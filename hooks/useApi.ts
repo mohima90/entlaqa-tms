@@ -216,23 +216,27 @@ export function useDashboardStats() {
     return {
       courses: {
         total: coursesResult.count || 0,
-        offline: coursesResult.data?.filter(c => c.data_source === 'offline').length || 0,
-        lms: coursesResult.data?.filter(c => c.data_source === 'lms').length || 0,
+        // Added (c: any) to fix build error
+        offline: coursesResult.data?.filter((c: any) => c.data_source === 'offline').length || 0,
+        lms: coursesResult.data?.filter((c: any) => c.data_source === 'lms').length || 0,
       },
       sessions: {
         total: sessionsResult.count || 0,
-        offline: sessionsResult.data?.filter(s => s.data_source === 'offline').length || 0,
-        lms: sessionsResult.data?.filter(s => s.data_source === 'lms').length || 0,
+        // Added (s: any) to fix build error
+        offline: sessionsResult.data?.filter((s: any) => s.data_source === 'offline').length || 0,
+        lms: sessionsResult.data?.filter((s: any) => s.data_source === 'lms').length || 0,
       },
       learners: {
         total: learnersResult.count || 0,
-        offline: learnersResult.data?.filter(l => l.data_source === 'offline').length || 0,
-        lms: learnersResult.data?.filter(l => l.data_source === 'lms').length || 0,
+        // Added (l: any) to fix build error
+        offline: learnersResult.data?.filter((l: any) => l.data_source === 'offline').length || 0,
+        lms: learnersResult.data?.filter((l: any) => l.data_source === 'lms').length || 0,
       },
       certificates: {
         total: certificatesResult.count || 0,
-        offline: certificatesResult.data?.filter(c => c.data_source === 'offline').length || 0,
-        lms: certificatesResult.data?.filter(c => c.data_source === 'lms').length || 0,
+        // Added (c: any) to fix build error
+        offline: certificatesResult.data?.filter((c: any) => c.data_source === 'offline').length || 0,
+        lms: certificatesResult.data?.filter((c: any) => c.data_source === 'lms').length || 0,
       },
     };
   }, []);

@@ -215,7 +215,7 @@ interface DataSourceLegendProps {
 }
 
 export function DataSourceLegend({
-  sources = ['manual', 'lms'],
+  sources = ['manual', 'lms'] as any, // THIS IS THE CRITICAL FIX
   orientation = 'horizontal',
   className,
 }: DataSourceLegendProps) {

@@ -1,5 +1,18 @@
 {
+  "/_not-found/page": "app/_not-found/page.js",
   "/page": "app/page.js",
-  "/(dashboard)/dashboard/page": "app/(dashboard)/dashboard/page.js",
-  "/(dashboard)/dashboard/certificates/page": "app/(dashboard)/dashboard/certificates/page.js"
+  "/(auth)/login/page": "app/(auth)/login/page.js",
+  "/(dashboard)/dashboard/attendance/page": "app/(dashboard)/dashboard/attendance/page.js",
+  "/(dashboard)/dashboard/instructors/page": "app/(dashboard)/dashboard/instructors/page.js",
+  "/(dashboard)/dashboard/certificates/page": "app/(dashboard)/dashboard/certificates/page.js",
+  "/(dashboard)/dashboard/profile/page": "app/(dashboard)/dashboard/profile/page.js",
+  "/(dashboard)/dashboard/learners/page": "app/(dashboard)/dashboard/learners/page.js",
+  "/(dashboard)/dashboard/sessions/[id]/page": "app/(dashboard)/dashboard/sessions/[id]/page.js",
+  "/(dashboard)/dashboard/reports/page": "app/(dashboard)/dashboard/reports/page.js",
+  "/(dashboard)/dashboard/courses/page": "app/(dashboard)/dashboard/courses/page.js",
+  "/(dashboard)/dashboard/settings/page": "app/(dashboard)/dashboard/settings/page.js",
+  "/(dashboard)/dashboard/suppliers/page": "app/(dashboard)/dashboard/suppliers/page.js",
+  "/(dashboard)/dashboard/sessions/page": "app/(dashboard)/dashboard/sessions/page.js",
+  "/(dashboard)/dashboard/venues/page": "app/(dashboard)/dashboard/venues/page.js",
+  "/(dashboard)/dashboard/page": "app/(dashboard)/dashboard/page.js"
 }

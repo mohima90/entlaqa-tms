@@ -1,24 +1,14 @@
-import { createBrowserClient } from '@supabase/ssr';
-import type { Database } from '@/types/database';
+import { createBrowserClient } from '@supabase/ssr'
 
 export function createClient() {
-  return createBrowserClient<Database>(
+  return createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
+  )
 }
 
-// Server-side client for API routes and server components
-export function createServerClient(cookieStore: any) {
-  return createBrowserClient<Database>(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name: string) {
-          return cookieStore.get(name)?.value;
-        },
-      },
-    }
-  );
+export function generateId(prefix: string): string {
+  const timestamp = Date.now().toString(36);
+  const randomStr = Math.random().toString(36).substring(2, 8);
+  return `${prefix}_${timestamp}${randomStr}`;
 }

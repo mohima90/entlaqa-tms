@@ -1,0 +1,241 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Import Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,200..800;1,200..800&family=Space+Grotesk:wght@300..700&family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+Arabic:wght@400;500;600;700&display=swap');
+
+:root {
+  --font-plus-jakarta: 'Plus Jakarta Sans', system-ui, sans-serif;
+  --font-space-grotesk: 'Space Grotesk', system-ui, sans-serif;
+  --font-jetbrains: 'JetBrains Mono', monospace;
+  --font-noto-arabic: 'Noto Sans Arabic', system-ui, sans-serif;
+  
+  /* Theme Colors */
+  --entlaqa-primary: #1d65d8;
+  --entlaqa-secondary: #3b99f5;
+  --source-offline: #22c55e;
+  --source-lms: #a855f7;
+  
+  /* Glassmorphism */
+  --glass-bg: rgba(255, 255, 255, 0.7);
+  --glass-border: rgba(255, 255, 255, 0.2);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+}
+
+.dark {
+  --glass-bg: rgba(30, 41, 59, 0.8);
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+@layer base {
+  * {
+    @apply border-slate-200 dark:border-slate-700;
+  }
+  
+  body {
+    @apply bg-surface-secondary dark:bg-dark-surface text-slate-900 dark:text-slate-100;
+    font-family: var(--font-plus-jakarta);
+    font-feature-settings: 'cv11', 'ss01';
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  
+  /* RTL Support for Arabic */
+  [dir="rtl"] {
+    font-family: var(--font-noto-arabic), var(--font-plus-jakarta);
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-space-grotesk);
+    @apply font-semibold tracking-tight;
+  }
+}
+
+@layer components {
+  /* Glass Card Effect */
+  .glass-card {
+    @apply bg-white/70 dark:bg-slate-800/70 backdrop-blur-xl 
+           border border-white/20 dark:border-slate-700/50 
+           rounded-2xl shadow-glass;
+  }
+  
+  .glass-card-elevated {
+    @apply bg-white dark:bg-slate-800 backdrop-blur-xl 
+           border border-slate-200/50 dark:border-slate-700/50 
+           rounded-2xl shadow-glass-lg;
+  }
+  
+  /* Data Source Badges */
+  .source-badge {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium;
+  }
+  
+  .source-badge-offline {
+    @apply source-badge bg-source-offline-light text-source-offline-dark 
+           border border-source-offline-border;
+  }
+  
+  .source-badge-lms {
+    @apply source-badge bg-source-lms-light text-source-lms-dark 
+           border border-source-lms-border;
+  }
+  
+  /* Source Indicator Dot */
+  .source-dot {
+    @apply w-2 h-2 rounded-full;
+  }
+  
+  .source-dot-offline {
+    @apply source-dot bg-source-offline;
+  }
+  
+  .source-dot-lms {
+    @apply source-dot bg-source-lms;
+  }
+  
+  /* Source Card Border */
+  .source-card-offline {
+    @apply border-l-4 border-l-source-offline;
+  }
+  
+  .source-card-lms {
+    @apply border-l-4 border-l-source-lms;
+  }
+  
+  /* Modern Input Styles */
+  .input-modern {
+    @apply w-full px-4 py-3 bg-white dark:bg-slate-800 
+           border border-slate-200 dark:border-slate-700 
+           rounded-xl text-slate-900 dark:text-slate-100
+           placeholder:text-slate-400 dark:placeholder:text-slate-500
+           focus:outline-none focus:ring-2 focus:ring-entlaqa-500/20 focus:border-entlaqa-500
+           transition-all duration-200;
+  }
+  
+  /* Button Styles */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 px-5 py-2.5
+           bg-entlaqa-gradient text-white font-medium rounded-xl
+           hover:shadow-lg hover:shadow-entlaqa-500/25
+           active:scale-[0.98] transition-all duration-200;
+  }
+  
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 px-5 py-2.5
+           bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200
+           font-medium rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700
+           active:scale-[0.98] transition-all duration-200;
+  }
+  
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2
+           text-slate-600 dark:text-slate-400 font-medium rounded-xl
+           hover:bg-slate-100 dark:hover:bg-slate-800
+           active:scale-[0.98] transition-all duration-200;
+  }
+  
+  /* Sidebar Navigation */
+  .nav-item {
+    @apply flex items-center gap-3 px-4 py-3 rounded-xl
+           text-slate-600 dark:text-slate-400 font-medium
+           hover:bg-slate-100 dark:hover:bg-slate-800
+           hover:text-slate-900 dark:hover:text-white
+           transition-all duration-200;
+  }
+  
+  .nav-item-active {
+    @apply nav-item bg-entlaqa-50 dark:bg-entlaqa-950/50 
+           text-entlaqa-700 dark:text-entlaqa-300
+           hover:bg-entlaqa-100 dark:hover:bg-entlaqa-950;
+  }
+  
+  /* Stat Card */
+  .stat-card {
+    @apply glass-card-elevated p-6 space-y-4;
+  }
+  
+  /* Table Styles */
+  .table-modern {
+    @apply w-full text-sm;
+  }
+  
+  .table-modern thead {
+    @apply bg-slate-50 dark:bg-slate-800/50;
+  }
+  
+  .table-modern th {
+    @apply px-4 py-3 text-left text-xs font-semibold text-slate-500 
+           dark:text-slate-400 uppercase tracking-wider;
+  }
+  
+  .table-modern tbody tr {
+    @apply border-b border-slate-100 dark:border-slate-800 
+           hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors;
+  }
+  
+  .table-modern td {
+    @apply px-4 py-4 text-slate-700 dark:text-slate-300;
+  }
+  
+  /* Metric trend indicator */
+  .trend-up {
+    @apply text-emerald-600 dark:text-emerald-400;
+  }
+  
+  .trend-down {
+    @apply text-red-600 dark:text-red-400;
+  }
+  
+  /* Shimmer loading effect */
+  .shimmer {
+    @apply relative overflow-hidden bg-slate-200 dark:bg-slate-700;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.4) 50%,
+      transparent 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 2s linear infinite;
+  }
+  
+  /* Custom scrollbar */
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  
+  .custom-scrollbar::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+  
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    @apply bg-slate-300 dark:bg-slate-600 rounded-full;
+  }
+  
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    @apply bg-slate-400 dark:bg-slate-500;
+  }
+}
+
+@layer utilities {
+  /* Text gradient */
+  .text-gradient {
+    @apply bg-clip-text text-transparent bg-entlaqa-gradient;
+  }
+  
+  /* Focus ring */
+  .focus-ring {
+    @apply focus:outline-none focus:ring-2 focus:ring-entlaqa-500/20 focus:ring-offset-2 
+           focus:ring-offset-white dark:focus:ring-offset-slate-900;
+  }
+  
+  /* Animation delays */
+  .animation-delay-100 { animation-delay: 100ms; }
+  .animation-delay-200 { animation-delay: 200ms; }
+  .animation-delay-300 { animation-delay: 300ms; }
+  .animation-delay-400 { animation-delay: 400ms; }
+  .animation-delay-500 { animation-delay: 500ms; }
+}

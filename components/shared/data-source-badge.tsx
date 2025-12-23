@@ -104,7 +104,7 @@ export function DataSourceBadge({
 }: DataSourceBadgeProps) {
   const [showTip, setShowTip] = useState(false)
   
-  // Safe access using type assertion to fix build error
+  // Safe access using type assertion
   const sourceConfig = config[source as keyof typeof config] || config.manual
   const Icon = sourceConfig.icon
 
@@ -125,7 +125,6 @@ export function DataSourceBadge({
         onMouseLeave={() => setShowTip(false)}
         whileHover={{ scale: 1.02 }}
       >
-        {/* Animated dot for LMS to show sync status */}
         {source === 'lms' ? (
           <span className={cn('rounded-full animate-pulse', sourceConfig.dotColor, sizes[size].dot)} />
         ) : (
@@ -150,7 +149,6 @@ export function DataSourceBadge({
         >
           <div className="font-medium mb-0.5">{sourceConfig.label}</div>
           <div className="text-white/50">{sourceConfig.description}</div>
-          {/* Arrow */}
           <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-px">
             <div className="border-4 border-transparent border-t-gray-900/95" />
           </div>
@@ -160,7 +158,6 @@ export function DataSourceBadge({
   )
 }
 
-// Data Source Indicator Dot (minimal version for tables)
 interface DataSourceDotProps {
   source: DataSource
   size?: 'sm' | 'md'
@@ -207,7 +204,6 @@ export function DataSourceDot({ source, size = 'md', showTooltip = true }: DataS
   )
 }
 
-// Data Source Legend Component (for dashboards/reports)
 interface DataSourceLegendProps {
   sources?: DataSource[]
   orientation?: 'horizontal' | 'vertical'
@@ -215,7 +211,7 @@ interface DataSourceLegendProps {
 }
 
 export function DataSourceLegend({
-  sources = ['manual', 'lms'] as any, // THIS IS THE FIX
+  sources = ['manual', 'lms'] as any,
   orientation = 'horizontal',
   className,
 }: DataSourceLegendProps) {
@@ -240,7 +236,6 @@ export function DataSourceLegend({
   )
 }
 
-// Data Source Filter Tabs
 interface DataSourceFilterProps {
   value: DataSource | 'all'
   onChange: (value: DataSource | 'all') => void
@@ -251,8 +246,9 @@ interface DataSourceFilterProps {
 export function DataSourceFilter({ value, onChange, counts, className }: DataSourceFilterProps) {
   const tabs = [
     { id: 'all', label: 'All', count: counts?.all },
-    { id: 'manual', label: 'Manual', count: counts?.manual, ...config.manual },
-    { id: 'lms', label: 'LMS', count: counts?.lms, ...config.lms },
+    // Removed duplicate 'label' keys below to fix build error
+    { id: 'manual', count: counts?.manual, ...config.manual },
+    { id: 'lms', count: counts?.lms, ...config.lms },
   ]
 
   return (
@@ -276,6 +272,7 @@ export function DataSourceFilter({ value, onChange, counts, className }: DataSou
               transition={{ type: 'spring', stiffness: 350, damping: 30 }}
             />
           )}
+          {/* @ts-ignore */}
           <span className="relative">{tab.label}</span>
           {tab.count !== undefined && (
             <span
@@ -295,7 +292,6 @@ export function DataSourceFilter({ value, onChange, counts, className }: DataSou
   )
 }
 
-// Data Source Summary Card
 interface DataSourceSummaryProps {
   source: DataSource
   count: number
@@ -337,7 +333,6 @@ export function DataSourceSummary({ source, count, total, trend, className }: Da
       <p className="text-xs text-white/50">
         {sourceConfig.label} Records ({percentage}%)
       </p>
-      {/* Progress bar */}
       <div className="mt-3 h-1.5 rounded-full bg-white/10 overflow-hidden">
         <motion.div
           initial={{ width: 0 }}

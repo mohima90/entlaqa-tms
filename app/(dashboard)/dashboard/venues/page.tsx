@@ -1,290 +1,191 @@
 'use client';
 
-import { useState } from 'react';
-import { motion } from 'framer-motion';
-import {
-  Plus,
-  Download,
-  Eye,
-  Edit,
-  Trash2,
-  MapPin,
-  Building2,
-  Phone,
-  Mail,
-  DoorOpen,
-  Users,
-  CheckCircle,
-  AlertCircle,
-  Wrench,
-} from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Plus, Edit, Trash2, MapPin, Users, X, Loader2, AlertCircle, CheckCircle, Search, Building } from 'lucide-react';
 import Header from '@/components/layout/Header';
-import DataTable, { Column } from '@/components/ui/DataTable';
-import { SourceDot } from '@/components/shared/SourceBadge';
-import { cn, formatCurrency } from '@/lib/utils';
+import { createClient, generateId } from '@/lib/supabase';
 
 interface Venue {
   id: string;
   name: string;
   name_ar: string;
+  type: string;
   address: string;
   city: string;
-  venue_type: 'internal' | 'external' | 'partner' | 'rented';
-  status: 'active' | 'inactive' | 'maintenance';
-  rooms_count: number;
-  total_capacity: number;
-  daily_rate: number | null;
-  contact_name: string;
+  capacity: number;
+  status: string;
+  facilities: string[];
   contact_phone: string;
-  amenities: string[];
-  data_source: 'offline' | 'lms';
+  contact_email: string;
+  notes: string;
 }
 
-const sampleVenues: Venue[] = [
-  {
-    id: '1',
-    name: 'Main Training Center',
-    name_ar: 'مركز التدريب الرئيسي',
-    address: 'King Fahd Road, Al Olaya District',
-    city: 'Riyadh',
-    venue_type: 'internal',
-    status: 'active',
-    rooms_count: 8,
-    total_capacity: 320,
-    daily_rate: null,
-    contact_name: 'Abdullah Al-Saud',
-    contact_phone: '+966 11 234 5678',
-    amenities: ['WiFi', 'Projector', 'Whiteboard', 'AC', 'Parking', 'Cafeteria'],
-    data_source: 'offline',
-  },
-  {
-    id: '2',
-    name: 'Tech Hub Innovation Center',
-    name_ar: 'مركز ابتكار التقنية',
-    address: 'Digital City, KAFD',
-    city: 'Riyadh',
-    venue_type: 'partner',
-    status: 'active',
-    rooms_count: 5,
-    total_capacity: 150,
-    daily_rate: 5000,
-    contact_name: 'Fahad Al-Rashid',
-    contact_phone: '+966 11 345 6789',
-    amenities: ['WiFi', 'Smart Board', 'Video Conferencing', 'Computer Lab', 'Coffee Area'],
-    data_source: 'offline',
-  },
-  {
-    id: '3',
-    name: 'Jeddah Branch Office',
-    name_ar: 'فرع جدة',
-    address: 'Tahlia Street, Al-Andalus District',
-    city: 'Jeddah',
-    venue_type: 'internal',
-    status: 'active',
-    rooms_count: 4,
-    total_capacity: 100,
-    daily_rate: null,
-    contact_name: 'Sara Al-Zahrani',
-    contact_phone: '+966 12 456 7890',
-    amenities: ['WiFi', 'Projector', 'Whiteboard', 'AC'],
-    data_source: 'lms',
-  },
-  {
-    id: '4',
-    name: 'Executive Conference Hotel',
-    name_ar: 'فندق المؤتمرات التنفيذي',
-    address: 'King Abdullah Road',
-    city: 'Riyadh',
-    venue_type: 'rented',
-    status: 'active',
-    rooms_count: 12,
-    total_capacity: 500,
-    daily_rate: 15000,
-    contact_name: 'Events Team',
-    contact_phone: '+966 11 567 8901',
-    amenities: ['WiFi', 'AV Equipment', 'Catering', 'VIP Lounge', 'Valet Parking'],
-    data_source: 'offline',
-  },
-  {
-    id: '5',
-    name: 'Dammam Industrial Training Facility',
-    name_ar: 'منشأة التدريب الصناعي بالدمام',
-    address: 'Industrial Area 2',
-    city: 'Dammam',
-    venue_type: 'external',
-    status: 'maintenance',
-    rooms_count: 6,
-    total_capacity: 180,
-    daily_rate: 8000,
-    contact_name: 'Mohammed Al-Qahtani',
-    contact_phone: '+966 13 678 9012',
-    amenities: ['Workshop Space', 'Safety Equipment', 'Computer Lab', 'Parking'],
-    data_source: 'offline',
-  },
-];
-
-const venueTypeConfig = {
-  internal: { label: 'Internal', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
-  external: { label: 'External', color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' },
-  partner: { label: 'Partner', color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' },
-  rented: { label: 'Rented', color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
-};
-
-const statusConfig = {
-  active: { label: 'Active', color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400', icon: CheckCircle },
-  inactive: { label: 'Inactive', color: 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300', icon: AlertCircle },
-  maintenance: { label: 'Maintenance', color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400', icon: Wrench },
-};
-
 export default function VenuesPage() {
-  const [venues] = useState<Venue[]>(sampleVenues);
+  const [venues, setVenues] = useState<Venue[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedVenue, setSelectedVenue] = useState<Venue | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const supabase = createClient();
 
-  const columns: Column<Venue>[] = [
-    {
-      key: 'name',
-      header: 'Venue',
-      sortable: true,
-      render: (venue) => (
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-700 flex items-center justify-center">
-            <Building2 className="w-5 h-5 text-slate-600 dark:text-slate-400" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="font-medium text-slate-900 dark:text-white">{venue.name}</span>
-              <SourceDot source={venue.data_source} size="sm" />
-            </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              {venue.city}
-            </p>
-          </div>
-        </div>
-      ),
-    },
-    {
-      key: 'venue_type',
-      header: 'Type',
-      sortable: true,
-      render: (venue) => (
-        <span className={cn('px-2.5 py-1 rounded-full text-xs font-medium', venueTypeConfig[venue.venue_type].color)}>
-          {venueTypeConfig[venue.venue_type].label}
-        </span>
-      ),
-    },
-    {
-      key: 'rooms_count',
-      header: 'Rooms',
-      sortable: true,
-      render: (venue) => (
-        <div className="flex items-center gap-1.5">
-          <DoorOpen className="w-4 h-4 text-slate-400" />
-          <span className="text-slate-700 dark:text-slate-300">{venue.rooms_count}</span>
-        </div>
-      ),
-    },
-    {
-      key: 'total_capacity',
-      header: 'Capacity',
-      sortable: true,
-      render: (venue) => (
-        <div className="flex items-center gap-1.5">
-          <Users className="w-4 h-4 text-slate-400" />
-          <span className="text-slate-700 dark:text-slate-300">{venue.total_capacity}</span>
-        </div>
-      ),
-    },
-    {
-      key: 'daily_rate',
-      header: 'Daily Rate',
-      sortable: true,
-      render: (venue) => (
-        <span className="text-slate-700 dark:text-slate-300">
-          {venue.daily_rate ? formatCurrency(venue.daily_rate) : '—'}
-        </span>
-      ),
-    },
-    {
-      key: 'contact_name',
-      header: 'Contact',
-      render: (venue) => (
-        <div className="text-sm">
-          <p className="text-slate-700 dark:text-slate-300">{venue.contact_name}</p>
-          <p className="text-xs text-slate-500 dark:text-slate-400">{venue.contact_phone}</p>
-        </div>
-      ),
-    },
-    {
-      key: 'status',
-      header: 'Status',
-      sortable: true,
-      render: (venue) => {
-        const config = statusConfig[venue.status];
-        const Icon = config.icon;
-        return (
-          <span className={cn('inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium', config.color)}>
-            <Icon className="w-3 h-3" />
-            {config.label}
-          </span>
-        );
-      },
-    },
-  ];
+  const [formData, setFormData] = useState({
+    name: '', name_ar: '', type: 'training_room', address: '', city: '', capacity: 20, status: 'active', contact_phone: '', contact_email: '', notes: ''
+  });
 
-  const actions = [
-    { label: 'View Details', icon: <Eye className="w-4 h-4" />, onClick: (v: Venue) => console.log('View', v) },
-    { label: 'Edit Venue', icon: <Edit className="w-4 h-4" />, onClick: (v: Venue) => console.log('Edit', v) },
-    { label: 'Manage Rooms', icon: <DoorOpen className="w-4 h-4" />, onClick: (v: Venue) => console.log('Rooms', v) },
-    { label: 'Delete', icon: <Trash2 className="w-4 h-4" />, onClick: (v: Venue) => console.log('Delete', v), variant: 'danger' as const },
-  ];
+  useEffect(() => { fetchVenues(); }, []);
 
-  const stats = {
-    total: venues.length,
-    active: venues.filter(v => v.status === 'active').length,
-    totalRooms: venues.reduce((acc, v) => acc + v.rooms_count, 0),
-    totalCapacity: venues.reduce((acc, v) => acc + v.total_capacity, 0),
+  const fetchVenues = async () => {
+    setIsLoading(true);
+    const { data, error } = await supabase.from('venues').select('*').order('name');
+    if (error) { setError('Failed to fetch venues'); console.error(error); }
+    else { setVenues(data || []); }
+    setIsLoading(false);
   };
 
+  const filteredVenues = venues.filter(v => {
+    if (!searchQuery) return true;
+    const query = searchQuery.toLowerCase();
+    return v.name.toLowerCase().includes(query) || v.city?.toLowerCase().includes(query);
+  });
+
+  const openCreateModal = () => {
+    setSelectedVenue(null);
+    setFormData({ name: '', name_ar: '', type: 'training_room', address: '', city: '', capacity: 20, status: 'active', contact_phone: '', contact_email: '', notes: '' });
+    setIsModalOpen(true);
+  };
+
+  const openEditModal = (venue: Venue) => {
+    setSelectedVenue(venue);
+    setFormData({
+      name: venue.name, name_ar: venue.name_ar || '', type: venue.type || 'training_room',
+      address: venue.address || '', city: venue.city || '', capacity: venue.capacity || 20,
+      status: venue.status || 'active', contact_phone: venue.contact_phone || '',
+      contact_email: venue.contact_email || '', notes: venue.notes || ''
+    });
+    setIsModalOpen(true);
+  };
+
+  const handleSave = async () => {
+    if (!formData.name) { setError('Name is required'); return; }
+    setIsSaving(true); setError('');
+
+    const venueData = { ...formData, updated_at: new Date().toISOString() };
+
+    if (selectedVenue) {
+      const { error } = await supabase.from('venues').update(venueData).eq('id', selectedVenue.id);
+      if (error) setError('Failed to update: ' + error.message);
+      else { setSuccess('Venue updated!'); setIsModalOpen(false); fetchVenues(); }
+    } else {
+      const { error } = await supabase.from('venues').insert({ id: generateId('ven'), ...venueData, organization_id: 'org_001', created_at: new Date().toISOString() });
+      if (error) setError('Failed to create: ' + error.message);
+      else { setSuccess('Venue created!'); setIsModalOpen(false); fetchVenues(); }
+    }
+    setTimeout(() => setSuccess(''), 3000);
+    setIsSaving(false);
+  };
+
+  const deleteVenue = async (venue: Venue) => {
+    if (!confirm(`Delete "${venue.name}"?`)) return;
+    const { error } = await supabase.from('venues').delete().eq('id', venue.id);
+    if (error) setError('Failed to delete: ' + error.message);
+    else { setSuccess('Venue deleted!'); fetchVenues(); }
+    setTimeout(() => setSuccess(''), 3000);
+  };
+
+  const typeLabels: Record<string, string> = { training_room: 'Training Room', conference_hall: 'Conference Hall', computer_lab: 'Computer Lab', virtual: 'Virtual', external: 'External' };
+  const statusColors: Record<string, string> = { active: 'bg-green-100 text-green-800', inactive: 'bg-gray-100 text-gray-800', maintenance: 'bg-yellow-100 text-yellow-800' };
+
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-900">
-      <Header title="Venues" subtitle="Manage training venues and rooms" />
-      <div className="p-6 space-y-6">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4">
-            <div className="flex items-center gap-2">
-              <Building2 className="w-5 h-5 text-entlaqa-600" />
-              <p className="text-2xl font-bold text-slate-900 dark:text-white">{stats.total}</p>
-            </div>
-            <p className="text-sm text-slate-500 mt-1">Total Venues</p>
-          </motion.div>
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4">
-            <div className="flex items-center gap-2">
-              <CheckCircle className="w-5 h-5 text-emerald-600" />
-              <p className="text-2xl font-bold text-slate-900 dark:text-white">{stats.active}</p>
-            </div>
-            <p className="text-sm text-slate-500 mt-1">Active</p>
-          </motion.div>
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4">
-            <div className="flex items-center gap-2">
-              <DoorOpen className="w-5 h-5 text-blue-600" />
-              <p className="text-2xl font-bold text-slate-900 dark:text-white">{stats.totalRooms}</p>
-            </div>
-            <p className="text-sm text-slate-500 mt-1">Total Rooms</p>
-          </motion.div>
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4">
-            <div className="flex items-center gap-2">
-              <Users className="w-5 h-5 text-purple-600" />
-              <p className="text-2xl font-bold text-slate-900 dark:text-white">{stats.totalCapacity}</p>
-            </div>
-            <p className="text-sm text-slate-500 mt-1">Total Capacity</p>
-          </motion.div>
+    <div className="min-h-screen bg-gray-50">
+      <Header title="Venues" subtitle="Manage training locations" />
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {error && <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-red-700"><AlertCircle className="w-5 h-5" />{error}<button onClick={() => setError('')} className="ml-auto">×</button></div>}
+        {success && <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2 text-green-700"><CheckCircle className="w-5 h-5" />{success}</div>}
+
+        <div className="flex items-center justify-between mb-6">
+          <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" /><input type="text" placeholder="Search venues..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg w-64" /></div>
+          <button onClick={openCreateModal} className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"><Plus className="w-5 h-5" />Add Venue</button>
         </div>
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}>
-          <DataTable data={venues} columns={columns} searchable searchPlaceholder="Search venues..." searchKeys={['name', 'name_ar', 'city', 'address']} showSourceFilter getSourceFn={(v) => v.data_source} actions={actions}
-            headerActions={<div className="flex items-center gap-2"><button className="btn-ghost text-sm"><Download className="w-4 h-4" />Export</button><button className="btn-primary text-sm"><Plus className="w-4 h-4" />Add Venue</button></div>}
-            emptyState={{ title: 'No venues found', description: 'Add your first training venue.', action: { label: 'Add Venue', onClick: () => console.log('Add venue') } }}
-          />
-        </motion.div>
-      </div>
+
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <table className="w-full">
+            <thead className="bg-gray-50 border-b border-gray-200">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Venue</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">City</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Capacity</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200">
+              {isLoading ? (
+                <tr><td colSpan={6} className="px-6 py-12 text-center"><Loader2 className="w-8 h-8 text-gray-400 animate-spin mx-auto" /></td></tr>
+              ) : filteredVenues.length === 0 ? (
+                <tr><td colSpan={6} className="px-6 py-12 text-center text-gray-500">No venues found. <button onClick={openCreateModal} className="text-primary-600 hover:underline">Create one</button></td></tr>
+              ) : filteredVenues.map((venue) => (
+                <tr key={venue.id} className="hover:bg-gray-50">
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center"><Building className="w-5 h-5 text-purple-600" /></div>
+                      <div><p className="font-medium text-gray-900">{venue.name}</p><p className="text-sm text-gray-500">{venue.address || 'No address'}</p></div>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 text-gray-600">{typeLabels[venue.type] || venue.type}</td>
+                  <td className="px-6 py-4 text-gray-600">{venue.city || '-'}</td>
+                  <td className="px-6 py-4"><div className="flex items-center gap-1 text-gray-600"><Users className="w-4 h-4" />{venue.capacity}</div></td>
+                  <td className="px-6 py-4"><span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColors[venue.status] || 'bg-gray-100 text-gray-800'}`}>{venue.status}</span></td>
+                  <td className="px-6 py-4">
+                    <div className="flex items-center justify-end gap-2">
+                      <button onClick={() => openEditModal(venue)} className="p-2 text-gray-400 hover:text-primary-600 hover:bg-gray-100 rounded-lg"><Edit className="w-4 h-4" /></button>
+                      <button onClick={() => deleteVenue(venue)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg"><Trash2 className="w-4 h-4" /></button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <AnimatePresence>
+          {isModalOpen && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setIsModalOpen(false)}>
+              <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }} className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center justify-between p-6 border-b"><h2 className="text-xl font-semibold">{selectedVenue ? 'Edit Venue' : 'Create Venue'}</h2><button onClick={() => setIsModalOpen(false)} className="text-gray-400 hover:text-gray-600"><X className="w-6 h-6" /></button></div>
+                <div className="p-6 space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Name (English) *</label><input type="text" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg" /></div>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Name (Arabic)</label><input type="text" value={formData.name_ar} onChange={e => setFormData({...formData, name_ar: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg" dir="rtl" /></div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Type</label><select value={formData.type} onChange={e => setFormData({...formData, type: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg"><option value="training_room">Training Room</option><option value="conference_hall">Conference Hall</option><option value="computer_lab">Computer Lab</option><option value="virtual">Virtual</option><option value="external">External</option></select></div>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Status</label><select value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg"><option value="active">Active</option><option value="inactive">Inactive</option><option value="maintenance">Maintenance</option></select></div>
+                  </div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Address</label><input type="text" value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg" /></div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">City</label><input type="text" value={formData.city} onChange={e => setFormData({...formData, city: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg" /></div>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Capacity</label><input type="number" value={formData.capacity} onChange={e => setFormData({...formData, capacity: parseInt(e.target.value)})} className="w-full px-4 py-2 border border-gray-300 rounded-lg" /></div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Contact Phone</label><input type="tel" value={formData.contact_phone} onChange={e => setFormData({...formData, contact_phone: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg" /></div>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Contact Email</label><input type="email" value={formData.contact_email} onChange={e => setFormData({...formData, contact_email: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg" /></div>
+                  </div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Notes</label><textarea value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} rows={2} className="w-full px-4 py-2 border border-gray-300 rounded-lg" /></div>
+                </div>
+                <div className="flex justify-end gap-3 p-6 border-t">
+                  <button onClick={() => setIsModalOpen(false)} className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
+                  <button onClick={handleSave} disabled={isSaving || !formData.name} className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50">{isSaving && <Loader2 className="w-4 h-4 animate-spin" />}{selectedVenue ? 'Update' : 'Create'}</button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </main>
     </div>
   );
 }

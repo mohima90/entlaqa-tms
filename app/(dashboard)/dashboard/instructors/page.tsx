@@ -134,7 +134,7 @@ export default function InstructorsPage() {
           <div className="bg-white rounded-xl p-4 border border-gray-200"><p className="text-2xl font-bold text-gray-900">{instructors.length}</p><p className="text-sm text-gray-500">Total Instructors</p></div>
           <div className="bg-white rounded-xl p-4 border border-gray-200"><p className="text-2xl font-bold text-green-600">{instructors.filter(i => i.status === 'active').length}</p><p className="text-sm text-gray-500">Active</p></div>
           <div className="bg-white rounded-xl p-4 border border-gray-200"><p className="text-2xl font-bold text-yellow-600">{instructors.filter(i => i.status === 'on_leave').length}</p><p className="text-sm text-gray-500">On Leave</p></div>
-          <div className="bg-white rounded-xl p-4 border border-gray-200"><p className="text-2xl font-bold text-blue-600">{[...new Set(instructors.map(i => i.specialization).filter(Boolean))].length}</p><p className="text-sm text-gray-500">Specializations</p></div>
+          <div className="bg-white rounded-xl p-4 border border-gray-200"><p className="text-2xl font-bold text-blue-600">{Array.from(new Set(instructors.map(i => i.specialization).filter(Boolean))).length}</p><p className="text-sm text-gray-500">Specializations</p></div>
         </div>
 
         {/* Table */}

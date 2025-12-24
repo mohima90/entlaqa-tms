@@ -45,7 +45,7 @@ export default function LearnersPage() {
     setIsLoading(false);
   };
 
-  const departments = [...new Set(learners.map(l => l.department).filter(Boolean))];
+  const departments = Array.from(new Set(learners.map(l => l.department).filter(Boolean)));
 
   const filteredLearners = learners.filter(l => {
     if (searchQuery) {

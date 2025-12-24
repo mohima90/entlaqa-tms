@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Edit, Trash2, User, Mail, Phone, X, Loader2, AlertCircle, CheckCircle, Search, Award } from 'lucide-react';
+import { Plus, Edit, Trash2, User, Mail, Phone, X, Loader2, AlertCircle, CheckCircle, Search, Award, Download, Upload } from 'lucide-react';
 import Header from '@/components/layout/Header';
 import { createClient, generateId } from '@/lib/supabase';
 
@@ -23,6 +23,7 @@ export default function InstructorsPage() {
   const [instructors, setInstructors] = useState<Instructor[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedInstructor, setSelectedInstructor] = useState<Instructor | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -45,9 +46,12 @@ export default function InstructorsPage() {
   };
 
   const filteredInstructors = instructors.filter(i => {
-    if (!searchQuery) return true;
-    const query = searchQuery.toLowerCase();
-    return i.full_name.toLowerCase().includes(query) || i.email?.toLowerCase().includes(query) || i.specialization?.toLowerCase().includes(query);
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      if (!i.full_name.toLowerCase().includes(query) && !i.email?.toLowerCase().includes(query) && !i.specialization?.toLowerCase().includes(query)) return false;
+    }
+    if (statusFilter !== 'all' && i.status !== statusFilter) return false;
+    return true;
   });
 
   const openCreateModal = () => {
@@ -70,7 +74,6 @@ export default function InstructorsPage() {
   const handleSave = async () => {
     if (!formData.full_name) { setError('Name is required'); return; }
     setIsSaving(true); setError('');
-
     const instructorData = { ...formData, updated_at: new Date().toISOString() };
 
     if (selectedInstructor) {
@@ -96,18 +99,45 @@ export default function InstructorsPage() {
 
   const statusColors: Record<string, string> = { active: 'bg-green-100 text-green-800', inactive: 'bg-gray-100 text-gray-800', on_leave: 'bg-yellow-100 text-yellow-800' };
 
+  const headerActions = (
+    <div className="flex items-center gap-2">
+      <button className="flex items-center gap-2 px-3 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">
+        <Upload className="w-4 h-4" />
+        <span className="hidden sm:inline">Import</span>
+      </button>
+      <button className="flex items-center gap-2 px-3 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">
+        <Download className="w-4 h-4" />
+        <span className="hidden sm:inline">Export</span>
+      </button>
+      <button onClick={openCreateModal} className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700">
+        <Plus className="w-5 h-5" />
+        <span>Add Instructor</span>
+      </button>
+    </div>
+  );
+
   return (
     <div className="min-h-screen bg-gray-50">
-      <Header title="Instructors" subtitle="Manage training instructors" />
+      <Header title="Instructors" subtitle={`${instructors.length} training instructors`} actions={headerActions} />
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {error && <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-red-700"><AlertCircle className="w-5 h-5" />{error}<button onClick={() => setError('')} className="ml-auto">×</button></div>}
         {success && <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2 text-green-700"><CheckCircle className="w-5 h-5" />{success}</div>}
 
-        <div className="flex items-center justify-between mb-6">
-          <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" /><input type="text" placeholder="Search instructors..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg w-64" /></div>
-          <button onClick={openCreateModal} className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"><Plus className="w-5 h-5" />Add Instructor</button>
+        {/* Filters */}
+        <div className="flex items-center gap-4 mb-6">
+          <div className="relative flex-1 max-w-md"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" /><input type="text" placeholder="Search instructors..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500" /></div>
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"><option value="all">All Status</option><option value="active">Active</option><option value="inactive">Inactive</option><option value="on_leave">On Leave</option></select>
         </div>
 
+        {/* Stats */}
+        <div className="grid grid-cols-4 gap-4 mb-6">
+          <div className="bg-white rounded-xl p-4 border border-gray-200"><p className="text-2xl font-bold text-gray-900">{instructors.length}</p><p className="text-sm text-gray-500">Total Instructors</p></div>
+          <div className="bg-white rounded-xl p-4 border border-gray-200"><p className="text-2xl font-bold text-green-600">{instructors.filter(i => i.status === 'active').length}</p><p className="text-sm text-gray-500">Active</p></div>
+          <div className="bg-white rounded-xl p-4 border border-gray-200"><p className="text-2xl font-bold text-yellow-600">{instructors.filter(i => i.status === 'on_leave').length}</p><p className="text-sm text-gray-500">On Leave</p></div>
+          <div className="bg-white rounded-xl p-4 border border-gray-200"><p className="text-2xl font-bold text-blue-600">{[...new Set(instructors.map(i => i.specialization).filter(Boolean))].length}</p><p className="text-sm text-gray-500">Specializations</p></div>
+        </div>
+
+        {/* Table */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
           <table className="w-full">
             <thead className="bg-gray-50 border-b border-gray-200">
@@ -154,30 +184,31 @@ export default function InstructorsPage() {
           </table>
         </div>
 
+        {/* Modal */}
         <AnimatePresence>
           {isModalOpen && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setIsModalOpen(false)}>
               <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }} className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-                <div className="flex items-center justify-between p-6 border-b"><h2 className="text-xl font-semibold">{selectedInstructor ? 'Edit Instructor' : 'Create Instructor'}</h2><button onClick={() => setIsModalOpen(false)} className="text-gray-400 hover:text-gray-600"><X className="w-6 h-6" /></button></div>
+                <div className="flex items-center justify-between p-6 border-b"><h2 className="text-xl font-semibold">{selectedInstructor ? 'Edit Instructor' : 'Add New Instructor'}</h2><button onClick={() => setIsModalOpen(false)} className="text-gray-400 hover:text-gray-600"><X className="w-6 h-6" /></button></div>
                 <div className="p-6 space-y-4">
                   <div className="grid grid-cols-2 gap-4">
-                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Full Name (English) *</label><input type="text" value={formData.full_name} onChange={e => setFormData({...formData, full_name: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg" /></div>
-                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Full Name (Arabic)</label><input type="text" value={formData.full_name_ar} onChange={e => setFormData({...formData, full_name_ar: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg" dir="rtl" /></div>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Full Name (English) *</label><input type="text" value={formData.full_name} onChange={e => setFormData({...formData, full_name: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500" /></div>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Full Name (Arabic)</label><input type="text" value={formData.full_name_ar} onChange={e => setFormData({...formData, full_name_ar: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500" dir="rtl" /></div>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
-                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Email</label><input type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg" /></div>
-                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Phone</label><input type="tel" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg" /></div>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Email</label><input type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500" /></div>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Phone</label><input type="tel" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500" /></div>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
-                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Specialization</label><input type="text" value={formData.specialization} onChange={e => setFormData({...formData, specialization: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg" placeholder="e.g., Leadership, Technology" /></div>
-                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Hourly Rate ($)</label><input type="number" value={formData.hourly_rate} onChange={e => setFormData({...formData, hourly_rate: parseInt(e.target.value)})} className="w-full px-4 py-2 border border-gray-300 rounded-lg" /></div>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Specialization</label><input type="text" value={formData.specialization} onChange={e => setFormData({...formData, specialization: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500" placeholder="e.g., Leadership, Technology" /></div>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Hourly Rate ($)</label><input type="number" value={formData.hourly_rate} onChange={e => setFormData({...formData, hourly_rate: parseInt(e.target.value)})} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500" /></div>
                   </div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Status</label><select value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg"><option value="active">Active</option><option value="inactive">Inactive</option><option value="on_leave">On Leave</option></select></div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Bio</label><textarea value={formData.bio} onChange={e => setFormData({...formData, bio: e.target.value})} rows={3} className="w-full px-4 py-2 border border-gray-300 rounded-lg" /></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Status</label><select value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"><option value="active">Active</option><option value="inactive">Inactive</option><option value="on_leave">On Leave</option></select></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Bio</label><textarea value={formData.bio} onChange={e => setFormData({...formData, bio: e.target.value})} rows={3} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500" /></div>
                 </div>
-                <div className="flex justify-end gap-3 p-6 border-t">
-                  <button onClick={() => setIsModalOpen(false)} className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
-                  <button onClick={handleSave} disabled={isSaving || !formData.full_name} className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50">{isSaving && <Loader2 className="w-4 h-4 animate-spin" />}{selectedInstructor ? 'Update' : 'Create'}</button>
+                <div className="flex justify-end gap-3 p-6 border-t bg-gray-50">
+                  <button onClick={() => setIsModalOpen(false)} className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-100">Cancel</button>
+                  <button onClick={handleSave} disabled={isSaving || !formData.full_name} className="flex items-center gap-2 px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50">{isSaving && <Loader2 className="w-4 h-4 animate-spin" />}{selectedInstructor ? 'Save Changes' : 'Create Instructor'}</button>
                 </div>
               </motion.div>
             </motion.div>

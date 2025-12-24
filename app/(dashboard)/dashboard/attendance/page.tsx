@@ -1,8 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
-import { UserCheck, UserX, Clock, Calendar, Search, Loader2, AlertCircle, CheckCircle, Filter } from 'lucide-react';
+import { UserCheck, UserX, Clock, Calendar, Search, Loader2, AlertCircle, CheckCircle, Download, Plus } from 'lucide-react';
 import Header from '@/components/layout/Header';
 import { createClient, generateId } from '@/lib/supabase';
 
@@ -81,6 +80,23 @@ export default function AttendancePage() {
     setTimeout(() => setSuccess(''), 3000);
   };
 
+  const exportAttendance = () => {
+    const data = filteredAttendance.map(a => ({
+      learner: a.learner?.full_name || 'Unknown',
+      employee_id: a.learner?.employee_id || '',
+      session: a.session?.title || 'Unknown',
+      date: a.session?.start_date || '',
+      status: a.status,
+      check_in: a.check_in_time || ''
+    }));
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `attendance-${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+  };
+
   const statusColors: Record<string, string> = {
     present: 'bg-green-100 text-green-800',
     absent: 'bg-red-100 text-red-800',
@@ -95,9 +111,24 @@ export default function AttendancePage() {
     late: attendance.filter(a => a.status === 'late').length,
   };
 
+  const attendanceRate = stats.total > 0 ? Math.round((stats.present / stats.total) * 100) : 0;
+
+  const headerActions = (
+    <div className="flex items-center gap-2">
+      <button onClick={exportAttendance} className="flex items-center gap-2 px-3 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">
+        <Download className="w-4 h-4" />
+        <span className="hidden sm:inline">Export</span>
+      </button>
+      <button className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700">
+        <Plus className="w-5 h-5" />
+        <span>Take Attendance</span>
+      </button>
+    </div>
+  );
+
   return (
     <div className="min-h-screen bg-gray-50">
-      <Header title="Attendance" subtitle="Track session attendance" />
+      <Header title="Attendance" subtitle={`${attendanceRate}% attendance rate`} actions={headerActions} />
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {error && <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-red-700"><AlertCircle className="w-5 h-5" />{error}<button onClick={() => setError('')} className="ml-auto">×</button></div>}
         {success && <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2 text-green-700"><CheckCircle className="w-5 h-5" />{success}</div>}
@@ -131,13 +162,13 @@ export default function AttendancePage() {
         </div>
 
         {/* Filters */}
-        <div className="flex items-center gap-4 mb-6">
-          <div className="relative flex-1 max-w-md"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" /><input type="text" placeholder="Search by learner or session..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg" /></div>
-          <select value={sessionFilter} onChange={(e) => setSessionFilter(e.target.value)} className="px-4 py-2 border border-gray-300 rounded-lg">
+        <div className="flex flex-wrap items-center gap-4 mb-6">
+          <div className="relative flex-1 min-w-[200px] max-w-md"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" /><input type="text" placeholder="Search by learner or session..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500" /></div>
+          <select value={sessionFilter} onChange={(e) => setSessionFilter(e.target.value)} className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500">
             <option value="all">All Sessions</option>
             {sessions.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
           </select>
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="px-4 py-2 border border-gray-300 rounded-lg">
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500">
             <option value="all">All Status</option>
             <option value="present">Present</option>
             <option value="absent">Absent</option>

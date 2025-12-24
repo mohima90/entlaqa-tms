@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Edit, Trash2, Calendar, Clock, MapPin, Users, X, Loader2, AlertCircle, CheckCircle, Search } from 'lucide-react';
+import { Plus, Edit, Trash2, Calendar, Clock, MapPin, Users, X, Loader2, AlertCircle, CheckCircle, Search, Download } from 'lucide-react';
 import Header from '@/components/layout/Header';
 import { createClient, generateId } from '@/lib/supabase';
 
@@ -30,6 +30,7 @@ export default function SessionsPage() {
   const [instructors, setInstructors] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedSession, setSelectedSession] = useState<Session | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -67,9 +68,12 @@ export default function SessionsPage() {
   };
 
   const filteredSessions = sessions.filter(s => {
-    if (!searchQuery) return true;
-    const query = searchQuery.toLowerCase();
-    return s.title?.toLowerCase().includes(query) || s.course?.name?.toLowerCase().includes(query);
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      if (!s.title?.toLowerCase().includes(query) && !s.course?.name?.toLowerCase().includes(query)) return false;
+    }
+    if (statusFilter !== 'all' && s.status !== statusFilter) return false;
+    return true;
   });
 
   const openCreateModal = () => {
@@ -92,7 +96,6 @@ export default function SessionsPage() {
   const handleSave = async () => {
     if (!formData.title || !formData.course_id) { setError('Title and course are required'); return; }
     setIsSaving(true); setError('');
-
     const sessionData = { ...formData, updated_at: new Date().toISOString() };
 
     if (selectedSession) {
@@ -116,20 +119,43 @@ export default function SessionsPage() {
     setTimeout(() => setSuccess(''), 3000);
   };
 
-  const statusColors: Record<string, string> = { scheduled: 'bg-blue-100 text-blue-800', ongoing: 'bg-green-100 text-green-800', completed: 'bg-gray-100 text-gray-800', cancelled: 'bg-red-100 text-red-800' };
+  const statusColors: Record<string, string> = { scheduled: 'bg-blue-100 text-blue-800', ongoing: 'bg-green-100 text-green-800', completed: 'bg-gray-100 text-gray-800', cancelled: 'bg-red-100 text-red-800', open: 'bg-yellow-100 text-yellow-800', confirmed: 'bg-purple-100 text-purple-800' };
+
+  const headerActions = (
+    <div className="flex items-center gap-2">
+      <button className="flex items-center gap-2 px-3 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">
+        <Download className="w-4 h-4" />
+        <span className="hidden sm:inline">Export</span>
+      </button>
+      <button onClick={openCreateModal} className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700">
+        <Plus className="w-5 h-5" />
+        <span>Add Session</span>
+      </button>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <Header title="Sessions" subtitle="Manage training sessions" />
+      <Header title="Sessions" subtitle={`${sessions.length} total sessions`} actions={headerActions} />
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {error && <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-red-700"><AlertCircle className="w-5 h-5" />{error}<button onClick={() => setError('')} className="ml-auto">×</button></div>}
         {success && <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2 text-green-700"><CheckCircle className="w-5 h-5" />{success}</div>}
 
-        <div className="flex items-center justify-between mb-6">
-          <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" /><input type="text" placeholder="Search sessions..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg w-64" /></div>
-          <button onClick={openCreateModal} className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"><Plus className="w-5 h-5" />Add Session</button>
+        {/* Filters */}
+        <div className="flex items-center gap-4 mb-6">
+          <div className="relative flex-1 max-w-md"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" /><input type="text" placeholder="Search sessions..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500" /></div>
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"><option value="all">All Status</option><option value="scheduled">Scheduled</option><option value="ongoing">Ongoing</option><option value="completed">Completed</option><option value="cancelled">Cancelled</option></select>
         </div>
 
+        {/* Stats Cards */}
+        <div className="grid grid-cols-4 gap-4 mb-6">
+          <div className="bg-white rounded-xl p-4 border border-gray-200"><p className="text-2xl font-bold text-gray-900">{sessions.length}</p><p className="text-sm text-gray-500">Total Sessions</p></div>
+          <div className="bg-white rounded-xl p-4 border border-gray-200"><p className="text-2xl font-bold text-blue-600">{sessions.filter(s => s.status === 'scheduled').length}</p><p className="text-sm text-gray-500">Scheduled</p></div>
+          <div className="bg-white rounded-xl p-4 border border-gray-200"><p className="text-2xl font-bold text-green-600">{sessions.filter(s => s.status === 'ongoing' || s.status === 'open').length}</p><p className="text-sm text-gray-500">Active</p></div>
+          <div className="bg-white rounded-xl p-4 border border-gray-200"><p className="text-2xl font-bold text-gray-600">{sessions.filter(s => s.status === 'completed').length}</p><p className="text-sm text-gray-500">Completed</p></div>
+        </div>
+
+        {/* Table */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
           <table className="w-full">
             <thead className="bg-gray-50 border-b border-gray-200">
@@ -171,32 +197,33 @@ export default function SessionsPage() {
           </table>
         </div>
 
+        {/* Modal */}
         <AnimatePresence>
           {isModalOpen && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setIsModalOpen(false)}>
               <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }} className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-                <div className="flex items-center justify-between p-6 border-b"><h2 className="text-xl font-semibold">{selectedSession ? 'Edit Session' : 'Create Session'}</h2><button onClick={() => setIsModalOpen(false)} className="text-gray-400 hover:text-gray-600"><X className="w-6 h-6" /></button></div>
+                <div className="flex items-center justify-between p-6 border-b"><h2 className="text-xl font-semibold">{selectedSession ? 'Edit Session' : 'Add New Session'}</h2><button onClick={() => setIsModalOpen(false)} className="text-gray-400 hover:text-gray-600"><X className="w-6 h-6" /></button></div>
                 <div className="p-6 space-y-4">
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Session Title *</label><input type="text" value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg" /></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Session Title *</label><input type="text" value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500" /></div>
                   <div className="grid grid-cols-2 gap-4">
-                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Course *</label><select value={formData.course_id} onChange={e => setFormData({...formData, course_id: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg"><option value="">Select Course</option>{courses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
-                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Venue</label><select value={formData.venue_id} onChange={e => setFormData({...formData, venue_id: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg"><option value="">Select Venue</option>{venues.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</select></div>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Course *</label><select value={formData.course_id} onChange={e => setFormData({...formData, course_id: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"><option value="">Select Course</option>{courses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Venue</label><select value={formData.venue_id} onChange={e => setFormData({...formData, venue_id: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"><option value="">Select Venue</option>{venues.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</select></div>
                   </div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Instructor</label><select value={formData.instructor_id} onChange={e => setFormData({...formData, instructor_id: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg"><option value="">Select Instructor</option>{instructors.map(i => <option key={i.id} value={i.id}>{i.full_name}</option>)}</select></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Instructor</label><select value={formData.instructor_id} onChange={e => setFormData({...formData, instructor_id: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"><option value="">Select Instructor</option>{instructors.map(i => <option key={i.id} value={i.id}>{i.full_name}</option>)}</select></div>
                   <div className="grid grid-cols-2 gap-4">
-                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label><input type="date" value={formData.start_date} onChange={e => setFormData({...formData, start_date: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg" /></div>
-                    <div><label className="block text-sm font-medium text-gray-700 mb-1">End Date</label><input type="date" value={formData.end_date} onChange={e => setFormData({...formData, end_date: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg" /></div>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label><input type="date" value={formData.start_date} onChange={e => setFormData({...formData, start_date: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500" /></div>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">End Date</label><input type="date" value={formData.end_date} onChange={e => setFormData({...formData, end_date: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500" /></div>
                   </div>
                   <div className="grid grid-cols-3 gap-4">
-                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Start Time</label><input type="time" value={formData.start_time} onChange={e => setFormData({...formData, start_time: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg" /></div>
-                    <div><label className="block text-sm font-medium text-gray-700 mb-1">End Time</label><input type="time" value={formData.end_time} onChange={e => setFormData({...formData, end_time: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg" /></div>
-                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Capacity</label><input type="number" value={formData.capacity} onChange={e => setFormData({...formData, capacity: parseInt(e.target.value)})} className="w-full px-4 py-2 border border-gray-300 rounded-lg" /></div>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Start Time</label><input type="time" value={formData.start_time} onChange={e => setFormData({...formData, start_time: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500" /></div>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">End Time</label><input type="time" value={formData.end_time} onChange={e => setFormData({...formData, end_time: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500" /></div>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Capacity</label><input type="number" value={formData.capacity} onChange={e => setFormData({...formData, capacity: parseInt(e.target.value)})} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500" /></div>
                   </div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Status</label><select value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg"><option value="scheduled">Scheduled</option><option value="ongoing">Ongoing</option><option value="completed">Completed</option><option value="cancelled">Cancelled</option></select></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Status</label><select value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"><option value="scheduled">Scheduled</option><option value="ongoing">Ongoing</option><option value="completed">Completed</option><option value="cancelled">Cancelled</option></select></div>
                 </div>
-                <div className="flex justify-end gap-3 p-6 border-t">
-                  <button onClick={() => setIsModalOpen(false)} className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
-                  <button onClick={handleSave} disabled={isSaving} className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50">{isSaving && <Loader2 className="w-4 h-4 animate-spin" />}{selectedSession ? 'Update' : 'Create'}</button>
+                <div className="flex justify-end gap-3 p-6 border-t bg-gray-50">
+                  <button onClick={() => setIsModalOpen(false)} className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-100">Cancel</button>
+                  <button onClick={handleSave} disabled={isSaving} className="flex items-center gap-2 px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50">{isSaving && <Loader2 className="w-4 h-4 animate-spin" />}{selectedSession ? 'Save Changes' : 'Create Session'}</button>
                 </div>
               </motion.div>
             </motion.div>

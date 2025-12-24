@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Edit, Trash2, Building2, Mail, Phone, X, Loader2, AlertCircle, CheckCircle, Search, Globe, MapPin } from 'lucide-react';
+import { Plus, Edit, Trash2, Building2, Mail, Phone, X, Loader2, AlertCircle, CheckCircle, Search, Globe, MapPin, Download } from 'lucide-react';
 import Header from '@/components/layout/Header';
 import { createClient, generateId } from '@/lib/supabase';
 
@@ -26,6 +26,7 @@ export default function SuppliersPage() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [typeFilter, setTypeFilter] = useState('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -48,9 +49,12 @@ export default function SuppliersPage() {
   };
 
   const filteredSuppliers = suppliers.filter(s => {
-    if (!searchQuery) return true;
-    const query = searchQuery.toLowerCase();
-    return s.name.toLowerCase().includes(query) || s.contact_person?.toLowerCase().includes(query) || s.email?.toLowerCase().includes(query);
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      if (!s.name.toLowerCase().includes(query) && !s.contact_person?.toLowerCase().includes(query) && !s.email?.toLowerCase().includes(query)) return false;
+    }
+    if (typeFilter !== 'all' && s.type !== typeFilter) return false;
+    return true;
   });
 
   const openCreateModal = () => {
@@ -73,7 +77,6 @@ export default function SuppliersPage() {
   const handleSave = async () => {
     if (!formData.name) { setError('Name is required'); return; }
     setIsSaving(true); setError('');
-
     const supplierData = { ...formData, updated_at: new Date().toISOString() };
 
     if (selectedSupplier) {
@@ -100,18 +103,48 @@ export default function SuppliersPage() {
   const typeLabels: Record<string, string> = { training_provider: 'Training Provider', content_provider: 'Content Provider', technology_vendor: 'Technology Vendor', venue_provider: 'Venue Provider', consultant: 'Consultant', other: 'Other' };
   const statusColors: Record<string, string> = { active: 'bg-green-100 text-green-800', inactive: 'bg-gray-100 text-gray-800', pending: 'bg-yellow-100 text-yellow-800' };
 
+  const headerActions = (
+    <div className="flex items-center gap-2">
+      <button className="flex items-center gap-2 px-3 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">
+        <Download className="w-4 h-4" />
+        <span className="hidden sm:inline">Export</span>
+      </button>
+      <button onClick={openCreateModal} className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700">
+        <Plus className="w-5 h-5" />
+        <span>Add Supplier</span>
+      </button>
+    </div>
+  );
+
   return (
     <div className="min-h-screen bg-gray-50">
-      <Header title="Suppliers" subtitle="Manage training suppliers and vendors" />
+      <Header title="Suppliers" subtitle={`${suppliers.length} vendors & partners`} actions={headerActions} />
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {error && <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-red-700"><AlertCircle className="w-5 h-5" />{error}<button onClick={() => setError('')} className="ml-auto">×</button></div>}
         {success && <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2 text-green-700"><CheckCircle className="w-5 h-5" />{success}</div>}
 
-        <div className="flex items-center justify-between mb-6">
-          <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" /><input type="text" placeholder="Search suppliers..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg w-64" /></div>
-          <button onClick={openCreateModal} className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"><Plus className="w-5 h-5" />Add Supplier</button>
+        {/* Filters */}
+        <div className="flex items-center gap-4 mb-6">
+          <div className="relative flex-1 max-w-md"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" /><input type="text" placeholder="Search suppliers..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500" /></div>
+          <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500">
+            <option value="all">All Types</option>
+            <option value="training_provider">Training Provider</option>
+            <option value="content_provider">Content Provider</option>
+            <option value="technology_vendor">Technology Vendor</option>
+            <option value="venue_provider">Venue Provider</option>
+            <option value="consultant">Consultant</option>
+          </select>
         </div>
 
+        {/* Stats */}
+        <div className="grid grid-cols-4 gap-4 mb-6">
+          <div className="bg-white rounded-xl p-4 border border-gray-200"><p className="text-2xl font-bold text-gray-900">{suppliers.length}</p><p className="text-sm text-gray-500">Total Suppliers</p></div>
+          <div className="bg-white rounded-xl p-4 border border-gray-200"><p className="text-2xl font-bold text-green-600">{suppliers.filter(s => s.status === 'active').length}</p><p className="text-sm text-gray-500">Active</p></div>
+          <div className="bg-white rounded-xl p-4 border border-gray-200"><p className="text-2xl font-bold text-blue-600">{suppliers.filter(s => s.type === 'training_provider').length}</p><p className="text-sm text-gray-500">Training Providers</p></div>
+          <div className="bg-white rounded-xl p-4 border border-gray-200"><p className="text-2xl font-bold text-purple-600">{suppliers.filter(s => s.type === 'technology_vendor').length}</p><p className="text-sm text-gray-500">Tech Vendors</p></div>
+        </div>
+
+        {/* Table */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
           <table className="w-full">
             <thead className="bg-gray-50 border-b border-gray-200">
@@ -162,36 +195,37 @@ export default function SuppliersPage() {
           </table>
         </div>
 
+        {/* Modal */}
         <AnimatePresence>
           {isModalOpen && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setIsModalOpen(false)}>
               <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }} className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-                <div className="flex items-center justify-between p-6 border-b"><h2 className="text-xl font-semibold">{selectedSupplier ? 'Edit Supplier' : 'Create Supplier'}</h2><button onClick={() => setIsModalOpen(false)} className="text-gray-400 hover:text-gray-600"><X className="w-6 h-6" /></button></div>
+                <div className="flex items-center justify-between p-6 border-b"><h2 className="text-xl font-semibold">{selectedSupplier ? 'Edit Supplier' : 'Add New Supplier'}</h2><button onClick={() => setIsModalOpen(false)} className="text-gray-400 hover:text-gray-600"><X className="w-6 h-6" /></button></div>
                 <div className="p-6 space-y-4">
                   <div className="grid grid-cols-2 gap-4">
-                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Name (English) *</label><input type="text" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg" /></div>
-                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Name (Arabic)</label><input type="text" value={formData.name_ar} onChange={e => setFormData({...formData, name_ar: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg" dir="rtl" /></div>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Name (English) *</label><input type="text" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500" /></div>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Name (Arabic)</label><input type="text" value={formData.name_ar} onChange={e => setFormData({...formData, name_ar: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500" dir="rtl" /></div>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
-                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Type</label><select value={formData.type} onChange={e => setFormData({...formData, type: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg"><option value="training_provider">Training Provider</option><option value="content_provider">Content Provider</option><option value="technology_vendor">Technology Vendor</option><option value="venue_provider">Venue Provider</option><option value="consultant">Consultant</option><option value="other">Other</option></select></div>
-                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Status</label><select value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg"><option value="active">Active</option><option value="inactive">Inactive</option><option value="pending">Pending</option></select></div>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Type</label><select value={formData.type} onChange={e => setFormData({...formData, type: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"><option value="training_provider">Training Provider</option><option value="content_provider">Content Provider</option><option value="technology_vendor">Technology Vendor</option><option value="venue_provider">Venue Provider</option><option value="consultant">Consultant</option><option value="other">Other</option></select></div>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Status</label><select value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"><option value="active">Active</option><option value="inactive">Inactive</option><option value="pending">Pending</option></select></div>
                   </div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Contact Person</label><input type="text" value={formData.contact_person} onChange={e => setFormData({...formData, contact_person: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg" /></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Contact Person</label><input type="text" value={formData.contact_person} onChange={e => setFormData({...formData, contact_person: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500" /></div>
                   <div className="grid grid-cols-2 gap-4">
-                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Email</label><input type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg" /></div>
-                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Phone</label><input type="tel" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg" /></div>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Email</label><input type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500" /></div>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Phone</label><input type="tel" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500" /></div>
                   </div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Website</label><input type="url" value={formData.website} onChange={e => setFormData({...formData, website: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg" placeholder="https://" /></div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Address</label><input type="text" value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg" /></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Website</label><input type="url" value={formData.website} onChange={e => setFormData({...formData, website: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500" placeholder="https://" /></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Address</label><input type="text" value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500" /></div>
                   <div className="grid grid-cols-2 gap-4">
-                    <div><label className="block text-sm font-medium text-gray-700 mb-1">City</label><input type="text" value={formData.city} onChange={e => setFormData({...formData, city: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg" /></div>
-                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Country</label><input type="text" value={formData.country} onChange={e => setFormData({...formData, country: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg" /></div>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">City</label><input type="text" value={formData.city} onChange={e => setFormData({...formData, city: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500" /></div>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Country</label><input type="text" value={formData.country} onChange={e => setFormData({...formData, country: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500" /></div>
                   </div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Notes</label><textarea value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} rows={2} className="w-full px-4 py-2 border border-gray-300 rounded-lg" /></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Notes</label><textarea value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} rows={2} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500" /></div>
                 </div>
-                <div className="flex justify-end gap-3 p-6 border-t">
-                  <button onClick={() => setIsModalOpen(false)} className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
-                  <button onClick={handleSave} disabled={isSaving || !formData.name} className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50">{isSaving && <Loader2 className="w-4 h-4 animate-spin" />}{selectedSupplier ? 'Update' : 'Create'}</button>
+                <div className="flex justify-end gap-3 p-6 border-t bg-gray-50">
+                  <button onClick={() => setIsModalOpen(false)} className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-100">Cancel</button>
+                  <button onClick={handleSave} disabled={isSaving || !formData.name} className="flex items-center gap-2 px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50">{isSaving && <Loader2 className="w-4 h-4 animate-spin" />}{selectedSupplier ? 'Save Changes' : 'Create Supplier'}</button>
                 </div>
               </motion.div>
             </motion.div>

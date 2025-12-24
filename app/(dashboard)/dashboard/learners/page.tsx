@@ -1,310 +1,201 @@
 'use client';
 
-import { useState } from 'react';
-import { motion } from 'framer-motion';
-import {
-  Search,
-  Filter,
-  Download,
-  Upload,
-  Plus,
-  MoreHorizontal,
-  Mail,
-  Phone,
-  Building2,
-  ChevronDown,
-  Eye,
-  Edit,
-  Trash2,
-  RefreshCw,
-} from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Plus, Edit, Trash2, User, Mail, Phone, X, Loader2, AlertCircle, CheckCircle, Search, Building, GraduationCap } from 'lucide-react';
 import Header from '@/components/layout/Header';
-import { SourceBadge, SourceFilter, SourceDot } from '@/components/shared/SourceBadge';
-import { cn, getInitials } from '@/lib/utils';
+import { createClient, generateId } from '@/lib/supabase';
 
-const learners = [
-  { id: 1, name: 'Ahmed Hassan Ibrahim', email: 'ahmed.hassan@company.com', phone: '+966 50 123 4567', department: 'Information Technology', employeeId: 'EMP001', enrollments: 12, completed: 10, source: 'offline' as const, avatar: null, status: 'active' },
-  { id: 2, name: 'Sara Mohamed Ali', email: 'sara.mohamed@company.com', phone: '+966 55 234 5678', department: 'Human Resources', employeeId: 'EMP002', enrollments: 8, completed: 8, source: 'lms' as const, avatar: null, status: 'active' },
-  { id: 3, name: 'Khalid Abdullah', email: 'khalid.abdullah@company.com', phone: '+966 54 345 6789', department: 'Finance', employeeId: 'EMP003', enrollments: 15, completed: 12, source: 'offline' as const, avatar: null, status: 'active' },
-  { id: 4, name: 'Fatima Al-Rashid', email: 'fatima.rashid@company.com', phone: '+966 56 456 7890', department: 'Operations', employeeId: 'EMP004', enrollments: 6, completed: 5, source: 'lms' as const, avatar: null, status: 'active' },
-  { id: 5, name: 'Omar Yusuf Khan', email: 'omar.khan@company.com', phone: '+966 50 567 8901', department: 'Sales', employeeId: 'EMP005', enrollments: 20, completed: 18, source: 'offline' as const, avatar: null, status: 'active' },
-  { id: 6, name: 'Noura Saleh Ahmed', email: 'noura.saleh@company.com', phone: '+966 55 678 9012', department: 'Marketing', employeeId: 'EMP006', enrollments: 9, completed: 7, source: 'lms' as const, avatar: null, status: 'inactive' },
-  { id: 7, name: 'Mansour Al-Dosari', email: 'mansour.dosari@company.com', phone: '+966 54 789 0123', department: 'Information Technology', employeeId: 'EMP007', enrollments: 11, completed: 11, source: 'offline' as const, avatar: null, status: 'active' },
-  { id: 8, name: 'Layla Mahmoud', email: 'layla.mahmoud@company.com', phone: '+966 56 890 1234', department: 'Legal', employeeId: 'EMP008', enrollments: 4, completed: 3, source: 'lms' as const, avatar: null, status: 'active' },
-];
+interface Learner {
+  id: string;
+  employee_id: string;
+  full_name: string;
+  full_name_ar: string;
+  email: string;
+  phone: string;
+  department: string;
+  job_title: string;
+  status: string;
+  hire_date: string;
+}
 
 export default function LearnersPage() {
-  const [sourceFilter, setSourceFilter] = useState<'all' | 'offline' | 'lms'>('all');
+  const [learners, setLearners] = useState<Learner[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedLearners, setSelectedLearners] = useState<number[]>([]);
+  const [departmentFilter, setDepartmentFilter] = useState('all');
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedLearner, setSelectedLearner] = useState<Learner | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const supabase = createClient();
 
-  const filteredLearners = learners.filter((learner) => {
-    const matchesSource = sourceFilter === 'all' || learner.source === sourceFilter;
-    const matchesSearch = learner.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      learner.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      learner.employeeId.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesSource && matchesSearch;
+  const [formData, setFormData] = useState({
+    employee_id: '', full_name: '', full_name_ar: '', email: '', phone: '', department: '', job_title: '', status: 'active', hire_date: ''
   });
 
-  const counts = {
-    all: learners.length,
-    offline: learners.filter(l => l.source === 'offline').length,
-    lms: learners.filter(l => l.source === 'lms').length,
+  useEffect(() => { fetchLearners(); }, []);
+
+  const fetchLearners = async () => {
+    setIsLoading(true);
+    const { data, error } = await supabase.from('learners').select('*').order('full_name');
+    if (error) { setError('Failed to fetch learners'); console.error(error); }
+    else { setLearners(data || []); }
+    setIsLoading(false);
   };
 
-  const toggleSelectAll = () => {
-    if (selectedLearners.length === filteredLearners.length) {
-      setSelectedLearners([]);
-    } else {
-      setSelectedLearners(filteredLearners.map(l => l.id));
+  const departments = [...new Set(learners.map(l => l.department).filter(Boolean))];
+
+  const filteredLearners = learners.filter(l => {
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      if (!l.full_name.toLowerCase().includes(query) && !l.email?.toLowerCase().includes(query) && !l.employee_id?.toLowerCase().includes(query)) return false;
     }
+    if (departmentFilter !== 'all' && l.department !== departmentFilter) return false;
+    return true;
+  });
+
+  const openCreateModal = () => {
+    setSelectedLearner(null);
+    setFormData({ employee_id: '', full_name: '', full_name_ar: '', email: '', phone: '', department: '', job_title: '', status: 'active', hire_date: '' });
+    setIsModalOpen(true);
   };
 
-  const toggleSelect = (id: number) => {
-    setSelectedLearners(prev =>
-      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
-    );
+  const openEditModal = (learner: Learner) => {
+    setSelectedLearner(learner);
+    setFormData({
+      employee_id: learner.employee_id || '', full_name: learner.full_name, full_name_ar: learner.full_name_ar || '',
+      email: learner.email || '', phone: learner.phone || '', department: learner.department || '',
+      job_title: learner.job_title || '', status: learner.status || 'active', hire_date: learner.hire_date || ''
+    });
+    setIsModalOpen(true);
   };
+
+  const handleSave = async () => {
+    if (!formData.full_name) { setError('Name is required'); return; }
+    setIsSaving(true); setError('');
+
+    const learnerData = { ...formData, updated_at: new Date().toISOString() };
+
+    if (selectedLearner) {
+      const { error } = await supabase.from('learners').update(learnerData).eq('id', selectedLearner.id);
+      if (error) setError('Failed to update: ' + error.message);
+      else { setSuccess('Learner updated!'); setIsModalOpen(false); fetchLearners(); }
+    } else {
+      const { error } = await supabase.from('learners').insert({ id: generateId('lrn'), ...learnerData, organization_id: 'org_001', data_source: 'offline', created_at: new Date().toISOString() });
+      if (error) setError('Failed to create: ' + error.message);
+      else { setSuccess('Learner created!'); setIsModalOpen(false); fetchLearners(); }
+    }
+    setTimeout(() => setSuccess(''), 3000);
+    setIsSaving(false);
+  };
+
+  const deleteLearner = async (learner: Learner) => {
+    if (!confirm(`Delete "${learner.full_name}"?`)) return;
+    const { error } = await supabase.from('learners').delete().eq('id', learner.id);
+    if (error) setError('Failed to delete: ' + error.message);
+    else { setSuccess('Learner deleted!'); fetchLearners(); }
+    setTimeout(() => setSuccess(''), 3000);
+  };
+
+  const statusColors: Record<string, string> = { active: 'bg-green-100 text-green-800', inactive: 'bg-gray-100 text-gray-800', on_leave: 'bg-yellow-100 text-yellow-800', terminated: 'bg-red-100 text-red-800' };
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-900">
-      <Header title="Learners" subtitle="Manage all learner profiles and training records" />
+    <div className="min-h-screen bg-gray-50">
+      <Header title="Learners" subtitle="Manage employees and trainees" />
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {error && <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-red-700"><AlertCircle className="w-5 h-5" />{error}<button onClick={() => setError('')} className="ml-auto">×</button></div>}
+        {success && <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2 text-green-700"><CheckCircle className="w-5 h-5" />{success}</div>}
 
-      <div className="p-6 space-y-6">
-        {/* Filters and Actions Bar */}
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-4">
-            <SourceFilter value={sourceFilter} onChange={setSourceFilter} counts={counts} />
+            <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" /><input type="text" placeholder="Search learners..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg w-64" /></div>
+            <select value={departmentFilter} onChange={(e) => setDepartmentFilter(e.target.value)} className="px-4 py-2 border border-gray-300 rounded-lg">
+              <option value="all">All Departments</option>
+              {departments.map(d => <option key={d} value={d}>{d}</option>)}
+            </select>
           </div>
-
-          <div className="flex items-center gap-3">
-            {/* Search */}
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-              <input
-                type="text"
-                placeholder="Search learners..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 pr-4 py-2 w-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-entlaqa-500/20 focus:border-entlaqa-500"
-              />
-            </div>
-
-            {/* Filter Button */}
-            <button className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">
-              <Filter className="w-4 h-4" />
-              Filters
-            </button>
-
-            {/* Export */}
-            <button className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">
-              <Download className="w-4 h-4" />
-              Export
-            </button>
-
-            {/* Sync from LMS */}
-            <button className="flex items-center gap-2 px-4 py-2 bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800 rounded-xl text-sm text-purple-700 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-950/50">
-              <RefreshCw className="w-4 h-4" />
-              Sync LMS
-            </button>
-
-            {/* Add Learner */}
-            <button className="flex items-center gap-2 px-4 py-2 bg-entlaqa-gradient text-white rounded-xl text-sm font-medium hover:shadow-lg hover:shadow-entlaqa-500/25">
-              <Plus className="w-4 h-4" />
-              Add Learner
-            </button>
-          </div>
+          <button onClick={openCreateModal} className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"><Plus className="w-5 h-5" />Add Learner</button>
         </div>
 
-        {/* Bulk Actions */}
-        {selectedLearners.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="flex items-center gap-4 p-4 bg-entlaqa-50 dark:bg-entlaqa-950/30 border border-entlaqa-200 dark:border-entlaqa-800 rounded-xl"
-          >
-            <span className="text-sm font-medium text-entlaqa-700 dark:text-entlaqa-300">
-              {selectedLearners.length} learner(s) selected
-            </span>
-            <div className="flex items-center gap-2">
-              <button className="px-3 py-1.5 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50">
-                Bulk Enroll
-              </button>
-              <button className="px-3 py-1.5 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50">
-                Export Selected
-              </button>
-              <button className="px-3 py-1.5 text-sm text-red-600 bg-white dark:bg-slate-800 border border-red-200 dark:border-red-800 rounded-lg hover:bg-red-50">
-                Delete
-              </button>
-            </div>
-          </motion.div>
-        )}
-
-        {/* Learners Table */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden"
-        >
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-slate-50 dark:bg-slate-800/50">
-                <tr>
-                  <th className="px-4 py-3 text-left">
-                    <input
-                      type="checkbox"
-                      checked={selectedLearners.length === filteredLearners.length && filteredLearners.length > 0}
-                      onChange={toggleSelectAll}
-                      className="w-4 h-4 rounded border-slate-300 text-entlaqa-600 focus:ring-entlaqa-500"
-                    />
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                    Learner
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                    Source
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                    Department
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                    Contact
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                    Training Progress
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                    Status
-                  </th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                    Actions
-                  </th>
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <table className="w-full">
+            <thead className="bg-gray-50 border-b border-gray-200">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Learner</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Employee ID</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Department</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Job Title</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200">
+              {isLoading ? (
+                <tr><td colSpan={6} className="px-6 py-12 text-center"><Loader2 className="w-8 h-8 text-gray-400 animate-spin mx-auto" /></td></tr>
+              ) : filteredLearners.length === 0 ? (
+                <tr><td colSpan={6} className="px-6 py-12 text-center text-gray-500">No learners found. <button onClick={openCreateModal} className="text-primary-600 hover:underline">Create one</button></td></tr>
+              ) : filteredLearners.map((learner) => (
+                <tr key={learner.id} className="hover:bg-gray-50">
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center"><GraduationCap className="w-5 h-5 text-green-600" /></div>
+                      <div>
+                        <p className="font-medium text-gray-900">{learner.full_name}</p>
+                        <p className="text-sm text-gray-500">{learner.email || 'No email'}</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 text-gray-600 font-mono text-sm">{learner.employee_id || '-'}</td>
+                  <td className="px-6 py-4"><div className="flex items-center gap-1 text-gray-600"><Building className="w-4 h-4" />{learner.department || '-'}</div></td>
+                  <td className="px-6 py-4 text-gray-600">{learner.job_title || '-'}</td>
+                  <td className="px-6 py-4"><span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColors[learner.status] || 'bg-gray-100 text-gray-800'}`}>{learner.status}</span></td>
+                  <td className="px-6 py-4">
+                    <div className="flex items-center justify-end gap-2">
+                      <button onClick={() => openEditModal(learner)} className="p-2 text-gray-400 hover:text-primary-600 hover:bg-gray-100 rounded-lg"><Edit className="w-4 h-4" /></button>
+                      <button onClick={() => deleteLearner(learner)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg"><Trash2 className="w-4 h-4" /></button>
+                    </div>
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-                {filteredLearners.map((learner, index) => (
-                  <motion.tr
-                    key={learner.id}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: index * 0.05 }}
-                    className={cn(
-                      'hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors',
-                      selectedLearners.includes(learner.id) && 'bg-entlaqa-50/50 dark:bg-entlaqa-950/20'
-                    )}
-                  >
-                    <td className="px-4 py-4">
-                      <input
-                        type="checkbox"
-                        checked={selectedLearners.includes(learner.id)}
-                        onChange={() => toggleSelect(learner.id)}
-                        className="w-4 h-4 rounded border-slate-300 text-entlaqa-600 focus:ring-entlaqa-500"
-                      />
-                    </td>
-                    <td className="px-4 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className={cn(
-                          'w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold text-sm',
-                          learner.source === 'offline' ? 'bg-gradient-to-br from-green-500 to-emerald-600' : 'bg-gradient-to-br from-purple-500 to-violet-600'
-                        )}>
-                          {getInitials(learner.name)}
-                        </div>
-                        <div>
-                          <p className="font-medium text-slate-900 dark:text-white">{learner.name}</p>
-                          <p className="text-xs text-slate-500 dark:text-slate-400">{learner.employeeId}</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-4">
-                      <SourceBadge source={learner.source} size="sm" />
-                    </td>
-                    <td className="px-4 py-4">
-                      <div className="flex items-center gap-2">
-                        <Building2 className="w-4 h-4 text-slate-400" />
-                        <span className="text-sm text-slate-700 dark:text-slate-300">{learner.department}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-4">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
-                          <Mail className="w-3.5 h-3.5" />
-                          {learner.email}
-                        </div>
-                        <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
-                          <Phone className="w-3.5 h-3.5" />
-                          {learner.phone}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-4">
-                      <div className="space-y-1">
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="text-slate-600 dark:text-slate-400">
-                            {learner.completed}/{learner.enrollments} completed
-                          </span>
-                          <span className="font-medium text-slate-900 dark:text-white">
-                            {Math.round((learner.completed / learner.enrollments) * 100)}%
-                          </span>
-                        </div>
-                        <div className="h-1.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
-                          <div
-                            className={cn(
-                              'h-full rounded-full',
-                              learner.source === 'offline' ? 'bg-source-offline' : 'bg-source-lms'
-                            )}
-                            style={{ width: `${(learner.completed / learner.enrollments) * 100}%` }}
-                          />
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-4">
-                      <span className={cn(
-                        'inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium',
-                        learner.status === 'active'
-                          ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                          : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
-                      )}>
-                        {learner.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-4 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <button className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors">
-                          <Eye className="w-4 h-4" />
-                        </button>
-                        <button className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors">
-                          <Edit className="w-4 h-4" />
-                        </button>
-                        <button className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg transition-colors">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </motion.tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+              ))}
+            </tbody>
+          </table>
+        </div>
 
-          {/* Pagination */}
-          <div className="flex items-center justify-between px-6 py-4 border-t border-slate-200 dark:border-slate-700">
-            <p className="text-sm text-slate-500 dark:text-slate-400">
-              Showing {filteredLearners.length} of {learners.length} learners
-            </p>
-            <div className="flex items-center gap-2">
-              <button className="px-3 py-1.5 text-sm border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50" disabled>
-                Previous
-              </button>
-              <button className="px-3 py-1.5 text-sm bg-entlaqa-600 text-white rounded-lg">1</button>
-              <button className="px-3 py-1.5 text-sm border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700">2</button>
-              <button className="px-3 py-1.5 text-sm border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700">3</button>
-              <button className="px-3 py-1.5 text-sm border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700">
-                Next
-              </button>
-            </div>
-          </div>
-        </motion.div>
-      </div>
+        <AnimatePresence>
+          {isModalOpen && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setIsModalOpen(false)}>
+              <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }} className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center justify-between p-6 border-b"><h2 className="text-xl font-semibold">{selectedLearner ? 'Edit Learner' : 'Create Learner'}</h2><button onClick={() => setIsModalOpen(false)} className="text-gray-400 hover:text-gray-600"><X className="w-6 h-6" /></button></div>
+                <div className="p-6 space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Full Name (English) *</label><input type="text" value={formData.full_name} onChange={e => setFormData({...formData, full_name: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg" /></div>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Full Name (Arabic)</label><input type="text" value={formData.full_name_ar} onChange={e => setFormData({...formData, full_name_ar: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg" dir="rtl" /></div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Employee ID</label><input type="text" value={formData.employee_id} onChange={e => setFormData({...formData, employee_id: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg" placeholder="e.g., EMP001" /></div>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Hire Date</label><input type="date" value={formData.hire_date} onChange={e => setFormData({...formData, hire_date: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg" /></div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Email</label><input type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg" /></div>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Phone</label><input type="tel" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg" /></div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Department</label><input type="text" value={formData.department} onChange={e => setFormData({...formData, department: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg" placeholder="e.g., IT, HR, Sales" /></div>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Job Title</label><input type="text" value={formData.job_title} onChange={e => setFormData({...formData, job_title: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg" /></div>
+                  </div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Status</label><select value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})} className="w-full px-4 py-2 border border-gray-300 rounded-lg"><option value="active">Active</option><option value="inactive">Inactive</option><option value="on_leave">On Leave</option><option value="terminated">Terminated</option></select></div>
+                </div>
+                <div className="flex justify-end gap-3 p-6 border-t">
+                  <button onClick={() => setIsModalOpen(false)} className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
+                  <button onClick={handleSave} disabled={isSaving || !formData.full_name} className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50">{isSaving && <Loader2 className="w-4 h-4 animate-spin" />}{selectedLearner ? 'Update' : 'Create'}</button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </main>
     </div>
   );
 }

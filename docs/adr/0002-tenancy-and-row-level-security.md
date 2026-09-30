@@ -99,7 +99,7 @@ Rules:
 ### 6a. Claim validation inside the database (defense against credential theft — TM-0001 F-01)
 Because the database trusts the claims that server code sets, a stolen `app_server` credential must not be enough to read any tenant's data. `private.current_tenant_id()` therefore returns a tenant **only if** the claims are valid for the login role that set them:
 - **User claims** (`role = authenticated`, `sub`, `session_id`, `tenant_id`) are accepted only when `session_user = 'app_server'`, the `session_id` exists in `auth.sessions` for `sub` and is not expired, and `sub` has an **active** membership in `tenant_id` for an active/trial tenant.
-- **System-actor claims** (`role = system`, `tenant_id`, job id) are accepted only when `session_user = 'app_worker'` and the tenant is active.
+- **System-actor claims** (`role = system`, `tenant_id`, job id) are accepted only when `session_user = 'app_worker'` and the tenant is active or trial (trial tenants need reminders and scheduled jobs too).
 - Any other combination returns `NULL` → all tenant policies deny.
 - **Future claim kinds** (R2): external API clients and MCP tokens (ADR 0011, ADR 0012) will get their own claim kind bound to their own login path; they are added to this function by a new ADR revision, never by loosening the existing checks.
 - **Anonymous endpoints** (host→tenant lookup, public certificate verification) never use tenant tables directly; they call narrow functions in `private` that return only the fields needed.

@@ -20,7 +20,7 @@
 | T-M0-06 | GitHub branch protection on `main` (require PR, require status checks once CI exists, block force-push/deletion) | PO | ⚪ | Instructions in STATUS next actions |
 | T-M0-07 | Supabase organization + project for staging (region `eu-central-1` Frankfurt) | PO | ⚪ | Needed by M1 Track D walking skeleton |
 | T-M0-08 | Recruit 3–5 design partners (≥ 2 Saudi, ≥ 1 government/bank) | PO | ⚪ | Needed for usability round 1 (M1) |
-| T-M0-09 | Close decision D3 (planning-cycle timing) | PO | ⚪ | Working assumption: R2 |
+| T-M0-09 | Close decision D3 (planning-cycle timing) | PO | 🟢 | Decided: R2 |
 
 **Gate G0 (adapted):** T-M0-01…06 done; T-M0-07 scheduled; design-partner recruitment started.
 

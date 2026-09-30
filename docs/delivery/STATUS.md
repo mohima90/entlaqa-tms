@@ -57,13 +57,13 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 | 30 Sep 2026 | D7 | Product name: **Jadarat TMS** |
 | 30 Sep 2026 | — | TMS is the first module of the planned Jadarat HR Suite (Core HR, Payroll & Time, Performance & Skills, Recruitment & Onboarding) and is also sold standalone |
 | 30 Sep 2026 | — | R1 GA re-targeted to ~month 7 (week 30) including Foundation; confirmed at Gate G1 |
+| 30 Sep 2026 | D3 | Full planning cycle (TNA campaigns, training plan, plan vs. actual) ships in **R2**; R1 includes training requests (PLN-01) only |
 | 30 Sep 2026 | — | **Delivery team = Product Owner + Claude Code agents** (Development Plan §2.3): agents author and review (separate review/security passes); PO merges and owns human-only activities (accounts, design partners, usability sessions, legal, pen test, go/no-go) |
 
 ### Open decisions (BRD §20)
 
 | ID | Decision | Recommended default | Needed by |
 |---|---|---|---|
-| D3 | Planning-cycle timing | R2 (training requests only in R1) | Before M1 estimation |
 | D4 | Next LMS connectors after Jadarat | Moodle, then SAP SuccessFactors | Before R3 |
 | D5 | Messaging vendors (SMS/WhatsApp) | MENA SMS gateway + Meta WhatsApp Cloud API / BSP | Before R2 |
 | D8 | Active-user vs. per-employee pricing | Active user | Before GA |

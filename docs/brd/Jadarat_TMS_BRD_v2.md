@@ -1461,7 +1461,7 @@ Detailed per-requirement release tags are in §6–§9.
 |---|---|---|---|---|
 | D1 | Serve training providers (Commerce, public registration, e-invoicing)? | **Decided 30 Sep 2026: No.** Jadarat TMS serves employers; Commerce removed (§6.17 marked W) | CEO / Product | Closed |
 | D2 | Government a Year-1 segment (drives in-country deployment)? | **Decided 30 Sep 2026: Yes.** Government and banks are Year-1 targets; in-country KSA/UAE deployment in R3, architecture self-hostable from R1 | CEO / Sales | Closed |
-| D3 | Planning cycle timing | R2 (training requests only in R1) | Product | Now |
+| D3 | Planning cycle timing | **Decided 30 Sep 2026: R2** (training requests PLN-01 only in R1) | Product | Closed |
 | D4 | Next LMS connectors after Jadarat | Moodle (R3), then SAP SuccessFactors, Docebo, Cornerstone | Product / Partnerships | Before R3 |
 | D5 | Messaging vendors | Meta WhatsApp Cloud API or regional BSP; MENA SMS gateway + international fallback | Engineering | Before R2 |
 | D6 | Stack for sovereign deployments | **Decided 30 Sep 2026:** Next.js + Supabase (PostgreSQL), self-hostable; no hard dependency on Vercel-only features; same stack for the whole Jadarat HR Suite | CTO | Closed |

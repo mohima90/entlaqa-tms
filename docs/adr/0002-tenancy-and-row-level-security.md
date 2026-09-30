@@ -97,11 +97,14 @@ Rules:
 - `platform.tenants` itself: policy `id = current_tenant_id()`.
 
 ### 6a. Claim validation inside the database (defense against credential theft — TM-0001 F-01)
+Our functions and policies read claims **only** from the transaction-local setting `request.jwt.claims` (never the legacy per-claim settings `request.jwt.claim` / `request.jwt.claim.sub`, which a session-level `SET` could make survive across pooled transactions — security review of the M1 scaffold), and `withUserTx` / `withSystemTx` blank the legacy settings for each transaction. For a user claim, the session's **current** active tenant (`platform.session_context`) must also equal the claimed tenant, so an old token stops working immediately after a tenant switch.
+
 Because the database trusts the claims that server code sets, a stolen `app_server` credential must not be enough to read any tenant's data. `private.current_tenant_id()` therefore returns a tenant **only if** the claims are valid for the login role that set them:
 - **User claims** (`role = authenticated`, `sub`, `session_id`, `tenant_id`) are accepted only when `session_user = 'app_server'`, the `session_id` exists in `auth.sessions` for `sub` and is not expired, and `sub` has an **active** membership in `tenant_id` for an active/trial tenant.
 - **System-actor claims** (`role = system`, `tenant_id`, job id) are accepted only when `session_user = 'app_worker'` and the tenant is active or trial (trial tenants need reminders and scheduled jobs too).
 - Any other combination returns `NULL` → all tenant policies deny.
 - **Future claim kinds** (R2): external API clients and MCP tokens (ADR 0011, ADR 0012) will get their own claim kind bound to their own login path; they are added to this function by a new ADR revision, never by loosening the existing checks.
+- **Supabase platform services** (Storage API, Realtime) connect with their own database login roles and set the end user's claims themselves. Under the rules above they resolve to **no tenant (fail-safe deny)**. Before the first feature that uses Storage or Realtime (M2/M3), this function is extended with an explicit allow-list of those service login roles that applies the **same user-claim validation** (live session, active membership, session's active tenant) — never a weaker check. The exact role names and the claim setting each service uses are verified on the staging project (T-M1-D03), and tests are added for both services.
 - **Anonymous endpoints** (host→tenant lookup, public certificate verification) never use tenant tables directly; they call narrow functions in `private` that return only the fields needed.
 The check runs once per statement (wrapped in `(select …)`); its cost is measured with `EXPLAIN ANALYZE` during M2 and indexes are added as needed.
 

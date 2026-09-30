@@ -1,0 +1,31 @@
+{
+  "name": "@jadarat/tms",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Jadarat TMS module: domain services, server actions, permissions (schema `tms`). Skeleton.",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts",
+    "./actions/sessions": "./src/actions/sessions.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@jadarat/platform-core": "workspace:*",
+    "@jadarat/platform-rbac": "workspace:*",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@jadarat/config": "workspace:*",
+    "@jadarat/platform-db": "workspace:*",
+    "@jadarat/platform-identity": "workspace:*",
+    "@types/node": "24.19.0",
+    "@vitest/coverage-v8": "5.0.3",
+    "typescript": "6.0.3",
+    "vitest": "5.0.3"
+  }
+}

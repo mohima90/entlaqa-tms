@@ -1,0 +1,41 @@
+{
+  "name": "jadarat",
+  "private": true,
+  "description": "Jadarat HR Suite monorepo \u2014 Jadarat TMS (modular monolith, ADR 0001)",
+  "license": "UNLICENSED",
+  "type": "module",
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=22.12.0",
+    "pnpm": ">=10.0.0"
+  },
+  "scripts": {
+    "dev": "turbo run dev --filter=@jadarat/suite",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "lint": "pnpm --filter @jadarat/suite exec next typegen && eslint . --max-warnings=0 && pnpm run check:rtl && pnpm run check:actions",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "turbo run test && pnpm run test:scripts",
+    "test:coverage": "turbo run test:coverage && pnpm run test:scripts",
+    "test:scripts": "vitest run --config scripts/vitest.config.mjs",
+    "test:integration": "turbo run test:integration",
+    "e2e": "pnpm --filter @jadarat/suite e2e",
+    "db:test": "bash scripts/db-test.sh",
+    "check:migrations": "node scripts/check-migration-names.mjs",
+    "check:deps": "depcruise apps packages modules --config .dependency-cruiser.cjs",
+    "check:actions": "node scripts/check-server-actions.mjs",
+    "check:rtl": "node scripts/check-logical-css.mjs",
+    "check:licenses": "node scripts/check-licenses.mjs",
+    "check:all": "pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm run test:coverage && pnpm run check:migrations && pnpm run check:deps"
+  },
+  "devDependencies": {
+    "@jadarat/config": "workspace:*",
+    "dependency-cruiser": "18.4.0",
+    "eslint": "10.11.0",
+    "prettier": "3.9.9",
+    "turbo": "2.11.5",
+    "typescript": "6.0.3",
+    "vitest": "5.0.3"
+  }
+}

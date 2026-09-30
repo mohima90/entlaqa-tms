@@ -1,0 +1,37 @@
+/*
+ * @jadarat/ui base styles.
+ * Design tokens: docs/design/tokens/tokens.css is the single source of truth (T-M1-A01) and is
+ * imported as-is (unlayered) so its values, dark mode and lang-specific typography apply.
+ */
+@import '../../../docs/design/tokens/tokens.css';
+
+@layer base {
+  html {
+    background-color: var(--color-bg);
+    color: var(--color-text);
+    font-family: var(--font-family-base);
+    font-size: 100%;
+    line-height: var(--line-height-body);
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  body {
+    margin: 0;
+    min-block-size: 100dvh;
+    font-size: var(--font-size-md);
+    overflow-wrap: anywhere;
+  }
+
+  :focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring);
+    border-radius: var(--radius-sm);
+  }
+
+  h1,
+  h2,
+  h3 {
+    line-height: var(--line-height-heading);
+  }
+}

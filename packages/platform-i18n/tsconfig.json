@@ -1,0 +1,5 @@
+{
+  "extends": "@jadarat/config/tsconfig/library.json",
+  "compilerOptions": { "lib": ["ES2023", "DOM"] },
+  "include": ["src", "messages/*.json", "vitest.config.ts"]
+}

@@ -1,0 +1,6 @@
+{
+  "extends": "./packages/config/tsconfig/react-library.json",
+  "compilerOptions": { "noEmit": true },
+  "include": ["apps/**/*", "packages/**/*", "modules/**/*"],
+  "exclude": ["**/node_modules", "**/.next"]
+}

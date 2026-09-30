@@ -2,7 +2,7 @@
 
 **Status:** Proposed · **Date:** 30 Sep 2026 · **Backlog:** T-M1-B13 · **Related:** ADR 0001 (database ownership, naming), ADR 0002 (RLS pattern, §6a claim validation, verification gates), ADR 0003, ADR 0004/0005 (roles `app_queue`, `app_worker`), ADR 0010 §8 (upgrade process); NFR-MNT-03/04, NFR-AVL-04; Development Plan §4.2 (DoD), §5.3 (CI gates); `docs/architecture/r1-data-model.md`
 
-These rules apply to every file in `supabase/migrations/` and `supabase/tests/`. The walking-skeleton migrations (`20260930120000…120400`) already follow them and are the reference examples.
+These rules apply to every file in `supabase/migrations/` and `supabase/tests/`. The walking-skeleton migrations (`20260930120000…120500`) already follow them and are the reference examples.
 
 ---
 
@@ -98,7 +98,9 @@ grant select, insert, update, delete on tms.session_days to authenticated;
 ```
 
 Rules:
-- **Never** omit `enable` + `force row level security` or the restrictive `tenant_isolation` policy; never write a permissive policy that references another tenant or bypasses `current_tenant_id()`.
+- **Never** omit `enable` + `force row level security` or the restrictive `tenant_isolation` policy; never write a permissive policy that references another tenant or bypasses `current_tenant_id()`. The `tenant_isolation` expressions must be exactly `<tenant column> = (select private.current_tenant_id())` (the catalog test compares the normalized expression).
+- Read claims in policies and functions **only** through `private.request_claims()` / `private.request_user_id()` (they read `request.jwt.claims`). Never `auth.jwt()` / `auth.uid()` or the legacy `request.jwt.claim*` settings: Supabase's helpers prefer those legacy settings, which a session-level `SET` can leak across pooled transactions. The catalog test fails on any use.
+- Nothing goes into the `public` schema (the catalog test fails on any table, view, sequence, function or type there); no module creates temporary objects (`TEMPORARY` is revoked from `PUBLIC`).
 - Grant only the operations the table needs: soft-delete tables ([sd]) get **no** `delete` grant; append-only tables ([ao]) get only `select, insert` and a trigger that raises on `update`/`delete`.
 - Ownership rules that are cheap and stable may be added as permissive policies (e.g., learners see their own enrollments), but never replace `defineAction` checks (ADR 0003 §4.3).
 - Grants to `app_queue`, `tenant_guard` or `supabase_auth_admin` are **column-level** and paired with a dedicated policy `…_guard_read`/`…_queue_read` (see `20260930120200_platform__tenancy_core.sql`).

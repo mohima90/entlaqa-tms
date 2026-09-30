@@ -1,0 +1,49 @@
+{
+  "common": {
+    "productName": "Jadarat · Training",
+    "suiteName": "Jadarat HR Suite",
+    "tmsFullName": "Training Management System",
+    "skipToContent": "Skip to content",
+    "languageLabel": "Language",
+    "switchLanguage": "العربية",
+    "switchLanguageAria": "Switch to Arabic"
+  },
+  "landing": {
+    "title": "Training Management System",
+    "subtitle": "Plan, schedule and track training, attendance and certificates in one place.",
+    "openSuite": "Go to the home screen",
+    "statusTitle": "Environment status",
+    "authConfigured": "Sign-in is configured.",
+    "authNotConfigured": "Sign-in is not configured in this environment yet. The interface runs in view-only mode.",
+    "databaseConfigured": "The database is configured.",
+    "databaseNotConfigured": "The database is not configured in this environment yet."
+  },
+  "shell": {
+    "mainNavigation": "Main navigation",
+    "modules": "Modules",
+    "home": "Home",
+    "calendar": "Calendar",
+    "sessions": "Sessions",
+    "courses": "Courses",
+    "settings": "Settings",
+    "tenantContext": "Organization",
+    "tenantUnresolved": "Organization not resolved from the site address yet",
+    "pageTitle": "Home",
+    "emptyTitle": "No training data yet",
+    "emptyBody": "Sessions and courses will appear here once the Training module is set up for your organization.",
+    "comingSoon": "Coming soon"
+  },
+  "errors": {
+    "malformedRequest": "We couldn't process this request. Refresh the page and try again.",
+    "unauthenticated": "Sign in to continue.",
+    "stepUpRequired": "This action requires multi-factor authentication. Enter your verification code to continue.",
+    "forbidden": "You don't have permission to do this.",
+    "notFound": "We couldn't find this item, or you don't have access to it.",
+    "conflictVersion": "Someone else changed this item after you opened it. Refresh to see the latest version, then try again.",
+    "preconditionFailed": "This item has changed since it was loaded. Refresh the page and try again.",
+    "validationFailed": "Some fields need correcting. Check the highlighted fields.",
+    "rateLimited": "Too many requests in a short time. Wait a moment, then try again.",
+    "internalError": "We couldn't complete this because of a problem on our side. Try again. Reference: {correlationId}",
+    "notConfigured": "This service isn't set up in this environment yet."
+  }
+}

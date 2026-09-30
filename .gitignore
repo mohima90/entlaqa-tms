@@ -1,0 +1,33 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# build output
+.next/
+out/
+dist/
+build/
+*.tsbuildinfo
+next-env.d.ts
+
+# tooling caches
+.turbo/
+.eslintcache
+coverage/
+playwright-report/
+test-results/
+blob-report/
+
+# environment files (secrets never committed; .env.example lists variable names only)
+.env
+.env.*
+!.env.example
+
+# local database / OS / editor
+supabase/.temp/
+supabase/.branches/
+.DS_Store
+*.log
+.vscode/*
+!.vscode/extensions.json
+.idea/

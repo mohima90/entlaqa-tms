@@ -1,0 +1,86 @@
+/*
+ * Jadarat Tailwind CSS v4 preset (CSS-first configuration).
+ *
+ * Import AFTER `@import "tailwindcss";` and BEFORE `@import "@jadarat/ui/styles.css";`.
+ *
+ * The design tokens (docs/design/tokens/tokens.css, imported by @jadarat/ui/styles.css) are the
+ * single source of truth. They are unlayered, so they override the fallback values registered
+ * here (Tailwind emits theme variables in `@layer theme`), including dark-mode overrides.
+ * The fallbacks below only exist so utilities such as `bg-surface` are generated.
+ *
+ * RTL: use logical utilities only (ps-/pe-/ms-/me-/start-/end-/border-s/border-e/text-start/text-end).
+ * `pnpm check:rtl` rejects physical direction utilities (pl-, mr-, left-, text-left, …).
+ */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+@theme {
+  /* Drop Tailwind's default palette: only design tokens may be used for color. */
+  --color-*: initial;
+  --color-bg: #f2f5f5;
+  --color-surface: #ffffff;
+  --color-surface-raised: #ffffff;
+  --color-surface-sunken: #f8fafa;
+  --color-surface-hover: #e3e9ea;
+  --color-surface-selected: #e7f3f1;
+  --color-text: #121a1c;
+  --color-text-muted: #465357;
+  --color-text-subtle: #5b6a6e;
+  --color-text-disabled: #7a898d;
+  --color-border: #cbd4d6;
+  --color-border-strong: #7a898d;
+  --color-primary: #0f665f;
+  --color-primary-hover: #0c534d;
+  --color-on-primary: #ffffff;
+  --color-primary-subtle: #e7f3f1;
+  --color-primary-text: #0c534d;
+  --color-focus-ring: #177d74;
+  --color-success: #1d7a43;
+  --color-success-subtle: #e9f6ee;
+  --color-warning: #955800;
+  --color-warning-subtle: #fff5e0;
+  --color-danger: #b42318;
+  --color-danger-hover: #931c14;
+  --color-on-danger: #ffffff;
+  --color-danger-subtle: #fdeeec;
+  --color-info: #1f5daa;
+  --color-info-subtle: #eaf1fb;
+  --color-inverse-surface: #192123;
+  --color-inverse-text: #f8fafa;
+  --color-transparent: transparent;
+  --color-current: currentColor;
+
+  /* Radius: same names as the tokens, so token values win automatically. */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-xl: 16px;
+  --radius-full: 9999px;
+
+  /* 4px spacing grid (matches --space-* tokens). */
+  --spacing: 0.25rem;
+
+  /* Breakpoints: docs/design/tokens (--bp-*). */
+  --breakpoint-sm: 360px;
+  --breakpoint-md: 600px;
+  --breakpoint-lg: 900px;
+  --breakpoint-xl: 1200px;
+  --breakpoint-2xl: 1440px;
+}
+
+@theme inline {
+  /* Typography follows the active script (lang="ar" | lang="en") through the tokens. */
+  --font-sans: var(--font-family-base);
+  --font-mono: var(--font-family-mono);
+  --text-xs: var(--font-size-xs);
+  --text-sm: var(--font-size-sm);
+  --text-base: var(--font-size-md);
+  --text-md: var(--font-size-md);
+  --text-lg: var(--font-size-lg);
+  --text-xl: var(--font-size-xl);
+  --text-2xl: var(--font-size-2xl);
+  --text-3xl: var(--font-size-3xl);
+  --text-4xl: var(--font-size-4xl);
+  --shadow-1: var(--elevation-1);
+  --shadow-2: var(--elevation-2);
+  --shadow-3: var(--elevation-3);
+}

@@ -16,6 +16,7 @@ It integrates with **Jadarat LMS** (reference connector) and any other LMS throu
 | # | Document | Use it for |
 |---|---|---|
 | 1 | `docs/delivery/STATUS.md` | **Current state**: phase, milestone progress, decisions, blockers, next actions, session log |
+| 1b | `docs/delivery/BACKLOG.md` | **Task list**: pick the next unblocked task of the current milestone; update its status |
 | 2 | `docs/delivery/Jadarat_TMS_Development_Plan.md` | **How** we deliver: quality bars, Definition of Ready/Done, CI gates, milestones M0–M7, quality gates, security program, templates |
 | 3 | `docs/brd/Jadarat_TMS_BRD_v2.md` | **What** to build: requirements `FR-*`, `NFR-*`, priorities, releases, architecture guidance (Appendix H) |
 | 4 | `docs/brd/TMS_Feature_List.md` | Feature IDs, release cut (R1 = 96 features), open decisions |
@@ -26,16 +27,20 @@ Precedence: BRD wins on **scope**; the Development Plan wins on **process and qu
 ## Session routine
 
 **At the start of every session**
-1. Read `docs/delivery/STATUS.md` (current milestone, next actions, blockers).
+1. Read `docs/delivery/STATUS.md` (current milestone, next actions, blockers) and the current milestone in `docs/delivery/BACKLOG.md`.
 2. Read the relevant milestone section of the Development Plan and the BRD requirements it references.
 3. Confirm with the user which next action to take if it is not obvious from their request.
 
 **At the end of every session (or after any meaningful change)**
-1. Update `docs/delivery/STATUS.md`: milestone/task status, decisions made (with date), new blockers/risks, next actions, and a one-line entry in the session log.
+1. Update `docs/delivery/STATUS.md` and task statuses in `docs/delivery/BACKLOG.md`: milestone/task status, decisions made (with date), new blockers/risks, next actions, and a one-line entry in the session log.
 2. If scope changed, update the BRD (increment version, add a revision-history row) **and** the feature list together.
 3. Commit with a clear message referencing requirement IDs; push to the designated branch.
 
 A project **Stop hook** (`.claude/settings.json` → `.claude/hooks/require-status-update.sh`) enforces step 1: if repository files changed (uncommitted, or committed on the branch but not yet on `origin/main`) and `docs/delivery/STATUS.md` is not among them, the session is asked to update `STATUS.md` before finishing. Do not disable or bypass it.
+
+## Team model (Development Plan §2.3)
+
+The delivery team is the **user as Product Owner + Claude Code sessions and sub-agents**. Claude acts as tech lead, engineers, designer, QA, DevOps and security. Every PR gets a separate code-review pass (and a security-review pass when security-relevant) before the PO merges. Never merge to `main` yourself. Human-only work (accounts/billing, design partners, usability sessions with real users, legal validation, pen test, go/no-go) belongs to the PO — prepare materials for it, do not attempt it.
 
 ## Non-negotiables (from Development Plan §1)
 

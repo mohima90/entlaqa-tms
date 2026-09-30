@@ -4,7 +4,7 @@
 |---|---|
 | **Audience** | Tech Lead and the engineering, design, QA, DevOps and security team |
 | **Owner** | Product Owner, Jadarat TMS |
-| **Version** | 1.0 — 30 September 2026 |
+| **Version** | 1.1 — 30 September 2026 (§2.3 agent-team operating model) |
 | **Status** | Issued for Tech Lead review; dates become the baseline after Milestone M1 estimation (§6) |
 | **Inputs** | `docs/delivery/STATUS.md` (current state, updated every session) · `docs/brd/Jadarat_TMS_BRD_v2.md` (BRD v2.1) · `docs/brd/TMS_Feature_List.md` · `docs/research/TMS_Market_Comparison_vs_BRD.md` |
 
@@ -70,6 +70,38 @@ Jadarat TMS is the first module of the Jadarat HR Suite and is also sold standal
 | Release go/no-go | A | R | C | I | R | R | R (veto on security) |
 
 The Security Lead has a **veto** on releases with open critical/high security findings. QA has a veto on releases that fail the Definition of Done at milestone level.
+
+### 2.3 Operating Model in Effect: Product Owner + Claude Code Agents (decided 30 Sep 2026)
+
+The delivery team for M0 onward is **the Product Owner (human) plus Claude Code sessions and their sub-agents**. The roles in §2.1 are still performed, but mapped as follows. Everything else in this guide (quality bars, DoR/DoD, CI gates, quality gates) applies unchanged.
+
+| Role in §2.1 | Performed by | How |
+|---|---|---|
+| Product Owner | **Human PO** | Scope, priorities, decisions, story acceptance, merges to `main`, design partners |
+| Tech Lead | Claude (main session) | Architecture, ADRs, plan, sequencing, integration of sub-agent work |
+| Engineers | Claude + sub-agents | Implementation in small PRs; parallel sub-agents for independent tasks, each in its own branch/worktree |
+| Designer & UX writer | Claude | Design system, prototypes (interactive artifacts), AR/EN copy and glossary — **validated by real users (below)** |
+| QA | Claude sub-agent (separate from the author) | Test plans, E2E automation, exploratory review of each PR |
+| DevOps | Claude | CI/CD, environments, infrastructure-as-code; account-level actions done by PO |
+| Security Lead | Claude sub-agent (separate from the author) | Threat models, security review of each security-relevant PR; **independent human pen test before GA** |
+
+**Review rule (replaces "1–2 approving reviewers" in §3.3):** every PR is (1) authored by one agent, (2) reviewed by a *separate* review pass — code review for all PRs and a dedicated security review for security-relevant PRs — with findings fixed or explicitly accepted, (3) green on all CI gates, and (4) **merged only by the PO**. The PO may ask for a summary of any PR before merging.
+
+**Activities that require humans (cannot be done by agents):**
+
+| Activity | Owner | When |
+|---|---|---|
+| Account setup and billing (GitHub settings, Supabase, Vercel, domains, messaging providers) | PO | As needed; see STATUS next actions |
+| Design partners (3–5 customers) and their feedback | PO | M0 onward |
+| Usability tests with real Arabic-speaking users (5–8 per persona) | PO (Claude prepares scripts, tasks and analysis) | M1, M4, M7 |
+| Legal validation of regulatory content (BRD Appendix E) | PO + legal counsel | Before each release using it |
+| Independent penetration test and accessibility audit | External vendor, arranged by PO | M7 (and annually) |
+| UAT sign-off | Design partners | M7 |
+| Go/no-go decision and production promotion | PO | Each release |
+
+**Continuity:** agents have no memory between sessions. Work state lives in `docs/delivery/STATUS.md` and `docs/delivery/BACKLOG.md`, updated at the end of every session (enforced by the Stop hook described in `CLAUDE.md`).
+
+**Timeline:** milestone dates in §6 assumed a human team. They are re-baselined at Gate G1 based on actual throughput of the agent team and on the pace of human-dependent activities (usability tests, design partners).
 
 ---
 
@@ -589,7 +621,7 @@ Total: 96 features = the R1 cut in the feature list. IAM-07 and IAM-13 deliver t
 - [ ] Migrations reversible and reviewed
 - [ ] API changes documented; no breaking changes
 - [ ] Feature flag if incomplete/risky
-- [ ] Security-relevant? Security Lead added as reviewer
+- [ ] Security-relevant? Separate security review completed and findings resolved
 
 ## Screenshots (Arabic and English)
 ```

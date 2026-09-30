@@ -10,7 +10,7 @@
 | **Version** | 2.1 — Draft for stakeholder review |
 | **Date** | 30 September 2026 |
 | **Supersedes** | *Jadarat TMS BRD v1.0* (15 March 2026) |
-| **Companion documents** | `docs/brd/TMS_Feature_List.md` (feature list, 280 features) · `docs/research/TMS_Market_Comparison_vs_BRD.md` (market & regulatory research) |
+| **Companion documents** | `docs/delivery/Jadarat_TMS_Development_Plan.md` (development plan & delivery guide) · `docs/brd/TMS_Feature_List.md` (feature list, 289 features) · `docs/research/TMS_Market_Comparison_vs_BRD.md` (market & regulatory research) |
 | **Classification** | Internal — Confidential |
 
 ### Document Control

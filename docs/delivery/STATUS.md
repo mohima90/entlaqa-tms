@@ -106,7 +106,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 **Product Owner (user)** — M0 tasks in `BACKLOG.md`
 1. Merge the open pull request (M0: team model, backlog, PR template, CODEOWNERS).
 2. **T-M0-06** GitHub branch protection: repo → Settings → Rules → Rulesets → New branch ruleset for `main`: require a pull request before merging, block force pushes, restrict deletions. (Add "require status checks" after CI exists in M1.)
-3. **T-M0-07** Supabase: create an organization and a staging project in region **eu-central-1 (Frankfurt)**; share the project URL when ready (never paste keys into chat — they go into Vercel/GitHub secrets).
+3. **T-M0-07** Supabase: create an organization and a staging project in region **eu-central-1 (Frankfurt)**; in Project Settings → Data API, **expose no schemas** (all data goes through our server — ADR 0002 §5); share the project URL when ready (never paste keys into chat — they go into Vercel/GitHub secrets).
 4. **T-M0-08** Start recruiting 3–5 design partners.
 5. **T-M0-09** Decide D3 (planning cycle in R2 recommended).
 
@@ -128,5 +128,6 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 | 30 Sep 2026 | Added project Stop hook (`.claude/settings.json`, `.claude/hooks/require-status-update.sh`) that requires this file to be updated whenever other files change in a session |
 | 30 Sep 2026 | Vercel: API project creation refused (403) for Claude's connection; added `vercel.json` (region `fra1`, skip builds until `package.json` exists); PO to create project `jadarat-tms` in the dashboard |
 | 30 Sep 2026 | PO created Vercel project `jadarat-tms` linked to `mohima90/entlaqa-tms`; first deployment canceled by the build-skip rule (0 check errors) |
+| 30 Sep 2026 | M1 review cycle: independent code review (approve with fixes) and security review (0 Critical/High, 3 Medium, 5 Low); all findings fixed with regression tests; ADR 0002 updated (transaction-local claims only, session-bound tenant, Supabase service roles) |
 | 30 Sep 2026 | M1 started (PO approved tracks A–D; D3 = R2): ADRs 0001–0012, R1 data model, security baseline (TM-0001, risk register, ASVS, coding standard), design foundation + prototype, monorepo scaffold with CI gates and tested DB isolation; independent code + security review |
 | 30 Sep 2026 | M0 started: team model PO + Claude agents (Plan §2.3); `BACKLOG.md` created (M0/M1 tasks, M2–M7 epics covering all 96 R1 features); PR template + CODEOWNERS added |

@@ -71,5 +71,5 @@ A project **Stop hook** (`.claude/settings.json` → `.claude/hooks/require-stat
 
 - The repository currently contains **documentation only** (no application code yet).
 - Vercel project **`jadarat-tms`** (team "Mohamed Attia's projects") is linked to this repository. Root `vercel.json` sets region `fra1` and an `ignoreCommand` that **skips builds while no `package.json` exists**, so docs-only commits do not fail. When the M1 scaffold lands in `apps/suite`, set the project's Root Directory to `apps/suite` and move/adapt `vercel.json` there.
-- The Vercel connection available to Claude sessions can read the account but **cannot create projects** (403); project creation/settings changes may need to be done by the user in the Vercel dashboard.
+- The Vercel connection available to Claude sessions **cannot create, list or read projects/deployments** in this team (403/empty results). Check deployment status in the Vercel dashboard (or ask the user for a screenshot); project settings changes are done by the user. To give Claude access, reconnect Vercel in claude.ai → Settings → Connectors with access to the team.
 - Mermaid diagrams in docs must render on GitHub; validate with `@mermaid-js/mermaid-cli` when changing them.

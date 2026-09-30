@@ -1,6 +1,6 @@
 # ADR 0003 — Authentication, authorization, permissions and data scopes
 
-**Status:** Proposed · **Date:** 30 Sep 2026 · **Backlog:** T-M1-B03 · **Related:** BRD FR-IAM-01…15, FR-ADM-17, FR-WFL-02, Appendix B (roles & permission matrix), NFR-SEC-01/02/09; Development Plan §8.3; ADR 0001, ADR 0002
+**Status:** Proposed (rev. 1 after TM-0001 review) · **Date:** 30 Sep 2026 · **Backlog:** T-M1-B03 · **Related:** BRD FR-IAM-01…15, FR-ADM-17, FR-WFL-02, Appendix B (roles & permission matrix), NFR-SEC-01/02/09; Development Plan §8.3; ADR 0001, ADR 0002
 
 ## Context
 
@@ -24,10 +24,11 @@
 | Other second factors (SMS / e-mail OTP per FR-IAM-12) | Spike in M2 to confirm Supabase support in cloud and self-hosted; fall back to TOTP-only if not supported natively | R1 spike → R2 |
 | SSO | SAML 2.0 via Supabase SSO; OIDC for Microsoft Entra ID / Google via supported providers; generic OIDC to be validated | R2 |
 | SCIM | Platform endpoint provisioning persons/memberships | R3 |
-| Lockout & rate limits | Supabase Auth rate limits plus application-level limits on sign-in, OTP, invitation and password-reset endpoints (self-hostable store) | R1 |
+| Lockout & rate limits | All sign-in, MFA, OTP, recovery and invitation flows run through **server actions** (never directly from the browser to Auth), so application limits and per-tenant lockout apply before Supabase Auth is called; plus Supabase Auth's own rate limits | R1 |
+| Bot protection | Self-hostable **proof-of-work challenge** on public forms (sign-up, sign-in after failed attempts, public certificate verification); library chosen at implementation; no third-party CAPTCHA that cannot run in-country (TM-0001 F-05) | R1 |
 
 **Sessions**
-- Cookies managed with `@supabase/ssr`; `HttpOnly`, `Secure`, `SameSite=Lax`, host-only.
+- Cookies managed with `@supabase/ssr` **on the server only**; `HttpOnly`, `Secure`, `SameSite=Lax`, host-only. Because the browser cannot read `HttpOnly` cookies, **all authentication flows** (sign-in, MFA challenge/verify, recovery, sign-out, tenant switch) are server actions (TM-0001 F-04). Verify `@supabase/ssr` cookie options at implementation.
 - Short-lived access tokens (target **15 min**) with refresh-token rotation and reuse detection, so revocations, suspensions and tenant switches take effect quickly.
 - The request proxy refreshes sessions; it does not make authorization decisions.
 - **Every** server component, server action, route handler and job verifies identity server-side:
@@ -71,7 +72,7 @@ Effective access = **union** of the member's assignments, each limited by its sc
    `defineAction` verifies the session, loads effective grants (cached per request), checks the permission and that the resource is within scope, enforces AAL2 when required, runs the handler in `withUserTx`, and emits audit events. **Deny by default**: out-of-scope resources return 404 (no existence leak); missing permissions return 403.
 2. **List queries** use `scopeFilter(ctx, 'tms.enrollment.read', …)`, which turns the member's scopes into SQL predicates so lists never over-fetch and then filter in memory.
 3. **Database layer (defense in depth).** RLS enforces tenant isolation on every table (ADR 0002) and, where cheap and stable, ownership rules (for example, learners reading their own enrollments). RLS does not replace server-side permission checks.
-4. **Browser.** The browser never queries tenant tables directly; all data flows through server code. The Supabase browser client is used only for authentication flows and Realtime channels (authorized by RLS).
+4. **Browser.** The browser never queries tenant tables directly; all data flows through server code. The only browser use of Supabase is **Realtime** (where needed, e.g., live attendance rosters): the server hands the browser a short-lived access token kept **in memory only** (`realtime.setAuth`), refreshed through a server call; channels are private and authorized by RLS. Storage objects are never readable by that token alone (ADR 0006 download grants).
 5. **CSRF / origin.** Server Actions rely on Next.js's built-in Origin/Host check; cookie-authenticated route handlers that change state must verify `Origin` and reject cross-site requests. The external API (R2) uses bearer tokens, not cookies (ADR 0011).
 6. **Mechanical enforcement.** A lint rule/test fails the build if any exported server action or mutating route handler in `modules/**` or `packages/platform-*/**` is not created with `defineAction` / `defineRoute`.
 

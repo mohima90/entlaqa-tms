@@ -532,7 +532,7 @@ Secure by design, deny by default, least privilege, defense in depth, no secrets
 | Severity | Remediation target |
 |---|---|
 | Critical | 24 hours (hotfix) |
-| High | 7 days (and before any release) |
+| High | 3 working days (and before any release) — aligned with §5.4 S2 |
 | Medium | 30 days |
 | Low | 90 days or accepted risk with PO + Security sign-off |
 

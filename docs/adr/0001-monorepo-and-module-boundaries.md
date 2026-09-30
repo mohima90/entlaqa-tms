@@ -38,6 +38,8 @@ packages/
   platform-notifications/   channel abstraction, templates (ADR 0008)
   platform-files/           storage, signed URLs, scanning (ADR 0006)
   platform-i18n/            next-intl config, messages, Hijri/working calendars, formatting (ADR 0007)
+  platform-integration/     connector transport, HMAC signing/verification, safeFetch (SSRF guard), secrets access (before M6; TM-0001 F-12)
+  platform-ai/              AI provider abstraction and governance (before R2; ADR 0012)
   contracts/                cross-module contracts only: event payload schemas, service interfaces (types + zod)
 modules/
   tms/                      Jadarat TMS domain: services, server actions, UI screens, permissions, events

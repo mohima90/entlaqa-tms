@@ -98,7 +98,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 ## 5. Next Actions
 
 **Product Owner (user)**
-1. Merge the open pull request so `main` contains the Development Plan, `CLAUDE.md` and this file.
+1. Merge the open pull request so `main` contains the Development Plan, `CLAUDE.md`, this file and the STATUS.md Stop hook.
 2. Share the Development Plan with the Tech Lead; collect questions.
 3. Staff the team and set the kickoff date (M0 week 1).
 4. Recruit design partners; close D3 before M1 estimation.
@@ -117,3 +117,4 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 |---|---|
 | 27 Sep 2026 | Market research and competitor/regulatory fact-check; old codebase removed; feature list (280) and BRD v2.0 written |
 | 30 Sep 2026 | Decisions D1, D2, D6, D7 and HR Suite positioning recorded (BRD v2.1); Development Plan v1.0; `CLAUDE.md` and this status tracker added for session handover |
+| 30 Sep 2026 | Added project Stop hook (`.claude/settings.json`, `.claude/hooks/require-status-update.sh`) that requires this file to be updated whenever other files change in a session |

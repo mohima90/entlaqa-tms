@@ -35,6 +35,8 @@ Precedence: BRD wins on **scope**; the Development Plan wins on **process and qu
 2. If scope changed, update the BRD (increment version, add a revision-history row) **and** the feature list together.
 3. Commit with a clear message referencing requirement IDs; push to the designated branch.
 
+A project **Stop hook** (`.claude/settings.json` → `.claude/hooks/require-status-update.sh`) enforces step 1: if repository files changed (uncommitted, or committed on the branch but not yet on `origin/main`) and `docs/delivery/STATUS.md` is not among them, the session is asked to update `STATUS.md` before finishing. Do not disable or bypass it.
+
 ## Non-negotiables (from Development Plan §1)
 
 - **Security:** no known critical/high vulnerabilities at any release; deny-by-default authorization; validate all inputs; no secrets or personal data in code or logs.

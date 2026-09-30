@@ -1,14 +1,14 @@
-# ENTLAQA TMS — Full Feature List (for scoping decision)
+# Jadarat TMS — Full Feature List
 
-**Date:** 27 Sep 2026 · **Status:** Draft for decision · **Basis:** Market research in `docs/research/TMS_Market_Comparison_vs_BRD.md` + Jadarat TMS BRD v1.0
+**Date:** 30 Sep 2026 (v2.1) · **Status:** Decisions D1, D2, D6, D7 applied · **BRD:** `docs/brd/Jadarat_TMS_BRD_v2.md` · **Basis:** Market research in `docs/research/TMS_Market_Comparison_vs_BRD.md` + Jadarat TMS BRD v1.0
 
 **Legend**
 
 - **Tier:** `Core` = table stakes (buyers expect it) · `Plus` = advanced / enterprise depth · `★` = MENA / ENTLAQA differentiator
-- **Proposed release:** `R1` MVP (months 0–4) · `R2` Growth (5–8) · `R3` Enterprise & Sovereign (9–12) · `R4` Intelligence & Scale (13–18)
+- **Proposed release:** `R1` MVP (months 0–4) · `R2` Growth (5–8) · `R3` Enterprise & Sovereign (9–12) · `R4` Intelligence & Scale (13–18) · `Suite` = when the related Jadarat HR Suite module ships · `—` = removed from scope
 - **In v1 BRD?** `✅` covered · `⚠️` partial · `❌` new (not in v1 BRD)
 
-**Totals:** 28 modules · 280 features · 106 new and 40 partial vs. v1 BRD · By proposed release: R1 93 · R2 110 · R3 63 · R4 14
+**Totals:** 29 modules · 289 features, of which 280 in scope and 9 removed by decision D1 (Commerce, public registration) · In scope: 106 new and 40 partial vs. v1 BRD · By release: R1 96 · R2 110 · R3 56 · R4 13 · Suite 5
 
 ---
 
@@ -52,7 +52,7 @@
 | IAM-12 | MFA (TOTP, e-mail, SMS) with per-role enforcement | Core | R1 | ✅ |
 | IAM-13 | Password policy, lockout, session timeout, IP allow-list, access hours | Core | R1/R3 | ✅ |
 | IAM-14 | Delegation (approver out-of-office delegate) | Plus | R2 | ❌ |
-| IAM-15 | External users (provider staff, external learners, client company learners) | Plus | R2 | ❌ |
+| IAM-15 | Non-employee users (provider staff, external instructors, contractor learners) | Plus | R2 | ❌ |
 
 ## 3. Training Needs Analysis & Planning (PLN) — new module
 
@@ -162,7 +162,7 @@
 | ENR-09 | Cancellation policy engine (cut-off windows, substitutions, transfers) | Plus | R2 | ❌ |
 | ENR-10 | No-show and late-cancellation fees charged back to cost center | Plus | R3 | ❌ |
 | ENR-11 | Registration forms with custom questions (dietary, accessibility, T-shirt size…) | Core | R2 | ❌ |
-| ENR-12 | External / public learner registration (B2C) and client-company registration (B2B) | Plus | R3 | ❌ |
+| ENR-12 | ~~External / public learner registration (B2C) and client-company registration (B2B)~~ — removed (D1) | — | — | ❌ |
 | ENR-13 | Learner schedule-conflict detection | Core | R1 | ✅ |
 
 ## 10. Session Logistics & Operations (LOG) — new module
@@ -270,18 +270,18 @@
 | FIN-11 | ERP export / integration (SAP, Oracle, Microsoft Dynamics, Odoo) | Plus | R3 | ❌ |
 | FIN-12 | Multi-currency with exchange rates; VAT handling | Core | R2 | ✅ |
 
-## 17. Commerce for Training Providers (COM) — new module (segment decision)
+## 17. Commerce for Training Providers (COM) — removed from scope (decision D1)
 
 | ID | Feature | Tier | Release | In v1? |
 |---|---|---|---|---|
-| COM-01 | Price lists (public, corporate, member, early-bird) | Plus | R3 | ❌ |
-| COM-02 | Public checkout (cards, Mada, Apple Pay; STC Pay, Fawry) | Plus | R3 | ❌ |
-| COM-03 | Corporate client accounts, group bookings, purchase-order payment | Plus | R3 | ❌ |
-| COM-04 | Vouchers, discounts, promo codes, training credits | Plus | R3 | ❌ |
-| COM-05 | Quotes → orders → invoices; refunds and credit notes | Plus | R3 | ❌ |
-| COM-06 | E-invoicing compliance: ZATCA (KSA), ETA (Egypt) | ★ | R3 | ❌ |
-| COM-07 | Revenue and profitability per course and session | Plus | R3 | ❌ |
-| COM-08 | Client-company portal (their learners, bookings, invoices, certificates) | Plus | R4 | ❌ |
+| COM-01 | ~~Price lists (public, corporate, member, early-bird)~~ | — | — | ❌ |
+| COM-02 | ~~Public checkout (cards, Mada, Apple Pay; STC Pay, Fawry)~~ | — | — | ❌ |
+| COM-03 | ~~Corporate client accounts, group bookings, purchase-order payment~~ | — | — | ❌ |
+| COM-04 | ~~Vouchers, discounts, promo codes, training credits~~ | — | — | ❌ |
+| COM-05 | ~~Quotes → orders → invoices; refunds and credit notes~~ | — | — | ❌ |
+| COM-06 | ~~E-invoicing compliance: ZATCA (KSA), ETA (Egypt)~~ | — | — | ❌ |
+| COM-07 | ~~Revenue and profitability per course and session~~ | — | — | ❌ |
+| COM-08 | ~~Client-company portal (their learners, bookings, invoices, certificates)~~ | — | — | ❌ |
 
 ## 18. Learner Experience (LRN)
 
@@ -432,20 +432,34 @@
 | DEP-04 | Customer-hosted / on-premise package | Plus | R4 | ⚠️ |
 | DEP-05 | Arabic-only operating mode (government) | ★ | R1 | ⚠️ |
 
+## 29. HR Suite Integration & Platform (STE) — new (v2.1)
+
+| ID | Feature | Tier | Release | In v1? |
+|---|---|---|---|---|
+| STE-01 | Suite mode and standalone mode per tenant, one codebase | ★ | R1 | ❌ |
+| STE-02 | Shared people & organization directory (single person record across suite modules) | Core | R1 | ❌ |
+| STE-03 | Consume Core HR lifecycle events (hire, transfer, promotion, termination) | Core | Suite | ❌ |
+| STE-04 | Publish training days and absences to Payroll & Time | Plus | Suite | ❌ |
+| STE-05 | Send payroll items (instructor allowances, stipends, training deductions) | Plus | Suite | ❌ |
+| STE-06 | Training agreements / training bonds with pro-rata recovery on exit | ★ | R3 | ❌ |
+| STE-07 | Exchange with Performance & Skills (training history ↔ appraisals and IDPs) | Plus | Suite | ❌ |
+| STE-08 | Suite shell: one navigation, notification inbox, approvals inbox, search, mobile app | ★ | R1 | ❌ |
+| STE-09 | Onboarding journeys trigger TMS programs | Plus | Suite | ❌ |
+
 ---
 
 ## Decisions Needed
 
 | # | Decision | Options | Recommendation |
 |---|---|---|---|
-| D1 | Include training providers / institutes (Commerce module, public registration, e-invoicing)? | Yes in R3 · Later · No | **Yes in R3.** A large MENA segment, but not needed for the corporate MVP |
-| D2 | Is the Government segment a Year-1 target? | Yes → in-country hosting in R3 · No → R4 | Yes if a pipeline exists; it drives architecture early |
+| D1 | Include training providers / institutes (Commerce module, public registration, e-invoicing)? | Yes in R3 · Later · No | **Decided: No** (30 Sep 2026) |
+| D2 | Is the Government segment a Year-1 target? | Yes → in-country hosting in R3 · No → R4 | **Decided: Yes** (30 Sep 2026) |
 | D3 | Pull the planning cycle (PLN) into R1? | R1 · R2 | **R2**, with only PLN-01 (requests) in R1 |
 | D4 | First LMS connectors after Jadarat | Moodle · Docebo · SAP SF · Cornerstone | **Moodle** (MENA gov/edu footprint), then SAP SF |
 | D5 | Messaging vendor for SMS / WhatsApp | Unifonic (MENA) · Twilio · Meta Cloud API direct | Unifonic for SMS + Meta Cloud API for WhatsApp |
-| D6 | Keep the Next.js / Supabase / Vercel stack for in-country deployments? | Keep + self-host variant · Change | Keep, and design for self-hosted Supabase + Next.js standalone |
-| D7 | Product name | ENTLAQA TMS · Jadarat TMS · new | Open |
+| D6 | Keep the Next.js / Supabase / Vercel stack for in-country deployments? | Keep + self-host variant · Change | **Decided: Next.js + Supabase, self-hostable**, for the whole HR Suite (30 Sep 2026) |
+| D7 | Product name | ENTLAQA TMS · Jadarat TMS · new | **Decided: Jadarat TMS** (30 Sep 2026) |
 
-## Suggested R1 (MVP) Cut — 93 features
+## Suggested R1 (MVP) Cut — 96 features
 
-ADM-01, 02, 04, 05, 07, 11, 13, 14, 17 · IAM-01…05, 07, 12, 13 · PLN-01 · CAT-01…03, 05, 06, 10 · SCH-01…03, 05, 07, 08 · RES-01…03, 07 · INS-01…05 · ENR-01…03, 13 · LOG-01, 02 · ATT-01…04, 09, 11 · ASM-01, 02, 04, 05, 08 · CRT-01…08 · LRN-01, 03, 04, 07, 08 · MGR-01…04 · FIN-03 · NTF-01, 02, 07, 08 · RPT-01, 02 · REG-01 · AUD-01, 05 · SUB-01 · LMS-01…03, 05…07, 10 · DEP-01, 05
+ADM-01, 02, 04, 05, 07, 11, 13, 14, 17 · IAM-01…05, 07, 12, 13 · PLN-01 · CAT-01…03, 05, 06, 10 · SCH-01…03, 05, 07, 08 · RES-01…03, 07 · INS-01…05 · ENR-01…03, 13 · LOG-01, 02 · ATT-01…04, 09, 11 · ASM-01, 02, 04, 05, 08 · CRT-01…08 · LRN-01, 03, 04, 07, 08 · MGR-01…04 · FIN-03 · NTF-01, 02, 07, 08 · RPT-01, 02 · REG-01 · AUD-01, 05 · SUB-01 · LMS-01…03, 05…07, 10 · DEP-01, 05 · STE-01, 02, 08

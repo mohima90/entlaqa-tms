@@ -1,14 +1,14 @@
-# ENTLAQA TMS — Business Requirements Document (BRD)
+# Jadarat TMS — Business Requirements Document (BRD)
 
 ## Cloud Training Management System (SaaS) with Open LMS Interoperability
 
 | | |
 |---|---|
-| **Product** | ENTLAQA TMS — Training Management System (working name) |
+| **Product** | Jadarat TMS — Training Management System (module of the Jadarat HR Suite; also sold standalone) |
 | **Company** | ENTLAQA |
 | **Document type** | Business Requirements Document |
-| **Version** | 2.0 — Draft for stakeholder review |
-| **Date** | 27 September 2026 |
+| **Version** | 2.1 — Draft for stakeholder review |
+| **Date** | 30 September 2026 |
 | **Supersedes** | *Jadarat TMS BRD v1.0* (15 March 2026) |
 | **Companion documents** | `docs/brd/TMS_Feature_List.md` (feature list, 280 features) · `docs/research/TMS_Market_Comparison_vs_BRD.md` (market & regulatory research) |
 | **Classification** | Internal — Confidential |
@@ -21,6 +21,7 @@
 |---|---|---|---|
 | 1.0 | 15 Mar 2026 | ENTLAQA Product Team | Initial Jadarat TMS BRD (offline training, Jadarat-specific) |
 | 2.0 | 27 Sep 2026 | ENTLAQA Product Team | Full rewrite: comprehensive TMS scope, training planning cycle, vendor & finance depth, assessment engine, generic LMS integration framework, corrected regulatory content, sovereign deployment, requirement IDs with priority & release |
+| 2.1 | 30 Sep 2026 | ENTLAQA Product Team | Decisions D1, D2, D6, D7 recorded: product named Jadarat TMS; positioned as first module of the planned Jadarat HR Suite and sold standalone; shared Jadarat Platform (§3.4, §6.27, Appendix H.5); Commerce for training providers removed from scope; government/banks confirmed as Year-1 segments; self-hostable Next.js + Supabase stack |
 
 **Approvals**
 
@@ -38,7 +39,7 @@
 - Each requirement has a unique ID (`FR-<MODULE>-<NNN>`, `NFR-<AREA>-<NNN>`, `INT-<NNN>`). IDs never change once issued; retired items are marked *Deprecated*.
 - **Priority (MoSCoW):** **M** = Must (release cannot ship without it) · **S** = Should (high value, may slip one release) · **C** = Could (desirable) · **W** = Won't in this plan (recorded for future).
 - **Release:** **R1** MVP (months 0–4) · **R2** Growth (months 5–8) · **R3** Enterprise & Sovereign (months 9–12) · **R4** Intelligence & Scale (months 13–18). See §16.
-- "The system" means ENTLAQA TMS. "Tenant" means one customer organization. "LMS" means any external Learning Management System (Jadarat LMS is the reference implementation).
+- "The system" means Jadarat TMS. "Tenant" means one customer organization. "LMS" means any external Learning Management System (Jadarat LMS is the reference implementation).
 - Requirements describe **what** the business needs. The reference architecture in Appendix H describes **how** ENTLAQA intends to build it and is guidance, not a requirement, unless stated as a constraint.
 
 ---
@@ -91,7 +92,9 @@ Organizations in the Middle East and North Africa (MENA) spend a large share of 
 
 ### 1.2 Solution
 
-ENTLAQA TMS is a multi-tenant, Arabic-first SaaS platform that manages the **complete training operations lifecycle** — *Plan → Design → Schedule → Enroll → Deliver → Assess → Certify → Pay → Report* — for classroom, virtual, blended and on-the-job training. It connects to any LMS through an open, standards-based **LMS Integration Framework** (SSO, SCIM, REST API, webhooks, xAPI, LTI 1.3, cmi5), with Jadarat LMS as the first certified connector, so that online and offline learning form one unified record.
+Jadarat TMS is a multi-tenant, Arabic-first SaaS platform that manages the **complete training operations lifecycle** — *Plan → Design → Schedule → Enroll → Deliver → Assess → Certify → Pay → Report* — for classroom, virtual, blended and on-the-job training. It connects to any LMS through an open, standards-based **LMS Integration Framework** (SSO, SCIM, REST API, webhooks, xAPI, LTI 1.3, cmi5), with Jadarat LMS as the first certified connector, so that online and offline learning form one unified record.
+
+Jadarat TMS is the **first module of the planned Jadarat HR Suite** (Core HR, Payroll & Time, Performance & Skills, Recruitment & Onboarding, Jadarat LMS, Jadarat TMS). It is built on a shared **Jadarat Platform** and is also sold **standalone** to organizations that use other HR systems (§3.4).
 
 ### 1.3 Value Proposition
 
@@ -166,7 +169,7 @@ Subscription SaaS with four editions — **Starter, Professional, Enterprise, Go
 | **S2 — SME** | 50–500 employees, HR runs training part-time | Fast setup, simple enrollment, attendance, certificates, compliance reports |
 | **S3 — Government & public sector** | Ministries, authorities, state-owned enterprises | Data sovereignty, in-country hosting, strict audit, Arabic-only operation, procurement-friendly licensing |
 | **S4 — Regulated financial institutions** | Banks, insurers, finance companies, capital-market firms | Mandatory certification coverage (SAMA/FA, CMA), audit trail, e-signatures, in-country hosting |
-| **S5 — Training providers & institutes** | Accredited training centres, academies, consultancies delivering to external clients | Public registration, commerce, client (B2B) accounts, invoicing, e-invoicing, trainer payments |
+| ~~S5 — Training providers & institutes (selling to the public)~~ | *Out of scope (decision D1).* Providers are supported only as **suppliers** to customer organizations through the provider portal (§6.8). | — |
 
 ### 3.2 In Scope
 
@@ -178,13 +181,12 @@ Subscription SaaS with four editions — **Starter, Professional, Enterprise, Go
 | Catalog | Courses, course templates, versions, programs and learning paths, blended programs, materials library, competency tagging |
 | Scheduling & resources | Sessions (ILT, VILT, hybrid, OJT, conference, exam), multi-day, recurrence, calendars and resource timeline, conflict detection, venues/rooms/equipment, VILT platforms, AI optimizer |
 | Instructors & providers | Internal/external instructors, availability, qualifications, portal, workload, contracts, payments; training-provider registry, contracts, RFQ, portal |
-| Enrollment | Self, manager, admin and rule-based enrollment; nominations; seat quotas; approvals; waitlists; cancellation and no-show policies; external learners |
+| Enrollment | Self, manager, admin and rule-based enrollment; nominations; seat quotas; approvals; waitlists; cancellation and no-show policies; contractor and other non-employee learners |
 | Logistics | Session task checklists, materials and printing, catering, travel and accommodation, room setup, joining instructions |
 | Delivery evidence | Attendance (manual, rotating QR, geo-fence, e-signature, kiosk/NFC, VILT import, offline), assessment engine, evaluations (Kirkpatrick L1–L4, Phillips ROI) |
 | Credentials & compliance | Certificate designer, issuance, public verification, Open Badges 3.0, external certifications, recertification, compliance rules and matrix |
 | OJT & skills | OJT plans, observation checklists, mentor sign-off, evidence, competency frameworks, gap analysis, individual development plans |
 | Finance | Budgets, commitments, expenses, purchase orders, vendor invoices, chargebacks, trainer payments, fees, subsidy claims, ERP export, multi-currency, VAT |
-| Commerce (S5) | Price lists, public catalog checkout, corporate client accounts, vouchers, invoicing, e-invoicing |
 | Experiences | Learner portal, manager hub, instructor portal, provider portal, mobile PWA with offline mode |
 | Communications | E-mail, SMS, WhatsApp, push, in-app, Microsoft Teams; templates; calendar invites |
 | Analytics | Dashboards, standard reports, report builder, scheduled delivery, BI export, ESG human-capital reporting, predictive insights |
@@ -192,17 +194,64 @@ Subscription SaaS with four editions — **Starter, Professional, Enterprise, Go
 | AI | Ops Agent, scheduling optimizer, recommendations, content generation, learner assistant, insights, AI governance |
 | Integration | LMS Integration Framework, HRIS, identity providers, calendars, VILT, messaging, payments, ERP, BI, e-signature, government platforms; public REST API, webhooks, MCP server |
 | SaaS operations | Subscription and billing, usage limits, tenant provisioning, ENTLAQA super-admin console |
+| HR Suite integration | Shared Jadarat Platform services; integration with Core HR, Payroll & Time, Performance & Skills, Recruitment & Onboarding; standalone mode (§3.4, §6.27) |
 
 ### 3.3 Out of Scope
 
 | Item | Rationale / alternative |
 |---|---|
+| Commerce for training providers (public course sales, checkout, e-commerce, customer invoicing) | Decision D1: Jadarat TMS serves employers training their own workforce. Buying from providers remains in scope (§6.8). |
+| Functions owned by other Jadarat HR Suite modules (payroll calculation, time & attendance, appraisals, recruitment) | Delivered by those modules; the TMS integrates with them (§6.27). |
 | E-learning content authoring and SCORM hosting/playback | Provided by the connected LMS (e.g., Jadarat LMS). The TMS launches LMS content via deep link / LTI / cmi5 but does not host SCORM runtimes. |
 | Full HRIS / payroll | TMS consumes HR master data; it does not run payroll. Trainer payment amounts are exported to ERP/payroll. |
 | Full ERP / accounts payable | TMS produces POs, accruals and payables data for export; payments are executed in ERP. |
 | Proctoring engine | Integrate with third-party proctoring for high-stakes exams (C priority). |
 | Native iOS/Android apps | Mobile experience delivered as installable PWA; native apps may follow (W in this plan). |
 | Workforce/Nitaqat headcount computation | The TMS reports the **training** contribution; official Nitaqat band is taken from Qiwa (input field), not calculated. |
+
+### 3.4 Jadarat HR Suite Context
+
+Jadarat TMS is the first module of the planned **Jadarat HR Suite**. Two commercial modes use **one codebase**:
+
+| Mode | Customer | Employee & org data comes from | Competency data comes from | Payroll / time integration |
+|---|---|---|---|---|
+| **Suite mode** | Buys Jadarat HR Suite (TMS plus other modules) | Jadarat Core HR (native, real-time) | Jadarat Performance & Skills | Native events to Jadarat Payroll & Time |
+| **Standalone mode** | Uses another HR system (e.g., SAP, Oracle, Workday, Jisr, ZenHR) | HRIS connector or CSV/SFTP (FR-INT-01), or maintained in the TMS | TMS competency module (§6.15) | Exports to external payroll/ERP |
+
+Suite modules are licensed per tenant; the mode is a tenant configuration, not a separate product.
+
+#### 3.4.1 Shared Jadarat Platform Services
+
+The following capabilities are built **once** as platform services and reused by every suite module. Requirements for them appear in this BRD because Jadarat TMS is the first module to need them.
+
+| Platform service | Requirements in this BRD |
+|---|---|
+| Tenancy, editions, subscription & billing, platform console | FR-ADM-01…17, FR-SUB-01…05 |
+| Identity: sign-in, SSO, SCIM, MFA, sessions | FR-IAM-10…13 |
+| People & organization directory (employees, managers, branches, departments, legal entities, cost centers) | FR-ADM-02…05, FR-IAM-01…06, FR-STE-02 |
+| Roles, permissions & data scopes | FR-IAM-07…09, FR-IAM-14 |
+| Workflow & approvals engine | FR-WFL-01…04 |
+| Notifications (e-mail, SMS, WhatsApp, push, in-app, Teams) | FR-NTF-01…09 |
+| Audit, privacy, consent, retention, data export | FR-AUD-01…06 |
+| Files & documents | FR-CAT-06 (shared storage service) |
+| Localization (Arabic/RTL, Hijri, holidays, working weeks, prayer times) | §13 |
+| Design system & suite shell (navigation, search, notification inbox, mobile app) | FR-STE-08, NFR-UX-01…04 |
+| Integration hub, public API, webhooks, event bus, MCP | §7–§9 |
+| AI governance and AI services | FR-AI-10, FR-AI-11 |
+| Reporting foundation (data sets, report builder, exports) | FR-RPT-05, FR-RPT-06 |
+
+#### 3.4.2 Module Boundaries (who owns what)
+
+| Data / capability | Owner in suite mode | Owner in standalone mode | How Jadarat TMS uses it |
+|---|---|---|---|
+| Employees, positions, jobs, managers, org units | Core HR | TMS (platform directory, fed by HRIS/CSV) | Reads; reacts to lifecycle events |
+| Competency frameworks, role profiles, proficiency, IDPs | Performance & Skills | TMS (§6.15) | Reads gaps; writes training evidence |
+| Appraisals and goals | Performance & Skills | — | Provides training history and L3 results; receives development actions |
+| Working time, leave, absence | Payroll & Time | External system | Publishes training days and absences |
+| Payroll items (allowances, stipends, deductions) | Payroll & Time | External payroll/ERP | Calculates amounts; sends for payment |
+| Recruitment and onboarding journeys | Recruitment & Onboarding | — | Receives new-hire and onboarding triggers |
+| Online learning content and progress | Jadarat LMS | Any LMS via connector | §7 |
+| Training operations, plans, sessions, attendance, assessments, certificates, compliance, training budgets | **Jadarat TMS** | **Jadarat TMS** | System of record |
 
 ---
 
@@ -303,7 +352,7 @@ flowchart LR
 ```mermaid
 sequenceDiagram
   participant L as Learner
-  participant T as ENTLAQA TMS
+  participant T as Jadarat TMS
   participant M as LMS (e.g., Jadarat)
   L->>T: Enrolls in blended program
   T->>M: Create/ensure user (SCIM or API) + enroll in online module (API)
@@ -380,7 +429,7 @@ Columns: **Pri** = MoSCoW priority · **Rel** = target release.
 | FR-IAM-12 | The system shall support MFA (TOTP, e-mail OTP, SMS OTP) with enforcement off / optional / required for all / required for selected roles, grace period and trusted-device duration. | M | R1 |
 | FR-IAM-13 | Tenant Admin shall configure password policy, lockout threshold, session timeout, maximum concurrent sessions (R1); IP allow-lists with role bypass and access-hour restrictions (R3). Admins can view active sessions and force logout. | M | R1 / R3 |
 | FR-IAM-14 | Approvers shall delegate approval authority to another user for a date range; delegated actions are recorded with both identities. | S | R2 |
-| FR-IAM-15 | The system shall support external user types — provider staff, external instructors, external/public learners and client-company learners — with restricted portals and no access to internal directory data. | M | R2 |
+| FR-IAM-15 | The system shall support non-employee user types — provider staff, external instructors, and contractor / outsourced workforce learners (e.g., contractors who need safety training) — with restricted portals and no access to internal directory data. | M | R2 |
 
 **Business rules**
 - BR-IAM-1: A user has exactly one primary role and may hold additional roles; effective permissions are the union, limited by each role's data scope.
@@ -531,7 +580,7 @@ Columns: **Pri** = MoSCoW priority · **Rel** = target release.
 | FR-ENR-09 | A cancellation policy per course/session shall define cut-off windows, substitution (replace with a colleague) and transfer (to another session) rules. | S | R2 |
 | FR-ENR-10 | No-show and late-cancellation fees shall be calculated per policy and charged back to the learner's cost center (see FIN-07), with manager notification and waiver workflow. | S | R3 |
 | FR-ENR-11 | Sessions may include registration forms with custom questions (dietary, accessibility needs, emergency contact, uniform size, travel origin); answers feed logistics. | M | R2 |
-| FR-ENR-12 | External learners (B2C) and client-company learners (B2B) shall register through public pages or client portals, with identity verification (e-mail/OTP), optional payment (COM) and restricted access. | S | R3 |
+| FR-ENR-12 | *Removed by decision D1.* Public (B2C) and client-company (B2B) registration is out of scope; contractor learners are handled through FR-IAM-15 and normal enrollment. | W | — |
 | FR-ENR-13 | The system shall prevent or warn on learner schedule conflicts across sessions and OJT days. | M | R1 |
 
 **Business rules**
@@ -681,18 +730,18 @@ Columns: **Pri** = MoSCoW priority · **Rel** = target release.
 
 ### 6.17 Commerce for Training Providers (COM)
 
-**Purpose:** Enable segment S5 (training providers/institutes) — and corporate academies that sell externally — to sell courses and invoice clients. Entire module is subject to decision D1 (§20).
+**Status: Won't — removed from scope by decision D1 (30 Sep 2026).** Requirements are kept below, marked **W**, for traceability and possible future reconsideration. Jadarat TMS serves employers training their own workforce; buying from training providers is covered by §6.8 and §6.16.
 
 | ID | Requirement | Pri | Rel |
 |---|---|---|---|
-| FR-COM-01 | Price lists per course/session (public, corporate, member, early-bird, group tiers) in multiple currencies, with VAT inclusive/exclusive display. | S | R3 |
-| FR-COM-02 | Public checkout with local and international payment methods (Mada, Visa/Mastercard, Apple Pay, STC Pay; Fawry/Meeza in Egypt) through a payment gateway, 3-D Secure, receipts. | S | R3 |
-| FR-COM-03 | Corporate client accounts with contacts, contract pricing, group bookings, credit terms and PO-based payment. | S | R3 |
-| FR-COM-04 | Vouchers, discount and promo codes, prepaid training credits with balance tracking. | C | R3 |
-| FR-COM-05 | Quote → order → invoice lifecycle with refunds and credit notes, and statement of account per client. | S | R3 |
-| FR-COM-06 | Invoices shall comply with e-invoicing regimes: ZATCA FATOORA (KSA) and ETA e-invoice (Egypt), including QR codes and clearance/reporting where required. | S | R3 |
-| FR-COM-07 | Revenue and profitability reports per course, session, client and instructor. | S | R3 |
-| FR-COM-08 | Client-company portal: client HR can book seats, manage their learners, view attendance, certificates and invoices. | C | R4 |
+| FR-COM-01 | Price lists per course/session (public, corporate, member, early-bird, group tiers) in multiple currencies, with VAT inclusive/exclusive display. | W | — |
+| FR-COM-02 | Public checkout with local and international payment methods (Mada, Visa/Mastercard, Apple Pay, STC Pay; Fawry/Meeza in Egypt) through a payment gateway, 3-D Secure, receipts. | W | — |
+| FR-COM-03 | Corporate client accounts with contacts, contract pricing, group bookings, credit terms and PO-based payment. | W | — |
+| FR-COM-04 | Vouchers, discount and promo codes, prepaid training credits with balance tracking. | W | — |
+| FR-COM-05 | Quote → order → invoice lifecycle with refunds and credit notes, and statement of account per client. | W | — |
+| FR-COM-06 | Invoices shall comply with e-invoicing regimes: ZATCA FATOORA (KSA) and ETA e-invoice (Egypt), including QR codes and clearance/reporting where required. | W | — |
+| FR-COM-07 | Revenue and profitability reports per course, session, client and instructor. | W | — |
+| FR-COM-08 | Client-company portal: client HR can book seats, manage their learners, view attendance, certificates and invoices. | W | — |
 
 ---
 
@@ -846,6 +895,22 @@ In R1, approvals use a fixed default chain (Line Manager → Training Manager) c
 **Business rule**
 - BR-SUB-1: An *active user* is a user who logs in or is enrolled/attended in the billing month; instructors and external learners are counted per edition rules (§14).
 
+### 6.27 HR Suite Integration & Platform (STE)
+
+**Purpose:** Make Jadarat TMS a native module of the Jadarat HR Suite while remaining fully functional standalone. **Rel = Suite** means the requirement is delivered when the corresponding suite module is available; until then the standalone behavior applies.
+
+| ID | Requirement | Pri | Rel |
+|---|---|---|---|
+| FR-STE-01 | Jadarat TMS shall run in suite mode or standalone mode per tenant (§3.4), switching data sources (Core HR vs. HRIS connector/CSV; Performance & Skills vs. TMS competencies) by configuration without data migration. | M | R1 |
+| FR-STE-02 | The people & organization directory shall be built from R1 as a shared platform service with a single person record per individual across all suite modules; each module stores only its module-specific attributes linked to that record. | M | R1 |
+| FR-STE-03 | In suite mode the TMS shall consume Core HR lifecycle events (hire, transfer, promotion, job change, manager change, termination) in near real time to trigger auto-enrollment, compliance recalculation, reassignment and deprovisioning. | M | Suite |
+| FR-STE-04 | The TMS shall publish training days, attendance and absences to Payroll & Time so employees attending training are not marked absent and training-related absence can follow HR policy. | S | Suite |
+| FR-STE-05 | The TMS shall send payroll items to Payroll & Time (or export them in standalone mode): internal instructor allowances, trainee stipends, training allowances and approved training-related deductions. | S | Suite |
+| FR-STE-06 | Training agreements (training bonds): record sponsored-training agreements (cost, commitment period, pro-rata recovery rule, signed document); on termination the recoverable amount is calculated and sent to Payroll/final settlement for review. Rules are configurable per country and require legal validation. | S | R3 |
+| FR-STE-07 | With Performance & Skills: provide training history, certifications and Level 3 results to appraisals; receive development actions from appraisals and IDPs as training requests or assignments. | S | Suite |
+| FR-STE-08 | Suite user experience: one navigation shell, module switcher, unified notification inbox, unified search, one approvals inbox across modules, and one installable mobile app (PWA) with module sections — designed in R1 even when only the TMS module is licensed. | M | R1 |
+| FR-STE-09 | With Recruitment & Onboarding: onboarding journeys trigger TMS programs (pre-start and first-90-days training) and receive completion status back. | S | Suite |
+
 ---
 
 ## 7. LMS Integration Framework
@@ -870,7 +935,7 @@ In R1, approvals use a fixed default chain (Line Manager → Training Manager) c
 
 ```mermaid
 flowchart LR
-  subgraph TMS[ENTLAQA TMS]
+  subgraph TMS[Jadarat TMS]
     CORE[Core domain: users, catalog, sessions, enrollments, records]
     SYNC[Sync engine: mapping, queue, retries, reconciliation]
     API[Public REST API + Webhooks + MCP]
@@ -1085,6 +1150,7 @@ erDiagram
 | Domain | Entities |
 |---|---|
 | Tenant & org | tenant, legal_entity, branch, department, cost_center, working_calendar, holiday, tenant_settings, branding, domain, custom_field_definition, terminology_override |
+| Suite integration | suite_module_license, event_outbox, event_subscription, training_agreement, payroll_item_export |
 | Identity | user, user_identity (SSO links), role, permission, role_assignment (with scope), group, audience_rule, invitation, delegation, consent |
 | Planning | training_request, tna_campaign, tna_form, training_need, training_plan, plan_version, plan_line, plan_scenario, interest |
 | Catalog | category, course, course_version, course_template, learning_objective, material, program, program_component, prerequisite, equivalency |
@@ -1099,7 +1165,6 @@ erDiagram
 | Compliance | framework, compliance_requirement, coverage_target, compliance_status_snapshot, regulatory_report |
 | OJT & skills | ojt_plan, ojt_task, ojt_assignment, ojt_task_record, evidence, observation_checklist, checklist_result, competency_framework, competency, proficiency_scale, role_profile, user_competency, idp |
 | Finance | budget, budget_line, budget_transaction (planned/committed/actual), cost_item, expense, purchase_order, invoice, allocation, trainer_payable, exchange_rate, subsidy_claim |
-| Commerce | price_list, order, order_line, payment, voucher, client_account, customer_invoice, credit_note |
 | Communications | notification_template, notification_rule, message, message_delivery, broadcast |
 | Integration | lms_connection, connector_config, entity_mapping, sync_job, sync_record, webhook_subscription, webhook_delivery, api_client |
 | AI | ai_config, knowledge_document, ai_interaction_log, recommendation, agent_action |
@@ -1267,18 +1332,21 @@ The system shall provide import templates and validation for: users, org structu
 | Public API & webhooks | — | Read API | Full | Full |
 | AI | — | Recommendations, assistant (add-on credits) | + Ops Agent, optimizer, content | + sovereign model option |
 | WhatsApp | Add-on | Included bundle | Included bundle | Included bundle |
-| Commerce (providers) | — | Add-on | Add-on | — |
 | Deployment | Regional multi-tenant | Regional multi-tenant | Multi-tenant or dedicated | Dedicated in-country / customer-hosted |
 | SLA | 99.5% | 99.9% | 99.95% | 99.95–99.99% |
 | Support | E-mail, knowledge base | Priority, business hours | Dedicated CSM, 24×5 | Dedicated team, on-site, 24×7 |
 
 ### 14.2 Add-ons
 
-AI credit packs · WhatsApp/SMS message bundles · additional LMS/HRIS connectors · Commerce module · dedicated hosting · sandbox tenant · premium support · implementation and data-migration services · custom regulatory packs.
+AI credit packs · WhatsApp/SMS message bundles · additional LMS/HRIS connectors · dedicated hosting · sandbox tenant · premium support · implementation and data-migration services · custom regulatory packs.
 
 ### 14.3 Active User Definition
 
-A user counts as active in a billing month if they logged in, or were enrolled/attended/assessed in that month. External instructors and provider users are free; external/public learners are billed per registration in the Commerce add-on.
+A user counts as active in a billing month if they logged in, or were enrolled/attended/assessed in that month. External instructors and provider users are free; contractor learners count as active users.
+
+### 14.4 Suite Pricing
+
+When Jadarat TMS is purchased as part of the Jadarat HR Suite, platform services and user licences are shared across modules and TMS is priced as a module add-on per employee; standalone pricing follows §14.1. Final suite pricing is decision D9 (§20).
 
 ---
 
@@ -1303,10 +1371,10 @@ A user counts as active in a billing month if they logged in, or were enrolled/a
 
 | Release | Timing | Theme | Scope (modules / key requirements) | Exit criteria |
 |---|---|---|---|---|
-| **R1 — MVP** | Months 0–4 | Run training operations end-to-end | ADM core, IAM core (MFA, import, 15 roles), training requests (PLN-01), catalog & templates, sessions & calendar, conflicts, Hijri, venues/rooms/equipment, instructors + portal, enrollment (self/manager/bulk), task checklists & joining instructions, attendance (manual, rotating QR, geo, sign-in sheets, rules), assessments & L1 surveys, certificates + verification + expiry, external certifications, compliance rules & dashboard, learner PWA, manager hub, e-mail + in-app notifications, executive & operational reports, audit log, consent, editions, **LMS framework + Jadarat L2**, regional cloud | 5 design-partner tenants live; all R1 "M" requirements accepted; pen test passed |
+| **R1 — MVP** | Months 0–4 | Run training operations end-to-end | **Shared Jadarat Platform foundation (people directory, identity, roles, workflow, notifications, audit, design system & suite shell)**, suite/standalone mode, ADM core, IAM core (MFA, import, 15 roles), training requests (PLN-01), catalog & templates, sessions & calendar, conflicts, Hijri, venues/rooms/equipment, instructors + portal, enrollment (self/manager/bulk), task checklists & joining instructions, attendance (manual, rotating QR, geo, sign-in sheets, rules), assessments & L1 surveys, certificates + verification + expiry, external certifications, compliance rules & dashboard, learner PWA, manager hub, e-mail + in-app notifications, executive & operational reports, audit log, consent, editions, **LMS framework + Jadarat L2**, regional cloud | 5 design-partner tenants live; all R1 "M" requirements accepted; pen test passed |
 | **R2 — Growth** | Months 5–8 | Plan, approve, budget, integrate | TNA campaigns & training plan, plan vs. actual, Qiwa disclosure & OJT quota, SAMA pack, custom roles & scopes, SSO, dynamic audiences, approval workflow builder, waitlists, quotas, cancellation policy, VILT (Zoom/Teams/Webex), resource timeline, e-signature & offline attendance, OJT & observation checklists, competencies, budgets/expenses, providers & portal, trainer contracts/payments, logistics orders, WhatsApp/SMS/push, report builder, unified transcript, AI assistant/recommendations/content + governance, public API & webhooks, HRIS connectors, Jadarat L3, xAPI | 50 tenants; Qiwa disclosure produced for ≥ 5 Saudi tenants |
-| **R3 — Enterprise & Sovereign** | Months 9–12 | Enterprise depth & sovereignty | Legal entities, sandbox, SCIM, IP/access-hour controls, scenarios, AI optimizer, Ops Agent, MCP server, RFQ & scorecards, POs, invoice matching, chargebacks, no-show fees, ERP export, subsidy packs (HRDF, Egypt), UAE & CMA packs, Open Badges 3.0, PKI signing, kiosk/NFC, anomaly detection, Teams/Slack, BI connector, ESG reports, AI narratives, retention & data tools, **Commerce module**, Moodle & other connectors, Jadarat L4 (LTI/cmi5), **in-country KSA/UAE deployment**, dedicated hosting | ISO 27001 certified; first government / bank in-country tenant live |
-| **R4 — Intelligence & Scale** | Months 13–18 | Predictive, AI-native, ecosystem | Phillips ROI, predictive insights, conversational analytics, AI instructor matching, skills inference & graph, transcription, regulatory drafting, proctoring, health CPD pack, client-company portal, connector SDK & partner program, iPaaS connectors, customer-hosted package | SOC 2 Type II; ≥ 3 partner-built connectors |
+| **R3 — Enterprise & Sovereign** | Months 9–12 | Enterprise depth & sovereignty | Legal entities, sandbox, SCIM, IP/access-hour controls, scenarios, AI optimizer, Ops Agent, MCP server, RFQ & scorecards, POs, invoice matching, chargebacks, no-show fees, ERP export, subsidy packs (HRDF, Egypt), UAE & CMA packs, Open Badges 3.0, PKI signing, kiosk/NFC, anomaly detection, Teams/Slack, BI connector, ESG reports, AI narratives, retention & data tools, training agreements (bonds), Moodle & other connectors, Jadarat L4 (LTI/cmi5), **in-country KSA/UAE deployment**, dedicated hosting | ISO 27001 certified; first government / bank in-country tenant live |
+| **R4 — Intelligence & Scale** | Months 13–18 | Predictive, AI-native, ecosystem | Phillips ROI, predictive insights, conversational analytics, AI instructor matching, skills inference & graph, transcription, regulatory drafting, proctoring, health CPD pack, connector SDK & partner program, iPaaS connectors, customer-hosted package | SOC 2 Type II; ≥ 3 partner-built connectors |
 
 Detailed per-requirement release tags are in §6–§9.
 
@@ -1334,11 +1402,12 @@ Detailed per-requirement release tags are in §6–§9.
 | Dependency | Needed for | Risk if late |
 |---|---|---|
 | Jadarat LMS API/webhooks | FR-LMS-02…10 | Blended programs delayed |
-| Payment gateway with Mada/STC Pay/Fawry | SUB, COM | Manual invoicing only |
+| Payment gateway with Mada/STC Pay/Fawry | SUB | Manual invoicing only |
 | WhatsApp BSP / Meta Cloud API | NTF-03, ENR-06, AI-02 | Fewer engagement channels |
 | In-country cloud partner (KSA/UAE) | FR-DEP-03 | Government segment blocked |
-| ZATCA/ETA e-invoicing integration | SUB-04, COM-06 | Non-compliant invoices in KSA/Egypt |
+| ZATCA/ETA e-invoicing integration | SUB-04 | Non-compliant invoices in KSA/Egypt |
 | Translators & Arabic UX review | NFR-L10N | Quality perception |
+| Other Jadarat HR Suite modules (Core HR, Payroll & Time, Performance & Skills, Recruitment & Onboarding) | FR-STE-03…09 | Suite-mode features remain in standalone behavior until each module ships |
 
 ---
 
@@ -1355,6 +1424,7 @@ Detailed per-requirement release tags are in §6–§9.
 | RK-7 | Attendance fraud undermining audit value | Medium | Medium | Rotating signed QR, geo-fence, device checks, anomaly detection, e-signature |
 | RK-8 | Data-protection non-compliance (cross-border transfers) | Low | High | DPA, SCCs, transfer risk assessments, regional/in-country options, privacy reviews |
 | RK-9 | Low adoption by managers | Medium | High | WhatsApp approvals, manager hub, digests, one-tap actions |
+| RK-11 | Platform built for TMS only and hard to reuse for other HR modules | Medium | High | Platform services separated from TMS module from R1 (Appendix H.5); architecture review before each new suite module |
 | RK-10 | Price pressure in SME segment | Medium | Medium | Self-serve onboarding, templates, low support cost design |
 
 ---
@@ -1389,14 +1459,16 @@ Detailed per-requirement release tags are in §6–§9.
 
 | # | Decision | Default used in this BRD | Owner | Needed by |
 |---|---|---|---|---|
-| D1 | Serve training providers (Commerce, public registration, e-invoicing)? | Yes, Commerce module in R3 as add-on | CEO / Product | Before R2 planning |
-| D2 | Government a Year-1 segment (drives in-country deployment)? | Yes, in-country KSA/UAE in R3 | CEO / Sales | Before R1 architecture sign-off |
+| D1 | Serve training providers (Commerce, public registration, e-invoicing)? | **Decided 30 Sep 2026: No.** Jadarat TMS serves employers; Commerce removed (§6.17 marked W) | CEO / Product | Closed |
+| D2 | Government a Year-1 segment (drives in-country deployment)? | **Decided 30 Sep 2026: Yes.** Government and banks are Year-1 targets; in-country KSA/UAE deployment in R3, architecture self-hostable from R1 | CEO / Sales | Closed |
 | D3 | Planning cycle timing | R2 (training requests only in R1) | Product | Now |
 | D4 | Next LMS connectors after Jadarat | Moodle (R3), then SAP SuccessFactors, Docebo, Cornerstone | Product / Partnerships | Before R3 |
 | D5 | Messaging vendors | Meta WhatsApp Cloud API or regional BSP; MENA SMS gateway + international fallback | Engineering | Before R2 |
-| D6 | Stack for sovereign deployments | Keep Next.js + PostgreSQL (Supabase-compatible, self-hostable); avoid hard dependency on Vercel-only features | CTO | Before R1 architecture sign-off |
-| D7 | Product name | "ENTLAQA TMS" (working) | Marketing | Before GA |
+| D6 | Stack for sovereign deployments | **Decided 30 Sep 2026:** Next.js + Supabase (PostgreSQL), self-hostable; no hard dependency on Vercel-only features; same stack for the whole Jadarat HR Suite | CTO | Closed |
+| D7 | Product name | **Decided 30 Sep 2026: Jadarat TMS** | Marketing | Closed |
 | D8 | Active-user pricing vs. per-employee pricing for Enterprise | Active user | CFO | Before GA |
+| D9 | Suite pricing (module add-on vs. bundle tiers) | Per-employee module pricing on a shared suite licence | CFO / Product | Before GA |
+| D10 | Order of HR Suite modules after TMS | Core HR next (it owns the employee record), then Payroll & Time, Performance & Skills, Recruitment & Onboarding | CEO / Product | Before R2 planning |
 
 ---
 
@@ -1552,7 +1624,7 @@ Figures below reflect research as of September 2026 and **must be validated by L
 | UAE | Working week | Federal government Mon–Thu full days + Friday half-day, weekend Sat–Sun; private sector varies | NFR-L10N-06 |
 | Egypt | Labour Law No. 14 of 2025 | In force 1 Sep 2025; employers with ≥ 30 employees contribute to the training fund (reported 0.25% of minimum insurance wage per employee, EGP 10–30 per employee per year); ministerial exemption possible for establishments running their own training | FR-REG-09, FR-FIN-10 |
 | Egypt | PDPL 151/2020 | Executive Regulations (Decree 816/2025) effective 2 Nov 2025; one-year grace period | §12.2 |
-| Egypt / KSA | E-invoicing | ETA e-invoice (Egypt); ZATCA FATOORA (KSA) | FR-SUB-04, FR-COM-06 |
+| Egypt / KSA | E-invoicing | ETA e-invoice (Egypt); ZATCA FATOORA (KSA) | FR-SUB-04 |
 
 ---
 
@@ -1560,7 +1632,7 @@ Figures below reflect research as of September 2026 and **must be validated by L
 
 Summary of the market research (details and sources in `docs/research/TMS_Market_Comparison_vs_BRD.md`). The table states what was **verified**; "not found" means no evidence was found, not proof of absence.
 
-| Capability | ENTLAQA TMS (target) | Training Orchestra | Administrate | Arlo | SAP SF Learning | Docebo | Cornerstone |
+| Capability | Jadarat TMS (target) | Training Orchestra | Administrate | Arlo | SAP SF Learning | Docebo | Cornerstone |
 |---|---|---|---|---|---|---|---|
 | Arabic-first UX (not just RTL) | ✅ | Not found | Not found | No localization | RTL supported | RTL supported | RTL claimed |
 | Hijri, prayer & Ramadan-aware scheduling | ✅ | Not found | Not found | Not found | Not found | Not found | Not found |
@@ -1660,6 +1732,14 @@ create policy tenant_isolation on public.sessions
 
 `platform` (tenancy, billing) · `identity` · `planning` · `catalog` · `scheduling` · `resources` · `people-instructors-providers` · `enrollment` · `logistics` · `delivery` (attendance) · `assessment` · `credentials-compliance` · `ojt-skills` · `finance` · `commerce` · `communications` · `analytics` · `regulatory` · `ai` · `integration` (connectors, API, webhooks, MCP). Each module owns its tables and exposes services and events; cross-module access goes through services or events.
 
+### H.5 Jadarat Platform & Suite Architecture
+
+- **Modular monolith first.** One Next.js application ("suite shell") with one PostgreSQL database per deployment. Each suite module (TMS now; Core HR, Payroll & Time, Performance & Skills, Recruitment & Onboarding later) is a separate code package with its own database schema (`platform`, `tms`, `core_hr`, …). Modules can be extracted into separate services later if scale requires it.
+- **Monorepo layout (indicative):** `apps/suite` (Next.js shell) · `packages/platform-*` (identity, people directory, rbac, workflow, notifications, audit, files, localization, integration, ai) · `packages/ui` (design system) · `modules/tms` · later `modules/core-hr`, `modules/payroll`, …
+- **Contracts between modules:** modules never read another module's tables directly; they use service interfaces or domain events. Events are written to a transactional outbox table and delivered through a PostgreSQL-based queue, so the same mechanism works on Vercel + Supabase and in self-hosted, in-country deployments.
+- **Licensing:** a tenant's licensed modules and mode (suite/standalone) are platform configuration; navigation, permissions and APIs are enabled per licensed module.
+- **Security boundary:** row-level security by tenant on every table in every schema; module permissions are namespaced (e.g., `tms.session.create`, `core_hr.employee.read`).
+
 ---
 
-*End of document — ENTLAQA TMS BRD v2.0 (Draft)*
+*End of document — Jadarat TMS BRD v2.1 (Draft)*

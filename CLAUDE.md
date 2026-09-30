@@ -35,6 +35,8 @@ Precedence: BRD wins on **scope**; the Development Plan wins on **process and qu
 2. If scope changed, update the BRD (increment version, add a revision-history row) **and** the feature list together.
 3. Commit with a clear message referencing requirement IDs; push to the designated branch.
 
+A project **Stop hook** (`.claude/settings.json` → `.claude/hooks/require-status-update.sh`) enforces step 1: if repository files changed (uncommitted, or committed on the branch but not yet on `origin/main`) and `docs/delivery/STATUS.md` is not among them, the session is asked to update `STATUS.md` before finishing. Do not disable or bypass it.
+
 ## Non-negotiables (from Development Plan §1)
 
 - **Security:** no known critical/high vulnerabilities at any release; deny-by-default authorization; validate all inputs; no secrets or personal data in code or logs.
@@ -68,5 +70,6 @@ Precedence: BRD wins on **scope**; the Development Plan wins on **process and qu
 ## Environment notes
 
 - The repository currently contains **documentation only** (no application code yet).
-- The Vercel project was **deleted intentionally**; reconnect it only after the app scaffold exists (M1 walking skeleton), otherwise every deployment fails.
+- Vercel project **`jadarat-tms`** (team "Mohamed Attia's projects") is linked to this repository. Root `vercel.json` sets region `fra1` and an `ignoreCommand` that **skips builds while no `package.json` exists**, so docs-only commits do not fail. When the M1 scaffold lands in `apps/suite`, set the project's Root Directory to `apps/suite` and move/adapt `vercel.json` there.
+- The Vercel connection available to Claude sessions can read the account but **cannot create projects** (403); project creation/settings changes may need to be done by the user in the Vercel dashboard.
 - Mermaid diagrams in docs must render on GitHub; validate with `@mermaid-js/mermaid-cli` when changing them.

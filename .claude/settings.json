@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/require-status-update.sh\"",
+            "timeout": 30,
+            "statusMessage": "Checking STATUS.md is updated..."
+          }
+        ]
+      }
+    ]
+  }
+}

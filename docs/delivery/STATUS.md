@@ -42,7 +42,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 - [ ] Track C: ASVS L2 mapping; secure coding standard
 - [ ] Track D: monorepo scaffold; CI/CD with all 14 gates
 - [ ] Track D: walking skeleton on staging **and** self-hosted stack
-- [ ] Track D: reconnect Vercel project (after scaffold exists)
+- [ ] Track D: point Vercel project `jadarat-tms` Root Directory to `apps/suite` and move `vercel.json` there (project created before M1 with build-skip rule)
 
 ---
 
@@ -78,7 +78,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 | Dependency | Team staffing (Tech Lead, designer, engineers, QA, DevOps, security) | PO | Open |
 | Dependency | 3–5 design-partner customers (≥ 2 Saudi, ≥ 1 government/bank) | PO | Open |
 | Dependency | Jadarat LMS APIs/webhooks for connector (needed by M6) | PO / Jadarat team | Open |
-| Note | Vercel project deleted on purpose; reconnect after M1 scaffold | DevOps | Waiting |
+| Note | Vercel project `jadarat-tms` to be created by PO in the dashboard (Claude's connection lacks create permission); builds skipped via `vercel.json` until `package.json` exists; set Root Directory to `apps/suite` at M1 scaffold | PO / DevOps | In progress |
 | Risk | Regulatory figures need legal validation before release (BRD Appendix E) | PO / Legal | Open |
 
 ---
@@ -98,7 +98,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 ## 5. Next Actions
 
 **Product Owner (user)**
-1. Merge the open pull request so `main` contains the Development Plan, `CLAUDE.md` and this file.
+1. Merge the open pull request (Stop hook + `vercel.json`), then create the Vercel project `jadarat-tms` in the dashboard (import `mohima90/entlaqa-tms`).
 2. Share the Development Plan with the Tech Lead; collect questions.
 3. Staff the team and set the kickoff date (M0 week 1).
 4. Recruit design partners; close D3 before M1 estimation.
@@ -117,3 +117,5 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 |---|---|
 | 27 Sep 2026 | Market research and competitor/regulatory fact-check; old codebase removed; feature list (280) and BRD v2.0 written |
 | 30 Sep 2026 | Decisions D1, D2, D6, D7 and HR Suite positioning recorded (BRD v2.1); Development Plan v1.0; `CLAUDE.md` and this status tracker added for session handover |
+| 30 Sep 2026 | Added project Stop hook (`.claude/settings.json`, `.claude/hooks/require-status-update.sh`) that requires this file to be updated whenever other files change in a session |
+| 30 Sep 2026 | Vercel: API project creation refused (403) for Claude's connection; added `vercel.json` (region `fra1`, skip builds until `package.json` exists); PO to create project `jadarat-tms` in the dashboard |

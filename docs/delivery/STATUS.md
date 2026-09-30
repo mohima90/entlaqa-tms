@@ -78,7 +78,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 | Dependency | Team staffing (Tech Lead, designer, engineers, QA, DevOps, security) | PO | Open |
 | Dependency | 3–5 design-partner customers (≥ 2 Saudi, ≥ 1 government/bank) | PO | Open |
 | Dependency | Jadarat LMS APIs/webhooks for connector (needed by M6) | PO / Jadarat team | Open |
-| Note | Vercel project `jadarat-tms` to be created by PO in the dashboard (Claude's connection lacks create permission); builds skipped via `vercel.json` until `package.json` exists; set Root Directory to `apps/suite` at M1 scaffold | PO / DevOps | In progress |
+| Note | Vercel project `jadarat-tms` created 30 Sep 2026 (team "Mohamed Attia's projects", repo `mohima90/entlaqa-tms`, branch `main`, preset Other, root `./`). First deployment **canceled by the build-skip rule** as intended. At M1 scaffold: set Root Directory `apps/suite`, preset Next.js, move `vercel.json` | DevOps | Done (revisit at M1) |
 | Risk | Regulatory figures need legal validation before release (BRD Appendix E) | PO / Legal | Open |
 
 ---
@@ -98,7 +98,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 ## 5. Next Actions
 
 **Product Owner (user)**
-1. Merge the open pull request (Stop hook + `vercel.json`), then create the Vercel project `jadarat-tms` in the dashboard (import `mohima90/entlaqa-tms`).
+1. Merge the open pull request (Vercel status note).
 2. Share the Development Plan with the Tech Lead; collect questions.
 3. Staff the team and set the kickoff date (M0 week 1).
 4. Recruit design partners; close D3 before M1 estimation.
@@ -119,3 +119,4 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 | 30 Sep 2026 | Decisions D1, D2, D6, D7 and HR Suite positioning recorded (BRD v2.1); Development Plan v1.0; `CLAUDE.md` and this status tracker added for session handover |
 | 30 Sep 2026 | Added project Stop hook (`.claude/settings.json`, `.claude/hooks/require-status-update.sh`) that requires this file to be updated whenever other files change in a session |
 | 30 Sep 2026 | Vercel: API project creation refused (403) for Claude's connection; added `vercel.json` (region `fra1`, skip builds until `package.json` exists); PO to create project `jadarat-tms` in the dashboard |
+| 30 Sep 2026 | PO created Vercel project `jadarat-tms` linked to `mohima90/entlaqa-tms`; first deployment canceled by the build-skip rule (0 check errors) |

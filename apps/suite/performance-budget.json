@@ -1,0 +1,5 @@
+{
+  "$comment": "Development Plan §5.3 gate 9 (bundle-size budget). Gzipped totals of the client build. Lighthouse CI budgets are added with the first preview deployment (T-M1-D03).",
+  "clientJsGzipKiB": 250,
+  "cssGzipKiB": 40
+}

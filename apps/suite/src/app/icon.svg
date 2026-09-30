@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Jadarat">
+  <!-- Placeholder mark until ENTLAQA brand assets are supplied (brand colors are placeholders in tokens). -->
+  <rect width="64" height="64" rx="14" fill="#0F665F"/>
+  <path d="M20 42c0 5 4 8 10 8s12-4 12-12V14h-7v24c0 4-2 6-5 6s-4-1-4-3z" fill="#FFFFFF"/>
+</svg>

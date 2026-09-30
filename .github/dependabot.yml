@@ -1,0 +1,42 @@
+# Nightly/weekly dependency updates (Development Plan §5.3, §8.3 supply chain). Every update is a PR
+# that must pass all CI gates; the PO merges.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '05:00'
+      timezone: Asia/Riyadh
+    open-pull-requests-limit: 10
+    groups:
+      nextjs-react:
+        patterns:
+          [
+            'next',
+            'eslint-config-next',
+            '@next/*',
+            'react',
+            'react-dom',
+            '@types/react',
+            '@types/react-dom',
+          ]
+      supabase:
+        patterns: ['@supabase/*']
+      lint-format:
+        patterns: ['eslint', '@eslint/*', 'eslint-*', 'typescript-eslint', 'prettier', 'globals']
+      test-tooling:
+        patterns: ['vitest', '@vitest/*', '@playwright/test', '@axe-core/*']
+    labels: ['dependencies']
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '05:00'
+      timezone: Asia/Riyadh
+    groups:
+      actions:
+        patterns: ['*']
+    labels: ['dependencies', 'ci']

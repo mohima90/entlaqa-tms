@@ -1,0 +1,103 @@
+# ADR 0008 — Notification service abstraction
+
+**Status:** Proposed · **Date:** 30 Sep 2026 · **Backlog:** T-M1-B08 · **Related:** BRD §6.20 (FR-NTF-01…09, BR-NTF-1/2), Appendix D, FR-LRN-03/07, FR-AUD-05, FR-ENR-06, FR-SUB-01, NFR-L10N-11, NFR-PERF-06, §15; Development Plan §6.6 security focus; decision D5; ADR 0003, ADR 0004, ADR 0005, ADR 0007, ADR 0009, ADR 0010
+
+## Context
+
+- Notifications are a shared platform service (BRD §3.4.1) used by every suite module; the suite shell has one notification inbox (FR-STE-08).
+- R1 channels: **in-app** (real-time, FR-NTF-01) and **e-mail** (branded bilingual templates, custom sending domain, FR-NTF-02), with an event catalog, per-event rules and **quiet hours respecting prayer times and weekends** (FR-NTF-07), scheduled reminders and digests (FR-NTF-08), channel/language preferences (FR-LRN-07) and .ics invitations (FR-LRN-03). R2: WhatsApp (FR-NTF-03), SMS (FR-NTF-04), web push (FR-NTF-05), broadcasts (FR-NTF-09). R3: Teams/Slack (FR-NTF-06).
+- Every outbound message must be logged with status for 12 months (BR-NTF-2); fallback order must be configurable (BR-NTF-1).
+- Vendors differ by deployment: international providers for regional SaaS; in-country gateways/relays for sovereign tenants (BRD §15, D5 open until R2).
+
+## Options considered
+
+1. **Call providers directly from features** — fast, but every module re-implements templates, preferences, consent, quiet hours and logging.
+2. **Third-party notification platform** (e.g., hosted orchestration SaaS) — rich features, but data leaves the jurisdiction and it is not self-hostable in-country.
+3. **Own platform service** (`platform-notifications`): event-driven pipeline on ADR 0004/0005 with a channel/provider adapter interface — chosen.
+
+## Decision
+
+### 1. Pipeline
+```
+domain event (outbox) ─► notifications subscriber ─► rule resolution ─► recipients ─► per-recipient planning
+   ─► platform.notifications (logical message) ─► platform.message_deliveries (one per channel attempt)
+   ─► send job (provider adapter) ─► provider status webhooks ─► delivery status updates
+```
+1. **Event catalog** (code registry per module, mirrors BRD Appendix D): key (`tms.session.reminder`, `tms.enrollment.approved`, `platform.user.invited`, …), triggering event types, recipient resolvers (learner, manager, instructor, coordinator, role in scope), variables schema (zod, from `packages/contracts`), default channels and timing, **category** (`security` · `transactional` · `reminder` · `digest` · `broadcast`) and `time_sensitive` flag.
+2. **Tenant rules** (`platform.notification_rules`): enable/disable per event, channels, recipient roles, timing offsets (e.g., reminders T-7d/T-3d/T-1d/T-1h), digest inclusion. Security events (invitation, password reset, MFA, sign-in alerts) cannot be disabled or deferred.
+3. **Per recipient planning:** locale (recipient preference → tenant default, NFR-L10N-11), channel preferences (FR-LRN-07, within what the tenant allows), **consent** (WhatsApp opt-in, FR-AUD-05), channel availability (verified e-mail/mobile), quiet hours (§4), rate limits (§6) → ordered channel plan with fallback (§5).
+4. Handlers never call providers inside the event transaction; they write `notifications` + `message_deliveries` rows, and send jobs (ADR 0005) call the adapter with the delivery id as idempotency key.
+
+### 2. Channels and adapters
+```ts
+interface ChannelAdapter {
+  channel: 'in_app' | 'email' | 'sms' | 'whatsapp' | 'push' | 'teams';
+  provider: string;                               // 'smtp', 'ses', 'resend', 'unifonic', 'meta_cloud', …
+  send(msg: RenderedMessage, ctx: SendContext): Promise<{ providerMessageId: string }>;
+  parseStatusWebhook?(req: Request): Promise<DeliveryStatusUpdate[]>; // signature verified inside
+  capabilities: { maxLength?: number; interactive?: boolean; attachments?: boolean };
+}
+```
+| Channel | Release | Regional SaaS (default candidates) | In-country / sovereign alternative |
+|---|---|---|---|
+| In-app | R1 | `platform.inbox_items` + Supabase Realtime (private channel per user, RLS-authorized) | Same (self-hosted Realtime) |
+| E-mail | R1 | Transactional API provider with an EU region (e.g., Amazon SES `eu-central-1` or Resend — verify region/data terms) | **SMTP adapter** to an in-country relay (customer Exchange/Postfix or local provider); SES has a UAE region (`me-central-1`) — verify for KSA |
+| SMS | R2 | MENA gateway (e.g., Unifonic, Taqnyat, Msegat) + international fallback (e.g., Twilio/Infobip) | In-country gateway with registered sender IDs (KSA sender-ID registration rules apply) |
+| WhatsApp | R2 | Meta WhatsApp Cloud API or an approved BSP (D5) | No in-country option: messages transit Meta; disabled by default for sovereign tenants unless the customer accepts it |
+| Web push | R2 | VAPID Web Push (self-hosted keys; payloads encrypted end-to-end) | Push services are operated by browser vendors outside the country → content-free "you have a new notification" payloads for sovereign tenants |
+| Teams/Slack | R3 | Bot/app per tenant | Customer's M365 tenant |
+
+Provider credentials are per platform (default) or per tenant (own sender), stored encrypted (ADR 0010 secrets). Adapter choice per deployment is configuration; code is identical (BRD §15).
+
+### 3. Templates
+- **System templates** (global, versioned in the repo, seeded to `platform.ref_notification_templates`) per event × channel × locale (`ar`, `en`); **tenant overrides** in `platform.notification_templates` (FR-NTF-02); every template exists in both languages (NFR-L10N-11).
+- Tenant-editable text uses **LiquidJS** in strict, sandboxed mode (no JS execution; unknown variables and filters are errors; HTML output escaped by default) with whitelisted variables from the event's schema and i18n filters (`date` with Gregorian/Hijri/dual per ADR 0007, `number` with tenant numerals, `money`).
+- E-mail layout is a branded React Email component (logo/colors from ADM-07, `dir`/`lang` set, plain-text alternative); preview with sample data (FR-NTF-02). SMS rendering counts segments (UCS-2 for Arabic: 70 chars, 67 per concatenated part); WhatsApp uses Meta-approved templates mapped to our variables, with approval status tracked (R2).
+- Content rule (Plan §6.6): no sensitive data in e-mail/SMS/push previews — messages carry a summary and a deep link that requires sign-in; approval links are **signed, single-use, expiring action tokens** (`platform.action_tokens`, hashed) bound to recipient and action.
+
+### 4. Quiet hours
+- Evaluated in the recipient's timezone and branch working calendar (ADR 0007): tenant-defined night window (default 22:00–07:00), non-working days, **prayer windows** (computed locally from the recipient's branch/venue location, ADR 0007 §8) and Jumu'ah block.
+- Non-urgent messages falling in a quiet window are **deferred** to the window's end (`scheduled_for`). `time_sensitive` events (e.g., session cancelled today, T-1h reminder) bypass weekend/prayer deferral but not the night window unless the tenant allows; `security` events are never deferred. In-app inbox items are always created immediately (only the push/e-mail/SMS side is deferred).
+
+### 5. Fallback order
+Configurable per tenant and event (BR-NTF-1), default for R2+: WhatsApp → SMS → e-mail; R1: e-mail (+ in-app always). Fallback triggers: no consent/opt-in, missing address, provider hard failure, or no `delivered` status within a channel timeout. Each attempt is its own `message_deliveries` row.
+
+### 6. Rate limits and volume control
+- Provider limits: token bucket per provider account (configured per provider).
+- Tenant limits: edition quotas (e.g., WhatsApp/SMS messages per month, SUB-01) checked before sending; over-quota behavior per edition (block/notify).
+- Recipient protection: collapse keys and a per-recipient cap for non-critical categories (excess goes to the next digest).
+
+### 7. Delivery log and status
+- `platform.message_deliveries`: tenant, notification, channel, provider, provider_message_id, masked destination + keyed hash (for support lookups without storing plain addresses in the log), status `queued → sent → delivered → read | failed | suppressed | deferred`, timestamps per status, attempts, sanitized error code. Retained 12 months (BR-NTF-2), then purged by housekeeping. Rendered message bodies are not kept beyond 30 days (only template id/version + variables hash).
+- Provider status webhooks (`/api/hooks/notifications/<provider>`) follow the inbound pattern of ADR 0011 §7: the web tier (which holds no provider secrets, ADR 0005 §1) only rate-limits and stores the raw request; the worker verifies the provider signature and updates statuses idempotently.
+- Metrics and alerts on failure rate per channel/provider (ADR 0009).
+
+### 8. In-app and real-time
+Inbox items are written by the send job; the job then emits a Realtime broadcast on the private topic `tenant:<tenant_id>:person:<person_id>` carrying only an id/counter. The browser subscribes with the short-lived, **in-memory** Realtime token handed out by the server (ADR 0003 §4.4 — the browser never uses Supabase for authentication) and refetches the inbox through server code (the browser does not query tables). Topic authorization is enforced by RLS on Realtime messages (verify self-hosted parity, ADR 0010 §3a); if Realtime is unavailable the bell falls back to periodic server polling. Target ≤ 2 s from event commit (NFR-PERF-06) in daemon mode (ADR 0005).
+
+### 9. WhatsApp consent (R2, schema in R1)
+Opt-in captured per person and purpose in `platform.consent_records` (FR-AUD-05) with timestamp, channel and evidence; opt-out keywords and Meta opt-out webhooks withdraw consent immediately; no template is sent without active consent; interactive replies (approve/reject, FR-ENR-06) are authenticated through action tokens bound to the recipient and action, processed by the worker (system claims, acting on behalf of the bound person — recorded as such in the audit log) and audited. In R1, e-mail approval links open the app and require sign-in.
+
+### 10. Calendar invitations
+.ics attachments (RFC 5545 `METHOD:REQUEST`/`CANCEL`) with stable `UID` per enrollment+session and incrementing `SEQUENCE` on changes (FR-LRN-03, FR-SCH-14 R2 adds two-way sync); a personal tokenized ICS feed URL per person (revocable).
+
+## Consequences
+
+**Positive:** one pipeline for all modules and channels; bilingual templates and quiet hours applied uniformly; vendor-neutral with in-country options; full delivery evidence.
+
+**Negative / costs:** significant platform work in M2 (catalog, rules, templates, preferences, log); provider onboarding per region (sender domains, sender IDs, WhatsApp templates) is operational work; deferred delivery requires clear UX ("scheduled for 07:00").
+
+## Security impact
+No sensitive data in message previews; signed single-use action tokens; provider webhooks signature-verified; addresses masked in logs; Liquid sandbox prevents template injection; tenant-scoped RLS on all notification tables; consent enforced before WhatsApp.
+
+## Sovereign deployment impact
+In-app and SMTP e-mail work fully in-country; SMS via local gateways; WhatsApp and web push inherently involve foreign operators and are opt-in per tenant with explicit disclosure.
+
+## Suite impact
+Other modules register their events in the catalog (namespaced keys) and reuse templates, preferences, the inbox and the delivery log.
+
+## Verification
+1. Unit tests: rule resolution, locale fallback, quiet-hour deferral incl. prayer windows and Friday, fallback ordering, SMS segment counting.
+2. Integration tests with provider fakes (Mailpit for SMTP in CI and the self-hosted stack): idempotent sends under retry; status webhook signature failures rejected.
+3. E2E (J5): enrollment approval → e-mail with .ics + in-app item in ≤ 2 s; Arabic and English templates.
+4. Template lint: every system template exists in `ar` and `en`, compiles in strict Liquid, uses only declared variables.

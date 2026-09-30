@@ -1,0 +1,11 @@
+# gitleaks configuration (Development Plan §5.3 gate 12). Default rules + narrowly scoped allowlists.
+# Every allowlist entry must name the exact false positive and be reviewed (CODEOWNERS).
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "BRD API example: Idempotency-Key header sample value (documentation, not a secret)"
+condition = "AND"
+paths = ['''^docs/brd/Jadarat_TMS_BRD_v2\.md$''']
+regexTarget = "line"
+regexes = ['''Idempotency-Key: tms-enr-[0-9a-f]{6}''']

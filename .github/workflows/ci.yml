@@ -1,0 +1,270 @@
+# Jadarat CI — Development Plan §5.3 quality gates (block merge when failing).
+# Gate 10 (SAST) runs in codeql.yml. Make the `ci-gates` job and CodeQL required status checks.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  TURBO_TELEMETRY_DISABLED: '1'
+  NEXT_TELEMETRY_DISABLED: '1'
+  FORCE_COLOR: '1'
+
+jobs:
+  install:
+    name: 'Gate 1 · Install (frozen lockfile) + licence check'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: Licence check (no disallowed licences)
+        run: pnpm check:licenses
+
+  typecheck:
+    name: 'Gate 2 · Type-check'
+    needs: install
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - run: pnpm typecheck
+
+  lint:
+    name: 'Gate 2 · Lint + format (incl. RTL and defineAction checks)'
+    needs: install
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - run: pnpm lint
+      - run: pnpm format:check
+
+  unit:
+    name: 'Gate 3 · Unit tests + coverage threshold'
+    needs: install
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      # Thresholds (>= 80% lines for packages/*) are enforced by each package's vitest.config.ts.
+      - run: pnpm test:coverage
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: coverage
+          path: '**/coverage/lcov.info'
+          retention-days: 14
+
+  boundaries:
+    name: 'Gate 4 · Migration conventions + module boundaries'
+    needs: install
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: Migration naming + rollback presence (ADR 0001, migration-conventions.md)
+        run: pnpm check:migrations
+      - name: dependency-cruiser (ADR 0001 boundaries, admin/jobs import rules)
+        run: pnpm check:deps
+
+  db:
+    name: 'Gates 4–6 · Migrations up/down/up, RLS & tenant isolation, DB integration'
+    needs: install
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        # Pinned by digest (multi-arch OCI index of postgres:16, published 2026-09-24): a moved tag can
+        # never change what CI tests against. Bump deliberately: docker buildx imagetools inspect postgres:16
+        image: postgres:16@sha256:1a6ab3f5345eb6dbe04a1349529caabdb0ab09293a09590fad07b2246bfa4b54
+        env:
+          # Throwaway service container for this run only.
+          POSTGRES_PASSWORD: ci-${{ github.run_id }}-${{ github.run_attempt }}
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: '5432'
+      PGUSER: postgres
+      PGPASSWORD: ci-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: PostgreSQL client
+        run: |
+          if ! command -v psql >/dev/null; then sudo apt-get update && sudo apt-get install -y postgresql-client; fi
+          psql --version
+      - name: Test-only Supabase shim → migrations up/down/up → SQL tests (catalog, isolation, claims, hook) → TS integration
+        run: bash scripts/db-test.sh
+        env:
+          DB_TEST_INTEGRATION: '1'
+
+  build:
+    name: 'Gate 9 · Build (standalone) + bundle-size budget'
+    needs: install
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      # No Supabase variables: the app must build and run in its "not configured" state.
+      - run: pnpm build
+      - run: pnpm --filter @jadarat/suite check:budget
+
+  e2e:
+    name: 'Gates 7–8 · E2E smoke (Arabic + English) + accessibility (axe)'
+    needs: install
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: Install Playwright Chromium
+        run: pnpm --filter @jadarat/suite exec playwright install --with-deps chromium
+      - run: pnpm build
+      # Runs against the production standalone server (preview-environment runs follow in T-M1-D03).
+      - run: pnpm e2e
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            apps/suite/playwright-report
+            apps/suite/test-results
+          retention-days: 14
+
+  audit:
+    name: 'Gate 11 · Dependency vulnerability scan'
+    needs: install
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: pnpm audit (fail on high/critical)
+        run: pnpm audit --audit-level high
+
+  secrets:
+    name: 'Gate 12 · Secret scanning (gitleaks)'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      GITLEAKS_VERSION: 8.30.1
+      GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install gitleaks (pinned version, verified checksum)
+        run: |
+          curl -sSfL -o gitleaks.tgz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  gitleaks.tgz" | sha256sum -c -
+          tar -xzf gitleaks.tgz gitleaks
+      - name: Scan the working tree
+        run: ./gitleaks dir . --config .gitleaks.toml --redact --no-banner --exit-code 1
+      - name: Scan new commits (PR range or pushed range)
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.sha }}
+        run: |
+          if [[ "$EVENT" == "pull_request" ]]; then
+            range="$PR_BASE..$PR_HEAD"
+          elif [[ -n "$PUSH_BEFORE" && "$PUSH_BEFORE" != 0000000000000000000000000000000000000000 ]]; then
+            range="$PUSH_BEFORE..$PUSH_AFTER"
+          else
+            range="-1"
+          fi
+          echo "Scanning commits: $range"
+          ./gitleaks git . --config .gitleaks.toml --redact --no-banner --exit-code 1 --log-opts="$range"
+
+  iac:
+    name: 'Gate 13 · Container / IaC scanning (Trivy)'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Scans IaC/config in the repo (Dockerfiles, compose, k8s, workflows as they appear).
+      # Image scanning is added with the sovereign images in T-M1-D04 (infra/docker).
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: config
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+
+  openapi:
+    name: 'Gate 14 · OpenAPI breaking-change check (placeholder)'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: No public API yet
+        run: |
+          # The external REST API (/api/v1) arrives in R2 (ADR 0011). This placeholder FAILS as soon as an
+          # OpenAPI document is added, so the real diff check (e.g. oasdiff against main) must land with it.
+          specs="$(git ls-files | grep -Ei '(^|/)openapi[^/]*\.(ya?ml|json)$' || true)"
+          if [[ -n "$specs" ]]; then
+            echo "OpenAPI documents found but no breaking-change check is configured:"; echo "$specs"; exit 1
+          fi
+          echo "No OpenAPI documents in the repository — nothing to compare (placeholder gate passes)."
+
+  ci-gates:
+    name: CI gates
+    if: always()
+    needs:
+      [install, typecheck, lint, unit, boundaries, db, build, e2e, audit, secrets, iac, openapi]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: All gates must pass
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Gate results: $RESULTS"
+          for r in $RESULTS; do [[ "$r" == "success" ]] || exit 1; done

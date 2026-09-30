@@ -56,7 +56,8 @@ The delivery team is the **user as Product Owner + Claude Code sessions and sub-
 
 - Next.js (App Router), React, TypeScript **strict**; Tailwind CSS (logical properties) + shadcn/ui; next-intl (Arabic default).
 - Supabase (PostgreSQL, Auth, Storage, Realtime), used in a **self-hostable** way.
-  - Use `@supabase/ssr`; verify users server-side with `supabase.auth.getUser()` (not `getSession()`).
+  - Use `@supabase/ssr` on the server only (HttpOnly cookies; all auth flows are server actions). Verify users server-side: `getClaims()` (asymmetric JWT signing keys) for normal requests and `getUser()` before sensitive operations — never `getSession()` (ADR 0003 §2).
+  - Server code reaches tenant data through a direct PostgreSQL connection as `app_server` with verified claims set per transaction (`withUserTx`); jobs use `app_worker` (`withSystemTx`). Tenant schemas are not exposed through the Supabase Data API (ADR 0002).
   - RLS helper functions go in a `private` schema (never the `auth` schema); tenant claim added via a Custom Access Token Hook.
 - Build Next.js with `output: 'standalone'` so it runs on Vercel (regional SaaS, region `fra1`, co-located with Supabase `eu-central-1`) and in containers (sovereign).
 - **Modular monolith** in a monorepo: `apps/suite` · `packages/platform-*` · `packages/ui` · `modules/tms` (later `modules/core-hr`, …). One database per deployment, one schema per module. Cross-module communication via service interfaces or domain events (transactional outbox + PostgreSQL queue).

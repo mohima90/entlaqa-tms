@@ -454,7 +454,7 @@
 |---|---|---|---|
 | D1 | Include training providers / institutes (Commerce module, public registration, e-invoicing)? | Yes in R3 · Later · No | **Decided: No** (30 Sep 2026) |
 | D2 | Is the Government segment a Year-1 target? | Yes → in-country hosting in R3 · No → R4 | **Decided: Yes** (30 Sep 2026) |
-| D3 | Pull the planning cycle (PLN) into R1? | R1 · R2 | **R2**, with only PLN-01 (requests) in R1 |
+| D3 | Pull the planning cycle (PLN) into R1? | R1 · R2 | **Decided: R2** (30 Sep 2026), with only PLN-01 (requests) in R1 |
 | D4 | First LMS connectors after Jadarat | Moodle · Docebo · SAP SF · Cornerstone | **Moodle** (MENA gov/edu footprint), then SAP SF |
 | D5 | Messaging vendor for SMS / WhatsApp | Unifonic (MENA) · Twilio · Meta Cloud API direct | Unifonic for SMS + Meta Cloud API for WhatsApp |
 | D6 | Keep the Next.js / Supabase / Vercel stack for in-country deployments? | Keep + self-host variant · Change | **Decided: Next.js + Supabase, self-hostable**, for the whole HR Suite (30 Sep 2026) |

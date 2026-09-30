@@ -1461,7 +1461,7 @@ Detailed per-requirement release tags are in §6–§9.
 |---|---|---|---|---|
 | D1 | Serve training providers (Commerce, public registration, e-invoicing)? | **Decided 30 Sep 2026: No.** Jadarat TMS serves employers; Commerce removed (§6.17 marked W) | CEO / Product | Closed |
 | D2 | Government a Year-1 segment (drives in-country deployment)? | **Decided 30 Sep 2026: Yes.** Government and banks are Year-1 targets; in-country KSA/UAE deployment in R3, architecture self-hostable from R1 | CEO / Sales | Closed |
-| D3 | Planning cycle timing | R2 (training requests only in R1) | Product | Now |
+| D3 | Planning cycle timing | **Decided 30 Sep 2026: R2** (training requests PLN-01 only in R1) | Product | Closed |
 | D4 | Next LMS connectors after Jadarat | Moodle (R3), then SAP SuccessFactors, Docebo, Cornerstone | Product / Partnerships | Before R3 |
 | D5 | Messaging vendors | Meta WhatsApp Cloud API or regional BSP; MENA SMS gateway + international fallback | Engineering | Before R2 |
 | D6 | Stack for sovereign deployments | **Decided 30 Sep 2026:** Next.js + Supabase (PostgreSQL), self-hostable; no hard dependency on Vercel-only features; same stack for the whole Jadarat HR Suite | CTO | Closed |
@@ -1684,7 +1684,7 @@ Summary of the market research (details and sources in `docs/research/TMS_Market
 | UI | Tailwind CSS (logical properties) + shadcn/ui; RTL-first | Design tokens per tenant theme |
 | i18n | next-intl (Arabic default) | ICU messages; locale-prefixed routes |
 | Database | PostgreSQL via Supabase | Row-level security for tenant isolation; place helper functions (e.g., `current_tenant_id()`) in a `private` schema, not the `auth` schema; add `tenant_id` to JWT via a Custom Access Token Hook |
-| Auth | Supabase Auth (email/password, MFA, SAML SSO, OIDC) | Use `@supabase/ssr`; validate users server-side with `auth.getUser()` (not `getSession()`) in middleware and server code |
+| Auth | Supabase Auth (email/password, MFA, SAML SSO, OIDC) | Use `@supabase/ssr`; validate users server-side with `getClaims()` / `getUser()` (not `getSession()`); see ADR 0003 |
 | Storage | Supabase Storage (S3-compatible) | Private buckets and signed URLs; virus scanning on upload |
 | Realtime | Supabase Realtime | Rosters, check-in, notifications |
 | Background jobs & queues | PostgreSQL-based queue (e.g., pgmq/Supabase Queues) + workers; cron via pg_cron / scheduler | Sync engine, notifications, reports, AI jobs; idempotent handlers |
@@ -1709,6 +1709,8 @@ Summary of the market research (details and sources in `docs/research/TMS_Market
 4. Set security headers (CSP, HSTS, frame-ancestors).
 
 ### H.3 Tenant Isolation Pattern
+
+> **Superseded by ADR 0002** (`docs/adr/0002-tenancy-and-row-level-security.md`): restrictive tenant policy, FORCE RLS, composite foreign keys and in-database claim validation. The simplified sample below is kept for history only.
 
 ```sql
 create schema if not exists private;

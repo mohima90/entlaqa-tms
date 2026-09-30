@@ -1,0 +1,43 @@
+{
+  "name": "@jadarat/suite",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Jadarat Suite shell \u2014 the only deployable web app (Next.js App Router, standalone output).",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build && node scripts/prepare-standalone.mjs",
+    "start": "node .next/standalone/apps/suite/server.js",
+    "typecheck": "next typegen && tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "e2e": "playwright test",
+    "check:budget": "node scripts/check-bundle-budget.mjs"
+  },
+  "dependencies": {
+    "@jadarat/platform-core": "workspace:*",
+    "@jadarat/platform-db": "workspace:*",
+    "@jadarat/platform-i18n": "workspace:*",
+    "@jadarat/tms": "workspace:*",
+    "@jadarat/ui": "workspace:*",
+    "next": "16.3.8",
+    "next-intl": "4.14.8",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "server-only": "0.0.1"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
+    "@jadarat/config": "workspace:*",
+    "@playwright/test": "1.63.0",
+    "@tailwindcss/postcss": "4.3.3",
+    "@types/node": "24.19.0",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitest/coverage-v8": "5.0.3",
+    "postcss": "8.5.28",
+    "tailwindcss": "4.3.3",
+    "typescript": "6.0.3",
+    "vitest": "5.0.3"
+  }
+}

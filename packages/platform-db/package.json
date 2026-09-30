@@ -1,0 +1,36 @@
+{
+  "name": "@jadarat/platform-db",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Database access: withUserTx (app_server) and withSystemTx (app_worker, jobs only) per ADR 0002 \u00a75/\u00a77, Drizzle schema types, server-side Supabase client; admin/ entry for jobs/admin only.",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts",
+    "./supabase-server": "./src/supabase/server.ts",
+    "./jobs": "./src/jobs/index.ts",
+    "./admin": "./src/admin/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:integration": "vitest run --config vitest.integration.config.ts"
+  },
+  "dependencies": {
+    "@jadarat/platform-core": "workspace:*",
+    "@supabase/ssr": "0.12.7",
+    "@supabase/supabase-js": "2.117.2",
+    "drizzle-orm": "0.45.3",
+    "postgres": "3.4.9",
+    "server-only": "0.0.1",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@jadarat/config": "workspace:*",
+    "@types/node": "24.19.0",
+    "@vitest/coverage-v8": "5.0.3",
+    "typescript": "6.0.3",
+    "vitest": "5.0.3"
+  }
+}

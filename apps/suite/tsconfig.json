@@ -1,0 +1,15 @@
+{
+  "extends": "@jadarat/config/tsconfig/nextjs.json",
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  "include": [
+    "next-env.d.ts",
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "e2e/**/*.ts",
+    ".next/types/**/*.ts",
+    "*.ts"
+  ],
+  "exclude": ["node_modules", ".next/standalone"]
+}

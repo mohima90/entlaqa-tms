@@ -1,0 +1,7 @@
+@import 'tailwindcss';
+@import '@jadarat/config/tailwind/preset.css';
+@import '@jadarat/ui/styles.css';
+
+/* Tailwind scans workspace packages that render UI. */
+@source "../../../../packages/ui/src";
+@source "../../../../modules/tms/src";

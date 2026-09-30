@@ -1,0 +1,33 @@
+{
+  "name": "@jadarat/platform-identity",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Identity: server-side verification of Supabase sessions into VerifiedClaims (ADR 0003 \u00a72). Skeleton.",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts",
+    "./next": "./src/next.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@jadarat/platform-core": "workspace:*",
+    "@jadarat/platform-db": "workspace:*",
+    "server-only": "0.0.1"
+  },
+  "peerDependencies": {
+    "next": "^16.0.0"
+  },
+  "devDependencies": {
+    "@jadarat/config": "workspace:*",
+    "@types/node": "24.19.0",
+    "@vitest/coverage-v8": "5.0.3",
+    "next": "16.3.8",
+    "typescript": "6.0.3",
+    "vitest": "5.0.3"
+  }
+}

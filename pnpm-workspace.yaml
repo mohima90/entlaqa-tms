@@ -1,0 +1,17 @@
+packages:
+  - apps/*
+  - packages/*
+  - modules/*
+
+# Supply chain: only these packages may run install scripts (pnpm 10 blocks all others by default).
+onlyBuiltDependencies:
+  - esbuild
+  - sharp
+  - unrs-resolver
+  - '@parcel/watcher'
+  - '@swc/core'
+
+# eslint-plugin-jsx-a11y has not widened its peer range to ESLint 10 yet; verified working (pnpm lint).
+peerDependencyRules:
+  allowedVersions:
+    eslint-plugin-jsx-a11y>eslint: '10'

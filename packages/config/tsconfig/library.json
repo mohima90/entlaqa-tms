@@ -1,0 +1,5 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "display": "Jadarat library package (server/shared TypeScript)",
+  "extends": "./base.json"
+}

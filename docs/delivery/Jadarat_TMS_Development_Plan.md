@@ -326,7 +326,7 @@ gantt
 - Required ADRs:
   1. Monorepo layout and module boundaries (platform packages vs. `modules/tms`) — BRD Appendix H.5
   2. Tenancy model, tenant resolution, RLS pattern and JWT tenant claim (Custom Access Token Hook); helper functions in `private` schema
-  3. AuthN/AuthZ: Supabase Auth with `@supabase/ssr`, server-side `getUser()`, permission model with data scopes, namespaced permissions
+  3. AuthN/AuthZ: Supabase Auth with `@supabase/ssr`, server-side `getClaims()`/`getUser()` verification (ADR 0003), permission model with data scopes, namespaced permissions
   4. Domain events: transactional outbox + PostgreSQL queue; idempotency rules
   5. Background jobs and scheduling (self-hostable)
   6. File storage, signed URLs, virus scanning
@@ -517,7 +517,7 @@ Secure by design, deny by default, least privilege, defense in depth, no secrets
 |---|---|
 | **Cross-tenant data access** | RLS on every table; tenant claim from server-verified JWT; no service-role key in request paths; automated cross-tenant tests; tenant ID never taken from client input |
 | **Broken authorization** | Central permission checks with data scopes; deny by default; negative tests per endpoint; server-side checks even when UI hides actions |
-| **Authentication & sessions** | MFA; lockout; secure cookies; session rotation on privilege change; `getUser()` server verification; SSO assertions validated (signature, audience, expiry) |
+| **Authentication & sessions** | MFA; lockout; secure cookies; session rotation on privilege change; `getClaims()`/`getUser()` server verification (ADR 0003); SSO assertions validated (signature, audience, expiry) |
 | **QR check-in & approval links** | Signed, short-lived, single-use tokens bound to session/day and user; replay detection; rate limits |
 | **File uploads** | Type/size checks, virus scanning, private storage, signed expiring URLs, no inline execution of uploaded HTML/SVG |
 | **Webhooks & connectors** | HMAC signature verification with timestamp; outbound URL allow-list and SSRF protection (block internal IP ranges); secrets in vault; idempotency keys |

@@ -101,6 +101,8 @@ Because the database trusts the claims that server code sets, a stolen `app_serv
 - **User claims** (`role = authenticated`, `sub`, `session_id`, `tenant_id`) are accepted only when `session_user = 'app_server'`, the `session_id` exists in `auth.sessions` for `sub` and is not expired, and `sub` has an **active** membership in `tenant_id` for an active/trial tenant.
 - **System-actor claims** (`role = system`, `tenant_id`, job id) are accepted only when `session_user = 'app_worker'` and the tenant is active.
 - Any other combination returns `NULL` → all tenant policies deny.
+- **Future claim kinds** (R2): external API clients and MCP tokens (ADR 0011, ADR 0012) will get their own claim kind bound to their own login path; they are added to this function by a new ADR revision, never by loosening the existing checks.
+- **Anonymous endpoints** (host→tenant lookup, public certificate verification) never use tenant tables directly; they call narrow functions in `private` that return only the fields needed.
 The check runs once per statement (wrapped in `(select …)`); its cost is measured with `EXPLAIN ANALYZE` during M2 and indexes are added as needed.
 
 ### 7. Background jobs and platform operations
@@ -108,7 +110,7 @@ The check runs once per statement (wrapped in `(select …)`); its cost is measu
 - The **service-role key / `BYPASSRLS`** is reserved for platform-level operations that are genuinely cross-tenant (migrations, tenant provisioning, platform console aggregates). It lives only in `packages/platform-db/admin` (ADR 0001 rule), is never available to request-path code, and every use is audited.
 
 ### 8. Storage and Realtime
-- Storage object keys start with the tenant ID: `<tenant_id>/<module>/<entity>/<id>/<file>`; storage policies on `storage.objects` require `(storage.foldername(name))[1] = private.current_tenant_id()::text`. Buckets are private; downloads use short-lived signed URLs generated server-side (ADR 0006).
+- Storage object keys start with the tenant ID: `<tenant_id>/<module>/<entity>/<id>/<file>`; storage policies on `storage.objects` require `(storage.foldername(name))[1] = private.current_tenant_id()::text` **and** the download/upload grant rules of ADR 0006 §4 (a clean file plus a short-lived grant created by the authorizing action). Buckets are private; downloads use short-lived signed URLs generated server-side (ADR 0006).
 - Realtime uses private channels authorized by RLS (Realtime Authorization) with tenant-prefixed topic names; verify exact configuration at implementation.
 
 ### 9. Tenant lifecycle

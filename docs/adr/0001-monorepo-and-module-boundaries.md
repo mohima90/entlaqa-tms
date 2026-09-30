@@ -40,6 +40,7 @@ packages/
   platform-i18n/            next-intl config, messages, Hijri/working calendars, formatting (ADR 0007)
   platform-integration/     connector transport, HMAC signing/verification, safeFetch (SSRF guard), secrets access (before M6; TM-0001 F-12)
   platform-ai/              AI provider abstraction and governance (before R2; ADR 0012)
+  platform-workflow/        approval workflow engine (FR-WFL; R1 default chain, builder in R2)
   contracts/                cross-module contracts only: event payload schemas, service interfaces (types + zod)
 modules/
   tms/                      Jadarat TMS domain: services, server actions, UI screens, permissions, events
@@ -50,7 +51,8 @@ supabase/
   seed/                     seed data (synthetic only)
   config.toml
 infra/
-  docker/                   self-hosted stack (compose) for sovereign/local parity (ADR 0010)
+  docker/                   self-hosted stack (compose) for sovereign/local parity (ADR 0010);
+                            images: suite (Next.js standalone), worker (jobs, ADR 0005), pdf-renderer (isolated, ADR 0006)
 docs/                       BRD, plan, status, ADRs, security, design
 ```
 
@@ -66,6 +68,7 @@ docs/                       BRD, plan, status, ADRs, security, design
 
 Additional rules:
 - A module talks to another module **only** through `packages/contracts` (event schemas, service interfaces) and domain events. No imports of another module's code, no reads of another module's tables.
+- Database login roles (ADRs 0002, 0004, 0005): `app_server` (web requests), `app_worker` (job handlers), `app_queue` (queue runner/dispatcher); none has `BYPASSRLS`.
 - Only `packages/platform-db/admin` may create a service-role Supabase client, and only code under `**/jobs/**` or `**/admin/**` may import it (ADR 0002).
 - Each package exposes a public API through its `package.json` `exports`; deep imports into another package's internals are forbidden.
 - No circular dependencies anywhere.

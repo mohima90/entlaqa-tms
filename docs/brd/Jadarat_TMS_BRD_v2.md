@@ -1684,7 +1684,7 @@ Summary of the market research (details and sources in `docs/research/TMS_Market
 | UI | Tailwind CSS (logical properties) + shadcn/ui; RTL-first | Design tokens per tenant theme |
 | i18n | next-intl (Arabic default) | ICU messages; locale-prefixed routes |
 | Database | PostgreSQL via Supabase | Row-level security for tenant isolation; place helper functions (e.g., `current_tenant_id()`) in a `private` schema, not the `auth` schema; add `tenant_id` to JWT via a Custom Access Token Hook |
-| Auth | Supabase Auth (email/password, MFA, SAML SSO, OIDC) | Use `@supabase/ssr`; validate users server-side with `auth.getUser()` (not `getSession()`) in middleware and server code |
+| Auth | Supabase Auth (email/password, MFA, SAML SSO, OIDC) | Use `@supabase/ssr`; validate users server-side with `getClaims()` / `getUser()` (not `getSession()`); see ADR 0003 |
 | Storage | Supabase Storage (S3-compatible) | Private buckets and signed URLs; virus scanning on upload |
 | Realtime | Supabase Realtime | Rosters, check-in, notifications |
 | Background jobs & queues | PostgreSQL-based queue (e.g., pgmq/Supabase Queues) + workers; cron via pg_cron / scheduler | Sync engine, notifications, reports, AI jobs; idempotent handlers |
@@ -1709,6 +1709,8 @@ Summary of the market research (details and sources in `docs/research/TMS_Market
 4. Set security headers (CSP, HSTS, frame-ancestors).
 
 ### H.3 Tenant Isolation Pattern
+
+> **Superseded by ADR 0002** (`docs/adr/0002-tenancy-and-row-level-security.md`): restrictive tenant policy, FORCE RLS, composite foreign keys and in-database claim validation. The simplified sample below is kept for history only.
 
 ```sql
 create schema if not exists private;

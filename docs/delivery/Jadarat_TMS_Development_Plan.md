@@ -6,7 +6,7 @@
 | **Owner** | Product Owner, Jadarat TMS |
 | **Version** | 1.0 — 30 September 2026 |
 | **Status** | Issued for Tech Lead review; dates become the baseline after Milestone M1 estimation (§6) |
-| **Inputs** | `docs/brd/Jadarat_TMS_BRD_v2.md` (BRD v2.1) · `docs/brd/TMS_Feature_List.md` · `docs/research/TMS_Market_Comparison_vs_BRD.md` |
+| **Inputs** | `docs/delivery/STATUS.md` (current state, updated every session) · `docs/brd/Jadarat_TMS_BRD_v2.md` (BRD v2.1) · `docs/brd/TMS_Feature_List.md` · `docs/research/TMS_Market_Comparison_vs_BRD.md` |
 
 ---
 

@@ -70,5 +70,6 @@ A project **Stop hook** (`.claude/settings.json` → `.claude/hooks/require-stat
 ## Environment notes
 
 - The repository currently contains **documentation only** (no application code yet).
-- The Vercel project was **deleted intentionally**; reconnect it only after the app scaffold exists (M1 walking skeleton), otherwise every deployment fails.
+- Vercel project **`jadarat-tms`** (team "Mohamed Attia's projects") is linked to this repository. Root `vercel.json` sets region `fra1` and an `ignoreCommand` that **skips builds while no `package.json` exists**, so docs-only commits do not fail. When the M1 scaffold lands in `apps/suite`, set the project's Root Directory to `apps/suite` and move/adapt `vercel.json` there.
+- The Vercel connection available to Claude sessions can read the account but **cannot create projects** (403); project creation/settings changes may need to be done by the user in the Vercel dashboard.
 - Mermaid diagrams in docs must render on GitHub; validate with `@mermaid-js/mermaid-cli` when changing them.

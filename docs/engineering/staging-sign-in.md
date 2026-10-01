@@ -15,9 +15,9 @@ Prerequisites: the database is deployed and verified ([db-deploy.md](db-deploy.m
    - several → `/{locale}/select-organization` shows a chooser.
 3. Selecting an organization records it for **this session only** (`switch_active_tenant`) and refreshes the session; the Custom Access Token hook then puts `tenant_id`/`person_id` into the new token. Without that claim the flow stops (`NOT_CONFIGURED`, logged as a warning) — e.g. when the hook is disabled.
 4. `platform.auth.signed_in` / `platform.auth.signed_out` are written to `platform.audit_events` (ids only).
-5. The request proxy refreshes the session cookies on every page request; `/suite` requires a session **with** an organization.
+5. Page requests carrying a session cookie go through the request proxy, which writes new cookies when the access token was about to expire and had to be rotated (it fails open: on an Auth error the page simply sees no valid session). `/suite` requires a session **with** an organization that the **database** still accepts; a token whose session was revoked, or whose membership or organization was suspended, counts as signed out (no redirect loop between the pages).
 
-Wrong e-mail and wrong password get the same message (no account enumeration). Too many attempts → Supabase Auth's rate limit → "Too many requests in a short time".
+Wrong e-mail and wrong password get the same message (no account enumeration) and are logged as a warning without personal data. If Supabase Auth itself fails (outage, wrong URL or key), the user sees the "problem on our side" message with a reference id, never "wrong password". Supabase Auth's rate limit → "Too many requests in a short time" (see Known gaps).
 
 **Multi-factor authentication** is off by default (PO decision, 1 Oct 2026). Later, each organization chooses off / optional / required, with any authenticator app (TOTP: Google Authenticator, Microsoft Authenticator, Apple Passwords, …).
 
@@ -44,7 +44,11 @@ Then **Deployments → latest → Redeploy** (environment variables apply to new
 
 1. Supabase **Authentication → Users → Add user → Create new user**: e-mail, a strong password, **Auto Confirm User** ticked. Open the user and **copy the UID**.
 2. GitHub **Actions → Provision organization → Run workflow** (branch `main`): environment `staging`, mode **`plan`**, organization short name (`tenant_slug`, e.g. `entlaqa-demo`), Arabic name, English name (optional), the UID. The dry run is always rolled back.
-3. Same inputs with mode **`apply`**. Running it again is harmless (nothing changes); a user whose membership is invited/suspended/revoked is refused — change that in the application.
+3. Same inputs with mode **`apply`**.
+
+An organization short name that **already exists is refused** — so a typo can never put someone into another customer's organization. To add another administrator to an existing organization, tick **add_to_existing** and give the organization's names exactly as stored. A user who is already an active member: nothing changes; a user whose membership is invited/suspended/revoked is refused — change that in the application.
+
+Recommended: GitHub → Settings → Environments → `staging` → **Required reviewers** = the PO, so every run (DB deploy and provisioning) waits for an approval click. Anyone who can run workflows on `main` could otherwise provision.
 
 The new member gets a person record named "مدير المنشأة" / "Tenant Admin" and an **active** membership; `platform.tenant.admin_provisioned` is audited. Inputs are visible to everyone who can read the repository's Actions runs, so the workflow takes a UID — never an e-mail or a person's name.
 
@@ -63,6 +67,8 @@ The new member gets a person record named "مدير المنشأة" / "Tenant Ad
 
 ## Known gaps (tracked in STATUS)
 
-- Rate limiting is Supabase Auth's (per IP/e-mail on its side); an application-level limit per account arrives with the platform rate limiter (NFR-SEC, M2).
+- **Rate limiting (release blocker before any real user, e.g. design partners).** All Auth calls come from the app server, so Supabase Auth's per-IP limits count the **server's** address: they do not slow one attacker down per account, and one attacker can exhaust the shared limit for everyone (including session refreshes triggered by forged session cookies). Needed: an application limiter keyed on the client IP and an e-mail hash before Supabase Auth is called (secure coding standard SCS-16; ADR 0003 §2), plus failed sign-ins as security events. Planned with the platform rate limiter (M2).
+- Session lifetime: cookies follow `@supabase/ssr` defaults (long-lived); session time-box and inactivity timeout (Supabase Auth settings, Pro plan) to be set before real users.
+- Switching organization from inside the suite (ADR 0002 §3): for now sign out and sign in again (M2).
 - Host tenant ↔ claim tenant check (`<slug>.<base domain>`) arrives with tenant domains (ADR 0002 §4, M2).
 - No password reset or invitation flow yet (M2).

@@ -9,16 +9,19 @@
 --   :'tenant_name_en'  English organization name ('' = none)
 --   :'admin_user_id'   the Auth user's UID (Supabase: Authentication → Users → Copy UID); no e-mail, so no
 --                      personal data in workflow inputs or logs
+--   :'add_to_existing' 'true' | 'false'
 --
--- Idempotent: an existing tenant with the same slug is reused (names unchanged); an existing ACTIVE
--- membership of the user is a no-op; any other existing membership status is refused (change it in the
--- application, where the status transitions are enforced and audited).
+-- An existing slug is REFUSED unless add_to_existing is 'true' AND both names equal the stored ones, so
+-- a typo or a slug collision can never make someone a member of another customer's organization.
+-- An existing ACTIVE membership of the user is a no-op; any other existing membership status is refused
+-- (change it in the application, where the status transitions are enforced and audited).
 -- The person record gets the neutral name 'مدير المنشأة' (Tenant Admin) until the user edits the profile.
 
 select set_config('provision.tenant_slug', :'tenant_slug', true),
        set_config('provision.tenant_name_ar', :'tenant_name_ar', true),
        set_config('provision.tenant_name_en', :'tenant_name_en', true),
-       set_config('provision.admin_user_id', :'admin_user_id', true);
+       set_config('provision.admin_user_id', :'admin_user_id', true),
+       set_config('provision.add_to_existing', :'add_to_existing', true);
 
 do $$
 declare
@@ -26,6 +29,9 @@ declare
   v_name_ar text := btrim(current_setting('provision.tenant_name_ar'));
   v_name_en text := nullif(btrim(current_setting('provision.tenant_name_en')), '');
   v_user_text text := lower(current_setting('provision.admin_user_id'));
+  v_add_to_existing text := current_setting('provision.add_to_existing');
+  v_stored_ar text;
+  v_stored_en text;
   v_user uuid;
   v_tenant uuid;
   v_person uuid;
@@ -44,17 +50,25 @@ begin
   if v_user_text !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
     raise exception 'provision: admin_user_id must be a UUID (the user''s UID in Supabase Auth)';
   end if;
+  if v_add_to_existing not in ('true', 'false') then
+    raise exception 'provision: add_to_existing must be true or false';
+  end if;
   v_user := v_user_text::uuid;
 
-  select id into v_tenant from platform.tenants where slug = v_slug;
+  select id, name_ar, name_en into v_tenant, v_stored_ar, v_stored_en
+  from platform.tenants where slug = v_slug for update;
   if v_tenant is null then
     insert into platform.tenants (slug, name_ar, name_en, status)
     values (v_slug, v_name_ar, v_name_en, 'active')
     returning id into v_tenant;
     v_tenant_created := true;
     raise notice 'provision: created organization % (%)', v_slug, v_tenant;
+  elsif v_add_to_existing <> 'true' then
+    raise exception 'provision: organization % already exists; to add a member to it, set add_to_existing and give its exact names', v_slug;
+  elsif v_stored_ar is distinct from v_name_ar or v_stored_en is distinct from v_name_en then
+    raise exception 'provision: organization % exists with different names; check the short name', v_slug;
   else
-    raise notice 'provision: organization % already exists (%); names left unchanged', v_slug, v_tenant;
+    raise notice 'provision: adding to the existing organization % (%)', v_slug, v_tenant;
   end if;
 
   select status into v_status from platform.tenant_memberships

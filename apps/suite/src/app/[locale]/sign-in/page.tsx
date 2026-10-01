@@ -1,6 +1,4 @@
-import { hasTenant } from '@jadarat/platform-core';
 import { routing } from '@jadarat/platform-i18n/routing';
-import { getVerifiedClaims } from '@jadarat/platform-identity/next';
 import { Card } from '@jadarat/ui';
 import { hasLocale } from 'next-intl';
 import { getTranslations } from 'next-intl/server';
@@ -10,6 +8,7 @@ import { SignInForm } from '../../../components/auth/sign-in-form';
 import { LanguageToggle } from '../../../components/language-toggle';
 import { authErrorTexts } from '../../../lib/auth-texts';
 import { getConfigStatus } from '../../../lib/config-status';
+import { getSessionState } from '../../../lib/session-state';
 
 /** Sign-in (T-M1-D03): e-mail + password; MFA off by default for now (PO decision, 1 Oct 2026). */
 export default async function SignInPage({ params }: { params: Promise<{ locale: string }> }) {
@@ -18,12 +17,11 @@ export default async function SignInPage({ params }: { params: Promise<{ locale:
   if (!hasLocale(routing.locales, locale)) notFound();
   const status = getConfigStatus();
 
-  if (status.auth) {
-    const claims = await getVerifiedClaims();
-    if (claims.ok) {
-      redirect(`/${locale}${hasTenant(claims.value) ? '/suite' : '/select-organization'}`);
-    }
-  }
+  // Already signed in → onwards. A token the database rejects counts as signed out (the form shows; a
+  // new sign-in replaces the session), so this page and /suite can never redirect to each other.
+  const session = await getSessionState(status);
+  if (session.kind === 'organization') redirect(`/${locale}/suite`);
+  if (session.kind === 'no-organization') redirect(`/${locale}/select-organization`);
 
   const t = await getTranslations({ locale, namespace: 'auth' });
   const common = await getTranslations({ locale, namespace: 'common' });

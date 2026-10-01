@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Creates an organization (tenant) and gives an existing Auth user an ACTIVE membership in it — the
-# first administrator of a new organization (T-M1-D03; runbook: docs/engineering/db-deploy.md §Provision).
+# first administrator of a new organization (T-M1-D03; runbook: docs/engineering/staging-sign-in.md).
 #
 #   DATABASE_URL=… DATABASE_CA_CERT=… TENANT_SLUG=… TENANT_NAME_AR=… [TENANT_NAME_EN=…] ADMIN_USER_ID=… \
-#     bash scripts/provision-tenant.sh plan|apply
+#     [ADD_TO_EXISTING=true] bash scripts/provision-tenant.sh plan|apply
 #
 # plan runs everything in a transaction that is always rolled back; apply commits it. Same connection
 # rules as scripts/db-deploy.sh (migration role, verify-full TLS, nothing secret on a command line).
@@ -22,6 +22,7 @@ fi
 TENANT_SLUG="${TENANT_SLUG:-}"
 TENANT_NAME_AR="${TENANT_NAME_AR:-}"
 TENANT_NAME_EN="${TENANT_NAME_EN:-}"
+ADD_TO_EXISTING="${ADD_TO_EXISTING:-false}"
 ADMIN_USER_ID="$(printf '%s' "${ADMIN_USER_ID:-}" | tr '[:upper:]' '[:lower:]')"
 
 fail() { echo "provision: $1" >&2; exit 1; }
@@ -34,8 +35,10 @@ for value in "$TENANT_NAME_AR" "$TENANT_NAME_EN"; do
   ((${#value} <= 200)) || fail "organization names must be at most 200 characters"
 done
 [[ -n "${TENANT_NAME_AR//[[:space:]]/}" ]] || fail "TENANT_NAME_AR is required"
+[[ "$ADD_TO_EXISTING" == "true" || "$ADD_TO_EXISTING" == "false" ]] || fail "ADD_TO_EXISTING must be true or false"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+[[ "$ROOT" != *"'"* ]] || fail "the repository path must not contain a single quote"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 chmod 700 "$WORK"
@@ -56,6 +59,7 @@ if [[ "$MODE" == "apply" ]]; then END=commit; else END=rollback; fi
 psql -X -q -v ON_ERROR_STOP=1 --no-psqlrc -o /dev/null \
   -v tenant_slug="$TENANT_SLUG" -v tenant_name_ar="$TENANT_NAME_AR" \
   -v tenant_name_en="$TENANT_NAME_EN" -v admin_user_id="$ADMIN_USER_ID" \
+  -v add_to_existing="$ADD_TO_EXISTING" \
   -f "$WORK/provision.sql"
 
 if [[ "$MODE" == "apply" ]]; then

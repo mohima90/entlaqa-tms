@@ -17,8 +17,7 @@ describe('definePublicAction', () => {
     const handler = vi.fn();
     const action = definePublicAction({ name: 'platform.auth.sign_in', input, handler });
     const result = await action({ email: 'not-an-email' });
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error.code).toBe('VALIDATION_FAILED');
+    expect(!result.ok && result.error.code).toBe('VALIDATION_FAILED');
     expect(handler).not.toHaveBeenCalled();
   });
 
@@ -43,15 +42,20 @@ describe('definePublicAction', () => {
       handler: () => Promise.resolve({ ok: false, error: appError('UNAUTHENTICATED') }),
     });
     const result = await unauth({ email: 'a@b.test' });
-    if (!result.ok) expect(result.error.code).toBe('UNAUTHENTICATED');
+    expect(!result.ok && result.error.code).toBe('UNAUTHENTICATED');
 
+    // A non-exposed error with its own code must not reach the client: it becomes INTERNAL_ERROR.
     const internal = definePublicAction({
       name: 'x.y.z',
       input,
-      handler: () => Promise.resolve({ ok: false, error: appError('INTERNAL_ERROR') }),
+      handler: () =>
+        Promise.resolve({
+          ok: false,
+          error: { ...appError('INTERNAL_ERROR'), code: 'DB_POOL_EXHAUSTED', expose: false },
+        }),
     });
     const hidden = await internal({ email: 'a@b.test' });
-    if (!hidden.ok) expect(hidden.error.code).toBe('INTERNAL_ERROR');
+    expect(!hidden.ok && hidden.error.code).toBe('INTERNAL_ERROR');
   });
 
   it('turns unexpected exceptions into INTERNAL_ERROR with a correlation id, logging no input', async () => {

@@ -1,7 +1,5 @@
-import { hasTenant } from '@jadarat/platform-core';
 import { routing } from '@jadarat/platform-i18n/routing';
 import { getSessionOrganizationsForRequest } from '@jadarat/platform-identity/auth';
-import { getVerifiedClaims } from '@jadarat/platform-identity/next';
 import { Card } from '@jadarat/ui';
 import { hasLocale } from 'next-intl';
 import { getTranslations } from 'next-intl/server';
@@ -12,6 +10,7 @@ import { SignOutButton } from '../../../components/auth/sign-out-button';
 import { LanguageToggle } from '../../../components/language-toggle';
 import { authErrorTexts } from '../../../lib/auth-texts';
 import { getConfigStatus } from '../../../lib/config-status';
+import { getSessionState } from '../../../lib/session-state';
 
 /** Organization chooser after sign-in when the account belongs to several organizations. */
 export default async function SelectOrganizationPage({
@@ -22,11 +21,10 @@ export default async function SelectOrganizationPage({
   await connection();
   const { locale } = await params;
   if (!hasLocale(routing.locales, locale)) notFound();
-  if (!getConfigStatus().auth) redirect(`/${locale}/sign-in`);
-
-  const claims = await getVerifiedClaims();
-  if (!claims.ok) redirect(`/${locale}/sign-in`);
-  if (hasTenant(claims.value)) redirect(`/${locale}/suite`);
+  // TODO(M2, ADR 0002 §3): switching organization from inside the suite; for now: sign out, sign in.
+  const session = await getSessionState(getConfigStatus());
+  if (session.kind === 'signed-out') redirect(`/${locale}/sign-in`);
+  if (session.kind === 'organization') redirect(`/${locale}/suite`);
 
   const organizations = await getSessionOrganizationsForRequest();
   if (!organizations.ok) redirect(`/${locale}/sign-in`);

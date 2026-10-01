@@ -1,5 +1,5 @@
 # Creates an organization (tenant) and makes an existing Auth user its first ACTIVE member (T-M1-D03;
-# runbook: docs/engineering/db-deploy.md §Provision an organization). Manual only.
+# runbook: docs/engineering/staging-sign-in.md). Manual only.
 # Uses the same GitHub environment as "DB deploy" (secret DATABASE_URL, variable DATABASE_CA_CERT); its
 # "Deployment branches" rule (main only) is the actual access control.
 # Inputs are organization data and a user UID only — never an e-mail or a person's name (run inputs are
@@ -37,6 +37,10 @@ on:
         description: "The user's UID (Supabase → Authentication → Users → the user → Copy UID)"
         type: string
         required: true
+      add_to_existing:
+        description: 'Add this user to an organization that already exists (the names must match exactly)'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -81,5 +85,6 @@ jobs:
           TENANT_NAME_AR: ${{ inputs.tenant_name_ar }}
           TENANT_NAME_EN: ${{ inputs.tenant_name_en }}
           ADMIN_USER_ID: ${{ inputs.admin_user_id }}
+          ADD_TO_EXISTING: ${{ inputs.add_to_existing }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           DATABASE_CA_CERT: ${{ vars.DATABASE_CA_CERT }}

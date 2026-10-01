@@ -61,6 +61,17 @@ export interface AuthFlowDeps {
   readonly logWarning: (message: string, meta: Record<string, string>) => void;
 }
 
+/**
+ * Supabase Auth could not answer (network error, 5xx, misconfigured URL/key). Thrown, not returned, so
+ * definePublicAction answers INTERNAL_ERROR with a correlation id and logs it — never "wrong password".
+ */
+export class AuthServiceError extends Error {
+  override readonly name = 'AuthServiceError';
+  constructor(readonly status: number | undefined) {
+    super(`Supabase Auth request failed (status ${String(status ?? 'none')})`);
+  }
+}
+
 export type SignInOutcome = { readonly next: 'home' } | { readonly next: 'choose-organization' };
 
 /** Tokens Auth just issued in THIS request (the session cookies are written, but not re-read). */
@@ -94,11 +105,17 @@ export async function signInWithPassword(
     password: credentials.password,
   });
   if (error) {
-    return err(
-      error.status === 429
-        ? appError('RATE_LIMITED')
-        : appError(IdentityErrors.AUTH_INVALID_CREDENTIALS),
-    );
+    if (error.status === 429) return err(appError('RATE_LIMITED'));
+    // 4xx: refused credentials (wrong e-mail or password, unconfirmed or banned account) — one answer
+    // for all of them (no account enumeration). Logged without personal data (security event).
+    if (error.status !== undefined && error.status >= 400 && error.status < 500) {
+      deps.logWarning('sign-in refused', {
+        action: 'platform.auth.sign_in',
+        status: String(error.status),
+      });
+      return err(appError(IdentityErrors.AUTH_INVALID_CREDENTIALS));
+    }
+    throw new AuthServiceError(error.status);
   }
   const tokens = sessionTokens(data);
   if (!tokens) return err(appError('UNAUTHENTICATED'));
@@ -177,8 +194,13 @@ export async function signOut(deps: AuthFlowDeps): Promise<Result<null, AppError
       });
     }
   }
-  // Revokes this session's refresh token in Auth and clears the session cookies.
-  await supabase.auth.signOut({ scope: 'local' });
+  // Revokes this session's refresh token in Auth and clears the session cookies (cleared even when the
+  // revocation fails; then the refresh token stays valid until it expires — logged, retried once).
+  let { error } = await supabase.auth.signOut({ scope: 'local' });
+  if (error) ({ error } = await supabase.auth.signOut({ scope: 'local' }));
+  if (error) {
+    deps.logWarning('could not revoke the session in Auth', { action: 'platform.auth.sign_out' });
+  }
   return ok(null);
 }
 

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  AuthServiceError,
   type AuthFlowDeps,
   getSessionOrganizations,
   selectOrganization,
@@ -21,7 +22,7 @@ const tokenClaims: Record<string, Record<string, unknown>> = {
 };
 
 interface FakeOptions {
-  signInError?: { status?: number };
+  signInError?: { status?: number | undefined };
   tenants?: { tenantId: string; nameAr: string; nameEn: string | null }[];
   switched?: boolean;
   refreshError?: boolean;
@@ -29,6 +30,7 @@ interface FakeOptions {
   cookieToken?: string;
   auditFails?: boolean;
   serverUserId?: string | null;
+  signOutFails?: boolean;
 }
 
 function setup(options: FakeOptions = {}) {
@@ -74,7 +76,7 @@ function setup(options: FakeOptions = {}) {
     ),
     signOut: vi.fn(() => {
       calls.push('signOut');
-      return Promise.resolve({ error: null });
+      return Promise.resolve({ error: options.signOutFails ? new Error('auth down') : null });
     }),
   };
   const audited: { action: string; actor: unknown; entityId?: string | undefined }[] = [];
@@ -134,8 +136,21 @@ describe('signInWithPassword', () => {
   it('answers wrong e-mail and wrong password identically (no account enumeration)', async () => {
     const { deps } = setup({ signInError: { status: 400 } });
     const result = await signInWithPassword(deps, credentials);
+    expect(result.ok).toBe(false);
     expect(!result.ok && result.error.code).toBe('AUTH_INVALID_CREDENTIALS');
     expect(!result.ok && result.error.status).toBe(401);
+    // Security event without personal data (no e-mail, no password).
+    expect(deps.logWarning).toHaveBeenCalledWith('sign-in refused', {
+      action: 'platform.auth.sign_in',
+      status: '400',
+    });
+  });
+
+  it('never reports an Auth outage as a wrong password', async () => {
+    for (const status of [500, 503, 0, undefined]) {
+      const { deps } = setup({ signInError: { status } });
+      await expect(signInWithPassword(deps, credentials)).rejects.toBeInstanceOf(AuthServiceError);
+    }
   });
 
   it('maps Auth rate limiting to RATE_LIMITED', async () => {
@@ -258,6 +273,14 @@ describe('signOut', () => {
     expect(await signOut(auditDown.deps)).toEqual({ ok: true, value: null });
     expect(auditDown.calls).toEqual(['signOut']);
     expect(auditDown.deps.logWarning).toHaveBeenCalled();
+
+    const revokeFails = setup({ cookieToken: 'access-1', signOutFails: true });
+    expect(await signOut(revokeFails.deps)).toEqual({ ok: true, value: null });
+    expect(revokeFails.calls).toEqual(['signOut', 'signOut']);
+    expect(revokeFails.deps.logWarning).toHaveBeenCalledWith(
+      'could not revoke the session in Auth',
+      { action: 'platform.auth.sign_out' },
+    );
 
     const notConfigured = await signOut({ ...noTenant.deps, supabase: null });
     expect(!notConfigured.ok && notConfigured.error.code).toBe('NOT_CONFIGURED');

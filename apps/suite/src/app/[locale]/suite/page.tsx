@@ -1,7 +1,4 @@
-import { hasTenant } from '@jadarat/platform-core';
-import { getCurrentTenant, withUserTx } from '@jadarat/platform-db';
 import { routing } from '@jadarat/platform-i18n/routing';
-import { getVerifiedClaims } from '@jadarat/platform-identity/next';
 import { tmsNavigation } from '@jadarat/tms';
 import { AppShell, Card } from '@jadarat/ui';
 import { hasLocale } from 'next-intl';
@@ -12,6 +9,7 @@ import { SignOutButton } from '../../../components/auth/sign-out-button';
 import { LanguageToggle } from '../../../components/language-toggle';
 import { getConfigStatus } from '../../../lib/config-status';
 import { HOST_KIND_HEADER, HOST_REF_HEADER } from '../../../lib/host-tenant';
+import { getSessionState } from '../../../lib/session-state';
 
 /**
  * Suite shell (walking skeleton, T-M1-D03). When sign-in is configured the page requires a verified
@@ -26,14 +24,10 @@ export default async function SuiteHomePage({ params }: { params: Promise<{ loca
   const status = getConfigStatus();
   let organizationName: string | null = null;
   if (status.auth) {
-    const claims = await getVerifiedClaims();
-    if (!claims.ok) redirect(`/${locale}/sign-in`);
-    if (!hasTenant(claims.value)) redirect(`/${locale}/select-organization`);
-    const tenant = status.database
-      ? await withUserTx(claims.value, (tx) => getCurrentTenant(tx))
-      : null;
-    // The claims name a tenant the database does not accept (e.g. membership just suspended).
-    if (status.database && !tenant) redirect(`/${locale}/sign-in`);
+    const session = await getSessionState(status);
+    if (session.kind === 'signed-out') redirect(`/${locale}/sign-in`);
+    if (session.kind === 'no-organization') redirect(`/${locale}/select-organization`);
+    const { tenant } = session;
     organizationName = tenant
       ? locale === 'en'
         ? (tenant.nameEn ?? tenant.nameAr)

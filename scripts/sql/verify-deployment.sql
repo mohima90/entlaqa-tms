@@ -62,13 +62,18 @@ begin
       end if;
     end loop;
     -- 3. Tenant tables (all tables in platform/module schemas; no global tables exist yet): RESTRICTIVE
-    --    tenant_isolation for ALL commands, to authenticated only.
+    --    tenant_isolation for ALL commands, to authenticated only, whose USING and WITH CHECK are EXACTLY
+    --    `<tenant column> = (select private.current_tenant_id())` (normalized; same rule as 10_catalog.sql,
+    --    so `… or true` fails).
     if r.nspname <> 'private' and not exists (
       select 1 from pg_policy p
       where p.polrelid = r.t and p.polname = 'tenant_isolation' and not p.polpermissive and p.polcmd = '*'
         and p.polroles = array[(select oid from pg_roles where rolname = 'authenticated')]::oid[]
-        and pg_get_expr(p.polqual, p.polrelid) like '%private.current_tenant_id()%'
-        and pg_get_expr(p.polwithcheck, p.polrelid) like '%private.current_tenant_id()%'
+        and pg_get_expr(p.polqual, p.polrelid) = format('(%I = ( SELECT private.current_tenant_id() AS current_tenant_id))',
+              case when r.nspname = 'platform' and r.relname = 'tenants' then 'id'
+                   when r.nspname = 'platform' and r.relname = 'session_context' then 'active_tenant_id'
+                   else 'tenant_id' end)
+        and pg_get_expr(p.polwithcheck, p.polrelid) = pg_get_expr(p.polqual, p.polrelid)
     ) then
       failures := failures || format('%s: RESTRICTIVE tenant_isolation policy (ALL, authenticated) missing or altered', r.t);
     end if;
@@ -98,7 +103,9 @@ begin
     end loop;
   end if;
 
-  -- 6. Data API: if PostgREST's role is configured, it must not expose our schemas (ADR 0002 §5).
+  -- 6. Data API, best effort: self-hosted PostgREST reads pgrst.db_schemas from the authenticator role.
+  --    Hosted Supabase keeps this setting outside the database, so there the dashboard setting
+  --    ("Data API" off) is the control (runbook) and this check cannot fail.
   if exists (
     select 1 from pg_db_role_setting s join pg_roles ro on ro.oid = s.setrole, unnest(s.setconfig) cfg
     where ro.rolname = 'authenticator' and cfg like 'pgrst.db_schemas=%'

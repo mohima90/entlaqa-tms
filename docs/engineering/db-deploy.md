@@ -37,10 +37,16 @@ Store the two role passwords in the password manager too: the app needs them lat
    - RLS enabled + forced on every table, RESTRICTIVE `tenant_isolation` (ALL, `authenticated`) on every platform/module table;
    - no privileges or schema usage for `anon` / `service_role`;
    - the access-token hook executable by `supabase_auth_admin` (with `USAGE` on `private`) and by no other role;
-   - the Data API (`pgrst.db_schemas`) does not expose our schemas.
+   - the Data API (`pgrst.db_schemas`) does not expose our schemas — best effort: hosted Supabase stores this outside the database, so there the dashboard setting **Data API off** (checked at creation; re-check under Project Settings → Data API after any project change) is the control.
 3. After the first successful apply on a project, enable the hook in the dashboard: **Authentication → Hooks → Customize Access Token (JWT) Claims → Postgres → schema `private`, function `custom_access_token_hook`**.
 
 Every transaction runs with `lock_timeout = 10s` and `statement_timeout = 5min`. A failed `apply` stops at the failing migration; earlier migrations stay applied (and recorded). Fix forward with a new migration; use `supabase/rollbacks/` only on staging and only deliberately.
+
+## Troubleshooting
+
+- **`SSL error: certificate verify failed`** or **`server certificate … does not match host name`**: the CA in `DATABASE_CA_CERT` is not the one that signed the server/pooler certificate, or the file was pasted incompletely. Re-download it from Database Settings → SSL Configuration and paste the whole file. **Never** work around it by lowering `sslmode` — the script does not allow it for remote hosts.
+- **`DATABASE_URL is not a valid URL` / `invalid percent-encoding`**: the database password contains characters that must be percent-encoded in the URI; easiest is to reset the database password to letters and digits only.
+- **`must be at least 40 characters` / `only letters, digits`**: regenerate the role password with symbols turned off.
 
 ## Security notes
 

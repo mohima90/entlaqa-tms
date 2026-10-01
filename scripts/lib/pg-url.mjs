@@ -5,7 +5,7 @@
 const HOST = /^[A-Za-z0-9.-]{1,253}$/;
 const USER = /^[A-Za-z0-9_.-]{1,128}$/;
 const DATABASE = /^[A-Za-z0-9_-]{1,63}$/;
-const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '::1']);
+const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost']);
 
 /** Escapes a pgpass field (`:` and `\`). */
 const pgpassField = (value) => value.replace(/[\\:]/g, (c) => `\\${c}`);

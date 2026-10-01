@@ -130,7 +130,7 @@ grant select on platform.ref_currencies to authenticated;
 RLS enabled + forced, no grants to `authenticated`/`anon`, explicit grants and policies only for the role that uses it (`app_queue`, `tenant_guard`), listed in `tests.global_tables()` with the reason "infrastructure". Payloads never contain personal data (ADR 0004/0005).
 
 ### 4.4 Functions
-- `security invoker` unless impossible; `security definer` only in `private`, owned by `tenant_guard` (or `app_queue` for queue helpers), `set search_path = ''`, explicit tenant checks, `revoke all … from public` then `grant execute` to the exact roles. Every definer function is flagged in the PR for the security-review pass.
+- `security invoker` unless impossible; `security definer` only in `private`, owned by `tenant_guard` (or `app_queue` for queue helpers). Supabase-owned tables they must read (e.g. `auth.sessions`) are reached through a column-limited view in `private`, owned by the migration role and selectable by `tenant_guard` only (ADR 0002 §6a rev. 2), `set search_path = ''`, explicit tenant checks, `revoke all … from public` then `grant execute` to the exact roles. Every definer function is flagged in the PR for the security-review pass.
 - Immutable helpers used in generated columns/indexes (e.g., `private.normalize_ar`) must be truly immutable and have unit parity tests with the application implementation (ADR 0007 §9).
 
 ## 5. Required tests per new table (Definition of Done)

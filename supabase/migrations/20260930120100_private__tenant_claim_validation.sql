@@ -77,6 +77,20 @@ $$;
 comment on function private.request_user_id() is
   'The `sub` claim of request.jwt.claims as uuid (NULL when absent/malformed). Use instead of auth.uid().';
 
+-- tenant_guard cannot be granted access to schema `auth` on hosted Supabase (the migration role has USAGE
+-- on `auth` without the grant option). It reads the three columns it needs through this view instead:
+-- a view reads its base table with its OWNER's rights (the migration role), and granting SELECT on a view
+-- needs no grant option on the base table (ADR 0002 §6a rev. 2). Nobody but tenant_guard may select it.
+create or replace view private.auth_session_validity
+with (security_barrier = true)  -- defensive only: the view has no WHERE clause
+as select s.id, s.user_id, s.not_after from auth.sessions s;
+
+comment on view private.auth_session_validity is
+  'SECURITY-RELEVANT (ADR 0002 §6a rev. 2): auth.sessions (id, user_id, not_after) for tenant_guard only. Owned by the migration role.';
+
+revoke all on private.auth_session_validity from public;
+grant select on private.auth_session_validity to tenant_guard;
+
 create or replace function private.user_session_is_valid(p_user_id uuid, p_session_id uuid)
 returns boolean
 language plpgsql stable security definer
@@ -88,7 +102,7 @@ begin
   end if;
   return exists (
     select 1
-    from auth.sessions s
+    from private.auth_session_validity s
     where s.id = p_session_id
       and s.user_id = p_user_id
       and (s.not_after is null or s.not_after > now())
@@ -97,7 +111,7 @@ end
 $$;
 
 comment on function private.user_session_is_valid(uuid, uuid) is
-  'SECURITY DEFINER (owner tenant_guard): true when the Auth session exists for the user and is not expired.';
+  'SECURITY DEFINER (owner tenant_guard, reads private.auth_session_validity): true when the Auth session exists for the user and is not expired.';
 
 create or replace function private.has_active_membership(p_user_id uuid, p_tenant_id uuid)
 returns boolean
@@ -240,18 +254,22 @@ grant execute on function private.has_active_membership(uuid, uuid) to tenant_gu
 grant execute on function private.current_tenant_id() to authenticated;
 grant execute on function private.switch_active_tenant(uuid) to authenticated;
 
--- tenant_guard reads Auth sessions. Without the grant option a GRANT only emits a WARNING and changes
--- nothing (possible on hosted Supabase, where the migration role does not own `auth`), which would make
--- every tenant query fail at runtime: assert the result instead of trusting the GRANT.
-grant usage on schema auth to tenant_guard;
-grant select (id, user_id, not_after) on auth.sessions to tenant_guard;
+-- The view's owner (the migration role) must be able to read auth.sessions, and tenant_guard must be able
+-- to read the view; otherwise every tenant query would fail at runtime (plpgsql does not check this at
+-- CREATE time).
 do $$
+declare
+  v_owner name := (select pg_get_userbyid(relowner) from pg_class
+                   where oid = 'private.auth_session_validity'::regclass);
 begin
-  if not (has_schema_privilege('tenant_guard', 'auth', 'usage')
-          and has_column_privilege('tenant_guard', 'auth.sessions', 'id', 'select')
-          and has_column_privilege('tenant_guard', 'auth.sessions', 'user_id', 'select')
-          and has_column_privilege('tenant_guard', 'auth.sessions', 'not_after', 'select')) then
-    raise exception 'tenant_guard could not be granted USAGE on schema auth and SELECT (id, user_id, not_after) on auth.sessions: the migration role (%) lacks the grant option', current_user;
+  if not (has_schema_privilege(v_owner, 'auth', 'usage')
+          and has_column_privilege(v_owner, 'auth.sessions', 'id', 'select')
+          and has_column_privilege(v_owner, 'auth.sessions', 'user_id', 'select')
+          and has_column_privilege(v_owner, 'auth.sessions', 'not_after', 'select')) then
+    raise exception 'role % (owner of private.auth_session_validity) cannot read auth.sessions (id, user_id, not_after)', v_owner;
+  end if;
+  if not has_table_privilege('tenant_guard', 'private.auth_session_validity', 'select') then
+    raise exception 'tenant_guard cannot read private.auth_session_validity';
   end if;
 end
 $$;

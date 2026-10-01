@@ -51,15 +51,75 @@ begin
     end if;
   end loop;
 
-  -- tenant_guard: may read exactly what private.user_session_is_valid() needs, and create nothing
-  -- (CREATE on `private` is granted only while ownership is handed over, migration 120100).
-  if exists (select 1 from pg_roles where rolname = 'tenant_guard') then
-    if not (has_schema_privilege('tenant_guard', 'auth', 'usage')
-            and has_column_privilege('tenant_guard', 'auth.sessions', 'id', 'select')
-            and has_column_privilege('tenant_guard', 'auth.sessions', 'user_id', 'select')
-            and has_column_privilege('tenant_guard', 'auth.sessions', 'not_after', 'select')) then
-      failures := failures || 'tenant_guard must read auth.sessions (id, user_id, not_after)'::text;
+  -- Session check (ADR 0002 §6a rev. 2): tenant_guard reads auth.sessions only through the view
+  -- private.auth_session_validity, owned by the migration role; nobody else may read the view.
+  if to_regclass('private.auth_session_validity') is null then
+    failures := failures || 'private.auth_session_validity is missing'::text;
+  else
+    v_role := (select pg_get_userbyid(relowner) from pg_class where oid = 'private.auth_session_validity'::regclass);
+    if not (has_schema_privilege(v_role, 'auth', 'usage')
+            and has_column_privilege(v_role, 'auth.sessions', 'id', 'select')
+            and has_column_privilege(v_role, 'auth.sessions', 'user_id', 'select')
+            and has_column_privilege(v_role, 'auth.sessions', 'not_after', 'select')) then
+      failures := failures || format('%s (owner of private.auth_session_validity) must read auth.sessions (id, user_id, not_after)', v_role);
     end if;
+    -- Exact ACL: tenant_guard may only SELECT; nobody else (besides the owner) holds any privilege, at table
+    -- or column level. The view is a plain projection, i.e. auto-updatable: write privileges on it would
+    -- reach auth.sessions with the owner's rights.
+    for r in
+      select distinct
+        case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end as grantee,
+        a.privilege_type
+      from pg_class c, aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a
+      where c.oid = 'private.auth_session_validity'::regclass and a.grantee <> c.relowner
+        and not (a.grantee <> 0 and pg_get_userbyid(a.grantee) = 'tenant_guard' and a.privilege_type = 'SELECT')
+      union
+      select distinct
+        case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end,
+        a.privilege_type || ' (column ' || att.attname || ')'
+      from pg_attribute att, aclexplode(att.attacl) a
+      where att.attrelid = 'private.auth_session_validity'::regclass and att.attacl is not null
+    loop
+      failures := failures || format('%s must not have %s on private.auth_session_validity', r.grantee, r.privilege_type);
+    end loop;
+  end if;
+
+  -- The SECURITY DEFINER helpers: owned by tenant_guard, search_path = '', and executable only by the
+  -- roles that need them (exact ACL, not a deny-list).
+  for r in
+    select h.fn, h.allowed, p.oid as poid, p.proowner, p.prosecdef, p.proconfig, p.proacl
+    from (values
+      ('private.user_session_is_valid(uuid, uuid)', array['tenant_guard']),
+      ('private.has_active_membership(uuid, uuid)', array['tenant_guard']),
+      ('private.current_tenant_id()',               array['tenant_guard', 'authenticated']),
+      ('private.switch_active_tenant(uuid)',        array['tenant_guard', 'authenticated'])
+    ) as h(fn, allowed)
+    left join pg_proc p on p.oid = to_regprocedure(h.fn)
+  loop
+    if r.poid is null then
+      failures := failures || format('%s is missing', r.fn);
+      continue;
+    end if;
+    if pg_get_userbyid(r.proowner) <> 'tenant_guard' then
+      failures := failures || format('%s must be owned by tenant_guard (is %s)', r.fn, pg_get_userbyid(r.proowner));
+    end if;
+    if not r.prosecdef or not coalesce('search_path=""' = any (r.proconfig) or 'search_path=' = any (r.proconfig), false) then
+      failures := failures || format('%s must be SECURITY DEFINER with an empty search_path', r.fn);
+    end if;
+    for v_role in
+      select distinct case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end
+      from aclexplode(coalesce(r.proacl, acldefault('f', r.proowner))) a
+      where a.privilege_type = 'EXECUTE'
+    loop
+      if not (v_role = any (r.allowed)) then
+        failures := failures || format('%s must not execute %s', v_role, r.fn);
+      end if;
+    end loop;
+  end loop;
+
+  -- tenant_guard creates nothing (CREATE on `private` is granted only while ownership is handed over,
+  -- migration 120100) and nobody else acts as it.
+  if exists (select 1 from pg_roles where rolname = 'tenant_guard') then
     for r in select nspname from pg_namespace where nspname = any (module_schemas) loop
       if has_schema_privilege('tenant_guard', r.nspname, 'create') then
         failures := failures || format('tenant_guard must not have CREATE on schema %s', r.nspname);

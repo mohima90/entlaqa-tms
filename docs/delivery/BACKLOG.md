@@ -17,8 +17,8 @@
 | T-M0-03 | Create backlog file (this document) | Claude | 🟢 | #8 |
 | T-M0-04 | Add PR template and CODEOWNERS | Claude | 🟢 | #8 |
 | T-M0-05 | Vercel project `jadarat-tms` with build-skip rule | PO + Claude | 🟢 | #6, #7 |
-| T-M0-06 | GitHub branch protection on `main` (require PR, require status checks once CI exists, block force-push/deletion) | PO | ⚪ | Instructions in STATUS next actions |
-| T-M0-07 | Supabase organization + project for staging (region `eu-central-1` Frankfurt) | PO | ⚪ | Needed by M1 Track D walking skeleton |
+| T-M0-06 | GitHub branch protection on `main` (require PR, require status checks once CI exists, block force-push/deletion) | PO | 🟢 | Ruleset `main protection` (1 Oct 2026): PR required (0 approvals), conversations resolved, checks `CI gates` + CodeQL ×2, no force-push/deletion, no bypass |
+| T-M0-07 | Supabase organization + project for staging (region `eu-central-1` Frankfurt) | PO | 🟢 | `jadarat-tms-staging` (ref `kgmhlmiwlbvdmalesexv`, org `entlaqa-TMS`, Free plan), Data API off (1 Oct 2026) |
 | T-M0-08 | Recruit 3–5 design partners (≥ 2 Saudi, ≥ 1 government/bank) | PO | ⚪ | Needed for usability round 1 (M1) |
 | T-M0-09 | Close decision D3 (planning-cycle timing) | PO | 🟢 | Decided: R2 |
 
@@ -32,52 +32,52 @@
 
 | ID | Task | Owner | Status | Notes / PR |
 |---|---|---|---|---|
-| T-M1-B01 | ADR 0001 Monorepo layout & module boundaries | Claude | 🟣 | PR (M1 foundation) |
-| T-M1-B02 | ADR 0002 Tenancy, tenant resolution, RLS pattern, JWT tenant claim | Claude | 🟣 | PR (M1 foundation) |
-| T-M1-B03 | ADR 0003 AuthN/AuthZ, permissions & data scopes | Claude | 🟣 | PR (M1 foundation) |
-| T-M1-B04 | ADR 0004 Domain events (outbox + PostgreSQL queue), idempotency | Claude | 🟣 | PR (M1 foundation) |
-| T-M1-B05 | ADR 0005 Background jobs & scheduling (self-hostable) | Claude | 🟣 | PR (M1 foundation) |
-| T-M1-B06 | ADR 0006 File storage, signed URLs, virus scanning | Claude | 🟣 | PR (M1 foundation) |
-| T-M1-B07 | ADR 0007 i18n/RTL, Hijri & working calendars, prayer times | Claude | 🟣 | PR (M1 foundation) |
-| T-M1-B08 | ADR 0008 Notification service abstraction | Claude | 🟣 | PR (M1 foundation) |
-| T-M1-B09 | ADR 0009 Observability | Claude | 🟣 | PR (M1 foundation) |
-| T-M1-B10 | ADR 0010 Sovereign deployment approach | Claude | 🟣 | PR (M1 foundation) |
-| T-M1-B11 | ADR 0011 API style, versioning, error model | Claude | 🟣 | PR (M1 foundation) |
-| T-M1-B12 | ADR 0012 AI provider abstraction & governance (draft) | Claude | 🟣 | Draft; PR (M1 foundation) |
-| T-M1-B13 | R1 logical data model & migration conventions | Claude | 🟣 | PR (M1 foundation) |
+| T-M1-B01 | ADR 0001 Monorepo layout & module boundaries | Claude | 🟢 | #9 |
+| T-M1-B02 | ADR 0002 Tenancy, tenant resolution, RLS pattern, JWT tenant claim | Claude | 🟢 | #9 |
+| T-M1-B03 | ADR 0003 AuthN/AuthZ, permissions & data scopes | Claude | 🟢 | #9 |
+| T-M1-B04 | ADR 0004 Domain events (outbox + PostgreSQL queue), idempotency | Claude | 🟢 | #9 |
+| T-M1-B05 | ADR 0005 Background jobs & scheduling (self-hostable) | Claude | 🟢 | #9 |
+| T-M1-B06 | ADR 0006 File storage, signed URLs, virus scanning | Claude | 🟢 | #9 |
+| T-M1-B07 | ADR 0007 i18n/RTL, Hijri & working calendars, prayer times | Claude | 🟢 | #9 |
+| T-M1-B08 | ADR 0008 Notification service abstraction | Claude | 🟢 | #9 |
+| T-M1-B09 | ADR 0009 Observability | Claude | 🟢 | #9 |
+| T-M1-B10 | ADR 0010 Sovereign deployment approach | Claude | 🟢 | #9 |
+| T-M1-B11 | ADR 0011 API style, versioning, error model | Claude | 🟢 | #9 |
+| T-M1-B12 | ADR 0012 AI provider abstraction & governance (draft) | Claude | 🟢 | #9 (stays Draft until R2) |
+| T-M1-B13 | R1 logical data model & migration conventions | Claude | 🟢 | #9 |
 | T-M1-B14 | R1 estimation and re-baselined milestone plan; update BRD §16 | Claude → PO approval | ⚪ | After PR review; needs throughput data |
 
 ### Track C — Security baseline (`EP-M1-SEC`)
 
 | ID | Task | Owner | Status | Notes / PR |
 |---|---|---|---|---|
-| T-M1-C01 | Platform threat model (STRIDE) | Claude | 🟣 | PR (M1 foundation) |
+| T-M1-C01 | Platform threat model (STRIDE) | Claude | 🟢 | #9 |
 | T-M1-C02 | Threat models for R1 epics (M2–M6) | Claude | ⚪ | Per-epic threat models, before each epic starts |
-| T-M1-C03 | Risk register | Claude | 🟣 | PR (M1 foundation) |
-| T-M1-C04 | OWASP ASVS L2 mapping to modules | Claude | 🟣 | PR (M1 foundation) |
-| T-M1-C05 | Secure coding standard | Claude | 🟣 | PR (M1 foundation) |
+| T-M1-C03 | Risk register | Claude | 🟢 | #9 |
+| T-M1-C04 | OWASP ASVS L2 mapping to modules | Claude | 🟢 | #9 |
+| T-M1-C05 | Secure coding standard | Claude | 🟢 | #9 |
 
 ### Track D — Engineering platform (`EP-M1-PLAT`)
 
 | ID | Task | Owner | Status | Notes / PR |
 |---|---|---|---|---|
-| T-M1-D01 | Monorepo scaffold (`apps/suite`, `packages/ui`, `packages/platform-*`, `modules/tms`) | Claude | 🟣 | PR (M1 foundation) |
-| T-M1-D02 | CI with all 14 gates (Plan §5.3) | Claude | 🟣 | PR; CodeQL/Trivy run only on GitHub |
-| T-M1-D03 | Walking skeleton: MFA sign-in → Arabic RTL suite shell → audit event, on staging | Claude | 🔵 | DB part done (migrations, RLS, hook, tests); needs Supabase staging (T-M0-07) |
+| T-M1-D01 | Monorepo scaffold (`apps/suite`, `packages/ui`, `packages/platform-*`, `modules/tms`) | Claude | 🟢 | #9 |
+| T-M1-D02 | CI with all 14 gates (Plan §5.3) | Claude | 🟢 | #9; all 17 checks green on GitHub |
+| T-M1-D03 | Walking skeleton: MFA sign-in → Arabic RTL suite shell → audit event, on staging | Claude | 🔵 | DB part done (#9); staging deploy workflow `DB deploy` (this PR) → PO runs plan/apply; then sign-in + MFA wiring |
 | T-M1-D04 | Walking skeleton on self-hosted stack (Docker) | Claude | ⚪ | |
-| T-M1-D05 | Vercel: Root Directory `apps/suite`, preset Next.js, move `vercel.json` | PO (dashboard) + Claude | ⚪ | PO: set Root Directory `apps/suite` after PR merge |
+| T-M1-D05 | Vercel: Root Directory `apps/suite`, preset Next.js, move `vercel.json` | PO (dashboard) + Claude | 🟢 | Root Directory `apps/suite`, Node 24; `main` deployment Ready (1 Oct 2026) |
 | T-M1-D06 | Observability baseline (errors, logs, uptime) | Claude | ⚪ | |
 
 ### Track A — UX foundation (`EP-M1-UX`)
 
 | ID | Task | Owner | Status | Notes / PR |
 |---|---|---|---|---|
-| T-M1-A01 | Design principles & Arabic-first design tokens | Claude | 🟣 | PR (M1 foundation) |
+| T-M1-A01 | Design principles & Arabic-first design tokens | Claude | 🟢 | #9 |
 | T-M1-A02 | Component library in `packages/ui` + Storybook (RTL/LTR, light/dark) | Claude | 🔵 | Primitives in packages/ui; Storybook pending |
-| T-M1-A03 | Suite shell design (navigation, inboxes, search, mobile) | Claude | 🟣 | PR (M1 foundation) |
-| T-M1-A04 | Clickable prototypes of 5 critical journeys | Claude | 🟣 | PR; `docs/design/prototype/index.html` |
+| T-M1-A03 | Suite shell design (navigation, inboxes, search, mobile) | Claude | 🟢 | #9 |
+| T-M1-A04 | Clickable prototypes of 5 critical journeys | Claude | 🟢 | #9; `docs/design/prototype/index.html` |
 | T-M1-A05 | Usability test round 1 (scripts, tasks, analysis by Claude; sessions run by PO with real users) | PO + Claude | ⚪ | Kit ready (`docs/design/research/`); PO runs sessions with real users |
-| T-M1-A06 | AR/EN glossary & content style guide | Claude | 🟣 | PR; 144 terms |
+| T-M1-A06 | AR/EN glossary & content style guide | Claude | 🟢 | #9; 144 terms |
 
 **Gate G1:** see Development Plan §6.3.
 

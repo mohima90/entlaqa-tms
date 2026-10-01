@@ -1,6 +1,6 @@
 # ADR 0004 — Domain events: transactional outbox and PostgreSQL queue
 
-**Status:** Proposed · **Date:** 30 Sep 2026 · **Backlog:** T-M1-B04 · **Related:** BRD §3.4.1, §7.2, §7.7, §9.1 (FR-INT-03), §9.3, Appendix C (LMS sync record), Appendix H.1/H.5; FR-STE-03, FR-LMS-06/07/10; NFR-SCAL-03, NFR-OBS-01; ADR 0001, ADR 0002, ADR 0005, ADR 0011
+**Status:** Accepted — PR #9, 30 Sep 2026 · **Date:** 30 Sep 2026 · **Backlog:** T-M1-B04 · **Related:** BRD §3.4.1, §7.2, §7.7, §9.1 (FR-INT-03), §9.3, Appendix C (LMS sync record), Appendix H.1/H.5; FR-STE-03, FR-LMS-06/07/10; NFR-SCAL-03, NFR-OBS-01; ADR 0001, ADR 0002, ADR 0005, ADR 0011
 
 ## Context
 

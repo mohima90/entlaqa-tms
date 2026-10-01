@@ -10,6 +10,11 @@ updates:
       time: '05:00'
       timezone: Asia/Riyadh
     open-pull-requests-limit: 10
+    ignore:
+      # Node.js 24 LTS is the runtime (.nvmrc, ADR 0001): its type definitions must stay on the same
+      # major. Major Node upgrades are a deliberate change (runtime + CI + Vercel), not a Dependabot PR.
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
     groups:
       nextjs-react:
         patterns:

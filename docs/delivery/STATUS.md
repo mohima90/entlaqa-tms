@@ -4,8 +4,8 @@
 
 | | |
 |---|---|
-| **Last updated** | 30 September 2026 |
-| **Current phase** | **M1 Foundation in progress** (all four tracks drafted; PR in review) · M0 PO setup tasks still open |
+| **Last updated** | 1 October 2026 |
+| **Current phase** | **M1 Foundation in progress** — foundation merged (PR #9); staging environment being connected (T-M1-D03) · M0 PO setup done except design partners (T-M0-08) |
 | **Next gate** | G0 (PO setup tasks) → G1 (Foundation sign-off) |
 | **Overall status** | 🟢 On track (no build started; dates are targets until Gate G1 re-baseline) |
 
@@ -18,8 +18,8 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 | Milestone | Target weeks | Status | Gate | Notes |
 |---|---|---|---|---|
 | Planning (research, BRD, feature list, delivery plan) | — | 🟢 Done | — | See §4 documents |
-| M0 Mobilize | 1–2 | 🔵 In progress | G0 | Team = PO + Claude agents; see `BACKLOG.md` M0 tasks |
-| M1 Foundation | 3–8 | 🔵 In progress | G1 | Tracks A–D drafted and reviewed; see `BACKLOG.md` M1 |
+| M0 Mobilize | 1–2 | 🟡 Conditional pass | G0 | T-M0-01…07, 09 done (branch protection, Supabase staging, Vercel); T-M0-08 design partners still open |
+| M1 Foundation | 3–8 | 🔵 In progress | G1 | Foundation merged (#9, all 17 checks green); remaining: walking skeleton on staging, Storybook, per-epic threat models, self-hosted spike, estimation |
 | M2 Platform core | 9–12 | ⚪ Not started | G2 | |
 | M3 Catalog & scheduling | 13–16 | ⚪ Not started | G3 | |
 | M4 Enrollment & manager | 17–19 | ⚪ Not started | G4 | |
@@ -31,18 +31,18 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 ### M1 Foundation — deliverables checklist
 
 - [~] Track A: design system v1 — tokens + contrast report done; primitives in `packages/ui`; Storybook pending
-- [x] Track A: suite shell design (`docs/design/suite-shell.md`) — in PR
-- [x] Track A: clickable prototype of 5 journeys (`docs/design/prototype/index.html`) — in PR
+- [x] Track A: suite shell design (`docs/design/suite-shell.md`) — merged (#9)
+- [x] Track A: clickable prototype of 5 journeys (`docs/design/prototype/index.html`) — merged (#9)
 - [ ] Track A: usability test round 1 — kit ready (`docs/design/research/`); **PO runs sessions**
-- [x] Track A: AR/EN glossary (144 terms) and content style guide — in PR
-- [x] Track B: ADRs 0001–0011 proposed, 0012 draft — in PR (approved on merge)
-- [x] Track B: R1 data model and migration conventions (`docs/architecture/`) — in PR
+- [x] Track A: AR/EN glossary (144 terms) and content style guide — merged (#9)
+- [x] Track B: ADRs 0001–0011 **Accepted** (#9), 0012 Draft
+- [x] Track B: R1 data model and migration conventions (`docs/architecture/`) — merged (#9)
 - [ ] Track B: R1 estimation → re-baselined plan; BRD §16 updated
-- [~] Track C: platform threat model TM-0001 + risk register done — in PR; per-epic models pending
-- [x] Track C: ASVS 5.0 L2 mapping; secure coding standard — in PR
-- [x] Track D: monorepo scaffold; CI with the §5.3 gates (green locally; CodeQL/Trivy run on GitHub) — in PR
-- [~] Track D: walking skeleton — database part done and tested; needs Supabase staging (T-M0-07); self-hosted stack pending (T-M1-D04)
-- [ ] Track D: point Vercel project `jadarat-tms` Root Directory to `apps/suite` and move `vercel.json` there (project created before M1 with build-skip rule)
+- [~] Track C: platform threat model TM-0001 + risk register merged (#9); per-epic models pending
+- [x] Track C: ASVS 5.0 L2 mapping; secure coding standard — merged (#9)
+- [x] Track D: monorepo scaffold; CI with the §5.3 gates — merged (#9), all checks green on GitHub; `CI gates` + CodeQL required on `main`
+- [~] Track D: walking skeleton — database part merged; staging project created (T-M0-07); `DB deploy` workflow (plan/apply + verification) in PR; then sign-in + MFA wiring; self-hosted stack pending (T-M1-D04)
+- [x] Track D: Vercel project `jadarat-tms` builds from `apps/suite` (Next.js, Node 24); `main` deployment Ready (1 Oct 2026)
 
 ---
 
@@ -58,6 +58,8 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 | 30 Sep 2026 | — | TMS is the first module of the planned Jadarat HR Suite (Core HR, Payroll & Time, Performance & Skills, Recruitment & Onboarding) and is also sold standalone |
 | 30 Sep 2026 | — | R1 GA re-targeted to ~month 7 (week 30) including Foundation; confirmed at Gate G1 |
 | 30 Sep 2026 | D3 | Full planning cycle (TNA campaigns, training plan, plan vs. actual) ships in **R2**; R1 includes training requests (PLN-01) only |
+| 1 Oct 2026 | — | Staging database: Supabase project `jadarat-tms-staging` (org `entlaqa-TMS`, Frankfurt `eu-central-1`, **Free plan** for now — PO deferred the Pro upgrade), Data API **off**, automatic RLS off (migrations enforce RLS). Migrations reach hosted environments only through the manual `DB deploy` workflow (plan → apply) |
+| 1 Oct 2026 | — | `main` protected by ruleset `main protection`: PR required (0 approvals — PO is the only human), conversation resolution, required checks `CI gates` + CodeQL (javascript-typescript, actions), no force-push/deletion, empty bypass list |
 | 30 Sep 2026 | — | **Delivery team = Product Owner + Claude Code agents** (Development Plan §2.3): agents author and review (separate review/security passes); PO merges and owns human-only activities (accounts, design partners, usability sessions, legal, pen test, go/no-go) |
 
 ### Open decisions (BRD §20)
@@ -79,9 +81,12 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 | Dependency | Human-only activities (Plan §2.3): accounts, design partners, usability sessions, legal validation, pen test | PO | Open |
 | Dependency | 3–5 design-partner customers (≥ 2 Saudi, ≥ 1 government/bank) | PO | Open |
 | Dependency | Jadarat LMS APIs/webhooks for connector (needed by M6) | PO / Jadarat team | Open |
-| Note | Vercel project `jadarat-tms` created 30 Sep 2026 (team "Mohamed Attia's projects", repo `mohima90/entlaqa-tms`, branch `main`, preset Other, root `./`). First deployment **canceled by the build-skip rule** as intended. At M1 scaffold: set Root Directory `apps/suite`, preset Next.js, move `vercel.json` | DevOps | Done (revisit at M1) |
+| Note | Vercel project `jadarat-tms` (team "Mohamed Attia's projects") builds from Root Directory `apps/suite` since 1 Oct 2026. The **old** project `entlaqa-tms` (team "Mohamed Ibrahim's projects") is still connected to the repo (seen on PR #10, 1 Oct 2026); the root `vercel.json` (`ignoreCommand: exit 0`) makes it skip builds — keep it until the PO deletes that project | PO | Open |
+| Risk | Staging is on Supabase **Free**: pauses after ~7 days idle (Restore in dashboard), no daily backups. Upgrade the org to Pro before design-partner or usability use | PO | Open |
+| Note | Dependabot npm run of 30 Sep 2026 failed: it tried `@types/node` 24 → 26 (wrong for the Node 24 runtime) and pnpm's 3-day release-age rule refused the then-new `next-intl` 4.14.8 in the lockfile. Fixed: `@types/node` major updates ignored; the release-age refusal clears by itself before the next weekly run | DevOps | Done 1 Oct 2026 |
+| Risk | Hosted Supabase may not let the `postgres` role revoke `TEMPORARY` on the database (ADR 0002 §5 hardening); `DB deploy` reports it as a warning — confirm on first apply | DevOps | Open |
 | Risk | Regulatory figures need legal validation before release (BRD Appendix E) | PO / Legal | Open |
-| **Security** | Old codebase history contains a committed `.env.local` (commit `9ca478b`: Vercel OIDC token, Supabase anon key) and Stripe-like values — **rotate/revoke those credentials**; consider purging history | PO | **Open — urgent** |
+| Security | Old codebase history (commit `9ca478b`) contained a committed `.env.local`: the leaked Vercel OIDC token was short-lived (hours) and project-bound — the old Vercel project itself still exists and should be deleted (see note above) and the old Supabase project `wtsdtyizauavvgolmygx` is deleted (DNS NXDOMAIN, checked 1 Oct 2026); the "Stripe" value was a UI placeholder (`sk_live_xxxx…`), not a key. History purge optional | PO | **Closed** 1 Oct 2026 |
 | Decision | Scope questions in `docs/architecture/r1-data-model.md` §7: LMS trigger without programs, competency prerequisites, audiences in R1, provider evaluations before registry, external-instructor logins in R1, data scopes in R1, audit retention, vendor approvals | PO | Open |
 | Decision | Design: brand colours/logo, IBM Plex font licence & self-hosting, two Arabic terms to validate in usability round 1 | PO | Open |
 | Legal | Egypt PDPL grace period ends ~2 Nov 2026 (Egyptian tenants at GA?); SDAIA SCCs + transfer risk assessment before first Saudi tenant | PO / Legal | Open |
@@ -96,23 +101,25 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 | `docs/brd/TMS_Feature_List.md` | 30 Sep 2026 | Current (289 features; 280 in scope; R1 = 96) |
 | `docs/delivery/Jadarat_TMS_Development_Plan.md` | 1.1 | §2.3 agent-team operating model added |
 | `docs/research/TMS_Market_Comparison_vs_BRD.md` | 27 Sep 2026 | Reference |
-| `docs/delivery/BACKLOG.md` | 30 Sep 2026 | Current task list (M0, M1 tasks; M2–M7 epics) |
-| `docs/adr/` | — | Not created yet (M1 Track B) |
+| `docs/delivery/BACKLOG.md` | 1 Oct 2026 | Current task list (M0, M1 tasks; M2–M7 epics) |
+| `docs/adr/` | — | 0001–0011 Accepted (#9); 0012 Draft |
+| `docs/engineering/db-deploy.md` | 1 Oct 2026 | Runbook for migrations on hosted environments |
 
 ---
 
 ## 5. Next Actions
 
-**Product Owner (user)** — M0 tasks in `BACKLOG.md`
-1. Merge the open pull request (M0: team model, backlog, PR template, CODEOWNERS).
-2. **T-M0-06** GitHub branch protection: repo → Settings → Rules → Rulesets → New branch ruleset for `main`: require a pull request before merging, block force pushes, restrict deletions. (Add "require status checks" after CI exists in M1.)
-3. **T-M0-07** Supabase: create an organization and a staging project in region **eu-central-1 (Frankfurt)**; in Project Settings → Data API, **expose no schemas** (all data goes through our server — ADR 0002 §5); share the project URL when ready (never paste keys into chat — they go into Vercel/GitHub secrets).
-4. **T-M0-08** Start recruiting 3–5 design partners.
-5. **T-M0-09** Decide D3 (planning cycle in R2 recommended).
+**Product Owner (user)** — Claude guides each step one action at a time (PO request, 1 Oct 2026)
+1. Merge the PR "staging DB deploy workflow + status housekeeping".
+2. GitHub → Settings → Environments → create `staging` (deployment branches: `main` only — mandatory) with secrets `DATABASE_URL` (Supabase Connect → Session pooler URI), `APP_SERVER_DB_PASSWORD`, `APP_WORKER_DB_PASSWORD` (≥ 40 chars, letters/digits/`-_`) and variable `DATABASE_CA_CERT` (Supabase Database Settings → SSL Configuration → Download certificate) — see `docs/engineering/db-deploy.md`. Never paste secrets into chat.
+3. Actions → **DB deploy** → `plan`, then `apply`; then Supabase → Authentication → Hooks → enable the access-token hook (`private.custom_access_token_hook`).
+4. Delete the **old** Vercel project `entlaqa-tms` in team "Mohamed Ibrahim's projects" (Settings → General → Delete Project); then Claude removes the root `vercel.json`.
+5. **T-M0-08** Start recruiting 3–5 design partners.
+6. Optional: upgrade Supabase org `entlaqa-TMS` to Pro (no pausing, backups) before design partners use staging.
 
-**Next Claude session** — continue M1 (after the M1 foundation PR is merged):
-1. Mark merged ADRs **Accepted** in `docs/adr/README.md`.
-2. T-M1-D03 walking skeleton against Supabase staging (needs T-M0-07): sign-in with MFA → Arabic shell → audit event.
+**Next Claude session** — continue M1:
+1. After `DB deploy apply` succeeds: record the server version and any TEMPORARY warning here; align CI to the staging Postgres major if it is 17.
+2. T-M1-D03 walking skeleton: sign-in with MFA (asymmetric signing keys, Auth settings: signups off, TOTP) → Arabic shell → audit event; Vercel env vars (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `DATABASE_URL_APP_SERVER`).
 3. T-M1-A02 Storybook for `packages/ui`; T-M1-C02 per-epic threat models for M2 epics.
 4. T-M1-D04 self-hosted stack spike (needs a Docker-capable environment).
 5. T-M1-B14 estimation and re-baselined plan → Gate G1.
@@ -123,6 +130,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
+| 1 Oct 2026 | PR #9 merged; Vercel builds `apps/suite` (Ready); Supabase staging created (Frankfurt, Data API off, Free); leaked old credentials revoked (old Supabase project deleted; old Vercel project still connected — PO to delete); `main` ruleset active; ADRs 0001–0011 Accepted; added `DB deploy` workflow (dry-run plan, apply with Supabase-CLI-compatible history, SCRAM role passwords, TLS verify-full, post-deploy verification also run in CI); independent code + security review: approve with fixes (2 High: password in libpq errors, unverified TLS; 4 Medium) — all fixed with tests |
 | 27 Sep 2026 | Market research and competitor/regulatory fact-check; old codebase removed; feature list (280) and BRD v2.0 written |
 | 30 Sep 2026 | Decisions D1, D2, D6, D7 and HR Suite positioning recorded (BRD v2.1); Development Plan v1.0; `CLAUDE.md` and this status tracker added for session handover |
 | 30 Sep 2026 | Added project Stop hook (`.claude/settings.json`, `.claude/hooks/require-status-update.sh`) that requires this file to be updated whenever other files change in a session |

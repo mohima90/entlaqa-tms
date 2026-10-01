@@ -194,10 +194,10 @@ export async function signOut(deps: AuthFlowDeps): Promise<Result<null, AppError
       });
     }
   }
-  // Revokes this session's refresh token in Auth and clears the session cookies (cleared even when the
-  // revocation fails; then the refresh token stays valid until it expires — logged, retried once).
-  let { error } = await supabase.auth.signOut({ scope: 'local' });
-  if (error) ({ error } = await supabase.auth.signOut({ scope: 'local' }));
+  // Revokes this session's refresh token in Auth and clears the session cookies. The cookies are cleared
+  // even when the revocation fails (auth-js drops the local session first, so a retry could not revoke);
+  // the refresh token then stays valid until it expires — logged.
+  const { error } = await supabase.auth.signOut({ scope: 'local' });
   if (error) {
     deps.logWarning('could not revoke the session in Auth', { action: 'platform.auth.sign_out' });
   }

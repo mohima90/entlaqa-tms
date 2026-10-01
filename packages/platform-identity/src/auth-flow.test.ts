@@ -276,7 +276,7 @@ describe('signOut', () => {
 
     const revokeFails = setup({ cookieToken: 'access-1', signOutFails: true });
     expect(await signOut(revokeFails.deps)).toEqual({ ok: true, value: null });
-    expect(revokeFails.calls).toEqual(['signOut', 'signOut']);
+    expect(revokeFails.calls).toEqual(['signOut']);
     expect(revokeFails.deps.logWarning).toHaveBeenCalledWith(
       'could not revoke the session in Auth',
       { action: 'platform.auth.sign_out' },

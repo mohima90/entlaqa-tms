@@ -40,6 +40,10 @@ export const definePublicAction = createDefinePublicAction({
       action: meta.action,
       correlationId: meta.correlationId,
       error: error instanceof Error ? error.name : typeof error,
+      // e.g. AuthServiceError: tells an outage (5xx) from a network failure (0); never personal data.
+      ...(error instanceof Error && 'status' in error && typeof error.status === 'number'
+        ? { status: error.status }
+        : {}),
     });
   },
 });

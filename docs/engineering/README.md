@@ -43,6 +43,7 @@ No Supabase project or secrets are needed to build, test or run the app: without
 | `pnpm e2e` | Playwright smoke against the standalone server: Arabic + English, `dir`, no console/CSP errors, no horizontal overflow at 390 px, axe (0 serious/critical) | 7, 8 |
 | `pnpm check:all` | typecheck + lint + format + coverage + migrations + deps | — |
 | `bash scripts/db-deploy.sh plan\|apply` | Hosted environments only, normally via **Actions → DB deploy** (runbook: [db-deploy.md](db-deploy.md)) | — |
+| `bash scripts/provision-tenant.sh plan\|apply` | Hosted environments only, normally via **Actions → Provision organization** (runbook: [staging-sign-in.md](staging-sign-in.md)) | — |
 
 ### Database tests locally
 
@@ -152,17 +153,17 @@ Make the aggregate job **`CI gates`** and the CodeQL checks required status chec
 
 | Area | State | Next |
 |---|---|---|
-| Sign-in, MFA, session refresh in the proxy | Not wired yet (staging project exists since 1 Oct 2026; migrations go through [db-deploy.md](db-deploy.md)). `platform-identity` verifies claims; cookies are configured HttpOnly/SameSite=Lax; no browser Auth client | **T-M1-D03** walking skeleton — needs the Supabase staging project from the PO (**T-M0-07**), asymmetric signing keys, hook enabled in the dashboard, `app_server`/`app_worker` passwords in the secret store |
+| Sign-in, MFA, session refresh in the proxy | E-mail + password sign-in, organization chooser and sign-out as server actions (`definePublicAction`, `apps/suite/src/auth/` only — CI gate); the proxy refreshes session cookies; `/suite` requires a session with a tenant claim; `platform.auth.signed_in/_out` audited; app DB connections use verify-full TLS (`DATABASE_CA_CERT`). Runbook: [staging-sign-in.md](staging-sign-in.md). MFA off by default (PO, 1 Oct 2026) | Per-tenant MFA policy (off/optional/required, any TOTP app), password reset and invitations, application-level rate limiting (M2) |
 | Host → tenant resolution | Proxy classifies the Host header only; on every path except `/_next/static` it strips client-sent `x-jadarat-*`/`x-nonce` headers and sets the nonce CSP (`/_next/static` gets a strict static CSP from `next.config.ts`) | Narrow `private` lookup over verified `tenant_domains` + claim/host comparison (ADR 0002 §4) |
 | Grants / roles | `defineAction` default runtime loads **no grants** → every action is denied (403) | Roles, role assignments and resource resolvers (M2) |
 | Audit | `defineAction` writes `platform.audit_events` rows | `platform-audit` package, `actor_type`, before/after, partitioning (M2, data model §2.5) |
 | DB types | Hand-written Drizzle definitions for the six platform tables | `pnpm db:types` (supabase gen types + drizzle-kit pull) with a drift gate (migration-conventions §8) |
 | Design tokens | `packages/ui` imports `docs/design/tokens/tokens.css` directly (single source of truth) | Component library + Storybook (T-M1-A02) |
 | Self-hosted stack | — | **T-M1-D04** (Docker): GoTrue hook config, `auth.sessions` grants, image scanning |
-| Vercel | Project Root Directory = `apps/suite` (Next.js preset, Node 24, files outside root included) — production deployment of `main` is Ready (1 Oct 2026). Root `vercel.json` (`ignoreCommand: exit 0`) keeps the **old** project `entlaqa-tms` (team "Mohamed Ibrahim's projects", still connected) from building | Remove root `vercel.json` only after the PO deletes the old project; add Supabase env vars with the sign-in work (T-M1-D03) |
+| Vercel | Project Root Directory = `apps/suite` (Next.js preset, Node 24, files outside root included) — production deployment of `main` is Ready (1 Oct 2026). Root `vercel.json` (`ignoreCommand: exit 0`) keeps the **old** project `entlaqa-tms` (team "Mohamed Ibrahim's projects", still connected) from building | Remove root `vercel.json` only after the PO deletes the old project; Supabase env vars for sign-in: [staging-sign-in.md](staging-sign-in.md) |
 
 ### Items to verify on the Supabase staging project (T-M0-07)
-The first two are exercised by `DB deploy` (`plan` fails on a refused grant; `verify-deployment.sql` checks role attributes); the others need the sign-in flow.
+The first two are exercised by `DB deploy` (`plan` fails on a refused grant; `verify-deployment.sql` checks role attributes); the others are confirmed by the first staging sign-in ([staging-sign-in.md](staging-sign-in.md) §Checking it works).
 - ~~`grant select … on auth.sessions to tenant_guard`~~ — not permitted on hosted Supabase (no grant option on `auth`); resolved by ADR 0002 §6a rev. 2: `tenant_guard` reads the view `private.auth_session_validity`, owned by the migration role. Still to confirm: the FK `platform.session_context → auth.sessions` is permitted, and `auth.sessions` has no RLS that hides rows from the view's owner.
 - `grant authenticated to app_server/app_worker` and `NOINHERIT` behave as tested; pooler user names are `app_server.<project-ref>`.
 - The access-token hook input contains `session_id` (ADR 0002 §3).

@@ -5,14 +5,17 @@
  * and that pooled connections do not leak role or claims.
  */
 import { randomUUID } from 'node:crypto';
+import { actorFromClaims, hasTenant } from '@jadarat/platform-core';
 import { brandVerifiedClaims } from '@jadarat/platform-core/internal/verified-claims';
 import { sql } from 'drizzle-orm';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createDatabase } from './client';
+import { insertAuditEvent } from './audit';
 import { createWithSystemTx } from './jobs';
 import { auditEvents, persons, tenantMemberships } from './schema';
-import { createWithUserTx, switchActiveTenant } from './with-user-tx';
+import { getCurrentTenant } from './tenants';
+import { createWithUserTx, listSessionTenants, switchActiveTenant } from './with-user-tx';
 
 const ownerUrl = process.env.TEST_DATABASE_URL;
 const appServerUrl = process.env.TEST_APP_SERVER_URL;
@@ -252,6 +255,51 @@ describe.skipIf(!configured)('withUserTx / withSystemTx against PostgreSQL', () 
     expect(new Set(visible.map((r) => r.tenantId))).toEqual(new Set([ids.tenantA]));
     const none = await systemTxOnServerConnection(actor, (tx) => tx.select().from(persons));
     expect(none).toHaveLength(0);
+  });
+
+  it('sign-in helpers: session organizations, the current organization and the sign-in audit event', async () => {
+    // Before a tenant is selected (no tenant claim): only the session's active memberships.
+    expect(await withUserTx(claimsFor(), (tx) => listSessionTenants(tx))).toEqual([
+      { tenantId: ids.tenantA, nameAr: 'أ', nameEn: null },
+    ]);
+    expect(await withUserTx(claimsFor(ids.tenantA), (tx) => getCurrentTenant(tx))).toEqual({
+      tenantId: ids.tenantA,
+      nameAr: 'أ',
+      nameEn: null,
+    });
+    // A forged tenant claim (no membership in B) resolves to no organization.
+    expect(await withUserTx(claimsFor(ids.tenantB), (tx) => getCurrentTenant(tx))).toBeNull();
+
+    const tenantClaims = claimsFor(ids.tenantA);
+    if (!hasTenant(tenantClaims)) throw new Error('bad fixture');
+    const actor = actorFromClaims(tenantClaims);
+    const otherClaims = claimsForUserB();
+    if (!hasTenant(otherClaims)) throw new Error('bad fixture');
+    await withUserTx(claimsFor(ids.tenantA), (tx) =>
+      insertAuditEvent(tx, actor, {
+        action: 'platform.auth.signed_in',
+        entityType: 'auth_session',
+        entityId: ids.session,
+        data: { method: 'password', aal: 'aal1' },
+      }),
+    );
+    const [row] = await owner<{ action: string; actor_user_id: string; entity_id: string }[]>`
+      select action, actor_user_id, entity_id from platform.audit_events
+      where tenant_id = ${ids.tenantA} and action = 'platform.auth.signed_in'`;
+    expect(row).toEqual({
+      action: 'platform.auth.signed_in',
+      actor_user_id: ids.user,
+      entity_id: ids.session,
+    });
+    // The actor must match the verified claims: another user's row (in another tenant) is refused.
+    await expectSqlState(
+      withUserTx(claimsFor(ids.tenantA), (tx) =>
+        insertAuditEvent(tx, actorFromClaims(otherClaims), {
+          action: 'platform.auth.signed_in',
+        }),
+      ),
+      '42501',
+    );
   });
 
   it('switchActiveTenant only switches into tenants with an active membership, for this session', async () => {

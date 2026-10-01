@@ -85,6 +85,27 @@ describe('Supabase Data API exposure (ADR 0002 §5)', () => {
 });
 
 describe('server actions gate (ADR 0003 §4.6)', () => {
+  it('allows definePublicAction only in apps/suite/src/auth/ (unauthenticated entry points)', () => {
+    const src =
+      "'use server';\nimport { definePublicAction } from '@jadarat/platform-rbac';\nexport const signIn = definePublicAction({});\n";
+    expect(checkServerActionsSource('apps/suite/src/auth/actions.ts', src)).toEqual([]);
+    for (const elsewhere of [
+      'apps/suite/src/app/[locale]/sign-in/actions.ts',
+      'apps/suite/src/auth/nested/actions.ts',
+      'modules/tms/src/actions.ts',
+      'packages/platform-identity/src/actions.ts',
+    ]) {
+      expect(checkServerActionsSource(elsewhere, src).join('\n')).toMatch(
+        /definePublicAction\(\) is allowed only in apps\/suite\/src\/auth\//,
+      );
+    }
+    const foreign =
+      "'use server';\nimport { definePublicAction } from './mine';\nexport const signIn = definePublicAction({});\n";
+    expect(checkServerActionsSource('apps/suite/src/auth/actions.ts', foreign).join('\n')).toMatch(
+      /"definePublicAction" must be imported from @jadarat\/platform-rbac/,
+    );
+  });
+
   it('accepts defineAction exports', () => {
     expect(checkServerActionsSource('modules/tms/src/actions/good.ts', fixture('good.ts'))).toEqual(
       [],

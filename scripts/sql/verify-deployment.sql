@@ -92,7 +92,8 @@ begin
       ('private.user_session_is_valid(uuid, uuid)', array['tenant_guard']),
       ('private.has_active_membership(uuid, uuid)', array['tenant_guard']),
       ('private.current_tenant_id()',               array['tenant_guard', 'authenticated']),
-      ('private.switch_active_tenant(uuid)',        array['tenant_guard', 'authenticated'])
+      ('private.switch_active_tenant(uuid)',        array['tenant_guard', 'authenticated']),
+      ('private.session_tenants()',                 array['tenant_guard', 'authenticated'])
     ) as h(fn, allowed)
     left join pg_proc p on p.oid = to_regprocedure(h.fn)
   loop

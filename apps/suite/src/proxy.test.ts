@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { describe, expect, it } from 'vitest';
-import { config, forwardRequestHeaders, isLocaleRouted, proxy } from './proxy';
+import { config, forwardRequestHeaders, isLocaleRouted, routeRequest } from './proxy';
 
 function run(url: string, headers: Record<string, string> = {}) {
-  return proxy(new NextRequest(url, { headers }));
+  return routeRequest(new NextRequest(url, { headers }));
 }
 
 /** Request-header overrides the proxy forwards to the app (Next.js encodes them on the response). */
@@ -146,5 +146,16 @@ describe('proxy', () => {
     expect(isLocaleRouted('/api/health')).toBe(false);
     expect(isLocaleRouted('/_next/image')).toBe(false);
     expect(isLocaleRouted('/icon.svg')).toBe(false);
+  });
+});
+
+describe('proxy (async wrapper)', () => {
+  it('routes like routeRequest and skips session refresh without session cookies', async () => {
+    const { proxy } = await import('./proxy');
+    const response = await proxy(new NextRequest('http://localhost:3000/ar/suite'));
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBeNull();
+    const asset = await proxy(new NextRequest('http://localhost:3000/icon.svg'));
+    expect(asset.headers.get('content-security-policy')).toBeTruthy();
   });
 });

@@ -88,3 +88,52 @@ echo "db-test-hosted-sim: plan as non-superuser $MIGRATOR"
 bash "$ROOT/scripts/db-deploy.sh" plan
 echo "db-test-hosted-sim: apply as non-superuser $MIGRATOR"
 bash "$ROOT/scripts/db-deploy.sh" apply
+
+# Tenant provisioning (scripts/provision-tenant.sh) as the same non-superuser migration role.
+ADMIN_UID="$(node -e 'process.stdout.write(require("node:crypto").randomUUID())')"
+"${PSQL[@]}" -d "$DB" -c "insert into auth.users (id, email) values ('$ADMIN_UID', 'sim-admin@example.test')"
+q() { psql -X -At --no-psqlrc -v ON_ERROR_STOP=1 -d "$DB" -c "$1"; }
+memberships() {
+  q "select count(*) from platform.tenant_memberships m join platform.tenants t on t.id = m.tenant_id
+     where t.slug = 'sim-org' and m.user_id = '$ADMIN_UID' and m.status = 'active'"
+}
+export TENANT_SLUG=sim-org TENANT_NAME_AR='منشأة المحاكاة' TENANT_NAME_EN='Simulation Org' ADMIN_USER_ID="$ADMIN_UID"
+echo "db-test-hosted-sim: provision plan + apply as $MIGRATOR"
+# expect_refusal <message pattern> [VAR=value …]: the provisioning must fail with that message.
+expect_refusal() {
+  local pattern="$1" err
+  shift
+  err="$(mktemp)"
+  if env "$@" bash "$ROOT/scripts/provision-tenant.sh" apply >/dev/null 2>"$err"; then
+    echo "db-test-hosted-sim: provisioning must fail ($*)" >&2; rm -f "$err"; exit 1
+  fi
+  grep -q "$pattern" "$err" || { cat "$err" >&2; rm -f "$err"; exit 1; }
+  rm -f "$err"
+}
+bash "$ROOT/scripts/provision-tenant.sh" plan
+[[ "$(memberships)" == "0" ]] || { echo "db-test-hosted-sim: provision plan changed the database" >&2; exit 1; }
+bash "$ROOT/scripts/provision-tenant.sh" apply
+[[ "$(memberships)" == "1" ]] || { echo "db-test-hosted-sim: provision apply did not create the membership" >&2; exit 1; }
+[[ "$(q "select name_ar || '|' || name_en || '|' || status from platform.tenants where slug = 'sim-org'")" == "منشأة المحاكاة|Simulation Org|active" ]] ||
+  { echo "db-test-hosted-sim: provisioned organization has unexpected values" >&2; exit 1; }
+# An existing organization is never joined by accident: refused without add_to_existing, and with it
+# when the names differ; with both, an already active member is a no-op.
+expect_refusal 'already exists; to add a member'
+expect_refusal 'exists with different names' ADD_TO_EXISTING=true TENANT_NAME_AR='منشأة أخرى'
+expect_refusal 'exists with different names' ADD_TO_EXISTING=true TENANT_NAME_EN=
+ADD_TO_EXISTING=true bash "$ROOT/scripts/provision-tenant.sh" apply
+[[ "$(memberships)" == "1" ]] || { echo "db-test-hosted-sim: re-provisioning changed the membership" >&2; exit 1; }
+[[ "$(q "select count(*) from platform.audit_events where action = 'platform.tenant.admin_provisioned' and entity_id = '$ADMIN_UID'")" == "1" ]] ||
+  { echo "db-test-hosted-sim: expected exactly one provisioning audit event" >&2; exit 1; }
+# An unknown Auth user: refused, and nothing is left behind.
+expect_refusal 'no Auth user with this UID' TENANT_SLUG=sim-other \
+  ADMIN_USER_ID="$(node -e 'process.stdout.write(require("node:crypto").randomUUID())')"
+[[ "$(q "select count(*) from platform.tenants where slug = 'sim-other'")" == "0" ]] ||
+  { echo "db-test-hosted-sim: a failed provisioning left an organization behind" >&2; exit 1; }
+# Malformed input is rejected before connecting.
+for bad in "TENANT_SLUG=-bad" "TENANT_SLUG=Bad" "ADMIN_USER_ID=not-a-uuid" "TENANT_NAME_AR= " "ADD_TO_EXISTING=yes"; do
+  if env "$bad" bash "$ROOT/scripts/provision-tenant.sh" plan >/dev/null 2>&1; then
+    echo "db-test-hosted-sim: provisioning accepted invalid input ($bad)" >&2; exit 1
+  fi
+done
+echo "db-test-hosted-sim: provisioning OK"

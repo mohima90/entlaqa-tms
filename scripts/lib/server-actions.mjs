@@ -11,13 +11,17 @@
  *    and may not use `export *` (it could re-export a mutating handler unchecked).
  *  - In action and route files, `defineAction` / `defineRoute` must be IMPORTED from the platform
  *    package (@jadarat/platform-rbac) — a local or foreign function with the same name is rejected.
+ *  - `definePublicAction` (pre-tenant sign-in flows, no permission check) is allowed ONLY in
+ *    apps/suite/src/auth/*.ts(x), so every unauthenticated entry point lives in one reviewed place.
  */
 import ts from 'typescript';
 
 const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 /** Packages allowed to provide defineAction / defineRoute. */
 export const PLATFORM_ACTION_PACKAGES = new Set(['@jadarat/platform-rbac']);
-const FACTORIES = ['defineAction', 'defineRoute'];
+const FACTORIES = ['defineAction', 'defineRoute', 'definePublicAction'];
+/** The only files that may export definePublicAction() actions (ADR 0003 §2 sign-in flows). */
+export const PUBLIC_ACTION_FILES = /^apps\/suite\/src\/auth\/[^/]+\.(ts|tsx)$/;
 
 /** File extensions scanned by the gate. */
 export const SCANNED_SOURCE = /\.(ts|tsx|js|jsx|mjs|cjs)$/;
@@ -202,7 +206,12 @@ export function checkServerActionsSource(fileName, source) {
           errors.push(`${where(st)}: exported server actions must be const`);
         }
         for (const decl of st.declarationList.declarations) {
-          if (!isCallTo(decl.initializer, 'defineAction')) {
+          const publicAction = isCallTo(decl.initializer, 'definePublicAction');
+          if (publicAction && !PUBLIC_ACTION_FILES.test(fileName)) {
+            errors.push(
+              `${where(decl)}: definePublicAction() is allowed only in apps/suite/src/auth/ (unauthenticated entry points)`,
+            );
+          } else if (!publicAction && !isCallTo(decl.initializer, 'defineAction')) {
             errors.push(
               `${where(decl)}: exported server action "${decl.name.getText(sf)}" must be created with defineAction()`,
             );

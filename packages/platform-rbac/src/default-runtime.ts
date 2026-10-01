@@ -28,19 +28,9 @@ export const defaultActionRuntime: ActionRuntime<UserTx> = {
   resolveResource() {
     return Promise.resolve(null);
   },
-  // TODO(T-M1-D03): move to platform-audit when that package lands.
   async writeAudit(tx, actor, record) {
-    const { schema } = await import('@jadarat/platform-db');
-    await tx.insert(schema.auditEvents).values({
-      tenantId: actor.tenantId,
-      actorUserId: actor.userId,
-      actorPersonId: actor.personId,
-      impersonatorUserId: actor.impersonatorUserId,
-      action: record.action,
-      entityType: record.entityType ?? null,
-      entityId: record.entityId ?? null,
-      data: record.data ?? {},
-    });
+    const { insertAuditEvent } = await import('@jadarat/platform-db');
+    await insertAuditEvent(tx, actor, record);
   },
   logError(error, meta) {
     // No personal data: log only the error class, the permission code and the correlation id.

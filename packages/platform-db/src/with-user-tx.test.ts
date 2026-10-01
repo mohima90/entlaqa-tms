@@ -3,7 +3,7 @@ import { type SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { describe, expect, it } from 'vitest';
 import type { AppDatabase } from './client';
-import { createWithUserTx, switchActiveTenant } from './with-user-tx';
+import { createWithUserTx, listSessionTenants, switchActiveTenant } from './with-user-tx';
 
 const dialect = new PgDialect();
 const toQuery = (query: SQL) => {
@@ -119,5 +119,36 @@ describe('switchActiveTenant', () => {
       sql: 'select private.switch_active_tenant($1::uuid) as switched',
       params: ['22222222-2222-4222-8222-222222222222'],
     });
+  });
+});
+
+describe('listSessionTenants', () => {
+  it('reads private.session_tenants() and maps the rows', async () => {
+    const executed: { sql: string; params: unknown[] }[] = [];
+    const tx = {
+      execute: (query: SQL) => {
+        executed.push(toQuery(query));
+        return Promise.resolve([
+          {
+            tenant_id: 'a0000000-0000-4000-8000-000000000001',
+            name_ar: 'المنشأة أ',
+            name_en: 'Tenant A',
+          },
+          {
+            tenant_id: 'b0000000-0000-4000-8000-000000000001',
+            name_ar: 'المنشأة ب',
+            name_en: null,
+          },
+        ]);
+      },
+    };
+    const tenants = await listSessionTenants(tx as never);
+    expect(executed).toEqual([
+      { sql: 'select tenant_id, name_ar, name_en from private.session_tenants()', params: [] },
+    ]);
+    expect(tenants).toEqual([
+      { tenantId: 'a0000000-0000-4000-8000-000000000001', nameAr: 'المنشأة أ', nameEn: 'Tenant A' },
+      { tenantId: 'b0000000-0000-4000-8000-000000000001', nameAr: 'المنشأة ب', nameEn: null },
+    ]);
   });
 });

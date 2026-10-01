@@ -1,6 +1,6 @@
 # ADR 0003 — Authentication, authorization, permissions and data scopes
 
-**Status:** Accepted (rev. 1 after TM-0001 review) — PR #9, 30 Sep 2026 · **Date:** 30 Sep 2026 · **Backlog:** T-M1-B03 · **Related:** BRD FR-IAM-01…15, FR-ADM-17, FR-WFL-02, Appendix B (roles & permission matrix), NFR-SEC-01/02/09; Development Plan §8.3; ADR 0001, ADR 0002
+**Status:** Accepted (rev. 1 after TM-0001 review) — PR #9, 30 Sep 2026; rev. 2 (§4.7 pre-tenant actions; MFA off by default until the tenant policy ships — PO, 1 Oct 2026) — T-M1-D03, 1 Oct 2026 · **Date:** 30 Sep 2026 · **Backlog:** T-M1-B03 · **Related:** BRD FR-IAM-01…15, FR-ADM-17, FR-WFL-02, Appendix B (roles & permission matrix), NFR-SEC-01/02/09; Development Plan §8.3; ADR 0001, ADR 0002
 
 ## Context
 
@@ -75,6 +75,7 @@ Effective access = **union** of the member's assignments, each limited by its sc
 4. **Browser.** The browser never queries tenant tables directly; all data flows through server code. The only browser use of Supabase is **Realtime** (where needed, e.g., live attendance rosters): the server hands the browser a short-lived access token kept **in memory only** (`realtime.setAuth`), refreshed through a server call; channels are private and authorized by RLS. Storage objects are never readable by that token alone (ADR 0006 download grants).
 5. **CSRF / origin.** Server Actions rely on Next.js's built-in Origin/Host check; cookie-authenticated route handlers that change state must verify `Origin` and reject cross-site requests. The external API (R2) uses bearer tokens, not cookies (ADR 0011).
 6. **Mechanical enforcement.** A lint rule/test fails the build if any exported server action or mutating route handler in `modules/**` or `packages/platform-*/**` is not created with `defineAction` / `defineRoute`.
+7. **Pre-tenant actions (rev. 2, T-M1-D03).** Sign-in, organization selection and sign-out run before a tenant (and therefore any grant) exists, so they cannot use `defineAction`. They use `definePublicAction` (`@jadarat/platform-rbac`): zod-validated input, the same error contract (ADR 0011), unexpected errors → `INTERNAL_ERROR` with a correlation id, no permission check. The CI gate allows it **only** in `apps/suite/src/auth/*.ts(x)`; every other use fails the build. The handlers call `platform-identity`, which verifies every token it acts on (strict `getUser()` before a session gains a tenant) and requires the tenant claim after selection.
 
 ### 5. Governance rules
 - **No privilege escalation:** a member can only grant roles whose permissions they themselves hold, within their own scope; `platform.role.manage` is high-risk and requires AAL2.

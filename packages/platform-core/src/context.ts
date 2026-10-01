@@ -1,3 +1,4 @@
+import type { TenantClaims } from './claims';
 import type { Uuid } from './ids';
 
 export type Locale = 'ar' | 'en';
@@ -29,4 +30,15 @@ export interface RequestContext {
   readonly locale: Locale;
   readonly hostTenant: HostTenant | null;
   readonly actor: ActorContext | null;
+}
+
+/** The actor of a request, from verified tenant claims only (never from client input). */
+export function actorFromClaims(claims: TenantClaims): ActorContext {
+  return {
+    userId: claims.sub as Uuid,
+    personId: (claims.person_id ?? null) as Uuid | null,
+    tenantId: claims.tenant_id as Uuid,
+    aal: claims.aal ?? 'aal1',
+    impersonatorUserId: (claims.actor ?? null) as Uuid | null,
+  };
 }

@@ -215,10 +215,14 @@ $$;
 comment on function private.switch_active_tenant(uuid) is
   'SECURITY-RELEVANT (ADR 0002 §3). Sets the active tenant of the caller''s current Auth session only.';
 
+-- A non-superuser (hosted Supabase's migration role) may hand ownership to a role only if that role has
+-- CREATE on the schema; tenant_guard gets it for these four statements only (same transaction).
+grant create on schema private to tenant_guard;
 alter function private.user_session_is_valid(uuid, uuid) owner to tenant_guard;
 alter function private.has_active_membership(uuid, uuid) owner to tenant_guard;
 alter function private.current_tenant_id() owner to tenant_guard;
 alter function private.switch_active_tenant(uuid) owner to tenant_guard;
+revoke create on schema private from tenant_guard;
 
 revoke all on function private.try_uuid(text) from public;
 revoke all on function private.request_claims() from public;
@@ -236,9 +240,21 @@ grant execute on function private.has_active_membership(uuid, uuid) to tenant_gu
 grant execute on function private.current_tenant_id() to authenticated;
 grant execute on function private.switch_active_tenant(uuid) to authenticated;
 
--- tenant_guard reads Auth sessions (verify on Supabase staging that this grant is permitted, T-M0-07).
+-- tenant_guard reads Auth sessions. Without the grant option a GRANT only emits a WARNING and changes
+-- nothing (possible on hosted Supabase, where the migration role does not own `auth`), which would make
+-- every tenant query fail at runtime: assert the result instead of trusting the GRANT.
 grant usage on schema auth to tenant_guard;
 grant select (id, user_id, not_after) on auth.sessions to tenant_guard;
+do $$
+begin
+  if not (has_schema_privilege('tenant_guard', 'auth', 'usage')
+          and has_column_privilege('tenant_guard', 'auth.sessions', 'id', 'select')
+          and has_column_privilege('tenant_guard', 'auth.sessions', 'user_id', 'select')
+          and has_column_privilege('tenant_guard', 'auth.sessions', 'not_after', 'select')) then
+    raise exception 'tenant_guard could not be granted USAGE on schema auth and SELECT (id, user_id, not_after) on auth.sessions: the migration role (%) lacks the grant option', current_user;
+  end if;
+end
+$$;
 
 -- updated_at maintenance (SECURITY INVOKER).
 create or replace function private.set_updated_at()

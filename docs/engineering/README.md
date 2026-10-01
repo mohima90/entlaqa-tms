@@ -37,6 +37,7 @@ No Supabase project or secrets are needed to build, test or run the app: without
 | `pnpm check:deps` | dependency-cruiser: ADR 0001 boundaries, admin/jobs import rules, no cycles | 4 (boundaries) |
 | `pnpm db:test` | Throwaway DB → test-only Supabase shim → migrations **up → down → up** → SQL tests (catalog, isolation, claim validation, access-token hook, tenant switch) | 4, 5 |
 | `DB_TEST_INTEGRATION=1 pnpm db:test` | …plus the TypeScript integration tests (`withUserTx` / `withSystemTx` against real PostgreSQL) | 6 |
+| `pnpm db:test:hosted-sim` | Runs the real deploy path (`db-deploy.sh` plan + apply + `verify-deployment.sql`) as a **non-superuser** migration role shaped like hosted Supabase's `postgres` — catches superuser-only statements that `db:test` cannot see | 4 |
 | `pnpm build` | Production build (`output: 'standalone'`) + copies static assets into `.next/standalone` | — |
 | `pnpm --filter @jadarat/suite check:budget` | Client JS / CSS gzip budget (`apps/suite/performance-budget.json`) | 9 |
 | `pnpm e2e` | Playwright smoke against the standalone server: Arabic + English, `dir`, no console/CSP errors, no horizontal overflow at 390 px, axe (0 serious/critical) | 7, 8 |

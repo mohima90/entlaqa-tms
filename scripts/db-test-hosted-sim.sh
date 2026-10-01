@@ -36,7 +36,7 @@ cleanup() {
           execute 'revoke tenant_guard from $MIGRATOR granted by $MIGRATOR';
         end if;
       end if;
-    end \$\$;" >/dev/null 2>&1 || true
+    end \$\$;" >/dev/null 2>&1 || echo "db-test-hosted-sim: WARNING: cleanup of cluster-wide roles failed" >&2
   dropdb --if-exists "$DB" >/dev/null 2>&1 || true
   if [[ $status -eq 0 ]]; then echo "db-test-hosted-sim: PASSED"; else echo "db-test-hosted-sim: FAILED (exit $status)" >&2; fi
 }
@@ -67,7 +67,7 @@ declare r text;
 begin
   foreach r in array array['app_server', 'app_worker', 'tenant_guard'] loop
     if exists (select 1 from pg_roles where rolname = r) then
-      execute format('grant %I to $MIGRATOR with admin option', r);
+      execute format('grant %I to $MIGRATOR with admin option, inherit false, set false', r);
     end if;
   end loop;
 end \$\$;

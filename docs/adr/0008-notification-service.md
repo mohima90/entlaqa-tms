@@ -1,6 +1,6 @@
 # ADR 0008 — Notification service abstraction
 
-**Status:** Proposed · **Date:** 30 Sep 2026 · **Backlog:** T-M1-B08 · **Related:** BRD §6.20 (FR-NTF-01…09, BR-NTF-1/2), Appendix D, FR-LRN-03/07, FR-AUD-05, FR-ENR-06, FR-SUB-01, NFR-L10N-11, NFR-PERF-06, §15; Development Plan §6.6 security focus; decision D5; ADR 0003, ADR 0004, ADR 0005, ADR 0007, ADR 0009, ADR 0010
+**Status:** Accepted — PR #9, 30 Sep 2026 · **Date:** 30 Sep 2026 · **Backlog:** T-M1-B08 · **Related:** BRD §6.20 (FR-NTF-01…09, BR-NTF-1/2), Appendix D, FR-LRN-03/07, FR-AUD-05, FR-ENR-06, FR-SUB-01, NFR-L10N-11, NFR-PERF-06, §15; Development Plan §6.6 security focus; decision D5; ADR 0003, ADR 0004, ADR 0005, ADR 0007, ADR 0009, ADR 0010
 
 ## Context
 

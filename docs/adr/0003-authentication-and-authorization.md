@@ -1,6 +1,6 @@
 # ADR 0003 — Authentication, authorization, permissions and data scopes
 
-**Status:** Proposed (rev. 1 after TM-0001 review) · **Date:** 30 Sep 2026 · **Backlog:** T-M1-B03 · **Related:** BRD FR-IAM-01…15, FR-ADM-17, FR-WFL-02, Appendix B (roles & permission matrix), NFR-SEC-01/02/09; Development Plan §8.3; ADR 0001, ADR 0002
+**Status:** Accepted (rev. 1 after TM-0001 review) — PR #9, 30 Sep 2026 · **Date:** 30 Sep 2026 · **Backlog:** T-M1-B03 · **Related:** BRD FR-IAM-01…15, FR-ADM-17, FR-WFL-02, Appendix B (roles & permission matrix), NFR-SEC-01/02/09; Development Plan §8.3; ADR 0001, ADR 0002
 
 ## Context
 

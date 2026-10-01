@@ -1,6 +1,6 @@
 # ADR 0001 — Monorepo layout and module boundaries
 
-**Status:** Proposed · **Date:** 30 Sep 2026 · **Backlog:** T-M1-B01 · **Related:** BRD §3.4, Appendix H.1/H.4/H.5; FR-STE-01, FR-STE-02, FR-STE-08; Q8 sovereign-ready, Q9 suite-ready
+**Status:** Accepted — PR #9, 30 Sep 2026 · **Date:** 30 Sep 2026 · **Backlog:** T-M1-B01 · **Related:** BRD §3.4, Appendix H.1/H.4/H.5; FR-STE-01, FR-STE-02, FR-STE-08; Q8 sovereign-ready, Q9 suite-ready
 
 ## Context
 

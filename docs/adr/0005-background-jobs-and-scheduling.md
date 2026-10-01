@@ -1,6 +1,6 @@
 # ADR 0005 — Background jobs and scheduling (self-hostable)
 
-**Status:** Proposed · **Date:** 30 Sep 2026 · **Backlog:** T-M1-B05 · **Related:** BRD Appendix H.1; FR-NTF-08, FR-CRT-05, FR-CRT-07/08, FR-SCH-08, FR-LOG-01/02, FR-ASM-05, FR-LMS-05/07/10, FR-IAM-03/04, FR-RPT-02; NFR-PERF-05, NFR-SCAL-03, NFR-AVL-04; TM-0001 F-01, F-03 (TB-9); ADR 0001, ADR 0002 §5–§7 (incl. §6a), ADR 0004, ADR 0006, ADR 0009, ADR 0010
+**Status:** Accepted — PR #9, 30 Sep 2026 · **Date:** 30 Sep 2026 · **Backlog:** T-M1-B05 · **Related:** BRD Appendix H.1; FR-NTF-08, FR-CRT-05, FR-CRT-07/08, FR-SCH-08, FR-LOG-01/02, FR-ASM-05, FR-LMS-05/07/10, FR-IAM-03/04, FR-RPT-02; NFR-PERF-05, NFR-SCAL-03, NFR-AVL-04; TM-0001 F-01, F-03 (TB-9); ADR 0001, ADR 0002 §5–§7 (incl. §6a), ADR 0004, ADR 0006, ADR 0009, ADR 0010
 
 ## Context
 

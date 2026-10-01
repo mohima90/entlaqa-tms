@@ -75,7 +75,10 @@ The delivery team is the **user as Product Owner + Claude Code sessions and sub-
 
 ## Environment notes
 
-- The repository currently contains **documentation only** (no application code yet).
-- Vercel project **`jadarat-tms`** (team "Mohamed Attia's projects") is linked to this repository. Root `vercel.json` sets region `fra1` and an `ignoreCommand` that **skips builds while no `package.json` exists**, so docs-only commits do not fail. When the M1 scaffold lands in `apps/suite`, set the project's Root Directory to `apps/suite` and move/adapt `vercel.json` there.
+- The repository contains the **M1 foundation** (monorepo, migrations, CI gates — see `docs/engineering/README.md`) plus the documentation.
+- Vercel project **`jadarat-tms`** (team "Mohamed Attia's projects") builds from Root Directory **`apps/suite`** (Next.js preset, Node 24, region `fra1` in `apps/suite/vercel.json`). The root `vercel.json` is no longer used.
+- Supabase staging: project **`jadarat-tms-staging`** (ref `kgmhlmiwlbvdmalesexv`, org `entlaqa-TMS`, Frankfurt, Free plan, Data API off). Claude's container **cannot reach `*.supabase.co`** (egress policy): migrations reach hosted databases only through the manual **Actions → DB deploy** workflow run by the user (`docs/engineering/db-deploy.md`). Never ask for keys or passwords in chat — they go into GitHub environment secrets / Vercel env vars.
+- `main` is protected by the ruleset `main protection` (PR required, `CI gates` + CodeQL checks required, no force-push).
+- **Guiding the user (PO):** give **one action per message** (exact click/field), then wait for "done" before the next.
 - The Vercel connection available to Claude sessions **cannot create, list or read projects/deployments** in this team (403/empty results). Check deployment status in the Vercel dashboard (or ask the user for a screenshot); project settings changes are done by the user. To give Claude access, reconnect Vercel in claude.ai → Settings → Connectors with access to the team.
 - Mermaid diagrams in docs must render on GitHub; validate with `@mermaid-js/mermaid-cli` when changing them.

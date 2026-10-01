@@ -1,6 +1,6 @@
 # ADR 0002 — Multi-tenancy, tenant resolution and row-level security
 
-**Status:** Proposed (rev. 1 after TM-0001 review) · **Date:** 30 Sep 2026 · **Backlog:** T-M1-B02 · **Related:** BRD §5 (v1 tenancy), §10.3 DR-1, §12, §15, Appendix H.3; NFR-SEC-02; Development Plan Q2 (tenant isolation), §8.3; ADR 0001, ADR 0003
+**Status:** Accepted (rev. 1 after TM-0001 review) — PR #9, 30 Sep 2026 · **Date:** 30 Sep 2026 · **Backlog:** T-M1-B02 · **Related:** BRD §5 (v1 tenancy), §10.3 DR-1, §12, §15, Appendix H.3; NFR-SEC-02; Development Plan Q2 (tenant isolation), §8.3; ADR 0001, ADR 0003
 
 ## Context
 

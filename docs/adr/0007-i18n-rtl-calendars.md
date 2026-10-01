@@ -1,6 +1,6 @@
 # ADR 0007 — Internationalization, RTL, Hijri and working calendars, prayer times
 
-**Status:** Proposed · **Date:** 30 Sep 2026 · **Backlog:** T-M1-B07 · **Related:** BRD §13 (NFR-L10N-01…13), FR-SCH-05/06/07, FR-ADM-04, BR-ADM-3, FR-NTF-07, FR-CAT-10, FR-CRT-01/02, FR-DEP-05, DR-2, DR-3, Appendix H.1/H.2; Development Plan §9; ADR 0001, ADR 0006, ADR 0008
+**Status:** Accepted — PR #9, 30 Sep 2026 · **Date:** 30 Sep 2026 · **Backlog:** T-M1-B07 · **Related:** BRD §13 (NFR-L10N-01…13), FR-SCH-05/06/07, FR-ADM-04, BR-ADM-3, FR-NTF-07, FR-CAT-10, FR-CRT-01/02, FR-DEP-05, DR-2, DR-3, Appendix H.1/H.2; Development Plan §9; ADR 0001, ADR 0006, ADR 0008
 
 ## Context
 

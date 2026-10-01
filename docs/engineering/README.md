@@ -41,6 +41,7 @@ No Supabase project or secrets are needed to build, test or run the app: without
 | `pnpm --filter @jadarat/suite check:budget` | Client JS / CSS gzip budget (`apps/suite/performance-budget.json`) | 9 |
 | `pnpm e2e` | Playwright smoke against the standalone server: Arabic + English, `dir`, no console/CSP errors, no horizontal overflow at 390 px, axe (0 serious/critical) | 7, 8 |
 | `pnpm check:all` | typecheck + lint + format + coverage + migrations + deps | — |
+| `bash scripts/db-deploy.sh plan\|apply` | Hosted environments only, normally via **Actions → DB deploy** (runbook: [db-deploy.md](db-deploy.md)) | — |
 
 ### Database tests locally
 
@@ -87,7 +88,7 @@ supabase/
   tests/                    SQL tests; first line declares the connection: -- db-test: run-as=owner|app_server|app_worker
   tests/_shim/              TEST-ONLY Supabase shim for plain PostgreSQL (roles, auth.jwt/uid, auth.users/sessions)
   config.toml               local Supabase CLI config (hook enabled, Data API disabled — nothing exposed, gated by check:migrations)
-scripts/                    db-test.sh and repository gate scripts (+ their tests)
+scripts/                    db-test.sh, db-deploy.sh (+ sql/verify-deployment.sql) and repository gate scripts (+ their tests)
 .github/                    CI (ci.yml, codeql.yml), composite setup action, Dependabot
 ```
 
@@ -144,22 +145,23 @@ Follow `docs/architecture/migration-conventions.md` (templates, naming, required
 
 Make the aggregate job **`CI gates`** and the CodeQL checks required status checks on `main` (PO, repository settings).
 
-**Secret-scanning note:** a full-history gitleaks scan reports findings in commits of the *removed* pre-rebuild codebase (e.g. a committed `.env.local`). CI therefore scans the working tree and the commits of each PR/push. The historical credentials must be treated as exposed and rotated/revoked by the PO; they are not allow-listed.
+**Secret-scanning note:** a full-history gitleaks scan reports findings in commits of the *removed* pre-rebuild codebase (e.g. a committed `.env.local`). CI therefore scans the working tree and the commits of each PR/push. The historical credentials were revoked on 1 Oct 2026 (old Vercel and Supabase projects deleted; see STATUS); they are not allow-listed.
 
 ## 7. What is stubbed, and what comes next
 
 | Area | State | Next |
 |---|---|---|
-| Sign-in, MFA, session refresh in the proxy | Not wired (no Supabase project). `platform-identity` verifies claims; cookies are configured HttpOnly/SameSite=Lax; no browser Auth client | **T-M1-D03** walking skeleton — needs the Supabase staging project from the PO (**T-M0-07**), asymmetric signing keys, hook enabled in the dashboard, `app_server`/`app_worker` passwords in the secret store |
+| Sign-in, MFA, session refresh in the proxy | Not wired yet (staging project exists since 1 Oct 2026; migrations go through [db-deploy.md](db-deploy.md)). `platform-identity` verifies claims; cookies are configured HttpOnly/SameSite=Lax; no browser Auth client | **T-M1-D03** walking skeleton — needs the Supabase staging project from the PO (**T-M0-07**), asymmetric signing keys, hook enabled in the dashboard, `app_server`/`app_worker` passwords in the secret store |
 | Host → tenant resolution | Proxy classifies the Host header only; on every path except `/_next/static` it strips client-sent `x-jadarat-*`/`x-nonce` headers and sets the nonce CSP (`/_next/static` gets a strict static CSP from `next.config.ts`) | Narrow `private` lookup over verified `tenant_domains` + claim/host comparison (ADR 0002 §4) |
 | Grants / roles | `defineAction` default runtime loads **no grants** → every action is denied (403) | Roles, role assignments and resource resolvers (M2) |
 | Audit | `defineAction` writes `platform.audit_events` rows | `platform-audit` package, `actor_type`, before/after, partitioning (M2, data model §2.5) |
 | DB types | Hand-written Drizzle definitions for the six platform tables | `pnpm db:types` (supabase gen types + drizzle-kit pull) with a drift gate (migration-conventions §8) |
 | Design tokens | `packages/ui` imports `docs/design/tokens/tokens.css` directly (single source of truth) | Component library + Storybook (T-M1-A02) |
 | Self-hosted stack | — | **T-M1-D04** (Docker): GoTrue hook config, `auth.sessions` grants, image scanning |
-| Vercel | Root `vercel.json` skips all builds (`ignoreCommand: exit 0`); `apps/suite/vercel.json` holds the region | PO sets Root Directory `apps/suite` (**T-M1-D05**); builds start then |
+| Vercel | Project Root Directory = `apps/suite` (Next.js preset, Node 24, files outside root included) — production deployment of `main` is Ready (1 Oct 2026). Root `vercel.json` (`ignoreCommand: exit 0`) is now unused | Remove root `vercel.json` in a later cleanup; add Supabase env vars with the sign-in work (T-M1-D03) |
 
 ### Items to verify on the Supabase staging project (T-M0-07)
+The first two are exercised by `DB deploy` (`plan` fails on a refused grant; `verify-deployment.sql` checks role attributes); the others need the sign-in flow.
 - `grant select (id, user_id, not_after) on auth.sessions to tenant_guard` and the FK `platform.session_context → auth.sessions` are permitted, and `auth.sessions` has no RLS that hides rows from `tenant_guard`.
 - `grant authenticated to app_server/app_worker` and `NOINHERIT` behave as tested; pooler user names are `app_server.<project-ref>`.
 - The access-token hook input contains `session_id` (ADR 0002 §3).

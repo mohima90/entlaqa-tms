@@ -1,6 +1,6 @@
 # ADR 0011 — API style, versioning and error model
 
-**Status:** Proposed · **Date:** 30 Sep 2026 · **Backlog:** T-M1-B11 · **Related:** BRD §7 (FR-LMS-01…10), §9 (FR-INT-02, FR-INT-03, §9.2, §9.3), FR-CRT-04, FR-ATT-02, FR-AI-11, NFR-PERF-02, NFR-MNT-05, NFR-SEC-02/04/07, NFR-L10N-01; Development Plan §6.8 security focus, §8.3; TM-0001 F-05, F-12; ADR 0002 (§4, §6a), ADR 0003 (§2, §4, §7), ADR 0004, ADR 0005, ADR 0009
+**Status:** Accepted — PR #9, 30 Sep 2026 · **Date:** 30 Sep 2026 · **Backlog:** T-M1-B11 · **Related:** BRD §7 (FR-LMS-01…10), §9 (FR-INT-02, FR-INT-03, §9.2, §9.3), FR-CRT-04, FR-ATT-02, FR-AI-11, NFR-PERF-02, NFR-MNT-05, NFR-SEC-02/04/07, NFR-L10N-01; Development Plan §6.8 security focus, §8.3; TM-0001 F-05, F-12; ADR 0002 (§4, §6a), ADR 0003 (§2, §4, §7), ADR 0004, ADR 0005, ADR 0009
 
 ## Context
 

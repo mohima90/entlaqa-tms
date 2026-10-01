@@ -1,6 +1,6 @@
 # ADR 0009 — Observability
 
-**Status:** Proposed · **Date:** 30 Sep 2026 · **Backlog:** T-M1-B09 · **Related:** BRD §11.7 (NFR-OBS-01…03), §11.3 (NFR-AVL-01…04), §12.2, FR-AUD-01, FR-LMS-10, FR-AI-10, §15; Development Plan §6.3 Track D, §8.2 (Operate), T-M1-D06; ADR 0002, ADR 0004, ADR 0005, ADR 0008, ADR 0010
+**Status:** Accepted — PR #9, 30 Sep 2026 · **Date:** 30 Sep 2026 · **Backlog:** T-M1-B09 · **Related:** BRD §11.7 (NFR-OBS-01…03), §11.3 (NFR-AVL-01…04), §12.2, FR-AUD-01, FR-LMS-10, FR-AI-10, §15; Development Plan §6.3 Track D, §8.2 (Operate), T-M1-D06; ADR 0002, ADR 0004, ADR 0005, ADR 0008, ADR 0010
 
 ## Context
 

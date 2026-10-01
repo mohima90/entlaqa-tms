@@ -1,6 +1,6 @@
 # ADR 0006 — File storage, signed URLs and malware scanning
 
-**Status:** Proposed · **Date:** 30 Sep 2026 · **Backlog:** T-M1-B06 · **Related:** BRD §3.4.1 (files service), FR-CAT-06, FR-ADM-07, FR-IAM-04, FR-INS-02, FR-CRT-01…06, FR-ATT-11, FR-LOG-01, FR-AUD-02/03, FR-SUB-01, NFR-SEC-08, DR-5, DR-6; Development Plan §8.3 (file uploads); TM-0001 F-06, F-13 (T-34, T-61); ADR 0001, ADR 0002 §8, ADR 0003 §4.4, ADR 0004, ADR 0005, ADR 0010
+**Status:** Accepted — PR #9, 30 Sep 2026 · **Date:** 30 Sep 2026 · **Backlog:** T-M1-B06 · **Related:** BRD §3.4.1 (files service), FR-CAT-06, FR-ADM-07, FR-IAM-04, FR-INS-02, FR-CRT-01…06, FR-ATT-11, FR-LOG-01, FR-AUD-02/03, FR-SUB-01, NFR-SEC-08, DR-5, DR-6; Development Plan §8.3 (file uploads); TM-0001 F-06, F-13 (T-34, T-61); ADR 0001, ADR 0002 §8, ADR 0003 §4.4, ADR 0004, ADR 0005, ADR 0010
 
 ## Context
 

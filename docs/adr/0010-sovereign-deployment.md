@@ -1,6 +1,6 @@
 # ADR 0010 — Sovereign (in-country) deployment approach
 
-**Status:** Proposed · **Date:** 30 Sep 2026 · **Backlog:** T-M1-B10 · **Related:** BRD §15 (FR-DEP-01…05), §11.3 (NFR-AVL-01…04), §12 (NFR-SEC-03/04, §12.2, §12.3), C1, RK-4, Appendix H.1/H.5; decisions D2, D6; Development Plan §3.4, §8.3 (supply chain, infrastructure), §10; T-M1-D04; TM-0001 F-03, F-06, F-07, F-09; ADR 0001–0009, ADR 0011, ADR 0012
+**Status:** Accepted — PR #9, 30 Sep 2026 · **Date:** 30 Sep 2026 · **Backlog:** T-M1-B10 · **Related:** BRD §15 (FR-DEP-01…05), §11.3 (NFR-AVL-01…04), §12 (NFR-SEC-03/04, §12.2, §12.3), C1, RK-4, Appendix H.1/H.5; decisions D2, D6; Development Plan §3.4, §8.3 (supply chain, infrastructure), §10; T-M1-D04; TM-0001 F-03, F-06, F-07, F-09; ADR 0001–0009, ADR 0011, ADR 0012
 
 ## Context
 

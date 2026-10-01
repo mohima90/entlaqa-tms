@@ -5,7 +5,7 @@ Each significant technical decision is recorded here using the template in Devel
 | # | Title | Status | Backlog |
 |---|---|---|---|
 | [0001](0001-monorepo-and-module-boundaries.md) | Monorepo layout and module boundaries | Accepted | T-M1-B01 |
-| [0002](0002-tenancy-and-row-level-security.md) | Multi-tenancy, tenant resolution and row-level security | Accepted (rev. 1) | T-M1-B02 |
+| [0002](0002-tenancy-and-row-level-security.md) | Multi-tenancy, tenant resolution and row-level security | Accepted (rev. 1); rev. 2 (§6a helper ownership) accepted on merge of its PR | T-M1-B02 |
 | [0003](0003-authentication-and-authorization.md) | Authentication, authorization, permissions and data scopes | Accepted (rev. 1) | T-M1-B03 |
 | [0004](0004-domain-events-outbox.md) | Domain events: transactional outbox and PostgreSQL queue | Accepted | T-M1-B04 |
 | [0005](0005-background-jobs-and-scheduling.md) | Background jobs and scheduling (self-hostable) | Accepted | T-M1-B05 |

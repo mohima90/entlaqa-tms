@@ -51,15 +51,31 @@ begin
     end if;
   end loop;
 
-  -- tenant_guard: may read exactly what private.user_session_is_valid() needs, and create nothing
-  -- (CREATE on `private` is granted only while ownership is handed over, migration 120100).
-  if exists (select 1 from pg_roles where rolname = 'tenant_guard') then
-    if not (has_schema_privilege('tenant_guard', 'auth', 'usage')
-            and has_column_privilege('tenant_guard', 'auth.sessions', 'id', 'select')
-            and has_column_privilege('tenant_guard', 'auth.sessions', 'user_id', 'select')
-            and has_column_privilege('tenant_guard', 'auth.sessions', 'not_after', 'select')) then
-      failures := failures || 'tenant_guard must read auth.sessions (id, user_id, not_after)'::text;
+  -- private.user_session_is_valid(): its owner (the migration role, ADR 0002 §6a rev. 2) can read
+  -- auth.sessions, and only tenant_guard may execute it (via the tenant_guard-owned helpers).
+  if to_regprocedure('private.user_session_is_valid(uuid, uuid)') is null then
+    failures := failures || 'private.user_session_is_valid(uuid, uuid) is missing'::text;
+  else
+    v_role := (select pg_get_userbyid(proowner) from pg_proc
+               where oid = 'private.user_session_is_valid(uuid, uuid)'::regprocedure);
+    if not (has_schema_privilege(v_role, 'auth', 'usage')
+            and has_column_privilege(v_role, 'auth.sessions', 'id', 'select')
+            and has_column_privilege(v_role, 'auth.sessions', 'user_id', 'select')
+            and has_column_privilege(v_role, 'auth.sessions', 'not_after', 'select')) then
+      failures := failures || format('%s (owner of private.user_session_is_valid) must read auth.sessions (id, user_id, not_after)', v_role);
     end if;
+    for r in select rolname from pg_roles
+             where rolname in ('anon', 'authenticated', 'service_role', 'authenticator', 'app_server', 'app_worker')
+    loop
+      if has_function_privilege(r.rolname, 'private.user_session_is_valid(uuid, uuid)', 'execute') then
+        failures := failures || format('%s must not execute private.user_session_is_valid', r.rolname);
+      end if;
+    end loop;
+  end if;
+
+  -- tenant_guard creates nothing (CREATE on `private` is granted only while ownership is handed over,
+  -- migration 120100) and nobody else acts as it.
+  if exists (select 1 from pg_roles where rolname = 'tenant_guard') then
     for r in select nspname from pg_namespace where nspname = any (module_schemas) loop
       if has_schema_privilege('tenant_guard', r.nspname, 'create') then
         failures := failures || format('tenant_guard must not have CREATE on schema %s', r.nspname);

@@ -1,6 +1,6 @@
 # ADR 0002 — Multi-tenancy, tenant resolution and row-level security
 
-**Status:** Accepted (rev. 1 after TM-0001 review) — PR #9, 30 Sep 2026 · **Date:** 30 Sep 2026 · **Backlog:** T-M1-B02 · **Related:** BRD §5 (v1 tenancy), §10.3 DR-1, §12, §15, Appendix H.3; NFR-SEC-02; Development Plan Q2 (tenant isolation), §8.3; ADR 0001, ADR 0003
+**Status:** Accepted (rev. 1 after TM-0001 review) — PR #9, 30 Sep 2026; rev. 2 (§6a helper ownership, hosted Supabase) — 1 Oct 2026, accepted on PR merge · **Date:** 30 Sep 2026 · **Backlog:** T-M1-B02 · **Related:** BRD §5 (v1 tenancy), §10.3 DR-1, §12, §15, Appendix H.3; NFR-SEC-02; Development Plan Q2 (tenant isolation), §8.3; ADR 0001, ADR 0003
 
 ## Context
 
@@ -107,6 +107,8 @@ Because the database trusts the claims that server code sets, a stolen `app_serv
 - **Supabase platform services** (Storage API, Realtime) connect with their own database login roles and set the end user's claims themselves. Under the rules above they resolve to **no tenant (fail-safe deny)**. Before the first feature that uses Storage or Realtime (M2/M3), this function is extended with an explicit allow-list of those service login roles that applies the **same user-claim validation** (live session, active membership, session's active tenant) — never a weaker check. The exact role names and the claim setting each service uses are verified on the staging project (T-M1-D03), and tests are added for both services.
 - **Anonymous endpoints** (host→tenant lookup, public certificate verification) never use tenant tables directly; they call narrow functions in `private` that return only the fields needed.
 The check runs once per statement (wrapped in `(select …)`); its cost is measured with `EXPLAIN ANALYZE` during M2 and indexes are added as needed.
+
+**Helper ownership (rev. 2, 1 Oct 2026).** The SECURITY DEFINER helpers of this section are owned by the NOLOGIN role `tenant_guard` (no BYPASSRLS; it reads platform tables only through explicit grants and `…_guard_read` policies) — **except `private.user_session_is_valid()`**, which stays owned by the **migration role**. Reason: on hosted Supabase the migration role (`postgres`, not a superuser) has `USAGE` on schema `auth` **without the grant option** (observed on the first staging deploy), so `tenant_guard` can never be allowed to read `auth.sessions`. The exception is kept minimal: the function runs one fixed, parameterised `EXISTS` query on `auth.sessions (id, user_id, not_after)`, sets `search_path = ''`, is `EXECUTE`-able by `tenant_guard` only (never by `authenticated`, `anon`, `service_role`, `app_server`, `app_worker`), and the migration asserts that its owner can read those columns. Self-hosted deployments (ADR 0010) use the same ownership for parity. Verified by `scripts/sql/verify-deployment.sql` and the hosted-Supabase simulation gate (`scripts/db-test-hosted-sim.sh`).
 
 ### 7. Background jobs and platform operations
 - Tenant-scoped jobs connect as **`app_worker`** and run with the same transaction mechanism (`withSystemTx`) using a **system-actor claim set** for the job's tenant (`tenant_id`, `role: 'system'`, job id) so RLS still applies (§6a); each job records its tenant and actor in the audit log.

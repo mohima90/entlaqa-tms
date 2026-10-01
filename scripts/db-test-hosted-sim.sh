@@ -8,7 +8,7 @@
 # This script creates a throwaway database plus a NON-superuser migration role shaped like Supabase's,
 # then runs the real deploy path (scripts/db-deploy.sh plan + apply + verify-deployment.sql) as that role.
 #
-# Connection: standard libpq variables for a SUPERUSER (as for scripts/db-test.sh).
+# Connection: standard libpq variables for a SUPERUSER (as for scripts/db-test.sh). DB_TEST_KEEP=1 keeps the database.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -37,7 +37,9 @@ cleanup() {
         end if;
       end if;
     end \$\$;" >/dev/null 2>&1 || echo "db-test-hosted-sim: WARNING: cleanup of cluster-wide roles failed" >&2
-  dropdb --if-exists "$DB" >/dev/null 2>&1 || true
+  if [[ "${DB_TEST_KEEP:-0}" == "1" ]]; then echo "db-test-hosted-sim: kept database $DB"; else
+    dropdb --if-exists "$DB" >/dev/null 2>&1 || true
+  fi
   if [[ $status -eq 0 ]]; then echo "db-test-hosted-sim: PASSED"; else echo "db-test-hosted-sim: FAILED (exit $status)" >&2; fi
 }
 trap cleanup EXIT
@@ -46,7 +48,7 @@ createdb "$DB"
 "${PSQL[@]}" -d "$DB" -f "$ROOT/supabase/tests/_shim/supabase_shim.sql"
 
 # The migration role, as on hosted Supabase: no SUPERUSER; CREATEROLE/CREATEDB/BYPASSRLS; ADMIN OPTION
-# on the API roles; grant options on `auth` (if hosted Supabase lacks them, migration 120100 fails loudly).
+# on authenticated; USAGE on `auth` without the grant option.
 "${PSQL[@]}" -d "$DB" <<SQL
 do \$\$ begin
   if not exists (select 1 from pg_roles where rolname = '$MIGRATOR') then
@@ -57,7 +59,9 @@ alter role $MIGRATOR login password '$MIGRATOR_PW';
 -- Only what the migrations need: ADMIN on authenticated (grant authenticated to app_server/app_worker).
 grant authenticated to $MIGRATOR with admin option;
 grant create, temporary on database "$DB" to $MIGRATOR;
-grant usage on schema auth to $MIGRATOR with grant option;
+-- Observed on hosted Supabase (first DB deploy plan, 1 Oct 2026): postgres has USAGE on schema auth but
+-- WITHOUT the grant option ("no privileges were granted for auth"); it can read auth.sessions.
+grant usage on schema auth to $MIGRATOR;
 grant select on auth.sessions to $MIGRATOR with grant option;
 grant references on auth.sessions, auth.users to $MIGRATOR;
 -- Login roles left by an earlier run on this cluster: on Supabase they would have been created by the

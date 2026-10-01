@@ -97,7 +97,7 @@ end
 $$;
 
 comment on function private.user_session_is_valid(uuid, uuid) is
-  'SECURITY DEFINER (owner tenant_guard): true when the Auth session exists for the user and is not expired.';
+  'SECURITY DEFINER (owner: the migration role, which can read auth.sessions; EXECUTE only for tenant_guard): true when the Auth session exists for the user and is not expired.';
 
 create or replace function private.has_active_membership(p_user_id uuid, p_tenant_id uuid)
 returns boolean
@@ -215,10 +215,13 @@ $$;
 comment on function private.switch_active_tenant(uuid) is
   'SECURITY-RELEVANT (ADR 0002 §3). Sets the active tenant of the caller''s current Auth session only.';
 
+-- private.user_session_is_valid() stays owned by the migration role: on hosted Supabase only that role
+-- can read auth.sessions (it cannot grant USAGE on schema `auth` onward — no grant option), so a
+-- tenant_guard-owned copy could never see a session. It runs one fixed, parameterised query with
+-- search_path = '' and is executable by tenant_guard only (ADR 0002 §6a, rev. 2).
 -- A non-superuser (hosted Supabase's migration role) may hand ownership to a role only if that role has
--- CREATE on the schema; tenant_guard gets it for these four statements only (same transaction).
+-- CREATE on the schema; tenant_guard gets it for these three statements only (same transaction).
 grant create on schema private to tenant_guard;
-alter function private.user_session_is_valid(uuid, uuid) owner to tenant_guard;
 alter function private.has_active_membership(uuid, uuid) owner to tenant_guard;
 alter function private.current_tenant_id() owner to tenant_guard;
 alter function private.switch_active_tenant(uuid) owner to tenant_guard;
@@ -240,18 +243,18 @@ grant execute on function private.has_active_membership(uuid, uuid) to tenant_gu
 grant execute on function private.current_tenant_id() to authenticated;
 grant execute on function private.switch_active_tenant(uuid) to authenticated;
 
--- tenant_guard reads Auth sessions. Without the grant option a GRANT only emits a WARNING and changes
--- nothing (possible on hosted Supabase, where the migration role does not own `auth`), which would make
--- every tenant query fail at runtime: assert the result instead of trusting the GRANT.
-grant usage on schema auth to tenant_guard;
-grant select (id, user_id, not_after) on auth.sessions to tenant_guard;
+-- The owner of private.user_session_is_valid() (the migration role) must be able to read what it reads;
+-- otherwise every tenant query would fail at runtime. plpgsql does not check this at CREATE time.
 do $$
+declare
+  v_owner name := (select pg_get_userbyid(proowner) from pg_proc
+                   where oid = 'private.user_session_is_valid(uuid, uuid)'::regprocedure);
 begin
-  if not (has_schema_privilege('tenant_guard', 'auth', 'usage')
-          and has_column_privilege('tenant_guard', 'auth.sessions', 'id', 'select')
-          and has_column_privilege('tenant_guard', 'auth.sessions', 'user_id', 'select')
-          and has_column_privilege('tenant_guard', 'auth.sessions', 'not_after', 'select')) then
-    raise exception 'tenant_guard could not be granted USAGE on schema auth and SELECT (id, user_id, not_after) on auth.sessions: the migration role (%) lacks the grant option', current_user;
+  if not (has_schema_privilege(v_owner, 'auth', 'usage')
+          and has_column_privilege(v_owner, 'auth.sessions', 'id', 'select')
+          and has_column_privilege(v_owner, 'auth.sessions', 'user_id', 'select')
+          and has_column_privilege(v_owner, 'auth.sessions', 'not_after', 'select')) then
+    raise exception 'role % (owner of private.user_session_is_valid) cannot read auth.sessions (id, user_id, not_after)', v_owner;
   end if;
 end
 $$;

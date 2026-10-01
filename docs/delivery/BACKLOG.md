@@ -63,7 +63,7 @@
 |---|---|---|---|---|
 | T-M1-D01 | Monorepo scaffold (`apps/suite`, `packages/ui`, `packages/platform-*`, `modules/tms`) | Claude | 🟢 | #9 |
 | T-M1-D02 | CI with all 14 gates (Plan §5.3) | Claude | 🟢 | #9; all 17 checks green on GitHub |
-| T-M1-D03 | Walking skeleton: sign-in → Arabic RTL suite shell → audit event, on staging | Claude | 🔵 | DB part **deployed to staging** (#9–#12; hook enabled). Sign-in (e-mail + password; MFA off by default — PO, 1 Oct 2026), organization chooser, sign-out, audit, `Provision organization` workflow: **in PR** (code + security review passed with fixes). Then PO: Vercel env vars, Auth settings, provision, test sign-in ([staging-sign-in.md](../engineering/staging-sign-in.md)) |
+| T-M1-D03 | Walking skeleton: sign-in → Arabic RTL suite shell → audit event, on staging | Claude | 🟢 | #9–#14. **Live on staging (1 Oct 2026):** migration `…session_tenants` applied, Vercel env vars set, Auth sign-ups off, Site URL set, ECC signing keys confirmed; organization `entlaqa-demo` provisioned; PO signed in (`/en/suite` shows "Organization: ENTLAQA"), signed out, `/ar/suite` redirects to sign-in. MFA off by default (PO). Runbook: [staging-sign-in.md](../engineering/staging-sign-in.md) |
 | T-M1-D04 | Walking skeleton on self-hosted stack (Docker) | Claude | ⚪ | |
 | T-M1-D05 | Vercel: Root Directory `apps/suite`, preset Next.js, move `vercel.json` | PO (dashboard) + Claude | 🟢 | Root Directory `apps/suite`, Node 24; `main` deployment Ready (1 Oct 2026) |
 | T-M1-D06 | Observability baseline (errors, logs, uptime) | Claude | ⚪ | |

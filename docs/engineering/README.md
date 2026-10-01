@@ -164,7 +164,7 @@ Make the aggregate job **`CI gates`** and the CodeQL checks required status chec
 
 ### Items to verify on the Supabase staging project (T-M0-07)
 The first two are exercised by `DB deploy` (`plan` fails on a refused grant; `verify-deployment.sql` checks role attributes); the others are confirmed by the first staging sign-in ([staging-sign-in.md](staging-sign-in.md) §Checking it works).
-- ~~`grant select … on auth.sessions to tenant_guard`~~ — not permitted on hosted Supabase (no grant option on `auth`); resolved by ADR 0002 §6a rev. 2: `tenant_guard` reads the view `private.auth_session_validity`, owned by the migration role. Still to confirm: the FK `platform.session_context → auth.sessions` is permitted, and `auth.sessions` has no RLS that hides rows from the view's owner.
-- `grant authenticated to app_server/app_worker` and `NOINHERIT` behave as tested; pooler user names are `app_server.<project-ref>`.
-- The access-token hook input contains `session_id` (ADR 0002 §3).
+- ~~`grant select … on auth.sessions to tenant_guard`~~ — not permitted on hosted Supabase (no grant option on `auth`); resolved by ADR 0002 §6a rev. 2: `tenant_guard` reads the view `private.auth_session_validity`, owned by the migration role. **Confirmed by the first staging sign-in (1 Oct 2026):** the FK `platform.session_context → auth.sessions` is permitted and the view's owner sees the session rows (the tenant was selected and accepted).
+- **Confirmed (1 Oct 2026):** `app_server` connects through the transaction pooler as `app_server.<project-ref>` with verify-full TLS, and `withUserTx` resolves the tenant.
+- **Confirmed (1 Oct 2026):** the access-token hook adds `tenant_id`/`person_id` for the session's selected tenant (ADR 0002 §3); `current_tenant_id()` accepts it, so the hook input carries `session_id`.
 - Storage and Realtime authorization: `private.current_tenant_id()` returns NULL for claims set by other login roles (Storage API, Realtime, PostgREST), so ADR 0002 §8/ADR 0006 storage policies need their own reviewed path.

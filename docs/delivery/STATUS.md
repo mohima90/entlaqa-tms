@@ -5,7 +5,7 @@
 | | |
 |---|---|
 | **Last updated** | 1 October 2026 |
-| **Current phase** | **M1 Foundation in progress** — foundation merged (PR #9); **staging database live** (all migrations applied and verified, access-token hook enabled, 1 Oct 2026); **sign-in built** (T-M1-D03, in PR) — next: PO configures Vercel + Supabase Auth and provisions the first organization · M0 PO setup done except design partners (T-M0-08) |
+| **Current phase** | **M1 Foundation in progress** — foundation merged (PR #9); **staging database live** (all migrations applied and verified, access-token hook enabled, 1 Oct 2026); **sign-in live on staging** (T-M1-D03 done: e-mail + password, organization `entlaqa-demo`, sign-out, audit) — next: CI on PostgreSQL 17, Storybook, threat models, self-hosted spike, estimation · M0 PO setup done except design partners (T-M0-08) |
 | **Next gate** | G0 (PO setup tasks) → G1 (Foundation sign-off) |
 | **Overall status** | 🟢 On track (no build started; dates are targets until Gate G1 re-baseline) |
 
@@ -19,7 +19,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 |---|---|---|---|---|
 | Planning (research, BRD, feature list, delivery plan) | — | 🟢 Done | — | See §4 documents |
 | M0 Mobilize | 1–2 | 🟡 Conditional pass | G0 | T-M0-01…07, 09 done (branch protection, Supabase staging, Vercel); T-M0-08 design partners still open |
-| M1 Foundation | 3–8 | 🔵 In progress | G1 | Foundation merged (#9, all 17 checks green); remaining: walking skeleton on staging, Storybook, per-epic threat models, self-hosted spike, estimation |
+| M1 Foundation | 3–8 | 🔵 In progress | G1 | Foundation merged (#9); walking skeleton live on staging (#10–#14); remaining: Storybook, per-epic threat models, self-hosted spike, estimation |
 | M2 Platform core | 9–12 | ⚪ Not started | G2 | |
 | M3 Catalog & scheduling | 13–16 | ⚪ Not started | G3 | |
 | M4 Enrollment & manager | 17–19 | ⚪ Not started | G4 | |
@@ -41,7 +41,8 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 - [~] Track C: platform threat model TM-0001 + risk register merged (#9); per-epic models pending
 - [x] Track C: ASVS 5.0 L2 mapping; secure coding standard — merged (#9)
 - [x] Track D: monorepo scaffold; CI with the §5.3 gates — merged (#9), all checks green on GitHub; `CI gates` + CodeQL required on `main`
-- [~] Track D: walking skeleton — database deployed to staging (#10–#12); sign-in, organization chooser, sign-out, audit and the `Provision organization` workflow in PR (T-M1-D03); staging configuration by the PO next; self-hosted stack pending (T-M1-D04)
+- [x] Track D: walking skeleton on staging (T-M1-D03, #10–#14) — sign-in → Arabic RTL suite shell → audit event, verified by the PO on 1 Oct 2026
+- [ ] Track D: walking skeleton on the self-hosted stack (T-M1-D04)
 - [x] Track D: Vercel project `jadarat-tms` builds from `apps/suite` (Next.js, Node 24); `main` deployment Ready (1 Oct 2026)
 
 ---
@@ -120,18 +121,16 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 ## 5. Next Actions
 
 **Product Owner (user)** — Claude guides each step one action at a time (PO request, 1 Oct 2026)
-1. Review and merge the sign-in PR (T-M1-D03). Then, one step at a time with Claude ([staging-sign-in.md](../engineering/staging-sign-in.md)): Vercel environment variables → redeploy → Supabase Auth settings (sign-ups off, Site URL, check JWT keys) → create a test user → **Actions → Provision organization** (plan, then apply) → test sign-in and sign-out.
-2. Recommended: add yourself as **Required reviewer** on the GitHub environment `staging` (every DB deploy / provisioning run then waits for your click).
-3. Old Vercel project `entlaqa-tms` (team "Mohamed Ibrahim's projects"): the PO's Vercel account has no access to that team (1 Oct 2026). Harmless while the root `vercel.json` skips its builds; delete it if access is recovered, or ask Vercel support.
-4. **T-M0-08** Start recruiting 3–5 design partners.
-5. Optional: upgrade Supabase org `entlaqa-TMS` to Pro (no pausing, backups) before design partners use staging.
+1. Recommended: add yourself as **Required reviewer** on the GitHub environment `staging` (every DB deploy / provisioning run then waits for your click).
+2. Old Vercel project `entlaqa-tms` (team "Mohamed Ibrahim's projects"): the PO's Vercel account has no access to that team (1 Oct 2026). Harmless while the root `vercel.json` skips its builds; delete it if access is recovered, or ask Vercel support.
+3. **T-M0-08** Start recruiting 3–5 design partners.
+4. Optional: upgrade Supabase org `entlaqa-TMS` to Pro (no pausing, backups) before design partners use staging.
 
 **Next Claude session** — continue M1:
 1. Align CI to the staging major: staging runs **PostgreSQL 17.11**, CI tests on 16 (`ci.yml` image digest, `supabase/config.toml` `major_version`).
-2. T-M1-D03: guide the PO through the staging configuration (runbook above); confirm the open items in `docs/engineering/README.md` §7 with the first real sign-in; then mark T-M1-D03 done.
-3. T-M1-A02 Storybook for `packages/ui`; T-M1-C02 per-epic threat models for M2 epics.
-4. T-M1-D04 self-hosted stack spike (needs a Docker-capable environment).
-5. T-M1-B14 estimation and re-baselined plan → Gate G1.
+2. T-M1-A02 Storybook for `packages/ui`; T-M1-C02 per-epic threat models for M2 epics.
+3. T-M1-D04 self-hosted stack spike (needs a Docker-capable environment).
+4. T-M1-B14 estimation and re-baselined plan → Gate G1.
 
 ---
 
@@ -139,6 +138,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
+| 1 Oct 2026 | PR #14 merged; **sign-in live on staging**: `DB deploy` plan + apply (`…session_tenants`, verification clean); PO set 4 Vercel env vars (publishable values as Config, DB URL as Secret) and redeployed; Supabase Auth sign-ups off, Site URL set, ECC P-256 signing key confirmed; test user created; `Provision organization` plan + apply → `entlaqa-demo`; PO signed in (organization name shown), signed out, `/ar/suite` redirects to sign-in — **T-M1-D03 done** |
 | 1 Oct 2026 | T-M1-D03 sign-in built: e-mail + password via server actions (`definePublicAction`, CI-gated), `private.session_tenants()`, organization chooser, `/suite` gated on a database-accepted tenant, sign-out, `platform.auth.signed_in/_out` audit, proxy cookie refresh, verify-full TLS for app DB connections, `Provision organization` workflow (hosted-sim tested); MFA off by default (PO). Independent reviews: code "request changes" (redirect loop on revoked sessions, outage shown as wrong password, provisioning could join an existing org) and security "approve with fixes" (0 Critical/High, 2 Medium) — all fixed with tests except app-level rate limiting (recorded risk, M2); code re-review: approve |
 | 1 Oct 2026 | PR #12 merged (ADR 0002 §6a rev. 2 accepted); third staging plan clean; **`DB deploy apply` succeeded** (6 migrations, role passwords, verification with no warnings, PG 17.11); PO enabled the Custom Access Token hook — staging database live |
 | 1 Oct 2026 | PR #11 merged; second staging plan stopped (no grant option on `auth` for hosted `postgres`, nothing changed) → ADR 0002 §6a rev. 2: `tenant_guard` reads Auth sessions through an owner-rights view (independent review preferred it over a migration-role-owned function); simulation mirrors observed Supabase grants and reproduces both staging failures with the old code |

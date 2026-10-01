@@ -63,7 +63,7 @@
 |---|---|---|---|---|
 | T-M1-D01 | Monorepo scaffold (`apps/suite`, `packages/ui`, `packages/platform-*`, `modules/tms`) | Claude | 🟢 | #9 |
 | T-M1-D02 | CI with all 14 gates (Plan §5.3) | Claude | 🟢 | #9; all 17 checks green on GitHub |
-| T-M1-D03 | Walking skeleton: MFA sign-in → Arabic RTL suite shell → audit event, on staging | Claude | 🔵 | DB part done (#9); `DB deploy` workflow (#10); first staging plan found a superuser-only statement → fix + hosted-sim CI gate (PR open); then PO runs plan/apply; then sign-in + MFA wiring |
+| T-M1-D03 | Walking skeleton: MFA sign-in → Arabic RTL suite shell → audit event, on staging | Claude | 🔵 | DB part done and **deployed to staging** (#9–#12, 1 Oct 2026; hook enabled); next: sign-in + MFA wiring, Auth settings, Vercel env vars |
 | T-M1-D04 | Walking skeleton on self-hosted stack (Docker) | Claude | ⚪ | |
 | T-M1-D05 | Vercel: Root Directory `apps/suite`, preset Next.js, move `vercel.json` | PO (dashboard) + Claude | 🟢 | Root Directory `apps/suite`, Node 24; `main` deployment Ready (1 Oct 2026) |
 | T-M1-D06 | Observability baseline (errors, logs, uptime) | Claude | ⚪ | |

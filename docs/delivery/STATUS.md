@@ -5,7 +5,7 @@
 | | |
 |---|---|
 | **Last updated** | 1 October 2026 |
-| **Current phase** | **M1 Foundation in progress** — foundation merged (PR #9); **staging database live** (all migrations applied and verified, access-token hook enabled, 1 Oct 2026); **sign-in live on staging** (T-M1-D03 done: e-mail + password, organization `entlaqa-demo`, sign-out, audit) — next: CI on PostgreSQL 17, Storybook, threat models, self-hosted spike, estimation · M0 PO setup done except design partners (T-M0-08) |
+| **Current phase** | **M1 Foundation in progress** — foundation merged (PR #9); **staging database live** (all migrations applied and verified, access-token hook enabled, 1 Oct 2026); **sign-in live on staging** (T-M1-D03 done: e-mail + password, organization `entlaqa-demo`, sign-out, audit) — next: CI on PostgreSQL 17, Storybook, threat models, self-hosted spike, estimation · M0 open items: design partners (T-M0-08), MFA on team accounts (T-M0-10), staging required reviewer (T-M0-11), pen-test shortlist (T-M0-12), error-tracking vendor (T-M0-13) |
 | **Next gate** | G0 (PO setup tasks) → G1 (Foundation sign-off) |
 | **Overall status** | 🟢 On track (no build started; dates are targets until Gate G1 re-baseline) |
 
@@ -18,7 +18,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 | Milestone | Target weeks | Status | Gate | Notes |
 |---|---|---|---|---|
 | Planning (research, BRD, feature list, delivery plan) | — | 🟢 Done | — | See §4 documents |
-| M0 Mobilize | 1–2 | 🟡 Conditional pass | G0 | T-M0-01…07, 09 done (branch protection, Supabase staging, Vercel); T-M0-08 design partners still open |
+| M0 Mobilize | 1–2 | 🟡 Conditional pass | G0 | T-M0-01…07, 09 done (branch protection, Supabase staging, Vercel); open: T-M0-08 design partners, T-M0-10 MFA on team accounts, T-M0-11 staging required reviewer, T-M0-12 pen-test shortlist, T-M0-13 error-tracking vendor (10–13 added 1 Oct 2026 from a check against Plan §6.2) |
 | M1 Foundation | 3–8 | 🔵 In progress | G1 | Foundation merged (#9); walking skeleton live on staging (#10–#14); remaining: Storybook, per-epic threat models, self-hosted spike, estimation |
 | M2 Platform core | 9–12 | ⚪ Not started | G2 | |
 | M3 Catalog & scheduling | 13–16 | ⚪ Not started | G3 | |
@@ -121,16 +121,19 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 ## 5. Next Actions
 
 **Product Owner (user)** — Claude guides each step one action at a time (PO request, 1 Oct 2026)
-1. Recommended: add yourself as **Required reviewer** on the GitHub environment `staging` (every DB deploy / provisioning run then waits for your click).
-2. Old Vercel project `entlaqa-tms` (team "Mohamed Ibrahim's projects"): the PO's Vercel account has no access to that team (1 Oct 2026). Harmless while the root `vercel.json` skips its builds; delete it if access is recovered, or ask Vercel support.
-3. **T-M0-08** Start recruiting 3–5 design partners.
-4. Optional: upgrade Supabase org `entlaqa-TMS` to Pro (no pausing, backups) before design partners use staging.
+1. **T-M0-11** Add yourself as **Required reviewer** on the GitHub environment `staging` (every DB deploy / provisioning run then waits for your click).
+2. **T-M0-10** Turn on two-step sign-in (MFA) for GitHub, Supabase, Vercel and the e-mail account behind them (Claude guides, one account at a time).
+3. Old Vercel project `entlaqa-tms` (team "Mohamed Ibrahim's projects"): the PO's Vercel account has no access to that team (1 Oct 2026). Harmless while the root `vercel.json` skips its builds; delete it if access is recovered, or ask Vercel support.
+4. **T-M0-08** Start recruiting 3–5 design partners.
+5. **T-M0-13** Approve the error-tracking vendor (Claude prepares a one-page recommendation: Sentry EU vs. GlitchTip).
+6. Optional: upgrade Supabase org `entlaqa-TMS` to Pro (no pausing, backups) before design partners use staging.
 
 **Next Claude session** — continue M1:
 1. Align CI to the staging major: staging runs **PostgreSQL 17.11**, CI tests on 16 (`ci.yml` image digest, `supabase/config.toml` `major_version`).
 2. T-M1-A02 Storybook for `packages/ui`; T-M1-C02 per-epic threat models for M2 epics.
 3. T-M1-D04 self-hosted stack spike (needs a Docker-capable environment).
 4. T-M1-B14 estimation and re-baselined plan → Gate G1.
+5. M0 support: T-M0-12 pen-test vendor shortlist; T-M0-13 error-tracking recommendation (Sentry EU vs. GlitchTip, ADR 0009 §4).
 
 ---
 
@@ -138,6 +141,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
+| 1 Oct 2026 | M0 check against Development Plan §6.2: four untracked items added to BACKLOG (T-M0-10 MFA on team accounts, T-M0-11 staging required reviewer, T-M0-12 pen-test shortlist, T-M0-13 error-tracking vendor); G0 stays conditional |
 | 1 Oct 2026 | PR #14 merged; **sign-in live on staging**: `DB deploy` plan + apply (`…session_tenants`, verification clean); PO set 4 Vercel env vars (publishable values as Config, DB URL as Secret) and redeployed; Supabase Auth sign-ups off, Site URL set, ECC P-256 signing key confirmed; test user created; `Provision organization` plan + apply → `entlaqa-demo`; PO signed in (organization name shown), signed out, `/ar/suite` redirects to sign-in — **T-M1-D03 done** |
 | 1 Oct 2026 | T-M1-D03 sign-in built: e-mail + password via server actions (`definePublicAction`, CI-gated), `private.session_tenants()`, organization chooser, `/suite` gated on a database-accepted tenant, sign-out, `platform.auth.signed_in/_out` audit, proxy cookie refresh, verify-full TLS for app DB connections, `Provision organization` workflow (hosted-sim tested); MFA off by default (PO). Independent reviews: code "request changes" (redirect loop on revoked sessions, outage shown as wrong password, provisioning could join an existing org) and security "approve with fixes" (0 Critical/High, 2 Medium) — all fixed with tests except app-level rate limiting (recorded risk, M2); code re-review: approve |
 | 1 Oct 2026 | PR #12 merged (ADR 0002 §6a rev. 2 accepted); third staging plan clean; **`DB deploy apply` succeeded** (6 migrations, role passwords, verification with no warnings, PG 17.11); PO enabled the Custom Access Token hook — staging database live |

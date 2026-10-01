@@ -21,8 +21,14 @@
 | T-M0-07 | Supabase organization + project for staging (region `eu-central-1` Frankfurt) | PO | 🟢 | `jadarat-tms-staging` (ref `kgmhlmiwlbvdmalesexv`, org `entlaqa-TMS`, Free plan), Data API off (1 Oct 2026) |
 | T-M0-08 | Recruit 3–5 design partners (≥ 2 Saudi, ≥ 1 government/bank) | PO | ⚪ | Needed for usability round 1 (M1) |
 | T-M0-09 | Close decision D3 (planning-cycle timing) | PO | 🟢 | Decided: R2 |
+| T-M0-10 | MFA (two-step sign-in) on every team account: GitHub, Supabase, Vercel, the e-mail account behind them; secrets only in the password manager | PO | ⚪ | Plan §6.2 "SSO + MFA enforced for all team tools" — added 1 Oct 2026 (was not tracked) |
+| T-M0-11 | GitHub environment `staging`: add the PO as **Required reviewer** (every DB deploy / provisioning run waits for approval) | PO | ⚪ | Security review of T-M1-D03 (1 Oct 2026) |
+| T-M0-12 | Pen-test vendor shortlist (KSA/UAE-capable, Arabic UI) | Claude prepares, PO contacts | ⚪ | Plan §6.2; needed by M7 (independent pen test before GA). Security tooling: CI already runs CodeQL, gitleaks, `pnpm audit`, Trivy (free) — no licences needed so far |
+| T-M0-13 | Approve the error-tracking vendor (Sentry EU region vs. GlitchTip) | PO (Claude recommends) | ⚪ | Plan §6.2 accounts; ADR 0009 §4; needed for T-M1-D06 observability |
 
-**Gate G0 (adapted):** T-M0-01…06 done; T-M0-07 scheduled; design-partner recruitment started.
+Plan §6.2 items that do not apply to the agent-team model (§2.3): team staffing/RACI (= T-M0-01), separate project tracker (this file), Figma (design artifacts in `docs/design/`), kick-off (`CLAUDE.md` + session routine). Open decisions D4, D5, D8–D10 are scheduled in STATUS §2 ("Needed by").
+
+**Gate G0 (adapted):** T-M0-01…07, 09 done; **open:** T-M0-08 design partners (recruitment not yet started), T-M0-10…13 → G0 stays 🟡 Conditional pass until T-M0-08 has started and T-M0-10, 11 are done.
 
 ---
 

@@ -1,46 +1,76 @@
 #!/usr/bin/env bash
 # Applies supabase/migrations to a hosted environment (staging first; T-M1-D03, docs/engineering/db-deploy.md).
 #
-#   DATABASE_URL=postgresql://… bash scripts/db-deploy.sh plan    # list pending, dry-run them, roll back
-#   DATABASE_URL=postgresql://… bash scripts/db-deploy.sh apply   # apply pending, set role passwords, verify
+#   DATABASE_URL=… DATABASE_CA_CERT="$(cat ca.crt)" bash scripts/db-deploy.sh plan    # dry run, rolled back
+#   DATABASE_URL=… DATABASE_CA_CERT="$(cat ca.crt)" bash scripts/db-deploy.sh apply   # apply + verify
 #
 # DATABASE_URL: the project's migration connection (hosted Supabase: role `postgres` through the session
-# pooler, which is reachable over IPv4). It never appears in output.
+# pooler, which is reachable over IPv4), without query parameters. It is split into libpq variables + a
+# pgpass file (scripts/pg-connection.mjs), so the password never appears in arguments or error output.
+# DATABASE_CA_CERT: PEM of the server's root CA (Supabase: Database Settings → SSL Configuration). TLS is
+# always `verify-full`; only a local server (127.0.0.1/localhost) may set DB_DEPLOY_LOCAL_NO_TLS=1.
 # History is kept in Supabase CLI's table supabase_migrations.schema_migrations (version = timestamp
-# prefix), so `supabase migration list` agrees with this script.
+# prefix), so `supabase migration list` agrees with this script (statements are not stored).
+# Both modes first validate APP_SERVER_DB_PASSWORD / APP_WORKER_DB_PASSWORD (optional).
 # apply: each pending migration runs in its own transaction together with its history row (same as the
-# CI gate, scripts/db-test.sh); then APP_SERVER_DB_PASSWORD / APP_WORKER_DB_PASSWORD (optional) are set
-# as SCRAM verifiers (scripts/role-passwords-sql.mjs); then scripts/sql/verify-deployment.sql must pass.
+# CI gate, scripts/db-test.sh); then the role passwords are set as SCRAM verifiers; then
+# scripts/sql/verify-deployment.sql must pass.
 set -euo pipefail
 
 MODE="${1:-}"
 if [[ "$MODE" != "plan" && "$MODE" != "apply" ]]; then
-  echo "usage: DATABASE_URL=… bash scripts/db-deploy.sh plan|apply" >&2
-  exit 2
-fi
-if [[ -z "${DATABASE_URL:-}" ]]; then
-  echo "db-deploy: DATABASE_URL is not set" >&2
+  echo "usage: DATABASE_URL=… DATABASE_CA_CERT=… bash scripts/db-deploy.sh plan|apply" >&2
   exit 2
 fi
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MIGRATIONS_DIR="$ROOT/supabase/migrations"
 VERIFY_SQL="$ROOT/scripts/sql/verify-deployment.sql"
-# TLS unless the URL says otherwise (libpq: URL parameters override PG* variables).
-export PGSSLMODE="${PGSSLMODE:-require}"
-export PGOPTIONS="${PGOPTIONS:-} -c client_min_messages=warning"
-export PGAPPNAME="jadarat-db-deploy"
-PSQL=(psql -X -q -v ON_ERROR_STOP=1 --no-psqlrc -d "$DATABASE_URL")
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
+chmod 700 "$WORK"
 
-echo "db-deploy: $("${PSQL[@]}" -At -c "select 'connected as ' || current_user || ' to PostgreSQL ' || current_setting('server_version')")"
+# Connection: libpq variables + pgpass file; nothing secret on any command line.
+node "$ROOT/scripts/pg-connection.mjs" "$WORK/pgpass" "$WORK/conn.env"
+while IFS='=' read -r key value; do
+  case "$key" in
+    PGHOST | PGPORT | PGUSER | PGDATABASE | DB_IS_LOCAL) export "$key=$value" ;;
+    '') ;;
+    *) echo "db-deploy: unexpected connection key" >&2; exit 1 ;;
+  esac
+done <"$WORK/conn.env"
+export PGPASSFILE="$WORK/pgpass"
+unset DATABASE_URL PGPASSWORD
 
+if [[ "${DB_DEPLOY_LOCAL_NO_TLS:-0}" == "1" && "$DB_IS_LOCAL" == "1" ]]; then
+  export PGSSLMODE=disable
+else
+  if [[ "${DATABASE_CA_CERT:-}" != *"-----BEGIN CERTIFICATE-----"* ]]; then
+    echo "db-deploy: DATABASE_CA_CERT (PEM of the server's root CA) is required: TLS is verify-full" >&2
+    exit 1
+  fi
+  printf '%s\n' "$DATABASE_CA_CERT" >"$WORK/ca.crt"
+  export PGSSLMODE=verify-full PGSSLROOTCERT="$WORK/ca.crt"
+fi
+export PGOPTIONS="${PGOPTIONS:-} -c client_min_messages=warning"
+export PGAPPNAME="jadarat-db-deploy"
+PSQL=(psql -X -q -v ON_ERROR_STOP=1 --no-psqlrc)
+
+# Validate role passwords before touching the database (both modes).
+node "$ROOT/scripts/role-passwords-sql.mjs" >"$WORK/roles.sql"
+
+server="$("${PSQL[@]}" -At -c "select current_user || ' to PostgreSQL ' || current_setting('server_version')")"
+echo "db-deploy: connected as $server (TLS: $PGSSLMODE)"
+
+history_exists="$("${PSQL[@]}" -At -c "select to_regclass('supabase_migrations.schema_migrations') is not null")"
 applied=""
-if [[ "$("${PSQL[@]}" -At -c "select to_regclass('supabase_migrations.schema_migrations') is not null")" == "t" ]]; then
+if [[ "$history_exists" == "t" ]]; then
   applied="$("${PSQL[@]}" -At -c "
     select coalesce(string_agg(version, ' ' order by version), '') from supabase_migrations.schema_migrations")"
+elif [[ "$history_exists" != "f" ]]; then
+  echo "db-deploy: could not read the migration history" >&2
+  exit 1
 fi
 
 shopt -s nullglob
@@ -58,12 +88,15 @@ done
 echo "db-deploy: ${#pending[@]} pending migration(s)"
 for migration in "${pending[@]}"; do echo "  - $(basename "$migration")"; done
 
+# Fail fast instead of waiting on locks held by live sessions.
+TX_SETTINGS="set local lock_timeout = '10s'; set local statement_timeout = '5min';"
+
 if [[ "$MODE" == "plan" ]]; then
   if [[ ${#pending[@]} -gt 0 ]]; then
     # Dry run: every pending migration in ONE transaction that is always rolled back.
     {
-      echo 'begin;'
-      for migration in "${pending[@]}"; do printf '\\i %s\n' "$migration"; done
+      echo "begin; $TX_SETTINGS"
+      for migration in "${pending[@]}"; do printf "\\\\i '%s'\n" "$migration"; done
       echo 'rollback;'
     } >"$WORK/plan.sql"
     "${PSQL[@]}" -f "$WORK/plan.sql"
@@ -81,8 +114,8 @@ for migration in "${pending[@]}"; do
   name="$(basename "$migration" .sql)"
   version="${name%%_*}"
   {
-    echo 'begin;'
-    printf '\\i %s\n' "$migration"
+    echo "begin; $TX_SETTINGS"
+    printf "\\\\i '%s'\n" "$migration"
     printf "insert into supabase_migrations.schema_migrations (version, name, statements) values ('%s', '%s', '{}');\n" \
       "$version" "${name#*_}"
     echo 'commit;'
@@ -91,7 +124,6 @@ for migration in "${pending[@]}"; do
   "${PSQL[@]}" -f "$WORK/apply.sql"
 done
 
-node "$ROOT/scripts/role-passwords-sql.mjs" >"$WORK/roles.sql"
 if [[ -s "$WORK/roles.sql" ]]; then
   echo "db-deploy: setting login role passwords (SCRAM verifiers)"
   "${PSQL[@]}" --single-transaction -f "$WORK/roles.sql"

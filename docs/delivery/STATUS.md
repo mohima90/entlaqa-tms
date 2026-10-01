@@ -110,7 +110,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 **Product Owner (user)** — Claude guides each step one action at a time (PO request, 1 Oct 2026)
 1. Merge the PR "staging DB deploy workflow + status housekeeping".
-2. GitHub → Settings → Environments → create `staging` (deployment branches: `main` only) with secrets `DATABASE_URL` (Supabase Connect → Session pooler URI), `APP_SERVER_DB_PASSWORD`, `APP_WORKER_DB_PASSWORD` — see `docs/engineering/db-deploy.md`. Never paste them into chat.
+2. GitHub → Settings → Environments → create `staging` (deployment branches: `main` only — mandatory) with secrets `DATABASE_URL` (Supabase Connect → Session pooler URI), `APP_SERVER_DB_PASSWORD`, `APP_WORKER_DB_PASSWORD` (≥ 40 chars, letters/digits/`-_`) and variable `DATABASE_CA_CERT` (Supabase Database Settings → SSL Configuration → Download certificate) — see `docs/engineering/db-deploy.md`. Never paste secrets into chat.
 3. Actions → **DB deploy** → `plan`, then `apply`; then Supabase → Authentication → Hooks → enable the access-token hook (`private.custom_access_token_hook`).
 4. **T-M0-08** Start recruiting 3–5 design partners.
 5. Optional: upgrade Supabase org `entlaqa-TMS` to Pro (no pausing, backups) before design partners use staging.
@@ -128,7 +128,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
-| 1 Oct 2026 | PR #9 merged; Vercel builds `apps/suite` (Ready); Supabase staging created (Frankfurt, Data API off, Free); leaked old credentials confirmed revoked (projects deleted); `main` ruleset active; ADRs 0001–0011 Accepted; added `DB deploy` workflow (dry-run plan, apply with Supabase-CLI-compatible history, SCRAM role passwords, post-deploy verification) |
+| 1 Oct 2026 | PR #9 merged; Vercel builds `apps/suite` (Ready); Supabase staging created (Frankfurt, Data API off, Free); leaked old credentials confirmed revoked (projects deleted); `main` ruleset active; ADRs 0001–0011 Accepted; added `DB deploy` workflow (dry-run plan, apply with Supabase-CLI-compatible history, SCRAM role passwords, TLS verify-full, post-deploy verification also run in CI); independent code + security review: approve with fixes (2 High: password in libpq errors, unverified TLS; 4 Medium) — all fixed with tests |
 | 27 Sep 2026 | Market research and competitor/regulatory fact-check; old codebase removed; feature list (280) and BRD v2.0 written |
 | 30 Sep 2026 | Decisions D1, D2, D6, D7 and HR Suite positioning recorded (BRD v2.1); Development Plan v1.0; `CLAUDE.md` and this status tracker added for session handover |
 | 30 Sep 2026 | Added project Stop hook (`.claude/settings.json`, `.claude/hooks/require-status-update.sh`) that requires this file to be updated whenever other files change in a session |

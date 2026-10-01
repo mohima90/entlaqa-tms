@@ -1,7 +1,7 @@
 # Database deployment to hosted environments (runbook)
 
 > Backlog: T-M1-D03 (walking skeleton on staging) · ADR 0002 §5–§7 · migration-conventions.md
-> Tooling: `.github/workflows/db-deploy.yml` → `scripts/db-deploy.sh` → `scripts/sql/verify-deployment.sql`
+> Tooling: `.github/workflows/db-deploy.yml` → `scripts/db-deploy.sh` (+ `pg-connection.mjs`, `role-passwords-sql.mjs`) → `scripts/sql/verify-deployment.sql`
 
 ## Environments
 
@@ -10,25 +10,43 @@
 | staging | `jadarat-tms-staging` (ref `kgmhlmiwlbvdmalesexv`, org `entlaqa-TMS`) | `eu-central-1` Frankfurt | Free (pauses after ~7 days idle; Restore in the dashboard) | `staging` |
 | production | — (M7) | — | — | — |
 
-Project settings applied at creation (30 Sep / 1 Oct 2026): **Data API disabled**, *automatically expose new tables* off, *automatic RLS* off (our migrations enable and force RLS on every table; the CI catalog test enforces it), Postgres (not OrioleDB), not connected to GitHub.
+Project settings applied at creation (1 Oct 2026): **Data API disabled**, *automatically expose new tables* off, *automatic RLS* off (our migrations enable and force RLS on every table; the CI catalog test enforces it), Postgres (not OrioleDB), not connected to GitHub.
 
-## Secrets (GitHub → Settings → Environments → `staging` → Environment secrets)
+## One-time setup of a GitHub environment (GitHub → Settings → Environments → New environment)
+
+1. Name: `staging`.
+2. **Deployment branches and tags → Selected branches → add `main`.** Mandatory: this rule, not the workflow's `if:`, is what stops a run from another branch from reaching the secrets.
+3. Optional: **Required reviewers** (the PO) — each run then waits for an approval click; recommended for production.
+4. **Environment secrets:**
 
 | Secret | Value | Notes |
 |---|---|---|
-| `DATABASE_URL` | Supabase **Connect → Session pooler** URI (user `postgres.<ref>`, port 5432) with the database password | The direct host is IPv6-only; GitHub runners need the pooler. Never paste it anywhere else |
-| `APP_SERVER_DB_PASSWORD` | 40+ random characters, letters/digits/`-_` only | Becomes the `app_server` password (sent as a SCRAM verifier) |
+| `DATABASE_URL` | Supabase **Connect → Session pooler** URI (user `postgres.<ref>`, host `aws-…pooler.supabase.com`, port 5432) with the database password filled in, **no `?…` parameters** | The direct host is IPv6-only; GitHub runners need the pooler. A password with special characters must be percent-encoded in the URI |
+| `APP_SERVER_DB_PASSWORD` | ≥ 40 characters, only letters, digits, `-`, `_` (e.g. a password manager's generator with symbols off, length 48) | Becomes the `app_server` password; it is sent to the server only as a SCRAM-SHA-256 verifier |
 | `APP_WORKER_DB_PASSWORD` | as above, different value | `app_worker` |
 
-The two role passwords are also needed later by the app (`DATABASE_URL_APP_SERVER`, `DATABASE_URL_APP_WORKER` in Vercel / the worker), so store them in the password manager too.
+5. **Environment variable** (not a secret — it is a public certificate): `DATABASE_CA_CERT` = full text of the CA file from Supabase **Database Settings → SSL Configuration → Download certificate**, including the `-----BEGIN CERTIFICATE-----` / `-----END CERTIFICATE-----` lines. TLS is always `verify-full` (certificate chain + host name); Supabase's root CA is not in any system trust store, so the run fails without it.
+
+Store the two role passwords in the password manager too: the app needs them later (`DATABASE_URL_APP_SERVER`, `DATABASE_URL_APP_WORKER` in Vercel / the worker).
 
 ## Running it
 
-1. GitHub → **Actions → DB deploy → Run workflow** (branch `main`), environment `staging`, mode **`plan`**: lists pending migrations and applies them all in one transaction that is **always rolled back**. Nothing changes.
-2. If `plan` is green, run again with mode **`apply`**: each pending migration is applied in its own transaction together with its row in `supabase_migrations.schema_migrations` (Supabase CLI's history table); then the role passwords are set; then `verify-deployment.sql` must pass (role attributes, RLS enabled + forced on every table, no `anon` access, hook executable only by `supabase_auth_admin`).
+1. GitHub → **Actions → DB deploy → Run workflow** (branch `main`), environment `staging`, mode **`plan`**: validates the configuration and the role passwords, lists pending migrations and applies them all in one transaction that is **always rolled back**. Nothing changes.
+2. If `plan` is green, run again on the **same `main` commit** with mode **`apply`**: each pending migration is applied in its own transaction together with its row in `supabase_migrations.schema_migrations` (Supabase CLI's history table; the `statements` column is left empty, so `supabase migration fetch` cannot rebuild files — the repository is the source); then the role passwords are set; then `verify-deployment.sql` must pass:
+   - `app_server`/`app_worker`/`tenant_guard` attributes, and memberships exactly `{authenticated}`;
+   - RLS enabled + forced on every table, RESTRICTIVE `tenant_isolation` (ALL, `authenticated`) on every platform/module table;
+   - no privileges or schema usage for `anon` / `service_role`;
+   - the access-token hook executable by `supabase_auth_admin` (with `USAGE` on `private`) and by no other role;
+   - the Data API (`pgrst.db_schemas`) does not expose our schemas.
 3. After the first successful apply on a project, enable the hook in the dashboard: **Authentication → Hooks → Customize Access Token (JWT) Claims → Postgres → schema `private`, function `custom_access_token_hook`**.
 
-A failed `apply` stops at the failing migration; earlier migrations stay applied (and recorded). Fix forward with a new migration; use `supabase/rollbacks/` only on staging and only deliberately.
+Every transaction runs with `lock_timeout = 10s` and `statement_timeout = 5min`. A failed `apply` stops at the failing migration; earlier migrations stay applied (and recorded). Fix forward with a new migration; use `supabase/rollbacks/` only on staging and only deliberately.
+
+## Security notes
+
+- The connection URL is split by `scripts/pg-connection.mjs` into libpq variables and a 0600 pgpass file: the password never appears in process arguments or in libpq error messages, and every form of it is masked in the job log. Malformed URLs fail with generic messages that quote no part of the URL.
+- Role passwords never reach the server in clear text. Their SCRAM verifiers do (that is how PostgreSQL stores passwords); `pg_stat_statements` on the server may retain the `ALTER ROLE` text, which is readable only by privileged roles. Rotate a role password by updating the secret and re-running `apply`.
+- `verify-deployment.sql` also runs in CI on every PR (`scripts/db-test.sh`), so it stays in step with the migrations.
 
 ## Hosted-Supabase items this verifies (from engineering/README §7)
 

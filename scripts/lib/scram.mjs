@@ -1,18 +1,19 @@
 // SCRAM-SHA-256 password verifiers for PostgreSQL login roles (RFC 5802 / RFC 7677, the format
 // PostgreSQL stores in pg_authid.rolpassword). `ALTER ROLE … PASSWORD '<verifier>'` stores it as is, so
-// the clear-text password never reaches the server, its statement logs or pg_stat_statements.
+// the clear-text password never reaches the server. The verifier itself is still sensitive (with a
+// captured SCRAM exchange it allows login): it may be retained by pg_stat_statements on the server.
 import { createHash, createHmac, pbkdf2Sync, randomBytes } from 'node:crypto';
 
 /** PostgreSQL's default `scram_iterations`. */
 export const SCRAM_ITERATIONS = 4096;
 
 /**
- * Passwords are restricted to printable ASCII without spaces or quotes: SASLprep (RFC 4013) is then the
- * identity, so the verifier matches what libpq computes on login, and the value survives copy/paste
- * into secret stores and connection URLs.
+ * Passwords are URL-safe (letters, digits, `-`, `_`) and at least 40 characters: SASLprep (RFC 4013) is
+ * then the identity, so the verifier matches what libpq computes on login, and the value can be placed in
+ * a connection URL without percent-encoding (docs/engineering/db-deploy.md).
  */
-const PASSWORD_PATTERN = /^[\x21-\x7e]+$/;
-const MIN_LENGTH = 32;
+const PASSWORD_PATTERN = /^[A-Za-z0-9_-]+$/;
+const MIN_LENGTH = 40;
 
 /** Returns a list of problems with `password` (empty when acceptable). */
 export function checkPassword(password) {
@@ -20,9 +21,8 @@ export function checkPassword(password) {
   if (typeof password !== 'string' || password.length === 0) return ['is empty'];
   if (password.length < MIN_LENGTH) problems.push(`must be at least ${MIN_LENGTH} characters`);
   if (!PASSWORD_PATTERN.test(password)) {
-    problems.push('must contain only printable ASCII characters (no spaces)');
+    problems.push('must contain only letters, digits, "-" and "_"');
   }
-  if (/["'\\]/.test(password)) problems.push('must not contain quotes or backslashes');
   return problems;
 }
 

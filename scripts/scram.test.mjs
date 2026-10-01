@@ -2,13 +2,13 @@ import { execFileSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 import { checkPassword, scramSha256Verifier } from './lib/scram.mjs';
 
-const PASSWORD = 'jadarat-test-password-0123456789-abcdef';
+const PASSWORD = 'jadarat-test-password-0123456789-abcdefghij';
 const SALT = Buffer.from('000102030405060708090a0b0c0d0e0f', 'hex');
 
 describe('scramSha256Verifier', () => {
   it('matches the verifier PostgreSQL accepts for login (vector verified against PostgreSQL 16)', () => {
     expect(scramSha256Verifier(PASSWORD, { salt: SALT })).toBe(
-      'SCRAM-SHA-256$4096:AAECAwQFBgcICQoLDA0ODw==$NuaGmQlClX+Vmz2C+mMV7TZ9uwPBQKWwMjoUb2RH5m0=:80AES/AQ1VVFAUUs6gO2C/t/A9vKLyqZAQYpUtUkUmc=',
+      'SCRAM-SHA-256$4096:AAECAwQFBgcICQoLDA0ODw==$tFkRG4Y1pdEx/E8DZz9Yj6eY5O583SopYyf063MuYvg=:cmGDil3g4AJv/GEBPzki+Bc+2/lV1FxOqbLDhhh3JUI=',
     );
   });
 
@@ -20,14 +20,17 @@ describe('scramSha256Verifier', () => {
     expect(scramSha256Verifier(PASSWORD)).not.toContain(PASSWORD);
   });
 
-  it('rejects short, non-ASCII, whitespace or quoted passwords', () => {
+  it('accepts only URL-safe passwords of at least 40 characters', () => {
     expect(checkPassword('')).toEqual(['is empty']);
-    expect(checkPassword('short')).toContain('must be at least 32 characters');
-    expect(checkPassword(`${PASSWORD} space`).length).toBeGreaterThan(0);
-    expect(checkPassword(`${PASSWORD}é`).length).toBeGreaterThan(0);
-    expect(checkPassword(`${PASSWORD}'`)).toContain('must not contain quotes or backslashes');
+    expect(checkPassword('short')).toContain('must be at least 40 characters');
+    for (const bad of [' ', 'é', "'", '"', '\\', '@', '/', ':', '#', '?', '%', '+']) {
+      expect(checkPassword(`${PASSWORD}${bad}`)).toContain(
+        'must contain only letters, digits, "-" and "_"',
+      );
+    }
     expect(checkPassword(PASSWORD)).toEqual([]);
-    expect(() => scramSha256Verifier('short')).toThrow(/at least 32/);
+    expect(checkPassword('A_b-9'.repeat(8))).toEqual([]);
+    expect(() => scramSha256Verifier('short')).toThrow(/at least 40/);
   });
 });
 

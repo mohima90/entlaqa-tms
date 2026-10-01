@@ -82,6 +82,10 @@ leftover="$(psql -X -At -d "$DB" -c "select string_agg(nspname, ',') from pg_nam
 if [[ -n "$leftover" ]]; then echo "db-test: rollbacks left schemas behind: $leftover" >&2; exit 1; fi
 migrate_up
 
+# The hosted-deployment verifier (scripts/db-deploy.sh) must pass on the real migrations.
+echo "db-test: verify-deployment.sql"
+"${PSQL[@]}" -d "$DB" -f "$ROOT/scripts/sql/verify-deployment.sql"
+
 "${PSQL[@]}" -d "$DB" -c "alter role app_server password '$APP_SERVER_PW'; alter role app_worker password '$APP_WORKER_PW';"
 
 for test_file in "$TESTS_DIR"/[0-9]*.sql; do

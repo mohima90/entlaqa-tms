@@ -1,8 +1,11 @@
 # Applies supabase/migrations to a hosted environment (T-M1-D03; runbook: docs/engineering/db-deploy.md).
-# Manual only, from `main` only. Secrets live in the GitHub *environment* (Settings → Environments):
-#   DATABASE_URL            migration connection (Supabase: role postgres via the session pooler, port 5432)
-#   APP_SERVER_DB_PASSWORD  password for login role app_server (optional after the first run)
-#   APP_WORKER_DB_PASSWORD  password for login role app_worker (optional after the first run)
+# Manual only. Configuration lives in the GitHub *environment* (Settings → Environments → staging), whose
+# "Deployment branches" rule (main only) is the actual access control — the `if:` below is a convenience,
+# because a run from another branch uses that branch's copy of this file.
+#   secret   DATABASE_URL            migration connection (Supabase: postgres via the session pooler), no query params
+#   secret   APP_SERVER_DB_PASSWORD  password for login role app_server (optional after the first run)
+#   secret   APP_WORKER_DB_PASSWORD  password for login role app_worker (optional after the first run)
+#   variable DATABASE_CA_CERT        PEM of the server's root CA (Supabase: Database Settings → SSL Configuration)
 # Run `plan` first (dry run, always rolled back), then `apply`.
 name: DB deploy
 
@@ -59,5 +62,6 @@ jobs:
         env:
           MODE: ${{ inputs.mode }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_CA_CERT: ${{ vars.DATABASE_CA_CERT }}
           APP_SERVER_DB_PASSWORD: ${{ secrets.APP_SERVER_DB_PASSWORD }}
           APP_WORKER_DB_PASSWORD: ${{ secrets.APP_WORKER_DB_PASSWORD }}

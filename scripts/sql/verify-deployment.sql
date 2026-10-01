@@ -1,14 +1,21 @@
 -- Post-deployment checks for a hosted environment (scripts/db-deploy.sh apply). Read-only; rolled back.
--- A subset of supabase/tests/10_catalog.sql that needs no test fixtures (ADR 0002 Verification 1, §5–§7).
+-- A subset of supabase/tests/10_catalog.sql that needs no test fixtures (ADR 0002 Verification 1, §3, §5–§7).
+-- Schemas checked: platform, private and the module schemas listed in `module_schemas` below — add each
+-- new module schema there (core_hr, payroll, …).
 \set ON_ERROR_STOP on
 begin;
 
 do $$
 declare
+  module_schemas constant text[] := array['platform', 'private', 'tms'];
+  -- Roles that must never reach tenant data or the hook directly. service_role bypasses RLS.
+  outsiders constant text[] := array['anon', 'service_role'];
+  hook constant text := 'private.custom_access_token_hook(jsonb)';
   r record;
+  v_role text;
   failures text[] := '{}';
 begin
-  -- Login roles: exact attributes (ADR 0002 §5, §7).
+  -- 1. Login roles: exact attributes and memberships (ADR 0002 §5, §7).
   for r in
     select rolname, rolcanlogin, rolinherit, rolsuper, rolbypassrls, rolcreaterole, rolcreatedb, rolreplication
     from pg_roles where rolname in ('app_server', 'app_worker', 'tenant_guard')
@@ -17,49 +24,88 @@ begin
       failures := failures || format('%s must be LOGIN', r.rolname);
     end if;
     if r.rolname = 'tenant_guard' and r.rolcanlogin then
-      failures := failures || 'tenant_guard must be NOLOGIN';
+      failures := failures || 'tenant_guard must be NOLOGIN'::text;
     end if;
     if r.rolinherit or r.rolsuper or r.rolbypassrls or r.rolcreaterole or r.rolcreatedb or r.rolreplication then
       failures := failures || format('%s must be NOINHERIT NOSUPERUSER NOBYPASSRLS NOCREATEROLE NOCREATEDB NOREPLICATION', r.rolname);
     end if;
   end loop;
   if (select count(*) from pg_roles where rolname in ('app_server', 'app_worker', 'tenant_guard')) <> 3 then
-    failures := failures || 'roles app_server, app_worker and tenant_guard must all exist';
+    failures := failures || 'roles app_server, app_worker and tenant_guard must all exist'::text;
   end if;
+  foreach v_role in array array['app_server', 'app_worker'] loop
+    if exists (select 1 from pg_roles where rolname = v_role) then
+      -- Direct memberships must be exactly {authenticated}.
+      if (select coalesce(array_agg(g.rolname::text order by g.rolname), '{}')
+          from pg_auth_members m
+          join pg_roles g on g.oid = m.roleid
+          join pg_roles u on u.oid = m.member
+          where u.rolname = v_role) <> array['authenticated'] then
+        failures := failures || format('%s must be a member of authenticated only', v_role);
+      end if;
+    end if;
+  end loop;
 
-  -- Every table in the platform and module schemas: RLS enabled AND forced; nothing for anon.
+  -- 2. Every table: RLS enabled AND forced; no privileges for outsider roles.
   for r in
-    select c.oid::regclass as t, c.relrowsecurity, c.relforcerowsecurity
+    select c.oid::regclass as t, n.nspname, c.relname, c.relrowsecurity, c.relforcerowsecurity
     from pg_class c join pg_namespace n on n.oid = c.relnamespace
-    -- Add each new module schema here and below (core_hr, payroll, …).
-    where c.relkind in ('r', 'p') and n.nspname in ('platform', 'private', 'tms')
+    where c.relkind in ('r', 'p') and n.nspname = any (module_schemas)
   loop
     if not (r.relrowsecurity and r.relforcerowsecurity) then
       failures := failures || format('%s: row level security must be ENABLED and FORCED', r.t);
     end if;
-    if has_table_privilege('anon', r.t, 'select, insert, update, delete, truncate, references, trigger') then
-      failures := failures || format('%s: anon must have no privileges', r.t);
+    foreach v_role in array outsiders loop
+      if exists (select 1 from pg_roles where rolname = v_role)
+         and has_table_privilege(v_role, r.t, 'select, insert, update, delete, truncate, references, trigger') then
+        failures := failures || format('%s: %s must have no privileges', r.t, v_role);
+      end if;
+    end loop;
+    -- 3. Tenant tables (all tables in platform/module schemas; no global tables exist yet): RESTRICTIVE
+    --    tenant_isolation for ALL commands, to authenticated only.
+    if r.nspname <> 'private' and not exists (
+      select 1 from pg_policy p
+      where p.polrelid = r.t and p.polname = 'tenant_isolation' and not p.polpermissive and p.polcmd = '*'
+        and p.polroles = array[(select oid from pg_roles where rolname = 'authenticated')]::oid[]
+        and pg_get_expr(p.polqual, p.polrelid) like '%private.current_tenant_id()%'
+        and pg_get_expr(p.polwithcheck, p.polrelid) like '%private.current_tenant_id()%'
+    ) then
+      failures := failures || format('%s: RESTRICTIVE tenant_isolation policy (ALL, authenticated) missing or altered', r.t);
     end if;
   end loop;
 
-  -- No anonymous access to our schemas.
-  for r in select nspname from pg_namespace where nspname in ('platform', 'private', 'tms') loop
-    if has_schema_privilege('anon', r.nspname, 'usage') then
-      failures := failures || format('schema %s: anon must not have USAGE', r.nspname);
-    end if;
+  -- 4. No outsider access to our schemas.
+  for r in select nspname from pg_namespace where nspname = any (module_schemas) loop
+    foreach v_role in array outsiders loop
+      if exists (select 1 from pg_roles where rolname = v_role) and has_schema_privilege(v_role, r.nspname, 'usage') then
+        failures := failures || format('schema %s: %s must not have USAGE', r.nspname, v_role);
+      end if;
+    end loop;
   end loop;
 
-  -- Custom Access Token Hook: present; executable by supabase_auth_admin only (ADR 0002 §3).
-  if to_regprocedure('private.custom_access_token_hook(jsonb)') is null then
-    failures := failures || 'private.custom_access_token_hook(jsonb) is missing';
+  -- 5. Custom Access Token Hook: present; executable by supabase_auth_admin and nobody else (ADR 0002 §3).
+  if to_regprocedure(hook) is null then
+    failures := failures || format('%s is missing', hook);
   else
-    if not has_function_privilege('supabase_auth_admin', 'private.custom_access_token_hook(jsonb)', 'execute') then
-      failures := failures || 'supabase_auth_admin must be able to execute the access token hook';
+    if not has_schema_privilege('supabase_auth_admin', 'private', 'usage')
+       or not has_function_privilege('supabase_auth_admin', hook, 'execute') then
+      failures := failures || 'supabase_auth_admin must have USAGE on private and EXECUTE on the access token hook'::text;
     end if;
-    if has_function_privilege('anon', 'private.custom_access_token_hook(jsonb)', 'execute')
-       or has_function_privilege('authenticated', 'private.custom_access_token_hook(jsonb)', 'execute') then
-      failures := failures || 'anon/authenticated must not execute the access token hook';
-    end if;
+    foreach v_role in array array['anon', 'authenticated', 'service_role', 'app_server', 'app_worker', 'authenticator'] loop
+      if exists (select 1 from pg_roles where rolname = v_role) and has_function_privilege(v_role, hook, 'execute') then
+        failures := failures || format('%s must not execute the access token hook', v_role);
+      end if;
+    end loop;
+  end if;
+
+  -- 6. Data API: if PostgREST's role is configured, it must not expose our schemas (ADR 0002 §5).
+  if exists (
+    select 1 from pg_db_role_setting s join pg_roles ro on ro.oid = s.setrole, unnest(s.setconfig) cfg
+    where ro.rolname = 'authenticator' and cfg like 'pgrst.db_schemas=%'
+      and exists (select 1 from unnest(module_schemas) m
+                  where m = any (string_to_array(replace(split_part(cfg, '=', 2), ' ', ''), ',')))
+  ) then
+    failures := failures || 'the Data API (pgrst.db_schemas) exposes platform/private/module schemas'::text;
   end if;
 
   if cardinality(failures) > 0 then

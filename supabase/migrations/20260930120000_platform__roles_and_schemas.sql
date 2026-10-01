@@ -22,9 +22,10 @@ begin
 end
 $$;
 
--- Roles that pre-existed with other settings: the migration role is not a superuser on hosted Supabase,
--- and PostgreSQL 16+ refuses even `NOSUPERUSER` / `NOBYPASSRLS` / `NOREPLICATION` in ALTER ROLE from a
--- non-superuser. So privileged attributes are asserted (an operator must fix them), and only the
+-- Roles that pre-existed with other settings: the migration role is not a superuser on hosted Supabase.
+-- PostgreSQL 16+ refuses `NOSUPERUSER` in ALTER ROLE from any non-superuser (and `NOBYPASSRLS` /
+-- `NOREPLICATION` unless the acting role has that attribute). So privileged attributes are asserted (an
+-- operator must fix them), and only the
 -- attributes the migration role may change are re-asserted, and only when they differ.
 do $$
 declare

@@ -23,7 +23,20 @@ MIGRATOR_PW="$(rand)"
 
 cleanup() {
   local status=$?
-  "${PSQL[@]}" -d postgres -c "alter role $MIGRATOR password null" >/dev/null 2>&1 || true
+  # Cluster-wide state: the login roles' test passwords and the migrator's ability to log in.
+  "${PSQL[@]}" -d postgres -c "do \$\$ begin
+      if exists (select 1 from pg_roles where rolname = 'app_server') then execute 'alter role app_server password null'; end if;
+      if exists (select 1 from pg_roles where rolname = 'app_worker') then execute 'alter role app_worker password null'; end if;
+      if exists (select 1 from pg_roles where rolname = '$MIGRATOR') then
+        execute 'alter role $MIGRATOR nologin password null';
+        -- The migration's own 'grant tenant_guard to current_user': not wanted beyond this run.
+        if exists (select 1 from pg_auth_members m join pg_roles g on g.oid = m.roleid
+                     join pg_roles u on u.oid = m.member join pg_roles gr on gr.oid = m.grantor
+                   where g.rolname = 'tenant_guard' and u.rolname = '$MIGRATOR' and gr.rolname = '$MIGRATOR') then
+          execute 'revoke tenant_guard from $MIGRATOR granted by $MIGRATOR';
+        end if;
+      end if;
+    end \$\$;" >/dev/null 2>&1 || true
   dropdb --if-exists "$DB" >/dev/null 2>&1 || true
   if [[ $status -eq 0 ]]; then echo "db-test-hosted-sim: PASSED"; else echo "db-test-hosted-sim: FAILED (exit $status)" >&2; fi
 }
@@ -37,11 +50,12 @@ createdb "$DB"
 "${PSQL[@]}" -d "$DB" <<SQL
 do \$\$ begin
   if not exists (select 1 from pg_roles where rolname = '$MIGRATOR') then
-    create role $MIGRATOR login createrole createdb bypassrls nosuperuser;
+    create role $MIGRATOR nologin createrole createdb bypassrls nosuperuser;
   end if;
 end \$\$;
-alter role $MIGRATOR password '$MIGRATOR_PW';
-grant anon, authenticated, service_role, supabase_auth_admin to $MIGRATOR with admin option;
+alter role $MIGRATOR login password '$MIGRATOR_PW';
+-- Only what the migrations need: ADMIN on authenticated (grant authenticated to app_server/app_worker).
+grant authenticated to $MIGRATOR with admin option;
 grant create, temporary on database "$DB" to $MIGRATOR;
 grant usage on schema auth to $MIGRATOR with grant option;
 grant select on auth.sessions to $MIGRATOR with grant option;
@@ -60,7 +74,8 @@ end \$\$;
 SQL
 
 enc() { node -e 'process.stdout.write(encodeURIComponent(process.argv[1]))' "$1"; }
-export DATABASE_URL="postgresql://$MIGRATOR:$(enc "$MIGRATOR_PW")@$PGHOST:$PGPORT/$DB"
+DATABASE_URL="postgresql://$MIGRATOR:$(enc "$MIGRATOR_PW")@$PGHOST:$PGPORT/$DB"
+export DATABASE_URL
 export DB_DEPLOY_LOCAL_NO_TLS=1
 export APP_SERVER_DB_PASSWORD="sim-$(rand)" APP_WORKER_DB_PASSWORD="sim-$(rand)"
 
@@ -68,6 +83,3 @@ echo "db-test-hosted-sim: plan as non-superuser $MIGRATOR"
 bash "$ROOT/scripts/db-deploy.sh" plan
 echo "db-test-hosted-sim: apply as non-superuser $MIGRATOR"
 bash "$ROOT/scripts/db-deploy.sh" apply
-
-# The roles' test passwords are cluster-wide: clear them (scripts/db-test.sh sets its own per run).
-"${PSQL[@]}" -d postgres -c "alter role app_server password null; alter role app_worker password null;"

@@ -126,12 +126,13 @@ jobs:
         run: |
           if ! command -v psql >/dev/null; then sudo apt-get update && sudo apt-get install -y postgresql-client; fi
           psql --version
+      # First, on the fresh service container: the roles do not exist yet, exactly as on a new hosted project.
+      - name: Hosted-Supabase simulation (deploy plan + apply + verify as a NON-superuser migration role)
+        run: bash scripts/db-test-hosted-sim.sh
       - name: Test-only Supabase shim → migrations up/down/up → SQL tests (catalog, isolation, claims, hook) → TS integration
         run: bash scripts/db-test.sh
         env:
           DB_TEST_INTEGRATION: '1'
-      - name: Hosted-Supabase simulation (deploy plan + apply + verify as a NON-superuser migration role)
-        run: bash scripts/db-test-hosted-sim.sh
 
   build:
     name: 'Gate 9 · Build (standalone) + bundle-size budget'

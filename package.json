@@ -22,6 +22,7 @@
     "test:integration": "turbo run test:integration",
     "e2e": "pnpm --filter @jadarat/suite e2e",
     "db:test": "bash scripts/db-test.sh",
+    "db:test:hosted-sim": "bash scripts/db-test-hosted-sim.sh",
     "check:migrations": "node scripts/check-migration-names.mjs",
     "check:deps": "depcruise apps packages modules --config .dependency-cruiser.cjs",
     "check:actions": "node scripts/check-server-actions.mjs",

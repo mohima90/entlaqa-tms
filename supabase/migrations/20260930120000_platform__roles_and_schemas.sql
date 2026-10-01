@@ -22,10 +22,29 @@ begin
 end
 $$;
 
--- Re-assert attributes in case the roles pre-existed with different settings.
-alter role app_server login noinherit nobypassrls nosuperuser nocreatedb nocreaterole noreplication;
-alter role app_worker login noinherit nobypassrls nosuperuser nocreatedb nocreaterole noreplication;
-alter role tenant_guard nologin noinherit nobypassrls nosuperuser nocreatedb nocreaterole noreplication;
+-- Roles that pre-existed with other settings: the migration role is not a superuser on hosted Supabase,
+-- and PostgreSQL 16+ refuses even `NOSUPERUSER` / `NOBYPASSRLS` / `NOREPLICATION` in ALTER ROLE from a
+-- non-superuser. So privileged attributes are asserted (an operator must fix them), and only the
+-- attributes the migration role may change are re-asserted, and only when they differ.
+do $$
+declare
+  r record;
+begin
+  for r in
+    select rolname, rolcanlogin, rolinherit, rolsuper, rolbypassrls, rolreplication, rolcreatedb, rolcreaterole
+    from pg_roles where rolname in ('app_server', 'app_worker', 'tenant_guard')
+  loop
+    if r.rolsuper or r.rolbypassrls or r.rolreplication then
+      raise exception 'role % must be NOSUPERUSER NOBYPASSRLS NOREPLICATION; fix it as a superuser first', r.rolname;
+    end if;
+    if r.rolinherit or r.rolcreatedb or r.rolcreaterole
+       or r.rolcanlogin <> (r.rolname <> 'tenant_guard') then
+      execute format('alter role %I %s noinherit nocreatedb nocreaterole', r.rolname,
+                     case when r.rolname = 'tenant_guard' then 'nologin' else 'login' end);
+    end if;
+  end loop;
+end
+$$;
 
 grant authenticated to app_server;
 grant authenticated to app_worker;

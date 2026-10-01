@@ -35,8 +35,8 @@ begin
   end if;
   foreach v_role in array array['app_server', 'app_worker'] loop
     if exists (select 1 from pg_roles where rolname = v_role) then
-      -- Direct memberships must be exactly {authenticated}.
-      if (select coalesce(array_agg(g.rolname::text order by g.rolname), '{}')
+      -- Direct memberships must be exactly {authenticated} (distinct: PostgreSQL 16+ keeps one row per grantor).
+      if (select coalesce(array_agg(distinct g.rolname::text order by g.rolname::text), '{}')
           from pg_auth_members m
           join pg_roles g on g.oid = m.roleid
           join pg_roles u on u.oid = m.member
@@ -45,6 +45,21 @@ begin
       end if;
     end if;
   end loop;
+
+  -- tenant_guard: may read exactly what private.user_session_is_valid() needs, and create nothing
+  -- (CREATE on `private` is granted only while ownership is handed over, migration 120100).
+  if exists (select 1 from pg_roles where rolname = 'tenant_guard') then
+    if not (has_schema_privilege('tenant_guard', 'auth', 'usage')
+            and has_column_privilege('tenant_guard', 'auth.sessions', 'user_id', 'select')
+            and has_column_privilege('tenant_guard', 'auth.sessions', 'not_after', 'select')) then
+      failures := failures || 'tenant_guard must read auth.sessions (id, user_id, not_after)'::text;
+    end if;
+    foreach v_role in array module_schemas loop
+      if has_schema_privilege('tenant_guard', v_role, 'create') then
+        failures := failures || format('tenant_guard must not have CREATE on schema %s', v_role);
+      end if;
+    end loop;
+  end if;
 
   -- 2. Every table: RLS enabled AND forced; no privileges for outsider roles.
   for r in

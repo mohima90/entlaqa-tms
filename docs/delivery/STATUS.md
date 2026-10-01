@@ -84,6 +84,8 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 | Note | Vercel project `jadarat-tms` (team "Mohamed Attia's projects") builds from Root Directory `apps/suite` since 1 Oct 2026. The **old** project `entlaqa-tms` (team "Mohamed Ibrahim's projects") is still connected to the repo (seen on PR #10, 1 Oct 2026); the root `vercel.json` (`ignoreCommand: exit 0`) makes it skip builds — keep it until the PO deletes that project | PO | Open |
 | Risk | Staging is on Supabase **Free**: pauses after ~7 days idle (Restore in dashboard), no daily backups. Upgrade the org to Pro before design-partner or usability use | PO | Open |
 | Note | Dependabot npm run of 30 Sep 2026 failed: it tried `@types/node` 24 → 26 (wrong for the Node 24 runtime) and pnpm's 3-day release-age rule refused the then-new `next-intl` 4.14.8 in the lockfile. Fixed: `@types/node` major updates ignored; the release-age refusal clears by itself before the next weekly run | DevOps | Done 1 Oct 2026 |
+| Note | First `DB deploy plan` on staging (1 Oct 2026): connection + TLS `verify-full` OK, PostgreSQL 17.11; dry run stopped at migration `…120000` (`ALTER ROLE … NOSUPERUSER` is refused to a non-superuser) — nothing changed. Fixed (attributes asserted instead of set; CREATE on `private` granted to `tenant_guard` only during ownership hand-over; `auth` grants asserted) and a CI gate now runs the deploy as a non-superuser (`scripts/db-test-hosted-sim.sh`) | DevOps | Fix in PR |
+| Risk | If hosted Supabase's `postgres` lacks the grant option on `auth` / `auth.sessions`, migration `…120100` now fails loudly (no silent runtime breakage); fallback would need an ADR 0002 change (e.g. a different owner for `private.user_session_is_valid`) | DevOps | Open — first plan run will tell |
 | Risk | Hosted Supabase may not let the `postgres` role revoke `TEMPORARY` on the database (ADR 0002 §5 hardening); `DB deploy` reports it as a warning — confirm on first apply | DevOps | Open |
 | Risk | Regulatory figures need legal validation before release (BRD Appendix E) | PO / Legal | Open |
 | Security | Old codebase history (commit `9ca478b`) contained a committed `.env.local`: the leaked Vercel OIDC token was short-lived (hours) and project-bound — the old Vercel project itself still exists and should be deleted (see note above) and the old Supabase project `wtsdtyizauavvgolmygx` is deleted (DNS NXDOMAIN, checked 1 Oct 2026); the "Stripe" value was a UI placeholder (`sk_live_xxxx…`), not a key. History purge optional | PO | **Closed** 1 Oct 2026 |
@@ -110,15 +112,14 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 ## 5. Next Actions
 
 **Product Owner (user)** — Claude guides each step one action at a time (PO request, 1 Oct 2026)
-1. Merge the PR "staging DB deploy workflow + status housekeeping".
-2. GitHub → Settings → Environments → create `staging` (deployment branches: `main` only — mandatory) with secrets `DATABASE_URL` (Supabase Connect → Session pooler URI), `APP_SERVER_DB_PASSWORD`, `APP_WORKER_DB_PASSWORD` (≥ 40 chars, letters/digits/`-_`) and variable `DATABASE_CA_CERT` (Supabase Database Settings → SSL Configuration → Download certificate) — see `docs/engineering/db-deploy.md`. Never paste secrets into chat.
-3. Actions → **DB deploy** → `plan`, then `apply`; then Supabase → Authentication → Hooks → enable the access-token hook (`private.custom_access_token_hook`).
-4. Delete the **old** Vercel project `entlaqa-tms` in team "Mohamed Ibrahim's projects" (Settings → General → Delete Project); then Claude removes the root `vercel.json`.
-5. **T-M0-08** Start recruiting 3–5 design partners.
-6. Optional: upgrade Supabase org `entlaqa-TMS` to Pro (no pausing, backups) before design partners use staging.
+1. Merge the PR "fix(db): migrations run as hosted Supabase's non-superuser `postgres`".
+2. Actions → **DB deploy** → `plan` again; if green, `apply`; then Supabase → Authentication → Hooks → enable the access-token hook (`private.custom_access_token_hook`). (GitHub environment `staging` with its 3 secrets + CA variable is configured — done 1 Oct 2026.)
+3. Old Vercel project `entlaqa-tms` (team "Mohamed Ibrahim's projects"): the PO's Vercel account has no access to that team (1 Oct 2026). Harmless while the root `vercel.json` skips its builds; delete it if access is recovered, or ask Vercel support.
+4. **T-M0-08** Start recruiting 3–5 design partners.
+5. Optional: upgrade Supabase org `entlaqa-TMS` to Pro (no pausing, backups) before design partners use staging.
 
 **Next Claude session** — continue M1:
-1. After `DB deploy apply` succeeds: record the server version and any TEMPORARY warning here; align CI to the staging Postgres major if it is 17.
+1. After `DB deploy apply` succeeds: record any TEMPORARY warning here. Staging runs **PostgreSQL 17.11** (first plan run, 1 Oct 2026) while CI tests on 16 — align CI (`ci.yml` image digest, `supabase/config.toml` `major_version`).
 2. T-M1-D03 walking skeleton: sign-in with MFA (asymmetric signing keys, Auth settings: signups off, TOTP) → Arabic shell → audit event; Vercel env vars (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `DATABASE_URL_APP_SERVER`).
 3. T-M1-A02 Storybook for `packages/ui`; T-M1-C02 per-epic threat models for M2 epics.
 4. T-M1-D04 self-hosted stack spike (needs a Docker-capable environment).
@@ -130,6 +131,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
+| 1 Oct 2026 | PR #10 merged; PO configured GitHub environment `staging` (main only; `DATABASE_URL`, two role passwords, `DATABASE_CA_CERT`); first `DB deploy plan`: TLS verify-full OK, PG 17.11, stopped on a superuser-only `ALTER ROLE` (nothing changed). Fixed migrations for a non-superuser migration role, added the hosted-Supabase simulation CI gate and stronger post-deploy checks; old Vercel project cannot be deleted (no access) |
 | 1 Oct 2026 | PR #9 merged; Vercel builds `apps/suite` (Ready); Supabase staging created (Frankfurt, Data API off, Free); leaked old credentials revoked (old Supabase project deleted; old Vercel project still connected — PO to delete); `main` ruleset active; ADRs 0001–0011 Accepted; added `DB deploy` workflow (dry-run plan, apply with Supabase-CLI-compatible history, SCRAM role passwords, TLS verify-full, post-deploy verification also run in CI); independent code + security review: approve with fixes (2 High: password in libpq errors, unverified TLS; 4 Medium) — all fixed with tests |
 | 27 Sep 2026 | Market research and competitor/regulatory fact-check; old codebase removed; feature list (280) and BRD v2.0 written |
 | 30 Sep 2026 | Decisions D1, D2, D6, D7 and HR Suite positioning recorded (BRD v2.1); Development Plan v1.0; `CLAUDE.md` and this status tracker added for session handover |

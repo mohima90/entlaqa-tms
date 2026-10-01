@@ -81,12 +81,12 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 | Dependency | Human-only activities (Plan §2.3): accounts, design partners, usability sessions, legal validation, pen test | PO | Open |
 | Dependency | 3–5 design-partner customers (≥ 2 Saudi, ≥ 1 government/bank) | PO | Open |
 | Dependency | Jadarat LMS APIs/webhooks for connector (needed by M6) | PO / Jadarat team | Open |
-| Note | Vercel project `jadarat-tms` (team "Mohamed Attia's projects") builds from Root Directory `apps/suite` since 1 Oct 2026; root `vercel.json` is now unused — remove in a cleanup | DevOps | Done |
+| Note | Vercel project `jadarat-tms` (team "Mohamed Attia's projects") builds from Root Directory `apps/suite` since 1 Oct 2026. The **old** project `entlaqa-tms` (team "Mohamed Ibrahim's projects") is still connected to the repo (seen on PR #10, 1 Oct 2026); the root `vercel.json` (`ignoreCommand: exit 0`) makes it skip builds — keep it until the PO deletes that project | PO | Open |
 | Risk | Staging is on Supabase **Free**: pauses after ~7 days idle (Restore in dashboard), no daily backups. Upgrade the org to Pro before design-partner or usability use | PO | Open |
 | Note | Dependabot npm run of 30 Sep 2026 failed: it tried `@types/node` 24 → 26 (wrong for the Node 24 runtime) and pnpm's 3-day release-age rule refused the then-new `next-intl` 4.14.8 in the lockfile. Fixed: `@types/node` major updates ignored; the release-age refusal clears by itself before the next weekly run | DevOps | Done 1 Oct 2026 |
 | Risk | Hosted Supabase may not let the `postgres` role revoke `TEMPORARY` on the database (ADR 0002 §5 hardening); `DB deploy` reports it as a warning — confirm on first apply | DevOps | Open |
 | Risk | Regulatory figures need legal validation before release (BRD Appendix E) | PO / Legal | Open |
-| Security | Old codebase history (commit `9ca478b`) contained a committed `.env.local`: the old Vercel project is deleted (OIDC token was short-lived and project-bound) and the old Supabase project `wtsdtyizauavvgolmygx` is deleted (DNS NXDOMAIN, checked 1 Oct 2026); the "Stripe" value was a UI placeholder (`sk_live_xxxx…`), not a key. History purge optional | PO | **Closed** 1 Oct 2026 |
+| Security | Old codebase history (commit `9ca478b`) contained a committed `.env.local`: the leaked Vercel OIDC token was short-lived (hours) and project-bound — the old Vercel project itself still exists and should be deleted (see note above) and the old Supabase project `wtsdtyizauavvgolmygx` is deleted (DNS NXDOMAIN, checked 1 Oct 2026); the "Stripe" value was a UI placeholder (`sk_live_xxxx…`), not a key. History purge optional | PO | **Closed** 1 Oct 2026 |
 | Decision | Scope questions in `docs/architecture/r1-data-model.md` §7: LMS trigger without programs, competency prerequisites, audiences in R1, provider evaluations before registry, external-instructor logins in R1, data scopes in R1, audit retention, vendor approvals | PO | Open |
 | Decision | Design: brand colours/logo, IBM Plex font licence & self-hosting, two Arabic terms to validate in usability round 1 | PO | Open |
 | Legal | Egypt PDPL grace period ends ~2 Nov 2026 (Egyptian tenants at GA?); SDAIA SCCs + transfer risk assessment before first Saudi tenant | PO / Legal | Open |
@@ -113,8 +113,9 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 1. Merge the PR "staging DB deploy workflow + status housekeeping".
 2. GitHub → Settings → Environments → create `staging` (deployment branches: `main` only — mandatory) with secrets `DATABASE_URL` (Supabase Connect → Session pooler URI), `APP_SERVER_DB_PASSWORD`, `APP_WORKER_DB_PASSWORD` (≥ 40 chars, letters/digits/`-_`) and variable `DATABASE_CA_CERT` (Supabase Database Settings → SSL Configuration → Download certificate) — see `docs/engineering/db-deploy.md`. Never paste secrets into chat.
 3. Actions → **DB deploy** → `plan`, then `apply`; then Supabase → Authentication → Hooks → enable the access-token hook (`private.custom_access_token_hook`).
-4. **T-M0-08** Start recruiting 3–5 design partners.
-5. Optional: upgrade Supabase org `entlaqa-TMS` to Pro (no pausing, backups) before design partners use staging.
+4. Delete the **old** Vercel project `entlaqa-tms` in team "Mohamed Ibrahim's projects" (Settings → General → Delete Project); then Claude removes the root `vercel.json`.
+5. **T-M0-08** Start recruiting 3–5 design partners.
+6. Optional: upgrade Supabase org `entlaqa-TMS` to Pro (no pausing, backups) before design partners use staging.
 
 **Next Claude session** — continue M1:
 1. After `DB deploy apply` succeeds: record the server version and any TEMPORARY warning here; align CI to the staging Postgres major if it is 17.
@@ -129,7 +130,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
-| 1 Oct 2026 | PR #9 merged; Vercel builds `apps/suite` (Ready); Supabase staging created (Frankfurt, Data API off, Free); leaked old credentials confirmed revoked (projects deleted); `main` ruleset active; ADRs 0001–0011 Accepted; added `DB deploy` workflow (dry-run plan, apply with Supabase-CLI-compatible history, SCRAM role passwords, TLS verify-full, post-deploy verification also run in CI); independent code + security review: approve with fixes (2 High: password in libpq errors, unverified TLS; 4 Medium) — all fixed with tests |
+| 1 Oct 2026 | PR #9 merged; Vercel builds `apps/suite` (Ready); Supabase staging created (Frankfurt, Data API off, Free); leaked old credentials revoked (old Supabase project deleted; old Vercel project still connected — PO to delete); `main` ruleset active; ADRs 0001–0011 Accepted; added `DB deploy` workflow (dry-run plan, apply with Supabase-CLI-compatible history, SCRAM role passwords, TLS verify-full, post-deploy verification also run in CI); independent code + security review: approve with fixes (2 High: password in libpq errors, unverified TLS; 4 Medium) — all fixed with tests |
 | 27 Sep 2026 | Market research and competitor/regulatory fact-check; old codebase removed; feature list (280) and BRD v2.0 written |
 | 30 Sep 2026 | Decisions D1, D2, D6, D7 and HR Suite positioning recorded (BRD v2.1); Development Plan v1.0; `CLAUDE.md` and this status tracker added for session handover |
 | 30 Sep 2026 | Added project Stop hook (`.claude/settings.json`, `.claude/hooks/require-status-update.sh`) that requires this file to be updated whenever other files change in a session |

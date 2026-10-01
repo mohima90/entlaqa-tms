@@ -76,7 +76,7 @@ The delivery team is the **user as Product Owner + Claude Code sessions and sub-
 ## Environment notes
 
 - The repository contains the **M1 foundation** (monorepo, migrations, CI gates — see `docs/engineering/README.md`) plus the documentation.
-- Vercel project **`jadarat-tms`** (team "Mohamed Attia's projects") builds from Root Directory **`apps/suite`** (Next.js preset, Node 24, region `fra1` in `apps/suite/vercel.json`). The root `vercel.json` is no longer used.
+- Vercel project **`jadarat-tms`** (team "Mohamed Attia's projects") builds from Root Directory **`apps/suite`** (Next.js preset, Node 24, region `fra1` in `apps/suite/vercel.json`). The root `vercel.json` (`ignoreCommand: exit 0`) must stay while the **old** Vercel project `entlaqa-tms` (team "Mohamed Ibrahim's projects") is still connected to this repo: it makes that project skip every build. Remove it only after the PO deletes that project.
 - Supabase staging: project **`jadarat-tms-staging`** (ref `kgmhlmiwlbvdmalesexv`, org `entlaqa-TMS`, Frankfurt, Free plan, Data API off). Claude's container **cannot reach `*.supabase.co`** (egress policy): migrations reach hosted databases only through the manual **Actions → DB deploy** workflow run by the user (`docs/engineering/db-deploy.md`). Never ask for keys or passwords in chat — they go into GitHub environment secrets / Vercel env vars.
 - `main` is protected by the ruleset `main protection` (PR required, `CI gates` + CodeQL checks required, no force-push).
 - **Guiding the user (PO):** give **one action per message** (exact click/field), then wait for "done" before the next.

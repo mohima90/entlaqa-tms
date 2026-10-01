@@ -158,7 +158,7 @@ Make the aggregate job **`CI gates`** and the CodeQL checks required status chec
 | DB types | Hand-written Drizzle definitions for the six platform tables | `pnpm db:types` (supabase gen types + drizzle-kit pull) with a drift gate (migration-conventions §8) |
 | Design tokens | `packages/ui` imports `docs/design/tokens/tokens.css` directly (single source of truth) | Component library + Storybook (T-M1-A02) |
 | Self-hosted stack | — | **T-M1-D04** (Docker): GoTrue hook config, `auth.sessions` grants, image scanning |
-| Vercel | Project Root Directory = `apps/suite` (Next.js preset, Node 24, files outside root included) — production deployment of `main` is Ready (1 Oct 2026). Root `vercel.json` (`ignoreCommand: exit 0`) is now unused | Remove root `vercel.json` in a later cleanup; add Supabase env vars with the sign-in work (T-M1-D03) |
+| Vercel | Project Root Directory = `apps/suite` (Next.js preset, Node 24, files outside root included) — production deployment of `main` is Ready (1 Oct 2026). Root `vercel.json` (`ignoreCommand: exit 0`) keeps the **old** project `entlaqa-tms` (team "Mohamed Ibrahim's projects", still connected) from building | Remove root `vercel.json` only after the PO deletes the old project; add Supabase env vars with the sign-in work (T-M1-D03) |
 
 ### Items to verify on the Supabase staging project (T-M0-07)
 The first two are exercised by `DB deploy` (`plan` fails on a refused grant; `verify-deployment.sql` checks role attributes); the others need the sign-in flow.

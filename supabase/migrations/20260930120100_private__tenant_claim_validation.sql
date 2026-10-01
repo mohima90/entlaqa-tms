@@ -82,7 +82,7 @@ comment on function private.request_user_id() is
 -- a view reads its base table with its OWNER's rights (the migration role), and granting SELECT on a view
 -- needs no grant option on the base table (ADR 0002 §6a rev. 2). Nobody but tenant_guard may select it.
 create or replace view private.auth_session_validity
-with (security_barrier = true)
+with (security_barrier = true)  -- defensive only: the view has no WHERE clause
 as select s.id, s.user_id, s.not_after from auth.sessions s;
 
 comment on view private.auth_session_validity is

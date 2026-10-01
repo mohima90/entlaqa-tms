@@ -63,14 +63,24 @@ begin
             and has_column_privilege(v_role, 'auth.sessions', 'not_after', 'select')) then
       failures := failures || format('%s (owner of private.auth_session_validity) must read auth.sessions (id, user_id, not_after)', v_role);
     end if;
+    -- Exact ACL: tenant_guard may only SELECT; nobody else (besides the owner) holds any privilege, at table
+    -- or column level. The view is a plain projection, i.e. auto-updatable: write privileges on it would
+    -- reach auth.sessions with the owner's rights.
     for r in
-      select distinct case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end as grantee
+      select distinct
+        case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end as grantee,
+        a.privilege_type
       from pg_class c, aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a
-      where c.oid = 'private.auth_session_validity'::regclass
-        and a.grantee <> c.relowner
-        and (a.grantee = 0 or pg_get_userbyid(a.grantee) <> 'tenant_guard')
+      where c.oid = 'private.auth_session_validity'::regclass and a.grantee <> c.relowner
+        and not (a.grantee <> 0 and pg_get_userbyid(a.grantee) = 'tenant_guard' and a.privilege_type = 'SELECT')
+      union
+      select distinct
+        case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end,
+        a.privilege_type || ' (column ' || att.attname || ')'
+      from pg_attribute att, aclexplode(att.attacl) a
+      where att.attrelid = 'private.auth_session_validity'::regclass and att.attacl is not null
     loop
-      failures := failures || format('%s must not have privileges on private.auth_session_validity', r.grantee);
+      failures := failures || format('%s must not have %s on private.auth_session_validity', r.grantee, r.privilege_type);
     end loop;
   end if;
 

@@ -45,5 +45,23 @@
     "rateLimited": "Too many requests in a short time. Wait a moment, then try again.",
     "internalError": "We couldn't complete this because of a problem on our side. Try again. Reference: {correlationId}",
     "notConfigured": "This service isn't set up in this environment yet."
+  },
+  "auth": {
+    "signInTitle": "Sign in",
+    "signInIntro": "Enter your account's email and password.",
+    "emailLabel": "Email",
+    "passwordLabel": "Password",
+    "submit": "Sign in",
+    "submitting": "Signing in…",
+    "notConfigured": "Sign-in is not configured in this environment yet.",
+    "chooseTitle": "Choose an organization",
+    "chooseIntro": "Your account belongs to more than one organization. Choose the one to work in.",
+    "choosing": "Opening the organization…",
+    "signOut": "Sign out",
+    "signingOut": "Signing out…",
+    "errors": {
+      "invalidCredentials": "The email or password is incorrect.",
+      "noOrganization": "Your account isn't linked to an active organization. Contact your organization's administrator."
+    }
   }
 }

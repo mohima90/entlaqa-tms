@@ -10,6 +10,8 @@ const pages = [
   { path: '/en', lang: 'en', dir: 'ltr', heading: 'Training Management System' },
   { path: '/ar/suite', lang: 'ar', dir: 'rtl', heading: 'الرئيسية' },
   { path: '/en/suite', lang: 'en', dir: 'ltr', heading: 'Home' },
+  { path: '/ar/sign-in', lang: 'ar', dir: 'rtl', heading: 'تسجيل الدخول' },
+  { path: '/en/sign-in', lang: 'en', dir: 'ltr', heading: 'Sign in' },
 ] as const;
 
 function collectConsoleErrors(page: Page): string[] {
@@ -93,6 +95,15 @@ test('the language toggle switches between Arabic and English on the same page',
 test('shows the "not configured" state when Supabase is not configured', async ({ page }) => {
   await page.goto('/en');
   await expect(page.getByTestId('config-status')).toContainText('not configured');
+});
+
+test('the sign-in form is disabled and explains why when sign-in is not configured', async ({
+  page,
+}) => {
+  await page.goto('/en/sign-in');
+  await expect(page.getByTestId('auth-not-configured')).toBeVisible();
+  await expect(page.getByLabel('Email')).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Sign in' })).toBeDisabled();
 });
 
 test('the skip link is the first focusable element and targets main', async ({ page }) => {

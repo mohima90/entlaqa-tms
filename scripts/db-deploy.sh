@@ -31,29 +31,10 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 chmod 700 "$WORK"
 
-# Connection: libpq variables + pgpass file; nothing secret on any command line.
-node "$ROOT/scripts/pg-connection.mjs" "$WORK/pgpass" "$WORK/conn.env"
-while IFS='=' read -r key value; do
-  case "$key" in
-    PGHOST | PGPORT | PGUSER | PGDATABASE | DB_IS_LOCAL) export "$key=$value" ;;
-    '') ;;
-    *) echo "db-deploy: unexpected connection key" >&2; exit 1 ;;
-  esac
-done <"$WORK/conn.env"
-export PGPASSFILE="$WORK/pgpass"
-unset DATABASE_URL PGPASSWORD
-
-if [[ "${DB_DEPLOY_LOCAL_NO_TLS:-0}" == "1" && "$DB_IS_LOCAL" == "1" ]]; then
-  export PGSSLMODE=disable
-else
-  if [[ "${DATABASE_CA_CERT:-}" != *"-----BEGIN CERTIFICATE-----"* ]]; then
-    echo "db-deploy: DATABASE_CA_CERT (PEM of the server's root CA) is required: TLS is verify-full" >&2
-    exit 1
-  fi
-  printf '%s\n' "$DATABASE_CA_CERT" >"$WORK/ca.crt"
-  export PGSSLMODE=verify-full PGSSLROOTCERT="$WORK/ca.crt"
-fi
-export PGOPTIONS="${PGOPTIONS:-} -c client_min_messages=warning"
+# Connection: libpq variables + pgpass file + verify-full TLS (scripts/lib/db-connect.sh).
+# shellcheck source=lib/db-connect.sh
+source "$ROOT/scripts/lib/db-connect.sh"
+db_connect "$WORK" db-deploy
 export PGAPPNAME="jadarat-db-deploy"
 PSQL=(psql -X -q -v ON_ERROR_STOP=1 --no-psqlrc)
 

@@ -7,7 +7,7 @@ const identity = vi.hoisted(() => ({
 }));
 const db = vi.hoisted(() => ({
   withUserTx: vi.fn((_claims: unknown, fn: (tx: unknown) => Promise<unknown>) => fn('tx')),
-  schema: { auditEvents: { name: 'audit_events' } },
+  insertAuditEvent: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock('@jadarat/platform-identity/next', () => identity);
@@ -45,9 +45,7 @@ describe('default defineAction runtime', () => {
     ).toBeNull();
   });
 
-  it('writes audit events with the actor from verified claims (no impersonator forging)', async () => {
-    const values = vi.fn(() => Promise.resolve());
-    const insert = vi.fn(() => ({ values }));
+  it('writes audit events through the platform-db audit writer (actor from verified claims)', async () => {
     const actor = {
       userId: 'u1',
       personId: 'p1',
@@ -55,20 +53,9 @@ describe('default defineAction runtime', () => {
       aal: 'aal1',
       impersonatorUserId: null,
     } as never;
-    await defaultActionRuntime.writeAudit({ insert } as never, actor, {
-      action: 'tms.session.draft_created',
-    });
-    expect(insert).toHaveBeenCalledWith(db.schema.auditEvents);
-    expect(values).toHaveBeenCalledWith({
-      tenantId: 't1',
-      actorUserId: 'u1',
-      actorPersonId: 'p1',
-      impersonatorUserId: null,
-      action: 'tms.session.draft_created',
-      entityType: null,
-      entityId: null,
-      data: {},
-    });
+    const record = { action: 'tms.session.draft_created' };
+    await defaultActionRuntime.writeAudit('tx' as never, actor, record);
+    expect(db.insertAuditEvent).toHaveBeenCalledWith('tx', actor, record);
   });
 
   it('logs unexpected errors without messages or personal data, with the correlation id', () => {

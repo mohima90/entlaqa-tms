@@ -30,16 +30,51 @@ export function assertConnectionRole(url: string, role: DbLoginRole): void {
   }
 }
 
+/** Environment variable holding the PEM root CA of the database server (Supabase: prod-ca-2021). */
+export const DATABASE_CA_CERT_ENV = 'DATABASE_CA_CERT';
+
+const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
+
+/**
+ * TLS for the application's database connections. A remote server is reached only with a VERIFIED
+ * certificate chain and host name (verify-full) against the configured root CA — never with
+ * encryption-only TLS, which a network attacker could intercept. Local servers (development, CI) keep
+ * whatever the URL says. Fails closed: a remote URL without a CA is a configuration error.
+ */
+export function tlsOptionsFor(
+  url: string,
+  caPem: string | undefined,
+): { readonly ca: string; readonly rejectUnauthorized: true } | undefined {
+  let host: string;
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    throw new Error('database URL is not a valid connection URL');
+  }
+  if (LOCAL_HOSTS.has(host)) return undefined;
+  if (!caPem?.includes('-----BEGIN CERTIFICATE-----')) {
+    throw new Error(
+      `${DATABASE_CA_CERT_ENV} (PEM root CA of the database server) is required for remote database hosts`,
+    );
+  }
+  return { ca: caPem, rejectUnauthorized: true };
+}
+
 /**
  * Creates a Drizzle database over a postgres.js connection.
  * `prepare: false` is required behind the Supabase pooler in transaction mode (ADR 0002 §5).
  */
-export function createDatabase(url: string, options: { max?: number } = {}): AppDatabase {
+export function createDatabase(
+  url: string,
+  options: { max?: number; caPem?: string | undefined } = {},
+): AppDatabase {
+  const ssl = tlsOptionsFor(url, options.caPem);
   const client = postgres(url, {
     prepare: false,
     max: options.max ?? 5,
     idle_timeout: 20,
     connect_timeout: 10,
+    ...(ssl ? { ssl } : {}),
   });
   return drizzle(client, { schema });
 }
@@ -61,7 +96,7 @@ export function getDatabase(role: DbLoginRole): AppDatabase {
   const url = readEnv(DATABASE_URL_ENV[role]);
   if (!url) throw new Error(`${DATABASE_URL_ENV[role]} is not configured`);
   assertConnectionRole(url, role);
-  const db = createDatabase(url);
+  const db = createDatabase(url, { caPem: readEnv(DATABASE_CA_CERT_ENV) });
   databases.set(role, db);
   return db;
 }

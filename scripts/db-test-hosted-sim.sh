@@ -88,3 +88,39 @@ echo "db-test-hosted-sim: plan as non-superuser $MIGRATOR"
 bash "$ROOT/scripts/db-deploy.sh" plan
 echo "db-test-hosted-sim: apply as non-superuser $MIGRATOR"
 bash "$ROOT/scripts/db-deploy.sh" apply
+
+# Tenant provisioning (scripts/provision-tenant.sh) as the same non-superuser migration role.
+ADMIN_UID="$(node -e 'process.stdout.write(require("node:crypto").randomUUID())')"
+"${PSQL[@]}" -d "$DB" -c "insert into auth.users (id, email) values ('$ADMIN_UID', 'sim-admin@example.test')"
+q() { psql -X -At --no-psqlrc -v ON_ERROR_STOP=1 -d "$DB" -c "$1"; }
+memberships() {
+  q "select count(*) from platform.tenant_memberships m join platform.tenants t on t.id = m.tenant_id
+     where t.slug = 'sim-org' and m.user_id = '$ADMIN_UID' and m.status = 'active'"
+}
+export TENANT_SLUG=sim-org TENANT_NAME_AR='منشأة المحاكاة' TENANT_NAME_EN='Simulation Org' ADMIN_USER_ID="$ADMIN_UID"
+echo "db-test-hosted-sim: provision plan + apply (twice: idempotent) as $MIGRATOR"
+bash "$ROOT/scripts/provision-tenant.sh" plan
+[[ "$(memberships)" == "0" ]] || { echo "db-test-hosted-sim: provision plan changed the database" >&2; exit 1; }
+bash "$ROOT/scripts/provision-tenant.sh" apply
+bash "$ROOT/scripts/provision-tenant.sh" apply
+[[ "$(memberships)" == "1" ]] || { echo "db-test-hosted-sim: provision apply did not create the membership" >&2; exit 1; }
+[[ "$(q "select name_ar || '|' || name_en || '|' || status from platform.tenants where slug = 'sim-org'")" == "منشأة المحاكاة|Simulation Org|active" ]] ||
+  { echo "db-test-hosted-sim: provisioned organization has unexpected values" >&2; exit 1; }
+[[ "$(q "select count(*) from platform.audit_events where action = 'platform.tenant.admin_provisioned' and entity_id = '$ADMIN_UID'")" == "1" ]] ||
+  { echo "db-test-hosted-sim: expected exactly one provisioning audit event" >&2; exit 1; }
+# Refusals: an unknown Auth user, and malformed input (rejected before connecting).
+ERR_FILE="$(mktemp)"
+if ADMIN_USER_ID="$(node -e 'process.stdout.write(require("node:crypto").randomUUID())')" TENANT_SLUG=sim-other \
+  bash "$ROOT/scripts/provision-tenant.sh" apply 2>"$ERR_FILE"; then
+  echo "db-test-hosted-sim: provisioning an unknown user must fail" >&2; exit 1
+fi
+grep -q 'no Auth user with this UID' "$ERR_FILE" || { cat "$ERR_FILE" >&2; rm -f "$ERR_FILE"; exit 1; }
+rm -f "$ERR_FILE"
+[[ "$(q "select count(*) from platform.tenants where slug = 'sim-other'")" == "0" ]] ||
+  { echo "db-test-hosted-sim: a failed provisioning left an organization behind" >&2; exit 1; }
+for bad in "TENANT_SLUG=-bad" "TENANT_SLUG=Bad" "ADMIN_USER_ID=not-a-uuid" "TENANT_NAME_AR= "; do
+  if env "$bad" bash "$ROOT/scripts/provision-tenant.sh" plan >/dev/null 2>&1; then
+    echo "db-test-hosted-sim: provisioning accepted invalid input ($bad)" >&2; exit 1
+  fi
+done
+echo "db-test-hosted-sim: provisioning OK"

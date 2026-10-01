@@ -6,7 +6,8 @@
  *     headers (`x-jadarat-*`, `x-nonce`), set the host classification and a per-request CSP nonce
  *  2. host → tenant resolution (placeholder classification; DB lookup in T-M1-D03)
  *  3. locale routing (/ar default, /en) via next-intl — page paths only
- * It makes NO authorization decisions. Session refresh with @supabase/ssr is added in T-M1-D03.
+ *  4. Supabase session refresh on page requests (lib/session-refresh.ts, T-M1-D03)
+ * It makes NO authorization decisions: pages verify the session themselves and fail closed.
  * Only `/_next/static/*` (immutable build assets) bypasses the proxy; next.config.ts gives those a
  * strict static CSP.
  */
@@ -15,6 +16,7 @@ import createMiddleware from 'next-intl/middleware';
 import { NextRequest, NextResponse } from 'next/server';
 import { INTERNAL_HEADER_PREFIX, applyHostHeaders, classifyHost } from './lib/host-tenant';
 import { NONCE_HEADER, buildContentSecurityPolicy, createNonce } from './lib/security-headers';
+import { applySessionCookies, refreshSessionCookies } from './lib/session-refresh';
 
 const handleI18nRouting = createMiddleware(routing);
 
@@ -65,7 +67,18 @@ export function forwardRequestHeaders(response: NextResponse, headers: Headers):
   response.headers.set(OVERRIDE_HEADERS, names.join(','));
 }
 
-export function proxy(request: NextRequest): NextResponse {
+export async function proxy(request: NextRequest): Promise<NextResponse> {
+  // Rotated session cookies are applied to the request first, so the copied headers carry them.
+  const sessionCookies = isLocaleRouted(request.nextUrl.pathname)
+    ? await refreshSessionCookies(request)
+    : { cookies: [], headers: {} };
+  const response = routeRequest(request);
+  applySessionCookies(response, sessionCookies);
+  return response;
+}
+
+/** Header scrubbing, CSP and locale routing (synchronous part of the proxy). */
+export function routeRequest(request: NextRequest): NextResponse {
   const nonce = createNonce();
   const csp = buildContentSecurityPolicy({
     nonce,

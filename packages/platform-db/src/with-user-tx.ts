@@ -41,3 +41,22 @@ export async function switchActiveTenant(tx: UserTx, tenantId: string): Promise<
   );
   return rows[0]?.switched === true;
 }
+
+/** An organization the signed-in user may act in (before a tenant is selected). */
+export interface SessionTenant {
+  readonly tenantId: string;
+  readonly nameAr: string;
+  readonly nameEn: string | null;
+}
+
+/**
+ * The CURRENT session's organizations (active memberships in active/trial tenants), for the sign-in
+ * flow before a tenant is selected (private.session_tenants(), migration 20261001120000). Empty for an
+ * invalid or expired session.
+ */
+export async function listSessionTenants(tx: UserTx): Promise<readonly SessionTenant[]> {
+  const rows = await tx.execute<{ tenant_id: string; name_ar: string; name_en: string | null }>(
+    sql`select tenant_id, name_ar, name_en from private.session_tenants()`,
+  );
+  return rows.map((row) => ({ tenantId: row.tenant_id, nameAr: row.name_ar, nameEn: row.name_en }));
+}

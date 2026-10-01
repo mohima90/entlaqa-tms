@@ -1,5 +1,6 @@
 import { defaultActionRuntime } from './default-runtime';
 import { createDefineAction } from './define-action';
+import { createDefinePublicAction } from './define-public-action';
 
 export * from './permissions';
 export * from './scopes';
@@ -18,6 +19,27 @@ export {
   createDefineAction,
   requiresStrictVerification,
 } from './define-action';
+export {
+  type PublicActionDefinition,
+  type PublicActionRuntime,
+  DEFINE_PUBLIC_ACTION_MARKER,
+  createDefinePublicAction,
+} from './define-public-action';
 
 /** The one way to declare a server action (ADR 0003 §4). */
 export const defineAction = createDefineAction(defaultActionRuntime);
+
+/**
+ * Pre-tenant server actions (sign-in, organization selection, sign-out) — no permission check; allowed
+ * only in apps/suite/src/auth/ (CI gate). See define-public-action.ts.
+ */
+export const definePublicAction = createDefinePublicAction({
+  logError(error, meta) {
+    // No personal data: the error class, the action name and the correlation id only.
+    console.error('[definePublicAction] unexpected error', {
+      action: meta.action,
+      correlationId: meta.correlationId,
+      error: error instanceof Error ? error.name : typeof error,
+    });
+  },
+});

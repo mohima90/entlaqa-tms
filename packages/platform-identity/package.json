@@ -3,11 +3,12 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Identity: server-side verification of Supabase sessions into VerifiedClaims (ADR 0003 \u00a72). Skeleton.",
+  "description": "Identity: server-side verification of Supabase sessions into VerifiedClaims and the sign-in flow (ADR 0003 §2, T-M1-D03).",
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
-    "./next": "./src/next.ts"
+    "./next": "./src/next.ts",
+    "./auth": "./src/auth-next.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",

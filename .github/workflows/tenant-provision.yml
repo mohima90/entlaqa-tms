@@ -1,0 +1,85 @@
+# Creates an organization (tenant) and makes an existing Auth user its first ACTIVE member (T-M1-D03;
+# runbook: docs/engineering/db-deploy.md §Provision an organization). Manual only.
+# Uses the same GitHub environment as "DB deploy" (secret DATABASE_URL, variable DATABASE_CA_CERT); its
+# "Deployment branches" rule (main only) is the actual access control.
+# Inputs are organization data and a user UID only — never an e-mail or a person's name (run inputs are
+# visible to everyone with read access to the repository).
+# Run `plan` first (dry run, always rolled back), then `apply`.
+name: Provision organization
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        options: [staging]
+        default: staging
+      mode:
+        description: 'plan = dry run (rolled back) · apply = create it'
+        type: choice
+        options: [plan, apply]
+        default: plan
+      tenant_slug:
+        description: 'Organization short name: lowercase letters, digits, hyphens (e.g. entlaqa-demo)'
+        type: string
+        required: true
+      tenant_name_ar:
+        description: Organization name in Arabic
+        type: string
+        required: true
+      tenant_name_en:
+        description: Organization name in English (optional)
+        type: string
+        required: false
+        default: ''
+      admin_user_id:
+        description: "The user's UID (Supabase → Authentication → Users → the user → Copy UID)"
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: db-deploy-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  provision:
+    name: Provision organization (${{ inputs.mode }} → ${{ inputs.environment }})
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+      - name: PostgreSQL client
+        run: |
+          if ! command -v psql >/dev/null; then sudo apt-get update && sudo apt-get install -y postgresql-client; fi
+          psql --version
+      - name: Check required secrets are configured
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          TARGET: ${{ inputs.environment }}
+        run: |
+          if [[ -z "$DATABASE_URL" ]]; then
+            echo "::error::Secret DATABASE_URL is missing in environment '$TARGET' (docs/engineering/db-deploy.md)"
+            exit 1
+          fi
+      # Inputs reach the script as environment variables only (never interpolated into the shell script).
+      - name: Provision (${{ inputs.mode }})
+        run: bash scripts/provision-tenant.sh "$MODE"
+        env:
+          MODE: ${{ inputs.mode }}
+          TENANT_SLUG: ${{ inputs.tenant_slug }}
+          TENANT_NAME_AR: ${{ inputs.tenant_name_ar }}
+          TENANT_NAME_EN: ${{ inputs.tenant_name_en }}
+          ADMIN_USER_ID: ${{ inputs.admin_user_id }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_CA_CERT: ${{ vars.DATABASE_CA_CERT }}

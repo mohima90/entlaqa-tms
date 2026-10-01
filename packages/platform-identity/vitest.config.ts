@@ -3,7 +3,8 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig(
   defineJadaratVitestConfig({
-    // next.ts only adapts next/headers cookies to verifyClaims(); covered by E2E once auth is wired (T-M1-D03).
-    coverageExclude: ['src/next.ts'],
+    // next.ts / auth-next.ts only adapt next/headers cookies and platform-db to the tested functions
+    // (verify-claims.ts, auth-flow.ts); exercised end-to-end on staging.
+    coverageExclude: ['src/next.ts', 'src/auth-next.ts'],
   }),
 );

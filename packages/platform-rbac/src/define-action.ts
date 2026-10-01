@@ -4,6 +4,7 @@ import {
   type Result,
   type TenantClaims,
   type VerifiedClaims,
+  actorFromClaims,
   appError,
   err,
   hasTenant,
@@ -131,16 +132,6 @@ export function requiresStrictVerification(permission: PermissionDefinition): bo
   return permission.risk === 'high' || permission.requiresAal2;
 }
 
-function actorFrom(claims: TenantClaims): ActorContext {
-  return {
-    userId: claims.sub as ActorContext['userId'],
-    personId: (claims.person_id ?? null) as ActorContext['personId'],
-    tenantId: claims.tenant_id as ActorContext['tenantId'],
-    aal: claims.aal ?? 'aal1',
-    impersonatorUserId: (claims.actor ?? null) as ActorContext['impersonatorUserId'],
-  };
-}
-
 /**
  * Creates `defineAction` bound to a runtime (ADR 0003 §4). Every server action and mutating route in
  * modules/** and packages/platform-*\/** must be created with it (CI: scripts/check-server-actions.mjs).
@@ -168,7 +159,7 @@ export function createDefineAction<Tx>(runtime: ActionRuntime<Tx>) {
 
       try {
         return await runtime.withUserTx(tenantClaims, async (tx) => {
-          const actor = actorFrom(tenantClaims);
+          const actor = actorFromClaims(tenantClaims);
           const grants = await runtime.loadGrants(tx, tenantClaims);
           const resource = definition.resource
             ? await runtime.resolveResource(tx, definition.resource(input.value), tenantClaims)

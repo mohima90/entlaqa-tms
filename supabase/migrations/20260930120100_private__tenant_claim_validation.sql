@@ -77,6 +77,20 @@ $$;
 comment on function private.request_user_id() is
   'The `sub` claim of request.jwt.claims as uuid (NULL when absent/malformed). Use instead of auth.uid().';
 
+-- tenant_guard cannot be granted access to schema `auth` on hosted Supabase (the migration role has USAGE
+-- on `auth` without the grant option). It reads the three columns it needs through this view instead:
+-- a view reads its base table with its OWNER's rights (the migration role), and granting SELECT on a view
+-- needs no grant option on the base table (ADR 0002 §6a rev. 2). Nobody but tenant_guard may select it.
+create or replace view private.auth_session_validity
+with (security_barrier = true)
+as select s.id, s.user_id, s.not_after from auth.sessions s;
+
+comment on view private.auth_session_validity is
+  'SECURITY-RELEVANT (ADR 0002 §6a rev. 2): auth.sessions (id, user_id, not_after) for tenant_guard only. Owned by the migration role.';
+
+revoke all on private.auth_session_validity from public;
+grant select on private.auth_session_validity to tenant_guard;
+
 create or replace function private.user_session_is_valid(p_user_id uuid, p_session_id uuid)
 returns boolean
 language plpgsql stable security definer
@@ -88,7 +102,7 @@ begin
   end if;
   return exists (
     select 1
-    from auth.sessions s
+    from private.auth_session_validity s
     where s.id = p_session_id
       and s.user_id = p_user_id
       and (s.not_after is null or s.not_after > now())
@@ -97,7 +111,7 @@ end
 $$;
 
 comment on function private.user_session_is_valid(uuid, uuid) is
-  'SECURITY DEFINER (owner: the migration role, which can read auth.sessions; EXECUTE only for tenant_guard): true when the Auth session exists for the user and is not expired.';
+  'SECURITY DEFINER (owner tenant_guard, reads private.auth_session_validity): true when the Auth session exists for the user and is not expired.';
 
 create or replace function private.has_active_membership(p_user_id uuid, p_tenant_id uuid)
 returns boolean
@@ -215,13 +229,10 @@ $$;
 comment on function private.switch_active_tenant(uuid) is
   'SECURITY-RELEVANT (ADR 0002 §3). Sets the active tenant of the caller''s current Auth session only.';
 
--- private.user_session_is_valid() stays owned by the migration role: on hosted Supabase only that role
--- can read auth.sessions (it cannot grant USAGE on schema `auth` onward — no grant option), so a
--- tenant_guard-owned copy could never see a session. It runs one fixed, parameterised query with
--- search_path = '' and is executable by tenant_guard only (ADR 0002 §6a, rev. 2).
 -- A non-superuser (hosted Supabase's migration role) may hand ownership to a role only if that role has
--- CREATE on the schema; tenant_guard gets it for these three statements only (same transaction).
+-- CREATE on the schema; tenant_guard gets it for these four statements only (same transaction).
 grant create on schema private to tenant_guard;
+alter function private.user_session_is_valid(uuid, uuid) owner to tenant_guard;
 alter function private.has_active_membership(uuid, uuid) owner to tenant_guard;
 alter function private.current_tenant_id() owner to tenant_guard;
 alter function private.switch_active_tenant(uuid) owner to tenant_guard;
@@ -243,18 +254,22 @@ grant execute on function private.has_active_membership(uuid, uuid) to tenant_gu
 grant execute on function private.current_tenant_id() to authenticated;
 grant execute on function private.switch_active_tenant(uuid) to authenticated;
 
--- The owner of private.user_session_is_valid() (the migration role) must be able to read what it reads;
--- otherwise every tenant query would fail at runtime. plpgsql does not check this at CREATE time.
+-- The view's owner (the migration role) must be able to read auth.sessions, and tenant_guard must be able
+-- to read the view; otherwise every tenant query would fail at runtime (plpgsql does not check this at
+-- CREATE time).
 do $$
 declare
-  v_owner name := (select pg_get_userbyid(proowner) from pg_proc
-                   where oid = 'private.user_session_is_valid(uuid, uuid)'::regprocedure);
+  v_owner name := (select pg_get_userbyid(relowner) from pg_class
+                   where oid = 'private.auth_session_validity'::regclass);
 begin
   if not (has_schema_privilege(v_owner, 'auth', 'usage')
           and has_column_privilege(v_owner, 'auth.sessions', 'id', 'select')
           and has_column_privilege(v_owner, 'auth.sessions', 'user_id', 'select')
           and has_column_privilege(v_owner, 'auth.sessions', 'not_after', 'select')) then
-    raise exception 'role % (owner of private.user_session_is_valid) cannot read auth.sessions (id, user_id, not_after)', v_owner;
+    raise exception 'role % (owner of private.auth_session_validity) cannot read auth.sessions (id, user_id, not_after)', v_owner;
+  end if;
+  if not has_table_privilege('tenant_guard', 'private.auth_session_validity', 'select') then
+    raise exception 'tenant_guard cannot read private.auth_session_validity';
   end if;
 end
 $$;

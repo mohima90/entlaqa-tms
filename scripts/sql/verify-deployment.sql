@@ -51,27 +51,61 @@ begin
     end if;
   end loop;
 
-  -- private.user_session_is_valid(): its owner (the migration role, ADR 0002 §6a rev. 2) can read
-  -- auth.sessions, and only tenant_guard may execute it (via the tenant_guard-owned helpers).
-  if to_regprocedure('private.user_session_is_valid(uuid, uuid)') is null then
-    failures := failures || 'private.user_session_is_valid(uuid, uuid) is missing'::text;
+  -- Session check (ADR 0002 §6a rev. 2): tenant_guard reads auth.sessions only through the view
+  -- private.auth_session_validity, owned by the migration role; nobody else may read the view.
+  if to_regclass('private.auth_session_validity') is null then
+    failures := failures || 'private.auth_session_validity is missing'::text;
   else
-    v_role := (select pg_get_userbyid(proowner) from pg_proc
-               where oid = 'private.user_session_is_valid(uuid, uuid)'::regprocedure);
+    v_role := (select pg_get_userbyid(relowner) from pg_class where oid = 'private.auth_session_validity'::regclass);
     if not (has_schema_privilege(v_role, 'auth', 'usage')
             and has_column_privilege(v_role, 'auth.sessions', 'id', 'select')
             and has_column_privilege(v_role, 'auth.sessions', 'user_id', 'select')
             and has_column_privilege(v_role, 'auth.sessions', 'not_after', 'select')) then
-      failures := failures || format('%s (owner of private.user_session_is_valid) must read auth.sessions (id, user_id, not_after)', v_role);
+      failures := failures || format('%s (owner of private.auth_session_validity) must read auth.sessions (id, user_id, not_after)', v_role);
     end if;
-    for r in select rolname from pg_roles
-             where rolname in ('anon', 'authenticated', 'service_role', 'authenticator', 'app_server', 'app_worker')
+    for r in
+      select distinct case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end as grantee
+      from pg_class c, aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a
+      where c.oid = 'private.auth_session_validity'::regclass
+        and a.grantee <> c.relowner
+        and (a.grantee = 0 or pg_get_userbyid(a.grantee) <> 'tenant_guard')
     loop
-      if has_function_privilege(r.rolname, 'private.user_session_is_valid(uuid, uuid)', 'execute') then
-        failures := failures || format('%s must not execute private.user_session_is_valid', r.rolname);
-      end if;
+      failures := failures || format('%s must not have privileges on private.auth_session_validity', r.grantee);
     end loop;
   end if;
+
+  -- The SECURITY DEFINER helpers: owned by tenant_guard, search_path = '', and executable only by the
+  -- roles that need them (exact ACL, not a deny-list).
+  for r in
+    select h.fn, h.allowed, p.oid as poid, p.proowner, p.prosecdef, p.proconfig, p.proacl
+    from (values
+      ('private.user_session_is_valid(uuid, uuid)', array['tenant_guard']),
+      ('private.has_active_membership(uuid, uuid)', array['tenant_guard']),
+      ('private.current_tenant_id()',               array['tenant_guard', 'authenticated']),
+      ('private.switch_active_tenant(uuid)',        array['tenant_guard', 'authenticated'])
+    ) as h(fn, allowed)
+    left join pg_proc p on p.oid = to_regprocedure(h.fn)
+  loop
+    if r.poid is null then
+      failures := failures || format('%s is missing', r.fn);
+      continue;
+    end if;
+    if pg_get_userbyid(r.proowner) <> 'tenant_guard' then
+      failures := failures || format('%s must be owned by tenant_guard (is %s)', r.fn, pg_get_userbyid(r.proowner));
+    end if;
+    if not r.prosecdef or not coalesce('search_path=""' = any (r.proconfig) or 'search_path=' = any (r.proconfig), false) then
+      failures := failures || format('%s must be SECURITY DEFINER with an empty search_path', r.fn);
+    end if;
+    for v_role in
+      select distinct case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end
+      from aclexplode(coalesce(r.proacl, acldefault('f', r.proowner))) a
+      where a.privilege_type = 'EXECUTE'
+    loop
+      if not (v_role = any (r.allowed)) then
+        failures := failures || format('%s must not execute %s', v_role, r.fn);
+      end if;
+    end loop;
+  end loop;
 
   -- tenant_guard creates nothing (CREATE on `private` is granted only while ownership is handed over,
   -- migration 120100) and nobody else acts as it.

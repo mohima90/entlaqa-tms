@@ -60,9 +60,10 @@ alter role $MIGRATOR login password '$MIGRATOR_PW';
 grant authenticated to $MIGRATOR with admin option;
 grant create, temporary on database "$DB" to $MIGRATOR;
 -- Observed on hosted Supabase (first DB deploy plan, 1 Oct 2026): postgres has USAGE on schema auth but
--- WITHOUT the grant option ("no privileges were granted for auth"); it can read auth.sessions.
+-- WITHOUT the grant option ("no privileges were granted for auth"); it can read auth.sessions (grant
+-- option on it not assumed).
 grant usage on schema auth to $MIGRATOR;
-grant select on auth.sessions to $MIGRATOR with grant option;
+grant select on auth.sessions to $MIGRATOR;
 grant references on auth.sessions, auth.users to $MIGRATOR;
 -- Login roles left by an earlier run on this cluster: on Supabase they would have been created by the
 -- migration role itself, which then holds ADMIN OPTION on them.

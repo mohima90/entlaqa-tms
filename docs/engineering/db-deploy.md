@@ -57,6 +57,6 @@ Every transaction runs with `lock_timeout = 10s` and `statement_timeout = 5min`.
 
 ## Hosted-Supabase items this verifies (from engineering/README §7)
 
-- Hosted Supabase's `postgres` has `USAGE` on schema `auth` **without** the grant option (second staging plan, 1 Oct 2026), so `tenant_guard` cannot be given access to `auth.sessions`; `private.user_session_is_valid()` is therefore owned by the migration role (ADR 0002 §6a rev. 2), and migration `…120100` asserts that its owner can read `auth.sessions`.
+- Hosted Supabase's `postgres` has `USAGE` on schema `auth` **without** the grant option (second staging plan, 1 Oct 2026), so `tenant_guard` cannot be given access to `auth.sessions`; it reads the view `private.auth_session_validity` (owned by the migration role, SELECT for `tenant_guard` only — ADR 0002 §6a rev. 2), and migration `…120100` asserts that the view's owner can read `auth.sessions`.
 - `revoke temporary on database … from public` may be a no-op when `postgres` does not own the database; the verification prints a **warning** (not a failure). Track it in STATUS risks if it appears.
 - The server version is printed on the first line of every run. New Supabase projects are expected to run PostgreSQL 17 while CI tests on 16 — if so, align CI (`ci.yml` service image, `supabase/config.toml` `major_version`) in a follow-up.

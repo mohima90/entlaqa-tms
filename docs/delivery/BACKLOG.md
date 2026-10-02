@@ -21,8 +21,14 @@
 | T-M0-07 | Supabase organization + project for staging (region `eu-central-1` Frankfurt) | PO | 🟢 | `jadarat-tms-staging` (ref `kgmhlmiwlbvdmalesexv`, org `entlaqa-TMS`, Free plan), Data API off (1 Oct 2026) |
 | T-M0-08 | Recruit 3–5 design partners (≥ 2 Saudi, ≥ 1 government/bank) | PO | ⚪ | Needed for usability round 1 (M1) |
 | T-M0-09 | Close decision D3 (planning-cycle timing) | PO | 🟢 | Decided: R2 |
+| T-M0-10 | MFA (two-step sign-in) on every team account: GitHub, Supabase, Vercel, the e-mail account behind them; secrets only in the password manager | PO | ⚪ | Plan §6.2 "SSO + MFA enforced for all team tools" — added 1 Oct 2026 (was not tracked) |
+| T-M0-11 | GitHub environment `staging`: add the PO as **Required reviewer** (every DB deploy / provisioning run waits for approval) | PO | ⚪ | Security review of T-M1-D03 (1 Oct 2026) |
+| T-M0-12 | Pen-test vendor shortlist (KSA/UAE-capable, Arabic UI) | Claude prepares, PO contacts | ⚪ | Plan §6.2; needed by M7 (independent pen test before GA). Security tooling: CI already runs CodeQL, gitleaks, `pnpm audit`, Trivy (free) — no licences needed so far |
+| T-M0-13 | Approve the error-tracking vendor (Sentry EU region vs. GlitchTip) | PO (Claude recommends) | ⚪ | Plan §6.2 accounts; ADR 0009 §4; needed for T-M1-D06 observability |
 
-**Gate G0 (adapted):** T-M0-01…06 done; T-M0-07 scheduled; design-partner recruitment started.
+Plan §6.2 items that do not apply to the agent-team model (§2.3): team staffing/RACI (= T-M0-01), separate project tracker (this file), Figma (design artifacts in `docs/design/`), kick-off (`CLAUDE.md` + session routine). Open decisions D4, D5, D8–D10 are scheduled in STATUS §2 ("Needed by").
+
+**Gate G0 (adapted):** T-M0-01…07, 09 done; **open:** T-M0-08 design partners (recruitment not yet started), T-M0-10…13 → G0 stays 🟡 Conditional pass until T-M0-08 has started and T-M0-10, 11 are done.
 
 ---
 
@@ -63,7 +69,7 @@
 |---|---|---|---|---|
 | T-M1-D01 | Monorepo scaffold (`apps/suite`, `packages/ui`, `packages/platform-*`, `modules/tms`) | Claude | 🟢 | #9 |
 | T-M1-D02 | CI with all 14 gates (Plan §5.3) | Claude | 🟢 | #9; all 17 checks green on GitHub |
-| T-M1-D03 | Walking skeleton: sign-in → Arabic RTL suite shell → audit event, on staging | Claude | 🔵 | DB part **deployed to staging** (#9–#12; hook enabled). Sign-in (e-mail + password; MFA off by default — PO, 1 Oct 2026), organization chooser, sign-out, audit, `Provision organization` workflow: **in PR** (code + security review passed with fixes). Then PO: Vercel env vars, Auth settings, provision, test sign-in ([staging-sign-in.md](../engineering/staging-sign-in.md)) |
+| T-M1-D03 | Walking skeleton: sign-in → Arabic RTL suite shell → audit event, on staging | Claude | 🟢 | #9–#14. **Live on staging (1 Oct 2026):** migration `…session_tenants` applied, Vercel env vars set, Auth sign-ups off, Site URL set, ECC signing keys confirmed; organization `entlaqa-demo` provisioned; PO signed in (`/en/suite` shows "Organization: ENTLAQA"), signed out, `/ar/suite` redirects to sign-in. MFA off by default (PO). Runbook: [staging-sign-in.md](../engineering/staging-sign-in.md) |
 | T-M1-D04 | Walking skeleton on self-hosted stack (Docker) | Claude | ⚪ | |
 | T-M1-D05 | Vercel: Root Directory `apps/suite`, preset Next.js, move `vercel.json` | PO (dashboard) + Claude | 🟢 | Root Directory `apps/suite`, Node 24; `main` deployment Ready (1 Oct 2026) |
 | T-M1-D06 | Observability baseline (errors, logs, uptime) | Claude | ⚪ | |

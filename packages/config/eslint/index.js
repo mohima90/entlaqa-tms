@@ -13,6 +13,7 @@ const IGNORES = [
   '**/coverage/**',
   '**/playwright-report/**',
   '**/test-results/**',
+  '**/storybook-static/**',
   '**/next-env.d.ts',
   'docs/**',
   'scripts/__fixtures__/**',

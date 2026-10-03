@@ -3,8 +3,9 @@
  * Run: `pnpm check:deps` (CI gate). Any `error` violation fails the build.
  * @type {import('dependency-cruiser').IConfiguration}
  */
+// Tests, tool configuration and Storybook (stories + .storybook/): never part of a production bundle.
 const TEST_FILES =
-  '(\\.test\\.tsx?$|/e2e/|\\.config\\.(ts|mjs|js|cjs)$|/playwright\\.config\\.ts$)';
+  '(\\.test\\.tsx?$|/e2e/|\\.config\\.(ts|mjs|js|cjs)$|/playwright\\.config\\.ts$|/\\.storybook/|\\.stories\\.tsx?$)';
 
 module.exports = {
   forbidden: [
@@ -196,7 +197,7 @@ module.exports = {
     // devDependencies) match the resolved node_modules path of the dependency. doNotFollow stops the
     // cruise from descending into them.
     exclude: {
-      path: '(^|/)(\\.next|\\.turbo|coverage|playwright-report|test-results)/|next-env\\.d\\.ts$',
+      path: '(^|/)(\\.next|\\.turbo|coverage|playwright-report|test-results|storybook-static)/|next-env\\.d\\.ts$',
     },
     tsPreCompilationDeps: true,
     combinedDependencies: true,

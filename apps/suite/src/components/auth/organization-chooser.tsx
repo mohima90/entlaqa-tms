@@ -1,5 +1,5 @@
 'use client';
-import { Button } from '@jadarat/ui';
+import { Alert, Button } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { selectOrganizationAction } from '../../auth/actions';
@@ -57,14 +57,7 @@ export function OrganizationChooser({
           </li>
         ))}
       </ul>
-      {message ? (
-        <p
-          role="alert"
-          className="m-0 rounded-md border border-danger bg-danger-subtle px-3 py-2 text-text"
-        >
-          {message}
-        </p>
-      ) : null}
+      {message ? <Alert tone="danger">{message}</Alert> : null}
     </div>
   );
 }

@@ -1,4 +1,11 @@
 {
   "extends": "@jadarat/config/tsconfig/react-library.json",
-  "include": ["src", "vitest.config.ts"]
+  "include": [
+    "src",
+    "vitest.config.ts",
+    ".storybook/*.ts",
+    ".storybook/*.tsx",
+    "e2e",
+    "playwright.config.ts"
+  ]
 }

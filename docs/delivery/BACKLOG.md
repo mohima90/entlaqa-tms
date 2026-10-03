@@ -79,7 +79,7 @@ Plan §6.2 items that do not apply to the agent-team model (§2.3): team staffin
 | ID | Task | Owner | Status | Notes / PR |
 |---|---|---|---|---|
 | T-M1-A01 | Design principles & Arabic-first design tokens | Claude | 🟢 | #9 |
-| T-M1-A02 | Component library in `packages/ui` + Storybook (RTL/LTR, light/dark) | Claude | 🔵 | Primitives in packages/ui; Storybook pending |
+| T-M1-A02 | Component library in `packages/ui` + Storybook (RTL/LTR, light/dark) | Claude | 🟢 | v1 (3 Oct 2026): Button, Card, TextField, Alert, Badge, AppShell; Storybook 10 with Arabic/English × light/dark toolbar; CI gate 8 runs axe on every story in all 4 modes; sign-in forms use the library. Further components arrive with the M2 screens |
 | T-M1-A03 | Suite shell design (navigation, inboxes, search, mobile) | Claude | 🟢 | #9 |
 | T-M1-A04 | Clickable prototypes of 5 critical journeys | Claude | 🟢 | #9; `docs/design/prototype/index.html` |
 | T-M1-A05 | Usability test round 1 (scripts, tasks, analysis by Claude; sessions run by PO with **ENTLAQA staff as stand-in users** — PO decision 3 Oct 2026) | PO + Claude | ⚪ | Kit ready (`docs/design/research/`); PO runs sessions with real users |

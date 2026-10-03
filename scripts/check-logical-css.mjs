@@ -5,7 +5,16 @@ import { join, relative } from 'node:path';
 import { checkLogicalSource } from './lib/logical-css.mjs';
 
 const root = new URL('..', import.meta.url).pathname;
-const SKIP = new Set(['node_modules', '.next', '.turbo', 'coverage', 'dist', 'e2e', 'public']);
+const SKIP = new Set([
+  'node_modules',
+  '.next',
+  '.turbo',
+  'coverage',
+  'dist',
+  'e2e',
+  'public',
+  'storybook-static',
+]);
 
 function* walk(dir) {
   for (const entry of readdirSync(dir)) {

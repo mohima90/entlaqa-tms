@@ -15,6 +15,7 @@ next-env.d.ts
 .eslintcache
 coverage/
 playwright-report/
+storybook-static/
 test-results/
 blob-report/
 

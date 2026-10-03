@@ -28,7 +28,13 @@ export function defineJadaratVitestConfig(options = {}) {
         provider: 'v8',
         reporter: ['text-summary', 'lcov', 'json-summary'],
         include: options.coverageInclude ?? ['src/**/*.{ts,tsx}'],
-        exclude: ['src/**/*.test.{ts,tsx}', 'src/**/*.d.ts', ...(options.coverageExclude ?? [])],
+        // Stories are documentation, verified by the Storybook gate (axe in RTL/LTR, light/dark), not unit tests.
+        exclude: [
+          'src/**/*.test.{ts,tsx}',
+          'src/**/*.stories.{ts,tsx}',
+          'src/**/*.d.ts',
+          ...(options.coverageExclude ?? []),
+        ],
         thresholds,
       },
     },

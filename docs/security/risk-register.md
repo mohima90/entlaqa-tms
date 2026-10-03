@@ -32,7 +32,7 @@
 | **5** | | | | | R-09 |
 | **4** | | | R-07, R-14, R-15, R-22 | R-05, R-10, R-16, R-19, R-28 | R-01, R-04, R-12 |
 | **3** | | | R-17, R-21, R-25, R-30 | R-02, R-06, R-08, R-11, R-13, R-18, R-20, R-23, R-24, R-26, R-27, R-29, R-31 | R-03 |
-| **2** | | | | R-32 | |
+| **2** | R-33 | | | R-32 | |
 | **1** | | | | | |
 
 ---
@@ -73,6 +73,7 @@
 | R-30 | **Certification evidence gap** for ISO/IEC 27001 (12 months after GA), SOC 2 Type II (18 months) and NCA controls if evidence is not collected from the start (BRD §12.3) | Compliance — assurance | 3 | 3 | 9 | 3 | PO + Security Lead | Control library mapped to ASVS/ISO Annex A; automated evidence from CI and access reviews; policies drafted during R1 | Open | 2027-03-31 |
 | R-31 | **Independent validation dependency**: pen-test vendor not yet booked (needed by M5 for M7); bug bounty after GA (Plan §8.2, §11) | Assurance | 3 | 4 | 12 | 3 | PO | Shortlist in M0 (Plan §6.2); book by M5; scope from this threat model; retest evidence for G7 | Open | 2027-01-31 |
 | R-32 | **Non-production environments with production data or secrets** (previews connected to staging/prod, copies of tenant data for debugging) | Privacy / security | 2 | 4 | 8 | 2 | DevOps (Claude) | Separate Supabase projects per environment; synthetic seed data only (ADR-0001 `supabase/seed/`); preview protection; production data never copied down; sandbox tenants without personal data (FR-ADM-15) | Open | 2026-11-30 |
+| R-33 | **Unpatched dev-time dependency** `braces` ≤ 3.0.3 ([GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm), high, stack-exhaustion DoS on deeply nested brace patterns); no patched release exists. Path: `@jadarat/config` → `@next/eslint-plugin-next` → `fast-glob` → `micromatch` → `braces` | Supply chain | 2 | 1 | 2 | 1 | DevOps (Claude) | Reached only by lint tooling on our own file patterns (worst case: a lint/CI run crashes); not in the production build (`apps/suite/.next/standalone` has no `braces`). **Accepted by the PO (3 Oct 2026)** as a single-advisory exception in `pnpm-workspace.yaml` (`auditConfig.ignoreGhsas`); gate 11 still fails on every other high/critical advisory. Remove the exception when a patched `braces` (or a dependency path without it) is available | Accepted | 2026-11-03 |
 
 ---
 
@@ -94,3 +95,4 @@
 | Date | Change | By |
 |---|---|---|
 | 30 Sep 2026 | Register created (32 risks) from TM-0001 and BRD §12/§15/App. E | Security Lead (Claude) |
+| 3 Oct 2026 | R-33 added: unpatched `braces` advisory in lint tooling; audit exception accepted by the PO | Security Lead (Claude) |

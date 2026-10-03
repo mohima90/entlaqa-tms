@@ -62,6 +62,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 | 1 Oct 2026 | — | Staging database: Supabase project `jadarat-tms-staging` (org `entlaqa-TMS`, Frankfurt `eu-central-1`, **Free plan** for now — PO deferred the Pro upgrade), Data API **off**, automatic RLS off (migrations enforce RLS). Migrations reach hosted environments only through the manual `DB deploy` workflow (plan → apply) |
 | 1 Oct 2026 | — | `main` protected by ruleset `main protection`: PR required (0 approvals — PO is the only human), conversation resolution, required checks `CI gates` + CodeQL (javascript-typescript, actions), no force-push/deletion, empty bypass list |
 | 3 Oct 2026 | — | **Customer feedback via trial accounts, not design partners now** (PO): the customers who shaped the BRD will get **2-week trial accounts** on a near-complete product (target ≈ end of M5, when catalog → schedule → enroll → attend → certificate works); until then usability tests use **ENTLAQA staff** as stand-in users. Replaces "3–5 design partners signed in M0" (Development Plan §6.2, Gate G0) |
+| 3 Oct 2026 | — | Dependency audit: single-advisory exception for GHSA-vfj7-8cjw-p6xm (`braces`, dev-time lint tooling only, no fix released) accepted by the PO — risk R-33; removed when a patch ships |
 | 3 Oct 2026 | — | T-M0-11 (staging required reviewer) deferred: the PO is the only repository collaborator; do it before a second person gets access or before production |
 | 1 Oct 2026 | — | **MFA off by default** (PO): sign-in is e-mail + password for now; later each organization chooses off / optional / required, with any authenticator app (TOTP: Google, Microsoft, Apple, …) — FR-IAM-12 unchanged (it includes "off"); ADR 0003 rev. 2 |
 | 1 Oct 2026 | — | Pre-tenant server actions (sign-in, organization selection, sign-out) use `definePublicAction`, allowed only in `apps/suite/src/auth/` (CI gate) — ADR 0003 §4.7 (rev. 2) |
@@ -134,7 +135,8 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 1. T-M1-A02 Storybook for `packages/ui`; T-M1-C02 per-epic threat models for M2 epics.
 2. T-M1-D04 self-hosted stack spike (needs a Docker-capable environment).
 3. T-M1-B14 estimation and re-baselined plan → Gate G1.
-4. M0 support: T-M0-12 pen-test vendor shortlist; T-M0-13 error-tracking recommendation (Sentry EU vs. GlitchTip, ADR 0009 §4).
+4. Check R-33 (`braces` advisory) at the start of each session: when a patched release exists, update and remove the `ignoreGhsas` entry in `pnpm-workspace.yaml`.
+5. M0 support: T-M0-12 pen-test vendor shortlist; T-M0-13 error-tracking recommendation (Sentry EU vs. GlitchTip, ADR 0009 §4).
 
 ---
 
@@ -142,6 +144,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
+| 3 Oct 2026 | New advisory GHSA-vfj7-8cjw-p6xm (`braces`, high, no patched release) turned CI gate 11 red on every branch; reached only via lint tooling, not in the production build → PO accepted a single-advisory audit exception (risk R-33, review 3 Nov 2026) |
 | 3 Oct 2026 | CI database moved to **PostgreSQL 17.11** (same as staging; `postgres:17` pinned by digest), `supabase/config.toml` `major_version = 17`, docs updated |
 | 3 Oct 2026 | MFA confirmed on GitHub (passkeys), Supabase and Vercel (T-M0-10) → **Gate G0 passed, M0 done** |
 | 3 Oct 2026 | PO decisions: no design partners now — customers get 2-week trial accounts on a near-complete product (≈ end of M5); usability round 1 with ENTLAQA staff; T-M0-11 deferred. Gate G0 now waits only on T-M0-10 (MFA) |

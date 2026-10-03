@@ -19,16 +19,16 @@
 | T-M0-05 | Vercel project `jadarat-tms` with build-skip rule | PO + Claude | 🟢 | #6, #7 |
 | T-M0-06 | GitHub branch protection on `main` (require PR, require status checks once CI exists, block force-push/deletion) | PO | 🟢 | Ruleset `main protection` (1 Oct 2026): PR required (0 approvals), conversations resolved, checks `CI gates` + CodeQL ×2, no force-push/deletion, no bypass |
 | T-M0-07 | Supabase organization + project for staging (region `eu-central-1` Frankfurt) | PO | 🟢 | `jadarat-tms-staging` (ref `kgmhlmiwlbvdmalesexv`, org `entlaqa-TMS`, Free plan), Data API off (1 Oct 2026) |
-| T-M0-08 | Recruit 3–5 design partners (≥ 2 Saudi, ≥ 1 government/bank) | PO | ⚪ | Needed for usability round 1 (M1) |
+| T-M0-08 | ~~Recruit 3–5 design partners now~~ → **deferred (PO decision, 3 Oct 2026):** the customers who shaped the BRD get **2-week trial accounts** once a near-complete product exists (target: core flow catalog → schedule → enroll → attend → certificate working, ≈ end of M5); until then usability tests use ENTLAQA staff | PO | ⏸ | Re-planned as T-M5-TRIAL (see M5 note below); not blocking G0 |
 | T-M0-09 | Close decision D3 (planning-cycle timing) | PO | 🟢 | Decided: R2 |
 | T-M0-10 | MFA (two-step sign-in) on every team account: GitHub, Supabase, Vercel, the e-mail account behind them; secrets only in the password manager | PO | ⚪ | Plan §6.2 "SSO + MFA enforced for all team tools" — added 1 Oct 2026 (was not tracked) |
-| T-M0-11 | GitHub environment `staging`: add the PO as **Required reviewer** (every DB deploy / provisioning run waits for approval) | PO | ⚪ | Security review of T-M1-D03 (1 Oct 2026) |
+| T-M0-11 | GitHub environment `staging`: add the PO as **Required reviewer** (every DB deploy / provisioning run waits for approval) | PO | ⏸ | Deferred (3 Oct 2026): the PO is the only repository collaborator and staging holds test data only. **Do before** a second person gets repository access or before a production environment exists |
 | T-M0-12 | Pen-test vendor shortlist (KSA/UAE-capable, Arabic UI) | Claude prepares, PO contacts | ⚪ | Plan §6.2; needed by M7 (independent pen test before GA). Security tooling: CI already runs CodeQL, gitleaks, `pnpm audit`, Trivy (free) — no licences needed so far |
 | T-M0-13 | Approve the error-tracking vendor (Sentry EU region vs. GlitchTip) | PO (Claude recommends) | ⚪ | Plan §6.2 accounts; ADR 0009 §4; needed for T-M1-D06 observability |
 
 Plan §6.2 items that do not apply to the agent-team model (§2.3): team staffing/RACI (= T-M0-01), separate project tracker (this file), Figma (design artifacts in `docs/design/`), kick-off (`CLAUDE.md` + session routine). Open decisions D4, D5, D8–D10 are scheduled in STATUS §2 ("Needed by").
 
-**Gate G0 (adapted):** T-M0-01…07, 09 done; **open:** T-M0-08 design partners (recruitment not yet started), T-M0-10…13 → G0 stays 🟡 Conditional pass until T-M0-08 has started and T-M0-10, 11 are done.
+**Gate G0 (adapted, 3 Oct 2026):** T-M0-01…07, 09 done; T-M0-08 and T-M0-11 deferred by PO decision (not blocking); **open and blocking: T-M0-10** (MFA on team accounts) → G0 turns 🟢 when T-M0-10 is done. T-M0-12/13 are needed later (M7 / T-M1-D06), not for G0.
 
 ---
 
@@ -82,7 +82,7 @@ Plan §6.2 items that do not apply to the agent-team model (§2.3): team staffin
 | T-M1-A02 | Component library in `packages/ui` + Storybook (RTL/LTR, light/dark) | Claude | 🔵 | Primitives in packages/ui; Storybook pending |
 | T-M1-A03 | Suite shell design (navigation, inboxes, search, mobile) | Claude | 🟢 | #9 |
 | T-M1-A04 | Clickable prototypes of 5 critical journeys | Claude | 🟢 | #9; `docs/design/prototype/index.html` |
-| T-M1-A05 | Usability test round 1 (scripts, tasks, analysis by Claude; sessions run by PO with real users) | PO + Claude | ⚪ | Kit ready (`docs/design/research/`); PO runs sessions with real users |
+| T-M1-A05 | Usability test round 1 (scripts, tasks, analysis by Claude; sessions run by PO with **ENTLAQA staff as stand-in users** — PO decision 3 Oct 2026) | PO + Claude | ⚪ | Kit ready (`docs/design/research/`); PO runs sessions with real users |
 | T-M1-A06 | AR/EN glossary & content style guide | Claude | 🟢 | #9; 144 terms |
 
 **Gate G1:** see Development Plan §6.3.
@@ -109,6 +109,7 @@ Plan §6.2 items that do not apply to the agent-team model (§2.3): team staffin
 | M5 | `EP-M5-ATT` Attendance | ATT-01…04, 09, 11 | ⚪ |
 | M5 | `EP-M5-ASM` Assessments & surveys | ASM-01, 02, 04, 05, 08 | ⚪ |
 | M5 | `EP-M5-CRT` Certificates & compliance | CRT-01…08 · REG-01 | ⚪ |
+| M5 | `T-M5-TRIAL` Customer trial: 2-week trial accounts for the customers who shaped the BRD (≥ 2 Saudi, ≥ 1 government/bank), once catalog → schedule → enroll → attend → certificate works; Claude prepares invitations, trial guide and feedback form; PO invites (replaces T-M0-08, PO decision 3 Oct 2026) | — | ⚪ |
 | M6 | `EP-M6-LMS` LMS framework & Jadarat connector | LMS-01, 02, 03, 05, 06, 07, 10 | ⚪ |
 | M6 | `EP-M6-RPT` Reports & accessibility pass | RPT-01, 02 · LRN-08 | ⚪ |
 | M7 | `EP-M7-HARD` Hardening & launch | — (Plan §6.9) | ⚪ |

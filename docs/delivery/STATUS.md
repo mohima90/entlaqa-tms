@@ -5,7 +5,7 @@
 | | |
 |---|---|
 | **Last updated** | 1 October 2026 |
-| **Current phase** | **M1 Foundation in progress** — foundation merged (PR #9); **staging database live** (all migrations applied and verified, access-token hook enabled, 1 Oct 2026); **sign-in live on staging** (T-M1-D03 done: e-mail + password, organization `entlaqa-demo`, sign-out, audit) — next: CI on PostgreSQL 17, Storybook, threat models, self-hosted spike, estimation · M0 open items: design partners (T-M0-08), MFA on team accounts (T-M0-10), staging required reviewer (T-M0-11), pen-test shortlist (T-M0-12), error-tracking vendor (T-M0-13) |
+| **Current phase** | **M1 Foundation in progress** — foundation merged (PR #9); **staging database live** (all migrations applied and verified, access-token hook enabled, 1 Oct 2026); **sign-in live on staging** (T-M1-D03 done: e-mail + password, organization `entlaqa-demo`, sign-out, audit) — next: CI on PostgreSQL 17, Storybook, threat models, self-hosted spike, estimation · M0: only MFA on team accounts (T-M0-10) left for Gate G0 |
 | **Next gate** | G0 (PO setup tasks) → G1 (Foundation sign-off) |
 | **Overall status** | 🟢 On track (no build started; dates are targets until Gate G1 re-baseline) |
 
@@ -18,7 +18,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 | Milestone | Target weeks | Status | Gate | Notes |
 |---|---|---|---|---|
 | Planning (research, BRD, feature list, delivery plan) | — | 🟢 Done | — | See §4 documents |
-| M0 Mobilize | 1–2 | 🟡 Conditional pass | G0 | T-M0-01…07, 09 done (branch protection, Supabase staging, Vercel); open: T-M0-08 design partners, T-M0-10 MFA on team accounts, T-M0-11 staging required reviewer, T-M0-12 pen-test shortlist, T-M0-13 error-tracking vendor (10–13 added 1 Oct 2026 from a check against Plan §6.2) |
+| M0 Mobilize | 1–2 | 🟡 Conditional pass | G0 | T-M0-01…07, 09 done; T-M0-08 (design partners → 2-week customer trials ≈ end of M5) and T-M0-11 deferred by PO (3 Oct 2026); **G0 waits only on T-M0-10** (MFA on team accounts); T-M0-12/13 needed later |
 | M1 Foundation | 3–8 | 🔵 In progress | G1 | Foundation merged (#9); walking skeleton live on staging (#10–#14); remaining: Storybook, per-epic threat models, self-hosted spike, estimation |
 | M2 Platform core | 9–12 | ⚪ Not started | G2 | |
 | M3 Catalog & scheduling | 13–16 | ⚪ Not started | G3 | |
@@ -33,7 +33,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 - [~] Track A: design system v1 — tokens + contrast report done; primitives in `packages/ui`; Storybook pending
 - [x] Track A: suite shell design (`docs/design/suite-shell.md`) — merged (#9)
 - [x] Track A: clickable prototype of 5 journeys (`docs/design/prototype/index.html`) — merged (#9)
-- [ ] Track A: usability test round 1 — kit ready (`docs/design/research/`); **PO runs sessions**
+- [ ] Track A: usability test round 1 — kit ready (`docs/design/research/`); **PO runs sessions with ENTLAQA staff** (PO decision, 3 Oct 2026)
 - [x] Track A: AR/EN glossary (144 terms) and content style guide — merged (#9)
 - [x] Track B: ADRs 0001–0011 **Accepted** (#9), 0012 Draft
 - [x] Track B: R1 data model and migration conventions (`docs/architecture/`) — merged (#9)
@@ -61,6 +61,8 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 | 30 Sep 2026 | D3 | Full planning cycle (TNA campaigns, training plan, plan vs. actual) ships in **R2**; R1 includes training requests (PLN-01) only |
 | 1 Oct 2026 | — | Staging database: Supabase project `jadarat-tms-staging` (org `entlaqa-TMS`, Frankfurt `eu-central-1`, **Free plan** for now — PO deferred the Pro upgrade), Data API **off**, automatic RLS off (migrations enforce RLS). Migrations reach hosted environments only through the manual `DB deploy` workflow (plan → apply) |
 | 1 Oct 2026 | — | `main` protected by ruleset `main protection`: PR required (0 approvals — PO is the only human), conversation resolution, required checks `CI gates` + CodeQL (javascript-typescript, actions), no force-push/deletion, empty bypass list |
+| 3 Oct 2026 | — | **Customer feedback via trial accounts, not design partners now** (PO): the customers who shaped the BRD will get **2-week trial accounts** on a near-complete product (target ≈ end of M5, when catalog → schedule → enroll → attend → certificate works); until then usability tests use **ENTLAQA staff** as stand-in users. Replaces "3–5 design partners signed in M0" (Development Plan §6.2, Gate G0) |
+| 3 Oct 2026 | — | T-M0-11 (staging required reviewer) deferred: the PO is the only repository collaborator; do it before a second person gets access or before production |
 | 1 Oct 2026 | — | **MFA off by default** (PO): sign-in is e-mail + password for now; later each organization chooses off / optional / required, with any authenticator app (TOTP: Google, Microsoft, Apple, …) — FR-IAM-12 unchanged (it includes "off"); ADR 0003 rev. 2 |
 | 1 Oct 2026 | — | Pre-tenant server actions (sign-in, organization selection, sign-out) use `definePublicAction`, allowed only in `apps/suite/src/auth/` (CI gate) — ADR 0003 §4.7 (rev. 2) |
 | 1 Oct 2026 | — | Organizations are provisioned by the manual `Provision organization` workflow (inputs: organization data + user UID only, no personal data); an existing organization is joined only with an explicit `add_to_existing` and matching names |
@@ -83,10 +85,11 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 | Type | Item | Owner | Status |
 |---|---|---|---|
 | Dependency | Human-only activities (Plan §2.3): accounts, design partners, usability sessions, legal validation, pen test | PO | Open |
-| Dependency | 3–5 design-partner customers (≥ 2 Saudi, ≥ 1 government/bank) | PO | Open |
+| Dependency | Customer trial (2-week trial accounts for the customers who shaped the BRD, ≥ 2 Saudi, ≥ 1 government/bank) when the core flow works (≈ end of M5) | PO | Planned |
+| Risk | Usability tests with ENTLAQA staff instead of customer users (PO decision, 3 Oct 2026): staff may not behave like customers' HR/training staff and learners, so usability problems can surface later (at the M5 trial, when they cost more to fix). Mitigation: pick staff who did not work on the BRD, include non-technical roles, and keep the M5 trial early enough to fix findings before GA. Reference customers at launch depend on the trial | PO | Open |
 | Dependency | Jadarat LMS APIs/webhooks for connector (needed by M6) | PO / Jadarat team | Open |
 | Note | Vercel project `jadarat-tms` (team "Mohamed Attia's projects") builds from Root Directory `apps/suite` since 1 Oct 2026. The **old** project `entlaqa-tms` (team "Mohamed Ibrahim's projects") is still connected to the repo (seen on PR #10, 1 Oct 2026); the root `vercel.json` (`ignoreCommand: exit 0`) makes it skip builds — keep it until the PO deletes that project | PO | Open |
-| Risk | Staging is on Supabase **Free**: pauses after ~7 days idle (Restore in dashboard), no daily backups. Upgrade the org to Pro before design-partner or usability use | PO | Open |
+| Risk | Staging is on Supabase **Free**: pauses after ~7 days idle (Restore in dashboard), no daily backups. Upgrade the org to Pro before customer trials | PO | Open |
 | Note | Dependabot npm run of 30 Sep 2026 failed: it tried `@types/node` 24 → 26 (wrong for the Node 24 runtime) and pnpm's 3-day release-age rule refused the then-new `next-intl` 4.14.8 in the lockfile. Fixed: `@types/node` major updates ignored; the release-age refusal clears by itself before the next weekly run | DevOps | Done 1 Oct 2026 |
 | Note | First `DB deploy plan` on staging (1 Oct 2026): connection + TLS `verify-full` OK, PostgreSQL 17.11; dry run stopped at migration `…120000` (`ALTER ROLE … NOSUPERUSER` is refused to a non-superuser) — nothing changed. Fixed (attributes asserted instead of set; CREATE on `private` granted to `tenant_guard` only during ownership hand-over; `auth` grants asserted) and a CI gate now runs the deploy as a non-superuser (`scripts/db-test-hosted-sim.sh`) | DevOps | Fix in PR |
 | Note | Second `DB deploy plan` (1 Oct 2026, after PR #11): passed `…120000`, stopped loudly in `…120100` — hosted `postgres` has `USAGE` on `auth` without the grant option, so `tenant_guard` cannot read `auth.sessions`. Nothing changed. Resolved by **ADR 0002 §6a rev. 2**: `tenant_guard` reads `auth.sessions` through the view `private.auth_session_validity` (owned by the migration role, SELECT for `tenant_guard` only; no function runs with the migration role's rights); simulation gate now mirrors the observed Supabase grants | DevOps | Done (PR #12) |
@@ -121,12 +124,12 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 ## 5. Next Actions
 
 **Product Owner (user)** — Claude guides each step one action at a time (PO request, 1 Oct 2026)
-1. **T-M0-11** Add yourself as **Required reviewer** on the GitHub environment `staging` (every DB deploy / provisioning run then waits for your click).
-2. **T-M0-10** Turn on two-step sign-in (MFA) for GitHub, Supabase, Vercel and the e-mail account behind them (Claude guides, one account at a time).
+1. **T-M0-10** Turn on two-step sign-in (MFA) for GitHub, Supabase, Vercel and the e-mail account behind them (Claude guides, one account at a time) — the only item left for Gate G0.
+2. Later: **T-M0-11** required reviewer on `staging` — before anyone else gets repository access.
 3. Old Vercel project `entlaqa-tms` (team "Mohamed Ibrahim's projects"): the PO's Vercel account has no access to that team (1 Oct 2026). Harmless while the root `vercel.json` skips its builds; delete it if access is recovered, or ask Vercel support.
-4. **T-M0-08** Start recruiting 3–5 design partners.
-5. **T-M0-13** Approve the error-tracking vendor (Claude prepares a one-page recommendation: Sentry EU vs. GlitchTip).
-6. Optional: upgrade Supabase org `entlaqa-TMS` to Pro (no pausing, backups) before design partners use staging.
+4. **T-M0-13** Approve the error-tracking vendor (Claude prepares a one-page recommendation: Sentry EU vs. GlitchTip).
+5. Optional: upgrade Supabase org `entlaqa-TMS` to Pro (no pausing, backups) before customer trials.
+6. When usability round 1 is due (end of M1): pick 5–8 ENTLAQA staff who did not work on the BRD (Claude prepares the sessions).
 
 **Next Claude session** — continue M1:
 1. Align CI to the staging major: staging runs **PostgreSQL 17.11**, CI tests on 16 (`ci.yml` image digest, `supabase/config.toml` `major_version`).
@@ -141,6 +144,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
+| 3 Oct 2026 | PO decisions: no design partners now — customers get 2-week trial accounts on a near-complete product (≈ end of M5); usability round 1 with ENTLAQA staff; T-M0-11 deferred. Gate G0 now waits only on T-M0-10 (MFA) |
 | 1 Oct 2026 | M0 check against Development Plan §6.2: four untracked items added to BACKLOG (T-M0-10 MFA on team accounts, T-M0-11 staging required reviewer, T-M0-12 pen-test shortlist, T-M0-13 error-tracking vendor); G0 stays conditional |
 | 1 Oct 2026 | PR #14 merged; **sign-in live on staging**: `DB deploy` plan + apply (`…session_tenants`, verification clean); PO set 4 Vercel env vars (publishable values as Config, DB URL as Secret) and redeployed; Supabase Auth sign-ups off, Site URL set, ECC P-256 signing key confirmed; test user created; `Provision organization` plan + apply → `entlaqa-demo`; PO signed in (organization name shown), signed out, `/ar/suite` redirects to sign-in — **T-M1-D03 done** |
 | 1 Oct 2026 | T-M1-D03 sign-in built: e-mail + password via server actions (`definePublicAction`, CI-gated), `private.session_tenants()`, organization chooser, `/suite` gated on a database-accepted tenant, sign-out, `platform.auth.signed_in/_out` audit, proxy cookie refresh, verify-full TLS for app DB connections, `Provision organization` workflow (hosted-sim tested); MFA off by default (PO). Independent reviews: code "request changes" (redirect loop on revoked sessions, outage shown as wrong password, provisioning could join an existing org) and security "approve with fixes" (0 Critical/High, 2 Medium) — all fixed with tests except app-level rate limiting (recorded risk, M2); code re-review: approve |

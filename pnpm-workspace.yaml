@@ -11,6 +11,15 @@ onlyBuiltDependencies:
   - '@parcel/watcher'
   - '@swc/core'
 
+# Dependency-audit exceptions (CI gate 11). Each one is a PO-accepted risk in docs/security/risk-register.md
+# with a review date; remove it as soon as a patched version exists. Never add an exception without that.
+auditConfig:
+  ignoreGhsas:
+    # R-33 (accepted by the PO, 3 Oct 2026): braces <= 3.0.3 stack-exhaustion DoS; no patched release exists.
+    # Reached only through lint tooling (@next/eslint-plugin-next > fast-glob > micromatch > braces) on our
+    # own file patterns; not part of the production build.
+    - GHSA-vfj7-8cjw-p6xm
+
 # eslint-plugin-jsx-a11y has not widened its peer range to ESLint 10 yet; verified working (pnpm lint).
 peerDependencyRules:
   allowedVersions:

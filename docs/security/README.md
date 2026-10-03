@@ -7,7 +7,7 @@ Home of the security program artefacts required by Development Plan §6.3 Track 
 | Document | Purpose | Backlog | Status |
 |---|---|---|---|
 | [threat-models/TM-0001-platform.md](threat-models/TM-0001-platform.md) | Platform threat model: assets and classification, actors, trust boundaries, data-flow diagram, STRIDE (65 threats), abuse cases, residual risks, findings for the ADRs (F-01…F-13) | T-M1-C01 | Proposed v0.1 |
-| [risk-register.md](risk-register.md) | Security, privacy and compliance risk register (32 risks) incl. Saudi PDPL transfers, NCA CCC, Egypt PDPL deadline, supply chain, AI, insiders | T-M1-C03 | Proposed v0.1 |
+| [risk-register.md](risk-register.md) | Security, privacy and compliance risk register (33 risks) incl. Saudi PDPL transfers, NCA CCC, Egypt PDPL deadline, supply chain, AI, insiders | T-M1-C03 | Proposed v0.1 |
 | [asvs-l2-mapping.md](asvs-l2-mapping.md) | OWASP ASVS 5.0.0 Level 2 mapped to packages/ADRs, verification method and R1 applicability | T-M1-C04 | Proposed v0.1 |
 | [secure-coding-standard.md](secure-coding-standard.md) | Mandatory coding rules for this stack with do/don't examples and the PR security checklist | T-M1-C05 | Proposed v0.1 |
 | `threat-models/TM-0002…` | Per-epic threat models (§4) | T-M1-C02 | Not started |

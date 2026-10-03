@@ -58,7 +58,7 @@ Plan §6.2 items that do not apply to the agent-team model (§2.3): team staffin
 | ID | Task | Owner | Status | Notes / PR |
 |---|---|---|---|---|
 | T-M1-C01 | Platform threat model (STRIDE) | Claude | 🟢 | #9 |
-| T-M1-C02 | Threat models for R1 epics (M2–M6) | Claude | ⚪ | Per-epic threat models, before each epic starts |
+| T-M1-C02 | Threat models for R1 epics (M2–M6) | Claude | 🔵 | Per-epic threat models, before each epic starts. M2 epics (TM-0002…0006) in progress (3 Oct 2026); M3–M6 epics before each starts |
 | T-M1-C03 | Risk register | Claude | 🟢 | #9 |
 | T-M1-C04 | OWASP ASVS L2 mapping to modules | Claude | 🟢 | #9 |
 | T-M1-C05 | Secure coding standard | Claude | 🟢 | #9 |

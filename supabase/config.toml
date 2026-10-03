@@ -17,8 +17,8 @@ max_rows = 1000
 [db]
 port = 54322
 shadow_port = 54320
-# Align with the staging project's major version once it exists (T-M0-07); CI tests run on 16.
-major_version = 16
+# Same major as the staging project (PostgreSQL 17.11) and CI (postgres:17).
+major_version = 17
 
 [db.seed]
 # Synthetic seed data only (migration-conventions.md §7); none yet.

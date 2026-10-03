@@ -16,7 +16,7 @@ This guide is for engineers (human or Claude sessions) working in the code. Prod
 |---|---|---|
 | Node.js | **24 LTS** (`.nvmrc`); `>= 22.12` accepted locally | CI and production use 24 |
 | pnpm | 10.x (pinned by `packageManager` in `package.json`) | `corepack enable` picks the right version |
-| PostgreSQL client + server | 16 | Only for `pnpm db:test` (plain PostgreSQL, no Docker needed) |
+| PostgreSQL client + server | **17** (as staging and CI); 16 still works locally | Only for `pnpm db:test` (plain PostgreSQL, no Docker needed) |
 | Playwright Chromium | matching `@playwright/test` | `pnpm --filter @jadarat/suite exec playwright install chromium` (or set `PW_CHROMIUM_EXECUTABLE` to an existing Chromium) |
 | Docker | — | Not needed yet; required for the self-hosted stack (T-M1-D04) |
 
@@ -47,7 +47,7 @@ No Supabase project or secrets are needed to build, test or run the app: without
 
 ### Database tests locally
 
-`scripts/db-test.sh` uses the standard libpq variables and needs a **superuser** connection to a scratch PostgreSQL 16 server (it creates and drops its own database):
+`scripts/db-test.sh` uses the standard libpq variables and needs a **superuser** connection to a scratch PostgreSQL 17 server (16 also works) (it creates and drops its own database):
 
 ```bash
 export PGHOST=127.0.0.1 PGPORT=5432 PGUSER=postgres PGPASSWORD=...   # a local, throwaway server

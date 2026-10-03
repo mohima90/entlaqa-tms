@@ -131,11 +131,10 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 5. When usability round 1 is due (end of M1): pick 5–8 ENTLAQA staff who did not work on the BRD (Claude prepares the sessions).
 
 **Next Claude session** — continue M1:
-1. Align CI to the staging major: staging runs **PostgreSQL 17.11**, CI tests on 16 (`ci.yml` image digest, `supabase/config.toml` `major_version`).
-2. T-M1-A02 Storybook for `packages/ui`; T-M1-C02 per-epic threat models for M2 epics.
-3. T-M1-D04 self-hosted stack spike (needs a Docker-capable environment).
-4. T-M1-B14 estimation and re-baselined plan → Gate G1.
-5. M0 support: T-M0-12 pen-test vendor shortlist; T-M0-13 error-tracking recommendation (Sentry EU vs. GlitchTip, ADR 0009 §4).
+1. T-M1-A02 Storybook for `packages/ui`; T-M1-C02 per-epic threat models for M2 epics.
+2. T-M1-D04 self-hosted stack spike (needs a Docker-capable environment).
+3. T-M1-B14 estimation and re-baselined plan → Gate G1.
+4. M0 support: T-M0-12 pen-test vendor shortlist; T-M0-13 error-tracking recommendation (Sentry EU vs. GlitchTip, ADR 0009 §4).
 
 ---
 
@@ -143,6 +142,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
+| 3 Oct 2026 | CI database moved to **PostgreSQL 17.11** (same as staging; `postgres:17` pinned by digest), `supabase/config.toml` `major_version = 17`, docs updated |
 | 3 Oct 2026 | MFA confirmed on GitHub (passkeys), Supabase and Vercel (T-M0-10) → **Gate G0 passed, M0 done** |
 | 3 Oct 2026 | PO decisions: no design partners now — customers get 2-week trial accounts on a near-complete product (≈ end of M5); usability round 1 with ENTLAQA staff; T-M0-11 deferred. Gate G0 now waits only on T-M0-10 (MFA) |
 | 1 Oct 2026 | M0 check against Development Plan §6.2: four untracked items added to BACKLOG (T-M0-10 MFA on team accounts, T-M0-11 staging required reviewer, T-M0-12 pen-test shortlist, T-M0-13 error-tracking vendor); G0 stays conditional |

@@ -99,9 +99,10 @@ jobs:
     timeout-minutes: 20
     services:
       postgres:
-        # Pinned by digest (multi-arch OCI index of postgres:16, published 2026-09-24): a moved tag can
-        # never change what CI tests against. Bump deliberately: docker buildx imagetools inspect postgres:16
-        image: postgres:16@sha256:1a6ab3f5345eb6dbe04a1349529caabdb0ab09293a09590fad07b2246bfa4b54
+        # Same major and minor as staging (Supabase, PostgreSQL 17.11). Pinned by digest (multi-arch OCI
+        # index of postgres:17 = 17.11, published 2026-09-19): a moved tag can never change what CI tests
+        # against. Bump deliberately, together with the hosted projects: docker buildx imagetools inspect postgres:17
+        image: postgres:17@sha256:d74eeac9a635390a49bc21bd49fccd973de707e2a53a76ac49b552b8712ec46f
         env:
           # Throwaway service container for this run only.
           POSTGRES_PASSWORD: ci-${{ github.run_id }}-${{ github.run_attempt }}

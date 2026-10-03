@@ -42,6 +42,7 @@ export const WithError: Story = {
         en: 'Course name in Arabic is required.',
       })}
       required
+      marker={pick(globals, { ar: '(مطلوب)', en: '(required)' })}
       className="max-w-md"
     />
   ),

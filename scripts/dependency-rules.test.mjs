@@ -257,4 +257,25 @@ describe('rules on installed packages fire (C1: node_modules is not excluded)', 
     );
     expect(found.filter((v) => v.includes('stories') || v.includes('.storybook'))).toEqual([]);
   });
+
+  it('rejects production code importing a story, Storybook config or a test file', async () => {
+    const root = fixtureRepo({
+      ...installed,
+      'packages/ui-y/package.json': JSON.stringify({ name: '@jadarat/ui-y' }),
+      'packages/ui-y/.storybook/l10n.ts': 'export const pick = 1;\n',
+      'packages/ui-y/src/card.stories.tsx': 'export const story = 1;\n',
+      'packages/ui-y/src/card.tsx':
+        "import { pick } from '../.storybook/l10n';\nimport { story } from './card.stories';\nexport const c = pick + story;\n",
+      'packages/ui-y/src/other.stories.tsx':
+        "import { c } from './card';\nimport { story } from './card.stories';\nexport const s = c + story;\n",
+    });
+    const found = await violations(root);
+    expect(found).toContain(
+      'no-prod-to-test-files: packages/ui-y/src/card.tsx → packages/ui-y/.storybook/l10n.ts',
+    );
+    expect(found).toContain(
+      'no-prod-to-test-files: packages/ui-y/src/card.tsx → packages/ui-y/src/card.stories.tsx',
+    );
+    expect(found.filter((v) => v.includes('other.stories'))).toEqual([]);
+  });
 });

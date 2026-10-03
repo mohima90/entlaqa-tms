@@ -6,7 +6,9 @@
     "skipToContent": "تخطَّ إلى المحتوى",
     "languageLabel": "اللغة",
     "switchLanguage": "English",
-    "switchLanguageAria": "التبديل إلى اللغة الإنجليزية"
+    "switchLanguageAria": "التبديل إلى اللغة الإنجليزية",
+    "required": "(مطلوب)",
+    "optional": "(اختياري)"
   },
   "landing": {
     "title": "نظام إدارة التدريب",

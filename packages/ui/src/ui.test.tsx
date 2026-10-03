@@ -104,6 +104,15 @@ describe('TextField', () => {
     expect(html).toContain('border-danger');
   });
 
+  it('shows the required marker in words and keeps the caller descriptions', () => {
+    const html = renderToStaticMarkup(
+      <TextField id="name" label="الاسم" marker="(مطلوب)" hint="h" aria-describedby="summary" />,
+    );
+    expect(html).toContain('(مطلوب)');
+    expect(html).toContain('aria-describedby="summary name-hint"');
+    expect(html).toContain('ms-1');
+  });
+
   it('has no description or invalid state without hint and error', () => {
     const html = renderToStaticMarkup(<TextField id="name" label="الاسم" />);
     expect(html).not.toContain('aria-describedby');

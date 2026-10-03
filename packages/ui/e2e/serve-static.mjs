@@ -1,7 +1,7 @@
 // Minimal static server for the built Storybook (no extra dependency). Local only: 127.0.0.1.
 import { createReadStream, existsSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
-import { extname, join, normalize, resolve } from 'node:path';
+import { extname, isAbsolute, join, relative, resolve } from 'node:path';
 
 const root = resolve(process.argv[2] ?? 'storybook-static');
 const port = Number(process.env.PORT ?? 6007);
@@ -17,14 +17,21 @@ const TYPES = {
 };
 
 createServer((req, res) => {
-  const path = decodeURIComponent(new URL(req.url ?? '/', 'http://localhost').pathname);
+  let path;
+  try {
+    path = decodeURIComponent(new URL(req.url ?? '/', 'http://localhost').pathname);
+  } catch {
+    res.writeHead(400).end();
+    return;
+  }
   if (path === '/favicon.ico') {
     // Browsers ask for it on every page; Storybook ships favicon.svg only.
     res.writeHead(204).end();
     return;
   }
-  let file = normalize(join(root, path));
-  if (!file.startsWith(root)) {
+  let file = resolve(join(root, path));
+  const rel = relative(root, file);
+  if (rel.startsWith('..') || isAbsolute(rel)) {
     res.writeHead(403).end();
     return;
   }

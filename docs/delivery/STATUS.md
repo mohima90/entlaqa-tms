@@ -144,7 +144,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
-| 3 Oct 2026 | T-M1-A02 component library v1: TextField, Alert, Badge added (Button, Card, AppShell existed); Storybook 10 with language/direction and theme toolbar; new CI gate (part of gate 8) opens every story in Arabic/English × light/dark and requires zero axe violations (proved to fail on an unlabelled input); sign-in forms now use the library |
+| 3 Oct 2026 | T-M1-A02 component library v1: TextField, Alert, Badge added (Button, Card, AppShell existed); Storybook 10 with language/direction and theme toolbar; new CI gate (part of gate 8) opens every story in Arabic/English × light/dark and requires zero axe violations (proved to fail on an unlabelled input); sign-in forms now use the library. Independent review: approve with minor follow-ups — all fixed (Alert announcement guidance, TextField keeps caller descriptions + «(مطلوب)» marker per design principles §4, test server hardened, new dependency rule `no-prod-to-test-files`) |
 | 3 Oct 2026 | New advisory GHSA-vfj7-8cjw-p6xm (`braces`, high, no patched release) turned CI gate 11 red on every branch; reached only via lint tooling, not in the production build → PO accepted a single-advisory audit exception (risk R-33, review 3 Nov 2026) |
 | 3 Oct 2026 | CI database moved to **PostgreSQL 17.11** (same as staging; `postgres:17` pinned by digest), `supabase/config.toml` `major_version = 17`, docs updated |
 | 3 Oct 2026 | MFA confirmed on GitHub (passkeys), Supabase and Vercel (T-M0-10) → **Gate G0 passed, M0 done** |

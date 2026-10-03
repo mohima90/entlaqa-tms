@@ -6,7 +6,9 @@
     "skipToContent": "Skip to content",
     "languageLabel": "Language",
     "switchLanguage": "العربية",
-    "switchLanguageAria": "Switch to Arabic"
+    "switchLanguageAria": "Switch to Arabic",
+    "required": "(required)",
+    "optional": "(optional)"
   },
   "landing": {
     "title": "Training Management System",

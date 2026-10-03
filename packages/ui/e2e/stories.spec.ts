@@ -4,7 +4,9 @@ import { expect, test } from '@playwright/test';
 
 /**
  * Every story × {Arabic RTL, English LTR} × {light, dark} (Development Plan §5.3 gate 8, ADR 0007):
- * correct lang/dir/theme on <html>, no console errors, and axe WCAG 2.2 AA with no violations.
+ * the decorator applied lang/dir/theme to <html>, no console errors, and axe WCAG 2.2 AA with no
+ * violations (incl. colour contrast in both themes). That components really mirror in RTL is enforced
+ * separately: logical properties only (`pnpm check:rtl`, unit tests banning physical classes).
  */
 interface IndexEntry {
   readonly id: string;

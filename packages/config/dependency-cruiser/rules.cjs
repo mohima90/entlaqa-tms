@@ -176,6 +176,14 @@ module.exports = {
       to: { path: '(^|/)node_modules/(next|react|react-dom)/' },
     },
     {
+      name: 'no-prod-to-test-files',
+      severity: 'error',
+      comment:
+        'Production code must not import tests, test tooling or Storybook files: they are exempt from not-to-dev-dep, so importing them would pull devDependencies into a production bundle.',
+      from: { path: '^(apps|packages|modules)/', pathNot: TEST_FILES },
+      to: { path: TEST_FILES },
+    },
+    {
       name: 'not-to-dev-dep',
       severity: 'error',
       comment:

@@ -47,6 +47,7 @@ export default async function SignInPage({ params }: { params: Promise<{ locale:
             labels={{
               email: t('emailLabel'),
               password: t('passwordLabel'),
+              required: common('required'),
               submit: t('submit'),
               submitting: t('submitting'),
             }}

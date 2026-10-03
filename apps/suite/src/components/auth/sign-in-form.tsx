@@ -11,6 +11,8 @@ export interface SignInFormProps {
   readonly labels: {
     readonly email: string;
     readonly password: string;
+    /** «(مطلوب)» / "(required)" — both fields are required (design principles §4). */
+    readonly required: string;
     readonly submit: string;
     readonly submitting: string;
   };
@@ -53,6 +55,7 @@ export function SignInForm({ locale, disabled, labels, errors }: SignInFormProps
         name="email"
         type="email"
         label={labels.email}
+        marker={labels.required}
         autoComplete="username"
         required
         dir="ltr"
@@ -63,6 +66,7 @@ export function SignInForm({ locale, disabled, labels, errors }: SignInFormProps
         name="password"
         type="password"
         label={labels.password}
+        marker={labels.required}
         autoComplete="current-password"
         required
         dir="ltr"

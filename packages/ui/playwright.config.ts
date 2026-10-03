@@ -14,6 +14,8 @@ export default defineConfig({
   use: {
     ...devices['Desktop Chrome'],
     baseURL: `http://127.0.0.1:${PORT}`,
+    trace: 'retain-on-failure',
+    screenshot: 'only-on-failure',
     launchOptions: executablePath ? { executablePath } : {},
   },
   webServer: {

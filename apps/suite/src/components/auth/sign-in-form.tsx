@@ -1,5 +1,5 @@
 'use client';
-import { Button } from '@jadarat/ui';
+import { Alert, Button, TextField } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
 import { type SyntheticEvent, useState, useTransition } from 'react';
 import { signInAction } from '../../auth/actions';
@@ -11,6 +11,8 @@ export interface SignInFormProps {
   readonly labels: {
     readonly email: string;
     readonly password: string;
+    /** «(مطلوب)» / "(required)" — both fields are required (design principles §4). */
+    readonly required: string;
     readonly submit: string;
     readonly submitting: string;
   };
@@ -48,44 +50,32 @@ export function SignInForm({ locale, disabled, labels, errors }: SignInFormProps
 
   return (
     <form className="flex flex-col gap-4" onSubmit={onSubmit}>
-      <div className="flex flex-col gap-1">
-        <label htmlFor="email" className="font-medium">
-          {labels.email}
-        </label>
-        <input
-          id="email"
-          name="email"
-          type="email"
-          autoComplete="username"
-          required
-          dir="ltr"
-          disabled={disabled || pending}
-          className="min-h-11 w-full rounded-md border border-border-strong bg-surface px-3 text-text"
-        />
-      </div>
-      <div className="flex flex-col gap-1">
-        <label htmlFor="password" className="font-medium">
-          {labels.password}
-        </label>
-        <input
-          id="password"
-          name="password"
-          type="password"
-          autoComplete="current-password"
-          required
-          dir="ltr"
-          disabled={disabled || pending}
-          className="min-h-11 w-full rounded-md border border-border-strong bg-surface px-3 text-text"
-        />
-      </div>
+      <TextField
+        id="email"
+        name="email"
+        type="email"
+        label={labels.email}
+        marker={labels.required}
+        autoComplete="username"
+        required
+        dir="ltr"
+        disabled={disabled || pending}
+      />
+      <TextField
+        id="password"
+        name="password"
+        type="password"
+        label={labels.password}
+        marker={labels.required}
+        autoComplete="current-password"
+        required
+        dir="ltr"
+        disabled={disabled || pending}
+      />
       {message ? (
-        <p
-          role="alert"
-          className="m-0 rounded-md border border-danger bg-danger-subtle px-3 py-2 text-text"
-          data-testid="sign-in-error"
-        >
+        <Alert tone="danger" data-testid="sign-in-error">
           {message}
-        </p>
+        </Alert>
       ) : null}
       <Button type="submit" disabled={disabled || pending}>
         {pending ? labels.submitting : labels.submit}

@@ -5,7 +5,7 @@
 | | |
 |---|---|
 | **Last updated** | 1 October 2026 |
-| **Current phase** | **M1 Foundation in progress** — foundation merged (PR #9); **staging database live** (all migrations applied and verified, access-token hook enabled, 1 Oct 2026); **sign-in live on staging** (T-M1-D03 done: e-mail + password, organization `entlaqa-demo`, sign-out, audit) — next: CI on PostgreSQL 17, Storybook, threat models, self-hosted spike, estimation · **M0 done** (Gate G0 passed 3 Oct 2026) |
+| **Current phase** | **M1 Foundation in progress** — foundation merged (PR #9); **staging database live** (all migrations applied and verified, access-token hook enabled, 1 Oct 2026); **sign-in live on staging** (T-M1-D03 done: e-mail + password, organization `entlaqa-demo`, sign-out, audit) — CI on PostgreSQL 17 and component library done — next: threat models, self-hosted spike, estimation · **M0 done** (Gate G0 passed 3 Oct 2026) |
 | **Next gate** | G0 (PO setup tasks) → G1 (Foundation sign-off) |
 | **Overall status** | 🟢 On track (no build started; dates are targets until Gate G1 re-baseline) |
 
@@ -19,7 +19,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 |---|---|---|---|---|
 | Planning (research, BRD, feature list, delivery plan) | — | 🟢 Done | — | See §4 documents |
 | M0 Mobilize | 1–2 | 🟢 Done | G0 | **Gate G0 passed 3 Oct 2026.** T-M0-01…07, 09, 10 done (MFA on GitHub, Supabase, Vercel confirmed); T-M0-08 (→ 2-week customer trials ≈ end of M5) and T-M0-11 deferred by PO; T-M0-12/13 needed later |
-| M1 Foundation | 3–8 | 🔵 In progress | G1 | Foundation merged (#9); walking skeleton live on staging (#10–#14); remaining: Storybook, per-epic threat models, self-hosted spike, estimation |
+| M1 Foundation | 3–8 | 🔵 In progress | G1 | Foundation merged (#9); walking skeleton live on staging (#10–#14); component library + Storybook done (T-M1-A02); remaining: per-epic threat models, self-hosted spike, estimation |
 | M2 Platform core | 9–12 | ⚪ Not started | G2 | |
 | M3 Catalog & scheduling | 13–16 | ⚪ Not started | G3 | |
 | M4 Enrollment & manager | 17–19 | ⚪ Not started | G4 | |
@@ -30,7 +30,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 ### M1 Foundation — deliverables checklist
 
-- [~] Track A: design system v1 — tokens + contrast report done; primitives in `packages/ui`; Storybook pending
+- [x] Track A: design system v1 — tokens + contrast report; component library v1 in `packages/ui` with Storybook (Arabic/English × light/dark), every story axe-checked in CI (T-M1-A02)
 - [x] Track A: suite shell design (`docs/design/suite-shell.md`) — merged (#9)
 - [x] Track A: clickable prototype of 5 journeys (`docs/design/prototype/index.html`) — merged (#9)
 - [ ] Track A: usability test round 1 — kit ready (`docs/design/research/`); **PO runs sessions with ENTLAQA staff** (PO decision, 3 Oct 2026)
@@ -132,7 +132,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 5. When usability round 1 is due (end of M1): pick 5–8 ENTLAQA staff who did not work on the BRD (Claude prepares the sessions).
 
 **Next Claude session** — continue M1:
-1. T-M1-A02 Storybook for `packages/ui`; T-M1-C02 per-epic threat models for M2 epics.
+1. T-M1-C02 per-epic threat models for M2 epics.
 2. T-M1-D04 self-hosted stack spike (needs a Docker-capable environment).
 3. T-M1-B14 estimation and re-baselined plan → Gate G1.
 4. Check R-33 (`braces` advisory) at the start of each session: when a patched release exists, update and remove the `ignoreGhsas` entry in `pnpm-workspace.yaml`.
@@ -144,6 +144,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
+| 3 Oct 2026 | T-M1-A02 component library v1: TextField, Alert, Badge added (Button, Card, AppShell existed); Storybook 10 with language/direction and theme toolbar; new CI gate (part of gate 8) opens every story in Arabic/English × light/dark and requires zero axe violations (proved to fail on an unlabelled input); sign-in forms now use the library. Independent review: approve with minor follow-ups — all fixed (Alert announcement guidance, TextField keeps caller descriptions + «(مطلوب)» marker per design principles §4, test server hardened, new dependency rule `no-prod-to-test-files`) |
 | 3 Oct 2026 | New advisory GHSA-vfj7-8cjw-p6xm (`braces`, high, no patched release) turned CI gate 11 red on every branch; reached only via lint tooling, not in the production build → PO accepted a single-advisory audit exception (risk R-33, review 3 Nov 2026) |
 | 3 Oct 2026 | CI database moved to **PostgreSQL 17.11** (same as staging; `postgres:17` pinned by digest), `supabase/config.toml` `major_version = 17`, docs updated |
 | 3 Oct 2026 | MFA confirmed on GitHub (passkeys), Supabase and Vercel (T-M0-10) → **Gate G0 passed, M0 done** |

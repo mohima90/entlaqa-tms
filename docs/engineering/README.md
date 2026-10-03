@@ -41,6 +41,8 @@ No Supabase project or secrets are needed to build, test or run the app: without
 | `pnpm build` | Production build (`output: 'standalone'`) + copies static assets into `.next/standalone` | — |
 | `pnpm --filter @jadarat/suite check:budget` | Client JS / CSS gzip budget (`apps/suite/performance-budget.json`) | 9 |
 | `pnpm e2e` | Playwright smoke against the standalone server: Arabic + English, `dir`, no console/CSP errors, no horizontal overflow at 390 px, axe (0 serious/critical) | 7, 8 |
+| `pnpm --filter @jadarat/ui storybook` | Component library (Storybook) on http://localhost:6006 — toolbar: Arabic RTL / English LTR, light / dark | — |
+| `pnpm --filter @jadarat/ui build-storybook` then `… test:stories` | Static Storybook, then Playwright opens **every story** in Arabic/English × light/dark: `lang`/`dir`/`data-theme`, no console errors, axe WCAG 2.2 AA with **no** violations | 8 |
 | `pnpm check:all` | typecheck + lint + format + coverage + migrations + deps | — |
 | `bash scripts/db-deploy.sh plan\|apply` | Hosted environments only, normally via **Actions → DB deploy** (runbook: [db-deploy.md](db-deploy.md)) | — |
 | `bash scripts/provision-tenant.sh plan\|apply` | Hosted environments only, normally via **Actions → Provision organization** (runbook: [staging-sign-in.md](staging-sign-in.md)) | — |
@@ -137,7 +139,7 @@ Follow `docs/architecture/migration-conventions.md` (templates, naming, required
 | 5 | RLS / tenant-isolation suite | db (`supabase/tests`) | ✅ active |
 | 6 | Integration tests | db (`DB_TEST_INTEGRATION=1`) | ✅ active (DB layer); server actions against local Supabase from T-M1-D03 |
 | 7 | E2E smoke (Arabic + English) | e2e (production standalone server) | ✅ active — against the preview environment once Vercel builds (T-M1-D05) |
-| 8 | Accessibility scan | e2e (axe, 0 serious/critical) | ✅ active |
+| 8 | Accessibility scan | e2e (app pages: axe, 0 serious/critical) + stories (every component in 4 modes: axe, 0 violations) | ✅ active |
 | 9 | Lighthouse / bundle-size budget | build (bundle budget) | 🟡 bundle budget active; Lighthouse CI with preview deployments |
 | 10 | SAST | `codeql.yml` (security-extended; JS/TS + Actions) | ✅ runs on GitHub only |
 | 11 | Dependency vulnerability scan | audit (`pnpm audit --audit-level high`) | ✅ active |
@@ -158,7 +160,7 @@ Make the aggregate job **`CI gates`** and the CodeQL checks required status chec
 | Grants / roles | `defineAction` default runtime loads **no grants** → every action is denied (403) | Roles, role assignments and resource resolvers (M2) |
 | Audit | `defineAction` writes `platform.audit_events` rows | `platform-audit` package, `actor_type`, before/after, partitioning (M2, data model §2.5) |
 | DB types | Hand-written Drizzle definitions for the six platform tables | `pnpm db:types` (supabase gen types + drizzle-kit pull) with a drift gate (migration-conventions §8) |
-| Design tokens | `packages/ui` imports `docs/design/tokens/tokens.css` directly (single source of truth) | Component library + Storybook (T-M1-A02) |
+| Design tokens & components | `packages/ui` imports `docs/design/tokens/tokens.css` directly (single source of truth). Component library v1: Button, Card, TextField, Alert, Badge, AppShell — Storybook with RTL/LTR and light/dark, axe-gated in CI (T-M1-A02) | Dialog, select/combobox, date picker (Hijri/Gregorian, ADR 0007), table, toast, empty/loading states — added with the M2 screens that need them; visual regression snapshots |
 | Self-hosted stack | — | **T-M1-D04** (Docker): GoTrue hook config, `auth.sessions` grants, image scanning |
 | Vercel | Project Root Directory = `apps/suite` (Next.js preset, Node 24, files outside root included) — production deployment of `main` is Ready (1 Oct 2026). Root `vercel.json` (`ignoreCommand: exit 0`) keeps the **old** project `entlaqa-tms` (team "Mohamed Ibrahim's projects", still connected) from building | Remove root `vercel.json` only after the PO deletes the old project; Supabase env vars for sign-in: [staging-sign-in.md](staging-sign-in.md) |
 

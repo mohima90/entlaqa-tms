@@ -173,6 +173,29 @@ jobs:
             apps/suite/test-results
           retention-days: 14
 
+  stories:
+    name: 'Gate 8 · Component library (Storybook): every story in Arabic/English × light/dark, axe'
+    needs: install
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: Install Playwright Chromium
+        run: pnpm --filter @jadarat/ui exec playwright install --with-deps chromium
+      - run: pnpm --filter @jadarat/ui build-storybook
+      - run: pnpm --filter @jadarat/ui test:stories
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: failure()
+        with:
+          name: storybook-report
+          path: |
+            packages/ui/playwright-report
+            packages/ui/test-results
+          retention-days: 14
+
   audit:
     name: 'Gate 11 · Dependency vulnerability scan'
     needs: install
@@ -262,7 +285,21 @@ jobs:
     name: CI gates
     if: always()
     needs:
-      [install, typecheck, lint, unit, boundaries, db, build, e2e, audit, secrets, iac, openapi]
+      [
+        install,
+        typecheck,
+        lint,
+        unit,
+        boundaries,
+        db,
+        build,
+        e2e,
+        stories,
+        audit,
+        secrets,
+        iac,
+        openapi,
+      ]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

@@ -239,4 +239,43 @@ describe('rules on installed packages fire (C1: node_modules is not excluded)', 
     );
     expect(found.filter((v) => v.includes('b.ts') || v.includes('a.test.ts'))).toEqual([]);
   });
+
+  it('lets Storybook stories and .storybook config use devDependencies, but not components', async () => {
+    const root = fixtureRepo({
+      ...installed,
+      'packages/ui-x/package.json': JSON.stringify({
+        name: '@jadarat/ui-x',
+        devDependencies: { vitest: '1.0.0' },
+      }),
+      'packages/ui-x/src/button.tsx': "import { x } from 'vitest';\nexport const b = x;\n",
+      'packages/ui-x/src/button.stories.tsx': "import { x } from 'vitest';\nexport const s = x;\n",
+      'packages/ui-x/.storybook/main.ts': "import { x } from 'vitest';\nexport const m = x;\n",
+    });
+    const found = await violations(root);
+    expect(found).toContain(
+      'not-to-dev-dep: packages/ui-x/src/button.tsx → node_modules/vitest/index.js',
+    );
+    expect(found.filter((v) => v.includes('stories') || v.includes('.storybook'))).toEqual([]);
+  });
+
+  it('rejects production code importing a story, Storybook config or a test file', async () => {
+    const root = fixtureRepo({
+      ...installed,
+      'packages/ui-y/package.json': JSON.stringify({ name: '@jadarat/ui-y' }),
+      'packages/ui-y/.storybook/l10n.ts': 'export const pick = 1;\n',
+      'packages/ui-y/src/card.stories.tsx': 'export const story = 1;\n',
+      'packages/ui-y/src/card.tsx':
+        "import { pick } from '../.storybook/l10n';\nimport { story } from './card.stories';\nexport const c = pick + story;\n",
+      'packages/ui-y/src/other.stories.tsx':
+        "import { c } from './card';\nimport { story } from './card.stories';\nexport const s = c + story;\n",
+    });
+    const found = await violations(root);
+    expect(found).toContain(
+      'no-prod-to-test-files: packages/ui-y/src/card.tsx → packages/ui-y/.storybook/l10n.ts',
+    );
+    expect(found).toContain(
+      'no-prod-to-test-files: packages/ui-y/src/card.tsx → packages/ui-y/src/card.stories.tsx',
+    );
+    expect(found.filter((v) => v.includes('other.stories'))).toEqual([]);
+  });
 });

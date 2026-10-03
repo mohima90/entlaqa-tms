@@ -1,0 +1,6 @@
+/* Same stack as apps/suite/src/app/globals.css: Tailwind → Jadarat preset → design tokens + base styles. */
+@import 'tailwindcss';
+@import '@jadarat/config/tailwind/preset.css';
+@import '../src/styles.css';
+
+@source "../src";

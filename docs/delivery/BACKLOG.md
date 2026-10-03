@@ -21,14 +21,14 @@
 | T-M0-07 | Supabase organization + project for staging (region `eu-central-1` Frankfurt) | PO | 🟢 | `jadarat-tms-staging` (ref `kgmhlmiwlbvdmalesexv`, org `entlaqa-TMS`, Free plan), Data API off (1 Oct 2026) |
 | T-M0-08 | ~~Recruit 3–5 design partners now~~ → **deferred (PO decision, 3 Oct 2026):** the customers who shaped the BRD get **2-week trial accounts** once a near-complete product exists (target: core flow catalog → schedule → enroll → attend → certificate working, ≈ end of M5); until then usability tests use ENTLAQA staff | PO | ⏸ | Re-planned as T-M5-TRIAL (see M5 note below); not blocking G0 |
 | T-M0-09 | Close decision D3 (planning-cycle timing) | PO | 🟢 | Decided: R2 |
-| T-M0-10 | MFA (two-step sign-in) on every team account: GitHub, Supabase, Vercel, the e-mail account behind them; secrets only in the password manager | PO | ⚪ | Plan §6.2 "SSO + MFA enforced for all team tools" — added 1 Oct 2026 (was not tracked) |
+| T-M0-10 | MFA (two-step sign-in) on every team account: GitHub, Supabase, Vercel, the e-mail account behind them; secrets only in the password manager | PO | 🟢 | Confirmed 3 Oct 2026: enabled on GitHub (passkeys, 2FA required), Supabase and Vercel since the accounts were created (PO) |
 | T-M0-11 | GitHub environment `staging`: add the PO as **Required reviewer** (every DB deploy / provisioning run waits for approval) | PO | ⏸ | Deferred (3 Oct 2026): the PO is the only repository collaborator and staging holds test data only. **Do before** a second person gets repository access or before a production environment exists |
 | T-M0-12 | Pen-test vendor shortlist (KSA/UAE-capable, Arabic UI) | Claude prepares, PO contacts | ⚪ | Plan §6.2; needed by M7 (independent pen test before GA). Security tooling: CI already runs CodeQL, gitleaks, `pnpm audit`, Trivy (free) — no licences needed so far |
 | T-M0-13 | Approve the error-tracking vendor (Sentry EU region vs. GlitchTip) | PO (Claude recommends) | ⚪ | Plan §6.2 accounts; ADR 0009 §4; needed for T-M1-D06 observability |
 
 Plan §6.2 items that do not apply to the agent-team model (§2.3): team staffing/RACI (= T-M0-01), separate project tracker (this file), Figma (design artifacts in `docs/design/`), kick-off (`CLAUDE.md` + session routine). Open decisions D4, D5, D8–D10 are scheduled in STATUS §2 ("Needed by").
 
-**Gate G0 (adapted, 3 Oct 2026):** T-M0-01…07, 09 done; T-M0-08 and T-M0-11 deferred by PO decision (not blocking); **open and blocking: T-M0-10** (MFA on team accounts) → G0 turns 🟢 when T-M0-10 is done. T-M0-12/13 are needed later (M7 / T-M1-D06), not for G0.
+**Gate G0 (adapted): 🟢 passed 3 Oct 2026.** T-M0-01…07, 09, 10 done; T-M0-08 and T-M0-11 deferred by PO decision; T-M0-12/13 are needed later (M7 / T-M1-D06), not for G0.
 
 ---
 

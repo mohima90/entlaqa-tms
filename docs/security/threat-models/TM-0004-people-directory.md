@@ -10,7 +10,7 @@
 | **Reviewers** | Tech Lead (Claude agent), Product Owner |
 | **Features** | **STE-01** Suite mode and standalone mode per tenant (FR-STE-01, M, R1) · **STE-02** Shared people & organization directory, single person record across suite modules (FR-STE-02, M, R1) |
 | **Inputs** | BRD v2.1 §3.4 (3.4.1, 3.4.2), §6.2 (FR-IAM-01…06, 15), §6.25 (FR-AUD-01…05), §6.27 (FR-STE-01…09), §8 (FR-INT-01), §10.3 (DR-5…7), §12, §13 (NFR-L10N-05/10), §15, App. B, App. E; Development Plan §6.4, §8.3, App. D, App. F; ADR 0001, 0002, 0003, 0004, 0005, 0006, 0010 §5; R1 data model §1.9, §1.12, §2.2, §2.3, §4; migrations `20260930120000…20261001120000` |
-| **Related** | [TM-0001](TM-0001-platform.md) (platform threats T-nn, findings F-nn — cited, not repeated) · [`../risk-register.md`](../risk-register.md) · [`../asvs-l2-mapping.md`](../asvs-l2-mapping.md) · [`../secure-coding-standard.md`](../secure-coding-standard.md) · sibling M2 models for EP-M2-TEN, EP-M2-IAM (importer, invitations, roles), EP-M2-AUD (audit, consent) |
+| **Related** | [TM-0001](TM-0001-platform.md) (platform threats T-nn, findings F-nn — cited, not repeated) · [`../risk-register.md`](../risk-register.md) · [`../asvs-l2-mapping.md`](../asvs-l2-mapping.md) · [`../secure-coding-standard.md`](../secure-coding-standard.md) · sibling M2 models: EP-M2-TEN, EP-M2-IAM (importer, invitations, roles), [TM-0005](TM-0005-audit-consent.md) EP-M2-AUD (audit, consent), [TM-0006](TM-0006-shell-notifications.md) EP-M2-SHELL (approvals inbox, notifications) |
 
 ---
 
@@ -28,7 +28,7 @@
 
 - Platform controls inherited unchanged (tenant isolation, `withUserTx`, `defineAction`, audit immutability, file scanning, `safeFetch`): TM-0001.
 - Invitation tokens, sign-in, MFA, role catalog and the importer's UI/engine as such: EP-M2-IAM model (this model adds only directory-specific import threats: matching, hierarchy, ownership).
-- Audit-log storage and consent capture: EP-M2-AUD model. Org-structure screens (FR-ADM-04/05): EP-M2-TEN model; this model covers their effect on scopes.
+- Audit-log storage and consent capture: TM-0005 (EP-M2-AUD). Org-structure screens (FR-ADM-04/05): EP-M2-TEN model; this model covers their effect on scopes.
 - Core HR module internals (future `modules/core-hr`): its own model when the module starts (Development Plan "Suite readiness").
 
 ### 1.3 Implementation baseline (checked 3 Oct 2026)
@@ -145,7 +145,7 @@ flowchart LR
   subgraph Z4["Z4 Data zone - Supabase"]
     DIR[("persons, person_employment, departments, branches")]
     SENS[("person_sensitive - C4, encrypted")]
-    OUTB[("event_outbox and audit_events")]
+    OUTB[("bulk_jobs, event_outbox, audit_events")]
     STO[("Storage: imports and generated buckets")]
   end
 
@@ -156,7 +156,7 @@ flowchart LR
   HRA -->|HTTPS session cookie| DACT
   HRA -->|upload via signed URL| STO
   LOW -->|"search, minimal DTO"| PICK
-  DACT -->|withUserTx, RLS| DIR
+  DACT -->|"withUserTx and RLS"| DIR
   DACT -->|read_sensitive only| SENS
   PICK -->|scopeFilter| DIR
   IMPU -->|create bulk job| OUTB
@@ -168,7 +168,7 @@ flowchart LR
   CHR -->|core_hr events| OUTB
   OUTB -->|delivery job| PROJ
   PROJ -->|"source = core_hr"| DIR
-  TMS -->|service interface only| DACT
+  TMS -->|"PeopleDirectory service, DTOs only"| DIR
   EXPJ -->|projection per permission| STO
   DACT --> KMS
   IMPJ --> KMS
@@ -375,8 +375,8 @@ Security/privacy acceptance criteria to copy into the stories (Plan Appendix C *
 |---|---|---|---|
 | SR-X-01 | EP-M2-IAM / IAM-04 importer | Explicit match key; key conflicts are row errors; dry-run diff by category; reactivation only by explicit option; no deactivation by absence; batch rollback; formula neutralization in error reports; UTF-8 enforcement; role columns cannot grant high-risk roles; source file purged after the job (≤ 7 days proposed) | PEO-09, PEO-10, PEO-21, PEO-23, PEO-28 |
 | SR-X-02 | EP-M2-IAM / IAM-02 | Restricted fields in `person_sensitive` incl. employment category (F-PEO-02) | PEO-15 |
-| SR-X-03 | EP-M2-SHELL / approvals | R1 chain never assigns a step to the requester or subject | PEO-06, F-PEO-08 |
-| SR-X-04 | EP-M2-AUD | Directory audit events with integration actor type; C4 values redacted/encrypted in diffs (F-08) | PEO-13, PEO-30 |
+| SR-X-03 | EP-M2-SHELL (TM-0006) / approvals | R1 chain never assigns a step to the requester or subject | PEO-06, F-PEO-08 |
+| SR-X-04 | EP-M2-AUD (TM-0005) | Directory audit events with integration actor type; C4 values redacted/encrypted in diffs (F-08) | PEO-13, PEO-30 |
 
 ---
 
@@ -403,17 +403,17 @@ Chapters as in the [ASVS L2 mapping](../asvs-l2-mapping.md).
 
 ## 13. Proposed risk-register rows (candidates — not yet in the register)
 
-Scales and bands as in the risk register §1. For PO/Security Lead decision at the next register review.
+Scales and bands as in the risk register §1. IDs are provisional (`PR-PEO-n`); the next free `R-nn` numbers are assigned when the register is updated, because the sibling M2 models also propose rows (TM-0005 uses R-34…R-37). For PO/Security Lead decision at the next register review.
 
 | ID | Risk description | Category | L | I | Score | Target | Owner | Mitigation (planned) | Status | Review date |
 |---|---|---|---|---|---|---|---|---|---|---|
-| R-34 (proposed) | **Manager-hierarchy or org-tree manipulation widens data scopes** through edits, imports or sync (PEO-05…07, PEO-25) | Security — authorization | 3 | 4 | 12 | 4 | Tech Lead | Placement permission with AAL2; in-scope-only edits; hierarchy invariants; notifications; scope-change report; audit + placement history | Open | 2026-10-31 |
-| R-35 (proposed) | **Over-collection and over-retention of HR master data** (national IDs without an R1 purpose, import artefacts, leavers' contact data) (PEO-16, PEO-21, PV-04/05) | Privacy | 3 | 4 | 12 | 4 | Security Lead + PO | F-PEO-05; artefact purge; leaver pseudonymization; classification registry | Open | 2026-10-31 |
-| R-36 (proposed) | **HR source impersonation or compromise** (SFTP/HRIS credentials, forged Core HR events) causing mass directory changes or deactivations (PEO-01, PEO-02, PEO-23) | Security — integration | 2 | 4 | 8 | 3 | Tech Lead | Worker-only credentials, host-key/TLS/HMAC, tenant from connection, event ownership CI test, thresholds + approval | Open | 2027-01-31 |
-| R-37 (proposed) | **Directory enumeration and bulk exfiltration** by low-trust members or over-privileged staff via search, pickers and exports (PEO-14, PEO-15, PEO-17) | Privacy | 4 | 3 | 12 | 4 | Tech Lead | `scopeFilter`, external person types denied, minimal DTOs, rate limits, export permission + audit + alerts; F-PEO-01 | Open | 2026-10-31 |
-| R-38 (proposed) | **Data-ownership conflict between suite and standalone writers** or during mode switch (PEO-11, PEO-12) | Integrity | 3 | 3 | 9 | 3 | Tech Lead | Field-ownership matrix, 409 on non-owner writes, console-only mode switch with job shutdown and reconciliation | Open | 2026-11-30 |
-| R-39 (proposed) | **Leavers retain access** in standalone tenants because terminations arrive late (PEO-29) | Security — access lifecycle | 4 | 3 | 12 | 4 | Tech Lead | Deactivation cascade, `end_on` job, straggler report; suite: STE-03 | Open | 2026-11-30 |
-| R-40 (proposed) | **DSR handling gap in R1** (FR-AUD-04 is R2) and erasure across a shared directory used by several modules (PEO-30, PV-06) | Compliance — privacy | 3 | 4 | 12 | 4 | PO + Legal counsel | Manual runbook before first paying tenant; anonymization event for all modules; crypto-shredding (F-08) | Open | 2026-11-30 |
+| PR-PEO-1 | **Manager-hierarchy or org-tree manipulation widens data scopes** through edits, imports or sync (PEO-05…07, PEO-25) | Security — authorization | 3 | 4 | 12 | 4 | Tech Lead | Placement permission with AAL2; in-scope-only edits; hierarchy invariants; notifications; scope-change report; audit + placement history | Open | 2026-10-31 |
+| PR-PEO-2 | **Over-collection and over-retention of HR master data** (national IDs without an R1 purpose, import artefacts, leavers' contact data) (PEO-16, PEO-21, PV-04/05) | Privacy | 3 | 4 | 12 | 4 | Security Lead + PO | F-PEO-05; artefact purge; leaver pseudonymization; classification registry | Open | 2026-10-31 |
+| PR-PEO-3 | **HR source impersonation or compromise** (SFTP/HRIS credentials, forged Core HR events) causing mass directory changes or deactivations (PEO-01, PEO-02, PEO-23) | Security — integration | 2 | 4 | 8 | 3 | Tech Lead | Worker-only credentials, host-key/TLS/HMAC, tenant from connection, event ownership CI test, thresholds + approval | Open | 2027-01-31 |
+| PR-PEO-4 | **Directory enumeration and bulk exfiltration** by low-trust members or over-privileged staff via search, pickers and exports (PEO-14, PEO-15, PEO-17) | Privacy | 4 | 3 | 12 | 4 | Tech Lead | `scopeFilter`, external person types denied, minimal DTOs, rate limits, export permission + audit + alerts; F-PEO-01 | Open | 2026-10-31 |
+| PR-PEO-5 | **Data-ownership conflict between suite and standalone writers** or during mode switch (PEO-11, PEO-12) | Integrity | 3 | 3 | 9 | 3 | Tech Lead | Field-ownership matrix, 409 on non-owner writes, console-only mode switch with job shutdown and reconciliation | Open | 2026-11-30 |
+| PR-PEO-6 | **Leavers retain access** in standalone tenants because terminations arrive late (PEO-29) | Security — access lifecycle | 4 | 3 | 12 | 4 | Tech Lead | Deactivation cascade, `end_on` job, straggler report; suite: STE-03 | Open | 2026-11-30 |
+| PR-PEO-7 | **DSR handling gap in R1** (FR-AUD-04 is R2) and erasure across a shared directory used by several modules (PEO-30, PV-06) | Compliance — privacy | 3 | 4 | 12 | 4 | PO + Legal counsel | Manual runbook before first paying tenant; anonymization event for all modules; crypto-shredding (F-08) | Open | 2026-11-30 |
 
 ---
 

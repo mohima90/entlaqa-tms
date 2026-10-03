@@ -131,8 +131,27 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 4. Optional: upgrade Supabase org `entlaqa-TMS` to Pro (no pausing, backups) before customer trials.
 5. When usability round 1 is due (end of M1): pick 5–8 ENTLAQA staff who did not work on the BRD (Claude prepares the sessions).
 
+**Security decisions for M2 (from TM-0002…0006, 3 Oct 2026)** — needed before the related M2 stories start; Claude will bring them one at a time:
+1. Always require an authenticator code for high-risk actions (role changes, exports), even when an organization turns MFA off? (TM-0003 D-IAM-01; recommended: yes)
+2. Ask each new organization's first administrator to set up an authenticator app during onboarding ("required for administrators" by default)? (TM-0002 F-TEN-05)
+3. "Platform Super Admin" only for ENTLAQA staff → 14 roles per organization, BRD wording corrected? (TM-0003 D-IAM-02)
+4. HR Managers may invite users and give ordinary roles; only a Tenant Admin can create another Tenant Admin? (TM-0003 D-IAM-03)
+5. A person in several organizations follows the strictest password rules? (TM-0003 D-IAM-04)
+6. No national ID / Iqama numbers collected in R1 (no R1 feature needs them)? (TM-0004 F-PEO-05)
+7. Automatic HR file/SFTP sync: R1 or R2? (BRD and feature list disagree; TM-0004 F-PEO-06)
+8. Which ENTLAQA console actions need a second staff approval (delete organization, change data location, exports, reactivation)? (TM-0002 PC-5)
+9. No paper/offline consent in R1? (TM-0005 F-AUD-06)
+10. Which countries may sign up without sales at launch (Egypt time-critical, ~2 Nov 2026)? (R-40; legal)
+11. May support staff outside KSA/UAE access in-country customers' data? (legal; TM-0002 L-TEN-04)
+12. Retention: audit logs (7 years proposed), expired trials, cancelled organizations, leavers' contact details (legal)
+13. Counsel to confirm lawful basis for location at check-in, photos, WhatsApp, AI; effect of consent withdrawal; whether nationality/gender/birth date are sensitive (legal)
+14. Manual procedure for employee data requests ready before the first paying customer? (R-51)
+15. Supabase Pro before real users (session time limits)? (R-36)
+16. Accept residual risks: self-declared organization identity/country, repeated free trials, rare missing sign-out records, HR may change who manages whom, e-mail content leaves our control, "delivered" ≠ read (RR-TEN-01/02/07, RR-AUD-05, RR-PEO-01, RR-SHL-01/07)
+17. Who at ENTLAQA confirms official Hijri dates and holidays each year? (TM-0006 RR-SHL-04)
+
 **Next Claude session** — continue M1:
-1. T-M1-C02 per-epic threat models for M2 epics.
+1. Turn the Tech Lead findings of TM-0002…0006 into M2 backlog stories/ADR updates (e.g. audit-table hardening F-AUD-01, `persons` grants F-PEO-01, host resolution F-TEN-02/03, Host-derived tenant label F-SHL-08); T-M1-C02 for M3–M6 epics before each starts.
 2. T-M1-D04 self-hosted stack spike (needs a Docker-capable environment).
 3. T-M1-B14 estimation and re-baselined plan → Gate G1.
 4. Check R-33 (`braces` advisory) at the start of each session: when a patched release exists, update and remove the `ignoreGhsas` entry in `pnpm-workspace.yaml`.
@@ -144,7 +163,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
-| 3 Oct 2026 | T-M1-C02 started: per-epic threat models for the M2 epics (TM-0002 tenancy, TM-0003 identity & roles, TM-0004 people directory, TM-0005 audit & consent, TM-0006 shell & notifications) — drafts in progress, review pending |
+| 3 Oct 2026 | T-M1-C02 (M2 part): five per-epic threat models TM-0002 tenancy & onboarding (39 threats), TM-0003 identity & roles (44), TM-0004 people directory (30), TM-0005 audit & consent (33), TM-0006 shell & notifications (32); IDs `T-<AREA>-NN`; risk register v0.2 (R-34…R-55, 55 risks); 17 PO decisions and ~35 Tech Lead findings collected for M2 planning |
 | 3 Oct 2026 | T-M1-A02 component library v1: TextField, Alert, Badge added (Button, Card, AppShell existed); Storybook 10 with language/direction and theme toolbar; new CI gate (part of gate 8) opens every story in Arabic/English × light/dark and requires zero axe violations (proved to fail on an unlabelled input); sign-in forms now use the library. Independent review: approve with minor follow-ups — all fixed (Alert announcement guidance, TextField keeps caller descriptions + «(مطلوب)» marker per design principles §4, test server hardened, new dependency rule `no-prod-to-test-files`) |
 | 3 Oct 2026 | New advisory GHSA-vfj7-8cjw-p6xm (`braces`, high, no patched release) turned CI gate 11 red on every branch; reached only via lint tooling, not in the production build → PO accepted a single-advisory audit exception (risk R-33, review 3 Nov 2026) |
 | 3 Oct 2026 | CI database moved to **PostgreSQL 17.11** (same as staging; `postgres:17` pinned by digest), `supabase/config.toml` `major_version = 17`, docs updated |

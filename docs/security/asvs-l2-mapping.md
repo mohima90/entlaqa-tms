@@ -6,7 +6,7 @@
 | **Standard** | **OWASP Application Security Verification Standard 5.0.0** (released May 2025), Level 2 — required by NFR-SEC-05 and Development Plan §6.3 Track C |
 | **Version** | 0.1 — 30 Sep 2026 |
 | **Owner** | Security Lead (Claude agent) |
-| **Related** | [TM-0001](threat-models/TM-0001-platform.md) · [Secure coding standard](secure-coding-standard.md) · ADR 0001–0003 |
+| **Related** | [TM-0001](threat-models/TM-0001-platform.md) · per-epic models TM-0002…TM-0006 (each has an *ASVS 5.0 references* section mapping its threats `T-<AREA>-NN` to the chapters below) · [Secure coding standard](secure-coding-standard.md) · ADR 0001–0003 |
 
 ## How to read this mapping
 

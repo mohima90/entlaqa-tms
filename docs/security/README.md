@@ -7,10 +7,15 @@ Home of the security program artefacts required by Development Plan §6.3 Track 
 | Document | Purpose | Backlog | Status |
 |---|---|---|---|
 | [threat-models/TM-0001-platform.md](threat-models/TM-0001-platform.md) | Platform threat model: assets and classification, actors, trust boundaries, data-flow diagram, STRIDE (65 threats), abuse cases, residual risks, findings for the ADRs (F-01…F-13) | T-M1-C01 | Proposed v0.1 |
-| [risk-register.md](risk-register.md) | Security, privacy and compliance risk register (33 risks) incl. Saudi PDPL transfers, NCA CCC, Egypt PDPL deadline, supply chain, AI, insiders | T-M1-C03 | Proposed v0.1 |
+| [threat-models/TM-0002-tenancy-onboarding.md](threat-models/TM-0002-tenancy-onboarding.md) | `EP-M2-TEN` tenancy & onboarding: self sign-up and provisioning, host → tenant resolution, org structure, custom fields, editions, platform console (39 threats T-TEN-nn, findings F-TEN-01…11) | T-M1-C02 | Proposed v0.1 |
+| [threat-models/TM-0003-identity-roles.md](threat-models/TM-0003-identity-roles.md) | `EP-M2-IAM` identity & roles: sign-in anti-automation, invitations, password reset, MFA policy, sessions, role assignment, bulk import (44 threats T-IAM-nn, findings F-IAM-01…08, PO decisions D-IAM-01…04) | T-M1-C02 | Proposed v0.1 |
+| [threat-models/TM-0004-people-directory.md](threat-models/TM-0004-people-directory.md) | `EP-M2-PEO` people directory & suite mode: manager hierarchy and scopes, restricted fields, national IDs, HR intake, data-subject requests (30 threats T-PEO-nn, findings F-PEO-01…10) | T-M1-C02 | Proposed v0.1 |
+| [threat-models/TM-0005-audit-consent.md](threat-models/TM-0005-audit-consent.md) | `EP-M2-AUD` audit & consent: audit completeness and tamper evidence, fail-closed policy, audit viewer/export, consent capture and enforcement (33 threats T-AUD-nn, findings F-AUD-01…06) | T-M1-C02 | Proposed v0.1 |
+| [threat-models/TM-0006-shell-notifications.md](threat-models/TM-0006-shell-notifications.md) | `EP-M2-SHELL` suite shell, notifications, Hijri: global search, inbox/Realtime, approvals inbox, e-mail templates and sender identity, bidi spoofing, dates and time zones (32 threats T-SHL-nn, findings F-SHL-01…08) | T-M1-C02 | Proposed v0.1 |
+| [risk-register.md](risk-register.md) | Security, privacy and compliance risk register (55 risks) incl. Saudi PDPL transfers, NCA CCC, Egypt PDPL deadline, supply chain, AI, insiders | T-M1-C03 | Proposed v0.1 |
 | [asvs-l2-mapping.md](asvs-l2-mapping.md) | OWASP ASVS 5.0.0 Level 2 mapped to packages/ADRs, verification method and R1 applicability | T-M1-C04 | Proposed v0.1 |
 | [secure-coding-standard.md](secure-coding-standard.md) | Mandatory coding rules for this stack with do/don't examples and the PR security checklist | T-M1-C05 | Proposed v0.1 |
-| `threat-models/TM-0002…` | Per-epic threat models (§4) | T-M1-C02 | Not started |
+| `threat-models/TM-0007…` | Per-epic threat models for M3–M6 and later (§4.1) | T-M1-C02 | Not started |
 | `reviews/` | Security review records (per epic before build; per security-relevant PR; gate sign-off) — Plan §7.1 | ongoing | Created with the first review |
 
 Related: ADRs in [`../adr/`](../adr/README.md) (each has a *Security impact* section); Development Plan §5.3 (CI gates), §5.4 (defect severity), §8 (security program).
@@ -58,21 +63,25 @@ Data classes (C1–C4) are defined in TM-0001 §2.
 ### 4.1 Structure and naming
 
 - `threat-models/TM-0001-platform.md` — cross-cutting platform model (this release baseline).
-- One model **per epic** (Plan §7.1: "per epic before build"), numbered sequentially: `TM-NNNN-<epic-slug>.md`. Planned for R1 (T-M1-C02):
+- One model **per epic** (Plan §7.1: "per epic before build"), numbered sequentially: `TM-NNNN-<epic-slug>.md`. Written or planned for R1 (T-M1-C02):
 
-| ID (planned) | Epics (Plan App. G) | Focus beyond TM-0001 | Needed by |
-|---|---|---|---|
-| TM-0002 | EP-M2-TEN, EP-M2-IAM, EP-M2-PEO, EP-M2-AUD, EP-M2-SHELL | Sign-up and provisioning, invitations, bulk import, roles/scopes, impersonation, audit, consent | Start of M2 |
-| TM-0003 | EP-M3-CAT, EP-M3-SCH, EP-M3-RES, EP-M3-INS | Materials library, instructor portal (external users), calendar feeds | Start of M3 |
-| TM-0004 | EP-M4-ENR, EP-M4-MGR, EP-M4-LRN, EP-M4-LOG | Approval links, manager scopes, learner PWA/offline cache, notifications | Start of M4 |
-| TM-0005 | EP-M5-ATT, EP-M5-ASM, EP-M5-CRT | QR/geo check-in, assessments integrity, certificate designer/PDF, public verification | Start of M5 |
-| TM-0006 | EP-M6-LMS, EP-M6-RPT | Connector framework, inbound webhooks, OAuth to LMS, SSRF, reports and exports | Start of M6 |
-| later | R2+: SSO/SCIM, public API & webhooks, AI features, WhatsApp, sovereign deployment | — | Before each epic |
+| ID | Epics (Plan App. G) | Focus beyond TM-0001 | Needed by | Status |
+|---|---|---|---|---|
+| TM-0002 | EP-M2-TEN | Sign-up and provisioning, host → tenant resolution, org structure, custom fields, editions, platform console | Start of M2 | Proposed v0.1 |
+| TM-0003 | EP-M2-IAM | Sign-in anti-automation, invitations, password reset, MFA policy, sessions, roles/scopes, bulk import | Start of M2 | Proposed v0.1 |
+| TM-0004 | EP-M2-PEO | Shared people directory, manager hierarchy as scope source, restricted fields, suite/standalone ownership | Start of M2 | Proposed v0.1 |
+| TM-0005 | EP-M2-AUD | Audit completeness and tamper evidence, impersonation attribution, consent | Start of M2 | Proposed v0.1 |
+| TM-0006 | EP-M2-SHELL | Global search, inbox and Realtime, approvals inbox, e-mail templates and sender identity, Hijri/time zones | Start of M2 | Proposed v0.1 |
+| TM-0007 | EP-M3-CAT, EP-M3-SCH, EP-M3-RES, EP-M3-INS | Materials library, instructor portal (external users), calendar feeds | Start of M3 | Planned |
+| TM-0008 | EP-M4-ENR, EP-M4-MGR, EP-M4-LRN, EP-M4-LOG | Approval links, manager scopes, learner PWA/offline cache, notifications | Start of M4 | Planned |
+| TM-0009 | EP-M5-ATT, EP-M5-ASM, EP-M5-CRT | QR/geo check-in, assessments integrity, certificate designer/PDF, public verification | Start of M5 | Planned |
+| TM-0010 | EP-M6-LMS, EP-M6-RPT | Connector framework, inbound webhooks, OAuth to LMS, SSRF, reports and exports | Start of M6 | Planned |
+| TM-0011… | R2+: SSO/SCIM, public API & webhooks, AI features, WhatsApp, sovereign deployment | — | Before each epic | Planned |
 
 ### 4.2 Process
 
 1. **Create before build.** The epic's threat model is written (template: Plan Appendix D, using the section structure of TM-0001) during backlog refinement, before the first story of the epic enters a sprint (Definition of Ready).
-2. **Inherit, don't repeat.** Epic models cite platform threats by ID (e.g., "T-14, T-55 apply") and add only epic-specific threats, numbered `T-<epic>-nn`.
+2. **Inherit, don't repeat.** Epic models cite platform threats by ID (e.g., "T-14, T-55 apply") and add only epic-specific items with an area prefix that never equals a bare BRD feature ID: threats `T-<AREA>-NN`, findings `F-<AREA>-NN`, PO decisions `D-<AREA>-NN`, abuse cases `AB-<AREA>-NN`, residual risks `RR-<AREA>-NN`, legal-validation items `L-<AREA>-NN` (areas so far: TEN, IAM, PEO, AUD, SHL). Feature IDs (`IAM-01`) and requirements (`FR-IAM-01`) keep their BRD form. Header fields, the L/I scale (risk register §1) and the status vocabulary (*Implemented* · *Partly implemented* · *Planned (Mx)* · *Open — decision <ID>*) are the same in every epic model; proposed register rows get their final `R-NN` when the register is updated.
 3. **Stories carry the controls.** Each mitigation maps to a story or acceptance criterion; the story's *Security notes* (Plan Appendix C) list the threat IDs; every abuse case becomes at least one negative test.
 4. **Review.** Security Lead + Tech Lead review the model (separate security-review pass, Plan §2.3); the record is saved as `reviews/SR-YYYYMMDD-<topic>.md` with scope, findings, decisions and sign-off.
 5. **Verify.** A threat's status becomes *Verified* only when its verification (test, CI gate or review record) exists and passes. Gate checklists (Plan §7.2 "Security") require all threats of the milestone to be *Verified* or *Accepted*.

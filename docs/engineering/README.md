@@ -18,7 +18,7 @@ This guide is for engineers (human or Claude sessions) working in the code. Prod
 | pnpm | 10.x (pinned by `packageManager` in `package.json`) | `corepack enable` picks the right version |
 | PostgreSQL client + server | **17** (as staging and CI); 16 still works locally | Only for `pnpm db:test` (plain PostgreSQL, no Docker needed) |
 | Playwright Chromium | matching `@playwright/test` | `pnpm --filter @jadarat/suite exec playwright install chromium` (or set `PW_CHROMIUM_EXECUTABLE` to an existing Chromium) |
-| Docker | — | Not needed yet; required for the self-hosted stack (T-M1-D04) |
+| Docker (with compose) | current | Only for the self-hosted stack (`infra/docker`, gate 15) |
 
 No Supabase project or secrets are needed to build, test or run the app: without `NEXT_PUBLIC_SUPABASE_*` / `DATABASE_URL_*` it runs in a visible **"not configured"** state. Variable **names** are listed in `.env.example`; values never go into git (put them in `apps/suite/.env.local`, which is git-ignored).
 
@@ -43,6 +43,7 @@ No Supabase project or secrets are needed to build, test or run the app: without
 | `pnpm e2e` | Playwright smoke against the standalone server: Arabic + English, `dir`, no console/CSP errors, no horizontal overflow at 390 px, axe (0 serious/critical) | 7, 8 |
 | `pnpm --filter @jadarat/ui storybook` | Component library (Storybook) on http://localhost:6006 — toolbar: Arabic RTL / English LTR, light / dark | — |
 | `pnpm --filter @jadarat/ui build-storybook` then `… test:stories` | Static Storybook, then Playwright opens **every story** in Arabic/English × light/dark: `lang`/`dir`/`data-theme`, no console errors, axe WCAG 2.2 AA with **no** violations | 8 |
+| `bash infra/docker/smoke.sh` | Whole self-hosted stack in containers + real sign-in + Auth parity checks (needs Docker) | 15 |
 | `pnpm check:all` | typecheck + lint + format + coverage + migrations + deps | — |
 | `bash scripts/db-deploy.sh plan\|apply` | Hosted environments only, normally via **Actions → DB deploy** (runbook: [db-deploy.md](db-deploy.md)) | — |
 | `bash scripts/provision-tenant.sh plan\|apply` | Hosted environments only, normally via **Actions → Provision organization** (runbook: [staging-sign-in.md](staging-sign-in.md)) | — |
@@ -144,7 +145,8 @@ Follow `docs/architecture/migration-conventions.md` (templates, naming, required
 | 10 | SAST | `codeql.yml` (security-extended; JS/TS + Actions) | ✅ runs on GitHub only |
 | 11 | Dependency vulnerability scan | audit (`pnpm audit --audit-level high`) | ✅ active |
 | 12 | Secret scanning | secrets (gitleaks: working tree + PR/push commit range) | ✅ runs in CI; see note below |
-| 13 | Container / IaC scanning | iac (Trivy config scan) | 🟡 active on config; image scanning with T-M1-D04 |
+| 13 | Container / IaC scanning | iac (Trivy config scan) + selfhosted (Trivy image scan of `jadarat/suite`, no fixable HIGH/CRITICAL; third-party images reported) | ✅ active |
+| 15 | Self-hosted (sovereign) parity | selfhosted (`infra/docker/smoke.sh`: Postgres 17.11 + Auth + gateway + app containers, migrations, real sign-in, Auth parity, audit/TLS checks) | ✅ active |
 | 14 | OpenAPI breaking-change check | openapi | 🟡 placeholder — fails as soon as an OpenAPI file is added without a real check |
 
 Make the aggregate job **`CI gates`** and the CodeQL checks required status checks on `main` (PO, repository settings).
@@ -161,7 +163,7 @@ Make the aggregate job **`CI gates`** and the CodeQL checks required status chec
 | Audit | `defineAction` writes `platform.audit_events` rows | `platform-audit` package, `actor_type`, before/after, partitioning (M2, data model §2.5) |
 | DB types | Hand-written Drizzle definitions for the six platform tables | `pnpm db:types` (supabase gen types + drizzle-kit pull) with a drift gate (migration-conventions §8) |
 | Design tokens & components | `packages/ui` imports `docs/design/tokens/tokens.css` directly (single source of truth). Component library v1: Button, Card, TextField, Alert, Badge, AppShell — Storybook with RTL/LTR and light/dark, axe-gated in CI (T-M1-A02) | Dialog, select/combobox, date picker (Hijri/Gregorian, ADR 0007), table, toast, empty/loading states — added with the M2 screens that need them; visual regression snapshots |
-| Self-hosted stack | — | **T-M1-D04** (Docker): GoTrue hook config, `auth.sessions` grants, image scanning |
+| Self-hosted stack | `infra/docker` (T-M1-D04): Postgres 17.11 + Auth (GoTrue) + TLS gateway + distroless app image; hook, ES256/JWKS and TOTP verified; gate 15 runs it on every PR. Runbook + spike report: [`infra/docker/README.md`](../../infra/docker/README.md) | Helm chart and in-country Kubernetes (R2/R3, ADR 0010 §4); verification-attempt hooks; Storage/Realtime/Supavisor when used |
 | Vercel | Project Root Directory = `apps/suite` (Next.js preset, Node 24, files outside root included) — production deployment of `main` is Ready (1 Oct 2026). Root `vercel.json` (`ignoreCommand: exit 0`) keeps the **old** project `entlaqa-tms` (team "Mohamed Ibrahim's projects", still connected) from building | Remove root `vercel.json` only after the PO deletes the old project; Supabase env vars for sign-in: [staging-sign-in.md](staging-sign-in.md) |
 
 ### Items to verify on the Supabase staging project (T-M0-07)

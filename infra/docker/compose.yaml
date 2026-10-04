@@ -1,0 +1,101 @@
+# Jadarat TMS — self-hosted (sovereign) stack, T-M1-D04 walking skeleton (ADR 0010). Runbook: README.md.
+# Everything runs in-country on the customer's servers: PostgreSQL 17 (Supabase image, same major/minor as
+# the cloud), Supabase Auth (GoTrue) with the Custom Access Token hook, a TLS gateway, and the app.
+# All connections that cross a container boundary use TLS verified against the installation's CA.
+# Images are pinned by digest (multi-arch index); bump deliberately with the hosted versions.
+# Secrets: ./gen-secrets.sh → .secrets/ (git-ignored); always run compose with
+#   docker compose --env-file .secrets/.env …
+# so ${…} below are filled from it. Ports are bound to 127.0.0.1 only.
+name: jadarat
+
+services:
+  db:
+    image: supabase/postgres:17.11.0.003@sha256:7374d196da7e301512cc5329e18040e0f7bb856287b323777cdadecccbc6c7e4
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run with --env-file .secrets/.env}
+      AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD:?run with --env-file .secrets/.env}
+      POSTGRES_HOST: /var/run/postgresql
+      POSTGRES_DB: postgres
+      POSTGRES_PORT: '5432'
+    # TLS: the key must be owned by postgres with mode 0600, so copy it in before the server starts.
+    entrypoint:
+      - bash
+      - -c
+      - |
+        install -d -o postgres -m 700 /var/lib/postgresql/certs
+        install -o postgres -m 600 /certs-src/db.key /var/lib/postgresql/certs/server.key
+        install -o postgres -m 644 /certs-src/db.crt /var/lib/postgresql/certs/server.crt
+        exec docker-entrypoint.sh postgres -D /etc/postgresql -c ssl=on \
+          -c ssl_cert_file=/var/lib/postgresql/certs/server.crt \
+          -c ssl_key_file=/var/lib/postgresql/certs/server.key
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./.secrets:/certs-src:ro
+      - ./db/99-roles.sql:/docker-entrypoint-initdb.d/init-scripts/99-roles.sql:ro
+    ports:
+      - 127.0.0.1:55432:5432
+    healthcheck:
+      test: ['CMD', 'pg_isready', '-U', 'postgres', '-h', 'localhost']
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  auth:
+    image: supabase/gotrue:v2.197.0@sha256:1736a63078f5922b198c4cbe50f80ab9a2d3b54fe8b7b6cfb2e9dc5dbbc12c6b
+    depends_on:
+      db: { condition: service_healthy }
+    volumes:
+      - ./.secrets/ca.crt:/certs/ca.crt:ro
+    environment:
+      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${AUTH_DB_PASSWORD}@db:5432/postgres?sslmode=verify-full&sslrootcert=/certs/ca.crt
+      GOTRUE_JWT_SECRET: ${JWT_SECRET:?run with --env-file .secrets/.env}
+      # ES256 signing key (JWK); its public half is served at /auth/v1/.well-known/jwks.json.
+      GOTRUE_JWT_KEYS: '${JWT_KEYS:?run with --env-file .secrets/.env}'
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: '9999'
+      API_EXTERNAL_URL: https://localhost:8443/auth/v1
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_SITE_URL: http://localhost:3200
+      GOTRUE_URI_ALLOW_LIST: http://localhost:3200
+      GOTRUE_DISABLE_SIGNUP: 'true'
+      GOTRUE_JWT_ADMIN_ROLES: service_role
+      GOTRUE_JWT_AUD: authenticated
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      GOTRUE_JWT_EXP: '900'
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: 'true'
+      # No mail server in the walking skeleton: administrators create confirmed users.
+      GOTRUE_MAILER_AUTOCONFIRM: 'true'
+      GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_ENABLED: 'true'
+      GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_URI: pg-functions://postgres/private/custom_access_token_hook
+
+  gateway:
+    image: nginxinc/nginx-unprivileged:stable-alpine-slim@sha256:e28dcf0a161ddcbf228c7364b4a14f9bad4763ae8f5317c437b896afa3df4b84
+    depends_on: [auth]
+    volumes:
+      - ./gateway/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./.secrets/gateway.crt:/etc/nginx/certs/gateway.crt:ro
+      - ./.secrets/gateway.key:/etc/nginx/certs/gateway.key:ro
+    ports:
+      - 127.0.0.1:8443:8443
+
+  app:
+    build:
+      context: ../..
+      dockerfile: infra/docker/app.Dockerfile
+    image: jadarat/suite:local
+    depends_on: [gateway]
+    volumes:
+      - ./.secrets/ca.crt:/run/secrets/ca.crt:ro
+    environment:
+      # Request path: login role app_server only (never the migration role); TLS verify-full via the CA file.
+      DATABASE_URL_APP_SERVER: postgres://app_server:${APP_SERVER_DB_PASSWORD:?run with --env-file .secrets/.env}@db:5432/postgres
+      NEXT_PUBLIC_SUPABASE_URL: https://gateway:8443
+      # Self-hosted Auth does not check the key; any non-empty value (no Supabase cloud key exists here).
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: self-hosted
+      DATABASE_CA_CERT_FILE: /run/secrets/ca.crt
+      NODE_EXTRA_CA_CERTS: /run/secrets/ca.crt
+    ports:
+      - 127.0.0.1:3200:3000
+
+volumes:
+  db-data:

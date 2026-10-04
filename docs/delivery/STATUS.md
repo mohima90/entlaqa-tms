@@ -5,7 +5,7 @@
 | | |
 |---|---|
 | **Last updated** | 1 October 2026 |
-| **Current phase** | **M1 Foundation in progress** — foundation merged (PR #9); **staging database live** (all migrations applied and verified, access-token hook enabled, 1 Oct 2026); **sign-in live on staging** (T-M1-D03 done: e-mail + password, organization `entlaqa-demo`, sign-out, audit) — CI on PostgreSQL 17 and component library done — next: threat models, self-hosted spike, estimation · **M0 done** (Gate G0 passed 3 Oct 2026) |
+| **Current phase** | **M1 Foundation in progress** — foundation merged (PR #9); **staging database live** (all migrations applied and verified, access-token hook enabled, 1 Oct 2026); **sign-in live on staging** (T-M1-D03 done: e-mail + password, organization `entlaqa-demo`, sign-out, audit) — CI on PostgreSQL 17 and component library done — M2 threat models and self-hosted stack done — next: observability baseline, usability round 1, estimation · **M0 done** (Gate G0 passed 3 Oct 2026) |
 | **Next gate** | G0 (PO setup tasks) → G1 (Foundation sign-off) |
 | **Overall status** | 🟢 On track (no build started; dates are targets until Gate G1 re-baseline) |
 
@@ -19,7 +19,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 |---|---|---|---|---|
 | Planning (research, BRD, feature list, delivery plan) | — | 🟢 Done | — | See §4 documents |
 | M0 Mobilize | 1–2 | 🟢 Done | G0 | **Gate G0 passed 3 Oct 2026.** T-M0-01…07, 09, 10 done (MFA on GitHub, Supabase, Vercel confirmed); T-M0-08 (→ 2-week customer trials ≈ end of M5) and T-M0-11 deferred by PO; T-M0-12/13 needed later |
-| M1 Foundation | 3–8 | 🔵 In progress | G1 | Foundation merged (#9); walking skeleton live on staging (#10–#14); component library + Storybook done (T-M1-A02); remaining: per-epic threat models, self-hosted spike, estimation |
+| M1 Foundation | 3–8 | 🔵 In progress | G1 | Foundation merged (#9); walking skeleton live on staging (#10–#14); component library + Storybook done (T-M1-A02); M2 threat models done (TM-0002…0006); self-hosted stack verified (T-M1-D04, gate 15); remaining: observability baseline (T-M1-D06), usability round 1 (staff), estimation (T-M1-B14) |
 | M2 Platform core | 9–12 | ⚪ Not started | G2 | |
 | M3 Catalog & scheduling | 13–16 | ⚪ Not started | G3 | |
 | M4 Enrollment & manager | 17–19 | ⚪ Not started | G4 | |
@@ -42,7 +42,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 - [x] Track C: ASVS 5.0 L2 mapping; secure coding standard — merged (#9)
 - [x] Track D: monorepo scaffold; CI with the §5.3 gates — merged (#9), all checks green on GitHub; `CI gates` + CodeQL required on `main`
 - [x] Track D: walking skeleton on staging (T-M1-D03, #10–#14) — sign-in → Arabic RTL suite shell → audit event, verified by the PO on 1 Oct 2026
-- [ ] Track D: walking skeleton on the self-hosted stack (T-M1-D04)
+- [x] Track D: walking skeleton on the self-hosted stack (T-M1-D04) — `infra/docker`, CI gate 15 (4 Oct 2026)
 - [x] Track D: Vercel project `jadarat-tms` builds from `apps/suite` (Next.js, Node 24); `main` deployment Ready (1 Oct 2026)
 
 ---
@@ -153,10 +153,11 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 **Next Claude session** — continue M1:
 1. Turn the Tech Lead findings of TM-0002…0006 into M2 backlog stories/ADR updates (e.g. audit-table hardening F-AUD-01, `persons` grants F-PEO-01, host resolution F-TEN-02/03, Host-derived tenant label F-SHL-08); T-M1-C02 for M3–M6 epics before each starts.
-2. T-M1-D04 self-hosted stack spike (needs a Docker-capable environment).
-3. T-M1-B14 estimation and re-baselined plan → Gate G1.
+2. T-M1-D06 observability baseline (Sentry EU for cloud / GlitchTip for sovereign, structured logs, uptime) — PO creates the Sentry account (guided).
+3. T-M1-B14 estimation and re-baselined plan → Gate G1 (last M1 task, uses the M1 throughput data).
 4. Check R-33 (`braces` advisory) at the start of each session: when a patched release exists, update and remove the `ignoreGhsas` entry in `pnpm-workspace.yaml`.
 5. M0 support: T-M0-12 pen-test vendor shortlist.
+6. Self-hosted follow-ups (infra/docker/README.md): JWT key rotation with overlap, verification-attempt hooks (with R-34), Storage/Realtime/Supavisor when used.
 
 ---
 
@@ -164,6 +165,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
+| 4 Oct 2026 | T-M1-D04 done: whole product runs self-hosted (Postgres 17.11, Supabase Auth/GoTrue with the access-token hook, TLS gateway, distroless app container); real sign-in, audit, session revocation and TLS verified; ADR 0010 §3a blockers pass (hook incl. session_id, ES256/JWKS, TOTP→aal2); new CI gate 15 + app image scan; fix: Supabase settings read at runtime (were inlined at build time); risk R-56 (third-party image patching) |
 | 4 Oct 2026 | PR #18 merged (M2 threat models, risk register v0.2); PO delegated technical choices to Claude; T-M0-13 decided: Sentry EU (cloud) + GlitchTip (sovereign) |
 | 3 Oct 2026 | Independent review of the M2 threat models: approve with fixes — fixed (8 new risks rescored to at least their worst threat, R-34 and R-37 now 20; evidence/wording corrections; register v0.2 in the index) |
 | 3 Oct 2026 | T-M1-C02 (M2 part): five per-epic threat models TM-0002 tenancy & onboarding (39 threats), TM-0003 identity & roles (44), TM-0004 people directory (30), TM-0005 audit & consent (33), TM-0006 shell & notifications (32); IDs `T-<AREA>-NN`; risk register v0.2 (R-34…R-55, 55 risks); 17 PO decisions and 43 Tech Lead findings collected for M2 planning |

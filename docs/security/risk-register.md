@@ -31,7 +31,7 @@
 |---|---|---|---|---|---|
 | **5** | | | | | R-09 |
 | **4** | | | R-07, R-14, R-15, R-22, R-50, R-55 | R-05, R-10, R-16, R-19, R-28, R-35, R-36, R-40, R-41, R-43, R-45, R-52 | R-01, R-04, R-12, R-34, R-37 |
-| **3** | | | R-17, R-21, R-25, R-30, R-49 | R-02, R-06, R-08, R-11, R-13, R-18, R-20, R-23, R-24, R-26, R-27, R-29, R-31, R-42, R-44, R-46, R-47, R-48, R-51, R-53 | R-03, R-38, R-39, R-54 |
+| **3** | | | R-17, R-21, R-25, R-30, R-49 | R-02, R-06, R-08, R-11, R-13, R-18, R-20, R-23, R-24, R-26, R-27, R-29, R-31, R-42, R-44, R-46, R-47, R-48, R-51, R-53, R-56 | R-03, R-38, R-39, R-54 |
 | **2** | R-33 | | | R-32 | |
 | **1** | | | | | |
 
@@ -96,6 +96,7 @@
 | R-53 | **Date and time errors** (Hijri conversion, time zones, DST, hard-coded `Asia/Riyadh`) produce wrong deadlines, compliance status, quiet hours or certificate dates — integrity of regulatory evidence (TM-0006 T-SHL-29, T-SHL-30, T-SHL-31, T-SHL-32) | Integrity — regulatory evidence | 3 | 4 | 12 | 3 | Tech Lead | ADR 0007 conversion table; zone resolution user → branch → tenant (F-SHL-01); time-zone matrix tests in CI; Gregorian equivalent shown on Hijri deadline entry | Open | 2026-11-14 |
 | R-54 | **Template injection / render DoS** through tenant-editable Liquid e-mail templates (TM-0006 T-SHL-17) | Security — injection | 3 | 5 | 15 | 3 | Tech Lead | Strict LiquidJS sandbox, no file system, parse/render limits, compile-and-lint on save, worker-only rendering (F-SHL-07) | Open | 2026-11-14 |
 | R-55 | **Bidi-control and confusable spoofing**: U+202E-style overrides and homoglyphs in names, file names, sender names and codes make a person, file or amount look like something else in pickers, approvals, inbox and e-mails; hidden bidi characters in code or message catalogs (Trojan Source) (TM-0006 T-SHL-15, T-SHL-16; TM-0003 T-IAM-15; TM-0004 T-PEO-04; TM-0002 T-TEN-05) | Security — web / SDLC | 4 | 3 | 12 | 3 | Security Lead | Shared sanitizer (`safeText`: NFC, strip bidi overrides/isolates, SCS-4) on input and on render of imported data; `<bdi>`/`dir` isolation; disambiguators (employee number, department) in pickers and approvals; CI lint for bidi controls in source and catalogs (F-SHL-05) | Open | 2026-11-14 |
+| R-56 | **Unpatched third-party container images in self-hosted installations** (PostgreSQL, Auth/GoTrue, gateway): vendor images lag security fixes (e.g. 4 Oct 2026 scan: fixable HIGH CVEs in the Auth and gateway images), and customer installations may not upgrade | Supply chain / operations | 3 | 4 | 12 | 2 | DevOps (Claude) + customer operations | Images pinned by digest (`infra/docker/compose.yaml`); Dependabot `docker`/`docker-compose` updates weekly, each re-running gate 15; CI scans and reports them on every PR; our own app image must have no fixable HIGH/CRITICAL (gate 15, blocking); upgrade procedure and supported-version policy in the sovereign runbook before the first in-country customer (R3) | Open | 2026-11-30 |
 
 ---
 
@@ -119,4 +120,5 @@
 | 30 Sep 2026 | Register created (32 risks) from TM-0001 and BRD §12/§15/App. E | Security Lead (Claude) |
 | 3 Oct 2026 | R-33 added: unpatched `braces` advisory in lint tooling; audit exception accepted by the PO | Security Lead (Claude) |
 | 3 Oct 2026 | Review fix: new rows R-34…R-37, R-45, R-48, R-52, R-55 rescored to at least their worst cited threat (same inherent scale); heat map and top risks regenerated | Security Lead (Claude) |
+| 4 Oct 2026 | R-56 added: third-party container images in self-hosted installations (T-M1-D04 image scan) | Security Lead (Claude) |
 | 3 Oct 2026 | v0.2 — R-34…R-55 added from the M2 per-epic threat models TM-0002…TM-0006 (26 provisional proposals plus the two STATUS §3 risks merged into 22 rows: sign-in anti-automation with STATUS §3; account takeover via sign-up, invitations, reset and MFA reset from TM-0002/0003/0004; session lifetime with STATUS §3; IAM and org-data escalation from TM-0003/0004; in-tenant over-exposure of directory, custom-field and audit data from TM-0002/0003/0004/0005; bidi spoofing from all models). Threat-model references added to R-01, R-03, R-04, R-06, R-11, R-15, R-16, R-19, R-21, R-22, R-27, R-28, R-29; R-02 and R-29 → *Treating* (TM-0001 F-01 claim validation and the audit append-only guard are implemented and tested); R-04 records MFA off by default (PO, 1 Oct 2026); heat map and top risks updated (55 risks) | Security Lead (Claude) |

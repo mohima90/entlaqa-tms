@@ -1,0 +1,3 @@
+# Docker build context allow-list (infra/docker/app.Dockerfile copies only the standalone build output).
+*
+!apps/suite/.next/standalone

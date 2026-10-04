@@ -63,7 +63,7 @@ Other services in every sovereign stack: `clamd`, `pdf-renderer`, OTel Collector
 | Storage signed upload URLs (+ TUS) | ADR 0006 §3 | Direct browser upload of 200 MB via signed URL | Standard single-request signed upload (no resume) |
 | Supavisor session/transaction modes | ADR 0002 §5, ADR 0005 | Web (transaction) and worker LISTEN (session) both work | PgBouncer + direct connection for the worker |
 
-Results are recorded in the spike report and re-run on every Supabase component upgrade (§8).
+Results are recorded in the spike report and re-run on every Supabase component upgrade (§8). **Spike report (T-M1-D04, 4 Oct 2026): [`infra/docker/README.md`](../../infra/docker/README.md)** — hook incl. `session_id`, ES256/JWKS and TOTP → `aal2` pass on `supabase/gotrue:v2.197.0` + `supabase/postgres:17.11.0.003`; CI gate 15 re-runs the stack and checks on every PR.
 
 ### 4. Infrastructure as code
 - `infra/docker/` — Docker Compose for local development, CI parity tests and demos (derived from Supabase's self-hosting compose, pinned).
@@ -126,7 +126,7 @@ This ADR is the reference; every other ADR states its in-country alternative.
 New suite modules add no new deployables (modular monolith, ADR 0001) and ship through the same images, chart and parity suite.
 
 ## Verification
-1. T-M1-D04: walking skeleton runs on `infra/docker` with the access-token hook, TOTP and asymmetric keys verified.
+1. ✅ T-M1-D04 (4 Oct 2026): walking skeleton runs on `infra/docker` with the access-token hook, TOTP and asymmetric keys verified (gate 15).
 2. Nightly sovereign smoke suite green; release gates require it (Plan §10).
 3. Image signing and SBOM presence checked at deploy time (admission policy in sovereign clusters).
 4. Backup/restore drill evidence per release from R2; DR drill in M7.

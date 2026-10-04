@@ -51,7 +51,7 @@ create index person_employment_tenant_branch_idx on platform.person_employment (
 
 -- References must point at live rows, and the manager chain must not loop:
 --   * department / branch not soft-deleted; manager is an active person (checked when set or changed);
---   * no cycles in the manager chain (A → B → A), at most 50 levels.
+--   * no cycles in the manager chain (A → B → A), at most 50 levels (reports below a moved person count).
 -- Locks (READ COMMITTED; same keys as private.check_tree, always in the order departments → branches →
 -- person_employment) serialise these checks against concurrent soft deletes and manager changes.
 -- SECURITY INVOKER: sees the caller's tenant only (read policies are tenant-wide).
@@ -68,6 +68,8 @@ declare
   v_manager_changed boolean := new.manager_person_id is not null
     and (tg_op = 'INSERT' or new.manager_person_id is distinct from old.manager_person_id);
   v_cycle boolean;
+  v_above integer;
+  v_below integer;
 begin
   if v_dept_changed then
     perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('platform.departments:' || new.tenant_id::text, 0));
@@ -89,6 +91,18 @@ begin
                    where p.tenant_id = new.tenant_id and p.id = new.manager_person_id and p.status = 'active') then
       raise exception 'the direct manager must be an active person' using errcode = 'check_violation';
     end if;
+    -- Levels under the person (their reports move with them).
+    with recursive reports (person_id, depth) as (
+      select e.person_id, 1
+      from platform.person_employment e
+      where e.tenant_id = new.tenant_id and e.manager_person_id = new.person_id
+      union all
+      select e.person_id, r.depth + 1
+      from reports r
+      join platform.person_employment e on e.tenant_id = new.tenant_id and e.manager_person_id = r.person_id
+      where r.depth < 60
+    )
+    select coalesce(max(depth), 0) into v_below from reports;
     with recursive chain (person_id, depth, cycle) as (
       select e.manager_person_id, 1, e.manager_person_id = new.person_id
       from platform.person_employment e
@@ -99,7 +113,9 @@ begin
       join platform.person_employment e on e.tenant_id = new.tenant_id and e.person_id = c.person_id
       where not c.cycle and c.depth < 60 and e.manager_person_id is not null
     )
-    select coalesce(bool_or(cycle), false) or coalesce(max(depth), 0) >= 50 into v_cycle from chain;
+    -- managers above the new manager + the manager + the person + the levels under the person.
+    select coalesce(bool_or(cycle), false), coalesce(max(depth), 0) into v_cycle, v_above from chain;
+    v_cycle := v_cycle or v_above + 2 + v_below > 50;
     if v_cycle then
       raise exception 'the manager chain of person % would loop or exceed 50 levels', new.person_id
         using errcode = 'check_violation';
@@ -150,6 +166,38 @@ create trigger departments_until_people_moved before update of deleted_at on pla
 create trigger branches_until_people_moved before update of deleted_at on platform.branches
   for each row execute function private.check_org_unit_has_no_people();
 
+-- Reactivating a person whose last placement points at a since-deleted department or branch would put
+-- an active person in a deleted unit: the person is moved first. Takes the same locks as the soft
+-- deletes (departments → branches) so a concurrent delete and reactivation cannot both succeed.
+create or replace function private.check_person_reactivation()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  if old.status = 'inactive' and new.status = 'active' then
+    perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('platform.departments:' || new.tenant_id::text, 0));
+    perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('platform.branches:' || new.tenant_id::text, 0));
+    if exists (
+         select 1
+         from platform.person_employment e
+         left join platform.departments d on d.tenant_id = e.tenant_id and d.id = e.department_id
+         left join platform.branches b on b.tenant_id = e.tenant_id and b.id = e.branch_id
+         where e.tenant_id = new.tenant_id and e.person_id = new.id
+           and (d.deleted_at is not null or b.deleted_at is not null)) then
+      raise exception 'person % is placed in a deleted department or branch; move them before reactivating', new.id
+        using errcode = 'check_violation';
+    end if;
+  end if;
+  return new;
+end
+$$;
+
+revoke all on function private.check_person_reactivation() from public;
+
+create trigger persons_reactivation before update of status on platform.persons
+  for each row execute function private.check_person_reactivation();
+
 alter table platform.person_employment enable row level security;
 alter table platform.person_employment force row level security;
 
@@ -162,6 +210,20 @@ create policy person_employment_read on platform.person_employment for select to
 create policy person_employment_insert on platform.person_employment for insert to authenticated with check (true);
 create policy person_employment_update on platform.person_employment for update to authenticated using (true) with check (true);
 
--- One row per person for the person's lifetime: no DELETE grant (end_on records leaving).
+-- One row per person for the person's lifetime: no DELETE grant (end_on records leaving). UPDATE only
+-- on the placement columns: id, tenant_id and person_id are immutable (moving a row to another person
+-- would bypass every check above); [std] columns are set by private.stamp_row().
 revoke all on platform.person_employment from public, anon;
-grant select, insert, update on platform.person_employment to authenticated;
+grant select, insert on platform.person_employment to authenticated;
+grant update (branch_id, department_id, job_title_ar, job_title_en, grade, manager_person_id, hire_on, end_on,
+              source, source_ref)
+  on platform.person_employment to authenticated;
+
+-- Classification tags (data model §1.12).
+comment on column platform.person_employment.job_title_ar is 'pii:indirect';
+comment on column platform.person_employment.job_title_en is 'pii:indirect';
+comment on column platform.person_employment.grade is 'pii:indirect';
+comment on column platform.person_employment.manager_person_id is 'pii:indirect';
+comment on column platform.person_employment.hire_on is 'pii:indirect';
+comment on column platform.person_employment.end_on is 'pii:indirect';
+comment on column platform.person_employment.source_ref is 'pii:indirect';

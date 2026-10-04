@@ -1,4 +1,8 @@
 -- Rollback of 20261005090000_platform__add_persons_profile.sql.
+comment on column platform.persons.display_name_ar is null;
+comment on column platform.persons.display_name_en is null;
+comment on column platform.persons.email is null;
+comment on column platform.persons.employee_number is null;
 drop trigger persons_deactivation on platform.persons;
 drop function private.stamp_person_status();
 drop trigger persons_stamp_row on platform.persons;

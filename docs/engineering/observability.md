@@ -51,7 +51,7 @@ Add the variables under **Settings → Environment Variables**:
 Then redeploy. The DSN is not a password: it only lets a sender *submit* events. Keep it in the environment, not in code, so each deployment points at its own project.
 
 ### Sovereign installations
-GlitchTip 6.2.6 runs in-country, in `infra/docker` (`glitchtip` with its own database `errors-db`, events kept 90 days):
+GlitchTip 6.2.6 runs in-country in `infra/docker`: `glitchtip` with its own database `errors-db`, events kept 90 days, no route out of the installation, and its UI served over TLS by the gateway (`https://localhost:8100`).
 - One-time set-up: run `glitchtip/bootstrap.py` to create the operator account, organization and project. It prints the DSN with the internal host (`http://<key>@glitchtip:8000/<id>`); put that DSN in `.secrets/.env` as `SENTRY_DSN`. Steps are in [`infra/docker/README.md`](../../infra/docker/README.md).
 - The same SDK, scrubbing and tunnel are used as with Sentry EU.
 - Gate 15 proves it on every PR: one browser error and one server error (Auth down) must arrive in GlitchTip, redacted and without planted personal data.

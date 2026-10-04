@@ -75,7 +75,9 @@ fi
 
 # Values added after the first release are appended to an existing .env (upgrades keep old secrets).
 add_secret() {
-  grep -q "^$1=" "$S/.env" || printf '%s=%s\n' "$1" "$2" >>"$S/.env"
+  grep -q "^$1=" "$S/.env" && return 0
+  [[ -z "$(tail -c1 "$S/.env")" ]] || echo >>"$S/.env" # a hand-edited file may lack the final newline
+  printf '%s=%s\n' "$1" "$2" >>"$S/.env"
 }
 pw2() {
   local p

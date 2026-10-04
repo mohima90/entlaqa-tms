@@ -52,7 +52,15 @@ SENTRY_DSN="$(GLITCHTIP_ADMIN_PASSWORD="$(secret GLITCHTIP_ADMIN_PASSWORD)" comp
 [[ "$SENTRY_DSN" =~ ^http://[0-9a-f]{32}@glitchtip:8000/[0-9]+$ ]] ||
   { echo "smoke: GlitchTip set-up did not return a DSN" >&2; exit 1; }
 # The project (and so the DSN) is new whenever the volumes are: replace any DSN from an earlier run.
-sed -i '/^SENTRY_DSN=/d' .secrets/.env && echo "SENTRY_DSN=$SENTRY_DSN" >>.secrets/.env
+grep -v '^SENTRY_DSN=' .secrets/.env >.secrets/.env.new || true
+echo "SENTRY_DSN=$SENTRY_DSN" >>.secrets/.env.new && chmod 600 .secrets/.env.new && mv .secrets/.env.new .secrets/.env
+# The GlitchTip UI is served over TLS by the gateway; GlitchTip itself has no route out.
+[[ "$(curl -s -o /dev/null -w '%{http_code}' --cacert .secrets/ca.crt https://localhost:8100/_health/)" == "200" ]] ||
+  { echo "smoke: the GlitchTip UI is not reachable over TLS through the gateway" >&2; exit 1; }
+if compose exec -T glitchtip python3 -c \
+  "import urllib.request; urllib.request.urlopen('https://example.com', timeout=5)" >/dev/null 2>&1; then
+  echo "smoke: GlitchTip can reach the internet (it must stay in-country)" >&2; exit 1
+fi
 
 echo "smoke: starting the app container"
 compose up -d --build --wait app
@@ -137,7 +145,8 @@ envelope="$(printf '%s\n%s\n%s' '{"dsn":"https://browser@errors.invalid/1"}' '{"
 # Server error: sign in while the Auth gateway is down (AuthServiceError → reportError → GlitchTip).
 compose stop gateway >/dev/null
 (cd "$ROOT/apps/suite" && E2E_BASE_URL=http://localhost:3200 AUTH_OUTAGE_E2E=1 \
-  pnpm exec playwright test e2e/auth-outage.spec.ts --project=desktop-chromium)
+  pnpm exec playwright test e2e/auth-outage.spec.ts --project=desktop-chromium) ||
+  { compose start gateway >/dev/null; exit 1; }
 compose start gateway >/dev/null
 events=""
 for i in $(seq 1 30); do
@@ -146,10 +155,33 @@ for i in $(seq 1 30); do
   [[ $i -eq 30 ]] && { echo "smoke: the browser and server errors did not both reach GlitchTip" >&2; exit 1; }
   sleep 2
 done
-for leak in leak.check@sovereign.example 0501234567 LeakCheck outage.check@sovereign.example \
-  Outage-Check-Password-1 "$EMAIL" "$PASSWORD"; do
+planted=(leak.check@sovereign.example 0501234567 LeakCheck outage.check@sovereign.example
+  Outage-Check-Password-1 "$EMAIL" "$PASSWORD" "$PARITY_EMAIL" "$PARITY_PASSWORD")
+for leak in "${planted[@]}"; do
   if grep -qF "$leak" <<<"$events"; then
     echo "smoke: personal data reached the error tracker" >&2; exit 1
   fi
 done
+if grep -qE '[[:alnum:]._%+-]+@[[:alnum:]-]+(\.[[:alnum:]-]+)*\.[[:alpha:]]{2,}' <<<"$events"; then
+  echo "smoke: an e-mail address reached the error tracker" >&2; exit 1
+fi
 grep -q '\[redacted\]' <<<"$events" || { echo "smoke: error messages were not redacted" >&2; exit 1; }
+
+# The error paths above wrote new log lines: scan the logs once more for the planted values, any e-mail
+# address and the installation's secrets.
+app_logs="$(compose logs --no-log-prefix app 2>&1)"
+all_logs="$(compose logs --no-log-prefix 2>&1)"
+for leak in "${planted[@]}"; do
+  if grep -qF "$leak" <<<"$app_logs"; then
+    echo "smoke: personal data appears in the app logs after the error checks" >&2; exit 1
+  fi
+done
+if grep -qE '[[:alnum:]._%+-]+@[[:alnum:]-]+(\.[[:alnum:]-]+)*\.[[:alpha:]]{2,}' <<<"$app_logs"; then
+  echo "smoke: an e-mail address appears in the app logs after the error checks" >&2; exit 1
+fi
+for name in AUTH_DB_PASSWORD APP_SERVER_DB_PASSWORD ERRORS_DB_PASSWORD GLITCHTIP_ADMIN_PASSWORD \
+  GLITCHTIP_SECRET_KEY; do
+  if grep -qF "$(secret "$name")" <<<"$all_logs"; then
+    echo "smoke: the secret $name appears in the container logs" >&2; exit 1
+  fi
+done

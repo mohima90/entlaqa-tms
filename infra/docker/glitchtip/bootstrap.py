@@ -13,6 +13,8 @@ from apps.users.models import User
 
 email = os.environ["GLITCHTIP_ADMIN_EMAIL"]
 password = os.environ["GLITCHTIP_ADMIN_PASSWORD"]
+if "@" not in email or len(password) < 16:
+    raise SystemExit("bootstrap: GLITCHTIP_ADMIN_EMAIL and a GLITCHTIP_ADMIN_PASSWORD of 16+ characters are required")
 
 user = User.objects.filter(email=email).first()
 if user is None:

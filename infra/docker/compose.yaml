@@ -3,9 +3,10 @@
 # the cloud), Supabase Auth (GoTrue) with the Custom Access Token hook, a TLS gateway, the app, and the
 # in-country error tracker (GlitchTip, Sentry-compatible; ADR 0009 §4) with its own database.
 # TLS verified against the installation's CA on every hop that leaves a private network: app → db,
-# Auth → db (PostgreSQL requires TLS for all network clients, db/pg_hba.conf) and app → gateway. The one
-# plain-HTTP hop, gateway → Auth, runs on an internal-only network that only those two containers join
-# (Supabase Auth has no TLS listener). Containers drop privileges; app and gateway are read-only.
+# Auth → db (PostgreSQL requires TLS for all network clients, db/pg_hba.conf) and app → gateway; the
+# GlitchTip UI is served through the gateway's TLS too. Plain-HTTP hops run only on internal networks:
+# gateway → Auth and app/gateway → GlitchTip (neither service has a TLS listener). Auth and GlitchTip
+# have no outbound route. Containers drop privileges; app, gateway, Auth and GlitchTip are read-only.
 # Images are pinned by digest (multi-arch index); bump deliberately with the hosted versions.
 # Secrets: ./gen-secrets.sh → .secrets/ (git-ignored); always run compose with
 #   docker compose --env-file .secrets/.env …
@@ -23,7 +24,7 @@ networks:
   auth-internal: { internal: true } # gateway ⇄ Auth (the plain-HTTP hop)
   db-app: {} # db ⇄ app (+ the db host port used for migrations)
   edge: {} # app ⇄ gateway (+ published ports)
-  errors: {} # app ⇄ GlitchTip (plain HTTP inside the installation; + the GlitchTip UI port)
+  errors: { internal: true } # app, gateway ⇄ GlitchTip (plain HTTP; no route out of the installation)
   errors-internal: { internal: true } # GlitchTip ⇄ its own database (error data never in the TMS db)
 
 services:
@@ -107,7 +108,7 @@ services:
     read_only: true
     cap_drop: [ALL]
     tmpfs: [/tmp]
-    networks: [auth-internal, edge]
+    networks: [auth-internal, edge, errors]
     healthcheck:
       test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:8081/healthz']
       interval: 5s
@@ -121,6 +122,7 @@ services:
       - ./.secrets/gateway.key:/etc/nginx/certs/gateway.key:ro
     ports:
       - 127.0.0.1:8443:8443
+      - 127.0.0.1:8100:8100 # GlitchTip UI (TLS)
 
   app:
     build:
@@ -146,7 +148,7 @@ services:
       NODE_EXTRA_CA_CERTS: /run/secrets/ca.crt
       JADARAT_ENVIRONMENT: self-hosted
       # Error tracking (ADR 0009 §4): the DSN of this installation's GlitchTip project, with the internal
-      # host, e.g. http://<key>@glitchtip:8000/<project id> (glitchtip/README.md). Unset = logs only.
+      # host, e.g. http://<key>@glitchtip:8000/<project id> (README.md, "Error tracking"). Unset = logs only.
       SENTRY_DSN: ${SENTRY_DSN:-}
     ports:
       - 127.0.0.1:3200:3000
@@ -154,8 +156,10 @@ services:
   # In-country error tracking (ADR 0009 §4, T-M1-D06): GlitchTip in all-in-one mode (web + worker, no
   # Valkey) with its own PostgreSQL. Errors arrive already scrubbed by the app; retention 90 days.
   errors-db:
-    image: postgres:17@sha256:d74eeac9a635390a49bc21bd49fccd973de707e2a53a76ac49b552b8712ec46f
+    image: postgres:17.11@sha256:d74eeac9a635390a49bc21bd49fccd973de707e2a53a76ac49b552b8712ec46f
     <<: *hardening
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
     networks: [errors-internal]
     command: ['postgres', '-c', 'max_locks_per_transaction=512']
     environment:
@@ -173,7 +177,9 @@ services:
   glitchtip:
     image: glitchtip/glitchtip:6.2.6@sha256:a3d8eb1b36c1e1603d55ab32711ea3dd8115874742a781a57391a62a16e0dff6
     <<: *hardening
+    read_only: true
     cap_drop: [ALL]
+    tmpfs: [/tmp]
     command: ['./bin/run-all-in-one.sh']
     networks: [errors, errors-internal]
     depends_on:
@@ -182,20 +188,26 @@ services:
       DATABASE_URL: postgres://glitchtip:${ERRORS_DB_PASSWORD:?run with --env-file .secrets/.env}@errors-db:5432/glitchtip
       VALKEY_URL: ''
       SECRET_KEY: ${GLITCHTIP_SECRET_KEY:?run with --env-file .secrets/.env}
-      # Address operators open the GlitchTip UI at (port bound to 127.0.0.1; put it behind TLS in production).
-      GLITCHTIP_DOMAIN: http://localhost:8100
-      ALLOWED_HOSTS: glitchtip,localhost,127.0.0.1
+      # The UI address operators use: through the gateway's TLS (gateway/nginx.conf, port 8100). Set the
+      # three values below in .secrets/.env for a real host name.
+      GLITCHTIP_DOMAIN: ${GLITCHTIP_DOMAIN:-https://localhost:8100}
+      CSRF_TRUSTED_ORIGINS: ${GLITCHTIP_DOMAIN:-https://localhost:8100}
+      ALLOWED_HOSTS: ${GLITCHTIP_ALLOWED_HOSTS:-glitchtip,localhost,127.0.0.1}
       ENABLE_USER_REGISTRATION: 'false'
       ENABLE_ORGANIZATION_CREATION: 'false'
-      GLITCHTIP_MAX_EVENT_LIFE_DAYS: '90'
+      # No Django admin or API browser; no uptime monitoring (it would call out of the installation).
+      ENABLE_ADMIN: 'false'
+      ENABLE_OPENAPI: 'false'
+      GLITCHTIP_ENABLE_UPTIME: 'false'
+      # Second line of defence: GlitchTip's own scrubber (the app already scrubs every event).
+      GLITCHTIP_PII_SCRUB_DEFAULT: '{"enabled": true, "scrub_emails": true}'
+      GLITCHTIP_RETENTION_DAYS: '90'
     healthcheck:
       test: ['CMD', 'python3', '/code/healthcheck.py']
       interval: 5s
       timeout: 5s
       retries: 60
       start_period: 30s
-    ports:
-      - 127.0.0.1:8100:8000
 
 volumes:
   db-data:

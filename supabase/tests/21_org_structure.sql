@@ -17,11 +17,12 @@ begin
     'branches_name_ar_check', 'branches: Arabic name cannot be blank');
   -- Invisible-only names (written with chr() so this file has no invisible characters itself):
   -- tab+newline+ZWSP+NBSP, Arabic letter mark, RTL override, LTR isolate, soft hyphen, combining
-  -- grapheme joiner, Mongolian vowel separator, ZWSP+LTR embedding.
+  -- grapheme joiner, Mongolian vowel separator, ZWSP+LTR embedding, braille blank, object replacement,
+  -- tag characters.
   perform tests.assert_check_constraint(format('insert into platform.branches (code, name_ar) values (%L, %L)', 'X', v),
     'branches_name_ar_check', format('branches: invisible-only Arabic name %s is rejected', encode(convert_to(v, 'UTF8'), 'hex')))
   from unnest(array[chr(9) || chr(10) || chr(8203) || chr(160), chr(1564), chr(8238), chr(8294), chr(173), chr(847),
-                    chr(6158), chr(8203) || chr(8234)]) as v;
+                    chr(6158), chr(8203) || chr(8234), chr(10240), chr(65532), chr(917505) || chr(917607)]) as v;
   perform tests.assert(private.has_visible_text(chr(8207) || 'فرع'), 'a name with a visible letter next to a mark is accepted');
   perform tests.assert_check_constraint(format('insert into platform.branches (code, name_ar, city_ar) values (%L, %L, %L)', 'X', 'فرع', repeat('م', 121)),
     'branches_city_check', 'branches: city length is limited');

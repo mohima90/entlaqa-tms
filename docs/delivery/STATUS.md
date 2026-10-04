@@ -173,7 +173,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
-| 4 Oct 2026 | T-M2-01 built: branches + departments tables with tenant isolation, tree rules and tamper-proof created/updated stamps; all database tests and the hosted-Supabase simulation pass; independent review in progress |
+| 4 Oct 2026 | T-M2-01 built: branches + departments tables with tenant isolation, tree rules and tamper-proof created/updated/deleted stamps; three independent review rounds (2 Medium + 7 Low fixed, concurrency verified with two sessions) → **approve**; all database tests and the hosted-Supabase simulation pass |
 | 4 Oct 2026 | PO approved the 11 users & roles screens after one change (direct manager chosen from the department's managers); screens saved in `docs/design/screens/m2-users-roles/`, glossary +4 terms (sign-in session, invitation, deactivate, primary/additional role); `EP-M2-IAM` broken into T-M2-01…12 |
 | 4 Oct 2026 | M2 started with users & roles: 11 product-level Arabic screens (users list with filters, invite with primary + extra roles, profile with sign-in sessions and audit trail, deactivate with reassignment, roles & permission matrix from BRD Appendix B, security settings, bilingual invitation e-mail, accept invitation, expired/revoked/used links, forgot/reset password) sent to the PO for review; T-M1-A05 cancelled (mock-up too shallow), M1 closed |
 | 4 Oct 2026 | PR #27 merged (GlitchTip in-country error tracking; T-M1-D06 done). PO: skip the time plan for now, build step by step — M2 starts with users & roles (invitations, roles, password reset) |

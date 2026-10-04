@@ -11,7 +11,7 @@ The whole product running on servers we (or the customer) control, with no Verce
 | `gateway` | `nginxinc/nginx-unprivileged:stable-alpine-slim` | TLS in front of Auth, Supabase URL layout (`/auth/v1/…`) |
 | `app` | `jadarat/suite:local` (`app.Dockerfile`, distroless Node 24, non-root) | The web app (standalone build) |
 | `glitchtip` | `glitchtip/glitchtip:6.2.6` (MIT) | In-country error tracker, Sentry-compatible (ADR 0009 §4). All-in-one mode (web + worker, no Valkey); no route out of the installation; UI over TLS through the gateway at `https://localhost:8100`; events kept 90 days |
-| `errors-db` | `postgres:17` | GlitchTip's own database: error data never shares the TMS database |
+| `errors-db` | `postgres:17.11` | GlitchTip's own database: error data never shares the TMS database |
 
 **Network and TLS.** The database accepts network connections **only over TLS** (`db/pg_hba.conf`), and its clients verify it against the installation's own CA (app → db, Auth → db, migrations); the app verifies the gateway the same way. There are two plain-HTTP hops inside the installation:
 - **gateway → Auth.** Supabase Auth has no TLS listener. The hop runs on an internal network that only those two containers join, and Auth has no route anywhere except the database and the gateway.
@@ -54,7 +54,11 @@ GLITCHTIP_ADMIN_PASSWORD="$(sed -n 's/^GLITCHTIP_ADMIN_PASSWORD=//p' .secrets/.e
 Then:
 1. Add `SENTRY_DSN=<that DSN>` to `.secrets/.env` and restart the app (`up -d app`).
 2. Operators sign in at `https://localhost:8100` with that account. The gateway serves it over TLS with the installation's CA. Registration and organization creation are off.
-3. For a real host name, set `GLITCHTIP_DOMAIN` (e.g. `https://errors.customer.example:8100`) and `GLITCHTIP_ALLOWED_HOSTS` in `.secrets/.env`. Connect the customer's SSO before go-live.
+3. For a real host name:
+   - set `GLITCHTIP_DOMAIN` (e.g. `https://errors.customer.example:8100`) and `GLITCHTIP_EXTRA_HOSTS` (e.g. `errors.customer.example`) in `.secrets/.env`; the internal names stay allowed;
+   - give the gateway a certificate for that name from the customer's PKI. The generated CA is name-constrained to the stack's own hosts and cannot sign one.
+   
+   Connect the customer's SSO before go-live.
 
 **Upgrading an existing installation.** Re-run `./gen-secrets.sh` after pulling a new version. It keeps every existing secret and appends the ones the new version needs (e.g. GlitchTip's). Without them, every `docker compose` command stops with "run with --env-file".
 

@@ -57,10 +57,12 @@ echo "SENTRY_DSN=$SENTRY_DSN" >>.secrets/.env.new && chmod 600 .secrets/.env.new
 # The GlitchTip UI is served over TLS by the gateway; GlitchTip itself has no route out.
 [[ "$(curl -s -o /dev/null -w '%{http_code}' --cacert .secrets/ca.crt https://localhost:8100/_health/)" == "200" ]] ||
   { echo "smoke: the GlitchTip UI is not reachable over TLS through the gateway" >&2; exit 1; }
-if compose exec -T glitchtip python3 -c \
-  "import urllib.request; urllib.request.urlopen('https://example.com', timeout=5)" >/dev/null 2>&1; then
-  echo "smoke: GlitchTip can reach the internet (it must stay in-country)" >&2; exit 1
-fi
+for target in "('example.com', 443)" "('1.1.1.1', 443)"; do # by name and by address (not just DNS)
+  if compose exec -T glitchtip python3 -c \
+    "import socket; socket.create_connection($target, timeout=5)" >/dev/null 2>&1; then
+    echo "smoke: GlitchTip can reach the internet (it must stay in-country)" >&2; exit 1
+  fi
+done
 
 echo "smoke: starting the app container"
 compose up -d --build --wait app
@@ -166,6 +168,11 @@ if grep -qE '[[:alnum:]._%+-]+@[[:alnum:]-]+(\.[[:alnum:]-]+)*\.[[:alpha:]]{2,}'
   echo "smoke: an e-mail address reached the error tracker" >&2; exit 1
 fi
 grep -q '\[redacted\]' <<<"$events" || { echo "smoke: error messages were not redacted" >&2; exit 1; }
+# GlitchTip's own scrubber marks what it removes with [Filtered]: that only happens when the app let
+# something through, so it must never appear (it would otherwise hide an app scrubbing regression).
+if grep -qF '[Filtered]' <<<"$events"; then
+  echo "smoke: GlitchTip had to scrub data the app should have removed" >&2; exit 1
+fi
 
 # The error paths above wrote new log lines: scan the logs once more for the planted values, any e-mail
 # address and the installation's secrets.

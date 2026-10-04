@@ -103,7 +103,12 @@ describe('scrubErrorEvent', () => {
             mechanism: { type: 'generic', handled: true, data: { input: 'a@b.co' } },
             stacktrace: {
               frames: [
-                { function: 'Ahmed (a@b.co)', filename: 'x', abs_path: 'y', module: 'z' },
+                {
+                  function: 'Ahmed (a@b.co)',
+                  filename: 'https://app/ar?name=Ahmed',
+                  abs_path: 'https://app/x#f',
+                  module: 'z',
+                },
                 {
                   filename: 'a.ts',
                   lineno: 1,
@@ -146,7 +151,12 @@ describe('scrubErrorEvent', () => {
     );
     expect(scrubbed.exception?.values?.[2]).toEqual({ type: 'Error' });
     expect(scrubbed.exception?.values?.[0]?.stacktrace?.frames).toEqual([
-      { function: 'Ahmed ([email])', filename: 'x', abs_path: 'y', module: 'z' },
+      {
+        function: 'Ahmed ([email])',
+        filename: 'https://app/ar',
+        abs_path: 'https://app/x',
+        module: 'z',
+      },
       { filename: 'a.ts', lineno: 1 },
     ]);
     expect(scrubbed.exception?.values?.[0]?.mechanism).toEqual({ type: 'generic', handled: true });

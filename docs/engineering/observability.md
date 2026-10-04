@@ -8,7 +8,7 @@
 | Signal | Where it goes | Content |
 |---|---|---|
 | **Logs** | stdout/stderr as one JSON object per line (Vercel runtime logs; `docker compose logs` in containers) | `time, level, msg, service, env, deployment, version` + a **closed** set of fields: `action, permission, correlation_id, tenant_id, status, outcome, duration_ms, error_code, error_name, route` |
-| **Errors** | Sentry (EU data region, org `entlaqa-qv`, project `javascript-nextjs`) for the cloud; GlitchTip in-country for sovereign installations | Error class, stack locations (file, function, line), route without query string, release, environment, tags `action`, `permission`, `correlation_id`, `tenant_id`, `error_code` (e.g. PostgreSQL SQLSTATE `23505`). The message is `[redacted]`, except for allow-listed error classes whose messages contain no input |
+| **Errors** | Sentry (EU data region, org `entlaqa-qv`, project `javascript-nextjs`) for the cloud; GlitchTip in-country for sovereign installations | Error class, stack locations (file, function, line), route without query string, release, environment, tags `action`, `permission`, `correlation_id`, `tenant_id`, `error_code` (e.g. PostgreSQL SQLSTATE `23505`). The message is `[redacted]`, except for allow-listed error classes whose messages contain no input. **Server and browser** errors; browser reports carry the tag `source: browser` |
 | **Uptime** | GitHub Actions every 15 min → issue "Uptime: staging is down" | HTTP status of `/api/health/ready` |
 
 **Never sent or logged by our code** (ADR 0009 §2): names, e-mails, phone numbers, national IDs (Saudi ID/Iqama, Emirates ID, Egyptian ID), IP addresses, request or response bodies, query strings, cookies, headers, tokens, passwords, local variables, source code lines, breadcrumbs. Enforcement:
@@ -22,7 +22,7 @@
    - breadcrumbs, extra data and threads;
    - local variables, source lines and the server name.
    Objects nested more than 6 levels deep are replaced by `[depth]`.
-5. `sendDefaultPii: false`, no tracing and no session replay. The `ContextLines` integration is off, and unhandled rejections are reported without being printed.
+5. The SDK's own data collection is fully off (`dataCollection` = `NO_DATA_COLLECTION`): no user info, cookies, headers, bodies, query strings, local variables or source lines. Sentry v11 replaced `sendDefaultPii` with `dataCollection`, and its defaults collect all of these. There is no tracing and no session replay, the `ContextLines` integration is off, and unhandled rejections are reported without being printed.
 6. Sentry organization settings (PO, 4 Oct 2026): Data Scrubber, Default Scrubbers and Prevent Storing of IP Addresses are all **required**.
 7. Tests:
    - unit tests per pattern;
@@ -35,6 +35,8 @@
 
 | Variable | Example | Purpose |
 |---|---|---|
+| `SENTRY_BROWSER_DSN` (optional) | DSN of a separate Sentry project for browser errors | Browser reports go here instead of `SENTRY_DSN` |
+| `JADARAT_CLIENT_IP_HEADER` (optional) | `x-real-ip` | Header holding the client IP that the load balancer in front of the app **overwrites** (never one it appends to, such as `x-forwarded-for`), for per-client limits. Vercel's `x-real-ip` is trusted automatically; without a trusted header all clients share one limit |
 | `SENTRY_DSN` | Sentry → Settings → Projects → `javascript-nextjs` → **Client Keys (DSN)** | Turns error tracking on. Unset or invalid = logs only. Must be `https://` (plain `http://` only to a single-label host on the installation's private network, e.g. `http://key@glitchtip:8000/1`) |
 | `JADARAT_ENVIRONMENT` | `staging`, `production`, `self-hosted` | `env` in logs, `environment` in Sentry (default: Vercel's `VERCEL_ENV`, else `NODE_ENV`) |
 | `JADARAT_DEPLOYMENT` | `eu-saas-1`, `sa-gov-1` | `deployment` in logs (optional) |
@@ -50,6 +52,28 @@ Then redeploy. The DSN is not a password: it only lets a sender *submit* events.
 
 ### Sovereign installations
 Run GlitchTip in-country and set `SENTRY_DSN` in `infra/docker/.secrets/.env`; compose passes it to the app. GlitchTip in the compose file and its parity check are T-M1-D06 part b.
+
+## Browser errors (`POST /api/monitoring/errors`)
+
+The browser reports uncaught errors and unhandled rejections through **our own server**, never directly to Sentry:
+- `src/instrumentation-client.ts` uses the `@sentry/browser` SDK. It adds about 29 KiB gzip of client JS (total 207 of the 250 KiB budget). The scrubbing patterns need Safari 16.4 or later, Next.js 16's own baseline.
+- The browser sends to the same-origin endpoint `/api/monitoring/errors` (`connect-src 'self'`) with a placeholder DSN on the never-resolving `.invalid` domain. Sessions, tracing, breadcrumbs and console capture are off.
+
+The server (`lib/error-tunnel.ts`, created with `definePublicRoute`) is a **public, unauthenticated** endpoint, so it is bounded:
+- It refuses cross-site browser requests (`Sec-Fetch-Site`). Scripts that send no fetch-metadata headers are accepted, which is why the limits below exist.
+- At most 64 KiB and **one** error event per envelope. The event is **rebuilt from an allow-list** (`sanitizeBrowserEvent`):
+  - kept: exception types, values and frame locations, level, timestamp and page URL;
+  - dropped: user, tags, headers, contexts, extra data, debug metadata, the client fingerprint and SDK settings.
+
+  It is then scrubbed like server events, and the browser's environment and release are replaced by the server's own.
+- Rate limits per minute and per instance: at most **10 forwarded reports per client** (keyed on a client-IP header the platform overwrites: `x-real-ip` on Vercel, or the one named in `JADARAT_CLIENT_IP_HEADER`; only a valid IP address counts; kept in memory, never logged) and **60 in total**.
+- The upstream request times out after 5 seconds, and the browser always gets the same answer.
+- Destination: `SENTRY_BROWSER_DSN` if set, otherwise `SENTRY_DSN`. A separate browser project keeps forged browser reports from using up the quota that server errors depend on. With no DSN at all, reports are dropped (`204`).
+
+**Before the first customer (PO, guided):**
+1. Create a separate Sentry project for browser errors and set `SENTRY_BROWSER_DSN`.
+2. Set a per-key rate limit on both Sentry projects (Settings → Client Keys → Rate limits).
+3. Consider a Vercel firewall rate-limit rule for `/api/monitoring/errors`.
 
 ## Health endpoints
 
@@ -81,7 +105,6 @@ This is a staging baseline. Production needs external checks from at least two r
 | Gap | Why | Planned |
 |---|---|---|
 | Stack traces show compiled (minified) server code | In-process source maps are not applied by Next.js 16 / Turbopack at runtime (tried 4 Oct 2026). Disabling minification would also unminify the browser bundle | Upload source maps privately at build time to Sentry and GlitchTip (ADR 0009 §4), T-M1-D06 part b |
-| Browser (client-side) errors are not reported | The browser SDK needs a runtime DSN, which means a tunnel route through our server, plus a check against the bundle budget | T-M1-D06 part b |
 | GlitchTip not yet in `infra/docker` | — | T-M1-D06 part b |
 | Supabase Auth (GoTrue) writes the e-mail of each sign-in to its own logs (`actor_username`, `user_email`; seen in the self-hosted smoke test). On the hosted cloud, Supabase keeps those logs | Third-party component; we cannot change its log content | Self-hosted: collect GoTrue logs through a scrubbing collector with short retention (ADR 0009 §5 Collector, M2). Cloud: covered by the Supabase sub-processor terms and the log access rules |
 | Source-map upload vs. the licence policy | The Sentry CLI used for uploads is FSL-licensed and removed from the install | Part b: upload through the Sentry/GlitchTip HTTP API from a small script, or a PO-approved licence exception for a build-only tool |

@@ -3,6 +3,7 @@ import {
   errorTrackingOptions,
   isAllowedDsn,
   isErrorTrackingDsnSet,
+  readBrowserErrorTrackingConfig,
   readErrorTrackingConfig,
 } from './error-tracking';
 
@@ -53,6 +54,28 @@ describe('readErrorTrackingConfig', () => {
   });
 });
 
+describe('readBrowserErrorTrackingConfig', () => {
+  it('uses SENTRY_BROWSER_DSN when set, else the server DSN', () => {
+    vi.stubEnv('SENTRY_DSN', DSN);
+    vi.stubEnv('SENTRY_BROWSER_DSN', '');
+    vi.stubEnv('JADARAT_ENVIRONMENT', 'staging');
+    vi.stubEnv('JADARAT_RELEASE', 'r9');
+    expect(readBrowserErrorTrackingConfig()?.dsn).toBe(DSN);
+    const browser = 'https://feed@o1.ingest.de.sentry.io/99';
+    vi.stubEnv('SENTRY_BROWSER_DSN', browser);
+    expect(readBrowserErrorTrackingConfig()).toEqual({
+      dsn: browser,
+      environment: 'staging',
+      release: 'r9',
+    });
+    vi.stubEnv('JADARAT_RELEASE', '');
+    vi.stubEnv('VERCEL_GIT_COMMIT_SHA', '');
+    expect(readBrowserErrorTrackingConfig()).not.toHaveProperty('release');
+    vi.stubEnv('SENTRY_BROWSER_DSN', 'http://key@errors.example.com/1');
+    expect(readBrowserErrorTrackingConfig()).toBeNull();
+  });
+});
+
 describe('errorTrackingOptions', () => {
   it('sends errors only, without personal data', () => {
     const options = errorTrackingOptions({ dsn: DSN, environment: 'staging', release: 'r1' });
@@ -60,8 +83,15 @@ describe('errorTrackingOptions', () => {
       dsn: DSN,
       environment: 'staging',
       release: 'r1',
-      sendDefaultPii: false,
-      includeLocalVariables: false,
+      dataCollection: expect.objectContaining({
+        userInfo: false,
+        cookies: false,
+        httpHeaders: false,
+        httpBodies: [],
+        urlQueryParams: false,
+        stackFrameVariables: false,
+        frameContextLines: 0,
+      }) as unknown,
       maxBreadcrumbs: 0,
       enableOpenTelemetrySetup: false,
       enableRuntimeChannelInjection: false,

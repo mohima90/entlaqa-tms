@@ -6,7 +6,8 @@
   "description": "Operational telemetry without personal data: structured JSON logs, PII scrubbing, error-reporting hook (ADR 0009 §2, §4; T-M1-D06).",
   "sideEffects": false,
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./scrub": "./src/scrub.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",

@@ -13,15 +13,29 @@
  *    package (@jadarat/platform-rbac) — a local or foreign function with the same name is rejected.
  *  - `definePublicAction` (pre-tenant sign-in flows, no permission check) is allowed ONLY in
  *    apps/suite/src/auth/*.ts(x), so every unauthenticated entry point lives in one reviewed place.
+ *  - `definePublicRoute` (mutating route without a session, e.g. browser error reports) is allowed
+ *    ONLY in the route files listed in PUBLIC_ROUTE_FILES — each one reviewed. Anywhere else (except
+ *    its own package) even importing or calling it fails, so it cannot be wrapped or passed around.
  */
 import ts from 'typescript';
 
 const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 /** Packages allowed to provide defineAction / defineRoute. */
 export const PLATFORM_ACTION_PACKAGES = new Set(['@jadarat/platform-rbac']);
-const FACTORIES = ['defineAction', 'defineRoute', 'definePublicAction'];
+const FACTORIES = ['defineAction', 'defineRoute', 'definePublicAction', 'definePublicRoute'];
 /** The only files that may export definePublicAction() actions (ADR 0003 §2 sign-in flows). */
 export const PUBLIC_ACTION_FILES = /^apps\/suite\/src\/auth\/[^/]+\.(ts|tsx)$/;
+
+/**
+ * The only route files that may export definePublicRoute() handlers. Add a file here only with a
+ * security review: it is a public, unauthenticated write endpoint.
+ */
+export const PUBLIC_ROUTE_FILES = new Set([
+  // Browser error reports → scrubbed, rate-limited tunnel to the error tracker (ADR 0009 §4, T-M1-D06).
+  'apps/suite/src/app/api/monitoring/errors/route.ts',
+]);
+
+const PUBLIC_ROUTE_NAMES = new Set(['definePublicRoute', 'createDefinePublicRoute']);
 
 /** File extensions scanned by the gate. */
 export const SCANNED_SOURCE = /\.(ts|tsx|js|jsx|mjs|cjs)$/;
@@ -227,11 +241,14 @@ export function checkServerActionsSource(fileName, source) {
       }
       if (ts.isVariableStatement(st) && isExported(st)) {
         for (const decl of st.declarationList.declarations) {
-          if (
-            ts.isIdentifier(decl.name) &&
-            MUTATING.has(decl.name.text) &&
-            !isCallTo(decl.initializer, 'defineRoute')
-          ) {
+          if (!ts.isIdentifier(decl.name) || !MUTATING.has(decl.name.text)) continue;
+          if (isCallTo(decl.initializer, 'definePublicRoute')) {
+            if (!PUBLIC_ROUTE_FILES.has(fileName)) {
+              errors.push(
+                `${where(decl)}: definePublicRoute() is allowed only in the reviewed public route files (PUBLIC_ROUTE_FILES)`,
+              );
+            }
+          } else if (!isCallTo(decl.initializer, 'defineRoute')) {
             errors.push(
               `${where(decl)}: mutating route handler ${decl.name.text} must be created with defineRoute()`,
             );
@@ -256,6 +273,28 @@ export function checkServerActionsSource(fileName, source) {
         }
       }
     }
+  }
+
+  // definePublicRoute / createDefinePublicRoute may not appear AT ALL outside the reviewed files and
+  // their own package: no identifier, property, string key or re-export by that name (no indirect use).
+  if (!PUBLIC_ROUTE_FILES.has(fileName) && !fileName.startsWith('packages/platform-rbac/')) {
+    const reported = new Set();
+    const visitPublic = (node) => {
+      if (
+        (ts.isIdentifier(node) || ts.isStringLiteralLike(node) || ts.isPrivateIdentifier(node)) &&
+        PUBLIC_ROUTE_NAMES.has(node.text)
+      ) {
+        const at = where(node);
+        if (!reported.has(at)) {
+          reported.add(at);
+          errors.push(
+            `${at}: definePublicRoute() is allowed only in the reviewed public route files (PUBLIC_ROUTE_FILES)`,
+          );
+        }
+      }
+      ts.forEachChild(node, visitPublic);
+    };
+    visitPublic(sf);
   }
 
   // Inline 'use server' inside function bodies (closures) bypass defineAction.

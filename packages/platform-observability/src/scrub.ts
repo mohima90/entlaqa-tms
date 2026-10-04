@@ -1,4 +1,4 @@
-import type { ErrorEvent } from '@sentry/core';
+import type { DataCollection, ErrorEvent } from '@sentry/core';
 
 /**
  * Personal-data patterns removed from every log line and error report (ADR 0009 §2: no names, e-mails,
@@ -44,6 +44,25 @@ const PATTERNS: readonly (readonly [RegExp, string])[] = [
     '[ip]',
   ],
 ];
+
+/**
+ * The Sentry SDK's own collection switches (v11 `dataCollection`; its defaults collect user info,
+ * cookies, headers, bodies, query strings, local variables and source lines). Everything is off — the
+ * first line of defence, before `scrubErrorEvent` (server and browser).
+ */
+export const NO_DATA_COLLECTION: DataCollection = {
+  userInfo: false,
+  cookies: false,
+  httpHeaders: false,
+  httpBodies: [],
+  urlQueryParams: false,
+  graphQL: { document: false, variables: false },
+  genAI: { inputs: false, outputs: false },
+  databaseQueryData: false,
+  queues: false,
+  stackFrameVariables: false,
+  frameContextLines: 0,
+};
 
 /** Longest string kept in a log line or error report; the rest is cut before scrubbing. */
 export const MAX_TEXT = 2_000;
@@ -141,7 +160,12 @@ function scrubException(exception: ExceptionValue): ExceptionValue {
                 ...location
               } = frame;
               // A multi-line message can be parsed into fake frames: scrub the text fields too.
-              for (const key of ['function', 'filename', 'abs_path', 'module'] as const) {
+              // File names can be page URLs (inline scripts): no query string or fragment.
+              for (const key of ['filename', 'abs_path'] as const) {
+                const url = location[key];
+                if (url !== undefined) location[key] = scrubUrl(url);
+              }
+              for (const key of ['function', 'module'] as const) {
                 const text = location[key];
                 if (text !== undefined) location[key] = scrubText(text);
               }

@@ -106,6 +106,58 @@ describe('server actions gate (ADR 0003 §4.6)', () => {
     );
   });
 
+  it('allows definePublicRoute only in the reviewed public route files', () => {
+    const src =
+      "import { definePublicRoute } from '@jadarat/platform-rbac';\nexport const POST = definePublicRoute({});\n";
+    expect(
+      checkServerActionsSource('apps/suite/src/app/api/monitoring/errors/route.ts', src),
+    ).toEqual([]);
+    for (const elsewhere of [
+      'apps/suite/src/app/api/other/route.ts',
+      'apps/suite/src/app/api/monitoring/errors/nested/route.ts',
+      'modules/tms/src/app/api/monitoring/errors/route.ts',
+    ]) {
+      expect(checkServerActionsSource(elsewhere, src).join('\n')).toMatch(
+        /definePublicRoute\(\) is allowed only in the reviewed public route files/,
+      );
+    }
+    const foreign =
+      "import { definePublicRoute } from './mine';\nexport const POST = definePublicRoute({});\n";
+    expect(
+      checkServerActionsSource('apps/suite/src/app/api/monitoring/errors/route.ts', foreign).join(
+        '\n',
+      ),
+    ).toMatch(/"definePublicRoute" must be imported from @jadarat\/platform-rbac/);
+    // No indirect use: importing or calling it anywhere else fails, route file or not.
+    const wrapped =
+      "import { definePublicRoute, defineRoute } from '@jadarat/platform-rbac';\nconst h = definePublicRoute({});\nexport const POST = defineRoute(h);\n";
+    expect(
+      checkServerActionsSource('apps/suite/src/app/api/x/route.ts', wrapped).join('\n'),
+    ).toMatch(/definePublicRoute\(\) is allowed only/);
+    const helper =
+      "import { definePublicRoute as d } from '@jadarat/platform-rbac';\nexport const x = d;\n";
+    expect(checkServerActionsSource('apps/suite/src/lib/helper.ts', helper).join('\n')).toMatch(
+      /definePublicRoute\(\) is allowed only/,
+    );
+    for (const indirect of [
+      "import * as r from '@jadarat/platform-rbac';\nexport const x = r.definePublicRoute({});\n",
+      "import * as r from '@jadarat/platform-rbac';\nexport const x = r['definePublicRoute'];\n",
+      "export { definePublicRoute } from '@jadarat/platform-rbac';\n",
+      "const { definePublicRoute: d } = await import('@jadarat/platform-rbac');\n",
+      "import { createDefinePublicRoute } from '@jadarat/platform-rbac';\nexport const d = createDefinePublicRoute({});\n",
+    ]) {
+      expect(checkServerActionsSource('apps/suite/src/lib/x.ts', indirect).join('\n')).toMatch(
+        /definePublicRoute\(\) is allowed only/,
+      );
+    }
+    expect(
+      checkServerActionsSource(
+        'packages/platform-rbac/src/index.ts',
+        "import { createDefinePublicRoute } from './x';\nexport const definePublicRoute = createDefinePublicRoute({});\n",
+      ),
+    ).toEqual([]);
+  });
+
   it('accepts defineAction exports', () => {
     expect(checkServerActionsSource('modules/tms/src/actions/good.ts', fixture('good.ts'))).toEqual(
       [],

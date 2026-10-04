@@ -95,6 +95,9 @@ begin
     1::bigint, 'departments: moving the subtree to exactly 10 levels is allowed');
 
   -- Live children block a soft delete; a deleted parent cannot receive (or restore) children.
+  -- (People placed in TD / TD-PRG move to OPS first: active people also block a delete — 23_people.sql.)
+  update platform.person_employment set department_id = 'a3000000-0000-4000-8000-000000000003'
+   where tenant_id = 'a0000000-0000-4000-8000-000000000001';
   perform tests.assert_fails($q$update platform.departments set deleted_at = now() where code = 'TD'$q$,
     array['23514'], 'departments: cannot soft-delete a department with live sub-departments');
   perform tests.assert_eq(tests.rows_affected($q$update platform.departments set deleted_at = now() where code = 'TD-PRG'$q$),
@@ -225,12 +228,12 @@ begin
   perform tests.assert_eq(
     (select array_agg(tgname::text order by tgname::text) from pg_trigger
      where tgrelid = 'platform.departments'::regclass and not tgisinternal),
-    array['departments_soft_delete', 'departments_stamp_row', 'departments_tree', 'departments_validate_refs'],
+    array['departments_soft_delete', 'departments_stamp_row', 'departments_tree', 'departments_until_people_moved', 'departments_validate_refs'],
     'departments: trigger order');
   perform tests.assert_eq(
     (select array_agg(tgname::text order by tgname::text) from pg_trigger
      where tgrelid = 'platform.branches'::regclass and not tgisinternal),
-    array['branches_soft_delete', 'branches_stamp_row', 'branches_timezone', 'branches_tree', 'branches_until_departments_moved'],
+    array['branches_soft_delete', 'branches_stamp_row', 'branches_timezone', 'branches_tree', 'branches_until_departments_moved', 'branches_until_people_moved'],
     'branches: trigger order');
 end $$;
 rollback;

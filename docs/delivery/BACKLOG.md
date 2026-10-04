@@ -51,7 +51,7 @@ Plan §6.2 items that do not apply to the agent-team model (§2.3): team staffin
 | T-M1-B11 | ADR 0011 API style, versioning, error model | Claude | 🟢 | #9 |
 | T-M1-B12 | ADR 0012 AI provider abstraction & governance (draft) | Claude | 🟢 | #9 (stays Draft until R2) |
 | T-M1-B13 | R1 logical data model & migration conventions | Claude | 🟢 | #9 |
-| T-M1-B14 | R1 estimation and re-baselined milestone plan; update BRD §16 | Claude → PO approval | ⚪ | After PR review; needs throughput data |
+| T-M1-B14 | R1 estimation and re-baselined milestone plan; update BRD §16 | Claude → PO approval | ⏸ | **Postponed by the PO (4 Oct 2026):** build step by step instead; revisit when the PO asks |
 
 ### Track C — Security baseline (`EP-M1-SEC`)
 

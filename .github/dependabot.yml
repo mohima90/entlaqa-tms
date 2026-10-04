@@ -15,24 +15,12 @@ updates:
       # major. Major Node upgrades are a deliberate change (runtime + CI + Vercel), not a Dependabot PR.
       - dependency-name: '@types/node'
         update-types: ['version-update:semver-major']
+    # One combined pull request per week for every minor/patch update (PO request, 4 Oct 2026: fewer,
+    # bigger updates). Major versions still come one by one — they need a deliberate look.
     groups:
-      nextjs-react:
-        patterns:
-          [
-            'next',
-            'eslint-config-next',
-            '@next/*',
-            'react',
-            'react-dom',
-            '@types/react',
-            '@types/react-dom',
-          ]
-      supabase:
-        patterns: ['@supabase/*']
-      lint-format:
-        patterns: ['eslint', '@eslint/*', 'eslint-*', 'typescript-eslint', 'prettier', 'globals']
-      test-tooling:
-        patterns: ['vitest', '@vitest/*', '@playwright/test', '@axe-core/*']
+      npm-minor-patch:
+        patterns: ['*']
+        update-types: ['minor', 'patch']
     labels: ['dependencies']
   - package-ecosystem: github-actions
     directory: /
@@ -54,6 +42,9 @@ updates:
       day: monday
       time: '05:00'
       timezone: Asia/Riyadh
+    groups:
+      images:
+        patterns: ['*']
     labels: ['dependencies']
   - package-ecosystem: docker-compose
     directory: /infra/docker
@@ -62,4 +53,7 @@ updates:
       day: monday
       time: '05:00'
       timezone: Asia/Riyadh
+    groups:
+      images:
+        patterns: ['*']
     labels: ['dependencies']

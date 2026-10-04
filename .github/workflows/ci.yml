@@ -300,7 +300,7 @@ jobs:
         with:
           persist-credentials: false
       # Scans IaC/config in the repo (Dockerfiles, compose, k8s, workflows as they appear).
-      # Image scanning is added with the sovereign images in T-M1-D04 (infra/docker).
+      # The app image itself is scanned in gate 15 (selfhosted job).
       - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: config

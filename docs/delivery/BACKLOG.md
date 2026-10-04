@@ -2,7 +2,7 @@
 
 > Working task list for the PO + Claude Code agent team (Development Plan §2.3). Sessions pick the next unblocked task from the current milestone, and update the status here and in `STATUS.md` before finishing.
 
-**Status:** ⚪ To do · 🔵 In progress · 🟣 In review (PR open) · 🟢 Done (merged) · 🔴 Blocked
+**Status:** ⚪ To do · 🔵 In progress · 🟣 In review (PR open) · 🟢 Done (merged) · 🔴 Blocked · ⏸ Postponed · ✖ Cancelled
 **Owner:** `PO` = human Product Owner · `Claude` = Claude Code session/agents
 **IDs:** tasks `T-<milestone>-NN`; epics `EP-*` (Development Plan Appendix G); features refer to `docs/brd/TMS_Feature_List.md`.
 
@@ -51,7 +51,7 @@ Plan §6.2 items that do not apply to the agent-team model (§2.3): team staffin
 | T-M1-B11 | ADR 0011 API style, versioning, error model | Claude | 🟢 | #9 |
 | T-M1-B12 | ADR 0012 AI provider abstraction & governance (draft) | Claude | 🟢 | #9 (stays Draft until R2) |
 | T-M1-B13 | R1 logical data model & migration conventions | Claude | 🟢 | #9 |
-| T-M1-B14 | R1 estimation and re-baselined milestone plan; update BRD §16 | Claude → PO approval | ⚪ | After PR review; needs throughput data |
+| T-M1-B14 | R1 estimation and re-baselined milestone plan; update BRD §16 | Claude → PO approval | ⏸ | **Postponed by the PO (4 Oct 2026):** build step by step instead; revisit when the PO asks |
 
 ### Track C — Security baseline (`EP-M1-SEC`)
 
@@ -82,19 +82,40 @@ Plan §6.2 items that do not apply to the agent-team model (§2.3): team staffin
 | T-M1-A02 | Component library in `packages/ui` + Storybook (RTL/LTR, light/dark) | Claude | 🟢 | v1 (3 Oct 2026): Button, Card, TextField, Alert, Badge, AppShell; Storybook 10 with Arabic/English × light/dark toolbar; CI gate 8 runs axe on every story in all 4 modes; sign-in forms use the library. Further components arrive with the M2 screens |
 | T-M1-A03 | Suite shell design (navigation, inboxes, search, mobile) | Claude | 🟢 | #9 |
 | T-M1-A04 | Clickable prototypes of 5 critical journeys | Claude | 🟢 | #9; `docs/design/prototype/index.html` |
-| T-M1-A05 | Usability test round 1 (scripts, tasks, analysis by Claude; sessions run by PO with **ENTLAQA staff as stand-in users** — PO decision 3 Oct 2026) | PO + Claude | ⚪ | Kit ready (`docs/design/research/`); PO runs sessions with real users |
+| T-M1-A05 | Usability test round 1 (scripts, tasks, analysis by Claude; sessions run by PO with **ENTLAQA staff as stand-in users** — PO decision 3 Oct 2026) | PO + Claude | ✖ | **Cancelled 4 Oct 2026:** the PO found the clickable mock-up too shallow to test. Replaced by product-level screen reviews before each feature is built, and tests of the real product with ENTLAQA staff once journeys work. The kit in `docs/design/research/` is reused for those tests |
 | T-M1-A06 | AR/EN glossary & content style guide | Claude | 🟢 | #9; 144 terms |
 
 **Gate G1:** see Development Plan §6.3.
 
 ---
 
+## M2 — Platform core: tasks
+
+Screens are approved by the PO before each feature is built (PO decision 4 Oct 2026). Order below is the build order.
+
+### `EP-M2-IAM` Identity & roles — screens approved 4 Oct 2026 ([`docs/design/screens/m2-users-roles/`](../design/screens/m2-users-roles/README.md))
+
+| ID | Task | Owner | Status | Notes / PR |
+|---|---|---|---|---|
+| T-M2-01 | Organization structure needed by users: departments (hierarchy, head) and branches, with RLS + cross-tenant tests (ADM-04/05 subset; full admin screens with `EP-M2-TEN`) | Claude | 🔵 | Tables `platform.branches`, `platform.departments` (tree ≤ 10 levels, no cycles, one HQ, codes unique per organization, soft delete) + `private.stamp_row()` ([std] columns from verified claims); db tests + hosted simulation pass. Independent review: approve with fixes (2 Medium: concurrent moves could form a cycle; soft-delete actor/time could be forged; 6 Low) — all fixed with tests (advisory lock per tenant, verified with two sessions; re-review: deleted rows obey the tree rules too, branch delete vs. new department race closed (verified), names checked by `private.has_visible_text` with escaped characters, trigger order asserted; final re-review: **approve**; `stamp_soft_delete`; immutable id; person only from user claims; branch cycles; no deleted parents/branches, active head; IANA timezone; invisible-only names). Deferred to EP-M2-TEN: GPS, working calendars, cost centers, department `path` for subtree scopes |
+| T-M2-02 | Person profile (FR-IAM-01 R1 fields: Arabic/English names, e-mail, mobile, employee number, job title, department, branch, direct manager, hire date, locale) | Claude | ⚪ | Extends `platform.persons`. Decide what happens to a department head (and direct reports) when the person is deactivated (T-M2-01 review note) |
+| T-M2-03 | Roles: 14 system roles + platform permission catalog + role assignments (one primary + additional, BR-IAM-1), effective grants in `defineAction`, no-escalation rule, audit with before/after (BR-IAM-3) | Claude | ⚪ | ADR 0003 §3–5; security decision 4 (who may invite / grant which roles) needed here. From T-M2-01 review: `withUserTx` retries once on deadlock (40P01) — org-structure locks can be taken in either order in long transactions; add a two-connection concurrency test (dblink) to the DB gate |
+| T-M2-04 | Users list + user profile screens (read), scoped lists | Claude | ⚪ | Screens 1, 3 |
+| T-M2-05 | Roles & permissions page (read-only matrix) | Claude | ⚪ | Screen 5 |
+| T-M2-06 | E-mail delivery: notification e-mail adapter (Mailpit locally/CI, SMTP for sovereign) + provider for the regional cloud | Claude + PO | ⚪ | **PO decision + account needed** (provider choice and cost, ADR 0008) before invitations can be sent on staging |
+| T-M2-07 | Invitations: create, resend (≤ 3), revoke, expire after 7 days; invitation e-mail (AR/EN); accept + set password (checked activation function); expired/revoked/used link states | Claude | ⚪ | Screens 2, 7, 8, 9; FR-IAM-03 |
+| T-M2-08 | Forgot / reset password: no account enumeration, 60-min single-use link, other sessions ended, confirmation e-mail | Claude | ⚪ | Screens 10, 11 |
+| T-M2-09 | Deactivate / reactivate: login blocked, sessions revoked, records kept; reassignment hook (module items join as M3/M4 ship) | Claude | ⚪ | Screen 4; FR-IAM-05 |
+| T-M2-10 | Security policy per organization: MFA enforcement (TOTP first), password policy, lockout, inactivity / max session length / max devices, active sessions + force sign-out | Claude | ⚪ | Screens 3, 6; FR-IAM-12/13; security decisions 1, 2, 5 needed here |
+| T-M2-11 | Sign-in rate limiting + failed sign-ins as security events (carry-over from T-M1-D03, SCS-16) | Claude | ⚪ | Release blocker for real users |
+| T-M2-12 | Bulk user import wizard (CSV/XLSX, FR-IAM-04) | Claude | ⚪ | Screens to be designed and approved first |
+
 ## M2–M7 — R1 build (epics; tasks are broken down at the start of each milestone)
 
 | Milestone | Epic | Features | Status |
 |---|---|---|---|
 | M2 | `EP-M2-TEN` Tenancy & onboarding | ADM-01, 02, 04, 05, 07, 11, 13, 14, 17 · SUB-01 · DEP-01, 05 | ⚪ |
-| M2 | `EP-M2-IAM` Identity & roles | IAM-01…05, 07, 12, 13 — carry-overs from T-M1-D03: application sign-in rate limit (SCS-16, release blocker for real users), failed sign-ins as security events, MFA tenant policy (IAM-12), session time-box/inactivity, organization switch in the suite, password reset + invitations | ⚪ |
+| M2 | `EP-M2-IAM` Identity & roles | IAM-01…05, 07, 12, 13 — carry-overs from T-M1-D03: application sign-in rate limit (SCS-16, release blocker for real users), failed sign-ins as security events, MFA tenant policy (IAM-12), session time-box/inactivity, organization switch in the suite, password reset + invitations | 🔵 Screens in PO review (4 Oct 2026): users list, invite + role, user profile, deactivate + reassign, roles & permissions, security settings, invitation e-mail, accept invitation, invitation link states, forgot / reset password |
 | M2 | `EP-M2-PEO` People directory & suite mode | STE-01, 02 | ⚪ |
 | M2 | `EP-M2-AUD` Audit & consent | AUD-01, 05 | ⚪ |
 | M2 | `EP-M2-SHELL` Suite shell, notifications, Hijri | STE-08 · NTF-01, 02, 07 · SCH-07 | ⚪ |

@@ -4,10 +4,10 @@
 
 | | |
 |---|---|
-| **Last updated** | 1 October 2026 |
-| **Current phase** | **M1 Foundation in progress** — foundation merged (PR #9); **staging database live** (all migrations applied and verified, access-token hook enabled, 1 Oct 2026); **sign-in live on staging** (T-M1-D03 done: e-mail + password, organization `entlaqa-demo`, sign-out, audit) — CI on PostgreSQL 17 and component library done — M2 threat models and self-hosted stack done — next: observability baseline, usability round 1, estimation · **M0 done** (Gate G0 passed 3 Oct 2026) |
-| **Next gate** | G0 (PO setup tasks) → G1 (Foundation sign-off) |
-| **Overall status** | 🟢 On track (no build started; dates are targets until Gate G1 re-baseline) |
+| **Last updated** | 4 October 2026 |
+| **Current phase** | **M2 Platform core in progress** — started 4 Oct 2026 with users & roles: product-level Arabic screens in PO review before building · **M1 done** (staging live: sign-in, self-hosted stack, observability; estimation postponed and mock-up test cancelled by the PO) · **M0 done** (Gate G0 passed 3 Oct 2026) |
+| **Next gate** | G2 (Platform core) |
+| **Overall status** | 🟢 On track (no time plan: the PO chose to build step by step, 4 Oct 2026) |
 
 ---
 
@@ -19,8 +19,8 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 |---|---|---|---|---|
 | Planning (research, BRD, feature list, delivery plan) | — | 🟢 Done | — | See §4 documents |
 | M0 Mobilize | 1–2 | 🟢 Done | G0 | **Gate G0 passed 3 Oct 2026.** T-M0-01…07, 09, 10 done (MFA on GitHub, Supabase, Vercel confirmed); T-M0-08 (→ 2-week customer trials ≈ end of M5) and T-M0-11 deferred by PO; T-M0-12/13 needed later |
-| M1 Foundation | 3–8 | 🔵 In progress | G1 | Foundation merged (#9); walking skeleton live on staging (#10–#14); component library + Storybook done (T-M1-A02); M2 threat models done (TM-0002…0006); self-hosted stack verified (T-M1-D04, gate 15); observability baseline done (T-M1-D06: logs without PII, server + browser error tracking — Sentry EU on staging, GlitchTip in-country —, health + uptime); remaining: usability round 1 (staff), estimation (T-M1-B14) |
-| M2 Platform core | 9–12 | ⚪ Not started | G2 | |
+| M1 Foundation | 3–8 | 🟢 Done | G1 | Foundation merged (#9); walking skeleton live on staging (#10–#14); component library + Storybook done (T-M1-A02); M2 threat models done (TM-0002…0006); self-hosted stack verified (T-M1-D04, gate 15); observability baseline done (T-M1-D06). Estimation (T-M1-B14) postponed and mock-up usability round (T-M1-A05) cancelled by the PO (4 Oct 2026) |
+| M2 Platform core | 9–12 | 🔵 In progress | G2 | Started 4 Oct 2026 with users & roles (`EP-M2-IAM`): 11 Arabic screens **approved by the PO** (4 Oct 2026); build broken into T-M2-01…12 (BACKLOG) |
 | M3 Catalog & scheduling | 13–16 | ⚪ Not started | G3 | |
 | M4 Enrollment & manager | 17–19 | ⚪ Not started | G4 | |
 | M5 Delivery & credentials | 20–23 | ⚪ Not started | G5 | |
@@ -63,6 +63,9 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 | 1 Oct 2026 | — | Staging database: Supabase project `jadarat-tms-staging` (org `entlaqa-TMS`, Frankfurt `eu-central-1`, **Free plan** for now — PO deferred the Pro upgrade), Data API **off**, automatic RLS off (migrations enforce RLS). Migrations reach hosted environments only through the manual `DB deploy` workflow (plan → apply) |
 | 1 Oct 2026 | — | `main` protected by ruleset `main protection`: PR required (0 approvals — PO is the only human), conversation resolution, required checks `CI gates` + CodeQL (javascript-typescript, actions), no force-push/deletion, empty bypass list |
 | 4 Oct 2026 | — | **Technical choices are delegated to Claude (Tech Lead)** (PO, non-technical): Claude decides technical/tooling questions and records them here; only business, cost, legal and scope decisions go to the PO, explained in plain language |
+| 4 Oct 2026 | — | **Re-baselined plan / estimation (T-M1-B14) postponed** (PO): no time plan now; we build the product step by step, feature by feature, starting with M2. Gate G1 is passed without the estimation item; the mock-up usability round (T-M1-A05) stays open and runs when the PO is ready |
+| 4 Oct 2026 | — | **Users & roles screens approved** (PO): 11 screens kept in `docs/design/screens/m2-users-roles/`. PO feedback applied before approval: the direct manager is **picked from a list** of the department's managers (department head, line managers, …), not typed; role names stay as in BRD §4.2 («رئيس القسم» / Department Head). The approved screens show **14 roles per organization**; Platform Super Admin is ENTLAQA-only and never shown (answers security decision 3, TM-0003 D-IAM-02) |
+| 4 Oct 2026 | — | **Mock-up usability round (T-M1-A05) cancelled; screens before building** (PO found the clickable mock-up too shallow; Claude proposed, PO agreed to proceed): before each feature is built, Claude shows the PO product-level Arabic screens on a design canvas for approval; ENTLAQA staff test the real product once journeys work |
 | 4 Oct 2026 | — | Sentry organization `entlaqa-qv` created by the PO in the **EU data region** (verified); Data Scrubber, Default Scrubbers and Prevent Storing of IP Addresses **required** for all projects. Free plan after the 14-day trial (no card) |
 | 4 Oct 2026 | — | Observability implementation choices (Tech Lead, ADR 0009 implementation notes): own closed JSON logger instead of `pino`; Sentry SDK errors-only (no tracing/OTel takeover/module patching, no source lines); Sentry CLI (FSL licence, build-time only) removed by pnpm override rather than a licence exception; staging uptime via a scheduled GitHub Actions check that opens an issue — production uptime vendor + status page to be chosen before the first customer |
 | 4 Oct 2026 | — | Error tracking (T-M0-13, ADR 0009 §4): **Sentry SaaS, EU data region** for the regional cloud; **self-hosted GlitchTip** for sovereign (in-country) deployments — same Sentry SDK, no PII (`sendDefaultPii: false`, scrubbing). Account creation (PO, guided) happens with T-M1-D06 |
@@ -133,12 +136,13 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 1. Later: **T-M0-11** required reviewer on `staging` — before anyone else gets repository access.
 2. Old Vercel project `entlaqa-tms` (team "Mohamed Ibrahim's projects"): the PO's Vercel account has no access to that team (1 Oct 2026). Harmless while the root `vercel.json` skips its builds; delete it if access is recovered, or ask Vercel support.
 3. Optional: upgrade Supabase org `entlaqa-TMS` to Pro (no pausing, backups) before customer trials.
-4. When usability round 1 is due (end of M1): pick 5–8 ENTLAQA staff who did not work on the BRD (Claude prepares the sessions).
+4. Soon (T-M2-06): choose the e-mail sending service for the cloud version (Claude will explain the options and costs in one message).
+5. When the first real journeys work: pick 5–8 ENTLAQA staff who did not work on the BRD to try the real product (Claude prepares the sessions).
 
 **Security decisions for M2 (from TM-0002…0006, 3 Oct 2026)** — needed before the related M2 stories start; Claude will bring them one at a time:
 1. Always require an authenticator code for high-risk actions (role changes, exports), even when an organization turns MFA off? (TM-0003 D-IAM-01; recommended: yes)
 2. Ask each new organization's first administrator to set up an authenticator app during onboarding ("required for administrators" by default)? (TM-0002 F-TEN-05)
-3. "Platform Super Admin" only for ENTLAQA staff → 14 roles per organization, BRD wording corrected? (TM-0003 D-IAM-02)
+3. ~~"Platform Super Admin" only for ENTLAQA staff → 14 roles per organization?~~ **Answered 4 Oct 2026** with the approved screens (14 roles shown) — BRD §4.2 wording to be aligned in the next BRD revision (TM-0003 D-IAM-02)
 4. HR Managers may invite users and give ordinary roles; only a Tenant Admin can create another Tenant Admin? (TM-0003 D-IAM-03)
 5. A person in several organizations follows the strictest password rules? (TM-0003 D-IAM-04)
 6. No national ID / Iqama numbers collected in R1 (no R1 feature needs them)? (TM-0004 F-PEO-05)
@@ -154,10 +158,11 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 16. Accept residual risks: self-declared organization identity/country, repeated free trials, rare missing sign-out records, HR may change who manages whom, e-mail content leaves our control, "delivered" ≠ read (RR-TEN-01/02/07, RR-AUD-05, RR-PEO-01, RR-SHL-01/07)
 17. Who at ENTLAQA confirms official Hijri dates and holidays each year? (TM-0006 RR-SHL-04)
 
-**Next Claude session** — continue M1:
+**Next Claude session** — M2:
+0. Build `EP-M2-IAM` in the BACKLOG order (T-M2-01 → T-M2-12). Bring security decisions 4 (at T-M2-03) and 1, 2, 5 (at T-M2-10) and the e-mail provider (T-M2-06) to the PO one at a time when the task needs them. Decision 3 is answered (14 roles, screens approval).
 1. Turn the Tech Lead findings of TM-0002…0006 into M2 backlog stories/ADR updates (e.g. audit-table hardening F-AUD-01, `persons` grants F-PEO-01, host resolution F-TEN-02/03, Host-derived tenant label F-SHL-08); T-M1-C02 for M3–M6 epics before each starts.
-2. Observability follow-ups: confirm the scheduled uptime runs started; before the first customer — separate Sentry browser project (`SENTRY_BROWSER_DSN`), per-key rate limits in Sentry, optional Vercel firewall rule, production uptime vendor + status page (PO, guided; runbook); later — source-map upload, OpenTelemetry traces/metrics + alerts (M2/M3).
-3. T-M1-B14 estimation and re-baselined plan → Gate G1 (last M1 task, uses the M1 throughput data).
+2. Observability follow-ups (scheduled uptime check confirmed running: first scheduled run green, 4 Oct 2026 17:04 UTC): before the first customer — separate Sentry browser project (`SENTRY_BROWSER_DSN`), per-key rate limits in Sentry, optional Vercel firewall rule, production uptime vendor + status page (PO, guided; runbook); later — source-map upload, OpenTelemetry traces/metrics + alerts (M2/M3).
+3. T-M1-B14 estimation: postponed by the PO; only when the PO asks.
 4. Check R-33 (`braces` advisory) at the start of each session: when a patched release exists, update and remove the `ignoreGhsas` entry in `pnpm-workspace.yaml`.
 5. M0 support: T-M0-12 pen-test vendor shortlist.
 6. Self-hosted follow-ups (infra/docker/README.md): JWT key rotation with overlap, verification-attempt hooks (with R-34), Storage/Realtime/Supavisor when used.
@@ -168,6 +173,10 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
+| 4 Oct 2026 | T-M2-01 built: branches + departments tables with tenant isolation, tree rules and tamper-proof created/updated/deleted stamps; three independent review rounds (2 Medium + 7 Low fixed, concurrency verified with two sessions) → **approve**; all database tests and the hosted-Supabase simulation pass |
+| 4 Oct 2026 | PO approved the 11 users & roles screens after one change (direct manager chosen from the department's managers); screens saved in `docs/design/screens/m2-users-roles/`, glossary +4 terms (sign-in session, invitation, deactivate, primary/additional role); `EP-M2-IAM` broken into T-M2-01…12 |
+| 4 Oct 2026 | M2 started with users & roles: 11 product-level Arabic screens (users list with filters, invite with primary + extra roles, profile with sign-in sessions and audit trail, deactivate with reassignment, roles & permission matrix from BRD Appendix B, security settings, bilingual invitation e-mail, accept invitation, expired/revoked/used links, forgot/reset password) sent to the PO for review; T-M1-A05 cancelled (mock-up too shallow), M1 closed |
+| 4 Oct 2026 | PR #27 merged (GlitchTip in-country error tracking; T-M1-D06 done). PO: skip the time plan for now, build step by step — M2 starts with users & roles (invitations, roles, password reset) |
 | 4 Oct 2026 | T-M1-D06 done: GlitchTip 6.2.6 (MIT) in `infra/docker` (all-in-one, own `errors-db`, 90-day retention, UI on 127.0.0.1:8100, registration off), bootstrap script prints the internal DSN; gate 15 now sends a browser error (tunnel) and a server error (sign-in with Auth down, new `e2e/auth-outage.spec.ts`) and checks both arrive in GlitchTip redacted, without planted personal data — passed locally |
 | 4 Oct 2026 | PR #25 merged (browser errors via scrubbing tunnel, `definePublicRoute`); Dependabot #20, #21, #23 merged by the PO. Dependabot now sends ONE combined weekly PR for all minor/patch updates (PO request; majors stay separate); vite 8.3.2 applied by hand with a lockfile dedupe (Dependabot #22 could not rebase — two vite copies broke type-checking) |
 | 4 Oct 2026 | T-M1-D06 part b (1): browser error reporting through a same-origin scrubbing tunnel (`/api/monitoring/errors`, rate-limited, error events only, re-scrubbed, runtime DSN), verified live (no PII, CSP clean); review fixes: events rebuilt from an allow-list, one event per envelope, per-client + per-instance limits, optional separate browser DSN, `definePublicRoute` gate tightened; found Sentry v11 replaced `sendDefaultPii` with `dataCollection` (defaults collect everything) — now explicitly off for server and browser; `/favicon.ico` → `/icon.svg`; client JS 207/250 KiB |

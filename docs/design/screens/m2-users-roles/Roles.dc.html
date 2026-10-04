@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>الأدوار والصلاحيات</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#F2F5F5}
+a{color:#0C534D}a:hover{color:#09403C}
+*{box-sizing:border-box}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid #177D74;outline-offset:2px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 18px;border-radius:6px;border:1px solid transparent;font-weight:600;font-size:15px;cursor:pointer;text-decoration:none;white-space:nowrap}
+.btn-primary{background:#0F665F;color:#fff}.btn-primary:hover{background:#0C534D;color:#fff}
+.btn-secondary{background:#fff;color:#121A1C;border-color:#7A898D}.btn-secondary:hover{background:#F2F5F5;color:#121A1C}
+.btn-ghost{background:transparent;color:#0C534D}.btn-ghost:hover{background:#E7F3F1}
+.btn-sm{min-height:36px;padding:0 12px;font-size:14px}
+.icon-btn{display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;border-radius:6px;border:0;background:transparent;color:#333E41;cursor:pointer;position:relative}
+.icon-btn:hover{background:#E3E9EA}
+.count{position:absolute;top:4px;inset-inline-end:2px;min-width:18px;height:18px;border-radius:9px;background:#B42318;color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 4px;line-height:1}
+.nav-item{display:flex;align-items:center;gap:12px;min-height:44px;padding:0 12px;border-radius:6px;color:#333E41;text-decoration:none;font-size:15.5px}
+.nav-item:hover{background:#F2F5F5;color:#121A1C}
+.nav-item.on{background:#E7F3F1;color:#0C534D;font-weight:600}
+.card{background:#fff;border:1px solid #CBD4D6;border-radius:10px}
+.rl{display:flex;align-items:center;gap:10px;width:100%;min-height:52px;padding:6px 12px;border:0;border-radius:8px;background:transparent;cursor:pointer;text-align:start}
+.rl:hover{background:#F2F5F5}
+.rl.on{background:#E7F3F1;color:#0C534D}
+.rl .nm{font-weight:600;flex:1 1 auto}
+.rl .uc{font-size:13.5px;color:#465357}
+.lv{display:inline-flex;align-items:center;gap:6px;min-width:96px;justify-content:center;padding:2px 12px;border-radius:999px;font-size:14px;font-weight:600;white-space:nowrap}
+.lv-f{background:#0F665F;color:#fff}
+.lv-e{background:#C6E4E0;color:#07302D}
+.lv-v{background:#fff;color:#333E41;border:1px solid #7A898D}
+.lv-n{background:transparent;color:#5B6A6E;font-weight:500}
+.mx td{padding:10px 20px;border-bottom:1px solid #E3E9EA;vertical-align:middle}
+.mx th{font-weight:600;font-size:14px;color:#465357;text-align:start;padding:10px 20px;background:#F8FAFA;border-bottom:1px solid #CBD4D6}
+@media (max-width:900px){.hide-md{display:none !important}}
+</style>
+</helmet>
+<div style="min-height: 100vh; display: flex; flex-direction: column; font-family: 'IBM Plex Sans Arabic', 'Noto Sans Arabic', Tahoma, sans-serif; color: #121A1C; font-size: 15.5px; line-height: 1.7; background: #F2F5F5">
+
+<header style="height: 56px; display: flex; align-items: center; gap: 8px; padding: 0 16px; background: #FFFFFF; border-bottom: 1px solid #CBD4D6">
+  <a href="Main.dc.html" style="display: flex; align-items: center; gap: 10px; text-decoration: none; color: #121A1C; font-weight: 700; font-size: 18px; white-space: nowrap">
+    <span style="width: 32px; height: 32px; border-radius: 8px; background: #0F665F; color: #FFFFFF; display: inline-flex; align-items: center; justify-content: center; font-size: 17px">ج</span>جدارات · التدريب</a>
+  <div class="hide-md" style="flex: 1 1 auto; max-width: 520px; margin-inline-start: 24px; position: relative">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5B6A6E" stroke-width="1.8" aria-hidden="true" style="position: absolute; inset-inline-start: 12px; top: 11px"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
+    <input type="search" aria-label="ابحث في جدارات" placeholder="ابحث في جدارات…" style="width: 100%; height: 40px; border: 1px solid #7A898D; border-radius: 6px; padding-inline-start: 40px; background: #F8FAFA">
+  </div>
+  <div style="flex: 1 1 auto"></div>
+  <button type="button" class="icon-btn" aria-label="الموافقات: 3 بانتظارك">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"></rect><path d="M9 12l2 2 4-4"></path></svg><span class="count">3</span></button>
+  <button type="button" class="icon-btn" aria-label="الإشعارات: 5 غير مقروءة">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M6 9a6 6 0 1 1 12 0c0 6 3 8 3 8H3s3-2 3-8"></path><path d="M10 21h4"></path></svg><span class="count">5</span></button>
+  <button type="button" class="btn btn-ghost btn-sm hide-md" style="color: #333E41; font-weight: 500">شركة الراية · فرع الرياض</button>
+  <button type="button" aria-label="قائمة المستخدم: محمد العتيبي" style="width: 40px; height: 40px; border-radius: 50%; border: 0; background: #0C534D; color: #FFFFFF; font-weight: 700; cursor: pointer">م</button>
+</header>
+
+<div style="display: flex; flex-wrap: wrap; flex: 1 1 auto">
+  <nav aria-label="التنقل الرئيسي" style="flex: 1 1 240px; background: #FFFFFF; border-inline-end: 1px solid #CBD4D6; padding: 16px 12px; display: flex; flex-direction: column; gap: 2px">
+    <a href="#" class="nav-item">الرئيسية</a>
+    <div style="font-size: 13.5px; font-weight: 600; color: #5B6A6E; padding: 16px 12px 6px">إدارة المنشأة</div>
+    <a href="#" class="nav-item">نظرة عامة</a>
+    <a href="#" class="nav-item">بيانات المنشأة</a>
+    <a href="Main.dc.html" class="nav-item">المستخدمون</a>
+    <a href="Roles.dc.html" class="nav-item on" aria-current="page">الأدوار والصلاحيات</a>
+    <a href="Security.dc.html" class="nav-item">الأمان</a>
+    <a href="#" class="nav-item">الإشعارات</a>
+    <a href="#" class="nav-item">التكاملات</a>
+    <a href="#" class="nav-item">سجل التدقيق</a>
+    <a href="#" class="nav-item">الاشتراك</a>
+  </nav>
+
+  <main id="main" style="flex: 999 1 560px; min-width: 0; padding: 24px 32px 40px">
+    <div style="max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px">
+
+      <div style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px">
+        <div>
+          <div style="font-size: 14px; color: #465357">إدارة المنشأة</div>
+          <h1 style="margin: 0; font-size: 27px; line-height: 1.45">الأدوار والصلاحيات</h1>
+          <p style="margin: 2px 0 0; color: #465357">14 دورًا جاهزًا تأتي مع جدارات. أدوار النظام لا تُعدَّل، ويمكن نسخها لإنشاء أدوار خاصة بالمنشأة.</p>
+        </div>
+        <button type="button" class="btn btn-secondary" aria-disabled="true" style="color: #465357; cursor: not-allowed">إنشاء دور مخصص <span style="font-size: 13px; background: #E3E9EA; color: #333E41; border-radius: 999px; padding: 0 8px">قريبًا</span></button>
+      </div>
+
+      <div style="display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start">
+        <section class="card" aria-label="قائمة الأدوار" style="flex: 1 1 280px; padding: 8px">
+          <sc-for list="{{ roles }}" as="r" hint-placeholder-count="14">
+            <button type="button" class="{{ r.cls }}" aria-pressed="{{ r.pressed }}" onClick="{{ r.pick }}">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5B6A6E" stroke-width="2" aria-hidden="true" style="flex: none"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>
+              <span class="nm">{{ r.name }}</span>
+              <span class="uc">{{ r.users }}</span>
+            </button>
+          </sc-for>
+        </section>
+
+        <section class="card" aria-labelledby="role-title" style="flex: 3 1 560px; min-width: 0; overflow: hidden">
+          <div style="padding: 20px; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 16px; border-bottom: 1px solid #E3E9EA">
+            <div style="flex: 1 1 320px">
+              <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px">
+                <h2 id="role-title" style="margin: 0; font-size: 23px; line-height: 1.45">{{ sel.name }}</h2>
+                <span style="font-size: 13.5px; font-weight: 600; background: #E3E9EA; color: #333E41; border-radius: 999px; padding: 1px 10px">دور النظام · للعرض فقط</span>
+              </div>
+              <p style="margin: 4px 0 0; color: #333E41">{{ sel.desc }}</p>
+              <p style="margin: 4px 0 0; color: #465357; font-size: 14px">{{ sel.users }} · <a href="Main.dc.html">عرض المستخدمين</a></p>
+            </div>
+            <a href="Invite.dc.html" class="btn btn-primary">دعوة مستخدم بهذا الدور</a>
+          </div>
+
+          <div style="padding: 12px 20px; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; font-size: 14px; color: #465357; background: #F8FAFA; border-bottom: 1px solid #E3E9EA">
+            <span style="font-weight: 600; color: #333E41">مستويات الوصول:</span>
+            <span class="lv lv-f" style="min-width: 0">كامل</span><span>إنشاء وتعديل وحذف</span>
+            <span class="lv lv-e" style="min-width: 0">تعديل · اعتماد</span><span>ضمن نطاق الدور</span>
+            <span class="lv lv-v" style="min-width: 0">عرض · سجلاته فقط</span>
+            <span class="lv lv-n" style="min-width: 0">— لا يوجد</span>
+          </div>
+
+          <div style="overflow-x: auto">
+            <table class="mx" style="width: 100%; border-collapse: collapse; min-width: 560px">
+              <thead><tr><th>المجال</th><th style="width: 160px">الوصول</th><th>النطاق أو الحد</th></tr></thead>
+              <tbody>
+                <sc-for list="{{ cells }}" as="c" hint-placeholder-count="20">
+                  <tr>
+                    <td>
+                      <span style="font-weight: 500">{{ c.area }}</span>
+                      <sc-if value="{{ c.risk }}" hint-placeholder-val="{{ false }}">
+                        <span style="margin-inline-start: 8px; font-size: 13px; font-weight: 600; color: #7A4800; background: #FFF5E0; border-radius: 999px; padding: 0 8px">حساسة</span>
+                      </sc-if>
+                    </td>
+                    <td><span class="{{ c.cls }}">{{ c.label }}</span></td>
+                    <td style="color: #333E41">{{ c.qual }}</td>
+                  </tr>
+                </sc-for>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1560}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { role: 2 };
+  }
+  renderVals() {
+    var self = this;
+    var roles = [
+      ['مدير المنشأة', 2, 'إعداد المنشأة بالكامل: المستخدمون والأدوار والأمان والهوية البصرية والاشتراك.'],
+      ['مدير التدريب', 3, 'الخطط ودليل الدورات والجلسات والموارد والتسجيلات والتقارير.'],
+      ['منسق التدريب', 8, 'تشغيل الجلسات يوميًا: الجدولة والتجهيزات والحضور وقوائم المتدربين.'],
+      ['مدير الموارد البشرية', 2, 'سجلات الموظفين والتدريب الإلزامي والامتثال وربط نظام الموارد البشرية.'],
+      ['المدير المالي', 1, 'الميزانيات وأوامر الشراء والفواتير والمدفوعات.'],
+      ['مسؤول الامتثال', 1, 'لوحات الامتثال والتقارير التنظيمية وعرض سجل التدقيق.'],
+      ['رئيس القسم', 14, 'خطة القسم وموافقاته وتقاريره.'],
+      ['المدير المباشر', 37, 'طلبات الفريق المباشر وترشيحاته والموافقة عليها.'],
+      ['مدرب داخلي', 11, 'الجلسات المسندة والحضور والمواد والتصحيح.'],
+      ['مدرب خارجي', 6, 'الجلسات المسندة فقط، دون الاطلاع على بيانات المنشأة.'],
+      ['مسؤول جهة التدريب', 0, 'بوابة جهة التدريب: العروض وقوائم المتدربين والفواتير.'],
+      ['مرشد / مقيّم', 9, 'قوائم الملاحظة والتدريب على رأس العمل للمتدربين المسندين.'],
+      ['متدرب', 236, 'دليل الدورات والتسجيل والسجل التدريبي والشهادات الخاصة به.'],
+      ['مدقق', 1, 'عرض السجلات وسجل التدقيق دون أي تعديل.']
+    ];
+    var areas = [
+      ['إعدادات المنشأة والهوية البصرية والنطاقات', true, 'F N N N N N N N N N N N N V'],
+      ['المستخدمون والأدوار', true, 'F V V E V V V:القسم V:الفريق N N N N O V'],
+      ['طلبات التدريب وحصر الاحتياجات', false, 'F F E E V V AE AE N N N N O V'],
+      ['الخطة التدريبية', false, 'F F V A A V A V N N N N N V'],
+      ['دليل الدورات والبرامج', false, 'F F E V V V V V V V:المسندة_فقط E:دليل_الجهة_فقط V V V'],
+      ['الجلسات والجدولة', false, 'F F F V V V V V V:المسندة_فقط V:المسندة_فقط V:المسندة_فقط N V:المسجَّل_فيها V'],
+      ['المقرات والموارد', false, 'F F E N V N N N N N N N N V'],
+      ['المدربون وجهات التدريب', false, 'F F E V V N N N O O O N N V'],
+      ['التسجيلات والموافقات', false, 'F F E E A:اعتماد_التكلفة V A A V:قائمة_المتدربين V:قائمة_المتدربين V:قائمة_المتدربين N O V'],
+      ['مهام التجهيز', false, 'F F F N V N N N E:المسندة_فقط E:المسندة_فقط E:المسندة_فقط N N V'],
+      ['الحضور', false, 'F F F V N V V V E E E N O V'],
+      ['الاختبارات والاستبيانات', false, 'F F E V N V V V:تقييم_المستوى_الثالث E:التصحيح E:التصحيح E:التصحيح E O V'],
+      ['الشهادات والشهادات الخارجية', false, 'F F E EA N V V V N N E:الرفع N O V'],
+      ['قواعد الامتثال وتقاريره', false, 'F E V F N F V V N N N N O V'],
+      ['التدريب على رأس العمل والملاحظة', false, 'F F E V N V V V N N N E O V'],
+      ['الميزانيات وأوامر الشراء والفواتير والمدفوعات', true, 'F E V V FA N V:القسم N O:مستحقاته O:مستحقاته E:الفواتير N N V'],
+      ['التقارير والتحليلات', false, 'F F E F F:المالية F:الامتثال V:القسم V:الفريق V:جلساته V:جلساته V:الخاصة_بالجهة V:المتدربون_المسندون O V'],
+      ['التكاملات وواجهة البرمجة', true, 'F N N E:ربط_نظام_الموارد_البشرية N N N N N N N N N V'],
+      ['ميزات الذكاء الاصطناعي', false, 'F:الإعداد U U U U U U U U N N U U V:السجلات'],
+      ['سجل التدقيق', true, 'V N N N N V N N N N N N N V']
+    ];
+    var labels = { F: 'كامل', E: 'تعديل', A: 'اعتماد', V: 'عرض', O: 'سجلاته فقط', N: 'لا يوجد', U: 'استخدام', AE: 'اعتماد وتعديل', EA: 'تعديل واعتماد', FA: 'كامل واعتماد' };
+    var cls = { F: 'lv lv-f', FA: 'lv lv-f', E: 'lv lv-e', A: 'lv lv-e', AE: 'lv lv-e', EA: 'lv lv-e', V: 'lv lv-v', O: 'lv lv-v', U: 'lv lv-v', N: 'lv lv-n' };
+    function count(n) {
+      if (n === 0) return 'لا يوجد مستخدمون';
+      if (n === 1) return 'مستخدم واحد';
+      if (n === 2) return 'مستخدمان';
+      if (n <= 10) return n + ' مستخدمين';
+      return n + ' مستخدمًا';
+    }
+    var i = this.state.role;
+    var cells = areas.map(function (a) {
+      var raw = a[2].split(' ')[i];
+      var parts = raw.split(':');
+      var code = parts[0];
+      return {
+        area: a[0],
+        risk: a[1],
+        label: code === 'N' ? '— لا يوجد' : labels[code],
+        cls: cls[code],
+        qual: parts[1] ? parts[1].split('_').join(' ') : ''
+      };
+    });
+    return {
+      roles: roles.map(function (r, k) {
+        return { name: r[0], users: String(r[1]), cls: k === i ? 'rl on' : 'rl', pressed: k === i ? 'true' : 'false', pick: function () { self.setState({ role: k }); } };
+      }),
+      sel: { name: roles[i][0], desc: roles[i][2], users: count(roles[i][1]) },
+      cells: cells
+    };
+  }
+}
+</script>
+</body>
+</html>

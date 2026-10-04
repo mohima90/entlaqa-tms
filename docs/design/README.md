@@ -12,6 +12,7 @@ UX foundation for **Jadarat TMS** and the **Jadarat Suite shell** (Development P
 | T-M1-A05 (prep) | Usability test round 1 plan: participants, screener, consent (AR/EN), tasks with targets, moderator script (AR/EN), SUS (AR/EN), note template, severity rubric, backlog flow | [`research/usability-test-round-1.md`](research/usability-test-round-1.md) | Ready for PO review; sessions are run by the PO |
 | T-M1-A06 | AR/EN terminology glossary (144 terms, with rejected alternatives and reasons) | [`content/glossary-ar-en.md`](content/glossary-ar-en.md) | Draft v1 |
 | T-M1-A06 | Content style guide: tone, formality, gender-inclusive Arabic, errors, button verbs, notification/WhatsApp templates, formatting | [`content/content-style-guide.md`](content/content-style-guide.md) | Draft v1 |
+| EP-M2-IAM | Users & roles screens (11, Arabic, product-level): users list, invite + roles, profile, deactivate, roles matrix, security settings, invitation e-mail, accept invitation, link states, forgot/reset password | [`screens/m2-users-roles/`](screens/m2-users-roles/README.md) | **Approved by the PO, 4 Oct 2026** |
 
 ## Viewing the prototype
 

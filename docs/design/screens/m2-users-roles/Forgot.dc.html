@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>نسيت كلمة المرور</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#F2F5F5}
+a{color:#0C534D}a:hover{color:#09403C}
+*{box-sizing:border-box}
+button,input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid #177D74;outline-offset:2px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:48px;padding:0 20px;border-radius:6px;border:1px solid transparent;font-weight:600;font-size:16px;cursor:pointer;text-decoration:none;white-space:nowrap}
+.btn-primary{background:#0F665F;color:#fff}.btn-primary:hover{background:#0C534D;color:#fff}
+.btn-secondary{background:#fff;color:#121A1C;border-color:#7A898D}.btn-secondary:hover{background:#F2F5F5;color:#121A1C}
+.btn-ghost{background:transparent;color:#0C534D}.btn-ghost:hover{background:#E7F3F1}
+.input{width:100%;height:48px;border:1px solid #7A898D;border-radius:6px;padding:0 12px;background:#fff;font-size:16px}
+.label{display:block;font-weight:600;font-size:15px;margin-bottom:6px}
+.panel{flex:1 1 380px;max-width:520px;display:flex;flex-direction:column;gap:16px}
+.cap{font-size:13px;font-weight:600;color:#465357}
+</style>
+</helmet>
+<div style="min-height: 100vh; display: flex; flex-direction: column; font-family: 'IBM Plex Sans Arabic', 'Noto Sans Arabic', Tahoma, sans-serif; color: #121A1C; font-size: 15.5px; line-height: 1.7; background: #F2F5F5">
+  <header style="display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 24px; background: #FFFFFF; border-bottom: 1px solid #CBD4D6">
+    <span style="display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px">
+      <span style="width: 32px; height: 32px; border-radius: 8px; background: #0F665F; color: #FFFFFF; display: inline-flex; align-items: center; justify-content: center; font-size: 17px">ج</span>جدارات · التدريب</span>
+    <a href="#" lang="en" class="btn btn-ghost" style="min-height: 44px; padding: 0 12px">English</a>
+  </header>
+
+  <main id="main" style="flex: 1 1 auto; padding: 40px 24px">
+    <div style="max-width: 1120px; margin: 0 auto; display: flex; flex-wrap: wrap; gap: 48px; justify-content: center">
+
+      <div class="panel">
+        <span class="cap">قبل الإرسال</span>
+        <div>
+          <h1 style="margin: 0; font-size: 27px; line-height: 1.45">نسيت كلمة المرور؟</h1>
+          <p style="margin: 4px 0 0; color: #333E41">سنرسل رابطًا لتعيين كلمة مرور جديدة إلى بريد العمل المستخدم للدخول.</p>
+        </div>
+        <form style="background: #FFFFFF; border: 1px solid #CBD4D6; border-radius: 10px; padding: 24px; display: flex; flex-direction: column; gap: 18px">
+          <div>
+            <label class="label" for="em">البريد الإلكتروني</label>
+            <input id="em" class="input" type="email" dir="ltr" autocomplete="email" value="s.alqahtani@alraya.example" style="text-align: left">
+          </div>
+          <button type="submit" class="btn btn-primary" style="width: 100%">إرسال الرابط</button>
+          <a href="#" style="text-align: center">العودة إلى تسجيل الدخول</a>
+        </form>
+      </div>
+
+      <div class="panel">
+        <span class="cap">بعد الإرسال</span>
+        <div role="status" style="background: #FFFFFF; border: 1px solid #CBD4D6; border-radius: 10px; padding: 28px 24px; display: flex; flex-direction: column; gap: 12px; align-items: flex-start">
+          <span aria-hidden="true" style="width: 48px; height: 48px; border-radius: 50%; background: #E7F3F1; display: inline-flex; align-items: center; justify-content: center">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0C534D" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="M3 7l9 6 9-6"></path></svg></span>
+          <h2 style="margin: 0; font-size: 22px; line-height: 1.45">الرسالة في الطريق</h2>
+          <p style="margin: 0; color: #333E41">إذا كان <span dir="ltr" style="unicode-bidi: isolate; font-weight: 600">s.alqahtani@alraya.example</span> مسجلًا لدينا، فستصلك رسالة خلال دقائق. الرابط صالح لمدة <b>60 دقيقة</b> ويُستخدم مرة واحدة.</p>
+          <p style="margin: 0; font-size: 14px; color: #465357">لم تصل الرسالة؟ قد تكون في مجلد البريد غير المرغوب فيه، ويمكن إعادة الإرسال بعد دقيقة.</p>
+          <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px">
+            <button type="button" class="btn btn-secondary">إعادة الإرسال (بعد 0:45)</button>
+            <a href="#" class="btn btn-ghost">العودة إلى تسجيل الدخول</a>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":760}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

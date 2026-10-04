@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>حالات رابط الدعوة</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#F2F5F5}
+a{color:#0C534D}a:hover{color:#09403C}
+*{box-sizing:border-box}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid #177D74;outline-offset:2px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:48px;padding:0 20px;border-radius:6px;border:1px solid transparent;font-weight:600;font-size:16px;cursor:pointer;text-decoration:none;white-space:nowrap}
+.btn-primary{background:#0F665F;color:#fff}.btn-primary:hover{background:#0C534D;color:#fff}
+.btn-secondary{background:#fff;color:#121A1C;border-color:#7A898D}.btn-secondary:hover{background:#F2F5F5;color:#121A1C}
+.btn-ghost{background:transparent;color:#0C534D}.btn-ghost:hover{background:#E7F3F1}
+.state{flex:1 1 320px;background:#fff;border:1px solid #CBD4D6;border-radius:10px;padding:28px 24px;display:flex;flex-direction:column;gap:12px;align-items:flex-start}
+.state h2{margin:0;font-size:22px;line-height:1.45}
+.state p{margin:0;color:#333E41}
+.ic{width:48px;height:48px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center}
+.cap{font-size:13px;font-weight:600;color:#465357}
+</style>
+</helmet>
+<div style="min-height: 100vh; display: flex; flex-direction: column; font-family: 'IBM Plex Sans Arabic', 'Noto Sans Arabic', Tahoma, sans-serif; color: #121A1C; font-size: 15.5px; line-height: 1.7; background: #F2F5F5">
+  <header style="display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 24px; background: #FFFFFF; border-bottom: 1px solid #CBD4D6">
+    <span style="display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px">
+      <span style="width: 32px; height: 32px; border-radius: 8px; background: #0F665F; color: #FFFFFF; display: inline-flex; align-items: center; justify-content: center; font-size: 17px">ج</span>جدارات · التدريب</span>
+    <a href="#" lang="en" class="btn btn-ghost" style="min-height: 44px; padding: 0 12px">English</a>
+  </header>
+
+  <main id="main" style="flex: 1 1 auto; padding: 40px 24px">
+    <div style="max-width: 1180px; margin: 0 auto; display: flex; flex-wrap: wrap; gap: 20px; align-items: stretch">
+
+      <section class="state" aria-labelledby="st1">
+        <span class="cap">الحالة 1 · الرابط انتهت مدته</span>
+        <span class="ic" style="background: #FFF5E0" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#955800" stroke-width="1.8"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg></span>
+        <h2 id="st1">انتهت صلاحية هذه الدعوة</h2>
+        <p>أُرسلت الدعوة في 21 سبتمبر 2026 وانتهت بعد 7 أيام. يمكنك طلب دعوة جديدة، وسنبلغ مدير المنشأة في شركة الراية.</p>
+        <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px">
+          <button type="button" class="btn btn-primary">طلب دعوة جديدة</button>
+        </div>
+      </section>
+
+      <section class="state" aria-labelledby="st2">
+        <span class="cap">الحالة 2 · ألغاها مدير المنشأة</span>
+        <span class="ic" style="background: #E3E9EA" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#333E41" stroke-width="1.8"><circle cx="12" cy="12" r="9"></circle><path d="M6 18L18 6"></path></svg></span>
+        <h2 id="st2">لم تعد هذه الدعوة صالحة</h2>
+        <p>أُلغيت هذه الدعوة. للحصول على الوصول، يمكنك التواصل مع فريق التدريب أو الموارد البشرية في منشأتك.</p>
+      </section>
+
+      <section class="state" aria-labelledby="st3">
+        <span class="cap">الحالة 3 · الدعوة قُبلت من قبل</span>
+        <span class="ic" style="background: #E9F6EE" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#166236" stroke-width="2"><path d="M5 12l5 5 9-10"></path></svg></span>
+        <h2 id="st3">الحساب جاهز بالفعل</h2>
+        <p>استُخدمت هذه الدعوة لإنشاء الحساب. يمكنك تسجيل الدخول بالبريد الإلكتروني وكلمة المرور.</p>
+        <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px">
+          <a href="#" class="btn btn-primary">تسجيل الدخول</a>
+          <a href="Forgot.dc.html" class="btn btn-secondary">نسيت كلمة المرور</a>
+        </div>
+      </section>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":760}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

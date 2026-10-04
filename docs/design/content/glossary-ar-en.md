@@ -205,8 +205,12 @@ Legend — **Form**: n = noun, v = verb/action (button form given as a verbal no
 | 142 | Single sign-on (SSO) | الدخول الموحّد | «تسجيل الدخول الأحادي» — calque | |
 | 143 | Learning Management System (LMS) | نظام إدارة التعلّم | «منصة التعليم الإلكتروني» — narrower | Jadarat LMS: «جدارات للتعلّم الإلكتروني» pending brand |
 | 144 | Prototype — sample data | نموذج أولي — بيانات تجريبية | «بيانات وهمية» — "fake" sounds untrustworthy | Marker on all prototypes |
+| 145 | Sign-in session (a signed-in device) | جلسة الدخول (plural: جلسات الدخول) | «جلسة» alone — reserved for a training session (#52); «الأجهزة المتصلة» — fine as a heading, not as the term | Added 4 Oct 2026 (M2 users & roles screens) |
+| 146 | Invitation / invite (user) | دعوة / دعوة مستخدم | «إضافة مستخدم» — hides that the person must accept | Statuses: مدعو · انتهت الدعوة; actions: إعادة إرسال الدعوة، إلغاء الدعوة |
+| 147 | Deactivate / reactivate (user) | تعطيل / إعادة تفعيل | «حذف» — records are kept, nothing is deleted; «إيقاف» — sounds temporary | Status «معطّل» |
+| 148 | Primary role / additional role | الدور الأساسي / دور إضافي | «الدور الرئيسي» — acceptable, keep one | BR-IAM-1 |
 
-**Count:** 144 entries (more than the 80 required), several of which group closely related values (statuses, priorities).
+**Count:** 148 entries (more than the 80 required), several of which group closely related values (statuses, priorities).
 
 ## 10. Words we do not use in the UI
 

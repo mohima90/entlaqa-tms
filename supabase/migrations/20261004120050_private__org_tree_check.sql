@@ -46,18 +46,23 @@ begin
     end if;
   end if;
 
-  if v_parent is null or new.deleted_at is not null then
+  if v_parent is null then
     return new;
   end if;
 
-  execute format('select deleted_at is not null from %s where tenant_id = $1 and id = $2', v_rel)
-    into v_flag using new.tenant_id, v_parent;
-  if v_flag then
-    raise exception '% row % cannot be placed under a deleted parent', v_rel, new.id
-      using errcode = 'check_violation';
+  -- A live row needs a live parent (deleted rows may sit under deleted parents).
+  if new.deleted_at is null then
+    execute format('select deleted_at is not null from %s where tenant_id = $1 and id = $2', v_rel)
+      into v_flag using new.tenant_id, v_parent;
+    if v_flag then
+      raise exception '% row % cannot be placed under a deleted parent', v_rel, new.id
+        using errcode = 'check_violation';
+    end if;
   end if;
 
-  if not v_moving then
+  -- Cycle and depth rules apply to every move and every restore, deleted rows included (otherwise a
+  -- deleted row could be moved anywhere and then restored past the limits).
+  if not (v_moving or v_restoring) then
     return new;
   end if;
 

@@ -25,11 +25,11 @@ create table platform.departments (
   deleted_by uuid,
   unique (tenant_id, id),
   constraint departments_code_check check (code ~ '^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$'),
-  -- Names need at least one visible character (not only spaces, tabs, line breaks or invisible marks).
+  -- Names need at least one visible character (private.has_visible_text).
   constraint departments_name_ar_check check (
-    char_length(name_ar) <= 200 and name_ar ~ '[^[:space:] ​-‏  ⁠﻿]'),
+    char_length(name_ar) <= 200 and private.has_visible_text(name_ar)),
   constraint departments_name_en_check check (name_en is null or (
-    char_length(name_en) <= 200 and name_en ~ '[^[:space:] ​-‏  ⁠﻿]')),
+    char_length(name_en) <= 200 and private.has_visible_text(name_en))),
   constraint departments_status_check check (status in ('active', 'inactive')),
   constraint departments_parent_check check (parent_id is distinct from id),
   constraint departments_deleted_check check (deleted_by is null or deleted_at is not null),
@@ -59,10 +59,15 @@ begin
     return new;
   end if;
   if new.branch_id is not null
-     and (tg_op = 'INSERT' or v_restoring or new.branch_id is distinct from old.branch_id)
-     and exists (select 1 from platform.branches b
-                 where b.tenant_id = new.tenant_id and b.id = new.branch_id and b.deleted_at is not null) then
-    raise exception 'department % cannot belong to a deleted branch', new.id using errcode = 'check_violation';
+     and (tg_op = 'INSERT' or v_restoring or new.branch_id is distinct from old.branch_id) then
+    -- Same lock as a branch soft delete (private.check_tree on platform.branches), so a department
+    -- cannot be added to a branch that is being deleted concurrently (READ COMMITTED: the query
+    -- below sees the delete once the lock is granted).
+    perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('platform.branches:' || new.tenant_id::text, 0));
+    if exists (select 1 from platform.branches b
+               where b.tenant_id = new.tenant_id and b.id = new.branch_id and b.deleted_at is not null) then
+      raise exception 'department % cannot belong to a deleted branch', new.id using errcode = 'check_violation';
+    end if;
   end if;
   if new.head_person_id is not null
      and (tg_op = 'INSERT' or v_restoring or new.head_person_id is distinct from old.head_person_id)

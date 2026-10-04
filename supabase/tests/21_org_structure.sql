@@ -15,8 +15,14 @@ begin
     'branches_code_check', 'branches: code format is checked');
   perform tests.assert_check_constraint($q$insert into platform.branches (code, name_ar) values ('X', '   ')$q$,
     'branches_name_ar_check', 'branches: Arabic name cannot be blank');
-  perform tests.assert_check_constraint(format('insert into platform.branches (code, name_ar) values (%L, %L)', 'X', E'\t\n​ '),
-    'branches_name_ar_check', 'branches: Arabic name cannot be only invisible characters');
+  -- Invisible-only names (written with chr() so this file has no invisible characters itself):
+  -- tab+newline+ZWSP+NBSP, Arabic letter mark, RTL override, LTR isolate, soft hyphen, combining
+  -- grapheme joiner, Mongolian vowel separator, ZWSP+LTR embedding.
+  perform tests.assert_check_constraint(format('insert into platform.branches (code, name_ar) values (%L, %L)', 'X', v),
+    'branches_name_ar_check', format('branches: invisible-only Arabic name %s is rejected', encode(convert_to(v, 'UTF8'), 'hex')))
+  from unnest(array[chr(9) || chr(10) || chr(8203) || chr(160), chr(1564), chr(8238), chr(8294), chr(173), chr(847),
+                    chr(6158), chr(8203) || chr(8234)]) as v;
+  perform tests.assert(private.has_visible_text(chr(8207) || 'فرع'), 'a name with a visible letter next to a mark is accepted');
   perform tests.assert_check_constraint(format('insert into platform.branches (code, name_ar, city_ar) values (%L, %L, %L)', 'X', 'فرع', repeat('م', 121)),
     'branches_city_check', 'branches: city length is limited');
   perform tests.assert_check_constraint($q$insert into platform.branches (code, name_ar, status) values ('X', 'فرع', 'closed')$q$,
@@ -100,6 +106,20 @@ begin
     array['23514'], 'departments: cannot be restored under a deleted parent');
   perform tests.assert_fails($q$update platform.branches set deleted_at = now() where code = 'JED'$q$,
     array['23514'], 'branches: cannot soft-delete a branch with live sub-branches');
+
+  -- Deleted rows obey the tree rules too: moving a deleted department past the limit and restoring
+  -- it is refused, and deleted departments cannot form a cycle.
+  select id into v_id from platform.departments where code = 'L10';
+  insert into platform.departments (code, name_ar) values ('LEAF', 'ورقة');
+  update platform.departments set deleted_at = now() where code = 'LEAF';
+  perform tests.assert_fails(format($q$update platform.departments set parent_id = %L where code = 'LEAF'$q$, v_id),
+    array['23514'], 'departments: a deleted department cannot be moved past 10 levels');
+  insert into platform.departments (code, name_ar) values ('D1', 'محذوف 1'), ('D2', 'محذوف 2');
+  update platform.departments set parent_id = (select id from platform.departments where code = 'D1') where code = 'D2';
+  update platform.departments set deleted_at = now() where code = 'D2';
+  update platform.departments set deleted_at = now() where code = 'D1';
+  perform tests.assert_fails($q$update platform.departments set parent_id = (select id from platform.departments where code = 'D2') where code = 'D1'$q$,
+    array['23514'], 'departments: deleted departments cannot form a cycle');
 
   perform tests.assert((select prosrc ilike '%pg_advisory_xact_lock%' from pg_proc
                         where oid = 'private.check_tree()'::regprocedure),
@@ -192,6 +212,25 @@ begin
   insert into platform.branches (code, name_ar, created_by) values ('NOP', 'فرع', 'a1000000-0000-4000-8000-0000000000a1');
   perform tests.assert((select created_by is null from platform.branches where code = 'NOP'),
     'stamp: no person claim → created_by NULL even when a value is sent');
+end $$;
+rollback;
+
+-- Trigger order matters (name order): soft-delete stamping must run before the tree / reference
+-- checks read deleted_at.
+begin;
+set local role authenticated;
+do $$
+begin
+  perform tests.assert_eq(
+    (select array_agg(tgname::text order by tgname::text) from pg_trigger
+     where tgrelid = 'platform.departments'::regclass and not tgisinternal),
+    array['departments_soft_delete', 'departments_stamp_row', 'departments_tree', 'departments_validate_refs'],
+    'departments: trigger order');
+  perform tests.assert_eq(
+    (select array_agg(tgname::text order by tgname::text) from pg_trigger
+     where tgrelid = 'platform.branches'::regclass and not tgisinternal),
+    array['branches_soft_delete', 'branches_stamp_row', 'branches_timezone', 'branches_tree', 'branches_until_departments_moved'],
+    'branches: trigger order');
 end $$;
 rollback;
 

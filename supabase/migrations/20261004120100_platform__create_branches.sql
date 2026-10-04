@@ -26,11 +26,11 @@ create table platform.branches (
   deleted_by uuid,
   unique (tenant_id, id),
   constraint branches_code_check check (code ~ '^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$'),
-  -- Names need at least one visible character (not only spaces, tabs, line breaks or invisible marks).
+  -- Names need at least one visible character (private.has_visible_text).
   constraint branches_name_ar_check check (
-    char_length(name_ar) <= 200 and name_ar ~ '[^[:space:] ​-‏  ⁠﻿]'),
+    char_length(name_ar) <= 200 and private.has_visible_text(name_ar)),
   constraint branches_name_en_check check (name_en is null or (
-    char_length(name_en) <= 200 and name_en ~ '[^[:space:] ​-‏  ⁠﻿]')),
+    char_length(name_en) <= 200 and private.has_visible_text(name_en))),
   constraint branches_city_check check (char_length(city_ar) <= 120 and char_length(city_en) <= 120),
   constraint branches_country_code_check check (country_code is null or country_code ~ '^[A-Z]{2}$'),
   constraint branches_status_check check (status in ('active', 'inactive')),

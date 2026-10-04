@@ -16,7 +16,6 @@ export const MAX_ENVELOPE_BYTES = 64 * 1024;
 const MAX_EVENTS = 1;
 const MAX_EXCEPTIONS = 10;
 const MAX_FRAMES = 100;
-const MAX_TAGS = 50;
 const LEVELS: ReadonlySet<string> = new Set(['fatal', 'error', 'warning']);
 
 export interface ForwardTarget {
@@ -103,9 +102,10 @@ function sanitizeException(exception: Record<string, unknown>) {
 
 /**
  * Rebuilds a browser event from the fields we accept — exception types/values/frames (location only),
- * level, timestamp, page URL and a bounded set of scalar tags — and nothing else (no user, request
- * headers, contexts, extra, breadcrumbs, debug metadata, client fingerprint or SDK settings). Returns
- * null when there is no usable exception.
+ * level, timestamp and page URL — and nothing else (no user, tags, request headers, contexts, extra,
+ * breadcrumbs, debug metadata, client fingerprint or SDK settings; our browser code sets no tags, and
+ * free-text tags could carry names no pattern recognises). Returns null when there is no usable
+ * exception.
  */
 export function sanitizeBrowserEvent(raw: Record<string, unknown>): ErrorEvent | null {
   const exception = isRecord(raw.exception) ? raw.exception : undefined;
@@ -113,14 +113,6 @@ export function sanitizeBrowserEvent(raw: Record<string, unknown>): ErrorEvent |
     ? exception.values.slice(0, MAX_EXCEPTIONS).filter(isRecord).map(sanitizeException)
     : [];
   if (values.length === 0) return null;
-  const tags: Record<string, string | number | boolean> = {};
-  if (isRecord(raw.tags)) {
-    for (const [key, value] of Object.entries(raw.tags).slice(0, MAX_TAGS)) {
-      if (!/^[\w.-]{1,32}$/.test(key)) continue;
-      if (typeof value === 'string') tags[key] = value.slice(0, 200);
-      else if (typeof value === 'number' || typeof value === 'boolean') tags[key] = value;
-    }
-  }
   const request = isRecord(raw.request) ? text(raw.request.url, 2_000) : undefined;
   const sdk = isRecord(raw.sdk) ? raw.sdk : undefined;
   const level = text(raw.level);
@@ -135,7 +127,6 @@ export function sanitizeBrowserEvent(raw: Record<string, unknown>): ErrorEvent |
       request: request === undefined ? undefined : { url: request },
     }),
     exception: { values },
-    tags,
     sdk: {
       name: text(sdk?.name, 100) ?? 'unknown',
       version: text(sdk?.version, 50) ?? 'unknown',

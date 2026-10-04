@@ -65,7 +65,6 @@ describe('readEnvelopeEvents', () => {
         platform: 'javascript',
         request: { url: 'https://app/ar/suite?email=a@b.co' },
         exception: { values: [{ type: 'TypeError', value: 'x is undefined for a@b.co' }] },
-        tags: { page: 'suite' },
         sdk: { name: 'unknown', version: 'unknown', settings: { infer_ip: 'never' } },
       },
     ]);
@@ -102,7 +101,7 @@ describe('readEnvelopeEvents', () => {
 });
 
 describe('sanitizeBrowserEvent', () => {
-  it('keeps only allow-listed fields of a forged event', () => {
+  it('keeps only allow-listed fields of a forged event (no client tags)', () => {
     const forged = {
       event_id: '0123456789abcdef0123456789abcdef',
       timestamp: 1791114922.3,
@@ -177,7 +176,6 @@ describe('sanitizeBrowserEvent', () => {
           },
         ],
       },
-      tags: { ok: 'v', n: 1, b: true },
       sdk: {
         name: 'sentry.javascript.browser',
         version: '11.4.0',
@@ -202,7 +200,6 @@ describe('sanitizeBrowserEvent', () => {
       type: undefined,
       platform: 'javascript',
       exception: { values: [{ mechanism: { type: 'generic' } }] },
-      tags: {},
       sdk: { name: 'unknown', version: 'unknown', settings: { infer_ip: 'never' } },
     });
   });
@@ -225,7 +222,7 @@ describe('buildForwardEnvelope', () => {
     expect(event).toMatchObject({
       environment: 'staging',
       release: 'abc123',
-      tags: { page: 'suite', source: 'browser' },
+      tags: { source: 'browser' },
       request: { url: 'https://app/ar/suite' },
       exception: { values: [{ type: 'TypeError', value: '[redacted]' }] },
     });

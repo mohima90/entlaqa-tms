@@ -36,7 +36,7 @@
 | Variable | Example | Purpose |
 |---|---|---|
 | `SENTRY_BROWSER_DSN` (optional) | DSN of a separate Sentry project for browser errors | Browser reports go here instead of `SENTRY_DSN` |
-| `JADARAT_CLIENT_IP_HEADER` (optional) | `x-forwarded-for` | Header with the client IP set by the load balancer in front of the app, for per-client limits (default `x-real-ip`, Vercel's) |
+| `JADARAT_CLIENT_IP_HEADER` (optional) | `x-real-ip` | Header holding the client IP that the load balancer in front of the app **overwrites** (never one it appends to, such as `x-forwarded-for`), for per-client limits. Vercel's `x-real-ip` is trusted automatically; without a trusted header all clients share one limit |
 | `SENTRY_DSN` | Sentry → Settings → Projects → `javascript-nextjs` → **Client Keys (DSN)** | Turns error tracking on. Unset or invalid = logs only. Must be `https://` (plain `http://` only to a single-label host on the installation's private network, e.g. `http://key@glitchtip:8000/1`) |
 | `JADARAT_ENVIRONMENT` | `staging`, `production`, `self-hosted` | `env` in logs, `environment` in Sentry (default: Vercel's `VERCEL_ENV`, else `NODE_ENV`) |
 | `JADARAT_DEPLOYMENT` | `eu-saas-1`, `sa-gov-1` | `deployment` in logs (optional) |
@@ -62,11 +62,11 @@ The browser reports uncaught errors and unhandled rejections through **our own s
 The server (`lib/error-tunnel.ts`, created with `definePublicRoute`) is a **public, unauthenticated** endpoint, so it is bounded:
 - It refuses cross-site browser requests (`Sec-Fetch-Site`). Scripts that send no fetch-metadata headers are accepted, which is why the limits below exist.
 - At most 64 KiB and **one** error event per envelope. The event is **rebuilt from an allow-list** (`sanitizeBrowserEvent`):
-  - kept: exception types, values and frame locations, level, timestamp, page URL, and up to 50 scalar tags;
-  - dropped: user, headers, contexts, extra data, debug metadata, the client fingerprint and SDK settings.
+  - kept: exception types, values and frame locations, level, timestamp and page URL;
+  - dropped: user, tags, headers, contexts, extra data, debug metadata, the client fingerprint and SDK settings.
 
   It is then scrubbed like server events, and the browser's environment and release are replaced by the server's own.
-- Rate limits per minute and per instance: at most **10 forwarded reports per client** (keyed on the platform's client-IP header, `x-real-ip` on Vercel, configurable with `JADARAT_CLIENT_IP_HEADER`; kept in memory, never logged) and **60 in total**.
+- Rate limits per minute and per instance: at most **10 forwarded reports per client** (keyed on a client-IP header the platform overwrites: `x-real-ip` on Vercel, or the one named in `JADARAT_CLIENT_IP_HEADER`; only a valid IP address counts; kept in memory, never logged) and **60 in total**.
 - The upstream request times out after 5 seconds, and the browser always gets the same answer.
 - Destination: `SENTRY_BROWSER_DSN` if set, otherwise `SENTRY_DSN`. A separate browser project keeps forged browser reports from using up the quota that server errors depend on. With no DSN at all, reports are dropped (`204`).
 

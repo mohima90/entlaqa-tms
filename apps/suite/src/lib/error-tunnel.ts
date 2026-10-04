@@ -1,4 +1,5 @@
 import 'server-only';
+import { isIP } from 'node:net';
 import {
   type ErrorTrackingConfig,
   MAX_ENVELOPE_BYTES,
@@ -37,14 +38,22 @@ const defaultDeps: TunnelDeps = {
 };
 
 /**
- * The client key: the client-IP header set by the platform in front of the app (`x-real-ip` on Vercel;
- * set `JADARAT_CLIENT_IP_HEADER` for other load balancers). Without it, all clients share one key.
+ * The client key: a client-IP header that the platform in front of the app OVERWRITES — `x-real-ip` on
+ * Vercel (trusted automatically there); elsewhere only the header named in `JADARAT_CLIENT_IP_HEADER`
+ * (set it only when a load balancer overwrites that header). Otherwise, or when the value is not a single
+ * IP address, all clients share one key: a client-sent header can never mint keys.
  */
 function clientKey(request: Request): string {
   const configured = process.env.JADARAT_CLIENT_IP_HEADER?.trim();
-  const header = configured === undefined || configured === '' ? 'x-real-ip' : configured;
-  const client = request.headers.get(header)?.split(',')[0]?.trim();
-  return client === undefined || client === '' ? 'unknown' : client;
+  const header =
+    configured !== undefined && configured !== ''
+      ? configured
+      : process.env.VERCEL === '1'
+        ? 'x-real-ip'
+        : undefined;
+  if (header === undefined) return 'unknown';
+  const client = request.headers.get(header)?.trim() ?? '';
+  return isIP(client) === 0 ? 'unknown' : client;
 }
 
 const ACCEPTED = 202;

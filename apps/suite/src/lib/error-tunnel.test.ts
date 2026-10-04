@@ -91,12 +91,14 @@ describe('handleErrorTunnel', () => {
     );
     const limited = deps({ allow: () => false });
     expect((await handleErrorTunnel(request(body(event)), limited)).status).toBe(429);
+    vi.stubEnv('VERCEL', '1');
     const perClient = deps({ allowClient: (key) => key !== '203.0.113.9' });
     expect(
       (await handleErrorTunnel(request(body(event), { 'x-real-ip': '203.0.113.9' }), perClient))
         .status,
     ).toBe(429);
     expect((await handleErrorTunnel(request(body(event)), perClient)).status).toBe(202);
+    vi.unstubAllEnvs();
     expect(d.send).not.toHaveBeenCalled();
     expect(limited.send).not.toHaveBeenCalled();
   });
@@ -122,12 +124,25 @@ describe('handleErrorTunnel', () => {
         return true;
       },
     });
+    // Outside Vercel, x-real-ip is not trusted unless configured.
+    vi.stubEnv('VERCEL', '');
+    await handleErrorTunnel(request(body(event), { 'x-real-ip': '198.51.100.7' }), d);
+    vi.stubEnv('VERCEL', '1');
     await handleErrorTunnel(request(body(event), { 'x-real-ip': '198.51.100.1' }), d);
-    vi.stubEnv('JADARAT_CLIENT_IP_HEADER', 'x-forwarded-for');
-    await handleErrorTunnel(request(body(event), { 'x-forwarded-for': '192.0.2.5, 10.0.0.1' }), d);
+    await handleErrorTunnel(request(body(event), { 'x-real-ip': 'x'.repeat(5000) }), d);
+    vi.stubEnv('JADARAT_CLIENT_IP_HEADER', 'x-client-ip');
+    await handleErrorTunnel(request(body(event), { 'x-client-ip': '2001:db8::5' }), d);
+    await handleErrorTunnel(request(body(event), { 'x-client-ip': '192.0.2.5, 10.0.0.1' }), d);
     await handleErrorTunnel(request(body(event)), d);
     vi.unstubAllEnvs();
-    expect(keys).toEqual(['198.51.100.1', '192.0.2.5', 'unknown']);
+    expect(keys).toEqual([
+      'unknown',
+      '198.51.100.1',
+      'unknown',
+      '2001:db8::5',
+      'unknown',
+      'unknown',
+    ]);
   });
 
   it('answers 400 when the request body cannot be read', async () => {

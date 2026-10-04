@@ -139,6 +139,17 @@ describe('server actions gate (ADR 0003 §4.6)', () => {
     expect(checkServerActionsSource('apps/suite/src/lib/helper.ts', helper).join('\n')).toMatch(
       /definePublicRoute\(\) is allowed only/,
     );
+    for (const indirect of [
+      "import * as r from '@jadarat/platform-rbac';\nexport const x = r.definePublicRoute({});\n",
+      "import * as r from '@jadarat/platform-rbac';\nexport const x = r['definePublicRoute'];\n",
+      "export { definePublicRoute } from '@jadarat/platform-rbac';\n",
+      "const { definePublicRoute: d } = await import('@jadarat/platform-rbac');\n",
+      "import { createDefinePublicRoute } from '@jadarat/platform-rbac';\nexport const d = createDefinePublicRoute({});\n",
+    ]) {
+      expect(checkServerActionsSource('apps/suite/src/lib/x.ts', indirect).join('\n')).toMatch(
+        /definePublicRoute\(\) is allowed only/,
+      );
+    }
     expect(
       checkServerActionsSource(
         'packages/platform-rbac/src/index.ts',

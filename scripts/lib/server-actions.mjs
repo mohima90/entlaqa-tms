@@ -35,6 +35,8 @@ export const PUBLIC_ROUTE_FILES = new Set([
   'apps/suite/src/app/api/monitoring/errors/route.ts',
 ]);
 
+const PUBLIC_ROUTE_NAMES = new Set(['definePublicRoute', 'createDefinePublicRoute']);
+
 /** File extensions scanned by the gate. */
 export const SCANNED_SOURCE = /\.(ts|tsx|js|jsx|mjs|cjs)$/;
 
@@ -273,15 +275,22 @@ export function checkServerActionsSource(fileName, source) {
     }
   }
 
-  // definePublicRoute may not appear outside the reviewed files (no indirect use).
+  // definePublicRoute / createDefinePublicRoute may not appear AT ALL outside the reviewed files and
+  // their own package: no identifier, property, string key or re-export by that name (no indirect use).
   if (!PUBLIC_ROUTE_FILES.has(fileName) && !fileName.startsWith('packages/platform-rbac/')) {
+    const reported = new Set();
     const visitPublic = (node) => {
-      const imported =
-        ts.isImportSpecifier(node) && (node.propertyName ?? node.name).text === 'definePublicRoute';
-      if (imported || isCallTo(node, 'definePublicRoute')) {
-        errors.push(
-          `${where(node)}: definePublicRoute() is allowed only in the reviewed public route files (PUBLIC_ROUTE_FILES)`,
-        );
+      if (
+        (ts.isIdentifier(node) || ts.isStringLiteralLike(node) || ts.isPrivateIdentifier(node)) &&
+        PUBLIC_ROUTE_NAMES.has(node.text)
+      ) {
+        const at = where(node);
+        if (!reported.has(at)) {
+          reported.add(at);
+          errors.push(
+            `${at}: definePublicRoute() is allowed only in the reviewed public route files (PUBLIC_ROUTE_FILES)`,
+          );
+        }
       }
       ts.forEachChild(node, visitPublic);
     };

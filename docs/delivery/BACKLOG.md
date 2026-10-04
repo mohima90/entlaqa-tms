@@ -2,7 +2,7 @@
 
 > Working task list for the PO + Claude Code agent team (Development Plan §2.3). Sessions pick the next unblocked task from the current milestone, and update the status here and in `STATUS.md` before finishing.
 
-**Status:** ⚪ To do · 🔵 In progress · 🟣 In review (PR open) · 🟢 Done (merged) · 🔴 Blocked
+**Status:** ⚪ To do · 🔵 In progress · 🟣 In review (PR open) · 🟢 Done (merged) · 🔴 Blocked · ⏸ Postponed · ✖ Cancelled
 **Owner:** `PO` = human Product Owner · `Claude` = Claude Code session/agents
 **IDs:** tasks `T-<milestone>-NN`; epics `EP-*` (Development Plan Appendix G); features refer to `docs/brd/TMS_Feature_List.md`.
 
@@ -82,7 +82,7 @@ Plan §6.2 items that do not apply to the agent-team model (§2.3): team staffin
 | T-M1-A02 | Component library in `packages/ui` + Storybook (RTL/LTR, light/dark) | Claude | 🟢 | v1 (3 Oct 2026): Button, Card, TextField, Alert, Badge, AppShell; Storybook 10 with Arabic/English × light/dark toolbar; CI gate 8 runs axe on every story in all 4 modes; sign-in forms use the library. Further components arrive with the M2 screens |
 | T-M1-A03 | Suite shell design (navigation, inboxes, search, mobile) | Claude | 🟢 | #9 |
 | T-M1-A04 | Clickable prototypes of 5 critical journeys | Claude | 🟢 | #9; `docs/design/prototype/index.html` |
-| T-M1-A05 | Usability test round 1 (scripts, tasks, analysis by Claude; sessions run by PO with **ENTLAQA staff as stand-in users** — PO decision 3 Oct 2026) | PO + Claude | ⚪ | Kit ready (`docs/design/research/`); PO runs sessions with real users |
+| T-M1-A05 | Usability test round 1 (scripts, tasks, analysis by Claude; sessions run by PO with **ENTLAQA staff as stand-in users** — PO decision 3 Oct 2026) | PO + Claude | ✖ | **Cancelled 4 Oct 2026:** the PO found the clickable mock-up too shallow to test. Replaced by product-level screen reviews before each feature is built, and tests of the real product with ENTLAQA staff once journeys work. The kit in `docs/design/research/` is reused for those tests |
 | T-M1-A06 | AR/EN glossary & content style guide | Claude | 🟢 | #9; 144 terms |
 
 **Gate G1:** see Development Plan §6.3.
@@ -94,7 +94,7 @@ Plan §6.2 items that do not apply to the agent-team model (§2.3): team staffin
 | Milestone | Epic | Features | Status |
 |---|---|---|---|
 | M2 | `EP-M2-TEN` Tenancy & onboarding | ADM-01, 02, 04, 05, 07, 11, 13, 14, 17 · SUB-01 · DEP-01, 05 | ⚪ |
-| M2 | `EP-M2-IAM` Identity & roles | IAM-01…05, 07, 12, 13 — carry-overs from T-M1-D03: application sign-in rate limit (SCS-16, release blocker for real users), failed sign-ins as security events, MFA tenant policy (IAM-12), session time-box/inactivity, organization switch in the suite, password reset + invitations | ⚪ |
+| M2 | `EP-M2-IAM` Identity & roles | IAM-01…05, 07, 12, 13 — carry-overs from T-M1-D03: application sign-in rate limit (SCS-16, release blocker for real users), failed sign-ins as security events, MFA tenant policy (IAM-12), session time-box/inactivity, organization switch in the suite, password reset + invitations | 🔵 Screens in PO review (4 Oct 2026): users list, invite + role, user profile, deactivate + reassign, roles & permissions, security settings, invitation e-mail, accept invitation, invitation link states, forgot / reset password |
 | M2 | `EP-M2-PEO` People directory & suite mode | STE-01, 02 | ⚪ |
 | M2 | `EP-M2-AUD` Audit & consent | AUD-01, 05 | ⚪ |
 | M2 | `EP-M2-SHELL` Suite shell, notifications, Hijri | STE-08 · NTF-01, 02, 07 · SCH-07 | ⚪ |

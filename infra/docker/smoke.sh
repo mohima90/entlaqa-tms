@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Self-hosted (sovereign) smoke test, T-M1-D04: brings up the whole stack from this directory, deploys the
-# migrations with the production deploy script, creates a user and an organization, signs in through a
-# real browser against the app container, checks the audit trail and TLS, then tears everything down.
+# Self-hosted (sovereign) smoke test, T-M1-D04/D06: brings up the whole stack from this directory, deploys
+# the migrations with the production deploy script, creates a user and an organization, signs in through a
+# real browser against the app container, checks the audit trail and TLS, sends a browser and a server
+# error to the in-country error tracker (GlitchTip) and checks they arrive without personal data, then
+# tears everything down.
 #
 #   bash infra/docker/smoke.sh            # KEEP=1 leaves the stack running; SKIP_BUILD=1 reuses the build
 #
@@ -33,8 +35,8 @@ if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
   (cd "$ROOT" && pnpm --filter @jadarat/suite build >/dev/null)
 fi
 
-echo "smoke: starting PostgreSQL, Auth and the TLS gateway"
-compose up -d --wait db auth gateway
+echo "smoke: starting PostgreSQL, Auth, the TLS gateway and the error tracker (GlitchTip)"
+compose up -d --wait db auth gateway errors-db glitchtip
 curl -sf --cacert .secrets/ca.crt https://localhost:8443/auth/v1/health >/dev/null ||
   { echo "smoke: Auth is not reachable through the TLS gateway" >&2; exit 1; }
 
@@ -42,6 +44,15 @@ echo "smoke: deploying migrations (scripts/db-deploy.sh, TLS verify-full)"
 (cd "$ROOT" && DATABASE_URL="$MIGRATION_URL" DATABASE_CA_CERT="$CA_PEM" \
   APP_SERVER_DB_PASSWORD="$(secret APP_SERVER_DB_PASSWORD)" APP_WORKER_DB_PASSWORD="$(secret APP_WORKER_DB_PASSWORD)" \
   bash scripts/db-deploy.sh apply)
+
+echo "smoke: setting up GlitchTip (operator account, organization, project) and the app's DSN"
+SENTRY_DSN="$(GLITCHTIP_ADMIN_PASSWORD="$(secret GLITCHTIP_ADMIN_PASSWORD)" compose exec -T \
+  -e GLITCHTIP_ADMIN_EMAIL=operator@sovereign.example -e GLITCHTIP_ADMIN_PASSWORD glitchtip \
+  python manage.py shell <glitchtip/bootstrap.py | sed -n 's/^DSN=//p')"
+[[ "$SENTRY_DSN" =~ ^http://[0-9a-f]{32}@glitchtip:8000/[0-9]+$ ]] ||
+  { echo "smoke: GlitchTip set-up did not return a DSN" >&2; exit 1; }
+# The project (and so the DSN) is new whenever the volumes are: replace any DSN from an earlier run.
+sed -i '/^SENTRY_DSN=/d' .secrets/.env && echo "SENTRY_DSN=$SENTRY_DSN" >>.secrets/.env
 
 echo "smoke: starting the app container"
 compose up -d --build --wait app
@@ -115,3 +126,30 @@ reach https://gateway:8443/auth/v1/health || { echo "smoke: the app cannot reach
 if reach http://auth:9999/health; then
   echo "smoke: the app container can reach Auth directly (it must go through the gateway)" >&2; exit 1
 fi
+
+echo "smoke: error tracking — a browser error and a server error (Auth down) must reach GlitchTip, scrubbed"
+# Browser report through the app's tunnel, with personal data in the message and the page URL.
+envelope="$(printf '%s\n%s\n%s' '{"dsn":"https://browser@errors.invalid/1"}' '{"type":"event"}' \
+  '{"exception":{"values":[{"type":"TypeError","value":"failed for leak.check@sovereign.example 0501234567"}]},"request":{"url":"http://localhost:3200/ar/suite?name=LeakCheck"}}')"
+[[ "$(curl -s -o /dev/null -w '%{http_code}' -X POST --data-binary "$envelope" \
+  http://localhost:3200/api/monitoring/errors)" == "202" ]] ||
+  { echo "smoke: the browser error tunnel did not accept the report" >&2; exit 1; }
+# Server error: sign in while the Auth gateway is down (AuthServiceError → reportError → GlitchTip).
+compose stop gateway >/dev/null
+(cd "$ROOT/apps/suite" && E2E_BASE_URL=http://localhost:3200 AUTH_OUTAGE_E2E=1 \
+  pnpm exec playwright test e2e/auth-outage.spec.ts --project=desktop-chromium)
+compose start gateway >/dev/null
+events=""
+for i in $(seq 1 30); do
+  events="$(compose exec -T glitchtip python manage.py shell <glitchtip/events.py 2>/dev/null || true)"
+  if grep -q 'AuthServiceError' <<<"$events" && grep -q '"TypeError"' <<<"$events"; then break; fi
+  [[ $i -eq 30 ]] && { echo "smoke: the browser and server errors did not both reach GlitchTip" >&2; exit 1; }
+  sleep 2
+done
+for leak in leak.check@sovereign.example 0501234567 LeakCheck outage.check@sovereign.example \
+  Outage-Check-Password-1 "$EMAIL" "$PASSWORD"; do
+  if grep -qF "$leak" <<<"$events"; then
+    echo "smoke: personal data reached the error tracker" >&2; exit 1
+  fi
+done
+grep -q '\[redacted\]' <<<"$events" || { echo "smoke: error messages were not redacted" >&2; exit 1; }

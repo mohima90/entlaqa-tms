@@ -72,4 +72,18 @@ if [[ ! -f "$S/.env" ]]; then
     echo "JWT_KEYS='[$(cat "$S/jwt-private.jwk.json")]'"
   } >"$S/.env"
 fi
+
+# Values added after the first release are appended to an existing .env (upgrades keep old secrets).
+add_secret() {
+  grep -q "^$1=" "$S/.env" || printf '%s=%s\n' "$1" "$2" >>"$S/.env"
+}
+pw2() {
+  local p
+  p="$(openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 40)"
+  [[ ${#p} -ge 32 ]] || { echo "gen-secrets: could not generate a password" >&2; exit 1; }
+  printf '%s' "$p"
+}
+add_secret ERRORS_DB_PASSWORD "$(pw2)"
+add_secret GLITCHTIP_SECRET_KEY "$(pw2)$(pw2)"
+add_secret GLITCHTIP_ADMIN_PASSWORD "$(pw2)"
 echo "gen-secrets: ready in infra/docker/$S"

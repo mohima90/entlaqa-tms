@@ -26,10 +26,13 @@ create table platform.branches (
   deleted_by uuid,
   unique (tenant_id, id),
   constraint branches_code_check check (code ~ '^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$'),
-  constraint branches_name_ar_check check (length(btrim(name_ar)) between 1 and 200),
-  constraint branches_name_en_check check (name_en is null or length(btrim(name_en)) between 1 and 200),
+  -- Names need at least one visible character (not only spaces, tabs, line breaks or invisible marks).
+  constraint branches_name_ar_check check (
+    char_length(name_ar) <= 200 and name_ar ~ '[^[:space:] ​-‏  ⁠﻿]'),
+  constraint branches_name_en_check check (name_en is null or (
+    char_length(name_en) <= 200 and name_en ~ '[^[:space:] ​-‏  ⁠﻿]')),
+  constraint branches_city_check check (char_length(city_ar) <= 120 and char_length(city_en) <= 120),
   constraint branches_country_code_check check (country_code is null or country_code ~ '^[A-Z]{2}$'),
-  constraint branches_timezone_check check (timezone ~ '^[A-Za-z]+(/[A-Za-z0-9_+-]+){0,2}$'),
   constraint branches_status_check check (status in ('active', 'inactive')),
   constraint branches_parent_check check (parent_branch_id is distinct from id),
   constraint branches_deleted_check check (deleted_by is null or deleted_at is not null),
@@ -43,8 +46,32 @@ create unique index branches_tenant_headquarters_uq on platform.branches (tenant
 create index branches_tenant_parent_idx on platform.branches (tenant_id, parent_branch_id)
   where parent_branch_id is not null;
 
+-- The timezone must be one PostgreSQL knows (IANA name); checked in a trigger because the catalog
+-- view is not usable in a CHECK constraint.
+create or replace function private.check_branch_timezone()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  if not exists (select 1 from pg_catalog.pg_timezone_names where name = new.timezone) then
+    raise exception 'unknown time zone "%"', new.timezone using errcode = 'check_violation';
+  end if;
+  return new;
+end
+$$;
+
+revoke all on function private.check_branch_timezone() from public;
+
+-- Triggers fire in name order: *_soft_delete normalises deleted_* before *_tree reads them.
+create trigger branches_soft_delete before insert or update on platform.branches
+  for each row execute function private.stamp_soft_delete();
 create trigger branches_stamp_row before insert or update on platform.branches
   for each row execute function private.stamp_row();
+create trigger branches_timezone before insert or update of timezone on platform.branches
+  for each row execute function private.check_branch_timezone();
+create trigger branches_tree before insert or update of parent_branch_id, deleted_at on platform.branches
+  for each row execute function private.check_tree('parent_branch_id', '10');
 
 alter table platform.branches enable row level security;
 alter table platform.branches force row level security;
@@ -58,6 +85,6 @@ create policy branches_read on platform.branches for select to authenticated usi
 create policy branches_insert on platform.branches for insert to authenticated with check (true);
 create policy branches_update on platform.branches for update to authenticated using (true) with check (true);
 
--- [sd]: no DELETE grant; "delete" sets deleted_at / deleted_by.
+-- [sd]: no DELETE grant; "delete" sets deleted_at (the trigger records when and by whom).
 revoke all on platform.branches from public, anon;
 grant select, insert, update on platform.branches to authenticated;

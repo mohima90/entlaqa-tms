@@ -146,7 +146,7 @@ begin
   perform tests.assert_fails($q$insert into platform.departments (code, name_ar, branch_id) values ('X3', 'قسم', 'b2000000-0000-4000-8000-000000000001')$q$,
     array['23503'], 'departments: composite FK rejects a tenant B branch');
   perform tests.assert_fails($q$update platform.departments set head_person_id = 'b1000000-0000-4000-8000-0000000000b1' where id = 'a3000000-0000-4000-8000-000000000003'$q$,
-    array['23503'], 'departments: composite FK rejects a tenant B person as head');
+    array['23503', '23514'], 'departments: a tenant B person cannot be head (refs trigger, then composite FK)');
   perform tests.assert_privilege_denied($q$delete from platform.departments where id = 'a3000000-0000-4000-8000-000000000003'$q$,
     'departments: no DELETE grant (soft delete only)');
 

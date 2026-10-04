@@ -25,8 +25,11 @@ create table platform.departments (
   deleted_by uuid,
   unique (tenant_id, id),
   constraint departments_code_check check (code ~ '^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$'),
-  constraint departments_name_ar_check check (length(btrim(name_ar)) between 1 and 200),
-  constraint departments_name_en_check check (name_en is null or length(btrim(name_en)) between 1 and 200),
+  -- Names need at least one visible character (not only spaces, tabs, line breaks or invisible marks).
+  constraint departments_name_ar_check check (
+    char_length(name_ar) <= 200 and name_ar ~ '[^[:space:] ​-‏  ⁠﻿]'),
+  constraint departments_name_en_check check (name_en is null or (
+    char_length(name_en) <= 200 and name_en ~ '[^[:space:] ​-‏  ⁠﻿]')),
   constraint departments_status_check check (status in ('active', 'inactive')),
   constraint departments_parent_check check (parent_id is distinct from id),
   constraint departments_deleted_check check (deleted_by is null or deleted_at is not null),
@@ -41,69 +44,70 @@ create index departments_tenant_parent_idx on platform.departments (tenant_id, p
 create index departments_tenant_branch_idx on platform.departments (tenant_id, branch_id) where branch_id is not null;
 create index departments_tenant_head_idx on platform.departments (tenant_id, head_person_id) where head_person_id is not null;
 
-create trigger departments_stamp_row before insert or update on platform.departments
-  for each row execute function private.stamp_row();
-
--- The hierarchy must stay a tree: a department cannot become its own ancestor, and depth is bounded so
--- subtree queries stay cheap. SECURITY INVOKER: walks only rows the caller can see (its own tenant).
-create or replace function private.check_department_hierarchy()
+-- References from a department must point at live rows: the branch is not soft-deleted and the head is
+-- an active person. Checked when the reference is set or changed, or when the department is restored.
+-- SECURITY INVOKER (same-tenant rows only).
+create or replace function private.check_department_refs()
 returns trigger
 language plpgsql
 set search_path = ''
 as $$
 declare
-  v_depth integer;
-  v_cycle boolean;
-  v_below integer := 0;
+  v_restoring boolean := tg_op = 'UPDATE' and old.deleted_at is not null and new.deleted_at is null;
 begin
-  if new.parent_id is null then
+  if new.deleted_at is not null then
     return new;
   end if;
-  -- Levels below the moved department (its subtree moves with it).
-  if tg_op = 'UPDATE' then
-    with recursive descendants (id, depth) as (
-      select d.id, 1
-      from platform.departments d
-      where d.tenant_id = new.tenant_id and d.parent_id = new.id
-      union all
-      select d.id, s.depth + 1
-      from descendants s
-      join platform.departments d on d.tenant_id = new.tenant_id and d.parent_id = s.id
-      where s.depth < 20
-    )
-    select coalesce(max(depth), 0) into v_below from descendants;
+  if new.branch_id is not null
+     and (tg_op = 'INSERT' or v_restoring or new.branch_id is distinct from old.branch_id)
+     and exists (select 1 from platform.branches b
+                 where b.tenant_id = new.tenant_id and b.id = new.branch_id and b.deleted_at is not null) then
+    raise exception 'department % cannot belong to a deleted branch', new.id using errcode = 'check_violation';
   end if;
-  with recursive ancestors (id, parent_id, depth, cycle) as (
-    select d.id, d.parent_id, 1, d.id = new.id
-    from platform.departments d
-    where d.tenant_id = new.tenant_id and d.id = new.parent_id
-    union all
-    select d.id, d.parent_id, a.depth + 1, d.id = new.id
-    from ancestors a
-    join platform.departments d on d.tenant_id = new.tenant_id and d.id = a.parent_id
-    where not a.cycle and a.depth < 20
-  )
-  select max(depth), bool_or(cycle) into v_depth, v_cycle from ancestors;
-  if v_cycle then
-    raise exception 'department % cannot be placed under its own descendant', new.id
-      using errcode = 'check_violation';
-  end if;
-  -- v_depth ancestors + the department itself + v_below levels under it.
-  if v_depth + 1 + v_below > 10 then
-    raise exception 'department hierarchy is limited to 10 levels'
-      using errcode = 'check_violation';
+  if new.head_person_id is not null
+     and (tg_op = 'INSERT' or v_restoring or new.head_person_id is distinct from old.head_person_id)
+     and not exists (select 1 from platform.persons p
+                     where p.tenant_id = new.tenant_id and p.id = new.head_person_id and p.status = 'active') then
+    raise exception 'the head of department % must be an active person', new.id using errcode = 'check_violation';
   end if;
   return new;
 end
 $$;
 
-comment on function private.check_department_hierarchy() is
-  'Keeps platform.departments a tree (no cycles, at most 10 levels). SECURITY INVOKER.';
+revoke all on function private.check_department_refs() from public;
 
-revoke all on function private.check_department_hierarchy() from public;
+-- Triggers fire in name order: *_soft_delete normalises deleted_* before *_tree and *_validate_refs
+-- read them (keep those names sorting after "soft_delete").
+create trigger departments_soft_delete before insert or update on platform.departments
+  for each row execute function private.stamp_soft_delete();
+create trigger departments_stamp_row before insert or update on platform.departments
+  for each row execute function private.stamp_row();
+create trigger departments_tree before insert or update of parent_id, deleted_at on platform.departments
+  for each row execute function private.check_tree('parent_id', '10');
+create trigger departments_validate_refs before insert or update of branch_id, head_person_id, deleted_at
+  on platform.departments
+  for each row execute function private.check_department_refs();
 
-create trigger departments_hierarchy before insert or update of parent_id on platform.departments
-  for each row execute function private.check_department_hierarchy();
+-- A branch cannot be soft-deleted while departments that are not deleted still belong to it.
+create or replace function private.check_branch_in_use()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  if old.deleted_at is null and new.deleted_at is not null
+     and exists (select 1 from platform.departments d
+                 where d.tenant_id = new.tenant_id and d.branch_id = new.id and d.deleted_at is null) then
+    raise exception 'branch % still has departments that are not deleted', new.id using errcode = 'check_violation';
+  end if;
+  return new;
+end
+$$;
+
+revoke all on function private.check_branch_in_use() from public;
+
+create trigger branches_until_departments_moved before update of deleted_at on platform.branches
+  for each row execute function private.check_branch_in_use();
 
 alter table platform.departments enable row level security;
 alter table platform.departments force row level security;
@@ -117,6 +121,6 @@ create policy departments_read on platform.departments for select to authenticat
 create policy departments_insert on platform.departments for insert to authenticated with check (true);
 create policy departments_update on platform.departments for update to authenticated using (true) with check (true);
 
--- [sd]: no DELETE grant; "delete" sets deleted_at / deleted_by.
+-- [sd]: no DELETE grant; "delete" sets deleted_at (the trigger records when and by whom).
 revoke all on platform.departments from public, anon;
 grant select, insert, update on platform.departments to authenticated;

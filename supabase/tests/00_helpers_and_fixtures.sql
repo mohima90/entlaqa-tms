@@ -84,6 +84,22 @@ language sql as $$
   select tests.assert_fails_like(p_sql, 'new row violates row-level security policy%', p_message);
 $$;
 
+-- CHECK violation raised by a named constraint (not by a trigger raising the same SQLSTATE 23514).
+create or replace function tests.assert_check_constraint(p_sql text, p_constraint text, p_message text) returns void
+language plpgsql as $$
+declare
+  v_name text;
+begin
+  begin
+    execute p_sql;
+  exception when check_violation then
+    get stacked diagnostics v_name = constraint_name;
+    perform tests.assert_eq(v_name, p_constraint, p_message);
+    return;
+  end;
+  raise exception 'ASSERTION FAILED: % (statement succeeded)', p_message;
+end $$;
+
 -- Row count of a table. Errors are NOT swallowed (see tests.rows_affected).
 create or replace function tests.count_rows(p_table regclass) returns bigint
 language plpgsql as $$

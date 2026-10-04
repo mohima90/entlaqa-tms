@@ -10,13 +10,22 @@ export function formatErrorForLog(error: Error): string {
     'code' in error && typeof error.code === 'string' && /^[A-Z0-9_]{2,64}$/.test(error.code)
       ? ` [${error.code}]`
       : '';
+  // Next.js shows the same digest to the user: it links a user's report to this log line.
+  const digest =
+    'digest' in error && typeof error.digest === 'string' && /^[\w-]{1,64}$/.test(error.digest)
+      ? ` [digest ${error.digest}]`
+      : '';
   const message = SAFE_MESSAGE_ERRORS.has(error.name) ? scrubText(error.message) : REDACTED;
+  // `stack` starts with "Name: message" — skip all of the message's lines, even ones that look like
+  // frames, then keep the frame lines.
+  const messageLines = 1 + (error.message.match(/\n/g)?.length ?? 0);
   const frames = (error.stack ?? '')
     .split('\n')
+    .slice(messageLines)
     .filter((line) => /^\s+at /.test(line))
     .slice(0, 20)
     .map((line) => scrubText(line));
-  return [`${error.name}${code}: ${message}`, ...frames].join('\n');
+  return [`${error.name}${code}${digest}: ${message}`, ...frames].join('\n');
 }
 
 function formatArg(arg: unknown): unknown {

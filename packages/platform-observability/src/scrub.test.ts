@@ -16,6 +16,8 @@ describe('scrubText', () => {
     ['050 123 4567 or 050-123-4567 or 010 1234 5678', '[phone] or [phone] or [phone]'],
     ['Saudi ID 1023456789 and Iqama 2123456789', 'Saudi ID [national-id] and Iqama [national-id]'],
     ['Emirates ID 784-1990-1234567-1', 'Emirates ID [national-id]'],
+    ['Emirates ID 784 1990 1234567 1', 'Emirates ID [national-id]'],
+    [`cut eyJhbGciOiJFUzI1NiIsInR5cCI6`, 'cut [token]'],
     ['Egypt ID 29001011234567', 'Egypt ID [national-id]'],
     ['call +966 50 123 4567 or 00971501234567', 'call [phone] or [phone]'],
     ['mobile 0501234567 / 01012345678', 'mobile [phone] / [phone]'],
@@ -98,8 +100,10 @@ describe('scrubErrorEvent', () => {
           {
             type: 'PostgresError',
             value: 'Failed query: insert\nparams: Sara,secret',
+            mechanism: { type: 'generic', handled: true, data: { input: 'a@b.co' } },
             stacktrace: {
               frames: [
+                { function: 'Ahmed (a@b.co)', filename: 'x', abs_path: 'y', module: 'z' },
                 {
                   filename: 'a.ts',
                   lineno: 1,
@@ -141,10 +145,11 @@ describe('scrubErrorEvent', () => {
       'Supabase Auth request failed (status 0) [email]',
     );
     expect(scrubbed.exception?.values?.[2]).toEqual({ type: 'Error' });
-    expect(scrubbed.exception?.values?.[0]?.stacktrace?.frames?.[0]).toEqual({
-      filename: 'a.ts',
-      lineno: 1,
-    });
+    expect(scrubbed.exception?.values?.[0]?.stacktrace?.frames).toEqual([
+      { function: 'Ahmed ([email])', filename: 'x', abs_path: 'y', module: 'z' },
+      { filename: 'a.ts', lineno: 1 },
+    ]);
+    expect(scrubbed.exception?.values?.[0]?.mechanism).toEqual({ type: 'generic', handled: true });
     expect(scrubbed.tags).toEqual({
       correlation_id: '550e8400-e29b-41d4-a716-446655440000',
       who: '[email]',

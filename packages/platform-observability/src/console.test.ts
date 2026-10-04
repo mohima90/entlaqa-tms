@@ -27,6 +27,21 @@ describe('formatErrorForLog', () => {
     expect(text.split('\n')[0]).toBe('AuthServiceError: Supabase Auth request failed (status 503)');
   });
 
+  it('does not let message lines that look like frames through, and keeps the Next.js digest', () => {
+    const error = Object.assign(
+      new Error('lookup failed for\n    at Ahmed Al-Harbi (1023456789)'),
+      {
+        digest: '2984721839',
+      },
+    );
+    const text = formatErrorForLog(error);
+    expect(text.split('\n')[0]).toBe('Error [digest 2984721839]: [redacted]');
+    expect(text).not.toMatch(/Ahmed|1023456789/);
+    expect(
+      formatErrorForLog(Object.assign(new Error('x'), { digest: 'not a digest!' })),
+    ).not.toContain('digest');
+  });
+
   it('copes with an error without a stack', () => {
     const error = new TypeError('x');
     delete error.stack;

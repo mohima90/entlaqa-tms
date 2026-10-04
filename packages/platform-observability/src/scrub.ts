@@ -13,6 +13,8 @@ const PATTERNS: readonly (readonly [RegExp, string])[] = [
   [/\b([a-z][\w+.-]{0,31}:\/\/)[^\s/?#]{1,512}@/gi, '$1[credentials]@'],
   // Tokens, so their parts are not mistaken for other identifiers.
   [/\beyJ[\w-]{4,4096}\.[\w-]{4,4096}\.[\w-]{0,4096}/g, '[token]'],
+  // …and a token fragment (e.g. cut by truncation).
+  [/\beyJ[\w-]{8,4096}/g, '[token]'],
   [/\b(bearer|basic)\s{1,8}[\w.~+/=-]{8,4096}/gi, '$1 [token]'],
   [/\b(sb_(?:secret|publishable)_)[\w-]{1,256}/g, '$1[token]'],
   // E-mail addresses, including Arabic / internationalized ones (the last label has letters only, so
@@ -21,8 +23,8 @@ const PATTERNS: readonly (readonly [RegExp, string])[] = [
     /(?<![\p{L}\p{N}._%+-])[\p{L}\p{N}._%+-]{1,64}@[\p{L}\p{N}-]{1,63}(?:\.[\p{L}\p{N}-]{1,63}){0,7}\.\p{L}{2,63}/gu,
     '[email]',
   ],
-  // Emirates ID (784-YYYY-NNNNNNN-N, with or without dashes)
-  [/\b784-?\d{4}-?\d{7}-?\d\b/g, '[national-id]'],
+  // Emirates ID (784-YYYY-NNNNNNN-N, with dashes, spaces or nothing between the groups)
+  [/\b784[\s-]?\d{4}[\s-]?\d{7}[\s-]?\d\b/g, '[national-id]'],
   // Egyptian national ID (14 digits, century digit 2 or 3)
   [/\b[23]\d{13}\b/g, '[national-id]'],
   // Saudi national ID / Iqama (10 digits starting with 1 or 2). Also hides 10-digit epoch seconds.
@@ -33,7 +35,8 @@ const PATTERNS: readonly (readonly [RegExp, string])[] = [
   [/\b(?:9665\d{8}|9715\d{8}|201[0125]\d{8})\b/g, '[phone]'],
   [/\b05\d[\s-]?\d{3}[\s-]?\d{4}\b/g, '[phone]'],
   [/\b01[0125][\s-]?\d{4}[\s-]?\d{4}\b/g, '[phone]'],
-  // IPv4 and IPv6 (full or compressed with at least one group; "11:30:45" and "A::b" are not addresses)
+  // IPv4 and IPv6 (full or compressed with at least one hex group; "11:30:45" and "Foo::bar" are not
+  // addresses, but a hex-only "A::b" is)
   [/\b(?:\d{1,3}\.){3}\d{1,3}\b/g, '[ip]'],
   [/\b(?:[0-9a-f]{1,4}:){7}[0-9a-f]{1,4}\b/gi, '[ip]'],
   [
@@ -109,8 +112,15 @@ function scrubContexts(
 type ExceptionValue = NonNullable<NonNullable<ErrorEvent['exception']>['values']>[number];
 
 function scrubException(exception: ExceptionValue): ExceptionValue {
-  const { stacktrace, value, type, ...rest } = exception;
+  const { stacktrace, value, type, mechanism, ...rest } = exception;
   const scrubbed: ExceptionValue = { ...rest };
+  // Mechanism kind only; its free-form `data` is dropped.
+  if (mechanism) {
+    scrubbed.mechanism = {
+      type: mechanism.type,
+      ...(mechanism.handled === undefined ? {} : { handled: mechanism.handled }),
+    };
+  }
   if (type !== undefined) scrubbed.type = scrubText(type);
   if (value !== undefined) {
     scrubbed.value =
@@ -130,6 +140,11 @@ function scrubException(exception: ExceptionValue): ExceptionValue {
                 post_context: _post,
                 ...location
               } = frame;
+              // A multi-line message can be parsed into fake frames: scrub the text fields too.
+              for (const key of ['function', 'filename', 'abs_path', 'module'] as const) {
+                const text = location[key];
+                if (text !== undefined) location[key] = scrubText(text);
+              }
               return location;
             }),
           }

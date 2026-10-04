@@ -1,4 +1,5 @@
 import 'server-only';
+import { readFileSync } from 'node:fs';
 import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import postgres, { type Sql } from 'postgres';
 import { readEnv } from './env';
@@ -32,6 +33,16 @@ export function assertConnectionRole(url: string, role: DbLoginRole): void {
 
 /** Environment variable holding the PEM root CA of the database server (Supabase: prod-ca-2021). */
 export const DATABASE_CA_CERT_ENV = 'DATABASE_CA_CERT';
+/** Alternative: path to the PEM file (container / Kubernetes secrets mounted as files; T-M1-D04). */
+export const DATABASE_CA_CERT_FILE_ENV = 'DATABASE_CA_CERT_FILE';
+
+/** The root CA PEM from DATABASE_CA_CERT, else from the file named by DATABASE_CA_CERT_FILE. */
+export function readDatabaseCaPem(): string | undefined {
+  const inline = readEnv(DATABASE_CA_CERT_ENV);
+  if (inline) return inline;
+  const file = readEnv(DATABASE_CA_CERT_FILE_ENV);
+  return file ? readFileSync(file, 'utf8') : undefined;
+}
 
 const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
 
@@ -96,7 +107,7 @@ export function getDatabase(role: DbLoginRole): AppDatabase {
   const url = readEnv(DATABASE_URL_ENV[role]);
   if (!url) throw new Error(`${DATABASE_URL_ENV[role]} is not configured`);
   assertConnectionRole(url, role);
-  const db = createDatabase(url, { caPem: readEnv(DATABASE_CA_CERT_ENV) });
+  const db = createDatabase(url, { caPem: readDatabaseCaPem() });
   databases.set(role, db);
   return db;
 }

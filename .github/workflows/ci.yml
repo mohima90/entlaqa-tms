@@ -196,6 +196,51 @@ jobs:
             packages/ui/test-results
           retention-days: 14
 
+  selfhosted:
+    name: 'Gate 15 · Self-hosted (sovereign) stack: Postgres + Auth + app containers, sign-in, image scan'
+    needs: install
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: PostgreSQL client + Playwright Chromium
+        run: |
+          if ! command -v psql >/dev/null; then sudo apt-get update && sudo apt-get install -y postgresql-client; fi
+          pnpm --filter @jadarat/suite exec playwright install --with-deps chromium
+      # T-M1-D04: the whole stack from infra/docker (images pinned by digest), migrations via the
+      # production deploy script, real browser sign-in against the app container, audit + TLS checks.
+      - run: bash infra/docker/smoke.sh
+      # Our image must carry no fixable HIGH/CRITICAL vulnerability.
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: jadarat/suite:local
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+      - name: Third-party images (report only; patching tracked as risk R-56)
+        if: always()
+        run: |
+          for image in $(grep -oE 'image: [^ ]+@sha256:[0-9a-f]+' infra/docker/compose.yaml | cut -d' ' -f2); do
+            echo "::group::$image"
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+              aquasec/trivy:0.69.3@sha256:bcc376de8d77cfe086a917230e818dc9f8528e3c852f7b1aff648949b6258d1c \
+              image --severity HIGH,CRITICAL --ignore-unfixed \
+              --scanners vuln --quiet --exit-code 0 "$image" || true
+            echo "::endgroup::"
+          done
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: failure()
+        with:
+          name: selfhosted-playwright-report
+          path: |
+            apps/suite/playwright-report
+            apps/suite/test-results
+          retention-days: 14
+
   audit:
     name: 'Gate 11 · Dependency vulnerability scan'
     needs: install
@@ -255,7 +300,7 @@ jobs:
         with:
           persist-credentials: false
       # Scans IaC/config in the repo (Dockerfiles, compose, k8s, workflows as they appear).
-      # Image scanning is added with the sovereign images in T-M1-D04 (infra/docker).
+      # The app image itself is scanned in gate 15 (selfhosted job).
       - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: config
@@ -295,6 +340,7 @@ jobs:
         build,
         e2e,
         stories,
+        selfhosted,
         audit,
         secrets,
         iac,

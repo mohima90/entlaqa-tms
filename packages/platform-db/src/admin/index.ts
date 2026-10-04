@@ -12,7 +12,7 @@ import { createClient } from '@supabase/supabase-js';
 import { sql } from 'drizzle-orm';
 import { type AppDatabase, createDatabase } from '../client';
 import { readEnv } from '../env';
-import { readSupabasePublicConfig } from '../supabase/config';
+import { readSupabasePublicConfigFromEnv } from '../supabase/config';
 
 export interface AdminOperation {
   /** Why the platform-level (cross-tenant) operation is needed; recorded for audit. */
@@ -59,10 +59,7 @@ export function createServiceRoleSupabaseClient(
   op: AdminOperation,
 ): ReturnType<typeof createClient> {
   assertAdminOperation(op);
-  const config = readSupabasePublicConfig({
-    NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
-    NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
-  });
+  const config = readSupabasePublicConfigFromEnv();
   const secretKey = readEnv('SUPABASE_SECRET_KEY');
   if (!config || !secretKey) throw new Error('Supabase admin access is not configured');
   return createClient(config.url, secretKey, {

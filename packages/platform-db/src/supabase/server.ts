@@ -1,7 +1,7 @@
 import 'server-only';
 import { type CookieMethodsServer, type CookieOptions, createServerClient } from '@supabase/ssr';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { type SupabasePublicConfig, readSupabasePublicConfig } from './config';
+import { type SupabasePublicConfig, readSupabasePublicConfigFromEnv } from './config';
 
 export { type SupabasePublicConfig } from './config';
 export type { CookieMethodsServer };
@@ -18,15 +18,9 @@ export const SESSION_COOKIE_OPTIONS: CookieOptions = {
   path: '/',
 };
 
-/**
- * Supabase public config from NEXT_PUBLIC_* variables. Must be read with literal `process.env.X`
- * accesses so Next.js can inline them.
- */
+/** Supabase public config, read from the runtime environment (see readSupabasePublicConfigFromEnv). */
 export function getSupabasePublicConfig(): SupabasePublicConfig | null {
-  return readSupabasePublicConfig({
-    NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
-    NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
-  });
+  return readSupabasePublicConfigFromEnv();
 }
 
 /**

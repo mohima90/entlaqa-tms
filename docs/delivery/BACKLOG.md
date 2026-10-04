@@ -24,7 +24,7 @@
 | T-M0-10 | MFA (two-step sign-in) on every team account: GitHub, Supabase, Vercel, the e-mail account behind them; secrets only in the password manager | PO | 🟢 | Confirmed 3 Oct 2026: enabled on GitHub (passkeys, 2FA required), Supabase and Vercel since the accounts were created (PO) |
 | T-M0-11 | GitHub environment `staging`: add the PO as **Required reviewer** (every DB deploy / provisioning run waits for approval) | PO | ⏸ | Deferred (3 Oct 2026): the PO is the only repository collaborator and staging holds test data only. **Do before** a second person gets repository access or before a production environment exists |
 | T-M0-12 | Pen-test vendor shortlist (KSA/UAE-capable, Arabic UI) | Claude prepares, PO contacts | ⚪ | Plan §6.2; needed by M7 (independent pen test before GA). Security tooling: CI already runs CodeQL, gitleaks, `pnpm audit`, Trivy (free) — no licences needed so far |
-| T-M0-13 | Approve the error-tracking vendor (Sentry EU region vs. GlitchTip) | PO (Claude recommends) | ⚪ | Plan §6.2 accounts; ADR 0009 §4; needed for T-M1-D06 observability |
+| T-M0-13 | Error-tracking vendor | Claude (delegated by PO, 4 Oct 2026) | 🟢 | Sentry SaaS EU region (cloud) + self-hosted GlitchTip (sovereign); same SDK (ADR 0009 §4). Account set-up with T-M1-D06 |
 
 Plan §6.2 items that do not apply to the agent-team model (§2.3): team staffing/RACI (= T-M0-01), separate project tracker (this file), Figma (design artifacts in `docs/design/`), kick-off (`CLAUDE.md` + session routine). Open decisions D4, D5, D8–D10 are scheduled in STATUS §2 ("Needed by").
 
@@ -70,7 +70,7 @@ Plan §6.2 items that do not apply to the agent-team model (§2.3): team staffin
 | T-M1-D01 | Monorepo scaffold (`apps/suite`, `packages/ui`, `packages/platform-*`, `modules/tms`) | Claude | 🟢 | #9 |
 | T-M1-D02 | CI with all 14 gates (Plan §5.3) | Claude | 🟢 | #9; all 17 checks green on GitHub |
 | T-M1-D03 | Walking skeleton: sign-in → Arabic RTL suite shell → audit event, on staging | Claude | 🟢 | #9–#14. **Live on staging (1 Oct 2026):** migration `…session_tenants` applied, Vercel env vars set, Auth sign-ups off, Site URL set, ECC signing keys confirmed; organization `entlaqa-demo` provisioned; PO signed in (`/en/suite` shows "Organization: ENTLAQA"), signed out, `/ar/suite` redirects to sign-in. MFA off by default (PO). Runbook: [staging-sign-in.md](../engineering/staging-sign-in.md) |
-| T-M1-D04 | Walking skeleton on self-hosted stack (Docker) | Claude | ⚪ | |
+| T-M1-D04 | Walking skeleton on self-hosted stack (Docker) | Claude | 🟢 | 4 Oct 2026: `infra/docker` (Postgres 17.11 + Auth/GoTrue + TLS gateway + distroless app image), real browser sign-in, hook / ES256-JWKS / TOTP→aal2 verified (ADR 0010 §3a), CI gate 15 on every PR; Supabase settings now read at runtime (one image for all deployments); independent review findings fixed (secrets out of logs, TLS-only database, network isolation, hardening). Spike report: `infra/docker/README.md` |
 | T-M1-D05 | Vercel: Root Directory `apps/suite`, preset Next.js, move `vercel.json` | PO (dashboard) + Claude | 🟢 | Root Directory `apps/suite`, Node 24; `main` deployment Ready (1 Oct 2026) |
 | T-M1-D06 | Observability baseline (errors, logs, uptime) | Claude | ⚪ | |
 

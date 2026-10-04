@@ -1,9 +1,13 @@
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   assertConnectionRole,
   createDatabase,
   getDatabase,
   isDatabaseConfigured,
+  readDatabaseCaPem,
   tlsOptionsFor,
 } from './client';
 
@@ -89,4 +93,20 @@ describe('database TLS (verify-full for remote hosts)', () => {
     vi.stubEnv('DATABASE_CA_CERT', '');
     expect(() => getDatabase('app_server')).toThrow('DATABASE_CA_CERT');
   });
+
+  it('reads the CA inline first, else from DATABASE_CA_CERT_FILE (mounted secret)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'jadarat-ca-'));
+    const file = join(dir, 'ca.crt');
+    writeFileSync(file, PEM_FROM_FILE);
+    vi.stubEnv('DATABASE_CA_CERT', '');
+    vi.stubEnv('DATABASE_CA_CERT_FILE', file);
+    expect(readDatabaseCaPem()).toBe(PEM_FROM_FILE);
+    vi.stubEnv('DATABASE_CA_CERT', 'inline-pem');
+    expect(readDatabaseCaPem()).toBe('inline-pem');
+    vi.stubEnv('DATABASE_CA_CERT', '');
+    vi.stubEnv('DATABASE_CA_CERT_FILE', '');
+    expect(readDatabaseCaPem()).toBeUndefined();
+  });
 });
+
+const PEM_FROM_FILE = '-----BEGIN CERTIFICATE-----\nfile\n-----END CERTIFICATE-----\n';

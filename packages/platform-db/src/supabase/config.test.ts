@@ -1,5 +1,22 @@
-import { describe, expect, it } from 'vitest';
-import { readSupabasePublicConfig } from './config';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { readSupabasePublicConfig, readSupabasePublicConfigFromEnv } from './config';
+
+describe('readSupabasePublicConfigFromEnv (runtime, not build-time)', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('reads the values when called, so one build can be configured per deployment', () => {
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', '');
+    expect(readSupabasePublicConfigFromEnv()).toBeNull();
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'https://auth.customer.example');
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY', 'sb_publishable_x');
+    expect(readSupabasePublicConfigFromEnv()).toEqual({
+      url: 'https://auth.customer.example',
+      publishableKey: 'sb_publishable_x',
+    });
+  });
+});
 
 describe('readSupabasePublicConfig', () => {
   it('returns null when not configured (app must run without Supabase)', () => {

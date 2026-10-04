@@ -4,6 +4,8 @@ export {
   type AppDatabase,
   type DbLoginRole,
   DATABASE_CA_CERT_ENV,
+  DATABASE_CA_CERT_FILE_ENV,
+  readDatabaseCaPem,
   DATABASE_URL_ENV,
   assertConnectionRole,
   createDatabase,

@@ -12,6 +12,7 @@
  * strict static CSP.
  */
 import { routing } from '@jadarat/platform-i18n/routing';
+import { getSupabasePublicConfig } from '@jadarat/platform-db/supabase-server';
 import createMiddleware from 'next-intl/middleware';
 import { NextRequest, NextResponse } from 'next/server';
 import { INTERNAL_HEADER_PREFIX, applyHostHeaders, classifyHost } from './lib/host-tenant';
@@ -84,7 +85,8 @@ export function routeRequest(request: NextRequest): NextResponse {
     nonce,
     isDev: process.env.NODE_ENV === 'development',
     upgradeInsecureRequests: isHttps(request),
-    supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
+    // Runtime value (not inlined at build time): one image serves every deployment (T-M1-D04).
+    supabaseUrl: getSupabasePublicConfig()?.url,
   });
 
   // 1. Scrub + set proxy-owned request headers (every path).

@@ -106,6 +106,30 @@ describe('server actions gate (ADR 0003 §4.6)', () => {
     );
   });
 
+  it('allows definePublicRoute only in the reviewed public route files', () => {
+    const src =
+      "import { definePublicRoute } from '@jadarat/platform-rbac';\nexport const POST = definePublicRoute({});\n";
+    expect(
+      checkServerActionsSource('apps/suite/src/app/api/monitoring/errors/route.ts', src),
+    ).toEqual([]);
+    for (const elsewhere of [
+      'apps/suite/src/app/api/other/route.ts',
+      'apps/suite/src/app/api/monitoring/errors/nested/route.ts',
+      'modules/tms/src/app/api/monitoring/errors/route.ts',
+    ]) {
+      expect(checkServerActionsSource(elsewhere, src).join('\n')).toMatch(
+        /definePublicRoute\(\) is allowed only in the reviewed public route files/,
+      );
+    }
+    const foreign =
+      "import { definePublicRoute } from './mine';\nexport const POST = definePublicRoute({});\n";
+    expect(
+      checkServerActionsSource('apps/suite/src/app/api/monitoring/errors/route.ts', foreign).join(
+        '\n',
+      ),
+    ).toMatch(/"definePublicRoute" must be imported from @jadarat\/platform-rbac/);
+  });
+
   it('accepts defineAction exports', () => {
     expect(checkServerActionsSource('modules/tms/src/actions/good.ts', fixture('good.ts'))).toEqual(
       [],

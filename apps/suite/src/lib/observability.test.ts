@@ -68,7 +68,11 @@ describe('startObservability', () => {
     const keepAlive = vi.fn();
     expect(startObservability(sdk, keepAlive)).toBe(true);
     expect(sdk.init).toHaveBeenCalledWith(
-      expect.objectContaining({ dsn: DSN, environment: 'staging', sendDefaultPii: false }),
+      expect.objectContaining({
+        dsn: DSN,
+        environment: 'staging',
+        dataCollection: expect.objectContaining({ userInfo: false, cookies: false }) as unknown,
+      }),
     );
     // Default integrations: no source lines, and unhandled rejections are not printed.
     const options = sdk.init.mock.calls[0]?.[0] as Parameters<ErrorTrackingSdk['init']>[0];

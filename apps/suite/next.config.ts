@@ -21,6 +21,10 @@ const nextConfig: NextConfig = {
     '@jadarat/tms',
     '@jadarat/ui',
   ],
+  // Browsers ask for /favicon.ico by default; the app icon is app/icon.svg.
+  redirects() {
+    return Promise.resolve([{ source: '/favicon.ico', destination: '/icon.svg', permanent: true }]);
+  },
   headers() {
     // Static security headers for every response; the nonce-based CSP is set per request in src/proxy.ts
     // for every path the proxy matches. Build assets (/_next/static) bypass the proxy and get a strict

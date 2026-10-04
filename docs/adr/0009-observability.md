@@ -106,7 +106,9 @@ Runbook: [`docs/engineering/observability.md`](../engineering/observability.md).
   - The reporter is registered on `globalThis`, because Next.js bundles instrumentation separately from route code.
   - The Sentry CLI (FSL licence, build-time only) is removed from the install with a pnpm override.
   - Exception messages are redacted by default (an allow-list keeps messages built from constants); a stable `error_code` (application code or SQLSTATE) is tagged instead. Console output, Next.js error lines included, goes through the same scrubbing.
-  - Source maps are not uploaded yet, so stack frames are minified. Browser errors and GlitchTip come in part b.
+  - Source maps are not uploaded yet, so stack frames are minified.
+  - SDK v11 uses `dataCollection` instead of `sendDefaultPii`, and its defaults collect user info, headers, cookies, bodies, query strings, local variables and source lines. All of these are switched off explicitly (`NO_DATA_COLLECTION`).
+- **§4 browser errors (part b, 4 Oct 2026):** `@sentry/browser` reports through a same-origin tunnel (`/api/monitoring/errors`). The server checks and rate-limits each report, keeps error events only, scrubs them again and forwards them to the runtime DSN, so the browser never holds the DSN. GlitchTip in `infra/docker` follows.
 - **§6 health:** `/api/health/live` and `/api/health/ready` (database as `app_server`; one probe in flight per instance, result reused 5 s, cancelled after 3 s).
 - **Uptime:** a scheduled GitHub Actions check opens and closes an incident issue for staging. Production uptime from at least two regions, plus a status page, is still to be chosen (§5).
 - **Verification 1:** the PII scan of app logs runs in the self-hosted smoke test (gate 15), after the real sign-in journeys.

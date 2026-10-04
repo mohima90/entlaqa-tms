@@ -2,6 +2,7 @@ import { reportError } from '@jadarat/platform-observability';
 import { defaultActionRuntime } from './default-runtime';
 import { createDefineAction } from './define-action';
 import { createDefinePublicAction } from './define-public-action';
+import { createDefinePublicRoute } from './define-public-route';
 
 export * from './permissions';
 export * from './scopes';
@@ -26,6 +27,12 @@ export {
   DEFINE_PUBLIC_ACTION_MARKER,
   createDefinePublicAction,
 } from './define-public-action';
+export {
+  type PublicRouteDefinition,
+  type PublicRouteHandler,
+  DEFINE_PUBLIC_ROUTE_MARKER,
+  createDefinePublicRoute,
+} from './define-public-route';
 
 /** The one way to declare a server action (ADR 0003 §4). */
 export const defineAction = createDefineAction(defaultActionRuntime);
@@ -37,6 +44,16 @@ export const defineAction = createDefineAction(defaultActionRuntime);
 export const definePublicAction = createDefinePublicAction({
   logError(error, meta) {
     // Logged (error class, action, correlation id — no personal data) and sent to the error tracker.
+    reportError(error, { action: meta.action, correlationId: meta.correlationId });
+  },
+});
+
+/**
+ * Mutating route handlers without a session (e.g. browser error reports) — no permission check;
+ * allowed only in the listed public route files (CI gate). See define-public-route.ts.
+ */
+export const definePublicRoute = createDefinePublicRoute({
+  logError(error, meta) {
     reportError(error, { action: meta.action, correlationId: meta.correlationId });
   },
 });

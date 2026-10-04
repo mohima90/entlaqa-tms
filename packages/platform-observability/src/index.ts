@@ -18,6 +18,14 @@ export {
 } from './report';
 export { formatErrorForLog, installConsoleScrubbing } from './console';
 export {
+  type ForwardTarget,
+  MAX_ENVELOPE_BYTES,
+  buildForwardEnvelope,
+  createRateLimiter,
+  forwardTargetFor,
+  readEnvelopeEvents,
+} from './envelope';
+export {
   type ErrorTrackingConfig,
   errorTrackingOptions,
   isAllowedDsn,

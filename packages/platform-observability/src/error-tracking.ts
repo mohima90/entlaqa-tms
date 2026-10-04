@@ -1,5 +1,5 @@
 import type { Breadcrumb, ErrorEvent, Integration } from '@sentry/core';
-import { scrubErrorEvent } from './scrub';
+import { NO_DATA_COLLECTION, scrubErrorEvent } from './scrub';
 
 /** Error-tracker settings read at RUNTIME, so one build serves every deployment (ADR 0010). */
 export interface ErrorTrackingConfig {
@@ -54,7 +54,9 @@ const DISABLED_INTEGRATIONS: ReadonlySet<string> = new Set(['ContextLines']);
 /**
  * Options for the Sentry SDK (`Sentry.init`), identical for Sentry SaaS (EU region) and GlitchTip
  * (ADR 0009 §4): errors only — no tracing (no sample rate is set), no session replay, no breadcrumbs,
- * no local variables, no default PII — and every event passes through `scrubErrorEvent`. The SDK does
+ * and the SDK's data collection fully off (`NO_DATA_COLLECTION`: no user info, cookies, headers,
+ * bodies, query strings, local variables or source lines) — and every event passes through
+ * `scrubErrorEvent`. The SDK does
  * not take over OpenTelemetry or patch modules at load time: traces get their own vendor-neutral
  * OpenTelemetry pipeline later (ADR 0009 §1). Source code lines around each stack frame are not read
  * from disk or sent (`ContextLines` off).
@@ -64,8 +66,7 @@ export function errorTrackingOptions(config: ErrorTrackingConfig) {
     dsn: config.dsn,
     environment: config.environment,
     ...(config.release ? { release: config.release } : {}),
-    sendDefaultPii: false,
-    includeLocalVariables: false,
+    dataCollection: NO_DATA_COLLECTION,
     maxBreadcrumbs: 0,
     beforeBreadcrumb: (_breadcrumb: Breadcrumb): Breadcrumb | null => null,
     beforeSend: (event: ErrorEvent): ErrorEvent => scrubErrorEvent(event),

@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Identity: server-side verification of Supabase sessions into VerifiedClaims and the sign-in flow (ADR 0003 \u00a72, T-M1-D03).",
+  "description": "Identity: server-side verification of Supabase sessions into VerifiedClaims and the sign-in flow (ADR 0003 §2, T-M1-D03).",
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",

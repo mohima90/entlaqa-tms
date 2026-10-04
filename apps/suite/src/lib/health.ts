@@ -12,18 +12,35 @@ export function liveResponse(): Response {
   return Response.json({ status: 'ok' }, { headers: HEADERS });
 }
 
-/** Readiness probe results are reused briefly, so the public endpoint cannot be used to load the DB. */
+/**
+ * Readiness results are reused for 5 s after a probe ends, and concurrent requests share one running
+ * probe: however often the public endpoint is called, at most one `select 1` per instance is in flight.
+ */
 const READY_CACHE_MS = 5_000;
 let cached: { readonly at: number; readonly result: DatabaseHealth } | undefined;
+let inflight: Promise<DatabaseHealth> | undefined;
 
 /** Readiness: the app can serve requests (database reachable as app_server). 503 otherwise. */
 export async function readyResponse(
   check: () => Promise<DatabaseHealth> = () => checkDatabase(),
   now: () => number = Date.now,
 ): Promise<Response> {
-  const time = now();
-  if (!cached || time - cached.at >= READY_CACHE_MS) cached = { at: time, result: await check() };
-  const ok = cached.result === 'ok';
+  let result: DatabaseHealth;
+  if (cached && now() - cached.at < READY_CACHE_MS) {
+    result = cached.result;
+  } else {
+    inflight ??= check()
+      .catch((): DatabaseHealth => 'unavailable')
+      .then((value) => {
+        cached = { at: now(), result: value };
+        return value;
+      })
+      .finally(() => {
+        inflight = undefined;
+      });
+    result = await inflight;
+  }
+  const ok = result === 'ok';
   return Response.json(
     { status: ok ? 'ok' : 'unavailable' },
     { status: ok ? 200 : 503, headers: HEADERS },
@@ -33,4 +50,5 @@ export async function readyResponse(
 /** Test hook. */
 export function resetReadyCache(): void {
   cached = undefined;
+  inflight = undefined;
 }

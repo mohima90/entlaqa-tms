@@ -46,6 +46,29 @@ describe('health endpoints', () => {
     expect(check).toHaveBeenCalledTimes(2);
   });
 
+  it('shares one running probe between concurrent requests', async () => {
+    let finish: (value: 'unavailable') => void = () => undefined;
+    const check = vi.fn(
+      () =>
+        new Promise<'unavailable'>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const pending = [readyResponse(check, () => 0), readyResponse(check, () => 0)];
+    finish('unavailable');
+    const responses = await Promise.all(pending);
+    expect(check).toHaveBeenCalledTimes(1);
+    expect(responses.map((response) => response.status)).toEqual([503, 503]);
+  });
+
+  it('treats a failing probe as unavailable', async () => {
+    const response = await readyResponse(
+      () => Promise.reject(new Error('boom')),
+      () => 0,
+    );
+    expect(response.status).toBe(503);
+  });
+
   it('uses the database probe by default', async () => {
     const response = await readyResponse();
     expect(response.status).toBe(200);

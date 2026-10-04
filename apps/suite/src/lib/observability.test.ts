@@ -1,6 +1,11 @@
 import { reportError, setErrorReporter } from '@jadarat/platform-observability';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { type ErrorTrackingSdk, handleRequestError, startObservability } from './observability';
+import {
+  type ErrorTrackingSdk,
+  handleRequestError,
+  startObservability,
+  vercelKeepAlive,
+} from './observability';
 
 vi.mock('server-only', () => ({}));
 vi.mock('@sentry/nextjs', () => ({
@@ -8,6 +13,7 @@ vi.mock('@sentry/nextjs', () => ({
   captureException: vi.fn(),
   captureRequestError: vi.fn(),
   flush: vi.fn(() => Promise.resolve(true)),
+  onUnhandledRejectionIntegration: vi.fn(() => ({ name: 'OnUnhandledRejection' })),
 }));
 
 const DSN = 'https://0123abcd@o1.ingest.de.sentry.io/4512197765103696';
@@ -18,6 +24,11 @@ function fakeSdk() {
     captureException: vi.fn(),
     captureRequestError: vi.fn(),
     flush: vi.fn(() => Promise.resolve(true)),
+    onUnhandledRejectionIntegration: vi.fn((options?: { mode?: string }) => ({
+      name: 'OnUnhandledRejection',
+      setupOnce: () => undefined,
+      options,
+    })),
   } satisfies ErrorTrackingSdk;
 }
 
@@ -35,14 +46,18 @@ afterEach(() => {
 });
 
 describe('startObservability', () => {
-  it('stays off (logging only) without a valid DSN', () => {
-    silenceLogs();
+  it('stays off (logging only) without a valid DSN, and warns about an invalid one', () => {
+    const { out, err } = silenceLogs();
     vi.stubEnv('SENTRY_DSN', '');
     const sdk = fakeSdk();
     expect(startObservability(sdk)).toBe(false);
     expect(sdk.init).not.toHaveBeenCalled();
     reportError(new Error('x'), {});
     expect(sdk.captureException).not.toHaveBeenCalled();
+    expect(String(out.mock.calls.at(-1)?.[0])).toContain('error tracking off');
+    vi.stubEnv('SENTRY_DSN', 'http://key@errors.example.com/1');
+    expect(startObservability(sdk)).toBe(false);
+    expect(String(err.mock.calls.at(-1)?.[0])).toContain('SENTRY_DSN is set but invalid');
   });
 
   it('starts the tracker with the scrubbing options and forwards reported errors with tags only', () => {
@@ -55,12 +70,25 @@ describe('startObservability', () => {
     expect(sdk.init).toHaveBeenCalledWith(
       expect.objectContaining({ dsn: DSN, environment: 'staging', sendDefaultPii: false }),
     );
+    // Default integrations: no source lines, and unhandled rejections are not printed.
+    const options = sdk.init.mock.calls[0]?.[0] as Parameters<ErrorTrackingSdk['init']>[0];
+    const integrations = options.integrations([
+      { name: 'ContextLines', setupOnce: () => undefined },
+      { name: 'OnUnhandledRejection', setupOnce: () => undefined },
+      { name: 'Dedupe', setupOnce: () => undefined },
+    ] as never);
+    expect(integrations.map((integration) => integration.name)).toEqual([
+      'Dedupe',
+      'OnUnhandledRejection',
+    ]);
+    expect(sdk.onUnhandledRejectionIntegration).toHaveBeenCalledWith({ mode: 'none' });
     const error = new Error('boom');
     reportError(error, {
       action: 'platform.auth.sign_in',
       permission: 'tms.session.create',
       correlationId: 'c-1',
       tenantId: '550e8400-e29b-41d4-a716-446655440000',
+      errorCode: '23505',
     });
     expect(sdk.captureException).toHaveBeenCalledWith(error, {
       tags: {
@@ -68,6 +96,7 @@ describe('startObservability', () => {
         permission: 'tms.session.create',
         correlation_id: 'c-1',
         tenant_id: '550e8400-e29b-41d4-a716-446655440000',
+        error_code: '23505',
       },
     });
     reportError(error, {});
@@ -97,10 +126,37 @@ describe('startObservability', () => {
   });
 });
 
+describe('vercelKeepAlive', () => {
+  const key = Symbol.for('@vercel/request-context');
+  const registry = globalThis as Record<symbol, unknown>;
+
+  afterEach(() => {
+    registry[key] = undefined;
+  });
+
+  it("hands the task to Vercel's waitUntil when a request context exists", () => {
+    const waitUntil = vi.fn();
+    registry[key] = { get: () => ({ waitUntil }) };
+    const task = Promise.resolve();
+    vercelKeepAlive(task);
+    expect(waitUntil).toHaveBeenCalledWith(task);
+  });
+
+  it('does nothing outside Vercel', () => {
+    expect(() => {
+      vercelKeepAlive(Promise.resolve());
+    }).not.toThrow();
+    registry[key] = { get: () => undefined };
+    expect(() => {
+      vercelKeepAlive(Promise.resolve());
+    }).not.toThrow();
+  });
+});
+
 describe('handleRequestError', () => {
   const context = { routerKind: 'App Router', routePath: '/[locale]/suite', routeType: 'render' };
 
-  it('logs class and route only, and reports without request headers', () => {
+  it('logs class and route only, and reports without request headers or query string', () => {
     const { err } = silenceLogs();
     const sdk = fakeSdk();
     const error = new TypeError('failed for a@b.co');
@@ -112,7 +168,7 @@ describe('handleRequestError', () => {
     );
     expect(sdk.captureRequestError).toHaveBeenCalledWith(
       error,
-      { path: '/ar/suite?x=1', method: 'GET', headers: {} },
+      { path: '/ar/suite', method: 'GET', headers: {} },
       context,
     );
     const line = JSON.parse(String(err.mock.calls[0]?.[0])) as Record<string, unknown>;

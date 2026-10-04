@@ -6,8 +6,8 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-function fakeDb(query: () => Promise<unknown>): () => AppDatabase {
-  return () => ({ $client: query }) as unknown as AppDatabase;
+function fakeDb(query: () => Promise<unknown>, cancel = vi.fn()): () => AppDatabase {
+  return () => ({ $client: () => Object.assign(query(), { cancel }) }) as unknown as AppDatabase;
 }
 
 describe('checkDatabase', () => {
@@ -26,9 +26,14 @@ describe('checkDatabase', () => {
     await expect(
       checkDatabase({ getDb: fakeDb(() => Promise.reject(new Error('refused'))) }),
     ).resolves.toBe('unavailable');
+    const cancel = vi.fn(() => {
+      throw new Error('already finished');
+    });
     await expect(
-      checkDatabase({ timeoutMs: 10, getDb: fakeDb(() => new Promise(() => undefined)) }),
+      checkDatabase({ timeoutMs: 10, getDb: fakeDb(() => new Promise(() => undefined), cancel) }),
     ).resolves.toBe('unavailable');
+    await Promise.resolve();
+    expect(cancel).toHaveBeenCalledTimes(1);
     await expect(
       checkDatabase({
         getDb: () => {

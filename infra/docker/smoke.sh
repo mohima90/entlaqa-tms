@@ -88,15 +88,23 @@ echo "smoke: checking secrets stay out of the logs and Auth is reachable only th
 if compose logs db auth 2>&1 | grep -qF "$(secret AUTH_DB_PASSWORD)"; then
   echo "smoke: the Auth database password appears in the container logs" >&2; exit 1
 fi
-# No personal data in the app's operational logs (ADR 0009 §2, verification 1): the test users' e-mail
-# addresses and passwords, or any e-mail address at all, must not appear after the sign-in journeys.
+# No personal data in operational logs (ADR 0009 §2, verification 1), after the sign-in journeys: the
+# test users' passwords must appear in no container's logs; their e-mail addresses — or any e-mail
+# address — must not appear in the app's logs. (Supabase Auth itself records the e-mail of a sign-in in
+# its own logs; that is third-party behaviour, covered by the log retention/access rules of ADR 0009.)
+all_logs="$(compose logs --no-log-prefix 2>&1)"
 app_logs="$(compose logs --no-log-prefix app 2>&1)"
-for value in "$EMAIL" "$PASSWORD" "$PARITY_EMAIL" "$PARITY_PASSWORD"; do
-  if grep -qF "$value" <<<"$app_logs"; then
-    echo "smoke: a test user's e-mail or password appears in the app logs" >&2; exit 1
+for value in "$PASSWORD" "$PARITY_PASSWORD"; do
+  if grep -qF "$value" <<<"$all_logs"; then
+    echo "smoke: a test user's password appears in the container logs" >&2; exit 1
   fi
 done
-if grep -qE '[[:alnum:]._%+-]+@[[:alnum:]-]+\.[[:alnum:].-]+' <<<"$app_logs"; then
+for value in "$EMAIL" "$PARITY_EMAIL"; do
+  if grep -qF "$value" <<<"$app_logs"; then
+    echo "smoke: a test user's e-mail address appears in the app logs" >&2; exit 1
+  fi
+done
+if grep -qE '[[:alnum:]._%+-]+@[[:alnum:]-]+(\.[[:alnum:]-]+)*\.[[:alpha:]]{2,}' <<<"$app_logs"; then
   echo "smoke: an e-mail address appears in the app logs" >&2; exit 1
 fi
 reach() {

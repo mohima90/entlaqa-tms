@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { type LogLevel, baseLogFields, createLogger, formatLogLine } from './logger';
-import { errorName, reportError, setErrorReporter } from './report';
+import { errorCode, errorName, reportError, setErrorReporter } from './report';
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -57,6 +57,12 @@ describe('baseLogFields', () => {
       deployment: 'eu-saas-1',
       version: 'abc123',
     });
+  });
+
+  it('uses the Vercel environment when no Jadarat environment is set', () => {
+    vi.stubEnv('JADARAT_ENVIRONMENT', '');
+    vi.stubEnv('VERCEL_ENV', 'preview');
+    expect(baseLogFields('suite-web').env).toBe('preview');
   });
 
   it('falls back to the Vercel commit as version', () => {
@@ -147,6 +153,21 @@ describe('reportError', () => {
     const error = Object.assign(new Error('x'), { status: 503 });
     reportError(error, {}, createLogger({ write: (_l, line) => lines.push(line) }));
     expect(JSON.parse(lines[0] ?? '{}')).toMatchObject({ error_name: 'Error', status: 503 });
+  });
+
+  it('adds a stable error code from the error or its cause (e.g. a PostgreSQL SQLSTATE)', () => {
+    const lines: string[] = [];
+    const reporter = vi.fn();
+    setErrorReporter(reporter);
+    const cause = Object.assign(new Error('duplicate key … (email)=(a@b.co)'), { code: '23505' });
+    const error = new Error('Failed query', { cause });
+    reportError(error, { action: 'x' }, createLogger({ write: (_l, line) => lines.push(line) }));
+    expect(JSON.parse(lines[0] ?? '{}')).toMatchObject({ error_code: '23505' });
+    expect(reporter).toHaveBeenCalledWith(error, { action: 'x', errorCode: '23505' });
+    expect(errorCode(Object.assign(new Error('x'), { code: 'lower case' }))).toBeUndefined();
+    expect(errorCode({ code: 42 })).toBeUndefined();
+    expect(errorCode(null)).toBeUndefined();
+    expect(errorCode({ code: 'AUTH_INVALID_CREDENTIALS' })).toBe('AUTH_INVALID_CREDENTIALS');
   });
 
   it('names non-Error values by type', () => {

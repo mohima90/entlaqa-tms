@@ -22,10 +22,18 @@ export function isAllowedDsn(dsn: string): boolean {
     const url = new URL(dsn);
     if (!url.username || url.pathname.length <= 1) return false;
     if (url.protocol === 'https:') return true;
-    return url.protocol === 'http:' && !url.hostname.includes('.');
+    return (
+      url.protocol === 'http:' &&
+      (/^[a-z0-9-]{1,63}$/i.test(url.hostname) || url.hostname === '127.0.0.1')
+    );
   } catch {
     return false;
   }
+}
+
+/** True when a DSN is configured, valid or not (to warn about an invalid one). */
+export function isErrorTrackingDsnSet(): boolean {
+  return readEnv('SENTRY_DSN') !== undefined;
 }
 
 /** `null` = error tracking off (no DSN, or an invalid one): errors are still logged. */

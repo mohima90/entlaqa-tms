@@ -105,7 +105,8 @@ Runbook: [`docs/engineering/observability.md`](../engineering/observability.md).
   - Server-side `@sentry/nextjs` is started from `instrumentation.ts` with a runtime `SENTRY_DSN`, errors only. The SDK's OpenTelemetry setup and runtime module patching are off, so traces keep their own OTel pipeline.
   - The reporter is registered on `globalThis`, because Next.js bundles instrumentation separately from route code.
   - The Sentry CLI (FSL licence, build-time only) is removed from the install with a pnpm override.
+  - Exception messages are redacted by default (an allow-list keeps messages built from constants); a stable `error_code` (application code or SQLSTATE) is tagged instead. Console output, Next.js error lines included, goes through the same scrubbing.
   - Source maps are not uploaded yet, so stack frames are minified. Browser errors and GlitchTip come in part b.
-- **§6 health:** `/api/health/live` and `/api/health/ready` (database as `app_server`, cached 5 s).
+- **§6 health:** `/api/health/live` and `/api/health/ready` (database as `app_server`; one probe in flight per instance, result reused 5 s, cancelled after 3 s).
 - **Uptime:** a scheduled GitHub Actions check opens and closes an incident issue for staging. Production uptime from at least two regions, plus a status page, is still to be chosen (§5).
 - **Verification 1:** the PII scan of app logs runs in the self-hosted smoke test (gate 15), after the real sign-in journeys.

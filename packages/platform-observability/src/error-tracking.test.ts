@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { errorTrackingOptions, isAllowedDsn, readErrorTrackingConfig } from './error-tracking';
+import {
+  errorTrackingOptions,
+  isAllowedDsn,
+  isErrorTrackingDsnSet,
+  readErrorTrackingConfig,
+} from './error-tracking';
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -13,6 +18,10 @@ describe('isAllowedDsn', () => {
     ['http://key@glitchtip:8000/1', true],
     ['http://key@localhost:8000/1', true],
     ['http://key@errors.example.com/1', false],
+    ['http://key@127.0.0.1:8000/1', true],
+    ['http://key@[2001:db8::1]/1', false],
+    ['http://key@10.0.0.5/1', false],
+    ['ftp://key@glitchtip/1', false],
     ['https://o1.ingest.de.sentry.io/1', false],
     ['https://key@o1.ingest.de.sentry.io/', false],
     ['not a url', false],
@@ -25,8 +34,10 @@ describe('readErrorTrackingConfig', () => {
   it('is off without a DSN or with an invalid one', () => {
     vi.stubEnv('SENTRY_DSN', '');
     expect(readErrorTrackingConfig()).toBeNull();
+    expect(isErrorTrackingDsnSet()).toBe(false);
     vi.stubEnv('SENTRY_DSN', 'http://key@errors.example.com/1');
     expect(readErrorTrackingConfig()).toBeNull();
+    expect(isErrorTrackingDsnSet()).toBe(true);
   });
 
   it('reads DSN, environment and release at runtime', () => {

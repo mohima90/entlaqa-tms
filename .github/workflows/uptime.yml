@@ -1,7 +1,8 @@
 # Uptime check for the hosted staging environment (T-M1-D06, ADR 0009 §6). Every 15 minutes it calls the
 # public readiness endpoint (app + database). When it fails twice in a row (one retry after 30 s), an
-# issue "Uptime: staging is down" is opened — GitHub e-mails everyone watching the repository — and it
-# is closed automatically when the check passes again.
+# issue "Uptime: staging is down" (label `uptime`) is opened — GitHub e-mails everyone watching the
+# repository — and it is closed automatically when the check passes again. Only issues opened by this
+# workflow (author github-actions, label `uptime`) are ever commented on or closed.
 # Runs only on the default branch (GitHub schedules) and only when the repository variable UPTIME_URL
 # is set (Settings → Secrets and variables → Actions → Variables), e.g. https://<staging-domain>.
 # Production uptime (≥ 2 regions, public status page) is chosen before the first customer (ADR 0009 §5).
@@ -31,6 +32,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
       TITLE: 'Uptime: staging is down'
+      LABEL: uptime
     steps:
       - name: Call /api/health/ready
         id: probe
@@ -50,11 +52,13 @@ jobs:
           STATUS: ${{ steps.probe.outputs.status }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          number="$(gh issue list --state open --search "in:title \"$TITLE\"" --json number,title \
+          gh label create "$LABEL" --color B60205 --description 'Opened by the uptime workflow' --force >/dev/null
+          number="$(gh issue list --state open --label "$LABEL" --author app/github-actions --json number,title \
             --jq '[.[] | select(.title == $ENV.TITLE)][0].number // empty')"
           body="Readiness check failed at $(date -u +'%Y-%m-%d %H:%M UTC') (HTTP ${STATUS:-none}). Run: $RUN_URL"
           if [[ -z "$number" ]]; then
-            gh issue create --title "$TITLE" --body "$body"$'\n\n'"Closed automatically when the check passes again. Runbook: docs/engineering/observability.md"
+            gh issue create --title "$TITLE" --label "$LABEL" \
+              --body "$body"$'\n\n'"Closed automatically when the check passes again. Runbook: docs/engineering/observability.md"
           else
             gh issue comment "$number" --body "$body"
           fi
@@ -62,7 +66,7 @@ jobs:
       - name: Close the incident issue after recovery
         if: steps.probe.outputs.up == 'true'
         run: |
-          for number in $(gh issue list --state open --search "in:title \"$TITLE\"" --json number,title \
-            --jq '.[] | select(.title == $ENV.TITLE) | .number'); do
+          for number in $(gh issue list --state open --label "$LABEL" --author app/github-actions \
+            --json number,title --jq '.[] | select(.title == $ENV.TITLE) | .number'); do
             gh issue close "$number" --comment "Recovered: readiness check passed at $(date -u +'%Y-%m-%d %H:%M UTC')."
           done

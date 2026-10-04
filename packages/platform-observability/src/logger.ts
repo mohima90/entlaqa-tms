@@ -57,7 +57,7 @@ function readEnv(name: string): string | undefined {
 /** Deployment-level fields on every line (ADR 0009 §1 common attributes). */
 export function baseLogFields(service: string): Record<string, string> {
   const fields: Record<string, string> = { service };
-  const env = readEnv('JADARAT_ENVIRONMENT') ?? readEnv('NODE_ENV');
+  const env = readEnv('JADARAT_ENVIRONMENT') ?? readEnv('VERCEL_ENV') ?? readEnv('NODE_ENV');
   const deployment = readEnv('JADARAT_DEPLOYMENT');
   const version = readEnv('JADARAT_RELEASE') ?? readEnv('VERCEL_GIT_COMMIT_SHA');
   if (env) fields.env = env;

@@ -8,20 +8,25 @@
 | Signal | Where it goes | Content |
 |---|---|---|
 | **Logs** | stdout/stderr as one JSON object per line (Vercel runtime logs; `docker compose logs` in containers) | `time, level, msg, service, env, deployment, version` + a **closed** set of fields: `action, permission, correlation_id, tenant_id, status, outcome, duration_ms, error_code, error_name, route` |
-| **Errors** | Sentry (EU data region, org `entlaqa-qv`, project `javascript-nextjs`) for the cloud; GlitchTip in-country for sovereign installations | Error class, scrubbed message, stack frames, route, release, environment, tags `action`, `permission`, `correlation_id`, `tenant_id` |
+| **Errors** | Sentry (EU data region, org `entlaqa-qv`, project `javascript-nextjs`) for the cloud; GlitchTip in-country for sovereign installations | Error class, stack locations (file, function, line), route without query string, release, environment, tags `action`, `permission`, `correlation_id`, `tenant_id`, `error_code` (e.g. PostgreSQL SQLSTATE `23505`). The message is `[redacted]`, except for allow-listed error classes whose messages contain no input |
 | **Uptime** | GitHub Actions every 15 min → issue "Uptime: staging is down" | HTTP status of `/api/health/ready` |
 
-**Never sent or logged** (ADR 0009 §2): names, e-mails, phone numbers, national IDs (Saudi ID/Iqama, Emirates ID, Egyptian ID), IP addresses, request or response bodies, query strings, cookies, headers, tokens, passwords, local variables, source code lines, breadcrumbs. Enforcement:
+**Never sent or logged by our code** (ADR 0009 §2): names, e-mails, phone numbers, national IDs (Saudi ID/Iqama, Emirates ID, Egyptian ID), IP addresses, request or response bodies, query strings, cookies, headers, tokens, passwords, local variables, source code lines, breadcrumbs. Enforcement:
 
 1. The logger API only accepts the fields above. There is no way to log an object.
-2. Error messages are not logged; only the error class is.
-3. Every string in a log line or error report goes through `scrubText`, which replaces e-mails, phone numbers, national IDs, IP addresses, tokens and URL credentials. UUIDs are kept.
-4. The error tracker's `beforeSend` (`scrubErrorEvent`) drops the user, request headers, cookies, body and query string, breadcrumbs, extra data, local variables and the server name.
-5. `sendDefaultPii: false`, no tracing, no session replay, and the `ContextLines` integration is off.
+2. **Error messages are redacted** everywhere: in our log lines (only the class and code are logged), in error reports (`exception.value` = `[redacted]`), and in console output, Next.js `⨯ Error: …` lines included. Error messages routinely embed input, such as a failed query with its parameters. The only exceptions are allow-listed classes built from constants (`SAFE_MESSAGE_ERRORS`, e.g. `AuthServiceError`).
+3. Strings in log lines, error reports and console output go through `scrubText`. It replaces e-mails (Arabic addresses included), phone numbers (KSA/UAE/Egypt, local and international), national IDs, IP addresses, tokens and URL credentials. UUIDs are kept. Input is truncated to 2,000 characters first and every pattern is bounded, so a hostile string cannot make scrubbing slow (tested on 100,000-character inputs). Side effect: 10-digit numbers starting with 1 or 2, such as epoch seconds, also become `[national-id]`.
+4. The error tracker's `beforeSend` (`scrubErrorEvent`) drops:
+   - the user;
+   - request headers, cookies, body and query string, and query strings in context URLs/paths;
+   - breadcrumbs, extra data and threads;
+   - local variables, source lines and the server name.
+   Objects nested more than 6 levels deep are replaced by `[depth]`.
+5. `sendDefaultPii: false`, no tracing and no session replay. The `ContextLines` integration is off, and unhandled rejections are reported without being printed.
 6. Sentry organization settings (PO, 4 Oct 2026): Data Scrubber, Default Scrubbers and Prevent Storing of IP Addresses are all **required**.
 7. Tests:
    - unit tests per pattern;
-   - the self-hosted smoke test (gate 15) fails if the test users' e-mail or password, or any e-mail address, appears in the app logs after the sign-in journeys;
+   - the self-hosted smoke test (gate 15) runs after the sign-in journeys. It fails if a test user's password appears in any container's logs, or if a test user's e-mail or any e-mail address appears in the app's logs;
    - an end-to-end check of a real error report through the built app (4 Oct 2026) found no e-mail, password or source line in it.
 
 **Correlation:** an unexpected error shows the user a reference id (`correlation_id`). Search for it in the logs or in Sentry (tag `correlation_id`) to find the matching log line and error report.
@@ -53,13 +58,14 @@ Run GlitchTip in-country and set `SENTRY_DSN` in `infra/docker/.secrets/.env`; c
 | `GET /api/health/live` | `200 {"status":"ok"}` while the process runs | container health check (`app.Dockerfile`), orchestrators |
 | `GET /api/health/ready` | `200 {"status":"ok"}`, or `503 {"status":"unavailable"}` when the database cannot be reached as `app_server` | uptime monitors, load balancers |
 
-Both are public and `no-store`, and never return versions, hosts or error details. The readiness result is reused for 5 seconds, so the endpoint cannot be used to load the database. More dependencies (Storage, worker heartbeat, ClamAV) join `/ready` when they exist (ADR 0009 §6).
+Both are public and `no-store`, and never return versions, hosts or error details. Each app instance runs at most one readiness probe at a time: concurrent requests share it, and its result is reused for 5 seconds. A probe that takes longer than 3 seconds is cancelled so it does not hold a database connection. More dependencies (Storage, worker heartbeat, ClamAV) join `/ready` when they exist (ADR 0009 §6).
 
 ## Uptime check (staging)
 
 `.github/workflows/uptime.yml` runs at minutes 7, 22, 37 and 52 of every hour (GitHub may delay scheduled runs by several minutes):
-- If `/api/health/ready` fails twice 30 s apart, it opens the issue **"Uptime: staging is down"**, or comments on it if it is already open. GitHub notifies watchers of the repository.
+- If `/api/health/ready` fails twice 30 s apart, it opens the issue **"Uptime: staging is down"** (label `uptime`), or comments on it if it is already open. GitHub notifies watchers of the repository.
 - The issue is closed automatically after the next successful check.
+- Only issues opened by the workflow itself (author `github-actions`) are touched. The repository is public, so staging incidents are visible; staging has no customer data.
 - Run it by hand: **Actions → Uptime (staging) → Run workflow**.
 
 This is a staging baseline. Production needs external checks from at least two regions and a public status page (ADR 0009 §5, NFR-OBS-03). That vendor is chosen before the first customer goes live.
@@ -77,5 +83,7 @@ This is a staging baseline. Production needs external checks from at least two r
 | Stack traces show compiled (minified) server code | In-process source maps are not applied by Next.js 16 / Turbopack at runtime (tried 4 Oct 2026). Disabling minification would also unminify the browser bundle | Upload source maps privately at build time to Sentry and GlitchTip (ADR 0009 §4), T-M1-D06 part b |
 | Browser (client-side) errors are not reported | The browser SDK needs a runtime DSN, which means a tunnel route through our server, plus a check against the bundle budget | T-M1-D06 part b |
 | GlitchTip not yet in `infra/docker` | — | T-M1-D06 part b |
+| Supabase Auth (GoTrue) writes the e-mail of each sign-in to its own logs (`actor_username`, `user_email`; seen in the self-hosted smoke test). On the hosted cloud, Supabase keeps those logs | Third-party component; we cannot change its log content | Self-hosted: collect GoTrue logs through a scrubbing collector with short retention (ADR 0009 §5 Collector, M2). Cloud: covered by the Supabase sub-processor terms and the log access rules |
+| Source-map upload vs. the licence policy | The Sentry CLI used for uploads is FSL-licensed and removed from the install | Part b: upload through the Sentry/GlitchTip HTTP API from a small script, or a PO-approved licence exception for a build-only tool |
 | Traces and metrics (OpenTelemetry), alert rules, status page | Need a backend (ADR 0009 §5) | M2/M3, with the worker (ADR 0005) |
 | `actor_ref` (HMAC of the user id) in logs | No per-user logging needed yet | When the first module action logs per actor |

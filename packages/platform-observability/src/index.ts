@@ -11,14 +11,25 @@ export {
 export {
   type ErrorContext,
   type ErrorReporter,
+  errorCode,
   errorName,
   reportError,
   setErrorReporter,
 } from './report';
+export { formatErrorForLog, installConsoleScrubbing } from './console';
 export {
   type ErrorTrackingConfig,
   errorTrackingOptions,
   isAllowedDsn,
+  isErrorTrackingDsnSet,
   readErrorTrackingConfig,
 } from './error-tracking';
-export { scrubErrorEvent, scrubText, scrubUrl, scrubValue } from './scrub';
+export {
+  MAX_TEXT,
+  REDACTED,
+  SAFE_MESSAGE_ERRORS,
+  scrubErrorEvent,
+  scrubText,
+  scrubUrl,
+  scrubValue,
+} from './scrub';

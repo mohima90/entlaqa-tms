@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Permissions registry, data scopes, authorize() and defineAction() (ADR 0003 \u00a73\u2013\u00a74).",
+  "description": "Permissions registry, data scopes, authorize() and defineAction() (ADR 0003 §3–§4).",
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts"

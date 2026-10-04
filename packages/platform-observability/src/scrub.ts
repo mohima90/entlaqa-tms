@@ -160,7 +160,12 @@ function scrubException(exception: ExceptionValue): ExceptionValue {
                 ...location
               } = frame;
               // A multi-line message can be parsed into fake frames: scrub the text fields too.
-              for (const key of ['function', 'filename', 'abs_path', 'module'] as const) {
+              // File names can be page URLs (inline scripts): no query string or fragment.
+              for (const key of ['filename', 'abs_path'] as const) {
+                const url = location[key];
+                if (url !== undefined) location[key] = scrubUrl(url);
+              }
+              for (const key of ['function', 'module'] as const) {
                 const text = location[key];
                 if (text !== undefined) location[key] = scrubText(text);
               }

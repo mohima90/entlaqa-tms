@@ -14,7 +14,8 @@
  *  - `definePublicAction` (pre-tenant sign-in flows, no permission check) is allowed ONLY in
  *    apps/suite/src/auth/*.ts(x), so every unauthenticated entry point lives in one reviewed place.
  *  - `definePublicRoute` (mutating route without a session, e.g. browser error reports) is allowed
- *    ONLY in the route files listed in PUBLIC_ROUTE_FILES — each one reviewed.
+ *    ONLY in the route files listed in PUBLIC_ROUTE_FILES — each one reviewed. Anywhere else (except
+ *    its own package) even importing or calling it fails, so it cannot be wrapped or passed around.
  */
 import ts from 'typescript';
 
@@ -270,6 +271,21 @@ export function checkServerActionsSource(fileName, source) {
         }
       }
     }
+  }
+
+  // definePublicRoute may not appear outside the reviewed files (no indirect use).
+  if (!PUBLIC_ROUTE_FILES.has(fileName) && !fileName.startsWith('packages/platform-rbac/')) {
+    const visitPublic = (node) => {
+      const imported =
+        ts.isImportSpecifier(node) && (node.propertyName ?? node.name).text === 'definePublicRoute';
+      if (imported || isCallTo(node, 'definePublicRoute')) {
+        errors.push(
+          `${where(node)}: definePublicRoute() is allowed only in the reviewed public route files (PUBLIC_ROUTE_FILES)`,
+        );
+      }
+      ts.forEachChild(node, visitPublic);
+    };
+    visitPublic(sf);
   }
 
   // Inline 'use server' inside function bodies (closures) bypass defineAction.

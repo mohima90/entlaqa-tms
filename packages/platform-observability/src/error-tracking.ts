@@ -49,6 +49,24 @@ export function readErrorTrackingConfig(): ErrorTrackingConfig | null {
   };
 }
 
+/**
+ * Destination for BROWSER reports: `SENTRY_BROWSER_DSN` (a separate project, so floods of forged
+ * browser reports cannot use up the quota server errors depend on), else `SENTRY_DSN`.
+ */
+export function readBrowserErrorTrackingConfig(): ErrorTrackingConfig | null {
+  const server = readErrorTrackingConfig();
+  const browserDsn = readEnv('SENTRY_BROWSER_DSN');
+  if (browserDsn === undefined) return server;
+  if (!isAllowedDsn(browserDsn)) return null;
+  const release = readEnv('JADARAT_RELEASE') ?? readEnv('VERCEL_GIT_COMMIT_SHA');
+  return {
+    dsn: browserDsn,
+    environment:
+      readEnv('JADARAT_ENVIRONMENT') ?? readEnv('VERCEL_ENV') ?? readEnv('NODE_ENV') ?? 'unknown',
+    ...(release ? { release } : {}),
+  };
+}
+
 const DISABLED_INTEGRATIONS: ReadonlySet<string> = new Set(['ContextLines']);
 
 /**

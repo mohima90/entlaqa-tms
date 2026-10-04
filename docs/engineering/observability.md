@@ -35,6 +35,8 @@
 
 | Variable | Example | Purpose |
 |---|---|---|
+| `SENTRY_BROWSER_DSN` (optional) | DSN of a separate Sentry project for browser errors | Browser reports go here instead of `SENTRY_DSN` |
+| `JADARAT_CLIENT_IP_HEADER` (optional) | `x-forwarded-for` | Header with the client IP set by the load balancer in front of the app, for per-client limits (default `x-real-ip`, Vercel's) |
 | `SENTRY_DSN` | Sentry → Settings → Projects → `javascript-nextjs` → **Client Keys (DSN)** | Turns error tracking on. Unset or invalid = logs only. Must be `https://` (plain `http://` only to a single-label host on the installation's private network, e.g. `http://key@glitchtip:8000/1`) |
 | `JADARAT_ENVIRONMENT` | `staging`, `production`, `self-hosted` | `env` in logs, `environment` in Sentry (default: Vercel's `VERCEL_ENV`, else `NODE_ENV`) |
 | `JADARAT_DEPLOYMENT` | `eu-saas-1`, `sa-gov-1` | `deployment` in logs (optional) |
@@ -54,16 +56,24 @@ Run GlitchTip in-country and set `SENTRY_DSN` in `infra/docker/.secrets/.env`; c
 ## Browser errors (`POST /api/monitoring/errors`)
 
 The browser reports uncaught errors and unhandled rejections through **our own server**, never directly to Sentry:
-- `src/instrumentation-client.ts` uses the `@sentry/browser` SDK (about +29 KiB gzip of client JS; total 207 of the 250 KiB budget).
-- The browser sends to the same-origin endpoint `/api/monitoring/errors` (`connect-src 'self'`), with a placeholder DSN.
-- The server (`lib/error-tunnel.ts`) chooses the real destination from its runtime `SENTRY_DSN` and handles each report like this:
-  - accepts only same-origin requests (`Sec-Fetch-Site`) of at most 64 KiB;
-  - keeps error events only (at most 5 per envelope), dropping sessions, transactions, replays and attachments;
-  - scrubs every event again, because the browser is not trusted;
-  - replaces the browser's environment and release with its own;
-  - forwards at most 60 envelopes per minute per instance, with a 5-second timeout.
-- The browser always gets the same answer, whatever happens upstream. With no `SENTRY_DSN`, reports are dropped (`204`).
-- Sessions, tracing and breadcrumbs are never collected in the browser.
+- `src/instrumentation-client.ts` uses the `@sentry/browser` SDK. It adds about 29 KiB gzip of client JS (total 207 of the 250 KiB budget). The scrubbing patterns need Safari 16.4 or later, Next.js 16's own baseline.
+- The browser sends to the same-origin endpoint `/api/monitoring/errors` (`connect-src 'self'`) with a placeholder DSN on the never-resolving `.invalid` domain. Sessions, tracing, breadcrumbs and console capture are off.
+
+The server (`lib/error-tunnel.ts`, created with `definePublicRoute`) is a **public, unauthenticated** endpoint, so it is bounded:
+- It refuses cross-site browser requests (`Sec-Fetch-Site`). Scripts that send no fetch-metadata headers are accepted, which is why the limits below exist.
+- At most 64 KiB and **one** error event per envelope. The event is **rebuilt from an allow-list** (`sanitizeBrowserEvent`):
+  - kept: exception types, values and frame locations, level, timestamp, page URL, and up to 50 scalar tags;
+  - dropped: user, headers, contexts, extra data, debug metadata, the client fingerprint and SDK settings.
+
+  It is then scrubbed like server events, and the browser's environment and release are replaced by the server's own.
+- Rate limits per minute and per instance: at most **10 forwarded reports per client** (keyed on the platform's client-IP header, `x-real-ip` on Vercel, configurable with `JADARAT_CLIENT_IP_HEADER`; kept in memory, never logged) and **60 in total**.
+- The upstream request times out after 5 seconds, and the browser always gets the same answer.
+- Destination: `SENTRY_BROWSER_DSN` if set, otherwise `SENTRY_DSN`. A separate browser project keeps forged browser reports from using up the quota that server errors depend on. With no DSN at all, reports are dropped (`204`).
+
+**Before the first customer (PO, guided):**
+1. Create a separate Sentry project for browser errors and set `SENTRY_BROWSER_DSN`.
+2. Set a per-key rate limit on both Sentry projects (Settings → Client Keys → Rate limits).
+3. Consider a Vercel firewall rate-limit rule for `/api/monitoring/errors`.
 
 ## Health endpoints
 

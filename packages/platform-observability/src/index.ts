@@ -21,15 +21,18 @@ export {
   type ForwardTarget,
   MAX_ENVELOPE_BYTES,
   buildForwardEnvelope,
+  createKeyedRateLimiter,
   createRateLimiter,
   forwardTargetFor,
   readEnvelopeEvents,
+  sanitizeBrowserEvent,
 } from './envelope';
 export {
   type ErrorTrackingConfig,
   errorTrackingOptions,
   isAllowedDsn,
   isErrorTrackingDsnSet,
+  readBrowserErrorTrackingConfig,
   readErrorTrackingConfig,
 } from './error-tracking';
 export {

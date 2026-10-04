@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   MAX_ENVELOPE_BYTES,
   buildForwardEnvelope,
+  createKeyedRateLimiter,
   createRateLimiter,
   forwardTargetFor,
   readEnvelopeEvents,
+  sanitizeBrowserEvent,
 } from './envelope';
 
 const DSN = 'https://0123abcd@o1.ingest.de.sentry.io/4512197765103696';
@@ -57,7 +59,16 @@ describe('readEnvelopeEvents', () => {
       JSON.stringify({ type: 'event' }),
       JSON.stringify({ message: 'no exception' }),
     );
-    expect(readEnvelopeEvents(body)).toEqual([browserEvent]);
+    expect(readEnvelopeEvents(body)).toEqual([
+      {
+        type: undefined,
+        platform: 'javascript',
+        request: { url: 'https://app/ar/suite?email=a@b.co' },
+        exception: { values: [{ type: 'TypeError', value: 'x is undefined for a@b.co' }] },
+        tags: { page: 'suite' },
+        sdk: { name: 'unknown', version: 'unknown', settings: { infer_ip: 'never' } },
+      },
+    ]);
   });
 
   it('honours explicit item lengths (bytes, not characters)', () => {
@@ -81,12 +92,119 @@ describe('readEnvelopeEvents', () => {
     expect(readEnvelopeEvents(envelope('{}', '{"type":"event"}', 'not json'))).toEqual([]);
   });
 
-  it('forwards at most five events per envelope', () => {
+  it('forwards one event per envelope (as the SDK sends)', () => {
     const items = Array.from({ length: 8 }, () => [
       JSON.stringify({ type: 'event' }),
       JSON.stringify(browserEvent),
     ]).flat();
-    expect(readEnvelopeEvents(envelope('{}', ...items))).toHaveLength(5);
+    expect(readEnvelopeEvents(envelope('{}', ...items))).toHaveLength(1);
+  });
+});
+
+describe('sanitizeBrowserEvent', () => {
+  it('keeps only allow-listed fields of a forged event', () => {
+    const forged = {
+      event_id: '0123456789abcdef0123456789abcdef',
+      timestamp: 1791114922.3,
+      level: 'error',
+      platform: 'node',
+      exception: {
+        values: [
+          {
+            type: 'Error',
+            value: 'v',
+            mechanism: { type: 'onerror', handled: false, data: { secret: 'x' } },
+            stacktrace: {
+              frames: [
+                {
+                  filename: 'https://app/ar/learners?name=Ahmed',
+                  abs_path: 'https://app/x#frag',
+                  function: 'f',
+                  module: 'm',
+                  lineno: 1,
+                  colno: 2,
+                  in_app: true,
+                  vars: { password: 'x' },
+                  data: { secret: 'x' },
+                  pre_context: ['x'],
+                },
+                'not a frame',
+              ],
+            },
+          },
+          null,
+        ],
+      },
+      request: { url: 'https://app/ar', headers: { cookie: 'sb=x' } },
+      user: { email: 'a@b.co' },
+      contexts: { browser: { name: 'x' } },
+      extra: { a: 1 },
+      debug_meta: { images: [{ code_file: 'https://app/?token=x' }] },
+      sdkProcessingMetadata: { cookies: 'x' },
+      fingerprint: ['a@b.co'],
+      sdk: { name: 'sentry.javascript.browser', version: '11.4.0', settings: { infer_ip: 'auto' } },
+      tags: { ok: 'v', n: 1, b: true, nested: { x: 1 }, 'bad key!': 'x' },
+      __proto__: { polluted: true },
+      level_extra: 'x',
+    };
+    const event = sanitizeBrowserEvent(forged);
+    expect(event).toEqual({
+      type: undefined,
+      platform: 'javascript',
+      event_id: '0123456789abcdef0123456789abcdef',
+      timestamp: 1791114922.3,
+      level: 'error',
+      request: { url: 'https://app/ar' },
+      exception: {
+        values: [
+          {
+            type: 'Error',
+            value: 'v',
+            mechanism: { type: 'onerror', handled: false },
+            stacktrace: {
+              frames: [
+                {
+                  filename: 'https://app/ar/learners?name=Ahmed',
+                  abs_path: 'https://app/x#frag',
+                  function: 'f',
+                  module: 'm',
+                  lineno: 1,
+                  colno: 2,
+                  in_app: true,
+                },
+              ],
+            },
+          },
+        ],
+      },
+      tags: { ok: 'v', n: 1, b: true },
+      sdk: {
+        name: 'sentry.javascript.browser',
+        version: '11.4.0',
+        settings: { infer_ip: 'never' },
+      },
+    });
+  });
+
+  it('rejects events without a usable exception and normalises odd values', () => {
+    expect(sanitizeBrowserEvent({ message: 'x' })).toBeNull();
+    expect(sanitizeBrowserEvent({ exception: { values: 'x' } })).toBeNull();
+    expect(sanitizeBrowserEvent({ exception: { values: [null, 3] } })).toBeNull();
+    expect(
+      sanitizeBrowserEvent({
+        event_id: 'not-hex',
+        level: 'debug',
+        timestamp: 'x',
+        request: { url: 5 },
+        exception: { values: [{ mechanism: {}, stacktrace: { frames: 'x' } }] },
+      }),
+    ).toEqual({
+      type: undefined,
+      platform: 'javascript',
+      exception: { values: [{ mechanism: { type: 'generic' } }] },
+      tags: {},
+      sdk: { name: 'unknown', version: 'unknown', settings: { infer_ip: 'never' } },
+    });
   });
 });
 
@@ -120,6 +238,17 @@ describe('buildForwardEnvelope', () => {
     if (!target) throw new Error('target');
     const text = buildForwardEnvelope([browserEvent], target, { environment: 'x' });
     expect(text).not.toContain('release');
+  });
+});
+
+describe('createKeyedRateLimiter', () => {
+  it('limits each key separately and caps the number of keys per window', () => {
+    let time = 0;
+    const allow = createKeyedRateLimiter(2, 1000, 2, () => time);
+    expect([allow('a'), allow('a'), allow('a'), allow('b')]).toEqual([true, true, false, true]);
+    expect(allow('c')).toBe(false);
+    time = 1000;
+    expect([allow('a'), allow('c')]).toEqual([true, true]);
   });
 });
 

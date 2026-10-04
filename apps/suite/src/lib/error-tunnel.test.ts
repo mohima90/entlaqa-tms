@@ -29,6 +29,7 @@ function deps(overrides: Partial<TunnelDeps> = {}) {
   return {
     config: () => ({ dsn: DSN, environment: 'staging', release: 'r1' }),
     allow: () => true,
+    allowClient: () => true,
     send: vi.fn(() => Promise.resolve(new Response(null, { status: 200 }))),
     ...overrides,
   };
@@ -90,6 +91,12 @@ describe('handleErrorTunnel', () => {
     );
     const limited = deps({ allow: () => false });
     expect((await handleErrorTunnel(request(body(event)), limited)).status).toBe(429);
+    const perClient = deps({ allowClient: (key) => key !== '203.0.113.9' });
+    expect(
+      (await handleErrorTunnel(request(body(event), { 'x-real-ip': '203.0.113.9' }), perClient))
+        .status,
+    ).toBe(429);
+    expect((await handleErrorTunnel(request(body(event)), perClient)).status).toBe(202);
     expect(d.send).not.toHaveBeenCalled();
     expect(limited.send).not.toHaveBeenCalled();
   });
@@ -105,6 +112,35 @@ describe('handleErrorTunnel', () => {
     const lines = err.mock.calls.map(([line]) => String(line));
     expect(lines[0]).toContain('"status":429');
     expect(lines[1]).toContain('browser error report not forwarded');
+  });
+
+  it('keys clients on the configured client-IP header', async () => {
+    const keys: string[] = [];
+    const d = deps({
+      allowClient: (key) => {
+        keys.push(key);
+        return true;
+      },
+    });
+    await handleErrorTunnel(request(body(event), { 'x-real-ip': '198.51.100.1' }), d);
+    vi.stubEnv('JADARAT_CLIENT_IP_HEADER', 'x-forwarded-for');
+    await handleErrorTunnel(request(body(event), { 'x-forwarded-for': '192.0.2.5, 10.0.0.1' }), d);
+    await handleErrorTunnel(request(body(event)), d);
+    vi.unstubAllEnvs();
+    expect(keys).toEqual(['198.51.100.1', '192.0.2.5', 'unknown']);
+  });
+
+  it('answers 400 when the request body cannot be read', async () => {
+    const broken = new Request('https://app/api/monitoring/errors', {
+      method: 'POST',
+      body: new ReadableStream({
+        pull() {
+          throw new Error('aborted');
+        },
+      }),
+      duplex: 'half',
+    } as RequestInit);
+    expect((await handleErrorTunnel(broken, deps())).status).toBe(400);
   });
 
   it('uses the runtime configuration by default', async () => {

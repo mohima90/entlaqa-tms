@@ -128,6 +128,23 @@ describe('server actions gate (ADR 0003 §4.6)', () => {
         '\n',
       ),
     ).toMatch(/"definePublicRoute" must be imported from @jadarat\/platform-rbac/);
+    // No indirect use: importing or calling it anywhere else fails, route file or not.
+    const wrapped =
+      "import { definePublicRoute, defineRoute } from '@jadarat/platform-rbac';\nconst h = definePublicRoute({});\nexport const POST = defineRoute(h);\n";
+    expect(
+      checkServerActionsSource('apps/suite/src/app/api/x/route.ts', wrapped).join('\n'),
+    ).toMatch(/definePublicRoute\(\) is allowed only/);
+    const helper =
+      "import { definePublicRoute as d } from '@jadarat/platform-rbac';\nexport const x = d;\n";
+    expect(checkServerActionsSource('apps/suite/src/lib/helper.ts', helper).join('\n')).toMatch(
+      /definePublicRoute\(\) is allowed only/,
+    );
+    expect(
+      checkServerActionsSource(
+        'packages/platform-rbac/src/index.ts',
+        "import { createDefinePublicRoute } from './x';\nexport const definePublicRoute = createDefinePublicRoute({});\n",
+      ),
+    ).toEqual([]);
   });
 
   it('accepts defineAction exports', () => {

@@ -10,9 +10,10 @@ export const ERROR_TUNNEL_PATH = '/api/monitoring/errors';
  */
 const PLACEHOLDER_DSN = 'https://browser@errors.invalid/1';
 
-/** Sessions, tracing and breadcrumbs are never collected in the browser. */
+/** Sessions, tracing, breadcrumbs and console capture are never collected in the browser. */
 const DISABLED_INTEGRATIONS: ReadonlySet<string> = new Set([
   'Breadcrumbs',
+  'Console',
   'BrowserSession',
   'BrowserTracing',
 ]);

@@ -3,30 +3,49 @@ import {
   type ErrorTrackingConfig,
   MAX_ENVELOPE_BYTES,
   buildForwardEnvelope,
+  createKeyedRateLimiter,
   createRateLimiter,
   forwardTargetFor,
   log,
+  readBrowserErrorTrackingConfig,
   readEnvelopeEvents,
-  readErrorTrackingConfig,
 } from '@jadarat/platform-observability';
 
 /**
- * Browser error reports (`POST /api/monitoring/errors`, see lib/browser-error-tracking.ts). Public, so
- * it is bounded: same-origin requests only, 64 KiB per envelope, error events only, at most 60
- * forwarded envelopes per minute per instance, and a 5-second upstream timeout. Every event is
- * scrubbed again here before it leaves (ADR 0009 §4). The answer never says what happened upstream.
+ * Browser error reports (`POST /api/monitoring/errors`, see lib/browser-error-tracking.ts). Public and
+ * unauthenticated, so it is bounded:
+ *  - cross-site browser requests are refused (`Sec-Fetch-Site`); scripts without fetch-metadata
+ *    headers are accepted, which is why the limits below exist;
+ *  - 64 KiB per envelope, one error event, rebuilt from an allow-list and scrubbed again here;
+ *  - at most 10 forwarded reports per client and 60 in total per minute per instance (the client key —
+ *    the platform's client-IP header — stays in memory only and is never logged);
+ *  - 5-second upstream timeout; the answer never says what happened upstream.
+ * Reports go to `SENTRY_BROWSER_DSN` (a separate project) when set, else `SENTRY_DSN` (ADR 0009 §4).
  */
 export interface TunnelDeps {
   readonly config: () => ErrorTrackingConfig | null;
   readonly allow: () => boolean;
+  readonly allowClient: (key: string) => boolean;
   readonly send: (url: string, init: RequestInit) => Promise<Response>;
 }
 
 const defaultDeps: TunnelDeps = {
-  config: readErrorTrackingConfig,
+  config: readBrowserErrorTrackingConfig,
   allow: createRateLimiter(60, 60_000),
+  allowClient: createKeyedRateLimiter(10, 60_000),
   send: (url, init) => fetch(url, init),
 };
+
+/**
+ * The client key: the client-IP header set by the platform in front of the app (`x-real-ip` on Vercel;
+ * set `JADARAT_CLIENT_IP_HEADER` for other load balancers). Without it, all clients share one key.
+ */
+function clientKey(request: Request): string {
+  const configured = process.env.JADARAT_CLIENT_IP_HEADER?.trim();
+  const header = configured === undefined || configured === '' ? 'x-real-ip' : configured;
+  const client = request.headers.get(header)?.split(',')[0]?.trim();
+  return client === undefined || client === '' ? 'unknown' : client;
+}
 
 const ACCEPTED = 202;
 
@@ -57,7 +76,13 @@ export async function handleErrorTunnel(
   const site = request.headers.get('sec-fetch-site');
   if (site !== null && site !== 'same-origin') return new Response(null, { status: 403 });
 
-  const body = await readLimited(request, MAX_ENVELOPE_BYTES);
+  let body: Buffer | null;
+  try {
+    body = await readLimited(request, MAX_ENVELOPE_BYTES);
+  } catch {
+    // Client aborted or the stream broke: nothing to forward, nothing worth reporting.
+    return new Response(null, { status: 400 });
+  }
   if (body === null) return new Response(null, { status: 413 });
 
   const config = deps.config();
@@ -67,7 +92,9 @@ export async function handleErrorTunnel(
   const events = readEnvelopeEvents(body);
   if (events === null) return new Response(null, { status: 400 });
   if (events.length === 0) return new Response(null, { status: 204 });
-  if (!deps.allow()) return new Response(null, { status: 429 });
+  if (!deps.allowClient(clientKey(request)) || !deps.allow()) {
+    return new Response(null, { status: 429 });
+  }
 
   try {
     const upstream = await deps.send(target.url, {
@@ -79,6 +106,8 @@ export async function handleErrorTunnel(
       }),
       signal: AbortSignal.timeout(5_000),
     });
+    // Release the connection: the upstream answer is never needed.
+    await upstream.body?.cancel().catch(() => undefined);
     if (!upstream.ok) {
       log.warn('browser error report not accepted upstream', {
         action: 'platform.observability.browser_error',

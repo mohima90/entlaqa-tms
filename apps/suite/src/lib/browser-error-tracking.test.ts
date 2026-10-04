@@ -23,7 +23,14 @@ describe('browserErrorTrackingOptions', () => {
     const integrations = browserErrorTrackingOptions().integrations as (
       defaults: { name: string }[],
     ) => { name: string }[];
-    const names = ['Breadcrumbs', 'BrowserSession', 'BrowserTracing', 'GlobalHandlers', 'Dedupe'];
+    const names = [
+      'Breadcrumbs',
+      'Console',
+      'BrowserSession',
+      'BrowserTracing',
+      'GlobalHandlers',
+      'Dedupe',
+    ];
     expect(integrations(names.map((name) => ({ name }))).map(({ name }) => name)).toEqual([
       'GlobalHandlers',
       'Dedupe',

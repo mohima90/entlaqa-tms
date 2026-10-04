@@ -89,6 +89,27 @@ Plan §6.2 items that do not apply to the agent-team model (§2.3): team staffin
 
 ---
 
+## M2 — Platform core: tasks
+
+Screens are approved by the PO before each feature is built (PO decision 4 Oct 2026). Order below is the build order.
+
+### `EP-M2-IAM` Identity & roles — screens approved 4 Oct 2026 ([`docs/design/screens/m2-users-roles/`](../design/screens/m2-users-roles/README.md))
+
+| ID | Task | Owner | Status | Notes / PR |
+|---|---|---|---|---|
+| T-M2-01 | Organization structure needed by users: departments (hierarchy, head) and branches, with RLS + cross-tenant tests (ADM-04/05 subset; full admin screens with `EP-M2-TEN`) | Claude | ⚪ | Invite form needs department, branch and the department's managers |
+| T-M2-02 | Person profile (FR-IAM-01 R1 fields: Arabic/English names, e-mail, mobile, employee number, job title, department, branch, direct manager, hire date, locale) | Claude | ⚪ | Extends `platform.persons` |
+| T-M2-03 | Roles: 14 system roles + platform permission catalog + role assignments (one primary + additional, BR-IAM-1), effective grants in `defineAction`, no-escalation rule, audit with before/after (BR-IAM-3) | Claude | ⚪ | ADR 0003 §3–5; security decision 4 (who may invite / grant which roles) needed here |
+| T-M2-04 | Users list + user profile screens (read), scoped lists | Claude | ⚪ | Screens 1, 3 |
+| T-M2-05 | Roles & permissions page (read-only matrix) | Claude | ⚪ | Screen 5 |
+| T-M2-06 | E-mail delivery: notification e-mail adapter (Mailpit locally/CI, SMTP for sovereign) + provider for the regional cloud | Claude + PO | ⚪ | **PO decision + account needed** (provider choice and cost, ADR 0008) before invitations can be sent on staging |
+| T-M2-07 | Invitations: create, resend (≤ 3), revoke, expire after 7 days; invitation e-mail (AR/EN); accept + set password (checked activation function); expired/revoked/used link states | Claude | ⚪ | Screens 2, 7, 8, 9; FR-IAM-03 |
+| T-M2-08 | Forgot / reset password: no account enumeration, 60-min single-use link, other sessions ended, confirmation e-mail | Claude | ⚪ | Screens 10, 11 |
+| T-M2-09 | Deactivate / reactivate: login blocked, sessions revoked, records kept; reassignment hook (module items join as M3/M4 ship) | Claude | ⚪ | Screen 4; FR-IAM-05 |
+| T-M2-10 | Security policy per organization: MFA enforcement (TOTP first), password policy, lockout, inactivity / max session length / max devices, active sessions + force sign-out | Claude | ⚪ | Screens 3, 6; FR-IAM-12/13; security decisions 1, 2, 5 needed here |
+| T-M2-11 | Sign-in rate limiting + failed sign-ins as security events (carry-over from T-M1-D03, SCS-16) | Claude | ⚪ | Release blocker for real users |
+| T-M2-12 | Bulk user import wizard (CSV/XLSX, FR-IAM-04) | Claude | ⚪ | Screens to be designed and approved first |
+
 ## M2–M7 — R1 build (epics; tasks are broken down at the start of each milestone)
 
 | Milestone | Epic | Features | Status |

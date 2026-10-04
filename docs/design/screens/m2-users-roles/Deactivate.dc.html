@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>تعطيل مستخدم</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#F2F5F5}
+a{color:#0C534D}a:hover{color:#09403C}
+*{box-sizing:border-box}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid #177D74;outline-offset:2px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 18px;border-radius:6px;border:1px solid transparent;font-weight:600;font-size:15px;cursor:pointer;text-decoration:none;white-space:nowrap}
+.btn-secondary{background:#fff;color:#121A1C;border-color:#7A898D}.btn-secondary:hover{background:#F2F5F5;color:#121A1C}
+.btn-danger{background:#B42318;color:#fff}.btn-danger:hover{background:#931C14;color:#fff}
+.icon-btn{display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;border-radius:6px;border:0;background:transparent;color:#333E41;cursor:pointer;text-decoration:none}
+.icon-btn:hover{background:#E3E9EA}
+.input{width:100%;height:44px;border:1px solid #7A898D;border-radius:6px;padding:0 12px;background:#fff;font-size:15.5px}
+.label{display:block;font-weight:600;font-size:15px;margin-bottom:6px}
+.skel{background:#E3E9EA;border-radius:6px}
+.item{display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:12px 14px;border:1px solid #CBD4D6;border-radius:10px}
+</style>
+</helmet>
+<div style="position: relative; min-height: 100vh; font-family: 'IBM Plex Sans Arabic', 'Noto Sans Arabic', Tahoma, sans-serif; color: #121A1C; font-size: 15.5px; line-height: 1.7; background: #F2F5F5">
+
+  <div aria-hidden="true" style="display: flex; flex-direction: column; min-height: 100vh">
+    <div style="height: 56px; background: #FFFFFF; border-bottom: 1px solid #CBD4D6; display: flex; align-items: center; padding: 0 16px; gap: 10px; font-weight: 700; font-size: 18px">
+      <span style="width: 32px; height: 32px; border-radius: 8px; background: #0F665F; color: #FFFFFF; display: inline-flex; align-items: center; justify-content: center; font-size: 17px">ج</span>جدارات · التدريب
+    </div>
+    <div style="display: flex; flex-wrap: wrap; flex: 1 1 auto">
+      <div style="flex: 1 1 240px; background: #FFFFFF; border-inline-end: 1px solid #CBD4D6; padding: 24px 16px; display: flex; flex-direction: column; gap: 14px">
+        <div class="skel" style="height: 18px; width: 60%"></div><div class="skel" style="height: 18px; width: 75%"></div><div class="skel" style="height: 18px; width: 55%"></div><div class="skel" style="height: 18px; width: 70%"></div>
+      </div>
+      <div style="flex: 999 1 560px; min-width: 0; padding: 24px 32px">
+        <div style="max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px">
+          <div style="background: #FFFFFF; border: 1px solid #CBD4D6; border-radius: 10px; padding: 20px; font-size: 27px; font-weight: 700">سارة عبدالله القحطاني</div>
+          <div style="display: flex; gap: 20px"><div class="skel" style="height: 420px; flex: 2"></div><div class="skel" style="height: 300px; flex: 1"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="position: absolute; inset: 0; background: rgba(11, 17, 18, 0.55); display: flex; justify-content: center; align-items: flex-start; padding: 48px 16px">
+    <section role="alertdialog" aria-modal="true" aria-labelledby="d-title" aria-describedby="d-desc" style="width: 100%; max-width: 680px; background: #FFFFFF; border-radius: 16px; box-shadow: 0 12px 24px rgba(18, 26, 28, 0.12), 0 24px 56px rgba(18, 26, 28, 0.18)">
+      <div style="display: flex; align-items: flex-start; gap: 12px; padding: 20px 24px 8px">
+        <span aria-hidden="true" style="width: 44px; height: 44px; border-radius: 50%; background: #FDEEEC; display: inline-flex; align-items: center; justify-content: center; flex: none">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#B42318" stroke-width="1.8"><path d="M12 3l10 18H2z"></path><path d="M12 10v5M12 18h.01"></path></svg></span>
+        <div style="flex: 1 1 auto">
+          <h2 id="d-title" style="margin: 0; font-size: 22px; line-height: 1.45">تعطيل حساب سارة عبدالله القحطاني؟</h2>
+        </div>
+        <a href="UserDetail.dc.html" class="icon-btn" aria-label="إغلاق">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></a>
+      </div>
+
+      <div style="padding: 4px 24px 20px; display: flex; flex-direction: column; gap: 18px">
+        <ul id="d-desc" style="margin: 0; padding-inline-start: 20px; display: flex; flex-direction: column; gap: 4px; color: #333E41">
+          <li>يتوقف الدخول بهذا الحساب فورًا، وتنتهي جلسات الدخول النشطة (2).</li>
+          <li>تبقى كل السجلات كما هي: التسجيلات والحضور والشهادات وسجل التدقيق.</li>
+          <li>يمكن إعادة تفعيل الحساب لاحقًا من تبويب «معطّل» في قائمة المستخدمين.</li>
+        </ul>
+
+        <div style="display: flex; flex-direction: column; gap: 10px">
+          <h3 style="margin: 0; font-size: 17px">عناصر مسندة إلى هذا المستخدم تحتاج إلى مسؤول جديد</h3>
+          <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 14px; background: #F8FAFA; border-radius: 10px">
+            <label for="all-to" style="font-weight: 600">نقل الكل إلى</label>
+            <select id="all-to" class="input" style="flex: 1 1 220px; width: auto"><option>خالد إبراهيم الشهري (مدير التدريب)</option><option>نورة فهد الدوسري (منسق التدريب)</option></select>
+          </div>
+          <div class="item">
+            <div style="flex: 1 1 220px"><div style="font-weight: 600">3 جلسات تدريبية قادمة</div><div style="font-size: 14px; color: #465357">أولها «مهارات التفاوض» في 12 أكتوبر 2026 · <a href="#">عرض</a></div></div>
+            <label style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)" for="r1">المسؤول الجديد عن الجلسات</label>
+            <select id="r1" class="input" style="flex: 1 1 220px; width: auto"><option>خالد إبراهيم الشهري</option></select>
+          </div>
+          <div class="item">
+            <div style="flex: 1 1 220px"><div style="font-weight: 600">4 طلبات تسجيل بانتظار الإجراء</div><div style="font-size: 14px; color: #465357">أقدمها منذ 5 أيام · <a href="#">عرض</a></div></div>
+            <label style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)" for="r2">المسؤول الجديد عن الطلبات</label>
+            <select id="r2" class="input" style="flex: 1 1 220px; width: auto"><option>خالد إبراهيم الشهري</option></select>
+          </div>
+          <div class="item">
+            <div style="flex: 1 1 220px"><div style="font-weight: 600">6 مهام تجهيز مفتوحة</div><div style="font-size: 14px; color: #465357">منها مهمتان مستحقتان هذا الأسبوع · <a href="#">عرض</a></div></div>
+            <label style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)" for="r3">المسؤول الجديد عن المهام</label>
+            <select id="r3" class="input" style="flex: 1 1 220px; width: auto"><option>خالد إبراهيم الشهري</option></select>
+          </div>
+        </div>
+
+        <div>
+          <label class="label" for="why">سبب التعطيل <span style="font-weight: 400; color: #465357">(اختياري، يظهر في سجل التدقيق)</span></label>
+          <select id="why" class="input"><option>انتهاء الخدمة</option><option>إجازة طويلة</option><option>انتقال إلى جهة أخرى</option><option>سبب آخر</option></select>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; padding: 16px 24px; border-top: 1px solid #CBD4D6; background: #F8FAFA; border-radius: 0 0 16px 16px">
+        <a href="UserDetail.dc.html" class="btn btn-secondary">إلغاء</a>
+        <a href="Main.dc.html" class="btn btn-danger">نقل العناصر وتعطيل الحساب</a>
+      </div>
+    </section>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1120}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

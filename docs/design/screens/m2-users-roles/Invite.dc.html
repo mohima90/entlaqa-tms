@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>دعوة مستخدم</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#F2F5F5}
+a{color:#0C534D}a:hover{color:#09403C}
+*{box-sizing:border-box}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid #177D74;outline-offset:2px}
+.ltr{direction:ltr;unicode-bidi:isolate}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 18px;border-radius:6px;border:1px solid transparent;font-weight:600;font-size:15px;cursor:pointer;text-decoration:none;white-space:nowrap}
+.btn-primary{background:#0F665F;color:#fff}.btn-primary:hover{background:#0C534D;color:#fff}
+.btn-secondary{background:#fff;color:#121A1C;border-color:#7A898D}.btn-secondary:hover{background:#F2F5F5;color:#121A1C}
+.btn-ghost{background:transparent;color:#0C534D}.btn-ghost:hover{background:#E7F3F1}
+.btn-sm{min-height:36px;padding:0 12px;font-size:14px}
+.icon-btn{display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;border-radius:6px;border:0;background:transparent;color:#333E41;cursor:pointer;position:relative;text-decoration:none}
+.icon-btn:hover{background:#E3E9EA}
+.input{width:100%;height:44px;border:1px solid #7A898D;border-radius:6px;padding:0 12px;background:#fff;font-size:15.5px}
+.label{display:block;font-weight:600;font-size:15px;margin-bottom:6px}
+.req{color:#B42318}
+.hint{font-size:14px;color:#465357;margin-top:4px}
+.role{display:flex;gap:12px;align-items:flex-start;padding:12px 14px;border:1px solid #CBD4D6;border-radius:10px;cursor:pointer;background:#fff}
+.role:hover{border-color:#7A898D}
+.role.on{border-color:#0F665F;background:#E7F3F1;box-shadow:inset 0 0 0 1px #0F665F}
+.chip{display:inline-flex;align-items:center;gap:8px;min-height:36px;padding:0 12px;border:1px solid #7A898D;border-radius:999px;background:#fff;cursor:pointer;font-size:14.5px}
+.chip.on{background:#0F665F;border-color:#0F665F;color:#fff}
+.skel{background:#E3E9EA;border-radius:6px}
+.mopt{display:flex;align-items:center;gap:10px;width:100%;min-height:52px;padding:6px 10px;border:0;border-radius:8px;background:transparent;cursor:pointer;text-align:start}
+.mopt:hover{background:#F2F5F5}
+.mopt.on{background:#E7F3F1}
+@media (max-width:900px){.hide-md{display:none !important}}
+</style>
+</helmet>
+<div style="position: relative; min-height: 100vh; font-family: 'IBM Plex Sans Arabic', 'Noto Sans Arabic', Tahoma, sans-serif; color: #121A1C; font-size: 15.5px; line-height: 1.7; background: #F2F5F5">
+
+  <div aria-hidden="true" style="display: flex; flex-direction: column; min-height: 100vh">
+    <div style="height: 56px; background: #FFFFFF; border-bottom: 1px solid #CBD4D6; display: flex; align-items: center; padding: 0 16px; gap: 10px; font-weight: 700; font-size: 18px">
+      <span style="width: 32px; height: 32px; border-radius: 8px; background: #0F665F; color: #FFFFFF; display: inline-flex; align-items: center; justify-content: center; font-size: 17px">ج</span>جدارات · التدريب
+    </div>
+    <div style="display: flex; flex-wrap: wrap; flex: 1 1 auto">
+      <div style="flex: 1 1 240px; background: #FFFFFF; border-inline-end: 1px solid #CBD4D6; padding: 24px 16px; display: flex; flex-direction: column; gap: 14px">
+        <div class="skel" style="height: 18px; width: 60%"></div><div class="skel" style="height: 18px; width: 75%"></div><div class="skel" style="height: 18px; width: 55%"></div><div class="skel" style="height: 18px; width: 70%"></div><div class="skel" style="height: 18px; width: 50%"></div>
+      </div>
+      <div style="flex: 999 1 560px; min-width: 0; padding: 24px 32px">
+        <div style="max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px">
+          <div style="font-size: 27px; font-weight: 700">المستخدمون</div>
+          <div class="skel" style="height: 52px; background: #FFF5E0"></div>
+          <div style="background: #FFFFFF; border: 1px solid #CBD4D6; border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 18px">
+            <div class="skel" style="height: 40px"></div><div class="skel" style="height: 28px"></div><div class="skel" style="height: 28px"></div><div class="skel" style="height: 28px"></div><div class="skel" style="height: 28px"></div><div class="skel" style="height: 28px"></div><div class="skel" style="height: 28px"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="position: absolute; inset: 0; background: rgba(11, 17, 18, 0.55); display: flex; justify-content: center; align-items: flex-start; padding: 32px 16px">
+    <section role="dialog" aria-modal="true" aria-labelledby="dlg-title" style="width: 100%; max-width: 760px; background: #FFFFFF; border-radius: 16px; box-shadow: 0 12px 24px rgba(18, 26, 28, 0.12), 0 24px 56px rgba(18, 26, 28, 0.18); display: flex; flex-direction: column">
+
+      <div style="display: flex; align-items: flex-start; gap: 12px; padding: 20px 24px 12px">
+        <div style="flex: 1 1 auto">
+          <h2 id="dlg-title" style="margin: 0; font-size: 23px; line-height: 1.45">دعوة مستخدم</h2>
+          <p style="margin: 2px 0 0; color: #465357">نرسل إليه رسالة بالبريد الإلكتروني لتعيين كلمة المرور والدخول.</p>
+        </div>
+        <a href="Main.dc.html" class="icon-btn" aria-label="إغلاق">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></a>
+      </div>
+
+      <div style="padding: 8px 24px 20px; display: flex; flex-direction: column; gap: 20px">
+
+        <fieldset style="border: 0; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px">
+          <legend style="font-weight: 700; font-size: 17px; margin-bottom: 10px; padding: 0">بيانات الشخص</legend>
+          <div style="grid-column: 1 / -1">
+            <label class="label" for="em">البريد الإلكتروني للعمل <span class="req" aria-hidden="true">*</span></label>
+            <input id="em" class="input ltr" type="email" required="" value="n.aldossari@alraya.example" style="text-align: left">
+            <div class="hint">يصبح هذا البريد اسم الدخول. لا يتكرر في المنشأة نفسها.</div>
+          </div>
+          <div>
+            <label class="label" for="fn">الاسم الأول <span class="req" aria-hidden="true">*</span></label>
+            <input id="fn" class="input" type="text" required="" value="نورة">
+          </div>
+          <div>
+            <label class="label" for="ln">اسم العائلة <span class="req" aria-hidden="true">*</span></label>
+            <input id="ln" class="input" type="text" required="" value="الدوسري">
+          </div>
+          <div style="grid-column: 1 / -1">
+            <button type="button" class="btn btn-ghost btn-sm" style="padding: 0 4px">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>إضافة الاسم بالإنجليزية واسم الأب والجد (اختياري)</button>
+          </div>
+          <div>
+            <label class="label" for="dp">القسم</label>
+            <select id="dp" class="input" value="{{ dept }}" onChange="{{ onDept }}"><option value="td">التدريب والتطوير</option><option value="ops">العمليات</option><option value="fin">المالية</option></select>
+          </div>
+          <div>
+            <label class="label" for="br">الفرع</label>
+            <select id="br" class="input"><option>فرع الرياض</option><option>فرع جدة</option></select>
+          </div>
+          <div style="grid-column: 1 / -1">
+            <span class="label" id="mg-l">المدير المباشر</span>
+            <button id="mg" type="button" class="input" aria-haspopup="listbox" aria-expanded="{{ mgExpanded }}" aria-labelledby="mg-l mg" onClick="{{ toggleMg }}" style="display: flex; align-items: center; gap: 10px; text-align: start; cursor: pointer; height: auto; min-height: 52px; padding: 6px 12px">
+              <sc-if value="{{ hasMgr }}" hint-placeholder-val="{{ true }}">
+                <span aria-hidden="true" style="width: 34px; height: 34px; flex: none; border-radius: 50%; background: #E7F3F1; color: #0C534D; display: inline-flex; align-items: center; justify-content: center; font-weight: 700">{{ mgr.initial }}</span>
+                <span style="display: flex; flex-direction: column; line-height: 1.45"><span style="font-weight: 600">{{ mgr.name }}</span><span style="font-size: 13.5px; color: #465357">{{ mgr.title }}</span></span>
+              </sc-if>
+              <sc-if value="{{ noMgr }}" hint-placeholder-val="{{ false }}"><span style="color: #465357">اختيار المدير المباشر</span></sc-if>
+              <span style="flex: 1 1 auto"></span>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#333E41" stroke-width="2" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg>
+            </button>
+            <div class="hint">القائمة تعرض أصحاب الأدوار الإدارية في القسم المختار، ويتغير محتواها بتغيير القسم.</div>
+            <sc-if value="{{ mgOpen }}" hint-placeholder-val="{{ true }}">
+              <div style="margin-top: 8px; border: 1px solid #7A898D; border-radius: 10px; background: #FFFFFF; box-shadow: 0 6px 12px rgba(18, 26, 28, 0.08), 0 12px 28px rgba(18, 26, 28, 0.12); overflow: hidden">
+                <div style="padding: 10px; border-bottom: 1px solid #E3E9EA; position: relative">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5B6A6E" stroke-width="1.8" aria-hidden="true" style="position: absolute; inset-inline-start: 22px; top: 23px"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
+                  <input class="input" type="search" aria-label="بحث عن المدير المباشر" placeholder="ابحث بالاسم أو المسمى الوظيفي" value="{{ mq }}" onInput="{{ onMq }}" style="padding-inline-start: 40px">
+                </div>
+                <div style="padding: 8px 16px 2px; font-size: 13.5px; font-weight: 600; color: #465357">{{ groupTitle }}</div>
+                <div role="listbox" aria-labelledby="mg-l" style="padding: 2px 6px 6px; display: flex; flex-direction: column; gap: 2px">
+                  <sc-for list="{{ mgrs }}" as="m" hint-placeholder-count="2">
+                    <button type="button" role="option" aria-selected="{{ m.sel }}" class="{{ m.cls }}" onClick="{{ m.pick }}">
+                      <span aria-hidden="true" style="width: 34px; height: 34px; flex: none; border-radius: 50%; background: #E7F3F1; color: #0C534D; display: inline-flex; align-items: center; justify-content: center; font-weight: 700">{{ m.initial }}</span>
+                      <span style="display: flex; flex-direction: column; line-height: 1.45; flex: 1 1 auto"><span style="font-weight: 600">{{ m.name }}</span><span style="font-size: 13.5px; color: #465357">{{ m.sub }}</span></span>
+                      <sc-if value="{{ m.on }}" hint-placeholder-val="{{ false }}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0C534D" stroke-width="2.2" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg></sc-if>
+                    </button>
+                  </sc-for>
+                </div>
+                <sc-if value="{{ mgEmpty }}" hint-placeholder-val="{{ false }}">
+                  <div style="padding: 8px 16px 12px; color: #465357">لا يوجد مدير بهذا الاسم في القسم.</div>
+                </sc-if>
+                <div style="border-top: 1px solid #E3E9EA; padding: 6px 10px; display: flex; flex-wrap: wrap; gap: 8px; background: #F8FAFA">
+                  <sc-if value="{{ scopeDept }}" hint-placeholder-val="{{ true }}"><button type="button" class="btn btn-ghost btn-sm" onClick="{{ allCompany }}">المدير من قسم آخر؟ عرض مديري كل الأقسام</button></sc-if>
+                  <sc-if value="{{ scopeAll }}" hint-placeholder-val="{{ false }}"><button type="button" class="btn btn-ghost btn-sm" onClick="{{ deptOnly }}">العودة إلى مديري القسم فقط</button></sc-if>
+                </div>
+              </div>
+            </sc-if>
+          </div>
+          <div>
+            <label class="label" for="eid">الرقم الوظيفي</label>
+            <input id="eid" class="input ltr" type="text" placeholder="مثال: EMP-1450" style="text-align: right">
+          </div>
+        </fieldset>
+
+        <fieldset style="border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px">
+          <legend style="font-weight: 700; font-size: 17px; margin-bottom: 4px; padding: 0">الدور الأساسي <span class="req" aria-hidden="true">*</span></legend>
+          <div class="hint" style="margin: 0 0 4px">يحدد الدور الأساسي الصفحة الرئيسية وما يراه الشخص أولًا. للمستخدم دور أساسي واحد.</div>
+          <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px">
+            <sc-for list="{{ roles }}" as="r" hint-placeholder-count="6">
+              <label class="{{ r.cls }}">
+                <input type="radio" name="primary" checked="{{ r.on }}" onChange="{{ r.pick }}" style="width: 18px; height: 18px; margin: 4px 0 0; accent-color: #0F665F; flex: none">
+                <span style="display: flex; flex-direction: column">
+                  <span style="font-weight: 600">{{ r.name }}</span>
+                  <span style="font-size: 14px; color: #465357; line-height: 1.6">{{ r.desc }}</span>
+                </span>
+              </label>
+            </sc-for>
+          </div>
+          <div>
+            <button type="button" class="btn btn-ghost btn-sm" style="padding: 0 4px" onClick="{{ toggleAll }}">{{ moreLabel }}</button>
+            <a href="Roles.dc.html" style="font-size: 14px; margin-inline-start: 12px">ما صلاحيات كل دور؟</a>
+          </div>
+        </fieldset>
+
+        <fieldset style="border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px">
+          <legend style="font-weight: 700; font-size: 17px; margin-bottom: 4px; padding: 0">أدوار إضافية (اختياري)</legend>
+          <div class="hint" style="margin: 0 0 4px">الصلاحيات الفعلية هي مجموع صلاحيات الدور الأساسي والأدوار الإضافية.</div>
+          <div style="display: flex; flex-wrap: wrap; gap: 8px">
+            <sc-for list="{{ extras }}" as="x" hint-placeholder-count="5">
+              <button type="button" class="{{ x.cls }}" aria-pressed="{{ x.pressed }}" onClick="{{ x.toggle }}">
+                <sc-if value="{{ x.on }}" hint-placeholder-val="{{ false }}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg></sc-if>{{ x.name }}</button>
+            </sc-for>
+          </div>
+        </fieldset>
+
+        <fieldset style="border: 0; padding: 0; margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 16px">
+          <legend style="font-weight: 700; font-size: 17px; margin-bottom: 8px; padding: 0">لغة رسالة الدعوة</legend>
+          <label style="display: inline-flex; align-items: center; gap: 8px; min-height: 44px; cursor: pointer"><input type="radio" name="lang" checked="" style="width: 18px; height: 18px; accent-color: #0F665F">العربية</label>
+          <label style="display: inline-flex; align-items: center; gap: 8px; min-height: 44px; cursor: pointer"><input type="radio" name="lang" style="width: 18px; height: 18px; accent-color: #0F665F"><span lang="en">English</span></label>
+        </fieldset>
+
+        <div style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 10px; background: #EAF1FB; color: #102338">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#194C8C" stroke-width="1.8" aria-hidden="true" style="flex: none; margin-top: 3px"><circle cx="12" cy="12" r="9"></circle><path d="M12 11v5M12 8h.01"></path></svg>
+          <span>تبقى الدعوة صالحة <strong>7 أيام</strong> (حتى 11 أكتوبر 2026). يمكنك إعادة إرسالها حتى 3 مرات أو إلغاؤها من قائمة المستخدمين. دور «منسق التدريب» يتطلب التحقق متعدد العوامل، فسيُطلب إعداده عند أول دخول.</span>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 16px 24px; border-top: 1px solid #CBD4D6; background: #F8FAFA; border-radius: 0 0 16px 16px">
+        <a href="InviteEmail.dc.html" class="btn btn-ghost" style="padding: 0 8px">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="M3 7l9 6 9-6"></path></svg>معاينة الرسالة</a>
+        <div style="flex: 1 1 auto"></div>
+        <a href="Main.dc.html" class="btn btn-secondary">إلغاء</a>
+        <a href="Main.dc.html" class="btn btn-primary">إرسال الدعوة</a>
+      </div>
+    </section>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":2000}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { role: 'coord', all: false, extra: { learner: true }, dept: 'td', mgr: 'k', mgOpen: true, mq: '', scope: 'dept' };
+  }
+  renderVals() {
+    var self = this;
+    var deptNames = { td: 'التدريب والتطوير', ops: 'العمليات', fin: 'المالية', sales: 'المبيعات', hr: 'الموارد البشرية' };
+    var managers = [
+      { id: 'k', name: 'خالد إبراهيم الشهري', title: 'مدير التدريب', role: 'مدير التدريب', dept: 'td' },
+      { id: 's', name: 'سلمان راشد القرني', title: 'رئيس قسم التدريب والتطوير', role: 'رئيس القسم', dept: 'td' },
+      { id: 'w', name: 'وعد خالد البقمي', title: 'مشرفة برامج التدريب', role: 'المدير المباشر', dept: 'td' },
+      { id: 'a', name: 'عبدالرحمن علي الزهراني', title: 'مشرف العمليات', role: 'المدير المباشر', dept: 'ops' },
+      { id: 'b', name: 'بندر سعيد الحارثي', title: 'رئيس قسم العمليات', role: 'رئيس القسم', dept: 'ops' },
+      { id: 'f', name: 'فاطمة يوسف المالكي', title: 'المديرة المالية', role: 'المدير المالي', dept: 'fin' },
+      { id: 'y', name: 'يوسف عمر الغامدي', title: 'رئيس قسم المبيعات', role: 'رئيس القسم', dept: 'sales' },
+      { id: 'm', name: 'محمد سعد العتيبي', title: 'مدير الموارد البشرية', role: 'مدير المنشأة', dept: 'hr' }
+    ];
+    var st = this.state;
+    var mq = (st.mq || '').trim();
+    var visible = managers.filter(function (m) {
+      if (st.scope === 'dept' && m.dept !== st.dept) return false;
+      if (mq && (m.name + ' ' + m.title).indexOf(mq) === -1) return false;
+      return true;
+    });
+    var sel = managers.filter(function (m) { return m.id === st.mgr; })[0];
+    var all = [
+      { id: 'admin', name: 'مدير المنشأة', desc: 'إعداد المنشأة بالكامل: المستخدمون والأدوار والأمان والاشتراك.' },
+      { id: 'tmgr', name: 'مدير التدريب', desc: 'الخطط ودليل الدورات والجلسات والموارد والتسجيلات والتقارير.' },
+      { id: 'coord', name: 'منسق التدريب', desc: 'تشغيل الجلسات يوميًا: الجدولة والتجهيزات والحضور.' },
+      { id: 'hr', name: 'مدير الموارد البشرية', desc: 'سجلات الموظفين والتدريب الإلزامي والامتثال.' },
+      { id: 'line', name: 'المدير المباشر', desc: 'طلبات الفريق وترشيحاته والموافقة عليها.' },
+      { id: 'learner', name: 'متدرب', desc: 'دليل الدورات والتسجيل والسجل التدريبي والشهادات.' },
+      { id: 'fin', name: 'المدير المالي', desc: 'الميزانيات وأوامر الشراء والفواتير والمدفوعات.' },
+      { id: 'comp', name: 'مسؤول الامتثال', desc: 'لوحات الامتثال والتقارير التنظيمية، وعرض سجل التدقيق.' },
+      { id: 'head', name: 'رئيس القسم', desc: 'خطة القسم وموافقاته وتقاريره.' },
+      { id: 'iins', name: 'مدرب داخلي', desc: 'الجلسات المسندة والحضور والمواد والتصحيح.' },
+      { id: 'eins', name: 'مدرب خارجي', desc: 'الجلسات المسندة فقط، دون الاطلاع على بيانات المنشأة.' },
+      { id: 'prov', name: 'مسؤول جهة التدريب', desc: 'بوابة جهة التدريب: العروض وقوائم المتدربين والفواتير.' },
+      { id: 'mentor', name: 'مرشد / مقيّم', desc: 'قوائم الملاحظة والتدريب على رأس العمل للمتدربين المسندين.' },
+      { id: 'audit', name: 'مدقق', desc: 'عرض السجلات وسجل التدقيق دون أي تعديل.' }
+    ];
+    var shown = this.state.all ? all : all.slice(0, 6);
+    var roles = shown.map(function (r) {
+      var on = r.id === self.state.role;
+      return { name: r.name, desc: r.desc, on: on, cls: on ? 'role on' : 'role', pick: function () { self.setState({ role: r.id }); } };
+    });
+    var extraIds = ['learner', 'line', 'iins', 'mentor', 'hr', 'audit'];
+    var extras = extraIds.filter(function (id) { return id !== self.state.role; }).map(function (id) {
+      var r = all.filter(function (a) { return a.id === id; })[0];
+      var on = !!self.state.extra[id];
+      return {
+        name: r.name, on: on, pressed: on ? 'true' : 'false', cls: on ? 'chip on' : 'chip',
+        toggle: function () {
+          var next = Object.assign({}, self.state.extra);
+          next[id] = !next[id];
+          self.setState({ extra: next });
+        }
+      };
+    });
+    return {
+      dept: st.dept,
+      onDept: function (e) {
+        var d = e.target.value;
+        var keep = managers.some(function (m) { return m.id === st.mgr && m.dept === d; });
+        self.setState({ dept: d, mgr: keep ? st.mgr : null, mgOpen: true, scope: 'dept', mq: '' });
+      },
+      hasMgr: !!sel,
+      noMgr: !sel,
+      mgr: sel ? { name: sel.name, title: sel.title + ' · ' + deptNames[sel.dept], initial: sel.name.charAt(0) } : { name: '', title: '', initial: '' },
+      mgOpen: st.mgOpen,
+      mgExpanded: st.mgOpen ? 'true' : 'false',
+      toggleMg: function () { self.setState({ mgOpen: !st.mgOpen }); },
+      mq: st.mq,
+      onMq: function (e) { self.setState({ mq: e.target.value }); },
+      groupTitle: st.scope === 'dept' ? 'مديرو قسم ' + deptNames[st.dept] : 'مديرو كل الأقسام',
+      mgrs: visible.map(function (m) {
+        var on = m.id === st.mgr;
+        return {
+          name: m.name, initial: m.name.charAt(0), on: on, sel: on ? 'true' : 'false', cls: on ? 'mopt on' : 'mopt',
+          sub: m.title + ' · ' + m.role + (st.scope === 'all' ? ' · ' + deptNames[m.dept] : ''),
+          pick: function () { self.setState({ mgr: m.id, mgOpen: false, mq: '' }); }
+        };
+      }),
+      mgEmpty: visible.length === 0,
+      scopeDept: st.scope === 'dept',
+      scopeAll: st.scope === 'all',
+      allCompany: function () { self.setState({ scope: 'all' }); },
+      deptOnly: function () { self.setState({ scope: 'dept' }); },
+      roles: roles,
+      extras: extras,
+      moreLabel: this.state.all ? 'عرض الأدوار الشائعة فقط' : 'عرض كل الأدوار (14)',
+      toggleAll: function () { self.setState({ all: !self.state.all }); }
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -58,8 +58,8 @@ describe('default defineAction runtime', () => {
     expect(db.insertAuditEvent).toHaveBeenCalledWith('tx', actor, record);
   });
 
-  it('logs unexpected errors without messages or personal data, with the correlation id', () => {
-    const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+  it('reports unexpected errors without messages or personal data, with the correlation id', () => {
+    const spy = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
     defaultActionRuntime.logError(new TypeError('secret: user@example.com'), {
       permission: 'tms.session.create',
       correlationId: 'c-1',
@@ -68,16 +68,17 @@ describe('default defineAction runtime', () => {
       permission: 'tms.session.create',
       correlationId: 'c-2',
     });
-    expect(spy).toHaveBeenNthCalledWith(1, '[defineAction] unexpected error', {
+    const lines = spy.mock.calls.map(
+      ([line]) => JSON.parse(String(line)) as Record<string, unknown>,
+    );
+    expect(lines[0]).toMatchObject({
+      level: 'error',
+      msg: 'unexpected error',
       permission: 'tms.session.create',
-      correlationId: 'c-1',
-      error: 'TypeError',
+      correlation_id: 'c-1',
+      error_name: 'TypeError',
     });
-    expect(spy).toHaveBeenNthCalledWith(2, '[defineAction] unexpected error', {
-      permission: 'tms.session.create',
-      correlationId: 'c-2',
-      error: 'string',
-    });
+    expect(lines[1]).toMatchObject({ correlation_id: 'c-2', error_name: 'string' });
     expect(JSON.stringify(spy.mock.calls)).not.toContain('example.com');
     spy.mockRestore();
   });

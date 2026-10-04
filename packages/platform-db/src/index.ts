@@ -13,6 +13,7 @@ export {
   tlsOptionsFor,
 } from './client';
 export { type AuditEventInput, insertAuditEvent } from './audit';
+export { type DatabaseHealth, checkDatabase } from './health';
 export { type CurrentTenant, getCurrentTenant } from './tenants';
 export {
   type SessionTenant,

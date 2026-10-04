@@ -11,6 +11,7 @@ import {
   ok,
 } from '@jadarat/platform-core';
 import type { AuditEventInput, SessionTenant, UserTx, WithUserTx } from '@jadarat/platform-db';
+import type { LogFields } from '@jadarat/platform-observability';
 import { type SupabaseAuthLike, verifyClaims, verifyClaimsStrict } from './verify-claims';
 
 /**
@@ -58,7 +59,8 @@ export interface AuthFlowDeps {
     actor: ReturnType<typeof actorFromClaims>,
     event: AuditEventInput,
   ) => Promise<void>;
-  readonly logWarning: (message: string, meta: Record<string, string>) => void;
+  /** Structured warning without personal data (platform-observability logger). */
+  readonly logWarning: (message: string, fields: LogFields) => void;
 }
 
 /**
@@ -111,7 +113,7 @@ export async function signInWithPassword(
     if (error.status !== undefined && error.status >= 400 && error.status < 500) {
       deps.logWarning('sign-in refused', {
         action: 'platform.auth.sign_in',
-        status: String(error.status),
+        status: error.status,
       });
       return err(appError(IdentityErrors.AUTH_INVALID_CREDENTIALS));
     }

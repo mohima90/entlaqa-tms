@@ -12,5 +12,5 @@ EXPOSE 3000
 # The base image already defaults to nonroot; stated explicitly so the image never runs as root (Trivy DS-0002).
 USER 65532:65532
 HEALTHCHECK --interval=10s --timeout=3s --retries=12 \
-  CMD ["/nodejs/bin/node", "-e", "fetch('http://127.0.0.1:3000/ar').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+  CMD ["/nodejs/bin/node", "-e", "fetch('http://127.0.0.1:3000/api/health/live').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
 CMD ["apps/suite/server.js"]

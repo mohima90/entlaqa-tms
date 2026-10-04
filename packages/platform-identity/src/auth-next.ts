@@ -11,6 +11,7 @@ import {
   withUserTx,
 } from '@jadarat/platform-db';
 import { createSupabaseServerClient } from '@jadarat/platform-db/supabase-server';
+import { log } from '@jadarat/platform-observability';
 import { cookies } from 'next/headers';
 import {
   type AuthClientLike,
@@ -39,8 +40,8 @@ async function requestDeps(): Promise<AuthFlowDeps> {
     listSessionTenants,
     switchActiveTenant,
     insertAuditEvent,
-    logWarning: (message, meta) => {
-      console.warn(`[auth] ${message}`, meta);
+    logWarning: (message, fields) => {
+      log.warn(message, fields);
     },
   };
 }

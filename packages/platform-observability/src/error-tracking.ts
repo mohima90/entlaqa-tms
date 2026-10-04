@@ -1,0 +1,69 @@
+import type { Breadcrumb, ErrorEvent, Integration } from '@sentry/core';
+import { scrubErrorEvent } from './scrub';
+
+/** Error-tracker settings read at RUNTIME, so one build serves every deployment (ADR 0010). */
+export interface ErrorTrackingConfig {
+  readonly dsn: string;
+  readonly environment: string;
+  readonly release?: string;
+}
+
+function readEnv(name: string): string | undefined {
+  const value = process.env[name]?.trim();
+  return value === '' ? undefined : value;
+}
+
+/**
+ * A DSN must use HTTPS — except plain HTTP to a host on the deployment's own private network (a
+ * single-label name such as `glitchtip`, or localhost), used by sovereign installations.
+ */
+export function isAllowedDsn(dsn: string): boolean {
+  try {
+    const url = new URL(dsn);
+    if (!url.username || url.pathname.length <= 1) return false;
+    if (url.protocol === 'https:') return true;
+    return url.protocol === 'http:' && !url.hostname.includes('.');
+  } catch {
+    return false;
+  }
+}
+
+/** `null` = error tracking off (no DSN, or an invalid one): errors are still logged. */
+export function readErrorTrackingConfig(): ErrorTrackingConfig | null {
+  const dsn = readEnv('SENTRY_DSN');
+  if (!dsn || !isAllowedDsn(dsn)) return null;
+  const release = readEnv('JADARAT_RELEASE') ?? readEnv('VERCEL_GIT_COMMIT_SHA');
+  return {
+    dsn,
+    environment:
+      readEnv('JADARAT_ENVIRONMENT') ?? readEnv('VERCEL_ENV') ?? readEnv('NODE_ENV') ?? 'unknown',
+    ...(release ? { release } : {}),
+  };
+}
+
+const DISABLED_INTEGRATIONS: ReadonlySet<string> = new Set(['ContextLines']);
+
+/**
+ * Options for the Sentry SDK (`Sentry.init`), identical for Sentry SaaS (EU region) and GlitchTip
+ * (ADR 0009 §4): errors only — no tracing (no sample rate is set), no session replay, no breadcrumbs,
+ * no local variables, no default PII — and every event passes through `scrubErrorEvent`. The SDK does
+ * not take over OpenTelemetry or patch modules at load time: traces get their own vendor-neutral
+ * OpenTelemetry pipeline later (ADR 0009 §1). Source code lines around each stack frame are not read
+ * from disk or sent (`ContextLines` off).
+ */
+export function errorTrackingOptions(config: ErrorTrackingConfig) {
+  return {
+    dsn: config.dsn,
+    environment: config.environment,
+    ...(config.release ? { release: config.release } : {}),
+    sendDefaultPii: false,
+    includeLocalVariables: false,
+    maxBreadcrumbs: 0,
+    beforeBreadcrumb: (_breadcrumb: Breadcrumb): Breadcrumb | null => null,
+    beforeSend: (event: ErrorEvent): ErrorEvent => scrubErrorEvent(event),
+    enableOpenTelemetrySetup: false,
+    enableRuntimeChannelInjection: false,
+    integrations: (defaults: Integration[]): Integration[] =>
+      defaults.filter((integration) => !DISABLED_INTEGRATIONS.has(integration.name)),
+  };
+}

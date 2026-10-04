@@ -19,7 +19,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 |---|---|---|---|---|
 | Planning (research, BRD, feature list, delivery plan) | — | 🟢 Done | — | See §4 documents |
 | M0 Mobilize | 1–2 | 🟢 Done | G0 | **Gate G0 passed 3 Oct 2026.** T-M0-01…07, 09, 10 done (MFA on GitHub, Supabase, Vercel confirmed); T-M0-08 (→ 2-week customer trials ≈ end of M5) and T-M0-11 deferred by PO; T-M0-12/13 needed later |
-| M1 Foundation | 3–8 | 🔵 In progress | G1 | Foundation merged (#9); walking skeleton live on staging (#10–#14); component library + Storybook done (T-M1-A02); M2 threat models done (TM-0002…0006); self-hosted stack verified (T-M1-D04, gate 15); remaining: observability baseline (T-M1-D06), usability round 1 (staff), estimation (T-M1-B14) |
+| M1 Foundation | 3–8 | 🔵 In progress | G1 | Foundation merged (#9); walking skeleton live on staging (#10–#14); component library + Storybook done (T-M1-A02); M2 threat models done (TM-0002…0006); self-hosted stack verified (T-M1-D04, gate 15); observability baseline part a in review (T-M1-D06: logs without PII, server error tracking, health + uptime); remaining: D06 part b, usability round 1 (staff), estimation (T-M1-B14) |
 | M2 Platform core | 9–12 | ⚪ Not started | G2 | |
 | M3 Catalog & scheduling | 13–16 | ⚪ Not started | G3 | |
 | M4 Enrollment & manager | 17–19 | ⚪ Not started | G4 | |
@@ -43,6 +43,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 - [x] Track D: monorepo scaffold; CI with the §5.3 gates — merged (#9), all checks green on GitHub; `CI gates` + CodeQL required on `main`
 - [x] Track D: walking skeleton on staging (T-M1-D03, #10–#14) — sign-in → Arabic RTL suite shell → audit event, verified by the PO on 1 Oct 2026
 - [x] Track D: walking skeleton on the self-hosted stack (T-M1-D04) — `infra/docker`, CI gate 15 (4 Oct 2026)
+- [~] Track D: observability baseline (T-M1-D06) — part a (logs, server error tracking, health, uptime) in review; part b (source maps, browser errors, GlitchTip) next
 - [x] Track D: Vercel project `jadarat-tms` builds from `apps/suite` (Next.js, Node 24); `main` deployment Ready (1 Oct 2026)
 
 ---
@@ -62,6 +63,8 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 | 1 Oct 2026 | — | Staging database: Supabase project `jadarat-tms-staging` (org `entlaqa-TMS`, Frankfurt `eu-central-1`, **Free plan** for now — PO deferred the Pro upgrade), Data API **off**, automatic RLS off (migrations enforce RLS). Migrations reach hosted environments only through the manual `DB deploy` workflow (plan → apply) |
 | 1 Oct 2026 | — | `main` protected by ruleset `main protection`: PR required (0 approvals — PO is the only human), conversation resolution, required checks `CI gates` + CodeQL (javascript-typescript, actions), no force-push/deletion, empty bypass list |
 | 4 Oct 2026 | — | **Technical choices are delegated to Claude (Tech Lead)** (PO, non-technical): Claude decides technical/tooling questions and records them here; only business, cost, legal and scope decisions go to the PO, explained in plain language |
+| 4 Oct 2026 | — | Sentry organization `entlaqa-qv` created by the PO in the **EU data region** (verified); Data Scrubber, Default Scrubbers and Prevent Storing of IP Addresses **required** for all projects. Free plan after the 14-day trial (no card) |
+| 4 Oct 2026 | — | Observability implementation choices (Tech Lead, ADR 0009 implementation notes): own closed JSON logger instead of `pino`; Sentry SDK errors-only (no tracing/OTel takeover/module patching, no source lines); Sentry CLI (FSL licence, build-time only) removed by pnpm override rather than a licence exception; staging uptime via a scheduled GitHub Actions check that opens an issue — production uptime vendor + status page to be chosen before the first customer |
 | 4 Oct 2026 | — | Error tracking (T-M0-13, ADR 0009 §4): **Sentry SaaS, EU data region** for the regional cloud; **self-hosted GlitchTip** for sovereign (in-country) deployments — same Sentry SDK, no PII (`sendDefaultPii: false`, scrubbing). Account creation (PO, guided) happens with T-M1-D06 |
 | 3 Oct 2026 | — | **Customer feedback via trial accounts, not design partners now** (PO): the customers who shaped the BRD will get **2-week trial accounts** on a near-complete product (target ≈ end of M5, when catalog → schedule → enroll → attend → certificate works); until then usability tests use **ENTLAQA staff** as stand-in users. Replaces "3–5 design partners signed in M0" (Development Plan §6.2, Gate G0) |
 | 3 Oct 2026 | — | Dependency audit: single-advisory exception for GHSA-vfj7-8cjw-p6xm (`braces`, dev-time lint tooling only, no fix released) accepted by the PO — risk R-33; removed when a patch ships |
@@ -153,7 +156,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 **Next Claude session** — continue M1:
 1. Turn the Tech Lead findings of TM-0002…0006 into M2 backlog stories/ADR updates (e.g. audit-table hardening F-AUD-01, `persons` grants F-PEO-01, host resolution F-TEN-02/03, Host-derived tenant label F-SHL-08); T-M1-C02 for M3–M6 epics before each starts.
-2. T-M1-D06 observability baseline (Sentry EU for cloud / GlitchTip for sovereign, structured logs, uptime) — PO creates the Sentry account (guided).
+2. T-M1-D06: after part a merges, guide the PO to set `SENTRY_DSN` + `JADARAT_ENVIRONMENT=staging` in Vercel and the `UPTIME_URL` repository variable, then verify one test error and one uptime run. Part b: source-map upload, browser errors (runtime-DSN tunnel), GlitchTip in `infra/docker` with a parity check.
 3. T-M1-B14 estimation and re-baselined plan → Gate G1 (last M1 task, uses the M1 throughput data).
 4. Check R-33 (`braces` advisory) at the start of each session: when a patched release exists, update and remove the `ignoreGhsas` entry in `pnpm-workspace.yaml`.
 5. M0 support: T-M0-12 pen-test vendor shortlist.
@@ -165,6 +168,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
+| 4 Oct 2026 | PR #19 merged (T-M1-D04). T-M1-D06 part a: PO created Sentry (EU, scrubbing required); new `platform-observability` (closed JSON logger, PII scrubbing, error-reporting hook); server-side Sentry with runtime DSN, verified end to end with a real sign-in error (no e-mail/password/source lines sent); `/api/health/live` + `/ready`; staging uptime workflow; smoke test now scans app logs for PII; runbook `docs/engineering/observability.md` |
 | 4 Oct 2026 | T-M1-D04 done: whole product runs self-hosted (Postgres 17.11, Supabase Auth/GoTrue with the access-token hook, TLS gateway, distroless app container); real sign-in, audit, session revocation and TLS verified; ADR 0010 §3a blockers pass (hook incl. session_id, ES256/JWKS, TOTP→aal2); new CI gate 15 + app image scan; fix: Supabase settings read at runtime (were inlined at build time); risk R-56 (third-party image patching). Independent review fixes: Auth DB password sent only as a SCRAM verifier (was visible in the DDL log), TLS required by `pg_hba.conf`, isolated networks (app reaches Auth only via the gateway), name-constrained CA, keys 0600, container hardening + health checks; smoke test now asserts each of these |
 | 4 Oct 2026 | PR #18 merged (M2 threat models, risk register v0.2); PO delegated technical choices to Claude; T-M0-13 decided: Sentry EU (cloud) + GlitchTip (sovereign) |
 | 3 Oct 2026 | Independent review of the M2 threat models: approve with fixes — fixed (8 new risks rescored to at least their worst threat, R-34 and R-37 now 20; evidence/wording corrections; register v0.2 in the index) |

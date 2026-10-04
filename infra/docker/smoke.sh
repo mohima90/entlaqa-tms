@@ -21,10 +21,12 @@ cleanup() {
 trap cleanup EXIT
 
 ./gen-secrets.sh
-set -a && . .secrets/.env && set +a
+# Only the values this script needs, read one by one (never the whole file into the environment, so the
+# Auth password and the signing key are not handed to every child process). Passwords are alphanumeric.
+secret() { sed -n "s/^$1=//p" "$ROOT/infra/docker/.secrets/.env"; }
+POSTGRES_PASSWORD="$(secret POSTGRES_PASSWORD)"
 CA_PEM="$(cat .secrets/ca.crt)"
-enc() { node -e 'process.stdout.write(encodeURIComponent(process.argv[1]))' "$1"; }
-MIGRATION_URL="postgresql://postgres:$(enc "$POSTGRES_PASSWORD")@localhost:55432/postgres"
+MIGRATION_URL="postgresql://postgres:$POSTGRES_PASSWORD@localhost:55432/postgres"
 
 if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
   echo "smoke: building the app (standalone, no environment baked in)"
@@ -32,16 +34,14 @@ if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
 fi
 
 echo "smoke: starting PostgreSQL, Auth and the TLS gateway"
-compose up -d --wait db
-compose up -d auth gateway
-for i in $(seq 1 60); do
-  curl -sf --cacert .secrets/ca.crt https://localhost:8443/auth/v1/health >/dev/null && break
-  [[ $i -eq 60 ]] && { echo "smoke: Auth did not become healthy" >&2; exit 1; }
-  sleep 2
-done
+compose up -d --wait db auth gateway
+curl -sf --cacert .secrets/ca.crt https://localhost:8443/auth/v1/health >/dev/null ||
+  { echo "smoke: Auth is not reachable through the TLS gateway" >&2; exit 1; }
 
 echo "smoke: deploying migrations (scripts/db-deploy.sh, TLS verify-full)"
-(cd "$ROOT" && DATABASE_URL="$MIGRATION_URL" DATABASE_CA_CERT="$CA_PEM" bash scripts/db-deploy.sh apply)
+(cd "$ROOT" && DATABASE_URL="$MIGRATION_URL" DATABASE_CA_CERT="$CA_PEM" \
+  APP_SERVER_DB_PASSWORD="$(secret APP_SERVER_DB_PASSWORD)" APP_WORKER_DB_PASSWORD="$(secret APP_WORKER_DB_PASSWORD)" \
+  bash scripts/db-deploy.sh apply)
 
 echo "smoke: starting the app container"
 compose up -d --build --wait app
@@ -75,3 +75,21 @@ q() {
   { echo "smoke: sign-out must revoke the session" >&2; exit 1; }
 [[ "$(q "select count(*) from pg_stat_ssl s join pg_stat_activity a using (pid) where a.client_addr is not null and not s.ssl")" == "0" ]] ||
   { echo "smoke: a network connection to PostgreSQL is not using TLS" >&2; exit 1; }
+# Correct password, no TLS: must be refused by pg_hba.conf (not by anything else).
+no_tls="$(PGPASSWORD="$POSTGRES_PASSWORD" PGSSLMODE=disable PGCONNECT_TIMEOUT=5 \
+  psql -h localhost -p 55432 -U postgres -d postgres -X -At -c 'select 1' 2>&1 || true)"
+[[ "$no_tls" == *"pg_hba.conf rejects connection"* ]] ||
+  { echo "smoke: PostgreSQL must refuse connections without TLS (got: $no_tls)" >&2; exit 1; }
+
+echo "smoke: checking secrets stay out of the logs and Auth is reachable only through the gateway"
+if compose logs db auth 2>&1 | grep -qF "$(secret AUTH_DB_PASSWORD)"; then
+  echo "smoke: the Auth database password appears in the container logs" >&2; exit 1
+fi
+reach() {
+  compose exec -T app /nodejs/bin/node -e \
+    "fetch(process.argv[1]).then(()=>process.exit(0)).catch(()=>process.exit(1))" "$1" >/dev/null 2>&1
+}
+reach https://gateway:8443/auth/v1/health || { echo "smoke: the app cannot reach the gateway" >&2; exit 1; }
+if reach http://auth:9999/health; then
+  echo "smoke: the app container can reach Auth directly (it must go through the gateway)" >&2; exit 1
+fi

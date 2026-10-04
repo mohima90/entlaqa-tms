@@ -24,7 +24,7 @@
 | T-M0-10 | MFA (two-step sign-in) on every team account: GitHub, Supabase, Vercel, the e-mail account behind them; secrets only in the password manager | PO | 🟢 | Confirmed 3 Oct 2026: enabled on GitHub (passkeys, 2FA required), Supabase and Vercel since the accounts were created (PO) |
 | T-M0-11 | GitHub environment `staging`: add the PO as **Required reviewer** (every DB deploy / provisioning run waits for approval) | PO | ⏸ | Deferred (3 Oct 2026): the PO is the only repository collaborator and staging holds test data only. **Do before** a second person gets repository access or before a production environment exists |
 | T-M0-12 | Pen-test vendor shortlist (KSA/UAE-capable, Arabic UI) | Claude prepares, PO contacts | ⚪ | Plan §6.2; needed by M7 (independent pen test before GA). Security tooling: CI already runs CodeQL, gitleaks, `pnpm audit`, Trivy (free) — no licences needed so far |
-| T-M0-13 | Approve the error-tracking vendor (Sentry EU region vs. GlitchTip) | PO (Claude recommends) | ⚪ | Plan §6.2 accounts; ADR 0009 §4; needed for T-M1-D06 observability |
+| T-M0-13 | Error-tracking vendor | Claude (delegated by PO, 4 Oct 2026) | 🟢 | Sentry SaaS EU region (cloud) + self-hosted GlitchTip (sovereign); same SDK (ADR 0009 §4). Account set-up with T-M1-D06 |
 
 Plan §6.2 items that do not apply to the agent-team model (§2.3): team staffing/RACI (= T-M0-01), separate project tracker (this file), Figma (design artifacts in `docs/design/`), kick-off (`CLAUDE.md` + session routine). Open decisions D4, D5, D8–D10 are scheduled in STATUS §2 ("Needed by").
 

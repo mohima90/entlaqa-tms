@@ -61,6 +61,8 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 | 30 Sep 2026 | D3 | Full planning cycle (TNA campaigns, training plan, plan vs. actual) ships in **R2**; R1 includes training requests (PLN-01) only |
 | 1 Oct 2026 | — | Staging database: Supabase project `jadarat-tms-staging` (org `entlaqa-TMS`, Frankfurt `eu-central-1`, **Free plan** for now — PO deferred the Pro upgrade), Data API **off**, automatic RLS off (migrations enforce RLS). Migrations reach hosted environments only through the manual `DB deploy` workflow (plan → apply) |
 | 1 Oct 2026 | — | `main` protected by ruleset `main protection`: PR required (0 approvals — PO is the only human), conversation resolution, required checks `CI gates` + CodeQL (javascript-typescript, actions), no force-push/deletion, empty bypass list |
+| 4 Oct 2026 | — | **Technical choices are delegated to Claude (Tech Lead)** (PO, non-technical): Claude decides technical/tooling questions and records them here; only business, cost, legal and scope decisions go to the PO, explained in plain language |
+| 4 Oct 2026 | — | Error tracking (T-M0-13, ADR 0009 §4): **Sentry SaaS, EU data region** for the regional cloud; **self-hosted GlitchTip** for sovereign (in-country) deployments — same Sentry SDK, no PII (`sendDefaultPii: false`, scrubbing). Account creation (PO, guided) happens with T-M1-D06 |
 | 3 Oct 2026 | — | **Customer feedback via trial accounts, not design partners now** (PO): the customers who shaped the BRD will get **2-week trial accounts** on a near-complete product (target ≈ end of M5, when catalog → schedule → enroll → attend → certificate works); until then usability tests use **ENTLAQA staff** as stand-in users. Replaces "3–5 design partners signed in M0" (Development Plan §6.2, Gate G0) |
 | 3 Oct 2026 | — | Dependency audit: single-advisory exception for GHSA-vfj7-8cjw-p6xm (`braces`, dev-time lint tooling only, no fix released) accepted by the PO — risk R-33; removed when a patch ships |
 | 3 Oct 2026 | — | T-M0-11 (staging required reviewer) deferred: the PO is the only repository collaborator; do it before a second person gets access or before production |
@@ -127,9 +129,8 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 **Product Owner (user)** — Claude guides each step one action at a time (PO request, 1 Oct 2026)
 1. Later: **T-M0-11** required reviewer on `staging` — before anyone else gets repository access.
 2. Old Vercel project `entlaqa-tms` (team "Mohamed Ibrahim's projects"): the PO's Vercel account has no access to that team (1 Oct 2026). Harmless while the root `vercel.json` skips its builds; delete it if access is recovered, or ask Vercel support.
-3. **T-M0-13** Approve the error-tracking vendor (Claude prepares a one-page recommendation: Sentry EU vs. GlitchTip).
-4. Optional: upgrade Supabase org `entlaqa-TMS` to Pro (no pausing, backups) before customer trials.
-5. When usability round 1 is due (end of M1): pick 5–8 ENTLAQA staff who did not work on the BRD (Claude prepares the sessions).
+3. Optional: upgrade Supabase org `entlaqa-TMS` to Pro (no pausing, backups) before customer trials.
+4. When usability round 1 is due (end of M1): pick 5–8 ENTLAQA staff who did not work on the BRD (Claude prepares the sessions).
 
 **Security decisions for M2 (from TM-0002…0006, 3 Oct 2026)** — needed before the related M2 stories start; Claude will bring them one at a time:
 1. Always require an authenticator code for high-risk actions (role changes, exports), even when an organization turns MFA off? (TM-0003 D-IAM-01; recommended: yes)
@@ -155,7 +156,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 2. T-M1-D04 self-hosted stack spike (needs a Docker-capable environment).
 3. T-M1-B14 estimation and re-baselined plan → Gate G1.
 4. Check R-33 (`braces` advisory) at the start of each session: when a patched release exists, update and remove the `ignoreGhsas` entry in `pnpm-workspace.yaml`.
-5. M0 support: T-M0-12 pen-test vendor shortlist; T-M0-13 error-tracking recommendation (Sentry EU vs. GlitchTip, ADR 0009 §4).
+5. M0 support: T-M0-12 pen-test vendor shortlist.
 
 ---
 
@@ -163,6 +164,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
+| 4 Oct 2026 | PR #18 merged (M2 threat models, risk register v0.2); PO delegated technical choices to Claude; T-M0-13 decided: Sentry EU (cloud) + GlitchTip (sovereign) |
 | 3 Oct 2026 | Independent review of the M2 threat models: approve with fixes — fixed (8 new risks rescored to at least their worst threat, R-34 and R-37 now 20; evidence/wording corrections; register v0.2 in the index) |
 | 3 Oct 2026 | T-M1-C02 (M2 part): five per-epic threat models TM-0002 tenancy & onboarding (39 threats), TM-0003 identity & roles (44), TM-0004 people directory (30), TM-0005 audit & consent (33), TM-0006 shell & notifications (32); IDs `T-<AREA>-NN`; risk register v0.2 (R-34…R-55, 55 risks); 17 PO decisions and 43 Tech Lead findings collected for M2 planning |
 | 3 Oct 2026 | T-M1-A02 component library v1: TextField, Alert, Badge added (Button, Card, AppShell existed); Storybook 10 with language/direction and theme toolbar; new CI gate (part of gate 8) opens every story in Arabic/English × light/dark and requires zero axe violations (proved to fail on an unlabelled input); sign-in forms now use the library. Independent review: approve with minor follow-ups — all fixed (Alert announcement guidance, TextField keeps caller descriptions + «(مطلوب)» marker per design principles §4, test server hardened, new dependency rule `no-prod-to-test-files`) |

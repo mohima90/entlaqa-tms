@@ -1,10 +1,12 @@
 # Jadarat TMS — self-hosted (sovereign) stack, T-M1-D04 walking skeleton (ADR 0010). Runbook: README.md.
 # Everything runs in-country on the customer's servers: PostgreSQL 17 (Supabase image, same major/minor as
-# the cloud), Supabase Auth (GoTrue) with the Custom Access Token hook, a TLS gateway, and the app.
+# the cloud), Supabase Auth (GoTrue) with the Custom Access Token hook, a TLS gateway, the app, and the
+# in-country error tracker (GlitchTip, Sentry-compatible; ADR 0009 §4) with its own database.
 # TLS verified against the installation's CA on every hop that leaves a private network: app → db,
-# Auth → db (PostgreSQL requires TLS for all network clients, db/pg_hba.conf) and app → gateway. The one
-# plain-HTTP hop, gateway → Auth, runs on an internal-only network that only those two containers join
-# (Supabase Auth has no TLS listener). Containers drop privileges; app and gateway are read-only.
+# Auth → db (PostgreSQL requires TLS for all network clients, db/pg_hba.conf) and app → gateway; the
+# GlitchTip UI is served through the gateway's TLS too. Plain-HTTP hops run only on internal networks:
+# gateway → Auth and app/gateway → GlitchTip (neither service has a TLS listener). Auth and GlitchTip
+# have no outbound route. Containers drop privileges; app, gateway, Auth and GlitchTip are read-only.
 # Images are pinned by digest (multi-arch index); bump deliberately with the hosted versions.
 # Secrets: ./gen-secrets.sh → .secrets/ (git-ignored); always run compose with
 #   docker compose --env-file .secrets/.env …
@@ -22,6 +24,8 @@ networks:
   auth-internal: { internal: true } # gateway ⇄ Auth (the plain-HTTP hop)
   db-app: {} # db ⇄ app (+ the db host port used for migrations)
   edge: {} # app ⇄ gateway (+ published ports)
+  errors: { internal: true } # app, gateway ⇄ GlitchTip (plain HTTP; no route out of the installation)
+  errors-internal: { internal: true } # GlitchTip ⇄ its own database (error data never in the TMS db)
 
 services:
   db:
@@ -104,7 +108,7 @@ services:
     read_only: true
     cap_drop: [ALL]
     tmpfs: [/tmp]
-    networks: [auth-internal, edge]
+    networks: [auth-internal, edge, errors]
     healthcheck:
       test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:8081/healthz']
       interval: 5s
@@ -118,6 +122,7 @@ services:
       - ./.secrets/gateway.key:/etc/nginx/certs/gateway.key:ro
     ports:
       - 127.0.0.1:8443:8443
+      - 127.0.0.1:8100:8100 # GlitchTip UI (TLS)
 
   app:
     build:
@@ -128,7 +133,7 @@ services:
     read_only: true
     cap_drop: [ALL]
     tmpfs: ['/app/apps/suite/.next/cache:uid=65532,gid=65532,mode=0700'] # distroless nonroot
-    networks: [db-app, edge]
+    networks: [db-app, edge, errors]
     depends_on:
       gateway: { condition: service_healthy }
     volumes:
@@ -142,11 +147,71 @@ services:
       DATABASE_CA_CERT_FILE: /run/secrets/ca.crt
       NODE_EXTRA_CA_CERTS: /run/secrets/ca.crt
       JADARAT_ENVIRONMENT: self-hosted
-      # Error tracking (ADR 0009 §4): set SENTRY_DSN to the installation's in-country GlitchTip project.
-      # Unset = errors are logged only.
+      # Error tracking (ADR 0009 §4): the DSN of this installation's GlitchTip project, with the internal
+      # host, e.g. http://<key>@glitchtip:8000/<project id> (README.md, "Error tracking"). Unset = logs only.
       SENTRY_DSN: ${SENTRY_DSN:-}
     ports:
       - 127.0.0.1:3200:3000
 
+  # In-country error tracking (ADR 0009 §4, T-M1-D06): GlitchTip in all-in-one mode (web + worker, no
+  # Valkey) with its own PostgreSQL. Errors arrive already scrubbed by the app; retention 90 days.
+  errors-db:
+    image: postgres:17.11@sha256:d74eeac9a635390a49bc21bd49fccd973de707e2a53a76ac49b552b8712ec46f
+    <<: *hardening
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    networks: [errors-internal]
+    command: ['postgres', '-c', 'max_locks_per_transaction=512']
+    environment:
+      POSTGRES_USER: glitchtip
+      POSTGRES_DB: glitchtip
+      POSTGRES_PASSWORD: ${ERRORS_DB_PASSWORD:?run with --env-file .secrets/.env}
+    volumes:
+      - errors-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD', 'pg_isready', '-U', 'glitchtip', '-d', 'glitchtip']
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  glitchtip:
+    image: glitchtip/glitchtip:6.2.6@sha256:a3d8eb1b36c1e1603d55ab32711ea3dd8115874742a781a57391a62a16e0dff6
+    <<: *hardening
+    read_only: true
+    cap_drop: [ALL]
+    tmpfs: [/tmp]
+    command: ['./bin/run-all-in-one.sh']
+    networks: [errors, errors-internal]
+    depends_on:
+      errors-db: { condition: service_healthy }
+    environment:
+      DATABASE_URL: postgres://glitchtip:${ERRORS_DB_PASSWORD:?run with --env-file .secrets/.env}@errors-db:5432/glitchtip
+      VALKEY_URL: ''
+      SECRET_KEY: ${GLITCHTIP_SECRET_KEY:?run with --env-file .secrets/.env}
+      # The UI address operators use: through the gateway's TLS (gateway/nginx.conf, port 8100). For a real
+      # host name set GLITCHTIP_DOMAIN and GLITCHTIP_EXTRA_HOSTS in .secrets/.env.
+      GLITCHTIP_DOMAIN: ${GLITCHTIP_DOMAIN:-https://localhost:8100}
+      CSRF_TRUSTED_ORIGINS: ${GLITCHTIP_DOMAIN:-https://localhost:8100}
+      # Internal names always stay (health check, ingest); GLITCHTIP_EXTRA_HOSTS adds the real host name.
+      ALLOWED_HOSTS: glitchtip,localhost,127.0.0.1${GLITCHTIP_EXTRA_HOSTS:+,${GLITCHTIP_EXTRA_HOSTS}}
+      ENABLE_USER_REGISTRATION: 'false'
+      ENABLE_ORGANIZATION_CREATION: 'false'
+      # No Django admin or API browser; no uptime monitoring (it would call out of the installation).
+      ENABLE_ADMIN: 'false'
+      ENABLE_OPENAPI: 'false'
+      GLITCHTIP_ENABLE_UPTIME: 'false'
+      # Second line of defence: GlitchTip's own scrubber (sensitive keys, card numbers, private keys); the
+      # app already removes e-mails — GlitchTip's e-mail pattern also mangles package paths in stack
+      # frames (`next@16.3.8_@babel+core@…`), so it stays off.
+      GLITCHTIP_PII_SCRUB_DEFAULT: '{"enabled": true, "scrub_emails": false}'
+      GLITCHTIP_RETENTION_DAYS: '90'
+    healthcheck:
+      test: ['CMD', 'python3', '/code/healthcheck.py']
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 30s
+
 volumes:
   db-data:
+  errors-db-data:

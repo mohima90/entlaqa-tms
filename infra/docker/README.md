@@ -10,10 +10,16 @@ The whole product running on servers we (or the customer) control, with no Verce
 | `auth` | `supabase/gotrue:v2.197.0` | Supabase Auth: password sign-in, ES256 keys, TOTP MFA, Custom Access Token hook |
 | `gateway` | `nginxinc/nginx-unprivileged:stable-alpine-slim` | TLS in front of Auth, Supabase URL layout (`/auth/v1/…`) |
 | `app` | `jadarat/suite:local` (`app.Dockerfile`, distroless Node 24, non-root) | The web app (standalone build) |
+| `glitchtip` | `glitchtip/glitchtip:6.2.6` (MIT) | In-country error tracker, Sentry-compatible (ADR 0009 §4). All-in-one mode (web + worker, no Valkey); no route out of the installation; UI over TLS through the gateway at `https://localhost:8100`; events kept 90 days |
+| `errors-db` | `postgres:17.11` | GlitchTip's own database: error data never shares the TMS database |
 
-**Network and TLS.** The database accepts network connections **only over TLS** (`db/pg_hba.conf`), and its clients verify it against the installation's own CA (app → db, Auth → db, migrations); the app verifies the gateway the same way. The one plain-HTTP hop is gateway → Auth (Supabase Auth has no TLS listener): it runs on an internal network that only those two containers join, and Auth has no route anywhere except the database and the gateway. The app reaches Auth only through the gateway. Host ports are bound to `127.0.0.1` only.
+**Network and TLS.** The database accepts network connections **only over TLS** (`db/pg_hba.conf`), and its clients verify it against the installation's own CA (app → db, Auth → db, migrations); the app verifies the gateway the same way. There are two plain-HTTP hops inside the installation:
+- **gateway → Auth.** Supabase Auth has no TLS listener. The hop runs on an internal network that only those two containers join, and Auth has no route anywhere except the database and the gateway.
+- **app / gateway → GlitchTip.** Error reports, already scrubbed, go over the internal `errors` network. GlitchTip reaches its own database only over another internal network, and has **no route out of the installation**: no uptime calls, webhooks or social sign-in can send data abroad. The gateway serves its UI over TLS.
 
-**Hardening.** No container can gain privileges (`no-new-privileges`); app, gateway and Auth drop all Linux capabilities and run with a read-only filesystem; every container restarts automatically and has a health check. The database receives the Auth password only as a SCRAM verifier, so it never appears in its logs; each container mounts only the certificate files it needs.
+The app reaches Auth only through the gateway. Host ports are bound to `127.0.0.1` only.
+
+**Hardening.** No container can gain privileges (`no-new-privileges`). App, gateway, Auth and GlitchTip drop all Linux capabilities and run with a read-only filesystem. GlitchTip's database keeps only the capabilities PostgreSQL's start-up needs. Every container restarts automatically and has a health check. GlitchTip runs without its Django admin, API browser or uptime monitoring, and with its own PII scrubber on as a second line of defence. The database receives the Auth password only as a SCRAM verifier, so it never appears in its logs; each container mounts only the certificate files it needs.
 
 ## One command
 
@@ -21,7 +27,7 @@ The whole product running on servers we (or the customer) control, with no Verce
 bash infra/docker/smoke.sh        # KEEP=1 keeps the stack running · SKIP_BUILD=1 reuses the app build
 ```
 
-It generates secrets, builds the app (no environment baked in), starts the stack, applies the migrations with the **production deploy script** (`scripts/db-deploy.sh`, verify-full TLS), creates a user through the Auth admin API, provisions an organization with `scripts/provision-tenant.sh`, signs in through a real browser (`apps/suite/e2e/signed-in.spec.ts`), runs the Auth parity checks (`check-auth-parity.mjs`), and verifies the audit trail, session revocation and TLS. CI runs exactly this on every PR (gate 15) and scans the app image (no fixable HIGH/CRITICAL allowed).
+It generates secrets, builds the app (no environment baked in), starts the stack, applies the migrations with the **production deploy script** (`scripts/db-deploy.sh`, verify-full TLS), creates a user through the Auth admin API, provisions an organization with `scripts/provision-tenant.sh`, signs in through a real browser (`apps/suite/e2e/signed-in.spec.ts`), runs the Auth parity checks (`check-auth-parity.mjs`), and verifies the audit trail, session revocation and TLS. It then sets up GlitchTip (`glitchtip/bootstrap.py`) and sends one browser error (through the app's tunnel) and one server error (signing in while Auth is down, `e2e/auth-outage.spec.ts`). Both must arrive in GlitchTip with their messages redacted and none of the planted personal data. CI runs exactly this on every PR (gate 15) and scans the app image (no fixable HIGH/CRITICAL allowed).
 
 ## Manual operation
 
@@ -36,6 +42,25 @@ pnpm --filter @jadarat/suite build && docker compose --env-file .secrets/.env up
 NEW_USER_PASSWORD='…' node create-user.mjs admin@example.org      # prints the user id
 # then scripts/provision-tenant.sh apply with ADMIN_USER_ID=<that id>; open http://localhost:3200/ar/sign-in
 ```
+
+**Error tracking (GlitchTip, once per installation).** Start `errors-db glitchtip`. Then create the operator account, the organization and the project, and get the app's DSN:
+
+```bash
+GLITCHTIP_ADMIN_PASSWORD="$(sed -n 's/^GLITCHTIP_ADMIN_PASSWORD=//p' .secrets/.env)" \
+  docker compose --env-file .secrets/.env exec -T -e GLITCHTIP_ADMIN_EMAIL=ops@customer.example \
+  -e GLITCHTIP_ADMIN_PASSWORD glitchtip python manage.py shell <glitchtip/bootstrap.py   # prints DSN=…
+```
+
+Then:
+1. Add `SENTRY_DSN=<that DSN>` to `.secrets/.env` and restart the app (`up -d app`).
+2. Operators sign in at `https://localhost:8100` with that account. The gateway serves it over TLS with the installation's CA. Registration and organization creation are off.
+3. For a real host name:
+   - set `GLITCHTIP_DOMAIN` (e.g. `https://errors.customer.example:8100`) and `GLITCHTIP_EXTRA_HOSTS` (e.g. `errors.customer.example`) in `.secrets/.env`; the internal names stay allowed;
+   - give the gateway a certificate for that name from the customer's PKI. The generated CA is name-constrained to the stack's own hosts and cannot sign one.
+   
+   Connect the customer's SSO before go-live.
+
+**Upgrading an existing installation.** Re-run `./gen-secrets.sh` after pulling a new version. It keeps every existing secret and appends the ones the new version needs (e.g. GlitchTip's). Without them, every `docker compose` command stops with "run with --env-file".
 
 `.secrets/` is git-ignored and created with mode 0700 (private keys 0600; when not run as root, the gateway key is 0644 so nginx's unprivileged user can read it — run `gen-secrets.sh` as root on a real server).
 

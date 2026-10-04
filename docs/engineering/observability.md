@@ -51,7 +51,10 @@ Add the variables under **Settings → Environment Variables**:
 Then redeploy. The DSN is not a password: it only lets a sender *submit* events. Keep it in the environment, not in code, so each deployment points at its own project.
 
 ### Sovereign installations
-Run GlitchTip in-country and set `SENTRY_DSN` in `infra/docker/.secrets/.env`; compose passes it to the app. GlitchTip in the compose file and its parity check are T-M1-D06 part b.
+GlitchTip 6.2.6 runs in-country in `infra/docker`: `glitchtip` with its own database `errors-db`, events kept 90 days, no route out of the installation, and its UI served over TLS by the gateway (`https://localhost:8100`).
+- One-time set-up: run `glitchtip/bootstrap.py` to create the operator account, organization and project. It prints the DSN with the internal host (`http://<key>@glitchtip:8000/<id>`); put that DSN in `.secrets/.env` as `SENTRY_DSN`. Steps are in [`infra/docker/README.md`](../../infra/docker/README.md).
+- The same SDK, scrubbing and tunnel are used as with Sentry EU.
+- Gate 15 proves it on every PR: one browser error and one server error (Auth down) must arrive in GlitchTip, redacted and without planted personal data.
 
 ## Browser errors (`POST /api/monitoring/errors`)
 
@@ -105,7 +108,6 @@ This is a staging baseline. Production needs external checks from at least two r
 | Gap | Why | Planned |
 |---|---|---|
 | Stack traces show compiled (minified) server code | In-process source maps are not applied by Next.js 16 / Turbopack at runtime (tried 4 Oct 2026). Disabling minification would also unminify the browser bundle | Upload source maps privately at build time to Sentry and GlitchTip (ADR 0009 §4), T-M1-D06 part b |
-| GlitchTip not yet in `infra/docker` | — | T-M1-D06 part b |
 | Supabase Auth (GoTrue) writes the e-mail of each sign-in to its own logs (`actor_username`, `user_email`; seen in the self-hosted smoke test). On the hosted cloud, Supabase keeps those logs | Third-party component; we cannot change its log content | Self-hosted: collect GoTrue logs through a scrubbing collector with short retention (ADR 0009 §5 Collector, M2). Cloud: covered by the Supabase sub-processor terms and the log access rules |
 | Source-map upload vs. the licence policy | The Sentry CLI used for uploads is FSL-licensed and removed from the install | Part b: upload through the Sentry/GlitchTip HTTP API from a small script, or a PO-approved licence exception for a build-only tool |
 | Traces and metrics (OpenTelemetry), alert rules, status page | Need a backend (ADR 0009 §5) | M2/M3, with the worker (ADR 0005) |

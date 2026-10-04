@@ -227,3 +227,17 @@ insert into platform.audit_events (tenant_id, actor_user_id, action, entity_type
   ('a0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-0000000000a1', 'platform.session.signed_in', 'user', 'ua'),
   ('b0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-0000000000b1', 'platform.session.signed_in', 'user', 'ub'),
   ('c0000000-0000-4000-8000-000000000001', null, 'platform.tenant.suspended', 'tenant', 'c');
+
+-- Organization structure (T-M2-01): branches and departments in tenants A and B.
+--   A: HQ branch RUH, branch JED; departments TD (head = person uA) → TD-PRG (child); OPS
+--   B: branch HQ; department TD (same code as A: codes are unique per tenant only)
+insert into platform.branches (id, tenant_id, code, name_ar, name_en, is_headquarters) values
+  ('a2000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'RUH', 'فرع الرياض', 'Riyadh', true),
+  ('a2000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'JED', 'فرع جدة', 'Jeddah', false),
+  ('b2000000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000001', 'HQ', 'المقر الرئيسي', 'HQ', true);
+
+insert into platform.departments (id, tenant_id, code, name_ar, name_en, parent_id, branch_id, head_person_id) values
+  ('a3000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'TD', 'التدريب والتطوير', 'Training & Development', null, 'a2000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1'),
+  ('a3000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'TD-PRG', 'برامج التدريب', 'Training programs', 'a3000000-0000-4000-8000-000000000001', 'a2000000-0000-4000-8000-000000000001', null),
+  ('a3000000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000001', 'OPS', 'العمليات', 'Operations', null, 'a2000000-0000-4000-8000-000000000002', null),
+  ('b3000000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000001', 'TD', 'التدريب', 'Training', null, 'b2000000-0000-4000-8000-000000000001', 'b1000000-0000-4000-8000-0000000000b1');

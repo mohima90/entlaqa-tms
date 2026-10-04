@@ -16,7 +16,8 @@ begin
   from tests.tenant_tables() t
   where t.table_name::text not in (
     'platform.tenants', 'platform.tenant_domains', 'platform.persons',
-    'platform.tenant_memberships', 'platform.session_context', 'platform.audit_events');
+    'platform.tenant_memberships', 'platform.session_context', 'platform.audit_events',
+    'platform.branches', 'platform.departments');
   perform tests.assert(v_missing is null, format('isolation tests missing for: %s', v_missing));
   perform tests.assert(session_user = 'app_server', 'this file must run connected as app_server');
   select string_agg(t.table_name::text, ', ') into v_missing
@@ -118,6 +119,36 @@ begin
     'session_context: no direct INSERT');
   perform tests.assert_privilege_denied($q$update platform.session_context set active_tenant_id = 'b0000000-0000-4000-8000-000000000001'$q$,
     'session_context: no direct UPDATE');
+
+  -- platform.branches ([sd]: no DELETE grant)
+  perform tests.assert_rls_violation($q$insert into platform.branches (tenant_id, code, name_ar) values ('b0000000-0000-4000-8000-000000000001', 'X1', 'دخيل')$q$,
+    'branches: insert with tenant B tenant_id is rejected by RLS');
+  perform tests.assert_eq(tests.rows_affected($q$insert into platform.branches (code, name_ar) values ('DMM', 'فرع الدمام')$q$),
+    1::bigint, 'branches: insert defaults tenant_id to the current tenant');
+  perform tests.assert_rls_violation($q$update platform.branches set tenant_id = 'b0000000-0000-4000-8000-000000000001' where id = 'a2000000-0000-4000-8000-000000000002'$q$,
+    'branches: cannot move a row into tenant B');
+  perform tests.assert_eq(tests.rows_affected($q$update platform.branches set name_ar = 'x' where id = 'b2000000-0000-4000-8000-000000000001'$q$),
+    0::bigint, 'branches: RLS filters tenant B branch by id');
+  perform tests.assert_fails($q$insert into platform.branches (code, name_ar, parent_branch_id) values ('SUB', 'فرعي', 'b2000000-0000-4000-8000-000000000001')$q$,
+    array['23503'], 'branches: composite FK rejects a tenant B parent branch');
+  perform tests.assert_privilege_denied($q$delete from platform.branches where id = 'a2000000-0000-4000-8000-000000000002'$q$,
+    'branches: no DELETE grant (soft delete only)');
+
+  -- platform.departments ([sd]: no DELETE grant; composite FKs to departments, branches, persons)
+  perform tests.assert_rls_violation($q$insert into platform.departments (tenant_id, code, name_ar) values ('b0000000-0000-4000-8000-000000000001', 'X1', 'دخيل')$q$,
+    'departments: insert with tenant B tenant_id is rejected by RLS');
+  perform tests.assert_rls_violation($q$update platform.departments set tenant_id = 'b0000000-0000-4000-8000-000000000001' where id = 'a3000000-0000-4000-8000-000000000003'$q$,
+    'departments: cannot move a row into tenant B');
+  perform tests.assert_eq(tests.rows_affected($q$update platform.departments set name_ar = 'x' where id = 'b3000000-0000-4000-8000-000000000001'$q$),
+    0::bigint, 'departments: RLS filters tenant B department by id');
+  perform tests.assert_fails($q$insert into platform.departments (code, name_ar, parent_id) values ('X2', 'قسم', 'b3000000-0000-4000-8000-000000000001')$q$,
+    array['23503'], 'departments: composite FK rejects a tenant B parent department');
+  perform tests.assert_fails($q$insert into platform.departments (code, name_ar, branch_id) values ('X3', 'قسم', 'b2000000-0000-4000-8000-000000000001')$q$,
+    array['23503'], 'departments: composite FK rejects a tenant B branch');
+  perform tests.assert_fails($q$update platform.departments set head_person_id = 'b1000000-0000-4000-8000-0000000000b1' where id = 'a3000000-0000-4000-8000-000000000003'$q$,
+    array['23503'], 'departments: composite FK rejects a tenant B person as head');
+  perform tests.assert_privilege_denied($q$delete from platform.departments where id = 'a3000000-0000-4000-8000-000000000003'$q$,
+    'departments: no DELETE grant (soft delete only)');
 
   -- platform.audit_events: append-only; tenant and actor cannot be forged.
   perform tests.assert_rls_violation($q$insert into platform.audit_events (tenant_id, actor_user_id, action) values ('b0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-0000000000a1', 'platform.test.forged')$q$,

@@ -1,5 +1,6 @@
 import 'server-only';
 import { type UserTx } from '@jadarat/platform-db';
+import { reportError } from '@jadarat/platform-observability';
 import type { ActionRuntime } from './define-action';
 
 /**
@@ -33,11 +34,7 @@ export const defaultActionRuntime: ActionRuntime<UserTx> = {
     await insertAuditEvent(tx, actor, record);
   },
   logError(error, meta) {
-    // No personal data: log only the error class, the permission code and the correlation id.
-    console.error('[defineAction] unexpected error', {
-      permission: meta.permission,
-      correlationId: meta.correlationId,
-      error: error instanceof Error ? error.name : typeof error,
-    });
+    // Logged (error class, permission, correlation id — no personal data) and sent to the error tracker.
+    reportError(error, { permission: meta.permission, correlationId: meta.correlationId });
   },
 };

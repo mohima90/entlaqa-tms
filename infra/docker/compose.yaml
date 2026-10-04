@@ -141,6 +141,10 @@ services:
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: self-hosted
       DATABASE_CA_CERT_FILE: /run/secrets/ca.crt
       NODE_EXTRA_CA_CERTS: /run/secrets/ca.crt
+      JADARAT_ENVIRONMENT: self-hosted
+      # Error tracking (ADR 0009 §4): set SENTRY_DSN to the installation's in-country GlitchTip project.
+      # Unset = errors are logged only.
+      SENTRY_DSN: ${SENTRY_DSN:-}
     ports:
       - 127.0.0.1:3200:3000
 

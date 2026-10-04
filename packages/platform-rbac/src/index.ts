@@ -1,3 +1,4 @@
+import { reportError } from '@jadarat/platform-observability';
 import { defaultActionRuntime } from './default-runtime';
 import { createDefineAction } from './define-action';
 import { createDefinePublicAction } from './define-public-action';
@@ -35,15 +36,7 @@ export const defineAction = createDefineAction(defaultActionRuntime);
  */
 export const definePublicAction = createDefinePublicAction({
   logError(error, meta) {
-    // No personal data: the error class, the action name and the correlation id only.
-    console.error('[definePublicAction] unexpected error', {
-      action: meta.action,
-      correlationId: meta.correlationId,
-      error: error instanceof Error ? error.name : typeof error,
-      // e.g. AuthServiceError: tells an outage (5xx) from a network failure (0); never personal data.
-      ...(error instanceof Error && 'status' in error && typeof error.status === 'number'
-        ? { status: error.status }
-        : {}),
-    });
+    // Logged (error class, action, correlation id — no personal data) and sent to the error tracker.
+    reportError(error, { action: meta.action, correlationId: meta.correlationId });
   },
 });

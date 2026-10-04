@@ -18,6 +18,7 @@
   "dependencies": {
     "@jadarat/platform-core": "workspace:*",
     "@jadarat/platform-db": "workspace:*",
+    "@jadarat/platform-observability": "workspace:*",
     "server-only": "0.0.1"
   },
   "peerDependencies": {

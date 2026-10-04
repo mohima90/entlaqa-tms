@@ -17,6 +17,7 @@ const nextConfig: NextConfig = {
     '@jadarat/platform-core',
     '@jadarat/platform-db',
     '@jadarat/platform-i18n',
+    '@jadarat/platform-observability',
     '@jadarat/tms',
     '@jadarat/ui',
   ],

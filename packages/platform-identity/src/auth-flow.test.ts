@@ -142,7 +142,7 @@ describe('signInWithPassword', () => {
     // Security event without personal data (no e-mail, no password).
     expect(deps.logWarning).toHaveBeenCalledWith('sign-in refused', {
       action: 'platform.auth.sign_in',
-      status: '400',
+      status: 400,
     });
   });
 

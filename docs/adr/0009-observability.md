@@ -97,3 +97,16 @@ Shared logger, tracing helpers and metric conventions in `platform-core`/`platfo
 2. Trace test: one E2E journey produces a single trace spanning web → outbox → worker → notification.
 3. Alert rules tested with synthetic failures in staging (queue stall, provider failure).
 4. Self-hosted stack (ADR 0010) ships the Collector + GlitchTip + Gatus in the compose file used for smoke tests (T-M1-D04/D06).
+
+## Implementation notes (T-M1-D06 part a, 4 Oct 2026)
+Runbook: [`docs/engineering/observability.md`](../engineering/observability.md).
+- **§2 logger:** a small typed JSON-lines writer in `packages/platform-observability`. Instead of `pino`, the API is closed (fixed fields, no object logging) and every string is scrubbed. Same output format and redaction intent, one fewer dependency and no worker-thread transport inside the Next.js bundle. `pino` can replace the writer later without changing callers.
+- **§4 error tracking:**
+  - Server-side `@sentry/nextjs` is started from `instrumentation.ts` with a runtime `SENTRY_DSN`, errors only. The SDK's OpenTelemetry setup and runtime module patching are off, so traces keep their own OTel pipeline.
+  - The reporter is registered on `globalThis`, because Next.js bundles instrumentation separately from route code.
+  - The Sentry CLI (FSL licence, build-time only) is removed from the install with a pnpm override.
+  - Exception messages are redacted by default (an allow-list keeps messages built from constants); a stable `error_code` (application code or SQLSTATE) is tagged instead. Console output, Next.js error lines included, goes through the same scrubbing.
+  - Source maps are not uploaded yet, so stack frames are minified. Browser errors and GlitchTip come in part b.
+- **§6 health:** `/api/health/live` and `/api/health/ready` (database as `app_server`; one probe in flight per instance, result reused 5 s, cancelled after 3 s).
+- **Uptime:** a scheduled GitHub Actions check opens and closes an incident issue for staging. Production uptime from at least two regions, plus a status page, is still to be chosen (§5).
+- **Verification 1:** the PII scan of app logs runs in the self-hosted smoke test (gate 15), after the real sign-in journeys.

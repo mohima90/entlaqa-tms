@@ -84,6 +84,7 @@ packages/
   platform-identity/        verifyClaims (getClaims) / verifyClaimsStrict (getUser) → VerifiedClaims; ./next adapter (cookies)
   platform-rbac/            permission registry, data scopes, authorize(), defineAction()
   platform-i18n/            locales, direction, next-intl routing, AR/EN messages
+  platform-observability/   JSON logger without PII, scrubbing, error-reporting hook (Sentry EU / GlitchTip) — runbook: observability.md
   ui/                       RTL-first primitives (Button, Card, AppShell); imports docs/design/tokens/tokens.css
   contracts/                cross-module contracts (example: TmsSessionScheduledV1 event)
 modules/tms/                TMS module skeleton: permissions, a domain service, an example server action
@@ -163,6 +164,7 @@ Make the aggregate job **`CI gates`** and the CodeQL checks required status chec
 | Audit | `defineAction` writes `platform.audit_events` rows | `platform-audit` package, `actor_type`, before/after, partitioning (M2, data model §2.5) |
 | DB types | Hand-written Drizzle definitions for the six platform tables | `pnpm db:types` (supabase gen types + drizzle-kit pull) with a drift gate (migration-conventions §8) |
 | Design tokens & components | `packages/ui` imports `docs/design/tokens/tokens.css` directly (single source of truth). Component library v1: Button, Card, TextField, Alert, Badge, AppShell — Storybook with RTL/LTR and light/dark, axe-gated in CI (T-M1-A02) | Dialog, select/combobox, date picker (Hijri/Gregorian, ADR 0007), table, toast, empty/loading states — added with the M2 screens that need them; visual regression snapshots |
+| Observability | JSON logs without personal data, server-side error tracking (runtime `SENTRY_DSN`; Sentry EU / GlitchTip), `/api/health/live` + `/ready`, scheduled staging uptime check (T-M1-D06a). Runbook: [observability.md](observability.md) | Source-map upload, browser errors, GlitchTip in `infra/docker` (D06b); OpenTelemetry traces/metrics, alerting, status page (M2/M3) |
 | Self-hosted stack | `infra/docker` (T-M1-D04): Postgres 17.11 + Auth (GoTrue) + TLS gateway + distroless app image; hook, ES256/JWKS and TOTP verified; gate 15 runs it on every PR. Runbook + spike report: [`infra/docker/README.md`](../../infra/docker/README.md) | Helm chart and in-country Kubernetes (R2/R3, ADR 0010 §4); verification-attempt hooks; Storage/Realtime/Supavisor when used |
 | Vercel | Project Root Directory = `apps/suite` (Next.js preset, Node 24, files outside root included) — production deployment of `main` is Ready (1 Oct 2026). Root `vercel.json` (`ignoreCommand: exit 0`) keeps the **old** project `entlaqa-tms` (team "Mohamed Ibrahim's projects", still connected) from building | Remove root `vercel.json` only after the PO deletes the old project; Supabase env vars for sign-in: [staging-sign-in.md](staging-sign-in.md) |
 

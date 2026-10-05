@@ -178,6 +178,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
+| 5 Oct 2026 | T-M2-04a review: approve with fixes (2 Medium, 6 Low) → all fixed with tests (activity needs audit-log permission, Arabic-aware search, audit indexes, list/profile agreement test per role); re-review next |
 | 5 Oct 2026 | PR #31 merged (T-M2-03 roles). T-M2-04 started, split into 04a (authorized page reads, people scope filter, users list/profile queries — built, unit + integration tests pass, review next) and 04b (pages + E2E) |
 | 5 Oct 2026 | T-M2-03 review: request changes (1 High: suspending/removing members was not limited by role; 4 Medium) → fixed with tests (membership guard, admin roles with end dates do not count, system jobs never touch privileged roles, `canAssignRole` via `authorize()` incl. AAL2; Compliance Officer made privileged so HR can give every other role, consistent app ↔ database); re-review next |
 | 5 Oct 2026 | T-M2-03 built: 14 system roles with their permissions, role assignments (one primary + extras), database guard for who may give which role (PO decision), at least one Organization Admin kept, grants now loaded on every action; database, integration and unit tests pass; review next |

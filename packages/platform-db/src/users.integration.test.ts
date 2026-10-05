@@ -28,8 +28,7 @@ describe.skipIf(!configured)('people directory reads against PostgreSQL', () => 
   const id = () => randomUUID();
   const t = { a: id(), b: id() };
   const branch = { hq: id(), jeddah: id() };
-  const dept = { training: id(), academy: id(), finance: id() };
-  // Person key → [display name, membership status or null (no login), employment]
+  const dept = { training: id(), academy: id(), academySub: id(), finance: id(), otherOrg: id() };
   const people = {
     admin: { id: id(), user: id(), name: 'أ-مدير المنشأة', status: 'active' },
     manager: { id: id(), user: id(), name: 'ب-مديرة التدريب', status: 'active' },
@@ -63,6 +62,7 @@ describe.skipIf(!configured)('people directory reads against PostgreSQL', () => 
         scope: { ...EMPTY_PERSON_SCOPE, all: true },
         actorPersonId: people.admin.id,
         tab: 'all',
+        includeRoles: true,
         limit: 50,
         offset: 0,
         ...filter,
@@ -86,6 +86,10 @@ describe.skipIf(!configured)('people directory reads against PostgreSQL', () => 
       (${dept.training}, ${t.a}, 'TRN', 'التدريب', null), (${dept.finance}, ${t.a}, 'FIN', 'المالية', null)`;
     await owner`insert into platform.departments (id, tenant_id, code, name_ar, parent_id)
       values (${dept.academy}, ${t.a}, 'ACD', 'الأكاديمية', ${dept.training})`;
+    await owner`insert into platform.departments (id, tenant_id, code, name_ar, parent_id)
+      values (${dept.academySub}, ${t.a}, 'ACD-1', 'برامج القيادة', ${dept.academy})`;
+    await owner`insert into platform.departments (id, tenant_id, code, name_ar)
+      values (${dept.otherOrg}, ${t.b}, 'TRN', 'التدريب')`;
 
     for (const [key, p] of Object.entries(people)) {
       await owner`insert into platform.persons (id, tenant_id, display_name_ar, display_name_en, employee_number)
@@ -101,24 +105,29 @@ describe.skipIf(!configured)('people directory reads against PostgreSQL', () => 
     await owner`insert into platform.session_context (session_id, user_id, active_tenant_id)
       values (${session}, ${people.admin.user}, ${t.a})`;
 
-    // Org placement: manager → report → deep (manager chain); training ⊃ academy.
+    // Org placement: manager → report → deep (manager chain); training ⊃ academy ⊃ academySub.
     const employ = (person: string, department: string, branchId: string, manager: string | null) =>
       owner`insert into platform.person_employment (tenant_id, person_id, department_id, branch_id, manager_person_id, job_title_ar, hire_on)
         values (${t.a}, ${person}, ${department}, ${branchId}, ${manager}, 'وظيفة', '2024-03-03')`;
     await employ(people.manager.id, dept.training, branch.hq, null);
     await employ(people.report.id, dept.academy, branch.hq, people.manager.id);
     await employ(people.deep.id, dept.finance, branch.jeddah, people.report.id);
-    await employ(people.invited.id, dept.training, branch.hq, null);
+    await employ(people.invited.id, dept.academySub, branch.hq, null);
     await employ(people.suspended.id, dept.training, branch.hq, null);
 
     await owner`insert into platform.role_assignments (tenant_id, membership_id, role_code, is_primary)
       select tenant_id, id, r.code, r.primary_role from platform.tenant_memberships,
         (values ('training_coordinator', true), ('learner', false), ('mentor', false)) as r (code, primary_role)
       where tenant_id = ${t.a} and person_id = ${people.report.id}`;
+    // A role that ended in 2020 is not current: not in the list, still in the profile's history.
+    await owner`insert into platform.role_assignments (tenant_id, membership_id, role_code, valid_until)
+      select tenant_id, id, 'internal_instructor', '2020-01-01T00:00:00Z' from platform.tenant_memberships
+      where tenant_id = ${t.a} and person_id = ${people.report.id}`;
     await owner`insert into platform.audit_events (tenant_id, actor_user_id, actor_person_id, action, entity_type, entity_id, occurred_at) values
       (${t.a}, ${people.report.user}, ${people.report.id}, 'platform.auth.signed_in', 'auth_session', ${id()}, '2026-10-05T08:40:00Z'),
       (${t.a}, ${people.report.user}, ${people.report.id}, 'platform.auth.signed_in', 'auth_session', ${id()}, '2026-10-01T08:00:00Z'),
-      (${t.a}, ${people.admin.user}, ${people.admin.id}, 'platform.role.assigned', 'person', ${people.report.id}, '2026-09-20T10:00:00Z')`;
+      (${t.a}, ${people.admin.user}, ${people.admin.id}, 'platform.role.assigned', 'person', ${people.report.id}, '2026-09-20T10:00:00Z'),
+      (${t.a}, ${people.admin.user}, ${people.admin.id}, 'tms.course.updated', 'course', ${people.report.id}, '2026-09-25T10:00:00Z')`;
   });
 
   afterAll(async () => {
@@ -127,8 +136,15 @@ describe.skipIf(!configured)('people directory reads against PostgreSQL', () => 
     await owner`delete from platform.person_employment where tenant_id in (${t.a}, ${t.b})`;
     await owner`delete from platform.session_context where session_id = ${session}`;
     await owner`delete from platform.tenant_memberships where tenant_id in (${t.a}, ${t.b})`;
-    await owner`delete from platform.departments where tenant_id = ${t.a} and parent_id is not null`;
-    await owner`delete from platform.departments where tenant_id = ${t.a}`;
+    for (const department of [
+      dept.academySub,
+      dept.academy,
+      dept.training,
+      dept.finance,
+      dept.otherOrg,
+    ]) {
+      await owner`delete from platform.departments where id = ${department}`;
+    }
     await owner`delete from platform.branches where tenant_id = ${t.a}`;
     await owner`delete from platform.persons where tenant_id in (${t.a}, ${t.b})`;
     for (const user of userIds) await owner`delete from auth.users where id = ${user}`;
@@ -172,6 +188,9 @@ describe.skipIf(!configured)('people directory reads against PostgreSQL', () => 
       departmentNameAr: 'الأكاديمية',
       lastSignInAt: new Date('2026-10-05T08:40:00Z'),
     });
+    // Without role.read the roles are not read at all.
+    const [withoutRoles] = (await list({ search: 'E-report', includeRoles: false })).rows;
+    expect(withoutRoles).toMatchObject({ primaryRole: null, otherRoles: [] });
   });
 
   it('filters by search text (wildcards are literal), role, department and branch', async () => {
@@ -180,7 +199,13 @@ describe.skipIf(!configured)('people directory reads against PostgreSQL', () => 
     expect(await names({ search: '_' })).toEqual([]);
     expect(await names({ search: 'omar 50' })).toEqual([people.report.name]);
     expect(await names({ search: '   ' })).toHaveLength(6);
+    // Arabic-first: hamza, teh marbuta and diacritics do not matter.
+    expect(await names({ search: 'ا-مدير المنشاه' })).toEqual([people.admin.name]);
+    expect(await names({ search: 'مد' + String.fromCharCode(0x0651) + 'عو' })).toEqual([
+      people.invited.name,
+    ]);
     expect(await names({ roleCode: 'mentor' })).toEqual([people.report.name]);
+    expect(await names({ roleCode: 'internal_instructor' })).toEqual([]);
     expect(await names({ departmentId: dept.academy })).toEqual([people.report.name]);
     expect(await names({ branchId: branch.jeddah })).toEqual([people.deep.name]);
   });
@@ -193,7 +218,7 @@ describe.skipIf(!configured)('people directory reads against PostgreSQL', () => 
     expect(await scoped({ self: true }, null)).toEqual([]);
     expect(
       await scoped({ departments: [{ ids: [dept.training], includeDescendants: false }] }),
-    ).toEqual([people.manager.name, people.invited.name, people.suspended.name]);
+    ).toEqual([people.manager.name, people.suspended.name]);
     expect(
       await scoped({ departments: [{ ids: [dept.training], includeDescendants: true }] }),
     ).toEqual([
@@ -221,10 +246,18 @@ describe.skipIf(!configured)('people directory reads against PostgreSQL', () => 
     const otherTenant = await list({ search: 'آخر' });
     expect(otherTenant.rows).toEqual([]);
     expect(await scoped({ self: true }, other.id)).toEqual([]);
+    for (const includeDescendants of [false, true]) {
+      expect(await scoped({ departments: [{ ids: [dept.otherOrg], includeDescendants }] })).toEqual(
+        [],
+      );
+    }
   });
 
   it('reads one profile with placement, manager, roles, activity and last sign-in', async () => {
-    const profile = await withUserTx(claims(), (tx) => getUserProfile(tx, people.report.id));
+    const everything = { includeRoles: true, includeActivity: true };
+    const profile = await withUserTx(claims(), (tx) =>
+      getUserProfile(tx, people.report.id, everything),
+    );
     expect(profile).toMatchObject({
       personId: people.report.id,
       membershipStatus: 'active',
@@ -235,10 +268,16 @@ describe.skipIf(!configured)('people directory reads against PostgreSQL', () => 
       hireOn: '2024-03-03',
       roles: [
         { roleCode: 'training_coordinator', isPrimary: true },
+        {
+          roleCode: 'internal_instructor',
+          isPrimary: false,
+          validUntil: new Date('2020-01-01T00:00:00Z'),
+        },
         { roleCode: 'learner', isPrimary: false },
         { roleCode: 'mentor', isPrimary: false },
       ],
       lastSignInAt: new Date('2026-10-05T08:40:00Z'),
+      // Only events about the person, their membership or login (not the course event).
       activity: [
         {
           action: 'platform.role.assigned',
@@ -248,9 +287,20 @@ describe.skipIf(!configured)('people directory reads against PostgreSQL', () => 
       ],
     });
 
-    const noLogin = await withUserTx(claims(), (tx) => getUserProfile(tx, people.noLogin.id));
+    const limited = await withUserTx(claims(), (tx) =>
+      getUserProfile(tx, people.report.id, { includeRoles: false, includeActivity: false }),
+    );
+    expect(limited).toMatchObject({
+      roles: null,
+      activity: null,
+      manager: { personId: people.manager.id },
+    });
+
+    const noLogin = await withUserTx(claims(), (tx) =>
+      getUserProfile(tx, people.noLogin.id, everything),
+    );
     expect(noLogin).toMatchObject({ membershipStatus: null, roles: [], manager: null });
-    expect(await withUserTx(claims(), (tx) => getUserProfile(tx, other.id))).toBeNull();
+    expect(await withUserTx(claims(), (tx) => getUserProfile(tx, other.id, everything))).toBeNull();
   });
 
   it('loads the scope attributes of a person for authorize()', async () => {
@@ -268,6 +318,9 @@ describe.skipIf(!configured)('people directory reads against PostgreSQL', () => 
     expect(
       await withUserTx(claims(), (tx) => loadPersonResourceFacts(tx, people.report.id)),
     ).toMatchObject({ managerChain: [people.manager.id], departmentAncestorIds: [dept.training] });
+    expect(
+      await withUserTx(claims(), (tx) => loadPersonResourceFacts(tx, people.invited.id)),
+    ).toMatchObject({ departmentAncestorIds: [dept.academy, dept.training] });
     expect(await withUserTx(claims(), (tx) => loadPersonResourceFacts(tx, other.id))).toBeNull();
   });
 });

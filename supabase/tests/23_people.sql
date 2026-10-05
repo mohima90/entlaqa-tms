@@ -215,4 +215,21 @@ begin
 end $$;
 rollback;
 
+-- private.search_key (T-M2-04): Arabic letter variants, diacritics and case do not change a name search.
+begin;
+set local role authenticated;
+do $$
+begin
+  perform tests.assert_eq(private.search_key('أحمد'), private.search_key('احمد'), 'search_key: alef with hamza = alef');
+  perform tests.assert_eq(private.search_key('إيمان'), 'ايمان', 'search_key: alef with hamza below = alef');
+  perform tests.assert_eq(private.search_key('آمنة'), 'امنه', 'search_key: alef madda = alef, teh marbuta = heh');
+  perform tests.assert_eq(private.search_key('مصطفى'), 'مصطفي', 'search_key: alef maqsura = yeh');
+  perform tests.assert_eq(private.search_key('م' || chr(1615) || 'ح' || chr(1614) || 'م' || chr(1617) || 'د'), 'محمد',
+    'search_key: diacritics removed');
+  perform tests.assert_eq(private.search_key('عـــلي'), 'علي', 'search_key: tatweel removed');
+  perform tests.assert_eq(private.search_key('Omar 50%_X'), 'omar 50%_x', 'search_key: lower case, other characters kept');
+  perform tests.assert(private.search_key(null) is null, 'search_key: null stays null');
+end $$;
+rollback;
+
 \echo '23_people: ok'

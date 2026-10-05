@@ -82,6 +82,7 @@ const baseFilter: UserListFilter = {
   scope: { ...EMPTY_PERSON_SCOPE, all: true },
   actorPersonId: ME,
   tab: 'all',
+  includeRoles: true,
   limit: 25,
   offset: 0,
 };
@@ -137,6 +138,8 @@ describe('listUsers', () => {
     expect(counts?.sql).toContain("m.status in ('active', 'invited', 'suspended')");
     expect(rows?.sql).toContain('and m.status = $');
     expect(rows?.params).toContain('%50\\%\\_off\\\\%');
+    expect(rows?.sql).toContain('private.search_key(p.display_name_ar) like private.search_key(');
+    expect(rows?.sql).toContain('ra.valid_until > now()');
     expect(rows?.params).toContain('learner');
     expect(rows?.params).toEqual(expect.arrayContaining([D1, B1, 25, 0]));
   });
@@ -151,9 +154,20 @@ describe('listUsers', () => {
     });
     expect(fake.executed[1]?.params).toContain('suspended');
   });
+
+  it('leaves roles out without role.read, refuses the role filter then, and clamps paging', async () => {
+    const fake = fakeTx([], []);
+    await listUsers(fake.tx, { ...baseFilter, includeRoles: false, limit: 10_000, offset: -5 });
+    expect(fake.executed[1]?.sql).toContain('null as primary_role, null as other_roles');
+    expect(fake.executed[1]?.params.slice(-2)).toEqual([100, 0]);
+    await expect(
+      listUsers(fakeTx().tx, { ...baseFilter, includeRoles: false, roleCode: 'learner' }),
+    ).rejects.toThrow('includeRoles');
+  });
 });
 
 describe('getUserProfile', () => {
+  const all = { includeRoles: true, includeActivity: true };
   const person = {
     person_id: 'p1',
     display_name_ar: 'سارة',
@@ -199,7 +213,7 @@ describe('getUserProfile', () => {
       ],
       [{ at: new Date('2026-10-05T08:40:00Z') }],
     );
-    const profile = await getUserProfile(fake.tx, 'p1');
+    const profile = await getUserProfile(fake.tx, 'p1', all);
     expect(profile).toMatchObject({
       personId: 'p1',
       manager: { personId: 'p0', displayNameAr: 'خالد', displayNameEn: null },
@@ -212,7 +226,14 @@ describe('getUserProfile', () => {
       lastSignInAt: new Date('2026-10-05T08:40:00Z'),
       hireOn: '2024-03-03',
     });
-    expect(fake.executed[2]?.params).toEqual(['p1', 'm1', 'u1']);
+    expect(fake.executed[2]?.params).toEqual([
+      'person',
+      'tenant_membership',
+      'user',
+      'p1',
+      'm1',
+      'u1',
+    ]);
   });
 
   it('handles a person without a login and without a manager', async () => {
@@ -228,13 +249,24 @@ describe('getUserProfile', () => {
       ],
       [],
     );
-    const profile = await getUserProfile(fake.tx, 'p1');
+    const profile = await getUserProfile(fake.tx, 'p1', all);
     expect(profile).toMatchObject({ roles: [], manager: null, lastSignInAt: null, activity: [] });
+  });
+
+  it('reads neither roles nor activity when the caller may not see them', async () => {
+    const fake = fakeTx([person], [{ at: null }]);
+    const profile = await getUserProfile(fake.tx, 'p1', {
+      includeRoles: false,
+      includeActivity: false,
+    });
+    expect(profile).toMatchObject({ roles: null, activity: null, lastSignInAt: null });
+    expect(fake.executed).toHaveLength(2);
+    expect(fake.executed[1]?.sql).toContain('platform.auth.signed_in');
     expect(fake.executed).toHaveLength(2);
   });
 
   it('returns null for an unknown (or other-tenant) person', async () => {
-    expect(await getUserProfile(fakeTx([]).tx, 'p1')).toBeNull();
+    expect(await getUserProfile(fakeTx([]).tx, 'p1', all)).toBeNull();
   });
 });
 

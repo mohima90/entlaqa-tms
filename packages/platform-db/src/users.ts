@@ -20,12 +20,20 @@ export interface UserListFilter {
   readonly tab: UserListTab;
   /** Free text: name (Arabic or English), e-mail or employee number. */
   readonly search?: string;
+  /**
+   * Return the members' roles and allow the role filter: only when the caller also holds
+   * `platform.role.read` (a learner sees their own row without roles).
+   */
+  readonly includeRoles: boolean;
   readonly roleCode?: string;
   readonly departmentId?: string;
   readonly branchId?: string;
+  /** Page size, clamped to 1…MAX_PAGE_SIZE. */
   readonly limit: number;
   readonly offset: number;
 }
+
+export const MAX_PAGE_SIZE = 100;
 
 export type MembershipStatus = 'active' | 'invited' | 'suspended';
 
@@ -113,10 +121,14 @@ export function personScopePredicate(scope: PersonScope, actorPersonId: string |
   return parts.length > 0 ? sql`(${sql.join(parts, sql` or `)})` : sql`false`;
 }
 
-/** `ilike` pattern for user text: % _ and \ are matched literally. */
+/** `like` pattern for user text: % _ and \ are matched literally (\ is PostgreSQL's default escape). */
 function containsPattern(text: string): string {
   return `%${text.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
 }
+
+/** Role assignments in force now (same window as authorize(): valid_from ≤ now < valid_until). */
+const ROLE_IN_FORCE = sql`(ra.valid_from is null or ra.valid_from <= now())
+  and (ra.valid_until is null or ra.valid_until > now())`;
 
 function filterPredicate(filter: UserListFilter): SQL {
   const parts: SQL[] = [
@@ -126,12 +138,15 @@ function filterPredicate(filter: UserListFilter): SQL {
   const search = filter.search?.trim();
   if (search) {
     const pattern = containsPattern(search);
-    parts.push(sql`(p.display_name_ar ilike ${pattern} or p.display_name_en ilike ${pattern}
+    // Names: Arabic letter variants, diacritics and case ignored (private.search_key).
+    parts.push(sql`(private.search_key(p.display_name_ar) like private.search_key(${pattern})
+      or private.search_key(p.display_name_en) like private.search_key(${pattern})
       or p.email ilike ${pattern} or p.employee_number ilike ${pattern})`);
   }
   if (filter.roleCode) {
+    if (!filter.includeRoles) throw new Error('listUsers: the role filter needs includeRoles');
     parts.push(sql`exists (select 1 from platform.role_assignments ra
-      where ra.membership_id = m.id and ra.role_code = ${filter.roleCode})`);
+      where ra.membership_id = m.id and ra.role_code = ${filter.roleCode} and ${ROLE_IN_FORCE})`);
   }
   if (filter.departmentId) parts.push(sql`e.department_id = ${filter.departmentId}::uuid`);
   if (filter.branchId) parts.push(sql`e.branch_id = ${filter.branchId}::uuid`);
@@ -162,6 +177,14 @@ export async function listUsers(tx: UserTx, filter: UserListFilter): Promise<Use
            count(*) filter (where m.status = 'suspended')::int as deactivated
     ${FROM_MEMBERS}
     where ${where}`);
+  const limit = Math.min(Math.max(Math.trunc(filter.limit), 1), MAX_PAGE_SIZE);
+  const offset = Math.max(Math.trunc(filter.offset), 0);
+  const roles = filter.includeRoles
+    ? sql`(select ra.role_code from platform.role_assignments ra
+             where ra.membership_id = m.id and ra.is_primary and ${ROLE_IN_FORCE}) as primary_role,
+           (select array_agg(ra.role_code order by ra.role_code) from platform.role_assignments ra
+             where ra.membership_id = m.id and not ra.is_primary and ${ROLE_IN_FORCE}) as other_roles`
+    : sql`null as primary_role, null as other_roles`;
   const tabWhere =
     filter.tab === 'all' ? where : sql`${where} and m.status = ${TAB_STATUS[filter.tab]}`;
   const rows = await tx.execute<{
@@ -179,11 +202,7 @@ export async function listUsers(tx: UserTx, filter: UserListFilter): Promise<Use
     last_sign_in_at: Date | string | null;
   }>(sql`
     select p.id as person_id, m.id as membership_id, p.display_name_ar, p.display_name_en, p.email,
-           p.employee_number, m.status,
-           (select ra.role_code from platform.role_assignments ra
-             where ra.membership_id = m.id and ra.is_primary) as primary_role,
-           (select array_agg(ra.role_code order by ra.role_code) from platform.role_assignments ra
-             where ra.membership_id = m.id and not ra.is_primary) as other_roles,
+           p.employee_number, m.status, ${roles},
            d.name_ar as department_name_ar, d.name_en as department_name_en,
            (select max(a.occurred_at) from platform.audit_events a
              where a.actor_user_id = m.user_id and a.action = 'platform.auth.signed_in') as last_sign_in_at
@@ -191,7 +210,7 @@ export async function listUsers(tx: UserTx, filter: UserListFilter): Promise<Use
     left join platform.departments d on d.tenant_id = e.tenant_id and d.id = e.department_id
     where ${tabWhere}
     order by p.display_name_ar, p.id
-    limit ${filter.limit} offset ${filter.offset}`);
+    limit ${limit} offset ${offset}`);
   const c = counts ?? { all: 0, active: 0, invited: 0, deactivated: 0 };
   return {
     rows: rows.map((r) => ({
@@ -249,13 +268,29 @@ export interface UserProfile {
     readonly displayNameEn: string | null;
   } | null;
   readonly hireOn: string | null;
-  readonly roles: readonly UserRole[];
+  /** All assignments with their validity dates; null when the caller may not read roles. */
+  readonly roles: readonly UserRole[] | null;
   readonly lastSignInAt: Date | null;
-  readonly activity: readonly UserActivity[];
+  /** Latest audit events about the person; null when the caller may not read the audit log. */
+  readonly activity: readonly UserActivity[] | null;
 }
 
+export interface UserProfileOptions {
+  /** The caller holds `platform.role.read` for this person. */
+  readonly includeRoles: boolean;
+  /** The caller holds `platform.audit.read` (privileged roles only, ADR 0003). */
+  readonly includeActivity: boolean;
+}
+
+/** Audit entity types that describe a person, their membership or their login. */
+const PERSON_ENTITY_TYPES = ['person', 'tenant_membership', 'user'] as const;
+
 /** One person's profile. The caller has authorized the person resource (defineQuery `resource`). */
-export async function getUserProfile(tx: UserTx, personId: string): Promise<UserProfile | null> {
+export async function getUserProfile(
+  tx: UserTx,
+  personId: string,
+  options: UserProfileOptions,
+): Promise<UserProfile | null> {
   const [row] = await tx.execute<{
     person_id: string;
     display_name_ar: string;
@@ -296,37 +331,45 @@ export async function getUserProfile(tx: UserTx, personId: string): Promise<User
     where p.id = ${personId}::uuid`);
   if (!row) return null;
 
-  const roles = row.membership_id
-    ? await tx.execute<{
-        role_code: string;
-        is_primary: boolean;
-        valid_from: Date | string | null;
-        valid_until: Date | string | null;
-      }>(sql`
+  const roles = !options.includeRoles
+    ? null
+    : row.membership_id
+      ? await tx.execute<{
+          role_code: string;
+          is_primary: boolean;
+          valid_from: Date | string | null;
+          valid_until: Date | string | null;
+        }>(sql`
         select role_code, is_primary, valid_from, valid_until from platform.role_assignments
         where membership_id = ${row.membership_id}::uuid
         order by is_primary desc, role_code`)
-    : [];
+      : [];
 
   const ids = [row.person_id, row.membership_id, row.user_id].filter(
     (v): v is string => v !== null,
   );
-  const activity = await tx.execute<{
-    occurred_at: Date | string;
-    action: string;
-    actor_name_ar: string | null;
-    actor_name_en: string | null;
-  }>(sql`
+  const activity = options.includeActivity
+    ? await tx.execute<{
+        occurred_at: Date | string;
+        action: string;
+        actor_name_ar: string | null;
+        actor_name_en: string | null;
+      }>(sql`
     select a.occurred_at, a.action, ap.display_name_ar as actor_name_ar,
            ap.display_name_en as actor_name_en
     from platform.audit_events a
     left join platform.persons ap on ap.tenant_id = a.tenant_id and ap.id = a.actor_person_id
-    where a.entity_id in (${sql.join(
-      ids.map((id) => sql`${id}`),
+    where a.entity_type in (${sql.join(
+      PERSON_ENTITY_TYPES.map((t) => sql`${t}`),
       sql`, `,
     )})
-    order by a.occurred_at desc
-    limit 10`);
+      and a.entity_id in (${sql.join(
+        ids.map((id) => sql`${id}`),
+        sql`, `,
+      )})
+    order by a.occurred_at desc, a.id
+    limit 10`)
+    : null;
 
   const [lastSignIn] = row.user_id
     ? await tx.execute<{ at: Date | string | null }>(sql`
@@ -358,19 +401,21 @@ export async function getUserProfile(tx: UserTx, personId: string): Promise<User
         }
       : null,
     hireOn: row.hire_on,
-    roles: roles.map((r) => ({
-      roleCode: r.role_code,
-      isPrimary: r.is_primary,
-      validFrom: toDate(r.valid_from),
-      validUntil: toDate(r.valid_until),
-    })),
+    roles:
+      roles?.map((r) => ({
+        roleCode: r.role_code,
+        isPrimary: r.is_primary,
+        validFrom: toDate(r.valid_from),
+        validUntil: toDate(r.valid_until),
+      })) ?? null,
     lastSignInAt: toDate(lastSignIn?.at ?? null),
-    activity: activity.map((a) => ({
-      occurredAt: toDate(a.occurred_at) ?? new Date(0),
-      action: a.action,
-      actorNameAr: a.actor_name_ar,
-      actorNameEn: a.actor_name_en,
-    })),
+    activity:
+      activity?.map((a) => ({
+        occurredAt: toDate(a.occurred_at) ?? new Date(0),
+        action: a.action,
+        actorNameAr: a.actor_name_ar,
+        actorNameEn: a.actor_name_en,
+      })) ?? null,
   };
 }
 

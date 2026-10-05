@@ -6,8 +6,14 @@ import {
   createDefineAction,
 } from './define-action';
 
+/** `Omit` per union member, so `resource` and `scoped` stay mutually exclusive. */
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
+
 /** A read for a page or route: the same authorization as an action, no audit, no server-action marker. */
-export type QueryDefinition<S extends z.ZodType, O, Tx> = Omit<ActionDefinition<S, O, Tx>, 'audit'>;
+export type QueryDefinition<S extends z.ZodType, O, Tx> = DistributiveOmit<
+  ActionDefinition<S, O, Tx>,
+  'audit'
+>;
 
 export type AuthorizedQuery<I, O> = (input: I) => Promise<ActionResult<O>>;
 

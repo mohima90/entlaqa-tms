@@ -2,6 +2,7 @@ import 'server-only';
 import { type UserTx } from '@jadarat/platform-db';
 import { reportError } from '@jadarat/platform-observability';
 import type { ActionRuntime } from './define-action';
+import { personResourceAttributes } from './person-scope';
 import { grantsForAssignments } from './role-grants';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -44,19 +45,7 @@ export const defaultActionRuntime: ActionRuntime<UserTx> = {
     if (ref.type !== 'person' || !UUID_RE.test(ref.id)) return null;
     const { loadPersonResourceFacts } = await import('@jadarat/platform-db');
     const facts = await loadPersonResourceFacts(tx, ref.id);
-    if (!facts) return null;
-    return {
-      type: 'person',
-      id: facts.personId,
-      tenantId: facts.tenantId,
-      subjectPersonId: facts.personId,
-      ...(facts.managerPersonId ? { subjectManagerPersonId: facts.managerPersonId } : {}),
-      subjectManagerChain: facts.managerChain,
-      ...(facts.departmentId
-        ? { orgUnitId: facts.departmentId, orgUnitAncestorIds: facts.departmentAncestorIds }
-        : {}),
-      ...(facts.branchId ? { branchId: facts.branchId } : {}),
-    };
+    return facts ? personResourceAttributes(facts) : null;
   },
   async writeAudit(tx, actor, record) {
     const { insertAuditEvent } = await import('@jadarat/platform-db');

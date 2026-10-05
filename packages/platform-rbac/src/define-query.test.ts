@@ -91,4 +91,19 @@ describe('defineQuery (authorized reads, ADR 0003 §4)', () => {
     })({});
     expect(!denied.ok && denied.error).toMatchObject(appError('FORBIDDEN'));
   });
+
+  it('keeps `resource` and `scoped` mutually exclusive at compile time', () => {
+    const { rt } = runtime([]);
+    const defineQuery = createDefineQuery(rt);
+    expect(() =>
+      // @ts-expect-error — a query is either scoped or about one resource, not both
+      defineQuery({
+        permission: read,
+        input: z.object({}),
+        scoped: true,
+        resource: () => ({ type: 'person', id: OTHER }),
+        handler: () => Promise.resolve(ok(null)),
+      }),
+    ).not.toThrow();
+  });
 });

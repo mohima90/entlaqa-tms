@@ -15,6 +15,7 @@ export {
 export { type AuditEventInput, insertAuditEvent } from './audit';
 export { type DatabaseHealth, checkDatabase } from './health';
 export { type CurrentTenant, getCurrentTenant } from './tenants';
+export { type OrgUnitOption, type OrgUnitOptions, listOrgUnitOptions } from './org';
 export {
   type MembershipStatus,
   type PersonResourceFacts,
@@ -25,6 +26,8 @@ export {
   type UserListRow,
   type UserListTab,
   type UserProfile,
+  type UserProfileOptions,
+  MAX_PAGE_SIZE,
   type UserRole,
   getUserProfile,
   listUsers,

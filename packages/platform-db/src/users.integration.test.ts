@@ -62,7 +62,7 @@ describe.skipIf(!configured)('people directory reads against PostgreSQL', () => 
         scope: { ...EMPTY_PERSON_SCOPE, all: true },
         actorPersonId: people.admin.id,
         tab: 'all',
-        includeRoles: true,
+        rolesScope: { ...EMPTY_PERSON_SCOPE, all: true },
         limit: 50,
         offset: 0,
         ...filter,
@@ -189,8 +189,29 @@ describe.skipIf(!configured)('people directory reads against PostgreSQL', () => 
       lastSignInAt: new Date('2026-10-05T08:40:00Z'),
     });
     // Without role.read the roles are not read at all.
-    const [withoutRoles] = (await list({ search: 'E-report', includeRoles: false })).rows;
-    expect(withoutRoles).toMatchObject({ primaryRole: null, otherRoles: [] });
+    const [withoutRoles] = (await list({ search: 'E-report', rolesScope: EMPTY_PERSON_SCOPE }))
+      .rows;
+    expect(withoutRoles).toMatchObject({ rolesVisible: false, primaryRole: null, otherRoles: [] });
+    // Roles only on rows inside the role.read scope (here: the manager's direct reports).
+    const byManager = await list({
+      actorPersonId: people.manager.id,
+      rolesScope: { ...EMPTY_PERSON_SCOPE, directReports: true },
+    });
+    const primaryRoles = Object.fromEntries(
+      byManager.rows.map((r) => [r.displayNameAr, r.primaryRole]),
+    );
+    expect(primaryRoles[people.report.name]).toBe('training_coordinator');
+    expect(Object.values(primaryRoles).filter((r) => r !== null)).toHaveLength(1);
+    expect(byManager.rows.filter((r) => r.rolesVisible).map((r) => r.displayNameAr)).toEqual([
+      people.report.name,
+    ]);
+    expect(
+      await names({
+        actorPersonId: people.manager.id,
+        rolesScope: { ...EMPTY_PERSON_SCOPE, self: true },
+        roleCode: 'training_coordinator',
+      }),
+    ).toEqual([]);
   });
 
   it('filters by search text (wildcards are literal), role, department and branch', async () => {
@@ -206,7 +227,17 @@ describe.skipIf(!configured)('people directory reads against PostgreSQL', () => 
     ]);
     expect(await names({ roleCode: 'mentor' })).toEqual([people.report.name]);
     expect(await names({ roleCode: 'internal_instructor' })).toEqual([]);
-    expect(await names({ departmentId: dept.academy })).toEqual([people.report.name]);
+    expect(await names({ departmentId: dept.academy })).toEqual([
+      people.report.name,
+      people.invited.name,
+    ]);
+    // A department includes its sub-departments.
+    expect(await names({ departmentId: dept.training })).toEqual([
+      people.manager.name,
+      people.report.name,
+      people.invited.name,
+      people.suspended.name,
+    ]);
     expect(await names({ branchId: branch.jeddah })).toEqual([people.deep.name]);
   });
 

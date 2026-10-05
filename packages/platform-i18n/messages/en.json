@@ -33,7 +33,9 @@
     "pageTitle": "Home",
     "emptyTitle": "No training data yet",
     "emptyBody": "Sessions and courses will appear here once the Training module is set up for your organization.",
-    "comingSoon": "Coming soon"
+    "comingSoon": "Coming soon",
+    "admin": "Organization admin",
+    "users": "Users"
   },
   "errors": {
     "malformedRequest": "We couldn't process this request. Refresh the page and try again.",
@@ -65,5 +67,108 @@
       "invalidCredentials": "The email or password is incorrect.",
       "noOrganization": "Your account isn't linked to an active organization. Contact your organization's administrator."
     }
+  },
+  "users": {
+    "title": "Users",
+    "summary": "{count, plural, =0 {No users} one {{count, number, integer} user} other {{count, number, integer} users}}",
+    "pendingInvitations": "{count, plural, =0 {No pending invitations} one {{count, number, integer} invitation not accepted yet} other {{count, number, integer} invitations not accepted yet}}",
+    "tabsLabel": "User status",
+    "tabs": {
+      "all": "All",
+      "active": "Active",
+      "invited": "Invited",
+      "deactivated": "Deactivated"
+    },
+    "filtersLabel": "Search and filters",
+    "search": "Search",
+    "searchHint": "By name, email or employee number",
+    "role": "Role",
+    "allRoles": "All roles",
+    "department": "Department",
+    "allDepartments": "All departments",
+    "branch": "Branch",
+    "allBranches": "All branches",
+    "apply": "Apply",
+    "clearFilters": "Clear filters",
+    "tableCaption": "Users list",
+    "columns": {
+      "name": "Name",
+      "employeeNumber": "Employee number",
+      "primaryRole": "Primary role",
+      "department": "Department",
+      "status": "Status",
+      "lastSignIn": "Last sign-in"
+    },
+    "otherRoles": "{count, plural, one {and {count, number, integer} additional role} other {and {count, number, integer} additional roles}}",
+    "status": {
+      "active": "Active",
+      "invited": "Invited",
+      "suspended": "Deactivated"
+    },
+    "never": "Never signed in",
+    "noneLabel": "Not set",
+    "emptyFilteredTitle": "No results match the filters",
+    "emptyFilteredBody": "Try a shorter word or search by employee number.",
+    "emptyTitle": "No users to show",
+    "emptyBody": "Users you can view appear here.",
+    "paginationLabel": "Users list pages",
+    "pageRange": "Showing {from, number, integer}–{to, number, integer} of {total, number, integer}",
+    "previous": "Previous",
+    "next": "Next",
+    "invalidFilters": "The filters in the link could not be read, so the list is shown without filters.",
+    "notConfigured": "The users list appears once this environment is connected to the database and the sign-in service.",
+    "loadFailed": "The data could not be loaded because of a problem on our side. You can try again. Reference: {correlationId}",
+    "rolesNotVisible": "Not visible to you"
+  },
+  "userProfile": {
+    "breadcrumb": "Users",
+    "basicData": "Basic information",
+    "fields": {
+      "email": "Email",
+      "mobile": "Mobile",
+      "employeeNumber": "Employee number",
+      "jobTitle": "Job title",
+      "department": "Department",
+      "branch": "Branch",
+      "manager": "Direct manager",
+      "hireDate": "Hire date",
+      "language": "Interface language",
+      "nameEn": "Name in English",
+      "nameAr": "Name in Arabic"
+    },
+    "hijri": "({date})",
+    "languages": {
+      "ar": "Arabic",
+      "en": "English"
+    },
+    "roles": "Roles",
+    "primaryRole": "Primary role",
+    "additionalRole": "Additional role",
+    "validUntil": "Until {date}",
+    "validFrom": "Starts on {date}",
+    "ended": "Ended on {date}",
+    "noRoles": "No roles assigned.",
+    "rolesAudited": "Every role change is recorded in the audit log with the values before and after the change.",
+    "account": "Sign-in and security",
+    "accountStatus": "Account status",
+    "accountStatuses": {
+      "active": "Active",
+      "invited": "Invited",
+      "suspended": "Deactivated",
+      "revoked": "Membership revoked",
+      "none": "No sign-in account"
+    },
+    "lastSignIn": "Last sign-in",
+    "never": "Never signed in",
+    "activity": "Recent activity",
+    "noActivity": "No recorded activity yet.",
+    "by": "By {name}",
+    "bySystem": "By the system",
+    "actions": {
+      "platform_tenant_admin_provisioned": "Account created with the Organization Admin role",
+      "platform_tenant_admin_role_restored": "Organization Admin role restored",
+      "other": "Recorded action ({action})"
+    },
+    "breadcrumbLabel": "Breadcrumb"
   }
 }

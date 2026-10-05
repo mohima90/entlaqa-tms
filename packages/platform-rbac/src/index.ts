@@ -4,6 +4,7 @@ import { createDefineAction } from './define-action';
 import { createDefinePublicAction } from './define-public-action';
 import { createDefinePublicRoute } from './define-public-route';
 import { createDefineQuery } from './define-query';
+import { createLoadMemberGrants } from './member-grants';
 
 export * from './permissions';
 export * from './scopes';
@@ -20,6 +21,7 @@ export {
   type ActionTarget,
   type AuditRecord,
   type GetClaimsOptions,
+  type PermissionTarget,
   type ResourceRef,
   type ServerAction,
   DEFINE_ACTION_MARKER,
@@ -41,8 +43,14 @@ export {
 
 export { type AuthorizedQuery, type QueryDefinition, createDefineQuery } from './define-query';
 
+export { createLoadMemberGrants } from './member-grants';
+export * from './iam/users';
+
 /** Authorized reads for server components and routes (same checks as defineAction, no audit). */
 export const defineQuery = createDefineQuery(defaultActionRuntime);
+
+/** The signed-in member's grants, for showing navigation entries only (pages authorize themselves). */
+export const loadMemberGrants = createLoadMemberGrants(defaultActionRuntime);
 
 /** The one way to declare a server action (ADR 0003 §4). */
 export const defineAction = createDefineAction(defaultActionRuntime);

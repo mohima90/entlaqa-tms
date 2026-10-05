@@ -2,6 +2,7 @@ import { EMPTY_PERSON_SCOPE } from '@jadarat/platform-core';
 import { type SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { describe, expect, it } from 'vitest';
+import { listOrgUnitOptions } from './org';
 import { loadMemberAuthorizationFacts } from './roles';
 import {
   type UserListFilter,
@@ -82,7 +83,7 @@ const baseFilter: UserListFilter = {
   scope: { ...EMPTY_PERSON_SCOPE, all: true },
   actorPersonId: ME,
   tab: 'all',
-  includeRoles: true,
+  rolesScope: { ...EMPTY_PERSON_SCOPE, all: true },
   limit: 25,
   offset: 0,
 };
@@ -100,6 +101,7 @@ describe('listUsers', () => {
           email: 's@example.test',
           employee_number: 'E1',
           status: 'active',
+          roles_visible: true,
           primary_role: 'learner',
           other_roles: null,
           department_name_ar: 'التدريب',
@@ -127,6 +129,7 @@ describe('listUsers', () => {
         email: 's@example.test',
         employeeNumber: 'E1',
         status: 'active',
+        rolesVisible: true,
         primaryRole: 'learner',
         otherRoles: [],
         departmentNameAr: 'التدريب',
@@ -155,17 +158,41 @@ describe('listUsers', () => {
     expect(fake.executed[1]?.params).toContain('suspended');
   });
 
-  it('leaves roles out without role.read, refuses the role filter then, and clamps paging', async () => {
+  it('leaves roles out without role.read, matches no one by role then, and clamps paging', async () => {
     const fake = fakeTx([], []);
-    await listUsers(fake.tx, { ...baseFilter, includeRoles: false, limit: 10_000, offset: -5 });
-    expect(fake.executed[1]?.sql).toContain('null as primary_role, null as other_roles');
+    await listUsers(fake.tx, {
+      ...baseFilter,
+      rolesScope: EMPTY_PERSON_SCOPE,
+      limit: 10_000,
+      offset: -5,
+    });
+    expect(fake.executed[1]?.sql).toContain(
+      'false as roles_visible, null as primary_role, null as other_roles',
+    );
     expect(fake.executed[1]?.params.slice(-2)).toEqual([100, 0]);
     const nan = fakeTx([], []);
     await listUsers(nan.tx, { ...baseFilter, limit: Number.NaN, offset: Number.NaN });
     expect(nan.executed[1]?.params.slice(-2)).toEqual([100, 0]);
-    await expect(
-      listUsers(fakeTx().tx, { ...baseFilter, includeRoles: false, roleCode: 'learner' }),
-    ).rejects.toThrow('includeRoles');
+    const byRole = fakeTx([], []);
+    await listUsers(byRole.tx, {
+      ...baseFilter,
+      rolesScope: EMPTY_PERSON_SCOPE,
+      roleCode: 'learner',
+    });
+    expect(byRole.executed[0]?.sql).toContain('and false and exists');
+  });
+
+  it('shows roles only on rows inside the role.read scope; the department filter takes sub-departments', async () => {
+    const fake = fakeTx([], []);
+    await listUsers(fake.tx, {
+      ...baseFilter,
+      rolesScope: { ...EMPTY_PERSON_SCOPE, directReports: true },
+      departmentId: D1,
+    });
+    const rows = fake.executed[1];
+    expect(rows?.sql).toContain('case when (e.manager_person_id = $');
+    expect(rows?.sql).toContain('with recursive tree');
+    expect(rows?.params).toContain(D1);
   });
 });
 
@@ -338,5 +365,19 @@ describe('loadMemberAuthorizationFacts', () => {
       headedDepartmentIds: ['d1'],
     });
     expect(fake.executed[0]?.sql).toContain("m.status = 'active'");
+  });
+});
+
+describe('listOrgUnitOptions', () => {
+  it('lists departments and branches that are not deleted', async () => {
+    const fake = fakeTx(
+      [{ id: 'd1', name_ar: 'التدريب', name_en: 'Training' }],
+      [{ id: 'b1', name_ar: 'الرياض', name_en: null }],
+    );
+    expect(await listOrgUnitOptions(fake.tx)).toEqual({
+      departments: [{ id: 'd1', nameAr: 'التدريب', nameEn: 'Training' }],
+      branches: [{ id: 'b1', nameAr: 'الرياض', nameEn: null }],
+    });
+    expect(fake.executed.every((q) => q.sql.includes('deleted_at is null'))).toBe(true);
   });
 });

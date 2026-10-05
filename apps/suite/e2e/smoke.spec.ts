@@ -12,6 +12,14 @@ const pages = [
   { path: '/en/suite', lang: 'en', dir: 'ltr', heading: 'Home' },
   { path: '/ar/sign-in', lang: 'ar', dir: 'rtl', heading: 'تسجيل الدخول' },
   { path: '/en/sign-in', lang: 'en', dir: 'ltr', heading: 'Sign in' },
+  { path: '/ar/suite/admin/users', lang: 'ar', dir: 'rtl', heading: 'المستخدمون' },
+  { path: '/en/suite/admin/users', lang: 'en', dir: 'ltr', heading: 'Users' },
+  {
+    path: '/ar/suite/admin/users/a1000000-0000-4000-8000-0000000000a1',
+    lang: 'ar',
+    dir: 'rtl',
+    heading: 'المستخدمون',
+  },
 ] as const;
 
 function collectConsoleErrors(page: Page): string[] {
@@ -112,4 +120,22 @@ test('the skip link is the first focusable element and targets main', async ({ p
   const focused = page.locator(':focus');
   await expect(focused).toHaveAttribute('href', '#main');
   await expect(focused).toHaveText('تخطَّ إلى المحتوى');
+});
+
+test('the users pages explain that they need a configured environment (preview)', async ({
+  page,
+  isMobile,
+}) => {
+  if (isMobile) {
+    // The side navigation is desktop-only for now (AppShell); open the page directly.
+    await page.goto('/en/suite/admin/users');
+  } else {
+    await page.goto('/en/suite');
+    await page.getByRole('link', { name: 'Users' }).click();
+    await expect(page.getByRole('link', { name: 'Users' })).toHaveAttribute('aria-current', 'page');
+  }
+  await expect(page).toHaveURL(/\/en\/suite\/admin\/users$/);
+  await expect(page.getByTestId('users-not-configured')).toContainText('connected to the database');
+  await page.getByTestId('language-toggle').click();
+  await expect(page).toHaveURL(/\/ar\/suite\/admin\/users$/);
 });

@@ -6,7 +6,7 @@
  * would be refused, and the other way round.
  */
 import { randomUUID } from 'node:crypto';
-import { ok } from '@jadarat/platform-core';
+import { EMPTY_PERSON_SCOPE, ok } from '@jadarat/platform-core';
 import { brandVerifiedClaims } from '@jadarat/platform-core/internal/verified-claims';
 import { createDatabase, createWithUserTx, listUsers } from '@jadarat/platform-db';
 import { sql } from 'drizzle-orm';
@@ -78,7 +78,7 @@ describe.skipIf(!configured)('people reads through defineQuery against PostgreSQ
             scope: personScopeFromGrants(ctx.grants, read),
             actorPersonId: ctx.actor.personId,
             tab: 'all',
-            includeRoles: false,
+            rolesScope: EMPTY_PERSON_SCOPE,
             limit: 100,
             offset: 0,
           });

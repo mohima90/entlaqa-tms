@@ -19,6 +19,12 @@ import { type AuthorizationDecision, type Grant, authorize } from './authorize';
 import type { PermissionDefinition } from './permissions';
 import type { ResourceAttributes } from './scopes';
 
+/**
+ * What `ctx.can` checks: one resource (its scope must cover it), `'tenant'` (a tenant-wide grant, like
+ * an action without a resource) or `'any'` (a grant in any scope — the caller restricts by scope).
+ */
+export type PermissionTarget = ResourceAttributes | 'tenant' | 'any';
+
 /** Reference to the resource an action touches; attributes are loaded server-side. */
 export interface ResourceRef {
   readonly type: string;
@@ -44,6 +50,17 @@ export interface ActionContext<Tx> {
    */
   readonly grants: readonly [Grant, ...Grant[]];
   readonly resource: ResourceAttributes | null;
+  /**
+   * Does the member also hold `permission` for `target`? Deny by default (also when it needs AAL2 and
+   * the session is AAL1). For deciding what else a page or action may show (e.g. roles or the audit
+   * trail on a profile); it never replaces the definition's own permission.
+   */
+  readonly can: (permission: PermissionDefinition, target: PermissionTarget) => boolean;
+  /**
+   * The member's grants in force for another permission (empty when none, or when it needs AAL2 and the
+   * session is AAL1) — to restrict what a scoped list shows for it, e.g. roles per row.
+   */
+  readonly grantsFor: (permission: PermissionDefinition) => readonly Grant[];
   /** Transaction opened by withUserTx: RLS applies as the signed-in user. */
   readonly tx: Tx;
 }
@@ -164,12 +181,15 @@ export function createDefineAction<Tx>(runtime: ActionRuntime<Tx>) {
           const resource = definition.resource
             ? await runtime.resolveResource(tx, definition.resource(input.value), tenantClaims)
             : undefined;
-          const decision = authorize(
-            { tenantId: actor.tenantId, personId: actor.personId, aal: actor.aal, grants },
-            definition.permission,
-            resource,
-            { scoped: definition.scoped === true },
-          );
+          const subject = {
+            tenantId: actor.tenantId,
+            personId: actor.personId,
+            aal: actor.aal,
+            grants,
+          };
+          const decision = authorize(subject, definition.permission, resource, {
+            scoped: definition.scoped === true,
+          });
           if (!decision.allowed) throw new HandledFailure(denial(decision));
 
           const output = await definition.handler({
@@ -178,6 +198,14 @@ export function createDefineAction<Tx>(runtime: ActionRuntime<Tx>) {
               actor,
               grants: decision.grants,
               resource: resource ?? null,
+              can: (permission, target) =>
+                authorize(subject, permission, typeof target === 'string' ? undefined : target, {
+                  scoped: target === 'any',
+                }).allowed,
+              grantsFor: (permission) => {
+                const other = authorize(subject, permission, undefined, { scoped: true });
+                return other.allowed ? other.grants : [];
+              },
               tx,
             },
             input: input.value,

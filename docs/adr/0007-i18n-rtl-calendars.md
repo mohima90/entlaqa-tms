@@ -61,6 +61,7 @@ Self-hosted with `next/font/local` (no runtime or build-time call to Google Font
 
 ### 9. Arabic search normalization
 `platform-i18n/text` provides one normalization function (remove tashkeel and tatweel; unify alef forms → ا, ى → ي, ة → ه; normalize digits) used both in the application and in an equivalent immutable SQL function `private.normalize_ar(text)` for generated search columns and trigram indexes (FR-CAT-10, NFR-L10N-05). Parity between the two is unit-tested with a shared fixture list; stemming beyond normalization is decided in the M3 catalog-search spike.
+- *Implementation note (T-M2-04, 5 Oct 2026):* the SQL function is `private.search_key(text)` (it also lower-cases); digits are normalized in the application before search (`normalizeDigits` in `platform-i18n`, applied by the users-list input schema), so the SQL side does not repeat it. Hijri display uses `formatHijriDate` (`islamic-umalqura`, Western digits); the conversion table and `<DateDisplay>` modes come with date pickers and preferences.
 
 ## Consequences
 

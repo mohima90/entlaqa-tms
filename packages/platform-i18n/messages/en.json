@@ -106,7 +106,6 @@
       "suspended": "Deactivated"
     },
     "never": "Never signed in",
-    "none": "—",
     "noneLabel": "Not set",
     "emptyFilteredTitle": "No results match the filters",
     "emptyFilteredBody": "Try a shorter word or search by employee number.",
@@ -118,7 +117,8 @@
     "next": "Next",
     "invalidFilters": "The filters in the link could not be read, so the list is shown without filters.",
     "notConfigured": "The users list appears once this environment is connected to the database and the sign-in service.",
-    "loadFailed": "The data could not be loaded because of a problem on our side. You can try again. Reference: {correlationId}"
+    "loadFailed": "The data could not be loaded because of a problem on our side. You can try again. Reference: {correlationId}",
+    "rolesNotVisible": "Not visible to you"
   },
   "userProfile": {
     "breadcrumb": "Users",

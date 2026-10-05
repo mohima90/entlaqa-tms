@@ -46,6 +46,8 @@ export interface UserListRow {
   readonly email: string | null;
   readonly employeeNumber: string | null;
   readonly status: MembershipStatus;
+  /** The caller may read this member's roles (inside `rolesScope`); else the roles are null/empty. */
+  readonly rolesVisible: boolean;
   readonly primaryRole: string | null;
   readonly otherRoles: readonly string[];
   readonly departmentNameAr: string | null;
@@ -194,8 +196,9 @@ export async function listUsers(tx: UserTx, filter: UserListFilter): Promise<Use
   const offset = Number.isFinite(filter.offset) ? Math.max(Math.trunc(filter.offset), 0) : 0;
   const rolesVisible = personScopePredicate(filter.rolesScope, filter.actorPersonId);
   const roles = isEmptyPersonScope(filter.rolesScope)
-    ? sql`null as primary_role, null as other_roles`
-    : sql`case when ${rolesVisible} then (select ra.role_code from platform.role_assignments ra
+    ? sql`false as roles_visible, null as primary_role, null as other_roles`
+    : sql`(${rolesVisible}) as roles_visible,
+           case when ${rolesVisible} then (select ra.role_code from platform.role_assignments ra
              where ra.membership_id = m.id and ra.is_primary and ${ROLE_IN_FORCE}) end as primary_role,
            case when ${rolesVisible} then (select array_agg(ra.role_code order by ra.role_code)
              from platform.role_assignments ra
@@ -210,6 +213,7 @@ export async function listUsers(tx: UserTx, filter: UserListFilter): Promise<Use
     email: string | null;
     employee_number: string | null;
     status: MembershipStatus;
+    roles_visible: boolean | null;
     primary_role: string | null;
     other_roles: string[] | null;
     department_name_ar: string | null;
@@ -236,6 +240,7 @@ export async function listUsers(tx: UserTx, filter: UserListFilter): Promise<Use
       email: r.email,
       employeeNumber: r.employee_number,
       status: r.status,
+      rolesVisible: r.roles_visible === true,
       primaryRole: r.primary_role,
       otherRoles: r.other_roles ?? [],
       departmentNameAr: r.department_name_ar,

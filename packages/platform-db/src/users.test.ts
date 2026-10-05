@@ -101,6 +101,7 @@ describe('listUsers', () => {
           email: 's@example.test',
           employee_number: 'E1',
           status: 'active',
+          roles_visible: true,
           primary_role: 'learner',
           other_roles: null,
           department_name_ar: 'التدريب',
@@ -128,6 +129,7 @@ describe('listUsers', () => {
         email: 's@example.test',
         employeeNumber: 'E1',
         status: 'active',
+        rolesVisible: true,
         primaryRole: 'learner',
         otherRoles: [],
         departmentNameAr: 'التدريب',
@@ -164,7 +166,9 @@ describe('listUsers', () => {
       limit: 10_000,
       offset: -5,
     });
-    expect(fake.executed[1]?.sql).toContain('null as primary_role, null as other_roles');
+    expect(fake.executed[1]?.sql).toContain(
+      'false as roles_visible, null as primary_role, null as other_roles',
+    );
     expect(fake.executed[1]?.params.slice(-2)).toEqual([100, 0]);
     const nan = fakeTx([], []);
     await listUsers(nan.tx, { ...baseFilter, limit: Number.NaN, offset: Number.NaN });

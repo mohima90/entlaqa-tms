@@ -191,7 +191,7 @@ describe.skipIf(!configured)('people directory reads against PostgreSQL', () => 
     // Without role.read the roles are not read at all.
     const [withoutRoles] = (await list({ search: 'E-report', rolesScope: EMPTY_PERSON_SCOPE }))
       .rows;
-    expect(withoutRoles).toMatchObject({ primaryRole: null, otherRoles: [] });
+    expect(withoutRoles).toMatchObject({ rolesVisible: false, primaryRole: null, otherRoles: [] });
     // Roles only on rows inside the role.read scope (here: the manager's direct reports).
     const byManager = await list({
       actorPersonId: people.manager.id,
@@ -202,6 +202,9 @@ describe.skipIf(!configured)('people directory reads against PostgreSQL', () => 
     );
     expect(primaryRoles[people.report.name]).toBe('training_coordinator');
     expect(Object.values(primaryRoles).filter((r) => r !== null)).toHaveLength(1);
+    expect(byManager.rows.filter((r) => r.rolesVisible).map((r) => r.displayNameAr)).toEqual([
+      people.report.name,
+    ]);
     expect(
       await names({
         actorPersonId: people.manager.id,

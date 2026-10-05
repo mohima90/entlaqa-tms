@@ -311,7 +311,9 @@ async function UsersList({
                   </td>
                   {canReadRoles ? (
                     <td className="px-4 py-3">
-                      {row.primaryRole ? (
+                      {!row.rolesVisible ? (
+                        <NotSet label={t('rolesNotVisible')} />
+                      ) : row.primaryRole ? (
                         roleName(locale, row.primaryRole)
                       ) : (
                         <NotSet label={t('noneLabel')} />

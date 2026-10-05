@@ -106,11 +106,16 @@ no_tls="$(PGPASSWORD="$POSTGRES_PASSWORD" PGSSLMODE=disable PGCONNECT_TIMEOUT=5 
   { echo "smoke: PostgreSQL must refuse connections without TLS (got: $no_tls)" >&2; exit 1; }
 
 echo "smoke: users pages (T-M2-04) with sample people, in Arabic and English"
+MANAGER_EMAIL="manager-$(date +%s)@sovereign.example"
+MANAGER_PASSWORD="Manager-$(openssl rand -hex 16)"
+MANAGER_ID="$(NEW_USER_PASSWORD="$MANAGER_PASSWORD" node create-user.mjs "$MANAGER_EMAIL")"
 PGPASSWORD="$POSTGRES_PASSWORD" PGSSLMODE=verify-full PGSSLROOTCERT=.secrets/ca.crt \
   psql -h localhost -p 55432 -U postgres -d postgres -X -q -v ON_ERROR_STOP=1 -v admin_user="$USER_ID" \
-  -f seed-users.sql >/dev/null
+  -v manager_user="$MANAGER_ID" -f seed-users.sql >/dev/null
 (cd "$ROOT/apps/suite" && E2E_BASE_URL=http://localhost:3200 SIGNED_IN_E2E_EMAIL="$EMAIL" \
-  SIGNED_IN_E2E_PASSWORD="$PASSWORD" pnpm exec playwright test e2e/users.spec.ts --project=desktop-chromium)
+  SIGNED_IN_E2E_PASSWORD="$PASSWORD" SIGNED_IN_E2E_MANAGER_EMAIL="$MANAGER_EMAIL" \
+  SIGNED_IN_E2E_MANAGER_PASSWORD="$MANAGER_PASSWORD" \
+  pnpm exec playwright test e2e/users.spec.ts --project=desktop-chromium)
 
 echo "smoke: checking secrets stay out of the logs and Auth is reachable only through the gateway"
 if compose logs db auth 2>&1 | grep -qF "$(secret AUTH_DB_PASSWORD)"; then
@@ -122,12 +127,12 @@ fi
 # its own logs; that is third-party behaviour, covered by the log retention/access rules of ADR 0009.)
 all_logs="$(compose logs --no-log-prefix 2>&1)"
 app_logs="$(compose logs --no-log-prefix app 2>&1)"
-for value in "$PASSWORD" "$PARITY_PASSWORD"; do
+for value in "$PASSWORD" "$PARITY_PASSWORD" "$MANAGER_PASSWORD"; do
   if grep -qF "$value" <<<"$all_logs"; then
     echo "smoke: a test user's password appears in the container logs" >&2; exit 1
   fi
 done
-for value in "$EMAIL" "$PARITY_EMAIL"; do
+for value in "$EMAIL" "$PARITY_EMAIL" "$MANAGER_EMAIL"; do
   if grep -qF "$value" <<<"$app_logs"; then
     echo "smoke: a test user's e-mail address appears in the app logs" >&2; exit 1
   fi

@@ -83,7 +83,7 @@ const baseFilter: UserListFilter = {
   scope: { ...EMPTY_PERSON_SCOPE, all: true },
   actorPersonId: ME,
   tab: 'all',
-  includeRoles: true,
+  rolesScope: { ...EMPTY_PERSON_SCOPE, all: true },
   limit: 25,
   offset: 0,
 };
@@ -156,17 +156,39 @@ describe('listUsers', () => {
     expect(fake.executed[1]?.params).toContain('suspended');
   });
 
-  it('leaves roles out without role.read, refuses the role filter then, and clamps paging', async () => {
+  it('leaves roles out without role.read, matches no one by role then, and clamps paging', async () => {
     const fake = fakeTx([], []);
-    await listUsers(fake.tx, { ...baseFilter, includeRoles: false, limit: 10_000, offset: -5 });
+    await listUsers(fake.tx, {
+      ...baseFilter,
+      rolesScope: EMPTY_PERSON_SCOPE,
+      limit: 10_000,
+      offset: -5,
+    });
     expect(fake.executed[1]?.sql).toContain('null as primary_role, null as other_roles');
     expect(fake.executed[1]?.params.slice(-2)).toEqual([100, 0]);
     const nan = fakeTx([], []);
     await listUsers(nan.tx, { ...baseFilter, limit: Number.NaN, offset: Number.NaN });
     expect(nan.executed[1]?.params.slice(-2)).toEqual([100, 0]);
-    await expect(
-      listUsers(fakeTx().tx, { ...baseFilter, includeRoles: false, roleCode: 'learner' }),
-    ).rejects.toThrow('includeRoles');
+    const byRole = fakeTx([], []);
+    await listUsers(byRole.tx, {
+      ...baseFilter,
+      rolesScope: EMPTY_PERSON_SCOPE,
+      roleCode: 'learner',
+    });
+    expect(byRole.executed[0]?.sql).toContain('and false and exists');
+  });
+
+  it('shows roles only on rows inside the role.read scope; the department filter takes sub-departments', async () => {
+    const fake = fakeTx([], []);
+    await listUsers(fake.tx, {
+      ...baseFilter,
+      rolesScope: { ...EMPTY_PERSON_SCOPE, directReports: true },
+      departmentId: D1,
+    });
+    const rows = fake.executed[1];
+    expect(rows?.sql).toContain('case when (e.manager_person_id = $');
+    expect(rows?.sql).toContain('with recursive tree');
+    expect(rows?.params).toContain(D1);
   });
 });
 

@@ -13,6 +13,7 @@ const db = vi.hoisted(() => ({
   listUsers: vi.fn(),
   listOrgUnitOptions: vi.fn(),
   getUserProfile: vi.fn(),
+  loadPersonResourceFacts: vi.fn(),
 }));
 vi.mock('@jadarat/platform-db', () => db);
 
@@ -91,7 +92,7 @@ describe('users list query', () => {
       scope: expect.objectContaining({ all: true }),
       actorPersonId: ME,
       tab: 'active',
-      includeRoles: true,
+      rolesScope: expect.objectContaining({ all: true }),
       search: 'EMP-1187',
       roleCode: 'learner',
       departmentId: DEPT,
@@ -110,7 +111,7 @@ describe('users list query', () => {
       scope: expect.objectContaining({ all: false, self: true, directReports: false }),
       actorPersonId: ME,
       tab: 'all',
-      includeRoles: false,
+      rolesScope: expect.objectContaining({ all: false, self: false, directReports: false }),
       limit: USERS_PAGE_SIZE,
       offset: 0,
     });
@@ -126,10 +127,27 @@ describe('users list query', () => {
           all: false,
           departments: [{ ids: [DEPT], includeDescendants: true }],
         }),
-        includeRoles: true,
+        rolesScope: expect.objectContaining({
+          departments: [{ ids: [DEPT], includeDescendants: true }],
+        }),
       }),
     );
     expect(db.listOrgUnitOptions).toHaveBeenCalled();
+  });
+
+  it('Line Manager + Learner: roles only for the direct reports, not for their own row', async () => {
+    const list = createDefineQuery(runtime(['line_manager', 'learner']))(
+      usersListQueryDefinition(),
+    );
+    const result = await list({});
+    expect(result.ok && result.value.canReadRoles).toBe(true);
+    expect(db.listUsers).toHaveBeenCalledWith(
+      TX,
+      expect.objectContaining({
+        scope: expect.objectContaining({ self: true, directReports: true }),
+        rolesScope: expect.objectContaining({ self: false, directReports: true }),
+      }),
+    );
   });
 
   it('rejects malformed input before any database work; no role → 403', async () => {
@@ -153,7 +171,9 @@ describe('users list query', () => {
 describe('user profile query', () => {
   it('Line Manager: a report’s profile with roles, without the audit trail', async () => {
     const profile = createDefineQuery(runtime(['line_manager']))(userProfileQueryDefinition());
-    expect(await profile({ personId: REPORT })).toEqual(ok({ personId: REPORT }));
+    expect(await profile({ personId: REPORT })).toEqual(
+      ok({ profile: { personId: REPORT }, canOpenManager: false }),
+    );
     expect(db.getUserProfile).toHaveBeenCalledWith(TX, REPORT, {
       includeRoles: true,
       includeActivity: false,
@@ -175,6 +195,29 @@ describe('user profile query', () => {
     const other = await profile({ personId: REPORT });
     expect(!other.ok && other.error.code).toBe('NOT_FOUND');
     expect(db.getUserProfile).not.toHaveBeenCalled();
+  });
+
+  it('links the manager only when the member may open the manager’s profile', async () => {
+    db.getUserProfile.mockResolvedValue({ personId: REPORT, manager: { personId: ME } });
+    db.loadPersonResourceFacts.mockResolvedValue({
+      personId: ME,
+      tenantId: TENANT,
+      managerPersonId: null,
+      managerChain: [],
+      departmentId: null,
+      departmentAncestorIds: [],
+      branchId: null,
+    });
+    // A Line Manager reads their reports, not themselves (no learner role here).
+    const asManager = await createDefineQuery(runtime(['line_manager']))(
+      userProfileQueryDefinition(),
+    )({ personId: REPORT });
+    expect(asManager.ok && asManager.value.canOpenManager).toBe(false);
+    const asAdmin = await createDefineQuery(runtime(['tenant_admin']))(
+      userProfileQueryDefinition(),
+    )({ personId: REPORT });
+    expect(asAdmin.ok && asAdmin.value.canOpenManager).toBe(true);
+    expect(db.loadPersonResourceFacts).toHaveBeenCalledWith(TX, ME);
   });
 
   it('a person that disappeared after authorization → NOT_FOUND', async () => {

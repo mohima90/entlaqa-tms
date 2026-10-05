@@ -11,6 +11,7 @@ import { SuiteShell } from '../../../../../../components/suite-shell';
 import { getSuiteContext } from '../../../../../../lib/suite-context';
 import { userProfileQuery } from '../../../../../../lib/users-queries';
 import { localizedName, roleName } from '../../../../../../lib/users-view';
+import { NotSet } from '../../../../../../components/not-set';
 
 type AccountStatus = NonNullable<UserProfile['membershipStatus']> | 'none';
 const ACCOUNT_TONE: Record<AccountStatus, BadgeTone> = {
@@ -68,14 +69,15 @@ export default async function UserProfilePage({
         );
       }
     } else {
-      title = localizedName(locale, result.value.displayNameAr, result.value.displayNameEn);
-      content = <Profile locale={locale} profile={result.value} />;
+      const { profile, canOpenManager } = result.value;
+      title = localizedName(locale, profile.displayNameAr, profile.displayNameEn);
+      content = <Profile locale={locale} profile={profile} canOpenManager={canOpenManager} />;
     }
   }
 
   return (
     <SuiteShell locale={locale} context={context} current="users" path={path}>
-      <nav aria-label={t('breadcrumb')} className="mb-2 text-sm">
+      <nav aria-label={t('breadcrumbLabel')} className="mb-2 text-sm">
         <a href={`/${locale}/suite/admin/users`}>{t('breadcrumb')}</a>
       </nav>
       <h1 className="mb-4 mt-0 text-2xl font-bold">{title}</h1>
@@ -84,15 +86,19 @@ export default async function UserProfilePage({
   );
 }
 
-async function Profile({ locale, profile }: { locale: AppLocale; profile: UserProfile }) {
+async function Profile({
+  locale,
+  profile,
+  canOpenManager,
+}: {
+  locale: AppLocale;
+  profile: UserProfile;
+  canOpenManager: boolean;
+}) {
   const t = await getTranslations({ locale, namespace: 'userProfile' });
   const users = await getTranslations({ locale, namespace: 'users' });
   const format = await getFormatter({ locale });
-  const none = (
-    <span aria-label={users('noneLabel')} className="text-text-muted">
-      {users('none')}
-    </span>
-  );
+  const none = <NotSet label={users('noneLabel')} />;
   const department = profile.departmentNameAr
     ? localizedName(locale, profile.departmentNameAr, profile.departmentNameEn)
     : null;
@@ -128,9 +134,13 @@ async function Profile({ locale, profile }: { locale: AppLocale; profile: UserPr
       key: 'manager',
       label: t('fields.manager'),
       value: profile.manager ? (
-        <a href={`/${locale}/suite/admin/users/${profile.manager.personId}`}>
-          {localizedName(locale, profile.manager.displayNameAr, profile.manager.displayNameEn)}
-        </a>
+        canOpenManager ? (
+          <a href={`/${locale}/suite/admin/users/${profile.manager.personId}`}>
+            {localizedName(locale, profile.manager.displayNameAr, profile.manager.displayNameEn)}
+          </a>
+        ) : (
+          localizedName(locale, profile.manager.displayNameAr, profile.manager.displayNameEn)
+        )
       ) : (
         none
       ),
@@ -206,16 +216,16 @@ async function Profile({ locale, profile }: { locale: AppLocale; profile: UserPr
                     <Badge tone={role.isPrimary ? 'info' : 'neutral'}>
                       {role.isPrimary ? t('primaryRole') : t('additionalRole')}
                     </Badge>
+                    {role.validFrom && role.validFrom > now ? (
+                      <span className="text-sm text-text-muted">
+                        {t('validFrom', { date: format.dateTime(role.validFrom, 'medium') })}
+                      </span>
+                    ) : null}
                     {role.validUntil ? (
                       <span className="text-sm text-text-muted">
                         {t(ended ? 'ended' : 'validUntil', {
                           date: format.dateTime(role.validUntil, 'medium'),
                         })}
-                      </span>
-                    ) : null}
-                    {role.validFrom && role.validFrom > now ? (
-                      <span className="text-sm text-text-muted">
-                        {t('validFrom', { date: format.dateTime(role.validFrom, 'medium') })}
                       </span>
                     ) : null}
                   </li>

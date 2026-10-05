@@ -168,6 +168,7 @@
       "platform_tenant_admin_provisioned": "أُنشئ الحساب بدور «مدير المنشأة»",
       "platform_tenant_admin_role_restored": "أُعيد دور «مدير المنشأة»",
       "other": "إجراء مسجّل ({action})"
-    }
+    },
+    "breadcrumbLabel": "مسار التنقل"
   }
 }

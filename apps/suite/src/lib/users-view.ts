@@ -18,6 +18,32 @@ export function usersListParams(
   return params;
 }
 
+/** Locale-less path of the users list with `params` (for the language switch). */
+export function usersListPath(params: UsersListParams): string {
+  return usersListHref('ar', params).slice('/ar'.length);
+}
+
+export interface UsersPaging {
+  /** 1-based position of the first and last row shown (0 when nothing is shown). */
+  readonly from: number;
+  readonly to: number;
+  readonly lastPage: number;
+  /** The requested page is past the last page of a non-empty list. */
+  readonly beyondLastPage: boolean;
+}
+
+export function usersPaging(
+  page: number,
+  pageSize: number,
+  rows: number,
+  total: number,
+): UsersPaging {
+  const lastPage = Math.max(1, Math.ceil(total / pageSize));
+  if (rows === 0) return { from: 0, to: 0, lastPage, beyondLastPage: total > 0 && page > lastPage };
+  const from = (page - 1) * pageSize + 1;
+  return { from, to: Math.min(from + rows - 1, total), lastPage, beyondLastPage: false };
+}
+
 /** Link to the users list with `params` changed by `changes` (undefined removes a key). */
 export function usersListHref(
   locale: AppLocale,

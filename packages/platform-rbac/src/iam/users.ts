@@ -1,4 +1,4 @@
-import { appError, err, ok } from '@jadarat/platform-core';
+import { EMPTY_PERSON_SCOPE, appError, err, isEmptyPersonScope, ok } from '@jadarat/platform-core';
 import {
   type OrgUnitOptions,
   type UserList,
@@ -7,11 +7,12 @@ import {
   getUserProfile,
   listOrgUnitOptions,
   listUsers,
+  loadPersonResourceFacts,
 } from '@jadarat/platform-db';
 import { normalizeDigits } from '@jadarat/platform-i18n';
 import { z } from 'zod';
 import type { QueryDefinition } from '../define-query';
-import { personScopeFromGrants } from '../person-scope';
+import { personResourceAttributes, personScopeFromGrants } from '../person-scope';
 import { platformPermissions } from '../platform-permissions';
 import { SYSTEM_ROLE_CODES } from '../system-roles';
 
@@ -61,8 +62,13 @@ export function usersListQueryDefinition(): QueryDefinition<
     input: UsersListInput,
     scoped: true,
     handler: async ({ ctx, input }) => {
-      // System roles give role.read with the same scope as user.read, so "any scope" matches the rows.
-      const canReadRoles = ctx.can(p['platform.role.read'], 'any');
+      // Roles per row only for the people role.read covers (it can be narrower than user.read, e.g.
+      // a Line Manager + Learner reads their own record but not their own roles).
+      const rolesScope = personScopeFromGrants(
+        ctx.grantsFor(p['platform.role.read']),
+        p['platform.role.read'],
+      );
+      const canReadRoles = !isEmptyPersonScope(rolesScope);
       const orgUnits = ctx.can(p['platform.org.read'], 'tenant')
         ? await listOrgUnitOptions(ctx.tx)
         : null;
@@ -70,7 +76,7 @@ export function usersListQueryDefinition(): QueryDefinition<
         scope: personScopeFromGrants(ctx.grants, p['platform.user.read']),
         actorPersonId: ctx.actor.personId,
         tab: input.tab,
-        includeRoles: canReadRoles,
+        rolesScope: canReadRoles ? rolesScope : EMPTY_PERSON_SCOPE,
         ...(input.q ? { search: input.q } : {}),
         ...(input.role && canReadRoles ? { roleCode: input.role } : {}),
         ...(input.department && orgUnits ? { departmentId: input.department } : {}),
@@ -85,13 +91,19 @@ export function usersListQueryDefinition(): QueryDefinition<
 
 export const UserProfileInput = z.object({ personId: z.uuid() });
 
+export interface UserProfileView {
+  readonly profile: UserProfile;
+  /** The direct manager's profile may be opened by the member (else the name is plain text). */
+  readonly canOpenManager: boolean;
+}
+
 /**
  * One person's profile, authorized against that person (out of scope → NOT_FOUND). Roles need
  * `platform.role.read` and the recent activity `platform.audit.read`, both for this person.
  */
 export function userProfileQueryDefinition(): QueryDefinition<
   typeof UserProfileInput,
-  UserProfile,
+  UserProfileView,
   UserTx
 > {
   return {
@@ -105,7 +117,14 @@ export function userProfileQueryDefinition(): QueryDefinition<
         includeRoles: ctx.can(p['platform.role.read'], person),
         includeActivity: ctx.can(p['platform.audit.read'], person),
       });
-      return profile ? ok(profile) : err(appError('NOT_FOUND'));
+      if (!profile) return err(appError('NOT_FOUND'));
+      const managerFacts = profile.manager
+        ? await loadPersonResourceFacts(ctx.tx, profile.manager.personId)
+        : null;
+      const canOpenManager =
+        managerFacts !== null &&
+        ctx.can(p['platform.user.read'], personResourceAttributes(managerFacts));
+      return ok({ profile, canOpenManager });
     },
   };
 }

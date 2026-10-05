@@ -118,6 +118,8 @@ describe('defineQuery (authorized reads, ADR 0003 §4)', () => {
               subjectManagerPersonId: PERSON,
             }),
             needsAal2: ctx.can(p['platform.role.assign_privileged'], 'tenant'),
+            roleReadGrants: ctx.grantsFor(p['platform.role.read']).map((g) => g.scope.type),
+            aal2Grants: ctx.grantsFor(p['platform.role.assign_privileged']).length,
           }),
         ),
     });
@@ -129,6 +131,8 @@ describe('defineQuery (authorized reads, ADR 0003 §4)', () => {
         orgTenantWide: false,
         otherTenant: false,
         needsAal2: false,
+        roleReadGrants: ['direct_reports'],
+        aal2Grants: 0,
       }),
     );
   });

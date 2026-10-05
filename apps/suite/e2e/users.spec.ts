@@ -8,12 +8,18 @@ import { type Page, expect, test } from '@playwright/test';
  */
 const email = process.env.SIGNED_IN_E2E_EMAIL;
 const password = process.env.SIGNED_IN_E2E_PASSWORD;
+const managerEmail = process.env.SIGNED_IN_E2E_MANAGER_EMAIL;
+const managerPassword = process.env.SIGNED_IN_E2E_MANAGER_PASSWORD;
 const SARA = '5eed1000-0000-4000-8000-000000000001';
+const KHALID = '5eed1000-0000-4000-8000-000000000002';
 
-async function signIn(page: Page) {
+async function signIn(
+  page: Page,
+  as: { email: string | undefined; password: string | undefined } = { email, password },
+) {
   await page.goto('/en/sign-in');
-  await page.getByLabel('Email').fill(email ?? '');
-  await page.getByLabel('Password').fill(password ?? '');
+  await page.getByLabel('Email').fill(as.email ?? '');
+  await page.getByLabel('Password').fill(as.password ?? '');
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page).toHaveURL(/\/en\/suite$/);
 }
@@ -39,7 +45,7 @@ test.describe('users pages', () => {
     await page.getByRole('link', { name: 'Users' }).click();
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Users');
     const table = page.getByTestId('users-table');
-    await expect(table.getByRole('row')).toHaveCount(4); // header + admin, Sarah, Khalid
+    await expect(table.getByRole('row')).toHaveCount(5); // header + admin, Sarah, Khalid, Mona
     await expect(page.getByRole('link', { name: /Invited/ })).toContainText('1');
     await expectNoSeriousA11yViolations(page);
 
@@ -81,7 +87,7 @@ test.describe('users pages', () => {
     await expect(page.getByRole('heading', { name: 'Recent activity' })).toBeVisible();
     await expectNoSeriousA11yViolations(page);
 
-    // Another organization's or an unknown person: not found (no existence leak)
+    // An unknown person or a malformed id: not found (no existence leak)
     const missing = await page.goto('/en/suite/admin/users/5eed1000-0000-4000-8000-0000000000ff');
     expect(missing?.status()).toBe(404);
     const malformed = await page.goto('/en/suite/admin/users/not-a-uuid');
@@ -112,6 +118,36 @@ test.describe('users pages', () => {
     // A malformed filter is reported and ignored, not an error page
     await page.goto('/ar/suite/admin/users?department=not-a-uuid');
     await expect(page.getByText('تعذّر فهم عوامل التصفية')).toBeVisible();
-    await expect(page.getByTestId('users-table').getByRole('row')).toHaveCount(4);
+    await expect(page.getByTestId('users-table').getByRole('row')).toHaveCount(5);
+
+    // A page past the end goes to the last page
+    await page.goto('/ar/suite/admin/users?page=9');
+    await expect(page).toHaveURL(/\/ar\/suite\/admin\/users$/);
+    await expect(page.getByTestId('users-table').getByRole('row')).toHaveCount(5);
+  });
+
+  test('Line Manager + Learner: only themselves and their team; roles only for the team', async ({
+    page,
+  }) => {
+    test.skip(!managerEmail || !managerPassword, 'SIGNED_IN_E2E_MANAGER_* not set');
+    await signIn(page, { email: managerEmail, password: managerPassword });
+    await page.getByRole('link', { name: 'Users' }).click();
+    const table = page.getByTestId('users-table');
+    await expect(table.getByRole('row')).toHaveCount(3); // header + Mona herself, Khalid
+    await expect(table).toContainText('Mona Saeed Alzahrani');
+    await expect(table).toContainText('خالد إبراهيم الشهري');
+    await expect(table).toContainText('Learner'); // Khalid's role (her direct report)
+    await expect(table).not.toContainText('Line Manager'); // her own roles are not readable to her
+    await expectNoSeriousA11yViolations(page);
+
+    // Outside her scope: not found, exactly like a person that does not exist
+    const outside = await page.goto(`/en/suite/admin/users/${SARA}`);
+    expect(outside?.status()).toBe(404);
+
+    // Her report's profile: roles yes, audit trail no
+    await page.goto(`/en/suite/admin/users/${KHALID}`);
+    await expect(page.getByTestId('user-roles')).toContainText('Learner');
+    await expect(page.getByRole('heading', { name: 'Recent activity' })).toHaveCount(0);
+    await expect(page.getByTestId('user-profile')).toContainText('Mona Saeed Alzahrani');
   });
 });

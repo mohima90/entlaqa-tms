@@ -168,6 +168,7 @@
       "platform_tenant_admin_provisioned": "Account created with the Organization Admin role",
       "platform_tenant_admin_role_restored": "Organization Admin role restored",
       "other": "Recorded action ({action})"
-    }
+    },
+    "breadcrumbLabel": "Breadcrumb"
   }
 }

@@ -60,4 +60,18 @@ describe('loadMemberGrants', () => {
     const result = await noTenant();
     expect(!result.ok && result.error.code).toBe('FORBIDDEN');
   });
+
+  it('logs a database failure and returns INTERNAL_ERROR with a correlation id', async () => {
+    const logError = vi.fn();
+    const load = createLoadMemberGrants(
+      runtime({ withUserTx: () => Promise.reject(new Error('db down')), logError }),
+    );
+    const result = await load();
+    expect(!result.ok && result.error.code).toBe('INTERNAL_ERROR');
+    expect(!result.ok && result.error.correlationId).toEqual(expect.any(String));
+    expect(logError).toHaveBeenCalledWith(expect.any(Error), {
+      permission: 'navigation',
+      correlationId: expect.any(String),
+    });
+  });
 });

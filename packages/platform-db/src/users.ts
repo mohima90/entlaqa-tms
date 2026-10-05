@@ -1,5 +1,5 @@
 import 'server-only';
-import { type PersonScope, isEmptyPersonScope } from '@jadarat/platform-core';
+import { EMPTY_PERSON_SCOPE, type PersonScope, isEmptyPersonScope } from '@jadarat/platform-core';
 import { type SQL, sql } from 'drizzle-orm';
 import type { UserTx } from './with-user-tx';
 
@@ -21,11 +21,12 @@ export interface UserListFilter {
   /** Free text: name (Arabic or English), e-mail or employee number. */
   readonly search?: string;
   /**
-   * Return the members' roles and allow the role filter: only when the caller also holds
-   * `platform.role.read` (a learner sees their own row without roles).
+   * The people whose roles the caller may read (`platform.role.read`): roles are returned, and the role
+   * filter matches, only for rows inside it. EMPTY_PERSON_SCOPE → no roles at all.
    */
-  readonly includeRoles: boolean;
+  readonly rolesScope: PersonScope;
   readonly roleCode?: string;
+  /** A department and its sub-departments. */
   readonly departmentId?: string;
   readonly branchId?: string;
   /** Page size, clamped to 1…MAX_PAGE_SIZE. */
@@ -144,11 +145,21 @@ function filterPredicate(filter: UserListFilter): SQL {
       or p.email ilike ${pattern} or p.employee_number ilike ${pattern})`);
   }
   if (filter.roleCode) {
-    if (!filter.includeRoles) throw new Error('listUsers: the role filter needs includeRoles');
+    parts.push(sql`${personScopePredicate(filter.rolesScope, filter.actorPersonId)}`);
     parts.push(sql`exists (select 1 from platform.role_assignments ra
       where ra.membership_id = m.id and ra.role_code = ${filter.roleCode} and ${ROLE_IN_FORCE})`);
   }
-  if (filter.departmentId) parts.push(sql`e.department_id = ${filter.departmentId}::uuid`);
+  if (filter.departmentId) {
+    parts.push(
+      personScopePredicate(
+        {
+          ...EMPTY_PERSON_SCOPE,
+          departments: [{ ids: [filter.departmentId], includeDescendants: true }],
+        },
+        null,
+      ),
+    );
+  }
   if (filter.branchId) parts.push(sql`e.branch_id = ${filter.branchId}::uuid`);
   return sql.join(parts, sql` and `);
 }
@@ -181,12 +192,14 @@ export async function listUsers(tx: UserTx, filter: UserListFilter): Promise<Use
     ? Math.min(Math.max(Math.trunc(filter.limit), 1), MAX_PAGE_SIZE)
     : MAX_PAGE_SIZE;
   const offset = Number.isFinite(filter.offset) ? Math.max(Math.trunc(filter.offset), 0) : 0;
-  const roles = filter.includeRoles
-    ? sql`(select ra.role_code from platform.role_assignments ra
-             where ra.membership_id = m.id and ra.is_primary and ${ROLE_IN_FORCE}) as primary_role,
-           (select array_agg(ra.role_code order by ra.role_code) from platform.role_assignments ra
-             where ra.membership_id = m.id and not ra.is_primary and ${ROLE_IN_FORCE}) as other_roles`
-    : sql`null as primary_role, null as other_roles`;
+  const rolesVisible = personScopePredicate(filter.rolesScope, filter.actorPersonId);
+  const roles = isEmptyPersonScope(filter.rolesScope)
+    ? sql`null as primary_role, null as other_roles`
+    : sql`case when ${rolesVisible} then (select ra.role_code from platform.role_assignments ra
+             where ra.membership_id = m.id and ra.is_primary and ${ROLE_IN_FORCE}) end as primary_role,
+           case when ${rolesVisible} then (select array_agg(ra.role_code order by ra.role_code)
+             from platform.role_assignments ra
+             where ra.membership_id = m.id and not ra.is_primary and ${ROLE_IN_FORCE}) end as other_roles`;
   const tabWhere =
     filter.tab === 'all' ? where : sql`${where} and m.status = ${TAB_STATUS[filter.tab]}`;
   const rows = await tx.execute<{

@@ -56,6 +56,11 @@ export interface ActionContext<Tx> {
    * trail on a profile); it never replaces the definition's own permission.
    */
   readonly can: (permission: PermissionDefinition, target: PermissionTarget) => boolean;
+  /**
+   * The member's grants in force for another permission (empty when none, or when it needs AAL2 and the
+   * session is AAL1) — to restrict what a scoped list shows for it, e.g. roles per row.
+   */
+  readonly grantsFor: (permission: PermissionDefinition) => readonly Grant[];
   /** Transaction opened by withUserTx: RLS applies as the signed-in user. */
   readonly tx: Tx;
 }
@@ -197,6 +202,10 @@ export function createDefineAction<Tx>(runtime: ActionRuntime<Tx>) {
                 authorize(subject, permission, typeof target === 'string' ? undefined : target, {
                   scoped: target === 'any',
                 }).allowed,
+              grantsFor: (permission) => {
+                const other = authorize(subject, permission, undefined, { scoped: true });
+                return other.allowed ? other.grants : [];
+              },
               tx,
             },
             input: input.value,

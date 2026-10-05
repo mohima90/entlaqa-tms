@@ -15,7 +15,10 @@ import {
   roleName,
   usersListHref,
   usersListParams,
+  usersListPath,
+  usersPaging,
 } from '../../../../../lib/users-view';
+import { NotSet } from '../../../../../components/not-set';
 
 const TABS = ['all', 'active', 'invited', 'deactivated'] as const;
 const STATUS_TONE: Record<'active' | 'invited' | 'suspended', BadgeTone> = {
@@ -40,6 +43,7 @@ export default async function UsersPage({
   const t = await getTranslations({ locale, namespace: 'users' });
 
   let body;
+  let languagePath = '/suite/admin/users';
   if (!context.live) {
     body = (
       <Alert tone="info" data-testid="users-not-configured">
@@ -61,6 +65,13 @@ export default async function UsersPage({
       if (result.error.code === 'UNAUTHENTICATED') redirect(`/${locale}/sign-in`);
       body = await failure(locale, result.error);
     } else {
+      const { page, pageSize, list } = result.value;
+      const paging = usersPaging(page, pageSize, list.rows.length, list.total);
+      // A page past the end (bookmarked, or people left the list): go to the last page instead.
+      if (paging.beyondLastPage) {
+        redirect(usersListHref(locale, current, { page: String(paging.lastPage) }));
+      }
+      languagePath = usersListPath(current);
       body = (
         <>
           {invalidFilters ? <Alert tone="warning">{t('invalidFilters')}</Alert> : null}
@@ -71,7 +82,7 @@ export default async function UsersPage({
   }
 
   return (
-    <SuiteShell locale={locale} context={context} current="users" path="/suite/admin/users">
+    <SuiteShell locale={locale} context={context} current="users" path={languagePath}>
       <h1 className="mb-2 mt-0 text-2xl font-bold">{t('title')}</h1>
       <div className="flex flex-col gap-6">{body}</div>
     </SuiteShell>
@@ -104,8 +115,7 @@ async function UsersList({
     ? (params.tab as (typeof TABS)[number])
     : 'all';
   const filtered = Boolean(params.q ?? params.role ?? params.department ?? params.branch);
-  const from = list.total === 0 ? 0 : (view.page - 1) * view.pageSize + 1;
-  const to = from === 0 ? 0 : from + list.rows.length - 1;
+  const { from, to } = usersPaging(view.page, view.pageSize, list.rows.length, list.total);
 
   return (
     <>
@@ -287,17 +297,25 @@ async function UsersList({
                       {localizedName(locale, row.displayNameAr, row.displayNameEn)}
                     </a>
                     {row.email ? (
-                      <div className="text-sm text-text-muted" dir="ltr">
-                        <bdi>{row.email}</bdi>
+                      <div className="text-sm text-text-muted">
+                        <bdi dir="ltr">{row.email}</bdi>
                       </div>
                     ) : null}
                   </td>
                   <td className="px-4 py-3">
-                    {row.employeeNumber ? <bdi dir="ltr">{row.employeeNumber}</bdi> : <Missing />}
+                    {row.employeeNumber ? (
+                      <bdi dir="ltr">{row.employeeNumber}</bdi>
+                    ) : (
+                      <NotSet label={t('noneLabel')} />
+                    )}
                   </td>
                   {canReadRoles ? (
                     <td className="px-4 py-3">
-                      {row.primaryRole ? roleName(locale, row.primaryRole) : <Missing />}
+                      {row.primaryRole ? (
+                        roleName(locale, row.primaryRole)
+                      ) : (
+                        <NotSet label={t('noneLabel')} />
+                      )}
                       {row.otherRoles.length > 0 ? (
                         <div className="text-sm text-text-muted">
                           {t('otherRoles', { count: row.otherRoles.length })}
@@ -309,7 +327,7 @@ async function UsersList({
                     {row.departmentNameAr ? (
                       localizedName(locale, row.departmentNameAr, row.departmentNameEn)
                     ) : (
-                      <Missing />
+                      <NotSet label={t('noneLabel')} />
                     )}
                   </td>
                   <td className="px-4 py-3">
@@ -356,14 +374,5 @@ async function UsersList({
         </nav>
       ) : null}
     </>
-  );
-}
-
-async function Missing() {
-  const t = await getTranslations('users');
-  return (
-    <span aria-label={t('noneLabel')} className="text-text-muted">
-      {t('none')}
-    </span>
   );
 }

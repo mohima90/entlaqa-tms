@@ -20,6 +20,6 @@ describe('formatHijriDate', () => {
   it('formats a stored date in Umm al-Qura with Western digits, in Arabic and English', () => {
     expect(formatHijriDate('2024-03-03', 'ar')).toBe('22 شعبان 1445 هـ');
     expect(formatHijriDate('2024-03-03', 'en')).toMatch(/22, 1445 AH$/);
-    expect(formatHijriDate(new Date('2024-03-03T00:00:00Z'), 'ar')).toBe('22 شعبان 1445 هـ');
+    expect(() => formatHijriDate('2024-03-03T21:00:00Z', 'ar')).toThrow(RangeError);
   });
 });

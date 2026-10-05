@@ -20,7 +20,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 | Planning (research, BRD, feature list, delivery plan) | — | 🟢 Done | — | See §4 documents |
 | M0 Mobilize | 1–2 | 🟢 Done | G0 | **Gate G0 passed 3 Oct 2026.** T-M0-01…07, 09, 10 done (MFA on GitHub, Supabase, Vercel confirmed); T-M0-08 (→ 2-week customer trials ≈ end of M5) and T-M0-11 deferred by PO; T-M0-12/13 needed later |
 | M1 Foundation | 3–8 | 🟢 Done | G1 | Foundation merged (#9); walking skeleton live on staging (#10–#14); component library + Storybook done (T-M1-A02); M2 threat models done (TM-0002…0006); self-hosted stack verified (T-M1-D04, gate 15); observability baseline done (T-M1-D06). Estimation (T-M1-B14) postponed and mock-up usability round (T-M1-A05) cancelled by the PO (4 Oct 2026) |
-| M2 Platform core | 9–12 | 🔵 In progress | G2 | Started 4 Oct 2026 with users & roles (`EP-M2-IAM`): 11 Arabic screens **approved by the PO** (4 Oct 2026); build broken into T-M2-01…12 (BACKLOG); T-M2-01…03 merged (#28, #30, #31), T-M2-04 in progress |
+| M2 Platform core | 9–12 | 🔵 In progress | G2 | Started 4 Oct 2026 with users & roles (`EP-M2-IAM`): 11 Arabic screens **approved by the PO** (4 Oct 2026); build broken into T-M2-01…12 (BACKLOG); T-M2-01…04 merged (#28, #30–#33); next T-M2-05 |
 | M3 Catalog & scheduling | 13–16 | ⚪ Not started | G3 | |
 | M4 Enrollment & manager | 17–19 | ⚪ Not started | G4 | |
 | M5 Delivery & credentials | 20–23 | ⚪ Not started | G5 | |
@@ -179,6 +179,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
+| 5 Oct 2026 | PR #33 merged (T-M2-04b users pages) → T-M2-04 done; the PO can open **إدارة المنشأة ← المستخدمون** on staging. Next: T-M2-05 roles & permissions page (screen 5) |
 | 5 Oct 2026 | Staging DB deploy with the PO: plan green, apply OK (13 migrations: org structure, person profile, roles, search key, audit indexes; `verify-deployment` passed). Backfill checked first: one provisioned member only (the PO) |
 | 5 Oct 2026 | T-M2-04b review: approve with fixes (2 Medium, 10 Low) → all fixed with tests (paging, screen-reader text, roles per row by role.read scope, manager link, language switch keeps filters, department filter with sub-departments); new signed-in E2E as a Line Manager passes on the self-hosted stack; re-review **approve** (2 nits fixed) |
 | 5 Oct 2026 | T-M2-04b built: users list and user profile pages (Arabic/English), Organization admin → Users navigation by permission, roles/activity shown only with their permissions; unit, preview E2E (84 checks incl. axe) and signed-in E2E on the self-hosted stack pass; review next |

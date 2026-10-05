@@ -53,6 +53,14 @@ updates:
       day: monday
       time: '05:00'
       timezone: Asia/Riyadh
+    # Database major versions are a deliberate migration (pg_upgrade of customer data; must match the
+    # hosted Supabase major and CI), never a Dependabot bump. Minor/patch updates still come (PR #29
+    # tried postgres 17 → 18 and was closed by the PO, 5 Oct 2026).
+    ignore:
+      - dependency-name: 'postgres'
+        update-types: ['version-update:semver-major']
+      - dependency-name: 'supabase/postgres'
+        update-types: ['version-update:semver-major']
     groups:
       images:
         patterns: ['*']

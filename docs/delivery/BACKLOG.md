@@ -110,6 +110,8 @@ Screens are approved by the PO before each feature is built (PO decision 4 Oct 2
 | T-M2-10 | Security policy per organization: MFA enforcement (TOTP first), password policy, lockout, inactivity / max session length / max devices, active sessions + force sign-out | Claude | ⚪ | Screens 3, 6; FR-IAM-12/13; security decisions 1, 2, 5 needed here |
 | T-M2-11 | Sign-in rate limiting + failed sign-ins as security events (carry-over from T-M1-D03, SCS-16) | Claude | ⚪ | Release blocker for real users |
 | T-M2-12 | Bulk user import wizard (CSV/XLSX, FR-IAM-04) | Claude | ⚪ | Screens to be designed and approved first |
+| T-M2-13 | Edit a user's details (screen 3 «تعديل البيانات»): names AR/EN, e-mail, mobile, employee number, job title, department, branch, direct manager (picked from the department's managers, PO 4 Oct 2026), hire date, interface language; audited with before/after | Claude | ⚪ | FR-IAM-01 · BR-IAM-3. Gap found by the PO on staging, 5 Oct 2026 (the provisioned admin shows the placeholder name "Tenant Admin" and no e-mail). Permission `platform.user.update` (HR Manager, Organization Admin) |
+| T-M2-14 | Change a user's roles on the profile (screen 3 «تعديل الأدوار»): one primary + additional roles, validity dates; HR gives ordinary roles, only the Organization Admin privileged ones (AAL2), never one's own (PO decision 5 Oct 2026); audited with before/after | Claude | ⚪ | FR-IAM-07 · BR-IAM-1 · BR-IAM-3. Same gap; database guards already exist (T-M2-03) |
 
 ## M2–M7 — R1 build (epics; tasks are broken down at the start of each milestone)
 

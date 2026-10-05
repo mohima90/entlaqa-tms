@@ -179,6 +179,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
+| 5 Oct 2026 | PO checked the users page on staging (works: one Organization Admin). Gap found: no task for editing a user's details or roles (screen 3) → added T-M2-13 and T-M2-14 to the backlog |
 | 5 Oct 2026 | PR #33 merged (T-M2-04b users pages) → T-M2-04 done; the PO can open **إدارة المنشأة ← المستخدمون** on staging. Next: T-M2-05 roles & permissions page (screen 5) |
 | 5 Oct 2026 | Staging DB deploy with the PO: plan green, apply OK (13 migrations: org structure, person profile, roles, search key, audit indexes; `verify-deployment` passed). Backfill checked first: one provisioned member only (the PO) |
 | 5 Oct 2026 | T-M2-04b review: approve with fixes (2 Medium, 10 Low) → all fixed with tests (paging, screen-reader text, roles per row by role.read scope, manager link, language switch keeps filters, department filter with sub-departments); new signed-in E2E as a Line Manager passes on the self-hosted stack; re-review **approve** (2 nits fixed) |

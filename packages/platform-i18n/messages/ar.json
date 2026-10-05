@@ -33,7 +33,9 @@
     "pageTitle": "الرئيسية",
     "emptyTitle": "لا توجد بيانات تدريب بعد",
     "emptyBody": "ستظهر هنا الجلسات والدورات بعد إعداد وحدة التدريب لمنشأتكم.",
-    "comingSoon": "قريبًا"
+    "comingSoon": "قريبًا",
+    "admin": "إدارة المنشأة",
+    "users": "المستخدمون"
   },
   "errors": {
     "malformedRequest": "تعذّر فهم الطلب. حدّث الصفحة ثم أعد المحاولة.",
@@ -64,6 +66,108 @@
     "errors": {
       "invalidCredentials": "البريد الإلكتروني أو كلمة المرور غير صحيحة.",
       "noOrganization": "حسابك غير مرتبط بأي منشأة نشطة. تواصل مع مدير المنشأة."
+    }
+  },
+  "users": {
+    "title": "المستخدمون",
+    "summary": "{count, plural, zero {لا يوجد مستخدمون} one {مستخدم واحد} two {مستخدمان} few {{count, number, integer} مستخدمين} many {{count, number, integer} مستخدمًا} other {{count, number, integer} مستخدم}}",
+    "pendingInvitations": "{count, plural, zero {لا توجد دعوات معلّقة} one {دعوة واحدة لم تُقبل بعد} two {دعوتان لم تُقبلا بعد} few {{count, number, integer} دعوات لم تُقبل بعد} many {{count, number, integer} دعوة لم تُقبل بعد} other {{count, number, integer} دعوة لم تُقبل بعد}}",
+    "tabsLabel": "حالة المستخدمين",
+    "tabs": {
+      "all": "الكل",
+      "active": "نشط",
+      "invited": "مدعو",
+      "deactivated": "معطّل"
+    },
+    "filtersLabel": "البحث والتصفية",
+    "search": "بحث",
+    "searchHint": "بالاسم أو البريد الإلكتروني أو الرقم الوظيفي",
+    "role": "الدور",
+    "allRoles": "كل الأدوار",
+    "department": "القسم",
+    "allDepartments": "كل الأقسام",
+    "branch": "الفرع",
+    "allBranches": "كل الفروع",
+    "apply": "تطبيق",
+    "clearFilters": "مسح عوامل التصفية",
+    "tableCaption": "قائمة المستخدمين",
+    "columns": {
+      "name": "الاسم",
+      "employeeNumber": "الرقم الوظيفي",
+      "primaryRole": "الدور الأساسي",
+      "department": "القسم",
+      "status": "الحالة",
+      "lastSignIn": "آخر دخول"
+    },
+    "otherRoles": "{count, plural, one {ودور إضافي} two {ودوران إضافيان} few {و{count, number, integer} أدوار إضافية} many {و{count, number, integer} دورًا إضافيًا} other {و{count, number, integer} دور إضافي}}",
+    "status": {
+      "active": "نشط",
+      "invited": "مدعو",
+      "suspended": "معطّل"
+    },
+    "never": "لم يسجّل الدخول بعد",
+    "none": "—",
+    "noneLabel": "غير محدد",
+    "emptyFilteredTitle": "لا توجد نتائج تطابق عوامل التصفية",
+    "emptyFilteredBody": "جرّب كلمة أقصر أو ابحث بالرقم الوظيفي.",
+    "emptyTitle": "لا يوجد مستخدمون لعرضهم",
+    "emptyBody": "يظهر هنا المستخدمون الذين يمكنك الاطلاع عليهم.",
+    "paginationLabel": "صفحات قائمة المستخدمين",
+    "pageRange": "عرض {from, number, integer}–{to, number, integer} من {total, number, integer}",
+    "previous": "السابق",
+    "next": "التالي",
+    "invalidFilters": "تعذّر فهم عوامل التصفية في الرابط، فعُرضت القائمة دون تصفية.",
+    "notConfigured": "تظهر قائمة المستخدمين بعد ربط هذه البيئة بقاعدة البيانات وخدمة الدخول.",
+    "loadFailed": "تعذّر تحميل البيانات بسبب خلل لدينا. يمكنك إعادة المحاولة. المرجع: {correlationId}"
+  },
+  "userProfile": {
+    "breadcrumb": "المستخدمون",
+    "basicData": "البيانات الأساسية",
+    "fields": {
+      "email": "البريد الإلكتروني",
+      "mobile": "الجوال",
+      "employeeNumber": "الرقم الوظيفي",
+      "jobTitle": "المسمى الوظيفي",
+      "department": "القسم",
+      "branch": "الفرع",
+      "manager": "المدير المباشر",
+      "hireDate": "تاريخ التعيين",
+      "language": "لغة الواجهة",
+      "nameEn": "الاسم بالإنجليزية",
+      "nameAr": "الاسم بالعربية"
+    },
+    "hijri": "({date})",
+    "languages": {
+      "ar": "العربية",
+      "en": "الإنجليزية"
+    },
+    "roles": "الأدوار",
+    "primaryRole": "الدور الأساسي",
+    "additionalRole": "دور إضافي",
+    "validUntil": "حتى {date}",
+    "validFrom": "يبدأ في {date}",
+    "ended": "انتهى في {date}",
+    "noRoles": "لا توجد أدوار مسندة.",
+    "rolesAudited": "كل تغيير في الأدوار يُسجَّل في سجل التدقيق بالقيمة قبل التغيير وبعده.",
+    "account": "الدخول والأمان",
+    "accountStatus": "حالة الحساب",
+    "accountStatuses": {
+      "active": "نشط",
+      "invited": "مدعو",
+      "suspended": "معطّل",
+      "revoked": "أُلغيت العضوية",
+      "none": "بلا حساب دخول"
+    },
+    "lastSignIn": "آخر دخول",
+    "never": "لم يسجّل الدخول بعد",
+    "activity": "آخر النشاط",
+    "noActivity": "لا يوجد نشاط مسجّل بعد.",
+    "by": "بواسطة {name}",
+    "bySystem": "بواسطة النظام",
+    "actions": {
+      "platform_tenant_admin_provisioned": "أُنشئ الحساب بدور «مدير المنشأة»",
+      "platform_tenant_admin_role_restored": "أُعيد دور «مدير المنشأة»",
+      "other": "إجراء مسجّل ({action})"
     }
   }
 }

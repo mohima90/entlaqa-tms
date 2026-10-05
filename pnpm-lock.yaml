@@ -367,6 +367,9 @@ importers:
       '@jadarat/platform-db':
         specifier: workspace:*
         version: link:../platform-db
+      '@jadarat/platform-i18n':
+        specifier: workspace:*
+        version: link:../platform-i18n
       '@jadarat/platform-identity':
         specifier: workspace:*
         version: link:../platform-identity

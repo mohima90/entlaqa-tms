@@ -92,6 +92,47 @@ describe('defineQuery (authorized reads, ADR 0003 §4)', () => {
     expect(!denied.ok && denied.error).toMatchObject(appError('FORBIDDEN'));
   });
 
+  it('ctx.can checks other permissions on the same resource or in any scope (deny by default)', async () => {
+    const p = platformPermissions;
+    const { rt } = runtime([
+      { permission: read.code, scope: { type: 'direct_reports' } },
+      { permission: p['platform.role.read'].code, scope: { type: 'direct_reports' } },
+      { permission: p['platform.org.read'].code, scope: { type: 'own' } },
+      { permission: p['platform.role.assign_privileged'].code, scope: { type: 'tenant' } },
+    ]);
+    const query = createDefineQuery(rt)({
+      permission: read,
+      input: z.object({ personId: z.uuid() }),
+      resource: (input) => ({ type: 'person', id: input.personId }),
+      handler: ({ ctx }) =>
+        Promise.resolve(
+          ok({
+            rolesOfThisPerson: ctx.can(p['platform.role.read'], ctx.resource ?? 'tenant'),
+            auditOfThisPerson: ctx.can(p['platform.audit.read'], ctx.resource ?? 'tenant'),
+            orgAnyScope: ctx.can(p['platform.org.read'], 'any'),
+            orgTenantWide: ctx.can(p['platform.org.read'], 'tenant'),
+            otherTenant: ctx.can(p['platform.role.read'], {
+              type: 'person',
+              id: OTHER,
+              tenantId: OTHER,
+              subjectManagerPersonId: PERSON,
+            }),
+            needsAal2: ctx.can(p['platform.role.assign_privileged'], 'tenant'),
+          }),
+        ),
+    });
+    expect(await query({ personId: OTHER })).toEqual(
+      ok({
+        rolesOfThisPerson: true,
+        auditOfThisPerson: false,
+        orgAnyScope: true,
+        orgTenantWide: false,
+        otherTenant: false,
+        needsAal2: false,
+      }),
+    );
+  });
+
   it('keeps `resource` and `scoped` mutually exclusive at compile time', () => {
     const { rt } = runtime([]);
     const defineQuery = createDefineQuery(rt);

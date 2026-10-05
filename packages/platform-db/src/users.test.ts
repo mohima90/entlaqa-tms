@@ -2,6 +2,7 @@ import { EMPTY_PERSON_SCOPE } from '@jadarat/platform-core';
 import { type SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { describe, expect, it } from 'vitest';
+import { listOrgUnitOptions } from './org';
 import { loadMemberAuthorizationFacts } from './roles';
 import {
   type UserListFilter,
@@ -338,5 +339,19 @@ describe('loadMemberAuthorizationFacts', () => {
       headedDepartmentIds: ['d1'],
     });
     expect(fake.executed[0]?.sql).toContain("m.status = 'active'");
+  });
+});
+
+describe('listOrgUnitOptions', () => {
+  it('lists departments and branches that are not deleted', async () => {
+    const fake = fakeTx(
+      [{ id: 'd1', name_ar: 'التدريب', name_en: 'Training' }],
+      [{ id: 'b1', name_ar: 'الرياض', name_en: null }],
+    );
+    expect(await listOrgUnitOptions(fake.tx)).toEqual({
+      departments: [{ id: 'd1', nameAr: 'التدريب', nameEn: 'Training' }],
+      branches: [{ id: 'b1', nameAr: 'الرياض', nameEn: null }],
+    });
+    expect(fake.executed.every((q) => q.sql.includes('deleted_at is null'))).toBe(true);
   });
 });

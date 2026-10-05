@@ -17,6 +17,7 @@
   "dependencies": {
     "@jadarat/platform-core": "workspace:*",
     "@jadarat/platform-db": "workspace:*",
+    "@jadarat/platform-i18n": "workspace:*",
     "@jadarat/platform-identity": "workspace:*",
     "@jadarat/platform-observability": "workspace:*",
     "drizzle-orm": "0.45.3",

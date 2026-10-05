@@ -66,6 +66,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 | 4 Oct 2026 | — | **Re-baselined plan / estimation (T-M1-B14) postponed** (PO): no time plan now; we build the product step by step, feature by feature, starting with M2. Gate G1 is passed without the estimation item; the mock-up usability round (T-M1-A05) stays open and runs when the PO is ready |
 | 5 Oct 2026 | — | **Confirmed by the PO:** the **Compliance Officer** role counts as privileged (it reads the audit log, like the Auditor), so only the Organization Admin can give it; the HR Manager gives every other ordinary role (Tech Lead proposal from the T-M2-03 review, PO "yes") |
 | 5 Oct 2026 | — | **Who may manage users and roles** (PO, security decision 4 / TM-0003 D-IAM-03): the **HR Manager** may invite, edit and deactivate users and give ordinary roles; only the **Organization Admin** (Tenant Admin) may give the Organization Admin role or other privileged roles (HR Manager, Finance Manager, Auditor); nobody may give roles to themselves |
+| 5 Oct 2026 | — | **My profile (self-service)** (PO, new scope FR-IAM-16 / IAM-16, R1; BRD v2.2): every user opens My profile from their own picture and changes their own **personal details** — names AR/EN, mobile, interface language, profile photo — and their **password**; the **e-mail cannot be changed**; job data (employee number, job title, department, branch, manager, hire date) stays read-only and is changed by HR / Organization Admin. Order (PO: continue the user sequence): My profile (T-M2-15) → edit user details (T-M2-13) → change roles (T-M2-14) → roles page (T-M2-05) → invitations… Screens shown to the PO first |
 | 5 Oct 2026 | — | **Visual design** (PO question, not a change request): the approved screens fix content and flow only; the whole product needs an elegant visual design, and each organization admin must be able to apply their own colors and identity (FR-ADM-07, R1; theme builder FR-ADM-08 R2). The look must be **similar to Jadarat LMS** (PO). The visual design round (T-M2-04c, matching Jadarat LMS on the real pages) is **on hold until the PO asks** (PO: "continue as normal and leave the UI now"); screens keep the current tokens meanwhile; organization colors/logo (FR-ADM-07) later in M2 with `EP-M2-TEN`, on the same tokens |
 | 5 Oct 2026 | — | Dependabot no longer proposes PostgreSQL **major** versions for the self-hosted stack (PO closed #29, 17 → 18): database majors are a planned migration matching hosted Supabase and CI |
 | 5 Oct 2026 | — | Nationality / "is national" on person profiles stored as ordinary personal data (`pii:indirect`) **pending legal validation** of whether it is a special category under KSA/UAE/Egypt PDPL (T-M2-02 review); flagged for the legal check before the first customer |
@@ -123,8 +124,8 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Document | Version | Status |
 |---|---|---|
-| `docs/brd/Jadarat_TMS_BRD_v2.md` | 2.1 | Draft for stakeholder review |
-| `docs/brd/TMS_Feature_List.md` | 30 Sep 2026 | Current (289 features; 280 in scope; R1 = 96) |
+| `docs/brd/Jadarat_TMS_BRD_v2.md` | 5 Oct 2026 | Current (v2.2 — FR-IAM-16 My profile added) |
+| `docs/brd/TMS_Feature_List.md` | 5 Oct 2026 | Current (290 features; 281 in scope; R1 = 97 — IAM-16 added) |
 | `docs/delivery/Jadarat_TMS_Development_Plan.md` | 1.1 | §2.3 agent-team operating model added |
 | `docs/research/TMS_Market_Comparison_vs_BRD.md` | 27 Sep 2026 | Reference |
 | `docs/delivery/BACKLOG.md` | 1 Oct 2026 | Current task list (M0, M1 tasks; M2–M7 epics) |
@@ -179,6 +180,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
+| 5 Oct 2026 | PO added self-service My profile (personal details + password, e-mail locked, job data with HR): BRD v2.2 FR-IAM-16, feature IAM-16 (R1 = 97), backlog T-M2-15 next in the user sequence |
 | 5 Oct 2026 | PO checked the users page on staging (works: one Organization Admin). Gap found: no task for editing a user's details or roles (screen 3) → added T-M2-13 and T-M2-14 to the backlog |
 | 5 Oct 2026 | PR #33 merged (T-M2-04b users pages) → T-M2-04 done; the PO can open **إدارة المنشأة ← المستخدمون** on staging. Next: T-M2-05 roles & permissions page (screen 5) |
 | 5 Oct 2026 | Staging DB deploy with the PO: plan green, apply OK (13 migrations: org structure, person profile, roles, search key, audit indexes; `verify-deployment` passed). Backfill checked first: one provisioned member only (the PO) |

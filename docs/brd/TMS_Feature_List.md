@@ -1,6 +1,6 @@
 # Jadarat TMS — Full Feature List
 
-**Date:** 30 Sep 2026 (v2.1) · **Status:** Decisions D1, D2, D6, D7 applied · **BRD:** `docs/brd/Jadarat_TMS_BRD_v2.md` · **Basis:** Market research in `docs/research/TMS_Market_Comparison_vs_BRD.md` + Jadarat TMS BRD v1.0
+**Date:** 5 Oct 2026 (v2.2) · **Status:** Decisions D1, D2, D6, D7 applied; IAM-16 added (PO, 5 Oct 2026) · **BRD:** `docs/brd/Jadarat_TMS_BRD_v2.md` · **Basis:** Market research in `docs/research/TMS_Market_Comparison_vs_BRD.md` + Jadarat TMS BRD v1.0
 
 **Legend**
 
@@ -8,7 +8,7 @@
 - **Proposed release:** `R1` MVP (months 0–4) · `R2` Growth (5–8) · `R3` Enterprise & Sovereign (9–12) · `R4` Intelligence & Scale (13–18) · `Suite` = when the related Jadarat HR Suite module ships · `—` = removed from scope
 - **In v1 BRD?** `✅` covered · `⚠️` partial · `❌` new (not in v1 BRD)
 
-**Totals:** 29 modules · 289 features, of which 280 in scope and 9 removed by decision D1 (Commerce, public registration) · In scope: 106 new and 40 partial vs. v1 BRD · By release: R1 96 · R2 110 · R3 56 · R4 13 · Suite 5
+**Totals:** 29 modules · 290 features, of which 281 in scope and 9 removed by decision D1 (Commerce, public registration) · In scope: 107 new and 40 partial vs. v1 BRD · By release: R1 97 · R2 110 · R3 56 · R4 13 · Suite 5
 
 ---
 
@@ -53,6 +53,7 @@
 | IAM-13 | Password policy, lockout, session timeout, IP allow-list, access hours | Core | R1/R3 | ✅ |
 | IAM-14 | Delegation (approver out-of-office delegate) | Plus | R2 | ❌ |
 | IAM-15 | Non-employee users (provider staff, external instructors, contractor learners) | Plus | R2 | ❌ |
+| IAM-16 | My profile (self-service): own names, mobile, language, photo and password; e-mail locked; job data read-only (PO, 5 Oct 2026) | Core | R1 | ❌ |
 
 ## 3. Training Needs Analysis & Planning (PLN) — new module
 
@@ -460,6 +461,6 @@
 | D6 | Keep the Next.js / Supabase / Vercel stack for in-country deployments? | Keep + self-host variant · Change | **Decided: Next.js + Supabase, self-hostable**, for the whole HR Suite (30 Sep 2026) |
 | D7 | Product name | ENTLAQA TMS · Jadarat TMS · new | **Decided: Jadarat TMS** (30 Sep 2026) |
 
-## Suggested R1 (MVP) Cut — 96 features
+## Suggested R1 (MVP) Cut — 97 features
 
-ADM-01, 02, 04, 05, 07, 11, 13, 14, 17 · IAM-01…05, 07, 12, 13 · PLN-01 · CAT-01…03, 05, 06, 10 · SCH-01…03, 05, 07, 08 · RES-01…03, 07 · INS-01…05 · ENR-01…03, 13 · LOG-01, 02 · ATT-01…04, 09, 11 · ASM-01, 02, 04, 05, 08 · CRT-01…08 · LRN-01, 03, 04, 07, 08 · MGR-01…04 · FIN-03 · NTF-01, 02, 07, 08 · RPT-01, 02 · REG-01 · AUD-01, 05 · SUB-01 · LMS-01…03, 05…07, 10 · DEP-01, 05 · STE-01, 02, 08
+ADM-01, 02, 04, 05, 07, 11, 13, 14, 17 · IAM-01…05, 07, 12, 13, 16 · PLN-01 · CAT-01…03, 05, 06, 10 · SCH-01…03, 05, 07, 08 · RES-01…03, 07 · INS-01…05 · ENR-01…03, 13 · LOG-01, 02 · ATT-01…04, 09, 11 · ASM-01, 02, 04, 05, 08 · CRT-01…08 · LRN-01, 03, 04, 07, 08 · MGR-01…04 · FIN-03 · NTF-01, 02, 07, 08 · RPT-01, 02 · REG-01 · AUD-01, 05 · SUB-01 · LMS-01…03, 05…07, 10 · DEP-01, 05 · STE-01, 02, 08

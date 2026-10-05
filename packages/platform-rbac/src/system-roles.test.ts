@@ -30,6 +30,13 @@ describe('system roles (FR-IAM-07, BRD Appendix B)', () => {
     expect(seededRoles()).toEqual(
       SYSTEM_ROLES.map((r) => ({ code: r.code, privileged: r.privileged })),
     );
+    // Only the seed migration may write ref_roles; a later change must extend this test.
+    const writers = readdirSync(migrationsDir).filter((f) =>
+      /(insert into|update|delete from)\s+platform\.ref_roles/i.test(
+        readFileSync(join(migrationsDir, f), 'utf8'),
+      ),
+    );
+    expect(writers).toEqual(['20261005100000_platform__create_ref_roles.sql']);
   });
 
   it('marks exactly the roles only an Organization Admin may give as privileged (PO, 5 Oct 2026)', () => {
@@ -37,8 +44,30 @@ describe('system roles (FR-IAM-07, BRD Appendix B)', () => {
       'tenant_admin',
       'hr_manager',
       'finance_manager',
+      'compliance_officer',
       'auditor',
     ]);
+  });
+
+  it('keeps sensitive permissions out of every role an HR Manager may give', () => {
+    const sensitive = [
+      'platform.user.invite',
+      'platform.user.update',
+      'platform.user.deactivate',
+      'platform.role.assign',
+      'platform.role.assign_privileged',
+      'platform.tenant.read',
+      'platform.tenant.manage',
+      'platform.security.manage',
+      'platform.audit.read',
+    ];
+    for (const role of SYSTEM_ROLES.filter((r) => !r.privileged)) {
+      for (const grant of role.grants) {
+        expect(sensitive, `${role.code} grants ${grant.permission.code}`).not.toContain(
+          grant.permission.code,
+        );
+      }
+    }
   });
 
   it('names every role in Arabic and English and grants only registered permissions', () => {

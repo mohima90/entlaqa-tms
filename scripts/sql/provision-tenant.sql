@@ -75,7 +75,22 @@ begin
   select status into v_status from platform.tenant_memberships
   where tenant_id = v_tenant and user_id = v_user;
   if v_status = 'active' then
-    raise notice 'provision: the user is already an active member; nothing to do';
+    -- Recovery path: an organization left without an Organization Admin gets one back (idempotent).
+    insert into platform.role_assignments (tenant_id, membership_id, role_code, is_primary)
+    select m.tenant_id, m.id, 'tenant_admin',
+           not exists (select 1 from platform.role_assignments p
+                       where p.tenant_id = m.tenant_id and p.membership_id = m.id and p.is_primary)
+    from platform.tenant_memberships m
+    where m.tenant_id = v_tenant and m.user_id = v_user
+    on conflict (tenant_id, membership_id, role_code) do nothing;
+    if found then
+      insert into platform.audit_events (tenant_id, action, entity_type, entity_id, data)
+      values (v_tenant, 'platform.tenant.admin_role_restored', 'tenant_membership', v_user::text,
+              jsonb_build_object('source', 'ops.provision_tenant'));
+      raise notice 'provision: the user is an active member; the Organization Admin role was given back';
+    else
+      raise notice 'provision: the user is already an active Organization Admin; nothing to do';
+    end if;
     return;
   elsif v_status is not null then
     raise exception 'provision: the user already has a % membership in this organization; change it in the application', v_status;

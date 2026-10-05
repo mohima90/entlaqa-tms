@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Grant } from './authorize';
-import { canAssignRole, grantsForAssignments } from './role-grants';
+import { type RoleAssignment, canAssignRole, grantsForAssignments } from './role-grants';
 
 const none = { headedDepartmentIds: [] };
 
@@ -15,6 +14,7 @@ describe('grantsForAssignments', () => {
     ).toEqual([
       { permission: 'platform.user.read', scope: { type: 'own' } },
       { permission: 'platform.user.read', scope: { type: 'direct_reports' }, validUntil: until },
+      { permission: 'platform.role.read', scope: { type: 'direct_reports' }, validUntil: until },
       { permission: 'platform.org.read', scope: { type: 'tenant' }, validUntil: until },
     ]);
   });
@@ -42,40 +42,67 @@ describe('grantsForAssignments', () => {
 });
 
 describe('canAssignRole (ADR 0003 §5, PO decision 5 Oct 2026)', () => {
-  const grantsOf = (...roleCodes: string[]): Grant[] =>
-    grantsForAssignments(
-      roleCodes.map((roleCode) => ({ roleCode })),
-      none,
-    );
+  const subjectOf = (aal: 'aal1' | 'aal2', ...assignments: RoleAssignment[]) => ({
+    tenantId: 't',
+    personId: 'p',
+    aal,
+    grants: grantsForAssignments(assignments, none),
+  });
 
-  it('lets an Organization Admin give every role', () => {
-    const admin = grantsOf('tenant_admin');
-    for (const code of ['tenant_admin', 'hr_manager', 'auditor', 'learner', 'line_manager']) {
+  it('lets an Organization Admin at AAL2 give every role', () => {
+    const admin = subjectOf('aal2', { roleCode: 'tenant_admin' });
+    for (const code of ['tenant_admin', 'hr_manager', 'auditor', 'compliance_officer', 'learner']) {
       expect(canAssignRole(admin, code)).toBe(true);
     }
   });
 
-  it('lets an HR Manager give ordinary roles only', () => {
-    const hr = grantsOf('hr_manager', 'learner');
-    expect(canAssignRole(hr, 'learner')).toBe(true);
-    expect(canAssignRole(hr, 'training_coordinator')).toBe(true);
-    expect(canAssignRole(hr, 'department_head')).toBe(true);
-    expect(canAssignRole(hr, 'tenant_admin')).toBe(false);
-    expect(canAssignRole(hr, 'hr_manager')).toBe(false);
-    expect(canAssignRole(hr, 'auditor')).toBe(false);
+  it('needs the AAL2 step-up for privileged roles, not for ordinary ones', () => {
+    const admin = subjectOf('aal1', { roleCode: 'tenant_admin' });
+    expect(canAssignRole(admin, 'hr_manager')).toBe(false);
+    expect(canAssignRole(admin, 'learner')).toBe(true);
   });
 
-  it('refuses a role whose permissions the actor does not hold tenant-wide (no escalation)', () => {
-    const hrWithoutTenantRead: Grant[] = grantsOf('hr_manager').filter(
-      (g) => g.permission !== 'platform.org.read',
-    );
-    expect(canAssignRole(hrWithoutTenantRead, 'training_manager')).toBe(false);
-    expect(canAssignRole(grantsOf('hr_manager'), 'compliance_officer')).toBe(false); // audit.read
+  it('lets an HR Manager give every non-privileged role, and no privileged one', () => {
+    const hr = subjectOf('aal2', { roleCode: 'hr_manager' }, { roleCode: 'learner' });
+    for (const code of [
+      'learner',
+      'training_manager',
+      'training_coordinator',
+      'department_head',
+      'mentor',
+    ]) {
+      expect(canAssignRole(hr, code)).toBe(true);
+    }
+    for (const code of [
+      'tenant_admin',
+      'hr_manager',
+      'finance_manager',
+      'compliance_officer',
+      'auditor',
+    ]) {
+      expect(canAssignRole(hr, code)).toBe(false);
+    }
+  });
+
+  it('ignores expired or not-yet-valid roles of the actor', () => {
+    const now = new Date('2026-10-05T12:00:00Z');
+    const expired = subjectOf('aal2', {
+      roleCode: 'tenant_admin',
+      validUntil: new Date('2026-10-01T00:00:00Z'),
+    });
+    expect(canAssignRole(expired, 'learner', now)).toBe(false);
+    const future = subjectOf('aal2', {
+      roleCode: 'hr_manager',
+      validFrom: new Date('2026-11-01T00:00:00Z'),
+    });
+    expect(canAssignRole(future, 'learner', now)).toBe(false);
   });
 
   it('refuses members without a role-management permission and unknown roles', () => {
-    expect(canAssignRole(grantsOf('learner', 'line_manager'), 'learner')).toBe(false);
-    expect(canAssignRole(grantsOf('tenant_admin'), 'platform_super_admin')).toBe(false);
-    expect(canAssignRole([], 'learner')).toBe(false);
+    const plain = subjectOf('aal2', { roleCode: 'learner' }, { roleCode: 'line_manager' });
+    expect(canAssignRole(plain, 'learner')).toBe(false);
+    expect(
+      canAssignRole(subjectOf('aal2', { roleCode: 'tenant_admin' }), 'platform_super_admin'),
+    ).toBe(false);
   });
 });

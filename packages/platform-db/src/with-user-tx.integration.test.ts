@@ -111,6 +111,10 @@ describe.skipIf(!configured)('withUserTx / withSystemTx against PostgreSQL', () 
     await owner`insert into platform.tenant_memberships (tenant_id, user_id, person_id, status) values
       (${ids.tenantA}, ${ids.user}, ${ids.personA}, 'active'),
       (${ids.tenantB}, ${ids.userB}, ${ids.personUserB}, 'active')`;
+    // The user manages people in tenant A (HR Manager): invitations are limited to user managers (T-M2-03).
+    await owner`insert into platform.role_assignments (tenant_id, membership_id, role_code, is_primary)
+      select tenant_id, id, 'hr_manager', true from platform.tenant_memberships
+      where tenant_id = ${ids.tenantA} and user_id = ${ids.user}`;
     await owner`insert into platform.session_context (session_id, user_id, active_tenant_id) values
       (${ids.session}, ${ids.user}, ${ids.tenantA}), (${ids.sessionB}, ${ids.userB}, ${ids.tenantB})`;
   });
@@ -148,7 +152,7 @@ describe.skipIf(!configured)('withUserTx / withSystemTx against PostgreSQL', () 
     );
   });
 
-  it('members can invite but cannot create active memberships (42501)', async () => {
+  it('user managers can invite but cannot create active memberships (42501)', async () => {
     await expectSqlState(
       withUserTx(claimsFor(ids.tenantA), (tx) =>
         tx.insert(tenantMemberships).values({
@@ -309,7 +313,7 @@ describe.skipIf(!configured)('withUserTx / withSystemTx against PostgreSQL', () 
     await owner`insert into platform.departments (id, tenant_id, code, name_ar, head_person_id)
       values (${department}, ${ids.tenantA}, ${`D-${department.slice(0, 8)}`}, 'قسم', ${ids.personA})`;
     await owner`insert into platform.role_assignments (tenant_id, membership_id, role_code, is_primary, valid_until)
-      select tenant_id, id, r.code, r.code = 'department_head', r.until
+      select tenant_id, id, r.code, false, r.until
       from platform.tenant_memberships,
            (values ('department_head', null::timestamptz), ('learner', '2030-01-01T00:00:00Z'::timestamptz)) as r (code, until)
       where user_id = ${ids.user} and tenant_id = ${ids.tenantA}`;
@@ -320,6 +324,7 @@ describe.skipIf(!configured)('withUserTx / withSystemTx against PostgreSQL', () 
     expect(facts).toEqual({
       roles: [
         { roleCode: 'department_head', validFrom: null, validUntil: null },
+        { roleCode: 'hr_manager', validFrom: null, validUntil: null },
         { roleCode: 'learner', validFrom: null, validUntil: new Date('2030-01-01T00:00:00Z') },
       ],
       headedDepartmentIds: [department],

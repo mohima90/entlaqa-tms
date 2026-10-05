@@ -141,6 +141,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 3. Optional: upgrade Supabase org `entlaqa-TMS` to Pro (no pausing, backups) before customer trials.
 4. Soon (T-M2-06): choose the e-mail sending service for the cloud version (Claude will explain the options and costs in one message).
 5. When the first real journeys work: pick 5–8 ENTLAQA staff who did not work on the BRD to try the real product (Claude prepares the sessions).
+6. Before the next **DB deploy** (it carries T-M2-01…03): Claude first runs the deploy **plan** with you; the roles backfill makes every active member without a role an Organization Admin — on staging that should only be your own account (all memberships came from provisioning).
 
 **Security decisions for M2 (from TM-0002…0006, 3 Oct 2026)** — needed before the related M2 stories start; Claude will bring them one at a time:
 1. Always require an authenticator code for high-risk actions (role changes, exports), even when an organization turns MFA off? (TM-0003 D-IAM-01; recommended: yes)
@@ -176,6 +177,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
+| 5 Oct 2026 | T-M2-03 review: request changes (1 High: suspending/removing members was not limited by role; 4 Medium) → fixed with tests (membership guard, admin roles with end dates do not count, system jobs never touch privileged roles, `canAssignRole` via `authorize()` incl. AAL2; Compliance Officer made privileged so HR can give every other role, consistent app ↔ database); re-review next |
 | 5 Oct 2026 | T-M2-03 built: 14 system roles with their permissions, role assignments (one primary + extras), database guard for who may give which role (PO decision), at least one Organization Admin kept, grants now loaded on every action; database, integration and unit tests pass; review next |
 | 5 Oct 2026 | PR #30 merged (T-M2-02 person profile). PO closed Dependabot #29 (PostgreSQL 18); majors now ignored. PO decided who manages users & roles (HR Manager: ordinary roles; Organization Admin: privileged roles). T-M2-03 (roles) started |
 | 5 Oct 2026 | PR #28 merged (T-M2-01 branches + departments; approved screens + M2 plan). T-M2-02 built: person profile fields (Arabic/English name parts, mobile, locale, nationality) and placement table (branch, department, job title, direct manager with no loops); all database tests + hosted simulation pass; independent review (2 Medium + 7 Low fixed) → **approve** |

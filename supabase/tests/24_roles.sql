@@ -82,27 +82,75 @@ begin
 end $$;
 rollback;
 
--- The last active Organization Admin cannot be suspended or lose the role; a second admin makes it possible.
+-- The last active Organization Admin is kept: an admin role with an end date does not count, so end
+-- dates cannot be used to leave the organization without an admin later (T-IAM-38).
+begin;
+set local role authenticated;
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
+  'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1'));
+insert into platform.role_assignments (membership_id, role_code, valid_until)
+select id, 'tenant_admin', now() + interval '1 hour' from platform.tenant_memberships
+where user_id = '00000000-0000-4000-8000-0000000000ab' and tenant_id = 'a0000000-0000-4000-8000-000000000001';
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000ab', '10000000-0000-4000-8000-0000000000ab',
+  'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000ab'));
+do $$
+declare
+  v_admin uuid := (select id from platform.tenant_memberships where user_id = '00000000-0000-4000-8000-0000000000a1' and tenant_id = 'a0000000-0000-4000-8000-000000000001');
+begin
+  perform tests.assert_fails(format($q$update platform.role_assignments set valid_until = now() + interval '1 hour' where membership_id = %L and role_code = 'tenant_admin'$q$, v_admin),
+    array['23514'], 'last admin: the only open-ended admin role cannot get an end date');
+  perform tests.assert_fails(format($q$delete from platform.role_assignments where membership_id = %L and role_code = 'tenant_admin'$q$, v_admin),
+    array['23514'], 'last admin: the only open-ended admin role cannot be removed');
+  perform tests.assert_fails(format($q$update platform.tenant_memberships set status = 'suspended' where id = %L$q$, v_admin),
+    array['23514'], 'last admin: the only open-ended admin cannot be suspended');
+end $$;
+rollback;
+
+-- Membership changes (invite, suspend, revoke) follow the same rules as roles (T-IAM-35).
 begin;
 set local role authenticated;
 select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000ab', '10000000-0000-4000-8000-0000000000ab',
   'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000ab'));
 do $$
 begin
-  perform tests.assert_fails($q$update platform.tenant_memberships set status = 'suspended' where user_id = '00000000-0000-4000-8000-0000000000a1' and tenant_id = 'a0000000-0000-4000-8000-000000000001'$q$,
-    array['23514'], 'last admin: the only Organization Admin cannot be suspended');
+  perform tests.assert_fails_like($q$update platform.tenant_memberships set status = 'suspended' where user_id = '00000000-0000-4000-8000-0000000000a1' and tenant_id = 'a0000000-0000-4000-8000-000000000001'$q$,
+    'only an Organization Admin can change a member who holds a privileged role', 'HR: cannot suspend an Organization Admin');
+  perform tests.assert_fails_like($q$update platform.tenant_memberships set status = 'suspended' where user_id = '00000000-0000-4000-8000-0000000000ab' and tenant_id = 'a0000000-0000-4000-8000-000000000001'$q$,
+    'members cannot change their own membership', 'HR: cannot change their own membership');
+  perform tests.assert_eq(tests.rows_affected($q$update platform.tenant_memberships set status = 'revoked' where user_id = '00000000-0000-4000-8000-0000000000a2' and tenant_id = 'a0000000-0000-4000-8000-000000000001'$q$),
+    1::bigint, 'HR: can revoke an ordinary member''s invitation');
+  perform tests.assert_fails_like($q$insert into platform.role_assignments (membership_id, role_code, is_primary) select id, 'tenant_admin', false from platform.tenant_memberships where user_id = '00000000-0000-4000-8000-0000000000a1' and tenant_id = 'a0000000-0000-4000-8000-000000000001' on conflict (tenant_id, membership_id, role_code) do update set is_primary = false$q$,
+    'only an Organization Admin can give or remove the role tenant_admin', 'HR: upsert onto an admin row is refused too');
 end $$;
+rollback;
+
+begin;
+set local role authenticated;
 select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
   'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1'));
-insert into platform.role_assignments (membership_id, role_code)
-select id, 'tenant_admin' from platform.tenant_memberships where user_id = '00000000-0000-4000-8000-0000000000ab' and tenant_id = 'a0000000-0000-4000-8000-000000000001';
+delete from platform.role_assignments
+ where role_code = 'hr_manager'
+   and membership_id = (select id from platform.tenant_memberships where user_id = '00000000-0000-4000-8000-0000000000ab' and tenant_id = 'a0000000-0000-4000-8000-000000000001');
 select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000ab', '10000000-0000-4000-8000-0000000000ab',
   'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000ab'));
 do $$
 begin
-  perform tests.assert_eq(tests.rows_affected($q$delete from platform.role_assignments where role_code = 'tenant_admin' and membership_id = (select id from platform.tenant_memberships where user_id = '00000000-0000-4000-8000-0000000000a1' and tenant_id = 'a0000000-0000-4000-8000-000000000001')$q$),
-    1::bigint, 'with a second admin, the first one''s admin role can be removed');
-  perform tests.assert(private.tenant_has_admin('a0000000-0000-4000-8000-000000000001'), 'one admin remains');
+  perform tests.assert_fails_like($q$update platform.tenant_memberships set status = 'revoked' where user_id = '00000000-0000-4000-8000-0000000000a2' and tenant_id = 'a0000000-0000-4000-8000-000000000001'$q$,
+    'only an Organization Admin or an HR Manager can invite or change members', 'learner: cannot revoke members');
+  perform tests.assert_fails_like($q$insert into platform.tenant_memberships (user_id, person_id) values ('00000000-0000-4000-8000-0000000000e1', 'a1000000-0000-4000-8000-0000000000a3')$q$,
+    'only an Organization Admin or an HR Manager can invite or change members', 'learner: cannot invite');
+end $$;
+rollback;
+
+-- Guards refuse other isolation levels (the per-tenant lock relies on READ COMMITTED).
+begin isolation level repeatable read;
+set local role authenticated;
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
+  'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1'));
+do $$
+begin
+  perform tests.assert_fails($q$insert into platform.role_assignments (membership_id, role_code) select id, 'mentor' from platform.tenant_memberships where user_id = '00000000-0000-4000-8000-0000000000a2' and tenant_id = 'a0000000-0000-4000-8000-000000000001'$q$,
+    array['0A000'], 'role changes are refused outside READ COMMITTED');
 end $$;
 rollback;
 
@@ -114,7 +162,7 @@ begin
   perform tests.assert_eq(
     (select array_agg(tgname::text order by tgname::text) from pg_trigger where tgrelid = 'platform.role_assignments'::regclass and not tgisinternal),
     array['role_assignments_guard', 'role_assignments_keep_admin', 'role_assignments_stamp_row'], 'role_assignments: triggers');
-  perform tests.assert((select prosrc ilike '%pg_advisory_xact_lock%' from pg_proc where oid = 'private.check_role_assignment_actor()'::regprocedure),
+  perform tests.assert((select prosrc ilike '%pg_advisory_xact_lock%' from pg_proc where oid = 'private.lock_tenant_roles(uuid)'::regprocedure),
     'role changes are serialised per tenant');
 end $$;
 rollback;

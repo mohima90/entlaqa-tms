@@ -46,7 +46,9 @@ export interface SystemRoleDefinition {
   readonly description: LocalizedText;
   /**
    * Privileged roles can be given or removed only by an Organization Admin (permission
-   * `platform.role.assign_privileged`, AAL2) — PO decision 5 Oct 2026 (TM-0003 D-IAM-03).
+   * `platform.role.assign_privileged`, AAL2) — PO decision 5 Oct 2026 (TM-0003 D-IAM-03). A role is
+   * privileged when it manages users or roles, sees finance, the audit log, or organization/security
+   * settings (tested in system-roles.test.ts); every other role an HR Manager may give.
    */
   readonly privileged: boolean;
   readonly grants: readonly RoleGrantDefinition[];
@@ -56,7 +58,11 @@ const p = platformPermissions;
 const tenantWide = (...permissions: PermissionDefinition[]): RoleGrantDefinition[] =>
   permissions.map((permission) => ({ permission, scope: 'tenant' }));
 
-/** Platform grants per role, from BRD Appendix B rows "Tenant settings", "Users & roles", "Audit log". */
+/**
+ * Platform grants per role, from BRD Appendix B rows "Tenant settings", "Users & roles", "Audit log".
+ * `platform.org.read` (branch and department names) is not a row of the matrix; every role that sees
+ * people also sees where they sit.
+ */
 export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
   {
     code: 'tenant_admin',
@@ -123,7 +129,8 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
       ar: 'لوحات الامتثال والتقارير التنظيمية، وعرض سجل التدقيق.',
       en: 'Compliance dashboards and regulatory reports; reads the audit log.',
     },
-    privileged: false,
+    // Reads the audit log (like the Auditor): privileged.
+    privileged: true,
     grants: tenantWide(
       p['platform.user.read'],
       p['platform.role.read'],
@@ -141,6 +148,7 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
     privileged: false,
     grants: [
       { permission: p['platform.user.read'], scope: 'headed_departments' },
+      { permission: p['platform.role.read'], scope: 'headed_departments' },
       { permission: p['platform.org.read'], scope: 'tenant' },
     ],
   },
@@ -154,6 +162,7 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
     privileged: false,
     grants: [
       { permission: p['platform.user.read'], scope: 'direct_reports' },
+      { permission: p['platform.role.read'], scope: 'direct_reports' },
       { permission: p['platform.org.read'], scope: 'tenant' },
     ],
   },

@@ -2,8 +2,9 @@
 -- supabase/tests/00_helpers_and_fixtures.sql). The 14 tenant roles of BRD Appendix B; Platform Super
 -- Admin is not a tenant role (ADR 0003 §6). Names and grants live in code
 -- (packages/platform-rbac/src/system-roles.ts); this table holds the codes that role assignments
--- reference and the `is_privileged` flag the database guard uses. An integration test fails when it
--- drifts from the code. PII: none.
+-- reference and the `is_privileged` flag the database guard uses. A unit test
+-- (packages/platform-rbac/src/system-roles.test.ts) fails when this seed drifts from the code and when
+-- a later migration changes ref_roles without updating that test. PII: none.
 
 create table platform.ref_roles (
   code text primary key check (code ~ '^[a-z][a-z_]{1,39}$'),
@@ -19,7 +20,7 @@ insert into platform.ref_roles (code, is_privileged, sort_order) values
   ('training_coordinator', false, 3),
   ('hr_manager', true, 4),
   ('finance_manager', true, 5),
-  ('compliance_officer', false, 6),
+  ('compliance_officer', true, 6),
   ('department_head', false, 7),
   ('line_manager', false, 8),
   ('internal_instructor', false, 9),

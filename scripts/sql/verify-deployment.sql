@@ -163,8 +163,10 @@ begin
     --    `<tenant column> = (select private.current_tenant_id())` (normalized; same rule as 10_catalog.sql,
     --    so `… or true` fails).
     if r.t::text = any (global_tables) then
-      if has_table_privilege('authenticated', r.t, 'insert, update, delete, truncate') then
-        failures := failures || format('%s: global table must be read-only for authenticated', r.t);
+      if has_table_privilege('authenticated', r.t, 'insert, update, delete, truncate, references, trigger')
+         or has_any_column_privilege('authenticated', r.t, 'insert, update, references')
+         or exists (select 1 from pg_policy p where p.polrelid = r.t and p.polcmd <> 'r') then
+        failures := failures || format('%s: global table must be read-only for authenticated (grants and policies)', r.t);
       end if;
     elsif r.nspname <> 'private' and not exists (
       select 1 from pg_policy p

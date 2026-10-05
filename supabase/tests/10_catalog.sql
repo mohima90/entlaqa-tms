@@ -50,12 +50,24 @@ begin
   end loop;
 end $$;
 
--- Global tables on the allow-list still need RLS (checked above) — and must exist.
+-- Global tables on the allow-list still need RLS (checked above) — and must exist. They are read-only
+-- for authenticated: no write privileges (table or column level) and only SELECT policies.
 do $$
+declare
+  r record;
 begin
   perform tests.assert(
     (select count(*) from tests.tenant_tables()) >= 6,
     'expected at least the 6 platform tenancy tables to be tenant-owned');
+  for r in select table_name as t from tests.global_tables() loop
+    perform tests.assert(
+      not has_table_privilege('authenticated', r.t, 'insert, update, delete, truncate, references, trigger')
+        and not has_any_column_privilege('authenticated', r.t, 'insert, update, references'),
+      format('%s: global table must be read-only for authenticated', r.t));
+    perform tests.assert(
+      not exists (select 1 from pg_policy p where p.polrelid = r.t and p.polcmd <> 'r'),
+      format('%s: global table may only have SELECT policies', r.t));
+  end loop;
 end $$;
 
 -- No privileges for anon or PUBLIC on any table in module schemas.

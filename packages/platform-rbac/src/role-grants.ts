@@ -1,4 +1,6 @@
-import type { Grant } from './authorize';
+import { type AuthorizationSubject, type Grant, authorize } from './authorize';
+import type { PermissionDefinition } from './permissions';
+import { platformPermissions } from './platform-permissions';
 import type { DataScope } from './scopes';
 import { type RoleScope, getSystemRole, isSystemRoleCode } from './system-roles';
 
@@ -60,25 +62,23 @@ export function grantsForAssignments(
 }
 
 /**
- * May an actor holding `actorGrants` give or remove `roleCode`? (ADR 0003 §5, PO decision 5 Oct 2026)
- * - privileged roles need `platform.role.assign_privileged`; others need `platform.role.assign` (or
- *   the privileged permission, which includes it);
- * - the actor must hold, tenant-wide, every permission the role grants (no escalation);
- * - never on the actor's own membership (checked by the caller with the target membership, and again
- *   in the database).
- * The AAL2 requirement of the privileged permission is enforced by defineAction / authorize().
+ * May the actor give or remove `roleCode`? (ADR 0003 §5, PO decision 5 Oct 2026)
+ * - privileged roles need `platform.role.assign_privileged` (high risk: AAL2), other roles
+ *   `platform.role.assign` or the privileged permission — both tenant-wide and active now, checked
+ *   with authorize() so validity windows and the AAL step-up apply exactly as in defineAction;
+ * - never on the actor's own membership (checked by the caller, and again in the database).
+ * The PO decision replaces ADR 0003 §5's "only roles whose permissions the assigner holds": an HR
+ * Manager gives every non-privileged role; what makes a role powerful is its `privileged` flag.
  */
-export function canAssignRole(actorGrants: readonly Grant[], roleCode: string): boolean {
+export function canAssignRole(
+  subject: AuthorizationSubject,
+  roleCode: string,
+  now: Date = new Date(),
+): boolean {
   if (!isSystemRoleCode(roleCode)) return false;
   const role = getSystemRole(roleCode);
-  const tenantWide = new Set(
-    actorGrants.filter((g) => g.scope.type === 'tenant').map((g) => g.permission),
-  );
-  const needed = role.privileged
-    ? 'platform.role.assign_privileged'
-    : tenantWide.has('platform.role.assign_privileged')
-      ? 'platform.role.assign_privileged'
-      : 'platform.role.assign';
-  if (!tenantWide.has(needed)) return false;
-  return role.grants.every((g) => tenantWide.has(g.permission.code));
+  const allowed = (permission: PermissionDefinition) =>
+    authorize(subject, permission, undefined, { now }).allowed;
+  if (allowed(platformPermissions['platform.role.assign_privileged'])) return true;
+  return !role.privileged && allowed(platformPermissions['platform.role.assign']);
 }

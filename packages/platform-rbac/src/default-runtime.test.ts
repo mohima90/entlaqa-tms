@@ -55,12 +55,21 @@ describe('default defineAction runtime', () => {
         validUntil: new Date('2027-01-01T00:00:00Z'),
       },
       {
+        permission: 'platform.role.read',
+        scope: { type: 'direct_reports' },
+        validUntil: new Date('2027-01-01T00:00:00Z'),
+      },
+      {
         permission: 'platform.org.read',
         scope: { type: 'tenant' },
         validUntil: new Date('2027-01-01T00:00:00Z'),
       },
       {
         permission: 'platform.user.read',
+        scope: { type: 'org_units', orgUnitIds: ['d1'], includeDescendants: true },
+      },
+      {
+        permission: 'platform.role.read',
         scope: { type: 'org_units', orgUnitIds: ['d1'], includeDescendants: true },
       },
       { permission: 'platform.org.read', scope: { type: 'tenant' } },

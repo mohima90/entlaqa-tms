@@ -3,6 +3,7 @@ import { defaultActionRuntime } from './default-runtime';
 import { createDefineAction } from './define-action';
 import { createDefinePublicAction } from './define-public-action';
 import { createDefinePublicRoute } from './define-public-route';
+import { createDefineQuery } from './define-query';
 
 export * from './permissions';
 export * from './scopes';
@@ -10,6 +11,7 @@ export * from './authorize';
 export * from './platform-permissions';
 export * from './system-roles';
 export * from './role-grants';
+export * from './person-scope';
 export {
   type ActionContext,
   type ActionDefinition,
@@ -36,6 +38,11 @@ export {
   DEFINE_PUBLIC_ROUTE_MARKER,
   createDefinePublicRoute,
 } from './define-public-route';
+
+export { type AuthorizedQuery, type QueryDefinition, createDefineQuery } from './define-query';
+
+/** Authorized reads for server components and routes (same checks as defineAction, no audit). */
+export const defineQuery = createDefineQuery(defaultActionRuntime);
 
 /** The one way to declare a server action (ADR 0003 §4). */
 export const defineAction = createDefineAction(defaultActionRuntime);

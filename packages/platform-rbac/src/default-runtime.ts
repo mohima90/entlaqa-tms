@@ -2,7 +2,10 @@ import 'server-only';
 import { type UserTx } from '@jadarat/platform-db';
 import { reportError } from '@jadarat/platform-observability';
 import type { ActionRuntime } from './define-action';
+import { personResourceAttributes } from './person-scope';
 import { grantsForAssignments } from './role-grants';
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Production runtime for defineAction: verified claims from the request cookies (platform-identity)
@@ -35,9 +38,14 @@ export const defaultActionRuntime: ActionRuntime<UserTx> = {
       { headedDepartmentIds: facts.headedDepartmentIds },
     );
   },
-  // TODO(M2): modules register resource resolvers by type. Until then → not found (deny by default).
-  resolveResource() {
-    return Promise.resolve(null);
+  // Resource attributes for scope checks (ADR 0003 §4). Platform types are resolved here; module
+  // resolvers register by type as modules gain resources (TODO with the first module resource).
+  // Unknown types → not found (deny by default).
+  async resolveResource(tx, ref) {
+    if (ref.type !== 'person' || !UUID_RE.test(ref.id)) return null;
+    const { loadPersonResourceFacts } = await import('@jadarat/platform-db');
+    const facts = await loadPersonResourceFacts(tx, ref.id);
+    return facts ? personResourceAttributes(facts) : null;
   },
   async writeAudit(tx, actor, record) {
     const { insertAuditEvent } = await import('@jadarat/platform-db');

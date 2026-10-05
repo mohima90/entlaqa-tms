@@ -147,8 +147,12 @@ $$;
 create or replace function tests.global_tables()
 returns table (table_name regclass)
 language sql stable as $$
-  select null::regclass where false
-  -- union all select 'platform.countries'::regclass
+  -- Looked up in the catalog (a ::regclass cast would need USAGE on the schema for app_server).
+  select c.oid::regclass
+  from pg_class c join pg_namespace n on n.oid = c.relnamespace
+  where (n.nspname, c.relname) in (
+    ('platform', 'ref_roles')  -- system role codes (T-M2-03): no tenant data
+  )
 $$;
 
 -- Tenant-owned tables in module/platform schemas and the column that carries the tenant.
@@ -263,3 +267,16 @@ insert into platform.person_employment (tenant_id, person_id, branch_id, departm
   ('a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1', 'a2000000-0000-4000-8000-000000000001', 'a3000000-0000-4000-8000-000000000001', 'مدير التدريب', null),
   ('a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000ab', 'a2000000-0000-4000-8000-000000000001', 'a3000000-0000-4000-8000-000000000002', 'منسق التدريب', 'a1000000-0000-4000-8000-0000000000a1'),
   ('b0000000-0000-4000-8000-000000000001', 'b1000000-0000-4000-8000-0000000000b1', 'b2000000-0000-4000-8000-000000000001', 'b3000000-0000-4000-8000-000000000001', 'مدير', null);
+
+-- Roles (T-M2-03): uA is the Organization Admin of A, uAB an HR Manager (+ learner) in A, uInv a learner;
+-- uB the Organization Admin of B.
+insert into platform.role_assignments (tenant_id, membership_id, role_code, is_primary)
+select m.tenant_id, m.id, r.role_code, r.is_primary
+from (values
+  ('a0000000-0000-4000-8000-000000000001'::uuid, '00000000-0000-4000-8000-0000000000a1'::uuid, 'tenant_admin', true),
+  ('a0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-0000000000ab', 'hr_manager', true),
+  ('a0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-0000000000ab', 'learner', false),
+  ('a0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-0000000000a2', 'learner', true),
+  ('b0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-0000000000b1', 'tenant_admin', true)
+) as r (tenant_id, user_id, role_code, is_primary)
+join platform.tenant_memberships m on m.tenant_id = r.tenant_id and m.user_id = r.user_id;

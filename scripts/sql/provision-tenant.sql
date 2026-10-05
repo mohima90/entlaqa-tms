@@ -35,6 +35,7 @@ declare
   v_user uuid;
   v_tenant uuid;
   v_person uuid;
+  v_membership uuid;
   v_status text;
   v_tenant_created boolean := false;
 begin
@@ -74,7 +75,26 @@ begin
   select status into v_status from platform.tenant_memberships
   where tenant_id = v_tenant and user_id = v_user;
   if v_status = 'active' then
-    raise notice 'provision: the user is already an active member; nothing to do';
+    -- Recovery path: an organization left without an Organization Admin gets one back (idempotent).
+    insert into platform.role_assignments (tenant_id, membership_id, role_code, is_primary)
+    select m.tenant_id, m.id, 'tenant_admin',
+           not exists (select 1 from platform.role_assignments p
+                       where p.tenant_id = m.tenant_id and p.membership_id = m.id and p.is_primary)
+    from platform.tenant_memberships m
+    where m.tenant_id = v_tenant and m.user_id = v_user
+    -- An existing admin row with an end or start date does not count (private.tenant_has_admin):
+    -- make it open-ended.
+    on conflict (tenant_id, membership_id, role_code) do update
+      set valid_from = null, valid_until = null
+      where platform.role_assignments.valid_from is not null or platform.role_assignments.valid_until is not null;
+    if found then
+      insert into platform.audit_events (tenant_id, action, entity_type, entity_id, data)
+      values (v_tenant, 'platform.tenant.admin_role_restored', 'tenant_membership', v_user::text,
+              jsonb_build_object('source', 'ops.provision_tenant'));
+      raise notice 'provision: the user is an active member; the Organization Admin role was given back';
+    else
+      raise notice 'provision: the user is already an active Organization Admin; nothing to do';
+    end if;
     return;
   elsif v_status is not null then
     raise exception 'provision: the user already has a % membership in this organization; change it in the application', v_status;
@@ -86,10 +106,15 @@ begin
 
   begin
     insert into platform.tenant_memberships (tenant_id, user_id, person_id, status)
-    values (v_tenant, v_user, v_person, 'active');
+    values (v_tenant, v_user, v_person, 'active')
+    returning id into v_membership;
   exception when foreign_key_violation then
     raise exception 'provision: no Auth user with this UID (create the user in Authentication → Users first)';
   end;
+
+  -- The provisioned member is an Organization Admin (primary role, T-M2-03).
+  insert into platform.role_assignments (tenant_id, membership_id, role_code, is_primary)
+  values (v_tenant, v_membership, 'tenant_admin', true);
 
   -- System action: no actor user (ids only, no personal data).
   insert into platform.audit_events (tenant_id, action, entity_type, entity_id, data)

@@ -14,6 +14,7 @@ import { createDatabase } from './client';
 import { insertAuditEvent } from './audit';
 import { createWithSystemTx } from './jobs';
 import { auditEvents, persons, tenantMemberships } from './schema';
+import { loadMemberAuthorizationFacts } from './roles';
 import { getCurrentTenant } from './tenants';
 import { createWithUserTx, listSessionTenants, switchActiveTenant } from './with-user-tx';
 
@@ -110,6 +111,10 @@ describe.skipIf(!configured)('withUserTx / withSystemTx against PostgreSQL', () 
     await owner`insert into platform.tenant_memberships (tenant_id, user_id, person_id, status) values
       (${ids.tenantA}, ${ids.user}, ${ids.personA}, 'active'),
       (${ids.tenantB}, ${ids.userB}, ${ids.personUserB}, 'active')`;
+    // The user manages people in tenant A (HR Manager): invitations are limited to user managers (T-M2-03).
+    await owner`insert into platform.role_assignments (tenant_id, membership_id, role_code, is_primary)
+      select tenant_id, id, 'hr_manager', true from platform.tenant_memberships
+      where tenant_id = ${ids.tenantA} and user_id = ${ids.user}`;
     await owner`insert into platform.session_context (session_id, user_id, active_tenant_id) values
       (${ids.session}, ${ids.user}, ${ids.tenantA}), (${ids.sessionB}, ${ids.userB}, ${ids.tenantB})`;
   });
@@ -117,6 +122,7 @@ describe.skipIf(!configured)('withUserTx / withSystemTx against PostgreSQL', () 
   afterAll(async () => {
     // audit_events is append-only (trigger): its rows stay in the throwaway test database, so the
     // tenants they reference stay too (deleting them is not needed for isolation between runs).
+    await owner`delete from platform.departments where tenant_id in (${ids.tenantA}, ${ids.tenantB})`;
     await owner`delete from platform.session_context where user_id in (${ids.user}, ${ids.userB})`;
     await owner`delete from platform.tenant_memberships where tenant_id in (${ids.tenantA}, ${ids.tenantB})`;
     await owner`delete from platform.persons where tenant_id in (${ids.tenantA}, ${ids.tenantB})`;
@@ -146,7 +152,7 @@ describe.skipIf(!configured)('withUserTx / withSystemTx against PostgreSQL', () 
     );
   });
 
-  it('members can invite but cannot create active memberships (42501)', async () => {
+  it('user managers can invite but cannot create active memberships (42501)', async () => {
     await expectSqlState(
       withUserTx(claimsFor(ids.tenantA), (tx) =>
         tx.insert(tenantMemberships).values({
@@ -300,6 +306,34 @@ describe.skipIf(!configured)('withUserTx / withSystemTx against PostgreSQL', () 
       ),
       '42501',
     );
+  });
+
+  it("loads the member's roles and headed departments for grant loading (T-M2-03)", async () => {
+    const department = randomUUID();
+    await owner`insert into platform.departments (id, tenant_id, code, name_ar, head_person_id)
+      values (${department}, ${ids.tenantA}, ${`D-${department.slice(0, 8)}`}, 'قسم', ${ids.personA})`;
+    await owner`insert into platform.role_assignments (tenant_id, membership_id, role_code, is_primary, valid_until)
+      select tenant_id, id, r.code, false, r.until
+      from platform.tenant_memberships,
+           (values ('department_head', null::timestamptz), ('learner', '2030-01-01T00:00:00Z'::timestamptz)) as r (code, until)
+      where user_id = ${ids.user} and tenant_id = ${ids.tenantA}`;
+
+    const facts = await withUserTx(claimsFor(ids.tenantA), (tx) =>
+      loadMemberAuthorizationFacts(tx),
+    );
+    expect(facts).toEqual({
+      roles: [
+        { roleCode: 'department_head', validFrom: null, validUntil: null },
+        { roleCode: 'hr_manager', validFrom: null, validUntil: null },
+        { roleCode: 'learner', validFrom: null, validUntil: new Date('2030-01-01T00:00:00Z') },
+      ],
+      headedDepartmentIds: [department],
+    });
+    // Another member of another tenant sees none of it.
+    expect(await withUserTx(claimsForUserB(), (tx) => loadMemberAuthorizationFacts(tx))).toEqual({
+      roles: [],
+      headedDepartmentIds: [],
+    });
   });
 
   it('switchActiveTenant only switches into tenants with an active membership, for this session', async () => {

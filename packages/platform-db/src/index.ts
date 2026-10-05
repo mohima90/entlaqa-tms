@@ -16,6 +16,11 @@ export { type AuditEventInput, insertAuditEvent } from './audit';
 export { type DatabaseHealth, checkDatabase } from './health';
 export { type CurrentTenant, getCurrentTenant } from './tenants';
 export {
+  type MemberAuthorizationFacts,
+  type MemberRole,
+  loadMemberAuthorizationFacts,
+} from './roles';
+export {
   type SessionTenant,
   type UserTx,
   type WithUserTx,

@@ -17,7 +17,7 @@ begin
   where t.table_name::text not in (
     'platform.tenants', 'platform.tenant_domains', 'platform.persons',
     'platform.tenant_memberships', 'platform.session_context', 'platform.audit_events',
-    'platform.branches', 'platform.departments', 'platform.person_employment');
+    'platform.branches', 'platform.departments', 'platform.person_employment', 'platform.role_assignments');
   perform tests.assert(v_missing is null, format('isolation tests missing for: %s', v_missing));
   perform tests.assert(session_user = 'app_server', 'this file must run connected as app_server');
   select string_agg(t.table_name::text, ', ') into v_missing
@@ -169,6 +169,20 @@ begin
     0::bigint, 'person_employment: RLS filters tenant B rows');
   perform tests.assert_privilege_denied($q$delete from platform.person_employment where person_id = 'a1000000-0000-4000-8000-0000000000ab'$q$,
     'person_employment: no DELETE grant');
+
+  -- platform.role_assignments (composite FK to memberships; member and role immutable)
+  perform tests.assert_rls_violation($q$insert into platform.role_assignments (tenant_id, membership_id, role_code) select 'b0000000-0000-4000-8000-000000000001', id, 'learner' from platform.tenant_memberships where user_id = '00000000-0000-4000-8000-0000000000a2'$q$,
+    'role_assignments: insert with tenant B tenant_id is rejected by RLS');
+  perform tests.assert_fails($q$insert into platform.role_assignments (membership_id, role_code) values ('ffffffff-0000-4000-8000-000000000001', 'learner')$q$,
+    array['23503'], 'role_assignments: unknown (or tenant B) membership is rejected by the composite FK');
+  perform tests.assert_privilege_denied($q$update platform.role_assignments set tenant_id = 'b0000000-0000-4000-8000-000000000001'$q$,
+    'role_assignments: tenant_id is not updatable');
+  perform tests.assert_privilege_denied($q$update platform.role_assignments set role_code = 'tenant_admin'$q$,
+    'role_assignments: role_code is not updatable');
+  perform tests.assert_privilege_denied($q$update platform.role_assignments set membership_id = membership_id$q$,
+    'role_assignments: membership_id is not updatable');
+  perform tests.assert_eq(tests.rows_affected($q$delete from platform.role_assignments where tenant_id = 'b0000000-0000-4000-8000-000000000001'$q$),
+    0::bigint, 'role_assignments: RLS filters tenant B rows');
 
   -- platform.audit_events: append-only; tenant and actor cannot be forged.
   perform tests.assert_rls_violation($q$insert into platform.audit_events (tenant_id, actor_user_id, action) values ('b0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-0000000000a1', 'platform.test.forged')$q$,

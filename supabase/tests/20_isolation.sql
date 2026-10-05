@@ -17,7 +17,7 @@ begin
   where t.table_name::text not in (
     'platform.tenants', 'platform.tenant_domains', 'platform.persons',
     'platform.tenant_memberships', 'platform.session_context', 'platform.audit_events',
-    'platform.branches', 'platform.departments');
+    'platform.branches', 'platform.departments', 'platform.person_employment');
   perform tests.assert(v_missing is null, format('isolation tests missing for: %s', v_missing));
   perform tests.assert(session_user = 'app_server', 'this file must run connected as app_server');
   select string_agg(t.table_name::text, ', ') into v_missing
@@ -149,6 +149,26 @@ begin
     array['23503', '23514'], 'departments: a tenant B person cannot be head (refs trigger, then composite FK)');
   perform tests.assert_privilege_denied($q$delete from platform.departments where id = 'a3000000-0000-4000-8000-000000000003'$q$,
     'departments: no DELETE grant (soft delete only)');
+
+  -- platform.person_employment (composite FKs to persons, branches, departments; no DELETE grant)
+  perform tests.assert_rls_violation($q$insert into platform.person_employment (tenant_id, person_id) values ('b0000000-0000-4000-8000-000000000001', 'b1000000-0000-4000-8000-0000000000b9')$q$,
+    'person_employment: insert with tenant B tenant_id is rejected by RLS');
+  perform tests.assert_fails($q$insert into platform.person_employment (person_id) values ('b1000000-0000-4000-8000-0000000000b9')$q$,
+    array['23503'], 'person_employment: composite FK rejects a tenant B person');
+  perform tests.assert_fails($q$update platform.person_employment set department_id = 'b3000000-0000-4000-8000-000000000001' where person_id = 'a1000000-0000-4000-8000-0000000000ab'$q$,
+    array['23503'], 'person_employment: composite FK rejects a tenant B department');
+  perform tests.assert_fails($q$update platform.person_employment set branch_id = 'b2000000-0000-4000-8000-000000000001' where person_id = 'a1000000-0000-4000-8000-0000000000ab'$q$,
+    array['23503'], 'person_employment: composite FK rejects a tenant B branch');
+  perform tests.assert_fails($q$update platform.person_employment set manager_person_id = 'b1000000-0000-4000-8000-0000000000b1' where person_id = 'a1000000-0000-4000-8000-0000000000ab'$q$,
+    array['23503', '23514'], 'person_employment: a tenant B person cannot be the manager (trigger, then composite FK)');
+  perform tests.assert_privilege_denied($q$update platform.person_employment set tenant_id = 'b0000000-0000-4000-8000-000000000001' where person_id = 'a1000000-0000-4000-8000-0000000000ab'$q$,
+    'person_employment: tenant_id is not updatable (column grants)');
+  perform tests.assert_privilege_denied($q$update platform.person_employment set person_id = 'a1000000-0000-4000-8000-0000000000a2' where person_id = 'a1000000-0000-4000-8000-0000000000ab'$q$,
+    'person_employment: person_id is immutable (column grants)');
+  perform tests.assert_eq(tests.rows_affected($q$update platform.person_employment set job_title_ar = 'x' where person_id = 'b1000000-0000-4000-8000-0000000000b1'$q$),
+    0::bigint, 'person_employment: RLS filters tenant B rows');
+  perform tests.assert_privilege_denied($q$delete from platform.person_employment where person_id = 'a1000000-0000-4000-8000-0000000000ab'$q$,
+    'person_employment: no DELETE grant');
 
   -- platform.audit_events: append-only; tenant and actor cannot be forged.
   perform tests.assert_rls_violation($q$insert into platform.audit_events (tenant_id, actor_user_id, action) values ('b0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-0000000000a1', 'platform.test.forged')$q$,

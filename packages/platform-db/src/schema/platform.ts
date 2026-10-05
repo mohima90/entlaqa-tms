@@ -2,11 +2,13 @@
  * Drizzle table definitions for schema `platform` — TYPES for the query builder only.
  * The source of truth is SQL in supabase/migrations (RLS, grants and functions are first-class there).
  * Keep in sync with: 20260930120200_platform__tenancy_core.sql, 20260930120300_platform__audit_events.sql,
- * 20261004120100_platform__create_branches.sql, 20261004120200_platform__create_departments.sql
+ * 20261004120100_platform__create_branches.sql, 20261004120200_platform__create_departments.sql,
+ * 20261005090000_platform__add_persons_profile.sql, 20261005090100_platform__create_person_employment.sql
  */
 import {
   boolean,
   char,
+  date,
   integer,
   jsonb,
   pgSchema,
@@ -45,18 +47,47 @@ export const tenantDomains = platform.table('tenant_domains', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const personTypes = [
+  'employee',
+  'contractor',
+  'external_instructor',
+  'provider_staff',
+] as const;
+export const locales = ['ar', 'en'] as const;
+
+/**
+ * People directory (FR-IAM-01, FR-STE-02). created_by / updated_by / version are set by the database
+ * trigger private.stamp_row(); deactivated_at follows `status` (private.stamp_person_status()).
+ */
 export const persons = platform.table('persons', {
   id: uuid('id').primaryKey().defaultRandom(),
   tenantId: uuid('tenant_id').notNull(),
+  personType: text('person_type', { enum: personTypes }).notNull().default('employee'),
   displayNameAr: text('display_name_ar').notNull(),
   displayNameEn: text('display_name_en'),
+  firstNameAr: text('first_name_ar'),
+  fatherNameAr: text('father_name_ar'),
+  grandfatherNameAr: text('grandfather_name_ar'),
+  familyNameAr: text('family_name_ar'),
+  firstNameEn: text('first_name_en'),
+  fatherNameEn: text('father_name_en'),
+  grandfatherNameEn: text('grandfather_name_en'),
+  familyNameEn: text('family_name_en'),
   email: text('email'),
   employeeNumber: text('employee_number'),
+  mobileE164: text('mobile_e164'),
+  preferredLocale: text('preferred_locale', { enum: locales }).notNull().default('ar'),
+  nationalityCode: char('nationality_code', { length: 2 }),
+  isNational: boolean('is_national'),
   status: text('status', { enum: ['active', 'inactive'] })
     .notNull()
     .default('active'),
+  deactivatedAt: timestamp('deactivated_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  createdBy: uuid('created_by'),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedBy: uuid('updated_by'),
+  version: integer('version').notNull().default(1),
 });
 
 export const tenantMemberships = platform.table('tenant_memberships', {
@@ -135,4 +166,28 @@ export const departments = platform.table('departments', {
   sortOrder: integer('sort_order').notNull().default(0),
   status: text('status', { enum: orgUnitStatus }).notNull().default('active'),
   ...stdColumns(),
+});
+
+export const employmentSources = ['manual', 'import', 'hris', 'core_hr'] as const;
+
+/** Placement of a person (FR-IAM-01, T-M2-02): one row per person; manager chain kept acyclic in the database. */
+export const personEmployment = platform.table('person_employment', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull(),
+  personId: uuid('person_id').notNull(),
+  branchId: uuid('branch_id'),
+  departmentId: uuid('department_id'),
+  jobTitleAr: text('job_title_ar'),
+  jobTitleEn: text('job_title_en'),
+  grade: text('grade'),
+  managerPersonId: uuid('manager_person_id'),
+  hireOn: date('hire_on'),
+  endOn: date('end_on'),
+  source: text('source', { enum: employmentSources }).notNull().default('manual'),
+  sourceRef: text('source_ref'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  createdBy: uuid('created_by'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedBy: uuid('updated_by'),
+  version: integer('version').notNull().default(1),
 });

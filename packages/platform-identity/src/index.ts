@@ -11,3 +11,10 @@ export {
   signInWithPassword,
   signOut,
 } from './auth-flow';
+export {
+  type PasswordChangeDeps,
+  type PasswordClientLike,
+  type PasswordVerdict,
+  PasswordErrors,
+  changePassword,
+} from './password';

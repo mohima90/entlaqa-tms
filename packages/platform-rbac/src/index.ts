@@ -13,6 +13,7 @@ export * from './platform-permissions';
 export * from './system-roles';
 export * from './role-grants';
 export * from './person-scope';
+export * from './member-permissions';
 export {
   type ActionContext,
   type ActionDefinition,
@@ -45,6 +46,7 @@ export { type AuthorizedQuery, type QueryDefinition, createDefineQuery } from '.
 
 export { createLoadMemberGrants } from './member-grants';
 export * from './iam/users';
+export * from './iam/my-profile';
 
 /** Authorized reads for server components and routes (same checks as defineAction, no audit). */
 export const defineQuery = createDefineQuery(defaultActionRuntime);

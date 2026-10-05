@@ -88,6 +88,8 @@ describe('default defineAction runtime', () => {
         scope: { type: 'org_units', orgUnitIds: ['d1'], includeDescendants: true },
       },
       { permission: 'platform.org.read', scope: { type: 'tenant' } },
+      // Every member: their own profile (FR-IAM-16).
+      { permission: 'platform.profile.manage_own', scope: { type: 'own' } },
     ]);
     expect(db.loadMemberAuthorizationFacts).toHaveBeenCalledWith(tx);
     expect(

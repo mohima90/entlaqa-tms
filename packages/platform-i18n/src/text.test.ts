@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { formatHijriDate } from './hijri';
-import { normalizeDigits } from './text';
+import { hasVisibleText, normalizeDigits } from './text';
 
 const shift = (digits: string, zero: number) =>
   digits.replace(/[0-9]/g, (d) => String.fromCharCode(zero + Number(d)));
@@ -21,5 +21,18 @@ describe('formatHijriDate', () => {
     expect(formatHijriDate('2024-03-03', 'ar')).toBe('22 شعبان 1445 هـ');
     expect(formatHijriDate('2024-03-03', 'en')).toMatch(/22, 1445 AH$/);
     expect(() => formatHijriDate('2024-03-03T21:00:00Z', 'ar')).toThrow(RangeError);
+  });
+});
+
+describe('hasVisibleText', () => {
+  it('needs one visible character; spaces and invisible marks alone do not count', () => {
+    const marks = [0x200f, 0x200b, 0x061c, 0x00ad, 0xfeff, 0x2066, 0xe0041]
+      .map((c) => String.fromCodePoint(c))
+      .join('');
+    expect(hasVisibleText('سارة')).toBe(true);
+    expect(hasVisibleText(marks + 'A')).toBe(true);
+    expect(hasVisibleText('   ')).toBe(false);
+    expect(hasVisibleText(marks + ' ' + String.fromCodePoint(0x3000))).toBe(false);
+    expect(hasVisibleText('')).toBe(false);
   });
 });

@@ -20,6 +20,10 @@ const identity = vi.hoisted(() => ({
 }));
 const db = vi.hoisted(() => ({
   withUserTx: vi.fn((_claims: unknown, fn: (tx: unknown) => Promise<unknown>) => fn({})),
+  // The member holds no role (T-M2-03: grants come from role assignments).
+  loadMemberAuthorizationFacts: vi.fn(() =>
+    Promise.resolve({ roles: [], headedDepartmentIds: [] }),
+  ),
   schema: {},
 }));
 vi.mock('@jadarat/platform-identity/next', () => identity);
@@ -41,7 +45,7 @@ afterEach(() => {
 });
 
 describe('createSessionDraft (server action)', () => {
-  it('is denied by default (403) for a signed-in member without grants; nothing is written', async () => {
+  it('is denied (403) for a signed-in member without a role that grants it; nothing is written', async () => {
     identity.getVerifiedClaims.mockResolvedValue(claims);
     const result = await createSessionDraft(input);
     expect(!result.ok && result.error).toMatchObject({ code: 'FORBIDDEN', status: 403 });
@@ -49,6 +53,7 @@ describe('createSessionDraft (server action)', () => {
     expect(identity.getVerifiedClaims).toHaveBeenCalledOnce();
     expect(identity.getVerifiedClaimsStrict).not.toHaveBeenCalled();
     expect(db.withUserTx).toHaveBeenCalledOnce();
+    expect(db.loadMemberAuthorizationFacts).toHaveBeenCalledOnce();
   });
 
   it('returns 401 without a verified session and never opens a transaction', async () => {

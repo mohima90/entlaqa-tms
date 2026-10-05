@@ -20,7 +20,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 | Planning (research, BRD, feature list, delivery plan) | — | 🟢 Done | — | See §4 documents |
 | M0 Mobilize | 1–2 | 🟢 Done | G0 | **Gate G0 passed 3 Oct 2026.** T-M0-01…07, 09, 10 done (MFA on GitHub, Supabase, Vercel confirmed); T-M0-08 (→ 2-week customer trials ≈ end of M5) and T-M0-11 deferred by PO; T-M0-12/13 needed later |
 | M1 Foundation | 3–8 | 🟢 Done | G1 | Foundation merged (#9); walking skeleton live on staging (#10–#14); component library + Storybook done (T-M1-A02); M2 threat models done (TM-0002…0006); self-hosted stack verified (T-M1-D04, gate 15); observability baseline done (T-M1-D06). Estimation (T-M1-B14) postponed and mock-up usability round (T-M1-A05) cancelled by the PO (4 Oct 2026) |
-| M2 Platform core | 9–12 | 🔵 In progress | G2 | Started 4 Oct 2026 with users & roles (`EP-M2-IAM`): 11 Arabic screens **approved by the PO** (4 Oct 2026); build broken into T-M2-01…12 (BACKLOG) |
+| M2 Platform core | 9–12 | 🔵 In progress | G2 | Started 4 Oct 2026 with users & roles (`EP-M2-IAM`): 11 Arabic screens **approved by the PO** (4 Oct 2026); build broken into T-M2-01…12 (BACKLOG); T-M2-01…03 merged (#28, #30, #31), T-M2-04 in progress |
 | M3 Catalog & scheduling | 13–16 | ⚪ Not started | G3 | |
 | M4 Enrollment & manager | 17–19 | ⚪ Not started | G4 | |
 | M5 Delivery & credentials | 20–23 | ⚪ Not started | G5 | |
@@ -178,6 +178,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
+| 5 Oct 2026 | PR #31 merged (T-M2-03 roles). T-M2-04 started, split into 04a (authorized page reads, people scope filter, users list/profile queries — built, unit + integration tests pass, review next) and 04b (pages + E2E) |
 | 5 Oct 2026 | T-M2-03 review: request changes (1 High: suspending/removing members was not limited by role; 4 Medium) → fixed with tests (membership guard, admin roles with end dates do not count, system jobs never touch privileged roles, `canAssignRole` via `authorize()` incl. AAL2; Compliance Officer made privileged so HR can give every other role, consistent app ↔ database); re-review next |
 | 5 Oct 2026 | T-M2-03 built: 14 system roles with their permissions, role assignments (one primary + extras), database guard for who may give which role (PO decision), at least one Organization Admin kept, grants now loaded on every action; database, integration and unit tests pass; review next |
 | 5 Oct 2026 | PR #30 merged (T-M2-02 person profile). PO closed Dependabot #29 (PostgreSQL 18); majors now ignored. PO decided who manages users & roles (HR Manager: ordinary roles; Organization Admin: privileged roles). T-M2-03 (roles) started |

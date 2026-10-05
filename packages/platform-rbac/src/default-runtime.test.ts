@@ -8,6 +8,21 @@ const identity = vi.hoisted(() => ({
 const db = vi.hoisted(() => ({
   withUserTx: vi.fn((_claims: unknown, fn: (tx: unknown) => Promise<unknown>) => fn('tx')),
   insertAuditEvent: vi.fn(() => Promise.resolve()),
+  loadPersonResourceFacts: vi.fn((_tx: unknown, id: string) =>
+    Promise.resolve(
+      id === '55555555-5555-4555-8555-555555555555'
+        ? {
+            personId: id,
+            tenantId: 't',
+            managerPersonId: 'm1',
+            managerChain: ['m1', 'm0'],
+            departmentId: 'd2',
+            departmentAncestorIds: ['d1'],
+            branchId: 'b1',
+          }
+        : null,
+    ),
+  ),
   loadMemberAuthorizationFacts: vi.fn(() =>
     Promise.resolve({
       roles: [
@@ -78,6 +93,34 @@ describe('default defineAction runtime', () => {
     expect(
       await defaultActionRuntime.resolveResource(tx, { type: 'x', id: '1' }, claims),
     ).toBeNull();
+  });
+
+  it('resolves person resources with their manager chain, department ancestors and branch', async () => {
+    const tx = 'tx' as never;
+    const claims = { sub: 'u', tenant_id: 't' } as never;
+    const id = '55555555-5555-4555-8555-555555555555';
+    expect(await defaultActionRuntime.resolveResource(tx, { type: 'person', id }, claims)).toEqual({
+      type: 'person',
+      id,
+      tenantId: 't',
+      subjectPersonId: id,
+      subjectManagerPersonId: 'm1',
+      subjectManagerChain: ['m1', 'm0'],
+      orgUnitId: 'd2',
+      orgUnitAncestorIds: ['d1'],
+      branchId: 'b1',
+    });
+    expect(
+      await defaultActionRuntime.resolveResource(
+        tx,
+        { type: 'person', id: '66666666-6666-4666-8666-666666666666' },
+        claims,
+      ),
+    ).toBeNull();
+    expect(
+      await defaultActionRuntime.resolveResource(tx, { type: 'person', id: 'nope' }, claims),
+    ).toBeNull();
+    expect(db.loadPersonResourceFacts).toHaveBeenCalledTimes(2);
   });
 
   it('writes audit events through the platform-db audit writer (actor from verified claims)', async () => {

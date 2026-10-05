@@ -4,3 +4,4 @@ export * from './ids';
 export * from './claims';
 export * from './context';
 export * from './validation';
+export * from './person-scope';

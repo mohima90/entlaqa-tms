@@ -177,8 +177,10 @@ export async function listUsers(tx: UserTx, filter: UserListFilter): Promise<Use
            count(*) filter (where m.status = 'suspended')::int as deactivated
     ${FROM_MEMBERS}
     where ${where}`);
-  const limit = Math.min(Math.max(Math.trunc(filter.limit), 1), MAX_PAGE_SIZE);
-  const offset = Math.max(Math.trunc(filter.offset), 0);
+  const limit = Number.isFinite(filter.limit)
+    ? Math.min(Math.max(Math.trunc(filter.limit), 1), MAX_PAGE_SIZE)
+    : MAX_PAGE_SIZE;
+  const offset = Number.isFinite(filter.offset) ? Math.max(Math.trunc(filter.offset), 0) : 0;
   const roles = filter.includeRoles
     ? sql`(select ra.role_code from platform.role_assignments ra
              where ra.membership_id = m.id and ra.is_primary and ${ROLE_IN_FORCE}) as primary_role,

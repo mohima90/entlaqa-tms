@@ -226,6 +226,7 @@ begin
   perform tests.assert_eq(private.search_key('مصطفى'), 'مصطفي', 'search_key: alef maqsura = yeh');
   perform tests.assert_eq(private.search_key('م' || chr(1615) || 'ح' || chr(1614) || 'م' || chr(1617) || 'د'), 'محمد',
     'search_key: diacritics removed');
+  perform tests.assert_eq(private.search_key('عبدالرحم' || chr(1648) || 'ن'), 'عبدالرحمن', 'search_key: dagger alef removed');
   perform tests.assert_eq(private.search_key('عـــلي'), 'علي', 'search_key: tatweel removed');
   perform tests.assert_eq(private.search_key('Omar 50%_X'), 'omar 50%_x', 'search_key: lower case, other characters kept');
   perform tests.assert(private.search_key(null) is null, 'search_key: null stays null');

@@ -160,6 +160,9 @@ describe('listUsers', () => {
     await listUsers(fake.tx, { ...baseFilter, includeRoles: false, limit: 10_000, offset: -5 });
     expect(fake.executed[1]?.sql).toContain('null as primary_role, null as other_roles');
     expect(fake.executed[1]?.params.slice(-2)).toEqual([100, 0]);
+    const nan = fakeTx([], []);
+    await listUsers(nan.tx, { ...baseFilter, limit: Number.NaN, offset: Number.NaN });
+    expect(nan.executed[1]?.params.slice(-2)).toEqual([100, 0]);
     await expect(
       listUsers(fakeTx().tx, { ...baseFilter, includeRoles: false, roleCode: 'learner' }),
     ).rejects.toThrow('includeRoles');

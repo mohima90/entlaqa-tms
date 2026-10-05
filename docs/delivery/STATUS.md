@@ -176,6 +176,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
+| 5 Oct 2026 | T-M2-03 built: 14 system roles with their permissions, role assignments (one primary + extras), database guard for who may give which role (PO decision), at least one Organization Admin kept, grants now loaded on every action; database, integration and unit tests pass; review next |
 | 5 Oct 2026 | PR #30 merged (T-M2-02 person profile). PO closed Dependabot #29 (PostgreSQL 18); majors now ignored. PO decided who manages users & roles (HR Manager: ordinary roles; Organization Admin: privileged roles). T-M2-03 (roles) started |
 | 5 Oct 2026 | PR #28 merged (T-M2-01 branches + departments; approved screens + M2 plan). T-M2-02 built: person profile fields (Arabic/English name parts, mobile, locale, nationality) and placement table (branch, department, job title, direct manager with no loops); all database tests + hosted simulation pass; independent review (2 Medium + 7 Low fixed) → **approve** |
 | 4 Oct 2026 | T-M2-01 built: branches + departments tables with tenant isolation, tree rules and tamper-proof created/updated/deleted stamps; three independent review rounds (2 Medium + 7 Low fixed, concurrency verified with two sessions) → **approve**; all database tests and the hosted-Supabase simulation pass |

@@ -2,6 +2,7 @@ import 'server-only';
 import { type UserTx } from '@jadarat/platform-db';
 import { reportError } from '@jadarat/platform-observability';
 import type { ActionRuntime } from './define-action';
+import { grantsForAssignments } from './role-grants';
 
 /**
  * Production runtime for defineAction: verified claims from the request cookies (platform-identity)
@@ -20,10 +21,19 @@ export const defaultActionRuntime: ActionRuntime<UserTx> = {
     const { withUserTx } = await import('@jadarat/platform-db');
     return withUserTx(claims, fn);
   },
-  // TODO(M2, ADR 0003 §3): load role assignments + delegations for the membership (cached per
-  // request, invalidated by the membership version counter). Until then no grants → deny by default.
-  loadGrants() {
-    return Promise.resolve([]);
+  // ADR 0003 §3: the member's roles in the current tenant (T-M2-03), read on every action so role
+  // changes take effect on the next request. Delegations (FR-IAM-14) join in R2.
+  async loadGrants(tx) {
+    const { loadMemberAuthorizationFacts } = await import('@jadarat/platform-db');
+    const facts = await loadMemberAuthorizationFacts(tx);
+    return grantsForAssignments(
+      facts.roles.map((role) => ({
+        roleCode: role.roleCode,
+        ...(role.validFrom ? { validFrom: role.validFrom } : {}),
+        ...(role.validUntil ? { validUntil: role.validUntil } : {}),
+      })),
+      { headedDepartmentIds: facts.headedDepartmentIds },
+    );
   },
   // TODO(M2): modules register resource resolvers by type. Until then → not found (deny by default).
   resolveResource() {

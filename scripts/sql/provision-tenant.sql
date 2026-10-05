@@ -35,6 +35,7 @@ declare
   v_user uuid;
   v_tenant uuid;
   v_person uuid;
+  v_membership uuid;
   v_status text;
   v_tenant_created boolean := false;
 begin
@@ -86,10 +87,15 @@ begin
 
   begin
     insert into platform.tenant_memberships (tenant_id, user_id, person_id, status)
-    values (v_tenant, v_user, v_person, 'active');
+    values (v_tenant, v_user, v_person, 'active')
+    returning id into v_membership;
   exception when foreign_key_violation then
     raise exception 'provision: no Auth user with this UID (create the user in Authentication → Users first)';
   end;
+
+  -- The provisioned member is an Organization Admin (primary role, T-M2-03).
+  insert into platform.role_assignments (tenant_id, membership_id, role_code, is_primary)
+  values (v_tenant, v_membership, 'tenant_admin', true);
 
   -- System action: no actor user (ids only, no personal data).
   insert into platform.audit_events (tenant_id, action, entity_type, entity_id, data)

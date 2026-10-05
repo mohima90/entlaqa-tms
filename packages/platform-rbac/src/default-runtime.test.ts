@@ -8,6 +8,15 @@ const identity = vi.hoisted(() => ({
 const db = vi.hoisted(() => ({
   withUserTx: vi.fn((_claims: unknown, fn: (tx: unknown) => Promise<unknown>) => fn('tx')),
   insertAuditEvent: vi.fn(() => Promise.resolve()),
+  loadMemberAuthorizationFacts: vi.fn(() =>
+    Promise.resolve({
+      roles: [
+        { roleCode: 'line_manager', validFrom: null, validUntil: new Date('2027-01-01T00:00:00Z') },
+        { roleCode: 'department_head', validFrom: null, validUntil: null },
+      ],
+      headedDepartmentIds: ['d1'],
+    }),
+  ),
 }));
 
 vi.mock('@jadarat/platform-identity/next', () => identity);
@@ -36,10 +45,27 @@ describe('default defineAction runtime', () => {
     expect(db.withUserTx).toHaveBeenCalledWith(claims, expect.any(Function));
   });
 
-  it('denies by default until role assignments and resource resolvers exist (M2)', async () => {
+  it("loads grants from the member's roles (T-M2-03) and resolves no resources yet", async () => {
     const tx = 'tx' as never;
     const claims = { sub: 'u', tenant_id: 't' } as never;
-    expect(await defaultActionRuntime.loadGrants(tx, claims)).toEqual([]);
+    expect(await defaultActionRuntime.loadGrants(tx, claims)).toEqual([
+      {
+        permission: 'platform.user.read',
+        scope: { type: 'direct_reports' },
+        validUntil: new Date('2027-01-01T00:00:00Z'),
+      },
+      {
+        permission: 'platform.org.read',
+        scope: { type: 'tenant' },
+        validUntil: new Date('2027-01-01T00:00:00Z'),
+      },
+      {
+        permission: 'platform.user.read',
+        scope: { type: 'org_units', orgUnitIds: ['d1'], includeDescendants: true },
+      },
+      { permission: 'platform.org.read', scope: { type: 'tenant' } },
+    ]);
+    expect(db.loadMemberAuthorizationFacts).toHaveBeenCalledWith(tx);
     expect(
       await defaultActionRuntime.resolveResource(tx, { type: 'x', id: '1' }, claims),
     ).toBeNull();

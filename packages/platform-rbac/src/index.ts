@@ -7,6 +7,9 @@ import { createDefinePublicRoute } from './define-public-route';
 export * from './permissions';
 export * from './scopes';
 export * from './authorize';
+export * from './platform-permissions';
+export * from './system-roles';
+export * from './role-grants';
 export {
   type ActionContext,
   type ActionDefinition,

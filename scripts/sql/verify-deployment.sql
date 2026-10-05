@@ -10,6 +10,9 @@ declare
   module_schemas constant text[] := array['platform', 'private', 'tms'];
   -- Roles that must never reach tenant data or the hook directly. service_role bypasses RLS.
   outsiders constant text[] := array['anon', 'service_role'];
+  -- Global (non-tenant) reference tables: RLS enabled + forced, read-only for authenticated, no
+  -- tenant_isolation policy. Same allow-list as tests.global_tables() (security review required).
+  global_tables constant text[] := array['platform.ref_roles'];
   hook constant text := 'private.custom_access_token_hook(jsonb)';
   r record;
   v_role text;
@@ -155,11 +158,15 @@ begin
         failures := failures || format('%s: %s must have no privileges', r.t, v_role);
       end if;
     end loop;
-    -- 3. Tenant tables (all tables in platform/module schemas; no global tables exist yet): RESTRICTIVE
+    -- 3. Tenant tables (all tables in platform/module schemas except global_tables): RESTRICTIVE
     --    tenant_isolation for ALL commands, to authenticated only, whose USING and WITH CHECK are EXACTLY
     --    `<tenant column> = (select private.current_tenant_id())` (normalized; same rule as 10_catalog.sql,
     --    so `… or true` fails).
-    if r.nspname <> 'private' and not exists (
+    if r.t::text = any (global_tables) then
+      if has_table_privilege('authenticated', r.t, 'insert, update, delete, truncate') then
+        failures := failures || format('%s: global table must be read-only for authenticated', r.t);
+      end if;
+    elsif r.nspname <> 'private' and not exists (
       select 1 from pg_policy p
       where p.polrelid = r.t and p.polname = 'tenant_isolation' and not p.polpermissive and p.polcmd = '*'
         and p.polroles = array[(select oid from pg_roles where rolname = 'authenticated')]::oid[]

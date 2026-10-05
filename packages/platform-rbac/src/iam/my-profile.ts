@@ -113,6 +113,30 @@ export function myProfileQueryDefinition(): QueryDefinition<
   };
 }
 
+/** Name for the header picture/initials (every page, so one small read). */
+export interface MyIdentity {
+  readonly displayNameAr: string;
+  readonly displayNameEn: string | null;
+}
+
+export function myIdentityQueryDefinition(): QueryDefinition<
+  z.ZodObject<Record<string, never>>,
+  MyIdentity,
+  UserTx
+> {
+  return {
+    permission: manageOwn,
+    input: z.strictObject({}),
+    scoped: true,
+    handler: async ({ ctx }) => {
+      const personId = ctx.actor.personId;
+      const details = personId ? await getPersonalDetails(ctx.tx, personId) : null;
+      if (!details) return err(appError('NOT_FOUND'));
+      return ok({ displayNameAr: details.displayNameAr, displayNameEn: details.displayNameEn });
+    },
+  };
+}
+
 export interface MyProfileSaved {
   readonly personId: string;
   /** Names of the changed fields (no values: personal data stays out of the audit log). */

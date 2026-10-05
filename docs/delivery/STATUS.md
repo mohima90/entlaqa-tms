@@ -145,6 +145,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 4. Soon (T-M2-06): choose the e-mail sending service for the cloud version (Claude will explain the options and costs in one message).
 5. When the first real journeys work: pick 5–8 ENTLAQA staff who did not work on the BRD to try the real product (Claude prepares the sessions).
 6. ~~DB deploy of T-M2-01…04a to staging~~ **Done 5 Oct 2026** (plan, then apply: 13 migrations, verification passed; the roles backfill made only the PO's account Organization Admin — one provisioning run ever, one member).
+7. After My profile is merged (T-M2-15a): one migration to deploy (plan → apply), and two Supabase Auth settings on staging — "Require current password when updating" on, minimum password length 12 (`docs/engineering/db-deploy.md`); Claude guides one click at a time.
 
 **Security decisions for M2 (from TM-0002…0006, 3 Oct 2026)** — needed before the related M2 stories start; Claude will bring them one at a time:
 1. Always require an authenticator code for high-risk actions (role changes, exports), even when an organization turns MFA off? (TM-0003 D-IAM-01; recommended: yes)
@@ -180,6 +181,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
+| 5 Oct 2026 | T-M2-15a built (My profile): own personal details + password change, header picture link, person write guard in the database (F-PEO-01); unit, pgTAP, preview E2E (100 checks) and signed-in E2E on the self-hosted stack pass; review next |
 | 5 Oct 2026 | PO added self-service My profile (personal details + password, e-mail locked, job data with HR): BRD v2.2 FR-IAM-16, feature IAM-16 (R1 = 97), backlog T-M2-15 next in the user sequence |
 | 5 Oct 2026 | PO checked the users page on staging (works: one Organization Admin). Gap found: no task for editing a user's details or roles (screen 3) → added T-M2-13 and T-M2-14 to the backlog |
 | 5 Oct 2026 | PR #33 merged (T-M2-04b users pages) → T-M2-04 done; the PO can open **إدارة المنشأة ← المستخدمون** on staging. Next: T-M2-05 roles & permissions page (screen 5) |

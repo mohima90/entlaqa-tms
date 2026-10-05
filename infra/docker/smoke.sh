@@ -117,6 +117,17 @@ PGPASSWORD="$POSTGRES_PASSWORD" PGSSLMODE=verify-full PGSSLROOTCERT=.secrets/ca.
   SIGNED_IN_E2E_MANAGER_PASSWORD="$MANAGER_PASSWORD" \
   pnpm exec playwright test e2e/users.spec.ts --project=desktop-chromium)
 
+echo "smoke: My profile (T-M2-15a) — own details and password change as an ordinary member"
+PROFILE_NEW_PASSWORD="Profile-$(openssl rand -hex 16)"
+(cd "$ROOT/apps/suite" && E2E_BASE_URL=http://localhost:3200 SIGNED_IN_E2E_MANAGER_EMAIL="$MANAGER_EMAIL" \
+  SIGNED_IN_E2E_MANAGER_PASSWORD="$MANAGER_PASSWORD" PROFILE_E2E_NEW_PASSWORD="$PROFILE_NEW_PASSWORD" \
+  pnpm exec playwright test e2e/profile.spec.ts --project=desktop-chromium)
+[[ "$(q "select count(distinct action) from platform.audit_events where action in ('platform.profile.updated', 'platform.auth.password_changed')")" == "2" ]] ||
+  { echo "smoke: expected profile and password-change audit events" >&2; exit 1; }
+if [[ "$(q "select count(*) from platform.audit_events where data::text like '%منيرة%' or data::text like '%966551112233%'")" != "0" ]]; then
+  echo "smoke: personal data reached the audit log" >&2; exit 1
+fi
+
 echo "smoke: checking secrets stay out of the logs and Auth is reachable only through the gateway"
 if compose logs db auth 2>&1 | grep -qF "$(secret AUTH_DB_PASSWORD)"; then
   echo "smoke: the Auth database password appears in the container logs" >&2; exit 1
@@ -127,7 +138,7 @@ fi
 # its own logs; that is third-party behaviour, covered by the log retention/access rules of ADR 0009.)
 all_logs="$(compose logs --no-log-prefix 2>&1)"
 app_logs="$(compose logs --no-log-prefix app 2>&1)"
-for value in "$PASSWORD" "$PARITY_PASSWORD" "$MANAGER_PASSWORD"; do
+for value in "$PASSWORD" "$PARITY_PASSWORD" "$MANAGER_PASSWORD" "$PROFILE_NEW_PASSWORD"; do
   if grep -qF "$value" <<<"$all_logs"; then
     echo "smoke: a test user's password appears in the container logs" >&2; exit 1
   fi

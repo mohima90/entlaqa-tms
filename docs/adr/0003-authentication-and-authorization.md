@@ -131,3 +131,9 @@ Permission namespaces per module (`core_hr.*`, `payroll.*`, …) and shared scop
 - **`ctx.can(permission, target)`** answers "may the member also do X?" from the grants already loaded — `target` is a resource, `'tenant'` or `'any'` — so a page decides what else it shows (roles need `platform.role.read`, the recent activity `platform.audit.read`) instead of hard-coding it.
 - **Navigation** uses `loadMemberGrants()` for display only; every page authorizes itself.
 
+### T-M2-15a (5 Oct 2026): My profile and person write guard
+- **Member permissions** (`member-permissions.ts`): `platform.profile.manage_own` is held by every active member with scope `own`, outside every role (FR-IAM-16), so My profile works for members without roles and no role widens it.
+- **Own-profile actions** are `scoped` and touch only `ctx.actor.personId`; input is a strict schema (names AR/EN, mobile, interface language). E-mail and job data are read-only (PO decision 5 Oct 2026).
+- **Database guard** `private.check_person_writer` (TM-0004 F-PEO-01): on the request path, `persons` and `person_employment` are written only by an active Organization Admin or HR Manager, by system jobs, or — `persons` only — by the member on their own row limited to the self-service columns.
+- **Password change**: the current password is checked on a cookie-less Supabase client whose session is ended at once (the user's own session is untouched), Auth sets the new password (also checking `current_password` where "require current password" is on) and every other sign-in session ends. Passwords never reach logs or the audit trail; the audit records `platform.auth.password_changed` and `platform.profile.updated` with changed field names only.
+

@@ -35,7 +35,8 @@
     "emptyBody": "Sessions and courses will appear here once the Training module is set up for your organization.",
     "comingSoon": "Coming soon",
     "admin": "Organization admin",
-    "users": "Users"
+    "users": "Users",
+    "myProfile": "My profile"
   },
   "errors": {
     "malformedRequest": "We couldn't process this request. Refresh the page and try again.",
@@ -65,7 +66,11 @@
     "signingOut": "Signing out…",
     "errors": {
       "invalidCredentials": "The email or password is incorrect.",
-      "noOrganization": "Your account isn't linked to an active organization. Contact your organization's administrator."
+      "noOrganization": "Your account isn't linked to an active organization. Contact your organization's administrator.",
+      "currentPasswordInvalid": "The current password is incorrect.",
+      "passwordTooWeak": "The new password is too weak. Use a longer password that mixes letters, digits and symbols.",
+      "passwordSame": "The new password is the same as the current one. Choose a different password.",
+      "reauthenticationNeeded": "For your account's security, sign out and sign in again, then change the password."
     }
   },
   "users": {
@@ -170,5 +175,48 @@
       "other": "Recorded action ({action})"
     },
     "breadcrumbLabel": "Breadcrumb"
+  },
+  "profile": {
+    "title": "My profile",
+    "personal": "Personal details",
+    "personalIntro": "Your name, mobile number and interface language can be changed here.",
+    "arabicName": "Name in Arabic",
+    "englishName": "Name in English",
+    "fields": {
+      "firstName": "First name",
+      "fatherName": "Father's name",
+      "grandfatherName": "Grandfather's name",
+      "familyName": "Family name",
+      "mobile": "Mobile number",
+      "language": "Interface and message language"
+    },
+    "mobileHint": "With the country code, for example",
+    "languages": {
+      "ar": "Arabic",
+      "en": "English"
+    },
+    "save": "Save changes",
+    "saving": "Saving…",
+    "saved": "Changes saved.",
+    "noChanges": "There are no changes to save.",
+    "fieldErrors": {
+      "required": "This field is required.",
+      "name": "Must contain visible letters and be at most 60 characters.",
+      "mobile": "Enter the full number with the country code.",
+      "tooShort": "At least 12 characters.",
+      "mismatch": "The passwords do not match."
+    },
+    "work": "Work details",
+    "workIntro": "HR or the Organization Admin keeps these details up to date.",
+    "emailLocked": "The email address cannot be changed.",
+    "password": "Password",
+    "passwordIntro": "After the change, sign-in sessions on other devices end.",
+    "currentPassword": "Current password",
+    "newPassword": "New password",
+    "newPasswordHint": "At least 12 characters.",
+    "confirmPassword": "Confirm the new password",
+    "changePassword": "Change password",
+    "changing": "Changing…",
+    "passwordChanged": "Password changed. Sign-in sessions on other devices have ended."
   }
 }

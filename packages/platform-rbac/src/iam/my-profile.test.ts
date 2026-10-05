@@ -10,6 +10,7 @@ import { SYSTEM_ROLES } from '../system-roles';
 import {
   MyProfileInput,
   changeMyPasswordActionDefinition,
+  myIdentityQueryDefinition,
   myProfileQueryDefinition,
   personalDetailsFrom,
   updateMyProfileActionDefinition,
@@ -121,6 +122,14 @@ describe('My profile query and save', () => {
     });
   });
 
+  it('reads the header name of the member', async () => {
+    db.getPersonalDetails.mockResolvedValue({ displayNameAr: 'سارة', displayNameEn: null });
+    const identity = createDefineQuery(runtime().rt)(myIdentityQueryDefinition());
+    expect(await identity({})).toEqual(ok({ displayNameAr: 'سارة', displayNameEn: null }));
+    const none = await createDefineQuery(runtime(null).rt)(myIdentityQueryDefinition())({});
+    expect(!none.ok && none.error.code).toBe('NOT_FOUND');
+  });
+
   it('a member without a person (or a vanished one) gets NOT_FOUND', async () => {
     const noPerson = await createDefineQuery(runtime(null).rt)(myProfileQueryDefinition())({});
     expect(!noPerson.ok && noPerson.error.code).toBe('NOT_FOUND');
@@ -203,7 +212,7 @@ describe('change my password', () => {
       { ...input, confirmPassword: 'different-password' },
       { ...input, extra: 'x' },
     ]) {
-      const result = await action(bad as typeof input);
+      const result = await action(bad);
       expect(!result.ok && result.error.code).toBe('VALIDATION_FAILED');
     }
     expect(changePassword).not.toHaveBeenCalled();

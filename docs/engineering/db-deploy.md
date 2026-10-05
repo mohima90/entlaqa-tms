@@ -42,6 +42,15 @@ Store the two role passwords in the password manager too: the app needs them lat
 
 Every transaction runs with `lock_timeout = 10s` and `statement_timeout = 5min`. A failed `apply` stops at the failing migration; earlier migrations stay applied (and recorded). Fix forward with a new migration; use `supabase/rollbacks/` only on staging and only deliberately.
 
+## Auth settings on hosted projects (dashboard)
+
+Self-hosted Auth gets these from `infra/docker/compose.yaml`; on hosted Supabase they are dashboard settings (Authentication → Sign In / Providers → Email, and Authentication → Policies / Passwords):
+
+| Setting | Value | Why |
+|---|---|---|
+| Require current password when updating | On | My profile password change (FR-IAM-16): Auth checks the current password itself, in addition to the app's own check |
+| Minimum password length | 12 | Same rule as the app (screen 6 proposed default, FR-IAM-13) |
+
 ## Troubleshooting
 
 - **`SSL error: certificate verify failed`** or **`server certificate … does not match host name`**: the CA in `DATABASE_CA_CERT` is not the one that signed the server/pooler certificate, or the file was pasted incompletely. Re-download it from Database Settings → SSL Configuration and paste the whole file. **Never** work around it by lowering `sslmode` — the script does not allow it for remote hosts.

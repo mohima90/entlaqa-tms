@@ -82,7 +82,11 @@ begin
                        where p.tenant_id = m.tenant_id and p.membership_id = m.id and p.is_primary)
     from platform.tenant_memberships m
     where m.tenant_id = v_tenant and m.user_id = v_user
-    on conflict (tenant_id, membership_id, role_code) do nothing;
+    -- An existing admin row with an end or start date does not count (private.tenant_has_admin):
+    -- make it open-ended.
+    on conflict (tenant_id, membership_id, role_code) do update
+      set valid_from = null, valid_until = null
+      where platform.role_assignments.valid_from is not null or platform.role_assignments.valid_until is not null;
     if found then
       insert into platform.audit_events (tenant_id, action, entity_type, entity_id, data)
       values (v_tenant, 'platform.tenant.admin_role_restored', 'tenant_membership', v_user::text,

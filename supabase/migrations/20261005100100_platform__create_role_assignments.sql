@@ -62,6 +62,9 @@ grant execute on function private.actor_role_codes(uuid, uuid) to authenticated;
 -- Shared preamble of the guards below: they serialise on a per-tenant advisory lock and then read
 -- other rows; that is only correct under READ COMMITTED (each statement sees rows committed while it
 -- waited), the isolation level the application uses. Anything else is refused rather than unsafe.
+-- Actions that change a member's roles AND status in one transaction call this function before their
+-- first write, so the per-tenant lock is always taken before any membership row lock (otherwise two
+-- such transactions can deadlock, 40P01; withUserTx also retries once on deadlock — T-M2-03 follow-up).
 create or replace function private.lock_tenant_roles(p_tenant_id uuid)
 returns void
 language plpgsql

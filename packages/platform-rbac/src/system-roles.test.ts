@@ -49,21 +49,13 @@ describe('system roles (FR-IAM-07, BRD Appendix B)', () => {
     ]);
   });
 
-  it('keeps sensitive permissions out of every role an HR Manager may give', () => {
-    const sensitive = [
-      'platform.user.invite',
-      'platform.user.update',
-      'platform.user.deactivate',
-      'platform.role.assign',
-      'platform.role.assign_privileged',
-      'platform.tenant.read',
-      'platform.tenant.manage',
-      'platform.security.manage',
-      'platform.audit.read',
-    ];
+  it('gives the roles an HR Manager may give only reading permissions (allow-list)', () => {
+    // Anything new (platform or module permission) fails here until reviewed: a role that can change
+    // people, structure, settings or the audit log must be privileged (PO decision 5 Oct 2026).
+    const allowed = ['platform.user.read', 'platform.role.read', 'platform.org.read'];
     for (const role of SYSTEM_ROLES.filter((r) => !r.privileged)) {
       for (const grant of role.grants) {
-        expect(sensitive, `${role.code} grants ${grant.permission.code}`).not.toContain(
+        expect(allowed, `${role.code} grants ${grant.permission.code}`).toContain(
           grant.permission.code,
         );
       }

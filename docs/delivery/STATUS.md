@@ -124,7 +124,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Document | Version | Status |
 |---|---|---|
-| `docs/brd/Jadarat_TMS_BRD_v2.md` | 5 Oct 2026 | Current (v2.2 — FR-IAM-16 My profile added) |
+| `docs/brd/Jadarat_TMS_BRD_v2.md` | 2.2 | Draft for stakeholder review (FR-IAM-16 added 5 Oct 2026) |
 | `docs/brd/TMS_Feature_List.md` | 5 Oct 2026 | Current (290 features; 281 in scope; R1 = 97 — IAM-16 added) |
 | `docs/delivery/Jadarat_TMS_Development_Plan.md` | 1.1 | §2.3 agent-team operating model added |
 | `docs/research/TMS_Market_Comparison_vs_BRD.md` | 27 Sep 2026 | Reference |

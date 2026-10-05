@@ -70,7 +70,8 @@
       "currentPasswordInvalid": "The current password is incorrect.",
       "passwordTooWeak": "The new password is too weak. Use a longer password that mixes letters, digits and symbols.",
       "passwordSame": "The new password is the same as the current one. Choose a different password.",
-      "reauthenticationNeeded": "For your account's security, sign out and sign in again, then change the password."
+      "reauthenticationNeeded": "For your account's security, sign out and sign in again, then change the password.",
+      "passwordRejected": "The new password was not accepted. Choose a different one."
     }
   },
   "users": {
@@ -204,7 +205,10 @@
       "name": "Must contain visible letters and be at most 60 characters.",
       "mobile": "Enter the full number with the country code.",
       "tooShort": "At least 12 characters.",
-      "mismatch": "The passwords do not match."
+      "mismatch": "The passwords do not match.",
+      "tooLong": "The password is too long (at most 72 bytes, about 36 Arabic letters).",
+      "nameTooLong": "The full name must be at most 200 characters.",
+      "currentRequired": "Enter the current password."
     },
     "work": "Work details",
     "workIntro": "HR or the Organization Admin keeps these details up to date.",
@@ -217,6 +221,8 @@
     "confirmPassword": "Confirm the new password",
     "changePassword": "Change password",
     "changing": "Changing…",
-    "passwordChanged": "Password changed. Sign-in sessions on other devices have ended."
+    "passwordChanged": "Password changed. Sign-in sessions on other devices have ended.",
+    "prefilledName": "The full name was placed in \"First name\"; it can be split into the fields.",
+    "noProfile": "There is no profile linked to your account in this organization."
   }
 }

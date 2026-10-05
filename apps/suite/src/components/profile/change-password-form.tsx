@@ -16,7 +16,12 @@ export interface ChangePasswordFormProps {
     readonly submitting: string;
     readonly changed: string;
   };
-  readonly fieldTexts: { readonly tooShort: string; readonly mismatch: string };
+  readonly fieldTexts: {
+    readonly tooShort: string;
+    readonly tooLong: string;
+    readonly mismatch: string;
+    readonly currentRequired: string;
+  };
   readonly errors: ErrorTexts;
 }
 
@@ -51,7 +56,13 @@ export function ChangePasswordForm({ labels, fieldTexts, errors }: ChangePasswor
       if (result.error.code === 'VALIDATION_FAILED') {
         const codes = fieldErrorCodes(result.error);
         setFieldErrors({
-          ...(codes.newPassword ? { newPassword: fieldTexts.tooShort } : {}),
+          ...(codes.currentPassword ? { currentPassword: fieldTexts.currentRequired } : {}),
+          ...(codes.newPassword
+            ? {
+                newPassword:
+                  codes.newPassword === 'TOO_SMALL' ? fieldTexts.tooShort : fieldTexts.tooLong,
+              }
+            : {}),
           ...(codes.confirmPassword ? { confirmPassword: fieldTexts.mismatch } : {}),
         });
       }
@@ -70,6 +81,7 @@ export function ChangePasswordForm({ labels, fieldTexts, errors }: ChangePasswor
         autoComplete="current-password"
         required
         dir="ltr"
+        error={fieldErrors.currentPassword}
         disabled={pending}
       />
       <TextField
@@ -82,7 +94,7 @@ export function ChangePasswordForm({ labels, fieldTexts, errors }: ChangePasswor
         autoComplete="new-password"
         required
         minLength={12}
-        maxLength={128}
+        maxLength={72}
         dir="ltr"
         error={fieldErrors.newPassword}
         disabled={pending}

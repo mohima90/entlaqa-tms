@@ -19,13 +19,17 @@ import { cookies } from 'next/headers';
 import {
   type AuthClientLike,
   type AuthFlowDeps,
-  AuthServiceError,
   getSessionOrganizations,
   selectOrganization,
   signInWithPassword,
   signOut,
 } from './auth-flow';
-import { type PasswordClientLike, type PasswordVerdict, changePassword } from './password';
+import {
+  type PasswordClientLike,
+  type VerifierClientLike,
+  changePassword,
+  createPasswordVerifier,
+} from './password';
 
 async function requestDeps(): Promise<AuthFlowDeps> {
   const store = await cookies();
@@ -70,25 +74,6 @@ export async function signOutForRequest() {
   return signOut(await requestDeps());
 }
 
-/** Checks a password on a cookie-less client and ends the session it creates (password.ts). */
-async function verifyPassword(email: string, password: string): Promise<PasswordVerdict> {
-  const client = createSupabaseVerifierClient();
-  if (!client) return 'invalid';
-  const { error } = await client.auth.signInWithPassword({ email, password });
-  if (error) {
-    if (error.status === 429) return 'rate_limited';
-    if (error.status !== undefined && error.status >= 400 && error.status < 500) return 'invalid';
-    throw new AuthServiceError(error.status);
-  }
-  const { error: signOutError } = await client.auth.signOut({ scope: 'local' });
-  if (signOutError) {
-    log.warn('could not end the password-check session', {
-      action: 'platform.auth.change_password',
-    });
-  }
-  return 'valid';
-}
-
 export async function changePasswordForRequest(input: {
   readonly currentPassword: string;
   readonly newPassword: string;
@@ -97,7 +82,10 @@ export async function changePasswordForRequest(input: {
   return changePassword(
     {
       supabase: deps.supabase as unknown as PasswordClientLike | null,
-      verifyPassword,
+      verifyPassword: createPasswordVerifier(
+        () => createSupabaseVerifierClient() as VerifierClientLike | null,
+        deps.logWarning,
+      ),
       logWarning: deps.logWarning,
     },
     input,

@@ -11,7 +11,7 @@ import { NotSet } from '../../../../components/not-set';
 import { ChangePasswordForm } from '../../../../components/profile/change-password-form';
 import { PersonalDetailsForm } from '../../../../components/profile/personal-details-form';
 import { SuiteShell } from '../../../../components/suite-shell';
-import { formValuesFrom } from '../../../../lib/profile-form';
+import { formStateFrom } from '../../../../lib/profile-form';
 import { profileErrorTexts } from '../../../../lib/profile-texts';
 import { getSuiteContext } from '../../../../lib/suite-context';
 import { myProfileQuery } from '../../../../lib/users-queries';
@@ -40,11 +40,14 @@ export default async function MyProfilePage({ params }: { params: Promise<{ loca
     if (!result.ok) {
       const error = toClientError(result.error);
       if (error.code === 'UNAUTHENTICATED') redirect(`/${locale}/sign-in`);
-      content = (
-        <Alert tone="danger">
-          {users('loadFailed', { correlationId: error.correlationId ?? '' })}
-        </Alert>
-      );
+      content =
+        error.code === 'NOT_FOUND' ? (
+          <Alert tone="info">{t('noProfile')}</Alert>
+        ) : (
+          <Alert tone="danger">
+            {users('loadFailed', { correlationId: error.correlationId ?? '' })}
+          </Alert>
+        );
     } else {
       content = (
         <MyProfile locale={locale} details={result.value.details} profile={result.value.profile} />
@@ -66,7 +69,7 @@ async function MyProfile({
   profile,
 }: {
   locale: AppLocale;
-  details: Parameters<typeof formValuesFrom>[0];
+  details: Parameters<typeof formStateFrom>[0];
   profile: UserProfile;
 }) {
   const t = await getTranslations({ locale, namespace: 'profile' });
@@ -144,7 +147,7 @@ async function MyProfile({
         <p className="mb-4 mt-0 text-text-muted">{t('personalIntro')}</p>
         <PersonalDetailsForm
           locale={locale}
-          initial={formValuesFrom(details)}
+          initial={formStateFrom(details)}
           labels={{
             arabicName: t('arabicName'),
             englishName: t('englishName'),
@@ -164,11 +167,13 @@ async function MyProfile({
             saving: t('saving'),
             saved: t('saved'),
             noChanges: t('noChanges'),
+            prefilledName: t('prefilledName'),
           }}
           fieldTexts={{
             required: t('fieldErrors.required'),
             name: t('fieldErrors.name'),
             mobile: t('fieldErrors.mobile'),
+            nameTooLong: t('fieldErrors.nameTooLong'),
           }}
           errors={errors}
         />
@@ -199,7 +204,12 @@ async function MyProfile({
             submitting: t('changing'),
             changed: t('passwordChanged'),
           }}
-          fieldTexts={{ tooShort: t('fieldErrors.tooShort'), mismatch: t('fieldErrors.mismatch') }}
+          fieldTexts={{
+            tooShort: t('fieldErrors.tooShort'),
+            tooLong: t('fieldErrors.tooLong'),
+            mismatch: t('fieldErrors.mismatch'),
+            currentRequired: t('fieldErrors.currentRequired'),
+          }}
           errors={errors}
         />
       </Card>

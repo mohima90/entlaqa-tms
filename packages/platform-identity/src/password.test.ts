@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { AuthServiceError } from './auth-flow';
-import { type PasswordChangeDeps, type PasswordClientLike, changePassword } from './password';
+import {
+  type PasswordChangeDeps,
+  type PasswordClientLike,
+  changePassword,
+  createPasswordVerifier,
+} from './password';
 
 const input = { currentPassword: 'Old-password-123', newPassword: 'New-password-456' };
 
@@ -69,6 +74,12 @@ describe('changePassword (FR-IAM-16)', () => {
         { updateError: { status: 401, code: 'reauthentication_needed' } },
         'AUTH_REAUTHENTICATION_NEEDED',
       ],
+      [
+        { updateError: { status: 400, code: 'current_password_required' } },
+        'AUTH_CURRENT_PASSWORD_INVALID',
+      ],
+      [{ updateError: { status: 403, code: 'insufficient_aal' } }, 'STEP_UP_REQUIRED'],
+      [{ updateError: { status: 400, code: 'validation_failed' } }, 'AUTH_PASSWORD_REJECTED'],
       [{ user: null }, 'UNAUTHENTICATED'],
       [{ user: { id: 'u1' } }, 'UNAUTHENTICATED'],
     ];
@@ -94,5 +105,44 @@ describe('changePassword (FR-IAM-16)', () => {
   it('is not configured without Supabase', async () => {
     const result = await changePassword({ ...setup().deps, supabase: null }, input);
     expect(!result.ok && result.error.code).toBe('NOT_CONFIGURED');
+  });
+});
+
+describe('createPasswordVerifier', () => {
+  function client(signInError: { status?: number } | null, signOutError: unknown = null) {
+    const signOut = vi.fn(() => Promise.resolve({ error: signOutError }));
+    return {
+      signOut,
+      client: {
+        auth: {
+          signInWithPassword: vi.fn(() => Promise.resolve({ error: signInError })),
+          signOut,
+        },
+      },
+    };
+  }
+
+  it('valid: signs in on the separate client and ends that session at once', async () => {
+    const { client: c, signOut } = client(null);
+    expect(await createPasswordVerifier(() => c, vi.fn())('a@b.test', 'pw')).toBe('valid');
+    expect(signOut).toHaveBeenCalledWith({ scope: 'local' });
+  });
+
+  it('maps refusals and failures; logs a session that could not be ended', async () => {
+    const log = vi.fn();
+    expect(await createPasswordVerifier(() => client({ status: 400 }).client, log)('a', 'p')).toBe(
+      'invalid',
+    );
+    expect(await createPasswordVerifier(() => client({ status: 429 }).client, log)('a', 'p')).toBe(
+      'rate_limited',
+    );
+    expect(await createPasswordVerifier(() => null, log)('a', 'p')).toBe('invalid');
+    await expect(
+      createPasswordVerifier(() => client({ status: 503 }).client, log)('a', 'p'),
+    ).rejects.toBeInstanceOf(AuthServiceError);
+    expect(
+      await createPasswordVerifier(() => client(null, new Error('x')).client, log)('a', 'p'),
+    ).toBe('valid');
+    expect(log).toHaveBeenCalledOnce();
   });
 });

@@ -124,6 +124,10 @@ PROFILE_NEW_PASSWORD="Profile-$(openssl rand -hex 16)"
   pnpm exec playwright test e2e/profile.spec.ts --project=desktop-chromium)
 [[ "$(q "select count(distinct action) from platform.audit_events where action in ('platform.profile.updated', 'platform.auth.password_changed')")" == "2" ]] ||
   { echo "smoke: expected profile and password-change audit events" >&2; exit 1; }
+# After the password change, every other sign-in session of the member ended (and the password-check
+# sessions too): only the last sign-in with the new password remains.
+[[ "$(q "select count(*) from auth.sessions where user_id = '$MANAGER_ID'")" == "1" ]] ||
+  { echo "smoke: other sign-in sessions survived the password change" >&2; exit 1; }
 if [[ "$(q "select count(*) from platform.audit_events where data::text like '%منيرة%' or data::text like '%966551112233%'")" != "0" ]]; then
   echo "smoke: personal data reached the audit log" >&2; exit 1
 fi

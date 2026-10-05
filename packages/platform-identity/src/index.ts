@@ -15,6 +15,8 @@ export {
   type PasswordChangeDeps,
   type PasswordClientLike,
   type PasswordVerdict,
+  type VerifierClientLike,
   PasswordErrors,
   changePassword,
+  createPasswordVerifier,
 } from './password';

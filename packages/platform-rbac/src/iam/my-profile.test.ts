@@ -83,17 +83,30 @@ describe('My profile input (FR-IAM-16)', () => {
     });
     const noEnglish = MyProfileInput.parse({
       ...form,
+      familyNameAr: '',
       firstNameEn: '',
       familyNameEn: '',
       mobile: '',
     });
-    expect(personalDetailsFrom(noEnglish)).toMatchObject({ displayNameEn: null, mobileE164: null });
+    expect(personalDetailsFrom(noEnglish)).toMatchObject({
+      displayNameAr: 'سارة عبدالله', // family name optional
+      displayNameEn: null,
+      mobileE164: null,
+    });
   });
 
   it('rejects missing Arabic names, invisible-only names, local mobiles and any job or e-mail field', () => {
     for (const bad of [
       { ...form, firstNameAr: '' },
-      { ...form, familyNameAr: '   ' },
+      { ...form, firstNameAr: '   ' },
+      // Four parts of 60 make a display name over 200 characters (database limit).
+      {
+        ...form,
+        firstNameAr: 'س'.repeat(60),
+        fatherNameAr: 'ع'.repeat(60),
+        grandfatherNameAr: 'م'.repeat(60),
+        familyNameAr: 'ق'.repeat(60),
+      },
       { ...form, firstNameAr: String.fromCodePoint(0x200f, 0x200b) },
       { ...form, mobile: '0551234567' },
       { ...form, firstNameAr: 'س'.repeat(61) },
@@ -211,6 +224,8 @@ describe('change my password', () => {
       { ...input, newPassword: 'short', confirmPassword: 'short' },
       { ...input, confirmPassword: 'different-password' },
       { ...input, extra: 'x' },
+      // 74 bytes (bcrypt limit is 72): 37 Arabic letters.
+      { ...input, newPassword: 'ك'.repeat(37), confirmPassword: 'ك'.repeat(37) },
     ]) {
       const result = await action(bad);
       expect(!result.ok && result.error.code).toBe('VALIDATION_FAILED');

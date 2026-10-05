@@ -4,14 +4,19 @@ import { useRouter } from 'next/navigation';
 import { type SyntheticEvent, useState, useTransition } from 'react';
 import { updateMyProfileAction } from '../../actions/profile';
 import { type ErrorTexts, errorText } from '../auth/error-text';
-import { NAME_PARTS, type NamePart, type PersonalDetailsValues } from '../../lib/profile-form';
+import {
+  NAME_PARTS,
+  type NamePart,
+  type PersonalDetailsFormState,
+  composedLength,
+} from '../../lib/profile-form';
 import { fieldErrorCodes } from './field-errors';
 
-const REQUIRED_AR: ReadonlySet<string> = new Set(['firstNameAr', 'familyNameAr']);
+const REQUIRED_AR: ReadonlySet<string> = new Set(['firstNameAr']);
 
 export interface PersonalDetailsFormProps {
   readonly locale: 'ar' | 'en';
-  readonly initial: PersonalDetailsValues;
+  readonly initial: PersonalDetailsFormState;
   readonly labels: {
     readonly arabicName: string;
     readonly englishName: string;
@@ -26,11 +31,13 @@ export interface PersonalDetailsFormProps {
     readonly saving: string;
     readonly saved: string;
     readonly noChanges: string;
+    readonly prefilledName: string;
   };
   readonly fieldTexts: {
     readonly required: string;
     readonly name: string;
     readonly mobile: string;
+    readonly nameTooLong: string;
   };
   readonly errors: ErrorTexts;
 }
@@ -44,6 +51,13 @@ export function PersonalDetailsForm({
   errors,
 }: PersonalDetailsFormProps) {
   const router = useRouter();
+  const fieldText = (path: string, values: Record<string, string>): string => {
+    if (path === 'mobile') return fieldTexts.mobile;
+    if (REQUIRED_AR.has(path) && (values[path] ?? '').trim() === '') return fieldTexts.required;
+    const script = path.endsWith('Ar') ? 'Ar' : 'En';
+    const parts = NAME_PARTS.map((part) => values[`${part}${script}`] ?? '');
+    return composedLength(parts) > 200 ? fieldTexts.nameTooLong : fieldTexts.name;
+  };
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState<{ tone: 'success' | 'danger'; text: string } | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
@@ -75,16 +89,7 @@ export function PersonalDetailsForm({
         if (result.error.code === 'VALIDATION_FAILED') {
           const codes = fieldErrorCodes(result.error);
           setFieldErrors(
-            Object.fromEntries(
-              Object.keys(codes).map((path) => [
-                path,
-                path === 'mobile'
-                  ? fieldTexts.mobile
-                  : REQUIRED_AR.has(path) && values[path as keyof typeof values] === ''
-                    ? fieldTexts.required
-                    : fieldTexts.name,
-              ]),
-            ),
+            Object.fromEntries(Object.keys(codes).map((path) => [path, fieldText(path, values)])),
           );
         }
         setMessage({ tone: 'danger', text: errorText(result.error, errors) });
@@ -103,7 +108,7 @@ export function PersonalDetailsForm({
 
   const nameField = (part: NamePart, script: 'Ar' | 'En') => {
     const name = `${part}${script}`;
-    const value = initial[name as keyof PersonalDetailsValues];
+    const value = initial.values[name as keyof typeof initial.values];
     return (
       <TextField
         key={name}
@@ -127,10 +132,16 @@ export function PersonalDetailsForm({
     <form className="flex flex-col gap-6" onSubmit={onSubmit} noValidate>
       <fieldset className="m-0 grid grid-cols-1 gap-4 border-0 p-0 sm:grid-cols-2">
         <legend className="mb-2 font-semibold">{labels.arabicName}</legend>
+        {initial.prefilled.ar ? (
+          <p className="m-0 text-sm text-text-muted sm:col-span-2">{labels.prefilledName}</p>
+        ) : null}
         {NAME_PARTS.map((part) => nameField(part, 'Ar'))}
       </fieldset>
       <fieldset className="m-0 grid grid-cols-1 gap-4 border-0 p-0 sm:grid-cols-2">
         <legend className="mb-2 font-semibold">{labels.englishName}</legend>
+        {initial.prefilled.en ? (
+          <p className="m-0 text-sm text-text-muted sm:col-span-2">{labels.prefilledName}</p>
+        ) : null}
         {NAME_PARTS.map((part) => nameField(part, 'En'))}
       </fieldset>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -145,7 +156,7 @@ export function PersonalDetailsForm({
               {labels.mobileHint} <bdi dir="ltr">+966 55 123 4567</bdi>
             </>
           }
-          defaultValue={initial.mobileE164 ?? ''}
+          defaultValue={initial.values.mobileE164 ?? ''}
           dir="ltr"
           autoComplete="tel"
           maxLength={32}
@@ -159,7 +170,7 @@ export function PersonalDetailsForm({
           <select
             id="profile-language"
             name="preferredLocale"
-            defaultValue={initial.preferredLocale}
+            defaultValue={initial.values.preferredLocale}
             disabled={pending}
             className="min-h-11 w-full rounded-md border border-border-strong bg-surface px-3 text-text"
           >

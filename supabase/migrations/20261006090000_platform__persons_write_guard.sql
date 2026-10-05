@@ -1,7 +1,9 @@
 -- Who may write person records on the request path (TM-0004 F-PEO-01 / T-PEO-08; FR-IAM-01, FR-IAM-16).
 -- Until now any member's transaction could insert or update any person (policies `with check (true)`);
 -- only application code stopped it. Defence in depth, like the role guards (T-M2-03):
---   · user managers (an active Organization Admin or HR Manager role) write any person and placement;
+--   · user managers (an active Organization Admin or HR Manager role) write persons and placements —
+--     but the record of a member holding a privileged role (Organization Admin, HR Manager, …) only an
+--     Organization Admin may change, as for memberships (PO decision 5 Oct 2026, TM-0003 D-IAM-03);
 --   · every member may change their OWN person, but only the personal details of My profile (FR-IAM-16):
 --     names AR/EN (parts and display names), mobile and interface language — never e-mail, employee
 --     number, status, type or nationality (PO decision 5 Oct 2026: job data stays with HR);
@@ -43,6 +45,8 @@ set search_path = ''
 as $$
 declare
   v_kind text := private.request_claims() ->> 'role';
+  v_target uuid;
+  v_ignore text[];
 begin
   if current_user <> 'authenticated' then
     return new;  -- platform operation
@@ -57,12 +61,26 @@ begin
     raise exception 'unexpected claims for a person change' using errcode = 'insufficient_privilege';
   end if;
   if private.actor_manages_users(new.tenant_id) then
-    return new;
+    if tg_table_name = 'persons' then
+      v_target := new.id;
+    else
+      v_target := new.person_id;
+    end if;
+    if 'tenant_admin' = any (private.actor_role_codes(new.tenant_id, private.request_user_id()))
+       or not exists (select 1 from platform.tenant_memberships m
+                      where m.tenant_id = new.tenant_id and m.person_id = v_target
+                        and private.membership_is_privileged(m.tenant_id, m.id)) then
+      return new;
+    end if;
+    -- An HR Manager on a privileged member's record (also their own): only the self-service path below.
   end if;
   if tg_table_name = 'persons' and tg_op = 'UPDATE' then
+    -- Generated columns are NULL in NEW in a BEFORE trigger: never compare them.
+    v_ignore := private.person_self_service_columns() || array(
+      select a.attname::text from pg_catalog.pg_attribute a
+      where a.attrelid = 'platform.persons'::regclass and a.attgenerated <> '' and not a.attisdropped);
     if old.id = private.request_person_id()
-       and (to_jsonb(new) - private.person_self_service_columns())
-         = (to_jsonb(old) - private.person_self_service_columns()) then
+       and (to_jsonb(new) - v_ignore) = (to_jsonb(old) - v_ignore) then
       return new;  -- My profile: own personal details only
     end if;
   end if;

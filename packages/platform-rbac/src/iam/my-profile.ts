@@ -40,18 +40,36 @@ const mobile = z
   })
   .transform((value) => (value === '' ? null : value));
 
-export const MyProfileInput = z.strictObject({
-  firstNameAr: namePart.refine((v) => v !== null, { message: 'required' }),
-  fatherNameAr: namePart,
-  grandfatherNameAr: namePart,
-  familyNameAr: namePart.refine((v) => v !== null, { message: 'required' }),
-  firstNameEn: namePart,
-  fatherNameEn: namePart,
-  grandfatherNameEn: namePart,
-  familyNameEn: namePart,
-  mobile,
-  preferredLocale: z.enum(['ar', 'en']),
-});
+export const MyProfileInput = z
+  .strictObject({
+    firstNameAr: namePart.refine((v) => v !== null, { message: 'required' }),
+    fatherNameAr: namePart,
+    grandfatherNameAr: namePart,
+    familyNameAr: namePart,
+    firstNameEn: namePart,
+    fatherNameEn: namePart,
+    grandfatherNameEn: namePart,
+    familyNameEn: namePart,
+    mobile,
+    preferredLocale: z.enum(['ar', 'en']),
+  })
+  .superRefine((value, ctx) => {
+    // Display names are at most 200 characters (database check).
+    const length = (...parts: (string | null)[]) =>
+      parts.filter((p) => p !== null).join(' ').length;
+    if (
+      length(value.firstNameAr, value.fatherNameAr, value.grandfatherNameAr, value.familyNameAr) >
+      200
+    ) {
+      ctx.addIssue({ code: 'custom', path: ['firstNameAr'], message: 'too_long' });
+    }
+    if (
+      length(value.firstNameEn, value.fatherNameEn, value.grandfatherNameEn, value.familyNameEn) >
+      200
+    ) {
+      ctx.addIssue({ code: 'custom', path: ['firstNameEn'], message: 'too_long' });
+    }
+  });
 
 /** Display names composed from the parts (design principles §4); English only when given. */
 export function personalDetailsFrom(input: z.output<typeof MyProfileInput>): PersonalDetails {
@@ -176,8 +194,12 @@ export function updateMyProfileActionDefinition(): ActionDefinition<
 export const ChangePasswordInput = z
   .strictObject({
     currentPassword: z.string().min(1).max(1024),
-    // Minimum 12 (screen 6 proposed default, FR-IAM-13); Auth applies its own policy too.
-    newPassword: z.string().min(12).max(128),
+    // Minimum 12 (screen 6 proposed default, FR-IAM-13); at most 72 bytes (bcrypt — an Arabic
+    // letter is 2 bytes); Auth applies its own policy too.
+    newPassword: z
+      .string()
+      .min(12)
+      .refine((v) => new TextEncoder().encode(v).length <= 72, { message: 'too_long' }),
     confirmPassword: z.string().max(128),
   })
   .refine((v) => v.newPassword === v.confirmPassword, {

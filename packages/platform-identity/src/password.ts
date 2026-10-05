@@ -138,6 +138,8 @@ export async function changePassword(
       return err(appError(PasswordErrors.AUTH_REAUTHENTICATION_NEEDED));
     }
     if (code === 'insufficient_aal') return err(appError('STEP_UP_REQUIRED'));
+    // The session ended between the checks (revoked, expired): sign in again.
+    if (status === 401 || status === 403) return err(appError('UNAUTHENTICATED'));
     // Other refusals (4xx, e.g. validation_failed for a password Auth does not accept): a handled
     // answer, not a server error. 5xx / no status: Auth could not answer.
     if (status !== undefined && status >= 400 && status < 500) {

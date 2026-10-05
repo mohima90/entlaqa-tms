@@ -181,7 +181,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
-| 5 Oct 2026 | T-M2-15a security review: approve with fixes (1 Medium, 7 Low) → fixed with tests (72-byte password limit, HR cannot edit a privileged member's record, guard ready for generated columns, name form no longer forces splitting); full self-hosted smoke incl. other-sessions-ended check passes; re-review next |
+| 5 Oct 2026 | T-M2-15a security review: approve with fixes (1 Medium, 7 Low) → fixed with tests (72-byte password limit, HR cannot edit a privileged member's record, guard ready for generated columns, name form no longer forces splitting); full self-hosted smoke incl. other-sessions-ended check passes; re-review **approve** (4 nits fixed) |
 | 5 Oct 2026 | T-M2-15a built (My profile): own personal details + password change, header picture link, person write guard in the database (F-PEO-01); unit, pgTAP, preview E2E (100 checks) and signed-in E2E on the self-hosted stack pass; review next |
 | 5 Oct 2026 | PO added self-service My profile (personal details + password, e-mail locked, job data with HR): BRD v2.2 FR-IAM-16, feature IAM-16 (R1 = 97), backlog T-M2-15 next in the user sequence |
 | 5 Oct 2026 | PO checked the users page on staging (works: one Organization Admin). Gap found: no task for editing a user's details or roles (screen 3) → added T-M2-13 and T-M2-14 to the backlog |

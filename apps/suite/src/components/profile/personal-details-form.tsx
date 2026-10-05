@@ -32,6 +32,7 @@ export interface PersonalDetailsFormProps {
     readonly saved: string;
     readonly noChanges: string;
     readonly prefilledName: string;
+    readonly currentName: string;
   };
   readonly fieldTexts: {
     readonly required: string;
@@ -135,12 +136,22 @@ export function PersonalDetailsForm({
         {initial.prefilled.ar ? (
           <p className="m-0 text-sm text-text-muted sm:col-span-2">{labels.prefilledName}</p>
         ) : null}
+        {initial.unsplit.ar ? (
+          <p className="m-0 text-sm text-text-muted sm:col-span-2">
+            {labels.currentName} <bdi>{initial.unsplit.ar}</bdi>
+          </p>
+        ) : null}
         {NAME_PARTS.map((part) => nameField(part, 'Ar'))}
       </fieldset>
       <fieldset className="m-0 grid grid-cols-1 gap-4 border-0 p-0 sm:grid-cols-2">
         <legend className="mb-2 font-semibold">{labels.englishName}</legend>
         {initial.prefilled.en ? (
           <p className="m-0 text-sm text-text-muted sm:col-span-2">{labels.prefilledName}</p>
+        ) : null}
+        {initial.unsplit.en ? (
+          <p className="m-0 text-sm text-text-muted sm:col-span-2">
+            {labels.currentName} <bdi>{initial.unsplit.en}</bdi>
+          </p>
         ) : null}
         {NAME_PARTS.map((part) => nameField(part, 'En'))}
       </fieldset>

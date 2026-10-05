@@ -80,6 +80,7 @@ describe('changePassword (FR-IAM-16)', () => {
       ],
       [{ updateError: { status: 403, code: 'insufficient_aal' } }, 'STEP_UP_REQUIRED'],
       [{ updateError: { status: 400, code: 'validation_failed' } }, 'AUTH_PASSWORD_REJECTED'],
+      [{ updateError: { status: 401, code: 'session_not_found' } }, 'UNAUTHENTICATED'],
       [{ user: null }, 'UNAUTHENTICATED'],
       [{ user: { id: 'u1' } }, 'UNAUTHENTICATED'],
     ];

@@ -73,6 +73,10 @@ begin
       return new;
     end if;
     -- An HR Manager on a privileged member's record (also their own): only the self-service path below.
+    if not (tg_table_name = 'persons' and tg_op = 'UPDATE' and old.id = private.request_person_id()) then
+      raise exception 'only an Organization Admin may change the record of a member with a privileged role'
+        using errcode = 'insufficient_privilege';
+    end if;
   end if;
   if tg_table_name = 'persons' and tg_op = 'UPDATE' then
     -- Generated columns are NULL in NEW in a BEFORE trigger: never compare them.

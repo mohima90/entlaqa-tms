@@ -223,6 +223,7 @@
     "changing": "Changing…",
     "passwordChanged": "Password changed. Sign-in sessions on other devices have ended.",
     "prefilledName": "The full name was placed in \"First name\"; it can be split into the fields.",
-    "noProfile": "There is no profile linked to your account in this organization."
+    "noProfile": "There is no profile linked to your account in this organization.",
+    "currentName": "Current name, to split into the fields:"
   }
 }

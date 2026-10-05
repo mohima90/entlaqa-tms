@@ -22,6 +22,8 @@ export interface PersonalDetailsFormState {
   readonly values: PersonalDetailsValues;
   /** The display name was placed in "first name" (no parts yet) — the form says it can be split. */
   readonly prefilled: { readonly ar: boolean; readonly en: boolean };
+  /** A display name too long for one field and without parts: shown so the member can split it. */
+  readonly unsplit: { readonly ar: string | null; readonly en: string | null };
 }
 
 /**
@@ -35,10 +37,10 @@ export function formStateFrom(
     readonly displayNameEn: string | null;
   },
 ): PersonalDetailsFormState {
-  const prefill = (script: 'Ar' | 'En', displayName: string | null) =>
-    displayName !== null &&
-    displayName.length <= NAME_PART_MAX &&
+  const noParts = (script: 'Ar' | 'En') =>
     NAME_PARTS.every((part) => details[`${part}${script}`] === null);
+  const prefill = (script: 'Ar' | 'En', displayName: string | null) =>
+    displayName !== null && displayName.length <= NAME_PART_MAX && noParts(script);
   const ar = prefill('Ar', details.displayNameAr);
   const en = prefill('En', details.displayNameEn);
   return {
@@ -55,6 +57,10 @@ export function formStateFrom(
       preferredLocale: details.preferredLocale,
     },
     prefilled: { ar, en },
+    unsplit: {
+      ar: !ar && noParts('Ar') ? details.displayNameAr : null,
+      en: !en && noParts('En') ? details.displayNameEn : null,
+    },
   };
 }
 

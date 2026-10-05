@@ -35,6 +35,7 @@ describe('formStateFrom', () => {
     const state = formStateFrom({ ...empty, displayNameAr: 'م'.repeat(61), displayNameEn: null });
     expect(state.values.firstNameAr).toBeNull();
     expect(state.prefilled.ar).toBe(false);
+    expect(state.unsplit).toEqual({ ar: 'م'.repeat(61), en: null });
   });
 
   it('keeps the parts when there are any', () => {

@@ -107,7 +107,7 @@ export function ChangePasswordForm({ labels, fieldTexts, errors }: ChangePasswor
         marker={labels.required}
         autoComplete="new-password"
         required
-        maxLength={128}
+        maxLength={72}
         dir="ltr"
         error={fieldErrors.confirmPassword}
         disabled={pending}

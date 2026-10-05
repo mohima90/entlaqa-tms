@@ -206,10 +206,10 @@ begin
 
   perform tests.assert_eq(
     (select array_agg(tgname::text order by tgname::text) from pg_trigger where tgrelid = 'platform.persons'::regclass and not tgisinternal),
-    array['persons_deactivation', 'persons_reactivation', 'persons_stamp_row'], 'persons: triggers');
+    array['persons_deactivation', 'persons_guard_writer', 'persons_reactivation', 'persons_stamp_row'], 'persons: triggers');
   perform tests.assert_eq(
     (select array_agg(tgname::text order by tgname::text) from pg_trigger where tgrelid = 'platform.person_employment'::regclass and not tgisinternal),
-    array['person_employment_stamp_row', 'person_employment_validate'], 'person_employment: triggers');
+    array['person_employment_guard_writer', 'person_employment_stamp_row', 'person_employment_validate'], 'person_employment: triggers');
   perform tests.assert((select bool_and(convalidated) from pg_constraint where conrelid = 'platform.persons'::regclass and contype = 'c'),
     'persons: every check constraint is validated');
 end $$;

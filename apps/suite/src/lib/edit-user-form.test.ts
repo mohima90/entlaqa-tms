@@ -29,6 +29,8 @@ describe('editFieldErrorKey', () => {
     expect(editFieldErrorKey('branchId', 'INVALID_FORMAT')).toBe('unit');
     expect(editFieldErrorKey('jobTitleEn', 'TOO_BIG')).toBe('jobTitle');
     expect(editFieldErrorKey('hireOn', 'INVALID_FORMAT')).toBe('hireOn');
+    expect(editFieldErrorKey('hireOn', 'AFTER_END')).toBe('hireOnAfterEnd');
+    expect(editFieldErrorKey('branchId', 'DELETED')).toBe('unitDeleted');
     expect(editFieldErrorKey('mobile', 'CUSTOM')).toBe('mobile');
     expect(editFieldErrorKey('familyNameAr', 'TOO_BIG')).toBe('name');
   });

@@ -1,5 +1,6 @@
 import { toClientError } from '@jadarat/platform-core';
 import { routing } from '@jadarat/platform-i18n/routing';
+import type { CurrentUnit } from '@jadarat/platform-db';
 import type { EditUserView } from '@jadarat/platform-rbac';
 import { Alert, Card } from '@jadarat/ui';
 import { hasLocale } from 'next-intl';
@@ -31,6 +32,7 @@ const LABEL_KEYS = [
   'employeeNumber',
   'employeeNumberHint',
   'hireDate',
+  'hireDateHijri',
   'jobTitleAr',
   'jobTitleEn',
   'department',
@@ -65,6 +67,7 @@ const FIELD_ERROR_KEYS = [
   'unitDeleted',
   'jobTitle',
   'hireOn',
+  'hireOnAfterEnd',
 ] as const;
 
 /**
@@ -166,6 +169,17 @@ async function editForm(
     id: u.id,
     name: localizedName(locale, u.nameAr, u.nameEn),
   });
+  // The current unit stays selectable even when deleted since (a save keeps it, never clears it).
+  const withCurrent = (
+    options: readonly { id: string; nameAr: string; nameEn: string | null }[],
+    id: string | null,
+    current: CurrentUnit | null,
+  ) => {
+    const list = options.map(unit);
+    if (id === null || current === null || options.some((o) => o.id === id)) return list;
+    const name = localizedName(locale, current.nameAr, current.nameEn);
+    return [{ id, name: current.deleted ? `${name} ${t('deleted')}` : name }, ...list];
+  };
 
   return (
     <Card title={t('details')}>
@@ -186,8 +200,8 @@ async function editForm(
           jobTitleEn: user.jobTitleEn ?? '',
           hireOn: user.hireOn ?? '',
         }}
-        departments={view.orgUnits.departments.map(unit)}
-        branches={view.orgUnits.branches.map(unit)}
+        departments={withCurrent(view.orgUnits.departments, user.departmentId, user.department)}
+        branches={withCurrent(view.orgUnits.branches, user.branchId, user.branch)}
         managers={view.managers.map((m) => ({
           personId: m.personId,
           name: localizedName(locale, m.nameAr, m.nameEn),

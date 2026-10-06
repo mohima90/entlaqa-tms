@@ -71,6 +71,10 @@ do $$
 begin
   perform tests.assert(private.actor_may_manage_person('a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000ab'),
     'admin: may manage every member');
+  perform tests.assert(not private.actor_may_manage_person('b0000000-0000-4000-8000-000000000001', 'b1000000-0000-4000-8000-0000000000b1'),
+    'admin: may manage nobody in another organization');
+  -- Callers always pass the row's own tenant (the guard: new.tenant_id; the app: p.tenant_id of a row RLS
+  -- let it read). The person need not exist yet (the guard also runs before a new person is inserted).
   perform tests.assert_eq(tests.rows_affected($q$update platform.persons set employee_number = 'E-200', email = 'ab.new@example.test' where id = 'a1000000-0000-4000-8000-0000000000ab'$q$),
     1::bigint, 'admin: changes HR data of a person');
   perform tests.assert_eq(tests.rows_affected($q$update platform.person_employment set job_title_ar = 'مديرة' where person_id = 'a1000000-0000-4000-8000-0000000000ab'$q$),

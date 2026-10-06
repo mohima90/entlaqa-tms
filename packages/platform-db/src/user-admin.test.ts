@@ -120,7 +120,7 @@ describe('updateUserDetails', () => {
   });
 
   it('updates the person with a version check and creates the first placement', async () => {
-    const fake = fakeTx([row], [{ id: 'p1' }], []);
+    const fake = fakeTx([row], [{ id: 'p1' }], [{ id: 'e1' }]);
     const outcome = await updateUserDetails(
       fake.tx,
       'p1',
@@ -130,6 +130,47 @@ describe('updateUserDetails', () => {
     expect(outcome).toEqual({ ok: true, changed: ['mobileE164', 'departmentId'] });
     expect(fake.executed[1]).toContain('and version = $');
     expect(fake.executed[2]).toContain('insert into platform.person_employment');
+    expect(fake.executed[2]).toContain('on conflict (tenant_id, person_id) do nothing');
+    // A concurrent first placement won the unique key: version conflict, not an internal error.
+    const raced = fakeTx([row], []);
+    expect(await updateUserDetails(raced.tx, 'p1', '3:0', change({ departmentId: 'd1' }))).toEqual({
+      ok: false,
+      refusal: 'version_conflict',
+    });
+  });
+
+  it('refuses a record the member may not manage, even their own (My profile is the path)', async () => {
+    const fake = fakeTx([{ ...row, may_manage: false }]);
+    expect(
+      await updateUserDetails(fake.tx, 'p1', '3:0', change({ mobileE164: '+966500000000' })),
+    ).toEqual({ ok: false, refusal: 'not_allowed' });
+    expect(fake.executed).toHaveLength(1);
+  });
+
+  it('keeps a long name stored without parts; an empty Arabic name is refused otherwise', async () => {
+    const unsplit = {
+      ...row,
+      first_name_ar: null,
+      display_name_ar: 'س'.repeat(70),
+      display_name_en: 'A'.repeat(70),
+    };
+    const kept = fakeTx([unsplit], [{ id: 'e1' }]);
+    expect(
+      await updateUserDetails(
+        kept.tx,
+        'p1',
+        '3:0',
+        change({ firstNameAr: null, displayNameAr: '', displayNameEn: null, departmentId: 'd1' }),
+      ),
+    ).toEqual({ ok: true, changed: ['departmentId'] });
+    expect(
+      await updateUserDetails(
+        fakeTx([row]).tx,
+        'p1',
+        '3:0',
+        change({ firstNameAr: null, displayNameAr: '' }),
+      ),
+    ).toEqual({ ok: false, refusal: 'name_required' });
   });
 
   it('updates an existing placement; a concurrent edit is a version conflict', async () => {
@@ -177,8 +218,22 @@ describe('updateUserDetails', () => {
       refusalOf(pgError('23514', { message: 'the direct manager must be an active person' })),
     ).toBe('manager_inactive');
     expect(refusalOf(pgError('23514', { message: 'cannot be placed in a deleted branch' }))).toBe(
-      'unit_deleted',
+      'branch_deleted',
     );
+    expect(
+      refusalOf(pgError('23514', { message: 'cannot be placed in a deleted department' })),
+    ).toBe('department_deleted');
+    expect(refusalOf(pgError('23514', { constraint_name: 'person_employment_dates_check' }))).toBe(
+      'hire_date_invalid',
+    );
+    for (const [constraint, refusal] of [
+      ['person_employment_tenant_id_department_id_fkey', 'department_deleted'],
+      ['person_employment_tenant_id_branch_id_fkey', 'branch_deleted'],
+      ['person_employment_tenant_id_manager_person_id_fkey', 'manager_inactive'],
+    ]) {
+      expect(refusalOf(pgError('23503', { constraint_name: constraint }))).toBe(refusal);
+    }
+    expect(() => refusalOf(pgError('23503', { constraint_name: 'other_fkey' }))).toThrow();
     expect(refusalOf(pgError('42501'))).toBe('not_allowed');
     expect(() => refusalOf(new Error('boom'))).toThrow('boom');
     expect(await updateUserDetails(fakeTx([]).tx, 'p1', '1:0', change())).toEqual({

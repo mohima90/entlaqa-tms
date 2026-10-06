@@ -1,4 +1,5 @@
 'use client';
+import { formatHijriDate } from '@jadarat/platform-i18n/hijri';
 import { Alert, Button, TextField } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
 import {
@@ -109,10 +110,20 @@ export function EditUserForm(props: EditUserFormProps) {
   const [message, setMessage] = useState<{ tone: 'success' | 'danger'; text: string } | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
   const [departmentId, setDepartmentId] = useState(values.departmentId);
+  const [branchId, setBranchId] = useState(values.branchId);
+  const [hireOn, setHireOn] = useState(values.hireOn);
   const [managerId, setManagerId] = useState(values.managerPersonId);
   const [showAll, setShowAll] = useState(false);
   const managers = managersFor(props.managers, departmentId, showAll, managerId);
   const text = (key: string) => labels[key] ?? key;
+  const hijri = (date: string): string | undefined => {
+    if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(date)) return undefined;
+    try {
+      return text('hireDateHijri').replace('{date}', formatHijriDate(date, props.locale));
+    } catch {
+      return undefined;
+    }
+  };
 
   function onSubmit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -132,16 +143,17 @@ export function EditUserForm(props: EditUserFormProps) {
       fatherNameEn: field('fatherNameEn'),
       grandfatherNameEn: field('grandfatherNameEn'),
       familyNameEn: field('familyNameEn'),
-      email: values.hasLogin ? values.email : field('email'),
+      // The login e-mail is not changed here (the server keeps it): not sent, not validated.
+      email: values.hasLogin ? '' : field('email'),
       mobile: field('mobile'),
       employeeNumber: field('employeeNumber'),
       preferredLocale: field('preferredLocale') === 'en' ? ('en' as const) : ('ar' as const),
       departmentId,
-      branchId: field('branchId'),
+      branchId,
       managerPersonId: managerId,
       jobTitleAr: field('jobTitleAr'),
       jobTitleEn: field('jobTitleEn'),
-      hireOn: field('hireOn'),
+      hireOn,
     };
     setMessage(null);
     setFieldErrors({});
@@ -173,7 +185,8 @@ export function EditUserForm(props: EditUserFormProps) {
 
   const nameField = (part: NamePart, script: 'Ar' | 'En') => {
     const name = `${part}${script}`;
-    const required = name === 'firstNameAr';
+    // A long Arabic name stored without parts is kept when no parts are entered.
+    const required = name === 'firstNameAr' && !names.unsplit.ar;
     return (
       <TextField
         key={name}
@@ -297,8 +310,14 @@ export function EditUserForm(props: EditUserFormProps) {
           type="date"
           label={text('hireDate')}
           marker={text('optional')}
-          defaultValue={values.hireOn}
+          hint={hijri(hireOn)}
+          value={hireOn}
+          onChange={(event) => {
+            setHireOn(event.target.value);
+          }}
           dir="ltr"
+          min="1900-01-01"
+          max="2100-12-31"
           error={fieldErrors.hireOn}
           disabled={pending}
         />
@@ -352,7 +371,10 @@ export function EditUserForm(props: EditUserFormProps) {
           name="branchId"
           label={text('branch')}
           marker={text('optional')}
-          defaultValue={values.branchId}
+          value={branchId}
+          onChange={(event) => {
+            setBranchId(event.target.value);
+          }}
           error={fieldErrors.branchId}
           disabled={pending}
         >
@@ -390,6 +412,7 @@ export function EditUserForm(props: EditUserFormProps) {
                 type="button"
                 variant="secondary"
                 aria-controls="edit-manager"
+                aria-pressed={showAll}
                 onClick={() => {
                   setShowAll((all) => !all);
                 }}
@@ -402,11 +425,19 @@ export function EditUserForm(props: EditUserFormProps) {
         </div>
       </fieldset>
 
-      {message ? (
-        <Alert tone={message.tone} data-testid="edit-user-message">
+      {message?.tone === 'danger' ? (
+        <Alert tone="danger" data-testid="edit-user-message">
           {message.text}
         </Alert>
       ) : null}
+      {/* Kept rendered so "Saved" is announced when its text changes (Alert docs). */}
+      <div role="status" aria-live="polite">
+        {message?.tone === 'success' ? (
+          <Alert tone="success" role="none" data-testid="edit-user-message">
+            {message.text}
+          </Alert>
+        ) : null}
+      </div>
       <div className="flex flex-wrap items-center gap-4">
         <Button type="submit" disabled={pending}>
           {pending ? text('saving') : text('save')}

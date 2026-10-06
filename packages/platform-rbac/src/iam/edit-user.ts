@@ -40,7 +40,8 @@ export const EditUserInput = z
   .strictObject({
     personId: z.uuid(),
     version: z.string().regex(/^[0-9]{1,9}:[0-9]{1,9}$/),
-    firstNameAr: namePart.refine((v) => v !== null, { message: 'required' }),
+    // Required unless the stored Arabic name has no parts and is kept as is (checked when saving).
+    firstNameAr: namePart,
     fatherNameAr: namePart,
     grandfatherNameAr: namePart,
     familyNameAr: namePart,
@@ -65,7 +66,12 @@ export const EditUserInput = z
     jobTitleAr: jobTitle,
     jobTitleEn: jobTitle,
     hireOn: z
-      .union([z.iso.date(), z.literal('')])
+      .union([
+        z.iso.date().refine((value) => value >= '1900-01-01' && value <= '2100-12-31', {
+          message: 'range',
+        }),
+        z.literal(''),
+      ])
       .transform((value) => (value === '' ? null : value)),
   })
   .superRefine((value, ctx) => {
@@ -136,8 +142,14 @@ function refusalError(refusal: UserDetailsRefusal): AppError {
       return field('managerPersonId', 'LOOP');
     case 'manager_inactive':
       return field('managerPersonId', 'INACTIVE');
-    case 'unit_deleted':
+    case 'department_deleted':
       return field('departmentId', 'DELETED');
+    case 'branch_deleted':
+      return field('branchId', 'DELETED');
+    case 'hire_date_invalid':
+      return field('hireOn', 'AFTER_END');
+    case 'name_required':
+      return field('firstNameAr', 'REQUIRED');
   }
 }
 

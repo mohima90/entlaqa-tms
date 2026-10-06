@@ -113,7 +113,8 @@ describe('edit user input', () => {
       { ...form, version: 'x' },
       { ...form, departmentId: 'd1' },
       { ...form, status: 'inactive' },
-      { ...form, firstNameAr: '' },
+      { ...form, hireOn: '0001-01-01' },
+      { ...form, hireOn: '9999-12-31' },
     ]) {
       expect(EditUserInput.safeParse(bad).success, JSON.stringify(bad)).toBe(false);
     }
@@ -177,7 +178,10 @@ describe('update user details', () => {
       ['employee_number_taken', 'VALIDATION_FAILED', 'employeeNumber'],
       ['manager_loop', 'VALIDATION_FAILED', 'managerPersonId'],
       ['manager_inactive', 'VALIDATION_FAILED', 'managerPersonId'],
-      ['unit_deleted', 'VALIDATION_FAILED', 'departmentId'],
+      ['department_deleted', 'VALIDATION_FAILED', 'departmentId'],
+      ['branch_deleted', 'VALIDATION_FAILED', 'branchId'],
+      ['hire_date_invalid', 'VALIDATION_FAILED', 'hireOn'],
+      ['name_required', 'VALIDATION_FAILED', 'firstNameAr'],
       ['version_conflict', 'CONFLICT_VERSION', undefined],
       ['not_allowed', 'FORBIDDEN', undefined],
       ['not_found', 'NOT_FOUND', undefined],
@@ -194,6 +198,13 @@ describe('update user details', () => {
     const { rt, writeAudit } = runtime(['tenant_admin']);
     await createDefineAction(rt)(updateUserDetailsActionDefinition())(form);
     expect(writeAudit).not.toHaveBeenCalled();
+    // Another organization's person or one outside the scope: not found, nothing saved.
+    db.updateUserDetails.mockClear();
+    const other = await createDefineAction(runtime(['tenant_admin']).rt)(
+      updateUserDetailsActionDefinition(),
+    )({ ...form, personId: ME });
+    expect(!other.ok && other.error.code).toBe('NOT_FOUND');
+    expect(db.updateUserDetails).not.toHaveBeenCalled();
     const denied = await createDefineAction(runtime(['line_manager']).rt)(
       updateUserDetailsActionDefinition(),
     )(form);

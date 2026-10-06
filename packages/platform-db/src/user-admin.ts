@@ -1,5 +1,6 @@
 import 'server-only';
 import { type SQL, sql } from 'drizzle-orm';
+import { keepUnsplitDisplayNames } from './names';
 import type { UserTx } from './with-user-tx';
 
 /**
@@ -7,6 +8,12 @@ import type { UserTx } from './with-user-tx';
  * The caller holds `platform.user.update` for the person (defineAction resource); the database guard
  * (private.check_person_writer, private.actor_may_manage_person) has the final word.
  */
+export interface CurrentUnit {
+  readonly nameAr: string;
+  readonly nameEn: string | null;
+  readonly deleted: boolean;
+}
+
 export interface EditableUser {
   readonly personId: string;
   readonly firstNameAr: string | null;
@@ -31,6 +38,9 @@ export interface EditableUser {
   readonly jobTitleAr: string | null;
   readonly jobTitleEn: string | null;
   readonly hireOn: string | null;
+  /** Names of the current department and branch, and whether they were deleted since (kept as is). */
+  readonly department: CurrentUnit | null;
+  readonly branch: CurrentUnit | null;
   /** Optimistic concurrency: `<person version>:<placement version or 0>`. */
   readonly version: string;
   /** The signed-in member may change this record (same rule as the database guard). */
@@ -47,12 +57,24 @@ export async function getEditableUser(tx: UserTx, personId: string): Promise<Edi
                    where m.tenant_id = p.tenant_id and m.person_id = p.id) as has_login,
            e.department_id, e.branch_id, e.manager_person_id, e.job_title_ar, e.job_title_en,
            e.hire_on::text as hire_on, coalesce(e.version, 0) as employment_version,
-           private.actor_may_manage_person(p.tenant_id, p.id) as may_manage
+           private.actor_may_manage_person(p.tenant_id, p.id) as may_manage,
+           d.name_ar as department_name_ar, d.name_en as department_name_en,
+           d.deleted_at is not null as department_deleted,
+           b.name_ar as branch_name_ar, b.name_en as branch_name_en,
+           b.deleted_at is not null as branch_deleted
     from platform.persons p
     left join platform.person_employment e on e.tenant_id = p.tenant_id and e.person_id = p.id
+    left join platform.departments d on d.tenant_id = e.tenant_id and d.id = e.department_id
+    left join platform.branches b on b.tenant_id = e.tenant_id and b.id = e.branch_id
     where p.id = ${personId}::uuid`);
   if (!row) return null;
   const text = (key: string) => (row[key] ?? null) as string | null;
+  const unit = (kind: 'department' | 'branch'): CurrentUnit | null => {
+    const nameAr = text(`${kind}_name_ar`);
+    return nameAr === null
+      ? null
+      : { nameAr, nameEn: text(`${kind}_name_en`), deleted: row[`${kind}_deleted`] === true };
+  };
   return {
     personId: row.id as string,
     firstNameAr: text('first_name_ar'),
@@ -76,6 +98,8 @@ export async function getEditableUser(tx: UserTx, personId: string): Promise<Edi
     jobTitleAr: text('job_title_ar'),
     jobTitleEn: text('job_title_en'),
     hireOn: text('hire_on'),
+    department: unit('department'),
+    branch: unit('branch'),
     version: `${String(row.person_version)}:${String(row.employment_version)}`,
     mayManage: row.may_manage === true,
   };
@@ -142,7 +166,7 @@ export async function listManagerOptions(
 }
 
 export interface UserDetailsChange {
-  readonly firstNameAr: string;
+  readonly firstNameAr: string | null;
   readonly fatherNameAr: string | null;
   readonly grandfatherNameAr: string | null;
   readonly familyNameAr: string | null;
@@ -173,7 +197,10 @@ export type UserDetailsRefusal =
   | 'employee_number_taken'
   | 'manager_loop'
   | 'manager_inactive'
-  | 'unit_deleted'
+  | 'department_deleted'
+  | 'branch_deleted'
+  | 'hire_date_invalid'
+  | 'name_required'
   | 'not_allowed';
 
 export type UserDetailsOutcome =
@@ -239,7 +266,19 @@ export function refusalOf(error: unknown): UserDetailsRefusal {
   if (pg?.code === '23514' && pg.message.includes('direct manager must be an active')) {
     return 'manager_inactive';
   }
-  if (pg?.code === '23514' && /deleted (department|branch)/.test(pg.message)) return 'unit_deleted';
+  if (pg?.code === '23514' && pg.message.includes('deleted department')) {
+    return 'department_deleted';
+  }
+  if (pg?.code === '23514' && pg.message.includes('deleted branch')) return 'branch_deleted';
+  if (pg?.code === '23514' && pg.constraint === 'person_employment_dates_check') {
+    return 'hire_date_invalid';
+  }
+  // A unit or manager id that does not exist (or belongs to another organization).
+  if (pg?.code === '23503' && pg.constraint?.includes('department_id')) return 'department_deleted';
+  if (pg?.code === '23503' && pg.constraint?.includes('branch_id')) return 'branch_deleted';
+  if (pg?.code === '23503' && pg.constraint?.includes('manager_person_id')) {
+    return 'manager_inactive';
+  }
   if (pg?.code === '42501') return 'not_allowed';
   throw error;
 }
@@ -258,7 +297,14 @@ export async function updateUserDetails(
   const before = await getEditableUser(tx, personId);
   if (!before) return { ok: false, refusal: 'not_found' };
   if (before.version !== expectedVersion) return { ok: false, refusal: 'version_conflict' };
-  const next: UserDetailsChange = before.hasLogin ? { ...change, email: before.email } : change;
+  // Same rule as the page and the database guard (also on one's own record: My profile is the
+  // self-service path, with its own audit event).
+  if (!before.mayManage) return { ok: false, refusal: 'not_allowed' };
+  const next: UserDetailsChange = keepUnsplitDisplayNames(
+    before,
+    before.hasLogin ? { ...change, email: before.email } : change,
+  );
+  if (next.displayNameAr === '') return { ok: false, refusal: 'name_required' };
 
   const personChanges = PERSON_FIELDS.filter(([field]) => before[field] !== next[field]);
   const employmentChanges = EMPLOYMENT_FIELDS.filter(([field]) => before[field] !== next[field]);
@@ -266,7 +312,6 @@ export async function updateUserDetails(
   const hasEmployment = employmentVersion !== '0';
   // The version check is repeated in each UPDATE, so a concurrent edit cannot slip in between.
   let conflict = false;
-  const employmentNeeded = hasEmployment || EMPLOYMENT_FIELDS.some(([f]) => next[f] !== null);
 
   try {
     if (personChanges.length > 0) {
@@ -277,7 +322,7 @@ export async function updateUserDetails(
         where id = ${personId}::uuid and version = ${Number(personVersion)} returning id`);
       conflict ||= updated.length === 0;
     }
-    if (employmentChanges.length > 0 && employmentNeeded) {
+    if (employmentChanges.length > 0) {
       if (hasEmployment) {
         const sets: SQL[] = employmentChanges.map(([field, column]) =>
           column === 'hire_on'
@@ -291,12 +336,15 @@ export async function updateUserDetails(
           where person_id = ${personId}::uuid and version = ${Number(employmentVersion)} returning id`);
         conflict ||= updated.length === 0;
       } else {
-        await tx.execute(sql`
+        // A concurrent first placement wins the unique key: this edit is then a version conflict.
+        const inserted = await tx.execute(sql`
           insert into platform.person_employment
             (person_id, department_id, branch_id, manager_person_id, job_title_ar, job_title_en, hire_on)
           values (${personId}::uuid, ${next.departmentId}::uuid, ${next.branchId}::uuid,
                   ${next.managerPersonId}::uuid, ${next.jobTitleAr}, ${next.jobTitleEn},
-                  ${next.hireOn}::date)`);
+                  ${next.hireOn}::date)
+          on conflict (tenant_id, person_id) do nothing returning id`);
+        conflict ||= inserted.length === 0;
       }
     }
   } catch (error) {

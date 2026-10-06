@@ -229,6 +229,8 @@ test.describe('users pages', () => {
       'تعديل بيانات سارة عبدالله القحطاني',
     );
     await expect(page.getByRole('combobox', { name: /القسم/ })).toHaveValue(/.+/);
+    // Hire date: Gregorian field, Hijri equivalent shown under it
+    await expect(page.getByText('يوافق 22 شعبان 1445 هـ')).toBeVisible();
     await expectNoSeriousA11yViolations(page);
   });
 });

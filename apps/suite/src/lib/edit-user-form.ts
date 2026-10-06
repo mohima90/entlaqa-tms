@@ -42,7 +42,7 @@ export function editFieldErrorKey(path: string, code: string): string {
     case 'jobTitleEn':
       return 'jobTitle';
     case 'hireOn':
-      return 'hireOn';
+      return code === 'AFTER_END' ? 'hireOnAfterEnd' : 'hireOn';
     case 'mobile':
       return 'mobile';
     default:

@@ -146,7 +146,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 5. When the first real journeys work: pick 5–8 ENTLAQA staff who did not work on the BRD to try the real product (Claude prepares the sessions).
 6. ~~DB deploy of T-M2-01…04a to staging~~ **Done 5 Oct 2026** (plan, then apply: 13 migrations, verification passed; the roles backfill made only the PO's account Organization Admin — one provisioning run ever, one member).
 7. ~~After My profile: DB deploy + Auth settings~~ **Done 6 Oct 2026** (migration `persons_write_guard` applied, verification passed; Supabase Auth: require current password on, minimum length 12).
-8. After the T-M2-13 PR is merged: **DB deploy** to staging (plan, then apply) for one migration (`actor_may_manage_person`). Claude guides it.
+8. ~~After T-M2-13: DB deploy~~ **Done 6 Oct 2026** (plan, then apply: migration `actor_may_manage_person` applied, verification passed).
 
 **Security decisions for M2 (from TM-0002…0006, 3 Oct 2026)** — needed before the related M2 stories start; Claude will bring them one at a time:
 1. Always require an authenticator code for high-risk actions (role changes, exports), even when an organization turns MFA off? (TM-0003 D-IAM-01; recommended: yes)
@@ -182,6 +182,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
+| 6 Oct 2026 | Staging DB deploy with the PO (plan → apply): `actor_may_manage_person` applied, verification passed. Edit user details is live on staging. Next: T-M2-14 change a user's roles |
 | 6 Oct 2026 | PR #35 merged (T-M2-13 edit a user's details). Next: staging DB deploy (1 migration, `actor_may_manage_person`) with the PO; then T-M2-14 change roles |
 | 6 Oct 2026 | T-M2-13 built: HR / Organization Admin edit a user's details (names, contact, employee number, language, placement, manager picker by department with "all departments"); shared manage rule in SQL; unit, integration, pgTAP and E2E (preview + self-hosted) tests. Independent review: approve with fixes (2 Medium, 7 Low; re-review 1 Low) → all fixed, all checks and the self-hosted smoke green. Next: PR (after PO "yes"), staging DB deploy |
 | 6 Oct 2026 | Staging updated with the PO: DB deploy plan → apply (person write guard), Auth settings (require current password, minimum length 12). Next: T-M2-13 edit a user's details |

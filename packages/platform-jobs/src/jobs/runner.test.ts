@@ -105,7 +105,7 @@ describe('assertQueueRole', () => {
 describe('createQueuePool', () => {
   it('keeps a local URL as it is', async () => {
     const pool = createQueuePool(LOCAL, undefined, 4);
-    expect(pool.options).toMatchObject({ connectionString: LOCAL, max: 4 });
+    expect(pool.options).toMatchObject({ connectionString: LOCAL, max: 4, keepAlive: true });
     expect(pool.options.ssl).toBeUndefined();
     await pool.end();
   });
@@ -117,6 +117,7 @@ describe('createQueuePool', () => {
         'postgres://app_queue.abcdef:pw@aws-0-eu-central-1.pooler.supabase.com:5432/postgres',
       max: 3,
       ssl: { ca: CA, rejectUnauthorized: true },
+      keepAlive: true,
     });
     await pool.end();
   });
@@ -309,6 +310,9 @@ describe('runDaemon and runPass', () => {
     await until(() => runner.addJob.mock.calls.length === 2);
     controller.abort();
     await done;
+    // A notification during shutdown queues nothing.
+    client.emit('notification', { channel: EVENTS_CHANNEL, payload: '' });
+    expect(runner.addJob).toHaveBeenCalledTimes(2);
     expect(runner.stop).toHaveBeenCalledTimes(1);
     expect(client.queries.at(-1)).toBe(`unlisten ${EVENTS_CHANNEL}`);
   });

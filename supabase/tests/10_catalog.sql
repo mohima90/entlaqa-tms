@@ -273,8 +273,16 @@ begin
   where c.relkind in ('r', 'p', 'v', 'm', 'f')
     and n.nspname not in ('pg_catalog', 'information_schema', 'graphile_worker')
     and c.oid <> 'platform.event_outbox'::regclass
-    and has_table_privilege('app_queue', c.oid, 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER');
+    and (has_table_privilege('app_queue', c.oid, 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER')
+         or has_any_column_privilege('app_queue', c.oid, 'SELECT, INSERT, UPDATE, REFERENCES'));
   perform tests.assert(v_objects is null, format('app_queue must have no privilege on these tables: %s', v_objects));
+  -- On the outbox: read, and mark dispatched — nothing else.
+  perform tests.assert(has_table_privilege('app_queue', 'platform.event_outbox', 'SELECT')
+    and not has_table_privilege('app_queue', 'platform.event_outbox', 'INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER')
+    and (select array_agg(a.attname::text order by a.attname) from pg_attribute a
+         where a.attrelid = 'platform.event_outbox'::regclass and a.attnum > 0 and not a.attisdropped
+           and has_column_privilege('app_queue', a.attrelid, a.attnum, 'UPDATE')) = array['dispatched_at'],
+    'app_queue: select on the outbox and update of dispatched_at only');
   perform tests.assert(not has_schema_privilege('app_queue', 'private', 'USAGE'), 'app_queue must not use schema private');
   perform tests.assert(not has_schema_privilege('app_server', 'graphile_worker', 'USAGE')
     and not has_schema_privilege('app_worker', 'graphile_worker', 'USAGE')

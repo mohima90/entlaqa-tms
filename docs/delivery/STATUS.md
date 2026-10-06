@@ -153,6 +153,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 9. ~~After T-M2-14: DB deploy~~ **Done 6 Oct 2026** (plan, then apply: migration `role_guard_privileged_member` applied, verification passed).
 10. After the T-M2-06a PR is merged (Claude guides, one step at a time): add the secret `APP_QUEUE_DB_PASSWORD` to the `staging` environment, DB deploy (plan, then apply), then create the environment `staging-jobs` (two connection secrets + the CA variable) and run **Jobs (staging)** once (runbook: `docs/engineering/background-jobs.md` §4).
 11. Before real customers: approve a container host in Frankfurt for the production workers (cost decision; ADR 0005 §1). Claude prepares the options and costs when the time comes.
+12. When organization suspension is built (admin console): confirm with the PO what happens to notifications already in flight for a suspended organization. Current behaviour (T-M2-06a): they are dropped, not sent after reactivation (stale reminders avoided).
 
 **Security decisions for M2 (from TM-0002…0006, 3 Oct 2026)** — needed before the related M2 stories start; Claude will bring them one at a time:
 1. ~~Always require an authenticator code for high-risk actions (role changes, exports), even when an organization turns MFA off?~~ **Answered 6 Oct 2026: yes** (TM-0003 D-IAM-01)
@@ -188,6 +189,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
+| 6 Oct 2026 | T-M2-06a re-review: **approve with fixes** (all 14 findings verified fixed; 1 Medium: queue commands must run as `app_queue`, never as `postgres` — runbook and ADR note; 2 Low: unlock only with all workers stopped, column-level grant checks) → fixed, plus TCP keep-alive on queue connections. Self-hosted smoke, hosted simulation and DB tests green. Next: PR after PO "yes" |
 | 6 Oct 2026 | T-M2-06a independent review: request changes (1 High: queue-role code ran inside business transactions; 3 Medium: database CREATE for `app_queue`, error messages in logs, dispatch blocked by a dead worker; 6 Low) → all fixed: notification wake-up, no database privilege, cleaned job errors, no serial queue, URL parameter check, clean shutdown, skipped inactive organizations, stale-event check, more tests. Next: re-review, PR after PO "yes" |
 | 6 Oct 2026 | T-M2-06a built: outbox/inbox, graphile-worker runner (`app_queue`), dispatcher and deliveries, `apps/worker` (daemon / one pass), two workers in the self-hosted stack, staging pass from GitHub Actions; unit, integration, hosted-simulation and self-hosted smoke tests green. Next: independent review, PR after PO "yes" |
 | 6 Oct 2026 | PO decision T-M2-06: e-mail provider Resend. Next: sending domain check with the PO, then the e-mail adapter and invitations (T-M2-07) |

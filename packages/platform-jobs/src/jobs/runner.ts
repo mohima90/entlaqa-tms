@@ -76,13 +76,14 @@ export function assertQueueRole(url: string): void {
 export function createQueuePool(url: string, caPem: string | undefined, max: number): pg.Pool {
   assertQueueRole(url);
   const ssl = tlsOptionsFor(url, caPem);
-  if (!ssl) return new pg.Pool({ connectionString: url, max });
+  // TCP keep-alive: a half-open connection (network failure) is noticed instead of hanging a query.
+  if (!ssl) return new pg.Pool({ connectionString: url, max, keepAlive: true });
   // pg lets TLS parameters in the URL override `ssl`: remove them so verification always applies.
   const cleaned = new URL(url);
   for (const key of TLS_URL_PARAMS) {
     cleaned.searchParams.delete(key);
   }
-  return new pg.Pool({ connectionString: cleaned.toString(), max, ssl });
+  return new pg.Pool({ connectionString: cleaned.toString(), max, ssl, keepAlive: true });
 }
 
 /** Safety net: dispatch runs every minute even when no notification arrived (one-pass mode, gaps). */
@@ -259,10 +260,14 @@ export async function runDaemon(config: WorkerConfig, signal?: AbortSignal): Pro
   const pool = openQueuePool(config);
   try {
     const runner = await run({ ...runnerOptions(config, pool), noHandleSignals: true });
-    const kick = createKicker(
+    const kicker = createKicker(
       () => runner.addJob(DISPATCH_TASK, {}, DISPATCH_JOB_OPTIONS),
       config.log,
     );
+    // Once stopping, wake-ups are ignored: the runner no longer takes jobs.
+    const kick = () => {
+      if (!signal?.aborted) kicker();
+    };
     const stopListening = listenForEvents(pool, kick, config.log);
     const stop = () => {
       runner.stop().catch((error: unknown) => {

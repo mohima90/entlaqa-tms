@@ -62,6 +62,16 @@ begin
   ) then
     failures := failures || 'app_queue must own nothing outside schema graphile_worker'::text;
   end if;
+  -- Table or column privileges only on the outbox (read; update of dispatched_at).
+  if exists (select 1 from pg_roles where rolname = 'app_queue') and exists (
+    select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
+    where c.relkind in ('r', 'p', 'v', 'm', 'f') and n.nspname = any (module_schemas)
+      and c.oid <> 'platform.event_outbox'::regclass
+      and (has_table_privilege('app_queue', c.oid, 'select, insert, update, delete, truncate, references, trigger')
+           or has_any_column_privilege('app_queue', c.oid, 'select, insert, update, references'))
+  ) then
+    failures := failures || 'app_queue must have privileges on platform.event_outbox only'::text;
+  end if;
   foreach v_role in array array['app_server', 'app_worker'] loop
     if exists (select 1 from pg_roles where rolname = v_role) then
       -- Direct memberships must be exactly {authenticated} (distinct: PostgreSQL 16+ keeps one row per grantor).

@@ -75,17 +75,19 @@ The guide in chat gives one step at a time; this is the full list for reference.
 
 Until steps 3–4 are done, every scheduled run ends after a notice ("not configured yet") — harmless. Good to know:
 - Scheduled runs start late when GitHub is busy, so on staging an event can take several minutes to be handled; run the workflow by hand for an immediate pass.
-- The repository is public, so **anyone can read these run logs**: they hold task names, job ids and cleaned errors only — never payloads, personal data or connection details.
+- The repository is public, so **anyone can read these run logs**: they hold task names, job ids and cleaned errors — never payloads, personal data or passwords. A connection failure may show the database host name and the user name `app_queue.<project-ref>` (nothing secret).
 - GitHub turns scheduled workflows off after 60 days without activity in a public repository; Actions shows a banner to turn it back on.
 
 ## 5. Operations
 
+**Queue commands run only in a session logged in as `app_queue`** — for example psql with the `DATABASE_URL_APP_QUEUE` connection string — never as `postgres`, `supabase_admin` or another owner role, and not by browsing `graphile_worker` in Supabase Studio. Every object in `graphile_worker` belongs to `app_queue`, which can replace it: run by a more powerful role, a replaced function or view would execute with that role's rights (a `set role app_queue` first does not prevent this). The outbox is the exception: `platform.event_outbox` is a platform table and may be read as any role.
+
 | Situation | What to do |
 |---|---|
-| Pending events pile up (`select count(*) from platform.event_outbox where dispatched_at is null`) | Check that a worker is running and can connect (logs: `worker configuration: …` names the variable at fault). Staging: look at the latest **Jobs (staging)** run |
-| A job keeps failing | `select id, task_identifier, attempts, max_attempts, last_error, run_at from graphile_worker.jobs where attempts > 0 order by run_at` (as an owner role). `last_error` holds the cleaned error (class and code). After the last attempt the job stays in the table with `attempts = max_attempts` — dead-letter records and alerts are a follow-up (ADR 0004 §7) |
-| Retry a failed job now | `select graphile_worker.reschedule_jobs(array[<id>]::bigint[], run_at := now(), attempts := 0)` |
-| A worker died mid-job (killed, host restart) | Its jobs stay locked for 4 hours, then run again. To release them sooner, once the worker is gone for sure: `select graphile_worker.force_unlock_workers(array(select distinct locked_by from graphile_worker.jobs where locked_at < now() - interval '15 minutes'))`. Dispatch itself is never blocked by this (no named queue) |
+| Pending events pile up (`select count(*) from platform.event_outbox where dispatched_at is null`; on staging a red **Jobs (staging)** run) | Check that a worker is running and can connect (logs: `worker configuration: …` names the variable at fault). Staging: look at the latest **Jobs (staging)** run |
+| A job keeps failing | As `app_queue`: `select id, task_identifier, attempts, max_attempts, last_error, run_at from graphile_worker.jobs where attempts > 0 order by run_at`. `last_error` holds the cleaned error (class and code). After the last attempt the job stays in the table with `attempts = max_attempts` — dead-letter records and alerts are a follow-up (ADR 0004 §7) |
+| Retry a failed job now | As `app_queue`: `select graphile_worker.reschedule_jobs(array[<id>]::bigint[], run_at := now(), attempts := 0)` |
+| A worker died mid-job (killed, host restart) | Its jobs stay locked for 4 hours, then run again. To release them sooner: stop **all** workers (`docker compose stop worker`), then as `app_queue` run `select graphile_worker.force_unlock_workers(array(select distinct locked_by from graphile_worker.jobs where locked_by is not null))`, then start the workers. With workers still running this would also release jobs that are running right now, and they would run twice. Dispatch itself is never blocked by a dead worker (no named queue) |
 | Shut down a worker | SIGTERM (`docker compose stop worker`): running jobs finish first, the process exits 0 |
 
 Housekeeping (90-day outbox retention, dead letters, alerts on permanent failures) arrives with the first subscribers that need it (ADR 0004 §7); the R1 schedules of ADR 0005 §6 arrive with their features.

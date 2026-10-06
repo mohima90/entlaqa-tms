@@ -22,6 +22,7 @@ export {
   type ActionTarget,
   type AuditRecord,
   type GetClaimsOptions,
+  type PermissionAccess,
   type PermissionTarget,
   type ResourceRef,
   type ServerAction,
@@ -48,6 +49,7 @@ export { createLoadMemberGrants } from './member-grants';
 export * from './iam/users';
 export * from './iam/my-profile';
 export * from './iam/edit-user';
+export * from './iam/edit-roles';
 
 /** Authorized reads for server components and routes (same checks as defineAction, no audit). */
 export const defineQuery = createDefineQuery(defaultActionRuntime);

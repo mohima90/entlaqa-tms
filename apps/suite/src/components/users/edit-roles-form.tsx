@@ -64,10 +64,10 @@ export function EditRolesForm(props: EditRolesFormProps) {
   const toggle = (code: string, on: boolean) => {
     setState((s) => {
       const additional = withoutRole(s.additional, code);
-      return {
-        ...s,
-        additional: on ? { ...additional, [code]: { validFrom: '', validUntil: '' } } : additional,
-      };
+      // A role the member already holds comes back with its stored days (an ended role stays ended).
+      const stored = props.roles.find((r) => r.roleCode === code);
+      const days = { validFrom: stored?.validFrom ?? '', validUntil: stored?.validUntil ?? '' };
+      return { ...s, additional: on ? { ...additional, [code]: days } : additional };
     });
   };
 
@@ -118,7 +118,10 @@ export function EditRolesForm(props: EditRolesFormProps) {
     });
   }
 
-  const storedPrimary = props.roles.find((r) => r.isPrimary);
+  const stored = (code: string) => props.roles.find((r) => r.roleCode === code) ?? null;
+  const chosenDays = stored(state.primary);
+  const primaryHasDays =
+    chosenDays !== null && (chosenDays.validFrom !== null || chosenDays.validUntil !== null);
   const roleLabel = (
     choice: RoleChoice,
     nameId: string,
@@ -179,14 +182,15 @@ export function EditRolesForm(props: EditRolesFormProps) {
                 }}
                 className="mt-1 size-5 shrink-0"
               />
-              {roleLabel(
-                choice,
-                `primary-${choice.code}-name`,
-                storedPrimary?.roleCode === choice.code ? storedPrimary : null,
-              )}
+              {roleLabel(choice, `primary-${choice.code}-name`, stored(choice.code))}
             </label>
           );
         })}
+        {primaryHasDays ? (
+          <p className="m-0 text-sm text-text-muted" data-testid="primary-days">
+            {text('primaryDaysKept')}
+          </p>
+        ) : null}
         {fieldErrors.primary ? (
           <p id="primary-error" className="m-0 text-sm font-medium text-danger">
             {fieldErrors.primary}

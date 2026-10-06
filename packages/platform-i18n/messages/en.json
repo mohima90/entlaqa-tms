@@ -300,6 +300,7 @@
     "roles": "Roles",
     "primary": "Primary role",
     "primaryHint": "The primary role sets the home page and what the person sees first. A user has one primary role.",
+    "primaryDaysKept": "The chosen primary role keeps its recorded start and end dates; they are not changed here. To change them, make it an additional role.",
     "additional": "Additional roles",
     "additionalHint": "The effective permissions are those of the primary role plus the additional roles.",
     "privileged": "Privileged role",

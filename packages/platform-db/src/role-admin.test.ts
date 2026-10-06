@@ -174,9 +174,13 @@ describe('primary days and locked roles', () => {
   it('a primary role that stays primary keeps its days', () => {
     const before = [role('learner', { isPrimary: true, validUntil: '2026-01-31' })];
     expect(keepPrimaryDays(before, [role('learner', { isPrimary: true })])).toEqual(before);
-    // Another primary, or a role that was additional, takes no days from elsewhere.
-    expect(keepPrimaryDays(before, [role('mentor', { isPrimary: true })])).toEqual([
-      role('mentor', { isPrimary: true }),
+    // A role that was additional keeps its own days when it becomes primary; a new role has none.
+    const both = [...before, role('mentor', { validUntil: '2025-12-31' })];
+    expect(keepPrimaryDays(both, [role('mentor', { isPrimary: true })])).toEqual([
+      role('mentor', { isPrimary: true, validUntil: '2025-12-31' }),
+    ]);
+    expect(keepPrimaryDays(before, [role('auditor', { isPrimary: true })])).toEqual([
+      role('auditor', { isPrimary: true }),
     ]);
   });
 

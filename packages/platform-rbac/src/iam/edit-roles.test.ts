@@ -10,6 +10,7 @@ import type { SystemRoleCode } from '../system-roles';
 import {
   EditRolesInput,
   PRIVILEGED_ROLE_CODES,
+  VERSION_TOKEN,
   editRolesQueryDefinition,
   updateMemberPrivilegedRolesActionDefinition,
   updateMemberRolesActionDefinition,
@@ -68,6 +69,8 @@ const role = (roleCode: string, over: Partial<AssignedRole> = {}): AssignedRole 
   validUntil: null,
   ...over,
 });
+const TOKEN =
+  'learner:4b0c1a2e-8f3d-4c1e-9a7b-2d5e6f7a8b9c:1,training_coordinator:5c1d2b3f-9a4e-4d2f-8b8c-3e6f7a8b9c0d:1';
 const current = [role('training_coordinator', { isPrimary: true }), role('learner')];
 const editable = (over: Record<string, unknown> = {}) => ({
   personId: SARA,
@@ -76,13 +79,13 @@ const editable = (over: Record<string, unknown> = {}) => ({
   isSelf: false,
   mayManage: true,
   roles: current,
-  version: 'learner:1,training_coordinator:1',
+  version: TOKEN,
   timeZone: 'Asia/Riyadh',
   ...over,
 });
 const form = {
   personId: SARA,
-  version: 'learner:1,training_coordinator:1',
+  version: TOKEN,
   primary: 'training_manager' as const,
   additional: [{ roleCode: 'learner' as const, validFrom: '', validUntil: '2026-12-31' }],
 };
@@ -106,6 +109,9 @@ describe('privileged roles', () => {
 
 describe('edit roles input', () => {
   it('one primary, no role twice, last day not before the first day, known roles only', () => {
+    // The token getEditableRoles builds (role:row id:version) is accepted as is; so is "no roles".
+    expect(VERSION_TOKEN.test(TOKEN)).toBe(true);
+    expect(EditRolesInput.safeParse({ ...form, version: '' }).success).toBe(true);
     expect(EditRolesInput.parse(form).additional).toEqual([
       { roleCode: 'learner', validFrom: null, validUntil: '2026-12-31' },
     ]);
@@ -125,6 +131,8 @@ describe('edit roles input', () => {
       { ...form, primary: 'platform_super_admin' },
       { ...form, additional: [{ roleCode: 'learner', validFrom: '1999-12-31', validUntil: '' }] },
       { ...form, version: "x'; drop" },
+      { ...form, version: 'learner:1' }, // the old token format
+
       { ...form, extra: true },
     ]) {
       expect(EditRolesInput.safeParse(bad).success, JSON.stringify(bad)).toBe(false);

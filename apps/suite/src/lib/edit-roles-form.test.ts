@@ -46,6 +46,10 @@ describe('roles form', () => {
     expect(
       desiredRoles({ ...formStateFromRoles(dated), primary: 'learner' }, catalogue, dated)[0]
         ?.validUntil,
+    ).toBe('2026-12-31');
+    expect(
+      desiredRoles({ ...formStateFromRoles(dated), primary: 'auditor' }, catalogue, dated)[0]
+        ?.validUntil,
     ).toBeNull();
   });
 

@@ -86,13 +86,13 @@ const day = z
   ])
   .transform((value) => (value === '' ? null : value));
 
+/** `role_code:row id:row version`, comma-separated (getEditableRoles), or empty for no roles. */
+export const VERSION_TOKEN = /^[a-z_]+:[0-9a-f-]{36}:[0-9]+(,[a-z_]+:[0-9a-f-]{36}:[0-9]+)*$|^$/;
+
 export const EditRolesInput = z
   .strictObject({
     personId: z.uuid(),
-    version: z
-      .string()
-      .max(2000)
-      .regex(/^[a-z_]+:[0-9]+(,[a-z_]+:[0-9]+)*$|^$/),
+    version: z.string().max(2000).regex(VERSION_TOKEN),
     primary: z.enum(SYSTEM_ROLE_CODES),
     additional: z
       .array(

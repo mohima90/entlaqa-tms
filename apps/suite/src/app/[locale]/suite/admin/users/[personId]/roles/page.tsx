@@ -33,6 +33,7 @@ const LABEL_KEYS = [
   'datesInvalid',
   'ended',
   'scheduled',
+  'primaryDaysKept',
 ] as const;
 
 /**

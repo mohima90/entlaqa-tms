@@ -157,19 +157,19 @@ export function touchesRoles(
 }
 
 /**
- * The primary role has no day fields in the form: a primary role that stays primary keeps the days it
- * has (a primary that ended stays ended), so a save never changes them silently.
+ * The primary role has no day fields in the form: the role chosen as primary keeps the days it already
+ * has (as primary or as an additional role), so an ended role is never revived by a save.
  */
 export function keepPrimaryDays(
   before: readonly AssignedRole[],
   desired: readonly AssignedRole[],
 ): AssignedRole[] {
-  const primary = before.find((r) => r.isPrimary);
-  return desired.map((r) =>
-    r.isPrimary && primary?.roleCode === r.roleCode && r.validFrom === null && r.validUntil === null
-      ? { ...r, validFrom: primary.validFrom, validUntil: primary.validUntil }
-      : r,
-  );
+  return desired.map((r) => {
+    const stored = before.find((b) => b.roleCode === r.roleCode);
+    return r.isPrimary && stored && r.validFrom === null && r.validUntil === null
+      ? { ...r, validFrom: stored.validFrom, validUntil: stored.validUntil }
+      : r;
+  });
 }
 
 export interface ReplaceRolesOptions {

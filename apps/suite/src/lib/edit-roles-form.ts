@@ -43,7 +43,8 @@ export function desiredRoles(
   catalogue: readonly RoleChoice[],
   stored: readonly RoleRow[] = [],
 ): RoleRow[] {
-  const storedPrimary = stored.find((r) => r.isPrimary && r.roleCode === state.primary);
+  // The role chosen as primary keeps its stored days (server: keepPrimaryDays).
+  const storedPrimary = stored.find((r) => r.roleCode === state.primary);
   return [
     {
       roleCode: state.primary,

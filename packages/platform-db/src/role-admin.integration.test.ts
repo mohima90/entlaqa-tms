@@ -156,12 +156,18 @@ describe.skipIf(!configured)('changing roles against PostgreSQL', () => {
     ]);
     expect(again).toMatchObject({ ok: true, changed: false });
 
-    // Moving the primary slot to an existing role and dropping another in one change.
+    // Moving the primary slot to an existing role and dropping another in one change: the promoted
+    // role keeps its days (an ended role is never revived by a save).
     expect(await change(admin, sara.person, [role('learner', { isPrimary: true })])).toMatchObject({
       ok: true,
       changed: true,
-      after: [role('learner', { isPrimary: true })],
+      after: [
+        role('learner', { isPrimary: true, validFrom: '2026-01-01', validUntil: '2026-12-31' }),
+      ],
     });
+    // Back to a primary without days for the following tests (set by the owner, outside the screen).
+    await owner`update platform.role_assignments ra set valid_from = null, valid_until = null
+      from platform.tenant_memberships m where m.id = ra.membership_id and m.user_id = ${sara.user}`;
   });
 
   it('refuses a stale version, own roles, members without an account and bad dates', async () => {

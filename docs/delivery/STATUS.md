@@ -141,7 +141,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 **Product Owner (user)** — Claude guides each step one action at a time (PO request, 1 Oct 2026)
 1. Later: **T-M0-11** required reviewer on `staging` — before anyone else gets repository access.
 2. Old Vercel project `entlaqa-tms` (team "Mohamed Ibrahim's projects"): the PO's Vercel account has no access to that team (1 Oct 2026). Harmless while the root `vercel.json` skips its builds; delete it if access is recovered, or ask Vercel support.
-3. Optional: upgrade Supabase org `entlaqa-TMS` to Pro (no pausing, backups) before customer trials.
+3. Optional: upgrade Supabase org `entlaqa-TMS` to Pro (no pausing, backups) before customer trials — then also turn on Auth → Email → **Prevent use of leaked passwords** (Pro only; screen 6 "breached-password check always on"). Password character requirements stay off (PO question 6 Oct 2026: length 12 + leaked-password check, no forced composition — NIST guidance).
 4. Soon (T-M2-06): choose the e-mail sending service for the cloud version (Claude will explain the options and costs in one message).
 5. When the first real journeys work: pick 5–8 ENTLAQA staff who did not work on the BRD to try the real product (Claude prepares the sessions).
 6. ~~DB deploy of T-M2-01…04a to staging~~ **Done 5 Oct 2026** (plan, then apply: 13 migrations, verification passed; the roles backfill made only the PO's account Organization Admin — one provisioning run ever, one member).

@@ -20,7 +20,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 | Planning (research, BRD, feature list, delivery plan) | — | 🟢 Done | — | See §4 documents |
 | M0 Mobilize | 1–2 | 🟢 Done | G0 | **Gate G0 passed 3 Oct 2026.** T-M0-01…07, 09, 10 done (MFA on GitHub, Supabase, Vercel confirmed); T-M0-08 (→ 2-week customer trials ≈ end of M5) and T-M0-11 deferred by PO; T-M0-12/13 needed later |
 | M1 Foundation | 3–8 | 🟢 Done | G1 | Foundation merged (#9); walking skeleton live on staging (#10–#14); component library + Storybook done (T-M1-A02); M2 threat models done (TM-0002…0006); self-hosted stack verified (T-M1-D04, gate 15); observability baseline done (T-M1-D06). Estimation (T-M1-B14) postponed and mock-up usability round (T-M1-A05) cancelled by the PO (4 Oct 2026) |
-| M2 Platform core | 9–12 | 🔵 In progress | G2 | Started 4 Oct 2026 with users & roles (`EP-M2-IAM`): 11 Arabic screens **approved by the PO** (4 Oct 2026); build broken into T-M2-01…12 (BACKLOG); T-M2-01…04, T-M2-13, T-M2-14, T-M2-15a merged (#28, #30–#37); T-M2-05 merged (#37); T-M2-06a background jobs merged (#38); next staging set-up for the worker with the PO, then e-mail (T-M2-06b), then invitations (T-M2-07) |
+| M2 Platform core | 9–12 | 🔵 In progress | G2 | Started 4 Oct 2026 with users & roles (`EP-M2-IAM`): 11 Arabic screens **approved by the PO** (4 Oct 2026); build broken into T-M2-01…12 (BACKLOG); T-M2-01…04, T-M2-13, T-M2-14, T-M2-15a merged (#28, #30–#37); T-M2-05 merged (#37); T-M2-06a background jobs merged (#38) and running on staging (every 5 min); next e-mail (T-M2-06b), then invitations (T-M2-07) |
 | M3 Catalog & scheduling | 13–16 | ⚪ Not started | G3 | |
 | M4 Enrollment & manager | 17–19 | ⚪ Not started | G4 | |
 | M5 Delivery & credentials | 20–23 | ⚪ Not started | G5 | |
@@ -151,7 +151,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 7. ~~After My profile: DB deploy + Auth settings~~ **Done 6 Oct 2026** (migration `persons_write_guard` applied, verification passed; Supabase Auth: require current password on, minimum length 12).
 8. ~~After T-M2-13: DB deploy~~ **Done 6 Oct 2026** (plan, then apply: migration `actor_may_manage_person` applied, verification passed).
 9. ~~After T-M2-14: DB deploy~~ **Done 6 Oct 2026** (plan, then apply: migration `role_guard_privileged_member` applied, verification passed).
-10. After the T-M2-06a PR is merged (Claude guides, one step at a time): add the secret `APP_QUEUE_DB_PASSWORD` to the `staging` environment, DB deploy (plan, then apply), then create the environment `staging-jobs` (two connection secrets + the CA variable) and run **Jobs (staging)** once (runbook: `docs/engineering/background-jobs.md` §4).
+10. ~~After T-M2-06a: staging set-up for the worker~~ **Done 6 Oct 2026** (secret `APP_QUEUE_DB_PASSWORD`; DB deploy plan → apply: `jobs_and_event_outbox` applied, verification passed; environment `staging-jobs` with main-only branch rule, two connection secrets (session pooler) and the CA variable; first **Jobs (staging)** run green: queue installed, dispatch ran, worker stopped cleanly).
 11. Before real customers: approve a container host in Frankfurt for the production workers (cost decision; ADR 0005 §1). Claude prepares the options and costs when the time comes.
 12. When organization suspension is built (admin console): confirm with the PO what happens to notifications already in flight for a suspended organization. Current behaviour (T-M2-06a): they are dropped, not sent after reactivation (stale reminders avoided).
 
@@ -189,6 +189,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
+| 6 Oct 2026 | Staging set-up for the worker with the PO: `APP_QUEUE_DB_PASSWORD`, DB deploy (plan → apply, verification passed), environment `staging-jobs`, first Jobs (staging) run green. PO answered the production-timing question (no fixed date; original plan ≈ month 7) and postponed an external demo; plan unchanged. Next: T-M2-06b e-mail |
 | 6 Oct 2026 | PR #38 merged (T-M2-06a background jobs; all CI gates green). Next: staging set-up with the PO (secret `APP_QUEUE_DB_PASSWORD`, DB deploy, environment `staging-jobs`), then T-M2-06b e-mail |
 | 6 Oct 2026 | T-M2-06a re-review: **approve with fixes** (all 14 findings verified fixed; 1 Medium: queue commands must run as `app_queue`, never as `postgres` — runbook and ADR note; 2 Low: unlock only with all workers stopped, column-level grant checks) → fixed, plus TCP keep-alive on queue connections. Self-hosted smoke, hosted simulation and DB tests green. Next: PR after PO "yes" |
 | 6 Oct 2026 | T-M2-06a independent review: request changes (1 High: queue-role code ran inside business transactions; 3 Medium: database CREATE for `app_queue`, error messages in logs, dispatch blocked by a dead worker; 6 Low) → all fixed: notification wake-up, no database privilege, cleaned job errors, no serial queue, URL parameter check, clean shutdown, skipped inactive organizations, stale-event check, more tests. Next: re-review, PR after PO "yes" |

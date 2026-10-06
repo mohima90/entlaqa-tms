@@ -100,3 +100,12 @@ Each module registers tasks and crontab entries in its `jobs/` folder with names
 6. Configuration tests: the production web environment contains no worker/service credentials and no tick route; system claims set under `app_server` read zero rows (ADR 0002 §6a test 3a); killing one worker replica does not stop processing.
 4. Import performance test: 10,000 users ≤ 5 min (NFR-PERF-05).
 5. Alerts on queue depth, oldest runnable job age and permanent failures (ADR 0009).
+
+## Implementation notes
+
+### T-M2-06a (6 Oct 2026): runner, worker app and staging
+- **Package `platform-jobs`** (`src/jobs/` only, importable from job code and `apps/worker`): graphile-worker 0.18 runner, the event dispatcher and delivery tasks (ADR 0004), the subscriber registry. A dependency rule (`queue-driver-only-in-platform-jobs`) keeps graphile-worker and its `pg` driver inside that folder.
+- **`apps/worker`** bundles everything into one file (esbuild) and runs `daemon` (graceful on SIGTERM) or `once` (`runOnce` after queueing a dispatch). Its configuration is checked before any connection: login roles `app_queue` / `app_worker`, TLS verify-full for remote hosts. Image `infra/docker/worker.Dockerfile` (distroless, non-root); the self-hosted stack runs two replicas.
+- **Schema migrations at start (deviation from §2):** graphile-worker 0.18 installs and upgrades its schema itself when a worker starts, without advisory locks (concurrent starts are detected by the migrations table), so no separate deploy step is needed. Because it runs `create schema if not exists` first, `app_queue` holds CREATE on the database (it can create schemas of its own, nothing else); the migration pre-creates `graphile_worker` owned by `app_queue`.
+- **Staging (deviation from §1, tick mode not built):** the web app cannot reach job code at all (dependency rules), so there is no tick route. Until the production container host is approved, staging runs one worker pass every 5 minutes as a scheduled GitHub Actions workflow (**Jobs (staging)**), with its own GitHub environment `staging-jobs` that holds only the `app_queue` and `app_worker` credentials — the web deployment still holds none (TB-9). Runbook: `docs/engineering/background-jobs.md`.
+- **Not yet built:** `platform.job_failures`, alerts and dashboards (§7, ADR 0009), the R1 schedules of §6 (with their features), cross-tenant fan-out policies for `app_queue` (§4).

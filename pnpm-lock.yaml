@@ -121,6 +121,37 @@ importers:
         specifier: 5.0.3
         version: 5.0.3(@opentelemetry/api@1.9.1)(@types/node@24.19.0)(@vitest/coverage-v8@5.0.3)(vite@8.3.2(@types/node@24.19.0)(esbuild@0.28.2)(jiti@2.7.0))
 
+  apps/worker:
+    dependencies:
+      '@jadarat/platform-db':
+        specifier: workspace:*
+        version: link:../../packages/platform-db
+      '@jadarat/platform-jobs':
+        specifier: workspace:*
+        version: link:../../packages/platform-jobs
+      '@jadarat/platform-observability':
+        specifier: workspace:*
+        version: link:../../packages/platform-observability
+    devDependencies:
+      '@jadarat/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@types/node':
+        specifier: 24.19.0
+        version: 24.19.0
+      '@vitest/coverage-v8':
+        specifier: 5.0.3
+        version: 5.0.3(vitest@5.0.3)
+      esbuild:
+        specifier: 0.28.2
+        version: 0.28.2
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: 5.0.3
+        version: 5.0.3(@opentelemetry/api@1.9.1)(@types/node@24.19.0)(@vitest/coverage-v8@5.0.3)(vite@8.3.2(@types/node@24.19.0)(esbuild@0.28.2)(jiti@2.7.0))
+
   modules/tms:
     dependencies:
       '@jadarat/platform-core':
@@ -355,6 +386,9 @@ importers:
       '@jadarat/config':
         specifier: workspace:*
         version: link:../config
+      '@jadarat/platform-core':
+        specifier: workspace:*
+        version: link:../platform-core
       '@types/node':
         specifier: 24.19.0
         version: 24.19.0
@@ -364,6 +398,9 @@ importers:
       '@vitest/coverage-v8':
         specifier: 5.0.3
         version: 5.0.3(vitest@5.0.3)
+      drizzle-orm:
+        specifier: 0.45.3
+        version: 0.45.3(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(pg@8.23.1)(postgres@3.4.9)
       typescript:
         specifier: 6.0.3
         version: 6.0.3

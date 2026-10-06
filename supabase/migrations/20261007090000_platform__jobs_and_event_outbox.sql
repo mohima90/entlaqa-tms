@@ -170,8 +170,11 @@ grant select, insert on platform.event_inbox to authenticated;
 -- ---------------------------------------------------------------------------------------------------
 -- Dispatcher kick
 -- ---------------------------------------------------------------------------------------------------
--- After a statement inserts events, add one debounced dispatch job (visible to workers only after the
--- business transaction commits). When graphile-worker has not installed its schema yet (no worker has
+-- After a transaction first inserts events, add one dispatch job (visible to workers only after the
+-- business transaction commits, so it always sees that transaction's events). The job has no job_key:
+-- a keyed add_job upserts one shared row and would hold its lock until commit, making every
+-- event-writing transaction wait for the others (and risking deadlocks). Dispatch jobs share a named
+-- queue, so they run one at a time. When graphile-worker has not installed its schema yet (no worker has
 -- started), nothing is added: the dispatcher's own schedule picks the events up later.
 create or replace function private.kick_event_dispatcher()
 returns trigger
@@ -180,16 +183,18 @@ security definer
 set search_path = ''
 as $$
 begin
-  if to_regprocedure('graphile_worker.add_job(text,json,text,timestamp with time zone,integer,text,integer,text[],text)') is not null then
+  if coalesce(current_setting('jadarat.event_dispatch_kicked', true), '') <> 'on'
+     and to_regprocedure('graphile_worker.add_job(text,json,text,timestamp with time zone,integer,text,integer,text[],text)') is not null then
     execute $sql$select graphile_worker.add_job('platform.events.dispatch', '{}'::json,
-      queue_name := 'platform.events.dispatch', job_key := 'platform.events.dispatch',
-      job_key_mode := 'preserve_run_at', max_attempts := 25)$sql$;
+      queue_name := 'platform.events.dispatch', max_attempts := 25)$sql$;
+    -- Once per transaction (reverted with the job if a savepoint rolls back).
+    perform set_config('jadarat.event_dispatch_kicked', 'on', true);
   end if;
   return null;
 end
 $$;
 comment on function private.kick_event_dispatcher() is
-  'SECURITY DEFINER (owner app_queue): adds the debounced outbox dispatch job after events are inserted (ADR 0004 §4).';
+  'SECURITY DEFINER (owner app_queue): adds one outbox dispatch job per transaction that inserts events (ADR 0004 §4).';
 revoke all on function private.kick_event_dispatcher() from public;
 
 -- ALTER OWNER needs CREATE on the schema for the new owner: granted for this statement only.

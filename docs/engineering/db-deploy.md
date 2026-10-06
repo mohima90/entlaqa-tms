@@ -24,16 +24,17 @@ Project settings applied at creation (1 Oct 2026): **Data API disabled**, *autom
 | `DATABASE_URL` | Supabase **Connect → Session pooler** URI (user `postgres.<ref>`, host `aws-…pooler.supabase.com`, port 5432) with the database password filled in, **no `?…` parameters** | The direct host is IPv6-only; GitHub runners need the pooler. A password with special characters must be percent-encoded in the URI |
 | `APP_SERVER_DB_PASSWORD` | ≥ 40 characters, only letters, digits, `-`, `_` (e.g. a password manager's generator with symbols off, length 48) | Becomes the `app_server` password; it is sent to the server only as a SCRAM-SHA-256 verifier |
 | `APP_WORKER_DB_PASSWORD` | as above, different value | `app_worker` |
+| `APP_QUEUE_DB_PASSWORD` | as above, different value | `app_queue`, the background-job runner (T-M2-06a; [background-jobs.md](background-jobs.md)) |
 
 5. **Environment variable** (not a secret — it is a public certificate): `DATABASE_CA_CERT` = full text of the CA file from Supabase **Database Settings → SSL Configuration → Download certificate**, including the `-----BEGIN CERTIFICATE-----` / `-----END CERTIFICATE-----` lines. TLS is always `verify-full` (certificate chain + host name); Supabase's root CA is not in any system trust store, so the run fails without it.
 
-Store the two role passwords in the password manager too: the app needs them later (`DATABASE_URL_APP_SERVER`, `DATABASE_URL_APP_WORKER` in Vercel / the worker).
+Store the role passwords in the password manager too: the app and the worker need them (`DATABASE_URL_APP_SERVER` in Vercel; `DATABASE_URL_APP_QUEUE` and `DATABASE_URL_APP_WORKER` for the worker — on staging in the GitHub environment `staging-jobs`, [background-jobs.md](background-jobs.md) §4).
 
 ## Running it
 
 1. GitHub → **Actions → DB deploy → Run workflow** (branch `main`), environment `staging`, mode **`plan`**: validates the configuration and the role passwords, lists pending migrations and applies them all in one transaction that is **always rolled back**. Nothing changes.
 2. If `plan` is green, run again on the **same `main` commit** with mode **`apply`**: each pending migration is applied in its own transaction together with its row in `supabase_migrations.schema_migrations` (Supabase CLI's history table; the `statements` column is left empty, so `supabase migration fetch` cannot rebuild files — the repository is the source); then the role passwords are set; then `verify-deployment.sql` must pass:
-   - `app_server`/`app_worker`/`tenant_guard` attributes, and memberships exactly `{authenticated}`;
+   - `app_server`/`app_worker`/`tenant_guard` attributes, and memberships exactly `{authenticated}`; `app_queue` (job runner) attributes, member of nothing, owner of schema `graphile_worker`;
    - RLS enabled + forced on every table, RESTRICTIVE `tenant_isolation` (ALL, `authenticated`) on every platform/module table;
    - no privileges or schema usage for `anon` / `service_role`;
    - the access-token hook executable by `supabase_auth_admin` (with `USAGE` on `private`) and by no other role;

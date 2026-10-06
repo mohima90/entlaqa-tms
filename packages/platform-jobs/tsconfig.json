@@ -1,4 +1,4 @@
 {
   "extends": "@jadarat/config/tsconfig/library.json",
-  "include": ["src", "vitest.config.ts"]
+  "include": ["src", "vitest.config.ts", "vitest.integration.config.ts"]
 }

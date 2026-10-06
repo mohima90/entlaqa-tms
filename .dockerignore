@@ -1,3 +1,5 @@
-# Docker build context allow-list (infra/docker/app.Dockerfile copies only the standalone build output).
+# Docker build context allow-list: the images copy only build output (infra/docker/app.Dockerfile: the
+# standalone app; infra/docker/worker.Dockerfile: the bundled worker).
 *
 !apps/suite/.next/standalone
+!apps/worker/dist/main.mjs

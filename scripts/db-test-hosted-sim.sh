@@ -145,3 +145,27 @@ for bad in "TENANT_SLUG=-bad" "TENANT_SLUG=Bad" "ADMIN_USER_ID=not-a-uuid" "TENA
   fi
 done
 echo "db-test-hosted-sim: provisioning OK"
+
+# Background jobs (T-M2-06a), as on staging: the worker installs graphile-worker's schema as app_queue on
+# a database migrated by the non-superuser role, then dispatches the pending events.
+echo "db-test-hosted-sim: worker passes (app_queue, app_worker)"
+(cd "$ROOT" && pnpm --filter @jadarat/worker build >/dev/null)
+worker_pass() {
+  env -u DATABASE_URL \
+    DATABASE_URL_APP_QUEUE="postgresql://app_queue:$(enc "$APP_QUEUE_DB_PASSWORD")@$PGHOST:$PGPORT/$DB" \
+    DATABASE_URL_APP_WORKER="postgresql://app_worker:$(enc "$APP_WORKER_DB_PASSWORD")@$PGHOST:$PGPORT/$DB" \
+    node "$ROOT/apps/worker/dist/main.mjs" once >/dev/null
+}
+event() { q "insert into platform.event_outbox (tenant_id, type) select id, 'com.entlaqa.platform.sim.$1' from platform.tenants where slug = 'sim-org'" >/dev/null; }
+dispatched() { q "select count(*) from platform.event_outbox where type = 'com.entlaqa.platform.sim.$1' and dispatched_at is not null"; }
+event before_install # no queue yet: the first pass's own dispatch picks it up
+worker_pass
+[[ "$(q "select nspowner::regrole from pg_namespace where nspname = 'graphile_worker'")" == "app_queue" ]] ||
+  { echo "db-test-hosted-sim: graphile_worker must belong to app_queue" >&2; exit 1; }
+[[ "$(dispatched before_install)" == "1" ]] || { echo "db-test-hosted-sim: the worker did not dispatch the event" >&2; exit 1; }
+event after_install # the insert now queues a dispatch job itself
+[[ "$(q "select count(*) from graphile_worker.jobs where task_identifier = 'platform.events.dispatch'")" -ge "1" ]] ||
+  { echo "db-test-hosted-sim: an event insert did not queue a dispatch" >&2; exit 1; }
+worker_pass
+[[ "$(dispatched after_install)" == "1" ]] || { echo "db-test-hosted-sim: the second pass did not dispatch" >&2; exit 1; }
+echo "db-test-hosted-sim: worker OK"

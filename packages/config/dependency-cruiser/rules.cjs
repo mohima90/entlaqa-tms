@@ -156,6 +156,14 @@ module.exports = {
       to: { path: '(^|/)node_modules/postgres/' },
     },
     {
+      name: 'queue-driver-only-in-platform-jobs',
+      severity: 'error',
+      comment:
+        'ADR 0005 §2: the job queue (graphile-worker and its pg driver, login role app_queue) is opened only by packages/platform-jobs/src/jobs/; the worker app uses that package.',
+      from: { pathNot: '^packages/platform-jobs/src/jobs/' },
+      to: { path: '(^|/)node_modules/(pg|graphile-worker)/' },
+    },
+    {
       name: 'no-relative-cross-package-imports',
       severity: 'error',
       comment:
@@ -205,7 +213,7 @@ module.exports = {
     // devDependencies) match the resolved node_modules path of the dependency. doNotFollow stops the
     // cruise from descending into them.
     exclude: {
-      path: '(^|/)(\\.next|\\.turbo|coverage|playwright-report|test-results|storybook-static)/|next-env\\.d\\.ts$',
+      path: '(^|/)(\\.next|\\.turbo|dist|coverage|playwright-report|test-results|storybook-static)/|next-env\\.d\\.ts$',
     },
     tsPreCompilationDeps: true,
     combinedDependencies: true,

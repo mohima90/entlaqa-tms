@@ -88,4 +88,5 @@ pw2() {
 add_secret ERRORS_DB_PASSWORD "$(pw2)"
 add_secret GLITCHTIP_SECRET_KEY "$(pw2)$(pw2)"
 add_secret GLITCHTIP_ADMIN_PASSWORD "$(pw2)"
+add_secret APP_QUEUE_DB_PASSWORD "$(pw2)"
 echo "gen-secrets: ready in infra/docker/$S"

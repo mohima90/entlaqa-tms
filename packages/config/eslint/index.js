@@ -9,6 +9,7 @@ import tseslint from 'typescript-eslint';
 const IGNORES = [
   '**/node_modules/**',
   '**/.next/**',
+  '**/dist/**',
   '**/.turbo/**',
   '**/coverage/**',
   '**/playwright-report/**',

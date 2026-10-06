@@ -36,14 +36,15 @@ No Supabase project or secrets are needed to build, test or run the app: without
 | `pnpm check:migrations` | Migration file naming + a rollback file per migration | 4 |
 | `pnpm check:deps` | dependency-cruiser: ADR 0001 boundaries, admin/jobs import rules, no cycles | 4 (boundaries) |
 | `pnpm db:test` | Throwaway DB → test-only Supabase shim → migrations **up → down → up** → SQL tests (catalog, isolation, claim validation, access-token hook, tenant switch) | 4, 5 |
-| `DB_TEST_INTEGRATION=1 pnpm db:test` | …plus the TypeScript integration tests (`withUserTx` / `withSystemTx` against real PostgreSQL) | 6 |
+| `DB_TEST_INTEGRATION=1 pnpm db:test` | …plus the TypeScript integration tests (`withUserTx` / `withSystemTx` and the job runner against real PostgreSQL) | 6 |
 | `pnpm db:test:hosted-sim` | Runs the real deploy path (`db-deploy.sh` plan + apply + `verify-deployment.sql`) as a **non-superuser** migration role shaped like hosted Supabase's `postgres` — catches superuser-only statements that `db:test` cannot see | 4 |
 | `pnpm build` | Production build (`output: 'standalone'`) + copies static assets into `.next/standalone` | — |
 | `pnpm --filter @jadarat/suite check:budget` | Client JS / CSS gzip budget (`apps/suite/performance-budget.json`) | 9 |
 | `pnpm e2e` | Playwright smoke against the standalone server: Arabic + English, `dir`, no console/CSP errors, no horizontal overflow at 390 px, axe (0 serious/critical) | 7, 8 |
 | `pnpm --filter @jadarat/ui storybook` | Component library (Storybook) on http://localhost:6006 — toolbar: Arabic RTL / English LTR, light / dark | — |
 | `pnpm --filter @jadarat/ui build-storybook` then `… test:stories` | Static Storybook, then Playwright opens **every story** in Arabic/English × light/dark: `lang`/`dir`/`data-theme`, no console errors, axe WCAG 2.2 AA with **no** violations | 8 |
-| `bash infra/docker/smoke.sh` | Whole self-hosted stack in containers + real sign-in + Auth parity checks (needs Docker) | 15 |
+| `bash infra/docker/smoke.sh` | Whole self-hosted stack in containers + real sign-in + Auth parity checks + two background-job workers (needs Docker) | 15 |
+| `pnpm --filter @jadarat/worker build` then `node apps/worker/dist/main.mjs daemon\|once` | Background-job worker (runbook: [background-jobs.md](background-jobs.md)) | — |
 | `pnpm check:all` | typecheck + lint + format + coverage + migrations + deps | — |
 | `bash scripts/db-deploy.sh plan\|apply` | Hosted environments only, normally via **Actions → DB deploy** (runbook: [db-deploy.md](db-deploy.md)) | — |
 | `bash scripts/provision-tenant.sh plan\|apply` | Hosted environments only, normally via **Actions → Provision organization** (runbook: [staging-sign-in.md](staging-sign-in.md)) | — |
@@ -59,7 +60,7 @@ DB_TEST_INTEGRATION=1 pnpm db:test           # + TypeScript integration tests
 DB_TEST_KEEP=1 pnpm db:test                  # keep the database for debugging
 ```
 
-The script sets random, per-run passwords on the `app_server` / `app_worker` login roles so tests can connect **as those roles** (the database's claim validation depends on `session_user`), and clears them on exit. Passwords never appear in migrations.
+The script sets random, per-run passwords on the `app_server` / `app_worker` / `app_queue` login roles so tests can connect **as those roles** (the database's claim validation depends on `session_user`), and clears them on exit. Passwords never appear in migrations.
 
 ### E2E locally
 
@@ -72,11 +73,12 @@ PW_CHROMIUM_EXECUTABLE=/path/to/chromium pnpm e2e   # or an existing Chromium bi
 ## 3. Repository map
 
 ```
-apps/suite/                 Next.js 16 App Router — the only deployable (standalone output)
+apps/suite/                 Next.js 16 App Router — the web app (standalone output)
   src/proxy.ts              request proxy: host → tenant classification (placeholder), locale routing, CSP nonce. No authz.
   src/app/[locale]/         thin route files (landing, /suite shell); Arabic default, English
   src/lib/                  security headers, host classification, config status
   e2e/                      Playwright smoke + axe
+apps/worker/                background-job process (graphile-worker; daemon / one-pass), bundled to one file — runbook: background-jobs.md
 packages/
   config/                   tsconfig bases, ESLint flat config, Prettier, Tailwind v4 preset, Vitest presets, dependency-cruiser rules
   platform-core/            Result/AppError, ids, verified-claims + request-context types, zod input helper
@@ -85,20 +87,21 @@ packages/
   platform-rbac/            permission registry, data scopes, authorize(), defineAction()
   platform-i18n/            locales, direction, next-intl routing, AR/EN messages
   platform-observability/   JSON logger without PII, scrubbing, error-reporting hook (Sentry EU / GlitchTip) — runbook: observability.md
+  platform-jobs/            ./jobs only: graphile-worker runner (app_queue), event dispatcher + deliveries, subscriber registry (ADR 0004/0005)
   ui/                       RTL-first primitives (Button, Card, AppShell); imports docs/design/tokens/tokens.css
   contracts/                cross-module contracts (example: TmsSessionScheduledV1 event)
 modules/tms/                TMS module skeleton: permissions, a domain service, an example server action
 supabase/
   migrations/               SQL migrations (YYYYMMDDHHMMSS_<schema>__<description>.sql)
   rollbacks/                one rollback per migration (tested up → down → up, never auto-run in production)
-  tests/                    SQL tests; first line declares the connection: -- db-test: run-as=owner|app_server|app_worker
+  tests/                    SQL tests; first line declares the connection: -- db-test: run-as=owner|app_server|app_worker|app_queue
   tests/_shim/              TEST-ONLY Supabase shim for plain PostgreSQL (roles, auth.jwt/uid, auth.users/sessions)
   config.toml               local Supabase CLI config (hook enabled, Data API disabled — nothing exposed, gated by check:migrations)
 scripts/                    db-test.sh, db-deploy.sh (+ sql/verify-deployment.sql) and repository gate scripts (+ their tests)
 .github/                    CI (ci.yml, codeql.yml), composite setup action, Dependabot
 ```
 
-Dependency rules (enforced by `pnpm check:deps`, ADR 0001): apps → anything; `modules/X` → config, ui, platform-*, contracts, itself (never another module, never the app); `platform-*` → config, contracts, other platform packages (acyclic), never ui/modules; `ui` → config only; `contracts` → config and **type-only** platform-core. Additional rules: `@jadarat/platform-db/admin` only from real job/admin roots — `packages|modules/<name>/src/{jobs,admin}/` and the future `apps/worker/` (a route folder merely *named* `admin/` or `jobs/`, e.g. `apps/suite/src/app/[locale]/admin/page.tsx`, is rejected; nothing in `apps/suite` may import either); `@jadarat/platform-db/jobs` only from `packages|modules/<name>/src/jobs/` and `apps/worker/`; `@jadarat/platform-core/internal/verified-claims` only from platform-core/platform-identity (and tests); `@supabase/*` and `postgres` only inside platform-db; no relative imports into another package; production code never imports a devDependency (a peer + dev dependency, like `next` in platform-identity, is allowed). `node_modules` is **not** excluded from the cruise (only not followed), so rules on installed packages fire; fixture tests in `scripts/dependency-rules.test.mjs` prove each rule.
+Dependency rules (enforced by `pnpm check:deps`, ADR 0001): apps → anything; `modules/X` → config, ui, platform-*, contracts, itself (never another module, never the app); `platform-*` → config, contracts, other platform packages (acyclic), never ui/modules; `ui` → config only; `contracts` → config and **type-only** platform-core. Additional rules: `@jadarat/platform-db/admin` only from real job/admin roots — `packages|modules/<name>/src/{jobs,admin}/` and `apps/worker/` (a route folder merely *named* `admin/` or `jobs/`, e.g. `apps/suite/src/app/[locale]/admin/page.tsx`, is rejected; nothing in `apps/suite` may import either); `@jadarat/platform-db/jobs` only from `packages|modules/<name>/src/jobs/` and `apps/worker/`; `@jadarat/platform-core/internal/verified-claims` only from platform-core/platform-identity (and tests); `@supabase/*` and `postgres` only inside platform-db; graphile-worker and `pg` only inside `platform-jobs/src/jobs/`; no relative imports into another package; production code never imports a devDependency (a peer + dev dependency, like `next` in platform-identity, is allowed). `node_modules` is **not** excluded from the cruise (only not followed), so rules on installed packages fire; fixture tests in `scripts/dependency-rules.test.mjs` prove each rule.
 
 ## 4. How the data path works (read before touching platform-db, SQL or actions)
 
@@ -123,6 +126,9 @@ Follow `docs/architecture/migration-conventions.md` (templates, naming, required
 2. Write the domain logic as a plain, unit-tested service returning `Result`.
 3. In a `'use server'` file: `export const doThing = defineAction({ permission, input: ZodSchema, resource, audit, handler })`.
 4. Tests: positive + negative (403, 404 out of scope, 404 other tenant, step-up) — see `packages/platform-rbac/src/define-action.test.ts` for the pattern.
+
+### …an event, a background job or an event subscriber
+Emit events with `emitEvent(tx, …)` inside the transaction that makes the change; write subscribers in a `src/jobs/` folder and register them in `apps/worker/src/subscribers.ts`. Rules and an example: [background-jobs.md](background-jobs.md) §2.
 
 ### …a package
 `packages/<name>/` with `package.json` (`"name": "@jadarat/<name>"`, `exports` pointing at `src/*.ts`, scripts `typecheck`, `test`, `test:coverage`), `tsconfig.json` extending `@jadarat/config/tsconfig/library.json`, `vitest.config.ts` using `defineJadaratVitestConfig()`. Add it to `transpilePackages` in `apps/suite/next.config.ts` if the app imports it, and to the dependency-cruiser rules if it needs special boundaries.
@@ -165,6 +171,7 @@ Make the aggregate job **`CI gates`** and the CodeQL checks required status chec
 | DB types | Hand-written Drizzle definitions for the six platform tables | `pnpm db:types` (supabase gen types + drizzle-kit pull) with a drift gate (migration-conventions §8) |
 | Design tokens & components | `packages/ui` imports `docs/design/tokens/tokens.css` directly (single source of truth). Component library v1: Button, Card, TextField, Alert, Badge, AppShell — Storybook with RTL/LTR and light/dark, axe-gated in CI (T-M1-A02) | Dialog, select/combobox, date picker (Hijri/Gregorian, ADR 0007), table, toast, empty/loading states — added with the M2 screens that need them; visual regression snapshots |
 | Observability | JSON logs without personal data, server-side error tracking (runtime `SENTRY_DSN`; Sentry EU / GlitchTip), `/api/health/live` + `/ready`, scheduled staging uptime check (T-M1-D06a). Runbook: [observability.md](observability.md) | Source-map upload, browser errors, GlitchTip in `infra/docker` (D06b); OpenTelemetry traces/metrics, alerting, status page (M2/M3) |
+| Background jobs and events | Outbox/inbox, graphile-worker runner as `app_queue`, dispatcher and deliveries, `apps/worker` (daemon / one pass), two replicas in the self-hosted stack, staging pass every 5 minutes from GitHub Actions (T-M2-06a; [background-jobs.md](background-jobs.md)). No subscribers yet | E-mail delivery and the first subscriber (T-M2-06b), dead letters, alerts and retention housekeeping; production worker host (PO cost decision) |
 | Self-hosted stack | `infra/docker` (T-M1-D04): Postgres 17.11 + Auth (GoTrue) + TLS gateway + distroless app image; hook, ES256/JWKS and TOTP verified; gate 15 runs it on every PR. Runbook + spike report: [`infra/docker/README.md`](../../infra/docker/README.md) | Helm chart and in-country Kubernetes (R2/R3, ADR 0010 §4); verification-attempt hooks; Storage/Realtime/Supavisor when used |
 | Vercel | Project Root Directory = `apps/suite` (Next.js preset, Node 24, files outside root included) — production deployment of `main` is Ready (1 Oct 2026). Root `vercel.json` (`ignoreCommand: exit 0`) keeps the **old** project `entlaqa-tms` (team "Mohamed Ibrahim's projects", still connected) from building | Remove root `vercel.json` only after the PO deletes the old project; Supabase env vars for sign-in: [staging-sign-in.md](staging-sign-in.md) |
 

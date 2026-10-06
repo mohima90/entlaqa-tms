@@ -1,0 +1,27 @@
+{
+  "name": "@jadarat/worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Background job runner (ADR 0005): graphile-worker with the platform's tasks and event subscribers. Daemon mode for production containers, one-pass mode for scheduled runs.",
+  "scripts": {
+    "build": "node esbuild.config.mjs",
+    "start": "node dist/main.mjs daemon",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@jadarat/platform-db": "workspace:*",
+    "@jadarat/platform-jobs": "workspace:*",
+    "@jadarat/platform-observability": "workspace:*"
+  },
+  "devDependencies": {
+    "@jadarat/config": "workspace:*",
+    "@types/node": "24.19.0",
+    "@vitest/coverage-v8": "5.0.3",
+    "esbuild": "0.28.2",
+    "typescript": "6.0.3",
+    "vitest": "5.0.3"
+  }
+}

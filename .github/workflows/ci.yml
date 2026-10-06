@@ -197,7 +197,7 @@ jobs:
           retention-days: 14
 
   selfhosted:
-    name: 'Gate 15 · Self-hosted (sovereign) stack: Postgres + Auth + app containers, sign-in, image scan'
+    name: 'Gate 15 · Self-hosted (sovereign) stack: Postgres + Auth + app + worker containers, sign-in, image scan'
     needs: install
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -213,11 +213,18 @@ jobs:
       # T-M1-D04: the whole stack from infra/docker (images pinned by digest), migrations via the
       # production deploy script, real browser sign-in against the app container, audit + TLS checks.
       - run: bash infra/docker/smoke.sh
-      # Our image must carry no fixable HIGH/CRITICAL vulnerability.
+      # Our images (app, worker) must carry no fixable HIGH/CRITICAL vulnerability.
       - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: image
           image-ref: jadarat/suite:local
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: jadarat/worker:local
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: '1'
@@ -300,7 +307,7 @@ jobs:
         with:
           persist-credentials: false
       # Scans IaC/config in the repo (Dockerfiles, compose, k8s, workflows as they appear).
-      # The app image itself is scanned in gate 15 (selfhosted job).
+      # The app and worker images themselves are scanned in gate 15 (selfhosted job).
       - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: config

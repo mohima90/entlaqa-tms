@@ -97,3 +97,11 @@ Every suite module publishes `com.entlaqa.<module>.*` events through the same ou
 3. CI: contract schema compatibility check; every emitted type registered; every subscriber type exists.
 4. Chaos test in CI: kill the worker mid-batch → all events delivered once after restart; LMS retry test with no duplicates (Gate G6).
 5. Metrics and alerts: outbox lag (oldest undispatched event age), dead-letter count (ADR 0009).
+
+## Implementation notes
+
+### T-M2-06a (6 Oct 2026): outbox, inbox and dispatcher
+- **Tables** (migration `20261007090000`): `platform.event_outbox` (append-only for application roles: `authenticated` may only insert; tenant, actor type and actor id are stamped by a trigger from the verified claims, never taken from the caller; `data` must be a JSON object of at most 16 KB) and `platform.event_inbox` (rows written and read only under system claims). `emitEvent()` chooses the event id itself, because the request and job roles cannot read the outbox (an insert with `RETURNING` would need read access).
+- **Kick (deviation from §4):** the trigger adds **one dispatch job per transaction** that writes events, without a `job_key`. A keyed (debounced) `add_job` upserts one shared row and would hold its lock until the business transaction commits, so every event-writing transaction would wait for the others and could deadlock with them. A transaction-local setting limits the kick to the first insert; the dispatch jobs share the named queue `platform.events.dispatch` (not `events-dispatch`), so they run one at a time and an extra one finds nothing to do. A minutely crontab entry is the safety net (events written before the first worker installed its schema).
+- **Registry:** subscribers are registered in code in `apps/worker/src/subscribers.ts` (`@jadarat/platform-jobs/jobs`: name, event types, `maxAttempts`, handler); the package is `platform-jobs`, not `platform-events`. Contracts (§3), dead letters and replay (§7), retention housekeeping and outbox-lag metrics arrive with the first subscribers that need them (T-M2-06b onwards).
+- **Actor types** stored today: `user`, `system`, `platform` (migrations and provisioning); `integration` and `platform_staff` arrive with those actors.

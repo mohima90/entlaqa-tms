@@ -26,6 +26,7 @@ const KNOWN_ACTIONS = new Set([
   'platform.tenant.admin_provisioned',
   'platform.tenant.admin_role_restored',
   'platform.user.updated',
+  'platform.user.roles_changed',
 ]);
 
 /**
@@ -71,7 +72,7 @@ export default async function UserProfilePage({
         );
       }
     } else {
-      const { profile, canOpenManager, canEdit } = result.value;
+      const { profile, canOpenManager, canEdit, canEditRoles } = result.value;
       title = localizedName(locale, profile.displayNameAr, profile.displayNameEn);
       content = (
         <Profile
@@ -79,6 +80,7 @@ export default async function UserProfilePage({
           profile={profile}
           canOpenManager={canOpenManager}
           canEdit={canEdit}
+          canEditRoles={canEditRoles}
         />
       );
     }
@@ -100,11 +102,13 @@ async function Profile({
   profile,
   canOpenManager,
   canEdit,
+  canEditRoles,
 }: {
   locale: AppLocale;
   profile: UserProfile;
   canOpenManager: boolean;
   canEdit: boolean;
+  canEditRoles: boolean;
 }) {
   const t = await getTranslations({ locale, namespace: 'userProfile' });
   const users = await getTranslations({ locale, namespace: 'users' });
@@ -244,7 +248,8 @@ async function Profile({
                     {role.validUntil ? (
                       <span className="text-sm text-text-muted">
                         {t(ended ? 'ended' : 'validUntil', {
-                          date: format.dateTime(role.validUntil, 'medium'),
+                          // The last day (a role ends at the start of the next day, T-M2-14).
+                          date: format.dateTime(new Date(role.validUntil.getTime() - 1), 'medium'),
                         })}
                       </span>
                     ) : null}
@@ -254,6 +259,15 @@ async function Profile({
             </ul>
           )}
           <p className="mb-0 mt-4 text-sm text-text-muted">{t('rolesAudited')}</p>
+          {canEditRoles ? (
+            <a
+              href={`/${locale}/suite/admin/users/${profile.personId}/roles`}
+              className={buttonClasses({ variant: 'secondary', className: 'mt-4' })}
+              data-testid="edit-roles-link"
+            >
+              {t('editRoles')}
+            </a>
+          ) : null}
         </Card>
       ) : null}
 

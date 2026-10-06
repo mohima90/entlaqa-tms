@@ -183,6 +183,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
+| 6 Oct 2026 | T-M2-14 built: change a member's roles (primary + additional with days; privileged roles locked until MFA per D-IAM-01; HR blocked on privileged members in the DB guard); unit, integration, pgTAP and E2E tests. Next: review, PR (after PO "yes"), staging DB deploy |
 | 6 Oct 2026 | PO verified Edit details on staging. PO decision D-IAM-01: authenticator code always required for high-risk actions. Started T-M2-14 change a user's roles |
 | 6 Oct 2026 | Staging DB deploy with the PO (plan → apply): `actor_may_manage_person` applied, verification passed. Edit user details is live on staging. Next: T-M2-14 change a user's roles |
 | 6 Oct 2026 | PR #35 merged (T-M2-13 edit a user's details). Next: staging DB deploy (1 migration, `actor_may_manage_person`) with the PO; then T-M2-14 change roles |

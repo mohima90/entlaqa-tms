@@ -6,6 +6,7 @@ import { listOrgUnitOptions } from './org';
 import { loadMemberAuthorizationFacts } from './roles';
 import {
   type UserListFilter,
+  countMembersByRole,
   getUserProfile,
   listUsers,
   loadPersonResourceFacts,
@@ -379,5 +380,17 @@ describe('listOrgUnitOptions', () => {
       branches: [{ id: 'b1', nameAr: 'الرياض', nameEn: null }],
     });
     expect(fake.executed.every((q) => q.sql.includes('deleted_at is null'))).toBe(true);
+  });
+});
+
+describe('countMembersByRole', () => {
+  it('counts members whose role is in force, invited to deactivated, per role', async () => {
+    const fake = fakeTx([
+      { role_code: 'learner', members: 3 },
+      { role_code: 'tenant_admin', members: '1' },
+    ]);
+    expect(await countMembersByRole(fake.tx)).toEqual({ learner: 3, tenant_admin: 1 });
+    expect(fake.executed[0]?.sql).toContain("m.status in ('active', 'invited', 'suspended')");
+    expect(fake.executed[0]?.sql).toContain('ra.valid_until > now()');
   });
 });

@@ -184,6 +184,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
+| 6 Oct 2026 | T-M2-05 built: roles & permissions page (14 roles, Appendix B matrix checked against real grants, member counts matching the users list). Next: review, PR after PO "yes" |
 | 6 Oct 2026 | Staging DB deploy with the PO (plan → apply): `role_guard_privileged_member` applied, verification passed. Edit roles is live on staging. Next: T-M2-05 roles & permissions page |
 | 6 Oct 2026 | PR #36 merged (T-M2-14 change a member's roles). Next: staging DB deploy (1 migration, `role_guard_privileged_member`) with the PO; then T-M2-05 roles page |
 | 6 Oct 2026 | T-M2-14 review: approve with fixes (1 Medium, 5 Low) → fixed; re-review found a High regression (version token) caught also by the self-hosted E2E → fixed; third round **approve**. Fixed a timing-dependent My profile E2E step (stored language Arabic). Next: PR after PO "yes" |

@@ -11,6 +11,7 @@ export * from './scopes';
 export * from './authorize';
 export * from './platform-permissions';
 export * from './system-roles';
+export * from './role-matrix';
 export * from './role-grants';
 export * from './person-scope';
 export * from './member-permissions';
@@ -50,6 +51,7 @@ export * from './iam/users';
 export * from './iam/my-profile';
 export * from './iam/edit-user';
 export * from './iam/edit-roles';
+export * from './iam/roles-page';
 
 /** Authorized reads for server components and routes (same checks as defineAction, no audit). */
 export const defineQuery = createDefineQuery(defaultActionRuntime);

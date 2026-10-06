@@ -9,7 +9,13 @@ import { brandVerifiedClaims } from '@jadarat/platform-core/internal/verified-cl
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createDatabase } from './client';
-import { type UserListFilter, getUserProfile, listUsers, loadPersonResourceFacts } from './users';
+import {
+  type UserListFilter,
+  countMembersByRole,
+  getUserProfile,
+  listUsers,
+  loadPersonResourceFacts,
+} from './users';
 import { createWithUserTx } from './with-user-tx';
 
 const ownerUrl = process.env.TEST_DATABASE_URL;
@@ -239,6 +245,20 @@ describe.skipIf(!configured)('people directory reads against PostgreSQL', () => 
       people.suspended.name,
     ]);
     expect(await names({ branchId: branch.jeddah })).toEqual([people.deep.name]);
+  });
+
+  it('counts members per role exactly as the list filters them (roles page, T-M2-05)', async () => {
+    const counts = await withUserTx(claims(), (tx) => countMembersByRole(tx));
+    expect(Object.keys(counts).length).toBeGreaterThan(0);
+    for (const code of [
+      'tenant_admin',
+      'mentor',
+      'learner',
+      'line_manager',
+      'internal_instructor',
+    ]) {
+      expect(counts[code] ?? 0, code).toBe((await names({ roleCode: code })).length);
+    }
   });
 
   it('restricts the list to the scope of the grant (ADR 0003 §4.2)', async () => {

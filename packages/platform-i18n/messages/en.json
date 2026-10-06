@@ -36,6 +36,7 @@
     "comingSoon": "Coming soon",
     "admin": "Organization admin",
     "users": "Users",
+    "roles": "Roles & permissions",
     "myProfile": "My profile"
   },
   "errors": {
@@ -324,5 +325,47 @@
       "no_account": "This person has no sign-in account in the organization; roles are chosen when they are invited.",
       "revoked": "This person's membership was revoked, so their roles can't be changed."
     }
+  },
+  "rolesPage": {
+    "title": "Roles & permissions",
+    "intro": "{count} ready-made roles come with Jadarat. System roles can't be edited; later they can be copied to create the organization's own roles.",
+    "customRole": "Create a custom role",
+    "comingSoon": "Coming soon",
+    "rolesLabel": "Roles",
+    "membersLabel": "Users:",
+    "systemRole": "System role · view only",
+    "privileged": "Privileged role",
+    "members": "{count, plural, =0 {No users} one {# user} other {# users}}",
+    "viewUsers": "View users",
+    "legendTitle": "Access levels",
+    "levels": {
+      "F": "Full",
+      "E": "Edit",
+      "A": "Approve",
+      "V": "View",
+      "O": "Own records only",
+      "U": "Use",
+      "N": "— None",
+      "AE": "Approve and edit",
+      "EA": "Edit and approve",
+      "FA": "Full and approve"
+    },
+    "levelHints": {
+      "F": "create, edit, delete",
+      "E": "within the role's scope",
+      "A": "approve requests",
+      "V": "read only",
+      "O": "the person's own records",
+      "U": "use the feature",
+      "N": "no access"
+    },
+    "tableCaption": "Permissions of the {role} role by area",
+    "columns": {
+      "area": "Area",
+      "access": "Access",
+      "scope": "Scope or limit"
+    },
+    "sensitive": "Sensitive",
+    "matrixNote": "The matrix comes from the product requirements (Appendix B). Each module's permissions apply as it is released; users & roles and the audit log apply now."
   }
 }

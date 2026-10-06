@@ -3,6 +3,7 @@ import {
   defineQuery,
   editRolesQueryDefinition,
   editUserQueryDefinition,
+  rolesPageQueryDefinition,
   myIdentityQueryDefinition,
   myProfileQueryDefinition,
   userProfileQueryDefinition,
@@ -16,6 +17,8 @@ export const userProfileQuery = defineQuery(userProfileQueryDefinition());
 export const editUserQuery = defineQuery(editUserQueryDefinition());
 /** Change a member's roles (T-M2-14): current roles and what the member may change. */
 export const editRolesQuery = defineQuery(editRolesQueryDefinition());
+/** Roles & permissions page (T-M2-05): member counts per role. */
+export const rolesPageQuery = defineQuery(rolesPageQueryDefinition());
 
 /** My profile (FR-IAM-16) and the header name of the signed-in member. */
 export const myProfileQuery = defineQuery(myProfileQueryDefinition());

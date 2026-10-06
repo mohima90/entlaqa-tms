@@ -34,6 +34,13 @@ const pages = [
     dir: 'rtl',
     heading: 'تعديل الأدوار',
   },
+  { path: '/ar/suite/admin/roles', lang: 'ar', dir: 'rtl', heading: 'الأدوار والصلاحيات' },
+  {
+    path: '/en/suite/admin/roles?role=auditor',
+    lang: 'en',
+    dir: 'ltr',
+    heading: 'Roles & permissions',
+  },
 ] as const;
 
 function collectConsoleErrors(page: Page): string[] {

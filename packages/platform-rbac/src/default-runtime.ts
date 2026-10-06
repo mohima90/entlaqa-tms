@@ -3,6 +3,7 @@ import { type UserTx } from '@jadarat/platform-db';
 import { reportError } from '@jadarat/platform-observability';
 import type { ActionRuntime } from './define-action';
 import { personResourceAttributes } from './person-scope';
+import { MEMBER_GRANTS } from './member-permissions';
 import { grantsForAssignments } from './role-grants';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -29,7 +30,7 @@ export const defaultActionRuntime: ActionRuntime<UserTx> = {
   async loadGrants(tx) {
     const { loadMemberAuthorizationFacts } = await import('@jadarat/platform-db');
     const facts = await loadMemberAuthorizationFacts(tx);
-    return grantsForAssignments(
+    const roleGrants = grantsForAssignments(
       facts.roles.map((role) => ({
         roleCode: role.roleCode,
         ...(role.validFrom ? { validFrom: role.validFrom } : {}),
@@ -37,6 +38,8 @@ export const defaultActionRuntime: ActionRuntime<UserTx> = {
       })),
       { headedDepartmentIds: facts.headedDepartmentIds },
     );
+    // Every member manages their own profile (FR-IAM-16), whatever their roles.
+    return [...roleGrants, ...MEMBER_GRANTS];
   },
   // Resource attributes for scope checks (ADR 0003 §4). Platform types are resolved here; module
   // resolvers register by type as modules gain resources (TODO with the first module resource).

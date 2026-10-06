@@ -10,7 +10,10 @@ import {
   switchActiveTenant,
   withUserTx,
 } from '@jadarat/platform-db';
-import { createSupabaseServerClient } from '@jadarat/platform-db/supabase-server';
+import {
+  createSupabaseServerClient,
+  createSupabaseVerifierClient,
+} from '@jadarat/platform-db/supabase-server';
 import { log } from '@jadarat/platform-observability';
 import { cookies } from 'next/headers';
 import {
@@ -21,6 +24,12 @@ import {
   signInWithPassword,
   signOut,
 } from './auth-flow';
+import {
+  type PasswordClientLike,
+  type VerifierClientLike,
+  changePassword,
+  createPasswordVerifier,
+} from './password';
 
 async function requestDeps(): Promise<AuthFlowDeps> {
   const store = await cookies();
@@ -63,4 +72,22 @@ export async function getSessionOrganizationsForRequest() {
 
 export async function signOutForRequest() {
   return signOut(await requestDeps());
+}
+
+export async function changePasswordForRequest(input: {
+  readonly currentPassword: string;
+  readonly newPassword: string;
+}) {
+  const deps = await requestDeps();
+  return changePassword(
+    {
+      supabase: deps.supabase as unknown as PasswordClientLike | null,
+      verifyPassword: createPasswordVerifier(
+        () => createSupabaseVerifierClient() as VerifierClientLike | null,
+        deps.logWarning,
+      ),
+      logWarning: deps.logWarning,
+    },
+    input,
+  );
 }

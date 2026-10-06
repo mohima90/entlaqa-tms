@@ -1,6 +1,6 @@
 import 'server-only';
 import { type CookieMethodsServer, type CookieOptions, createServerClient } from '@supabase/ssr';
-import type { SupabaseClient } from '@supabase/supabase-js';
+import { type SupabaseClient, createClient } from '@supabase/supabase-js';
 import { type SupabasePublicConfig, readSupabasePublicConfigFromEnv } from './config';
 
 export { type SupabasePublicConfig } from './config';
@@ -35,5 +35,19 @@ export function createSupabaseServerClient(
   return createServerClient(config.url, config.publishableKey, {
     cookies,
     cookieOptions: SESSION_COOKIE_OPTIONS,
+  });
+}
+
+/**
+ * A Supabase client WITHOUT the user's cookies or any stored session, only to check a password (e.g.
+ * the current password before a change, FR-IAM-16). The session it creates is signed out right away
+ * by the caller; it never touches the user's own session. Null when Supabase is not configured.
+ */
+export function createSupabaseVerifierClient(
+  config: SupabasePublicConfig | null = getSupabasePublicConfig(),
+): SupabaseClient | null {
+  if (!config) return null;
+  return createClient(config.url, config.publishableKey, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
   });
 }

@@ -7,6 +7,7 @@ vi.mock('@jadarat/platform-rbac', () => ({
 }));
 vi.mock('./session-state', () => ({ getSessionState: vi.fn() }));
 vi.mock('./config-status', () => ({ getConfigStatus: vi.fn() }));
+vi.mock('./users-queries', () => ({ myIdentityQuery: vi.fn() }));
 
 describe('navigationFor', () => {
   it('shows Users to members who see more than themselves', () => {

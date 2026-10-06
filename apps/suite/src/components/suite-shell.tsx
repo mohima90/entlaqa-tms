@@ -10,7 +10,7 @@ import type { SuiteContext } from '../lib/suite-context';
 import { SignOutButton } from './auth/sign-out-button';
 import { LanguageToggle } from './language-toggle';
 
-export type SuitePage = 'home' | 'users';
+export type SuitePage = 'home' | 'users' | 'profile';
 
 const linkClass = 'block rounded-md px-3 py-2 no-underline';
 const currentClass = 'bg-surface-selected font-medium text-primary-text';
@@ -32,6 +32,40 @@ function NavLink({
       className={`${linkClass} ${current ? currentClass : otherClass}`}
     >
       {children}
+    </a>
+  );
+}
+
+/**
+ * The member's picture in the header (initials until photos arrive, T-M2-15b) → My profile (FR-IAM-16).
+ */
+function MyProfileLink({
+  href,
+  name,
+  label,
+  current,
+}: {
+  href: string;
+  name: string;
+  label: string;
+  current: boolean;
+}) {
+  const initial = Array.from(name.trim())[0] ?? '?';
+  return (
+    <a
+      href={href}
+      aria-current={current ? 'page' : undefined}
+      className="flex min-h-11 items-center gap-2 rounded-full px-1 text-text no-underline hover:bg-surface-hover"
+      data-testid="my-profile-link"
+    >
+      <span
+        aria-hidden="true"
+        className="flex size-9 items-center justify-center rounded-full bg-primary font-semibold text-on-primary"
+      >
+        {initial}
+      </span>
+      <span className="sr-only">{label}: </span>
+      <span className="hidden max-w-40 truncate text-sm lg:inline">{name}</span>
     </a>
   );
 }
@@ -120,6 +154,14 @@ export async function SuiteShell({
             {t('tenantContext')}: {tenantLabel}
           </span>
           <LanguageToggle locale={locale} path={path} />
+          {context.me ? (
+            <MyProfileLink
+              href={`/${locale}/suite/profile`}
+              name={locale === 'en' ? (context.me.nameEn ?? context.me.nameAr) : context.me.nameAr}
+              label={t('myProfile')}
+              current={current === 'profile'}
+            />
+          ) : null}
           {getConfigStatus().auth ? (
             <SignOutButton
               locale={locale}

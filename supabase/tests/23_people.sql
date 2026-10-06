@@ -190,26 +190,27 @@ end $$;
 rollback;
 
 -- [std] stamping on person_employment; trigger order; NOT VALID checks validated by the follow-up migration.
+-- (The Organization Admin edits: an HR Manager's own placement is an Organization Admin's to change.)
 begin;
 set local role authenticated;
-select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000ab', '10000000-0000-4000-8000-0000000000ab',
-  'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000ab'));
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
+  'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1'));
 do $$
 declare
   r record;
 begin
   update platform.person_employment set job_title_ar = 'منسق أول' where person_id = 'a1000000-0000-4000-8000-0000000000ab';
   select * into r from platform.person_employment where person_id = 'a1000000-0000-4000-8000-0000000000ab';
-  perform tests.assert_eq(r.updated_by, 'a1000000-0000-4000-8000-0000000000ab'::uuid, 'employment: updated_by from the claims');
+  perform tests.assert_eq(r.updated_by, 'a1000000-0000-4000-8000-0000000000a1'::uuid, 'employment: updated_by from the claims');
   perform tests.assert_eq(r.version, 2, 'employment: version increments');
   perform tests.assert(r.created_by is null, 'employment: created_by of the fixture row (no claims) stays NULL');
 
   perform tests.assert_eq(
     (select array_agg(tgname::text order by tgname::text) from pg_trigger where tgrelid = 'platform.persons'::regclass and not tgisinternal),
-    array['persons_deactivation', 'persons_reactivation', 'persons_stamp_row'], 'persons: triggers');
+    array['persons_deactivation', 'persons_guard_writer', 'persons_reactivation', 'persons_stamp_row'], 'persons: triggers');
   perform tests.assert_eq(
     (select array_agg(tgname::text order by tgname::text) from pg_trigger where tgrelid = 'platform.person_employment'::regclass and not tgisinternal),
-    array['person_employment_stamp_row', 'person_employment_validate'], 'person_employment: triggers');
+    array['person_employment_guard_writer', 'person_employment_stamp_row', 'person_employment_validate'], 'person_employment: triggers');
   perform tests.assert((select bool_and(convalidated) from pg_constraint where conrelid = 'platform.persons'::regclass and contype = 'c'),
     'persons: every check constraint is validated');
 end $$;

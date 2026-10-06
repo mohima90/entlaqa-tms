@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   SESSION_COOKIE_OPTIONS,
   createSupabaseServerClient,
+  createSupabaseVerifierClient,
   getSupabasePublicConfig,
 } from './server';
 
@@ -29,5 +30,16 @@ describe('createSupabaseServerClient', () => {
     expect(SESSION_COOKIE_OPTIONS.sameSite).toBe('lax');
     expect(SESSION_COOKIE_OPTIONS.secure).toBe(true);
     expect(SESSION_COOKIE_OPTIONS).not.toHaveProperty('domain');
+  });
+});
+
+describe('createSupabaseVerifierClient', () => {
+  it('returns null when Supabase is not configured, a cookie-less client otherwise', () => {
+    expect(createSupabaseVerifierClient(null)).toBeNull();
+    const client = createSupabaseVerifierClient({
+      url: 'https://example.supabase.co',
+      publishableKey: 'sb_publishable_test',
+    });
+    expect(client?.auth).toBeDefined();
   });
 });

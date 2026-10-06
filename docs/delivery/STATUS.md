@@ -20,7 +20,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 | Planning (research, BRD, feature list, delivery plan) | — | 🟢 Done | — | See §4 documents |
 | M0 Mobilize | 1–2 | 🟢 Done | G0 | **Gate G0 passed 3 Oct 2026.** T-M0-01…07, 09, 10 done (MFA on GitHub, Supabase, Vercel confirmed); T-M0-08 (→ 2-week customer trials ≈ end of M5) and T-M0-11 deferred by PO; T-M0-12/13 needed later |
 | M1 Foundation | 3–8 | 🟢 Done | G1 | Foundation merged (#9); walking skeleton live on staging (#10–#14); component library + Storybook done (T-M1-A02); M2 threat models done (TM-0002…0006); self-hosted stack verified (T-M1-D04, gate 15); observability baseline done (T-M1-D06). Estimation (T-M1-B14) postponed and mock-up usability round (T-M1-A05) cancelled by the PO (4 Oct 2026) |
-| M2 Platform core | 9–12 | 🔵 In progress | G2 | Started 4 Oct 2026 with users & roles (`EP-M2-IAM`): 11 Arabic screens **approved by the PO** (4 Oct 2026); build broken into T-M2-01…12 (BACKLOG); T-M2-01…03 merged (#28, #30, #31), T-M2-04 in progress |
+| M2 Platform core | 9–12 | 🔵 In progress | G2 | Started 4 Oct 2026 with users & roles (`EP-M2-IAM`): 11 Arabic screens **approved by the PO** (4 Oct 2026); build broken into T-M2-01…12 (BACKLOG); T-M2-01…04 merged (#28, #30–#33); next T-M2-05 |
 | M3 Catalog & scheduling | 13–16 | ⚪ Not started | G3 | |
 | M4 Enrollment & manager | 17–19 | ⚪ Not started | G4 | |
 | M5 Delivery & credentials | 20–23 | ⚪ Not started | G5 | |
@@ -66,6 +66,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 | 4 Oct 2026 | — | **Re-baselined plan / estimation (T-M1-B14) postponed** (PO): no time plan now; we build the product step by step, feature by feature, starting with M2. Gate G1 is passed without the estimation item; the mock-up usability round (T-M1-A05) stays open and runs when the PO is ready |
 | 5 Oct 2026 | — | **Confirmed by the PO:** the **Compliance Officer** role counts as privileged (it reads the audit log, like the Auditor), so only the Organization Admin can give it; the HR Manager gives every other ordinary role (Tech Lead proposal from the T-M2-03 review, PO "yes") |
 | 5 Oct 2026 | — | **Who may manage users and roles** (PO, security decision 4 / TM-0003 D-IAM-03): the **HR Manager** may invite, edit and deactivate users and give ordinary roles; only the **Organization Admin** (Tenant Admin) may give the Organization Admin role or other privileged roles (HR Manager, Finance Manager, Auditor); nobody may give roles to themselves |
+| 5 Oct 2026 | — | **My profile (self-service)** (PO, new scope FR-IAM-16 / IAM-16, R1; BRD v2.2): every user opens My profile from their own picture and changes their own **personal details** — names AR/EN, mobile, interface language, profile photo — and their **password**; the **e-mail cannot be changed**; job data (employee number, job title, department, branch, manager, hire date) stays read-only and is changed by HR / Organization Admin. Order (PO: continue the user sequence): My profile (T-M2-15) → edit user details (T-M2-13) → change roles (T-M2-14) → roles page (T-M2-05) → invitations…; no screen approval for My profile (PO: the whole UI/UX will be redesigned later) |
 | 5 Oct 2026 | — | **Visual design** (PO question, not a change request): the approved screens fix content and flow only; the whole product needs an elegant visual design, and each organization admin must be able to apply their own colors and identity (FR-ADM-07, R1; theme builder FR-ADM-08 R2). The look must be **similar to Jadarat LMS** (PO). The visual design round (T-M2-04c, matching Jadarat LMS on the real pages) is **on hold until the PO asks** (PO: "continue as normal and leave the UI now"); screens keep the current tokens meanwhile; organization colors/logo (FR-ADM-07) later in M2 with `EP-M2-TEN`, on the same tokens |
 | 5 Oct 2026 | — | Dependabot no longer proposes PostgreSQL **major** versions for the self-hosted stack (PO closed #29, 17 → 18): database majors are a planned migration matching hosted Supabase and CI |
 | 5 Oct 2026 | — | Nationality / "is national" on person profiles stored as ordinary personal data (`pii:indirect`) **pending legal validation** of whether it is a special category under KSA/UAE/Egypt PDPL (T-M2-02 review); flagged for the legal check before the first customer |
@@ -123,8 +124,8 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Document | Version | Status |
 |---|---|---|
-| `docs/brd/Jadarat_TMS_BRD_v2.md` | 2.1 | Draft for stakeholder review |
-| `docs/brd/TMS_Feature_List.md` | 30 Sep 2026 | Current (289 features; 280 in scope; R1 = 96) |
+| `docs/brd/Jadarat_TMS_BRD_v2.md` | 2.2 | Draft for stakeholder review (FR-IAM-16 added 5 Oct 2026) |
+| `docs/brd/TMS_Feature_List.md` | 5 Oct 2026 | Current (290 features; 281 in scope; R1 = 97 — IAM-16 added) |
 | `docs/delivery/Jadarat_TMS_Development_Plan.md` | 1.1 | §2.3 agent-team operating model added |
 | `docs/research/TMS_Market_Comparison_vs_BRD.md` | 27 Sep 2026 | Reference |
 | `docs/delivery/BACKLOG.md` | 1 Oct 2026 | Current task list (M0, M1 tasks; M2–M7 epics) |
@@ -144,6 +145,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 4. Soon (T-M2-06): choose the e-mail sending service for the cloud version (Claude will explain the options and costs in one message).
 5. When the first real journeys work: pick 5–8 ENTLAQA staff who did not work on the BRD to try the real product (Claude prepares the sessions).
 6. ~~DB deploy of T-M2-01…04a to staging~~ **Done 5 Oct 2026** (plan, then apply: 13 migrations, verification passed; the roles backfill made only the PO's account Organization Admin — one provisioning run ever, one member).
+7. After My profile is merged (T-M2-15a): one migration to deploy (plan → apply), and two Supabase Auth settings on staging — "Require current password when updating" on, minimum password length 12 (`docs/engineering/db-deploy.md`); Claude guides one click at a time.
 
 **Security decisions for M2 (from TM-0002…0006, 3 Oct 2026)** — needed before the related M2 stories start; Claude will bring them one at a time:
 1. Always require an authenticator code for high-risk actions (role changes, exports), even when an organization turns MFA off? (TM-0003 D-IAM-01; recommended: yes)
@@ -179,6 +181,11 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
+| 5 Oct 2026 | T-M2-15a security review: approve with fixes (1 Medium, 7 Low) → fixed with tests (72-byte password limit, HR cannot edit a privileged member's record, guard ready for generated columns, name form no longer forces splitting); full self-hosted smoke incl. other-sessions-ended check passes; re-review **approve** (4 nits fixed) |
+| 5 Oct 2026 | T-M2-15a built (My profile): own personal details + password change, header picture link, person write guard in the database (F-PEO-01); unit, pgTAP, preview E2E (100 checks) and signed-in E2E on the self-hosted stack pass; review next |
+| 5 Oct 2026 | PO added self-service My profile (personal details + password, e-mail locked, job data with HR): BRD v2.2 FR-IAM-16, feature IAM-16 (R1 = 97), backlog T-M2-15 next in the user sequence |
+| 5 Oct 2026 | PO checked the users page on staging (works: one Organization Admin). Gap found: no task for editing a user's details or roles (screen 3) → added T-M2-13 and T-M2-14 to the backlog |
+| 5 Oct 2026 | PR #33 merged (T-M2-04b users pages) → T-M2-04 done; the PO can open **إدارة المنشأة ← المستخدمون** on staging. Next: T-M2-05 roles & permissions page (screen 5) |
 | 5 Oct 2026 | Staging DB deploy with the PO: plan green, apply OK (13 migrations: org structure, person profile, roles, search key, audit indexes; `verify-deployment` passed). Backfill checked first: one provisioned member only (the PO) |
 | 5 Oct 2026 | T-M2-04b review: approve with fixes (2 Medium, 10 Low) → all fixed with tests (paging, screen-reader text, roles per row by role.read scope, manager link, language switch keeps filters, department filter with sub-departments); new signed-in E2E as a Line Manager passes on the self-hosted stack; re-review **approve** (2 nits fixed) |
 | 5 Oct 2026 | T-M2-04b built: users list and user profile pages (Arabic/English), Organization admin → Users navigation by permission, roles/activity shown only with their permissions; unit, preview E2E (84 checks incl. axe) and signed-in E2E on the self-hosted stack pass; review next |

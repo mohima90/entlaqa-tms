@@ -14,6 +14,8 @@ const pages = [
   { path: '/en/sign-in', lang: 'en', dir: 'ltr', heading: 'Sign in' },
   { path: '/ar/suite/admin/users', lang: 'ar', dir: 'rtl', heading: 'المستخدمون' },
   { path: '/en/suite/admin/users', lang: 'en', dir: 'ltr', heading: 'Users' },
+  { path: '/ar/suite/profile', lang: 'ar', dir: 'rtl', heading: 'ملفي الشخصي' },
+  { path: '/en/suite/profile', lang: 'en', dir: 'ltr', heading: 'My profile' },
   {
     path: '/ar/suite/admin/users/a1000000-0000-4000-8000-0000000000a1',
     lang: 'ar',

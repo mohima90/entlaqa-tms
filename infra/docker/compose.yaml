@@ -99,6 +99,10 @@ services:
       GOTRUE_EXTERNAL_EMAIL_ENABLED: 'true'
       # No mail server in the walking skeleton: administrators create confirmed users.
       GOTRUE_MAILER_AUTOCONFIRM: 'true'
+      # My profile (FR-IAM-16): Auth itself requires the current password to set a new one, and a
+      # minimum length matching the application's rule (12).
+      GOTRUE_SECURITY_UPDATE_PASSWORD_REQUIRE_CURRENT_PASSWORD: 'true'
+      GOTRUE_PASSWORD_MIN_LENGTH: '12'
       GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_ENABLED: 'true'
       GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_URI: pg-functions://postgres/private/custom_access_token_hook
 

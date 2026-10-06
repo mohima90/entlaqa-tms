@@ -7,10 +7,10 @@
 | **Product** | Jadarat TMS — Training Management System (module of the Jadarat HR Suite; also sold standalone) |
 | **Company** | ENTLAQA |
 | **Document type** | Business Requirements Document |
-| **Version** | 2.1 — Draft for stakeholder review |
+| **Version** | 2.2 — Draft for stakeholder review |
 | **Date** | 30 September 2026 |
 | **Supersedes** | *Jadarat TMS BRD v1.0* (15 March 2026) |
-| **Companion documents** | `docs/delivery/Jadarat_TMS_Development_Plan.md` (development plan & delivery guide) · `docs/brd/TMS_Feature_List.md` (feature list, 289 features) · `docs/research/TMS_Market_Comparison_vs_BRD.md` (market & regulatory research) |
+| **Companion documents** | `docs/delivery/Jadarat_TMS_Development_Plan.md` (development plan & delivery guide) · `docs/brd/TMS_Feature_List.md` (feature list, 290 features) · `docs/research/TMS_Market_Comparison_vs_BRD.md` (market & regulatory research) |
 | **Classification** | Internal — Confidential |
 
 ### Document Control
@@ -21,6 +21,7 @@
 |---|---|---|---|
 | 1.0 | 15 Mar 2026 | ENTLAQA Product Team | Initial Jadarat TMS BRD (offline training, Jadarat-specific) |
 | 2.0 | 27 Sep 2026 | ENTLAQA Product Team | Full rewrite: comprehensive TMS scope, training planning cycle, vendor & finance depth, assessment engine, generic LMS integration framework, corrected regulatory content, sovereign deployment, requirement IDs with priority & release |
+| 2.2 | 5 Oct 2026 | Product Owner (via Claude) | FR-IAM-16 added (PO, 5 Oct 2026): self-service My profile — users change their own personal details (names, mobile, language, photo) and password; e-mail locked; job data stays with HR. Feature list IAM-16 (R1) |
 | 2.1 | 30 Sep 2026 | ENTLAQA Product Team | Decisions D1, D2, D6, D7 recorded: product named Jadarat TMS; positioned as first module of the planned Jadarat HR Suite and sold standalone; shared Jadarat Platform (§3.4, §6.27, Appendix H.5); Commerce for training providers removed from scope; government/banks confirmed as Year-1 segments; self-hostable Next.js + Supabase stack |
 
 **Approvals**
@@ -430,6 +431,7 @@ Columns: **Pri** = MoSCoW priority · **Rel** = target release.
 | FR-IAM-13 | Tenant Admin shall configure password policy, lockout threshold, session timeout, maximum concurrent sessions (R1); IP allow-lists with role bypass and access-hour restrictions (R3). Admins can view active sessions and force logout. | M | R1 / R3 |
 | FR-IAM-14 | Approvers shall delegate approval authority to another user for a date range; delegated actions are recorded with both identities. | S | R2 |
 | FR-IAM-15 | The system shall support non-employee user types — provider staff, external instructors, and contractor / outsourced workforce learners (e.g., contractors who need safety training) — with restricted portals and no access to internal directory data. | M | R2 |
+| FR-IAM-16 | Every signed-in user shall have a self-service **My profile** (opened from their own picture in the header) to change their own personal details — names in Arabic and English, mobile with country code, interface language and profile photo — and their password (current password required; the password policy of FR-IAM-13 applies; other sign-in sessions end). The e-mail address cannot be changed by the user. Job data (employee ID, job title, department, branch, manager, hire date) is shown read-only and changed only by HR / Tenant Admin (FR-IAM-01). Every change is audited (FR-AUD-01). | M | R1 |
 
 **Business rules**
 - BR-IAM-1: A user has exactly one primary role and may hold additional roles; effective permissions are the union, limited by each role's data scope.

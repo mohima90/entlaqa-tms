@@ -250,7 +250,9 @@ for name in AUTH_DB_PASSWORD APP_SERVER_DB_PASSWORD APP_WORKER_DB_PASSWORD APP_Q
 done
 
 echo "smoke: the workers log structured lines and stop gracefully"
-compose logs --no-log-prefix worker 2>&1 | grep -q '"service":"jadarat-worker"' ||
+# Logs captured first: `grep -q` stops reading early, which fails the pipe under pipefail.
+worker_logs="$(compose logs --no-log-prefix worker 2>&1)"
+grep -q '"service":"jadarat-worker"' <<<"$worker_logs" ||
   { echo "smoke: the worker does not write the platform's structured log lines" >&2; exit 1; }
 compose stop worker >/dev/null
 for id in $(compose ps -a -q worker); do

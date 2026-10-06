@@ -27,8 +27,14 @@ cleanup() {
   "${PSQL[@]}" -d postgres -c "do \$\$ begin
       if exists (select 1 from pg_roles where rolname = 'app_server') then execute 'alter role app_server password null'; end if;
       if exists (select 1 from pg_roles where rolname = 'app_worker') then execute 'alter role app_worker password null'; end if;
+      if exists (select 1 from pg_roles where rolname = 'app_queue') then execute 'alter role app_queue password null'; end if;
       if exists (select 1 from pg_roles where rolname = '$MIGRATOR') then
         execute 'alter role $MIGRATOR nologin password null';
+        if exists (select 1 from pg_auth_members m join pg_roles g on g.oid = m.roleid
+                     join pg_roles u on u.oid = m.member join pg_roles gr on gr.oid = m.grantor
+                   where g.rolname = 'app_queue' and u.rolname = '$MIGRATOR' and gr.rolname = '$MIGRATOR') then
+          execute 'revoke app_queue from $MIGRATOR granted by $MIGRATOR';
+        end if;
         -- The migration's own 'grant tenant_guard to current_user': not wanted beyond this run.
         if exists (select 1 from pg_auth_members m join pg_roles g on g.oid = m.roleid
                      join pg_roles u on u.oid = m.member join pg_roles gr on gr.oid = m.grantor
@@ -58,7 +64,9 @@ end \$\$;
 alter role $MIGRATOR login password '$MIGRATOR_PW';
 -- Only what the migrations need: ADMIN on authenticated (grant authenticated to app_server/app_worker).
 grant authenticated to $MIGRATOR with admin option;
-grant create, temporary on database "$DB" to $MIGRATOR;
+-- With the grant option: on staging the migration role's REVOKE TEMPORARY … FROM PUBLIC took effect
+-- (1 Oct 2026), so it can grant and revoke database privileges (the job runner needs CREATE, T-M2-06a).
+grant create, temporary on database "$DB" to $MIGRATOR with grant option;
 -- Observed on hosted Supabase (first DB deploy plan, 1 Oct 2026): postgres has USAGE on schema auth but
 -- WITHOUT the grant option ("no privileges were granted for auth"); it can read auth.sessions (grant
 -- option on it not assumed).
@@ -70,7 +78,7 @@ grant references on auth.sessions, auth.users to $MIGRATOR;
 do \$\$
 declare r text;
 begin
-  foreach r in array array['app_server', 'app_worker', 'tenant_guard'] loop
+  foreach r in array array['app_server', 'app_worker', 'app_queue', 'tenant_guard'] loop
     if exists (select 1 from pg_roles where rolname = r) then
       execute format('grant %I to $MIGRATOR with admin option, inherit false, set false', r);
     end if;
@@ -82,7 +90,7 @@ enc() { node -e 'process.stdout.write(encodeURIComponent(process.argv[1]))' "$1"
 DATABASE_URL="postgresql://$MIGRATOR:$(enc "$MIGRATOR_PW")@$PGHOST:$PGPORT/$DB"
 export DATABASE_URL
 export DB_DEPLOY_LOCAL_NO_TLS=1
-export APP_SERVER_DB_PASSWORD="sim-$(rand)" APP_WORKER_DB_PASSWORD="sim-$(rand)"
+export APP_SERVER_DB_PASSWORD="sim-$(rand)" APP_WORKER_DB_PASSWORD="sim-$(rand)" APP_QUEUE_DB_PASSWORD="sim-$(rand)"
 
 echo "db-test-hosted-sim: plan as non-superuser $MIGRATOR"
 bash "$ROOT/scripts/db-deploy.sh" plan

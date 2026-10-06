@@ -5,6 +5,7 @@
 #   secret   DATABASE_URL            migration connection (Supabase: postgres via the session pooler), no query params
 #   secret   APP_SERVER_DB_PASSWORD  password for login role app_server (optional after the first run)
 #   secret   APP_WORKER_DB_PASSWORD  password for login role app_worker (optional after the first run)
+#   secret   APP_QUEUE_DB_PASSWORD   password for login role app_queue, the job runner (optional after the first run)
 #   variable DATABASE_CA_CERT        PEM of the server's root CA (Supabase: Database Settings → SSL Configuration)
 # Run `plan` first (dry run, always rolled back), then `apply`.
 name: DB deploy
@@ -65,3 +66,4 @@ jobs:
           DATABASE_CA_CERT: ${{ vars.DATABASE_CA_CERT }}
           APP_SERVER_DB_PASSWORD: ${{ secrets.APP_SERVER_DB_PASSWORD }}
           APP_WORKER_DB_PASSWORD: ${{ secrets.APP_WORKER_DB_PASSWORD }}
+          APP_QUEUE_DB_PASSWORD: ${{ secrets.APP_QUEUE_DB_PASSWORD }}

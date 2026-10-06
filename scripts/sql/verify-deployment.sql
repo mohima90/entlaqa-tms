@@ -21,9 +21,9 @@ begin
   -- 1. Login roles: exact attributes and memberships (ADR 0002 §5, §7).
   for r in
     select rolname, rolcanlogin, rolinherit, rolsuper, rolbypassrls, rolcreaterole, rolcreatedb, rolreplication
-    from pg_roles where rolname in ('app_server', 'app_worker', 'tenant_guard')
+    from pg_roles where rolname in ('app_server', 'app_worker', 'app_queue', 'tenant_guard')
   loop
-    if r.rolname in ('app_server', 'app_worker') and not r.rolcanlogin then
+    if r.rolname in ('app_server', 'app_worker', 'app_queue') and not r.rolcanlogin then
       failures := failures || format('%s must be LOGIN', r.rolname);
     end if;
     if r.rolname = 'tenant_guard' and r.rolcanlogin then
@@ -33,8 +33,15 @@ begin
       failures := failures || format('%s must be NOINHERIT NOSUPERUSER NOBYPASSRLS NOCREATEROLE NOCREATEDB NOREPLICATION', r.rolname);
     end if;
   end loop;
-  if (select count(*) from pg_roles where rolname in ('app_server', 'app_worker', 'tenant_guard')) <> 3 then
-    failures := failures || 'roles app_server, app_worker and tenant_guard must all exist'::text;
+  if (select count(*) from pg_roles where rolname in ('app_server', 'app_worker', 'app_queue', 'tenant_guard')) <> 4 then
+    failures := failures || 'roles app_server, app_worker, app_queue and tenant_guard must all exist'::text;
+  end if;
+  -- The job runner (ADR 0005 §2): member of nothing (never authenticated), owner of graphile_worker.
+  if exists (select 1 from pg_auth_members m join pg_roles u on u.oid = m.member where u.rolname = 'app_queue') then
+    failures := failures || 'app_queue must not be a member of any role'::text;
+  end if;
+  if (select pg_get_userbyid(nspowner) from pg_namespace where nspname = 'graphile_worker') is distinct from 'app_queue' then
+    failures := failures || 'schema graphile_worker must exist and be owned by app_queue'::text;
   end if;
   foreach v_role in array array['app_server', 'app_worker'] loop
     if exists (select 1 from pg_roles where rolname = v_role) then

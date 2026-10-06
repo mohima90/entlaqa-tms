@@ -34,7 +34,7 @@ declare
   r record;
 begin
   perform tests.assert(private.current_tenant_id() is null, 'stale pre-switch tenant A claim is refused');
-  for r in select * from tests.tenant_tables() loop
+  for r in select * from tests.readable_tenant_tables() loop
     perform tests.assert_eq(tests.count_rows(r.table_name), 0::bigint,
       format('%s: stale pre-switch claim must read zero rows', r.table_name));
   end loop;

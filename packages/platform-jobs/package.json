@@ -1,0 +1,30 @@
+{
+  "name": "@jadarat/platform-jobs",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Background jobs and domain-event delivery (ADR 0004, ADR 0005): graphile-worker runner, outbox dispatcher, subscriber registry. Importable only from job code and apps/worker.",
+  "sideEffects": false,
+  "exports": {
+    "./jobs": "./src/jobs/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@jadarat/platform-db": "workspace:*",
+    "graphile-worker": "0.18.0",
+    "pg": "8.23.1",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@jadarat/config": "workspace:*",
+    "@types/node": "24.19.0",
+    "@types/pg": "8.23.1",
+    "@vitest/coverage-v8": "5.0.3",
+    "typescript": "6.0.3",
+    "vitest": "5.0.3"
+  }
+}

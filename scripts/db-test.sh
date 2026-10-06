@@ -31,6 +31,7 @@ DB="jadarat_test_$(date +%s)_$$"
 # Test-only passwords for the login roles, generated per run and cleared on exit (never in migrations).
 APP_SERVER_PW="test-$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
 APP_WORKER_PW="test-$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+APP_QUEUE_PW="test-$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
 
 PSQL=(psql -X -q -v ON_ERROR_STOP=1 --no-psqlrc -o /dev/null)
 
@@ -39,6 +40,7 @@ cleanup() {
   "${PSQL[@]}" -d postgres -c "do \$\$ begin
       if exists (select 1 from pg_roles where rolname = 'app_server') then execute 'alter role app_server password null'; end if;
       if exists (select 1 from pg_roles where rolname = 'app_worker') then execute 'alter role app_worker password null'; end if;
+      if exists (select 1 from pg_roles where rolname = 'app_queue') then execute 'alter role app_queue password null'; end if;
     end \$\$;" >/dev/null 2>&1 || true
   if [[ "${DB_TEST_KEEP:-0}" != "1" ]]; then
     dropdb --if-exists "$DB" >/dev/null 2>&1 || true
@@ -86,7 +88,7 @@ migrate_up
 echo "db-test: verify-deployment.sql"
 "${PSQL[@]}" -d "$DB" -f "$ROOT/scripts/sql/verify-deployment.sql"
 
-"${PSQL[@]}" -d "$DB" -c "alter role app_server password '$APP_SERVER_PW'; alter role app_worker password '$APP_WORKER_PW';"
+"${PSQL[@]}" -d "$DB" -c "alter role app_server password '$APP_SERVER_PW'; alter role app_worker password '$APP_WORKER_PW'; alter role app_queue password '$APP_QUEUE_PW';"
 
 for test_file in "$TESTS_DIR"/[0-9]*.sql; do
   name="$(basename "$test_file")"
@@ -96,9 +98,11 @@ for test_file in "$TESTS_DIR"/[0-9]*.sql; do
       PGPASSWORD="$APP_SERVER_PW" "${PSQL[@]}" -U app_server -d "$DB" -f "$test_file" ;;
     app_worker) echo "db-test: run $name (as app_worker)"
       PGPASSWORD="$APP_WORKER_PW" "${PSQL[@]}" -U app_worker -d "$DB" -f "$test_file" ;;
+    app_queue) echo "db-test: run $name (as app_queue)"
+      PGPASSWORD="$APP_QUEUE_PW" "${PSQL[@]}" -U app_queue -d "$DB" -f "$test_file" ;;
     owner) echo "db-test: run $name (as $PGUSER)"
       "${PSQL[@]}" -d "$DB" -f "$test_file" ;;
-    *) echo "db-test: $name must start with '-- db-test: run-as=owner|app_server|app_worker'" >&2; exit 1 ;;
+    *) echo "db-test: $name must start with '-- db-test: run-as=owner|app_server|app_worker|app_queue'" >&2; exit 1 ;;
   esac
 done
 
@@ -109,6 +113,7 @@ if [[ "${DB_TEST_INTEGRATION:-0}" == "1" ]]; then
   export TEST_DATABASE_URL="postgres://$(enc "$PGUSER"):$(enc "${PGPASSWORD:-}")@$PGHOST:$PGPORT/$DB"
   export TEST_APP_SERVER_URL="postgres://app_server:$(enc "$APP_SERVER_PW")@$PGHOST:$PGPORT/$DB"
   export TEST_APP_WORKER_URL="postgres://app_worker:$(enc "$APP_WORKER_PW")@$PGHOST:$PGPORT/$DB"
+  export TEST_APP_QUEUE_URL="postgres://app_queue:$(enc "$APP_QUEUE_PW")@$PGHOST:$PGPORT/$DB"
   export JADARAT_REQUIRE_INTEGRATION=1
   (cd "$ROOT" && pnpm run test:integration)
 fi

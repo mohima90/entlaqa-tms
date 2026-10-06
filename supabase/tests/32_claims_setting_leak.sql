@@ -33,7 +33,7 @@ begin
     'current_tenant_id() reads request.jwt.claims only');
   perform tests.assert_eq(private.request_user_id(), '00000000-0000-4000-8000-0000000000b1'::uuid,
     'request_user_id() reads request.jwt.claims only');
-  for r in select * from tests.tenant_tables() loop
+  for r in select * from tests.readable_tenant_tables() loop
     execute format('select count(*) from %s where %I <> %L', r.table_name, r.tenant_column, 'b0000000-0000-4000-8000-000000000001')
       into v_foreign;
     perform tests.assert_eq(v_foreign, 0::bigint, format('%s: leaked legacy claims must not expose tenant A', r.table_name));
@@ -57,7 +57,7 @@ declare
 begin
   perform tests.assert(private.request_claims() is null, 'no request.jwt.claims → no claims');
   perform tests.assert(private.current_tenant_id() is null, 'leaked legacy claims never resolve a tenant');
-  for r in select * from tests.tenant_tables() loop
+  for r in select * from tests.readable_tenant_tables() loop
     perform tests.assert_eq(tests.count_rows(r.table_name), 0::bigint,
       format('%s: leaked legacy claims must read zero rows', r.table_name));
   end loop;

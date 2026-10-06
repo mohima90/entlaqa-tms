@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 // Prints `ALTER ROLE … PASSWORD '<SCRAM verifier>'` for the database login roles (ADR 0002 §5, §7) from
-// APP_SERVER_DB_PASSWORD / APP_WORKER_DB_PASSWORD, for piping straight into psql (scripts/db-deploy.sh).
+// APP_SERVER_DB_PASSWORD / APP_WORKER_DB_PASSWORD / APP_QUEUE_DB_PASSWORD, for piping straight into psql (scripts/db-deploy.sh).
 // Only verifiers are printed, never the passwords. A role whose variable is unset is left unchanged.
 import { checkPassword, scramSha256Verifier } from './lib/scram.mjs';
 
 const ROLES = [
   ['app_server', 'APP_SERVER_DB_PASSWORD'],
   ['app_worker', 'APP_WORKER_DB_PASSWORD'],
+  ['app_queue', 'APP_QUEUE_DB_PASSWORD'],
 ];
 
 const statements = [];

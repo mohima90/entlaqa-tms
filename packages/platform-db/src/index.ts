@@ -22,9 +22,12 @@ export {
   type EditableRoles,
   type RolesOutcome,
   type RolesRefusal,
+  type ReplaceRolesOptions,
   getEditableRoles,
+  keepPrimaryDays,
   replaceMemberRoles,
   rolesRefusalOf,
+  touchesRoles,
 } from './role-admin';
 export {
   type CurrentUnit,

@@ -31,6 +31,8 @@ const LABEL_KEYS = [
   'backToProfile',
   'lastAdmin',
   'datesInvalid',
+  'ended',
+  'scheduled',
 ] as const;
 
 /**
@@ -149,6 +151,7 @@ async function rolesForm(
         labels={labels}
         errors={await profileErrorTexts(locale)}
         profileHref={profileHref}
+        today={view.roles.today}
       />
     </Card>
   );

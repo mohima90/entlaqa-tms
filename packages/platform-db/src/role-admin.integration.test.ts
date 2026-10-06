@@ -120,7 +120,7 @@ describe.skipIf(!configured)('changing roles against PostgreSQL', () => {
       roles: [role('learner', { isPrimary: true })],
       timeZone: 'Asia/Riyadh',
     });
-    expect(roles?.version).toMatch(/^learner:1$/);
+    expect(roles?.version).toMatch(/^learner:[0-9a-f-]{36}:1$/);
     const own = await withUserTx(claimsOf(admin), (tx) => getEditableRoles(tx, admin.person));
     expect(own?.isSelf).toBe(true);
     const none = await withUserTx(claimsOf(admin), (tx) => getEditableRoles(tx, noLogin.person));
@@ -202,6 +202,47 @@ describe.skipIf(!configured)('changing roles against PostgreSQL', () => {
     expect(await change(hr, sara.person, [role('learner', { isPrimary: true })])).toEqual({
       ok: false,
       refusal: 'not_allowed',
+    });
+  });
+
+  it('primary days are kept; revoked members are refused', async () => {
+    // A primary role that has an end day (set outside this screen) keeps it when other roles change.
+    await owner`update platform.role_assignments ra set valid_until = '2030-01-01 00:00+03'
+      from platform.tenant_memberships m
+      where m.id = ra.membership_id and m.user_id = ${sara.user} and ra.is_primary`;
+    const saved = await change(admin, sara.person, [
+      role('learner', { isPrimary: true }),
+      role('mentor'),
+    ]);
+    expect(saved).toMatchObject({ ok: true, changed: true });
+    const roles = await withUserTx(claimsOf(admin), (tx) => getEditableRoles(tx, sara.person));
+    expect(roles?.roles.find((r) => r.isPrimary)).toMatchObject({
+      roleCode: 'learner',
+      validUntil: '2029-12-31',
+    });
+
+    await owner`update platform.tenant_memberships set status = 'revoked' where user_id = ${sara.user}`;
+    expect(await change(admin, sara.person, [role('learner', { isPrimary: true })])).toEqual({
+      ok: false,
+      refusal: 'membership_revoked',
+    });
+    await owner`update platform.tenant_memberships set status = 'active' where user_id = ${sara.user}`;
+  });
+
+  it("days follow the headquarters' time zone, also across a daylight-saving change", async () => {
+    // Cairo moved its clocks forward at midnight on 26 April 2024: that midnight does not exist.
+    await owner`insert into platform.branches (tenant_id, code, name_ar, is_headquarters, timezone)
+      values (${tenant}, 'CAI', 'القاهرة', true, 'Africa/Cairo')`;
+    const saved = await change(admin, sara.person, [
+      role('learner', { isPrimary: true, validUntil: '2029-12-31' }),
+      role('mentor', { validFrom: '2024-04-01', validUntil: '2024-04-25' }),
+    ]);
+    expect(saved).toMatchObject({ ok: true });
+    const roles = await withUserTx(claimsOf(admin), (tx) => getEditableRoles(tx, sara.person));
+    expect(roles?.timeZone).toBe('Africa/Cairo');
+    expect(roles?.roles.find((r) => r.roleCode === 'mentor')).toMatchObject({
+      validFrom: '2024-04-01',
+      validUntil: '2024-04-25',
     });
   });
 });

@@ -1,6 +1,7 @@
 import 'server-only';
 import { EMPTY_PERSON_SCOPE, type PersonScope, isEmptyPersonScope } from '@jadarat/platform-core';
 import { type SQL, sql } from 'drizzle-orm';
+import { ORG_TIME_ZONE } from './org-time-zone';
 import type { UserTx } from './with-user-tx';
 
 /**
@@ -288,6 +289,8 @@ export interface UserProfile {
     readonly displayNameEn: string | null;
   } | null;
   readonly hireOn: string | null;
+  /** The organization's time zone for calendar days (role validity days, T-M2-14). */
+  readonly timeZone: string;
   /** All assignments with their validity dates; null when the caller may not read roles. */
   readonly roles: readonly UserRole[] | null;
   readonly lastSignInAt: Date | null;
@@ -333,6 +336,7 @@ export async function getUserProfile(
     manager_name_ar: string | null;
     manager_name_en: string | null;
     hire_on: string | null;
+    time_zone: string;
   }>(sql`
     select p.id as person_id, p.display_name_ar, p.display_name_en, p.email, p.mobile_e164,
            p.employee_number, p.preferred_locale, p.status as person_status,
@@ -341,7 +345,8 @@ export async function getUserProfile(
            d.name_ar as department_name_ar, d.name_en as department_name_en,
            b.name_ar as branch_name_ar, b.name_en as branch_name_en,
            mgr.id as manager_person_id, mgr.display_name_ar as manager_name_ar,
-           mgr.display_name_en as manager_name_en, e.hire_on::text as hire_on
+           mgr.display_name_en as manager_name_en, e.hire_on::text as hire_on,
+           ${ORG_TIME_ZONE} as time_zone
     from platform.persons p
     left join platform.tenant_memberships m on m.tenant_id = p.tenant_id and m.person_id = p.id
     left join platform.person_employment e on e.tenant_id = p.tenant_id and e.person_id = p.id
@@ -406,6 +411,7 @@ export async function getUserProfile(
     employeeNumber: row.employee_number,
     preferredLocale: row.preferred_locale,
     personStatus: row.person_status,
+    timeZone: row.time_zone,
     membershipStatus: row.membership_status,
     jobTitleAr: row.job_title_ar,
     jobTitleEn: row.job_title_en,

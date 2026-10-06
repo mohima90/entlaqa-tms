@@ -4,8 +4,10 @@ import { describe, expect, it } from 'vitest';
 import {
   type AssignedRole,
   getEditableRoles,
+  keepPrimaryDays,
   replaceMemberRoles,
   rolesRefusalOf,
+  touchesRoles,
 } from './role-admin';
 
 const dialect = new PgDialect();
@@ -32,6 +34,7 @@ const person = {
   is_self: false,
   may_manage: true,
   time_zone: 'Asia/Riyadh',
+  today: '2026-10-06',
 };
 const rows = [
   {
@@ -39,6 +42,7 @@ const rows = [
     is_primary: true,
     valid_from: null,
     valid_until: null,
+    id: 'r2',
     version: 2,
   },
   {
@@ -46,6 +50,7 @@ const rows = [
     is_primary: false,
     valid_from: null,
     valid_until: '2026-12-31',
+    id: 'r1',
     version: 1,
   },
 ];
@@ -56,7 +61,7 @@ const role = (roleCode: string, over: Partial<AssignedRole> = {}): AssignedRole 
   validUntil: null,
   ...over,
 });
-const VERSION = 'learner:1,training_coordinator:2';
+const VERSION = 'learner:r1:1,training_coordinator:r2:2';
 const pgError = (code: string, extra: Record<string, unknown> = {}) =>
   Object.assign(new Error('db'), { cause: { code, message: '', ...extra } });
 
@@ -74,6 +79,7 @@ describe('getEditableRoles', () => {
       ],
       version: VERSION,
       timeZone: 'Asia/Riyadh',
+      today: '2026-10-06',
     });
     const noAccount = fakeTx([{ ...person, membership_id: null, status: null }]);
     expect(await getEditableRoles(noAccount.tx, 'p1')).toMatchObject({ roles: [], version: '' });
@@ -89,6 +95,7 @@ describe('replaceMemberRoles', () => {
       [[{ ...person, membership_id: null }], '', 'no_account'],
       [[{ ...person, is_self: true }], VERSION, 'own_roles'],
       [[{ ...person, may_manage: false }], VERSION, 'not_allowed'],
+      [[{ ...person, status: 'revoked' }], VERSION, 'membership_revoked'],
       [[person], 'learner:0', 'version_conflict'],
     ];
     for (const [personRows, version, refusal] of cases) {
@@ -160,5 +167,57 @@ describe('replaceMemberRoles', () => {
     expect(rolesRefusalOf(pgError('23505'))).toBe('version_conflict');
     expect(() => rolesRefusalOf(pgError('23514', { message: 'other' }))).toThrow();
     expect(() => rolesRefusalOf(new Error('boom'))).toThrow('boom');
+  });
+});
+
+describe('primary days and locked roles', () => {
+  it('a primary role that stays primary keeps its days', () => {
+    const before = [role('learner', { isPrimary: true, validUntil: '2026-01-31' })];
+    expect(keepPrimaryDays(before, [role('learner', { isPrimary: true })])).toEqual(before);
+    // Another primary, or a role that was additional, takes no days from elsewhere.
+    expect(keepPrimaryDays(before, [role('mentor', { isPrimary: true })])).toEqual([
+      role('mentor', { isPrimary: true }),
+    ]);
+  });
+
+  it('touchesRoles: given, removed, primary flag or days of a locked role', () => {
+    const locked = new Set(['auditor', 'tenant_admin']);
+    const current = [role('learner', { isPrimary: true }), role('auditor')];
+    expect(touchesRoles(current, current, locked)).toBe(false);
+    expect(touchesRoles(current, [role('learner', { isPrimary: true })], locked)).toBe(true);
+    expect(touchesRoles(current, [...current, role('tenant_admin')], locked)).toBe(true);
+    expect(
+      touchesRoles(
+        current,
+        [role('learner', { isPrimary: true }), role('auditor', { validUntil: '2027-01-01' })],
+        locked,
+      ),
+    ).toBe(true);
+    expect(
+      touchesRoles(
+        current,
+        [role('learner', { isPrimary: true }), role('auditor'), role('mentor')],
+        locked,
+      ),
+    ).toBe(false);
+  });
+
+  it('refuses a locked change after the lock, before writing; keeps the primary days on save', async () => {
+    const locked = fakeTx([], [person], rows);
+    expect(
+      await replaceMemberRoles(locked.tx, 'p1', VERSION, [role('auditor', { isPrimary: true })], {
+        lockedCodes: new Set(['auditor']),
+      }),
+    ).toEqual({ ok: false, refusal: 'privileged_change' });
+    expect(locked.executed).toHaveLength(3);
+
+    const dated = [{ ...rows[0], valid_until: '2026-01-31' }, rows[1]];
+    const kept = fakeTx([], [person], dated);
+    expect(
+      await replaceMemberRoles(kept.tx, 'p1', VERSION, [
+        role('training_coordinator', { isPrimary: true }),
+        role('learner', { validUntil: '2026-12-31' }),
+      ]),
+    ).toMatchObject({ ok: true, changed: false });
   });
 });

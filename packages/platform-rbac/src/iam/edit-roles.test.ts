@@ -11,7 +11,6 @@ import {
   EditRolesInput,
   PRIVILEGED_ROLE_CODES,
   editRolesQueryDefinition,
-  touchesPrivilegedRoles,
   updateMemberPrivilegedRolesActionDefinition,
   updateMemberRolesActionDefinition,
 } from './edit-roles';
@@ -94,7 +93,7 @@ beforeEach(() => {
 });
 
 describe('privileged roles', () => {
-  it('lists the privileged roles and detects changes that touch them', () => {
+  it('lists the privileged roles', () => {
     expect(PRIVILEGED_ROLE_CODES).toEqual([
       'tenant_admin',
       'hr_manager',
@@ -102,14 +101,6 @@ describe('privileged roles', () => {
       'compliance_officer',
       'auditor',
     ]);
-    expect(touchesPrivilegedRoles(current, [role('learner', { isPrimary: true })])).toBe(false);
-    expect(touchesPrivilegedRoles(current, [...current, role('auditor')])).toBe(true);
-    const admin = [role('tenant_admin', { isPrimary: true })];
-    expect(touchesPrivilegedRoles(admin, [role('tenant_admin')])).toBe(true);
-    expect(touchesPrivilegedRoles(admin, [...admin, role('learner')])).toBe(false);
-    expect(
-      touchesPrivilegedRoles([role('auditor')], [role('auditor', { validUntil: '2026-01-01' })]),
-    ).toBe(true);
   });
 });
 
@@ -186,7 +177,9 @@ describe('update roles actions', () => {
     const { rt, writeAudit, getClaims } = runtime(['hr_manager']);
     const result = await createDefineAction(rt)(updateMemberRolesActionDefinition())(form);
     expect(result).toEqual(ok({ personId: SARA, changed: true, before: current, after }));
-    expect(db.replaceMemberRoles).toHaveBeenCalledWith(TX, SARA, form.version, after);
+    expect(db.replaceMemberRoles).toHaveBeenCalledWith(TX, SARA, form.version, after, {
+      lockedCodes: new Set(PRIVILEGED_ROLE_CODES),
+    });
     expect(writeAudit).toHaveBeenCalledWith(TX, expect.anything(), {
       action: 'platform.user.roles_changed',
       entityType: 'person',
@@ -201,6 +194,7 @@ describe('update roles actions', () => {
       ...form,
       additional: [{ roleCode: 'auditor' as const, validFrom: '', validUntil: '' }],
     };
+    db.replaceMemberRoles.mockResolvedValue({ ok: false, refusal: 'privileged_change' });
     const admin = await createDefineAction(runtime(['tenant_admin']).rt)(
       updateMemberRolesActionDefinition(),
     )(withAuditor);
@@ -209,7 +203,10 @@ describe('update roles actions', () => {
       updateMemberRolesActionDefinition(),
     )(withAuditor);
     expect(!hr.ok && hr.error.code).toBe('FORBIDDEN');
-    expect(db.replaceMemberRoles).not.toHaveBeenCalled();
+    // The check runs in the locked save, against the stored roles: privileged roles are locked there.
+    expect(db.replaceMemberRoles).toHaveBeenCalledWith(TX, SARA, form.version, expect.anything(), {
+      lockedCodes: new Set(PRIVILEGED_ROLE_CODES),
+    });
   });
 
   it('privileged action: needs AAL2 (strict session check), then saves', async () => {
@@ -249,6 +246,7 @@ describe('update roles actions', () => {
       ['version_conflict', 'CONFLICT_VERSION', undefined],
       ['last_admin', 'VALIDATION_FAILED', 'primary'],
       ['dates_invalid', 'VALIDATION_FAILED', 'additional'],
+      ['privileged_change', 'STEP_UP_REQUIRED', undefined], // Organization Admin without a code
     ];
     for (const [refusal, code, path] of cases) {
       db.replaceMemberRoles.mockResolvedValue({ ok: false, refusal });

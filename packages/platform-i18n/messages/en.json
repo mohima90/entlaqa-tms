@@ -303,6 +303,8 @@
     "additional": "Additional roles",
     "additionalHint": "The effective permissions are those of the primary role plus the additional roles.",
     "privileged": "Privileged role",
+    "ended": "Ended",
+    "scheduled": "Not started yet",
     "privilegedNeedsCode": "Changing privileged roles (Organization Admin, HR Manager, Finance Manager, Compliance Officer, Auditor) needs a code from an authenticator app; this becomes available once multi-factor authentication is set up. You can change the other roles now.",
     "privilegedAdminOnly": "Only the Organization Admin changes privileged roles (Organization Admin, HR Manager, Finance Manager, Compliance Officer, Auditor).",
     "validFrom": "Starts on",

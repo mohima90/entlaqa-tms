@@ -1,6 +1,11 @@
 import { toClientError } from '@jadarat/platform-core';
 import type { UserProfile } from '@jadarat/platform-db';
-import { type AppLocale, formatHijriDate } from '@jadarat/platform-i18n';
+import {
+  type AppLocale,
+  DEFAULT_CALENDAR,
+  DEFAULT_NUMBERING_SYSTEM,
+  formatHijriDate,
+} from '@jadarat/platform-i18n';
 import { routing } from '@jadarat/platform-i18n/routing';
 import { Alert, Badge, type BadgeTone, Card, buttonClasses } from '@jadarat/ui';
 import { hasLocale } from 'next-intl';
@@ -125,6 +130,14 @@ async function Profile({
   const accountStatus: AccountStatus = profile.membershipStatus ?? 'none';
   const subtitle = [jobTitle, department, branch].filter(Boolean).join(' · ');
   const now = new Date();
+  // Role days in the organization's time zone, as on the edit-roles page (T-M2-14).
+  const roleDay = (value: Date) =>
+    format.dateTime(value, {
+      dateStyle: 'medium',
+      timeZone: profile.timeZone,
+      calendar: DEFAULT_CALENDAR,
+      numberingSystem: DEFAULT_NUMBERING_SYSTEM,
+    });
 
   const fields: { key: string; label: string; value: ReactNode }[] = [
     {
@@ -242,14 +255,14 @@ async function Profile({
                     </Badge>
                     {role.validFrom && role.validFrom > now ? (
                       <span className="text-sm text-text-muted">
-                        {t('validFrom', { date: format.dateTime(role.validFrom, 'medium') })}
+                        {t('validFrom', { date: roleDay(role.validFrom) })}
                       </span>
                     ) : null}
                     {role.validUntil ? (
                       <span className="text-sm text-text-muted">
                         {t(ended ? 'ended' : 'validUntil', {
                           // The last day (a role ends at the start of the next day, T-M2-14).
-                          date: format.dateTime(new Date(role.validUntil.getTime() - 1), 'medium'),
+                          date: roleDay(new Date(role.validUntil.getTime() - 1)),
                         })}
                       </span>
                     ) : null}

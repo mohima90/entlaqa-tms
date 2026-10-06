@@ -32,20 +32,6 @@ export const PRIVILEGED_ROLE_CODES: readonly SystemRoleCode[] = SYSTEM_ROLES.fil
   (r) => r.privileged,
 ).map((r) => r.code);
 
-/** Does going from `before` to `after` give, remove or change a privileged role? */
-export function touchesPrivilegedRoles(
-  before: readonly AssignedRole[],
-  after: readonly AssignedRole[],
-): boolean {
-  const key = (r: AssignedRole) =>
-    `${String(r.isPrimary)}|${r.validFrom ?? ''}|${r.validUntil ?? ''}`;
-  const was = new Map(before.map((r) => [r.roleCode, key(r)]));
-  const will = new Map(after.map((r) => [r.roleCode, key(r)]));
-  return [...new Set([...was.keys(), ...will.keys()])].some(
-    (code) => PRIVILEGED.has(code) && was.get(code) !== will.get(code),
-  );
-}
-
 export type RolesBlock = 'own_roles' | 'no_account' | 'revoked';
 
 export interface EditRolesView {
@@ -157,6 +143,8 @@ function refusalError(refusal: RolesRefusal): AppError {
       return appError('VALIDATION_FAILED', {
         fieldErrors: [{ path: 'primary', code: 'LAST_ADMIN' }],
       });
+    case 'privileged_change':
+      return appError('FORBIDDEN');
     case 'dates_invalid':
       return appError('VALIDATION_FAILED', {
         fieldErrors: [{ path: 'additional', code: 'DATES' }],
@@ -180,17 +168,19 @@ function rolesAction(
     input: EditRolesInput,
     resource: (input) => ({ type: 'person', id: input.personId }),
     handler: async ({ ctx, input }) => {
-      const desired = desiredRoles(input);
-      if (!privileged) {
-        // Ordinary path: a change that touches a privileged role goes through the privileged action
-        // (AAL2, strict session check). Checked against the stored roles, not the client's view.
-        const current = await getEditableRoles(ctx.tx, input.personId);
-        if (current && touchesPrivilegedRoles(current.roles, desired)) {
-          const access = ctx.access(p['platform.role.assign_privileged'], ctx.resource ?? 'tenant');
-          return err(appError(access === 'step_up_required' ? 'STEP_UP_REQUIRED' : 'FORBIDDEN'));
-        }
+      // Ordinary path: a change that touches a privileged role must go through the privileged action
+      // (AAL2, strict session check). Checked after the role lock against the stored roles.
+      const outcome = await replaceMemberRoles(
+        ctx.tx,
+        input.personId,
+        input.version,
+        desiredRoles(input),
+        privileged ? {} : { lockedCodes: PRIVILEGED },
+      );
+      if (!outcome.ok && outcome.refusal === 'privileged_change') {
+        const access = ctx.access(p['platform.role.assign_privileged'], ctx.resource ?? 'tenant');
+        return err(appError(access === 'step_up_required' ? 'STEP_UP_REQUIRED' : 'FORBIDDEN'));
       }
-      const outcome = await replaceMemberRoles(ctx.tx, input.personId, input.version, desired);
       if (!outcome.ok) return err(refusalError(outcome.refusal));
       return ok({
         personId: input.personId,

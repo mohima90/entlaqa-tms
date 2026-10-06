@@ -10,6 +10,7 @@ import {
   desiredRoles,
   formStateFromRoles,
   lockedRoles,
+  roleTiming,
   touchesPrivileged,
 } from '../../lib/edit-roles-form';
 import { type ErrorTexts, errorText } from '../auth/error-text';
@@ -32,6 +33,8 @@ export interface EditRolesFormProps {
   readonly labels: Readonly<Record<string, string>>;
   readonly errors: ErrorTexts;
   readonly profileHref: string;
+  /** Today in the organization's time zone (YYYY-MM-DD): ended and scheduled roles are marked. */
+  readonly today: string;
 }
 
 /**
@@ -70,7 +73,7 @@ export function EditRolesForm(props: EditRolesFormProps) {
 
   function onSubmit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
-    const desired = desiredRoles(state, catalogue);
+    const desired = desiredRoles(state, catalogue, props.roles);
     const input = {
       personId: props.personId,
       version: props.version,
@@ -94,8 +97,12 @@ export function EditRolesForm(props: EditRolesFormProps) {
         if (result.error.code === 'VALIDATION_FAILED') {
           const codes = fieldErrorCodes(result.error);
           const errors: Record<string, string> = {};
+          const sent = desired.filter((r) => !r.isPrimary);
           for (const [path, code] of Object.entries(codes)) {
+            const row = /^additional\.([0-9]+)\./.exec(path);
+            const rowCode = row ? sent[Number(row[1])]?.roleCode : undefined;
             if (path === 'primary' && code === 'LAST_ADMIN') errors.primary = text('lastAdmin');
+            else if (rowCode) errors[`dates-${rowCode}`] = text('datesInvalid');
             else if (path.startsWith('additional')) errors.additional = text('datesInvalid');
           }
           setFieldErrors(errors);
@@ -111,15 +118,24 @@ export function EditRolesForm(props: EditRolesFormProps) {
     });
   }
 
-  const roleLabel = (choice: RoleChoice) => (
-    <span className="flex flex-col gap-1">
-      <span className="flex flex-wrap items-center gap-2 font-medium">
-        {choice.name}
-        {choice.privileged ? <Badge tone="warning">{text('privileged')}</Badge> : null}
+  const storedPrimary = props.roles.find((r) => r.isPrimary);
+  const roleLabel = (
+    choice: RoleChoice,
+    nameId: string,
+    days: { validFrom: string | null; validUntil: string | null } | null,
+  ) => {
+    const timing = days ? roleTiming(days.validFrom, days.validUntil, props.today) : 'current';
+    return (
+      <span className="flex flex-col gap-1">
+        <span className="flex flex-wrap items-center gap-2 font-medium">
+          <span id={nameId}>{choice.name}</span>
+          {choice.privileged ? <Badge tone="warning">{text('privileged')}</Badge> : null}
+          {timing !== 'current' ? <Badge tone="neutral">{text(timing)}</Badge> : null}
+        </span>
+        <span className="text-sm text-text-muted">{choice.description}</span>
       </span>
-      <span className="text-sm text-text-muted">{choice.description}</span>
-    </span>
-  );
+    );
+  };
 
   return (
     <form className="flex flex-col gap-8" onSubmit={onSubmit} noValidate data-testid="edit-roles">
@@ -163,7 +179,11 @@ export function EditRolesForm(props: EditRolesFormProps) {
                 }}
                 className="mt-1 size-5 shrink-0"
               />
-              {roleLabel(choice)}
+              {roleLabel(
+                choice,
+                `primary-${choice.code}-name`,
+                storedPrimary?.roleCode === choice.code ? storedPrimary : null,
+              )}
             </label>
           );
         })}
@@ -205,13 +225,23 @@ export function EditRolesForm(props: EditRolesFormProps) {
                     }}
                     className="mt-1 size-5 shrink-0"
                   />
-                  {roleLabel(choice)}
+                  {roleLabel(
+                    choice,
+                    `additional-${choice.code}-name`,
+                    days
+                      ? {
+                          validFrom: days.validFrom === '' ? null : days.validFrom,
+                          validUntil: days.validUntil === '' ? null : days.validUntil,
+                        }
+                      : null,
+                  )}
                 </label>
                 {days !== undefined ? (
                   <div className="grid grid-cols-1 gap-3 ps-8 sm:grid-cols-2">
                     {(['validFrom', 'validUntil'] as const).map((field) => (
                       <div key={field} className="flex flex-col gap-1">
                         <label
+                          id={`role-${choice.code}-${field}-label`}
                           htmlFor={`role-${choice.code}-${field}`}
                           className="text-sm font-medium"
                         >
@@ -229,11 +259,25 @@ export function EditRolesForm(props: EditRolesFormProps) {
                           onChange={(event) => {
                             setDay(choice.code, field, event.target.value);
                           }}
-                          aria-label={`${text(field)} — ${choice.name}`}
+                          aria-labelledby={`role-${choice.code}-${field}-label additional-${choice.code}-name`}
+                          aria-invalid={fieldErrors[`dates-${choice.code}`] ? true : undefined}
+                          aria-describedby={
+                            fieldErrors[`dates-${choice.code}`]
+                              ? `role-${choice.code}-dates-error`
+                              : undefined
+                          }
                           className="min-h-11 w-full rounded-md border border-border-strong bg-surface px-3 text-text"
                         />
                       </div>
                     ))}
+                    {fieldErrors[`dates-${choice.code}`] ? (
+                      <p
+                        id={`role-${choice.code}-dates-error`}
+                        className="m-0 text-sm font-medium text-danger sm:col-span-2"
+                      >
+                        {fieldErrors[`dates-${choice.code}`]}
+                      </p>
+                    ) : null}
                   </div>
                 ) : null}
               </div>

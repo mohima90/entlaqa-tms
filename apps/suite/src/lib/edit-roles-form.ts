@@ -34,10 +34,23 @@ export function formStateFromRoles(roles: readonly RoleRow[]): RolesFormState {
 const orNull = (day: string | undefined): string | null =>
   day === undefined || day === '' ? null : day;
 
-/** The roles the form would save: the primary first, then the additional ones in catalogue order. */
-export function desiredRoles(state: RolesFormState, catalogue: readonly RoleChoice[]): RoleRow[] {
+/**
+ * The roles the form would save: the primary first, then the additional ones in catalogue order. A
+ * primary role that stays primary keeps its days (the server does the same: keepPrimaryDays).
+ */
+export function desiredRoles(
+  state: RolesFormState,
+  catalogue: readonly RoleChoice[],
+  stored: readonly RoleRow[] = [],
+): RoleRow[] {
+  const storedPrimary = stored.find((r) => r.isPrimary && r.roleCode === state.primary);
   return [
-    { roleCode: state.primary, isPrimary: true, validFrom: null, validUntil: null },
+    {
+      roleCode: state.primary,
+      isPrimary: true,
+      validFrom: storedPrimary?.validFrom ?? null,
+      validUntil: storedPrimary?.validUntil ?? null,
+    },
     ...catalogue
       .filter((c) => c.code !== state.primary && state.additional[c.code] !== undefined)
       .map((c) => {
@@ -64,6 +77,17 @@ export function touchesPrivileged(
   return [...new Set([...was.keys(), ...will.keys()])].some(
     (code) => privileged.has(code) && was.get(code) !== will.get(code),
   );
+}
+
+/** A role's state today (days in the organization's time zone; YYYY-MM-DD compares as text). */
+export function roleTiming(
+  validFrom: string | null,
+  validUntil: string | null,
+  today: string,
+): 'ended' | 'scheduled' | 'current' {
+  if (validUntil !== null && validUntil < today) return 'ended';
+  if (validFrom !== null && validFrom > today) return 'scheduled';
+  return 'current';
 }
 
 /**

@@ -260,9 +260,9 @@ test.describe('users pages', () => {
     await expectNoSeriousA11yViolations(page);
 
     await form.getByRole('radio', { name: /^Training Manager/ }).check();
-    await form.getByLabel('Ends on — Learner').fill('2030-12-31');
+    await form.locator('#role-learner-validUntil').fill('2030-12-31');
     await form.getByRole('checkbox', { name: /^Mentor/ }).check();
-    await form.getByLabel('Starts on — Mentor').fill('2026-01-01');
+    await form.locator('#role-mentor-validFrom').fill('2026-01-01');
     await form.getByRole('button', { name: 'Save roles' }).click();
     await expect(page.getByTestId('edit-roles-message')).toHaveText('Roles saved.');
     await form.getByRole('button', { name: 'Save roles' }).click();

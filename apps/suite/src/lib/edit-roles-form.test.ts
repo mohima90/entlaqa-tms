@@ -3,6 +3,7 @@ import {
   desiredRoles,
   formStateFromRoles,
   lockedRoles,
+  roleTiming,
   touchesPrivileged,
 } from './edit-roles-form';
 
@@ -29,6 +30,30 @@ describe('roles form', () => {
       desiredRoles({ ...state, primary: 'learner' }, catalogue).map((r) => r.roleCode),
     ).toEqual(['learner']);
     expect(formStateFromRoles([]).primary).toBe('');
+    // A primary role that stays primary keeps its days; another primary has none.
+    const dated = [
+      {
+        roleCode: 'training_coordinator',
+        isPrimary: true,
+        validFrom: null,
+        validUntil: '2026-01-31',
+      },
+      { roleCode: 'learner', isPrimary: false, validFrom: null, validUntil: '2026-12-31' },
+    ];
+    expect(desiredRoles(formStateFromRoles(dated), catalogue, dated)[0]?.validUntil).toBe(
+      '2026-01-31',
+    );
+    expect(
+      desiredRoles({ ...formStateFromRoles(dated), primary: 'learner' }, catalogue, dated)[0]
+        ?.validUntil,
+    ).toBeNull();
+  });
+
+  it('tells ended and scheduled roles from current ones', () => {
+    expect(roleTiming(null, '2026-10-05', '2026-10-06')).toBe('ended');
+    expect(roleTiming(null, '2026-10-06', '2026-10-06')).toBe('current');
+    expect(roleTiming('2026-10-07', null, '2026-10-06')).toBe('scheduled');
+    expect(roleTiming(null, null, '2026-10-06')).toBe('current');
   });
 
   it('detects privileged changes and locks privileged roles unless allowed', () => {

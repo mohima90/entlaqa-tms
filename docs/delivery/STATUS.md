@@ -20,7 +20,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 | Planning (research, BRD, feature list, delivery plan) | — | 🟢 Done | — | See §4 documents |
 | M0 Mobilize | 1–2 | 🟢 Done | G0 | **Gate G0 passed 3 Oct 2026.** T-M0-01…07, 09, 10 done (MFA on GitHub, Supabase, Vercel confirmed); T-M0-08 (→ 2-week customer trials ≈ end of M5) and T-M0-11 deferred by PO; T-M0-12/13 needed later |
 | M1 Foundation | 3–8 | 🟢 Done | G1 | Foundation merged (#9); walking skeleton live on staging (#10–#14); component library + Storybook done (T-M1-A02); M2 threat models done (TM-0002…0006); self-hosted stack verified (T-M1-D04, gate 15); observability baseline done (T-M1-D06). Estimation (T-M1-B14) postponed and mock-up usability round (T-M1-A05) cancelled by the PO (4 Oct 2026) |
-| M2 Platform core | 9–12 | 🔵 In progress | G2 | Started 4 Oct 2026 with users & roles (`EP-M2-IAM`): 11 Arabic screens **approved by the PO** (4 Oct 2026); build broken into T-M2-01…12 (BACKLOG); T-M2-01…04 merged (#28, #30–#33); next T-M2-05 |
+| M2 Platform core | 9–12 | 🔵 In progress | G2 | Started 4 Oct 2026 with users & roles (`EP-M2-IAM`): 11 Arabic screens **approved by the PO** (4 Oct 2026); build broken into T-M2-01…12 (BACKLOG); T-M2-01…04, T-M2-13, T-M2-14, T-M2-15a merged (#28, #30–#36); T-M2-05 in review; then invitations (T-M2-06/07) |
 | M3 Catalog & scheduling | 13–16 | ⚪ Not started | G3 | |
 | M4 Enrollment & manager | 17–19 | ⚪ Not started | G4 | |
 | M5 Delivery & credentials | 20–23 | ⚪ Not started | G5 | |
@@ -148,6 +148,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 6. ~~DB deploy of T-M2-01…04a to staging~~ **Done 5 Oct 2026** (plan, then apply: 13 migrations, verification passed; the roles backfill made only the PO's account Organization Admin — one provisioning run ever, one member).
 7. ~~After My profile: DB deploy + Auth settings~~ **Done 6 Oct 2026** (migration `persons_write_guard` applied, verification passed; Supabase Auth: require current password on, minimum length 12).
 8. ~~After T-M2-13: DB deploy~~ **Done 6 Oct 2026** (plan, then apply: migration `actor_may_manage_person` applied, verification passed).
+9. ~~After T-M2-14: DB deploy~~ **Done 6 Oct 2026** (plan, then apply: migration `role_guard_privileged_member` applied, verification passed).
 
 **Security decisions for M2 (from TM-0002…0006, 3 Oct 2026)** — needed before the related M2 stories start; Claude will bring them one at a time:
 1. ~~Always require an authenticator code for high-risk actions (role changes, exports), even when an organization turns MFA off?~~ **Answered 6 Oct 2026: yes** (TM-0003 D-IAM-01)
@@ -183,6 +184,9 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
+| 6 Oct 2026 | T-M2-05 built: roles & permissions page (14 roles, Appendix B matrix checked against real grants, member counts matching the users list). Next: review, PR after PO "yes" |
+| 6 Oct 2026 | Staging DB deploy with the PO (plan → apply): `role_guard_privileged_member` applied, verification passed. Edit roles is live on staging. Next: T-M2-05 roles & permissions page |
+| 6 Oct 2026 | PR #36 merged (T-M2-14 change a member's roles). Next: staging DB deploy (1 migration, `role_guard_privileged_member`) with the PO; then T-M2-05 roles page |
 | 6 Oct 2026 | T-M2-14 review: approve with fixes (1 Medium, 5 Low) → fixed; re-review found a High regression (version token) caught also by the self-hosted E2E → fixed; third round **approve**. Fixed a timing-dependent My profile E2E step (stored language Arabic). Next: PR after PO "yes" |
 | 6 Oct 2026 | T-M2-14 built: change a member's roles (primary + additional with days; privileged roles locked until MFA per D-IAM-01; HR blocked on privileged members in the DB guard); unit, integration, pgTAP and E2E tests. Next: review, PR (after PO "yes"), staging DB deploy |
 | 6 Oct 2026 | PO verified Edit details on staging. PO decision D-IAM-01: authenticator code always required for high-risk actions. Started T-M2-14 change a user's roles |

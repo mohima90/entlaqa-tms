@@ -55,6 +55,7 @@ export {
   type UserProfileOptions,
   MAX_PAGE_SIZE,
   type UserRole,
+  countMembersByRole,
   getUserProfile,
   listUsers,
   loadPersonResourceFacts,

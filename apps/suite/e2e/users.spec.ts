@@ -156,6 +156,12 @@ test.describe('users pages', () => {
     await page.goto(`/en/suite/admin/users/${KHALID}/edit`);
     await expect(page.getByText("You don't have permission to do this.")).toBeVisible();
     await expect(page.getByTestId('edit-user')).toHaveCount(0);
+    // No roles & permissions page either (T-M2-05: tenant-wide role.read)
+    await expect(page.getByRole('link', { name: 'Roles & permissions' })).toHaveCount(0);
+    await page.goto('/en/suite/admin/roles');
+    await expect(page.getByText("You don't have permission to do this.")).toBeVisible();
+    await expect(page.getByTestId('role-matrix')).toHaveCount(0);
+
     // Nor roles (T-M2-14)
     await expect(page.getByTestId('edit-roles-link')).toHaveCount(0);
     await page.goto(`/en/suite/admin/users/${KHALID}/roles`);
@@ -236,6 +242,52 @@ test.describe('users pages', () => {
     await expect(page.getByRole('combobox', { name: /القسم/ })).toHaveValue(/.+/);
     // Hire date: Gregorian field, Hijri equivalent shown under it
     await expect(page.getByText('يوافق 22 شعبان 1445 هـ')).toBeVisible();
+    await expectNoSeriousA11yViolations(page);
+  });
+
+  test('Roles & permissions: the 14 roles, the matrix, and member counts that match the list', async ({
+    page,
+  }) => {
+    await signIn(page);
+    await page.getByRole('link', { name: 'Roles & permissions' }).click();
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Roles & permissions');
+    const list = page.getByTestId('role-list');
+    await expect(list.getByRole('link')).toHaveCount(14);
+    await expect(list.getByRole('link', { name: /^Organization Admin/ })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    await expect(page.getByTestId('custom-role')).toContainText('Coming soon');
+    await expectNoSeriousA11yViolations(page);
+
+    await list.getByRole('link', { name: /^Learner/ }).click();
+    await expect(page).toHaveURL(/\/en\/suite\/admin\/roles\?role=learner#role-detail$/);
+    const detail = page.getByTestId('role-detail');
+    await expect(detail.getByRole('heading', { level: 2 })).toHaveText('Learner');
+    const matrix = page.getByTestId('role-matrix');
+    await expect(matrix.getByRole('row', { name: /Users & roles/ })).toContainText(
+      'Own records only',
+    );
+    await expect(matrix.getByRole('row', { name: /Audit log/ })).toContainText('None');
+    // The count matches the users list filtered by the role.
+    const members = Number(
+      ((await page.getByTestId('role-members').textContent()) ?? '').replace(/[^0-9]/g, ''),
+    );
+    expect(members).toBeGreaterThan(0);
+    await detail.getByRole('link', { name: 'View users' }).click();
+    await expect(page).toHaveURL(/\/en\/suite\/admin\/users\?role=learner$/);
+    await expect(page.getByTestId('users-table').getByRole('row')).toHaveCount(members + 1);
+
+    // An unknown role in the address: back to the plain page
+    await page.goto('/en/suite/admin/roles?role=not-a-role');
+    await expect(page).toHaveURL(/\/en\/suite\/admin\/roles$/);
+
+    // Arabic: right to left, privileged role flagged; the language switch keeps the role
+    await page.goto('/en/suite/admin/roles?role=auditor');
+    await page.getByRole('link', { name: 'Switch to Arabic' }).click();
+    await expect(page).toHaveURL(/\/ar\/suite\/admin\/roles\?role=auditor$/);
+    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await expect(page.getByTestId('role-detail')).toContainText('دور مميز');
     await expectNoSeriousA11yViolations(page);
   });
 

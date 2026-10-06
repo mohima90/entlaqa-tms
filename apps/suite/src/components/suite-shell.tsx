@@ -10,7 +10,7 @@ import type { SuiteContext } from '../lib/suite-context';
 import { SignOutButton } from './auth/sign-out-button';
 import { LanguageToggle } from './language-toggle';
 
-export type SuitePage = 'home' | 'users' | 'profile';
+export type SuitePage = 'home' | 'users' | 'roles' | 'profile';
 
 const linkClass = 'block rounded-md px-3 py-2 no-underline';
 const currentClass = 'bg-surface-selected font-medium text-primary-text';
@@ -121,17 +121,26 @@ export async function SuiteShell({
           ),
         )}
       </ul>
-      {context.navigation.users ? (
+      {context.navigation.users || context.navigation.roles ? (
         <div className="mt-6">
           <h2 id="nav-admin" className="m-0 px-3 pb-2 text-sm font-semibold text-text-muted">
             {t('admin')}
           </h2>
           <ul aria-labelledby="nav-admin" className="m-0 flex list-none flex-col gap-1 p-0">
-            <li>
-              <NavLink href={`/${locale}/suite/admin/users`} current={current === 'users'}>
-                {t('users')}
-              </NavLink>
-            </li>
+            {context.navigation.users ? (
+              <li>
+                <NavLink href={`/${locale}/suite/admin/users`} current={current === 'users'}>
+                  {t('users')}
+                </NavLink>
+              </li>
+            ) : null}
+            {context.navigation.roles ? (
+              <li>
+                <NavLink href={`/${locale}/suite/admin/roles`} current={current === 'roles'}>
+                  {t('roles')}
+                </NavLink>
+              </li>
+            ) : null}
           </ul>
         </div>
       ) : null}

@@ -167,6 +167,21 @@ function filterPredicate(filter: UserListFilter): SQL {
   return sql.join(parts, sql` and `);
 }
 
+/**
+ * Members per role (roles page, T-M2-05): the same people the users list shows with that role filter
+ * on the "All" tab — invited, active or deactivated members whose role is in force now. The caller
+ * reads every user and role of the organization (tenant-wide `platform.user.read` and `role.read`).
+ */
+export async function countMembersByRole(tx: UserTx): Promise<Readonly<Record<string, number>>> {
+  const rows = await tx.execute<{ role_code: string; members: number | string }>(sql`
+    select ra.role_code, count(distinct m.id)::int as members
+    from platform.role_assignments ra
+    join platform.tenant_memberships m on m.tenant_id = ra.tenant_id and m.id = ra.membership_id
+    where m.status in ('active', 'invited', 'suspended') and ${ROLE_IN_FORCE}
+    group by ra.role_code`);
+  return Object.fromEntries(rows.map((r) => [r.role_code, Number(r.members)]));
+}
+
 const FROM_MEMBERS = sql`
   from platform.tenant_memberships m
   join platform.persons p on p.tenant_id = m.tenant_id and p.id = m.person_id

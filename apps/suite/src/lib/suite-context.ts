@@ -12,7 +12,7 @@ export interface SuiteContext {
   readonly live: boolean;
   readonly organizationName: string | null;
   /** Navigation entries the member may open (display only — every page authorizes itself). */
-  readonly navigation: { readonly users: boolean };
+  readonly navigation: { readonly users: boolean; readonly roles: boolean };
   /** The signed-in member's names for the header picture (null in the preview or when unknown). */
   readonly me: { readonly nameAr: string; readonly nameEn: string | null } | null;
 }
@@ -22,9 +22,14 @@ export interface SuiteContext {
  * department heads, line managers…). A learner can still open their own entry from the list URL.
  */
 export function navigationFor(grants: readonly Grant[] | null): SuiteContext['navigation'] {
-  if (grants === null) return { users: true }; // preview: every entry is shown, without data
+  if (grants === null) return { users: true, roles: true }; // preview: every entry, without data
   const read = platformPermissions['platform.user.read'].code;
-  return { users: grants.some((g) => g.permission === read && g.scope.type !== 'own') };
+  const roles = platformPermissions['platform.role.read'].code;
+  return {
+    users: grants.some((g) => g.permission === read && g.scope.type !== 'own'),
+    // Roles & permissions (T-M2-05): members who read the roles of the whole organization.
+    roles: grants.some((g) => g.permission === roles && g.scope.type === 'tenant'),
+  };
 }
 
 /** Fails closed: no session → sign-in; no organization → organization chooser. */

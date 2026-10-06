@@ -116,6 +116,12 @@ PGPASSWORD="$POSTGRES_PASSWORD" PGSSLMODE=verify-full PGSSLROOTCERT=.secrets/ca.
   SIGNED_IN_E2E_PASSWORD="$PASSWORD" SIGNED_IN_E2E_MANAGER_EMAIL="$MANAGER_EMAIL" \
   SIGNED_IN_E2E_MANAGER_PASSWORD="$MANAGER_PASSWORD" \
   pnpm exec playwright test e2e/users.spec.ts --project=desktop-chromium)
+# T-M2-13: the edit is audited with the changed field names only (no values).
+[[ "$(q "select count(*) from platform.audit_events where action = 'platform.user.updated' and data ? 'changed'")" -ge "1" ]] ||
+  { echo "smoke: expected the user-details audit event" >&2; exit 1; }
+if [[ "$(q "select count(*) from platform.audit_events where data::text like '%Alshehri%' or data::text like '%EMP-2041%' or data::text like '%محاسب%'")" != "0" ]]; then
+  echo "smoke: edited personal data reached the audit log" >&2; exit 1
+fi
 
 echo "smoke: My profile (T-M2-15a) — own details and password change as an ordinary member"
 PROFILE_NEW_PASSWORD="Profile-$(openssl rand -hex 16)"

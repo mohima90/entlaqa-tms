@@ -8,6 +8,7 @@ import {
   listOrgUnitOptions,
   listUsers,
   loadPersonResourceFacts,
+  mayManagePerson,
 } from '@jadarat/platform-db';
 import { normalizeDigits } from '@jadarat/platform-i18n';
 import { z } from 'zod';
@@ -95,6 +96,8 @@ export interface UserProfileView {
   readonly profile: UserProfile;
   /** The direct manager's profile may be opened by the member (else the name is plain text). */
   readonly canOpenManager: boolean;
+  /** The member may edit this person's details (T-M2-13): user.update + the manage rule. */
+  readonly canEdit: boolean;
 }
 
 /**
@@ -124,7 +127,9 @@ export function userProfileQueryDefinition(): QueryDefinition<
       const canOpenManager =
         managerFacts !== null &&
         ctx.can(p['platform.user.read'], personResourceAttributes(managerFacts));
-      return ok({ profile, canOpenManager });
+      const canEdit =
+        ctx.can(p['platform.user.update'], person) && (await mayManagePerson(ctx.tx, person.id));
+      return ok({ profile, canOpenManager, canEdit });
     },
   };
 }

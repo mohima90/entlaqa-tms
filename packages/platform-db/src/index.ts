@@ -18,6 +18,19 @@ export { type CurrentTenant, getCurrentTenant } from './tenants';
 export { type OrgUnitOption, type OrgUnitOptions, listOrgUnitOptions } from './org';
 export { type PersonalDetails, getPersonalDetails, updatePersonalDetails } from './my-profile';
 export {
+  type CurrentUnit,
+  type EditableUser,
+  type ManagerOption,
+  type UserDetailsChange,
+  type UserDetailsOutcome,
+  type UserDetailsRefusal,
+  getEditableUser,
+  listManagerOptions,
+  mayManagePerson,
+  refusalOf,
+  updateUserDetails,
+} from './user-admin';
+export {
   type MembershipStatus,
   type PersonResourceFacts,
   type UserActivity,

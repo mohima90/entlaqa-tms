@@ -169,6 +169,7 @@ async function MyProfile({
             noChanges: t('noChanges'),
             prefilledName: t('prefilledName'),
             currentName: t('currentName'),
+            currentNameKept: t('currentNameKept'),
           }}
           fieldTexts={{
             required: t('fieldErrors.required'),

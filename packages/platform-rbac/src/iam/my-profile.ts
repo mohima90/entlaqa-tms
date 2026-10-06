@@ -20,7 +20,8 @@ import { memberPermissions } from '../member-permissions';
  */
 const manageOwn = memberPermissions['platform.profile.manage_own'];
 
-const namePart = z
+/** A name part: trimmed, at most 60 characters, at least one visible letter; '' → null. */
+export const namePart = z
   .string()
   .trim()
   .max(60)
@@ -28,7 +29,7 @@ const namePart = z
   .transform((value) => (value === '' ? null : value));
 
 /** Mobile with country code: digits in any script, spaces/dashes/brackets ignored, 00 → +. */
-const mobile = z
+export const mobile = z
   .string()
   .max(32)
   .transform((value) => {

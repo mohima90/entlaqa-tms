@@ -1,5 +1,6 @@
 import 'server-only';
 import { sql } from 'drizzle-orm';
+import { keepUnsplitDisplayNames } from './names';
 import type { UserTx } from './with-user-tx';
 
 /**
@@ -62,10 +63,11 @@ export async function getPersonalDetails(
 export async function updatePersonalDetails(
   tx: UserTx,
   personId: string,
-  details: PersonalDetails,
+  submitted: PersonalDetails,
 ): Promise<readonly Field[] | null> {
   const before = await getPersonalDetails(tx, personId);
   if (!before) return null;
+  const details = keepUnsplitDisplayNames(before, submitted);
   const changed = FIELDS.filter((f) => before[f] !== details[f]);
   if (changed.length === 0) return [];
   await tx.execute(sql`

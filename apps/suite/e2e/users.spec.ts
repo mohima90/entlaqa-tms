@@ -156,6 +156,11 @@ test.describe('users pages', () => {
     await page.goto(`/en/suite/admin/users/${KHALID}/edit`);
     await expect(page.getByText("You don't have permission to do this.")).toBeVisible();
     await expect(page.getByTestId('edit-user')).toHaveCount(0);
+    // Nor roles (T-M2-14)
+    await expect(page.getByTestId('edit-roles-link')).toHaveCount(0);
+    await page.goto(`/en/suite/admin/users/${KHALID}/roles`);
+    await expect(page.getByText("You don't have permission to do this.")).toBeVisible();
+    await expect(page.getByTestId('edit-roles')).toHaveCount(0);
   });
 
   // Runs last: it changes Khalid's English name, which the tests above read in Arabic.
@@ -231,6 +236,63 @@ test.describe('users pages', () => {
     await expect(page.getByRole('combobox', { name: /القسم/ })).toHaveValue(/.+/);
     // Hire date: Gregorian field, Hijri equivalent shown under it
     await expect(page.getByText('يوافق 22 شعبان 1445 هـ')).toBeVisible();
+    await expectNoSeriousA11yViolations(page);
+  });
+
+  // Runs last: it changes Sarah's roles, which the tests above read.
+  test('Organization Admin changes roles: ordinary roles now, privileged ones need a code', async ({
+    page,
+  }) => {
+    await signIn(page);
+    await page.goto(`/en/suite/admin/users/${SARA}`);
+    await page.getByTestId('edit-roles-link').click();
+    await expect(page).toHaveURL(new RegExp(`/en/suite/admin/users/${SARA}/roles$`));
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+      'Edit roles of Sarah Abdullah Alqahtani',
+    );
+    const form = page.getByTestId('edit-roles');
+    // No authenticator code in this session: privileged roles are locked (PO decision D-IAM-01).
+    await expect(page.getByTestId('privileged-locked')).toContainText('authenticator app');
+    await expect(form.getByRole('radio', { name: /^Organization Admin/ })).toBeDisabled();
+    await expect(form.getByRole('checkbox', { name: /^Auditor/ })).toBeDisabled();
+    await expect(form.getByRole('radio', { name: /^Training Coordinator/ })).toBeChecked();
+    await expect(form.getByRole('checkbox', { name: /^Learner/ })).toBeChecked();
+    await expectNoSeriousA11yViolations(page);
+
+    await form.getByRole('radio', { name: /^Training Manager/ }).check();
+    await form.locator('#role-learner-validUntil').fill('2030-12-31');
+    await form.getByRole('checkbox', { name: /^Mentor/ }).check();
+    await form.locator('#role-mentor-validFrom').fill('2026-01-01');
+    await form.getByRole('button', { name: 'Save roles' }).click();
+    await expect(page.getByTestId('edit-roles-message')).toHaveText('Roles saved.');
+    await form.getByRole('button', { name: 'Save roles' }).click();
+    await expect(page.getByTestId('edit-roles-message')).toHaveText(
+      'There are no changes to save.',
+    );
+
+    await page.goto(`/en/suite/admin/users/${SARA}`);
+    const roles = page.getByTestId('user-roles');
+    await expect(roles).toContainText('Training ManagerPrimary role');
+    await expect(roles).toContainText('Until Dec 31, 2030');
+    await expect(roles).toContainText('Mentor');
+    await expect(page.getByTestId('user-activity')).toContainText('Roles changed');
+
+    // Nobody changes their own roles: no link on one's own profile, and the page says why.
+    // The Organization Admin's own profile: through Mona's direct-manager link (seed-users.sql).
+    await page.goto('/en/suite/admin/users/5eed1000-0000-4000-8000-000000000003');
+    await page.locator('dt:text-is("Direct manager") + dd a').click();
+    await expect(page).not.toHaveURL(/5eed1000-0000-4000-8000-000000000003$/);
+    await expect(page.getByTestId('user-profile')).toBeVisible();
+    await expect(page.getByTestId('edit-roles-link')).toHaveCount(0);
+    await page.goto(`${page.url()}/roles`);
+    await expect(page.getByTestId('roles-blocked')).toContainText("can't change your own roles");
+
+    // Arabic: right to left
+    await page.goto(`/ar/suite/admin/users/${SARA}/roles`);
+    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+      'تعديل أدوار سارة عبدالله القحطاني',
+    );
     await expectNoSeriousA11yViolations(page);
   });
 });

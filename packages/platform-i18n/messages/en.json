@@ -174,10 +174,12 @@
       "platform_tenant_admin_provisioned": "Account created with the Organization Admin role",
       "platform_tenant_admin_role_restored": "Organization Admin role restored",
       "platform_user_updated": "Details updated",
+      "platform_user_roles_changed": "Roles changed",
       "other": "Recorded action ({action})"
     },
     "breadcrumbLabel": "Breadcrumb",
-    "editDetails": "Edit details"
+    "editDetails": "Edit details",
+    "editRoles": "Edit roles"
   },
   "profile": {
     "title": "My profile",
@@ -288,6 +290,39 @@
       "jobTitle": "Must contain visible letters and be at most 150 characters.",
       "hireOn": "Enter a valid date between 1900 and 2100.",
       "hireOnAfterEnd": "The hire date must be on or before the recorded end-of-service date."
+    }
+  },
+  "editRoles": {
+    "title": "Edit roles",
+    "titleFor": "Edit roles of {name}",
+    "breadcrumb": "Users",
+    "breadcrumbLabel": "Breadcrumb",
+    "roles": "Roles",
+    "primary": "Primary role",
+    "primaryHint": "The primary role sets the home page and what the person sees first. A user has one primary role.",
+    "primaryDaysKept": "The chosen primary role keeps its recorded start and end dates; they are not changed here. To change them, make it an additional role.",
+    "additional": "Additional roles",
+    "additionalHint": "The effective permissions are those of the primary role plus the additional roles.",
+    "privileged": "Privileged role",
+    "ended": "Ended",
+    "scheduled": "Not started yet",
+    "privilegedNeedsCode": "Changing privileged roles (Organization Admin, HR Manager, Finance Manager, Compliance Officer, Auditor) needs a code from an authenticator app; this becomes available once multi-factor authentication is set up. You can change the other roles now.",
+    "privilegedAdminOnly": "Only the Organization Admin changes privileged roles (Organization Admin, HR Manager, Finance Manager, Compliance Officer, Auditor).",
+    "validFrom": "Starts on",
+    "validUntil": "Ends on",
+    "daysHint": "A role starts at the beginning of its first day and ends at the end of its last day, in the organization's time zone. Leave a date empty for a role that starts now or does not end.",
+    "audited": "Every role change is recorded in the audit log with the values before and after the change.",
+    "save": "Save roles",
+    "saving": "Saving…",
+    "saved": "Roles saved.",
+    "noChanges": "There are no changes to save.",
+    "backToProfile": "Back to the profile",
+    "lastAdmin": "The organization must keep at least one active Organization Admin without an end date.",
+    "datesInvalid": "The end date must not be before the start date, and dates must be between 2000 and 2100.",
+    "blocked": {
+      "own_roles": "You can't change your own roles. The Organization Admin or HR changes them.",
+      "no_account": "This person has no sign-in account in the organization; roles are chosen when they are invited.",
+      "revoked": "This person's membership was revoked, so their roles can't be changed."
     }
   }
 }

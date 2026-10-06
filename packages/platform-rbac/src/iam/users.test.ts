@@ -174,7 +174,12 @@ describe('user profile query', () => {
   it('Line Manager: a report’s profile with roles, without the audit trail', async () => {
     const profile = createDefineQuery(runtime(['line_manager']))(userProfileQueryDefinition());
     expect(await profile({ personId: REPORT })).toEqual(
-      ok({ profile: { personId: REPORT }, canOpenManager: false, canEdit: false }),
+      ok({
+        profile: { personId: REPORT },
+        canOpenManager: false,
+        canEdit: false,
+        canEditRoles: false,
+      }),
     );
     expect(db.getUserProfile).toHaveBeenCalledWith(TX, REPORT, {
       includeRoles: true,
@@ -200,7 +205,12 @@ describe('user profile query', () => {
   });
 
   it('links the manager only when the member may open the manager’s profile', async () => {
-    db.getUserProfile.mockResolvedValue({ personId: REPORT, manager: { personId: ME } });
+    db.getUserProfile.mockResolvedValue({
+      personId: REPORT,
+      manager: { personId: ME },
+      roles: [],
+      membershipStatus: 'active',
+    });
     db.loadPersonResourceFacts.mockResolvedValue({
       personId: ME,
       tenantId: TENANT,
@@ -227,6 +237,22 @@ describe('user profile query', () => {
       userProfileQueryDefinition(),
     )({ personId: REPORT });
     expect(refused.ok && refused.value.canEdit).toBe(false);
+    expect(refused.ok && refused.value.canEditRoles).toBe(false);
+    // Roles (T-M2-14): role.assign + manage rule + a membership that is not revoked, never one's own.
+    db.mayManagePerson.mockResolvedValue(true);
+    expect(asManager.ok && asManager.value.canEditRoles).toBe(false);
+    expect(asAdmin.ok && asAdmin.value.canEditRoles).toBe(true);
+    for (const profile of [
+      { personId: REPORT, roles: [], membershipStatus: null },
+      { personId: REPORT, roles: [], membershipStatus: 'revoked' },
+      { personId: REPORT, roles: null, membershipStatus: 'active' },
+    ]) {
+      db.getUserProfile.mockResolvedValue(profile);
+      const view = await createDefineQuery(runtime(['tenant_admin']))(userProfileQueryDefinition())(
+        { personId: REPORT },
+      );
+      expect(view.ok && view.value.canEditRoles, JSON.stringify(profile)).toBe(false);
+    }
     expect(db.loadPersonResourceFacts).toHaveBeenCalledWith(TX, ME);
   });
 

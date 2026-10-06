@@ -234,7 +234,9 @@ const EMPLOYMENT_FIELDS = [
 ] as const;
 
 /** SQLSTATE, constraint and message of a postgres.js error (also wrapped by Drizzle). */
-function pgError(error: unknown): { code?: string; constraint?: string; message: string } | null {
+export function pgError(
+  error: unknown,
+): { code?: string; constraint?: string; message: string } | null {
   let current: unknown = error;
   for (let depth = 0; depth < 5 && typeof current === 'object' && current !== null; depth += 1) {
     const e = current as {

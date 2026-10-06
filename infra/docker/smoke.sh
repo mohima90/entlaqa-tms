@@ -119,6 +119,9 @@ PGPASSWORD="$POSTGRES_PASSWORD" PGSSLMODE=verify-full PGSSLROOTCERT=.secrets/ca.
 # T-M2-13: the edit is audited with the changed field names only (no values).
 [[ "$(q "select count(*) from platform.audit_events where action = 'platform.user.updated' and data ? 'changed'")" -ge "1" ]] ||
   { echo "smoke: expected the user-details audit event" >&2; exit 1; }
+# T-M2-14: role changes are audited with the roles before and after (BR-IAM-3).
+[[ "$(q "select count(*) from platform.audit_events where action = 'platform.user.roles_changed' and data ? 'before' and data ? 'after'")" -ge "1" ]] ||
+  { echo "smoke: expected the roles-changed audit event with before and after" >&2; exit 1; }
 if [[ "$(q "select count(*) from platform.audit_events where data::text like '%Alshehri%' or data::text like '%EMP-2041%' or data::text like '%محاسب%'")" != "0" ]]; then
   echo "smoke: edited personal data reached the audit log" >&2; exit 1
 fi

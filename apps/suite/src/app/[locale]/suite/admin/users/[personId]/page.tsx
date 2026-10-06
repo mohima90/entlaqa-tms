@@ -1,6 +1,11 @@
 import { toClientError } from '@jadarat/platform-core';
 import type { UserProfile } from '@jadarat/platform-db';
-import { type AppLocale, formatHijriDate } from '@jadarat/platform-i18n';
+import {
+  type AppLocale,
+  DEFAULT_CALENDAR,
+  DEFAULT_NUMBERING_SYSTEM,
+  formatHijriDate,
+} from '@jadarat/platform-i18n';
 import { routing } from '@jadarat/platform-i18n/routing';
 import { Alert, Badge, type BadgeTone, Card, buttonClasses } from '@jadarat/ui';
 import { hasLocale } from 'next-intl';
@@ -26,6 +31,7 @@ const KNOWN_ACTIONS = new Set([
   'platform.tenant.admin_provisioned',
   'platform.tenant.admin_role_restored',
   'platform.user.updated',
+  'platform.user.roles_changed',
 ]);
 
 /**
@@ -71,7 +77,7 @@ export default async function UserProfilePage({
         );
       }
     } else {
-      const { profile, canOpenManager, canEdit } = result.value;
+      const { profile, canOpenManager, canEdit, canEditRoles } = result.value;
       title = localizedName(locale, profile.displayNameAr, profile.displayNameEn);
       content = (
         <Profile
@@ -79,6 +85,7 @@ export default async function UserProfilePage({
           profile={profile}
           canOpenManager={canOpenManager}
           canEdit={canEdit}
+          canEditRoles={canEditRoles}
         />
       );
     }
@@ -100,11 +107,13 @@ async function Profile({
   profile,
   canOpenManager,
   canEdit,
+  canEditRoles,
 }: {
   locale: AppLocale;
   profile: UserProfile;
   canOpenManager: boolean;
   canEdit: boolean;
+  canEditRoles: boolean;
 }) {
   const t = await getTranslations({ locale, namespace: 'userProfile' });
   const users = await getTranslations({ locale, namespace: 'users' });
@@ -121,6 +130,14 @@ async function Profile({
   const accountStatus: AccountStatus = profile.membershipStatus ?? 'none';
   const subtitle = [jobTitle, department, branch].filter(Boolean).join(' · ');
   const now = new Date();
+  // Role days in the organization's time zone, as on the edit-roles page (T-M2-14).
+  const roleDay = (value: Date) =>
+    format.dateTime(value, {
+      dateStyle: 'medium',
+      timeZone: profile.timeZone,
+      calendar: DEFAULT_CALENDAR,
+      numberingSystem: DEFAULT_NUMBERING_SYSTEM,
+    });
 
   const fields: { key: string; label: string; value: ReactNode }[] = [
     {
@@ -238,13 +255,14 @@ async function Profile({
                     </Badge>
                     {role.validFrom && role.validFrom > now ? (
                       <span className="text-sm text-text-muted">
-                        {t('validFrom', { date: format.dateTime(role.validFrom, 'medium') })}
+                        {t('validFrom', { date: roleDay(role.validFrom) })}
                       </span>
                     ) : null}
                     {role.validUntil ? (
                       <span className="text-sm text-text-muted">
                         {t(ended ? 'ended' : 'validUntil', {
-                          date: format.dateTime(role.validUntil, 'medium'),
+                          // The last day (a role ends at the start of the next day, T-M2-14).
+                          date: roleDay(new Date(role.validUntil.getTime() - 1)),
                         })}
                       </span>
                     ) : null}
@@ -254,6 +272,15 @@ async function Profile({
             </ul>
           )}
           <p className="mb-0 mt-4 text-sm text-text-muted">{t('rolesAudited')}</p>
+          {canEditRoles ? (
+            <a
+              href={`/${locale}/suite/admin/users/${profile.personId}/roles`}
+              className={buttonClasses({ variant: 'secondary', className: 'mt-4' })}
+              data-testid="edit-roles-link"
+            >
+              {t('editRoles')}
+            </a>
+          ) : null}
         </Card>
       ) : null}
 

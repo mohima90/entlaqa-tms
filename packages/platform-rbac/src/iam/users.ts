@@ -98,6 +98,11 @@ export interface UserProfileView {
   readonly canOpenManager: boolean;
   /** The member may edit this person's details (T-M2-13): user.update + the manage rule. */
   readonly canEdit: boolean;
+  /**
+   * The member may change this person's roles (T-M2-14): role.assign + the manage rule, the person has
+   * a membership that is not revoked, and it is not the member's own.
+   */
+  readonly canEditRoles: boolean;
 }
 
 /**
@@ -127,9 +132,16 @@ export function userProfileQueryDefinition(): QueryDefinition<
       const canOpenManager =
         managerFacts !== null &&
         ctx.can(p['platform.user.read'], personResourceAttributes(managerFacts));
-      const canEdit =
-        ctx.can(p['platform.user.update'], person) && (await mayManagePerson(ctx.tx, person.id));
-      return ok({ profile, canOpenManager, canEdit });
+      const mayManage = await mayManagePerson(ctx.tx, person.id);
+      const canEdit = mayManage && ctx.can(p['platform.user.update'], person);
+      const canEditRoles =
+        mayManage &&
+        profile.roles !== null &&
+        ctx.can(p['platform.role.assign'], person) &&
+        profile.membershipStatus !== null &&
+        profile.membershipStatus !== 'revoked' &&
+        person.id !== ctx.actor.personId;
+      return ok({ profile, canOpenManager, canEdit, canEditRoles });
     },
   };
 }

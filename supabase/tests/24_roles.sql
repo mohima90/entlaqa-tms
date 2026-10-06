@@ -57,9 +57,13 @@ begin
   perform tests.assert_fails_like(format($q$insert into platform.role_assignments (membership_id, role_code) values (%L, 'hr_manager')$q$, v_inv),
     'only an Organization Admin can give or remove the role hr_manager', 'HR: cannot create another HR Manager (privileged)');
   perform tests.assert_fails_like(format($q$delete from platform.role_assignments where membership_id = %L$q$, v_admin),
-    'only an Organization Admin can give or remove the role tenant_admin', 'HR: cannot remove the Organization Admin role');
+    'only an Organization Admin can change the roles of a member who holds a privileged role',
+    'HR: cannot remove the Organization Admin role');
+  perform tests.assert_fails_like(format($q$insert into platform.role_assignments (membership_id, role_code) values (%L, 'learner')$q$, v_admin),
+    'only an Organization Admin can change the roles of a member who holds a privileged role',
+    'HR: cannot give even an ordinary role to a privileged member (T-M2-14)');
   perform tests.assert_fails_like(format($q$update platform.role_assignments set valid_until = now() + interval '1 day' where membership_id = %L$q$, v_admin),
-    'only an Organization Admin can give or remove the role tenant_admin', 'HR: cannot limit the Organization Admin role either');
+    'only an Organization Admin can change the roles of a member who holds a privileged role', 'HR: cannot limit the Organization Admin role either');
   perform tests.assert_fails_like($q$update platform.role_assignments set is_primary = false where role_code = 'learner' and membership_id = (select id from platform.tenant_memberships where user_id = '00000000-0000-4000-8000-0000000000ab' and tenant_id = 'a0000000-0000-4000-8000-000000000001')$q$,
     'members cannot change their own roles', 'HR: cannot change their own roles');
 end $$;
@@ -120,7 +124,7 @@ begin
   perform tests.assert_eq(tests.rows_affected($q$update platform.tenant_memberships set status = 'revoked' where user_id = '00000000-0000-4000-8000-0000000000a2' and tenant_id = 'a0000000-0000-4000-8000-000000000001'$q$),
     1::bigint, 'HR: can revoke an ordinary member''s invitation');
   perform tests.assert_fails_like($q$insert into platform.role_assignments (membership_id, role_code, is_primary) select id, 'tenant_admin', false from platform.tenant_memberships where user_id = '00000000-0000-4000-8000-0000000000a1' and tenant_id = 'a0000000-0000-4000-8000-000000000001' on conflict (tenant_id, membership_id, role_code) do update set is_primary = false$q$,
-    'only an Organization Admin can give or remove the role tenant_admin', 'HR: upsert onto an admin row is refused too');
+    'only an Organization Admin can change the roles of a member who holds a privileged role', 'HR: upsert onto an admin row is refused too');
 end $$;
 rollback;
 

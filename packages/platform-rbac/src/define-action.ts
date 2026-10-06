@@ -40,6 +40,8 @@ export interface AuditRecord {
   readonly data?: Record<string, unknown>;
 }
 
+export type PermissionAccess = 'allowed' | 'step_up_required' | 'denied';
+
 export interface ActionContext<Tx> {
   readonly claims: TenantClaims;
   readonly actor: ActorContext;
@@ -56,6 +58,11 @@ export interface ActionContext<Tx> {
    * trail on a profile); it never replaces the definition's own permission.
    */
   readonly can: (permission: PermissionDefinition, target: PermissionTarget) => boolean;
+  /**
+   * Like `can`, but tells "allowed after an authenticator code" (`step_up_required`: the member holds
+   * the permission but the session is AAL1) apart from `denied` — so a page can say what is needed.
+   */
+  readonly access: (permission: PermissionDefinition, target: PermissionTarget) => PermissionAccess;
   /**
    * The member's grants in force for another permission (empty when none, or when it needs AAL2 and the
    * session is AAL1) — to restrict what a scoped list shows for it, e.g. roles per row.
@@ -202,6 +209,16 @@ export function createDefineAction<Tx>(runtime: ActionRuntime<Tx>) {
                 authorize(subject, permission, typeof target === 'string' ? undefined : target, {
                   scoped: target === 'any',
                 }).allowed,
+              access: (permission, target) => {
+                const decision = authorize(
+                  subject,
+                  permission,
+                  typeof target === 'string' ? undefined : target,
+                  { scoped: target === 'any' },
+                );
+                if (decision.allowed) return 'allowed';
+                return decision.reason === 'step_up_required' ? 'step_up_required' : 'denied';
+              },
               grantsFor: (permission) => {
                 const other = authorize(subject, permission, undefined, { scoped: true });
                 return other.allowed ? other.grants : [];

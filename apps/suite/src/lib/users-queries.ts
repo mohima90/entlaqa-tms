@@ -1,6 +1,7 @@
 import 'server-only';
 import {
   defineQuery,
+  editRolesQueryDefinition,
   editUserQueryDefinition,
   myIdentityQueryDefinition,
   myProfileQueryDefinition,
@@ -13,6 +14,8 @@ export const usersListQuery = defineQuery(usersListQueryDefinition());
 export const userProfileQuery = defineQuery(userProfileQueryDefinition());
 /** Edit a user's details (T-M2-13): the record, manager options and org units. */
 export const editUserQuery = defineQuery(editUserQueryDefinition());
+/** Change a member's roles (T-M2-14): current roles and what the member may change. */
+export const editRolesQuery = defineQuery(editRolesQueryDefinition());
 
 /** My profile (FR-IAM-16) and the header name of the signed-in member. */
 export const myProfileQuery = defineQuery(myProfileQueryDefinition());

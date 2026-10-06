@@ -28,6 +28,12 @@ const pages = [
     dir: 'ltr',
     heading: 'Edit user details',
   },
+  {
+    path: '/ar/suite/admin/users/a1000000-0000-4000-8000-0000000000a1/roles',
+    lang: 'ar',
+    dir: 'rtl',
+    heading: 'تعديل الأدوار',
+  },
 ] as const;
 
 function collectConsoleErrors(page: Page): string[] {

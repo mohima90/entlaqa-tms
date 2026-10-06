@@ -156,7 +156,7 @@ async function Roles({
         id="role-detail"
         title={selected.name[locale]}
         data-testid="role-detail"
-        className="scroll-mt-6"
+        className="scroll-mt-20"
       >
         <div className="flex flex-col gap-4">
           <div className="flex flex-wrap items-center gap-2">

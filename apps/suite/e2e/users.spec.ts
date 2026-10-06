@@ -286,7 +286,6 @@ test.describe('users pages', () => {
     await page.goto('/en/suite/admin/roles?role=auditor');
     await page.getByRole('link', { name: 'Switch to Arabic' }).click();
     await expect(page).toHaveURL(/\/ar\/suite\/admin\/roles\?role=auditor$/);
-    await page.goto('/ar/suite/admin/roles?role=auditor');
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
     await expect(page.getByTestId('role-detail')).toContainText('دور مميز');
     await expectNoSeriousA11yViolations(page);

@@ -14,6 +14,7 @@
   "dependencies": {
     "@jadarat/platform-db": "workspace:*",
     "@jadarat/platform-jobs": "workspace:*",
+    "@jadarat/platform-notifications": "workspace:*",
     "@jadarat/platform-observability": "workspace:*"
   },
   "devDependencies": {

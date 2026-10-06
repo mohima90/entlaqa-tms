@@ -32,11 +32,32 @@ cert() {
 }
 cert db "DNS:db,DNS:localhost,IP:127.0.0.1"
 cert gateway "DNS:gateway,DNS:localhost,IP:127.0.0.1"
+
+# Mail (T-M2-06b): Mailpit stands in for the installation's mail relay in this stack. Its certificate
+# comes from a separate CA that may vouch for `mailpit` only and is trusted by the worker's SMTP client
+# alone (SMTP_CA_CERT_FILE), so the main CA keeps its name constraints. A real relay brings its own PKI.
+if [[ ! -f "$S/mail-ca.crt" ]]; then
+  openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 825 \
+    -subj "/CN=Jadarat self-hosted mail CA" -keyout "$S/mail-ca.key" -out "$S/mail-ca.crt" \
+    -addext "basicConstraints=critical,CA:TRUE,pathlen:0" -addext "keyUsage=critical,keyCertSign,cRLSign" \
+    -addext "nameConstraints=critical,permitted;DNS:mailpit" 2>/dev/null
+fi
+if [[ ! -f "$S/mailpit.crt" ]]; then
+  openssl req -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -subj "/CN=mailpit" \
+    -keyout "$S/mailpit.key" -out "$S/mailpit.csr" 2>/dev/null
+  printf 'subjectAltName=DNS:mailpit\nextendedKeyUsage=serverAuth\n' >"$S/mailpit.ext"
+  openssl x509 -req -in "$S/mailpit.csr" -CA "$S/mail-ca.crt" -CAkey "$S/mail-ca.key" -CAcreateserial \
+    -days 397 -extfile "$S/mailpit.ext" -out "$S/mailpit.crt" 2>/dev/null
+  rm -f "$S/mailpit.csr" "$S/mailpit.ext"
+fi
 # Certificates are public; private keys stay 0600. The db entrypoint copies its key (root can read it);
 # the gateway key is handed to nginx's unprivileged user (uid 101) by ownership, not by widening the mode.
 chmod 644 "$S"/*.crt
 chmod 600 "$S"/*.key
 if [[ "$(id -u)" == "0" ]]; then chown 101:101 "$S/gateway.key"; else chmod 644 "$S/gateway.key"; fi
+# Mailpit runs as root without capabilities: it reads its key as the owner, or a readable copy when the
+# stack is set up by an ordinary user (it is the test relay's key only).
+if [[ "$(id -u)" != "0" ]]; then chmod 644 "$S/mailpit.key"; fi
 
 if [[ ! -f "$S/jwt-private.jwk.json" ]]; then
   node -e '

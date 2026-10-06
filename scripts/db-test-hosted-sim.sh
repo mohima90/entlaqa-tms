@@ -153,6 +153,7 @@ worker_pass() {
   env -u DATABASE_URL \
     DATABASE_URL_APP_QUEUE="postgresql://app_queue:$(enc "$APP_QUEUE_DB_PASSWORD")@$PGHOST:$PGPORT/$DB" \
     DATABASE_URL_APP_WORKER="postgresql://app_worker:$(enc "$APP_WORKER_DB_PASSWORD")@$PGHOST:$PGPORT/$DB" \
+    EMAIL_PROVIDER=none \
     node "$ROOT/apps/worker/dist/main.mjs" once >/dev/null
 }
 event() { q "insert into platform.event_outbox (tenant_id, type) select id, 'com.entlaqa.platform.sim.$1' from platform.tenants where slug = 'sim-org'" >/dev/null; }

@@ -1,7 +1,7 @@
 {
   "name": "jadarat",
   "private": true,
-  "description": "Jadarat HR Suite monorepo \u2014 Jadarat TMS (modular monolith, ADR 0001)",
+  "description": "Jadarat HR Suite monorepo — Jadarat TMS (modular monolith, ADR 0001)",
   "license": "UNLICENSED",
   "type": "module",
   "packageManager": "pnpm@10.33.0",
@@ -19,7 +19,7 @@
     "test": "turbo run test && pnpm run test:scripts",
     "test:coverage": "turbo run test:coverage && pnpm run test:scripts",
     "test:scripts": "vitest run --config scripts/vitest.config.mjs",
-    "test:integration": "turbo run test:integration",
+    "test:integration": "turbo run test:integration --concurrency=1",
     "e2e": "pnpm --filter @jadarat/suite e2e",
     "db:test": "bash scripts/db-test.sh",
     "db:test:hosted-sim": "bash scripts/db-test-hosted-sim.sh",

@@ -8,13 +8,26 @@
 #   secret   DATABASE_URL_APP_QUEUE   login role app_queue via the Supabase session pooler
 #   secret   DATABASE_URL_APP_WORKER  login role app_worker via the Supabase session pooler
 #   variable DATABASE_CA_CERT         PEM of the server's root CA (same value as in `staging`)
-# Until both secrets exist each run ends with a notice and does nothing.
+#   E-mail (T-M2-06b; ADR 0008), optional — without EMAIL_PROVIDER this workflow passes `none`
+#   (e-mail switched off: queued messages are recorded as suppressed):
+#   variable EMAIL_PROVIDER           resend
+#   variable EMAIL_FROM_NAME          display name of the sender (e.g. ENTLAQA LMS)
+#   variable EMAIL_FROM_ADDRESS       sender address on the verified sending domain
+#   secret   RESEND_API_KEY           Resend API key (sending access only)
+#   secret   EMAIL_TEST_TO            recipient of the test e-mail (mode test-email)
+# Until both connection secrets exist each run ends with a notice and does nothing.
 name: Jobs (staging)
 
 on:
   schedule:
     - cron: '*/5 * * * *'
   workflow_dispatch:
+    inputs:
+      mode:
+        description: 'pass = run due jobs · test-email = send one sample e-mail to EMAIL_TEST_TO'
+        type: choice
+        options: [pass, test-email]
+        default: pass
 
 permissions:
   contents: read
@@ -59,12 +72,18 @@ jobs:
         run: |
           pnpm install --frozen-lockfile --filter '@jadarat/worker...'
           pnpm --filter @jadarat/worker build
-      - name: One worker pass
+      - name: One worker pass (or a test e-mail)
         if: steps.configured.outputs.ready == 'true'
         env:
           DATABASE_URL_APP_QUEUE: ${{ secrets.DATABASE_URL_APP_QUEUE }}
           DATABASE_URL_APP_WORKER: ${{ secrets.DATABASE_URL_APP_WORKER }}
           DATABASE_CA_CERT: ${{ vars.DATABASE_CA_CERT }}
+          EMAIL_PROVIDER: ${{ vars.EMAIL_PROVIDER || 'none' }}
+          EMAIL_FROM_NAME: ${{ vars.EMAIL_FROM_NAME }}
+          EMAIL_FROM_ADDRESS: ${{ vars.EMAIL_FROM_ADDRESS }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          EMAIL_TEST_TO: ${{ secrets.EMAIL_TEST_TO }}
+          MODE: ${{ inputs.mode == 'test-email' && 'test-email' || 'once' }}
           JADARAT_ENVIRONMENT: staging
           JADARAT_RELEASE: ${{ github.sha }}
-        run: node apps/worker/dist/main.mjs once
+        run: node apps/worker/dist/main.mjs "$MODE"

@@ -160,14 +160,15 @@ $$;
 -- Tenant-owned tables in module/platform schemas and the column that carries the tenant.
 -- Tenant tables written and read only by background jobs (system claims under app_worker) or the job
 -- runner (app_queue), never by user requests (ADR 0004): the generic user-claims checks in 20_isolation
--- skip them; 28_event_outbox_app_server.sql, 29_event_tables_app_worker.sql and
--- 33_event_tables_app_queue.sql cover them instead.
+-- skip them; 28_event_outbox_app_server.sql, 29_event_tables_app_worker.sql,
+-- 33_event_tables_app_queue.sql and 34_message_deliveries_app_worker.sql cover them instead.
 create or replace function tests.job_only_tables()
 returns table (table_name regclass)
 language sql stable as $$
   select c.oid::regclass
   from pg_class c join pg_namespace n on n.oid = c.relnamespace
-  where (n.nspname, c.relname) in (('platform', 'event_outbox'), ('platform', 'event_inbox'))
+  where (n.nspname, c.relname) in (('platform', 'event_outbox'), ('platform', 'event_inbox'),
+                                   ('platform', 'message_deliveries'))
 $$;
 
 create or replace function tests.tenant_tables()
@@ -308,6 +309,16 @@ join platform.tenant_memberships m on m.tenant_id = r.tenant_id and m.user_id = 
 -- A pending event of tenant B (platform operation), for 33_event_tables_app_queue.sql.
 insert into platform.event_outbox (tenant_id, type)
   values ('b0000000-0000-4000-8000-000000000001', 'com.entlaqa.platform.test.fixture');
+-- Queued e-mails: tenant A's own (its users must not see or change it, 28), tenant B's (tenant A's jobs
+-- (34) and every user (28, 30–32) must not see it) and suspended tenant C's (discarded by its job, 34).
+insert into platform.message_deliveries (id, tenant_id, template, template_version, locale, destination,
+    destination_masked, subject, html_body, text_body)
+  values ('a8000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'platform.invitation', 1,
+    'ar', 'a.user@tenant-a.example', 'a***@tenant-a.example', 'دعوة', '<p><a href="https://a.example/accept?t=secret">قبول</a></p>', 'دعوة'),
+         ('b8000000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000001', 'platform.invitation', 1,
+    'ar', 'b.user@tenant-b.example', 'b***@tenant-b.example', 'دعوة', '<p>دعوة</p>', 'دعوة'),
+         ('c8000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'platform.invitation', 1,
+    'ar', 'c.user@tenant-c.example', 'c***@tenant-c.example', 'دعوة', '<p>دعوة</p>', 'دعوة');
 -- A processed event of tenant B: tenant A's jobs (29) and every user (28) must not see it.
 insert into platform.event_inbox (tenant_id, subscriber, event_id)
   values ('b0000000-0000-4000-8000-000000000001', 'test.subscriber', 'b9000000-0000-4000-8000-000000000001');

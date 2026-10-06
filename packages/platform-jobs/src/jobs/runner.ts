@@ -295,28 +295,37 @@ export interface PassResult {
   readonly staleEvents: number;
 }
 
+/** Rounds of one pass: jobs can write events (an invitation queues an e-mail) that the pass handles too. */
+export const PASS_ROUNDS = 5;
+
 /**
- * One pass (non-production schedules, e.g. staging): migrate, queue a dispatch, then run every job
- * that is due until none is left — deliveries created by the dispatch included. Reports events the
- * pass could not dispatch, so a stuck dispatch shows as a failed run.
+ * One pass (non-production schedules, e.g. staging): migrate, then up to PASS_ROUNDS times queue a
+ * dispatch and run every job that is due — until no event waits for dispatch. Reports events the pass
+ * could not dispatch, so a stuck dispatch shows as a failed run.
  */
 export async function runPass(config: WorkerConfig): Promise<PassResult> {
   const pool = openQueuePool(config);
+  const waiting = async (olderThanMinutes: number) => {
+    const { rows } = await pool.query<{ waiting: string }>(
+      `select count(*) as waiting from platform.event_outbox
+       where dispatched_at is null and created_at <= now() - make_interval(mins => $1)`,
+      [olderThanMinutes],
+    );
+    return Number(rows[0]?.waiting ?? 0);
+  };
   try {
     const utils = await makeWorkerUtils({ pgPool: pool, logger: loggerFrom(config.log) });
     try {
       await utils.migrate();
-      await utils.addJob(DISPATCH_TASK, {}, DISPATCH_JOB_OPTIONS);
+      for (let round = 0; round < PASS_ROUNDS; round += 1) {
+        await utils.addJob(DISPATCH_TASK, {}, DISPATCH_JOB_OPTIONS);
+        await runOnce(runnerOptions(config, pool));
+        if ((await waiting(0)) === 0) break;
+      }
     } finally {
       await utils.release();
     }
-    await runOnce(runnerOptions(config, pool));
-    const { rows } = await pool.query<{ stale: string }>(
-      `select count(*) as stale from platform.event_outbox
-       where dispatched_at is null and created_at < now() - make_interval(mins => $1)`,
-      [STALE_EVENT_MINUTES],
-    );
-    return { staleEvents: Number(rows[0]?.stale ?? 0) };
+    return { staleEvents: await waiting(STALE_EVENT_MINUTES) };
   } finally {
     await pool.end();
   }

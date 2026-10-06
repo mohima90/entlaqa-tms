@@ -4,8 +4,11 @@
  */
 export {
   type DeliveredEvent,
+  type EffectSubscriber,
+  type InTenant,
   type Subscriber,
   type SubscriberRegistry,
+  type TransactionalSubscriber,
   createSubscriberRegistry,
 } from './registry';
 export {
@@ -22,6 +25,7 @@ export {
   CRON_ITEMS,
   DATABASE_URL_APP_QUEUE_ENV,
   EVENTS_CHANNEL,
+  PASS_ROUNDS,
   type PassResult,
   STALE_EVENT_MINUTES,
   type WorkerConfig,

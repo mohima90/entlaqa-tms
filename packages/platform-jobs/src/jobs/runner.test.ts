@@ -6,6 +6,7 @@ import { createSubscriberRegistry } from './registry';
 import {
   CRON_ITEMS,
   EVENTS_CHANNEL,
+  PASS_ROUNDS,
   type WorkerConfig,
   assertQueueRole,
   createKicker,
@@ -335,7 +336,7 @@ describe('runDaemon and runPass', () => {
     await done;
   });
 
-  it('runPass migrates, queues a dispatch, then runs every due job once', async () => {
+  it('runPass migrates, then dispatches and runs due jobs until no event waits', async () => {
     const utils = {
       migrate: vi.fn(() => Promise.resolve()),
       addJob: vi.fn(() => Promise.resolve({})),
@@ -343,17 +344,38 @@ describe('runDaemon and runPass', () => {
     };
     graphile.makeWorkerUtils.mockResolvedValue(utils);
     graphile.runOnce.mockResolvedValue(undefined);
+    // Round 1 leaves an event written by a job; round 2 empties the outbox; nothing is stale.
     const query = vi
       .spyOn(pg.Pool.prototype, 'query')
-      .mockResolvedValueOnce({ rows: [{ stale: '2' }] } as never)
-      .mockResolvedValueOnce({ rows: [] } as never);
-    expect(await runPass(config())).toEqual({ staleEvents: 2 });
-    expect(query.mock.calls[0]?.[1]).toEqual([10]);
+      .mockResolvedValueOnce({ rows: [{ waiting: '1' }] } as never)
+      .mockResolvedValueOnce({ rows: [{ waiting: '0' }] } as never)
+      .mockResolvedValueOnce({ rows: [{ waiting: '0' }] } as never);
     expect(await runPass(config())).toEqual({ staleEvents: 0 });
-    expect(utils.migrate).toHaveBeenCalled();
-    expect(utils.addJob).toHaveBeenCalledWith(DISPATCH_TASK, {}, DISPATCH_JOB_OPTIONS);
-    expect(utils.release).toHaveBeenCalled();
     expect(graphile.runOnce).toHaveBeenCalledTimes(2);
+    expect(utils.addJob).toHaveBeenCalledTimes(2);
+    expect(utils.addJob).toHaveBeenCalledWith(DISPATCH_TASK, {}, DISPATCH_JOB_OPTIONS);
+    expect(query.mock.calls.map((c) => c[1])).toEqual([[0], [0], [10]]);
+    expect(utils.migrate).toHaveBeenCalledTimes(1);
+    expect(utils.release).toHaveBeenCalledTimes(1);
+  });
+
+  it('runPass stops after PASS_ROUNDS and reports stale events', async () => {
+    const utils = {
+      migrate: vi.fn(() => Promise.resolve()),
+      addJob: vi.fn(() => Promise.resolve({})),
+      release: vi.fn(() => Promise.resolve()),
+    };
+    graphile.makeWorkerUtils.mockResolvedValue(utils);
+    graphile.runOnce.mockResolvedValue(undefined);
+    vi.spyOn(pg.Pool.prototype, 'query')
+      .mockResolvedValueOnce({ rows: [{ waiting: '3' }] } as never)
+      .mockResolvedValueOnce({ rows: [{ waiting: '3' }] } as never)
+      .mockResolvedValueOnce({ rows: [{ waiting: '3' }] } as never)
+      .mockResolvedValueOnce({ rows: [{ waiting: '3' }] } as never)
+      .mockResolvedValueOnce({ rows: [{ waiting: '3' }] } as never)
+      .mockResolvedValueOnce({ rows: [{ waiting: '2' }] } as never);
+    expect(await runPass(config())).toEqual({ staleEvents: 2 });
+    expect(graphile.runOnce).toHaveBeenCalledTimes(PASS_ROUNDS);
   });
 
   it('runPass releases the utilities when the migration fails', async () => {

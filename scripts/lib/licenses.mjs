@@ -6,6 +6,7 @@
  */
 export const ALLOWED = new Set([
   'MIT',
+  'MIT-0', // MIT without the attribution condition (nodemailer, T-M2-06b)
   'ISC',
   'Apache-2.0',
   'BSD-2-Clause',

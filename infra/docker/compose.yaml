@@ -172,6 +172,9 @@ services:
     cap_drop: [ALL]
     networks: [db-app]
     deploy: { replicas: 2 }
+    # SIGTERM lets running jobs finish; give them time before Docker kills the process (a killed job is
+    # retried, but only after graphile-worker's 4-hour lock expiry).
+    stop_grace_period: 60s
     depends_on:
       db: { condition: service_healthy }
     volumes:

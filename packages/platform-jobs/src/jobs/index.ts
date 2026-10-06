@@ -17,13 +17,19 @@ export {
   deliverTask,
   dispatchTask,
 } from './tasks';
+export { JobError, toJobError } from './errors';
 export {
   CRON_ITEMS,
   DATABASE_URL_APP_QUEUE_ENV,
+  EVENTS_CHANNEL,
+  type PassResult,
+  STALE_EVENT_MINUTES,
   type WorkerConfig,
   type WorkerLogLevel,
   assertQueueRole,
+  createKicker,
   createQueuePool,
+  listenForEvents,
   openQueuePool,
   runDaemon,
   runPass,

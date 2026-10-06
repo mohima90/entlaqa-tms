@@ -38,19 +38,3 @@ export async function emitEvent(tx: ClaimsTx, event: EmittedEvent): Promise<stri
             ${JSON.stringify(event.data ?? {})}::jsonb, ${event.correlationId ?? null})`);
   return id;
 }
-
-/**
- * Records that `subscriber` processed `eventId` (platform.event_inbox, ADR 0004 §5), in the job's own
- * transaction. False when it was already recorded: the delivery was a retry or a duplicate and the
- * handler must not run again. Only jobs may call this (system claims; the inbox policy enforces it).
- */
-export async function markEventProcessed(
-  tx: ClaimsTx,
-  subscriber: string,
-  eventId: string,
-): Promise<boolean> {
-  const rows = await tx.execute<{ event_id: string }>(sql`
-    insert into platform.event_inbox (subscriber, event_id) values (${subscriber}, ${eventId}::uuid)
-    on conflict do nothing returning event_id`);
-  return rows.length > 0;
-}

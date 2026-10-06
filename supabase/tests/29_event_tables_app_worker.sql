@@ -25,7 +25,8 @@ begin
     'system: an inbox row for tenant B is rejected by RLS');
   perform tests.assert_fails(format($q$insert into platform.event_inbox (subscriber, event_id) values ('Bad Name', %L)$q$, gen_random_uuid()),
     array['23514'], 'subscriber names are lower-case identifiers');
-  perform tests.assert_eq(tests.count_rows('platform.event_inbox'), 1::bigint, 'system: reads its own inbox rows');
+  -- The fixtures hold a tenant B inbox row: only the row just written is visible.
+  perform tests.assert_eq(tests.count_rows('platform.event_inbox'), 1::bigint, 'system: reads its own tenant''s inbox rows only');
 end $$;
 reset role;
 rollback;

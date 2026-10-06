@@ -239,10 +239,52 @@ do $$
 declare
   v_role text;
 begin
-  foreach v_role in array array['anon', 'authenticated', 'app_server', 'app_worker', 'tenant_guard'] loop
+  foreach v_role in array array['anon', 'authenticated', 'app_server', 'app_worker', 'app_queue', 'tenant_guard'] loop
     perform tests.assert(not has_database_privilege(v_role, current_database(), 'TEMPORARY'),
       format('%s must not create temporary objects', v_role));
   end loop;
+end $$;
+
+-- The job runner app_queue (ADR 0005 §2, T-M2-06a): no CREATE on the database (it could add schemas named
+-- after other roles and capture their unqualified names), owns nothing outside graphile_worker (so none of
+-- its code runs in request or job transactions), and holds table privileges only on the outbox.
+do $$
+declare
+  v_objects text;
+begin
+  perform tests.assert(not has_database_privilege('app_queue', current_database(), 'CREATE'),
+    'app_queue must not create schemas');
+  select string_agg(o, ', ') into v_objects from (
+    select n.nspname::text as o from pg_namespace n
+    where n.nspowner = 'app_queue'::regrole and n.nspname <> 'graphile_worker'
+    union all
+    select c.oid::regclass::text from pg_class c join pg_namespace n on n.oid = c.relnamespace
+    where c.relowner = 'app_queue'::regrole and n.nspname <> 'graphile_worker'
+    union all
+    select p.oid::regprocedure::text from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where p.proowner = 'app_queue'::regrole and n.nspname <> 'graphile_worker'
+    union all
+    select t.typname::text from pg_type t join pg_namespace n on n.oid = t.typnamespace
+    where t.typowner = 'app_queue'::regrole and n.nspname <> 'graphile_worker'
+  ) owned;
+  perform tests.assert(v_objects is null, format('app_queue must own nothing outside graphile_worker: %s', v_objects));
+  select string_agg(c.oid::regclass::text, ', ') into v_objects
+  from pg_class c join pg_namespace n on n.oid = c.relnamespace
+  where c.relkind in ('r', 'p', 'v', 'm', 'f')
+    and n.nspname not in ('pg_catalog', 'information_schema', 'graphile_worker')
+    and c.oid <> 'platform.event_outbox'::regclass
+    and has_table_privilege('app_queue', c.oid, 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER');
+  perform tests.assert(v_objects is null, format('app_queue must have no privilege on these tables: %s', v_objects));
+  perform tests.assert(not has_schema_privilege('app_queue', 'private', 'USAGE'), 'app_queue must not use schema private');
+  perform tests.assert(not has_schema_privilege('app_server', 'graphile_worker', 'USAGE')
+    and not has_schema_privilege('app_worker', 'graphile_worker', 'USAGE')
+    and not has_schema_privilege('authenticated', 'graphile_worker', 'USAGE')
+    and not has_schema_privilege('anon', 'graphile_worker', 'USAGE'),
+    'only app_queue uses schema graphile_worker');
+  -- The outbox trigger wakes the dispatcher with a notification only: it runs as the inserting role.
+  perform tests.assert((select not prosecdef and proowner <> 'app_queue'::regrole from pg_proc
+                        where oid = 'private.notify_event_dispatcher()'::regprocedure),
+    'the outbox notification trigger is SECURITY INVOKER and not owned by app_queue');
 end $$;
 
 -- Access-token hook: EXECUTE only for supabase_auth_admin.

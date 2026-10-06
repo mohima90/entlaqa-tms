@@ -1,7 +1,7 @@
 import { type SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { describe, expect, it } from 'vitest';
-import { emitEvent, markEventProcessed } from './events';
+import { emitEvent } from './events';
 
 const dialect = new PgDialect();
 
@@ -49,14 +49,5 @@ describe('emitEvent', () => {
       emitEvent(fake.tx, { type: `com.entlaqa.a.b.${'c'.repeat(200)}` }),
     ).rejects.toThrow('invalid event type');
     expect(fake.executed).toHaveLength(0);
-  });
-});
-
-describe('markEventProcessed', () => {
-  it('is true the first time and false for a repeated delivery', async () => {
-    const first = fakeTx([{ event_id: 'e1' }]);
-    expect(await markEventProcessed(first.tx, 'notifications.email', 'e1')).toBe(true);
-    expect(first.executed[0]?.sql).toContain('on conflict do nothing');
-    expect(await markEventProcessed(fakeTx([]).tx, 'notifications.email', 'e1')).toBe(false);
   });
 });

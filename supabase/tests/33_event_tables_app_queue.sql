@@ -21,9 +21,12 @@ begin
   perform tests.assert_eq((select actor_type || ':' || actor_id::text from platform.event_outbox
                            where type = 'com.entlaqa.platform.test.user_stamped'),
     'user:00000000-0000-4000-8000-0000000000a1', 'user event: actor stamped from the claims, forged values ignored');
-  perform tests.assert_eq((select actor_type || ':' || coalesce(actor_id::text, '-') from platform.event_outbox
-                           where type = 'com.entlaqa.platform.test.system_stamped'),
-    'system:-', 'job event: system actor, no user');
+  perform tests.assert_eq((select actor_type || ':' || coalesce(actor_id::text, '-') || ':' || coalesce(actor_job, '-')
+                           from platform.event_outbox where type = 'com.entlaqa.platform.test.system_stamped'),
+    'system:-:platform.events.deliver', 'job event: system actor with the job from the claims, no user');
+  perform tests.assert_eq((select coalesce(actor_job, '-') from platform.event_outbox
+                           where type = 'com.entlaqa.platform.test.user_stamped'),
+    '-', 'user event: no job');
   perform tests.assert_eq((select actor_type from platform.event_outbox where type = 'com.entlaqa.platform.test.fixture'),
     'platform', 'platform operation: platform actor');
   perform tests.assert_eq(tests.rows_affected($q$update platform.event_outbox set dispatched_at = now() where dispatched_at is null$q$),
@@ -38,6 +41,9 @@ begin
   perform tests.assert_privilege_denied($q$select count(*) from platform.persons$q$, 'app_queue: reads no business table');
   perform tests.assert_privilege_denied($q$select count(*) from platform.event_inbox$q$, 'app_queue: no access to the inbox');
   perform tests.assert_privilege_denied($q$set role authenticated$q$, 'app_queue: cannot become authenticated');
+  perform tests.assert_privilege_denied($q$create schema app_server$q$, 'app_queue: cannot create schemas');
+  perform tests.assert_privilege_denied($q$create temporary table t (x int)$q$, 'app_queue: no temporary objects');
+  perform tests.assert_privilege_denied($q$select private.current_tenant_id()$q$, 'app_queue: no access to schema private');
 end $$;
 rollback;
 

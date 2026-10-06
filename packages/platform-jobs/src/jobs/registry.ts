@@ -9,6 +9,10 @@ export interface DeliveredEvent {
   readonly subject: string | null;
   readonly data: Readonly<Record<string, unknown>>;
   readonly actorType: 'user' | 'system' | 'platform';
+  /** The user, for `actorType: 'user'`. */
+  readonly actorId: string | null;
+  /** The job that wrote the event, for `actorType: 'system'`. */
+  readonly actorJob: string | null;
   readonly correlationId: string | null;
   readonly createdAt: Date;
 }

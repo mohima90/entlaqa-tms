@@ -1,14 +1,14 @@
 -- Background jobs and domain events (ADR 0004, ADR 0005; T-M2-06a).
 --
 --   app_queue   LOGIN role of the job runner (graphile-worker) and the event dispatcher. NOT a member of
---               authenticated, NOINHERIT, NOBYPASSRLS. Owns schema graphile_worker and reads/updates only
---               the outbox columns it needs (policies below); no access to any business table.
---               graphile-worker runs its own schema migrations at start-up (`create schema if not exists`,
---               which PostgreSQL authorises with CREATE on the database even when the schema exists), so
---               app_queue holds CREATE on the database — it can create schemas of its own, nothing more.
+--               authenticated, NOINHERIT, NOBYPASSRLS, no privilege on the database itself. Owns schema
+--               graphile_worker (graphile-worker installs its tables there at start-up) and reads/updates
+--               only the outbox columns it needs (policies below); no access to any business table. It owns
+--               nothing outside its schema, so none of its code ever runs inside request or job
+--               transactions.
 --   platform.event_outbox   transactional outbox: request and job code insert an event in the same
 --               transaction as the business change; the dispatcher (app_queue) fans it out to subscriber
---               jobs. Append-only for application roles.
+--               jobs. Append-only for application roles. Inserts wake the workers with a notification.
 --   platform.event_inbox    per subscriber and event: written by the delivery job in the same transaction
 --               as the handler's work (exactly-once effect, at-least-once delivery).
 -- Passwords are set out of band (scripts/db-deploy.sh, APP_QUEUE_DB_PASSWORD), never here.
@@ -41,7 +41,7 @@ begin
 end
 $$;
 
--- The migration role hands schema and function ownership to app_queue.
+-- The migration role hands the schema and its bootstrap table to app_queue.
 grant app_queue to current_user;
 
 create schema if not exists graphile_worker authorization app_queue;
@@ -49,17 +49,20 @@ revoke all on schema graphile_worker from public;
 comment on schema graphile_worker is
   'graphile-worker job queue (ADR 0005), owned by app_queue. Infrastructure: no tenant data, never exposed through the Data API.';
 
-do $$
-begin
-  execute format('grant create on database %I to app_queue', current_database());
-  -- Without the grant option GRANT only warns: fail here rather than at the worker's first start.
-  if not has_database_privilege('app_queue', current_database(), 'CREATE') then
-    raise exception 'could not grant CREATE on database % to app_queue (the migration role needs the grant option)', current_database();
-  end if;
-end
-$$;
+-- graphile-worker (0.18) runs `create schema if not exists` — which PostgreSQL authorises only with CREATE
+-- on the database — when its migrations table is missing. The table is created here, exactly as
+-- graphile-worker bootstraps it, so the worker installs everything else inside its own schema and
+-- app_queue needs no database privilege (with CREATE it could add schemas named after other roles and
+-- capture their unqualified names).
+set role app_queue;
+create table if not exists graphile_worker.migrations (
+  id int primary key,
+  ts timestamptz default now() not null,
+  breaking boolean not null default false
+);
+reset role;
 
-grant usage on schema platform, private to app_queue;
+grant usage on schema platform to app_queue;
 
 -- ---------------------------------------------------------------------------------------------------
 -- Outbox
@@ -75,6 +78,8 @@ create table platform.event_outbox (
   data jsonb not null default '{}'::jsonb,
   actor_type text not null,
   actor_id uuid,
+  -- System actor: the job that wrote the event (ADR 0005 §4), e.g. `platform.events.deliver:42`.
+  actor_job text,
   correlation_id text,
   created_at timestamptz not null default now(),
   dispatched_at timestamptz,
@@ -83,6 +88,7 @@ create table platform.event_outbox (
     check (type ~ '^com\.entlaqa\.[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$' and char_length(type) <= 200),
   constraint event_outbox_version_check check (schema_version between 1 and 999),
   constraint event_outbox_actor_check check (actor_type in ('user', 'system', 'platform')),
+  constraint event_outbox_actor_job_check check (actor_job is null or char_length(actor_job) <= 200),
   constraint event_outbox_data_check check (jsonb_typeof(data) = 'object' and pg_column_size(data) <= 16384),
   constraint event_outbox_correlation_check check (correlation_id is null or char_length(correlation_id) <= 100)
 );
@@ -102,12 +108,13 @@ declare
 begin
   new.created_at := now();
   new.dispatched_at := null;
+  new.actor_id := null;
+  new.actor_job := null;
   if current_user <> 'authenticated' then
     new.actor_type := 'platform';  -- migrations, provisioning: no user claims
-    new.actor_id := null;
   elsif v_kind = 'system' then
     new.actor_type := 'system';
-    new.actor_id := null;
+    new.actor_job := left(private.request_claims() ->> 'job_id', 200);
   else
     new.actor_type := 'user';
     new.actor_id := private.request_user_id();
@@ -168,39 +175,27 @@ revoke all on platform.event_inbox from public, anon;
 grant select, insert on platform.event_inbox to authenticated;
 
 -- ---------------------------------------------------------------------------------------------------
--- Dispatcher kick
+-- Dispatcher wake-up
 -- ---------------------------------------------------------------------------------------------------
--- After a transaction first inserts events, add one dispatch job (visible to workers only after the
--- business transaction commits, so it always sees that transaction's events). The job has no job_key:
--- a keyed add_job upserts one shared row and would hold its lock until commit, making every
--- event-writing transaction wait for the others (and risking deadlocks). Dispatch jobs share a named
--- queue, so they run one at a time. When graphile-worker has not installed its schema yet (no worker has
--- started), nothing is added: the dispatcher's own schedule picks the events up later.
-create or replace function private.kick_event_dispatcher()
+-- After a statement inserts events, notify channel `jadarat_events`. PostgreSQL delivers notifications
+-- only when the transaction commits, and merges identical ones of a transaction, so a rolled-back change
+-- wakes nobody and a busy transaction sends one. Workers in daemon mode listen and queue a dispatch; the
+-- minutely schedule covers any gap (no worker listening, a lost connection). The function runs as the
+-- inserting role and touches nothing else: no queue code runs inside business transactions, and their
+-- commits never wait on the queue.
+create or replace function private.notify_event_dispatcher()
 returns trigger
 language plpgsql
-security definer
 set search_path = ''
 as $$
 begin
-  if coalesce(current_setting('jadarat.event_dispatch_kicked', true), '') <> 'on'
-     and to_regprocedure('graphile_worker.add_job(text,json,text,timestamp with time zone,integer,text,integer,text[],text)') is not null then
-    execute $sql$select graphile_worker.add_job('platform.events.dispatch', '{}'::json,
-      queue_name := 'platform.events.dispatch', max_attempts := 25)$sql$;
-    -- Once per transaction (reverted with the job if a savepoint rolls back).
-    perform set_config('jadarat.event_dispatch_kicked', 'on', true);
-  end if;
+  perform pg_notify('jadarat_events', '');
   return null;
 end
 $$;
-comment on function private.kick_event_dispatcher() is
-  'SECURITY DEFINER (owner app_queue): adds one outbox dispatch job per transaction that inserts events (ADR 0004 §4).';
-revoke all on function private.kick_event_dispatcher() from public;
+comment on function private.notify_event_dispatcher() is
+  'Wakes the event dispatcher (channel jadarat_events) when a transaction that inserted events commits (ADR 0004 §4).';
+revoke all on function private.notify_event_dispatcher() from public;
 
--- ALTER OWNER needs CREATE on the schema for the new owner: granted for this statement only.
-grant create on schema private to app_queue;
-alter function private.kick_event_dispatcher() owner to app_queue;
-revoke create on schema private from app_queue;
-
-create trigger event_outbox_kick after insert on platform.event_outbox
-  for each statement execute function private.kick_event_dispatcher();
+create trigger event_outbox_notify after insert on platform.event_outbox
+  for each statement execute function private.notify_event_dispatcher();

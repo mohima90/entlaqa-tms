@@ -373,6 +373,9 @@ importers:
       '@jadarat/platform-db':
         specifier: workspace:*
         version: link:../platform-db
+      '@jadarat/platform-observability':
+        specifier: workspace:*
+        version: link:../platform-observability
       graphile-worker:
         specifier: 0.18.0
         version: 0.18.0(typescript@6.0.3)

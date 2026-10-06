@@ -1,8 +1,10 @@
 /**
  * The job runner against PostgreSQL (T-M2-06a, ADR 0004/0005): graphile-worker installs its schema as
- * app_queue; an event committed by a request is fanned out by the dispatcher and delivered once per
- * subscriber inside the event tenant's system transaction (app_worker, RLS); failures roll back and
- * retry; a duplicate delivery does nothing.
+ * app_queue without any database privilege; a committed event wakes the workers (notification) and is
+ * fanned out by the dispatcher and delivered once per subscriber inside the event tenant's system
+ * transaction (app_worker, RLS); failures roll back and retry without leaking their message; a
+ * duplicate delivery does nothing; suspended organizations get no deliveries; the daemon delivers on
+ * notification and stops on request.
  */
 import { randomUUID } from 'node:crypto';
 import { emitEvent } from '@jadarat/platform-db';
@@ -13,8 +15,8 @@ import { sql } from 'drizzle-orm';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { type DeliveredEvent, type Subscriber, createSubscriberRegistry } from './registry';
-import { type WorkerConfig, runPass } from './runner';
-import { DELIVER_TASK, DISPATCH_TASK } from './tasks';
+import { EVENTS_CHANNEL, type WorkerConfig, runDaemon, runPass } from './runner';
+import { DELIVER_TASK } from './tasks';
 
 const ownerUrl = process.env.TEST_DATABASE_URL;
 const appServerUrl = process.env.TEST_APP_SERVER_URL;
@@ -33,6 +35,8 @@ const FAIL_ONCE = 'com.entlaqa.platform.test.worker_fail_once';
 
 describe.skipIf(!configured)('job runner against PostgreSQL', () => {
   const owner = new pg.Client({ connectionString: ownerUrl });
+  const listener = new pg.Client({ connectionString: ownerUrl });
+  let notifications = 0;
   const serverDb = createDatabase(appServerUrl ?? '', { max: 1 });
   const workerDb = createDatabase(appWorkerUrl ?? '', { max: 2 });
   const withUserTx = createWithUserTx(() => serverDb);
@@ -67,7 +71,7 @@ describe.skipIf(!configured)('job runner against PostgreSQL', () => {
         await record('test.fail_once')(context);
         if (failNext) {
           failNext = false;
-          throw new Error('temporary failure');
+          throw new Error('temporary failure for سارة');
         }
       },
     },
@@ -99,15 +103,11 @@ describe.skipIf(!configured)('job runner against PostgreSQL', () => {
 
   const ownerQuery = async <T extends pg.QueryResultRow>(text: string, values: unknown[] = []) =>
     (await owner.query<T>(text, values)).rows;
-  const dispatchJobs = async () =>
-    Number(
-      (
-        await ownerQuery<{ n: string }>(
-          'select count(*) as n from graphile_worker.jobs where task_identifier = $1',
-          [DISPATCH_TASK],
-        )
-      )[0]?.n,
-    );
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 100));
+  const until = async (condition: () => boolean, ms = 15_000) => {
+    for (const start = Date.now(); !condition() && Date.now() - start < ms;) await settle();
+    expect(condition()).toBe(true);
+  };
   const outbox = (id: string) =>
     ownerQuery<{ dispatched_at: Date | null; actor_type: string; tenant_id: string }>(
       'select dispatched_at, actor_type, tenant_id from platform.event_outbox where id = $1',
@@ -121,6 +121,11 @@ describe.skipIf(!configured)('job runner against PostgreSQL', () => {
 
   beforeAll(async () => {
     await owner.connect();
+    await listener.connect();
+    listener.on('notification', (message) => {
+      if (message.channel === EVENTS_CHANNEL) notifications += 1;
+    });
+    await listener.query(`listen ${EVENTS_CHANNEL}`);
     for (const [tenant, slug] of [
       [ids.tenantA, 'wa'],
       [ids.tenantB, 'wb'],
@@ -162,11 +167,12 @@ describe.skipIf(!configured)('job runner against PostgreSQL', () => {
     ]);
     await owner.query('delete from auth.users where id = $1', [ids.user]);
     await owner.end();
+    await listener.end();
     await serverDb.$client.end();
     await workerDb.$client.end();
   });
 
-  it('graphile-worker runs as app_queue in its own schema', async () => {
+  it('graphile-worker installs its schema as app_queue, without any database privilege', async () => {
     const [schema] = await ownerQuery<{ owner: string }>(
       `select nspowner::regrole::text as owner from pg_namespace where nspname = 'graphile_worker'`,
     );
@@ -174,7 +180,12 @@ describe.skipIf(!configured)('job runner against PostgreSQL', () => {
     const [migrations] = await ownerQuery<{ n: string }>(
       'select count(*) as n from graphile_worker.migrations',
     );
-    expect(Number(migrations?.n)).toBeGreaterThan(0);
+    expect(Number(migrations?.n)).toBeGreaterThan(10);
+    const [privileges] = await ownerQuery<{ create: boolean; temporary: boolean }>(
+      `select has_database_privilege('app_queue', current_database(), 'CREATE') as create,
+              has_database_privilege('app_queue', current_database(), 'TEMPORARY') as temporary`,
+    );
+    expect(privileges).toEqual({ create: false, temporary: false });
     const roles = await ownerQuery<{ role: string; usage: boolean }>(
       `select r as role, has_schema_privilege(r, 'graphile_worker', 'USAGE') as usage
        from unnest(array['app_server', 'app_worker', 'authenticated', 'anon']) r`,
@@ -183,22 +194,23 @@ describe.skipIf(!configured)('job runner against PostgreSQL', () => {
   });
 
   it('a committed event reaches each subscriber exactly once, in its tenant', async () => {
-    const before = await dispatchJobs();
+    await settle();
+    const before = notifications;
     const [first, second] = await withUserTx(claims(), async (tx) => [
       await emitEvent(tx, { type: PROBE, data: { n: 1 } }),
       await emitEvent(tx, { type: PROBE, data: { n: 2 }, correlationId: 'corr-1' }),
     ]);
     if (!first || !second) throw new Error('no events');
-    // One dispatch job per transaction, however many events it wrote.
-    expect(await dispatchJobs()).toBe(before + 1);
-    // A rolled-back transaction leaves neither events nor a dispatch job.
+    // One wake-up per committed transaction, however many events it wrote; none for a rollback.
+    await until(() => notifications === before + 1);
     await expect(
       withUserTx(claims(), async (tx) => {
         await emitEvent(tx, { type: PROBE });
         throw new Error('rolled back');
       }),
     ).rejects.toThrow('rolled back');
-    expect(await dispatchJobs()).toBe(before + 1);
+    await settle();
+    expect(notifications).toBe(before + 1);
 
     await runPass(config);
     const delivered = seen.filter((s) => s.event.id === first || s.event.id === second);
@@ -209,7 +221,13 @@ describe.skipIf(!configured)('job runner against PostgreSQL', () => {
       'test.probe:2',
     ]);
     for (const s of delivered) {
-      expect(s.event).toMatchObject({ tenantId: ids.tenantA, type: PROBE, actorType: 'user' });
+      expect(s.event).toMatchObject({
+        tenantId: ids.tenantA,
+        type: PROBE,
+        actorType: 'user',
+        actorId: ids.user,
+        actorJob: null,
+      });
       expect(s.visibleTenants).toEqual([ids.tenantA]);
     }
     expect(delivered.find((s) => s.event.id === second)?.event.correlationId).toBe('corr-1');
@@ -241,8 +259,10 @@ describe.skipIf(!configured)('job runner against PostgreSQL', () => {
       [`test.fail_once:${eventId}`],
     );
     expect(job).toMatchObject({ attempts: 1 });
-    expect(job?.last_error).toContain('temporary failure');
+    // The error reaches the queue and the logs without its message (it named a person).
+    expect(job?.last_error).toBe('delivery failed: Error');
     expect(logs.some((l) => l.startsWith('error: ') && l.includes(DELIVER_TASK))).toBe(true);
+    expect(logs.join('\n')).not.toContain('سارة');
 
     // Retry now instead of after the back-off.
     await owner.query(
@@ -261,12 +281,55 @@ describe.skipIf(!configured)('job runner against PostgreSQL', () => {
       'test.fail_once',
     ]);
     for (const s of attempts) {
-      expect(s.event).toMatchObject({ tenantId: ids.tenantB, actorType: 'system' });
+      expect(s.event).toMatchObject({
+        tenantId: ids.tenantB,
+        actorType: 'system',
+        actorId: null,
+        actorJob: 'test.worker:1',
+      });
       expect(s.visibleTenants).toEqual([ids.tenantB]);
     }
     expect((await outbox(eventId))[0]).toMatchObject({
       actor_type: 'system',
       tenant_id: ids.tenantB,
     });
+  });
+
+  it('a suspended organization gets no deliveries; the job ends without retries', async () => {
+    const eventId = await withSystemTx({ tenantId: ids.tenantB, jobId: 'test.worker:2' }, (tx) =>
+      emitEvent(tx, { type: PROBE }),
+    );
+    await owner.query(`update platform.tenants set status = 'suspended' where id = $1`, [
+      ids.tenantB,
+    ]);
+    try {
+      await runPass(config);
+    } finally {
+      await owner.query(`update platform.tenants set status = 'active' where id = $1`, [
+        ids.tenantB,
+      ]);
+    }
+    expect(seen.filter((s) => s.event.id === eventId)).toEqual([]);
+    expect(await inbox(eventId)).toEqual([]);
+    const pending = await ownerQuery(`select id from graphile_worker.jobs where key like $1`, [
+      `%:${eventId}`,
+    ]);
+    expect(pending).toEqual([]);
+    expect(logs).toContain('warning: organization not active; delivery skipped');
+  });
+
+  it('the daemon delivers as soon as an event is committed, and stops on request', async () => {
+    const controller = new AbortController();
+    const daemon = runDaemon(config, controller.signal);
+    try {
+      const eventId = await withUserTx(claims(), (tx) =>
+        emitEvent(tx, { type: PROBE, data: { n: 3 } }),
+      );
+      // Well before the minutely schedule: the notification woke the dispatcher.
+      await until(() => seen.filter((s) => s.event.id === eventId).length === 2, 20_000);
+    } finally {
+      controller.abort();
+      await daemon;
+    }
   });
 });

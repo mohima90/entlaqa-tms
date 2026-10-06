@@ -43,6 +43,25 @@ begin
   if (select pg_get_userbyid(nspowner) from pg_namespace where nspname = 'graphile_worker') is distinct from 'app_queue' then
     failures := failures || 'schema graphile_worker must exist and be owned by app_queue'::text;
   end if;
+  -- No CREATE on the database (it could add schemas named after other roles and capture their
+  -- unqualified names), and nothing owned outside graphile_worker: none of its code can run in other
+  -- roles' transactions.
+  if exists (select 1 from pg_roles where rolname = 'app_queue')
+     and has_database_privilege('app_queue', current_database(), 'CREATE') then
+    failures := failures || 'app_queue must have no CREATE privilege on the database'::text;
+  end if;
+  if exists (
+    select 1 from pg_namespace n
+    where n.nspowner = (select oid from pg_roles where rolname = 'app_queue') and n.nspname <> 'graphile_worker'
+    union all
+    select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
+    where c.relowner = (select oid from pg_roles where rolname = 'app_queue') and n.nspname <> 'graphile_worker'
+    union all
+    select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where p.proowner = (select oid from pg_roles where rolname = 'app_queue') and n.nspname <> 'graphile_worker'
+  ) then
+    failures := failures || 'app_queue must own nothing outside schema graphile_worker'::text;
+  end if;
   foreach v_role in array array['app_server', 'app_worker'] loop
     if exists (select 1 from pg_roles where rolname = v_role) then
       -- Direct memberships must be exactly {authenticated} (distinct: PostgreSQL 16+ keeps one row per grantor).

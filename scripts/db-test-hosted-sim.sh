@@ -64,9 +64,7 @@ end \$\$;
 alter role $MIGRATOR login password '$MIGRATOR_PW';
 -- Only what the migrations need: ADMIN on authenticated (grant authenticated to app_server/app_worker).
 grant authenticated to $MIGRATOR with admin option;
--- With the grant option: on staging the migration role's REVOKE TEMPORARY … FROM PUBLIC took effect
--- (1 Oct 2026), so it can grant and revoke database privileges (the job runner needs CREATE, T-M2-06a).
-grant create, temporary on database "$DB" to $MIGRATOR with grant option;
+grant create, temporary on database "$DB" to $MIGRATOR;
 -- Observed on hosted Supabase (first DB deploy plan, 1 Oct 2026): postgres has USAGE on schema auth but
 -- WITHOUT the grant option ("no privileges were granted for auth"); it can read auth.sessions (grant
 -- option on it not assumed).
@@ -146,8 +144,9 @@ for bad in "TENANT_SLUG=-bad" "TENANT_SLUG=Bad" "ADMIN_USER_ID=not-a-uuid" "TENA
 done
 echo "db-test-hosted-sim: provisioning OK"
 
-# Background jobs (T-M2-06a), as on staging: the worker installs graphile-worker's schema as app_queue on
-# a database migrated by the non-superuser role, then dispatches the pending events.
+# Background jobs (T-M2-06a), as on staging: the worker installs graphile-worker's schema as app_queue —
+# which holds no database privilege — on a database migrated by the non-superuser role, then dispatches
+# the pending events.
 echo "db-test-hosted-sim: worker passes (app_queue, app_worker)"
 (cd "$ROOT" && pnpm --filter @jadarat/worker build >/dev/null)
 worker_pass() {
@@ -163,9 +162,9 @@ worker_pass
 [[ "$(q "select nspowner::regrole from pg_namespace where nspname = 'graphile_worker'")" == "app_queue" ]] ||
   { echo "db-test-hosted-sim: graphile_worker must belong to app_queue" >&2; exit 1; }
 [[ "$(dispatched before_install)" == "1" ]] || { echo "db-test-hosted-sim: the worker did not dispatch the event" >&2; exit 1; }
-event after_install # the insert now queues a dispatch job itself
-[[ "$(q "select count(*) from graphile_worker.jobs where task_identifier = 'platform.events.dispatch'")" -ge "1" ]] ||
-  { echo "db-test-hosted-sim: an event insert did not queue a dispatch" >&2; exit 1; }
+[[ "$(q "select has_database_privilege('app_queue', current_database(), 'CREATE')")" == "f" ]] ||
+  { echo "db-test-hosted-sim: app_queue must not hold CREATE on the database" >&2; exit 1; }
+event after_install # with the queue installed
 worker_pass
 [[ "$(dispatched after_install)" == "1" ]] || { echo "db-test-hosted-sim: the second pass did not dispatch" >&2; exit 1; }
 echo "db-test-hosted-sim: worker OK"

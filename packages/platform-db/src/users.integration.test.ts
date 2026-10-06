@@ -259,6 +259,22 @@ describe.skipIf(!configured)('people directory reads against PostgreSQL', () => 
     ]) {
       expect(counts[code] ?? 0, code).toBe((await names({ roleCode: code })).length);
     }
+    // A deactivated member counts, a revoked one and another organization's member do not. (Roles
+    // cannot be given to a revoked membership: give it first, then revoke, as happens in practice.)
+    await owner`update platform.tenant_memberships set status = 'active' where user_id = ${people.revoked.user}`;
+    await owner`insert into platform.role_assignments (tenant_id, membership_id, role_code)
+      select tenant_id, id, 'auditor' from platform.tenant_memberships
+      where user_id in (${people.suspended.user}, ${people.revoked.user}, ${other.user})`;
+    await owner`update platform.tenant_memberships set status = 'revoked' where user_id = ${people.revoked.user}`;
+    try {
+      const withAuditors = await withUserTx(claims(), (tx) => countMembersByRole(tx));
+      expect(withAuditors.auditor).toBe(1);
+      expect(await names({ roleCode: 'auditor' })).toEqual([people.suspended.name]);
+    } finally {
+      await owner`delete from platform.role_assignments where role_code = 'auditor'
+        and membership_id in (select id from platform.tenant_memberships
+          where user_id in (${people.suspended.user}, ${people.revoked.user}, ${other.user}))`;
+    }
   });
 
   it('restricts the list to the scope of the grant (ADR 0003 §4.2)', async () => {

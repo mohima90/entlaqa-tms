@@ -40,6 +40,11 @@ describe('role matrix (BRD Appendix B, screen 5)', () => {
       expect(users.level === 'O', `users own / ${role.code}`).toBe(
         userRead.length > 0 && userRead.every((g) => g.scope === 'own'),
       );
+      // Settings: full with tenant.manage, view with tenant.read only, none otherwise.
+      const settings = area('settings').access[role.code].level;
+      const manage = grants(p['platform.tenant.manage'].code).length > 0;
+      const readSettings = grants(p['platform.tenant.read'].code).length > 0;
+      expect(settings, `settings / ${role.code}`).toBe(manage ? 'F' : readSettings ? 'V' : 'N');
       const audit = area('audit').access[role.code];
       expect(audit.level !== 'N', `audit / ${role.code}`).toBe(
         grants(p['platform.audit.read'].code).length > 0,

@@ -9,7 +9,7 @@ import {
 } from '@jadarat/platform-rbac';
 import { Alert, Badge, type BadgeTone, Card } from '@jadarat/ui';
 import { hasLocale } from 'next-intl';
-import { getTranslations } from 'next-intl/server';
+import { getFormatter, getTranslations } from 'next-intl/server';
 import { notFound, redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { SuiteShell } from '../../../../../components/suite-shell';
@@ -44,8 +44,11 @@ export default async function RolesPage({
   const { locale } = await params;
   if (!hasLocale(routing.locales, locale)) notFound();
   const query = await searchParams;
-  const requested = typeof query.role === 'string' ? query.role : '';
-  const selected = SYSTEM_ROLES.find((r) => r.code === requested) ?? SYSTEM_ROLES[0];
+  const requested = typeof query.role === 'string' ? query.role : null;
+  const found = SYSTEM_ROLES.find((r) => r.code === requested);
+  // An unknown role in the address: back to the plain page rather than a silent default.
+  if (requested !== null && !found) redirect(`/${locale}/suite/admin/roles`);
+  const selected = found ?? SYSTEM_ROLES[0];
   if (!selected) notFound();
   const context = await getSuiteContext(locale);
   const t = await getTranslations({ locale, namespace: 'rolesPage' });
@@ -56,7 +59,7 @@ export default async function RolesPage({
     content = (
       <>
         <Alert tone="info" data-testid="roles-not-configured">
-          {users('notConfigured')}
+          {t('notConfigured')}
         </Alert>
         <Roles locale={locale} selected={selected} counts={null} />
       </>
@@ -82,7 +85,13 @@ export default async function RolesPage({
   }
 
   return (
-    <SuiteShell locale={locale} context={context} current="roles" path="/suite/admin/roles">
+    <SuiteShell
+      locale={locale}
+      context={context}
+      current="roles"
+      // The language switch keeps the selected role.
+      path={found ? `/suite/admin/roles?role=${found.code}` : '/suite/admin/roles'}
+    >
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="m-0 text-2xl font-bold">{t('title')}</h1>
@@ -107,7 +116,9 @@ async function Roles({
   counts: Readonly<Record<string, number>> | null;
 }) {
   const t = await getTranslations({ locale, namespace: 'rolesPage' });
-  const href = (code: string) => `/${locale}/suite/admin/roles?role=${code}`;
+  // The anchor brings the details into view where the list stacks above them (phones, tablets).
+  const href = (code: string) => `/${locale}/suite/admin/roles?role=${code}#role-detail`;
+  const format = await getFormatter({ locale });
   const members = counts ? (counts[selected.code] ?? 0) : null;
 
   return (
@@ -120,7 +131,7 @@ async function Roles({
               <li key={role.code}>
                 <a
                   href={href(role.code)}
-                  aria-current={current ? 'true' : undefined}
+                  aria-current={current ? 'page' : undefined}
                   className={`flex min-h-11 items-center justify-between gap-2 rounded-md px-3 py-2 no-underline ${
                     current
                       ? 'bg-surface-selected font-medium text-primary-text'
@@ -131,7 +142,7 @@ async function Roles({
                   {counts ? (
                     <span className="text-sm text-text-muted">
                       <span className="sr-only">{t('membersLabel')} </span>
-                      {counts[role.code] ?? 0}
+                      {format.number(counts[role.code] ?? 0, 'integer')}
                     </span>
                   ) : null}
                 </a>
@@ -141,7 +152,12 @@ async function Roles({
         </ul>
       </nav>
 
-      <Card title={selected.name[locale]} data-testid="role-detail">
+      <Card
+        id="role-detail"
+        title={selected.name[locale]}
+        data-testid="role-detail"
+        className="scroll-mt-6"
+      >
         <div className="flex flex-col gap-4">
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone="neutral">{t('systemRole')}</Badge>
@@ -167,7 +183,11 @@ async function Roles({
             <ul className="m-0 flex list-none flex-wrap gap-x-4 gap-y-2 p-0 text-sm">
               {LEGEND.map((level) => (
                 <li key={level} className="flex items-center gap-2">
-                  <Badge tone={LEVEL_TONE[level]}>{t(`levels.${level}`)}</Badge>
+                  {level === 'N' ? (
+                    <span className="text-text-muted">{t('levels.N')}</span>
+                  ) : (
+                    <Badge tone={LEVEL_TONE[level]}>{t(`levels.${level}`)}</Badge>
+                  )}
                   <span className="text-text-muted">{t(`levelHints.${level}`)}</span>
                 </li>
               ))}

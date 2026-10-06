@@ -255,13 +255,13 @@ test.describe('users pages', () => {
     await expect(list.getByRole('link')).toHaveCount(14);
     await expect(list.getByRole('link', { name: /^Organization Admin/ })).toHaveAttribute(
       'aria-current',
-      'true',
+      'page',
     );
     await expect(page.getByTestId('custom-role')).toContainText('Coming soon');
     await expectNoSeriousA11yViolations(page);
 
     await list.getByRole('link', { name: /^Learner/ }).click();
-    await expect(page).toHaveURL(/\/en\/suite\/admin\/roles\?role=learner$/);
+    await expect(page).toHaveURL(/\/en\/suite\/admin\/roles\?role=learner#role-detail$/);
     const detail = page.getByTestId('role-detail');
     await expect(detail.getByRole('heading', { level: 2 })).toHaveText('Learner');
     const matrix = page.getByTestId('role-matrix');
@@ -278,7 +278,14 @@ test.describe('users pages', () => {
     await expect(page).toHaveURL(/\/en\/suite\/admin\/users\?role=learner$/);
     await expect(page.getByTestId('users-table').getByRole('row')).toHaveCount(members + 1);
 
-    // Arabic: right to left, privileged role flagged
+    // An unknown role in the address: back to the plain page
+    await page.goto('/en/suite/admin/roles?role=not-a-role');
+    await expect(page).toHaveURL(/\/en\/suite\/admin\/roles$/);
+
+    // Arabic: right to left, privileged role flagged; the language switch keeps the role
+    await page.goto('/en/suite/admin/roles?role=auditor');
+    await page.getByRole('link', { name: 'Switch to Arabic' }).click();
+    await expect(page).toHaveURL(/\/ar\/suite\/admin\/roles\?role=auditor$/);
     await page.goto('/ar/suite/admin/roles?role=auditor');
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
     await expect(page.getByTestId('role-detail')).toContainText('دور مميز');

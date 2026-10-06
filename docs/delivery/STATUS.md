@@ -20,7 +20,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 | Planning (research, BRD, feature list, delivery plan) | — | 🟢 Done | — | See §4 documents |
 | M0 Mobilize | 1–2 | 🟢 Done | G0 | **Gate G0 passed 3 Oct 2026.** T-M0-01…07, 09, 10 done (MFA on GitHub, Supabase, Vercel confirmed); T-M0-08 (→ 2-week customer trials ≈ end of M5) and T-M0-11 deferred by PO; T-M0-12/13 needed later |
 | M1 Foundation | 3–8 | 🟢 Done | G1 | Foundation merged (#9); walking skeleton live on staging (#10–#14); component library + Storybook done (T-M1-A02); M2 threat models done (TM-0002…0006); self-hosted stack verified (T-M1-D04, gate 15); observability baseline done (T-M1-D06). Estimation (T-M1-B14) postponed and mock-up usability round (T-M1-A05) cancelled by the PO (4 Oct 2026) |
-| M2 Platform core | 9–12 | 🔵 In progress | G2 | Started 4 Oct 2026 with users & roles (`EP-M2-IAM`): 11 Arabic screens **approved by the PO** (4 Oct 2026); build broken into T-M2-01…12 (BACKLOG); T-M2-01…04 merged (#28, #30–#33); next T-M2-05 |
+| M2 Platform core | 9–12 | 🔵 In progress | G2 | Started 4 Oct 2026 with users & roles (`EP-M2-IAM`): 11 Arabic screens **approved by the PO** (4 Oct 2026); build broken into T-M2-01…12 (BACKLOG); T-M2-01…04, T-M2-13, T-M2-14, T-M2-15a merged (#28, #30–#36); T-M2-05 in review; then invitations (T-M2-06/07) |
 | M3 Catalog & scheduling | 13–16 | ⚪ Not started | G3 | |
 | M4 Enrollment & manager | 17–19 | ⚪ Not started | G4 | |
 | M5 Delivery & credentials | 20–23 | ⚪ Not started | G5 | |

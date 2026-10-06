@@ -328,14 +328,14 @@
   },
   "rolesPage": {
     "title": "Roles & permissions",
-    "intro": "{count} ready-made roles come with Jadarat. System roles can't be edited; later they can be copied to create the organization's own roles.",
+    "intro": "{count, number, integer} ready-made roles come with Jadarat. System roles can't be edited; later they can be copied to create the organization's own roles.",
     "customRole": "Create a custom role",
     "comingSoon": "Coming soon",
     "rolesLabel": "Roles",
     "membersLabel": "Users:",
     "systemRole": "System role · view only",
     "privileged": "Privileged role",
-    "members": "{count, plural, =0 {No users} one {# user} other {# users}}",
+    "members": "{count, plural, =0 {No users} one {{count, number, integer} user} other {{count, number, integer} users}}",
     "viewUsers": "View users",
     "legendTitle": "Access levels",
     "levels": {
@@ -366,6 +366,7 @@
       "scope": "Scope or limit"
     },
     "sensitive": "Sensitive",
-    "matrixNote": "The matrix comes from the product requirements (Appendix B). Each module's permissions apply as it is released; users & roles and the audit log apply now."
+    "matrixNote": "Each module's permissions apply as it is released; users & roles and the audit log apply now.",
+    "notConfigured": "The number of users per role appears once this environment is connected to the database."
   }
 }

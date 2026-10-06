@@ -46,7 +46,6 @@ describe('navigationFor', () => {
     expect(
       navigationFor([{ permission: 'platform.role.read', scope: { type: 'direct_reports' } }]),
     ).toEqual({ users: false, roles: false });
-    expect(navigationFor(null)).toEqual({ users: true, roles: true });
   });
 
   it('shows every entry in the data-less preview', () => {

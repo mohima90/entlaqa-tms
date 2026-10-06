@@ -182,6 +182,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
+| 6 Oct 2026 | PR #35 merged (T-M2-13 edit a user's details). Next: staging DB deploy (1 migration, `actor_may_manage_person`) with the PO; then T-M2-14 change roles |
 | 6 Oct 2026 | T-M2-13 built: HR / Organization Admin edit a user's details (names, contact, employee number, language, placement, manager picker by department with "all departments"); shared manage rule in SQL; unit, integration, pgTAP and E2E (preview + self-hosted) tests. Independent review: approve with fixes (2 Medium, 7 Low; re-review 1 Low) → all fixed, all checks and the self-hosted smoke green. Next: PR (after PO "yes"), staging DB deploy |
 | 6 Oct 2026 | Staging updated with the PO: DB deploy plan → apply (person write guard), Auth settings (require current password, minimum length 12). Next: T-M2-13 edit a user's details |
 | 6 Oct 2026 | PR #34 merged (T-M2-15a My profile). Next: staging DB deploy (1 migration) and two Supabase Auth settings with the PO; then T-M2-13 / T-M2-14 |

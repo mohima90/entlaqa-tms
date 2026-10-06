@@ -183,6 +183,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
+| 6 Oct 2026 | T-M2-14 review: approve with fixes (1 Medium, 5 Low) → fixed; re-review found a High regression (version token) caught also by the self-hosted E2E → fixed; third round **approve**. Fixed a timing-dependent My profile E2E step (stored language Arabic). Next: PR after PO "yes" |
 | 6 Oct 2026 | T-M2-14 built: change a member's roles (primary + additional with days; privileged roles locked until MFA per D-IAM-01; HR blocked on privileged members in the DB guard); unit, integration, pgTAP and E2E tests. Next: review, PR (after PO "yes"), staging DB deploy |
 | 6 Oct 2026 | PO verified Edit details on staging. PO decision D-IAM-01: authenticator code always required for high-risk actions. Started T-M2-14 change a user's roles |
 | 6 Oct 2026 | Staging DB deploy with the PO (plan → apply): `actor_may_manage_person` applied, verification passed. Edit user details is live on staging. Next: T-M2-14 change a user's roles |

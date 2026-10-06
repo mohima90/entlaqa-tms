@@ -150,7 +150,7 @@ export function EditRolesForm(props: EditRolesFormProps) {
 
       <fieldset
         className="m-0 flex flex-col gap-3 border-0 p-0"
-        aria-describedby={`primary-hint${fieldErrors.primary ? ' primary-error' : ''}`}
+        aria-describedby={`primary-hint${primaryHasDays ? ' primary-days' : ''}${fieldErrors.primary ? ' primary-error' : ''}`}
       >
         <legend className="mb-1 font-semibold">
           {text('primary')} <span className="font-normal text-text-muted">{text('required')}</span>
@@ -187,7 +187,7 @@ export function EditRolesForm(props: EditRolesFormProps) {
           );
         })}
         {primaryHasDays ? (
-          <p className="m-0 text-sm text-text-muted" data-testid="primary-days">
+          <p id="primary-days" className="m-0 text-sm text-text-muted" data-testid="primary-days">
             {text('primaryDaysKept')}
           </p>
         ) : null}

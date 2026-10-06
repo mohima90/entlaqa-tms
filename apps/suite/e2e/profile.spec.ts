@@ -44,8 +44,12 @@ test.describe('My profile', () => {
     await arabic.getByLabel('Family name').fill('الزهراني');
     // Mobile typed with Eastern Arabic digits and the 00 prefix.
     await page.getByLabel('Mobile number').fill('٠٠٩٦٦ ٥٥ ١١١ ٢٢٣٣');
+    // The stored language is Arabic (the default): keep the page in English by choosing it, so the
+    // save does not switch the page (that switch is checked below).
+    await page.getByLabel('Interface and message language').selectOption('en');
     await page.getByRole('button', { name: 'Save changes' }).click();
     await expect(page.getByTestId('profile-message')).toHaveText('Changes saved.');
+    await expect(page).toHaveURL(/\/en\/suite\/profile$/);
     await page.reload();
     await expect(page.getByLabel('Mobile number')).toHaveValue('+966551112233');
     await expect(page.getByTestId('my-profile-link')).toContainText('Mona Saeed Alzahrani'); // English name kept

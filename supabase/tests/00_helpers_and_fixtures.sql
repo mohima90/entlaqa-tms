@@ -130,13 +130,15 @@ language sql immutable as $$
 $$;
 
 -- Schemas that must follow the tenant RLS pattern: every non-system schema except the listed ones.
+-- graphile_worker is the job queue's infrastructure (ADR 0005 §2): no tenant data, reachable only by
+-- app_queue (checked in 10_catalog.sql).
 create or replace function tests.module_schemas()
 returns table (schema_name name)
 language sql stable as $$
   select n.nspname
   from pg_namespace n
   where n.nspname not like 'pg\_%'
-    and n.nspname not in ('information_schema', 'public', 'auth', 'private', 'tests', 'extensions',
+    and n.nspname not in ('information_schema', 'public', 'auth', 'private', 'tests', 'extensions', 'graphile_worker',
                           'storage', 'realtime', 'graphql', 'graphql_public', 'vault', 'net',
                           'cron', 'pgbouncer', 'supabase_functions', 'supabase_migrations', 'pgsodium',
                           'pgsodium_masks', 'pgmq', 'pgtle');
@@ -156,6 +158,18 @@ language sql stable as $$
 $$;
 
 -- Tenant-owned tables in module/platform schemas and the column that carries the tenant.
+-- Tenant tables written and read only by background jobs (system claims under app_worker) or the job
+-- runner (app_queue), never by user requests (ADR 0004): the generic user-claims checks in 20_isolation
+-- skip them; 28_event_outbox_app_server.sql, 29_event_tables_app_worker.sql and
+-- 33_event_tables_app_queue.sql cover them instead.
+create or replace function tests.job_only_tables()
+returns table (table_name regclass)
+language sql stable as $$
+  select c.oid::regclass
+  from pg_class c join pg_namespace n on n.oid = c.relnamespace
+  where (n.nspname, c.relname) in (('platform', 'event_outbox'), ('platform', 'event_inbox'))
+$$;
+
 create or replace function tests.tenant_tables()
 returns table (table_name regclass, tenant_column text)
 language sql stable as $$
@@ -171,6 +185,16 @@ language sql stable as $$
     and n.nspname in (select schema_name from tests.module_schemas())
     and c.oid not in (select table_name from tests.global_tables())
   order by 1::text;
+$$;
+
+-- Tenant tables the `authenticated` role may read. Only job-only tables can be missing here (the
+-- coverage guard in 20_isolation.sql requires SELECT on every other tenant table); the outbox is
+-- insert-only for application roles (ADR 0004 §1).
+create or replace function tests.readable_tenant_tables()
+returns table (table_name regclass, tenant_column text)
+language sql stable as $$
+  select t.table_name, t.tenant_column from tests.tenant_tables() t
+  where has_table_privilege('authenticated', t.table_name, 'SELECT');
 $$;
 
 grant execute on all functions in schema tests to public;
@@ -280,3 +304,10 @@ from (values
   ('b0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-0000000000b1', 'tenant_admin', true)
 ) as r (tenant_id, user_id, role_code, is_primary)
 join platform.tenant_memberships m on m.tenant_id = r.tenant_id and m.user_id = r.user_id;
+
+-- A pending event of tenant B (platform operation), for 33_event_tables_app_queue.sql.
+insert into platform.event_outbox (tenant_id, type)
+  values ('b0000000-0000-4000-8000-000000000001', 'com.entlaqa.platform.test.fixture');
+-- A processed event of tenant B: tenant A's jobs (29) and every user (28) must not see it.
+insert into platform.event_inbox (tenant_id, subscriber, event_id)
+  values ('b0000000-0000-4000-8000-000000000001', 'test.subscriber', 'b9000000-0000-4000-8000-000000000001');

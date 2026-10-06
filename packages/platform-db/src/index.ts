@@ -16,6 +16,7 @@ export { type AuditEventInput, insertAuditEvent } from './audit';
 export { type DatabaseHealth, checkDatabase } from './health';
 export { type CurrentTenant, getCurrentTenant } from './tenants';
 export { type OrgUnitOption, type OrgUnitOptions, listOrgUnitOptions } from './org';
+export { EVENT_TYPE_PATTERN, type EmittedEvent, emitEvent } from './events';
 export { type PersonalDetails, getPersonalDetails, updatePersonalDetails } from './my-profile';
 export {
   type AssignedRole,

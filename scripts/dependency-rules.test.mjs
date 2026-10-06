@@ -167,8 +167,21 @@ describe('rules on installed packages fire (C1: node_modules is not excluded)', 
     'package.json': JSON.stringify({
       name: 'fixture',
       private: true,
-      dependencies: { postgres: '1.0.0', '@supabase/supabase-js': '1.0.0', react: '1.0.0' },
+      dependencies: {
+        postgres: '1.0.0',
+        '@supabase/supabase-js': '1.0.0',
+        react: '1.0.0',
+        pg: '1.0.0',
+        'graphile-worker': '1.0.0',
+      },
     }),
+    'node_modules/pg/package.json': JSON.stringify({ name: 'pg', main: 'index.js' }),
+    'node_modules/pg/index.js': 'module.exports = {};\n',
+    'node_modules/graphile-worker/package.json': JSON.stringify({
+      name: 'graphile-worker',
+      main: 'index.js',
+    }),
+    'node_modules/graphile-worker/index.js': 'module.exports = {};\n',
     'node_modules/postgres/package.json': JSON.stringify({ name: 'postgres', main: 'index.js' }),
     'node_modules/postgres/index.js': 'module.exports = {};\n',
     'node_modules/@supabase/supabase-js/package.json': JSON.stringify({
@@ -208,6 +221,22 @@ describe('rules on installed packages fire (C1: node_modules is not excluded)', 
         "import postgres from 'postgres';\nexport const x = postgres;\n",
     });
     expect(await violations(root)).toEqual([]);
+  });
+
+  it('opens the job queue (pg, graphile-worker) only in packages/platform-jobs/src/jobs/', async () => {
+    const root = fixtureRepo({
+      ...installed,
+      'packages/platform-jobs/package.json': JSON.stringify({ name: '@jadarat/platform-jobs' }),
+      'packages/platform-jobs/src/jobs/runner.ts':
+        "import pg from 'pg';\nimport { run } from 'graphile-worker';\nexport const x = [pg, run];\n",
+      'packages/platform-jobs/src/helpers.ts': "import pg from 'pg';\nexport const y = pg;\n",
+      'apps/worker/package.json': JSON.stringify({ name: '@jadarat/worker' }),
+      'apps/worker/src/main.ts': "import { run } from 'graphile-worker';\nexport const z = run;\n",
+    });
+    expect(await violations(root)).toEqual([
+      'queue-driver-only-in-platform-jobs: apps/worker/src/main.ts → node_modules/graphile-worker/index.js',
+      'queue-driver-only-in-platform-jobs: packages/platform-jobs/src/helpers.ts → node_modules/pg/index.js',
+    ]);
   });
 
   it('rejects React in the framework-free kernel', async () => {

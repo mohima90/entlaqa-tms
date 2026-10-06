@@ -11,7 +11,7 @@
 # always `verify-full`; only a local server (127.0.0.1/localhost) may set DB_DEPLOY_LOCAL_NO_TLS=1.
 # History is kept in Supabase CLI's table supabase_migrations.schema_migrations (version = timestamp
 # prefix), so `supabase migration list` agrees with this script (statements are not stored).
-# Both modes first validate APP_SERVER_DB_PASSWORD / APP_WORKER_DB_PASSWORD (optional).
+# Both modes first validate APP_SERVER_DB_PASSWORD / APP_WORKER_DB_PASSWORD / APP_QUEUE_DB_PASSWORD (optional).
 # apply: each pending migration runs in its own transaction together with its history row (same as the
 # CI gate, scripts/db-test.sh); then the role passwords are set as SCRAM verifiers; then
 # scripts/sql/verify-deployment.sql must pass.

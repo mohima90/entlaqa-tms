@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Self-hosted (sovereign) smoke test, T-M1-D04/D06: brings up the whole stack from this directory, deploys
 # the migrations with the production deploy script, creates a user and an organization, signs in through a
-# real browser against the app container, checks the audit trail and TLS, sends a browser and a server
-# error to the in-country error tracker (GlitchTip) and checks they arrive without personal data, then
-# tears everything down.
+# real browser against the app container, checks the audit trail and TLS, runs two background-job workers
+# and checks they dispatch an event, sends a browser and a server error to the in-country error tracker
+# (GlitchTip) and checks they arrive without personal data, then tears everything down.
 #
 #   bash infra/docker/smoke.sh            # KEEP=1 leaves the stack running; SKIP_BUILD=1 reuses the build
 #
@@ -31,8 +31,8 @@ CA_PEM="$(cat .secrets/ca.crt)"
 MIGRATION_URL="postgresql://postgres:$POSTGRES_PASSWORD@localhost:55432/postgres"
 
 if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
-  echo "smoke: building the app (standalone, no environment baked in)"
-  (cd "$ROOT" && pnpm --filter @jadarat/suite build >/dev/null)
+  echo "smoke: building the app (standalone, no environment baked in) and the worker (bundle)"
+  (cd "$ROOT" && pnpm --filter @jadarat/suite --filter @jadarat/worker build >/dev/null)
 fi
 
 echo "smoke: starting PostgreSQL, Auth, the TLS gateway and the error tracker (GlitchTip)"
@@ -43,7 +43,7 @@ curl -sf --cacert .secrets/ca.crt https://localhost:8443/auth/v1/health >/dev/nu
 echo "smoke: deploying migrations (scripts/db-deploy.sh, TLS verify-full)"
 (cd "$ROOT" && DATABASE_URL="$MIGRATION_URL" DATABASE_CA_CERT="$CA_PEM" \
   APP_SERVER_DB_PASSWORD="$(secret APP_SERVER_DB_PASSWORD)" APP_WORKER_DB_PASSWORD="$(secret APP_WORKER_DB_PASSWORD)" \
-  bash scripts/db-deploy.sh apply)
+  APP_QUEUE_DB_PASSWORD="$(secret APP_QUEUE_DB_PASSWORD)" bash scripts/db-deploy.sh apply)
 
 echo "smoke: setting up GlitchTip (operator account, organization, project) and the app's DSN"
 SENTRY_DSN="$(GLITCHTIP_ADMIN_PASSWORD="$(secret GLITCHTIP_ADMIN_PASSWORD)" compose exec -T \
@@ -104,6 +104,26 @@ no_tls="$(PGPASSWORD="$POSTGRES_PASSWORD" PGSSLMODE=disable PGCONNECT_TIMEOUT=5 
   psql -h localhost -p 55432 -U postgres -d postgres -X -At -c 'select 1' 2>&1 || true)"
 [[ "$no_tls" == *"pg_hba.conf rejects connection"* ]] ||
   { echo "smoke: PostgreSQL must refuse connections without TLS (got: $no_tls)" >&2; exit 1; }
+
+echo "smoke: background jobs (T-M2-06a) — two workers install the queue and dispatch an event"
+compose up -d --build --wait worker
+[[ "$(compose ps -q worker | wc -l)" == "2" ]] || { echo "smoke: expected two worker replicas" >&2; exit 1; }
+for i in $(seq 1 30); do
+  [[ "$(q "select to_regprocedure('graphile_worker.add_job(text,json,text,timestamp with time zone,integer,text,integer,text[],text)') is not null")" == "t" ]] && break
+  [[ $i -eq 30 ]] && { echo "smoke: the worker did not install the job queue" >&2; exit 1; }
+  sleep 1
+done
+[[ "$(q "select nspowner::regrole from pg_namespace where nspname = 'graphile_worker'")" == "app_queue" ]] ||
+  { echo "smoke: the job queue must belong to app_queue" >&2; exit 1; }
+# No feature emits events yet: the operator writes one (actor 'platform'); the insert queues a dispatch.
+q "insert into platform.event_outbox (tenant_id, type) select id, 'com.entlaqa.platform.smoke.checked' from platform.tenants where slug = 'sovereign-smoke'" >/dev/null
+for i in $(seq 1 30); do
+  [[ "$(q "select count(*) from platform.event_outbox where type = 'com.entlaqa.platform.smoke.checked' and dispatched_at is not null and actor_type = 'platform'")" == "1" ]] && break
+  [[ $i -eq 30 ]] && { echo "smoke: the worker did not dispatch the event" >&2; exit 1; }
+  sleep 1
+done
+[[ "$(q "select count(*) from pg_stat_ssl s join pg_stat_activity a using (pid) where a.usename in ('app_queue', 'app_worker') and s.ssl")" -ge "2" ]] ||
+  { echo "smoke: the workers must connect over TLS" >&2; exit 1; }
 
 echo "smoke: users pages (T-M2-04) with sample people, in Arabic and English"
 MANAGER_EMAIL="manager-$(date +%s)@sovereign.example"
@@ -222,9 +242,20 @@ done
 if grep -qE '[[:alnum:]._%+-]+@[[:alnum:]-]+(\.[[:alnum:]-]+)*\.[[:alpha:]]{2,}' <<<"$app_logs"; then
   echo "smoke: an e-mail address appears in the app logs after the error checks" >&2; exit 1
 fi
-for name in AUTH_DB_PASSWORD APP_SERVER_DB_PASSWORD ERRORS_DB_PASSWORD GLITCHTIP_ADMIN_PASSWORD \
-  GLITCHTIP_SECRET_KEY; do
+for name in AUTH_DB_PASSWORD APP_SERVER_DB_PASSWORD APP_WORKER_DB_PASSWORD APP_QUEUE_DB_PASSWORD \
+  ERRORS_DB_PASSWORD GLITCHTIP_ADMIN_PASSWORD GLITCHTIP_SECRET_KEY; do
   if grep -qF "$(secret "$name")" <<<"$all_logs"; then
     echo "smoke: the secret $name appears in the container logs" >&2; exit 1
   fi
+done
+
+echo "smoke: the workers log structured lines and stop gracefully"
+# Logs captured first: `grep -q` stops reading early, which fails the pipe under pipefail.
+worker_logs="$(compose logs --no-log-prefix worker 2>&1)"
+grep -q '"service":"jadarat-worker"' <<<"$worker_logs" ||
+  { echo "smoke: the worker does not write the platform's structured log lines" >&2; exit 1; }
+compose stop worker >/dev/null
+for id in $(compose ps -a -q worker); do
+  [[ "$($DOCKER inspect -f '{{.State.ExitCode}}' "$id")" == "0" ]] ||
+    { echo "smoke: a worker did not stop cleanly on SIGTERM" >&2; exit 1; }
 done

@@ -36,6 +36,7 @@
         "TEST_DATABASE_URL",
         "TEST_APP_SERVER_URL",
         "TEST_APP_WORKER_URL",
+        "TEST_APP_QUEUE_URL",
         "JADARAT_REQUIRE_INTEGRATION"
       ]
     },

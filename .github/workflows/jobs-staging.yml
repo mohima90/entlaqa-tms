@@ -1,0 +1,70 @@
+# Background jobs for staging (ADR 0005 §3, T-M2-06a). Staging has no container host for the worker, so
+# GitHub runs one worker pass every 5 minutes (scheduled runs can start late) and on demand
+# (Actions → Jobs (staging) → Run workflow): install or upgrade the queue schema, dispatch pending events,
+# run every job that is due, exit. Production runs worker containers in daemon mode instead; this
+# workflow never targets it. Runbook: docs/engineering/background-jobs.md.
+# Configuration lives in its own GitHub *environment* (Settings → Environments → staging-jobs), whose
+# "Deployment branches" rule (main only) is the access control; it holds no migration credential:
+#   secret   DATABASE_URL_APP_QUEUE   login role app_queue via the Supabase session pooler
+#   secret   DATABASE_URL_APP_WORKER  login role app_worker via the Supabase session pooler
+#   variable DATABASE_CA_CERT         PEM of the server's root CA (same value as in `staging`)
+# Until both secrets exist each run ends with a notice and does nothing.
+name: Jobs (staging)
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jobs-staging
+  cancel-in-progress: false
+
+jobs:
+  pass:
+    name: Worker pass (staging)
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: staging-jobs
+    steps:
+      - name: Configured?
+        id: configured
+        env:
+          QUEUE_URL: ${{ secrets.DATABASE_URL_APP_QUEUE }}
+          WORKER_URL: ${{ secrets.DATABASE_URL_APP_WORKER }}
+        run: |
+          if [[ -z "$QUEUE_URL" || -z "$WORKER_URL" ]]; then
+            echo "::notice::staging-jobs is not configured yet (docs/engineering/background-jobs.md); nothing to do"
+            echo "ready=false" >>"$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >>"$GITHUB_OUTPUT"
+          fi
+      - if: steps.configured.outputs.ready == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - if: steps.configured.outputs.ready == 'true'
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - if: steps.configured.outputs.ready == 'true'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - name: Install the worker's dependencies only (frozen lockfile) and bundle it
+        if: steps.configured.outputs.ready == 'true'
+        run: |
+          pnpm install --frozen-lockfile --filter '@jadarat/worker...'
+          pnpm --filter @jadarat/worker build
+      - name: One worker pass
+        if: steps.configured.outputs.ready == 'true'
+        env:
+          DATABASE_URL_APP_QUEUE: ${{ secrets.DATABASE_URL_APP_QUEUE }}
+          DATABASE_URL_APP_WORKER: ${{ secrets.DATABASE_URL_APP_WORKER }}
+          DATABASE_CA_CERT: ${{ vars.DATABASE_CA_CERT }}
+          JADARAT_ENVIRONMENT: staging
+          JADARAT_RELEASE: ${{ github.sha }}
+        run: node apps/worker/dist/main.mjs once

@@ -17,12 +17,14 @@ begin
   where t.table_name::text not in (
     'platform.tenants', 'platform.tenant_domains', 'platform.persons',
     'platform.tenant_memberships', 'platform.session_context', 'platform.audit_events',
-    'platform.branches', 'platform.departments', 'platform.person_employment', 'platform.role_assignments');
+    'platform.branches', 'platform.departments', 'platform.person_employment', 'platform.role_assignments')
+    and t.table_name not in (select table_name from tests.job_only_tables());
   perform tests.assert(v_missing is null, format('isolation tests missing for: %s', v_missing));
   perform tests.assert(session_user = 'app_server', 'this file must run connected as app_server');
   select string_agg(t.table_name::text, ', ') into v_missing
   from tests.tenant_tables() t
-  where not has_table_privilege('authenticated', t.table_name, 'SELECT');
+  where not has_table_privilege('authenticated', t.table_name, 'SELECT')
+    and t.table_name not in (select table_name from tests.job_only_tables());
   perform tests.assert(v_missing is null, format('tenant tables without SELECT for authenticated: %s', v_missing));
 end $$;
 
@@ -44,7 +46,8 @@ declare
   v_delete text;
 begin
   perform tests.assert_eq(private.current_tenant_id(), v_a, 'valid claims resolve tenant A');
-  for r in select * from tests.tenant_tables() loop
+  for r in select * from tests.tenant_tables()
+           where table_name not in (select table_name from tests.job_only_tables()) loop
     execute format('select count(*), count(*) filter (where %I <> %L) from %s', r.tenant_column, v_a, r.table_name)
       into v_total, v_foreign;
     perform tests.assert(v_total > 0, format('%s: tenant A must see its own rows', r.table_name));
@@ -265,7 +268,8 @@ declare
   r record;
   v_foreign bigint;
 begin
-  for r in select * from tests.tenant_tables() loop
+  for r in select * from tests.tenant_tables()
+           where table_name not in (select table_name from tests.job_only_tables()) loop
     execute format('select count(*) from %s where %I <> %L', r.table_name, r.tenant_column, 'b0000000-0000-4000-8000-000000000001')
       into v_foreign;
     perform tests.assert_eq(v_foreign, 0::bigint, format('%s: tenant B must not see other tenants'' rows', r.table_name));
@@ -282,7 +286,8 @@ declare
   r record;
 begin
   perform tests.assert(private.current_tenant_id() is null, 'no claims → no tenant');
-  for r in select * from tests.tenant_tables() loop
+  for r in select * from tests.tenant_tables()
+           where table_name not in (select table_name from tests.job_only_tables()) loop
     perform tests.assert_eq(tests.count_rows(r.table_name), 0::bigint, format('%s: no claims must read zero rows', r.table_name));
   end loop;
 end $$;
@@ -295,7 +300,8 @@ do $$
 declare
   r record;
 begin
-  for r in select * from tests.tenant_tables() loop
+  for r in select * from tests.tenant_tables()
+           where table_name not in (select table_name from tests.job_only_tables()) loop
     perform tests.assert_eq(tests.count_rows(r.table_name), 0::bigint, format('%s: claims without tenant_id must read zero rows', r.table_name));
   end loop;
   perform tests.assert_fails($q$insert into platform.persons (display_name_ar) values ('بلا منشأة')$q$,

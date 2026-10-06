@@ -6,6 +6,7 @@
  * tenant; RLS applies (private.current_tenant_id() accepts system claims only under app_worker).
  */
 import 'server-only';
+import { sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { type ClaimsTx, runWithClaims } from '../claims-tx';
 import { type AppDatabase, getDatabase } from '../client';
@@ -45,3 +46,31 @@ export function createWithSystemTx(getDb: () => AppDatabase): WithSystemTx {
 
 /** Runs `fn` for one tenant as a system actor (connection role app_worker), with RLS enforced. */
 export const withSystemTx: WithSystemTx = createWithSystemTx(() => getDatabase('app_worker'));
+
+/**
+ * Records that `subscriber` processed `eventId` (platform.event_inbox, ADR 0004 §5), in the job's own
+ * transaction. False when it was already recorded: the delivery was a retry or a duplicate and the
+ * handler must not run again. Only jobs can write the inbox (system claims; the inbox policy enforces it).
+ */
+export async function markEventProcessed(
+  tx: SystemTx,
+  subscriber: string,
+  eventId: string,
+): Promise<boolean> {
+  const rows = await tx.execute<{ event_id: string }>(sql`
+    insert into platform.event_inbox (subscriber, event_id) values (${subscriber}, ${eventId}::uuid)
+    on conflict do nothing returning event_id`);
+  return rows.length > 0;
+}
+
+/**
+ * True when the transaction's tenant may be served (active or trial, ADR 0002 §6a). For a suspended or
+ * closed organization the claims resolve to no tenant and RLS shows nothing: jobs skip their work
+ * (ADR 0005 §4).
+ */
+export async function tenantIsServed(tx: SystemTx): Promise<boolean> {
+  const [row] = await tx.execute<{ served: boolean }>(
+    sql`select private.current_tenant_id() is not null as served`,
+  );
+  return row?.served === true;
+}

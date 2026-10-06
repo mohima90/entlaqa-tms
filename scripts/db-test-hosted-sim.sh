@@ -27,8 +27,14 @@ cleanup() {
   "${PSQL[@]}" -d postgres -c "do \$\$ begin
       if exists (select 1 from pg_roles where rolname = 'app_server') then execute 'alter role app_server password null'; end if;
       if exists (select 1 from pg_roles where rolname = 'app_worker') then execute 'alter role app_worker password null'; end if;
+      if exists (select 1 from pg_roles where rolname = 'app_queue') then execute 'alter role app_queue password null'; end if;
       if exists (select 1 from pg_roles where rolname = '$MIGRATOR') then
         execute 'alter role $MIGRATOR nologin password null';
+        if exists (select 1 from pg_auth_members m join pg_roles g on g.oid = m.roleid
+                     join pg_roles u on u.oid = m.member join pg_roles gr on gr.oid = m.grantor
+                   where g.rolname = 'app_queue' and u.rolname = '$MIGRATOR' and gr.rolname = '$MIGRATOR') then
+          execute 'revoke app_queue from $MIGRATOR granted by $MIGRATOR';
+        end if;
         -- The migration's own 'grant tenant_guard to current_user': not wanted beyond this run.
         if exists (select 1 from pg_auth_members m join pg_roles g on g.oid = m.roleid
                      join pg_roles u on u.oid = m.member join pg_roles gr on gr.oid = m.grantor
@@ -70,7 +76,7 @@ grant references on auth.sessions, auth.users to $MIGRATOR;
 do \$\$
 declare r text;
 begin
-  foreach r in array array['app_server', 'app_worker', 'tenant_guard'] loop
+  foreach r in array array['app_server', 'app_worker', 'app_queue', 'tenant_guard'] loop
     if exists (select 1 from pg_roles where rolname = r) then
       execute format('grant %I to $MIGRATOR with admin option, inherit false, set false', r);
     end if;
@@ -82,7 +88,7 @@ enc() { node -e 'process.stdout.write(encodeURIComponent(process.argv[1]))' "$1"
 DATABASE_URL="postgresql://$MIGRATOR:$(enc "$MIGRATOR_PW")@$PGHOST:$PGPORT/$DB"
 export DATABASE_URL
 export DB_DEPLOY_LOCAL_NO_TLS=1
-export APP_SERVER_DB_PASSWORD="sim-$(rand)" APP_WORKER_DB_PASSWORD="sim-$(rand)"
+export APP_SERVER_DB_PASSWORD="sim-$(rand)" APP_WORKER_DB_PASSWORD="sim-$(rand)" APP_QUEUE_DB_PASSWORD="sim-$(rand)"
 
 echo "db-test-hosted-sim: plan as non-superuser $MIGRATOR"
 bash "$ROOT/scripts/db-deploy.sh" plan
@@ -137,3 +143,28 @@ for bad in "TENANT_SLUG=-bad" "TENANT_SLUG=Bad" "ADMIN_USER_ID=not-a-uuid" "TENA
   fi
 done
 echo "db-test-hosted-sim: provisioning OK"
+
+# Background jobs (T-M2-06a), as on staging: the worker installs graphile-worker's schema as app_queue —
+# which holds no database privilege — on a database migrated by the non-superuser role, then dispatches
+# the pending events.
+echo "db-test-hosted-sim: worker passes (app_queue, app_worker)"
+(cd "$ROOT" && pnpm --filter @jadarat/worker build >/dev/null)
+worker_pass() {
+  env -u DATABASE_URL \
+    DATABASE_URL_APP_QUEUE="postgresql://app_queue:$(enc "$APP_QUEUE_DB_PASSWORD")@$PGHOST:$PGPORT/$DB" \
+    DATABASE_URL_APP_WORKER="postgresql://app_worker:$(enc "$APP_WORKER_DB_PASSWORD")@$PGHOST:$PGPORT/$DB" \
+    node "$ROOT/apps/worker/dist/main.mjs" once >/dev/null
+}
+event() { q "insert into platform.event_outbox (tenant_id, type) select id, 'com.entlaqa.platform.sim.$1' from platform.tenants where slug = 'sim-org'" >/dev/null; }
+dispatched() { q "select count(*) from platform.event_outbox where type = 'com.entlaqa.platform.sim.$1' and dispatched_at is not null"; }
+event before_install # no queue yet: the first pass's own dispatch picks it up
+worker_pass
+[[ "$(q "select nspowner::regrole from pg_namespace where nspname = 'graphile_worker'")" == "app_queue" ]] ||
+  { echo "db-test-hosted-sim: graphile_worker must belong to app_queue" >&2; exit 1; }
+[[ "$(dispatched before_install)" == "1" ]] || { echo "db-test-hosted-sim: the worker did not dispatch the event" >&2; exit 1; }
+[[ "$(q "select has_database_privilege('app_queue', current_database(), 'CREATE')")" == "f" ]] ||
+  { echo "db-test-hosted-sim: app_queue must not hold CREATE on the database" >&2; exit 1; }
+event after_install # with the queue installed
+worker_pass
+[[ "$(dispatched after_install)" == "1" ]] || { echo "db-test-hosted-sim: the second pass did not dispatch" >&2; exit 1; }
+echo "db-test-hosted-sim: worker OK"

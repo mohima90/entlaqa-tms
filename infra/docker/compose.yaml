@@ -1,12 +1,14 @@
 # Jadarat TMS — self-hosted (sovereign) stack, T-M1-D04 walking skeleton (ADR 0010). Runbook: README.md.
 # Everything runs in-country on the customer's servers: PostgreSQL 17 (Supabase image, same major/minor as
-# the cloud), Supabase Auth (GoTrue) with the Custom Access Token hook, a TLS gateway, the app, and the
-# in-country error tracker (GlitchTip, Sentry-compatible; ADR 0009 §4) with its own database.
-# TLS verified against the installation's CA on every hop that leaves a private network: app → db,
+# the cloud), Supabase Auth (GoTrue) with the Custom Access Token hook, a TLS gateway, the app, the
+# background-job worker, and the in-country error tracker (GlitchTip, Sentry-compatible; ADR 0009 §4)
+# with its own database.
+# TLS verified against the installation's CA on every hop that leaves a private network: app/worker → db,
 # Auth → db (PostgreSQL requires TLS for all network clients, db/pg_hba.conf) and app → gateway; the
 # GlitchTip UI is served through the gateway's TLS too. Plain-HTTP hops run only on internal networks:
 # gateway → Auth and app/gateway → GlitchTip (neither service has a TLS listener). Auth and GlitchTip
-# have no outbound route. Containers drop privileges; app, gateway, Auth and GlitchTip are read-only.
+# have no outbound route. Containers drop privileges; app, worker, gateway, Auth and GlitchTip are
+# read-only.
 # Images are pinned by digest (multi-arch index); bump deliberately with the hosted versions.
 # Secrets: ./gen-secrets.sh → .secrets/ (git-ignored); always run compose with
 #   docker compose --env-file .secrets/.env …
@@ -156,6 +158,32 @@ services:
       SENTRY_DSN: ${SENTRY_DSN:-}
     ports:
       - 127.0.0.1:3200:3000
+
+  # Background jobs (ADR 0005, T-M2-06a): graphile-worker in daemon mode, two replicas — jobs are claimed
+  # with SKIP LOCKED, so replicas never run the same job, and one keeps working while the other restarts.
+  # Database only (queue as app_queue, tenant work as app_worker; TLS verify-full): no route to Auth.
+  worker:
+    build:
+      context: ../..
+      dockerfile: infra/docker/worker.Dockerfile
+    image: jadarat/worker:local
+    <<: *hardening
+    read_only: true
+    cap_drop: [ALL]
+    networks: [db-app]
+    deploy: { replicas: 2 }
+    # SIGTERM lets running jobs finish; give them time before Docker kills the process (a killed job is
+    # retried, but only after graphile-worker's 4-hour lock expiry).
+    stop_grace_period: 60s
+    depends_on:
+      db: { condition: service_healthy }
+    volumes:
+      - ./.secrets/ca.crt:/run/secrets/ca.crt:ro
+    environment:
+      DATABASE_URL_APP_QUEUE: postgres://app_queue:${APP_QUEUE_DB_PASSWORD:?run with --env-file .secrets/.env}@db:5432/postgres
+      DATABASE_URL_APP_WORKER: postgres://app_worker:${APP_WORKER_DB_PASSWORD:?run with --env-file .secrets/.env}@db:5432/postgres
+      DATABASE_CA_CERT_FILE: /run/secrets/ca.crt
+      JADARAT_ENVIRONMENT: self-hosted
 
   # In-country error tracking (ADR 0009 §4, T-M1-D06): GlitchTip in all-in-one mode (web + worker, no
   # Valkey) with its own PostgreSQL. Errors arrive already scrubbed by the app; retention 90 days.

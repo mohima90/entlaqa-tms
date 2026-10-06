@@ -2,7 +2,7 @@ import { type SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { describe, expect, it } from 'vitest';
 import type { AppDatabase } from '../client';
-import { createWithSystemTx, systemClaims } from './index';
+import { createWithSystemTx, markEventProcessed, systemClaims, tenantIsServed } from './index';
 
 const dialect = new PgDialect();
 const TENANT = '22222222-2222-4222-8222-222222222222';
@@ -38,5 +38,33 @@ describe('withSystemTx (ADR 0002 §7)', () => {
       'invalid system actor',
     );
     expect(() => systemClaims({ tenantId: TENANT, jobId: '  ' })).toThrow('invalid system actor');
+  });
+});
+
+describe('markEventProcessed and tenantIsServed', () => {
+  const fakeTx = (result: unknown[]) => {
+    const executed: string[] = [];
+    return {
+      executed,
+      tx: {
+        execute: (q: SQL) => {
+          executed.push(dialect.sqlToQuery(q).sql);
+          return Promise.resolve(result);
+        },
+      } as never,
+    };
+  };
+
+  it('is true the first time and false for a repeated delivery', async () => {
+    const first = fakeTx([{ event_id: 'e1' }]);
+    expect(await markEventProcessed(first.tx, 'notifications.email', 'e1')).toBe(true);
+    expect(first.executed[0]).toContain('on conflict do nothing');
+    expect(await markEventProcessed(fakeTx([]).tx, 'notifications.email', 'e1')).toBe(false);
+  });
+
+  it('reads whether the claims resolve to a tenant', async () => {
+    expect(await tenantIsServed(fakeTx([{ served: true }]).tx)).toBe(true);
+    expect(await tenantIsServed(fakeTx([{ served: false }]).tx)).toBe(false);
+    expect(await tenantIsServed(fakeTx([]).tx)).toBe(false);
   });
 });

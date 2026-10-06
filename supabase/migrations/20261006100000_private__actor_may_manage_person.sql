@@ -16,6 +16,10 @@ as $$
                            and private.membership_is_privileged(m.tenant_id, m.id)));
 $$;
 
+comment on function private.actor_may_manage_person(uuid, uuid) is
+  'May the signed-in member change this person''s record (T-M2-13)? Callers pass the row''s own tenant '
+  '(the guard: new.tenant_id; the app: p.tenant_id of a row RLS let it read); the person need not exist yet.';
+
 revoke all on function private.actor_may_manage_person(uuid, uuid) from public;
 grant execute on function private.actor_may_manage_person(uuid, uuid) to authenticated;
 
@@ -71,4 +75,8 @@ begin
     using errcode = 'insufficient_privilege';
 end
 $$;
+
+comment on function private.actor_may_manage_person(uuid, uuid) is
+  'May the signed-in member change this person''s record (T-M2-13)? Callers pass the row''s own tenant '
+  '(the guard: new.tenant_id; the app: p.tenant_id of a row RLS let it read); the person need not exist yet.';
 

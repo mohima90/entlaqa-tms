@@ -226,7 +226,8 @@
     "passwordChanged": "Password changed. Sign-in sessions on other devices have ended.",
     "prefilledName": "The full name was placed in \"First name\"; it can be split into the fields.",
     "noProfile": "There is no profile linked to your account in this organization.",
-    "currentName": "Current name, to split into the fields:"
+    "currentName": "Current name, to split into the fields:",
+    "currentNameKept": "It is kept as is if the fields are left empty."
   },
   "editUser": {
     "title": "Edit user details",
@@ -239,6 +240,7 @@
     "englishName": "Name in English",
     "prefilledName": "The full name was placed in \"First name\"; it can be split into the fields.",
     "currentName": "Current name, to split into the fields:",
+    "currentNameKept": "It is kept as is if the fields are left empty.",
     "contact": "Contact and language",
     "email": "Work email",
     "emailHint": "Must be unique within the organization.",
@@ -285,7 +287,7 @@
       "unitDeleted": "The chosen department or branch was deleted. Refresh the page and choose another.",
       "jobTitle": "Must contain visible letters and be at most 150 characters.",
       "hireOn": "Enter a valid date between 1900 and 2100.",
-      "hireOnAfterEnd": "The hire date must be before the recorded end-of-service date."
+      "hireOnAfterEnd": "The hire date must be on or before the recorded end-of-service date."
     }
   }
 }

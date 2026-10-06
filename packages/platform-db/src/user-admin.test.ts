@@ -171,6 +171,22 @@ describe('updateUserDetails', () => {
         change({ firstNameAr: null, displayNameAr: '' }),
       ),
     ).toEqual({ ok: false, refusal: 'name_required' });
+    // Father and family name without a first name: refused, also over a kept long name.
+    for (const before of [row, unsplit]) {
+      expect(
+        await updateUserDetails(
+          fakeTx([before]).tx,
+          'p1',
+          '3:0',
+          change({
+            firstNameAr: null,
+            fatherNameAr: 'محمد',
+            familyNameAr: 'الشهري',
+            displayNameAr: 'محمد الشهري',
+          }),
+        ),
+      ).toEqual({ ok: false, refusal: 'name_required' });
+    }
   });
 
   it('updates an existing placement; a concurrent edit is a version conflict', async () => {

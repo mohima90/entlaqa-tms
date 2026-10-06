@@ -1,4 +1,5 @@
 import { toClientError } from '@jadarat/platform-core';
+import { formatHijriDate } from '@jadarat/platform-i18n';
 import { routing } from '@jadarat/platform-i18n/routing';
 import type { CurrentUnit } from '@jadarat/platform-db';
 import type { EditUserView } from '@jadarat/platform-rbac';
@@ -21,6 +22,7 @@ const LABEL_KEYS = [
   'englishName',
   'prefilledName',
   'currentName',
+  'currentNameKept',
   'contact',
   'email',
   'emailHint',
@@ -212,6 +214,11 @@ async function editForm(
         fieldTexts={fieldTexts}
         errors={await profileErrorTexts(locale)}
         profileHref={profileHref}
+        hireOnHijri={
+          user.hireOn
+            ? t('hireDateHijri', { date: formatHijriDate(user.hireOn, locale) })
+            : undefined
+        }
       />
     </Card>
   );

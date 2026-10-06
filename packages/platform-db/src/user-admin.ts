@@ -304,7 +304,9 @@ export async function updateUserDetails(
     before,
     before.hasLogin ? { ...change, email: before.email } : change,
   );
-  if (next.displayNameAr === '') return { ok: false, refusal: 'name_required' };
+  // A first name is required, unless a long Arabic name stored without parts was kept as is.
+  const arabicNameKept = next.displayNameAr !== change.displayNameAr;
+  if (next.firstNameAr === null && !arabicNameKept) return { ok: false, refusal: 'name_required' };
 
   const personChanges = PERSON_FIELDS.filter(([field]) => before[field] !== next[field]);
   const employmentChanges = EMPLOYMENT_FIELDS.filter(([field]) => before[field] !== next[field]);

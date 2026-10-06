@@ -45,6 +45,8 @@ export interface EditUserFormProps {
   readonly fieldTexts: Readonly<Record<string, string>>;
   readonly errors: ErrorTexts;
   readonly profileHref: string;
+  /** Hijri equivalent of the stored hire date, formatted on the server (no hydration mismatch). */
+  readonly hireOnHijri: string | undefined;
 }
 
 /** Labelled native select with hint and error (same contract as TextField). */
@@ -117,6 +119,7 @@ export function EditUserForm(props: EditUserFormProps) {
   const managers = managersFor(props.managers, departmentId, showAll, managerId);
   const text = (key: string) => labels[key] ?? key;
   const hijri = (date: string): string | undefined => {
+    if (date === values.hireOn) return props.hireOnHijri;
     if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(date)) return undefined;
     try {
       return text('hireDateHijri').replace('{date}', formatHijriDate(date, props.locale));
@@ -218,7 +221,7 @@ export function EditUserForm(props: EditUserFormProps) {
         ) : null}
         {names.unsplit[key] ? (
           <p className="m-0 text-sm text-text-muted sm:col-span-2">
-            {text('currentName')} <bdi>{names.unsplit[key]}</bdi>
+            {text('currentName')} <bdi>{names.unsplit[key]}</bdi> {text('currentNameKept')}
           </p>
         ) : null}
         {NAME_PARTS.map((part) => nameField(part, script))}

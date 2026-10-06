@@ -33,6 +33,7 @@ export interface PersonalDetailsFormProps {
     readonly noChanges: string;
     readonly prefilledName: string;
     readonly currentName: string;
+    readonly currentNameKept: string;
   };
   readonly fieldTexts: {
     readonly required: string;
@@ -150,7 +151,7 @@ export function PersonalDetailsForm({
         ) : null}
         {initial.unsplit.en ? (
           <p className="m-0 text-sm text-text-muted sm:col-span-2">
-            {labels.currentName} <bdi>{initial.unsplit.en}</bdi>
+            {labels.currentName} <bdi>{initial.unsplit.en}</bdi> {labels.currentNameKept}
           </p>
         ) : null}
         {NAME_PARTS.map((part) => nameField(part, 'En'))}

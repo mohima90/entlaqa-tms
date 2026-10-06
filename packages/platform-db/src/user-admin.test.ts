@@ -5,6 +5,7 @@ import {
   type UserDetailsChange,
   getEditableUser,
   listManagerOptions,
+  mayManagePerson,
   refusalOf,
   updateUserDetails,
 } from './user-admin';
@@ -98,6 +99,13 @@ describe('getEditableUser / listManagerOptions', () => {
         fakeTx([{ person_id: 'm', name_ar: 'م', name_en: null, department_ids: null }]).tx,
       ),
     ).toEqual([{ personId: 'm', nameAr: 'م', nameEn: null, departmentIds: [] }]);
+  });
+});
+
+describe('mayManagePerson', () => {
+  it('asks the database rule; unknown person → false', async () => {
+    expect(await mayManagePerson(fakeTx([{ may: true }]).tx, 'p1')).toBe(true);
+    expect(await mayManagePerson(fakeTx([]).tx, 'p1')).toBe(false);
   });
 });
 

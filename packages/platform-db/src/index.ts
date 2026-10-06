@@ -25,6 +25,7 @@ export {
   type UserDetailsRefusal,
   getEditableUser,
   listManagerOptions,
+  mayManagePerson,
   refusalOf,
   updateUserDetails,
 } from './user-admin';

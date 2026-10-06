@@ -47,6 +47,7 @@ export { type AuthorizedQuery, type QueryDefinition, createDefineQuery } from '.
 export { createLoadMemberGrants } from './member-grants';
 export * from './iam/users';
 export * from './iam/my-profile';
+export * from './iam/edit-user';
 
 /** Authorized reads for server components and routes (same checks as defineAction, no audit). */
 export const defineQuery = createDefineQuery(defaultActionRuntime);

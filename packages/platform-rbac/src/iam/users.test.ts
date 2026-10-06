@@ -14,6 +14,7 @@ const db = vi.hoisted(() => ({
   listOrgUnitOptions: vi.fn(),
   getUserProfile: vi.fn(),
   loadPersonResourceFacts: vi.fn(),
+  mayManagePerson: vi.fn(),
 }));
 vi.mock('@jadarat/platform-db', () => db);
 
@@ -72,6 +73,7 @@ beforeEach(() => {
   db.listUsers.mockResolvedValue(emptyList);
   db.listOrgUnitOptions.mockResolvedValue(orgUnits);
   db.getUserProfile.mockResolvedValue({ personId: REPORT });
+  db.mayManagePerson.mockResolvedValue(true);
 });
 
 describe('users list query', () => {
@@ -172,7 +174,7 @@ describe('user profile query', () => {
   it('Line Manager: a report’s profile with roles, without the audit trail', async () => {
     const profile = createDefineQuery(runtime(['line_manager']))(userProfileQueryDefinition());
     expect(await profile({ personId: REPORT })).toEqual(
-      ok({ profile: { personId: REPORT }, canOpenManager: false }),
+      ok({ profile: { personId: REPORT }, canOpenManager: false, canEdit: false }),
     );
     expect(db.getUserProfile).toHaveBeenCalledWith(TX, REPORT, {
       includeRoles: true,
@@ -217,6 +219,14 @@ describe('user profile query', () => {
       userProfileQueryDefinition(),
     )({ personId: REPORT });
     expect(asAdmin.ok && asAdmin.value.canOpenManager).toBe(true);
+    // Edit: user.update (admin yes, line manager no) and the database manage rule.
+    expect(asManager.ok && asManager.value.canEdit).toBe(false);
+    expect(asAdmin.ok && asAdmin.value.canEdit).toBe(true);
+    db.mayManagePerson.mockResolvedValue(false);
+    const refused = await createDefineQuery(runtime(['tenant_admin']))(
+      userProfileQueryDefinition(),
+    )({ personId: REPORT });
+    expect(refused.ok && refused.value.canEdit).toBe(false);
     expect(db.loadPersonResourceFacts).toHaveBeenCalledWith(TX, ME);
   });
 

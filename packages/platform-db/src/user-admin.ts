@@ -295,3 +295,11 @@ export async function updateUserDetails(
     changed: [...personChanges.map(([f]) => f), ...employmentChanges.map(([f]) => f)],
   };
 }
+
+/** May the signed-in member change this person's record? (private.actor_may_manage_person) */
+export async function mayManagePerson(tx: UserTx, personId: string): Promise<boolean> {
+  const [row] = await tx.execute<{ may: boolean }>(sql`
+    select private.actor_may_manage_person(p.tenant_id, p.id) as may
+    from platform.persons p where p.id = ${personId}::uuid`);
+  return row?.may === true;
+}

@@ -148,7 +148,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 6. ~~DB deploy of T-M2-01…04a to staging~~ **Done 5 Oct 2026** (plan, then apply: 13 migrations, verification passed; the roles backfill made only the PO's account Organization Admin — one provisioning run ever, one member).
 7. ~~After My profile: DB deploy + Auth settings~~ **Done 6 Oct 2026** (migration `persons_write_guard` applied, verification passed; Supabase Auth: require current password on, minimum length 12).
 8. ~~After T-M2-13: DB deploy~~ **Done 6 Oct 2026** (plan, then apply: migration `actor_may_manage_person` applied, verification passed).
-9. After T-M2-14 (#36, merged): **DB deploy** to staging (plan, then apply) for one migration (`role_guard_privileged_member`). Claude guides it.
+9. ~~After T-M2-14: DB deploy~~ **Done 6 Oct 2026** (plan, then apply: migration `role_guard_privileged_member` applied, verification passed).
 
 **Security decisions for M2 (from TM-0002…0006, 3 Oct 2026)** — needed before the related M2 stories start; Claude will bring them one at a time:
 1. ~~Always require an authenticator code for high-risk actions (role changes, exports), even when an organization turns MFA off?~~ **Answered 6 Oct 2026: yes** (TM-0003 D-IAM-01)
@@ -184,6 +184,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
+| 6 Oct 2026 | Staging DB deploy with the PO (plan → apply): `role_guard_privileged_member` applied, verification passed. Edit roles is live on staging. Next: T-M2-05 roles & permissions page |
 | 6 Oct 2026 | PR #36 merged (T-M2-14 change a member's roles). Next: staging DB deploy (1 migration, `role_guard_privileged_member`) with the PO; then T-M2-05 roles page |
 | 6 Oct 2026 | T-M2-14 review: approve with fixes (1 Medium, 5 Low) → fixed; re-review found a High regression (version token) caught also by the self-hosted E2E → fixed; third round **approve**. Fixed a timing-dependent My profile E2E step (stored language Arabic). Next: PR after PO "yes" |
 | 6 Oct 2026 | T-M2-14 built: change a member's roles (primary + additional with days; privileged roles locked until MFA per D-IAM-01; HR blocked on privileged members in the DB guard); unit, integration, pgTAP and E2E tests. Next: review, PR (after PO "yes"), staging DB deploy |

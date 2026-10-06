@@ -19,6 +19,8 @@ declare
   r record;
 begin
   perform tests.assert(not private.actor_manages_users('a0000000-0000-4000-8000-000000000001'), 'uAB no longer manages users');
+  perform tests.assert(not private.actor_may_manage_person('a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a2'),
+    'member: may manage nobody');
 
   -- My profile: own names, mobile and language.
   perform tests.assert_eq(tests.rows_affected($q$update platform.persons set first_name_ar = 'سارة', family_name_ar = 'القحطاني',
@@ -67,6 +69,8 @@ select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1'
   'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1'));
 do $$
 begin
+  perform tests.assert(private.actor_may_manage_person('a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000ab'),
+    'admin: may manage every member');
   perform tests.assert_eq(tests.rows_affected($q$update platform.persons set employee_number = 'E-200', email = 'ab.new@example.test' where id = 'a1000000-0000-4000-8000-0000000000ab'$q$),
     1::bigint, 'admin: changes HR data of a person');
   perform tests.assert_eq(tests.rows_affected($q$update platform.person_employment set job_title_ar = 'مديرة' where person_id = 'a1000000-0000-4000-8000-0000000000ab'$q$),
@@ -85,6 +89,12 @@ select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000ab'
 do $$
 begin
   perform tests.assert(private.actor_manages_users('a0000000-0000-4000-8000-000000000001'), 'uAB manages users (HR Manager)');
+  perform tests.assert(private.actor_may_manage_person('a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a2'),
+    'HR Manager: may manage an ordinary member');
+  perform tests.assert(not private.actor_may_manage_person('a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1'),
+    'HR Manager: may not manage the Organization Admin');
+  perform tests.assert(not private.actor_may_manage_person('a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000ab'),
+    'HR Manager: may not manage their own (privileged) record');
   perform tests.assert_eq(tests.rows_affected($q$update platform.persons set mobile_e164 = '+971501234567', employee_number = 'E-2' where id = 'a1000000-0000-4000-8000-0000000000a2'$q$),
     1::bigint, 'HR Manager: changes an ordinary member');
   perform tests.assert_eq(tests.rows_affected($q$insert into platform.person_employment (person_id, job_title_ar) values ('a1000000-0000-4000-8000-0000000000a2', 'متدرب')$q$),

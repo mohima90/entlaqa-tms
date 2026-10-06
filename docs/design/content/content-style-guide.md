@@ -132,7 +132,7 @@ Don'ts: «حدث خطأ ما»، «خطأ 500»، «بيانات غير صالح
 ## 7. Notifications and WhatsApp
 
 ### 7.1 Rules
-- **Recipient locale** decides the language (NFR-L10N-11). One language per message; no bilingual stacking except in e-mail footers for legal text.
+- **Recipient locale** decides the language (NFR-L10N-11). One language per message; no bilingual stacking except in e-mail footers for legal text. **Exception:** e-mails to people whose language is not known yet — the invitation (approved screen 7) — carry the chosen language first and the other below.
 - Lead with the **action or the fact**; the name of the organization appears in the sender, not repeated in the first line.
 - Include the **who / what / when / where** needed to act without opening the app.
 - Dates: weekday + primary calendar; times with ص / م; session codes in LTR.

@@ -9,6 +9,17 @@ import 'server-only';
 import { sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { type ClaimsTx, runWithClaims } from '../claims-tx';
+
+export {
+  type ClaimedEmail,
+  type DeliveryOutcome,
+  type QueuedEmail,
+  CLAIM_LEASE_SECONDS,
+  claimEmailDelivery,
+  discardInactiveTenantDelivery,
+  finishEmailDelivery,
+  insertEmailDelivery,
+} from './deliveries';
 import { type AppDatabase, getDatabase } from '../client';
 
 export type SystemTx = ClaimsTx;

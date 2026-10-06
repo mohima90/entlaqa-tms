@@ -2,7 +2,8 @@
 # Self-hosted (sovereign) smoke test, T-M1-D04/D06: brings up the whole stack from this directory, deploys
 # the migrations with the production deploy script, creates a user and an organization, signs in through a
 # real browser against the app container, checks the audit trail and TLS, runs two background-job workers
-# and checks they dispatch an event, sends a browser and a server error to the in-country error tracker
+# and checks they dispatch an event, sends a test e-mail over SMTP with STARTTLS to the stand-in relay
+# (Mailpit), sends a browser and a server error to the in-country error tracker
 # (GlitchTip) and checks they arrive without personal data, then tears everything down.
 #
 #   bash infra/docker/smoke.sh            # KEEP=1 leaves the stack running; SKIP_BUILD=1 reuses the build
@@ -124,6 +125,15 @@ for i in $(seq 1 30); do
 done
 [[ "$(q "select count(*) from pg_stat_ssl s join pg_stat_activity a using (pid) where a.usename in ('app_queue', 'app_worker') and s.ssl")" -ge "2" ]] ||
   { echo "smoke: the workers must connect over TLS" >&2; exit 1; }
+
+echo "smoke: e-mail (T-M2-06b) — a test e-mail over SMTP with verified STARTTLS reaches the relay (Mailpit)"
+compose run --rm -e EMAIL_TEST_TO=smoke-mail@sovereign.example worker main.mjs test-email >/dev/null
+for i in $(seq 1 20); do
+  mail="$(compose exec -T mailpit wget -qO- http://127.0.0.1:8025/api/v1/messages 2>/dev/null || true)"
+  grep -q 'smoke-mail@sovereign.example' <<<"$mail" && grep -qF '[TEST]' <<<"$mail" && break
+  [[ $i -eq 20 ]] && { echo "smoke: the test e-mail did not reach Mailpit" >&2; exit 1; }
+  sleep 1
+done
 
 echo "smoke: users pages (T-M2-04) with sample people, in Arabic and English"
 MANAGER_EMAIL="manager-$(date +%s)@sovereign.example"

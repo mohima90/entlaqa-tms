@@ -33,6 +33,16 @@ begin
   perform tests.assert_rls_violation($q$insert into platform.event_inbox (subscriber, event_id) values ('test.subscriber', gen_random_uuid())$q$,
     'user: cannot write the inbox');
   perform tests.assert_eq(tests.count_rows('platform.event_inbox'), 0::bigint, 'user: reads no inbox rows');
+  -- Message deliveries belong to jobs too (T-M2-06b).
+  perform tests.assert_rls_violation($q$insert into platform.message_deliveries (template, template_version, locale, destination, destination_masked, subject, html_body, text_body)
+      values ('platform.invitation', 1, 'ar', 'a@x.example', 'a***@x.example', 's', 'h', 't')$q$,
+    'user: cannot queue a message');
+  -- Not even the own tenant's (fixture a8…: its body holds an invitation link).
+  perform tests.assert_eq(tests.count_rows('platform.message_deliveries'), 0::bigint, 'user: reads no deliveries');
+  perform tests.assert_eq(tests.rows_affected($q$update platform.message_deliveries set error_code = 'USER_CHANGED'$q$),
+    0::bigint, 'user: changes no deliveries, not even the own tenant''s');
+  perform tests.assert(not private.discard_inactive_tenant_delivery('c8000000-0000-4000-8000-000000000001'),
+    'user: cannot discard deliveries');
 end $$;
 reset role;
 rollback;

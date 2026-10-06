@@ -14,7 +14,11 @@ import { createWithSystemTx } from '@jadarat/platform-db/jobs';
 import { sql } from 'drizzle-orm';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { type DeliveredEvent, type Subscriber, createSubscriberRegistry } from './registry';
+import {
+  type DeliveredEvent,
+  type TransactionalSubscriber,
+  createSubscriberRegistry,
+} from './registry';
 import { EVENTS_CHANNEL, type WorkerConfig, runDaemon, runPass } from './runner';
 import { DELIVER_TASK } from './tasks';
 
@@ -54,7 +58,7 @@ describe.skipIf(!configured)('job runner against PostgreSQL', () => {
   const seen: { subscriber: string; event: DeliveredEvent; visibleTenants: string[] }[] = [];
   let failNext = true;
   const record =
-    (name: string): Subscriber['handle'] =>
+    (name: string): TransactionalSubscriber['handle'] =>
     async ({ tx, event }) => {
       const rows = await tx.execute<{ tenant_id: string }>(
         sql`select distinct tenant_id from platform.persons`,

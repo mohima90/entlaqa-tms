@@ -2,7 +2,13 @@ import type { SystemTx, WithSystemTx } from '@jadarat/platform-db/jobs';
 import type { JobHelpers } from 'graphile-worker';
 import { describe, expect, it, vi } from 'vitest';
 import { JobError } from './errors';
-import { type DeliveredEvent, type Subscriber, createSubscriberRegistry } from './registry';
+import {
+  type DeliveredEvent,
+  type EffectSubscriber,
+  type Subscriber,
+  type TransactionalSubscriber,
+  createSubscriberRegistry,
+} from './registry';
 import {
   DELIVER_TASK,
   DISPATCH_BATCH,
@@ -39,13 +45,13 @@ function fakeHelpers(outbox: { id: string; type: string }[], options: { failOn?:
     withPgClient: <T>(fn: (c: typeof client) => Promise<T>) => fn(client),
     addJob: vi.fn(() => Promise.resolve({})),
     query: vi.fn(),
-    job: { id: '42' },
+    job: { id: '42', attempts: 2, max_attempts: 8 },
     logger: { warn, info: vi.fn(), error: vi.fn(), debug: vi.fn() },
   };
   return { helpers: helpers as unknown as JobHelpers & typeof helpers, queries, warn };
 }
 
-const handlerMock = () => vi.fn<Subscriber['handle']>(() => Promise.resolve());
+const handlerMock = () => vi.fn<TransactionalSubscriber['handle']>(() => Promise.resolve());
 const handler = (name: string, types = [CREATED], handle = handlerMock()) =>
   ({ name, types, handle }) satisfies Subscriber;
 const verb = (q: Query) => q.text.trim().split(/\s+/)[0];
@@ -222,7 +228,7 @@ describe('deliverTask', () => {
   });
 
   it('fails with a cleaned error: class and code, never the message', async () => {
-    const handle = vi.fn<Subscriber['handle']>(() =>
+    const handle = vi.fn<TransactionalSubscriber['handle']>(() =>
       Promise.reject(Object.assign(new TypeError('no e-mail for سارة أحمد'), { code: 'P0001' })),
     );
     const failure = await run([handler('notifications.email', [CREATED], handle)], payload, [
@@ -234,6 +240,51 @@ describe('deliverTask', () => {
     // A malformed payload too.
     const malformed = await run([], { eventId: 'x', subscriber: 'a' }, []).catch((e: unknown) => e);
     expect((malformed as Error).message).toBe('delivery failed: ZodError');
+  });
+
+  it('effect subscribers run outside the inbox, with the tenant bound and the attempt numbers', async () => {
+    const perform = vi.fn<EffectSubscriber['perform']>(() => Promise.resolve());
+    const effect: EffectSubscriber = {
+      kind: 'effect',
+      name: 'notifications.email',
+      types: [CREATED],
+      perform,
+    };
+    const systemTx = fakeSystemTx({ firstDelivery: true });
+    const { statements, actors } = await run([effect], payload, [row], systemTx);
+    expect(statements).toEqual(['served']);
+    expect(perform).toHaveBeenCalledTimes(1);
+    const context = perform.mock.calls[0]?.[0];
+    expect(context).toMatchObject({ attempt: 2, maxAttempts: 8, event: { id: EVENT_ID } });
+    // inTenant opens a transaction of the event's tenant.
+    await context?.inTenant(() => Promise.resolve());
+    expect(actors).toEqual([
+      { tenantId: TENANT_ID, jobId: `${DELIVER_TASK}:42` },
+      { tenantId: TENANT_ID, jobId: `${DELIVER_TASK}:42` },
+    ]);
+
+    const skipped = vi.fn<EffectSubscriber['perform']>(() => Promise.resolve());
+    const { warn } = await run(
+      [{ ...effect, perform: skipped }],
+      payload,
+      [row],
+      fakeSystemTx({ firstDelivery: true, served: false }),
+    );
+    expect(skipped).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith('organization not active; delivery skipped');
+
+    // A suspended organization: the subscriber may release what its record holds instead.
+    const discard = vi.fn<NonNullable<EffectSubscriber['discard']>>(() => Promise.resolve());
+    await run(
+      [{ ...effect, perform: skipped, discard }],
+      payload,
+      [row],
+      fakeSystemTx({ firstDelivery: true, served: false }),
+    );
+    expect(skipped).not.toHaveBeenCalled();
+    expect(discard).toHaveBeenCalledWith(
+      expect.objectContaining({ event: expect.objectContaining({ id: EVENT_ID }) }),
+    );
   });
 
   it('the task list holds both tasks', () => {

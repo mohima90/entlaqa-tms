@@ -10,6 +10,8 @@ The whole product running on servers we (or the customer) control, with no Verce
 | `auth` | `supabase/gotrue:v2.197.0` | Supabase Auth: password sign-in, ES256 keys, TOTP MFA, Custom Access Token hook |
 | `gateway` | `nginxinc/nginx-unprivileged:stable-alpine-slim` | TLS in front of Auth, Supabase URL layout (`/auth/v1/…`) |
 | `app` | `jadarat/suite:local` (`app.Dockerfile`, distroless Node 24, non-root) | The web app (standalone build) |
+| `worker` ×2 | `jadarat/worker:local` (`worker.Dockerfile`, distroless Node 24, non-root) | Background jobs and domain events (ADR 0004/0005; runbook `docs/engineering/background-jobs.md`), e-mail sending over SMTP (ADR 0008; `docs/engineering/email.md`) |
+| `mailpit` | `axllent/mailpit:v1.29.7` (MIT) | **Stand-in for the installation's mail relay**: keeps every message for inspection and sends nothing on; STARTTLS required. A real installation points `SMTP_URL` at its own relay and drops this service |
 | `glitchtip` | `glitchtip/glitchtip:6.2.6` (MIT) | In-country error tracker, Sentry-compatible (ADR 0009 §4). All-in-one mode (web + worker, no Valkey); no route out of the installation; UI over TLS through the gateway at `https://localhost:8100`; events kept 90 days |
 | `errors-db` | `postgres:17.11` | GlitchTip's own database: error data never shares the TMS database |
 
@@ -17,9 +19,11 @@ The whole product running on servers we (or the customer) control, with no Verce
 - **gateway → Auth.** Supabase Auth has no TLS listener. The hop runs on an internal network that only those two containers join, and Auth has no route anywhere except the database and the gateway.
 - **app / gateway → GlitchTip.** Error reports, already scrubbed, go over the internal `errors` network. GlitchTip reaches its own database only over another internal network, and has **no route out of the installation**: no uptime calls, webhooks or social sign-in can send data abroad. The gateway serves its UI over TLS.
 
+- **worker → mail relay.** SMTP with STARTTLS required and verified: here against a separate mail CA that may vouch for `mailpit` only (`gen-secrets.sh`, `SMTP_CA_CERT_FILE`); for a real relay, its own CA. Mailpit sits on an internal network with the workers alone.
+
 The app reaches Auth only through the gateway. Host ports are bound to `127.0.0.1` only.
 
-**Hardening.** No container can gain privileges (`no-new-privileges`). App, gateway, Auth and GlitchTip drop all Linux capabilities and run with a read-only filesystem. GlitchTip's database keeps only the capabilities PostgreSQL's start-up needs. Every container restarts automatically and has a health check. GlitchTip runs without its Django admin, API browser or uptime monitoring, and with its own PII scrubber on as a second line of defence. The database receives the Auth password only as a SCRAM verifier, so it never appears in its logs; each container mounts only the certificate files it needs.
+**Hardening.** No container can gain privileges (`no-new-privileges`). App, workers, Mailpit, gateway, Auth and GlitchTip drop all Linux capabilities and run with a read-only filesystem. GlitchTip's database keeps only the capabilities PostgreSQL's start-up needs. Every container restarts automatically; every container except the workers has a health check (a stuck worker shows as events waiting in the outbox — runbook §5; alerts are a follow-up). GlitchTip runs without its Django admin, API browser or uptime monitoring, and with its own PII scrubber on as a second line of defence. The database receives the Auth password only as a SCRAM verifier, so it never appears in its logs; each container mounts only the certificate files it needs.
 
 ## One command
 

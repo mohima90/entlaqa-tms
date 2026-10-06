@@ -3,7 +3,7 @@ import type { WithSystemTx } from '@jadarat/platform-db/jobs';
 import type { JobHelpers, Task, TaskList } from 'graphile-worker';
 import { z } from 'zod';
 import { toJobError } from './errors';
-import type { DeliveredEvent, SubscriberRegistry } from './registry';
+import type { DeliveredEvent, InTenant, SubscriberRegistry } from './registry';
 
 /** Task names (graphile-worker identifiers). */
 export const DISPATCH_TASK = 'platform.events.dispatch';
@@ -140,17 +140,30 @@ async function deliver(
     correlationId: row.correlation_id,
     createdAt: row.created_at,
   };
-  const served = await withSystemTx(
-    { tenantId: event.tenantId, jobId: `${DELIVER_TASK}:${helpers.job.id}` },
-    async (tx) => {
-      // Suspended or closed organizations get no deliveries (ADR 0005 §4); they are not replayed later.
-      if (!(await tenantIsServed(tx))) return false;
-      if (await markEventProcessed(tx, subscriber.name, event.id)) {
-        await subscriber.handle({ tx, event });
-      }
-      return true;
-    },
-  );
+  const inTenant: InTenant = (fn) =>
+    withSystemTx({ tenantId: event.tenantId, jobId: `${DELIVER_TASK}:${helpers.job.id}` }, fn);
+  if (subscriber.kind === 'effect') {
+    if (!(await inTenant(tenantIsServed))) {
+      await subscriber.discard?.({ event, inTenant });
+      helpers.logger.warn('organization not active; delivery skipped');
+      return;
+    }
+    await subscriber.perform({
+      event,
+      inTenant,
+      attempt: helpers.job.attempts,
+      maxAttempts: helpers.job.max_attempts,
+    });
+    return;
+  }
+  const served = await inTenant(async (tx) => {
+    // Suspended or closed organizations get no deliveries (ADR 0005 §4); they are not replayed later.
+    if (!(await tenantIsServed(tx))) return false;
+    if (await markEventProcessed(tx, subscriber.name, event.id)) {
+      await subscriber.handle({ tx, event });
+    }
+    return true;
+  });
   if (!served) helpers.logger.warn('organization not active; delivery skipped');
 }
 

@@ -1,7 +1,7 @@
 import type { Logger } from '@jadarat/platform-observability';
 import { describe, expect, it, vi } from 'vitest';
 import { workerLog } from './log';
-import { SUBSCRIBERS } from './subscribers';
+import { subscribers } from './subscribers';
 
 describe('workerLog', () => {
   it('maps graphile-worker levels to the platform logger and drops debug lines', () => {
@@ -17,9 +17,16 @@ describe('workerLog', () => {
   });
 });
 
-describe('SUBSCRIBERS', () => {
-  it('form a valid registry', async () => {
+describe('subscribers', () => {
+  it('form a valid registry, with the e-mail sender', async () => {
     const { createSubscriberRegistry } = await import('@jadarat/platform-jobs/jobs');
-    expect(() => createSubscriberRegistry(SUBSCRIBERS)).not.toThrow();
+    const registry = createSubscriberRegistry(
+      subscribers({
+        emailTransport: null,
+        emailFrom: { name: 'Jadarat', address: 'noreply@example.com' },
+        log: () => undefined,
+      }),
+    );
+    expect(registry.names).toEqual(['notifications.email']);
   });
 });

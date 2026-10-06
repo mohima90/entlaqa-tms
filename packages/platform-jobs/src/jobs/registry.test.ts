@@ -34,5 +34,8 @@ describe('createSubscriberRegistry', () => {
     expect(() => createSubscriberRegistry([subscriber('a', ['platform.x.y'])])).toThrow(
       /invalid event type/,
     );
+    expect(() =>
+      createSubscriberRegistry([{ ...subscriber('a', type), kind: 'other' } as never]),
+    ).toThrow(/unknown kind/);
   });
 });

@@ -7,7 +7,7 @@
 | **Product** | Jadarat TMS — Training Management System (module of the Jadarat HR Suite; also sold standalone) |
 | **Company** | ENTLAQA |
 | **Document type** | Business Requirements Document |
-| **Version** | 2.2 — Draft for stakeholder review |
+| **Version** | 2.3 — Draft for stakeholder review |
 | **Date** | 30 September 2026 |
 | **Supersedes** | *Jadarat TMS BRD v1.0* (15 March 2026) |
 | **Companion documents** | `docs/delivery/Jadarat_TMS_Development_Plan.md` (development plan & delivery guide) · `docs/brd/TMS_Feature_List.md` (feature list, 290 features) · `docs/research/TMS_Market_Comparison_vs_BRD.md` (market & regulatory research) |
@@ -21,6 +21,7 @@
 |---|---|---|---|
 | 1.0 | 15 Mar 2026 | ENTLAQA Product Team | Initial Jadarat TMS BRD (offline training, Jadarat-specific) |
 | 2.0 | 27 Sep 2026 | ENTLAQA Product Team | Full rewrite: comprehensive TMS scope, training planning cycle, vendor & finance depth, assessment engine, generic LMS integration framework, corrected regulatory content, sovereign deployment, requirement IDs with priority & release |
+| 2.3 | 6 Oct 2026 | Product Owner (via Claude) | FR-ADM-17 extended (PO, 6 Oct 2026): the Platform Super Admin manages platform settings in the platform console, starting with the e-mail provider (API key write-only and encrypted, sender, test message; MFA, audited), before production. Feature list ADM-17 (R1) |
 | 2.2 | 5 Oct 2026 | Product Owner (via Claude) | FR-IAM-16 added (PO, 5 Oct 2026): self-service My profile — users change their own personal details (names, mobile, language, photo) and password; e-mail locked; job data stays with HR. Feature list IAM-16 (R1) |
 | 2.1 | 30 Sep 2026 | ENTLAQA Product Team | Decisions D1, D2, D6, D7 recorded: product named Jadarat TMS; positioned as first module of the planned Jadarat HR Suite and sold standalone; shared Jadarat Platform (§3.4, §6.27, Appendix H.5); Commerce for training providers removed from scope; government/banks confirmed as Year-1 segments; self-hostable Next.js + Supabase stack |
 
@@ -397,7 +398,7 @@ Columns: **Pri** = MoSCoW priority · **Rel** = target release.
 | FR-ADM-14 | The admin home shall show: users by status, usage vs. plan limits, integration health, AI spend vs. cap, domain/SSL status, pending invitations and approvals, and the last 10 audit events, with quick actions. | M | R1 |
 | FR-ADM-15 | Enterprise tenants shall be able to create a sandbox tenant cloned from production configuration (without personal data) for testing. | S | R3 |
 | FR-ADM-16 | Tenant Admin shall export and import configuration packages (roles, workflows, templates, custom fields, notification templates) between tenants. | C | R3 |
-| FR-ADM-17 | ENTLAQA staff shall have a platform console to manage tenants (plan, limits, status, feature flags), view health, send announcements, and impersonate a tenant user only with a reason, time limit, tenant-visible banner and audit entry. | M | R1 |
+| FR-ADM-17 | ENTLAQA staff shall have a platform console to manage tenants (plan, limits, status, feature flags), view health, send announcements, and impersonate a tenant user only with a reason, time limit, tenant-visible banner and audit entry. The Platform Super Admin shall also manage platform settings, starting with the e-mail provider: API key (entered write-only, stored encrypted, never shown again), sender name and address, and a test message to a chosen address — with MFA and an audit entry for every change. | M | R1 |
 
 **Business rules**
 - BR-ADM-1: Tenant data is isolated; no tenant can read another tenant's data through UI, API, export or AI.

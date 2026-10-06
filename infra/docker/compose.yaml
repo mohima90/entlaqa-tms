@@ -4,8 +4,9 @@
 # background-job worker, and the in-country error tracker (GlitchTip, Sentry-compatible; ADR 0009 §4)
 # with its own database.
 # TLS verified against the installation's CA on every hop that leaves a private network: app/worker → db,
-# Auth → db (PostgreSQL requires TLS for all network clients, db/pg_hba.conf) and app → gateway; the
-# GlitchTip UI is served through the gateway's TLS too. Plain-HTTP hops run only on internal networks:
+# worker → mail relay (STARTTLS), Auth → db (PostgreSQL requires TLS for all network clients,
+# db/pg_hba.conf) and app → gateway; the GlitchTip UI is served through the gateway's TLS too.
+# Plain-HTTP hops run only on internal networks:
 # gateway → Auth and app/gateway → GlitchTip (neither service has a TLS listener). Auth and GlitchTip
 # have no outbound route. Containers drop privileges; app, worker, gateway, Auth and GlitchTip are
 # read-only.
@@ -28,6 +29,7 @@ networks:
   edge: {} # app ⇄ gateway (+ published ports)
   errors: { internal: true } # app, gateway ⇄ GlitchTip (plain HTTP; no route out of the installation)
   errors-internal: { internal: true } # GlitchTip ⇄ its own database (error data never in the TMS db)
+  mail: { internal: true } # worker ⇄ Mailpit (SMTP with STARTTLS)
 
 services:
   db:
@@ -170,20 +172,57 @@ services:
     <<: *hardening
     read_only: true
     cap_drop: [ALL]
-    networks: [db-app]
+    networks: [db-app, mail]
     deploy: { replicas: 2 }
     # SIGTERM lets running jobs finish; give them time before Docker kills the process (a killed job is
     # retried, but only after graphile-worker's 4-hour lock expiry).
     stop_grace_period: 60s
     depends_on:
       db: { condition: service_healthy }
+      mailpit: { condition: service_healthy }
     volumes:
       - ./.secrets/ca.crt:/run/secrets/ca.crt:ro
+      - ./.secrets/mail-ca.crt:/run/secrets/mail-ca.crt:ro
     environment:
       DATABASE_URL_APP_QUEUE: postgres://app_queue:${APP_QUEUE_DB_PASSWORD:?run with --env-file .secrets/.env}@db:5432/postgres
       DATABASE_URL_APP_WORKER: postgres://app_worker:${APP_WORKER_DB_PASSWORD:?run with --env-file .secrets/.env}@db:5432/postgres
       DATABASE_CA_CERT_FILE: /run/secrets/ca.crt
       JADARAT_ENVIRONMENT: self-hosted
+      # E-mail (ADR 0008 §2): SMTP with verified STARTTLS. Here Mailpit catches every message. A real
+      # installation sets SMTP_URL (smtp://user:password@relay:587) and SMTP_CA_CERT_FILE for its relay
+      # (set it empty for a publicly trusted certificate), removes the mailpit service, its depends_on
+      # entry and the mail-ca.crt mount, and gives the worker a network that reaches the relay
+      # (`mail` is internal). docs/engineering/email.md §2.
+      EMAIL_PROVIDER: smtp
+      SMTP_URL: ${SMTP_URL:-smtp://mailpit:1025}
+      SMTP_CA_CERT_FILE: ${SMTP_CA_CERT_FILE-/run/secrets/mail-ca.crt}
+      EMAIL_FROM_ADDRESS: ${EMAIL_FROM_ADDRESS:-noreply@jadarat.example}
+      EMAIL_FROM_NAME: ${EMAIL_FROM_NAME:-Jadarat}
+
+  # Stand-in for the installation's mail relay (T-M2-06b): Mailpit keeps every message for inspection and
+  # sends nothing on (internal network, no relay configured). STARTTLS is required, with a certificate
+  # from the stack's mail CA (gen-secrets.sh). Remove it when SMTP_URL points at a real relay.
+  mailpit:
+    image: axllent/mailpit:v1.29.7@sha256:757f22b56c1da03570afdb3d259effe5091018008a81bbedc8158cee7e16fdbc
+    <<: *hardening
+    read_only: true
+    cap_drop: [ALL]
+    tmpfs: [/tmp]
+    networks: [mail]
+    volumes:
+      - ./.secrets/mailpit.crt:/certs/mailpit.crt:ro
+      - ./.secrets/mailpit.key:/certs/mailpit.key:ro
+    environment:
+      MP_SMTP_TLS_CERT: /certs/mailpit.crt
+      MP_SMTP_TLS_KEY: /certs/mailpit.key
+      MP_SMTP_REQUIRE_STARTTLS: 'true'
+      MP_DISABLE_VERSION_CHECK: 'true'
+      MP_MAX_MESSAGES: '500'
+    healthcheck:
+      test: ['CMD', '/mailpit', 'readyz']
+      interval: 5s
+      timeout: 3s
+      retries: 30
 
   # In-country error tracking (ADR 0009 §4, T-M1-D06): GlitchTip in all-in-one mode (web + worker, no
   # Valkey) with its own PostgreSQL. Errors arrive already scrubbed by the app; retention 90 days.

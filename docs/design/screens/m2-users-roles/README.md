@@ -24,3 +24,17 @@ Each `.dc.html` file is one screen in the design-canvas format (HTML with `{{ }}
 - A signed-in device is a **«جلسة الدخول»**, never «جلسة» alone (that word is a training session) — glossary #145.
 - Invitation, deactivate/reactivate and primary/additional role terms: glossary #146–148.
 - Copy follows the style guide's gender-neutral rules (no imperatives addressed to the user outside placeholders).
+
+## Build differences in the invitation e-mail (screen 7, T-M2-06b)
+
+The built template (`packages/platform-notifications/src/templates/invitation.ts`) follows screen 7, with these differences:
+
+| Screen 7 | Built | Why |
+|---|---|---|
+| Sender «شركة الراية عبر جدارات» (style guide §7.1) | «ENTLAQA LMS» <noreply@lms.entlaqa.com> on staging | PO decision, 6 Oct 2026 (sending domain). The organization in the sender name comes with the platform e-mail settings (FR-ADM-17, BRD v2.3) |
+| «أضافك **محمد العتيبي** إلى نظام التدريب…» | «لديك دعوة من **محمد العتيبي** للانضمام إلى نظام التدريب…» | «أضافك» needs the inviter's gender (أضافتك) and says the person was already added; glossary #146 prefers «دعوة» (nobody is added before accepting) |
+| "… added you … as a **Training Coordinator**" | "… invited you … with the role **Training Coordinator**" | Same reason; "with the role" also avoids a/an before role names |
+| Footer signature in Arabic only («جدارات · منصة ENTLAQA») | Same signature in the chosen language; English "Jadarat · an ENTLAQA platform" | New English copy (no English footer on the screen) |
+| English block: link and expiry on one line | English block has the same lines as the Arabic one (expiry, sign-in e-mail, ignore notice) | When English is the chosen language its block comes first with the button, so both blocks carry the full text |
+
+The two wording changes are listed for the PO in the T-M2-06b pull request; changing them later means a new template version.

@@ -1,6 +1,6 @@
 # Jadarat TMS — Full Feature List
 
-**Date:** 5 Oct 2026 (v2.2) · **Status:** Decisions D1, D2, D6, D7 applied; IAM-16 added (PO, 5 Oct 2026) · **BRD:** `docs/brd/Jadarat_TMS_BRD_v2.md` · **Basis:** Market research in `docs/research/TMS_Market_Comparison_vs_BRD.md` + Jadarat TMS BRD v1.0
+**Date:** 6 Oct 2026 (v2.3) · **Status:** Decisions D1, D2, D6, D7 applied; IAM-16 added (PO, 5 Oct 2026); ADM-17 extended with platform settings (PO, 6 Oct 2026) · **BRD:** `docs/brd/Jadarat_TMS_BRD_v2.md` · **Basis:** Market research in `docs/research/TMS_Market_Comparison_vs_BRD.md` + Jadarat TMS BRD v1.0
 
 **Legend**
 
@@ -32,7 +32,7 @@
 | ADM-14 | Admin overview dashboard (usage vs. limits, integration health, AI spend, pending items) | Core | R1 | ✅ |
 | ADM-15 | Sandbox / test tenant cloned from production configuration | Plus | R3 | ❌ |
 | ADM-16 | Configuration export/import between tenants (templates, workflows, roles) | Plus | R3 | ❌ |
-| ADM-17 | ENTLAQA platform super-admin console (tenants, plans, impersonation with audit, announcements) | Core | R1 | ⚠️ |
+| ADM-17 | ENTLAQA platform super-admin console (tenants, plans, impersonation with audit, announcements, platform settings such as the e-mail provider key, sender and test message) | Core | R1 | ⚠️ |
 
 ## 2. Identity, Users & Access (IAM)
 

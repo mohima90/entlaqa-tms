@@ -1,0 +1,36 @@
+{
+  "name": "@jadarat/platform-notifications",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Notification service (ADR 0008): bilingual e-mail templates, delivery queueing and the e-mail sender (Resend / SMTP adapters). Jobs-only parts under ./jobs.",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts",
+    "./jobs": "./src/jobs/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:integration": "vitest run --config vitest.integration.config.ts"
+  },
+  "dependencies": {
+    "@jadarat/platform-db": "workspace:*",
+    "@jadarat/platform-i18n": "workspace:*",
+    "@jadarat/platform-jobs": "workspace:*",
+    "nodemailer": "10.0.15",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@jadarat/config": "workspace:*",
+    "@jadarat/platform-core": "workspace:*",
+    "@types/node": "24.19.0",
+    "@types/smtp-server": "3.5.13",
+    "@vitest/coverage-v8": "5.0.3",
+    "drizzle-orm": "0.45.3",
+    "smtp-server": "3.19.17",
+    "typescript": "6.0.3",
+    "vitest": "5.0.3"
+  }
+}

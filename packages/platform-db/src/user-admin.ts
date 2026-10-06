@@ -86,19 +86,27 @@ export interface ManagerOption {
   readonly personId: string;
   readonly nameAr: string;
   readonly nameEn: string | null;
+  /** False only for the present manager who is no longer active (shown so it is not lost). */
+  readonly active: boolean;
   /** Their own department and the departments they head (the picker filters by these). */
   readonly departmentIds: readonly string[];
 }
 
 /**
  * Active members with a managing role in force (Department Head, Line Manager) and the heads of
- * departments, with the departments they belong to or head.
+ * departments, with the departments they belong to or head. `current` (the person's present
+ * manager) is always included, even without a managing role or when no longer active, so an edit
+ * never drops it silently.
  */
-export async function listManagerOptions(tx: UserTx): Promise<readonly ManagerOption[]> {
+export async function listManagerOptions(
+  tx: UserTx,
+  current: string | null = null,
+): Promise<readonly ManagerOption[]> {
   const rows = await tx.execute<{
     person_id: string;
     name_ar: string;
     name_en: string | null;
+    active: boolean;
     department_ids: string[] | null;
   }>(sql`
     with managers as (
@@ -110,20 +118,25 @@ export async function listManagerOptions(tx: UserTx): Promise<readonly ManagerOp
       union
       select d.head_person_id from platform.departments d
       where d.head_person_id is not null and d.deleted_at is null
+      union
+      select ${current}::uuid where ${current}::uuid is not null
     )
     select p.id as person_id, p.display_name_ar as name_ar, p.display_name_en as name_en,
+           p.status = 'active' as active,
            array_remove(array_cat(
              array[e.department_id],
              array(select d.id from platform.departments d
                    where d.head_person_id = p.id and d.deleted_at is null)), null) as department_ids
     from managers x
-    join platform.persons p on p.id = x.person_id and p.status = 'active'
+    join platform.persons p on p.id = x.person_id
+      and (p.status = 'active' or p.id = ${current}::uuid)
     left join platform.person_employment e on e.tenant_id = p.tenant_id and e.person_id = p.id
     order by p.display_name_ar, p.id`);
   return rows.map((r) => ({
     personId: r.person_id,
     nameAr: r.name_ar,
     nameEn: r.name_en,
+    active: r.active,
     departmentIds: r.department_ids ?? [],
   }));
 }

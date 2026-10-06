@@ -190,6 +190,11 @@ describe.skipIf(!configured)('editing a user against PostgreSQL', () => {
     expect(byPerson[lead.person]).toEqual([dept.finance]); // line manager placed in finance
     expect(byPerson[admin.person]).toEqual([dept.training]); // heads training
     expect(byPerson[sara.person]).toBeUndefined(); // learner, heads nothing
+    // The present manager is always offered, even without a managing role.
+    const withCurrent = await withUserTx(claimsOf(admin), (tx) =>
+      listManagerOptions(tx, sara.person),
+    );
+    expect(withCurrent.find((m) => m.personId === sara.person)?.active).toBe(true);
   });
 
   it('saves details and placement and reports the changed fields; the login e-mail stays', async () => {

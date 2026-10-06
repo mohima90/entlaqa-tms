@@ -2,7 +2,7 @@ import { toClientError } from '@jadarat/platform-core';
 import type { UserProfile } from '@jadarat/platform-db';
 import { type AppLocale, formatHijriDate } from '@jadarat/platform-i18n';
 import { routing } from '@jadarat/platform-i18n/routing';
-import { Alert, Badge, type BadgeTone, Card } from '@jadarat/ui';
+import { Alert, Badge, type BadgeTone, Card, buttonClasses } from '@jadarat/ui';
 import { hasLocale } from 'next-intl';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { notFound, redirect } from 'next/navigation';
@@ -25,12 +25,14 @@ const ACCOUNT_TONE: Record<AccountStatus, BadgeTone> = {
 const KNOWN_ACTIONS = new Set([
   'platform.tenant.admin_provisioned',
   'platform.tenant.admin_role_restored',
+  'platform.user.updated',
 ]);
 
 /**
  * User profile (T-M2-04, screen 3 — FR-IAM-01/07): authorized against the person (out of scope or
  * another organization → 404, no existence leak). Roles need role.read, the activity audit.read.
- * Sign-in sessions, MFA and lockout (FR-IAM-12/13) join with T-M2-10; edit actions with T-M2-07/09.
+ * "Edit details" (T-M2-13) when the member may change this record; sign-in sessions, MFA and lockout
+ * (FR-IAM-12/13) join with T-M2-10; account actions with T-M2-07/09.
  */
 export default async function UserProfilePage({
   params,
@@ -69,9 +71,16 @@ export default async function UserProfilePage({
         );
       }
     } else {
-      const { profile, canOpenManager } = result.value;
+      const { profile, canOpenManager, canEdit } = result.value;
       title = localizedName(locale, profile.displayNameAr, profile.displayNameEn);
-      content = <Profile locale={locale} profile={profile} canOpenManager={canOpenManager} />;
+      content = (
+        <Profile
+          locale={locale}
+          profile={profile}
+          canOpenManager={canOpenManager}
+          canEdit={canEdit}
+        />
+      );
     }
   }
 
@@ -90,10 +99,12 @@ async function Profile({
   locale,
   profile,
   canOpenManager,
+  canEdit,
 }: {
   locale: AppLocale;
   profile: UserProfile;
   canOpenManager: boolean;
+  canEdit: boolean;
 }) {
   const t = await getTranslations({ locale, namespace: 'userProfile' });
   const users = await getTranslations({ locale, namespace: 'users' });
@@ -187,6 +198,15 @@ async function Profile({
       <div className="flex flex-wrap items-center gap-3">
         {subtitle ? <p className="m-0 text-text-muted">{subtitle}</p> : null}
         <Badge tone={ACCOUNT_TONE[accountStatus]}>{t(`accountStatuses.${accountStatus}`)}</Badge>
+        {canEdit ? (
+          <a
+            href={`/${locale}/suite/admin/users/${profile.personId}/edit`}
+            className={buttonClasses({ variant: 'secondary', className: 'ms-auto' })}
+            data-testid="edit-user-link"
+          >
+            {t('editDetails')}
+          </a>
+        ) : null}
       </div>
 
       <Card title={t('basicData')}>

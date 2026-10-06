@@ -110,7 +110,7 @@ export function editUserQueryDefinition(): QueryDefinition<
       if (!user) return err(appError('NOT_FOUND'));
       // A privileged member's record: Organization Admin only (same rule as the database guard).
       if (!user.mayManage) return err(appError('FORBIDDEN'));
-      const managers = await listManagerOptions(ctx.tx);
+      const managers = await listManagerOptions(ctx.tx, user.managerPersonId);
       const orgUnits = await listOrgUnitOptions(ctx.tx);
       return ok({ user, managers: managers.filter((m) => m.personId !== user.personId), orgUnits });
     },

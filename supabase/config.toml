@@ -50,6 +50,25 @@ enable_signup = true
 # The invitation e-mail already proved the address: the sign-up returns a session at once (as on staging,
 # "Confirm email" off, and self-hosted GOTRUE_MAILER_AUTOCONFIRM).
 enable_confirmations = false
+# Password reset (FR-IAM-13, T-M2-08; docs/engineering/password-reset.md): the e-mailed link is valid for
+# 60 minutes and single use; one e-mail a minute per account. The link's token hash is
+# sha224(e-mail + one-time code): with Auth's default 6-digit code it could be guessed (about 20 bits once
+# the address is known), so the code has GoTrue's maximum length — 10 digits — although it is never shown.
+otp_expiry = 3600
+otp_length = 10
+max_frequency = "60s"
+
+# The reset e-mail links straight to our page with the token hash in the URL fragment; it never carries
+# the 6-digit code or Auth's own /verify link. Bilingual, Arabic first.
+[auth.email.template.recovery]
+subject = "إعادة تعيين كلمة المرور · Reset your password"
+content_path = "./supabase/templates/recovery.html"
+
+# Auth tells the account owner after every password change (reset or My profile).
+[auth.email.notification.password_changed]
+enabled = true
+subject = "تغيّرت كلمة المرور · Your password was changed"
+content_path = "./supabase/templates/password-changed.html"
 
 [auth.sms]
 enable_signup = false

@@ -39,15 +39,32 @@ export function createSupabaseServerClient(
 }
 
 /**
- * A Supabase client WITHOUT the user's cookies or any stored session, only to check a password (e.g.
- * the current password before a change, FR-IAM-16). The session it creates is signed out right away
- * by the caller; it never touches the user's own session. Null when Supabase is not configured.
+ * A Supabase client WITHOUT the user's cookies: its session lives in this object's memory only and
+ * never reaches the browser or the session cookies. Implicit flow, so no PKCE code verifier is created
+ * or sent. Used for one-off Auth calls that must not touch the user's own session:
+ *  - checking a password (the current password before a change, FR-IAM-16; that session is signed out
+ *    right away by the caller);
+ *  - password recovery (FR-IAM-13, T-M2-08): asking for the reset e-mail, and the short-lived recovery
+ *    session that sets the new password and is signed out again in the same action.
+ * Null when Supabase is not configured.
  */
-export function createSupabaseVerifierClient(
+export function createSupabaseStatelessClient(
   config: SupabasePublicConfig | null = getSupabasePublicConfig(),
 ): SupabaseClient | null {
   if (!config) return null;
   return createClient(config.url, config.publishableKey, {
-    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+      flowType: 'implicit',
+    },
   });
+}
+
+/** The cookie-less client used to check a password (see createSupabaseStatelessClient). */
+export function createSupabaseVerifierClient(
+  config: SupabasePublicConfig | null = getSupabasePublicConfig(),
+): SupabaseClient | null {
+  return createSupabaseStatelessClient(config);
 }

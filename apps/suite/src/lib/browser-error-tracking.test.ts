@@ -37,6 +37,25 @@ describe('browserErrorTrackingOptions', () => {
     expect(scrubbed).toMatchObject({ request: { url: 'https://app.example/en/invite/accept' } });
   });
 
+  it('drops the password-reset token of the URL fragment in the browser already (T-M2-08)', () => {
+    const tokenHash = `pkce_${'0a'.repeat(28)}`; // shape only
+    const url = `https://app.example/en/reset-password#token_hash=${tokenHash}&type=recovery`;
+    const scrubbed = browserErrorTrackingOptions().beforeSend?.(
+      {
+        type: undefined,
+        request: { url },
+        transaction: url,
+        contexts: { page: { url } },
+        exception: {
+          values: [{ type: 'Error', value: url, stacktrace: { frames: [{ filename: url }] } }],
+        },
+      },
+      {},
+    );
+    expect(JSON.stringify(scrubbed)).not.toContain(tokenHash);
+    expect(scrubbed).toMatchObject({ request: { url: 'https://app.example/en/reset-password' } });
+  });
+
   it('removes session, tracing and breadcrumb integrations', () => {
     const integrations = browserErrorTrackingOptions().integrations as (
       defaults: { name: string }[],

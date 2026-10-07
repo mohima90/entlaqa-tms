@@ -6,6 +6,7 @@
 | **Architecture** | ADR 0008 (notification service), ADR 0004/0005 (events and jobs) — runbook [background-jobs.md](background-jobs.md) |
 | **Code** | `packages/platform-notifications` (templates, `queueEmail`, sender, Resend/SMTP transports) · `platform.message_deliveries` (migration `20261008090000`) · `apps/worker` |
 | **Provider** | Regional cloud: **Resend** (PO, 6 Oct 2026), sending domain `lms.entlaqa.com`, sender «ENTLAQA LMS» <noreply@lms.entlaqa.com>. Sovereign: SMTP to the installation's relay |
+| **Not here** | The password-reset e-mail and the "password changed" notice are sent by Supabase Auth itself through its own SMTP settings (T-M2-08, ADR 0008 implementation note): [password-reset.md](password-reset.md) |
 
 ## 1. How a message travels
 

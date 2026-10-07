@@ -92,9 +92,9 @@ describe('staticSecurityHeaders', () => {
   });
 });
 
-describe('secretUrlHeaders (invitation links, T-M2-07)', () => {
-  it('sends no referrer from the invitation pages, whose URL carries the token', () => {
-    expect(SECRET_URL_PAGES).toBe('/:locale/invite/:path*');
+describe('secretUrlHeaders (invitation links T-M2-07, password-reset links T-M2-08)', () => {
+  it('sends no referrer from the pages whose URL carries a token', () => {
+    expect(SECRET_URL_PAGES).toEqual(['/:locale/invite/:path*', '/:locale/reset-password']);
     expect(Object.fromEntries(secretUrlHeaders.map((h) => [h.key, h.value]))).toEqual({
       'Referrer-Policy': 'no-referrer',
     });

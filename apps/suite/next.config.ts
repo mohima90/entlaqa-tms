@@ -36,8 +36,8 @@ const nextConfig: NextConfig = {
     // static CSP instead, so no response is served without one.
     return Promise.resolve([
       { source: '/:path*', headers: [...staticSecurityHeaders] },
-      // Invitation links carry a token in the query string: no referrer (overrides the entry above).
-      { source: SECRET_URL_PAGES, headers: [...secretUrlHeaders] },
+      // Invitation and password-reset links carry a token: no referrer (overrides the entry above).
+      ...SECRET_URL_PAGES.map((source) => ({ source, headers: [...secretUrlHeaders] })),
       {
         source: '/_next/static/:path*',
         headers: [{ key: 'Content-Security-Policy', value: STATIC_FALLBACK_CSP }],

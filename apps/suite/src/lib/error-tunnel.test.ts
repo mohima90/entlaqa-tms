@@ -86,6 +86,36 @@ describe('handleErrorTunnel', () => {
     expect(sent).not.toContain('token=');
   });
 
+  it('drops the password-reset token (URL fragment) from every URL of a report (T-M2-08)', async () => {
+    const tokenHash = `pkce_${'0a'.repeat(28)}`; // shape only
+    const url = `https://app.example/ar/reset-password#token_hash=${tokenHash}&type=recovery`;
+    const send = vi.fn((_url: string, _init: RequestInit) =>
+      Promise.resolve(new Response(null, { status: 200 })),
+    );
+    const reset = {
+      exception: {
+        values: [
+          {
+            type: 'TypeError',
+            value: `failed at ${url}`,
+            stacktrace: { frames: [{ filename: url, abs_path: url, lineno: 1 }] },
+          },
+        ],
+      },
+      request: { url, headers: { Referer: url } },
+      transaction: url,
+      contexts: { page: { url, referrer: url, path: url } },
+      breadcrumbs: [{ message: url }],
+      extra: { tokenHash },
+    };
+    expect((await handleErrorTunnel(request(body(reset)), deps({ send }))).status).toBe(202);
+    const [, init] = send.mock.calls[0] ?? ['', {}];
+    const sent = typeof init.body === 'string' ? init.body : '';
+    expect(sent).toContain('/ar/reset-password');
+    expect(sent).not.toContain(tokenHash);
+    expect(sent).not.toContain('token_hash');
+  });
+
   it('refuses cross-site requests and oversized bodies', async () => {
     const d = deps();
     expect(
@@ -168,7 +198,7 @@ describe('handleErrorTunnel', () => {
       'unknown',
       '198.51.100.1',
       'unknown',
-      '2001:db8::5',
+      '2001:db8:0:0::/64', // IPv6 clients are keyed by their /64
       'unknown',
       'unknown',
     ]);

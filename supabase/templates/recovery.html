@@ -1,0 +1,125 @@
+<!doctype html>
+<!--
+  Password reset e-mail (FR-IAM-13, T-M2-08; layout of the approved invitation e-mail, screen 7 —
+  packages/platform-notifications/src/layout.ts). Sent by Supabase Auth itself: a Go html/template,
+  variables escaped by Auth. Only the variables SiteURL, TokenHash and Email are used.
+  NEVER add the variables Token (the one-time code) or ConfirmationURL (Auth's own /verify link): the
+  only way to use this e-mail is our page, which takes the token from the URL fragment and verifies it
+  on the server when the new password is submitted (docs/engineering/password-reset.md).
+  Hosted: paste into Authentication → Emails → Templates → "Reset password" (subject below).
+  Subject: إعادة تعيين كلمة المرور · Reset your password
+-->
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <title>إعادة تعيين كلمة المرور · Reset your password</title>
+  </head>
+  <body style="margin: 0; padding: 0; background: #e3e9ea">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background: #e3e9ea">
+      <tr>
+        <td align="center" style="padding: 24px 12px">
+          <table
+            role="presentation"
+            width="100%"
+            cellpadding="0"
+            cellspacing="0"
+            style="max-width: 600px; background: #ffffff; border-radius: 10px; border-collapse: separate"
+          >
+            <tr>
+              <td
+                dir="rtl"
+                style="padding: 20px 32px; border-bottom: 1px solid #e3e9ea; font-family: 'IBM Plex Sans Arabic', 'Noto Sans Arabic', Tahoma, Arial, sans-serif"
+              >
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td style="font-weight: 700; font-size: 19px; color: #121a1c">جدارات · التدريب</td>
+                    <td align="left" style="font-size: 13px; color: #465357" lang="en" dir="ltr">
+                      Jadarat · Training
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td
+                lang="ar"
+                dir="rtl"
+                style="padding: 28px 32px; font-family: 'IBM Plex Sans Arabic', 'Noto Sans Arabic', Tahoma, Arial, sans-serif; font-size: 16px; line-height: 1.75; color: #121a1c; text-align: right"
+              >
+                <h1 style="margin: 0 0 14px 0; font-size: 23px; line-height: 1.5">إعادة تعيين كلمة المرور</h1>
+                <p style="margin: 0 0 14px 0; color: #121a1c">
+                  وصلنا طلب لتعيين كلمة مرور جديدة للحساب
+                  <span dir="ltr" style="unicode-bidi: isolate">{{ .Email }}</span>.
+                </p>
+                <table role="presentation" cellpadding="0" cellspacing="0" style="margin: 6px 0">
+                  <tr>
+                    <td style="border-radius: 6px; background: #0f665f">
+                      <a
+                        href="{{ .SiteURL }}/ar/reset-password#token_hash={{ .TokenHash }}&amp;type=recovery"
+                        style="display: inline-block; padding: 12px 28px; color: #ffffff; font-weight: 700; text-decoration: none; border-radius: 6px"
+                        >تعيين كلمة مرور جديدة</a
+                      >
+                    </td>
+                  </tr>
+                </table>
+                <p style="margin: 14px 0 14px 0; color: #333e41; font-size: 14px">
+                  الرابط صالح لمدة <b>60 دقيقة</b> ويُستخدم مرة واحدة. إذا انتهى، يمكن طلب رابط جديد من صفحة «نسيت كلمة المرور».
+                </p>
+                <p style="margin: 0; color: #333e41; font-size: 14px">
+                  إن لم يكن الطلب منك، يمكنك تجاهل هذه الرسالة؛ تبقى كلمة المرور الحالية كما هي.
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td
+                lang="en"
+                dir="ltr"
+                style="padding: 24px 32px; font-family: 'IBM Plex Sans', 'Segoe UI', Arial, sans-serif; font-size: 15px; line-height: 1.55; color: #121a1c; text-align: left; background: #f8fafa; border-top: 1px solid #e3e9ea"
+              >
+                <h1 style="margin: 0 0 12px 0; font-size: 17px; line-height: 1.4">Reset your password</h1>
+                <p style="margin: 0 0 14px 0; color: #121a1c">
+                  We received a request to set a new password for {{ .Email }}.
+                </p>
+                <p style="margin: 0 0 14px 0">
+                  <a
+                    href="{{ .SiteURL }}/en/reset-password#token_hash={{ .TokenHash }}&amp;type=recovery"
+                    style="color: #0c534d; font-weight: 600"
+                    >Set a new password</a
+                  >
+                </p>
+                <p style="margin: 0 0 14px 0; color: #333e41; font-size: 14px">
+                  The link is valid for <b>60 minutes</b> and works once. If it has expired, request a new one on the
+                  "Forgot password" page.
+                </p>
+                <p style="margin: 0; color: #333e41; font-size: 14px">
+                  If you didn't ask for this, you can ignore this e-mail; your current password stays as it is.
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td
+                dir="rtl"
+                style="padding: 16px 32px; border-top: 1px solid #e3e9ea; font-family: 'IBM Plex Sans Arabic', 'Noto Sans Arabic', Tahoma, Arial, sans-serif; font-size: 13px; line-height: 1.6; color: #465357"
+              >
+                <div lang="ar" dir="rtl" style="text-align: right">
+                  أُرسلت هذه الرسالة إلى <span dir="ltr" style="unicode-bidi: isolate">{{ .Email }}</span> بطلب
+                  من صفحة «نسيت كلمة المرور».
+                </div>
+                <div
+                  lang="en"
+                  dir="ltr"
+                  style="text-align: left; font-family: 'IBM Plex Sans', 'Segoe UI', Arial, sans-serif"
+                >
+                  Sent to {{ .Email }} because a password reset was requested.
+                </div>
+                <div lang="ar" dir="rtl" style="text-align: right">جدارات · منصة ENTLAQA</div>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

@@ -15,10 +15,12 @@ import {
 } from '@jadarat/platform-db';
 import {
   createSupabaseServerClient,
+  createSupabaseStatelessClient,
   createSupabaseVerifierClient,
 } from '@jadarat/platform-db/supabase-server';
 import { log } from '@jadarat/platform-observability';
 import { cookies } from 'next/headers';
+import { after } from 'next/server';
 import {
   type AuthClientLike,
   type AuthFlowDeps,
@@ -36,6 +38,11 @@ import {
   acceptInvitationWithPassword,
   lookupInvitationLink,
 } from './invitation-accept';
+import {
+  type RecoveryClientLike,
+  completePasswordReset,
+  requestPasswordReset,
+} from './password-reset';
 import {
   type PasswordClientLike,
   type VerifierClientLike,
@@ -144,4 +151,62 @@ export async function acceptInvitationWithPasswordForRequest(input: {
 
 export async function acceptInvitationAsSignedInUserForRequest(input: { readonly token: string }) {
   return acceptInvitationAsSignedInUser(invitationDeps(await requestDeps()), input);
+}
+
+// Forgot / reset password (FR-IAM-13, T-M2-08): Supabase Auth's own recovery on a STATELESS client
+// (publishable key, session in memory only, no PKCE) — the recovery session never reaches the browser or
+// the session cookies. No Auth secret key in the web app.
+
+const sleep = (ms: number) =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
+
+/**
+ * Screen 10: asks Auth for a reset link (unless the application limiter refused the request) and
+ * resolves after a constant time; never throws. The Auth call may finish after the answer (`after()`).
+ */
+export async function requestPasswordResetForRequest(input: {
+  readonly email: string;
+  readonly limited: boolean;
+}): Promise<void> {
+  return requestPasswordReset(
+    {
+      client: input.limited ? null : (createSupabaseStatelessClient() as RecoveryClientLike | null),
+      logWarning: (message, fields) => {
+        log.warn(message, fields);
+      },
+      sleep,
+      keepAlive: (work) => {
+        after(work);
+      },
+    },
+    input,
+  );
+}
+
+/** Screen 11: verifies the link, sets the password, ends every session of the account. */
+export async function completePasswordResetForRequest(input: {
+  readonly tokenHash: string;
+  readonly password: string;
+}) {
+  const auth = await requestDeps();
+  return completePasswordReset(
+    {
+      client: createSupabaseStatelessClient() as RecoveryClientLike | null,
+      logInfo: (message, fields) => {
+        log.info(message, fields);
+      },
+      logWarning: auth.logWarning,
+      // The browser's own session cookies (whoever was signed in here): the sign-in page follows.
+      endBrowserSession: async () => {
+        try {
+          await auth.supabase?.auth.signOut({ scope: 'local' });
+        } catch {
+          // Nothing to end, or Auth unreachable: the cookies are cleared by auth-js either way.
+        }
+      },
+    },
+    input,
+  );
 }

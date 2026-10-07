@@ -57,6 +57,7 @@
     "signInIntro": "Enter your account's email and password.",
     "emailLabel": "Email",
     "passwordLabel": "Password",
+    "forgotPassword": "Forgot your password?",
     "submit": "Sign in",
     "submitting": "Signing in…",
     "notConfigured": "Sign-in is not configured in this environment yet.",
@@ -150,6 +151,67 @@
       "otherAccount": "This invitation is for a different account. Sign out, then continue.",
       "alreadyMember": "This account is already a member of the organization. Sign in to continue.",
       "accountMismatch": "This invitation can't be accepted with this account. Ask your organization's administrator for a new invitation."
+    }
+  },
+  "passwordReset": {
+    "forgot": {
+      "pageTitle": "Forgot your password?",
+      "intro": "We'll send a link to set a new password to the work email you sign in with.",
+      "emailLabel": "Email",
+      "submit": "Send link",
+      "submitting": "Sending…",
+      "backToSignIn": "Back to sign in",
+      "emailInvalid": "Enter a valid email address, such as name@company.com."
+    },
+    "sent": {
+      "title": "Check your email",
+      "text": "If {email} has an account with us, you'll get an email within a few minutes.",
+      "validity": "The link is valid for <b>60 minutes</b> and works once.",
+      "spam": "No email? It may be in your spam folder. You can send it again after a minute.",
+      "resend": "Send again",
+      "resendIn": "Send again ({time})",
+      "resending": "Sending again…",
+      "resent": "We've sent the request again. Only the newest link works."
+    },
+    "reset": {
+      "pageTitle": "Set a new password",
+      "opening": "Opening the link…",
+      "intro": "Choose a new password for your account.",
+      "password": "New password",
+      "confirmPassword": "Confirm password",
+      "showPassword": "Show password",
+      "rulesLabel": "Password rules",
+      "rules": {
+        "minLength": "At least 12 characters",
+        "maxBytes": "No more than 72 bytes (about 36 Arabic letters)",
+        "matches": "Both passwords match",
+        "met": "(met)",
+        "notMet": "(not met yet)"
+      },
+      "passwordTip": "Tip: a phrase of several words is easy to remember and hard to guess.",
+      "sessionsNotice": "After saving, we end every sign-in session on all devices and send a confirmation to your email. You then sign in with the new password.",
+      "submit": "Save password",
+      "submitting": "Saving…",
+      "validity": "The link is valid for 60 minutes from when it was requested and works once. If it has expired, request a new one on the <link>Forgot password</link> page."
+    },
+    "fieldErrors": {
+      "tooShort": "At least 12 characters.",
+      "tooLong": "The password is too long (no more than 72 bytes, about 36 Arabic letters).",
+      "mismatch": "The passwords don't match."
+    },
+    "invalidLink": {
+      "title": "This link has expired or was already used",
+      "text": "Password reset links are valid for 60 minutes and work once. Request a new link.",
+      "requestNew": "Request a new link",
+      "signIn": "Back to sign in"
+    },
+    "notice": "Your new password is saved, and every sign-in session has ended. Sign in with your new password.",
+    "errors": {
+      "linkInvalid": "This link has expired or was already used. Request a new link.",
+      "samePassword": "The new password is the same as your current one, so nothing changed. Links work only once: request a new link and choose a different password.",
+      "weakPassword": "This password wasn't accepted because it's weak or common, so nothing changed. Links work only once: request a new link and choose a longer password that's hard to guess.",
+      "breachedPassword": "This password appears in known data breaches, so nothing changed. Links work only once: request a new link and choose a different password.",
+      "passwordRejected": "The new password wasn't accepted, so nothing changed. Links work only once: request a new link."
     }
   },
   "users": {

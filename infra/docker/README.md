@@ -11,9 +11,12 @@ The whole product running on servers we (or the customer) control, with no Verce
 | `gateway` | `nginxinc/nginx-unprivileged:stable-alpine-slim` | TLS in front of Auth, Supabase URL layout (`/auth/v1/…`) |
 | `app` | `jadarat/suite:local` (`app.Dockerfile`, distroless Node 24, non-root) | The web app (standalone build) |
 | `worker` ×2 | `jadarat/worker:local` (`worker.Dockerfile`, distroless Node 24, non-root) | Background jobs and domain events (ADR 0004/0005; runbook `docs/engineering/background-jobs.md`), e-mail sending over SMTP (ADR 0008; `docs/engineering/email.md`) |
-| `mailpit` | `axllent/mailpit:v1.29.7` (MIT) | **Stand-in for the installation's mail relay**: keeps every message for inspection and sends nothing on; STARTTLS required. A real installation points `SMTP_URL` at its own relay and drops this service |
+| `mailpit` | `axllent/mailpit:v1.29.7` (MIT) | **Stand-in for the installation's mail relay**: keeps every message for inspection and sends nothing on; STARTTLS required. Receives the worker's e-mails and Auth's own (password reset, T-M2-08). A real installation points `SMTP_URL` and `AUTH_SMTP_*` at its own relay and drops this service |
+| `auth-templates` | `nginxinc/nginx-unprivileged` (as the gateway) | Serves Auth's e-mail templates (`supabase/templates`) to Auth over the internal network; Auth starts only once it is healthy (`docs/engineering/password-reset.md` §5) |
 | `glitchtip` | `glitchtip/glitchtip:6.2.6` (MIT) | In-country error tracker, Sentry-compatible (ADR 0009 §4). All-in-one mode (web + worker, no Valkey); no route out of the installation; UI over TLS through the gateway at `https://localhost:8100`; events kept 90 days |
 | `errors-db` | `postgres:17.11` | GlitchTip's own database: error data never shares the TMS database |
+
+**Required setting for production:** `JADARAT_CLIENT_IP_HEADER` on the app = the client-IP header your load balancer or reverse proxy **overwrites** (e.g. `X-Real-IP`, never `X-Forwarded-For`). Without it every visitor shares one rate-limit budget (password reset, error reports) and one abuser can exhaust it for all (`docs/engineering/password-reset.md` §5). This stack publishes the app directly and leaves it empty.
 
 **Network and TLS.** The database accepts network connections **only over TLS** (`db/pg_hba.conf`), and its clients verify it against the installation's own CA (app → db, Auth → db, migrations); the app verifies the gateway the same way. There are two plain-HTTP hops inside the installation:
 - **gateway → Auth.** Supabase Auth has no TLS listener. The hop runs on an internal network that only those two containers join, and Auth has no route anywhere except the database and the gateway.

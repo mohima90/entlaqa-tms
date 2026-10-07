@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   SESSION_COOKIE_OPTIONS,
   createSupabaseServerClient,
+  createSupabaseStatelessClient,
   createSupabaseVerifierClient,
   getSupabasePublicConfig,
 } from './server';
@@ -41,5 +42,26 @@ describe('createSupabaseVerifierClient', () => {
       publishableKey: 'sb_publishable_test',
     });
     expect(client?.auth).toBeDefined();
+  });
+});
+
+describe('createSupabaseStatelessClient (password recovery, T-M2-08)', () => {
+  it('returns null when Supabase is not configured', () => {
+    expect(createSupabaseStatelessClient(null)).toBeNull();
+  });
+
+  it('keeps its session in memory only and uses no PKCE code verifier', () => {
+    const client = createSupabaseStatelessClient({
+      url: 'https://example.supabase.co',
+      publishableKey: 'sb_publishable_test',
+    });
+    const auth = client?.auth as unknown as {
+      persistSession: boolean;
+      autoRefreshToken: boolean;
+      flowType: string;
+    };
+    expect(auth.persistSession).toBe(false);
+    expect(auth.autoRefreshToken).toBe(false);
+    expect(auth.flowType).toBe('implicit');
   });
 });

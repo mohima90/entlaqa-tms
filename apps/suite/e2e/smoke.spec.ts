@@ -12,6 +12,11 @@ const pages = [
   { path: '/en/suite', lang: 'en', dir: 'ltr', heading: 'Home' },
   { path: '/ar/sign-in', lang: 'ar', dir: 'rtl', heading: 'تسجيل الدخول' },
   { path: '/en/sign-in', lang: 'en', dir: 'ltr', heading: 'Sign in' },
+  { path: '/ar/forgot-password', lang: 'ar', dir: 'rtl', heading: 'نسيت كلمة المرور؟' },
+  { path: '/en/forgot-password', lang: 'en', dir: 'ltr', heading: 'Forgot your password?' },
+  // Without Auth configured (CI) the reset page says so; the flow runs on the self-hosted stack.
+  { path: '/ar/reset-password', lang: 'ar', dir: 'rtl', heading: 'تعيين كلمة مرور جديدة' },
+  { path: '/en/reset-password', lang: 'en', dir: 'ltr', heading: 'Set a new password' },
   { path: '/ar/suite/admin/users', lang: 'ar', dir: 'rtl', heading: 'المستخدمون' },
   { path: '/en/suite/admin/users', lang: 'en', dir: 'ltr', heading: 'Users' },
   { path: '/ar/suite/profile', lang: 'ar', dir: 'rtl', heading: 'ملفي الشخصي' },
@@ -77,7 +82,10 @@ for (const { path, lang, dir, heading } of pages) {
       expect(headers['content-security-policy']).toContain("frame-ancestors 'none'");
       expect(headers['strict-transport-security']).toContain('max-age=');
       expect(headers['x-frame-options']).toBe('DENY');
-      expect(headers['referrer-policy']).toBe('strict-origin-when-cross-origin');
+      // Pages whose link carries a token send no referrer at all (security-headers.ts SECRET_URL_PAGES).
+      expect(headers['referrer-policy']).toBe(
+        path.endsWith('/reset-password') ? 'no-referrer' : 'strict-origin-when-cross-origin',
+      );
       expect(headers['permissions-policy']).toContain('camera=()');
       expect(headers['x-powered-by']).toBeUndefined();
     });

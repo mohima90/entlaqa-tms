@@ -4,7 +4,13 @@ import {
   finishEmailDelivery,
 } from '@jadarat/platform-db/jobs';
 import type { EffectSubscriber, InTenant, WorkerLogLevel } from '@jadarat/platform-jobs/jobs';
-import { EmailSendError, type EmailTransport, type OutgoingEmail } from './transport';
+import {
+  type EmailRoute,
+  type EmailRouter,
+  EmailSendError,
+  type EmailTransport,
+  type OutgoingEmail,
+} from './transport';
 
 /** Emitted with each queued e-mail (subject = delivery id); data carries the template key only. */
 export const EMAIL_QUEUED_EVENT = 'com.entlaqa.platform.email.queued';
@@ -30,8 +36,15 @@ export function createEmailSender(options: {
   readonly transport: EmailTransport | null;
   readonly from: OutgoingEmail['from'];
   readonly log: Log;
+  /**
+   * The transport and sender per organization (FR-NTF-11, R2). Default (R1): `transport` and `from`
+   * for every organization.
+   */
+  readonly router?: EmailRouter;
 }): EffectSubscriber {
   const { log } = options;
+  const platform: EmailRoute = { transport: options.transport, from: options.from };
+  const router: EmailRouter = options.router ?? (() => platform);
   return {
     kind: 'effect',
     name: EMAIL_SENDER_NAME,
@@ -46,7 +59,7 @@ export function createEmailSender(options: {
       }
       const last = attempt >= maxAttempts;
       try {
-        await send(options, id, inTenant, last);
+        await send({ ...(await router(event.tenantId)), log }, id, inTenant, last);
       } catch (error) {
         if (last) {
           // The last attempt failed outside the provider call (e.g. the database): the content and
@@ -72,11 +85,7 @@ export function createEmailSender(options: {
 }
 
 async function send(
-  options: {
-    readonly transport: EmailTransport | null;
-    readonly from: OutgoingEmail['from'];
-    readonly log: Log;
-  },
+  options: EmailRoute & { readonly log: Log },
   id: string,
   inTenant: InTenant,
   last: boolean,

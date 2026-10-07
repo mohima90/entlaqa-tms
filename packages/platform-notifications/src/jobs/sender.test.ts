@@ -76,6 +76,37 @@ describe('e-mail sender', () => {
     });
   });
 
+  it("asks the router for the organization's transport and sender (FR-NTF-11 seam, R2)", async () => {
+    db.claimEmailDelivery.mockResolvedValue(claimed);
+    const own = vi.fn<EmailTransport['send']>(() =>
+      Promise.resolve({ providerMessageId: 'own_1' }),
+    );
+    const platform = vi.fn<EmailTransport['send']>();
+    const ownFrom = { name: 'Al Raya', address: 'training@raya.example' };
+    const router = vi.fn(() => ({
+      transport: { provider: 'smtp' as const, send: own },
+      from: ownFrom,
+    }));
+    await createEmailSender({ transport: transport(platform), from, log: vi.fn(), router }).perform(
+      {
+        event,
+        inTenant,
+        attempt: 1,
+        maxAttempts: EMAIL_MAX_ATTEMPTS,
+      },
+    );
+    expect(router).toHaveBeenCalledWith('t1');
+    expect(platform).not.toHaveBeenCalled();
+    expect(own).toHaveBeenCalledWith(
+      expect.objectContaining({ from: ownFrom, idempotencyKey: ID }),
+    );
+    expect(db.finishEmailDelivery).toHaveBeenCalledWith(tx, ID, {
+      status: 'sent',
+      provider: 'smtp',
+      providerMessageId: 'own_1',
+    });
+  });
+
   it('does nothing for a delivery already finished, or an event without subject', async () => {
     db.claimEmailDelivery.mockResolvedValue(null);
     const send = vi.fn<EmailTransport['send']>();

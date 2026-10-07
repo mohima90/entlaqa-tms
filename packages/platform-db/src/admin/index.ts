@@ -55,6 +55,106 @@ export async function withAdminTx<T>(
 }
 
 /**
+ * Where the WORKER reaches the Auth admin API (T-M2-17): the Supabase URL and the secret key
+ * (`SUPABASE_URL`, `SUPABASE_SECRET_KEY`, read and checked by apps/worker at start-up). Configured in the
+ * worker's environment only — never in the web app's (ADR 0002 §7).
+ */
+export interface AuthAdminSettings {
+  readonly url: string;
+  readonly secretKey: string;
+}
+
+/** The outcome of asking Auth for a recovery link. */
+export type RecoveryLinkResult =
+  | { readonly status: 'issued'; readonly hashedToken: string }
+  /** Auth has no account with this address (GoTrue: 404 user_not_found; nothing created or sent). */
+  | { readonly status: 'unknown_account' };
+
+/**
+ * Auth refused or could not answer. `temporary`: worth another attempt later (Auth or the network down,
+ * rate limited, the secret key wrong or revoked — fixable by an operator); otherwise the request itself
+ * was refused (e.g. an address Auth does not accept). `code` is ours or Auth's stable error code, never
+ * Auth's message (it may quote the address).
+ */
+export class AuthAdminError extends Error {
+  override readonly name = 'AuthAdminError';
+  constructor(
+    readonly code: string,
+    readonly temporary: boolean,
+  ) {
+    super(`Auth admin request failed (${code})`);
+  }
+}
+
+export interface RecoveryLinkIssuer {
+  /**
+   * A new recovery token for the account with this address — Auth stores it (single use, `otp_exp`)
+   * and sends NOTHING; the caller builds the link and e-mails it. A newer token replaces the older one.
+   */
+  issue(email: string): Promise<RecoveryLinkResult>;
+}
+
+/** The token hash's character set and size (GoTrue v2.197.0: 56 hex characters, sha224). */
+const TOKEN_HASH = /^[A-Za-z0-9_-]{16,128}$/;
+const STABLE_CODE = /^[a-z0-9_]{2,64}$/;
+/** An Auth admin call that has not answered by then is abandoned (and retried later). */
+export const AUTH_ADMIN_TIMEOUT_MS = 10_000;
+
+/**
+ * Recovery links for the worker's password-reset e-mail (T-M2-17), through Auth's admin `generate_link`
+ * (type `recovery`): GoTrue v2.197.0 (`internal/api/mail.go`, adminGenerateLink) looks the account up,
+ * answers 404 `user_not_found` for an unknown address BEFORE writing anything (no user is created — the
+ * before-user-created hook is not even reached on this path), stores the new token hash on the account
+ * and returns it with the link; it sends no e-mail, and neither Auth's per-account e-mail frequency
+ * (SMTP_MAX_FREQUENCY) nor its e-mail rate limit applies (admin routes have no limiter). The one-time
+ * code and Auth's own link in the answer are discarded here and never leave this function.
+ */
+export function createRecoveryLinkIssuer(
+  settings: AuthAdminSettings,
+  op: AdminOperation,
+): RecoveryLinkIssuer {
+  assertAdminOperation(op);
+  const client = createClient(settings.url, settings.secretKey, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    global: {
+      fetch: (input, init) =>
+        fetch(input, { ...init, signal: AbortSignal.timeout(AUTH_ADMIN_TIMEOUT_MS) }),
+    },
+  });
+  return {
+    async issue(email) {
+      let answer: Awaited<ReturnType<typeof client.auth.admin.generateLink>>;
+      try {
+        answer = await client.auth.admin.generateLink({ type: 'recovery', email });
+      } catch {
+        throw new AuthAdminError('AUTH_UNREACHABLE', true);
+      }
+      const { data, error } = answer;
+      if (error) {
+        const status = 'status' in error && typeof error.status === 'number' ? error.status : 0;
+        const code =
+          'code' in error && typeof error.code === 'string' && STABLE_CODE.test(error.code)
+            ? error.code
+            : undefined;
+        if (status === 404 || code === 'user_not_found') return { status: 'unknown_account' };
+        if (status === 401 || status === 403) throw new AuthAdminError('AUTH_ADMIN_KEY', true);
+        if (status === 0 || status === 429 || status >= 500) {
+          throw new AuthAdminError(code ?? `AUTH_HTTP_${String(status || 'NETWORK')}`, true);
+        }
+        throw new AuthAdminError(code ?? `AUTH_HTTP_${String(status)}`, false);
+      }
+      // Checked at run time: the answer comes from another service.
+      const { properties } = data as { properties?: { hashed_token?: unknown } };
+      const hashedToken = properties?.hashed_token;
+      if (typeof hashedToken !== 'string' || !TOKEN_HASH.test(hashedToken)) {
+        throw new AuthAdminError('AUTH_UNEXPECTED_ANSWER', true);
+      }
+      return { status: 'issued', hashedToken };
+    },
+  };
+}
+
+/**
  * Supabase client with the secret (service-role) key — Auth admin API (user lifecycle) for jobs/admin
  * code only. Never on the request path: invitees sign up through the public Auth API instead (ADR 0002
  * §7 note T-M2-07).

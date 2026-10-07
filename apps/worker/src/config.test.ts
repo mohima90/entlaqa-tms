@@ -103,6 +103,43 @@ describe('readSettings', () => {
     }
   });
 
+  it('reads the Auth admin API for reset links (T-M2-17): both or neither, the key never in an error', () => {
+    expect(runner([], env).authAdmin).toBeUndefined();
+    const KEY = 'sb_secret_sample_only_value'; // sample, not a key
+    expect(
+      runner([], {
+        ...env,
+        SUPABASE_URL: 'https://ref.supabase.co/',
+        SUPABASE_SECRET_KEY: ` ${KEY} `,
+      }).authAdmin,
+    ).toEqual({ url: 'https://ref.supabase.co', secretKey: KEY });
+    // Self-hosted: the gateway; local Supabase: plain http on the loopback.
+    expect(
+      runner([], { ...env, SUPABASE_URL: 'http://127.0.0.1:54321', SUPABASE_SECRET_KEY: KEY })
+        .authAdmin?.url,
+    ).toBe('http://127.0.0.1:54321');
+    fails([], { ...env, SUPABASE_URL: 'https://ref.supabase.co' }, /must be set together/);
+    fails([], { ...env, SUPABASE_SECRET_KEY: KEY }, /must be set together/);
+    fails(
+      [],
+      { ...env, SUPABASE_URL: 'http://ref.supabase.co', SUPABASE_SECRET_KEY: KEY },
+      /SUPABASE_URL must be an https origin/,
+    );
+    for (const bad of ['short', 'sb_secret with spaces inside it']) {
+      let error: unknown;
+      try {
+        readSettings(
+          [],
+          { ...env, SUPABASE_URL: 'https://ref.supabase.co', SUPABASE_SECRET_KEY: bad },
+          noCa,
+        );
+      } catch (e) {
+        error = e;
+      }
+      expect((error as Error).message).toBe('SUPABASE_SECRET_KEY is not a valid key');
+    }
+  });
+
   it('remote hosts need the CA', () => {
     const remote = {
       DATABASE_URL_APP_QUEUE: 'postgres://app_queue.ref:pw@pooler.example.com:5432/postgres',

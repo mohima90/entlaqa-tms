@@ -11,24 +11,32 @@ import type { LogFields } from '@jadarat/platform-observability';
 import { AuthServiceError, sessionTokens } from './auth-flow';
 
 /**
- * Forgot / reset password (FR-IAM-13, NFR-SEC-01; T-M2-08, screens 10 and 11) with Supabase Auth's own
- * recovery: Auth stores a single-use token, e-mails the link through the project's SMTP (Resend on
- * hosted, the installation's relay self-hosted) and expires it after `otp_exp` (3600 s = 60 minutes).
- * The template builds the link `{{ .SiteURL }}/ar/reset-password#token_hash=…&type=recovery`: the token
- * travels in the URL FRAGMENT, never sent to the server with a page request (as for invitations, review
- * M3), and loading the page verifies nothing (link scanners cannot use the token up). Framework-free like
- * auth-flow.ts; the Next.js adapter is auth-next.ts and the public actions are in
- * apps/suite/src/auth/password-reset.ts. Design and GoTrue findings: docs/engineering/password-reset.md.
+ * Forgot / reset password (FR-IAM-13, NFR-SEC-01; T-M2-08, screens 10 and 11) on Supabase Auth's
+ * recovery tokens: single use, expired after `otp_exp` (3600 s = 60 minutes). The e-mailed link is
+ * `{site}/{ar|en}/reset-password#token_hash=…&type=recovery`: the token travels in the URL FRAGMENT,
+ * never sent to the server with a page request (as for invitations, review M3), and loading the page
+ * verifies nothing (link scanners cannot use the token up). Framework-free like auth-flow.ts; the
+ * Next.js adapter is auth-next.ts and the public actions are in apps/suite/src/auth/password-reset.ts.
+ * Design and GoTrue findings: docs/engineering/password-reset.md.
  *
- *   request  → (application limiter, decided by the action) → resetPasswordForEmail(email) on a
- *              STATELESS client (no PKCE: a code challenge does not protect the token_hash path) —
- *              started at once, never awaited by the answer: the answer comes after a constant time
- *              whatever Auth did (Auth answers an existing account later, and with 429 to a repeat
- *              within a minute — both would tell that the account exists)
+ * Who sends the e-mails is the server setting PASSWORD_RESET_DELIVERY (T-M2-17, BRD v2.5 FR-NTF-02):
+ *   `auth`   (default) Supabase Auth's own mailer: resetPasswordForEmail(email) on a STATELESS client (no
+ *            PKCE: a code challenge does not protect the token_hash path); Auth also sends its own
+ *            "password changed" notice when that is switched on in Auth.
+ *   `worker` our notification service: the request is queued in the database UNCONDITIONALLY (the
+ *            worker decides whether an account exists, creates the token through the Auth admin API —
+ *            held by the worker only — and e-mails it in the organization's language and brand); after a
+ *            completed reset (and a My profile change) the "password changed" notice is queued too.
+ *
+ *   request  → (application limiter, decided by the action) → the delivery above — started at once, never
+ *              awaited by the answer: the answer comes after a constant time whatever happened (Auth
+ *              answers an existing account later, and with 429 to a repeat within a minute — both would
+ *              tell that the account exists)
  *   complete → verifyOtp(recovery, token_hash) on a STATELESS client: the recovery session lives only in
  *              this request's memory, never in the browser or our session cookies → updateUser(password)
  *              → signOut(global): every session of the account ends, the recovery session included →
- *              security log `platform.auth.password_reset` (user id only) → the visitor signs in
+ *              security log `platform.auth.password_reset` (user id only) → (worker mode) the "password
+ *              changed" notice is queued → the visitor signs in
  *
  * The e-mail, password and token never reach a log.
  */
@@ -51,6 +59,23 @@ export const PasswordResetErrors = defineErrorCodes({
     messageKey: 'passwordReset.errors.passwordRejected',
   },
 });
+
+/** Server setting: who sends the reset e-mail and the "password changed" notice (T-M2-17). */
+export const PASSWORD_RESET_DELIVERY_ENV = 'PASSWORD_RESET_DELIVERY';
+export type PasswordResetDelivery = 'auth' | 'worker';
+
+/**
+ * PASSWORD_RESET_DELIVERY: `auth` (default, also when unset or empty) or `worker`. Any other value is a
+ * configuration error (thrown at start-up by the app's instrumentation, and on use).
+ */
+export function readPasswordResetDelivery(
+  env: Readonly<Record<string, string | undefined>>,
+): PasswordResetDelivery {
+  const raw = env[PASSWORD_RESET_DELIVERY_ENV]?.trim() ?? '';
+  if (raw === '' || raw === 'auth') return 'auth';
+  if (raw === 'worker') return 'worker';
+  throw new Error(`${PASSWORD_RESET_DELIVERY_ENV} must be "auth" or "worker"`);
+}
 
 /** The answer to a reset request is sent after this long, whatever happened (timing). */
 export const RESET_REQUEST_ANSWER_MS = 1_500;
@@ -84,9 +109,16 @@ export interface RecoveryClientLike {
   };
 }
 
+/**
+ * How the reset e-mail is sent: by Auth's own mailer (a new stateless client; null when Auth is not
+ * configured), or queued for the worker (our notification service; never tells anything back).
+ */
+export type ResetEmailDelivery =
+  | { readonly mode: 'auth'; readonly client: RecoveryClientLike | null }
+  | { readonly mode: 'worker'; readonly enqueue: (email: string) => Promise<void> };
+
 export interface PasswordResetRequestDeps {
-  /** A new stateless client; null when Auth is not configured. */
-  readonly client: RecoveryClientLike | null;
+  readonly delivery: ResetEmailDelivery;
   readonly logWarning: (message: string, fields: LogFields) => void;
   readonly sleep: (ms: number) => Promise<void>;
   /** Lets the Auth call finish after the answer was sent (Next.js `after()`). */
@@ -100,12 +132,18 @@ export interface PasswordResetDeps {
   readonly logWarning: (message: string, fields: LogFields) => void;
   /** Ends this browser's own session cookies, if any (after the reset the visitor signs in again). */
   readonly endBrowserSession: () => Promise<void>;
+  /**
+   * Worker mode (T-M2-17): queues the account's "password changed" notice for our notification
+   * service. Absent in `auth` mode (Auth sends its own notice when switched on there).
+   */
+  readonly queuePasswordChangedNotice?: (userId: string) => Promise<void>;
 }
 
 /**
- * Screen 10. Starts the Auth request and answers after RESET_REQUEST_ANSWER_MS, never waiting for Auth:
- * the caller learns nothing from the result or the time taken. `limited`: the application limiter
- * refused this request (per account, per client) — Auth is not asked, the answer is the same.
+ * Screen 10. Starts the delivery (Auth's request, or the worker's queue) and answers after
+ * RESET_REQUEST_ANSWER_MS, never waiting for it: the caller learns nothing from the result or the time
+ * taken. `limited`: the application limiter refused this request (per account, per client) — nothing is
+ * started, the answer is the same.
  */
 export async function requestPasswordReset(
   deps: PasswordResetRequestDeps,
@@ -124,15 +162,29 @@ export async function requestPasswordReset(
 
 /** Never rejects: every outcome is logged as a code (never the address) and treated as success. */
 async function sendRecoveryLink(deps: PasswordResetRequestDeps, email: string): Promise<void> {
+  const { delivery } = deps;
+  if (delivery.mode === 'worker') {
+    try {
+      // Unconditional: the database records the request whether or not an account exists.
+      await delivery.enqueue(email);
+    } catch (error) {
+      deps.logWarning('password reset request could not be queued', {
+        action: REQUEST_ACTION,
+        reason: 'enqueue_failed',
+        errorName: error instanceof Error ? error.name : 'unknown',
+      });
+    }
+    return;
+  }
   try {
-    if (!deps.client) {
+    if (!delivery.client) {
       deps.logWarning('password reset requested but Auth is not configured', {
         action: REQUEST_ACTION,
         reason: 'not_configured',
       });
       return;
     }
-    const { error } = await deps.client.auth.resetPasswordForEmail(email);
+    const { error } = await delivery.client.auth.resetPasswordForEmail(email);
     if (error) {
       deps.logWarning('password reset request not accepted by Auth', {
         action: REQUEST_ACTION,
@@ -260,6 +312,20 @@ export async function completePasswordReset(
     entityType: 'auth_user',
     entityId: userId,
   });
+  if (deps.queuePasswordChangedNotice) {
+    try {
+      await deps.queuePasswordChangedNotice(userId);
+    } catch (error) {
+      // The password has changed: the notice is best effort, the reset still succeeds.
+      deps.logWarning('password changed notice could not be queued', {
+        action: COMPLETE_ACTION,
+        reason: 'notice_not_queued',
+        errorName: error instanceof Error ? error.name : 'unknown',
+        entityType: 'auth_user',
+        entityId: userId,
+      });
+    }
+  }
   await deps.endBrowserSession();
   return ok({ next: 'sign-in' });
 }

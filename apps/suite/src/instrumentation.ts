@@ -9,6 +9,9 @@ export async function register(): Promise<void> {
   if (process.env.NEXT_RUNTIME !== 'nodejs') return;
   const { startObservability } = await import('./lib/observability');
   startObservability();
+  // A wrong server setting (e.g. PASSWORD_RESET_DELIVERY) stops the start here.
+  const { checkServerSettings } = await import('./lib/server-settings');
+  checkServerSettings();
 }
 
 export const onRequestError: Instrumentation.onRequestError = async (error, request, context) => {

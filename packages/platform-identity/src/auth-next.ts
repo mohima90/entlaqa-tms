@@ -10,6 +10,9 @@ import {
   insertAuditEvent,
   invitationByToken,
   listSessionTenants,
+  queueOwnPasswordChangedMail,
+  requestPasswordChangedMail,
+  requestPasswordResetMail,
   switchActiveTenant,
   withUserTx,
 } from '@jadarat/platform-db';
@@ -40,7 +43,9 @@ import {
 } from './invitation-accept';
 import {
   type RecoveryClientLike,
+  type ResetEmailDelivery,
   completePasswordReset,
+  readPasswordResetDelivery,
   requestPasswordReset,
 } from './password-reset';
 import {
@@ -153,18 +158,32 @@ export async function acceptInvitationAsSignedInUserForRequest(input: { readonly
   return acceptInvitationAsSignedInUser(invitationDeps(await requestDeps()), input);
 }
 
-// Forgot / reset password (FR-IAM-13, T-M2-08): Supabase Auth's own recovery on a STATELESS client
-// (publishable key, session in memory only, no PKCE) — the recovery session never reaches the browser or
-// the session cookies. No Auth secret key in the web app.
+// Forgot / reset password (FR-IAM-13, T-M2-08): Supabase Auth's recovery tokens, verified on a STATELESS
+// client (publishable key, session in memory only, no PKCE) — the recovery session never reaches the
+// browser or the session cookies. No Auth secret key in the web app. The e-mails are sent by Auth's own
+// mailer or, with PASSWORD_RESET_DELIVERY=worker, by our notification service (T-M2-17): the web app then
+// only queues requests in the database; the worker holds the Auth admin key.
 
 const sleep = (ms: number) =>
   new Promise<void>((resolve) => {
     setTimeout(resolve, ms);
   });
 
+/** Auth's own mailer, or the worker's queue (PASSWORD_RESET_DELIVERY, read on the server only). */
+function resetEmailDelivery(limited: boolean): ResetEmailDelivery {
+  if (readPasswordResetDelivery(process.env) === 'worker') {
+    return { mode: 'worker', enqueue: requestPasswordResetMail };
+  }
+  return {
+    mode: 'auth',
+    client: limited ? null : (createSupabaseStatelessClient() as RecoveryClientLike | null),
+  };
+}
+
 /**
- * Screen 10: asks Auth for a reset link (unless the application limiter refused the request) and
- * resolves after a constant time; never throws. The Auth call may finish after the answer (`after()`).
+ * Screen 10: asks Auth for a reset link, or queues the request for the worker (unless the application
+ * limiter refused it), and resolves after a constant time; never throws. The call may finish after the
+ * answer (`after()`).
  */
 export async function requestPasswordResetForRequest(input: {
   readonly email: string;
@@ -172,7 +191,7 @@ export async function requestPasswordResetForRequest(input: {
 }): Promise<void> {
   return requestPasswordReset(
     {
-      client: input.limited ? null : (createSupabaseStatelessClient() as RecoveryClientLike | null),
+      delivery: resetEmailDelivery(input.limited),
       logWarning: (message, fields) => {
         log.warn(message, fields);
       },
@@ -206,7 +225,31 @@ export async function completePasswordResetForRequest(input: {
           // Nothing to end, or Auth unreachable: the cookies are cleared by auth-js either way.
         }
       },
+      ...(readPasswordResetDelivery(process.env) === 'worker'
+        ? { queuePasswordChangedNotice: requestPasswordChangedMail }
+        : {}),
     },
     input,
   );
+}
+
+/**
+ * My profile (FR-IAM-16), inside the action's withUserTx after the password changed: with
+ * PASSWORD_RESET_DELIVERY=worker, queues the member's "password changed" notice (our notification
+ * service, the session's organization). Best effort: never fails the change (a code is logged).
+ */
+export async function queueOwnPasswordChangedNoticeForRequest(
+  tx: Parameters<typeof queueOwnPasswordChangedMail>[0],
+  userId: string,
+): Promise<void> {
+  if (readPasswordResetDelivery(process.env) !== 'worker') return;
+  try {
+    await queueOwnPasswordChangedMail(tx, userId);
+  } catch (error) {
+    log.warn('password changed notice could not be queued', {
+      action: 'platform.auth.change_password',
+      reason: 'notice_not_queued',
+      errorName: error instanceof Error ? error.name : 'unknown',
+    });
+  }
 }

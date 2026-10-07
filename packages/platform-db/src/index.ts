@@ -13,6 +13,13 @@ export {
   tlsOptionsFor,
 } from './client';
 export { type AuditEventInput, insertAuditEvent } from './audit';
+export {
+  type AccountMailApi,
+  createAccountMailApi,
+  queueOwnPasswordChangedMail,
+  requestPasswordChangedMail,
+  requestPasswordResetMail,
+} from './account-mail';
 export { DomainError, isDomainError } from './domain-error';
 export {
   INVITATION_EVENTS,

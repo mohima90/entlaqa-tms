@@ -7,7 +7,7 @@
 | **Product** | Jadarat TMS — Training Management System (module of the Jadarat HR Suite; also sold standalone) |
 | **Company** | ENTLAQA |
 | **Document type** | Business Requirements Document |
-| **Version** | 2.3 — Draft for stakeholder review |
+| **Version** | 2.4 — Draft for stakeholder review |
 | **Date** | 30 September 2026 |
 | **Supersedes** | *Jadarat TMS BRD v1.0* (15 March 2026) |
 | **Companion documents** | `docs/delivery/Jadarat_TMS_Development_Plan.md` (development plan & delivery guide) · `docs/brd/TMS_Feature_List.md` (feature list, 290 features) · `docs/research/TMS_Market_Comparison_vs_BRD.md` (market & regulatory research) |
@@ -21,6 +21,7 @@
 |---|---|---|---|
 | 1.0 | 15 Mar 2026 | ENTLAQA Product Team | Initial Jadarat TMS BRD (offline training, Jadarat-specific) |
 | 2.0 | 27 Sep 2026 | ENTLAQA Product Team | Full rewrite: comprehensive TMS scope, training planning cycle, vendor & finance depth, assessment engine, generic LMS integration framework, corrected regulatory content, sovereign deployment, requirement IDs with priority & release |
+| 2.4 | 7 Oct 2026 | Product Owner (via Claude) | FR-IAM-07 extended (PO, 7 Oct 2026): full role management per tenant in R2 — create, edit and delete custom roles, remove unused system roles and restore them (SMEs using 3–4 roles); Organization Admin role never removable; roles in use cannot be deleted; audited. Organization Admin becomes a setup role without core training features (Appendix B) and never shares a person with HR Manager (BR-IAM-4). Feature list IAM-07 |
 | 2.3 | 6 Oct 2026 | Product Owner (via Claude) | FR-ADM-17 extended (PO, 6 Oct 2026): the Platform Super Admin manages platform settings in the platform console, starting with the e-mail provider (API key write-only and encrypted, sender, test message; MFA, audited), before production. Feature list ADM-17 (R1) |
 | 2.2 | 5 Oct 2026 | Product Owner (via Claude) | FR-IAM-16 added (PO, 5 Oct 2026): self-service My profile — users change their own personal details (names, mobile, language, photo) and password; e-mail locked; job data stays with HR. Feature list IAM-16 (R1) |
 | 2.1 | 30 Sep 2026 | ENTLAQA Product Team | Decisions D1, D2, D6, D7 recorded: product named Jadarat TMS; positioned as first module of the planned Jadarat HR Suite and sold standalone; shared Jadarat Platform (§3.4, §6.27, Appendix H.5); Commerce for training providers removed from scope; government/banks confirmed as Year-1 segments; self-hostable Next.js + Supabase stack |
@@ -284,7 +285,7 @@ Fifteen default roles ship with every tenant; tenants may clone and create custo
 | Role | Arabic label | Scope |
 |---|---|---|
 | Platform Super Admin | مشرف المنصة | ENTLAQA internal only; cross-tenant operations |
-| Tenant Admin | مدير المنشأة | Full configuration of one tenant |
+| Tenant Admin | مدير المنشأة | Setup of one tenant (settings, branding, users and roles, security, integrations, audit); no core training features (PO, 7 Oct 2026) |
 | Training Manager | مدير التدريب | Plans, catalog, sessions, resources, enrollments, reports |
 | Training Coordinator | منسق التدريب | Day-to-day session operations, logistics, attendance |
 | HR Manager | مدير الموارد البشرية | Records, mandatory training, compliance, HRIS |
@@ -423,7 +424,7 @@ Columns: **Pri** = MoSCoW priority · **Rel** = target release.
 | FR-IAM-04 | The system shall provide a bulk import wizard for users (CSV/XLSX, up to 10,000 rows): template download with Arabic headers, auto/manual column mapping, row-level validation, dry-run preview, create-only / upsert / update-only modes, progress and downloadable error report. | M | R1 |
 | FR-IAM-05 | Deactivating a user shall preserve all records, block login, and prompt reassignment of owned items (sessions, approvals, OJT mentees, tasks); deactivated users are archived and can be reactivated. | M | R1 |
 | FR-IAM-06 | Admins shall create static groups and dynamic audiences defined by AND/OR rules on any profile field (incl. custom fields and hire date); audiences re-evaluate automatically and can be used for enrollment, notifications, compliance rules, catalog visibility and reports. | M | R2 |
-| FR-IAM-07 | The system shall ship 15 default roles (Appendix B). Tenant Admin can clone roles and create custom roles with a permission matrix grouped by module; high-risk permissions are flagged. System roles cannot be edited. | M | R1 (default) / R2 (builder) |
+| FR-IAM-07 | The system shall ship 15 default roles (Appendix B). Tenant Admin can clone roles and create custom roles with a permission matrix grouped by module; high-risk permissions are flagged. The definitions of system roles cannot be changed (a tenant clones one to adapt it). **Full role management for the tenant (PO, 7 Oct 2026):** create, view, edit and delete custom roles, and remove system roles the organization does not use (e.g. an SME keeping only 3–4 roles) and restore them later. Safeguards: the Organization Admin role cannot be removed; a role still held by members cannot be deleted or removed until they are given another role; every change is audited. | M | R1 (default) / R2 (builder, role CRUD) |
 | FR-IAM-08 | Role assignments shall support data scopes: own, direct reports, all reports (hierarchy), department(s), branch(es), legal entity, all. | M | R2 |
 | FR-IAM-09 | The system shall enforce configurable separation-of-duties rules (e.g., a user cannot approve their own request; budget creator cannot approve the same budget; invoice approver ≠ PO creator). | S | R2 |
 | FR-IAM-10 | The system shall support SSO via SAML 2.0 and OpenID Connect with multiple identity providers per tenant, attribute mapping, just-in-time provisioning with default role, "force SSO" (disable passwords except break-glass admins), and a test tool with request/response log. | M | R2 |
@@ -438,6 +439,7 @@ Columns: **Pri** = MoSCoW priority · **Rel** = target release.
 - BR-IAM-1: A user has exactly one primary role and may hold additional roles; effective permissions are the union, limited by each role's data scope.
 - BR-IAM-2: Break-glass: at least one Tenant Admin must retain password + MFA login when SSO is forced.
 - BR-IAM-3: Any role or permission change is audited with before/after values.
+- BR-IAM-4: Separation of duties (PO, 7 Oct 2026): one person never holds both the Organization Admin (Tenant Admin) and HR Manager roles; assigning one to a holder of the other is refused. The Organization Admin role has no core training permissions (Appendix B).
 
 ---
 
@@ -1521,24 +1523,26 @@ Detailed per-requirement release tags are in §6–§9.
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | Tenant settings, branding, domains | F | — | — | — | — | — | — | — | — | — | — | — | — | V |
 | Users & roles | F | V | V | E | V | V | V (dept) | V (team) | — | — | — | — | O | V |
-| Training requests & TNA | F | F | E | E | V | V | A / E | A / E | — | — | — | — | O | V |
-| Training plan | F | F | V | A | A | V | A | V | — | — | — | — | — | V |
-| Catalog & programs | F | F | E | V | V | V | V | V | V | V (assigned) | E (own catalog) | V | V | V |
-| Sessions & scheduling | F | F | F | V | V | V | V | V | V (assigned) | V (assigned) | V (assigned) | — | V (enrolled) | V |
-| Venues & resources | F | F | E | — | V | — | — | — | — | — | — | — | — | V |
-| Instructors & providers | F | F | E | V | V | — | — | — | O | O | O | — | — | V |
-| Enrollments & approvals | F | F | E | E | A (cost) | V | A | A | V (roster) | V (roster) | V (roster) | — | O | V |
-| Logistics tasks | F | F | F | — | V | — | — | — | E (assigned) | E (assigned) | E (assigned) | — | — | V |
-| Attendance | F | F | F | V | — | V | V | V | E | E | E | — | O | V |
-| Assessments & evaluations | F | F | E | V | — | V | V | V (L3) | E (grading) | E (grading) | E (grading) | E | O | V |
-| Certificates & external certs | F | F | E | E / A | — | V | V | V | — | — | E (upload) | — | O | V |
-| Compliance rules & reports | F | E | V | F | — | F | V | V | — | — | — | — | O | V |
-| OJT & observation | F | F | E | V | — | V | V | V | — | — | — | E | O | V |
-| Budgets, POs, invoices, payments | F | E | V | V | F / A | — | V (dept) | — | O (payables) | O (payables) | E (invoices) | — | — | V |
-| Reports & analytics | F | F | E | F | F (finance) | F (compliance) | V (dept) | V (team) | V (own sessions) | V (own sessions) | V (own) | V (mentees) | O | V |
+| Training requests & TNA | — | F | E | E | V | V | A / E | A / E | — | — | — | — | O | V |
+| Training plan | — | F | V | A | A | V | A | V | — | — | — | — | — | V |
+| Catalog & programs | — | F | E | V | V | V | V | V | V | V (assigned) | E (own catalog) | V | V | V |
+| Sessions & scheduling | — | F | F | V | V | V | V | V | V (assigned) | V (assigned) | V (assigned) | — | V (enrolled) | V |
+| Venues & resources | — | F | E | — | V | — | — | — | — | — | — | — | — | V |
+| Instructors & providers | — | F | E | V | V | — | — | — | O | O | O | — | — | V |
+| Enrollments & approvals | — | F | E | E | A (cost) | V | A | A | V (roster) | V (roster) | V (roster) | — | O | V |
+| Logistics tasks | — | F | F | — | V | — | — | — | E (assigned) | E (assigned) | E (assigned) | — | — | V |
+| Attendance | — | F | F | V | — | V | V | V | E | E | E | — | O | V |
+| Assessments & evaluations | — | F | E | V | — | V | V | V (L3) | E (grading) | E (grading) | E (grading) | E | O | V |
+| Certificates & external certs | — | F | E | E / A | — | V | V | V | — | — | E (upload) | — | O | V |
+| Compliance rules & reports | — | E | V | F | — | F | V | V | — | — | — | — | O | V |
+| OJT & observation | — | F | E | V | — | V | V | V | — | — | — | E | O | V |
+| Budgets, POs, invoices, payments | — | E | V | V | F / A | — | V (dept) | — | O (payables) | O (payables) | E (invoices) | — | — | V |
+| Reports & analytics | — | F | E | F | F (finance) | F (compliance) | V (dept) | V (team) | V (own sessions) | V (own sessions) | V (own) | V (mentees) | O | V |
 | Integrations & API | F | — | — | E (HRIS) | — | — | — | — | — | — | — | — | — | V |
 | AI features | F (config) | Use | Use | Use | Use | Use | Use | Use | Use | — | — | Use | Use | V (logs) |
 | Audit log | V | — | — | — | — | V | — | — | — | — | — | — | — | V |
+
+**Organization Admin = setup role (PO, 7 Oct 2026):** the Tenant Admin (Organization Admin, مدير المنشأة) sets the organization up from the IT and marketing side — tenant settings, branding and domains, users and roles (full people records), security, integrations, AI configuration, audit log — and hands it over to the HR department; it has **no access to core training features** (requests, plans, catalog, sessions, enrollments, attendance, assessments, certificates, compliance, OJT, budgets, training reports). The Organization Admin and HR Manager roles are never held by the same person (BR-IAM-4).
 
 The Platform Super Admin (ENTLAQA) operates outside tenant roles, through the platform console (FR-ADM-17).
 

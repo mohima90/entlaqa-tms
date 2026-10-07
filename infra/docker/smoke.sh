@@ -5,7 +5,8 @@
 # and checks they dispatch an event, sends a test e-mail over SMTP with STARTTLS to the stand-in relay
 # (Mailpit), runs the invitation journey (invite in the UI, e-mail, accept link from Mailpit, set a
 # password, signed in; expired/revoked/used links; Auth's sign-up hook refuses sign-ups without a valid
-# invitation for that e-mail), sends a browser and a server error to the in-country
+# invitation for that e-mail), runs the password reset (forgot page, Auth's e-mail from Mailpit, new
+# password, old one refused, link single use), sends a browser and a server error to the in-country
 # error tracker (GlitchTip) and checks they arrive without personal data, then tears everything down.
 #
 #   bash infra/docker/smoke.sh            # KEEP=1 leaves the stack running; SKIP_BUILD=1 reuses the build
@@ -331,8 +332,9 @@ response="$(auth_api PUT /user "$GUARD_TOKEN" "{\"email\":\"squat-$STAMP@soverei
   { echo "smoke: Auth accepted an e-mail change request (HTTP ${response##*$'\n'})" >&2; exit 1; }
 [[ "$(q "select email || '|' || coalesce(email_change, '') from auth.users where id = '$GUARD_ID'")" == "$GUARD_EMAIL|" ]] ||
   { echo "smoke: the account's e-mail or pending e-mail change was modified" >&2; exit 1; }
-# Here Auth has no SMTP relay, so it would fail anyway; the database guard itself must refuse the
-# change for every role (the migration role too) — that is what protects hosted Auth.
+# Auth could e-mail a confirmation link here (it sends through Mailpit since T-M2-08), but the database
+# guard itself must refuse the change for every role (the migration role too) — that is what protects
+# hosted Auth.
 guard_err="$(q "update auth.users set email = 'squat-$STAMP@sovereign.example' where id = '$GUARD_ID'" 2>&1 || true)"
 [[ "$guard_err" == *"managed by the organization"* ]] ||
   { echo "smoke: the database did not refuse an Auth e-mail change (re-review N1)" >&2; exit 1; }
@@ -362,6 +364,89 @@ if [[ "$(q "select count(*) from platform.audit_events where data::text like '%�
   echo "smoke: personal data reached the audit log" >&2; exit 1
 fi
 
+echo "smoke: password reset (T-M2-08) — forgot page, Auth's e-mail, new password; old password and link refused"
+RESET_EMAIL="reset-$STAMP@sovereign.example"
+RESET_OLD_PASSWORD="Reset-$(openssl rand -hex 16)"
+RESET_NEW_PASSWORD="Reset-$(openssl rand -hex 16)"
+RESET_ID="$(NEW_USER_PASSWORD="$RESET_OLD_PASSWORD" node create-user.mjs "$RESET_EMAIL")"
+# A sign-in session that the reset must end (every session of the account ends: signOut global).
+response="$(auth_api POST '/token?grant_type=password' '' "{\"email\":\"$RESET_EMAIL\",\"password\":\"$RESET_OLD_PASSWORD\"}")"
+[[ "${response##*$'\n'}" == "200" ]] || { echo "smoke: the reset test user could not sign in" >&2; exit 1; }
+unset response
+# Step 1: request a link through the forgot page (Arabic), and the same answer for an unknown address.
+(cd "$ROOT/apps/suite" && E2E_BASE_URL=http://localhost:3200 RESET_E2E_EMAIL="$RESET_EMAIL" \
+  pnpm exec playwright test e2e/password-reset.spec.ts --project=desktop-chromium)
+# reset_link <address>: the reset link in the newest reset e-mail to <address> (sent by Auth itself,
+# HTML only; Mailpit derives the text part). Whole and unchanged: the token travels in the fragment. The
+# e-mail must carry neither the one-time code path (/verify) nor anything but our page. Never echo it.
+reset_link() {
+  local id
+  id="$(compose exec -T mailpit wget -qO- 'http://127.0.0.1:8025/api/v1/messages?limit=500' 2>/dev/null |
+    node -e 'let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => {
+      try { for (const m of JSON.parse(s).messages ?? [])
+        if ((m.To ?? []).some((t) => t.Address === process.argv[1]) && /Reset your password/.test(m.Subject ?? ""))
+          { console.log(m.ID); break; } } catch {} })' "$1")"
+  [[ -n "$id" ]] || return 1
+  compose exec -T mailpit wget -qO- "http://127.0.0.1:8025/api/v1/message/$id" 2>/dev/null |
+    node -e 'let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => {
+      let m = {}; try { m = JSON.parse(s); } catch {}
+      const html = (m.HTML ?? "").replace(/&amp;/g, "&");
+      if (/\/verify|token=/.test(html)) process.exit(2);
+      const re = /http:\/\/localhost:3200\/ar\/reset-password#token_hash=[A-Za-z0-9_-]{16,128}&type=recovery(?![A-Za-z0-9_-])/;
+      const link = html.match(re);
+      if (!link || !html.includes(link[0].replace("/ar/", "/en/"))) process.exit(1);
+      process.stdout.write(link[0]); })'
+}
+RESET_URL=""
+for i in $(seq 1 30); do
+  RESET_URL="$(reset_link "$RESET_EMAIL")" && break
+  [[ $i -eq 30 ]] && { echo "smoke: no reset link (our template, fragment only) in Auth's e-mail" >&2; exit 1; }
+  sleep 1
+done
+# Step 2: set the new password from the link; a second use of the link is refused (in the spec).
+(cd "$ROOT/apps/suite" && E2E_BASE_URL=http://localhost:3200 RESET_E2E_LINK_URL="$RESET_URL" \
+  RESET_E2E_NEW_PASSWORD="$RESET_NEW_PASSWORD" \
+  pnpm exec playwright test e2e/password-reset.spec.ts --project=desktop-chromium)
+# Every session of the account ended (the earlier sign-in and the recovery session).
+[[ "$(q "select count(*) from auth.sessions where user_id = '$RESET_ID'")" == "0" ]] ||
+  { echo "smoke: sign-in sessions survived the password reset" >&2; exit 1; }
+response="$(auth_api POST '/token?grant_type=password' '' "{\"email\":\"$RESET_EMAIL\",\"password\":\"$RESET_NEW_PASSWORD\"}")"
+[[ "${response##*$'\n'}" == "200" ]] || { echo "smoke: sign-in with the new password failed" >&2; exit 1; }
+response="$(auth_api POST '/token?grant_type=password' '' "{\"email\":\"$RESET_EMAIL\",\"password\":\"$RESET_OLD_PASSWORD\"}")"
+[[ "${response##*$'\n'}" =~ ^4[0-9][0-9]$ ]] || { echo "smoke: the old password still signs in" >&2; exit 1; }
+unset response
+# Auth told the account owner (password-changed notification, our template).
+for i in $(seq 1 30); do
+  compose exec -T mailpit wget -qO- 'http://127.0.0.1:8025/api/v1/messages?limit=500' 2>/dev/null |
+    node -e 'let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => {
+      let n = 0; try { for (const m of JSON.parse(s).messages ?? [])
+        if ((m.To ?? []).some((t) => t.Address === process.argv[1]) && /Your password was changed/.test(m.Subject ?? "")) n++; } catch {}
+      process.exit(n > 0 ? 0 : 1); })' "$RESET_EMAIL" && break
+  [[ $i -eq 30 ]] && { echo "smoke: no password-changed notification from Auth" >&2; exit 1; }
+  sleep 1
+done
+# The token (a credential) appears nowhere but the e-mail: not in any container log or the audit trail.
+RESET_TOKEN="${RESET_URL#*token_hash=}"
+RESET_TOKEN="${RESET_TOKEN%%&*}"
+if compose logs --no-log-prefix app 2>&1 | grep -qF "$RESET_TOKEN"; then
+  echo "smoke: the reset token appears in the app logs" >&2; exit 1
+fi
+[[ "$(q "select count(*) from platform.audit_events where data::text like '%$RESET_TOKEN%'")" == "0" ]] ||
+  { echo "smoke: the reset token reached the audit log" >&2; exit 1; }
+unset RESET_URL RESET_TOKEN
+# The gateway limits Auth's /verify per source address (30 a minute, burst 10) — also with a trailing
+# slash, which Auth's router serves too (security review M). Beyond the burst: 429. Nothing else calls
+# /verify from this host's address (the app has its own).
+for path in /verify/ /verify; do
+  limited=0
+  for i in $(seq 1 15); do
+    code="$(curl -s -o /dev/null -w '%{http_code}' --cacert .secrets/ca.crt -H "$AUTH_APIKEY_HEADER" \
+      "https://localhost:8443/auth/v1$path?type=recovery&token_hash=0000000000000000")"
+    [[ "$code" == "429" ]] && { limited=1; break; }
+  done
+  [[ $limited -eq 1 ]] || { echo "smoke: the gateway does not limit /auth/v1$path beyond its burst" >&2; exit 1; }
+done
+
 # No unconfirmed e-mail account exists after every journey (re-review N3): with "Confirm email" off, Auth
 # would hand a session for such an account to anyone who signs up with its e-mail, without the hook.
 # Accounts as Auth looks them up for a sign-up (GoTrue FindUserByEmailAndAudience); the sample people of
@@ -380,12 +465,12 @@ fi
 all_logs="$(compose logs --no-log-prefix 2>&1)"
 app_logs="$(compose logs --no-log-prefix app 2>&1)"
 for value in "$PASSWORD" "$PARITY_PASSWORD" "$MANAGER_PASSWORD" "$PROFILE_NEW_PASSWORD" "$INTRUDER_PASSWORD" \
-  "$GUARD_PASSWORD" "$GUARD_NEW_PASSWORD"; do
+  "$GUARD_PASSWORD" "$GUARD_NEW_PASSWORD" "$RESET_OLD_PASSWORD" "$RESET_NEW_PASSWORD"; do
   if grep -qF "$value" <<<"$all_logs"; then
     echo "smoke: a test user's password appears in the container logs" >&2; exit 1
   fi
 done
-for value in "$EMAIL" "$PARITY_EMAIL" "$MANAGER_EMAIL"; do
+for value in "$EMAIL" "$PARITY_EMAIL" "$MANAGER_EMAIL" "$RESET_EMAIL"; do
   if grep -qF "$value" <<<"$app_logs"; then
     echo "smoke: a test user's e-mail address appears in the app logs" >&2; exit 1
   fi

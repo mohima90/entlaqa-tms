@@ -27,6 +27,7 @@ import {
 } from '../../lib/invite-link';
 import { passwordRuleState } from '../../lib/password-rules';
 import { type ErrorTexts, errorText } from '../auth/error-text';
+import { PasswordRulesList } from '../auth/password-rules-list';
 import { fieldErrorCodes } from '../profile/field-errors';
 
 /**
@@ -60,28 +61,6 @@ function useInviteOutcome(locale: string, onInvalidated: () => void) {
       return true;
     },
   };
-}
-
-function RuleItem({ met, label, state }: { met: boolean; label: string; state: string }) {
-  return (
-    <li className={`flex items-center gap-2 text-sm ${met ? 'text-success' : 'text-text-muted'}`}>
-      <svg
-        width="18"
-        height="18"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        aria-hidden="true"
-        className="shrink-0"
-      >
-        {met ? <path d="M5 12l5 5 9-10" /> : <circle cx="12" cy="12" r="8" />}
-      </svg>
-      <span>
-        {label} <span className="sr-only">{state}</span>
-      </span>
-    </li>
-  );
 }
 
 export interface AcceptInvitationFormProps {
@@ -287,27 +266,7 @@ function CreateAccountForm({
           error={fieldErrors.password}
           disabled={pending}
         />
-        <ul
-          id="invite-password-rules"
-          aria-label={labels.rulesLabel}
-          aria-live="polite"
-          className="m-0 flex list-none flex-col gap-1 p-0"
-        >
-          {(
-            [
-              [rules.minLength, labels.ruleMinLength],
-              [rules.maxBytes, labels.ruleMaxBytes],
-              [rules.matches, labels.ruleMatches],
-            ] as const
-          ).map(([met, label]) => (
-            <RuleItem
-              key={label}
-              met={met}
-              label={label}
-              state={met ? labels.ruleMet : labels.ruleNotMet}
-            />
-          ))}
-        </ul>
+        <PasswordRulesList id="invite-password-rules" rules={rules} labels={labels} />
         <p className="m-0 text-sm text-text-muted">{labels.passwordTip}</p>
       </div>
       <TextField
@@ -697,8 +656,10 @@ export function InviteAcceptView({
               <a href={`/${locale}/sign-in`} className={buttonClasses({ variant: 'primary' })}>
                 {texts.usedSignIn}
               </a>
-              {/* TODO(T-M2-08): link to the forgot-password page once it exists (screen 10). */}
-              <a href={`/${locale}/sign-in`} className={buttonClasses({ variant: 'secondary' })}>
+              <a
+                href={`/${locale}/forgot-password`}
+                className={buttonClasses({ variant: 'secondary' })}
+              >
                 {texts.usedForgotPassword}
               </a>
             </div>

@@ -39,3 +39,13 @@ export {
   changePassword,
   createPasswordVerifier,
 } from './password';
+export {
+  type PasswordResetDeps,
+  type PasswordResetRequestDeps,
+  type RecoveryClientLike,
+  PasswordResetErrors,
+  RECOVERY_TOKEN_HASH_PATTERN,
+  RESET_REQUEST_ANSWER_MS,
+  completePasswordReset,
+  requestPasswordReset,
+} from './password-reset';

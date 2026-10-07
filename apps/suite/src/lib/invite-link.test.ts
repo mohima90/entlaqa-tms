@@ -5,6 +5,7 @@ import {
   inviteFragment,
   inviteTokenFromHash,
   splitLinkMessage,
+  splitTaggedMessage,
   withOrganization,
 } from './invite-link';
 
@@ -46,5 +47,23 @@ describe('raw invite messages on the client', () => {
 
   it('a message without a link stays whole', () => {
     expect(splitLinkMessage('plain')).toEqual({ before: 'plain', link: '', after: '' });
+  });
+
+  it('splits the password-reset messages around their bold part and link (T-M2-08)', () => {
+    for (const messages of [ar, en]) {
+      const validity = splitTaggedMessage(messages.passwordReset.sent.validity, 'b');
+      expect(validity.inner).toMatch(/60/);
+      const link = splitTaggedMessage(messages.passwordReset.reset.validity, 'link');
+      expect(link.inner).not.toBe('');
+      for (const part of [validity, link]) {
+        expect(`${part.before}${part.inner}${part.after}`).not.toMatch(/[<>]/);
+      }
+    }
+    expect(splitTaggedMessage('a <b>b', 'b')).toEqual({ before: 'a <b>b', inner: '', after: '' });
+    expect(splitTaggedMessage('a </b>b<b>', 'b')).toEqual({
+      before: 'a </b>b<b>',
+      inner: '',
+      after: '',
+    });
   });
 });

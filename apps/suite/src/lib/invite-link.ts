@@ -24,14 +24,29 @@ export function withOrganization(template: string, organization: string): string
   return template.split('{organization}').join(organization);
 }
 
+/** A raw message split around its first `<tag>…</tag>` part (rich text without a client i18n runtime). */
+export function splitTaggedMessage(
+  template: string,
+  tag: 'link' | 'b',
+): { readonly before: string; readonly inner: string; readonly after: string } {
+  const open = `<${tag}>`;
+  const close = `</${tag}>`;
+  const start = template.indexOf(open);
+  const end = start === -1 ? -1 : template.indexOf(close, start + open.length);
+  if (end === -1) return { before: template, inner: '', after: '' };
+  return {
+    before: template.slice(0, start),
+    inner: template.slice(start + open.length, end),
+    after: template.slice(end + close.length),
+  };
+}
+
 /** A raw message split around its `<link>…</link>` part (rich text without a client i18n runtime). */
 export function splitLinkMessage(template: string): {
   readonly before: string;
   readonly link: string;
   readonly after: string;
 } {
-  const match = /^([\s\S]*?)<link>([\s\S]*?)<\/link>([\s\S]*)$/.exec(template);
-  return match
-    ? { before: match[1] ?? '', link: match[2] ?? '', after: match[3] ?? '' }
-    : { before: template, link: '', after: '' };
+  const { before, inner, after } = splitTaggedMessage(template, 'link');
+  return { before, link: inner, after };
 }

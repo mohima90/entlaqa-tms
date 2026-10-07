@@ -1,6 +1,6 @@
 # Jadarat TMS — Full Feature List
 
-**Date:** 6 Oct 2026 (v2.3) · **Status:** Decisions D1, D2, D6, D7 applied; IAM-16 added (PO, 5 Oct 2026); ADM-17 extended with platform settings (PO, 6 Oct 2026) · **BRD:** `docs/brd/Jadarat_TMS_BRD_v2.md` · **Basis:** Market research in `docs/research/TMS_Market_Comparison_vs_BRD.md` + Jadarat TMS BRD v1.0
+**Date:** 7 Oct 2026 (v2.4) · **Status:** Decisions D1, D2, D6, D7 applied; IAM-16 added (PO, 5 Oct 2026); ADM-17 extended with platform settings (PO, 6 Oct 2026); IAM-07 role CRUD per tenant (PO, 7 Oct 2026) · **BRD:** `docs/brd/Jadarat_TMS_BRD_v2.md` · **Basis:** Market research in `docs/research/TMS_Market_Comparison_vs_BRD.md` + Jadarat TMS BRD v1.0
 
 **Legend**
 
@@ -44,7 +44,7 @@
 | IAM-04 | Bulk import wizard (CSV/XLSX, mapping, validation, dry run, upsert modes) | Core | R1 | ✅ |
 | IAM-05 | User lifecycle: deactivate with reassignment, archive, reactivate | Core | R1 | ✅ |
 | IAM-06 | Static and dynamic (rule-based) groups / audiences | Core | R2 | ✅ |
-| IAM-07 | 15 default roles + custom role builder with permission matrix and risk flags | Core | R1/R2 | ✅ |
+| IAM-07 | 15 default roles + custom role builder with permission matrix and risk flags; full role CRUD per tenant (create, edit, delete custom roles; remove/restore unused system roles; Org Admin role kept; roles in use protected); Org Admin = setup role without core training features, never the same person as HR Manager (BR-IAM-4) | Core | R1/R2 | ✅ |
 | IAM-08 | Data scoping of roles by branch / department / legal entity | Plus | R2 | ❌ |
 | IAM-09 | Separation-of-duties rules (requester ≠ approver, creator ≠ approver) | Plus | R2 | ⚠️ |
 | IAM-10 | SSO: SAML 2.0 / OIDC, multiple identity providers, just-in-time provisioning, force SSO | Plus | R2 | ✅ |

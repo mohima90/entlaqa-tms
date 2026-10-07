@@ -11,3 +11,5 @@ docs/
 *.md
 supabase/**/*.sql
 .claude/
+# Supabase Auth e-mail templates are Go html/templates rendered by Auth (T-M2-08); keep them as written.
+supabase/templates/

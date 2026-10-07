@@ -1,5 +1,4 @@
 import 'server-only';
-import { isIP } from 'node:net';
 import {
   type ErrorTrackingConfig,
   MAX_ENVELOPE_BYTES,
@@ -11,6 +10,7 @@ import {
   readBrowserErrorTrackingConfig,
   readEnvelopeEvents,
 } from '@jadarat/platform-observability';
+import { clientAddress, clientRateKey } from './client-ip';
 
 /**
  * Browser error reports (`POST /api/monitoring/errors`, see lib/browser-error-tracking.ts). Public and
@@ -38,22 +38,11 @@ const defaultDeps: TunnelDeps = {
 };
 
 /**
- * The client key: a client-IP header that the platform in front of the app OVERWRITES — `x-real-ip` on
- * Vercel (trusted automatically there); elsewhere only the header named in `JADARAT_CLIENT_IP_HEADER`
- * (set it only when a load balancer overwrites that header). Otherwise, or when the value is not a single
- * IP address, all clients share one key: a client-sent header can never mint keys.
+ * The client key (lib/client-ip.ts): a platform-overwritten client-IP header (IPv6 by its /64), else
+ * one shared key.
  */
 function clientKey(request: Request): string {
-  const configured = process.env.JADARAT_CLIENT_IP_HEADER?.trim();
-  const header =
-    configured !== undefined && configured !== ''
-      ? configured
-      : process.env.VERCEL === '1'
-        ? 'x-real-ip'
-        : undefined;
-  if (header === undefined) return 'unknown';
-  const client = request.headers.get(header)?.trim() ?? '';
-  return isIP(client) === 0 ? 'unknown' : client;
+  return clientRateKey(clientAddress((name) => request.headers.get(name)));
 }
 
 const ACCEPTED = 202;

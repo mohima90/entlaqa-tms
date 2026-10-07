@@ -7,7 +7,7 @@
 | **Product** | Jadarat TMS — Training Management System (module of the Jadarat HR Suite; also sold standalone) |
 | **Company** | ENTLAQA |
 | **Document type** | Business Requirements Document |
-| **Version** | 2.5 — Draft for stakeholder review |
+| **Version** | 2.6 — Draft for stakeholder review |
 | **Date** | 30 September 2026 |
 | **Supersedes** | *Jadarat TMS BRD v1.0* (15 March 2026) |
 | **Companion documents** | `docs/delivery/Jadarat_TMS_Development_Plan.md` (development plan & delivery guide) · `docs/brd/TMS_Feature_List.md` (feature list, 292 features) · `docs/research/TMS_Market_Comparison_vs_BRD.md` (market & regulatory research) |
@@ -21,6 +21,7 @@
 |---|---|---|---|
 | 1.0 | 15 Mar 2026 | ENTLAQA Product Team | Initial Jadarat TMS BRD (offline training, Jadarat-specific) |
 | 2.0 | 27 Sep 2026 | ENTLAQA Product Team | Full rewrite: comprehensive TMS scope, training planning cycle, vendor & finance depth, assessment engine, generic LMS integration framework, corrected regulatory content, sovereign deployment, requirement IDs with priority & release |
+| 2.6 | 8 Oct 2026 | Product Owner (via Claude) | BR-IAM-4 widened (PO, 8 Oct 2026): the Organization Admin role is held alone — no other role for the same person in the organization (not even Learner); scheduled hand-overs allowed; second-account circumvention accepted as residual risk (audit log only). Feature list IAM-07 |
 | 2.5 | 7 Oct 2026 | Product Owner (via Claude) | E-mail ownership (PO, 7 Oct 2026): FR-NTF-02 clarified — R1 sends every e-mail, account e-mails included (invitation, password reset, password changed), through the platform's notification service in the organization's language and brand, not the sign-in provider's mailer; new FR-NTF-10 organization-editable e-mail texts (R2) and FR-NTF-11 organization's own mail server — Resend, Mailgun, SMTP, Microsoft Graph (R2). Feature list NTF-02, NTF-10, NTF-11 |
 | 2.4 | 7 Oct 2026 | Product Owner (via Claude) | FR-IAM-07 extended (PO, 7 Oct 2026): full role management per tenant in R2 — create, edit and delete custom roles, remove unused system roles and restore them (SMEs using 3–4 roles); Organization Admin role never removable; roles in use cannot be deleted; audited. Organization Admin becomes a setup role without core training features (Appendix B) and never shares a person with HR Manager (BR-IAM-4). Feature list IAM-07 |
 | 2.3 | 6 Oct 2026 | Product Owner (via Claude) | FR-ADM-17 extended (PO, 6 Oct 2026): the Platform Super Admin manages platform settings in the platform console, starting with the e-mail provider (API key write-only and encrypted, sender, test message; MFA, audited), before production. Feature list ADM-17 (R1) |
@@ -440,7 +441,7 @@ Columns: **Pri** = MoSCoW priority · **Rel** = target release.
 - BR-IAM-1: A user has exactly one primary role and may hold additional roles; effective permissions are the union, limited by each role's data scope.
 - BR-IAM-2: Break-glass: at least one Tenant Admin must retain password + MFA login when SSO is forced.
 - BR-IAM-3: Any role or permission change is audited with before/after values.
-- BR-IAM-4: Separation of duties (PO, 7 Oct 2026): one person never holds both the Organization Admin (Tenant Admin) and HR Manager roles; assigning one to a holder of the other is refused. The Organization Admin role has no core training permissions (Appendix B).
+- BR-IAM-4: Separation of duties (PO, 7 Oct 2026; widened 8 Oct 2026): the Organization Admin (Tenant Admin) role is held **alone** — a person who is Organization Admin of an organization holds no other role there (not HR Manager, Training Manager, Learner or any other), and assigning any role to an Organization Admin, or the Organization Admin role to a holder of another role, is refused (a scheduled hand-over with non-overlapping dates is allowed). The Organization Admin role has no core training permissions (Appendix B). Residual risk accepted by the PO: one human using a second account cannot be detected; the audit log records every role grant.
 
 ---
 
@@ -1545,7 +1546,7 @@ Detailed per-requirement release tags are in §6–§9.
 | AI features | F (config) | Use | Use | Use | Use | Use | Use | Use | Use | — | — | Use | Use | V (logs) |
 | Audit log | V | — | — | — | — | V | — | — | — | — | — | — | — | V |
 
-**Organization Admin = setup role (PO, 7 Oct 2026):** the Tenant Admin (Organization Admin, مدير المنشأة) sets the organization up from the IT and marketing side — tenant settings, branding and domains, users and roles (full people records), security, integrations, AI configuration, audit log — and hands it over to the HR department; it has **no access to core training features** (requests, plans, catalog, sessions, enrollments, attendance, assessments, certificates, compliance, OJT, budgets, training reports). The Organization Admin and HR Manager roles are never held by the same person (BR-IAM-4).
+**Organization Admin = setup role (PO, 7 Oct 2026):** the Tenant Admin (Organization Admin, مدير المنشأة) sets the organization up from the IT and marketing side — tenant settings, branding and domains, users and roles (full people records), security, integrations, AI configuration, audit log — and hands it over to the HR department; it has **no access to core training features** (requests, plans, catalog, sessions, enrollments, attendance, assessments, certificates, compliance, OJT, budgets, training reports). The Organization Admin holds no other role in the same organization — not even Learner (BR-IAM-4, PO 8 Oct 2026).
 
 The Platform Super Admin (ENTLAQA) operates outside tenant roles, through the platform console (FR-ADM-17).
 

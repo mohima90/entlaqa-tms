@@ -102,29 +102,34 @@ export function lockedRoles(
   return new Set(privilegedAllowed ? [] : catalogue.filter((c) => c.privileged).map((c) => c.code));
 }
 
-/** Each role of an exclusive pair → the other (BR-IAM-4; from EXCLUSIVE_ROLE_PAIRS on the server). */
-export type ExclusiveRoles = Readonly<Record<string, string>>;
+/** Do two roles conflict (BR-IAM-4)? A role held alone (`sole`, from SOLE_ROLE_CODES on the server)
+ * conflicts with every other role. Same rule as the server (rolesConflict). */
+export function soleConflict(a: string, b: string, sole: readonly string[]): boolean {
+  return a !== b && (sole.includes(a) || sole.includes(b));
+}
 
 /**
- * Separation of duties (BR-IAM-4, T-M2-16): may `code` be chosen now — as the primary role or as an
- * additional role — while its pair is chosen and not ended? A role already chosen can always be
- * unchosen; choosing the pair's other role as primary replaces it (allowed). Same rule as the server
+ * Separation of duties (BR-IAM-4, T-M2-16; the Organization Admin holds no other role): may `code` be
+ * chosen now — as the primary role or as an additional role — while a conflicting role is chosen and
+ * not ended? A role already chosen can always be unchosen; choosing another primary role replaces the
+ * current one (so the current primary never blocks the primary choice). Same rule as the server
  * (rolesHeldTogether), without dates for the new choice: the server decides about scheduled hand-overs.
  */
-export function blockedByPair(
+export function blockedBySole(
   code: string,
   as: 'primary' | 'additional',
   state: RolesFormState,
-  exclusive: ExclusiveRoles,
+  sole: readonly string[],
   today: string,
 ): boolean {
-  const other = exclusive[code];
-  if (other === undefined) return false;
   if (as === 'primary' ? state.primary === code : state.additional[code] !== undefined) {
     return false;
   }
-  const days = state.additional[other];
-  const otherAdditional =
-    days !== undefined && (days.validUntil === '' || days.validUntil >= today);
-  return as === 'primary' ? otherAdditional : otherAdditional || state.primary === other;
+  const held = Object.entries(state.additional)
+    .filter(
+      ([other, days]) => other !== code && (days.validUntil === '' || days.validUntil >= today),
+    )
+    .map(([other]) => other);
+  if (as === 'additional' && state.primary !== '') held.push(state.primary);
+  return held.some((other) => soleConflict(code, other, sole));
 }

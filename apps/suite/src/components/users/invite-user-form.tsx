@@ -6,9 +6,8 @@ import { invitePrivilegedUserAction, inviteUserAction } from '../../actions/invi
 import { type ManagerChoice, managersFor } from '../../lib/edit-user-form';
 import {
   COMMON_ROLE_CODES,
-  type ExclusiveRoles,
   type RoleChoice,
-  blockedByPair,
+  blockedBySole,
   choosesPrivileged,
   inviteFieldError,
   lockedRoleCodes,
@@ -33,8 +32,8 @@ export interface InviteUserFormProps {
   readonly usersHref: string;
   readonly successHref: string;
   readonly rolesHref: string;
-  /** Roles never held together by one person (BR-IAM-4): each role of a pair → the other. */
-  readonly exclusiveRoles: ExclusiveRoles;
+  /** Roles held alone (BR-IAM-4: the Organization Admin holds no other role). */
+  readonly soleRoles: readonly string[];
 }
 
 const EN_FIELDS = ['firstNameEn', 'familyNameEn'];
@@ -42,8 +41,9 @@ const EN_FIELDS = ['firstNameEn', 'familyNameEn'];
 /**
  * Invite a user (T-M2-07, FR-IAM-03, BR-IAM-1; approved screen 2): work e-mail, Arabic name (English
  * optional), placement, one primary role and optional additional roles, invitation language. Privileged
- * roles stay locked unless the session may give them (PO decision D-IAM-01). A role whose pair is
- * chosen (Organization Admin / HR Manager, BR-IAM-4) is disabled with the explanation.
+ * roles stay locked unless the session may give them (PO decision D-IAM-01). The Organization Admin
+ * holds no other role (BR-IAM-4): choosing it disables every other role and choosing another role
+ * disables it, with the explanation.
  */
 export function InviteUserForm(props: InviteUserFormProps) {
   const { labels, fieldTexts, catalogue } = props;
@@ -62,8 +62,8 @@ export function InviteUserForm(props: InviteUserFormProps) {
   const [additional, setAdditional] = useState<readonly string[]>([]);
   const [invitationLocale, setInvitationLocale] = useState<'ar' | 'en'>('ar');
   const locked = lockedRoleCodes(catalogue, props.privilegedAllowed);
-  const pairBlocked = (code: string, as: 'primary' | 'additional') =>
-    blockedByPair(code, as, primary, additional, props.exclusiveRoles);
+  const soleBlocked = (code: string, as: 'primary' | 'additional') =>
+    blockedBySole(code, as, primary, additional, props.soleRoles);
   const managers = managersFor(props.managers, departmentId, allManagers, managerId);
   // A chosen role stays visible when the list goes back to the common roles.
   const shown = rolesShown(
@@ -330,7 +330,7 @@ export function InviteUserForm(props: InviteUserFormProps) {
         </p>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           {shown.map((choice) => {
-            const blocked = pairBlocked(choice.code, 'primary');
+            const blocked = soleBlocked(choice.code, 'primary');
             return (
               <label
                 key={choice.code}
@@ -397,7 +397,7 @@ export function InviteUserForm(props: InviteUserFormProps) {
             .filter((choice) => choice.code !== primary)
             .map((choice) => {
               const on = additional.includes(choice.code);
-              const blocked = pairBlocked(choice.code, 'additional');
+              const blocked = soleBlocked(choice.code, 'additional');
               return (
                 <li key={choice.code}>
                   <button

@@ -6,7 +6,7 @@ import type { ActionRuntime } from '../define-action';
 import { createDefineAction } from '../define-action';
 import { createDefineQuery } from '../define-query';
 import { grantsForAssignments } from '../role-grants';
-import { rolesHeldTogether } from '../separation-of-duties';
+import { SOLE_ROLE_CODES, rolesHeldTogether } from '../separation-of-duties';
 import type { SystemRoleCode } from '../system-roles';
 import {
   EditRolesInput,
@@ -189,6 +189,7 @@ describe('update roles actions', () => {
     expect(db.replaceMemberRoles).toHaveBeenCalledWith(TX, SARA, form.version, after, {
       lockedCodes: new Set(PRIVILEGED_ROLE_CODES),
       conflicts: rolesHeldTogether,
+      soleRoles: new Set(SOLE_ROLE_CODES),
     });
     expect(writeAudit).toHaveBeenCalledWith(TX, expect.anything(), {
       action: 'platform.user.roles_changed',
@@ -217,6 +218,7 @@ describe('update roles actions', () => {
     expect(db.replaceMemberRoles).toHaveBeenCalledWith(TX, SARA, form.version, expect.anything(), {
       lockedCodes: new Set(PRIVILEGED_ROLE_CODES),
       conflicts: rolesHeldTogether,
+      soleRoles: new Set(SOLE_ROLE_CODES),
     });
   });
 
@@ -247,7 +249,7 @@ describe('update roles actions', () => {
     expect(getClaims).toHaveBeenCalledWith({ strict: true });
   });
 
-  it('separation of duties (BR-IAM-4): the privileged save checks it; a refusal is ROLE_CONFLICT', async () => {
+  it('separation of duties (BR-IAM-4): the save checks it; a refusal is ROLE_CONFLICT', async () => {
     const withHr = {
       ...form,
       primary: 'tenant_admin' as const,
@@ -266,6 +268,7 @@ describe('update roles actions', () => {
     });
     expect(db.replaceMemberRoles).toHaveBeenCalledWith(TX, SARA, form.version, expect.anything(), {
       conflicts: rolesHeldTogether,
+      soleRoles: new Set(SOLE_ROLE_CODES),
     });
   });
 

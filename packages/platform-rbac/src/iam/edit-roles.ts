@@ -12,7 +12,7 @@ import type { ActionDefinition, PermissionAccess } from '../define-action';
 import type { QueryDefinition } from '../define-query';
 import type { PermissionDefinition } from '../permissions';
 import { platformPermissions } from '../platform-permissions';
-import { rolesHeldTogether } from '../separation-of-duties';
+import { SOLE_ROLE_CODES, rolesHeldTogether } from '../separation-of-duties';
 import { SYSTEM_ROLES, SYSTEM_ROLE_CODES, type SystemRoleCode } from '../system-roles';
 
 /**
@@ -21,10 +21,13 @@ import { SYSTEM_ROLES, SYSTEM_ROLE_CODES, type SystemRoleCode } from '../system-
  * optional first/last days. Ordinary roles: `platform.role.assign` (HR Manager, Organization Admin);
  * privileged roles: `platform.role.assign_privileged` — Organization Admin with an authenticator code
  * (AAL2, PO decision D-IAM-01, 6 Oct 2026). Nobody changes their own roles; a privileged member's roles
- * only an Organization Admin (database guard); nobody holds the Organization Admin and HR Manager roles
- * together (BR-IAM-4, T-M2-16: ROLE_CONFLICT). Audited with the roles before and after.
+ * only an Organization Admin (database guard); the Organization Admin holds no other role (BR-IAM-4,
+ * T-M2-16: ROLE_CONFLICT). Audited with the roles before and after.
  */
 const p = platformPermissions;
+
+/** Roles held alone (BR-IAM-4): written so that no intermediate state of a save holds them with others. */
+const SOLE: ReadonlySet<string> = new Set(SOLE_ROLE_CODES);
 
 const PRIVILEGED: ReadonlySet<string> = new Set(
   SYSTEM_ROLES.filter((r) => r.privileged).map((r) => r.code),
@@ -183,8 +186,8 @@ function rolesAction(
         input.version,
         desiredRoles(input),
         privileged
-          ? { conflicts: rolesHeldTogether }
-          : { lockedCodes: PRIVILEGED, conflicts: rolesHeldTogether },
+          ? { conflicts: rolesHeldTogether, soleRoles: SOLE }
+          : { lockedCodes: PRIVILEGED, conflicts: rolesHeldTogether, soleRoles: SOLE },
       );
       if (!outcome.ok && outcome.refusal === 'privileged_change') {
         const access = ctx.access(p['platform.role.assign_privileged'], ctx.resource ?? 'tenant');

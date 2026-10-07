@@ -264,42 +264,110 @@ describe.skipIf(!configured)('changing roles against PostgreSQL', () => {
     });
   });
 
-  it('separation of duties: never Organization Admin and HR Manager together (BR-IAM-4)', async () => {
-    const conflicts = (roles: readonly AssignedRole[]) =>
-      roles.some((r) => r.roleCode === 'tenant_admin') &&
-      roles.some((r) => r.roleCode === 'hr_manager');
-    const both = [role('learner', { isPrimary: true }), role('tenant_admin'), role('hr_manager')];
+  // BR-IAM-4 (PO 7–8 Oct 2026): the Organization Admin holds no other role. As the edit-roles action
+  // calls it: platform-rbac SOLE_ROLE_CODES and rolesHeldTogether (here: without dates).
+  const soleRoles: ReadonlySet<string> = new Set(['tenant_admin']);
+  const adminWithOthers = (roles: readonly AssignedRole[]) =>
+    roles.some((r) => r.roleCode === 'tenant_admin') &&
+    roles.some((r) => r.roleCode !== 'tenant_admin');
+
+  it('separation of duties: the Organization Admin holds no other role (BR-IAM-4)', async () => {
+    const withLearner = [role('tenant_admin', { isPrimary: true }), role('learner')];
     // The application refuses first (before writing), the database anyway.
     const early = await withUserTx(claimsOf(admin), async (tx) => {
       const current = await getEditableRoles(tx, omar.person);
-      return replaceMemberRoles(tx, omar.person, current?.version ?? '', both, { conflicts });
+      return replaceMemberRoles(tx, omar.person, current?.version ?? '', withLearner, {
+        conflicts: adminWithOthers,
+      });
     });
     expect(early).toEqual({ ok: false, refusal: 'role_conflict' });
-    expect(await change(admin, omar.person, both)).toEqual({ ok: false, refusal: 'role_conflict' });
-    // A scheduled hand-over is fine: Organization Admin until the day before HR Manager starts.
+    expect(await change(admin, omar.person, withLearner)).toEqual({
+      ok: false,
+      refusal: 'role_conflict',
+    });
     expect(
       await change(admin, omar.person, [
         role('learner', { isPrimary: true }),
-        role('tenant_admin', { validUntil: '2031-01-31' }),
-        role('hr_manager', { validFrom: '2031-02-01' }),
-      ]),
-    ).toMatchObject({ ok: true, changed: true });
-    expect(
-      await change(admin, omar.person, [
-        role('learner', { isPrimary: true }),
-        role('tenant_admin', { validUntil: '2031-02-01' }),
-        role('hr_manager', { validFrom: '2031-02-01' }),
+        role('tenant_admin'),
       ]),
     ).toEqual({ ok: false, refusal: 'role_conflict' });
+    expect(
+      await change(admin, omar.person, [
+        role('training_manager', { isPrimary: true }),
+        role('tenant_admin'),
+      ]),
+    ).toEqual({ ok: false, refusal: 'role_conflict' });
+    // Other roles combine freely.
+    expect(
+      await change(admin, omar.person, [
+        role('hr_manager', { isPrimary: true }),
+        role('learner'),
+        role('training_manager'),
+      ]),
+    ).toMatchObject({ ok: true, changed: true });
+    // Replacing all roles by the Organization Admin role alone is fine; and back.
+    expect(
+      await change(admin, omar.person, [role('tenant_admin', { isPrimary: true })]),
+    ).toMatchObject({ ok: true, changed: true });
     expect(await change(admin, omar.person, [role('learner', { isPrimary: true })])).toMatchObject({
       ok: true,
     });
   });
 
+  it('a scheduled hand-over can be moved later or earlier in one save (security review L3)', async () => {
+    const save = (desired: readonly AssignedRole[]) =>
+      withUserTx(claimsOf(admin), async (tx) => {
+        const current = await getEditableRoles(tx, omar.person);
+        const outcome = await replaceMemberRoles(tx, omar.person, current?.version ?? '', desired, {
+          soleRoles,
+        });
+        if (!outcome.ok) throw Object.assign(new Error('refused'), { outcome });
+        return outcome;
+      }).catch((error: unknown) => {
+        const outcome = (error as { outcome?: unknown }).outcome;
+        if (outcome) return outcome as { ok: false; refusal: string };
+        throw error;
+      });
+    // Organization Admin (primary) until `last`, then learner and Training Manager from `first`.
+    const handOver = (last: string, first: string) => [
+      role('tenant_admin', { isPrimary: true, validUntil: last }),
+      role('learner', { validFrom: first }),
+      role('training_manager', { validFrom: first }),
+    ];
+    const stored = async () =>
+      (await withUserTx(claimsOf(admin), (tx) => getEditableRoles(tx, omar.person)))?.roles;
+
+    expect(await save(handOver('2031-12-31', '2032-01-01'))).toMatchObject({ ok: true });
+    // Later: the admin period grows while the other roles start later — written one row at a time in
+    // the wrong order, an intermediate state would hold both.
+    expect(await save(handOver('2032-03-31', '2032-04-01'))).toMatchObject({ ok: true });
+    expect(await stored()).toEqual(handOver('2032-03-31', '2032-04-01'));
+    // Earlier: the opposite.
+    expect(await save(handOver('2031-09-30', '2031-10-01'))).toMatchObject({ ok: true });
+    expect(await stored()).toEqual(handOver('2031-09-30', '2031-10-01'));
+    // A swap (other roles first, then Organization Admin) in one save.
+    const swapped = [
+      role('learner', { isPrimary: true, validUntil: '2031-09-30' }),
+      role('tenant_admin', { validFrom: '2031-10-01' }),
+      role('training_manager', { validUntil: '2031-09-30' }),
+    ];
+    expect(await save(swapped)).toMatchObject({ ok: true });
+    expect(await stored()).toEqual(swapped);
+    // Still refused when the final state holds both.
+    expect(await save(handOver('2032-01-31', '2032-01-01'))).toEqual({
+      ok: false,
+      refusal: 'role_conflict',
+    });
+    expect(await save([role('learner', { isPrimary: true })])).toMatchObject({ ok: true });
+  });
+
   it('separation of duties holds between two concurrent transactions (race-safe)', async () => {
     const give = (code: string) =>
-      sql`insert into platform.role_assignments (membership_id, role_code)
-          select id, ${code} from platform.tenant_memberships where person_id = ${omar.person}::uuid`;
+      sql`insert into platform.role_assignments (membership_id, role_code, is_primary)
+          select id, ${code}, true from platform.tenant_memberships where person_id = ${omar.person}::uuid`;
+    // Omar starts without any role (set by the owner).
+    await owner`delete from platform.role_assignments ra using platform.tenant_memberships m
+      where m.id = ra.membership_id and m.person_id = ${omar.person}`;
     const signal = () => {
       let fire: () => void = () => undefined;
       const promise = new Promise<void>((resolve) => {
@@ -314,10 +382,13 @@ describe.skipIf(!configured)('changing roles against PostgreSQL', () => {
     };
     const { promise: held, fire: release } = signal();
     const { promise: wrote, fire: firstWrote } = signal();
-    // First transaction: gives HR Manager, then stays open (holding the organization's role lock).
+    // First transaction: gives the learner role, then stays open (holding the organization's role lock).
     const first = withUserTx(claimsOf(admin), async (tx) => {
-      await tx.execute(give('hr_manager'));
-      firstWrote();
+      try {
+        await tx.execute(give('learner'));
+      } finally {
+        firstWrote();
+      }
       await held;
     });
     await wrote;
@@ -345,6 +416,6 @@ describe.skipIf(!configured)('changing roles against PostgreSQL', () => {
     const [stored] = await owner<{ codes: string[] }[]>`
       select array_agg(ra.role_code order by ra.role_code) as codes from platform.role_assignments ra
       join platform.tenant_memberships m on m.id = ra.membership_id where m.person_id = ${omar.person}`;
-    expect(stored?.codes).toEqual(['hr_manager', 'learner']);
+    expect(stored?.codes).toEqual(['learner']);
   });
 });

@@ -47,7 +47,7 @@ test.describe('invitations (admin side)', () => {
     await expect(form.getByTestId('invite-notice')).toContainText('7 days');
     // Separation of duties (BR-IAM-4, T-M2-16): explained next to the roles.
     await expect(form.getByTestId('role-conflict-hint')).toContainText(
-      "One person can't hold both the Organization Admin and HR Manager roles",
+      "Organization Admin is a setup-only role and can't be combined with any other role",
     );
     await expectNoSeriousA11yViolations(page);
 
@@ -107,7 +107,7 @@ test.describe('invitations (admin side)', () => {
     const form = page.getByTestId('invite-user');
     await expect(form.getByTestId('invite-notice')).toContainText('تبقى الدعوة صالحة 7 أيام');
     await expect(form.getByTestId('role-conflict-hint')).toContainText(
-      'لا يجمع شخص واحد بين دور مدير المنشأة ودور مدير الموارد البشرية',
+      'مدير المنشأة دور إعداد فقط ولا يُجمع مع أي دور آخر',
     );
     await expectNoSeriousA11yViolations(page);
 

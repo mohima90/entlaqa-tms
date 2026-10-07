@@ -62,7 +62,7 @@ export interface NewInvitation {
 }
 export function createInvitation(tx: ClaimsTx, input: NewInvitation): Promise<{ invitationId: string; personId: string }>;
   // errors (thrown as DomainError codes): EMAIL_TAKEN, EMPLOYEE_NUMBER_TAKEN, ROLE_NOT_ALLOWED,
-  // ROLE_CONFLICT (Organization Admin + HR Manager together, BR-IAM-4, T-M2-16; SQLSTATE JR001)
+  // ROLE_CONFLICT (Organization Admin with another role, BR-IAM-4, T-M2-16; SQLSTATE JR001)
 export interface InvitationRow {
   readonly id: string; readonly personId: string; readonly email: string;
   readonly displayNameAr: string; readonly displayNameEn: string | null;

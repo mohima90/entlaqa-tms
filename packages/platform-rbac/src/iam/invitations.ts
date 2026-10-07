@@ -18,7 +18,7 @@ import type { ActionContext, ActionDefinition, PermissionAccess } from '../defin
 import type { QueryDefinition } from '../define-query';
 import type { PermissionDefinition } from '../permissions';
 import { platformPermissions } from '../platform-permissions';
-import { includesExclusivePair } from '../separation-of-duties';
+import { includesConflictingRoles } from '../separation-of-duties';
 import { SYSTEM_ROLES, SYSTEM_ROLE_CODES } from '../system-roles';
 import { namePart } from './my-profile';
 
@@ -29,7 +29,7 @@ import { namePart } from './my-profile';
  * `platform.role.assign_privileged` (Organization Admin with an authenticator code, PO decision
  * D-IAM-01) — the same split as changing roles (edit-roles.ts): an ordinary action that refuses
  * privileged roles and a privileged action with the strict session check. The database guard applies
- * the same rule. An invitation never gives both the Organization Admin and HR Manager roles (BR-IAM-4,
+ * the same rule. An invitation never gives the Organization Admin role together with another role (BR-IAM-4,
  * T-M2-16: ROLE_CONFLICT on the additional roles). Audit records carry ids and role codes only (no names,
  * no e-mail).
  */
@@ -99,7 +99,7 @@ const REFUSAL_FIELDS = {
   EMAIL_TAKEN: 'email',
   EMPLOYEE_NUMBER_TAKEN: 'employeeNumber',
   ROLE_NOT_ALLOWED: 'primaryRole',
-  // Both roles of a pair: one is always an additional role (BR-IAM-4).
+  // The Organization Admin role with another role: one of them is always an additional role (BR-IAM-4).
   ROLE_CONFLICT: 'additionalRoles',
 } as const;
 type InvitationRefusalCode = keyof typeof REFUSAL_FIELDS;
@@ -170,7 +170,7 @@ function inviteAction(
     input: InviteUserInput,
     handler: async ({ ctx, input }) => {
       // Separation of duties (BR-IAM-4): refused whoever invites — a rule about the roles, not the actor.
-      if (includesExclusivePair([input.primaryRole, ...input.additionalRoles])) {
+      if (includesConflictingRoles([input.primaryRole, ...input.additionalRoles])) {
         return err(fieldError(REFUSAL_FIELDS.ROLE_CONFLICT, 'ROLE_CONFLICT'));
       }
       if (privileged) {

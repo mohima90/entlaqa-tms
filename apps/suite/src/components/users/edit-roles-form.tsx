@@ -4,11 +4,10 @@ import { useRouter } from 'next/navigation';
 import { type SyntheticEvent, useState, useTransition } from 'react';
 import { updateMemberPrivilegedRolesAction, updateMemberRolesAction } from '../../actions/users';
 import {
-  type ExclusiveRoles,
   type RoleChoice,
   type RoleRow,
   type RolesFormState,
-  blockedByPair,
+  blockedBySole,
   desiredRoles,
   formStateFromRoles,
   lockedRoles,
@@ -37,15 +36,16 @@ export interface EditRolesFormProps {
   readonly profileHref: string;
   /** Today in the organization's time zone (YYYY-MM-DD): ended and scheduled roles are marked. */
   readonly today: string;
-  /** Roles never held together by one person (BR-IAM-4): each role of a pair → the other. */
-  readonly exclusiveRoles: ExclusiveRoles;
+  /** Roles held alone (BR-IAM-4: the Organization Admin holds no other role). */
+  readonly soleRoles: readonly string[];
 }
 
 /**
  * Change a member's roles (T-M2-14, FR-IAM-07, BR-IAM-1; screen 3 «تعديل الأدوار», role choice of
  * screen 2): one primary role and optional additional roles with optional first and last days.
- * Privileged roles stay locked unless the session may change them (PO decision D-IAM-01). A role
- * whose pair is chosen (Organization Admin / HR Manager, BR-IAM-4) is disabled with the explanation.
+ * Privileged roles stay locked unless the session may change them (PO decision D-IAM-01). The
+ * Organization Admin holds no other role (BR-IAM-4): choosing it disables every other role and choosing
+ * another role disables it, with the explanation.
  */
 export function EditRolesForm(props: EditRolesFormProps) {
   const { labels, catalogue } = props;
@@ -59,8 +59,8 @@ export function EditRolesForm(props: EditRolesFormProps) {
   const initialPrimary = props.roles.find((r) => r.isPrimary)?.roleCode ?? '';
   const primaryLocked = locked.has(initialPrimary);
   const privileged = new Set(catalogue.filter((c) => c.privileged).map((c) => c.code));
-  const pairBlocked = (code: string, as: 'primary' | 'additional') =>
-    blockedByPair(code, as, state, props.exclusiveRoles, props.today);
+  const soleBlocked = (code: string, as: 'primary' | 'additional') =>
+    blockedBySole(code, as, state, props.soleRoles, props.today);
 
   const setDay = (code: string, field: 'validFrom' | 'validUntil', value: string) => {
     setState((s) => {
@@ -174,7 +174,7 @@ export function EditRolesForm(props: EditRolesFormProps) {
           {text('primaryHint')}
         </p>
         {catalogue.map((choice) => {
-          const blocked = pairBlocked(choice.code, 'primary');
+          const blocked = soleBlocked(choice.code, 'primary');
           const disabled =
             pending ||
             blocked ||
@@ -233,7 +233,7 @@ export function EditRolesForm(props: EditRolesFormProps) {
           .filter((choice) => choice.code !== state.primary)
           .map((choice) => {
             const days = state.additional[choice.code];
-            const blocked = pairBlocked(choice.code, 'additional');
+            const blocked = soleBlocked(choice.code, 'additional');
             const disabled = pending || blocked || locked.has(choice.code);
             return (
               <div

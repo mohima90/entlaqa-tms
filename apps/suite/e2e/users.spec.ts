@@ -318,7 +318,7 @@ test.describe('users pages', () => {
     await expect(form.getByRole('checkbox', { name: /^Learner/ })).toBeChecked();
     // Separation of duties (BR-IAM-4, T-M2-16): explained on the form.
     await expect(form.getByTestId('role-conflict-hint')).toContainText(
-      "One person can't hold both the Organization Admin and HR Manager roles",
+      "Organization Admin is a setup-only role and can't be combined with any other role",
     );
     await expectNoSeriousA11yViolations(page);
 
@@ -357,7 +357,7 @@ test.describe('users pages', () => {
       'تعديل أدوار سارة عبدالله القحطاني',
     );
     await expect(page.getByTestId('role-conflict-hint')).toContainText(
-      'لا يجمع شخص واحد بين دور مدير المنشأة ودور مدير الموارد البشرية',
+      'مدير المنشأة دور إعداد فقط ولا يُجمع مع أي دور آخر',
     );
     await expectNoSeriousA11yViolations(page);
   });

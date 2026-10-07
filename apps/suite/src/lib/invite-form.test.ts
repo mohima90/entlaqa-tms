@@ -4,7 +4,7 @@ import {
   type RoleChoice,
   canResend,
   choosesPrivileged,
-  blockedByPair,
+  blockedBySole,
   inviteFieldError,
   lockedRoleCodes,
   rolesShown,
@@ -80,27 +80,29 @@ describe('inviteFieldError', () => {
   });
 });
 
-describe('blockedByPair (BR-IAM-4)', () => {
-  const pairs = { tenant_admin: 'hr_manager', hr_manager: 'tenant_admin' };
-  it('blocks the other role of a chosen pair; never a chosen role; other roles never', () => {
-    // Organization Admin as primary: HR Manager cannot be added; the admin radio stays usable.
-    expect(blockedByPair('hr_manager', 'additional', 'tenant_admin', [], pairs)).toBe(true);
-    expect(blockedByPair('tenant_admin', 'primary', 'tenant_admin', [], pairs)).toBe(false);
-    // Switching the primary role to HR Manager replaces the admin: allowed.
-    expect(blockedByPair('hr_manager', 'primary', 'tenant_admin', [], pairs)).toBe(false);
-    // HR Manager as an additional role: the admin can be neither primary nor additional.
-    expect(blockedByPair('tenant_admin', 'primary', 'learner', ['hr_manager'], pairs)).toBe(true);
-    expect(blockedByPair('tenant_admin', 'additional', 'learner', ['hr_manager'], pairs)).toBe(
-      true,
-    );
-    // A chosen role can always be unchosen, even if both slipped in.
-    expect(blockedByPair('tenant_admin', 'additional', 'hr_manager', ['tenant_admin'], pairs)).toBe(
+describe('blockedBySole (BR-IAM-4: the Organization Admin holds no other role)', () => {
+  const sole = ['tenant_admin'];
+  it('the Organization Admin blocks every other role, and any other role blocks it', () => {
+    // Organization Admin as primary: no additional role; the radio buttons stay usable (replace).
+    for (const code of ['hr_manager', 'learner', 'auditor']) {
+      expect(blockedBySole(code, 'additional', 'tenant_admin', [], sole), code).toBe(true);
+      expect(blockedBySole(code, 'primary', 'tenant_admin', [], sole), code).toBe(false);
+    }
+    // Another primary role: the admin cannot be added; as primary it replaces it (allowed).
+    expect(blockedBySole('tenant_admin', 'additional', 'learner', [], sole)).toBe(true);
+    expect(blockedBySole('tenant_admin', 'primary', 'learner', [], sole)).toBe(false);
+    // An additional role chosen: the admin can be neither primary nor additional.
+    expect(blockedBySole('tenant_admin', 'primary', 'learner', ['hr_manager'], sole)).toBe(true);
+    expect(blockedBySole('tenant_admin', 'primary', '', ['mentor'], sole)).toBe(true);
+    expect(blockedBySole('tenant_admin', 'additional', '', [], sole)).toBe(false);
+  });
+
+  it('never blocks a chosen role; other roles combine freely', () => {
+    expect(blockedBySole('tenant_admin', 'additional', 'hr_manager', ['tenant_admin'], sole)).toBe(
       false,
     );
-    expect(blockedByPair('auditor', 'additional', 'tenant_admin', ['hr_manager'], pairs)).toBe(
-      false,
-    );
-    expect(blockedByPair('hr_manager', 'additional', 'learner', [], pairs)).toBe(false);
+    expect(blockedBySole('auditor', 'additional', 'hr_manager', ['learner'], sole)).toBe(false);
+    expect(blockedBySole('hr_manager', 'primary', 'learner', ['mentor'], sole)).toBe(false);
   });
 });
 

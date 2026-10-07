@@ -229,7 +229,7 @@ describe('invite user action', () => {
 
   it('HR Manager giving a privileged role: ROLE_NOT_ALLOWED on that field, nothing created', async () => {
     const hr = createDefineAction(runtime(['hr_manager']).rt)(inviteUserActionDefinition());
-    const primary = await hr({ ...form, primaryRole: 'tenant_admin' });
+    const primary = await hr({ ...form, primaryRole: 'tenant_admin', additionalRoles: [] });
     expect(!primary.ok && primary.error.fieldErrors).toEqual([
       { path: 'primaryRole', code: 'ROLE_NOT_ALLOWED' },
     ]);
@@ -240,7 +240,7 @@ describe('invite user action', () => {
     // The privileged action itself: HR does not hold role.assign_privileged.
     const privileged = await createDefineAction(runtime(['hr_manager'], 'aal2').rt)(
       invitePrivilegedUserActionDefinition(),
-    )({ ...form, primaryRole: 'tenant_admin' });
+    )({ ...form, primaryRole: 'tenant_admin', additionalRoles: [] });
     expect(!privileged.ok && privileged.error.code).toBe('FORBIDDEN');
     expect(db.createInvitation).not.toHaveBeenCalled();
   });
@@ -269,10 +269,12 @@ describe('invite user action', () => {
     expect(writeAudit).toHaveBeenCalledTimes(1);
   });
 
-  it('separation of duties (BR-IAM-4): never Organization Admin and HR Manager together', async () => {
+  it('separation of duties (BR-IAM-4): the Organization Admin role is given alone', async () => {
     const conflict = [{ path: 'additionalRoles', code: 'ROLE_CONFLICT' }];
     for (const roles of [
       { primaryRole: 'tenant_admin' as const, additionalRoles: ['hr_manager' as const] },
+      { primaryRole: 'tenant_admin' as const, additionalRoles: ['learner' as const] },
+      { primaryRole: 'learner' as const, additionalRoles: ['tenant_admin' as const] },
       {
         primaryRole: 'hr_manager' as const,
         additionalRoles: ['learner' as const, 'tenant_admin' as const],
@@ -292,11 +294,19 @@ describe('invite user action', () => {
       }
     }
     expect(db.createInvitation).not.toHaveBeenCalled();
-    // Either role with other privileged roles is fine.
-    const saved = await createDefineAction(runtime(['tenant_admin'], 'aal2').rt)(
-      invitePrivilegedUserActionDefinition(),
-    )({ ...form, primaryRole: 'tenant_admin', additionalRoles: ['finance_manager', 'auditor'] });
-    expect(saved.ok).toBe(true);
+    // The Organization Admin role alone is fine; so are other roles together, privileged ones included.
+    for (const roles of [
+      { primaryRole: 'tenant_admin' as const, additionalRoles: [] },
+      {
+        primaryRole: 'hr_manager' as const,
+        additionalRoles: ['learner' as const, 'finance_manager' as const, 'auditor' as const],
+      },
+    ]) {
+      const saved = await createDefineAction(runtime(['tenant_admin'], 'aal2').rt)(
+        invitePrivilegedUserActionDefinition(),
+      )({ ...form, ...roles });
+      expect(saved.ok).toBe(true);
+    }
   });
 
   it('maps createInvitation refusals to field errors; other errors stay internal', async () => {

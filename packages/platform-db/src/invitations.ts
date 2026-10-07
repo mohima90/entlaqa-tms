@@ -33,7 +33,7 @@ export type InvitationErrorCode =
   | 'EMAIL_TAKEN'
   | 'EMPLOYEE_NUMBER_TAKEN'
   | 'ROLE_NOT_ALLOWED'
-  /** BR-IAM-4: the invitation would give both the Organization Admin and HR Manager roles. */
+  /** BR-IAM-4: the invitation would give the Organization Admin role together with another role. */
   | 'ROLE_CONFLICT'
   | 'INVITATION_NOT_VALID'
   | 'INVITATION_ACCOUNT_MISMATCH'

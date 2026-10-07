@@ -101,23 +101,22 @@ export function canResend(row: Pick<InvitationListItem, 'state' | 'sendCount'>):
   return (row.state === 'pending' || row.state === 'expired') && row.sendCount < MAX_SENDS;
 }
 
-/** Each role of an exclusive pair → the other (BR-IAM-4; from EXCLUSIVE_ROLE_PAIRS on the server). */
-export type ExclusiveRoles = Readonly<Record<string, string>>;
-
 /**
- * Separation of duties (BR-IAM-4, T-M2-16): is `code` unavailable because the other role of its pair is
- * chosen? Only roles not chosen yet are blocked; choosing the other role of the pair as primary replaces
- * the current primary (allowed). The server refuses the pair anyway (ROLE_CONFLICT).
+ * Separation of duties (BR-IAM-4, T-M2-16; the Organization Admin holds no other role): is `code`
+ * unavailable because a conflicting role is chosen? A role held alone (`sole`, from SOLE_ROLE_CODES on
+ * the server) conflicts with every other role. Only roles not chosen yet are blocked; choosing another
+ * primary role replaces the current one (so the current primary never blocks the primary choice). The
+ * server refuses conflicting roles anyway (ROLE_CONFLICT).
  */
-export function blockedByPair(
+export function blockedBySole(
   code: string,
   as: 'primary' | 'additional',
   primary: string,
   additional: readonly string[],
-  exclusive: ExclusiveRoles,
+  sole: readonly string[],
 ): boolean {
-  const other = exclusive[code];
-  if (other === undefined) return false;
-  if (as === 'primary') return primary !== code && additional.includes(other);
-  return !additional.includes(code) && (primary === other || additional.includes(other));
+  if (as === 'primary' ? primary === code : additional.includes(code)) return false;
+  const held = additional.filter((other) => other !== code);
+  if (as === 'additional' && primary !== '') held.push(primary);
+  return held.some((other) => other !== code && (sole.includes(code) || sole.includes(other)));
 }

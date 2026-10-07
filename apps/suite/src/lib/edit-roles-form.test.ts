@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  blockedByPair,
+  blockedBySole,
   desiredRoles,
   formStateFromRoles,
   lockedRoles,
@@ -76,8 +76,8 @@ describe('roles form', () => {
   });
 });
 
-describe('blockedByPair (BR-IAM-4)', () => {
-  const pairs = { tenant_admin: 'hr_manager', hr_manager: 'tenant_admin' };
+describe('blockedBySole (BR-IAM-4: the Organization Admin holds no other role)', () => {
+  const sole = ['tenant_admin'];
   const TODAY = '2026-10-07';
   const state = (primary: string, additional: Record<string, [string, string]> = {}) => ({
     primary,
@@ -89,25 +89,45 @@ describe('blockedByPair (BR-IAM-4)', () => {
     ),
   });
 
-  it('blocks the other role of a chosen pair, unless that one has ended', () => {
+  it('the Organization Admin as primary blocks every additional role', () => {
     const admin = state('tenant_admin');
-    expect(blockedByPair('hr_manager', 'additional', admin, pairs, TODAY)).toBe(true);
-    // Choosing HR Manager as the primary role replaces the admin role: allowed.
-    expect(blockedByPair('hr_manager', 'primary', admin, pairs, TODAY)).toBe(false);
-    const hrAdditional = state('learner', { hr_manager: ['', ''] });
-    expect(blockedByPair('tenant_admin', 'primary', hrAdditional, pairs, TODAY)).toBe(true);
-    expect(blockedByPair('tenant_admin', 'additional', hrAdditional, pairs, TODAY)).toBe(true);
-    // Ends today: still held today. Ended yesterday: history.
-    const endsToday = state('learner', { hr_manager: ['', TODAY] });
-    expect(blockedByPair('tenant_admin', 'additional', endsToday, pairs, TODAY)).toBe(true);
-    const ended = state('learner', { hr_manager: ['', '2026-10-06'] });
-    expect(blockedByPair('tenant_admin', 'additional', ended, pairs, TODAY)).toBe(false);
+    for (const code of ['hr_manager', 'learner', 'training_manager', 'auditor']) {
+      expect(blockedBySole(code, 'additional', admin, sole, TODAY), code).toBe(true);
+    }
+    // Choosing another primary role replaces the admin role: allowed.
+    expect(blockedBySole('learner', 'primary', admin, sole, TODAY)).toBe(false);
   });
 
-  it('never blocks a chosen role or a role outside the pairs', () => {
-    const both = state('learner', { hr_manager: ['', ''], tenant_admin: ['', ''] });
-    expect(blockedByPair('tenant_admin', 'additional', both, pairs, TODAY)).toBe(false);
-    expect(blockedByPair('learner', 'primary', both, pairs, TODAY)).toBe(false);
-    expect(blockedByPair('auditor', 'additional', state('tenant_admin'), pairs, TODAY)).toBe(false);
+  it('any other role chosen blocks the Organization Admin, unless it has ended', () => {
+    const learner = state('learner');
+    expect(blockedBySole('tenant_admin', 'additional', learner, sole, TODAY)).toBe(true);
+    // As primary it would replace the learner role: allowed while no additional role is held.
+    expect(blockedBySole('tenant_admin', 'primary', learner, sole, TODAY)).toBe(false);
+    const withHr = state('learner', { hr_manager: ['', ''] });
+    expect(blockedBySole('tenant_admin', 'primary', withHr, sole, TODAY)).toBe(true);
+    expect(blockedBySole('tenant_admin', 'additional', withHr, sole, TODAY)).toBe(true);
+    // Ends today: still held today. Ended yesterday: history.
+    const endsToday = state('tenant_admin', { learner: ['', TODAY] });
+    expect(blockedBySole('tenant_admin', 'primary', endsToday, sole, TODAY)).toBe(false);
+    expect(
+      blockedBySole(
+        'tenant_admin',
+        'primary',
+        state('hr_manager', { learner: ['', TODAY] }),
+        sole,
+        TODAY,
+      ),
+    ).toBe(true);
+    const ended = state('hr_manager', { learner: ['', '2026-10-06'] });
+    expect(blockedBySole('tenant_admin', 'primary', ended, sole, TODAY)).toBe(false);
+  });
+
+  it('never blocks a chosen role; other roles combine freely', () => {
+    const both = state('learner', { tenant_admin: ['', ''], hr_manager: ['', ''] });
+    expect(blockedBySole('tenant_admin', 'additional', both, sole, TODAY)).toBe(false);
+    expect(blockedBySole('learner', 'primary', both, sole, TODAY)).toBe(false);
+    const hr = state('hr_manager', { learner: ['', ''] });
+    expect(blockedBySole('auditor', 'additional', hr, sole, TODAY)).toBe(false);
+    expect(blockedBySole('training_manager', 'primary', hr, sole, TODAY)).toBe(false);
   });
 });

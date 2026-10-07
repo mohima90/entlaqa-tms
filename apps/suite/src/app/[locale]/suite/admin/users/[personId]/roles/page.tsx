@@ -1,6 +1,6 @@
 import { toClientError } from '@jadarat/platform-core';
 import { routing } from '@jadarat/platform-i18n/routing';
-import { EXCLUSIVE_ROLES_BY_CODE, type EditRolesView, SYSTEM_ROLES } from '@jadarat/platform-rbac';
+import { SOLE_ROLE_CODES, type EditRolesView, SYSTEM_ROLES } from '@jadarat/platform-rbac';
 import { Alert, Card } from '@jadarat/ui';
 import { hasLocale } from 'next-intl';
 import { getTranslations } from 'next-intl/server';
@@ -155,7 +155,7 @@ async function rolesForm(
         errors={await profileErrorTexts(locale)}
         profileHref={profileHref}
         today={view.roles.today}
-        exclusiveRoles={EXCLUSIVE_ROLES_BY_CODE}
+        soleRoles={SOLE_ROLE_CODES}
       />
     </Card>
   );

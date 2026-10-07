@@ -168,4 +168,7 @@ worker_pass
 event after_install # with the queue installed
 worker_pass
 [[ "$(dispatched after_install)" == "1" ]] || { echo "db-test-hosted-sim: the second pass did not dispatch" >&2; exit 1; }
+# A later deploy runs after the worker has installed its queue (as on staging): it must still verify.
+echo "db-test-hosted-sim: apply again with the queue installed (nothing pending; verification)"
+bash "$ROOT/scripts/db-deploy.sh" apply >/dev/null
 echo "db-test-hosted-sim: worker OK"

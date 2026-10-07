@@ -54,8 +54,10 @@ begin
     select 1 from pg_namespace n
     where n.nspowner = (select oid from pg_roles where rolname = 'app_queue') and n.nspname <> 'graphile_worker'
     union all
+    -- pg_toast: the out-of-line storage of graphile_worker's own tables (owned with them; no code).
     select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
-    where c.relowner = (select oid from pg_roles where rolname = 'app_queue') and n.nspname <> 'graphile_worker'
+    where c.relowner = (select oid from pg_roles where rolname = 'app_queue')
+      and n.nspname not in ('graphile_worker', 'pg_toast')
     union all
     select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where p.proowner = (select oid from pg_roles where rolname = 'app_queue') and n.nspname <> 'graphile_worker'

@@ -16,9 +16,13 @@
 #   secret   RESEND_API_KEY           Resend API key (sending access only)
 #   secret   EMAIL_TEST_TO            recipient of the test e-mail (mode test-email)
 #   variable APP_BASE_URL             public origin of the staging web app (https://…, no path) for
-#                                     links in e-mails (invitations, T-M2-07); required once
-#                                     EMAIL_PROVIDER is set — without it (e-mail off) invitations
-#                                     are not mailed
+#                                     links in e-mails (invitations, T-M2-07; password reset, T-M2-17);
+#                                     required once EMAIL_PROVIDER is set — without it (e-mail off)
+#                                     invitations are not mailed
+#   Password-reset links (T-M2-17), optional — needed once the web app runs with
+#   PASSWORD_RESET_DELIVERY=worker; the Auth admin key exists HERE ONLY, never in Vercel (ADR 0002 §7):
+#   variable SUPABASE_URL             the project's API origin (https://<ref>.supabase.co)
+#   secret   SUPABASE_SECRET_KEY      a Supabase secret key (sb_secret_…) of that project
 # Until both connection secrets exist each run ends with a notice and does nothing.
 name: Jobs (staging)
 
@@ -88,6 +92,8 @@ jobs:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           EMAIL_TEST_TO: ${{ secrets.EMAIL_TEST_TO }}
           APP_BASE_URL: ${{ vars.APP_BASE_URL }}
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           MODE: ${{ inputs.mode == 'test-email' && 'test-email' || 'once' }}
           JADARAT_ENVIRONMENT: staging
           JADARAT_RELEASE: ${{ github.sha }}

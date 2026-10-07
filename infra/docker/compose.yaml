@@ -5,12 +5,13 @@
 # background-job worker, and the in-country error tracker (GlitchTip, Sentry-compatible; ADR 0009 §4)
 # with its own database.
 # TLS verified against the installation's CA on every hop that leaves a private network: app/worker → db,
-# worker and Auth → mail relay (STARTTLS), Auth → db (PostgreSQL requires TLS for all network clients,
-# db/pg_hba.conf) and app → gateway; the GlitchTip UI is served through the gateway's TLS too.
+# worker → mail relay (STARTTLS), Auth → db (PostgreSQL requires TLS for all network clients,
+# db/pg_hba.conf), app and worker → gateway; the GlitchTip UI is served through the gateway's TLS too.
 # Plain-HTTP hops run only on internal networks:
-# gateway → Auth, Auth → its e-mail templates and app/gateway → GlitchTip (none has a TLS listener). Auth and GlitchTip
-# have no outbound route. Containers drop privileges; app, worker, gateway, Auth and GlitchTip are
-# read-only.
+# gateway → Auth and app/gateway → GlitchTip (none has a TLS listener). Auth and GlitchTip have no
+# outbound route. Containers drop privileges; app, worker, gateway, Auth and GlitchTip are read-only.
+# Every e-mail is sent by the worker through our notification service (T-M2-17, BRD v2.5 FR-NTF-02):
+# Auth has no mail relay at all.
 # Images are pinned by digest (multi-arch index); bump deliberately with the hosted versions.
 # Secrets: ./gen-secrets.sh → .secrets/ (git-ignored); always run compose with
 #   docker compose --env-file .secrets/.env …
@@ -25,12 +26,15 @@ x-hardening: &hardening
 # gateway, and the gateway cannot reach the database.
 networks:
   db-auth: { internal: true } # db ⇄ Auth
-  auth-internal: { internal: true } # gateway ⇄ Auth (the plain-HTTP hop); Auth ⇄ its e-mail templates
+  auth-internal: { internal: true } # gateway ⇄ Auth (the plain-HTTP hop)
+  # worker ⇄ gateway (TLS): the Auth admin API for password-reset links (T-M2-17) — the worker's only
+  # route to Auth; the app has none to the admin key.
+  auth-admin: { internal: true }
   db-app: {} # db ⇄ app (+ the db host port used for migrations)
   edge: {} # app ⇄ gateway (+ published ports)
   errors: { internal: true } # app, gateway ⇄ GlitchTip (plain HTTP; no route out of the installation)
   errors-internal: { internal: true } # GlitchTip ⇄ its own database (error data never in the TMS db)
-  mail: { internal: true } # worker, Auth ⇄ Mailpit (SMTP with STARTTLS)
+  mail: { internal: true } # worker ⇄ Mailpit (SMTP with STARTTLS)
 
 services:
   db:
@@ -75,8 +79,8 @@ services:
     <<: *hardening
     read_only: true
     cap_drop: [ALL]
-    # `mail`: Auth sends its own e-mails (password reset, password changed; T-M2-08) to the relay.
-    networks: [db-auth, auth-internal, mail]
+    # No mail network: Auth sends no e-mail (T-M2-17) — without GOTRUE_SMTP_HOST its mailer is a no-op.
+    networks: [db-auth, auth-internal]
     healthcheck:
       test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:9999/health']
       interval: 5s
@@ -84,14 +88,8 @@ services:
       retries: 30
     depends_on:
       db: { condition: service_healthy }
-      # Auth reads its e-mail templates at start-up and falls back to its English default when it
-      # cannot (logged as `template_body_http_error` — alert on it): start only once they are served.
-      auth-templates: { condition: service_healthy }
-      mailpit: { condition: service_healthy }
     volumes:
       - ./.secrets/ca.crt:/certs/ca.crt:ro
-      # The relay's CA, added to (not replacing) the system roots — see SSL_CERT_DIR below.
-      - ${AUTH_SMTP_CA_CERT_FILE:-./.secrets/mail-ca.crt}:/certs/mail/smtp-ca.crt:ro
     environment:
       GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${AUTH_DB_PASSWORD:?run with --env-file .secrets/.env}@db:5432/postgres?sslmode=verify-full&sslrootcert=/certs/ca.crt
       GOTRUE_JWT_SECRET: ${JWT_SECRET:?run with --env-file .secrets/.env}
@@ -117,35 +115,22 @@ services:
       # No confirmation e-mails: administrators create confirmed users, and an invitee's sign-up is
       # confirmed at once — the invitation e-mail proved the address — so it returns a session.
       GOTRUE_MAILER_AUTOCONFIRM: 'true'
-      # Password reset (FR-IAM-13, T-M2-08; docs/engineering/password-reset.md): Auth e-mails the link
-      # itself, through the installation's relay (here Mailpit). The template links straight to our page
-      # with the token hash in the URL fragment; the link is valid for 60 minutes, single use, and one
-      # e-mail a minute per account.
-      # TLS: Auth's mailer uses implicit TLS on port 465 and otherwise STARTTLS ONLY IF the relay offers
-      # it — so a real installation uses port 465, or a relay that requires TLS and authentication
-      # (Mailpit here requires STARTTLS). Certificates are verified against the system roots PLUS the
-      # relay's CA mounted in /certs/mail (AUTH_SMTP_CA_CERT_FILE, default the stack's mail CA): Go reads
-      # its default CA file and every directory in SSL_CERT_DIR (SSL_CERT_FILE would replace the roots).
-      GOTRUE_SMTP_HOST: ${AUTH_SMTP_HOST:-mailpit}
-      GOTRUE_SMTP_PORT: ${AUTH_SMTP_PORT:-1025}
-      GOTRUE_SMTP_USER: ${AUTH_SMTP_USER:-}
-      GOTRUE_SMTP_PASS: ${AUTH_SMTP_PASS:-}
-      GOTRUE_SMTP_ADMIN_EMAIL: ${EMAIL_FROM_ADDRESS:-noreply@jadarat.example}
-      GOTRUE_SMTP_SENDER_NAME: ${EMAIL_FROM_NAME:-Jadarat}
-      GOTRUE_SMTP_MAX_FREQUENCY: 60s
-      SSL_CERT_DIR: /etc/ssl/certs:/certs/mail
+      # Password reset (FR-IAM-13, T-M2-08/T-M2-17; docs/engineering/password-reset.md): the WORKER asks
+      # Auth's admin API for a recovery token (generate_link — Auth sends nothing) and e-mails the link
+      # through our notification service (Mailpit here). Auth has NO mail relay: GOTRUE_SMTP_HOST is
+      # unset, so its mailer is a no-op, and the gateway refuses the public endpoints that would make it
+      # issue tokens (/recover, /otp, /magiclink). The token settings still apply: 60 minutes, single use.
       GOTRUE_MAILER_OTP_EXP: '3600'
       # The link's token hash is sha224(e-mail + one-time code): a 6-digit code would leave about 20 bits
       # to guess once the address is known. 10 digits is GoTrue's maximum (security review, T-M2-08).
       GOTRUE_MAILER_OTP_LENGTH: '10'
-      GOTRUE_MAILER_TEMPLATES_RECOVERY: http://auth-templates:8080/recovery.html
-      GOTRUE_MAILER_SUBJECTS_RECOVERY: 'إعادة تعيين كلمة المرور · Reset your password'
-      # Auth's own /verify path, used only by its English fallback template (see auth-templates).
+      # Auth's own /verify path (in the action link generate_link returns, which we discard).
       GOTRUE_MAILER_URLPATHS_RECOVERY: /auth/v1/verify
-      # After every password change (reset or My profile) the account owner gets a notice.
-      GOTRUE_MAILER_NOTIFICATIONS_PASSWORD_CHANGED_ENABLED: 'true'
-      GOTRUE_MAILER_TEMPLATES_PASSWORD_CHANGED_NOTIFICATION: http://auth-templates:8080/password-changed.html
-      GOTRUE_MAILER_SUBJECTS_PASSWORD_CHANGED_NOTIFICATION: 'تغيّرت كلمة المرور · Your password was changed'
+      # One recovery token a minute per account on Auth's own endpoints (defence in depth: the gateway
+      # refuses them anyway; the admin API is not limited by it).
+      GOTRUE_SMTP_MAX_FREQUENCY: 60s
+      # The "password changed" notice is ours (worker, T-M2-17): Auth's own stays off.
+      GOTRUE_MAILER_NOTIFICATIONS_PASSWORD_CHANGED_ENABLED: 'false'
       # My profile (FR-IAM-16): Auth itself requires the current password to set a new one, and a
       # minimum length matching the application's rule (12).
       GOTRUE_SECURITY_UPDATE_PASSWORD_REQUIRE_CURRENT_PASSWORD: 'true'
@@ -155,31 +140,13 @@ services:
       GOTRUE_HOOK_BEFORE_USER_CREATED_ENABLED: 'true'
       GOTRUE_HOOK_BEFORE_USER_CREATED_URI: pg-functions://postgres/private/before_user_created_hook
 
-  # Auth's e-mail templates (supabase/templates, T-M2-08), read by Auth over plain HTTP on the internal
-  # auth-internal network (GoTrue takes templates by URL only). Nothing else is served.
-  auth-templates:
-    image: nginxinc/nginx-unprivileged:stable-alpine-slim@sha256:e28dcf0a161ddcbf228c7364b4a14f9bad4763ae8f5317c437b896afa3df4b84
-    <<: *hardening
-    read_only: true
-    cap_drop: [ALL]
-    tmpfs: [/tmp]
-    networks: [auth-internal]
-    healthcheck:
-      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:8080/recovery.html']
-      interval: 5s
-      timeout: 3s
-      retries: 30
-    volumes:
-      - ./auth-templates/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ../../supabase/templates:/srv/templates:ro
-
   gateway:
     image: nginxinc/nginx-unprivileged:stable-alpine-slim@sha256:e28dcf0a161ddcbf228c7364b4a14f9bad4763ae8f5317c437b896afa3df4b84
     <<: *hardening
     read_only: true
     cap_drop: [ALL]
     tmpfs: [/tmp]
-    networks: [auth-internal, edge, errors]
+    networks: [auth-internal, auth-admin, edge, errors]
     healthcheck:
       test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:8081/healthz']
       interval: 5s
@@ -214,8 +181,12 @@ services:
       DATABASE_URL_APP_SERVER: postgres://app_server:${APP_SERVER_DB_PASSWORD:?run with --env-file .secrets/.env}@db:5432/postgres
       NEXT_PUBLIC_SUPABASE_URL: https://gateway:8443
       # Self-hosted Auth does not check the key; any non-empty value (no Supabase cloud key exists here).
-      # The app has no Auth secret key: invitees sign up through the public API (T-M2-07).
+      # The app has no Auth secret key: invitees sign up through the public API (T-M2-07), and reset
+      # links are created by the worker (T-M2-17).
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: self-hosted
+      # Password-reset and "password changed" e-mails through our notification service: the app queues
+      # requests in the database; the worker (always running here) sends them (T-M2-17).
+      PASSWORD_RESET_DELIVERY: worker
       DATABASE_CA_CERT_FILE: /run/secrets/ca.crt
       NODE_EXTRA_CA_CERTS: /run/secrets/ca.crt
       JADARAT_ENVIRONMENT: self-hosted
@@ -232,7 +203,8 @@ services:
 
   # Background jobs (ADR 0005, T-M2-06a): graphile-worker in daemon mode, two replicas — jobs are claimed
   # with SKIP LOCKED, so replicas never run the same job, and one keeps working while the other restarts.
-  # Database only (queue as app_queue, tenant work as app_worker; TLS verify-full): no route to Auth.
+  # Database (queue as app_queue, tenant work as app_worker; TLS verify-full), the mail relay, and the Auth
+  # admin API through the gateway (TLS) for password-reset links — the only holder of the admin key.
   worker:
     build:
       context: ../..
@@ -241,13 +213,14 @@ services:
     <<: *hardening
     read_only: true
     cap_drop: [ALL]
-    networks: [db-app, mail]
+    networks: [db-app, mail, auth-admin]
     deploy: { replicas: 2 }
     # SIGTERM lets running jobs finish; give them time before Docker kills the process (a killed job is
     # retried, but only after graphile-worker's 4-hour lock expiry).
     stop_grace_period: 60s
     depends_on:
       db: { condition: service_healthy }
+      gateway: { condition: service_healthy }
       mailpit: { condition: service_healthy }
     volumes:
       - ./.secrets/ca.crt:/run/secrets/ca.crt:ro
@@ -256,7 +229,14 @@ services:
       DATABASE_URL_APP_QUEUE: postgres://app_queue:${APP_QUEUE_DB_PASSWORD:?run with --env-file .secrets/.env}@db:5432/postgres
       DATABASE_URL_APP_WORKER: postgres://app_worker:${APP_WORKER_DB_PASSWORD:?run with --env-file .secrets/.env}@db:5432/postgres
       DATABASE_CA_CERT_FILE: /run/secrets/ca.crt
+      # The gateway's certificate (Auth admin API) is from the installation's CA.
+      NODE_EXTRA_CA_CERTS: /run/secrets/ca.crt
       JADARAT_ENVIRONMENT: self-hosted
+      # Password-reset links (T-M2-17): the Auth admin API through the gateway, with a service_role token
+      # signed by the installation's key (gen-secrets.sh, one year — rotate with the key). The worker is
+      # the ONLY container with an Auth admin key (ADR 0002 §7; the smoke test checks it).
+      SUPABASE_URL: https://gateway:8443
+      SUPABASE_SECRET_KEY: ${WORKER_AUTH_ADMIN_TOKEN:?run gen-secrets.sh, then compose with --env-file .secrets/.env}
       # E-mail (ADR 0008 §2): SMTP with verified STARTTLS. Here Mailpit catches every message. A real
       # installation sets SMTP_URL (smtp://user:password@relay:587) and SMTP_CA_CERT_FILE for its relay
       # (set it empty for a publicly trusted certificate), removes the mailpit service, its depends_on
@@ -267,15 +247,15 @@ services:
       SMTP_CA_CERT_FILE: ${SMTP_CA_CERT_FILE-/run/secrets/mail-ca.crt}
       EMAIL_FROM_ADDRESS: ${EMAIL_FROM_ADDRESS:-noreply@jadarat.example}
       EMAIL_FROM_NAME: ${EMAIL_FROM_NAME:-Jadarat}
-      # Public origin of the web app for links in e-mails (invitation accept links): the `app`
-      # service as published on this host. An installation sets its own https origin.
+      # Public origin of the web app for links in e-mails (invitation and password-reset links): the
+      # `app` service as published on this host. An installation sets its own https origin.
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3200}
 
   # Stand-in for the installation's mail relay (T-M2-06b): Mailpit keeps every message for inspection and
   # sends nothing on (internal network, no relay configured). STARTTLS is required, with a certificate
-  # from the stack's mail CA (gen-secrets.sh). It receives the worker's e-mails and Auth's own (password
-  # reset, T-M2-08). Remove it when SMTP_URL and AUTH_SMTP_* point at a real relay (and remove Auth's
-  # depends_on entry; give Auth a network that reaches the relay).
+  # from the stack's mail CA (gen-secrets.sh). It receives every e-mail — all sent by the worker
+  # (invitations, password reset and "password changed", T-M2-17). Remove it when SMTP_URL points at a
+  # real relay.
   mailpit:
     image: axllent/mailpit:v1.29.7@sha256:757f22b56c1da03570afdb3d259effe5091018008a81bbedc8158cee7e16fdbc
     <<: *hardening

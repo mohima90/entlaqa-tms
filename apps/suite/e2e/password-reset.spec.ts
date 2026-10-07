@@ -4,8 +4,10 @@ import { type Page, expect, test } from '@playwright/test';
 
 /**
  * Forgot / reset password (FR-IAM-13, T-M2-08; screens 10 and 11) on the self-hosted stack
- * (infra/docker/smoke.sh runs it in two steps and reads the link from Mailpit in between). The flow
- * tests are skipped unless their variables are set:
+ * (infra/docker/smoke.sh runs it in two steps and reads the link from Mailpit in between — from OUR
+ * e-mail, sent by the worker through the notification service with PASSWORD_RESET_DELIVERY=worker,
+ * T-M2-17; the smoke test also checks the "password changed" notice). The page and its answers are the
+ * same whichever service sends the e-mail. The flow tests are skipped unless their variables are set:
  *   RESET_E2E_EMAIL         step 1: an account's e-mail — request a link through the forgot page
  *   RESET_E2E_LINK_URL      step 2: the reset link of the newest e-mail to that account
  *   RESET_E2E_NEW_PASSWORD  step 2: the new password to set (the smoke then signs in with it and checks

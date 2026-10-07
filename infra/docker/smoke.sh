@@ -5,8 +5,9 @@
 # and checks they dispatch an event, sends a test e-mail over SMTP with STARTTLS to the stand-in relay
 # (Mailpit), runs the invitation journey (invite in the UI, e-mail, accept link from Mailpit, set a
 # password, signed in; expired/revoked/used links; Auth's sign-up hook refuses sign-ups without a valid
-# invitation for that e-mail), runs the password reset (forgot page, Auth's e-mail from Mailpit, new
-# password, old one refused, link single use), sends a browser and a server error to the in-country
+# invitation for that e-mail), runs the password reset (forgot page, OUR e-mail from Mailpit — sent by the
+# worker, T-M2-17 — new password, old one refused, link single use, our "password changed" notice), sends
+# a browser and a server error to the in-country
 # error tracker (GlitchTip) and checks they arrive without personal data, then tears everything down.
 #
 #   bash infra/docker/smoke.sh            # KEEP=1 leaves the stack running; SKIP_BUILD=1 reuses the build
@@ -332,9 +333,9 @@ response="$(auth_api PUT /user "$GUARD_TOKEN" "{\"email\":\"squat-$STAMP@soverei
   { echo "smoke: Auth accepted an e-mail change request (HTTP ${response##*$'\n'})" >&2; exit 1; }
 [[ "$(q "select email || '|' || coalesce(email_change, '') from auth.users where id = '$GUARD_ID'")" == "$GUARD_EMAIL|" ]] ||
   { echo "smoke: the account's e-mail or pending e-mail change was modified" >&2; exit 1; }
-# Auth could e-mail a confirmation link here (it sends through Mailpit since T-M2-08), but the database
-# guard itself must refuse the change for every role (the migration role too) — that is what protects
-# hosted Auth.
+# Self-hosted Auth has no mail relay (T-M2-17), but hosted Auth could e-mail a confirmation link: the
+# database guard itself must refuse the change for every role (the migration role too) — that is what
+# protects hosted Auth.
 guard_err="$(q "update auth.users set email = 'squat-$STAMP@sovereign.example' where id = '$GUARD_ID'" 2>&1 || true)"
 [[ "$guard_err" == *"managed by the organization"* ]] ||
   { echo "smoke: the database did not refuse an Auth e-mail change (re-review N1)" >&2; exit 1; }
@@ -360,15 +361,58 @@ PROFILE_NEW_PASSWORD="Profile-$(openssl rand -hex 16)"
 # sessions too): only the last sign-in with the new password remains.
 [[ "$(q "select count(*) from auth.sessions where user_id = '$MANAGER_ID'")" == "1" ]] ||
   { echo "smoke: other sign-in sessions survived the password change" >&2; exit 1; }
+# Our "password changed" notice (T-M2-17): queued by the profile action, sent by the worker in the
+# member's organization (Auth's own notice is off).
+# mail_count <address> <subject pattern>: Mailpit messages to <address> whose subject matches.
+mail_count() {
+  compose exec -T mailpit wget -qO- 'http://127.0.0.1:8025/api/v1/messages?limit=500' 2>/dev/null |
+    node -e 'let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => {
+      let n = 0; try { for (const m of JSON.parse(s).messages ?? [])
+        if ((m.To ?? []).some((t) => t.Address === process.argv[1]) && new RegExp(process.argv[2]).test(m.Subject ?? "")) n++; } catch {}
+      process.stdout.write(String(n)); })' "$1" "$2"
+}
+for i in $(seq 1 30); do
+  [[ "$(mail_count "$MANAGER_EMAIL" 'Your password was changed')" == "1" ]] && break
+  [[ $i -eq 30 ]] && { echo "smoke: no (or more than one) password-changed notice after the My profile change" >&2; exit 1; }
+  sleep 1
+done
 if [[ "$(q "select count(*) from platform.audit_events where data::text like '%منيرة%' or data::text like '%966551112233%'")" != "0" ]]; then
   echo "smoke: personal data reached the audit log" >&2; exit 1
 fi
 
-echo "smoke: password reset (T-M2-08) — forgot page, Auth's e-mail, new password; old password and link refused"
+echo "smoke: password reset (T-M2-08, T-M2-17) — forgot page, our e-mail, new password; old password and link refused"
 RESET_EMAIL="reset-$STAMP@sovereign.example"
 RESET_OLD_PASSWORD="Reset-$(openssl rand -hex 16)"
 RESET_NEW_PASSWORD="Reset-$(openssl rand -hex 16)"
 RESET_ID="$(NEW_USER_PASSWORD="$RESET_OLD_PASSWORD" node create-user.mjs "$RESET_EMAIL")"
+# The account must belong to an organization (the e-mail is sent in its language and brand); a person
+# without membership gets none.
+[[ "$(q "with p as (insert into platform.persons (tenant_id, display_name_ar, display_name_en, email)
+            select id, 'مستخدمة الاستعادة', 'Reset User', '$RESET_EMAIL' from platform.tenants where slug = 'sovereign-smoke'
+            returning tenant_id, id),
+          m as (insert into platform.tenant_memberships (tenant_id, user_id, person_id, status)
+            select tenant_id, '$RESET_ID', id, 'active' from p returning 1)
+        select count(*) from m")" == "1" ]] || { echo "smoke: could not add the reset test user to the organization" >&2; exit 1; }
+# Auth's admin generate_link (GoTrue v2.197.0) as the worker uses it, with the worker's key: an unknown
+# address is refused with 404 and creates no user; Auth itself sends nothing (it has no mail relay), and
+# its public endpoints that would issue recovery tokens are closed at the gateway.
+admin_link() {
+  curl -s -o /dev/null -w '%{http_code}' --cacert .secrets/ca.crt -X POST -H 'Content-Type: application/json' \
+    -H "$AUTH_APIKEY_HEADER" -H "Authorization: Bearer $(secret WORKER_AUTH_ADMIN_TOKEN)" \
+    --data-binary "{\"type\":\"recovery\",\"email\":\"$1\"}" https://localhost:8443/auth/v1/admin/generate_link
+}
+users_before="$(q "select count(*) from auth.users")"
+[[ "$(admin_link "nobody-$STAMP@sovereign.example")" == "404" ]] ||
+  { echo "smoke: generate_link for an unknown address must answer 404" >&2; exit 1; }
+[[ "$(q "select count(*) from auth.users")" == "$users_before" ]] ||
+  { echo "smoke: generate_link (recovery) created an Auth user" >&2; exit 1; }
+for path in /recover /otp /magiclink /resend; do
+  code="$(curl -s -o /dev/null -w '%{http_code}' --cacert .secrets/ca.crt -X POST -H 'Content-Type: application/json' \
+    -H "$AUTH_APIKEY_HEADER" --data-binary "{\"email\":\"$RESET_EMAIL\"}" "https://localhost:8443/auth/v1$path")"
+  [[ "$code" == "404" ]] || { echo "smoke: the gateway must refuse /auth/v1$path (got $code)" >&2; exit 1; }
+done
+[[ "$(q "select count(*) from auth.users where id = '$RESET_ID' and recovery_sent_at is not null")" == "0" ]] ||
+  { echo "smoke: a recovery token was issued before the reset was requested" >&2; exit 1; }
 # A sign-in session that the reset must end (every session of the account ends: signOut global).
 response="$(auth_api POST '/token?grant_type=password' '' "{\"email\":\"$RESET_EMAIL\",\"password\":\"$RESET_OLD_PASSWORD\"}")"
 [[ "${response##*$'\n'}" == "200" ]] || { echo "smoke: the reset test user could not sign in" >&2; exit 1; }
@@ -376,9 +420,10 @@ unset response
 # Step 1: request a link through the forgot page (Arabic), and the same answer for an unknown address.
 (cd "$ROOT/apps/suite" && E2E_BASE_URL=http://localhost:3200 RESET_E2E_EMAIL="$RESET_EMAIL" \
   pnpm exec playwright test e2e/password-reset.spec.ts --project=desktop-chromium)
-# reset_link <address>: the reset link in the newest reset e-mail to <address> (sent by Auth itself,
-# HTML only; Mailpit derives the text part). Whole and unchanged: the token travels in the fragment. The
-# e-mail must carry neither the one-time code path (/verify) nor anything but our page. Never echo it.
+# reset_link <address>: the reset link in the newest reset e-mail to <address> — OUR e-mail (worker,
+# notification service, T-M2-17): HTML and text parts, the organization's name, Arabic first (the
+# person's language) with the English page below. Whole and unchanged: the token travels in the fragment.
+# The e-mail must carry neither the one-time code path (/verify) nor anything but our page. Never echo it.
 reset_link() {
   local id
   id="$(compose exec -T mailpit wget -qO- 'http://127.0.0.1:8025/api/v1/messages?limit=500' 2>/dev/null |
@@ -390,17 +435,28 @@ reset_link() {
   compose exec -T mailpit wget -qO- "http://127.0.0.1:8025/api/v1/message/$id" 2>/dev/null |
     node -e 'let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => {
       let m = {}; try { m = JSON.parse(s); } catch {}
-      const html = (m.HTML ?? "").replace(/&amp;/g, "&");
-      if (/\/verify|token=/.test(html)) process.exit(2);
+      const html = (m.HTML ?? "").replace(/&amp;/g, "&"), text = m.Text ?? "";
+      if (/\/verify|token=/.test(html + text)) process.exit(2);
+      if (!html.includes("منشأة الاختبار السيادي") || !/^<!doctype html>\s*<html lang="ar" dir="rtl">/.test(html)) process.exit(3);
       const re = /http:\/\/localhost:3200\/ar\/reset-password#token_hash=[A-Za-z0-9_-]{16,128}&type=recovery(?![A-Za-z0-9_-])/;
-      const link = html.match(re);
-      if (!link || !html.includes(link[0].replace("/ar/", "/en/"))) process.exit(1);
+      const link = html.match(re), inText = text.match(re);
+      const en = link && link[0].replace("/ar/", "/en/");
+      if (!link || !inText || inText[0] !== link[0] || !html.includes(en) || !text.includes(en)) process.exit(1);
       process.stdout.write(link[0]); })'
 }
 RESET_URL=""
 for i in $(seq 1 30); do
   RESET_URL="$(reset_link "$RESET_EMAIL")" && break
-  [[ $i -eq 30 ]] && { echo "smoke: no reset link (our template, fragment only) in Auth's e-mail" >&2; exit 1; }
+  [[ $i -eq 30 ]] && { echo "smoke: no reset link (our e-mail, fragment only) from the worker" >&2; exit 1; }
+  sleep 1
+done
+# Exactly one reset e-mail, and every request answered: the unknown address of the spec got none, and
+# nothing waits in the account e-mail queue.
+[[ "$(mail_count "$RESET_EMAIL" 'Reset your password')" == "1" ]] ||
+  { echo "smoke: expected exactly one reset e-mail" >&2; exit 1; }
+for i in $(seq 1 30); do
+  [[ "$(q "select count(*) from private.account_mail_requests")" == "0" ]] && break
+  [[ $i -eq 30 ]] && { echo "smoke: account e-mail requests were left unanswered" >&2; exit 1; }
   sleep 1
 done
 # Step 2: set the new password from the link; a second use of the link is refused (in the spec).
@@ -415,21 +471,22 @@ response="$(auth_api POST '/token?grant_type=password' '' "{\"email\":\"$RESET_E
 response="$(auth_api POST '/token?grant_type=password' '' "{\"email\":\"$RESET_EMAIL\",\"password\":\"$RESET_OLD_PASSWORD\"}")"
 [[ "${response##*$'\n'}" =~ ^4[0-9][0-9]$ ]] || { echo "smoke: the old password still signs in" >&2; exit 1; }
 unset response
-# Auth told the account owner (password-changed notification, our template).
+# The account owner got our "password changed" notice (worker, T-M2-17) — one, not Auth's as well.
 for i in $(seq 1 30); do
-  compose exec -T mailpit wget -qO- 'http://127.0.0.1:8025/api/v1/messages?limit=500' 2>/dev/null |
-    node -e 'let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => {
-      let n = 0; try { for (const m of JSON.parse(s).messages ?? [])
-        if ((m.To ?? []).some((t) => t.Address === process.argv[1]) && /Your password was changed/.test(m.Subject ?? "")) n++; } catch {}
-      process.exit(n > 0 ? 0 : 1); })' "$RESET_EMAIL" && break
-  [[ $i -eq 30 ]] && { echo "smoke: no password-changed notification from Auth" >&2; exit 1; }
+  [[ "$(mail_count "$RESET_EMAIL" 'Your password was changed')" == "1" ]] && break
+  [[ $i -eq 30 ]] && { echo "smoke: no (or more than one) password-changed notice after the reset" >&2; exit 1; }
   sleep 1
 done
+# Both e-mails are in the organization's delivery log, sent, without content or address.
+[[ "$(q "select count(*) from platform.message_deliveries d join platform.persons p on p.tenant_id = d.tenant_id and p.id = d.recipient_person_id
+        where p.email = '$RESET_EMAIL' and d.template in ('platform.password_reset', 'platform.password_changed')
+          and d.status = 'sent' and d.destination is null and d.html_body is null and d.text_body is null")" == "2" ]] ||
+  { echo "smoke: expected the reset e-mail and the notice as sent deliveries without content" >&2; exit 1; }
 # The token (a credential) appears nowhere but the e-mail: not in any container log or the audit trail.
 RESET_TOKEN="${RESET_URL#*token_hash=}"
 RESET_TOKEN="${RESET_TOKEN%%&*}"
-if compose logs --no-log-prefix app 2>&1 | grep -qF "$RESET_TOKEN"; then
-  echo "smoke: the reset token appears in the app logs" >&2; exit 1
+if compose logs --no-log-prefix app worker 2>&1 | grep -qF "$RESET_TOKEN"; then
+  echo "smoke: the reset token appears in the app or worker logs" >&2; exit 1
 fi
 [[ "$(q "select count(*) from platform.audit_events where data::text like '%$RESET_TOKEN%'")" == "0" ]] ||
   { echo "smoke: the reset token reached the audit log" >&2; exit 1; }
@@ -477,6 +534,11 @@ for value in "$EMAIL" "$PARITY_EMAIL" "$MANAGER_EMAIL" "$RESET_EMAIL"; do
 done
 if grep -qE '[[:alnum:]._%+-]+@[[:alnum:]-]+(\.[[:alnum:]-]+)*\.[[:alpha:]]{2,}' <<<"$app_logs"; then
   echo "smoke: an e-mail address appears in the app logs" >&2; exit 1
+fi
+# The worker handled every address of the journeys (invitations, resets, notices): it logs none.
+if compose logs --no-log-prefix worker 2>&1 |
+  grep -qE '[[:alnum:]._%+-]+@[[:alnum:]-]+(\.[[:alnum:]-]+)*\.[[:alpha:]]{2,}'; then
+  echo "smoke: an e-mail address appears in the worker logs" >&2; exit 1
 fi
 reach() {
   compose exec -T app /nodejs/bin/node -e \
@@ -544,22 +606,29 @@ for name in AUTH_DB_PASSWORD APP_SERVER_DB_PASSWORD APP_WORKER_DB_PASSWORD APP_Q
     echo "smoke: the secret $name appears in the container logs" >&2; exit 1
   fi
 done
-# No Auth admin key anywhere (T-M2-07, review H1): the app signs invitees up through the public API, so
-# no container — the app least of all — has a secret/service-role key or a service_role token.
+# The Auth admin key exists in the WORKER only (ADR 0002 §7; T-M2-07 review H1, T-M2-17): the app signs
+# invitees up through the public API and queues reset requests; no other container — the app least of
+# all — has a secret/service-role key or a service_role token.
 grep -q '^SUPABASE_SECRET_KEY=' .secrets/.env && { echo "smoke: .secrets/.env still holds SUPABASE_SECRET_KEY" >&2; exit 1; }
 [[ -n "$(compose ps -a -q app)" ]] || { echo "smoke: no app container to inspect" >&2; exit 1; }
 for service in app db auth gateway worker mailpit glitchtip errors-db; do
   for id in $(compose ps -a -q "$service"); do
     env_vars="$($DOCKER inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$id")"
-    if grep -qE '^(SUPABASE_SECRET_KEY|SUPABASE_SERVICE_ROLE_KEY)=' <<<"$env_vars"; then
-      echo "smoke: $service has an Auth admin key in its environment" >&2; exit 1
-    fi
-    # Any JWT in the environment must not carry role service_role.
+    service_role=0
+    # Any JWT in the environment that carries role service_role.
     for jwt in $(grep -oE 'ey[A-Za-z0-9_-]+\.ey[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+' <<<"$env_vars" || true); do
       if node -e 'const p = JSON.parse(Buffer.from(process.argv[1].split(".")[1], "base64url")); process.exit(p.role === "service_role" ? 0 : 1)' "$jwt" 2>/dev/null; then
-        echo "smoke: $service has a service_role token in its environment" >&2; exit 1
+        service_role=1
       fi
     done
+    if [[ "$service" == "worker" ]]; then
+      grep -qE '^SUPABASE_SECRET_KEY=ey' <<<"$env_vars" && [[ $service_role -eq 1 ]] ||
+        { echo "smoke: the worker must hold the Auth admin key (service_role token) for reset links" >&2; exit 1; }
+      continue
+    fi
+    if grep -qE '^(SUPABASE_SECRET_KEY|SUPABASE_SERVICE_ROLE_KEY)=' <<<"$env_vars" || [[ $service_role -eq 1 ]]; then
+      echo "smoke: $service has an Auth admin key in its environment" >&2; exit 1
+    fi
   done
 done
 # Invitation tokens (credentials) never reach a log: they exist only in the e-mails.

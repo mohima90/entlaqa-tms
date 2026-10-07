@@ -110,6 +110,27 @@ add_secret ERRORS_DB_PASSWORD "$(pw2)"
 add_secret GLITCHTIP_SECRET_KEY "$(pw2)$(pw2)"
 add_secret GLITCHTIP_ADMIN_PASSWORD "$(pw2)"
 add_secret APP_QUEUE_DB_PASSWORD "$(pw2)"
+# The WORKER's Auth admin key (T-M2-17): a service_role token signed with the installation's ES256 key,
+# valid one year, for password-reset links (Auth's admin generate_link). Compose hands it to the worker
+# only (SUPABASE_SECRET_KEY) — never to the app. To renew or revoke it: delete the line and run this
+# script again (renew), or rotate the signing key (revokes every token signed with it; README.md).
+if ! grep -q '^WORKER_AUTH_ADMIN_TOKEN=' "$S/.env"; then
+  token="$(node -e '
+    const { createPrivateKey, randomUUID, sign } = require("node:crypto");
+    const jwk = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"));
+    const b64 = (v) => Buffer.from(JSON.stringify(v)).toString("base64url");
+    const now = Math.floor(Date.now() / 1000);
+    const head = b64({ alg: "ES256", typ: "JWT", kid: jwk.kid });
+    const body = b64({ role: "service_role", iss: "jadarat-worker", iat: now, exp: now + 365 * 86400, jti: randomUUID() });
+    const sig = sign("sha256", Buffer.from(`${head}.${body}`), {
+      key: createPrivateKey({ key: jwk, format: "jwk" }), dsaEncoding: "ieee-p1363" }).toString("base64url");
+    process.stdout.write(`${head}.${body}.${sig}`);
+  ' "$S/jwt-private.jwk.json")"
+  [[ "$token" =~ ^ey[A-Za-z0-9_-]+\.ey[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$ ]] ||
+    { echo "gen-secrets: could not sign the worker's Auth admin token" >&2; exit 1; }
+  add_secret WORKER_AUTH_ADMIN_TOKEN "$token"
+  unset token
+fi
 
 # No Auth secret key for the app (T-M2-07, security review H1): invitees sign up through the public API.
 # An installation set up before this change may still hold SUPABASE_SECRET_KEY (a service_role token

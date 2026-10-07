@@ -2,10 +2,13 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 /**
- * Supabase Auth's e-mail templates (FR-IAM-13, T-M2-08; docs/engineering/password-reset.md). Auth renders
- * them itself, so these checks guard what must never change: the reset link goes straight to our page
- * with the token hash in the URL FRAGMENT, and no template carries the 6-digit code or Auth's own
- * /verify link. The same files are wired in supabase/config.toml and the self-hosted stack.
+ * Supabase Auth's e-mail templates (FR-IAM-13, T-M2-08; docs/engineering/password-reset.md). Since T-M2-17
+ * our notification service sends these e-mails (PASSWORD_RESET_DELIVERY=worker); Auth's own mailer is the
+ * fallback (`auth`, the default until the worker runs continuously): hosted Supabase's dashboard and local
+ * Supabase (supabase/config.toml) still use these files. Auth renders them itself, so these checks guard
+ * what must never change: the reset link goes straight to our page with the token hash in the URL
+ * FRAGMENT, and no template carries the one-time code or Auth's own /verify link. The self-hosted stack
+ * uses the worker only: its Auth has no mail relay and no templates.
  */
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 const recovery = read('supabase/templates/recovery.html');
@@ -52,22 +55,31 @@ describe('Auth e-mail templates (T-M2-08)', () => {
     }
   });
 
-  it('are wired for local Supabase and the self-hosted stack', () => {
+  it('are wired for local Supabase; Auth\'s own "password changed" notice is off there (ours is sent)', () => {
     const config = read('supabase/config.toml');
     expect(config).toContain('content_path = "./supabase/templates/recovery.html"');
     expect(config).toContain('content_path = "./supabase/templates/password-changed.html"');
+    expect(config).toMatch(/\[auth\.email\.notification\.password_changed\]\nenabled = false\n/);
     expect(config).toMatch(/otp_expiry = 3600/);
     // The token hash is sha224(e-mail + code): the code must have GoTrue's maximum length (review H).
     expect(config).toMatch(/^otp_length = 10$/m);
+  });
+
+  it('the self-hosted stack: tokens as before, but Auth sends nothing — the worker does (T-M2-17)', () => {
     const compose = read('infra/docker/compose.yaml');
-    expect(compose).toContain(
-      'GOTRUE_MAILER_TEMPLATES_RECOVERY: http://auth-templates:8080/recovery.html',
-    );
-    expect(compose).toContain(
-      'GOTRUE_MAILER_TEMPLATES_PASSWORD_CHANGED_NOTIFICATION: http://auth-templates:8080/password-changed.html',
-    );
     expect(compose).toContain("GOTRUE_MAILER_OTP_EXP: '3600'");
     expect(compose).toContain("GOTRUE_MAILER_OTP_LENGTH: '10'");
-    expect(compose).toContain('../../supabase/templates:/srv/templates:ro');
+    expect(compose).toContain('GOTRUE_MAILER_URLPATHS_RECOVERY: /auth/v1/verify');
+    expect(compose).toContain("GOTRUE_MAILER_NOTIFICATIONS_PASSWORD_CHANGED_ENABLED: 'false'");
+    // No mail relay for Auth (its mailer is then a no-op) and no templates container.
+    expect(compose).not.toMatch(
+      /^\s+(GOTRUE_SMTP_(HOST|PORT|USER|PASS)|GOTRUE_MAILER_TEMPLATES_\w+):|^  auth-templates:/m,
+    );
+    expect(compose).toContain('PASSWORD_RESET_DELIVERY: worker');
+    // The gateway refuses Auth's public endpoints that would issue (and so replace) recovery tokens.
+    const gateway = read('infra/docker/gateway/nginx.conf');
+    for (const path of ['recover', 'otp', 'magiclink', 'resend']) {
+      expect(gateway).toContain(`location ^~ /auth/v1/${path} { return 404; }`);
+    }
   });
 });

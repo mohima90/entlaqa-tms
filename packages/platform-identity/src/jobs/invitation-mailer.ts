@@ -51,7 +51,9 @@ export function hashToken(token: string): Buffer {
  * never carry names, addresses or tokens.
  */
 export function createInvitationMailer(options: InvitationMailerOptions): TransactionalSubscriber {
-  const base = options.appBaseUrl.replace(/\/+$/, '');
+  let base = options.appBaseUrl;
+  // Trailing slashes trimmed without a backtracking regular expression (CodeQL js/polynomial-redos).
+  while (base.endsWith('/')) base = base.slice(0, -1);
   if (!isSafeLink(base)) {
     throw new Error('invitation mailer: the app base URL must be https (http only for localhost)');
   }

@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
-import { checkPassword, scramSha256Verifier } from './lib/scram.mjs';
+import { checkPassword, scramSha256Verifier, stableSalt } from './lib/scram.mjs';
 
 const PASSWORD = 'jadarat-test-password-0123456789-abcdefghij';
 const SALT = Buffer.from('000102030405060708090a0b0c0d0e0f', 'hex');
@@ -14,6 +14,15 @@ describe('scramSha256Verifier', () => {
 
   it('uses a fresh random salt by default', () => {
     expect(scramSha256Verifier(PASSWORD)).not.toBe(scramSha256Verifier(PASSWORD));
+  });
+
+  it('stable salt: same role and password give the same verifier; another role or password does not', () => {
+    const salt = stableSalt('app_queue', PASSWORD);
+    expect(salt).toHaveLength(16);
+    expect(stableSalt('app_queue', PASSWORD).equals(salt)).toBe(true);
+    expect(stableSalt('app_worker', PASSWORD).equals(salt)).toBe(false);
+    expect(stableSalt('app_queue', `${PASSWORD}-x`).equals(salt)).toBe(false);
+    expect(salt.toString('utf8')).not.toContain(PASSWORD.slice(0, 8));
   });
 
   it('never contains the password', () => {
@@ -52,6 +61,11 @@ describe('role-passwords-sql.mjs', () => {
     expect(lines[0]).toMatch(/^alter role app_server password 'SCRAM-SHA-256\$4096:[^']+';$/);
     expect(lines[1]).toMatch(/^alter role app_worker password 'SCRAM-SHA-256\$4096:[^']+';$/);
     expect(out).not.toContain(PASSWORD);
+  });
+
+  it('prints the same verifier on every run for an unchanged password (no pooler cache churn)', () => {
+    const env = { APP_QUEUE_DB_PASSWORD: PASSWORD };
+    expect(run(env)).toBe(run(env));
   });
 
   it('prints nothing when no password is provided', () => {

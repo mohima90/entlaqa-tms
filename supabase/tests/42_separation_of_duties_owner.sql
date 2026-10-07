@@ -1,8 +1,9 @@
 -- db-test: run-as=owner
--- Separation of duties (BR-IAM-4, T-M2-16), as the owner: the guards also bind platform operations and
+-- Separation of duties (BR-IAM-4, T-M2-16: the Organization Admin holds no other role), as the owner: the
+-- guards also bind platform operations and
 -- invitation acceptance (invitation_guard); the existing-data check of migration 20261010090000 and
 -- verify-deployment.sql. Also commits the fixture used by 43_separation_of_duties_app_server.sql:
---   tenant A  a4…0b  a PENDING invitation giving tenant_admin + hr_manager for both@a.test ('tok-both'),
+--   tenant A  a4…0b  a PENDING invitation giving tenant_admin + hr_manager, learner for both@a.test ('tok-both'),
 --                    written with the guard trigger disabled (as if it predated the rule); account uBoth
 --                    (…fb, session sBoth) signed up after the e-mail.
 -- Users in tenant A: uA = Organization Admin, uAB = HR Manager + learner, uInv = invited learner.
@@ -40,12 +41,23 @@ begin
   perform tests.assert((select prosrc ~ 'lock_tenant_roles.*from platform\.role_assignments'
                         from pg_proc where oid = 'private.check_role_separation()'::regprocedure),
     'the role check serialises on the per-tenant lock before reading');
-  perform tests.assert_eq(private.exclusive_role('tenant_admin'), 'hr_manager', 'pair: tenant_admin → hr_manager');
-  perform tests.assert_eq(private.exclusive_role('hr_manager'), 'tenant_admin', 'pair: hr_manager → tenant_admin');
-  perform tests.assert(private.exclusive_role('auditor') is null, 'no pair for other roles');
-  perform tests.assert(private.roles_include_exclusive_pair(array['hr_manager', 'learner', 'tenant_admin']), 'pair found');
-  perform tests.assert(not private.roles_include_exclusive_pair(array['tenant_admin', 'finance_manager', 'auditor']), 'no pair');
-  perform tests.assert(not private.roles_include_exclusive_pair('{}'), 'no roles: no pair');
+  -- The rule: tenant_admin conflicts with every other role; other roles combine freely.
+  perform tests.assert_eq(
+    (select string_agg(r.code, ',' order by r.sort_order) from platform.ref_roles r
+     where private.roles_conflict('tenant_admin', r.code)),
+    (select string_agg(r.code, ',' order by r.sort_order) from platform.ref_roles r where r.code <> 'tenant_admin'),
+    'tenant_admin conflicts with every other system role');
+  perform tests.assert(not exists (select 1 from platform.ref_roles a, platform.ref_roles b
+                                   where a.code <> 'tenant_admin' and b.code <> 'tenant_admin'
+                                     and private.roles_conflict(a.code, b.code)),
+    'no other two roles conflict');
+  perform tests.assert(not private.roles_conflict('tenant_admin', 'tenant_admin'), 'a role does not conflict with itself');
+  perform tests.assert(private.roles_conflict('learner', 'tenant_admin'), 'symmetric');
+  perform tests.assert(private.roles_include_conflict(array['tenant_admin', 'learner']), 'admin + learner');
+  perform tests.assert(private.roles_include_conflict(array['hr_manager', 'learner', 'tenant_admin']), 'admin among others');
+  perform tests.assert(not private.roles_include_conflict(array['tenant_admin']), 'admin alone');
+  perform tests.assert(not private.roles_include_conflict(array['hr_manager', 'learner', 'finance_manager', 'auditor']), 'others together');
+  perform tests.assert(not private.roles_include_conflict('{}'), 'no roles');
   -- Windows: overlapping from now on only.
   perform tests.assert(private.role_windows_overlap(null, null, null, null), 'open windows overlap');
   perform tests.assert(not private.role_windows_overlap(null, now() + interval '1 day', now() + interval '1 day', null),
@@ -72,6 +84,8 @@ declare
 begin
   perform tests.assert_fails(format($q$insert into platform.role_assignments (tenant_id, membership_id, role_code) values ('a0000000-0000-4000-8000-000000000001', %L, 'hr_manager')$q$, v_admin),
     array['JR001'], 'platform operation: an Organization Admin cannot become HR Manager');
+  perform tests.assert_fails(format($q$insert into platform.role_assignments (tenant_id, membership_id, role_code) values ('a0000000-0000-4000-8000-000000000001', %L, 'learner')$q$, v_admin),
+    array['JR001'], 'platform operation: an Organization Admin cannot also be a learner');
   perform tests.assert_fails(format($q$insert into platform.role_assignments (tenant_id, membership_id, role_code) values ('a0000000-0000-4000-8000-000000000001', %L, 'tenant_admin')$q$, v_hr),
     array['JR001'], 'platform operation: an HR Manager cannot become Organization Admin');
   perform tests.assert_fails($q$insert into platform.invitations (tenant_id, person_id, email, locale, primary_role, additional_roles, invited_by) values ('a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000e6', 'notoken@a.test', 'ar', 'hr_manager', '{tenant_admin}', '00000000-0000-4000-8000-0000000000a1')$q$,

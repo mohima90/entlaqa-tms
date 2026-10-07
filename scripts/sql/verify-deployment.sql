@@ -380,8 +380,8 @@ begin
   end if;
 
   -- 7. Separation of duties (BR-IAM-4, T-M2-16): the guard triggers exist and are enabled, and no member
-  --    holds the Organization Admin and HR Manager roles at the same time (now or later), no pending
-  --    invitation gives both. Counts only (no ids). Reads every organization: the migration role
+  --    holds the Organization Admin role together with another role (now or later), no pending
+  --    invitation gives it with another role. Counts only (no ids). Reads every organization: the migration role
   --    bypasses row-level security (checked by migration 20261010090000).
   if not exists (select 1 from pg_trigger t where t.tgrelid = 'platform.role_assignments'::regclass
                  and t.tgname = 'role_assignments_separation_of_duties' and t.tgenabled in ('O', 'A')
@@ -398,10 +398,10 @@ begin
   else
     select * into r from private.separation_of_duties_violations();
     if r.members > 0 then
-      failures := failures || format('%s member(s) hold both the Organization Admin and HR Manager roles (BR-IAM-4)', r.members);
+      failures := failures || format('%s member(s) hold the Organization Admin role together with another role (BR-IAM-4)', r.members);
     end if;
     if r.pending_invitations > 0 then
-      failures := failures || format('%s pending invitation(s) give both the Organization Admin and HR Manager roles (BR-IAM-4)', r.pending_invitations);
+      failures := failures || format('%s pending invitation(s) give the Organization Admin role with another role (BR-IAM-4)', r.pending_invitations);
     end if;
   end if;
 

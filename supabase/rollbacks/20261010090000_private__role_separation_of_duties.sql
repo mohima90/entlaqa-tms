@@ -26,5 +26,5 @@ drop trigger role_assignments_separation_of_duties on platform.role_assignments;
 drop function private.check_role_separation();
 drop function private.separation_of_duties_violations();
 drop function private.role_windows_overlap(timestamptz, timestamptz, timestamptz, timestamptz);
-drop function private.roles_include_exclusive_pair(text[]);
-drop function private.exclusive_role(text);
+drop function private.roles_include_conflict(text[]);
+drop function private.roles_conflict(text, text);

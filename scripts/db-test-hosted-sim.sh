@@ -144,6 +144,19 @@ ADD_TO_EXISTING=true bash "$ROOT/scripts/provision-tenant.sh" apply
 [[ "$(memberships)" == "1" ]] || { echo "db-test-hosted-sim: re-provisioning changed the membership" >&2; exit 1; }
 [[ "$(q "select count(*) from platform.audit_events where action = 'platform.tenant.admin_provisioned' and entity_id = '$ADMIN_UID'")" == "1" ]] ||
   { echo "db-test-hosted-sim: expected exactly one provisioning audit event" >&2; exit 1; }
+# An Organization Admin holds no other role (BR-IAM-4, T-M2-16): a member with another role is not made
+# one by the recovery path (refused, nothing changed).
+LEARNER_UID="$(node -e 'process.stdout.write(require("node:crypto").randomUUID())')"
+q "insert into auth.users (id, email) values ('$LEARNER_UID', 'sim-learner@example.test');
+   with p as (insert into platform.persons (tenant_id, display_name_ar)
+              select id, 'متدرب' from platform.tenants where slug = 'sim-org' returning tenant_id, id),
+        m as (insert into platform.tenant_memberships (tenant_id, user_id, person_id, status)
+              select tenant_id, '$LEARNER_UID', id, 'active' from p returning tenant_id, id)
+   insert into platform.role_assignments (tenant_id, membership_id, role_code, is_primary)
+   select tenant_id, id, 'learner', true from m" >/dev/null
+expect_refusal 'holds other roles' ADD_TO_EXISTING=true ADMIN_USER_ID="$LEARNER_UID"
+[[ "$(q "select string_agg(ra.role_code, ',') from platform.role_assignments ra join platform.tenant_memberships m on m.id = ra.membership_id where m.user_id = '$LEARNER_UID'")" == "learner" ]] ||
+  { echo "db-test-hosted-sim: the recovery path changed the roles of a member with another role" >&2; exit 1; }
 # An unknown Auth user: refused, and nothing is left behind.
 expect_refusal 'no Auth user with this UID' TENANT_SLUG=sim-other \
   ADMIN_USER_ID="$(node -e 'process.stdout.write(require("node:crypto").randomUUID())')"

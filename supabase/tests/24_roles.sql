@@ -92,10 +92,9 @@ begin;
 set local role authenticated;
 select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
   'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1'));
--- uAB stops being HR Manager first: nobody holds both roles (BR-IAM-4, T-M2-16).
+-- uAB gives up their roles first: an Organization Admin holds no other role (BR-IAM-4, T-M2-16).
 delete from platform.role_assignments
- where role_code = 'hr_manager'
-   and membership_id = (select id from platform.tenant_memberships where user_id = '00000000-0000-4000-8000-0000000000ab' and tenant_id = 'a0000000-0000-4000-8000-000000000001');
+ where membership_id = (select id from platform.tenant_memberships where user_id = '00000000-0000-4000-8000-0000000000ab' and tenant_id = 'a0000000-0000-4000-8000-000000000001');
 insert into platform.role_assignments (membership_id, role_code, valid_until)
 select id, 'tenant_admin', now() + interval '1 hour' from platform.tenant_memberships
 where user_id = '00000000-0000-4000-8000-0000000000ab' and tenant_id = 'a0000000-0000-4000-8000-000000000001';

@@ -1,14 +1,23 @@
 import { type AppError, toClientError } from '@jadarat/platform-core';
 import type { AppLocale } from '@jadarat/platform-i18n';
 import { routing } from '@jadarat/platform-i18n/routing';
+import type { InvitationRow } from '@jadarat/platform-db';
 import { SYSTEM_ROLES, type UsersListView } from '@jadarat/platform-rbac';
 import { Alert, Badge, type BadgeTone, buttonClasses } from '@jadarat/ui';
 import { hasLocale } from 'next-intl';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { notFound, redirect } from 'next/navigation';
 import { SuiteShell } from '../../../../../components/suite-shell';
+import {
+  ExpiredInvitationsBanner,
+  type InvitationRowView,
+  InvitationsTable,
+} from '../../../../../components/users/invitations-table';
+import { INVITED_FLASH_PARAM, canResend } from '../../../../../lib/invite-form';
+import { filterInvitations } from '../../../../../lib/invitations-view';
+import { profileErrorTexts } from '../../../../../lib/profile-texts';
 import { getSuiteContext } from '../../../../../lib/suite-context';
-import { usersListQuery } from '../../../../../lib/users-queries';
+import { invitationsListQuery, usersListQuery } from '../../../../../lib/users-queries';
 import {
   type UsersListParams,
   localizedName,
@@ -29,7 +38,36 @@ const STATUS_TONE: Record<'active' | 'invited' | 'suspended', BadgeTone> = {
 const fieldClass =
   'min-h-11 w-full rounded-md border border-border-strong bg-surface px-3 text-text';
 
-/** Users list (T-M2-04, screen 1 — FR-IAM-01): only the people the member may see (ADR 0003 §4.2). */
+/** Text keys of the invitations table and banner (namespace `invitations.list`). */
+const INVITATION_LIST_KEYS = [
+  'tableCaption',
+  'columns.name',
+  'columns.primaryRole',
+  'columns.status',
+  'columns.sent',
+  'columns.actions',
+  'status.pending',
+  'status.expired',
+  'resend',
+  'resent',
+  'resendLimit',
+  'resendLimitShort',
+  'revoke',
+  'revoked',
+  'revokeConfirmButton',
+  'keep',
+  'working',
+  'notPending',
+  'roleNotAllowed',
+] as const;
+/** Keys whose `{name}` / `{count}` the client fills in (read raw). */
+const INVITATION_RAW_KEYS = ['revokeConfirm', 'resentExpired'] as const;
+
+/**
+ * Users list (T-M2-04, screen 1 — FR-IAM-01): only the people the member may see (ADR 0003 §4.2).
+ * Holders of `platform.user.invite` also see «دعوة مستخدم» and, on the `invited` tab, the pending and
+ * expired invitations with resend and revoke (T-M2-07, FR-IAM-03).
+ */
 export default async function UsersPage({
   params,
   searchParams,
@@ -41,8 +79,10 @@ export default async function UsersPage({
   if (!hasLocale(routing.locales, locale)) notFound();
   const context = await getSuiteContext(locale);
   const t = await getTranslations({ locale, namespace: 'users' });
+  const invitationTexts = await getTranslations({ locale, namespace: 'invitations' });
 
   let body;
+  let canInvite = false;
   let languagePath = '/suite/admin/users';
   if (!context.live) {
     body = (
@@ -51,7 +91,8 @@ export default async function UsersPage({
       </Alert>
     );
   } else {
-    const requested = usersListParams(await searchParams);
+    const raw = await searchParams;
+    const requested = usersListParams(raw);
     let current: UsersListParams = requested;
     // Untrusted query-string values: the query's zod schema validates them (bad values → VALIDATION_FAILED).
     let result = await usersListQuery(requested as Parameters<typeof usersListQuery>[0]);
@@ -72,10 +113,30 @@ export default async function UsersPage({
         redirect(usersListHref(locale, current, { page: String(paging.lastPage) }));
       }
       languagePath = usersListPath(current);
+      canInvite = result.value.canInvite;
+      // Invitations (T-M2-07) come from platform.invitations, not from the memberships list.
+      const invitations = canInvite ? await invitationsListQuery({}) : null;
+      const invitationsError =
+        invitations !== null && !invitations.ok ? toClientError(invitations.error) : null;
       body = (
         <>
+          {raw[INVITED_FLASH_PARAM] === '1' && canInvite ? (
+            <Alert tone="success" data-testid="invitation-created">
+              {invitationTexts('list.created')}
+            </Alert>
+          ) : null}
           {invalidFilters ? <Alert tone="warning">{t('invalidFilters')}</Alert> : null}
-          <UsersList locale={locale} view={result.value} params={current} />
+          {invitationsError ? (
+            <Alert tone="danger">
+              {t('loadFailed', { correlationId: invitationsError.correlationId ?? '' })}
+            </Alert>
+          ) : null}
+          <UsersList
+            locale={locale}
+            view={result.value}
+            params={current}
+            invitations={invitations?.ok ? invitations.value.invitations : null}
+          />
         </>
       );
     }
@@ -83,7 +144,18 @@ export default async function UsersPage({
 
   return (
     <SuiteShell locale={locale} context={context} current="users" path={languagePath}>
-      <h1 className="mb-2 mt-0 text-2xl font-bold">{t('title')}</h1>
+      <div className="mb-2 flex flex-wrap items-end justify-between gap-4">
+        <h1 className="m-0 text-2xl font-bold">{t('title')}</h1>
+        {canInvite ? (
+          <a
+            href={`/${locale}/suite/admin/users/invite`}
+            className={buttonClasses({ variant: 'primary', size: 'md' })}
+            data-testid="invite-user-link"
+          >
+            {invitationTexts('inviteUser')}
+          </a>
+        ) : null}
+      </div>
       <div className="flex flex-col gap-6">{body}</div>
     </SuiteShell>
   );
@@ -103,10 +175,13 @@ async function UsersList({
   locale,
   view,
   params,
+  invitations,
 }: {
   locale: AppLocale;
   view: UsersListView;
   params: UsersListParams;
+  /** Pending and expired invitations (null: the member may not invite, or they did not load). */
+  invitations: readonly InvitationRow[] | null;
 }) {
   const t = await getTranslations({ locale, namespace: 'users' });
   const format = await getFormatter({ locale });
@@ -116,15 +191,28 @@ async function UsersList({
     : 'all';
   const filtered = Boolean(params.q ?? params.role ?? params.department ?? params.branch);
   const { from, to } = usersPaging(view.page, view.pageSize, list.rows.length, list.total);
+  // The invited tab counts invited memberships (before T-M2-07) and open invitations.
+  const counts = { ...list.counts, invited: list.counts.invited + (invitations?.length ?? 0) };
+  const invitationRows =
+    activeTab === 'invited' && invitations
+      ? filterInvitations(invitations, {
+          q: params.q,
+          role: canReadRoles ? params.role : undefined,
+          department: orgUnits ? params.department : undefined,
+          branch: orgUnits ? params.branch : undefined,
+        })
+      : [];
+  const expired = (invitations ?? []).filter((row) => row.state === 'expired');
+  const nothingToShow = list.rows.length === 0 && invitationRows.length === 0;
 
   return (
     <>
       <p className="m-0 text-text-muted" data-testid="users-summary">
         {t('summary', { count: list.counts.all })}
-        {list.counts.invited > 0
-          ? ` · ${t('pendingInvitations', { count: list.counts.invited })}`
-          : ''}
+        {counts.invited > 0 ? ` · ${t('pendingInvitations', { count: counts.invited })}` : ''}
       </p>
+
+      {expired.length > 0 ? await expiredBanner(locale, expired) : null}
 
       <nav aria-label={t('tabsLabel')}>
         <ul className="m-0 flex list-none flex-wrap gap-2 border-b border-border p-0">
@@ -140,7 +228,7 @@ async function UsersList({
                 }`}
               >
                 {t(`tabs.${tab}`)}
-                <Badge>{format.number(list.counts[tab], 'integer')}</Badge>
+                <Badge>{format.number(counts[tab], 'integer')}</Badge>
               </a>
             </li>
           ))}
@@ -246,7 +334,11 @@ async function UsersList({
         </div>
       </form>
 
-      {list.rows.length === 0 ? (
+      {invitationRows.length > 0
+        ? await invitationsTable(locale, invitationRows, canReadRoles)
+        : null}
+
+      {nothingToShow ? (
         <div
           className="rounded-lg border border-border bg-surface p-6 text-center"
           data-testid="users-empty"
@@ -258,7 +350,7 @@ async function UsersList({
             {filtered ? t('emptyFilteredBody') : t('emptyBody')}
           </p>
         </div>
-      ) : (
+      ) : list.rows.length === 0 ? null : (
         <div className="overflow-x-auto rounded-lg border border-border bg-surface">
           <table className="w-full border-collapse text-start" data-testid="users-table">
             <caption className="sr-only">{t('tableCaption')}</caption>
@@ -376,5 +468,63 @@ async function UsersList({
         </nav>
       ) : null}
     </>
+  );
+}
+
+async function invitationLabels(locale: AppLocale): Promise<Record<string, string>> {
+  const t = await getTranslations({ locale, namespace: 'invitations' });
+  const labels: Record<string, string> = Object.fromEntries(
+    INVITATION_LIST_KEYS.map((k) => [k, t(`list.${k}`)]),
+  );
+  for (const key of INVITATION_RAW_KEYS) labels[key] = String(t.raw(`list.${key}`));
+  return labels;
+}
+
+/** Pending and expired invitations of the `invited` tab (T-M2-07, screen 1). */
+async function invitationsTable(
+  locale: AppLocale,
+  rows: readonly InvitationRow[],
+  canReadRoles: boolean,
+) {
+  const t = await getTranslations({ locale, namespace: 'invitations' });
+  const format = await getFormatter({ locale });
+  const views: InvitationRowView[] = rows.map((row) => {
+    const expired = row.state === 'expired';
+    const date = format.dateTime(row.expiresAt, 'medium');
+    return {
+      id: row.id,
+      name: localizedName(locale, row.displayNameAr, row.displayNameEn),
+      email: row.email,
+      profileHref: `/${locale}/suite/admin/users/${row.personId}`,
+      roleName: canReadRoles ? roleName(locale, row.primaryRole) : null,
+      sentText: t('list.sentCount', { count: row.sendCount }),
+      expiryText: expired ? t('list.expiredOn', { date }) : t('list.expiresOn', { date }),
+      expired,
+      canResend: canResend(row),
+    };
+  });
+  return (
+    <InvitationsTable
+      rows={views}
+      showRole={canReadRoles}
+      labels={await invitationLabels(locale)}
+      errors={await profileErrorTexts(locale)}
+    />
+  );
+}
+
+/** Screen 1 banner: invitations that expired before acceptance, with a bulk resend. */
+async function expiredBanner(locale: AppLocale, expired: readonly InvitationRow[]) {
+  const t = await getTranslations({ locale, namespace: 'invitations' });
+  const ids = expired.filter((row) => canResend(row)).map((row) => row.id);
+  const labels = await invitationLabels(locale);
+  labels.resendExpired = t('list.resendExpired', { count: ids.length });
+  return (
+    <ExpiredInvitationsBanner
+      ids={ids}
+      message={t('list.expiredBanner', { count: expired.length })}
+      labels={labels}
+      errors={await profileErrorTexts(locale)}
+    />
   );
 }

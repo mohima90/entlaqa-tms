@@ -13,6 +13,26 @@ export {
   tlsOptionsFor,
 } from './client';
 export { type AuditEventInput, insertAuditEvent } from './audit';
+export { DomainError, isDomainError } from './domain-error';
+export {
+  INVITATION_EVENTS,
+  INVITATION_MAX_SENDS,
+  type InvitationErrorCode,
+  type InvitationRow,
+  type InvitationState,
+  type InvitationTokenApi,
+  type NewInvitation,
+  type TokenLookup,
+  acceptInvitationAsCaller,
+  createInvitation,
+  createInvitationTokenApi,
+  getInvitationRoles,
+  hashInvitationToken,
+  invitationByToken,
+  listInvitations,
+  requestInvitationResend,
+  revokeInvitation,
+} from './invitations';
 export { type DatabaseHealth, checkDatabase } from './health';
 export { type CurrentTenant, getCurrentTenant } from './tenants';
 export { type OrgUnitOption, type OrgUnitOptions, listOrgUnitOptions } from './org';

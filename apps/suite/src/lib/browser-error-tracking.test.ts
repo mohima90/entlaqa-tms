@@ -19,6 +19,24 @@ describe('browserErrorTrackingOptions', () => {
     expect(scrubbed).toEqual({ type: undefined, request: { url: 'https://a/b' } });
   });
 
+  it('drops the invitation token in the browser already (T-M2-07)', () => {
+    const token = 'sample-invitation-token'.padEnd(43, '0'); // shape only
+    const url = `https://app.example/en/invite/accept?token=${token}`;
+    const scrubbed = browserErrorTrackingOptions().beforeSend?.(
+      {
+        type: undefined,
+        request: { url, query_string: `token=${token}` },
+        transaction: url,
+        exception: {
+          values: [{ type: 'Error', value: url, stacktrace: { frames: [{ filename: url }] } }],
+        },
+      },
+      {},
+    );
+    expect(JSON.stringify(scrubbed)).not.toContain(token);
+    expect(scrubbed).toMatchObject({ request: { url: 'https://app.example/en/invite/accept' } });
+  });
+
   it('removes session, tracing and breadcrumb integrations', () => {
     const integrations = browserErrorTrackingOptions().integrations as (
       defaults: { name: string }[],

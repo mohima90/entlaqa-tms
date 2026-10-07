@@ -15,6 +15,10 @@
 #   variable EMAIL_FROM_ADDRESS       sender address on the verified sending domain
 #   secret   RESEND_API_KEY           Resend API key (sending access only)
 #   secret   EMAIL_TEST_TO            recipient of the test e-mail (mode test-email)
+#   variable APP_BASE_URL             public origin of the staging web app (https://…, no path) for
+#                                     links in e-mails (invitations, T-M2-07); required once
+#                                     EMAIL_PROVIDER is set — without it (e-mail off) invitations
+#                                     are not mailed
 # Until both connection secrets exist each run ends with a notice and does nothing.
 name: Jobs (staging)
 
@@ -83,6 +87,7 @@ jobs:
           EMAIL_FROM_ADDRESS: ${{ vars.EMAIL_FROM_ADDRESS }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           EMAIL_TEST_TO: ${{ secrets.EMAIL_TEST_TO }}
+          APP_BASE_URL: ${{ vars.APP_BASE_URL }}
           MODE: ${{ inputs.mode == 'test-email' && 'test-email' || 'once' }}
           JADARAT_ENVIRONMENT: staging
           JADARAT_RELEASE: ${{ github.sha }}

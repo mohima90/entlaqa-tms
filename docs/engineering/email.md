@@ -28,6 +28,7 @@ Only jobs (system claims) can read or write deliveries, and the sender acts only
 | `SMTP_URL` | `smtp://user:password@relay:587` (STARTTLS, required for any non-local server) or `smtps://…:465`; no parameters |
 | `SMTP_CA_CERT_FILE` / `SMTP_CA_CERT` | CA of a relay whose certificate is not publicly trusted (empty: the system's public roots) |
 | `EMAIL_TEST_TO` | Recipient of the `test-email` mode |
+| `APP_BASE_URL` | Public origin of the web app for links in e-mails (invitation accept links, T-M2-07), e.g. `https://tms.example.com`: https (plain http only for `localhost` / `127.0.0.1`), no path or query; a trailing slash is ignored. Required when `EMAIL_PROVIDER` is not `none`; without it (e-mail off) invitations are not mailed — resend them once e-mail is on. Self-hosted stack: `http://localhost:3200` |
 
 Check any deployment's settings with `node apps/worker/dist/main.mjs test-email` (one sample invitation, marked `[TEST]`, straight to the provider; no database). The self-hosted stack sends one to Mailpit in its smoke test. This checks the provider settings only; the whole path (queue → dispatch → send) runs on staging with the first real sender, the invitations of T-M2-07.
 
@@ -37,7 +38,7 @@ Check any deployment's settings with `node apps/worker/dist/main.mjs test-email`
 
 All in GitHub → Settings → Environments → **staging-jobs** (where the worker runs; never in Vercel):
 1. **Secret** `RESEND_API_KEY` = a Resend API key with **Sending access** for the domain `lms.entlaqa.com` (Resend → API Keys → Create).
-2. **Variables** `EMAIL_PROVIDER` = `resend`, `EMAIL_FROM_NAME` = `ENTLAQA LMS`, `EMAIL_FROM_ADDRESS` = `noreply@lms.entlaqa.com`.
+2. **Variables** `EMAIL_PROVIDER` = `resend`, `EMAIL_FROM_NAME` = `ENTLAQA LMS`, `EMAIL_FROM_ADDRESS` = `noreply@lms.entlaqa.com`, `APP_BASE_URL` = the staging web app's address (`https://…`, no path; required with `EMAIL_PROVIDER` set, or every pass stops with a configuration error).
 3. **Secret** `EMAIL_TEST_TO` = the PO's own e-mail address.
 4. DB deploy (plan, then apply) for the delivery-log table.
 5. Actions → **Jobs (staging)** → Run workflow → mode **test-email**: the sample invitation must arrive (check spam once); the run log shows `test e-mail accepted by resend (<id>)`.

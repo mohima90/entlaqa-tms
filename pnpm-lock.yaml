@@ -126,6 +126,9 @@ importers:
       '@jadarat/platform-db':
         specifier: workspace:*
         version: link:../../packages/platform-db
+      '@jadarat/platform-identity':
+        specifier: workspace:*
+        version: link:../../packages/platform-identity
       '@jadarat/platform-jobs':
         specifier: workspace:*
         version: link:../../packages/platform-jobs
@@ -135,6 +138,9 @@ importers:
       '@jadarat/platform-observability':
         specifier: workspace:*
         version: link:../../packages/platform-observability
+      '@jadarat/platform-rbac':
+        specifier: workspace:*
+        version: link:../../packages/platform-rbac
     devDependencies:
       '@jadarat/config':
         specifier: workspace:*
@@ -345,6 +351,12 @@ importers:
       '@jadarat/platform-db':
         specifier: workspace:*
         version: link:../platform-db
+      '@jadarat/platform-jobs':
+        specifier: workspace:*
+        version: link:../platform-jobs
+      '@jadarat/platform-notifications':
+        specifier: workspace:*
+        version: link:../platform-notifications
       '@jadarat/platform-observability':
         specifier: workspace:*
         version: link:../platform-observability
@@ -361,6 +373,9 @@ importers:
       '@vitest/coverage-v8':
         specifier: 5.0.3
         version: 5.0.3(vitest@5.0.3)
+      drizzle-orm:
+        specifier: 0.45.3
+        version: 0.45.3(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(pg@8.23.1)(postgres@3.4.9)
       next:
         specifier: 16.3.8
         version: 16.3.8(@babel/core@7.29.7)(@opentelemetry/api@1.9.1)(@playwright/test@1.63.0)(@types/node@24.19.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)

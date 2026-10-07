@@ -77,12 +77,13 @@ export class AuthServiceError extends Error {
 export type SignInOutcome = { readonly next: 'home' } | { readonly next: 'choose-organization' };
 
 /** Tokens Auth just issued in THIS request (the session cookies are written, but not re-read). */
-interface SessionTokens {
+export interface SessionTokens {
   readonly accessToken: string;
   readonly refreshToken: string;
 }
 
-function sessionTokens(data: unknown): SessionTokens | null {
+/** The session tokens in an Auth answer (sign-in, sign-up, refresh), if any. */
+export function sessionTokens(data: unknown): SessionTokens | null {
   const session =
     typeof data === 'object' && data !== null && 'session' in data ? data.session : null;
   if (typeof session !== 'object' || session === null) return null;
@@ -95,10 +96,21 @@ function sessionTokens(data: unknown): SessionTokens | null {
     : null;
 }
 
-export async function signInWithPassword(
+/** A session Auth just opened in THIS request, with its verified (tenant-less) claims. */
+export interface PasswordSession {
+  readonly tokens: SessionTokens;
+  readonly claims: VerifiedClaims;
+}
+
+/**
+ * Signs in with e-mail + password and verifies the issued access token. No organization is required
+ * here: signInWithPassword() continues with the organizations, the invitation flow
+ * (invitation-accept.ts) with the invitation.
+ */
+export async function startPasswordSession(
   deps: AuthFlowDeps,
   credentials: { readonly email: string; readonly password: string },
-): Promise<Result<SignInOutcome, AppError>> {
+): Promise<Result<PasswordSession, AppError>> {
   const { supabase } = deps;
   if (!supabase) return err(appError('NOT_CONFIGURED'));
 
@@ -123,9 +135,20 @@ export async function signInWithPassword(
   if (!tokens) return err(appError('UNAUTHENTICATED'));
 
   const claims = await verifyClaims(supabase, tokens.accessToken);
-  if (!claims.ok) return claims;
+  return claims.ok ? ok({ tokens, claims: claims.value }) : claims;
+}
 
-  const tenants = await deps.withUserTx(claims.value, (tx) => deps.listSessionTenants(tx));
+export async function signInWithPassword(
+  deps: AuthFlowDeps,
+  credentials: { readonly email: string; readonly password: string },
+): Promise<Result<SignInOutcome, AppError>> {
+  const { supabase } = deps;
+  if (!supabase) return err(appError('NOT_CONFIGURED'));
+  const session = await startPasswordSession(deps, credentials);
+  if (!session.ok) return session;
+  const { tokens, claims } = session.value;
+
+  const tenants = await deps.withUserTx(claims, (tx) => deps.listSessionTenants(tx));
   const [only, ...others] = tenants;
   if (!only) {
     await supabase.auth.signOut({ scope: 'local' });

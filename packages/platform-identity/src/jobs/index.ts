@@ -1,0 +1,15 @@
+/**
+ * RESTRICTED ENTRY POINT — job code and the worker app only (dependency-cruiser rules
+ * `admin-jobs-folders-are-private`, `no-admin-or-jobs-reachable-from-suite`; ADR 0005).
+ */
+export {
+  INVITATION_CREATED_EVENT,
+  INVITATION_MAILER_MAX_ATTEMPTS,
+  INVITATION_MAILER_NAME,
+  INVITATION_MAX_SENDS,
+  INVITATION_RESEND_REQUESTED_EVENT,
+  type InvitationMailerOptions,
+  type RoleNameLookup,
+  createInvitationMailer,
+  hashToken,
+} from './invitation-mailer';

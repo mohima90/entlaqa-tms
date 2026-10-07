@@ -1,5 +1,5 @@
 import 'server-only';
-import { JwtClaimsSchema, type VerifiedClaims } from '@jadarat/platform-core';
+import { type JwtClaims, JwtClaimsSchema, type VerifiedClaims } from '@jadarat/platform-core';
 import { sql } from 'drizzle-orm';
 import { type ClaimsTx, runWithClaims } from './claims-tx';
 import { type AppDatabase, getDatabase } from './client';
@@ -7,12 +7,32 @@ import { type AppDatabase, getDatabase } from './client';
 /** Transaction handle for request-path units of work (connection role app_server). */
 export type UserTx = ClaimsTx;
 
+/**
+ * The only claims forwarded to PostgreSQL as `request.jwt.claims` (re-review N5, TM-0001 T-15): what the
+ * database reads through private.request_claims() — `sub`, `role`, `session_id`, `tenant_id`,
+ * `person_id` — and `aal`. Everything else in the access token (e-mail, phone, `user_metadata` with the
+ * caller-chosen sign-up data such as a raw invitation token, `app_metadata`, `amr`, …) stays out of the
+ * database session.
+ */
+const DATABASE_CLAIM_KEYS = ['sub', 'role', 'session_id', 'tenant_id', 'person_id', 'aal'] as const;
+
+/** The allow-listed subset of verified user claims that withUserTx hands to PostgreSQL. */
+export function databaseClaims(claims: JwtClaims): Readonly<Record<string, string>> {
+  const subset: Record<string, string> = {};
+  for (const key of DATABASE_CLAIM_KEYS) {
+    const value = claims[key];
+    if (typeof value === 'string') subset[key] = value;
+  }
+  return subset;
+}
+
 export type WithUserTx = <T>(claims: VerifiedClaims, fn: (tx: UserTx) => Promise<T>) => Promise<T>;
 
 /**
  * Builds withUserTx over a database handle connected as `app_server`.
  * Only claims from a server-verified JWT (VerifiedClaims) are accepted; the shape is re-validated
- * here, and the database accepts them only for a live Auth session with an active membership.
+ * here, only the allow-listed subset reaches PostgreSQL (databaseClaims), and the database accepts them
+ * only for a live Auth session with an active membership.
  */
 export function createWithUserTx(getDb: () => AppDatabase): WithUserTx {
   return async function withUserTx<T>(
@@ -23,7 +43,7 @@ export function createWithUserTx(getDb: () => AppDatabase): WithUserTx {
     if (!parsed.success || parsed.data.role !== 'authenticated' || !parsed.data.session_id) {
       throw new Error('withUserTx: refusing claims that are not a verified user session claim set');
     }
-    return runWithClaims(getDb(), JSON.stringify(parsed.data), fn);
+    return runWithClaims(getDb(), JSON.stringify(databaseClaims(parsed.data)), fn);
   };
 }
 

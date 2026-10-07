@@ -1,6 +1,7 @@
 # Jadarat TMS — self-hosted (sovereign) stack, T-M1-D04 walking skeleton (ADR 0010). Runbook: README.md.
 # Everything runs in-country on the customer's servers: PostgreSQL 17 (Supabase image, same major/minor as
-# the cloud), Supabase Auth (GoTrue) with the Custom Access Token hook, a TLS gateway, the app, the
+# the cloud), Supabase Auth (GoTrue) with the Custom Access Token and sign-up (before user created) hooks,
+# a TLS gateway, the app, the
 # background-job worker, and the in-country error tracker (GlitchTip, Sentry-compatible; ADR 0009 §4)
 # with its own database.
 # TLS verified against the installation's CA on every hop that leaves a private network: app/worker → db,
@@ -95,13 +96,20 @@ services:
       GOTRUE_DB_DRIVER: postgres
       GOTRUE_SITE_URL: http://localhost:3200
       GOTRUE_URI_ALLOW_LIST: http://localhost:3200
-      GOTRUE_DISABLE_SIGNUP: 'true'
+      # Sign-ups are OPEN so that an invitee creates their own account through the public API; the
+      # before-user-created hook below refuses every sign-up without a valid invitation token for that
+      # e-mail (FR-IAM-03, ADR 0002 §7 note T-M2-07). Never open sign-ups without the hook.
+      GOTRUE_DISABLE_SIGNUP: 'false'
+      GOTRUE_EXTERNAL_ANONYMOUS_USERS_ENABLED: 'false'
+      GOTRUE_EXTERNAL_PHONE_ENABLED: 'false'
       GOTRUE_JWT_ADMIN_ROLES: service_role
       GOTRUE_JWT_AUD: authenticated
       GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
       GOTRUE_JWT_EXP: '900'
       GOTRUE_EXTERNAL_EMAIL_ENABLED: 'true'
-      # No mail server in the walking skeleton: administrators create confirmed users.
+      # Auth sends no e-mail here (the worker sends ours): administrators create confirmed users, and an
+      # invitee's sign-up is confirmed at once — the invitation e-mail proved the address — so it returns
+      # a session.
       GOTRUE_MAILER_AUTOCONFIRM: 'true'
       # My profile (FR-IAM-16): Auth itself requires the current password to set a new one, and a
       # minimum length matching the application's rule (12).
@@ -109,6 +117,8 @@ services:
       GOTRUE_PASSWORD_MIN_LENGTH: '12'
       GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_ENABLED: 'true'
       GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_URI: pg-functions://postgres/private/custom_access_token_hook
+      GOTRUE_HOOK_BEFORE_USER_CREATED_ENABLED: 'true'
+      GOTRUE_HOOK_BEFORE_USER_CREATED_URI: pg-functions://postgres/private/before_user_created_hook
 
   gateway:
     image: nginxinc/nginx-unprivileged:stable-alpine-slim@sha256:e28dcf0a161ddcbf228c7364b4a14f9bad4763ae8f5317c437b896afa3df4b84
@@ -151,6 +161,7 @@ services:
       DATABASE_URL_APP_SERVER: postgres://app_server:${APP_SERVER_DB_PASSWORD:?run with --env-file .secrets/.env}@db:5432/postgres
       NEXT_PUBLIC_SUPABASE_URL: https://gateway:8443
       # Self-hosted Auth does not check the key; any non-empty value (no Supabase cloud key exists here).
+      # The app has no Auth secret key: invitees sign up through the public API (T-M2-07).
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: self-hosted
       DATABASE_CA_CERT_FILE: /run/secrets/ca.crt
       NODE_EXTRA_CA_CERTS: /run/secrets/ca.crt
@@ -198,6 +209,9 @@ services:
       SMTP_CA_CERT_FILE: ${SMTP_CA_CERT_FILE-/run/secrets/mail-ca.crt}
       EMAIL_FROM_ADDRESS: ${EMAIL_FROM_ADDRESS:-noreply@jadarat.example}
       EMAIL_FROM_NAME: ${EMAIL_FROM_NAME:-Jadarat}
+      # Public origin of the web app for links in e-mails (invitation accept links): the `app`
+      # service as published on this host. An installation sets its own https origin.
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3200}
 
   # Stand-in for the installation's mail relay (T-M2-06b): Mailpit keeps every message for inspection and
   # sends nothing on (internal network, no relay configured). STARTTLS is required, with a certificate

@@ -6,7 +6,8 @@
   "description": "Permissions registry, data scopes, authorize() and defineAction() (ADR 0003 §3–§4).",
   "sideEffects": false,
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./system-roles": "./src/system-roles.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",

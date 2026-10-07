@@ -6,6 +6,19 @@
 # Runs only on the default branch (GitHub schedules) and only when the repository variable UPTIME_URL
 # is set (Settings → Secrets and variables → Actions → Variables), e.g. https://<staging-domain>.
 # Production uptime (≥ 2 regions, public status page) is chosen before the first customer (ADR 0009 §5).
+#
+# Sign-up gate (T-M2-07, FR-IAM-03, security review H1; docs/engineering/db-deploy.md § Auth sign-up
+# gate): staging Auth accepts public sign-ups so that invitees create their own accounts, and ONLY the
+# "before user created" hook (private.before_user_created_hook) stops everyone else. That hook API is
+# fail-open — a hook that is switched off, pointed at the wrong function or answers '{}' lets every
+# sign-up through — and its setting lives in the Supabase dashboard, outside the database checks. So the
+# second job tries two sign-ups as anyone on the internet could — one WITHOUT an invitation, one with a
+# well-formed but unknown invitation token — from a fresh address on our own domain (lms.entlaqa.com),
+# and fails unless Auth refuses both: 403 with the hook's exact message "Sign-up is by invitation only."
+# or 422 signup_disabled / email_provider_disabled (sign-ups off). An HTTP 200 means a stranger could
+# create an account: the incident issue says so. Needs the repository variables SUPABASE_URL
+# (https://<ref>.supabase.co) and SUPABASE_PUBLISHABLE_KEY (sb_publishable_…, public by design); skipped
+# while either is unset.
 name: Uptime (staging)
 
 on:
@@ -69,4 +82,98 @@ jobs:
           for number in $(gh issue list --state open --label "$LABEL" --app github-actions \
             --json number,title --jq '.[] | select(.title == $ENV.TITLE) | .number'); do
             gh issue close "$number" --comment "Recovered: readiness check passed at $(date -u +'%Y-%m-%d %H:%M UTC')."
+          done
+
+  signup-gate:
+    name: Sign-up gate (no account without an invitation)
+    if: vars.SUPABASE_URL != '' && vars.SUPABASE_PUBLISHABLE_KEY != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+      SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TITLE: 'Uptime: staging sign-up gate is not refusing sign-ups'
+      LABEL: uptime
+    steps:
+      - name: Try public sign-ups without a valid invitation
+        id: probe
+        run: |
+          url="${SUPABASE_URL%/}/auth/v1/signup"
+          # The hook's exact refusal (private.before_user_created_hook): any other 403 — a gateway, a WAF,
+          # another hook — does not prove that the sign-up gate itself answered.
+          deny_msg='Sign-up is by invitation only.'
+          # probe <name> <JSON data>: one sign-up as anyone on the internet could send it, with a fresh
+          # address on a domain we own (never a real person) and a random password. Prints the verdict.
+          probe() {
+            local name="$1" data="$2" email body status code msg attempt
+            email="uptime-probe-$(openssl rand -hex 8)@lms.entlaqa.com"
+            body="$(jq -nc --arg email "$email" --arg password "Uptime-$(openssl rand -hex 24)" --argjson data "$data" \
+              '{email: $email, password: $password, data: $data}')"
+            for attempt in 1 2; do
+              status="$(curl -s -o response.json -w '%{http_code}' --max-time 20 -X POST "$url" \
+                -H "apikey: $SUPABASE_PUBLISHABLE_KEY" -H 'Content-Type: application/json' \
+                --data-binary "$body" || true)"
+              # Only Auth's machine code is printed (never the response body).
+              code="$(jq -r '.error_code // .code // empty' response.json 2>/dev/null || true)"
+              msg="$(jq -r '.msg // .message // empty' response.json 2>/dev/null || true)"
+              echo "$name, attempt $attempt: HTTP $status ${code:+($code)}" >&2
+              if [[ "$status" == "403" && "$msg" == "$deny_msg" ]] ||
+                [[ "$status" == "422" && ( "$code" == "signup_disabled" || "$code" == "email_provider_disabled" ) ]]; then
+                echo "refused"; return 0
+              fi
+              # A created account (2xx) is never retried: report it at once.
+              [[ "$status" =~ ^2 ]] && break
+              [[ $attempt -eq 1 ]] && sleep 30
+            done
+            echo "$name|$status|$code"
+          }
+          # 1. No invitation at all. 2. A well-formed (43 base64url characters) but unknown invitation token.
+          unknown_token="$(openssl rand 32 | basenc --base64url | tr -d '=\n')"
+          [[ ${#unknown_token} -eq 43 ]] || { echo "could not build a 43-character token" >&2; exit 1; }
+          for check in "no invitation|{}" "unknown invitation token|$(jq -nc --arg t "$unknown_token" '{invitation: $t}')"; do
+            verdict="$(probe "${check%%|*}" "${check#*|}")"
+            if [[ "$verdict" != "refused" ]]; then
+              IFS='|' read -r name status code <<<"$verdict"
+              {
+                echo "refused=false"
+                echo "probe=$name"
+                echo "status=$status"
+                echo "code=$code"
+              } >>"$GITHUB_OUTPUT"
+              exit 0
+            fi
+          done
+          echo "refused=true" >>"$GITHUB_OUTPUT"
+      - name: Open or update the incident issue
+        if: steps.probe.outputs.refused == 'false'
+        env:
+          PROBE: ${{ steps.probe.outputs.probe }}
+          STATUS: ${{ steps.probe.outputs.status }}
+          CODE: ${{ steps.probe.outputs.code }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh label create "$LABEL" --color B60205 --description 'Opened by the uptime workflow' --force >/dev/null
+          number="$(gh issue list --state open --label "$LABEL" --app github-actions --json number,title \
+            --jq '[.[] | select(.title == $ENV.TITLE)][0].number // empty')"
+          if [[ "$STATUS" =~ ^2 ]]; then
+            what="Auth ACCEPTED a sign-up with $PROBE (HTTP $STATUS): anyone can create an account. Turn \"Allow new users to sign up\" OFF now, then check Authentication → Hooks → Before User Created (docs/engineering/db-deploy.md § Auth sign-up gate) and delete the test user (uptime-probe-…@lms.entlaqa.com)."
+          else
+            what="Auth did not refuse a sign-up with $PROBE as expected (HTTP ${STATUS:-none}${CODE:+, $CODE}; expected 403 with the hook's message \"Sign-up is by invitation only.\", or 422 signup_disabled). Check the hook and the sign-up settings (docs/engineering/db-deploy.md § Auth sign-up gate)."
+          fi
+          body="Sign-up gate check failed at $(date -u +'%Y-%m-%d %H:%M UTC'). $what Run: $RUN_URL"
+          if [[ -z "$number" ]]; then
+            gh issue create --title "$TITLE" --label "$LABEL" \
+              --body "$body"$'\n\n'"Closed automatically when the check passes again."
+          else
+            gh issue comment "$number" --body "$body"
+          fi
+          exit 1
+      - name: Close the incident issue after recovery
+        if: steps.probe.outputs.refused == 'true'
+        run: |
+          for number in $(gh issue list --state open --label "$LABEL" --app github-actions \
+            --json number,title --jq '.[] | select(.title == $ENV.TITLE) | .number'); do
+            gh issue close "$number" --comment "Recovered: sign-ups without a valid invitation were refused at $(date -u +'%Y-%m-%d %H:%M UTC')."
           done

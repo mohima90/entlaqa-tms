@@ -14,6 +14,7 @@ declare
   -- tenant_isolation policy. Same allow-list as tests.global_tables() (security review required).
   global_tables constant text[] := array['platform.ref_roles'];
   hook constant text := 'private.custom_access_token_hook(jsonb)';
+  signup_hook constant text := 'private.before_user_created_hook(jsonb)';
   r record;
   v_role text;
   failures text[] := '{}';
@@ -21,20 +22,21 @@ begin
   -- 1. Login roles: exact attributes and memberships (ADR 0002 §5, §7).
   for r in
     select rolname, rolcanlogin, rolinherit, rolsuper, rolbypassrls, rolcreaterole, rolcreatedb, rolreplication
-    from pg_roles where rolname in ('app_server', 'app_worker', 'app_queue', 'tenant_guard')
+    from pg_roles where rolname in ('app_server', 'app_worker', 'app_queue', 'tenant_guard', 'invitation_guard')
   loop
     if r.rolname in ('app_server', 'app_worker', 'app_queue') and not r.rolcanlogin then
       failures := failures || format('%s must be LOGIN', r.rolname);
     end if;
-    if r.rolname = 'tenant_guard' and r.rolcanlogin then
-      failures := failures || 'tenant_guard must be NOLOGIN'::text;
+    if r.rolname in ('tenant_guard', 'invitation_guard') and r.rolcanlogin then
+      failures := failures || format('%s must be NOLOGIN', r.rolname);
     end if;
     if r.rolinherit or r.rolsuper or r.rolbypassrls or r.rolcreaterole or r.rolcreatedb or r.rolreplication then
       failures := failures || format('%s must be NOINHERIT NOSUPERUSER NOBYPASSRLS NOCREATEROLE NOCREATEDB NOREPLICATION', r.rolname);
     end if;
   end loop;
-  if (select count(*) from pg_roles where rolname in ('app_server', 'app_worker', 'app_queue', 'tenant_guard')) <> 4 then
-    failures := failures || 'roles app_server, app_worker, app_queue and tenant_guard must all exist'::text;
+  if (select count(*) from pg_roles
+      where rolname in ('app_server', 'app_worker', 'app_queue', 'tenant_guard', 'invitation_guard')) <> 5 then
+    failures := failures || 'roles app_server, app_worker, app_queue, tenant_guard and invitation_guard must all exist'::text;
   end if;
   -- The job runner (ADR 0005 §2): member of nothing (never authenticated), owner of graphile_worker.
   if exists (select 1 from pg_auth_members m join pg_roles u on u.oid = m.member where u.rolname = 'app_queue') then
@@ -125,29 +127,72 @@ begin
     end loop;
   end if;
 
-  -- The SECURITY DEFINER helpers: owned by tenant_guard, search_path = '', and executable only by the
-  -- roles that need them (exact ACL, not a deny-list).
+  -- Invitation acceptance (FR-IAM-03): invitation_guard reads Auth users only through the view
+  -- private.auth_user_email, owned by the migration role; nobody else may read the view.
+  if to_regclass('private.auth_user_email') is null then
+    failures := failures || 'private.auth_user_email is missing'::text;
+  else
+    v_role := (select pg_get_userbyid(relowner) from pg_class where oid = 'private.auth_user_email'::regclass);
+    if not (has_schema_privilege(v_role, 'auth', 'usage')
+            and has_column_privilege(v_role, 'auth.users', 'id', 'select')
+            and has_column_privilege(v_role, 'auth.users', 'email', 'select')) then
+      failures := failures || format('%s (owner of private.auth_user_email) must read auth.users (id, email)', v_role);
+    end if;
+    for r in
+      select distinct
+        case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end as grantee,
+        a.privilege_type
+      from pg_class c, aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a
+      where c.oid = 'private.auth_user_email'::regclass and a.grantee <> c.relowner
+        and not (a.grantee <> 0 and pg_get_userbyid(a.grantee) = 'invitation_guard' and a.privilege_type = 'SELECT')
+      union
+      select distinct
+        case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end,
+        a.privilege_type || ' (column ' || att.attname || ')'
+      from pg_attribute att, aclexplode(att.attacl) a
+      where att.attrelid = 'private.auth_user_email'::regclass and att.attacl is not null
+    loop
+      failures := failures || format('%s must not have %s on private.auth_user_email', r.grantee, r.privilege_type);
+    end loop;
+  end if;
+
+  -- The SECURITY DEFINER helpers: owned by tenant_guard or invitation_guard, search_path = '', and
+  -- executable only by the roles that need them (exact ACL, not a deny-list). The list is complete: any
+  -- other SECURITY DEFINER function in `private` fails the check.
   for r in
-    select h.fn, h.allowed, p.oid as poid, p.proowner, p.prosecdef, p.proconfig, p.proacl
+    select h.fn, h.owner, h.allowed, h.definer, p.oid as poid, p.proowner, p.prosecdef, p.proconfig, p.proacl
     from (values
-      ('private.user_session_is_valid(uuid, uuid)', array['tenant_guard']),
-      ('private.has_active_membership(uuid, uuid)', array['tenant_guard']),
-      ('private.current_tenant_id()',               array['tenant_guard', 'authenticated']),
-      ('private.switch_active_tenant(uuid)',        array['tenant_guard', 'authenticated']),
-      ('private.session_tenants()',                 array['tenant_guard', 'authenticated']),
-      ('private.discard_inactive_tenant_delivery(uuid)', array['tenant_guard', 'authenticated'])
-    ) as h(fn, allowed)
+      ('private.user_session_is_valid(uuid, uuid)', 'tenant_guard', array['tenant_guard', 'invitation_guard'], true),
+      ('private.has_active_membership(uuid, uuid)', 'tenant_guard', array['tenant_guard'], true),
+      ('private.current_tenant_id()',               'tenant_guard', array['tenant_guard', 'authenticated'], true),
+      ('private.switch_active_tenant(uuid)',        'tenant_guard', array['tenant_guard', 'authenticated'], true),
+      ('private.session_tenants()',                 'tenant_guard', array['tenant_guard', 'authenticated'], true),
+      ('private.discard_inactive_tenant_delivery(uuid)', 'tenant_guard', array['tenant_guard', 'authenticated'], true),
+      ('private.invitation_by_token(bytea)',        'invitation_guard', array['invitation_guard', 'authenticated'], true),
+      ('private.accept_invitation_as_caller(bytea, text, text)', 'invitation_guard', array['invitation_guard', 'authenticated'], true),
+      -- The sign-up gate's yes/no check (review H1): Auth's hook only.
+      ('private.invitation_allows_signup(text, text)', 'invitation_guard', array['invitation_guard', 'supabase_auth_admin'], true),
+      -- The acceptance effects: SECURITY INVOKER, called only by accept_invitation_as_caller.
+      ('private.apply_invitation_acceptance(bytea, uuid, text, text)', 'invitation_guard',
+       array['invitation_guard'], false),
+      -- A link's state (the one definition of "valid"): SECURITY INVOKER, called by the definer functions.
+      ('private.invitation_link(bytea)', 'invitation_guard', array['invitation_guard'], false),
+      -- Does the inviter still hold the authority (review M1): SECURITY INVOKER, same callers.
+      ('private.invitation_inviter_may_grant(uuid, uuid, text[])', 'invitation_guard',
+       array['invitation_guard'], false)
+    ) as h(fn, owner, allowed, definer)
     left join pg_proc p on p.oid = to_regprocedure(h.fn)
   loop
     if r.poid is null then
       failures := failures || format('%s is missing', r.fn);
       continue;
     end if;
-    if pg_get_userbyid(r.proowner) <> 'tenant_guard' then
-      failures := failures || format('%s must be owned by tenant_guard (is %s)', r.fn, pg_get_userbyid(r.proowner));
+    if pg_get_userbyid(r.proowner) <> r.owner then
+      failures := failures || format('%s must be owned by %s (is %s)', r.fn, r.owner, pg_get_userbyid(r.proowner));
     end if;
-    if not r.prosecdef or not coalesce('search_path=""' = any (r.proconfig) or 'search_path=' = any (r.proconfig), false) then
-      failures := failures || format('%s must be SECURITY DEFINER with an empty search_path', r.fn);
+    if r.prosecdef <> r.definer or not coalesce('search_path=""' = any (r.proconfig) or 'search_path=' = any (r.proconfig), false) then
+      failures := failures || format('%s must be %s with an empty search_path', r.fn,
+                                     case when r.definer then 'SECURITY DEFINER' else 'SECURITY INVOKER' end);
     end if;
     for v_role in
       select distinct case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end
@@ -159,6 +204,35 @@ begin
       end if;
     end loop;
   end loop;
+
+  for r in
+    select p.oid::regprocedure as fn from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = any (module_schemas) and p.prosecdef
+      and p.oid::regprocedure::text not in (
+        'private.user_session_is_valid(uuid,uuid)', 'private.has_active_membership(uuid,uuid)',
+        'private.current_tenant_id()', 'private.switch_active_tenant(uuid)', 'private.session_tenants()',
+        'private.discard_inactive_tenant_delivery(uuid)', 'private.invitation_by_token(bytea)',
+        'private.accept_invitation_as_caller(bytea,text,text)', 'private.invitation_allows_signup(text,text)')
+  loop
+    failures := failures || format('%s: unexpected SECURITY DEFINER function (security review)', r.fn);
+  end loop;
+
+  -- invitation_guard: the same rules as tenant_guard below.
+  if exists (select 1 from pg_roles where rolname = 'invitation_guard') then
+    for r in select nspname from pg_namespace where nspname = any (module_schemas) loop
+      if has_schema_privilege('invitation_guard', r.nspname, 'create') then
+        failures := failures || format('invitation_guard must not have CREATE on schema %s', r.nspname);
+      end if;
+    end loop;
+    for r in
+      select distinct u.rolname from pg_auth_members m
+      join pg_roles g on g.oid = m.roleid join pg_roles u on u.oid = m.member
+      where g.rolname = 'invitation_guard' and (m.inherit_option or m.set_option)
+        and not u.rolsuper and u.rolname <> current_user
+    loop
+      failures := failures || format('%s must not be a member of invitation_guard', r.rolname);
+    end loop;
+  end if;
 
   -- tenant_guard creates nothing (CREATE on `private` is granted only while ownership is handed over,
   -- migration 120100) and nobody else acts as it.
@@ -243,6 +317,54 @@ begin
         failures := failures || format('%s must not execute the access token hook', v_role);
       end if;
     end loop;
+  end if;
+
+  -- 5b. Before-user-created hook (sign-up gate, FR-IAM-03, review H1): present, SECURITY INVOKER with an
+  --     empty search_path, executable by supabase_auth_admin and nobody else (exact ACL besides the owner).
+  --     Auth's hook setting itself lives outside the database: the staging uptime check probes it.
+  if to_regprocedure(signup_hook) is null then
+    failures := failures || format('%s is missing', signup_hook);
+  else
+    if not has_function_privilege('supabase_auth_admin', signup_hook, 'execute')
+       or not has_function_privilege('supabase_auth_admin', 'private.invitation_allows_signup(text, text)', 'execute') then
+      failures := failures || 'supabase_auth_admin must have EXECUTE on the sign-up hook and its check'::text;
+    end if;
+    if exists (select 1 from pg_proc p where p.oid = to_regprocedure(signup_hook)
+               and (p.prosecdef or not coalesce('search_path=""' = any (p.proconfig) or 'search_path=' = any (p.proconfig), false))) then
+      failures := failures || format('%s must be SECURITY INVOKER with an empty search_path', signup_hook);
+    end if;
+    for v_role in
+      select distinct case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end
+      from pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+      where p.oid = to_regprocedure(signup_hook) and a.privilege_type = 'EXECUTE' and a.grantee <> p.proowner
+    loop
+      if v_role <> 'supabase_auth_admin' then
+        failures := failures || format('%s must not execute the sign-up hook', v_role);
+      end if;
+    end loop;
+  end if;
+  if to_regprocedure('private.accept_invitation(bytea, uuid, text, text)') is not null then
+    failures := failures || 'private.accept_invitation (acceptance for a given user id) must not exist (review H1)'::text;
+  end if;
+
+  -- 5c. No Auth e-mail change (re-review N1): the guard trigger on auth.users exists, is enabled (ALWAYS
+  --     or ORIGIN), fires before UPDATE OF email, email_change, and calls the SECURITY INVOKER function
+  --     with an empty search_path that PUBLIC cannot execute.
+  if not exists (
+    select 1 from pg_trigger t
+    where t.tgrelid = 'auth.users'::regclass and t.tgname = 'jadarat_refuse_email_change' and not t.tgisinternal
+      and t.tgenabled in ('O', 'A') and t.tgfoid = to_regprocedure('private.refuse_auth_email_change()')
+      and (t.tgtype & 1) <> 0 and (t.tgtype & 2) <> 0 and (t.tgtype & 16) <> 0  -- FOR EACH ROW, BEFORE, UPDATE
+      and (select array_agg(a.attname::text order by a.attname) from pg_attribute a
+           where a.attrelid = t.tgrelid and a.attnum = any (t.tgattr::int2[])) = array['email', 'email_change']
+  ) then
+    failures := failures || 'trigger jadarat_refuse_email_change on auth.users (re-review N1) is missing, disabled or altered'::text;
+  end if;
+  if exists (select 1 from pg_proc p where p.oid = to_regprocedure('private.refuse_auth_email_change()')
+             and (p.prosecdef or not coalesce('search_path=""' = any (p.proconfig) or 'search_path=' = any (p.proconfig), false)
+                  or exists (select 1 from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+                             where a.grantee = 0 and a.privilege_type = 'EXECUTE'))) then
+    failures := failures || 'private.refuse_auth_email_change() must be SECURITY INVOKER with an empty search_path, not executable by PUBLIC'::text;
   end if;
 
   -- 6. Data API, best effort: self-hosted PostgREST reads pgrst.db_schemas from the authenticator role.

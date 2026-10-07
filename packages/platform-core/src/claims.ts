@@ -3,7 +3,8 @@ import { z } from 'zod';
 /**
  * Shape of the Supabase access-token claims the platform relies on (ADR 0002 §3, ADR 0003 §2).
  * `tenant_id` / `person_id` are added by the Custom Access Token Hook only for an active membership.
- * Unknown claims are preserved (they are forwarded to PostgreSQL as `request.jwt.claims`).
+ * Unknown claims are preserved for the application; only an allow-listed subset is forwarded to
+ * PostgreSQL as `request.jwt.claims` (`databaseClaims` in @jadarat/platform-db, re-review N5).
  */
 export const JwtClaimsSchema = z.looseObject({
   sub: z.uuid(),

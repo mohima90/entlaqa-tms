@@ -21,7 +21,8 @@ import { subscribers } from './subscribers';
  * Worker process (ADR 0005, ADR 0008): `node dist/main.mjs [daemon|once|test-email]`. Connections:
  * DATABASE_URL_APP_QUEUE (queue, login role app_queue) and DATABASE_URL_APP_WORKER (tenant work,
  * app_worker); TLS verify-full against DATABASE_CA_CERT / DATABASE_CA_CERT_FILE for remote hosts.
- * E-mail: EMAIL_PROVIDER (resend | smtp | none) and its settings. Daemon mode stops gracefully on
+ * E-mail: EMAIL_PROVIDER (resend | smtp | none) and its settings; APP_BASE_URL (the web app's public
+ * origin, for invitation links). Daemon mode stops gracefully on
  * SIGTERM/SIGINT (running jobs finish first) and exits 0.
  */
 installConsoleScrubbing();
@@ -53,7 +54,12 @@ async function runWorker(settings: RunnerSettings): Promise<void> {
       queueUrl: settings.queueUrl,
       caPem: settings.caPem,
       registry: createSubscriberRegistry(
-        subscribers({ emailTransport, emailFrom: settings.email.from, log }),
+        subscribers({
+          emailTransport,
+          emailFrom: settings.email.from,
+          appBaseUrl: settings.appBaseUrl,
+          log,
+        }),
       ),
       withSystemTx: createWithSystemTx(() => workerDb),
       concurrency: settings.concurrency,

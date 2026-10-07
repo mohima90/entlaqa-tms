@@ -7,7 +7,7 @@ The whole product running on servers we (or the customer) control, with no Verce
 | Container | Image (pinned by digest in `compose.yaml`) | Role |
 |---|---|---|
 | `db` | `supabase/postgres:17.11.0.003` | PostgreSQL 17.11 (same version as the cloud), TLS on |
-| `auth` | `supabase/gotrue:v2.197.0` | Supabase Auth: password sign-in, ES256 keys, TOTP MFA, Custom Access Token hook |
+| `auth` | `supabase/gotrue:v2.197.0` | Supabase Auth: password sign-in, ES256 keys, TOTP MFA, Custom Access Token hook, invitation-only sign-up hook (before user created) |
 | `gateway` | `nginxinc/nginx-unprivileged:stable-alpine-slim` | TLS in front of Auth, Supabase URL layout (`/auth/v1/…`) |
 | `app` | `jadarat/suite:local` (`app.Dockerfile`, distroless Node 24, non-root) | The web app (standalone build) |
 | `worker` ×2 | `jadarat/worker:local` (`worker.Dockerfile`, distroless Node 24, non-root) | Background jobs and domain events (ADR 0004/0005; runbook `docs/engineering/background-jobs.md`), e-mail sending over SMTP (ADR 0008; `docs/engineering/email.md`) |
@@ -31,13 +31,13 @@ The app reaches Auth only through the gateway. Host ports are bound to `127.0.0.
 bash infra/docker/smoke.sh        # KEEP=1 keeps the stack running · SKIP_BUILD=1 reuses the app build
 ```
 
-It generates secrets, builds the app (no environment baked in), starts the stack, applies the migrations with the **production deploy script** (`scripts/db-deploy.sh`, verify-full TLS), creates a user through the Auth admin API, provisions an organization with `scripts/provision-tenant.sh`, signs in through a real browser (`apps/suite/e2e/signed-in.spec.ts`), runs the Auth parity checks (`check-auth-parity.mjs`), and verifies the audit trail, session revocation and TLS. It then sets up GlitchTip (`glitchtip/bootstrap.py`) and sends one browser error (through the app's tunnel) and one server error (signing in while Auth is down, `e2e/auth-outage.spec.ts`). Both must arrive in GlitchTip with their messages redacted and none of the planted personal data. CI runs exactly this on every PR (gate 15) and scans the app image (no fixable HIGH/CRITICAL allowed).
+It generates secrets, builds the app (no environment baked in), starts the stack, applies the migrations with the **production deploy script** (`scripts/db-deploy.sh`, verify-full TLS), creates a user through the Auth admin API, provisions an organization with `scripts/provision-tenant.sh`, signs in through a real browser (`apps/suite/e2e/signed-in.spec.ts`), runs the Auth parity checks (`check-auth-parity.mjs`), and verifies the audit trail, session revocation and TLS. It runs the background-job workers and an e-mail through Mailpit, then the invitation journey (T-M2-07) in Arabic and English: an Organization Admin invites, resends and revokes (`e2e/invitations.spec.ts`); the worker e-mails the invitation (link built from `APP_BASE_URL`); the smoke test reads the accept link from Mailpit's API and the invitee sets a password and lands signed in (`e2e/invite-accept.spec.ts`), with the used, expired and revoked link states. The database is then checked: account, membership and roles, audit events, a sent delivery without content, no token in any log. It then sets up GlitchTip (`glitchtip/bootstrap.py`) and sends one browser error (through the app's tunnel) and one server error (signing in while Auth is down, `e2e/auth-outage.spec.ts`). Both must arrive in GlitchTip with their messages redacted and none of the planted personal data. CI runs exactly this on every PR (gate 15) and scans the app image (no fixable HIGH/CRITICAL allowed).
 
 ## Manual operation
 
 ```bash
 cd infra/docker
-./gen-secrets.sh                                          # .secrets/: CA, TLS certs, ES256 JWK, .env (passwords)
+./gen-secrets.sh                                          # .secrets/: CA, TLS certs, ES256 JWK, .env (passwords, Auth admin key)
 docker compose --env-file .secrets/.env up -d db auth gateway
 # migrations (from the repo root):
 DATABASE_URL="postgresql://postgres:<POSTGRES_PASSWORD>@localhost:55432/postgres" \
@@ -65,6 +65,8 @@ Then:
    Connect the customer's SSO before go-live.
 
 **Upgrading an existing installation.** Re-run `./gen-secrets.sh` after pulling a new version. It keeps every existing secret and appends the ones the new version needs (e.g. GlitchTip's). Without them, every `docker compose` command stops with "run with --env-file".
+
+**Sign-ups and invitations (T-M2-07, FR-IAM-03).** Auth accepts sign-ups (`GOTRUE_DISABLE_SIGNUP: 'false'`) so that an invited person can create their own account from the invitation link; the app calls the public `/auth/v1/signup` endpoint and holds **no Auth admin key**. Every new account passes Auth's *before user created* hook (`private.before_user_created_hook`, `GOTRUE_HOOK_BEFORE_USER_CREATED_*`), which refuses everything except an e-mail sign-up carrying a valid invitation token for that e-mail. Anonymous and phone sign-ups are off. Never turn sign-ups on without the hook: the hook is the only gate. Operators still create the first administrators with `create-user.mjs` (Auth's admin API does not run the hook). The smoke test checks that a sign-up without an invitation, or with another person's invitation, is refused and that the app container has no Auth secret key. An installation set up from an earlier development build may still have `SUPABASE_SECRET_KEY` in `.secrets/.env`: `gen-secrets.sh` removes it; the token stays valid until its expiry unless the ES256 signing key (`JWT_KEYS`) is rotated.
 
 `.secrets/` is git-ignored and created with mode 0700 (private keys 0600; when not run as root, the gateway key is 0644 so nginx's unprivileged user can read it — run `gen-secrets.sh` as root on a real server).
 

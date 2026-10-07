@@ -19,6 +19,8 @@ const IGNORES = [
   'docs/**',
   'scripts/__fixtures__/**',
   'packages/config/**/*.d.ts',
+  // Agent worktrees (Claude Code) are full copies of the repository.
+  '.claude/**',
 ];
 
 /** Any claims type: VerifiedClaims, TenantClaims, JwtClaims and future `…Claims` types. */

@@ -20,6 +20,12 @@ export {
   finishEmailDelivery,
   insertEmailDelivery,
 } from './deliveries';
+export {
+  type InvitationForMail,
+  invitationActorMayManage,
+  issueInvitationToken,
+  loadInvitationForMail,
+} from './invitations';
 import { type AppDatabase, getDatabase } from '../client';
 
 export type SystemTx = ClaimsTx;

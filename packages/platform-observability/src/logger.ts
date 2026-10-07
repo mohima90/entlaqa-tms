@@ -25,6 +25,14 @@ export interface LogFields {
   readonly errorName?: string;
   /** Route pattern (e.g. `/[locale]/suite`), never the concrete URL. */
   readonly route?: string;
+  /** Stable machine reason of an operational event, e.g. `orphan_auth_user`. */
+  readonly reason?: string;
+  /** State of the entity concerned (a code such as `valid`, `expired`), never free text. */
+  readonly state?: string;
+  /** Kind of entity an operator must act on, e.g. `auth_user`. */
+  readonly entityType?: string;
+  /** UUID of that entity (allowed identifier, ADR 0009 §2). */
+  readonly entityId?: string;
 }
 
 export interface Logger {
@@ -46,6 +54,10 @@ const FIELD_NAMES: Readonly<Record<keyof LogFields, string>> = {
   errorCode: 'error_code',
   errorName: 'error_name',
   route: 'route',
+  reason: 'reason',
+  state: 'state',
+  entityType: 'entity_type',
+  entityId: 'entity_id',
 };
 
 /** Runtime environment value (dynamic access: never inlined at build time, see ADR 0010). */

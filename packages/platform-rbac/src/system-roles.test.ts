@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { MEMBER_GRANTS } from './member-permissions';
 import { platformPermissions } from './platform-permissions';
 import { SYSTEM_ROLES, SYSTEM_ROLE_CODES, getSystemRole, isSystemRoleCode } from './system-roles';
 
@@ -106,6 +107,8 @@ describe('system roles (FR-IAM-07, BRD Appendix B)', () => {
       expect(grant.permission.code.startsWith('platform.'), grant.permission.code).toBe(true);
       expect(SETUP_PERMISSIONS, grant.permission.code).toContain(grant.permission.code);
     }
+    // Member-wide grants reach the Organization Admin too: they stay limited to one's own profile.
+    expect(MEMBER_GRANTS.map((g) => g.permission)).toEqual(['platform.profile.manage_own']);
     // The description says so, in both languages.
     expect(admin.description.en).toContain('No access to training features');
     expect(admin.description.ar).toContain('دون الوصول إلى ميزات التدريب');

@@ -10,6 +10,19 @@ import { describe, expect, it } from 'vitest';
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 const recovery = read('supabase/templates/recovery.html');
 const changed = read('supabase/templates/password-changed.html');
+/** The markup without HTML comments (a plain scan, not a regular-expression replace). */
+const withoutComments = (html) => {
+  let out = '';
+  let at = 0;
+  for (;;) {
+    const start = html.indexOf('<!--', at);
+    if (start === -1) return out + html.slice(at);
+    out += html.slice(at, start);
+    const end = html.indexOf('-->', start + 4);
+    if (end === -1) return out;
+    at = end + 3;
+  }
+};
 const actions = (html) => [...html.matchAll(/\{\{-?\s*([^}]*?)\s*-?\}\}/g)].map((m) => m[1]);
 
 describe('Auth e-mail templates (T-M2-08)', () => {
@@ -26,7 +39,7 @@ describe('Auth e-mail templates (T-M2-08)', () => {
     expect(new Set(actions(changed))).toEqual(new Set(['.SiteURL', '.Email']));
     for (const html of [recovery, changed]) {
       // The explanatory comment names the forbidden variables; Auth strips it, the markup may not use them.
-      expect(html.replace(/<!--[\s\S]*?-->/g, '')).not.toMatch(
+      expect(withoutComments(html)).not.toMatch(
         /\.Token\b(?!Hash)|ConfirmationURL|\.Data|\.RedirectTo/,
       );
     }

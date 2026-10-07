@@ -73,7 +73,7 @@ describe('Auth e-mail templates (T-M2-08)', () => {
     expect(compose).toContain("GOTRUE_MAILER_NOTIFICATIONS_PASSWORD_CHANGED_ENABLED: 'false'");
     // No mail relay for Auth (its mailer is then a no-op) and no templates container.
     expect(compose).not.toMatch(
-      /^\s+(GOTRUE_SMTP_(HOST|PORT|USER|PASS)|GOTRUE_MAILER_TEMPLATES_\w+):|^  auth-templates:/m,
+      /^\s+(GOTRUE_SMTP_(HOST|PORT|USER|PASS)|GOTRUE_MAILER_TEMPLATES_\w+):|^ {2}auth-templates:/m,
     );
     expect(compose).toContain('PASSWORD_RESET_DELIVERY: worker');
     // The gateway refuses Auth's public endpoints that would issue (and so replace) recovery tokens.

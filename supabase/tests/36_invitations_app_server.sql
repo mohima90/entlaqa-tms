@@ -225,9 +225,13 @@ do $$ begin
   perform tests.assert_fails($q$select private.accept_invitation_as_caller(tests.token_hash('tok-priv-by-hr'))$q$,
     array['JI001'], 'inviter not (or no longer) an Organization Admin: the privileged invitation is refused');
 end $$;
--- uA makes uAB an Organization Admin: the privileged invitation is usable…
+-- uA makes uAB an Organization Admin (instead of HR Manager: never both, BR-IAM-4): the privileged
+-- invitation is usable…
 select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
   'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1'));
+delete from platform.role_assignments
+ where role_code = 'hr_manager'
+   and membership_id = (select id from platform.tenant_memberships where user_id = '00000000-0000-4000-8000-0000000000ab' and tenant_id = 'a0000000-0000-4000-8000-000000000001');
 insert into platform.role_assignments (membership_id, role_code)
 select id, 'tenant_admin' from platform.tenant_memberships
 where user_id = '00000000-0000-4000-8000-0000000000ab' and tenant_id = 'a0000000-0000-4000-8000-000000000001';
@@ -242,6 +246,9 @@ select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1'
 delete from platform.role_assignments
  where role_code = 'tenant_admin'
    and membership_id = (select id from platform.tenant_memberships where user_id = '00000000-0000-4000-8000-0000000000ab' and tenant_id = 'a0000000-0000-4000-8000-000000000001');
+insert into platform.role_assignments (membership_id, role_code)
+select id, 'hr_manager' from platform.tenant_memberships
+where user_id = '00000000-0000-4000-8000-0000000000ab' and tenant_id = 'a0000000-0000-4000-8000-000000000001';
 select tests.set_claims(null);
 do $$
 begin

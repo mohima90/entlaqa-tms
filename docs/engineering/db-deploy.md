@@ -82,6 +82,15 @@ If the uptime check ever reports HTTP 200: do step 1 of the roll back **at once*
 
 **E-mail of an account (operators).** Auth never changes an account's e-mail any more — not the user's own "change e-mail" request, not the dashboard or admin API (they answer with an error; re-review N1). If an address must be corrected, an operator does it in the SQL editor in one transaction: `begin; set local jadarat.allow_auth_email_change = 'on'; update auth.users set email = '<new>' where id = '<uid>'; update auth.identities set identity_data = jsonb_set(identity_data, '{email}', to_jsonb('<new>'::text)) where user_id = '<uid>' and provider = 'email'; commit;` — and the person's e-mail in the organization (HR record) is changed to match. A future Auth upgrade that rewrites e-mails would be refused by the guard too: if a Supabase Auth upgrade ever fails on `jadarat_refuse_email_change`, report it (the guard is dropped only by the migration rollback).
 
+## Separation of duties (T-M2-16, BR-IAM-4)
+
+Migration `20261010090000` makes the database refuse a person holding the **Organization Admin** and the **HR Manager** role at the same time in one organization (and invitations giving both). Before it installs the guards it checks the existing data and **changes nothing**: if any member already holds both roles (validity periods overlapping from now on) or a **pending** invitation would give both, `plan`/`apply` stops with `separation of duties (BR-IAM-4): N member(s) … and M pending invitation(s) …` (counts only). `verify-deployment.sql` §7 checks the same after every deploy.
+
+If it stops (staging is expected to pass: its only member is the Organization Admin):
+1. Find them (SQL editor, read-only): `select m.tenant_id, m.person_id, array_agg(ra.role_code) from platform.role_assignments ra join platform.tenant_memberships m on m.tenant_id = ra.tenant_id and m.id = ra.membership_id where ra.role_code in ('tenant_admin', 'hr_manager') and (ra.valid_until is null or ra.valid_until > now()) group by 1, 2 having count(*) > 1;` and `select tenant_id, id from platform.invitations where status = 'pending' and primary_role in ('tenant_admin', 'hr_manager') and (additional_roles && array['tenant_admin', 'hr_manager']);`
+2. The **PO decides with the organization** which of the two roles each person keeps (an organization needs at least one Organization Admin without an end date — give that role to another person first if needed). Then the Organization Admin removes the other role in the app (Users → profile → Edit roles), or revokes the invitation and invites again with one of the roles. Nobody deletes roles in SQL on the organization's behalf.
+3. Re-run `plan`, then `apply`.
+
 ## Troubleshooting
 
 - **`SSL error: certificate verify failed`** or **`server certificate … does not match host name`**: the CA in `DATABASE_CA_CERT` is not the one that signed the server/pooler certificate, or the file was pasted incompletely. Re-download it from Database Settings → SSL Configuration and paste the whole file. **Never** work around it by lowering `sslmode` — the script does not allow it for remote hosts.

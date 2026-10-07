@@ -76,6 +76,8 @@ begin
   where tenant_id = v_tenant and user_id = v_user;
   if v_status = 'active' then
     -- Recovery path: an organization left without an Organization Admin gets one back (idempotent).
+    -- Refused (SQLSTATE JR001, BR-IAM-4) when the user is the organization's HR Manager: choose another
+    -- person, or have that role removed in the application first.
     insert into platform.role_assignments (tenant_id, membership_id, role_code, is_primary)
     select m.tenant_id, m.id, 'tenant_admin',
            not exists (select 1 from platform.role_assignments p

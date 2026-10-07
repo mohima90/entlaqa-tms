@@ -70,8 +70,10 @@ export function inviteFieldError(
         key: code === 'EMPLOYEE_NUMBER_TAKEN' ? 'employeeNumberTaken' : 'employeeNumber',
       };
     case 'primaryRole':
+      if (code === 'ROLE_CONFLICT') return { field, key: 'roleConflict' };
       return { field, key: code === 'ROLE_NOT_ALLOWED' ? 'roleNotAllowed' : 'roleRequired' };
     case 'additionalRoles':
+      if (code === 'ROLE_CONFLICT') return { field, key: 'roleConflict' };
       return { field, key: code === 'ROLE_NOT_ALLOWED' ? 'roleNotAllowed' : 'roles' };
     case 'departmentId':
     case 'branchId':
@@ -97,4 +99,25 @@ export interface InvitationListItem {
 /** Resend is offered while pending (also after expiry) until the last of the 4 e-mails. */
 export function canResend(row: Pick<InvitationListItem, 'state' | 'sendCount'>): boolean {
   return (row.state === 'pending' || row.state === 'expired') && row.sendCount < MAX_SENDS;
+}
+
+/** Each role of an exclusive pair → the other (BR-IAM-4; from EXCLUSIVE_ROLE_PAIRS on the server). */
+export type ExclusiveRoles = Readonly<Record<string, string>>;
+
+/**
+ * Separation of duties (BR-IAM-4, T-M2-16): is `code` unavailable because the other role of its pair is
+ * chosen? Only roles not chosen yet are blocked; choosing the other role of the pair as primary replaces
+ * the current primary (allowed). The server refuses the pair anyway (ROLE_CONFLICT).
+ */
+export function blockedByPair(
+  code: string,
+  as: 'primary' | 'additional',
+  primary: string,
+  additional: readonly string[],
+  exclusive: ExclusiveRoles,
+): boolean {
+  const other = exclusive[code];
+  if (other === undefined) return false;
+  if (as === 'primary') return primary !== code && additional.includes(other);
+  return !additional.includes(code) && (primary === other || additional.includes(other));
 }

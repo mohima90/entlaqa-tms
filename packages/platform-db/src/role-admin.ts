@@ -109,7 +109,9 @@ export type RolesRefusal =
   | 'last_admin'
   | 'membership_revoked'
   | 'dates_invalid'
-  | 'privileged_change';
+  | 'privileged_change'
+  /** BR-IAM-4: the Organization Admin and HR Manager roles would be held together (T-M2-16). */
+  | 'role_conflict';
 
 export type RolesOutcome =
   | {
@@ -124,6 +126,8 @@ export type RolesOutcome =
 export function rolesRefusalOf(error: unknown): RolesRefusal {
   const pg = pgError(error);
   if (pg?.code === '42501') return 'not_allowed';
+  // Separation of duties (BR-IAM-4, migration 20261010090000).
+  if (pg?.code === 'JR001') return 'role_conflict';
   if (pg?.code === '23514' && pg.message.includes('at least one active Organization Admin')) {
     return 'last_admin';
   }
@@ -178,6 +182,12 @@ export interface ReplaceRolesOptions {
    * after the lock, against the stored roles: refused as `privileged_change`.
    */
   readonly lockedCodes?: ReadonlySet<string>;
+  /**
+   * Would the member hold roles that may not go together (BR-IAM-4)? Called after the lock with the
+   * roles as they would be saved and today in the organization's time zone: refused as `role_conflict`
+   * before anything is written (the database refuses it anyway).
+   */
+  readonly conflicts?: (roles: readonly AssignedRole[], today: string) => boolean;
 }
 
 /**
@@ -206,6 +216,7 @@ export async function replaceMemberRoles(
   if (options.lockedCodes && touchesRoles(before.roles, desired, options.lockedCodes)) {
     return { ok: false, refusal: 'privileged_change' };
   }
+  if (options.conflicts?.(desired, before.today)) return { ok: false, refusal: 'role_conflict' };
 
   const current = new Map(before.roles.map((r) => [r.roleCode, r]));
   const wanted = new Map(desired.map((r) => [r.roleCode, r]));

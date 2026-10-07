@@ -118,6 +118,8 @@ describe('createInvitation', () => {
       'EMPLOYEE_NUMBER_TAKEN',
     ],
     [pgErr('42501'), 'ROLE_NOT_ALLOWED'],
+    // Separation of duties (BR-IAM-4, T-M2-16).
+    [pgErr('JR001'), 'ROLE_CONFLICT'],
   ])('maps database refusals to DomainErrors (%#)', async (error, code) => {
     const failure = await createInvitation(fakeTx(error).tx, input).catch((e: unknown) => e);
     expect(isDomainError(failure, code)).toBe(true);
@@ -303,6 +305,7 @@ describe('acceptInvitationAsCaller', () => {
     ['JI002', 'ALREADY_MEMBER'],
     ['JI003', 'INVITATION_ACCOUNT_MISMATCH'],
     ['23514', 'INVITATION_NOT_VALID'],
+    ['JR001', 'INVITATION_NOT_VALID'],
   ])('maps %s to %s', async (sqlstate, code) => {
     const failure = await acceptInvitationAsCaller(fakeTx(pgErr(sqlstate)).tx, HASH).catch(
       (e: unknown) => e,

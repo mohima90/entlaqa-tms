@@ -1,7 +1,7 @@
 import { toClientError } from '@jadarat/platform-core';
 import type { AppLocale } from '@jadarat/platform-i18n';
 import { routing } from '@jadarat/platform-i18n/routing';
-import { type InviteFormView, SYSTEM_ROLES } from '@jadarat/platform-rbac';
+import { EXCLUSIVE_ROLES_BY_CODE, type InviteFormView, SYSTEM_ROLES } from '@jadarat/platform-rbac';
 import { Alert, Card } from '@jadarat/ui';
 import { hasLocale } from 'next-intl';
 import { getFormatter, getTranslations } from 'next-intl/server';
@@ -44,6 +44,7 @@ const LABEL_KEYS = [
   'rolesHelp',
   'additionalRoles',
   'additionalRolesHint',
+  'roleConflictHint',
   'privileged',
   'language',
   'submit',
@@ -59,6 +60,7 @@ const FIELD_ERROR_KEYS = [
   'employeeNumberTaken',
   'roleRequired',
   'roleNotAllowed',
+  'roleConflict',
   'roles',
   'unit',
   'manager',
@@ -172,6 +174,7 @@ async function inviteForm(
         usersHref={usersHref}
         successHref={`${usersHref}?tab=invited&${INVITED_FLASH_PARAM}=1`}
         rolesHref={`/${locale}/suite/admin/roles`}
+        exclusiveRoles={EXCLUSIVE_ROLES_BY_CODE}
       />
     </Card>
   );

@@ -165,6 +165,8 @@ describe('replaceMemberRoles', () => {
       rolesRefusalOf(pgError('23514', { constraint_name: 'role_assignments_validity_check' })),
     ).toBe('dates_invalid');
     expect(rolesRefusalOf(pgError('23505'))).toBe('version_conflict');
+    // Separation of duties (BR-IAM-4, T-M2-16): the role trigger's SQLSTATE.
+    expect(rolesRefusalOf(pgError('JR001'))).toBe('role_conflict');
     expect(() => rolesRefusalOf(pgError('23514', { message: 'other' }))).toThrow();
     expect(() => rolesRefusalOf(new Error('boom'))).toThrow('boom');
   });
@@ -214,6 +216,30 @@ describe('primary days and locked roles', () => {
       }),
     ).toEqual({ ok: false, refusal: 'privileged_change' });
     expect(locked.executed).toHaveLength(3);
+
+    // Roles that may not go together (BR-IAM-4): refused after the lock, before any write, with the
+    // roles as they would be saved (primary days kept) and today in the organization's time zone.
+    const seen: unknown[] = [];
+    const conflicting = fakeTx([], [person], rows);
+    expect(
+      await replaceMemberRoles(
+        conflicting.tx,
+        'p1',
+        VERSION,
+        [role('tenant_admin', { isPrimary: true }), role('hr_manager')],
+        {
+          conflicts: (roles, today) => {
+            seen.push(roles, today);
+            return true;
+          },
+        },
+      ),
+    ).toEqual({ ok: false, refusal: 'role_conflict' });
+    expect(conflicting.executed).toHaveLength(3);
+    expect(seen).toEqual([
+      [role('tenant_admin', { isPrimary: true }), role('hr_manager')],
+      '2026-10-06',
+    ]);
 
     const dated = [{ ...rows[0], valid_until: '2026-01-31' }, rows[1]];
     const kept = fakeTx([], [person], dated);

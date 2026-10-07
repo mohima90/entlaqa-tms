@@ -11,6 +11,7 @@ export * from './scopes';
 export * from './authorize';
 export * from './platform-permissions';
 export * from './system-roles';
+export * from './separation-of-duties';
 export * from './role-matrix';
 export * from './role-grants';
 export * from './person-scope';

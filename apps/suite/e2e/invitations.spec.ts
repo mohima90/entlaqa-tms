@@ -45,6 +45,10 @@ test.describe('invitations (admin side)', () => {
     await expect(form.getByTestId('privileged-locked')).toContainText('authenticator app');
     await expect(form.getByRole('radio', { name: /^Organization Admin/ })).toBeDisabled();
     await expect(form.getByTestId('invite-notice')).toContainText('7 days');
+    // Separation of duties (BR-IAM-4, T-M2-16): explained next to the roles.
+    await expect(form.getByTestId('role-conflict-hint')).toContainText(
+      "One person can't hold both the Organization Admin and HR Manager roles",
+    );
     await expectNoSeriousA11yViolations(page);
 
     // Required fields are reported inline
@@ -102,6 +106,9 @@ test.describe('invitations (admin side)', () => {
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('دعوة مستخدم');
     const form = page.getByTestId('invite-user');
     await expect(form.getByTestId('invite-notice')).toContainText('تبقى الدعوة صالحة 7 أيام');
+    await expect(form.getByTestId('role-conflict-hint')).toContainText(
+      'لا يجمع شخص واحد بين دور مدير المنشأة ودور مدير الموارد البشرية',
+    );
     await expectNoSeriousA11yViolations(page);
 
     const invite = async () => {

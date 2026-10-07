@@ -12,6 +12,7 @@ import type { ActionDefinition, PermissionAccess } from '../define-action';
 import type { QueryDefinition } from '../define-query';
 import type { PermissionDefinition } from '../permissions';
 import { platformPermissions } from '../platform-permissions';
+import { rolesHeldTogether } from '../separation-of-duties';
 import { SYSTEM_ROLES, SYSTEM_ROLE_CODES, type SystemRoleCode } from '../system-roles';
 
 /**
@@ -20,7 +21,8 @@ import { SYSTEM_ROLES, SYSTEM_ROLE_CODES, type SystemRoleCode } from '../system-
  * optional first/last days. Ordinary roles: `platform.role.assign` (HR Manager, Organization Admin);
  * privileged roles: `platform.role.assign_privileged` — Organization Admin with an authenticator code
  * (AAL2, PO decision D-IAM-01, 6 Oct 2026). Nobody changes their own roles; a privileged member's roles
- * only an Organization Admin (database guard). Audited with the roles before and after.
+ * only an Organization Admin (database guard); nobody holds the Organization Admin and HR Manager roles
+ * together (BR-IAM-4, T-M2-16: ROLE_CONFLICT). Audited with the roles before and after.
  */
 const p = platformPermissions;
 
@@ -149,6 +151,10 @@ function refusalError(refusal: RolesRefusal): AppError {
       return appError('VALIDATION_FAILED', {
         fieldErrors: [{ path: 'additional', code: 'DATES' }],
       });
+    case 'role_conflict':
+      return appError('VALIDATION_FAILED', {
+        fieldErrors: [{ path: 'additional', code: 'ROLE_CONFLICT' }],
+      });
   }
 }
 
@@ -169,13 +175,16 @@ function rolesAction(
     resource: (input) => ({ type: 'person', id: input.personId }),
     handler: async ({ ctx, input }) => {
       // Ordinary path: a change that touches a privileged role must go through the privileged action
-      // (AAL2, strict session check). Checked after the role lock against the stored roles.
+      // (AAL2, strict session check). Checked after the role lock against the stored roles, like the
+      // separation of duties (BR-IAM-4), which needs the stored days of the primary role.
       const outcome = await replaceMemberRoles(
         ctx.tx,
         input.personId,
         input.version,
         desiredRoles(input),
-        privileged ? {} : { lockedCodes: PRIVILEGED },
+        privileged
+          ? { conflicts: rolesHeldTogether }
+          : { lockedCodes: PRIVILEGED, conflicts: rolesHeldTogether },
       );
       if (!outcome.ok && outcome.refusal === 'privileged_change') {
         const access = ctx.access(p['platform.role.assign_privileged'], ctx.resource ?? 'tenant');

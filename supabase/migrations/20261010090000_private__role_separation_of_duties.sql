@@ -40,7 +40,7 @@
 -- Helpers (SECURITY INVOKER, empty search_path)
 -- ---------------------------------------------------------------------------------------------------
 -- The role that may not be held together with p_role (null: none). The one place that lists the pairs;
--- packages/platform-rbac EXCLUSIVE_ROLE_PAIRS mirrors it (drift test in system-roles.test.ts).
+-- packages/platform-rbac EXCLUSIVE_ROLE_PAIRS mirrors it (drift test in separation-of-duties.test.ts).
 create or replace function private.exclusive_role(p_role text)
 returns text
 language sql immutable

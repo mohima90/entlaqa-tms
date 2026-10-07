@@ -101,3 +101,30 @@ export function lockedRoles(
 ): ReadonlySet<string> {
   return new Set(privilegedAllowed ? [] : catalogue.filter((c) => c.privileged).map((c) => c.code));
 }
+
+/** Each role of an exclusive pair → the other (BR-IAM-4; from EXCLUSIVE_ROLE_PAIRS on the server). */
+export type ExclusiveRoles = Readonly<Record<string, string>>;
+
+/**
+ * Separation of duties (BR-IAM-4, T-M2-16): may `code` be chosen now — as the primary role or as an
+ * additional role — while its pair is chosen and not ended? A role already chosen can always be
+ * unchosen; choosing the pair's other role as primary replaces it (allowed). Same rule as the server
+ * (rolesHeldTogether), without dates for the new choice: the server decides about scheduled hand-overs.
+ */
+export function blockedByPair(
+  code: string,
+  as: 'primary' | 'additional',
+  state: RolesFormState,
+  exclusive: ExclusiveRoles,
+  today: string,
+): boolean {
+  const other = exclusive[code];
+  if (other === undefined) return false;
+  if (as === 'primary' ? state.primary === code : state.additional[code] !== undefined) {
+    return false;
+  }
+  const days = state.additional[other];
+  const otherAdditional =
+    days !== undefined && (days.validUntil === '' || days.validUntil >= today);
+  return as === 'primary' ? otherAdditional : otherAdditional || state.primary === other;
+}

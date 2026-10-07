@@ -6,6 +6,7 @@ import type { ActionRuntime } from '../define-action';
 import { createDefineAction } from '../define-action';
 import { createDefineQuery } from '../define-query';
 import { grantsForAssignments } from '../role-grants';
+import { rolesHeldTogether } from '../separation-of-duties';
 import type { SystemRoleCode } from '../system-roles';
 import {
   EditRolesInput,
@@ -187,6 +188,7 @@ describe('update roles actions', () => {
     expect(result).toEqual(ok({ personId: SARA, changed: true, before: current, after }));
     expect(db.replaceMemberRoles).toHaveBeenCalledWith(TX, SARA, form.version, after, {
       lockedCodes: new Set(PRIVILEGED_ROLE_CODES),
+      conflicts: rolesHeldTogether,
     });
     expect(writeAudit).toHaveBeenCalledWith(TX, expect.anything(), {
       action: 'platform.user.roles_changed',
@@ -214,6 +216,7 @@ describe('update roles actions', () => {
     // The check runs in the locked save, against the stored roles: privileged roles are locked there.
     expect(db.replaceMemberRoles).toHaveBeenCalledWith(TX, SARA, form.version, expect.anything(), {
       lockedCodes: new Set(PRIVILEGED_ROLE_CODES),
+      conflicts: rolesHeldTogether,
     });
   });
 
@@ -244,6 +247,28 @@ describe('update roles actions', () => {
     expect(getClaims).toHaveBeenCalledWith({ strict: true });
   });
 
+  it('separation of duties (BR-IAM-4): the privileged save checks it; a refusal is ROLE_CONFLICT', async () => {
+    const withHr = {
+      ...form,
+      primary: 'tenant_admin' as const,
+      additional: [{ roleCode: 'hr_manager' as const, validFrom: '', validUntil: '' }],
+    };
+    db.replaceMemberRoles.mockResolvedValue({ ok: false, refusal: 'role_conflict' });
+    const result = await createDefineAction(runtime(['tenant_admin'], 'aal2').rt)(
+      updateMemberPrivilegedRolesActionDefinition(),
+    )(withHr);
+    expect(result).toMatchObject({
+      ok: false,
+      error: {
+        code: 'VALIDATION_FAILED',
+        fieldErrors: [{ path: 'additional', code: 'ROLE_CONFLICT' }],
+      },
+    });
+    expect(db.replaceMemberRoles).toHaveBeenCalledWith(TX, SARA, form.version, expect.anything(), {
+      conflicts: rolesHeldTogether,
+    });
+  });
+
   it('maps refusals; no change → no audit; out of scope → NOT_FOUND', async () => {
     const cases: [string, string, string | undefined][] = [
       ['not_found', 'NOT_FOUND', undefined],
@@ -254,6 +279,7 @@ describe('update roles actions', () => {
       ['version_conflict', 'CONFLICT_VERSION', undefined],
       ['last_admin', 'VALIDATION_FAILED', 'primary'],
       ['dates_invalid', 'VALIDATION_FAILED', 'additional'],
+      ['role_conflict', 'VALIDATION_FAILED', 'additional'],
       ['privileged_change', 'STEP_UP_REQUIRED', undefined], // Organization Admin without a code
     ];
     for (const [refusal, code, path] of cases) {

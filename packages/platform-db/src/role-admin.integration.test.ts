@@ -1,14 +1,21 @@
 /**
  * Changing a member's roles (T-M2-14) against PostgreSQL under withUserTx: diff writes, the primary
  * slot, validity days in the organization's time zone, concurrent edits, own roles, members without an
- * account, and the HR Manager vs privileged-member rule of the role guard.
+ * account, the HR Manager vs privileged-member rule of the role guard, and separation of duties
+ * (BR-IAM-4, T-M2-16) — also between two transactions running at the same time.
  */
 import { randomUUID } from 'node:crypto';
 import { brandVerifiedClaims } from '@jadarat/platform-core/internal/verified-claims';
+import { sql } from 'drizzle-orm';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createDatabase } from './client';
-import { type AssignedRole, getEditableRoles, replaceMemberRoles } from './role-admin';
+import {
+  type AssignedRole,
+  getEditableRoles,
+  replaceMemberRoles,
+  rolesRefusalOf,
+} from './role-admin';
 import { createWithUserTx } from './with-user-tx';
 
 const ownerUrl = process.env.TEST_DATABASE_URL;
@@ -23,6 +30,9 @@ describe.skipIf(!configured)('changing roles against PostgreSQL', () => {
   const owner = postgres(ownerUrl ?? '', { max: 1, onnotice: () => undefined });
   const serverDb = createDatabase(appServerUrl ?? '', { max: 1 });
   const withUserTx = createWithUserTx(() => serverDb);
+  // A second connection: two transactions at the same time.
+  const serverDb2 = createDatabase(appServerUrl ?? '', { max: 1 });
+  const withUserTx2 = createWithUserTx(() => serverDb2);
   const id = () => randomUUID();
   const tenant = id();
   const member = (role: string, name: string) => ({
@@ -35,8 +45,9 @@ describe.skipIf(!configured)('changing roles against PostgreSQL', () => {
   const admin = member('tenant_admin', 'أ-مدير');
   const hr = member('hr_manager', 'ب-موارد');
   const sara = member('learner', 'ث-سارة');
+  const omar = member('learner', 'ح-عمر');
   const noLogin = { person: id() };
-  const all = [admin, hr, sara];
+  const all = [admin, hr, sara, omar];
 
   const claimsOf = (m: (typeof all)[number]) => {
     const r = brandVerifiedClaims({
@@ -109,6 +120,7 @@ describe.skipIf(!configured)('changing roles against PostgreSQL', () => {
     for (const m of all) await owner`delete from auth.users where id = ${m.user}`;
     await owner.end();
     await serverDb.$client.end();
+    await serverDb2.$client.end();
   });
 
   it('reads the roles, the version token and who may change them', async () => {
@@ -250,5 +262,89 @@ describe.skipIf(!configured)('changing roles against PostgreSQL', () => {
       validFrom: '2024-04-01',
       validUntil: '2024-04-25',
     });
+  });
+
+  it('separation of duties: never Organization Admin and HR Manager together (BR-IAM-4)', async () => {
+    const conflicts = (roles: readonly AssignedRole[]) =>
+      roles.some((r) => r.roleCode === 'tenant_admin') &&
+      roles.some((r) => r.roleCode === 'hr_manager');
+    const both = [role('learner', { isPrimary: true }), role('tenant_admin'), role('hr_manager')];
+    // The application refuses first (before writing), the database anyway.
+    const early = await withUserTx(claimsOf(admin), async (tx) => {
+      const current = await getEditableRoles(tx, omar.person);
+      return replaceMemberRoles(tx, omar.person, current?.version ?? '', both, { conflicts });
+    });
+    expect(early).toEqual({ ok: false, refusal: 'role_conflict' });
+    expect(await change(admin, omar.person, both)).toEqual({ ok: false, refusal: 'role_conflict' });
+    // A scheduled hand-over is fine: Organization Admin until the day before HR Manager starts.
+    expect(
+      await change(admin, omar.person, [
+        role('learner', { isPrimary: true }),
+        role('tenant_admin', { validUntil: '2031-01-31' }),
+        role('hr_manager', { validFrom: '2031-02-01' }),
+      ]),
+    ).toMatchObject({ ok: true, changed: true });
+    expect(
+      await change(admin, omar.person, [
+        role('learner', { isPrimary: true }),
+        role('tenant_admin', { validUntil: '2031-02-01' }),
+        role('hr_manager', { validFrom: '2031-02-01' }),
+      ]),
+    ).toEqual({ ok: false, refusal: 'role_conflict' });
+    expect(await change(admin, omar.person, [role('learner', { isPrimary: true })])).toMatchObject({
+      ok: true,
+    });
+  });
+
+  it('separation of duties holds between two concurrent transactions (race-safe)', async () => {
+    const give = (code: string) =>
+      sql`insert into platform.role_assignments (membership_id, role_code)
+          select id, ${code} from platform.tenant_memberships where person_id = ${omar.person}::uuid`;
+    const signal = () => {
+      let fire: () => void = () => undefined;
+      const promise = new Promise<void>((resolve) => {
+        fire = resolve;
+      });
+      return {
+        promise,
+        fire: () => {
+          fire();
+        },
+      };
+    };
+    const { promise: held, fire: release } = signal();
+    const { promise: wrote, fire: firstWrote } = signal();
+    // First transaction: gives HR Manager, then stays open (holding the organization's role lock).
+    const first = withUserTx(claimsOf(admin), async (tx) => {
+      await tx.execute(give('hr_manager'));
+      firstWrote();
+      await held;
+    });
+    await wrote;
+    // Second transaction, at the same time: gives Organization Admin — it waits for the first.
+    const second = withUserTx2(claimsOf(admin), (tx) => tx.execute(give('tenant_admin'))).then(
+      () => 'saved',
+      (error: unknown) => rolesRefusalOf(error),
+    );
+    // Wait until the second really waits for the organization's role lock (it must not run after).
+    let blocked = false;
+    try {
+      for (let i = 0; i < 100 && !blocked; i += 1) {
+        const [waiting] = await owner<{ n: number }[]>`
+          select count(*)::int as n from pg_locks where locktype = 'advisory' and not granted`;
+        blocked = (waiting?.n ?? 0) > 0;
+        if (!blocked) await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+    } finally {
+      release();
+    }
+    expect(blocked).toBe(true);
+    await first;
+    // Once the first commits, the second sees its row and is refused.
+    expect(await second).toBe('role_conflict');
+    const [stored] = await owner<{ codes: string[] }[]>`
+      select array_agg(ra.role_code order by ra.role_code) as codes from platform.role_assignments ra
+      join platform.tenant_memberships m on m.id = ra.membership_id where m.person_id = ${omar.person}`;
+    expect(stored?.codes).toEqual(['hr_manager', 'learner']);
   });
 });

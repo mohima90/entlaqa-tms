@@ -196,6 +196,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
+| 8 Oct 2026 | T-M2-16 (separation of duties, BR-IAM-4) and T-M2-17 (reset and password-changed e-mails through our notification service, behind a rollout flag until the production worker host exists) started in parallel by two developer agents |
 | 8 Oct 2026 | Hosted reset set-up finished with the PO: OTP length 10 / expiry 3600 / current password ON, rate limits (verify 150 per 5 min, e-mails 100 per hour), "Password changed" notice enabled (it was off; then received after a My profile password change). Test: reset e-mail **received at entlaqa.com**, new password set (a same-password attempt was refused and asked for a new link, as designed), sessions ended, sign-in with the new password OK. The reset e-mail sent by Supabase (HTML only) never reached the jadarat.io mailbox although our invitation e-mail (worker → Resend API, HTML + text) did: recipient-side filtering; T-M2-17 moves these e-mails to the worker's route |
 | 7 Oct 2026 | Hosted reset set-up with the PO: Site URL checked, Resend SMTP on (port 465), both Auth templates saved. PO decision: e-mails belong to the organization (BRD v2.5: FR-NTF-02 clarified, FR-NTF-10/11 in R2) → T-M2-17 added (reset e-mails through our notification service) |
 | 7 Oct 2026 | **PR #43 merged** (T-M2-08 forgot/reset password + BRD v2.4; all 19 checks green after a CodeQL test-file fix). Next: hosted Auth set-up with the PO (docs/engineering/password-reset.md §4), then T-M2-16 |

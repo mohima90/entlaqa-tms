@@ -314,7 +314,7 @@ begin
                         null::uuid, null::text, v_request.attempts::integer;
     return;
   end if;
-  return query select v_request.id, v_request.kind, 'send'::text, v_account.email, v_account.id, v_member.tenant_id,
+  return query select v_request.id, v_request.kind, 'send'::text, v_account.email::text, v_account.id, v_member.tenant_id,
                       v_member.person_id, case when v_member.preferred_locale = 'en' then 'en' else 'ar' end,
                       v_request.attempts::integer;
 end

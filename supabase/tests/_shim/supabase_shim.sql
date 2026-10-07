@@ -29,9 +29,11 @@ $$;
 create schema if not exists auth;
 grant usage on schema auth to anon, authenticated, service_role, supabase_auth_admin;
 
+-- email is character varying(255) as in Supabase Auth (a function returning it as `text` must cast it:
+-- found by the self-hosted smoke, T-M2-17).
 create table if not exists auth.users (
   id uuid primary key,
-  email text,
+  email character varying(255),
   created_at timestamptz not null default now()
 );
 -- Columns Supabase Auth updates that the migrations' trigger on auth.users reads or the tests touch

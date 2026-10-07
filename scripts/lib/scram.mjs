@@ -29,8 +29,19 @@ export function checkPassword(password) {
 const hmac = (key, data) => createHmac('sha256', key).update(data).digest();
 
 /**
+ * A salt that stays the same for the same role and password (16 bytes of HMAC-SHA-256 keyed by the
+ * password). Deploys re-run `ALTER ROLE … PASSWORD` every time; with a fresh random salt each run, the
+ * stored verifier changes although the password did not, and Supabase's pooler (Supavisor), which caches
+ * the old verifier, then refuses logins ("password authentication failed") until its cache refreshes.
+ * The salt is still unique per role and unguessable without the password.
+ */
+export function stableSalt(role, password) {
+  return hmac(Buffer.from(password, 'utf8'), `jadarat:scram-salt:${role}`).subarray(0, 16);
+}
+
+/**
  * Builds `SCRAM-SHA-256$<iterations>:<salt>$<StoredKey>:<ServerKey>` (all base64).
- * `salt` defaults to 16 random bytes (PostgreSQL's default length); pass it only in tests.
+ * `salt` defaults to 16 random bytes (PostgreSQL's default length); deploys pass `stableSalt()`.
  */
 export function scramSha256Verifier(
   password,

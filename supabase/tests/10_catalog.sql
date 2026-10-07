@@ -258,8 +258,9 @@ begin
     select n.nspname::text as o from pg_namespace n
     where n.nspowner = 'app_queue'::regrole and n.nspname <> 'graphile_worker'
     union all
+    -- pg_toast: the out-of-line storage of graphile_worker's own tables (owned with them; no code).
     select c.oid::regclass::text from pg_class c join pg_namespace n on n.oid = c.relnamespace
-    where c.relowner = 'app_queue'::regrole and n.nspname <> 'graphile_worker'
+    where c.relowner = 'app_queue'::regrole and n.nspname not in ('graphile_worker', 'pg_toast')
     union all
     select p.oid::regprocedure::text from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where p.proowner = 'app_queue'::regrole and n.nspname <> 'graphile_worker'

@@ -80,6 +80,37 @@ describe('system roles (FR-IAM-07, BRD Appendix B)', () => {
     expect(admin.grants.every((g) => g.scope === 'tenant')).toBe(true);
   });
 
+  it('keeps the Organization Admin a setup role: setup permissions only, never module permissions', () => {
+    // PO decision 7 Oct 2026 (BRD v2.4 Appendix B): the Organization Admin sets the organization up —
+    // settings, branding, users and roles (full people records), security, integrations, audit — and has
+    // no core training feature. Every permission it is granted must be on this reviewed allow-list of
+    // setup permissions; a module permission (tms.*, M3+) or a new platform permission fails here until
+    // it is reviewed. Never add a training permission to this list.
+    const SETUP_PERMISSIONS = [
+      'platform.user.read',
+      'platform.user.invite',
+      'platform.user.update',
+      'platform.user.deactivate',
+      'platform.role.read',
+      'platform.role.assign',
+      'platform.role.assign_privileged',
+      'platform.org.read',
+      'platform.org.manage',
+      'platform.tenant.read',
+      'platform.tenant.manage',
+      'platform.security.manage',
+      'platform.audit.read',
+    ];
+    const admin = getSystemRole('tenant_admin');
+    for (const grant of admin.grants) {
+      expect(grant.permission.code.startsWith('platform.'), grant.permission.code).toBe(true);
+      expect(SETUP_PERMISSIONS, grant.permission.code).toContain(grant.permission.code);
+    }
+    // The description says so, in both languages.
+    expect(admin.description.en).toContain('No access to training features');
+    expect(admin.description.ar).toContain('دون الوصول إلى ميزات التدريب');
+  });
+
   it('lets only the Organization Admin and the HR Manager manage users and roles', () => {
     const managing = SYSTEM_ROLES.filter((r) =>
       r.grants.some((g) => g.permission.code.startsWith('platform.role.assign')),

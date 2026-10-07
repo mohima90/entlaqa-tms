@@ -51,7 +51,8 @@ type QualifierKey = keyof typeof QUALIFIERS;
 
 /**
  * One area: cells in SYSTEM_ROLE_CODES order (Organization Admin … Auditor), `LEVEL` or
- * `LEVEL:qualifier`. Rows are copied from BRD Appendix B (Arabic wording of the approved screen 5).
+ * `LEVEL:qualifier`. Rows are copied from BRD Appendix B (Arabic wording of the approved screen 5). The
+ * Organization Admin is a setup role (BRD v2.4, PO 7 Oct 2026): no access to the training areas.
  */
 const ROWS: readonly [string, LocalizedText, boolean, string][] = [
   [
@@ -73,69 +74,69 @@ const ROWS: readonly [string, LocalizedText, boolean, string][] = [
     'requests',
     { ar: 'طلبات التدريب وحصر الاحتياجات', en: 'Training requests & needs analysis' },
     false,
-    'F F E E V V AE AE N N N N O V',
+    'N F E E V V AE AE N N N N O V',
   ],
-  ['plan', { ar: 'الخطة التدريبية', en: 'Training plan' }, false, 'F F V A A V A V N N N N N V'],
+  ['plan', { ar: 'الخطة التدريبية', en: 'Training plan' }, false, 'N F V A A V A V N N N N N V'],
   [
     'catalog',
     { ar: 'دليل الدورات والبرامج', en: 'Catalog & programs' },
     false,
-    'F F E V V V V V V V:assigned E:ownCatalog V V V',
+    'N F E V V V V V V V:assigned E:ownCatalog V V V',
   ],
   [
     'sessions',
     { ar: 'الجلسات والجدولة', en: 'Sessions & scheduling' },
     false,
-    'F F F V V V V V V:assigned V:assigned V:assigned N V:enrolled V',
+    'N F F V V V V V V:assigned V:assigned V:assigned N V:enrolled V',
   ],
   [
     'venues',
     { ar: 'المقرات والموارد', en: 'Venues & resources' },
     false,
-    'F F E N V N N N N N N N N V',
+    'N F E N V N N N N N N N N V',
   ],
   [
     'instructors',
     { ar: 'المدربون وجهات التدريب', en: 'Instructors & providers' },
     false,
-    'F F E V V N N N O O O N N V',
+    'N F E V V N N N O O O N N V',
   ],
   [
     'enrollments',
     { ar: 'التسجيلات والموافقات', en: 'Enrollments & approvals' },
     false,
-    'F F E E A:cost V A A V:roster V:roster V:roster N O V',
+    'N F E E A:cost V A A V:roster V:roster V:roster N O V',
   ],
   [
     'logistics',
     { ar: 'مهام التجهيز', en: 'Logistics tasks' },
     false,
-    'F F F N V N N N E:assigned E:assigned E:assigned N N V',
+    'N F F N V N N N E:assigned E:assigned E:assigned N N V',
   ],
-  ['attendance', { ar: 'الحضور', en: 'Attendance' }, false, 'F F F V N V V V E E E N O V'],
+  ['attendance', { ar: 'الحضور', en: 'Attendance' }, false, 'N F F V N V V V E E E N O V'],
   [
     'assessments',
     { ar: 'الاختبارات والاستبيانات', en: 'Assessments & evaluations' },
     false,
-    'F F E V N V V V:l3 E:grading E:grading E:grading E O V',
+    'N F E V N V V V:l3 E:grading E:grading E:grading E O V',
   ],
   [
     'certificates',
     { ar: 'الشهادات والشهادات الخارجية', en: 'Certificates & external certificates' },
     false,
-    'F F E EA N V V V N N E:upload N O V',
+    'N F E EA N V V V N N E:upload N O V',
   ],
   [
     'compliance',
     { ar: 'قواعد الامتثال وتقاريره', en: 'Compliance rules & reports' },
     false,
-    'F E V F N F V V N N N N O V',
+    'N E V F N F V V N N N N O V',
   ],
   [
     'ojt',
     { ar: 'التدريب على رأس العمل والملاحظة', en: 'On-the-job training & observation' },
     false,
-    'F F E V N V V V N N N E O V',
+    'N F E V N V V V N N N E O V',
   ],
   [
     'finance',
@@ -144,13 +145,13 @@ const ROWS: readonly [string, LocalizedText, boolean, string][] = [
       en: 'Budgets, purchase orders, invoices, payments',
     },
     true,
-    'F E V V FA N V:dept N O:payables O:payables E:invoices N N V',
+    'N E V V FA N V:dept N O:payables O:payables E:invoices N N V',
   ],
   [
     'reports',
     { ar: 'التقارير والتحليلات', en: 'Reports & analytics' },
     false,
-    'F F E F F:finance F:compliance V:dept V:team V:ownSessions V:ownSessions V:providerOwn V:mentees O V',
+    'N F E F F:finance F:compliance V:dept V:team V:ownSessions V:ownSessions V:providerOwn V:mentees O V',
   ],
   [
     'integrations',

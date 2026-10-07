@@ -51,4 +51,23 @@ describe('role matrix (BRD Appendix B, screen 5)', () => {
       );
     }
   });
+
+  it('shows the Organization Admin as a setup role: no access to training areas (BRD v2.4)', () => {
+    const admin = Object.fromEntries(
+      ROLE_MATRIX.map((a) => [
+        a.key,
+        `${a.access.tenant_admin.level}${a.access.tenant_admin.qualifier ? `:${a.access.tenant_admin.qualifier.en}` : ''}`,
+      ]),
+    );
+    const setup: Readonly<Record<string, string>> = {
+      settings: 'F',
+      users: 'F',
+      integrations: 'F',
+      ai: 'F:configuration',
+      audit: 'V',
+    };
+    for (const [key, cell] of Object.entries(admin)) {
+      expect(cell, key).toBe(Object.hasOwn(setup, key) ? setup[key] : 'N');
+    }
+  });
 });

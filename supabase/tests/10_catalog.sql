@@ -240,7 +240,7 @@ declare
   v_role text;
 begin
   foreach v_role in array array['anon', 'authenticated', 'app_server', 'app_worker', 'app_queue', 'tenant_guard',
-                                'invitation_guard'] loop
+                                'invitation_guard', 'account_mail_guard'] loop
     perform tests.assert(not has_database_privilege(v_role, current_database(), 'TEMPORARY'),
       format('%s must not create temporary objects', v_role));
   end loop;
@@ -372,7 +372,8 @@ begin
   select string_agg(format('%s (owner %s)', p.oid::regprocedure, pg_get_userbyid(p.proowner)), ', '
                     order by p.oid::regprocedure::text) into v_list
   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-  where n.nspname = 'private' and p.prosecdef;
+  where n.nspname = 'private' and p.prosecdef
+    and p.proowner <> 'account_mail_guard'::regrole;  -- checked in its own block below (T-M2-17)
   perform tests.assert_eq(v_list,
     'private.accept_invitation_as_caller(bytea,text,text) (owner invitation_guard), '
     'private.current_tenant_id() (owner tenant_guard), '
@@ -428,6 +429,62 @@ begin
   perform tests.assert(not has_table_privilege('authenticated', 'platform.invitations', 'delete')
                        and not has_table_privilege('invitation_guard', 'platform.invitations', 'delete'),
     'invitations: nobody deletes');
+end $$;
+
+-- account_mail_guard (T-M2-17, account e-mails): owns exactly the request and worker functions (all
+-- SECURITY DEFINER, empty search_path), nobody acts as it, it creates nothing and owns no relation; it
+-- reads Auth accounts only through private.auth_account; the request queue is reachable by it alone.
+do $$
+declare
+  v_list text;
+begin
+  perform tests.assert(not (select rolbypassrls or rolcanlogin or rolsuper or rolinherit or rolcreaterole or rolcreatedb
+                            from pg_roles where rolname = 'account_mail_guard'),
+    'account_mail_guard must be NOLOGIN NOINHERIT and not BYPASSRLS / superuser / createrole / createdb');
+  select string_agg(format('%s%s', p.oid::regprocedure, case when p.prosecdef then '' else ' (INVOKER)' end), ', '
+                    order by p.oid::regprocedure::text) into v_list
+  from pg_proc p where p.proowner = 'account_mail_guard'::regrole;
+  perform tests.assert_eq(v_list,
+    'private.claim_account_mail_request(), private.finish_account_mail_request(uuid), '
+    'private.request_password_changed_mail(uuid), private.request_password_reset_mail(text), '
+    'private.retry_account_mail_request(uuid)',
+    'account_mail_guard owns the account e-mail functions only, all SECURITY DEFINER');
+  perform tests.assert(not exists (select 1 from pg_class c where c.relowner = 'account_mail_guard'::regrole),
+    'account_mail_guard owns no relations');
+  perform tests.assert(not exists (
+      select 1 from pg_auth_members m join pg_roles u on u.oid = m.member
+      where m.roleid = 'account_mail_guard'::regrole and (m.inherit_option or m.set_option)
+        and not u.rolsuper and u.rolname <> current_user),
+    'nobody acts as account_mail_guard');
+  perform tests.assert(not has_schema_privilege('account_mail_guard', 'private', 'CREATE')
+                       and not has_schema_privilege('account_mail_guard', 'platform', 'CREATE'),
+    'account_mail_guard creates nothing');
+  perform tests.assert(not has_table_privilege('account_mail_guard', 'auth.users', 'select')
+                       and has_table_privilege('account_mail_guard', 'private.auth_account', 'select'),
+    'account_mail_guard reads auth.users only through the view');
+  -- The queue and the view: no privilege for any application role (only through the functions).
+  perform tests.assert((select relrowsecurity and relforcerowsecurity from pg_class
+                        where oid = 'private.account_mail_requests'::regclass),
+    'account_mail_requests: row level security must be ENABLED and FORCED');
+  for v_list in select unnest(array['anon', 'authenticated', 'service_role', 'app_server', 'app_worker', 'app_queue',
+                                    'tenant_guard', 'invitation_guard', 'supabase_auth_admin']) loop
+    perform tests.assert(
+      not has_table_privilege(v_list, 'private.account_mail_requests', 'select, insert, update, delete, truncate, references, trigger')
+        and not has_any_column_privilege(v_list, 'private.account_mail_requests', 'select, insert, update, references')
+        and not has_table_privilege(v_list, 'private.auth_account', 'select, insert, update, delete, truncate, references, trigger'),
+      format('%s must have no privilege on the account e-mail queue or private.auth_account', v_list));
+  end loop;
+  -- Callers: the request functions and the worker functions are executable by authenticated (the
+  -- functions check the login role themselves) and nobody else besides the owner.
+  for v_list in
+    select distinct format('%s → %s', p.oid::regprocedure,
+                           case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end)
+    from pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+    where p.proowner = 'account_mail_guard'::regrole and a.privilege_type = 'EXECUTE' and a.grantee <> p.proowner
+      and (a.grantee = 0 or pg_get_userbyid(a.grantee) <> 'authenticated')
+  loop
+    perform tests.assert(false, format('unexpected EXECUTE: %s', v_list));
+  end loop;
 end $$;
 
 rollback;

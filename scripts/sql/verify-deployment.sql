@@ -22,12 +22,13 @@ begin
   -- 1. Login roles: exact attributes and memberships (ADR 0002 §5, §7).
   for r in
     select rolname, rolcanlogin, rolinherit, rolsuper, rolbypassrls, rolcreaterole, rolcreatedb, rolreplication
-    from pg_roles where rolname in ('app_server', 'app_worker', 'app_queue', 'tenant_guard', 'invitation_guard')
+    from pg_roles where rolname in ('app_server', 'app_worker', 'app_queue', 'tenant_guard', 'invitation_guard',
+                                    'account_mail_guard')
   loop
     if r.rolname in ('app_server', 'app_worker', 'app_queue') and not r.rolcanlogin then
       failures := failures || format('%s must be LOGIN', r.rolname);
     end if;
-    if r.rolname in ('tenant_guard', 'invitation_guard') and r.rolcanlogin then
+    if r.rolname in ('tenant_guard', 'invitation_guard', 'account_mail_guard') and r.rolcanlogin then
       failures := failures || format('%s must be NOLOGIN', r.rolname);
     end if;
     if r.rolinherit or r.rolsuper or r.rolbypassrls or r.rolcreaterole or r.rolcreatedb or r.rolreplication then
@@ -35,8 +36,9 @@ begin
     end if;
   end loop;
   if (select count(*) from pg_roles
-      where rolname in ('app_server', 'app_worker', 'app_queue', 'tenant_guard', 'invitation_guard')) <> 5 then
-    failures := failures || 'roles app_server, app_worker, app_queue, tenant_guard and invitation_guard must all exist'::text;
+      where rolname in ('app_server', 'app_worker', 'app_queue', 'tenant_guard', 'invitation_guard',
+                        'account_mail_guard')) <> 6 then
+    failures := failures || 'roles app_server, app_worker, app_queue, tenant_guard, invitation_guard and account_mail_guard must all exist'::text;
   end if;
   -- The job runner (ADR 0005 §2): member of nothing (never authenticated), owner of graphile_worker.
   if exists (select 1 from pg_auth_members m join pg_roles u on u.oid = m.member where u.rolname = 'app_queue') then
@@ -164,7 +166,7 @@ begin
     from (values
       ('private.user_session_is_valid(uuid, uuid)', 'tenant_guard', array['tenant_guard', 'invitation_guard'], true),
       ('private.has_active_membership(uuid, uuid)', 'tenant_guard', array['tenant_guard'], true),
-      ('private.current_tenant_id()',               'tenant_guard', array['tenant_guard', 'authenticated'], true),
+      ('private.current_tenant_id()',               'tenant_guard', array['tenant_guard', 'authenticated', 'account_mail_guard'], true),
       ('private.switch_active_tenant(uuid)',        'tenant_guard', array['tenant_guard', 'authenticated'], true),
       ('private.session_tenants()',                 'tenant_guard', array['tenant_guard', 'authenticated'], true),
       ('private.discard_inactive_tenant_delivery(uuid)', 'tenant_guard', array['tenant_guard', 'authenticated'], true),
@@ -179,7 +181,14 @@ begin
       ('private.invitation_link(bytea)', 'invitation_guard', array['invitation_guard'], false),
       -- Does the inviter still hold the authority (review M1): SECURITY INVOKER, same callers.
       ('private.invitation_inviter_may_grant(uuid, uuid, text[])', 'invitation_guard',
-       array['invitation_guard'], false)
+       array['invitation_guard'], false),
+      -- Account e-mails (T-M2-17): the web app queues requests (app_server, checked inside), the worker
+      -- answers them (app_worker system claims, checked inside).
+      ('private.request_password_reset_mail(text)', 'account_mail_guard', array['account_mail_guard', 'authenticated'], true),
+      ('private.request_password_changed_mail(uuid)', 'account_mail_guard', array['account_mail_guard', 'authenticated'], true),
+      ('private.claim_account_mail_request()', 'account_mail_guard', array['account_mail_guard', 'authenticated'], true),
+      ('private.finish_account_mail_request(uuid)', 'account_mail_guard', array['account_mail_guard', 'authenticated'], true),
+      ('private.retry_account_mail_request(uuid)', 'account_mail_guard', array['account_mail_guard', 'authenticated'], true)
     ) as h(fn, owner, allowed, definer)
     left join pg_proc p on p.oid = to_regprocedure(h.fn)
   loop
@@ -212,7 +221,10 @@ begin
         'private.user_session_is_valid(uuid,uuid)', 'private.has_active_membership(uuid,uuid)',
         'private.current_tenant_id()', 'private.switch_active_tenant(uuid)', 'private.session_tenants()',
         'private.discard_inactive_tenant_delivery(uuid)', 'private.invitation_by_token(bytea)',
-        'private.accept_invitation_as_caller(bytea,text,text)', 'private.invitation_allows_signup(text,text)')
+        'private.accept_invitation_as_caller(bytea,text,text)', 'private.invitation_allows_signup(text,text)',
+        'private.request_password_reset_mail(text)', 'private.request_password_changed_mail(uuid)',
+        'private.claim_account_mail_request()', 'private.finish_account_mail_request(uuid)',
+        'private.retry_account_mail_request(uuid)')
   loop
     failures := failures || format('%s: unexpected SECURITY DEFINER function (security review)', r.fn);
   end loop;
@@ -232,6 +244,57 @@ begin
     loop
       failures := failures || format('%s must not be a member of invitation_guard', r.rolname);
     end loop;
+  end if;
+
+  -- account_mail_guard (T-M2-17): creates nothing, nobody acts as it; it reads Auth accounts only through
+  -- private.auth_account (owned by the migration role, SELECT for account_mail_guard only), and the request
+  -- queue private.account_mail_requests is reachable by account_mail_guard alone.
+  if exists (select 1 from pg_roles where rolname = 'account_mail_guard') then
+    for r in select nspname from pg_namespace where nspname = any (module_schemas) loop
+      if has_schema_privilege('account_mail_guard', r.nspname, 'create') then
+        failures := failures || format('account_mail_guard must not have CREATE on schema %s', r.nspname);
+      end if;
+    end loop;
+    for r in
+      select distinct u.rolname from pg_auth_members m
+      join pg_roles g on g.oid = m.roleid join pg_roles u on u.oid = m.member
+      where g.rolname = 'account_mail_guard' and (m.inherit_option or m.set_option)
+        and not u.rolsuper and u.rolname <> current_user
+    loop
+      failures := failures || format('%s must not be a member of account_mail_guard', r.rolname);
+    end loop;
+  end if;
+  for r in
+    select o.obj, o.reader
+    from (values ('private.auth_account', 'account_mail_guard'), ('private.account_mail_requests', 'account_mail_guard')) as o(obj, reader)
+  loop
+    if to_regclass(r.obj) is null then
+      failures := failures || format('%s is missing', r.obj);
+      continue;
+    end if;
+    for v_role in
+      select distinct case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end
+      from pg_class c, aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a
+      where c.oid = to_regclass(r.obj) and a.grantee <> c.relowner
+        and not (a.grantee <> 0 and pg_get_userbyid(a.grantee) = r.reader
+                 and (a.privilege_type = 'SELECT' or (r.obj = 'private.account_mail_requests'
+                                                     and a.privilege_type in ('INSERT', 'UPDATE', 'DELETE'))))
+      union
+      select distinct case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end
+      from pg_attribute att, aclexplode(att.attacl) a
+      where att.attrelid = to_regclass(r.obj) and att.attacl is not null
+    loop
+      failures := failures || format('%s must have no privilege on %s', v_role, r.obj);
+    end loop;
+  end loop;
+  if to_regclass('private.auth_account') is not null then
+    v_role := (select pg_get_userbyid(relowner) from pg_class where oid = 'private.auth_account'::regclass);
+    if not (has_schema_privilege(v_role, 'auth', 'usage')
+            and has_column_privilege(v_role, 'auth.users', 'email', 'select')
+            and has_column_privilege(v_role, 'auth.users', 'banned_until', 'select')
+            and has_column_privilege(v_role, 'auth.users', 'recovery_sent_at', 'select')) then
+      failures := failures || format('%s (owner of private.auth_account) must read auth.users', v_role);
+    end if;
   end if;
 
   -- tenant_guard creates nothing (CREATE on `private` is granted only while ownership is handed over,

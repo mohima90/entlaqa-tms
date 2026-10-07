@@ -392,6 +392,9 @@ begin
     failures := failures || 'separation-of-duties triggers (BR-IAM-4) on role_assignments / invitations are missing or disabled'::text;
   elsif to_regprocedure('private.separation_of_duties_violations()') is null then
     failures := failures || 'private.separation_of_duties_violations() is missing'::text;
+  elsif not exists (select 1 from pg_roles where rolname = current_user and (rolsuper or rolbypassrls)) then
+    -- Both tables force RLS: without bypassing it the counts would silently read 0 (security review L2).
+    failures := failures || format('role %s must bypass row-level security to check separation of duties (BR-IAM-4)', current_user);
   else
     select * into r from private.separation_of_duties_violations();
     if r.members > 0 then

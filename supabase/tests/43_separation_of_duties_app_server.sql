@@ -86,6 +86,31 @@ end $$;
 reset role;
 rollback;
 
+-- One statement writing both rows of the pair (security review L4): the second row's check sees the
+-- first row written by the same statement.
+begin;
+set local role authenticated;
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
+  'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1'));
+do $$
+declare
+  m_m uuid := (select id from platform.tenant_memberships where user_id = '00000000-0000-4000-8000-0000000000f7' and tenant_id = 'a0000000-0000-4000-8000-000000000001');
+begin
+  perform tests.assert_fails(format($q$insert into platform.role_assignments (membership_id, role_code) values (%L, 'tenant_admin'), (%L, 'hr_manager')$q$, m_m, m_m),
+    array['JR001'], 'one multi-row INSERT giving both roles is refused');
+  perform tests.assert_fails(format($q$insert into platform.role_assignments (membership_id, role_code) values (%L, 'hr_manager'), (%L, 'learner'), (%L, 'tenant_admin')$q$, m_m, m_m, m_m),
+    array['JR001'], 'also with another role in between');
+  -- A scheduled hand-over, then ONE update that makes both windows overlap.
+  perform tests.assert_eq(tests.rows_affected(format($q$insert into platform.role_assignments (membership_id, role_code, valid_from, valid_until) values (%L, 'tenant_admin', null, date_trunc('day', now()) + interval '30 days'), (%L, 'hr_manager', date_trunc('day', now()) + interval '30 days', null)$q$, m_m, m_m)),
+    2::bigint, 'a scheduled hand-over in one multi-row INSERT is allowed');
+  perform tests.assert_fails(format($q$update platform.role_assignments set valid_from = null, valid_until = null where membership_id = %L and role_code in ('tenant_admin', 'hr_manager')$q$, m_m),
+    array['JR001'], 'one UPDATE opening both windows is refused');
+  perform tests.assert_fails(format($q$update platform.role_assignments set valid_until = case role_code when 'tenant_admin' then date_trunc('day', now()) + interval '60 days' else valid_until end, valid_from = case role_code when 'hr_manager' then date_trunc('day', now()) + interval '45 days' else valid_from end where membership_id = %L and role_code in ('tenant_admin', 'hr_manager')$q$, m_m),
+    array['JR001'], 'one UPDATE moving both ends so they overlap is refused');
+end $$;
+reset role;
+rollback;
+
 -- Actor rules come first: an HR Manager is refused for giving a privileged role (42501), whoever holds what.
 begin;
 set local role authenticated;

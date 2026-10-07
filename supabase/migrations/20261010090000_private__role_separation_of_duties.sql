@@ -35,6 +35,14 @@
 -- windows) or any PENDING invitation would give both. Nothing is changed or deleted silently: the error
 -- gives the counts only; see docs/engineering/db-deploy.md § "Separation of duties (T-M2-16)" for what to
 -- do. scripts/sql/verify-deployment.sql checks the same invariant after every deploy.
+--
+-- No gap between the check and the guards (security review L1): the migration first locks both tables
+-- against writes (SHARE ROW EXCLUSIVE: reads go on; inserts, updates and deletes — e.g. of the previous
+-- application version still running during the deploy — wait until this transaction commits, when the
+-- triggers are in place). The table owner (the migration role) may take the lock; it waits at most the
+-- deploy's lock_timeout (scripts/db-deploy.sh, 10 s), then the deploy fails and can be run again.
+
+lock table platform.role_assignments, platform.invitations in share row exclusive mode;
 
 -- ---------------------------------------------------------------------------------------------------
 -- Helpers (SECURITY INVOKER, empty search_path)

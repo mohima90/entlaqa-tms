@@ -10,6 +10,7 @@ import {
   runOnce,
 } from 'graphile-worker';
 import pg from 'pg';
+import { type PlatformTask, platformJobOptions } from './platform-tasks';
 import type { SubscriberRegistry } from './registry';
 import { DISPATCH_JOB_OPTIONS, DISPATCH_TASK, createTaskList } from './tasks';
 
@@ -25,6 +26,8 @@ export interface WorkerConfig {
   readonly caPem: string | undefined;
   readonly registry: SubscriberRegistry;
   readonly withSystemTx: WithSystemTx;
+  /** Work that belongs to no tenant yet (e.g. account e-mails), run on every wake-up and every minute. */
+  readonly platformTasks?: readonly PlatformTask[];
   /** Jobs run in parallel per process (default 5); the pool holds three more connections. */
   readonly concurrency?: number;
   /** Operational log line: level and message only (no payloads, no personal data, ADR 0009). */
@@ -96,6 +99,39 @@ export const CRON_ITEMS = parseCronItems([
   },
 ]);
 
+/** CRON_ITEMS plus a minutely run of every platform task (its retries and any missed wake-up). */
+export function cronItemsFor(platformTasks: readonly PlatformTask[]) {
+  if (platformTasks.length === 0) return CRON_ITEMS;
+  return parseCronItems([
+    {
+      task: DISPATCH_TASK,
+      match: '* * * * *',
+      identifier: 'platform.events.dispatch.minutely',
+      options: { ...DISPATCH_JOB_OPTIONS, backfillPeriod: 0 },
+    },
+    ...platformTasks.map((task) => ({
+      task: task.name,
+      match: '* * * * *',
+      identifier: `${task.name}.minutely`,
+      options: { ...platformJobOptions(task), backfillPeriod: 0 },
+    })),
+  ]);
+}
+
+/**
+ * What every wake-up queues: one dispatch, and one run of each platform task (each at most once
+ * pending: job keys).
+ */
+function wakeUpJobs(
+  config: WorkerConfig,
+  addJob: (task: string, payload: object, options: object) => Promise<unknown>,
+): Promise<unknown> {
+  return Promise.all([
+    addJob(DISPATCH_TASK, {}, DISPATCH_JOB_OPTIONS),
+    ...(config.platformTasks ?? []).map((task) => addJob(task.name, {}, platformJobOptions(task))),
+  ]);
+}
+
 function loggerFrom(log: WorkerConfig['log']): Logger {
   // Graphile's scope and meta (job payloads, task details) are dropped: level and message only.
   const factory: LogFunctionFactory = () => (level, message) => {
@@ -140,8 +176,8 @@ export function runnerOptions(config: WorkerConfig, pgPool: pg.Pool): RunnerOpti
     // Behind a transaction pooler, prepared statements are not available (ADR 0005 §2).
     noPreparedStatements: true,
     logger: loggerFrom(config.log),
-    taskList: createTaskList(config.registry, config.withSystemTx),
-    parsedCronItems: CRON_ITEMS,
+    taskList: createTaskList(config.registry, config.withSystemTx, config.platformTasks),
+    parsedCronItems: cronItemsFor(config.platformTasks ?? []),
   };
 }
 
@@ -261,7 +297,7 @@ export async function runDaemon(config: WorkerConfig, signal?: AbortSignal): Pro
   try {
     const runner = await run({ ...runnerOptions(config, pool), noHandleSignals: true });
     const kicker = createKicker(
-      () => runner.addJob(DISPATCH_TASK, {}, DISPATCH_JOB_OPTIONS),
+      () => wakeUpJobs(config, (task, payload, options) => runner.addJob(task, payload, options)),
       config.log,
     );
     // Once stopping, wake-ups are ignored: the runner no longer takes jobs.
@@ -318,7 +354,7 @@ export async function runPass(config: WorkerConfig): Promise<PassResult> {
     try {
       await utils.migrate();
       for (let round = 0; round < PASS_ROUNDS; round += 1) {
-        await utils.addJob(DISPATCH_TASK, {}, DISPATCH_JOB_OPTIONS);
+        await wakeUpJobs(config, (task, payload, options) => utils.addJob(task, payload, options));
         await runOnce(runnerOptions(config, pool));
         if ((await waiting(0)) === 0) break;
       }

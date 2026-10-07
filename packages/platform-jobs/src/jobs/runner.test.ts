@@ -10,6 +10,7 @@ import {
   type WorkerConfig,
   assertQueueRole,
   createKicker,
+  cronItemsFor,
   createQueuePool,
   listenForEvents,
   openQueuePool,
@@ -175,6 +176,41 @@ describe('runner options', () => {
   });
 });
 
+describe('platform tasks in the runner (T-M2-17: work without a tenant)', () => {
+  const task = { name: 'platform.account_mail', run: vi.fn(() => Promise.resolve(false)) };
+
+  it('adds each platform task to the task list and to the minutely schedule', () => {
+    const options = runnerOptions({ ...config(), platformTasks: [task] }, {} as never);
+    expect(Object.keys(options.taskList ?? {})).toEqual([
+      DISPATCH_TASK,
+      'platform.events.deliver',
+      'platform.account_mail',
+    ]);
+    expect(options.parsedCronItems).toHaveLength(2);
+    expect(cronItemsFor([task])[1]).toMatchObject({
+      task: 'platform.account_mail',
+      identifier: 'platform.account_mail.minutely',
+      options: { backfillPeriod: 0, jobKey: 'platform.account_mail' },
+    });
+    expect(cronItemsFor([])).toBe(CRON_ITEMS);
+  });
+
+  it('refuses a platform task named like a built-in task, or twice', () => {
+    expect(() =>
+      runnerOptions(
+        { ...config(), platformTasks: [{ ...task, name: DISPATCH_TASK }] },
+        {} as never,
+      ),
+    ).toThrow('registered twice');
+    expect(() => runnerOptions({ ...config(), platformTasks: [task, task] }, {} as never)).toThrow(
+      'registered twice',
+    );
+    expect(() =>
+      runnerOptions({ ...config(), platformTasks: [{ ...task, name: 'Bad Name' }] }, {} as never),
+    ).toThrow('invalid');
+  });
+});
+
 describe('createKicker', () => {
   it('queues one dispatch at a time and one more for wake-ups that arrive meanwhile', async () => {
     const pending: (() => void)[] = [];
@@ -318,6 +354,28 @@ describe('runDaemon and runPass', () => {
     expect(client.queries.at(-1)).toBe(`unlisten ${EVENTS_CHANNEL}`);
   });
 
+  it('runDaemon queues every platform task with each dispatch (one pending each: job keys)', async () => {
+    const client = fakeClient();
+    vi.spyOn(pg.Pool.prototype, 'connect').mockImplementation((() =>
+      Promise.resolve(client)) as never);
+    const runner = fakeRunner();
+    graphile.run.mockResolvedValue(runner);
+    const controller = new AbortController();
+    const task = { name: 'platform.account_mail', run: vi.fn(() => Promise.resolve(false)) };
+    const done = runDaemon({ ...config(), platformTasks: [task] }, controller.signal);
+    await until(() => runner.addJob.mock.calls.length === 2);
+    expect(runner.addJob).toHaveBeenCalledWith(DISPATCH_TASK, {}, DISPATCH_JOB_OPTIONS);
+    expect(runner.addJob).toHaveBeenCalledWith(
+      'platform.account_mail',
+      {},
+      { jobKey: 'platform.account_mail', jobKeyMode: 'preserve_run_at', maxAttempts: 5 },
+    );
+    client.emit('notification', { channel: EVENTS_CHANNEL, payload: '' });
+    await until(() => runner.addJob.mock.calls.length === 4);
+    controller.abort();
+    await done;
+  });
+
   it('runDaemon stops at once when the signal has already been aborted; stop failures are logged', async () => {
     vi.spyOn(pg.Pool.prototype, 'connect').mockImplementation((() =>
       Promise.resolve(fakeClient())) as never);
@@ -357,6 +415,25 @@ describe('runDaemon and runPass', () => {
     expect(query.mock.calls.map((c) => c[1])).toEqual([[0], [0], [10]]);
     expect(utils.migrate).toHaveBeenCalledTimes(1);
     expect(utils.release).toHaveBeenCalledTimes(1);
+  });
+
+  it('runPass queues the platform tasks in every round too', async () => {
+    const utils = {
+      migrate: vi.fn(() => Promise.resolve()),
+      addJob: vi.fn(() => Promise.resolve({})),
+      release: vi.fn(() => Promise.resolve()),
+    };
+    graphile.makeWorkerUtils.mockResolvedValue(utils);
+    graphile.runOnce.mockResolvedValue(undefined);
+    vi.spyOn(pg.Pool.prototype, 'query')
+      .mockResolvedValueOnce({ rows: [{ waiting: '0' }] } as never)
+      .mockResolvedValueOnce({ rows: [{ waiting: '0' }] } as never);
+    const task = { name: 'platform.account_mail', run: vi.fn(() => Promise.resolve(false)) };
+    await runPass({ ...config(), platformTasks: [task] });
+    expect(utils.addJob.mock.calls.map((c) => (c as unknown[])[0])).toEqual([
+      DISPATCH_TASK,
+      'platform.account_mail',
+    ]);
   });
 
   it('runPass stops after PASS_ROUNDS and reports stale events', async () => {

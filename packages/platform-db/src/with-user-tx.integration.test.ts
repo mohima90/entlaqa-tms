@@ -203,6 +203,34 @@ describe.skipIf(!configured)('withUserTx / withSystemTx against PostgreSQL', () 
     expect(state).toEqual({ role: 'app_server', claims: null });
   });
 
+  it('the database session sees only the allow-listed claims (no e-mail, metadata or invitation token)', async () => {
+    const verified = brandVerifiedClaims({
+      sub: ids.user,
+      role: 'authenticated',
+      aal: 'aal1',
+      session_id: ids.session,
+      tenant_id: ids.tenantA,
+      email: 'invitee@example.test',
+      user_metadata: { invitation: 'raw-invitation-token-raw-invitation-token-x' },
+      app_metadata: { provider: 'email', providers: ['email'] },
+    });
+    if (!verified.ok) throw new Error('bad fixture');
+    const seen = await withUserTx(verified.value, (tx) =>
+      tx.execute<{ claims: Record<string, unknown> }>(
+        sql`select private.request_claims() as claims`,
+      ),
+    );
+    expect(seen[0]?.claims).toEqual({
+      sub: ids.user,
+      role: 'authenticated',
+      session_id: ids.session,
+      tenant_id: ids.tenantA,
+      aal: 'aal1',
+    });
+    // The tenant claim still works with the subset (the session's active tenant is A).
+    expect(await withUserTx(verified.value, (tx) => tx.select().from(persons))).not.toHaveLength(0);
+  });
+
   it('app_server has no table privileges outside withUserTx (NOINHERIT → 42501)', async () => {
     await expectSqlState(serverDb.execute(sql`select count(*) from platform.persons`), '42501');
   });

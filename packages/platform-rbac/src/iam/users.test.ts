@@ -88,7 +88,14 @@ describe('users list query', () => {
       page: '3',
     });
     expect(result).toEqual(
-      ok({ list: emptyList, page: 3, pageSize: USERS_PAGE_SIZE, canReadRoles: true, orgUnits }),
+      ok({
+        list: emptyList,
+        page: 3,
+        pageSize: USERS_PAGE_SIZE,
+        canReadRoles: true,
+        orgUnits,
+        canInvite: true,
+      }),
     );
     expect(db.listUsers).toHaveBeenCalledWith(TX, {
       scope: expect.objectContaining({ all: true }),
@@ -107,7 +114,11 @@ describe('users list query', () => {
   it('Learner: only themselves, no roles, no organization filters (filters ignored)', async () => {
     const list = createDefineQuery(runtime(['learner']))(usersListQueryDefinition());
     const result = await list({ role: 'tenant_admin', department: DEPT });
-    expect(result.ok && result.value).toMatchObject({ canReadRoles: false, orgUnits: null });
+    expect(result.ok && result.value).toMatchObject({
+      canReadRoles: false,
+      orgUnits: null,
+      canInvite: false,
+    });
     expect(db.listOrgUnitOptions).not.toHaveBeenCalled();
     expect(db.listUsers).toHaveBeenCalledWith(TX, {
       scope: expect.objectContaining({ all: false, self: true, directReports: false }),

@@ -17,13 +17,15 @@ begin
   where t.table_name::text not in (
     'platform.tenants', 'platform.tenant_domains', 'platform.persons',
     'platform.tenant_memberships', 'platform.session_context', 'platform.audit_events',
-    'platform.branches', 'platform.departments', 'platform.person_employment', 'platform.role_assignments')
+    'platform.branches', 'platform.departments', 'platform.person_employment', 'platform.role_assignments',
+    'platform.invitations')
     and t.table_name not in (select table_name from tests.job_only_tables());
   perform tests.assert(v_missing is null, format('isolation tests missing for: %s', v_missing));
   perform tests.assert(session_user = 'app_server', 'this file must run connected as app_server');
+  -- (SELECT on the tenant column at least: platform.invitations is readable column by column.)
   select string_agg(t.table_name::text, ', ') into v_missing
   from tests.tenant_tables() t
-  where not has_table_privilege('authenticated', t.table_name, 'SELECT')
+  where not tests.can_read_tenant_column(t.table_name, t.tenant_column)
     and t.table_name not in (select table_name from tests.job_only_tables());
   perform tests.assert(v_missing is null, format('tenant tables without SELECT for authenticated: %s', v_missing));
 end $$;
@@ -198,6 +200,24 @@ begin
     'audit_events: no UPDATE grant (append-only)');
   perform tests.assert_privilege_denied($q$delete from platform.audit_events$q$,
     'audit_events: no DELETE grant (append-only)');
+
+  -- platform.invitations (composite FK to persons; token hash never readable; no DELETE grant)
+  perform tests.assert_rls_violation($q$insert into platform.invitations (tenant_id, person_id, email, locale, primary_role) values ('b0000000-0000-4000-8000-000000000001', 'b1000000-0000-4000-8000-0000000000b9', 'x@b.test', 'ar', 'learner')$q$,
+    'invitations: insert with tenant B tenant_id is rejected by RLS');
+  perform tests.assert_fails($q$insert into platform.invitations (person_id, email, locale, primary_role) values ('b1000000-0000-4000-8000-0000000000e1', 'invitee@b.test', 'ar', 'learner')$q$,
+    array['23503'], 'invitations: composite FK rejects a tenant B person');
+  perform tests.assert_privilege_denied($q$update platform.invitations set tenant_id = 'b0000000-0000-4000-8000-000000000001'$q$,
+    'invitations: tenant_id is not updatable');
+  perform tests.assert_privilege_denied($q$update platform.invitations set person_id = 'a1000000-0000-4000-8000-0000000000a2'$q$,
+    'invitations: person_id is not updatable');
+  perform tests.assert_eq(tests.rows_affected($q$update platform.invitations set status = 'revoked' where tenant_id = 'b0000000-0000-4000-8000-000000000001'$q$),
+    0::bigint, 'invitations: RLS filters tenant B rows');
+  perform tests.assert_eq((select count(*) from platform.invitations where id = 'b4000000-0000-4000-8000-000000000001'),
+    0::bigint, 'invitations: tenant B invitation invisible by id');
+  perform tests.assert_privilege_denied($q$select token_hash from platform.invitations$q$,
+    'invitations: token_hash is never readable on the request path');
+  perform tests.assert_privilege_denied($q$delete from platform.invitations$q$,
+    'invitations: no DELETE grant');
 end $$;
 rollback;
 

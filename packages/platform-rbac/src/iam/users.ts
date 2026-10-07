@@ -47,6 +47,8 @@ export interface UsersListView {
   readonly canReadRoles: boolean;
   /** Department and branch filters, only with a tenant-wide `platform.org.read`. */
   readonly orgUnits: OrgUnitOptions | null;
+  /** «دعوة مستخدم» and the invitations on the `invited` tab (T-M2-07): `platform.user.invite`. */
+  readonly canInvite: boolean;
 }
 
 /**
@@ -85,7 +87,14 @@ export function usersListQueryDefinition(): QueryDefinition<
         limit: USERS_PAGE_SIZE,
         offset: (input.page - 1) * USERS_PAGE_SIZE,
       });
-      return ok({ list, page: input.page, pageSize: USERS_PAGE_SIZE, canReadRoles, orgUnits });
+      return ok({
+        list,
+        page: input.page,
+        pageSize: USERS_PAGE_SIZE,
+        canReadRoles,
+        orgUnits,
+        canInvite: ctx.can(p['platform.user.invite'], 'tenant'),
+      });
     },
   };
 }

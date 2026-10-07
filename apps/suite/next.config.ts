@@ -1,7 +1,12 @@
 import path from 'node:path';
 import type { NextConfig } from 'next';
 import createNextIntlPlugin from 'next-intl/plugin';
-import { STATIC_FALLBACK_CSP, staticSecurityHeaders } from './src/lib/security-headers';
+import {
+  SECRET_URL_PAGES,
+  STATIC_FALLBACK_CSP,
+  secretUrlHeaders,
+  staticSecurityHeaders,
+} from './src/lib/security-headers';
 
 const monorepoRoot = path.join(import.meta.dirname, '../..');
 
@@ -31,6 +36,8 @@ const nextConfig: NextConfig = {
     // static CSP instead, so no response is served without one.
     return Promise.resolve([
       { source: '/:path*', headers: [...staticSecurityHeaders] },
+      // Invitation links carry a token in the query string: no referrer (overrides the entry above).
+      { source: SECRET_URL_PAGES, headers: [...secretUrlHeaders] },
       {
         source: '/_next/static/:path*',
         headers: [{ key: 'Content-Security-Policy', value: STATIC_FALLBACK_CSP }],

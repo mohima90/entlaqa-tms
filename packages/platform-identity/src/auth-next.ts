@@ -5,7 +5,10 @@
  */
 import 'server-only';
 import {
+  acceptInvitationAsCaller,
+  hashInvitationToken,
   insertAuditEvent,
+  invitationByToken,
   listSessionTenants,
   switchActiveTenant,
   withUserTx,
@@ -24,6 +27,15 @@ import {
   signInWithPassword,
   signOut,
 } from './auth-flow';
+import {
+  type InvitationAcceptDeps,
+  type InvitationLinkView,
+  type InvitationSignUpClientLike,
+  acceptInvitationAsSignedInUser,
+  acceptInvitationWithNewAccount,
+  acceptInvitationWithPassword,
+  lookupInvitationLink,
+} from './invitation-accept';
 import {
   type PasswordClientLike,
   type VerifierClientLike,
@@ -90,4 +102,46 @@ export async function changePasswordForRequest(input: {
     },
     input,
   );
+}
+
+// Invitations (FR-IAM-03, T-M2-07). The new account signs up through the public Auth API with the same
+// cookie-bound client (publishable key); Auth's before-user-created hook admits only a valid invitation.
+// No Auth secret key in the web app (ADR 0002 §7 note T-M2-07, security review H1).
+
+function invitationDeps(auth: AuthFlowDeps): InvitationAcceptDeps {
+  return {
+    auth,
+    signUpClient: auth.supabase as unknown as InvitationSignUpClientLike | null,
+    hashToken: hashInvitationToken,
+    invitationByToken,
+    acceptInvitationAsCaller,
+  };
+}
+
+/**
+ * What the accept page shows for a link: its state and, when valid, the details and who is looking
+ * (no session needed). Called by the page's public lookup action with the token from the URL fragment.
+ */
+export async function lookupInvitationLinkForRequest(token: string): Promise<InvitationLinkView> {
+  return lookupInvitationLink(
+    { hashToken: hashInvitationToken, invitationByToken, auth: await requestDeps() },
+    token,
+  );
+}
+
+export async function acceptInvitationWithNewAccountForRequest(
+  input: Parameters<typeof acceptInvitationWithNewAccount>[1],
+) {
+  return acceptInvitationWithNewAccount(invitationDeps(await requestDeps()), input);
+}
+
+export async function acceptInvitationWithPasswordForRequest(input: {
+  readonly token: string;
+  readonly password: string;
+}) {
+  return acceptInvitationWithPassword(invitationDeps(await requestDeps()), input);
+}
+
+export async function acceptInvitationAsSignedInUserForRequest(input: { readonly token: string }) {
+  return acceptInvitationAsSignedInUser(invitationDeps(await requestDeps()), input);
 }

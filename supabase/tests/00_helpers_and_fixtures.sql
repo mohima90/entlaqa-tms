@@ -188,14 +188,30 @@ language sql stable as $$
   order by 1::text;
 $$;
 
--- Tenant tables the `authenticated` role may read. Only job-only tables can be missing here (the
+-- May `authenticated` read this column? (By attribute number: the name variant raises for a table
+-- without that column, and the planner may evaluate it on catalog rows the caller later filters out.)
+create or replace function tests.can_read_tenant_column(p_table regclass, p_column text) returns boolean
+language sql stable as $$
+  select exists (select 1 from pg_attribute a
+                 where a.attrelid = p_table and a.attname = p_column and not a.attisdropped
+                   and has_column_privilege('authenticated', a.attrelid, a.attnum, 'SELECT'));
+$$;
+
+-- Tenant tables the `authenticated` role may read (at least their tenant column: platform.invitations is
+-- readable column by column, never its token_hash). Only job-only tables can be missing here (the
 -- coverage guard in 20_isolation.sql requires SELECT on every other tenant table); the outbox is
 -- insert-only for application roles (ADR 0004 §1).
 create or replace function tests.readable_tenant_tables()
 returns table (table_name regclass, tenant_column text)
 language sql stable as $$
   select t.table_name, t.tenant_column from tests.tenant_tables() t
-  where has_table_privilege('authenticated', t.table_name, 'SELECT');
+  where tests.can_read_tenant_column(t.table_name, t.tenant_column);
+$$;
+
+-- SHA-256 of an invitation token, as packages/platform-db hashInvitationToken() computes it.
+create or replace function tests.token_hash(p_token text) returns bytea
+language sql immutable as $$
+  select sha256(convert_to(p_token, 'UTF8'));
 $$;
 
 grant execute on all functions in schema tests to public;
@@ -322,3 +338,16 @@ insert into platform.message_deliveries (id, tenant_id, template, template_versi
 -- A processed event of tenant B: tenant A's jobs (29) and every user (28) must not see it.
 insert into platform.event_inbox (tenant_id, subscriber, event_id)
   values ('b0000000-0000-4000-8000-000000000001', 'test.subscriber', 'b9000000-0000-4000-8000-000000000001');
+
+-- Invitations (T-M2-07): one pending invitation per tenant A and B, each mailed once (token issued as a
+-- platform operation). Tokens: 'tok-a' and 'tok-b' (tests.token_hash). More states: 35_invitations_fixtures.sql.
+insert into platform.persons (id, tenant_id, display_name_ar, display_name_en, email) values
+  ('a1000000-0000-4000-8000-0000000000e1', 'a0000000-0000-4000-8000-000000000001', 'مدعوة أ', 'Invitee A', 'invitee@a.test'),
+  ('b1000000-0000-4000-8000-0000000000e1', 'b0000000-0000-4000-8000-000000000001', 'مدعوة ب', null, 'invitee@b.test');
+insert into platform.invitations (id, tenant_id, person_id, email, locale, primary_role, additional_roles, invited_by) values
+  ('a4000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000e1',
+   'invitee@a.test', 'ar', 'learner', '{mentor}', '00000000-0000-4000-8000-0000000000a1'),
+  ('b4000000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000001', 'b1000000-0000-4000-8000-0000000000e1',
+   'invitee@b.test', 'en', 'learner', '{}', '00000000-0000-4000-8000-0000000000b1');
+update platform.invitations set token_hash = tests.token_hash('tok-a') where id = 'a4000000-0000-4000-8000-000000000001';
+update platform.invitations set token_hash = tests.token_hash('tok-b') where id = 'b4000000-0000-4000-8000-000000000001';

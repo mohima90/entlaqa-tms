@@ -28,6 +28,17 @@ export const staticSecurityHeaders = [
 ] as const;
 
 /**
+ * Pages whose URL carries a secret — the invitation link token, in the fragment `#token=` (T-M2-07,
+ * FR-IAM-03; browsers never put fragments in a Referer, and the page removes it from the address bar
+ * at once): no referrer at all anyway, as defence in depth (not even the path to a linked page). Applied
+ * after `staticSecurityHeaders` in next.config.ts (the later entry wins for the same key); the page
+ * also sets `<meta name="referrer" content="no-referrer">`.
+ */
+export const SECRET_URL_PAGES = '/:locale/invite/:path*';
+
+export const secretUrlHeaders = [{ key: 'Referrer-Policy', value: 'no-referrer' }] as const;
+
+/**
  * Strict CSP for responses that never pass the proxy (immutable build assets under /_next/static):
  * nothing may execute or be framed if such a file is opened directly (e.g. an SVG).
  */

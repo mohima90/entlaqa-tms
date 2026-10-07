@@ -50,7 +50,7 @@ export interface EditUserFormProps {
 }
 
 /** Labelled native select with hint and error (same contract as TextField). */
-function SelectField({
+export function SelectField({
   id,
   label,
   marker,

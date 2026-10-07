@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  SECRET_URL_PAGES,
   STATIC_FALLBACK_CSP,
   buildContentSecurityPolicy,
   createNonce,
+  secretUrlHeaders,
   staticSecurityHeaders,
 } from './security-headers';
 
@@ -87,6 +89,15 @@ describe('staticSecurityHeaders', () => {
     expect(map['X-Content-Type-Options']).toBe('nosniff');
     expect(map['Referrer-Policy']).toBe('strict-origin-when-cross-origin');
     expect(map['Permissions-Policy']).toContain('camera=()');
+  });
+});
+
+describe('secretUrlHeaders (invitation links, T-M2-07)', () => {
+  it('sends no referrer from the invitation pages, whose URL carries the token', () => {
+    expect(SECRET_URL_PAGES).toBe('/:locale/invite/:path*');
+    expect(Object.fromEntries(secretUrlHeaders.map((h) => [h.key, h.value]))).toEqual({
+      'Referrer-Policy': 'no-referrer',
+    });
   });
 });
 

@@ -162,6 +162,69 @@ describe('admin/jobs code cannot be laundered through re-exports (security re-re
   });
 });
 
+describe('no Auth admin client on the request path (T-M2-07, security review H1)', () => {
+  const ADMIN_RULES =
+    /^(admin-client-only-in-jobs-or-admin|admin-jobs-folders-are-private|no-admin-or-jobs-db-in-suite-app|no-admin-or-jobs-reachable-from-suite|platform-db-admin-only-from-admin-or-jobs):/;
+  const base = {
+    ...platformDb,
+    'packages/platform-identity/package.json': JSON.stringify({
+      name: '@jadarat/platform-identity',
+    }),
+    'apps/suite/package.json': JSON.stringify({ name: '@jadarat/suite' }),
+  };
+  const adminViolations = async (root) =>
+    (await violations(root)).filter((v) => ADMIN_RULES.test(v));
+
+  it('rejects the invitation accept action, form and page reaching the admin client in any way', async () => {
+    const root = fixtureRepo({
+      ...base,
+      // The former exception: an identity module creating Auth users with the secret key.
+      'packages/platform-identity/src/invitation-admin/create-user.ts':
+        "import { createServiceRoleSupabaseClient } from '../../../platform-db/src/admin/index';\nexport const createInvitedUser = createServiceRoleSupabaseClient;\n",
+      'apps/suite/src/auth/invitations.ts':
+        "import { createInvitedUser } from '../../../../packages/platform-identity/src/invitation-admin/create-user';\nexport const acceptInvitationAction = createInvitedUser;\n",
+      'apps/suite/src/components/invite/accept-invitation.tsx':
+        "import { acceptInvitationAction } from '../../auth/invitations';\nexport const Form = acceptInvitationAction;\n",
+      'apps/suite/src/app/[locale]/invite/accept/page.tsx':
+        "import { Form } from '../../../../components/invite/accept-invitation';\nexport default Form;\n",
+    });
+    const found = await adminViolations(root);
+    expect(found).toContain(
+      'admin-client-only-in-jobs-or-admin: packages/platform-identity/src/invitation-admin/create-user.ts → packages/platform-db/src/admin/index.ts',
+    );
+    for (const from of [
+      'apps/suite/src/auth/invitations.ts',
+      'apps/suite/src/components/invite/accept-invitation.tsx',
+      'apps/suite/src/app/[locale]/invite/accept/page.tsx',
+    ]) {
+      expect(
+        found.some((v) => v.startsWith(`no-admin-or-jobs-reachable-from-suite: ${from}`)),
+        from,
+      ).toBe(true);
+    }
+  });
+
+  it('rejects the web app importing the admin client directly, and platform-db re-exporting it', async () => {
+    const root = fixtureRepo({
+      ...base,
+      'apps/suite/src/auth/invitations.ts':
+        "import { createServiceRoleSupabaseClient } from '../../../../packages/platform-db/src/admin/index';\nexport const a = createServiceRoleSupabaseClient;\n",
+      // A platform-db request-path module re-exporting the admin client.
+      'packages/platform-db/src/bridge.ts': "export { withAdminTx } from './admin/index';\n",
+    });
+    const found = await adminViolations(root);
+    expect(found).toContain(
+      'no-admin-or-jobs-db-in-suite-app: apps/suite/src/auth/invitations.ts → packages/platform-db/src/admin/index.ts',
+    );
+    expect(found).toContain(
+      'admin-client-only-in-jobs-or-admin: apps/suite/src/auth/invitations.ts → packages/platform-db/src/admin/index.ts',
+    );
+    expect(found).toContain(
+      'platform-db-admin-only-from-admin-or-jobs: packages/platform-db/src/bridge.ts → packages/platform-db/src/admin/index.ts',
+    );
+  });
+});
+
 describe('rules on installed packages fire (C1: node_modules is not excluded)', () => {
   const installed = {
     'package.json': JSON.stringify({

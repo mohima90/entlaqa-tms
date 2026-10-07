@@ -3,7 +3,12 @@ import { type SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { describe, expect, it } from 'vitest';
 import type { AppDatabase } from './client';
-import { createWithUserTx, listSessionTenants, switchActiveTenant } from './with-user-tx';
+import {
+  createWithUserTx,
+  databaseClaims,
+  listSessionTenants,
+  switchActiveTenant,
+} from './with-user-tx';
 
 const dialect = new PgDialect();
 const toQuery = (query: SQL) => {
@@ -54,7 +59,18 @@ describe('withUserTx (ADR 0002 §5)', () => {
     expect(transactionCount()).toBe(1);
     expect(executed).toEqual([
       { sql: 'set local role authenticated', params: [] },
-      { sql: "select set_config('request.jwt.claims', $1, true)", params: [JSON.stringify(c)] },
+      {
+        sql: "select set_config('request.jwt.claims', $1, true)",
+        params: [
+          JSON.stringify({
+            sub: c.sub,
+            role: 'authenticated',
+            session_id: c.session_id,
+            tenant_id: c.tenant_id,
+            aal: 'aal1',
+          }),
+        ],
+      },
       {
         sql: "select set_config('request.jwt.claim', '', true), set_config('request.jwt.claim.sub', '', true)",
         params: [],
@@ -68,8 +84,48 @@ describe('withUserTx (ADR 0002 §5)', () => {
     await withUserTx(claims({ email: "x'); drop table platform.tenants; --" }), () =>
       Promise.resolve(null),
     );
+    expect(executed.map((q) => q.sql).join('\n')).not.toContain('drop table');
     expect(executed[1]?.sql).toBe("select set_config('request.jwt.claims', $1, true)");
-    expect(executed[1]?.params[0]).toContain('drop table');
+  });
+
+  it('forwards only the allow-listed claims: no e-mail, metadata or invitation token (re-review N5)', async () => {
+    const { db, executed } = fakeDatabase();
+    const withUserTx = createWithUserTx(() => db);
+    const c = claims({
+      person_id: '44444444-4444-4444-8444-444444444444',
+      email: 'invitee@example.test',
+      phone: '966500000000',
+      user_metadata: { invitation: 'raw-invitation-token-raw-invitation-token-x' },
+      app_metadata: { provider: 'email' },
+      amr: [{ method: 'password', timestamp: 1 }],
+      exp: 1_900_000_000,
+      iat: 1_800_000_000,
+      iss: 'https://auth.example.test/auth/v1',
+      aud: 'authenticated',
+      actor: '55555555-5555-4555-8555-555555555555',
+      is_anonymous: false,
+    });
+    await withUserTx(c, () => Promise.resolve(null));
+    const forwarded = JSON.parse(String(executed[1]?.params[0])) as Record<string, unknown>;
+    expect(Object.keys(forwarded).sort()).toEqual([
+      'aal',
+      'person_id',
+      'role',
+      'session_id',
+      'sub',
+      'tenant_id',
+    ]);
+    expect(String(executed[1]?.params[0])).not.toMatch(/invitee@|invitation|966500000000/);
+  });
+
+  it('databaseClaims leaves out absent claims and non-string values', () => {
+    expect(
+      databaseClaims({
+        sub: '11111111-1111-4111-8111-111111111111',
+        role: 'authenticated',
+        tenant_id: undefined,
+      }),
+    ).toEqual({ sub: '11111111-1111-4111-8111-111111111111', role: 'authenticated' });
   });
 
   it('runs the unit of work after the session settings and propagates its errors (rollback)', async () => {

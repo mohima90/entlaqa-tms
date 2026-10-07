@@ -54,7 +54,11 @@ export async function withAdminTx<T>(
   });
 }
 
-/** Supabase client with the secret (service-role) key — Auth admin API (invitations, user lifecycle). */
+/**
+ * Supabase client with the secret (service-role) key — Auth admin API (user lifecycle) for jobs/admin
+ * code only. Never on the request path: invitees sign up through the public Auth API instead (ADR 0002
+ * §7 note T-M2-07).
+ */
 export function createServiceRoleSupabaseClient(
   op: AdminOperation,
 ): ReturnType<typeof createClient> {

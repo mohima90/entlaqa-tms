@@ -57,6 +57,35 @@ describe('handleErrorTunnel', () => {
     expect(sent).not.toMatch(/a@b\.co|errors\.invalid/);
   });
 
+  it('drops the invitation token from every URL of a report (T-M2-07)', async () => {
+    const token = 'sample-invitation-token'.padEnd(43, '0'); // shape only
+    const url = `https://app.example/ar/invite/accept?token=${token}`;
+    const send = vi.fn((_url: string, _init: RequestInit) =>
+      Promise.resolve(new Response(null, { status: 200 })),
+    );
+    const invite = {
+      exception: {
+        values: [
+          {
+            type: 'TypeError',
+            value: `failed at ${url}`,
+            stacktrace: { frames: [{ filename: url, abs_path: `${url}#x`, lineno: 1 }] },
+          },
+        ],
+      },
+      request: { url, query_string: `token=${token}`, headers: { Referer: url } },
+      transaction: url,
+      contexts: { page: { url, referrer: url } },
+      breadcrumbs: [{ message: url }],
+    };
+    expect((await handleErrorTunnel(request(body(invite)), deps({ send }))).status).toBe(202);
+    const [, init] = send.mock.calls[0] ?? ['', {}];
+    const sent = typeof init.body === 'string' ? init.body : '';
+    expect(sent).toContain('/ar/invite/accept');
+    expect(sent).not.toContain(token);
+    expect(sent).not.toContain('token=');
+  });
+
   it('refuses cross-site requests and oversized bodies', async () => {
     const d = deps();
     expect(

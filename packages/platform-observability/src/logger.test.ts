@@ -38,6 +38,28 @@ describe('formatLogLine', () => {
     });
   });
 
+  it('writes the operational fields (reason, state, entity) for runbook follow-up', () => {
+    const line = formatLogLine(
+      'warn',
+      'invitation: Auth user created but the invitation was not accepted',
+      {
+        action: 'platform.invitation.accept',
+        reason: 'orphan_auth_user',
+        state: 'revoked',
+        entityType: 'auth_user',
+        entityId: '22222222-2222-4222-8222-222222222222',
+      },
+      {},
+      new Date('2026-10-07T10:00:00Z'),
+    );
+    expect(JSON.parse(line)).toMatchObject({
+      reason: 'orphan_auth_user',
+      state: 'revoked',
+      entity_type: 'auth_user',
+      entity_id: '22222222-2222-4222-8222-222222222222',
+    });
+  });
+
   it('ignores fields outside the closed list and non-finite numbers', () => {
     const fields = { status: Number.NaN, email: 'a@b.co' } as unknown as Record<string, never>;
     const parsed = JSON.parse(formatLogLine('info', 'x', fields, {})) as Record<string, unknown>;

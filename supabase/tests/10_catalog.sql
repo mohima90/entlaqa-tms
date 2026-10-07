@@ -239,7 +239,8 @@ do $$
 declare
   v_role text;
 begin
-  foreach v_role in array array['anon', 'authenticated', 'app_server', 'app_worker', 'app_queue', 'tenant_guard'] loop
+  foreach v_role in array array['anon', 'authenticated', 'app_server', 'app_worker', 'app_queue', 'tenant_guard',
+                                'invitation_guard'] loop
     perform tests.assert(not has_database_privilege(v_role, current_database(), 'TEMPORARY'),
       format('%s must not create temporary objects', v_role));
   end loop;
@@ -297,8 +298,31 @@ begin
 end $$;
 
 -- Access-token hook: EXECUTE only for supabase_auth_admin.
+-- Before-user-created hook (sign-up gate, review H1) and its yes/no check: EXECUTE for supabase_auth_admin
+-- and nobody else (exact ACL besides the owner); the hook is SECURITY INVOKER with an empty search_path.
 do $$
+declare
+  r record;
+  v_grantees text;
 begin
+  for r in select * from (values ('private.before_user_created_hook(jsonb)'::regprocedure),
+                                 ('private.invitation_allows_signup(text,text)'::regprocedure)) as f(fn) loop
+    select string_agg(distinct case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end, ',')
+      into v_grantees
+    from pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+    where p.oid = r.fn and a.privilege_type = 'EXECUTE' and a.grantee <> p.proowner;
+    perform tests.assert_eq(v_grantees, 'supabase_auth_admin', format('%s: EXECUTE for supabase_auth_admin only', r.fn));
+  end loop;
+  perform tests.assert((select not prosecdef
+                               and exists (select 1 from unnest(proconfig) c where c in ('search_path=""', 'search_path='))
+                               and 'lock_timeout=2s' = any (proconfig)
+                        from pg_proc where oid = 'private.before_user_created_hook(jsonb)'::regprocedure),
+    'the sign-up hook is SECURITY INVOKER with an empty search_path and a lock timeout');
+  perform tests.assert(not has_table_privilege('supabase_auth_admin', 'platform.invitations', 'select')
+                       and not has_any_column_privilege('supabase_auth_admin', 'platform.invitations', 'select'),
+    'Auth reads no invitation itself (only the yes/no check)');
+  perform tests.assert(to_regprocedure('private.accept_invitation(bytea,uuid,text,text)') is null,
+    'no app_server-only acceptance for a given user id (review H1)');
   perform tests.assert(has_function_privilege('supabase_auth_admin', 'private.custom_access_token_hook(jsonb)', 'execute'),
     'supabase_auth_admin must execute the access-token hook');
   perform tests.assert(not has_function_privilege('authenticated', 'private.custom_access_token_hook(jsonb)', 'execute'),
@@ -330,8 +354,80 @@ begin
     'roles app_server and app_worker must exist');
   perform tests.assert(not (select rolbypassrls or rolcanlogin from pg_roles where rolname = 'tenant_guard'),
     'tenant_guard must be NOLOGIN and not BYPASSRLS');
+  perform tests.assert(not (select rolbypassrls or rolcanlogin or rolsuper or rolinherit or rolcreaterole or rolcreatedb
+                            from pg_roles where rolname = 'invitation_guard'),
+    'invitation_guard must be NOLOGIN NOINHERIT and not BYPASSRLS / superuser / createrole / createdb');
   perform tests.assert(not has_table_privilege('app_server', 'platform.persons', 'select'),
     'app_server must have no table privileges of its own (NOINHERIT)');
+end $$;
+
+-- The definer functions and their owners (no BYPASSRLS anywhere; explicit grants + policies per owner).
+-- invitation_guard (FR-IAM-03): owns exactly the link, acceptance and sign-up gate functions; nobody but
+-- superusers and the deploying role (here: this superuser) may act as it; it reads Auth users only through
+-- private.auth_user_email; it creates nothing.
+do $$
+declare
+  v_list text;
+begin
+  select string_agg(format('%s (owner %s)', p.oid::regprocedure, pg_get_userbyid(p.proowner)), ', '
+                    order by p.oid::regprocedure::text) into v_list
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'private' and p.prosecdef;
+  perform tests.assert_eq(v_list,
+    'private.accept_invitation_as_caller(bytea,text,text) (owner invitation_guard), '
+    'private.current_tenant_id() (owner tenant_guard), '
+    'private.discard_inactive_tenant_delivery(uuid) (owner tenant_guard), '
+    'private.has_active_membership(uuid,uuid) (owner tenant_guard), '
+    'private.invitation_allows_signup(text,text) (owner invitation_guard), '
+    'private.invitation_by_token(bytea) (owner invitation_guard), '
+    'private.session_tenants() (owner tenant_guard), '
+    'private.switch_active_tenant(uuid) (owner tenant_guard), '
+    'private.user_session_is_valid(uuid,uuid) (owner tenant_guard)',
+    'SECURITY DEFINER functions and owners (security review for any change)');
+  select string_agg(p.oid::regprocedure::text, ', ' order by p.oid::regprocedure::text) into v_list
+  from pg_proc p where p.proowner = 'invitation_guard'::regrole;
+  perform tests.assert_eq(v_list,
+    'private.accept_invitation_as_caller(bytea,text,text), '
+    'private.apply_invitation_acceptance(bytea,uuid,text,text), private.invitation_allows_signup(text,text), '
+    'private.invitation_by_token(bytea), private.invitation_inviter_may_grant(uuid,uuid,text[]), '
+    'private.invitation_link(bytea)',
+    'invitation_guard owns the link, acceptance and sign-up gate functions only');
+  perform tests.assert(not has_function_privilege('authenticated', 'private.invitation_link(bytea)', 'execute'),
+    'only the definer functions read a link''s state');
+  perform tests.assert(not has_function_privilege('authenticated',
+      'private.invitation_inviter_may_grant(uuid,uuid,text[])', 'execute'),
+    'only the acceptance functions check the inviter''s authority');
+  -- What invitation_guard reads of the roles (review M1): the inviter's current roles, nothing more.
+  perform tests.assert(has_column_privilege('invitation_guard', 'platform.role_assignments', 'role_code', 'select')
+                       and not has_column_privilege('invitation_guard', 'platform.role_assignments', 'created_by', 'select')
+                       and not has_table_privilege('invitation_guard', 'platform.role_assignments', 'update')
+                       and not has_table_privilege('invitation_guard', 'platform.role_assignments', 'delete'),
+    'invitation_guard: reads role assignments (columns), never changes or removes them');
+  perform tests.assert(not exists (select 1 from pg_class c where c.relowner = 'invitation_guard'::regrole),
+    'invitation_guard owns no relations');
+  perform tests.assert(not exists (
+      select 1 from pg_auth_members m join pg_roles u on u.oid = m.member
+      where m.roleid = 'invitation_guard'::regrole and (m.inherit_option or m.set_option)
+        and not u.rolsuper and u.rolname <> current_user),
+    'nobody acts as invitation_guard');
+  perform tests.assert(not has_schema_privilege('invitation_guard', 'private', 'CREATE')
+                       and not has_schema_privilege('invitation_guard', 'platform', 'CREATE'),
+    'invitation_guard creates nothing');
+  perform tests.assert(not has_function_privilege('authenticated',
+      'private.apply_invitation_acceptance(bytea,uuid,text,text)', 'execute'),
+    'only the acceptance functions run the acceptance effects');
+  perform tests.assert(not has_table_privilege('authenticated', 'private.auth_user_email', 'select')
+                       and not has_table_privilege('tenant_guard', 'private.auth_user_email', 'select')
+                       and has_table_privilege('invitation_guard', 'private.auth_user_email', 'select'),
+    'private.auth_user_email: invitation_guard only');
+  perform tests.assert(not has_table_privilege('invitation_guard', 'auth.users', 'select'),
+    'invitation_guard reads auth.users only through the view');
+  -- Request path: every invitation column but the token hash.
+  perform tests.assert(not has_column_privilege('authenticated', 'platform.invitations', 'token_hash', 'select'),
+    'invitations: token_hash is not readable by authenticated');
+  perform tests.assert(not has_table_privilege('authenticated', 'platform.invitations', 'delete')
+                       and not has_table_privilege('invitation_guard', 'platform.invitations', 'delete'),
+    'invitations: nobody deletes');
 end $$;
 
 rollback;

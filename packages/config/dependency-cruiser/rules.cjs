@@ -86,6 +86,17 @@ module.exports = {
       to: { path: '^packages/platform-db/src/admin/' },
     },
     {
+      name: 'platform-db-admin-only-from-admin-or-jobs',
+      severity: 'error',
+      comment:
+        'ADR 0002 §7: inside platform-db, only src/admin/ and src/jobs/ (both private) may import the admin client, so no platform-db request-path module (or its index) can re-export it.',
+      from: {
+        path: '^packages/platform-db/src/',
+        pathNot: ['^packages/platform-db/src/(admin|jobs)/', '\\.(integration\\.)?test\\.tsx?$'],
+      },
+      to: { path: '^packages/platform-db/src/admin/' },
+    },
+    {
       name: 'jobs-db-only-in-jobs',
       severity: 'error',
       comment:
@@ -126,7 +137,7 @@ module.exports = {
       name: 'no-admin-or-jobs-reachable-from-suite',
       severity: 'error',
       comment:
-        'ADR 0002 §7: the web app must not reach any admin/jobs code transitively (direct-import rules alone miss re-exports).',
+        'ADR 0002 §7: the web app must not reach any admin/jobs code transitively (direct-import rules alone miss re-exports). No exceptions: accepting an invitation signs up through the public Auth API (implementation note T-M2-07, security review H1).',
       from: { path: '^apps/suite/' },
       to: { path: '^(packages|modules)/[^/]+/src/(admin|jobs)/', reachable: true },
     },

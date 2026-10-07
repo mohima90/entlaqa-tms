@@ -13,9 +13,11 @@
   },
   "dependencies": {
     "@jadarat/platform-db": "workspace:*",
+    "@jadarat/platform-identity": "workspace:*",
     "@jadarat/platform-jobs": "workspace:*",
     "@jadarat/platform-notifications": "workspace:*",
-    "@jadarat/platform-observability": "workspace:*"
+    "@jadarat/platform-observability": "workspace:*",
+    "@jadarat/platform-rbac": "workspace:*"
   },
   "devDependencies": {
     "@jadarat/config": "workspace:*",

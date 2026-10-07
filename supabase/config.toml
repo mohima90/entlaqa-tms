@@ -36,13 +36,23 @@ additional_redirect_urls = ["http://localhost:3000"]
 jwt_expiry = 900
 enable_refresh_token_rotation = true
 refresh_token_reuse_interval = 10
-# Accounts are created by invitation only (FR-IAM-03).
-enable_signup = false
+# Accounts are created by invitation only (FR-IAM-03): sign-ups are OPEN in Auth so that an invitee can
+# create their own account through the public API, and the before-user-created hook below refuses every
+# sign-up without a valid invitation token for that e-mail (ADR 0002 §7 note T-M2-07, review H1). Never
+# enable sign-ups without the hook.
+enable_signup = true
+# No anonymous sign-ins (the hook refuses them too).
+enable_anonymous_sign_ins = false
 # TODO(T-M1-D03): asymmetric signing keys for getClaims() (`supabase gen signing-key`), path kept out of git.
 
 [auth.email]
+enable_signup = true
+# The invitation e-mail already proved the address: the sign-up returns a session at once (as on staging,
+# "Confirm email" off, and self-hosted GOTRUE_MAILER_AUTOCONFIRM).
+enable_confirmations = false
+
+[auth.sms]
 enable_signup = false
-enable_confirmations = true
 
 [auth.mfa.totp]
 enroll_enabled = true
@@ -52,3 +62,9 @@ verify_enabled = true
 [auth.hook.custom_access_token]
 enabled = true
 uri = "pg-functions://postgres/private/custom_access_token_hook"
+
+# Sign-up gate (FR-IAM-03, review H1, migration 20261009090000): only an e-mail sign-up carrying a valid
+# invitation token for that e-mail creates an Auth user. Admin-created users (provisioning) skip it.
+[auth.hook.before_user_created]
+enabled = true
+uri = "pg-functions://postgres/private/before_user_created_hook"

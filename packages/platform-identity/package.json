@@ -3,21 +3,25 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Identity: server-side verification of Supabase sessions into VerifiedClaims and the sign-in flow (ADR 0003 §2, T-M1-D03).",
+  "description": "Identity: server-side verification of Supabase sessions into VerifiedClaims and the sign-in flow (ADR 0003 §2, T-M1-D03); the invitation e-mail job under ./jobs (T-M2-07).",
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
     "./next": "./src/next.ts",
-    "./auth": "./src/auth-next.ts"
+    "./auth": "./src/auth-next.ts",
+    "./jobs": "./src/jobs/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "test:integration": "vitest run --config vitest.integration.config.ts"
   },
   "dependencies": {
     "@jadarat/platform-core": "workspace:*",
     "@jadarat/platform-db": "workspace:*",
+    "@jadarat/platform-jobs": "workspace:*",
+    "@jadarat/platform-notifications": "workspace:*",
     "@jadarat/platform-observability": "workspace:*",
     "server-only": "0.0.1"
   },
@@ -28,6 +32,7 @@
     "@jadarat/config": "workspace:*",
     "@types/node": "24.19.0",
     "@vitest/coverage-v8": "5.0.3",
+    "drizzle-orm": "0.45.3",
     "next": "16.3.8",
     "typescript": "6.0.3",
     "vitest": "5.0.3"

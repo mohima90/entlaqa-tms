@@ -13,6 +13,7 @@ const RESEND = {
   EMAIL_FROM_ADDRESS: 'noreply@lms.entlaqa.com',
   EMAIL_FROM_NAME: 'ENTLAQA LMS',
   RESEND_API_KEY: 're_testtesttest', // sample, not a key
+  APP_BASE_URL: 'https://tms.example.com',
 };
 const CA = '-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n';
 const noCa = () => undefined;
@@ -40,6 +41,7 @@ describe('readSettings', () => {
       caPem: undefined,
       concurrency: 5,
       email: { provider: 'none' },
+      appBaseUrl: undefined,
     });
   });
 
@@ -56,6 +58,51 @@ describe('readSettings', () => {
     });
   });
 
+  it('reads the web app origin for e-mail links: required with e-mail on, checked whenever set', () => {
+    expect(runner(['once'], { ...env, ...RESEND }).appBaseUrl).toBe('https://tms.example.com');
+    for (const [value, origin] of [
+      ['https://TMS.example.com/', 'https://tms.example.com'],
+      ['https://tms.example.com:8443', 'https://tms.example.com:8443'],
+      ['http://localhost:3200/', 'http://localhost:3200'],
+      ['http://127.0.0.1:3200', 'http://127.0.0.1:3200'],
+    ] as const) {
+      expect(runner([], { ...env, APP_BASE_URL: ` ${value} ` }).appBaseUrl).toBe(origin);
+    }
+    fails([], { ...env, ...RESEND, APP_BASE_URL: undefined }, /APP_BASE_URL must be set/);
+    fails(
+      ['once'],
+      {
+        ...env,
+        EMAIL_PROVIDER: 'smtp',
+        SMTP_URL: 'smtp://127.0.0.1:1025',
+        EMAIL_FROM_ADDRESS: 'noreply@jadarat.example',
+      },
+      /APP_BASE_URL/,
+    );
+    for (const bad of [
+      'http://tms.example.com',
+      'ftp://tms.example.com',
+      'tms.example.com',
+      'https://tms.example.com/ar',
+      'https://tms.example.com/?x=1',
+      'https://tms.example.com?',
+      'https://tms.example.com/#top',
+      'https://user:secret@tms.example.com',
+      'https://user@tms.example.com',
+    ]) {
+      let error: unknown;
+      try {
+        readSettings([], { ...env, APP_BASE_URL: bad }, noCa);
+      } catch (e) {
+        error = e;
+      }
+      expect(error).toBeInstanceOf(ConfigurationError);
+      // Names the variable, never repeats the value (it could carry a credential).
+      expect((error as Error).message).toMatch(/^APP_BASE_URL must be an https origin/);
+      expect((error as Error).message).not.toContain('secret');
+    }
+  });
+
   it('remote hosts need the CA', () => {
     const remote = {
       DATABASE_URL_APP_QUEUE: 'postgres://app_queue.ref:pw@pooler.example.com:5432/postgres',
@@ -68,13 +115,22 @@ describe('readSettings', () => {
 
   it('test-email mode needs a provider and a recipient, not the database', () => {
     expect(
-      readSettings(['test-email'], { ...RESEND, EMAIL_TEST_TO: 'po@example.com' }, noCa),
+      readSettings(
+        ['test-email'],
+        { ...RESEND, APP_BASE_URL: undefined, EMAIL_TEST_TO: 'po@example.com' },
+        noCa,
+      ),
     ).toMatchObject({
       mode: 'test-email',
       testTo: 'po@example.com',
       email: { provider: 'resend' },
     });
     fails(['test-email'], { EMAIL_TEST_TO: 'po@example.com' }, /EMAIL_PROVIDER/);
+    fails(
+      ['test-email'],
+      { EMAIL_PROVIDER: 'none', EMAIL_TEST_TO: 'po@example.com' },
+      /EMAIL_PROVIDER must be set to send/,
+    );
     fails(['test-email'], RESEND, /EMAIL_TEST_TO/);
     fails(['test-email'], { ...RESEND, EMAIL_TEST_TO: 'not-an-address' }, /EMAIL_TEST_TO/);
   });

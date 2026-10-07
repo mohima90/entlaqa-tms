@@ -110,4 +110,14 @@ add_secret ERRORS_DB_PASSWORD "$(pw2)"
 add_secret GLITCHTIP_SECRET_KEY "$(pw2)$(pw2)"
 add_secret GLITCHTIP_ADMIN_PASSWORD "$(pw2)"
 add_secret APP_QUEUE_DB_PASSWORD "$(pw2)"
+
+# No Auth secret key for the app (T-M2-07, security review H1): invitees sign up through the public API.
+# An installation set up before this change may still hold SUPABASE_SECRET_KEY (a service_role token
+# minted here): it is removed from .env. A removed token stays valid until its own expiry (one year from
+# minting); to end it at once, rotate the ES256 signing key (README.md, "Sign-ups and invitations").
+if grep -q '^SUPABASE_SECRET_KEY=' "$S/.env"; then
+  { grep -v '^SUPABASE_SECRET_KEY=' "$S/.env" || true; } >"$S/.env.new"
+  mv "$S/.env.new" "$S/.env"
+  echo "gen-secrets: removed SUPABASE_SECRET_KEY from .env (the app no longer uses an Auth admin key)"
+fi
 echo "gen-secrets: ready in infra/docker/$S"

@@ -75,6 +75,83 @@
       "passwordRejected": "The new password was not accepted. Choose a different one."
     }
   },
+  "invite": {
+    "pageTitle": "Accept invitation",
+    "checking": "Checking the invitation link…",
+    "welcomeTitle": "Welcome to {organization}",
+    "intro": "Choose a password to finish creating your account.",
+    "loginEmail": "Sign-in email",
+    "loginEmailHint": "You sign in with the email address the invitation was sent to. It can't be changed.",
+    "displayNameAr": "Name in Arabic as others see it",
+    "displayNameEn": "Name in English as others see it",
+    "displayNameHint": "You can change it later in My profile.",
+    "password": "Password",
+    "confirmPassword": "Confirm password",
+    "showPassword": "Show password",
+    "rulesLabel": "Password rules",
+    "rules": {
+      "minLength": "At least 12 characters",
+      "maxBytes": "No more than 72 bytes (about 36 Arabic letters)",
+      "matches": "Both passwords match",
+      "met": "(met)",
+      "notMet": "(not met yet)"
+    },
+    "passwordTip": "Tip: a phrase of several words is easy to remember and hard to guess.",
+    "privacy": "I have read the <link>privacy notice</link> explaining how {organization} processes my training data.",
+    "submit": "Continue",
+    "submitting": "Creating your account…",
+    "fieldErrors": {
+      "tooShort": "At least 12 characters.",
+      "tooLong": "The password is too long (no more than 72 bytes, about 36 Arabic letters).",
+      "mismatch": "The passwords don't match.",
+      "nameTooLong": "The name can't be longer than 200 characters.",
+      "nameInvisible": "The name must contain visible letters.",
+      "privacyRequired": "Confirm that you have read the privacy notice to continue.",
+      "passwordRequired": "Enter the password."
+    },
+    "signInToAccept": {
+      "title": "Sign in to accept the invitation",
+      "intro": "An account with this email already exists. Enter its password to accept the invitation.",
+      "submit": "Sign in and accept",
+      "submitting": "Accepting the invitation…"
+    },
+    "signedIn": {
+      "invitee": "You're signed in with the invited account. Accept the invitation to join {organization}.",
+      "accept": "Accept invitation",
+      "accepting": "Accepting the invitation…",
+      "otherAccount": "You're signed in with a different account. To accept this invitation, sign out and continue on this page.",
+      "signOut": "Sign out",
+      "signingOut": "Signing out…"
+    },
+    "states": {
+      "expired": {
+        "title": "This invitation has expired",
+        "text": "Invitations are valid for 7 days. Ask your organization's administrator or HR team for a new invitation."
+      },
+      "revoked": {
+        "title": "This invitation is no longer valid",
+        "text": "This invitation was cancelled. To get access, contact the training or HR team in your organization."
+      },
+      "used": {
+        "title": "Your account is already set up",
+        "text": "This invitation was already used to create the account. Sign in with your email and password.",
+        "signIn": "Sign in",
+        "forgotPassword": "Forgot password"
+      },
+      "invalid": {
+        "title": "This invitation link isn't valid",
+        "text": "The link wasn't recognized. Make sure you opened the whole link from the invitation email, or ask your organization's administrator for a new invitation."
+      }
+    },
+    "errors": {
+      "notValid": "This invitation is no longer valid.",
+      "accountExists": "An account with this email already exists. Sign in to accept the invitation.",
+      "passwordRejected": "This password wasn't accepted because it's weak or common. Choose a longer one that's hard to guess.",
+      "otherAccount": "This invitation is for a different account. Sign out, then continue.",
+      "alreadyMember": "This account is already a member of the organization. Sign in to continue.",
+      "accountMismatch": "This invitation can't be accepted with this account. Ask your organization's administrator for a new invitation."
+    }
+  },
   "users": {
     "title": "Users",
     "summary": "{count, plural, =0 {No users} one {{count, number, integer} user} other {{count, number, integer} users}}",
@@ -368,5 +445,99 @@
     "sensitive": "Sensitive",
     "matrixNote": "Each module's permissions apply as it is released; users & roles and the audit log apply now.",
     "notConfigured": "The number of users per role appears once this environment is connected to the database."
+  },
+  "invitations": {
+    "inviteUser": "Invite user",
+    "title": "Invite a user",
+    "intro": "We send an email to the work address with a link to set a password and sign in. No account is created until the invitation is accepted.",
+    "breadcrumb": "Users",
+    "breadcrumbLabel": "Breadcrumb",
+    "form": {
+      "person": "Person details",
+      "email": "Work email",
+      "emailHint": "This email becomes the sign-in name. It must be unique within the organization.",
+      "firstNameAr": "First name",
+      "familyNameAr": "Family name",
+      "addEnglishName": "Add the name in English (optional)",
+      "firstNameEn": "First name in English",
+      "familyNameEn": "Family name in English",
+      "department": "Department",
+      "noDepartment": "No department",
+      "branch": "Branch",
+      "noBranch": "No branch",
+      "manager": "Direct manager",
+      "noManager": "No direct manager",
+      "managerHint": "The list shows people with managing roles in the chosen department and changes with the department.",
+      "managerHintAll": "The list shows people with managing roles in all departments.",
+      "allDepartmentsManagers": "Manager in another department? Show managers of all departments",
+      "departmentManagersOnly": "Back to this department's managers only",
+      "employeeNumber": "Employee number",
+      "employeeNumberHint": "Must be unique within the organization, for example EMP-1450.",
+      "primaryRole": "Primary role",
+      "primaryRoleHint": "The primary role sets the home page and what the person sees first. A user has one primary role.",
+      "showAllRoles": "Show all roles ({count, number, integer})",
+      "showCommonRoles": "Show common roles only",
+      "rolesHelp": "What can each role do?",
+      "additionalRoles": "Additional roles",
+      "additionalRolesHint": "The effective permissions are those of the primary role plus the additional roles.",
+      "privileged": "Privileged role",
+      "privilegedNeedsCode": "Giving privileged roles (Organization Admin, HR Manager, Finance Manager, Compliance Officer, Auditor) needs a code from an authenticator app; this becomes available once multi-factor authentication is set up. You can invite with the other roles now.",
+      "privilegedAdminOnly": "Only the Organization Admin gives privileged roles (Organization Admin, HR Manager, Finance Manager, Compliance Officer, Auditor). You can invite with the other roles.",
+      "language": "Invitation email language",
+      "languages": {
+        "ar": "العربية",
+        "en": "English"
+      },
+      "expiryNotice": "The invitation stays valid for 7 days (until {date}). You can resend it up to 3 times or revoke it from the users list.",
+      "submit": "Send invitation",
+      "submitting": "Sending…",
+      "back": "Go back",
+      "fieldErrors": {
+        "required": "This field is required.",
+        "name": "The name must contain visible letters and be at most 60 characters.",
+        "email": "Enter an email address such as name@example.com.",
+        "emailTaken": "This email belongs to someone else in the organization, or has an invitation not accepted yet.",
+        "employeeNumber": "The employee number must contain visible letters or digits and be at most 40 characters.",
+        "employeeNumberTaken": "This employee number belongs to someone else in the organization.",
+        "roleRequired": "Choose a primary role.",
+        "roleNotAllowed": "You can't give this role. Only the Organization Admin gives privileged roles.",
+        "roles": "A role can be chosen once, and the primary role can't also be an additional role.",
+        "unit": "Choose a department or branch from the list.",
+        "manager": "Choose the direct manager from the list."
+      }
+    },
+    "list": {
+      "created": "Invitation created. We're sending it to the work email now; it stays valid for 7 days.",
+      "tableCaption": "Invitations not accepted yet",
+      "columns": {
+        "name": "Name",
+        "primaryRole": "Primary role",
+        "status": "Status",
+        "sent": "Sent",
+        "actions": "Actions"
+      },
+      "status": {
+        "pending": "Invited",
+        "expired": "Invitation expired"
+      },
+      "sentCount": "{count, plural, =0 {Not sent yet} one {Sent once} =2 {Sent twice} other {Sent {count, number, integer} times}}",
+      "expiresOn": "Expires on {date}",
+      "expiredOn": "Expired on {date}",
+      "resend": "Resend invitation",
+      "resent": "Invitation resent. The new link stays valid for 7 days and the previous link stops working.",
+      "resendLimit": "This invitation has reached the resend limit (3 times).",
+      "resendLimitShort": "Resend limit reached",
+      "revoke": "Revoke invitation",
+      "revokeConfirm": "Revoke the invitation of {name}? The invitation link stops working immediately.",
+      "revokeConfirmButton": "Revoke invitation",
+      "keep": "Go back",
+      "revoked": "Invitation revoked; its link no longer works.",
+      "working": "Working…",
+      "notPending": "This invitation is no longer waiting for acceptance; it may have been accepted or revoked. Refresh the page to see its latest status.",
+      "roleNotAllowed": "Only the Organization Admin can resend or revoke an invitation with a privileged role.",
+      "expiredBanner": "{count, plural, one {{count, number, integer} invitation expired before it was accepted. You can resend it now; it stays valid for 7 days.} other {{count, number, integer} invitations expired before they were accepted. You can resend them now; each stays valid for 7 days.}}",
+      "resendExpired": "Resend expired invitations ({count, number, integer})",
+      "resentExpired": "Expired invitations resent ({count})."
+    }
   }
 }

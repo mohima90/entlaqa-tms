@@ -3,6 +3,8 @@ import {
   defineQuery,
   editRolesQueryDefinition,
   editUserQueryDefinition,
+  invitationsListQueryDefinition,
+  inviteFormQueryDefinition,
   rolesPageQueryDefinition,
   myIdentityQueryDefinition,
   myProfileQueryDefinition,
@@ -19,6 +21,9 @@ export const editUserQuery = defineQuery(editUserQueryDefinition());
 export const editRolesQuery = defineQuery(editRolesQueryDefinition());
 /** Roles & permissions page (T-M2-05): member counts per role. */
 export const rolesPageQuery = defineQuery(rolesPageQueryDefinition());
+/** Invitations (T-M2-07): the invited tab of the users list and the invite form's choices. */
+export const invitationsListQuery = defineQuery(invitationsListQueryDefinition());
+export const inviteFormQuery = defineQuery(inviteFormQueryDefinition());
 
 /** My profile (FR-IAM-16) and the header name of the signed-in member. */
 export const myProfileQuery = defineQuery(myProfileQueryDefinition());

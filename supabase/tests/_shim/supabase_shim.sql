@@ -34,6 +34,13 @@ create table if not exists auth.users (
   email text,
   created_at timestamptz not null default now()
 );
+-- Columns Supabase Auth updates that the migrations' trigger on auth.users reads or the tests touch
+-- (e-mail change guard, re-review N1).
+alter table auth.users
+  add column if not exists email_change text default '',
+  add column if not exists encrypted_password text,
+  add column if not exists email_confirmed_at timestamptz,
+  add column if not exists last_sign_in_at timestamptz;
 
 -- Subset of Supabase Auth's sessions table used by private.current_tenant_id() (ADR 0002 §6a).
 create table if not exists auth.sessions (

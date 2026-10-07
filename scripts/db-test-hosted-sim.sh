@@ -35,11 +35,16 @@ cleanup() {
                    where g.rolname = 'app_queue' and u.rolname = '$MIGRATOR' and gr.rolname = '$MIGRATOR') then
           execute 'revoke app_queue from $MIGRATOR granted by $MIGRATOR';
         end if;
-        -- The migration's own 'grant tenant_guard to current_user': not wanted beyond this run.
+        -- The migrations' own 'grant tenant_guard / invitation_guard to current_user': not wanted beyond this run.
         if exists (select 1 from pg_auth_members m join pg_roles g on g.oid = m.roleid
                      join pg_roles u on u.oid = m.member join pg_roles gr on gr.oid = m.grantor
                    where g.rolname = 'tenant_guard' and u.rolname = '$MIGRATOR' and gr.rolname = '$MIGRATOR') then
           execute 'revoke tenant_guard from $MIGRATOR granted by $MIGRATOR';
+        end if;
+        if exists (select 1 from pg_auth_members m join pg_roles g on g.oid = m.roleid
+                     join pg_roles u on u.oid = m.member join pg_roles gr on gr.oid = m.grantor
+                   where g.rolname = 'invitation_guard' and u.rolname = '$MIGRATOR' and gr.rolname = '$MIGRATOR') then
+          execute 'revoke invitation_guard from $MIGRATOR granted by $MIGRATOR';
         end if;
       end if;
     end \$\$;" >/dev/null 2>&1 || echo "db-test-hosted-sim: WARNING: cleanup of cluster-wide roles failed" >&2
@@ -67,16 +72,24 @@ grant authenticated to $MIGRATOR with admin option;
 grant create, temporary on database "$DB" to $MIGRATOR;
 -- Observed on hosted Supabase (first DB deploy plan, 1 Oct 2026): postgres has USAGE on schema auth but
 -- WITHOUT the grant option ("no privileges were granted for auth"); it can read auth.sessions (grant
--- option on it not assumed).
+-- option on it not assumed). Likewise auth.users (id, email) for private.auth_user_email (invitations,
+-- T-M2-07: to be confirmed by the staging plan run — the migration fails loudly otherwise).
 grant usage on schema auth to $MIGRATOR;
 grant select on auth.sessions to $MIGRATOR;
+grant select (id, email) on auth.users to $MIGRATOR;
 grant references on auth.sessions, auth.users to $MIGRATOR;
+-- TRIGGER on auth.users: the e-mail change guard of migration 20261009090000 (re-review N1). Assumption,
+-- from Supabase's own image (supabase/postgres 17.11.0.003, the version staging runs): auth.users ACL
+-- postgres=ar*wdDxtm/supabase_auth_admin — postgres is not the owner but holds TRIGGER (Supabase keeps
+-- triggers on auth tables allowed, like its handle_new_user pattern). Only that privilege is simulated
+-- here; the migration checks it and fails loudly without it (confirmed by the staging plan run).
+grant trigger on auth.users to $MIGRATOR;
 -- Login roles left by an earlier run on this cluster: on Supabase they would have been created by the
 -- migration role itself, which then holds ADMIN OPTION on them.
 do \$\$
 declare r text;
 begin
-  foreach r in array array['app_server', 'app_worker', 'app_queue', 'tenant_guard'] loop
+  foreach r in array array['app_server', 'app_worker', 'app_queue', 'tenant_guard', 'invitation_guard'] loop
     if exists (select 1 from pg_roles where rolname = r) then
       execute format('grant %I to $MIGRATOR with admin option, inherit false, set false', r);
     end if;
@@ -143,6 +156,26 @@ for bad in "TENANT_SLUG=-bad" "TENANT_SLUG=Bad" "ADMIN_USER_ID=not-a-uuid" "TENA
   fi
 done
 echo "db-test-hosted-sim: provisioning OK"
+
+# Sign-up gate (T-M2-07, review H1): with the grants made by the non-superuser migration role, Auth's
+# role can run the hook and its yes/no check (an error inside the hook would also read as a refusal, so
+# the check is called directly too).
+[[ "$(q "set role supabase_auth_admin;
+         select private.invitation_allows_signup('nobody@example.invalid', repeat('A', 43))::text || '|' ||
+                private.before_user_created_hook('{}'::jsonb)::text" | tail -n 1)" == 'false|{"error": {"message": "Sign-up is by invitation only.", "http_code": 403}}' ]] ||
+  { echo "db-test-hosted-sim: supabase_auth_admin cannot run the sign-up hook as deployed" >&2; exit 1; }
+echo "db-test-hosted-sim: sign-up hook OK"
+
+# E-mail change guard (re-review N1): created on auth.users by the non-superuser migration role, enabled,
+# and it refuses an e-mail change (whoever updates: here even a superuser) unless the operator flag is set.
+[[ "$(q "select count(*) from pg_trigger where tgrelid = 'auth.users'::regclass and tgname = 'jadarat_refuse_email_change' and tgenabled = 'O'")" == "1" ]] ||
+  { echo "db-test-hosted-sim: the e-mail change guard on auth.users is missing" >&2; exit 1; }
+if q "update auth.users set email = 'sim-other@example.test' where id = '$ADMIN_UID'" >/dev/null 2>&1; then
+  echo "db-test-hosted-sim: an Auth e-mail change was not refused" >&2; exit 1
+fi
+grep -qx 'sim-renamed@example.test' <<<"$(q "begin; set local jadarat.allow_auth_email_change = 'on'; update auth.users set email = 'sim-renamed@example.test' where id = '$ADMIN_UID' returning email; rollback")" ||
+  { echo "db-test-hosted-sim: the operator flag must allow an e-mail change" >&2; exit 1; }
+echo "db-test-hosted-sim: e-mail change guard OK"
 
 # Background jobs (T-M2-06a), as on staging: the worker installs graphile-worker's schema as app_queue —
 # which holds no database privilege — on a database migrated by the non-superuser role, then dispatches

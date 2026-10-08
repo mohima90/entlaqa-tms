@@ -507,6 +507,10 @@ for i in $(seq 1 30); do
   [[ $i -eq 30 ]] && { echo "smoke: account e-mail requests were left unanswered" >&2; exit 1; }
   sleep 1
 done
+# The link's token waits in Auth (generate_link set recovery_token, GoTrue v2.197.0); the database sees
+# only that one waits (private.auth_account.recovery_pending), never the token.
+[[ "$(q "select recovery_pending from private.auth_account where id = '$RESET_ID'")" == "t" ]] ||
+  { echo "smoke: after generate_link a recovery token must wait (recovery_pending)" >&2; exit 1; }
 # Step 2: set the new password from the link; a second use of the link is refused (in the spec).
 (cd "$ROOT/apps/suite" && E2E_BASE_URL=http://localhost:3200 RESET_E2E_LINK_URL="$RESET_URL" \
   RESET_E2E_NEW_PASSWORD="$RESET_NEW_PASSWORD" \
@@ -525,11 +529,41 @@ for i in $(seq 1 30); do
   [[ $i -eq 30 ]] && { echo "smoke: no (or more than one) password-changed notice after the reset" >&2; exit 1; }
   sleep 1
 done
+# The link was used: Auth cleared the token (verify, then the password change), so the notice was queued.
+[[ "$(q "select recovery_pending from private.auth_account where id = '$RESET_ID'")" == "f" ]] ||
+  { echo "smoke: after the reset no recovery token may wait (recovery_pending)" >&2; exit 1; }
 # Both e-mails are in the organization's delivery log, sent, without content or address.
 [[ "$(q "select count(*) from platform.message_deliveries d join platform.persons p on p.tenant_id = d.tenant_id and p.id = d.recipient_person_id
         where p.email = '$RESET_EMAIL' and d.template in ('platform.password_reset', 'platform.password_changed')
           and d.status = 'sent' and d.destination is null and d.html_body is null and d.text_body is null")" == "2" ]] ||
   { echo "smoke: expected the reset e-mail and the notice as sent deliveries without content" >&2; exit 1; }
+# A reset that was triggered but never used blocks the notice (security re-verification): another member
+# gets our reset e-mail (requested as the web app does it, through the database as app_server); a
+# claim-less "password changed" request — what a stolen app_server credential could send — is then
+# dropped, because the link's token still waits.
+q_app_server() {
+  PGPASSWORD="$(secret APP_SERVER_DB_PASSWORD)" PGSSLMODE=verify-full PGSSLROOTCERT=.secrets/ca.crt \
+    psql -h localhost -p 55432 -U app_server -d postgres -X -At -v ON_ERROR_STOP=1 -c "$1"
+}
+UNUSED_EMAIL="unused-$STAMP@sovereign.example"
+UNUSED_ID="$(create_user "$UNUSED_EMAIL" "Unused-$(openssl rand -hex 16)")"
+[[ "$(q "with p as (insert into platform.persons (tenant_id, display_name_ar, display_name_en, email)
+            select id, 'رابط غير مستخدم', 'Unused Link', '$UNUSED_EMAIL' from platform.tenants where slug = 'sovereign-smoke'
+            returning tenant_id, id),
+          m as (insert into platform.tenant_memberships (tenant_id, user_id, person_id, status)
+            select tenant_id, '$UNUSED_ID', id, 'active' from p returning 1)
+        select count(*) from m")" == "1" ]] || { echo "smoke: could not add the unused-link user to the organization" >&2; exit 1; }
+q_app_server "begin; set local role authenticated; select private.request_password_reset_mail('$UNUSED_EMAIL'); commit" >/dev/null
+for i in $(seq 1 30); do
+  [[ "$(mail_count "$UNUSED_EMAIL" 'Reset your password')" == "1" ]] && break
+  [[ $i -eq 30 ]] && { echo "smoke: the unused-link user's reset e-mail did not arrive" >&2; exit 1; }
+  sleep 1
+done
+[[ "$(q "select recovery_pending from private.auth_account where id = '$UNUSED_ID'")" == "t" ]] ||
+  { echo "smoke: after generate_link a recovery token must wait (recovery_pending, second account)" >&2; exit 1; }
+q_app_server "begin; set local role authenticated; select private.request_password_changed_mail('$UNUSED_ID'); commit" >/dev/null
+[[ "$(q "select count(*) from private.account_mail_requests where user_id = '$UNUSED_ID'")" == "0" ]] ||
+  { echo "smoke: a password-changed notice was queued although the reset link was never used" >&2; exit 1; }
 # The token (a credential) appears nowhere but the e-mail: not in any container log or the audit trail.
 RESET_TOKEN="${RESET_URL#*token_hash=}"
 RESET_TOKEN="${RESET_TOKEN%%&*}"

@@ -152,6 +152,11 @@ grant select (tenant_id, id, status, preferred_locale) on platform.persons to ac
 create policy session_context_account_mail_guard_read on platform.session_context for select
   to account_mail_guard using (true);
 grant select (user_id, active_tenant_id, updated_at) on platform.session_context to account_mail_guard;
+-- request_password_changed_mail without claims: did the worker send OUR reset e-mail to that account in
+-- the last 65 minutes? Which person got which template when — never an address or content.
+create policy message_deliveries_account_mail_guard_read on platform.message_deliveries for select
+  to account_mail_guard using (true);
+grant select (tenant_id, recipient_person_id, template, created_at) on platform.message_deliveries to account_mail_guard;
 
 grant execute on function private.try_uuid(text) to account_mail_guard;
 grant execute on function private.request_claims() to account_mail_guard;
@@ -198,9 +203,11 @@ comment on function private.request_password_reset_mail(text) is
 
 -- After a password change, the web app (app_server) queues the "password changed" notice:
 --   * after a reset (screen 11): without claims — the worker picks the organization. Only for an account
---     that was issued a recovery token within the last 65 minutes (a completed reset always follows one:
---     the link lives 60 minutes; 5 more for the completion itself), so a stolen app_server credential
---     cannot send branded notices to arbitrary accounts (security review);
+--     to which the worker sent OUR reset e-mail (platform.password_reset) within the last 65 minutes: in
+--     worker mode a completed reset always follows one — the link exists only in that e-mail and lives
+--     60 minutes; 5 more for the completion itself. So a stolen app_server credential cannot send branded
+--     notices to arbitrary accounts (security review). Auth's recovery_sent_at cannot serve: Auth clears
+--     it when the password changes (GoTrue v2.197.0 User.UpdatePassword), before this call;
 --   * after a My profile change (FR-IAM-16): with the signed-in user's own claims — p_user_id must be
 --     that user, and the session's organization is recorded for the notice.
 create or replace function private.request_password_changed_mail(p_user_id uuid)
@@ -220,9 +227,12 @@ begin
     if v_tenant is null or private.request_user_id() is distinct from p_user_id then
       raise exception 'only for the signed-in user' using errcode = 'insufficient_privilege';
     end if;
-  elsif not exists (select 1 from private.auth_account a
-                    where a.id = p_user_id and a.recovery_sent_at > now() - interval '65 minutes') then
-    return;  -- no recent recovery token: not after a reset
+  elsif not exists (select 1 from platform.tenant_memberships m
+                    join platform.message_deliveries d
+                      on d.tenant_id = m.tenant_id and d.recipient_person_id = m.person_id
+                    where m.user_id = p_user_id and d.template = 'platform.password_reset'
+                      and d.created_at > now() - interval '65 minutes') then
+    return;  -- no reset e-mail of ours within 65 minutes: not after a reset
   end if;
   if not exists (select 1 from private.auth_account a where a.id = p_user_id)
      or (select count(*) from (select 1 from private.account_mail_requests limit 10000) w) >= 10000

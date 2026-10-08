@@ -1,7 +1,7 @@
 -- db-test: run-as=owner
 -- Account e-mail queue as stored (T-M2-17): what the request path committed in
 -- 55_account_mail_app_server.sql (lower-cased addresses, repeats dropped, the profile change's
--- organization, no notice without claims unless a recovery token was issued recently) and the shape
+-- organization, no notice without claims unless we sent the account a reset e-mail recently) and the shape
 -- rules; then the set-up for the retention rules and the DB-side cap (58–61).
 \set ON_ERROR_STOP on
 
@@ -18,7 +18,7 @@ begin
     'password_changed||e7000000-0000-4000-8000-000000000002|a0000000-0000-4000-8000-000000000001|0,'
     'password_changed||e7000000-0000-4000-8000-000000000003||0',
     'requests as queued: one per address/account, lower-cased, the profile change with its organization; '
-    'no notice without claims for an account without a recent recovery token (uR1, uR6)');
+    'no notice without claims for an account without our reset e-mail in the last 65 minutes (uR1, uR6)');
   perform tests.assert_check_constraint(
     $q$insert into private.account_mail_requests (kind, email, user_id) values ('password_reset', 'x@a.test', 'e7000000-0000-4000-8000-000000000001')$q$,
     'account_mail_requests_shape_check', 'a reset request carries the address only');

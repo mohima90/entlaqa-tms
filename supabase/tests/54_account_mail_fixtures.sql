@@ -2,15 +2,14 @@
 -- Fixtures for the account e-mail queue (T-M2-17, FR-NTF-02 / FR-IAM-13): accounts whose reset or
 -- "password changed" e-mail goes to one organization, several, none, or nowhere at all. Committed (the
 -- request path 55 and the worker 56 run as other login roles); 61 empties the queue again.
--- recovery_sent_at (Auth's last recovery token) decides whether a "password changed" notice may be queued
--- WITHOUT claims (after a reset: a token within 65 minutes): uR3 yes (10 minutes ago), uR5 yes (seconds
--- ago), uR1 no (never), uR6 no (two hours ago).
+-- A "password changed" notice WITHOUT claims (after a reset) needs OUR reset e-mail (a platform.password_reset
+-- delivery) to the account within 65 minutes: uR3 yes (10 minutes ago, in B), uR5 yes (a minute ago), uR1 no
+-- (only an invitation e-mail, and a recovery token from Auth alone does not count), uR6 no (two hours ago).
 --   uR1  reset1@a.test   active in A only (Arabic)                                → A, ar
 --   uR2  multi@ab.test   active in A (older) and B (newer); its most recent sign-in session selected B,
 --                        an older one A; English in B                              → B, en (session A for
 --                        a My profile change made in A → A, ar)
---   uR3  oldest@bd.test  active in B (older) and D (newer), never signed in, a reset link 10 minutes ago
---                                                                                  → B (oldest), ar
+--   uR3  oldest@bd.test  active in B (older) and D (newer), never signed in       → B (oldest), ar
 --   uR4  banned@a.test   active in A, banned in Auth                              → nothing (banned)
 --   uR5  soon@a.test     active in A, a reset link issued seconds ago             → nothing on a first try
 --   uR6  invited@a.test  only an invited membership in A                          → nothing (no membership)
@@ -18,12 +17,12 @@
 \set ON_ERROR_STOP on
 
 insert into auth.users (id, email, banned_until, recovery_sent_at) values
-  ('e7000000-0000-4000-8000-000000000001', 'reset1@a.test', null, null),
+  ('e7000000-0000-4000-8000-000000000001', 'reset1@a.test', null, now() - interval '5 minutes'),
   ('e7000000-0000-4000-8000-000000000002', 'multi@ab.test', null, null),
-  ('e7000000-0000-4000-8000-000000000003', 'oldest@bd.test', null, now() - interval '10 minutes'),
+  ('e7000000-0000-4000-8000-000000000003', 'oldest@bd.test', null, null),
   ('e7000000-0000-4000-8000-000000000004', 'banned@a.test', now() + interval '1 day', null),
   ('e7000000-0000-4000-8000-000000000005', 'soon@a.test', null, now()),
-  ('e7000000-0000-4000-8000-000000000006', 'invited@a.test', null, now() - interval '2 hours');
+  ('e7000000-0000-4000-8000-000000000006', 'invited@a.test', null, null);
 
 insert into platform.persons (id, tenant_id, display_name_ar, email, preferred_locale) values
   ('e7100000-0000-4000-8000-0000000001a1', 'a0000000-0000-4000-8000-000000000001', 'مستخدم إعادة', 'reset1@a.test', 'ar'),
@@ -52,5 +51,22 @@ insert into auth.sessions (id, user_id, not_after) values
 insert into platform.session_context (session_id, user_id, active_tenant_id, updated_at) values
   ('e7200000-0000-4000-8000-0000000002a1', 'e7000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', now() - interval '3 hours'),
   ('e7200000-0000-4000-8000-0000000002b1', 'e7000000-0000-4000-8000-000000000002', 'b0000000-0000-4000-8000-000000000001', now() - interval '1 hour');
+
+-- Our e-mails to them (sent: no address or content kept); 61 removes them again. Written as finished and
+-- backdated, so the lifecycle trigger (a delivery starts queued, now) is off for this insert only.
+begin;
+alter table platform.message_deliveries disable trigger message_deliveries_check;
+insert into platform.message_deliveries (id, tenant_id, template, template_version, locale, recipient_person_id,
+    destination_masked, status, provider, sent_at, created_at) values
+  ('e7300000-0000-4000-8000-0000000001a1', 'a0000000-0000-4000-8000-000000000001', 'platform.invitation', 1, 'ar',
+    'e7100000-0000-4000-8000-0000000001a1', 'r***@a.test', 'sent', 'smtp', now() - interval '5 minutes', now() - interval '5 minutes'),
+  ('e7300000-0000-4000-8000-0000000003b1', 'b0000000-0000-4000-8000-000000000001', 'platform.password_reset', 1, 'ar',
+    'e7100000-0000-4000-8000-0000000003b1', 'o***@bd.test', 'sent', 'smtp', now() - interval '10 minutes', now() - interval '10 minutes'),
+  ('e7300000-0000-4000-8000-0000000005a1', 'a0000000-0000-4000-8000-000000000001', 'platform.password_reset', 1, 'ar',
+    'e7100000-0000-4000-8000-0000000005a1', 's***@a.test', 'sent', 'smtp', now() - interval '1 minute', now() - interval '1 minute'),
+  ('e7300000-0000-4000-8000-0000000006a1', 'a0000000-0000-4000-8000-000000000001', 'platform.password_reset', 1, 'ar',
+    'e7100000-0000-4000-8000-0000000006a1', 'i***@a.test', 'sent', 'smtp', now() - interval '2 hours', now() - interval '2 hours');
+alter table platform.message_deliveries enable trigger message_deliveries_check;
+commit;
 
 \echo '54_account_mail_fixtures: ok'

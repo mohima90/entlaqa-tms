@@ -1,6 +1,6 @@
 -- db-test: run-as=owner
--- Checks of 60 (T-M2-17), then the queue is emptied for the TypeScript integration tests
--- (DB_TEST_INTEGRATION=1), which make their own requests.
+-- Checks of 60 (T-M2-17), then the queue (and the deliveries of 54) are emptied for the TypeScript
+-- integration tests (DB_TEST_INTEGRATION=1), which make their own requests.
 \set ON_ERROR_STOP on
 
 do $$
@@ -14,5 +14,6 @@ begin
 end $$;
 
 delete from private.account_mail_requests;
+delete from platform.message_deliveries where id::text like 'e7300000-%';
 
 \echo '61_account_mail_limits_owner: ok'

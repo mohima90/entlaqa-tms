@@ -13,6 +13,8 @@ revoke execute on function private.request_claims() from account_mail_guard;
 revoke execute on function private.request_user_id() from account_mail_guard;
 revoke execute on function private.current_tenant_id() from account_mail_guard;
 
+drop policy message_deliveries_account_mail_guard_read on platform.message_deliveries;
+revoke all on platform.message_deliveries from account_mail_guard;
 drop policy session_context_account_mail_guard_read on platform.session_context;
 revoke all on platform.session_context from account_mail_guard;
 drop policy persons_account_mail_guard_read on platform.persons;

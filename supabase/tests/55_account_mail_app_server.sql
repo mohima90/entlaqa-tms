@@ -132,11 +132,11 @@ begin; set local role authenticated; select tests.set_claims(null);
 select private.request_password_changed_mail('e7000000-0000-4000-8000-000000000003'); commit;
 begin; set local role authenticated; select tests.set_claims(null);
 select private.request_password_changed_mail('e7000000-0000-4000-8000-000000000003'); commit;  -- a repeat: dropped
--- Without claims, an account that had no recovery token within 65 minutes gets no notice — there was no
--- reset (a stolen app_server credential cannot send branded notices to arbitrary accounts). Dropped
+-- Without claims, an account to which we sent no reset e-mail within 65 minutes gets no notice — there was
+-- no reset (a stolen app_server credential cannot send branded notices to arbitrary accounts). Dropped
 -- silently; 57_account_mail_owner.sql checks nothing was stored.
 begin; set local role authenticated; select tests.set_claims(null);
-select private.request_password_changed_mail('e7000000-0000-4000-8000-000000000001'); commit;  -- never
+select private.request_password_changed_mail('e7000000-0000-4000-8000-000000000001'); commit;  -- an invitation only
 begin; set local role authenticated; select tests.set_claims(null);
 select private.request_password_changed_mail('e7000000-0000-4000-8000-000000000006'); commit;  -- 2 hours ago
 

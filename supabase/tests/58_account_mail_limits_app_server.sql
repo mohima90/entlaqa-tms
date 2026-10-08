@@ -1,7 +1,7 @@
 -- db-test: run-as=app_server
 -- Retention without a worker and the DB-side cap (T-M2-17): each request first removes requests older
 -- than 60 minutes (57_account_mail_owner.sql aged one); with 10,000 requests still waiting a further reset
--- request — or "password changed" notice (uR5: a recent recovery token, so only the cap stops it) — is
+-- request — or "password changed" notice (uR5: our reset e-mail a minute ago, so only the cap stops it) — is
 -- dropped silently, like a limited one on the request path (the web app's answer does not change).
 -- Checked in 59_account_mail_retention_owner.sql.
 \set ON_ERROR_STOP on

@@ -9,9 +9,11 @@ import {
 import { sendTestEmail } from '@jadarat/platform-notifications/jobs';
 import { createLogger, errorName, installConsoleScrubbing } from '@jadarat/platform-observability';
 import {
+  ADMIN_KEY_WARN_DAYS,
   ConfigurationError,
   type RunnerSettings,
   type TestEmailSettings,
+  adminKeyDaysLeft,
   readSettings,
 } from './config';
 import { workerLog } from './log';
@@ -82,6 +84,22 @@ async function runWorker(settings: RunnerSettings): Promise<void> {
         action: 'worker.start',
       },
     );
+    // A self-hosted Auth admin token lives 90 days (gen-secrets.sh): warn a month ahead so that it is
+    // renewed before password-reset links stop (infra/docker/README.md, "Auth admin key").
+    const daysLeft = settings.authAdmin && adminKeyDaysLeft(settings.authAdmin.secretKey);
+    if (daysLeft !== undefined && daysLeft < ADMIN_KEY_WARN_DAYS) {
+      const expired = daysLeft < 0;
+      logger.warn(
+        expired
+          ? 'the Auth admin key (SUPABASE_SECRET_KEY) has expired: password-reset links fail until it is renewed'
+          : `the Auth admin key (SUPABASE_SECRET_KEY) expires in ${String(daysLeft)} days: renew it`,
+        {
+          action: 'worker.start',
+          reason: 'auth_admin_key_expiry',
+          state: expired ? 'expired' : 'expiring',
+        },
+      );
+    }
     if (settings.mode === 'once') {
       // graphile-worker's own signal handling releases the pass's jobs on cancel.
       const { staleEvents } = await runPass(config);

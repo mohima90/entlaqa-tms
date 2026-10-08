@@ -1,8 +1,12 @@
 #!/usr/bin/env node
 // Creates a confirmed Auth user through the self-hosted Auth admin API (no public sign-up exists).
-// Usage: node create-user.mjs <email>   (password from env NEW_USER_PASSWORD; prints only the user id)
+// Runs in the `admin-cli` container (compose profile `tools`) on the internal auth-tools network: the
+// gateway serves this one admin call (POST /admin/users) only there, on port 8444 (T-M2-17 security
+// review). Usage:
+//   NEW_USER_PASSWORD='…' docker compose --env-file .secrets/.env run --rm --user "$(id -u):$(id -g)" \
+//     -e NEW_USER_PASSWORD admin-cli <email>          (prints only the user id)
 // The admin call is authorised by a 60-second service_role token signed with the installation's ES256
-// key (.secrets/jwt-private.jwk.json) — the key never leaves this machine.
+// key (.secrets/jwt-private.jwk.json, mounted read-only) — the key never leaves this machine.
 import { createPrivateKey, randomUUID, sign } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { request } from 'node:https';
@@ -10,7 +14,9 @@ import { request } from 'node:https';
 const email = process.argv[2];
 const password = process.env.NEW_USER_PASSWORD;
 if (!email || !password) {
-  console.error('usage: NEW_USER_PASSWORD=… node create-user.mjs <email>');
+  console.error(
+    'usage: NEW_USER_PASSWORD=… create-user.mjs <email> (through the admin-cli service: README.md)',
+  );
   process.exit(2);
 }
 const dir = new URL('.secrets/', import.meta.url);
@@ -32,7 +38,7 @@ const signature = sign('sha256', Buffer.from(`${header}.${payload}`), {
   dsaEncoding: 'ieee-p1363',
 }).toString('base64url');
 
-const url = new URL(`${process.env.AUTH_URL ?? 'https://localhost:8443/auth/v1'}/admin/users`);
+const url = new URL(`${process.env.AUTH_URL ?? 'https://gateway:8444/auth/v1'}/admin/users`);
 const payloadBody = JSON.stringify({ email, password, email_confirm: true });
 const { status, body } = await new Promise((resolve, reject) => {
   const req = request(

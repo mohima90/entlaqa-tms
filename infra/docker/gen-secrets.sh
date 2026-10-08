@@ -110,10 +110,38 @@ add_secret ERRORS_DB_PASSWORD "$(pw2)"
 add_secret GLITCHTIP_SECRET_KEY "$(pw2)$(pw2)"
 add_secret GLITCHTIP_ADMIN_PASSWORD "$(pw2)"
 add_secret APP_QUEUE_DB_PASSWORD "$(pw2)"
+# Auth's signing key (written with a new .env; written again after a key rotation, README.md "Auth admin
+# key"). Auth, the worker's token and admin-cli must all use the key in jwt-private.jwk.json.
+add_secret JWT_KEYS "'[$(cat "$S/jwt-private.jwk.json")]'"
+kid="$(node -e 'process.stdout.write(JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).kid)' \
+  "$S/jwt-private.jwk.json")"
+grep -q "^JWT_KEYS=.*\"kid\":\"$kid\"" "$S/.env" ||
+  { echo "gen-secrets: JWT_KEYS in .env is not the key in jwt-private.jwk.json (README.md, \"Auth admin key\")" >&2; exit 1; }
 # The WORKER's Auth admin key (T-M2-17): a service_role token signed with the installation's ES256 key,
-# valid one year, for password-reset links (Auth's admin generate_link). Compose hands it to the worker
-# only (SUPABASE_SECRET_KEY) — never to the app. To renew or revoke it: delete the line and run this
-# script again (renew), or rotate the signing key (revokes every token signed with it; README.md).
+# valid 90 days, for password-reset links (Auth's admin generate_link). Compose hands it to the workers
+# only (SUPABASE_SECRET_KEY) — never to the app — and the gateway serves the admin API only on the
+# internal auth-admin network (generate_link only). RENEWAL: re-running this script replaces it once
+# fewer than 30 days are left (the workers log a warning from then on), after a signing-key rotation, or
+# when it is an earlier build's one-year token;
+# then `docker compose … up -d worker`. To revoke it at once, rotate the signing key (README.md, "Auth
+# admin key"). The token is decoded here only, never printed.
+admin_token_needs_renewal() {
+  WORKER_TOKEN="$(sed -n 's/^WORKER_AUTH_ADMIN_TOKEN=//p' "$S/.env")" node -e '
+    try {
+      const kid = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).kid;
+      const [head, body] = process.env.WORKER_TOKEN.split(".").slice(0, 2)
+        .map((part) => JSON.parse(Buffer.from(part, "base64url")));
+      const left = body.exp - Date.now() / 1000; // a one-year token of an earlier build is replaced too
+      process.exit(head.kid === kid && left >= 30 * 86400 && left <= 91 * 86400 ? 1 : 0);
+    } catch { process.exit(0); }
+  ' "$S/jwt-private.jwk.json"
+}
+if grep -q '^WORKER_AUTH_ADMIN_TOKEN=' "$S/.env" && admin_token_needs_renewal; then
+  { grep -v '^WORKER_AUTH_ADMIN_TOKEN=' "$S/.env" || true; } >"$S/.env.new"
+  mv "$S/.env.new" "$S/.env"
+  echo "gen-secrets: renewed the worker's Auth admin token (under 30 days left, another signing key or an" \
+    "earlier build's) — restart the workers: docker compose --env-file .secrets/.env up -d worker"
+fi
 if ! grep -q '^WORKER_AUTH_ADMIN_TOKEN=' "$S/.env"; then
   token="$(node -e '
     const { createPrivateKey, randomUUID, sign } = require("node:crypto");
@@ -121,7 +149,7 @@ if ! grep -q '^WORKER_AUTH_ADMIN_TOKEN=' "$S/.env"; then
     const b64 = (v) => Buffer.from(JSON.stringify(v)).toString("base64url");
     const now = Math.floor(Date.now() / 1000);
     const head = b64({ alg: "ES256", typ: "JWT", kid: jwk.kid });
-    const body = b64({ role: "service_role", iss: "jadarat-worker", iat: now, exp: now + 365 * 86400, jti: randomUUID() });
+    const body = b64({ role: "service_role", iss: "jadarat-worker", iat: now, exp: now + 90 * 86400, jti: randomUUID() });
     const sig = sign("sha256", Buffer.from(`${head}.${body}`), {
       key: createPrivateKey({ key: jwk, format: "jwk" }), dsaEncoding: "ieee-p1363" }).toString("base64url");
     process.stdout.write(`${head}.${body}.${sig}`);

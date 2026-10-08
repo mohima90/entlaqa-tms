@@ -27,9 +27,21 @@ x-hardening: &hardening
 networks:
   db-auth: { internal: true } # db ⇄ Auth
   auth-internal: { internal: true } # gateway ⇄ Auth (the plain-HTTP hop)
-  # worker ⇄ gateway (TLS): the Auth admin API for password-reset links (T-M2-17) — the worker's only
-  # route to Auth; the app has none to the admin key.
-  auth-admin: { internal: true }
+  # Auth's admin API on the gateway's port 8444 (TLS, not published), by source network: the gateway
+  # (gateway/nginx.conf) serves each subnet one call — change both files together if a subnet collides
+  # with a network of the host (T-M2-17 security review).
+  # workers ⇄ gateway: recovery links for password resets (POST /admin/generate_link) only.
+  auth-admin:
+    internal: true
+    ipam:
+      config:
+        - { subnet: 10.231.0.0/28, gateway: 10.231.0.1 }
+  # admin-cli (operators' one-off tool) ⇄ gateway: creating a confirmed user (POST /admin/users) only.
+  auth-tools:
+    internal: true
+    ipam:
+      config:
+        - { subnet: 10.231.0.16/28, gateway: 10.231.0.17 }
   db-app: {} # db ⇄ app (+ the db host port used for migrations)
   edge: {} # app ⇄ gateway (+ published ports)
   errors: { internal: true } # app, gateway ⇄ GlitchTip (plain HTTP; no route out of the installation)
@@ -146,7 +158,7 @@ services:
     read_only: true
     cap_drop: [ALL]
     tmpfs: [/tmp]
-    networks: [auth-internal, auth-admin, edge, errors]
+    networks: [auth-internal, auth-admin, auth-tools, edge, errors]
     healthcheck:
       test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:8081/healthz']
       interval: 5s
@@ -232,10 +244,12 @@ services:
       # The gateway's certificate (Auth admin API) is from the installation's CA.
       NODE_EXTRA_CA_CERTS: /run/secrets/ca.crt
       JADARAT_ENVIRONMENT: self-hosted
-      # Password-reset links (T-M2-17): the Auth admin API through the gateway, with a service_role token
-      # signed by the installation's key (gen-secrets.sh, one year — rotate with the key). The worker is
-      # the ONLY container with an Auth admin key (ADR 0002 §7; the smoke test checks it).
-      SUPABASE_URL: https://gateway:8443
+      # Password-reset links (T-M2-17): Auth's admin API on the gateway's internal admin port (8444, from
+      # the auth-admin network: generate_link only), with a service_role token signed by the
+      # installation's key (gen-secrets.sh, 90 days; renewed by re-running it — README.md; the worker
+      # warns 30 days before it expires). The worker is the ONLY long-running container with an Auth
+      # admin key (ADR 0002 §7; smoke-tested).
+      SUPABASE_URL: https://gateway:8444
       SUPABASE_SECRET_KEY: ${WORKER_AUTH_ADMIN_TOKEN:?run gen-secrets.sh, then compose with --env-file .secrets/.env}
       # E-mail (ADR 0008 §2): SMTP with verified STARTTLS. Here Mailpit catches every message. A real
       # installation sets SMTP_URL (smtp://user:password@relay:587) and SMTP_CA_CERT_FILE for its relay
@@ -250,6 +264,27 @@ services:
       # Public origin of the web app for links in e-mails (invitation and password-reset links): the
       # `app` service as published on this host. An installation sets its own https origin.
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3200}
+
+  # Operators' one-off tool (profile `tools`, never started by `up`): creates a confirmed Auth user through
+  # the admin API (create-user.mjs) from the auth-tools network — the published gateway port serves no
+  # admin path. It signs a 60-second service_role token with the installation's key, mounted read-only.
+  # Run it as the owner of .secrets (README.md, "Manual operation"):
+  #   NEW_USER_PASSWORD='…' docker compose --env-file .secrets/.env run --rm --user "$(id -u):$(id -g)" \
+  #     -e NEW_USER_PASSWORD admin-cli admin@example.org
+  admin-cli:
+    image: gcr.io/distroless/nodejs24-debian13:nonroot@sha256:9eeb7f5887d0e239e78264b06f7f11d2e14be534050481803a9e4728fcdd278e
+    profiles: [tools]
+    security_opt: ['no-new-privileges:true']
+    read_only: true
+    cap_drop: [ALL]
+    networks: [auth-tools]
+    entrypoint: ['/nodejs/bin/node', '/tools/create-user.mjs']
+    volumes:
+      - ./create-user.mjs:/tools/create-user.mjs:ro
+      - ./.secrets/jwt-private.jwk.json:/tools/.secrets/jwt-private.jwk.json:ro
+      - ./.secrets/ca.crt:/tools/.secrets/ca.crt:ro
+    environment:
+      AUTH_URL: https://gateway:8444/auth/v1
 
   # Stand-in for the installation's mail relay (T-M2-06b): Mailpit keeps every message for inspection and
   # sends nothing on (internal network, no relay configured). STARTTLS is required, with a certificate

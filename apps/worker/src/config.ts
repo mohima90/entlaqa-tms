@@ -126,6 +126,31 @@ function readAuthAdmin(env: NodeJS.ProcessEnv): RunnerSettings['authAdmin'] {
   return { url, secretKey };
 }
 
+/** The worker warns at start-up once the Auth admin token has fewer days than this left. */
+export const ADMIN_KEY_WARN_DAYS = 30;
+
+/**
+ * Whole days until a self-hosted Auth admin token (SUPABASE_SECRET_KEY: a service_role JWT minted by
+ * infra/docker/gen-secrets.sh, valid 90 days) expires — negative once expired. Undefined for a Supabase
+ * secret key (`sb_secret_…`, no expiry) or a value without a readable `exp`. The payload is only decoded,
+ * never verified (Auth verifies it); nothing of the token is returned or logged.
+ */
+export function adminKeyDaysLeft(secretKey: string, now: number = Date.now()): number | undefined {
+  const parts = secretKey.split('.');
+  const body = parts[1];
+  if (parts.length !== 3 || body === undefined) return undefined;
+  let payload: unknown;
+  try {
+    payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
+  } catch {
+    return undefined;
+  }
+  if (typeof payload !== 'object' || payload === null || !('exp' in payload)) return undefined;
+  const { exp } = payload;
+  if (typeof exp !== 'number' || !Number.isFinite(exp)) return undefined;
+  return Math.floor((exp * 1000 - now) / 86_400_000);
+}
+
 /**
  * `daemon` (default): long-running, for containers (ADR 0005 §1). `once`: runs every due job, then exits —
  * for scheduled runs in environments without a container host (staging). `test-email`: sends one sample

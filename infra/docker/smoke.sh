@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 # Self-hosted (sovereign) smoke test, T-M1-D04/D06: brings up the whole stack from this directory, deploys
-# the migrations with the production deploy script, creates a user and an organization, signs in through a
-# real browser against the app container, checks the audit trail and TLS, runs two background-job workers
-# and checks they dispatch an event, sends a test e-mail over SMTP with STARTTLS to the stand-in relay
-# (Mailpit), runs the invitation journey (invite in the UI, e-mail, accept link from Mailpit, set a
-# password, signed in; expired/revoked/used links; Auth's sign-up hook refuses sign-ups without a valid
-# invitation for that e-mail), runs the password reset (forgot page, OUR e-mail from Mailpit — sent by the
-# worker, T-M2-17 — new password, old one refused, link single use, our "password changed" notice), sends
-# a browser and a server error to the in-country
-# error tracker (GlitchTip) and checks they arrive without personal data, then tears everything down.
+# the migrations with the production deploy script, creates a user (through the operators' admin-cli) and
+# an organization, signs in through a real browser against the app container, checks the audit trail and
+# TLS, runs two background-job workers and checks they dispatch an event, sends a test e-mail over SMTP
+# with STARTTLS to the stand-in relay (Mailpit), runs the invitation journey (invite in the UI, e-mail,
+# accept link from Mailpit, set a password, signed in; expired/revoked/used links; Auth's sign-up hook
+# refuses sign-ups without a valid invitation for that e-mail), runs the password reset (forgot page, OUR
+# e-mail from Mailpit — sent by the worker, T-M2-17 — new password, old one refused, link single use, our
+# "password changed" notice; Auth's admin API only on the gateway's internal port, one call per network),
+# sends a browser and a server error to the in-country error tracker (GlitchTip) and checks they arrive
+# without personal data, then tears everything down.
 #
 #   bash infra/docker/smoke.sh            # KEEP=1 leaves the stack running; SKIP_BUILD=1 reuses the build
 #
@@ -33,6 +34,17 @@ trap cleanup EXIT
 secret() { sed -n "s/^$1=//p" "$ROOT/infra/docker/.secrets/.env"; }
 POSTGRES_PASSWORD="$(secret POSTGRES_PASSWORD)"
 CA_PEM="$(cat .secrets/ca.crt)"
+# create_user <email> <password>: a confirmed Auth user through the operators' one-off admin-cli
+# (create-user.mjs on the internal auth-tools network — the published gateway port serves no admin path);
+# prints the user id.
+create_user() {
+  local new_id
+  new_id="$(NEW_USER_PASSWORD="$2" compose run --rm -T --user "$(id -u):$(id -g)" -e NEW_USER_PASSWORD \
+    admin-cli "$1")"
+  [[ "$new_id" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] ||
+    { echo "smoke: admin-cli did not create the user" >&2; return 1; }
+  printf '%s\n' "$new_id"
+}
 MIGRATION_URL="postgresql://postgres:$POSTGRES_PASSWORD@localhost:55432/postgres"
 
 if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
@@ -77,7 +89,7 @@ curl -sf http://localhost:3200/api/health/ready >/dev/null ||
 
 EMAIL="smoke-$(date +%s)@sovereign.example"
 PASSWORD="Smoke-$(openssl rand -hex 16)"
-USER_ID="$(NEW_USER_PASSWORD="$PASSWORD" node create-user.mjs "$EMAIL")"
+USER_ID="$(create_user "$EMAIL" "$PASSWORD")"
 (cd "$ROOT" && DATABASE_URL="$MIGRATION_URL" DATABASE_CA_CERT="$CA_PEM" TENANT_SLUG=sovereign-smoke \
   TENANT_NAME_AR='منشأة الاختبار السيادي' TENANT_NAME_EN='Sovereign Smoke' ADMIN_USER_ID="$USER_ID" \
   ADD_TO_EXISTING=false bash scripts/provision-tenant.sh apply >/dev/null)
@@ -90,7 +102,7 @@ echo "smoke: signing in through a real browser"
 echo "smoke: Auth parity checks (ADR 0010 §3a: ES256/JWKS, session_id, TOTP MFA → aal2)"
 PARITY_EMAIL="parity-$(date +%s)@sovereign.example"
 PARITY_PASSWORD="Parity-$(openssl rand -hex 16)"
-NEW_USER_PASSWORD="$PARITY_PASSWORD" node create-user.mjs "$PARITY_EMAIL" >/dev/null
+create_user "$PARITY_EMAIL" "$PARITY_PASSWORD" >/dev/null
 PARITY_EMAIL="$PARITY_EMAIL" PARITY_PASSWORD="$PARITY_PASSWORD" node check-auth-parity.mjs
 
 echo "smoke: checking the audit trail, revoked sessions and TLS"
@@ -142,7 +154,7 @@ done
 echo "smoke: users pages (T-M2-04) with sample people, in Arabic and English"
 MANAGER_EMAIL="manager-$(date +%s)@sovereign.example"
 MANAGER_PASSWORD="Manager-$(openssl rand -hex 16)"
-MANAGER_ID="$(NEW_USER_PASSWORD="$MANAGER_PASSWORD" node create-user.mjs "$MANAGER_EMAIL")"
+MANAGER_ID="$(create_user "$MANAGER_EMAIL" "$MANAGER_PASSWORD")"
 PGPASSWORD="$POSTGRES_PASSWORD" PGSSLMODE=verify-full PGSSLROOTCERT=.secrets/ca.crt \
   psql -h localhost -p 55432 -U postgres -d postgres -X -q -v ON_ERROR_STOP=1 -v admin_user="$USER_ID" \
   -v manager_user="$MANAGER_ID" -f seed-users.sql >/dev/null
@@ -322,7 +334,7 @@ auth_api() {
 json_field() { node -e 'try { process.stdout.write(String(JSON.parse(process.argv[1])[process.argv[2]] ?? "")); } catch {}' "$1" "$2"; }
 GUARD_EMAIL="guard-$STAMP@sovereign.example"
 GUARD_PASSWORD="Guard-$(openssl rand -hex 16)"
-GUARD_ID="$(NEW_USER_PASSWORD="$GUARD_PASSWORD" node create-user.mjs "$GUARD_EMAIL")"
+GUARD_ID="$(create_user "$GUARD_EMAIL" "$GUARD_PASSWORD")"
 response="$(auth_api POST '/token?grant_type=password' '' "{\"email\":\"$GUARD_EMAIL\",\"password\":\"$GUARD_PASSWORD\"}")"
 [[ "${response##*$'\n'}" == "200" ]] || { echo "smoke: the guard test user could not sign in" >&2; exit 1; }
 GUARD_TOKEN="$(json_field "${response%$'\n'*}" access_token)"
@@ -384,7 +396,7 @@ echo "smoke: password reset (T-M2-08, T-M2-17) — forgot page, our e-mail, new 
 RESET_EMAIL="reset-$STAMP@sovereign.example"
 RESET_OLD_PASSWORD="Reset-$(openssl rand -hex 16)"
 RESET_NEW_PASSWORD="Reset-$(openssl rand -hex 16)"
-RESET_ID="$(NEW_USER_PASSWORD="$RESET_OLD_PASSWORD" node create-user.mjs "$RESET_EMAIL")"
+RESET_ID="$(create_user "$RESET_EMAIL" "$RESET_OLD_PASSWORD")"
 # The account must belong to an organization (the e-mail is sent in its language and brand); a person
 # without membership gets none.
 [[ "$(q "with p as (insert into platform.persons (tenant_id, display_name_ar, display_name_en, email)
@@ -393,19 +405,55 @@ RESET_ID="$(NEW_USER_PASSWORD="$RESET_OLD_PASSWORD" node create-user.mjs "$RESET
           m as (insert into platform.tenant_memberships (tenant_id, user_id, person_id, status)
             select tenant_id, '$RESET_ID', id, 'active' from p returning 1)
         select count(*) from m")" == "1" ]] || { echo "smoke: could not add the reset test user to the organization" >&2; exit 1; }
-# Auth's admin generate_link (GoTrue v2.197.0) as the worker uses it, with the worker's key: an unknown
-# address is refused with 404 and creates no user; Auth itself sends nothing (it has no mail relay), and
-# its public endpoints that would issue recovery tokens are closed at the gateway.
-admin_link() {
-  curl -s -o /dev/null -w '%{http_code}' --cacert .secrets/ca.crt -X POST -H 'Content-Type: application/json' \
-    -H "$AUTH_APIKEY_HEADER" -H "Authorization: Bearer $(secret WORKER_AUTH_ADMIN_TOKEN)" \
-    --data-binary "{\"type\":\"recovery\",\"email\":\"$1\"}" https://localhost:8443/auth/v1/admin/generate_link
+# Auth's admin API (security review T-M2-17). From INSIDE a worker, with its own key and URL (gateway port
+# 8444, network auth-admin): generate_link (GoTrue v2.197.0) answers — an unknown address gets Auth's 404
+# user_not_found and creates no user — and nothing else is served (no listing, creating or changing users).
+# worker_admin <method> <path> [JSON body] → "<HTTP status> <Auth error_code or ->"; never the body.
+worker_admin() {
+  compose exec -T --index 1 worker /nodejs/bin/node -e '
+    const [method, path, body] = process.argv.slice(1);
+    const key = process.env.SUPABASE_SECRET_KEY;
+    fetch(`${process.env.SUPABASE_URL}/auth/v1${path}`, { method, body: method === "GET" ? undefined : body || undefined,
+      headers: { "content-type": "application/json", apikey: key, authorization: `Bearer ${key}` } })
+      .then(async (r) => { let code = "-"; try { code = (await r.json()).error_code ?? "-"; } catch {}
+        process.stdout.write(`${r.status} ${code}`); }, () => process.stdout.write("000 -"));' "$1" "$2" "${3:-}"
 }
 users_before="$(q "select count(*) from auth.users")"
-[[ "$(admin_link "nobody-$STAMP@sovereign.example")" == "404" ]] ||
-  { echo "smoke: generate_link for an unknown address must answer 404" >&2; exit 1; }
+[[ "$(worker_admin POST /admin/generate_link "{\"type\":\"recovery\",\"email\":\"nobody-$STAMP@sovereign.example\"}")" == "404 user_not_found" ]] ||
+  { echo "smoke: the worker's generate_link for an unknown address must get Auth's 404 user_not_found" >&2; exit 1; }
+for call in "GET /admin/users" "POST /admin/users" "GET /admin/users/$RESET_ID" "PUT /admin/users/$RESET_ID" \
+  "DELETE /admin/users/$RESET_ID" "POST /invite" "GET /health"; do
+  # shellcheck disable=SC2086 # method and path, split on purpose
+  answer="$(worker_admin $call "{\"email\":\"worker-$STAMP@sovereign.example\",\"password\":\"Worker-$STAMP-not-used\"}")"
+  [[ "$answer" == "403 -" || "$answer" == "404 -" ]] ||
+    { echo "smoke: the gateway must refuse the worker's $call on the admin port (got $answer)" >&2; exit 1; }
+done
 [[ "$(q "select count(*) from auth.users")" == "$users_before" ]] ||
-  { echo "smoke: generate_link (recovery) created an Auth user" >&2; exit 1; }
+  { echo "smoke: the worker's admin calls created an Auth user" >&2; exit 1; }
+# The published port 8443 serves no admin path — not even with a valid admin key (the worker's) — and the
+# admin port 8444 is not published; the app (network edge) is refused there.
+for call in "POST /admin/generate_link" "GET /admin/users" "POST /admin/users" "POST /invite"; do
+  code="$(curl -s -o /dev/null -w '%{http_code}' --cacert .secrets/ca.crt -X "${call%% *}" \
+    -H 'Content-Type: application/json' -H "$AUTH_APIKEY_HEADER" -H "Authorization: Bearer $(secret WORKER_AUTH_ADMIN_TOKEN)" \
+    --data-binary "{\"type\":\"recovery\",\"email\":\"$RESET_EMAIL\"}" "https://localhost:8443/auth/v1${call#* }")"
+  [[ "$code" == "404" ]] || { echo "smoke: the published gateway port must refuse $call (got $code)" >&2; exit 1; }
+done
+code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 --cacert .secrets/ca.crt -X POST \
+  https://localhost:8444/auth/v1/admin/generate_link || true)"
+[[ "$code" == "000" ]] || { echo "smoke: the gateway's admin port must not be published (got $code)" >&2; exit 1; }
+code="$(compose exec -T app /nodejs/bin/node -e \
+  'fetch(process.argv[1], { method: "POST" }).then((r) => process.stdout.write(String(r.status)), () => process.stdout.write("000"))' \
+  https://gateway:8444/auth/v1/admin/generate_link)"
+[[ "$code" == "403" ]] || { echo "smoke: the gateway's admin port must refuse the app (got $code)" >&2; exit 1; }
+# Nor does the host reach it through a bridge: every gateway address refuses (403) or does not answer.
+for address in $($DOCKER inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' "$(compose ps -q gateway)"); do
+  code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 --cacert .secrets/ca.crt --resolve "gateway:8444:$address" \
+    -X POST https://gateway:8444/auth/v1/admin/generate_link || true)"
+  [[ "$code" == "403" || "$code" == "000" ]] ||
+    { echo "smoke: the host reached the gateway's admin port at $address (got $code)" >&2; exit 1; }
+done
+# Auth itself sends nothing (it has no mail relay), and its public endpoints that would issue recovery
+# tokens are closed at the gateway.
 for path in /recover /otp /magiclink /resend; do
   code="$(curl -s -o /dev/null -w '%{http_code}' --cacert .secrets/ca.crt -X POST -H 'Content-Type: application/json' \
     -H "$AUTH_APIKEY_HEADER" --data-binary "{\"email\":\"$RESET_EMAIL\"}" "https://localhost:8443/auth/v1$path")"

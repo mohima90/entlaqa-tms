@@ -82,4 +82,44 @@ describe('Auth e-mail templates (T-M2-08)', () => {
       expect(gateway).toContain(`location ^~ /auth/v1/${path} { return 404; }`);
     }
   });
+
+  it("the self-hosted stack: Auth's admin API only on the internal admin port, one call per network (T-M2-17 review)", () => {
+    const gateway = read('infra/docker/gateway/nginx.conf');
+    const compose = read('infra/docker/compose.yaml');
+    // The published port (8443) serves no admin path, not even with a valid admin key.
+    for (const path of ['admin', 'invite']) {
+      expect(gateway).toContain(`location ^~ /auth/v1/${path} { return 404; }`);
+    }
+    // Port 8444: generate_link for the workers' subnet, user creation for admin-cli's — nothing else.
+    const admin = gateway.slice(
+      gateway.indexOf('listen 8444 ssl;'),
+      gateway.indexOf('listen 8100 ssl;'),
+    );
+    expect([...admin.matchAll(/proxy_pass (\S+);/g)].map((m) => m[1])).toEqual([
+      'http://auth:9999/admin/generate_link',
+      'http://auth:9999/admin/users',
+    ]);
+    expect(admin).toMatch(
+      /location = \/auth\/v1\/admin\/generate_link \{\n\s+deny 10\.231\.0\.1;\n\s+allow 10\.231\.0\.0\/28;\n\s+deny all;\n\s+limit_except POST \{ deny all; \}/,
+    );
+    expect(admin).toMatch(
+      /location = \/auth\/v1\/admin\/users \{\n\s+deny 10\.231\.0\.17;\n\s+allow 10\.231\.0\.16\/28;\n\s+deny all;\n\s+limit_except POST \{ deny all; \}/,
+    );
+    expect(admin).toContain('location / { return 404; }');
+    // The same subnets in compose; the admin port is never published; who sits on which network.
+    expect(compose).toContain('- { subnet: 10.231.0.0/28, gateway: 10.231.0.1 }');
+    expect(compose).toContain('- { subnet: 10.231.0.16/28, gateway: 10.231.0.17 }');
+    expect(compose).not.toMatch(/^\s+- ['"]?[\d.:]*8444(:\d+)?['"]?\s*(#.*)?$/m);
+    expect(compose).toContain('SUPABASE_URL: https://gateway:8444');
+    expect(compose).toContain('AUTH_URL: https://gateway:8444/auth/v1');
+    expect(
+      [...compose.matchAll(/^ {4}networks: \[(.*\bauth-(?:admin|tools)\b.*)\]$/gm)].map(
+        (m) => m[1],
+      ),
+    ).toEqual([
+      'auth-internal, auth-admin, auth-tools, edge, errors', // gateway
+      'db-app, mail, auth-admin', // workers
+      'auth-tools', // admin-cli
+    ]);
+  });
 });

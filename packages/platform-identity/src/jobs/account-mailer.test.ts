@@ -153,6 +153,42 @@ describe('account mailer (T-M2-17): reset e-mail and "password changed" notice',
     expect(JSON.stringify(log.mock.calls)).not.toMatch(/raya\.example|sample0token/);
   });
 
+  it('reset: Auth issues the token LAST — after organization, person and cap were checked, right before queueing (security review)', async () => {
+    queue(send());
+    const order: string[] = [];
+    db.tenantIsServed.mockImplementation(() => {
+      order.push('tenantIsServed');
+      return Promise.resolve(true);
+    });
+    db.loadAccountMailContext.mockImplementation(() => {
+      order.push('loadAccountMailContext');
+      return Promise.resolve({
+        organizationName: { ar: 'شركة الراية', en: 'Al Raya' },
+        recipientName: { ar: 'سارة', en: 'Sara' },
+        recentCount: ACCOUNT_MAIL_HOURLY_CAP - 1,
+      });
+    });
+    mail.queueEmail.mockImplementation(() => {
+      order.push('queueEmail');
+      return Promise.resolve('delivery-1');
+    });
+    const { task, issue } = setup();
+    issue.mockImplementation(() => {
+      order.push('issue');
+      return Promise.resolve({ status: 'issued', hashedToken: HASH });
+    });
+    await task.run({ jobId: 'j' });
+    // Checked before the token exists, and again in the transaction that queues the e-mail.
+    expect(order).toEqual([
+      'tenantIsServed',
+      'loadAccountMailContext',
+      'issue',
+      'tenantIsServed',
+      'loadAccountMailContext',
+      'queueEmail',
+    ]);
+  });
+
   it('the organization and the language are the ones the database chose (several organizations)', async () => {
     const other = '0e517062-8f91-4203-8ebf-3a4b5c6d7e8f';
     queue(send({ tenantId: other, locale: 'ar' }));
@@ -273,11 +309,13 @@ describe('account mailer (T-M2-17): reset e-mail and "password changed" notice',
     expect(db.retryAccountMailRequest).toHaveBeenCalledWith(platformTx, REQUEST);
   });
 
-  it('an organization suspended since the lease, or the hourly cap: answered without an e-mail', async () => {
+  it('an organization suspended since the lease, or the hourly cap: answered without an e-mail, and no new token', async () => {
     queue(send());
     db.tenantIsServed.mockResolvedValueOnce(false);
     const first = setup();
     await first.task.run({ jobId: 'j' });
+    // A new token would invalidate the person's last link although nothing is sent (security review).
+    expect(first.issue).not.toHaveBeenCalled();
     expect(mail.queueEmail).not.toHaveBeenCalled();
     expect(db.finishAccountMailRequest).toHaveBeenCalledWith(tenantTx, REQUEST);
     expect(first.log).toHaveBeenCalledWith(
@@ -293,11 +331,48 @@ describe('account mailer (T-M2-17): reset e-mail and "password changed" notice',
     });
     const second = setup();
     await second.task.run({ jobId: 'j' });
+    expect(second.issue).not.toHaveBeenCalled();
     expect(mail.queueEmail).not.toHaveBeenCalled();
+    expect(db.finishAccountMailRequest).toHaveBeenLastCalledWith(tenantTx, REQUEST);
     expect(second.log).toHaveBeenCalledWith(
       'info',
       'account e-mail not sent (hourly_cap) (password_reset)',
     );
+
+    // The person no longer visible in the organization: the same.
+    queue(send());
+    db.loadAccountMailContext.mockResolvedValueOnce(null);
+    const third = setup();
+    await third.task.run({ jobId: 'j' });
+    expect(third.issue).not.toHaveBeenCalled();
+    expect(mail.queueEmail).not.toHaveBeenCalled();
+  });
+
+  it('content the template would refuse: answered without an e-mail, and no new token', async () => {
+    queue(send());
+    db.loadAccountMailContext.mockResolvedValueOnce({
+      organizationName: { ar: 'شركة\u202Eالراية', en: null },
+      recipientName: { ar: 'سارة', en: null },
+      recentCount: 0,
+    });
+    const { task, issue, log } = setup();
+    await task.run({ jobId: 'j' });
+    expect(issue).not.toHaveBeenCalled();
+    expect(mail.queueEmail).not.toHaveBeenCalled();
+    expect(db.finishAccountMailRequest).toHaveBeenCalledWith(tenantTx, REQUEST);
+    expect(log).toHaveBeenCalledWith(
+      'info',
+      'account e-mail not sent (invalid_content) (password_reset)',
+    );
+  });
+
+  it('a failure of the check before the token is temporary: retried, and no new token', async () => {
+    queue(send());
+    db.tenantIsServed.mockRejectedValueOnce(Object.assign(new Error('db'), { code: '57P01' }));
+    const { task, issue } = setup();
+    await task.run({ jobId: 'j' });
+    expect(issue).not.toHaveBeenCalled();
+    expect(db.retryAccountMailRequest).toHaveBeenCalledWith(platformTx, REQUEST);
   });
 
   it('with e-mail switched off (no APP_BASE_URL) requests are answered without an e-mail', async () => {

@@ -10,8 +10,8 @@ import {
   tenantIsServed,
 } from '@jadarat/platform-db/jobs';
 import type { PlatformTask, WorkerLogLevel } from '@jadarat/platform-jobs/jobs';
-import { isSafeLink } from '@jadarat/platform-notifications';
-import { queueEmail } from '@jadarat/platform-notifications/jobs';
+import { isEmailAddress, isSafeLink, renderEmail } from '@jadarat/platform-notifications';
+import { type EmailRequest, queueEmail } from '@jadarat/platform-notifications/jobs';
 
 /** graphile-worker task of the account e-mails (a platform task: requests have no tenant yet). */
 export const ACCOUNT_MAIL_TASK = 'platform.account_mail';
@@ -67,6 +67,11 @@ function codeOf(error: unknown): string {
 }
 
 type Sendable = Extract<AccountMailRequest, { outcome: 'send' }>;
+type OrganizationName = { readonly ar: string; readonly en: string | null };
+type AccountEmail = EmailRequest<'platform.password_reset' | 'platform.password_changed'>;
+
+/** Stands in for the token while the reset e-mail's content is checked before a token exists. */
+const PLACEHOLDER_TOKEN_HASH = '0'.repeat(56);
 
 /**
  * Account e-mails (FR-NTF-02 as clarified in BRD v2.5, FR-IAM-13, FR-IAM-16; T-M2-17): the
@@ -75,7 +80,9 @@ type Sendable = Extract<AccountMailRequest, { outcome: 'send' }>;
  * requests (platform transaction: they have no tenant yet); the database says whom to write in which
  * organization and language, or why nothing is sent (unknown address, banned, a link issued less than a
  * minute ago, no active membership). A reset gets a new recovery token from the Auth admin API —
- * which sends nothing itself — and the link is built exactly as Auth's template built it:
+ * which sends nothing itself — as the LAST step before queueing, after the organization, the person, the
+ * hourly cap and the content were checked (a new token invalidates the previous link). The link is
+ * built exactly as Auth's template built it:
  * `{APP_BASE_URL}/{ar|en}/reset-password#token_hash=…&type=recovery` (the reset page and its completion
  * are unchanged). The e-mail is queued in the organization's delivery log in the same transaction that
  * removes the request; the existing sender sends it (its retries apply). A temporary failure (Auth, the
@@ -96,31 +103,43 @@ export function createAccountMailer(options: AccountMailerOptions): PlatformTask
     log('info', `account e-mail not sent (${request.kind}: ${reason})`);
   }
 
+  /**
+   * In the organization's transaction: may this e-mail go to this person now? The organization must
+   * still be served (active or trial) and the person visible, and the hourly cap must not be reached.
+   * When not, the request is answered — removed — in the same transaction and the reason returned.
+   */
+  async function admissible(
+    tx: SystemTx,
+    request: Sendable,
+  ): Promise<{ readonly organizationName: OrganizationName } | { readonly reason: string }> {
+    const template =
+      request.kind === 'password_reset' ? 'platform.password_reset' : 'platform.password_changed';
+    // A suspended or closed organization since the lease: its RLS shows nothing; nothing is sent.
+    const context = (await tenantIsServed(tx))
+      ? await loadAccountMailContext(tx, request.personId, template)
+      : null;
+    if (!context) {
+      await finishAccountMailRequest(tx, request.id);
+      return { reason: 'organization_unavailable' };
+    }
+    if (context.recentCount >= ACCOUNT_MAIL_HOURLY_CAP) {
+      await finishAccountMailRequest(tx, request.id);
+      return { reason: 'hourly_cap' };
+    }
+    return { organizationName: context.organizationName };
+  }
+
   /** Queues the e-mail in the organization and removes the request, in one transaction. */
   async function queueInTenant(
     jobId: string,
     request: Sendable,
-    variables: (organizationName: {
-      ar: string;
-      en: string | null;
-    }) => Parameters<typeof queueEmail>[1],
+    email: (organizationName: OrganizationName) => AccountEmail,
   ): Promise<string> {
     return withSystemTx({ tenantId: request.tenantId, jobId }, async (tx: SystemTx) => {
-      const template =
-        request.kind === 'password_reset' ? 'platform.password_reset' : 'platform.password_changed';
-      // A suspended or closed organization since the lease: its RLS shows nothing; nothing is sent.
-      const context = (await tenantIsServed(tx))
-        ? await loadAccountMailContext(tx, request.personId, template)
-        : null;
-      if (!context) {
-        await finishAccountMailRequest(tx, request.id);
-        return 'organization_unavailable';
-      }
-      if (context.recentCount >= ACCOUNT_MAIL_HOURLY_CAP) {
-        await finishAccountMailRequest(tx, request.id);
-        return 'hourly_cap';
-      }
-      await queueEmail(tx, variables(context.organizationName));
+      // Checked again: anything may have changed since the lease (or the check before the token).
+      const checked = await admissible(tx, request);
+      if ('reason' in checked) return checked.reason;
+      await queueEmail(tx, email(checked.organizationName));
       await finishAccountMailRequest(tx, request.id);
       return 'queued';
     });
@@ -147,29 +166,50 @@ export function createAccountMailer(options: AccountMailerOptions): PlatformTask
         temporary: true,
       });
     }
+    // In the URL FRAGMENT, as before (T-M2-08): never sent to the server with the page request.
+    const resetEmail =
+      (hashedToken: string) =>
+      (organizationName: OrganizationName): EmailRequest<'platform.password_reset'> => ({
+        template: 'platform.password_reset',
+        locale: request.locale,
+        to: request.email,
+        recipientPersonId: request.personId,
+        variables: {
+          organizationName,
+          resetUrl: {
+            ar: `${appBase}/ar/reset-password#token_hash=${hashedToken}&type=recovery`,
+            en: `${appBase}/en/reset-password#token_hash=${hashedToken}&type=recovery`,
+          },
+          validMinutes: RESET_LINK_VALID_MINUTES,
+          loginEmail: request.email,
+        },
+      });
+    // A new token REPLACES the account's previous one: the link the person may have just received stops
+    // working. So everything that could still stop this e-mail is checked first — organization, person,
+    // hourly cap, the content itself — and Auth is asked last, right before queueing (security review
+    // T-M2-17: otherwise capped or unsendable requests would keep invalidating the person's links).
+    const refused = await withSystemTx({ tenantId: request.tenantId, jobId }, async (tx) => {
+      const checked = await admissible(tx, request);
+      if ('reason' in checked) return checked.reason;
+      const draft = resetEmail(PLACEHOLDER_TOKEN_HASH)(checked.organizationName);
+      let valid = isEmailAddress(draft.to);
+      try {
+        renderEmail('platform.password_reset', draft.locale, draft.variables);
+      } catch {
+        valid = false;
+      }
+      if (valid) return null;
+      await finishAccountMailRequest(tx, request.id);
+      return 'invalid_content';
+    });
+    if (refused) return refused;
     const link = await recoveryLinks.issue(request.email);
     if (link.status === 'unknown_account') {
       // The account went away since the lease (Auth looked it up again): nothing to send.
       await withPlatformTx({ jobId }, (tx) => finishAccountMailRequest(tx, request.id));
       return 'unknown_account';
     }
-    // In the URL FRAGMENT, as before (T-M2-08): never sent to the server with the page request.
-    const fragment = `#token_hash=${link.hashedToken}&type=recovery`;
-    return queueInTenant(jobId, request, (organizationName) => ({
-      template: 'platform.password_reset',
-      locale: request.locale,
-      to: request.email,
-      recipientPersonId: request.personId,
-      variables: {
-        organizationName,
-        resetUrl: {
-          ar: `${appBase}/ar/reset-password${fragment}`,
-          en: `${appBase}/en/reset-password${fragment}`,
-        },
-        validMinutes: RESET_LINK_VALID_MINUTES,
-        loginEmail: request.email,
-      },
-    }));
+    return queueInTenant(jobId, request, resetEmail(link.hashedToken));
   }
 
   async function answer(jobId: string, request: AccountMailRequest): Promise<void> {

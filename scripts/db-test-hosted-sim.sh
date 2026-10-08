@@ -84,7 +84,7 @@ grant select on auth.sessions to $MIGRATOR;
 grant select (id, email) on auth.users to $MIGRATOR;
 -- private.auth_account (account e-mails, T-M2-17). The observed ACL (postgres=ar*… below) gives postgres
 -- SELECT on every column of auth.users; only the columns the view reads are simulated.
-grant select (banned_until, recovery_sent_at, is_sso_user, deleted_at) on auth.users to $MIGRATOR;
+grant select (banned_until, recovery_sent_at, recovery_token, is_sso_user, deleted_at) on auth.users to $MIGRATOR;
 grant references on auth.sessions, auth.users to $MIGRATOR;
 -- TRIGGER on auth.users: the e-mail change guard of migration 20261009090000 (re-review N1). Assumption,
 -- from Supabase's own image (supabase/postgres 17.11.0.003, the version staging runs): auth.users ACL

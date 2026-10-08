@@ -113,12 +113,17 @@ create trigger account_mail_requests_notify after insert on private.account_mail
 -- ---------------------------------------------------------------------------------------------------
 -- Auth accounts for account_mail_guard (pattern of private.auth_session_validity, ADR 0002 §6a rev. 2)
 -- ---------------------------------------------------------------------------------------------------
+-- recovery_pending: a recovery token is waiting to be used (Auth's generate_link sets recovery_token; Auth
+-- clears it when the link is verified — GoTrue v2.197.0 User.Recover — and on every password change). Only
+-- this yes/no leaves auth.users, never the token hash itself.
 create or replace view private.auth_account
 with (security_barrier = true)  -- defensive only: the view has no WHERE clause
-as select u.id, u.email, u.banned_until, u.recovery_sent_at, u.is_sso_user, u.deleted_at from auth.users u;
+as select u.id, u.email, u.banned_until, u.recovery_sent_at, coalesce(u.recovery_token, '') <> '' as recovery_pending,
+          u.is_sso_user, u.deleted_at
+   from auth.users u;
 
 comment on view private.auth_account is
-  'SECURITY-RELEVANT (T-M2-17): auth.users (id, email, banned_until, recovery_sent_at, is_sso_user, deleted_at) for account_mail_guard only. Owned by the migration role.';
+  'SECURITY-RELEVANT (T-M2-17): auth.users (id, email, banned_until, recovery_sent_at, recovery_pending — whether a recovery token waits, never the token —, is_sso_user, deleted_at) for account_mail_guard only. Owned by the migration role.';
 
 revoke all on private.auth_account from public;
 grant select on private.auth_account to account_mail_guard;
@@ -128,7 +133,8 @@ declare
   v_owner name := (select pg_get_userbyid(relowner) from pg_class where oid = 'private.auth_account'::regclass);
   v_column text;
 begin
-  foreach v_column in array array['id', 'email', 'banned_until', 'recovery_sent_at', 'is_sso_user', 'deleted_at'] loop
+  foreach v_column in array array['id', 'email', 'banned_until', 'recovery_sent_at', 'recovery_token', 'is_sso_user',
+                                   'deleted_at'] loop
     if not (has_schema_privilege(v_owner, 'auth', 'usage') and has_column_privilege(v_owner, 'auth.users', v_column, 'select')) then
       raise exception 'role % (owner of private.auth_account) cannot read auth.users (%)', v_owner, v_column;
     end if;
@@ -206,8 +212,11 @@ comment on function private.request_password_reset_mail(text) is
 --     to which the worker sent OUR reset e-mail (platform.password_reset) within the last 65 minutes: in
 --     worker mode a completed reset always follows one — the link exists only in that e-mail and lives
 --     60 minutes; 5 more for the completion itself. So a stolen app_server credential cannot send branded
---     notices to arbitrary accounts (security review). Auth's recovery_sent_at cannot serve: Auth clears
---     it when the password changes (GoTrue v2.197.0 User.UpdatePassword), before this call;
+--     notices to arbitrary accounts (security review). And that link must have been USED: no recovery
+--     token may still wait (private.auth_account.recovery_pending) — otherwise anyone could trigger our
+--     reset e-mail on the public forgot page and then, with a stolen credential, the notice (security
+--     re-verification). Auth's recovery_sent_at cannot serve: Auth clears it when the password changes
+--     (GoTrue v2.197.0 User.UpdatePassword), before this call;
 --   * after a My profile change (FR-IAM-16): with the signed-in user's own claims — p_user_id must be
 --     that user, and the session's organization is recorded for the notice.
 create or replace function private.request_password_changed_mail(p_user_id uuid)
@@ -231,8 +240,9 @@ begin
                     join platform.message_deliveries d
                       on d.tenant_id = m.tenant_id and d.recipient_person_id = m.person_id
                     where m.user_id = p_user_id and d.template = 'platform.password_reset'
-                      and d.created_at > now() - interval '65 minutes') then
-    return;  -- no reset e-mail of ours within 65 minutes: not after a reset
+                      and d.created_at > now() - interval '65 minutes')
+        or exists (select 1 from private.auth_account a where a.id = p_user_id and a.recovery_pending) then
+    return;  -- no reset e-mail of ours within 65 minutes, or its link was not used: not after a reset
   end if;
   if not exists (select 1 from private.auth_account a where a.id = p_user_id)
      or (select count(*) from (select 1 from private.account_mail_requests limit 10000) w) >= 10000

@@ -46,6 +46,7 @@ alter table auth.users
   -- Read by the account e-mail worker functions (T-M2-17, private.auth_account).
   add column if not exists banned_until timestamptz,
   add column if not exists recovery_sent_at timestamptz,
+  add column if not exists recovery_token character varying(255),
   add column if not exists is_sso_user boolean not null default false,
   add column if not exists deleted_at timestamptz;
 

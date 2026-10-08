@@ -437,6 +437,7 @@ end $$;
 do $$
 declare
   v_list text;
+  v_column text;
 begin
   perform tests.assert(not (select rolbypassrls or rolcanlogin or rolsuper or rolinherit or rolcreaterole or rolcreatedb
                             from pg_roles where rolname = 'account_mail_guard'),
@@ -462,6 +463,29 @@ begin
   perform tests.assert(not has_table_privilege('account_mail_guard', 'auth.users', 'select')
                        and has_table_privilege('account_mail_guard', 'private.auth_account', 'select'),
     'account_mail_guard reads auth.users only through the view');
+  select string_agg(a.attname, ', ' order by a.attnum) into v_list
+  from pg_attribute a where a.attrelid = 'private.auth_account'::regclass and a.attnum > 0 and not a.attisdropped;
+  perform tests.assert_eq(v_list, 'id, email, banned_until, recovery_sent_at, recovery_pending, is_sso_user, deleted_at',
+    'private.auth_account: whether a recovery token waits, never the token itself');
+  -- Our deliveries (security re-verification): which person got which template when — SELECT on exactly
+  -- (tenant_id, recipient_person_id, template, created_at); never the address or the content (html_body
+  -- holds live reset links while queued), no table-level SELECT, no writes.
+  select string_agg(a.attname, ', ' order by a.attname::text collate "C") into v_list
+  from pg_attribute a
+  where a.attrelid = 'platform.message_deliveries'::regclass and a.attnum > 0 and not a.attisdropped
+    and has_column_privilege('account_mail_guard', a.attrelid, a.attnum, 'select');
+  perform tests.assert_eq(v_list, 'created_at, recipient_person_id, template, tenant_id',
+    'account_mail_guard reads exactly four columns of platform.message_deliveries');
+  foreach v_column in array array['destination', 'subject', 'html_body', 'text_body'] loop
+    perform tests.assert(
+      not has_column_privilege('account_mail_guard', 'platform.message_deliveries', v_column, 'select, insert, update, references'),
+      format('account_mail_guard must have no privilege on platform.message_deliveries.%s', v_column));
+  end loop;
+  perform tests.assert(
+    not has_table_privilege('account_mail_guard', 'platform.message_deliveries',
+                            'select, insert, update, delete, truncate, references, trigger')
+      and not has_any_column_privilege('account_mail_guard', 'platform.message_deliveries', 'insert, update, references'),
+    'account_mail_guard: no table-level SELECT and no write on platform.message_deliveries');
   -- The queue and the view: no privilege for any application role (only through the functions).
   perform tests.assert((select relrowsecurity and relforcerowsecurity from pg_class
                         where oid = 'private.account_mail_requests'::regclass),

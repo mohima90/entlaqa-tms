@@ -292,8 +292,39 @@ begin
     if not (has_schema_privilege(v_role, 'auth', 'usage')
             and has_column_privilege(v_role, 'auth.users', 'email', 'select')
             and has_column_privilege(v_role, 'auth.users', 'banned_until', 'select')
-            and has_column_privilege(v_role, 'auth.users', 'recovery_sent_at', 'select')) then
+            and has_column_privilege(v_role, 'auth.users', 'recovery_sent_at', 'select')
+            and has_column_privilege(v_role, 'auth.users', 'recovery_token', 'select')) then
       failures := failures || format('%s (owner of private.auth_account) must read auth.users', v_role);
+    end if;
+    -- Exactly these columns: whether a recovery token waits, never the token itself.
+    if (select string_agg(a.attname, ',' order by a.attnum) from pg_attribute a
+        where a.attrelid = 'private.auth_account'::regclass and a.attnum > 0 and not a.attisdropped)
+       <> 'id,email,banned_until,recovery_sent_at,recovery_pending,is_sso_user,deleted_at' then
+      failures := failures || 'private.auth_account must expose exactly id, email, banned_until, recovery_sent_at, recovery_pending, is_sso_user, deleted_at'::text;
+    end if;
+  end if;
+  -- account_mail_guard on our deliveries (security re-verification): SELECT on exactly (tenant_id,
+  -- recipient_person_id, template, created_at) — never the address or the content (html_body holds live
+  -- reset links while queued) — and no table-level SELECT, no writes.
+  if to_regclass('platform.message_deliveries') is not null
+     and exists (select 1 from pg_roles where rolname = 'account_mail_guard') then
+    if (select coalesce(string_agg(a.attname, ',' order by a.attname::text collate "C"), '')
+        from pg_attribute a
+        where a.attrelid = 'platform.message_deliveries'::regclass and a.attnum > 0 and not a.attisdropped
+          and has_column_privilege('account_mail_guard', a.attrelid, a.attnum, 'select'))
+       <> 'created_at,recipient_person_id,template,tenant_id' then
+      failures := failures || 'account_mail_guard must read exactly (tenant_id, recipient_person_id, template, created_at) of platform.message_deliveries'::text;
+    end if;
+    for r in
+      select c.col from unnest(array['destination', 'subject', 'html_body', 'text_body']) as c(col)
+      where has_column_privilege('account_mail_guard', 'platform.message_deliveries', c.col, 'select, insert, update, references')
+    loop
+      failures := failures || format('account_mail_guard must have no privilege on platform.message_deliveries.%s', r.col);
+    end loop;
+    if has_table_privilege('account_mail_guard', 'platform.message_deliveries',
+                           'select, insert, update, delete, truncate, references, trigger')
+       or has_any_column_privilege('account_mail_guard', 'platform.message_deliveries', 'insert, update, references') then
+      failures := failures || 'account_mail_guard must have no table-level SELECT and no write on platform.message_deliveries'::text;
     end if;
   end if;
 

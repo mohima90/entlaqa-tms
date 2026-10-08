@@ -139,5 +139,9 @@ begin; set local role authenticated; select tests.set_claims(null);
 select private.request_password_changed_mail('e7000000-0000-4000-8000-000000000001'); commit;  -- an invitation only
 begin; set local role authenticated; select tests.set_claims(null);
 select private.request_password_changed_mail('e7000000-0000-4000-8000-000000000006'); commit;  -- 2 hours ago
+-- Our reset e-mail went out 5 minutes ago, but its link was never used (a recovery token still waits):
+-- triggering a reset on the public forgot page is not enough for a notice (security re-verification).
+begin; set local role authenticated; select tests.set_claims(null);
+select private.request_password_changed_mail('e7000000-0000-4000-8000-000000000007'); commit;
 
 \echo '55_account_mail_app_server: ok'

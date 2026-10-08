@@ -3,8 +3,9 @@
 -- "password changed" e-mail goes to one organization, several, none, or nowhere at all. Committed (the
 -- request path 55 and the worker 56 run as other login roles); 61 empties the queue again.
 -- A "password changed" notice WITHOUT claims (after a reset) needs OUR reset e-mail (a platform.password_reset
--- delivery) to the account within 65 minutes: uR3 yes (10 minutes ago, in B), uR5 yes (a minute ago), uR1 no
--- (only an invitation e-mail, and a recovery token from Auth alone does not count), uR6 no (two hours ago).
+-- delivery) to the account within 65 minutes AND its link used (no recovery token waiting): uR3 yes (10 minutes
+-- ago, in B), uR5 yes (a minute ago), uR1 no (only an invitation e-mail, and a recovery token from Auth alone
+-- does not count), uR6 no (two hours ago), uR7 no (5 minutes ago, but the link was never used).
 --   uR1  reset1@a.test   active in A only (Arabic)                                → A, ar
 --   uR2  multi@ab.test   active in A (older) and B (newer); its most recent sign-in session selected B,
 --                        an older one A; English in B                              → B, en (session A for
@@ -13,16 +14,19 @@
 --   uR4  banned@a.test   active in A, banned in Auth                              → nothing (banned)
 --   uR5  soon@a.test     active in A, a reset link issued seconds ago             → nothing on a first try
 --   uR6  invited@a.test  only an invited membership in A                          → nothing (no membership)
+--   uR7  pending@a.test  active in A, our reset e-mail 5 minutes ago, its link not used
 --   uC (uc@c.test, 00_helpers): active in suspended tenant C only                 → nothing (no membership)
 \set ON_ERROR_STOP on
 
-insert into auth.users (id, email, banned_until, recovery_sent_at) values
-  ('e7000000-0000-4000-8000-000000000001', 'reset1@a.test', null, now() - interval '5 minutes'),
-  ('e7000000-0000-4000-8000-000000000002', 'multi@ab.test', null, null),
-  ('e7000000-0000-4000-8000-000000000003', 'oldest@bd.test', null, null),
-  ('e7000000-0000-4000-8000-000000000004', 'banned@a.test', now() + interval '1 day', null),
-  ('e7000000-0000-4000-8000-000000000005', 'soon@a.test', null, now()),
-  ('e7000000-0000-4000-8000-000000000006', 'invited@a.test', null, null);
+-- recovery_token as Auth leaves it: '' once used (uR3, uR5), NULL never issued, a hash while waiting (uR1, uR7).
+insert into auth.users (id, email, banned_until, recovery_sent_at, recovery_token) values
+  ('e7000000-0000-4000-8000-000000000001', 'reset1@a.test', null, now() - interval '5 minutes', rpad('sample0token0hash', 56, '0')),
+  ('e7000000-0000-4000-8000-000000000002', 'multi@ab.test', null, null, null),
+  ('e7000000-0000-4000-8000-000000000003', 'oldest@bd.test', null, null, ''),
+  ('e7000000-0000-4000-8000-000000000004', 'banned@a.test', now() + interval '1 day', null, null),
+  ('e7000000-0000-4000-8000-000000000005', 'soon@a.test', null, now(), ''),
+  ('e7000000-0000-4000-8000-000000000006', 'invited@a.test', null, null, ''),
+  ('e7000000-0000-4000-8000-000000000007', 'pending@a.test', null, now() - interval '5 minutes', rpad('sample1token1hash', 56, '1'));
 
 insert into platform.persons (id, tenant_id, display_name_ar, email, preferred_locale) values
   ('e7100000-0000-4000-8000-0000000001a1', 'a0000000-0000-4000-8000-000000000001', 'مستخدم إعادة', 'reset1@a.test', 'ar'),
@@ -32,7 +36,8 @@ insert into platform.persons (id, tenant_id, display_name_ar, email, preferred_l
   ('e7100000-0000-4000-8000-0000000003d1', 'd0000000-0000-4000-8000-000000000001', 'أقدم د', 'oldest@bd.test', 'en'),
   ('e7100000-0000-4000-8000-0000000004a1', 'a0000000-0000-4000-8000-000000000001', 'محظور', 'banned@a.test', 'ar'),
   ('e7100000-0000-4000-8000-0000000005a1', 'a0000000-0000-4000-8000-000000000001', 'قريب', 'soon@a.test', 'ar'),
-  ('e7100000-0000-4000-8000-0000000006a1', 'a0000000-0000-4000-8000-000000000001', 'مدعو فقط', 'invited@a.test', 'ar');
+  ('e7100000-0000-4000-8000-0000000006a1', 'a0000000-0000-4000-8000-000000000001', 'مدعو فقط', 'invited@a.test', 'ar'),
+  ('e7100000-0000-4000-8000-0000000007a1', 'a0000000-0000-4000-8000-000000000001', 'رابط غير مستخدم', 'pending@a.test', 'ar');
 
 insert into platform.tenant_memberships (tenant_id, user_id, person_id, status, created_at) values
   ('a0000000-0000-4000-8000-000000000001', 'e7000000-0000-4000-8000-000000000001', 'e7100000-0000-4000-8000-0000000001a1', 'active', now() - interval '5 days'),
@@ -42,7 +47,8 @@ insert into platform.tenant_memberships (tenant_id, user_id, person_id, status, 
   ('d0000000-0000-4000-8000-000000000001', 'e7000000-0000-4000-8000-000000000003', 'e7100000-0000-4000-8000-0000000003d1', 'active', now() - interval '1 day'),
   ('a0000000-0000-4000-8000-000000000001', 'e7000000-0000-4000-8000-000000000004', 'e7100000-0000-4000-8000-0000000004a1', 'active', now() - interval '1 day'),
   ('a0000000-0000-4000-8000-000000000001', 'e7000000-0000-4000-8000-000000000005', 'e7100000-0000-4000-8000-0000000005a1', 'active', now() - interval '1 day'),
-  ('a0000000-0000-4000-8000-000000000001', 'e7000000-0000-4000-8000-000000000006', 'e7100000-0000-4000-8000-0000000006a1', 'invited', now() - interval '1 day');
+  ('a0000000-0000-4000-8000-000000000001', 'e7000000-0000-4000-8000-000000000006', 'e7100000-0000-4000-8000-0000000006a1', 'invited', now() - interval '1 day'),
+  ('a0000000-0000-4000-8000-000000000001', 'e7000000-0000-4000-8000-000000000007', 'e7100000-0000-4000-8000-0000000007a1', 'active', now() - interval '1 day');
 
 -- uR2's sign-in sessions: an older one in A, the most recent in B.
 insert into auth.sessions (id, user_id, not_after) values
@@ -65,7 +71,9 @@ insert into platform.message_deliveries (id, tenant_id, template, template_versi
   ('e7300000-0000-4000-8000-0000000005a1', 'a0000000-0000-4000-8000-000000000001', 'platform.password_reset', 1, 'ar',
     'e7100000-0000-4000-8000-0000000005a1', 's***@a.test', 'sent', 'smtp', now() - interval '1 minute', now() - interval '1 minute'),
   ('e7300000-0000-4000-8000-0000000006a1', 'a0000000-0000-4000-8000-000000000001', 'platform.password_reset', 1, 'ar',
-    'e7100000-0000-4000-8000-0000000006a1', 'i***@a.test', 'sent', 'smtp', now() - interval '2 hours', now() - interval '2 hours');
+    'e7100000-0000-4000-8000-0000000006a1', 'i***@a.test', 'sent', 'smtp', now() - interval '2 hours', now() - interval '2 hours'),
+  ('e7300000-0000-4000-8000-0000000007a1', 'a0000000-0000-4000-8000-000000000001', 'platform.password_reset', 1, 'ar',
+    'e7100000-0000-4000-8000-0000000007a1', 'p***@a.test', 'sent', 'smtp', now() - interval '5 minutes', now() - interval '5 minutes');
 alter table platform.message_deliveries enable trigger message_deliveries_check;
 commit;
 

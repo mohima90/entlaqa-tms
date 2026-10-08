@@ -34,6 +34,22 @@ describe('worker platform tasks (T-M2-17)', () => {
     expect(recoveryLinksFor).not.toHaveBeenCalled();
   });
 
+  it("runs the Auth admin key's expiry check before every account-mail pass (it rate-limits itself)", async () => {
+    db.claimAccountMailRequest.mockResolvedValue(null);
+    const adminKeyCheck = vi.fn();
+    const [task] = platformTasks({
+      ...deps,
+      authAdmin: { url: 'https://ref.supabase.co', secretKey: 'sb_secret_sample_only' },
+      recoveryLinksFor: () => ({ issue: vi.fn() }),
+      adminKeyCheck,
+    });
+    expect(task?.name).toBe('platform.account_mail');
+    await expect(task?.run({ jobId: '1' })).resolves.toBe(false);
+    await expect(task?.run({ jobId: '2' })).resolves.toBe(false);
+    expect(adminKeyCheck).toHaveBeenCalledTimes(2);
+    expect(db.claimAccountMailRequest).toHaveBeenCalledTimes(2);
+  });
+
   it('builds the real Auth admin client by default (no network until a link is asked for)', () => {
     const [task] = platformTasks({
       ...deps,

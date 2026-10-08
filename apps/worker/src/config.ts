@@ -126,7 +126,7 @@ function readAuthAdmin(env: NodeJS.ProcessEnv): RunnerSettings['authAdmin'] {
   return { url, secretKey };
 }
 
-/** The worker warns at start-up once the Auth admin token has fewer days than this left. */
+/** The worker warns (at start-up, then daily) once the Auth admin token has fewer days than this left. */
 export const ADMIN_KEY_WARN_DAYS = 30;
 
 /**

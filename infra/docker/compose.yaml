@@ -30,7 +30,8 @@ networks:
   # Auth's admin API on the gateway's port 8444 (TLS, not published), by source network: the gateway
   # (gateway/nginx.conf) serves each subnet one call — change both files together if a subnet collides
   # with a network of the host (T-M2-17 security review).
-  # workers ⇄ gateway: recovery links for password resets (POST /admin/generate_link) only.
+  # workers ⇄ gateway: recovery links for password resets (POST /admin/generate_link) only. A /28 holds 13
+  # containers besides its .1: the gateway plus about 12 workers (deploy.replicas below).
   auth-admin:
     internal: true
     ipam:
@@ -226,6 +227,7 @@ services:
     read_only: true
     cap_drop: [ALL]
     networks: [db-app, mail, auth-admin]
+    # More than about 12 replicas do not fit the auth-admin network's /28 (networks above).
     deploy: { replicas: 2 }
     # SIGTERM lets running jobs finish; give them time before Docker kills the process (a killed job is
     # retried, but only after graphile-worker's 4-hour lock expiry).
@@ -247,8 +249,8 @@ services:
       # Password-reset links (T-M2-17): Auth's admin API on the gateway's internal admin port (8444, from
       # the auth-admin network: generate_link only), with a service_role token signed by the
       # installation's key (gen-secrets.sh, 90 days; renewed by re-running it — README.md; the worker
-      # warns 30 days before it expires). The worker is the ONLY long-running container with an Auth
-      # admin key (ADR 0002 §7; smoke-tested).
+      # warns from 30 days before it expires, at start-up and daily). The worker is the ONLY
+      # long-running container with an Auth admin key (ADR 0002 §7; smoke-tested).
       SUPABASE_URL: https://gateway:8444
       SUPABASE_SECRET_KEY: ${WORKER_AUTH_ADMIN_TOKEN:?run gen-secrets.sh, then compose with --env-file .secrets/.env}
       # E-mail (ADR 0008 §2): SMTP with verified STARTTLS. Here Mailpit catches every message. A real

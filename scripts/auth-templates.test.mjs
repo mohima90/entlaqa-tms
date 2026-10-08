@@ -106,6 +106,10 @@ describe('Auth e-mail templates (T-M2-08)', () => {
       /location = \/auth\/v1\/admin\/users \{\n\s+deny 10\.231\.0\.17;\n\s+allow 10\.231\.0\.16\/28;\n\s+deny all;\n\s+limit_except POST \{ deny all; \}/,
     );
     expect(admin).toContain('location / { return 404; }');
+    // No method-override header reaches Auth from either admin location.
+    for (const header of ['X-HTTP-Method-Override', 'X-HTTP-Method', 'X-Method-Override']) {
+      expect(admin.split(`proxy_set_header ${header} "";`)).toHaveLength(3);
+    }
     // The same subnets in compose; the admin port is never published; who sits on which network.
     expect(compose).toContain('- { subnet: 10.231.0.0/28, gateway: 10.231.0.1 }');
     expect(compose).toContain('- { subnet: 10.231.0.16/28, gateway: 10.231.0.17 }');

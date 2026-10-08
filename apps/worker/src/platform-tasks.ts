@@ -13,6 +13,11 @@ export interface PlatformTaskDependencies {
   readonly log: (level: WorkerLogLevel, message: string) => void;
   /** Injectable for tests: the Auth admin API's recovery links. */
   readonly recoveryLinksFor?: (settings: { url: string; secretKey: string }) => RecoveryLinks;
+  /**
+   * The Auth admin token's expiry check (adminKeyExpiryCheck): run before every account-mail pass; it
+   * warns at most once a day per process, so a long-running daemon keeps reminding until renewal.
+   */
+  readonly adminKeyCheck?: (() => void) | undefined;
 }
 
 /**
@@ -30,13 +35,22 @@ function authAdminRecoveryLinks(settings: { url: string; secretKey: string }): R
 /** Work without a tenant (ADR 0005 §4), run on every wake-up and every minute: account e-mails. */
 export function platformTasks(deps: PlatformTaskDependencies): readonly PlatformTask[] {
   const recoveryLinksFor = deps.recoveryLinksFor ?? authAdminRecoveryLinks;
+  const mailer = createAccountMailer({
+    appBaseUrl: deps.appBaseUrl,
+    recoveryLinks: deps.authAdmin ? recoveryLinksFor(deps.authAdmin) : null,
+    withPlatformTx: deps.withPlatformTx,
+    withSystemTx: deps.withSystemTx,
+    log: deps.log,
+  });
+  const adminKeyCheck = deps.adminKeyCheck;
+  if (!adminKeyCheck) return [mailer];
   return [
-    createAccountMailer({
-      appBaseUrl: deps.appBaseUrl,
-      recoveryLinks: deps.authAdmin ? recoveryLinksFor(deps.authAdmin) : null,
-      withPlatformTx: deps.withPlatformTx,
-      withSystemTx: deps.withSystemTx,
-      log: deps.log,
-    }),
+    {
+      name: mailer.name,
+      run: (context) => {
+        adminKeyCheck();
+        return mailer.run(context);
+      },
+    },
   ];
 }

@@ -70,8 +70,10 @@ export function inviteFieldError(
         key: code === 'EMPLOYEE_NUMBER_TAKEN' ? 'employeeNumberTaken' : 'employeeNumber',
       };
     case 'primaryRole':
+      if (code === 'ROLE_CONFLICT') return { field, key: 'roleConflict' };
       return { field, key: code === 'ROLE_NOT_ALLOWED' ? 'roleNotAllowed' : 'roleRequired' };
     case 'additionalRoles':
+      if (code === 'ROLE_CONFLICT') return { field, key: 'roleConflict' };
       return { field, key: code === 'ROLE_NOT_ALLOWED' ? 'roleNotAllowed' : 'roles' };
     case 'departmentId':
     case 'branchId':
@@ -97,4 +99,24 @@ export interface InvitationListItem {
 /** Resend is offered while pending (also after expiry) until the last of the 4 e-mails. */
 export function canResend(row: Pick<InvitationListItem, 'state' | 'sendCount'>): boolean {
   return (row.state === 'pending' || row.state === 'expired') && row.sendCount < MAX_SENDS;
+}
+
+/**
+ * Separation of duties (BR-IAM-4, T-M2-16; the Organization Admin holds no other role): is `code`
+ * unavailable because a conflicting role is chosen? A role held alone (`sole`, from SOLE_ROLE_CODES on
+ * the server) conflicts with every other role. Only roles not chosen yet are blocked; choosing another
+ * primary role replaces the current one (so the current primary never blocks the primary choice). The
+ * server refuses conflicting roles anyway (ROLE_CONFLICT).
+ */
+export function blockedBySole(
+  code: string,
+  as: 'primary' | 'additional',
+  primary: string,
+  additional: readonly string[],
+  sole: readonly string[],
+): boolean {
+  if (as === 'primary' ? primary === code : additional.includes(code)) return false;
+  const held = additional.filter((other) => other !== code);
+  if (as === 'additional' && primary !== '') held.push(primary);
+  return held.some((other) => other !== code && (sole.includes(code) || sole.includes(other)));
 }

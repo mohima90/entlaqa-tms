@@ -165,6 +165,8 @@ describe('replaceMemberRoles', () => {
       rolesRefusalOf(pgError('23514', { constraint_name: 'role_assignments_validity_check' })),
     ).toBe('dates_invalid');
     expect(rolesRefusalOf(pgError('23505'))).toBe('version_conflict');
+    // Separation of duties (BR-IAM-4, T-M2-16): the role trigger's SQLSTATE.
+    expect(rolesRefusalOf(pgError('JR001'))).toBe('role_conflict');
     expect(() => rolesRefusalOf(pgError('23514', { message: 'other' }))).toThrow();
     expect(() => rolesRefusalOf(new Error('boom'))).toThrow('boom');
   });
@@ -214,6 +216,73 @@ describe('primary days and locked roles', () => {
       }),
     ).toEqual({ ok: false, refusal: 'privileged_change' });
     expect(locked.executed).toHaveLength(3);
+
+    // Roles that may not go together (BR-IAM-4): refused after the lock, before any write, with the
+    // roles as they would be saved (primary days kept) and today in the organization's time zone.
+    const seen: unknown[] = [];
+    const conflicting = fakeTx([], [person], rows);
+    expect(
+      await replaceMemberRoles(
+        conflicting.tx,
+        'p1',
+        VERSION,
+        [role('tenant_admin', { isPrimary: true }), role('hr_manager')],
+        {
+          conflicts: (roles, today) => {
+            seen.push(roles, today);
+            return true;
+          },
+        },
+      ),
+    ).toEqual({ ok: false, refusal: 'role_conflict' });
+    expect(conflicting.executed).toHaveLength(3);
+    expect(seen).toEqual([
+      [role('tenant_admin', { isPrimary: true }), role('hr_manager')],
+      '2026-10-06',
+    ]);
+
+    // A role held alone (BR-IAM-4) changing with other roles in one save: the others are removed and
+    // added again around its update, so no intermediate state holds both (security review L3).
+    const handOver = [
+      { ...rows[0], role_code: 'tenant_admin', valid_until: '2031-12-31' },
+      { ...rows[1], valid_from: '2032-01-01', valid_until: null },
+    ];
+    const moved = fakeTx([], [person], handOver);
+    expect(
+      await replaceMemberRoles(
+        moved.tx,
+        'p1',
+        'learner:r1:1,tenant_admin:r2:2',
+        [
+          role('tenant_admin', { isPrimary: true, validUntil: '2032-03-31' }),
+          role('learner', { validFrom: '2032-04-01' }),
+        ],
+        { soleRoles: new Set(['tenant_admin']) },
+      ),
+    ).toMatchObject({ ok: true, changed: true });
+    expect(moved.executed.slice(3, 6).map((q) => [q.sql.trim().split(/\s+/)[0], q.params])).toEqual(
+      [
+        ['delete', ['m1', 'learner']],
+        ['update', [true, '2032-03-31', 'Asia/Riyadh', 'm1', 'tenant_admin']],
+        ['insert', ['m1', 'learner', false, '2032-04-01', 'Asia/Riyadh']],
+      ],
+    );
+    // Without the option (or when the sole role does not change) rows are updated in place.
+    const inPlace = fakeTx([], [person], handOver);
+    await replaceMemberRoles(
+      inPlace.tx,
+      'p1',
+      'learner:r1:1,tenant_admin:r2:2',
+      [
+        role('tenant_admin', { isPrimary: true, validUntil: '2031-12-31' }),
+        role('learner', { validFrom: '2032-02-01' }),
+      ],
+      { soleRoles: new Set(['tenant_admin']) },
+    );
+    expect(inPlace.executed.slice(3).map((q) => q.sql.trim().split(/\s+/)[0])).toEqual([
+      'update',
+      'select',
+    ]);
 
     const dated = [{ ...rows[0], valid_until: '2026-01-31' }, rows[1]];
     const kept = fakeTx([], [person], dated);

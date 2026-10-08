@@ -232,7 +232,10 @@ describe.skipIf(!configured)('invitations against PostgreSQL', () => {
       withUserTx(claimsOf(hr), (tx) =>
         createInvitation(
           tx,
-          newInvitation(`boss-${tag}@example.test`, { primaryRole: 'tenant_admin' }),
+          newInvitation(`boss-${tag}@example.test`, {
+            primaryRole: 'tenant_admin',
+            additionalRoles: [],
+          }),
         ),
       ),
     );
@@ -242,7 +245,10 @@ describe.skipIf(!configured)('invitations against PostgreSQL', () => {
       withUserTx(claimsOf(admin), (tx) =>
         createInvitation(
           tx,
-          newInvitation(`boss-${tag}@example.test`, { primaryRole: 'tenant_admin' }),
+          newInvitation(`boss-${tag}@example.test`, {
+            primaryRole: 'tenant_admin',
+            additionalRoles: [],
+          }),
         ),
       ),
     ).resolves.toMatchObject({ invitationId: expect.any(String) });

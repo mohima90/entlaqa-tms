@@ -7,10 +7,10 @@
 | **Product** | Jadarat TMS — Training Management System (module of the Jadarat HR Suite; also sold standalone) |
 | **Company** | ENTLAQA |
 | **Document type** | Business Requirements Document |
-| **Version** | 2.4 — Draft for stakeholder review |
+| **Version** | 2.6 — Draft for stakeholder review |
 | **Date** | 30 September 2026 |
 | **Supersedes** | *Jadarat TMS BRD v1.0* (15 March 2026) |
-| **Companion documents** | `docs/delivery/Jadarat_TMS_Development_Plan.md` (development plan & delivery guide) · `docs/brd/TMS_Feature_List.md` (feature list, 290 features) · `docs/research/TMS_Market_Comparison_vs_BRD.md` (market & regulatory research) |
+| **Companion documents** | `docs/delivery/Jadarat_TMS_Development_Plan.md` (development plan & delivery guide) · `docs/brd/TMS_Feature_List.md` (feature list, 292 features) · `docs/research/TMS_Market_Comparison_vs_BRD.md` (market & regulatory research) |
 | **Classification** | Internal — Confidential |
 
 ### Document Control
@@ -21,6 +21,8 @@
 |---|---|---|---|
 | 1.0 | 15 Mar 2026 | ENTLAQA Product Team | Initial Jadarat TMS BRD (offline training, Jadarat-specific) |
 | 2.0 | 27 Sep 2026 | ENTLAQA Product Team | Full rewrite: comprehensive TMS scope, training planning cycle, vendor & finance depth, assessment engine, generic LMS integration framework, corrected regulatory content, sovereign deployment, requirement IDs with priority & release |
+| 2.6 | 8 Oct 2026 | Product Owner (via Claude) | BR-IAM-4 widened (PO, 8 Oct 2026): the Organization Admin role is held alone — no other role for the same person in the organization (not even Learner); scheduled hand-overs allowed; second-account circumvention accepted as residual risk (audit log only). Feature list IAM-07 |
+| 2.5 | 7 Oct 2026 | Product Owner (via Claude) | E-mail ownership (PO, 7 Oct 2026): FR-NTF-02 clarified — R1 sends every e-mail, account e-mails included (invitation, password reset, password changed), through the platform's notification service in the organization's language and brand, not the sign-in provider's mailer; new FR-NTF-10 organization-editable e-mail texts (R2) and FR-NTF-11 organization's own mail server — Resend, Mailgun, SMTP, Microsoft Graph (R2). Feature list NTF-02, NTF-10, NTF-11 |
 | 2.4 | 7 Oct 2026 | Product Owner (via Claude) | FR-IAM-07 extended (PO, 7 Oct 2026): full role management per tenant in R2 — create, edit and delete custom roles, remove unused system roles and restore them (SMEs using 3–4 roles); Organization Admin role never removable; roles in use cannot be deleted; audited. Organization Admin becomes a setup role without core training features (Appendix B) and never shares a person with HR Manager (BR-IAM-4). Feature list IAM-07 |
 | 2.3 | 6 Oct 2026 | Product Owner (via Claude) | FR-ADM-17 extended (PO, 6 Oct 2026): the Platform Super Admin manages platform settings in the platform console, starting with the e-mail provider (API key write-only and encrypted, sender, test message; MFA, audited), before production. Feature list ADM-17 (R1) |
 | 2.2 | 5 Oct 2026 | Product Owner (via Claude) | FR-IAM-16 added (PO, 5 Oct 2026): self-service My profile — users change their own personal details (names, mobile, language, photo) and password; e-mail locked; job data stays with HR. Feature list IAM-16 (R1) |
@@ -234,7 +236,7 @@ The following capabilities are built **once** as platform services and reused by
 | People & organization directory (employees, managers, branches, departments, legal entities, cost centers) | FR-ADM-02…05, FR-IAM-01…06, FR-STE-02 |
 | Roles, permissions & data scopes | FR-IAM-07…09, FR-IAM-14 |
 | Workflow & approvals engine | FR-WFL-01…04 |
-| Notifications (e-mail, SMS, WhatsApp, push, in-app, Teams) | FR-NTF-01…09 |
+| Notifications (e-mail, SMS, WhatsApp, push, in-app, Teams) | FR-NTF-01…11 |
 | Audit, privacy, consent, retention, data export | FR-AUD-01…06 |
 | Files & documents | FR-CAT-06 (shared storage service) |
 | Localization (Arabic/RTL, Hijri, holidays, working weeks, prayer times) | §13 |
@@ -439,7 +441,7 @@ Columns: **Pri** = MoSCoW priority · **Rel** = target release.
 - BR-IAM-1: A user has exactly one primary role and may hold additional roles; effective permissions are the union, limited by each role's data scope.
 - BR-IAM-2: Break-glass: at least one Tenant Admin must retain password + MFA login when SSO is forced.
 - BR-IAM-3: Any role or permission change is audited with before/after values.
-- BR-IAM-4: Separation of duties (PO, 7 Oct 2026): one person never holds both the Organization Admin (Tenant Admin) and HR Manager roles; assigning one to a holder of the other is refused. The Organization Admin role has no core training permissions (Appendix B).
+- BR-IAM-4: Separation of duties (PO, 7 Oct 2026; widened 8 Oct 2026): the Organization Admin (Tenant Admin) role is held **alone** — a person who is Organization Admin of an organization holds no other role there (not HR Manager, Training Manager, Learner or any other), and assigning any role to an Organization Admin, or the Organization Admin role to a holder of another role, is refused (a scheduled hand-over with non-overlapping dates is allowed). The Organization Admin role has no core training permissions (Appendix B). Residual risk accepted by the PO: one human using a second account cannot be detected; the audit log records every role grant.
 
 ---
 
@@ -784,7 +786,7 @@ Columns: **Pri** = MoSCoW priority · **Rel** = target release.
 | ID | Requirement | Pri | Rel |
 |---|---|---|---|
 | FR-NTF-01 | A real-time in-app notification center (bell + page) with read/unread, filters, deep links and bulk mark-as-read. | M | R1 |
-| FR-NTF-02 | E-mail notifications with branded bilingual templates, variables, preview with sample data, per-tenant sender name and optional custom sending domain (SPF/DKIM). | M | R1 |
+| FR-NTF-02 | E-mail notifications with branded bilingual templates, variables, preview with sample data, per-tenant sender name and optional custom sending domain (SPF/DKIM). R1: the organization's brand (logo, colours, sender name, default language) on standard texts; editing the texts is FR-NTF-10 (R2). Account e-mails (invitation, password reset, password changed) are sent by the platform's notification service in the organization's language and brand, never by the sign-in provider's own mailer (PO, 7 Oct 2026). | M | R1 |
 | FR-NTF-03 | WhatsApp Business (Meta Cloud API or approved BSP): template management with approval status tracking, variables, AR/EN, interactive buttons (confirm attendance, approve/reject, open check-in), opt-in capture and opt-out handling. | M | R2 |
 | FR-NTF-04 | SMS through configurable gateways (MENA-native provider and an international fallback), sender ID per tenant/country. | M | R2 |
 | FR-NTF-05 | Web push notifications for PWA users. | S | R2 |
@@ -792,6 +794,8 @@ Columns: **Pri** = MoSCoW priority · **Rel** = target release.
 | FR-NTF-07 | A notification event catalog (Appendix D) with per-event configuration: recipients by role, channels, timing, language resolution (recipient's locale), and quiet hours respecting prayer times and weekends. | M | R1 |
 | FR-NTF-08 | Scheduled reminders (default T-7d, T-3d, T-1d, T-1h) and daily/weekly digests for managers and coordinators. | M | R1 |
 | FR-NTF-09 | Coordinators shall broadcast messages to session participants or audiences via chosen channels, with delivery statistics. | M | R2 |
+| FR-NTF-10 | Organization Admins shall edit the subject and body of each e-mail in Arabic and English, with variables, preview with sample data and reset to the default text; changes audited (PO, 7 Oct 2026). | S | R2 |
+| FR-NTF-11 | Each organization may connect its own mail server for all of its e-mails (account, operational, reminders): Resend, Mailgun, SMTP with TLS, or Microsoft 365 via Microsoft Graph; credentials write-only and encrypted, test send, delivery errors visible to the Organization Admin, automatic fallback to the platform sender; changes audited (PO, 7 Oct 2026). | S | R2 |
 
 **Business rules**
 - BR-NTF-1: Channel fallback order is configurable (e.g., WhatsApp → SMS → e-mail) when a channel fails or the recipient has not opted in.
@@ -1542,7 +1546,7 @@ Detailed per-requirement release tags are in §6–§9.
 | AI features | F (config) | Use | Use | Use | Use | Use | Use | Use | Use | — | — | Use | Use | V (logs) |
 | Audit log | V | — | — | — | — | V | — | — | — | — | — | — | — | V |
 
-**Organization Admin = setup role (PO, 7 Oct 2026):** the Tenant Admin (Organization Admin, مدير المنشأة) sets the organization up from the IT and marketing side — tenant settings, branding and domains, users and roles (full people records), security, integrations, AI configuration, audit log — and hands it over to the HR department; it has **no access to core training features** (requests, plans, catalog, sessions, enrollments, attendance, assessments, certificates, compliance, OJT, budgets, training reports). The Organization Admin and HR Manager roles are never held by the same person (BR-IAM-4).
+**Organization Admin = setup role (PO, 7 Oct 2026):** the Tenant Admin (Organization Admin, مدير المنشأة) sets the organization up from the IT and marketing side — tenant settings, branding and domains, users and roles (full people records), security, integrations, AI configuration, audit log — and hands it over to the HR department; it has **no access to core training features** (requests, plans, catalog, sessions, enrollments, attendance, assessments, certificates, compliance, OJT, budgets, training reports). The Organization Admin holds no other role in the same organization — not even Learner (BR-IAM-4, PO 8 Oct 2026).
 
 The Platform Super Admin (ENTLAQA) operates outside tenant roles, through the platform console (FR-ADM-17).
 

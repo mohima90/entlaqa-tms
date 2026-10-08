@@ -76,6 +76,14 @@ begin
   where tenant_id = v_tenant and user_id = v_user;
   if v_status = 'active' then
     -- Recovery path: an organization left without an Organization Admin gets one back (idempotent).
+    -- An Organization Admin holds no other role (BR-IAM-4, T-M2-16; the database refuses it too): a
+    -- member who holds other roles (not ended) is not made one here and nothing is removed silently.
+    if exists (select 1 from platform.role_assignments ra
+               join platform.tenant_memberships m on m.tenant_id = ra.tenant_id and m.id = ra.membership_id
+               where m.tenant_id = v_tenant and m.user_id = v_user and ra.role_code <> 'tenant_admin'
+                 and (ra.valid_until is null or ra.valid_until > now())) then
+      raise exception 'provision: the user holds other roles in this organization, and an Organization Admin holds no other role (BR-IAM-4); remove them in the application first, or choose another person';
+    end if;
     insert into platform.role_assignments (tenant_id, membership_id, role_code, is_primary)
     select m.tenant_id, m.id, 'tenant_admin',
            not exists (select 1 from platform.role_assignments p

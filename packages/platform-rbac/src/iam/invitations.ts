@@ -18,6 +18,7 @@ import type { ActionContext, ActionDefinition, PermissionAccess } from '../defin
 import type { QueryDefinition } from '../define-query';
 import type { PermissionDefinition } from '../permissions';
 import { platformPermissions } from '../platform-permissions';
+import { includesConflictingRoles } from '../separation-of-duties';
 import { SYSTEM_ROLES, SYSTEM_ROLE_CODES } from '../system-roles';
 import { namePart } from './my-profile';
 
@@ -28,7 +29,9 @@ import { namePart } from './my-profile';
  * `platform.role.assign_privileged` (Organization Admin with an authenticator code, PO decision
  * D-IAM-01) — the same split as changing roles (edit-roles.ts): an ordinary action that refuses
  * privileged roles and a privileged action with the strict session check. The database guard applies
- * the same rule. Audit records carry ids and role codes only (no names, no e-mail).
+ * the same rule. An invitation never gives the Organization Admin role together with another role (BR-IAM-4,
+ * T-M2-16: ROLE_CONFLICT on the additional roles). Audit records carry ids and role codes only (no names,
+ * no e-mail).
  */
 const p = platformPermissions;
 
@@ -96,12 +99,15 @@ const REFUSAL_FIELDS = {
   EMAIL_TAKEN: 'email',
   EMPLOYEE_NUMBER_TAKEN: 'employeeNumber',
   ROLE_NOT_ALLOWED: 'primaryRole',
+  // The Organization Admin role with another role: one of them is always an additional role (BR-IAM-4).
+  ROLE_CONFLICT: 'additionalRoles',
 } as const;
 type InvitationRefusalCode = keyof typeof REFUSAL_FIELDS;
 
 /**
  * The refusal code createInvitation throws (contract §2: EMAIL_TAKEN, EMPLOYEE_NUMBER_TAKEN,
- * ROLE_NOT_ALLOWED), read from the error's `code`; anything else is unexpected (null).
+ * ROLE_NOT_ALLOWED; ROLE_CONFLICT, BR-IAM-4), read from the error's `code`; anything else is unexpected
+ * (null).
  */
 export function invitationRefusalCode(error: unknown): InvitationRefusalCode | null {
   if (typeof error !== 'object' || error === null || !('code' in error)) return null;
@@ -163,6 +169,10 @@ function inviteAction(
     permission,
     input: InviteUserInput,
     handler: async ({ ctx, input }) => {
+      // Separation of duties (BR-IAM-4): refused whoever invites — a rule about the roles, not the actor.
+      if (includesConflictingRoles([input.primaryRole, ...input.additionalRoles])) {
+        return err(fieldError(REFUSAL_FIELDS.ROLE_CONFLICT, 'ROLE_CONFLICT'));
+      }
       if (privileged) {
         // The privileged path is authorized by role.assign_privileged; inviting stays user.invite.
         if (!ctx.can(p['platform.user.invite'], 'tenant')) return err(appError('FORBIDDEN'));

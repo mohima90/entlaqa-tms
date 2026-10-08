@@ -7,6 +7,7 @@ import { type ManagerChoice, managersFor } from '../../lib/edit-user-form';
 import {
   COMMON_ROLE_CODES,
   type RoleChoice,
+  blockedBySole,
   choosesPrivileged,
   inviteFieldError,
   lockedRoleCodes,
@@ -31,6 +32,8 @@ export interface InviteUserFormProps {
   readonly usersHref: string;
   readonly successHref: string;
   readonly rolesHref: string;
+  /** Roles held alone (BR-IAM-4: the Organization Admin holds no other role). */
+  readonly soleRoles: readonly string[];
 }
 
 const EN_FIELDS = ['firstNameEn', 'familyNameEn'];
@@ -38,7 +41,9 @@ const EN_FIELDS = ['firstNameEn', 'familyNameEn'];
 /**
  * Invite a user (T-M2-07, FR-IAM-03, BR-IAM-1; approved screen 2): work e-mail, Arabic name (English
  * optional), placement, one primary role and optional additional roles, invitation language. Privileged
- * roles stay locked unless the session may give them (PO decision D-IAM-01).
+ * roles stay locked unless the session may give them (PO decision D-IAM-01). The Organization Admin
+ * holds no other role (BR-IAM-4): choosing it disables every other role and choosing another role
+ * disables it, with the explanation.
  */
 export function InviteUserForm(props: InviteUserFormProps) {
   const { labels, fieldTexts, catalogue } = props;
@@ -57,6 +62,8 @@ export function InviteUserForm(props: InviteUserFormProps) {
   const [additional, setAdditional] = useState<readonly string[]>([]);
   const [invitationLocale, setInvitationLocale] = useState<'ar' | 'en'>('ar');
   const locked = lockedRoleCodes(catalogue, props.privilegedAllowed);
+  const soleBlocked = (code: string, as: 'primary' | 'additional') =>
+    blockedBySole(code, as, primary, additional, props.soleRoles);
   const managers = managersFor(props.managers, departmentId, allManagers, managerId);
   // A chosen role stays visible when the list goes back to the common roles.
   const shown = rolesShown(
@@ -106,7 +113,15 @@ export function InviteUserForm(props: InviteUserFormProps) {
         if (EN_FIELDS.some((name) => errors[name])) setShowEnglish(true);
         setFieldErrors(errors);
       }
-      setMessage(errorText(result.error, props.errors));
+      // Separation of duties (BR-IAM-4): the reason itself is the message.
+      const conflict =
+        result.error.code === 'VALIDATION_FAILED' &&
+        Object.values(fieldErrorCodes(result.error)).includes('ROLE_CONFLICT');
+      setMessage(
+        conflict
+          ? (fieldTexts.roleConflict ?? errorText(result.error, props.errors))
+          : errorText(result.error, props.errors),
+      );
     });
   }
 
@@ -314,28 +329,32 @@ export function InviteUserForm(props: InviteUserFormProps) {
           {text('primaryRoleHint')}
         </p>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          {shown.map((choice) => (
-            <label
-              key={choice.code}
-              className={`flex min-h-11 items-start gap-3 rounded-md border p-3 ${
-                primary === choice.code ? 'border-primary bg-primary-subtle' : 'border-border'
-              }`}
-            >
-              <input
-                type="radio"
-                name="primaryRole"
-                value={choice.code}
-                checked={primary === choice.code}
-                disabled={pending || locked.has(choice.code)}
-                onChange={() => {
-                  setPrimary(choice.code);
-                  setAdditional((list) => list.filter((code) => code !== choice.code));
-                }}
-                className="mt-1 size-5 shrink-0"
-              />
-              {roleText(choice, `invite-primary-${choice.code}-name`)}
-            </label>
-          ))}
+          {shown.map((choice) => {
+            const blocked = soleBlocked(choice.code, 'primary');
+            return (
+              <label
+                key={choice.code}
+                className={`flex min-h-11 items-start gap-3 rounded-md border p-3 ${
+                  primary === choice.code ? 'border-primary bg-primary-subtle' : 'border-border'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="primaryRole"
+                  value={choice.code}
+                  checked={primary === choice.code}
+                  disabled={pending || blocked || locked.has(choice.code)}
+                  onChange={() => {
+                    setPrimary(choice.code);
+                    setAdditional((list) => list.filter((code) => code !== choice.code));
+                  }}
+                  aria-describedby={blocked ? 'invite-role-conflict-hint' : undefined}
+                  className="mt-1 size-5 shrink-0"
+                />
+                {roleText(choice, `invite-primary-${choice.code}-name`)}
+              </label>
+            );
+          })}
         </div>
         {fieldErrors.primaryRole ? (
           <p id="invite-primary-error" className="m-0 text-sm font-medium text-danger">
@@ -378,12 +397,14 @@ export function InviteUserForm(props: InviteUserFormProps) {
             .filter((choice) => choice.code !== primary)
             .map((choice) => {
               const on = additional.includes(choice.code);
+              const blocked = soleBlocked(choice.code, 'additional');
               return (
                 <li key={choice.code}>
                   <button
                     type="button"
                     aria-pressed={on}
-                    disabled={pending || locked.has(choice.code)}
+                    disabled={pending || blocked || locked.has(choice.code)}
+                    aria-describedby={blocked ? 'invite-role-conflict-hint' : undefined}
                     onClick={() => {
                       setAdditional((list) =>
                         on ? list.filter((code) => code !== choice.code) : [...list, choice.code],
@@ -417,6 +438,13 @@ export function InviteUserForm(props: InviteUserFormProps) {
               );
             })}
         </ul>
+        <p
+          id="invite-role-conflict-hint"
+          className="m-0 text-sm text-text-muted"
+          data-testid="role-conflict-hint"
+        >
+          {text('roleConflictHint')}
+        </p>
         {fieldErrors.additionalRoles ? (
           <p id="invite-additional-error" className="m-0 text-sm font-medium text-danger">
             {fieldErrors.additionalRoles}

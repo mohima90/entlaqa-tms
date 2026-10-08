@@ -1,6 +1,6 @@
 # Jadarat TMS — Full Feature List
 
-**Date:** 7 Oct 2026 (v2.4) · **Status:** Decisions D1, D2, D6, D7 applied; IAM-16 added (PO, 5 Oct 2026); ADM-17 extended with platform settings (PO, 6 Oct 2026); IAM-07 role CRUD per tenant (PO, 7 Oct 2026) · **BRD:** `docs/brd/Jadarat_TMS_BRD_v2.md` · **Basis:** Market research in `docs/research/TMS_Market_Comparison_vs_BRD.md` + Jadarat TMS BRD v1.0
+**Date:** 8 Oct 2026 (v2.6) · **Status:** Decisions D1, D2, D6, D7 applied; IAM-16 added (PO, 5 Oct 2026); ADM-17 extended with platform settings (PO, 6 Oct 2026); IAM-07 role CRUD per tenant (PO, 7 Oct 2026); NTF-10/11 organization e-mail texts and own mail server in R2 (PO, 7 Oct 2026); BR-IAM-4 Org Admin held alone (PO, 8 Oct 2026) · **BRD:** `docs/brd/Jadarat_TMS_BRD_v2.md` · **Basis:** Market research in `docs/research/TMS_Market_Comparison_vs_BRD.md` + Jadarat TMS BRD v1.0
 
 **Legend**
 
@@ -8,7 +8,7 @@
 - **Proposed release:** `R1` MVP (months 0–4) · `R2` Growth (5–8) · `R3` Enterprise & Sovereign (9–12) · `R4` Intelligence & Scale (13–18) · `Suite` = when the related Jadarat HR Suite module ships · `—` = removed from scope
 - **In v1 BRD?** `✅` covered · `⚠️` partial · `❌` new (not in v1 BRD)
 
-**Totals:** 29 modules · 290 features, of which 281 in scope and 9 removed by decision D1 (Commerce, public registration) · In scope: 107 new and 40 partial vs. v1 BRD · By release: R1 97 · R2 110 · R3 56 · R4 13 · Suite 5
+**Totals:** 29 modules · 292 features, of which 283 in scope and 9 removed by decision D1 (Commerce, public registration) · In scope: 109 new and 40 partial vs. v1 BRD · By release: R1 97 · R2 112 · R3 56 · R4 13 · Suite 5
 
 ---
 
@@ -44,7 +44,7 @@
 | IAM-04 | Bulk import wizard (CSV/XLSX, mapping, validation, dry run, upsert modes) | Core | R1 | ✅ |
 | IAM-05 | User lifecycle: deactivate with reassignment, archive, reactivate | Core | R1 | ✅ |
 | IAM-06 | Static and dynamic (rule-based) groups / audiences | Core | R2 | ✅ |
-| IAM-07 | 15 default roles + custom role builder with permission matrix and risk flags; full role CRUD per tenant (create, edit, delete custom roles; remove/restore unused system roles; Org Admin role kept; roles in use protected); Org Admin = setup role without core training features, never the same person as HR Manager (BR-IAM-4) | Core | R1/R2 | ✅ |
+| IAM-07 | 15 default roles + custom role builder with permission matrix and risk flags; full role CRUD per tenant (create, edit, delete custom roles; remove/restore unused system roles; Org Admin role kept; roles in use protected); Org Admin = setup role without core training features, held alone — no other role for the same person (BR-IAM-4) | Core | R1/R2 | ✅ |
 | IAM-08 | Data scoping of roles by branch / department / legal entity | Plus | R2 | ❌ |
 | IAM-09 | Separation-of-duties rules (requester ≠ approver, creator ≠ approver) | Plus | R2 | ⚠️ |
 | IAM-10 | SSO: SAML 2.0 / OIDC, multiple identity providers, just-in-time provisioning, force SSO | Plus | R2 | ✅ |
@@ -314,7 +314,7 @@
 | ID | Feature | Tier | Release | In v1? |
 |---|---|---|---|---|
 | NTF-01 | In-app notification center (real-time) | Core | R1 | ✅ |
-| NTF-02 | E-mail with branded bilingual templates and variables | Core | R1 | ✅ |
+| NTF-02 | E-mail with branded bilingual templates and variables; R1: the organization's brand (logo, colours, sender name, default language) on standard texts; account e-mails (invitation, password reset, password changed) sent by the platform, not the sign-in provider | Core | R1 | ✅ |
 | NTF-03 | WhatsApp Business (templates, reminders, approvals, check-in links) | ★ | R2 | ✅ |
 | NTF-04 | SMS (MENA gateways, e.g. Unifonic or Twilio) | Core | R2 | ✅ |
 | NTF-05 | Web push notifications | Core | R2 | ✅ |
@@ -322,6 +322,8 @@
 | NTF-07 | Event catalog with per-event, per-role, per-channel rules and quiet hours | Core | R1 | ✅ |
 | NTF-08 | Scheduled reminders (7 days / 3 days / 1 day / 1 hour) and digests | Core | R1 | ✅ |
 | NTF-09 | Broadcast messages to audiences / session participants | Core | R2 | ❌ |
+| NTF-10 | Organization-editable e-mail texts (subject and body per e-mail, Arabic and English, variables, preview with sample data, reset to default) | Core | R2 | ❌ |
+| NTF-11 | Organization's own mail server for all its e-mails (Resend, Mailgun, SMTP, Microsoft 365 / Graph): encrypted credentials, test send, fallback to the platform sender | Plus | R2 | ❌ |
 
 ## 21. Reporting & Analytics (RPT)
 

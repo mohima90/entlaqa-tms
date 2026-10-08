@@ -67,9 +67,12 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
   {
     code: 'tenant_admin',
     name: { ar: 'مدير المنشأة', en: 'Organization Admin' },
+    // A setup role (PO, 7 Oct 2026; BRD Appendix B): sets the organization up and hands it over to HR;
+    // never core training features (module permissions, M3+) — enforced by system-roles.test.ts — and
+    // never held together with any other role (BR-IAM-4, PO 8 Oct 2026, separation-of-duties.ts).
     description: {
-      ar: 'إعداد المنشأة بالكامل: المستخدمون والأدوار والأمان والاشتراك.',
-      en: 'Full configuration of the organization: users, roles, security and subscription.',
+      ar: 'يُعدّ المنشأة: الإعدادات والهوية والمستخدمون والأدوار والأمان والتكاملات وسجل التدقيق، دون الوصول إلى ميزات التدريب.',
+      en: 'Sets up the organization: settings, branding, users and roles, security, integrations and audit. No access to training features.',
     },
     privileged: true,
     grants: tenantWide(...Object.values(p)),

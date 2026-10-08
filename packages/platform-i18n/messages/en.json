@@ -459,6 +459,8 @@
     "backToProfile": "Back to the profile",
     "lastAdmin": "The organization must keep at least one active Organization Admin without an end date.",
     "datesInvalid": "The end date must not be before the start date, and dates must be between 2000 and 2100.",
+    "roleConflict": "Organization Admin is a setup-only role and can't be combined with any other role. Remove the other roles, or end one before the other starts.",
+    "roleConflictHint": "Organization Admin is a setup-only role and can't be combined with any other role. To give it to someone or take it away, make it their only role, or end one role before the other starts.",
     "blocked": {
       "own_roles": "You can't change your own roles. The Organization Admin or HR changes them.",
       "no_account": "This person has no sign-in account in the organization; roles are chosen when they are invited.",
@@ -542,6 +544,7 @@
       "rolesHelp": "What can each role do?",
       "additionalRoles": "Additional roles",
       "additionalRolesHint": "The effective permissions are those of the primary role plus the additional roles.",
+      "roleConflictHint": "Organization Admin is a setup-only role and can't be combined with any other role.",
       "privileged": "Privileged role",
       "privilegedNeedsCode": "Giving privileged roles (Organization Admin, HR Manager, Finance Manager, Compliance Officer, Auditor) needs a code from an authenticator app; this becomes available once multi-factor authentication is set up. You can invite with the other roles now.",
       "privilegedAdminOnly": "Only the Organization Admin gives privileged roles (Organization Admin, HR Manager, Finance Manager, Compliance Officer, Auditor). You can invite with the other roles.",
@@ -564,6 +567,7 @@
         "roleRequired": "Choose a primary role.",
         "roleNotAllowed": "You can't give this role. Only the Organization Admin gives privileged roles.",
         "roles": "A role can be chosen once, and the primary role can't also be an additional role.",
+        "roleConflict": "Organization Admin is a setup-only role and can't be combined with any other role. Choose it alone, or choose other roles.",
         "unit": "Choose a department or branch from the list.",
         "manager": "Choose the direct manager from the list."
       }

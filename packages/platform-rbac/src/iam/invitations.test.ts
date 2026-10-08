@@ -158,6 +158,7 @@ describe('invite input', () => {
   it('reads the refusal code of createInvitation errors only', () => {
     expect(invitationRefusalCode(refusal('EMAIL_TAKEN'))).toBe('EMAIL_TAKEN');
     expect(invitationRefusalCode({ code: 'ROLE_NOT_ALLOWED' })).toBe('ROLE_NOT_ALLOWED');
+    expect(invitationRefusalCode({ code: 'ROLE_CONFLICT' })).toBe('ROLE_CONFLICT');
     expect(invitationRefusalCode(refusal('23505'))).toBeNull();
     expect(invitationRefusalCode({ code: 'toString' })).toBeNull();
     expect(invitationRefusalCode(new Error('boom'))).toBeNull();
@@ -228,7 +229,7 @@ describe('invite user action', () => {
 
   it('HR Manager giving a privileged role: ROLE_NOT_ALLOWED on that field, nothing created', async () => {
     const hr = createDefineAction(runtime(['hr_manager']).rt)(inviteUserActionDefinition());
-    const primary = await hr({ ...form, primaryRole: 'tenant_admin' });
+    const primary = await hr({ ...form, primaryRole: 'tenant_admin', additionalRoles: [] });
     expect(!primary.ok && primary.error.fieldErrors).toEqual([
       { path: 'primaryRole', code: 'ROLE_NOT_ALLOWED' },
     ]);
@@ -239,7 +240,7 @@ describe('invite user action', () => {
     // The privileged action itself: HR does not hold role.assign_privileged.
     const privileged = await createDefineAction(runtime(['hr_manager'], 'aal2').rt)(
       invitePrivilegedUserActionDefinition(),
-    )({ ...form, primaryRole: 'tenant_admin' });
+    )({ ...form, primaryRole: 'tenant_admin', additionalRoles: [] });
     expect(!privileged.ok && privileged.error.code).toBe('FORBIDDEN');
     expect(db.createInvitation).not.toHaveBeenCalled();
   });
@@ -268,11 +269,52 @@ describe('invite user action', () => {
     expect(writeAudit).toHaveBeenCalledTimes(1);
   });
 
+  it('separation of duties (BR-IAM-4): the Organization Admin role is given alone', async () => {
+    const conflict = [{ path: 'additionalRoles', code: 'ROLE_CONFLICT' }];
+    for (const roles of [
+      { primaryRole: 'tenant_admin' as const, additionalRoles: ['hr_manager' as const] },
+      { primaryRole: 'tenant_admin' as const, additionalRoles: ['learner' as const] },
+      { primaryRole: 'learner' as const, additionalRoles: ['tenant_admin' as const] },
+      {
+        primaryRole: 'hr_manager' as const,
+        additionalRoles: ['learner' as const, 'tenant_admin' as const],
+      },
+    ]) {
+      // Refused for whoever invites, at AAL2 too, before anything is written or audited.
+      for (const [roleCodes, definition] of [
+        [['tenant_admin'], invitePrivilegedUserActionDefinition()],
+        [['tenant_admin'], inviteUserActionDefinition()],
+        [['hr_manager'], inviteUserActionDefinition()],
+      ] as const) {
+        const { rt, writeAudit } = runtime([...roleCodes], 'aal2');
+        const result = await createDefineAction(rt)(definition)({ ...form, ...roles });
+        expect(!result.ok && result.error.code).toBe('VALIDATION_FAILED');
+        expect(!result.ok && result.error.fieldErrors).toEqual(conflict);
+        expect(writeAudit).not.toHaveBeenCalled();
+      }
+    }
+    expect(db.createInvitation).not.toHaveBeenCalled();
+    // The Organization Admin role alone is fine; so are other roles together, privileged ones included.
+    for (const roles of [
+      { primaryRole: 'tenant_admin' as const, additionalRoles: [] },
+      {
+        primaryRole: 'hr_manager' as const,
+        additionalRoles: ['learner' as const, 'finance_manager' as const, 'auditor' as const],
+      },
+    ]) {
+      const saved = await createDefineAction(runtime(['tenant_admin'], 'aal2').rt)(
+        invitePrivilegedUserActionDefinition(),
+      )({ ...form, ...roles });
+      expect(saved.ok).toBe(true);
+    }
+  });
+
   it('maps createInvitation refusals to field errors; other errors stay internal', async () => {
     const cases = [
       ['EMAIL_TAKEN', 'email'],
       ['EMPLOYEE_NUMBER_TAKEN', 'employeeNumber'],
       ['ROLE_NOT_ALLOWED', 'primaryRole'],
+      ['ROLE_CONFLICT', 'additionalRoles'],
     ] as const;
     for (const [code, path] of cases) {
       db.createInvitation.mockRejectedValueOnce(refusal(code));

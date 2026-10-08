@@ -33,6 +33,8 @@ export type InvitationErrorCode =
   | 'EMAIL_TAKEN'
   | 'EMPLOYEE_NUMBER_TAKEN'
   | 'ROLE_NOT_ALLOWED'
+  /** BR-IAM-4: the invitation would give the Organization Admin role together with another role. */
+  | 'ROLE_CONFLICT'
   | 'INVITATION_NOT_VALID'
   | 'INVITATION_ACCOUNT_MISMATCH'
   | 'ALREADY_MEMBER';
@@ -125,14 +127,18 @@ export function invitationErrorOf(error: unknown): unknown {
   }
   if (pg?.code === '42501')
     return new DomainError<InvitationErrorCode>('ROLE_NOT_ALLOWED', { cause: error });
+  // Separation of duties (BR-IAM-4, migration 20261010090000).
+  if (pg?.code === 'JR001')
+    return new DomainError<InvitationErrorCode>('ROLE_CONFLICT', { cause: error });
   return error;
 }
 
 /**
  * Creates the person (with their placement), the pending invitation (no token: the mailer job issues
  * it) and the `invitation.created` event, in the caller's transaction. A refusal leaves the transaction
- * aborted (the action rolls back). Throws DomainError EMAIL_TAKEN, EMPLOYEE_NUMBER_TAKEN or
- * ROLE_NOT_ALLOWED (the actor may not invite, or not with these roles).
+ * aborted (the action rolls back). Throws DomainError EMAIL_TAKEN, EMPLOYEE_NUMBER_TAKEN,
+ * ROLE_NOT_ALLOWED (the actor may not invite, or not with these roles) or ROLE_CONFLICT (the roles may
+ * not go together, BR-IAM-4).
  */
 export async function createInvitation(
   tx: ClaimsTx,
@@ -286,6 +292,9 @@ const ACCEPTANCE_ERRORS: Readonly<Record<string, InvitationErrorCode>> = {
   JI001: 'INVITATION_NOT_VALID',
   JI002: 'ALREADY_MEMBER',
   JI003: 'INVITATION_ACCOUNT_MISMATCH',
+  // The role guard refused the invitation's roles together (BR-IAM-4). Unreachable while the link check
+  // (invitation_inviter_may_grant) refuses them first; kept so a refusal never becomes a 500.
+  JR001: 'INVITATION_NOT_VALID',
 };
 
 function acceptanceErrorOf(error: unknown): unknown {

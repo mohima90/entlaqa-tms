@@ -258,6 +258,11 @@ test.describe('users pages', () => {
       'page',
     );
     await expect(page.getByTestId('custom-role')).toContainText('Coming soon');
+    // The Organization Admin is a setup role (BRD v2.4, T-M2-16): no training areas.
+    await expect(page.getByTestId('role-detail')).toContainText('No access to training features');
+    await expect(
+      page.getByTestId('role-matrix').getByRole('row', { name: /Sessions & scheduling/ }),
+    ).toContainText('None');
     await expectNoSeriousA11yViolations(page);
 
     await list.getByRole('link', { name: /^Learner/ }).click();
@@ -289,6 +294,8 @@ test.describe('users pages', () => {
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
     await expect(page.getByTestId('role-detail')).toContainText('دور مميز');
     await expectNoSeriousA11yViolations(page);
+    await page.goto('/ar/suite/admin/roles?role=tenant_admin');
+    await expect(page.getByTestId('role-detail')).toContainText('دون الوصول إلى ميزات التدريب');
   });
 
   // Runs last: it changes Sarah's roles, which the tests above read.
@@ -309,6 +316,10 @@ test.describe('users pages', () => {
     await expect(form.getByRole('checkbox', { name: /^Auditor/ })).toBeDisabled();
     await expect(form.getByRole('radio', { name: /^Training Coordinator/ })).toBeChecked();
     await expect(form.getByRole('checkbox', { name: /^Learner/ })).toBeChecked();
+    // Separation of duties (BR-IAM-4, T-M2-16): explained on the form.
+    await expect(form.getByTestId('role-conflict-hint')).toContainText(
+      "Organization Admin is a setup-only role and can't be combined with any other role",
+    );
     await expectNoSeriousA11yViolations(page);
 
     await form.getByRole('radio', { name: /^Training Manager/ }).check();
@@ -344,6 +355,9 @@ test.describe('users pages', () => {
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(
       'تعديل أدوار سارة عبدالله القحطاني',
+    );
+    await expect(page.getByTestId('role-conflict-hint')).toContainText(
+      'مدير المنشأة دور إعداد فقط ولا يُجمع مع أي دور آخر',
     );
     await expectNoSeriousA11yViolations(page);
   });

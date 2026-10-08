@@ -7,6 +7,7 @@ import {
   type RoleChoice,
   type RoleRow,
   type RolesFormState,
+  blockedBySole,
   desiredRoles,
   formStateFromRoles,
   lockedRoles,
@@ -35,12 +36,16 @@ export interface EditRolesFormProps {
   readonly profileHref: string;
   /** Today in the organization's time zone (YYYY-MM-DD): ended and scheduled roles are marked. */
   readonly today: string;
+  /** Roles held alone (BR-IAM-4: the Organization Admin holds no other role). */
+  readonly soleRoles: readonly string[];
 }
 
 /**
  * Change a member's roles (T-M2-14, FR-IAM-07, BR-IAM-1; screen 3 «تعديل الأدوار», role choice of
  * screen 2): one primary role and optional additional roles with optional first and last days.
- * Privileged roles stay locked unless the session may change them (PO decision D-IAM-01).
+ * Privileged roles stay locked unless the session may change them (PO decision D-IAM-01). The
+ * Organization Admin holds no other role (BR-IAM-4): choosing it disables every other role and choosing
+ * another role disables it, with the explanation.
  */
 export function EditRolesForm(props: EditRolesFormProps) {
   const { labels, catalogue } = props;
@@ -54,6 +59,8 @@ export function EditRolesForm(props: EditRolesFormProps) {
   const initialPrimary = props.roles.find((r) => r.isPrimary)?.roleCode ?? '';
   const primaryLocked = locked.has(initialPrimary);
   const privileged = new Set(catalogue.filter((c) => c.privileged).map((c) => c.code));
+  const soleBlocked = (code: string, as: 'primary' | 'additional') =>
+    blockedBySole(code, as, state, props.soleRoles, props.today);
 
   const setDay = (code: string, field: 'validFrom' | 'validUntil', value: string) => {
     setState((s) => {
@@ -94,6 +101,8 @@ export function EditRolesForm(props: EditRolesFormProps) {
     startTransition(async () => {
       const result = await action(input);
       if (!result.ok) {
+        // Separation of duties (BR-IAM-4): the reason itself is the message, not "check the fields".
+        let conflict = false;
         if (result.error.code === 'VALIDATION_FAILED') {
           const codes = fieldErrorCodes(result.error);
           const errors: Record<string, string> = {};
@@ -102,12 +111,18 @@ export function EditRolesForm(props: EditRolesFormProps) {
             const row = /^additional\.([0-9]+)\./.exec(path);
             const rowCode = row ? sent[Number(row[1])]?.roleCode : undefined;
             if (path === 'primary' && code === 'LAST_ADMIN') errors.primary = text('lastAdmin');
-            else if (rowCode) errors[`dates-${rowCode}`] = text('datesInvalid');
+            else if (code === 'ROLE_CONFLICT') {
+              errors.additional = text('roleConflict');
+              conflict = true;
+            } else if (rowCode) errors[`dates-${rowCode}`] = text('datesInvalid');
             else if (path.startsWith('additional')) errors.additional = text('datesInvalid');
           }
           setFieldErrors(errors);
         }
-        setMessage({ tone: 'danger', text: errorText(result.error, props.errors) });
+        setMessage({
+          tone: 'danger',
+          text: conflict ? text('roleConflict') : errorText(result.error, props.errors),
+        });
         return;
       }
       setMessage({
@@ -159,8 +174,12 @@ export function EditRolesForm(props: EditRolesFormProps) {
           {text('primaryHint')}
         </p>
         {catalogue.map((choice) => {
+          const blocked = soleBlocked(choice.code, 'primary');
           const disabled =
-            pending || locked.has(choice.code) || (primaryLocked && choice.code !== initialPrimary);
+            pending ||
+            blocked ||
+            locked.has(choice.code) ||
+            (primaryLocked && choice.code !== initialPrimary);
           return (
             <label
               key={choice.code}
@@ -180,6 +199,7 @@ export function EditRolesForm(props: EditRolesFormProps) {
                     };
                   });
                 }}
+                aria-describedby={blocked ? 'role-conflict-hint' : undefined}
                 className="mt-1 size-5 shrink-0"
               />
               {roleLabel(choice, `primary-${choice.code}-name`, stored(choice.code))}
@@ -213,7 +233,8 @@ export function EditRolesForm(props: EditRolesFormProps) {
           .filter((choice) => choice.code !== state.primary)
           .map((choice) => {
             const days = state.additional[choice.code];
-            const disabled = pending || locked.has(choice.code);
+            const blocked = soleBlocked(choice.code, 'additional');
+            const disabled = pending || blocked || locked.has(choice.code);
             return (
               <div
                 key={choice.code}
@@ -227,6 +248,7 @@ export function EditRolesForm(props: EditRolesFormProps) {
                     onChange={(event) => {
                       toggle(choice.code, event.target.checked);
                     }}
+                    aria-describedby={blocked ? 'role-conflict-hint' : undefined}
                     className="mt-1 size-5 shrink-0"
                   />
                   {roleLabel(
@@ -288,6 +310,13 @@ export function EditRolesForm(props: EditRolesFormProps) {
             );
           })}
         <p className="m-0 text-sm text-text-muted">{text('daysHint')}</p>
+        <p
+          id="role-conflict-hint"
+          className="m-0 text-sm text-text-muted"
+          data-testid="role-conflict-hint"
+        >
+          {text('roleConflictHint')}
+        </p>
         {fieldErrors.additional ? (
           <p id="additional-error" className="m-0 text-sm font-medium text-danger">
             {fieldErrors.additional}

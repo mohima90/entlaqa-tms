@@ -379,6 +379,32 @@ begin
     failures := failures || 'the Data API (pgrst.db_schemas) exposes platform/private/module schemas'::text;
   end if;
 
+  -- 7. Separation of duties (BR-IAM-4, T-M2-16): the guard triggers exist and are enabled, and no member
+  --    holds the Organization Admin role together with another role (now or later), no pending
+  --    invitation gives it with another role. Counts only (no ids). Reads every organization: the migration role
+  --    bypasses row-level security (checked by migration 20261010090000).
+  if not exists (select 1 from pg_trigger t where t.tgrelid = 'platform.role_assignments'::regclass
+                 and t.tgname = 'role_assignments_separation_of_duties' and t.tgenabled in ('O', 'A')
+                 and t.tgfoid = to_regprocedure('private.check_role_separation()'))
+     or not exists (select 1 from pg_trigger t where t.tgrelid = 'platform.invitations'::regclass
+                    and t.tgname = 'invitations_separation_of_duties' and t.tgenabled in ('O', 'A')
+                    and t.tgfoid = to_regprocedure('private.check_invitation_separation()')) then
+    failures := failures || 'separation-of-duties triggers (BR-IAM-4) on role_assignments / invitations are missing or disabled'::text;
+  elsif to_regprocedure('private.separation_of_duties_violations()') is null then
+    failures := failures || 'private.separation_of_duties_violations() is missing'::text;
+  elsif not exists (select 1 from pg_roles where rolname = current_user and (rolsuper or rolbypassrls)) then
+    -- Both tables force RLS: without bypassing it the counts would silently read 0 (security review L2).
+    failures := failures || format('role %s must bypass row-level security to check separation of duties (BR-IAM-4)', current_user);
+  else
+    select * into r from private.separation_of_duties_violations();
+    if r.members > 0 then
+      failures := failures || format('%s member(s) hold the Organization Admin role together with another role (BR-IAM-4)', r.members);
+    end if;
+    if r.pending_invitations > 0 then
+      failures := failures || format('%s pending invitation(s) give the Organization Admin role with another role (BR-IAM-4)', r.pending_invitations);
+    end if;
+  end if;
+
   if cardinality(failures) > 0 then
     raise exception 'deployment verification failed:%', E'\n  - ' || array_to_string(failures, E'\n  - ');
   end if;

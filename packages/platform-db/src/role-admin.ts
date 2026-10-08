@@ -109,7 +109,9 @@ export type RolesRefusal =
   | 'last_admin'
   | 'membership_revoked'
   | 'dates_invalid'
-  | 'privileged_change';
+  | 'privileged_change'
+  /** BR-IAM-4: the Organization Admin role would be held together with another role (T-M2-16). */
+  | 'role_conflict';
 
 export type RolesOutcome =
   | {
@@ -124,6 +126,8 @@ export type RolesOutcome =
 export function rolesRefusalOf(error: unknown): RolesRefusal {
   const pg = pgError(error);
   if (pg?.code === '42501') return 'not_allowed';
+  // Separation of duties (BR-IAM-4, migration 20261010090000).
+  if (pg?.code === 'JR001') return 'role_conflict';
   if (pg?.code === '23514' && pg.message.includes('at least one active Organization Admin')) {
     return 'last_admin';
   }
@@ -178,6 +182,20 @@ export interface ReplaceRolesOptions {
    * after the lock, against the stored roles: refused as `privileged_change`.
    */
   readonly lockedCodes?: ReadonlySet<string>;
+  /**
+   * Would the member hold roles that may not go together (BR-IAM-4)? Called after the lock with the
+   * roles as they would be saved and today in the organization's time zone: refused as `role_conflict`
+   * before anything is written (the database refuses it anyway).
+   */
+  readonly conflicts?: (roles: readonly AssignedRole[], today: string) => boolean;
+  /**
+   * Roles held alone (BR-IAM-4: the Organization Admin). When such a role's row changes in the same save
+   * as other rows, those other rows are written as remove + add (after the sole role's update), so no
+   * intermediate state holds both: the database checks every row write, and e.g. a scheduled hand-over
+   * moved later or earlier would otherwise be refused half-way (security review L3). The sole role's own
+   * row is never removed for this (last-admin rule).
+   */
+  readonly soleRoles?: ReadonlySet<string>;
 }
 
 /**
@@ -206,16 +224,25 @@ export async function replaceMemberRoles(
   if (options.lockedCodes && touchesRoles(before.roles, desired, options.lockedCodes)) {
     return { ok: false, refusal: 'privileged_change' };
   }
+  if (options.conflicts?.(desired, before.today)) return { ok: false, refusal: 'role_conflict' };
 
   const current = new Map(before.roles.map((r) => [r.roleCode, r]));
   const wanted = new Map(desired.map((r) => [r.roleCode, r]));
   const removed = before.roles.filter((r) => !wanted.has(r.roleCode));
   const added = desired.filter((r) => !current.has(r.roleCode));
-  const updated = desired.filter((r) => {
+  const changed = desired.filter((r) => {
     const old = current.get(r.roleCode);
     return old !== undefined && !same(old, r);
   });
-  if (removed.length + added.length + updated.length === 0) {
+  const sole = options.soleRoles;
+  const rewritten =
+    sole && changed.some((r) => sole.has(r.roleCode))
+      ? changed.filter((r) => !sole.has(r.roleCode))
+      : [];
+  const updated = changed.filter((r) => !rewritten.includes(r));
+  const deletedCodes = [...removed, ...rewritten].map((r) => r.roleCode);
+  const inserted = [...added, ...rewritten];
+  if (removed.length + added.length + changed.length === 0) {
     return { ok: true, before: before.roles, after: before.roles, changed: false };
   }
 
@@ -228,9 +255,9 @@ export async function replaceMemberRoles(
   // The primary slot is unique: rows giving it up are written before the row taking it.
   const order = (r: AssignedRole) => (r.isPrimary ? 1 : 0);
   try {
-    for (const r of removed) {
+    for (const code of deletedCodes) {
       await tx.execute(sql`delete from platform.role_assignments
-        where membership_id = ${membership}::uuid and role_code = ${r.roleCode}`);
+        where membership_id = ${membership}::uuid and role_code = ${code}`);
     }
     for (const r of [...updated].sort((a, b) => order(a) - order(b))) {
       await tx.execute(sql`update platform.role_assignments
@@ -238,7 +265,7 @@ export async function replaceMemberRoles(
             valid_until = ${until(r.validUntil)}
         where membership_id = ${membership}::uuid and role_code = ${r.roleCode}`);
     }
-    for (const r of [...added].sort((a, b) => order(a) - order(b))) {
+    for (const r of [...inserted].sort((a, b) => order(a) - order(b))) {
       await tx.execute(sql`insert into platform.role_assignments
           (membership_id, role_code, is_primary, valid_from, valid_until)
         values (${membership}::uuid, ${r.roleCode}, ${r.isPrimary}, ${from(r.validFrom)},

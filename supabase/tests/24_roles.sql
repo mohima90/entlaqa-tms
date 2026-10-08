@@ -92,6 +92,9 @@ begin;
 set local role authenticated;
 select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
   'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1'));
+-- uAB gives up their roles first: an Organization Admin holds no other role (BR-IAM-4, T-M2-16).
+delete from platform.role_assignments
+ where membership_id = (select id from platform.tenant_memberships where user_id = '00000000-0000-4000-8000-0000000000ab' and tenant_id = 'a0000000-0000-4000-8000-000000000001');
 insert into platform.role_assignments (membership_id, role_code, valid_until)
 select id, 'tenant_admin', now() + interval '1 hour' from platform.tenant_memberships
 where user_id = '00000000-0000-4000-8000-0000000000ab' and tenant_id = 'a0000000-0000-4000-8000-000000000001';
@@ -165,7 +168,8 @@ do $$
 begin
   perform tests.assert_eq(
     (select array_agg(tgname::text order by tgname::text) from pg_trigger where tgrelid = 'platform.role_assignments'::regclass and not tgisinternal),
-    array['role_assignments_guard', 'role_assignments_keep_admin', 'role_assignments_stamp_row'], 'role_assignments: triggers');
+    array['role_assignments_guard', 'role_assignments_keep_admin', 'role_assignments_separation_of_duties',
+          'role_assignments_stamp_row'], 'role_assignments: triggers');
   perform tests.assert((select prosrc ilike '%pg_advisory_xact_lock%' from pg_proc where oid = 'private.lock_tenant_roles(uuid)'::regprocedure),
     'role changes are serialised per tenant');
 end $$;

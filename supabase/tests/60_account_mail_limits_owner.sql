@@ -1,5 +1,5 @@
 -- db-test: run-as=owner
--- Checks of 46/47 (T-M2-17), then the queue is emptied for the TypeScript integration tests
+-- Checks of 58/59 (T-M2-17), then the queue is emptied for the TypeScript integration tests
 -- (DB_TEST_INTEGRATION=1), which make their own requests.
 \set ON_ERROR_STOP on
 

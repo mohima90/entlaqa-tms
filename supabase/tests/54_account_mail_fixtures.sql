@@ -1,7 +1,7 @@
 -- db-test: run-as=owner
 -- Fixtures for the account e-mail queue (T-M2-17, FR-NTF-02 / FR-IAM-13): accounts whose reset or
 -- "password changed" e-mail goes to one organization, several, none, or nowhere at all. Committed (the
--- request path 43 and the worker 44 run as other login roles); 45 empties the queue again.
+-- request path 55 and the worker 56 run as other login roles); 57 empties the queue again.
 --   uR1  reset1@a.test   active in A only (Arabic)                                → A, ar
 --   uR2  multi@ab.test   active in A (older) and B (newer); its most recent sign-in session selected B,
 --                        an older one A; English in B                              → B, en (session A for

@@ -2,7 +2,7 @@
 -- Account e-mail queue as stored (T-M2-17): what the request path committed in
 -- 43_account_mail_app_server.sql (lower-cased addresses, repeats dropped, the profile change's
 -- organization) and the shape rules; then the set-up for the retention rules and the DB-side cap
--- (46–48).
+-- (58–60).
 \set ON_ERROR_STOP on
 
 begin;
@@ -30,7 +30,7 @@ begin
 end $$;
 rollback;
 
--- Set-up for the limits (46 as app_server, 47 as app_worker, checked in 48): one request older than the
+-- Set-up for the limits (58 as app_server, 59 as app_worker, checked in 60): one request older than the
 -- link's lifetime, one whose 5 attempts are used up, and the queue filled to its cap of 10,000.
 begin;
 update private.account_mail_requests set created_at = now() - interval '61 minutes' where email = 'reset1@a.test';

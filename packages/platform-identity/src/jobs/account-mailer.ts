@@ -67,7 +67,10 @@ function codeOf(error: unknown): string {
 }
 
 type Sendable = Extract<AccountMailRequest, { outcome: 'send' }>;
-type OrganizationName = { readonly ar: string; readonly en: string | null };
+interface OrganizationName {
+  readonly ar: string;
+  readonly en: string | null;
+}
 type AccountEmail = EmailRequest<'platform.password_reset' | 'platform.password_changed'>;
 
 /** Stands in for the token while the reset e-mail's content is checked before a token exists. */

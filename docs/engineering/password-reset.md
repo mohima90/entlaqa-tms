@@ -80,7 +80,7 @@ The request comes from a visitor without session or organization, so it cannot u
 | `finish_account_mail_request(id)` | worker | Removes an answered request — in the organization's transaction that queues the e-mail, or after deciding to send nothing |
 | `retry_account_mail_request(id)` | worker | A temporary failure: back-off 15 s, 30 s, 60 s, 120 s; after the 5th attempt the request is removed |
 
-The table has RLS enabled and forced; no application role (web app, worker, queue runner, Auth) has any privilege on it or on the view `private.auth_account` (Auth accounts: id, e-mail, banned, last recovery link) — catalog test `10_catalog.sql`, `verify-deployment.sql`, pgTAP `54`–`60`.
+The table has RLS enabled and forced; no application role (web app, worker, queue runner, Auth) has any privilege on it or on the view `private.auth_account` (Auth accounts: id, e-mail, banned, last recovery link) — catalog test `10_catalog.sql`, `verify-deployment.sql`, pgTAP `54`–`61`.
 
 **Retention and caps (database).** A request lives until it is answered — seconds with a running worker — and **at most 60 minutes** (the link's lifetime; older ones are removed unanswered by the next lease); it holds the typed address and nothing else about the visitor. One waiting request per address (or account); at most **10,000** waiting in all (a flood while no worker runs cannot grow the table without bound; further requests are dropped silently). The address never enters an event, a job payload (the worker's job has no payload), `jobs.last_error` or a log line.
 

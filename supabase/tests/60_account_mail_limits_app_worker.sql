@@ -1,7 +1,7 @@
 -- db-test: run-as=app_worker
 -- Retention (T-M2-17): each lease first removes requests older than 60 minutes (the link's lifetime) and
 -- requests whose 5 attempts are used up, unanswered; then leases the oldest remaining one. Committed;
--- checked in 48_account_mail_limits_owner.sql.
+-- checked in 61_account_mail_limits_owner.sql.
 \set ON_ERROR_STOP on
 
 do $$ begin perform tests.assert(session_user = 'app_worker', 'must run connected as app_worker'); end $$;
@@ -15,8 +15,8 @@ declare
 begin
   select * into r from private.claim_account_mail_request();
   perform tests.assert_eq(r.email, 'oldest@bd.test',
-    'the stale and the exhausted requests are skipped (removed); the oldest remaining one is leased');
+    'the exhausted request is skipped (removed); the oldest remaining one is leased');
 end $$;
 commit;
 
-\echo '47_account_mail_limits_app_worker: ok'
+\echo '60_account_mail_limits_app_worker: ok'

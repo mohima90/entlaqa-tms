@@ -1,12 +1,16 @@
 -- db-test: run-as=owner
 -- Fixtures for the account e-mail queue (T-M2-17, FR-NTF-02 / FR-IAM-13): accounts whose reset or
 -- "password changed" e-mail goes to one organization, several, none, or nowhere at all. Committed (the
--- request path 55 and the worker 56 run as other login roles); 57 empties the queue again.
+-- request path 55 and the worker 56 run as other login roles); 61 empties the queue again.
+-- recovery_sent_at (Auth's last recovery token) decides whether a "password changed" notice may be queued
+-- WITHOUT claims (after a reset: a token within 65 minutes): uR3 yes (10 minutes ago), uR5 yes (seconds
+-- ago), uR1 no (never), uR6 no (two hours ago).
 --   uR1  reset1@a.test   active in A only (Arabic)                                → A, ar
 --   uR2  multi@ab.test   active in A (older) and B (newer); its most recent sign-in session selected B,
 --                        an older one A; English in B                              → B, en (session A for
 --                        a My profile change made in A → A, ar)
---   uR3  oldest@bd.test  active in B (older) and D (newer), never signed in       → B (oldest), ar
+--   uR3  oldest@bd.test  active in B (older) and D (newer), never signed in, a reset link 10 minutes ago
+--                                                                                  → B (oldest), ar
 --   uR4  banned@a.test   active in A, banned in Auth                              → nothing (banned)
 --   uR5  soon@a.test     active in A, a reset link issued seconds ago             → nothing on a first try
 --   uR6  invited@a.test  only an invited membership in A                          → nothing (no membership)
@@ -16,10 +20,10 @@
 insert into auth.users (id, email, banned_until, recovery_sent_at) values
   ('e7000000-0000-4000-8000-000000000001', 'reset1@a.test', null, null),
   ('e7000000-0000-4000-8000-000000000002', 'multi@ab.test', null, null),
-  ('e7000000-0000-4000-8000-000000000003', 'oldest@bd.test', null, null),
+  ('e7000000-0000-4000-8000-000000000003', 'oldest@bd.test', null, now() - interval '10 minutes'),
   ('e7000000-0000-4000-8000-000000000004', 'banned@a.test', now() + interval '1 day', null),
   ('e7000000-0000-4000-8000-000000000005', 'soon@a.test', null, now()),
-  ('e7000000-0000-4000-8000-000000000006', 'invited@a.test', null, null);
+  ('e7000000-0000-4000-8000-000000000006', 'invited@a.test', null, now() - interval '2 hours');
 
 insert into platform.persons (id, tenant_id, display_name_ar, email, preferred_locale) values
   ('e7100000-0000-4000-8000-0000000001a1', 'a0000000-0000-4000-8000-000000000001', 'مستخدم إعادة', 'reset1@a.test', 'ar'),
@@ -49,4 +53,4 @@ insert into platform.session_context (session_id, user_id, active_tenant_id, upd
   ('e7200000-0000-4000-8000-0000000002a1', 'e7000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', now() - interval '3 hours'),
   ('e7200000-0000-4000-8000-0000000002b1', 'e7000000-0000-4000-8000-000000000002', 'b0000000-0000-4000-8000-000000000001', now() - interval '1 hour');
 
-\echo '42_account_mail_fixtures: ok'
+\echo '54_account_mail_fixtures: ok'

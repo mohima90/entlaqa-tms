@@ -165,6 +165,8 @@ grant execute on function private.current_tenant_id() to account_mail_guard;
 -- At most this many requests wait at any time (a flood while no worker runs cannot grow the table
 -- without bound); further requests are dropped silently, like a limited one on the request path.
 -- One waiting request per address or account: a repeat before the worker answered adds nothing.
+-- Retention does not depend on a running worker: each request function first removes requests older
+-- than 60 minutes (the link's lifetime; created_at is indexed), as each lease does (security review).
 
 -- Screen 10: the web app (app_server, no session) queues a reset request for the address typed on the
 -- forgot page, unconditionally — this function never looks at accounts, and answers nothing.
@@ -179,6 +181,7 @@ begin
   if session_user <> 'app_server' then
     raise exception 'reserved to the web app' using errcode = 'insufficient_privilege';
   end if;
+  delete from private.account_mail_requests r where r.created_at < now() - interval '60 minutes';
   if v_email is null or char_length(v_email) not between 3 and 320 or v_email !~ '^[^@\s]+@[^@\s]+$' then
     return;
   end if;
@@ -194,7 +197,10 @@ comment on function private.request_password_reset_mail(text) is
   'SECURITY-RELEVANT (FR-IAM-13, T-M2-17). Queues a password-reset e-mail request for an address, unconditionally (no account lookup). app_server only.';
 
 -- After a password change, the web app (app_server) queues the "password changed" notice:
---   * after a reset (screen 11): without claims — the worker picks the organization;
+--   * after a reset (screen 11): without claims — the worker picks the organization. Only for an account
+--     that was issued a recovery token within the last 65 minutes (a completed reset always follows one:
+--     the link lives 60 minutes; 5 more for the completion itself), so a stolen app_server credential
+--     cannot send branded notices to arbitrary accounts (security review);
 --   * after a My profile change (FR-IAM-16): with the signed-in user's own claims — p_user_id must be
 --     that user, and the session's organization is recorded for the notice.
 create or replace function private.request_password_changed_mail(p_user_id uuid)
@@ -208,11 +214,15 @@ begin
   if session_user <> 'app_server' or p_user_id is null then
     raise exception 'reserved to the web app' using errcode = 'insufficient_privilege';
   end if;
+  delete from private.account_mail_requests r where r.created_at < now() - interval '60 minutes';
   if private.request_claims() is not null then
     v_tenant := private.current_tenant_id();
     if v_tenant is null or private.request_user_id() is distinct from p_user_id then
       raise exception 'only for the signed-in user' using errcode = 'insufficient_privilege';
     end if;
+  elsif not exists (select 1 from private.auth_account a
+                    where a.id = p_user_id and a.recovery_sent_at > now() - interval '65 minutes') then
+    return;  -- no recent recovery token: not after a reset
   end if;
   if not exists (select 1 from private.auth_account a where a.id = p_user_id)
      or (select count(*) from (select 1 from private.account_mail_requests limit 10000) w) >= 10000

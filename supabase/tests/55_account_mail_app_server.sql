@@ -4,7 +4,7 @@
 -- (nothing on this path looks at accounts), and the "password changed" notice of an account (its own
 -- user's, with claims; any, without claims, after a reset). It can never read, change or remove the
 -- queue, nor run the worker functions. The requests committed at the end are answered by
--- 44_account_mail_app_worker.sql. Fixtures: 00_helpers_and_fixtures.sql, 42_account_mail_fixtures.sql.
+-- 56_account_mail_app_worker.sql. Fixtures: 00_helpers_and_fixtures.sql, 54_account_mail_fixtures.sql.
 \set ON_ERROR_STOP on
 
 do $$ begin perform tests.assert(session_user = 'app_server', 'must run connected as app_server'); end $$;
@@ -100,7 +100,7 @@ reset role;
 rollback;
 
 -- ---------------------------------------------------------------------------------------------------
--- Committed for 44_account_mail_app_worker.sql: one request per transaction (oldest first is the
+-- Committed for 56_account_mail_app_worker.sql: one request per transaction (oldest first is the
 -- worker's order).
 -- ---------------------------------------------------------------------------------------------------
 begin; set local role authenticated; select tests.set_claims(null);
@@ -132,5 +132,12 @@ begin; set local role authenticated; select tests.set_claims(null);
 select private.request_password_changed_mail('e7000000-0000-4000-8000-000000000003'); commit;
 begin; set local role authenticated; select tests.set_claims(null);
 select private.request_password_changed_mail('e7000000-0000-4000-8000-000000000003'); commit;  -- a repeat: dropped
+-- Without claims, an account that had no recovery token within 65 minutes gets no notice — there was no
+-- reset (a stolen app_server credential cannot send branded notices to arbitrary accounts). Dropped
+-- silently; 57_account_mail_owner.sql checks nothing was stored.
+begin; set local role authenticated; select tests.set_claims(null);
+select private.request_password_changed_mail('e7000000-0000-4000-8000-000000000001'); commit;  -- never
+begin; set local role authenticated; select tests.set_claims(null);
+select private.request_password_changed_mail('e7000000-0000-4000-8000-000000000006'); commit;  -- 2 hours ago
 
-\echo '43_account_mail_app_server: ok'
+\echo '55_account_mail_app_server: ok'

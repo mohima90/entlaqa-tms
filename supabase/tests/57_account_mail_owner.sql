@@ -1,8 +1,8 @@
 -- db-test: run-as=owner
 -- Account e-mail queue as stored (T-M2-17): what the request path committed in
--- 43_account_mail_app_server.sql (lower-cased addresses, repeats dropped, the profile change's
--- organization) and the shape rules; then the set-up for the retention rules and the DB-side cap
--- (58–60).
+-- 55_account_mail_app_server.sql (lower-cased addresses, repeats dropped, the profile change's
+-- organization, no notice without claims unless a recovery token was issued recently) and the shape
+-- rules; then the set-up for the retention rules and the DB-side cap (58–61).
 \set ON_ERROR_STOP on
 
 begin;
@@ -17,7 +17,8 @@ begin
     'password_reset|uc@c.test|||0,password_reset|nobody@nowhere.test|||0,'
     'password_changed||e7000000-0000-4000-8000-000000000002|a0000000-0000-4000-8000-000000000001|0,'
     'password_changed||e7000000-0000-4000-8000-000000000003||0',
-    'requests as queued: one per address/account, lower-cased, the profile change with its organization');
+    'requests as queued: one per address/account, lower-cased, the profile change with its organization; '
+    'no notice without claims for an account without a recent recovery token (uR1, uR6)');
   perform tests.assert_check_constraint(
     $q$insert into private.account_mail_requests (kind, email, user_id) values ('password_reset', 'x@a.test', 'e7000000-0000-4000-8000-000000000001')$q$,
     'account_mail_requests_shape_check', 'a reset request carries the address only');
@@ -30,14 +31,16 @@ begin
 end $$;
 rollback;
 
--- Set-up for the limits (58 as app_server, 59 as app_worker, checked in 60): one request older than the
--- link's lifetime, one whose 5 attempts are used up, and the queue filled to its cap of 10,000.
+-- Set-up for the limits (58 as app_server, checked in 59; 60 as app_worker, checked in 61): one request
+-- older than the link's lifetime, one whose 5 attempts are used up, and the queue filled to ONE MORE than
+-- its cap of 10,000 — the request path first removes the old request (retention without a worker), and
+-- the queue is then exactly full.
 begin;
 update private.account_mail_requests set created_at = now() - interval '61 minutes' where email = 'reset1@a.test';
 update private.account_mail_requests set attempts = 5 where email = 'multi@ab.test';
 insert into private.account_mail_requests (kind, email, created_at)
   select 'password_reset', format('flood-%s@cap.test', g), now() + interval '1 second'
-  from generate_series(1, 10000 - (select count(*) from private.account_mail_requests)) g;
+  from generate_series(1, 10001 - (select count(*) from private.account_mail_requests)) g;
 commit;
 
-\echo '45_account_mail_owner: ok'
+\echo '57_account_mail_owner: ok'

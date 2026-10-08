@@ -2,8 +2,8 @@
 -- Account e-mails, the worker side (T-M2-17): only a job (system claims under the app_worker login) may
 -- lease, answer or put back a request; a lease says who gets which e-mail — the R1 rule for the
 -- organization (docs/engineering/password-reset.md §3) and the person's language — or why nothing is sent.
--- The queue itself stays unreachable. Requests: committed by 43_account_mail_app_server.sql; every block
--- here is rolled back (45_account_mail_owner.sql empties the queue).
+-- The queue itself stays unreachable. Requests: committed by 55_account_mail_app_server.sql; every block
+-- here is rolled back (61_account_mail_limits_owner.sql empties the queue).
 \set ON_ERROR_STOP on
 
 do $$ begin perform tests.assert(session_user = 'app_worker', 'must run connected as app_worker'); end $$;
@@ -121,4 +121,4 @@ end $$;
 reset role;
 rollback;
 
-\echo '44_account_mail_app_worker: ok'
+\echo '56_account_mail_app_worker: ok'

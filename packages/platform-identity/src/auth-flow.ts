@@ -60,6 +60,12 @@ export const IdentityErrors = defineErrorCodes({
  */
 export const SIGN_IN_REFUSAL_ANSWER_MS = 1_500;
 
+/**
+ * A refusal whose work took longer than this before the padding is logged (codes only): close to the
+ * answer time, a slow limiter or Auth could start to tell accounts apart again (security review T-M2-11).
+ */
+export const SIGN_IN_REFUSAL_WARN_MS = 1_200;
+
 /** The subset of the Supabase Auth client the flow uses (server-side, cookie-bound). */
 export interface AuthClientLike extends SupabaseAuthLike {
   readonly auth: SupabaseAuthLike['auth'] & {
@@ -144,9 +150,11 @@ export interface PasswordSession {
  * here: signInWithPassword() continues with the organizations, the invitation flow
  * (invitation-accept.ts) with the invitation.
  *
- * Limits first (T-M2-11): a limited attempt gets AUTH_TOO_MANY_ATTEMPTS without asking Auth; when the
- * limiter cannot answer, RateLimiterUnavailableError is thrown (fail closed: the generic internal error).
- * Every refusal — limited, or wrong e-mail or password — is answered after the same minimum time.
+ * Limits first (T-M2-11): the attempt is counted BEFORE Auth is asked — a limited attempt gets
+ * AUTH_TOO_MANY_ATTEMPTS without asking Auth; when the limiter cannot answer, RateLimiterUnavailableError
+ * is thrown (fail closed: the generic internal error). Auth's verdict is then reported to the attempt
+ * (failed: events and the lockout e-mail; succeeded: the provisional failure is given back and the browser
+ * trusted). Every refusal — limited, or wrong e-mail or password — is answered after the same minimum time.
  */
 export async function startPasswordSession(
   deps: AuthFlowDeps,
@@ -156,7 +164,15 @@ export async function startPasswordSession(
   if (!supabase) return err(appError('NOT_CONFIGURED'));
   const started = deps.now();
   const refuse = async (error: AppError): Promise<Result<never, AppError>> => {
-    await deps.sleep(Math.max(0, started + SIGN_IN_REFUSAL_ANSWER_MS - deps.now()));
+    const elapsed = deps.now() - started;
+    if (elapsed > SIGN_IN_REFUSAL_WARN_MS) {
+      deps.logWarning('sign-in refusal took longer than its padding allows', {
+        action: 'platform.auth.sign_in',
+        reason: 'refusal_padding_exceeded',
+        durationMs: Math.round(elapsed),
+      });
+    }
+    await deps.sleep(Math.max(0, SIGN_IN_REFUSAL_ANSWER_MS - elapsed));
     return err(error);
   };
 
@@ -168,6 +184,8 @@ export async function startPasswordSession(
     password: credentials.password,
   });
   if (error) {
+    // Auth refused or could not answer: the attempt's provisional failure stays counted (429 and 5xx
+    // included — security review T-M2-11).
     if (error.status === 429) {
       // Auth's own limits (on hosted Supabase: the app's egress address, shared by every visitor).
       deps.logWarning('sign-in limited by Auth', {
@@ -179,16 +197,18 @@ export async function startPasswordSession(
       return refuse(appError('RATE_LIMITED'));
     }
     // 4xx: refused credentials (wrong e-mail or password, unconfirmed or banned account) — one answer
-    // for all of them (no account enumeration). The guard counts the failure and records the security
-    // event (keyed references only).
+    // for all of them (no account enumeration). The failure was counted before Auth was asked; the
+    // attempt records the security events (keyed references only) and, when the account locks now,
+    // requests the lockout e-mail.
     if (error.status !== undefined && error.status >= 400 && error.status < 500) {
-      await deps.signInGuard.failed(credentials.email);
+      await gate.attempt.failed();
       return refuse(appError(IdentityErrors.AUTH_INVALID_CREDENTIALS));
     }
     throw new AuthServiceError(error.status);
   }
-  // The password was right: the account's run of consecutive failures ends.
-  await deps.signInGuard.succeeded(credentials.email);
+  // The password was right: the provisional failure is given back, the run of failures ends and the
+  // browser is trusted for the account (30 days).
+  await gate.attempt.succeeded();
   const tokens = sessionTokens(data);
   if (!tokens) return err(appError('UNAUTHENTICATED'));
 

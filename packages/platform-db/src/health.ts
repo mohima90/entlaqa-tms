@@ -3,9 +3,22 @@ import { type AppDatabase, getDatabase, isDatabaseConfigured } from './client';
 export type DatabaseHealth = 'ok' | 'unavailable' | 'not-configured';
 
 /**
- * Readiness probe for the request-path connection (ADR 0009 §6): `select 1` as `app_server`, bounded by
- * a timeout after which the query is cancelled (it must not stay queued in the pool real traffic uses).
- * Needs no table privileges and reads no tenant data. Never throws and never returns details.
+ * Database functions the request path cannot work without: sign-in fails closed until they exist
+ * (T-M2-11, migration 20261013090000). Readiness is refused while they are missing, so an app deployed
+ * ahead of its database migration is not sent traffic (security review T-M2-11, deploy readiness).
+ */
+export const REQUIRED_DATABASE_FUNCTIONS = [
+  'rate_limit_hit',
+  'rate_limit_sign_in_check',
+  'rate_limit_sign_in_succeeded',
+] as const;
+
+/**
+ * Readiness probe for the request-path connection (ADR 0009 §6): one catalog query as `app_server` —
+ * whether the required functions exist in schema `private` (pg_catalog is readable by every role; no
+ * function is called) — bounded by a timeout after which the query is cancelled (it must not stay queued
+ * in the pool real traffic uses). Needs no table privileges and reads no tenant data. Never throws and
+ * never returns details.
  */
 export async function checkDatabase(
   options: { readonly timeoutMs?: number; readonly getDb?: () => AppDatabase } = {},
@@ -14,7 +27,11 @@ export async function checkDatabase(
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const db = (options.getDb ?? (() => getDatabase('app_server')))();
-    const query = db.$client`select 1 as ok`;
+    const required = [...REQUIRED_DATABASE_FUNCTIONS];
+    const query = db.$client<{ missing: number | string }[]>`
+      select ${required.length}::int - count(distinct p.proname)::int as missing
+      from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = 'private' and p.proname = any(${required}::text[])`;
     const timeout = new Promise<never>((_resolve, reject) => {
       timer = setTimeout(() => {
         void Promise.resolve()
@@ -25,8 +42,8 @@ export async function checkDatabase(
         reject(new Error('database health check timed out'));
       }, options.timeoutMs ?? 3000);
     });
-    await Promise.race([query, timeout]);
-    return 'ok';
+    const rows = await Promise.race([query, timeout]);
+    return Number(rows[0]?.missing ?? required.length) === 0 ? 'ok' : 'unavailable';
   } catch {
     return 'unavailable';
   } finally {

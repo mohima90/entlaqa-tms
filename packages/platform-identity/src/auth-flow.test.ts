@@ -93,15 +93,16 @@ function setup(options: FakeOptions = {}) {
   };
   const audited: { action: string; actor: unknown; entityId?: string | undefined }[] = [];
   const claimsSeen: unknown[] = [];
-  const guard = {
-    check: vi.fn((_email: string) =>
-      options.gate instanceof Error
-        ? Promise.reject(options.gate)
-        : Promise.resolve(options.gate ?? { allowed: true as const }),
-    ),
-    failed: vi.fn((_email: string) => Promise.resolve()),
-    succeeded: vi.fn((_email: string) => Promise.resolve()),
-  } satisfies SignInGuard;
+  // The attempt an allowed check hands out: Auth's verdict is reported to it.
+  const failed = vi.fn(() => Promise.resolve());
+  const succeeded = vi.fn(() => Promise.resolve());
+  const check = vi.fn((_email: string): Promise<SignInGate> =>
+    options.gate instanceof Error
+      ? Promise.reject(options.gate)
+      : Promise.resolve(options.gate ?? { allowed: true, attempt: { failed, succeeded } }),
+  );
+  const signInGuard: SignInGuard = { check };
+  const guard = { check, failed, succeeded };
   const deps: AuthFlowDeps = {
     supabase: { auth },
     withUserTx: ((claims: unknown, fn: (tx: unknown) => Promise<unknown>) => {
@@ -132,7 +133,7 @@ function setup(options: FakeOptions = {}) {
       return Promise.resolve();
     }),
     logWarning: vi.fn(),
-    signInGuard: guard,
+    signInGuard,
     now: () => clock,
     sleep: vi.fn((ms: number) => {
       clock += ms;
@@ -172,14 +173,32 @@ describe('signInWithPassword', () => {
   });
 
   it('answers wrong e-mail and wrong password identically (no account enumeration)', async () => {
-    const { deps, guard } = setup({ signInError: { status: 400 } });
+    const { deps, guard, auth } = setup({ signInError: { status: 400 } });
     const result = await signInWithPassword(deps, credentials);
     expect(result.ok).toBe(false);
     expect(!result.ok && result.error.code).toBe('AUTH_INVALID_CREDENTIALS');
     expect(!result.ok && result.error.status).toBe(401);
-    // The guard counts the failure (account + client) and records the security event (keyed refs only).
-    expect(guard.failed).toHaveBeenCalledWith(credentials.email);
+    // The failure was counted BEFORE Auth was asked (check); the attempt records the security event
+    // (keyed refs only) and requests the lockout e-mail when the account locks now.
+    expect(guard.check).toHaveBeenCalledWith(credentials.email);
+    expect(guard.check.mock.invocationCallOrder[0]).toBeLessThan(
+      auth.signInWithPassword.mock.invocationCallOrder[0] ?? 0,
+    );
+    expect(guard.failed).toHaveBeenCalledTimes(1);
     expect(guard.succeeded).not.toHaveBeenCalled();
+  });
+
+  it('warns (codes only) when a refusal took longer than the padding allows', async () => {
+    const slow = setup({ signInError: { status: 400 }, authLatencyMs: 1_300 });
+    const result = await signInWithPassword(slow.deps, credentials);
+    expect(!result.ok && result.error.code).toBe('AUTH_INVALID_CREDENTIALS');
+    expect(slow.deps.logWarning).toHaveBeenCalledWith(
+      'sign-in refusal took longer than its padding allows',
+      { action: 'platform.auth.sign_in', reason: 'refusal_padding_exceeded', durationMs: 1_300 },
+    );
+    const fast = setup({ signInError: { status: 400 }, authLatencyMs: 1_100 });
+    await signInWithPassword(fast.deps, credentials);
+    expect(fast.deps.logWarning).not.toHaveBeenCalled();
   });
 
   it('answers an unknown account and a wrong password after the same time (timing, T-IAM-27)', async () => {
@@ -231,17 +250,19 @@ describe('signInWithPassword', () => {
   it("ends the account's run of failures after a correct password", async () => {
     const { deps, guard } = setup();
     await signInWithPassword(deps, credentials);
-    expect(guard.succeeded).toHaveBeenCalledWith(credentials.email);
+    expect(guard.succeeded).toHaveBeenCalledTimes(1);
     expect(guard.failed).not.toHaveBeenCalled();
     // A successful sign-in is not slowed down.
     expect(deps.sleep).not.toHaveBeenCalled();
   });
 
-  it('never reports an Auth outage as a wrong password (and counts no failure)', async () => {
+  it('never reports an Auth outage as a wrong password; the provisional failure stays counted', async () => {
     for (const status of [500, 503, 0, undefined]) {
       const { deps, guard } = setup({ signInError: { status } });
       await expect(signInWithPassword(deps, credentials)).rejects.toBeInstanceOf(AuthServiceError);
+      // Neither verdict is reported: nothing is given back (security review T-M2-11).
       expect(guard.failed).not.toHaveBeenCalled();
+      expect(guard.succeeded).not.toHaveBeenCalled();
     }
   });
 
@@ -252,6 +273,7 @@ describe('signInWithPassword', () => {
     expect(!result.ok && result.error.code).toBe('RATE_LIMITED');
     expect(deps.now() - started).toBe(SIGN_IN_REFUSAL_ANSWER_MS);
     expect(guard.failed).not.toHaveBeenCalled();
+    expect(guard.succeeded).not.toHaveBeenCalled();
     expect(deps.logWarning).toHaveBeenCalledWith('sign-in limited by Auth', {
       action: 'platform.auth.sign_in',
       securityEvent: 'auth.rate_limited',

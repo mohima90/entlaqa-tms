@@ -133,6 +133,10 @@ select tests.assert_fails($$select private.rate_limit_sign_in_reset(sha256('\x02
   array['42501'], 'app_worker may not reset');
 select tests.assert_fails($$select private.request_account_locked_mail('x@a.test', 15)$$,
   array['42501'], 'app_worker may not request lockout e-mails');
+select tests.assert_fails($$select private.sign_in_account_in_tenant('ua@a.test', 'a0000000-0000-4000-8000-000000000001')$$,
+  array['42501'], 'app_worker may not ask about memberships by address');
+select tests.assert_fails($$select private.rate_limit_give_back('tests.args', sha256('\x01'::bytea))$$,
+  array['42501'], 'app_worker may not give hits back');
 commit;
 reset session authorization;
 

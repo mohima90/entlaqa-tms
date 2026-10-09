@@ -231,21 +231,39 @@ const FAILED_CHANGE_REASONS: Readonly<Record<string, string>> = {
 };
 
 /**
- * `changePassword` is the identity flow bound to the request (platform-identity/auth); `afterChange`
- * runs once it succeeded (platform-identity/auth `queueOwnPasswordChangedNoticeForRequest`). A wrong
- * current password is audited as `platform.auth.password_change_failed` (no password, the reason code
- * only); the flow limits the checks per user and records security events for both.
+ * Counts one current-password check of the user on the shared limiter (platform-identity/auth
+ * `allowPasswordCheckForRequest`): false = limited; throws when the limiter cannot answer (fail closed).
+ */
+export type AllowPasswordCheck = (userId: string) => Promise<boolean>;
+
+export interface ChangeMyPasswordOptions {
+  /** Per-user limit on current-password checks (T-M2-11, T-M2-15a security review). Required. */
+  readonly allowPasswordCheck: AllowPasswordCheck;
+  readonly afterChange?: AfterPasswordChange;
+}
+
+/**
+ * `changePassword` is the identity flow bound to the request (platform-identity/auth); the per-user limit
+ * on current-password checks runs BEFORE the action's transaction (`beforeTransaction`: the limiter's own
+ * short transaction never runs while the action holds a pooled connection, and its count survives the
+ * rollback of a refused change — security review T-M2-11); `afterChange` runs once it succeeded
+ * (platform-identity/auth `queueOwnPasswordChangedNoticeForRequest`). A wrong current password is audited
+ * as `platform.auth.password_change_failed` (no password, the reason code only); the flow records
+ * security events for both.
  */
 export function changeMyPasswordActionDefinition(
   changePassword: ChangePassword,
-  afterChange?: AfterPasswordChange,
+  options: ChangeMyPasswordOptions,
 ): ActionDefinition<typeof ChangePasswordInput, { readonly userId: string }, UserTx> {
+  const { allowPasswordCheck, afterChange } = options;
   return {
     permission: manageOwn,
     input: ChangePasswordInput,
     scoped: true,
     // The password changes at Auth inside the transaction: never run twice after a deadlock.
     externalEffects: true,
+    beforeTransaction: async ({ actor }) =>
+      (await allowPasswordCheck(actor.userId)) ? ok(undefined) : err(appError('RATE_LIMITED')),
     handler: async ({ ctx, input }) => {
       // Strictest wins (PO decision 5, T-M2-10): the longest minimum of the account's organizations,
       // checked before Auth is asked. The answer names the length only, never which organization.
@@ -271,7 +289,7 @@ export function changeMyPasswordActionDefinition(
       entityType: 'user',
       entityId: output.userId,
     }),
-    auditFailure: (_input, error, actor) => {
+    auditFailure: (error, actor) => {
       const reason = FAILED_CHANGE_REASONS[error.code];
       return reason === undefined
         ? null

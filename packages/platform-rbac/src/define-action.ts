@@ -159,13 +159,22 @@ export type ActionDefinition<S extends z.ZodType, O, Tx> = ActionTarget<S> & {
    * Audit record for a REFUSED attempt the handler returned (e.g. a wrong current password —
    * `platform.auth.password_change_failed`, T-M2-11). The action's transaction has rolled back, so it is
    * written in a new transaction with the same verified claims. Best effort: a failure to write it is
-   * logged and the caller still gets the handler's answer. Authorization denials are not passed here.
+   * logged and the caller still gets the handler's answer. Authorization denials are not passed here. It
+   * gets the error and the actor only — never the input (which may hold secrets, e.g. passwords).
    */
-  readonly auditFailure?: (
-    input: z.output<S>,
-    error: AppError,
-    actor: ActorContext,
-  ) => AuditRecord | null;
+  readonly auditFailure?: (error: AppError, actor: ActorContext) => AuditRecord | null;
+  /**
+   * Work that must happen BEFORE the action's transaction (after the session and the input were checked,
+   * before authorization): e.g. counting the actor's own attempts on the shared rate limiter, whose short
+   * transaction must never run while this action holds a pooled connection (two connections per request
+   * can starve the pool — security review T-M2-11), and whose count must survive the action's rollback.
+   * An error result is the action's answer (no transaction is opened); a throw is an internal error. Use it
+   * only for per-actor work that is harmless for a caller the action would then refuse.
+   */
+  readonly beforeTransaction?: (args: {
+    readonly actor: ActorContext;
+    readonly input: z.output<S>;
+  }) => Promise<Result<void, AppError>>;
   readonly handler: (args: {
     readonly ctx: ActionContext<Tx>;
     readonly input: z.output<S>;
@@ -210,7 +219,7 @@ export function requiresStrictVerification(permission: PermissionDefinition): bo
  * modules/** and packages/platform-*\/** must be created with it (CI: scripts/check-server-actions.mjs).
  *
  * Pipeline: verify session (strict getUser round-trip for high-risk / AAL2 permissions) → require
- * tenant claim → validate input → withUserTx {
+ * tenant claim → validate input → beforeTransaction (optional) → withUserTx {
  *   session facts (inactive → UNAUTHENTICATED) → load effective grants → resolve resource → authorize
  *   (deny by default; AAL2 permissions need the database's AAL2 AND a code from the last
  *   STEP_UP_MAX_AGE_SECONDS, else STEP_UP_REQUIRED) → handler → audit } — the whole transaction run once
@@ -252,6 +261,13 @@ export function createDefineAction<Tx>(runtime: ActionRuntime<Tx>) {
       // A refusal the handler returned (not an authorization denial), for `auditFailure`.
       let refused = null as AppError | null;
       try {
+        if (definition.beforeTransaction) {
+          const before = await definition.beforeTransaction({
+            actor: actorFromClaims(tenantClaims),
+            input: input.value,
+          });
+          if (!before.ok) return err(toClientError(before.error));
+        }
         return await runtime.withUserTx(
           tenantClaims,
           async (tx) => {
@@ -328,11 +344,7 @@ export function createDefineAction<Tx>(runtime: ActionRuntime<Tx>) {
         if (error instanceof HandledFailure) {
           if (refused && definition.auditFailure) {
             const actor = actorFromClaims(tenantClaims);
-            await writeFailureAudit(
-              tenantClaims,
-              actor,
-              definition.auditFailure(input.value, refused, actor),
-            );
+            await writeFailureAudit(tenantClaims, actor, definition.auditFailure(refused, actor));
           }
           return err(toClientError(error.error));
         }

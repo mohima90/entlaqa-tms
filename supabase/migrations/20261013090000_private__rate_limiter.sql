@@ -30,7 +30,8 @@
 -- Entry points of the web app (session_user app_server, inside its `set local role authenticated`
 -- transaction — without claims, the pattern of private.request_password_reset_mail, except the two
 -- Organization Admin functions, which run with the admin's claims):
---   rate_limit_hit / _peek / _clear     generic counters (password check, reset, invitations). The hit that
+--   rate_limit_hit / _peek / _clear / _give_back   generic counters (password check, reset, invitations,
+--                                authenticator codes — failures only: given back when right). The hit that
 --                                uses a budget up starts a full window: a locked key stays locked for the
 --                                whole window from then. Race-safe (INSERT … ON CONFLICT takes the key's row
 --                                lock; concurrent hits of one key serialise, other keys never wait).
@@ -45,6 +46,8 @@
 --                                trusted is forgotten.
 --   member_sign_in_lock / unlock_member_sign_in   Organization Admin (own organization's members only):
 --                                whether a member's account is locked; end the lock.
+--   sign_in_account_in_tenant    whether a typed address is an active member of the host's organization
+--                                (only then does that organization's lockout policy apply).
 -- Owner only: rotate_rate_limit_keys() (new keys; every counter and trusted browser restarts).
 -- Each counting function also removes up to 20 expired counters and trusted browsers (SKIP LOCKED: purging
 -- never waits) — retention is bounded by the longest window (≤ 24 hours) or trust period without any job.
@@ -221,6 +224,7 @@ grant execute on function private.request_claims() to rate_limit_guard;
 grant execute on function private.request_user_id() to rate_limit_guard;
 grant execute on function private.current_tenant_id() to rate_limit_guard;
 grant execute on function private.actor_role_codes(uuid, uuid) to rate_limit_guard;
+grant execute on function private.has_active_membership(uuid, uuid) to rate_limit_guard;
 
 -- ---------------------------------------------------------------------------------------------------
 -- Helpers (owner rate_limit_guard, SECURITY INVOKER: called by its definer functions only)
@@ -421,10 +425,13 @@ begin
   select c.o_hits, c.o_reset_at into v_hits, v_reset_at
   from private.rate_limit_count(p_bucket, private.rate_limit_key(p_subject), p_max_hits, p_window_seconds, true) c;
   perform private.rate_limit_purge();
+  -- now() is the transaction's start: one that waited for the row lock may see a window that began after
+  -- it started — the seconds left never exceed the window.
   return query select v_hits <= p_max_hits,
                       greatest(p_max_hits - v_hits, 0),
                       case when v_hits >= p_max_hits
-                           then greatest(ceil(extract(epoch from v_reset_at - pg_catalog.now()))::integer, 1)
+                           then least(greatest(ceil(extract(epoch from v_reset_at - pg_catalog.now()))::integer, 1),
+                                      p_window_seconds)
                            else 0 end,
                       private.rate_limit_ref(p_subject);
 end
@@ -481,6 +488,47 @@ $$;
 
 comment on function private.rate_limit_clear(text, bytea) is
   'SECURITY-RELEVANT (ADR 0011 §4, T-M2-11). Forgets a key''s counter. app_server only.';
+
+-- Gives one hit back (failures-only counting outside sign-in, e.g. authenticator codes: counted before
+-- Auth is asked, given back when Auth accepted — T-M2-10 security review, TM-0003 T-IAM-12).
+create or replace function private.rate_limit_give_back(p_bucket text, p_subject bytea)
+returns void
+language plpgsql volatile security definer
+set search_path = ''
+as $$
+begin
+  perform private.rate_limit_check_call(p_bucket, p_subject);
+  perform private.rate_limit_refund(p_bucket, private.rate_limit_key(p_subject));
+end
+$$;
+
+comment on function private.rate_limit_give_back(text, bytea) is
+  'SECURITY-RELEVANT (T-M2-11). Gives one hit of a key back (an attempt that turned out right). app_server only.';
+
+-- Whether the typed address belongs to an account with an active membership in an organization (the
+-- host's): an organization's own lockout policy applies to its members only — anyone else gets the
+-- platform default, so a lax organization's host cannot loosen the lock of another organization's
+-- accounts (T-M2-10 security review). The address is compared, never stored or returned.
+create or replace function private.sign_in_account_in_tenant(p_email text, p_tenant_id uuid)
+returns boolean
+language plpgsql stable security definer
+set search_path = ''
+as $$
+begin
+  if session_user <> 'app_server' then
+    raise exception 'reserved to the web app' using errcode = 'insufficient_privilege';
+  end if;
+  if p_email is null or p_tenant_id is null then
+    return false;
+  end if;
+  return exists (select 1 from private.auth_user_email e
+                 where e.email = pg_catalog.lower(pg_catalog.btrim(p_email))
+                   and private.has_active_membership(e.id, p_tenant_id));
+end
+$$;
+
+comment on function private.sign_in_account_in_tenant(text, uuid) is
+  'SECURITY-RELEVANT (T-M2-11, T-M2-10 review). Whether a typed address is an active member of an organization (its lockout policy then applies). app_server only.';
 
 -- ---------------------------------------------------------------------------------------------------
 -- Sign-in (owner rate_limit_guard, SECURITY DEFINER, app_server)
@@ -571,10 +619,17 @@ begin
   end if;
   perform private.rate_limit_purge();
 
+  -- The seconds left never exceed the refusing budget's window (see rate_limit_hit: now() is the
+  -- transaction's start, and a transaction may have waited for the row lock).
   return query select v_refused is null,
                       v_refused,
                       case when v_refused is null then 0
-                           else greatest(ceil(extract(epoch from v_reset_at - pg_catalog.now()))::integer, 1) end,
+                           else least(greatest(ceil(extract(epoch from v_reset_at - pg_catalog.now()))::integer, 1),
+                                      case v_refused
+                                        when 'sign_in.client_attempts' then p_client_attempts_window_seconds
+                                        when 'sign_in.client_failures' then p_client_failures_window_seconds
+                                        when 'sign_in.device_failures' then p_device_window_seconds
+                                        else p_account_window_seconds end) end,
                       case when v_account_hits is null then 0 else greatest(v_max - v_account_hits, 0) end,
                       case when v_failures is null then 0 else greatest(p_client_failures_max - v_failures, 0) end,
                       v_trusted,
@@ -768,6 +823,8 @@ alter function private.rate_limit_member_account_key(uuid) owner to rate_limit_g
 alter function private.rate_limit_hit(text, bytea, integer, integer) owner to rate_limit_guard;
 alter function private.rate_limit_peek(text, bytea, integer) owner to rate_limit_guard;
 alter function private.rate_limit_clear(text, bytea) owner to rate_limit_guard;
+alter function private.rate_limit_give_back(text, bytea) owner to rate_limit_guard;
+alter function private.sign_in_account_in_tenant(text, uuid) owner to rate_limit_guard;
 alter function private.rate_limit_sign_in_check(bytea, bytea, bytea, integer, integer, integer, integer, integer, integer, integer, integer) owner to rate_limit_guard;
 alter function private.rate_limit_sign_in_succeeded(bytea, bytea, bytea, boolean, integer) owner to rate_limit_guard;
 alter function private.rate_limit_sign_in_reset(bytea) owner to rate_limit_guard;
@@ -788,6 +845,8 @@ revoke all on function private.rate_limit_member_account_key(uuid) from public;
 revoke all on function private.rate_limit_hit(text, bytea, integer, integer) from public;
 revoke all on function private.rate_limit_peek(text, bytea, integer) from public;
 revoke all on function private.rate_limit_clear(text, bytea) from public;
+revoke all on function private.rate_limit_give_back(text, bytea) from public;
+revoke all on function private.sign_in_account_in_tenant(text, uuid) from public;
 revoke all on function private.rate_limit_sign_in_check(bytea, bytea, bytea, integer, integer, integer, integer, integer, integer, integer, integer) from public;
 revoke all on function private.rate_limit_sign_in_succeeded(bytea, bytea, bytea, boolean, integer) from public;
 revoke all on function private.rate_limit_sign_in_reset(bytea) from public;
@@ -799,6 +858,8 @@ revoke all on function private.rotate_rate_limit_keys() from public;
 grant execute on function private.rate_limit_hit(text, bytea, integer, integer) to authenticated;
 grant execute on function private.rate_limit_peek(text, bytea, integer) to authenticated;
 grant execute on function private.rate_limit_clear(text, bytea) to authenticated;
+grant execute on function private.rate_limit_give_back(text, bytea) to authenticated;
+grant execute on function private.sign_in_account_in_tenant(text, uuid) to authenticated;
 grant execute on function private.rate_limit_sign_in_check(bytea, bytea, bytea, integer, integer, integer, integer, integer, integer, integer, integer) to authenticated;
 grant execute on function private.rate_limit_sign_in_succeeded(bytea, bytea, bytea, boolean, integer) to authenticated;
 grant execute on function private.rate_limit_sign_in_reset(bytea) to authenticated;

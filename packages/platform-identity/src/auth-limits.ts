@@ -1,35 +1,49 @@
 import 'server-only';
-import { createHash } from 'node:crypto';
-import type { RateLimit, RateLimitCounter, RateLimitStore } from '@jadarat/platform-db';
+import { createHash, randomBytes } from 'node:crypto';
+import { type AppError, type Result, appError, err } from '@jadarat/platform-core';
+import type {
+  RateLimit,
+  RateLimitCounter,
+  RateLimitStore,
+  SignInBudgets,
+  SignInCheck,
+} from '@jadarat/platform-db';
 import type { LogFields } from '@jadarat/platform-observability';
 
 /**
- * Sign-in protection (T-M2-11, SCS-16; FR-IAM-13; TM-0003 T-IAM-01/03/25/27/31/32): the application's
- * limits in front of Supabase Auth — whose own per-IP limits see the app server's address, not the
- * visitor's — on the shared PostgreSQL limiter (ADR 0011 §4, platform-db rate-limit.ts). Framework-free;
- * the Next.js adapter (auth-next.ts) binds the store, the request's client and the logger.
+ * Sign-in protection (T-M2-11, SCS-16; FR-IAM-13; TM-0003 T-IAM-01/03/25/27/31/32; PO decisions 9 Oct
+ * 2026): the application's limits in front of Supabase Auth — whose own per-IP limits see the app server's
+ * address, not the visitor's — on the shared PostgreSQL limiter (ADR 0011 §4, platform-db rate-limit.ts).
+ * Framework-free; the Next.js adapter (auth-next.ts) binds the store, the request's client, the browser's
+ * trusted-device cookie and the logger.
  *
- *   sign-in       per ACCOUNT: 5 consecutive failures lock the typed e-mail for 15 minutes, existing
- *                 account or not (screen 6 defaults; a success clears the run, a completed password reset
- *                 unlocks); per CLIENT: failures and all attempts. Checked before Auth is asked; failures
- *                 counted after Auth refused. The same guard covers "sign in to accept" an invitation.
+ *   sign-in       counted BEFORE Auth is asked, in one database call (security review T-M2-11): per
+ *                 ACCOUNT, 5 consecutive failures lock the typed e-mail for 15 minutes for browsers it
+ *                 does not trust, existing account or not (screen 6 defaults; a success ends the run, a
+ *                 completed password reset or the Organization Admin unlocks); a browser that signed in
+ *                 to the account before (TRUSTED, 30 days) is not stopped by that lock but has its own
+ *                 budget (10 per 15 minutes); per CLIENT address, 100 wrong passwords per 15 minutes
+ *                 (successes are given back) and 1,000 attempts (Auth's shared budget). When the account
+ *                 locks, the "account locked" e-mail is requested (the worker decides whether an account
+ *                 exists). The same guard covers "sign in to accept" an invitation.
  *   password      My profile's current-password check: per user.
  *   reset         requests per client, then (allowed client only) per account; new-password submissions
  *                 per client (T-M2-08 numbers, now shared by every instance).
  *   invitations   link lookups and new-account sign-ups per client.
  *
- * Keys: the typed e-mail (trimmed, lower-case), the client's address (IPv6 by its /64; apps/suite
- * lib/client-ip.ts) or the user id — each hashed here with SHA-256 under a fixed domain prefix (the
- * limiter's `subject`) and again in the database with its own HMAC key. Nothing readable is sent to the
- * database, stored or logged: log lines carry the database's keyed references (`rk_…`) only.
- * Clients without a trusted address (self-hosted without JADARAT_CLIENT_IP_HEADER) share one key with
- * larger budgets.
+ * Keys: the typed e-mail (trimmed, NFC, lower-case), the client's address (IPv6 by its /64; apps/suite
+ * lib/client-ip.ts), the user id or the browser's random token — each hashed here with SHA-256 under a
+ * fixed domain prefix (the limiter's `subject`) and again in the database with its own HMAC key. Nothing
+ * readable is sent to the database, stored or logged: log lines carry the database's keyed references
+ * (`rk_…`, from a separate log key) only. Clients without a trusted address (self-hosted without
+ * JADARAT_CLIENT_IP_HEADER) share one key with larger budgets — a misconfiguration the app reports at
+ * start-up (apps/suite lib/server-settings.ts).
  *
  * Failure policy when the limiter itself fails (docs/engineering/sign-in-protection.md): sign-in, the
  * password check, reset completions and new-account sign-ups FAIL CLOSED (RateLimiterUnavailableError →
  * the generic internal error with a correlation id; nothing reaches Auth); a reset request is treated as
- * limited (same answer, no e-mail); counting a failure Auth already refused, clearing after a success and
- * invitation link lookups fail open (logged) — they decide nothing about a credential.
+ * limited (same answer, no e-mail); recording a success, the lockout e-mail request, the unlock after a
+ * reset and invitation link lookups fail open (logged) — they decide nothing about a credential.
  */
 
 /** The visitor's rate-limit key: its address (IPv6 /64) when the platform gives a trusted one, else null. */
@@ -39,7 +53,7 @@ export interface RequestClient {
 
 const SUBJECT_DOMAIN = 'jadarat.rate-limit.v1';
 
-function subject(kind: 'account' | 'client' | 'user', value: string): Buffer {
+function subject(kind: 'account' | 'client' | 'user' | 'device', value: string): Buffer {
   return createHash('sha256').update(`${SUBJECT_DOMAIN}\n${kind}\n${value}`).digest();
 }
 
@@ -48,6 +62,10 @@ export function normalizeAccountKey(email: string): string {
   return email.trim().normalize('NFC').toLowerCase();
 }
 
+/**
+ * The typed account's subject. The database derives the same from an Auth address for the Organization
+ * Admin's unlock (private.rate_limit_account_subject; shared test vector in auth-limits.test.ts).
+ */
 export function accountSubject(email: string): Buffer {
   return subject('account', normalizeAccountKey(email));
 }
@@ -60,9 +78,36 @@ export function userSubject(userId: string): Buffer {
   return subject('user', userId.trim().toLowerCase());
 }
 
+// ----- Trusted browsers (PO decision 9 Oct 2026; screen 6 «تذكّر الجهاز الموثوق»; TM-0003 IA-02) -----
+
+/** A browser's trusted-device token: 32 random bytes, base64url without padding (43 characters). */
+export const DEVICE_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
+
+/** A new random token for a browser that has none (sent only in the HttpOnly cookie). */
+export function newDeviceToken(): string {
+  return randomBytes(32).toString('base64url');
+}
+
+export function deviceSubject(token: string): Buffer {
+  return subject('device', token);
+}
+
+/**
+ * The browser's trusted-device cookie (auth-next.ts: HttpOnly, Secure, SameSite=Lax, `__Host-` prefix).
+ * It holds a random token only — never the account; the database knows which accounts trust it (keyed
+ * hashes). One cookie per browser serves every account that signed in with it.
+ */
+export interface TrustedDeviceCookie {
+  /** The browser's token when it sent a well-formed one, else null. */
+  read(): string | null;
+  /** Sets (or renews) the cookie for `maxAgeSeconds`. */
+  write(token: string, maxAgeSeconds: number): void;
+}
+
 /** Limiter buckets (database bucket names; also the `limit` field of security events). */
 export const LIMIT_BUCKETS = {
   signInAccountFailures: 'sign_in.account_failures',
+  signInDeviceFailures: 'sign_in.device_failures',
   signInClientFailures: 'sign_in.client_failures',
   signInClientAttempts: 'sign_in.client_attempts',
   passwordCheckUser: 'password_check.user',
@@ -71,20 +116,29 @@ export const LIMIT_BUCKETS = {
   resetCompletionClient: 'password_reset.completion_client',
   invitationLookupClient: 'invitation.lookup_client',
   invitationSignUpClient: 'invitation.sign_up_client',
+  mfaCodeAccount: 'mfa_code.account_failures',
+  mfaCodeClient: 'mfa_code.client_failures',
 } as const;
 
+/** Every sign-in budget, in one place (PO decision 9 Oct 2026: one config). */
+export interface SignInLimits {
+  /** Consecutive failures per typed e-mail from browsers it does not trust (screen 6: 5, for 15 minutes). */
+  readonly accountFailures: RateLimit;
+  /** Failures per trusted browser of an account — the account's lock does not apply to it. */
+  readonly deviceFailures: RateLimit;
+  /** Wrong passwords per client address, any account (password spraying); successes are given back. */
+  readonly clientFailures: RateLimit;
+  /** Every attempt per client address (protects Auth's shared budget, T-IAM-31). */
+  readonly clientAttempts: RateLimit;
+  /** Clients without a trusted address share one key: larger budgets. */
+  readonly sharedClientFailures: RateLimit;
+  readonly sharedClientAttempts: RateLimit;
+}
+
 export interface AuthLimits {
-  readonly signIn: {
-    /** Consecutive failures per typed e-mail (screen 6: lock after 5, for 15 minutes). */
-    readonly accountFailures: RateLimit;
-    /** Failures per client, any account (password spraying from one address). */
-    readonly clientFailures: RateLimit;
-    /** Every attempt per client (protects Auth's shared budget, T-IAM-31). */
-    readonly clientAttempts: RateLimit;
-    /** Clients without a trusted address share one key: larger budgets. */
-    readonly sharedClientFailures: RateLimit;
-    readonly sharedClientAttempts: RateLimit;
-  };
+  readonly signIn: SignInLimits;
+  /** How long a browser stays trusted after a successful sign-in (screen 6: 30 days; renewed by each). */
+  readonly trustedDevice: { readonly days: number };
   readonly passwordCheck: {
     /** My profile current-password checks per user. */
     readonly userAttempts: RateLimit;
@@ -102,23 +156,35 @@ export interface AuthLimits {
     readonly sharedClientLookups: RateLimit;
     readonly sharedClientSignUps: RateLimit;
   };
+  /**
+   * Authenticator-app codes (T-M2-10 security review, TM-0003 T-IAM-12): wrong codes only, as for
+   * passwords — per account (consecutive, a success ends the run) and per client address.
+   */
+  readonly mfaCode: {
+    readonly accountFailures: RateLimit;
+    readonly clientFailures: RateLimit;
+    readonly sharedClientFailures: RateLimit;
+  };
 }
 
 const WINDOW = 15 * 60;
 
 /**
- * Platform defaults (Tech Lead, T-M2-11). Sign-in per account follows the proposed organization defaults
- * of the security settings screen (5 failures, 15 minutes). Per client the budgets are wide enough for an
- * office behind one address (many people, few typos) and narrow enough to stop one source guessing.
+ * Platform defaults (PO decisions 9 Oct 2026; Tech Lead, T-M2-11). Sign-in per account follows the
+ * proposed organization defaults of the security settings screen (5 failures, 15 minutes); a trusted
+ * browser gets 10 per 15 minutes. Per client: 100 wrong passwords per 15 minutes — wide enough for an
+ * office behind one address — and 1,000 attempts (only Auth's shared budget needs it).
  */
 export const PLATFORM_AUTH_LIMITS: AuthLimits = {
   signIn: {
     accountFailures: { max: 5, windowSeconds: WINDOW },
-    clientFailures: { max: 30, windowSeconds: WINDOW },
-    clientAttempts: { max: 300, windowSeconds: WINDOW },
-    sharedClientFailures: { max: 300, windowSeconds: WINDOW },
-    sharedClientAttempts: { max: 3000, windowSeconds: WINDOW },
+    deviceFailures: { max: 10, windowSeconds: WINDOW },
+    clientFailures: { max: 100, windowSeconds: WINDOW },
+    clientAttempts: { max: 1000, windowSeconds: WINDOW },
+    sharedClientFailures: { max: 1000, windowSeconds: WINDOW },
+    sharedClientAttempts: { max: 10_000, windowSeconds: WINDOW },
   },
+  trustedDevice: { days: 30 },
   passwordCheck: { userAttempts: { max: 5, windowSeconds: WINDOW } },
   passwordReset: {
     requestsPerClient: { max: 10, windowSeconds: WINDOW },
@@ -133,13 +199,21 @@ export const PLATFORM_AUTH_LIMITS: AuthLimits = {
     sharedClientLookups: { max: 600, windowSeconds: WINDOW },
     sharedClientSignUps: { max: 100, windowSeconds: WINDOW },
   },
+  mfaCode: {
+    accountFailures: { max: 5, windowSeconds: WINDOW },
+    clientFailures: { max: 100, windowSeconds: WINDOW },
+    sharedClientFailures: { max: 1000, windowSeconds: WINDOW },
+  },
 };
 
 /**
- * Server setting for TESTS ONLY (the self-hosted smoke test): every window, lock included, lasts this many
- * seconds (1–3600) instead of 15 minutes. Unset in every real deployment; checked at start-up.
+ * Server setting for the self-hosted SMOKE TEST ONLY: every window, lock included, lasts this many seconds
+ * (1–3600) instead of 15 minutes. Refused in production (NODE_ENV or VERCEL_ENV `production`) unless
+ * AUTH_RATE_LIMIT_WINDOW_SMOKE_ONLY=1 is set as well (infra/docker/compose.smoke.yaml, used by smoke.sh
+ * only); on a Vercel production deployment it is refused regardless (security review T-M2-11).
  */
 export const AUTH_RATE_LIMIT_WINDOW_ENV = 'AUTH_RATE_LIMIT_WINDOW_SECONDS';
+export const AUTH_RATE_LIMIT_WINDOW_SMOKE_ENV = 'AUTH_RATE_LIMIT_WINDOW_SMOKE_ONLY';
 
 export function readAuthLimitWindowOverride(
   env: Readonly<Record<string, string | undefined>>,
@@ -150,6 +224,14 @@ export function readAuthLimitWindowOverride(
   if (!Number.isInteger(seconds) || seconds < 1 || seconds > 3600) {
     throw new Error(
       `${AUTH_RATE_LIMIT_WINDOW_ENV} must be a whole number of seconds from 1 to 3600`,
+    );
+  }
+  if (env.VERCEL_ENV === 'production') {
+    throw new Error(`${AUTH_RATE_LIMIT_WINDOW_ENV} is refused on a production deployment`);
+  }
+  if (env.NODE_ENV === 'production' && env[AUTH_RATE_LIMIT_WINDOW_SMOKE_ENV]?.trim() !== '1') {
+    throw new Error(
+      `${AUTH_RATE_LIMIT_WINDOW_ENV} is refused in production (smoke test only: ${AUTH_RATE_LIMIT_WINDOW_SMOKE_ENV}=1)`,
     );
   }
   return seconds;
@@ -175,10 +257,10 @@ export interface AuthLimitContext {
 
 /**
  * The limits for a flow. INTEGRATION POINT for T-M2-10 (per-organization security policy — lockout
- * threshold and duration, FR-IAM-13, screen 6; TM-0003 D-IAM-04: platform default at the shared sign-in
- * host, the host organization's policy on its own host): read the organization's settings here for a
- * known `context.tenantId` and return them within the platform floors (TM-0003 T-IAM-24: lockout cannot
- * be disabled). Keep the result's shape; callers do not change.
+ * threshold and duration, trusted-browser days, FR-IAM-13, screen 6; TM-0003 D-IAM-04: platform default at
+ * the shared sign-in host, the host organization's policy on its own host): read the organization's
+ * settings here for a known `context.tenantId` and return them within the platform floors (TM-0003
+ * T-IAM-24: lockout cannot be disabled). Keep the result's shape; callers do not change.
  */
 export function limitsFor(
   _context: AuthLimitContext,
@@ -188,9 +270,79 @@ export function limitsFor(
   if (window === null) return PLATFORM_AUTH_LIMITS;
   return {
     signIn: withWindow(PLATFORM_AUTH_LIMITS.signIn, window),
+    trustedDevice: PLATFORM_AUTH_LIMITS.trustedDevice,
     passwordCheck: withWindow(PLATFORM_AUTH_LIMITS.passwordCheck, window),
     passwordReset: withWindow(PLATFORM_AUTH_LIMITS.passwordReset, window),
     invitation: withWindow(PLATFORM_AUTH_LIMITS.invitation, window),
+    mfaCode: withWindow(PLATFORM_AUTH_LIMITS.mfaCode, window),
+  };
+}
+
+/** An organization's lockout settings (T-M2-10 platform-db `getLockoutPolicy`). */
+export interface LockoutPolicy {
+  /** Consecutive failures that lock the account. */
+  readonly threshold: number;
+  /** How long the lock lasts. */
+  readonly minutes: number;
+}
+
+export interface OrganizationLockoutDeps {
+  /** The organization of the host the visitor signs in on (a tenant host); null on the platform host. */
+  readonly hostTenantId: string | null;
+  /** The organization's lockout settings, or null for the platform default (T-M2-10 getLockoutPolicy). */
+  readonly lockoutPolicyFor: (tenantId: string) => Promise<LockoutPolicy | null>;
+  /** Whether the typed address is an active member there (platform-db signInAccountInTenant). */
+  readonly accountInTenant: (email: string, tenantId: string) => Promise<boolean>;
+}
+
+/**
+ * The account budget of a typed address (INTEGRATION POINT with T-M2-10; T-M2-10 security review): the
+ * host organization's lockout policy when — and only when — the address belongs to an active member of
+ * that organization; the platform default (`fallback`: 5 failures, 15 minutes) for everyone else, so an
+ * attacker cannot pick the laxest organization's host to try more passwords on another organization's
+ * accounts. A policy outside the limiter's bounds is ignored (the default applies). The smoke test's
+ * shortened window (AUTH_RATE_LIMIT_WINDOW_SECONDS) still applies. Lookup failures throw (the caller fails
+ * closed). Residual: a policy that differs from the default makes the number of attempts before the lock
+ * depend on membership — docs/engineering/sign-in-protection.md §3.
+ */
+export function organizationAccountLockout(
+  deps: OrganizationLockoutDeps,
+  fallback: RateLimit,
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): (email: string) => Promise<RateLimit> {
+  const windowOverride = readAuthLimitWindowOverride(env);
+  return async (email) => {
+    const tenantId = deps.hostTenantId;
+    if (tenantId === null || !(await deps.accountInTenant(email, tenantId))) return fallback;
+    const policy = await deps.lockoutPolicyFor(tenantId);
+    if (
+      policy === null ||
+      !Number.isInteger(policy.threshold) ||
+      policy.threshold < 1 ||
+      policy.threshold > 1_000 ||
+      !Number.isInteger(policy.minutes) ||
+      policy.minutes < 1 ||
+      policy.minutes > 1_440
+    ) {
+      return fallback;
+    }
+    return { max: policy.threshold, windowSeconds: windowOverride ?? policy.minutes * 60 };
+  };
+}
+
+/**
+ * The budgets one sign-in attempt is checked against. INTEGRATION POINT (later; PO decision 9 Oct 2026):
+ * per-organization trusted office address ranges would give a client inside such a range wider client
+ * budgets here (the account and browser budgets stay). Not built: every client gets the platform budgets
+ * (the shared ones without a trusted address) — docs/engineering/sign-in-protection.md §3.
+ */
+export function signInBudgets(limits: SignInLimits, client: RequestClient): SignInBudgets {
+  const shared = client.key === null;
+  return {
+    clientAttempts: shared ? limits.sharedClientAttempts : limits.clientAttempts,
+    clientFailures: shared ? limits.sharedClientFailures : limits.clientFailures,
+    accountFailures: limits.accountFailures,
+    deviceFailures: limits.deviceFailures,
   };
 }
 
@@ -233,7 +385,8 @@ export type SecurityEventName =
   | 'auth.lockout'
   | 'auth.rate_limited'
   | 'auth.limiter.unavailable'
-  | 'auth.password_change.failed';
+  | 'auth.password_change.failed'
+  | 'auth.mfa_code.failed';
 
 export interface SecurityEvent {
   readonly event: SecurityEventName;
@@ -260,6 +413,7 @@ const EVENT_MESSAGES: Readonly<Record<SecurityEventName, string>> = {
   'auth.rate_limited': 'attempt refused by a rate limit',
   'auth.limiter.unavailable': 'rate limiter unavailable',
   'auth.password_change.failed': 'password change refused: current password',
+  'auth.mfa_code.failed': 'authenticator code refused',
 };
 
 /** The log line of a security event: its message, level and the closed logger fields. */
@@ -333,110 +487,136 @@ async function failClosed<T>(
 
 // ----- Sign-in -----
 
+/** One attempt that reached Auth: report Auth's verdict. Neither method throws. */
+export interface SignInAttempt {
+  /** Auth refused the credentials (the failure was counted already): events, and the lockout e-mail. */
+  failed(): Promise<void>;
+  /** Auth accepted them: the provisional failure is given back, the run ends, the browser is trusted. */
+  succeeded(): Promise<void>;
+}
+
 export type SignInGate =
-  { readonly allowed: true } | { readonly allowed: false; readonly retryAfterSeconds: number };
+  | { readonly allowed: true; readonly attempt: SignInAttempt }
+  | { readonly allowed: false; readonly retryAfterSeconds: number };
 
 export interface SignInGuard {
   /**
-   * Before Auth is asked: counts the attempt for the client and checks the failure counters of the client
-   * and the typed account. Throws RateLimiterUnavailableError when the limiter cannot answer.
+   * Before Auth is asked: counts the attempt and its provisional failures (one database call) and says
+   * whether it may proceed. Throws RateLimiterUnavailableError when the limiter cannot answer.
    */
   check(email: string): Promise<SignInGate>;
-  /** Auth refused the credentials: one failure for the account and the client (never throws). */
-  failed(email: string): Promise<void>;
-  /** Auth accepted them: the account's run of consecutive failures ends (never throws). */
-  succeeded(email: string): Promise<void>;
 }
 
-/** Records the security events of a hit that used a budget up (the lock starts now). */
-function noteLockout(
-  deps: LimiterDeps,
-  action: string,
-  limit: string,
-  counter: RateLimitCounter,
-  refs: { readonly subjectRef?: string; readonly clientRef?: string },
-): void {
-  if (counter.allowed && counter.remaining === 0) {
-    deps.log({
-      event: 'auth.lockout',
-      action,
-      reason: limit,
-      limit,
-      retryAfterS: counter.retryAfterSeconds,
-      ...refs,
-    });
-  }
+export interface SignInGuardDeps extends LimiterDeps {
+  readonly client: RequestClient;
+  readonly action: string;
+  /** The browser's trusted-device cookie of this request. */
+  readonly device: TrustedDeviceCookie;
+  /**
+   * Requests the "account locked" e-mail for the typed address (platform-db requestAccountLockedMail):
+   * the worker decides whether an account exists. Called when this attempt's failure starts the lock.
+   */
+  readonly requestLockedMail: (email: string, lockMinutes: number) => Promise<void>;
+  /**
+   * The account budget of the typed address (organizationAccountLockout: the host organization's policy
+   * for its own members — T-M2-10); the platform's `limits.signIn.accountFailures` when absent.
+   */
+  readonly accountLockout?: ((email: string) => Promise<RateLimit>) | undefined;
 }
 
-export function createSignInGuard(
-  deps: LimiterDeps & { readonly client: RequestClient; readonly action: string },
-): SignInGuard {
-  const { store, client, action } = deps;
-  const shared = client.key === null;
-  const limits = deps.limits.signIn;
-  const clientFailures = shared ? limits.sharedClientFailures : limits.clientFailures;
-  const clientAttempts = shared ? limits.sharedClientAttempts : limits.clientAttempts;
-  const clientKey = clientSubject(client);
+export function createSignInGuard(deps: SignInGuardDeps): SignInGuard {
+  const { store, client, action, device, log, accountLockout } = deps;
+  const platformBudgets = signInBudgets(deps.limits.signIn, client);
+  const trustDays = deps.limits.trustedDevice.days;
   const B = LIMIT_BUCKETS;
   return {
     async check(email) {
-      const [attempts, clientState, accountState] = await failClosed(deps, action, () =>
-        Promise.all([
-          store.hit(B.signInClientAttempts, clientKey, clientAttempts),
-          store.peek(B.signInClientFailures, clientKey, clientFailures.max),
-          store.peek(B.signInAccountFailures, accountSubject(email), limits.accountFailures.max),
-        ]),
+      const token = device.read();
+      const subjects = {
+        client: clientSubject(client),
+        account: accountSubject(email),
+        device: token === null ? null : deviceSubject(token),
+      };
+      const budgets: SignInBudgets = accountLockout
+        ? {
+            ...platformBudgets,
+            accountFailures: await failClosed(deps, action, () => accountLockout(email)),
+          }
+        : platformBudgets;
+      const result: SignInCheck = await failClosed(deps, action, () =>
+        store.signInCheck(subjects, budgets),
       );
-      const refusals: [string, RateLimitCounter][] = [];
-      if (!accountState.allowed) refusals.push([B.signInAccountFailures, accountState]);
-      if (!clientState.allowed) refusals.push([B.signInClientFailures, clientState]);
-      if (!attempts.allowed) refusals.push([B.signInClientAttempts, attempts]);
-      const [first] = refusals;
-      if (!first) return { allowed: true };
-      const retryAfterSeconds = Math.max(...refusals.map(([, c]) => c.retryAfterSeconds));
-      deps.log({
-        event: 'auth.rate_limited',
-        action,
-        reason: first[0],
-        limit: first[0],
-        retryAfterS: retryAfterSeconds,
-        subjectRef: accountState.ref,
-        clientRef: attempts.ref,
-      });
-      return { allowed: false, retryAfterSeconds };
-    },
-    async failed(email) {
-      try {
-        const [account, fromClient] = await Promise.all([
-          store.hit(B.signInAccountFailures, accountSubject(email), limits.accountFailures),
-          store.hit(B.signInClientFailures, clientKey, clientFailures),
-        ]);
-        const refs = { subjectRef: account.ref, clientRef: fromClient.ref };
-        deps.log({ event: 'auth.sign_in.failed', action, reason: 'invalid_credentials', ...refs });
-        noteLockout(deps, action, B.signInAccountFailures, account, refs);
-        noteLockout(deps, action, B.signInClientFailures, fromClient, refs);
-      } catch (error) {
-        // Auth has refused already; the answer stays "wrong e-mail or password". This failure is not
-        // counted — the next attempt's check fails closed while the limiter is down.
-        deps.log({
-          event: 'auth.limiter.unavailable',
+      const refs = { subjectRef: result.subjectRef, clientRef: result.clientRef };
+      if (!result.allowed) {
+        const limit = result.refusedBy ?? 'unknown';
+        log({
+          event: 'auth.rate_limited',
           action,
-          reason: 'failure_not_counted',
-          errorName: errorNameOf(error),
+          reason: limit,
+          limit,
+          retryAfterS: result.retryAfterSeconds,
+          ...refs,
         });
+        return { allowed: false, retryAfterSeconds: result.retryAfterSeconds };
       }
-    },
-    async succeeded(email) {
-      try {
-        await store.clear(B.signInAccountFailures, accountSubject(email));
-      } catch (error) {
-        deps.log({
-          event: 'auth.limiter.unavailable',
-          action,
-          reason: 'failures_not_cleared',
-          errorName: errorNameOf(error),
-        });
-      }
+      const attempt: SignInAttempt = {
+        async failed() {
+          log({ event: 'auth.sign_in.failed', action, reason: 'invalid_credentials', ...refs });
+          if (result.clientRemaining === 0) {
+            log({
+              event: 'auth.lockout',
+              action,
+              reason: B.signInClientFailures,
+              limit: B.signInClientFailures,
+              ...refs,
+            });
+          }
+          if (result.remaining !== 0) return;
+          // This failure used the account's (or the trusted browser's) budget up: the lock starts now.
+          const limit = result.trusted ? budgets.deviceFailures : budgets.accountFailures;
+          const bucket = result.trusted ? B.signInDeviceFailures : B.signInAccountFailures;
+          log({
+            event: 'auth.lockout',
+            action,
+            reason: bucket,
+            limit: bucket,
+            retryAfterS: limit.windowSeconds,
+            ...refs,
+          });
+          if (result.trusted) return;
+          try {
+            await deps.requestLockedMail(email, Math.max(1, Math.ceil(limit.windowSeconds / 60)));
+          } catch (error) {
+            log({
+              event: 'auth.limiter.unavailable',
+              action,
+              reason: 'lock_mail_not_requested',
+              errorName: errorNameOf(error),
+            });
+          }
+        },
+        async succeeded() {
+          const deviceToken = token ?? newDeviceToken();
+          try {
+            await store.signInSucceeded(
+              { ...subjects, device: deviceSubject(deviceToken) },
+              result.trusted,
+              trustDays,
+            );
+            device.write(deviceToken, trustDays * 86_400);
+          } catch (error) {
+            // Auth said yes: the sign-in continues. The provisional failure stays counted and the
+            // browser is not (newly) trusted — both only tighten the limits.
+            log({
+              event: 'auth.limiter.unavailable',
+              action,
+              reason: 'success_not_recorded',
+              errorName: errorNameOf(error),
+            });
+          }
+        },
+      };
+      return { allowed: true, attempt };
     },
   };
 }
@@ -447,21 +627,20 @@ export function createSignInGuard(
  */
 export const NO_SIGN_IN_GUARD: SignInGuard = {
   check: () => Promise.reject(new RateLimiterUnavailableError()),
-  failed: () => Promise.resolve(),
-  succeeded: () => Promise.resolve(),
 };
 
 /**
- * Ends an account's sign-in lock (a completed password reset: the owner proved control of the mailbox —
- * TM-0003 T-IAM-32 self-unlock). Never throws.
+ * After a completed password reset (the owner proved control of the mailbox — TM-0003 T-IAM-32
+ * self-unlock; PO decision 9 Oct 2026): the account's sign-in lock ends and every browser it trusted is
+ * forgotten. Never throws (logged).
  */
-export async function unlockSignIn(
+export async function resetAccountSignIn(
   deps: LimiterDeps,
   action: string,
   email: string,
 ): Promise<void> {
   try {
-    await deps.store.clear(LIMIT_BUCKETS.signInAccountFailures, accountSubject(email));
+    await deps.store.signInReset(accountSubject(email));
   } catch (error) {
     deps.log({
       event: 'auth.limiter.unavailable',
@@ -470,6 +649,132 @@ export async function unlockSignIn(
       errorName: errorNameOf(error),
     });
   }
+}
+
+// ----- Authenticator-app codes (T-M2-10 security review; TM-0003 T-IAM-12) -----
+
+/** Auth's per-IP limit sees only the app server: codes are limited here, per account and per client. */
+export interface CodeAttemptLimiter {
+  /**
+   * Before Auth is asked: counts a provisional wrong code for the account (the signed-in user) and the
+   * client; refused when either budget is used up. Throws RateLimiterUnavailableError when the limiter
+   * cannot answer (fail closed). Report Auth's verdict to the returned attempt.
+   */
+  check(userId: string): Promise<SignInGate>;
+}
+
+export function createCodeAttemptLimiter(
+  deps: LimiterDeps & { readonly client: RequestClient; readonly action: string },
+): CodeAttemptLimiter {
+  const { store, client, action, log } = deps;
+  const limits = deps.limits.mfaCode;
+  const clientFailures = client.key === null ? limits.sharedClientFailures : limits.clientFailures;
+  const B = LIMIT_BUCKETS;
+  const giveBack = async (bucket: string, subject: Uint8Array) => {
+    try {
+      await store.giveBack(bucket, subject);
+    } catch (error) {
+      log({
+        event: 'auth.limiter.unavailable',
+        action,
+        reason: 'failure_not_given_back',
+        errorName: errorNameOf(error),
+      });
+    }
+  };
+  return {
+    async check(userId) {
+      const account = userSubject(userId);
+      const clientKey = clientSubject(client);
+      const [byAccount, byClient] = await failClosed(deps, action, () =>
+        Promise.all([
+          store.hit(B.mfaCodeAccount, account, limits.accountFailures),
+          store.hit(B.mfaCodeClient, clientKey, clientFailures),
+        ]),
+      );
+      const refs = {
+        subjectRef: byAccount.ref,
+        clientRef: byClient.ref,
+        entityType: 'auth_user',
+        entityId: userId,
+      };
+      if (!byAccount.allowed || !byClient.allowed) {
+        // Refused before Auth: no wrong code — the other budget gets its provisional failure back.
+        if (byAccount.allowed) await giveBack(B.mfaCodeAccount, account);
+        if (byClient.allowed) await giveBack(B.mfaCodeClient, clientKey);
+        const limit = byAccount.allowed ? B.mfaCodeClient : B.mfaCodeAccount;
+        const retryAfterSeconds = Math.max(
+          byAccount.allowed ? 0 : byAccount.retryAfterSeconds,
+          byClient.allowed ? 0 : byClient.retryAfterSeconds,
+        );
+        log({
+          event: 'auth.rate_limited',
+          action,
+          reason: limit,
+          limit,
+          retryAfterS: retryAfterSeconds,
+          ...refs,
+        });
+        return { allowed: false, retryAfterSeconds };
+      }
+      const attempt: SignInAttempt = {
+        failed() {
+          log({ event: 'auth.mfa_code.failed', action, reason: 'invalid_code', ...refs });
+          for (const [bucket, counter] of [
+            [B.mfaCodeAccount, byAccount],
+            [B.mfaCodeClient, byClient],
+          ] as const) {
+            if (counter.remaining === 0) {
+              log({
+                event: 'auth.lockout',
+                action,
+                reason: bucket,
+                limit: bucket,
+                retryAfterS: counter.retryAfterSeconds,
+                ...refs,
+              });
+            }
+          }
+          return Promise.resolve();
+        },
+        async succeeded() {
+          // The run of wrong codes ends for the account; the client's provisional failure is given back.
+          try {
+            await store.clear(B.mfaCodeAccount, account);
+          } catch (error) {
+            log({
+              event: 'auth.limiter.unavailable',
+              action,
+              reason: 'success_not_recorded',
+              errorName: errorNameOf(error),
+            });
+          }
+          await giveBack(B.mfaCodeClient, clientKey);
+        },
+      };
+      return { allowed: true, attempt };
+    },
+  };
+}
+
+/**
+ * The hook for the code check (T-M2-10 `verifyTotpCode`): limits it per account and per client, counting
+ * wrong codes only. `verify` asks Auth; `isWrongCode` tells a wrong or expired code from other refusals.
+ * A limited check answers RATE_LIMITED without asking Auth; a wrong code stays counted; a right one gives
+ * its provisional failure back; any other refusal, or an Auth outage (thrown), keeps it counted.
+ */
+export async function withCodeAttemptLimit<T>(
+  limiter: CodeAttemptLimiter,
+  userId: string,
+  verify: () => Promise<Result<T, AppError>>,
+  isWrongCode: (error: AppError) => boolean,
+): Promise<Result<T, AppError>> {
+  const gate = await limiter.check(userId);
+  if (!gate.allowed) return err(appError('RATE_LIMITED'));
+  const result = await verify();
+  if (result.ok) await gate.attempt.succeeded();
+  else if (isWrongCode(result.error)) await gate.attempt.failed();
+  return result;
 }
 
 // ----- My profile: current-password check -----

@@ -17,6 +17,7 @@ export {
   type AccountMailApi,
   createAccountMailApi,
   queueOwnPasswordChangedMail,
+  requestAccountLockedMail,
   requestPasswordChangedMail,
   requestPasswordResetMail,
 } from './account-mail';
@@ -27,9 +28,20 @@ export {
   type RateLimit,
   type RateLimitCounter,
   type RateLimitStore,
+  type SignInBudgets,
+  type SignInCheck,
+  type SignInRefusal,
+  type SignInSubjects,
   createRateLimitStore,
   rateLimitStore,
 } from './rate-limit';
+export {
+  type MemberSignInLock,
+  createSignInMembershipLookup,
+  memberSignInLock,
+  signInAccountInTenant,
+  unlockMemberSignIn,
+} from './sign-in-lock';
 export {
   INVITATION_EVENTS,
   INVITATION_MAX_SENDS,

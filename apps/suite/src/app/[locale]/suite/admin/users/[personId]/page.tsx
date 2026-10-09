@@ -1,5 +1,5 @@
 import { toClientError } from '@jadarat/platform-core';
-import type { UserProfile } from '@jadarat/platform-db';
+import type { MemberSignInLock, UserProfile } from '@jadarat/platform-db';
 import type { LifecycleOffer } from '@jadarat/platform-rbac';
 import {
   type AppLocale,
@@ -26,6 +26,8 @@ import { getSuiteContext } from '../../../../../../lib/suite-context';
 import { memberSecurityQuery, userProfileQuery } from '../../../../../../lib/users-queries';
 import { localizedName, roleName } from '../../../../../../lib/users-view';
 import { NotSet } from '../../../../../../components/not-set';
+import { UnlockSignIn } from '../../../../../../components/users/unlock-sign-in';
+import { authErrorTexts } from '../../../../../../lib/auth-texts';
 
 type AccountStatus = NonNullable<UserProfile['membershipStatus']> | 'none';
 const ACCOUNT_TONE: Record<AccountStatus, BadgeTone> = {
@@ -46,6 +48,8 @@ const KNOWN_ACTIONS = new Set([
   // T-M2-10: force sign-out and the reset of a lost authenticator app.
   'platform.user.sessions_ended',
   'platform.user.mfa_reset',
+  // T-M2-11: the Organization Admin ended a member's sign-in lock.
+  'platform.user.sign_in_unlocked',
 ]);
 
 /**
@@ -53,7 +57,9 @@ const KNOWN_ACTIONS = new Set([
  * another organization → 404, no existence leak). Roles need role.read, the activity audit.read.
  * "Edit details" (T-M2-13) when the member may change this record; «تعطيل المستخدم» / «إعادة تفعيل
  * المستخدم» (T-M2-09, FR-IAM-05) for HR / the Organization Admin; sign-in sessions, force sign-out and
- * the authenticator app with its reset (FR-IAM-12/13, T-M2-10); account actions with T-M2-07/09.
+ * the authenticator app with its reset (FR-IAM-12/13, T-M2-10); a sign-in lock after repeated failed
+ * attempts with «إلغاء إيقاف تسجيل الدخول» for the Organization Admin (T-M2-11, FR-IAM-13); account
+ * actions with T-M2-07/09.
  */
 export default async function UserProfilePage({
   params,
@@ -95,7 +101,7 @@ export default async function UserProfilePage({
         );
       }
     } else {
-      const { profile, canOpenManager, canEdit, canEditRoles, lifecycle } = result.value;
+      const { profile, canOpenManager, canEdit, canEditRoles, lifecycle, signInLock } = result.value;
       title = localizedName(locale, profile.displayNameAr, profile.displayNameEn);
       // Sign-in and security (screen 3, T-M2-10): user managers only (else the card is left out).
       const security = await memberSecurityQuery({ personId });
@@ -114,6 +120,7 @@ export default async function UserProfilePage({
             canEditRoles={canEditRoles}
             lifecycle={lifecycle}
             security={security.ok ? security.value : null}
+            signInLock={signInLock}
           />
         </>
       );
@@ -139,6 +146,7 @@ async function Profile({
   canEditRoles,
   lifecycle,
   security,
+  signInLock,
 }: {
   locale: AppLocale;
   profile: UserProfile;
@@ -147,6 +155,7 @@ async function Profile({
   canEditRoles: boolean;
   lifecycle: LifecycleOffer;
   security: Extract<Awaited<ReturnType<typeof memberSecurityQuery>>, { ok: true }>['value'] | null;
+  signInLock: MemberSignInLock | null;
 }) {
   const sessionsT = await getTranslations({ locale, namespace: 'sessions' });
   const t = await getTranslations({ locale, namespace: 'userProfile' });
@@ -403,6 +412,25 @@ async function Profile({
             }}
             errors={securityErrors}
           />
+        ) : null}
+        {signInLock?.locked ? (
+          <div className="mt-4">
+            <UnlockSignIn
+              personId={profile.personId}
+              labels={{
+                title: t('signInLock.title'),
+                body: t('signInLock.body', {
+                  minutes: Math.max(1, Math.ceil(signInLock.retryAfterSeconds / 60)),
+                }),
+                unlock: t('signInLock.unlock'),
+                unlocking: t('signInLock.unlocking'),
+                unlocked: t('signInLock.unlocked'),
+                notLocked: t('signInLock.notLocked'),
+                audited: t('signInLock.audited'),
+              }}
+              errors={await authErrorTexts(locale)}
+            />
+          </div>
         ) : null}
       </Card>
 

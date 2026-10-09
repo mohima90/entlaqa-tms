@@ -135,15 +135,15 @@ function setup(options: Options = {}) {
     ),
     signOut: vi.fn(() => Promise.resolve({ error: null })),
   };
-  const guard = {
-    check: vi.fn((_email: string) =>
-      options.gate instanceof Error
-        ? Promise.reject(options.gate)
-        : Promise.resolve(options.gate ?? { allowed: true as const }),
-    ),
-    failed: vi.fn((_email: string) => Promise.resolve()),
-    succeeded: vi.fn((_email: string) => Promise.resolve()),
-  };
+  // The attempt an allowed check hands out: Auth's verdict is reported to it.
+  const failed = vi.fn(() => Promise.resolve());
+  const succeeded = vi.fn(() => Promise.resolve());
+  const check = vi.fn((_email: string): Promise<SignInGate> =>
+    options.gate instanceof Error
+      ? Promise.reject(options.gate)
+      : Promise.resolve(options.gate ?? { allowed: true, attempt: { failed, succeeded } }),
+  );
+  const guard = { check, failed, succeeded };
   const authDeps: AuthFlowDeps = {
     supabase: { auth },
     withUserTx: ((_claims: unknown, fn: (tx: unknown) => Promise<unknown>) =>
@@ -172,7 +172,7 @@ function setup(options: Options = {}) {
     ),
     insertAuditEvent: vi.fn(() => Promise.resolve()),
     logWarning: vi.fn(),
-    signInGuard: guard,
+    signInGuard: { check },
     now: () => 0,
     sleep: vi.fn(() => Promise.resolve()),
   };
@@ -580,7 +580,9 @@ describe('acceptInvitationWithPassword (sign in to accept)', () => {
   it('counts a wrong password as a sign-in failure of the invitation e-mail', async () => {
     const { deps, guard } = setup({ signInError: { status: 400 } });
     await acceptInvitationWithPassword(deps, { token: TOKEN, password: 'wrong' });
-    expect(guard.failed).toHaveBeenCalledWith(EMAIL);
+    expect(guard.check).toHaveBeenCalledWith(EMAIL);
+    expect(guard.failed).toHaveBeenCalledTimes(1);
+    expect(guard.succeeded).not.toHaveBeenCalled();
   });
 
   it('fails closed when the limiter cannot answer', async () => {

@@ -1,5 +1,6 @@
 import type { AppLocale } from '@jadarat/platform-i18n';
 import type { z } from 'zod';
+import { accountLockedTemplate } from './account-locked';
 import { invitationTemplate } from './invitation';
 import { mfaFactorAddedTemplate } from './mfa-factor-added';
 import { mfaFactorRemovedTemplate } from './mfa-factor-removed';
@@ -22,6 +23,7 @@ export const EMAIL_TEMPLATES = {
   'platform.mfa_factor_removed': mfaFactorRemovedTemplate,
   'platform.security_policy_changed': securityPolicyChangedTemplate,
   'platform.security_digest': securityDigestTemplate,
+  'platform.account_locked': accountLockedTemplate,
 } as const;
 
 export type EmailTemplateKey = keyof typeof EMAIL_TEMPLATES;

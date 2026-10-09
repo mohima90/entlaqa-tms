@@ -447,11 +447,12 @@ describe('defineAction (ADR 0003 §4)', () => {
         input: Input,
         scoped: grants,
         handler: () => Promise.resolve(err(appError('RATE_LIMITED'))),
-        auditFailure: (input, error, actor) =>
+        // The error and the actor only — never the input (it may hold secrets: review INFO 9).
+        auditFailure: (error, actor) =>
           error.code === 'RATE_LIMITED'
             ? {
                 action: 'tms.enrollment.approve_failed',
-                entityId: input.enrollmentId,
+                entityType: 'enrollment',
                 data: { by: actor.userId },
               }
             : null,
@@ -467,7 +468,7 @@ describe('defineAction (ADR 0003 §4)', () => {
           actor: expect.objectContaining({ userId: USER, tenantId: TENANT }),
           record: {
             action: 'tms.enrollment.approve_failed',
-            entityId: ENROLLMENT,
+            entityType: 'enrollment',
             data: { by: USER },
           },
         },
@@ -505,6 +506,138 @@ describe('defineAction (ADR 0003 §4)', () => {
         permission: 'tms.enrollment.approve',
         correlationId: expect.stringMatching(/^[0-9a-f-]{36}$/),
       });
+    });
+  });
+
+  describe('beforeTransaction (work outside the transaction, T-M2-11 review)', () => {
+    const limitedAction = (
+      rt: ActionRuntime<FakeTx>,
+      before: () => Promise<Result<void, AppError>>,
+      order: string[],
+    ) =>
+      createDefineAction(rt)({
+        permission: approve,
+        input: Input,
+        scoped: true,
+        beforeTransaction: async ({ actor, input }) => {
+          order.push(`before ${actor.userId} ${input.enrollmentId}`);
+          return before();
+        },
+        handler: () => {
+          order.push('handler');
+          return Promise.resolve(ok('done'));
+        },
+      });
+
+    it('runs before the transaction opens; a refusal is the answer and no transaction opens', async () => {
+      const order: string[] = [];
+      const allowed = runtime();
+      const answer = await limitedAction(
+        allowed.rt,
+        () => Promise.resolve(ok(undefined)),
+        order,
+      )({
+        enrollmentId: ENROLLMENT,
+      });
+      expect(answer).toEqual(ok('done'));
+      expect(order).toEqual([`before ${USER} ${ENROLLMENT}`, 'handler']);
+      expect(allowed.log).toEqual(['begin', 'commit']);
+
+      const refused = runtime();
+      const r = await limitedAction(
+        refused.rt,
+        () => Promise.resolve(err(appError('RATE_LIMITED'))),
+        [],
+      )({ enrollmentId: ENROLLMENT });
+      expect(!r.ok && r.error.code).toBe('RATE_LIMITED');
+      expect(refused.log).toEqual([]);
+    });
+
+    it('a throw (e.g. the limiter is down) is an internal error with a correlation id; nothing runs', async () => {
+      const logError = vi.fn();
+      const failing = runtime({ logError });
+      const r = await limitedAction(
+        failing.rt,
+        () => Promise.reject(new Error('limiter unavailable')),
+        [],
+      )({ enrollmentId: ENROLLMENT });
+      expect(!r.ok && r.error.code).toBe('INTERNAL_ERROR');
+      expect(failing.log).toEqual([]);
+      expect(logError).toHaveBeenCalled();
+    });
+
+    it('regression: more concurrent actions than pool connections all complete (none held while waiting for another)', async () => {
+      // A pool of 2 connections shared by the action's transaction and the limiter's own transaction (the
+      // shape of the app_server pool). Holding a connection in withUserTx while the handler waited for a
+      // second one deadlocked with 2+ concurrent requests; beforeTransaction runs with none held.
+      const POOL = 2;
+      let free = POOL;
+      const waiting: (() => void)[] = [];
+      const acquire = async () => {
+        if (free > 0) {
+          free -= 1;
+          return;
+        }
+        await new Promise<void>((resolve) => {
+          waiting.push(resolve);
+        });
+      };
+      const release = () => {
+        const next = waiting.shift();
+        if (next) next();
+        else free += 1;
+      };
+      const pooled = async <T>(fn: () => Promise<T>): Promise<T> => {
+        await acquire();
+        try {
+          // Hold the connection across a turn of the event loop, like a real round trip.
+          await new Promise((resolve) => {
+            setTimeout(resolve, 5);
+          });
+          return await fn();
+        } finally {
+          release();
+        }
+      };
+      const { rt } = runtime({ withUserTx: (_c, fn) => pooled(() => fn({ log: [] })) });
+      const action = createDefineAction(rt)({
+        permission: approve,
+        input: Input,
+        scoped: true,
+        // The limiter's own short transaction on the same pool.
+        beforeTransaction: () => pooled(() => Promise.resolve(ok(undefined))),
+        handler: () => Promise.resolve(ok('done')),
+      });
+      const N = 8;
+      const all = Promise.all(
+        Array.from({ length: N }, () => action({ enrollmentId: ENROLLMENT })),
+      );
+      const timeout = new Promise<'deadlock'>((resolve) => {
+        setTimeout(() => {
+          resolve('deadlock');
+        }, 2_000);
+      });
+      const results = await Promise.race([all, timeout]);
+      expect(results).toEqual(Array.from({ length: N }, () => ok('done')));
+      expect(free).toBe(POOL);
+
+      // Control: the old shape — the limiter's transaction inside the handler — never completes.
+      free = POOL;
+      const nested = createDefineAction(rt)({
+        permission: approve,
+        input: Input,
+        scoped: true,
+        handler: () => pooled(() => Promise.resolve(ok('done'))),
+      });
+      const stuck = Promise.all(
+        Array.from({ length: N }, () => nested({ enrollmentId: ENROLLMENT })),
+      );
+      const control = new Promise<'deadlock'>((resolve) => {
+        setTimeout(() => {
+          resolve('deadlock');
+        }, 500);
+      });
+      expect(await Promise.race([stuck, control])).toBe('deadlock');
     });
   });
 });

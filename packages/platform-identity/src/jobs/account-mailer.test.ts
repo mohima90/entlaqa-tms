@@ -63,6 +63,7 @@ const send = (overrides: Partial<Extract<AccountMailRequest, { outcome: 'send' }
     mfaReason: null,
     policyChange: null,
     digest: null,
+    lockMinutes: null,
     ...overrides,
   }) as const;
 
@@ -127,6 +128,7 @@ beforeEach(() => {
     organizationName: { ar: 'شركة الراية', en: 'Al Raya' },
     recipientName: { ar: 'سارة', en: 'Sara' },
     recentCount: 0,
+    quietCount: 0,
   });
   mail.queueEmail.mockResolvedValue('delivery-1');
   db.accountHasApp.mockResolvedValue(false);
@@ -170,6 +172,7 @@ describe('account mailer (T-M2-17): reset e-mail and "password changed" notice',
       tenantTx,
       PERSON,
       'platform.password_reset',
+      0,
     );
     const email = queued();
     expect(email).toMatchObject({
@@ -275,6 +278,68 @@ describe('account mailer (T-M2-17): reset e-mail and "password changed" notice',
     },
   );
 
+  it('"account locked" (T-M2-11): no Auth call; the lock minutes and the forgot-password page', async () => {
+    queue(send({ kind: 'account_locked', locale: 'ar', lockMinutes: 15 }));
+    const { task, issue, log } = setup();
+    await task.run({ jobId: 'j' });
+    expect(issue).not.toHaveBeenCalled();
+    // Once per lock period: the context counts this template's e-mails within the lock's minutes.
+    expect(db.loadAccountMailContext).toHaveBeenCalledWith(
+      tenantTx,
+      PERSON,
+      'platform.account_locked',
+      15,
+    );
+    const email = queued();
+    expect(email).toMatchObject({
+      template: 'platform.account_locked',
+      locale: 'ar',
+      to: EMAIL,
+      recipientPersonId: PERSON,
+    });
+    expect(email.variables).toEqual({
+      organizationName: { ar: 'شركة الراية', en: 'Al Raya' },
+      lockMinutes: 15,
+      forgotPasswordUrl: { ar: `${BASE}/ar/forgot-password`, en: `${BASE}/en/forgot-password` },
+      loginEmail: EMAIL,
+    });
+    expect(db.finishAccountMailRequest).toHaveBeenCalledWith(tenantTx, REQUEST);
+    expect(log).toHaveBeenCalledWith('info', 'account e-mail queued (account_locked)');
+  });
+
+  it('"account locked": at most one per lock period, and within the hourly cap', async () => {
+    queue(send({ kind: 'account_locked', lockMinutes: 15 }));
+    db.loadAccountMailContext.mockResolvedValueOnce({
+      organizationName: { ar: 'شركة الراية', en: null },
+      recipientName: { ar: 'سارة', en: null },
+      recentCount: 1,
+      quietCount: 1,
+    });
+    const first = setup();
+    await first.task.run({ jobId: 'j' });
+    expect(mail.queueEmail).not.toHaveBeenCalled();
+    expect(db.finishAccountMailRequest).toHaveBeenCalledWith(tenantTx, REQUEST);
+    expect(first.log).toHaveBeenCalledWith(
+      'info',
+      'account e-mail not sent (already_notified) (account_locked)',
+    );
+
+    queue(send({ kind: 'account_locked', lockMinutes: 15 }));
+    db.loadAccountMailContext.mockResolvedValueOnce({
+      organizationName: { ar: 'شركة الراية', en: null },
+      recipientName: { ar: 'سارة', en: null },
+      recentCount: ACCOUNT_MAIL_HOURLY_CAP,
+      quietCount: 0,
+    });
+    const second = setup();
+    await second.task.run({ jobId: 'j' });
+    expect(mail.queueEmail).not.toHaveBeenCalled();
+    expect(second.log).toHaveBeenCalledWith(
+      'info',
+      'account e-mail not sent (hourly_cap) (account_locked)',
+    );
+  });
+
   it('Auth no longer knows the address (deleted meanwhile): answered, nothing sent', async () => {
     queue(send());
     const { task, issue } = setup();
@@ -373,6 +438,7 @@ describe('account mailer (T-M2-17): reset e-mail and "password changed" notice',
       organizationName: { ar: 'شركة الراية', en: null },
       recipientName: { ar: 'سارة', en: null },
       recentCount: ACCOUNT_MAIL_HOURLY_CAP,
+      quietCount: 0,
     });
     const second = setup();
     await second.task.run({ jobId: 'j' });

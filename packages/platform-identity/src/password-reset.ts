@@ -171,7 +171,10 @@ export interface PasswordResetDeps {
    * usable). Throws RateLimiterUnavailableError when the limiter cannot answer: fail closed, link unspent.
    */
   readonly allowAttempt: () => Promise<boolean>;
-  /** Ends the account's sign-in lock after a completed reset (auth-limits.ts unlockSignIn; never throws). */
+  /**
+   * After a completed reset: ends the account's sign-in lock and forgets every browser it trusted
+   * (auth-limits.ts resetAccountSignIn; never throws).
+   */
   readonly unlockSignIn: (email: string) => Promise<void>;
   readonly logInfo: (message: string, fields: LogFields) => void;
   readonly logWarning: (message: string, fields: LogFields) => void;
@@ -474,7 +477,8 @@ export async function completePasswordReset(
     entityType: 'auth_user',
     entityId: userId,
   });
-  // The owner proved control of the mailbox: a sign-in lock on the account ends (T-M2-11).
+  // The owner proved control of the mailbox: a sign-in lock on the account ends, and the browsers it
+  // trusted must sign in again before they are trusted again (T-M2-11, PO decision 9 Oct 2026).
   if (accountEmail) await deps.unlockSignIn(accountEmail);
   if (deps.queuePasswordChangedNotice) {
     try {

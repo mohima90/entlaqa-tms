@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
 import { AuthServiceError } from './auth-flow';
-import { RateLimiterUnavailableError } from './auth-limits';
 import {
   type PasswordChangeDeps,
   type PasswordClientLike,
@@ -16,8 +15,6 @@ function setup(
     verdict?: 'valid' | 'invalid' | 'rate_limited';
     updateError?: { status?: number; code?: string } | null;
     signOutError?: unknown;
-    /** The per-user limiter's answer (default: allowed); an Error = limiter unavailable. */
-    allowed?: boolean | Error;
   } = {},
 ) {
   const updateUser = vi.fn(() => Promise.resolve({ error: over.updateError ?? null }));
@@ -38,19 +35,13 @@ function setup(
   const verifyPassword = vi.fn(() => Promise.resolve(over.verdict ?? 'valid'));
   const logWarning = vi.fn();
   const securityLog = vi.fn();
-  const allowPasswordCheck = vi.fn((_userId: string) =>
-    over.allowed instanceof Error
-      ? Promise.reject(over.allowed)
-      : Promise.resolve(over.allowed ?? true),
-  );
   const deps: PasswordChangeDeps = {
     supabase,
     verifyPassword,
-    allowPasswordCheck,
     securityLog,
     logWarning,
   };
-  return { deps, updateUser, signOut, verifyPassword, logWarning, securityLog, allowPasswordCheck };
+  return { deps, updateUser, signOut, verifyPassword, logWarning, securityLog };
 }
 
 describe('changePassword (FR-IAM-16)', () => {
@@ -82,21 +73,6 @@ describe('changePassword (FR-IAM-16)', () => {
       expect(JSON.stringify(calls)).not.toContain('Old-password');
       expect(JSON.stringify(calls)).not.toContain('example.test');
     }
-  });
-
-  it('limits current-password checks per user before Auth is asked (T-M2-11)', async () => {
-    const { deps, verifyPassword, updateUser, allowPasswordCheck } = setup({ allowed: false });
-    const result = await changePassword(deps, input);
-    expect(!result.ok && result.error.code).toBe('RATE_LIMITED');
-    expect(allowPasswordCheck).toHaveBeenCalledWith('u1');
-    expect(verifyPassword).not.toHaveBeenCalled();
-    expect(updateUser).not.toHaveBeenCalled();
-  });
-
-  it('fails closed when the limiter cannot answer', async () => {
-    const { deps, verifyPassword } = setup({ allowed: new RateLimiterUnavailableError() });
-    await expect(changePassword(deps, input)).rejects.toBeInstanceOf(RateLimiterUnavailableError);
-    expect(verifyPassword).not.toHaveBeenCalled();
   });
 
   it("records Auth's own current-password refusal as the same security event", async () => {

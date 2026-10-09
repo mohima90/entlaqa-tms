@@ -73,6 +73,20 @@ begin
   select * into r from private.rate_limit_peek('tests.other', s1, 3);
   perform tests.assert(r.remaining = 2, 'clear forgets one bucket only');
 
+  -- Give back (failures-only counting, e.g. authenticator codes): one hit back; the last one removes the
+  -- counter; an unknown key is a no-op.
+  for i in 1..3 loop
+    perform private.rate_limit_hit('tests.give_back', s1, 5, 900);
+  end loop;
+  perform private.rate_limit_give_back('tests.give_back', s1);
+  select * into r from private.rate_limit_peek('tests.give_back', s1, 5);
+  perform tests.assert(r.remaining = 3, 'give back: one hit less');
+  perform private.rate_limit_give_back('tests.give_back', s1);
+  perform private.rate_limit_give_back('tests.give_back', s1);
+  perform private.rate_limit_give_back('tests.give_back', s1);
+  select * into r from private.rate_limit_peek('tests.give_back', s1, 5);
+  perform tests.assert(r.remaining = 5, 'give back: never below zero');
+
   -- A limit of one: the first hit uses it up.
   select * into r from private.rate_limit_hit('tests.single', s1, 1, 30);
   perform tests.assert(r.allowed and r.remaining = 0 and r.retry_after_seconds between 29 and 30, 'max 1: first allowed');
@@ -233,6 +247,26 @@ select tests.assert_fails($$select private.rate_limit_hit('tests.args', sha256('
   array['22023'], 'window at most a day (bounded retention)');
 select tests.assert_fails($$select private.rate_limit_peek('tests.args', sha256('\x01'::bytea), 1000001)$$,
   array['22023'], 'max_hits at most a million');
+
+-- Whether a typed address is an active member of the host's organization (its lockout policy applies to
+-- its members only): uA is an active member of A (active tenant), not of B; the invited and suspended
+-- members of A are not active; tenant C is suspended; an unknown address is no member.
+do $$
+begin
+  perform tests.assert(private.sign_in_account_in_tenant(' UA@a.test ', 'a0000000-0000-4000-8000-000000000001'),
+    'an active member of A (address as typed)');
+  perform tests.assert(not private.sign_in_account_in_tenant('ua@a.test', 'b0000000-0000-4000-8000-000000000001'),
+    'not a member of B');
+  perform tests.assert(not private.sign_in_account_in_tenant('uinv@a.test', 'a0000000-0000-4000-8000-000000000001')
+                       and not private.sign_in_account_in_tenant('usus@a.test', 'a0000000-0000-4000-8000-000000000001'),
+    'invited or suspended: not an active member');
+  perform tests.assert(not private.sign_in_account_in_tenant('uc@c.test', 'c0000000-0000-4000-8000-000000000001'),
+    'a suspended organization has no active members');
+  perform tests.assert(not private.sign_in_account_in_tenant('nobody@nowhere.test', 'a0000000-0000-4000-8000-000000000001')
+                       and not private.sign_in_account_in_tenant(null, 'a0000000-0000-4000-8000-000000000001')
+                       and not private.sign_in_account_in_tenant('ua@a.test', null),
+    'unknown address or no organization: no member');
+end $$;
 
 -- Without claims, the Organization Admin functions refuse.
 select tests.assert_fails($$select * from private.member_sign_in_lock('a1000000-0000-4000-8000-0000000000ab', 3)$$,

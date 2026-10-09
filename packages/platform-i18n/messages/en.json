@@ -336,7 +336,8 @@
       "platform_user_reactivated": "Account reactivated",
       "other": "Recorded action ({action})",
       "platform_user_mfa_reset": "Authenticator app reset",
-      "platform_user_sessions_ended": "Sign-in sessions ended"
+      "platform_user_sessions_ended": "Sign-in sessions ended",
+      "platform_user_sign_in_unlocked": "Sign-in unlocked"
     },
     "breadcrumbLabel": "Breadcrumb",
     "editDetails": "Edit details",
@@ -362,6 +363,15 @@
     "errors": {
       "mfaResetNoApp": "This member has no authenticator app to reset.",
       "mfaResetOtherOrganization": "This member's account also belongs to another organization, so only ENTLAQA support can reset the app, after checking their identity. Ask the member to contact ENTLAQA support."
+    },
+    "signInLock": {
+      "title": "Sign-in is paused",
+      "body": "Sign-in to this account was paused after too many unsuccessful attempts. It resumes by itself in about {minutes, plural, one {# minute} other {# minutes}}. Browsers this person signed in with before can still sign in.",
+      "unlock": "Unlock sign-in",
+      "unlocking": "Unlocking…",
+      "unlocked": "Sign-in unlocked. This person can sign in again now.",
+      "notLocked": "Sign-in was no longer paused.",
+      "audited": "Unlocking is recorded in the audit log."
     }
   },
   "profile": {

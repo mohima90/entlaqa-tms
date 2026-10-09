@@ -22,7 +22,8 @@ begin
     'private.member_sign_in_lock(uuid,integer), '
     'private.rate_limit_account_subject(text) (INVOKER), private.rate_limit_check_call(text,bytea) (INVOKER), '
     'private.rate_limit_clear(text,bytea), private.rate_limit_count(text,bytea,integer,integer,boolean) (INVOKER), '
-    'private.rate_limit_generate_keys() (INVOKER), private.rate_limit_hit(text,bytea,integer,integer), '
+    'private.rate_limit_generate_keys() (INVOKER), private.rate_limit_give_back(text,bytea), '
+    'private.rate_limit_hit(text,bytea,integer,integer), '
     'private.rate_limit_key(bytea) (INVOKER), private.rate_limit_lock_account_devices(bytea) (INVOKER), '
     'private.rate_limit_member_account_key(uuid) (INVOKER), private.rate_limit_peek(text,bytea,integer), '
     'private.rate_limit_purge() (INVOKER), private.rate_limit_ref(bytea) (INVOKER), '
@@ -30,7 +31,8 @@ begin
     'private.rate_limit_sign_in_check(bytea,bytea,bytea,integer,integer,integer,integer,integer,integer,integer,integer), '
     'private.rate_limit_sign_in_reset(bytea), '
     'private.rate_limit_sign_in_succeeded(bytea,bytea,bytea,boolean,integer), '
-    'private.rotate_rate_limit_keys(), private.unlock_member_sign_in(uuid)',
+    'private.rotate_rate_limit_keys(), private.sign_in_account_in_tenant(text,uuid), '
+    'private.unlock_member_sign_in(uuid)',
     'rate_limit_guard owns the limiter functions only; the entry points are SECURITY DEFINER');
   perform tests.assert(not exists (
       select 1 from pg_proc p where p.proowner = 'rate_limit_guard'::regrole
@@ -87,7 +89,7 @@ begin
   perform tests.assert_eq(
     (select count(*)::int from pg_proc p
      where p.proowner = 'rate_limit_guard'::regrole and has_function_privilege('authenticated', p.oid, 'execute')),
-    8, 'the web app (as authenticated) may call the eight entry points');
+    10, 'the web app (as authenticated) may call the ten entry points');
 
   -- The keys, the counters and the trusted browsers: RLS forced, reachable by rate_limit_guard alone (no
   -- application role, no Supabase role, no other guard has any privilege, table or column).

@@ -8,6 +8,8 @@ drop function private.member_sign_in_lock(uuid, integer);
 drop function private.rate_limit_sign_in_reset(bytea);
 drop function private.rate_limit_sign_in_succeeded(bytea, bytea, bytea, boolean, integer);
 drop function private.rate_limit_sign_in_check(bytea, bytea, bytea, integer, integer, integer, integer, integer, integer, integer, integer);
+drop function private.sign_in_account_in_tenant(text, uuid);
+drop function private.rate_limit_give_back(text, bytea);
 drop function private.rate_limit_clear(text, bytea);
 drop function private.rate_limit_peek(text, bytea, integer);
 drop function private.rate_limit_hit(text, bytea, integer, integer);
@@ -33,6 +35,7 @@ revoke execute on function private.request_claims() from rate_limit_guard;
 revoke execute on function private.request_user_id() from rate_limit_guard;
 revoke execute on function private.current_tenant_id() from rate_limit_guard;
 revoke execute on function private.actor_role_codes(uuid, uuid) from rate_limit_guard;
+revoke execute on function private.has_active_membership(uuid, uuid) from rate_limit_guard;
 
 drop table private.sign_in_trusted_devices;
 drop table private.rate_limit_counters;

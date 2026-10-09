@@ -13,10 +13,12 @@ import type { SecurityLog } from './auth-limits';
 
 /**
  * Password change by the signed-in user (FR-IAM-16 My profile; FR-IAM-13, NFR-SEC-01):
+ *   0. (before the action's transaction) the check is limited per user (T-M2-11, from the T-M2-15a
+ *      security review: 5 per 15 minutes on the shared limiter — auth-next.ts
+ *      allowPasswordCheckForRequest, platform-rbac my-profile.ts beforeTransaction);
  *   1. the session must still be live at the Auth server (getUser);
- *   1a. the check is limited per user (T-M2-11, from the T-M2-15a security review: 5 per 15 minutes on
- *      the shared limiter; a limited or failed check is a security event and is audited as
- *      `platform.auth.password_change_failed` by the action, platform-rbac my-profile.ts);
+ *   1a. a wrong current password is a security event, audited as `platform.auth.password_change_failed`
+ *      by the action (platform-rbac my-profile.ts);
  *   2. the CURRENT password is checked by signing in with it on a separate, cookie-less client whose
  *      session is ended right away — the user's own session is never touched; Auth also checks it
  *      itself when "require current password" is on (`current_password`);
@@ -64,11 +66,6 @@ export interface PasswordChangeDeps {
   readonly supabase: PasswordClientLike | null;
   /** Checks e-mail + password on a cookie-less client and ends that session (auth-next.ts). */
   readonly verifyPassword: (email: string, password: string) => Promise<PasswordVerdict>;
-  /**
-   * Counts one current-password check for the user (auth-limits.ts createPasswordCheckLimiter): false
-   * = limited; throws RateLimiterUnavailableError when the limiter cannot answer (fail closed).
-   */
-  readonly allowPasswordCheck: (userId: string) => Promise<boolean>;
   readonly securityLog: SecurityLog;
   readonly logWarning: (message: string, fields: LogFields) => void;
 }
@@ -123,8 +120,9 @@ export async function changePassword(
   const user = error ? null : data.user;
   if (!user?.email) return err(appError('UNAUTHENTICATED'));
 
-  // Before Auth is asked (fail closed: a limiter failure throws).
-  if (!(await deps.allowPasswordCheck(user.id))) return err(appError('RATE_LIMITED'));
+  // The current-password checks are limited per user BEFORE the action's transaction (auth-next.ts
+  // allowPasswordCheckForRequest, run by the action's beforeTransaction: never while a pooled connection
+  // is held — security review T-M2-11).
   const currentPasswordRefused = () => {
     deps.securityLog({
       event: 'auth.password_change.failed',

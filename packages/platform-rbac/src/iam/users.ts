@@ -1,5 +1,6 @@
 import { EMPTY_PERSON_SCOPE, appError, err, isEmptyPersonScope, ok } from '@jadarat/platform-core';
 import {
+  type MemberSignInLock,
   type OrgUnitOptions,
   type UserList,
   type UserProfile,
@@ -18,6 +19,7 @@ import { personResourceAttributes, personScopeFromGrants } from '../person-scope
 import { platformPermissions } from '../platform-permissions';
 import { SYSTEM_ROLE_CODES } from '../system-roles';
 import { type LifecycleOffer, NO_LIFECYCLE_OFFER, lifecycleOffer } from './deactivation';
+import { type AccountLockBudget, signInLockForProfile } from './sign-in-lock';
 
 /**
  * Reads behind the users screens (T-M2-04, FR-IAM-01; screens 1 and 3). Kept as definitions so they
@@ -136,17 +138,22 @@ export interface UserProfileView {
   readonly canEditRoles: boolean;
   /** Deactivate / reactivate (T-M2-09): user.deactivate + the manage rule, never one's own account. */
   readonly lifecycle: LifecycleOffer;
+  /**
+   * The member's sign-in lock (T-M2-11), for a viewer who may end it (`platform.user.unlock_sign_in`:
+   * Organization Admin) — null for anyone else and for a person without an account here. «إلغاء إيقاف
+   * تسجيل الدخول» is shown only while `locked`.
+   */
+  readonly signInLock: MemberSignInLock | null;
 }
 
 /**
  * One person's profile, authorized against that person (out of scope → NOT_FOUND). Roles need
- * `platform.role.read` and the recent activity `platform.audit.read`, both for this person.
+ * `platform.role.read` and the recent activity `platform.audit.read`, both for this person; the sign-in
+ * lock `platform.user.unlock_sign_in` (`accountLockBudget`: the account budget sign-in applies).
  */
-export function userProfileQueryDefinition(): QueryDefinition<
-  typeof UserProfileInput,
-  UserProfileView,
-  UserTx
-> {
+export function userProfileQueryDefinition(
+  accountLockBudget?: AccountLockBudget,
+): QueryDefinition<typeof UserProfileInput, UserProfileView, UserTx> {
   return {
     permission: p['platform.user.read'],
     input: UserProfileInput,
@@ -181,7 +188,16 @@ export function userProfileQueryDefinition(): QueryDefinition<
         person.id !== ctx.actor.personId
           ? await lifecycleOffer(ctx, person.id)
           : NO_LIFECYCLE_OFFER;
-      return ok({ profile, canOpenManager, canEdit, canEditRoles, lifecycle });
+      const signInLock = await signInLockForProfile(
+        ctx.tx,
+        person.id,
+        {
+          canUnlock: ctx.can(p['platform.user.unlock_sign_in'], person),
+          hasAccount: profile.membershipStatus !== null,
+        },
+        accountLockBudget,
+      );
+      return ok({ profile, canOpenManager, canEdit, canEditRoles, lifecycle, signInLock });
     },
   };
 }

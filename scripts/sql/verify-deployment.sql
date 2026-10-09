@@ -254,7 +254,7 @@ begin
     select h.fn, h.owner, h.allowed, h.definer, p.oid as poid, p.proowner, p.prosecdef, p.proconfig, p.proacl
     from (values
       ('private.user_session_is_valid(uuid, uuid)', 'tenant_guard', array['tenant_guard', 'invitation_guard'], true),
-      ('private.has_active_membership(uuid, uuid)', 'tenant_guard', array['tenant_guard'], true),
+      ('private.has_active_membership(uuid, uuid)', 'tenant_guard', array['tenant_guard', 'rate_limit_guard'], true),
       ('private.current_tenant_id()',               'tenant_guard', array['tenant_guard', 'authenticated', 'account_mail_guard', 'membership_guard', 'rate_limit_guard'], true),
       ('private.switch_active_tenant(uuid)',        'tenant_guard', array['tenant_guard', 'authenticated'], true),
       ('private.session_tenants()',                 'tenant_guard', array['tenant_guard', 'authenticated'], true),
@@ -340,6 +340,8 @@ begin
       ('private.rate_limit_hit(text, bytea, integer, integer)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
       ('private.rate_limit_peek(text, bytea, integer)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
       ('private.rate_limit_clear(text, bytea)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
+      ('private.rate_limit_give_back(text, bytea)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
+      ('private.sign_in_account_in_tenant(text, uuid)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
       ('private.rate_limit_sign_in_check(bytea, bytea, bytea, integer, integer, integer, integer, integer, integer, integer, integer)',
        'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
       ('private.rate_limit_sign_in_succeeded(bytea, bytea, bytea, boolean, integer)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
@@ -417,6 +419,7 @@ begin
         'private.request_account_locked_mail(text,integer)',
         'private.rate_limit_hit(text,bytea,integer,integer)',
         'private.rate_limit_peek(text,bytea,integer)', 'private.rate_limit_clear(text,bytea)',
+        'private.rate_limit_give_back(text,bytea)', 'private.sign_in_account_in_tenant(text,uuid)',
         'private.rate_limit_sign_in_check(bytea,bytea,bytea,integer,integer,integer,integer,integer,integer,integer,integer)',
         'private.rate_limit_sign_in_succeeded(bytea,bytea,bytea,boolean,integer)', 'private.rate_limit_sign_in_reset(bytea)',
         'private.member_sign_in_lock(uuid,integer)', 'private.unlock_member_sign_in(uuid)',

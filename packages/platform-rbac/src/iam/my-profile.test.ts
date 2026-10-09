@@ -205,13 +205,48 @@ describe('change my password', () => {
     newPassword: 'New-password-4567',
     confirmPassword: 'New-password-4567',
   };
+  /** The per-user limit on current-password checks: allowed. */
+  const LIMITS = { allowPasswordCheck: () => Promise.resolve(true) };
+
+  it('limits the checks per user BEFORE the transaction; a limited check never reaches the flow (T-M2-11)', async () => {
+    const order: string[] = [];
+    const allowPasswordCheck = vi.fn((userId: string) => {
+      order.push(`limit ${userId}`);
+      return Promise.resolve(true);
+    });
+    const changePassword = vi.fn(() => {
+      order.push('change');
+      return Promise.resolve(ok({ userId: 'u1' }));
+    });
+    const { rt, writeAudit } = runtime();
+    const tx = vi.spyOn(rt, 'withUserTx');
+    await createDefineAction(rt)(
+      changeMyPasswordActionDefinition(changePassword, { allowPasswordCheck }),
+    )(input);
+    // The verified user's own id; the limiter ran before the action's transaction opened.
+    expect(order).toEqual(['limit 11111111-1111-4111-8111-111111111111', 'change']);
+    expect(allowPasswordCheck.mock.invocationCallOrder[0]).toBeLessThan(
+      tx.mock.invocationCallOrder[0] ?? 0,
+    );
+
+    changePassword.mockClear();
+    writeAudit.mockClear();
+    const limited = await createDefineAction(rt)(
+      changeMyPasswordActionDefinition(changePassword, {
+        allowPasswordCheck: () => Promise.resolve(false),
+      }),
+    )(input);
+    expect(!limited.ok && limited.error.code).toBe('RATE_LIMITED');
+    expect(changePassword).not.toHaveBeenCalled();
+    expect(writeAudit).not.toHaveBeenCalled();
+  });
 
   it('changes the password and audits without any password', async () => {
     const changePassword = vi.fn(() => Promise.resolve(ok({ userId: 'u1' })));
     const { rt, writeAudit } = runtime();
-    const result = await createDefineAction(rt)(changeMyPasswordActionDefinition(changePassword))(
-      input,
-    );
+    const result = await createDefineAction(rt)(
+      changeMyPasswordActionDefinition(changePassword, LIMITS),
+    )(input);
     expect(result).toEqual(ok({ userId: 'u1' }));
     expect(changePassword).toHaveBeenCalledWith({
       currentPassword: 'Old-password-123',
@@ -236,16 +271,16 @@ describe('change my password', () => {
     const afterChange = vi.fn(() => Promise.resolve());
     const changed = vi.fn(() => Promise.resolve(ok({ userId: 'u1' })));
     const result = await createDefineAction(runtime().rt)(
-      changeMyPasswordActionDefinition(changed, afterChange),
+      changeMyPasswordActionDefinition(changed, { ...LIMITS, afterChange }),
     )(input);
     expect(result).toEqual(ok({ userId: 'u1' }));
     expect(afterChange).toHaveBeenCalledWith(TX, 'u1');
 
     afterChange.mockClear();
     const refused = vi.fn(() => Promise.resolve(err(appError('RATE_LIMITED'))));
-    await createDefineAction(runtime().rt)(changeMyPasswordActionDefinition(refused, afterChange))(
-      input,
-    );
+    await createDefineAction(runtime().rt)(
+      changeMyPasswordActionDefinition(refused, { ...LIMITS, afterChange }),
+    )(input);
     expect(afterChange).not.toHaveBeenCalled();
   });
 
@@ -255,7 +290,7 @@ describe('change my password', () => {
     ] as const) {
       const { rt, writeAudit } = runtime();
       const result = await createDefineAction(rt)(
-        changeMyPasswordActionDefinition(() => Promise.resolve(err(error))),
+        changeMyPasswordActionDefinition(() => Promise.resolve(err(error)), LIMITS),
       )(input);
       expect(!result.ok && result.error.code).toBe(error.code);
       expect(writeAudit).toHaveBeenCalledTimes(1);
@@ -277,7 +312,7 @@ describe('change my password', () => {
     for (const error of [appError(Codes.AUTH_PASSWORD_TOO_WEAK), appError('RATE_LIMITED')]) {
       const { rt, writeAudit } = runtime();
       await createDefineAction(rt)(
-        changeMyPasswordActionDefinition(() => Promise.resolve(err(error))),
+        changeMyPasswordActionDefinition(() => Promise.resolve(err(error)), LIMITS),
       )(input);
       expect(writeAudit).not.toHaveBeenCalled();
     }
@@ -286,7 +321,7 @@ describe('change my password', () => {
   it('validates length and confirmation before calling Auth; passes Auth errors through', async () => {
     const changePassword = vi.fn(() => Promise.resolve(err(appError('RATE_LIMITED'))));
     const action = createDefineAction(runtime().rt)(
-      changeMyPasswordActionDefinition(changePassword),
+      changeMyPasswordActionDefinition(changePassword, LIMITS),
     );
     for (const bad of [
       { ...input, newPassword: 'short', confirmPassword: 'short' },

@@ -26,9 +26,10 @@ export const ACCOUNT_MAIL_BATCH = 20;
 /** Auth's link lifetime (`otp_exp` = 3600 s), stated in the e-mail. */
 export const RESET_LINK_VALID_MINUTES = 60;
 /**
- * Per person and organization: at most this many reset e-mails an hour (beyond the web app's own limits and
- * Auth's one link a minute) — a further request is answered without an e-mail. Security notices are exempt
- * (SECURITY_NOTICE_KINDS).
+ * Per person and organization: at most this many e-mails of each account template an hour (beyond the web
+ * app's own limits and Auth's one link a minute) — a further request is answered without an e-mail.
+ * Security notices are exempt (SECURITY_NOTICE_KINDS). The "account locked" notice (T-M2-11) also at most
+ * once per lock period.
  */
 export const ACCOUNT_MAIL_HOURLY_CAP = 5;
 /**
@@ -106,7 +107,8 @@ type AccountTemplate =
   | 'platform.mfa_factor_added'
   | 'platform.mfa_factor_removed'
   | 'platform.security_policy_changed'
-  | 'platform.security_digest';
+  | 'platform.security_digest'
+  | 'platform.account_locked';
 type AccountEmail = EmailRequest<AccountTemplate>;
 
 const TEMPLATE_OF: Readonly<Record<AccountMailRequest['kind'], AccountTemplate>> = {
@@ -116,6 +118,7 @@ const TEMPLATE_OF: Readonly<Record<AccountMailRequest['kind'], AccountTemplate>>
   mfa_factor_removed: 'platform.mfa_factor_removed',
   security_policy_changed: 'platform.security_policy_changed',
   security_digest: 'platform.security_digest',
+  account_locked: 'platform.account_locked',
 };
 
 /** A new link token: 32 random bytes, base64url (43 characters) — only its SHA-256 is stored. */
@@ -137,7 +140,9 @@ const PLACEHOLDER_TOKEN_HASH = '0'.repeat(56);
 
 /**
  * Account e-mails (FR-NTF-02 as clarified in BRD v2.5, FR-IAM-13, FR-IAM-16; T-M2-17): the
- * password-reset e-mail and the "password changed" notice, sent by our notification service in the
+ * password-reset e-mail, the "password changed" notice and — since T-M2-11 — the "account locked" notice
+ * (once per lock period: none when one went to the person within the lock's minutes), sent by our
+ * notification service in the
  * organization's language and brand instead of Supabase Auth's own mailer. Each pass leases waiting
  * requests (platform transaction: they have no tenant yet); the database says whom to write in which
  * organization and language, or why nothing is sent (unknown address, banned, a link issued less than a
@@ -184,7 +189,7 @@ export function createAccountMailer(options: AccountMailerOptions): PlatformTask
     const template = TEMPLATE_OF[request.kind];
     // A suspended or closed organization since the lease: its RLS shows nothing; nothing is sent.
     const context = (await tenantIsServed(tx))
-      ? await loadAccountMailContext(tx, request.personId, template)
+      ? await loadAccountMailContext(tx, request.personId, template, request.lockMinutes ?? 0)
       : null;
     if (!context) {
       await finishAccountMailRequest(tx, request.id);
@@ -197,6 +202,10 @@ export function createAccountMailer(options: AccountMailerOptions): PlatformTask
       }
       // Re-review N3: never dropped silently — sent, and the volume shows in the logs.
       log('warning', `security notice over the hourly cap sent anyway (${request.kind})`);
+    }
+    if (request.kind === 'account_locked' && context.quietCount > 0) {
+      await finishAccountMailRequest(tx, request.id);
+      return { reason: 'already_notified' };
     }
     return { organizationName: context.organizationName };
   }
@@ -280,6 +289,20 @@ export function createAccountMailer(options: AccountMailerOptions): PlatformTask
 
   async function send(jobId: string, request: Sendable, appBase: string): Promise<string> {
     const pages = (path: string) => ({ ar: `${appBase}/ar/${path}`, en: `${appBase}/en/${path}` });
+    if (request.kind === 'account_locked') {
+      return queueInTenant(jobId, request, (organizationName) => ({
+        template: 'platform.account_locked',
+        locale: request.locale,
+        to: request.email,
+        recipientPersonId: request.personId,
+        variables: {
+          organizationName,
+          lockMinutes: request.lockMinutes ?? 15,
+          forgotPasswordUrl: pages('forgot-password'),
+          loginEmail: request.email,
+        },
+      }));
+    }
     if (request.kind === 'mfa_factor_added') return sendSetUp(jobId, request, pages);
     if (request.kind === 'mfa_factor_removed') {
       const reason = request.mfaReason ?? 'removed';

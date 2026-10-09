@@ -53,6 +53,22 @@ describe('account e-mail requests on the request path (T-M2-17)', () => {
     await expect(api.requestPasswordChangedMail('not-a-uuid')).rejects.toThrow('invalid user id');
   });
 
+  it('queues the "account locked" e-mail for the typed address with the lock minutes (T-M2-11)', async () => {
+    const { db, executed } = fakeDb();
+    const api = createAccountMailApi(() => db);
+    await expect(api.requestAccountLockedMail('Locked@example.test', 15)).resolves.toBeUndefined();
+    expect(executed[1]?.params).toEqual(['']);
+    expect(executed.at(-1)).toMatchObject({
+      sql: 'select private.request_account_locked_mail($1, $2::integer)',
+      params: ['Locked@example.test', 15],
+    });
+    for (const minutes of [0, 1441, 1.5]) {
+      await expect(api.requestAccountLockedMail('a@example.test', minutes)).rejects.toThrow(
+        'lock minutes',
+      );
+    }
+  });
+
   it('passes database failures to the caller (it logs a code and answers the same)', async () => {
     const { db } = fakeDb(new Error('connection refused'));
     await expect(

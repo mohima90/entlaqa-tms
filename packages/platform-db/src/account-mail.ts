@@ -19,6 +19,12 @@ export interface AccountMailApi {
   requestPasswordResetMail(email: string): Promise<void>;
   /** After a password reset (screen 11, no session): queues the account's "password changed" notice. */
   requestPasswordChangedMail(userId: string): Promise<void>;
+  /**
+   * Sign-in locked the typed address (T-M2-11, migration 20261013090100): queues the "account locked"
+   * e-mail request, unconditionally — the worker decides whether an account exists. `lockMinutes`: how
+   * long the lock lasts (1–1440); anything else is dropped by the database.
+   */
+  requestAccountLockedMail(email: string, lockMinutes: number): Promise<void>;
 }
 
 const UserId = z.uuid();
@@ -42,6 +48,16 @@ export function createAccountMailApi(getDb: () => AppDatabase): AccountMailApi {
         tx.execute(sql`select private.request_password_changed_mail(${userId}::uuid)`),
       );
     },
+    async requestAccountLockedMail(email, lockMinutes) {
+      if (!Number.isInteger(lockMinutes) || lockMinutes < 1 || lockMinutes > 1440) {
+        throw new Error('requestAccountLockedMail: lock minutes must be 1–1440');
+      }
+      await withoutClaims((tx) =>
+        tx.execute(
+          sql`select private.request_account_locked_mail(${email}, ${lockMinutes}::integer)`,
+        ),
+      );
+    },
   };
 }
 
@@ -53,6 +69,10 @@ export function requestPasswordResetMail(email: string): Promise<void> {
 
 export function requestPasswordChangedMail(userId: string): Promise<void> {
   return defaultAccountMailApi.requestPasswordChangedMail(userId);
+}
+
+export function requestAccountLockedMail(email: string, lockMinutes: number): Promise<void> {
+  return defaultAccountMailApi.requestAccountLockedMail(email, lockMinutes);
 }
 
 /**

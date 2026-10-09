@@ -1,15 +1,19 @@
 /**
  * Shared rate limiter against real PostgreSQL (T-M2-11; scripts/db-test.sh with DB_TEST_INTEGRATION=1):
  * concurrent hits of one key from separate connections never let more than the limit through (the row
- * lock of INSERT … ON CONFLICT), the stored key is HMAC-SHA-256 under the database's own key (computed
- * here independently from the secret, read as the owner), and the TypeScript checks refuse readable keys
- * before any round trip. The SQL behaviour (windows, purge, grants) is in supabase/tests/70–72.
+ * lock of INSERT … ON CONFLICT) — nor do concurrent sign-in checks of one account (counted BEFORE Auth:
+ * at most 5 attempts reach Auth, security review T-M2-11); the stored key is HMAC-SHA-256 under the
+ * database's counter key and the log reference under its log key (computed here independently from the
+ * secret, read as the owner); a trusted browser and a password reset; readiness; and the TypeScript checks
+ * refuse readable keys before any round trip. The SQL behaviour (windows, purge, grants) is in
+ * supabase/tests/70–72.
  */
 import { createHash, createHmac, randomUUID } from 'node:crypto';
 import postgres from 'postgres';
 import { afterAll, describe, expect, it } from 'vitest';
 import { createDatabase } from './client';
-import { createRateLimitStore } from './rate-limit';
+import { checkDatabase } from './health';
+import { type SignInBudgets, createRateLimitStore } from './rate-limit';
 
 const ownerUrl = process.env.TEST_DATABASE_URL;
 const appServerUrl = process.env.TEST_APP_SERVER_URL;
@@ -31,6 +35,8 @@ describe.skipIf(!configured)('rate limiter against PostgreSQL', () => {
 
   afterAll(async () => {
     await owner`delete from private.rate_limit_counters where bucket like ${'itest.%'}`;
+    await owner`delete from private.rate_limit_counters where bucket like ${'sign_in.%'}`;
+    await owner`delete from private.sign_in_trusted_devices`;
     await owner.end();
     await serverDb.$client.end();
   });
@@ -63,17 +69,23 @@ describe.skipIf(!configured)('rate limiter against PostgreSQL', () => {
     const key = subject(`hmac-${tag}`);
     const counter = await store.hit(`${bucket}.hmac`, key, { max: 3, windowSeconds: 60 });
     const [secret] = await owner<
-      { inner_key: Buffer }[]
-    >`select inner_key from private.rate_limit_secret`;
-    // K = inner xor 0x36 (RFC 2104 with a 64-byte key).
+      { inner_key: Buffer; log_inner_key: Buffer }[]
+    >`select inner_key, log_inner_key from private.rate_limit_secret`;
+    // K = inner xor 0x36 (RFC 2104 with a 64-byte key); the log key likewise.
     const k = Buffer.from((secret?.inner_key ?? Buffer.alloc(64)).map((byte) => byte ^ 0x36));
+    const logK = Buffer.from(
+      (secret?.log_inner_key ?? Buffer.alloc(64)).map((byte) => byte ^ 0x36),
+    );
     const expected = createHmac('sha256', k).update(key).digest();
     const [row] = await owner<{ key_hash: Buffer }[]>`
       select key_hash from private.rate_limit_counters where bucket = ${`${bucket}.hmac`}`;
     expect(row?.key_hash.equals(expected)).toBe(true);
     expect(row?.key_hash.equals(key)).toBe(false);
     expect(row?.key_hash.equals(createHash('sha256').update(key).digest())).toBe(false);
-    expect(counter.ref).toBe(`rk_${expected.subarray(0, 12).toString('hex')}`);
+    // The log reference comes from the OTHER key: no prefix of the stored key (review LOW 5).
+    const ref = createHmac('sha256', logK).update(key).digest().subarray(0, 12).toString('hex');
+    expect(counter.ref).toBe(`rk_${ref}`);
+    expect(counter.ref).not.toBe(`rk_${expected.subarray(0, 12).toString('hex')}`);
   });
 
   it('peeks without counting and clears a key', async () => {
@@ -93,6 +105,67 @@ describe.skipIf(!configured)('rate limiter against PostgreSQL', () => {
       allowed: true,
       remaining: 2,
     });
+  });
+
+  const budgets: SignInBudgets = {
+    clientAttempts: { max: 1000, windowSeconds: 600 },
+    clientFailures: { max: 100, windowSeconds: 600 },
+    accountFailures: { max: 5, windowSeconds: 600 },
+    deviceFailures: { max: 10, windowSeconds: 600 },
+  };
+
+  it('lets at most 5 sign-in attempts of one account reach Auth when 30 run at once', async () => {
+    const account = subject(`account-${tag}`);
+    const answers = await Promise.all(
+      Array.from({ length: 30 }, (_, i) =>
+        store.signInCheck(
+          { client: subject(`client-${tag}-${String(i)}`), account, device: null },
+          budgets,
+        ),
+      ),
+    );
+    expect(answers.filter((a) => a.allowed)).toHaveLength(5);
+    const refused = answers.filter((a) => !a.allowed);
+    expect(refused.every((a) => a.refusedBy === 'sign_in.account_failures')).toBe(true);
+    expect(refused.every((a) => a.retryAfterSeconds > 0 && a.retryAfterSeconds <= 600)).toBe(true);
+    // Refused before Auth: those clients got their provisional failure back.
+    expect(refused.every((a) => a.clientRemaining === 100)).toBe(true);
+    expect(new Set(answers.map((a) => a.subjectRef)).size).toBe(1);
+  });
+
+  it('trusts a browser after a success: it passes the account lock with its own budget; a reset forgets it', async () => {
+    const account = subject(`trusted-${tag}`);
+    const browser = subject(`browser-${tag}`);
+    const client = subject(`trusted-client-${tag}`);
+    const first = await store.signInCheck({ client, account, device: browser }, budgets);
+    expect(first).toMatchObject({ allowed: true, trusted: false, remaining: 4 });
+    const until = await store.signInSucceeded({ client, account, device: browser }, false, 30);
+    expect(until.getTime()).toBeGreaterThan(Date.now() + 29 * 86_400_000);
+    // Five failures from unknown browsers lock the account.
+    for (let i = 0; i < 6; i += 1) {
+      await store.signInCheck(
+        { client: subject(`other-${tag}-${String(i)}`), account, device: null },
+        budgets,
+      );
+    }
+    expect(await store.signInCheck({ client, account, device: null }, budgets)).toMatchObject({
+      allowed: false,
+      refusedBy: 'sign_in.account_failures',
+    });
+    expect(await store.signInCheck({ client, account, device: browser }, budgets)).toMatchObject({
+      allowed: true,
+      trusted: true,
+      remaining: 9,
+    });
+    expect(await store.signInReset(account)).toBe(1);
+    expect(await store.signInCheck({ client, account, device: browser }, budgets)).toMatchObject({
+      allowed: true,
+      trusted: false,
+    });
+  });
+
+  it('is ready only when the sign-in functions exist (deploy readiness)', async () => {
+    await expect(checkDatabase({ getDb: () => serverDb })).resolves.toBe('ok');
   });
 
   it('refuses readable keys and bad limits before any round trip', () => {

@@ -64,11 +64,21 @@ describe('account e-mail queue, worker side (T-M2-17)', () => {
       personId: PERSON,
       locale: 'en',
       ...none,
+      lockMinutes: null,
     });
     expect(fake.executed[0]?.sql).toBe('select * from private.claim_account_mail_request()');
     // Anything but English is Arabic.
     const ar = await claimAccountMailRequest(fakeTx([row({ locale: 'fr' })]).tx);
     expect(ar).toMatchObject({ locale: 'ar' });
+  });
+
+  it('an account_locked lease carries the lock minutes (T-M2-11); without them it is refused', async () => {
+    expect(
+      await claimAccountMailRequest(fakeTx([row({ kind: 'account_locked', lock_minutes: 15 })]).tx),
+    ).toMatchObject({ kind: 'account_locked', outcome: 'send', lockMinutes: 15 });
+    await expect(
+      claimAccountMailRequest(fakeTx([row({ kind: 'account_locked', lock_minutes: null })]).tx),
+    ).rejects.toThrow('lock minutes');
   });
 
   it('a lease without e-mail carries only why; nothing waiting is null', async () => {
@@ -238,14 +248,24 @@ describe('account e-mail queue, worker side (T-M2-17)', () => {
         recipient_ar: 'سارة',
         recipient_en: 'Sara',
         recent: '2',
+        quiet: '1',
       },
     ]);
-    expect(await loadAccountMailContext(fake.tx, PERSON, 'platform.password_reset')).toEqual({
+    expect(await loadAccountMailContext(fake.tx, PERSON, 'platform.account_locked', 15)).toEqual({
       organizationName: { ar: 'شركة الراية', en: null },
       recipientName: { ar: 'سارة', en: 'Sara' },
       recentCount: 2,
+      quietCount: 1,
     });
-    expect(fake.executed[0]?.params).toEqual(['platform.password_reset', PERSON]);
+    expect(fake.executed[0]?.params).toEqual([
+      'platform.account_locked',
+      'platform.account_locked',
+      15,
+      PERSON,
+    ]);
+    await expect(loadAccountMailContext(fake.tx, PERSON, 'x.y', 1441)).rejects.toThrow(
+      'quiet minutes',
+    );
     expect(await loadAccountMailContext(fakeTx([]).tx, PERSON, 'x.y')).toBeNull();
   });
 });

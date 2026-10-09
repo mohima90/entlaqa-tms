@@ -336,7 +336,8 @@
       "platform_user_reactivated": "أُعيد تفعيل الحساب",
       "other": "إجراء مسجّل ({action})",
       "platform_user_mfa_reset": "إعادة ضبط تطبيق المصادقة",
-      "platform_user_sessions_ended": "إنهاء جلسات الدخول"
+      "platform_user_sessions_ended": "إنهاء جلسات الدخول",
+      "platform_user_sign_in_unlocked": "أُلغي إيقاف تسجيل الدخول"
     },
     "breadcrumbLabel": "مسار التنقل",
     "editDetails": "تعديل البيانات",
@@ -362,6 +363,15 @@
     "errors": {
       "mfaResetNoApp": "لا يوجد لدى هذا العضو تطبيق مصادقة لإعادة ضبطه.",
       "mfaResetOtherOrganization": "حساب هذا العضو في منشأة أخرى أيضًا، لذا يعيد فريق دعم ENTLAQA وحده ضبط التطبيق بعد التحقق من هويته. يمكن للعضو التواصل مع فريق دعم ENTLAQA."
+    },
+    "signInLock": {
+      "title": "تسجيل الدخول موقوف مؤقتًا",
+      "body": "أُوقف تسجيل الدخول إلى هذا الحساب بعد محاولات كثيرة لم تنجح. يُرفع الإيقاف تلقائيًا بعد {minutes, plural, one {دقيقة واحدة} two {دقيقتين} few {{minutes, number, integer} دقائق} many {{minutes, number, integer} دقيقة} other {{minutes, number, integer} دقيقة}} تقريبًا، ويبقى بإمكان صاحب الحساب الدخول من المتصفحات التي سجّل الدخول منها سابقًا.",
+      "unlock": "إلغاء إيقاف تسجيل الدخول",
+      "unlocking": "جارٍ إلغاء الإيقاف…",
+      "unlocked": "أُلغي إيقاف تسجيل الدخول، ويمكن لصاحب الحساب تسجيل الدخول الآن.",
+      "notLocked": "لم يعد تسجيل الدخول موقوفًا.",
+      "audited": "يُسجَّل إلغاء الإيقاف في سجل التدقيق."
     }
   },
   "profile": {

@@ -715,8 +715,10 @@ q "grant execute on function private.account_sign_in_refused(uuid) to supabase_a
 db_logs="$(compose logs --no-log-prefix db 2>&1)"
 grep -qE 'custom_access_token_hook: no token issued after an error \(SQLSTATE 42501\)' <<<"$db_logs" ||
   { echo "smoke: the hook's error was not logged with its alerting prefix" >&2; exit 1; }
+# The warning lines themselves (PostgreSQL's prefix names the role, e.g. supabase_auth_admin@postgres):
+# no account id and no e-mail address.
 hook_lines="$(grep 'custom_access_token_hook:' <<<"$db_logs" || true)"
-if grep -qE "$PARITY_ID|$PARITY_EMAIL|@" <<<"$hook_lines"; then
+if grep -qE "$PARITY_ID|[[:alnum:]._%+-]+@[[:alnum:]-]+(\.[[:alnum:]-]+)*\.[[:alpha:]]{2,}" <<<"$hook_lines"; then
   echo "smoke: the hook's warning carries personal data" >&2; exit 1
 fi
 unset db_logs hook_lines

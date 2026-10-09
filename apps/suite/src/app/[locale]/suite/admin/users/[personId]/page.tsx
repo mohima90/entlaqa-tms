@@ -1,5 +1,6 @@
 import { toClientError } from '@jadarat/platform-core';
 import type { UserProfile } from '@jadarat/platform-db';
+import type { LifecycleOffer } from '@jadarat/platform-rbac';
 import {
   type AppLocale,
   DEFAULT_CALENDAR,
@@ -13,6 +14,10 @@ import { getFormatter, getTranslations } from 'next-intl/server';
 import { notFound, redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { SuiteShell } from '../../../../../../components/suite-shell';
+import { ReactivateMemberButton } from '../../../../../../components/users/reactivate-member-button';
+import { REACTIVATED_FLASH_PARAM } from '../../../../../../lib/deactivate-form';
+import { reactivateLabels } from '../../../../../../lib/deactivation-texts';
+import { profileErrorTexts } from '../../../../../../lib/profile-texts';
 import { getSuiteContext } from '../../../../../../lib/suite-context';
 import { userProfileQuery } from '../../../../../../lib/users-queries';
 import { localizedName, roleName } from '../../../../../../lib/users-view';
@@ -32,20 +37,26 @@ const KNOWN_ACTIONS = new Set([
   'platform.tenant.admin_role_restored',
   'platform.user.updated',
   'platform.user.roles_changed',
+  'platform.user.deactivated',
+  'platform.user.reactivated',
 ]);
 
 /**
  * User profile (T-M2-04, screen 3 — FR-IAM-01/07): authorized against the person (out of scope or
  * another organization → 404, no existence leak). Roles need role.read, the activity audit.read.
- * "Edit details" (T-M2-13) when the member may change this record; sign-in sessions, MFA and lockout
- * (FR-IAM-12/13) join with T-M2-10; account actions with T-M2-07/09.
+ * "Edit details" (T-M2-13) when the member may change this record; «تعطيل المستخدم» / «إعادة تفعيل
+ * المستخدم» (T-M2-09, FR-IAM-05) for HR / the Organization Admin; sign-in sessions, MFA and lockout
+ * (FR-IAM-12/13) join with T-M2-10.
  */
 export default async function UserProfilePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ locale: string; personId: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { locale, personId } = await params;
+  const reactivated = (await searchParams)[REACTIVATED_FLASH_PARAM] === '1';
   if (!hasLocale(routing.locales, locale)) notFound();
   const context = await getSuiteContext(locale);
   const t = await getTranslations({ locale, namespace: 'userProfile' });
@@ -77,16 +88,24 @@ export default async function UserProfilePage({
         );
       }
     } else {
-      const { profile, canOpenManager, canEdit, canEditRoles } = result.value;
+      const { profile, canOpenManager, canEdit, canEditRoles, lifecycle } = result.value;
       title = localizedName(locale, profile.displayNameAr, profile.displayNameEn);
       content = (
-        <Profile
-          locale={locale}
-          profile={profile}
-          canOpenManager={canOpenManager}
-          canEdit={canEdit}
-          canEditRoles={canEditRoles}
-        />
+        <>
+          {reactivated && profile.membershipStatus === 'active' ? (
+            <Alert tone="success" className="mb-4" data-testid="reactivated">
+              {(await getTranslations({ locale, namespace: 'deactivation' }))('reactivate.done')}
+            </Alert>
+          ) : null}
+          <Profile
+            locale={locale}
+            profile={profile}
+            canOpenManager={canOpenManager}
+            canEdit={canEdit}
+            canEditRoles={canEditRoles}
+            lifecycle={lifecycle}
+          />
+        </>
       );
     }
   }
@@ -108,14 +127,19 @@ async function Profile({
   canOpenManager,
   canEdit,
   canEditRoles,
+  lifecycle,
 }: {
   locale: AppLocale;
   profile: UserProfile;
   canOpenManager: boolean;
   canEdit: boolean;
   canEditRoles: boolean;
+  lifecycle: LifecycleOffer;
 }) {
   const t = await getTranslations({ locale, namespace: 'userProfile' });
+  const deactivation = await getTranslations({ locale, namespace: 'deactivation' });
+  const name = localizedName(locale, profile.displayNameAr, profile.displayNameEn);
+  const profileHref = `/${locale}/suite/admin/users/${profile.personId}`;
   const users = await getTranslations({ locale, namespace: 'users' });
   const format = await getFormatter({ locale });
   const none = <NotSet label={users('noneLabel')} />;
@@ -215,16 +239,44 @@ async function Profile({
       <div className="flex flex-wrap items-center gap-3">
         {subtitle ? <p className="m-0 text-text-muted">{subtitle}</p> : null}
         <Badge tone={ACCOUNT_TONE[accountStatus]}>{t(`accountStatuses.${accountStatus}`)}</Badge>
-        {canEdit ? (
-          <a
-            href={`/${locale}/suite/admin/users/${profile.personId}/edit`}
-            className={buttonClasses({ variant: 'secondary', className: 'ms-auto' })}
-            data-testid="edit-user-link"
-          >
-            {t('editDetails')}
-          </a>
+        {canEdit || lifecycle.canDeactivate ? (
+          <div className="ms-auto flex flex-wrap gap-2">
+            {canEdit ? (
+              <a
+                href={`/${locale}/suite/admin/users/${profile.personId}/edit`}
+                className={buttonClasses({ variant: 'secondary' })}
+                data-testid="edit-user-link"
+              >
+                {t('editDetails')}
+              </a>
+            ) : null}
+            {lifecycle.canDeactivate ? (
+              <a
+                href={`${profileHref}/deactivate`}
+                // Screen 3's danger-outline button (destructive, but only opens screen 4).
+                className={buttonClasses({ variant: 'danger-outline' })}
+                data-testid="deactivate-user-link"
+              >
+                {t('deactivate')}
+              </a>
+            ) : null}
+          </div>
         ) : null}
       </div>
+      {lifecycle.reactivate === 'allowed' ? (
+        <ReactivateMemberButton
+          personId={profile.personId}
+          name={name}
+          privileged={lifecycle.privileged}
+          labels={await reactivateLabels(locale)}
+          errors={await profileErrorTexts(locale)}
+          successHref={`${profileHref}?${REACTIVATED_FLASH_PARAM}=1`}
+        />
+      ) : lifecycle.reactivate === 'step_up_required' ? (
+        <Alert tone="info" data-testid="reactivate-step-up">
+          {deactivation('reactivate.stepUp')}
+        </Alert>
+      ) : null}
 
       <Card title={t('basicData')}>
         <dl className="m-0 grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">

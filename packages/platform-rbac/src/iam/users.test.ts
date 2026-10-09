@@ -97,6 +97,8 @@ describe('users list query', () => {
         orgUnits,
         canInvite: true,
         canDeactivate: true,
+        // aal1: privileged members come back after an authenticator code (D-IAM-01).
+        privilegedReactivation: 'step_up_required',
       }),
     );
     expect(db.listUsers).toHaveBeenCalledWith(TX, {
@@ -121,6 +123,7 @@ describe('users list query', () => {
       orgUnits: null,
       canInvite: false,
       canDeactivate: false,
+      privilegedReactivation: null,
     });
     expect(db.listOrgUnitOptions).not.toHaveBeenCalled();
     expect(db.listUsers).toHaveBeenCalledWith(TX, {
@@ -167,9 +170,11 @@ describe('users list query', () => {
   });
 
   it('deactivated tab: rows say whether the member may manage each person (T-M2-09)', async () => {
-    await createDefineQuery(runtime(['hr_manager']))(usersListQueryDefinition())({
+    const hr = await createDefineQuery(runtime(['hr_manager']))(usersListQueryDefinition())({
       tab: 'deactivated',
     });
+    // HR Manager: never privileged members (D-IAM-01).
+    expect(hr.ok && hr.value.privilegedReactivation).toBeNull();
     expect(db.listUsers).toHaveBeenLastCalledWith(
       TX,
       expect.objectContaining({ tab: 'deactivated', includeManageable: true }),

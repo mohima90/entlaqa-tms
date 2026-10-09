@@ -12,6 +12,7 @@ import {
 } from '@jadarat/platform-db';
 import { normalizeDigits } from '@jadarat/platform-i18n';
 import { z } from 'zod';
+import type { ActionContext } from '../define-action';
 import type { QueryDefinition } from '../define-query';
 import { personResourceAttributes, personScopeFromGrants } from '../person-scope';
 import { platformPermissions } from '../platform-permissions';
@@ -52,9 +53,20 @@ export interface UsersListView {
   readonly canInvite: boolean;
   /**
    * Deactivate / reactivate (T-M2-09): `platform.user.deactivate`. On the deactivated tab the rows then say
-   * whether the member may manage each person (`mayManage`), for «إعادة التفعيل».
+   * whether the member may manage each person (`mayManage`) and whether the person holds a privileged role
+   * (`privileged`), for «إعادة التفعيل».
    */
   readonly canDeactivate: boolean;
+  /**
+   * Reactivating a privileged member (`platform.role.assign_privileged`): allowed now, after an
+   * authenticator code, or not at all (null; also without `canDeactivate`).
+   */
+  readonly privilegedReactivation: 'allowed' | 'step_up_required' | null;
+}
+
+function privilegedAccess(ctx: ActionContext<UserTx>): 'allowed' | 'step_up_required' | null {
+  const access = ctx.access(p['platform.role.assign_privileged'], 'tenant');
+  return access === 'denied' ? null : access;
 }
 
 /**
@@ -103,6 +115,7 @@ export function usersListQueryDefinition(): QueryDefinition<
         orgUnits,
         canInvite: ctx.can(p['platform.user.invite'], 'tenant'),
         canDeactivate,
+        privilegedReactivation: canDeactivate ? privilegedAccess(ctx) : null,
       });
     },
   };

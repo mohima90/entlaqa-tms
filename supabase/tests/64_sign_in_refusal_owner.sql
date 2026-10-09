@@ -121,15 +121,16 @@ end $$;
 reset role;
 rollback;
 
--- Fail closed: if the rule cannot be asked (here: EXECUTE revoked), the hook refuses — it never issues a
--- token without the answer.
+-- Fail closed: if the rule cannot be asked (here: EXECUTE revoked), the hook issues no token — with a
+-- server error (500), not the refusal (403), so that clients keep their session and retry (review N1).
 begin;
 revoke execute on function private.account_sign_in_refused(uuid) from supabase_auth_admin;
 set local role supabase_auth_admin;
 do $$
 begin
-  perform tests.assert_eq(pg_temp.hook('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1') -> 'error' ->> 'http_code',
-    '403', 'the rule raised: no token, even for an active member');
+  perform tests.assert_eq(pg_temp.hook('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1'),
+    '{"error": {"http_code": 500, "message": "Sign-in is temporarily unavailable."}}'::jsonb,
+    'the rule raised: no token, even for an active member — a server error, not the refusal');
 end $$;
 reset role;
 rollback;

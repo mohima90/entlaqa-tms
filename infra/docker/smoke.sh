@@ -698,18 +698,28 @@ q "update platform.invitations set status = 'revoked', revoked_at = now(), revok
 [[ "$(sign_in "$SECOND_EMAIL" "$SECOND_PASSWORD")" == 403* ]] ||
   { echo "smoke: once the invitation is revoked, Huda must be refused again" >&2; exit 1; }
 # (f) the hook fails closed: when its rule cannot be asked (EXECUTE revoked for a moment), Auth issues no
-#     token even to an account that may sign in, and keeps no session of the attempt.
+#     token even to an account that may sign in — with a server error, not the refusal (a 403 would make
+#     auth-js drop the session on refresh, review N1) — keeps no session of the attempt, and the database
+#     logs a warning for alerting (prefix custom_access_token_hook:, SQLSTATE only).
 PARITY_ID="$(q "select id from auth.users where email = '$PARITY_EMAIL'")"
 rows_before="$(auth_rows "$PARITY_ID")"
 q "revoke execute on function private.account_sign_in_refused(uuid) from supabase_auth_admin" >/dev/null
 answer="$(sign_in "$PARITY_EMAIL" "$PARITY_PASSWORD")"
 q "grant execute on function private.account_sign_in_refused(uuid) to supabase_auth_admin" >/dev/null
-[[ "$answer" == 403* || "$answer" == 500* ]] ||
-  { echo "smoke: the access-token hook failed open when its rule raised (got $answer)" >&2; exit 1; }
+[[ "$answer" == 5* ]] ||
+  { echo "smoke: when its rule raised, the access-token hook must answer a server error (got $answer)" >&2; exit 1; }
 [[ "$(auth_rows "$PARITY_ID")" == "$rows_before" ]] ||
   { echo "smoke: a refused sign-in (hook error) left a session or refresh token behind" >&2; exit 1; }
 [[ "$(sign_in "$PARITY_EMAIL" "$PARITY_PASSWORD")" == "200 -" ]] ||
   { echo "smoke: the parity user must sign in again once the rule is back" >&2; exit 1; }
+db_logs="$(compose logs --no-log-prefix db 2>&1)"
+grep -qE 'custom_access_token_hook: no token issued after an error \(SQLSTATE 42501\)' <<<"$db_logs" ||
+  { echo "smoke: the hook's error was not logged with its alerting prefix" >&2; exit 1; }
+hook_lines="$(grep 'custom_access_token_hook:' <<<"$db_logs" || true)"
+if grep -qE "$PARITY_ID|$PARITY_EMAIL|@" <<<"$hook_lines"; then
+  echo "smoke: the hook's warning carries personal data" >&2; exit 1
+fi
+unset db_logs hook_lines
 # Reactivation: the members come back with the same roles, and (e) Reem signs in again at once (no queue).
 deactivate_e2e reactivate
 [[ "$(q "select count(*) from platform.tenant_memberships m join platform.persons p on p.tenant_id = m.tenant_id and p.id = m.person_id

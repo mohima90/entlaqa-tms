@@ -16,7 +16,11 @@
 -- EXECUTE for supabase_auth_admin only — and answers Auth's documented error object
 -- {"error": {"http_code": 403, "message": …}} instead of claims. GoTrue then issues no token and keeps no
 -- session or refresh-token row (self-hosted smoke). The hook fails CLOSED: any error inside it is caught
--- and answered with the same refusal (a raised error would reach the client as a 500).
+-- and answered {"error": {"http_code": 500, …}} — still no token, but NOT the refusal: auth-js treats a 403
+-- on refresh as final and drops the session, so a database blip must not look like "refused" (review N1).
+-- The error is logged as a WARNING starting with `custom_access_token_hook:` (alerting), SQLSTATE only.
+-- Members of a suspended or cancelled organization (its Organization Admin included) get no token at
+-- all while that is their only organization (ADR 0002 §7 note T-M2-09: billing / suspension pages).
 -- Only someone who knows the account's password (or holds a refresh token) can see the refusal: a wrong
 -- password is answered `invalid_credentials` before the hook runs.
 
@@ -63,8 +67,9 @@ create index invitations_pending_email_idx on platform.invitations (email) where
 -- The rule
 -- ---------------------------------------------------------------------------------------------------
 -- True when Auth must not issue a token to this account (see the header). Invitation e-mails are stored
--- lower-case (invitations_email_check); the account's e-mail is lower-cased for the comparison. An
--- unknown or missing account id is refused.
+-- lower-case (invitations_email_check); the account's e-mail is lower-cased for the comparison. A missing
+-- account id is refused; an unknown one has no membership and is not. Platform staff (FR-ADM-17) must be
+-- exempted here once platform_staff exists.
 create or replace function private.account_sign_in_refused(p_user_id uuid)
 returns boolean
 language sql stable security definer
@@ -87,7 +92,7 @@ as $$
 $$;
 
 comment on function private.account_sign_in_refused(uuid) is
-  'SECURITY-RELEVANT (FR-IAM-05, T-M2-09, TM-0003 T-IAM-39/40). May Auth issue a token to this account? Refused when it has memberships but none active in a served organization and no pending invitation there. supabase_auth_admin (the access-token hook) only; owner membership_guard.';
+  'SECURITY-RELEVANT (FR-IAM-05, T-M2-09, TM-0003 T-IAM-39/40). May Auth issue a token to this account? Refused when it has memberships but none active in a served organization and no pending invitation there. supabase_auth_admin (the access-token hook) only; owner membership_guard. TODO(FR-ADM-17): exempt platform staff once platform_staff exists (a staff login with a former customer membership must not be refused).';
 
 -- ---------------------------------------------------------------------------------------------------
 -- The Custom Access Token Hook (as in 20260930120400, plus the refusal)
@@ -101,6 +106,8 @@ declare
   -- Neutral: says nothing about memberships (only someone with the right password or a refresh token
   -- reaches it; the web app shows every refused sign-in alike).
   v_deny constant jsonb := '{"error": {"http_code": 403, "message": "Sign-in is not available for this account."}}';
+  -- An error is not a refusal (review N1): no token either, but a server error the client retries.
+  v_failed constant jsonb := '{"error": {"http_code": 500, "message": "Sign-in is temporarily unavailable."}}';
   v_claims jsonb := coalesce(event -> 'claims', '{}'::jsonb);
   v_user uuid := private.try_uuid(event ->> 'user_id');
   v_session uuid := private.try_uuid(event -> 'claims' ->> 'session_id');
@@ -134,15 +141,16 @@ begin
 
     return jsonb_set(event, '{claims}', v_claims);
   exception when others then
-    -- Fail closed: no token. Only the SQLSTATE is logged (no account id, no e-mail).
-    raise warning 'custom_access_token_hook: token refused after an error (SQLSTATE %)', sqlstate;
-    return v_deny;
+    -- Fail closed: no token. Only the SQLSTATE is logged (no account id, no e-mail); the prefix is what
+    -- alerting looks for.
+    raise warning 'custom_access_token_hook: no token issued after an error (SQLSTATE %)', sqlstate;
+    return v_failed;
   end;
 end
 $$;
 
 comment on function private.custom_access_token_hook(jsonb) is
-  'SECURITY-RELEVANT (ADR 0002 §3, T-M2-09). Supabase Custom Access Token Hook: refuses tokens of accounts that belong nowhere any more (private.account_sign_in_refused); otherwise tenant_id/person_id for the session''s active tenant. Fails closed.';
+  'SECURITY-RELEVANT (ADR 0002 §3, T-M2-09). Supabase Custom Access Token Hook: refuses tokens of accounts that belong nowhere any more (private.account_sign_in_refused, 403); otherwise tenant_id/person_id for the session''s active tenant. Fails closed on errors (500, never the 403).';
 
 -- Ownership hand-over as in migration 20260930120100 (non-superuser migration role on hosted Supabase).
 -- The hook itself stays with the migration role (as before).

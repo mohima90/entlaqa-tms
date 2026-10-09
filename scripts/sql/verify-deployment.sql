@@ -394,7 +394,12 @@ begin
     end loop;
   end if;
   -- The access-token hook asks the sign-in rule (T-M2-09): a hook that no longer calls it would issue
-  -- tokens to logins that belong nowhere any more.
+  -- tokens to logins that belong nowhere any more; without EXECUTE for Auth nobody could sign in (the hook
+  -- fails closed).
+  if to_regprocedure('private.account_sign_in_refused(uuid)') is null
+     or not has_function_privilege('supabase_auth_admin', 'private.account_sign_in_refused(uuid)', 'execute') then
+    failures := failures || 'supabase_auth_admin must execute private.account_sign_in_refused (T-M2-09: every sign-in asks it)'::text;
+  end if;
   if to_regprocedure(hook) is not null
      and position('private.account_sign_in_refused(' in (select prosrc from pg_proc where oid = to_regprocedure(hook))) = 0 then
     failures := failures || format('%s must refuse tokens through private.account_sign_in_refused (T-M2-09)', hook);

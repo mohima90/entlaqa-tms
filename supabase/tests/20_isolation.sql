@@ -18,7 +18,10 @@ begin
     'platform.tenants', 'platform.tenant_domains', 'platform.persons',
     'platform.tenant_memberships', 'platform.session_context', 'platform.audit_events',
     'platform.branches', 'platform.departments', 'platform.person_employment', 'platform.role_assignments',
-    'platform.invitations')
+    'platform.invitations',
+    -- Files (T-M2-18): no direct writes at all (file_guard's functions only); cross-tenant, FK and
+    -- function tests in 81_files_app_server.sql, 82_files_app_worker.sql and 83_files_storage.sql.
+    'platform.files', 'platform.file_download_grants')
     and t.table_name not in (select table_name from tests.job_only_tables());
   perform tests.assert(v_missing is null, format('isolation tests missing for: %s', v_missing));
   perform tests.assert(session_user = 'app_server', 'this file must run connected as app_server');

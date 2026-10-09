@@ -240,7 +240,7 @@ declare
   v_role text;
 begin
   foreach v_role in array array['anon', 'authenticated', 'app_server', 'app_worker', 'app_queue', 'tenant_guard',
-                                'invitation_guard', 'account_mail_guard'] loop
+                                'invitation_guard', 'account_mail_guard', 'file_guard'] loop
     perform tests.assert(not has_database_privilege(v_role, current_database(), 'TEMPORARY'),
       format('%s must not create temporary objects', v_role));
   end loop;
@@ -373,7 +373,9 @@ begin
                     order by p.oid::regprocedure::text) into v_list
   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'private' and p.prosecdef
-    and p.proowner <> 'account_mail_guard'::regrole;  -- checked in its own block below (T-M2-17)
+    and p.proowner <> 'account_mail_guard'::regrole  -- checked in its own block below (T-M2-17)
+    and p.proowner <> 'file_guard'::regrole          -- checked in its own block below (T-M2-18)
+    and p.oid <> 'private.storage_request_tenant()'::regprocedure;  -- files block below (T-M2-18)
   perform tests.assert_eq(v_list,
     'private.accept_invitation_as_caller(bytea,text,text) (owner invitation_guard), '
     'private.current_tenant_id() (owner tenant_guard), '
@@ -509,6 +511,91 @@ begin
   loop
     perform tests.assert(false, format('unexpected EXECUTE: %s', v_list));
   end loop;
+end $$;
+
+-- file_guard (T-M2-18, files and scanning): owns exactly the file functions (SECURITY DEFINER) and their
+-- three helpers (INVOKER, executable by file_guard only); nobody acts as it, it creates nothing and owns
+-- no relation; it reads storage.objects only through private.storage_object_facts. Storage's tenant check
+-- private.storage_request_tenant() belongs to tenant_guard. Nobody but file_guard writes the file tables.
+do $$
+declare
+  v_list text;
+  v_role text;
+begin
+  perform tests.assert(not (select rolbypassrls or rolcanlogin or rolsuper or rolinherit or rolcreaterole or rolcreatedb
+                            from pg_roles where rolname = 'file_guard'),
+    'file_guard must be NOLOGIN NOINHERIT and not BYPASSRLS / superuser / createrole / createdb');
+  select string_agg(format('%s%s', p.oid::regprocedure, case when p.prosecdef then '' else ' (INVOKER)' end), ', '
+                    order by p.oid::regprocedure::text) into v_list
+  from pg_proc p where p.proowner = 'file_guard'::regrole;
+  perform tests.assert_eq(v_list,
+    'private.can_read_object(text,text), private.can_upload_object(text,text), '
+    'private.claim_file_housekeeping(integer), private.claim_file_scan(), private.confirm_file_upload(uuid), '
+    'private.create_file_upload(text,text,text,uuid,text,text,bigint), '
+    'private.create_generated_file(text,text,text,uuid,text,text,bigint,uuid), private.delete_file(uuid), '
+    'private.file_for_actor(uuid) (INVOKER), private.file_user_tenant() (INVOKER), private.file_worker_check() (INVOKER), '
+    'private.finish_file_housekeeping(uuid,text), '
+    'private.finish_file_scan(uuid,text,text,bigint,text,text,text,text,text), '
+    'private.finish_generated_file(uuid,bigint,text), private.grant_file_download(uuid), private.mark_file_used(uuid), '
+    'private.retry_file_scan(uuid,text)',
+    'file_guard owns the file functions only');
+  perform tests.assert((select prosecdef and pg_get_userbyid(proowner) = 'tenant_guard' from pg_proc
+                        where oid = 'private.storage_request_tenant()'::regprocedure),
+    'private.storage_request_tenant() is SECURITY DEFINER owned by tenant_guard');
+  perform tests.assert(not exists (select 1 from pg_class c where c.relowner = 'file_guard'::regrole),
+    'file_guard owns no relations');
+  perform tests.assert(not exists (
+      select 1 from pg_auth_members m join pg_roles u on u.oid = m.member
+      where m.roleid = 'file_guard'::regrole and (m.inherit_option or m.set_option)
+        and not u.rolsuper and u.rolname <> current_user),
+    'nobody acts as file_guard');
+  perform tests.assert(not has_schema_privilege('file_guard', 'private', 'CREATE')
+                       and not has_schema_privilege('file_guard', 'platform', 'CREATE'),
+    'file_guard creates nothing');
+  perform tests.assert(not has_table_privilege('file_guard', 'storage.objects', 'select')
+                       and has_table_privilege('file_guard', 'private.storage_object_facts', 'select'),
+    'file_guard reads storage.objects only through the view');
+  select string_agg(a.attname, ', ' order by a.attnum) into v_list
+  from pg_attribute a where a.attrelid = 'private.storage_object_facts'::regclass and a.attnum > 0 and not a.attisdropped;
+  perform tests.assert_eq(v_list, 'bucket_id, name, size_text, created_at',
+    'private.storage_object_facts: where an object is and its reported size, nothing of its content or owner');
+  -- No direct writes on the file tables for any application role (writes only through the functions).
+  foreach v_role in array array['authenticated', 'anon', 'service_role', 'app_server', 'app_worker', 'app_queue',
+                                'tenant_guard', 'invitation_guard', 'account_mail_guard', 'supabase_storage_admin'] loop
+    perform tests.assert(
+      not has_table_privilege(v_role, 'platform.files', 'insert, update, delete, truncate, references, trigger')
+        and not has_any_column_privilege(v_role, 'platform.files', 'insert, update, references')
+        and not has_table_privilege(v_role, 'platform.file_download_grants', 'insert, update, delete, truncate, references, trigger')
+        and not has_table_privilege(v_role, 'private.storage_object_facts', 'select'),
+      format('%s must not write the file tables or read the storage view', v_role));
+  end loop;
+  -- Callers: every file function is executable by authenticated (each checks the login role itself) and
+  -- nobody else besides the owner; the helpers by nobody but the owner.
+  for v_list in
+    select distinct format('%s → %s', p.oid::regprocedure,
+                           case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end)
+    from pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+    where p.proowner = 'file_guard'::regrole and a.privilege_type = 'EXECUTE' and a.grantee <> p.proowner
+      and (a.grantee = 0 or pg_get_userbyid(a.grantee) <> 'authenticated' or not p.prosecdef)
+  loop
+    perform tests.assert(false, format('unexpected EXECUTE: %s', v_list));
+  end loop;
+  -- The write guard and the wake-up trigger are in place.
+  perform tests.assert(exists (select 1 from pg_trigger where tgrelid = 'platform.files'::regclass
+                               and tgname = 'files_transition' and tgenabled = 'O'),
+    'files: the transition guard trigger must exist and be enabled');
+  perform tests.assert(exists (select 1 from pg_trigger where tgrelid = 'platform.files'::regclass
+                               and tgname = 'files_uploaded_notify' and tgenabled = 'O'),
+    'files: the scan wake-up trigger must exist and be enabled');
+  -- Every bucket is private; the purposes point at our buckets.
+  perform tests.assert(not exists (select 1 from storage.buckets where public), 'every storage bucket is private');
+  perform tests.assert(not exists (select 1 from platform.file_purposes p
+                                   where not exists (select 1 from storage.buckets b where b.id = p.bucket)),
+    'every purpose uses an existing bucket');
+  perform tests.assert_eq((select string_agg(concat_ws(':', polname, polcmd::text, polpermissive::text), ',' order by polname)
+                           from pg_policy where polrelid = 'storage.objects'::regclass),
+    'jadarat_files_read:r:true,jadarat_files_upload:a:true,jadarat_tenant_prefix:*:false',
+    'storage.objects: exactly our three policies (no UPDATE/DELETE policy)');
 end $$;
 
 rollback;

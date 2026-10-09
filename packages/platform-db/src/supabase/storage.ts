@@ -95,11 +95,9 @@ export function readStoragePublicOrigin(
 /** Replaces the origin of a Storage URL with the public one (path and query unchanged). */
 export function toPublicUrl(raw: string, publicOrigin: string | null): string {
   if (publicOrigin === null) return raw;
+  // Rebuilt on the public origin (setting `host` alone would keep the internal URL's port).
   const url = new URL(raw);
-  const target = new URL(publicOrigin);
-  url.protocol = target.protocol;
-  url.host = target.host;
-  return url.toString();
+  return new URL(`${url.pathname}${url.search}`, publicOrigin).toString();
 }
 
 /**

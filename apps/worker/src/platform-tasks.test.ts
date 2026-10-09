@@ -58,3 +58,40 @@ describe('worker platform tasks (T-M2-17)', () => {
     expect(task?.name).toBe('platform.account_mail');
   });
 });
+
+describe('worker file tasks (T-M2-18)', () => {
+  const settings = { url: 'https://ref.supabase.co', secretKey: 'sb_secret_sample_only' };
+  const store = { read: vi.fn(), move: vi.fn(), remove: vi.fn(), write: vi.fn() };
+  const scanner = { ping: vi.fn(), version: vi.fn(), start: vi.fn() };
+
+  it('housekeeping with Storage; the scan only with Storage AND the scanner', () => {
+    const storeFor = vi.fn(() => store);
+    const scannerFor = vi.fn(() => scanner);
+    const base = { ...deps, recoveryLinksFor: () => ({ issue: vi.fn() }), storeFor, scannerFor };
+    expect(platformTasks({ ...base, authAdmin: settings }).map((t) => t.name)).toEqual([
+      'platform.account_mail',
+      'platform.files.housekeeping',
+    ]);
+    expect(storeFor).toHaveBeenCalledWith(settings);
+    expect(scannerFor).not.toHaveBeenCalled();
+    const scanner3310 = { host: 'clamd', port: 3310 };
+    expect(
+      platformTasks({ ...base, authAdmin: settings, scanner: scanner3310 }).map((t) => t.name),
+    ).toEqual(['platform.account_mail', 'platform.files.housekeeping', 'platform.files.scan']);
+    expect(scannerFor).toHaveBeenCalledWith(scanner3310);
+    // Without Storage there is nothing to read: no file task at all, even with a scanner.
+    expect(
+      platformTasks({ ...base, authAdmin: undefined, scanner: scanner3310 }).map((t) => t.name),
+    ).toEqual(['platform.account_mail']);
+  });
+
+  it('builds the real Storage and clamd clients by default (no network until a pass runs)', () => {
+    const tasks = platformTasks({
+      ...deps,
+      authAdmin: settings,
+      scanner: { host: 'clamd', port: 3310 },
+      recoveryLinksFor: () => ({ issue: vi.fn() }),
+    });
+    expect(tasks).toHaveLength(3);
+  });
+});

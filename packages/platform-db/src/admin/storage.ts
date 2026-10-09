@@ -110,7 +110,8 @@ export function createStorageAdmin(
         throw failure(response.status);
       }
       if (!response.body) throw new StorageAdminError('STORAGE_NO_BODY', true);
-      const length = Number(response.headers.get('content-length'));
+      const header = response.headers.get('content-length');
+      const length = header === null || header === '' ? Number.NaN : Number(header);
       return {
         body: response.body,
         size: Number.isSafeInteger(length) && length >= 0 ? length : null,

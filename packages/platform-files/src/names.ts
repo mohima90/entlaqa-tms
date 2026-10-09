@@ -2,7 +2,7 @@
  * Original file names (ADR 0006 §2): kept only for display and the download's Content-Disposition (RFC
  * 6266, `filename*` in UTF-8, so Arabic names work) — never part of a Storage key. Sanitized here, checked
  * again by the database (files_name_check): Unicode NFC; no control characters (C0, DEL, C1), no
- * bidirectional controls or byte-order mark (a right-to-left override can disguise `photo‮gpj.exe` as
+ * bidirectional controls or byte-order mark (a right-to-left override can disguise `photo<U+202E>gpj.exe` as
  * `photoexe.jpg`), no path separators or characters Windows refuses in names; no leading dots or spaces;
  * at most MAX_NAME_LENGTH characters, extension kept.
  */

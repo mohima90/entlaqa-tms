@@ -25,6 +25,8 @@ export const SIGNATURE_MAX_AGE_HOURS = 24;
 const SIGNATURE_CHECK_INTERVAL_MS = 60 * 60_000;
 const VERSION_CACHE_MS = 10 * 60_000;
 const MIME = /^[a-z0-9][a-z0-9.+-]{0,62}\/[a-z0-9][a-z0-9.+-]{0,62}$/;
+/** clamd's finding for a file over its limits (clamd.conf: AlertExceedsMax). */
+const LIMITS_FINDING = 'Heuristics.Limits.Exceeded';
 
 export interface FileScanTaskOptions {
   readonly withPlatformTx: WithPlatformTx;
@@ -50,8 +52,9 @@ function concat(parts: readonly Uint8Array[], length: number): Uint8Array {
  * Storage as a stream: counted (the purpose's limit — over it, the read stops: `rejected`, too_large),
  * hashed (SHA-256), its first bytes kept for the content-type detection, and every byte sent to clamd
  * (INSTREAM). Outcome, in the file's tenant transaction: `infected` (any finding — blocked at once; the
- * object moves to quarantine; audit event `platform.file.infected`), `rejected` (empty, too large, or a
- * type the purpose does not accept by content — the object is removed), else `clean`. The event
+ * object moves to quarantine; audit event `platform.file.infected`), `rejected` (empty, too large, over
+ * clamd's scan limits — `unscannable` —, or a type the purpose does not accept by content — the object is
+ * removed), else `clean`. The event
  * `com.entlaqa.platform.file.scanned` tells the owning module.
  *
  * Fail closed: when clamd or Storage cannot be reached, the file stays `scanning` and is tried again
@@ -138,6 +141,11 @@ export function createFileScanTask(options: FileScanTaskOptions): PlatformTask {
     const detectedType = found !== null && MIME.test(found) ? found : null;
     const scan = { size, sha256, engine: version.engine, signatures: version.signatures };
     if (!verdict.clean) {
+      // Over clamd's scan limits (archive depth, file count, scanned bytes — AlertExceedsMax): not checked,
+      // so never clean, but no malware finding either: rejected (object removed), not a security event.
+      if (verdict.finding.startsWith(LIMITS_FINDING)) {
+        return { outcome: 'rejected', reason: 'unscannable', detectedType, ...scan };
+      }
       return { outcome: 'infected', detectedType, finding: verdict.finding, ...scan };
     }
     if (detectedType === null || !lease.allowedTypes.includes(detectedType)) {

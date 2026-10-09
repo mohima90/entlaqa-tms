@@ -231,3 +231,33 @@ describe('adminKeyDaysLeft (T-M2-17, security review)', () => {
     }
   });
 });
+
+describe('readSettings: malware scanner (T-M2-18)', () => {
+  it('reads CLAMD_HOST and CLAMD_PORT (default 3310); absent means no scanning', () => {
+    expect(runner([], env).scanner).toBeUndefined();
+    expect(runner([], { ...env, CLAMD_HOST: 'clamd' }).scanner).toEqual({
+      host: 'clamd',
+      port: 3310,
+    });
+    expect(runner([], { ...env, CLAMD_HOST: '10.0.0.5', CLAMD_PORT: '3311' }).scanner).toEqual({
+      host: '10.0.0.5',
+      port: 3311,
+    });
+  });
+
+  it('refuses a port without host, a bad host or port', () => {
+    fails([], { ...env, CLAMD_PORT: '3310' }, /CLAMD_PORT is set without CLAMD_HOST/);
+    fails([], { ...env, CLAMD_HOST: 'clamd;rm' }, /CLAMD_HOST must be/);
+    fails([], { ...env, CLAMD_HOST: 'clamd', CLAMD_PORT: '70000' }, /CLAMD_PORT must be/);
+    fails([], { ...env, CLAMD_HOST: 'clamd', CLAMD_PORT: 'x' }, /CLAMD_PORT must be/);
+  });
+
+  it('scanner-check needs only the scanner (no database, no e-mail)', () => {
+    expect(readSettings(['scanner-check'], { CLAMD_HOST: 'clamd' }, noCa)).toEqual({
+      mode: 'scanner-check',
+      scanner: { host: 'clamd', port: 3310 },
+    });
+    fails(['scanner-check'], {}, /CLAMD_HOST must be set/);
+    fails(['scan'], env, /expected daemon, once, test-email or scanner-check/);
+  });
+});

@@ -156,6 +156,8 @@ rollback;
 -- Names: no control characters, path separators or bidirectional overrides; keys never carry the name.
 begin;
 do $$
+declare
+  v_point integer;
 begin
   perform tests.assert_check_constraint($q$insert into platform.files (tenant_id, bucket, object_key, purpose, owner_module,
       owner_entity_type, owner_entity_id, original_name, declared_mime, declared_size, retention_class, upload_expires_at)
@@ -176,6 +178,17 @@ begin
       'a0000000-0000-4000-8000-000000000001/platform/user_import/a5000000-0000-4000-8000-000000000002/a1110000-0000-4000-8000-000000000001',
       'platform.user_import', 'platform', 'user_import', 'a5000000-0000-4000-8000-000000000002', %L, 'text/csv', 1, 'import',
       now())$q$, '..' || chr(92) || 'a.csv'), 'files_name_check', 'a backslash in a name is refused');
+  -- Every other invisible control: C1 (NEL), Arabic letter mark, RLM, LRE, PDI, byte-order mark.
+  foreach v_point in array array[133, 1564, 8207, 8234, 8297, 65279] loop
+    perform tests.assert_check_constraint(format($q$insert into platform.files (id, tenant_id, bucket, object_key,
+        purpose, owner_module, owner_entity_type, owner_entity_id, original_name, declared_mime, declared_size,
+        retention_class, upload_expires_at)
+      values ('a1110000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'imports',
+        'a0000000-0000-4000-8000-000000000001/platform/user_import/a5000000-0000-4000-8000-000000000002/a1110000-0000-4000-8000-000000000001',
+        'platform.user_import', 'platform', 'user_import', 'a5000000-0000-4000-8000-000000000002', %L, 'text/csv', 1,
+        'import', now())$q$, 'staff' || chr(v_point) || '.csv'), 'files_name_check',
+      format('the invisible character U+%s in a name is refused', to_hex(v_point)));
+  end loop;
 end $$;
 rollback;
 

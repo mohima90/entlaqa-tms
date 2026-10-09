@@ -181,7 +181,7 @@ create table platform.files (
   constraint files_name_check check (
     char_length(original_name) between 1 and 255
     and original_name !~ '[\x01-\x1f\x7f/\\]'
-    and original_name !~ '[\u0080-\u009f؜‎‏‪-‮⁦-⁩﻿]'),
+    and original_name !~ '[\u0080-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069\ufeff]'),
   constraint files_declared_mime_check check (declared_mime ~ '^[a-z0-9][a-z0-9.+-]{0,62}/[a-z0-9][a-z0-9.+-]{0,62}$'),
   constraint files_detected_mime_check check (detected_mime is null or detected_mime ~ '^[a-z0-9][a-z0-9.+-]{0,62}/[a-z0-9][a-z0-9.+-]{0,62}$'),
   constraint files_size_check check (declared_size between 1 and 209715200 and (size_bytes is null or size_bytes between 0 and 209715200)),

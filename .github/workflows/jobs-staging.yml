@@ -23,6 +23,14 @@
 #   PASSWORD_RESET_DELIVERY=worker; the Auth admin key exists HERE ONLY, never in Vercel (ADR 0002 §7):
 #   variable SUPABASE_URL             the project's API origin (https://<ref>.supabase.co)
 #   secret   SUPABASE_SECRET_KEY      a Supabase secret key (sb_secret_…) of that project
+#   (the same two settings give the worker Storage for the file tasks of T-M2-18: retention housekeeping,
+#   and the malware scan when the scanner below is on)
+#   File scanning (T-M2-18, ADR 0006 §8), optional — uploads stay unscanned (never clean, so never usable)
+#   until it is on:
+#   variable FILE_SCANNING            on = start clamd (the pinned image's signatures, no freshclam) on the
+#                                     runner for each pass; adds about 1–2 minutes of signature loading to
+#                                     every run. A continuous worker host is the PO's pending cost
+#                                     decision (docs/engineering/files.md §7).
 # Until both connection secrets exist each run ends with a notice and does nothing.
 name: Jobs (staging)
 
@@ -49,7 +57,7 @@ jobs:
     name: Worker pass (staging)
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     environment: staging-jobs
     steps:
       - name: Configured?
@@ -80,6 +88,25 @@ jobs:
         run: |
           pnpm install --frozen-lockfile --filter '@jadarat/worker...'
           pnpm --filter @jadarat/worker build
+      # The malware scanner for this pass (opt-in): the same clamd image and limits as the self-hosted stack,
+      # unprivileged, read-only, reachable on the runner's loopback only. Its signatures are the image's
+      # (refreshing them every 5 minutes from the public mirror would get the runner rate-limited), so the
+      # worker reports them as stale after a day: bump the pinned image to refresh them.
+      - name: Malware scanner (clamd) for this pass
+        if: steps.configured.outputs.ready == 'true' && vars.FILE_SCANNING == 'on' && inputs.mode != 'test-email'
+        run: |
+          docker run -d --name clamd --read-only --tmpfs /tmp --user 1000:1000 --cap-drop ALL \
+            --security-opt no-new-privileges -p 127.0.0.1:3310:3310 \
+            -v "$PWD/infra/docker/clamav/clamd.conf:/etc/jadarat/clamd.conf:ro" --entrypoint clamd \
+            clamav/clamav:1.5.4-debian@sha256:9bb8712a50f0e75166e936c452cd82dd5e5be0b85586598930b5bbb84a99a578 \
+            --foreground --config-file=/etc/jadarat/clamd.conf
+          for _ in $(seq 1 60); do
+            if docker exec clamd clamdcheck.sh >/dev/null 2>&1; then exit 0; fi
+            sleep 5
+          done
+          echo "::error::clamd did not become ready; uploads stay unscanned until the next pass"
+          docker logs --tail 30 clamd
+          exit 1
       - name: One worker pass (or a test e-mail)
         if: steps.configured.outputs.ready == 'true'
         env:
@@ -94,6 +121,7 @@ jobs:
           APP_BASE_URL: ${{ vars.APP_BASE_URL }}
           SUPABASE_URL: ${{ vars.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          CLAMD_HOST: ${{ vars.FILE_SCANNING == 'on' && '127.0.0.1' || '' }}
           MODE: ${{ inputs.mode == 'test-email' && 'test-email' || 'once' }}
           JADARAT_ENVIRONMENT: staging
           JADARAT_RELEASE: ${{ github.sha }}

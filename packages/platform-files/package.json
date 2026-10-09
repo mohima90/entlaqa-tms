@@ -1,0 +1,38 @@
+{
+  "name": "@jadarat/platform-files",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Files service (ADR 0006, T-M2-18): upload intents with signed URLs under the user's own Storage session, confirmation, download grants, purposes and names; worker side under ./jobs: content-type detection, ClamAV (clamd INSTREAM) scanning, quarantine and retention housekeeping, scanned-file streams for modules.",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts",
+    "./next": "./src/next.ts",
+    "./jobs": "./src/jobs/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:integration": "vitest run --config vitest.integration.config.ts"
+  },
+  "dependencies": {
+    "@jadarat/platform-core": "workspace:*",
+    "@jadarat/platform-db": "workspace:*",
+    "@jadarat/platform-jobs": "workspace:*",
+    "file-type": "22.1.1",
+    "server-only": "0.0.1"
+  },
+  "peerDependencies": {
+    "next": "^16.0.0"
+  },
+  "devDependencies": {
+    "@jadarat/config": "workspace:*",
+    "@types/node": "24.19.0",
+    "@vitest/coverage-v8": "5.0.3",
+    "drizzle-orm": "0.45.3",
+    "next": "16.3.8",
+    "typescript": "6.0.3",
+    "vitest": "5.0.3"
+  }
+}

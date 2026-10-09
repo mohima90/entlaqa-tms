@@ -32,6 +32,22 @@ export {
   retryAccountMailRequest,
 } from './account-mail';
 export {
+  type GeneratedFileInput,
+  type HousekeepingAction,
+  type HousekeepingItem,
+  type ScanLease,
+  type ScanOutcome,
+  claimFileHousekeeping,
+  claimFileScan,
+  createGeneratedFile,
+  finishFileHousekeeping,
+  finishFileScan,
+  finishGeneratedFile,
+  insertSystemAuditEvent,
+  loadCleanFile,
+  retryFileScan,
+} from './files';
+export {
   type InvitationForMail,
   invitationActorMayManage,
   issueInvitationToken,

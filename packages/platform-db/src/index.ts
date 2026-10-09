@@ -22,6 +22,23 @@ export {
 } from './account-mail';
 export { DomainError, isDomainError } from './domain-error';
 export {
+  type DownloadGrant,
+  FILE_EVENTS,
+  type FileErrorCode,
+  type FileOwner,
+  type FileStatus,
+  type FileStatusView,
+  type ReserveUploadInput,
+  type ReservedUpload,
+  confirmFileUpload,
+  deleteFileRecord,
+  fileErrorOf,
+  getFileStatus,
+  grantFileDownload,
+  markFileUsed,
+  reserveUpload,
+} from './files';
+export {
   INVITATION_EVENTS,
   INVITATION_MAX_SENDS,
   type InvitationErrorCode,

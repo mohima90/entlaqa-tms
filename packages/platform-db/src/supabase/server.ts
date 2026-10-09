@@ -68,3 +68,14 @@ export function createSupabaseVerifierClient(
 ): SupabaseClient | null {
   return createSupabaseStatelessClient(config);
 }
+
+export {
+  FileStorageError,
+  type SignedUpload,
+  STORAGE_PUBLIC_URL_ENV,
+  type UserFileStorage,
+  createUserFileStorage,
+  readStoragePublicOrigin,
+  storageErrorOf,
+  toPublicUrl,
+} from './storage';

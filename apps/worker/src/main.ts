@@ -6,12 +6,14 @@ import {
   runDaemon,
   runPass,
 } from '@jadarat/platform-jobs/jobs';
+import { SIGNATURE_MAX_AGE_HOURS, createClamdScanner } from '@jadarat/platform-files/jobs';
 import { sendTestEmail } from '@jadarat/platform-notifications/jobs';
 import { createLogger, errorName, installConsoleScrubbing } from '@jadarat/platform-observability';
 import { adminKeyExpiryCheck } from './admin-key-expiry';
 import {
   ConfigurationError,
   type RunnerSettings,
+  type ScannerCheckSettings,
   type TestEmailSettings,
   readSettings,
 } from './config';
@@ -43,6 +45,32 @@ async function testEmail(settings: TestEmailSettings): Promise<void> {
     });
   } finally {
     await transport.close?.();
+  }
+}
+
+/**
+ * Operators' check of the malware scanner (T-M2-18, ADR 0006 §8): it answers, and its signatures are at
+ * most SIGNATURE_MAX_AGE_HOURS old (freshclam working). Fails otherwise.
+ */
+async function scannerCheck(settings: ScannerCheckSettings): Promise<void> {
+  const scanner = createClamdScanner(settings.scanner);
+  await scanner.ping();
+  const version = await scanner.version();
+  const hours =
+    version.signaturesDate === null
+      ? null
+      : Math.floor((Date.now() - version.signaturesDate.getTime()) / 3_600_000);
+  const stale = hours === null || hours > SIGNATURE_MAX_AGE_HOURS;
+  const message = `scanner ${version.engine}, signatures ${version.signatures}${hours === null ? '' : `, ${String(hours)} hours old`}`;
+  if (stale) {
+    logger.warn(`${message}: older than ${String(SIGNATURE_MAX_AGE_HOURS)} hours`, {
+      action: 'worker.scanner_check',
+      outcome: 'failure',
+      reason: 'scanner_signatures_stale',
+    });
+    process.exitCode = 2;
+  } else {
+    logger.info(message, { action: 'worker.scanner_check', outcome: 'success' });
   }
 }
 
@@ -87,6 +115,7 @@ async function runWorker(settings: RunnerSettings): Promise<void> {
       platformTasks: platformTasks({
         appBaseUrl: settings.appBaseUrl,
         authAdmin: settings.authAdmin,
+        scanner: settings.scanner,
         withPlatformTx: createWithPlatformTx(() => workerDb),
         withSystemTx,
         log,
@@ -96,8 +125,10 @@ async function runWorker(settings: RunnerSettings): Promise<void> {
       log,
     };
     const resetLinks = settings.authAdmin ? 'on' : 'off';
+    // File scanning needs Storage (the secret key) and the scanner; without them uploads wait unscanned.
+    const fileScanning = settings.authAdmin && settings.scanner ? 'on' : 'off';
     logger.info(
-      `worker starting (${settings.mode}; e-mail: ${settings.email.provider}; reset links: ${resetLinks})`,
+      `worker starting (${settings.mode}; e-mail: ${settings.email.provider}; reset links: ${resetLinks}; file scanning: ${fileScanning})`,
       {
         action: 'worker.start',
       },
@@ -133,6 +164,7 @@ async function runWorker(settings: RunnerSettings): Promise<void> {
 async function main(): Promise<void> {
   const settings = readSettings(process.argv.slice(2), process.env);
   if (settings.mode === 'test-email') await testEmail(settings);
+  else if (settings.mode === 'scanner-check') await scannerCheck(settings);
   else await runWorker(settings);
 }
 

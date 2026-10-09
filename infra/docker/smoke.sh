@@ -21,10 +21,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT/infra/docker"
 DOCKER="${DOCKER:-docker}"
-compose() { $DOCKER compose --env-file .secrets/.env "$@"; }
-# Sign-in protection (T-M2-11): the app's limit windows — the 15-minute lock included — last this many
-# seconds here, so the journey below does not wait 15 minutes. Tests only; never set in an installation.
-export AUTH_RATE_LIMIT_WINDOW_SECONDS="${AUTH_RATE_LIMIT_WINDOW_SECONDS:-20}"
+# compose.smoke.yaml (this test only): the app's limit windows — the 15-minute lock included — last
+# AUTH_RATE_LIMIT_WINDOW_SECONDS seconds, so the journeys below do not wait 15 minutes (T-M2-11).
+compose() { $DOCKER compose -f compose.yaml -f compose.smoke.yaml --env-file .secrets/.env "$@"; }
+export AUTH_RATE_LIMIT_WINDOW_SECONDS="${AUTH_RATE_LIMIT_WINDOW_SECONDS:-45}"
 
 cleanup() {
   local status=$?
@@ -87,11 +87,18 @@ for target in "('example.com', 443)" "('1.1.1.1', 443)"; do # by name and by add
   fi
 done
 
-echo "smoke: starting the app container"
-compose up -d --build --wait app
+echo "smoke: starting the app container behind its front proxy"
+compose up -d --build --wait app front
 curl -sf http://localhost:3200/api/health/live >/dev/null || { echo "smoke: liveness check failed" >&2; exit 1; }
 curl -sf http://localhost:3200/api/health/ready >/dev/null ||
-  { echo "smoke: readiness check failed (app cannot reach the database)" >&2; exit 1; }
+  { echo "smoke: readiness check failed (app cannot reach the database, or its migrations are missing)" >&2; exit 1; }
+# The app is reachable only through the front proxy, which sets the visitor's address (T-M2-11 review):
+# its own port is not published, and it started with a trusted client-address header (no ERROR about it).
+code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://localhost:3000/api/health/live || true)"
+[[ "$code" == "000" ]] || { echo "smoke: the app's own port must not be published (got $code)" >&2; exit 1; }
+if compose logs --no-log-prefix app 2>&1 | grep -qF 'client_ip_header_missing'; then
+  echo "smoke: the app runs without a trusted client address header" >&2; exit 1
+fi
 
 EMAIL="smoke-$(date +%s)@sovereign.example"
 PASSWORD="Smoke-$(openssl rand -hex 16)"
@@ -594,12 +601,31 @@ done
 
 # Before the T-M2-09 and T-M2-10 journeys, which change the accounts' passwords and the organization's MFA
 # policy; Auth's own per-IP limits (below) come after them: they use up the host's budget for direct Auth calls.
-echo "smoke: sign-in protection (T-M2-11) — 5 wrong passwords lock, generic answers in Arabic and English"
+echo "smoke: sign-in protection (T-M2-11) — 5 wrong passwords lock, a trusted browser still signs in, the lockout e-mail, the Organization Admin unlocks"
 LIMITS_UNKNOWN_EMAIL="nobody-limits-$(date +%s)@sovereign.example"
+MANAGER_PERSON_ID="$(q "select person_id from platform.tenant_memberships where user_id = '$MANAGER_ID'")"
+[[ "$MANAGER_PERSON_ID" =~ ^[0-9a-f-]{36}$ ]] || { echo "smoke: no person for the manager" >&2; exit 1; }
 (cd "$ROOT/apps/suite" && E2E_BASE_URL=http://localhost:3200 SIGN_IN_LIMITS_E2E_EMAIL="$EMAIL" \
   SIGN_IN_LIMITS_E2E_PASSWORD="$PASSWORD" SIGN_IN_LIMITS_E2E_UNKNOWN_EMAIL="$LIMITS_UNKNOWN_EMAIL" \
   SIGN_IN_LIMITS_E2E_WINDOW_SECONDS="$AUTH_RATE_LIMIT_WINDOW_SECONDS" \
+  SIGN_IN_LIMITS_E2E_MEMBER_EMAIL="$MANAGER_EMAIL" SIGN_IN_LIMITS_E2E_MEMBER_PASSWORD="$PROFILE_NEW_PASSWORD" \
+  SIGN_IN_LIMITS_E2E_MEMBER_PERSON_ID="$MANAGER_PERSON_ID" \
   pnpm exec playwright test e2e/sign-in-limits.spec.ts --project=desktop-chromium)
+# The lockout e-mail (PO decision 9 Oct 2026): the worker wrote the locked member, in the organization's
+# brand (Arabic first); nothing went to the address without an account.
+for i in $(seq 1 60); do
+  [[ "$(mail_count "$MANAGER_EMAIL" 'أُوقف تسجيل الدخول إلى حسابك مؤقتًا')" -ge 1 ]] && break
+  [[ $i -eq 60 ]] && { echo "smoke: no lockout e-mail for the locked member" >&2; exit 1; }
+  sleep 1
+done
+[[ "$(mail_count "$LIMITS_UNKNOWN_EMAIL" '.')" == "0" ]] ||
+  { echo "smoke: an e-mail went to an address without an account" >&2; exit 1; }
+# The Organization Admin's unlock is audited, without personal data.
+[[ "$(q "select count(*) from platform.audit_events where action = 'platform.user.sign_in_unlocked' and entity_id = '$MANAGER_PERSON_ID'")" -ge 1 ]] ||
+  { echo "smoke: the sign-in unlock was not audited" >&2; exit 1; }
+# A trusted browser is a keyed hash in the database (never the cookie's token or the address).
+[[ "$(q "select count(*) from private.sign_in_trusted_devices")" -ge 1 ]] ||
+  { echo "smoke: no trusted browser was recorded" >&2; exit 1; }
 # Failed sign-ins are security events (TM-0003 T-IAM-25): stable names, keyed references (rk_…) only.
 app_logs="$(compose logs --no-log-prefix app 2>&1)"
 for event in auth.sign_in.failed auth.lockout auth.rate_limited; do
@@ -1078,7 +1104,7 @@ done
 # all — has a secret/service-role key or a service_role token.
 grep -q '^SUPABASE_SECRET_KEY=' .secrets/.env && { echo "smoke: .secrets/.env still holds SUPABASE_SECRET_KEY" >&2; exit 1; }
 [[ -n "$(compose ps -a -q app)" ]] || { echo "smoke: no app container to inspect" >&2; exit 1; }
-for service in app db auth gateway worker mailpit glitchtip errors-db; do
+for service in app front db auth gateway worker mailpit glitchtip errors-db; do
   for id in $(compose ps -a -q "$service"); do
     env_vars="$($DOCKER inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$id")"
     service_role=0

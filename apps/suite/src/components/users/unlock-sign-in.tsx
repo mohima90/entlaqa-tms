@@ -1,6 +1,5 @@
 'use client';
 import { Alert, Button } from '@jadarat/ui';
-import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { unlockSignInAction } from '../../actions/users';
 import { type ErrorTexts, errorText } from '../auth/error-text';
@@ -28,10 +27,10 @@ interface Outcome {
 /**
  * «إلغاء إيقاف تسجيل الدخول» (T-M2-11, PO decision 9 Oct 2026): shown on a member's profile to the
  * Organization Admin only while the member's account is locked after repeated failed sign-ins. One click
- * ends the lock (audited); the outcome is announced politely and the page reloads its data.
+ * ends the lock (audited); the outcome is announced politely in place of the notice (the next visit of
+ * the profile shows no lock).
  */
 export function UnlockSignIn({ personId, labels, errors }: UnlockSignInProps) {
-  const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [outcome, setOutcome] = useState<Outcome | null>(null);
 
@@ -44,7 +43,6 @@ export function UnlockSignIn({ personId, labels, errors }: UnlockSignInProps) {
           ? { tone: 'success', text: result.value.unlocked ? labels.unlocked : labels.notLocked }
           : { tone: 'danger', text: errorText(result.error, errors) },
       );
-      if (result.ok) router.refresh();
     });
   };
 

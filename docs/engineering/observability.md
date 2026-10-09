@@ -83,7 +83,7 @@ The server (`lib/error-tunnel.ts`, created with `definePublicRoute`) is a **publ
 | Endpoint | Answers | Use |
 |---|---|---|
 | `GET /api/health/live` | `200 {"status":"ok"}` while the process runs | container health check (`app.Dockerfile`), orchestrators |
-| `GET /api/health/ready` | `200 {"status":"ok"}`, or `503 {"status":"unavailable"}` when the database cannot be reached as `app_server` | uptime monitors, load balancers |
+| `GET /api/health/ready` | `200 {"status":"ok"}`, or `503 {"status":"unavailable"}` when the database cannot be reached as `app_server` or lacks the functions sign-in needs (the rate limiter's migration not applied yet — T-M2-11; one catalog query) | uptime monitors, load balancers |
 
 Both are public and `no-store`, and never return versions, hosts or error details. Each app instance runs at most one readiness probe at a time: concurrent requests share it, and its result is reused for 5 seconds. A probe that takes longer than 3 seconds is cancelled so it does not hold a database connection. More dependencies (Storage, worker heartbeat, ClamAV) join `/ready` when they exist (ADR 0009 §6).
 
@@ -99,7 +99,7 @@ This is a staging baseline. Production needs external checks from at least two r
 
 ## When an incident issue opens or Sentry alerts
 
-1. Open `https://<staging domain>/api/health/ready`. A `503` means the app cannot reach the database: check the Supabase project status and `DATABASE_URL_APP_SERVER` (see [staging-sign-in.md](staging-sign-in.md), Troubleshooting).
+1. Open `https://<staging domain>/api/health/ready`. A `503` means the app cannot reach the database, or a migration it needs is missing: check the Supabase project status, `DATABASE_URL_APP_SERVER` (see [staging-sign-in.md](staging-sign-in.md), Troubleshooting) and that the last **DB deploy** ran after the merge.
 2. Look at Vercel → the deployment → **Logs** (filter `level:error`). Take the `correlation_id` and find the matching Sentry issue.
 3. Record the incident and its fix in `docs/delivery/STATUS.md` (session log).
 

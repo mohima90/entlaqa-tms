@@ -1,0 +1,10 @@
+# SMOKE TEST ONLY (smoke.sh adds it with `-f compose.yaml -f compose.smoke.yaml`; never use it in an
+# installation). Sign-in protection (T-M2-11): every sign-in, reset and invitation limit window — the
+# 15-minute lock included — lasts AUTH_RATE_LIMIT_WINDOW_SECONDS seconds, so the journeys do not wait 15
+# minutes. The app refuses the setting in production unless AUTH_RATE_LIMIT_WINDOW_SMOKE_ONLY=1 says it is
+# this test (security review T-M2-11); it refuses it on a Vercel production deployment regardless.
+services:
+  app:
+    environment:
+      AUTH_RATE_LIMIT_WINDOW_SECONDS: ${AUTH_RATE_LIMIT_WINDOW_SECONDS:?smoke.sh sets it}
+      AUTH_RATE_LIMIT_WINDOW_SMOKE_ONLY: '1'

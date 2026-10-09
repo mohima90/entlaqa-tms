@@ -45,6 +45,13 @@ networks:
         - { subnet: 10.231.0.16/28, gateway: 10.231.0.17 }
   db-app: {} # db ⇄ app (+ the db host port used for migrations)
   edge: {} # app ⇄ gateway (+ published ports)
+  # Supabase Storage (T-M2-18, ADR 0006): its database connection (TLS) and the gateway's plain-HTTP hop.
+  db-storage: { internal: true } # db ⇄ Storage
+  storage-internal: { internal: true } # gateway ⇄ Storage
+  # Malware scanning (ADR 0006 §8): workers ⇄ clamd (no route out); freshclam's route to the signature
+  # mirror (the only scanning container with egress; a private mirror for in-country installations).
+  scan: { internal: true }
+  signature-updates: {}
   errors: { internal: true } # app, gateway ⇄ GlitchTip (plain HTTP; no route out of the installation)
   errors-internal: { internal: true } # GlitchTip ⇄ its own database (error data never in the TMS db)
   mail: { internal: true } # worker ⇄ Mailpit (SMTP with STARTTLS)
@@ -53,11 +60,12 @@ services:
   db:
     image: supabase/postgres:17.11.0.003@sha256:7374d196da7e301512cc5329e18040e0f7bb856287b323777cdadecccbc6c7e4
     <<: *hardening
-    networks: [db-auth, db-app]
+    networks: [db-auth, db-app, db-storage]
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run with --env-file .secrets/.env}
-      # Verifier only (db/99-roles.sql): the clear Auth password never reaches the database.
+      # Verifiers only (db/99-roles.sql): the clear Auth and Storage passwords never reach the database.
       AUTH_DB_PASSWORD_SCRAM: ${AUTH_DB_PASSWORD_SCRAM:?run with --env-file .secrets/.env}
+      STORAGE_DB_PASSWORD_SCRAM: ${STORAGE_DB_PASSWORD_SCRAM:?run gen-secrets.sh, then compose with --env-file .secrets/.env}
       POSTGRES_HOST: /var/run/postgresql
       POSTGRES_DB: postgres
       POSTGRES_PORT: '5432'
@@ -153,13 +161,107 @@ services:
       GOTRUE_HOOK_BEFORE_USER_CREATED_ENABLED: 'true'
       GOTRUE_HOOK_BEFORE_USER_CREATED_URI: pg-functions://postgres/private/before_user_created_hook
 
+  # Supabase Storage (T-M2-18, ADR 0006, ADR 0010 §3): private buckets, signed URLs, our storage.objects
+  # policies (applied by the migrations, which therefore run AFTER Storage's own schema migrations — the
+  # gateway depends on it, so `up … gateway` starts it first). File backend on a named volume here; a real
+  # installation uses an in-country S3-compatible backend (STORAGE_BACKEND=s3, README.md). Reached only
+  # through the gateway; database over TLS verified against the installation's CA; no route out.
+  # Logs only its own errors (LOG_LEVEL error): its request lines (also refused requests, at warn) carry
+  # the URL, and a download URL carries the original file name (Storage redacts only the token).
+  storage:
+    image: supabase/storage-api:v1.74.0@sha256:f1546fac6d1c7e345428ac904bfaa7be7cecd50a1f549fe1cf38c628a7b15c85
+    <<: *hardening
+    read_only: true
+    cap_drop: [ALL]
+    user: '1000:1000' # the image's `node` user, owner of the volume's root (/home/node)
+    tmpfs: [/tmp]
+    networks: [db-storage, storage-internal]
+    depends_on:
+      db: { condition: service_healthy }
+    volumes:
+      - storage-data:/home/node
+      - ./.secrets/ca.crt:/certs/ca.crt:ro
+    environment:
+      # TLS verify-full in the URL itself: every connection Storage opens (pool, migrations, its LISTEN
+      # connection) reads it; the driver loads the CA from the mounted file.
+      DATABASE_URL: postgres://supabase_storage_admin:${STORAGE_DB_PASSWORD:?run gen-secrets.sh, then compose with --env-file .secrets/.env}@db:5432/postgres?sslmode=verify-full&sslrootcert=/certs/ca.crt
+      # Its own HS secret for the short-lived URL tokens it signs; users' and the worker's tokens are
+      # verified against the public half of the installation's ES256 key.
+      AUTH_JWT_SECRET: ${STORAGE_JWT_SECRET:?run gen-secrets.sh, then compose with --env-file .secrets/.env}
+      JWT_JWKS: '${STORAGE_JWT_JWKS:?run gen-secrets.sh, then compose with --env-file .secrets/.env}'
+      DB_INSTALL_ROLES: 'false'
+      TENANT_ID: jadarat
+      REGION: local
+      STORAGE_BACKEND: file
+      STORAGE_FILE_BACKEND_PATH: /home/node
+      GLOBAL_S3_BUCKET: objects
+      # The largest purpose (materials, 200 MB); each bucket's own limit applies below it.
+      FILE_SIZE_LIMIT: '209715200'
+      # A signed upload URL is valid 15 minutes (the upload window of platform.files).
+      UPLOAD_SIGNED_URL_EXPIRATION_TIME: '900'
+      EXPOSE_DOCS: 'false'
+      S3_PROTOCOL_ENABLED: 'false'
+      IMAGE_TRANSFORMATION_ENABLED: 'false'
+      LOG_LEVEL: error
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:5000/status']
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  # Malware scanner (ADR 0006 §8, T-M2-18): clamd with the limits of clamav/clamd.conf, as the image's
+  # unprivileged clamav user, read-only, reachable only from the workers (`scan`, internal). Signatures come
+  # from the image the first time the `clamav-db` volume is created, then from freshclam. Loading them
+  # takes about a minute and some 1.5 GB of memory.
+  clamd:
+    image: clamav/clamav:1.5.4-debian@sha256:9bb8712a50f0e75166e936c452cd82dd5e5be0b85586598930b5bbb84a99a578
+    <<: *hardening
+    read_only: true
+    cap_drop: [ALL]
+    user: '1000:1000' # clamav
+    tmpfs: [/tmp]
+    networks: [scan]
+    entrypoint: ['clamd', '--foreground', '--config-file=/etc/jadarat/clamd.conf']
+    volumes:
+      - clamav-db:/var/lib/clamav:ro
+      - ./clamav/clamd.conf:/etc/jadarat/clamd.conf:ro
+    healthcheck:
+      test: ['CMD', 'clamdcheck.sh']
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 300s
+
+  # Signature updates (ADR 0006 §8): freshclam writes into the shared volume; clamd reloads (SelfCheck).
+  # The public mirror by default — a private in-country mirror for sovereign/air-gapped installations
+  # (clamav/freshclam.conf). Not started by the smoke test (its signatures are those of the pinned image).
+  freshclam:
+    image: clamav/clamav:1.5.4-debian@sha256:9bb8712a50f0e75166e936c452cd82dd5e5be0b85586598930b5bbb84a99a578
+    <<: *hardening
+    read_only: true
+    cap_drop: [ALL]
+    user: '1000:1000' # clamav
+    tmpfs: [/tmp]
+    networks: [signature-updates]
+    entrypoint:
+      [
+        'freshclam',
+        '--daemon',
+        '--foreground',
+        '--stdout',
+        '--config-file=/etc/jadarat/freshclam.conf',
+      ]
+    volumes:
+      - clamav-db:/var/lib/clamav
+      - ./clamav/freshclam.conf:/etc/jadarat/freshclam.conf:ro
+
   gateway:
     image: nginxinc/nginx-unprivileged:stable-alpine-slim@sha256:e28dcf0a161ddcbf228c7364b4a14f9bad4763ae8f5317c437b896afa3df4b84
     <<: *hardening
     read_only: true
     cap_drop: [ALL]
     tmpfs: [/tmp]
-    networks: [auth-internal, auth-admin, auth-tools, edge, errors]
+    networks: [auth-internal, auth-admin, auth-tools, edge, errors, storage-internal]
     healthcheck:
       test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:8081/healthz']
       interval: 5s
@@ -167,6 +269,7 @@ services:
       retries: 30
     depends_on:
       auth: { condition: service_healthy }
+      storage: { condition: service_healthy }
     volumes:
       - ./gateway/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./.secrets/gateway.crt:/etc/nginx/certs/gateway.crt:ro
@@ -197,6 +300,9 @@ services:
       # The app has no Auth secret key: invitees sign up through the public API (T-M2-07), and reset
       # links are created by the worker (T-M2-17).
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: self-hosted
+      # Files (T-M2-18): the app asks Storage for signed URLs at https://gateway:8443 with the user's own
+      # session (no Storage key); browsers use them at the installation's public gateway origin.
+      STORAGE_PUBLIC_URL: ${STORAGE_PUBLIC_URL:-https://localhost:8443}
       # Password-reset and "password changed" e-mails through our notification service: the app queues
       # requests in the database; the worker (always running here) sends them (T-M2-17).
       PASSWORD_RESET_DELIVERY: worker
@@ -226,7 +332,7 @@ services:
     <<: *hardening
     read_only: true
     cap_drop: [ALL]
-    networks: [db-app, mail, auth-admin]
+    networks: [db-app, mail, auth-admin, scan]
     # More than about 12 replicas do not fit the auth-admin network's /28 (networks above).
     deploy: { replicas: 2 }
     # SIGTERM lets running jobs finish; give them time before Docker kills the process (a killed job is
@@ -253,6 +359,11 @@ services:
       # long-running container with an Auth admin key (ADR 0002 §7; smoke-tested).
       SUPABASE_URL: https://gateway:8444
       SUPABASE_SECRET_KEY: ${WORKER_AUTH_ADMIN_TOKEN:?run gen-secrets.sh, then compose with --env-file .secrets/.env}
+      # Files (T-M2-18, ADR 0006): the same key and admin port reach Storage (workers' network only: reading
+      # uploads, quarantine, retention, generated files); clamd scans every upload. Without CLAMD_HOST
+      # uploads stay unscanned — never clean.
+      CLAMD_HOST: clamd
+      CLAMD_PORT: '3310'
       # E-mail (ADR 0008 §2): SMTP with verified STARTTLS. Here Mailpit catches every message. A real
       # installation sets SMTP_URL (smtp://user:password@relay:587) and SMTP_CA_CERT_FILE for its relay
       # (set it empty for a publicly trusted certificate), removes the mailpit service, its depends_on
@@ -377,3 +488,5 @@ services:
 volumes:
   db-data:
   errors-db-data:
+  storage-data:
+  clamav-db:

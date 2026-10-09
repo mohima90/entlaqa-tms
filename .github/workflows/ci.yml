@@ -197,10 +197,12 @@ jobs:
           retention-days: 14
 
   selfhosted:
-    name: 'Gate 15 · Self-hosted (sovereign) stack: Postgres + Auth + app + worker containers, sign-in, image scan'
+    name: 'Gate 15 · Self-hosted (sovereign) stack: Postgres + Auth + Storage + ClamAV + app + worker containers, sign-in, files, image scan'
     needs: install
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    # 40: the file journey (T-M2-18) adds ClamAV's signature loading (twice: the fail-closed check restarts
+    # it) and two more third-party images to pull and report.
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

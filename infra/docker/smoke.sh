@@ -19,6 +19,9 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT/infra/docker"
 DOCKER="${DOCKER:-docker}"
 compose() { $DOCKER compose --env-file .secrets/.env "$@"; }
+# File storage and malware scanning journey (T-M2-18): files_journey.
+# shellcheck source=smoke-files.sh
+source "$ROOT/infra/docker/smoke-files.sh"
 
 cleanup() {
   local status=$?
@@ -52,8 +55,10 @@ if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
   (cd "$ROOT" && pnpm --filter @jadarat/suite --filter @jadarat/worker build >/dev/null)
 fi
 
-echo "smoke: starting PostgreSQL, Auth, the TLS gateway and the error tracker (GlitchTip)"
-compose up -d --wait db auth gateway errors-db glitchtip
+echo "smoke: starting PostgreSQL, Auth, Storage, the TLS gateway and the error tracker (GlitchTip)"
+compose up -d --wait db auth storage gateway errors-db glitchtip
+# The malware scanner loads its signatures meanwhile (about a minute); the file journey waits for it.
+compose up -d clamd
 curl -sf --cacert .secrets/ca.crt https://localhost:8443/auth/v1/health >/dev/null ||
   { echo "smoke: Auth is not reachable through the TLS gateway" >&2; exit 1; }
 
@@ -586,6 +591,10 @@ for path in /verify/ /verify; do
   [[ $limited -eq 1 ]] || { echo "smoke: the gateway does not limit /auth/v1$path beyond its burst" >&2; exit 1; }
 done
 
+# File storage and malware scanning (T-M2-18, ADR 0006): smoke-files.sh.
+compose up -d --wait clamd >/dev/null
+files_journey "$EMAIL" "$PASSWORD" sovereign-smoke
+
 # No unconfirmed e-mail account exists after every journey (re-review N3): with "Confirm email" off, Auth
 # would hand a session for such an account to anyone who signs up with its e-mail, without the hook.
 # Accounts as Auth looks them up for a sign-up (GoTrue FindUserByEmailAndAudience); the sample people of
@@ -681,7 +690,7 @@ if grep -qE '[[:alnum:]._%+-]+@[[:alnum:]-]+(\.[[:alnum:]-]+)*\.[[:alpha:]]{2,}'
   echo "smoke: an e-mail address appears in the app logs after the error checks" >&2; exit 1
 fi
 for name in AUTH_DB_PASSWORD APP_SERVER_DB_PASSWORD APP_WORKER_DB_PASSWORD APP_QUEUE_DB_PASSWORD \
-  ERRORS_DB_PASSWORD GLITCHTIP_ADMIN_PASSWORD GLITCHTIP_SECRET_KEY; do
+  ERRORS_DB_PASSWORD GLITCHTIP_ADMIN_PASSWORD GLITCHTIP_SECRET_KEY STORAGE_DB_PASSWORD STORAGE_JWT_SECRET; do
   value="$(secret "$name")"
   [[ ${#value} -ge 32 ]] || { echo "smoke: the secret $name is missing from .secrets/.env" >&2; exit 1; }
   if grep -qF "$value" <<<"$all_logs"; then
@@ -693,7 +702,7 @@ done
 # all — has a secret/service-role key or a service_role token.
 grep -q '^SUPABASE_SECRET_KEY=' .secrets/.env && { echo "smoke: .secrets/.env still holds SUPABASE_SECRET_KEY" >&2; exit 1; }
 [[ -n "$(compose ps -a -q app)" ]] || { echo "smoke: no app container to inspect" >&2; exit 1; }
-for service in app db auth gateway worker mailpit glitchtip errors-db; do
+for service in app db auth gateway worker mailpit glitchtip errors-db storage clamd; do
   for id in $(compose ps -a -q "$service"); do
     env_vars="$($DOCKER inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$id")"
     service_role=0

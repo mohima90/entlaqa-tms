@@ -221,9 +221,17 @@ export type ChangePassword = (input: {
  */
 export type AfterPasswordChange = (tx: UserTx, userId: string) => Promise<void>;
 
+/** Refusals of a password change that are security events (T-M2-11, T-M2-15a security review). */
+const FAILED_CHANGE_REASONS: Readonly<Record<string, string>> = {
+  AUTH_CURRENT_PASSWORD_INVALID: 'current_password',
+  RATE_LIMITED: 'rate_limited',
+};
+
 /**
  * `changePassword` is the identity flow bound to the request (platform-identity/auth); `afterChange`
- * runs once it succeeded (platform-identity/auth `queueOwnPasswordChangedNoticeForRequest`).
+ * runs once it succeeded (platform-identity/auth `queueOwnPasswordChangedNoticeForRequest`). A wrong
+ * current password or a limited attempt is audited as `platform.auth.password_change_failed` (no
+ * password, the reason code only); the flow limits the checks per user and records a security event.
  */
 export function changeMyPasswordActionDefinition(
   changePassword: ChangePassword,
@@ -260,5 +268,16 @@ export function changeMyPasswordActionDefinition(
       entityType: 'user',
       entityId: output.userId,
     }),
+    auditFailure: (_input, error, actor) => {
+      const reason = FAILED_CHANGE_REASONS[error.code];
+      return reason === undefined
+        ? null
+        : {
+            action: 'platform.auth.password_change_failed',
+            entityType: 'user',
+            entityId: actor.userId,
+            data: { reason },
+          };
+    },
   };
 }

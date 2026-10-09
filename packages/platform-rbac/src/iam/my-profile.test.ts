@@ -1,4 +1,4 @@
-import { appError, err, ok } from '@jadarat/platform-core';
+import { appError, defineErrorCodes, err, ok } from '@jadarat/platform-core';
 import { brandVerifiedClaims } from '@jadarat/platform-core/internal/verified-claims';
 import type { UserTx } from '@jadarat/platform-db';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -25,6 +25,11 @@ const db = vi.hoisted(() => ({
 vi.mock('@jadarat/platform-db', () => db);
 
 const TX = 'tx' as unknown as UserTx;
+/** The identity flow's codes (platform-identity PasswordErrors), as the action sees them. */
+const Codes = defineErrorCodes({
+  AUTH_CURRENT_PASSWORD_INVALID: { status: 422, messageKey: 'auth.errors.currentPasswordInvalid' },
+  AUTH_PASSWORD_TOO_WEAK: { status: 422, messageKey: 'auth.errors.passwordTooWeak' },
+});
 const ME = '33333333-3333-4333-8333-333333333333';
 
 function runtime(personId: string | null = ME, grants = MEMBER_GRANTS) {
@@ -242,6 +247,41 @@ describe('change my password', () => {
       input,
     );
     expect(afterChange).not.toHaveBeenCalled();
+  });
+
+  it('audits a wrong current password or a limited attempt as password_change_failed (T-M2-11)', async () => {
+    for (const [error, reason] of [
+      [appError(Codes.AUTH_CURRENT_PASSWORD_INVALID), 'current_password'],
+      [appError('RATE_LIMITED'), 'rate_limited'],
+    ] as const) {
+      const { rt, writeAudit } = runtime();
+      const result = await createDefineAction(rt)(
+        changeMyPasswordActionDefinition(() => Promise.resolve(err(error))),
+      )(input);
+      expect(!result.ok && result.error.code).toBe(error.code);
+      expect(writeAudit).toHaveBeenCalledTimes(1);
+      expect(writeAudit).toHaveBeenCalledWith(
+        TX,
+        expect.objectContaining({ userId: '11111111-1111-4111-8111-111111111111' }),
+        {
+          action: 'platform.auth.password_change_failed',
+          entityType: 'user',
+          entityId: '11111111-1111-4111-8111-111111111111',
+          data: { reason },
+        },
+      );
+      expect(JSON.stringify(writeAudit.mock.calls)).not.toContain('password-');
+    }
+  });
+
+  it('does not audit other refusals (e.g. a weak new password) as failed attempts', async () => {
+    const { rt, writeAudit } = runtime();
+    await createDefineAction(rt)(
+      changeMyPasswordActionDefinition(() =>
+        Promise.resolve(err(appError(Codes.AUTH_PASSWORD_TOO_WEAK))),
+      ),
+    )(input);
+    expect(writeAudit).not.toHaveBeenCalled();
   });
 
   it('validates length and confirmation before calling Auth; passes Auth errors through', async () => {

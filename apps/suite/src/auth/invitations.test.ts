@@ -11,8 +11,12 @@ const flow = vi.hoisted(() => ({
   acceptInvitationAsSignedInUserForRequest: vi.fn(),
   lookupInvitationLinkForRequest: vi.fn(),
 }));
+const requestHeaders = vi.hoisted(() => new Map<string, string>());
 vi.mock('server-only', () => ({}));
 vi.mock('@jadarat/platform-identity/auth', () => flow);
+vi.mock('next/headers', () => ({
+  headers: () => Promise.resolve({ get: (name: string) => requestHeaders.get(name) ?? null }),
+}));
 
 const {
   acceptInvitationAction,
@@ -30,8 +34,13 @@ const form = {
   privacyAcknowledged: true as const,
 };
 
+// No trusted client address in these tests: every visitor shares one key (T-M2-11).
+const SHARED = { key: null };
+
 afterEach(() => {
   vi.clearAllMocks();
+  vi.unstubAllEnvs();
+  requestHeaders.clear();
 });
 
 describe('acceptInvitationAction', () => {
@@ -44,12 +53,30 @@ describe('acceptInvitationAction', () => {
       ok: true,
       value: { next: 'home' },
     });
-    expect(flow.acceptInvitationWithNewAccountForRequest).toHaveBeenCalledWith({
-      token,
-      password: form.password,
-      displayNameAr: 'نورة',
-      displayNameEn: undefined,
+    expect(flow.acceptInvitationWithNewAccountForRequest).toHaveBeenCalledWith(
+      {
+        token,
+        password: form.password,
+        displayNameAr: 'نورة',
+        displayNameEn: undefined,
+      },
+      SHARED,
+    );
+  });
+
+  it('passes the trusted client address (sign-ups are limited per client, T-M2-11)', async () => {
+    flow.acceptInvitationWithNewAccountForRequest.mockResolvedValue({
+      ok: false,
+      error: { code: 'RATE_LIMITED', status: 429, messageKey: 'errors.rateLimited', expose: true },
     });
+    vi.stubEnv('VERCEL', '1');
+    requestHeaders.set('x-real-ip', '203.0.113.7');
+    const result = await acceptInvitationAction(form);
+    expect(result).toMatchObject({ ok: false, error: { code: 'RATE_LIMITED' } });
+    expect(flow.acceptInvitationWithNewAccountForRequest).toHaveBeenCalledWith(
+      expect.objectContaining({ token }),
+      { key: '203.0.113.7' },
+    );
   });
 
   it('refuses invalid input with field errors (codes only) before any flow or Auth call', async () => {
@@ -84,12 +111,12 @@ describe('sign-in-to-accept and signed-in actions', () => {
       value: { next: 'home' },
     });
     await acceptInvitationWithSignInAction({ token, password: 'secret' });
-    expect(flow.acceptInvitationWithPasswordForRequest).toHaveBeenCalledWith({
-      token,
-      password: 'secret',
-    });
+    expect(flow.acceptInvitationWithPasswordForRequest).toHaveBeenCalledWith(
+      { token, password: 'secret' },
+      SHARED,
+    );
     await acceptInvitationAsSignedInUser({ token });
-    expect(flow.acceptInvitationAsSignedInUserForRequest).toHaveBeenCalledWith({ token });
+    expect(flow.acceptInvitationAsSignedInUserForRequest).toHaveBeenCalledWith({ token }, SHARED);
   });
 
   it('refuse a malformed token without calling the flow', async () => {
@@ -112,13 +139,27 @@ describe('lookupInvitationAction (token from the URL fragment)', () => {
       displayName: { ar: 'نورة', en: null },
       viewer: 'anonymous',
     };
-    flow.lookupInvitationLinkForRequest.mockResolvedValueOnce(view);
+    flow.lookupInvitationLinkForRequest.mockResolvedValueOnce({ ok: true, value: view });
     await expect(lookupInvitationAction({ token })).resolves.toEqual({ ok: true, value: view });
-    expect(flow.lookupInvitationLinkForRequest).toHaveBeenCalledWith(token);
-    flow.lookupInvitationLinkForRequest.mockResolvedValueOnce({ state: 'expired' });
+    expect(flow.lookupInvitationLinkForRequest).toHaveBeenCalledWith(token, SHARED);
+    flow.lookupInvitationLinkForRequest.mockResolvedValueOnce({
+      ok: true,
+      value: { state: 'expired' },
+    });
     await expect(lookupInvitationAction({ token })).resolves.toEqual({
       ok: true,
       value: { state: 'expired' },
+    });
+  });
+
+  it("passes RATE_LIMITED through when the client's lookups are used up (T-M2-11)", async () => {
+    flow.lookupInvitationLinkForRequest.mockResolvedValueOnce({
+      ok: false,
+      error: { code: 'RATE_LIMITED', status: 429, messageKey: 'errors.rateLimited', expose: true },
+    });
+    await expect(lookupInvitationAction({ token })).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'RATE_LIMITED' },
     });
   });
 

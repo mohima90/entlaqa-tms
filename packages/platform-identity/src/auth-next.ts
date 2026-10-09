@@ -5,6 +5,15 @@
  */
 import 'server-only';
 import {
+  type AppError,
+  type Result,
+  actorFromClaims,
+  appError,
+  err,
+  hasTenant,
+  ok,
+} from '@jadarat/platform-core';
+import {
   acceptInvitationAsCaller,
   applyDeviceLimit,
   confirmMfaSetup as confirmMfaSetupInDatabase,
@@ -18,6 +27,7 @@ import {
   listSessionTenants,
   passwordMinLengthForCaller,
   queueOwnPasswordChangedMail,
+  rateLimitStore,
   rejectMfaFactor,
   removeMfaApp as removeMfaAppInDatabase,
   requestMfaFactorMail,
@@ -32,7 +42,6 @@ import {
   createSupabaseStatelessClient,
   createSupabaseVerifierClient,
 } from '@jadarat/platform-db/supabase-server';
-import { type AppError, type Result, actorFromClaims, hasTenant, ok } from '@jadarat/platform-core';
 import { log } from '@jadarat/platform-observability';
 import { cookies, headers } from 'next/headers';
 import { after } from 'next/server';
@@ -45,6 +54,20 @@ import {
   signOut,
   signOutEndedSession,
 } from './auth-flow';
+import {
+  type LimiterDeps,
+  NO_SIGN_IN_GUARD,
+  type RequestClient,
+  type SecurityLog,
+  type SignInGuard,
+  createInvitationLimiter,
+  createPasswordCheckLimiter,
+  createPasswordResetLimiter,
+  createSignInGuard,
+  limitsFor,
+  securityLogLine,
+  unlockSignIn,
+} from './auth-limits';
 import {
   type MfaClientLike,
   type MfaDeps,
@@ -81,7 +104,34 @@ import {
   createPasswordVerifier,
 } from './password';
 
-async function requestDeps(): Promise<AuthFlowDeps> {
+const sleep = (ms: number) =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
+
+/** Security events (TM-0003 T-IAM-25) as structured log lines: codes and keyed references only. */
+const securityLog: SecurityLog = (event) => {
+  const line = securityLogLine(event);
+  if (line.level === 'error') log.error(line.message, line.fields);
+  else log.warn(line.message, line.fields);
+};
+
+/**
+ * The shared limiter (T-M2-11) with the limits for this flow (platform defaults; per-organization
+ * settings join in limitsFor — T-M2-10).
+ */
+function limiterDeps(): LimiterDeps {
+  return { store: rateLimitStore, limits: limitsFor({}), log: securityLog };
+}
+
+const SIGN_IN_ACTION = 'platform.auth.sign_in';
+
+/** The sign-in guard for this request's client (the app passes it: apps/suite lib/request-client.ts). */
+function signInGuardFor(client: RequestClient, action = SIGN_IN_ACTION): SignInGuard {
+  return createSignInGuard({ ...limiterDeps(), client, action });
+}
+
+async function requestDeps(signInGuard: SignInGuard = NO_SIGN_IN_GUARD): Promise<AuthFlowDeps> {
   const store = await cookies();
   // The browser's User-Agent goes to Auth with our calls, so a session created at sign-in records the real
   // browser (session lists, T-M2-10); createSupabaseServerClient drops anything but printable ASCII.
@@ -110,14 +160,18 @@ async function requestDeps(): Promise<AuthFlowDeps> {
     logWarning: (message, fields) => {
       log.warn(message, fields);
     },
+    signInGuard,
+    now: () => Date.now(),
+    sleep,
   };
 }
 
-export async function signInWithPasswordForRequest(credentials: {
-  readonly email: string;
-  readonly password: string;
-}) {
-  return signInWithPassword(await requestDeps(), credentials);
+/** Sign-in (screen «تسجيل الدخول»): limited per account and per client before Auth is asked (T-M2-11). */
+export async function signInWithPasswordForRequest(
+  credentials: { readonly email: string; readonly password: string },
+  client: RequestClient,
+) {
+  return signInWithPassword(await requestDeps(signInGuardFor(client)), credentials);
 }
 
 export async function selectOrganizationForRequest(tenantId: string) {
@@ -269,6 +323,12 @@ export async function changePasswordForRequest(input: {
         () => createSupabaseVerifierClient() as VerifierClientLike | null,
         deps.logWarning,
       ),
+      // Per user (T-M2-11, T-M2-15a security review): fail closed.
+      allowPasswordCheck: createPasswordCheckLimiter({
+        ...limiterDeps(),
+        action: 'platform.auth.change_password',
+      }),
+      securityLog,
       logWarning: deps.logWarning,
     },
     input,
@@ -279,7 +339,19 @@ export async function changePasswordForRequest(input: {
 // cookie-bound client (publishable key); Auth's before-user-created hook admits only a valid invitation.
 // No Auth secret key in the web app (ADR 0002 §7 note T-M2-07, security review H1).
 
-function invitationDeps(auth: AuthFlowDeps): InvitationAcceptDeps {
+const INVITATION_LOOKUP_ACTION = 'platform.invitation.lookup';
+const INVITATION_ACCEPT_ACTION = 'platform.invitation.accept';
+
+function invitationLimiter(client: RequestClient) {
+  return createInvitationLimiter({
+    ...limiterDeps(),
+    client,
+    lookupAction: INVITATION_LOOKUP_ACTION,
+    signUpAction: INVITATION_ACCEPT_ACTION,
+  });
+}
+
+function invitationDeps(auth: AuthFlowDeps, client: RequestClient): InvitationAcceptDeps {
   return {
     auth,
     signUpClient: auth.supabase as unknown as InvitationSignUpClientLike | null,
@@ -287,40 +359,59 @@ function invitationDeps(auth: AuthFlowDeps): InvitationAcceptDeps {
     invitationByToken,
     invitationPasswordMinLength,
     acceptInvitationAsCaller,
+    allowSignUp: () => invitationLimiter(client).allowSignUp(),
   };
 }
 
 /**
  * What the accept page shows for a link: its state and, when valid, the details and who is looking
  * (no session needed). Called by the page's public lookup action with the token from the URL fragment.
+ * Lookups are limited per client (T-M2-11; RATE_LIMITED when used up).
  */
-export async function lookupInvitationLinkForRequest(token: string): Promise<InvitationLinkView> {
-  return lookupInvitationLink(
-    {
-      hashToken: hashInvitationToken,
-      invitationByToken,
-      invitationPasswordMinLength,
-      auth: await requestDeps(),
-    },
-    token,
+export async function lookupInvitationLinkForRequest(
+  token: string,
+  client: RequestClient,
+): Promise<Result<InvitationLinkView, AppError>> {
+  if (!(await invitationLimiter(client).allowLookup())) return err(appError('RATE_LIMITED'));
+  return ok(
+    await lookupInvitationLink(
+      {
+        hashToken: hashInvitationToken,
+        invitationByToken,
+        invitationPasswordMinLength,
+        auth: await requestDeps(),
+      },
+      token,
+    ),
   );
 }
 
 export async function acceptInvitationWithNewAccountForRequest(
   input: Parameters<typeof acceptInvitationWithNewAccount>[1],
+  client: RequestClient,
 ) {
-  return acceptInvitationWithNewAccount(invitationDeps(await requestDeps()), input);
+  return acceptInvitationWithNewAccount(invitationDeps(await requestDeps(), client), input);
 }
 
-export async function acceptInvitationWithPasswordForRequest(input: {
-  readonly token: string;
-  readonly password: string;
-}) {
-  return acceptInvitationWithPassword(invitationDeps(await requestDeps()), input);
+/** "Sign in to accept": the sign-in guard applies (per account and per client), as for sign-in. */
+export async function acceptInvitationWithPasswordForRequest(
+  input: { readonly token: string; readonly password: string },
+  client: RequestClient,
+) {
+  return acceptInvitationWithPassword(
+    invitationDeps(
+      await requestDeps(signInGuardFor(client, 'platform.invitation.accept_with_sign_in')),
+      client,
+    ),
+    input,
+  );
 }
 
-export async function acceptInvitationAsSignedInUserForRequest(input: { readonly token: string }) {
-  return acceptInvitationAsSignedInUser(invitationDeps(await requestDeps()), input);
+export async function acceptInvitationAsSignedInUserForRequest(
+  input: { readonly token: string },
+  client: RequestClient,
+) {
+  return acceptInvitationAsSignedInUser(invitationDeps(await requestDeps(), client), input);
 }
 
 // Forgot / reset password (FR-IAM-13, T-M2-08): Supabase Auth's recovery tokens, verified on a STATELESS
@@ -329,34 +420,40 @@ export async function acceptInvitationAsSignedInUserForRequest(input: { readonly
 // mailer or, with PASSWORD_RESET_DELIVERY=worker, by our notification service (T-M2-17): the web app then
 // only queues requests in the database; the worker holds the Auth admin key.
 
-const sleep = (ms: number) =>
-  new Promise<void>((resolve) => {
-    setTimeout(resolve, ms);
-  });
-
 /** Auth's own mailer, or the worker's queue (PASSWORD_RESET_DELIVERY, read on the server only). */
-function resetEmailDelivery(limited: boolean): ResetEmailDelivery {
+function resetEmailDelivery(): ResetEmailDelivery {
   if (readPasswordResetDelivery(process.env) === 'worker') {
     return { mode: 'worker', enqueue: requestPasswordResetMail };
   }
-  return {
-    mode: 'auth',
-    client: limited ? null : (createSupabaseStatelessClient() as RecoveryClientLike | null),
-  };
+  return { mode: 'auth', client: createSupabaseStatelessClient() as RecoveryClientLike | null };
+}
+
+const RESET_REQUEST_ACTION = 'platform.auth.request_password_reset';
+const RESET_COMPLETE_ACTION = 'platform.auth.password_reset';
+
+function resetLimiter(client: RequestClient) {
+  return createPasswordResetLimiter({
+    ...limiterDeps(),
+    client,
+    requestAction: RESET_REQUEST_ACTION,
+    completeAction: RESET_COMPLETE_ACTION,
+  });
 }
 
 /**
- * Screen 10: asks Auth for a reset link, or queues the request for the worker (unless the application
- * limiter refused it), and resolves after a constant time; never throws. The call may finish after the
- * answer (`after()`).
+ * Screen 10: checks the shared limiter (per client, then per account) and asks Auth for a reset link, or
+ * queues the request for the worker, in the background; resolves after a constant time and never throws.
+ * The work may finish after the answer (`after()`).
  */
-export async function requestPasswordResetForRequest(input: {
-  readonly email: string;
-  readonly limited: boolean;
-}): Promise<void> {
+export async function requestPasswordResetForRequest(
+  input: { readonly email: string },
+  client: RequestClient,
+): Promise<void> {
+  const limiter = resetLimiter(client);
   return requestPasswordReset(
     {
-      delivery: resetEmailDelivery(input.limited),
+      delivery: resetEmailDelivery(),
+      allowRequest: (email) => limiter.allowRequest(email),
       logWarning: (message, fields) => {
         log.warn(message, fields);
       },
@@ -369,21 +466,30 @@ export async function requestPasswordResetForRequest(input: {
   );
 }
 
-/** Screen 11: verifies the link, sets the password, ends every session of the account. */
-export async function completePasswordResetForRequest(input: {
-  readonly tokenHash: string;
-  readonly password: string;
-  readonly code?: string | undefined;
-}) {
+/**
+ * Screen 11: limited per client (fail closed — the link is not spent), verifies the link, sets the
+ * password, ends every session of the account and its sign-in lock.
+ */
+export async function completePasswordResetForRequest(
+  input: {
+    readonly tokenHash: string;
+    readonly password: string;
+    readonly code?: string | undefined;
+  },
+  client: RequestClient,
+) {
   const auth = await requestDeps();
-  const client = createSupabaseStatelessClient() as RecoveryClientLike | null;
+  const limiter = resetLimiter(client);
+  const recoveryClient = createSupabaseStatelessClient() as RecoveryClientLike | null;
   return completePasswordReset(
     {
-      client,
+      client: recoveryClient,
+      allowAttempt: () => limiter.allowCompletion(),
+      unlockSignIn: (email) => unlockSignIn(limiterDeps(), RESET_COMPLETE_ACTION, email),
       // Strictest wins (T-M2-10): asked with the recovery session's own, verified access token.
       passwordMinLength: async (accessToken) => {
         const claims = await verifyClaims(
-          client as unknown as SupabaseAuthLike | null,
+          recoveryClient as unknown as SupabaseAuthLike | null,
           accessToken,
         );
         return claims.ok ? withUserTx(claims.value, (tx) => passwordMinLengthForCaller(tx)) : null;

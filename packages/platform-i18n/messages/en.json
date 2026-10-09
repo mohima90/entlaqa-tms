@@ -78,7 +78,8 @@
       "passwordTooWeak": "The new password is too weak. Use a longer password that mixes letters, digits and symbols.",
       "passwordSame": "The new password is the same as the current one. Choose a different password.",
       "reauthenticationNeeded": "For your account's security, sign out and sign in again, then change the password.",
-      "passwordRejected": "The new password was not accepted. Choose a different one."
+      "passwordRejected": "The new password was not accepted. Choose a different one.",
+      "tooManyAttempts": "Sign-in is paused for now after too many unsuccessful attempts. Try again later, or reset your password with “Forgot password?”."
     },
     "sessionEnded": "Your sign-in session has ended. Sign in again to continue."
   },

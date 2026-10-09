@@ -439,4 +439,72 @@ describe('defineAction (ADR 0003 §4)', () => {
     expect(audits).toHaveLength(1);
     expect(logError).not.toHaveBeenCalled();
   });
+
+  describe('auditFailure (refused attempts, T-M2-11)', () => {
+    const refusedAction = (rt: ActionRuntime<FakeTx>, grants = true) =>
+      createDefineAction(rt)({
+        permission: approve,
+        input: Input,
+        scoped: grants,
+        handler: () => Promise.resolve(err(appError('RATE_LIMITED'))),
+        auditFailure: (input, error, actor) =>
+          error.code === 'RATE_LIMITED'
+            ? {
+                action: 'tms.enrollment.approve_failed',
+                entityId: input.enrollmentId,
+                data: { by: actor.userId },
+              }
+            : null,
+      });
+
+    it('writes the refused attempt in a new transaction after the rollback, then returns the refusal', async () => {
+      const { rt, log, audits } = runtime();
+      const result = await refusedAction(rt)({ enrollmentId: ENROLLMENT });
+      expect(!result.ok && result.error.code).toBe('RATE_LIMITED');
+      expect(log).toEqual(['begin', 'rollback', 'begin', 'commit']);
+      expect(audits).toEqual([
+        {
+          actor: expect.objectContaining({ userId: USER, tenantId: TENANT }),
+          record: {
+            action: 'tms.enrollment.approve_failed',
+            entityId: ENROLLMENT,
+            data: { by: USER },
+          },
+        },
+      ]);
+    });
+
+    it('is not called for authorization denials or when it returns no record', async () => {
+      const denied = runtime({ loadGrants: () => Promise.resolve([]) });
+      const r1 = await refusedAction(denied.rt)({ enrollmentId: ENROLLMENT });
+      expect(!r1.ok && r1.error.code).toBe('FORBIDDEN');
+      expect(denied.log).toEqual(['begin', 'rollback']);
+      expect(denied.audits).toHaveLength(0);
+
+      const other = runtime();
+      const action = createDefineAction(other.rt)({
+        permission: approve,
+        input: Input,
+        scoped: true,
+        handler: () => Promise.resolve(err(appError('CONFLICT_VERSION'))),
+        auditFailure: () => null,
+      });
+      await action({ enrollmentId: ENROLLMENT });
+      expect(other.log).toEqual(['begin', 'rollback']);
+    });
+
+    it('never changes the answer when the failure audit cannot be written (logged)', async () => {
+      const logError = vi.fn();
+      const broken = runtime({
+        logError,
+        writeAudit: () => Promise.reject(new Error('audit table locked')),
+      });
+      const result = await refusedAction(broken.rt)({ enrollmentId: ENROLLMENT });
+      expect(!result.ok && result.error.code).toBe('RATE_LIMITED');
+      expect(logError).toHaveBeenCalledWith(expect.any(Error), {
+        permission: 'tms.enrollment.approve',
+        correlationId: expect.stringMatching(/^[0-9a-f-]{36}$/),
+      });
+    });
+  });
 });

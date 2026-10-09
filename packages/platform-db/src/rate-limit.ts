@@ -80,8 +80,8 @@ function counterOf(rows: readonly CounterRow[]): RateLimitCounter {
   if (!row) throw new Error('rate limit: no answer from the database');
   return {
     allowed: row.allowed,
-    remaining: Number(row.remaining),
-    retryAfterSeconds: Number(row.retry_after_seconds),
+    remaining: row.remaining,
+    retryAfterSeconds: row.retry_after_seconds,
     ref: row.key_ref,
   };
 }

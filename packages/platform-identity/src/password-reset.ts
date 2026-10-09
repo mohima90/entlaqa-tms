@@ -28,16 +28,19 @@ import { AuthServiceError, sessionTokens } from './auth-flow';
  *            held by the worker only — and e-mails it in the organization's language and brand); after a
  *            completed reset (and a My profile change) the "password changed" notice is queued too.
  *
- *   request  → (application limiter, decided by the action) → the delivery above — started at once, never
- *              awaited by the answer: the answer comes after a constant time whatever happened (Auth
+ *   request  → the shared application limiter (per client, then per account — T-M2-11, auth-limits.ts;
+ *              a limiter failure counts as limited) → the delivery above. Both run in the background,
+ *              never awaited by the answer: the answer comes after a constant time whatever happened (Auth
  *              answers an existing account later, and with 429 to a repeat within a minute — both would
  *              tell that the account exists)
- *   complete → verifyOtp(recovery, token_hash) on a STATELESS client: the recovery session lives only in
+ *   complete → the shared limiter per client (fail closed: the link is not spent) →
+ *              verifyOtp(recovery, token_hash) on a STATELESS client: the recovery session lives only in
  *              this request's memory, never in the browser or our session cookies → for an account with an
  *              authenticator app, the code from it (Auth sets a password only from an AAL2 session when
  *              MFA is enabled — GoTrue v2.197.0; T-M2-10) → updateUser(password)
  *              → signOut(global): every session of the account ends, the recovery session included →
- *              security log `platform.auth.password_reset` (user id only) → (worker mode) the "password
+ *              security log `platform.auth.password_reset` (user id only) → the account's sign-in lock
+ *              ends (the owner proved the mailbox — TM-0003 T-IAM-32) → (worker mode) the "password
  *              changed" notice is queued → the visitor signs in
  *
  * The e-mail, password and token never reach a log.
@@ -149,6 +152,11 @@ export type ResetEmailDelivery =
 
 export interface PasswordResetRequestDeps {
   readonly delivery: ResetEmailDelivery;
+  /**
+   * The shared limiter (auth-limits.ts createPasswordResetLimiter): per client, then per account; false =
+   * limited. May throw when the limiter cannot answer: the request then counts as limited.
+   */
+  readonly allowRequest: (email: string) => Promise<boolean>;
   readonly logWarning: (message: string, fields: LogFields) => void;
   readonly sleep: (ms: number) => Promise<void>;
   /** Lets the Auth call finish after the answer was sent (Next.js `after()`). */
@@ -158,6 +166,13 @@ export interface PasswordResetRequestDeps {
 export interface PasswordResetDeps {
   /** A new stateless client for this request only; null when Auth is not configured. */
   readonly client: RecoveryClientLike | null;
+  /**
+   * New-password submissions per client (shared limiter); false = limited (RATE_LIMITED, the link stays
+   * usable). Throws RateLimiterUnavailableError when the limiter cannot answer: fail closed, link unspent.
+   */
+  readonly allowAttempt: () => Promise<boolean>;
+  /** Ends the account's sign-in lock after a completed reset (auth-limits.ts unlockSignIn; never throws). */
+  readonly unlockSignIn: (email: string) => Promise<void>;
   readonly logInfo: (message: string, fields: LogFields) => void;
   readonly logWarning: (message: string, fields: LogFields) => void;
   /** Ends this browser's own session cookies, if any (after the reset the visitor signs in again). */
@@ -175,24 +190,36 @@ export interface PasswordResetDeps {
 }
 
 /**
- * Screen 10. Starts the delivery (Auth's request, or the worker's queue) and answers after
- * RESET_REQUEST_ANSWER_MS, never waiting for it: the caller learns nothing from the result or the time
- * taken. `limited`: the application limiter refused this request (per account, per client) — nothing is
- * started, the answer is the same.
+ * Screen 10. Starts the limiter check and then the delivery (Auth's request, or the worker's queue) in the
+ * background and answers after RESET_REQUEST_ANSWER_MS, never waiting for either: the caller learns
+ * nothing from the result or the time taken. A limited request (per client, per account) — or one the
+ * limiter could not answer — starts nothing; the answer is the same.
  */
 export async function requestPasswordReset(
   deps: PasswordResetRequestDeps,
-  input: { readonly email: string; readonly limited: boolean },
+  input: { readonly email: string },
 ): Promise<void> {
-  if (input.limited) {
+  deps.keepAlive(limitThenSend(deps, input.email));
+  await deps.sleep(RESET_REQUEST_ANSWER_MS);
+}
+
+/** Never rejects. */
+async function limitThenSend(deps: PasswordResetRequestDeps, email: string): Promise<void> {
+  let allowed: boolean;
+  try {
+    allowed = await deps.allowRequest(email);
+  } catch {
+    // Fail closed: no e-mail (the limiter recorded the security event).
+    allowed = false;
+  }
+  if (!allowed) {
     deps.logWarning('password reset request limited', {
       action: REQUEST_ACTION,
       reason: 'rate_limited',
     });
-  } else {
-    deps.keepAlive(sendRecoveryLink(deps, input.email));
+    return;
   }
-  await deps.sleep(RESET_REQUEST_ANSWER_MS);
+  await sendRecoveryLink(deps, email);
 }
 
 /** Never rejects: every outcome is logged as a code (never the address) and treated as success. */
@@ -324,11 +351,17 @@ function passwordRefusal(error: AuthErrorLike & { readonly reasons?: unknown }):
   return appError(PasswordResetErrors.PASSWORD_RESET_PASSWORD_REJECTED);
 }
 
-/** The user id Auth returned with the recovery session (for the security log only). */
-function userIdOf(data: unknown): string | null {
+/** The user Auth returned with the recovery session: its id (security log) and e-mail (unlock). */
+function userOf(data: unknown): { readonly id: string | null; readonly email: string | null } {
   const user = typeof data === 'object' && data !== null && 'user' in data ? data.user : null;
-  const id = typeof user === 'object' && user !== null && 'id' in user ? user.id : null;
-  return typeof id === 'string' ? id : null;
+  const field = (name: 'id' | 'email') => {
+    const value =
+      typeof user === 'object' && user !== null && name in user
+        ? (user as Record<string, unknown>)[name]
+        : null;
+    return typeof value === 'string' && value !== '' ? value : null;
+  };
+  return { id: field('id'), email: field('email') };
 }
 
 /** Ends the recovery session (memory-only); a failure is logged, never shown. */
@@ -372,11 +405,13 @@ export async function completePasswordReset(
 ): Promise<Result<{ readonly next: 'sign-in' }, AppError>> {
   const { client } = deps;
   if (!client) return err(appError('NOT_CONFIGURED'));
+  // Every submission counts, malformed ones included; nothing is spent when limited.
+  if (!(await deps.allowAttempt())) return err(appError('RATE_LIMITED'));
   if (!RECOVERY_TOKEN_HASH_PATTERN.test(input.tokenHash)) return linkInvalid();
 
   const verified = await client.auth.verifyOtp({ type: 'recovery', token_hash: input.tokenHash });
   if (verified.error) return verifyRefusal(verified.error);
-  const userId = userIdOf(verified.data);
+  const { id: userId, email: accountEmail } = userOf(verified.data);
   const tokens = sessionTokens(verified.data);
   if (!tokens || !userId) {
     await endRecoverySession(deps, client, 'local', userId);
@@ -439,6 +474,8 @@ export async function completePasswordReset(
     entityType: 'auth_user',
     entityId: userId,
   });
+  // The owner proved control of the mailbox: a sign-in lock on the account ends (T-M2-11).
+  if (accountEmail) await deps.unlockSignIn(accountEmail);
   if (deps.queuePasswordChangedNotice) {
     try {
       await deps.queuePasswordChangedNotice(userId);

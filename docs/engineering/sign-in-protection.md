@@ -16,7 +16,7 @@ Supabase Auth's own per-IP limits see the **app server's** address (every Auth c
 |---|---|---|---|---|
 | Sign-in (and "sign in to accept" an invitation) | typed **e-mail** — existing account or not | **5 consecutive failures** lock it for 15 minutes from the 5th; a successful sign-in ends the run; a completed password reset unlocks | «أُوقف تسجيل الدخول مؤقتًا بعد محاولات كثيرة لم تنجح…» / "Sign-in is paused for now after too many unsuccessful attempts…" (`AUTH_TOO_MANY_ATTEMPTS`); **the right password is refused too** while locked | **Fail closed**: the generic «تعذّر إكمال الطلب بسبب خلل لدينا… المرجع» with a correlation id; Auth is not asked |
 | | **client** (address; IPv6 by its /64) | 30 failures, 300 attempts (shared key without a trusted address: 300 / 3,000) | same | same |
-| My profile: current-password check | **user** id | 5 checks | «طلبات كثيرة خلال وقت قصير…» (`RATE_LIMITED`), audited | Fail closed (generic error) |
+| My profile: current-password check | **user** id | 5 checks | «طلبات كثيرة خلال وقت قصير…» (`RATE_LIMITED`); a wrong current password is audited | Fail closed (generic error) |
 | Password reset request (screen 10) | client, then — only for an allowed client — account | 10 per client, 3 per account (shared: 100) | **the same answer** after the same 1.5 s; no e-mail | Treated as limited (same answer, no e-mail) |
 | Password reset completion (screen 11) | client | 5 (shared: 100) | `RATE_LIMITED`; the link is **not** spent | Fail closed (generic error); the link stays usable |
 | Invitation: new-account sign-up | client | 10 (shared: 100) | `RATE_LIMITED` | Fail closed |
@@ -57,7 +57,7 @@ Failed sign-ins and limits are **security events** in the app's JSON logs (ADR 0
 | `auth.password_change.failed` | warn | My profile: wrong current password | `current_password` |
 | `auth.limiter.unavailable` | **error** | The limiter could not answer | `fail_closed`, `fail_open`, `failure_not_counted`, `failures_not_cleared`, `lock_not_cleared` |
 
-**Tenant audit**: failed sign-ins happen before any organization is known, so they are platform security events, not tenant audit rows (TM-0003 F-IAM-06: a platform-level event store with a tenant projection is a follow-up). Where the organization is known — a signed-in member's failed or limited password change on My profile — the audit trail gets `platform.auth.password_change_failed` (`entity_type` `user`, data `{ reason: current_password | rate_limited }`, no password). Integration point for T-M2-10: a failed MFA step (organization known after the password) audits the same way through `defineAction`'s `auditFailure`.
+**Tenant audit**: failed sign-ins happen before any organization is known, so they are platform security events, not tenant audit rows (TM-0003 F-IAM-06: a platform-level event store with a tenant projection is a follow-up). Where the organization is known — a signed-in member's wrong current password on My profile — the audit trail gets `platform.auth.password_change_failed` (`entity_type` `user`, data `{ reason: current_password }`, no password). Limited attempts are logged as `auth.rate_limited` but not audited, so the audit rows per member stay bounded by the limit (5 per 15 minutes). Integration point for T-M2-10: a failed MFA step (organization known after the password) audits the same way through `defineAction`'s `auditFailure`.
 
 **Alerting queries** (starting thresholds; tune on real traffic). Loki/LogQL for the collector of ADR 0009 §5 (logs from `service="suite-web"`):
 

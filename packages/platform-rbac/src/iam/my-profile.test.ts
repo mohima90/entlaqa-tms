@@ -249,10 +249,9 @@ describe('change my password', () => {
     expect(afterChange).not.toHaveBeenCalled();
   });
 
-  it('audits a wrong current password or a limited attempt as password_change_failed (T-M2-11)', async () => {
+  it('audits a wrong current password as password_change_failed (T-M2-11)', async () => {
     for (const [error, reason] of [
       [appError(Codes.AUTH_CURRENT_PASSWORD_INVALID), 'current_password'],
-      [appError('RATE_LIMITED'), 'rate_limited'],
     ] as const) {
       const { rt, writeAudit } = runtime();
       const result = await createDefineAction(rt)(
@@ -274,14 +273,14 @@ describe('change my password', () => {
     }
   });
 
-  it('does not audit other refusals (e.g. a weak new password) as failed attempts', async () => {
-    const { rt, writeAudit } = runtime();
-    await createDefineAction(rt)(
-      changeMyPasswordActionDefinition(() =>
-        Promise.resolve(err(appError(Codes.AUTH_PASSWORD_TOO_WEAK))),
-      ),
-    )(input);
-    expect(writeAudit).not.toHaveBeenCalled();
+  it('does not audit other refusals — a weak new password, or a limited attempt (bounded audit volume)', async () => {
+    for (const error of [appError(Codes.AUTH_PASSWORD_TOO_WEAK), appError('RATE_LIMITED')]) {
+      const { rt, writeAudit } = runtime();
+      await createDefineAction(rt)(
+        changeMyPasswordActionDefinition(() => Promise.resolve(err(error))),
+      )(input);
+      expect(writeAudit).not.toHaveBeenCalled();
+    }
   });
 
   it('validates length and confirmation before calling Auth; passes Auth errors through', async () => {

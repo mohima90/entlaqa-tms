@@ -7,7 +7,7 @@
 
 | Signal | Where it goes | Content |
 |---|---|---|
-| **Logs** | stdout/stderr as one JSON object per line (Vercel runtime logs; `docker compose logs` in containers) | `time, level, msg, service, env, deployment, version` + a **closed** set of fields: `action, permission, correlation_id, tenant_id, status, outcome, duration_ms, error_code, error_name, route` |
+| **Logs** | stdout/stderr as one JSON object per line (Vercel runtime logs; `docker compose logs` in containers) | `time, level, msg, service, env, deployment, version` + a **closed** set of fields: `action, permission, correlation_id, tenant_id, status, outcome, duration_ms, error_code, error_name, route, reason, state, entity_type, entity_id` and, for security events (T-M2-11), `security_event, subject_ref, client_ref, limit, retry_after_s` — the references are keyed hashes (`rk_…`), never an e-mail or address; event names and alerting queries: [sign-in-protection.md](sign-in-protection.md) §4 |
 | **Errors** | Sentry (EU data region, org `entlaqa-qv`, project `javascript-nextjs`) for the cloud; GlitchTip in-country for sovereign installations | Error class, stack locations (file, function, line), route without query string, release, environment, tags `action`, `permission`, `correlation_id`, `tenant_id`, `error_code` (e.g. PostgreSQL SQLSTATE `23505`). The message is `[redacted]`, except for allow-listed error classes whose messages contain no input. **Server and browser** errors; browser reports carry the tag `source: browser` |
 | **Uptime** | GitHub Actions every 15 min → issue "Uptime: staging is down" | HTTP status of `/api/health/ready` |
 

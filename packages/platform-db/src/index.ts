@@ -40,6 +40,28 @@ export {
   requestInvitationResend,
   revokeInvitation,
 } from './invitations';
+export {
+  type DeactivationRefusal,
+  MEMBER_EVENTS,
+  type MemberLifecycleTarget,
+  type MembershipState,
+  type ReactivationRefusal,
+  type ReassignOutcome,
+  type ReassignRefusal,
+  type ReplacementCandidate,
+  type ResponsibilityItem,
+  deactivateMembership,
+  getMemberLifecycleTarget,
+  listDirectReports,
+  listHeadedDepartments,
+  listReplacementCandidates,
+  lockMemberLifecycle,
+  reactivateMembership,
+  reassignDirectReports,
+  reassignHeadedDepartments,
+  reassignRefusalOf,
+  revokePendingInvitationsOf,
+} from './deactivation';
 export { type DatabaseHealth, checkDatabase } from './health';
 export { type CurrentTenant, getCurrentTenant } from './tenants';
 export { type OrgUnitOption, type OrgUnitOptions, listOrgUnitOptions } from './org';

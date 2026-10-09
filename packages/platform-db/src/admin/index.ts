@@ -100,6 +100,36 @@ const STABLE_CODE = /^[a-z0-9_]{2,64}$/;
 /** An Auth admin call that has not answered by then is abandoned (and retried later). */
 export const AUTH_ADMIN_TIMEOUT_MS = 10_000;
 
+/** The admin client of the worker: no session, no refresh, every call bounded by the timeout. */
+function authAdminClient(settings: AuthAdminSettings) {
+  return createClient(settings.url, settings.secretKey, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    global: {
+      fetch: (input, init) =>
+        fetch(input, { ...init, signal: AbortSignal.timeout(AUTH_ADMIN_TIMEOUT_MS) }),
+    },
+  });
+}
+
+/**
+ * Auth's error answer of an admin call: `unknown_account` (404 `user_not_found`), or an AuthAdminError —
+ * temporary for a missing or wrong key (401/403), the network, rate limits and server errors; refused for
+ * anything else. Codes only (Auth's message may quote the address).
+ */
+function authAdminFailure(error: object): 'unknown_account' {
+  const status = 'status' in error && typeof error.status === 'number' ? error.status : 0;
+  const code =
+    'code' in error && typeof error.code === 'string' && STABLE_CODE.test(error.code)
+      ? error.code
+      : undefined;
+  if (status === 404 || code === 'user_not_found') return 'unknown_account';
+  if (status === 401 || status === 403) throw new AuthAdminError('AUTH_ADMIN_KEY', true);
+  if (status === 0 || status === 429 || status >= 500) {
+    throw new AuthAdminError(code ?? `AUTH_HTTP_${String(status || 'NETWORK')}`, true);
+  }
+  throw new AuthAdminError(code ?? `AUTH_HTTP_${String(status)}`, false);
+}
+
 /**
  * Recovery links for the worker's password-reset e-mail (T-M2-17), through Auth's admin `generate_link`
  * (type `recovery`): GoTrue v2.197.0 (`internal/api/mail.go`, adminGenerateLink) looks the account up,
@@ -114,13 +144,7 @@ export function createRecoveryLinkIssuer(
   op: AdminOperation,
 ): RecoveryLinkIssuer {
   assertAdminOperation(op);
-  const client = createClient(settings.url, settings.secretKey, {
-    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-    global: {
-      fetch: (input, init) =>
-        fetch(input, { ...init, signal: AbortSignal.timeout(AUTH_ADMIN_TIMEOUT_MS) }),
-    },
-  });
+  const client = authAdminClient(settings);
   return {
     async issue(email) {
       let answer: Awaited<ReturnType<typeof client.auth.admin.generateLink>>;
@@ -130,19 +154,7 @@ export function createRecoveryLinkIssuer(
         throw new AuthAdminError('AUTH_UNREACHABLE', true);
       }
       const { data, error } = answer;
-      if (error) {
-        const status = 'status' in error && typeof error.status === 'number' ? error.status : 0;
-        const code =
-          'code' in error && typeof error.code === 'string' && STABLE_CODE.test(error.code)
-            ? error.code
-            : undefined;
-        if (status === 404 || code === 'user_not_found') return { status: 'unknown_account' };
-        if (status === 401 || status === 403) throw new AuthAdminError('AUTH_ADMIN_KEY', true);
-        if (status === 0 || status === 429 || status >= 500) {
-          throw new AuthAdminError(code ?? `AUTH_HTTP_${String(status || 'NETWORK')}`, true);
-        }
-        throw new AuthAdminError(code ?? `AUTH_HTTP_${String(status)}`, false);
-      }
+      if (error) return { status: authAdminFailure(error) };
       // Checked at run time: the answer comes from another service.
       const { properties } = data as { properties?: { hashed_token?: unknown } };
       const hashedToken = properties?.hashed_token;
@@ -151,6 +163,50 @@ export function createRecoveryLinkIssuer(
       }
       return { status: 'issued', hashedToken };
     },
+  };
+}
+
+/** The outcome of banning or unbanning an account. */
+export type AccountBanResult =
+  | { readonly status: 'done' }
+  /** Auth has no such account (any more): nothing to ban. */
+  | { readonly status: 'unknown_account' };
+
+export interface AccountBans {
+  /** Bans the account in Auth: no sign-in, no token refresh, no recovery link verification. */
+  ban(userId: string): Promise<AccountBanResult>;
+  /** Lifts the ban. */
+  unban(userId: string): Promise<AccountBanResult>;
+}
+
+/** A ban "until lifted" (GoTrue takes a Go duration; 100 years). */
+export const ACCOUNT_BAN_DURATION = '876000h';
+const USER_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/**
+ * Account bans for the worker (T-M2-09, FR-IAM-05): an Auth account that signs in nowhere is banned, and
+ * unbanned when it may sign in somewhere again — decided by the database (private.claim_account_access_check).
+ * Auth's admin `PUT /admin/users/{id}` with `ban_duration` only (GoTrue v2.197.0 adminUserUpdate: the other
+ * attributes are left as they are when absent): a duration bans until then, `none` lifts the ban. The
+ * request body is exactly `{ "ban_duration": … }`; Auth's answer (the whole user) is discarded here.
+ */
+export function createAccountBans(settings: AuthAdminSettings, op: AdminOperation): AccountBans {
+  assertAdminOperation(op);
+  const client = authAdminClient(settings);
+  async function update(userId: string, banDuration: string): Promise<AccountBanResult> {
+    if (!USER_ID.test(userId)) throw new AuthAdminError('INVALID_USER_ID', false);
+    let answer: Awaited<ReturnType<typeof client.auth.admin.updateUserById>>;
+    try {
+      answer = await client.auth.admin.updateUserById(userId, { ban_duration: banDuration });
+    } catch {
+      throw new AuthAdminError('AUTH_UNREACHABLE', true);
+    }
+    if (answer.error) return { status: authAdminFailure(answer.error) };
+    return { status: 'done' };
+  }
+  return {
+    ban: (userId) => update(userId, ACCOUNT_BAN_DURATION),
+    unban: (userId) => update(userId, 'none'),
   };
 }
 

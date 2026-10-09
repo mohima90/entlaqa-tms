@@ -32,6 +32,14 @@ export {
   retryAccountMailRequest,
 } from './account-mail';
 export {
+  type AccountAccessAction,
+  type AccountAccessCheck,
+  type AccountAccessOutcome,
+  claimAccountAccessCheck,
+  finishAccountAccessCheck,
+  retryAccountAccessCheck,
+} from './account-access';
+export {
   type InvitationForMail,
   invitationActorMayManage,
   issueInvitationToken,

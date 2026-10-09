@@ -33,6 +33,11 @@ export interface UserListFilter {
   /** Page size, clamped to 1…MAX_PAGE_SIZE. */
   readonly limit: number;
   readonly offset: number;
+  /**
+   * Also say per row whether the caller may manage the person (private.actor_may_manage_person) — e.g.
+   * to offer «إعادة التفعيل» on the deactivated tab (T-M2-09). False on every row when not asked.
+   */
+  readonly includeManageable?: boolean;
 }
 
 export const MAX_PAGE_SIZE = 100;
@@ -54,6 +59,8 @@ export interface UserListRow {
   readonly departmentNameAr: string | null;
   readonly departmentNameEn: string | null;
   readonly lastSignInAt: Date | null;
+  /** The caller may manage this person (only with `includeManageable`; else false). */
+  readonly mayManage: boolean;
 }
 
 export interface UserListCounts {
@@ -235,9 +242,11 @@ export async function listUsers(tx: UserTx, filter: UserListFilter): Promise<Use
     department_name_ar: string | null;
     department_name_en: string | null;
     last_sign_in_at: Date | string | null;
+    may_manage: boolean;
   }>(sql`
     select p.id as person_id, m.id as membership_id, p.display_name_ar, p.display_name_en, p.email,
            p.employee_number, m.status, ${roles},
+           ${filter.includeManageable ? sql`private.actor_may_manage_person(p.tenant_id, p.id)` : sql`false`} as may_manage,
            d.name_ar as department_name_ar, d.name_en as department_name_en,
            (select max(a.occurred_at) from platform.audit_events a
              where a.actor_user_id = m.user_id and a.action = 'platform.auth.signed_in') as last_sign_in_at
@@ -262,6 +271,7 @@ export async function listUsers(tx: UserTx, filter: UserListFilter): Promise<Use
       departmentNameAr: r.department_name_ar,
       departmentNameEn: r.department_name_en,
       lastSignInAt: toDate(r.last_sign_in_at),
+      mayManage: r.may_manage,
     })),
     counts: c,
     total: filter.tab === 'all' ? c.all : c[filter.tab],

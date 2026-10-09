@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  ACCOUNT_BAN_DURATION,
   AuthAdminError,
   assertAdminOperation,
+  createAccountBans,
   createRecoveryLinkIssuer,
   createServiceRoleSupabaseClient,
   withAdminTx,
@@ -143,6 +145,91 @@ describe('recovery links through the Auth admin API (T-M2-17, worker only)', () 
 
   it('requires a meaningful reason and an actor', () => {
     expect(() => createRecoveryLinkIssuer(settings, { reason: 'x', actor: 'job' })).toThrow(
+      'meaningful reason',
+    );
+  });
+});
+
+describe('account bans through the Auth admin API (T-M2-09, worker only)', () => {
+  const settings = { url: 'https://auth.example.test', secretKey: 'sb_secret_sample_only' };
+  const banOp = { reason: 'Ban accounts that sign in nowhere (T-M2-09)', actor: 'job:test' };
+  const USER = '9d000000-0000-4000-8000-000000000001';
+
+  function answer(status: number, body: unknown) {
+    const fetchMock = vi.fn((_url: string, _init?: RequestInit) =>
+      Promise.resolve(
+        new Response(JSON.stringify(body), {
+          status,
+          headers: { 'content-type': 'application/json' },
+        }),
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    return fetchMock;
+  }
+
+  it('bans with PUT /admin/users/{id} and nothing but the ban duration; unbans with "none"', async () => {
+    const fetchMock = answer(200, {
+      id: USER,
+      email: 'sara@example.test',
+      banned_until: '2126-01-01',
+    });
+    const bans = createAccountBans(settings, banOp);
+    expect(await bans.ban(USER)).toEqual({ status: 'done' });
+    const [url, init] = fetchMock.mock.calls[0] ?? [];
+    expect(url).toBe(`https://auth.example.test/auth/v1/admin/users/${USER}`);
+    expect(init?.method).toBe('PUT');
+    expect(JSON.parse(init?.body as string)).toEqual({ ban_duration: ACCOUNT_BAN_DURATION });
+    expect(new Headers(init?.headers).get('authorization')).toBe(`Bearer ${settings.secretKey}`);
+    expect(init?.signal).toBeInstanceOf(AbortSignal);
+    expect(await bans.unban(USER)).toEqual({ status: 'done' });
+    expect(JSON.parse(fetchMock.mock.calls[1]?.[1]?.body as string)).toEqual({
+      ban_duration: 'none',
+    });
+    // 100 years in Go's duration syntax.
+    expect(ACCOUNT_BAN_DURATION).toBe('876000h');
+  });
+
+  it('an account Auth no longer has is an answer; failures are classified like recovery links', async () => {
+    answer(404, { code: 404, error_code: 'user_not_found', msg: 'User not found' });
+    expect(await createAccountBans(settings, banOp).ban(USER)).toEqual({
+      status: 'unknown_account',
+    });
+    for (const [status, body, code, temporary] of [
+      [401, { code: 401, msg: 'invalid JWT' }, 'AUTH_ADMIN_KEY', true],
+      [503, { code: 503, msg: 'down' }, 'AUTH_HTTP_503', true],
+      [
+        400,
+        { code: 400, error_code: 'validation_failed', msg: 'bad duration' },
+        'validation_failed',
+        false,
+      ],
+    ] as const) {
+      answer(status, body);
+      await expect(createAccountBans(settings, banOp).unban(USER)).rejects.toMatchObject({
+        code,
+        temporary,
+      });
+    }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.reject(new TypeError('fetch failed'))),
+    );
+    await expect(createAccountBans(settings, banOp).ban(USER)).rejects.toMatchObject({
+      temporary: true,
+    });
+  });
+
+  it('refuses anything but an account id before calling Auth (no path tricks)', async () => {
+    const fetchMock = answer(200, {});
+    for (const bad of ['', '../users', `${USER}/factors`, USER.toUpperCase()]) {
+      await expect(createAccountBans(settings, banOp).ban(bad)).rejects.toMatchObject({
+        code: 'INVALID_USER_ID',
+        temporary: false,
+      });
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(() => createAccountBans(settings, { reason: 'x', actor: 'job' })).toThrow(
       'meaningful reason',
     );
   });

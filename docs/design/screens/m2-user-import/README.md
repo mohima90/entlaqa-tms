@@ -1,4 +1,4 @@
-# M2 — Bulk user import screens (draft for PO review)
+# M2 — Bulk user import screens (approved by the PO, 9 Oct 2026)
 
 > **Status:** Draft for PO review, 9 Oct 2026 · Task **T-M2-12** phase 1 (design only, no code) · Epic `EP-M2-IAM`
 > **Requirements:** FR-IAM-04 (bulk import), FR-IAM-03 (invitations), FR-IAM-01 (profile fields), FR-IAM-07 (roles) · BR-IAM-1, BR-IAM-3, BR-IAM-4 · NFR-SEC-08, NFR-PERF-05, NFR-UX-01 · BRD §10.4 (import with dry run, error report and rollback) · FR-NTF-02 (e-mails through our notification service)
@@ -82,8 +82,8 @@ The first row holds the headers, in Arabic or English; column order does not mat
 
 | Limit | Proposal | Note |
 |---|---|---|
-| Rows per file | **5,000** | **PO decision** (open question 1). BRD FR-IAM-04 says up to 10,000 |
-| File size | 20 MB | ADR 0006 `imports` bucket limit; 5,000 rows are about 1–3 MB |
+| Rows per file | **10,000** | As BRD FR-IAM-04 / NFR-PERF-05 (PO, 9 Oct 2026, question 1) |
+| File size | 20 MB | ADR 0006 `imports` bucket limit; 10,000 rows are about 2–6 MB |
 | File types | `.xlsx`, `.csv` | Detected by content, not by the name. `.xls`, `.xlsm`, password-protected and macro files refused. XLSX: one sheet chosen in step 2 (the first by default); formulas read as their values |
 | CSV encoding | UTF-8 (with or without BOM) | Other encodings refused with a clear message (TM-0004 T-PEO-09); comma or semicolon separators detected |
 | Imports at a time | One per organization | TM-0003 T-IAM-34; others see «يجري استيراد آخر الآن» |
@@ -218,11 +218,11 @@ Copy follows the glossary and style guide (verbal nouns on buttons, «يمكنك
 | Undo an import / stop an import | التراجع عن الاستيراد / إيقاف الاستيراد | «تراجع» follows #139 |
 | Row / column / sheet | صف / عمود / ورقة | Spreadsheet terms |
 
-## 16. Open questions for the PO
+## 16. Decisions (PO, 9 Oct 2026)
 
-Each has a recommendation; the screens show the recommended answer.
+**All recommendations approved** by the PO on 9 Oct 2026 («Approve, all recommendations»), with question 1 settled at the BRD's 10,000 rows (the review page recommended keeping the BRD figure). The whole product look will be discussed with the PO later (visual round T-M2-04c); these screens fix content and flow.
 
-1. **Maximum rows per file.** The BRD says 10,000; the screens show 5,000. **Recommendation: 5,000 per file in R1.** Reviews and error reports stay easy to read and thousands of invitation e-mails go out in a reasonable time; larger organizations split the file (e.g. by branch). It is one setting, so it can be raised after we measure real imports. (Choosing 5,000 means a small BRD change.)
+1. **Maximum rows per file.** **Decided: 10,000 per file, as in the BRD** (the first draft proposed 5,000). It is one setting; larger organizations split the file (e.g. by branch). No BRD change needed.
 2. **Who may import.** **Recommendation: Organization Admin and HR Manager**, with the same rules as inviting one person.
 3. **Privileged roles in a file** (Organization Admin, HR Manager, Finance Manager, Compliance Officer, Auditor). **Recommendation: never by import, for anyone;** give them from the user's profile after the import. One wrong cell could otherwise give hundreds of people access to sensitive data, and these roles need an authenticator code.
 4. **People who already exist.** **Recommendation: skip them by default,** and offer "add new and update existing" and "update existing only" (the three BRD modes).

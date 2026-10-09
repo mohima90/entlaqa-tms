@@ -14,11 +14,14 @@
 --     * end of the member's sign-in sessions IN THIS ORGANIZATION (tenant-scoped, never global: T-IAM-40):
 --       when a membership leaves `active`, that tenant's platform.session_context rows of the user are
 --       removed. private.current_tenant_id() already refuses the old claims at the next statement (no
---       active membership); without a session_context row the old sessions also stay out after a later
---       reactivation — the member selects the organization again: by signing in again, or in the
---       organization chooser of a session that is still signed in elsewhere (T-IAM-39). A concurrent
---       organization switch cannot leave a row behind: switch and deactivation take the same per-membership
---       advisory lock (shared / exclusive, review L3);
+--       active membership), and while the login belongs nowhere Auth issues no token at all (access-token
+--       hook, 20261011090100). The Auth sessions themselves are NOT ended: a refused refresh is rolled back,
+--       so its refresh token is never revoked — after a reactivation, a refresh token from before the
+--       deactivation works again, its session has no organization selected and can pick this one in the
+--       organization chooser without a new sign-in (residual N2, T-IAM-39). Planned closure: with T-M2-10's
+--       Auth-session deletion, deactivation also ends the login's Auth sessions when no other active
+--       membership remains. A concurrent organization switch cannot leave a session_context row behind:
+--       switch and deactivation take the same per-membership advisory lock (shared / exclusive, review L3);
 --     * one lock order for the people responsibilities that deactivation reassigns (direct reports and
 --       department heads, T-M2-02 decision): setting a department head now takes the same per-tenant
 --       lock as setting a direct manager (`platform.person_employment:<tenant>`), and the deactivation

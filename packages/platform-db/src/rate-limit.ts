@@ -273,9 +273,8 @@ export function createRateLimitStore(getDb: () => AppDatabase): RateLimitStore {
     },
     signInReset(account) {
       const key = checkSubject(account);
-      return run(
-        sql`select private.rate_limit_sign_in_reset(${key}::bytea) as revoked`,
-        (rows) => Number(rows[0]?.revoked ?? 0),
+      return run(sql`select private.rate_limit_sign_in_reset(${key}::bytea) as revoked`, (rows) =>
+        Number(rows[0]?.revoked ?? 0),
       );
     },
   };

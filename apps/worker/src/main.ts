@@ -24,8 +24,8 @@ import { subscribers } from './subscribers';
  * DATABASE_URL_APP_QUEUE (queue, login role app_queue) and DATABASE_URL_APP_WORKER (tenant work,
  * app_worker); TLS verify-full against DATABASE_CA_CERT / DATABASE_CA_CERT_FILE for remote hosts.
  * E-mail: EMAIL_PROVIDER (resend | smtp | none) and its settings; APP_BASE_URL (the web app's public
- * origin, for links in e-mails). Password-reset links and account bans: SUPABASE_URL + SUPABASE_SECRET_KEY
- * (the Auth admin API — in the worker's environment only, T-M2-17, T-M2-09). Daemon mode stops gracefully on
+ * origin, for links in e-mails). Password-reset links: SUPABASE_URL + SUPABASE_SECRET_KEY (the Auth
+ * admin API — in the worker's environment only, T-M2-17). Daemon mode stops gracefully on
  * SIGTERM/SIGINT (running jobs finish first) and exits 0.
  */
 installConsoleScrubbing();
@@ -61,7 +61,7 @@ async function runWorker(settings: RunnerSettings): Promise<void> {
         const expired = daysLeft < 0;
         logger.warn(
           expired
-            ? 'the Auth admin key (SUPABASE_SECRET_KEY) has expired: password-reset links and account bans fail until it is renewed'
+            ? 'the Auth admin key (SUPABASE_SECRET_KEY) has expired: password-reset links fail until it is renewed'
             : `the Auth admin key (SUPABASE_SECRET_KEY) expires in ${String(daysLeft)} days: renew it`,
           {
             action: 'worker.auth_admin_key',
@@ -95,10 +95,9 @@ async function runWorker(settings: RunnerSettings): Promise<void> {
       concurrency: settings.concurrency,
       log,
     };
-    // Reset links and account bans both need the Auth admin API (T-M2-17, T-M2-09).
-    const authAdmin = settings.authAdmin ? 'on' : 'off';
+    const resetLinks = settings.authAdmin ? 'on' : 'off';
     logger.info(
-      `worker starting (${settings.mode}; e-mail: ${settings.email.provider}; reset links: ${authAdmin}; account bans: ${authAdmin})`,
+      `worker starting (${settings.mode}; e-mail: ${settings.email.provider}; reset links: ${resetLinks})`,
       {
         action: 'worker.start',
       },

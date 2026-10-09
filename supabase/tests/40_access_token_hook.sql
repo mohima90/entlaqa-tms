@@ -29,13 +29,15 @@ begin
   v := pg_temp.hook('00000000-0000-4000-8000-0000000000d1', '10000000-0000-4000-8000-0000000000d1');
   perform tests.assert_eq(v -> 'claims' ->> 'tenant_id', 'd0000000-0000-4000-8000-000000000001', 'trial tenant gets tenant_id');
 
-  -- No claim for: invited, suspended membership, suspended tenant, no session context, unknown session.
+  -- No token at all (T-M2-09, 64_sign_in_refusal_owner.sql) for an account whose memberships are all
+  -- invited, suspended or in a suspended tenant: Auth's error object instead of claims.
   v := pg_temp.hook('00000000-0000-4000-8000-0000000000a2', '10000000-0000-4000-8000-0000000000a2');
-  perform tests.assert(not (v -> 'claims' ? 'tenant_id'), 'invited membership → no tenant_id');
+  perform tests.assert(v -> 'error' ->> 'http_code' = '403' and not (v ? 'claims'), 'invited membership only → refused');
   v := pg_temp.hook('00000000-0000-4000-8000-0000000000a3', '10000000-0000-4000-8000-0000000000a3');
-  perform tests.assert(not (v -> 'claims' ? 'tenant_id'), 'suspended membership → no tenant_id');
+  perform tests.assert(v -> 'error' ->> 'http_code' = '403' and not (v ? 'claims'), 'suspended membership only → refused');
   v := pg_temp.hook('00000000-0000-4000-8000-0000000000c1', '10000000-0000-4000-8000-0000000000c1');
-  perform tests.assert(not (v -> 'claims' ? 'tenant_id'), 'suspended tenant → no tenant_id');
+  perform tests.assert(v -> 'error' ->> 'http_code' = '403' and not (v ? 'claims'), 'only a suspended tenant → refused');
+  -- No claim for: no session context, unknown session.
   v := pg_temp.hook('00000000-0000-4000-8000-0000000000e1', '10000000-0000-4000-8000-0000000000e1');
   perform tests.assert(not (v -> 'claims' ? 'tenant_id'), 'no session context → no tenant_id');
   v := pg_temp.hook('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000ab');

@@ -1,14 +1,16 @@
 -- db-test: run-as=owner
 -- Deactivate / reactivate a member (FR-IAM-05, T-M2-09): committed fixtures for 63 (request path, as
--- app_server) and 64 (Auth ban queue, worker), then the checks that need the owner connection: the
--- session-ending trigger for every writer, the lock order of the people responsibilities, and the Auth
--- ban queue being filled by membership and invitation changes. 64 removes these fixtures again.
+-- app_server) and 64 (sign-in refusal of the access-token hook), then the checks that need the owner
+-- connection: the session-ending trigger for every writer (with the lock it shares with the organization
+-- switch), the privileged-deactivation rule for platform operations, and the lock order of the people
+-- responsibilities. 64 removes these fixtures again.
 --   tenant A:  uX   learner (also an active learner in tenant B), heads department DX, manages pR, pR2
 --                   (no login) and pP; sessions sX1, sX2 (A), sXB (B), sX0 (no organization selected)
 --              uR   learner, reports to pX                    uP   Compliance Officer (privileged), reports to pX
 --              uS   learner, deactivated (person inactive)    uSP  Auditor (privileged), deactivated
 --              uA2  Organization Admin whose role ENDS in 30 days (the fixture admin uA has no end date)
 --              uN   an account without membership; a pending invitation of A for its e-mail
+--              uE   learner whose Auditor role ENDED yesterday     uF  learner with an Auditor role from in 10 days
 \set ON_ERROR_STOP on
 
 insert into auth.users (id, email) values
@@ -18,7 +20,9 @@ insert into auth.users (id, email) values
   ('9d000000-0000-4000-8000-000000000004', 'ds@a.test'),
   ('9d000000-0000-4000-8000-000000000005', 'dsp@a.test'),
   ('9d000000-0000-4000-8000-000000000006', 'da2@a.test'),
-  ('9d000000-0000-4000-8000-000000000007', 'dn@a.test');
+  ('9d000000-0000-4000-8000-000000000007', 'dn@a.test'),
+  ('9d000000-0000-4000-8000-000000000008', 'de@a.test'),
+  ('9d000000-0000-4000-8000-000000000009', 'df@a.test');
 
 insert into auth.sessions (id, user_id, not_after) values
   ('9d200000-0000-4000-8000-000000000001', '9d000000-0000-4000-8000-000000000001', null), -- sX1 (A)
@@ -38,7 +42,9 @@ insert into platform.persons (id, tenant_id, display_name_ar, email, status) val
   ('9d100000-0000-4000-8000-0000000000a5', 'a0000000-0000-4000-8000-000000000001', 'معطَّل', 'ds@a.test', 'inactive'),
   ('9d100000-0000-4000-8000-0000000000a6', 'a0000000-0000-4000-8000-000000000001', 'مدقق معطَّل', 'dsp@a.test', 'inactive'),
   ('9d100000-0000-4000-8000-0000000000a7', 'a0000000-0000-4000-8000-000000000001', 'مدير منشأة مؤقت', 'da2@a.test', 'active'),
-  ('9d100000-0000-4000-8000-0000000000a8', 'a0000000-0000-4000-8000-000000000001', 'مدعو بحساب', 'dn@a.test', 'active');
+  ('9d100000-0000-4000-8000-0000000000a8', 'a0000000-0000-4000-8000-000000000001', 'مدعو بحساب', 'dn@a.test', 'active'),
+  ('9d100000-0000-4000-8000-0000000000a9', 'a0000000-0000-4000-8000-000000000001', 'مدقق سابق', 'de@a.test', 'active'),
+  ('9d100000-0000-4000-8000-0000000000aa', 'a0000000-0000-4000-8000-000000000001', 'مدقق لاحقًا', 'df@a.test', 'active');
 
 insert into platform.departments (id, tenant_id, code, name_ar, name_en, head_person_id) values
   ('9d300000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'DX', 'قسم يرأسه uX', 'Department DX',
@@ -60,7 +66,9 @@ insert into platform.tenant_memberships (tenant_id, user_id, person_id, status) 
   ('a0000000-0000-4000-8000-000000000001', '9d000000-0000-4000-8000-000000000003', '9d100000-0000-4000-8000-0000000000a4', 'active'),
   ('a0000000-0000-4000-8000-000000000001', '9d000000-0000-4000-8000-000000000004', '9d100000-0000-4000-8000-0000000000a5', 'suspended'),
   ('a0000000-0000-4000-8000-000000000001', '9d000000-0000-4000-8000-000000000005', '9d100000-0000-4000-8000-0000000000a6', 'suspended'),
-  ('a0000000-0000-4000-8000-000000000001', '9d000000-0000-4000-8000-000000000006', '9d100000-0000-4000-8000-0000000000a7', 'active');
+  ('a0000000-0000-4000-8000-000000000001', '9d000000-0000-4000-8000-000000000006', '9d100000-0000-4000-8000-0000000000a7', 'active'),
+  ('a0000000-0000-4000-8000-000000000001', '9d000000-0000-4000-8000-000000000008', '9d100000-0000-4000-8000-0000000000a9', 'active'),
+  ('a0000000-0000-4000-8000-000000000001', '9d000000-0000-4000-8000-000000000009', '9d100000-0000-4000-8000-0000000000aa', 'active');
 
 insert into platform.role_assignments (tenant_id, membership_id, role_code, is_primary, valid_until)
 select m.tenant_id, m.id, r.role_code, true, r.valid_until
@@ -71,9 +79,19 @@ from (values
   ('a0000000-0000-4000-8000-000000000001', '9d000000-0000-4000-8000-000000000003', 'compliance_officer', null),
   ('a0000000-0000-4000-8000-000000000001', '9d000000-0000-4000-8000-000000000004', 'learner', null),
   ('a0000000-0000-4000-8000-000000000001', '9d000000-0000-4000-8000-000000000005', 'auditor', null),
-  ('a0000000-0000-4000-8000-000000000001', '9d000000-0000-4000-8000-000000000006', 'tenant_admin', now() + interval '30 days')
+  ('a0000000-0000-4000-8000-000000000001', '9d000000-0000-4000-8000-000000000006', 'tenant_admin', now() + interval '30 days'),
+  ('a0000000-0000-4000-8000-000000000001', '9d000000-0000-4000-8000-000000000008', 'learner', null),
+  ('a0000000-0000-4000-8000-000000000001', '9d000000-0000-4000-8000-000000000009', 'learner', null)
 ) as r (tenant_id, user_id, role_code, valid_until)
 join platform.tenant_memberships m on m.tenant_id = r.tenant_id and m.user_id = r.user_id;
+-- uE's Auditor role ended yesterday; uF's starts in 10 days (additional roles).
+insert into platform.role_assignments (tenant_id, membership_id, role_code, is_primary, valid_from, valid_until)
+select m.tenant_id, m.id, 'auditor', false, r.valid_from, r.valid_until
+from (values
+  ('9d000000-0000-4000-8000-000000000008'::uuid, now() - interval '30 days', now() - interval '1 day'),
+  ('9d000000-0000-4000-8000-000000000009', now() + interval '10 days', null::timestamptz)
+) as r (user_id, valid_from, valid_until)
+join platform.tenant_memberships m on m.user_id = r.user_id;
 
 insert into platform.session_context (session_id, user_id, active_tenant_id) values
   ('9d200000-0000-4000-8000-000000000001', '9d000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001'),
@@ -126,60 +144,17 @@ begin
   return v_rows;
 end $$;
 
-grant execute on function tests.t09_as(text, text), tests.t09_deactivate(uuid) to public;
+-- Does this transaction hold the advisory lock of `p_key` in `p_mode` (ShareLock / ExclusiveLock)?
+create or replace function tests.t09_holds_lock(p_key text, p_mode text default 'ExclusiveLock') returns boolean
+language sql as $$
+  select exists (select 1 from pg_locks l
+                 where l.locktype = 'advisory' and l.pid = pg_backend_pid() and l.objsubid = 1
+                   and l.mode = p_mode and l.granted
+                   and ((l.classid::bigint << 32) | l.objid::bigint) = hashtextextended(p_key, 0));
+$$;
 
--- ---------------------------------------------------------------------------------------------------
--- The Auth ban queue fills itself from membership and invitation changes (any writer)
--- ---------------------------------------------------------------------------------------------------
-do $$
-begin
-  perform tests.assert(exists (select 1 from private.account_access_checks where user_id = '9d000000-0000-4000-8000-000000000001')
-                       and exists (select 1 from private.account_access_checks where user_id = '9d000000-0000-4000-8000-000000000006'),
-    'new active memberships queue a check of their accounts');
-  perform tests.assert(not exists (select 1 from private.account_access_checks where user_id = '9d000000-0000-4000-8000-000000000004'),
-    'a membership created deactivated queues nothing');
-  perform tests.assert(exists (select 1 from private.account_access_checks where user_id = '9d000000-0000-4000-8000-000000000007'),
-    'an invitation for the e-mail of an existing account queues a check of that account');
-end $$;
--- 63 and 64 start from an empty queue.
-delete from private.account_access_checks;
-delete from private.account_bans;
-
-begin;
-do $$
-declare
-  v_before timestamptz;
-begin
-  -- Leaving active (here as a platform operation): queued; entering active again: queued again (renewed).
-  update platform.tenant_memberships set status = 'suspended'
-  where user_id = '9d000000-0000-4000-8000-000000000002' and tenant_id = 'a0000000-0000-4000-8000-000000000001';
-  select requested_at into v_before from private.account_access_checks where user_id = '9d000000-0000-4000-8000-000000000002';
-  perform tests.assert(v_before is not null, 'a membership leaving active queues a check');
-  update private.account_access_checks set attempts = 3, not_before = now() + interval '1 hour'
-  where user_id = '9d000000-0000-4000-8000-000000000002';
-  update platform.tenant_memberships set status = 'active'
-  where user_id = '9d000000-0000-4000-8000-000000000002' and tenant_id = 'a0000000-0000-4000-8000-000000000001';
-  perform tests.assert((select requested_at > v_before and attempts = 0 and not_before <= now()
-                        from private.account_access_checks where user_id = '9d000000-0000-4000-8000-000000000002'),
-    'a later change renews the check (due at once, attempts reset)');
-  perform tests.assert_eq((select count(*) from private.account_access_checks), 1::bigint,
-    'one check per account');
-  -- A status change that neither enters nor leaves active (suspended → revoked) queues nothing.
-  delete from private.account_access_checks;
-  update platform.tenant_memberships set status = 'revoked'
-  where user_id = '9d000000-0000-4000-8000-000000000004' and tenant_id = 'a0000000-0000-4000-8000-000000000001';
-  perform tests.assert_eq((select count(*) from private.account_access_checks), 0::bigint,
-    'suspended → revoked queues nothing');
-  -- Invitations: revoking one of an existing account queues it; one for an e-mail without account nothing.
-  update platform.invitations set status = 'revoked' where id = '9d400000-0000-4000-8000-000000000001';
-  perform tests.assert(exists (select 1 from private.account_access_checks where user_id = '9d000000-0000-4000-8000-000000000007'),
-    'a revoked invitation queues a check of the account with its e-mail');
-  delete from private.account_access_checks;
-  update platform.invitations set status = 'revoked' where id = 'a4000000-0000-4000-8000-000000000001';
-  perform tests.assert_eq((select count(*) from private.account_access_checks), 0::bigint,
-    'an invitation for an e-mail without an Auth account queues nothing');
-end $$;
-rollback;
+grant execute on function tests.t09_as(text, text), tests.t09_deactivate(uuid), tests.t09_holds_lock(text, text)
+  to public;
 
 -- ---------------------------------------------------------------------------------------------------
 -- Ending the member's sessions in the organization — for every writer (platform operations too)
@@ -198,6 +173,10 @@ begin
     4::bigint, 'the Auth sessions themselves are untouched (no global sign-out from an organization)');
   perform tests.assert_eq((select count(*) from platform.session_context where user_id = '9d000000-0000-4000-8000-000000000002'),
     1::bigint, 'other members keep their sessions');
+  perform tests.assert(tests.t09_holds_lock('platform.membership:a0000000-0000-4000-8000-000000000001:9d000000-0000-4000-8000-000000000001'),
+    'ending the sessions takes the membership''s lock exclusively (an organization switch in flight is waited for)');
+  perform tests.assert(not tests.t09_holds_lock('platform.membership:b0000000-0000-4000-8000-000000000001:9d000000-0000-4000-8000-000000000001'),
+    'not the lock of the same login''s membership in B');
   -- Back to active: the old sessions do not come back (the member selects the organization again).
   update platform.tenant_memberships set status = 'active'
   where user_id = '9d000000-0000-4000-8000-000000000001' and tenant_id = 'a0000000-0000-4000-8000-000000000001';
@@ -205,6 +184,31 @@ begin
                            where user_id = '9d000000-0000-4000-8000-000000000001'
                              and active_tenant_id = 'a0000000-0000-4000-8000-000000000001'),
     0::bigint, 'reactivation does not revive the ended sessions');
+end $$;
+rollback;
+
+-- A status change that does not leave active takes no lock and ends nothing.
+begin;
+do $$
+begin
+  update platform.tenant_memberships set status = 'revoked'
+  where user_id = '9d000000-0000-4000-8000-000000000004' and tenant_id = 'a0000000-0000-4000-8000-000000000001';
+  perform tests.assert(not tests.t09_holds_lock('platform.membership:a0000000-0000-4000-8000-000000000001:9d000000-0000-4000-8000-000000000004'),
+    'suspended → revoked: no lock');
+  perform tests.assert_eq((select count(*) from platform.session_context where user_id = '9d000000-0000-4000-8000-000000000004'),
+    0::bigint, 'nothing to end');
+end $$;
+rollback;
+
+-- ---------------------------------------------------------------------------------------------------
+-- Privileged members (review M4): the authenticator-code rule binds request-path deactivations only
+-- (63); a platform operation without claims (an operator's provisioning fix) is not one.
+-- ---------------------------------------------------------------------------------------------------
+begin;
+do $$
+begin
+  perform tests.assert_eq(tests.rows_affected($q$update platform.tenant_memberships set status = 'suspended' where user_id = '9d000000-0000-4000-8000-000000000003'$q$),
+    1::bigint, 'platform operation: the privileged member is suspended without claims');
 end $$;
 rollback;
 

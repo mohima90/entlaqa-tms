@@ -4,8 +4,42 @@
 -- only as a platform operation.
 drop function private.reactivate_membership(uuid);
 
+drop trigger tenant_memberships_privileged_deactivation on platform.tenant_memberships;
+drop function private.check_privileged_deactivation();
+
 drop trigger tenant_memberships_end_sessions on platform.tenant_memberships;
 drop function private.end_member_sessions();
+
+-- As in 20260930120100 (no advisory lock).
+create or replace function private.switch_active_tenant(p_tenant_id uuid)
+returns boolean
+language plpgsql volatile security definer
+set search_path = ''
+as $$
+declare
+  v_claims jsonb := private.request_claims();
+  v_user uuid;
+  v_session uuid;
+begin
+  if session_user <> 'app_server' or v_claims is null or coalesce(v_claims ->> 'role', '') <> 'authenticated' then
+    return false;
+  end if;
+  v_user := private.try_uuid(v_claims ->> 'sub');
+  v_session := private.try_uuid(v_claims ->> 'session_id');
+  if not private.user_session_is_valid(v_user, v_session)
+     or not private.has_active_membership(v_user, p_tenant_id) then
+    return false;
+  end if;
+
+  insert into platform.session_context as c (session_id, user_id, active_tenant_id, updated_at)
+  values (v_session, v_user, p_tenant_id, now())
+  on conflict (session_id) do update
+    set active_tenant_id = excluded.active_tenant_id,
+        updated_at = excluded.updated_at
+    where c.user_id = excluded.user_id;
+  return found;
+end
+$$;
 
 -- As in 20261004120200 (no person_employment lock for department heads).
 create or replace function private.check_department_refs()

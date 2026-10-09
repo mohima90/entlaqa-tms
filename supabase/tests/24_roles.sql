@@ -98,8 +98,10 @@ delete from platform.role_assignments
 insert into platform.role_assignments (membership_id, role_code, valid_until)
 select id, 'tenant_admin', now() + interval '1 hour' from platform.tenant_memberships
 where user_id = '00000000-0000-4000-8000-0000000000ab' and tenant_id = 'a0000000-0000-4000-8000-000000000001';
+-- At AAL2: suspending a privileged member needs the authenticator code (T-M2-09, review M4); the
+-- last-admin rule is what refuses it here.
 select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000ab', '10000000-0000-4000-8000-0000000000ab',
-  'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000ab'));
+  'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000ab') || '{"aal": "aal2"}'::jsonb);
 do $$
 declare
   v_admin uuid := (select id from platform.tenant_memberships where user_id = '00000000-0000-4000-8000-0000000000a1' and tenant_id = 'a0000000-0000-4000-8000-000000000001');

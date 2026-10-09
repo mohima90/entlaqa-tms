@@ -512,11 +512,11 @@ begin
   end loop;
 end $$;
 
--- membership_guard (T-M2-09, deactivate / reactivate): owns exactly the session-ending trigger, the checked
--- reactivation and the Auth ban queue's functions; nobody acts as it, it creates nothing and owns no
--- relation; it reads Auth accounts only through private.auth_account_access; the ban queue and the record
--- of our bans are reachable by it alone; only the reactivation and the three worker functions are
--- callable (by authenticated: each checks the login role itself).
+-- membership_guard (T-M2-09, deactivate / reactivate): owns exactly the session-ending and
+-- privileged-deactivation triggers, the checked reactivation and the sign-in refusal rule; nobody acts as
+-- it, it creates nothing and owns no relation; it reads Auth accounts only through
+-- private.auth_account_email; only the reactivation (authenticated: it checks the login role itself) and
+-- the sign-in rule (supabase_auth_admin: the access-token hook) are callable.
 do $$
 declare
   v_list text;
@@ -529,13 +529,9 @@ begin
                     order by p.oid::regprocedure::text) into v_list
   from pg_proc p where p.proowner = 'membership_guard'::regrole;
   perform tests.assert_eq(v_list,
-    'private.account_should_be_banned(uuid) (INVOKER), private.claim_account_access_check(), '
-    'private.end_member_sessions(), '
-    'private.finish_account_access_check(uuid,timestamp with time zone,text), '
-    'private.invitation_access_changed(), private.membership_access_changed(), '
-    'private.queue_account_access_check(uuid) (INVOKER), private.reactivate_membership(uuid), '
-    'private.retry_account_access_check(uuid)',
-    'membership_guard owns the deactivation and Auth ban functions only');
+    'private.account_sign_in_refused(uuid), private.check_privileged_deactivation(), '
+    'private.end_member_sessions(), private.reactivate_membership(uuid)',
+    'membership_guard owns the deactivation, reactivation and sign-in refusal functions only');
   perform tests.assert(not exists (select 1 from pg_class c where c.relowner = 'membership_guard'::regrole),
     'membership_guard owns no relations');
   perform tests.assert(not exists (
@@ -547,14 +543,13 @@ begin
                        and not has_schema_privilege('membership_guard', 'platform', 'CREATE'),
     'membership_guard creates nothing');
   perform tests.assert(not has_table_privilege('membership_guard', 'auth.users', 'select')
-                       and has_table_privilege('membership_guard', 'private.auth_account_access', 'select'),
+                       and has_table_privilege('membership_guard', 'private.auth_account_email', 'select'),
     'membership_guard reads auth.users only through the view');
   select string_agg(a.attname, ', ' order by a.attnum) into v_list
-  from pg_attribute a where a.attrelid = 'private.auth_account_access'::regclass and a.attnum > 0 and not a.attisdropped;
-  perform tests.assert_eq(v_list, 'id, email, banned_until, is_sso_user',
-    'private.auth_account_access: id, e-mail and ban state only');
+  from pg_attribute a where a.attrelid = 'private.auth_account_email'::regclass and a.attnum > 0 and not a.attisdropped;
+  perform tests.assert_eq(v_list, 'id, email', 'private.auth_account_email: id and e-mail only');
   -- What it may change: memberships suspended → active (status only), session_context rows (delete only);
-  -- never roles, persons or audit records.
+  -- never roles, persons, organizations, invitations or audit records.
   perform tests.assert(has_column_privilege('membership_guard', 'platform.tenant_memberships', 'status', 'update')
                        and not has_column_privilege('membership_guard', 'platform.tenant_memberships', 'user_id', 'update')
                        and not has_column_privilege('membership_guard', 'platform.tenant_memberships', 'person_id', 'update')
@@ -577,38 +572,33 @@ begin
   perform tests.assert(not has_table_privilege('membership_guard', 'platform.audit_events', 'select, insert, update, delete')
                        and not has_table_privilege('membership_guard', 'platform.event_outbox', 'select, insert, update, delete'),
     'membership_guard writes no audit record or event (the calling action does)');
-  -- The queue, the record of our bans and the view: no privilege for any application role.
-  perform tests.assert((select bool_and(relrowsecurity and relforcerowsecurity) from pg_class
-                        where oid in ('private.account_access_checks'::regclass, 'private.account_bans'::regclass)),
-    'account_access_checks / account_bans: row level security must be ENABLED and FORCED');
+  -- The e-mail view: no privilege for any other role.
   foreach v_role in array array['anon', 'authenticated', 'service_role', 'app_server', 'app_worker', 'app_queue',
                                 'tenant_guard', 'invitation_guard', 'account_mail_guard', 'supabase_auth_admin'] loop
     perform tests.assert(
-      not has_table_privilege(v_role, 'private.account_access_checks', 'select, insert, update, delete, truncate, references, trigger')
-        and not has_table_privilege(v_role, 'private.account_bans', 'select, insert, update, delete, truncate, references, trigger')
-        and not has_table_privilege(v_role, 'private.auth_account_access', 'select, insert, update, delete, truncate, references, trigger'),
-      format('%s must have no privilege on the Auth ban queue, its record or private.auth_account_access', v_role));
+      not has_table_privilege(v_role, 'private.auth_account_email', 'select, insert, update, delete, truncate, references, trigger'),
+      format('%s must have no privilege on private.auth_account_email', v_role));
   end loop;
   for v_list in
     select distinct format('%s → %s', p.oid::regprocedure,
                            case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end)
     from pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
     where p.proowner = 'membership_guard'::regrole and a.privilege_type = 'EXECUTE' and a.grantee <> p.proowner
-      and not (pg_get_userbyid(a.grantee) = 'authenticated'
-               and p.oid in ('private.reactivate_membership(uuid)'::regprocedure,
-                             'private.claim_account_access_check()'::regprocedure,
-                             'private.finish_account_access_check(uuid,timestamptz,text)'::regprocedure,
-                             'private.retry_account_access_check(uuid)'::regprocedure))
+      and not (pg_get_userbyid(a.grantee) = 'authenticated' and p.oid = 'private.reactivate_membership(uuid)'::regprocedure)
+      and not (pg_get_userbyid(a.grantee) = 'supabase_auth_admin'
+               and p.oid = 'private.account_sign_in_refused(uuid)'::regprocedure)
   loop
     perform tests.assert(false, format('unexpected EXECUTE: %s', v_list));
   end loop;
+  perform tests.assert(has_function_privilege('supabase_auth_admin', 'private.account_sign_in_refused(uuid)', 'execute'),
+    'the access-token hook (supabase_auth_admin) may ask the sign-in rule');
   -- The triggers are in place and enabled.
   perform tests.assert((select count(*) from pg_trigger t
                         where t.tgenabled = 'O' and (t.tgrelid, t.tgname, t.tgfoid) in (
                           ('platform.tenant_memberships'::regclass, 'tenant_memberships_end_sessions', 'private.end_member_sessions()'::regprocedure),
-                          ('platform.tenant_memberships'::regclass, 'tenant_memberships_access_check', 'private.membership_access_changed()'::regprocedure),
-                          ('platform.invitations'::regclass, 'invitations_access_check', 'private.invitation_access_changed()'::regprocedure))) = 3,
-    'deactivation triggers (sessions, Auth ban queue) exist and are enabled');
+                          ('platform.tenant_memberships'::regclass, 'tenant_memberships_privileged_deactivation',
+                           'private.check_privileged_deactivation()'::regprocedure))) = 2,
+    'deactivation triggers (sessions, privileged members at AAL2) exist and are enabled');
 end $$;
 
 rollback;

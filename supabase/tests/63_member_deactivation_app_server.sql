@@ -3,9 +3,10 @@
 -- is: who may deactivate whom (Organization Admin; HR Manager for members without a privileged role; never
 -- oneself; never the last Organization Admin without an end date), what a deactivation ends at once (the
 -- member's access to THIS organization, through the database: claims refused, organization chooser,
--- session contexts), what it keeps (records, roles, other organizations), and the checked reactivation
--- function (privileged members: Organization Admin with AAL2). Fixtures and the helpers tests.t09_as /
--- tests.t09_deactivate: 62_member_deactivation_owner.sql. Every block is rolled back.
+-- session contexts), what it keeps (records, roles, other organizations), the checked reactivation
+-- function, and the authenticator code (AAL2) both directions need for a member who holds a privileged role
+-- (in force or future-dated; review M4, D-IAM-01). Fixtures and the helpers tests.t09_as / tests.t09_deactivate
+-- / tests.t09_holds_lock: 62_member_deactivation_owner.sql. Every block is rolled back.
 \set ON_ERROR_STOP on
 
 do $$ begin perform tests.assert(session_user = 'app_server', 'must run connected as app_server'); end $$;
@@ -150,7 +151,7 @@ rollback;
 -- cannot be deactivated by uA2 — the organization would be left without a lasting administrator (T-IAM-38).
 begin;
 set local role authenticated;
-select tests.t09_as('admin2');
+select tests.t09_as('admin2', 'aal2');
 do $$
 begin
   perform tests.assert_fails($q$select tests.t09_deactivate('a1000000-0000-4000-8000-0000000000a1')$q$,
@@ -161,7 +162,7 @@ rollback;
 -- uA2 itself can be deactivated by uA (an Organization Admin without an end date remains).
 begin;
 set local role authenticated;
-select tests.t09_as('admin');
+select tests.t09_as('admin', 'aal2');
 do $$
 begin
   perform tests.assert_eq(tests.t09_deactivate('9d100000-0000-4000-8000-0000000000a7'), 1::bigint,
@@ -171,7 +172,70 @@ reset role;
 rollback;
 
 -- ---------------------------------------------------------------------------------------------------
--- Tenant isolation, and the Auth ban queue out of reach
+-- A member who holds a privileged role is deactivated only with an authenticator code (review M4)
+-- ---------------------------------------------------------------------------------------------------
+-- uP (Compliance Officer, in force) and uF (Auditor from in 10 days) are privileged; uE's Auditor role
+-- ended yesterday (not privileged any more). The same test as the reactivation.
+begin;
+set local role authenticated;
+select tests.t09_as('admin');
+do $$
+begin
+  perform tests.assert_fails($q$update platform.tenant_memberships set status = 'suspended' where person_id = '9d100000-0000-4000-8000-0000000000a4'$q$,
+    array['JM003'], 'Organization Admin at AAL1: a privileged member needs an authenticator code');
+  perform tests.assert_fails($q$update platform.tenant_memberships set status = 'suspended' where person_id = '9d100000-0000-4000-8000-0000000000aa'$q$,
+    array['JM003'], 'a future-dated privileged role counts');
+  perform tests.assert_eq(tests.t09_deactivate('9d100000-0000-4000-8000-0000000000a9'), 1::bigint,
+    'an ended privileged role does not: deactivated at AAL1');
+  perform tests.assert_eq(tests.t09_deactivate('9d100000-0000-4000-8000-0000000000a2'), 1::bigint,
+    'an ordinary member at AAL1');
+end $$;
+select tests.t09_as('admin', 'aal2');
+do $$
+begin
+  perform tests.assert_eq(tests.t09_deactivate('9d100000-0000-4000-8000-0000000000a4'), 1::bigint,
+    'Organization Admin at AAL2: the privileged member is deactivated');
+  perform tests.assert_eq(tests.t09_deactivate('9d100000-0000-4000-8000-0000000000aa'), 1::bigint,
+    'and the member with a future-dated privileged role');
+end $$;
+reset role;
+rollback;
+-- Revoking (not only suspending) an active privileged membership is the same rule; an HR Manager is
+-- refused before it (only an Organization Admin changes a privileged member), also at AAL2.
+begin;
+set local role authenticated;
+select tests.t09_as('admin');
+do $$
+begin
+  perform tests.assert_fails($q$update platform.tenant_memberships set status = 'revoked' where person_id = '9d100000-0000-4000-8000-0000000000a4'$q$,
+    array['JM003'], 'leaving active by revocation: also refused at AAL1');
+end $$;
+select tests.t09_as('hr', 'aal2');
+do $$
+begin
+  perform tests.assert_fails($q$update platform.tenant_memberships set status = 'suspended' where person_id = '9d100000-0000-4000-8000-0000000000a4'$q$,
+    array['42501'], 'HR Manager at AAL2: still not a privileged member');
+end $$;
+reset role;
+rollback;
+
+-- ---------------------------------------------------------------------------------------------------
+-- The organization switch holds the membership's lock (shared) until it commits (review L3)
+-- ---------------------------------------------------------------------------------------------------
+begin;
+set local role authenticated;
+select tests.t09_as('x_signing_in');
+do $$
+begin
+  perform tests.assert(private.switch_active_tenant('a0000000-0000-4000-8000-000000000001'), 'uX selects A');
+  perform tests.assert(tests.t09_holds_lock('platform.membership:a0000000-0000-4000-8000-000000000001:9d000000-0000-4000-8000-000000000001', 'ShareLock'),
+    'the switch holds the membership''s lock shared (a deactivation waits for it, then ends the new session too)');
+end $$;
+reset role;
+rollback;
+
+-- ---------------------------------------------------------------------------------------------------
+-- Tenant isolation, and the sign-in rule out of reach
 -- ---------------------------------------------------------------------------------------------------
 begin;
 set local role authenticated;
@@ -189,22 +253,12 @@ begin
   perform tests.assert_fails($q$select private.reactivate_membership('a1000000-0000-4000-8000-0000000000e1')$q$,
     array['JM001'], 'a person of A without membership: JM001');
   perform tests.assert_fails($q$select private.reactivate_membership(null)$q$, array['42501'], 'no person: refused');
-  perform tests.assert_privilege_denied($q$select * from private.account_access_checks$q$,
-    'the Auth ban queue is not readable by the web app');
-  perform tests.assert_privilege_denied($q$select * from private.account_bans$q$,
-    'nor the record of our bans');
-  perform tests.assert_privilege_denied($q$select * from private.auth_account_access$q$,
-    'nor the Auth accounts view');
-  perform tests.assert_fails($q$select * from private.claim_account_access_check()$q$, array['42501'],
-    'the web app cannot lease Auth ban checks');
-  perform tests.assert_fails($q$select private.finish_account_access_check('9d000000-0000-4000-8000-000000000001', now(), 'banned')$q$,
-    array['42501'], 'nor record bans');
-  perform tests.assert_fails($q$select private.retry_account_access_check('9d000000-0000-4000-8000-000000000001')$q$,
-    array['42501'], 'nor put checks back');
-  perform tests.assert_fails($q$select private.queue_account_access_check('9d000000-0000-4000-8000-000000000001')$q$,
-    array['42501'], 'nor queue checks directly');
-  perform tests.assert_fails($q$select private.account_should_be_banned('9d000000-0000-4000-8000-000000000001')$q$,
-    array['42501'], 'nor ask the decision directly');
+  perform tests.assert_privilege_denied($q$select * from private.auth_account_email$q$,
+    'the web app cannot read the Auth accounts'' e-mail view');
+  perform tests.assert_fails($q$select private.account_sign_in_refused('9d000000-0000-4000-8000-000000000001')$q$,
+    array['42501'], 'nor ask the sign-in rule about any account (Auth only)');
+  perform tests.assert_fails($q$select private.custom_access_token_hook('{}'::jsonb)$q$,
+    array['42501'], 'nor run the access-token hook');
 end $$;
 reset role;
 rollback;

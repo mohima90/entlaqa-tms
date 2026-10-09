@@ -8,11 +8,17 @@
 --   (private.check_membership_change_actor), never the last active Organization Admin
 --   (private.check_last_admin_membership); the person record by the same people
 --   (private.check_person_writer). This migration adds:
+--     * a privileged member (privileged role in force or future-dated: private.membership_is_privileged,
+--       the reactivation test) is deactivated only with an authenticator code (AAL2 — PO decision D-IAM-01,
+--       review M4): private.check_privileged_deactivation, owner membership_guard;
 --     * end of the member's sign-in sessions IN THIS ORGANIZATION (tenant-scoped, never global: T-IAM-40):
 --       when a membership leaves `active`, that tenant's platform.session_context rows of the user are
 --       removed. private.current_tenant_id() already refuses the old claims at the next statement (no
 --       active membership); without a session_context row the old sessions also stay out after a later
---       reactivation — the member signs in again (T-IAM-39);
+--       reactivation — the member selects the organization again: by signing in again, or in the
+--       organization chooser of a session that is still signed in elsewhere (T-IAM-39). A concurrent
+--       organization switch cannot leave a row behind: switch and deactivation take the same per-membership
+--       advisory lock (shared / exclusive, review L3);
 --     * one lock order for the people responsibilities that deactivation reassigns (direct reports and
 --       department heads, T-M2-02 decision): setting a department head now takes the same per-tenant
 --       lock as setting a direct manager (`platform.person_employment:<tenant>`), and the deactivation
@@ -29,7 +35,8 @@
 --   only after the person was made active again (by the same request, under the person write guard).
 --   Roles are kept as they were (screen 4 says nothing about them; documented in the screens README).
 -- Errors (SQLSTATE → @jadarat/platform-db): JM001 no membership here · JM002 not deactivated ·
--- JM003 authenticator code needed · JM004 the person is still inactive · 42501 wrong caller or actor.
+-- JM003 authenticator code needed (reactivation or deactivation of a privileged member) · JM004 the
+-- person is still inactive · 42501 wrong caller or actor.
 
 -- ---------------------------------------------------------------------------------------------------
 -- Role membership_guard (attribute policy as in 20260930120000)
@@ -151,6 +158,10 @@ set search_path = ''
 as $$
 begin
   if old.status = 'active' and new.status <> 'active' then
+    -- Waits for an organization switch of this membership in flight (it holds the lock shared until it
+    -- commits); the DELETE below is a later statement, so it sees that switch's row (READ COMMITTED).
+    perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(
+      'platform.membership:' || new.tenant_id::text || ':' || new.user_id::text, 0));
     delete from platform.session_context c
     where c.active_tenant_id = new.tenant_id and c.user_id = new.user_id;
   end if;
@@ -165,6 +176,81 @@ revoke all on function private.end_member_sessions() from public;
 
 create trigger tenant_memberships_end_sessions after update of status on platform.tenant_memberships
   for each row execute function private.end_member_sessions();
+
+-- As in 20260930120100, plus: the switch holds the membership's advisory lock SHARED from before its
+-- membership check until it commits. A deactivation takes it EXCLUSIVE (private.end_member_sessions):
+-- either the switch commits first and its session_context row is then removed, or the switch waits and
+-- then finds the membership no longer active (review L3). A row lock (FOR SHARE) would need UPDATE
+-- privileges and an update policy for tenant_guard; the advisory lock needs none.
+create or replace function private.switch_active_tenant(p_tenant_id uuid)
+returns boolean
+language plpgsql volatile security definer
+set search_path = ''
+as $$
+declare
+  v_claims jsonb := private.request_claims();
+  v_user uuid;
+  v_session uuid;
+begin
+  if session_user <> 'app_server' or v_claims is null or coalesce(v_claims ->> 'role', '') <> 'authenticated' then
+    return false;
+  end if;
+  v_user := private.try_uuid(v_claims ->> 'sub');
+  v_session := private.try_uuid(v_claims ->> 'session_id');
+  if not private.user_session_is_valid(v_user, v_session) or p_tenant_id is null then
+    return false;
+  end if;
+  perform pg_catalog.pg_advisory_xact_lock_shared(pg_catalog.hashtextextended(
+    'platform.membership:' || p_tenant_id::text || ':' || v_user::text, 0));
+  if not private.has_active_membership(v_user, p_tenant_id) then
+    return false;
+  end if;
+
+  insert into platform.session_context as c (session_id, user_id, active_tenant_id, updated_at)
+  values (v_session, v_user, p_tenant_id, now())
+  on conflict (session_id) do update
+    set active_tenant_id = excluded.active_tenant_id,
+        updated_at = excluded.updated_at
+    where c.user_id = excluded.user_id;
+  return found;
+end
+$$;
+
+-- ---------------------------------------------------------------------------------------------------
+-- Deactivating a privileged member needs an authenticator code (review M4, D-IAM-01)
+-- ---------------------------------------------------------------------------------------------------
+-- Request path only (user claims): an active membership that leaves `active` while it holds a privileged
+-- role — in force or future-dated, the same test as private.reactivate_membership — needs claims at
+-- aal2. Who may do it at all stays with private.check_membership_change_actor (Organization Admin only;
+-- that trigger, `tenant_memberships_guard`, fires first). Platform operations and jobs are not request-path
+-- deactivations. SECURITY DEFINER (owner membership_guard) so the role test sees every role assignment of
+-- the organization, whatever the caller may read.
+create or replace function private.check_privileged_deactivation()
+returns trigger
+language plpgsql security definer
+set search_path = ''
+as $$
+declare
+  v_claims jsonb := private.request_claims();
+begin
+  if old.status = 'active' and new.status <> 'active'
+     and coalesce(v_claims ->> 'role', '') = 'authenticated'
+     and private.membership_is_privileged(new.tenant_id, new.id)
+     and (v_claims ->> 'aal') is distinct from 'aal2' then
+    raise exception 'deactivating a member who holds a privileged role needs an authenticator code'
+      using errcode = 'JM003';
+  end if;
+  return new;
+end
+$$;
+
+comment on function private.check_privileged_deactivation() is
+  'SECURITY-RELEVANT (FR-IAM-05, D-IAM-01, review M4). Trigger: a request-path deactivation of a member who holds a privileged role needs AAL2. membership_guard.';
+
+revoke all on function private.check_privileged_deactivation() from public;
+
+create trigger tenant_memberships_privileged_deactivation before update of status on platform.tenant_memberships
+  for each row execute function private.check_privileged_deactivation();
 
 -- ---------------------------------------------------------------------------------------------------
 -- Reactivation (membership suspended → active)
@@ -274,6 +360,7 @@ comment on function private.reactivate_membership(uuid) is
 -- Ownership hand-over as in migration 20260930120100 (non-superuser migration role on hosted Supabase).
 grant create on schema private to membership_guard;
 alter function private.end_member_sessions() owner to membership_guard;
+alter function private.check_privileged_deactivation() owner to membership_guard;
 alter function private.reactivate_membership(uuid) owner to membership_guard;
 revoke create on schema private from membership_guard;
 

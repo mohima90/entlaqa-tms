@@ -456,10 +456,14 @@ begin
   perform tests.assert(not has_function_privilege('authenticated',
       'private.apply_invitation_acceptance(bytea,uuid,text,text)', 'execute'),
     'only the acceptance functions run the acceptance effects');
+  -- Readers: invitation_guard (FR-IAM-03) and rate_limit_guard (the Organization Admin's sign-in unlock,
+  -- T-M2-11: a member's address → the account's limiter key).
   perform tests.assert(not has_table_privilege('authenticated', 'private.auth_user_email', 'select')
                        and not has_table_privilege('tenant_guard', 'private.auth_user_email', 'select')
-                       and has_table_privilege('invitation_guard', 'private.auth_user_email', 'select'),
-    'private.auth_user_email: invitation_guard only');
+                       and not has_table_privilege('account_mail_guard', 'private.auth_user_email', 'select')
+                       and has_table_privilege('invitation_guard', 'private.auth_user_email', 'select')
+                       and has_table_privilege('rate_limit_guard', 'private.auth_user_email', 'select'),
+    'private.auth_user_email: invitation_guard and rate_limit_guard only');
   perform tests.assert(not has_table_privilege('invitation_guard', 'auth.users', 'select'),
     'invitation_guard reads auth.users only through the view');
   -- Request path: every invitation column but the token hash.
@@ -486,6 +490,7 @@ begin
   from pg_proc p where p.proowner = 'account_mail_guard'::regrole;
   perform tests.assert_eq(v_list,
     'private.claim_account_mail_request(), private.finish_account_mail_request(uuid), '
+    'private.request_account_locked_mail(text,integer), '
     'private.request_password_changed_mail(uuid), private.request_password_reset_mail(text), '
     'private.retry_account_mail_request(uuid)',
     'account_mail_guard owns the account e-mail functions only, all SECURITY DEFINER');

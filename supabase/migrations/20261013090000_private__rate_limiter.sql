@@ -1,35 +1,54 @@
--- Shared rate limiter (ADR 0011 §4; T-M2-11, SCS-16; TM-0003 T-IAM-01/03/31). One set of counters for
--- every app instance and Vercel function, replacing per-instance memory: sign-in (per account and per
--- client), the My profile current-password check (per user), password reset (request and completion) and
--- invitation links. Class: P (platform, no tenant). PII: none stored — keys are keyed hashes only.
+-- Shared rate limiter and sign-in protection (ADR 0011 §4; T-M2-11, SCS-16, FR-IAM-13; TM-0003 T-IAM-01/03/31;
+-- PO decisions 9 Oct 2026). One set of counters for every app instance and Vercel function, replacing
+-- per-instance memory: sign-in (per account, per trusted browser of an account and per client), the My
+-- profile current-password check (per user), password reset (request and completion) and invitation links.
+-- Class: P (platform, no tenant). PII: none stored — keys are keyed hashes only.
 --
---   private.rate_limit_secret    the limiter's HMAC key (one row): generated here from the server's strong
---                                random source, kept as HMAC-SHA-256's inner and outer padded keys. Readable
---                                by rate_limit_guard only — never by app_server, app_worker or authenticated.
+--   private.rate_limit_secret    the limiter's two HMAC keys (one row): the COUNTER key (counters and trusted
+--                                browsers are found by it) and the LOG key (the `rk_…` references in log
+--                                lines), so a log line never repeats a stored key. Generated here from the
+--                                server's strong random source, kept as HMAC-SHA-256's inner and outer padded
+--                                keys. Readable by rate_limit_guard only — never by app_server, app_worker or
+--                                authenticated. The pseudonymisation rests on the database's confidentiality:
+--                                whoever reads this table (pg_read_all_data, a backup) can test guesses
+--                                against references and counters (docs/engineering/sign-in-protection.md §2).
+--                                private.rotate_rate_limit_keys() replaces both keys.
 --   private.rate_limit_counters  UNLOGGED (ADR 0011 §4): (bucket, key_hash) → hits within a window that ends
---                                at reset_at. key_hash = HMAC-SHA-256(secret, subject); the subject is the
---                                app's SHA-256 of the normalised key (e-mail, client address or user id —
+--                                at reset_at. key_hash = HMAC-SHA-256(counter key, subject); the subject is
+--                                the app's SHA-256 of the normalised key (e-mail, client address, user id —
 --                                packages/platform-identity/src/auth-limits.ts), so neither a raw key nor an
 --                                unkeyed hash of one is stored or ever reaches SQL. Counters are lost on a
 --                                crash (unlogged): every limit starts again, which only ever loosens them.
+--   private.sign_in_trusted_devices  browsers that signed in to an account (PO decision 9 Oct 2026, screen 6
+--                                «تذكّر الجهاز الموثوق», TM-0003 IA-02 "cookie + hashed server record"):
+--                                (keyed hash of the account subject, keyed hash of the browser's random token)
+--                                → expiry. A trusted browser is not stopped by its account's lock, only by its
+--                                own failure budget. The token lives in an HttpOnly cookie; only its hash
+--                                reaches SQL.
 --   rate_limit_guard             NOLOGIN owner of the functions (pattern of account_mail_guard).
 --
---   private.rate_limit_hit(bucket, subject, max_hits, window_seconds)  counts one hit and says whether it is
---                                within the limit. The hit that uses the budget up starts a full window: a
---                                locked key stays locked for `window_seconds` from then (security settings
---                                screen 6: "lock for 15 minutes after 5 failures"). Race-safe (INSERT … ON
---                                CONFLICT takes the key's row lock; concurrent hits of one key serialise,
---                                other keys never wait). Each call also removes up to 20 expired counters
---                                (SKIP LOCKED: purging never waits for anyone) — retention is bounded by the
---                                longest window (≤ 24 hours) without any job.
---   private.rate_limit_peek(bucket, subject, max_hits)  whether the key is within its limit now, without
---                                counting (failure counters are checked before Auth and counted after it).
---   private.rate_limit_clear(bucket, subject)           forgets a key (a successful sign-in ends the
---                                account's run of consecutive failures; a completed password reset unlocks).
---
--- Callers: the web app only (session_user app_server, inside its `set local role authenticated`
--- transaction without claims — the pattern of private.request_password_reset_mail). Errors: 42501 wrong
--- caller; 22023 invalid argument.
+-- Entry points of the web app (session_user app_server, inside its `set local role authenticated`
+-- transaction — without claims, the pattern of private.request_password_reset_mail, except the two
+-- Organization Admin functions, which run with the admin's claims):
+--   rate_limit_hit / _peek / _clear     generic counters (password check, reset, invitations). The hit that
+--                                uses a budget up starts a full window: a locked key stays locked for the
+--                                whole window from then. Race-safe (INSERT … ON CONFLICT takes the key's row
+--                                lock; concurrent hits of one key serialise, other keys never wait).
+--   rate_limit_sign_in_check     BEFORE Auth is asked, in one round trip: counts the attempt for the client,
+--                                then provisionally a failure for the client and for the account — or, for a
+--                                browser the account trusts, for that browser — and refuses when a budget is
+--                                used up (security review T-M2-11: counting first bounds parallel guesses).
+--   rate_limit_sign_in_succeeded the password was right: the client's provisional failure is refunded, the
+--                                account's (or the browser's) run of failures ends, the browser is trusted
+--                                (again) for the account.
+--   rate_limit_sign_in_reset     a completed password reset: the account's lock ends and every browser it
+--                                trusted is forgotten.
+--   member_sign_in_lock / unlock_member_sign_in   Organization Admin (own organization's members only):
+--                                whether a member's account is locked; end the lock.
+-- Owner only: rotate_rate_limit_keys() (new keys; every counter and trusted browser restarts).
+-- Each counting function also removes up to 20 expired counters and trusted browsers (SKIP LOCKED: purging
+-- never waits) — retention is bounded by the longest window (≤ 24 hours) or trust period without any job.
+-- Errors: 42501 wrong caller; 22023 invalid argument.
 
 -- ---------------------------------------------------------------------------------------------------
 -- Role rate_limit_guard (attribute policy as in 20260930120000)
@@ -67,45 +86,71 @@ grant rate_limit_guard to current_user;
 grant usage on schema private to rate_limit_guard;
 
 -- ---------------------------------------------------------------------------------------------------
--- private.rate_limit_secret: the HMAC key, as HMAC-SHA-256's padded keys (RFC 2104 with a 64-byte key K:
--- inner = K xor 0x36…, outer = K xor 0x5c…; HMAC(m) = SHA-256(outer ‖ SHA-256(inner ‖ m)))
+-- Key generation (SECURITY INVOKER; executable by its owner only — the migration, then rate_limit_guard)
+-- ---------------------------------------------------------------------------------------------------
+-- Two 64-byte keys K, each from four version-4 UUIDs — gen_random_uuid() draws on the server's strong
+-- random source (pg_strong_random), 122 random bits each: 488 bits per key. Returned as HMAC-SHA-256's
+-- padded keys (RFC 2104: inner = K xor 0x36…, outer = K xor 0x5c…; HMAC(m) = SHA-256(outer ‖ SHA-256(inner
+-- ‖ m))). Generated in the database, so the keys are the same for every app instance and never configured,
+-- copied or logged anywhere.
+create or replace function private.rate_limit_generate_keys(out inner_key bytea, out outer_key bytea,
+                                                            out log_inner_key bytea, out log_outer_key bytea)
+language plpgsql volatile
+set search_path = ''
+as $$
+declare
+  v_counter bytea := pg_catalog.uuid_send(pg_catalog.gen_random_uuid()) || pg_catalog.uuid_send(pg_catalog.gen_random_uuid())
+                  || pg_catalog.uuid_send(pg_catalog.gen_random_uuid()) || pg_catalog.uuid_send(pg_catalog.gen_random_uuid());
+  v_log bytea := pg_catalog.uuid_send(pg_catalog.gen_random_uuid()) || pg_catalog.uuid_send(pg_catalog.gen_random_uuid())
+              || pg_catalog.uuid_send(pg_catalog.gen_random_uuid()) || pg_catalog.uuid_send(pg_catalog.gen_random_uuid());
+begin
+  inner_key := v_counter;
+  outer_key := v_counter;
+  log_inner_key := v_log;
+  log_outer_key := v_log;
+  for i in 0..63 loop
+    inner_key := pg_catalog.set_byte(inner_key, i, pg_catalog.get_byte(v_counter, i) # 54);   -- 0x36
+    outer_key := pg_catalog.set_byte(outer_key, i, pg_catalog.get_byte(v_counter, i) # 92);   -- 0x5c
+    log_inner_key := pg_catalog.set_byte(log_inner_key, i, pg_catalog.get_byte(v_log, i) # 54);
+    log_outer_key := pg_catalog.set_byte(log_outer_key, i, pg_catalog.get_byte(v_log, i) # 92);
+  end loop;
+end
+$$;
+
+comment on function private.rate_limit_generate_keys() is
+  'SECURITY-RELEVANT (T-M2-11). New counter and log keys of the rate limiter (HMAC-SHA-256 padded keys). Owner only.';
+
+revoke all on function private.rate_limit_generate_keys() from public;
+
+-- ---------------------------------------------------------------------------------------------------
+-- private.rate_limit_secret
 -- ---------------------------------------------------------------------------------------------------
 create table private.rate_limit_secret (
   id boolean primary key default true,
   inner_key bytea not null,
   outer_key bytea not null,
+  log_inner_key bytea not null,
+  log_outer_key bytea not null,
   created_at timestamptz not null default now(),
   constraint rate_limit_secret_single_row check (id),
-  constraint rate_limit_secret_inner_length check (octet_length(inner_key) = 64),
-  constraint rate_limit_secret_outer_length check (octet_length(outer_key) = 64)
+  constraint rate_limit_secret_key_length check (
+    octet_length(inner_key) = 64 and octet_length(outer_key) = 64
+    and octet_length(log_inner_key) = 64 and octet_length(log_outer_key) = 64)
 );
 comment on table private.rate_limit_secret is
-  'SECURITY-RELEVANT (ADR 0011 §4, T-M2-11). HMAC key of the shared rate limiter (padded inner/outer keys). Readable by rate_limit_guard only. Replacing the row restarts every counter.';
+  'SECURITY-RELEVANT (ADR 0011 §4, T-M2-11). Counter and log HMAC keys of the shared rate limiter (padded inner/outer keys). Readable by rate_limit_guard only. private.rotate_rate_limit_keys() replaces them (every counter and trusted browser restarts).';
 
--- K: 64 bytes from four version-4 UUIDs — gen_random_uuid() draws on the server's strong random source
--- (pg_strong_random), 122 random bits each: 488 bits in all. Generated in the database, so it is the same
--- for every app instance and never configured, copied or logged anywhere.
-do $$
-declare
-  v_key bytea := pg_catalog.uuid_send(pg_catalog.gen_random_uuid()) || pg_catalog.uuid_send(pg_catalog.gen_random_uuid())
-              || pg_catalog.uuid_send(pg_catalog.gen_random_uuid()) || pg_catalog.uuid_send(pg_catalog.gen_random_uuid());
-  v_inner bytea := v_key;
-  v_outer bytea := v_key;
-begin
-  for i in 0..63 loop
-    v_inner := pg_catalog.set_byte(v_inner, i, pg_catalog.get_byte(v_key, i) # 54);  -- 0x36
-    v_outer := pg_catalog.set_byte(v_outer, i, pg_catalog.get_byte(v_key, i) # 92);  -- 0x5c
-  end loop;
-  insert into private.rate_limit_secret (inner_key, outer_key) values (v_inner, v_outer);
-end
-$$;
+insert into private.rate_limit_secret (inner_key, outer_key, log_inner_key, log_outer_key)
+select k.inner_key, k.outer_key, k.log_inner_key, k.log_outer_key from private.rate_limit_generate_keys() k;
 
--- Row level security after the key is in (the migration role needs no policy of its own).
+-- Row level security after the keys are in (the migration role needs no policy of its own).
 alter table private.rate_limit_secret enable row level security;
 alter table private.rate_limit_secret force row level security;
 create policy rate_limit_secret_guard_read on private.rate_limit_secret for select to rate_limit_guard using (true);
+create policy rate_limit_secret_guard_rotate on private.rate_limit_secret for update to rate_limit_guard
+  using (true) with check (true);
 revoke all on private.rate_limit_secret from public;
-grant select on private.rate_limit_secret to rate_limit_guard;
+grant select, update on private.rate_limit_secret to rate_limit_guard;
 
 -- ---------------------------------------------------------------------------------------------------
 -- private.rate_limit_counters
@@ -121,7 +166,7 @@ create unlogged table private.rate_limit_counters (
   constraint rate_limit_counters_hits_check check (hits between 1 and 1000001)
 );
 comment on table private.rate_limit_counters is
-  'SECURITY-RELEVANT (ADR 0011 §4, T-M2-11). Shared rate-limit counters: keyed hashes only (never a raw or unkeyed key). Unlogged; expired rows are purged by the hit function. Only rate_limit_guard''s functions reach it.';
+  'SECURITY-RELEVANT (ADR 0011 §4, T-M2-11). Shared rate-limit counters: keyed hashes only (never a raw or unkeyed key). Unlogged; expired rows are purged by the counting functions. Only rate_limit_guard''s functions reach it.';
 
 create index rate_limit_counters_reset_at_idx on private.rate_limit_counters (reset_at);
 
@@ -133,10 +178,55 @@ revoke all on private.rate_limit_counters from public;
 grant select, insert, update, delete on private.rate_limit_counters to rate_limit_guard;
 
 -- ---------------------------------------------------------------------------------------------------
--- Functions (owner rate_limit_guard)
+-- private.sign_in_trusted_devices
+-- ---------------------------------------------------------------------------------------------------
+create table private.sign_in_trusted_devices (
+  account_key bytea not null,
+  device_key bytea not null,
+  created_at timestamptz not null default now(),
+  expires_at timestamptz not null,
+  primary key (account_key, device_key),
+  constraint sign_in_trusted_devices_account_key_check check (octet_length(account_key) = 32),
+  constraint sign_in_trusted_devices_device_key_check check (octet_length(device_key) = 32),
+  constraint sign_in_trusted_devices_expiry_check check (expires_at > created_at)
+);
+comment on table private.sign_in_trusted_devices is
+  'SECURITY-RELEVANT (T-M2-11, PO decision 9 Oct 2026). Browsers trusted by an account (keyed hashes of the account subject and of the browser''s cookie token) until expires_at. Only rate_limit_guard''s functions reach it.';
+
+create index sign_in_trusted_devices_expires_at_idx on private.sign_in_trusted_devices (expires_at);
+
+alter table private.sign_in_trusted_devices enable row level security;
+alter table private.sign_in_trusted_devices force row level security;
+create policy sign_in_trusted_devices_guard on private.sign_in_trusted_devices for all to rate_limit_guard
+  using (true) with check (true);
+revoke all on private.sign_in_trusted_devices from public;
+grant select, insert, update, delete on private.sign_in_trusted_devices to rate_limit_guard;
+
+-- ---------------------------------------------------------------------------------------------------
+-- What the Organization Admin functions read (explicit grants + policies `to rate_limit_guard`, limited to
+-- the caller's organization). Auth accounts through private.auth_user_email (id, email).
+-- ---------------------------------------------------------------------------------------------------
+grant usage on schema platform to rate_limit_guard;
+create policy tenant_memberships_rate_limit_guard_read on platform.tenant_memberships for select
+  to rate_limit_guard using (tenant_id = (select private.current_tenant_id()));
+grant select (id, tenant_id, user_id, person_id, status) on platform.tenant_memberships to rate_limit_guard;
+create policy role_assignments_rate_limit_guard_read on platform.role_assignments for select
+  to rate_limit_guard using (tenant_id = (select private.current_tenant_id()));
+grant select (tenant_id, membership_id, role_code, valid_from, valid_until) on platform.role_assignments
+  to rate_limit_guard;
+grant select on private.auth_user_email to rate_limit_guard;
+
+grant execute on function private.try_uuid(text) to rate_limit_guard;
+grant execute on function private.request_claims() to rate_limit_guard;
+grant execute on function private.request_user_id() to rate_limit_guard;
+grant execute on function private.current_tenant_id() to rate_limit_guard;
+grant execute on function private.actor_role_codes(uuid, uuid) to rate_limit_guard;
+
+-- ---------------------------------------------------------------------------------------------------
+-- Helpers (owner rate_limit_guard, SECURITY INVOKER: called by its definer functions only)
 -- ---------------------------------------------------------------------------------------------------
 
--- The keyed hash of a subject (SECURITY INVOKER: callable only by the owner's definer functions).
+-- The keyed hash of a subject under the COUNTER key: how counters and trusted browsers are found.
 create or replace function private.rate_limit_key(p_subject bytea)
 returns bytea
 language sql stable
@@ -148,9 +238,25 @@ as $$
 $$;
 
 comment on function private.rate_limit_key(bytea) is
-  'SECURITY-RELEVANT (T-M2-11). HMAC-SHA-256 of a rate-limit subject under the limiter''s key. Called by the rate_limit_* definer functions only.';
+  'SECURITY-RELEVANT (T-M2-11). HMAC-SHA-256 of a rate-limit subject under the counter key. Called by the rate limiter''s definer functions only.';
 
--- Argument checks shared by the three functions (SECURITY INVOKER; raises 42501 / 22023).
+-- The reference of a subject in log lines: `rk_` + 12 bytes of its HMAC under the LOG key (hex). Correlates
+-- log lines; reveals nothing, and is no prefix of any stored key.
+create or replace function private.rate_limit_ref(p_subject bytea)
+returns text
+language sql stable
+set search_path = ''
+as $$
+  select 'rk_' || pg_catalog.encode(pg_catalog.substr(
+           pg_catalog.sha256(s.log_outer_key || pg_catalog.sha256(s.log_inner_key || p_subject)), 1, 12), 'hex')
+  from private.rate_limit_secret s
+  where s.id
+$$;
+
+comment on function private.rate_limit_ref(bytea) is
+  'SECURITY-RELEVANT (T-M2-11). Log reference (rk_…) of a rate-limit subject under the log key. Called by the rate limiter''s definer functions only.';
+
+-- Caller and argument checks shared by the entry points (raises 42501 / 22023).
 create or replace function private.rate_limit_check_call(p_bucket text, p_subject bytea)
 returns void
 language plpgsql stable
@@ -170,6 +276,137 @@ begin
 end
 $$;
 
+-- Counts one hit of a counter key. `p_lock`: the hit that uses the budget up starts a full window (a lock
+-- lasts the whole window from then — security settings screen 6: "lock for 15 minutes after 5 failures");
+-- otherwise the window keeps its end (a plain rate). A new window when the old one is over. Hits stop
+-- growing one above the budget.
+create or replace function private.rate_limit_count(p_bucket text, p_key bytea, p_max_hits integer,
+                                                    p_window_seconds integer, p_lock boolean,
+                                                    out o_hits integer, out o_reset_at timestamptz)
+language plpgsql volatile
+set search_path = ''
+as $$
+declare
+  v_window interval;
+begin
+  if p_max_hits is null or p_max_hits not between 1 and 1000000
+     or p_window_seconds is null or p_window_seconds not between 1 and 86400 then
+    raise exception 'a limit is 1–1,000,000 hits in 1–86,400 seconds' using errcode = 'invalid_parameter_value';
+  end if;
+  if p_key is null then
+    raise exception 'the rate limiter has no key' using errcode = 'object_not_in_prerequisite_state';
+  end if;
+  v_window := pg_catalog.make_interval(secs => p_window_seconds);
+  insert into private.rate_limit_counters as c (bucket, key_hash, hits, reset_at)
+  values (p_bucket, p_key, 1, pg_catalog.now() + v_window)
+  on conflict (bucket, key_hash) do update
+  set hits = case when c.reset_at <= pg_catalog.now() then 1 else least(c.hits + 1, p_max_hits + 1) end,
+      reset_at = case when c.reset_at <= pg_catalog.now() then pg_catalog.now() + v_window
+                      when p_lock and c.hits + 1 = p_max_hits then pg_catalog.now() + v_window
+                      else c.reset_at end
+  returning c.hits, c.reset_at into o_hits, o_reset_at;
+end
+$$;
+
+-- Gives one provisional hit back (a sign-in that turned out right, or was refused before Auth).
+create or replace function private.rate_limit_refund(p_bucket text, p_key bytea)
+returns void
+language plpgsql volatile
+set search_path = ''
+as $$
+begin
+  update private.rate_limit_counters c set hits = c.hits - 1
+  where c.bucket = p_bucket and c.key_hash = p_key and c.hits > 1 and c.reset_at > pg_catalog.now();
+  if not found then
+    delete from private.rate_limit_counters c where c.bucket = p_bucket and c.key_hash = p_key and c.hits <= 1;
+  end if;
+end
+$$;
+
+-- Retention without a job: a few expired counters and trusted browsers go with every counting call. LAST
+-- in each transaction and with SKIP LOCKED, so it never waits: rows are otherwise locked in one order
+-- (client counters, then the account's or browser's counter, then the account's trusted browsers — under
+-- the account's advisory lock), and no two calls can wait for each other (no deadlock).
+create or replace function private.rate_limit_purge()
+returns void
+language sql volatile
+set search_path = ''
+as $$
+  delete from private.rate_limit_counters c
+  where (c.bucket, c.key_hash) in (select x.bucket, x.key_hash from private.rate_limit_counters x
+                                   where x.reset_at <= pg_catalog.now()
+                                   order by x.reset_at
+                                   limit 20
+                                   for update skip locked);
+  delete from private.sign_in_trusted_devices d
+  where (d.account_key, d.device_key) in (select x.account_key, x.device_key from private.sign_in_trusted_devices x
+                                          where x.expires_at <= pg_catalog.now()
+                                          order by x.expires_at
+                                          limit 20
+                                          for update skip locked);
+$$;
+
+-- The sign-in subject of an Auth account's address, exactly as the web app derives it from a typed
+-- e-mail (auth-limits.ts accountSubject: trimmed, Unicode NFC, lower-case; SHA-256 under the domain
+-- prefix). Auth stores addresses trimmed and lower-case, so both agree for every account.
+create or replace function private.rate_limit_account_subject(p_email text)
+returns bytea
+language sql stable
+set search_path = ''
+as $$
+  select pg_catalog.sha256(pg_catalog.convert_to(
+           'jadarat.rate-limit.v1' || pg_catalog.chr(10) || 'account' || pg_catalog.chr(10)
+           || pg_catalog.lower(pg_catalog.normalize(pg_catalog.btrim(p_email), 'NFC')), 'UTF8'))
+$$;
+
+-- The serialisation point of an account's trusted browsers (a sign-in adding one, a password reset
+-- removing all of them): transaction-level advisory lock on the account's keyed hash.
+create or replace function private.rate_limit_lock_account_devices(p_account_key bytea)
+returns void
+language sql volatile
+set search_path = ''
+as $$
+  select pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(
+           'private.sign_in_trusted_devices:' || pg_catalog.encode(p_account_key, 'hex'), 0));
+$$;
+
+-- An Organization Admin's request about a member of THEIR organization: the member's account key (the
+-- counter key of its address), or null when the person has no account there. Raises 42501 for anyone but
+-- an active Organization Admin (tenant_admin) of the session's organization (the web app checks
+-- platform.user.unlock_sign_in first; this is the database's own check).
+create or replace function private.rate_limit_member_account_key(p_person_id uuid)
+returns bytea
+language plpgsql stable
+set search_path = ''
+as $$
+declare
+  v_tenant uuid;
+  v_actor uuid;
+  v_email text;
+begin
+  if session_user <> 'app_server' or coalesce(private.request_claims() ->> 'role', '') <> 'authenticated' then
+    raise exception 'reserved to signed-in members of the web app' using errcode = 'insufficient_privilege';
+  end if;
+  v_tenant := private.current_tenant_id();
+  v_actor := private.request_user_id();
+  if v_tenant is null or v_actor is null
+     or not ('tenant_admin' = any (private.actor_role_codes(v_tenant, v_actor))) then
+    raise exception 'only an Organization Admin' using errcode = 'insufficient_privilege';
+  end if;
+  select e.email into v_email
+  from platform.tenant_memberships m
+  join private.auth_user_email e on e.id = m.user_id
+  where m.tenant_id = v_tenant and m.person_id = p_person_id;
+  if v_email is null then
+    return null;
+  end if;
+  return private.rate_limit_key(private.rate_limit_account_subject(v_email));
+end
+$$;
+
+-- ---------------------------------------------------------------------------------------------------
+-- Generic counters (owner rate_limit_guard, SECURITY DEFINER, app_server)
+-- ---------------------------------------------------------------------------------------------------
 create or replace function private.rate_limit_hit(p_bucket text, p_subject bytea, p_max_hits integer,
                                                   p_window_seconds integer)
 returns table (allowed boolean, remaining integer, retry_after_seconds integer, key_ref text)
@@ -177,49 +414,19 @@ language plpgsql volatile security definer
 set search_path = ''
 as $$
 declare
-  v_key bytea;
-  v_window interval;
   v_hits integer;
   v_reset_at timestamptz;
 begin
   perform private.rate_limit_check_call(p_bucket, p_subject);
-  if p_max_hits is null or p_max_hits not between 1 and 1000000
-     or p_window_seconds is null or p_window_seconds not between 1 and 86400 then
-    raise exception 'a limit is 1–1,000,000 hits in 1–86,400 seconds' using errcode = 'invalid_parameter_value';
-  end if;
-  v_key := private.rate_limit_key(p_subject);
-  if v_key is null then
-    raise exception 'the rate limiter has no key' using errcode = 'object_not_in_prerequisite_state';
-  end if;
-  v_window := pg_catalog.make_interval(secs => p_window_seconds);
-
-  insert into private.rate_limit_counters as c (bucket, key_hash, hits, reset_at)
-  values (p_bucket, v_key, 1, pg_catalog.now() + v_window)
-  on conflict (bucket, key_hash) do update
-  set hits = case when c.reset_at <= pg_catalog.now() then 1 else least(c.hits + 1, p_max_hits + 1) end,
-      -- A new window when the old one is over; the hit that uses the budget up starts a full window
-      -- (the lock lasts p_window_seconds from then); otherwise the window keeps its end.
-      reset_at = case when c.reset_at <= pg_catalog.now() then pg_catalog.now() + v_window
-                      when c.hits + 1 = p_max_hits then pg_catalog.now() + v_window
-                      else c.reset_at end
-  returning c.hits, c.reset_at into v_hits, v_reset_at;
-
-  -- Retention without a job: a few expired counters go with every hit. AFTER the upsert and with SKIP
-  -- LOCKED, so this part never waits: a transaction holds at most one counter it may wait for (the web
-  -- app runs one counting call per transaction), and no two hits can wait for each other (no deadlock).
-  delete from private.rate_limit_counters c
-  where (c.bucket, c.key_hash) in (select x.bucket, x.key_hash from private.rate_limit_counters x
-                                   where x.reset_at <= pg_catalog.now()
-                                   order by x.reset_at
-                                   limit 20
-                                   for update skip locked);
-
+  select c.o_hits, c.o_reset_at into v_hits, v_reset_at
+  from private.rate_limit_count(p_bucket, private.rate_limit_key(p_subject), p_max_hits, p_window_seconds, true) c;
+  perform private.rate_limit_purge();
   return query select v_hits <= p_max_hits,
                       greatest(p_max_hits - v_hits, 0),
                       case when v_hits >= p_max_hits
                            then greatest(ceil(extract(epoch from v_reset_at - pg_catalog.now()))::integer, 1)
                            else 0 end,
-                      'rk_' || pg_catalog.encode(pg_catalog.substr(v_key, 1, 12), 'hex');
+                      private.rate_limit_ref(p_subject);
 end
 $$;
 
@@ -253,7 +460,7 @@ begin
                       case when v_hits >= p_max_hits
                            then greatest(ceil(extract(epoch from v_reset_at - pg_catalog.now()))::integer, 1)
                            else 0 end,
-                      'rk_' || pg_catalog.encode(pg_catalog.substr(v_key, 1, 12), 'hex');
+                      private.rate_limit_ref(p_subject);
 end
 $$;
 
@@ -273,24 +480,327 @@ end
 $$;
 
 comment on function private.rate_limit_clear(text, bytea) is
-  'SECURITY-RELEVANT (ADR 0011 §4, T-M2-11). Forgets a key''s counter (after a successful sign-in or a completed password reset). app_server only.';
+  'SECURITY-RELEVANT (ADR 0011 §4, T-M2-11). Forgets a key''s counter. app_server only.';
+
+-- ---------------------------------------------------------------------------------------------------
+-- Sign-in (owner rate_limit_guard, SECURITY DEFINER, app_server)
+-- ---------------------------------------------------------------------------------------------------
+
+-- Before Auth is asked. Counts, in this order (one row lock after the other, never back):
+--   1. sign_in.client_attempts  every attempt of the client (protects Auth's shared budget);
+--   2. sign_in.client_failures  a provisional failure of the client (wrong passwords per address);
+--   3. sign_in.device_failures  for a browser the account trusts (p_device: the hash of its cookie token,
+--                               a valid row in sign_in_trusted_devices): a provisional failure of
+--                               that browser for that account — the account's lock does not apply;
+--      sign_in.account_failures otherwise: a provisional failure of the typed account (existing or not).
+-- The first budget used up refuses the attempt (refused_by) and nothing after it is counted; an attempt the
+-- account (or browser) refuses gives the client's provisional failure back (it is no wrong password). The
+-- attempt that uses the account's budget up still reaches Auth; the next one is refused. `remaining`: the
+-- account's (or browser's) failures left after this attempt, `client_remaining` the client's.
+create or replace function private.rate_limit_sign_in_check(
+  p_client bytea, p_account bytea, p_device bytea,
+  p_client_attempts_max integer, p_client_attempts_window_seconds integer,
+  p_client_failures_max integer, p_client_failures_window_seconds integer,
+  p_account_max integer, p_account_window_seconds integer,
+  p_device_max integer, p_device_window_seconds integer)
+returns table (allowed boolean, refused_by text, retry_after_seconds integer, remaining integer,
+               client_remaining integer, trusted boolean, subject_ref text, client_ref text)
+language plpgsql volatile security definer
+set search_path = ''
+as $$
+declare
+  v_client_key bytea;
+  v_account_key bytea;
+  v_hits integer;
+  v_reset_at timestamptz;
+  v_failures integer;
+  v_account_hits integer;
+  v_max integer;
+  v_trusted boolean := false;
+  v_refused text;
+begin
+  perform private.rate_limit_check_call('sign_in.client_failures', p_client);
+  perform private.rate_limit_check_call('sign_in.account_failures', p_account);
+  if p_device is not null and octet_length(p_device) <> 32 then
+    raise exception 'a rate-limit subject is a 32-byte hash' using errcode = 'invalid_parameter_value';
+  end if;
+  if exists (select 1 from unnest(array[p_client_attempts_max, p_client_failures_max, p_account_max, p_device_max]) m
+             where m is null or m not between 1 and 1000000)
+     or exists (select 1 from unnest(array[p_client_attempts_window_seconds, p_client_failures_window_seconds,
+                                           p_account_window_seconds, p_device_window_seconds]) w
+                where w is null or w not between 1 and 86400) then
+    raise exception 'a limit is 1–1,000,000 hits in 1–86,400 seconds' using errcode = 'invalid_parameter_value';
+  end if;
+  v_client_key := private.rate_limit_key(p_client);
+  v_account_key := private.rate_limit_key(p_account);
+
+  select c.o_hits, c.o_reset_at into v_hits, v_reset_at
+  from private.rate_limit_count('sign_in.client_attempts', v_client_key, p_client_attempts_max,
+                                p_client_attempts_window_seconds, false) c;
+  if v_hits > p_client_attempts_max then
+    v_refused := 'sign_in.client_attempts';
+  else
+    select c.o_hits, c.o_reset_at into v_failures, v_reset_at
+    from private.rate_limit_count('sign_in.client_failures', v_client_key, p_client_failures_max,
+                                  p_client_failures_window_seconds, false) c;
+    if v_failures > p_client_failures_max then
+      v_refused := 'sign_in.client_failures';
+    else
+      if p_device is not null then
+        v_trusted := exists (select 1 from private.sign_in_trusted_devices d
+                             where d.account_key = v_account_key and d.device_key = private.rate_limit_key(p_device)
+                               and d.expires_at > pg_catalog.now());
+      end if;
+      if v_trusted then
+        v_max := p_device_max;
+        select c.o_hits, c.o_reset_at into v_account_hits, v_reset_at
+        from private.rate_limit_count('sign_in.device_failures', private.rate_limit_key(p_account || p_device),
+                                      p_device_max, p_device_window_seconds, true) c;
+      else
+        v_max := p_account_max;
+        select c.o_hits, c.o_reset_at into v_account_hits, v_reset_at
+        from private.rate_limit_count('sign_in.account_failures', v_account_key, p_account_max,
+                                      p_account_window_seconds, true) c;
+      end if;
+      if v_account_hits > v_max then
+        v_refused := case when v_trusted then 'sign_in.device_failures' else 'sign_in.account_failures' end;
+        perform private.rate_limit_refund('sign_in.client_failures', v_client_key);
+        v_failures := v_failures - 1;
+      end if;
+    end if;
+  end if;
+  perform private.rate_limit_purge();
+
+  return query select v_refused is null,
+                      v_refused,
+                      case when v_refused is null then 0
+                           else greatest(ceil(extract(epoch from v_reset_at - pg_catalog.now()))::integer, 1) end,
+                      case when v_account_hits is null then 0 else greatest(v_max - v_account_hits, 0) end,
+                      case when v_failures is null then 0 else greatest(p_client_failures_max - v_failures, 0) end,
+                      v_trusted,
+                      private.rate_limit_ref(p_account),
+                      private.rate_limit_ref(p_client);
+end
+$$;
+
+comment on function private.rate_limit_sign_in_check(bytea, bytea, bytea, integer, integer, integer, integer, integer, integer, integer, integer) is
+  'SECURITY-RELEVANT (T-M2-11, FR-IAM-13). Before Auth: counts a sign-in attempt for the client and provisionally a failure for the client and the account (or a browser the account trusts); refuses when a budget is used up. app_server only.';
+
+-- After Auth accepted the password (p_trusted: what the check answered). The client's provisional failure
+-- is refunded; the account's run of failures ends (an unknown browser) — or that browser's run (a trusted
+-- browser: the account's lock stays, it was not this browser's to end); the browser is trusted for the
+-- account until now + p_trust_days (again, if it was). At most 10 trusted browsers per account: the least
+-- recently used go. Returns the trust's end.
+create or replace function private.rate_limit_sign_in_succeeded(p_client bytea, p_account bytea, p_device bytea,
+                                                                p_trusted boolean, p_trust_days integer)
+returns timestamptz
+language plpgsql volatile security definer
+set search_path = ''
+as $$
+declare
+  v_account_key bytea;
+  v_device_key bytea;
+  v_until timestamptz;
+begin
+  perform private.rate_limit_check_call('sign_in.client_failures', p_client);
+  perform private.rate_limit_check_call('sign_in.account_failures', p_account);
+  perform private.rate_limit_check_call('sign_in.device_failures', p_device);
+  if p_trusted is null or p_trust_days is null or p_trust_days not between 1 and 400 then
+    raise exception 'a browser is trusted for 1–400 days' using errcode = 'invalid_parameter_value';
+  end if;
+  v_account_key := private.rate_limit_key(p_account);
+  v_device_key := private.rate_limit_key(p_device);
+
+  perform private.rate_limit_refund('sign_in.client_failures', private.rate_limit_key(p_client));
+  if p_trusted then
+    delete from private.rate_limit_counters c
+    where c.bucket = 'sign_in.device_failures' and c.key_hash = private.rate_limit_key(p_account || p_device);
+  else
+    delete from private.rate_limit_counters c
+    where c.bucket = 'sign_in.account_failures' and c.key_hash = v_account_key;
+  end if;
+
+  perform private.rate_limit_lock_account_devices(v_account_key);
+  v_until := pg_catalog.now() + pg_catalog.make_interval(days => p_trust_days);
+  insert into private.sign_in_trusted_devices as d (account_key, device_key, expires_at)
+  values (v_account_key, v_device_key, v_until)
+  on conflict (account_key, device_key) do update set expires_at = excluded.expires_at;
+  delete from private.sign_in_trusted_devices d
+  where d.account_key = v_account_key
+    and d.device_key in (select x.device_key from private.sign_in_trusted_devices x
+                         where x.account_key = v_account_key
+                         order by x.expires_at desc, x.device_key
+                         offset 10);
+  perform private.rate_limit_purge();
+  return v_until;
+end
+$$;
+
+comment on function private.rate_limit_sign_in_succeeded(bytea, bytea, bytea, boolean, integer) is
+  'SECURITY-RELEVANT (T-M2-11, PO decision 9 Oct 2026). After a successful sign-in: refunds the client''s provisional failure, ends the account''s (or the trusted browser''s) run of failures, trusts the browser for the account. app_server only.';
+
+-- A completed password reset (the owner proved control of the mailbox — TM-0003 T-IAM-32): the account's
+-- lock ends and every browser it trusted is forgotten. Returns how many were.
+create or replace function private.rate_limit_sign_in_reset(p_account bytea)
+returns integer
+language plpgsql volatile security definer
+set search_path = ''
+as $$
+declare
+  v_account_key bytea;
+  v_revoked integer;
+begin
+  perform private.rate_limit_check_call('sign_in.account_failures', p_account);
+  v_account_key := private.rate_limit_key(p_account);
+  delete from private.rate_limit_counters c
+  where c.bucket = 'sign_in.account_failures' and c.key_hash = v_account_key;
+  perform private.rate_limit_lock_account_devices(v_account_key);
+  delete from private.sign_in_trusted_devices d where d.account_key = v_account_key;
+  get diagnostics v_revoked = row_count;
+  return v_revoked;
+end
+$$;
+
+comment on function private.rate_limit_sign_in_reset(bytea) is
+  'SECURITY-RELEVANT (T-M2-11, PO decision 9 Oct 2026). After a completed password reset: ends the account''s sign-in lock and forgets every browser it trusted. app_server only.';
+
+-- ---------------------------------------------------------------------------------------------------
+-- Organization Admin (owner rate_limit_guard, SECURITY DEFINER, app_server with the admin's claims)
+-- ---------------------------------------------------------------------------------------------------
+
+-- Whether a member's account is locked now (p_max_failures: the account budget the web app applies).
+create or replace function private.member_sign_in_lock(p_person_id uuid, p_max_failures integer)
+returns table (locked boolean, retry_after_seconds integer)
+language plpgsql stable security definer
+set search_path = ''
+as $$
+declare
+  v_key bytea;
+  v_hits integer;
+  v_reset_at timestamptz;
+begin
+  if p_max_failures is null or p_max_failures not between 1 and 1000000 then
+    raise exception 'a limit is 1–1,000,000 hits' using errcode = 'invalid_parameter_value';
+  end if;
+  v_key := private.rate_limit_member_account_key(p_person_id);
+  if v_key is not null then
+    select c.hits, c.reset_at into v_hits, v_reset_at
+    from private.rate_limit_counters c
+    where c.bucket = 'sign_in.account_failures' and c.key_hash = v_key and c.reset_at > pg_catalog.now();
+  end if;
+  return query select coalesce(v_hits, 0) >= p_max_failures,
+                      case when coalesce(v_hits, 0) >= p_max_failures
+                           then greatest(ceil(extract(epoch from v_reset_at - pg_catalog.now()))::integer, 1)
+                           else 0 end;
+end
+$$;
+
+comment on function private.member_sign_in_lock(uuid, integer) is
+  'SECURITY-RELEVANT (T-M2-11, PO decision 9 Oct 2026). Whether a member of the caller''s organization is locked out of sign-in. Organization Admin (tenant_admin) claims only.';
+
+-- Ends a member's sign-in lock; true when there was a run of failures to end.
+create or replace function private.unlock_member_sign_in(p_person_id uuid)
+returns boolean
+language plpgsql volatile security definer
+set search_path = ''
+as $$
+declare
+  v_key bytea;
+begin
+  v_key := private.rate_limit_member_account_key(p_person_id);
+  if v_key is null then
+    return false;
+  end if;
+  delete from private.rate_limit_counters c where c.bucket = 'sign_in.account_failures' and c.key_hash = v_key;
+  return found;
+end
+$$;
+
+comment on function private.unlock_member_sign_in(uuid) is
+  'SECURITY-RELEVANT (T-M2-11, PO decision 9 Oct 2026). Ends the sign-in lock of a member of the caller''s organization. Organization Admin (tenant_admin) claims only.';
+
+-- ---------------------------------------------------------------------------------------------------
+-- Key rotation (owner only: the migration role, a member of rate_limit_guard — never the app roles)
+-- ---------------------------------------------------------------------------------------------------
+create or replace function private.rotate_rate_limit_keys()
+returns void
+language plpgsql volatile security definer
+set search_path = ''
+as $$
+declare
+  v_rows integer;
+begin
+  if session_user in ('app_server', 'app_worker', 'app_queue', 'authenticator')
+     or not pg_catalog.pg_has_role(session_user, 'rate_limit_guard', 'MEMBER') then
+    raise exception 'reserved to the database owner' using errcode = 'insufficient_privilege';
+  end if;
+  update private.rate_limit_secret s
+  set inner_key = k.inner_key, outer_key = k.outer_key, log_inner_key = k.log_inner_key,
+      log_outer_key = k.log_outer_key, created_at = pg_catalog.now()
+  from private.rate_limit_generate_keys() k
+  where s.id;
+  get diagnostics v_rows = row_count;
+  if v_rows <> 1 then
+    raise exception 'the rate limiter must have exactly one key row (% changed)', v_rows
+      using errcode = 'object_not_in_prerequisite_state';
+  end if;
+  -- Counters and trusted browsers were found by the old key: all of them start again.
+  delete from private.rate_limit_counters c where true;
+  delete from private.sign_in_trusted_devices d where true;
+end
+$$;
+
+comment on function private.rotate_rate_limit_keys() is
+  'SECURITY-RELEVANT (T-M2-11). Replaces the rate limiter''s counter and log keys (exactly one row); every counter and trusted browser restarts. Database owner only (docs/engineering/sign-in-protection.md §2).';
 
 -- Ownership hand-over as in migration 20260930120100 (non-superuser migration role on hosted Supabase).
 grant create on schema private to rate_limit_guard;
+alter function private.rate_limit_generate_keys() owner to rate_limit_guard;
 alter function private.rate_limit_key(bytea) owner to rate_limit_guard;
+alter function private.rate_limit_ref(bytea) owner to rate_limit_guard;
 alter function private.rate_limit_check_call(text, bytea) owner to rate_limit_guard;
+alter function private.rate_limit_count(text, bytea, integer, integer, boolean) owner to rate_limit_guard;
+alter function private.rate_limit_refund(text, bytea) owner to rate_limit_guard;
+alter function private.rate_limit_purge() owner to rate_limit_guard;
+alter function private.rate_limit_account_subject(text) owner to rate_limit_guard;
+alter function private.rate_limit_lock_account_devices(bytea) owner to rate_limit_guard;
+alter function private.rate_limit_member_account_key(uuid) owner to rate_limit_guard;
 alter function private.rate_limit_hit(text, bytea, integer, integer) owner to rate_limit_guard;
 alter function private.rate_limit_peek(text, bytea, integer) owner to rate_limit_guard;
 alter function private.rate_limit_clear(text, bytea) owner to rate_limit_guard;
+alter function private.rate_limit_sign_in_check(bytea, bytea, bytea, integer, integer, integer, integer, integer, integer, integer, integer) owner to rate_limit_guard;
+alter function private.rate_limit_sign_in_succeeded(bytea, bytea, bytea, boolean, integer) owner to rate_limit_guard;
+alter function private.rate_limit_sign_in_reset(bytea) owner to rate_limit_guard;
+alter function private.member_sign_in_lock(uuid, integer) owner to rate_limit_guard;
+alter function private.unlock_member_sign_in(uuid) owner to rate_limit_guard;
+alter function private.rotate_rate_limit_keys() owner to rate_limit_guard;
 revoke create on schema private from rate_limit_guard;
 
 revoke all on function private.rate_limit_key(bytea) from public;
+revoke all on function private.rate_limit_ref(bytea) from public;
 revoke all on function private.rate_limit_check_call(text, bytea) from public;
+revoke all on function private.rate_limit_count(text, bytea, integer, integer, boolean) from public;
+revoke all on function private.rate_limit_refund(text, bytea) from public;
+revoke all on function private.rate_limit_purge() from public;
+revoke all on function private.rate_limit_account_subject(text) from public;
+revoke all on function private.rate_limit_lock_account_devices(bytea) from public;
+revoke all on function private.rate_limit_member_account_key(uuid) from public;
 revoke all on function private.rate_limit_hit(text, bytea, integer, integer) from public;
 revoke all on function private.rate_limit_peek(text, bytea, integer) from public;
 revoke all on function private.rate_limit_clear(text, bytea) from public;
--- Called inside the web app's `set local role authenticated` transaction without claims; each function
--- checks the LOGIN role (session_user = app_server) itself.
+revoke all on function private.rate_limit_sign_in_check(bytea, bytea, bytea, integer, integer, integer, integer, integer, integer, integer, integer) from public;
+revoke all on function private.rate_limit_sign_in_succeeded(bytea, bytea, bytea, boolean, integer) from public;
+revoke all on function private.rate_limit_sign_in_reset(bytea) from public;
+revoke all on function private.member_sign_in_lock(uuid, integer) from public;
+revoke all on function private.unlock_member_sign_in(uuid) from public;
+revoke all on function private.rotate_rate_limit_keys() from public;
+-- Called inside the web app's `set local role authenticated` transactions; each function checks the LOGIN
+-- role (session_user = app_server) itself — and the Organization Admin functions the claims.
 grant execute on function private.rate_limit_hit(text, bytea, integer, integer) to authenticated;
 grant execute on function private.rate_limit_peek(text, bytea, integer) to authenticated;
 grant execute on function private.rate_limit_clear(text, bytea) to authenticated;
+grant execute on function private.rate_limit_sign_in_check(bytea, bytea, bytea, integer, integer, integer, integer, integer, integer, integer, integer) to authenticated;
+grant execute on function private.rate_limit_sign_in_succeeded(bytea, bytea, bytea, boolean, integer) to authenticated;
+grant execute on function private.rate_limit_sign_in_reset(bytea) to authenticated;
+grant execute on function private.member_sign_in_lock(uuid, integer) to authenticated;
+grant execute on function private.unlock_member_sign_in(uuid) to authenticated;

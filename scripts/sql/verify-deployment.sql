@@ -233,7 +233,9 @@ begin
         a.privilege_type
       from pg_class c, aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a
       where c.oid = 'private.auth_user_email'::regclass and a.grantee <> c.relowner
-        and not (a.grantee <> 0 and pg_get_userbyid(a.grantee) = 'invitation_guard' and a.privilege_type = 'SELECT')
+        -- Readers: invitation_guard (FR-IAM-03) and rate_limit_guard (Organization Admin unlock, T-M2-11).
+        and not (a.grantee <> 0 and pg_get_userbyid(a.grantee) in ('invitation_guard', 'rate_limit_guard')
+                 and a.privilege_type = 'SELECT')
       union
       select distinct
         case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end,
@@ -253,7 +255,7 @@ begin
     from (values
       ('private.user_session_is_valid(uuid, uuid)', 'tenant_guard', array['tenant_guard', 'invitation_guard'], true),
       ('private.has_active_membership(uuid, uuid)', 'tenant_guard', array['tenant_guard'], true),
-      ('private.current_tenant_id()',               'tenant_guard', array['tenant_guard', 'authenticated', 'account_mail_guard', 'membership_guard'], true),
+      ('private.current_tenant_id()',               'tenant_guard', array['tenant_guard', 'authenticated', 'account_mail_guard', 'membership_guard', 'rate_limit_guard'], true),
       ('private.switch_active_tenant(uuid)',        'tenant_guard', array['tenant_guard', 'authenticated'], true),
       ('private.session_tenants()',                 'tenant_guard', array['tenant_guard', 'authenticated'], true),
       ('private.discard_inactive_tenant_delivery(uuid)', 'tenant_guard', array['tenant_guard', 'authenticated'], true),
@@ -330,13 +332,31 @@ begin
       ('private.reset_member_mfa(uuid)',            'tenant_guard', array['tenant_guard', 'authenticated'], true),
       -- ENTLAQA support's reset: the migration role (operators) only — never the request path.
       ('private.reset_account_mfa(uuid, text)',     'tenant_guard', array['tenant_guard', current_user::text], true),
-      -- Shared rate limiter (ADR 0011 §4, T-M2-11): the web app counts, peeks and clears (app_server, checked
-      -- inside); the keyed hash and the argument checks are the owner's own helpers.
+      -- The lockout e-mail request (T-M2-11): the web app (app_server, checked inside).
+      ('private.request_account_locked_mail(text, integer)', 'account_mail_guard', array['account_mail_guard', 'authenticated'], true),
+      -- Shared rate limiter and sign-in protection (ADR 0011 §4, T-M2-11): the web app counts, peeks, clears
+      -- and checks sign-ins (app_server, checked inside); the Organization Admin functions also check the
+      -- claims; the helpers and the key rotation are the owner's own.
       ('private.rate_limit_hit(text, bytea, integer, integer)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
       ('private.rate_limit_peek(text, bytea, integer)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
       ('private.rate_limit_clear(text, bytea)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
+      ('private.rate_limit_sign_in_check(bytea, bytea, bytea, integer, integer, integer, integer, integer, integer, integer, integer)',
+       'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
+      ('private.rate_limit_sign_in_succeeded(bytea, bytea, bytea, boolean, integer)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
+      ('private.rate_limit_sign_in_reset(bytea)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
+      ('private.member_sign_in_lock(uuid, integer)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
+      ('private.unlock_member_sign_in(uuid)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
+      ('private.rotate_rate_limit_keys()', 'rate_limit_guard', array['rate_limit_guard'], true),
+      ('private.rate_limit_generate_keys()', 'rate_limit_guard', array['rate_limit_guard'], false),
       ('private.rate_limit_key(bytea)', 'rate_limit_guard', array['rate_limit_guard'], false),
-      ('private.rate_limit_check_call(text, bytea)', 'rate_limit_guard', array['rate_limit_guard'], false)
+      ('private.rate_limit_ref(bytea)', 'rate_limit_guard', array['rate_limit_guard'], false),
+      ('private.rate_limit_check_call(text, bytea)', 'rate_limit_guard', array['rate_limit_guard'], false),
+      ('private.rate_limit_count(text, bytea, integer, integer, boolean)', 'rate_limit_guard', array['rate_limit_guard'], false),
+      ('private.rate_limit_refund(text, bytea)', 'rate_limit_guard', array['rate_limit_guard'], false),
+      ('private.rate_limit_purge()', 'rate_limit_guard', array['rate_limit_guard'], false),
+      ('private.rate_limit_account_subject(text)', 'rate_limit_guard', array['rate_limit_guard'], false),
+      ('private.rate_limit_lock_account_devices(bytea)', 'rate_limit_guard', array['rate_limit_guard'], false),
+      ('private.rate_limit_member_account_key(uuid)', 'rate_limit_guard', array['rate_limit_guard'], false)
     ) as h(fn, owner, allowed, definer)
     left join pg_proc p on p.oid = to_regprocedure(h.fn)
   loop
@@ -394,8 +414,13 @@ begin
         'private.account_has_app(uuid)', 'private.reject_mfa_factor(bytea)',
         'private.purge_unconfirmed_mfa_apps(integer)', 'private.reset_member_mfa(uuid)',
         'private.reset_account_mfa(uuid,text)',
+        'private.request_account_locked_mail(text,integer)',
         'private.rate_limit_hit(text,bytea,integer,integer)',
-        'private.rate_limit_peek(text,bytea,integer)', 'private.rate_limit_clear(text,bytea)')
+        'private.rate_limit_peek(text,bytea,integer)', 'private.rate_limit_clear(text,bytea)',
+        'private.rate_limit_sign_in_check(bytea,bytea,bytea,integer,integer,integer,integer,integer,integer,integer,integer)',
+        'private.rate_limit_sign_in_succeeded(bytea,bytea,bytea,boolean,integer)', 'private.rate_limit_sign_in_reset(bytea)',
+        'private.member_sign_in_lock(uuid,integer)', 'private.unlock_member_sign_in(uuid)',
+        'private.rotate_rate_limit_keys()')
   loop
     failures := failures || format('%s: unexpected SECURITY DEFINER function (security review)', r.fn);
   end loop;
@@ -597,9 +622,10 @@ begin
     end if;
   end if;
 
-  -- rate_limit_guard (T-M2-11): creates nothing, nobody acts as it; the limiter's secret
-  -- (private.rate_limit_secret: SELECT) and counters (private.rate_limit_counters: SELECT, INSERT, UPDATE,
-  -- DELETE) are reachable by rate_limit_guard alone, with row level security forced (section 2).
+  -- rate_limit_guard (T-M2-11): creates nothing, nobody acts as it; the limiter's keys
+  -- (private.rate_limit_secret: SELECT, UPDATE for rotation), counters (private.rate_limit_counters) and
+  -- trusted browsers (private.sign_in_trusted_devices: SELECT, INSERT, UPDATE, DELETE) are reachable by
+  -- rate_limit_guard alone, with row level security forced (section 2).
   if exists (select 1 from pg_roles where rolname = 'rate_limit_guard') then
     for r in select nspname from pg_namespace where nspname = any (module_schemas) loop
       if has_schema_privilege('rate_limit_guard', r.nspname, 'create') then
@@ -616,7 +642,8 @@ begin
     end loop;
   end if;
   for r in
-    select o.obj from (values ('private.rate_limit_secret'), ('private.rate_limit_counters')) as o(obj)
+    select o.obj from (values ('private.rate_limit_secret'), ('private.rate_limit_counters'),
+                              ('private.sign_in_trusted_devices')) as o(obj)
   loop
     if to_regclass(r.obj) is null then
       failures := failures || format('%s is missing', r.obj);
@@ -627,8 +654,10 @@ begin
       from pg_class c, aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a
       where c.oid = to_regclass(r.obj) and a.grantee <> c.relowner
         and not (a.grantee <> 0 and pg_get_userbyid(a.grantee) = 'rate_limit_guard'
-                 and (a.privilege_type = 'SELECT' or (r.obj = 'private.rate_limit_counters'
-                                                     and a.privilege_type in ('INSERT', 'UPDATE', 'DELETE'))))
+                 and (a.privilege_type = 'SELECT'
+                      or (r.obj = 'private.rate_limit_secret' and a.privilege_type = 'UPDATE')
+                      or (r.obj in ('private.rate_limit_counters', 'private.sign_in_trusted_devices')
+                          and a.privilege_type in ('INSERT', 'UPDATE', 'DELETE'))))
       union
       select distinct case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end
       from pg_attribute att, aclexplode(att.attacl) a

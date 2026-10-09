@@ -1,5 +1,5 @@
 import { createDatabase } from '@jadarat/platform-db';
-import { createWithSystemTx } from '@jadarat/platform-db/jobs';
+import { createWithPlatformTx, createWithSystemTx } from '@jadarat/platform-db/jobs';
 import {
   STALE_EVENT_MINUTES,
   createSubscriberRegistry,
@@ -8,6 +8,7 @@ import {
 } from '@jadarat/platform-jobs/jobs';
 import { sendTestEmail } from '@jadarat/platform-notifications/jobs';
 import { createLogger, errorName, installConsoleScrubbing } from '@jadarat/platform-observability';
+import { adminKeyExpiryCheck } from './admin-key-expiry';
 import {
   ConfigurationError,
   type RunnerSettings,
@@ -15,6 +16,7 @@ import {
   readSettings,
 } from './config';
 import { workerLog } from './log';
+import { platformTasks } from './platform-tasks';
 import { subscribers } from './subscribers';
 
 /**
@@ -22,7 +24,8 @@ import { subscribers } from './subscribers';
  * DATABASE_URL_APP_QUEUE (queue, login role app_queue) and DATABASE_URL_APP_WORKER (tenant work,
  * app_worker); TLS verify-full against DATABASE_CA_CERT / DATABASE_CA_CERT_FILE for remote hosts.
  * E-mail: EMAIL_PROVIDER (resend | smtp | none) and its settings; APP_BASE_URL (the web app's public
- * origin, for invitation links). Daemon mode stops gracefully on
+ * origin, for links in e-mails). Password-reset links: SUPABASE_URL + SUPABASE_SECRET_KEY (the Auth
+ * admin API — in the worker's environment only, T-M2-17). Daemon mode stops gracefully on
  * SIGTERM/SIGINT (running jobs finish first) and exits 0.
  */
 installConsoleScrubbing();
@@ -49,6 +52,25 @@ async function runWorker(settings: RunnerSettings): Promise<void> {
     max: settings.concurrency,
   });
   const emailTransport = settings.email.createTransport();
+  const withSystemTx = createWithSystemTx(() => workerDb);
+  // A self-hosted Auth admin token lives 90 days (gen-secrets.sh): warn a month ahead — at start-up and
+  // then daily from the account-mail task — so that it is renewed before password-reset links stop
+  // (infra/docker/README.md, "Auth admin key"). Only the days left are logged.
+  const adminKeyCheck = settings.authAdmin
+    ? adminKeyExpiryCheck(settings.authAdmin.secretKey, (daysLeft) => {
+        const expired = daysLeft < 0;
+        logger.warn(
+          expired
+            ? 'the Auth admin key (SUPABASE_SECRET_KEY) has expired: password-reset links fail until it is renewed'
+            : `the Auth admin key (SUPABASE_SECRET_KEY) expires in ${String(daysLeft)} days: renew it`,
+          {
+            action: 'worker.auth_admin_key',
+            reason: 'auth_admin_key_expiry',
+            state: expired ? 'expired' : 'expiring',
+          },
+        );
+      })
+    : undefined;
   try {
     const config = {
       queueUrl: settings.queueUrl,
@@ -61,13 +83,26 @@ async function runWorker(settings: RunnerSettings): Promise<void> {
           log,
         }),
       ),
-      withSystemTx: createWithSystemTx(() => workerDb),
+      withSystemTx,
+      platformTasks: platformTasks({
+        appBaseUrl: settings.appBaseUrl,
+        authAdmin: settings.authAdmin,
+        withPlatformTx: createWithPlatformTx(() => workerDb),
+        withSystemTx,
+        log,
+        adminKeyCheck,
+      }),
       concurrency: settings.concurrency,
       log,
     };
-    logger.info(`worker starting (${settings.mode}; e-mail: ${settings.email.provider})`, {
-      action: 'worker.start',
-    });
+    const resetLinks = settings.authAdmin ? 'on' : 'off';
+    logger.info(
+      `worker starting (${settings.mode}; e-mail: ${settings.email.provider}; reset links: ${resetLinks})`,
+      {
+        action: 'worker.start',
+      },
+    );
+    adminKeyCheck?.();
     if (settings.mode === 'once') {
       // graphile-worker's own signal handling releases the pass's jobs on cancel.
       const { staleEvents } = await runPass(config);

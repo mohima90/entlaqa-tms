@@ -24,6 +24,12 @@ export interface RunnerSettings {
    * slash. Required when e-mail is on; without it (e-mail off) invitations are not mailed.
    */
   readonly appBaseUrl: string | undefined;
+  /**
+   * The Auth admin API for password-reset links (T-M2-17): SUPABASE_URL and SUPABASE_SECRET_KEY, in the
+   * worker's environment ONLY (never the web app's, ADR 0002 §7). Undefined when not set: reset requests
+   * queued by the web app (PASSWORD_RESET_DELIVERY=worker) then wait and expire unanswered.
+   */
+  readonly authAdmin: { readonly url: string; readonly secretKey: string } | undefined;
 }
 
 /** Operators' check of the e-mail settings: one sample message to EMAIL_TEST_TO, no database. */
@@ -91,11 +97,66 @@ function readAppBaseUrl(env: NodeJS.ProcessEnv, required: boolean): string | und
   return origin;
 }
 
+export const SUPABASE_URL_ENV = 'SUPABASE_URL';
+export const SUPABASE_SECRET_KEY_ENV = 'SUPABASE_SECRET_KEY';
+
+/**
+ * SUPABASE_URL (the project's API origin: https, plain http only for a local Auth) and
+ * SUPABASE_SECRET_KEY (Supabase secret key `sb_secret_…`, or a service_role token self-hosted): both or
+ * neither. The key's value is never part of an error.
+ */
+function readAuthAdmin(env: NodeJS.ProcessEnv): RunnerSettings['authAdmin'] {
+  const rawUrl = read(env, SUPABASE_URL_ENV);
+  const secretKey = read(env, SUPABASE_SECRET_KEY_ENV);
+  if (rawUrl === undefined && secretKey === undefined) return undefined;
+  if (rawUrl === undefined || secretKey === undefined) {
+    throw new ConfigurationError(
+      `${SUPABASE_URL_ENV} and ${SUPABASE_SECRET_KEY_ENV} must be set together (password-reset links)`,
+    );
+  }
+  const url = parseOrigin(rawUrl);
+  if (url === undefined) {
+    throw new ConfigurationError(
+      `${SUPABASE_URL_ENV} must be an https origin without path or query (http only for localhost)`,
+    );
+  }
+  if (secretKey.length < 20 || /\s/.test(secretKey)) {
+    throw new ConfigurationError(`${SUPABASE_SECRET_KEY_ENV} is not a valid key`);
+  }
+  return { url, secretKey };
+}
+
+/** The worker warns (at start-up, then daily) once the Auth admin token has fewer days than this left. */
+export const ADMIN_KEY_WARN_DAYS = 30;
+
+/**
+ * Whole days until a self-hosted Auth admin token (SUPABASE_SECRET_KEY: a service_role JWT minted by
+ * infra/docker/gen-secrets.sh, valid 90 days) expires — negative once expired. Undefined for a Supabase
+ * secret key (`sb_secret_…`, no expiry) or a value without a readable `exp`. The payload is only decoded,
+ * never verified (Auth verifies it); nothing of the token is returned or logged.
+ */
+export function adminKeyDaysLeft(secretKey: string, now: number = Date.now()): number | undefined {
+  const parts = secretKey.split('.');
+  const body = parts[1];
+  if (parts.length !== 3 || body === undefined) return undefined;
+  let payload: unknown;
+  try {
+    payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
+  } catch {
+    return undefined;
+  }
+  if (typeof payload !== 'object' || payload === null || !('exp' in payload)) return undefined;
+  const { exp } = payload;
+  if (typeof exp !== 'number' || !Number.isFinite(exp)) return undefined;
+  return Math.floor((exp * 1000 - now) / 86_400_000);
+}
+
 /**
  * `daemon` (default): long-running, for containers (ADR 0005 §1). `once`: runs every due job, then exits —
  * for scheduled runs in environments without a container host (staging). `test-email`: sends one sample
  * e-mail to EMAIL_TEST_TO. Everything is checked before the first connection: login roles, TLS
- * verification for remote hosts, e-mail settings, the web app's public origin (APP_BASE_URL).
+ * verification for remote hosts, e-mail settings, the web app's public origin (APP_BASE_URL), the Auth
+ * admin API for reset links (SUPABASE_URL + SUPABASE_SECRET_KEY, optional).
  */
 export function readSettings(
   argv: readonly string[],
@@ -136,5 +197,6 @@ export function readSettings(
     throw new ConfigurationError('WORKER_CONCURRENCY must be a whole number from 1 to 50');
   }
   const appBaseUrl = readAppBaseUrl(env, email.provider !== 'none');
-  return { mode, queueUrl, workerUrl, caPem, concurrency, email, appBaseUrl };
+  const authAdmin = readAuthAdmin(env);
+  return { mode, queueUrl, workerUrl, caPem, concurrency, email, appBaseUrl, authAdmin };
 }

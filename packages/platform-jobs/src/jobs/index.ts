@@ -22,6 +22,12 @@ export {
 } from './tasks';
 export { JobError, toJobError } from './errors';
 export {
+  type PlatformTask,
+  assertPlatformTasks,
+  platformJobOptions,
+  platformTaskRunner,
+} from './platform-tasks';
+export {
   CRON_ITEMS,
   DATABASE_URL_APP_QUEUE_ENV,
   EVENTS_CHANNEL,
@@ -29,6 +35,7 @@ export {
   type PassResult,
   STALE_EVENT_MINUTES,
   type WorkerConfig,
+  cronItemsFor,
   type WorkerLogLevel,
   assertQueueRole,
   createKicker,

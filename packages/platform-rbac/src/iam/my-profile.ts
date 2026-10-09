@@ -213,16 +213,33 @@ export type ChangePassword = (input: {
   readonly newPassword: string;
 }) => Promise<Result<{ readonly userId: string }, AppError>>;
 
-/** `changePassword` is the identity flow bound to the request (platform-identity/auth). */
+/**
+ * After a successful change, in the action's transaction (T-M2-17): e.g. queue the "password changed"
+ * notice. Must never fail the change (the password has changed at Auth already): it handles its own
+ * errors.
+ */
+export type AfterPasswordChange = (tx: UserTx, userId: string) => Promise<void>;
+
+/**
+ * `changePassword` is the identity flow bound to the request (platform-identity/auth); `afterChange`
+ * runs once it succeeded (platform-identity/auth `queueOwnPasswordChangedNoticeForRequest`).
+ */
 export function changeMyPasswordActionDefinition(
   changePassword: ChangePassword,
+  afterChange?: AfterPasswordChange,
 ): ActionDefinition<typeof ChangePasswordInput, { readonly userId: string }, UserTx> {
   return {
     permission: manageOwn,
     input: ChangePasswordInput,
     scoped: true,
-    handler: ({ input }) =>
-      changePassword({ currentPassword: input.currentPassword, newPassword: input.newPassword }),
+    handler: async ({ ctx, input }) => {
+      const result = await changePassword({
+        currentPassword: input.currentPassword,
+        newPassword: input.newPassword,
+      });
+      if (result.ok && afterChange) await afterChange(ctx.tx, result.value.userId);
+      return result;
+    },
     audit: (_input, output) => ({
       action: 'platform.auth.password_changed',
       entityType: 'user',

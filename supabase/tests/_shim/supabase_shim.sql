@@ -29,9 +29,11 @@ $$;
 create schema if not exists auth;
 grant usage on schema auth to anon, authenticated, service_role, supabase_auth_admin;
 
+-- email is character varying(255) as in Supabase Auth (a function returning it as `text` must cast it:
+-- found by the self-hosted smoke, T-M2-17).
 create table if not exists auth.users (
   id uuid primary key,
-  email text,
+  email character varying(255),
   created_at timestamptz not null default now()
 );
 -- Columns Supabase Auth updates that the migrations' trigger on auth.users reads or the tests touch
@@ -40,7 +42,13 @@ alter table auth.users
   add column if not exists email_change text default '',
   add column if not exists encrypted_password text,
   add column if not exists email_confirmed_at timestamptz,
-  add column if not exists last_sign_in_at timestamptz;
+  add column if not exists last_sign_in_at timestamptz,
+  -- Read by the account e-mail worker functions (T-M2-17, private.auth_account).
+  add column if not exists banned_until timestamptz,
+  add column if not exists recovery_sent_at timestamptz,
+  add column if not exists recovery_token character varying(255),
+  add column if not exists is_sso_user boolean not null default false,
+  add column if not exists deleted_at timestamptz;
 
 -- Subset of Supabase Auth's sessions table used by private.current_tenant_id() (ADR 0002 §6a).
 create table if not exists auth.sessions (

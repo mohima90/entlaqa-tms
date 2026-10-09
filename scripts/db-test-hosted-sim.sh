@@ -46,6 +46,11 @@ cleanup() {
                    where g.rolname = 'invitation_guard' and u.rolname = '$MIGRATOR' and gr.rolname = '$MIGRATOR') then
           execute 'revoke invitation_guard from $MIGRATOR granted by $MIGRATOR';
         end if;
+        if exists (select 1 from pg_auth_members m join pg_roles g on g.oid = m.roleid
+                     join pg_roles u on u.oid = m.member join pg_roles gr on gr.oid = m.grantor
+                   where g.rolname = 'account_mail_guard' and u.rolname = '$MIGRATOR' and gr.rolname = '$MIGRATOR') then
+          execute 'revoke account_mail_guard from $MIGRATOR granted by $MIGRATOR';
+        end if;
       end if;
     end \$\$;" >/dev/null 2>&1 || echo "db-test-hosted-sim: WARNING: cleanup of cluster-wide roles failed" >&2
   if [[ "${DB_TEST_KEEP:-0}" == "1" ]]; then echo "db-test-hosted-sim: kept database $DB"; else
@@ -77,6 +82,9 @@ grant create, temporary on database "$DB" to $MIGRATOR;
 grant usage on schema auth to $MIGRATOR;
 grant select on auth.sessions to $MIGRATOR;
 grant select (id, email) on auth.users to $MIGRATOR;
+-- private.auth_account (account e-mails, T-M2-17). The observed ACL (postgres=ar*… below) gives postgres
+-- SELECT on every column of auth.users; only the columns the view reads are simulated.
+grant select (banned_until, recovery_sent_at, recovery_token, is_sso_user, deleted_at) on auth.users to $MIGRATOR;
 grant references on auth.sessions, auth.users to $MIGRATOR;
 -- TRIGGER on auth.users: the e-mail change guard of migration 20261009090000 (re-review N1). Assumption,
 -- from Supabase's own image (supabase/postgres 17.11.0.003, the version staging runs): auth.users ACL
@@ -89,7 +97,8 @@ grant trigger on auth.users to $MIGRATOR;
 do \$\$
 declare r text;
 begin
-  foreach r in array array['app_server', 'app_worker', 'app_queue', 'tenant_guard', 'invitation_guard'] loop
+  foreach r in array array['app_server', 'app_worker', 'app_queue', 'tenant_guard', 'invitation_guard',
+                          'account_mail_guard'] loop
     if exists (select 1 from pg_roles where rolname = r) then
       execute format('grant %I to $MIGRATOR with admin option, inherit false, set false', r);
     end if;

@@ -6,6 +6,7 @@ import {
   RESET_REQUEST_ANSWER_MS,
   type RecoveryClientLike,
   completePasswordReset,
+  readPasswordResetDelivery,
   requestPasswordReset,
 } from './password-reset';
 
@@ -13,6 +14,30 @@ const USER = '11111111-1111-4111-8111-111111111111';
 const TOKEN_HASH = 'sample0token0hash'.padEnd(56, '0'); // shape only
 const EMAIL = 'reset.me@example.test';
 const PASSWORD = 'A-new-password-for-reset';
+
+// ---------------------------------------------------------------------------------------------------
+// Delivery setting (T-M2-17)
+
+describe('readPasswordResetDelivery (PASSWORD_RESET_DELIVERY)', () => {
+  it("defaults to Auth's own mailer: unset, empty or blank", () => {
+    expect(readPasswordResetDelivery({})).toBe('auth');
+    expect(readPasswordResetDelivery({ PASSWORD_RESET_DELIVERY: '' })).toBe('auth');
+    expect(readPasswordResetDelivery({ PASSWORD_RESET_DELIVERY: '  ' })).toBe('auth');
+    expect(readPasswordResetDelivery({ PASSWORD_RESET_DELIVERY: 'auth' })).toBe('auth');
+  });
+
+  it('worker: our notification service', () => {
+    expect(readPasswordResetDelivery({ PASSWORD_RESET_DELIVERY: ' worker ' })).toBe('worker');
+  });
+
+  it('refuses any other value (a configuration error, never a silent fallback)', () => {
+    for (const value of ['Worker', 'smtp', 'none', 'true']) {
+      expect(() => readPasswordResetDelivery({ PASSWORD_RESET_DELIVERY: value })).toThrow(
+        'PASSWORD_RESET_DELIVERY must be "auth" or "worker"',
+      );
+    }
+  });
+});
 
 // ---------------------------------------------------------------------------------------------------
 // Request (screen 10)
@@ -24,9 +49,12 @@ function requestSetup(resetPasswordForEmail: ResetForEmail | null) {
   const kept: Promise<unknown>[] = [];
   const logWarning = vi.fn();
   const deps: PasswordResetRequestDeps = {
-    client: resetPasswordForEmail
-      ? ({ auth: { resetPasswordForEmail } } as unknown as RecoveryClientLike)
-      : null,
+    delivery: {
+      mode: 'auth',
+      client: resetPasswordForEmail
+        ? ({ auth: { resetPasswordForEmail } } as unknown as RecoveryClientLike)
+        : null,
+    },
     logWarning,
     sleep: vi.fn((ms: number) => {
       order.push(`sleep:${String(ms)}`);
@@ -140,13 +168,16 @@ describe('requestPasswordReset (no account enumeration)', () => {
     const throwsString = requestSetup(() => Promise.reject(new Error('x')));
     throwsString.deps = {
       ...throwsString.deps,
-      client: {
-        auth: {
-          resetPasswordForEmail: () => {
-            throw 'not an error'; // eslint-disable-line @typescript-eslint/only-throw-error
+      delivery: {
+        mode: 'auth',
+        client: {
+          auth: {
+            resetPasswordForEmail: () => {
+              throw 'not an error'; // eslint-disable-line @typescript-eslint/only-throw-error
+            },
           },
-        },
-      } as unknown as RecoveryClientLike,
+        } as unknown as RecoveryClientLike,
+      },
     };
     await requestPasswordReset(throwsString.deps, { email: EMAIL, limited: false });
     await Promise.all(throwsString.kept);
@@ -154,6 +185,76 @@ describe('requestPasswordReset (no account enumeration)', () => {
       action: 'platform.auth.request_password_reset',
       errorName: 'unknown',
     });
+  });
+});
+
+describe('requestPasswordReset, worker mode (T-M2-17: our notification service)', () => {
+  function workerSetup(enqueue: (email: string) => Promise<void>) {
+    const order: string[] = [];
+    const kept: Promise<unknown>[] = [];
+    const logWarning = vi.fn();
+    const deps: PasswordResetRequestDeps = {
+      delivery: { mode: 'worker', enqueue },
+      logWarning,
+      sleep: vi.fn((ms: number) => {
+        order.push(`sleep:${String(ms)}`);
+        return Promise.resolve();
+      }),
+      keepAlive: vi.fn((work: Promise<unknown>) => {
+        order.push('keepAlive');
+        kept.push(work);
+      }),
+    };
+    return { deps, order, kept, logWarning };
+  }
+
+  it('queues the typed address unconditionally, then answers after the same fixed time', async () => {
+    const enqueue = vi.fn(() => Promise.resolve());
+    const { deps, order, kept, logWarning } = workerSetup(enqueue);
+    await expect(
+      requestPasswordReset(deps, { email: EMAIL, limited: false }),
+    ).resolves.toBeUndefined();
+    await Promise.all(kept);
+    expect(enqueue).toHaveBeenCalledWith(EMAIL);
+    expect(order).toEqual(['keepAlive', `sleep:${String(RESET_REQUEST_ANSWER_MS)}`]);
+    expect(logWarning).not.toHaveBeenCalled();
+  });
+
+  it('a failed enqueue gives the same answer; the log has the class name only', async () => {
+    const { deps, order, kept, logWarning } = workerSetup(() =>
+      Promise.reject(new Error(`insert failed for ${EMAIL}`)),
+    );
+    await expect(
+      requestPasswordReset(deps, { email: EMAIL, limited: false }),
+    ).resolves.toBeUndefined();
+    await expect(Promise.all(kept)).resolves.toBeDefined();
+    expect(order).toEqual(['keepAlive', `sleep:${String(RESET_REQUEST_ANSWER_MS)}`]);
+    expect(logWarning).toHaveBeenCalledWith('password reset request could not be queued', {
+      action: 'platform.auth.request_password_reset',
+      reason: 'enqueue_failed',
+      errorName: 'Error',
+    });
+    expect(JSON.stringify(logWarning.mock.calls)).not.toContain('example.test');
+  });
+
+  it('never waits for the queue, and queues nothing when the limiter refused', async () => {
+    let release: (() => void) | undefined;
+    const enqueue = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+    const { deps, kept } = workerSetup(enqueue);
+    await requestPasswordReset(deps, { email: EMAIL, limited: false });
+    expect(kept).toHaveLength(1);
+    release?.();
+    await Promise.all(kept);
+
+    const limited = workerSetup(enqueue);
+    await requestPasswordReset(limited.deps, { email: EMAIL, limited: true });
+    expect(enqueue).toHaveBeenCalledTimes(1);
+    expect(limited.order).toEqual([`sleep:${String(RESET_REQUEST_ANSWER_MS)}`]);
   });
 });
 
@@ -239,6 +340,53 @@ describe('completePasswordReset (FR-IAM-13)', () => {
     const logged = JSON.stringify(logInfo.mock.calls);
     expect(logged).not.toContain(TOKEN_HASH);
     expect(logged).not.toContain(PASSWORD);
+  });
+
+  it('worker mode: queues the "password changed" notice for the account after the sessions ended', async () => {
+    const { deps, calls } = completeSetup();
+    const queuePasswordChangedNotice = vi.fn((userId: string) => {
+      calls.push(`notice:${userId}`);
+      return Promise.resolve();
+    });
+    const result = await completePasswordReset({ ...deps, queuePasswordChangedNotice }, input);
+    expect(result.ok).toBe(true);
+    expect(calls).toEqual([
+      'verifyOtp:recovery',
+      'updateUser:password',
+      'signOut:global',
+      `notice:${USER}`,
+      'endBrowserSession',
+    ]);
+  });
+
+  it('worker mode: a notice that cannot be queued never fails the reset (a code is logged)', async () => {
+    const { deps, logWarning } = completeSetup();
+    const queuePasswordChangedNotice = vi.fn(() =>
+      Promise.reject(new Error('database down for reset.me@example.test')),
+    );
+    const result = await completePasswordReset({ ...deps, queuePasswordChangedNotice }, input);
+    expect(result).toEqual({ ok: true, value: { next: 'sign-in' } });
+    expect(logWarning).toHaveBeenCalledWith('password changed notice could not be queued', {
+      action: 'platform.auth.password_reset',
+      reason: 'notice_not_queued',
+      errorName: 'Error',
+      entityType: 'auth_user',
+      entityId: USER,
+    });
+    expect(JSON.stringify(logWarning.mock.calls)).not.toContain('example.test');
+  });
+
+  it('worker mode: no notice when the password was not changed', async () => {
+    const queuePasswordChangedNotice = vi.fn(() => Promise.resolve());
+    for (const options of [
+      { verifyError: { status: 403, code: 'otp_expired' } },
+      { updateError: { status: 422, code: 'same_password' } },
+    ]) {
+      const { deps } = completeSetup(options);
+      const result = await completePasswordReset({ ...deps, queuePasswordChangedNotice }, input);
+      expect(result.ok).toBe(false);
+    }
+    expect(queuePasswordChangedNotice).not.toHaveBeenCalled();
   });
 
   it('still succeeds when the sessions could not be ended (logged; Auth ended the others itself)', async () => {

@@ -21,6 +21,17 @@ export {
   insertEmailDelivery,
 } from './deliveries';
 export {
+  ACCOUNT_MAIL_MAX_ATTEMPTS,
+  type AccountMailContext,
+  type AccountMailKind,
+  type AccountMailRequest,
+  type AccountMailSkip,
+  claimAccountMailRequest,
+  finishAccountMailRequest,
+  loadAccountMailContext,
+  retryAccountMailRequest,
+} from './account-mail';
+export {
   type InvitationForMail,
   invitationActorMayManage,
   issueInvitationToken,
@@ -63,6 +74,30 @@ export function createWithSystemTx(getDb: () => AppDatabase): WithSystemTx {
 
 /** Runs `fn` for one tenant as a system actor (connection role app_worker), with RLS enforced. */
 export const withSystemTx: WithSystemTx = createWithSystemTx(() => getDatabase('app_worker'));
+
+/**
+ * A job transaction that belongs to no tenant (yet): system-actor claims WITHOUT a tenant (`role:
+ * 'system'`, job_id). RLS shows no tenant data (private.current_tenant_id() is NULL); only platform-level
+ * definer functions that check for a job under the app_worker login answer — e.g. the account e-mail
+ * queue (T-M2-17), whose requests have no organization until the worker resolves one.
+ */
+export type WithPlatformTx = <T>(
+  actor: { readonly jobId: string },
+  fn: (tx: SystemTx) => Promise<T>,
+) => Promise<T>;
+
+export function createWithPlatformTx(getDb: () => AppDatabase): WithPlatformTx {
+  return async function withPlatformTx<T>(
+    actor: { readonly jobId: string },
+    fn: (tx: SystemTx) => Promise<T>,
+  ) {
+    const jobId = z.string().trim().min(1).max(200).safeParse(actor.jobId);
+    if (!jobId.success) throw new Error('withPlatformTx: invalid job id');
+    return runWithClaims(getDb(), JSON.stringify({ role: 'system', job_id: jobId.data }), fn);
+  };
+}
+
+export const withPlatformTx: WithPlatformTx = createWithPlatformTx(() => getDatabase('app_worker'));
 
 /**
  * Records that `subscriber` processed `eventId` (platform.event_inbox, ADR 0004 §5), in the job's own

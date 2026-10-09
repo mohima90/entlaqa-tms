@@ -40,12 +40,16 @@ export {
   createPasswordVerifier,
 } from './password';
 export {
+  type PasswordResetDelivery,
   type PasswordResetDeps,
   type PasswordResetRequestDeps,
   type RecoveryClientLike,
+  type ResetEmailDelivery,
+  PASSWORD_RESET_DELIVERY_ENV,
   PasswordResetErrors,
   RECOVERY_TOKEN_HASH_PATTERN,
   RESET_REQUEST_ANSWER_MS,
   completePasswordReset,
+  readPasswordResetDelivery,
   requestPasswordReset,
 } from './password-reset';

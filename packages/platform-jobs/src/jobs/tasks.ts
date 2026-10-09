@@ -3,6 +3,7 @@ import type { WithSystemTx } from '@jadarat/platform-db/jobs';
 import type { JobHelpers, Task, TaskList } from 'graphile-worker';
 import { z } from 'zod';
 import { toJobError } from './errors';
+import { type PlatformTask, assertPlatformTasks, platformTaskRunner } from './platform-tasks';
 import type { DeliveredEvent, InTenant, SubscriberRegistry } from './registry';
 
 /** Task names (graphile-worker identifiers). */
@@ -182,9 +183,15 @@ export function deliverTask(registry: SubscriberRegistry, withSystemTx: WithSyst
   };
 }
 
-export function createTaskList(registry: SubscriberRegistry, withSystemTx: WithSystemTx): TaskList {
+export function createTaskList(
+  registry: SubscriberRegistry,
+  withSystemTx: WithSystemTx,
+  platformTasks: readonly PlatformTask[] = [],
+): TaskList {
+  assertPlatformTasks(platformTasks, [DISPATCH_TASK, DELIVER_TASK]);
   return {
     [DISPATCH_TASK]: dispatchTask(registry),
     [DELIVER_TASK]: deliverTask(registry, withSystemTx),
+    ...Object.fromEntries(platformTasks.map((task) => [task.name, platformTaskRunner(task)])),
   };
 }

@@ -2,11 +2,11 @@
 
 | | |
 |---|---|
-| **Backlog** | T-M2-06 part b (e-mail delivery); used by T-M2-07 (invitations), T-M2-08 (password reset) |
+| **Backlog** | T-M2-06 part b (e-mail delivery); used by T-M2-07 (invitations), T-M2-17 (password reset and "password changed", BRD v2.5 FR-NTF-02) |
 | **Architecture** | ADR 0008 (notification service), ADR 0004/0005 (events and jobs) — runbook [background-jobs.md](background-jobs.md) |
 | **Code** | `packages/platform-notifications` (templates, `queueEmail`, sender, Resend/SMTP transports) · `platform.message_deliveries` (migration `20261008090000`) · `apps/worker` |
 | **Provider** | Regional cloud: **Resend** (PO, 6 Oct 2026), sending domain `lms.entlaqa.com`, sender «ENTLAQA LMS» <noreply@lms.entlaqa.com>. Sovereign: SMTP to the installation's relay |
-| **Not here** | The password-reset e-mail and the "password changed" notice are sent by Supabase Auth itself through its own SMTP settings (T-M2-08, ADR 0008 implementation note): [password-reset.md](password-reset.md) |
+| **Account e-mails** | The password-reset e-mail and the "password changed" notice go through this service when the web app runs with `PASSWORD_RESET_DELIVERY=worker` (T-M2-17; the worker resolves the account and organization and gets the token from Auth's admin API); with `auth` (the default until the worker runs continuously) Supabase Auth still sends them itself through its own SMTP settings. [password-reset.md](password-reset.md) |
 
 ## 1. How a message travels
 
@@ -29,7 +29,8 @@ Only jobs (system claims) can read or write deliveries, and the sender acts only
 | `SMTP_URL` | `smtp://user:password@relay:587` (STARTTLS, required for any non-local server) or `smtps://…:465`; no parameters |
 | `SMTP_CA_CERT_FILE` / `SMTP_CA_CERT` | CA of a relay whose certificate is not publicly trusted (empty: the system's public roots) |
 | `EMAIL_TEST_TO` | Recipient of the `test-email` mode |
-| `APP_BASE_URL` | Public origin of the web app for links in e-mails (invitation accept links, T-M2-07), e.g. `https://tms.example.com`: https (plain http only for `localhost` / `127.0.0.1`), no path or query; a trailing slash is ignored. Required when `EMAIL_PROVIDER` is not `none`; without it (e-mail off) invitations are not mailed — resend them once e-mail is on. Self-hosted stack: `http://localhost:3200` |
+| `APP_BASE_URL` | Public origin of the web app for links in e-mails (invitation accept links, T-M2-07; password-reset links and the forgot-password page, T-M2-17), e.g. `https://tms.example.com`: https (plain http only for `localhost` / `127.0.0.1`), no path or query; a trailing slash is ignored. Required when `EMAIL_PROVIDER` is not `none`; without it (e-mail off) invitations are not mailed — resend them once e-mail is on — and account e-mail requests are answered without an e-mail. Self-hosted stack: `http://localhost:3200` |
+| `SUPABASE_URL` / `SUPABASE_SECRET_KEY` | The Auth admin API for password-reset links (T-M2-17): the project's API origin and a secret key (`sb_secret_…`; self-hosted: the service_role token of `gen-secrets.sh`). Both or neither; **in the worker's environment only** — never the web app's (ADR 0002 §7 note T-M2-17). Without them reset requests wait and expire (the worker logs `reset links: off` at start-up) |
 
 Check any deployment's settings with `node apps/worker/dist/main.mjs test-email` (one sample invitation, marked `[TEST]`, straight to the provider; no database). The self-hosted stack sends one to Mailpit in its smoke test. This checks the provider settings only; the whole path (queue → dispatch → send) runs on staging with the first real sender, the invitations of T-M2-07.
 
@@ -41,6 +42,7 @@ All in GitHub → Settings → Environments → **staging-jobs** (where the work
 1. **Secret** `RESEND_API_KEY` = a Resend API key with **Sending access** for the domain `lms.entlaqa.com` (Resend → API Keys → Create).
 2. **Variables** `EMAIL_PROVIDER` = `resend`, `EMAIL_FROM_NAME` = `ENTLAQA LMS`, `EMAIL_FROM_ADDRESS` = `noreply@lms.entlaqa.com`, `APP_BASE_URL` = the staging web app's address (`https://…`, no path; required with `EMAIL_PROVIDER` set, or every pass stops with a configuration error).
 3. **Secret** `EMAIL_TEST_TO` = the PO's own e-mail address.
+3a. *(T-M2-17, password-reset links)* **Secret** `SUPABASE_SECRET_KEY` = a Supabase secret key (Supabase → Project Settings → API Keys → Secret keys), **variable** `SUPABASE_URL` = `https://<project ref>.supabase.co` — order and switch-on: [password-reset.md](password-reset.md) §6.
 4. DB deploy (plan, then apply) for the delivery-log table.
 5. Actions → **Jobs (staging)** → Run workflow → mode **test-email**: the sample invitation must arrive (check spam once); the run log shows `test e-mail accepted by resend (<id>)`.
 

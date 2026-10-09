@@ -13,3 +13,12 @@ export {
   createInvitationMailer,
   hashToken,
 } from './invitation-mailer';
+export {
+  ACCOUNT_MAIL_BATCH,
+  ACCOUNT_MAIL_HOURLY_CAP,
+  ACCOUNT_MAIL_TASK,
+  type AccountMailerOptions,
+  RESET_LINK_VALID_MINUTES,
+  type RecoveryLinks,
+  createAccountMailer,
+} from './account-mailer';

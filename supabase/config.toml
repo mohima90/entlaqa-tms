@@ -58,15 +58,18 @@ otp_expiry = 3600
 otp_length = 10
 max_frequency = "60s"
 
-# The reset e-mail links straight to our page with the token hash in the URL fragment; it never carries
-# the 6-digit code or Auth's own /verify link. Bilingual, Arabic first.
+# Who sends the reset e-mail is the web app's PASSWORD_RESET_DELIVERY (T-M2-17): `worker` (our
+# notification service; the worker creates the token through Auth's admin API, Auth sends nothing) or
+# `auth` (the default, kept as fallback) — then Auth sends this template. It links straight to our page
+# with the token hash in the URL fragment; it never carries the code or Auth's own /verify link.
 [auth.email.template.recovery]
 subject = "إعادة تعيين كلمة المرور · Reset your password"
 content_path = "./supabase/templates/recovery.html"
 
-# Auth tells the account owner after every password change (reset or My profile).
+# The "password changed" notice is ours (worker, T-M2-17): Auth's own stays off here. (Hosted staging
+# keeps Auth's ON, with this template, only while the web app runs with PASSWORD_RESET_DELIVERY=auth.)
 [auth.email.notification.password_changed]
-enabled = true
+enabled = false
 subject = "تغيّرت كلمة المرور · Your password was changed"
 content_path = "./supabase/templates/password-changed.html"
 

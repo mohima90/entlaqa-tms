@@ -215,6 +215,23 @@ describe('change my password', () => {
     expect(JSON.stringify(writeAudit.mock.calls)).not.toContain('password-');
   });
 
+  it('runs the after-change step (the "password changed" notice) in the action transaction, only on success', async () => {
+    const afterChange = vi.fn(() => Promise.resolve());
+    const changed = vi.fn(() => Promise.resolve(ok({ userId: 'u1' })));
+    const result = await createDefineAction(runtime().rt)(
+      changeMyPasswordActionDefinition(changed, afterChange),
+    )(input);
+    expect(result).toEqual(ok({ userId: 'u1' }));
+    expect(afterChange).toHaveBeenCalledWith(TX, 'u1');
+
+    afterChange.mockClear();
+    const refused = vi.fn(() => Promise.resolve(err(appError('RATE_LIMITED'))));
+    await createDefineAction(runtime().rt)(changeMyPasswordActionDefinition(refused, afterChange))(
+      input,
+    );
+    expect(afterChange).not.toHaveBeenCalled();
+  });
+
   it('validates length and confirmation before calling Auth; passes Auth errors through', async () => {
     const changePassword = vi.fn(() => Promise.resolve(err(appError('RATE_LIMITED'))));
     const action = createDefineAction(runtime().rt)(

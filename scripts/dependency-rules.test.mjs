@@ -120,6 +120,45 @@ describe('admin client / withSystemTx import rules (S2: exemptions anchored to r
   });
 });
 
+describe('the Auth admin key stays in the worker (T-M2-17, ADR 0002 §7)', () => {
+  it('rejects the reset flow (request path) importing the admin entry point; allows the worker wiring', async () => {
+    const root = fixtureRepo({
+      ...platformDb,
+      'packages/platform-identity/package.json': JSON.stringify({
+        name: '@jadarat/platform-identity',
+      }),
+      // A request-path module of the identity package reaching for the Auth admin API.
+      'packages/platform-identity/src/password-reset.ts':
+        "import { withAdminTx } from '../../platform-db/src/admin/index';\nexport const r = withAdminTx;\n",
+      // The account mailer job (allowed) and the worker that wires the admin client into it (allowed).
+      'packages/platform-identity/src/jobs/account-mailer.ts':
+        "import { withSystemTx } from '../../../platform-db/src/jobs/index';\nexport const m = withSystemTx;\n",
+      'apps/worker/package.json': JSON.stringify({ name: '@jadarat/worker' }),
+      'apps/worker/src/platform-tasks.ts':
+        "import { withAdminTx } from '../../../packages/platform-db/src/admin/index';\nimport { m } from '../../../packages/platform-identity/src/jobs/account-mailer';\nexport const t = [withAdminTx, m];\n",
+      // The web app's reset action may use the request-path module only — and is then refused
+      // transitively, since that module reaches the admin client.
+      'apps/suite/package.json': JSON.stringify({ name: '@jadarat/suite' }),
+      'apps/suite/src/auth/password-reset.ts':
+        "import { r } from '../../../../packages/platform-identity/src/password-reset';\nexport const a = r;\n",
+    });
+    const found = (await violations(root)).filter((v) =>
+      /^(admin-client-only-in-jobs-or-admin|no-admin-or-jobs-reachable-from-suite|admin-jobs-folders-are-private):/.test(
+        v,
+      ),
+    );
+    expect(found).toContain(
+      'admin-client-only-in-jobs-or-admin: packages/platform-identity/src/password-reset.ts → packages/platform-db/src/admin/index.ts',
+    );
+    expect(
+      found.some((v) => v.startsWith('no-admin-or-jobs-reachable-from-suite: apps/suite/')),
+    ).toBe(true);
+    expect(
+      found.filter((v) => v.includes('apps/worker/') || v.includes('src/jobs/account-mailer')),
+    ).toEqual([]);
+  });
+});
+
 describe('admin/jobs code cannot be laundered through re-exports (security re-review)', () => {
   it('rejects a module re-exporting the admin client that the suite app then imports', async () => {
     const root = fixtureRepo({

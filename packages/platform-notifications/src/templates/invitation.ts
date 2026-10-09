@@ -4,25 +4,8 @@ import { isEmailAddress } from '../address';
 import { formatEmailDate, isTimeZone } from '../format';
 import { type SafeHtml, isSafeLink, markup } from '../html';
 import { actionButton, link, ltr, paragraph, renderLayout } from '../layout';
+import { Localized, PRODUCT, SIGNATURE, localizedName, text } from './shared';
 import type { EmailTemplate } from './types';
-
-/**
- * One line of plain text: no control characters or line/paragraph separators, and no bidirectional
- * embedding, override or isolate controls (they can make a name display as something else).
- * Joiners and direction marks used in Arabic text stay allowed.
- */
-const text = (max: number) =>
-  z
-    .string()
-    .trim()
-    .min(1)
-    .max(max)
-    .refine(
-      (v) => !/[\p{Cc}\p{Zl}\p{Zp}\u202A-\u202E\u2066-\u2069]/u.test(v),
-      'single line, plain',
-    );
-
-const Localized = (max: number) => z.strictObject({ ar: text(max), en: text(max).nullable() });
 
 /**
  * Invitation e-mail (FR-IAM-03, approved screen 7 «رسالة الدعوة»). Names are passed in both languages
@@ -42,20 +25,7 @@ export const InvitationVariables = z.strictObject({
 
 export type InvitationVariables = z.output<typeof InvitationVariables>;
 
-const PRODUCT: Readonly<Record<AppLocale, string>> = {
-  ar: 'جدارات · التدريب',
-  en: 'Jadarat · Training',
-};
-
-/** Footer signature (approved screen 7). */
-const SIGNATURE: Readonly<Record<AppLocale, string>> = {
-  ar: 'جدارات · منصة ENTLAQA',
-  en: 'Jadarat · an ENTLAQA platform',
-};
-
-function name(value: { ar: string; en: string | null }, locale: AppLocale): string {
-  return locale === 'ar' ? value.ar : (value.en ?? value.ar);
-}
+const name = localizedName;
 
 function body(v: InvitationVariables, locale: AppLocale, primary: boolean): SafeHtml {
   const recipient = name(v.recipientName, locale);

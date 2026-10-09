@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { ConfigurationError, type RunnerSettings, readSettings } from './config';
+import {
+  ADMIN_KEY_WARN_DAYS,
+  ConfigurationError,
+  type RunnerSettings,
+  adminKeyDaysLeft,
+  readSettings,
+} from './config';
 
 const QUEUE = 'postgres://app_queue:pw@127.0.0.1:5432/postgres';
 const WORKER = 'postgres://app_worker:pw@127.0.0.1:5432/postgres';
@@ -103,6 +109,43 @@ describe('readSettings', () => {
     }
   });
 
+  it('reads the Auth admin API for reset links (T-M2-17): both or neither, the key never in an error', () => {
+    expect(runner([], env).authAdmin).toBeUndefined();
+    const KEY = 'sb_secret_sample_only_value'; // sample, not a key
+    expect(
+      runner([], {
+        ...env,
+        SUPABASE_URL: 'https://ref.supabase.co/',
+        SUPABASE_SECRET_KEY: ` ${KEY} `,
+      }).authAdmin,
+    ).toEqual({ url: 'https://ref.supabase.co', secretKey: KEY });
+    // Self-hosted: the gateway; local Supabase: plain http on the loopback.
+    expect(
+      runner([], { ...env, SUPABASE_URL: 'http://127.0.0.1:54321', SUPABASE_SECRET_KEY: KEY })
+        .authAdmin?.url,
+    ).toBe('http://127.0.0.1:54321');
+    fails([], { ...env, SUPABASE_URL: 'https://ref.supabase.co' }, /must be set together/);
+    fails([], { ...env, SUPABASE_SECRET_KEY: KEY }, /must be set together/);
+    fails(
+      [],
+      { ...env, SUPABASE_URL: 'http://ref.supabase.co', SUPABASE_SECRET_KEY: KEY },
+      /SUPABASE_URL must be an https origin/,
+    );
+    for (const bad of ['short', 'sb_secret with spaces inside it']) {
+      let error: unknown;
+      try {
+        readSettings(
+          [],
+          { ...env, SUPABASE_URL: 'https://ref.supabase.co', SUPABASE_SECRET_KEY: bad },
+          noCa,
+        );
+      } catch (e) {
+        error = e;
+      }
+      expect((error as Error).message).toBe('SUPABASE_SECRET_KEY is not a valid key');
+    }
+  });
+
   it('remote hosts need the CA', () => {
     const remote = {
       DATABASE_URL_APP_QUEUE: 'postgres://app_queue.ref:pw@pooler.example.com:5432/postgres',
@@ -153,5 +196,38 @@ describe('readSettings', () => {
         throw 'unreadable';
       }),
     ).toThrow('invalid configuration');
+  });
+});
+
+describe('adminKeyDaysLeft (T-M2-17, security review)', () => {
+  const NOW = Date.UTC(2026, 9, 8, 12);
+  const DAY = 86_400;
+  // Built at run time from a header and a payload: no token-shaped literal in the source.
+  const b64 = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url');
+  const token = (payload: unknown) =>
+    `${b64({ alg: 'ES256', typ: 'JWT' })}.${b64(payload)}.${'sample0signature'.padEnd(40, '0')}`;
+  const exp = (days: number) => NOW / 1000 + days * DAY;
+
+  it('counts whole days until a self-hosted token expires (decode only), negative once expired', () => {
+    expect(adminKeyDaysLeft(token({ role: 'service_role', exp: exp(90) }), NOW)).toBe(90);
+    expect(adminKeyDaysLeft(token({ exp: exp(29.5) }), NOW)).toBe(29);
+    expect(adminKeyDaysLeft(token({ exp: exp(29.5) }), NOW)).toBeLessThan(ADMIN_KEY_WARN_DAYS);
+    expect(adminKeyDaysLeft(token({ exp: exp(30) }), NOW)).toBe(ADMIN_KEY_WARN_DAYS);
+    expect(adminKeyDaysLeft(token({ exp: exp(-1) }), NOW)).toBe(-1);
+  });
+
+  it('has nothing to say about a Supabase secret key or a token without a readable expiry', () => {
+    for (const key of [
+      'sb_secret_sample_only_value',
+      token({ role: 'service_role' }),
+      token({ exp: 'soon' }),
+      token(null),
+      token(7),
+      `${b64({ alg: 'ES256' })}.not-json.${'sample0signature'.padEnd(40, '0')}`,
+      'a.b',
+      'a.b.c.d',
+    ]) {
+      expect(adminKeyDaysLeft(key, NOW)).toBeUndefined();
+    }
   });
 });

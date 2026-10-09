@@ -13,4 +13,10 @@ export {
 } from './sender';
 export { type SmtpSettings, classifySmtpError, createSmtpTransport, parseSmtpUrl } from './smtp';
 export { sendTestEmail } from './test-email';
-export { EmailSendError, type EmailTransport, type OutgoingEmail } from './transport';
+export {
+  EmailSendError,
+  type EmailRoute,
+  type EmailRouter,
+  type EmailTransport,
+  type OutgoingEmail,
+} from './transport';

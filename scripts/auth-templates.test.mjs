@@ -83,22 +83,38 @@ describe('Auth e-mail templates (T-M2-08)', () => {
     }
   });
 
-  it("the self-hosted stack: Auth's admin API only on the internal admin port, one call per network (T-M2-17 review)", () => {
+  it("the self-hosted stack: Auth's admin API only on the internal admin port, only its calls per network (T-M2-17 review, T-M2-09)", () => {
     const gateway = read('infra/docker/gateway/nginx.conf');
     const compose = read('infra/docker/compose.yaml');
     // The published port (8443) serves no admin path, not even with a valid admin key.
     for (const path of ['admin', 'invite']) {
       expect(gateway).toContain(`location ^~ /auth/v1/${path} { return 404; }`);
     }
-    // Port 8444: generate_link for the workers' subnet, user creation for admin-cli's — nothing else.
+    // Port 8444: generate_link and account bans (PUT one user by id, T-M2-09) for the workers' subnet, user
+    // creation for admin-cli's — nothing else.
     const admin = gateway.slice(
       gateway.indexOf('listen 8444 ssl;'),
       gateway.indexOf('listen 8100 ssl;'),
     );
     expect([...admin.matchAll(/proxy_pass (\S+);/g)].map((m) => m[1])).toEqual([
       'http://auth:9999/admin/generate_link',
+      'http://auth:9999',
       'http://auth:9999/admin/users',
     ]);
+    // The ban location: the whole path is one lower-case UUID, PUT only, rewritten without the query.
+    expect(admin).toContain(
+      [
+        '    location ~ "^/auth/v1/admin/users/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$" {',
+        '      deny 10.231.0.1;',
+        '      allow 10.231.0.0/28;',
+        '      deny all;',
+        '      limit_except PUT { deny all; }',
+        '      client_max_body_size 1k;',
+        '      rewrite "^/auth/v1/admin/users/([0-9a-f-]{36})$" /admin/users/$1? break;',
+        '      proxy_pass http://auth:9999;',
+      ].join('\n'),
+    );
+    expect(admin.match(/location ~/g)).toHaveLength(1);
     expect(admin).toMatch(
       /location = \/auth\/v1\/admin\/generate_link \{\n\s+deny 10\.231\.0\.1;\n\s+allow 10\.231\.0\.0\/28;\n\s+deny all;\n\s+limit_except POST \{ deny all; \}/,
     );
@@ -106,9 +122,9 @@ describe('Auth e-mail templates (T-M2-08)', () => {
       /location = \/auth\/v1\/admin\/users \{\n\s+deny 10\.231\.0\.17;\n\s+allow 10\.231\.0\.16\/28;\n\s+deny all;\n\s+limit_except POST \{ deny all; \}/,
     );
     expect(admin).toContain('location / { return 404; }');
-    // No method-override header reaches Auth from either admin location.
+    // No method-override header reaches Auth from any admin location.
     for (const header of ['X-HTTP-Method-Override', 'X-HTTP-Method', 'X-Method-Override']) {
-      expect(admin.split(`proxy_set_header ${header} "";`)).toHaveLength(3);
+      expect(admin.split(`proxy_set_header ${header} "";`)).toHaveLength(4);
     }
     // The same subnets in compose; the admin port is never published; who sits on which network.
     expect(compose).toContain('- { subnet: 10.231.0.0/28, gateway: 10.231.0.1 }');

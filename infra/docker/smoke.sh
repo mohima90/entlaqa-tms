@@ -7,9 +7,10 @@
 # accept link from Mailpit, set a password, signed in; expired/revoked/used links; Auth's sign-up hook
 # refuses sign-ups without a valid invitation for that e-mail), runs the password reset (forgot page, OUR
 # e-mail from Mailpit — sent by the worker, T-M2-17 — new password, old one refused, link single use, our
-# "password changed" notice; Auth's admin API only on the gateway's internal port, one call per network),
-# sends a browser and a server error to the in-country error tracker (GlitchTip) and checks they arrive
-# without personal data, then tears everything down.
+# "password changed" notice; Auth's admin API only on the gateway's internal port, only its calls per
+# network), deactivates and reactivates members (reassignment, sessions end at once, the worker's Auth ban
+# and its lifting — T-M2-09), sends a browser and a server error to the in-country error tracker
+# (GlitchTip) and checks they arrive without personal data, then tears everything down.
 #
 #   bash infra/docker/smoke.sh            # KEEP=1 leaves the stack running; SKIP_BUILD=1 reuses the build
 #
@@ -405,9 +406,10 @@ RESET_ID="$(create_user "$RESET_EMAIL" "$RESET_OLD_PASSWORD")"
           m as (insert into platform.tenant_memberships (tenant_id, user_id, person_id, status)
             select tenant_id, '$RESET_ID', id, 'active' from p returning 1)
         select count(*) from m")" == "1" ]] || { echo "smoke: could not add the reset test user to the organization" >&2; exit 1; }
-# Auth's admin API (security review T-M2-17). From INSIDE a worker, with its own key and URL (gateway port
-# 8444, network auth-admin): generate_link (GoTrue v2.197.0) answers — an unknown address gets Auth's 404
-# user_not_found and creates no user — and nothing else is served (no listing, creating or changing users).
+# Auth's admin API (security review T-M2-17, T-M2-09). From INSIDE a worker, with its own key and URL
+# (gateway port 8444, network auth-admin): generate_link (GoTrue v2.197.0) answers — an unknown address
+# gets Auth's 404 user_not_found and creates no user — and so does PUT /admin/users/{id} (account bans) for
+# an unknown id; nothing else is served (no listing, creating, reading or deleting users, no factors).
 # worker_admin <method> <path> [JSON body] → "<HTTP status> <Auth error_code or ->"; never the body.
 worker_admin() {
   compose exec -T --index 1 worker /nodejs/bin/node -e '
@@ -421,8 +423,14 @@ worker_admin() {
 users_before="$(q "select count(*) from auth.users")"
 [[ "$(worker_admin POST /admin/generate_link "{\"type\":\"recovery\",\"email\":\"nobody-$STAMP@sovereign.example\"}")" == "404 user_not_found" ]] ||
   { echo "smoke: the worker's generate_link for an unknown address must get Auth's 404 user_not_found" >&2; exit 1; }
-for call in "GET /admin/users" "POST /admin/users" "GET /admin/users/$RESET_ID" "PUT /admin/users/$RESET_ID" \
-  "DELETE /admin/users/$RESET_ID" "POST /invite" "GET /health"; do
+# A ban for an id Auth does not have: through the gateway to Auth, which answers 404 and changes nothing.
+[[ "$(worker_admin PUT /admin/users/00000000-0000-4000-8000-00000000dead '{"ban_duration":"none"}')" == "404 user_not_found" ]] ||
+  { echo "smoke: the worker's account ban for an unknown id must get Auth's 404 user_not_found" >&2; exit 1; }
+# One account by its lower-case id, PUT only: no other method, no sub-path, no other spelling of the id.
+for call in "GET /admin/users" "POST /admin/users" "PUT /admin/users" "GET /admin/users/$RESET_ID" \
+  "DELETE /admin/users/$RESET_ID" "POST /admin/users/$RESET_ID" "PATCH /admin/users/$RESET_ID" \
+  "GET /admin/users/$RESET_ID/factors" "PUT /admin/users/$RESET_ID/factors" \
+  "PUT /admin/users/${RESET_ID^^}" "PUT /admin/users/$RESET_ID/" "POST /invite" "GET /health"; do
   # shellcheck disable=SC2086 # method and path, split on purpose
   answer="$(worker_admin $call "{\"email\":\"worker-$STAMP@sovereign.example\",\"password\":\"Worker-$STAMP-not-used\"}")"
   [[ "$answer" == "403 -" || "$answer" == "404 -" ]] ||
@@ -586,6 +594,105 @@ for path in /verify/ /verify; do
   [[ $limited -eq 1 ]] || { echo "smoke: the gateway does not limit /auth/v1$path beyond its burst" >&2; exit 1; }
 done
 
+echo "smoke: deactivate and reactivate members (T-M2-09) — reassignment, sessions end, the worker's Auth ban"
+DEACT_EMAIL="deactivate-$STAMP@sovereign.example"
+DEACT_PASSWORD="Deactivate-$(openssl rand -hex 16)"
+DEACT_ID="$(create_user "$DEACT_EMAIL" "$DEACT_PASSWORD")"
+SECOND_EMAIL="deactivate-second-$STAMP@sovereign.example"
+SECOND_ID="$(create_user "$SECOND_EMAIL" "Second-$(openssl rand -hex 16)")"
+PGPASSWORD="$POSTGRES_PASSWORD" PGSSLMODE=verify-full PGSSLROOTCERT=.secrets/ca.crt \
+  psql -h localhost -p 55432 -U postgres -d postgres -X -q -v ON_ERROR_STOP=1 -v admin_user="$USER_ID" \
+  -v deact_user="$DEACT_ID" -v deact_email="$DEACT_EMAIL" -v second_user="$SECOND_ID" \
+  -v second_email="$SECOND_EMAIL" -f seed-deactivation.sql >/dev/null
+DEACT_PERSON=5eed1000-0000-4000-8000-0000000000d1
+SECOND_PERSON=5eed1000-0000-4000-8000-0000000000d2
+# An Auth session of Reem outside the browser: after the ban its refresh token must stop working.
+response="$(auth_api POST '/token?grant_type=password' '' "{\"email\":\"$DEACT_EMAIL\",\"password\":\"$DEACT_PASSWORD\"}")"
+[[ "${response##*$'\n'}" == "200" ]] || { echo "smoke: the member to deactivate could not sign in" >&2; exit 1; }
+DEACT_REFRESH="$(json_field "${response%$'\n'*}" refresh_token)"
+unset response
+[[ -n "$DEACT_REFRESH" ]] || { echo "smoke: no refresh token for the member to deactivate" >&2; exit 1; }
+# deactivate_e2e <phase>: the browser journey of deactivate.spec.ts for one phase.
+deactivate_e2e() {
+  (cd "$ROOT/apps/suite" && E2E_BASE_URL=http://localhost:3200 DEACTIVATE_E2E_PHASE="$1" \
+    SIGNED_IN_E2E_EMAIL="$EMAIL" SIGNED_IN_E2E_PASSWORD="$PASSWORD" \
+    SIGNED_IN_E2E_MANAGER_EMAIL="$MANAGER_EMAIL" SIGNED_IN_E2E_MANAGER_PASSWORD="$MANAGER_PASSWORD" \
+    DEACTIVATE_E2E_MEMBER_EMAIL="$DEACT_EMAIL" DEACTIVATE_E2E_MEMBER_PASSWORD="$DEACT_PASSWORD" \
+    pnpm exec playwright test e2e/deactivate.spec.ts --project=desktop-chromium)
+}
+deactivate_e2e deactivate
+# The database after the deactivations: memberships suspended, people inactive, records and roles kept;
+# Reem's report and department handed over to Mona; her sessions in the organization ended.
+[[ "$(q "select count(*) from platform.tenant_memberships m join platform.persons p on p.tenant_id = m.tenant_id and p.id = m.person_id
+        where m.user_id in ('$DEACT_ID', '$SECOND_ID') and m.status = 'suspended' and p.status = 'inactive'")" == "2" ]] ||
+  { echo "smoke: expected both members deactivated (membership suspended, person inactive)" >&2; exit 1; }
+[[ "$(q "select count(*) from platform.role_assignments ra join platform.tenant_memberships m on m.id = ra.membership_id
+        where m.user_id = '$DEACT_ID' and ra.role_code in ('line_manager', 'learner')")" == "2" ]] ||
+  { echo "smoke: a deactivated member's roles must be kept" >&2; exit 1; }
+[[ "$(q "select count(*) from platform.person_employment e join platform.departments d on d.tenant_id = e.tenant_id
+        where e.person_id = '5eed1000-0000-4000-8000-0000000000d3' and e.manager_person_id = '5eed1000-0000-4000-8000-000000000003'
+          and d.code = 'QLT' and d.head_person_id = '5eed1000-0000-4000-8000-000000000003'")" == "1" ]] ||
+  { echo "smoke: the direct report and the department were not handed over to the chosen person" >&2; exit 1; }
+[[ "$(q "select count(*) from platform.session_context c join platform.tenants t on t.id = c.active_tenant_id
+        where c.user_id = '$DEACT_ID' and t.slug = 'sovereign-smoke'")" == "0" ]] ||
+  { echo "smoke: the deactivated member's sessions in the organization did not end" >&2; exit 1; }
+# Audited with changed facts only (ids and codes: reason, what moved to whom) and announced as events.
+[[ "$(q "select count(*) from platform.audit_events where action = 'platform.user.deactivated'
+        and entity_id in ('$DEACT_PERSON', '$SECOND_PERSON') and data ? 'membershipId' and data ? 'reassigned'")" == "2" ]] ||
+  { echo "smoke: expected two deactivation audit events" >&2; exit 1; }
+[[ "$(q "select count(*) from platform.audit_events where action = 'platform.user.deactivated' and entity_id = '$DEACT_PERSON'
+        and data ->> 'reason' = 'long_leave' and jsonb_array_length(data -> 'reassigned') = 2")" == "1" ]] ||
+  { echo "smoke: the deactivation audit event must carry the reason and both hand-overs" >&2; exit 1; }
+[[ "$(q "select count(*) from platform.event_outbox where type = 'com.entlaqa.platform.user.deactivated'")" == "2" ]] ||
+  { echo "smoke: expected two user.deactivated events" >&2; exit 1; }
+if [[ "$(q "select count(*) from platform.audit_events a where a.action like 'platform.user.%activated'
+           and (a.data::text like '%@%' or a.data::text like '%Reem%' or a.data::text like '%ريم%' or a.data::text like '%EMP-41%')")" != "0" ]]; then
+  echo "smoke: personal data reached the deactivation audit events" >&2; exit 1
+fi
+# The worker bans both accounts in Auth (they sign in nowhere now) through the gateway's admin port.
+for i in $(seq 1 60); do
+  [[ "$(q "select count(*) from auth.users u join private.account_bans b on b.user_id = u.id
+          where u.id in ('$DEACT_ID', '$SECOND_ID') and u.banned_until > now() + interval '50 years'")" == "2" ]] && break
+  [[ $i -eq 60 ]] && { echo "smoke: the worker did not ban the deactivated accounts in Auth" >&2; exit 1; }
+  sleep 1
+done
+[[ "$(q "select count(*) from private.account_access_checks")" == "0" ]] ||
+  { echo "smoke: account access checks were left unanswered" >&2; exit 1; }
+# Auth refuses the banned account: sign-in and token refresh. (The web app answers every refused
+# sign-in alike; Auth's own answer says user_banned — recorded, not asserted, for the security review.)
+response="$(auth_api POST '/token?grant_type=password' '' "{\"email\":\"$DEACT_EMAIL\",\"password\":\"$DEACT_PASSWORD\"}")"
+[[ "${response##*$'\n'}" =~ ^4[0-9][0-9]$ ]] || { echo "smoke: Auth still signs in the banned account" >&2; exit 1; }
+echo "smoke: Auth answers a banned account's sign-in with $(json_field "${response%$'\n'*}" error_code) (HTTP ${response##*$'\n'})"
+response="$(auth_api POST '/token?grant_type=password' '' "{\"email\":\"$DEACT_EMAIL\",\"password\":\"Wrong-$STAMP-password\"}")"
+echo "smoke: …and with a wrong password: $(json_field "${response%$'\n'*}" error_code) (HTTP ${response##*$'\n'})"
+response="$(auth_api POST '/token?grant_type=refresh_token' '' "{\"refresh_token\":\"$DEACT_REFRESH\"}")"
+[[ "${response##*$'\n'}" =~ ^4[0-9][0-9]$ ]] || { echo "smoke: Auth still refreshes the banned account's session" >&2; exit 1; }
+unset response
+# Reactivation: the bans are lifted and the member signs in again, with the same roles.
+deactivate_e2e reactivate
+[[ "$(q "select count(*) from platform.tenant_memberships m join platform.persons p on p.tenant_id = m.tenant_id and p.id = m.person_id
+        where m.user_id in ('$DEACT_ID', '$SECOND_ID') and m.status = 'active' and p.status = 'active'")" == "2" ]] ||
+  { echo "smoke: expected both members active again" >&2; exit 1; }
+[[ "$(q "select count(*) from platform.audit_events where action = 'platform.user.reactivated' and entity_id in ('$DEACT_PERSON', '$SECOND_PERSON')")" == "2" &&
+   "$(q "select count(*) from platform.event_outbox where type = 'com.entlaqa.platform.user.reactivated'")" == "2" ]] ||
+  { echo "smoke: expected two reactivation audit events and events" >&2; exit 1; }
+for i in $(seq 1 60); do
+  [[ "$(q "select count(*) from auth.users u where u.id in ('$DEACT_ID', '$SECOND_ID') and (u.banned_until is null or u.banned_until <= now())
+          and not exists (select 1 from private.account_bans b where b.user_id = u.id)")" == "2" ]] && break
+  [[ $i -eq 60 ]] && { echo "smoke: the worker did not lift the bans of the reactivated accounts" >&2; exit 1; }
+  sleep 1
+done
+deactivate_e2e returns
+[[ "$(q "select count(*) from platform.role_assignments ra join platform.tenant_memberships m on m.id = ra.membership_id
+        where m.user_id = '$DEACT_ID' and ra.role_code in ('line_manager', 'learner')")" == "2" ]] ||
+  { echo "smoke: the reactivated member's roles changed" >&2; exit 1; }
+# The worker logged what it did, never an account id or address.
+if compose logs --no-log-prefix worker 2>&1 | grep -qE "$DEACT_ID|$SECOND_ID"; then
+  echo "smoke: an account id appears in the worker logs" >&2; exit 1
+fi
+compose logs --no-log-prefix worker 2>&1 | grep -q 'account access: banned' ||
+  { echo "smoke: the worker did not log its account bans" >&2; exit 1; }
+
 # No unconfirmed e-mail account exists after every journey (re-review N3): with "Confirm email" off, Auth
 # would hand a session for such an account to anyone who signs up with its e-mail, without the hook.
 # Accounts as Auth looks them up for a sign-up (GoTrue FindUserByEmailAndAudience); the sample people of
@@ -604,12 +711,12 @@ fi
 all_logs="$(compose logs --no-log-prefix 2>&1)"
 app_logs="$(compose logs --no-log-prefix app 2>&1)"
 for value in "$PASSWORD" "$PARITY_PASSWORD" "$MANAGER_PASSWORD" "$PROFILE_NEW_PASSWORD" "$INTRUDER_PASSWORD" \
-  "$GUARD_PASSWORD" "$GUARD_NEW_PASSWORD" "$RESET_OLD_PASSWORD" "$RESET_NEW_PASSWORD"; do
+  "$GUARD_PASSWORD" "$GUARD_NEW_PASSWORD" "$RESET_OLD_PASSWORD" "$RESET_NEW_PASSWORD" "$DEACT_PASSWORD"; do
   if grep -qF "$value" <<<"$all_logs"; then
     echo "smoke: a test user's password appears in the container logs" >&2; exit 1
   fi
 done
-for value in "$EMAIL" "$PARITY_EMAIL" "$MANAGER_EMAIL" "$RESET_EMAIL"; do
+for value in "$EMAIL" "$PARITY_EMAIL" "$MANAGER_EMAIL" "$RESET_EMAIL" "$DEACT_EMAIL" "$SECOND_EMAIL"; do
   if grep -qF "$value" <<<"$app_logs"; then
     echo "smoke: a test user's e-mail address appears in the app logs" >&2; exit 1
   fi
@@ -705,7 +812,7 @@ for service in app db auth gateway worker mailpit glitchtip errors-db; do
     done
     if [[ "$service" == "worker" ]]; then
       grep -qE '^SUPABASE_SECRET_KEY=ey' <<<"$env_vars" && [[ $service_role -eq 1 ]] ||
-        { echo "smoke: the worker must hold the Auth admin key (service_role token) for reset links" >&2; exit 1; }
+        { echo "smoke: the worker must hold the Auth admin key (service_role token) for reset links and bans" >&2; exit 1; }
       continue
     fi
     if grep -qE '^(SUPABASE_SECRET_KEY|SUPABASE_SERVICE_ROLE_KEY)=' <<<"$env_vars" || [[ $service_role -eq 1 ]]; then

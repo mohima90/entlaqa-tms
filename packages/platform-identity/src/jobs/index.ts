@@ -20,5 +20,14 @@ export {
   type AccountMailerOptions,
   RESET_LINK_VALID_MINUTES,
   type RecoveryLinks,
+  MFA_CONFIRM_VALID_HOURS,
+  MFA_REMOVE_VALID_DAYS,
   createAccountMailer,
 } from './account-mailer';
+export {
+  SESSION_PURGE_BATCH,
+  SESSION_PURGE_INTERVAL_MS,
+  SESSION_PURGE_TASK,
+  type SessionPurgerOptions,
+  createSessionPurger,
+} from './session-purger';

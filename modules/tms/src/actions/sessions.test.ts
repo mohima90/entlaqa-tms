@@ -25,6 +25,19 @@ const db = vi.hoisted(() => ({
     Promise.resolve({ roles: [], headedDepartmentIds: [] }),
   ),
   schema: {},
+  // Read when @jadarat/platform-rbac loads (its security settings schema, T-M2-10).
+  MFA_MODES: ['off', 'optional', 'required_all', 'required_roles'],
+  SECURITY_LIMITS: {
+    mfaGraceDays: { min: 0, max: 30 },
+    passwordMinLength: { min: 12, max: 36 },
+    lockoutThreshold: { min: 3, max: 5 },
+    lockoutMinutes: { min: 15, max: 60 },
+    sessionIdleMinutes: { min: 5, max: 480 },
+    sessionMaxHours: { min: 1, max: 24 },
+    sessionMaxDevices: { min: 1, max: 10 },
+  },
+  // The session may act in its organization (T-M2-10, review L1).
+  loadSessionFacts: vi.fn(() => Promise.resolve({ active: true, aal2: false })),
 }));
 vi.mock('@jadarat/platform-identity/next', () => identity);
 vi.mock('@jadarat/platform-db', () => db);
@@ -89,6 +102,7 @@ describe('createSessionDraft definition (positive path with a fake runtime)', ()
     const action = createDefineAction<object>({
       getClaims: () => Promise.resolve(claims),
       withUserTx: (_c, fn) => fn({}),
+      loadSessionFacts: () => Promise.resolve({ active: true, aal2: true }),
       loadGrants: () =>
         Promise.resolve([
           {

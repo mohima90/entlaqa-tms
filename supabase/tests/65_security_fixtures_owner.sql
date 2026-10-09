@@ -8,8 +8,13 @@
 --   uS2 …c02 (A learner)  device limit: s2a/s2b/s2c started 3/2/1 h ago, s2d inactive (not counted),
 --                         s2n new without an organization
 --   uS3 …c03 (A + B learner)  s3a, s3b in A, s3c in B
---   uM1 …c04 (A learner, verified authenticator app) sM1 · uM2 …c05 (A learner, unverified app only) sM2 ·
---   uM3 …c06 (A Training Manager) sM3 · uS4 …c07 (member of suspended tenant C) sS4
+--   uM1 …c04 (A learner, verified and confirmed authenticator app) sM1 · uM2 …c05 (A learner, unverified app
+--   only) sM2 · uM3 …c06 (A Training Manager) sM3 · uS4 …c07 (member of suspended tenant C) sS4
+--   uM4 …c08 (A learner) set up an app that waits for the e-mailed confirmation; sM4 …c81 passed its code in
+--         Auth (aal2 with that factor) — and one notice waits for the worker (69)
+--   uA2 …c09 second Organization Admin of A, confirmed app, sA2 …c91 at AAL2 (changes A's policy in 66–68)
+--   uB  (00) gets a confirmed app and its session sB AAL2 (changes B's policy)
+--   s3b (…c32) was last active 10 minutes ago (the target organization's inactivity limit, 67)
 \set ON_ERROR_STOP on
 
 insert into auth.users (id, email) values
@@ -19,7 +24,9 @@ insert into auth.users (id, email) values
   ('00000000-0000-4000-8000-000000000c04', 'um1@a.test'),
   ('00000000-0000-4000-8000-000000000c05', 'um2@a.test'),
   ('00000000-0000-4000-8000-000000000c06', 'um3@a.test'),
-  ('00000000-0000-4000-8000-000000000c07', 'us4@c.test');
+  ('00000000-0000-4000-8000-000000000c07', 'us4@c.test'),
+  ('00000000-0000-4000-8000-000000000c08', 'um4@a.test'),
+  ('00000000-0000-4000-8000-000000000c09', 'ua2@a.test');
 
 insert into auth.sessions (id, user_id, created_at, not_after) values
   ('10000000-0000-4000-8000-000000000c11', '00000000-0000-4000-8000-000000000c01', now(), null),
@@ -40,7 +47,9 @@ insert into auth.sessions (id, user_id, created_at, not_after) values
   ('10000000-0000-4000-8000-000000000c41', '00000000-0000-4000-8000-000000000c04', now(), null),
   ('10000000-0000-4000-8000-000000000c51', '00000000-0000-4000-8000-000000000c05', now(), null),
   ('10000000-0000-4000-8000-000000000c61', '00000000-0000-4000-8000-000000000c06', now(), null),
-  ('10000000-0000-4000-8000-000000000c71', '00000000-0000-4000-8000-000000000c07', now(), null);
+  ('10000000-0000-4000-8000-000000000c71', '00000000-0000-4000-8000-000000000c07', now(), null),
+  ('10000000-0000-4000-8000-000000000c81', '00000000-0000-4000-8000-000000000c08', now(), null),
+  ('10000000-0000-4000-8000-000000000c91', '00000000-0000-4000-8000-000000000c09', now(), null);
 update auth.sessions set user_agent = 'Mozilla/5.0 (Windows NT 10.0) Chrome/130.0', aal = 'aal1'
 where user_id = '00000000-0000-4000-8000-000000000c03';
 
@@ -52,7 +61,9 @@ insert into platform.persons (id, tenant_id, display_name_ar, email) values
   ('a1000000-0000-4000-8000-000000000c04', 'a0000000-0000-4000-8000-000000000001', 'تطبيق ٤', 'um1@a.test'),
   ('a1000000-0000-4000-8000-000000000c05', 'a0000000-0000-4000-8000-000000000001', 'بلا تطبيق ٥', 'um2@a.test'),
   ('a1000000-0000-4000-8000-000000000c06', 'a0000000-0000-4000-8000-000000000001', 'مدير تدريب ٦', 'um3@a.test'),
-  ('c1000000-0000-4000-8000-000000000c07', 'c0000000-0000-4000-8000-000000000001', 'منشأة موقوفة ٧', 'us4@c.test');
+  ('c1000000-0000-4000-8000-000000000c07', 'c0000000-0000-4000-8000-000000000001', 'منشأة موقوفة ٧', 'us4@c.test'),
+  ('a1000000-0000-4000-8000-000000000c08', 'a0000000-0000-4000-8000-000000000001', 'تطبيق ينتظر ٨', 'um4@a.test'),
+  ('a1000000-0000-4000-8000-000000000c09', 'a0000000-0000-4000-8000-000000000001', 'مدير ثانٍ ٩', 'ua2@a.test');
 
 insert into platform.tenant_memberships (tenant_id, user_id, person_id, status) values
   ('a0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000c01', 'a1000000-0000-4000-8000-000000000c01', 'active'),
@@ -62,7 +73,9 @@ insert into platform.tenant_memberships (tenant_id, user_id, person_id, status) 
   ('a0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000c04', 'a1000000-0000-4000-8000-000000000c04', 'active'),
   ('a0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000c05', 'a1000000-0000-4000-8000-000000000c05', 'active'),
   ('a0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000c06', 'a1000000-0000-4000-8000-000000000c06', 'active'),
-  ('c0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000c07', 'c1000000-0000-4000-8000-000000000c07', 'active');
+  ('c0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000c07', 'c1000000-0000-4000-8000-000000000c07', 'active'),
+  ('a0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000c08', 'a1000000-0000-4000-8000-000000000c08', 'active'),
+  ('a0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000c09', 'a1000000-0000-4000-8000-000000000c09', 'active');
 
 insert into platform.role_assignments (tenant_id, membership_id, role_code, is_primary)
 select m.tenant_id, m.id, r.role_code, true
@@ -74,7 +87,9 @@ from (values
   ('a0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000c04', 'learner'),
   ('a0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000c05', 'learner'),
   ('a0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000c06', 'training_manager'),
-  ('c0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000c07', 'learner')
+  ('c0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000c07', 'learner'),
+  ('a0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000c08', 'learner'),
+  ('a0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000c09', 'tenant_admin')
 ) as r (tenant_id, user_id, role_code)
 join platform.tenant_memberships m on m.tenant_id = r.tenant_id and m.user_id = r.user_id;
 
@@ -90,19 +105,41 @@ insert into platform.session_context (session_id, user_id, active_tenant_id, las
   ('10000000-0000-4000-8000-000000000c23', '00000000-0000-4000-8000-000000000c02', 'a0000000-0000-4000-8000-000000000001', now()),
   ('10000000-0000-4000-8000-000000000c24', '00000000-0000-4000-8000-000000000c02', 'a0000000-0000-4000-8000-000000000001', now() - interval '40 minutes'),
   ('10000000-0000-4000-8000-000000000c31', '00000000-0000-4000-8000-000000000c03', 'a0000000-0000-4000-8000-000000000001', now()),
-  ('10000000-0000-4000-8000-000000000c32', '00000000-0000-4000-8000-000000000c03', 'a0000000-0000-4000-8000-000000000001', now()),
+  ('10000000-0000-4000-8000-000000000c32', '00000000-0000-4000-8000-000000000c03', 'a0000000-0000-4000-8000-000000000001', now() - interval '10 minutes'),
   ('10000000-0000-4000-8000-000000000c33', '00000000-0000-4000-8000-000000000c03', 'b0000000-0000-4000-8000-000000000001', now()),
   ('10000000-0000-4000-8000-000000000c41', '00000000-0000-4000-8000-000000000c04', 'a0000000-0000-4000-8000-000000000001', now()),
   ('10000000-0000-4000-8000-000000000c51', '00000000-0000-4000-8000-000000000c05', 'a0000000-0000-4000-8000-000000000001', now()),
   ('10000000-0000-4000-8000-000000000c61', '00000000-0000-4000-8000-000000000c06', 'a0000000-0000-4000-8000-000000000001', now()),
-  ('10000000-0000-4000-8000-000000000c71', '00000000-0000-4000-8000-000000000c07', 'c0000000-0000-4000-8000-000000000001', now());
+  ('10000000-0000-4000-8000-000000000c71', '00000000-0000-4000-8000-000000000c07', 'c0000000-0000-4000-8000-000000000001', now()),
+  ('10000000-0000-4000-8000-000000000c81', '00000000-0000-4000-8000-000000000c08', 'a0000000-0000-4000-8000-000000000001', now()),
+  ('10000000-0000-4000-8000-000000000c91', '00000000-0000-4000-8000-000000000c09', 'a0000000-0000-4000-8000-000000000001', now());
 
 insert into private.revoked_sessions (session_id, user_id, reason, revoked_by) values
   ('10000000-0000-4000-8000-000000000c15', '00000000-0000-4000-8000-000000000c01', 'user', '00000000-0000-4000-8000-000000000c01');
 
 insert into auth.mfa_factors (id, user_id, friendly_name, factor_type, status, secret) values
   ('20000000-0000-4000-8000-000000000c04', '00000000-0000-4000-8000-000000000c04', 'app', 'totp', 'verified', 'NOT-A-REAL-SECRET'),
-  ('20000000-0000-4000-8000-000000000c05', '00000000-0000-4000-8000-000000000c05', 'app', 'totp', 'unverified', 'NOT-A-REAL-SECRET');
+  ('20000000-0000-4000-8000-000000000c05', '00000000-0000-4000-8000-000000000c05', 'app', 'totp', 'unverified', 'NOT-A-REAL-SECRET'),
+  ('20000000-0000-4000-8000-000000000c08', '00000000-0000-4000-8000-000000000c08', 'app', 'totp', 'verified', 'NOT-A-REAL-SECRET'),
+  ('20000000-0000-4000-8000-000000000c09', '00000000-0000-4000-8000-000000000c09', 'app', 'totp', 'verified', 'NOT-A-REAL-SECRET'),
+  ('20000000-0000-4000-8000-0000000000b1', '00000000-0000-4000-8000-0000000000b1', 'app', 'totp', 'verified', 'NOT-A-REAL-SECRET');
+-- Confirmed from the mailbox (review H1): uM1's, uA2's and uB's apps.
+insert into private.mfa_factor_confirmations (factor_id, user_id, confirmed_at) values
+  ('20000000-0000-4000-8000-000000000c04', '00000000-0000-4000-8000-000000000c04', now()),
+  ('20000000-0000-4000-8000-000000000c09', '00000000-0000-4000-8000-000000000c09', now()),
+  ('20000000-0000-4000-8000-0000000000b1', '00000000-0000-4000-8000-0000000000b1', now());
+-- Sessions that passed a code in Auth, with the factor it came from.
+update auth.sessions s set aal = 'aal2', factor_id = f.factor_id
+from (values ('10000000-0000-4000-8000-000000000c81'::uuid, '20000000-0000-4000-8000-000000000c08'::uuid),
+             ('10000000-0000-4000-8000-000000000c91', '20000000-0000-4000-8000-000000000c09'),
+             ('10000000-0000-4000-8000-0000000000b1', '20000000-0000-4000-8000-0000000000b1')) as f (session_id, factor_id)
+where s.id = f.session_id;
+-- uM4's app as the web app records it at set-up (waiting for confirmation), and its set-up notice waiting for
+-- the worker (claimed in 69).
+insert into private.mfa_factor_confirmations (factor_id, user_id) values
+  ('20000000-0000-4000-8000-000000000c08', '00000000-0000-4000-8000-000000000c08');
+insert into private.account_mail_requests (kind, user_id, factor_id)
+values ('mfa_factor_added', '00000000-0000-4000-8000-000000000c08', '20000000-0000-4000-8000-000000000c08');
 
 -- Every organization has exactly one policy, with the defaults of screen 6 and PO decisions 1 / 2.
 do $$
@@ -142,6 +179,15 @@ begin
     'security_policies_password_min_length_check', 'minimum length above 36 (72 bytes in Arabic) is refused');
   perform tests.assert_check_constraint(format('update platform.security_policies set lockout_threshold = 50 where tenant_id = %L', v_a),
     'security_policies_lockout_threshold_check', 'lockout cannot be turned off');
+  -- Never more lenient than the platform default of 5 attempts / 15 minutes (TM-0003 T-IAM-24).
+  perform tests.assert_check_constraint(format('update platform.security_policies set lockout_threshold = 6 where tenant_id = %L', v_a),
+    'security_policies_lockout_threshold_check', 'at most 5 failed attempts');
+  perform tests.assert_check_constraint(format('update platform.security_policies set lockout_threshold = 2 where tenant_id = %L', v_a),
+    'security_policies_lockout_threshold_check', 'at least 3 failed attempts');
+  perform tests.assert_check_constraint(format('update platform.security_policies set lockout_minutes = 14 where tenant_id = %L', v_a),
+    'security_policies_lockout_minutes_check', 'locked for at least 15 minutes');
+  perform tests.assert_check_constraint(format('update platform.security_policies set lockout_minutes = 61 where tenant_id = %L', v_a),
+    'security_policies_lockout_minutes_check', 'locked for at most 60 minutes');
   perform tests.assert_check_constraint(format('update platform.security_policies set session_max_hours = 25 where tenant_id = %L', v_a),
     'security_policies_session_max_hours_check', 'sessions end within 24 hours');
   perform tests.assert_check_constraint(format('update platform.security_policies set session_idle_minutes = 481 where tenant_id = %L', v_a),

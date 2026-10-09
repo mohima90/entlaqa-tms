@@ -66,7 +66,10 @@ export { type DatabaseHealth, checkDatabase } from './health';
 export {
   DEFAULT_LOCKOUT_POLICY,
   type LockoutPolicy,
+  MEMBER_MFA_RESETS,
   MFA_MODES,
+  type MemberMfaReset,
+  type MfaLinkOutcome,
   type MfaMode,
   type MySignInSession,
   PLATFORM_PASSWORD_MIN_LENGTH,
@@ -79,7 +82,9 @@ export {
   type SessionAccess,
   type SessionAccessState,
   type SignInSession,
+  applyDeviceLimit,
   changedSettings,
+  confirmMfaFactor,
   createPreSessionSecurityApi,
   dismissMfaPrompt,
   endMemberSessions,
@@ -91,7 +96,12 @@ export {
   invitationPasswordMinLength,
   listMemberSessions,
   listMySessions,
+  loadSessionFacts,
   passwordMinLengthForCaller,
+  rejectMfaFactor,
+  requestMfaFactorMail,
+  requestMfaRemovedMail,
+  resetMemberMfa,
   updateSecurityPolicy,
 } from './security';
 export { type CurrentTenant, getCurrentTenant } from './tenants';

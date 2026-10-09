@@ -1,6 +1,10 @@
 import { createRecoveryLinkIssuer } from '@jadarat/platform-db/admin';
 import type { WithPlatformTx, WithSystemTx } from '@jadarat/platform-db/jobs';
-import { type RecoveryLinks, createAccountMailer } from '@jadarat/platform-identity/jobs';
+import {
+  type RecoveryLinks,
+  createAccountMailer,
+  createSessionPurger,
+} from '@jadarat/platform-identity/jobs';
 import type { PlatformTask, WorkerLogLevel } from '@jadarat/platform-jobs/jobs';
 
 export interface PlatformTaskDependencies {
@@ -32,7 +36,10 @@ function authAdminRecoveryLinks(settings: { url: string; secretKey: string }): R
   });
 }
 
-/** Work without a tenant (ADR 0005 §4), run on every wake-up and every minute: account e-mails. */
+/**
+ * Work without a tenant (ADR 0005 §4), run on every wake-up and every minute: account e-mails, and ended
+ * sessions removed from Auth (T-M2-10, at most once a minute).
+ */
 export function platformTasks(deps: PlatformTaskDependencies): readonly PlatformTask[] {
   const recoveryLinksFor = deps.recoveryLinksFor ?? authAdminRecoveryLinks;
   const mailer = createAccountMailer({
@@ -42,8 +49,9 @@ export function platformTasks(deps: PlatformTaskDependencies): readonly Platform
     withSystemTx: deps.withSystemTx,
     log: deps.log,
   });
+  const purger = createSessionPurger({ withPlatformTx: deps.withPlatformTx, log: deps.log });
   const adminKeyCheck = deps.adminKeyCheck;
-  if (!adminKeyCheck) return [mailer];
+  if (!adminKeyCheck) return [mailer, purger];
   return [
     {
       name: mailer.name,
@@ -52,5 +60,6 @@ export function platformTasks(deps: PlatformTaskDependencies): readonly Platform
         return mailer.run(context);
       },
     },
+    purger,
   ];
 }

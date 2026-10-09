@@ -148,7 +148,13 @@ function setup(options: Options = {}) {
       return Promise.resolve(true);
     }),
     getSessionAccess: vi.fn(() =>
-      Promise.resolve({ state: options.access ?? ('ok' as const), mfaDeadline: null }),
+      Promise.resolve({
+        state: options.access ?? ('ok' as const),
+        mfaDeadline: null,
+        usesApp: false,
+        mfaPending: false,
+        aal2: false,
+      }),
     ),
     insertAuditEvent: vi.fn(() => Promise.resolve()),
     logWarning: vi.fn(),

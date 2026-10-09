@@ -3,13 +3,17 @@
 -- One login, one password (ADR 0003 §1): an account in several organizations follows the STRICTEST
 -- password rule of all of them (PO decision 5, 9 Oct 2026; TM-0003 D-IAM-04) — the largest
 -- password_min_length over its active memberships in active/trial organizations, never below the
--- platform's 12. Supabase Auth keeps the platform minimum (12) itself; the larger value is checked by the
--- web app wherever a password is set (reset, My profile, invitation acceptance) before Auth is called.
--- The answers are a number only: never which organization asks for it.
+-- platform's 12. Lengths are CHARACTERS (code points: an Arabic letter counts once). Supabase Auth's own
+-- minimum (12) counts BYTES (GoTrue compares len() of the UTF-8 string), so for Arabic it is a weaker floor
+-- (6 Arabic letters are 12 bytes): the character rule — 12 or an organization's larger value — is checked by
+-- the web app wherever a password is set (reset, My profile, invitation acceptance) before Auth is called.
+-- A password set directly through Auth's API with the account's own session skips that check (residual
+-- risk, TM-0003 RR-IAM-07 / T-IAM-05). The answers are a number only: never which organization asks for it.
 --
 --   private.password_min_length_of(user)            the rule (helper, SECURITY INVOKER; tenant_guard)
 --   private.password_min_length_for_caller()        web app (app_server, user claims of a live session —
---       also the recovery session of a reset, which has no organization): the caller's own rule
+--       also the recovery session of a reset, which has no organization; a session acting in an
+--       organization must be allowed to act there: MFA state, session rules): the caller's own rule
 --   private.invitation_password_min_length(hash)    web app (app_server, no session): a new account
 --       created by accepting an invitation belongs to that organization only, so its rule applies
 --   private.tenant_lockout_policy(tenant)           web app (app_server, before sign-in): the lockout
@@ -53,12 +57,17 @@ begin
   if not private.user_session_is_valid(v_user, private.try_uuid(v_claims ->> 'session_id')) then
     return null;
   end if;
+  -- A session acting in an organization answers only while it may act there (MFA state and session rules,
+  -- the same decision as every tenant policy; review L1). The recovery session of a reset has none.
+  if v_claims ? 'tenant_id' and private.current_tenant_id() is null then
+    return null;
+  end if;
   return private.password_min_length_of(v_user);
 end
 $$;
 
 comment on function private.password_min_length_for_caller() is
-  'SECURITY-RELEVANT (FR-IAM-13, PO decision 5). Minimum password length for the signed-in account (live session), NULL otherwise.';
+  'SECURITY-RELEVANT (FR-IAM-13, PO decision 5). Minimum password length for the signed-in account (live session allowed to act in its organization, or a recovery session), NULL otherwise.';
 
 create or replace function private.invitation_password_min_length(p_token_hash bytea)
 returns smallint

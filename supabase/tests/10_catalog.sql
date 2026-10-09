@@ -377,17 +377,37 @@ begin
     and p.proowner <> 'membership_guard'::regrole;    -- checked in its own block below (T-M2-09)
   perform tests.assert_eq(v_list,
     'private.accept_invitation_as_caller(bytea,text,text) (owner invitation_guard), '
+    'private.account_has_app(uuid) (owner tenant_guard), '
+    'private.apply_device_limit() (owner tenant_guard), '
+    'private.audit_account_event(uuid,text,jsonb,text,uuid,uuid) (owner tenant_guard), '
+    'private.confirm_mfa_factor(bytea) (owner tenant_guard), '
     'private.current_tenant_id() (owner tenant_guard), '
     'private.discard_inactive_tenant_delivery(uuid) (owner tenant_guard), '
     'private.dismiss_mfa_prompt() (owner tenant_guard), '
+    'private.end_all_account_sessions(uuid,uuid,uuid) (owner tenant_guard), '
     'private.end_member_sessions(uuid,uuid) (owner tenant_guard), '
     'private.end_my_sessions(uuid) (owner tenant_guard), '
+    'private.end_sessions(uuid,uuid[],uuid,text,uuid) (owner tenant_guard), '
+    'private.enforce_device_limit(uuid,uuid,uuid) (owner tenant_guard), '
     'private.has_active_membership(uuid,uuid) (owner tenant_guard), '
     'private.invitation_allows_signup(text,text) (owner invitation_guard), '
     'private.invitation_by_token(bytea) (owner invitation_guard), '
     'private.invitation_password_min_length(bytea) (owner invitation_guard), '
+    'private.issue_mfa_factor_tokens(uuid,uuid,bytea,bytea) (owner tenant_guard), '
     'private.my_sessions() (owner tenant_guard), '
     'private.password_min_length_for_caller() (owner tenant_guard), '
+    'private.purge_ended_sessions(integer) (owner tenant_guard), '
+    'private.queue_mfa_mail(text,uuid,uuid,text,uuid) (owner tenant_guard), '
+    'private.reject_mfa_factor(bytea) (owner tenant_guard), '
+    'private.remove_account_factors(uuid,uuid[]) (owner tenant_guard), '
+    'private.request_aal2() (owner tenant_guard), '
+    'private.request_live_user() (owner tenant_guard), '
+    'private.request_mfa_factor_mail(uuid) (owner tenant_guard), '
+    'private.request_mfa_removed_mail(uuid) (owner tenant_guard), '
+    'private.request_session_facts() (owner tenant_guard), '
+    'private.reset_account_mfa(uuid,text) (owner tenant_guard), '
+    'private.reset_member_mfa(uuid) (owner tenant_guard), '
+    'private.security_policy_changed_mail() (owner tenant_guard), '
     'private.session_access(uuid,uuid,uuid,boolean,boolean) (owner tenant_guard), '
     'private.session_access_state() (owner tenant_guard), '
     'private.session_tenants() (owner tenant_guard), '
@@ -504,13 +524,25 @@ begin
                         where oid = 'private.account_mail_requests'::regclass),
     'account_mail_requests: row level security must be ENABLED and FORCED');
   for v_list in select unnest(array['anon', 'authenticated', 'service_role', 'app_server', 'app_worker', 'app_queue',
-                                    'tenant_guard', 'invitation_guard', 'supabase_auth_admin']) loop
+                                    'invitation_guard', 'supabase_auth_admin']) loop
     perform tests.assert(
       not has_table_privilege(v_list, 'private.account_mail_requests', 'select, insert, update, delete, truncate, references, trigger')
         and not has_any_column_privilege(v_list, 'private.account_mail_requests', 'select, insert, update, references')
         and not has_table_privilege(v_list, 'private.auth_account', 'select, insert, update, delete, truncate, references, trigger'),
       format('%s must have no privilege on the account e-mail queue or private.auth_account', v_list));
   end loop;
+  -- tenant_guard queues the authenticator and policy-change notices (T-M2-10): select, insert, delete on the
+  -- queue (its policy limits it to those kinds); never the Auth accounts view.
+  perform tests.assert(
+    has_table_privilege('tenant_guard', 'private.account_mail_requests', 'select, insert, delete')
+      and not has_table_privilege('tenant_guard', 'private.account_mail_requests', 'update, truncate, references, trigger')
+      and not has_table_privilege('tenant_guard', 'private.auth_account', 'select, insert, update, delete, truncate, references, trigger'),
+    'tenant_guard: the authenticator notices on the queue only, never private.auth_account');
+  perform tests.assert_eq((select string_agg(polname || ':' || pg_get_expr(polqual, polrelid), ', ') from pg_policy
+                           where polrelid = 'private.account_mail_requests'::regclass
+                             and 'tenant_guard'::regrole = any (polroles)),
+    'account_mail_requests_tenant_guard:(kind = ANY (ARRAY[''mfa_factor_added''::text, ''mfa_factor_removed''::text, ''security_policy_changed''::text]))',
+    'tenant_guard''s policy on the queue: the authenticator and policy-change notices only');
   -- Callers: the request functions and the worker functions are executable by authenticated (the
   -- functions check the login role themselves) and nobody else besides the owner.
   for v_list in

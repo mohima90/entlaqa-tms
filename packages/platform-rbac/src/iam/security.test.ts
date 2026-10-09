@@ -16,6 +16,7 @@ import {
   endMySessionsActionDefinition,
   memberSecurityQueryDefinition,
   mySecurityQueryDefinition,
+  resetMemberMfaActionDefinition,
   securityPageQueryDefinition,
   updateSecurityPolicyActionDefinition,
 } from './security';
@@ -25,8 +26,8 @@ const db = vi.hoisted(() => ({
   SECURITY_LIMITS: {
     mfaGraceDays: { min: 0, max: 30 },
     passwordMinLength: { min: 12, max: 36 },
-    lockoutThreshold: { min: 3, max: 10 },
-    lockoutMinutes: { min: 5, max: 60 },
+    lockoutThreshold: { min: 3, max: 5 },
+    lockoutMinutes: { min: 15, max: 60 },
     sessionIdleMinutes: { min: 5, max: 480 },
     sessionMaxHours: { min: 1, max: 24 },
     sessionMaxDevices: { min: 1, max: 10 },
@@ -42,6 +43,7 @@ const db = vi.hoisted(() => ({
   listMemberSessions: vi.fn(),
   endMemberSessions: vi.fn(),
   mayManagePerson: vi.fn(),
+  resetMemberMfa: vi.fn(),
 }));
 vi.mock('@jadarat/platform-db', () => db);
 
@@ -65,6 +67,9 @@ function runtime(grants: readonly Grant[], aal: 'aal1' | 'aal2' = 'aal1', found 
       sub: '11111111-1111-4111-8111-111111111111',
       role: 'authenticated',
       aal,
+      ...(aal === 'aal2'
+        ? { amr: [{ method: 'totp', timestamp: Math.floor(Date.now() / 1000) }] }
+        : {}),
       session_id: SESSION,
       tenant_id: TENANT,
       person_id: ME,
@@ -75,6 +80,7 @@ function runtime(grants: readonly Grant[], aal: 'aal1' | 'aal2' = 'aal1', found 
   const rt: ActionRuntime<UserTx> = {
     getClaims,
     withUserTx: (_c, fn) => fn(TX),
+    loadSessionFacts: () => Promise.resolve({ active: true, aal2: aal === 'aal2' }),
     loadGrants: () => Promise.resolve([...grants, ...MEMBER_GRANTS]),
     resolveResource: () => Promise.resolve(found ? sara : null),
     writeAudit,
@@ -113,12 +119,13 @@ beforeEach(() => {
   vi.clearAllMocks();
   db.getSecurityPolicy.mockResolvedValue(policy);
   db.passwordMinLengthForCaller.mockResolvedValue(16);
-  db.getMemberMfa.mockResolvedValue({ usesApp: true, since: new Date(1) });
+  db.getMemberMfa.mockResolvedValue({ usesApp: true, since: new Date(1), pending: false });
   db.listMySessions.mockResolvedValue([]);
   db.listMemberSessions.mockResolvedValue([]);
   db.endMySessions.mockResolvedValue(1);
   db.endMemberSessions.mockResolvedValue(2);
   db.mayManagePerson.mockResolvedValue(true);
+  db.resetMemberMfa.mockResolvedValue('reset');
 });
 
 describe('security settings page (screen 6)', () => {
@@ -253,6 +260,9 @@ describe('changing the policy (high risk, Organization Admin at AAL2)', () => {
       { passwordMinLength: 11 },
       { passwordMinLength: 37 },
       { lockoutThreshold: 0 },
+      // Never more lenient than the platform default (TM-0003 T-IAM-24).
+      { lockoutThreshold: 6 },
+      { lockoutMinutes: 14 },
       { lockoutMinutes: 61 },
       { sessionIdleMinutes: 4 },
       { sessionMaxHours: 25 },
@@ -276,7 +286,9 @@ describe('changing the policy (high risk, Organization Admin at AAL2)', () => {
 describe('own sign-in sessions (My profile)', () => {
   it('every member lists their own sessions and password rule', async () => {
     const query = createDefineQuery(runtime([]).rt)(mySecurityQueryDefinition());
-    expect(await query({})).toEqual(ok({ sessions: [], passwordMinLength: 16, usesApp: true }));
+    expect(await query({})).toEqual(
+      ok({ sessions: [], passwordMinLength: 16, usesApp: true, appPending: false }),
+    );
     expect(db.getMemberMfa).toHaveBeenCalledWith(TX, ME);
     db.passwordMinLengthForCaller.mockResolvedValue(null);
     const gone = await query({});
@@ -306,7 +318,15 @@ describe("a member's sessions (screen 3: user managers)", () => {
       const { rt, writeAudit } = runtime(forRoles(role));
       const query = createDefineQuery(rt)(memberSecurityQueryDefinition());
       expect(await query({ personId: SARA })).toEqual(
-        ok({ sessions: [], usesApp: true, appSince: new Date(1), maxDevices: 3 }),
+        ok({
+          sessions: [],
+          usesApp: true,
+          appSince: new Date(1),
+          appPending: false,
+          // Only the Organization Admin resets a lost authenticator app (PO answer, 9 Oct 2026).
+          canResetApp: role === 'tenant_admin',
+          maxDevices: 3,
+        }),
       );
       const end = createDefineAction(rt)(endMemberSessionsActionDefinition());
       expect(await end({ personId: SARA, sessionId: null })).toEqual(
@@ -368,5 +388,68 @@ describe("a member's sessions (screen 3: user managers)", () => {
     db.endMemberSessions.mockRejectedValueOnce(new Error('db down'));
     const failed = await end({ personId: SARA, sessionId: null });
     expect(!failed.ok && failed.error.code).toBe('INTERNAL_ERROR');
+  });
+});
+
+describe("a member's lost authenticator app (screen 3; PO answer 9 Oct 2026)", () => {
+  const reset = (rt: ActionRuntime<UserTx>) =>
+    createDefineAction(rt)(resetMemberMfaActionDefinition());
+
+  it('the Organization Admin with a recent code resets it; audited without personal data', async () => {
+    const { rt, writeAudit, getClaims } = runtime(forRoles('tenant_admin'), 'aal2');
+    expect(await reset(rt)({ personId: SARA })).toEqual(ok({ personId: SARA }));
+    expect(db.resetMemberMfa).toHaveBeenCalledWith(TX, SARA);
+    expect(getClaims).toHaveBeenCalledWith({ strict: true });
+    expect(writeAudit).toHaveBeenCalledWith(TX, expect.anything(), {
+      action: 'platform.user.mfa_reset',
+      entityType: 'person',
+      entityId: SARA,
+      data: { method: 'totp' },
+    });
+  });
+
+  it('authorization negatives: no code, every other role, out of scope, the manage rule, the database', async () => {
+    // Without a code (AAL1): STEP_UP_REQUIRED — the /mfa page asks for one first.
+    const aal1 = await reset(runtime(forRoles('tenant_admin')).rt)({ personId: SARA });
+    expect(!aal1.ok && aal1.error.code).toBe('STEP_UP_REQUIRED');
+    // No other role holds the permission, not even the HR Manager who signs members out.
+    for (const role of SYSTEM_ROLES.map((r) => r.code).filter((c) => c !== 'tenant_admin')) {
+      const result = await reset(runtime(forRoles(role), 'aal2').rt)({ personId: SARA });
+      expect(!result.ok && result.error.code, role).toBe('FORBIDDEN');
+    }
+    const outOfScope = await reset(runtime(forRoles('tenant_admin'), 'aal2', false).rt)({
+      personId: SARA,
+    });
+    expect(!outOfScope.ok && outOfScope.error.code).toBe('NOT_FOUND');
+    db.mayManagePerson.mockResolvedValueOnce(false);
+    const unmanaged = await reset(runtime(forRoles('tenant_admin'), 'aal2').rt)({ personId: SARA });
+    expect(!unmanaged.ok && unmanaged.error.code).toBe('FORBIDDEN');
+    db.resetMemberMfa.mockRejectedValueOnce(Object.assign(new Error('refused'), { code: '42501' }));
+    const refused = await reset(runtime(forRoles('tenant_admin'), 'aal2').rt)({ personId: SARA });
+    expect(!refused.ok && refused.error.code).toBe('FORBIDDEN');
+    expect(db.resetMemberMfa).toHaveBeenCalledTimes(1);
+  });
+
+  it("the database's answers: no app, another organization (ENTLAQA support), oneself, gone", async () => {
+    const cases = [
+      ['no_app', 'MFA_RESET_NO_APP'],
+      ['other_organization', 'MFA_RESET_OTHER_ORGANIZATION'],
+      ['self', 'FORBIDDEN'],
+      ['not_found', 'NOT_FOUND'],
+    ] as const;
+    for (const [outcome, code] of cases) {
+      db.resetMemberMfa.mockResolvedValueOnce(outcome);
+      const { rt, writeAudit } = runtime(forRoles('tenant_admin'), 'aal2');
+      const result = await reset(rt)({ personId: SARA });
+      expect(!result.ok && result.error.code, outcome).toBe(code);
+      expect(writeAudit).not.toHaveBeenCalled();
+    }
+  });
+
+  it("one cannot reset one's own app from the user list (My profile does that)", async () => {
+    const { rt } = runtime(forRoles('tenant_admin'), 'aal2');
+    const query = createDefineQuery(rt)(memberSecurityQueryDefinition());
+    const own = await query({ personId: ME });
+    expect(own.ok && own.value.canResetApp).toBe(false);
   });
 });

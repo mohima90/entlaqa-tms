@@ -20,6 +20,7 @@ function runtime(over: Partial<ActionRuntime<string>>): ActionRuntime<string> {
     getClaims: () =>
       Promise.resolve(ok(claims({ tenant_id: '22222222-2222-4222-8222-222222222222' }))),
     withUserTx: (_c, fn) => fn('tx'),
+    loadSessionFacts: () => Promise.resolve({ active: true, aal2: true }),
     loadGrants: () =>
       Promise.resolve([
         { permission: 'platform.user.read', scope: { type: 'tenant' } },

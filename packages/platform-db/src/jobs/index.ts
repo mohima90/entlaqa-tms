@@ -21,14 +21,22 @@ export {
   insertEmailDelivery,
 } from './deliveries';
 export {
+  ACCOUNT_MAIL_KINDS,
   ACCOUNT_MAIL_MAX_ATTEMPTS,
   type AccountMailContext,
   type AccountMailKind,
   type AccountMailRequest,
   type AccountMailSkip,
+  MFA_REMOVAL_REASONS,
+  type MfaRemovalReason,
+  type PolicyChange,
+  accountHasApp,
   claimAccountMailRequest,
   finishAccountMailRequest,
+  issueMfaFactorTokens,
   loadAccountMailContext,
+  purgeEndedSessions,
+  loadPersonName,
   retryAccountMailRequest,
 } from './account-mail';
 export {

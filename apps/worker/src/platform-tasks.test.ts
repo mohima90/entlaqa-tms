@@ -7,6 +7,7 @@ const db = vi.hoisted(() => ({
   retryAccountMailRequest: vi.fn(),
   loadAccountMailContext: vi.fn(),
   tenantIsServed: vi.fn(),
+  purgeEndedSessions: vi.fn(),
 }));
 vi.mock('@jadarat/platform-db/jobs', () => db);
 
@@ -19,7 +20,17 @@ const deps = {
   log: vi.fn(),
 };
 
-describe('worker platform tasks (T-M2-17)', () => {
+describe('worker platform tasks (T-M2-17, T-M2-10)', () => {
+  it('removes ended sessions from Auth (review M1), with or without the admin key check', async () => {
+    db.purgeEndedSessions.mockResolvedValue(0);
+    for (const adminKeyCheck of [undefined, vi.fn()]) {
+      const tasks = platformTasks({ ...deps, authAdmin: undefined, adminKeyCheck });
+      const purger = tasks.find((t) => t.name === 'platform.session_purge');
+      await expect(purger?.run({ jobId: 'p' })).resolves.toBe(false);
+    }
+    expect(db.purgeEndedSessions).toHaveBeenCalledTimes(2);
+  });
+
   it('registers the account mailer; the Auth admin API only when it is configured', () => {
     const issue = vi.fn(() => Promise.resolve({ status: 'unknown_account' as const }));
     const recoveryLinksFor = vi.fn(() => ({ issue }));
@@ -30,7 +41,7 @@ describe('worker platform tasks (T-M2-17)', () => {
 
     recoveryLinksFor.mockClear();
     const tasks = platformTasks({ ...deps, authAdmin: undefined, recoveryLinksFor });
-    expect(tasks.map((t) => t.name)).toEqual(['platform.account_mail']);
+    expect(tasks.map((t) => t.name)).toEqual(['platform.account_mail', 'platform.session_purge']);
     expect(recoveryLinksFor).not.toHaveBeenCalled();
   });
 

@@ -8,6 +8,7 @@ const identity = vi.hoisted(() => ({
 const db = vi.hoisted(() => ({
   withUserTx: vi.fn((_claims: unknown, fn: (tx: unknown) => Promise<unknown>) => fn('tx')),
   insertAuditEvent: vi.fn(() => Promise.resolve()),
+  loadSessionFacts: vi.fn(() => Promise.resolve({ active: true, aal2: false })),
   loadPersonResourceFacts: vi.fn((_tx: unknown, id: string) =>
     Promise.resolve(
       id === '55555555-5555-4555-8555-555555555555'
@@ -58,6 +59,14 @@ describe('default defineAction runtime', () => {
     const claims = { sub: 'u' } as never;
     expect(await defaultActionRuntime.withUserTx(claims, (tx) => Promise.resolve(tx))).toBe('tx');
     expect(db.withUserTx).toHaveBeenCalledWith(claims, expect.any(Function));
+  });
+
+  it('asks the database whether the session may act and counts as AAL2 (T-M2-10, review L1/H1)', async () => {
+    expect(await defaultActionRuntime.loadSessionFacts('tx' as never)).toEqual({
+      active: true,
+      aal2: false,
+    });
+    expect(db.loadSessionFacts).toHaveBeenCalledWith('tx');
   });
 
   it("loads grants from the member's roles (T-M2-03) and resolves no resources yet", async () => {

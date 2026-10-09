@@ -42,6 +42,7 @@ function runtime(personId: string | null = ME, grants = MEMBER_GRANTS) {
       return Promise.resolve(ok(r.value));
     },
     withUserTx: (_c, fn) => fn(TX),
+    loadSessionFacts: () => Promise.resolve({ active: true, aal2: true }),
     loadGrants: () => Promise.resolve([...grants]),
     resolveResource: () => Promise.resolve(null),
     writeAudit,

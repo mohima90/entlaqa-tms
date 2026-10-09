@@ -23,6 +23,8 @@ export const PasswordResetVariables = z.strictObject({
   /** How long the link works (Auth's `otp_exp`: 60 minutes). */
   validMinutes: z.number().int().min(1).max(1440),
   loginEmail: z.string().refine(isEmailAddress, 'e-mail address'),
+  /** The account uses an authenticator app: the page will ask for its code too (T-M2-10). */
+  codeNeeded: z.boolean().default(false),
 });
 
 export type PasswordResetVariables = z.output<typeof PasswordResetVariables>;
@@ -37,6 +39,7 @@ function body(v: PasswordResetVariables, locale: AppLocale, primary: boolean): S
       </h1>
       ${paragraph(markup`وصلنا طلب لتعيين كلمة مرور جديدة للحساب ${ltr(v.loginEmail)}.`)}
       ${primary ? actionButton('تعيين كلمة مرور جديدة', url) : paragraph(link('تعيين كلمة مرور جديدة', url))}
+      ${v.codeNeeded ? paragraph(markup`يستخدم حسابك تطبيق مصادقة، وستطلب الصفحة الرمز الظاهر فيه؛ أبقِه في متناولك.`) : markup``}
       ${paragraph(markup`الرابط صالح لمدة <b>${v.validMinutes} دقيقة</b> ويُستخدم مرة واحدة. إذا انتهى، يمكن طلب رابط جديد من صفحة «نسيت كلمة المرور».`, true, true)}
       ${paragraph(markup`إن لم يكن الطلب منك، يمكنك تجاهل هذه الرسالة؛ تبقى كلمة المرور الحالية كما هي.`, true, true)}`;
   }
@@ -47,6 +50,7 @@ function body(v: PasswordResetVariables, locale: AppLocale, primary: boolean): S
     </h1>
     ${paragraph(markup`We received a request to set a new password for ${v.loginEmail}.`)}
     ${primary ? actionButton('Set a new password', url) : paragraph(link('Set a new password', url))}
+    ${v.codeNeeded ? paragraph(markup`Your account uses an authenticator app: the page will ask for the code it shows, so keep it at hand.`) : markup``}
     ${paragraph(markup`The link is valid for <b>${v.validMinutes} minutes</b> and works once. If it has expired, request a new one on the "Forgot password" page.`, true, true)}
     ${paragraph(markup`If you didn't ask for this, you can ignore this e-mail; your current password stays as it is.`, true, true)}`;
 }
@@ -60,6 +64,9 @@ function plain(v: PasswordResetVariables, locale: AppLocale): string {
       `وصلنا طلب لتعيين كلمة مرور جديدة للحساب ${v.loginEmail}.`,
       'تعيين كلمة مرور جديدة:',
       url,
+      ...(v.codeNeeded
+        ? ['يستخدم حسابك تطبيق مصادقة، وستطلب الصفحة الرمز الظاهر فيه؛ أبقِه في متناولك.']
+        : []),
       '',
       `الرابط صالح لمدة ${String(v.validMinutes)} دقيقة ويُستخدم مرة واحدة. إذا انتهى، يمكن طلب رابط جديد من صفحة «نسيت كلمة المرور».`,
       'إن لم يكن الطلب منك، يمكنك تجاهل هذه الرسالة؛ تبقى كلمة المرور الحالية كما هي.',
@@ -71,6 +78,11 @@ function plain(v: PasswordResetVariables, locale: AppLocale): string {
     `We received a request to set a new password for ${v.loginEmail}.`,
     'Set a new password:',
     url,
+    ...(v.codeNeeded
+      ? [
+          'Your account uses an authenticator app: the page will ask for the code it shows, so keep it at hand.',
+        ]
+      : []),
     '',
     `The link is valid for ${String(v.validMinutes)} minutes and works once. If it has expired, request a new one on the "Forgot password" page.`,
     "If you didn't ask for this, you can ignore this e-mail; your current password stays as it is.",
@@ -84,7 +96,7 @@ const SUBJECT: Readonly<Record<AppLocale, string>> = {
 
 export const passwordResetTemplate: EmailTemplate<typeof PasswordResetVariables> = {
   key: 'platform.password_reset',
-  version: 1,
+  version: 2,
   variables: PasswordResetVariables,
   render(v, primary) {
     const secondary = otherLocale(primary);

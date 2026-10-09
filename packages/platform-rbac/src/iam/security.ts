@@ -1,4 +1,4 @@
-import { appError, err, ok } from '@jadarat/platform-core';
+import { appError, defineErrorCodes, err, ok } from '@jadarat/platform-core';
 import {
   MFA_MODES,
   type MySignInSession,
@@ -16,6 +16,7 @@ import {
   listMySessions,
   mayManagePerson,
   passwordMinLengthForCaller,
+  resetMemberMfa,
   updateSecurityPolicy,
 } from '@jadarat/platform-db';
 import { z } from 'zod';
@@ -36,6 +37,9 @@ import { SYSTEM_ROLE_CODES } from '../system-roles';
  *   - My sessions: every member (own scope) lists and ends their own other sessions.
  *   - A member's sessions: user managers (`platform.user.deactivate` on the person, and the manage rule —
  *     only an Organization Admin for a member with a privileged role) list them and sign them out.
+ *   - A member's lost authenticator app (PO answer, 9 Oct 2026): the Organization Admin resets it
+ *     (`platform.user.reset_mfa` — high risk, a recent code of their own), for a member whose login belongs
+ *     to no other organization; ENTLAQA support otherwise (docs/engineering/mfa-reset.md).
  */
 const manageOwn = memberPermissions['platform.profile.manage_own'];
 
@@ -154,8 +158,10 @@ export interface MySecurityView {
   readonly sessions: readonly MySignInSession[];
   /** The strictest minimum password length of the account's organizations (PO decision 5). */
   readonly passwordMinLength: number;
-  /** Whether the account uses an authenticator app (null: unknown). */
+  /** Whether the account uses a confirmed authenticator app (null: unknown). */
   readonly usesApp: boolean | null;
+  /** An app waits for its e-mailed confirmation (review H1): it does not count yet. */
+  readonly appPending: boolean;
 }
 
 export function mySecurityQueryDefinition(): QueryDefinition<
@@ -175,14 +181,18 @@ export function mySecurityQueryDefinition(): QueryDefinition<
         sessions: await listMySessions(ctx.tx),
         passwordMinLength: minLength,
         usesApp: mfa?.usesApp ?? null,
+        appPending: mfa?.pending ?? false,
       });
     },
   };
 }
 
 /**
- * "Stay signed in" on the inactivity warning (screen 6): any request through withUserTx records the
- * session's activity (private.touch_session); this one does nothing else. Refused for an ended session.
+ * "Stay signed in" on the inactivity warning (screen 6): every request through withUserTx moves the
+ * session's last activity forward (private.touch_session, at most once a minute and never once the
+ * inactivity limit has passed); this action does nothing else. It cannot revive a session: defineAction
+ * refuses every action of a session the database no longer lets act in its organization (ended by
+ * inactivity or maximum length, signed out, or refused by the MFA policy — review L1).
  */
 export function keepSessionAliveActionDefinition(): ActionDefinition<
   z.ZodObject<Record<string, never>>,
@@ -233,6 +243,10 @@ export interface MemberSecurityView {
   readonly sessions: readonly SignInSession[];
   readonly usesApp: boolean | null;
   readonly appSince: Date | null;
+  /** An app waits for its e-mailed confirmation (review H1). */
+  readonly appPending: boolean;
+  /** The caller may reset the member's authenticator app (Organization Admin; PO answer 9 Oct 2026). */
+  readonly canResetApp: boolean;
   /** The organization's device limit, for "(2 of 3 allowed)". */
   readonly maxDevices: number | null;
 }
@@ -260,6 +274,12 @@ export function memberSecurityQueryDefinition(): QueryDefinition<
         sessions,
         usesApp: mfa?.usesApp ?? null,
         appSince: mfa?.since ?? null,
+        appPending: mfa?.pending ?? false,
+        // Shown also before the code: the action then asks for it (step-up).
+        canResetApp:
+          ctx.resource !== null &&
+          ctx.access(p['platform.user.reset_mfa'], ctx.resource) !== 'denied' &&
+          ctx.actor.personId !== input.personId,
         maxDevices: policy?.sessionMaxDevices ?? null,
       });
     },
@@ -316,6 +336,71 @@ export function endMemberSessionsActionDefinition(): ActionDefinition<
         count: output.ended,
         ...(input.sessionId ? { sessionId: input.sessionId } : {}),
       },
+    }),
+  };
+}
+
+// ---------------------------------------------------------------------------------------------------
+// A member's lost authenticator app (screen 3; PO answer, 9 Oct 2026; TM-0003 T-IAM-10)
+// ---------------------------------------------------------------------------------------------------
+
+export const MfaResetErrors = defineErrorCodes({
+  /** The member has no authenticator app (nothing to reset). */
+  MFA_RESET_NO_APP: { status: 409, messageKey: 'users.errors.mfaResetNoApp' },
+  /** The member's login belongs to another organization too: ENTLAQA support resets it. */
+  MFA_RESET_OTHER_ORGANIZATION: {
+    status: 409,
+    messageKey: 'users.errors.mfaResetOtherOrganization',
+  },
+});
+
+export const ResetMemberMfaInput = z.strictObject({ personId: z.uuid() });
+
+/**
+ * "Reset authenticator app" on a user's profile: the Organization Admin, with a code of their own from the
+ * last 15 minutes (`platform.user.reset_mfa`: high risk, AAL2), removes the apps of a member they may
+ * manage. The database checks the same again (private.reset_member_mfa: Organization Admin, AAL2 through a
+ * confirmed app, the manage rule, not themself — My profile — and a login that is an active member of no
+ * other organization), deletes the apps in Auth, ends every session of the member and e-mails them; the
+ * member sets up a new app at their next sign-in. Audited here.
+ */
+export function resetMemberMfaActionDefinition(): ActionDefinition<
+  typeof ResetMemberMfaInput,
+  { readonly personId: string },
+  UserTx
+> {
+  return {
+    permission: p['platform.user.reset_mfa'],
+    input: ResetMemberMfaInput,
+    resource: (input) => ({ type: 'person', id: input.personId }),
+    handler: async ({ ctx, input }) => {
+      if (!(await mayManagePerson(ctx.tx, input.personId))) return err(appError('FORBIDDEN'));
+      let outcome: Awaited<ReturnType<typeof resetMemberMfa>>;
+      try {
+        outcome = await resetMemberMfa(ctx.tx, input.personId);
+      } catch (error) {
+        if (databaseCode(error) === INSUFFICIENT_PRIVILEGE) return err(appError('FORBIDDEN'));
+        throw error;
+      }
+      switch (outcome) {
+        case 'reset':
+          return ok({ personId: input.personId });
+        case 'no_app':
+          return err(appError(MfaResetErrors.MFA_RESET_NO_APP));
+        case 'other_organization':
+          return err(appError(MfaResetErrors.MFA_RESET_OTHER_ORGANIZATION));
+        case 'self':
+          // One's own app is removed in My profile, with one's own code.
+          return err(appError('FORBIDDEN'));
+        case 'not_found':
+          return err(appError('NOT_FOUND'));
+      }
+    },
+    audit: (_input, output) => ({
+      action: 'platform.user.mfa_reset',
+      entityType: 'person',
+      entityId: output.personId,
+      data: { method: 'totp' },
     }),
   };
 }

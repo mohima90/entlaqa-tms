@@ -92,6 +92,7 @@ describe('system roles (FR-IAM-07, BRD Appendix B)', () => {
       'platform.user.invite',
       'platform.user.update',
       'platform.user.deactivate',
+      'platform.user.reset_mfa',
       'platform.role.read',
       'platform.role.assign',
       'platform.role.assign_privileged',

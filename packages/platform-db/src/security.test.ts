@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import type { AppDatabase } from './client';
 import {
   DEFAULT_LOCKOUT_POLICY,
+  applyDeviceLimit,
   changedSettings,
   createPreSessionSecurityApi,
   dismissMfaPrompt,
@@ -14,7 +15,11 @@ import {
   getSessionAccess,
   listMemberSessions,
   listMySessions,
+  loadSessionFacts,
   passwordMinLengthForCaller,
+  requestMfaFactorMail,
+  requestMfaRemovedMail,
+  resetMemberMfa,
   updateSecurityPolicy,
 } from './security';
 import type { UserTx } from './with-user-tx';
@@ -124,12 +129,29 @@ describe('session access, MFA and the password rule', () => {
   it("maps the database's state; anything unknown is invalid", async () => {
     expect(
       await getSessionAccess(
-        fakeTx([{ state: 'prompt_grace', mfa_deadline: '2026-10-16T08:00:00Z' }]).tx,
+        fakeTx([
+          {
+            state: 'prompt_grace',
+            mfa_deadline: '2026-10-16T08:00:00Z',
+            uses_app: false,
+            mfa_pending: true,
+            aal2: false,
+          },
+        ]).tx,
       ),
-    ).toEqual({ state: 'prompt_grace', mfaDeadline: new Date('2026-10-16T08:00:00Z') });
+    ).toEqual({
+      state: 'prompt_grace',
+      mfaDeadline: new Date('2026-10-16T08:00:00Z'),
+      usesApp: false,
+      mfaPending: true,
+      aal2: false,
+    });
     expect(await getSessionAccess(fakeTx([{ state: 'whatever', mfa_deadline: null }]).tx)).toEqual({
       state: 'invalid',
       mfaDeadline: null,
+      usesApp: false,
+      mfaPending: false,
+      aal2: false,
     });
     expect((await getSessionAccess(fakeTx([]).tx)).state).toBe('invalid');
   });
@@ -137,16 +159,47 @@ describe('session access, MFA and the password rule', () => {
   it('records "not now"; reads a member\'s app; the caller\'s password rule', async () => {
     expect(await dismissMfaPrompt(fakeTx([{ done: true }]).tx)).toBe(true);
     expect(await dismissMfaPrompt(fakeTx([{ done: false }]).tx)).toBe(false);
-    const mfa = fakeTx([{ uses_app: true, since: '2026-09-12T08:00:00Z' }]);
+    const mfa = fakeTx([{ uses_app: true, since: '2026-09-12T08:00:00Z', pending: false }]);
     expect(await getMemberMfa(mfa.tx, PERSON)).toEqual({
       usesApp: true,
       since: new Date('2026-09-12T08:00:00Z'),
+      pending: false,
     });
     expect(mfa.executed[0]?.params).toEqual([PERSON]);
     expect(await getMemberMfa(fakeTx([]).tx, PERSON)).toBeNull();
     expect(await passwordMinLengthForCaller(fakeTx([{ length: 20 }]).tx)).toBe(20);
     expect(await passwordMinLengthForCaller(fakeTx([{ length: null }]).tx)).toBeNull();
     expect(await passwordMinLengthForCaller(fakeTx([]).tx)).toBeNull();
+  });
+});
+
+describe('authenticator apps and the device limit (review H1, L1; PO answer on resets)', () => {
+  it('session facts for defineAction; the device limit after a code', async () => {
+    expect(await loadSessionFacts(fakeTx([{ active: true, aal2: false }]).tx)).toEqual({
+      active: true,
+      aal2: false,
+    });
+    expect(await loadSessionFacts(fakeTx([]).tx)).toEqual({ active: false, aal2: false });
+    expect(await applyDeviceLimit(fakeTx([{ ended: 2 }]).tx)).toBe(2);
+    expect(await applyDeviceLimit(fakeTx([]).tx)).toBe(0);
+  });
+
+  it('queues the set-up and removal e-mails through the database', async () => {
+    const added = fakeTx([{ queued: true }]);
+    expect(await requestMfaFactorMail(added.tx, SESSION)).toBe(true);
+    expect(added.executed[0]?.params).toEqual([SESSION]);
+    expect(await requestMfaFactorMail(fakeTx([{ queued: false }]).tx, null)).toBe(false);
+    expect(await requestMfaRemovedMail(fakeTx([{ queued: true }]).tx, SESSION)).toBe(true);
+    expect(await requestMfaRemovedMail(fakeTx([]).tx, SESSION)).toBe(false);
+  });
+
+  it("an Organization Admin's reset: the database's outcome, nothing else", async () => {
+    for (const outcome of ['reset', 'no_app', 'other_organization', 'self', 'not_found']) {
+      expect(await resetMemberMfa(fakeTx([{ outcome }]).tx, PERSON)).toBe(outcome);
+    }
+    await expect(resetMemberMfa(fakeTx([{ outcome: 'maybe' }]).tx, PERSON)).rejects.toThrow(
+      'unknown outcome',
+    );
   });
 });
 
@@ -179,10 +232,37 @@ describe('before any session (app_server, no claims)', () => {
     ).toBe(12);
   });
 
+  it('the e-mailed confirmation and "not you" links (review H1)', async () => {
+    const confirm = fakeDb([{ outcome: 'confirmed' }]);
+    const api = createPreSessionSecurityApi(() => confirm.db);
+    expect(await api.confirmMfaFactor(Buffer.alloc(32))).toBe('confirmed');
+    expect(confirm.executed.at(-1)?.sql).toBe(
+      'select private.confirm_mfa_factor($1::bytea) as outcome',
+    );
+    expect(
+      await createPreSessionSecurityApi(() => fakeDb([{ outcome: 'expired' }]).db).confirmMfaFactor(
+        Buffer.alloc(32),
+      ),
+    ).toBe('expired');
+    expect(
+      await createPreSessionSecurityApi(() => fakeDb([{ outcome: 'removed' }]).db).confirmMfaFactor(
+        Buffer.alloc(32),
+      ),
+    ).toBe('invalid');
+    expect(
+      await createPreSessionSecurityApi(() => fakeDb([{ outcome: 'removed' }]).db).rejectMfaFactor(
+        Buffer.alloc(32),
+      ),
+    ).toBe('removed');
+    expect(
+      await createPreSessionSecurityApi(() => fakeDb([]).db).rejectMfaFactor(Buffer.alloc(32)),
+    ).toBe('invalid');
+  });
+
   it("lockout settings for the sign-in limiter: the organization's, else the platform default", async () => {
-    const { db, executed } = fakeDb([{ lockout_threshold: 7, lockout_minutes: 30 }]);
+    const { db, executed } = fakeDb([{ lockout_threshold: 3, lockout_minutes: 30 }]);
     const api = createPreSessionSecurityApi(() => db);
-    expect(await api.getLockoutPolicy(TENANT)).toEqual({ threshold: 7, minutes: 30 });
+    expect(await api.getLockoutPolicy(TENANT)).toEqual({ threshold: 3, minutes: 30 });
     expect(executed.at(-1)?.params).toEqual([TENANT]);
     expect(await api.getLockoutPolicy(null)).toEqual(DEFAULT_LOCKOUT_POLICY);
     expect(await api.getLockoutPolicy('not-a-uuid')).toEqual(DEFAULT_LOCKOUT_POLICY);

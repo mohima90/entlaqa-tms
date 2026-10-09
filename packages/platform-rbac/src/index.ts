@@ -28,6 +28,7 @@ export {
   type PermissionTarget,
   type ResourceRef,
   type ServerAction,
+  type SessionFacts,
   DEFINE_ACTION_MARKER,
   createDefineAction,
   requiresStrictVerification,

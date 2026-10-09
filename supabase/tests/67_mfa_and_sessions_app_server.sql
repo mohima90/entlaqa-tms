@@ -15,8 +15,12 @@ set local role authenticated;
 do $$
 declare
   v_a constant uuid := 'a0000000-0000-4000-8000-000000000001';
-  v_admin_aal2 constant jsonb := tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
+  -- uA2: an Organization Admin of A at AAL2 through a confirmed app (changes the policy below).
+  v_admin_aal2 constant jsonb := tests.user_claims('00000000-0000-4000-8000-000000000c09', '10000000-0000-4000-8000-000000000c91',
                                                    'a0000000-0000-4000-8000-000000000001') || '{"aal": "aal2"}';
+  -- uM4 set up an app that waits for its e-mailed confirmation; its session passed the code in Auth.
+  v_m4 constant jsonb := tests.user_claims('00000000-0000-4000-8000-000000000c08', '10000000-0000-4000-8000-000000000c81',
+                                           'a0000000-0000-4000-8000-000000000001') || '{"aal": "aal2"}';
   -- uM1 has a verified authenticator app, uM2 an unverified one only, uS1 none; uM3 is a Training Manager.
   v_m1 constant jsonb := tests.user_claims('00000000-0000-4000-8000-000000000c04', '10000000-0000-4000-8000-000000000c41', 'a0000000-0000-4000-8000-000000000001');
   v_m2 constant jsonb := tests.user_claims('00000000-0000-4000-8000-000000000c05', '10000000-0000-4000-8000-000000000c51', 'a0000000-0000-4000-8000-000000000001');
@@ -48,8 +52,16 @@ begin
   perform tests.assert(private.current_tenant_id() is null, 'optional: an AAL1 session with an app is refused');
   perform tests.assert_eq((select count(*) from platform.persons), 0::bigint, 'optional: it reads nothing');
   perform tests.assert_eq((select state from private.session_access_state()), 'mfa_challenge', 'optional: challenge');
+  -- A token claiming aal2 on an Auth session that did not pass the code (sM1 is aal1): still refused.
   perform tests.set_claims(v_m1 || '{"aal": "aal2"}');
-  perform tests.assert_eq(private.current_tenant_id(), v_a, 'optional: after the code it acts');
+  perform tests.assert(private.current_tenant_id() is null, 'optional: a claimed aal2 alone does not count (review H1)');
+  perform tests.assert_eq((select state from private.session_access_state()), 'mfa_challenge', 'optional: still the code');
+  -- An app waiting for its e-mailed confirmation does not count (nothing to challenge): AAL1 acts, the page
+  -- can say the e-mail waits.
+  perform tests.set_claims(v_m4);
+  perform tests.assert_eq(private.current_tenant_id(), v_a, 'optional: an unconfirmed app acts at AAL1');
+  perform tests.assert((select mfa_pending and not uses_app and not aal2 from private.session_access_state()),
+    'optional: the app waits for confirmation, not AAL2');
   perform tests.set_claims(v_m2);
   perform tests.assert_eq(private.current_tenant_id(), v_a, 'optional: an unverified app does not count');
   perform tests.set_claims(v_s1);
@@ -65,6 +77,20 @@ begin
   perform tests.assert(r.state = 'prompt_grace' and r.mfa_deadline > now() + interval '6 days', 'grace period: prompt with its end');
   perform tests.set_claims(v_s1);
   perform tests.assert_eq((select state from private.session_access_state()), 'ok', 'a member not covered is not prompted');
+  -- Roles holding high-risk permissions get NO grace period (TM-0003 T-IAM-11): with the Organization Admin
+  -- covered too, uA (no app) must set one up at once, while the Training Manager keeps the grace period.
+  perform tests.set_claims(v_admin_aal2);
+  perform tests.assert_eq(tests.rows_affected('update platform.security_policies set mfa_required_roles = ''{training_manager,tenant_admin}'''),
+    1::bigint, 'required for Training Managers and Organization Admins');
+  perform tests.set_claims(v_admin);
+  perform tests.assert(private.current_tenant_id() is null, 'no grace for the Organization Admin: refused at once');
+  select * into r from private.session_access_state();
+  perform tests.assert(r.state = 'mfa_enrol' and r.mfa_deadline <= now(), 'no grace for the Organization Admin: set up first');
+  perform tests.set_claims(v_m3);
+  perform tests.assert_eq((select state from private.session_access_state()), 'prompt_grace', 'the Training Manager keeps the grace period');
+  perform tests.set_claims(v_admin_aal2);
+  perform tests.assert_eq(tests.rows_affected('update platform.security_policies set mfa_required_roles = ''{training_manager}'''),
+    1::bigint, 'back to Training Managers only');
 
   -- Grace over (0 days): the covered member must set an app up first; others are untouched.
   perform tests.set_claims(v_admin_aal2);
@@ -86,6 +112,10 @@ begin
   perform tests.assert_eq((select state from private.session_access_state()), 'mfa_challenge', 'required for all, app: challenge');
   perform tests.set_claims(v_m2);
   perform tests.assert_eq((select state from private.session_access_state()), 'mfa_enrol', 'unverified app: enrol');
+  perform tests.set_claims(v_m4);
+  perform tests.assert(private.current_tenant_id() is null, 'an app waiting for confirmation does not let the session in');
+  select * into r from private.session_access_state();
+  perform tests.assert(r.state = 'mfa_enrol' and r.mfa_pending and not r.aal2, 'required: the set-up waits for the e-mail');
   perform tests.set_claims(v_admin);
   perform tests.assert(private.current_tenant_id() is null, 'the Organization Admin at AAL1 too');
   perform tests.assert(not private.dismiss_mfa_prompt(), 'a refused session records nothing');
@@ -111,7 +141,9 @@ begin
   select * into r from private.tenant_member_mfa('a1000000-0000-4000-8000-000000000c04');
   perform tests.assert(r.uses_app and r.since is not null, 'admin: uM1 uses an app');
   select * into r from private.tenant_member_mfa('a1000000-0000-4000-8000-000000000c05');
-  perform tests.assert(not r.uses_app, 'admin: an unverified app is not "in use"');
+  perform tests.assert(not r.uses_app and not r.pending, 'admin: an unverified app is not "in use"');
+  select * into r from private.tenant_member_mfa('a1000000-0000-4000-8000-000000000c08');
+  perform tests.assert(not r.uses_app and r.pending and r.since is null, 'admin: uM4''s app waits for confirmation');
   perform tests.assert_eq((select count(*) from private.tenant_member_mfa('b1000000-0000-4000-8000-0000000000b1')), 0::bigint,
     'admin of A: nothing about a member of B');
   perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c01', '10000000-0000-4000-8000-000000000c11',
@@ -157,7 +189,7 @@ do $$
 declare
   v_a constant uuid := 'a0000000-0000-4000-8000-000000000001';
 begin
-  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1', v_a) || '{"aal": "aal2"}');
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c09', '10000000-0000-4000-8000-000000000c91', v_a) || '{"aal": "aal2"}');
   perform tests.assert_eq(tests.rows_affected('update platform.security_policies set session_idle_minutes = 5, session_max_hours = 24'),
     1::bigint, 'A: 5 minutes, 24 hours');
   perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c01', '10000000-0000-4000-8000-000000000c16', v_a));
@@ -175,6 +207,29 @@ begin
   perform tests.set_claims(jsonb_build_object('role', 'authenticated', 'sub', '00000000-0000-4000-8000-000000000c01',
                                               'session_id', '10000000-0000-4000-8000-000000000c15'));
   perform tests.assert(not private.switch_active_tenant(v_a), 'a session ended by the account cannot re-enter');
+end $$;
+rollback;
+
+-- Entering ANOTHER organization applies that organization's inactivity limit (review L2): s3b was last active
+-- 10 minutes ago in A; B with a 5-minute limit refuses it, with its default 30 minutes it may enter.
+begin;
+set local role authenticated;
+do $$
+declare
+  v_b constant uuid := 'b0000000-0000-4000-8000-000000000001';
+  v_s3b constant jsonb := jsonb_build_object('role', 'authenticated', 'sub', '00000000-0000-4000-8000-000000000c03',
+                                             'session_id', '10000000-0000-4000-8000-000000000c32');
+begin
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000b1', '10000000-0000-4000-8000-0000000000b1', v_b) || '{"aal": "aal2"}');
+  perform tests.assert_eq(tests.rows_affected('update platform.security_policies set session_idle_minutes = 5'), 1::bigint,
+    'B: 5 minutes');
+  perform tests.set_claims(v_s3b);
+  perform tests.assert(not private.switch_active_tenant(v_b), 'inactive longer than B allows: cannot enter B');
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000b1', '10000000-0000-4000-8000-0000000000b1', v_b) || '{"aal": "aal2"}');
+  perform tests.assert_eq(tests.rows_affected('update platform.security_policies set session_idle_minutes = 30'), 1::bigint,
+    'B: 30 minutes');
+  perform tests.set_claims(v_s3b);
+  perform tests.assert(private.switch_active_tenant(v_b), 'within B''s limit: enters B');
 end $$;
 rollback;
 
@@ -201,8 +256,8 @@ begin
 end $$;
 rollback;
 
--- Device limit (3): entering A with a new session ends the oldest live one beyond the limit (s2a); the
--- inactive s2d does not count.
+-- Device limit (3): entering A with a new session ends the oldest live one beyond the limit (s2a), audited;
+-- the inactive s2d does not count.
 begin;
 set local role authenticated;
 do $$
@@ -222,6 +277,41 @@ begin
   end loop;
   perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c02', '10000000-0000-4000-8000-000000000c21', v_a));
   perform tests.assert_eq((select state from private.session_access_state()), 'ended', 'the oldest session ended');
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c02', '10000000-0000-4000-8000-000000000c25', v_a));
+  perform tests.assert((select count(*) = 1 and bool_and(data = '{"reason": "device_limit", "count": 1}'::jsonb
+                                                        and actor_user_id = '00000000-0000-4000-8000-000000000c02')
+                        from platform.audit_events where action = 'platform.auth.sessions_evicted'),
+    'the eviction is audited (review L5)');
+end $$;
+rollback;
+
+-- …but only once the session may act there with its own AAL (review L1): while A wants a code, a password
+-- alone pushes nobody out; after the code (here: the policy relaxed) the web app applies it.
+begin;
+set local role authenticated;
+do $$
+declare
+  v_a constant uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_admin_aal2 constant jsonb := tests.user_claims('00000000-0000-4000-8000-000000000c09', '10000000-0000-4000-8000-000000000c91',
+                                                   'a0000000-0000-4000-8000-000000000001') || '{"aal": "aal2"}';
+begin
+  perform tests.set_claims(v_admin_aal2);
+  perform tests.assert_eq(tests.rows_affected('update platform.security_policies set mfa_mode = ''required_all'', mfa_grace_days = 0'),
+    1::bigint, 'A requires an app from everyone');
+  perform tests.set_claims(jsonb_build_object('role', 'authenticated', 'sub', '00000000-0000-4000-8000-000000000c02',
+                                              'session_id', '10000000-0000-4000-8000-000000000c25'));
+  perform tests.assert(private.switch_active_tenant(v_a), 'the new session enters A (to set an app up)');
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c02', '10000000-0000-4000-8000-000000000c21', v_a));
+  perform tests.assert_eq((select state from private.session_access_state()), 'mfa_enrol', 'the oldest session was not ended');
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c02', '10000000-0000-4000-8000-000000000c25', v_a));
+  perform tests.assert_eq(private.apply_device_limit(), 0, 'not before the session may act');
+  perform tests.set_claims(v_admin_aal2);
+  perform tests.assert_eq(tests.rows_affected('update platform.security_policies set mfa_mode = ''off'''), 1::bigint, 'A: off');
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c02', '10000000-0000-4000-8000-000000000c25', v_a));
+  perform tests.assert_eq(private.apply_device_limit(), 1, 'once it may act: the oldest session ends');
+  perform tests.assert_eq(private.apply_device_limit(), 0, 'and only once');
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c02', '10000000-0000-4000-8000-000000000c21', v_a));
+  perform tests.assert_eq((select state from private.session_access_state()), 'ended', 's2a ended');
 end $$;
 rollback;
 
@@ -260,6 +350,14 @@ begin
   perform tests.assert_eq(private.end_my_sessions(null), 0, 'an ended session ends nothing');
   perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1', v_a));
   perform tests.assert_eq(private.current_tenant_id(), v_a, 'other accounts are untouched');
+  -- A session its organization refuses (an app waiting for confirmation under "required for everyone")
+  -- neither lists nor ends sessions (review L1).
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c09', '10000000-0000-4000-8000-000000000c91', v_a) || '{"aal": "aal2"}');
+  perform tests.assert_eq(tests.rows_affected('update platform.security_policies set mfa_mode = ''required_all'', mfa_grace_days = 0'),
+    1::bigint, 'A requires an app from everyone');
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c08', '10000000-0000-4000-8000-000000000c81', v_a) || '{"aal": "aal2"}');
+  perform tests.assert_eq((select count(*) from private.my_sessions()), 0::bigint, 'a refused session lists nothing');
+  perform tests.assert_eq(private.end_my_sessions(null), 0, 'a refused session ends nothing');
 end $$;
 rollback;
 
@@ -331,6 +429,10 @@ begin
   perform tests.set_claims(tests.system_claims(v_a));
   perform tests.assert_eq(private.end_my_sessions(null), 0, 'system claims: nothing');
   perform tests.assert_eq((select count(*) from private.my_sessions()), 0::bigint, 'system claims: no list');
+  -- The worker's purge and the link hashes are not the web app's.
+  perform tests.assert_fails($q$select private.purge_ended_sessions(10)$q$, array['42501'], 'the web app cannot purge sessions');
+  perform tests.assert_fails($q$select private.issue_mfa_factor_tokens('20000000-0000-4000-8000-000000000c08', '00000000-0000-4000-8000-000000000c08', sha256('a'), sha256('b'))$q$,
+    array['42501'], 'the web app cannot issue link hashes');
 end $$;
 rollback;
 

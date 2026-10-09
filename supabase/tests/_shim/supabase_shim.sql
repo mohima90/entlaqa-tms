@@ -58,12 +58,14 @@ create table if not exists auth.sessions (
   not_after timestamptz
 );
 -- Columns of Supabase Auth's sessions listed in "sign-in sessions" (T-M2-10, private.auth_session_validity).
--- As in GoTrue: refreshed_at is a timestamp WITHOUT time zone, aal an enum (text here).
+-- As in GoTrue: refreshed_at is a timestamp WITHOUT time zone, aal an enum (text here); factor_id is the
+-- factor whose code raised the session to aal2 (no foreign key in GoTrue either).
 alter table auth.sessions
   add column if not exists updated_at timestamptz default now(),
   add column if not exists refreshed_at timestamp without time zone,
   add column if not exists user_agent text,
-  add column if not exists aal text;
+  add column if not exists aal text,
+  add column if not exists factor_id uuid;
 
 -- Supabase Auth's MFA factors (T-M2-10, private.auth_mfa_factor). GoTrue uses enums for factor_type and
 -- status; text here (the view casts both to text).

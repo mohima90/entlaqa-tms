@@ -51,8 +51,10 @@ create table platform.security_policies (
            and (mfa_mode <> 'required_roles' or cardinality(mfa_required_roles) > 0)),
   constraint security_policies_mfa_grace_days_check check (mfa_grace_days between 0 and 30),
   constraint security_policies_password_min_length_check check (password_min_length between 12 and 36),
-  constraint security_policies_lockout_threshold_check check (lockout_threshold between 3 and 10),
-  constraint security_policies_lockout_minutes_check check (lockout_minutes between 5 and 60),
+  -- Lockout: the platform default (5 attempts, 15 minutes) or stricter, never more lenient (TM-0003 T-IAM-24;
+  -- T-M2-11 clamps the same way at sign-in).
+  constraint security_policies_lockout_threshold_check check (lockout_threshold between 3 and 5),
+  constraint security_policies_lockout_minutes_check check (lockout_minutes between 15 and 60),
   constraint security_policies_session_idle_minutes_check check (session_idle_minutes between 5 and 480),
   constraint security_policies_session_max_hours_check check (session_max_hours between 1 and 24),
   constraint security_policies_session_max_devices_check check (session_max_devices between 1 and 10),

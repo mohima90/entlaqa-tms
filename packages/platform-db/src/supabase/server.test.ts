@@ -4,6 +4,7 @@ import {
   createSupabaseServerClient,
   createSupabaseStatelessClient,
   createSupabaseVerifierClient,
+  forwardableUserAgent,
   getSupabasePublicConfig,
 } from './server';
 
@@ -19,6 +20,23 @@ describe('createSupabaseServerClient', () => {
       url: 'https://example.supabase.co',
       publishableKey: 'sb_publishable_test',
     });
+    expect(client?.auth).toBeDefined();
+  });
+
+  it("forwards a browser's User-Agent only when it is printable ASCII of at most 512 characters", () => {
+    expect(forwardableUserAgent(' Mozilla/5.0 (X11; Linux x86_64) Firefox/131.0 ')).toBe(
+      'Mozilla/5.0 (X11; Linux x86_64) Firefox/131.0',
+    );
+    expect(forwardableUserAgent(null)).toBeNull();
+    expect(forwardableUserAgent('')).toBeNull();
+    expect(forwardableUserAgent('a'.repeat(513))).toBeNull();
+    expect(forwardableUserAgent('Mozilla\r\nX-Injected: 1')).toBeNull();
+    expect(forwardableUserAgent('متصفح')).toBeNull();
+    const client = createSupabaseServerClient(
+      cookies,
+      { url: 'https://example.supabase.co', publishableKey: 'sb_publishable_test' },
+      { userAgent: 'Mozilla/5.0' },
+    );
     expect(client?.auth).toBeDefined();
   });
 

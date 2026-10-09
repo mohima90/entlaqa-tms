@@ -47,6 +47,19 @@ export const platformPermissions = definePermissions('platform', [
     requiresAal2: false,
   },
   {
+    // PO answer (9 Oct 2026; TM-0003 T-IAM-10): the Organization Admin resets a lost authenticator app of a
+    // member of their organization, after entering their own code. Last Organization Admin and people in
+    // several organizations: ENTLAQA support (docs/engineering/mfa-reset.md).
+    code: 'platform.user.reset_mfa',
+    label: { ar: 'إعادة ضبط تطبيق المصادقة', en: 'Reset authenticator apps' },
+    description: {
+      ar: 'إزالة تطبيق المصادقة لعضو فقده، ليُعدّ تطبيقًا جديدًا عند دخوله التالي',
+      en: 'Remove the authenticator app of a member who lost it, so they set up a new one at their next sign-in',
+    },
+    risk: 'high',
+    requiresAal2: true,
+  },
+  {
     code: 'platform.role.read',
     label: { ar: 'عرض الأدوار والصلاحيات', en: 'View roles and permissions' },
     description: {

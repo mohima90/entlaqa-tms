@@ -6,6 +6,7 @@ import {
   type VerifiedClaims,
   actorFromClaims,
   appError,
+  codeIsFresh,
   err,
   hasTenant,
   internalError,
@@ -80,10 +81,24 @@ export interface GetClaimsOptions {
   readonly strict: boolean;
 }
 
+/**
+ * What the database says about the session (T-M2-10; security review L1/H1), in the action's transaction:
+ * - `active`: it may act in its organization now — the same decision as every tenant policy
+ *   (private.current_tenant_id(): live session, membership, the organization's MFA policy and session
+ *   rules). An inactive session does nothing, also with member-level permissions (own profile, sessions).
+ * - `aal2`: it passed a code from a CONFIRMED authenticator app (private.request_aal2(): the lower of the
+ *   token's claim and the Auth session's own level).
+ */
+export interface SessionFacts {
+  readonly active: boolean;
+  readonly aal2: boolean;
+}
+
 /** Infrastructure used by defineAction; the default wires identity + platform-db (default-runtime.ts). */
 export interface ActionRuntime<Tx> {
   getClaims(options: GetClaimsOptions): Promise<Result<VerifiedClaims, AppError>>;
   withUserTx<T>(claims: VerifiedClaims, fn: (tx: Tx) => Promise<T>): Promise<T>;
+  loadSessionFacts(tx: Tx): Promise<SessionFacts>;
   loadGrants(tx: Tx, claims: TenantClaims): Promise<readonly Grant[]>;
   resolveResource(
     tx: Tx,
@@ -162,7 +177,9 @@ export function requiresStrictVerification(permission: PermissionDefinition): bo
  *
  * Pipeline: verify session (strict getUser round-trip for high-risk / AAL2 permissions) → require
  * tenant claim → validate input → withUserTx {
- *   load effective grants → resolve resource → authorize (deny by default) → handler → audit } .
+ *   session facts (inactive → UNAUTHENTICATED) → load effective grants → resolve resource → authorize
+ *   (deny by default; AAL2 permissions need the database's AAL2 AND a code from the last
+ *   STEP_UP_MAX_AGE_SECONDS, else STEP_UP_REQUIRED) → handler → audit } .
  */
 export function createDefineAction<Tx>(runtime: ActionRuntime<Tx>) {
   return function defineAction<S extends z.ZodType, O>(
@@ -184,6 +201,9 @@ export function createDefineAction<Tx>(runtime: ActionRuntime<Tx>) {
       try {
         return await runtime.withUserTx(tenantClaims, async (tx) => {
           const actor = actorFromClaims(tenantClaims);
+          // Tenant-scoped work only while the database lets the session act there (review L1).
+          const facts = await runtime.loadSessionFacts(tx);
+          if (!facts.active) throw new HandledFailure(appError('UNAUTHENTICATED'));
           const grants = await runtime.loadGrants(tx, tenantClaims);
           const resource = definition.resource
             ? await runtime.resolveResource(tx, definition.resource(input.value), tenantClaims)
@@ -191,7 +211,11 @@ export function createDefineAction<Tx>(runtime: ActionRuntime<Tx>) {
           const subject = {
             tenantId: actor.tenantId,
             personId: actor.personId,
-            aal: actor.aal,
+            // AAL2 for authorization: the token, the database (confirmed app) and a fresh code (L3).
+            aal:
+              actor.aal === 'aal2' && facts.aal2 && codeIsFresh(tenantClaims)
+                ? ('aal2' as const)
+                : ('aal1' as const),
             grants,
           };
           const decision = authorize(subject, definition.permission, resource, {

@@ -23,18 +23,32 @@ export function getSupabasePublicConfig(): SupabasePublicConfig | null {
   return readSupabasePublicConfigFromEnv();
 }
 
+/** A browser's User-Agent as Auth may record it: printable ASCII, at most 512 characters. */
+const USER_AGENT = /^[\x20-\x7E]{1,512}$/;
+
+/** The browser's User-Agent to forward to Auth, or null (absent, too long or not printable ASCII). */
+export function forwardableUserAgent(value: string | null | undefined): string | null {
+  const trimmed = value?.trim() ?? '';
+  return USER_AGENT.test(trimmed) ? trimmed : null;
+}
+
 /**
  * Server-side Supabase client (publishable key + the user's session cookies) for Auth and Storage.
  * Never used to read tenant tables (ADR 0003 §4). Returns null when Supabase is not configured.
+ * `userAgent`: the browser's, sent to Auth instead of the server's own so that the session Auth creates at
+ * sign-in records the real browser (the session lists show browser and system, T-M2-10).
  */
 export function createSupabaseServerClient(
   cookies: CookieMethodsServer,
   config: SupabasePublicConfig | null = getSupabasePublicConfig(),
+  options: { readonly userAgent?: string | null } = {},
 ): SupabaseClient | null {
   if (!config) return null;
+  const userAgent = forwardableUserAgent(options.userAgent);
   return createServerClient(config.url, config.publishableKey, {
     cookies,
     cookieOptions: SESSION_COOKIE_OPTIONS,
+    ...(userAgent ? { global: { headers: { 'User-Agent': userAgent } } } : {}),
   });
 }
 

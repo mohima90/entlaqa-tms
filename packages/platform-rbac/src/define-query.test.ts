@@ -30,6 +30,7 @@ function runtime(grants: Grant[]) {
   const rt: ActionRuntime<string> = {
     getClaims: () => Promise.resolve(ok(claims())),
     withUserTx: (_c, fn) => fn('tx'),
+    loadSessionFacts: () => Promise.resolve({ active: true, aal2: true }),
     loadGrants: () => Promise.resolve(grants),
     resolveResource: (_tx, ref) =>
       Promise.resolve(

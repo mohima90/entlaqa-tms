@@ -103,6 +103,9 @@ function setup(options: FakeOptions = {}) {
           ReturnType<AuthFlowDeps['getSessionAccess']>
         >['state'],
         mfaDeadline: null,
+        usesApp: false,
+        mfaPending: false,
+        aal2: false,
       }),
     ),
     insertAuditEvent: vi.fn((_tx, actor, event) => {

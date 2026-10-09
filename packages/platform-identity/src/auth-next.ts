@@ -6,6 +6,8 @@
 import 'server-only';
 import {
   acceptInvitationAsCaller,
+  applyDeviceLimit,
+  confirmMfaFactor,
   dismissMfaPrompt,
   getSessionAccess,
   hashInvitationToken,
@@ -15,6 +17,9 @@ import {
   listSessionTenants,
   passwordMinLengthForCaller,
   queueOwnPasswordChangedMail,
+  rejectMfaFactor,
+  requestMfaFactorMail,
+  requestMfaRemovedMail,
   requestPasswordChangedMail,
   requestPasswordResetMail,
   type SessionAccess,
@@ -28,7 +33,7 @@ import {
 } from '@jadarat/platform-db/supabase-server';
 import { type AppError, type Result, actorFromClaims, hasTenant, ok } from '@jadarat/platform-core';
 import { log } from '@jadarat/platform-observability';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { after } from 'next/server';
 import {
   type AuthClientLike,
@@ -44,7 +49,9 @@ import {
   type MfaDeps,
   type MfaOverview,
   getMfaOverview,
+  openMfaLink,
   removeTotp,
+  requestMfaConfirmationMail,
   startTotpSetup,
   verifyTotpCode,
 } from './mfa';
@@ -74,16 +81,23 @@ import {
 
 async function requestDeps(): Promise<AuthFlowDeps> {
   const store = await cookies();
-  const supabase = createSupabaseServerClient({
-    getAll: () => store.getAll(),
-    setAll: (toSet) => {
-      try {
-        for (const { name, value, options } of toSet) store.set(name, value, options);
-      } catch {
-        // Server Components cannot write cookies; the request proxy refreshes sessions there.
-      }
+  // The browser's User-Agent goes to Auth with our calls, so a session created at sign-in records the real
+  // browser (session lists, T-M2-10); createSupabaseServerClient drops anything but printable ASCII.
+  const userAgent = (await headers()).get('user-agent');
+  const supabase = createSupabaseServerClient(
+    {
+      getAll: () => store.getAll(),
+      setAll: (toSet) => {
+        try {
+          for (const { name, value, options } of toSet) store.set(name, value, options);
+        } catch {
+          // Server Components cannot write cookies; the request proxy refreshes sessions there.
+        }
+      },
     },
-  });
+    undefined,
+    { userAgent },
+  );
   return {
     supabase: supabase as AuthClientLike | null,
     withUserTx,
@@ -132,6 +146,9 @@ async function mfaDeps(): Promise<MfaDeps> {
     withUserTx,
     insertAuditEvent,
     getSessionAccess,
+    requestMfaFactorMail,
+    requestMfaRemovedMail,
+    applyDeviceLimit,
     logWarning: auth.logWarning,
   };
 }
@@ -155,7 +172,7 @@ export async function getMfaPageStateForRequest(): Promise<
   const tenantClaims = claims.value;
   const access: SessionAccess = hasTenant(tenantClaims)
     ? await withUserTx(tenantClaims, (tx) => getSessionAccess(tx))
-    : { state: 'invalid', mfaDeadline: null };
+    : { state: 'invalid', mfaDeadline: null, usesApp: false, mfaPending: false, aal2: false };
   return ok({ ...overview.value, access });
 }
 
@@ -172,6 +189,37 @@ export async function verifyTotpCodeForRequest(input: {
 
 export async function removeTotpForRequest() {
   return removeTotp(await mfaDeps());
+}
+
+/** "Send the e-mail again" for an app waiting for its confirmation (review H1). */
+export async function requestMfaConfirmationMailForRequest() {
+  return requestMfaConfirmationMail(await mfaDeps());
+}
+
+/**
+ * The set-up e-mail's links (review H1), with the token the page read from the URL fragment: no session
+ * needed. "remove" ends every session of the account; this browser's cookies are cleared too.
+ */
+export async function openMfaLinkForRequest(kind: 'confirm' | 'remove', token: string) {
+  const outcome = await openMfaLink(
+    {
+      confirmMfaFactor,
+      rejectMfaFactor,
+      logInfo: (message, fields) => {
+        log.info(message, fields);
+      },
+    },
+    kind,
+    token,
+  );
+  if (outcome === 'removed') {
+    try {
+      await (await requestDeps()).supabase?.auth.signOut({ scope: 'local' });
+    } catch {
+      // Nothing to end, or Auth unreachable: the session has ended in the database either way.
+    }
+  }
+  return outcome;
 }
 
 /**
@@ -312,6 +360,7 @@ export async function requestPasswordResetForRequest(input: {
 export async function completePasswordResetForRequest(input: {
   readonly tokenHash: string;
   readonly password: string;
+  readonly code?: string | undefined;
 }) {
   const auth = await requestDeps();
   const client = createSupabaseStatelessClient() as RecoveryClientLike | null;

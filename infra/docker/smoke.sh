@@ -612,11 +612,12 @@ response="$(auth_api POST '/token?grant_type=password' '' "{\"email\":\"$DEACT_E
 DEACT_REFRESH="$(json_field "${response%$'\n'*}" refresh_token)"
 unset response
 [[ -n "$DEACT_REFRESH" ]] || { echo "smoke: no refresh token for the member to deactivate" >&2; exit 1; }
-# deactivate_e2e <phase>: the browser journey of deactivate.spec.ts for one phase.
+# deactivate_e2e <phase>: the browser journey of deactivate.spec.ts for one phase (Mona's password is the one
+# she set in the My profile journey).
 deactivate_e2e() {
   (cd "$ROOT/apps/suite" && E2E_BASE_URL=http://localhost:3200 DEACTIVATE_E2E_PHASE="$1" \
     SIGNED_IN_E2E_EMAIL="$EMAIL" SIGNED_IN_E2E_PASSWORD="$PASSWORD" \
-    SIGNED_IN_E2E_MANAGER_EMAIL="$MANAGER_EMAIL" SIGNED_IN_E2E_MANAGER_PASSWORD="$MANAGER_PASSWORD" \
+    SIGNED_IN_E2E_MANAGER_EMAIL="$MANAGER_EMAIL" SIGNED_IN_E2E_MANAGER_PASSWORD="$PROFILE_NEW_PASSWORD" \
     DEACTIVATE_E2E_MEMBER_EMAIL="$DEACT_EMAIL" DEACTIVATE_E2E_MEMBER_PASSWORD="$DEACT_PASSWORD" \
     pnpm exec playwright test e2e/deactivate.spec.ts --project=desktop-chromium)
 }
@@ -686,12 +687,15 @@ deactivate_e2e returns
 [[ "$(q "select count(*) from platform.role_assignments ra join platform.tenant_memberships m on m.id = ra.membership_id
         where m.user_id = '$DEACT_ID' and ra.role_code in ('line_manager', 'learner')")" == "2" ]] ||
   { echo "smoke: the reactivated member's roles changed" >&2; exit 1; }
-# The worker logged what it did, never an account id or address.
-if compose logs --no-log-prefix worker 2>&1 | grep -qE "$DEACT_ID|$SECOND_ID"; then
+# The worker logged what it did, never an account id or address. (Logs captured first: `grep -q` stops
+# reading early, which fails the pipe under pipefail.)
+worker_logs="$(compose logs --no-log-prefix worker 2>&1)"
+if grep -qE "$DEACT_ID|$SECOND_ID" <<<"$worker_logs"; then
   echo "smoke: an account id appears in the worker logs" >&2; exit 1
 fi
-compose logs --no-log-prefix worker 2>&1 | grep -q 'account access: banned' ||
-  { echo "smoke: the worker did not log its account bans" >&2; exit 1; }
+grep -q 'account access: banned' <<<"$worker_logs" && grep -q 'account access: unbanned' <<<"$worker_logs" ||
+  { echo "smoke: the worker did not log its account bans and their lifting" >&2; exit 1; }
+unset worker_logs
 
 # No unconfirmed e-mail account exists after every journey (re-review N3): with "Confirm email" off, Auth
 # would hand a session for such an account to anyone who signs up with its e-mail, without the hook.

@@ -32,7 +32,9 @@ begin
   perform tests.assert_eq(
     (select array_agg(tgname::text order by tgname::text) from pg_trigger
      where tgrelid = 'platform.invitations'::regclass and not tgisinternal and tgenabled = 'O'),
-    array['invitations_check', 'invitations_separation_of_duties'], 'invitations: triggers enabled');
+    -- invitations_access_check (T-M2-09): queues the Auth ban decision of an existing account (AFTER).
+    array['invitations_access_check', 'invitations_check', 'invitations_separation_of_duties'],
+    'invitations: triggers enabled');
   perform tests.assert(exists (select 1 from pg_trigger where tgrelid = 'platform.role_assignments'::regclass
                                and tgname = 'role_assignments_separation_of_duties' and tgenabled = 'O'
                                and tgfoid = 'private.check_role_separation()'::regprocedure),

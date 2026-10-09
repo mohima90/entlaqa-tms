@@ -117,7 +117,7 @@ Platform tasks (ADR 0005 §4; every wake-up and every minute):
 - **Logs** carry file ids, purposes, outcomes and codes — never names, contents or URLs (signed URLs carry tokens; download URLs carry the name). Self-hosted Storage logs errors only for that reason.
 - **Downloads** are always attachments with `X-Content-Type-Options: nosniff`; self-hosted, the gateway adds `Content-Security-Policy: default-src 'none'; sandbox`. SVG, HTML and macro-enabled Office files are refused by content.
 - **Names** are sanitized in TypeScript and checked again by the database (`files_name_check`).
-- Residual risks, accepted for now: hosted Supabase signs upload URLs for 2 hours (not configurable; our reservation window is 15 minutes, and an upload after it is never confirmed and is purged); hosted Storage's request logs (Supabase's, not ours) contain the download name of each signed download URL.
+- Residual risks, accepted for now: hosted Supabase signs upload URLs for 2 hours (not configurable): our 15-minute reservation window bounds when a URL can be **issued**, not when it is used — an upload made later with it is accepted by Storage for that one key and, if confirmed (within 24 hours of the reservation), scanned like any other before any use; unconfirmed objects are purged after 24 hours; hosted Storage's request logs (Supabase's, not ours) contain the download name of each signed download URL.
 
 ## 7. Deployments
 

@@ -90,7 +90,8 @@ describe('Auth e-mail templates (T-M2-08)', () => {
     for (const path of ['admin', 'invite']) {
       expect(gateway).toContain(`location ^~ /auth/v1/${path} { return 404; }`);
     }
-    // Port 8444: generate_link for the workers' subnet, user creation for admin-cli's — nothing else.
+    // Port 8444: generate_link for the workers' subnet, user creation for admin-cli's, and Storage's
+    // object calls for the workers' subnet (file tasks, T-M2-18) — nothing else.
     const admin = gateway.slice(
       gateway.indexOf('listen 8444 ssl;'),
       gateway.indexOf('listen 8100 ssl;'),
@@ -98,6 +99,7 @@ describe('Auth e-mail templates (T-M2-08)', () => {
     expect([...admin.matchAll(/proxy_pass (\S+);/g)].map((m) => m[1])).toEqual([
       'http://auth:9999/admin/generate_link',
       'http://auth:9999/admin/users',
+      'http://storage:5000/object/',
     ]);
     expect(admin).toMatch(
       /location = \/auth\/v1\/admin\/generate_link \{\n\s+deny 10\.231\.0\.1;\n\s+allow 10\.231\.0\.0\/28;\n\s+deny all;\n\s+limit_except POST \{ deny all; \}/,
@@ -105,10 +107,13 @@ describe('Auth e-mail templates (T-M2-08)', () => {
     expect(admin).toMatch(
       /location = \/auth\/v1\/admin\/users \{\n\s+deny 10\.231\.0\.17;\n\s+allow 10\.231\.0\.16\/28;\n\s+deny all;\n\s+limit_except POST \{ deny all; \}/,
     );
+    expect(admin).toMatch(
+      /location \^~ \/storage\/v1\/object\/ \{\n\s+deny 10\.231\.0\.1;\n\s+allow 10\.231\.0\.0\/28;\n\s+deny all;\n\s+limit_except GET POST DELETE \{ deny all; \}/,
+    );
     expect(admin).toContain('location / { return 404; }');
-    // No method-override header reaches Auth from either admin location.
+    // No method-override header reaches Auth or Storage from any admin location.
     for (const header of ['X-HTTP-Method-Override', 'X-HTTP-Method', 'X-Method-Override']) {
-      expect(admin.split(`proxy_set_header ${header} "";`)).toHaveLength(3);
+      expect(admin.split(`proxy_set_header ${header} "";`)).toHaveLength(4);
     }
     // The same subnets in compose; the admin port is never published; who sits on which network.
     expect(compose).toContain('- { subnet: 10.231.0.0/28, gateway: 10.231.0.1 }');
@@ -121,9 +126,44 @@ describe('Auth e-mail templates (T-M2-08)', () => {
         (m) => m[1],
       ),
     ).toEqual([
-      'auth-internal, auth-admin, auth-tools, edge, errors', // gateway
-      'db-app, mail, auth-admin', // workers
+      'auth-internal, auth-admin, auth-tools, edge, errors, storage-internal', // gateway
+      'db-app, mail, auth-admin, scan', // workers
       'auth-tools', // admin-cli
     ]);
+  });
+
+  it('the self-hosted stack: Storage only through its signed-URL paths on the published port (T-M2-18)', () => {
+    const gateway = read('infra/docker/gateway/nginx.conf');
+    const compose = read('infra/docker/compose.yaml');
+    const published = gateway.slice(
+      gateway.indexOf('listen 8443 ssl;'),
+      gateway.indexOf('listen 8444 ssl;'),
+    );
+    // Exactly two Storage routes: creating/using signed upload URLs and signed download URLs.
+    expect([...published.matchAll(/proxy_pass (http:\/\/storage\S+);/g)].map((m) => m[1])).toEqual([
+      'http://storage:5000/object/upload/sign/',
+      'http://storage:5000/object/sign/',
+    ]);
+    expect(published).toMatch(
+      /location \^~ \/storage\/v1\/object\/upload\/sign\/ \{\n\s+limit_except POST PUT \{ deny all; \}/,
+    );
+    expect(published).toMatch(
+      /location \^~ \/storage\/v1\/object\/sign\/ \{\n\s+limit_except GET POST \{ deny all; \}/,
+    );
+    // Everything else of Storage is refused; uploads never replace an object; downloads never render.
+    expect(published).toContain('location ^~ /storage/ { return 404; }');
+    expect(published).toContain('proxy_set_header X-Upsert "";');
+    expect(published).toContain(
+      `add_header Content-Security-Policy "default-src 'none'; sandbox" always;`,
+    );
+    expect(published.split('add_header X-Content-Type-Options nosniff always;')).toHaveLength(3);
+    // Storage and clamd sit on internal networks only; Storage logs no request lines (names in URLs).
+    expect(compose).toContain('storage-internal: { internal: true }');
+    expect(compose).toContain('db-storage: { internal: true }');
+    expect(compose).toContain('scan: { internal: true }');
+    expect(compose).toMatch(/^ {4}networks: \[db-storage, storage-internal\]$/m);
+    expect(compose).toMatch(/^ {4}networks: \[scan\]$/m);
+    expect(compose).toContain('LOG_LEVEL: error');
+    expect(compose).toContain('sslmode=verify-full&sslrootcert=/certs/ca.crt');
   });
 });

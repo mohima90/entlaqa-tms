@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>مطابقة الأعمدة — استيراد المستخدمين</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#F2F5F5}
+a{color:#0C534D}a:hover{color:#09403C}
+*{box-sizing:border-box}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid #177D74;outline-offset:2px}
+.ltr{direction:ltr;unicode-bidi:isolate}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 18px;border-radius:6px;border:1px solid transparent;font-weight:600;font-size:15px;cursor:pointer;text-decoration:none;white-space:nowrap}
+.btn-primary{background:#0F665F;color:#fff}.btn-primary:hover{background:#0C534D;color:#fff}
+.btn-secondary{background:#fff;color:#121A1C;border-color:#7A898D}.btn-secondary:hover{background:#F2F5F5;color:#121A1C}
+.btn-ghost{background:transparent;color:#0C534D}.btn-ghost:hover{background:#E7F3F1}
+.btn-sm{min-height:36px;padding:0 12px;font-size:14px}
+.icon-btn{display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;border-radius:6px;border:0;background:transparent;color:#333E41;cursor:pointer;position:relative}
+.icon-btn:hover{background:#E3E9EA}
+.count{position:absolute;top:4px;inset-inline-end:2px;min-width:18px;height:18px;border-radius:9px;background:#B42318;color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 4px;line-height:1}
+.nav-item{display:flex;align-items:center;gap:12px;min-height:44px;padding:0 12px;border-radius:6px;color:#333E41;text-decoration:none;font-size:15.5px}
+.nav-item:hover{background:#F2F5F5;color:#121A1C}
+.nav-item.on{background:#E7F3F1;color:#0C534D;font-weight:600}
+.card{background:#fff;border:1px solid #CBD4D6;border-radius:10px}
+.badge{display:inline-flex;align-items:center;gap:6px;padding:1px 10px;border-radius:999px;font-size:13px;font-weight:600;white-space:nowrap;line-height:1.8}
+.b-ok{background:#E9F6EE;color:#166236}.b-warn{background:#FFF5E0;color:#7A4800}.b-mute{background:#E3E9EA;color:#333E41}
+.input{width:100%;height:44px;border:1px solid #7A898D;border-radius:6px;padding:0 12px;background:#fff;font-size:15px}
+.hint{font-size:13.5px;color:#465357;margin-top:4px;line-height:1.6}
+th{font-weight:600;font-size:14px;color:#465357;text-align:start;padding:10px 16px;background:#F8FAFA;border-bottom:1px solid #CBD4D6;white-space:nowrap}
+td{padding:10px 16px;border-bottom:1px solid #E3E9EA;vertical-align:top;font-size:15px}
+tbody th{background:#fff;color:#121A1C;font-size:15px;font-weight:700;white-space:normal;border-bottom:1px solid #E3E9EA;vertical-align:top;padding:10px 16px}
+.ex{font-size:14px;color:#333E41}
+tr.attn td,tr.attn th{background:#FFFBF2}
+tr.off td,tr.off th{color:#465357}
+.steps{display:flex;flex-wrap:wrap;align-items:center;gap:8px;list-style:none;margin:0;padding:0}
+.step{display:flex;align-items:center;gap:8px;color:#465357;font-weight:500;font-size:15px}
+.step:not(:first-child)::before{content:"";width:28px;height:2px;background:#CBD4D6}
+.step .n{width:30px;height:30px;flex:none;border-radius:50%;border:2px solid #7A898D;display:inline-flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;background:#fff;color:#333E41}
+.step.on{color:#0C534D;font-weight:700}
+.step.on .n{background:#0F665F;border-color:#0F665F;color:#fff}
+.step.done{color:#166236}
+.step.done .n{background:#E9F6EE;border-color:#166236;color:#166236}
+.foot{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:16px 24px;border-top:1px solid #CBD4D6;background:#F8FAFA;border-radius:0 0 10px 10px}
+.chip{display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:999px;background:#E9F6EE;color:#166236;font-size:14px;font-weight:600}
+.show-md{display:none}
+@media (max-width:900px){.hide-md{display:none !important}.show-md{display:block !important}}
+</style>
+</helmet>
+<div style="min-height: 100vh; display: flex; flex-direction: column; font-family: 'IBM Plex Sans Arabic', 'Noto Sans Arabic', Tahoma, sans-serif; color: #121A1C; font-size: 15.5px; line-height: 1.7; background: #F2F5F5">
+
+<header style="height: 56px; display: flex; align-items: center; gap: 8px; padding: 0 16px; background: #FFFFFF; border-bottom: 1px solid #CBD4D6">
+  <a href="Entry.dc.html" style="display: flex; align-items: center; gap: 10px; text-decoration: none; color: #121A1C; font-weight: 700; font-size: 18px; white-space: nowrap">
+    <span style="width: 32px; height: 32px; border-radius: 8px; background: #0F665F; color: #FFFFFF; display: inline-flex; align-items: center; justify-content: center; font-size: 17px">ج</span>جدارات · التدريب</a>
+  <div style="flex: 1 1 auto"></div>
+  <button type="button" class="icon-btn" aria-label="الإشعارات: 5 غير مقروءة">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M6 9a6 6 0 1 1 12 0c0 6 3 8 3 8H3s3-2 3-8"></path><path d="M10 21h4"></path></svg><span class="count">5</span></button>
+  <button type="button" class="btn btn-ghost btn-sm hide-md" style="color: #333E41; font-weight: 500">شركة الراية · فرع الرياض</button>
+  <button type="button" aria-label="قائمة المستخدم: محمد العتيبي" style="width: 40px; height: 40px; border-radius: 50%; border: 0; background: #0C534D; color: #FFFFFF; font-weight: 700; cursor: pointer">م</button>
+</header>
+
+<div style="display: flex; flex-wrap: wrap; flex: 1 1 auto">
+  <nav aria-label="التنقل الرئيسي" style="flex: 1 1 240px; background: #FFFFFF; border-inline-end: 1px solid #CBD4D6; padding: 16px 12px; display: flex; flex-direction: column; gap: 2px">
+    <a href="#" class="nav-item">الرئيسية</a>
+    <div style="font-size: 13.5px; font-weight: 600; color: #5B6A6E; padding: 16px 12px 6px">إدارة المنشأة</div>
+    <a href="#" class="nav-item">نظرة عامة</a>
+    <a href="#" class="nav-item">بيانات المنشأة</a>
+    <a href="Entry.dc.html" class="nav-item on" aria-current="page">المستخدمون</a>
+    <a href="../m2-users-roles/Roles.dc.html" class="nav-item">الأدوار والصلاحيات</a>
+    <a href="../m2-users-roles/Security.dc.html" class="nav-item">الأمان</a>
+    <a href="#" class="nav-item">سجل التدقيق</a>
+  </nav>
+
+  <main id="main" style="flex: 999 1 560px; min-width: 0; padding: 20px 32px 40px">
+    <div style="max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px">
+
+      <nav aria-label="مسار التنقل" style="font-size: 14px; color: #465357; display: flex; align-items: center; gap: 6px">
+        <a href="Entry.dc.html">المستخدمون</a>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 6l-6 6 6 6"></path></svg>
+        <span aria-current="page">استيراد من ملف</span>
+      </nav>
+
+      <h1 style="margin: 0; font-size: 27px; line-height: 1.45">استيراد المستخدمين من ملف</h1>
+
+      <ol class="steps hide-md" aria-label="خطوات الاستيراد">
+        <li class="step done"><span class="n" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M5 12l5 5 9-10"></path></svg></span>الملف<span class="sr"> (مكتملة)</span></li>
+        <li class="step on" aria-current="step"><span class="n" aria-hidden="true">2</span>مطابقة الأعمدة</li>
+        <li class="step"><span class="n" aria-hidden="true">3</span>المراجعة</li>
+        <li class="step"><span class="n" aria-hidden="true">4</span>الخيارات</li>
+        <li class="step"><span class="n" aria-hidden="true">5</span>التأكيد</li>
+      </ol>
+      <div class="show-md" style="font-weight: 600; color: #0C534D">الخطوة 2 من 5 · مطابقة الأعمدة</div>
+
+      <section class="card" aria-labelledby="step-h">
+        <div style="padding: 20px 24px 8px; display: flex; flex-direction: column; gap: 14px">
+          <div>
+            <h2 id="step-h" style="margin: 0; font-size: 22px; line-height: 1.45">مطابقة الأعمدة</h2>
+            <p style="margin: 2px 0 0; color: #333E41">تعرّفنا تلقائيًا على 14 عمودًا من 17 بعناوينها العربية أو الإنجليزية، ونقترح مطابقة عمود واحد يحتاج إلى تأكيدك، وعمودان لا يُستوردان. يمكنك تغيير أي مطابقة.</p>
+          </div>
+
+          <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px">
+            <span style="font-size: 14.5px; color: #333E41">الملف: <b><bdi>موظفو-الراية-2026.xlsx</bdi></b></span>
+            <label for="sheet" style="font-weight: 600; font-size: 14.5px">الورقة</label>
+            <select id="sheet" class="input" style="width: auto; min-width: 240px"><option>الموظفين (4,862 صفًا)</option><option>ملخص (12 صفًا)</option></select>
+          </div>
+
+          <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px">
+            <span style="font-weight: 600; font-size: 14.5px">الحقول المطلوبة:</span>
+            <span class="chip"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg>البريد الإلكتروني للعمل: عمود «Email»</span>
+            <span class="chip"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg>الاسم الأول: عمود «الاسم الأول»</span>
+            <span class="chip"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg>اسم العائلة: عمود «العائلة»</span>
+          </div>
+
+          <div role="status" style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 10px; background: #FFF5E0; border: 1px solid #F3BD5A">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#955800" stroke-width="1.8" aria-hidden="true" style="flex: none; margin-top: 3px"><path d="M12 3l10 18H2z"></path><path d="M12 10v5M12 18h.01"></path></svg>
+            <span>عمود واحد يحتاج إلى تأكيدك: «المشرف». <a href="#row-12">الانتقال إليه</a></span>
+          </div>
+        </div>
+
+        <div style="overflow-x: auto">
+          <table style="width: 100%; border-collapse: collapse; min-width: 900px">
+            <caption class="sr">أعمدة الملف، وأمثلة من قيمها، والحقل الذي يُستورد إليه كل عمود</caption>
+            <thead>
+              <tr><th scope="col">عمود في الملف</th><th scope="col">أمثلة من أول الصفوف</th><th scope="col" style="width: 300px">يُستورد إلى</th><th scope="col">الحالة</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row" class="ltr" style="text-align: right">Email</th>
+                <td class="ex ltr" style="text-align: right">n.aldossari@alraya.example · k.alshehri@alraya.example</td>
+                <td><select class="input" aria-label="يُستورد إليه عمود Email"><option selected="">البريد الإلكتروني للعمل</option><option>تجاهل هذا العمود</option></select></td>
+                <td><span class="badge b-ok">تعرّفنا عليه</span></td>
+              </tr>
+              <tr>
+                <th scope="row">الاسم الأول</th>
+                <td class="ex">نورة · خالد · سارة</td>
+                <td><select class="input" aria-label="يُستورد إليه عمود الاسم الأول"><option selected="">الاسم الأول</option><option>تجاهل هذا العمود</option></select></td>
+                <td><span class="badge b-ok">تعرّفنا عليه</span></td>
+              </tr>
+              <tr>
+                <th scope="row">اسم الأب</th>
+                <td class="ex">فهد · إبراهيم · عبدالله</td>
+                <td><select class="input" aria-label="يُستورد إليه عمود اسم الأب"><option selected="">اسم الأب</option><option>تجاهل هذا العمود</option></select></td>
+                <td><span class="badge b-ok">تعرّفنا عليه</span></td>
+              </tr>
+              <tr>
+                <th scope="row">العائلة</th>
+                <td class="ex">الدوسري · الشهري · القحطاني</td>
+                <td><select class="input" aria-label="يُستورد إليه عمود العائلة"><option selected="">اسم العائلة</option><option>تجاهل هذا العمود</option></select></td>
+                <td><span class="badge b-ok">تعرّفنا عليه</span></td>
+              </tr>
+              <tr>
+                <th scope="row" class="ltr" style="text-align: right">First Name</th>
+                <td class="ex ltr" style="text-align: right">Noura · Khalid · Sarah</td>
+                <td><select class="input" aria-label="يُستورد إليه عمود First Name"><option selected="">الاسم الأول بالإنجليزية</option><option>تجاهل هذا العمود</option></select></td>
+                <td><span class="badge b-ok">تعرّفنا عليه</span></td>
+              </tr>
+              <tr>
+                <th scope="row" class="ltr" style="text-align: right">Last Name</th>
+                <td class="ex ltr" style="text-align: right">Aldossari · Alshehri · Alqahtani</td>
+                <td><select class="input" aria-label="يُستورد إليه عمود Last Name"><option selected="">اسم العائلة بالإنجليزية</option><option>تجاهل هذا العمود</option></select></td>
+                <td><span class="badge b-ok">تعرّفنا عليه</span></td>
+              </tr>
+              <tr>
+                <th scope="row">الجوال</th>
+                <td class="ex"><span class="ltr">+966 55 123 4567</span> · <span class="ltr">0551234567</span></td>
+                <td><select class="input" aria-label="يُستورد إليه عمود الجوال"><option selected="">رقم الجوال</option><option>تجاهل هذا العمود</option></select></td>
+                <td><span class="badge b-ok">تعرّفنا عليه</span></td>
+              </tr>
+              <tr>
+                <th scope="row">رقم الموظف</th>
+                <td class="ex ltr" style="text-align: right">EMP-1450 · EMP-1042</td>
+                <td><select class="input" aria-label="يُستورد إليه عمود رقم الموظف"><option selected="">الرقم الوظيفي</option><option>تجاهل هذا العمود</option></select></td>
+                <td><span class="badge b-ok">تعرّفنا عليه</span></td>
+              </tr>
+              <tr>
+                <th scope="row">الإدارة</th>
+                <td class="ex">التدريب والتطوير · العمليات</td>
+                <td><select class="input" aria-label="يُستورد إليه عمود الإدارة"><option selected="">القسم</option><option>تجاهل هذا العمود</option></select>
+                  <div class="hint">كثير من المنشآت تسمي القسم «الإدارة».</div></td>
+                <td><span class="badge b-ok">تعرّفنا عليه</span></td>
+              </tr>
+              <tr>
+                <th scope="row">الفرع</th>
+                <td class="ex">فرع الرياض · فرع جدة</td>
+                <td><select class="input" aria-label="يُستورد إليه عمود الفرع"><option selected="">الفرع</option><option>تجاهل هذا العمود</option></select></td>
+                <td><span class="badge b-ok">تعرّفنا عليه</span></td>
+              </tr>
+              <tr>
+                <th scope="row">المسمى</th>
+                <td class="ex">أخصائية تدريب · مشرف العمليات</td>
+                <td><select class="input" aria-label="يُستورد إليه عمود المسمى"><option selected="">المسمى الوظيفي بالعربية</option><option>تجاهل هذا العمود</option></select></td>
+                <td><span class="badge b-ok">تعرّفنا عليه</span></td>
+              </tr>
+              <tr id="row-12" class="attn">
+                <th scope="row">المشرف</th>
+                <td class="ex ltr" style="text-align: right">k.alshehri@alraya.example · b.alharthi@alraya.example</td>
+                <td>
+                  <select class="input" aria-label="يُستورد إليه عمود المشرف" aria-describedby="sup-hint" style="border-color: #955800">
+                    <option>تجاهل هذا العمود</option>
+                    <optgroup label="الاسم">
+                      <option>الاسم الأول</option><option>اسم الأب</option><option>اسم الجد</option><option>اسم العائلة</option>
+                      <option>الاسم الأول بالإنجليزية</option><option>اسم الأب بالإنجليزية</option><option>اسم الجد بالإنجليزية</option><option>اسم العائلة بالإنجليزية</option>
+                    </optgroup>
+                    <optgroup label="التواصل والعمل">
+                      <option>البريد الإلكتروني للعمل</option><option>رقم الجوال</option><option>الرقم الوظيفي</option><option>المسمى الوظيفي بالعربية</option><option>المسمى الوظيفي بالإنجليزية</option><option>القسم</option><option>الفرع</option><option selected="">بريد المدير المباشر</option><option>تاريخ التعيين</option>
+                    </optgroup>
+                    <optgroup label="الأدوار واللغة">
+                      <option>الدور الأساسي</option><option>أدوار إضافية</option><option>اللغة المفضلة</option>
+                    </optgroup>
+                  </select>
+                  <div id="sup-hint" class="hint">لم نتعرّف على العنوان، لكن قيمه عناوين بريد إلكتروني، فنقترح أنها بريد المدير المباشر.</div>
+                  <button type="button" class="btn btn-secondary btn-sm" style="margin-top: 6px">تأكيد الاقتراح</button>
+                </td>
+                <td><span class="badge b-warn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3l10 18H2z"></path><path d="M12 10v5M12 18h.01"></path></svg>اقتراح يحتاج إلى تأكيد</span></td>
+              </tr>
+              <tr>
+                <th scope="row">تاريخ التعيين</th>
+                <td class="ex ltr" style="text-align: right">2024-03-03 · 2019-11-17</td>
+                <td><select class="input" aria-label="يُستورد إليه عمود تاريخ التعيين"><option selected="">تاريخ التعيين</option><option>تجاهل هذا العمود</option></select></td>
+                <td><span class="badge b-ok">تعرّفنا عليه</span></td>
+              </tr>
+              <tr>
+                <th scope="row">الدور</th>
+                <td class="ex">منسق التدريب · متدرب</td>
+                <td><select class="input" aria-label="يُستورد إليه عمود الدور"><option selected="">الدور الأساسي</option><option>تجاهل هذا العمود</option></select></td>
+                <td><span class="badge b-ok">تعرّفنا عليه</span></td>
+              </tr>
+              <tr>
+                <th scope="row">اللغة</th>
+                <td class="ex">العربية · <span lang="en">English</span></td>
+                <td><select class="input" aria-label="يُستورد إليه عمود اللغة"><option selected="">اللغة المفضلة</option><option>تجاهل هذا العمود</option></select></td>
+                <td><span class="badge b-ok">تعرّفنا عليه</span></td>
+              </tr>
+              <tr class="off">
+                <th scope="row">الجنسية</th>
+                <td class="ex">سعودية · مصرية</td>
+                <td><span>لا يُستورد</span><div class="hint">هذا الحقل لا يُستورد من ملف.</div></td>
+                <td><span class="badge b-mute">يُتجاهَل</span></td>
+              </tr>
+              <tr class="off">
+                <th scope="row">الحالة</th>
+                <td class="ex">نشط · مدعو</td>
+                <td><span>لا يُستورد</span><div class="hint">لا تُستورد حالة الحساب من ملف: يُضاف الجدد بدعوة، ويُعطَّل الحساب من ملف صاحبه.</div></td>
+                <td><span class="badge b-mute">يُتجاهَل</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div style="padding: 14px 24px; display: flex; flex-direction: column; gap: 6px; font-size: 14.5px; color: #333E41">
+          <div><b>حقول اختيارية لم ترد في الملف:</b> اسم الجد، واسم الأب واسم الجد بالإنجليزية، والمسمى الوظيفي بالإنجليزية، وأدوار إضافية.</div>
+          <div>لا يُطابَق عمودان مع الحقل نفسه. الأعمدة المتجاهَلة لا تُقرأ قيمها ولا تُحفظ.</div>
+        </div>
+
+        <div class="foot">
+          <a href="Upload.dc.html" class="btn btn-secondary">رجوع</a>
+          <div style="flex: 1 1 auto"></div>
+          <span id="next-why" style="font-size: 14px; color: #465357">يتاح بعد تأكيد الاقتراح أو تغييره.</span>
+          <a href="Review.dc.html" class="btn btn-primary" aria-describedby="next-why">التالي: مراجعة البيانات</a>
+        </div>
+      </section>
+
+    </div>
+  </main>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1720}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

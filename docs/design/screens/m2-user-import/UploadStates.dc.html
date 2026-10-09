@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>حالات رفع الملف وفحصه</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#F2F5F5}
+a{color:#0C534D}a:hover{color:#09403C}
+*{box-sizing:border-box}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid #177D74;outline-offset:2px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 18px;border-radius:6px;border:1px solid transparent;font-weight:600;font-size:15px;cursor:pointer;text-decoration:none;white-space:nowrap}
+.btn-primary{background:#0F665F;color:#fff}.btn-primary:hover{background:#0C534D;color:#fff}
+.btn-secondary{background:#fff;color:#121A1C;border-color:#7A898D}.btn-secondary:hover{background:#F2F5F5;color:#121A1C}
+.btn-ghost{background:transparent;color:#0C534D}.btn-ghost:hover{background:#E7F3F1}
+.btn-sm{min-height:36px;padding:0 12px;font-size:14px}
+.state{flex:1 1 260px;background:#fff;border:1px solid #CBD4D6;border-radius:10px;padding:22px 20px;display:flex;flex-direction:column;gap:12px;align-items:stretch}
+.state h2{margin:0;font-size:19px;line-height:1.45}
+.state p{margin:0;color:#333E41;font-size:14.5px}
+.cap{font-size:13px;font-weight:600;color:#465357}
+.ic{width:44px;height:44px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;flex:none}
+.file{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid #E3E9EA;border-radius:8px;background:#F8FAFA}
+.file .nm{font-weight:600;font-size:14.5px;min-width:0;overflow-wrap:anywhere}
+.file .sz{font-size:13px;color:#465357}
+.bar{height:10px;background:#E3E9EA;border-radius:999px;overflow:hidden}
+.bar > div{height:100%;background:#0F665F;border-radius:999px}
+.bar.ind > div{width:35%;background:repeating-linear-gradient(45deg,#0F665F 0 10px,#177D74 10px 20px)}
+.steps{display:flex;flex-wrap:wrap;align-items:center;gap:8px;list-style:none;margin:0;padding:0}
+.step{display:flex;align-items:center;gap:8px;color:#465357;font-weight:500;font-size:15px}
+.step:not(:first-child)::before{content:"";width:28px;height:2px;background:#CBD4D6}
+.step .n{width:30px;height:30px;flex:none;border-radius:50%;border:2px solid #7A898D;display:inline-flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;background:#fff;color:#333E41}
+.step.on{color:#0C534D;font-weight:700}
+.step.on .n{background:#0F665F;border-color:#0F665F;color:#fff}
+@media (prefers-reduced-motion:no-preference){.bar.ind > div{animation:slide 1.4s linear infinite}@keyframes slide{from{transform:translateX(0)}to{transform:translateX(-200%)}}}
+@media (max-width:900px){.hide-md{display:none !important}}
+</style>
+</helmet>
+<div style="min-height: 100vh; display: flex; flex-direction: column; font-family: 'IBM Plex Sans Arabic', 'Noto Sans Arabic', Tahoma, sans-serif; color: #121A1C; font-size: 15.5px; line-height: 1.7; background: #F2F5F5">
+  <header style="height: 56px; display: flex; align-items: center; gap: 10px; padding: 0 16px; background: #FFFFFF; border-bottom: 1px solid #CBD4D6; font-weight: 700; font-size: 18px">
+    <span style="width: 32px; height: 32px; border-radius: 8px; background: #0F665F; color: #FFFFFF; display: inline-flex; align-items: center; justify-content: center; font-size: 17px">ج</span>جدارات · التدريب
+  </header>
+
+  <main id="main" style="flex: 1 1 auto; padding: 24px 32px 40px">
+    <div style="max-width: 1240px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px">
+      <div>
+        <div style="font-size: 14px; color: #465357">المستخدمون · استيراد من ملف</div>
+        <h1 style="margin: 0; font-size: 27px; line-height: 1.45">الخطوة 1: من الرفع إلى ملف جاهز</h1>
+        <p style="margin: 2px 0 0; color: #465357">تظهر هذه الحالات مكان منطقة الرفع بالترتيب بعد اختيار الملف. يُعلَن كل تغيير لقارئ الشاشة في منطقة حالة واحدة.</p>
+      </div>
+
+      <ol class="steps hide-md" aria-label="خطوات الاستيراد">
+        <li class="step on" aria-current="step"><span class="n" aria-hidden="true">1</span>الملف</li>
+        <li class="step"><span class="n" aria-hidden="true">2</span>مطابقة الأعمدة</li>
+        <li class="step"><span class="n" aria-hidden="true">3</span>المراجعة</li>
+        <li class="step"><span class="n" aria-hidden="true">4</span>الخيارات</li>
+        <li class="step"><span class="n" aria-hidden="true">5</span>التأكيد</li>
+      </ol>
+
+      <div style="display: flex; flex-wrap: wrap; gap: 20px; align-items: stretch">
+
+        <section class="state" aria-labelledby="s1">
+          <span class="cap">الحالة 1 · رفع الملف</span>
+          <div class="file">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#166236" stroke-width="1.6" aria-hidden="true" style="flex: none"><path d="M6 2h9l5 5v15H6z"></path><path d="M14 2v6h6"></path><path d="M9 13l6 6M15 13l-6 6"></path></svg>
+            <div style="min-width: 0"><div class="nm"><bdi>موظفو-الراية-2026.xlsx</bdi></div><div class="sz">1.8 من 2.9 ميجابايت</div></div>
+          </div>
+          <h2 id="s1">جارٍ رفع الملف…</h2>
+          <div class="bar" role="progressbar" aria-label="رفع الملف" aria-valuemin="0" aria-valuemax="100" aria-valuenow="62" aria-valuetext="62%"><div style="width: 62%"></div></div>
+          <p>62% · يمكنك متابعة الرفع من هذه الصفحة.</p>
+          <div><button type="button" class="btn btn-secondary btn-sm">إيقاف الرفع</button></div>
+        </section>
+
+        <section class="state" aria-labelledby="s2">
+          <span class="cap">الحالة 2 · الفحص من الفيروسات</span>
+          <span class="ic" style="background: #E7F3F1" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0C534D" stroke-width="1.8"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"></path><circle cx="11.5" cy="11.5" r="3"></circle><path d="M14 14l2.5 2.5"></path></svg></span>
+          <h2 id="s2">جارٍ فحص الملف من الفيروسات…</h2>
+          <div class="bar ind" role="progressbar" aria-label="فحص الملف" aria-valuetext="جارٍ الفحص"><div></div></div>
+          <p>لا نقرأ محتوى الملف قبل انتهاء الفحص. يستغرق ذلك عادةً لحظات.</p>
+        </section>
+
+        <section class="state" aria-labelledby="s3">
+          <span class="cap">الحالة 3 · قراءة الملف</span>
+          <span class="ic" style="background: #E7F3F1" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0C534D" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M3 9h18M3 14h18M9 4v16"></path></svg></span>
+          <h2 id="s3">الملف سليم. جارٍ قراءة الصفوف…</h2>
+          <div class="bar" role="progressbar" aria-label="قراءة الملف" aria-valuemin="0" aria-valuemax="100" aria-valuenow="66" aria-valuetext="قُرئ 3,200 صف"><div style="width: 66%"></div></div>
+          <p>قرأنا 3,200 صف حتى الآن.</p>
+        </section>
+
+        <section class="state" aria-labelledby="s4" style="border-color: #166236; box-shadow: inset 0 0 0 1px #166236">
+          <span class="cap">الحالة 4 · الملف جاهز</span>
+          <span class="ic" style="background: #E9F6EE" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#166236" stroke-width="2"><path d="M5 12l5 5 9-10"></path></svg></span>
+          <h2 id="s4">الملف جاهز للخطوة التالية</h2>
+          <div class="file">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#166236" stroke-width="1.6" aria-hidden="true" style="flex: none"><path d="M6 2h9l5 5v15H6z"></path><path d="M14 2v6h6"></path><path d="M9 13l6 6M15 13l-6 6"></path></svg>
+            <div style="min-width: 0"><div class="nm"><bdi>موظفو-الراية-2026.xlsx</bdi></div><div class="sz">2.9 ميجابايت · فُحص ولم يُعثر فيه على فيروسات</div></div>
+          </div>
+          <p>في الورقة «الموظفين» 4,862 صفًا و17 عمودًا. في الملف ورقتان، واخترنا الأولى؛ يمكنك تغييرها في الخطوة التالية.</p>
+          <div style="display: flex; flex-wrap: wrap; gap: 8px">
+            <a href="Mapping.dc.html" class="btn btn-primary btn-sm">التالي: مطابقة الأعمدة</a>
+            <a href="Upload.dc.html" class="btn btn-ghost btn-sm">استبدال الملف</a>
+          </div>
+        </section>
+      </div>
+
+      <div role="status" style="font-size: 14px; color: #465357; padding: 10px 14px; border: 1px dashed #CBD4D6; border-radius: 10px; background: #FFFFFF">
+        <b>ما يُعلَن لقارئ الشاشة:</b> «بدأ رفع الملف» ← «اكتمل الرفع، جارٍ فحص الملف من الفيروسات» ← «الملف سليم، جارٍ قراءة الصفوف» ← «الملف جاهز: 4,862 صفًا و17 عمودًا». لا تُعلَن النسب المئوية أثناء الرفع حتى لا تتكرر الإعلانات. أخطاء هذه الخطوة (نوع الملف، الحجم، عدد الصفوف، فيروس، ترميز الحروف) في <a href="States.dc.html">صفحة الحالات</a>.
+      </div>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

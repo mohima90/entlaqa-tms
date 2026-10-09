@@ -7,7 +7,8 @@ import { type Page, expect, test } from '@playwright/test';
  * seed-deactivation.sql, in three phases (DEACTIVATE_E2E_PHASE) around the database and Auth checks of the
  * smoke (memberships, audit, the worker's Auth ban and its lifting):
  *  - deactivate  English: Reem (direct report + department head) with reassignment; her open session loses
- *                access at once. Arabic: Huda (nothing to move). A Line Manager gets neither.
+ *                access at once. Arabic: Huda (nothing to move). Faisal (Auditor, a privileged role): the
+ *                authenticator-code step only (the admin has none). A Line Manager gets neither.
  *  - reactivate  Arabic from the deactivated tab (Reem), English from the profile (Huda).
  *  - returns     Reem signs in again, into the organization.
  * Skipped in the default CI run (no Auth server, no data).
@@ -146,6 +147,25 @@ test.describe('deactivate and reactivate members', () => {
     await expect(page.getByTestId('member-deactivated')).toContainText('عُطّل الحساب');
     await expect(page.getByTestId('users-table')).toContainText('هدى علي القرني');
     await expectNoSeriousA11yViolations(page);
+  });
+
+  test('a privileged member: the authenticator-code step instead of the form (AAL1 session)', async ({
+    page,
+  }) => {
+    test.skip(phase !== 'deactivate', 'phase');
+    await signIn(page, admin);
+    await page.goto('/en/suite/admin/users/5eed1000-0000-4000-8000-0000000000d4');
+    await page.getByTestId('deactivate-user-link').click();
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+      "Deactivate Faisal Omar Alharbi's account?",
+    );
+    await expect(page.getByTestId('deactivation-blocked')).toContainText(
+      'needs a code from an authenticator app',
+    );
+    await expect(page.getByTestId('deactivate')).toHaveCount(0);
+    await expectNoSeriousA11yViolations(page);
+    await page.goto('/ar/suite/admin/users/5eed1000-0000-4000-8000-0000000000d4/deactivate');
+    await expect(page.getByTestId('deactivation-blocked')).toContainText('رمزًا من تطبيق المصادقة');
   });
 
   test('Line Manager: no deactivation, no reactivation', async ({ page }) => {

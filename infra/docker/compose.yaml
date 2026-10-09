@@ -28,10 +28,9 @@ networks:
   db-auth: { internal: true } # db ⇄ Auth
   auth-internal: { internal: true } # gateway ⇄ Auth (the plain-HTTP hop)
   # Auth's admin API on the gateway's port 8444 (TLS, not published), by source network: the gateway
-  # (gateway/nginx.conf) serves each subnet only its calls — change both files together if a subnet
-  # collides with a network of the host (T-M2-17 security review, T-M2-09).
-  # workers ⇄ gateway: recovery links for password resets (POST /admin/generate_link) and account bans
-  # (PUT /admin/users/{id}; T-M2-09 — residual power in gateway/nginx.conf) only. A /28 holds 13
+  # (gateway/nginx.conf) serves each subnet one call — change both files together if a subnet collides
+  # with a network of the host (T-M2-17 security review).
+  # workers ⇄ gateway: recovery links for password resets (POST /admin/generate_link) only. A /28 holds 13
   # containers besides its .1: the gateway plus about 12 workers (deploy.replicas below).
   auth-admin:
     internal: true
@@ -218,8 +217,7 @@ services:
   # Background jobs (ADR 0005, T-M2-06a): graphile-worker in daemon mode, two replicas — jobs are claimed
   # with SKIP LOCKED, so replicas never run the same job, and one keeps working while the other restarts.
   # Database (queue as app_queue, tenant work as app_worker; TLS verify-full), the mail relay, and the Auth
-  # admin API through the gateway (TLS) for password-reset links and account bans — the only holder of the
-  # admin key.
+  # admin API through the gateway (TLS) for password-reset links — the only holder of the admin key.
   worker:
     build:
       context: ../..
@@ -248,9 +246,8 @@ services:
       # The gateway's certificate (Auth admin API) is from the installation's CA.
       NODE_EXTRA_CA_CERTS: /run/secrets/ca.crt
       JADARAT_ENVIRONMENT: self-hosted
-      # Password-reset links (T-M2-17) and bans of accounts that sign in nowhere (T-M2-09): Auth's admin
-      # API on the gateway's internal admin port (8444, from the auth-admin network: generate_link and
-      # PUT /admin/users/{id} only), with a service_role token signed by the
+      # Password-reset links (T-M2-17): Auth's admin API on the gateway's internal admin port (8444, from
+      # the auth-admin network: generate_link only), with a service_role token signed by the
       # installation's key (gen-secrets.sh, 90 days; renewed by re-running it — README.md; the worker
       # warns from 30 days before it expires, at start-up and daily). The worker is the ONLY
       # long-running container with an Auth admin key (ADR 0002 §7; smoke-tested).

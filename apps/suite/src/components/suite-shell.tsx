@@ -8,6 +8,7 @@ import { getConfigStatus } from '../lib/config-status';
 import { HOST_KIND_HEADER, HOST_REF_HEADER } from '../lib/host-tenant';
 import type { SuiteContext } from '../lib/suite-context';
 import { SignOutButton } from './auth/sign-out-button';
+import { IdleWarning } from './idle-warning';
 import { LanguageToggle } from './language-toggle';
 
 export type SuitePage = 'home' | 'users' | 'roles' | 'security' | 'profile';
@@ -189,6 +190,18 @@ export async function SuiteShell({
       }
     >
       {children}
+      {context.live && context.idleMinutes !== null ? (
+        <IdleWarning
+          locale={locale}
+          idleMinutes={context.idleMinutes}
+          texts={{
+            title: t('idleTitle'),
+            text: t('idleText'),
+            stay: t('idleContinue'),
+            signOut: t('idleSignOut'),
+          }}
+        />
+      ) : null}
     </AppShell>
   );
 }

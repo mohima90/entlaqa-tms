@@ -12,6 +12,8 @@ import type { ResourceAttributes } from '../scopes';
 import { SYSTEM_ROLES, type SystemRoleCode } from '../system-roles';
 import {
   SecuritySettingsInput,
+  endMemberSessionsActionDefinition,
+  endMySessionsActionDefinition,
   memberSecurityQueryDefinition,
   mySecurityQueryDefinition,
   securityPageQueryDefinition,
@@ -35,6 +37,10 @@ const db = vi.hoisted(() => ({
   updateSecurityPolicy: vi.fn(),
   passwordMinLengthForCaller: vi.fn(),
   getMemberMfa: vi.fn(),
+  listMySessions: vi.fn(),
+  endMySessions: vi.fn(),
+  listMemberSessions: vi.fn(),
+  endMemberSessions: vi.fn(),
   mayManagePerson: vi.fn(),
 }));
 vi.mock('@jadarat/platform-db', () => db);
@@ -108,6 +114,10 @@ beforeEach(() => {
   db.getSecurityPolicy.mockResolvedValue(policy);
   db.passwordMinLengthForCaller.mockResolvedValue(16);
   db.getMemberMfa.mockResolvedValue({ usesApp: true, since: new Date(1) });
+  db.listMySessions.mockResolvedValue([]);
+  db.listMemberSessions.mockResolvedValue([]);
+  db.endMySessions.mockResolvedValue(1);
+  db.endMemberSessions.mockResolvedValue(2);
   db.mayManagePerson.mockResolvedValue(true);
 });
 
@@ -263,42 +273,100 @@ describe('changing the policy (high risk, Organization Admin at AAL2)', () => {
   });
 });
 
-describe('own password rule and authenticator app (My profile)', () => {
-  it('every member reads their own password rule and whether they use an app', async () => {
+describe('own sign-in sessions (My profile)', () => {
+  it('every member lists their own sessions and password rule', async () => {
     const query = createDefineQuery(runtime([]).rt)(mySecurityQueryDefinition());
-    expect(await query({})).toEqual(ok({ passwordMinLength: 16, usesApp: true }));
+    expect(await query({})).toEqual(ok({ sessions: [], passwordMinLength: 16, usesApp: true }));
     expect(db.getMemberMfa).toHaveBeenCalledWith(TX, ME);
     db.passwordMinLengthForCaller.mockResolvedValue(null);
     const gone = await query({});
     expect(!gone.ok && gone.error.code).toBe('UNAUTHENTICATED');
   });
+
+  it('ends one other session or all others; audited without personal data', async () => {
+    const { rt, writeAudit } = runtime([]);
+    const action = createDefineAction(rt)(endMySessionsActionDefinition());
+    expect(await action({ sessionId: null })).toEqual(ok({ ended: 1, scope: 'others' }));
+    expect(writeAudit).toHaveBeenCalledWith(TX, expect.anything(), {
+      action: 'platform.auth.own_sessions_ended',
+      entityType: 'user',
+      data: { scope: 'others', count: 1 },
+    });
+    db.endMySessions.mockResolvedValue(0);
+    const unknown = await action({ sessionId: SESSION });
+    expect(!unknown.ok && unknown.error.code).toBe('NOT_FOUND');
+    const bad = await action({ sessionId: 'not-a-uuid' });
+    expect(!bad.ok && bad.error.code).toBe('VALIDATION_FAILED');
+  });
 });
 
-describe("a member's authenticator app (screen 3: user managers)", () => {
-  it('the Organization Admin and the HR Manager see whether the member uses one', async () => {
+describe("a member's sessions (screen 3: user managers)", () => {
+  it('the Organization Admin and the HR Manager list them and sign the member out', async () => {
     for (const role of ['tenant_admin', 'hr_manager'] as const) {
-      const { rt } = runtime(forRoles(role));
+      const { rt, writeAudit } = runtime(forRoles(role));
       const query = createDefineQuery(rt)(memberSecurityQueryDefinition());
-      expect(await query({ personId: SARA })).toEqual(ok({ usesApp: true, appSince: new Date(1) }));
+      expect(await query({ personId: SARA })).toEqual(
+        ok({ sessions: [], usesApp: true, appSince: new Date(1), maxDevices: 3 }),
+      );
+      const end = createDefineAction(rt)(endMemberSessionsActionDefinition());
+      expect(await end({ personId: SARA, sessionId: null })).toEqual(
+        ok({ personId: SARA, ended: 2, scope: 'all' }),
+      );
+      expect(writeAudit).toHaveBeenCalledWith(TX, expect.anything(), {
+        action: 'platform.user.sessions_ended',
+        entityType: 'person',
+        entityId: SARA,
+        data: { scope: 'all', count: 2 },
+      });
     }
   });
 
   it('roles without user management are FORBIDDEN; out of scope 404; the manage rule FORBIDDEN', async () => {
     for (const role of ['learner', 'line_manager', 'auditor', 'training_manager'] as const) {
       const { rt } = runtime(forRoles(role));
+      const end = await createDefineAction(rt)(endMemberSessionsActionDefinition())({
+        personId: SARA,
+        sessionId: null,
+      });
+      expect(!end.ok && end.error.code, role).toBe('FORBIDDEN');
       const list = await createDefineQuery(rt)(memberSecurityQueryDefinition())({ personId: SARA });
       expect(!list.ok && list.error.code, role).toBe('FORBIDDEN');
     }
     const outOfScope = runtime(forRoles('hr_manager'), 'aal1', false);
-    const missing = await createDefineQuery(outOfScope.rt)(memberSecurityQueryDefinition())({
+    const missing = await createDefineAction(outOfScope.rt)(endMemberSessionsActionDefinition())({
       personId: SARA,
+      sessionId: null,
     });
     expect(!missing.ok && missing.error.code).toBe('NOT_FOUND');
     // An HR Manager on a member with a privileged role (only the Organization Admin manages them).
     db.mayManagePerson.mockResolvedValue(false);
     const { rt } = runtime(forRoles('hr_manager'));
-    const denied = await createDefineQuery(rt)(memberSecurityQueryDefinition())({ personId: SARA });
-    expect(!denied.ok && denied.error.code).toBe('FORBIDDEN');
-    expect(db.getMemberMfa).not.toHaveBeenCalled();
+    const end = await createDefineAction(rt)(endMemberSessionsActionDefinition())({
+      personId: SARA,
+      sessionId: null,
+    });
+    expect(!end.ok && end.error.code).toBe('FORBIDDEN');
+    expect(db.endMemberSessions).not.toHaveBeenCalled();
+  });
+
+  it('a database refusal (insufficient_privilege) is FORBIDDEN; a session not found 404', async () => {
+    const { rt } = runtime(forRoles('tenant_admin'));
+    const end = createDefineAction(rt)(endMemberSessionsActionDefinition());
+    db.endMemberSessions.mockRejectedValueOnce(
+      Object.assign(new Error('refused'), { code: '42501' }),
+    );
+    const refused = await end({ personId: SARA, sessionId: null });
+    expect(!refused.ok && refused.error.code).toBe('FORBIDDEN');
+    db.endMemberSessions.mockRejectedValueOnce(
+      Object.assign(new Error('wrapped'), { cause: { code: '42501' } }),
+    );
+    const wrapped = await end({ personId: SARA, sessionId: null });
+    expect(!wrapped.ok && wrapped.error.code).toBe('FORBIDDEN');
+    db.endMemberSessions.mockResolvedValueOnce(0);
+    const gone = await end({ personId: SARA, sessionId: SESSION });
+    expect(!gone.ok && gone.error.code).toBe('NOT_FOUND');
+    db.endMemberSessions.mockRejectedValueOnce(new Error('db down'));
+    const failed = await end({ personId: SARA, sessionId: null });
+    expect(!failed.ok && failed.error.code).toBe('INTERNAL_ERROR');
   });
 });

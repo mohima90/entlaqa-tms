@@ -38,7 +38,11 @@
     "users": "Users",
     "roles": "Roles & permissions",
     "myProfile": "My profile",
-    "security": "Security"
+    "security": "Security",
+    "idleTitle": "Your sign-in session is about to end",
+    "idleText": "Your sign-in session ends in two minutes because of inactivity. Continue to stay signed in.",
+    "idleContinue": "Stay signed in",
+    "idleSignOut": "Sign out"
   },
   "errors": {
     "malformedRequest": "We couldn't process this request. Refresh the page and try again.",
@@ -75,7 +79,8 @@
       "passwordSame": "The new password is the same as the current one. Choose a different password.",
       "reauthenticationNeeded": "For your account's security, sign out and sign in again, then change the password.",
       "passwordRejected": "The new password was not accepted. Choose a different one."
-    }
+    },
+    "sessionEnded": "Your sign-in session has ended. Sign in again to continue."
   },
   "invite": {
     "pageTitle": "Accept invitation",
@@ -330,7 +335,8 @@
     "mfa": "Multi-factor authentication",
     "mfaOn": "On · authenticator app since {date}",
     "mfaOff": "Not set up",
-    "mfaReset": "Resetting it after a lost phone is done by platform support for now."
+    "mfaReset": "Resetting it after a lost phone is done by platform support for now.",
+    "sessionsTitle": "Active sign-in sessions"
   },
   "profile": {
     "title": "My profile",
@@ -393,6 +399,10 @@
       "removeNeedsCode": "Removing it needs a code from the app first.",
       "verifyFirst": "Verify with the app",
       "removeWarning": "If your organization requires it, you will be asked to set it up again."
+    },
+    "sessions": {
+      "title": "Sign-in sessions",
+      "intro": "Devices and browsers signed in to your account, in every organization."
     }
   },
   "editUser": {
@@ -824,5 +834,26 @@
       "invalid": "Check this value."
     },
     "notConfigured": "Security settings aren't available in this environment yet."
+  },
+  "sessions": {
+    "device": "Device and browser",
+    "organization": "Organization",
+    "started": "Started",
+    "lastActive": "Last activity",
+    "action": "Action",
+    "on": "{browser} on {system}",
+    "unknownBrowser": "Unknown browser",
+    "unknownSystem": "unknown system",
+    "thisDevice": "This device",
+    "withCode": "Verified with a code",
+    "noOrganization": "Not chosen yet",
+    "end": "End",
+    "endLabel": "End the sign-in session: {device}",
+    "endAll": "End all sign-in sessions",
+    "endOthers": "End all other sign-in sessions",
+    "ending": "Ending…",
+    "ended": "The selected sign-in sessions have ended.",
+    "empty": "There are no active sign-in sessions.",
+    "allowed": "({count} of {max} allowed)"
   }
 }

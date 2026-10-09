@@ -96,10 +96,12 @@ begin
   perform tests.set_claims(jsonb_build_object('role', 'authenticated', 'sub', '00000000-0000-4000-8000-000000000c07',
                                               'session_id', '10000000-0000-4000-8000-000000000c71'));
   perform tests.assert_eq(private.password_min_length_for_caller(), 12::smallint, 'suspended organization: platform minimum');
-  -- No live session, foreign claims: no answer.
+  -- No live session, an ended session, foreign claims: no answer.
   perform tests.set_claims(jsonb_build_object('role', 'authenticated', 'sub', '00000000-0000-4000-8000-000000000c03',
                                               'session_id', '10000000-0000-4000-8000-0000000000a1'));
   perform tests.assert(private.password_min_length_for_caller() is null, 'another account''s session: no answer');
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c01', '10000000-0000-4000-8000-000000000c15', v_a));
+  perform tests.assert(private.password_min_length_for_caller() is null, 'an ended session: no answer');
   perform tests.set_claims(tests.system_claims(v_a));
   perform tests.assert(private.password_min_length_for_caller() is null, 'system claims: no answer');
   perform tests.set_claims(null);
@@ -151,6 +153,7 @@ begin
     'authenticated cannot ask about other sessions');
   perform tests.assert_privilege_denied($q$select private.password_min_length_of('00000000-0000-4000-8000-0000000000b1')$q$,
     'authenticated cannot ask about other accounts'' rules');
+  perform tests.assert_privilege_denied($q$select count(*) from private.revoked_sessions$q$, 'ended sessions: tenant_guard only');
   perform tests.assert_privilege_denied($q$select count(*) from private.mfa_prompt_dismissals$q$, 'prompt answers: tenant_guard only');
   perform tests.assert_privilege_denied($q$select count(*) from private.auth_mfa_factor$q$, 'factors: tenant_guard only');
 end $$;

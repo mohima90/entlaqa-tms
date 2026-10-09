@@ -8,6 +8,7 @@
 import {
   selectOrganizationForRequest,
   signInWithPasswordForRequest,
+  signOutEndedSessionForRequest,
   signOutForRequest,
 } from '@jadarat/platform-identity/auth';
 import { definePublicAction } from '@jadarat/platform-rbac';
@@ -33,4 +34,14 @@ export const signOutAction = definePublicAction({
   name: 'platform.auth.sign_out',
   input: z.object({}).strict(),
   handler: () => signOutForRequest(),
+});
+
+/**
+ * The sign-in page signs out a session its organization's rules ended (T-M2-10): Auth deletes it with the
+ * session's own token and the cookies are cleared. Any other session is left alone.
+ */
+export const signOutEndedSessionAction = definePublicAction({
+  name: 'platform.auth.session_ended',
+  input: z.object({}).strict(),
+  handler: () => signOutEndedSessionForRequest(),
 });

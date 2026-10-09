@@ -13,11 +13,13 @@ import { hasLocale } from 'next-intl';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { notFound, redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
+import { SessionsTable } from '../../../../../../components/sessions/sessions-table';
 import { SuiteShell } from '../../../../../../components/suite-shell';
 import { ReactivateMemberButton } from '../../../../../../components/users/reactivate-member-button';
 import { REACTIVATED_FLASH_PARAM } from '../../../../../../lib/deactivate-form';
 import { reactivateLabels } from '../../../../../../lib/deactivation-texts';
 import { profileErrorTexts } from '../../../../../../lib/profile-texts';
+import { sessionLabels, sessionRows } from '../../../../../../lib/sessions-view';
 import { getSuiteContext } from '../../../../../../lib/suite-context';
 import { memberSecurityQuery, userProfileQuery } from '../../../../../../lib/users-queries';
 import { localizedName, roleName } from '../../../../../../lib/users-view';
@@ -90,7 +92,7 @@ export default async function UserProfilePage({
     } else {
       const { profile, canOpenManager, canEdit, canEditRoles, lifecycle } = result.value;
       title = localizedName(locale, profile.displayNameAr, profile.displayNameEn);
-      // The member's authenticator app (screen 3, T-M2-10): user managers only (else left out).
+      // Sign-in and security (screen 3, T-M2-10): user managers only (else the card is left out).
       const security = await memberSecurityQuery({ personId });
       content = (
         <>
@@ -141,6 +143,7 @@ async function Profile({
   lifecycle: LifecycleOffer;
   security: Extract<Awaited<ReturnType<typeof memberSecurityQuery>>, { ok: true }>['value'] | null;
 }) {
+  const sessionsT = await getTranslations({ locale, namespace: 'sessions' });
   const t = await getTranslations({ locale, namespace: 'userProfile' });
   const deactivation = await getTranslations({ locale, namespace: 'deactivation' });
   const name = localizedName(locale, profile.displayNameAr, profile.displayNameEn);
@@ -370,6 +373,26 @@ async function Profile({
           ) : null}
         </dl>
       </Card>
+
+      {security ? (
+        <Card
+          title={
+            security.maxDevices === null
+              ? t('sessionsTitle')
+              : `${t('sessionsTitle')} ${sessionsT('allowed', {
+                  count: security.sessions.length,
+                  max: security.maxDevices,
+                })}`
+          }
+        >
+          <SessionsTable
+            target={{ kind: 'member', personId: profile.personId }}
+            sessions={await sessionRows(locale, security.sessions)}
+            labels={sessionLabels(locale)}
+            errors={await profileErrorTexts(locale)}
+          />
+        </Card>
+      ) : null}
 
       {profile.activity ? (
         <Card title={t('activity')}>

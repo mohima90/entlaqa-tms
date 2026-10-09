@@ -11,11 +11,13 @@ import { NotSet } from '../../../../components/not-set';
 import { AuthenticatorCard } from '../../../../components/profile/authenticator-card';
 import { ChangePasswordForm } from '../../../../components/profile/change-password-form';
 import { PersonalDetailsForm } from '../../../../components/profile/personal-details-form';
+import { SessionsTable } from '../../../../components/sessions/sessions-table';
 import { SuiteShell } from '../../../../components/suite-shell';
 import { mfaErrorTexts } from '../../../../lib/auth-texts';
 import { stepUpHref } from '../../../../lib/mfa-view';
 import { formStateFrom } from '../../../../lib/profile-form';
 import { profileErrorTexts } from '../../../../lib/profile-texts';
+import { sessionLabels, sessionRows } from '../../../../lib/sessions-view';
 import { getSuiteContext } from '../../../../lib/suite-context';
 import { myProfileQuery, mySecurityQuery } from '../../../../lib/users-queries';
 import { localizedName } from '../../../../lib/users-view';
@@ -52,7 +54,7 @@ export default async function MyProfilePage({ params }: { params: Promise<{ loca
           </Alert>
         );
     } else {
-      // Own password rule and authenticator app (T-M2-10).
+      // Own sign-in sessions, password rule and authenticator app (T-M2-10).
       const security = await mySecurityQuery({});
       content = (
         <MyProfile
@@ -239,25 +241,36 @@ async function MyProfile({
       </Card>
 
       {security ? (
-        <Card title={t('mfa.title')}>
-          <p className="mb-4 mt-0 text-text-muted">{t('mfa.intro')}</p>
-          <AuthenticatorCard
-            usesApp={security.usesApp === true}
-            setUpHref={stepUpHref(locale, `/${locale}/suite/profile`)}
-            labels={{
-              on: t('mfa.on'),
-              off: t('mfa.off'),
-              setUp: t('mfa.setUp'),
-              remove: t('mfa.remove'),
-              removing: t('mfa.removing'),
-              removed: t('mfa.removed'),
-              removeNeedsCode: t('mfa.removeNeedsCode'),
-              verifyFirst: t('mfa.verifyFirst'),
-              removeWarning: t('mfa.removeWarning'),
-            }}
-            errors={await mfaErrorTexts(locale)}
-          />
-        </Card>
+        <>
+          <Card title={t('mfa.title')}>
+            <p className="mb-4 mt-0 text-text-muted">{t('mfa.intro')}</p>
+            <AuthenticatorCard
+              usesApp={security.usesApp === true}
+              setUpHref={stepUpHref(locale, `/${locale}/suite/profile`)}
+              labels={{
+                on: t('mfa.on'),
+                off: t('mfa.off'),
+                setUp: t('mfa.setUp'),
+                remove: t('mfa.remove'),
+                removing: t('mfa.removing'),
+                removed: t('mfa.removed'),
+                removeNeedsCode: t('mfa.removeNeedsCode'),
+                verifyFirst: t('mfa.verifyFirst'),
+                removeWarning: t('mfa.removeWarning'),
+              }}
+              errors={await mfaErrorTexts(locale)}
+            />
+          </Card>
+          <Card title={t('sessions.title')}>
+            <p className="mb-4 mt-0 text-text-muted">{t('sessions.intro')}</p>
+            <SessionsTable
+              target={{ kind: 'own' }}
+              sessions={await sessionRows(locale, security.sessions)}
+              labels={sessionLabels(locale)}
+              errors={errors}
+            />
+          </Card>
+        </>
       ) : null}
     </div>
   );

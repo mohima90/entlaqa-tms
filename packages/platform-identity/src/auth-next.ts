@@ -37,6 +37,7 @@ import {
   selectOrganization,
   signInWithPassword,
   signOut,
+  signOutEndedSession,
 } from './auth-flow';
 import {
   type MfaClientLike,
@@ -113,6 +114,11 @@ export async function getSessionOrganizationsForRequest() {
 
 export async function signOutForRequest() {
   return signOut(await requestDeps());
+}
+
+/** The sign-in page signs out a session its organization's rules ended (T-M2-10). */
+export async function signOutEndedSessionForRequest() {
+  return signOutEndedSession(await requestDeps());
 }
 
 // Multi-factor authentication with an authenticator app (FR-IAM-12, T-M2-10): the user's own session

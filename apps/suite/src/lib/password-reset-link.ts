@@ -57,9 +57,16 @@ export function pathAfterReset(locale: string): string {
   return `/${locale}/sign-in?notice=${PASSWORD_RESET_NOTICE}`;
 }
 
+/**
+ * The notice after a sign-in session ended (T-M2-10: inactivity, maximum length, device limit, signed out
+ * from another device or by a user manager) — the session-ended route signed it out first.
+ */
+export const SESSION_ENDED_NOTICE = 'session-ended';
+
 /** The known notice in a page's search parameters, if any (anything else is ignored). */
 export function noticeFrom(
   searchParams: Readonly<Record<string, string | string[] | undefined>>,
-): typeof PASSWORD_RESET_NOTICE | null {
-  return searchParams.notice === PASSWORD_RESET_NOTICE ? PASSWORD_RESET_NOTICE : null;
+): typeof PASSWORD_RESET_NOTICE | typeof SESSION_ENDED_NOTICE | null {
+  if (searchParams.notice === PASSWORD_RESET_NOTICE) return PASSWORD_RESET_NOTICE;
+  return searchParams.notice === SESSION_ENDED_NOTICE ? SESSION_ENDED_NOTICE : null;
 }

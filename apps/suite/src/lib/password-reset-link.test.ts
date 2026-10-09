@@ -80,6 +80,7 @@ describe('after an answer of the reset action', () => {
 
   it('shows only the known notice', () => {
     expect(noticeFrom({ notice: PASSWORD_RESET_NOTICE })).toBe(PASSWORD_RESET_NOTICE);
+    expect(noticeFrom({ notice: 'session-ended' })).toBe('session-ended');
     expect(noticeFrom({ notice: 'anything-else' })).toBeNull();
     expect(noticeFrom({ notice: [PASSWORD_RESET_NOTICE] })).toBeNull();
     expect(noticeFrom({})).toBeNull();

@@ -737,7 +737,7 @@ deactivate_e2e returns
         where m.user_id = '$DEACT_ID' and ra.role_code in ('line_manager', 'learner')")" == "2" ]] ||
   { echo "smoke: the reactivated member's roles changed" >&2; exit 1; }
 unset answer wrong unknown rows_before
-echo "smoke: security policy (T-M2-10) — change needs a code; MFA required; strictest password rule"
+echo "smoke: security policy (T-M2-10) — change needs a code; MFA required; strictest password rule; force sign-out"
 # The last browser journey: it makes an authenticator app required for everyone in the organization.
 [[ "$(q "select p.mfa_mode || ':' || p.password_min_length || ':' || p.session_max_devices from platform.security_policies p join platform.tenants t on t.id = p.tenant_id where t.slug = 'sovereign-smoke'")" == "off:12:3" ]] ||
   { echo "smoke: the organization must start with the default security policy" >&2; exit 1; }
@@ -748,15 +748,24 @@ echo "smoke: security policy (T-M2-10) — change needs a code; MFA required; st
 [[ "$(q "select p.mfa_mode || ':' || p.mfa_grace_days || ':' || p.password_min_length || ':' || (p.updated_by is not null) from platform.security_policies p join platform.tenants t on t.id = p.tenant_id where t.slug = 'sovereign-smoke'")" == "required_all:0:16:true" ]] ||
   { echo "smoke: the security policy change was not saved" >&2; exit 1; }
 # Audited: the change with the settings before and after; the prompt postponed (signed-in.spec); both
-# apps set up; the member's sign-ins completed with a code (set-up, then the next sign-in).
+# apps set up; sign-ins completed with a code (the member twice, then again after the forced sign-out;
+# the admin once); the member's sessions ended by the admin.
 [[ "$(q "select count(*) from platform.audit_events where action = 'platform.security.policy_changed' and data -> 'changed' ? 'mfaMode' and data -> 'changed' ? 'passwordMinLength' and data -> 'before' ->> 'mfaMode' = 'off' and data -> 'after' ->> 'mfaMode' = 'required_all'")" == "1" ]] ||
   { echo "smoke: expected the security policy audit event with the settings before and after" >&2; exit 1; }
 [[ "$(q "select count(*) from platform.audit_events where action = 'platform.auth.mfa_prompt_dismissed' and actor_user_id = '$USER_ID'")" == "1" ]] ||
   { echo "smoke: expected the Organization Admin's postponed MFA prompt in the audit log" >&2; exit 1; }
 [[ "$(q "select count(distinct actor_user_id) from platform.audit_events where action = 'platform.auth.mfa_enrolled' and actor_user_id in ('$USER_ID', '$MANAGER_ID')")" == "2" ]] ||
   { echo "smoke: expected both authenticator set-ups in the audit log" >&2; exit 1; }
-[[ "$(q "select count(*) from platform.audit_events where action = 'platform.auth.signed_in' and data ->> 'method' = 'password+totp' and data ->> 'aal' = 'aal2'")" -ge "2" ]] ||
+[[ "$(q "select count(*) from platform.audit_events where action = 'platform.auth.signed_in' and data ->> 'method' = 'password+totp' and data ->> 'aal' = 'aal2'")" -ge "4" ]] ||
   { echo "smoke: expected the sign-ins completed with an authenticator code in the audit log" >&2; exit 1; }
+[[ "$(q "select count(*) from platform.audit_events where action = 'platform.user.sessions_ended' and actor_user_id = '$USER_ID' and (data ->> 'count')::int >= 1")" == "1" ]] ||
+  { echo "smoke: expected the forced sign-out in the audit log" >&2; exit 1; }
+# Every earlier session of the member was ended (revocation marker, or signed out at Auth): only the
+# sign-in after the forced sign-out is live.
+[[ "$(q "select count(*) from auth.sessions s where s.user_id = '$MANAGER_ID' and not exists (select 1 from private.revoked_sessions r where r.session_id = s.id)")" == "1" ]] ||
+  { echo "smoke: a session of the member survived the forced sign-out" >&2; exit 1; }
+[[ "$(q "select count(*) from private.revoked_sessions where user_id = '$MANAGER_ID' and reason = 'admin' and revoked_by = '$USER_ID'")" -ge "1" ]] ||
+  { echo "smoke: expected the admin's revocation markers on the member's sessions" >&2; exit 1; }
 # The set-up keys (credentials) appear in neither the audit log nor (checked below) any container log.
 mapfile -t MFA_KEYS < <(q "select secret from auth.mfa_factors where user_id in ('$USER_ID', '$MANAGER_ID') and factor_type = 'totp' and status = 'verified'")
 [[ ${#MFA_KEYS[@]} -eq 2 ]] || { echo "smoke: expected the two verified authenticator apps" >&2; exit 1; }

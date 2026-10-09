@@ -72,10 +72,26 @@ describe('withUserTx (ADR 0002 §5)', () => {
         ],
       },
       {
-        sql: "select set_config('request.jwt.claim', '', true), set_config('request.jwt.claim.sub', '', true)",
+        sql: "select set_config('request.jwt.claim', '', true), set_config('request.jwt.claim.sub', '', true), private.touch_session()",
         params: [],
       },
     ]);
+  });
+
+  it('records activity only for a session acting in an organization (T-M2-10 inactivity rule)', async () => {
+    const { db, executed } = fakeDatabase();
+    const withUserTx = createWithUserTx(() => db);
+    const preTenant = brandVerifiedClaims({
+      sub: '11111111-1111-4111-8111-111111111111',
+      role: 'authenticated',
+      aal: 'aal1',
+      session_id: '33333333-3333-4333-8333-333333333333',
+    });
+    if (!preTenant.ok) throw new Error('fixture claims invalid');
+    await withUserTx(preTenant.value, () => Promise.resolve(null));
+    expect(executed[2]?.sql).not.toContain('touch_session');
+    await withUserTx(claims(), () => Promise.resolve(null));
+    expect(executed[5]?.sql).toContain('private.touch_session()');
   });
 
   it('never interpolates claim values into SQL text (injection-safe)', async () => {

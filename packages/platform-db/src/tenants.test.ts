@@ -20,13 +20,19 @@ function tx(rows: unknown[]) {
 
 describe('getCurrentTenant', () => {
   it('reads the current tenant through RLS', async () => {
-    const fake = tx([{ id: 't1', name_ar: 'المنشأة', name_en: 'Org' }]);
+    const fake = tx([{ id: 't1', name_ar: 'المنشأة', name_en: 'Org', session_idle_minutes: 30 }]);
     expect(await getCurrentTenant(fake.tx)).toEqual({
       tenantId: 't1',
       nameAr: 'المنشأة',
       nameEn: 'Org',
+      sessionIdleMinutes: 30,
     });
     expect(fake.executed[0]).toContain('private.current_tenant_id()');
+  });
+
+  it('has no inactivity limit without a policy row', async () => {
+    const fake = tx([{ id: 't1', name_ar: 'المنشأة', name_en: null, session_idle_minutes: null }]);
+    expect((await getCurrentTenant(fake.tx))?.sessionIdleMinutes).toBeNull();
   });
 
   it('returns null when the claims resolve to no tenant', async () => {

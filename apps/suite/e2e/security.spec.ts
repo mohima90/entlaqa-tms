@@ -1,6 +1,6 @@
 import { createHmac } from 'node:crypto';
 import AxeBuilder from '@axe-core/playwright';
-import { type Page, expect, test } from '@playwright/test';
+import { type Page, type Response, expect, test } from '@playwright/test';
 
 /**
  * Security policy per organization (FR-IAM-12, FR-IAM-13; T-M2-10; approved screens 3 and 6) on the
@@ -9,7 +9,8 @@ import { type Page, expect, test } from '@playwright/test';
  * key the page shows (RFC 6238). Covers, in Arabic and English:
  *  - the Organization Admin changes the policy only with a code (AAL2, PO decision D-IAM-01);
  *  - an organization that requires MFA makes a member set an app up, then asks for its code at sign-in;
- *  - a new password shorter than the strictest rule of the member's organizations is refused.
+ *  - a new password shorter than the strictest rule of the member's organizations is refused;
+ *  - a user manager ends a member's sign-in sessions; the member must sign in again.
  * Skipped without credentials (default CI run).
  */
 const adminEmail = process.env.SIGNED_IN_E2E_EMAIL;
@@ -17,10 +18,13 @@ const adminPassword = process.env.SIGNED_IN_E2E_PASSWORD;
 const memberEmail = process.env.SIGNED_IN_E2E_MANAGER_EMAIL;
 /** The member's password after profile.spec changed it. */
 const memberPassword = process.env.SECURITY_E2E_MANAGER_PASSWORD;
+/** Mona Saeed Alzahrani (infra/docker/seed-users.sql): the member above. */
+const MONA = '5eed1000-0000-4000-8000-000000000003';
 /** At least 12 characters (the platform minimum), shorter than the 16 this spec sets. */
 const SHORTER_PASSWORD = 'shorter-pass14';
 
-/** The member's set-up key (kept in memory only, never logged). */
+/** Set-up keys of the apps this spec registers (kept in memory only, never logged). */
+let adminKey = '';
 let memberKey = '';
 
 const BASE32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
@@ -106,7 +110,7 @@ async function expectShorterPasswordRefused(page: Page, locale: 'ar' | 'en') {
   await expect(page.locator('#password-new-error')).toHaveText(`${rule}.`);
 }
 
-test.describe('Security policy and MFA', () => {
+test.describe('Security policy, MFA and sign-in sessions', () => {
   test.skip(
     !adminEmail || !adminPassword || !memberEmail || !memberPassword,
     'security E2E credentials not set',
@@ -136,7 +140,7 @@ test.describe('Security policy and MFA', () => {
     await expect(page).toHaveURL(/\/en\/mfa\?next=%2Fen%2Fsuite%2Fadmin%2Fsecurity$/);
     await expect(page.getByTestId('mfa-enrol')).toBeVisible();
     await expectNoSeriousA11yViolations(page);
-    await setUpApp(page);
+    adminKey = await setUpApp(page);
     await expect(page).toHaveURL(/\/en\/suite\/admin\/security$/);
     await expect(page.getByTestId('security-step-up')).toHaveCount(0);
 
@@ -205,5 +209,65 @@ test.describe('Security policy and MFA', () => {
     await expectShorterPasswordRefused(page, 'ar');
     await expectShorterPasswordRefused(page, 'en');
     await expect(page.getByTestId('profile-mfa-status')).toHaveText('On · authenticator app');
+  });
+
+  test("a user manager ends a member's sign-in sessions; the member signs in again", async ({
+    browser,
+  }) => {
+    test.setTimeout(180_000);
+    const memberContext = await browser.newContext();
+    const adminContext = await browser.newContext();
+    const member = await memberContext.newPage();
+    const admin = await adminContext.newPage();
+    try {
+      await signIn(member, 'en', memberEmail ?? '', memberPassword ?? '');
+      await expect(member).toHaveURL(/\/en\/mfa$/);
+      await enterCode(member, memberKey);
+      await expect(member).toHaveURL(/\/en\/suite$/);
+      await member.goto('/en/suite/profile');
+      const own = member.getByTestId('sessions-own');
+      await expect(own.locator('[data-testid="session-row"][data-current="true"]')).toHaveCount(1);
+
+      // The admin's own sign-in now needs the code too (required for everyone).
+      await signIn(admin, 'en', adminEmail ?? '', adminPassword ?? '');
+      await expect(admin).toHaveURL(/\/en\/mfa$/);
+      await expect(admin.getByTestId('mfa-challenge')).toBeVisible();
+      await enterCode(admin, adminKey);
+      await expect(admin).toHaveURL(/\/en\/suite$/);
+      await admin.goto(`/en/suite/admin/users/${MONA}`);
+      await expect(admin.getByTestId('user-mfa-status')).toContainText(
+        'On · authenticator app since',
+      );
+      const sessions = admin.getByTestId('sessions-member');
+      await expect(sessions.getByTestId('session-row').first()).toBeVisible();
+      await expectNoSeriousA11yViolations(admin);
+      await sessions.getByTestId('sessions-end-all').click();
+      await expect(admin.getByTestId('sessions-message')).toHaveText(
+        'The selected sign-in sessions have ended.',
+      );
+      await expect(sessions.getByTestId('session-row')).toHaveCount(0);
+
+      // The member's next request is refused: the sign-in page says why and signs the session out.
+      const signedOut = member.waitForResponse(
+        (response: Response) =>
+          response.request().method() === 'POST' &&
+          response.request().headers()['next-action'] !== undefined,
+      );
+      await member.reload();
+      await expect(member).toHaveURL(/\/en\/sign-in\?notice=session-ended$/);
+      await expect(member.getByTestId('session-ended-notice')).toHaveText(
+        'Your sign-in session has ended. Sign in again to continue.',
+      );
+      await signedOut;
+      await member.waitForLoadState('networkidle');
+      // Only the sessions ended, not the account.
+      await signIn(member, 'en', memberEmail ?? '', memberPassword ?? '');
+      await expect(member).toHaveURL(/\/en\/mfa$/);
+      await enterCode(member, memberKey);
+      await expect(member).toHaveURL(/\/en\/suite$/);
+    } finally {
+      await memberContext.close();
+      await adminContext.close();
+    }
   });
 });

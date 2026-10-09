@@ -7,9 +7,13 @@ import {
   changedSettings,
   createPreSessionSecurityApi,
   dismissMfaPrompt,
+  endMemberSessions,
+  endMySessions,
   getMemberMfa,
   getSecurityPolicy,
   getSessionAccess,
+  listMemberSessions,
+  listMySessions,
   passwordMinLengthForCaller,
   updateSecurityPolicy,
 } from './security';
@@ -17,6 +21,7 @@ import type { UserTx } from './with-user-tx';
 
 const dialect = new PgDialect();
 const PERSON = '4f6c1a2e-1111-4a5b-8c9d-0123456789ab';
+const SESSION = '9a8b7c6d-2222-4e5f-8a1b-0123456789ab';
 const TENANT = 'a0000000-0000-4000-8000-000000000001';
 
 /** A transaction answering each statement with the next prepared result set. */
@@ -184,5 +189,53 @@ describe('before any session (app_server, no claims)', () => {
     expect(await createPreSessionSecurityApi(() => fakeDb([]).db).getLockoutPolicy(TENANT)).toEqual(
       DEFAULT_LOCKOUT_POLICY,
     );
+  });
+});
+
+describe('sign-in sessions', () => {
+  const session = {
+    session_id: SESSION,
+    started_at: '2026-10-09T08:00:00Z',
+    last_active_at: '2026-10-09T09:00:00Z',
+    user_agent: 'Mozilla/5.0 Chrome/130.0',
+    with_code: true,
+    is_current: false,
+  };
+
+  it("lists the account's own sessions with their organization", async () => {
+    const { tx } = fakeTx([
+      { ...session, tenant_name_ar: 'المنشأة', tenant_name_en: 'Org' },
+      {
+        ...session,
+        session_id: 'x',
+        is_current: true,
+        with_code: false,
+        user_agent: null,
+        tenant_name_ar: null,
+      },
+    ]);
+    expect(await listMySessions(tx)).toEqual([
+      {
+        sessionId: SESSION,
+        startedAt: new Date('2026-10-09T08:00:00Z'),
+        lastActiveAt: new Date('2026-10-09T09:00:00Z'),
+        userAgent: 'Mozilla/5.0 Chrome/130.0',
+        withCode: true,
+        isCurrent: false,
+        organization: { nameAr: 'المنشأة', nameEn: 'Org' },
+      },
+      expect.objectContaining({ isCurrent: true, userAgent: null, organization: null }),
+    ]);
+  });
+
+  it("ends own and members' sessions through the database functions", async () => {
+    const own = fakeTx([{ ended: 2 }]);
+    expect(await endMySessions(own.tx, null)).toBe(2);
+    expect(own.executed[0]?.params).toEqual([null]);
+    const member = fakeTx([session], [{ ended: 1 }]);
+    expect((await listMemberSessions(member.tx, PERSON))[0]?.sessionId).toBe(SESSION);
+    expect(await endMemberSessions(member.tx, PERSON, SESSION)).toBe(1);
+    expect(member.executed[1]?.params).toEqual([PERSON, SESSION]);
+    expect(await endMySessions(fakeTx([]).tx, SESSION)).toBe(0);
   });
 });

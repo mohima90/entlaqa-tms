@@ -105,8 +105,12 @@ begin
     if not (has_schema_privilege(v_role, 'auth', 'usage')
             and has_column_privilege(v_role, 'auth.sessions', 'id', 'select')
             and has_column_privilege(v_role, 'auth.sessions', 'user_id', 'select')
-            and has_column_privilege(v_role, 'auth.sessions', 'not_after', 'select')) then
-      failures := failures || format('%s (owner of private.auth_session_validity) must read auth.sessions (id, user_id, not_after)', v_role);
+            and has_column_privilege(v_role, 'auth.sessions', 'not_after', 'select')
+            and has_column_privilege(v_role, 'auth.sessions', 'created_at', 'select')
+            and has_column_privilege(v_role, 'auth.sessions', 'updated_at', 'select')
+            and has_column_privilege(v_role, 'auth.sessions', 'user_agent', 'select')
+            and has_column_privilege(v_role, 'auth.sessions', 'aal', 'select')) then
+      failures := failures || format('%s (owner of private.auth_session_validity) must read auth.sessions (id, user_id, not_after, created_at, updated_at, user_agent, aal)', v_role);
     end if;
     -- Exact ACL: tenant_guard may only SELECT; nobody else (besides the owner) holds any privilege, at table
     -- or column level. The view is a plain projection, i.e. auto-updatable: write privileges on it would
@@ -163,9 +167,9 @@ begin
       failures := failures || format('%s must not have %s on private.auth_mfa_factor', r.grantee, r.privilege_type);
     end loop;
   end if;
-  -- The MFA prompt answers (T-M2-10): tenant_guard alone.
+  -- Ended sessions and the MFA prompt answers (T-M2-10): tenant_guard alone.
   for r in
-    select o.obj from (values ('private.mfa_prompt_dismissals')) as o(obj)
+    select o.obj from (values ('private.revoked_sessions'), ('private.mfa_prompt_dismissals')) as o(obj)
   loop
     if to_regclass(r.obj) is null then
       failures := failures || format('%s is missing', r.obj);
@@ -253,15 +257,20 @@ begin
       ('private.check_privileged_deactivation()', 'membership_guard', array['membership_guard'], true),
       ('private.reactivate_membership(uuid)', 'membership_guard', array['membership_guard', 'authenticated'], true),
       ('private.account_sign_in_refused(uuid)', 'membership_guard', array['membership_guard', 'supabase_auth_admin'], true),
-      -- Security policy and MFA (T-M2-10): the decision is tenant_guard's own; the web app calls the others
-      -- (app_server, checked inside).
+      -- Security policy, MFA and sign-in sessions (T-M2-10): the decision is tenant_guard's own; the web app
+      -- calls the others (app_server, checked inside).
       ('private.session_access(uuid, uuid, uuid, boolean, boolean)', 'tenant_guard', array['tenant_guard'], true),
       ('private.session_access_state()',            'tenant_guard', array['tenant_guard', 'authenticated'], true),
       ('private.dismiss_mfa_prompt()',              'tenant_guard', array['tenant_guard', 'authenticated'], true),
       ('private.tenant_member_mfa(uuid)',           'tenant_guard', array['tenant_guard', 'authenticated'], true),
       ('private.password_min_length_for_caller()',  'tenant_guard', array['tenant_guard', 'authenticated'], true),
       ('private.tenant_lockout_policy(uuid)',       'tenant_guard', array['tenant_guard', 'authenticated'], true),
-      ('private.invitation_password_min_length(bytea)', 'invitation_guard', array['invitation_guard', 'authenticated'], true)
+      ('private.invitation_password_min_length(bytea)', 'invitation_guard', array['invitation_guard', 'authenticated'], true),
+      ('private.touch_session()',                   'tenant_guard', array['tenant_guard', 'authenticated'], true),
+      ('private.my_sessions()',                     'tenant_guard', array['tenant_guard', 'authenticated'], true),
+      ('private.end_my_sessions(uuid)',             'tenant_guard', array['tenant_guard', 'authenticated'], true),
+      ('private.tenant_member_sessions(uuid)',      'tenant_guard', array['tenant_guard', 'authenticated'], true),
+      ('private.end_member_sessions(uuid, uuid)',   'tenant_guard', array['tenant_guard', 'authenticated'], true)
     ) as h(fn, owner, allowed, definer)
     left join pg_proc p on p.oid = to_regprocedure(h.fn)
   loop
@@ -302,7 +311,9 @@ begin
         'private.account_sign_in_refused(uuid)',
         'private.session_access(uuid,uuid,uuid,boolean,boolean)', 'private.session_access_state()',
         'private.dismiss_mfa_prompt()', 'private.tenant_member_mfa(uuid)', 'private.password_min_length_for_caller()',
-        'private.tenant_lockout_policy(uuid)', 'private.invitation_password_min_length(bytea)')
+        'private.tenant_lockout_policy(uuid)', 'private.invitation_password_min_length(bytea)',
+        'private.touch_session()', 'private.my_sessions()', 'private.end_my_sessions(uuid)',
+        'private.tenant_member_sessions(uuid)', 'private.end_member_sessions(uuid,uuid)')
   loop
     failures := failures || format('%s: unexpected SECURITY DEFINER function (security review)', r.fn);
   end loop;

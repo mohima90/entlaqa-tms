@@ -1,13 +1,19 @@
 import { appError, err, ok } from '@jadarat/platform-core';
 import {
   MFA_MODES,
+  type MySignInSession,
   SECURITY_LIMITS,
   type SecurityPolicy,
   type SecuritySettings,
+  type SignInSession,
   type UserTx,
   changedSettings,
+  endMemberSessions,
+  endMySessions,
   getMemberMfa,
   getSecurityPolicy,
+  listMemberSessions,
+  listMySessions,
   mayManagePerson,
   passwordMinLengthForCaller,
   updateSecurityPolicy,
@@ -20,16 +26,16 @@ import { platformPermissions as p } from '../platform-permissions';
 import { SYSTEM_ROLE_CODES } from '../system-roles';
 
 /**
- * Security settings of the organization (screen 6, FR-IAM-12/13) — T-M2-10. The database enforces
- * everything (private.session_access, the update policy of platform.security_policies); these
- * definitions authorize, validate and audit.
+ * Security settings of the organization (screen 6, FR-IAM-12/13) and sign-in sessions (screens 3 and 6,
+ * FR-IAM-13) — T-M2-10. The database enforces everything (private.session_access, the update policy of
+ * platform.security_policies, the session functions); these definitions authorize, validate and audit.
  *
  *   - The page: every member with `platform.tenant.read` (Organization Admin, Auditor) reads the policy;
  *     changing it needs `platform.security.manage` — high risk, AAL2 (an authenticator code even when the
  *     organization keeps MFA off: PO decision D-IAM-01), Organization Admin only.
- *   - My profile: every member (own scope) reads their own password rule and authenticator status.
- *   - A member's authenticator status (screen 3): user managers (`platform.user.deactivate` on the
- *     person, and the manage rule — only an Organization Admin for a member with a privileged role).
+ *   - My sessions: every member (own scope) lists and ends their own other sessions.
+ *   - A member's sessions: user managers (`platform.user.deactivate` on the person, and the manage rule —
+ *     only an Organization Admin for a member with a privileged role) list them and sign them out.
  */
 const manageOwn = memberPermissions['platform.profile.manage_own'];
 
@@ -141,10 +147,11 @@ export function updateSecurityPolicyActionDefinition(): ActionDefinition<
 }
 
 // ---------------------------------------------------------------------------------------------------
-// My profile: own password rule, own authenticator app
+// My profile: own sign-in sessions, own password rule, own authenticator app
 // ---------------------------------------------------------------------------------------------------
 
 export interface MySecurityView {
+  readonly sessions: readonly MySignInSession[];
   /** The strictest minimum password length of the account's organizations (PO decision 5). */
   readonly passwordMinLength: number;
   /** Whether the account uses an authenticator app (null: unknown). */
@@ -159,23 +166,75 @@ export function mySecurityQueryDefinition(): QueryDefinition<
   return {
     permission: manageOwn,
     input: z.strictObject({}),
-    scoped: true, // the member's own account only
+    scoped: true, // the member's own account and sessions only
     handler: async ({ ctx }) => {
       const minLength = await passwordMinLengthForCaller(ctx.tx);
       if (minLength === null) return err(appError('UNAUTHENTICATED'));
       const mfa = ctx.actor.personId ? await getMemberMfa(ctx.tx, ctx.actor.personId) : null;
-      return ok({ passwordMinLength: minLength, usesApp: mfa?.usesApp ?? null });
+      return ok({
+        sessions: await listMySessions(ctx.tx),
+        passwordMinLength: minLength,
+        usesApp: mfa?.usesApp ?? null,
+      });
     },
   };
 }
 
+/**
+ * "Stay signed in" on the inactivity warning (screen 6): any request through withUserTx records the
+ * session's activity (private.touch_session); this one does nothing else. Refused for an ended session.
+ */
+export function keepSessionAliveActionDefinition(): ActionDefinition<
+  z.ZodObject<Record<string, never>>,
+  null,
+  UserTx
+> {
+  return {
+    permission: manageOwn,
+    input: z.strictObject({}),
+    scoped: true,
+    handler: () => Promise.resolve(ok(null)),
+  };
+}
+
+export const EndMySessionsInput = z.strictObject({ sessionId: z.uuid().nullable() });
+
+export function endMySessionsActionDefinition(): ActionDefinition<
+  typeof EndMySessionsInput,
+  { readonly ended: number; readonly scope: 'one' | 'others' },
+  UserTx
+> {
+  return {
+    permission: manageOwn,
+    input: EndMySessionsInput,
+    scoped: true,
+    handler: async ({ ctx, input }) => {
+      const ended = await endMySessions(ctx.tx, input.sessionId);
+      if (input.sessionId !== null && ended === 0) return err(appError('NOT_FOUND'));
+      return ok({ ended, scope: input.sessionId === null ? 'others' : 'one' });
+    },
+    audit: (input, output) =>
+      output.ended === 0
+        ? null
+        : {
+            action: 'platform.auth.own_sessions_ended',
+            entityType: 'user',
+            ...(input.sessionId ? { entityId: input.sessionId } : {}),
+            data: { scope: output.scope, count: output.ended },
+          },
+  };
+}
+
 // ---------------------------------------------------------------------------------------------------
-// A member's authenticator app (screen 3, user managers)
+// A member's sessions (screen 3, user managers)
 // ---------------------------------------------------------------------------------------------------
 
 export interface MemberSecurityView {
+  readonly sessions: readonly SignInSession[];
   readonly usesApp: boolean | null;
   readonly appSince: Date | null;
+  /** The organization's device limit, for "(2 of 3 allowed)". */
+  readonly maxDevices: number | null;
 }
 
 const MemberInput = z.strictObject({ personId: z.uuid() });
@@ -192,8 +251,71 @@ export function memberSecurityQueryDefinition(): QueryDefinition<
     handler: async ({ ctx, input }) => {
       // The manage rule (only an Organization Admin for a member with a privileged role), as the database.
       if (!(await mayManagePerson(ctx.tx, input.personId))) return err(appError('FORBIDDEN'));
-      const mfa = await getMemberMfa(ctx.tx, input.personId);
-      return ok({ usesApp: mfa?.usesApp ?? null, appSince: mfa?.since ?? null });
+      const [sessions, mfa, policy] = [
+        await listMemberSessions(ctx.tx, input.personId),
+        await getMemberMfa(ctx.tx, input.personId),
+        await getSecurityPolicy(ctx.tx),
+      ];
+      return ok({
+        sessions,
+        usesApp: mfa?.usesApp ?? null,
+        appSince: mfa?.since ?? null,
+        maxDevices: policy?.sessionMaxDevices ?? null,
+      });
     },
+  };
+}
+
+export const EndMemberSessionsInput = z.strictObject({
+  personId: z.uuid(),
+  sessionId: z.uuid().nullable(),
+});
+
+const INSUFFICIENT_PRIVILEGE = '42501';
+
+function databaseCode(error: unknown): string | undefined {
+  let current: unknown = error;
+  for (let depth = 0; depth < 5 && typeof current === 'object' && current !== null; depth += 1) {
+    if ('code' in current && typeof current.code === 'string') return current.code;
+    current = 'cause' in current ? current.cause : undefined;
+  }
+  return undefined;
+}
+
+export function endMemberSessionsActionDefinition(): ActionDefinition<
+  typeof EndMemberSessionsInput,
+  { readonly personId: string; readonly ended: number; readonly scope: 'one' | 'all' },
+  UserTx
+> {
+  return {
+    permission: p['platform.user.deactivate'],
+    input: EndMemberSessionsInput,
+    resource: (input) => ({ type: 'person', id: input.personId }),
+    handler: async ({ ctx, input }) => {
+      if (!(await mayManagePerson(ctx.tx, input.personId))) return err(appError('FORBIDDEN'));
+      let ended: number;
+      try {
+        ended = await endMemberSessions(ctx.tx, input.personId, input.sessionId);
+      } catch (error) {
+        if (databaseCode(error) === INSUFFICIENT_PRIVILEGE) return err(appError('FORBIDDEN'));
+        throw error;
+      }
+      if (input.sessionId !== null && ended === 0) return err(appError('NOT_FOUND'));
+      return ok({
+        personId: input.personId,
+        ended,
+        scope: input.sessionId === null ? 'all' : 'one',
+      });
+    },
+    audit: (input, output) => ({
+      action: 'platform.user.sessions_ended',
+      entityType: 'person',
+      entityId: output.personId,
+      data: {
+        scope: output.scope,
+        count: output.ended,
+        ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+      },
+    }),
   };
 }

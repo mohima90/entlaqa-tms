@@ -1,7 +1,8 @@
 -- db-test: run-as=app_server
--- The organization's MFA policy, enforced by private.current_tenant_id() on every statement (T-M2-10;
--- FR-IAM-12; T-IAM-41, T-IAM-43); the state the web app reads; whether a member uses an app. Runs
--- CONNECTED AS app_server (fixtures: 00, 65). Every block is rolled back.
+-- The organization's MFA policy and sign-in session rules, enforced by private.current_tenant_id() on every
+-- statement (T-M2-10; FR-IAM-12/13; T-IAM-41, T-IAM-43, T-IAM-40); the state the web app reads; the
+-- account's and the user manager's session lists and sign-out. Runs CONNECTED AS app_server (fixtures:
+-- 00, 65). Every block is rolled back.
 \set ON_ERROR_STOP on
 
 do $$ begin perform tests.assert(session_user = 'app_server', 'must run connected as app_server'); end $$;
@@ -119,6 +120,217 @@ begin
     'a learner: nothing about others');
   perform tests.assert_eq((select count(*) from private.tenant_member_mfa('a1000000-0000-4000-8000-000000000c01')), 1::bigint,
     'a learner: their own');
+end $$;
+rollback;
+
+-- ---------------------------------------------------------------------------------------------------
+-- Session rules (defaults: 30 minutes inactive, 12 hours, 3 devices; platform: 24 hours)
+-- ---------------------------------------------------------------------------------------------------
+do $$
+declare
+  c record;
+begin
+  for c in select * from (values
+      ('fresh session (control)', '10000000-0000-4000-8000-000000000c11'::uuid, true, 'ok'),
+      ('started 13 hours ago (maximum 12)', '10000000-0000-4000-8000-000000000c12', false, 'ended'),
+      ('31 minutes inactive (maximum 30)', '10000000-0000-4000-8000-000000000c13', false, 'ended'),
+      ('ended by the account', '10000000-0000-4000-8000-000000000c15', false, 'ended'),
+      ('last seen 5 minutes ago', '10000000-0000-4000-8000-000000000c16', true, 'ok')) as v (label, session_id, allowed, state)
+  loop
+    set local role authenticated;
+    perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c01', c.session_id, 'a0000000-0000-4000-8000-000000000001'));
+    perform tests.assert_eq(private.current_tenant_id() is not null, c.allowed, format('current_tenant_id(): %s', c.label));
+    perform tests.assert_eq((select state from private.session_access_state()), c.state, format('state: %s', c.label));
+    if not c.allowed then
+      perform tests.assert_eq((select count(*) from platform.persons), 0::bigint, format('%s: reads nothing', c.label));
+    end if;
+    reset role;
+  end loop;
+end $$;
+
+-- An organization's own rules: a stricter inactivity limit ends s1f (5 minutes) at once; s1b (13 hours)
+-- comes back when the organization allows 24 hours. The platform's 24 hours hold before an organization is
+-- chosen too (s1d, 25 hours): no organizations, no switch.
+begin;
+set local role authenticated;
+do $$
+declare
+  v_a constant uuid := 'a0000000-0000-4000-8000-000000000001';
+begin
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1', v_a) || '{"aal": "aal2"}');
+  perform tests.assert_eq(tests.rows_affected('update platform.security_policies set session_idle_minutes = 5, session_max_hours = 24'),
+    1::bigint, 'A: 5 minutes, 24 hours');
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c01', '10000000-0000-4000-8000-000000000c16', v_a));
+  perform tests.assert(private.current_tenant_id() is null, 'inactive 5 minutes under a 5-minute rule: ended');
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c01', '10000000-0000-4000-8000-000000000c12', v_a));
+  perform tests.assert_eq(private.current_tenant_id(), v_a, '13 hours under a 24-hour rule: acts');
+  perform tests.set_claims(jsonb_build_object('role', 'authenticated', 'sub', '00000000-0000-4000-8000-000000000c01',
+                                              'session_id', '10000000-0000-4000-8000-000000000c14'));
+  perform tests.assert_eq((select count(*) from private.session_tenants()), 0::bigint, '25 hours: no organizations');
+  perform tests.assert(not private.switch_active_tenant(v_a), '25 hours: cannot enter an organization');
+  -- An ended session cannot move on to another organization either.
+  perform tests.set_claims(jsonb_build_object('role', 'authenticated', 'sub', '00000000-0000-4000-8000-000000000c01',
+                                              'session_id', '10000000-0000-4000-8000-000000000c13'));
+  perform tests.assert(not private.switch_active_tenant(v_a), 'an inactive session cannot re-enter (sign in again)');
+  perform tests.set_claims(jsonb_build_object('role', 'authenticated', 'sub', '00000000-0000-4000-8000-000000000c01',
+                                              'session_id', '10000000-0000-4000-8000-000000000c15'));
+  perform tests.assert(not private.switch_active_tenant(v_a), 'a session ended by the account cannot re-enter');
+end $$;
+rollback;
+
+-- Activity: at most once a minute, never reviving an inactive session; none for foreign claims.
+begin;
+set local role authenticated;
+do $$
+declare
+  v_a constant uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_seen timestamptz;
+begin
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c01', '10000000-0000-4000-8000-000000000c16', v_a));
+  perform private.touch_session();
+  select last_seen_at into v_seen from platform.session_context;
+  perform tests.assert_eq(v_seen, now(), 'last seen 5 minutes ago: moved to now');
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c01', '10000000-0000-4000-8000-000000000c17', v_a));
+  perform private.touch_session();
+  perform tests.assert((select last_seen_at < now() - interval '10 seconds' from platform.session_context),
+    'last seen 20 seconds ago: not moved (once a minute)');
+  -- (s1c is inactive: the touch must not bring it back; its context is unreadable, so check the decision.)
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c01', '10000000-0000-4000-8000-000000000c13', v_a));
+  perform private.touch_session();
+  perform tests.assert(private.current_tenant_id() is null, 'an inactive session stays ended after a touch');
+end $$;
+rollback;
+
+-- Device limit (3): entering A with a new session ends the oldest live one beyond the limit (s2a); the
+-- inactive s2d does not count.
+begin;
+set local role authenticated;
+do $$
+declare
+  v_a constant uuid := 'a0000000-0000-4000-8000-000000000001';
+  c record;
+begin
+  perform tests.set_claims(jsonb_build_object('role', 'authenticated', 'sub', '00000000-0000-4000-8000-000000000c02',
+                                              'session_id', '10000000-0000-4000-8000-000000000c25'));
+  perform tests.assert(private.switch_active_tenant(v_a), 'the new session enters A');
+  for c in select * from (values
+      ('10000000-0000-4000-8000-000000000c25'::uuid, true), ('10000000-0000-4000-8000-000000000c23', true),
+      ('10000000-0000-4000-8000-000000000c22', true), ('10000000-0000-4000-8000-000000000c21', false)) as v (session_id, allowed)
+  loop
+    perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c02', c.session_id, v_a));
+    perform tests.assert_eq(private.current_tenant_id() is not null, c.allowed, format('device limit: session %s', c.session_id));
+  end loop;
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c02', '10000000-0000-4000-8000-000000000c21', v_a));
+  perform tests.assert_eq((select state from private.session_access_state()), 'ended', 'the oldest session ended');
+end $$;
+rollback;
+
+-- ---------------------------------------------------------------------------------------------------
+-- Session lists and sign-out
+-- ---------------------------------------------------------------------------------------------------
+-- The account's own sessions (uS3: s3a and s3b in A, s3c in B): every organization's, current first.
+begin;
+set local role authenticated;
+do $$
+declare
+  v_a constant uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_ids uuid[];
+begin
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c03', '10000000-0000-4000-8000-000000000c32', v_a));
+  select array_agg(session_id order by is_current desc, session_id) into v_ids from private.my_sessions();
+  perform tests.assert_eq(v_ids, array['10000000-0000-4000-8000-000000000c32', '10000000-0000-4000-8000-000000000c31',
+                                       '10000000-0000-4000-8000-000000000c33']::uuid[], 'own sessions, current first');
+  perform tests.assert((select bool_and(user_agent like 'Mozilla%' and tenant_name_ar is not null) from private.my_sessions()),
+    'each with its browser and organization');
+  -- uS1's list leaves out ended sessions (13 hours, inactive, 25 hours, ended).
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c01', '10000000-0000-4000-8000-000000000c11', v_a));
+  select array_agg(session_id order by session_id) into v_ids from private.my_sessions();
+  perform tests.assert_eq(v_ids, array['10000000-0000-4000-8000-000000000c11', '10000000-0000-4000-8000-000000000c16',
+                                       '10000000-0000-4000-8000-000000000c17']::uuid[], 'live sessions only');
+  -- End one other session, then all others; never the current one; never another account's.
+  perform tests.assert_eq(private.end_my_sessions('10000000-0000-4000-8000-0000000000a1'), 0, 'not another account''s session');
+  perform tests.assert_eq(private.end_my_sessions('10000000-0000-4000-8000-000000000c11'), 0, 'not the current one');
+  perform tests.assert_eq(private.end_my_sessions('10000000-0000-4000-8000-000000000c16'), 1, 'one other session');
+  perform tests.assert_eq(private.end_my_sessions(null), 1, 'all others (the remaining one)');
+  perform tests.assert_eq(private.current_tenant_id(), v_a, 'the current session still acts');
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c01', '10000000-0000-4000-8000-000000000c17', v_a));
+  perform tests.assert(private.current_tenant_id() is null, 'an ended session reads nothing at once');
+  perform tests.assert_eq((select state from private.session_access_state()), 'ended', 'and says so');
+  perform tests.assert_eq((select count(*) from private.my_sessions()), 0::bigint, 'an ended session lists nothing');
+  perform tests.assert_eq(private.end_my_sessions(null), 0, 'an ended session ends nothing');
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1', v_a));
+  perform tests.assert_eq(private.current_tenant_id(), v_a, 'other accounts are untouched');
+end $$;
+rollback;
+
+-- Force sign-out by a user manager (screen 3): one or all of a member's sessions IN THIS organization.
+begin;
+set local role authenticated;
+do $$
+declare
+  v_a constant uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_b constant uuid := 'b0000000-0000-4000-8000-000000000001';
+  v_admin_a constant jsonb := tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1', 'a0000000-0000-4000-8000-000000000001');
+  v_ids uuid[];
+begin
+  perform tests.set_claims(v_admin_a);
+  select array_agg(session_id order by session_id) into v_ids from private.tenant_member_sessions('a1000000-0000-4000-8000-000000000c03');
+  perform tests.assert_eq(v_ids, array['10000000-0000-4000-8000-000000000c31', '10000000-0000-4000-8000-000000000c32']::uuid[],
+    'the admin of A lists uS3''s sessions in A only');
+  perform tests.assert_eq((select count(*) from private.tenant_member_sessions('b1000000-0000-4000-8000-000000000c03')), 0::bigint,
+    'nothing about uS3''s person in B');
+  perform tests.assert_eq(private.end_member_sessions('a1000000-0000-4000-8000-000000000c03', '10000000-0000-4000-8000-000000000c32'), 1,
+    'one session');
+  perform tests.assert_eq(private.end_member_sessions('a1000000-0000-4000-8000-000000000c03', '10000000-0000-4000-8000-000000000c33'), 0,
+    'never a session acting in another organization');
+  perform tests.assert_eq(private.end_member_sessions('a1000000-0000-4000-8000-000000000c03', null), 1, 'all (the remaining one in A)');
+  perform tests.assert_eq(private.end_member_sessions('b1000000-0000-4000-8000-000000000c03', null), 0, 'not B''s person');
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c03', '10000000-0000-4000-8000-000000000c31', v_a));
+  perform tests.assert(private.current_tenant_id() is null, 'uS3 in A: ended at once');
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c03', '10000000-0000-4000-8000-000000000c33', v_b));
+  perform tests.assert_eq(private.current_tenant_id(), v_b, 'uS3 in B: untouched (T-IAM-40)');
+  -- The admin's own current session is never ended by this path.
+  perform tests.set_claims(v_admin_a);
+  perform tests.assert_eq(private.end_member_sessions('a1000000-0000-4000-8000-0000000000a1', null), 0,
+    'the caller''s own current session stays');
+  perform tests.assert_eq(private.current_tenant_id(), v_a, 'the admin still acts');
+end $$;
+rollback;
+
+-- Who may not: a learner, an HR Manager on the Organization Admin (privileged), another organization's admin.
+begin;
+set local role authenticated;
+do $$
+declare
+  v_a constant uuid := 'a0000000-0000-4000-8000-000000000001';
+begin
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c01', '10000000-0000-4000-8000-000000000c11', v_a,
+                                             'a1000000-0000-4000-8000-000000000c01'));
+  perform tests.assert_fails($q$select private.end_member_sessions('a1000000-0000-4000-8000-000000000c03', null)$q$,
+    array['42501'], 'a learner cannot end others'' sessions');
+  perform tests.assert_eq((select count(*) from private.tenant_member_sessions('a1000000-0000-4000-8000-000000000c03')), 0::bigint,
+    'a learner lists nothing');
+  -- uAB is an HR Manager in A: ordinary members yes, the Organization Admin no.
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000ab', '10000000-0000-4000-8000-0000000000ab', v_a,
+                                             'a1000000-0000-4000-8000-0000000000ab'));
+  perform tests.assert_fails($q$select private.end_member_sessions('a1000000-0000-4000-8000-0000000000a1', null)$q$,
+    array['42501'], 'an HR Manager cannot sign the Organization Admin out');
+  perform tests.assert_eq((select count(*) from private.tenant_member_sessions('a1000000-0000-4000-8000-0000000000a1')), 0::bigint,
+    'an HR Manager does not list the Organization Admin''s sessions');
+  perform tests.assert_eq(private.end_member_sessions('a1000000-0000-4000-8000-000000000c03', null), 2,
+    'an HR Manager signs an ordinary member out');
+  -- B's admin: nothing in A.
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000b1', '10000000-0000-4000-8000-0000000000b1',
+                                             'b0000000-0000-4000-8000-000000000001'));
+  perform tests.assert_eq(private.end_member_sessions('a1000000-0000-4000-8000-000000000c01', null), 0, 'B''s admin ends nothing in A');
+  perform tests.assert_eq((select count(*) from private.tenant_member_sessions('a1000000-0000-4000-8000-000000000c01')), 0::bigint,
+    'B''s admin lists nothing in A');
+  -- No valid claims: nothing.
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c01', '10000000-0000-4000-8000-0000000000a1', v_a));
+  perform tests.assert_eq(private.end_member_sessions('a1000000-0000-4000-8000-000000000c03', null), 0, 'forged claims: nothing');
+  perform tests.set_claims(tests.system_claims(v_a));
+  perform tests.assert_eq(private.end_my_sessions(null), 0, 'system claims: nothing');
+  perform tests.assert_eq((select count(*) from private.my_sessions()), 0::bigint, 'system claims: no list');
 end $$;
 rollback;
 

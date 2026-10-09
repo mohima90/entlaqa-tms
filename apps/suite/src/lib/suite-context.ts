@@ -19,6 +19,8 @@ export interface SuiteContext {
   };
   /** The signed-in member's names for the header picture (null in the preview or when unknown). */
   readonly me: { readonly nameAr: string; readonly nameEn: string | null } | null;
+  /** The organization's inactivity limit in minutes (T-M2-10): the page warns before it ends. */
+  readonly idleMinutes: number | null;
 }
 
 /**
@@ -43,7 +45,13 @@ export function navigationFor(grants: readonly Grant[] | null): SuiteContext['na
 export async function getSuiteContext(locale: AppLocale): Promise<SuiteContext> {
   const status = getConfigStatus();
   if (!status.auth) {
-    return { live: false, organizationName: null, navigation: navigationFor(null), me: null };
+    return {
+      live: false,
+      organizationName: null,
+      navigation: navigationFor(null),
+      me: null,
+      idleMinutes: null,
+    };
   }
   const session = await getSessionState(status);
   const elsewhere = redirectFor(locale, session, 'suite');
@@ -56,7 +64,13 @@ export async function getSuiteContext(locale: AppLocale): Promise<SuiteContext> 
       : tenant.nameAr
     : null;
   if (!status.database) {
-    return { live: false, organizationName, navigation: navigationFor(null), me: null };
+    return {
+      live: false,
+      organizationName,
+      navigation: navigationFor(null),
+      me: null,
+      idleMinutes: null,
+    };
   }
   const grants = await loadMemberGrants();
   const identity = await myIdentityQuery({});
@@ -67,5 +81,6 @@ export async function getSuiteContext(locale: AppLocale): Promise<SuiteContext> 
     me: identity.ok
       ? { nameAr: identity.value.displayNameAr, nameEn: identity.value.displayNameEn }
       : null,
+    idleMinutes: tenant?.sessionIdleMinutes ?? null,
   };
 }

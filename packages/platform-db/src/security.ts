@@ -6,8 +6,8 @@ import { type AppDatabase, getDatabase } from './client';
 import type { UserTx } from './with-user-tx';
 
 /**
- * Security policy per organization, MFA state and the password rule (T-M2-10; FR-IAM-12, FR-IAM-13;
- * migrations 20261012090000–20261012090200). The database decides; these are its request-path calls.
+ * Security policy per organization, MFA state and sign-in sessions (T-M2-10; FR-IAM-12, FR-IAM-13;
+ * migrations 20261012090000–20261012100000). The database decides; these are its request-path calls.
  */
 
 export const MFA_MODES = ['off', 'optional', 'required_all', 'required_roles'] as const;
@@ -150,6 +150,7 @@ export function changedSettings(before: SecuritySettings, after: SecuritySetting
 export const SESSION_ACCESS_STATES = [
   'ok',
   'invalid',
+  'ended',
   'mfa_challenge',
   'mfa_enrol',
   'prompt_grace',
@@ -264,4 +265,82 @@ export function invitationPasswordMinLength(tokenHash: Buffer): Promise<number> 
 
 export function getLockoutPolicy(tenantId: string | null): Promise<LockoutPolicy> {
   return defaultPreSessionApi.getLockoutPolicy(tenantId);
+}
+
+// ---------------------------------------------------------------------------------------------------
+// Sign-in sessions (screens 3 and 6)
+// ---------------------------------------------------------------------------------------------------
+
+export interface SignInSession {
+  readonly sessionId: string;
+  readonly startedAt: Date;
+  readonly lastActiveAt: Date;
+  /** The browser's own description (Auth's user agent); shown parsed, never logged. */
+  readonly userAgent: string | null;
+  /** The session passed an authenticator code (aal2). */
+  readonly withCode: boolean;
+  readonly isCurrent: boolean;
+}
+
+export interface MySignInSession extends SignInSession {
+  /** The organization it acts in (null: none chosen yet). */
+  readonly organization: { readonly nameAr: string; readonly nameEn: string | null } | null;
+}
+
+function sessionOf(row: Row): SignInSession {
+  return {
+    sessionId: row.session_id as string,
+    startedAt: date(row.started_at) ?? new Date(0),
+    lastActiveAt: date(row.last_active_at) ?? new Date(0),
+    userAgent: (row.user_agent as string | null) ?? null,
+    withCode: row.with_code === true,
+    isCurrent: row.is_current === true,
+  };
+}
+
+/** The account's live sessions (every organization), current first. */
+export async function listMySessions(tx: UserTx): Promise<MySignInSession[]> {
+  const rows = await tx.execute(sql`
+    select session_id, started_at, last_active_at, user_agent, with_code, is_current,
+           tenant_name_ar, tenant_name_en
+    from private.my_sessions()`);
+  return rows.map((row) => ({
+    ...sessionOf(row),
+    organization: row.tenant_name_ar
+      ? {
+          nameAr: row.tenant_name_ar as string,
+          nameEn: (row.tenant_name_en as string | null) ?? null,
+        }
+      : null,
+  }));
+}
+
+/** Ends one other session of the account, or all others (null). Returns how many ended. */
+export async function endMySessions(tx: UserTx, sessionId: string | null): Promise<number> {
+  const [row] = await tx.execute(sql`select private.end_my_sessions(${sessionId}::uuid) as ended`);
+  return Number(row?.ended ?? 0);
+}
+
+/** A member's live sessions in the caller's organization (user managers only; else empty). */
+export async function listMemberSessions(tx: UserTx, personId: string): Promise<SignInSession[]> {
+  const rows = await tx.execute(sql`
+    select session_id, started_at, last_active_at, user_agent, with_code, is_current
+    from private.tenant_member_sessions(${personId}::uuid)`);
+  return rows.map(sessionOf);
+}
+
+/**
+ * Force sign-out (screen 3): ends one (or every, null) session of the member acting in the caller's
+ * organization — never their sessions elsewhere, never the caller's own current one. The database
+ * refuses callers who may not manage the person (insufficient_privilege).
+ */
+export async function endMemberSessions(
+  tx: UserTx,
+  personId: string,
+  sessionId: string | null,
+): Promise<number> {
+  const [row] = await tx.execute(
+    sql`select private.end_member_sessions(${personId}::uuid, ${sessionId}::uuid) as ended`,
+  );
+  return Number(row?.ended ?? 0);
 }

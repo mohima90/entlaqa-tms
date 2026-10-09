@@ -17,7 +17,11 @@ function deps(
 ) {
   const claims = payload ? brandVerifiedClaims(payload) : null;
   const getCurrentTenant = vi.fn(() =>
-    Promise.resolve(tenantInDatabase ? { tenantId: TENANT, nameAr: 'أ', nameEn: null } : null),
+    Promise.resolve(
+      tenantInDatabase
+        ? { tenantId: TENANT, nameAr: 'أ', nameEn: null, sessionIdleMinutes: 30 }
+        : null,
+    ),
   );
   const getSessionAccess = vi.fn(() => Promise.resolve({ state: access, mfaDeadline: null }));
   return {
@@ -74,7 +78,10 @@ describe('getSessionState (no redirect loops between the auth pages)', () => {
 describe('sessions the database refuses (T-M2-10)', () => {
   const tenantClaims = { ...base, tenant_id: TENANT };
 
-  it('an MFA code or app needed; otherwise signed out', async () => {
+  it("ended by the organization's rules, or an MFA code or app needed; otherwise signed out", async () => {
+    expect(await getSessionState(configured, deps(tenantClaims, false, 'ended'))).toEqual({
+      kind: 'session-ended',
+    });
     for (const access of ['mfa_challenge', 'mfa_enrol']) {
       expect(await getSessionState(configured, deps(tenantClaims, false, access))).toEqual({
         kind: 'mfa-required',
@@ -86,7 +93,7 @@ describe('sessions the database refuses (T-M2-10)', () => {
   });
 
   it('asks why only when the tenant was refused (one read for every other request)', async () => {
-    const d = deps(tenantClaims, true, 'mfa_challenge');
+    const d = deps(tenantClaims, true, 'ended');
     expect((await getSessionState(configured, d)).kind).toBe('organization');
     expect(d.getSessionAccess).not.toHaveBeenCalled();
   });
@@ -95,12 +102,19 @@ describe('sessions the database refuses (T-M2-10)', () => {
     const pages = ['suite', 'sign-in', 'select-organization', 'mfa'] as const;
     const states = [
       { kind: 'signed-out' },
+      { kind: 'session-ended' },
       { kind: 'mfa-required' },
       { kind: 'no-organization' },
     ] as const;
     const targets = states.map((state) => pages.map((page) => redirectFor('ar', state, page)));
     expect(targets).toEqual([
       ['/ar/sign-in', null, '/ar/sign-in', '/ar/sign-in'],
+      [
+        '/ar/sign-in?notice=session-ended',
+        null,
+        '/ar/sign-in?notice=session-ended',
+        '/ar/sign-in?notice=session-ended',
+      ],
       ['/ar/mfa', '/ar/mfa', '/ar/mfa', null],
       ['/ar/select-organization', '/ar/select-organization', null, '/ar/select-organization'],
     ]);

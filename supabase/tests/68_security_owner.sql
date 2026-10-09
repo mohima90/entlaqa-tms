@@ -1,8 +1,8 @@
 -- db-test: run-as=owner
--- Catalog checks for the security policy and MFA objects (T-M2-10): the definer functions are
--- tenant_guard's (invitation_guard's for the invitation rule) with exact EXECUTE grants; the decision
+-- Catalog checks for the security policy, MFA and sign-in session objects (T-M2-10): the definer functions
+-- are tenant_guard's (invitation_guard's for the invitation rule) with exact EXECUTE grants; the decision
 -- function is tenant_guard's alone; the factor and session views expose no secret and are tenant_guard's
--- alone; the private table is forced-RLS and tenant_guard's alone; tenant_guard writes only what it
+-- alone; the private tables are forced-RLS and tenant_guard's alone; tenant_guard writes only what it
 -- must. (10_catalog.sql lists every SECURITY DEFINER function; verify-deployment.sql repeats these.)
 \set ON_ERROR_STOP on
 
@@ -19,7 +19,12 @@ begin
       ('private.tenant_member_mfa(uuid)', 'tenant_guard', 'authenticated'),
       ('private.password_min_length_for_caller()', 'tenant_guard', 'authenticated'),
       ('private.tenant_lockout_policy(uuid)', 'tenant_guard', 'authenticated'),
-      ('private.invitation_password_min_length(bytea)', 'invitation_guard', 'authenticated')) as f (fn, owner, callers)
+      ('private.invitation_password_min_length(bytea)', 'invitation_guard', 'authenticated'),
+      ('private.touch_session()', 'tenant_guard', 'authenticated'),
+      ('private.my_sessions()', 'tenant_guard', 'authenticated'),
+      ('private.end_my_sessions(uuid)', 'tenant_guard', 'authenticated'),
+      ('private.tenant_member_sessions(uuid)', 'tenant_guard', 'authenticated'),
+      ('private.end_member_sessions(uuid,uuid)', 'tenant_guard', 'authenticated')) as f (fn, owner, callers)
   loop
     perform tests.assert((select prosecdef and pg_get_userbyid(proowner) = r.owner
                                  and exists (select 1 from unnest(proconfig) c where c in ('search_path=""', 'search_path='))
@@ -43,9 +48,9 @@ begin
     'id, user_id, factor_type, status, created_at, updated_at', 'private.auth_mfa_factor: never the TOTP secret');
   perform tests.assert_eq((select string_agg(a.attname, ', ' order by a.attnum) from pg_attribute a
                            where a.attrelid = 'private.auth_session_validity'::regclass and a.attnum > 0 and not a.attisdropped),
-    'id, user_id, not_after', 'private.auth_session_validity: no address, no token');
+    'id, user_id, not_after, created_at, updated_at, user_agent, aal', 'private.auth_session_validity: no address, no token');
   for r in select * from (values ('private.auth_mfa_factor'), ('private.auth_session_validity'),
-                                 ('private.mfa_prompt_dismissals')) as o (obj) loop
+                                 ('private.revoked_sessions'), ('private.mfa_prompt_dismissals')) as o (obj) loop
     foreach v_list in array array['anon', 'authenticated', 'app_server', 'app_worker', 'app_queue', 'invitation_guard',
                                   'account_mail_guard', 'service_role', 'supabase_auth_admin'] loop
       perform tests.assert(not has_table_privilege(v_list, r.obj, 'select, insert, update, delete, truncate, references, trigger'),
@@ -53,10 +58,12 @@ begin
     end loop;
     perform tests.assert(has_table_privilege('tenant_guard', r.obj, 'select'), format('tenant_guard reads %s', r.obj));
   end loop;
-  perform tests.assert((select relrowsecurity and relforcerowsecurity from pg_class
-                        where oid = 'private.mfa_prompt_dismissals'::regclass),
-    'private table: row level security ENABLED and FORCED');
-  -- tenant_guard records "not now" — it cannot change Auth's data.
+  perform tests.assert((select bool_and(relrowsecurity and relforcerowsecurity) from pg_class
+                        where oid in ('private.revoked_sessions'::regclass, 'private.mfa_prompt_dismissals'::regclass)),
+    'private tables: row level security ENABLED and FORCED');
+  -- tenant_guard: ends sessions and records "not now" — it cannot change ended sessions or Auth's data.
+  perform tests.assert(not has_table_privilege('tenant_guard', 'private.revoked_sessions', 'update'),
+    'tenant_guard never changes an ended session (only adds or purges)');
   perform tests.assert(not has_table_privilege('tenant_guard', 'auth.sessions', 'select')
                        and not has_table_privilege('tenant_guard', 'auth.mfa_factors', 'select'),
     'tenant_guard reads Auth only through the views');
@@ -79,6 +86,20 @@ begin
                            where a.attrelid = 'platform.security_policies'::regclass and a.attnum > 0 and not a.attisdropped
                              and has_column_privilege('invitation_guard', a.attrelid, a.attnum, 'select')),
     'tenant_id, password_min_length', 'invitation_guard reads the password rule only');
+end $$;
+rollback;
+
+-- Ending a session in Auth removes the database marker with it (the web app signs ended sessions out).
+begin;
+do $$
+begin
+  insert into private.revoked_sessions (session_id, user_id, reason)
+    values ('10000000-0000-4000-8000-000000000c16', '00000000-0000-4000-8000-000000000c01', 'user');
+  delete from auth.sessions where id = '10000000-0000-4000-8000-000000000c16';
+  perform tests.assert_eq((select count(*) from private.revoked_sessions where session_id = '10000000-0000-4000-8000-000000000c16'),
+    0::bigint, 'the marker goes with the Auth session');
+  perform tests.assert_fails($q$insert into private.revoked_sessions (session_id, user_id, reason) values ('10000000-0000-4000-8000-000000000c11', '00000000-0000-4000-8000-000000000c01', 'whim')$q$,
+    array['23514'], 'reasons are user, admin or device_limit');
 end $$;
 rollback;
 

@@ -44,6 +44,7 @@ export {
   selectOrganization,
   signInWithPassword,
   signOut,
+  signOutEndedSession,
   startPasswordSession,
 } from './auth-flow';
 export {

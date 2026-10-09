@@ -6,6 +6,7 @@ import {
   selectOrganization,
   signInWithPassword,
   signOut,
+  signOutEndedSession,
 } from './auth-flow';
 
 const USER = '11111111-1111-4111-8111-111111111111';
@@ -314,6 +315,41 @@ describe('signOut', () => {
     );
 
     const notConfigured = await signOut({ ...noTenant.deps, supabase: null });
+    expect(!notConfigured.ok && notConfigured.error.code).toBe('NOT_CONFIGURED');
+  });
+});
+
+describe('signOutEndedSession (T-M2-10)', () => {
+  it('signs out only a session the organization ended', async () => {
+    const ended = setup({ cookieToken: 'access-2', access: 'ended' });
+    expect(await signOutEndedSession(ended.deps)).toEqual({ ok: true, value: { signedOut: true } });
+    expect(ended.calls).toEqual(['signOut']);
+
+    for (const access of ['ok', 'invalid', 'mfa_challenge']) {
+      const other = setup({ cookieToken: 'access-2', access });
+      expect(await signOutEndedSession(other.deps)).toEqual({
+        ok: true,
+        value: { signedOut: false },
+      });
+      expect(other.calls).toEqual([]);
+    }
+    const noTenant = setup({ cookieToken: 'access-1', access: 'ended' });
+    expect(await signOutEndedSession(noTenant.deps)).toEqual({
+      ok: true,
+      value: { signedOut: false },
+    });
+    const noSession = setup({});
+    expect((await signOutEndedSession(noSession.deps)).ok).toBe(true);
+    expect(noSession.calls).toEqual([]);
+
+    const revokeFails = setup({ cookieToken: 'access-2', access: 'ended', signOutFails: true });
+    expect(await signOutEndedSession(revokeFails.deps)).toEqual({
+      ok: true,
+      value: { signedOut: true },
+    });
+    expect(revokeFails.deps.logWarning).toHaveBeenCalled();
+
+    const notConfigured = await signOutEndedSession({ ...noSession.deps, supabase: null });
     expect(!notConfigured.ok && notConfigured.error.code).toBe('NOT_CONFIGURED');
   });
 });

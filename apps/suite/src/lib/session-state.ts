@@ -14,6 +14,9 @@ import type { ConfigStatus } from './config-status';
  * /select-organization, /mfa and /suite can never redirect to each other in a loop:
  *  - signed-out       no session, or a token the DATABASE does not accept (membership or organization
  *                     suspended, another session's claims) — the token alone still looks valid
+ *  - session-ended    the organization's session rules ended it (inactivity, maximum length, device
+ *                     limit) or it was signed out from another device / by a user manager: the sign-in
+ *                     page says why and signs it out at Auth (signOutEndedSessionAction)
  *  - mfa-required     the organization's MFA policy wants an authenticator code first (challenge) or
  *                     an app set up (enrolment) — the /mfa page
  *  - no-organization  a session without a selected organization (tenant claim)
@@ -21,6 +24,7 @@ import type { ConfigStatus } from './config-status';
  */
 export type SessionState =
   | { readonly kind: 'signed-out' }
+  | { readonly kind: 'session-ended' }
   | { readonly kind: 'mfa-required' }
   | { readonly kind: 'no-organization' }
   | {
@@ -58,6 +62,8 @@ export async function getSessionState(
   // Refused: ask the database why (only on this path, so every other request stays one read).
   const access = await deps.withUserTx(verified, (tx) => deps.getSessionAccess(tx));
   switch (access.state) {
+    case 'ended':
+      return { kind: 'session-ended' };
     case 'mfa_challenge':
     case 'mfa_enrol':
       return { kind: 'mfa-required' };
@@ -73,6 +79,9 @@ export function redirectFor(
   page: 'suite' | 'sign-in' | 'select-organization' | 'mfa',
 ): string | null {
   switch (state.kind) {
+    case 'session-ended':
+      // The sign-in page says why and signs the session out at Auth (a POST server action, never a GET).
+      return page === 'sign-in' ? null : `/${locale}/sign-in?notice=session-ended`;
     case 'mfa-required':
       return page === 'mfa' ? null : `/${locale}/mfa`;
     case 'signed-out':

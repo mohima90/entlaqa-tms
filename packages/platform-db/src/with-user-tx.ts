@@ -43,7 +43,10 @@ export function createWithUserTx(getDb: () => AppDatabase): WithUserTx {
     if (!parsed.success || parsed.data.role !== 'authenticated' || !parsed.data.session_id) {
       throw new Error('withUserTx: refusing claims that are not a verified user session claim set');
     }
-    return runWithClaims(getDb(), JSON.stringify(databaseClaims(parsed.data)), fn);
+    // A session acting in an organization records its activity (inactivity rule, T-M2-10).
+    return runWithClaims(getDb(), JSON.stringify(databaseClaims(parsed.data)), fn, {
+      touchSession: typeof parsed.data.tenant_id === 'string',
+    });
   };
 }
 

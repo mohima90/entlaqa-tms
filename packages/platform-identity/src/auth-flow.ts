@@ -249,6 +249,29 @@ export async function signOut(deps: AuthFlowDeps): Promise<Result<null, AppError
   return ok(null);
 }
 
+/**
+ * A session the organization's rules ended (T-M2-10: inactivity, maximum length, device limit, signed
+ * out from another device or by a user manager) is signed out at Auth with its own token and its cookies
+ * are cleared. Anything else is left alone (this is called from the sign-in page, for any visitor).
+ */
+export async function signOutEndedSession(
+  deps: AuthFlowDeps,
+): Promise<Result<{ readonly signedOut: boolean }, AppError>> {
+  const { supabase } = deps;
+  if (!supabase) return err(appError('NOT_CONFIGURED'));
+  const claims = await verifyClaims(supabase);
+  if (!claims.ok || !hasTenant(claims.value)) return ok({ signedOut: false });
+  const access = await deps.withUserTx(claims.value, (tx) => deps.getSessionAccess(tx));
+  if (access.state !== 'ended') return ok({ signedOut: false });
+  const { error } = await supabase.auth.signOut({ scope: 'local' });
+  if (error) {
+    deps.logWarning('could not revoke an ended session in Auth', {
+      action: 'platform.auth.session_ended',
+    });
+  }
+  return ok({ signedOut: true });
+}
+
 export async function recordAudit(
   deps: Pick<AuthFlowDeps, 'withUserTx' | 'insertAuditEvent'>,
   claims: VerifiedClaims,

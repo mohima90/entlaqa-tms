@@ -240,7 +240,8 @@ declare
   v_role text;
 begin
   foreach v_role in array array['anon', 'authenticated', 'app_server', 'app_worker', 'app_queue', 'tenant_guard',
-                                'invitation_guard', 'account_mail_guard', 'membership_guard'] loop
+                                'invitation_guard', 'account_mail_guard', 'membership_guard',
+                                'rate_limit_guard'] loop
     perform tests.assert(not has_database_privilege(v_role, current_database(), 'TEMPORARY'),
       format('%s must not create temporary objects', v_role));
   end loop;
@@ -374,7 +375,8 @@ begin
   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'private' and p.prosecdef
     and p.proowner <> 'account_mail_guard'::regrole   -- checked in its own block below (T-M2-17)
-    and p.proowner <> 'membership_guard'::regrole;    -- checked in its own block below (T-M2-09)
+    and p.proowner <> 'membership_guard'::regrole     -- checked in its own block below (T-M2-09)
+    and p.proowner <> 'rate_limit_guard'::regrole;    -- checked in 70_rate_limiter_owner.sql (T-M2-11)
   perform tests.assert_eq(v_list,
     'private.accept_invitation_as_caller(bytea,text,text) (owner invitation_guard), '
     'private.account_has_app(uuid) (owner tenant_guard), '

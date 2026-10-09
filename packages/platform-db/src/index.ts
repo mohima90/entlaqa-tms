@@ -22,6 +22,15 @@ export {
 } from './account-mail';
 export { DomainError, isDomainError } from './domain-error';
 export {
+  RATE_LIMIT_BUCKET_PATTERN,
+  RATE_LIMIT_STATEMENT_TIMEOUT_MS,
+  type RateLimit,
+  type RateLimitCounter,
+  type RateLimitStore,
+  createRateLimitStore,
+  rateLimitStore,
+} from './rate-limit';
+export {
   INVITATION_EVENTS,
   INVITATION_MAX_SENDS,
   type InvitationErrorCode,

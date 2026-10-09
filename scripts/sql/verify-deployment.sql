@@ -23,12 +23,13 @@ begin
   for r in
     select rolname, rolcanlogin, rolinherit, rolsuper, rolbypassrls, rolcreaterole, rolcreatedb, rolreplication
     from pg_roles where rolname in ('app_server', 'app_worker', 'app_queue', 'tenant_guard', 'invitation_guard',
-                                    'account_mail_guard', 'membership_guard')
+                                    'account_mail_guard', 'membership_guard', 'rate_limit_guard')
   loop
     if r.rolname in ('app_server', 'app_worker', 'app_queue') and not r.rolcanlogin then
       failures := failures || format('%s must be LOGIN', r.rolname);
     end if;
-    if r.rolname in ('tenant_guard', 'invitation_guard', 'account_mail_guard', 'membership_guard') and r.rolcanlogin then
+    if r.rolname in ('tenant_guard', 'invitation_guard', 'account_mail_guard', 'membership_guard', 'rate_limit_guard')
+       and r.rolcanlogin then
       failures := failures || format('%s must be NOLOGIN', r.rolname);
     end if;
     if r.rolinherit or r.rolsuper or r.rolbypassrls or r.rolcreaterole or r.rolcreatedb or r.rolreplication then
@@ -37,8 +38,8 @@ begin
   end loop;
   if (select count(*) from pg_roles
       where rolname in ('app_server', 'app_worker', 'app_queue', 'tenant_guard', 'invitation_guard',
-                        'account_mail_guard', 'membership_guard')) <> 7 then
-    failures := failures || 'roles app_server, app_worker, app_queue, tenant_guard, invitation_guard, account_mail_guard and membership_guard must all exist'::text;
+                        'account_mail_guard', 'membership_guard', 'rate_limit_guard')) <> 8 then
+    failures := failures || 'roles app_server, app_worker, app_queue, tenant_guard, invitation_guard, account_mail_guard, membership_guard and rate_limit_guard must all exist'::text;
   end if;
   -- The job runner (ADR 0005 §2): member of nothing (never authenticated), owner of graphile_worker.
   if exists (select 1 from pg_auth_members m join pg_roles u on u.oid = m.member where u.rolname = 'app_queue') then
@@ -328,7 +329,14 @@ begin
       ('private.purge_unconfirmed_mfa_apps(integer)', 'tenant_guard', array['tenant_guard', 'authenticated'], true),
       ('private.reset_member_mfa(uuid)',            'tenant_guard', array['tenant_guard', 'authenticated'], true),
       -- ENTLAQA support's reset: the migration role (operators) only — never the request path.
-      ('private.reset_account_mfa(uuid, text)',     'tenant_guard', array['tenant_guard', current_user::text], true)
+      ('private.reset_account_mfa(uuid, text)',     'tenant_guard', array['tenant_guard', current_user::text], true),
+      -- Shared rate limiter (ADR 0011 §4, T-M2-11): the web app counts, peeks and clears (app_server, checked
+      -- inside); the keyed hash and the argument checks are the owner's own helpers.
+      ('private.rate_limit_hit(text, bytea, integer, integer)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
+      ('private.rate_limit_peek(text, bytea, integer)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
+      ('private.rate_limit_clear(text, bytea)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
+      ('private.rate_limit_key(bytea)', 'rate_limit_guard', array['rate_limit_guard'], false),
+      ('private.rate_limit_check_call(text, bytea)', 'rate_limit_guard', array['rate_limit_guard'], false)
     ) as h(fn, owner, allowed, definer)
     left join pg_proc p on p.oid = to_regprocedure(h.fn)
   loop
@@ -385,7 +393,9 @@ begin
         'private.remove_mfa_app(uuid)', 'private.issue_mfa_factor_tokens(uuid,uuid,bytea,bytea)',
         'private.account_has_app(uuid)', 'private.reject_mfa_factor(bytea)',
         'private.purge_unconfirmed_mfa_apps(integer)', 'private.reset_member_mfa(uuid)',
-        'private.reset_account_mfa(uuid,text)')
+        'private.reset_account_mfa(uuid,text)',
+        'private.rate_limit_hit(text,bytea,integer,integer)',
+        'private.rate_limit_peek(text,bytea,integer)', 'private.rate_limit_clear(text,bytea)')
   loop
     failures := failures || format('%s: unexpected SECURITY DEFINER function (security review)', r.fn);
   end loop;
@@ -585,6 +595,51 @@ begin
        or has_any_column_privilege('account_mail_guard', 'platform.message_deliveries', 'insert, update, references') then
       failures := failures || 'account_mail_guard must have no table-level SELECT and no write on platform.message_deliveries'::text;
     end if;
+  end if;
+
+  -- rate_limit_guard (T-M2-11): creates nothing, nobody acts as it; the limiter's secret
+  -- (private.rate_limit_secret: SELECT) and counters (private.rate_limit_counters: SELECT, INSERT, UPDATE,
+  -- DELETE) are reachable by rate_limit_guard alone, with row level security forced (section 2).
+  if exists (select 1 from pg_roles where rolname = 'rate_limit_guard') then
+    for r in select nspname from pg_namespace where nspname = any (module_schemas) loop
+      if has_schema_privilege('rate_limit_guard', r.nspname, 'create') then
+        failures := failures || format('rate_limit_guard must not have CREATE on schema %s', r.nspname);
+      end if;
+    end loop;
+    for r in
+      select distinct u.rolname from pg_auth_members m
+      join pg_roles g on g.oid = m.roleid join pg_roles u on u.oid = m.member
+      where g.rolname = 'rate_limit_guard' and (m.inherit_option or m.set_option)
+        and not u.rolsuper and u.rolname <> current_user
+    loop
+      failures := failures || format('%s must not be a member of rate_limit_guard', r.rolname);
+    end loop;
+  end if;
+  for r in
+    select o.obj from (values ('private.rate_limit_secret'), ('private.rate_limit_counters')) as o(obj)
+  loop
+    if to_regclass(r.obj) is null then
+      failures := failures || format('%s is missing', r.obj);
+      continue;
+    end if;
+    for v_role in
+      select distinct case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end
+      from pg_class c, aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a
+      where c.oid = to_regclass(r.obj) and a.grantee <> c.relowner
+        and not (a.grantee <> 0 and pg_get_userbyid(a.grantee) = 'rate_limit_guard'
+                 and (a.privilege_type = 'SELECT' or (r.obj = 'private.rate_limit_counters'
+                                                     and a.privilege_type in ('INSERT', 'UPDATE', 'DELETE'))))
+      union
+      select distinct case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end
+      from pg_attribute att, aclexplode(att.attacl) a
+      where att.attrelid = to_regclass(r.obj) and att.attacl is not null
+    loop
+      failures := failures || format('%s must have no privilege on %s', v_role, r.obj);
+    end loop;
+  end loop;
+  if to_regclass('private.rate_limit_secret') is not null
+     and (select count(*) from private.rate_limit_secret) <> 1 then
+    failures := failures || 'private.rate_limit_secret must hold exactly one key'::text;
   end if;
 
   -- tenant_guard creates nothing (CREATE on `private` is granted only while ownership is handed over,

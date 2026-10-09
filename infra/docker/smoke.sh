@@ -737,6 +737,34 @@ deactivate_e2e returns
         where m.user_id = '$DEACT_ID' and ra.role_code in ('line_manager', 'learner')")" == "2" ]] ||
   { echo "smoke: the reactivated member's roles changed" >&2; exit 1; }
 unset answer wrong unknown rows_before
+echo "smoke: security policy (T-M2-10) — change needs a code; MFA required; strictest password rule"
+# The last browser journey: it makes an authenticator app required for everyone in the organization.
+[[ "$(q "select p.mfa_mode || ':' || p.password_min_length || ':' || p.session_max_devices from platform.security_policies p join platform.tenants t on t.id = p.tenant_id where t.slug = 'sovereign-smoke'")" == "off:12:3" ]] ||
+  { echo "smoke: the organization must start with the default security policy" >&2; exit 1; }
+(cd "$ROOT/apps/suite" && E2E_BASE_URL=http://localhost:3200 SIGNED_IN_E2E_EMAIL="$EMAIL" \
+  SIGNED_IN_E2E_PASSWORD="$PASSWORD" SIGNED_IN_E2E_MANAGER_EMAIL="$MANAGER_EMAIL" \
+  SECURITY_E2E_MANAGER_PASSWORD="$PROFILE_NEW_PASSWORD" \
+  pnpm exec playwright test e2e/security.spec.ts --project=desktop-chromium)
+[[ "$(q "select p.mfa_mode || ':' || p.mfa_grace_days || ':' || p.password_min_length || ':' || (p.updated_by is not null) from platform.security_policies p join platform.tenants t on t.id = p.tenant_id where t.slug = 'sovereign-smoke'")" == "required_all:0:16:true" ]] ||
+  { echo "smoke: the security policy change was not saved" >&2; exit 1; }
+# Audited: the change with the settings before and after; the prompt postponed (signed-in.spec); both
+# apps set up; the member's sign-ins completed with a code (set-up, then the next sign-in).
+[[ "$(q "select count(*) from platform.audit_events where action = 'platform.security.policy_changed' and data -> 'changed' ? 'mfaMode' and data -> 'changed' ? 'passwordMinLength' and data -> 'before' ->> 'mfaMode' = 'off' and data -> 'after' ->> 'mfaMode' = 'required_all'")" == "1" ]] ||
+  { echo "smoke: expected the security policy audit event with the settings before and after" >&2; exit 1; }
+[[ "$(q "select count(*) from platform.audit_events where action = 'platform.auth.mfa_prompt_dismissed' and actor_user_id = '$USER_ID'")" == "1" ]] ||
+  { echo "smoke: expected the Organization Admin's postponed MFA prompt in the audit log" >&2; exit 1; }
+[[ "$(q "select count(distinct actor_user_id) from platform.audit_events where action = 'platform.auth.mfa_enrolled' and actor_user_id in ('$USER_ID', '$MANAGER_ID')")" == "2" ]] ||
+  { echo "smoke: expected both authenticator set-ups in the audit log" >&2; exit 1; }
+[[ "$(q "select count(*) from platform.audit_events where action = 'platform.auth.signed_in' and data ->> 'method' = 'password+totp' and data ->> 'aal' = 'aal2'")" -ge "2" ]] ||
+  { echo "smoke: expected the sign-ins completed with an authenticator code in the audit log" >&2; exit 1; }
+# The set-up keys (credentials) appear in neither the audit log nor (checked below) any container log.
+mapfile -t MFA_KEYS < <(q "select secret from auth.mfa_factors where user_id in ('$USER_ID', '$MANAGER_ID') and factor_type = 'totp' and status = 'verified'")
+[[ ${#MFA_KEYS[@]} -eq 2 ]] || { echo "smoke: expected the two verified authenticator apps" >&2; exit 1; }
+for key in "${MFA_KEYS[@]}"; do
+  [[ ${#key} -ge 16 ]] || { echo "smoke: an authenticator set-up key is unexpectedly short" >&2; exit 1; }
+  [[ "$(q "select count(*) from platform.audit_events where data::text like '%$key%'")" == "0" ]] ||
+    { echo "smoke: an authenticator set-up key reached the audit log" >&2; exit 1; }
+done
 
 # No unconfirmed e-mail account exists after every journey (re-review N3): with "Confirm email" off, Auth
 # would hand a session for such an account to anyone who signs up with its e-mail, without the hook.
@@ -870,6 +898,12 @@ done
 for token in "${INVITE_TOKENS[@]}"; do
   if grep -qF "$token" <<<"$all_logs"; then
     echo "smoke: an invitation token appears in the container logs" >&2; exit 1
+  fi
+done
+# Nor do the authenticator set-up keys (T-M2-10): shown once to their owner, kept by Auth.
+for key in "${MFA_KEYS[@]}"; do
+  if grep -qF "$key" <<<"$all_logs"; then
+    echo "smoke: an authenticator set-up key appears in the container logs" >&2; exit 1
   fi
 done
 

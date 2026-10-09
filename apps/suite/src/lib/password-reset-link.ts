@@ -41,6 +41,8 @@ const LINK_SPENT: ReadonlySet<string> = new Set([
   'PASSWORD_RESET_WEAK_PASSWORD',
   'PASSWORD_RESET_BREACHED_PASSWORD',
   'PASSWORD_RESET_PASSWORD_REJECTED',
+  // Shorter than the account's organizations ask (T-M2-10): known only once the link was used.
+  'PASSWORD_RESET_TOO_SHORT',
 ]);
 
 export function linkIsSpent(errorCode: string): boolean {

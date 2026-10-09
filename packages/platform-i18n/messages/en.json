@@ -37,7 +37,8 @@
     "admin": "Organization admin",
     "users": "Users",
     "roles": "Roles & permissions",
-    "myProfile": "My profile"
+    "myProfile": "My profile",
+    "security": "Security"
   },
   "errors": {
     "malformedRequest": "We couldn't process this request. Refresh the page and try again.",
@@ -91,7 +92,7 @@
     "showPassword": "Show password",
     "rulesLabel": "Password rules",
     "rules": {
-      "minLength": "At least 12 characters",
+      "minLength": "At least {min} characters",
       "maxBytes": "No more than 72 bytes (about 36 Arabic letters)",
       "matches": "Both passwords match",
       "met": "(met)",
@@ -102,7 +103,7 @@
     "submit": "Continue",
     "submitting": "Creating your account…",
     "fieldErrors": {
-      "tooShort": "At least 12 characters.",
+      "tooShort": "At least {min} characters.",
       "tooLong": "The password is too long (no more than 72 bytes, about 36 Arabic letters).",
       "mismatch": "The passwords don't match.",
       "nameTooLong": "The name can't be longer than 200 characters.",
@@ -150,7 +151,8 @@
       "passwordRejected": "This password wasn't accepted because it's weak or common. Choose a longer one that's hard to guess.",
       "otherAccount": "This invitation is for a different account. Sign out, then continue.",
       "alreadyMember": "This account is already a member of the organization. Sign in to continue.",
-      "accountMismatch": "This invitation can't be accepted with this account. Ask your organization's administrator for a new invitation."
+      "accountMismatch": "This invitation can't be accepted with this account. Ask your organization's administrator for a new invitation.",
+      "passwordTooShort": "Your organization requires a password of at least {min} characters."
     }
   },
   "passwordReset": {
@@ -182,7 +184,7 @@
       "showPassword": "Show password",
       "rulesLabel": "Password rules",
       "rules": {
-        "minLength": "At least 12 characters",
+        "minLength": "At least {min} characters",
         "maxBytes": "No more than 72 bytes (about 36 Arabic letters)",
         "matches": "Both passwords match",
         "met": "(met)",
@@ -195,7 +197,7 @@
       "validity": "The link is valid for 60 minutes from when it was requested and works once. If it has expired, request a new one on the <link>Forgot password</link> page."
     },
     "fieldErrors": {
-      "tooShort": "At least 12 characters.",
+      "tooShort": "At least {min} characters.",
       "tooLong": "The password is too long (no more than 72 bytes, about 36 Arabic letters).",
       "mismatch": "The passwords don't match."
     },
@@ -211,7 +213,8 @@
       "samePassword": "The new password is the same as your current one, so nothing changed. Links work only once: request a new link and choose a different password.",
       "weakPassword": "This password wasn't accepted because it's weak or common, so nothing changed. Links work only once: request a new link and choose a longer password that's hard to guess.",
       "breachedPassword": "This password appears in known data breaches, so nothing changed. Links work only once: request a new link and choose a different password.",
-      "passwordRejected": "The new password wasn't accepted, so nothing changed. Links work only once: request a new link."
+      "passwordRejected": "The new password wasn't accepted, so nothing changed. Links work only once: request a new link.",
+      "tooShort": "Your account needs a password of at least {min} characters, so nothing changed. Links work only once: request a new link and choose a longer password."
     }
   },
   "users": {
@@ -323,7 +326,11 @@
     "breadcrumbLabel": "Breadcrumb",
     "editDetails": "Edit details",
     "editRoles": "Edit roles",
-    "deactivate": "Deactivate user"
+    "deactivate": "Deactivate user",
+    "mfa": "Multi-factor authentication",
+    "mfaOn": "On · authenticator app since {date}",
+    "mfaOff": "Not set up",
+    "mfaReset": "Resetting it after a lost phone is done by platform support for now."
   },
   "profile": {
     "title": "My profile",
@@ -352,7 +359,7 @@
       "required": "This field is required.",
       "name": "Must contain visible letters and be at most 60 characters.",
       "mobile": "Enter the full number with the country code.",
-      "tooShort": "At least 12 characters.",
+      "tooShort": "At least {min} characters.",
       "mismatch": "The passwords do not match.",
       "tooLong": "The password is too long (at most 72 bytes, about 36 Arabic letters).",
       "nameTooLong": "The full name must be at most 200 characters.",
@@ -365,7 +372,7 @@
     "passwordIntro": "After the change, sign-in sessions on other devices end.",
     "currentPassword": "Current password",
     "newPassword": "New password",
-    "newPasswordHint": "At least 12 characters.",
+    "newPasswordHint": "At least {min} characters.",
     "confirmPassword": "Confirm the new password",
     "changePassword": "Change password",
     "changing": "Changing…",
@@ -373,7 +380,20 @@
     "prefilledName": "The full name was placed in \"First name\"; it can be split into the fields.",
     "noProfile": "There is no profile linked to your account in this organization.",
     "currentName": "Current name, to split into the fields:",
-    "currentNameKept": "It is kept as is if the fields are left empty."
+    "currentNameKept": "It is kept as is if the fields are left empty.",
+    "mfa": {
+      "title": "Multi-factor authentication",
+      "intro": "A code from an authenticator app protects your account and is needed for sensitive actions.",
+      "on": "On · authenticator app",
+      "off": "Not set up",
+      "setUp": "Set up the authenticator app",
+      "remove": "Remove the authenticator app",
+      "removing": "Removing…",
+      "removed": "The authenticator app was removed.",
+      "removeNeedsCode": "Removing it needs a code from the app first.",
+      "verifyFirst": "Verify with the app",
+      "removeWarning": "If your organization requires it, you will be asked to set it up again."
+    }
   },
   "editUser": {
     "title": "Edit user details",
@@ -681,5 +701,128 @@
       "notDeactivated": "This account isn't deactivated. Refresh the page.",
       "placementDeleted": "This person's department or branch was deleted. Edit their details first, then reactivate the account."
     }
+  },
+  "mfa": {
+    "title": "Multi-factor authentication",
+    "challengeTitle": "Verification code",
+    "challengeIntro": "Your authenticator app shows a 6-digit code for Jadarat. Enter it to continue.",
+    "stepUpIntro": "This action needs a verification code from your authenticator app.",
+    "codeLabel": "Verification code",
+    "codeHint": "6 digits; the code changes every 30 seconds.",
+    "verify": "Verify",
+    "verifying": "Verifying…",
+    "enrolTitle": "Set up an authenticator app",
+    "enrolRequired": "Your organization requires an authenticator app to sign in. Set one up to continue.",
+    "enrolStepUp": "This action needs a code from an authenticator app. Set one up now; it takes about a minute.",
+    "promptAdmin": "As the Organization Admin, protect your account with an authenticator app such as Google Authenticator or Microsoft Authenticator. A code from it is also needed for sensitive actions, such as changing privileged roles or the security settings.",
+    "promptGrace": "Your organization requires an authenticator app. Until {date} you can still sign in without one.",
+    "appsHint": "Any authenticator app works: Google Authenticator, Microsoft Authenticator, Apple Passwords, 1Password and others.",
+    "start": "Set up the app",
+    "starting": "Preparing…",
+    "scanStep": "1. Scan this QR code with your authenticator app.",
+    "qrAlt": "QR code to add Jadarat to an authenticator app",
+    "keyStep": "Can't scan it? Enter this key in the app instead:",
+    "keyLabel": "Set-up key",
+    "codeStep": "2. Enter the 6-digit code the app shows.",
+    "finish": "Verify and turn on",
+    "notNow": "Not now",
+    "continueWithout": "Continue without it for now",
+    "back": "Go back",
+    "signOut": "Sign out",
+    "lostDevice": "Lost access to your authenticator app? Contact your organization's administrator.",
+    "errors": {
+      "codeInvalid": "The code is incorrect or has expired. Enter the code the app shows now.",
+      "notSetUp": "Your account has no authenticator app yet. Set one up first.",
+      "alreadySetUp": "Your account already has an authenticator app.",
+      "setupExpired": "The set-up has expired. Start again.",
+      "codeFormat": "The verification code has 6 digits."
+    }
+  },
+  "security": {
+    "title": "Security",
+    "section": "Organization admin",
+    "intro": "These settings apply to everyone in {organization}. Every change is recorded in the audit log.",
+    "stepUp": "Changing these settings needs a verification code from your authenticator app.",
+    "stepUpLink": "Verify with the authenticator app",
+    "readOnly": "Only the Organization Admin changes these settings.",
+    "comingSoon": "Coming soon",
+    "mfa": {
+      "title": "Multi-factor authentication",
+      "intro": "An extra code at sign-in, after the password.",
+      "modeLegend": "When a code is required",
+      "modes": {
+        "off": "Off",
+        "offHint": "Nobody is asked for a code at sign-in. Sensitive actions still need one.",
+        "optional": "Optional",
+        "optionalHint": "Anyone can turn it on in their profile; it is then asked at every sign-in.",
+        "required_all": "Required for everyone",
+        "required_allHint": "Set up at first sign-in.",
+        "required_roles": "Required for selected roles",
+        "required_rolesHint": "Optional for everyone else."
+      },
+      "roles": "Roles that must use it",
+      "rolesHint": "We recommend the roles that see employee data or money.",
+      "methods": "Allowed methods",
+      "methodTotp": "Authenticator app",
+      "methodEmail": "Code by email",
+      "methodSms": "Code by text message",
+      "grace": "Set-up grace period",
+      "graceHint": "Time allowed before setting it up becomes a condition for signing in (0 to 30 days).",
+      "graceUnit": "days",
+      "trusted": "Remember a trusted device",
+      "trustedHint": "The code isn't asked again on the same device during this period.",
+      "promptAdmins": "Invite Organization Admins to set up an authenticator app at sign-in",
+      "promptAdminsHint": "For those who don't use an app yet; they can postpone it."
+    },
+    "password": {
+      "title": "Password",
+      "intro": "We rely on length rather than complex symbols.",
+      "minLength": "Minimum length",
+      "minLengthHint": "12 to 36 characters. A person in several organizations follows the longest minimum among them; other organizations' settings are never shown.",
+      "minLengthUnit": "characters",
+      "breached": "Refuse leaked passwords",
+      "breachedHint": "Checked by the sign-in service when it is turned on for the server.",
+      "history": "Block reuse of earlier passwords",
+      "expiry": "Password expiry",
+      "expiryHint": "Forced periodic changes lead to weaker passwords, so we don't recommend them.",
+      "expiryNever": "Never expires"
+    },
+    "lockout": {
+      "title": "Account lockout",
+      "intro": "Protects against password guessing.",
+      "threshold": "Lock after consecutive failed attempts",
+      "thresholdHint": "3 to 10 attempts.",
+      "thresholdUnit": "attempts",
+      "minutes": "Lockout duration",
+      "minutesHint": "5 to 60 minutes.",
+      "minutesUnit": "minutes"
+    },
+    "sessions": {
+      "title": "Sign-in sessions",
+      "intro": "When signing in again is required.",
+      "idle": "End the session after inactivity",
+      "idleHint": "We warn the user two minutes before it ends so they can continue (5 to 480 minutes).",
+      "idleUnit": "minutes",
+      "maxHours": "Maximum session length",
+      "maxHoursHint": "1 to 24 hours.",
+      "maxHoursUnit": "hours",
+      "devices": "Maximum devices at the same time",
+      "devicesHint": "When exceeded, the oldest sign-in session ends (1 to 10).",
+      "devicesUnit": "devices"
+    },
+    "lastChanged": "Last changed: {date} by {name}",
+    "lastChangedDefault": "Default settings (not changed yet)",
+    "discard": "Discard changes",
+    "save": "Save changes",
+    "saving": "Saving…",
+    "saved": "Security settings saved.",
+    "noChanges": "There are no changes to save.",
+    "fieldErrors": {
+      "range": "Enter a whole number from {min} to {max}.",
+      "rolesRequired": "Choose at least one role.",
+      "idleAboveMax": "Inactivity can't be longer than the maximum session length.",
+      "invalid": "Check this value."
+    },
+    "notConfigured": "Security settings aren't available in this environment yet."
   }
 }

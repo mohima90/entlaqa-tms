@@ -9,7 +9,7 @@ import { LanguageToggle } from '../../../components/language-toggle';
 import { authErrorTexts } from '../../../lib/auth-texts';
 import { getConfigStatus } from '../../../lib/config-status';
 import { noticeFrom } from '../../../lib/password-reset-link';
-import { getSessionState } from '../../../lib/session-state';
+import { getSessionState, redirectFor } from '../../../lib/session-state';
 
 /**
  * Sign-in (T-M1-D03): e-mail + password; MFA off by default for now (PO decision, 1 Oct 2026). Links to
@@ -30,8 +30,8 @@ export default async function SignInPage({
   // Already signed in → onwards. A token the database rejects counts as signed out (the form shows; a
   // new sign-in replaces the session), so this page and /suite can never redirect to each other.
   const session = await getSessionState(status);
-  if (session.kind === 'organization') redirect(`/${locale}/suite`);
-  if (session.kind === 'no-organization') redirect(`/${locale}/select-organization`);
+  const elsewhere = redirectFor(locale, session, 'sign-in');
+  if (elsewhere) redirect(elsewhere);
 
   const t = await getTranslations({ locale, namespace: 'auth' });
   const common = await getTranslations({ locale, namespace: 'common' });

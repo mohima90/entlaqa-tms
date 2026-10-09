@@ -512,3 +512,41 @@ describe('completePasswordReset (FR-IAM-13)', () => {
     expect(!result.ok && result.error.code).toBe('NOT_CONFIGURED');
   });
 });
+
+describe("completePasswordReset: strictest rule of the account's organizations (T-M2-10)", () => {
+  it("asks with the recovery session's token; a shorter password ends the recovery session unchanged", async () => {
+    const { deps, calls, logWarning } = completeSetup();
+    const passwordMinLength = vi.fn(() => Promise.resolve(30));
+    const result = await completePasswordReset({ ...deps, passwordMinLength }, input);
+    expect(!result.ok && result.error).toMatchObject({
+      code: 'PASSWORD_RESET_TOO_SHORT',
+      params: { min: 30 },
+    });
+    expect(passwordMinLength).toHaveBeenCalledWith('access-otp');
+    expect(calls).toEqual(['verifyOtp:recovery', 'signOut:local']);
+    expect(JSON.stringify(logWarning.mock.calls)).not.toContain(PASSWORD);
+  });
+
+  it("a long enough password, or an unknown rule (Auth's 12 apply), goes on", async () => {
+    for (const min of [24, null]) {
+      const { deps, calls } = completeSetup();
+      const result = await completePasswordReset(
+        { ...deps, passwordMinLength: () => Promise.resolve(min) },
+        input,
+      );
+      expect(result.ok).toBe(true);
+      expect(calls).toContain('updateUser:password');
+    }
+  });
+
+  it('ends the recovery session when the rule cannot be read (then the error surfaces)', async () => {
+    const { deps, calls } = completeSetup();
+    await expect(
+      completePasswordReset(
+        { ...deps, passwordMinLength: () => Promise.reject(new Error('db down')) },
+        input,
+      ),
+    ).rejects.toThrow('db down');
+    expect(calls).toEqual(['verifyOtp:recovery', 'signOut:local']);
+  });
+});

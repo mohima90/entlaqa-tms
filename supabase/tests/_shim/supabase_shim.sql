@@ -57,6 +57,27 @@ create table if not exists auth.sessions (
   created_at timestamptz not null default now(),
   not_after timestamptz
 );
+-- Columns of Supabase Auth's sessions listed in "sign-in sessions" (T-M2-10, private.auth_session_validity).
+-- As in GoTrue: refreshed_at is a timestamp WITHOUT time zone, aal an enum (text here).
+alter table auth.sessions
+  add column if not exists updated_at timestamptz default now(),
+  add column if not exists refreshed_at timestamp without time zone,
+  add column if not exists user_agent text,
+  add column if not exists aal text;
+
+-- Supabase Auth's MFA factors (T-M2-10, private.auth_mfa_factor). GoTrue uses enums for factor_type and
+-- status; text here (the view casts both to text).
+create table if not exists auth.mfa_factors (
+  id uuid primary key,
+  user_id uuid not null references auth.users (id) on delete cascade,
+  friendly_name text,
+  factor_type text not null,
+  status text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  secret text
+);
+create index if not exists mfa_factors_user_id_idx on auth.mfa_factors (user_id);
 
 create or replace function auth.jwt() returns jsonb
 language sql stable

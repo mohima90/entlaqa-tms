@@ -379,11 +379,18 @@ begin
     'private.accept_invitation_as_caller(bytea,text,text) (owner invitation_guard), '
     'private.current_tenant_id() (owner tenant_guard), '
     'private.discard_inactive_tenant_delivery(uuid) (owner tenant_guard), '
+    'private.dismiss_mfa_prompt() (owner tenant_guard), '
     'private.has_active_membership(uuid,uuid) (owner tenant_guard), '
     'private.invitation_allows_signup(text,text) (owner invitation_guard), '
     'private.invitation_by_token(bytea) (owner invitation_guard), '
+    'private.invitation_password_min_length(bytea) (owner invitation_guard), '
+    'private.password_min_length_for_caller() (owner tenant_guard), '
+    'private.session_access(uuid,uuid,uuid,boolean,boolean) (owner tenant_guard), '
+    'private.session_access_state() (owner tenant_guard), '
     'private.session_tenants() (owner tenant_guard), '
     'private.switch_active_tenant(uuid) (owner tenant_guard), '
+    'private.tenant_lockout_policy(uuid) (owner tenant_guard), '
+    'private.tenant_member_mfa(uuid) (owner tenant_guard), '
     'private.user_session_is_valid(uuid,uuid) (owner tenant_guard)',
     'SECURITY DEFINER functions and owners (security review for any change)');
   select string_agg(p.oid::regprocedure::text, ', ' order by p.oid::regprocedure::text) into v_list
@@ -392,7 +399,7 @@ begin
     'private.accept_invitation_as_caller(bytea,text,text), '
     'private.apply_invitation_acceptance(bytea,uuid,text,text), private.invitation_allows_signup(text,text), '
     'private.invitation_by_token(bytea), private.invitation_inviter_may_grant(uuid,uuid,text[]), '
-    'private.invitation_link(bytea)',
+    'private.invitation_link(bytea), private.invitation_password_min_length(bytea)',
     'invitation_guard owns the link, acceptance and sign-up gate functions only');
   perform tests.assert(not has_function_privilege('authenticated', 'private.invitation_link(bytea)', 'execute'),
     'only the definer functions read a link''s state');

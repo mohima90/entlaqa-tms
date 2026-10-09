@@ -1,0 +1,267 @@
+import 'server-only';
+import { sql } from 'drizzle-orm';
+import { z } from 'zod';
+import { type ClaimsTx, runWithClaims } from './claims-tx';
+import { type AppDatabase, getDatabase } from './client';
+import type { UserTx } from './with-user-tx';
+
+/**
+ * Security policy per organization, MFA state and the password rule (T-M2-10; FR-IAM-12, FR-IAM-13;
+ * migrations 20261012090000–20261012090200). The database decides; these are its request-path calls.
+ */
+
+export const MFA_MODES = ['off', 'optional', 'required_all', 'required_roles'] as const;
+export type MfaMode = (typeof MFA_MODES)[number];
+
+/** The settings an Organization Admin changes (screen 6). Ranges are the database's floors. */
+export interface SecuritySettings {
+  readonly mfaMode: MfaMode;
+  readonly mfaRequiredRoles: readonly string[];
+  readonly mfaGraceDays: number;
+  readonly mfaPromptAdmins: boolean;
+  readonly passwordMinLength: number;
+  readonly lockoutThreshold: number;
+  readonly lockoutMinutes: number;
+  readonly sessionIdleMinutes: number;
+  readonly sessionMaxHours: number;
+  readonly sessionMaxDevices: number;
+}
+
+/** Limits of every setting (the database's CHECK constraints, 20261012090000). */
+export const SECURITY_LIMITS = {
+  mfaGraceDays: { min: 0, max: 30 },
+  passwordMinLength: { min: 12, max: 36 },
+  lockoutThreshold: { min: 3, max: 10 },
+  lockoutMinutes: { min: 5, max: 60 },
+  sessionIdleMinutes: { min: 5, max: 480 },
+  sessionMaxHours: { min: 1, max: 24 },
+  sessionMaxDevices: { min: 1, max: 10 },
+} as const;
+
+export interface SecurityPolicy extends SecuritySettings {
+  /** When an MFA requirement started (its grace period counts from here); null without one. */
+  readonly mfaRequiredSince: Date | null;
+  readonly updatedAt: Date;
+  /** Who changed it last (null: created by the platform). */
+  readonly updatedBy: { readonly nameAr: string; readonly nameEn: string | null } | null;
+  /** Optimistic concurrency token. */
+  readonly version: number;
+}
+
+type Row = Record<string, unknown>;
+
+function settingsOf(row: Row): SecuritySettings {
+  return {
+    mfaMode: row.mfa_mode as MfaMode,
+    mfaRequiredRoles: (row.mfa_required_roles as string[] | null) ?? [],
+    mfaGraceDays: Number(row.mfa_grace_days),
+    mfaPromptAdmins: row.mfa_prompt_admins === true,
+    passwordMinLength: Number(row.password_min_length),
+    lockoutThreshold: Number(row.lockout_threshold),
+    lockoutMinutes: Number(row.lockout_minutes),
+    sessionIdleMinutes: Number(row.session_idle_minutes),
+    sessionMaxHours: Number(row.session_max_hours),
+    sessionMaxDevices: Number(row.session_max_devices),
+  };
+}
+
+const date = (value: unknown): Date | null =>
+  value === null || value === undefined ? null : new Date(value as string | Date);
+
+/** The current organization's policy (RLS: only the claims' organization), or null. */
+export async function getSecurityPolicy(tx: UserTx): Promise<SecurityPolicy | null> {
+  const [row] = await tx.execute(sql`
+    select p.mfa_mode, p.mfa_required_roles, p.mfa_grace_days, p.mfa_prompt_admins, p.mfa_required_since,
+           p.password_min_length, p.lockout_threshold, p.lockout_minutes, p.session_idle_minutes,
+           p.session_max_hours, p.session_max_devices, p.updated_at, p.version,
+           e.display_name_ar as editor_name_ar, e.display_name_en as editor_name_en
+    from platform.security_policies p
+    left join platform.persons e on e.tenant_id = p.tenant_id and e.id = p.updated_by
+    where p.tenant_id = (select private.current_tenant_id())`);
+  if (!row) return null;
+  const editor = row.editor_name_ar as string | null;
+  return {
+    ...settingsOf(row),
+    mfaRequiredSince: date(row.mfa_required_since),
+    updatedAt: date(row.updated_at) ?? new Date(0),
+    updatedBy: editor
+      ? { nameAr: editor, nameEn: (row.editor_name_en as string | null) ?? null }
+      : null,
+    version: Number(row.version),
+  };
+}
+
+export type SecurityPolicyUpdate =
+  | {
+      readonly outcome: 'updated';
+      readonly before: SecuritySettings;
+      readonly after: SecuritySettings;
+    }
+  /** Someone changed it since the page was loaded (version), or this session may not change it. */
+  | { readonly outcome: 'conflict' | 'refused' };
+
+/**
+ * Saves the settings when the policy is still at `version`. The database lets only an Organization Admin
+ * at AAL2 change it (policy security_policies_update); a refused update changes nothing.
+ */
+export async function updateSecurityPolicy(
+  tx: UserTx,
+  settings: SecuritySettings,
+  version: number,
+): Promise<SecurityPolicyUpdate> {
+  const [current] = await tx.execute(sql`
+    select mfa_mode, mfa_required_roles, mfa_grace_days, mfa_prompt_admins, password_min_length,
+           lockout_threshold, lockout_minutes, session_idle_minutes, session_max_hours,
+           session_max_devices, version
+    from platform.security_policies
+    where tenant_id = (select private.current_tenant_id())
+    for update`);
+  if (!current) return { outcome: 'refused' };
+  if (Number(current.version) !== version) return { outcome: 'conflict' };
+  const roles = `{${settings.mfaRequiredRoles.join(',')}}`;
+  const [row] = await tx.execute(sql`
+    update platform.security_policies
+    set mfa_mode = ${settings.mfaMode}, mfa_required_roles = ${roles}::text[],
+        mfa_grace_days = ${settings.mfaGraceDays}, mfa_prompt_admins = ${settings.mfaPromptAdmins},
+        password_min_length = ${settings.passwordMinLength},
+        lockout_threshold = ${settings.lockoutThreshold}, lockout_minutes = ${settings.lockoutMinutes},
+        session_idle_minutes = ${settings.sessionIdleMinutes},
+        session_max_hours = ${settings.sessionMaxHours},
+        session_max_devices = ${settings.sessionMaxDevices}
+    where tenant_id = (select private.current_tenant_id()) and version = ${version}
+    returning mfa_mode, mfa_required_roles, mfa_grace_days, mfa_prompt_admins, password_min_length,
+              lockout_threshold, lockout_minutes, session_idle_minutes, session_max_hours,
+              session_max_devices`);
+  if (!row) return { outcome: 'refused' };
+  return { outcome: 'updated', before: settingsOf(current), after: settingsOf(row) };
+}
+
+/** The setting names whose values differ (audit: before/after of these only). */
+export function changedSettings(before: SecuritySettings, after: SecuritySettings): string[] {
+  return (Object.keys(after) as (keyof SecuritySettings)[]).filter(
+    (key) => JSON.stringify(before[key]) !== JSON.stringify(after[key]),
+  );
+}
+
+// ---------------------------------------------------------------------------------------------------
+// Where the current session stands (private.session_access_state)
+// ---------------------------------------------------------------------------------------------------
+
+export const SESSION_ACCESS_STATES = [
+  'ok',
+  'invalid',
+  'mfa_challenge',
+  'mfa_enrol',
+  'prompt_grace',
+  'prompt_admin',
+] as const;
+export type SessionAccessState = (typeof SESSION_ACCESS_STATES)[number];
+
+export interface SessionAccess {
+  readonly state: SessionAccessState;
+  /** Covered by an MFA requirement: until when the member may still sign in without an app. */
+  readonly mfaDeadline: Date | null;
+}
+
+export async function getSessionAccess(tx: UserTx): Promise<SessionAccess> {
+  const [row] = await tx.execute(
+    sql`select state, mfa_deadline from private.session_access_state()`,
+  );
+  const state = SESSION_ACCESS_STATES.find((s) => s === row?.state) ?? 'invalid';
+  return { state, mfaDeadline: date(row?.mfa_deadline) };
+}
+
+/** "Not now" on the Organization Admin prompt (PO decision 2), remembered for this organization. */
+export async function dismissMfaPrompt(tx: UserTx): Promise<boolean> {
+  const [row] = await tx.execute(sql`select private.dismiss_mfa_prompt() as done`);
+  return row?.done === true;
+}
+
+/** Whether a member uses an authenticator app (screen 3): user managers and the member themself. */
+export async function getMemberMfa(
+  tx: UserTx,
+  personId: string,
+): Promise<{ readonly usesApp: boolean; readonly since: Date | null } | null> {
+  const [row] = await tx.execute(
+    sql`select uses_app, since from private.tenant_member_mfa(${personId}::uuid)`,
+  );
+  return row ? { usesApp: row.uses_app === true, since: date(row.since) } : null;
+}
+
+// ---------------------------------------------------------------------------------------------------
+// Password rule (strictest wins, PO decision 5) and lockout settings (for T-M2-11)
+// ---------------------------------------------------------------------------------------------------
+
+/** Auth's own minimum and the platform floor (FR-IAM-13). */
+export const PLATFORM_PASSWORD_MIN_LENGTH = 12;
+
+/**
+ * The signed-in account's minimum password length: the strictest of its organizations. Also for the
+ * recovery session of a reset (no organization). Null when the session is not live.
+ */
+export async function passwordMinLengthForCaller(tx: UserTx): Promise<number | null> {
+  const [row] = await tx.execute(sql`select private.password_min_length_for_caller() as length`);
+  return row?.length === null || row?.length === undefined ? null : Number(row.length);
+}
+
+export interface LockoutPolicy {
+  readonly threshold: number;
+  readonly minutes: number;
+}
+
+/** Platform default (screen 6) — for the platform's own sign-in host, before an organization is known. */
+export const DEFAULT_LOCKOUT_POLICY: LockoutPolicy = { threshold: 5, minutes: 15 };
+
+const Uuid = z.uuid();
+
+/** Request-path calls that run before any session (app_server, no claims). */
+export interface PreSessionSecurityApi {
+  /** A new account accepting this invitation follows its organization's rule (at least 12). */
+  invitationPasswordMinLength(tokenHash: Buffer): Promise<number>;
+  /**
+   * The lockout settings of an organization (null / unknown / inactive: the platform default).
+   *
+   * INTEGRATION POINT (T-M2-11): the sign-in limiter owns enforcement — counting failed sign-ins and
+   * locking accounts. It reads the threshold and duration here: the organization of a tenant host, the
+   * platform default on the platform's sign-in host (TM-0003 D-IAM-04). T-M2-10 stores and shows them only.
+   */
+  getLockoutPolicy(tenantId: string | null): Promise<LockoutPolicy>;
+}
+
+export function createPreSessionSecurityApi(getDb: () => AppDatabase): PreSessionSecurityApi {
+  const withoutClaims = <T>(fn: (tx: ClaimsTx) => Promise<T>) => runWithClaims(getDb(), '', fn);
+  return {
+    async invitationPasswordMinLength(tokenHash) {
+      const [row] = await withoutClaims((tx) =>
+        tx.execute(
+          sql`select private.invitation_password_min_length(${tokenHash}::bytea) as length`,
+        ),
+      );
+      const length = Number(row?.length);
+      return Number.isInteger(length) && length >= PLATFORM_PASSWORD_MIN_LENGTH
+        ? length
+        : PLATFORM_PASSWORD_MIN_LENGTH;
+    },
+    async getLockoutPolicy(tenantId) {
+      if (tenantId === null || !Uuid.safeParse(tenantId).success) return DEFAULT_LOCKOUT_POLICY;
+      const [row] = await withoutClaims((tx) =>
+        tx.execute(
+          sql`select lockout_threshold, lockout_minutes from private.tenant_lockout_policy(${tenantId}::uuid)`,
+        ),
+      );
+      return row
+        ? { threshold: Number(row.lockout_threshold), minutes: Number(row.lockout_minutes) }
+        : DEFAULT_LOCKOUT_POLICY;
+    },
+  };
+}
+
+const defaultPreSessionApi = createPreSessionSecurityApi(() => getDatabase('app_server'));
+
+export function invitationPasswordMinLength(tokenHash: Buffer): Promise<number> {
+  return defaultPreSessionApi.invitationPasswordMinLength(tokenHash);
+}
+
+export function getLockoutPolicy(tenantId: string | null): Promise<LockoutPolicy> {
+  return defaultPreSessionApi.getLockoutPolicy(tenantId);
+}

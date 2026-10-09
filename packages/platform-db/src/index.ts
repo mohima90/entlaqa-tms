@@ -63,6 +63,31 @@ export {
   revokePendingInvitationsOf,
 } from './deactivation';
 export { type DatabaseHealth, checkDatabase } from './health';
+export {
+  DEFAULT_LOCKOUT_POLICY,
+  type LockoutPolicy,
+  MFA_MODES,
+  type MfaMode,
+  PLATFORM_PASSWORD_MIN_LENGTH,
+  type PreSessionSecurityApi,
+  SECURITY_LIMITS,
+  SESSION_ACCESS_STATES,
+  type SecurityPolicy,
+  type SecurityPolicyUpdate,
+  type SecuritySettings,
+  type SessionAccess,
+  type SessionAccessState,
+  changedSettings,
+  createPreSessionSecurityApi,
+  dismissMfaPrompt,
+  getLockoutPolicy,
+  getMemberMfa,
+  getSecurityPolicy,
+  getSessionAccess,
+  invitationPasswordMinLength,
+  passwordMinLengthForCaller,
+  updateSecurityPolicy,
+} from './security';
 export { type CurrentTenant, getCurrentTenant } from './tenants';
 export { type OrgUnitOption, type OrgUnitOptions, listOrgUnitOptions } from './org';
 export { EVENT_TYPE_PATTERN, type EmittedEvent, emitEvent } from './events';

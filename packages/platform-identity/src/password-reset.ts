@@ -58,6 +58,11 @@ export const PasswordResetErrors = defineErrorCodes({
     status: 422,
     messageKey: 'passwordReset.errors.passwordRejected',
   },
+  /**
+   * Shorter than the strictest minimum of the account's organizations (T-M2-10, PO decision 5; `min` in
+   * params). Known only once the link has identified the account, i.e. after it was spent.
+   */
+  PASSWORD_RESET_TOO_SHORT: { status: 422, messageKey: 'passwordReset.errors.tooShort' },
 });
 
 /** Server setting: who sends the reset e-mail and the "password changed" notice (T-M2-17). */
@@ -137,6 +142,11 @@ export interface PasswordResetDeps {
    * service. Absent in `auth` mode (Auth sends its own notice when switched on there).
    */
   readonly queuePasswordChangedNotice?: (userId: string) => Promise<void>;
+  /**
+   * The account's minimum password length (strictest of its organizations, T-M2-10), asked with the
+   * recovery session's access token; null when unknown (the platform's 12 applies, Auth enforces it).
+   */
+  readonly passwordMinLength?: (accessToken: string) => Promise<number | null>;
 }
 
 /**
@@ -279,9 +289,29 @@ export async function completePasswordReset(
   const verified = await client.auth.verifyOtp({ type: 'recovery', token_hash: input.tokenHash });
   if (verified.error) return verifyRefusal(verified.error);
   const userId = userIdOf(verified.data);
-  if (!sessionTokens(verified.data) || !userId) {
+  const tokens = sessionTokens(verified.data);
+  if (!tokens || !userId) {
     await endRecoverySession(deps, client, 'local', userId);
     return linkInvalid();
+  }
+
+  // Strictest wins (PO decision 5): the account's organizations decide the minimum, known only now.
+  if (deps.passwordMinLength) {
+    let min: number | null;
+    try {
+      min = await deps.passwordMinLength(tokens.accessToken);
+    } catch (error) {
+      await endRecoverySession(deps, client, 'local', userId);
+      throw error;
+    }
+    if (min !== null && Array.from(input.password).length < min) {
+      await endRecoverySession(deps, client, 'local', userId);
+      deps.logWarning("password reset: shorter than the account's minimum", {
+        action: COMPLETE_ACTION,
+        reason: 'too_short',
+      });
+      return err(appError(PasswordResetErrors.PASSWORD_RESET_TOO_SHORT, { params: { min } }));
+    }
   }
 
   let updated: Awaited<ReturnType<RecoveryClientLike['auth']['updateUser']>>;

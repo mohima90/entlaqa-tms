@@ -19,7 +19,7 @@ import { REACTIVATED_FLASH_PARAM } from '../../../../../../lib/deactivate-form';
 import { reactivateLabels } from '../../../../../../lib/deactivation-texts';
 import { profileErrorTexts } from '../../../../../../lib/profile-texts';
 import { getSuiteContext } from '../../../../../../lib/suite-context';
-import { userProfileQuery } from '../../../../../../lib/users-queries';
+import { memberSecurityQuery, userProfileQuery } from '../../../../../../lib/users-queries';
 import { localizedName, roleName } from '../../../../../../lib/users-view';
 import { NotSet } from '../../../../../../components/not-set';
 
@@ -90,6 +90,8 @@ export default async function UserProfilePage({
     } else {
       const { profile, canOpenManager, canEdit, canEditRoles, lifecycle } = result.value;
       title = localizedName(locale, profile.displayNameAr, profile.displayNameEn);
+      // The member's authenticator app (screen 3, T-M2-10): user managers only (else left out).
+      const security = await memberSecurityQuery({ personId });
       content = (
         <>
           {reactivated && profile.membershipStatus === 'active' ? (
@@ -104,6 +106,7 @@ export default async function UserProfilePage({
             canEdit={canEdit}
             canEditRoles={canEditRoles}
             lifecycle={lifecycle}
+            security={security.ok ? security.value : null}
           />
         </>
       );
@@ -128,6 +131,7 @@ async function Profile({
   canEdit,
   canEditRoles,
   lifecycle,
+  security,
 }: {
   locale: AppLocale;
   profile: UserProfile;
@@ -135,6 +139,7 @@ async function Profile({
   canEdit: boolean;
   canEditRoles: boolean;
   lifecycle: LifecycleOffer;
+  security: Extract<Awaited<ReturnType<typeof memberSecurityQuery>>, { ok: true }>['value'] | null;
 }) {
   const t = await getTranslations({ locale, namespace: 'userProfile' });
   const deactivation = await getTranslations({ locale, namespace: 'deactivation' });
@@ -350,6 +355,19 @@ async function Profile({
                 : t('never')}
             </dd>
           </div>
+          {security && security.usesApp !== null ? (
+            <div className="flex flex-col gap-1">
+              <dt className="text-sm text-text-muted">{t('mfa')}</dt>
+              <dd className="m-0" data-testid="user-mfa-status">
+                {security.usesApp && security.appSince
+                  ? t('mfaOn', { date: format.dateTime(security.appSince, 'medium') })
+                  : t('mfaOff')}
+                {security.usesApp ? (
+                  <span className="block text-sm text-text-muted">{t('mfaReset')}</span>
+                ) : null}
+              </dd>
+            </div>
+          ) : null}
         </dl>
       </Card>
 

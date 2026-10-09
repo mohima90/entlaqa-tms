@@ -31,6 +31,8 @@ interface FakeOptions {
   auditFails?: boolean;
   serverUserId?: string | null;
   signOutFails?: boolean;
+  /** The database's view of the session in its organization (T-M2-10); default 'ok'. */
+  access?: string;
 }
 
 function setup(options: FakeOptions = {}) {
@@ -94,6 +96,14 @@ function setup(options: FakeOptions = {}) {
       calls.push(`switch:${tenantId}`);
       return Promise.resolve(options.switched ?? true);
     }),
+    getSessionAccess: vi.fn(() =>
+      Promise.resolve({
+        state: (options.access ?? 'ok') as Awaited<
+          ReturnType<AuthFlowDeps['getSessionAccess']>
+        >['state'],
+        mfaDeadline: null,
+      }),
+    ),
     insertAuditEvent: vi.fn((_tx, actor, event) => {
       if (options.auditFails) return Promise.reject(new Error('db down'));
       audited.push({ action: event.action, actor, entityId: event.entityId });
@@ -207,10 +217,31 @@ describe('selectOrganization', () => {
   it('uses the cookie session when called from the chooser (separate request)', async () => {
     const { deps, auth, audited } = setup({ cookieToken: 'access-1' });
     const result = await selectOrganization(deps, TENANT_A);
-    expect(result).toEqual({ ok: true, value: { tenantId: TENANT_A } });
+    expect(result).toEqual({ ok: true, value: { tenantId: TENANT_A, next: 'home' } });
     expect(auth.getClaims).toHaveBeenCalledWith();
     expect(auth.refreshSession).toHaveBeenCalledWith();
     expect(audited.map((a) => a.action)).toEqual(['platform.auth.signed_in']);
+  });
+
+  it('sends the session to the MFA page when the organization asks for a code or an app (T-M2-10)', async () => {
+    for (const access of ['mfa_challenge', 'mfa_enrol']) {
+      const { deps, audited } = setup({ cookieToken: 'access-1', access });
+      const result = await selectOrganization(deps, TENANT_A);
+      expect(result).toEqual({ ok: true, value: { tenantId: TENANT_A, next: 'mfa' } });
+      // Refused by the database until the code: the sign-in is audited after it (mfa.ts).
+      expect(audited).toEqual([]);
+    }
+  });
+
+  it('invites to set up an app (grace period, Organization Admin prompt) after auditing the sign-in', async () => {
+    for (const access of ['prompt_grace', 'prompt_admin']) {
+      const { deps, audited } = setup({ cookieToken: 'access-1', access });
+      const result = await selectOrganization(deps, TENANT_A);
+      expect(result).toEqual({ ok: true, value: { tenantId: TENANT_A, next: 'mfa' } });
+      expect(audited.map((a) => a.action)).toEqual(['platform.auth.signed_in']);
+    }
+    const signIn = await signInWithPassword(setup({ access: 'mfa_challenge' }).deps, credentials);
+    expect(signIn).toEqual({ ok: true, value: { next: 'mfa' } });
   });
 
   it('never continues without the tenant claim (hook disabled or another tenant)', async () => {

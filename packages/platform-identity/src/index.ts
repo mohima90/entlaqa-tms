@@ -15,8 +15,23 @@ export {
   acceptInvitationWithPassword,
   lookupInvitation,
   lookupInvitationLink,
+  passwordLength,
   sessionEmail,
 } from './invitation-accept';
+export {
+  type FactorLike,
+  type MfaClientLike,
+  type MfaDeps,
+  type MfaOverview,
+  type MfaVerification,
+  type TotpSetup,
+  MfaErrors,
+  TOTP_ISSUER,
+  getMfaOverview,
+  removeTotp,
+  startTotpSetup,
+  verifyTotpCode,
+} from './mfa';
 export {
   type AuthClientLike,
   type AuthFlowDeps,
@@ -25,6 +40,7 @@ export {
   type SignInOutcome,
   IdentityErrors,
   getSessionOrganizations,
+  recordAudit,
   selectOrganization,
   signInWithPassword,
   signOut,

@@ -10,7 +10,7 @@ import {
   resetFragment,
   resetTokenFromHash,
 } from '../../lib/password-reset-link';
-import { passwordRuleState } from '../../lib/password-rules';
+import { PASSWORD_MIN_LENGTH, passwordRuleState, withMin } from '../../lib/password-rules';
 import { type ErrorTexts, errorText } from '../auth/error-text';
 import { type PasswordRuleLabels, PasswordRulesList } from '../auth/password-rules-list';
 import { fieldErrorCodes } from '../profile/field-errors';
@@ -92,7 +92,9 @@ function ResetForm({
     setFieldErrors({});
     // The rules are checked here and again by the action BEFORE the single-use link is spent.
     if (!(rules.minLength && rules.maxBytes)) {
-      setFieldErrors({ password: rules.minLength ? texts.tooLong : texts.tooShort });
+      setFieldErrors({
+        password: rules.minLength ? texts.tooLong : withMin(texts.tooShort, PASSWORD_MIN_LENGTH),
+      });
       return;
     }
     if (!rules.matches) {
@@ -118,7 +120,12 @@ function ResetForm({
         const codes = fieldErrorCodes(result.error);
         setFieldErrors({
           ...(codes.password
-            ? { password: codes.password === 'TOO_SMALL' ? texts.tooShort : texts.tooLong }
+            ? {
+                password:
+                  codes.password === 'TOO_SMALL'
+                    ? withMin(texts.tooShort, PASSWORD_MIN_LENGTH)
+                    : texts.tooLong,
+              }
             : {}),
           ...(codes.confirmPassword ? { confirmPassword: texts.mismatch } : {}),
         });

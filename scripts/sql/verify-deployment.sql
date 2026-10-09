@@ -129,6 +129,63 @@ begin
     end loop;
   end if;
 
+  -- MFA policy (T-M2-10): tenant_guard reads Auth factors only through private.auth_mfa_factor, owned by the
+  -- migration role (never the secret); nobody else may read the view.
+  if to_regclass('private.auth_mfa_factor') is null then
+    failures := failures || 'private.auth_mfa_factor is missing'::text;
+  else
+    v_role := (select pg_get_userbyid(relowner) from pg_class where oid = 'private.auth_mfa_factor'::regclass);
+    if not (has_schema_privilege(v_role, 'auth', 'usage')
+            and has_column_privilege(v_role, 'auth.mfa_factors', 'user_id', 'select')
+            and has_column_privilege(v_role, 'auth.mfa_factors', 'factor_type', 'select')
+            and has_column_privilege(v_role, 'auth.mfa_factors', 'status', 'select')) then
+      failures := failures || format('%s (owner of private.auth_mfa_factor) must read auth.mfa_factors', v_role);
+    end if;
+    if (select string_agg(a.attname, ',' order by a.attnum) from pg_attribute a
+        where a.attrelid = 'private.auth_mfa_factor'::regclass and a.attnum > 0 and not a.attisdropped)
+       <> 'id,user_id,factor_type,status,created_at,updated_at' then
+      failures := failures || 'private.auth_mfa_factor must expose exactly id, user_id, factor_type, status, created_at, updated_at (never the secret)'::text;
+    end if;
+    for r in
+      select distinct
+        case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end as grantee,
+        a.privilege_type
+      from pg_class c, aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a
+      where c.oid = 'private.auth_mfa_factor'::regclass and a.grantee <> c.relowner
+        and not (a.grantee <> 0 and pg_get_userbyid(a.grantee) = 'tenant_guard' and a.privilege_type = 'SELECT')
+      union
+      select distinct
+        case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end,
+        a.privilege_type || ' (column ' || att.attname || ')'
+      from pg_attribute att, aclexplode(att.attacl) a
+      where att.attrelid = 'private.auth_mfa_factor'::regclass and att.attacl is not null
+    loop
+      failures := failures || format('%s must not have %s on private.auth_mfa_factor', r.grantee, r.privilege_type);
+    end loop;
+  end if;
+  -- The MFA prompt answers (T-M2-10): tenant_guard alone.
+  for r in
+    select o.obj from (values ('private.mfa_prompt_dismissals')) as o(obj)
+  loop
+    if to_regclass(r.obj) is null then
+      failures := failures || format('%s is missing', r.obj);
+      continue;
+    end if;
+    for v_role in
+      select distinct case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end
+      from pg_class c, aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a
+      where c.oid = to_regclass(r.obj) and a.grantee <> c.relowner
+        and not (a.grantee <> 0 and pg_get_userbyid(a.grantee) = 'tenant_guard'
+                 and a.privilege_type in ('SELECT', 'INSERT', 'UPDATE', 'DELETE'))
+      union
+      select distinct case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end
+      from pg_attribute att, aclexplode(att.attacl) a
+      where att.attrelid = to_regclass(r.obj) and att.attacl is not null
+    loop
+      failures := failures || format('%s must have no privilege on %s', v_role, r.obj);
+    end loop;
+  end loop;
+
   -- Invitation acceptance (FR-IAM-03): invitation_guard reads Auth users only through the view
   -- private.auth_user_email, owned by the migration role; nobody else may read the view.
   if to_regclass('private.auth_user_email') is null then
@@ -195,7 +252,16 @@ begin
       ('private.end_member_sessions()', 'membership_guard', array['membership_guard'], true),
       ('private.check_privileged_deactivation()', 'membership_guard', array['membership_guard'], true),
       ('private.reactivate_membership(uuid)', 'membership_guard', array['membership_guard', 'authenticated'], true),
-      ('private.account_sign_in_refused(uuid)', 'membership_guard', array['membership_guard', 'supabase_auth_admin'], true)
+      ('private.account_sign_in_refused(uuid)', 'membership_guard', array['membership_guard', 'supabase_auth_admin'], true),
+      -- Security policy and MFA (T-M2-10): the decision is tenant_guard's own; the web app calls the others
+      -- (app_server, checked inside).
+      ('private.session_access(uuid, uuid, uuid, boolean, boolean)', 'tenant_guard', array['tenant_guard'], true),
+      ('private.session_access_state()',            'tenant_guard', array['tenant_guard', 'authenticated'], true),
+      ('private.dismiss_mfa_prompt()',              'tenant_guard', array['tenant_guard', 'authenticated'], true),
+      ('private.tenant_member_mfa(uuid)',           'tenant_guard', array['tenant_guard', 'authenticated'], true),
+      ('private.password_min_length_for_caller()',  'tenant_guard', array['tenant_guard', 'authenticated'], true),
+      ('private.tenant_lockout_policy(uuid)',       'tenant_guard', array['tenant_guard', 'authenticated'], true),
+      ('private.invitation_password_min_length(bytea)', 'invitation_guard', array['invitation_guard', 'authenticated'], true)
     ) as h(fn, owner, allowed, definer)
     left join pg_proc p on p.oid = to_regprocedure(h.fn)
   loop
@@ -233,7 +299,10 @@ begin
         'private.claim_account_mail_request()', 'private.finish_account_mail_request(uuid)',
         'private.retry_account_mail_request(uuid)', 'private.end_member_sessions()',
         'private.check_privileged_deactivation()', 'private.reactivate_membership(uuid)',
-        'private.account_sign_in_refused(uuid)')
+        'private.account_sign_in_refused(uuid)',
+        'private.session_access(uuid,uuid,uuid,boolean,boolean)', 'private.session_access_state()',
+        'private.dismiss_mfa_prompt()', 'private.tenant_member_mfa(uuid)', 'private.password_min_length_for_caller()',
+        'private.tenant_lockout_policy(uuid)', 'private.invitation_password_min_length(bytea)')
   loop
     failures := failures || format('%s: unexpected SECURITY DEFINER function (security review)', r.fn);
   end loop;

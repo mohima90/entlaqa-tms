@@ -10,7 +10,13 @@ import {
   hasTenant,
   ok,
 } from '@jadarat/platform-core';
-import type { AuditEventInput, SessionTenant, UserTx, WithUserTx } from '@jadarat/platform-db';
+import type {
+  AuditEventInput,
+  SessionAccess,
+  SessionTenant,
+  UserTx,
+  WithUserTx,
+} from '@jadarat/platform-db';
 import type { LogFields } from '@jadarat/platform-observability';
 import { type SupabaseAuthLike, verifyClaims, verifyClaimsStrict } from './verify-claims';
 
@@ -26,8 +32,9 @@ import { type SupabaseAuthLike, verifyClaims, verifyClaimsStrict } from './verif
  *     Custom Access Token Hook issues a token WITH the tenant claim → audit `platform.auth.signed_in`
  *   signOut → audit `platform.auth.signed_out` (when a tenant is active) → revoke this session
  *
- * Multi-factor authentication is off by default for now (PO decision, 1 Oct 2026; tenant policy
- * off / optional / required arrives with the security settings, ADR 0003 §1).
+ * After the selection the organization's MFA policy may ask for more (T-M2-10, database decision
+ * private.session_access): a code from the account's authenticator app, setting one up, or — allowed
+ * meanwhile — the set-up prompt (grace period; Organization Admins, PO decision 2): next = 'mfa'.
  */
 
 export const IdentityErrors = defineErrorCodes({
@@ -54,6 +61,8 @@ export interface AuthFlowDeps {
   readonly withUserTx: WithUserTx;
   readonly listSessionTenants: (tx: UserTx) => Promise<readonly SessionTenant[]>;
   readonly switchActiveTenant: (tx: UserTx, tenantId: string) => Promise<boolean>;
+  /** Where the session stands in its organization (MFA policy, session rules; T-M2-10). */
+  readonly getSessionAccess: (tx: UserTx) => Promise<SessionAccess>;
   readonly insertAuditEvent: (
     tx: UserTx,
     actor: ReturnType<typeof actorFromClaims>,
@@ -74,7 +83,11 @@ export class AuthServiceError extends Error {
   }
 }
 
-export type SignInOutcome = { readonly next: 'home' } | { readonly next: 'choose-organization' };
+export type SignInOutcome =
+  | { readonly next: 'home' }
+  | { readonly next: 'choose-organization' }
+  /** The organization's MFA policy asks for a code or an app first, or invites to set one up. */
+  | { readonly next: 'mfa' };
 
 /** Tokens Auth just issued in THIS request (the session cookies are written, but not re-read). */
 export interface SessionTokens {
@@ -157,7 +170,7 @@ export async function signInWithPassword(
   if (others.length > 0) return ok({ next: 'choose-organization' });
 
   const selected = await selectOrganization(deps, only.tenantId, tokens);
-  return selected.ok ? ok({ next: 'home' }) : selected;
+  return selected.ok ? ok({ next: selected.value.next }) : selected;
 }
 
 /** The organizations of the current session (for the chooser). Fails closed without a session. */
@@ -173,7 +186,7 @@ export async function selectOrganization(
   deps: AuthFlowDeps,
   tenantId: string,
   tokens?: SessionTokens,
-): Promise<Result<{ readonly tenantId: string }, AppError>> {
+): Promise<Result<{ readonly tenantId: string; readonly next: 'home' | 'mfa' }, AppError>> {
   const { supabase } = deps;
   // Strict: the Auth server confirms the session is still live before it gains a tenant.
   const claims = await verifyClaimsStrict(supabase, tokens?.accessToken);
@@ -201,8 +214,15 @@ export async function selectOrganization(
     return err(appError('NOT_CONFIGURED'));
   }
 
+  // The organization's MFA policy (T-M2-10). A session it refuses until a code is entered cannot write
+  // in the organization yet: its sign-in is audited once the code passed (mfa.ts).
+  const access = await deps.withUserTx(tenantClaims.value, (tx) => deps.getSessionAccess(tx));
+  if (access.state === 'mfa_challenge' || access.state === 'mfa_enrol') {
+    return ok({ tenantId, next: 'mfa' });
+  }
   await recordAudit(deps, tenantClaims.value, 'platform.auth.signed_in');
-  return ok({ tenantId });
+  const prompt = access.state === 'prompt_grace' || access.state === 'prompt_admin';
+  return ok({ tenantId, next: prompt ? 'mfa' : 'home' });
 }
 
 export async function signOut(deps: AuthFlowDeps): Promise<Result<null, AppError>> {
@@ -229,10 +249,11 @@ export async function signOut(deps: AuthFlowDeps): Promise<Result<null, AppError
   return ok(null);
 }
 
-async function recordAudit(
-  deps: AuthFlowDeps,
+export async function recordAudit(
+  deps: Pick<AuthFlowDeps, 'withUserTx' | 'insertAuditEvent'>,
   claims: VerifiedClaims,
   action: 'platform.auth.signed_in' | 'platform.auth.signed_out',
+  method: 'password' | 'password+totp' = 'password',
 ): Promise<void> {
   if (!hasTenant(claims)) return;
   const actor = actorFromClaims(claims);
@@ -241,7 +262,7 @@ async function recordAudit(
       action,
       entityType: 'auth_session',
       entityId: claims.session_id,
-      data: { method: 'password', aal: actor.aal },
+      data: { method, aal: actor.aal },
     }),
   );
 }

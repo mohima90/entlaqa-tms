@@ -51,6 +51,8 @@ export const InvitationErrors = defineErrorCodes({
   INVITATION_ALREADY_MEMBER: { status: 409, messageKey: 'invite.errors.alreadyMember' },
   /** "Sign in to accept": the database refused the account for this invitation (other Auth e-mail). */
   INVITATION_ACCOUNT_MISMATCH: { status: 403, messageKey: 'invite.errors.accountMismatch' },
+  /** Shorter than the organization's minimum (T-M2-10; `min` in params). Checked before Auth. */
+  INVITATION_PASSWORD_TOO_SHORT: { status: 422, messageKey: 'invite.errors.passwordTooShort' },
 });
 
 /** The code track A's helpers throw when the invitation is no longer valid (contract §2). */
@@ -60,8 +62,11 @@ export const INVITATION_NOT_VALID_CODE = 'INVITATION_NOT_VALID';
 export const INVITATION_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 
 export interface InvitationAcceptOutcome {
-  /** Where to go: suite home, the organization chooser, or sign-in (account ready, sign-in failed). */
-  readonly next: 'home' | 'choose-organization' | 'sign-in';
+  /**
+   * Where to go: suite home, the organization chooser, sign-in (account ready, sign-in failed), or the
+   * MFA page when the organization asks for an authenticator app (screen 8 step 2, T-M2-10).
+   */
+  readonly next: 'home' | 'choose-organization' | 'sign-in' | 'mfa';
 }
 
 /**
@@ -89,6 +94,8 @@ export interface InvitationAcceptDeps {
   readonly signUpClient: InvitationSignUpClientLike | null;
   readonly hashToken: (token: string) => Buffer;
   readonly invitationByToken: (tokenHash: Buffer) => Promise<TokenLookup>;
+  /** The organization's minimum password length for a new account (T-M2-10; at least 12). */
+  readonly invitationPasswordMinLength: (tokenHash: Buffer) => Promise<number>;
   readonly acceptInvitationAsCaller: (
     tx: UserTx,
     tokenHash: Buffer,
@@ -152,7 +159,17 @@ export type InvitationViewer = 'anonymous' | 'invitee' | 'other-account';
 
 /** What the accept page shows for a link (screens 8 and 9): the state, and for a valid link its details. */
 export type InvitationLinkView =
-  Exclude<TokenLookup, { state: 'valid' }> | (ValidLookup & { readonly viewer: InvitationViewer });
+  | Exclude<TokenLookup, { state: 'valid' }>
+  | (ValidLookup & {
+      readonly viewer: InvitationViewer;
+      /** The organization's minimum password length, for the live rules (T-M2-10). */
+      readonly passwordMinLength: number;
+    });
+
+/** Password length as people count it: characters (code points), not UTF-16 units. */
+export function passwordLength(password: string): number {
+  return Array.from(password).length;
+}
 
 /**
  * The accept page's view of a link (review M3: the page reads the token from the URL fragment in the
@@ -160,18 +177,26 @@ export type InvitationLinkView =
  * the page never needs the session's e-mail.
  */
 export async function lookupInvitationLink(
-  deps: LookupDeps & { readonly auth: Pick<AuthFlowDeps, 'supabase'> },
+  deps: LookupDeps &
+    Pick<InvitationAcceptDeps, 'invitationPasswordMinLength'> & {
+      readonly auth: Pick<AuthFlowDeps, 'supabase'>;
+    },
   token: string,
 ): Promise<InvitationLinkView> {
-  const lookup = await lookupInvitation(deps, token);
+  const { lookup, tokenHash } = await lookupWithHash(deps, token);
   if (lookup.state !== 'valid') return { state: lookup.state };
+  if (!tokenHash) return { state: 'invalid' };
   const claims = await verifyClaims(deps.auth.supabase);
   const viewer: InvitationViewer = !claims.ok
     ? 'anonymous'
     : sessionEmail(claims.value) === lookup.email.toLowerCase()
       ? 'invitee'
       : 'other-account';
-  return { ...lookup, viewer };
+  return {
+    ...lookup,
+    viewer,
+    passwordMinLength: await deps.invitationPasswordMinLength(tokenHash),
+  };
 }
 
 /** The invitation and its token hash when (and only when) the link is valid. */
@@ -274,6 +299,17 @@ export async function acceptInvitationWithNewAccount(
   const { invitation, tokenHash } = valid;
   const client = deps.signUpClient;
   if (!client || !deps.auth.supabase) return err(appError('NOT_CONFIGURED'));
+  // A new account belongs to the invited organization only: its rule applies (T-M2-10, PO decision 5),
+  // checked before Auth creates anything. The answer names the length, never the organization's settings.
+  const min = await deps.invitationPasswordMinLength(tokenHash);
+  if (passwordLength(input.password) < min) {
+    return err(
+      appError(InvitationErrors.INVITATION_PASSWORD_TOO_SHORT, {
+        params: { min },
+        fieldErrors: [{ path: 'password', code: 'TOO_SMALL', params: { min } }],
+      }),
+    );
+  }
 
   // The e-mail comes from the invitation, never from the form; the token travels raw (the hook hashes
   // it), so nothing Auth stores can be replayed against the database.
@@ -351,9 +387,10 @@ async function acceptAsCallerAndEnter(
     if (refusal) return err(refusal);
     throw error;
   }
-  // The membership exists now; open the new organization in this session.
+  // The membership exists now; open the new organization in this session (its MFA policy may ask for an
+  // authenticator app next: screen 8, step 2).
   const selected = await selectOrganization(deps.auth, tenantId, tokens);
-  return ok({ next: selected.ok ? 'home' : 'choose-organization' });
+  return ok({ next: selected.ok ? selected.value.next : 'choose-organization' });
 }
 
 /** "Sign in to accept": password sign-in as the invitation e-mail, then accept as that user. */

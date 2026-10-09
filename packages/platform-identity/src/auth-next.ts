@@ -6,13 +6,18 @@
 import 'server-only';
 import {
   acceptInvitationAsCaller,
+  dismissMfaPrompt,
+  getSessionAccess,
   hashInvitationToken,
   insertAuditEvent,
   invitationByToken,
+  invitationPasswordMinLength,
   listSessionTenants,
+  passwordMinLengthForCaller,
   queueOwnPasswordChangedMail,
   requestPasswordChangedMail,
   requestPasswordResetMail,
+  type SessionAccess,
   switchActiveTenant,
   withUserTx,
 } from '@jadarat/platform-db';
@@ -21,6 +26,7 @@ import {
   createSupabaseStatelessClient,
   createSupabaseVerifierClient,
 } from '@jadarat/platform-db/supabase-server';
+import { type AppError, type Result, actorFromClaims, hasTenant, ok } from '@jadarat/platform-core';
 import { log } from '@jadarat/platform-observability';
 import { cookies } from 'next/headers';
 import { after } from 'next/server';
@@ -32,6 +38,16 @@ import {
   signInWithPassword,
   signOut,
 } from './auth-flow';
+import {
+  type MfaClientLike,
+  type MfaDeps,
+  type MfaOverview,
+  getMfaOverview,
+  removeTotp,
+  startTotpSetup,
+  verifyTotpCode,
+} from './mfa';
+import { type SupabaseAuthLike, verifyClaims } from './verify-claims';
 import {
   type InvitationAcceptDeps,
   type InvitationLinkView,
@@ -72,6 +88,7 @@ async function requestDeps(): Promise<AuthFlowDeps> {
     withUserTx,
     listSessionTenants,
     switchActiveTenant,
+    getSessionAccess,
     insertAuditEvent,
     logWarning: (message, fields) => {
       log.warn(message, fields);
@@ -96,6 +113,81 @@ export async function getSessionOrganizationsForRequest() {
 
 export async function signOutForRequest() {
   return signOut(await requestDeps());
+}
+
+// Multi-factor authentication with an authenticator app (FR-IAM-12, T-M2-10): the user's own session
+// only (no Auth secret key). The /mfa page and My profile use these through public actions: a session the
+// organization's MFA policy refuses has no access to the organization until it passes here.
+
+async function mfaDeps(): Promise<MfaDeps> {
+  const auth = await requestDeps();
+  return {
+    supabase: auth.supabase as unknown as MfaClientLike | null,
+    withUserTx,
+    insertAuditEvent,
+    getSessionAccess,
+    logWarning: auth.logWarning,
+  };
+}
+
+export async function getMfaOverviewForRequest() {
+  return getMfaOverview(await mfaDeps());
+}
+
+/**
+ * What the /mfa page shows: the account's app and this session's level (Auth), and where the session
+ * stands in its organization (the database: a code or an app needed, or the set-up prompt).
+ */
+export async function getMfaPageStateForRequest(): Promise<
+  Result<MfaOverview & { readonly access: SessionAccess }, AppError>
+> {
+  const deps = await mfaDeps();
+  const overview = await getMfaOverview(deps);
+  if (!overview.ok) return overview;
+  const claims = await verifyClaims(deps.supabase);
+  if (!claims.ok) return claims;
+  const tenantClaims = claims.value;
+  const access: SessionAccess = hasTenant(tenantClaims)
+    ? await withUserTx(tenantClaims, (tx) => getSessionAccess(tx))
+    : { state: 'invalid', mfaDeadline: null };
+  return ok({ ...overview.value, access });
+}
+
+export async function startTotpSetupForRequest() {
+  return startTotpSetup(await mfaDeps());
+}
+
+export async function verifyTotpCodeForRequest(input: {
+  readonly code: string;
+  readonly factorId?: string | undefined;
+}) {
+  return verifyTotpCode(await mfaDeps(), input);
+}
+
+export async function removeTotpForRequest() {
+  return removeTotp(await mfaDeps());
+}
+
+/**
+ * "Not now" on the Organization Admin prompt (PO decision 2): remembered for the session's organization;
+ * audited there. False when the session has no organization the database accepts.
+ */
+export async function dismissMfaPromptForRequest(): Promise<boolean> {
+  const auth = await requestDeps();
+  const claims = await verifyClaims(auth.supabase);
+  if (!claims.ok || !hasTenant(claims.value)) return false;
+  const tenantClaims = claims.value;
+  return withUserTx(tenantClaims, async (tx) => {
+    const done = await dismissMfaPrompt(tx);
+    if (done) {
+      await insertAuditEvent(tx, actorFromClaims(tenantClaims), {
+        action: 'platform.auth.mfa_prompt_dismissed',
+        entityType: 'user',
+        entityId: tenantClaims.sub,
+      });
+    }
+    return done;
+  });
 }
 
 export async function changePasswordForRequest(input: {
@@ -126,6 +218,7 @@ function invitationDeps(auth: AuthFlowDeps): InvitationAcceptDeps {
     signUpClient: auth.supabase as unknown as InvitationSignUpClientLike | null,
     hashToken: hashInvitationToken,
     invitationByToken,
+    invitationPasswordMinLength,
     acceptInvitationAsCaller,
   };
 }
@@ -136,7 +229,12 @@ function invitationDeps(auth: AuthFlowDeps): InvitationAcceptDeps {
  */
 export async function lookupInvitationLinkForRequest(token: string): Promise<InvitationLinkView> {
   return lookupInvitationLink(
-    { hashToken: hashInvitationToken, invitationByToken, auth: await requestDeps() },
+    {
+      hashToken: hashInvitationToken,
+      invitationByToken,
+      invitationPasswordMinLength,
+      auth: await requestDeps(),
+    },
     token,
   );
 }
@@ -210,9 +308,18 @@ export async function completePasswordResetForRequest(input: {
   readonly password: string;
 }) {
   const auth = await requestDeps();
+  const client = createSupabaseStatelessClient() as RecoveryClientLike | null;
   return completePasswordReset(
     {
-      client: createSupabaseStatelessClient() as RecoveryClientLike | null,
+      client,
+      // Strictest wins (T-M2-10): asked with the recovery session's own, verified access token.
+      passwordMinLength: async (accessToken) => {
+        const claims = await verifyClaims(
+          client as unknown as SupabaseAuthLike | null,
+          accessToken,
+        );
+        return claims.ok ? withUserTx(claims.value, (tx) => passwordMinLengthForCaller(tx)) : null;
+      },
       logInfo: (message, fields) => {
         log.info(message, fields);
       },

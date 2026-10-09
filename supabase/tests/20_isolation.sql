@@ -18,7 +18,7 @@ begin
     'platform.tenants', 'platform.tenant_domains', 'platform.persons',
     'platform.tenant_memberships', 'platform.session_context', 'platform.audit_events',
     'platform.branches', 'platform.departments', 'platform.person_employment', 'platform.role_assignments',
-    'platform.invitations')
+    'platform.invitations', 'platform.security_policies')
     and t.table_name not in (select table_name from tests.job_only_tables());
   perform tests.assert(v_missing is null, format('isolation tests missing for: %s', v_missing));
   perform tests.assert(session_user = 'app_server', 'this file must run connected as app_server');
@@ -218,6 +218,19 @@ begin
     'invitations: token_hash is never readable on the request path');
   perform tests.assert_privilege_denied($q$delete from platform.invitations$q$,
     'invitations: no DELETE grant');
+
+  -- platform.security_policies (T-M2-10): one row per organization, created with it; only the settings
+  -- columns are updatable (and only by an Organization Admin at AAL2: 66_security_policies_app_server.sql).
+  perform tests.assert_eq((select count(*) from platform.security_policies), 1::bigint,
+    'security_policies: only own organization''s policy visible');
+  perform tests.assert_privilege_denied($q$insert into platform.security_policies (tenant_id) values ('b0000000-0000-4000-8000-000000000001')$q$,
+    'security_policies: no INSERT grant');
+  perform tests.assert_privilege_denied($q$update platform.security_policies set tenant_id = 'b0000000-0000-4000-8000-000000000001'$q$,
+    'security_policies: tenant_id is not updatable');
+  perform tests.assert_eq(tests.rows_affected($q$update platform.security_policies set password_min_length = 30 where tenant_id = 'b0000000-0000-4000-8000-000000000001'$q$),
+    0::bigint, 'security_policies: RLS filters tenant B''s policy');
+  perform tests.assert_privilege_denied($q$delete from platform.security_policies$q$,
+    'security_policies: no DELETE grant');
 end $$;
 rollback;
 

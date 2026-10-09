@@ -8,13 +8,16 @@ import { getFormatter, getTranslations } from 'next-intl/server';
 import { notFound, redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { NotSet } from '../../../../components/not-set';
+import { AuthenticatorCard } from '../../../../components/profile/authenticator-card';
 import { ChangePasswordForm } from '../../../../components/profile/change-password-form';
 import { PersonalDetailsForm } from '../../../../components/profile/personal-details-form';
 import { SuiteShell } from '../../../../components/suite-shell';
+import { mfaErrorTexts } from '../../../../lib/auth-texts';
+import { stepUpHref } from '../../../../lib/mfa-view';
 import { formStateFrom } from '../../../../lib/profile-form';
 import { profileErrorTexts } from '../../../../lib/profile-texts';
 import { getSuiteContext } from '../../../../lib/suite-context';
-import { myProfileQuery } from '../../../../lib/users-queries';
+import { myProfileQuery, mySecurityQuery } from '../../../../lib/users-queries';
 import { localizedName } from '../../../../lib/users-view';
 
 /**
@@ -49,8 +52,15 @@ export default async function MyProfilePage({ params }: { params: Promise<{ loca
           </Alert>
         );
     } else {
+      // Own password rule and authenticator app (T-M2-10).
+      const security = await mySecurityQuery({});
       content = (
-        <MyProfile locale={locale} details={result.value.details} profile={result.value.profile} />
+        <MyProfile
+          locale={locale}
+          details={result.value.details}
+          profile={result.value.profile}
+          security={security.ok ? security.value : null}
+        />
       );
     }
   }
@@ -67,11 +77,14 @@ async function MyProfile({
   locale,
   details,
   profile,
+  security,
 }: {
   locale: AppLocale;
   details: Parameters<typeof formStateFrom>[0];
   profile: UserProfile;
+  security: Extract<Awaited<ReturnType<typeof mySecurityQuery>>, { ok: true }>['value'] | null;
 }) {
+  const reset = await getTranslations({ locale, namespace: 'passwordReset.reset' });
   const t = await getTranslations({ locale, namespace: 'profile' });
   const common = await getTranslations({ locale, namespace: 'common' });
   const fields = await getTranslations({ locale, namespace: 'userProfile' });
@@ -196,10 +209,19 @@ async function MyProfile({
       <Card title={t('password')}>
         <p className="mb-4 mt-0 text-text-muted">{t('passwordIntro')}</p>
         <ChangePasswordForm
+          minLength={security?.passwordMinLength ?? 12}
+          rules={{
+            rulesLabel: reset('rulesLabel'),
+            ruleMinLength: reset('rules.minLength', { min: '{min}' }),
+            ruleMaxBytes: reset('rules.maxBytes'),
+            ruleMatches: reset('rules.matches'),
+            ruleMet: reset('rules.met'),
+            ruleNotMet: reset('rules.notMet'),
+          }}
           labels={{
             current: t('currentPassword'),
             next: t('newPassword'),
-            nextHint: t('newPasswordHint'),
+            nextHint: t('newPasswordHint', { min: '{min}' }),
             confirm: t('confirmPassword'),
             required: common('required'),
             submit: t('changePassword'),
@@ -207,7 +229,7 @@ async function MyProfile({
             changed: t('passwordChanged'),
           }}
           fieldTexts={{
-            tooShort: t('fieldErrors.tooShort'),
+            tooShort: t('fieldErrors.tooShort', { min: '{min}' }),
             tooLong: t('fieldErrors.tooLong'),
             mismatch: t('fieldErrors.mismatch'),
             currentRequired: t('fieldErrors.currentRequired'),
@@ -215,6 +237,28 @@ async function MyProfile({
           errors={errors}
         />
       </Card>
+
+      {security ? (
+        <Card title={t('mfa.title')}>
+          <p className="mb-4 mt-0 text-text-muted">{t('mfa.intro')}</p>
+          <AuthenticatorCard
+            usesApp={security.usesApp === true}
+            setUpHref={stepUpHref(locale, `/${locale}/suite/profile`)}
+            labels={{
+              on: t('mfa.on'),
+              off: t('mfa.off'),
+              setUp: t('mfa.setUp'),
+              remove: t('mfa.remove'),
+              removing: t('mfa.removing'),
+              removed: t('mfa.removed'),
+              removeNeedsCode: t('mfa.removeNeedsCode'),
+              verifyFirst: t('mfa.verifyFirst'),
+              removeWarning: t('mfa.removeWarning'),
+            }}
+            errors={await mfaErrorTexts(locale)}
+          />
+        </Card>
+      ) : null}
     </div>
   );
 }

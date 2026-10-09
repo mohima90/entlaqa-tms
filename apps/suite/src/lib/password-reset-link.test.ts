@@ -63,6 +63,7 @@ describe('after an answer of the reset action', () => {
       'PASSWORD_RESET_WEAK_PASSWORD',
       'PASSWORD_RESET_BREACHED_PASSWORD',
       'PASSWORD_RESET_PASSWORD_REJECTED',
+      'PASSWORD_RESET_TOO_SHORT',
     ]) {
       expect(linkIsSpent(code), code).toBe(true);
     }

@@ -3,10 +3,13 @@
  *
  * Import AFTER `@import "tailwindcss";` and BEFORE `@import "@jadarat/ui/styles.css";`.
  *
- * The design tokens (docs/design/tokens/tokens.css, imported by @jadarat/ui/styles.css) are the
- * single source of truth. They are unlayered, so they override the fallback values registered
- * here (Tailwind emits theme variables in `@layer theme`), including dark-mode overrides.
- * The fallbacks below only exist so utilities such as `bg-surface` are generated.
+ * The design tokens are the single source of truth (docs/design/theming.md): the brand-neutral
+ * foundation (docs/design/tokens/tokens.css) and the swappable brand theme
+ * (docs/design/tokens/themes/<id>.css), both imported by @jadarat/ui/styles.css. This preset only
+ * NAMES the colour roles so that utilities such as `bg-surface` or `text-on-primary` exist; it holds no
+ * colour values (`inline reference`: utilities read `var(--color-…)` from the tokens, and Tailwind emits
+ * no copies), so a theme or an organization's brand layer changes every utility at once.
+ * Radius names match the tokens (`--radius-*`), so the token values win over the fallbacks below.
  *
  * RTL: use logical utilities only (ps-/pe-/ms-/me-/start-/end-/border-s/border-e/text-start/text-end).
  * `pnpm check:rtl` rejects physical direction utilities (pl-, mr-, left-, text-left, …).
@@ -16,36 +19,6 @@
 @theme {
   /* Drop Tailwind's default palette: only design tokens may be used for color. */
   --color-*: initial;
-  --color-bg: #f2f5f5;
-  --color-surface: #ffffff;
-  --color-surface-raised: #ffffff;
-  --color-surface-sunken: #f8fafa;
-  --color-surface-hover: #e3e9ea;
-  --color-surface-selected: #e7f3f1;
-  --color-text: #121a1c;
-  --color-text-muted: #465357;
-  --color-text-subtle: #5b6a6e;
-  --color-text-disabled: #7a898d;
-  --color-border: #cbd4d6;
-  --color-border-strong: #7a898d;
-  --color-primary: #0f665f;
-  --color-primary-hover: #0c534d;
-  --color-on-primary: #ffffff;
-  --color-primary-subtle: #e7f3f1;
-  --color-primary-text: #0c534d;
-  --color-focus-ring: #177d74;
-  --color-success: #1d7a43;
-  --color-success-subtle: #e9f6ee;
-  --color-warning: #955800;
-  --color-warning-subtle: #fff5e0;
-  --color-danger: #b42318;
-  --color-danger-hover: #931c14;
-  --color-on-danger: #ffffff;
-  --color-danger-subtle: #fdeeec;
-  --color-info: #1f5daa;
-  --color-info-subtle: #eaf1fb;
-  --color-inverse-surface: #192123;
-  --color-inverse-text: #f8fafa;
   --color-transparent: transparent;
   --color-current: currentColor;
 
@@ -65,6 +38,58 @@
   --breakpoint-lg: 900px;
   --breakpoint-xl: 1200px;
   --breakpoint-2xl: 1440px;
+}
+
+/* Colour roles of the theme contract (packages/ui/src/theme/contract.ts), values from the tokens. */
+@theme inline reference {
+  --color-bg: var(--color-bg);
+  --color-surface: var(--color-surface);
+  --color-surface-raised: var(--color-surface-raised);
+  --color-surface-sunken: var(--color-surface-sunken);
+  --color-surface-hover: var(--color-surface-hover);
+  --color-surface-selected: var(--color-surface-selected);
+  --color-text: var(--color-text);
+  --color-text-muted: var(--color-text-muted);
+  --color-text-subtle: var(--color-text-subtle);
+  --color-text-disabled: var(--color-text-disabled);
+  --color-border: var(--color-border);
+  --color-border-strong: var(--color-border-strong);
+  --color-primary: var(--color-primary);
+  --color-primary-hover: var(--color-primary-hover);
+  --color-on-primary: var(--color-on-primary);
+  --color-primary-subtle: var(--color-primary-subtle);
+  --color-primary-text: var(--color-primary-text);
+  --color-focus-ring: var(--color-focus-ring);
+  --color-accent: var(--color-accent);
+  --color-accent-hover: var(--color-accent-hover);
+  --color-on-accent: var(--color-on-accent);
+  --color-accent-subtle: var(--color-accent-subtle);
+  --color-accent-text: var(--color-accent-text);
+  --color-success: var(--color-success);
+  --color-success-subtle: var(--color-success-subtle);
+  --color-warning: var(--color-warning);
+  --color-warning-strong: var(--color-warning-strong);
+  --color-warning-subtle: var(--color-warning-subtle);
+  --color-danger: var(--color-danger);
+  --color-danger-hover: var(--color-danger-hover);
+  --color-on-danger: var(--color-on-danger);
+  --color-danger-subtle: var(--color-danger-subtle);
+  --color-info: var(--color-info);
+  --color-info-subtle: var(--color-info-subtle);
+  --color-inverse-surface: var(--color-inverse-surface);
+  --color-inverse-text: var(--color-inverse-text);
+  --color-overlay: var(--color-overlay);
+  --color-header: var(--color-header);
+  --color-on-header: var(--color-on-header);
+  --color-on-header-muted: var(--color-on-header-muted);
+  --color-header-border: var(--color-header-border);
+  --color-nav: var(--color-nav);
+  --color-on-nav: var(--color-on-nav);
+  --color-on-nav-muted: var(--color-on-nav-muted);
+  --color-nav-border: var(--color-nav-border);
+  --color-nav-item-hover: var(--color-nav-item-hover);
+  --color-nav-item-current: var(--color-nav-item-current);
+  --color-on-nav-item-current: var(--color-on-nav-item-current);
 }
 
 @theme inline {

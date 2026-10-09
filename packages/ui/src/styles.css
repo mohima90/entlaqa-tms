@@ -1,9 +1,14 @@
 /*
  * @jadarat/ui base styles.
- * Design tokens: docs/design/tokens/tokens.css is the single source of truth (T-M1-A01) and is
- * imported as-is (unlayered) so its values, dark mode and lang-specific typography apply.
+ * Design tokens (docs/design/theming.md), imported as-is (unlayered) so their values, dark mode and
+ * lang-specific typography apply, in this order:
+ *   1. tokens.css — the brand-neutral foundation (type scale, spacing, motion, z-index, sizes);
+ *   2. themes/jadarat.css — the shipped brand theme (colours, fonts, radii, shadows), generated from
+ *      src/theme/themes/jadarat.ts. Swapping the look = importing another theme file here.
+ * An organization's brand colours (FR-ADM-07) are a third layer loaded after these (src/theme).
  */
 @import '../../../docs/design/tokens/tokens.css';
+@import '../../../docs/design/tokens/themes/jadarat.css';
 
 @layer base {
   html {

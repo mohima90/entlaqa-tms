@@ -16,6 +16,9 @@ export interface AppShellProps {
  * Suite shell layout (docs/design/suite-shell.md §1): skip link, sticky header (56px), side navigation
  * at inline-start (264px, ≥ 900px), main content (max 1280px). Logical properties only (RTL/LTR).
  * The mobile drawer and bottom navigation come with T-M1-A02/A03.
+ * Colours come from the shell roles (`header*`, `nav*`) so a theme can colour the header and the
+ * navigation; navigation content must then use `navItemClasses` / `NavItem` (./nav-item), not
+ * surface/text utilities, to stay readable on them.
  */
 export function AppShell({
   brand,
@@ -33,14 +36,14 @@ export function AppShell({
       >
         {skipToContentLabel}
       </a>
-      <header className="sticky top-0 z-40 flex h-14 items-center justify-between gap-4 border-b border-border bg-surface px-4">
+      <header className="sticky top-0 z-40 flex h-14 items-center justify-between gap-4 border-b border-header-border bg-header px-4 text-on-header">
         <div className="min-w-0 truncate text-lg font-semibold">{brand}</div>
         {headerEnd ? <div className="flex shrink-0 items-center gap-3">{headerEnd}</div> : null}
       </header>
       <div className="flex flex-1">
         <nav
           aria-label={navigationLabel}
-          className="hidden w-66 shrink-0 border-e border-border bg-surface p-4 lg:block"
+          className="hidden w-66 shrink-0 border-e border-nav-border bg-nav p-4 text-on-nav lg:block"
         >
           {navigation}
         </nav>

@@ -159,6 +159,54 @@ describe('the Auth admin key stays in the worker (T-M2-17, ADR 0002 §7)', () =>
   });
 });
 
+describe('the Storage key stays in the worker (T-M2-18, ADR 0006 §3.4)', () => {
+  it('rejects the files request path reaching the worker side; allows the worker and the request context', async () => {
+    const root = fixtureRepo({
+      ...platformDb,
+      'packages/platform-db/src/supabase/server.ts': 'export const createUserFileStorage = 1;\n',
+      'packages/platform-files/package.json': JSON.stringify({ name: '@jadarat/platform-files' }),
+      // The request-path service using the user's Storage session (allowed) …
+      'packages/platform-files/src/index.ts':
+        "import { createUserFileStorage } from '../../platform-db/src/supabase/server';\nexport const s = createUserFileStorage;\n",
+      // … and, wrongly, the worker's scanner (Storage with the secret key).
+      'packages/platform-files/src/download.ts':
+        "import { scan } from './jobs/scan';\nexport const d = scan;\n",
+      'packages/platform-files/src/jobs/scan.ts':
+        "import { withSystemTx } from '../../../platform-db/src/jobs/index';\nexport const scan = withSystemTx;\n",
+      'apps/worker/package.json': JSON.stringify({ name: '@jadarat/worker' }),
+      'apps/worker/src/platform-tasks.ts':
+        "import { withAdminTx } from '../../../packages/platform-db/src/admin/index';\nimport { scan } from '../../../packages/platform-files/src/jobs/scan';\nexport const t = [withAdminTx, scan];\n",
+      'apps/suite/package.json': JSON.stringify({ name: '@jadarat/suite' }),
+      'apps/suite/src/files/upload.ts':
+        "import { s } from '../../../../packages/platform-files/src/index';\nexport const u = s;\n",
+      'apps/suite/src/files/download.ts':
+        "import { d } from '../../../../packages/platform-files/src/download';\nexport const v = d;\n",
+    });
+    // The security rules only (the fixture's relative imports trip no-relative-cross-package-imports).
+    const found = (await violations(root)).filter((v) =>
+      /^(admin-client-only-in-jobs-or-admin|jobs-db-only-in-jobs|no-admin-or-jobs-reachable-from-suite|admin-jobs-folders-are-private|no-admin-or-jobs-db-in-suite-app):/.test(
+        v,
+      ),
+    );
+    expect(found).toContain(
+      'admin-jobs-folders-are-private: packages/platform-files/src/download.ts → packages/platform-files/src/jobs/scan.ts',
+    );
+    expect(
+      found.some((v) =>
+        v.startsWith('no-admin-or-jobs-reachable-from-suite: apps/suite/src/files/download.ts'),
+      ),
+    ).toBe(true);
+    expect(
+      found.filter(
+        (v) =>
+          v.includes('apps/worker/') ||
+          v.includes('apps/suite/src/files/upload.ts') ||
+          v.startsWith('admin-jobs-folders-are-private: packages/platform-files/src/jobs/'),
+      ),
+    ).toEqual([]);
+  });
+});
+
 describe('admin/jobs code cannot be laundered through re-exports (security re-review)', () => {
   it('rejects a module re-exporting the admin client that the suite app then imports', async () => {
     const root = fixtureRepo({

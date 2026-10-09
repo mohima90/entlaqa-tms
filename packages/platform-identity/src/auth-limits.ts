@@ -194,6 +194,38 @@ export function limitsFor(
   };
 }
 
+// ----- The visitor's key for Auth's own limits (self-hosted only) -----
+
+/**
+ * Server setting, SELF-HOSTED ONLY (T-M2-11; docs/engineering/sign-in-protection.md §5): the name of the
+ * header in which the app sends the visitor's rate-limit key with its Auth calls. The installation's
+ * gateway trusts it from the app's network only and passes it to Auth as GOTRUE_RATE_LIMIT_HEADER, so
+ * Auth's own per-IP limits count visitors instead of the app. Unset on hosted Supabase: there the trusted
+ * forwarded-IP header (Sb-Forwarded-For) needs the Auth secret key, which the web app never holds (ADR 0002
+ * §7) — and the visitor's address would reach a sub-processor for nothing.
+ */
+export const AUTH_CLIENT_HEADER_ENV = 'JADARAT_AUTH_CLIENT_HEADER';
+
+export function readAuthClientHeader(
+  env: Readonly<Record<string, string | undefined>>,
+): string | null {
+  const raw = env[AUTH_CLIENT_HEADER_ENV]?.trim() ?? '';
+  if (raw === '') return null;
+  if (!/^[A-Za-z][A-Za-z0-9-]{0,63}$/.test(raw)) {
+    throw new Error(`${AUTH_CLIENT_HEADER_ENV} must be an HTTP header name`);
+  }
+  return raw;
+}
+
+/** The header carrying the visitor's key to Auth, when configured and the visitor has a trusted address. */
+export function authClientHeaders(
+  client: RequestClient,
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): Readonly<Record<string, string>> | null {
+  const name = readAuthClientHeader(env);
+  return name === null || client.key === null ? null : { [name]: client.key };
+}
+
 // ----- Security events (TM-0003 T-IAM-25; ADR 0009 §2: codes and keyed references only) -----
 
 export type SecurityEventName =

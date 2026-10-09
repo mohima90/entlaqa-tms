@@ -44,7 +44,14 @@ networks:
       config:
         - { subnet: 10.231.0.16/28, gateway: 10.231.0.17 }
   db-app: {} # db ⇄ app (+ the db host port used for migrations)
-  edge: {} # app ⇄ gateway (+ published ports)
+  # app ⇄ gateway (+ published ports). Fixed subnet (T-M2-11): the gateway takes the visitor key the app
+  # sends with its Auth calls (X-Jadarat-Client) from this network only, for Auth's own per-IP limits
+  # (gateway/nginx.conf `jadarat_from_app`; change both files together). Only the app and the gateway
+  # join it; .33 is the bridge (the host, through a published port) and is not trusted.
+  edge:
+    ipam:
+      config:
+        - { subnet: 10.231.0.32/28, gateway: 10.231.0.33 }
   errors: { internal: true } # app, gateway ⇄ GlitchTip (plain HTTP; no route out of the installation)
   errors-internal: { internal: true } # GlitchTip ⇄ its own database (error data never in the TMS db)
   mail: { internal: true } # worker ⇄ Mailpit (SMTP with STARTTLS)
@@ -155,6 +162,12 @@ services:
       GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_URI: pg-functions://postgres/private/custom_access_token_hook
       GOTRUE_HOOK_BEFORE_USER_CREATED_ENABLED: 'true'
       GOTRUE_HOOK_BEFORE_USER_CREATED_URI: pg-functions://postgres/private/before_user_created_hook
+      # Auth's own per-IP limits (sign-in and refresh, verify, sign-up, password change; T-M2-11): GoTrue
+      # applies them ONLY with this header set, keyed on its value. The gateway always sets it: the caller's
+      # own address for direct callers, the visitor's key for the app's calls (sent by the app, trusted from
+      # its network only), or nothing for an app call without a trusted visitor address — then Auth limits
+      # nothing and the app's shared limiter (in front of every Auth call) applies alone.
+      GOTRUE_RATE_LIMIT_HEADER: X-Jadarat-Rate-Limit-Key
 
   gateway:
     image: nginxinc/nginx-unprivileged:stable-alpine-slim@sha256:e28dcf0a161ddcbf228c7364b4a14f9bad4763ae8f5317c437b896afa3df4b84
@@ -211,6 +224,12 @@ services:
       # error reports) are per client only with it; empty = every visitor shares one budget. Empty here:
       # this stack publishes the app directly. docs/engineering/password-reset.md §5.
       JADARAT_CLIENT_IP_HEADER: ${JADARAT_CLIENT_IP_HEADER:-}
+      # The header in which the app sends that visitor key with its Auth calls; the gateway trusts it from
+      # the app's network only (T-M2-11). Self-hosted only — never on hosted Supabase.
+      JADARAT_AUTH_CLIENT_HEADER: X-Jadarat-Client
+      # TESTS ONLY (smoke.sh sets it): every sign-in, reset and invitation limit window — the 15-minute lock
+      # included — lasts this many seconds. Leave unset in every real installation.
+      AUTH_RATE_LIMIT_WINDOW_SECONDS: ${AUTH_RATE_LIMIT_WINDOW_SECONDS:-}
       # Error tracking (ADR 0009 §4): the DSN of this installation's GlitchTip project, with the internal
       # host, e.g. http://<key>@glitchtip:8000/<project id> (README.md, "Error tracking"). Unset = logs only.
       SENTRY_DSN: ${SENTRY_DSN:-}

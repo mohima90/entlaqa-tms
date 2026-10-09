@@ -60,6 +60,7 @@ import {
   type RequestClient,
   type SecurityLog,
   type SignInGuard,
+  authClientHeaders,
   createInvitationLimiter,
   createPasswordCheckLimiter,
   createPasswordResetLimiter,
@@ -131,7 +132,19 @@ function signInGuardFor(client: RequestClient, action = SIGN_IN_ACTION): SignInG
   return createSignInGuard({ ...limiterDeps(), client, action });
 }
 
-async function requestDeps(signInGuard: SignInGuard = NO_SIGN_IN_GUARD): Promise<AuthFlowDeps> {
+/**
+ * Self-hosted only: the visitor's rate-limit key on the Auth calls of this request, for Auth's own per-IP
+ * limits behind the installation's gateway (JADARAT_AUTH_CLIENT_HEADER; none on hosted Supabase).
+ */
+function authClientOptions(client: RequestClient | null) {
+  const headers = client ? authClientHeaders(client) : null;
+  return headers ? { headers } : {};
+}
+
+async function requestDeps(
+  signInGuard: SignInGuard = NO_SIGN_IN_GUARD,
+  client: RequestClient | null = null,
+): Promise<AuthFlowDeps> {
   const store = await cookies();
   // The browser's User-Agent goes to Auth with our calls, so a session created at sign-in records the real
   // browser (session lists, T-M2-10); createSupabaseServerClient drops anything but printable ASCII.
@@ -148,7 +161,7 @@ async function requestDeps(signInGuard: SignInGuard = NO_SIGN_IN_GUARD): Promise
       },
     },
     undefined,
-    { userAgent },
+    { ...authClientOptions(client), userAgent },
   );
   return {
     supabase: supabase as AuthClientLike | null,
@@ -171,7 +184,7 @@ export async function signInWithPasswordForRequest(
   credentials: { readonly email: string; readonly password: string },
   client: RequestClient,
 ) {
-  return signInWithPassword(await requestDeps(signInGuardFor(client)), credentials);
+  return signInWithPassword(await requestDeps(signInGuardFor(client), client), credentials);
 }
 
 export async function selectOrganizationForRequest(tenantId: string) {
@@ -379,7 +392,7 @@ export async function lookupInvitationLinkForRequest(
         hashToken: hashInvitationToken,
         invitationByToken,
         invitationPasswordMinLength,
-        auth: await requestDeps(),
+        auth: await requestDeps(undefined, client),
       },
       token,
     ),
@@ -390,7 +403,10 @@ export async function acceptInvitationWithNewAccountForRequest(
   input: Parameters<typeof acceptInvitationWithNewAccount>[1],
   client: RequestClient,
 ) {
-  return acceptInvitationWithNewAccount(invitationDeps(await requestDeps(), client), input);
+  return acceptInvitationWithNewAccount(
+    invitationDeps(await requestDeps(undefined, client), client),
+    input,
+  );
 }
 
 /** "Sign in to accept": the sign-in guard applies (per account and per client), as for sign-in. */
@@ -400,7 +416,7 @@ export async function acceptInvitationWithPasswordForRequest(
 ) {
   return acceptInvitationWithPassword(
     invitationDeps(
-      await requestDeps(signInGuardFor(client, 'platform.invitation.accept_with_sign_in')),
+      await requestDeps(signInGuardFor(client, 'platform.invitation.accept_with_sign_in'), client),
       client,
     ),
     input,
@@ -411,7 +427,10 @@ export async function acceptInvitationAsSignedInUserForRequest(
   input: { readonly token: string },
   client: RequestClient,
 ) {
-  return acceptInvitationAsSignedInUser(invitationDeps(await requestDeps(), client), input);
+  return acceptInvitationAsSignedInUser(
+    invitationDeps(await requestDeps(undefined, client), client),
+    input,
+  );
 }
 
 // Forgot / reset password (FR-IAM-13, T-M2-08): Supabase Auth's recovery tokens, verified on a STATELESS
@@ -421,11 +440,17 @@ export async function acceptInvitationAsSignedInUserForRequest(
 // only queues requests in the database; the worker holds the Auth admin key.
 
 /** Auth's own mailer, or the worker's queue (PASSWORD_RESET_DELIVERY, read on the server only). */
-function resetEmailDelivery(): ResetEmailDelivery {
+function resetEmailDelivery(client: RequestClient): ResetEmailDelivery {
   if (readPasswordResetDelivery(process.env) === 'worker') {
     return { mode: 'worker', enqueue: requestPasswordResetMail };
   }
-  return { mode: 'auth', client: createSupabaseStatelessClient() as RecoveryClientLike | null };
+  return {
+    mode: 'auth',
+    client: createSupabaseStatelessClient(
+      undefined,
+      authClientOptions(client),
+    ) as RecoveryClientLike | null,
+  };
 }
 
 const RESET_REQUEST_ACTION = 'platform.auth.request_password_reset';
@@ -452,7 +477,7 @@ export async function requestPasswordResetForRequest(
   const limiter = resetLimiter(client);
   return requestPasswordReset(
     {
-      delivery: resetEmailDelivery(),
+      delivery: resetEmailDelivery(client),
       allowRequest: (email) => limiter.allowRequest(email),
       logWarning: (message, fields) => {
         log.warn(message, fields);
@@ -478,9 +503,12 @@ export async function completePasswordResetForRequest(
   },
   client: RequestClient,
 ) {
-  const auth = await requestDeps();
+  const auth = await requestDeps(undefined, client);
   const limiter = resetLimiter(client);
-  const recoveryClient = createSupabaseStatelessClient() as RecoveryClientLike | null;
+  const recoveryClient = createSupabaseStatelessClient(
+    undefined,
+    authClientOptions(client),
+  ) as RecoveryClientLike | null;
   return completePasswordReset(
     {
       client: recoveryClient,

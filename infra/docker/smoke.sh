@@ -9,8 +9,10 @@
 # e-mail from Mailpit — sent by the worker, T-M2-17 — new password, old one refused, link single use, our
 # "password changed" notice; Auth's admin API only on the gateway's internal port, one call per network),
 # deactivates and reactivates members (reassignment, sessions end at once, Auth issues no token to a login
-# that belongs nowhere any more — T-M2-09), sends a browser and a server error to the in-country error
-# tracker (GlitchTip) and checks they arrive without personal data, then tears everything down.
+# that belongs nowhere any more — T-M2-09), runs the sign-in protection journey (T-M2-11: lock after 5 wrong
+# passwords, generic answers in Arabic and English, the shared limiter; Auth's own per-IP limits keyed by the
+# gateway), sends a browser and a server error to the in-country error tracker (GlitchTip) and checks they
+# arrive without personal data, then tears everything down.
 #
 #   bash infra/docker/smoke.sh            # KEEP=1 leaves the stack running; SKIP_BUILD=1 reuses the build
 #
@@ -20,6 +22,9 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT/infra/docker"
 DOCKER="${DOCKER:-docker}"
 compose() { $DOCKER compose --env-file .secrets/.env "$@"; }
+# Sign-in protection (T-M2-11): the app's limit windows — the 15-minute lock included — last this many
+# seconds here, so the journey below does not wait 15 minutes. Tests only; never set in an installation.
+export AUTH_RATE_LIMIT_WINDOW_SECONDS="${AUTH_RATE_LIMIT_WINDOW_SECONDS:-20}"
 
 cleanup() {
   local status=$?
@@ -587,6 +592,26 @@ for path in /verify/ /verify; do
   [[ $limited -eq 1 ]] || { echo "smoke: the gateway does not limit /auth/v1$path beyond its burst" >&2; exit 1; }
 done
 
+# Before the T-M2-09 and T-M2-10 journeys, which change the accounts' passwords and the organization's MFA
+# policy; Auth's own per-IP limits (below) come after them: they use up the host's budget for direct Auth calls.
+echo "smoke: sign-in protection (T-M2-11) — 5 wrong passwords lock, generic answers in Arabic and English"
+LIMITS_UNKNOWN_EMAIL="nobody-limits-$(date +%s)@sovereign.example"
+(cd "$ROOT/apps/suite" && E2E_BASE_URL=http://localhost:3200 SIGN_IN_LIMITS_E2E_EMAIL="$EMAIL" \
+  SIGN_IN_LIMITS_E2E_PASSWORD="$PASSWORD" SIGN_IN_LIMITS_E2E_UNKNOWN_EMAIL="$LIMITS_UNKNOWN_EMAIL" \
+  SIGN_IN_LIMITS_E2E_WINDOW_SECONDS="$AUTH_RATE_LIMIT_WINDOW_SECONDS" \
+  pnpm exec playwright test e2e/sign-in-limits.spec.ts --project=desktop-chromium)
+# Failed sign-ins are security events (TM-0003 T-IAM-25): stable names, keyed references (rk_…) only.
+app_logs="$(compose logs --no-log-prefix app 2>&1)"
+for event in auth.sign_in.failed auth.lockout auth.rate_limited; do
+  grep -qE "\"security_event\":\"$event\".*\"subject_ref\":\"rk_[0-9a-f]{24}\"" <<<"$app_logs" ||
+    { echo "smoke: no $event security event with a keyed reference in the app logs" >&2; exit 1; }
+done
+# The shared limiter stores keyed hashes only: nothing readable (no address, no e-mail) in its counters.
+[[ "$(q "select count(*) from private.rate_limit_counters where octet_length(key_hash) <> 32 or encode(key_hash, 'escape') like '%sovereign.example%'")" == "0" ]] ||
+  { echo "smoke: the rate limiter stores something readable" >&2; exit 1; }
+[[ "$(q "select count(*) from private.rate_limit_secret")" == "1" ]] ||
+  { echo "smoke: the rate limiter has no key" >&2; exit 1; }
+
 echo "smoke: deactivate and reactivate members (T-M2-09) — reassignment, sessions end, Auth issues no token, old refresh tokens stay dead"
 DEACT_EMAIL="deactivate-$STAMP@sovereign.example"
 DEACT_PASSWORD="Deactivate-$(openssl rand -hex 16)"
@@ -896,6 +921,54 @@ for i in $(seq 1 30); do
   [[ $i -eq 30 ]] && { echo "smoke: no (or more than one) password-changed notice after the reset with a code" >&2; exit 1; }
   sleep 1
 done
+
+echo "smoke: Auth's own per-IP limits (T-M2-11) — keyed by the gateway, never by the caller"
+# Password grants for an address without an account (Auth answers 400 at once; burst 30, then 429).
+# token_codes <source: app|host> <visitor key or ''> <count>: the HTTP status codes, space-separated.
+token_codes() {
+  local body='{"email":"nobody-ratelimit@sovereign.example","password":"not-a-password"}'
+  if [[ "$1" == "app" ]]; then
+    # From the app's network: the visitor key the app sends with its Auth calls (X-Jadarat-Client).
+    compose exec -T app /nodejs/bin/node -e '
+      const [key, count, body] = process.argv.slice(1);
+      (async () => {
+        const codes = [];
+        for (let i = 0; i < Number(count); i += 1) {
+          const headers = { "content-type": "application/json", apikey: "self-hosted" };
+          if (key) headers["X-Jadarat-Client"] = key;
+          const answer = await fetch("https://gateway:8443/auth/v1/token?grant_type=password",
+            { method: "POST", headers, body });
+          codes.push(answer.status);
+        }
+        console.log(codes.join(" "));
+      })().catch(() => process.exit(1));' "$2" "$3" "$body"
+  else
+    # From the host (published port): whatever the caller claims, its own address is the key.
+    local codes=()
+    for i in $(seq 1 "$3"); do
+      codes+=("$(curl -s -o /dev/null -w '%{http_code}' --cacert .secrets/ca.crt -H "$AUTH_APIKEY_HEADER" \
+        -H 'Content-Type: application/json' -H "X-Jadarat-Client: 198.51.100.$i" \
+        -H "X-Jadarat-Rate-Limit-Key: 198.51.100.$i" --data-binary "$body" \
+        'https://localhost:8443/auth/v1/token?grant_type=password')")
+    done
+    echo "${codes[*]}"
+  fi
+}
+codes="$(token_codes app 198.51.100.7 40)"
+[[ " $codes " == *" 429 "* ]] ||
+  { echo "smoke: Auth does not limit one visitor key from the app (got: $codes)" >&2; exit 1; }
+codes="$(token_codes app 198.51.100.8 3)"
+[[ " $codes " != *" 429 "* ]] ||
+  { echo "smoke: another visitor key shares the limit (got: $codes)" >&2; exit 1; }
+# An app call without a trusted visitor address is not limited by Auth (one budget for every visitor
+# would let one abuser block everyone); the app's shared limiter covers it.
+codes="$(token_codes app '' 40)"
+[[ " $codes " != *" 429 "* ]] ||
+  { echo "smoke: Auth limits app calls without a visitor key (got: $codes)" >&2; exit 1; }
+# A direct caller rotating made-up keys is still limited by its own address.
+codes="$(token_codes host '' 40)"
+[[ " $codes " == *" 429 "* ]] ||
+  { echo "smoke: a direct caller chose its own rate-limit key (got: $codes)" >&2; exit 1; }
 
 # No unconfirmed e-mail account exists after every journey (re-review N3): with "Confirm email" off, Auth
 # would hand a session for such an account to anyone who signs up with its e-mail, without the hook.

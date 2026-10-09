@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import type { RateLimit, RateLimitCounter, RateLimitStore } from '@jadarat/platform-db';
 import { describe, expect, it, vi } from 'vitest';
 import {
+  AUTH_CLIENT_HEADER_ENV,
   AUTH_RATE_LIMIT_WINDOW_ENV,
   LIMIT_BUCKETS,
   NO_SIGN_IN_GUARD,
@@ -9,6 +10,7 @@ import {
   RateLimiterUnavailableError,
   type SecurityEvent,
   accountSubject,
+  authClientHeaders,
   clientSubject,
   createInvitationLimiter,
   createPasswordCheckLimiter,
@@ -497,5 +499,27 @@ describe('securityLogLine (ADR 0009 §2)', () => {
         errorName: 'Error',
       }),
     ).toMatchObject({ level: 'error', fields: { outcome: 'failure', errorName: 'Error' } });
+  });
+});
+
+describe("authClientHeaders (self-hosted: the visitor's key for Auth's own limits)", () => {
+  it('sends the trusted key under the configured header only', () => {
+    const env = { [AUTH_CLIENT_HEADER_ENV]: 'X-Jadarat-Client' };
+    expect(authClientHeaders({ key: '2001:db8:1:2::/64' }, env)).toEqual({
+      'X-Jadarat-Client': '2001:db8:1:2::/64',
+    });
+    // No trusted address: nothing is sent (the gateway then leaves Auth's per-IP limit off for the app).
+    expect(authClientHeaders({ key: null }, env)).toBeNull();
+    // Hosted (unset): the visitor's address never reaches Auth.
+    expect(authClientHeaders({ key: '203.0.113.7' }, {})).toBeNull();
+    expect(authClientHeaders({ key: '203.0.113.7' }, { [AUTH_CLIENT_HEADER_ENV]: ' ' })).toBeNull();
+  });
+
+  it('refuses anything but a header name (a configuration error)', () => {
+    for (const value of ['X Jadarat', 'X-Jadarat:1', '1-header', 'x'.repeat(65)]) {
+      expect(() =>
+        authClientHeaders({ key: '203.0.113.7' }, { [AUTH_CLIENT_HEADER_ENV]: value }),
+      ).toThrow(AUTH_CLIENT_HEADER_ENV);
+    }
   });
 });

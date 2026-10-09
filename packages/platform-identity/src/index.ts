@@ -41,6 +41,7 @@ export {
   verifyTotpCode,
 } from './mfa';
 export {
+  AUTH_CLIENT_HEADER_ENV,
   AUTH_RATE_LIMIT_WINDOW_ENV,
   type AuthLimitContext,
   type AuthLimits,
@@ -54,8 +55,10 @@ export {
   type SecurityLog,
   type SignInGate,
   type SignInGuard,
+  authClientHeaders,
   createSignInGuard,
   limitsFor,
+  readAuthClientHeader,
   readAuthLimitWindowOverride,
   securityLogLine,
 } from './auth-limits';

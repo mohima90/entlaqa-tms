@@ -10,6 +10,7 @@ describe('server settings at start-up (T-M2-17, T-M2-11)', () => {
     expect(checkServerSettings({})).toEqual({
       passwordResetDelivery: 'auth',
       limitWindowSeconds: null,
+      authClientHeader: null,
     });
     expect(checkServerSettings({ PASSWORD_RESET_DELIVERY: 'worker' })).toMatchObject({
       passwordResetDelivery: 'worker',
@@ -23,6 +24,12 @@ describe('server settings at start-up (T-M2-17, T-M2-11)', () => {
     expect(() => checkServerSettings({ AUTH_RATE_LIMIT_WINDOW_SECONDS: '0' })).toThrow(
       'AUTH_RATE_LIMIT_WINDOW_SECONDS',
     );
+    expect(() => checkServerSettings({ JADARAT_AUTH_CLIENT_HEADER: 'not a header' })).toThrow(
+      'JADARAT_AUTH_CLIENT_HEADER',
+    );
+    expect(checkServerSettings({ JADARAT_AUTH_CLIENT_HEADER: 'X-Jadarat-Client' })).toMatchObject({
+      authClientHeader: 'X-Jadarat-Client',
+    });
   });
 
   it('warns loudly when the limit windows are shortened (testing only)', () => {

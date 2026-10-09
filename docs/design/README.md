@@ -13,6 +13,7 @@ UX foundation for **Jadarat TMS** and the **Jadarat Suite shell** (Development P
 | T-M1-A06 | AR/EN terminology glossary (144 terms, with rejected alternatives and reasons) | [`content/glossary-ar-en.md`](content/glossary-ar-en.md) | Draft v1 |
 | T-M1-A06 | Content style guide: tone, formality, gender-inclusive Arabic, errors, button verbs, notification/WhatsApp templates, formatting | [`content/content-style-guide.md`](content/content-style-guide.md) | Draft v1 |
 | EP-M2-IAM | Users & roles screens (11, Arabic, product-level): users list, invite + roles, profile, deactivate, roles matrix, security settings, invitation e-mail, accept invitation, link states, forgot/reset password | [`screens/m2-users-roles/`](screens/m2-users-roles/README.md) | **Approved by the PO, 4 Oct 2026** |
+| T-M2-12 | Bulk user import screens (13, Arabic, product-level): entry point, template + column guide, upload and virus scan, column mapping, review (dry run), options, confirm, progress, result, error report, undo, error/permission states; functional spec with 13 open questions | [`screens/m2-user-import/`](screens/m2-user-import/README.md) | Draft for PO review, 9 Oct 2026 |
 
 ## Viewing the prototype
 

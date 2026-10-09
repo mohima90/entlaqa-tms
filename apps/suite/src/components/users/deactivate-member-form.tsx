@@ -2,7 +2,7 @@
 import { Alert, buttonClasses } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
 import { type SyntheticEvent, useState, useTransition } from 'react';
-import { deactivateMemberAction } from '../../actions/users';
+import { deactivateMemberAction, deactivatePrivilegedMemberAction } from '../../actions/users';
 import {
   type DeactivateFormState,
   chooseForAll,
@@ -28,6 +28,8 @@ export interface DeactivationKindRow {
 
 export interface DeactivateMemberFormProps {
   readonly personId: string;
+  /** The member holds a privileged role: the privileged action (Organization Admin, AAL2). */
+  readonly privileged: boolean;
   readonly kinds: readonly DeactivationKindRow[];
   readonly candidates: readonly { readonly personId: string; readonly name: string }[];
   readonly reasons: readonly { readonly value: string; readonly label: string }[];
@@ -79,7 +81,8 @@ export function DeactivateMemberForm(props: DeactivateMemberFormProps) {
       const input = deactivateInput(props.personId, state, views) as Parameters<
         typeof deactivateMemberAction
       >[0];
-      const result = await deactivateMemberAction(input);
+      const action = props.privileged ? deactivatePrivilegedMemberAction : deactivateMemberAction;
+      const result = await action(input);
       if (!result.ok) {
         const keys = deactivationErrorKeys(result.error, views);
         setKindErrors(keys.kinds);

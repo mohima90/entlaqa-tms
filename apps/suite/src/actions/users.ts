@@ -6,6 +6,7 @@
  */
 import {
   deactivateMemberActionDefinition,
+  deactivatePrivilegedMemberActionDefinition,
   defineAction,
   reactivateMemberActionDefinition,
   reactivatePrivilegedMemberActionDefinition,
@@ -28,6 +29,11 @@ export const updateMemberPrivilegedRolesAction = defineAction(
 /** Deactivate a member, handing over what they are responsible for (screen 4). */
 export const deactivateMemberAction = defineAction(
   deactivateMemberActionDefinition(RESPONSIBILITY_KINDS),
+);
+
+/** Deactivate a member who holds a privileged role: Organization Admin with an authenticator code. */
+export const deactivatePrivilegedMemberAction = defineAction(
+  deactivatePrivilegedMemberActionDefinition(RESPONSIBILITY_KINDS),
 );
 
 /** Reactivate a member without a privileged role (HR Manager, Organization Admin). */

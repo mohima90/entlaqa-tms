@@ -27,11 +27,12 @@ import { platformPermissions } from '../platform-permissions';
  * Deactivate / reactivate a member (T-M2-09, FR-IAM-05; approved screen 4 «تعطيل المستخدم»). Permission
  * `platform.user.deactivate` (HR Manager, Organization Admin; medium risk, AAL1 — platform permission
  * registry). The database guards repeat the rules: a member who holds a privileged role only by an
- * Organization Admin, never oneself, never the last Organization Admin without an end date. Reactivating a
- * privileged member gives privileged roles back: `platform.role.assign_privileged` — Organization Admin with
- * an authenticator code (AAL2, PO decision D-IAM-01) — checked again inside private.reactivate_membership.
- * Records are kept; roles are kept as they were (screen 4 changes none). Audited with changed facts only:
- * ids, the reason code, what was moved to whom.
+ * Organization Admin, never oneself, never the last Organization Admin without an end date. A member who
+ * holds a privileged role (in force or future-dated) is deactivated AND reactivated only through the
+ * privileged actions: `platform.role.assign_privileged` — Organization Admin with an authenticator code
+ * (AAL2, PO decision D-IAM-01; review M4) — checked again by the database (private.check_privileged_deactivation,
+ * private.reactivate_membership). Records are kept; roles are kept as they were (screen 4 changes none).
+ * Audited with changed facts only: ids, the reason code, what was moved to whom.
  */
 const p = platformPermissions;
 
@@ -113,8 +114,12 @@ export function assertResponsibilityKinds(kinds: readonly ResponsibilityKind[]):
 export const DEACTIVATION_REASONS = ['end_of_service', 'long_leave', 'transfer', 'other'] as const;
 export type DeactivationReason = (typeof DEACTIVATION_REASONS)[number];
 
-/** Why this person cannot be deactivated here at all. */
-export type DeactivationBlock = 'own_account' | 'no_account' | 'not_active' | 'last_admin';
+/**
+ * Why this person cannot be deactivated here (now): `step_up_required` — the member holds a privileged role
+ * and the session has no authenticator code yet (AAL2, review M4).
+ */
+export type DeactivationBlock =
+  'own_account' | 'no_account' | 'not_active' | 'last_admin' | 'step_up_required';
 /** Why the actor cannot move a kind of item: the permission, or an item that is not theirs to move. */
 export type ResponsibilityBlock = 'permission' | 'item_not_allowed';
 
@@ -131,6 +136,8 @@ export interface DeactivationView {
     readonly displayNameEn: string | null;
   };
   readonly blocked: DeactivationBlock | null;
+  /** Holds a privileged role: the form uses the privileged action (AAL2). */
+  readonly privileged: boolean;
   /** The kinds the person holds items of (empty: nothing to move). */
   readonly responsibilities: readonly ResponsibilityView[];
   /** Who can take them over (empty when there is nothing to move). */
@@ -143,6 +150,11 @@ export function deactivationBlock(target: MemberLifecycleTarget): DeactivationBl
   if (target.membershipStatus !== 'active') return 'not_active';
   if (target.lastAdmin) return 'last_admin';
   return null;
+}
+
+/** How the signed-in member may act on a privileged member now (assign_privileged at the session's AAL). */
+function privilegedAccess(ctx: ActionContext<UserTx>): 'allowed' | 'step_up_required' | 'denied' {
+  return ctx.access(p['platform.role.assign_privileged'], ctx.resource ?? 'tenant');
 }
 
 async function responsibilitiesOf(
@@ -182,8 +194,13 @@ export function deactivationQueryDefinition(
     handler: async ({ ctx, input }) => {
       const target = await getMemberLifecycleTarget(ctx.tx, input.personId);
       if (!target) return err(appError('NOT_FOUND'));
-      const blocked = deactivationBlock(target);
+      let blocked = deactivationBlock(target);
       if (blocked === null && !target.mayManage) return err(appError('FORBIDDEN'));
+      if (blocked === null && target.privileged) {
+        const access = privilegedAccess(ctx);
+        if (access === 'denied') return err(appError('FORBIDDEN'));
+        if (access === 'step_up_required') blocked = 'step_up_required';
+      }
       const view = {
         target: {
           personId: target.personId,
@@ -191,6 +208,7 @@ export function deactivationQueryDefinition(
           displayNameEn: target.displayNameEn,
         },
         blocked,
+        privileged: target.privileged,
       };
       if (blocked) return ok({ ...view, responsibilities: [], candidates: [] });
       const responsibilities = await responsibilitiesOf(ctx, kinds, input.personId);
@@ -265,22 +283,29 @@ function domainCode(error: unknown): string | null {
 
 /**
  * Deactivates a member (screen 4 «نقل العناصر وتعطيل الحساب»), in one transaction: takes the locks, checks
- * the person again, moves every kind of item they are responsible for to the chosen owner, revokes their
+ * the person again, moves every kind of item they are responsible for to the chosen owner — one of the
+ * replacement candidates the screen offered (review I1; the database keeps its own checks) — revokes their
  * pending invitations, then makes the person inactive and the membership `suspended` (their sessions in
- * this organization end; the Auth ban follows from the worker). A kind is refused on the field
- * `reassign.<code>`: OWNER_REQUIRED (no owner chosen — e.g. the person took something on after the page was
- * loaded), NOT_ALLOWED, OWNER_INVALID or OWNER_REPORTS_TO_PERSON.
+ * this organization end; Auth issues no new token once the login belongs nowhere — the access-token hook).
+ * A kind is refused on the field `reassign.<code>`: OWNER_REQUIRED (no owner chosen — e.g. the person took
+ * something on after the page was loaded), NOT_ALLOWED, OWNER_INVALID or OWNER_REPORTS_TO_PERSON.
  */
-export function deactivateMemberActionDefinition(
-  kinds: readonly ResponsibilityKind[] = PLATFORM_RESPONSIBILITIES,
+function deactivateAction(
+  kinds: readonly ResponsibilityKind[],
+  permission: PermissionDefinition,
+  privileged: boolean,
 ): ActionDefinition<typeof DeactivateMemberInput, MemberDeactivated, UserTx> {
   assertResponsibilityKinds(kinds);
   const known = new Set(kinds.map((kind) => kind.code));
   return {
-    permission: p['platform.user.deactivate'],
+    permission,
     input: DeactivateMemberInput,
     resource: (input) => ({ type: 'person', id: input.personId }),
     handler: async ({ ctx, input }) => {
+      // The privileged path is authorized by role.assign_privileged; deactivating stays user.deactivate.
+      if (privileged && !ctx.can(p['platform.user.deactivate'], ctx.resource ?? 'tenant')) {
+        return err(appError('FORBIDDEN'));
+      }
       const unknown = input.reassign.findIndex((choice) => !known.has(choice.kind));
       if (unknown >= 0) return err(fieldError(`reassign.${String(unknown)}.kind`, 'UNKNOWN'));
       // Serialised with every change of managers, heads, roles and memberships (global lock order).
@@ -290,8 +315,14 @@ export function deactivateMemberActionDefinition(
       if (target.isSelf || !target.mayManage) return err(appError('FORBIDDEN'));
       if (target.membershipStatus !== 'active') return err(fieldError('personId', 'NOT_ACTIVE'));
       if (target.lastAdmin) return err(fieldError('personId', 'LAST_ADMIN'));
+      if (target.privileged && !privileged) {
+        // Ordinary path: a privileged member goes through the privileged action (AAL2, strict check).
+        const access = privilegedAccess(ctx);
+        return err(appError(access === 'step_up_required' ? 'STEP_UP_REQUIRED' : 'FORBIDDEN'));
+      }
 
       const reassigned: Reassignment[] = [];
+      let candidates: ReadonlySet<string> | null = null;
       for (const kind of kinds) {
         const items = await kind.list(ctx.tx, input.personId);
         if (items.length === 0) continue;
@@ -301,6 +332,10 @@ export function deactivateMemberActionDefinition(
         }
         const choice = input.reassign.find((c) => c.kind === kind.code);
         if (!choice) return err(fieldError(path, 'OWNER_REQUIRED'));
+        candidates ??= new Set(
+          (await listReplacementCandidates(ctx.tx, input.personId)).map((c) => c.personId),
+        );
+        if (!candidates.has(choice.toPersonId)) return err(fieldError(path, 'OWNER_INVALID'));
         const outcome = await kind.reassign(ctx.tx, input.personId, choice.toPersonId);
         if (!outcome.ok) return err(fieldError(path, REASSIGN_CODES[outcome.refusal]));
         reassigned.push({ kind: kind.code, toPersonId: choice.toPersonId, ids: outcome.moved });
@@ -320,6 +355,7 @@ export function deactivateMemberActionDefinition(
       });
       if (!outcome.ok) {
         if (outcome.refusal === 'not_allowed') return err(appError('FORBIDDEN'));
+        if (outcome.refusal === 'step_up_required') return err(appError('STEP_UP_REQUIRED'));
         return err(
           fieldError('personId', outcome.refusal === 'last_admin' ? 'LAST_ADMIN' : 'NOT_ACTIVE'),
         );
@@ -346,6 +382,20 @@ export function deactivateMemberActionDefinition(
       },
     }),
   };
+}
+
+/** Members without a privileged role (HR Manager, Organization Admin). */
+export function deactivateMemberActionDefinition(
+  kinds: readonly ResponsibilityKind[] = PLATFORM_RESPONSIBILITIES,
+) {
+  return deactivateAction(kinds, p['platform.user.deactivate'], false);
+}
+
+/** Members who hold a privileged role: Organization Admin with an authenticator code (AAL2, review M4). */
+export function deactivatePrivilegedMemberActionDefinition(
+  kinds: readonly ResponsibilityKind[] = PLATFORM_RESPONSIBILITIES,
+) {
+  return deactivateAction(kinds, p['platform.role.assign_privileged'], true);
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -382,7 +432,7 @@ function reactivateAction(
       }
       if (target.privileged && !privileged) {
         // Ordinary path: a privileged member comes back through the privileged action (AAL2, strict check).
-        const access = ctx.access(p['platform.role.assign_privileged'], ctx.resource ?? 'tenant');
+        const access = privilegedAccess(ctx);
         return err(appError(access === 'step_up_required' ? 'STEP_UP_REQUIRED' : 'FORBIDDEN'));
       }
       const outcome = await reactivateMembership(ctx.tx, input.personId);
@@ -449,9 +499,7 @@ export async function lifecycleOffer(
   if (!target || target.isSelf || !target.mayManage) return NO_LIFECYCLE_OFFER;
   let reactivate: LifecycleOffer['reactivate'] = null;
   if (target.membershipStatus === 'suspended') {
-    const access = target.privileged
-      ? ctx.access(p['platform.role.assign_privileged'], ctx.resource ?? 'tenant')
-      : 'allowed';
+    const access = target.privileged ? privilegedAccess(ctx) : 'allowed';
     reactivate = access === 'denied' ? null : access;
   }
   return {

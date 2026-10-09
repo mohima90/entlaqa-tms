@@ -44,7 +44,9 @@ const LABEL_KEYS = [
  * Deactivate a member (T-M2-09, FR-IAM-05; approved screen 4, built as a page — like «تعديل الأدوار» —
  * rather than a dialog over the profile): what it does, what the person is responsible for and its new
  * owner, an optional reason. `platform.user.deactivate` (HR Manager for members without a privileged role,
- * Organization Admin); out of scope or another organization → 404.
+ * Organization Admin); a member who holds a privileged role only by the Organization Admin after an
+ * authenticator code (the page says so first, as for reactivation); out of scope or another organization
+ * → 404.
  */
 export default async function DeactivatePage({
   params,
@@ -158,6 +160,7 @@ async function deactivation(
       </ul>
       <DeactivateMemberForm
         personId={view.target.personId}
+        privileged={view.privileged}
         kinds={kinds}
         candidates={view.candidates.map((c) => ({
           personId: c.personId,

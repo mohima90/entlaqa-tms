@@ -664,7 +664,8 @@
       "own_account": "You can't deactivate your own account.",
       "no_account": "This person has no sign-in account in the organization, so there is nothing to deactivate.",
       "not_active": "This account isn't active (it is deactivated, or its invitation isn't accepted yet), so it can't be deactivated.",
-      "last_admin": "This is the last active account with the Organization Admin role and no end date. Give the role to another member before deactivating this account."
+      "last_admin": "This is the last active account with the Organization Admin role and no end date. Give the role to another member before deactivating this account.",
+      "step_up_required": "Deactivating an account that holds a privileged role needs a code from an authenticator app; this becomes available once multi-factor authentication is set up."
     },
     "backToProfile": "Back to the profile",
     "deactivated": "The account was deactivated and its sign-in sessions in the organization ended. It can be reactivated from this tab.",

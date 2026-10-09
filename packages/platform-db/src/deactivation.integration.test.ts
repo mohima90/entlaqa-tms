@@ -2,10 +2,12 @@
  * Deactivate / reactivate (T-M2-09, FR-IAM-05) against PostgreSQL under withUserTx: the responsibilities
  * move first (a report who takes over moves up to the person's own manager), pending invitations are
  * revoked, the person becomes inactive and the membership suspended — the member's sessions in this
- * organization end at once (another organization stays), the Auth ban is queued for the worker, the
- * events are written; reactivation brings person and membership back with the same roles; the HR Manager
- * cannot move a privileged report; a placement in a deleted department blocks reactivation; and a
- * concurrent "make X head of a department" waits for the deactivation and is then refused (lock order).
+ * organization end at once (another organization stays, and so does the login: the access-token hook's
+ * rule), the events are written; reactivation brings person and membership back with the same roles; the
+ * HR Manager cannot move a privileged report; a privileged member needs an authenticator code; a placement
+ * in a deleted department blocks reactivation; a concurrent "make X head of a department" waits for the
+ * deactivation and is then refused (lock order); and a concurrent organization switch cannot leave a
+ * session behind (review L3).
  */
 import { randomUUID } from 'node:crypto';
 import { brandVerifiedClaims } from '@jadarat/platform-core/internal/verified-claims';
@@ -236,10 +238,29 @@ describe.skipIf(!configured)('deactivate / reactivate against PostgreSQL', () =>
       tx.execute<{ t: string | null }>(sql`select private.current_tenant_id() as t`),
     );
     expect(there[0]?.t).toBe(other);
-    // The Auth ban decision is queued for the worker (x still works in the other organization: none).
-    const [queued] = await owner<{ n: number }[]>`
-      select count(*)::int as n from private.account_access_checks where user_id = ${x.user}`;
-    expect(queued?.n).toBe(1);
+    // x's login is still active in the other organization: Auth keeps issuing tokens (T-IAM-40).
+    const [rule] = await owner<{ refused: boolean }[]>`
+      select private.account_sign_in_refused(${x.user}::uuid) as refused`;
+    expect(rule?.refused).toBe(false);
+  });
+
+  it('a member who holds a privileged role: refused at AAL1 (review M4), nothing changed', async () => {
+    const refused = await withUserTx(claimsOf(admin), async (tx) => {
+      const target = await getMemberLifecycleTarget(tx, auditor.person);
+      expect(target?.privileged).toBe(true);
+      const outcome = await deactivateMembership(tx, {
+        personId: auditor.person,
+        membershipId: target?.membershipId ?? 'missing-membership',
+      });
+      // The caller rolls the transaction back on a refusal.
+      throw Object.assign(new Error('refused'), { outcome });
+    }).catch((error: unknown) => (error as { outcome?: unknown }).outcome ?? error);
+    expect(refused).toEqual({ ok: false, refusal: 'step_up_required' });
+    const [state] = await owner<{ person: string; membership: string }[]>`
+      select p.status as person, m.status as membership
+      from platform.persons p join platform.tenant_memberships m on m.person_id = p.id
+      where p.id = ${auditor.person}`;
+    expect(state).toEqual({ person: 'active', membership: 'active' });
   });
 
   it('reactivation needs a live placement, then brings person and membership back with their roles', async () => {
@@ -332,5 +353,61 @@ describe.skipIf(!configured)('deactivate / reactivate against PostgreSQL', () =>
     const [head] = await owner<{ head: string }[]>`
       select head_person_id::text as head from platform.departments where id = ${dept}`;
     expect(head?.head).toBe(boss.person);
+  });
+
+  it('an organization switch in flight cannot leave a session behind (review L3)', async () => {
+    const signal = () => {
+      let fire: () => void = () => undefined;
+      const promise = new Promise<void>((resolve) => {
+        fire = resolve;
+      });
+      return {
+        promise,
+        fire: () => {
+          fire();
+        },
+      };
+    };
+    // r1 signs in again (a new Auth session) and selects this organization while the admin deactivates r1.
+    const newSession = id();
+    await owner`insert into auth.sessions (id, user_id) values (${newSession}, ${r1.user})`;
+    const { promise: held, fire: release } = signal();
+    const { promise: switched, fire: switchedNow } = signal();
+    const first = withUserTx2(claimsOf({ ...r1, session: newSession }), async (tx) => {
+      const [row] = await tx.execute<{ ok: boolean }>(
+        sql`select private.switch_active_tenant(${tenant}::uuid) as ok`,
+      );
+      switchedNow();
+      await held;
+      return row?.ok;
+    });
+    await switched;
+    const second = withUserTx(claimsOf(admin), async (tx) => {
+      await lockMemberLifecycle(tx);
+      return deactivateMembership(tx, {
+        personId: r1.person,
+        membershipId:
+          (await getMemberLifecycleTarget(tx, r1.person))?.membershipId ?? 'missing-membership',
+      });
+    });
+    let blocked = false;
+    try {
+      for (let i = 0; i < 100 && !blocked; i += 1) {
+        const [waiting] = await owner<{ n: number }[]>`
+          select count(*)::int as n from pg_locks where locktype = 'advisory' and not granted`;
+        blocked = (waiting?.n ?? 0) > 0;
+        if (!blocked) await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+    } finally {
+      release();
+    }
+    expect(blocked).toBe(true);
+    expect(await first).toBe(true);
+    expect(await second).toEqual({ ok: true });
+    // The deactivation waited for the switch, then ended its session too.
+    const [left] = await owner<{ n: number }[]>`
+      select count(*)::int as n from platform.session_context
+      where user_id = ${r1.user} and active_tenant_id = ${tenant}`;
+    expect(left?.n).toBe(0);
   });
 });

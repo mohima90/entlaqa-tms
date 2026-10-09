@@ -15,6 +15,7 @@ import {
   type ResponsibilityKind,
   assertResponsibilityKinds,
   deactivateMemberActionDefinition,
+  deactivatePrivilegedMemberActionDefinition,
   deactivationQueryDefinition,
   reactivateMemberActionDefinition,
   reactivatePrivilegedMemberActionDefinition,
@@ -147,8 +148,11 @@ describe('responsibility kinds (the reassignment hook)', () => {
 });
 
 describe('deactivation screen query', () => {
-  const query = (roles: SystemRoleCode[], kinds?: readonly ResponsibilityKind[]) =>
-    createDefineQuery(runtime(roles).rt)(deactivationQueryDefinition(kinds));
+  const query = (
+    roles: SystemRoleCode[],
+    kinds?: readonly ResponsibilityKind[],
+    aal: 'aal1' | 'aal2' = 'aal1',
+  ) => createDefineQuery(runtime(roles, aal).rt)(deactivationQueryDefinition(kinds));
 
   it('Organization Admin: the person, what they hold and who can take it over', async () => {
     db.listDirectReports.mockResolvedValue([report]);
@@ -158,6 +162,7 @@ describe('deactivation screen query', () => {
       ok({
         target: { personId: SARA, displayNameAr: 'سارة', displayNameEn: 'Sarah' },
         blocked: null,
+        privileged: false,
         responsibilities: [
           { code: 'platform.direct_reports', items: [report], blocked: null },
           { code: 'platform.headed_departments', items: [department], blocked: null },
@@ -176,6 +181,22 @@ describe('deactivation screen query', () => {
       ['platform.direct_reports', 'item_not_allowed'],
       ['platform.headed_departments', 'permission'],
     ]);
+  });
+
+  it('a privileged member: the authenticator-code step first (AAL1), the screen at AAL2 (review M4)', async () => {
+    db.getMemberLifecycleTarget.mockResolvedValue(target({ privileged: true }));
+    db.listDirectReports.mockResolvedValue([report]);
+    const atAal1 = await query(['tenant_admin'])({ personId: SARA });
+    expect(atAal1.ok && atAal1.value).toMatchObject({
+      blocked: 'step_up_required',
+      privileged: true,
+      responsibilities: [],
+      candidates: [],
+    });
+    expect(db.listDirectReports).not.toHaveBeenCalled();
+    const atAal2 = await query(['tenant_admin'], undefined, 'aal2')({ personId: SARA });
+    expect(atAal2.ok && atAal2.value).toMatchObject({ blocked: null, privileged: true });
+    expect(atAal2.ok && atAal2.value.responsibilities).toHaveLength(1);
   });
 
   it('nothing to move: no candidates are loaded', async () => {
@@ -354,6 +375,19 @@ describe('deactivate action', () => {
     expect(db.deactivateMembership).not.toHaveBeenCalled();
   });
 
+  it('an owner the screen did not offer (not a replacement candidate) → OWNER_INVALID (review I1)', async () => {
+    db.listDirectReports.mockResolvedValue([report]);
+    const result = await action(['tenant_admin']).run(
+      deactivateInput({ reassign: [{ kind: 'platform.direct_reports', toPersonId: ME }] }),
+    );
+    expect(!result.ok && result.error.fieldErrors).toEqual([
+      { path: 'reassign.platform.direct_reports', code: 'OWNER_INVALID' },
+    ]);
+    expect(db.listReplacementCandidates).toHaveBeenCalledWith(TX, SARA);
+    expect(db.reassignDirectReports).not.toHaveBeenCalled();
+    expect(db.deactivateMembership).not.toHaveBeenCalled();
+  });
+
   it('HR Manager: departments they cannot restructure, or a privileged report → NOT_ALLOWED', async () => {
     db.listHeadedDepartments.mockResolvedValue([department]);
     const departments = await action(['hr_manager']).run(deactivateInput());
@@ -387,6 +421,7 @@ describe('deactivate action', () => {
   it('maps the database refusals of the deactivation itself', async () => {
     for (const [refusal, code, field] of [
       ['not_allowed', 'FORBIDDEN', undefined],
+      ['step_up_required', 'STEP_UP_REQUIRED', undefined],
       ['last_admin', 'VALIDATION_FAILED', 'LAST_ADMIN'],
       ['not_active', 'VALIDATION_FAILED', 'NOT_ACTIVE'],
     ] as const) {
@@ -415,6 +450,53 @@ describe('deactivate action', () => {
     }
     const unknown = await action(['tenant_admin']).run(deactivateInput({ personId: NEW_MANAGER }));
     expect(!unknown.ok && unknown.error.code).toBe('NOT_FOUND');
+    expect(db.lockMemberLifecycle).not.toHaveBeenCalled();
+    expect(db.deactivateMembership).not.toHaveBeenCalled();
+  });
+});
+
+describe('deactivating a member who holds a privileged role (review M4, D-IAM-01)', () => {
+  const ordinary = (roles: SystemRoleCode[], aal: 'aal1' | 'aal2' = 'aal1') => {
+    const r = runtime(roles, aal);
+    return { ...r, run: createDefineAction(r.rt)(deactivateMemberActionDefinition()) };
+  };
+  const privileged = (roles: SystemRoleCode[], aal: 'aal1' | 'aal2' = 'aal1') => {
+    const r = runtime(roles, aal);
+    return { ...r, run: createDefineAction(r.rt)(deactivatePrivilegedMemberActionDefinition()) };
+  };
+  beforeEach(() => {
+    db.getMemberLifecycleTarget.mockResolvedValue(target({ privileged: true }));
+  });
+
+  it('the ordinary action refuses: STEP_UP_REQUIRED at AAL1, FORBIDDEN at AAL2 (use the privileged one)', async () => {
+    const atAal1 = await ordinary(['tenant_admin']).run(deactivateInput({ reassign: [] }));
+    expect(!atAal1.ok && atAal1.error.code).toBe('STEP_UP_REQUIRED');
+    const atAal2 = await ordinary(['tenant_admin'], 'aal2').run(deactivateInput({ reassign: [] }));
+    expect(!atAal2.ok && atAal2.error.code).toBe('FORBIDDEN');
+    expect(db.deactivateMembership).not.toHaveBeenCalled();
+  });
+
+  it('the privileged action: Organization Admin at AAL2, strict session check; audited the same way', async () => {
+    const { run, writeAudit, getClaims } = privileged(['tenant_admin'], 'aal2');
+    const result = await run(deactivateInput({ reassign: [] }));
+    expect(result.ok).toBe(true);
+    expect(getClaims).toHaveBeenCalledWith({ strict: true });
+    expect(writeAudit.mock.calls[0]?.[2]).toMatchObject({ action: 'platform.user.deactivated' });
+    expect(db.deactivateMembership).toHaveBeenCalledWith(TX, {
+      personId: SARA,
+      membershipId: 'm1',
+    });
+  });
+
+  it('authorization negatives: AAL1 → STEP_UP_REQUIRED; HR Manager → FORBIDDEN; nothing touched', async () => {
+    const atAal1 = await privileged(['tenant_admin']).run(deactivateInput({ reassign: [] }));
+    expect(!atAal1.ok && atAal1.error.code).toBe('STEP_UP_REQUIRED');
+    for (const aal of ['aal1', 'aal2'] as const) {
+      const hr = await privileged(['hr_manager'], aal).run(deactivateInput({ reassign: [] }));
+      expect(!hr.ok && hr.error.code, aal).toBe('FORBIDDEN');
+    }
+    const learner = await privileged(['learner'], 'aal2').run(deactivateInput({ reassign: [] }));
+    expect(!learner.ok && learner.error.code).toBe('FORBIDDEN');
     expect(db.lockMemberLifecycle).not.toHaveBeenCalled();
     expect(db.deactivateMembership).not.toHaveBeenCalled();
   });

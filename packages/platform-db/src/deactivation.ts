@@ -262,12 +262,13 @@ export async function revokePendingInvitationsOf(
   return revoked;
 }
 
-export type DeactivationRefusal = 'not_allowed' | 'last_admin' | 'not_active';
+export type DeactivationRefusal = 'not_allowed' | 'last_admin' | 'not_active' | 'step_up_required';
 
 /**
  * The person becomes inactive and the membership `suspended`, then `user.deactivated` is emitted. A
- * refusal (the guards: not this actor, the last Organization Admin; or the membership is no longer
- * active) leaves the transaction aborted or unchanged; the caller rolls back.
+ * refusal (the guards: not this actor, the last Organization Admin, a privileged member without an
+ * authenticator code; or the membership is no longer active) leaves the transaction aborted or
+ * unchanged; the caller rolls back.
  */
 export async function deactivateMembership(
   tx: UserTx,
@@ -285,6 +286,8 @@ export async function deactivateMembership(
   } catch (error) {
     const pg = pgError(error);
     if (pg?.code === '42501') return { ok: false, refusal: 'not_allowed' };
+    // private.check_privileged_deactivation (review M4): a privileged member needs AAL2.
+    if (pg?.code === 'JM003') return { ok: false, refusal: 'step_up_required' };
     if (pg?.code === '23514' && pg.message.includes('at least one active Organization Admin')) {
       return { ok: false, refusal: 'last_admin' };
     }

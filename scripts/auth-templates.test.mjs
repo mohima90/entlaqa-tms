@@ -212,6 +212,20 @@ describe('Auth e-mail templates (T-M2-08)', () => {
     expect(published).toContain(
       `add_header Content-Security-Policy "default-src 'none'; sandbox" always;`,
     );
+    // CORS only on uploads, for any origin and never with credentials (a signed URL needs no cookie);
+    // downloads carry no CORS header, so no other site's script reads a file (security re-review).
+    expect(gateway).not.toMatch(/Access-Control-Allow-Credentials/i);
+    expect(
+      [...gateway.matchAll(/add_header Access-Control-Allow-Origin (\S+) always;/g)].map(
+        (m) => m[1],
+      ),
+    ).toEqual(['"*"', '"*"']);
+    const download = published.slice(
+      published.indexOf('location ^~ /storage/v1/object/sign/'),
+      published.indexOf('location ^~ /storage/ {'),
+    );
+    expect(download).toContain('proxy_pass http://storage:5000/object/sign/;');
+    expect(download).not.toMatch(/Access-Control/i);
     // nosniff on uploads, their CORS preflight and downloads.
     expect(published.split('add_header X-Content-Type-Options nosniff always;')).toHaveLength(4);
     // Storage and clamd sit on internal networks only; Storage logs no request lines (names in URLs).

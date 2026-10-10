@@ -175,7 +175,7 @@ files_journey() {
     { echo "smoke: files: no signed download URL with a grant (HTTP $(files_status "$response"))" >&2; return 1; }
   signed="$(files_json "$(files_body "$response")" signedURL)"
   url="https://localhost:8443/storage/v1${signed}&download=$(node -e 'process.stdout.write(encodeURIComponent(process.argv[1]))' 'موظفو الرياض.csv')"
-  curl -sf --cacert .secrets/ca.crt -D "$work/headers" -o "$work/downloaded.csv" "$url" ||
+  curl -sf --cacert .secrets/ca.crt -H 'Origin: https://elsewhere.example' -D "$work/headers" -o "$work/downloaded.csv" "$url" ||
     { echo "smoke: files: the signed download URL did not work" >&2; return 1; }
   cmp -s "$work/staff.csv" "$work/downloaded.csv" || { echo "smoke: files: downloaded bytes differ" >&2; return 1; }
   grep -qi '^x-content-type-options: nosniff' "$work/headers" &&
@@ -183,6 +183,9 @@ files_journey() {
     grep -qi '^content-disposition: attachment' "$work/headers" &&
     grep -qi "filename\*=UTF-8''%D9%85%D9%88%D8%B8%D9%81%D9%88" "$work/headers" ||
     { echo "smoke: files: the download lacks nosniff, the sandbox CSP or the attachment with its Arabic name" >&2; return 1; }
+  # No CORS on downloads, even for a request from another origin: no other site's script reads a file.
+  ! grep -qi '^access-control-' "$work/headers" ||
+    { echo "smoke: files: the download answered with CORS headers" >&2; return 1; }
   # A refused download (altered token) is not logged with its file name (checked with the logs below).
   [[ "$(curl -s -o /dev/null -w '%{http_code}' --cacert .secrets/ca.crt "${url/token=/token=x}")" =~ ^4[0-9][0-9]$ ]] ||
     { echo "smoke: files: a download with an altered token was served" >&2; return 1; }

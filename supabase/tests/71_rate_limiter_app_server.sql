@@ -87,7 +87,10 @@ end $$;
 
 -- Sign-in (counted BEFORE Auth is asked; security review T-M2-11). Small budgets: client attempts 8,
 -- client failures 6, account 3, trusted browser 2 (each per 900 s); clients c5/c6 with wide client budgets.
--- Subjects: clients c1–c6, accounts x/y/z/q/…, browser tokens d1, d2, f1–f3 (labels). The calls below are
+-- Subjects: clients c1–c6, browser tokens d1, d2, f1–f3 (labels); accounts x/k/429/spray-* that never
+-- sign in (labels), and the accounts that do — y, z, q, p, w, renewed, kept, ok-1…5 — with the address
+-- subjects of their Auth users (fixtures of 70, rl-*@a.test): succeeded gets the user of the token Auth
+-- issued, and that user's address must give the account (integration review hardening). The calls below are
 -- what the web app does for each attempt: check, then — only when Auth accepted the password —
 -- succeeded (p_remember: «تذكّر هذا المتصفح» ticked; the fresh token the app minted for this request).
 do $$
@@ -98,10 +101,20 @@ declare
   c4 constant bytea := sha256(convert_to('client-4', 'UTF8'));
   c5 constant bytea := sha256(convert_to('client-5', 'UTF8'));
   x constant bytea := sha256(convert_to('account-x', 'UTF8'));
-  y constant bytea := sha256(convert_to('account-y', 'UTF8'));
-  z constant bytea := sha256(convert_to('account-z', 'UTF8'));
-  q constant bytea := sha256(convert_to('account-q', 'UTF8'));
-  p constant bytea := sha256(convert_to('account-p', 'UTF8'));
+  y constant bytea := tests.rate_limit_account('rl-y@a.test');
+  z constant bytea := tests.rate_limit_account('rl-z@a.test');
+  q constant bytea := tests.rate_limit_account('rl-q@a.test');
+  p constant bytea := tests.rate_limit_account('rl-p@a.test');
+  w constant bytea := tests.rate_limit_account('rl-w@a.test');
+  renewed constant bytea := tests.rate_limit_account('rl-renewed@a.test');
+  kept constant bytea := tests.rate_limit_account('rl-kept@a.test');
+  uy constant uuid := '00000000-0000-4000-8000-000000007101';
+  uz constant uuid := '00000000-0000-4000-8000-000000007102';
+  uq constant uuid := '00000000-0000-4000-8000-000000007103';
+  up constant uuid := '00000000-0000-4000-8000-000000007104';
+  uw constant uuid := '00000000-0000-4000-8000-000000007105';
+  urenewed constant uuid := '00000000-0000-4000-8000-000000007106';
+  ukept constant uuid := '00000000-0000-4000-8000-000000007107';
   d1 constant bytea := sha256(convert_to('device-1', 'UTF8'));
   d2 constant bytea := sha256(convert_to('device-2', 'UTF8'));
   dx constant bytea := sha256(convert_to('device-unknown', 'UTF8'));
@@ -134,14 +147,14 @@ begin
   -- failure is refunded, y's run ends, and the app's fresh token (d1) is trusted for y for 30 days.
   select * into r from private.rate_limit_sign_in_check(c1, y, null, 8, 900, 6, 900, 3, 900, 2, 900);
   perform tests.assert(r.allowed and not r.trusted and r.client_remaining = 2, 'y: an unknown browser');
-  select * into r from private.rate_limit_sign_in_succeeded(c1, y, null, d1, false, true, 30, '00000000-0000-4000-8000-0000000000a1', null, false, 15);
+  select * into r from private.rate_limit_sign_in_succeeded(c1, y, null, d1, false, true, 30, uy, null, false, 15);
   perform tests.assert(r.device = 'fresh'
                        and r.trusted_until between now() + interval '30 days' - interval '1 minute' and now() + interval '30 days',
     'succeeded, ticked: the fresh token is trusted for 30 days');
   select * into r from private.rate_limit_sign_in_check(c1, y, d1, 8, 900, 6, 900, 3, 900, 2, 900);
   perform tests.assert(r.allowed and r.trusted and r.remaining = 1 and r.client_remaining = 2,
     'y with d1: trusted (counted against the browser''s budget of 2); the success did not count for the client');
-  select * into r from private.rate_limit_sign_in_succeeded(c1, y, d1, f1, true, true, 30, '00000000-0000-4000-8000-0000000000a1', null, false, 15);
+  select * into r from private.rate_limit_sign_in_succeeded(c1, y, d1, f1, true, true, 30, uy, null, false, 15);
   perform tests.assert(r.device = 'presented', 'a trusted browser keeps its token');
   -- d1 is trusted for y only: account x stays locked for it.
   select * into r from private.rate_limit_sign_in_check(c1, x, d1, 8, 900, 6, 900, 3, 900, 2, 900);
@@ -151,36 +164,36 @@ begin
   -- A token the server never issued (dx) is never trusted: the fresh one is, and the browser gets it.
   select * into r from private.rate_limit_sign_in_check(c5, y, dx, 100, 900, 100, 900, 3, 900, 2, 900);
   perform tests.assert(r.allowed and not r.trusted, 'an unknown token');
-  select * into r from private.rate_limit_sign_in_succeeded(c5, y, dx, f1, false, true, 30, '00000000-0000-4000-8000-0000000000a1', null, false, 15);
+  select * into r from private.rate_limit_sign_in_succeeded(c5, y, dx, f1, false, true, 30, uy, null, false, 15);
   perform tests.assert(r.device = 'fresh', 'an unknown presented token is replaced by the fresh one');
   select * into r from private.rate_limit_sign_in_check(c5, y, dx, 100, 900, 100, 900, 3, 900, 2, 900);
   perform tests.assert(not r.trusted, 'the unknown token stays untrusted');
   select * into r from private.rate_limit_sign_in_check(c5, y, f1, 100, 900, 100, 900, 3, 900, 2, 900);
   perform tests.assert(r.trusted, 'the fresh token is trusted');
-  perform private.rate_limit_sign_in_succeeded(c5, y, f1, f2, true, false, 30, '00000000-0000-4000-8000-0000000000a1', null, false, 15);
+  perform private.rate_limit_sign_in_succeeded(c5, y, f1, f2, true, false, 30, uy, null, false, 15);
 
   -- Trust is opt-in: an unticked sign-in trusts nothing, and returns no token.
   select * into r from private.rate_limit_sign_in_check(c5, q, null, 100, 900, 100, 900, 3, 900, 2, 900);
-  select * into r from private.rate_limit_sign_in_succeeded(c5, q, null, f3, false, false, 30, '00000000-0000-4000-8000-0000000000a1', null, false, 15);
+  select * into r from private.rate_limit_sign_in_succeeded(c5, q, null, f3, false, false, 30, uq, null, false, 15);
   perform tests.assert(r.trusted_until is null and r.device is null, 'unticked: nothing is trusted');
   select * into r from private.rate_limit_sign_in_check(c5, q, f3, 100, 900, 100, 900, 3, 900, 2, 900);
   perform tests.assert(r.allowed and not r.trusted and r.remaining = 2,
     'unticked: the fresh token was not trusted (and the success ended q''s run)');
   -- Renewal: a ticked sign-in of a trusted browser renews its 30 days (fixture: 10 left); an unticked one
   -- leaves the trust as it is (checked in 72) — it still holds until it ends.
-  select * into r from private.rate_limit_sign_in_check(c5, sha256(convert_to('renewed-account', 'UTF8')),
+  select * into r from private.rate_limit_sign_in_check(c5, renewed,
                                                         sha256(convert_to('renewed-device', 'UTF8')), 100, 900, 100, 900, 3, 900, 2, 900);
   perform tests.assert(r.trusted, 'renewed-device is trusted');
-  select * into r from private.rate_limit_sign_in_succeeded(c5, sha256(convert_to('renewed-account', 'UTF8')),
-                                                            sha256(convert_to('renewed-device', 'UTF8')), f3, true, true, 30, '00000000-0000-4000-8000-0000000000a1', null, false, 15);
+  select * into r from private.rate_limit_sign_in_succeeded(c5, renewed,
+                                                            sha256(convert_to('renewed-device', 'UTF8')), f3, true, true, 30, urenewed, null, false, 15);
   perform tests.assert(r.device = 'presented' and r.trusted_until > now() + interval '29 days',
     'ticked: the trust is renewed for 30 days');
-  select * into r from private.rate_limit_sign_in_check(c5, sha256(convert_to('kept-account', 'UTF8')),
+  select * into r from private.rate_limit_sign_in_check(c5, kept,
                                                         sha256(convert_to('kept-device', 'UTF8')), 100, 900, 100, 900, 3, 900, 2, 900);
-  select * into r from private.rate_limit_sign_in_succeeded(c5, sha256(convert_to('kept-account', 'UTF8')),
-                                                            sha256(convert_to('kept-device', 'UTF8')), f3, true, false, 30, '00000000-0000-4000-8000-0000000000a1', null, false, 15);
+  select * into r from private.rate_limit_sign_in_succeeded(c5, kept,
+                                                            sha256(convert_to('kept-device', 'UTF8')), f3, true, false, 30, ukept, null, false, 15);
   perform tests.assert(r.trusted_until is null and r.device is null, 'unticked by a trusted browser: no renewal');
-  select * into r from private.rate_limit_sign_in_check(c5, sha256(convert_to('kept-account', 'UTF8')),
+  select * into r from private.rate_limit_sign_in_check(c5, kept,
                                                         sha256(convert_to('kept-device', 'UTF8')), 100, 900, 100, 900, 3, 900, 2, 900);
   perform tests.assert(r.trusted, 'unticked by a trusted browser: still trusted until its trust ends');
 
@@ -198,7 +211,7 @@ begin
   -- cookie for every account. Then z is locked by failures from other browsers; d1 still gets its own
   -- budget (2), the lock stays for everyone else, and d1's success does not end it.
   select * into r from private.rate_limit_sign_in_check(c3, z, d1, 8, 900, 6, 900, 3, 900, 2, 900);
-  select * into r from private.rate_limit_sign_in_succeeded(c3, z, d1, f2, r.trusted, true, 30, '00000000-0000-4000-8000-0000000000a1', null, false, 15);
+  select * into r from private.rate_limit_sign_in_succeeded(c3, z, d1, f2, r.trusted, true, 30, uz, null, false, 15);
   perform tests.assert(r.device = 'presented', 'a token the server knows (another account''s) is reused');
   for i in 1..3 loop
     select * into r from private.rate_limit_sign_in_check(c4, z, null, 8, 900, 6, 900, 3, 900, 2, 900);
@@ -213,7 +226,7 @@ begin
   select * into r from private.rate_limit_sign_in_check(c3, z, d1, 8, 900, 6, 900, 3, 900, 2, 900);
   perform tests.assert(not r.allowed and r.trusted and r.refused_by = 'sign_in.device_failures',
     'the trusted browser has its own budget (2 per window)');
-  perform private.rate_limit_sign_in_succeeded(c3, z, d1, f2, true, true, 30, '00000000-0000-4000-8000-0000000000a1', null, false, 15);
+  perform private.rate_limit_sign_in_succeeded(c3, z, d1, f2, true, true, 30, uz, null, false, 15);
   select * into r from private.rate_limit_sign_in_check(c3, z, d1, 8, 900, 6, 900, 3, 900, 2, 900);
   perform tests.assert(r.allowed and r.trusted and r.remaining = 1 and r.client_remaining = 4,
     'a success ends the trusted browser''s run');
@@ -255,8 +268,8 @@ begin
     'the cookie lives as long as the longest trust of its token (any account)');
 
   -- After a password change on My profile: every other trusted browser is forgotten.
-  perform private.rate_limit_sign_in_succeeded(c5, p, null, sha256(convert_to('p-1', 'UTF8')), false, true, 30, '00000000-0000-4000-8000-0000000000a1', null, false, 15);
-  perform private.rate_limit_sign_in_succeeded(c5, p, null, sha256(convert_to('p-2', 'UTF8')), false, true, 30, '00000000-0000-4000-8000-0000000000a1', null, false, 15);
+  perform private.rate_limit_sign_in_succeeded(c5, p, null, sha256(convert_to('p-1', 'UTF8')), false, true, 30, up, null, false, 15);
+  perform private.rate_limit_sign_in_succeeded(c5, p, null, sha256(convert_to('p-2', 'UTF8')), false, true, 30, up, null, false, 15);
   perform tests.assert_eq(private.rate_limit_forget_other_devices(p, sha256(convert_to('p-1', 'UTF8'))), 1,
     'forget the others: one browser forgotten');
   select * into r from private.rate_limit_sign_in_check(c5, p, sha256(convert_to('p-1', 'UTF8')), 100, 900, 100, 900, 3, 900, 2, 900);
@@ -268,9 +281,10 @@ begin
 
   -- Client budgets: successes never count as failures; every attempt counts as an attempt.
   for i in 1..5 loop
-    select * into r from private.rate_limit_sign_in_check(c2, sha256(convert_to('ok-' || i, 'UTF8')), null,
+    select * into r from private.rate_limit_sign_in_check(c2, tests.rate_limit_account('rl-ok-' || i || '@a.test'), null,
                                                           8, 900, 6, 900, 3, 900, 2, 900);
-    perform private.rate_limit_sign_in_succeeded(c2, sha256(convert_to('ok-' || i, 'UTF8')), null, d1, false, false, 30, '00000000-0000-4000-8000-0000000000a1', null, false, 15);
+    perform private.rate_limit_sign_in_succeeded(c2, tests.rate_limit_account('rl-ok-' || i || '@a.test'), null, d1, false, false, 30,
+                                                 ('00000000-0000-4000-8000-00000000711' || i)::uuid, null, false, 15);
   end loop;
   perform tests.assert(r.allowed and r.client_remaining = 5, 'successes are refunded (c2 had one refused attempt)');
   -- c2 had 1 attempt on x, now 6 → 7th and 8th attempts allowed, the 9th refused (attempts budget 8).
@@ -296,8 +310,8 @@ begin
 
   -- At most 10 trusted browsers per account (checked in 72): 12 browsers sign in to account w, ticked.
   for i in 1..12 loop
-    perform private.rate_limit_sign_in_succeeded(c1, sha256(convert_to('account-w', 'UTF8')), null,
-                                                 sha256(convert_to('browser-' || i, 'UTF8')), false, true, 30, '00000000-0000-4000-8000-0000000000a1', null, false, 15);
+    perform private.rate_limit_sign_in_succeeded(c1, w, null,
+                                                 sha256(convert_to('browser-' || i, 'UTF8')), false, true, 30, uw, null, false, 15);
   end loop;
   -- The expired trusted browser of 70 trusts nothing.
   select * into r from private.rate_limit_sign_in_check(c1, sha256(convert_to('purged-account', 'UTF8')),
@@ -473,6 +487,28 @@ begin
   select * into r from private.rate_limit_sign_in_succeeded(sha256(convert_to('client-l4', 'UTF8')), v_account_a, null,
                                                             v_fresh, false, true, 30, null, null, false, 15);
   perform tests.assert(r.trusted_until is null and r.waits_for_code, 'no verified user: nothing is trusted');
+  -- The token's user must be the account that signed in (integration review hardening): uA (no app) with
+  -- the subject of another account without an app (rl-y@a.test), a user Auth does not know, and a user
+  -- without an address (7108) are each treated as an account with an app — nothing is trusted, the tick
+  -- waits for the session's code.
+  select * into r from private.rate_limit_sign_in_succeeded(sha256(convert_to('client-l4', 'UTF8')),
+                                                            tests.rate_limit_account('rl-y@a.test'), null,
+                                                            v_fresh, false, true, 30,
+                                                            '00000000-0000-4000-8000-0000000000a1', null, false, 15);
+  perform tests.assert(r.trusted_until is null and r.device is null and r.waits_for_code,
+    'another account''s user: the password alone trusts nothing, the tick waits for the code');
+  select * into r from private.rate_limit_sign_in_succeeded(sha256(convert_to('client-l4', 'UTF8')), v_account_a, null,
+                                                            v_fresh, false, true, 30,
+                                                            '00000000-0000-4000-8000-0000000071ff', null, false, 15);
+  perform tests.assert(r.trusted_until is null and r.waits_for_code, 'a user Auth does not know: nothing is trusted');
+  select * into r from private.rate_limit_sign_in_succeeded(sha256(convert_to('client-l4', 'UTF8')), v_account_a, null,
+                                                            v_fresh, false, true, 30,
+                                                            '00000000-0000-4000-8000-000000007108', null, false, 15);
+  perform tests.assert(r.trusted_until is null and r.waits_for_code, 'a user without an address: nothing is trusted');
+  select * into r from private.rate_limit_sign_in_check(sha256(convert_to('client-l4', 'UTF8')),
+                                                        tests.rate_limit_account('rl-y@a.test'), v_fresh,
+                                                        100, 900, 100, 900, 5, 900, 10, 900);
+  perform tests.assert(not r.trusted, 'the mismatched account does not trust the browser');
   -- uA has no authenticator app: trusted at the password step, as before.
   select * into r from private.rate_limit_sign_in_succeeded(sha256(convert_to('client-l4', 'UTF8')), v_account_a, null,
                                                             v_fresh, false, true, 30,

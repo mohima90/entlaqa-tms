@@ -25,6 +25,9 @@ if ((process.env.CI || process.env.JADARAT_REQUIRE_INTEGRATION) && !configured) 
 }
 
 const subject = (label: string) => createHash('sha256').update(label).digest();
+/** The sign-in subject of an (already normalised) address, as auth-limits.ts accountSubject derives it. */
+const accountOf = (email: string) =>
+  createHash('sha256').update(`jadarat.rate-limit.v1\naccount\n${email}`).digest();
 
 describe.skipIf(!configured)('rate limiter against PostgreSQL', () => {
   const owner = postgres(ownerUrl ?? '', { max: 1, onnotice: () => undefined });
@@ -33,8 +36,12 @@ describe.skipIf(!configured)('rate limiter against PostgreSQL', () => {
   const store = createRateLimitStore(() => serverDb);
   const tag = randomUUID().slice(0, 8);
   const bucket = `itest.r${tag}`;
+  // The Auth user of the trusted-browser case: the token's user must be the account that signed in.
+  const trustedUser = randomUUID();
+  const trustedEmail = `trusted-${tag}@rate-limit.test`;
 
   afterAll(async () => {
+    await owner`delete from auth.users where id = ${trustedUser}`;
     await owner`delete from private.rate_limit_counters where bucket like ${'itest.%'}`;
     await owner`delete from private.rate_limit_counters where bucket like ${'sign_in.%'}`;
     await owner`delete from private.sign_in_trusted_devices`;
@@ -127,16 +134,28 @@ describe.skipIf(!configured)('rate limiter against PostgreSQL', () => {
   });
 
   it('trusts a browser after a ticked success: it passes the account lock with its own budget; a reset trusts only the browser that completed it', async () => {
-    const account = subject(`trusted-${tag}`);
+    await owner`insert into auth.users (id, email) values (${trustedUser}, ${trustedEmail})`;
+    const account = accountOf(trustedEmail);
     const browser = subject(`browser-${tag}`);
     const client = subject(`trusted-client-${tag}`);
     const first = await store.signInCheck({ client, account, device: null }, budgets);
     expect(first).toMatchObject({ allowed: true, trusted: false, remaining: 4 });
-    // A user without an authenticator app (none in Auth): trusted at the password step.
+    // Another account's user (the token must be this account's): nothing is trusted, the tick waits.
+    expect(
+      await store.signInSucceeded({ client, account, device: null }, false, {
+        freshDevice: browser,
+        trustDays: 30,
+        userId: randomUUID(),
+        session: null,
+        authNamesApp: false,
+        codeWaitMinutes: 15,
+      }),
+    ).toBeNull();
+    // This account's user, without an authenticator app (none in Auth): trusted at the password step.
     const trust = await store.signInSucceeded({ client, account, device: null }, false, {
       freshDevice: browser,
       trustDays: 30,
-      userId: randomUUID(),
+      userId: trustedUser,
       session: null,
       authNamesApp: false,
       codeWaitMinutes: 15,

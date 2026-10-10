@@ -68,10 +68,10 @@ begin
   -- profile password change forgot account p's others.
   perform tests.assert_eq(
     (select count(*)::int from private.sign_in_trusted_devices
-     where account_key = private.rate_limit_key(sha256(convert_to('account-w', 'UTF8')))), 10,
+     where account_key = private.rate_limit_key(tests.rate_limit_account('rl-w@a.test'))), 10,
     'at most 10 trusted browsers per account');
   perform tests.assert(exists (select 1 from private.sign_in_trusted_devices
-                               where account_key = private.rate_limit_key(sha256(convert_to('account-y', 'UTF8')))
+                               where account_key = private.rate_limit_key(tests.rate_limit_account('rl-y@a.test'))
                                  and device_key = private.rate_limit_key(sha256(convert_to('device-1', 'UTF8')))
                                  and expires_at > now() + interval '29 days'),
     'device-1 is trusted for account y (keyed hashes, 30 days)');
@@ -81,11 +81,11 @@ begin
     'a token the server never issued is trusted for no account');
   perform tests.assert_eq(
     (select string_agg(encode(device_key, 'hex'), ',') from private.sign_in_trusted_devices
-     where account_key = private.rate_limit_key(sha256(convert_to('account-z', 'UTF8')))),
+     where account_key = private.rate_limit_key(tests.rate_limit_account('rl-z@a.test'))),
     encode(private.rate_limit_key(sha256(convert_to('fresh-2', 'UTF8'))), 'hex'),
     'after the password reset, account z trusts the browser that completed it, and no other');
   perform tests.assert(exists (select 1 from private.sign_in_trusted_devices
-                               where account_key = private.rate_limit_key(sha256(convert_to('account-z', 'UTF8')))
+                               where account_key = private.rate_limit_key(tests.rate_limit_account('rl-z@a.test'))
                                  and expires_at > now() + interval '29 days'),
     'a ticked reset trusted for 30 days, and a later unticked one did not shorten it');
   perform tests.assert(exists (select 1 from private.sign_in_trusted_devices
@@ -94,14 +94,14 @@ begin
                                  and expires_at between now() + interval '23 hours' and now() + interval '24 hours'),
     'an unticked reset trusts its browser for 24 hours only (security re-review N1)');
   perform tests.assert(not exists (select 1 from private.sign_in_trusted_devices
-                                   where account_key in (private.rate_limit_key(sha256(convert_to('account-q', 'UTF8'))),
-                                                         private.rate_limit_key(sha256(convert_to('account-p', 'UTF8'))))),
+                                   where account_key in (private.rate_limit_key(tests.rate_limit_account('rl-q@a.test')),
+                                                         private.rate_limit_key(tests.rate_limit_account('rl-p@a.test')))),
     'an unticked sign-in trusted nothing; forgetting the others left account p none');
   perform tests.assert(exists (select 1 from private.sign_in_trusted_devices
-                               where account_key = private.rate_limit_key(sha256(convert_to('renewed-account', 'UTF8')))
+                               where account_key = private.rate_limit_key(tests.rate_limit_account('rl-renewed@a.test'))
                                  and expires_at > now() + interval '29 days')
                        and exists (select 1 from private.sign_in_trusted_devices
-                                   where account_key = private.rate_limit_key(sha256(convert_to('kept-account', 'UTF8')))
+                                   where account_key = private.rate_limit_key(tests.rate_limit_account('rl-kept@a.test'))
                                      and expires_at between now() + interval '9 days' and now() + interval '11 days'),
     'a ticked sign-in renewed the trust, an unticked one did not');
 

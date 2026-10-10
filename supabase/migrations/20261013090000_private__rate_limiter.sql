@@ -717,9 +717,11 @@ comment on function private.rate_limit_sign_in_check(bytea, bytea, bytea, intege
 -- code (p_session: the subject of the session id of the token Auth just issued; bucket
 -- sign_in.remember_after_code — rate_limit_trust_after_code trusts the browser once that code passed). The
 -- database decides, failing safe: the account counts as one with an app when Auth's answer named one
--- (p_app_hint), when the token's user (p_user, verified by the web app) is not known, or when that user has
--- a verified authenticator app in Auth (T-M2-10's private.auth_mfa_factor) — so a change in what Auth's
--- answer carries can never make a password alone trust a browser.
+-- (p_app_hint), when the token's user (p_user, verified by the web app) is not known, when that user's Auth
+-- address is missing or does not give the account subject that signed in (p_account — the token must be
+-- this account's: integration review hardening), or when that user has a verified authenticator app in
+-- Auth (T-M2-10's private.auth_mfa_factor) — so a change in what Auth's answer carries, or a token of
+-- another account, can never make a password alone trust a browser.
 -- Returns which token was trusted ('presented' / 'fresh') and until when its cookie must live
 -- (rate_limit_trust_device; both null when nothing was trusted), and whether the tick waits for the code:
 -- the web app writes that token's cookie.
@@ -778,6 +780,9 @@ begin
 
   if p_remember then
     v_after_code := p_app_hint or p_user is null
+      or not exists (select 1 from private.auth_user_email e
+                     where e.id = p_user and e.email is not null
+                       and private.rate_limit_account_subject(e.email) = p_account)
       or exists (select 1 from private.auth_mfa_factor f
                  where f.user_id = p_user and f.factor_type = 'totp' and f.status = 'verified');
     if v_after_code then
@@ -800,7 +805,7 @@ end
 $$;
 
 comment on function private.rate_limit_sign_in_succeeded(bytea, bytea, bytea, bytea, boolean, boolean, integer, uuid, bytea, boolean, integer) is
-  'SECURITY-RELEVANT (T-M2-11, PO decisions 9 Oct 2026, integration review L4). After a successful sign-in: refunds the client''s provisional failure, ends the account''s (or the trusted browser''s) run of failures and — only when the browser is to be remembered — trusts it for the account (a token the server knows, else the fresh one); for an account with an authenticator app (Auth''s answer, an unknown user, or a verified app of the user in Auth) the tick waits for the session''s sign-in code instead. app_server only.';
+  'SECURITY-RELEVANT (T-M2-11, PO decisions 9 Oct 2026, integration review L4). After a successful sign-in: refunds the client''s provisional failure, ends the account''s (or the trusted browser''s) run of failures and — only when the browser is to be remembered — trusts it for the account (a token the server knows, else the fresh one); for an account with an authenticator app (Auth''s answer, an unknown user, a user whose Auth address is not the signed-in account''s, or a verified app of the user in Auth) the tick waits for the session''s sign-in code instead. app_server only.';
 
 -- Auth answered before comparing the password (its own rate limit, HTTP 429): no wrong password, so the
 -- account's (or the trusted browser's) provisional failure is given back; the client's failure and attempt

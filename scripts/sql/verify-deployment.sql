@@ -865,6 +865,10 @@ begin
             or (r.relname = 'files' and r.polname = 'files_read' and r.polcmd = 'r'
                 and r.roles = array['authenticated'] and r.qual like '%private.request_user_id()%'
                 and r.qual not like '%true%')
+            -- T-M2-12: the import worker's claim reads a file's tenant and status (column privileges id,
+            -- tenant_id, status only — checked in the user_import_guard block), for user_import_guard alone.
+            or (r.relname = 'files' and r.polname = 'files_user_import_guard_read' and r.polcmd = 'r'
+                and r.roles = array['user_import_guard'] and r.qual = 'true' and r.chk = '')
             or (r.relname = 'file_download_grants' and r.polname = 'file_download_grants_guard' and r.polcmd = '*'
                 and r.roles = array['file_guard'] and r.qual = 'true' and r.chk = 'true')
             or (r.relname = 'file_download_grants' and r.polname = 'file_download_grants_read' and r.polcmd = 'r'

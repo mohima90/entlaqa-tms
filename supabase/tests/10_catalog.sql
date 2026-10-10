@@ -638,7 +638,8 @@ begin
     'membership_guard writes no audit record or event (the calling action does)');
   -- The e-mail view: no privilege for any other role.
   foreach v_role in array array['anon', 'authenticated', 'service_role', 'app_server', 'app_worker', 'app_queue',
-                                'tenant_guard', 'invitation_guard', 'account_mail_guard', 'supabase_auth_admin'] loop
+                                'tenant_guard', 'invitation_guard', 'account_mail_guard', 'user_import_guard',
+                                'supabase_auth_admin'] loop
     perform tests.assert(
       not has_table_privilege(v_role, 'private.auth_account_email', 'select, insert, update, delete, truncate, references, trigger'),
       format('%s must have no privilege on private.auth_account_email', v_role));
@@ -731,7 +732,7 @@ begin
   -- No direct writes on the file tables for any application role (writes only through the functions).
   foreach v_role in array array['authenticated', 'anon', 'service_role', 'app_server', 'app_worker', 'app_queue',
                                 'tenant_guard', 'invitation_guard', 'account_mail_guard', 'membership_guard',
-                                'rate_limit_guard', 'supabase_storage_admin'] loop
+                                'rate_limit_guard', 'user_import_guard', 'supabase_storage_admin'] loop
     perform tests.assert(
       not has_table_privilege(v_role, 'platform.files', 'insert, update, delete, truncate, references, trigger')
         and not has_any_column_privilege(v_role, 'platform.files', 'insert, update, references')
@@ -781,7 +782,7 @@ begin
                             from pg_roles where rolname = 'user_import_guard'),
     'user_import_guard must be NOLOGIN NOINHERIT and not BYPASSRLS / superuser / createrole / createdb');
   select string_agg(format('%s%s', p.oid::regprocedure, case when p.prosecdef then '' else ' (INVOKER)' end), ', '
-                    order by p.oid::regprocedure::text) into v_list
+                    order by p.oid::regprocedure::text collate "C") into v_list
   from pg_proc p where p.proowner = 'user_import_guard'::regrole;
   perform tests.assert_eq(v_list, 'private.claim_user_import_work(), private.take_invitation_send_slot(interval), '
                                  'private.user_import_worker_check() (INVOKER)',
@@ -798,7 +799,7 @@ begin
     'user_import_guard creates nothing');
   -- What it reads and writes, column by column (no names, no row data).
   select string_agg(format('%s.%s:%s', c.relname, a.attname, x.privilege_type), ', '
-                    order by c.relname, a.attname, x.privilege_type) into v_list
+                    order by c.relname::text collate "C", a.attname::text collate "C", x.privilege_type collate "C") into v_list
   from pg_class c
   join pg_namespace n on n.oid = c.relnamespace
   join pg_attribute a on a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped
@@ -827,7 +828,7 @@ begin
                         where oid = 'private.invitation_send_clock'::regclass),
     'invitation_send_clock: row level security must be ENABLED and FORCED');
   select string_agg(format('%s:%s:%s', a.attname, pg_get_userbyid(x.grantee), x.privilege_type), ', '
-                    order by a.attname, x.privilege_type) into v_list
+                    order by a.attname::text collate "C", x.privilege_type collate "C") into v_list
   from pg_attribute a cross join lateral aclexplode(a.attacl) x
   where a.attrelid = 'private.invitation_send_clock'::regclass and a.attnum > 0 and not a.attisdropped;
   perform tests.assert_eq(v_list, 'id:user_import_guard:SELECT, next_slot:user_import_guard:SELECT, next_slot:user_import_guard:UPDATE',
@@ -849,7 +850,7 @@ begin
   perform tests.assert(exists (select 1 from pg_trigger where tgrelid = 'platform.user_imports'::regclass
                                and tgname = 'user_imports_check' and tgenabled = 'O'),
     'user_imports: the lifecycle trigger must exist and be enabled');
-  perform tests.assert_eq((select string_agg(polname || ':' || polcmd::text, ',' order by polname) from pg_policy
+  perform tests.assert_eq((select string_agg(polname || ':' || polcmd::text, ',' order by polname::text collate "C") from pg_policy
                            where polrelid in ('platform.user_import_rows'::regclass, 'platform.user_import_columns'::regclass)
                              and polpermissive and polcmd <> 'r'),
     'user_import_columns_jobs:*,user_import_rows_jobs:*',
@@ -859,6 +860,21 @@ begin
                        and not has_column_privilege('authenticated', 'platform.user_imports', 'tenant_id', 'update')
                        and not has_table_privilege('authenticated', 'platform.user_imports', 'delete'),
     'user_imports: what an import is never changes, and imports are never deleted');
+  -- The other guard roles (and the job runner) reach nothing of the imports: no privilege on the import
+  -- tables or the send clock, table or column (each guard in the others' no-privilege lists).
+  foreach v_list in array array['anon', 'service_role', 'app_server', 'app_worker', 'app_queue', 'tenant_guard',
+                                'invitation_guard', 'account_mail_guard', 'membership_guard', 'rate_limit_guard',
+                                'file_guard', 'supabase_storage_admin', 'supabase_auth_admin'] loop
+    perform tests.assert(
+      not has_table_privilege(v_list, 'platform.user_imports', 'select, insert, update, delete, truncate, references, trigger')
+        and not has_any_column_privilege(v_list, 'platform.user_imports', 'select, insert, update, references')
+        and not has_table_privilege(v_list, 'platform.user_import_rows', 'select, insert, update, delete, truncate, references, trigger')
+        and not has_any_column_privilege(v_list, 'platform.user_import_rows', 'select, insert, update, references')
+        and not has_table_privilege(v_list, 'platform.user_import_columns', 'select, insert, update, delete, truncate, references, trigger')
+        and not has_any_column_privilege(v_list, 'platform.user_import_columns', 'select, insert, update, references')
+        and not has_any_column_privilege(v_list, 'private.invitation_send_clock', 'select, insert, update, references'),
+      format('%s must have no privilege on the import tables or the send clock', v_list));
+  end loop;
   -- Every staged-row write is defined by the processing functions: none of them is SECURITY DEFINER.
   perform tests.assert(not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
                                    where n.nspname = 'private' and p.proname like 'user_import%' and p.prosecdef),

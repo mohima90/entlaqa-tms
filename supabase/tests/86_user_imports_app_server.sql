@@ -332,24 +332,24 @@ begin
     array['42501'], 'users cannot create held invitations of an import');
   perform tests.assert_fails(format($q$insert into platform.invitations (person_id, email, locale, primary_role, import_id) values (%L, 'new.person@imp.test', 'ar', 'learner', 'a5000000-0000-4000-8000-000000000011')$q$, v_person),
     array['42501'], 'nor link an invitation to an import');
-  perform tests.assert_fails($q$update platform.invitations set mail_held = false where id = 'a4000000-0000-4000-8000-000000000c07'$q$,
+  perform tests.assert_fails($q$update platform.invitations set mail_held = false where id = 'a4000000-0000-4000-8000-000000000e07'$q$,
     array['42501'], 'a held invitation is sent by the worker, never by a user');
-  perform tests.assert_fails($q$update platform.invitations set resend_requested_at = now() where id = 'a4000000-0000-4000-8000-000000000c07'$q$,
+  perform tests.assert_fails($q$update platform.invitations set resend_requested_at = now() where id = 'a4000000-0000-4000-8000-000000000e07'$q$,
     array['23514'], 'no resend for a held invitation (it was never sent)');
-  perform tests.assert_eq(private.schedule_held_invitations(array['a4000000-0000-4000-8000-000000000c07'::uuid], interval '1 second'),
+  perform tests.assert_eq(private.schedule_held_invitations(array['a4000000-0000-4000-8000-000000000e07'::uuid], interval '1 second'),
     1, 'a user manager asks for the held invitation to be sent');
   perform tests.assert((select send_at is not null and mail_held and send_count = 0 from platform.invitations
-                        where id = 'a4000000-0000-4000-8000-000000000c07'), 'scheduled, still held, no token');
-  perform tests.assert_eq(private.schedule_held_invitations(array['a4000000-0000-4000-8000-000000000c07'::uuid], interval '1 second'),
+                        where id = 'a4000000-0000-4000-8000-000000000e07'), 'scheduled, still held, no token');
+  perform tests.assert_eq(private.schedule_held_invitations(array['a4000000-0000-4000-8000-000000000e07'::uuid], interval '1 second'),
     0, 'scheduling again changes nothing');
-  perform tests.assert_fails($q$update platform.invitations set send_at = now() - interval '1 hour' where id = 'a4000000-0000-4000-8000-000000000c07'$q$,
+  perform tests.assert_fails($q$update platform.invitations set send_at = now() - interval '1 hour' where id = 'a4000000-0000-4000-8000-000000000e07'$q$,
     array['23514'], 'users cannot move a scheduled time');
-  perform tests.assert_fails($q$select private.schedule_held_invitations(array['a4000000-0000-4000-8000-000000000c07'::uuid], interval '2 minutes')$q$,
+  perform tests.assert_fails($q$select private.schedule_held_invitations(array['a4000000-0000-4000-8000-000000000e07'::uuid], interval '2 minutes')$q$,
     array['22023'], 'the pace is bounded');
-  perform tests.assert_eq(tests.rows_affected($q$update platform.invitations set status = 'revoked' where id = 'a4000000-0000-4000-8000-000000000c07'$q$),
+  perform tests.assert_eq(tests.rows_affected($q$update platform.invitations set status = 'revoked' where id = 'a4000000-0000-4000-8000-000000000e07'$q$),
     1::bigint, 'a held invitation can be revoked');
   perform tests.assert((select send_at is null and revoked_by = '00000000-0000-4000-8000-0000000000a1' from platform.invitations
-                        where id = 'a4000000-0000-4000-8000-000000000c07'), 'revoked: schedule cleared, revoker stamped');
+                        where id = 'a4000000-0000-4000-8000-000000000e07'), 'revoked: schedule cleared, revoker stamped');
 end $$;
 rollback;
 
@@ -359,7 +359,7 @@ select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000f7'
   'a0000000-0000-4000-8000-000000000001'));
 do $$
 begin
-  perform tests.assert_eq(private.schedule_held_invitations(array['a4000000-0000-4000-8000-000000000c07'::uuid], interval '1 second'),
+  perform tests.assert_eq(private.schedule_held_invitations(array['a4000000-0000-4000-8000-000000000e07'::uuid], interval '1 second'),
     0, 'a member without a user-management role schedules nothing (sees no invitation)');
 end $$;
 rollback;

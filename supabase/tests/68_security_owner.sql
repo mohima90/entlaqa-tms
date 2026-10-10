@@ -105,8 +105,8 @@ begin
                                  ('private.mfa_factor_confirmations'), ('private.mfa_setup_code_failures'),
                                  ('private.security_notice_digests')) as o (obj) loop
     foreach v_list in array array['anon', 'authenticated', 'app_server', 'app_worker', 'app_queue', 'invitation_guard',
-                                  'account_mail_guard', 'tenant_guard', 'file_guard', 'service_role',
-                                  'supabase_auth_admin'] loop
+                                  'account_mail_guard', 'tenant_guard', 'file_guard', 'user_import_guard',
+                                  'service_role', 'supabase_auth_admin'] loop
       continue when v_list = case when r.obj = 'private.security_notice_digests' then 'account_mail_guard'
                                   else 'tenant_guard' end;
       perform tests.assert(not has_table_privilege(v_list, r.obj, 'select, insert, update, delete, truncate, references, trigger'),

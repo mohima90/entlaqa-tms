@@ -138,8 +138,8 @@ begin
   perform tests.assert_eq(pg_temp.kind(i, 2) || '|' || pg_temp.codes(i, 2), 'new|',
     'row 2: new, department by code (letter case ignored), branch by name, existing manager, no issue');
   select * into v_row from platform.user_import_rows where import_id = i and row_number = 2;
-  perform tests.assert(v_row.department_id = 'a3000000-0000-4000-8000-000000000c01' and v_row.branch_id = 'a2000000-0000-4000-8000-000000000001'
-                       and v_row.manager_person_id = 'a1000000-0000-4000-8000-000000000c06' and v_row.manager_row is null,
+  perform tests.assert(v_row.department_id = 'a3000000-0000-4000-8000-000000000e01' and v_row.branch_id = 'a2000000-0000-4000-8000-000000000001'
+                       and v_row.manager_person_id = 'a1000000-0000-4000-8000-000000000e06' and v_row.manager_row is null,
     'row 2: references resolved (SAL, RUH, the existing manager)');
   perform tests.assert_eq(pg_temp.kind(i, 3) || '|' || pg_temp.codes(i, 3), 'new|DEPARTMENT_AMBIGUOUS:w',
     'row 3: two departments named «المبيعات»: added without one (warning)');
@@ -167,7 +167,7 @@ begin
   perform tests.assert_eq(pg_temp.kind(i, 11) || '|' || pg_temp.codes(i, 11), 'new|',
     'row 11: a person without account or invitation is invited again');
   perform tests.assert_eq((select target_person_id from platform.user_import_rows where import_id = i and row_number = 11),
-    'a1000000-0000-4000-8000-000000000c05'::uuid, 'row 11: their record is reused');
+    'a1000000-0000-4000-8000-000000000e05'::uuid, 'row 11: their record is reused');
   perform tests.assert_eq(pg_temp.kind(i, 12) || '|' || pg_temp.codes(i, 12), 'error|EMPLOYEE_NUMBER_TAKEN:e',
     'row 12: an employee number of someone else: an error');
   perform tests.assert_eq(pg_temp.kind(i, 13) || '|' || pg_temp.codes(i, 13), 'error|KEY_CONFLICT:e',
@@ -272,8 +272,8 @@ begin
                        and v_person.mobile_e164 = '+966551234567' and v_person.status = 'active'
                        and v_person.created_by is null,
     'row 2: names composed from the parts, language, number, mobile; created by the job (no person)');
-  perform tests.assert((select department_id = 'a3000000-0000-4000-8000-000000000c01' and branch_id = 'a2000000-0000-4000-8000-000000000001'
-                               and manager_person_id = 'a1000000-0000-4000-8000-000000000c06' and hire_on = '2024-03-03'
+  perform tests.assert((select department_id = 'a3000000-0000-4000-8000-000000000e01' and branch_id = 'a2000000-0000-4000-8000-000000000001'
+                               and manager_person_id = 'a1000000-0000-4000-8000-000000000e06' and hire_on = '2024-03-03'
                                and job_title_ar = 'أخصائية تدريب' and source = 'import'
                         from platform.person_employment where person_id = v_row.person_id), 'row 2: placement from the file');
   perform tests.assert((select mail_held and send_count = 0 and token_issued_at is null and import_id = i
@@ -297,26 +297,26 @@ begin
   select * into v_row from platform.user_import_rows where import_id = i and row_number = 6;
   perform tests.assert_eq(v_row.result, 'updated', 'row 6 updated');
   perform tests.assert((select job_title_ar = 'مدير' and department_id = 'a3000000-0000-4000-8000-000000000001'
-                        from platform.person_employment where person_id = 'a1000000-0000-4000-8000-000000000c01'),
+                        from platform.person_employment where person_id = 'a1000000-0000-4000-8000-000000000e01'),
     'row 6: job title and department changed');
   perform tests.assert_eq(v_row.before, '{"job_title_ar": "محاسب", "department_id": "a3000000-0000-4000-8000-000000000003"}'::jsonb,
     'row 6: the previous values kept for undo');
   perform tests.assert_eq((select string_agg(ra.role_code, ',') from platform.role_assignments ra
                            join platform.tenant_memberships m on m.id = ra.membership_id
-                           where m.person_id = 'a1000000-0000-4000-8000-000000000c01'), 'learner',
+                           where m.person_id = 'a1000000-0000-4000-8000-000000000e01'), 'learner',
     'row 6: roles of an existing member never change by import');
   perform tests.assert_eq((select data -> 'changed' from platform.audit_events where action = 'platform.user.updated'
-                             and entity_id = 'a1000000-0000-4000-8000-000000000c01' and data ->> 'importId' = i::text),
+                             and entity_id = 'a1000000-0000-4000-8000-000000000e01' and data ->> 'importId' = i::text),
     '["department_id", "job_title_ar"]'::jsonb, 'row 6: audited with the changed fields');
   -- Row 7: the Organization Admin may update a privileged member.
   perform tests.assert_eq((select result from platform.user_import_rows where import_id = i and row_number = 7), 'updated',
     'row 7: updated by the Organization Admin');
   -- Row 11: invited again; their record made active and kept for undo.
   select * into v_row from platform.user_import_rows where import_id = i and row_number = 11;
-  perform tests.assert(v_row.result = 'added' and v_row.person_id = 'a1000000-0000-4000-8000-000000000c05'
+  perform tests.assert(v_row.result = 'added' and v_row.person_id = 'a1000000-0000-4000-8000-000000000e05'
                        and v_row.before = '{"status": "inactive", "job_title_ar": null}'::jsonb,
     'row 11: the existing record reused; its previous state kept');
-  perform tests.assert((select status = 'active' from platform.persons where id = 'a1000000-0000-4000-8000-000000000c05'),
+  perform tests.assert((select status = 'active' from platform.persons where id = 'a1000000-0000-4000-8000-000000000e05'),
     'row 11: active again');
   -- Rows not written: their results.
   perform tests.assert_eq((select string_agg(row_number || ':' || result, ',' order by row_number)
@@ -379,8 +379,8 @@ insert into platform.tenant_memberships (tenant_id, user_id, person_id, status)
   from platform.user_import_rows where import_id = 'a5000000-0000-4000-8000-0000000000d2' and row_number = 3;
 update platform.person_employment set manager_person_id =
     (select person_id from platform.user_import_rows where import_id = 'a5000000-0000-4000-8000-0000000000d2' and row_number = 2)
-  where person_id = 'a1000000-0000-4000-8000-000000000c06';
-update platform.persons set mobile_e164 = '+966500000007' where id = 'a1000000-0000-4000-8000-000000000c02';
+  where person_id = 'a1000000-0000-4000-8000-000000000e06';
+update platform.persons set mobile_e164 = '+966500000007' where id = 'a1000000-0000-4000-8000-000000000e02';
 -- The importer undoes the import.
 select pg_temp.become_user('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
                            'a1000000-0000-4000-8000-0000000000a1');
@@ -415,13 +415,13 @@ begin
   perform tests.assert_eq((select count(*) from platform.persons p join platform.user_import_rows r on r.person_id = p.id
                            where r.import_id = i and r.undo_result = 'removed' and p.removed_at is not null), 2::bigint,
     'both people the import created and the undo removed carry the marker');
-  perform tests.assert((select removed_at is null from platform.persons where id = 'a1000000-0000-4000-8000-000000000c05'),
+  perform tests.assert((select removed_at is null from platform.persons where id = 'a1000000-0000-4000-8000-000000000e05'),
     'row 11: a record the import reused is put back, never marked removed');
   perform tests.assert((select status = 'inactive' and job_title_ar is null from platform.persons p
                         left join platform.person_employment e on e.person_id = p.id
-                        where p.id = 'a1000000-0000-4000-8000-000000000c05'), 'row 11: the reused record is put back as it was');
+                        where p.id = 'a1000000-0000-4000-8000-000000000e05'), 'row 11: the reused record is put back as it was');
   perform tests.assert((select job_title_ar = 'محاسب' and department_id = 'a3000000-0000-4000-8000-000000000003'
-                        from platform.person_employment where person_id = 'a1000000-0000-4000-8000-000000000c01'),
+                        from platform.person_employment where person_id = 'a1000000-0000-4000-8000-000000000e01'),
     'row 6: previous values back');
   perform tests.assert_eq((select count(*) from platform.audit_events where data ->> 'importId' = i::text and (data ->> 'undo')::boolean),
     4::bigint, 'every removal and restore is audited');
@@ -459,7 +459,7 @@ begin
                                                        where removed_by_import_id = %L$q$, i)), 0::bigint,
     'nor can a user change them');
   perform tests.assert_fails($q$update platform.persons set removed_by_import_id = 'a5000000-0000-4000-8000-0000000000d2'
-                                where id = 'a1000000-0000-4000-8000-000000000c01'$q$,
+                                where id = 'a1000000-0000-4000-8000-000000000e01'$q$,
     array['42501'], 'a user (even an Organization Admin) cannot mark a person removed');
   -- Their placement is gone with them (re-review Low 3): no manager, department or reports-tree link.
   perform tests.assert_eq((select count(*) from platform.person_employment e
@@ -590,8 +590,8 @@ begin
   perform tests.assert(private.user_import_apply_batch(i, 50) > 0, 'one batch');
   perform tests.assert_eq((select result || ':' || (result_issues -> 0 ->> 'c') from platform.user_import_rows where import_id = i and row_number = 7),
     'skipped:PRIVILEGED_MEMBER', 'an HR Manager''s import never changes a privileged member''s record');
-  perform tests.assert((select job_title_ar is null from platform.person_employment where person_id = 'a1000000-0000-4000-8000-000000000c02')
-                       or not exists (select 1 from platform.person_employment where person_id = 'a1000000-0000-4000-8000-000000000c02'),
+  perform tests.assert((select job_title_ar is null from platform.person_employment where person_id = 'a1000000-0000-4000-8000-000000000e02')
+                       or not exists (select 1 from platform.person_employment where person_id = 'a1000000-0000-4000-8000-000000000e02'),
     'the privileged member''s record is unchanged');
   perform tests.assert_eq((select string_agg(distinct invited_by::text, ',') from platform.invitations where import_id = i),
     '00000000-0000-4000-8000-0000000000ab', 'the HR Manager is the inviter');
@@ -654,17 +654,17 @@ rollback;
 begin;
 -- A held invitation (another organization's import) for a deactivated login's address.
 insert into platform.persons (id, tenant_id, display_name_ar, email)
-  values ('b1000000-0000-4000-8000-000000000c03', 'b0000000-0000-4000-8000-000000000001', 'معطل في أ', 'deact@imp.test');
+  values ('b1000000-0000-4000-8000-000000000e03', 'b0000000-0000-4000-8000-000000000001', 'معطل في أ', 'deact@imp.test');
 insert into platform.invitations (id, tenant_id, person_id, email, locale, primary_role, invited_by, import_id, mail_held)
-  values ('b4000000-0000-4000-8000-000000000c03', 'b0000000-0000-4000-8000-000000000001', 'b1000000-0000-4000-8000-000000000c03',
+  values ('b4000000-0000-4000-8000-000000000e03', 'b0000000-0000-4000-8000-000000000001', 'b1000000-0000-4000-8000-000000000e03',
           'deact@imp.test', 'ar', 'learner', '00000000-0000-4000-8000-0000000000b1', 'b5000000-0000-4000-8000-000000000001', true);
 do $$
 begin
-  perform tests.assert(private.account_sign_in_refused('00000000-0000-4000-8000-000000000c03'),
+  perform tests.assert(private.account_sign_in_refused('00000000-0000-4000-8000-000000000e03'),
     'a held invitation (not sent, no link) does not let the deactivated login sign in');
-  update platform.invitations set send_at = now() - interval '1 second' where id = 'b4000000-0000-4000-8000-000000000c03';
-  update platform.invitations set mail_held = false where id = 'b4000000-0000-4000-8000-000000000c03';
-  perform tests.assert(not private.account_sign_in_refused('00000000-0000-4000-8000-000000000c03'),
+  update platform.invitations set send_at = now() - interval '1 second' where id = 'b4000000-0000-4000-8000-000000000e03';
+  update platform.invitations set mail_held = false where id = 'b4000000-0000-4000-8000-000000000e03';
+  perform tests.assert(not private.account_sign_in_refused('00000000-0000-4000-8000-000000000e03'),
     'once it is sent, the login may sign in to accept it (T-M2-07)');
 end $$;
 rollback;
@@ -678,11 +678,11 @@ select pg_temp.become_user('00000000-0000-4000-8000-0000000000a1', '10000000-000
                            'a1000000-0000-4000-8000-0000000000a1');
 do $$
 begin
-  perform tests.assert_eq(private.schedule_held_invitations(array['a4000000-0000-4000-8000-000000000c07']::uuid[],
+  perform tests.assert_eq(private.schedule_held_invitations(array['a4000000-0000-4000-8000-000000000e07']::uuid[],
                                                             interval '1 second'), 1, 'the admin sends the held invitation');
 end $$;
 select pg_temp.become_owner();
-update platform.invitations set send_at = now() - interval '1 second' where id = 'a4000000-0000-4000-8000-000000000c07';
+update platform.invitations set send_at = now() - interval '1 second' where id = 'a4000000-0000-4000-8000-000000000e07';
 set local session authorization app_worker;
 set local role authenticated;
 select tests.set_claims(jsonb_build_object('role', 'system', 'job_id', 'tests.user_imports'));
@@ -700,7 +700,7 @@ begin
                                                                                interval '100 milliseconds', 1000, 100) x),
     'released', 'and it is sent');
   perform tests.assert((select not mail_held and send_at is null from platform.invitations
-                        where id = 'a4000000-0000-4000-8000-000000000c07'), 'released (the mailer gives it its link)');
+                        where id = 'a4000000-0000-4000-8000-000000000e07'), 'released (the mailer gives it its link)');
 end $$;
 select pg_temp.become_owner();
 rollback;
@@ -727,7 +727,7 @@ insert into platform.invitations (id, tenant_id, person_id, email, locale, prima
    'in.b@imp.test', 'ar', 'learner', '00000000-0000-4000-8000-0000000000b1', 'b5000000-0000-4000-8000-000000000001', true);
 -- All overdue by an hour (e.g. the worker was down).
 update platform.invitations set send_at = now() - interval '1 hour'
-  where id in ('a4000000-0000-4000-8000-000000000c07', 'a4000000-0000-4000-8000-000000000f11',
+  where id in ('a4000000-0000-4000-8000-000000000e07', 'a4000000-0000-4000-8000-000000000f11',
                'a4000000-0000-4000-8000-000000000f12', 'a4000000-0000-4000-8000-000000000f13',
                'b4000000-0000-4000-8000-000000000f11');
 select pg_temp.become_worker('a0000000-0000-4000-8000-000000000001');
@@ -807,8 +807,8 @@ end $$;
 -- After the import: row 6's member is given a privileged role; row 11's record (invited again) is edited.
 insert into platform.role_assignments (tenant_id, membership_id, role_code, is_primary)
   select tenant_id, id, 'finance_manager', false from platform.tenant_memberships
-  where person_id = 'a1000000-0000-4000-8000-000000000c01';
-update platform.persons set mobile_e164 = '+966500000011' where id = 'a1000000-0000-4000-8000-000000000c05';
+  where person_id = 'a1000000-0000-4000-8000-000000000e01';
+update platform.persons set mobile_e164 = '+966500000011' where id = 'a1000000-0000-4000-8000-000000000e05';
 select pg_temp.become_user('00000000-0000-4000-8000-0000000000ab', '10000000-0000-4000-8000-0000000000ab',
                            'a1000000-0000-4000-8000-0000000000ab');
 update platform.user_imports set status = 'undoing', undo_reason = 'wrong_data' where id = 'a5000000-0000-4000-8000-0000000000d7';
@@ -822,7 +822,7 @@ begin
   perform tests.assert_eq(pg_temp.undo_results(i), '2:removed,3:removed,6:kept_privileged,11:kept_changed,17:removed,19:removed,20:removed',
     'an HR Manager''s undo keeps the data of a member who now holds a privileged role, and a record invited again that changed since');
   perform tests.assert((select job_title_ar = 'مدير' from platform.person_employment
-                        where person_id = 'a1000000-0000-4000-8000-000000000c01'),
+                        where person_id = 'a1000000-0000-4000-8000-000000000e01'),
     'row 6: the privileged member''s record is not changed by the undo');
   perform tests.assert((select i.status = 'pending' and p.status = 'active' and p.mobile_e164 = '+966500000011'
                         from platform.user_import_rows r
@@ -846,7 +846,7 @@ select pg_temp.run_import('a5000000-0000-4000-8000-0000000000d8', '00000000-0000
 -- Row 6's member now holds a privileged role; the HR Manager loses theirs.
 insert into platform.role_assignments (tenant_id, membership_id, role_code, is_primary)
   select tenant_id, id, 'finance_manager', false from platform.tenant_memberships
-  where person_id = 'a1000000-0000-4000-8000-000000000c01';
+  where person_id = 'a1000000-0000-4000-8000-000000000e01';
 delete from platform.role_assignments where role_code = 'hr_manager'
   and membership_id = (select id from platform.tenant_memberships where user_id = '00000000-0000-4000-8000-0000000000ab'
                          and tenant_id = 'a0000000-0000-4000-8000-000000000001');
@@ -909,6 +909,64 @@ begin
     'the HR Manager lost the role: the undo goes no further (the worker ends it)');
   perform tests.assert_eq((select count(*) from platform.user_import_rows where import_id = i and undo_result is not null),
     2::bigint, 'nothing more was undone');
+end $$;
+select pg_temp.become_owner();
+rollback;
+
+-- ---------------------------------------------------------------------------------------------------
+-- An import never gives a privileged role, which is why starting one needs no authenticator code
+-- (TM-0003 D-IAM-01: the single-user flows ask for one only to give a privileged role; integration
+-- T-M2-10 × T-M2-12). Even rows a defective or tampered worker stages with a privileged role — primary or
+-- additional — fail at the invitation guard, for an Organization Admin's import too; only the ordinary
+-- row is added, and no invitation of the import carries a privileged role.
+-- ---------------------------------------------------------------------------------------------------
+begin;
+select pg_temp.new_import('a5000000-0000-4000-8000-0000000000da', '00000000-0000-4000-8000-0000000000a1',
+                          'a1000000-0000-4000-8000-0000000000a1', 'f0a00000-0000-4000-8000-0000000000da');
+select pg_temp.stage('a5000000-0000-4000-8000-0000000000da', 2, '{"email": "priv.primary@imp.test", "first_name_ar": "مميز",
+  "family_name_ar": "أساسي", "primary_role": "hr_manager", "roles_given": true}');
+select pg_temp.stage('a5000000-0000-4000-8000-0000000000da', 3, '{"email": "priv.extra@imp.test", "first_name_ar": "مميز",
+  "family_name_ar": "إضافي", "primary_role": "learner", "additional_roles": ["auditor"], "roles_given": true}');
+select pg_temp.stage('a5000000-0000-4000-8000-0000000000da', 4, '{"email": "priv.admin@imp.test", "first_name_ar": "مدير",
+  "family_name_ar": "منشأة", "primary_role": "tenant_admin", "roles_given": true}');
+select pg_temp.stage('a5000000-0000-4000-8000-0000000000da', 5, '{"email": "plain.new@imp.test", "first_name_ar": "عادي",
+  "family_name_ar": "جديد"}');
+select pg_temp.become_worker('a0000000-0000-4000-8000-000000000001');
+select private.user_import_classify('a5000000-0000-4000-8000-0000000000da');
+update platform.user_imports set status = 'review' where id = 'a5000000-0000-4000-8000-0000000000da';
+select pg_temp.become_user('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
+                           'a1000000-0000-4000-8000-0000000000a1');
+update platform.user_imports set status = 'queued',
+  options = '{"existing": "skip", "defaultRole": "learner", "invitations": "hold"}'
+where id = 'a5000000-0000-4000-8000-0000000000da';
+select pg_temp.become_worker('a0000000-0000-4000-8000-000000000001');
+update platform.user_imports set status = 'checking' where id = 'a5000000-0000-4000-8000-0000000000da';
+select private.user_import_recheck('a5000000-0000-4000-8000-0000000000da');
+update platform.user_imports set status = 'importing' where id = 'a5000000-0000-4000-8000-0000000000da';
+do $$
+declare
+  i constant uuid := 'a5000000-0000-4000-8000-0000000000da';
+begin
+  while private.user_import_apply_batch(i, 50) > 0 loop
+  end loop;
+  perform tests.assert_eq((select string_agg(row_number || ':' || result, ',' order by row_number)
+                           from platform.user_import_rows where import_id = i),
+    '2:failed,3:failed,4:failed,5:added', 'only the row without a privileged role is added');
+  perform tests.assert_eq((select string_agg(r.row_number || ':' || (x ->> 'c') || ':' || (x ->> 's'), ','
+                                             order by r.row_number)
+                           from platform.user_import_rows r, jsonb_array_elements(r.result_issues) x
+                           where r.import_id = i and r.result = 'failed'),
+    '2:NOT_ALLOWED:e,3:NOT_ALLOWED:e,4:NOT_ALLOWED:e',
+    'a privileged primary or additional role, the Organization Admin role: refused by the invitation guard');
+  perform tests.assert_eq((select count(*) from platform.invitations v
+                           where v.import_id = i
+                             and exists (select 1 from platform.ref_roles r
+                                         where r.code = any (array[v.primary_role] || v.additional_roles)
+                                           and r.is_privileged)), 0::bigint,
+    'no invitation of the import carries a privileged role');
+  perform tests.assert_eq((select count(*) from platform.persons
+                           where email in ('priv.primary@imp.test', 'priv.extra@imp.test', 'priv.admin@imp.test')),
+    0::bigint, 'nobody was added for the refused rows');
 end $$;
 select pg_temp.become_owner();
 rollback;

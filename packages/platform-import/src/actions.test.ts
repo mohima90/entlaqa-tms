@@ -35,6 +35,7 @@ vi.mock('@jadarat/platform-files', async (original) => ({
 }));
 
 const { DomainError } = await import('@jadarat/platform-db');
+const rbac = await import('@jadarat/platform-rbac');
 const actions = await import('./actions');
 
 const ID = '6f1d2c3b-4a5e-4f60-8a7b-9c0d1e2f3a4b';
@@ -366,6 +367,43 @@ describe('confirm, cancel, stop, undo', () => {
     // Never a privileged default role.
     expect(() => definition.input.parse({ ...input, defaultRole: 'hr_manager' })).toThrow();
     expect(() => definition.input.parse({ ...input, defaultRole: 'tenant_admin' })).toThrow();
+  });
+
+  // Step-up (TM-0003 D-IAM-01, PO 6 Oct 2026; integration T-M2-10 × T-M2-12): the single-user flows ask
+  // for a fresh authenticator code (platform.role.assign_privileged: high risk, AAL2) only to give or take
+  // a privileged role. An import never gives one — so starting it is the ordinary invite, without step-up.
+  it('an import gives only roles the single invite gives without step-up; privileged ones are refused', () => {
+    const confirm = actions.confirmUserImportActionDefinition();
+    const ordinaryInvite = rbac.inviteUserActionDefinition();
+    expect(confirm.permission).toBe(ordinaryInvite.permission);
+    expect(confirm.permission.risk).not.toBe('high');
+    expect(confirm.permission.requiresAal2).toBe(false);
+    expect(rbac.requiresStrictVerification(confirm.permission)).toBe(false);
+    // The privileged path of the single-user flows is the one that needs the step-up.
+    const privilegedInvite = rbac.invitePrivilegedUserActionDefinition();
+    expect(privilegedInvite.permission.code).toBe('platform.role.assign_privileged');
+    expect(privilegedInvite.permission.requiresAal2).toBe(true);
+    // Every default role the confirmation accepts goes through the ordinary path…
+    const accepted = confirm.input.shape.defaultRole.options;
+    expect(accepted.length).toBeGreaterThan(0);
+    for (const role of accepted) {
+      expect(rbac.invitationGivesPrivilegedRole({ primaryRole: role, additionalRoles: [] })).toBe(
+        false,
+      );
+    }
+    // …and every role the single-user flows treat as privileged is refused as the default role.
+    expect(rbac.PRIVILEGED_ROLE_CODES.length).toBeGreaterThan(0);
+    for (const role of rbac.PRIVILEGED_ROLE_CODES) {
+      expect(accepted).not.toContain(role);
+      expect(() =>
+        confirm.input.parse({
+          importId: ID,
+          existing: 'skip',
+          defaultRole: role,
+          invitations: 'send',
+        }),
+      ).toThrow();
+    }
   });
 
   it('cancels, stops and undoes (audited); refusals as the screens show them', async () => {

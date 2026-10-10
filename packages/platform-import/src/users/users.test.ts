@@ -13,6 +13,7 @@ import {
 } from './headers';
 import { ISSUES, ISSUE_CODES, issue, issueMessage, parseIssues, severityOf } from './issues';
 import { ReportBuilder, reportFileName } from './report';
+import { SYSTEM_ROLES } from '@jadarat/platform-rbac/system-roles';
 import { IMPORTABLE_ROLES, isPrivilegedRole, roleForName, roleName, splitRoles } from './roles';
 import { compactMobile, isEmail, isoDate, languageFor, normalizeRow } from './rows';
 import { csvTemplate, templateFileName, templateHeaders, xlsxTemplate } from './template';
@@ -281,6 +282,34 @@ describe('normalizeRow', () => {
     ]);
     expect(row.issues.find((i) => i.c === 'ROLE_PRIVILEGED')?.p).toEqual({ role: 'hr_manager' });
     expect(row.issues.find((i) => i.c === 'ROLE_UNKNOWN')?.p).toEqual({ name: 'منسق' });
+  });
+
+  it('never takes a privileged role from a file, by any of its names (no step-up path, TM-0003 D-IAM-01)', () => {
+    const mapping = {
+      '0': 'email',
+      '1': 'first_name_ar',
+      '2': 'family_name_ar',
+      '3': 'primary_role',
+      '4': 'additional_roles',
+    } as const;
+    const privileged = SYSTEM_ROLES.filter((r) => r.privileged);
+    expect(privileged.length).toBeGreaterThan(0);
+    for (const role of privileged) {
+      for (const name of [role.name.ar, role.name.en, role.code]) {
+        const row = normalizeRow(
+          2,
+          ['a@b.example', 'نورة', 'الدوسري', name, `متدرب، ${name}`],
+          mapping,
+        );
+        const expected = role.code === 'tenant_admin' ? 'ROLE_ORG_ADMIN' : 'ROLE_PRIVILEGED';
+        expect(row.issues.filter((i) => i.c === expected && i.s === 'e').map((i) => i.f)).toEqual([
+          'primary_role',
+          'additional_roles',
+        ]);
+        expect(row.data.primary_role).toBeUndefined();
+        expect(row.data.additional_roles).toEqual(['learner']);
+      }
+    }
   });
 
   it('requires the e-mail, checks the parts together and the mobile otherwise wrong', () => {

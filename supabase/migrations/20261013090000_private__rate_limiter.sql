@@ -18,7 +18,9 @@
 --                                the app's SHA-256 of the normalised key (e-mail, client address, user id —
 --                                packages/platform-identity/src/auth-limits.ts), so neither a raw key nor an
 --                                unkeyed hash of one is stored or ever reaches SQL. Counters are lost on a
---                                crash (unlogged): every limit starts again, which only ever loosens them.
+--                                crash, an HA failover or a replica's promotion (unlogged: emptied by crash
+--                                recovery, not replicated): every limit starts again, which only ever
+--                                loosens them for one window.
 --   private.sign_in_trusted_devices  browsers an account trusts (PO decisions 9 Oct 2026: screen 6 «تذكّر
 --                                الجهاز الموثوق», TM-0003 IA-02 "cookie + hashed server record"; trust is
 --                                OPT-IN — «تذكّر هذا المتصفح», unticked by default): (keyed hash of the account

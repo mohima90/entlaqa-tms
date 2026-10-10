@@ -87,6 +87,8 @@ export function routeRequest(request: NextRequest): NextResponse {
     upgradeInsecureRequests: isHttps(request),
     // Runtime value (not inlined at build time): one image serves every deployment (T-M1-D04).
     supabaseUrl: getSupabasePublicConfig()?.url,
+    // Self-hosted: browsers PUT import files to Storage's public origin (T-M2-12, ADR 0006).
+    storagePublicUrl: process.env.STORAGE_PUBLIC_URL,
   });
 
   // 1. Scrub + set proxy-owned request headers (every path).

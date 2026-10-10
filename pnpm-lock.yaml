@@ -50,6 +50,9 @@ importers:
       '@jadarat/platform-identity':
         specifier: workspace:*
         version: link:../../packages/platform-identity
+      '@jadarat/platform-import':
+        specifier: workspace:*
+        version: link:../../packages/platform-import
       '@jadarat/platform-observability':
         specifier: workspace:*
         version: link:../../packages/platform-observability

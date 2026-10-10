@@ -1,9 +1,10 @@
 'use client';
-import type { AppError } from '@jadarat/platform-core';
+import type { AppError, Result } from '@jadarat/platform-core';
 import { Alert, Badge, Button } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { resendInvitationAction, revokeInvitationAction } from '../../actions/invitations';
+import { sendHeldInvitationsAction } from '../../actions/user-import';
 import { type ErrorTexts, errorText } from '../auth/error-text';
 import { fieldErrorCodes } from '../profile/field-errors';
 
@@ -15,10 +16,21 @@ export interface InvitationRowView {
   readonly profileHref: string;
   readonly roleName: string | null;
   readonly sentText: string;
+  /** «تنتهي في …» / «انتهت في …»; for held and scheduled invitations, what happens next. */
   readonly expiryText: string;
-  readonly expired: boolean;
+  /** `held`: added by a bulk import without its e-mail; `scheduled`: its e-mail goes out shortly (T-M2-12). */
+  readonly state: 'pending' | 'expired' | 'held' | 'scheduled';
+  /** «من استيراد في …» when a bulk import added the person (T-M2-12). */
+  readonly fromImportText: string | null;
   readonly canResend: boolean;
 }
+
+const STATE_TONE = {
+  pending: 'info',
+  expired: 'warning',
+  held: 'neutral',
+  scheduled: 'info',
+} as const;
 
 export interface InvitationsTableProps {
   readonly rows: readonly InvitationRowView[];
@@ -42,12 +54,22 @@ export function invitationErrorText(
   if (code === 'RESEND_LIMIT') return labels.resendLimit ?? errorText(error, errors);
   if (code === 'NOT_PENDING') return labels.notPending ?? errorText(error, errors);
   if (code === 'ROLE_NOT_ALLOWED') return labels.roleNotAllowed ?? errorText(error, errors);
+  if (fieldErrorCodes(error).invitations === 'NOTHING_TO_SEND') {
+    return labels.nothingToSend ?? errorText(error, errors);
+  }
   return errorText(error, errors);
 }
 
+type InvitationAction = (input: { invitationId: string }) => Promise<Result<unknown, AppError>>;
+
+/** «إرسال الدعوة» of one held invitation (T-M2-12): the import's pipeline sends it shortly. */
+const sendHeld: InvitationAction = ({ invitationId }) =>
+  sendHeldInvitationsAction({ invitationIds: [invitationId] });
+
 /**
  * Pending and expired invitations on the users list (T-M2-07, FR-IAM-03; screen 1 `invited` tab):
- * resend inline (up to 3 times), revoke after a confirmation.
+ * resend inline (up to 3 times), revoke after a confirmation. People a bulk import added without their
+ * e-mail show «لم تُرسل الدعوة» with «إرسال الدعوة» (T-M2-12, FR-IAM-04).
  */
 export function InvitationsTable({ rows, showRole, labels, errors }: InvitationsTableProps) {
   const text = (key: string, name?: string) => (labels[key] ?? key).replace('{name}', name ?? '');
@@ -57,12 +79,7 @@ export function InvitationsTable({ rows, showRole, labels, errors }: Invitations
   const [confirming, setConfirming] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
 
-  const run = (
-    id: string,
-    action: typeof resendInvitationAction,
-    success: string,
-    after?: () => void,
-  ) => {
+  const run = (id: string, action: InvitationAction, success: string, after?: () => void) => {
     setOutcome(null);
     setBusyId(id);
     startTransition(async () => {
@@ -132,10 +149,13 @@ export function InvitationsTable({ rows, showRole, labels, errors }: Invitations
                   </td>
                   {showRole ? <td className="px-4 py-3">{row.roleName}</td> : null}
                   <td className="px-4 py-3">
-                    <Badge tone={row.expired ? 'warning' : 'info'}>
-                      {row.expired ? text('status.expired') : text('status.pending')}
-                    </Badge>
-                    <div className="mt-1 text-sm text-text-muted">{row.expiryText}</div>
+                    <Badge tone={STATE_TONE[row.state]}>{text(`status.${row.state}`)}</Badge>
+                    {row.expiryText ? (
+                      <div className="mt-1 text-sm text-text-muted">{row.expiryText}</div>
+                    ) : null}
+                    {row.fromImportText ? (
+                      <div className="text-sm text-text-muted">{row.fromImportText}</div>
+                    ) : null}
                   </td>
                   <td className="px-4 py-3 text-sm">{row.sentText}</td>
                   <td className="px-4 py-3">
@@ -173,7 +193,19 @@ export function InvitationsTable({ rows, showRole, labels, errors }: Invitations
                       </div>
                     ) : (
                       <div className="flex flex-wrap gap-2">
-                        {row.canResend ? (
+                        {row.state === 'held' ? (
+                          <Button
+                            variant="secondary"
+                            disabled={pending}
+                            data-testid="send-held-invitation"
+                            onClick={() => {
+                              run(row.id, sendHeld, text('sentHeld'));
+                            }}
+                          >
+                            {busy ? text('working') : text('sendHeld')}
+                            <span className="sr-only">{` (${row.name})`}</span>
+                          </Button>
+                        ) : row.state === 'scheduled' ? null : row.canResend ? (
                           <Button
                             variant="secondary"
                             disabled={pending}

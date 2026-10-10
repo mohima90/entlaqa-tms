@@ -66,6 +66,23 @@ export interface CspOptions {
   readonly upgradeInsecureRequests: boolean;
   /** Supabase project URL (Auth + Realtime from the browser), if configured. */
   readonly supabaseUrl?: string | undefined;
+  /**
+   * STORAGE_PUBLIC_URL (self-hosted, ADR 0006): the origin browsers upload files to with a signed URL
+   * (the user import's PUT, T-M2-12) when it is not the Supabase URL. HTTPS only (HTTP for localhost).
+   */
+  readonly storagePublicUrl?: string | undefined;
+}
+
+/** The origin of a configured public Storage URL (HTTPS, or HTTP on localhost), else nothing. */
+function storageOrigin(value: string | undefined): string[] {
+  if (!value) return [];
+  try {
+    const url = new URL(value);
+    const local = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
+    return url.protocol === 'https:' || (url.protocol === 'http:' && local) ? [url.origin] : [];
+  } catch {
+    return [];
+  }
 }
 
 function supabaseOrigins(supabaseUrl: string | undefined): string[] {
@@ -92,7 +109,17 @@ export function buildContentSecurityPolicy(options: CspOptions): string {
     ['img-src', ["'self'", 'data:', 'blob:']],
     ['font-src', ["'self'"]],
     // Supabase origin: Realtime with an in-memory token only (ADR 0003 §4.4); no browser Auth client.
-    ['connect-src', ["'self'", ...supabaseOrigins(options.supabaseUrl), ...(isDev ? ['ws:'] : [])]],
+    [
+      'connect-src',
+      [
+        "'self'",
+        ...new Set([
+          ...supabaseOrigins(options.supabaseUrl),
+          ...storageOrigin(options.storagePublicUrl),
+        ]),
+        ...(isDev ? ['ws:'] : []),
+      ],
+    ],
     ['object-src', ["'none'"]],
     ['base-uri', ["'self'"]],
     ['form-action', ["'self'"]],

@@ -11,9 +11,9 @@ export function generateMetadata({
 }: {
   params: Promise<{ locale: string }>;
 }): Promise<Metadata> {
-  return mfaLinkMetadata(params, 'remove');
+  return mfaLinkMetadata(params);
 }
 
 export default function MfaRemovePage({ params }: { params: Promise<{ locale: string }> }) {
-  return <MfaLinkPage params={params} kind="remove" />;
+  return <MfaLinkPage params={params} />;
 }

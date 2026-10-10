@@ -9,23 +9,20 @@ import { notFound } from 'next/navigation';
 import { connection } from 'next/server';
 import { mfaErrorTexts } from '../../lib/auth-texts';
 import { getConfigStatus } from '../../lib/config-status';
-import { type MfaLinkKind, mfaLinkPath } from '../../lib/mfa-link';
+import { mfaLinkPath } from '../../lib/mfa-link';
 import { LanguageToggle } from '../language-toggle';
 import { MfaLinkView } from './mfa-link-view';
 
 /**
- * The pages of the authenticator set-up e-mail's links (FR-IAM-12, T-M2-10; review H1): `/[locale]/mfa/
- * confirm` and `/[locale]/mfa/remove`. Public (the link proves the mailbox; no session needed). The server
+ * The page of the authenticator set-up e-mail's "not you? remove this app" link (FR-IAM-12, T-M2-10;
+ * review H1): `/[locale]/mfa/remove`. Public (the link proves the mailbox; no session needed). The server
  * renders the shell and its texts only; the client view reads the token from the URL fragment. No
  * referrer (metadata + `Referrer-Policy: no-referrer`, next.config.ts), not indexed.
  */
-export async function mfaLinkMetadata(
-  params: Promise<{ locale: string }>,
-  kind: MfaLinkKind,
-): Promise<Metadata> {
+export async function mfaLinkMetadata(params: Promise<{ locale: string }>): Promise<Metadata> {
   const { locale } = await params;
   if (!hasLocale(routing.locales, locale)) return {};
-  const t = await getTranslations({ locale, namespace: `mfaLink.${kind}` });
+  const t = await getTranslations({ locale, namespace: 'mfaLink.remove' });
   return {
     title: t('pageTitle'),
     referrer: 'no-referrer',
@@ -33,18 +30,12 @@ export async function mfaLinkMetadata(
   };
 }
 
-export async function MfaLinkPage({
-  params,
-  kind,
-}: {
-  readonly params: Promise<{ locale: string }>;
-  readonly kind: MfaLinkKind;
-}) {
+export async function MfaLinkPage({ params }: { readonly params: Promise<{ locale: string }> }) {
   await connection();
   const { locale } = await params;
   if (!hasLocale(routing.locales, locale)) notFound();
   const status = getConfigStatus();
-  const t = await getTranslations({ locale, namespace: `mfaLink.${kind}` });
+  const t = await getTranslations({ locale, namespace: 'mfaLink.remove' });
   const shared = await getTranslations({ locale, namespace: 'mfaLink' });
   const common = await getTranslations({ locale, namespace: 'common' });
 
@@ -54,7 +45,7 @@ export async function MfaLinkPage({
       <div className="flex min-h-dvh flex-col">
         <header className="flex items-center justify-between gap-4 border-b border-border bg-surface px-4 py-3">
           <span className="text-lg font-semibold">{common('productName')}</span>
-          <LanguageToggle locale={locale} path={`/mfa/${kind}`} />
+          <LanguageToggle locale={locale} path="/mfa/remove" />
         </header>
         <main id="main" className="mx-auto flex w-full max-w-lg flex-1 flex-col gap-6 px-4 py-10">
           <h1 className="m-0 text-2xl font-bold">{t('pageTitle')}</h1>
@@ -72,10 +63,9 @@ export async function MfaLinkPage({
   return (
     <MfaLinkView
       locale={locale}
-      kind={kind}
       productName={common('productName')}
       toggle={{
-        href: mfaLinkPath(target, kind),
+        href: mfaLinkPath(target),
         lang: target,
         label: common('switchLanguage'),
         ariaLabel: common('switchLanguageAria'),
@@ -84,7 +74,7 @@ export async function MfaLinkPage({
         pageTitle: t('pageTitle'),
         opening: shared('opening'),
         intro: t('intro'),
-        warning: kind === 'remove' ? t('warning') : null,
+        warning: t('warning'),
         submit: t('submit'),
         submitting: t('submitting'),
         doneTitle: t('doneTitle'),
@@ -93,7 +83,6 @@ export async function MfaLinkPage({
         expiredText: t('expiredText'),
         invalidTitle: shared('invalidTitle'),
         invalidText: t('invalidText'),
-        continue: shared('continue'),
         newPassword: shared('newPassword'),
         signIn: shared('signIn'),
       }}

@@ -1,29 +1,24 @@
 'use client';
 import { Alert, Button, Card, buttonClasses } from '@jadarat/ui';
 import { useEffect, useRef, useState, useTransition } from 'react';
-import { openMfaLinkAction } from '../../auth/mfa';
-import {
-  type MfaLinkKind,
-  type MfaLinkOutcome,
-  mfaLinkFragment,
-  mfaLinkTokenFromHash,
-} from '../../lib/mfa-link';
+import { openMfaRemoveLinkAction } from '../../auth/mfa';
+import { type MfaLinkOutcome, mfaLinkFragment, mfaLinkTokenFromHash } from '../../lib/mfa-link';
 import { type ErrorTexts, errorText } from '../auth/error-text';
 
 /**
- * The authenticator set-up e-mail's links (FR-IAM-12, T-M2-10; security review H1): "confirm" makes the new
- * app count for sign-in codes and sensitive actions; "remove" ("not you?") removes it and ends every
- * sign-in session of the account. No session needed: opening the e-mailed link proves the mailbox. The
- * token is read from the URL fragment, removed from the address bar at once, kept in memory only and sent
- * in the body of the action after a click — opening the page changes nothing (mail scanners). The database
- * makes each link single use. The pages link only to fixed pages of the suite (no redirect parameter).
+ * The authenticator set-up e-mail's "not you? remove this app" link (FR-IAM-12, T-M2-10; security review H1):
+ * removes that app and ends every sign-in session of the account. No session needed: opening the e-mailed
+ * link proves the mailbox. The token is read from the URL fragment, removed from the address bar at once,
+ * kept in memory only and sent in the body of the action after a click — opening the page changes nothing
+ * (mail scanners). The database makes the link single use. The page links only to fixed pages of the suite
+ * (no redirect parameter).
  */
 export interface MfaLinkTexts {
   readonly pageTitle: string;
   readonly opening: string;
   readonly intro: string;
-  /** Shown before the click (the "remove" link: what else happens). */
-  readonly warning: string | null;
+  /** Shown before the click: what else happens. */
+  readonly warning: string;
   readonly submit: string;
   readonly submitting: string;
   readonly doneTitle: string;
@@ -32,9 +27,7 @@ export interface MfaLinkTexts {
   readonly expiredText: string;
   readonly invalidTitle: string;
   readonly invalidText: string;
-  /** After a confirmation: on to the suite. */
-  readonly continue: string;
-  /** After a removal: set a new password (the forgot-password page). */
+  /** Whatever the answer: set a new password (the forgot-password page). */
   readonly newPassword: string;
   readonly signIn: string;
 }
@@ -46,14 +39,12 @@ type View =
 
 export function MfaLinkView({
   locale,
-  kind,
   productName,
   toggle,
   texts,
   errors,
 }: {
   readonly locale: 'ar' | 'en';
-  readonly kind: MfaLinkKind;
   readonly productName: string;
   /** The language switch: its target (locale-prefixed path without the fragment) and texts. */
   readonly toggle: {
@@ -90,7 +81,7 @@ export function MfaLinkView({
   function submit(token: string) {
     setMessage(null);
     startTransition(async () => {
-      const result = await openMfaLinkAction({ kind, token });
+      const result = await openMfaRemoveLinkAction({ token });
       if (result.ok) setView({ kind: 'done', outcome: result.value.outcome });
       else setMessage(errorText(result.error, errors));
     });
@@ -111,7 +102,7 @@ export function MfaLinkView({
       <Card>
         <div className="flex flex-col gap-4">
           <p className="m-0">{texts.intro}</p>
-          {texts.warning ? <Alert tone="warning">{texts.warning}</Alert> : null}
+          <Alert tone="warning">{texts.warning}</Alert>
           {message ? (
             <Alert tone="danger" data-testid="mfa-link-error">
               {message}
@@ -120,7 +111,7 @@ export function MfaLinkView({
           <div>
             <Button
               type="button"
-              variant={kind === 'remove' ? 'danger' : 'primary'}
+              variant="danger"
               disabled={pending}
               onClick={() => {
                 submit(view.token);
@@ -135,7 +126,7 @@ export function MfaLinkView({
     );
   } else {
     const { outcome } = view;
-    const done = outcome === 'confirmed' || outcome === 'removed';
+    const done = outcome === 'removed';
     title = done
       ? texts.doneTitle
       : outcome === 'expired'
@@ -147,38 +138,21 @@ export function MfaLinkView({
         ? texts.expiredText
         : texts.invalidText;
     // "Not you?": whatever the answer, a new password comes first (someone may know the current one).
-    const newPassword = kind === 'remove';
     body = (
       <Card data-testid={`mfa-link-${outcome}`}>
         <div className="flex flex-col items-start gap-4">
-          <Alert tone={outcome === 'confirmed' ? 'success' : 'warning'}>{text}</Alert>
+          <Alert tone="warning">{text}</Alert>
           <div className="flex flex-wrap gap-2">
-            {outcome === 'confirmed' ? (
-              <a
-                href={`/${locale}/suite`}
-                className={buttonClasses({ variant: 'primary' })}
-                data-testid="mfa-link-continue"
-              >
-                {texts.continue}
-              </a>
-            ) : null}
-            {newPassword ? (
-              <a
-                href={`/${locale}/forgot-password`}
-                className={buttonClasses({ variant: 'primary' })}
-                data-testid="mfa-link-new-password"
-              >
-                {texts.newPassword}
-              </a>
-            ) : null}
-            {outcome === 'confirmed' ? null : (
-              <a
-                href={`/${locale}/sign-in`}
-                className={buttonClasses({ variant: newPassword ? 'secondary' : 'primary' })}
-              >
-                {texts.signIn}
-              </a>
-            )}
+            <a
+              href={`/${locale}/forgot-password`}
+              className={buttonClasses({ variant: 'primary' })}
+              data-testid="mfa-link-new-password"
+            >
+              {texts.newPassword}
+            </a>
+            <a href={`/${locale}/sign-in`} className={buttonClasses({ variant: 'secondary' })}>
+              {texts.signIn}
+            </a>
           </div>
         </div>
       </Card>

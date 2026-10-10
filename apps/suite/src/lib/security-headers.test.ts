@@ -97,7 +97,6 @@ describe('secretUrlHeaders (invitation links T-M2-07, password-reset links T-M2-
     expect(SECRET_URL_PAGES).toEqual([
       '/:locale/invite/:path*',
       '/:locale/reset-password',
-      '/:locale/mfa/confirm',
       '/:locale/mfa/remove',
     ]);
     expect(Object.fromEntries(secretUrlHeaders.map((h) => [h.key, h.value]))).toEqual({

@@ -1,6 +1,11 @@
 import { toClientError } from '@jadarat/platform-core';
 import type { UserProfile } from '@jadarat/platform-db';
-import { type AppLocale, formatHijriDate } from '@jadarat/platform-i18n';
+import {
+  type AppLocale,
+  DEFAULT_CALENDAR,
+  DEFAULT_NUMBERING_SYSTEM,
+  formatHijriDate,
+} from '@jadarat/platform-i18n';
 import { routing } from '@jadarat/platform-i18n/routing';
 import { Alert, Card } from '@jadarat/ui';
 import { hasLocale } from 'next-intl';
@@ -8,7 +13,10 @@ import { getFormatter, getTranslations } from 'next-intl/server';
 import { notFound, redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { NotSet } from '../../../../components/not-set';
-import { AuthenticatorCard } from '../../../../components/profile/authenticator-card';
+import {
+  AuthenticatorCard,
+  type AuthenticatorCardApp,
+} from '../../../../components/profile/authenticator-card';
 import { ChangePasswordForm } from '../../../../components/profile/change-password-form';
 import { PersonalDetailsForm } from '../../../../components/profile/personal-details-form';
 import { SessionsTable } from '../../../../components/sessions/sessions-table';
@@ -20,6 +28,7 @@ import { profileErrorTexts } from '../../../../lib/profile-texts';
 import { sessionLabels, sessionRows } from '../../../../lib/sessions-view';
 import { getSuiteContext } from '../../../../lib/suite-context';
 import { myProfileQuery, mySecurityQuery } from '../../../../lib/users-queries';
+import { describeUserAgent } from '../../../../lib/user-agent';
 import { localizedName } from '../../../../lib/users-view';
 
 /**
@@ -88,6 +97,7 @@ async function MyProfile({
 }) {
   const reset = await getTranslations({ locale, namespace: 'passwordReset.reset' });
   const t = await getTranslations({ locale, namespace: 'profile' });
+  const mfa = await getTranslations({ locale, namespace: 'mfa' });
   const common = await getTranslations({ locale, namespace: 'common' });
   const fields = await getTranslations({ locale, namespace: 'userProfile' });
   const users = await getTranslations({ locale, namespace: 'users' });
@@ -245,9 +255,9 @@ async function MyProfile({
           <Card title={t('mfa.title')}>
             <p className="mb-4 mt-0 text-text-muted">{t('mfa.intro')}</p>
             <AuthenticatorCard
-              usesApp={security.usesApp === true}
-              appPending={security.appPending}
+              app={await authenticatorApp(locale, security.apps)}
               setUpHref={stepUpHref(locale, `/${locale}/suite/profile`)}
+              forgotPasswordHref={`/${locale}/forgot-password`}
               labels={{
                 on: t('mfa.on'),
                 off: t('mfa.off'),
@@ -260,9 +270,16 @@ async function MyProfile({
                 removeWarning: t('mfa.removeWarning'),
                 pending: t('mfa.pending'),
                 pendingText: t('mfa.pendingText'),
-                resend: t('mfa.resend'),
-                resending: t('mfa.resending'),
-                resent: t('mfa.resent'),
+                enterCode: t('mfa.enterCode'),
+                cancel: t('mfa.cancel'),
+                cancelling: t('mfa.cancelling'),
+                cancelled: t('mfa.cancelled'),
+                elsewhere: t('mfa.elsewhere'),
+                removeElsewhere: mfa('elsewhere.remove'),
+                removedElsewhere: mfa('elsewhere.removed'),
+                newPassword: mfa('elsewhere.newPassword'),
+                itWasMe: mfa('elsewhere.itWasMe'),
+                itWasMeText: mfa('elsewhere.itWasMeText'),
               }}
               errors={await mfaErrorTexts(locale)}
             />
@@ -280,4 +297,42 @@ async function MyProfile({
       ) : null}
     </div>
   );
+}
+
+/**
+ * The account's authenticator app as this window sees it (re-review N1): an app added from another sign-in
+ * first (a security warning, with when and which browser), then a confirmed app, then this window's set-up.
+ */
+async function authenticatorApp(
+  locale: AppLocale,
+  apps: Extract<Awaited<ReturnType<typeof mySecurityQuery>>, { ok: true }>['value']['apps'],
+): Promise<AuthenticatorCardApp> {
+  const elsewhere = apps.find((app) => !app.confirmed && !app.here);
+  if (elsewhere) {
+    const t = await getTranslations({ locale, namespace: 'profile.mfa' });
+    const mfa = await getTranslations({ locale, namespace: 'mfa.elsewhere' });
+    const format = await getFormatter({ locale });
+    const device = describeUserAgent(elsewhere.userAgent);
+    return {
+      state: 'elsewhere',
+      factorId: elsewhere.factorId,
+      notice: t('elsewhereText', {
+        date: format.dateTime(elsewhere.setUpAt, {
+          dateStyle: 'long',
+          timeStyle: 'short',
+          calendar: DEFAULT_CALENDAR,
+          numberingSystem: DEFAULT_NUMBERING_SYSTEM,
+        }),
+        device:
+          device.browser && device.system
+            ? mfa('device', { browser: device.browser, system: device.system })
+            : (device.browser ?? device.system ?? mfa('unknownDevice')),
+      }),
+    };
+  }
+  const confirmed = apps.find((app) => app.confirmed);
+  if (confirmed) return { state: 'on', factorId: confirmed.factorId };
+  const here = apps.find((app) => !app.confirmed && app.here);
+  if (here) return { state: 'pending', factorId: here.factorId };
+  return { state: 'off' };
 }

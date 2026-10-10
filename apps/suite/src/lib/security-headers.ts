@@ -30,7 +30,7 @@ export const staticSecurityHeaders = [
 /**
  * Pages whose URL carries a secret — the invitation link token in the fragment `#token=` (T-M2-07,
  * FR-IAM-03), the password-reset token in `#token_hash=` (T-M2-08, FR-IAM-13) and the authenticator set-up
- * e-mail's confirm / "not you? remove" tokens in `#token=` (T-M2-10, FR-IAM-12; browsers never put
+ * e-mail's "not you? remove this app" token in `#token=` (T-M2-10, FR-IAM-12; browsers never put
  * fragments in a Referer, and the pages remove them from the address bar at once): no referrer at all
  * anyway, as defence in depth (not even the path to a linked page). Applied after
  * `staticSecurityHeaders` in next.config.ts (the later entry wins for the same key); the pages also set
@@ -39,7 +39,6 @@ export const staticSecurityHeaders = [
 export const SECRET_URL_PAGES: readonly string[] = [
   '/:locale/invite/:path*',
   '/:locale/reset-password',
-  '/:locale/mfa/confirm',
   '/:locale/mfa/remove',
 ];
 

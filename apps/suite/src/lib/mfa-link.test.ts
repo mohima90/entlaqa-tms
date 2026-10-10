@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { MFA_LINK_KINDS, mfaLinkFragment, mfaLinkPath, mfaLinkTokenFromHash } from './mfa-link';
+import { mfaLinkFragment, mfaLinkPath, mfaLinkTokenFromHash } from './mfa-link';
 
 const token = 'T'.repeat(43); // shape only: 32 random bytes, base64url
 
-describe('the authenticator set-up e-mail links (T-M2-10, review H1)', () => {
+describe('the authenticator set-up e-mail\'s "not you" link (T-M2-10, review H1)', () => {
   it('read the token from the URL fragment only', () => {
     expect(mfaLinkTokenFromHash(`#token=${token}`)).toBe(token);
     expect(mfaLinkTokenFromHash(`token=${token}`)).toBe(token);
@@ -19,9 +19,8 @@ describe('the authenticator set-up e-mail links (T-M2-10, review H1)', () => {
     expect(mfaLinkTokenFromHash(mfaLinkFragment('a&b=c#d'))).toBe('a&b=c#d');
   });
 
-  it('open fixed pages of the suite only', () => {
-    expect(MFA_LINK_KINDS).toEqual(['confirm', 'remove']);
-    expect(mfaLinkPath('ar', 'confirm')).toBe('/ar/mfa/confirm');
-    expect(mfaLinkPath('en', 'remove')).toBe('/en/mfa/remove');
+  it('opens a fixed page of the suite only (no confirmation link any more: re-review N1)', () => {
+    expect(mfaLinkPath('ar')).toBe('/ar/mfa/remove');
+    expect(mfaLinkPath('en')).toBe('/en/mfa/remove');
   });
 });

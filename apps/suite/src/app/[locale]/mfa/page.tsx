@@ -13,6 +13,7 @@ import { LanguageToggle } from '../../../components/language-toggle';
 import {
   type MfaTexts,
   MfaChallenge,
+  MfaElsewhere,
   MfaPending,
   MfaSetup,
 } from '../../../components/mfa/mfa-flow';
@@ -20,15 +21,18 @@ import { mfaErrorTexts } from '../../../lib/auth-texts';
 import { getConfigStatus } from '../../../lib/config-status';
 import { mayContinueWithoutApp, mfaPageMode, safeNextPath } from '../../../lib/mfa-view';
 import { getSessionState, redirectFor } from '../../../lib/session-state';
+import { describeUserAgent } from '../../../lib/user-agent';
 
 /**
  * Multi-factor authentication (FR-IAM-12, T-M2-10; screens 6 and 8 step 2): the code from the account's
  * authenticator app, or setting one up — when the organization's policy asks for it at sign-in (the
  * database refuses the session until then), when a sensitive action needs a code (`?next=`, PO decision
  * D-IAM-01; again when the last code is older than 15 minutes, review L3), or as the set-up prompt (grace
- * period; Organization Admins, PO decision 2). A new app counts only once its owner opened the e-mailed
- * confirmation link (review H1): until then the page says so and offers to send the e-mail again.
- * `next` is only ever a suite page in the same language (safeNextPath).
+ * period; Organization Admins, PO decision 2). A new app counts only once the window that set it up entered
+ * the one-time code e-mailed to its owner (re-review N1): that window asks for the code; every other sign-in
+ * of the account is told "an app was added from another sign-in on … with …" and can remove it (the sign-in
+ * sends every session of such an account here). `next` is only ever a suite page in the same language
+ * (safeNextPath).
  */
 export async function generateMetadata({
   params,
@@ -65,12 +69,16 @@ export default async function MfaPage({
     if (toClientError(state.error).code === 'UNAUTHENTICATED') redirect(`/${locale}/sign-in`);
     throw new Error('the MFA page state could not be read');
   }
-  const { access } = state.value;
+  const { access, apps } = state.value;
+  // Apps waiting for the e-mailed code: set up by this window, or added from another sign-in (N1).
+  const pendingHere = apps.find((app) => !app.confirmed && app.here) ?? null;
+  const pendingElsewhere = apps.find((app) => !app.confirmed && !app.here) ?? null;
   const mode = mfaPageMode({
     state: access.state,
     // What the database counts: a CONFIRMED app, and a code from it in this session (review H1)…
     usesApp: access.usesApp,
-    pending: access.mfaPending,
+    pendingHere: pendingHere !== null,
+    pendingElsewhere: pendingElsewhere !== null,
     // …recent enough for a sensitive action (STEP_UP_MAX_AGE_SECONDS, review L3).
     verified: access.aal2 && state.value.codeFresh,
     stepUp: stepUpPath !== null,
@@ -99,17 +107,10 @@ export default async function MfaPage({
     continueWithout: t('continueWithout'),
     appsHint: t('appsHint'),
     codeFormat: t('errors.codeFormat'),
-    pendingDelay: t('pending.delay'),
-    pendingNotMe: t('pending.notMe'),
-    resend: t('pending.resend'),
-    resending: t('pending.resending'),
-    resent: t('pending.resent'),
-    checkAgain: t('pending.checkAgain'),
-    checking: t('pending.checking'),
-    notYet: t('pending.notYet'),
   };
   const errors = await mfaErrorTexts(locale);
   const deadline = access.mfaDeadline;
+  const mayContinue = mayContinueWithoutApp(access.state, stepUpPath !== null);
 
   let title: string;
   let intro: string;
@@ -121,6 +122,21 @@ export default async function MfaPage({
   } else if (mode === 'pending') {
     title = t('pending.title');
     intro = t('pending.intro');
+  } else if (mode === 'pending-elsewhere' && pendingElsewhere) {
+    title = t('elsewhere.title');
+    const device = describeUserAgent(pendingElsewhere.userAgent);
+    intro = t('elsewhere.intro', {
+      date: format.dateTime(pendingElsewhere.setUpAt, {
+        dateStyle: 'long',
+        timeStyle: 'short',
+        calendar: DEFAULT_CALENDAR,
+        numberingSystem: DEFAULT_NUMBERING_SYSTEM,
+      }),
+      device:
+        device.browser && device.system
+          ? t('elsewhere.device', { browser: device.browser, system: device.system })
+          : (device.browser ?? device.system ?? t('elsewhere.unknownDevice')),
+    });
   } else {
     title = t('enrolTitle');
     if (mode === 'prompt-admin') intro = t('promptAdmin');
@@ -158,7 +174,13 @@ export default async function MfaPage({
           <h1 className="m-0 text-2xl font-bold">{title}</h1>
         </div>
         <Alert
-          tone={mode === 'challenge' || mode === 'enrol' ? 'info' : 'warning'}
+          tone={
+            mode === 'challenge' || mode === 'enrol'
+              ? 'info'
+              : mode === 'pending-elsewhere'
+                ? 'danger'
+                : 'warning'
+          }
           data-testid="mfa-intro"
         >
           {intro}
@@ -166,11 +188,47 @@ export default async function MfaPage({
         <Card>
           {mode === 'challenge' ? (
             <MfaChallenge next={next} texts={texts} errors={errors} />
-          ) : mode === 'pending' ? (
+          ) : mode === 'pending' && pendingHere ? (
             <MfaPending
+              factorId={pendingHere.factorId}
               next={next}
-              mayContinue={mayContinueWithoutApp(access.state, stepUpPath !== null)}
-              texts={texts}
+              mayContinue={mayContinue}
+              texts={{
+                delay: t('pending.delay'),
+                codeLabel: t('pending.codeLabel'),
+                codeHint: t('pending.codeHint'),
+                codeFormat: t('pending.codeFormat'),
+                confirm: t('pending.confirm'),
+                confirming: t('pending.confirming'),
+                notMe: t('pending.notMe'),
+                resend: t('pending.resend'),
+                resending: t('pending.resending'),
+                resent: t('pending.resent'),
+                resentWaiting: t('pending.resentWaiting'),
+                cancel: t('pending.cancel'),
+                cancelling: t('pending.cancelling'),
+                continueWithout: t('continueWithout'),
+              }}
+              errors={errors}
+            />
+          ) : mode === 'pending-elsewhere' && pendingElsewhere ? (
+            <MfaElsewhere
+              locale={locale}
+              factorId={pendingElsewhere.factorId}
+              next={next}
+              mayContinue={mayContinue}
+              texts={{
+                notMeHint: t('elsewhere.notMeHint'),
+                remove: t('elsewhere.remove'),
+                removing: t('elsewhere.removing'),
+                removed: t('elsewhere.removed'),
+                newPassword: t('elsewhere.newPassword'),
+                continue: t('elsewhere.continue'),
+                itWasMe: t('elsewhere.itWasMe'),
+                itWasMeText: t('elsewhere.itWasMeText'),
+                itWasMeClosed: t('elsewhere.itWasMeClosed'),
+                continueWithout: t('continueWithout'),
+              }}
               errors={errors}
             />
           ) : (

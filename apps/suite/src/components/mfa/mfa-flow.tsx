@@ -10,7 +10,7 @@ import {
   startTotpSetupAction,
   verifyTotpCodeAction,
 } from '../../auth/mfa';
-import { looksLikeEmailSetupCode, looksLikeTotpCode } from '../../lib/totp-code';
+import { looksLikeEmailSetupCode, looksLikeTotpCode } from '../../lib/totp-code-shape';
 import { type ErrorTexts, errorText } from '../auth/error-text';
 
 /**

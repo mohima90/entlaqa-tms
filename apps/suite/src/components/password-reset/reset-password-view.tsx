@@ -11,7 +11,7 @@ import {
   resetLinkFromHash,
 } from '../../lib/password-reset-link';
 import { PASSWORD_MIN_LENGTH, passwordRuleState, withMin } from '../../lib/password-rules';
-import { looksLikeTotpCode } from '../../lib/totp-code';
+import { looksLikeTotpCode } from '../../lib/totp-code-shape';
 import { type ErrorTexts, errorText } from '../auth/error-text';
 import { type PasswordRuleLabels, PasswordRulesList } from '../auth/password-rules-list';
 import { fieldErrorCodes } from '../profile/field-errors';

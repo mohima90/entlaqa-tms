@@ -1,6 +1,33 @@
 import 'server-only';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { sql } from 'drizzle-orm';
 import type { AppDatabase } from './client';
+
+/**
+ * Marks the async context of every transaction opened by runWithClaims (withUserTx, withSystemTx,
+ * withPlatformTx and the claim-less helpers), so code that must never run while this request or job holds
+ * a pooled connection can refuse to (T-M2-18 integration review M1): e.g. asking Supabase Storage — which
+ * sees committed rows only, on its own connection — for a signed URL, which belongs in defineAction's
+ * afterCommit. The mark ends with the transaction (work after `await withUserTx(…)` is outside it).
+ */
+const openTransaction = new AsyncLocalStorage<true>();
+
+/** True while the current async context is inside a transaction opened by runWithClaims. */
+export function inDatabaseTransaction(): boolean {
+  return openTransaction.getStore() === true;
+}
+
+/**
+ * Throws when called inside a database transaction of this request or job (see inDatabaseTransaction):
+ * `what` names the refused step in the error (a programming error — never shown to users).
+ */
+export function assertNoDatabaseTransaction(what: string): void {
+  if (inDatabaseTransaction()) {
+    throw new Error(
+      `${what} must run after the transaction commits (defineAction afterCommit), never inside it`,
+    );
+  }
+}
 
 /** The transaction handle passed to units of work. RLS applies to every query. */
 export type ClaimsTx = Parameters<Parameters<AppDatabase['transaction']>[0]>[0];
@@ -31,6 +58,15 @@ export async function runWithClaims<T>(
   claimsJson: string,
   fn: (tx: ClaimsTx) => Promise<T>,
   options: { readonly touchSession?: boolean } = {},
+): Promise<T> {
+  return openTransaction.run(true, () => runInTransaction(db, claimsJson, fn, options));
+}
+
+async function runInTransaction<T>(
+  db: AppDatabase,
+  claimsJson: string,
+  fn: (tx: ClaimsTx) => Promise<T>,
+  options: { readonly touchSession?: boolean },
 ): Promise<T> {
   return db.transaction(async (tx) => {
     await tx.execute(sql`set local role authenticated`);

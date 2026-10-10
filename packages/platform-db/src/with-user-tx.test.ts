@@ -2,6 +2,7 @@ import { brandVerifiedClaims } from '@jadarat/platform-core/internal/verified-cl
 import { type SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { describe, expect, it } from 'vitest';
+import { assertNoDatabaseTransaction, inDatabaseTransaction } from './claims-tx';
 import type { AppDatabase } from './client';
 import {
   createWithUserTx,
@@ -262,6 +263,32 @@ describe('withUserTx (ADR 0002 §5)', () => {
       expect(attempts).toBe(2);
       expect(transactionCount()).toBe(2);
     });
+  });
+
+  it('marks its async context as inside a transaction, and only there (integration review M1)', async () => {
+    const { db } = fakeDatabase();
+    const withUserTx = createWithUserTx(() => db);
+    expect(inDatabaseTransaction()).toBe(false);
+    const seen: boolean[] = [];
+    const sibling = (async () => {
+      // A concurrent request that holds no transaction: not marked.
+      await Promise.resolve();
+      seen.push(inDatabaseTransaction());
+    })();
+    await withUserTx(claims(), async () => {
+      await Promise.resolve();
+      seen.push(inDatabaseTransaction());
+      expect(() => {
+        assertNoDatabaseTransaction('Signing a Storage URL');
+      }).toThrow(/Signing a Storage URL must run after the transaction commits/);
+    });
+    await sibling;
+    // After the commit (where defineAction's afterCommit runs): outside again.
+    expect(inDatabaseTransaction()).toBe(false);
+    expect(() => {
+      assertNoDatabaseTransaction('Signing a Storage URL');
+    }).not.toThrow();
+    expect(seen.sort()).toEqual([false, true]);
   });
 
   it('refuses claim sets that do not match the verified-claims schema', async () => {

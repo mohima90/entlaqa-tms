@@ -1,5 +1,6 @@
 import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { assertNoDatabaseTransaction } from '../claims-tx';
 import { readEnv } from '../env';
 
 /**
@@ -173,7 +174,10 @@ export function toPublicUrl(raw: string, publicOrigin: string | null): string {
 
 /**
  * Storage through the user's server-side Supabase client (createSupabaseServerClient: publishable key +
- * the user's session cookies).
+ * the user's session cookies). Signing refuses to run inside a database transaction of the request
+ * (assertNoDatabaseTransaction — a programming error, thrown as is): Storage sees committed rows only, so
+ * it belongs after the commit (defineAction afterCommit), never while a pooled connection is held (T-M2-18
+ * integration review M1).
  */
 export function createUserFileStorage(
   client: SupabaseClient,
@@ -181,6 +185,7 @@ export function createUserFileStorage(
 ): UserFileStorage {
   return {
     async createSignedUploadUrl(bucket, objectKey) {
+      assertNoDatabaseTransaction('Signing a Storage upload URL');
       let answer: Awaited<
         ReturnType<ReturnType<typeof client.storage.from>['createSignedUploadUrl']>
       >;
@@ -194,6 +199,7 @@ export function createUserFileStorage(
       return { url: toPublicUrl(answer.data.signedUrl, publicOrigin), token: answer.data.token };
     },
     async createSignedDownloadUrl(bucket, objectKey, ttlSeconds, downloadName) {
+      assertNoDatabaseTransaction('Signing a Storage download URL');
       let answer: Awaited<ReturnType<ReturnType<typeof client.storage.from>['createSignedUrl']>>;
       try {
         answer = await client.storage.from(bucket).createSignedUrl(objectKey, ttlSeconds);

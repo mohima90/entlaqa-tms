@@ -220,4 +220,5 @@ export {
   switchActiveTenant,
   withUserTx,
 } from './with-user-tx';
+export { assertNoDatabaseTransaction, inDatabaseTransaction } from './claims-tx';
 export * as schema from './schema';

@@ -1,5 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { describe, expect, it } from 'vitest';
+import { runWithClaims } from '../claims-tx';
+import type { AppDatabase } from '../client';
 import {
   FileStorageError,
   STORAGE_STRIPPED_HEADERS,
@@ -173,6 +175,32 @@ function fakeClient(answer: Answer) {
 }
 
 describe('createUserFileStorage', () => {
+  it('refuses to sign inside a database transaction of the request; signs after it (integration review M1)', async () => {
+    const fake = fakeClient({
+      data: {
+        signedUrl: 'https://x.supabase.co/storage/v1/object/sign/imports/k?token=t',
+        token: 't',
+      },
+      error: null,
+    });
+    const storage = createUserFileStorage(fake.client, null);
+    const db = {
+      transaction: (cb: (tx: unknown) => Promise<unknown>) =>
+        cb({ execute: () => Promise.resolve([]) }),
+    } as unknown as AppDatabase;
+    await expect(
+      runWithClaims(db, '{}', () => storage.createSignedUploadUrl('imports', 'k')),
+    ).rejects.toThrow(/Signing a Storage upload URL must run after the transaction commits/);
+    await expect(
+      runWithClaims(db, '{}', () => storage.createSignedDownloadUrl('imports', 'k', 60, 'a.csv')),
+    ).rejects.toThrow(/Signing a Storage download URL must run after the transaction commits/);
+    expect(fake.calls).toEqual([]);
+    await runWithClaims(db, '{}', () => Promise.resolve());
+    await expect(storage.createSignedDownloadUrl('imports', 'k', 60, 'a.csv')).resolves.toContain(
+      'token=t',
+    );
+  });
+
   it('asks for a signed upload URL for exactly the key, without upsert, at the public origin', async () => {
     const fake = fakeClient({
       data: {

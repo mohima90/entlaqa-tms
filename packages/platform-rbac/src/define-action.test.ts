@@ -914,9 +914,10 @@ describe('defineAction (ADR 0003 §4)', () => {
       expect(after).not.toHaveBeenCalled();
     });
 
-    it('its refusal is the answer and its throw an internal error; the committed work stays', async () => {
+    it('its refusal is the answer (a warning: permission and code) and its throw an internal error; the committed work stays', async () => {
       const logError = vi.fn();
-      const { rt, log, audits } = runtime({ logError });
+      const logAfterCommitRefusal = vi.fn();
+      const { rt, log, audits } = runtime({ logError, logAfterCommitRefusal });
       const define = (afterCommit: () => Promise<Result<string, AppError>>) =>
         createDefineAction(rt)({
           permission: approve,
@@ -930,11 +931,17 @@ describe('defineAction (ADR 0003 §4)', () => {
         enrollmentId: ENROLLMENT,
       });
       expect(!refusal.ok && refusal.error.code).toBe('CONFLICT_VERSION');
+      expect(logAfterCommitRefusal).toHaveBeenCalledExactlyOnceWith({
+        permission: 'tms.enrollment.approve',
+        code: 'CONFLICT_VERSION',
+      });
+      expect(logError).not.toHaveBeenCalled();
       const thrown = await define(() => Promise.reject(new Error('storage down')))({
         enrollmentId: ENROLLMENT,
       });
       expect(!thrown.ok && thrown.error.code).toBe('INTERNAL_ERROR');
       expect(logError).toHaveBeenCalledOnce();
+      expect(logAfterCommitRefusal).toHaveBeenCalledOnce();
       // Each action committed once; nothing was rolled back or run again.
       expect(log).toEqual(['begin', 'commit', 'begin', 'commit']);
       expect(audits).toHaveLength(2);

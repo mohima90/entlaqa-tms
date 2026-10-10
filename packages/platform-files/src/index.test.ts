@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   FINAL_STATUSES,
+  FileErrors,
   XLSX,
   confirmUpload,
+  fileResult,
   deleteFile,
   getFileStatus,
   grantDownload,
@@ -23,6 +25,7 @@ const db = vi.hoisted(() => {
   }
   return {
     DomainError,
+    isDomainError: (error: unknown) => error instanceof DomainError,
     inTransaction: false,
     assertNoDatabaseTransaction: vi.fn(),
     reserveUpload: vi.fn(),
@@ -274,5 +277,64 @@ describe('grantDownload (transaction step) and signDownload (after the commit)',
     await expect(signDownload(files, granted)).rejects.toMatchObject({
       code: 'STORAGE_REFUSED',
     });
+  });
+});
+
+describe('fileResult: expected refusals as error results (integration review L-b)', () => {
+  it('passes a value through; Storage and domain refusals become application errors', async () => {
+    expect(await fileResult(Promise.resolve(1))).toEqual({ ok: true, value: 1 });
+    const files = storage();
+    files.createSignedUploadUrl.mockRejectedValueOnce({ temporary: true });
+    expect(await fileResult(signUploadIntent(files, reservation))).toMatchObject({
+      ok: false,
+      error: { code: 'FILE_STORAGE_UNAVAILABLE', status: 503, expose: true },
+    });
+    files.createSignedUploadUrl.mockRejectedValueOnce({ temporary: false });
+    expect(await fileResult(signUploadIntent(files, reservation))).toMatchObject({
+      ok: false,
+      error: { code: 'FORBIDDEN', status: 403 },
+    });
+    expect(await fileResult(reserveUploadIntent(TX, { ...intent, size: 0 }))).toMatchObject({
+      ok: false,
+      error: { code: 'FILE_TOO_LARGE', status: 422, messageKey: 'files.errors.tooLarge' },
+    });
+    expect(
+      await fileResult(reserveUploadIntent(TX, { ...intent, declaredName: 'run.exe' })),
+    ).toMatchObject({ ok: false, error: { code: 'FILE_TYPE_NOT_ALLOWED' } });
+    for (const [code, expected] of [
+      ['TOO_MANY_PENDING_UPLOADS', 'FILE_TOO_MANY_UPLOADS'],
+      ['FILE_NOT_CLEAN', 'FILE_NOT_READY'],
+      ['OBJECT_NOT_UPLOADED', 'FILE_NOT_UPLOADED'],
+      ['UPLOAD_EXPIRED', 'FILE_UPLOAD_EXPIRED'],
+      ['FILE_BUSY', 'FILE_BUSY'],
+      ['FILE_NOT_FOUND', 'NOT_FOUND'],
+    ] as const) {
+      const result = await fileResult(Promise.reject(new db.DomainError(code)));
+      expect(!result.ok && result.error.code, code).toBe(expected);
+    }
+    expect(Object.keys(FileErrors).sort()).toEqual([
+      'FILE_BUSY',
+      'FILE_NOT_READY',
+      'FILE_NOT_UPLOADED',
+      'FILE_STORAGE_UNAVAILABLE',
+      'FILE_TOO_LARGE',
+      'FILE_TOO_MANY_UPLOADS',
+      'FILE_TYPE_NOT_ALLOWED',
+      'FILE_UPLOAD_EXPIRED',
+    ]);
+  });
+
+  it('rethrows bugs and outages: a purpose or owner a module must never pass, the transaction guard, any other error', async () => {
+    await expect(
+      fileResult(reserveUploadIntent(TX, { ...intent, purpose: 'constructor' as never })),
+    ).rejects.toMatchObject({ code: 'UNKNOWN_PURPOSE' });
+    await expect(
+      fileResult(reserveUploadIntent(TX, { ...intent, owner: { ...intent.owner, entityId: 'x' } })),
+    ).rejects.toMatchObject({ code: 'INVALID_FILE_DATA' });
+    db.inTransaction = true;
+    await expect(fileResult(signUploadIntent(storage(), reservation))).rejects.toThrow(
+      /must run after the transaction commits/,
+    );
+    await expect(fileResult(Promise.reject(new TypeError('x')))).rejects.toThrow(TypeError);
   });
 });

@@ -40,6 +40,9 @@ import {
  *   handler:     reserveUploadIntent(tx, …)      → afterCommit: signUploadIntent(storage, reservation)
  *   handler:     grantDownload(tx, actor, …)     → afterCommit: signDownload(storage, granted)
  *
+ * Wrap each call in `fileResult(…)` (errors.ts): expected refusals — too large, Storage unavailable, … —
+ * become error results with the codes of FileErrors instead of internal errors (integration review L-b).
+ *
  * Upload: the browser PUTs the bytes to the intent's `url` (with `contentType`) → confirmUpload → the
  * worker scans → getFileStatus shows `clean` (or infected / rejected). Download: a signed URL valid for
  * the purpose's TTL (60 s documents, 300 s media), saved under the original name with the extension of
@@ -64,6 +67,7 @@ export {
 } from './purposes';
 export { MAX_NAME_LENGTH, downloadName, sanitizeFileName } from './names';
 export { DETECTION_HEAD_BYTES, detectType, sniffText } from './detect';
+export { FileErrors, fileAppError, fileResult } from './errors';
 export type { FileErrorCode, FileOwner, FileStatus, FileStatusView } from '@jadarat/platform-db';
 
 export interface UploadIntentInput {

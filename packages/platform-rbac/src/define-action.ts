@@ -126,6 +126,11 @@ export interface ActionRuntime<Tx> {
    * SQLSTATE only, never input or personal data.
    */
   logTransactionRetry?(meta: { readonly permission: string; readonly sqlState: string }): void;
+  /**
+   * `afterCommit` answered with an error after the transaction committed (operational warning, integration
+   * review L-b): the permission and the error code only, never input or personal data.
+   */
+  logAfterCommitRefusal?(meta: { readonly permission: string; readonly code: string }): void;
 }
 
 /**
@@ -187,8 +192,10 @@ export type ActionDefinition<S extends z.ZodType, O, Tx, R = O> = ActionTarget<S
    * that must see the committed rows, e.g. asking Supabase Storage (its own database connection) for a
    * signed URL for the upload reservation or download grant the handler wrote. Keep the handler's work
    * complete on its own: if afterCommit fails, the transaction stays committed (an error result is the
-   * answer; a throw is an internal error with a correlation id) — what it leaves must be harmless (an
-   * unsigned reservation expires and is purged). Never open a transaction of your own here.
+   * answer, logged as a warning with the permission and the code; a throw is an internal error with a
+   * correlation id, reported to the error tracker — so return expected refusals as results, e.g. with
+   * platform-files `fileResult`) — what it leaves must be harmless (an unsigned reservation expires and is
+   * purged). Never open a transaction of your own here.
    */
   readonly afterCommit?: (args: {
     readonly actor: ActorContext;
@@ -373,7 +380,12 @@ export function createDefineAction<Tx>(runtime: ActionRuntime<Tx>) {
           input: input.value,
           result: committed,
         });
-        return after.ok ? ok(after.value) : err(toClientError(after.error));
+        if (after.ok) return ok(after.value);
+        runtime.logAfterCommitRefusal?.({
+          permission: definition.permission.code,
+          code: after.error.code,
+        });
+        return err(toClientError(after.error));
       } catch (error) {
         if (error instanceof HandledFailure) {
           if (refused && definition.auditFailure) {

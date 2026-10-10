@@ -50,22 +50,22 @@ The owning **module authorizes first** (may this user attach a file to / read fi
 
 ```ts
 import {
-  confirmUpload, grantDownload, reserveUploadIntent, signDownload, signUploadIntent,
+  confirmUpload, fileResult, grantDownload, reserveUploadIntent, signDownload, signUploadIntent,
 } from '@jadarat/platform-files';
 import { requestFileStorage } from '@jadarat/platform-files/next';
 
 // 1. Server action "start upload" — after checking, in the handler, that the user may import:
 export const startUpload = defineAction({
   permission, input, // …
-  handler: async ({ ctx, input }) =>
-    ok(await reserveUploadIntent(ctx.tx, {
+  handler: ({ ctx, input }) =>
+    fileResult(reserveUploadIntent(ctx.tx, {
       purpose: 'platform.user_import',
       owner: { module: 'platform', entityType: 'user_import', entityId: input.importId },
       declaredName: input.name, // its extension decides the declared type (.csv / .xlsx here)
       size: input.size,
     })),
   // Committed: Storage now sees the reservation.
-  afterCommit: async ({ result }) => ok(await signUploadIntent(await requestFileStorage(), result)),
+  afterCommit: async ({ result }) => fileResult(signUploadIntent(await requestFileStorage(), result)),
 });
 // → { fileId, url, method: 'PUT', contentType, maxBytes, expiresAt }
 // 2. The browser PUTs the bytes to `url` with Content-Type `contentType` (no session needed).
@@ -74,13 +74,13 @@ export const startUpload = defineAction({
 // 5. Download, after the module's own check (handler) that this user may read files of `owner`:
 export const downloadImportFile = defineAction({
   permission, input, // …
-  handler: async ({ ctx, input }) =>
-    ok(await grantDownload(ctx.tx, ctx.actor, {
+  handler: ({ ctx, input }) =>
+    fileResult(grantDownload(ctx.tx, ctx.actor, {
       fileId: input.fileId,
       purpose: 'platform.user_import',
       owner, // the entity the module authorized: a file of any other entity is FILE_NOT_FOUND
     })),
-  afterCommit: async ({ result }) => ok(await signDownload(await requestFileStorage(), result)),
+  afterCommit: async ({ result }) => fileResult(signDownload(await requestFileStorage(), result)),
 });
 // → { url, expiresAt, name } — `name`: the original name with the extension of the detected type
 ```
@@ -97,6 +97,8 @@ export const downloadImportFile = defineAction({
 | `markFileUsed(tx, fileId)` | handler | Records the first use of a clean file (imports: kept 7 days from then) | `FILE_NOT_FOUND`, `FILE_NOT_CLEAN` |
 
 **Why the transaction step and `afterCommit` (integration review M1).** Storage evaluates our policies on its **own** database connection, so it sees only committed rows: the reservation and the grant must be committed before Storage is asked. They are written in the **action's own transaction** — one pooled connection per request, retried as a whole by `defineAction` after a deadlock or serialization failure (T-M2-10), the audit row with them — and signed in `afterCommit`, which runs **once**, after the commit, with **no connection held**. So file actions need no `externalEffects`, and there is no second transaction inside the first: an earlier design (`ownTx`) opened one, which could exhaust the pool (`max: 5`, no queue timeout: five concurrent uploads each holding a connection and waiting for a sixth) and wait on row locks of its own outer transaction (a self-deadlock PostgreSQL cannot detect). `signUploadIntent` / `signDownload` (and the user Storage client itself) **refuse to run inside a transaction** of the request (`assertNoDatabaseTransaction`, marked by platform-db's transaction helpers), so the wrong shape fails at once instead of hanging. If signing fails after the commit, what stays is harmless: a reservation expires unused (15 minutes) and is purged after 24 hours; a grant expires with its URL (60 s / 300 s). `requestFileStorage()` (`@jadarat/platform-files/next`) is the user's Storage client for `afterCommit`.
+
+**Refusals are answers, not internal errors (integration review L-b).** The functions throw `DomainError`s; wrap each call in `fileResult(…)` so the expected ones become error results with the codes of `FileErrors` (Arabic and English messages under `files.errors.*`): `TYPE_NOT_ALLOWED` → `FILE_TYPE_NOT_ALLOWED` (422), `TOO_LARGE` → `FILE_TOO_LARGE` (422), `TOO_MANY_PENDING_UPLOADS` → `FILE_TOO_MANY_UPLOADS` (429), `FILE_NOT_CLEAN` → `FILE_NOT_READY`, `OBJECT_NOT_UPLOADED` → `FILE_NOT_UPLOADED`, `UPLOAD_EXPIRED` → `FILE_UPLOAD_EXPIRED`, `FILE_BUSY` (409), `FILE_NOT_FOUND` → `NOT_FOUND`, `STORAGE_REFUSED` → `FORBIDDEN`, `STORAGE_UNAVAILABLE` → `FILE_STORAGE_UNAVAILABLE` (503). In the handler an error result rolls the transaction back; in `afterCommit` it is the answer and `defineAction` logs a **warning** with the permission and the code (`action refused after its commit`) — no error-tracker event. `UNKNOWN_PURPOSE` and `INVALID_FILE_DATA` (a module passing a purpose or owner it must never pass), the transaction guard and any other error stay thrown: an internal error with a correlation id, reported.
 
 **Who creates signed URLs.** Only the web app's server, with the user's session. Self-hosted, it asks Storage on the gateway's **internal port 8445** (`STORAGE_INTERNAL_URL`; the app's network `edge` alone); the browser-facing port 8443 serves only the uploads (`PUT`, with its CORS preflight) and downloads (`GET`) with a URL's token — a user's own token cannot create a URL there, of any lifetime (security review M2, smoke-tested). On hosted Supabase the project URL serves both: see the residual risk in §6.
 
@@ -208,7 +210,7 @@ Platform tasks (ADR 0005 §4; every wake-up and every minute):
 | Where | What |
 |---|---|
 | Storage's tenant check | `private.storage_request_tenant()` asks the same decision as `private.current_tenant_id()`, `private.session_access` (T-M2-10): an idle session, one past the organization's maximum length or one that does not meet its MFA policy gets no tenant from Storage (pgTAP 84) |
-| Server actions | Transaction step in the handler (`reserveUploadIntent`, `grantDownload` with its audit row), Storage signing in `defineAction`'s `afterCommit` (`signUploadIntent`, `signDownload`; integration review M1) — no `externalEffects`, no second transaction; signing refuses to run inside one (§3) |
+| Server actions | Transaction step in the handler (`reserveUploadIntent`, `grantDownload` with its audit row), Storage signing in `defineAction`'s `afterCommit` (`signUploadIntent`, `signDownload`; integration review M1) — no `externalEffects`, no second transaction; signing refuses to run inside one; expected refusals as results through `fileResult` / `FileErrors`, an `afterCommit` refusal logged as a warning (L-b) (§3) |
 | Supabase server client | one `global` object: T-M2-11's visitor header and T-M2-10's User-Agent together with Storage's routing fetch; `requestFileStorage` forwards the browser's User-Agent (a refresh records the real browser); no visitor or client-address header reaches Storage (integration review L2) |
 | Worker | platform tasks: account mail (reset links, lock notices), the session purge (T-M2-10), file housekeeping and the scan |
 | Self-hosted smoke | the file journey runs before the sign-in protection, deactivation and security-policy journeys (it signs in with the first account's original password, before the policy requires an authenticator app); `front` (T-M2-11) and Storage/clamd in the service checks |

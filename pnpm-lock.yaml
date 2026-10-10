@@ -41,6 +41,9 @@ importers:
       '@jadarat/platform-db':
         specifier: workspace:*
         version: link:../../packages/platform-db
+      '@jadarat/platform-files':
+        specifier: workspace:*
+        version: link:../../packages/platform-files
       '@jadarat/platform-i18n':
         specifier: workspace:*
         version: link:../../packages/platform-i18n

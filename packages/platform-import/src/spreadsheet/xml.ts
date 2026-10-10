@@ -153,3 +153,31 @@ export function parseXml(chunks: Iterable<Uint8Array>, handlers: XmlHandlers): v
   for (const chunk of chunks) stream.write(chunk);
   stream.end();
 }
+
+/** Lets the event loop run (timers, I/O, the lease's renewal) between pieces of long parsing work. */
+export function yieldToLoop(): Promise<void> {
+  return new Promise((resolve) => {
+    setImmediate(resolve);
+  });
+}
+
+/** Inflated bytes parsed between two yields to the event loop (security review H1). */
+export const YIELD_BYTES = 1024 * 1024;
+
+/** A part through the handlers, letting the event loop run every YIELD_BYTES. */
+export async function parseXmlAsync(
+  chunks: Iterable<Uint8Array>,
+  handlers: XmlHandlers,
+): Promise<void> {
+  const stream = new XmlStream(handlers);
+  let since = 0;
+  for (const chunk of chunks) {
+    stream.write(chunk);
+    since += chunk.length;
+    if (since >= YIELD_BYTES) {
+      since = 0;
+      await yieldToLoop();
+    }
+  }
+  stream.end();
+}

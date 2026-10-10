@@ -75,6 +75,8 @@ function importRefusal(error: unknown): AppError | null {
     case 'UNDO_EXPIRED':
     case 'IMPORT_STATE_CHANGED':
       return fieldError('import', error.code);
+    case 'TOO_MANY_DRAFTS':
+      return fieldError('file', error.code);
     default:
       return null;
   }

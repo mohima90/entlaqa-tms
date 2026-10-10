@@ -19,8 +19,17 @@ const EOCD_SIGNATURE = 0x06054b50;
 const CENTRAL_SIGNATURE = 0x02014b50;
 const LOCAL_SIGNATURE = 0x04034b50;
 const MAX_ENTRIES = 10_000;
-/** Compressed bytes pushed at a time: what one push may inflate to stays bounded (≈ 1:1032). */
-const INPUT_SLICE = 16 * 1024;
+/** Compressed bytes pushed at a time: what one push may inflate to stays bounded (≈ 1:1032, ≤ 4 MB). */
+const INPUT_SLICE = 4 * 1024;
+
+/**
+ * What all the parts read from one archive may inflate to together (TM-0003 T-IAM-19, security review
+ * H1): shared by every `chunks` call, so a workbook whose sheets point at the same huge part, or a huge
+ * shared-strings part read again for every sheet, stops at the budget.
+ */
+export interface InflateBudget {
+  remaining: number;
+}
 
 const unreadable = () => new SpreadsheetError('FILE_UNREADABLE');
 
@@ -48,7 +57,10 @@ export function looksLikeZip(bytes: Uint8Array): boolean {
 export class ZipArchive {
   private readonly entries = new Map<string, ZipEntry>();
 
-  constructor(private readonly bytes: Uint8Array) {
+  constructor(
+    private readonly bytes: Uint8Array,
+    private readonly budget: InflateBudget = { remaining: Number.POSITIVE_INFINITY },
+  ) {
     const end = this.findEndOfCentralDirectory();
     const disk = u16(bytes, end + 4);
     const directoryDisk = u16(bytes, end + 6);
@@ -119,7 +131,9 @@ export class ZipArchive {
     if (entry.method === 0) {
       if (entry.compressedSize > maxBytes) throw unreadable();
       for (let at = start; at < end; at += INPUT_SLICE) {
-        yield bytes.subarray(at, Math.min(end, at + INPUT_SLICE));
+        const piece = bytes.subarray(at, Math.min(end, at + INPUT_SLICE));
+        this.spend(piece.length);
+        yield piece;
       }
       return;
     }
@@ -129,6 +143,7 @@ export class ZipArchive {
     const inflate = new Inflate((data, final) => {
       state.produced += data.length;
       if (state.produced > maxBytes) throw unreadable();
+      this.spend(data.length);
       out.push(data);
       if (final) state.finished = true;
     });
@@ -143,6 +158,11 @@ export class ZipArchive {
       yield* out.splice(0);
     }
     if (entry.compressedSize === 0 || !state.finished) throw unreadable();
+  }
+
+  private spend(bytes: number): void {
+    this.budget.remaining -= bytes;
+    if (this.budget.remaining < 0) throw unreadable();
   }
 
   /** A small entry as UTF-8 text (e.g. the workbook, its relationships, the styles). */

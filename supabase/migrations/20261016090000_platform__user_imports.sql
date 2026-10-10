@@ -271,6 +271,18 @@ begin
     if not private.user_import_actor_may_import(new.tenant_id, v_user) then
       raise exception 'only an Organization Admin or an HR Manager imports people' using errcode = 'insufficient_privilege';
     end if;
+    -- Bounded work (security review H1): at most 5 unfinished imports (uploaded … review, review window
+    -- still open: each may be read and checked by the worker) per member and 20 per organization; finish,
+    -- cancel or let them expire.
+    perform pg_advisory_xact_lock(hashtextextended('platform.user_imports.unfinished:' || new.tenant_id::text, 0));
+    if (select count(*) from platform.user_imports i
+        where i.tenant_id = new.tenant_id and i.created_by = v_user and i.review_expires_at > now()
+          and i.status = any (private.user_import_draft_statuses())) >= 5
+       or (select count(*) from platform.user_imports i
+           where i.tenant_id = new.tenant_id and i.review_expires_at > now()
+             and i.status = any (private.user_import_draft_statuses())) >= 20 then
+      raise exception 'too many unfinished imports' using errcode = 'check_violation';
+    end if;
     if new.status <> 'uploaded' or new.failure_code is not null or new.sheet_index is not null
        or new.mapping is not null or new.options is not null or new.review_counts is not null
        or new.result_counts is not null or new.stop_requested_at is not null or new.undo_requested_by is not null

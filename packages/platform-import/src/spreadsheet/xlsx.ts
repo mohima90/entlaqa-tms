@@ -1,5 +1,5 @@
 import { DEFAULT_LIMITS, type ReadLimits, type SheetRow, SpreadsheetError } from './errors';
-import { attribute, parseXml, XmlStream } from './xml';
+import { attribute, parseXml, parseXmlAsync, XmlStream, YIELD_BYTES, yieldToLoop } from './xml';
 import { ZipArchive, normalizeName } from './zip';
 
 /**
@@ -7,7 +7,11 @@ import { ZipArchive, normalizeName } from './zip';
  * the rows as text — read from the file in memory (at most 20 MB) with every part inflated as a stream
  * under a hard limit. Formulas are never run: a formula cell gives the value Excel stored with it. Dates
  * (cells with a date format) are given as `YYYY-MM-DD`. Refused: macro-enabled workbooks (.xlsm, a VBA
- * project), encrypted entries, more than 50 sheets.
+ * project), encrypted entries, more than 50 sheets, two sheets in one part.
+ *
+ * Bounded work (security review H1): every part has its own inflate limit and all the parts read from one
+ * opening share `limits.maxUnpackedBytes`; rows are produced asynchronously, letting the event loop run
+ * every YIELD_BYTES of XML, so the worker's other work (and the lease's renewal) goes on.
  */
 export interface XlsxSheet {
   readonly name: string;
@@ -19,9 +23,9 @@ export interface XlsxSheet {
 export const MAX_SHEETS = 50;
 /** Small parts (workbook, relationships, styles, content types). */
 const SMALL_PART_BYTES = 8 * 1024 * 1024;
-/** A sheet's XML may inflate to this much (10,000 rows × 200 columns fit well within it). */
-const SHEET_PART_BYTES = 512 * 1024 * 1024;
-const SHARED_STRINGS_BYTES = 256 * 1024 * 1024;
+/** A sheet's XML may inflate to this much (10,000 rows × 200 short columns fit within it). */
+const SHEET_PART_BYTES = 128 * 1024 * 1024;
+const SHARED_STRINGS_BYTES = 64 * 1024 * 1024;
 /** Characters of all shared strings together, and their number. */
 const SHARED_STRINGS_CHARS = 32 * 1024 * 1024;
 const SHARED_STRINGS_COUNT = 2_000_000;
@@ -149,14 +153,18 @@ function readDateStyles(zip: ZipArchive, path: string | null): Set<number> {
   return styles;
 }
 
-function readSharedStrings(zip: ZipArchive, path: string | null, limits: ReadLimits): string[] {
+async function readSharedStrings(
+  zip: ZipArchive,
+  path: string | null,
+  limits: ReadLimits,
+): Promise<string[]> {
   const strings: string[] = [];
   if (path === null || !zip.has(path)) return strings;
   let total = 0;
   let current: string | null = null;
   let inText = false;
   let phonetic = 0;
-  parseXml(zip.chunks(path, SHARED_STRINGS_BYTES), {
+  await parseXmlAsync(zip.chunks(path, SHARED_STRINGS_BYTES), {
     open(name) {
       if (name === 'si') current = '';
       else if (name === 'rPh') phonetic += 1;
@@ -276,6 +284,8 @@ export class XlsxWorkbook {
           // Chart sheets and dialog sheets hold no rows: not offered.
           if (!rel || !relType(rel.type, REL_WORKSHEET) || !zip.has(rel.target)) return;
           if (sheets.length >= MAX_SHEETS) throw new SpreadsheetError('FILE_TOO_MANY_SHEETS');
+          // Two sheets in one part: never written by spreadsheet programs, only to multiply the work.
+          if (sheets.some((other) => other.path === rel.target)) throw unreadable();
           const state = attribute(attributes, 'state');
           sheets.push({
             name: (attribute(attributes, 'name') ?? '').slice(0, 100),
@@ -290,19 +300,19 @@ export class XlsxWorkbook {
     this.date1904 = date1904;
   }
 
-  /** Opens a workbook from its bytes. */
+  /** Opens a workbook from its bytes; everything read from this opening shares one inflate budget. */
   static open(bytes: Uint8Array, limits: ReadLimits = DEFAULT_LIMITS): XlsxWorkbook {
-    return new XlsxWorkbook(new ZipArchive(bytes), limits);
+    return new XlsxWorkbook(new ZipArchive(bytes, { remaining: limits.maxUnpackedBytes }), limits);
   }
 
   /**
    * The rows of a sheet as text, in order, skipping rows without text. Throws SpreadsheetError
    * FILE_TOO_MANY_COLUMNS (a value beyond the last allowed column) or FILE_UNREADABLE.
    */
-  *rows(sheetIndex: number): Generator<SheetRow> {
+  async *rows(sheetIndex: number): AsyncGenerator<SheetRow> {
     const sheet = this.sheets[sheetIndex];
     if (!sheet) throw unreadable();
-    this.sharedStrings ??= readSharedStrings(this.zip, this.sharedStringsPath, this.limits);
+    this.sharedStrings ??= await readSharedStrings(this.zip, this.sharedStringsPath, this.limits);
     this.dateStyles ??= readDateStyles(this.zip, this.stylesPath);
     const strings = this.sharedStrings;
     const dateStyles = this.dateStyles;
@@ -410,9 +420,15 @@ export class XlsxWorkbook {
         }
       },
     });
+    let since = 0;
     for (const chunk of this.zip.chunks(sheet.path, SHEET_PART_BYTES)) {
       stream.write(chunk);
       yield* ready.splice(0);
+      since += chunk.length;
+      if (since >= YIELD_BYTES) {
+        since = 0;
+        await yieldToLoop();
+      }
     }
     stream.end();
     yield* ready.splice(0);

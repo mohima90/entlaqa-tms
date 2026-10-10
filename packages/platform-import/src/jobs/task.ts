@@ -16,9 +16,11 @@ import {
   jobFileStatus,
   loadUserImportForJob,
   markUserImportPurged,
+  noteUserImportLeaseLost,
   recheckUserImport,
   releaseDueUserImportInvitations,
   releaseUserImportLease,
+  renewUserImportLease,
   saveUserImportColumns,
   scheduleUserImportInvitations,
   setUserImportStatus,
@@ -32,7 +34,7 @@ import { isSpreadsheetError, kindOfType, openSpreadsheet } from '../spreadsheet/
 import { reportFileName } from '../users/report';
 import { toImportMapping } from '../users/rows';
 import { MAX_IMPORT_FILE_BYTES } from '../users/limits';
-import { type ReadOutcome, readSheets, stagedBatches } from './read';
+import { type ReadGuard, type ReadOutcome, readSheets, stagedBatches } from './read';
 import { buildReport, reportColumns } from './report';
 
 /**
@@ -53,8 +55,10 @@ import { buildReport, reportColumns } from './report';
  *             expired imports). The import record stays with the audit log.
  *
  * A failed step is tried again after 2^n minutes (at most an hour); after MAX_FAILURES attempts the
- * import ends (failed: what was added stays, the rest is in the error report). Logs carry ids, codes and
- * counts only (TM-0004 T-PEO-20).
+ * import ends (failed: what was added stays, the rest is in the error report). A lost lease counts as a
+ * failure too, so a step that keeps outliving its lease cannot be claimed forever. Every transaction of
+ * a step renews the lease; reading a file renews it as rows go and gives up past a time budget (security
+ * review H1). Logs carry ids, codes and counts only (TM-0004 T-PEO-20).
  */
 export const USER_IMPORT_TASK = 'platform.user_imports';
 /** Rows written per transaction (design README §9). */
@@ -67,6 +71,10 @@ export const PASS_BUDGET_MS = 4 * 60_000;
 export const MAX_FAILURES = 6;
 /** Default pace of an import's invitations: one a second (Resend's default API limit: 2 a second). */
 export const DEFAULT_INVITATION_PACE_SECONDS = 1;
+/** Reading the file's sheets (step `read`) gives up after this long: the file is refused as unreadable. */
+export const READ_BUDGET_MS = 5 * 60_000;
+/** Staging and checking the chosen sheet's rows (step `validate`) gives up after this long. */
+export const VALIDATE_BUDGET_MS = 10 * 60_000;
 
 export interface UserImportTaskOptions {
   readonly withPlatformTx: WithPlatformTx;
@@ -139,7 +147,7 @@ export function createUserImportTask(options: UserImportTaskOptions): PlatformTa
     Math.max(0, options.invitationPaceSeconds ?? DEFAULT_INVITATION_PACE_SECONDS),
   );
 
-  /** A tenant transaction of the import, while the lease holds. */
+  /** A tenant transaction of the import, while the lease holds (each one renews it). */
   function inImport<T>(
     jobId: string,
     claim: UserImportClaim,
@@ -148,8 +156,20 @@ export function createUserImportTask(options: UserImportTaskOptions): PlatformTa
     return withSystemTx({ tenantId: claim.tenantId, jobId }, async (tx) => {
       const view = await loadUserImportForJob(tx, claim.importId, claim.leaseToken);
       if (!view) throw new LeaseLost('the lease was lost');
+      await renewUserImportLease(tx, claim.importId, claim.leaseToken);
       return fn(tx, view);
     });
+  }
+
+  /** Bounds for reading the file: a time budget and the lease renewed as rows go. */
+  function readGuard(budgetMs: number, renew: () => Promise<boolean>): ReadGuard {
+    return {
+      deadline: now() + budgetMs,
+      now,
+      heartbeat: async () => {
+        if (!(await renew())) throw new LeaseLost('the lease was lost');
+      },
+    };
   }
 
   async function audit(
@@ -270,7 +290,15 @@ export function createUserImportTask(options: UserImportTaskOptions): PlatformTa
       const file = await openSpreadsheet(opened.kind, opened.stream, {
         maxBytes: MAX_IMPORT_FILE_BYTES,
       });
-      outcome = await readSheets(file);
+      outcome = await readSheets(
+        file,
+        undefined,
+        readGuard(READ_BUDGET_MS, () =>
+          withSystemTx({ tenantId: claim.tenantId, jobId }, (tx) =>
+            renewUserImportLease(tx, claim.importId, claim.leaseToken),
+          ),
+        ),
+      );
     } catch (error) {
       if (!isSpreadsheetError(error) && !(error instanceof FileIntegrityError)) throw error;
       const code = isSpreadsheetError(error) ? error.code : 'FILE_UNREADABLE';
@@ -311,6 +339,11 @@ export function createUserImportTask(options: UserImportTaskOptions): PlatformTa
         for await (const batch of stagedBatches(
           file.rows(view.sheetIndex),
           toImportMapping(view.mapping),
+          undefined,
+          // In this transaction: it holds the import's row, so the renewal is the lease's own.
+          readGuard(VALIDATE_BUDGET_MS, () =>
+            renewUserImportLease(tx, claim.importId, claim.leaseToken),
+          ),
         )) {
           await stageUserImportRows(tx, view.id, batch);
           total += batch.length;
@@ -532,13 +565,26 @@ export function createUserImportTask(options: UserImportTaskOptions): PlatformTa
         if (!claim) return false;
         let result: StepResult = 'done';
         try {
-          result = await handle(jobId, claim, deadline);
+          // A step that kept failing or outliving its lease is not tried again: the import ends.
+          const failures = await withSystemTx({ tenantId: claim.tenantId, jobId }, async (tx) => {
+            const view = await loadUserImportForJob(tx, claim.importId, claim.leaseToken);
+            return view?.failures ?? 0;
+          });
+          if (failures >= MAX_FAILURES) await giveUp(jobId, claim);
+          else result = await handle(jobId, claim, deadline);
           await withSystemTx({ tenantId: claim.tenantId, jobId }, (tx) =>
             releaseUserImportLease(tx, claim.importId, claim.leaseToken, 'done'),
           );
         } catch (error) {
           if (error instanceof LeaseLost) {
-            log('warning', `user import ${claim.importId}: lease lost during ${claim.step}`);
+            // Counted as a failure, with the back-off (unless another worker holds a live lease).
+            const failures = await withSystemTx({ tenantId: claim.tenantId, jobId }, (tx) =>
+              noteUserImportLeaseLost(tx, claim.importId, claim.leaseToken),
+            ).catch(() => null);
+            log(
+              'warning',
+              `user import ${claim.importId}: lease lost during ${claim.step} (failures: ${String(failures ?? 'unknown')})`,
+            );
           } else {
             await failed(jobId, claim, error);
           }

@@ -75,12 +75,14 @@ function workbook(
 const sheetXml = (rows: string) =>
   `<worksheet xmlns="${MAIN}"><sheetData>${rows}</sheetData></worksheet>`;
 
-function rowsOf(book: XlsxWorkbook, index = 0): SheetRow[] {
-  return [...book.rows(index)];
+async function rowsOf(book: XlsxWorkbook, index = 0): Promise<SheetRow[]> {
+  const out: SheetRow[] = [];
+  for await (const row of book.rows(index)) out.push(row);
+  return out;
 }
 
 describe('XlsxWorkbook', () => {
-  it('reads shared strings (rich text, without phonetic hints), inline strings, numbers, formulas, booleans', () => {
+  it('reads shared strings (rich text, without phonetic hints), inline strings, numbers, formulas, booleans', async () => {
     const bytes = workbook(
       [
         {
@@ -101,30 +103,33 @@ describe('XlsxWorkbook', () => {
     expect(book.sheets).toEqual([
       { name: 'الموظفون', hidden: false, path: 'xl/worksheets/s1.xml' },
     ]);
-    expect(rowsOf(book)).toEqual([
+    expect(await rowsOf(book)).toEqual([
       { number: 1, cells: ['البريد', 'الاسم الأول', 'رقم'] },
       { number: 3, cells: ['a@x.test', '', '551234567', 'محسوب', 'TRUE', '', '0.3'] },
       { number: 4, cells: ['نورة'] },
     ]);
   });
 
-  it('gives date cells as YYYY-MM-DD (built-in and custom formats, 1904 system, ISO cells)', () => {
+  it('gives date cells as YYYY-MM-DD (built-in and custom formats, 1904 system, ISO cells)', async () => {
     const styles = `<styleSheet xmlns="${MAIN}"><numFmts><numFmt numFmtId="164" formatCode="yyyy\\-mm\\-dd"/><numFmt numFmtId="165" formatCode="&quot;EMP&quot;0"/></numFmts><cellXfs><xf numFmtId="0"/><xf numFmtId="14"/><xf numFmtId="164"/><xf numFmtId="165"/></cellXfs></styleSheet>`;
     const xml = sheetXml(
       '<row r="1"><c r="A1" t="inlineStr"><is><t>تاريخ</t></is></c></row>' +
         '<row r="2"><c r="A2" s="1"><v>45354</v></c><c r="B2" s="2"><v>43786.5</v></c><c r="C2" s="3"><v>45354</v></c><c r="D2" t="d"><v>2024-03-03T00:00:00</v></c><c r="E2" s="1"><v>-5</v></c></row>',
     );
-    expect(rowsOf(XlsxWorkbook.open(workbook([{ name: 'S', xml }], { styles })))[1]).toEqual({
+    expect(
+      (await rowsOf(XlsxWorkbook.open(workbook([{ name: 'S', xml }], { styles }))))[1],
+    ).toEqual({
       number: 2,
       cells: ['2024-03-03', '2019-11-17', '45354', '2024-03-03', '-5'],
     });
     expect(
-      rowsOf(XlsxWorkbook.open(workbook([{ name: 'S', xml }], { styles, date1904: true })))[1]
-        ?.cells[0],
+      (
+        await rowsOf(XlsxWorkbook.open(workbook([{ name: 'S', xml }], { styles, date1904: true })))
+      )[1]?.cells[0],
     ).toBe('2028-03-04');
   });
 
-  it('lists worksheets only (chart sheets skipped), with hidden ones marked; any sheet by index', () => {
+  it('lists worksheets only (chart sheets skipped), with hidden ones marked; any sheet by index', async () => {
     const book = XlsxWorkbook.open(
       workbook([
         {
@@ -139,9 +144,11 @@ describe('XlsxWorkbook', () => {
       ['أولى', false],
       ['مخفية', true],
     ]);
-    expect(rowsOf(book, 0)).toEqual([{ number: 1, cells: ['', 'x'] }]);
-    expect(rowsOf(book, 1)).toEqual([]);
-    expect(() => rowsOf(book, 5)).toThrow(expect.objectContaining({ code: 'FILE_UNREADABLE' }));
+    expect(await rowsOf(book, 0)).toEqual([{ number: 1, cells: ['', 'x'] }]);
+    expect(await rowsOf(book, 1)).toEqual([]);
+    await expect(rowsOf(book, 5)).rejects.toThrow(
+      expect.objectContaining({ code: 'FILE_UNREADABLE' }),
+    );
   });
 
   it('refuses macro-enabled workbooks', () => {
@@ -161,9 +168,9 @@ describe('XlsxWorkbook', () => {
     ).toThrow(expect.objectContaining({ code: 'FILE_MACROS' }));
   });
 
-  it('refuses a value beyond column 200, more than 50 sheets, a DOCTYPE, broken XML', () => {
+  it('refuses a value beyond column 200, more than 50 sheets, a DOCTYPE, broken XML', async () => {
     const wide = sheetXml('<row r="1"><c r="GS1" t="inlineStr"><is><t>x</t></is></c></row>');
-    expect(() => rowsOf(XlsxWorkbook.open(workbook([{ name: 'S', xml: wide }])))).toThrow(
+    await expect(rowsOf(XlsxWorkbook.open(workbook([{ name: 'S', xml: wide }])))).rejects.toThrow(
       expect.objectContaining({ code: 'FILE_TOO_MANY_COLUMNS' }),
     );
     const many = Array.from({ length: 51 }, (_v, i) => ({
@@ -174,23 +181,23 @@ describe('XlsxWorkbook', () => {
       expect.objectContaining({ code: 'FILE_TOO_MANY_SHEETS' }),
     );
     const doctype = `<!DOCTYPE x [<!ENTITY a "aaaa">]>${sheetXml('<row r="1"><c t="inlineStr"><is><t>&a;</t></is></c></row>')}`;
-    expect(() => rowsOf(XlsxWorkbook.open(workbook([{ name: 'S', xml: doctype }])))).toThrow(
-      expect.objectContaining({ code: 'FILE_UNREADABLE' }),
-    );
-    expect(() =>
+    await expect(
+      rowsOf(XlsxWorkbook.open(workbook([{ name: 'S', xml: doctype }]))),
+    ).rejects.toThrow(expect.objectContaining({ code: 'FILE_UNREADABLE' }));
+    await expect(
       rowsOf(XlsxWorkbook.open(workbook([{ name: 'S', xml: '<worksheet><sheetData><row>' }]))),
-    ).toThrow(expect.objectContaining({ code: 'FILE_UNREADABLE' }));
+    ).rejects.toThrow(expect.objectContaining({ code: 'FILE_UNREADABLE' }));
   });
 
-  it('refuses text runs longer than the parser may buffer, and over-long cells', () => {
+  it('refuses text runs longer than the parser may buffer, and over-long cells', async () => {
     const long = sheetXml(
       `<row r="1"><c t="inlineStr"><is><t>${'x'.repeat(MAX_XML_GAP + 10)}</t></is></c></row>`,
     );
-    expect(() => rowsOf(XlsxWorkbook.open(workbook([{ name: 'S', xml: long }])))).toThrow(
+    await expect(rowsOf(XlsxWorkbook.open(workbook([{ name: 'S', xml: long }])))).rejects.toThrow(
       expect.objectContaining({ code: 'FILE_UNREADABLE' }),
     );
     const cell = sheetXml(`<row r="1"><c><v>${'1'.repeat(40_000)}</v></c></row>`);
-    expect(() => rowsOf(XlsxWorkbook.open(workbook([{ name: 'S', xml: cell }])))).toThrow(
+    await expect(rowsOf(XlsxWorkbook.open(workbook([{ name: 'S', xml: cell }])))).rejects.toThrow(
       expect.objectContaining({ code: 'FILE_UNREADABLE' }),
     );
   });
@@ -206,6 +213,74 @@ describe('XlsxWorkbook', () => {
     expect(() => XlsxWorkbook.open(good.subarray(0, good.length - 30))).toThrow(
       expect.objectContaining({ code: 'FILE_UNREADABLE' }),
     );
+  });
+});
+
+describe('XlsxWorkbook: bounded work (security review H1)', () => {
+  const LIMITS = { maxRows: 10_000, maxColumns: 200, maxCellChars: 32_767 };
+  const row = (r: number) =>
+    `<row r="${String(r)}"><c r="A${String(r)}" t="inlineStr"><is><t>${'x'.repeat(40)}</t></is></c></row>`;
+  const bigSheet = (rows: number) =>
+    sheetXml(Array.from({ length: rows }, (_v, i) => row(i + 1)).join(''));
+
+  it('refuses two sheets in one part (each would read the same huge part again)', () => {
+    const bytes = workbook([{ name: 'A', xml: sheetXml('') }], {
+      files: {
+        'xl/workbook.xml': `<workbook xmlns="${MAIN}" xmlns:r="${R}"><sheets><sheet name="A" sheetId="1" r:id="rId1"/><sheet name="B" sheetId="2" r:id="rId1"/></sheets></workbook>`,
+      },
+    });
+    expect(() => XlsxWorkbook.open(bytes)).toThrow(
+      expect.objectContaining({ code: 'FILE_UNREADABLE' }),
+    );
+  });
+
+  it('counts every part read from one opening against one budget', async () => {
+    const xml = bigSheet(1000); // ≈ 80 KB each
+    const bytes = workbook([
+      { name: 'A', xml },
+      { name: 'B', xml },
+    ]);
+    const book = XlsxWorkbook.open(bytes, { ...LIMITS, maxUnpackedBytes: 120_000 });
+    expect(await rowsOf(book, 0)).toHaveLength(1000);
+    await expect(rowsOf(book, 1)).rejects.toThrow(
+      expect.objectContaining({ code: 'FILE_UNREADABLE' }),
+    );
+    // Reading the same sheet again spends the budget again.
+    const again = XlsxWorkbook.open(bytes, { ...LIMITS, maxUnpackedBytes: 120_000 });
+    await rowsOf(again, 0);
+    await expect(rowsOf(again, 0)).rejects.toThrow(
+      expect.objectContaining({ code: 'FILE_UNREADABLE' }),
+    );
+  });
+
+  it('counts the shared strings against the budget too', async () => {
+    const strings = Array.from(
+      { length: 5000 },
+      (_v, i) => `<si><t>${'s'.repeat(30)}${String(i)}</t></si>`,
+    );
+    const bytes = workbook(
+      [{ name: 'A', xml: sheetXml('<row r="1"><c r="A1" t="s"><v>0</v></c></row>') }],
+      { sharedStrings: `<sst xmlns="${MAIN}">${strings.join('')}</sst>` },
+    );
+    await expect(
+      rowsOf(XlsxWorkbook.open(bytes, { ...LIMITS, maxUnpackedBytes: 100_000 })),
+    ).rejects.toThrow(expect.objectContaining({ code: 'FILE_UNREADABLE' }));
+    expect(await rowsOf(XlsxWorkbook.open(bytes))).toHaveLength(1);
+  });
+
+  it('lets the event loop run while it reads a large sheet', async () => {
+    const book = XlsxWorkbook.open(workbook([{ name: 'A', xml: bigSheet(40_000) }])); // ≈ 3 MB
+    const seen = { ran: false, duringRead: false };
+    setImmediate(() => {
+      seen.ran = true;
+    });
+    let count = 0;
+    for await (const _row of book.rows(0)) {
+      count += 1;
+      if (seen.ran && count < 40_000) seen.duringRead = true;
+    }
+    expect(count).toBe(40_000);
+    expect(seen.duringRead).toBe(true);
   });
 });
 
@@ -296,7 +371,7 @@ describe('XLSX helpers', () => {
 });
 
 describe('writeXlsx', () => {
-  it('writes sheets the reader reads back: text, RTL, widths, formats, lists', () => {
+  it('writes sheets the reader reads back: text, RTL, widths, formats, lists', async () => {
     const bytes = writeXlsx([
       {
         name: 'المستخدمون',
@@ -321,11 +396,11 @@ describe('writeXlsx', () => {
     ]);
     const book = XlsxWorkbook.open(bytes);
     expect(book.sheets.map((s) => s.name)).toEqual(['المستخدمون', "Li'sts"]);
-    expect([...book.rows(0)]).toEqual([
+    expect(await rowsOf(book, 0)).toEqual([
       { number: 1, cells: ['البريد', 'تاريخ التعيين', 'اللغة'] },
       { number: 2, cells: ['=1+1 & <b>', '', 'English'] },
     ]);
-    expect([...book.rows(1)].map((r) => r.cells)).toEqual([['x'], ['yz']]);
+    expect((await rowsOf(book, 1)).map((r) => r.cells)).toEqual([['x'], ['yz']]);
     const zip = new ZipArchive(bytes);
     const sheet = zip.text('xl/worksheets/sheet1.xml', 1_000_000);
     expect(sheet).toContain('rightToLeft="1"');

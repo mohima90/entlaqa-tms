@@ -68,7 +68,9 @@ export type UserImportErrorCode =
   | 'REVIEW_EXPIRED'
   | 'UNDO_EXPIRED'
   /** The import is no longer in the step the request was made for (e.g. confirmed twice). */
-  | 'IMPORT_STATE_CHANGED';
+  | 'IMPORT_STATE_CHANGED'
+  /** Too many imports not run yet: 5 per member, 20 per organization (security review H1). */
+  | 'TOO_MANY_DRAFTS';
 
 export interface UserImportOptions {
   readonly existing: 'skip' | 'upsert' | 'update_only';
@@ -266,6 +268,7 @@ export function userImportErrorOf(error: unknown): unknown {
   if (pg.code === '23514') {
     if (pg.message.includes('review of this import has expired')) return refuse('REVIEW_EXPIRED');
     if (pg.message.includes('can no longer be undone')) return refuse('UNDO_EXPIRED');
+    if (pg.message.includes('too many unfinished imports')) return refuse('TOO_MANY_DRAFTS');
     return refuse('IMPORT_STATE_CHANGED');
   }
   return error;

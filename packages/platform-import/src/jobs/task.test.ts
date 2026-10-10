@@ -15,6 +15,8 @@ const db = vi.hoisted(() => ({
   claimUserImportWork: vi.fn(),
   loadUserImportForJob: vi.fn(),
   releaseUserImportLease: vi.fn(),
+  renewUserImportLease: vi.fn(),
+  noteUserImportLeaseLost: vi.fn(),
   setUserImportStatus: vi.fn(),
   saveUserImportColumns: vi.fn(),
   deleteUserImportStaged: vi.fn(),
@@ -155,6 +157,8 @@ beforeEach(() => {
     },
   );
   db.releaseUserImportLease.mockResolvedValue(0);
+  db.renewUserImportLease.mockResolvedValue(true);
+  db.noteUserImportLeaseLost.mockResolvedValue(1);
   db.finishUserImportRows.mockResolvedValue({ added: 2, failed: 1, codes: { X: 1 }, text: '3' });
   db.loadUserImportHeaders.mockResolvedValue(new Map([[0, 'Email']]));
   db.loadUserImportReportRows.mockResolvedValue([
@@ -432,12 +436,57 @@ describe('user import task', () => {
     expect(db.markUserImportPurged).not.toHaveBeenCalled();
   });
 
-  it('a lost lease: the pass leaves the import alone', async () => {
+  it('a lost lease: the pass leaves the import alone, but it counts as a failure (back-off)', async () => {
     db.loadUserImportForJob.mockResolvedValue(null);
     claimOnce('read');
     await task().run({ jobId: 'j' });
-    expect(logs.join('\n')).toContain('lease lost during read');
+    expect(logs.join('\n')).toContain('lease lost during read (failures: 1)');
+    expect(db.noteUserImportLeaseLost).toHaveBeenCalledWith({}, ID, 'lease');
     expect(db.releaseUserImportLease).not.toHaveBeenCalled();
+  });
+
+  it('past MAX_FAILURES (failures or lost leases) the import ends instead of running the step again', async () => {
+    state = { ...base, failures: MAX_FAILURES };
+    claimOnce('read');
+    await task().run({ jobId: 'j' });
+    expect(files.openScannedFile).not.toHaveBeenCalled();
+    expect(db.setUserImportStatus).toHaveBeenCalledWith({}, ID, ['uploaded'], 'failed', {
+      failureCode: 'SYSTEM_FAULT',
+    });
+  });
+
+  it('reading renews the lease as rows go; a lost renewal stops it; past its time budget the file is refused', async () => {
+    const big = new TextEncoder().encode(
+      CSV_BOM +
+        csvLine(['Email', 'الاسم الأول', 'اسم العائلة']) +
+        Array.from({ length: 2500 }, (_v, i) => csvLine([`p${String(i)}@x.test`, 'س', 'ع'])).join(
+          '',
+        ),
+    );
+    files.openScannedFile.mockImplementation(() => Promise.resolve(streamOf(big)));
+    claimOnce('read');
+    await task().run({ jobId: 'j' });
+    expect(state.status).toBe('mapping');
+    // Every transaction renews it, and the reading every 1000 rows.
+    expect(db.renewUserImportLease.mock.calls.length).toBeGreaterThanOrEqual(4);
+
+    state = { ...base };
+    db.renewUserImportLease.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+    claimOnce('read');
+    await task().run({ jobId: 'j' });
+    expect(state.status).toBe('uploaded');
+    expect(db.noteUserImportLeaseLost).toHaveBeenCalled();
+
+    state = { ...base };
+    db.renewUserImportLease.mockImplementation(() => {
+      clock += 6 * 60_000;
+      return Promise.resolve(true);
+    });
+    claimOnce('read');
+    await task().run({ jobId: 'j' });
+    expect(db.setUserImportStatus).toHaveBeenLastCalledWith({}, ID, ['uploaded'], 'rejected', {
+      failureCode: 'FILE_UNREADABLE',
+    });
   });
 
   it('a failed step is tried again later; after MAX_FAILURES the import ends', async () => {

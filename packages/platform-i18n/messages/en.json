@@ -1088,7 +1088,7 @@
         },
         "FILE_TOO_MANY_ROWS": {
           "title": "The file has more rows than allowed",
-          "body": "The file has {rows, number, integer} rows; the limit is 10,000 rows per file. You can split it in two, for example by branch, and import them one after the other."
+          "body": "The file has more than 10,000 rows, the limit per file. You can split it in two, for example by branch, and import them one after the other."
         },
         "FILE_INFECTED": {
           "title": "We didn't accept the file for security reasons",
@@ -1149,7 +1149,8 @@
         "STORAGE_REFUSED": "The file service refused the upload. Refresh the page and try again.",
         "OBJECT_NOT_UPLOADED": "The file didn't arrive in full. You can upload it again.",
         "UPLOAD_EXPIRED": "The upload took too long. You can upload it again.",
-        "INVALID_FILE_DATA": "The file's name couldn't be accepted. You can rename it and upload it."
+        "INVALID_FILE_DATA": "The file's name couldn't be accepted. You can rename it and upload it.",
+        "TOO_MANY_DRAFTS": "You have 5 unfinished imports, or the organization has 20. Complete or cancel them before uploading another file; a review that isn't confirmed ends after 24 hours."
       }
     },
     "recent": {

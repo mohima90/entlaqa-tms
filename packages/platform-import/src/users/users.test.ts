@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readCsvRows, unneutralizeFormula } from '../spreadsheet/csv';
+import type { SheetRow } from '../spreadsheet/errors';
 import { XlsxWorkbook } from '../spreadsheet/xlsx';
 import { FIELD_DEFINITIONS, IMPORT_FIELDS, NEVER_IMPORTED } from './fields';
 import {
@@ -15,6 +16,12 @@ import { IMPORTABLE_ROLES, isPrivilegedRole, roleForName, roleName, splitRoles }
 import { compactMobile, isEmail, isoDate, languageFor, normalizeRow } from './rows';
 import { csvTemplate, templateFileName, templateHeaders, xlsxTemplate } from './template';
 import { cleanText, excerpt, matchKey } from './text';
+
+async function rowsOf(book: XlsxWorkbook, index: number): Promise<SheetRow[]> {
+  const out: SheetRow[] = [];
+  for await (const row of book.rows(index)) out.push(row);
+  return out;
+}
 
 describe('text', () => {
   it('cleans cells like the forms do', () => {
@@ -439,7 +446,7 @@ describe('template (screen 3)', () => {
     expect(templateFileName('en', 'csv')).toBe('user-import-template.csv');
   });
 
-  it('XLSX: users, instructions and lists sheets; headers recognized back', () => {
+  it('XLSX: users, instructions and lists sheets; headers recognized back', async () => {
     const bytes = xlsxTemplate('ar', {
       departments: [
         { code: 'TRN', nameAr: 'التدريب والتطوير', nameEn: 'Training' },
@@ -449,11 +456,11 @@ describe('template (screen 3)', () => {
     });
     const book = XlsxWorkbook.open(bytes);
     expect(book.sheets.map((s) => s.name)).toEqual(['المستخدمون', 'تعليمات', 'القوائم']);
-    const [header] = [...book.rows(0)];
+    const [header] = await rowsOf(book, 0);
     expect(header?.cells).toEqual(templateHeaders('ar'));
     expect(header?.cells.map((h) => fieldForHeader(h))).toEqual([...IMPORT_FIELDS]);
-    expect([...book.rows(0)]).toHaveLength(1);
-    const lists = [...book.rows(2)].map((r) => r.cells);
+    expect(await rowsOf(book, 0)).toHaveLength(1);
+    const lists = (await rowsOf(book, 2)).map((r) => r.cells);
     expect(lists[0]).toEqual(['القسم', 'رمز القسم', 'الفرع', 'رمز الفرع', 'الدور', 'اللغة']);
     expect(lists[1]?.slice(0, 5)).toEqual([
       'التدريب والتطوير',
@@ -469,12 +476,12 @@ describe('template (screen 3)', () => {
         .map((r) => r[4])
         .filter(Boolean),
     ).toHaveLength(IMPORTABLE_ROLES.length);
-    const guide = [...book.rows(1)].map((r) => r.cells);
+    const guide = (await rowsOf(book, 1)).map((r) => r.cells);
     expect(guide[1]?.[0]).toBe('البريد الإلكتروني للعمل');
     expect(guide[1]?.[2]).toBe('مطلوب');
     const english = XlsxWorkbook.open(xlsxTemplate('en', { departments: [], branches: [] }));
     expect(english.sheets.map((s) => s.name)).toEqual(['Users', 'Instructions', 'Lists']);
-    expect([...english.rows(0)][0]?.cells[0]).toBe('Work email');
+    expect((await rowsOf(english, 0))[0]?.cells[0]).toBe('Work email');
   });
 });
 

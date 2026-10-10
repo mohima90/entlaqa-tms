@@ -58,6 +58,34 @@ begin
 end $$;
 rollback;
 
+-- Bounded work (security review H1): at most 5 unfinished imports per member (20 per organization).
+begin;
+set local role authenticated;
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000ab', '10000000-0000-4000-8000-0000000000ab',
+  'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000ab'));
+do $$
+declare
+  v_file uuid;
+  v_id uuid;
+  v_have bigint := (select count(*) from platform.user_imports
+                    where created_by = '00000000-0000-4000-8000-0000000000ab' and review_expires_at > now()
+                      and status = any (private.user_import_draft_statuses()));
+begin
+  for n in v_have + 1 .. 6 loop
+    v_id := gen_random_uuid();
+    select id into v_file from private.create_file_upload('platform.user_import', 'platform', 'user_import',
+      v_id, 'hr' || n || '.csv', 'text/csv', 10);
+    if n <= 5 then
+      perform tests.assert_eq(tests.rows_affected(format($q$insert into platform.user_imports (id, file_id, file_name, file_size) values (%L, %L, 'hr.csv', 10)$q$, v_id, v_file)),
+        1::bigint, format('unfinished import %s of 5', n));
+    else
+      perform tests.assert_fails(format($q$insert into platform.user_imports (id, file_id, file_name, file_size) values (%L, %L, 'hr.csv', 10)$q$, v_id, v_file),
+        array['23514'], 'a sixth unfinished import of the same member is refused (TOO_MANY_DRAFTS)');
+    end if;
+  end loop;
+end $$;
+rollback;
+
 begin;
 set local role authenticated;
 select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000f7', '10000000-0000-4000-8000-0000000000f7',

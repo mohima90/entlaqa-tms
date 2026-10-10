@@ -98,8 +98,11 @@ export function normalizeRow(
   for (const [index, field] of Object.entries(mapping)) {
     const raw = rowCells[Number(index)] ?? '';
     if (raw.trim() === '') continue;
-    cells[field] = raw.slice(0, CELL_LIMIT);
-    const value = cleanText(raw);
+    // Cut before cleaning: a 32,767-character cell is never worked on whole (security review H1); the
+    // cut cell is still reported as too long below.
+    const cut = raw.slice(0, CELL_LIMIT);
+    cells[field] = cut;
+    const value = cleanText(cut);
     if (value !== '' && hasVisibleText(value)) values[field] = value;
   }
 

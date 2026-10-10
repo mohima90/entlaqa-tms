@@ -21,7 +21,7 @@ function chunks(bytes: Uint8Array, size: number): Uint8Array[] {
 async function read(
   text: string | Uint8Array,
   size = 1024,
-  limits = { maxRows: 10_000, maxColumns: 200, maxCellChars: 32_767 },
+  limits = { maxRows: 10_000, maxColumns: 200, maxCellChars: 32_767, maxUnpackedBytes: 1_000_000 },
 ): Promise<SheetRow[]> {
   const bytes = typeof text === 'string' ? encoder.encode(text) : text;
   const rows: SheetRow[] = [];
@@ -98,7 +98,7 @@ describe('readCsvRows', () => {
   });
 
   it('refuses a value beyond the last allowed column; empty cells beyond it are fine', async () => {
-    const limits = { maxRows: 10, maxColumns: 3, maxCellChars: 100 };
+    const limits = { maxRows: 10, maxColumns: 3, maxCellChars: 100, maxUnpackedBytes: 1_000_000 };
     expect((await read('a,b,c,,,\n', 64, limits)).map((r) => r.cells)).toEqual([['a', 'b', 'c']]);
     await expect(read('a,b,c,d\n', 64, limits)).rejects.toMatchObject({
       code: 'FILE_TOO_MANY_COLUMNS',
@@ -106,7 +106,7 @@ describe('readCsvRows', () => {
   });
 
   it('refuses a cell longer than the limit and a quote never closed', async () => {
-    const limits = { maxRows: 10, maxColumns: 3, maxCellChars: 5 };
+    const limits = { maxRows: 10, maxColumns: 3, maxCellChars: 5, maxUnpackedBytes: 1_000_000 };
     await expect(read('abcdef\n', 64, limits)).rejects.toMatchObject({ code: 'FILE_UNREADABLE' });
     await expect(read('a,"bc\n')).rejects.toMatchObject({ code: 'FILE_UNREADABLE' });
   });

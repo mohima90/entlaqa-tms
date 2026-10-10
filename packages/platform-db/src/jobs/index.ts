@@ -92,6 +92,7 @@ export {
   markUserImportPurged,
   recheckUserImport,
   releaseDueUserImportInvitations,
+  noteUserImportLeaseLost,
   releaseUserImportLease,
   renewUserImportLease,
   saveUserImportColumns,

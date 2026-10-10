@@ -33,19 +33,50 @@ export type ReadOutcome =
 export { MAX_IMPORT_ROWS };
 
 /**
+ * Bounds for reading a file in a worker step (security review H1): a time budget (past it the file is
+ * refused as unreadable) and a heartbeat that renews the import's lease every HEARTBEAT_ROWS rows.
+ */
+export interface ReadGuard {
+  /** Epoch milliseconds after which the step gives up (FILE_UNREADABLE). */
+  readonly deadline?: number;
+  /** Called every HEARTBEAT_ROWS rows; throws to stop (e.g. the lease was lost). */
+  readonly heartbeat?: () => Promise<void>;
+  readonly now?: () => number;
+}
+
+export const HEARTBEAT_ROWS = 1000;
+
+/** The rows, checked against the guard as they go. */
+async function* guarded(rows: AsyncIterable<SheetRow>, guard: ReadGuard): AsyncGenerator<SheetRow> {
+  const now = guard.now ?? Date.now;
+  let count = 0;
+  for await (const row of rows) {
+    count += 1;
+    if (count % HEARTBEAT_ROWS === 0) {
+      if (guard.deadline !== undefined && now() > guard.deadline) {
+        throw new SpreadsheetError('FILE_UNREADABLE');
+      }
+      await guard.heartbeat?.();
+    }
+    yield row;
+  }
+}
+
+/**
  * Every sheet's header, size and samples. Refused (FILE_EMPTY, FILE_TOO_MANY_ROWS) when no sheet has
  * between 1 and `maxRows` data rows; sample values of columns that are never imported are not kept.
  */
 export async function readSheets(
   file: OpenedSpreadsheet,
   maxRows: number = MAX_IMPORT_ROWS,
+  guard: ReadGuard = {},
 ): Promise<ReadOutcome> {
   const sheets: SheetInfo[] = [];
   const columns: StagedColumn[] = [];
   for (let index = 0; index < file.sheets.length; index += 1) {
     const sheet = file.sheets[index];
     if (!sheet) continue;
-    const summary = await summarizeSheet(file.rows(index), sheet);
+    const summary = await summarizeSheet(guarded(file.rows(index), guard), sheet, { maxRows });
     sheets.push({
       name: summary.name,
       rows: summary.rows,
@@ -78,14 +109,15 @@ export const STAGE_BATCH = 500;
  * batches. Throws SpreadsheetError FILE_TOO_MANY_ROWS past `maxRows` and FILE_EMPTY without data rows.
  */
 export async function* stagedBatches(
-  rows: AsyncIterable<SheetRow> | Iterable<SheetRow>,
+  rows: AsyncIterable<SheetRow>,
   mapping: ImportMapping,
   maxRows: number = MAX_IMPORT_ROWS,
+  guard: ReadGuard = {},
 ): AsyncGenerator<StagedRow[]> {
   let header = true;
   let count = 0;
   let batch: StagedRow[] = [];
-  for await (const row of rows) {
+  for await (const row of guarded(rows, guard)) {
     if (header) {
       header = false;
       continue;

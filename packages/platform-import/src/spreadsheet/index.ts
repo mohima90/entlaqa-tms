@@ -76,7 +76,10 @@ export interface SheetSummary {
   /** The header's row number, or null when the sheet has no text at all. */
   readonly headerRow: number | null;
   readonly header: readonly string[];
-  /** Data rows (rows with text after the header); counted past the limit. */
+  /**
+   * Data rows (rows with text after the header), counted up to `maxRows + 1` — enough to know a sheet
+   * is over the limit without reading the rest (security review H1).
+   */
   readonly rows: number;
   /** Columns that have a header or a value. */
   readonly columns: number;
@@ -85,15 +88,15 @@ export interface SheetSummary {
 }
 
 /** Rows counted at most (Excel's last row): beyond, a file is refused anyway. */
-const COUNT_LIMIT = 1_048_576;
 const SAMPLE_CHARS = 100;
 
 export async function summarizeSheet(
   rows: AsyncIterable<SheetRow> | Iterable<SheetRow>,
   sheet: { readonly name: string; readonly hidden: boolean },
-  options: { readonly samples?: number } = {},
+  options: { readonly samples?: number; readonly maxRows?: number } = {},
 ): Promise<SheetSummary> {
   const sampleCount = options.samples ?? 3;
+  const countLimit = (options.maxRows ?? DEFAULT_LIMITS.maxRows) + 1;
   let headerRow: number | null = null;
   let header: readonly string[] = [];
   let count = 0;
@@ -107,7 +110,7 @@ export async function summarizeSheet(
       continue;
     }
     count += 1;
-    if (count > COUNT_LIMIT) break;
+    if (count >= countLimit) break;
     if (row.cells.length > columns) columns = row.cells.length;
     row.cells.forEach((cell, index) => {
       const value = cell.trim();
@@ -133,7 +136,7 @@ export async function summarizeSheet(
 export interface OpenedSpreadsheet {
   readonly kind: SpreadsheetKind;
   readonly sheets: readonly { readonly name: string; readonly hidden: boolean }[];
-  rows(sheetIndex: number): AsyncIterable<SheetRow> | Iterable<SheetRow>;
+  rows(sheetIndex: number): AsyncIterable<SheetRow>;
 }
 
 /**

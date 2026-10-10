@@ -168,6 +168,26 @@ export async function releaseUserImportLease(
   return Number(row?.failures ?? 0);
 }
 
+/**
+ * A step outlived its lease (security review H1): counted as a failed attempt with the back-off, so the
+ * import is not claimed again at once — unless another worker took a live lease meanwhile (then nothing
+ * changes). Returns the failures now counted, or null when nothing changed.
+ */
+export async function noteUserImportLeaseLost(
+  tx: ClaimsTx,
+  id: string,
+  leaseToken: string,
+): Promise<number | null> {
+  const [row] = await tx.execute<{ failures: number | string }>(sql`
+    update platform.user_imports
+    set lease_until = null, lease_token = null, failures = least(failures + 1, 1000),
+        next_attempt_at = now() + least(power(2, least(failures, 10)), 60) * interval '1 minute'
+    where id = ${id}::uuid
+      and (lease_token = ${leaseToken}::uuid or lease_until is null or lease_until <= now())
+    returning failures`);
+  return row ? Number(row.failures) : null;
+}
+
 export interface StatusChange {
   readonly failureCode?: string | null;
   readonly sheets?: readonly Record<string, unknown>[];

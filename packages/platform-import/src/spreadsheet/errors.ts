@@ -42,12 +42,18 @@ export interface ReadLimits {
   readonly maxColumns: number;
   /** Characters a single cell may hold (Excel's own limit: 32,767). */
   readonly maxCellChars: number;
+  /**
+   * XLSX: bytes all the parts read in one step (one opening of the file) may inflate to together
+   * (security review H1).
+   */
+  readonly maxUnpackedBytes: number;
 }
 
 export const DEFAULT_LIMITS: ReadLimits = {
   maxRows: 10_000,
   maxColumns: 200,
   maxCellChars: 32_767,
+  maxUnpackedBytes: 256 * 1024 * 1024,
 };
 
 /**

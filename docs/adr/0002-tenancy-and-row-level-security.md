@@ -147,7 +147,7 @@ The check runs once per statement (wrapped in `(select …)`); its cost is measu
 - **§7, the worker's key.** The worker's Supabase secret key (T-M2-17) is also its Storage key: reading uploads to scan them, quarantine moves, retention removals, generated files (`createStorageAdmin` in `@jadarat/platform-db/admin`). The web app still holds no key: users get signed URLs through Storage with their own session, decided by the policies above (ADR 0006 §4).
 
 ### 8. Storage and Realtime
-- Storage object keys start with the tenant ID: `<tenant_id>/<module>/<entity>/<id>/<file>`; storage policies on `storage.objects` require `(storage.foldername(name))[1] = private.current_tenant_id()::text` **and** the download/upload grant rules of ADR 0006 §4 (a clean file plus a short-lived grant created by the authorizing action). Buckets are private; downloads use short-lived signed URLs generated server-side (ADR 0006).
+- Storage object keys start with the tenant ID: `<tenant_id>/<module>/<entity>/<id>/<file>`; storage policies on `storage.objects` require the key's first folder to be the caller's tenant — as built (T-M2-18), `split_part(name, '/', 1) = private.storage_request_tenant()::text`, not `current_tenant_id()`: Storage's own login role, the same decision `private.session_access` (session, idle and maximum-length rules, MFA policy; note T-M2-18 under §7) — **and** the download/upload grant rules of ADR 0006 §4 (a clean file plus a short-lived grant created by the authorizing action). Buckets are private; downloads use short-lived signed URLs generated server-side (ADR 0006).
 - Realtime uses private channels authorized by RLS (Realtime Authorization) with tenant-prefixed topic names; verify exact configuration at implementation.
 
 ### 9. Tenant lifecycle

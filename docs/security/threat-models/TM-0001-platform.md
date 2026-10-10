@@ -4,7 +4,7 @@
 |---|---|
 | **Backlog** | T-M1-C01 (Track C, M1 Foundation) |
 | **Template** | Development Plan Appendix D (extended) |
-| **Version** | 0.1 — 30 Sep 2026 |
+| **Version** | 0.2 — 10 Oct 2026 (RR-06: Storage re-checks the session on every signed-URL request, T-M2-18 integration review) · 0.1 — 30 Sep 2026 |
 | **Status** | Proposed (awaiting Tech Lead review and PO merge) |
 | **Owner** | Security Lead (Claude agent) |
 | **Reviewers** | Tech Lead (Claude agent), Product Owner |
@@ -385,7 +385,7 @@ Each abuse case becomes at least one negative test in the relevant epic (Plan §
 | RR-03 | Platform operator / database superuser can read or alter data and audit logs | Operators of any SaaS hold infrastructure access | PO + Security Lead | External anchoring of audit hash chain; access logging; least privilege; quarterly reviews; ISO 27001 controls |
 | RR-04 | Prompt injection cannot be fully prevented (R2+) | Property of LLMs | Security Lead | Permission-bounded tools, confirmation, red-team suite, monitoring; accept with controls |
 | RR-05 | Zero-day in Next.js/React/Supabase/PostgreSQL | Third-party software | DevOps | Patch SLAs, defense in depth, WAF virtual patching |
-| RR-06 | Access-token validity window (≤ 15 min) after revocation for direct Supabase surfaces (Storage, Realtime, Auth `/user`) | JWT design | Tech Lead | Short TTL; server paths re-check membership per request; F-01 |
+| RR-06 | Access-token validity window (≤ 15 min) after revocation for direct Supabase surfaces (Storage, Realtime, Auth `/user`) | JWT design | Tech Lead | Short TTL; server paths re-check membership per request; F-01. Storage (T-M2-18): every signed-URL request re-checks the session in the database (revocation marker, idle and maximum-length rules, membership, MFA policy — `private.storage_request_tenant()`); URLs already issued stay valid for their lifetime (TM-0003 RR-FIL-01) |
 | RR-07 | Signed URLs are bearer URLs until expiry | Storage design | Tech Lead | Short TTL; per-request issuance; audit of issuance for C4 files |
 | RR-08 | Regional SaaS stores KSA/UAE/Egypt personal data in Frankfurt (cross-border transfer) | Hosting decision for R1 | PO + Legal | SDAIA SCCs + transfer risk assessment; Egypt PDPL permit review; in-country offering R3; see risk register R-05, R-07 |
 | RR-09 | Sub-processor behaviour (Vercel, Supabase, e-mail, error tracking, AI providers) | Third parties | PO + Legal | DPAs, sub-processor list, region pinning, in-country alternatives |

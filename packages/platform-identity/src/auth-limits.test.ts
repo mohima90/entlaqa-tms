@@ -40,8 +40,10 @@ import {
   lockoutHostTenant,
   organizationAccountLockout,
   readAuthLimitWindowOverride,
+  rememberBrowserAfterCode,
   resetAccountSignIn,
   securityLogLine,
+  sessionSubject,
   signInBudgets,
   userSubject,
   withCodeAttemptLimit,
@@ -223,6 +225,12 @@ function memoryStore(now: () => number = () => 0) {
   const forgetOtherDevices = vi.fn((accountSubject: Uint8Array, device: Uint8Array | null) =>
     Promise.resolve(forget(hex(accountSubject), device === null ? null : hex(device))),
   );
+  /** Ticks waiting for a session's sign-in code (integration review L4): session subject → until. */
+  const pending = new Map<string, number>();
+  const rememberAfterCode = vi.fn((session: Uint8Array, minutes: number) => {
+    pending.set(hex(session), now() + minutes * 60_000);
+    return Promise.resolve();
+  });
   const store: RateLimitStore = {
     hit,
     clear: vi.fn((bucket: string, subject: Uint8Array) => {
@@ -238,9 +246,12 @@ function memoryStore(now: () => number = () => 0) {
     signInNotChecked,
     signInReset,
     forgetOtherDevices,
+    rememberAfterCode,
   };
   return {
     store,
+    rememberAfterCode,
+    pending,
     hit,
     signInCheck,
     signInSucceeded,
@@ -264,6 +275,7 @@ function failingStore(): RateLimitStore {
     signInNotChecked: vi.fn(down),
     signInReset: vi.fn(down),
     forgetOtherDevices: vi.fn(down),
+    rememberAfterCode: vi.fn(down),
   };
 }
 
@@ -403,7 +415,7 @@ describe('limitsFor (platform defaults; per-organization policy joins here with 
       sharedClientAttempts: { max: 10_000, windowSeconds: 900 },
     });
     // Opt-in: 30 days when ticked; an unticked password reset trusts its browser for 24 hours (N1).
-    expect(limits.trustedDevice).toEqual({ days: 30, resetDays: 1 });
+    expect(limits.trustedDevice).toEqual({ days: 30, resetDays: 1, codeWaitMinutes: 15 });
     // The lockout e-mail (security review M3): one per person a day, a ceiling per organization an hour.
     expect(limits.lockoutMail).toEqual({ personQuietHours: 24, tenantPerHour: 50 });
     expect(limitsFor({ tenantId: '22222222-2222-4222-8222-222222222222' }, {})).toBe(
@@ -528,6 +540,112 @@ describe('createSignInGuard (FR-IAM-13 lockout, TM-0003 T-IAM-01/03; PO decision
     expect(answers.filter((a) => !a.ok && a.error.code === 'AUTH_TOO_MANY_ATTEMPTS')).toHaveLength(
       25,
     );
+  });
+
+  it('an account with an authenticator app: a ticked password sign-in trusts no browser — the tick waits for the session’s code (integration review L4)', async () => {
+    const { guard, memory } = guardSetup();
+    const SESSION = '33333333-3333-4333-8333-333333333333';
+    const signIn = (factors: { factor_type: string; status: string }[]) =>
+      ({
+        supabase: {
+          auth: {
+            signInWithPassword: () =>
+              Promise.resolve({
+                data: {
+                  session: { access_token: 'access-1', refresh_token: 'refresh-1' },
+                  user: { id: '11111111-1111-4111-8111-111111111111', factors },
+                },
+                error: null,
+              }),
+            getClaims: () =>
+              Promise.resolve({
+                data: {
+                  claims: {
+                    sub: '11111111-1111-4111-8111-111111111111',
+                    role: 'authenticated',
+                    aal: 'aal1',
+                    session_id: SESSION,
+                  },
+                },
+                error: null,
+              }),
+          },
+        },
+        signInGuard: guard(),
+        now: () => 0,
+        sleep: () => Promise.resolve(),
+        logWarning: () => undefined,
+      }) as unknown as AuthFlowDeps;
+    const app = [{ factor_type: 'totp', status: 'verified' }];
+    const answer = await startPasswordSession(signIn(app), {
+      email: EMAIL,
+      password: 'right horse battery',
+      remember: true,
+    });
+    expect(answer.ok).toBe(true);
+    // Password only: no trust row, no cookie — the success is recorded without remembering.
+    expect(memory.trusted.size).toBe(0);
+    expect(memory.signInSucceeded).toHaveBeenCalledWith(expect.anything(), false, null);
+    // The tick waits server-side for THIS Auth session's sign-in code (15 minutes), keyed by its subject.
+    expect(memory.rememberAfterCode).toHaveBeenCalledWith(sessionSubject(SESSION), 15);
+    expect([...memory.pending.keys()]).toEqual([hex(sessionSubject(SESSION))]);
+
+    // Unticked: nothing waits. An account without an app (or with an unfinished one): trusted as before.
+    memory.rememberAfterCode.mockClear();
+    await startPasswordSession(signIn(app), { email: EMAIL, password: 'right horse battery' });
+    expect(memory.rememberAfterCode).not.toHaveBeenCalled();
+    expect(memory.trusted.size).toBe(0);
+    await startPasswordSession(signIn([{ factor_type: 'totp', status: 'unverified' }]), {
+      email: EMAIL,
+      password: 'right horse battery',
+      remember: true,
+    });
+    expect(memory.rememberAfterCode).not.toHaveBeenCalled();
+    expect(memory.trusted.size).toBe(1);
+  });
+
+  it('the shared session vector: the web app and the database derive the same subject (supabase/tests/71)', () => {
+    expect(hex(sessionSubject(' 10000000-0000-4000-8000-000000000C91 '))).toBe(
+      hex(sessionSubject('10000000-0000-4000-8000-000000000c91')),
+    );
+    expect(hex(sessionSubject('10000000-0000-4000-8000-000000000c91'))).toBe(
+      '291dc6033ad349160f5b283a29178503019810558330ae234b920e2209aa8e6f',
+    );
+  });
+
+  it('rememberBrowserAfterCode: after the code, the database decides; the cookie follows its answer; never throws (L4)', async () => {
+    const { deps, events } = guardSetup();
+    const until = new Date(Date.now() + 30 * 86_400_000);
+    // Trusted under a fresh token (the browser had none the server knows).
+    const fresh = browser();
+    const trust = vi.fn(() => Promise.resolve({ device: 'fresh' as const, until }));
+    await rememberBrowserAfterCode(deps, 'platform.auth.mfa_verify', fresh.cookie, trust);
+    expect(trust).toHaveBeenCalledWith(null, expect.any(Buffer), 30);
+    expect(fresh.jar.token).toMatch(DEVICE_TOKEN_PATTERN);
+    expect(fresh.jar.maxAge).toBeGreaterThan(29 * 86_400);
+    // A known token is kept.
+    const known = browser('k'.repeat(43));
+    await rememberBrowserAfterCode(deps, 'platform.auth.mfa_verify', known.cookie, () =>
+      Promise.resolve({ device: 'presented' as const, until }),
+    );
+    expect(known.jar.token).toBe('k'.repeat(43));
+    // Nothing to remember (no tick, not AAL2, an old code): the cookie is left alone.
+    const none = browser();
+    await rememberBrowserAfterCode(deps, 'platform.auth.mfa_verify', none.cookie, () =>
+      Promise.resolve(null),
+    );
+    expect(none.jar.token).toBeNull();
+    // A failure is logged, never thrown: the sign-in goes on, the browser is not remembered.
+    await rememberBrowserAfterCode(deps, 'platform.auth.mfa_verify', none.cookie, () =>
+      Promise.reject(new Error('db down')),
+    );
+    expect(none.jar.token).toBeNull();
+    expect(events.at(-1)).toEqual({
+      event: 'auth.limiter.unavailable',
+      action: 'platform.auth.mfa_verify',
+      reason: 'trust_not_recorded',
+      errorName: 'Error',
+    });
   });
 
   it('treats an unknown account exactly like an existing one (counters per typed e-mail)', async () => {

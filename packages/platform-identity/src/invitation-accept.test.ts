@@ -139,11 +139,15 @@ function setup(options: Options = {}) {
   const failed = vi.fn(() => Promise.resolve());
   const succeeded = vi.fn((_options?: { remember: boolean }) => Promise.resolve());
   const notChecked = vi.fn(() => Promise.resolve());
+  const rememberAfterCode = vi.fn((_sessionId: string) => Promise.resolve());
   const check = vi.fn((_email: string): Promise<SignInGate> =>
     options.gate instanceof Error
       ? Promise.reject(options.gate)
       : Promise.resolve(
-          options.gate ?? { allowed: true, attempt: { failed, succeeded, notChecked } },
+          options.gate ?? {
+            allowed: true,
+            attempt: { failed, succeeded, notChecked, rememberAfterCode },
+          },
         ),
   );
   const guard = { check, failed, succeeded, notChecked };

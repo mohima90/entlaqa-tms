@@ -18,6 +18,8 @@ export const REQUIRED_DATABASE_FUNCTIONS = [
   'rate_limit_sign_in_not_checked(bytea, bytea, boolean)',
   'rate_limit_sign_in_reset(bytea, bytea, bytea, integer)',
   'rate_limit_forget_other_devices(bytea, bytea)',
+  'rate_limit_remember_after_code(bytea, integer)',
+  'rate_limit_trust_after_code(bytea, bytea, integer)',
   'member_sign_in_lock(uuid, integer)',
   'request_account_locked_mail(text, integer)',
   'request_mfa_code_locked_mail(uuid, integer)',

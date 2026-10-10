@@ -37,6 +37,7 @@ import {
   requestPasswordChangedMail,
   requestPasswordResetMail,
   type SessionAccess,
+  trustDeviceAfterCode,
   signInAccountInTenant,
   switchActiveTenant,
   withUserTx,
@@ -80,6 +81,7 @@ import {
   limitsFor,
   lockoutHostTenant,
   organizationAccountLockout,
+  rememberBrowserAfterCode,
   resetAccountSignIn,
   securityLogLine,
   withCodeAttemptLimit,
@@ -365,13 +367,30 @@ export async function startTotpSetupForRequest() {
 
 /**
  * A code from the authenticator app (sign-in, a sensitive action, or a set-up's first code): limited per
- * account and per client (T-M2-11 — Auth's own per-IP limit sees only the app server).
+ * account and per client (T-M2-11 — Auth's own per-IP limit sees only the app server). Once it passed,
+ * this browser becomes trusted when the session ticked «تذكّر هذا المتصفح» at sign-in (integration review
+ * L4): in a transaction with the upgraded session's own claims, after the code check (never nested).
  */
 export async function verifyTotpCodeForRequest(
   input: { readonly code: string; readonly factorId?: string | undefined },
   client: RequestClient,
 ) {
-  return verifyTotpCode(await mfaDeps(codeCheckLimitFor(client, MFA_VERIFY_ACTION), client), input);
+  const deps = await mfaDeps(codeCheckLimitFor(client, MFA_VERIFY_ACTION), client);
+  const device = trustedDeviceCookie(await cookies());
+  return verifyTotpCode(
+    {
+      ...deps,
+      rememberBrowser: (session) =>
+        rememberBrowserAfterCode(
+          limiterDeps(),
+          MFA_VERIFY_ACTION,
+          device,
+          (presented, fresh, days) =>
+            withUserTx(session, (tx) => trustDeviceAfterCode(tx, presented, fresh, days)),
+        ),
+    },
+    input,
+  );
 }
 
 /**

@@ -158,6 +158,27 @@ export interface PasswordCredentials {
 }
 
 /**
+ * Whether Auth's answer to a password sign-in names a verified authenticator app of the account (GoTrue
+ * returns the user with its factors). A missing user counts as one (the safe side: the browser waits for a
+ * code before it is remembered).
+ */
+function usesAuthenticatorApp(data: unknown): boolean {
+  const user = typeof data === 'object' && data !== null && 'user' in data ? data.user : null;
+  if (typeof user !== 'object' || user === null) return true;
+  const factors = 'factors' in user ? user.factors : null;
+  return (
+    Array.isArray(factors) &&
+    factors.some(
+      (f: unknown) =>
+        typeof f === 'object' &&
+        f !== null &&
+        (f as Record<string, unknown>).factor_type === 'totp' &&
+        (f as Record<string, unknown>).status === 'verified',
+    )
+  );
+}
+
+/**
  * Signs in with e-mail + password and verifies the issued access token. No organization is required
  * here: signInWithPassword() continues with the organizations, the invitation flow
  * (invitation-accept.ts) with the invitation.
@@ -168,6 +189,9 @@ export interface PasswordCredentials {
  * (failed: events and the lockout e-mail; succeeded: the provisional failure is given back and — only with
  * `remember` — the browser trusted; Auth's own 429: the account's failure is given back, no password was
  * compared). Every refusal — limited, or wrong e-mail or password — is answered after the same minimum time.
+ * For an account with an authenticator app (integration review L4), a ticked «تذكّر هذا المتصفح» trusts
+ * nothing yet: it waits — server-side, bound to this Auth session — for the session's sign-in code
+ * (mfa.ts verifyTotpCode → auth-limits.ts rememberBrowserAfterCode).
  */
 export async function startPasswordSession(
   deps: AuthFlowDeps,
@@ -222,13 +246,19 @@ export async function startPasswordSession(
     throw new AuthServiceError(error.status);
   }
   // The password was right: the provisional failure is given back and the run of failures ends; the
-  // browser is trusted for the account (30 days) only when «تذكّر هذا المتصفح» was ticked.
-  await gate.attempt.succeeded({ remember: credentials.remember === true });
+  // browser is trusted for the account (30 days) only when «تذكّر هذا المتصفح» was ticked — and, for an
+  // account with an authenticator app, only once the sign-in code passed (integration review L4).
+  const remember = credentials.remember === true;
+  const afterCode = remember && usesAuthenticatorApp(data);
+  await gate.attempt.succeeded({ remember: remember && !afterCode });
   const tokens = sessionTokens(data);
   if (!tokens) return err(appError('UNAUTHENTICATED'));
 
   const claims = await verifyClaims(supabase, tokens.accessToken);
-  return claims.ok ? ok({ tokens, claims: claims.value }) : claims;
+  if (!claims.ok) return claims;
+  const sessionId = claims.value.session_id;
+  if (afterCode && sessionId !== undefined) await gate.attempt.rememberAfterCode(sessionId);
+  return ok({ tokens, claims: claims.value });
 }
 
 export async function signInWithPassword(

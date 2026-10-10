@@ -18,9 +18,10 @@ declare
 begin
   for r in select * from (values
       ('private.session_access(uuid,uuid,uuid,boolean,boolean)', 'tenant_guard', ''),
-      -- membership_guard: T-M2-09's authenticator-code rule (20261012120000).
-      ('private.request_aal2()', 'tenant_guard', 'authenticated,membership_guard'),
-      ('private.request_code_fresh()', 'tenant_guard', 'authenticated,membership_guard'),
+      -- membership_guard: T-M2-09's authenticator-code rule (20261012120000); rate_limit_guard: the trust
+      -- of a remembered browser after the sign-in code (T-M2-11 integration review L4, 20261013090000).
+      ('private.request_aal2()', 'tenant_guard', 'authenticated,membership_guard,rate_limit_guard'),
+      ('private.request_code_fresh()', 'tenant_guard', 'authenticated,membership_guard,rate_limit_guard'),
       ('private.request_session_facts()', 'tenant_guard', 'authenticated'),
       ('private.session_access_state()', 'tenant_guard', 'authenticated'),
       ('private.dismiss_mfa_prompt()', 'tenant_guard', 'authenticated'),

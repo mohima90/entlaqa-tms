@@ -118,6 +118,9 @@ begin
     'the Kelvin sign K is K (NFC), as Go lower-cases it');
   -- Guard: whatever is not printable ASCII after normalisation shares one subject (no account has such an
   -- address; the same vector in auth-limits.test.ts).
+  -- The session subject (integration review L4), as the web app derives it (auth-limits.test.ts).
+  perform tests.assert_eq(encode(private.rate_limit_session_subject('10000000-0000-4000-8000-000000000C91'), 'hex'),
+    '291dc6033ad349160f5b283a29178503019810558330ae234b920e2209aa8e6f', 'the session subject (same vector as the web app)');
   perform tests.assert_eq(encode(private.rate_limit_account_subject(U&'\0131@x.test'), 'hex'),
     '4644ee3cbaf840b60dad525e47034dcf9c671f09a383121efc87556f94acf4cc',
     'a non-ASCII address: the shared subject (same vector as the web app)');

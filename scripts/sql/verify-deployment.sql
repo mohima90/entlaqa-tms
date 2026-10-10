@@ -293,8 +293,8 @@ begin
       ('private.session_access(uuid, uuid, uuid, boolean, boolean)', 'tenant_guard', array['tenant_guard'], true),
       ('private.session_access_state()',            'tenant_guard', array['tenant_guard', 'authenticated'], true),
       -- membership_guard: T-M2-09's authenticator-code rule uses them (20261012120000).
-      ('private.request_aal2()',                    'tenant_guard', array['tenant_guard', 'authenticated', 'membership_guard'], true),
-      ('private.request_code_fresh()',              'tenant_guard', array['tenant_guard', 'authenticated', 'membership_guard'], true),
+      ('private.request_aal2()',                    'tenant_guard', array['tenant_guard', 'authenticated', 'membership_guard', 'rate_limit_guard'], true),
+      ('private.request_code_fresh()',              'tenant_guard', array['tenant_guard', 'authenticated', 'membership_guard', 'rate_limit_guard'], true),
       ('private.request_session_facts()',           'tenant_guard', array['tenant_guard', 'authenticated'], true),
       ('private.dismiss_mfa_prompt()',              'tenant_guard', array['tenant_guard', 'authenticated'], true),
       ('private.tenant_member_mfa(uuid)',           'tenant_guard', array['tenant_guard', 'authenticated'], true),
@@ -352,6 +352,9 @@ begin
       ('private.rate_limit_sign_in_not_checked(bytea, bytea, boolean)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
       ('private.rate_limit_sign_in_reset(bytea, bytea, bytea, integer)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
       ('private.rate_limit_forget_other_devices(bytea, bytea)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
+      -- «تذكّر هذا المتصفح» after the sign-in code (integration review L4).
+      ('private.rate_limit_remember_after_code(bytea, integer)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
+      ('private.rate_limit_trust_after_code(bytea, bytea, integer)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
       ('private.member_sign_in_lock(uuid, integer)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
       ('private.unlock_member_sign_in(uuid, integer)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
       ('private.rotate_rate_limit_keys()', 'rate_limit_guard', array['rate_limit_guard'], true),
@@ -367,7 +370,8 @@ begin
       ('private.rate_limit_lock_account_devices(bytea)', 'rate_limit_guard', array['rate_limit_guard'], false),
       ('private.rate_limit_choose_device(bytea)', 'rate_limit_guard', array['rate_limit_guard'], false),
       ('private.rate_limit_trust_device(bytea, bytea, integer)', 'rate_limit_guard', array['rate_limit_guard'], false),
-      ('private.rate_limit_member_account(uuid)', 'rate_limit_guard', array['rate_limit_guard'], false)
+      ('private.rate_limit_member_account(uuid)', 'rate_limit_guard', array['rate_limit_guard'], false),
+      ('private.rate_limit_session_subject(uuid)', 'rate_limit_guard', array['rate_limit_guard'], false)
     ) as h(fn, owner, allowed, definer)
     left join pg_proc p on p.oid = to_regprocedure(h.fn)
   loop
@@ -433,6 +437,7 @@ begin
         'private.rate_limit_sign_in_succeeded(bytea,bytea,bytea,bytea,boolean,boolean,integer)',
         'private.rate_limit_sign_in_not_checked(bytea,bytea,boolean)',
         'private.rate_limit_sign_in_reset(bytea,bytea,bytea,integer)', 'private.rate_limit_forget_other_devices(bytea,bytea)',
+        'private.rate_limit_remember_after_code(bytea,integer)', 'private.rate_limit_trust_after_code(bytea,bytea,integer)',
         'private.member_sign_in_lock(uuid,integer)', 'private.unlock_member_sign_in(uuid,integer)',
         'private.rotate_rate_limit_keys()')
   loop

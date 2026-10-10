@@ -38,6 +38,7 @@ export {
   type TrustedDeviceChoice,
   createRateLimitStore,
   rateLimitStore,
+  trustDeviceAfterCode,
 } from './rate-limit';
 export {
   type MemberSignInLock,

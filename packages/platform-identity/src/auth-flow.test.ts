@@ -41,6 +41,8 @@ interface FakeOptions {
   gate?: SignInGate | Error;
   /** Milliseconds Auth takes to answer (the fake clock moves on by this much). */
   authLatencyMs?: number;
+  /** The account's factors in Auth's answer (default: none — no authenticator app). */
+  factors?: { factor_type: string; status: string }[];
 }
 
 function setup(options: FakeOptions = {}) {
@@ -53,7 +55,10 @@ function setup(options: FakeOptions = {}) {
         options.signInError
           ? { data: { session: null }, error: options.signInError }
           : {
-              data: { session: { access_token: 'access-1', refresh_token: 'refresh-1' } },
+              data: {
+                session: { access_token: 'access-1', refresh_token: 'refresh-1' },
+                user: { id: USER, factors: options.factors ?? [] },
+              },
               error: null,
             },
       );
@@ -97,15 +102,19 @@ function setup(options: FakeOptions = {}) {
   const failed = vi.fn(() => Promise.resolve());
   const succeeded = vi.fn((_options?: { remember: boolean }) => Promise.resolve());
   const notChecked = vi.fn(() => Promise.resolve());
+  const rememberAfterCode = vi.fn((_sessionId: string) => Promise.resolve());
   const check = vi.fn((_email: string): Promise<SignInGate> =>
     options.gate instanceof Error
       ? Promise.reject(options.gate)
       : Promise.resolve(
-          options.gate ?? { allowed: true, attempt: { failed, succeeded, notChecked } },
+          options.gate ?? {
+            allowed: true,
+            attempt: { failed, succeeded, notChecked, rememberAfterCode },
+          },
         ),
   );
   const signInGuard: SignInGuard = { check };
-  const guard = { check, failed, succeeded, notChecked };
+  const guard = { check, failed, succeeded, notChecked, rememberAfterCode };
   const deps: AuthFlowDeps = {
     supabase: { auth },
     withUserTx: ((claims: unknown, fn: (tx: unknown) => Promise<unknown>) => {
@@ -262,6 +271,28 @@ describe('signInWithPassword', () => {
     const ticked = setup();
     await signInWithPassword(ticked.deps, { ...credentials, remember: true });
     expect(ticked.guard.succeeded).toHaveBeenCalledWith({ remember: true });
+    expect(ticked.guard.rememberAfterCode).not.toHaveBeenCalled();
+  });
+
+  it('an account with an authenticator app: the password alone remembers nothing — a ticked box waits for this session’s code (integration review L4)', async () => {
+    const app = [{ factor_type: 'totp', status: 'verified' }];
+    const ticked = setup({ factors: app });
+    expect((await signInWithPassword(ticked.deps, { ...credentials, remember: true })).ok).toBe(
+      true,
+    );
+    expect(ticked.guard.succeeded).toHaveBeenCalledWith({ remember: false });
+    // The session of the token Auth just issued, verified.
+    expect(ticked.guard.rememberAfterCode).toHaveBeenCalledWith(SESSION);
+    // Unticked: nothing waits.
+    const unticked = setup({ factors: app });
+    await signInWithPassword(unticked.deps, credentials);
+    expect(unticked.guard.succeeded).toHaveBeenCalledWith({ remember: false });
+    expect(unticked.guard.rememberAfterCode).not.toHaveBeenCalled();
+    // A set-up that never passed its first code is no app yet: today's behaviour.
+    const unfinished = setup({ factors: [{ factor_type: 'totp', status: 'unverified' }] });
+    await signInWithPassword(unfinished.deps, { ...credentials, remember: true });
+    expect(unfinished.guard.succeeded).toHaveBeenCalledWith({ remember: true });
+    expect(unfinished.guard.rememberAfterCode).not.toHaveBeenCalled();
   });
 
   it('never reports an Auth outage as a wrong password; the provisional failure stays counted', async () => {

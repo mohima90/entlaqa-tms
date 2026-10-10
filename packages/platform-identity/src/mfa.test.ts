@@ -340,6 +340,34 @@ describe('verifyTotpCode', () => {
     expect(audited).toEqual(['platform.auth.mfa_verified', 'platform.auth.signed_in']);
   });
 
+  it('a remembered browser is trusted only once a sign-in code passed — never after a set-up or a wrong code (integration review L4)', async () => {
+    const remembered: unknown[] = [];
+    const rememberBrowser = vi.fn((session: unknown) => {
+      remembered.push(session);
+      return Promise.resolve();
+    });
+    // A sign-in code: asked with the UPGRADED session's verified claims (aal2), before the sign-in completes.
+    const signIn = setup({ apps: [confirmedApp], access: 'mfa_challenge', accessAfter: 'ok' });
+    await verifyTotpCode({ ...signIn.deps, rememberBrowser }, { code: '123456' });
+    expect(rememberBrowser).toHaveBeenCalledTimes(1);
+    expect(remembered[0]).toMatchObject({ sub: USER, aal: 'aal2' });
+    // A set-up's first code, a wrong code, a limited check: nothing.
+    const enrol = setup({
+      factors: [{ ...unfinished, id: 'f-new' }],
+      access: 'mfa_enrol',
+      accessAfter: 'mfa_enrol',
+    });
+    await verifyTotpCode({ ...enrol.deps, rememberBrowser }, { code: '123456', factorId: 'f-new' });
+    const wrong = setup({
+      apps: [confirmedApp],
+      verifyError: { status: 422, code: 'mfa_verification_failed' },
+    });
+    await verifyTotpCode({ ...wrong.deps, rememberBrowser }, { code: '000000' });
+    const limited = setup({ apps: [confirmedApp], codeLimited: true });
+    await verifyTotpCode({ ...limited.deps, rememberBrowser }, { code: '123456' });
+    expect(rememberBrowser).toHaveBeenCalledTimes(1);
+  });
+
   it('a step-up code (session already allowed) is not a new sign-in', async () => {
     const { deps, audited, calls } = setup({ apps: [confirmedApp], access: 'ok' });
     await verifyTotpCode(deps, { code: '123456' });

@@ -2,6 +2,7 @@ import 'server-only';
 import { createHash, randomBytes } from 'node:crypto';
 import { type AppError, type Result, appError, err } from '@jadarat/platform-core';
 import type {
+  DeviceTrust,
   RateLimit,
   RateLimitCounter,
   RateLimitStore,
@@ -60,7 +61,10 @@ export interface RequestClient {
 
 const SUBJECT_DOMAIN = 'jadarat.rate-limit.v1';
 
-function subject(kind: 'account' | 'client' | 'user' | 'device', value: string): Buffer {
+function subject(
+  kind: 'account' | 'client' | 'user' | 'device' | 'session',
+  value: string,
+): Buffer {
   return createHash('sha256').update(`${SUBJECT_DOMAIN}\n${kind}\n${value}`).digest();
 }
 
@@ -109,6 +113,16 @@ export function clientSubject(client: RequestClient): Buffer {
 
 export function userSubject(userId: string): Buffer {
   return subject('user', userId.trim().toLowerCase());
+}
+
+/**
+ * An Auth session's subject (the session id of a verified token): where a ticked «تذكّر هذا المتصفح» waits
+ * for that session's sign-in code (integration review L4). The database derives the same from the
+ * session's claims (private.rate_limit_session_subject; shared test vector in auth-limits.test.ts and
+ * supabase/tests/71).
+ */
+export function sessionSubject(sessionId: string): Buffer {
+  return subject('session', sessionId.trim().toLowerCase());
 }
 
 // ----- Trusted browsers (PO decision 9 Oct 2026; screen 6 «تذكّر الجهاز الموثوق»; TM-0003 IA-02) -----
@@ -538,6 +552,13 @@ export interface SignInAttempt extends LimitedAttempt {
    */
   succeeded(options?: SignInSuccessOptions): Promise<void>;
   /**
+   * «تذكّر هذا المتصفح» was ticked for an account with an authenticator app (integration review L4): the
+   * browser is NOT trusted now — the tick waits for the sign-in code of this Auth session (`sessionId`,
+   * from the verified token Auth just issued), server-side, `trustedDevice.codeWaitMinutes` at most;
+   * `rememberBrowserAfterCode` trusts it once the code passed. Never throws (logged).
+   */
+  rememberAfterCode(sessionId: string): Promise<void>;
+  /**
    * Auth answered before comparing the password (its own rate limit, HTTP 429 — security review T-M2-11
    * L6): the account's (or the trusted browser's) provisional failure is given back; the client's stays.
    */
@@ -674,6 +695,17 @@ export function createSignInGuard(deps: SignInGuardDeps): SignInGuard {
             unavailable('failure_not_given_back', error);
           }
         },
+        async rememberAfterCode(sessionId) {
+          try {
+            await store.rememberAfterCode(
+              sessionSubject(sessionId),
+              deps.limits.trustedDevice.codeWaitMinutes,
+            );
+          } catch (error) {
+            // The browser is simply not remembered: it only tightens the limits.
+            unavailable('remember_not_recorded', error);
+          }
+        },
       };
       return { allowed: true, attempt };
     },
@@ -723,6 +755,47 @@ export async function resetAccountSignIn(
       event: 'auth.limiter.unavailable',
       action,
       reason: 'lock_not_cleared',
+      errorName: errorNameOf(error),
+    });
+  }
+}
+
+/**
+ * After a session's sign-in code passed (integration review L4; mfa.ts verifyTotpCode): when that session
+ * ticked «تذكّر هذا المتصفح» at sign-in (`SignInAttempt.rememberAfterCode`), the browser becomes trusted
+ * for the account (30 days) and its cookie is set — the browser's own token when the server knows it,
+ * else a fresh one. `trustAfterCode` is platform-db `trustDeviceAfterCode` in a transaction with the
+ * session's verified claims: the database trusts only a session it sees at AAL2 through a confirmed app
+ * with a fresh code, and only once per tick. Never throws (logged).
+ */
+export async function rememberBrowserAfterCode(
+  deps: LimiterDeps,
+  action: string,
+  device: TrustedDeviceCookie,
+  trustAfterCode: (
+    device: Uint8Array | null,
+    freshDevice: Uint8Array,
+    trustDays: number,
+  ) => Promise<DeviceTrust | null>,
+): Promise<void> {
+  const token = device.read();
+  const fresh = newDeviceToken();
+  try {
+    const trust = await trustAfterCode(
+      token === null ? null : deviceSubject(token),
+      deviceSubject(fresh),
+      deps.limits.trustedDevice.days,
+    );
+    if (trust === null) return;
+    device.write(
+      trust.device === 'presented' && token !== null ? token : fresh,
+      cookieSeconds(trust.until),
+    );
+  } catch (error) {
+    deps.log({
+      event: 'auth.limiter.unavailable',
+      action,
+      reason: 'trust_not_recorded',
       errorName: errorNameOf(error),
     });
   }

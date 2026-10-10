@@ -83,6 +83,8 @@ export {
   organizationAccountLockout,
   readAuthClientHeader,
   readAuthLimitWindowOverride,
+  rememberBrowserAfterCode,
+  sessionSubject,
   securityLogLine,
   signInBudgets,
   withCodeAttemptLimit,

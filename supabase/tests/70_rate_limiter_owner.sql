@@ -30,12 +30,13 @@ begin
     'private.rate_limit_key(bytea) (INVOKER), private.rate_limit_lock_account_devices(bytea) (INVOKER), '
     'private.rate_limit_member_account(uuid) (INVOKER), private.rate_limit_normalize_email(text) (INVOKER), '
     'private.rate_limit_purge() (INVOKER), private.rate_limit_ref(bytea) (INVOKER), '
-    'private.rate_limit_refund(text,bytea) (INVOKER), '
+    'private.rate_limit_refund(text,bytea) (INVOKER), private.rate_limit_remember_after_code(bytea,integer), '
+    'private.rate_limit_session_subject(uuid) (INVOKER), '
     'private.rate_limit_sign_in_check(bytea,bytea,bytea,integer,integer,integer,integer,integer,integer,integer,integer), '
     'private.rate_limit_sign_in_not_checked(bytea,bytea,boolean), '
     'private.rate_limit_sign_in_reset(bytea,bytea,bytea,integer), '
     'private.rate_limit_sign_in_succeeded(bytea,bytea,bytea,bytea,boolean,boolean,integer), '
-    'private.rate_limit_trust_device(bytea,bytea,integer) (INVOKER), '
+    'private.rate_limit_trust_after_code(bytea,bytea,integer), private.rate_limit_trust_device(bytea,bytea,integer) (INVOKER), '
     'private.rotate_rate_limit_keys(), private.sign_in_account_in_tenant(text,uuid), '
     'private.unlock_member_sign_in(uuid,integer)',
     'rate_limit_guard owns the limiter functions only; the entry points are SECURITY DEFINER');
@@ -94,7 +95,7 @@ begin
   perform tests.assert_eq(
     (select count(*)::int from pg_proc p
      where p.proowner = 'rate_limit_guard'::regrole and has_function_privilege('authenticated', p.oid, 'execute')),
-    11, 'the web app (as authenticated) may call the eleven entry points');
+    13, 'the web app (as authenticated) may call the thirteen entry points');
   -- Beyond its own: the unlock notice of the account-mail pipeline (inside unlock_member_sign_in).
   perform tests.assert_eq(
     (select string_agg(p.oid::regprocedure::text, ', ' order by p.oid::regprocedure::text)
@@ -102,8 +103,8 @@ begin
      where p.proowner <> 'rate_limit_guard'::regrole
        and exists (select 1 from aclexplode(p.proacl) a where pg_get_userbyid(a.grantee) = 'rate_limit_guard')),
     'private.actor_role_codes(uuid,uuid), private.current_tenant_id(), private.has_active_membership(uuid,uuid), '
-    'private.request_claims(), private.request_sign_in_unlocked_mail(uuid), private.request_user_id(), '
-    'private.try_uuid(text)',
+    'private.request_aal2(), private.request_claims(), private.request_code_fresh(), '
+    'private.request_sign_in_unlocked_mail(uuid), private.request_user_id(), private.try_uuid(text)',
     'rate_limit_guard may call exactly these other functions');
 
   -- The keys, the counters and the trusted browsers: RLS forced, reachable by rate_limit_guard alone (no

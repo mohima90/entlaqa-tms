@@ -423,6 +423,65 @@ select tests.assert_fails($$select private.request_mfa_code_locked_mail('0000000
 select private.request_mfa_code_locked_mail('00000000-0000-4000-8000-0000000000a1', 15);
 rollback;
 
+-- «تذكّر هذا المتصفح» for an account with an authenticator app (integration review L4): the tick waits for
+-- the session's sign-in code; only a session the database sees at AAL2 through a confirmed app with a fresh
+-- code (T-M2-10 fixtures of 65: uA2 …c09 / sA2 …c91 at AAL2; uM1 …c04 / sM1 …c41 signed in with the password
+-- only) gets the browser trusted, once. Rolled back.
+begin;
+set local role authenticated;
+do $$
+declare
+  v_session_a2 constant bytea := sha256(convert_to(
+    'jadarat.rate-limit.v1' || chr(10) || 'session' || chr(10) || '10000000-0000-4000-8000-000000000c91', 'UTF8'));
+  v_session_m1 constant bytea := sha256(convert_to(
+    'jadarat.rate-limit.v1' || chr(10) || 'session' || chr(10) || '10000000-0000-4000-8000-000000000c41', 'UTF8'));
+  v_account_a2 constant bytea := sha256(convert_to(
+    'jadarat.rate-limit.v1' || chr(10) || 'account' || chr(10) || 'ua2@a.test', 'UTF8'));
+  v_fresh constant bytea := sha256(convert_to('tests.trust-after-code', 'UTF8'));
+  v_a2 constant jsonb := tests.user_claims('00000000-0000-4000-8000-000000000c09', '10000000-0000-4000-8000-000000000c91',
+                                           'a0000000-0000-4000-8000-000000000001');
+  v_m1 constant jsonb := tests.user_claims('00000000-0000-4000-8000-000000000c04', '10000000-0000-4000-8000-000000000c41',
+                                           'a0000000-0000-4000-8000-000000000001');
+  r record;
+begin
+  -- The shared vector (auth-limits.test.ts): the session subject the web app sends.
+  perform tests.assert_eq(encode(v_session_a2, 'hex'),
+    '291dc6033ad349160f5b283a29178503019810558330ae234b920e2209aa8e6f', 'the session subject (same vector as the web app)');
+  -- At the password step (no claims, the limiter's own transaction): the ticks wait; nothing is trusted.
+  perform tests.set_claims(null);
+  perform private.rate_limit_remember_after_code(v_session_a2, 15);
+  perform private.rate_limit_remember_after_code(v_session_m1, 15);
+  perform tests.assert_fails(format('select private.rate_limit_remember_after_code(%L::bytea, 61)', v_session_a2),
+    array['22023'], 'the tick waits at most 60 minutes');
+  perform tests.assert_fails('select * from private.rate_limit_trust_after_code(null, sha256(''\x01''::bytea), 30)',
+    array['42501'], 'trusting after a code needs the session''s claims');
+  select * into r from private.rate_limit_sign_in_check(sha256(convert_to('client-l4', 'UTF8')), v_account_a2, v_fresh,
+                                                        100, 900, 100, 900, 5, 900, 10, 900);
+  perform tests.assert(not r.trusted, 'after the password alone the browser is not trusted');
+  -- uM1 signed in with the password only (its Auth session is aal1): a token CLAIMING aal2 and a fresh code is
+  -- not enough — no browser is trusted (the database checks Auth's own session level and the app).
+  perform tests.set_claims(v_m1 || tests.fresh_code());
+  perform tests.assert(not exists (select 1 from private.rate_limit_trust_after_code(null, v_fresh, 30)),
+    'password only: no trusted browser, whatever the token claims');
+  -- uA2's code is older than the step-up age: nothing.
+  perform tests.set_claims(v_a2 || tests.fresh_code(interval '20 minutes'));
+  perform tests.assert(not exists (select 1 from private.rate_limit_trust_after_code(null, v_fresh, 30)),
+    'an old code trusts nothing');
+  -- uA2's code just passed: the fresh token is trusted for the account, 30 days — once.
+  perform tests.set_claims(v_a2 || tests.fresh_code());
+  select * into r from private.rate_limit_trust_after_code(null, v_fresh, 30);
+  perform tests.assert(r.device = 'fresh' and r.trusted_until between now() + interval '29 days 23 hours'
+                                                                  and now() + interval '30 days 1 hour',
+    'after the sign-in code: the browser is trusted for 30 days');
+  perform tests.assert(not exists (select 1 from private.rate_limit_trust_after_code(null, v_fresh, 30)),
+    'the tick is used up');
+  perform tests.set_claims(null);
+  select * into r from private.rate_limit_sign_in_check(sha256(convert_to('client-l4', 'UTF8')), v_account_a2, v_fresh,
+                                                        100, 900, 100, 900, 5, 900, 10, 900);
+  perform tests.assert(r.trusted, 'the browser is now trusted for that account');
+end $$;
+rollback;
+
 -- Accounts locked by failures (uAB 'uab@ab.test' and the former member uRev 'urev@a.test', subjects as the
 -- web app derives them), then the Organization Admin of A (uA) sees the lock of their member and ends it.
 begin;

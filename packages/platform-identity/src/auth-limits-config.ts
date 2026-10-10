@@ -28,9 +28,15 @@ export interface AuthLimits {
    * days); sliding, renewed by ticked sign-ins only — an unticked one leaves the trust to end on its date.
    * `resetDays`: after a completed reset with the box NOT ticked — 1 (24 hours), enough for the owner to
    * ride out a lock attack (security review M2) without remembering the browser unasked (re-review N1). A
-   * longer trust the browser already has is never shortened.
+   * longer trust the browser already has is never shortened. `codeWaitMinutes` (integration review L4):
+   * for an account with an authenticator app, a ticked sign-in trusts the browser only once the session's
+   * sign-in code passed — the tick waits this long for it (server-side, bound to the Auth session).
    */
-  readonly trustedDevice: { readonly days: number; readonly resetDays: number };
+  readonly trustedDevice: {
+    readonly days: number;
+    readonly resetDays: number;
+    readonly codeWaitMinutes: number;
+  };
   /**
    * The "account locked" e-mail (security review T-M2-11 M3; the worker enforces both): at most one per
    * person in `personQuietHours`, and at most `tenantPerHour` per organization an hour (a spray against a
@@ -92,7 +98,7 @@ export const PLATFORM_AUTH_LIMITS: AuthLimits = {
     sharedClientFailures: { max: 1000, windowSeconds: WINDOW },
     sharedClientAttempts: { max: 10_000, windowSeconds: WINDOW },
   },
-  trustedDevice: { days: 30, resetDays: 1 },
+  trustedDevice: { days: 30, resetDays: 1, codeWaitMinutes: 15 },
   lockoutMail: { personQuietHours: 24, tenantPerHour: 50 },
   passwordCheck: { userAttempts: { max: 5, windowSeconds: WINDOW } },
   passwordReset: {

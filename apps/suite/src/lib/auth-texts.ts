@@ -1,6 +1,11 @@
 import 'server-only';
 import { PlatformErrors } from '@jadarat/platform-core';
-import { IdentityErrors, InvitationErrors, PasswordResetErrors } from '@jadarat/platform-identity';
+import {
+  IdentityErrors,
+  InvitationErrors,
+  MfaErrors,
+  PasswordResetErrors,
+} from '@jadarat/platform-identity';
 import { getTranslations } from 'next-intl/server';
 
 /** Message keys an auth action can return (platform + identity registries). */
@@ -21,6 +26,12 @@ export const PASSWORD_RESET_ERROR_KEYS: readonly string[] = [
   ...Object.values(PasswordResetErrors).map((def) => def.messageKey),
 ];
 
+/** Message keys the authenticator-app actions can return (auth keys + MFA registry, T-M2-10). */
+export const MFA_ERROR_KEYS: readonly string[] = [
+  ...AUTH_ERROR_KEYS,
+  ...Object.values(MfaErrors).map((def) => def.messageKey),
+];
+
 async function rawTexts(locale: string, keys: readonly string[]): Promise<Record<string, string>> {
   const t = await getTranslations({ locale });
   return Object.fromEntries(keys.map((key) => [key, String(t.raw(key))]));
@@ -39,4 +50,9 @@ export async function inviteErrorTexts(locale: string): Promise<Record<string, s
 /** Error texts for the forgot / reset password pages (screens 10 and 11). */
 export async function passwordResetErrorTexts(locale: string): Promise<Record<string, string>> {
   return rawTexts(locale, PASSWORD_RESET_ERROR_KEYS);
+}
+
+/** Error texts for the authenticator-app steps (/mfa page, My profile). */
+export async function mfaErrorTexts(locale: string): Promise<Record<string, string>> {
+  return rawTexts(locale, MFA_ERROR_KEYS);
 }

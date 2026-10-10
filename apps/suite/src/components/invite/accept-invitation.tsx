@@ -25,7 +25,7 @@ import {
   splitLinkMessage,
   withOrganization,
 } from '../../lib/invite-link';
-import { passwordRuleState } from '../../lib/password-rules';
+import { minFromParams, passwordRuleState, withMin } from '../../lib/password-rules';
 import { type ErrorTexts, errorText } from '../auth/error-text';
 import { PasswordRulesList } from '../auth/password-rules-list';
 import { fieldErrorCodes } from '../profile/field-errors';
@@ -37,10 +37,12 @@ import { fieldErrorCodes } from '../profile/field-errors';
  * logged or stored in the browser.
  */
 
-type Next = 'home' | 'choose-organization' | 'sign-in';
+type Next = 'home' | 'choose-organization' | 'sign-in' | 'mfa';
 
 function nextPath(locale: string, next: Next): string {
   if (next === 'home') return `/${locale}/suite`;
+  // The organization asks for an authenticator app (screen 8, step 2; T-M2-10).
+  if (next === 'mfa') return `/${locale}/mfa`;
   return `/${locale}/${next === 'choose-organization' ? 'select-organization' : 'sign-in'}`;
 }
 
@@ -68,6 +70,8 @@ export interface AcceptInvitationFormProps {
   readonly token: string;
   readonly email: string;
   readonly displayName: { readonly ar: string; readonly en: string };
+  /** The invited organization's minimum password length (T-M2-10; at least 12). */
+  readonly passwordMinLength: number;
   /** The privacy acknowledgement sentence with its link (rendered on the server). */
   readonly privacyLabel: ReactNode;
   readonly labels: {
@@ -138,6 +142,7 @@ function CreateAccountForm({
   token,
   email,
   displayName,
+  passwordMinLength,
   privacyLabel,
   labels,
   fieldTexts,
@@ -152,7 +157,7 @@ function CreateAccountForm({
   const [reveal, setReveal] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
-  const rules = passwordRuleState(password, confirmation);
+  const rules = passwordRuleState(password, confirmation, passwordMinLength);
 
   function onSubmit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -187,6 +192,14 @@ function CreateAccountForm({
         onAccountExists();
         return;
       }
+      if (result.error.code === 'INVITATION_PASSWORD_TOO_SHORT') {
+        setFieldErrors({
+          password: withMin(
+            fieldTexts.tooShort,
+            minFromParams(result.error.params, passwordMinLength),
+          ),
+        });
+      }
       if (result.error.code === 'VALIDATION_FAILED') {
         const codes = fieldErrorCodes(result.error);
         const nameAr = nameError(codes.displayNameAr, fieldTexts);
@@ -196,7 +209,10 @@ function CreateAccountForm({
           ...(nameEn ? { displayNameEn: nameEn } : {}),
           ...(codes.password
             ? {
-                password: codes.password === 'TOO_SMALL' ? fieldTexts.tooShort : fieldTexts.tooLong,
+                password:
+                  codes.password === 'TOO_SMALL'
+                    ? withMin(fieldTexts.tooShort, passwordMinLength)
+                    : fieldTexts.tooLong,
               }
             : {}),
           ...(codes.confirmPassword ? { confirmPassword: fieldTexts.mismatch } : {}),
@@ -256,7 +272,7 @@ function CreateAccountForm({
           marker={labels.required}
           autoComplete="new-password"
           required
-          minLength={12}
+          minLength={passwordMinLength}
           dir="ltr"
           value={password}
           onChange={(event) => {
@@ -715,6 +731,7 @@ export function InviteAcceptView({
               token={token ?? ''}
               email={link.email}
               displayName={{ ar: link.displayName.ar, en: link.displayName.en ?? '' }}
+              passwordMinLength={link.passwordMinLength}
               privacyLabel={
                 <>
                   {privacy.before}

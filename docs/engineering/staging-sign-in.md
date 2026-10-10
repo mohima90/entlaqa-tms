@@ -19,7 +19,7 @@ Prerequisites: the database is deployed and verified ([db-deploy.md](db-deploy.m
 
 Wrong e-mail and wrong password get the same message (no account enumeration) and are logged as a warning without personal data. If Supabase Auth itself fails (outage, wrong URL or key), the user sees the "problem on our side" message with a reference id, never "wrong password". Supabase Auth's rate limit → "Too many requests in a short time" (see Known gaps).
 
-**Multi-factor authentication** is off by default (PO decision, 1 Oct 2026). Later, each organization chooses off / optional / required, with any authenticator app (TOTP: Google Authenticator, Microsoft Authenticator, Apple Passwords, …).
+**Multi-factor authentication** is off by default (PO decision, 1 Oct 2026); each organization chooses off / optional / required for everyone / required for roles on its **Security** page (T-M2-10), with any authenticator app (TOTP: Google Authenticator, Microsoft Authenticator, Apple Passwords, …). High-risk actions (privileged roles, the security settings, resetting someone's app) always need a code from the last 15 minutes. A new app counts only after its owner opens the link in the confirmation e-mail — on staging that e-mail comes with the next worker pass (**Actions → Jobs (staging) → Run workflow** sends it at once). A lost app is reset by the Organization Admin or ENTLAQA support ([mfa-reset.md](mfa-reset.md)).
 
 ## One-time setup per environment
 
@@ -68,7 +68,7 @@ The new member gets a person record named "مدير المنشأة" / "Tenant Ad
 ## Known gaps (tracked in STATUS)
 
 - **Rate limiting (release blocker before any real user, e.g. design partners).** All Auth calls come from the app server, so Supabase Auth's per-IP limits count the **server's** address: they do not slow one attacker down per account, and one attacker can exhaust the shared limit for everyone (including session refreshes triggered by forged session cookies). Needed: an application limiter keyed on the client IP and an e-mail hash before Supabase Auth is called (secure coding standard SCS-16; ADR 0003 §2), plus failed sign-ins as security events. Planned with the platform rate limiter (M2).
-- Session lifetime: cookies follow `@supabase/ssr` defaults (long-lived); session time-box and inactivity timeout (Supabase Auth settings, Pro plan) to be set before real users.
+- Session lifetime: the organization's inactivity limit, maximum session length and device limit are enforced by the database on every request (T-M2-10); the cookies themselves follow `@supabase/ssr` defaults, and Supabase's own time-box (Pro plan) stays an optional outer bound.
 - Switching organization from inside the suite (ADR 0002 §3): for now sign out and sign in again (M2).
 - Host tenant ↔ claim tenant check (`<slug>.<base domain>`) arrives with tenant domains (ADR 0002 §4, M2).
 - No password reset or invitation flow yet (M2).

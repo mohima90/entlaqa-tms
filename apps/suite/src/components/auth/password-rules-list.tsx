@@ -1,4 +1,4 @@
-import type { PasswordRuleState } from '../../lib/password-rules';
+import { type PasswordRuleState, withMin } from '../../lib/password-rules';
 
 /** One live password rule: an icon plus its state for screen readers. */
 function RuleItem({ met, label, state }: { met: boolean; label: string; state: string }) {
@@ -25,6 +25,7 @@ function RuleItem({ met, label, state }: { met: boolean; label: string; state: s
 
 export interface PasswordRuleLabels {
   readonly rulesLabel: string;
+  /** With `{min}`: the minimum in force (12, or the organization's longer rule — T-M2-10). */
   readonly ruleMinLength: string;
   readonly ruleMaxBytes: string;
   readonly ruleMatches: string;
@@ -33,8 +34,8 @@ export interface PasswordRuleLabels {
 }
 
 /**
- * The live password rules (12+ characters, at most 72 bytes, both entries match) shown while a
- * password is chosen — invitation acceptance (screen 8) and password reset (screen 11).
+ * The live password rules (the minimum length, at most 72 bytes, both entries match) shown while a
+ * password is chosen — invitation acceptance (screen 8), password reset (screen 11) and My profile.
  */
 export function PasswordRulesList({
   id,
@@ -54,7 +55,7 @@ export function PasswordRulesList({
     >
       {(
         [
-          [rules.minLength, labels.ruleMinLength],
+          [rules.minLength, withMin(labels.ruleMinLength, rules.min)],
           [rules.maxBytes, labels.ruleMaxBytes],
           [rules.matches, labels.ruleMatches],
         ] as const

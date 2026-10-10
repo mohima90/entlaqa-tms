@@ -21,9 +21,14 @@ export const defaultActionRuntime: ActionRuntime<UserTx> = {
     // before sensitive operations (high-risk / AAL2 permissions).
     return strict ? getVerifiedClaimsStrict() : getVerifiedClaims();
   },
-  async withUserTx(claims, fn) {
+  async withUserTx(claims, fn, options) {
     const { withUserTx } = await import('@jadarat/platform-db');
-    return withUserTx(claims, fn);
+    return withUserTx(claims, fn, options);
+  },
+  // T-M2-10 (review L1/H1): may the session act in its organization, and is it at AAL2 (confirmed app)?
+  async loadSessionFacts(tx) {
+    const { loadSessionFacts } = await import('@jadarat/platform-db');
+    return loadSessionFacts(tx);
   },
   // ADR 0003 §3: the member's roles in the current tenant (T-M2-03), read on every action so role
   // changes take effect on the next request. Delegations (FR-IAM-14) join in R2.

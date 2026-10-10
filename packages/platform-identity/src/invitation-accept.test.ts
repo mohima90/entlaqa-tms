@@ -59,6 +59,10 @@ interface Options {
   refreshError?: boolean;
   cookieToken?: string;
   tenants?: number;
+  /** The invited organization's minimum password length (T-M2-10). */
+  minLength?: number;
+  /** The database's view of the new session in its organization (T-M2-10). */
+  access?: 'ok' | 'prompt_grace' | 'mfa_enrol';
 }
 
 function setup(options: Options = {}) {
@@ -143,6 +147,15 @@ function setup(options: Options = {}) {
       calls.push(`switch:${tenantId}`);
       return Promise.resolve(true);
     }),
+    getSessionAccess: vi.fn(() =>
+      Promise.resolve({
+        state: options.access ?? ('ok' as const),
+        mfaDeadline: null,
+        usesApp: false,
+        mfaPending: false,
+        aal2: false,
+      }),
+    ),
     insertAuditEvent: vi.fn(() => Promise.resolve()),
     logWarning: vi.fn(),
   };
@@ -152,6 +165,7 @@ function setup(options: Options = {}) {
     signUpClient: { auth },
     hashToken,
     invitationByToken: vi.fn(() => Promise.resolve(options.lookup ?? valid)),
+    invitationPasswordMinLength: vi.fn(() => Promise.resolve(options.minLength ?? 12)),
     acceptInvitationAsCaller: vi.fn(() => {
       calls.push('acceptAsCaller');
       return options.callerError === undefined
@@ -205,7 +219,11 @@ describe('lookupInvitationLink', () => {
       ['cookie-no-email', 'other-account'],
     ] as const) {
       const { deps } = setup(cookieToken ? { cookieToken } : {});
-      await expect(lookupInvitationLink(deps, TOKEN)).resolves.toEqual({ ...valid, viewer });
+      await expect(lookupInvitationLink(deps, TOKEN)).resolves.toEqual({
+        ...valid,
+        viewer,
+        passwordMinLength: 12,
+      });
     }
   });
 
@@ -221,6 +239,48 @@ describe('lookupInvitationLink', () => {
     await expect(
       lookupInvitationLink({ ...deps, auth: { ...deps.auth, supabase: null } }, TOKEN),
     ).resolves.toMatchObject({ state: 'valid', viewer: 'anonymous' });
+  });
+});
+
+describe("the organization's password rule and MFA step (T-M2-10)", () => {
+  it("the accept page learns the invited organization's minimum (live rules)", async () => {
+    const { deps } = setup({ minLength: 16 });
+    await expect(lookupInvitationLink(deps, TOKEN)).resolves.toMatchObject({
+      state: 'valid',
+      passwordMinLength: 16,
+    });
+    expect(deps.invitationPasswordMinLength).toHaveBeenCalledWith(
+      createHash('sha256').update(TOKEN, 'utf8').digest(),
+    );
+  });
+
+  it('refuses a shorter password before Auth creates anything, naming only the length', async () => {
+    const { deps, auth, calls } = setup({ minLength: 30 });
+    const result = await acceptInvitationWithNewAccount(deps, newAccount);
+    expect(!result.ok && result.error).toMatchObject({
+      code: 'INVITATION_PASSWORD_TOO_SHORT',
+      params: { min: 30 },
+      fieldErrors: [{ path: 'password', code: 'TOO_SMALL', params: { min: 30 } }],
+    });
+    expect(auth.signUp).not.toHaveBeenCalled();
+    expect(calls).toEqual([]);
+  });
+
+  it('counts characters, not UTF-16 units (an Arabic passphrase of 16 letters meets 16)', async () => {
+    const { deps } = setup({ minLength: 16 });
+    const result = await acceptInvitationWithNewAccount(deps, {
+      token: TOKEN,
+      password: 'كلمةمرورعربيةطوي',
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it('continues to the MFA page when the organization asks for an app (screen 8 step 2)', async () => {
+    for (const access of ['prompt_grace', 'mfa_enrol'] as const) {
+      const { deps } = setup({ access });
+      const result = await acceptInvitationWithNewAccount(deps, newAccount);
+      expect(result).toEqual({ ok: true, value: { next: 'mfa' } });
+    }
   });
 });
 

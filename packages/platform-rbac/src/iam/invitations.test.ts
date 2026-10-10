@@ -46,6 +46,9 @@ function runtime(roles: SystemRoleCode[], aal: 'aal1' | 'aal2' = 'aal1') {
       sub: '11111111-1111-4111-8111-111111111111',
       role: 'authenticated',
       aal,
+      ...(aal === 'aal2'
+        ? { amr: [{ method: 'totp', timestamp: Math.floor(Date.now() / 1000) }] }
+        : {}),
       tenant_id: TENANT,
       person_id: ME,
     });
@@ -55,6 +58,7 @@ function runtime(roles: SystemRoleCode[], aal: 'aal1' | 'aal2' = 'aal1') {
   const rt: ActionRuntime<UserTx> = {
     getClaims,
     withUserTx: (_c, fn) => fn(TX),
+    loadSessionFacts: () => Promise.resolve({ active: true, aal2: aal === 'aal2' }),
     loadGrants: () =>
       Promise.resolve(
         grantsForAssignments(

@@ -370,29 +370,65 @@ declare
   v_list text;
 begin
   select string_agg(format('%s (owner %s)', p.oid::regprocedure, pg_get_userbyid(p.proowner)), ', '
-                    order by p.oid::regprocedure::text) into v_list
+                    order by p.oid::regprocedure::text collate "C") into v_list
   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'private' and p.prosecdef
     and p.proowner <> 'account_mail_guard'::regrole   -- checked in its own block below (T-M2-17)
     and p.proowner <> 'membership_guard'::regrole;    -- checked in its own block below (T-M2-09)
   perform tests.assert_eq(v_list,
     'private.accept_invitation_as_caller(bytea,text,text) (owner invitation_guard), '
+    'private.account_has_app(uuid) (owner tenant_guard), '
+    'private.apply_device_limit() (owner tenant_guard), '
+    'private.audit_account_event(uuid,text,jsonb,text,uuid,uuid) (owner tenant_guard), '
+    'private.confirm_mfa_setup(uuid,text) (owner tenant_guard), '
     'private.current_tenant_id() (owner tenant_guard), '
     'private.discard_inactive_tenant_delivery(uuid) (owner tenant_guard), '
+    'private.dismiss_mfa_prompt() (owner tenant_guard), '
+    'private.end_all_account_sessions(uuid,uuid,uuid) (owner tenant_guard), '
+    'private.end_member_sessions(uuid,uuid) (owner tenant_guard), '
+    'private.end_my_sessions(uuid) (owner tenant_guard), '
+    'private.end_sessions(uuid,uuid[],uuid,text,uuid) (owner tenant_guard), '
+    'private.end_unserved_login_sessions(uuid,uuid,uuid) (owner tenant_guard), '
+    'private.enforce_device_limit(uuid,uuid,uuid) (owner tenant_guard), '
     'private.has_active_membership(uuid,uuid) (owner tenant_guard), '
     'private.invitation_allows_signup(text,text) (owner invitation_guard), '
     'private.invitation_by_token(bytea) (owner invitation_guard), '
+    'private.invitation_password_min_length(bytea) (owner invitation_guard), '
+    'private.issue_mfa_factor_tokens(uuid,uuid,bytea,bytea) (owner tenant_guard), '
+    'private.my_mfa_apps() (owner tenant_guard), '
+    'private.my_sessions() (owner tenant_guard), '
+    'private.password_min_length_for_caller() (owner tenant_guard), '
+    'private.purge_ended_sessions(integer) (owner tenant_guard), '
+    'private.purge_unconfirmed_mfa_apps(integer) (owner tenant_guard), '
+    'private.queue_mfa_mail(text,uuid,uuid,text,uuid) (owner tenant_guard), '
+    'private.reject_mfa_factor(bytea) (owner tenant_guard), '
+    'private.remove_account_factors(uuid,uuid[]) (owner tenant_guard), '
+    'private.remove_mfa_app(uuid) (owner tenant_guard), '
+    'private.request_aal2() (owner tenant_guard), '
+    'private.request_code_fresh() (owner tenant_guard), '
+    'private.request_live_user() (owner tenant_guard), '
+    'private.request_mfa_factor_mail(uuid) (owner tenant_guard), '
+    'private.request_session_facts() (owner tenant_guard), '
+    'private.reset_account_mfa(uuid,text) (owner tenant_guard), '
+    'private.reset_member_mfa(uuid) (owner tenant_guard), '
+    'private.security_policy_changed_mail() (owner tenant_guard), '
+    'private.session_access(uuid,uuid,uuid,boolean,boolean) (owner tenant_guard), '
+    'private.session_access_state() (owner tenant_guard), '
     'private.session_tenants() (owner tenant_guard), '
     'private.switch_active_tenant(uuid) (owner tenant_guard), '
+    'private.tenant_lockout_policy(uuid) (owner tenant_guard), '
+    'private.tenant_member_mfa(uuid) (owner tenant_guard), '
+    'private.tenant_member_sessions(uuid) (owner tenant_guard), '
+    'private.touch_session() (owner tenant_guard), '
     'private.user_session_is_valid(uuid,uuid) (owner tenant_guard)',
     'SECURITY DEFINER functions and owners (security review for any change)');
-  select string_agg(p.oid::regprocedure::text, ', ' order by p.oid::regprocedure::text) into v_list
+  select string_agg(p.oid::regprocedure::text, ', ' order by p.oid::regprocedure::text collate "C") into v_list
   from pg_proc p where p.proowner = 'invitation_guard'::regrole;
   perform tests.assert_eq(v_list,
     'private.accept_invitation_as_caller(bytea,text,text), '
     'private.apply_invitation_acceptance(bytea,uuid,text,text), private.invitation_allows_signup(text,text), '
     'private.invitation_by_token(bytea), private.invitation_inviter_may_grant(uuid,uuid,text[]), '
-    'private.invitation_link(bytea)',
+    'private.invitation_link(bytea), private.invitation_password_min_length(bytea)',
     'invitation_guard owns the link, acceptance and sign-up gate functions only');
   perform tests.assert(not has_function_privilege('authenticated', 'private.invitation_link(bytea)', 'execute'),
     'only the definer functions read a link''s state');
@@ -444,7 +480,7 @@ begin
                             from pg_roles where rolname = 'account_mail_guard'),
     'account_mail_guard must be NOLOGIN NOINHERIT and not BYPASSRLS / superuser / createrole / createdb');
   select string_agg(format('%s%s', p.oid::regprocedure, case when p.prosecdef then '' else ' (INVOKER)' end), ', '
-                    order by p.oid::regprocedure::text) into v_list
+                    order by p.oid::regprocedure::text collate "C") into v_list
   from pg_proc p where p.proowner = 'account_mail_guard'::regrole;
   perform tests.assert_eq(v_list,
     'private.claim_account_mail_request(), private.finish_account_mail_request(uuid), '
@@ -492,13 +528,25 @@ begin
                         where oid = 'private.account_mail_requests'::regclass),
     'account_mail_requests: row level security must be ENABLED and FORCED');
   for v_list in select unnest(array['anon', 'authenticated', 'service_role', 'app_server', 'app_worker', 'app_queue',
-                                    'tenant_guard', 'invitation_guard', 'supabase_auth_admin']) loop
+                                    'invitation_guard', 'supabase_auth_admin']) loop
     perform tests.assert(
       not has_table_privilege(v_list, 'private.account_mail_requests', 'select, insert, update, delete, truncate, references, trigger')
         and not has_any_column_privilege(v_list, 'private.account_mail_requests', 'select, insert, update, references')
         and not has_table_privilege(v_list, 'private.auth_account', 'select, insert, update, delete, truncate, references, trigger'),
       format('%s must have no privilege on the account e-mail queue or private.auth_account', v_list));
   end loop;
+  -- tenant_guard queues the authenticator and policy-change notices (T-M2-10): select, insert, delete on the
+  -- queue (its policy limits it to those kinds); never the Auth accounts view.
+  perform tests.assert(
+    has_table_privilege('tenant_guard', 'private.account_mail_requests', 'select, insert, delete')
+      and not has_table_privilege('tenant_guard', 'private.account_mail_requests', 'update, truncate, references, trigger')
+      and not has_table_privilege('tenant_guard', 'private.auth_account', 'select, insert, update, delete, truncate, references, trigger'),
+    'tenant_guard: the authenticator notices on the queue only, never private.auth_account');
+  perform tests.assert_eq((select string_agg(polname || ':' || pg_get_expr(polqual, polrelid), ', ') from pg_policy
+                           where polrelid = 'private.account_mail_requests'::regclass
+                             and 'tenant_guard'::regrole = any (polroles)),
+    'account_mail_requests_tenant_guard:(kind = ANY (ARRAY[''mfa_factor_added''::text, ''mfa_factor_removed''::text, ''security_policy_changed''::text]))',
+    'tenant_guard''s policy on the queue: the authenticator and policy-change notices only');
   -- Callers: the request functions and the worker functions are executable by authenticated (the
   -- functions check the login role themselves) and nobody else besides the owner.
   for v_list in
@@ -526,11 +574,11 @@ begin
                             from pg_roles where rolname = 'membership_guard'),
     'membership_guard must be NOLOGIN NOINHERIT and not BYPASSRLS / superuser / createrole / createdb');
   select string_agg(format('%s%s', p.oid::regprocedure, case when p.prosecdef then '' else ' (INVOKER)' end), ', '
-                    order by p.oid::regprocedure::text) into v_list
+                    order by p.oid::regprocedure::text collate "C") into v_list
   from pg_proc p where p.proowner = 'membership_guard'::regrole;
   perform tests.assert_eq(v_list,
     'private.account_sign_in_refused(uuid), private.check_privileged_deactivation(), '
-    'private.end_member_sessions(), private.reactivate_membership(uuid)',
+    'private.end_member_sessions(), private.end_unserved_logins(), private.reactivate_membership(uuid)',
     'membership_guard owns the deactivation, reactivation and sign-in refusal functions only');
   perform tests.assert(not exists (select 1 from pg_class c where c.relowner = 'membership_guard'::regrole),
     'membership_guard owns no relations');
@@ -592,13 +640,27 @@ begin
   end loop;
   perform tests.assert(has_function_privilege('supabase_auth_admin', 'private.account_sign_in_refused(uuid)', 'execute'),
     'the access-token hook (supabase_auth_admin) may ask the sign-in rule');
+  -- With T-M2-10 (20261012120000): its trigger ends a login's Auth sessions through tenant_guard's helper, and
+  -- its code rule asks tenant_guard's AAL2 and code age — calls only, no table access of its own.
+  perform tests.assert(has_function_privilege('membership_guard', 'private.end_unserved_login_sessions(uuid, uuid, uuid)', 'execute')
+                       and has_function_privilege('membership_guard', 'private.request_aal2()', 'execute')
+                       and has_function_privilege('membership_guard', 'private.request_code_fresh()', 'execute')
+                       and not has_function_privilege('membership_guard', 'private.end_sessions(uuid, uuid[], uuid, text, uuid)', 'execute')
+                       and not has_table_privilege('membership_guard', 'private.auth_session_validity', 'select, delete')
+                       and not has_table_privilege('membership_guard', 'private.revoked_sessions', 'select, insert, delete'),
+    'membership_guard: the login-session helper and the AAL2 checks, not the session tables');
   -- The triggers are in place and enabled.
   perform tests.assert((select count(*) from pg_trigger t
                         where t.tgenabled = 'O' and (t.tgrelid, t.tgname, t.tgfoid) in (
                           ('platform.tenant_memberships'::regclass, 'tenant_memberships_end_sessions', 'private.end_member_sessions()'::regprocedure),
                           ('platform.tenant_memberships'::regclass, 'tenant_memberships_privileged_deactivation',
-                           'private.check_privileged_deactivation()'::regprocedure))) = 2,
-    'deactivation triggers (sessions, privileged members at AAL2) exist and are enabled');
+                           'private.check_privileged_deactivation()'::regprocedure),
+                          ('platform.tenant_memberships'::regclass, 'tenant_memberships_end_login_sessions',
+                           'private.end_unserved_logins()'::regprocedure))) = 3,
+    'deactivation triggers (sessions, privileged members at AAL2, the login''s Auth sessions) exist and are enabled');
+  perform tests.assert((select t.tgtype & 1 = 0 and t.tgnewtable is not null and t.tgoldtable is not null
+                        from pg_trigger t where t.tgname = 'tenant_memberships_end_login_sessions'),
+    'the login-session trigger runs once per statement, over the rows it changed (user-id order)');
 end $$;
 
 rollback;

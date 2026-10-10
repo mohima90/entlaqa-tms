@@ -1,12 +1,24 @@
 import type { AccountMailRequest, SystemTx } from '@jadarat/platform-db/jobs';
-import { PasswordChangedVariables, PasswordResetVariables } from '@jadarat/platform-notifications';
+import { createHash } from 'node:crypto';
+import {
+  MfaFactorAddedVariables,
+  MfaFactorRemovedVariables,
+  PasswordChangedVariables,
+  PasswordResetVariables,
+  SecurityDigestVariables,
+  SecurityPolicyChangedVariables,
+} from '@jadarat/platform-notifications';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ACCOUNT_MAIL_BATCH,
   ACCOUNT_MAIL_HOURLY_CAP,
   ACCOUNT_MAIL_TASK,
+  MFA_CODE_VALID_HOURS,
+  MFA_REMOVE_VALID_DAYS,
   type RecoveryLinks,
+  SECURITY_NOTICE_KINDS,
   createAccountMailer,
+  hashMfaSetupCode,
 } from './index';
 
 const db = vi.hoisted(() => ({
@@ -15,6 +27,9 @@ const db = vi.hoisted(() => ({
   retryAccountMailRequest: vi.fn(),
   loadAccountMailContext: vi.fn(),
   tenantIsServed: vi.fn(),
+  accountHasApp: vi.fn(),
+  issueMfaFactorTokens: vi.fn(),
+  loadPersonName: vi.fn(),
 }));
 const mail = vi.hoisted(() => ({ queueEmail: vi.fn() }));
 vi.mock('@jadarat/platform-db/jobs', () => db);
@@ -27,6 +42,8 @@ const USER = '9d406f51-7e80-4192-9dae-2f3a4b5c6d7e';
 const EMAIL = 'sara.alharbi@raya.example';
 const HASH = 'sample0token0hash'.padEnd(56, '0'); // shape only
 const BASE = 'https://tms.example.com';
+const FACTOR = '0f5a7b62-8091-42a3-8bce-3a4b5c6d7e8f';
+const EDITOR = '1a6b8c73-91a2-43b4-9cdf-4b5c6d7e8f90';
 
 const platformTx = { kind: 'platform' } as unknown as SystemTx;
 const tenantTx = { kind: 'tenant' } as unknown as SystemTx;
@@ -42,7 +59,24 @@ const send = (overrides: Partial<Extract<AccountMailRequest, { outcome: 'send' }
     tenantId: TENANT,
     personId: PERSON,
     locale: 'en',
+    factorId: null,
+    mfaReason: null,
+    policyChange: null,
+    digest: null,
     ...overrides,
+  }) as const;
+
+/** A request the database answers without an e-mail. */
+const skipped = (outcome: 'unknown_account' | 'banned' | 'too_soon' | 'no_membership') =>
+  ({
+    id: REQUEST,
+    kind: 'password_reset',
+    attempt: 1,
+    outcome,
+    factorId: null,
+    mfaReason: null,
+    policyChange: null,
+    digest: null,
   }) as const;
 
 function setup(
@@ -95,6 +129,15 @@ beforeEach(() => {
     recentCount: 0,
   });
   mail.queueEmail.mockResolvedValue('delivery-1');
+  db.accountHasApp.mockResolvedValue(false);
+  db.issueMfaFactorTokens.mockResolvedValue({
+    codeExpiresAt: new Date(Date.now() + 72 * 3600_000),
+    removeExpiresAt: new Date(Date.now() + 7 * 86_400_000),
+    setUpAt: new Date('2026-10-09T08:05:00Z'),
+    setupUserAgent:
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0; rv:131.0) Gecko/20100101 Firefox/131.0',
+  });
+  db.loadPersonName.mockResolvedValue({ ar: 'محمد العتيبي', en: 'Mohammed Alotaibi' });
 });
 
 afterEach(() => {
@@ -143,7 +186,9 @@ describe('account mailer (T-M2-17): reset e-mail and "password changed" notice',
       },
       validMinutes: 60,
       loginEmail: EMAIL,
+      codeNeeded: false,
     });
+    expect(db.accountHasApp).toHaveBeenCalledWith(platformTx, USER);
     // The template accepts exactly these variables.
     expect(() => PasswordResetVariables.parse(email.variables)).not.toThrow();
     // Queued and answered in the same organization transaction.
@@ -217,7 +262,7 @@ describe('account mailer (T-M2-17): reset e-mail and "password changed" notice',
   it.each(['unknown_account', 'banned', 'too_soon', 'no_membership'] as const)(
     'nothing sent and no Auth call when the database says %s; the request is answered',
     async (outcome) => {
-      queue({ id: REQUEST, kind: 'password_reset', attempt: 1, outcome });
+      queue(skipped(outcome));
       const { task, issue, log } = setup();
       await task.run({ jobId: 'j' });
       expect(issue).not.toHaveBeenCalled();
@@ -384,12 +429,7 @@ describe('account mailer (T-M2-17): reset e-mail and "password changed" notice',
   });
 
   it('answers at most a batch per pass and asks for another pass', async () => {
-    db.claimAccountMailRequest.mockResolvedValue({
-      id: REQUEST,
-      kind: 'password_reset',
-      attempt: 1,
-      outcome: 'no_membership',
-    });
+    db.claimAccountMailRequest.mockResolvedValue(skipped('no_membership'));
     const { task } = setup();
     expect(await task.run({ jobId: 'j' })).toBe(true);
     expect(db.claimAccountMailRequest).toHaveBeenCalledTimes(ACCOUNT_MAIL_BATCH);
@@ -404,5 +444,281 @@ describe('account mailer (T-M2-17): reset e-mail and "password changed" notice',
       ar: `${BASE}/ar/forgot-password`,
       en: `${BASE}/en/forgot-password`,
     });
+  });
+});
+
+describe('account mailer (T-M2-10): authenticator app and security settings notices', () => {
+  const sha256 = (token: string) => createHash('sha256').update(token, 'utf8').digest();
+  /** The token in a link's fragment (`#token=…`). */
+  const tokenOf = (url: string) => new URL(url).hash.replace('#token=', '');
+
+  it('set-up e-mail: a new code and "not you" link whose hashes are stored in the transaction that queues it (re-review N1)', async () => {
+    queue(send({ kind: 'mfa_factor_added', factorId: FACTOR, locale: 'ar' }));
+    const { task, log } = setup({ recoveryLinks: null });
+    await task.run({ jobId: 'j' });
+    const email = queued();
+    expect(email).toMatchObject({
+      template: 'platform.mfa_factor_added',
+      locale: 'ar',
+      to: EMAIL,
+      recipientPersonId: PERSON,
+    });
+    expect(() => MfaFactorAddedVariables.parse(email.variables)).not.toThrow();
+    const v = email.variables as { code: string; removeUrl: { ar: string; en: string } };
+    const remove = tokenOf(v.removeUrl.ar);
+    expect(v.removeUrl).toEqual({
+      ar: `${BASE}/ar/mfa/remove#token=${remove}`,
+      en: `${BASE}/en/mfa/remove#token=${remove}`,
+    });
+    // 8 random digits; 32 random bytes (base64url) for the link, never in a query string; no confirm link.
+    expect(v.code).toMatch(/^[0-9]{8}$/);
+    expect(remove).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(JSON.stringify(email.variables)).not.toContain('mfa/confirm');
+    // When and from which browser (well-known names, never the raw user agent).
+    expect(email.variables).toMatchObject({
+      setUpAt: '2026-10-09T08:05:00.000Z',
+      timeZone: 'Asia/Riyadh',
+      browser: 'Firefox',
+      system: 'macOS',
+      codeValidHours: MFA_CODE_VALID_HOURS,
+      removeValidDays: MFA_REMOVE_VALID_DAYS,
+    });
+    expect(JSON.stringify(email.variables)).not.toContain('Gecko');
+    // Only the hashes reach the database — the code bound to its app — in the organization transaction.
+    expect(db.issueMfaFactorTokens).toHaveBeenCalledWith(
+      tenantTx,
+      FACTOR,
+      USER,
+      hashMfaSetupCode(FACTOR, v.code),
+      sha256(remove),
+    );
+    expect(hashMfaSetupCode(FACTOR, v.code)).toEqual(sha256(`${FACTOR}:${v.code}`));
+    expect(hashMfaSetupCode(FACTOR.toUpperCase(), v.code)).toEqual(
+      hashMfaSetupCode(FACTOR, v.code),
+    );
+    expect(db.loadAccountMailContext).toHaveBeenCalledWith(
+      tenantTx,
+      PERSON,
+      'platform.mfa_factor_added',
+    );
+    expect(db.finishAccountMailRequest).toHaveBeenCalledWith(tenantTx, REQUEST);
+    expect(log).toHaveBeenCalledWith('info', 'account e-mail queued (mfa_factor_added)');
+    expect(JSON.stringify(log.mock.calls)).not.toContain(v.code);
+    expect(JSON.stringify(log.mock.calls)).not.toContain(remove);
+  });
+
+  it('set-up e-mail: each e-mail gets a new code (a resend replaces it)', async () => {
+    queue(
+      send({ kind: 'mfa_factor_added', factorId: FACTOR }),
+      send({ kind: 'mfa_factor_added', factorId: FACTOR }),
+    );
+    const { task } = setup();
+    await task.run({ jobId: 'j' });
+    const codes = mail.queueEmail.mock.calls.map(
+      (call) => (call[1] as { variables: { code: string } }).variables.code,
+    );
+    expect(codes).toHaveLength(2);
+    // Two random 8-digit codes: equal only by a 1-in-100-million chance.
+    expect(codes[0]).not.toBe(codes[1]);
+  });
+
+  it('security notices are never dropped by the hourly cap — logged instead (re-review N3)', async () => {
+    expect([...SECURITY_NOTICE_KINDS].sort()).toEqual([
+      'mfa_factor_added',
+      'mfa_factor_removed',
+      'password_changed',
+      'security_digest',
+      'security_policy_changed',
+    ]);
+    const kinds = [
+      send({ kind: 'mfa_factor_added', factorId: FACTOR }),
+      send({ kind: 'mfa_factor_removed', factorId: FACTOR, mfaReason: 'removed' }),
+      send({ kind: 'password_changed' }),
+      send({
+        kind: 'security_policy_changed',
+        policyChange: { changed: ['mfaMode'], changedByPersonId: null, changedAt: new Date() },
+      }),
+    ];
+    queue(...kinds);
+    db.loadAccountMailContext.mockResolvedValue({
+      organizationName: { ar: 'شركة الراية', en: null },
+      recipientName: { ar: 'سارة', en: null },
+      recentCount: ACCOUNT_MAIL_HOURLY_CAP + 3,
+    });
+    const { task, log } = setup();
+    await task.run({ jobId: 'j' });
+    expect(mail.queueEmail).toHaveBeenCalledTimes(4);
+    for (const request of kinds) {
+      expect(log).toHaveBeenCalledWith(
+        'warning',
+        `security notice over the hourly cap sent anyway (${request.kind})`,
+      );
+    }
+    expect(JSON.stringify(log.mock.calls)).not.toContain('hourly_cap)');
+  });
+
+  it('set-up e-mail: an app removed or already confirmed meanwhile — answered, nothing sent', async () => {
+    queue(
+      send({ kind: 'mfa_factor_added', factorId: FACTOR }),
+      send({ kind: 'mfa_factor_added', factorId: null }),
+    );
+    db.issueMfaFactorTokens.mockResolvedValueOnce(null);
+    const { task, log } = setup();
+    await task.run({ jobId: 'j' });
+    expect(mail.queueEmail).not.toHaveBeenCalled();
+    expect(db.finishAccountMailRequest).toHaveBeenCalledTimes(2);
+    expect(log).toHaveBeenCalledWith(
+      'info',
+      'account e-mail not sent (factor_gone) (mfa_factor_added)',
+    );
+  });
+
+  it('a notice the database held for the digest is not sent now, only logged (final re-review L1)', async () => {
+    queue({
+      id: REQUEST,
+      kind: 'mfa_factor_removed',
+      attempt: 1,
+      outcome: 'held',
+      factorId: FACTOR,
+      mfaReason: 'not_me',
+      policyChange: null,
+      digest: null,
+    });
+    const { task, log, withSystemTx } = setup();
+    await task.run({ jobId: 'j' });
+    expect(mail.queueEmail).not.toHaveBeenCalled();
+    expect(withSystemTx).not.toHaveBeenCalled();
+    // The database already answered the request (merged into the digest).
+    expect(db.finishAccountMailRequest).not.toHaveBeenCalled();
+    expect(log).toHaveBeenCalledWith(
+      'info',
+      "security notice merged into the account's digest (mfa_factor_removed)",
+    );
+  });
+
+  it('the security digest: the held notices by kind, since when, the forgot-password page — never capped', async () => {
+    const since = new Date('2026-10-10T05:00:00Z');
+    queue(
+      send({
+        kind: 'security_digest',
+        locale: 'ar',
+        digest: { held: { mfa_factor_added: 7, mfa_factor_removed: 7 }, since },
+      }),
+    );
+    db.loadAccountMailContext.mockResolvedValueOnce({
+      organizationName: { ar: 'شركة الراية', en: 'Al Raya' },
+      recipientName: { ar: 'سارة', en: 'Sara' },
+      recentCount: ACCOUNT_MAIL_HOURLY_CAP + 10,
+    });
+    const { task } = setup();
+    await task.run({ jobId: 'j' });
+    const email = queued();
+    expect(email.template).toBe('platform.security_digest');
+    expect(email.variables).toEqual({
+      organizationName: { ar: 'شركة الراية', en: 'Al Raya' },
+      held: { mfa_factor_added: 7, mfa_factor_removed: 7 },
+      since: '2026-10-10T05:00:00.000Z',
+      timeZone: 'Asia/Riyadh',
+      forgotPasswordUrl: { ar: `${BASE}/ar/forgot-password`, en: `${BASE}/en/forgot-password` },
+      loginEmail: EMAIL,
+    });
+    expect(() => SecurityDigestVariables.parse(email.variables)).not.toThrow();
+    expect(SECURITY_NOTICE_KINDS.has('security_digest')).toBe(true);
+  });
+
+  it.each([
+    'removed',
+    'not_me',
+    'admin_reset',
+    'support_reset',
+    'expired',
+    'too_many_codes',
+  ] as const)('"app removed" notice (%s): the reason, the forgot-password page', async (reason) => {
+    queue(send({ kind: 'mfa_factor_removed', factorId: FACTOR, mfaReason: reason }));
+    const { task, issue } = setup();
+    await task.run({ jobId: 'j' });
+    expect(issue).not.toHaveBeenCalled();
+    const email = queued();
+    expect(email.template).toBe('platform.mfa_factor_removed');
+    expect(email.variables).toEqual({
+      organizationName: { ar: 'شركة الراية', en: 'Al Raya' },
+      reason,
+      forgotPasswordUrl: { ar: `${BASE}/ar/forgot-password`, en: `${BASE}/en/forgot-password` },
+      loginEmail: EMAIL,
+    });
+    expect(() => MfaFactorRemovedVariables.parse(email.variables)).not.toThrow();
+  });
+
+  it('"security settings changed": which settings, who (their name in the organization), when (review L5)', async () => {
+    const changedAt = new Date('2026-10-11T09:30:00Z');
+    queue(
+      send({
+        kind: 'security_policy_changed',
+        policyChange: {
+          changed: ['mfaMode', 'sessionMaxDevices'],
+          changedByPersonId: EDITOR,
+          changedAt,
+        },
+      }),
+    );
+    const { task } = setup();
+    await task.run({ jobId: 'j' });
+    expect(db.loadPersonName).toHaveBeenCalledWith(tenantTx, EDITOR);
+    const email = queued();
+    expect(email.template).toBe('platform.security_policy_changed');
+    expect(email.variables).toEqual({
+      organizationName: { ar: 'شركة الراية', en: 'Al Raya' },
+      changedBy: { ar: 'محمد العتيبي', en: 'Mohammed Alotaibi' },
+      changed: ['mfaMode', 'sessionMaxDevices'],
+      changedAt: changedAt.toISOString(),
+      timeZone: 'Asia/Riyadh',
+      settingsUrl: {
+        ar: `${BASE}/ar/suite/admin/security`,
+        en: `${BASE}/en/suite/admin/security`,
+      },
+      loginEmail: EMAIL,
+    });
+    expect(() => SecurityPolicyChangedVariables.parse(email.variables)).not.toThrow();
+  });
+
+  it('"security settings changed" by the platform (no editor) or without its detail', async () => {
+    queue(
+      send({
+        kind: 'security_policy_changed',
+        policyChange: {
+          changed: ['passwordMinLength'],
+          changedByPersonId: null,
+          changedAt: new Date('2026-10-11T09:30:00Z'),
+        },
+      }),
+      send({ kind: 'security_policy_changed', policyChange: null }),
+    );
+    const { task, log } = setup();
+    await task.run({ jobId: 'j' });
+    expect(db.loadPersonName).not.toHaveBeenCalled();
+    expect(queued().variables.changedBy).toBeNull();
+    // A request without its detail cannot be fixed by a retry: answered without an e-mail.
+    expect(mail.queueEmail).toHaveBeenCalledTimes(1);
+    expect(db.retryAccountMailRequest).not.toHaveBeenCalled();
+    expect(log).toHaveBeenCalledWith(
+      'info',
+      'account e-mail not sent (security_policy_changed: refused POLICY_CHANGE_DETAIL_MISSING)',
+    );
+  });
+
+  it('reset e-mail for an account with an app: the page asks for the code (`&mfa=1`), the e-mail says so', async () => {
+    queue(send());
+    db.accountHasApp.mockResolvedValueOnce(true);
+    const { task } = setup();
+    await task.run({ jobId: 'j' });
+    const email = queued();
+    expect(email.variables).toMatchObject({
+      resetUrl: {
+        ar: `${BASE}/ar/reset-password#token_hash=${HASH}&type=recovery&mfa=1`,
+        en: `${BASE}/en/reset-password#token_hash=${HASH}&type=recovery&mfa=1`,
+      },
+      codeNeeded: true,
+    });
+    expect(() => PasswordResetVariables.parse(email.variables)).not.toThrow();
   });
 });

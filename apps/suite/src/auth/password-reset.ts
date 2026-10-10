@@ -39,8 +39,9 @@ export const requestPasswordResetAction = definePublicAction({
 
 /**
  * Screen 11: the link's token (read from the URL fragment in the browser) and the new password, whose
- * rules are checked here before the single-use link is spent. On success every session of the account
- * has ended and the visitor signs in with the new password.
+ * rules are checked here before the single-use link is spent — with the authenticator app's code for an
+ * account that uses one (Auth sets the password only after it, T-M2-10). On success every session of the
+ * account has ended and the visitor signs in with the new password.
  */
 export const completePasswordResetAction = definePublicAction({
   name: 'platform.auth.password_reset',
@@ -50,6 +51,7 @@ export const completePasswordResetAction = definePublicAction({
     return completePasswordResetForRequest({
       tokenHash: input.tokenHash,
       password: input.password,
+      code: input.code,
     });
   },
 });

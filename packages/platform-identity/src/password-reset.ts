@@ -33,7 +33,9 @@ import { AuthServiceError, sessionTokens } from './auth-flow';
  *              answers an existing account later, and with 429 to a repeat within a minute — both would
  *              tell that the account exists)
  *   complete → verifyOtp(recovery, token_hash) on a STATELESS client: the recovery session lives only in
- *              this request's memory, never in the browser or our session cookies → updateUser(password)
+ *              this request's memory, never in the browser or our session cookies → for an account with an
+ *              authenticator app, the code from it (Auth sets a password only from an AAL2 session when
+ *              MFA is enabled — GoTrue v2.197.0; T-M2-10) → updateUser(password)
  *              → signOut(global): every session of the account ends, the recovery session included →
  *              security log `platform.auth.password_reset` (user id only) → (worker mode) the "password
  *              changed" notice is queued → the visitor signs in
@@ -58,6 +60,18 @@ export const PasswordResetErrors = defineErrorCodes({
     status: 422,
     messageKey: 'passwordReset.errors.passwordRejected',
   },
+  /**
+   * Shorter than the strictest minimum of the account's organizations (T-M2-10, PO decision 5; `min` in
+   * params). Known only once the link has identified the account, i.e. after it was spent.
+   */
+  PASSWORD_RESET_TOO_SHORT: { status: 422, messageKey: 'passwordReset.errors.tooShort' },
+  /**
+   * The account uses an authenticator app and no code came with the new password (T-M2-10): the link is
+   * used up; a new one asks for the code (the worker's e-mail says so).
+   */
+  PASSWORD_RESET_CODE_REQUIRED: { status: 422, messageKey: 'passwordReset.errors.codeRequired' },
+  /** The authenticator code was wrong or expired; the link is used up (single use): ask for a new one. */
+  PASSWORD_RESET_CODE_INVALID: { status: 422, messageKey: 'passwordReset.errors.codeInvalid' },
 });
 
 /** Server setting: who sends the reset e-mail and the "password changed" notice (T-M2-17). */
@@ -106,6 +120,22 @@ export interface RecoveryClientLike {
       password: string;
     }): Promise<{ error: (AuthErrorLike & { readonly reasons?: unknown }) | null }>;
     signOut(options: { scope: 'global' | 'local' }): Promise<{ error: unknown }>;
+    readonly mfa: {
+      listFactors(): Promise<{
+        data: {
+          readonly all: readonly {
+            readonly id: string;
+            readonly factor_type?: string;
+            readonly status?: string;
+          }[];
+        } | null;
+        error: AuthErrorLike | null;
+      }>;
+      challengeAndVerify(params: {
+        factorId: string;
+        code: string;
+      }): Promise<{ data: unknown; error: AuthErrorLike | null }>;
+    };
   };
 }
 
@@ -137,6 +167,11 @@ export interface PasswordResetDeps {
    * service. Absent in `auth` mode (Auth sends its own notice when switched on there).
    */
   readonly queuePasswordChangedNotice?: (userId: string) => Promise<void>;
+  /**
+   * The account's minimum password length (strictest of its organizations, T-M2-10), asked with the
+   * recovery session's access token; null when unknown (the platform's 12 applies, Auth enforces it).
+   */
+  readonly passwordMinLength?: (accessToken: string) => Promise<number | null>;
 }
 
 /**
@@ -198,6 +233,64 @@ async function sendRecoveryLink(deps: PasswordResetRequestDeps, email: string): 
       errorName: error instanceof Error ? error.name : 'unknown',
     });
   }
+}
+
+/**
+ * The code from the account's verified authenticator app, on the recovery session (T-M2-10). Nothing to do
+ * for an account without one (a code given anyway is ignored). On a refusal the recovery session ends.
+ */
+async function secondFactor(
+  deps: PasswordResetDeps,
+  client: RecoveryClientLike,
+  userId: string,
+  code: string | undefined,
+): Promise<Result<null, AppError>> {
+  let factorId: string | undefined;
+  try {
+    const listed = await client.auth.mfa.listFactors();
+    if (listed.error) {
+      const { status } = listed.error;
+      if (status === undefined || status === 0 || status >= 500) throw new AuthServiceError(status);
+      await endRecoverySession(deps, client, 'local', userId);
+      return linkInvalid();
+    }
+    factorId = listed.data?.all.find(
+      (f) => f.factor_type === 'totp' && f.status === 'verified',
+    )?.id;
+  } catch (error) {
+    await endRecoverySession(deps, client, 'local', userId);
+    throw error;
+  }
+  if (factorId === undefined) return ok(null);
+  if (code === undefined) {
+    await endRecoverySession(deps, client, 'local', userId);
+    deps.logWarning('password reset: the authenticator code is needed', {
+      action: COMPLETE_ACTION,
+      reason: 'code_required',
+    });
+    return err(appError(PasswordResetErrors.PASSWORD_RESET_CODE_REQUIRED));
+  }
+  let verified: Awaited<ReturnType<RecoveryClientLike['auth']['mfa']['challengeAndVerify']>>;
+  try {
+    verified = await client.auth.mfa.challengeAndVerify({ factorId, code });
+  } catch (error) {
+    await endRecoverySession(deps, client, 'local', userId);
+    throw error;
+  }
+  if (!verified.error) return ok(null);
+  await endRecoverySession(deps, client, 'local', userId);
+  const { status } = verified.error;
+  if (status === 429 || verified.error.code === 'over_request_rate_limit') {
+    return err(appError('RATE_LIMITED'));
+  }
+  if (status === undefined || status === 0 || status >= 500) throw new AuthServiceError(status);
+  // Logged without the code (review M3: T-M2-11 counts refused codes).
+  deps.logWarning('password reset: authenticator code refused', {
+    action: COMPLETE_ACTION,
+    outcome: 'failure',
+    errorCode: PasswordResetErrors.PASSWORD_RESET_CODE_INVALID.code,
+  });
+  return err(appError(PasswordResetErrors.PASSWORD_RESET_CODE_INVALID));
 }
 
 function linkInvalid(): Result<never, AppError> {
@@ -270,7 +363,12 @@ async function endRecoverySession(
  */
 export async function completePasswordReset(
   deps: PasswordResetDeps,
-  input: { readonly tokenHash: string; readonly password: string },
+  input: {
+    readonly tokenHash: string;
+    readonly password: string;
+    /** The code from the account's authenticator app (asked when the link says the account has one). */
+    readonly code?: string | undefined;
+  },
 ): Promise<Result<{ readonly next: 'sign-in' }, AppError>> {
   const { client } = deps;
   if (!client) return err(appError('NOT_CONFIGURED'));
@@ -279,9 +377,34 @@ export async function completePasswordReset(
   const verified = await client.auth.verifyOtp({ type: 'recovery', token_hash: input.tokenHash });
   if (verified.error) return verifyRefusal(verified.error);
   const userId = userIdOf(verified.data);
-  if (!sessionTokens(verified.data) || !userId) {
+  const tokens = sessionTokens(verified.data);
+  if (!tokens || !userId) {
     await endRecoverySession(deps, client, 'local', userId);
     return linkInvalid();
+  }
+
+  // An account with an authenticator app: Auth sets the password only from an AAL2 session, so the code
+  // first (on the same in-memory recovery session).
+  const second = await secondFactor(deps, client, userId, input.code);
+  if (!second.ok) return second;
+
+  // Strictest wins (PO decision 5): the account's organizations decide the minimum, known only now.
+  if (deps.passwordMinLength) {
+    let min: number | null;
+    try {
+      min = await deps.passwordMinLength(tokens.accessToken);
+    } catch (error) {
+      await endRecoverySession(deps, client, 'local', userId);
+      throw error;
+    }
+    if (min !== null && Array.from(input.password).length < min) {
+      await endRecoverySession(deps, client, 'local', userId);
+      deps.logWarning("password reset: shorter than the account's minimum", {
+        action: COMPLETE_ACTION,
+        reason: 'too_short',
+      });
+      return err(appError(PasswordResetErrors.PASSWORD_RESET_TOO_SHORT, { params: { min } }));
+    }
   }
 
   let updated: Awaited<ReturnType<RecoveryClientLike['auth']['updateUser']>>;
@@ -296,6 +419,10 @@ export async function completePasswordReset(
     await endRecoverySession(deps, client, 'local', userId);
     const { status } = updated.error;
     if (status === undefined || status === 0 || status >= 500) throw new AuthServiceError(status);
+    if (updated.error.code === 'insufficient_aal') {
+      // An app Auth counts that the list above did not show (set up meanwhile): the code is needed.
+      return err(appError(PasswordResetErrors.PASSWORD_RESET_CODE_REQUIRED));
+    }
     deps.logWarning('password reset: Auth refused the new password', {
       action: COMPLETE_ACTION,
       status,

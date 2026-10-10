@@ -1,5 +1,5 @@
 {
-  "$comment": "Development Plan §5.3 gate 9 (bundle-size budget). Gzipped totals of the client build. Lighthouse CI budgets are added with the first preview deployment (T-M1-D03).",
-  "clientJsGzipKiB": 250,
+  "$comment": "Development Plan §5.3 gate 9 (bundle-size budget). Gzipped client JavaScript a browser downloads to open each page (first load: shared framework chunks + the page's layouts, page and synchronous client components), and total CSS. Per page since the PO decision of 10 Oct 2026 (the total of all chunks grows with every screen and is printed for information only). Lighthouse CI budgets are added with the first preview deployment (T-M1-D03).",
+  "clientJsPerRouteGzipKiB": 250,
   "cssGzipKiB": 40
 }

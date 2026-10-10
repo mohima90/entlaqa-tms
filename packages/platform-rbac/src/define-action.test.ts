@@ -61,6 +61,7 @@ function runtime(over: Partial<ActionRuntime<FakeTx>> = {}) {
         throw e;
       }
     },
+    loadSessionFacts: () => Promise.resolve({ active: true, aal2: true }),
     loadGrants: () =>
       Promise.resolve<Grant[]>([{ permission: approve.code, scope: { type: 'direct_reports' } }]),
     resolveResource: (_tx, ref) =>
@@ -169,6 +170,7 @@ describe('defineAction (ADR 0003 §4)', () => {
       { code: 'platform.role.manage', label, description: label, risk: 'high', requiresAal2: true },
     ])['platform.role.manage'];
     const { rt } = runtime({
+      loadSessionFacts: () => Promise.resolve({ active: true, aal2: true }),
       loadGrants: () =>
         Promise.resolve([{ permission: sensitive.code, scope: { type: 'tenant' } }]),
     });
@@ -179,6 +181,52 @@ describe('defineAction (ADR 0003 §4)', () => {
     });
     const result = await action({});
     expect(!result.ok && result.error.code).toBe('STEP_UP_REQUIRED');
+  });
+
+  it('a session the database does not let act in its organization does nothing (review L1)', async () => {
+    const handler = vi.fn(() => Promise.resolve(ok('done')));
+    const { rt, log, audits } = runtime({
+      loadSessionFacts: () => Promise.resolve({ active: false, aal2: false }),
+    });
+    const result = await makeAction(rt, handler)({ enrollmentId: ENROLLMENT });
+    expect(!result.ok && result.error.code).toBe('UNAUTHENTICATED');
+    expect(handler).not.toHaveBeenCalled();
+    expect(audits).toEqual([]);
+    expect(log).toEqual(['begin', 'rollback']);
+  });
+
+  it('AAL2 permissions: the token, a confirmed app (database) and a code from the last 15 minutes (review H1/L3)', async () => {
+    const sensitive = definePermissions('platform', [
+      { code: 'platform.role.manage', label, description: label, risk: 'high', requiresAal2: true },
+    ])['platform.role.manage'];
+    const seconds = (ago: number) => Math.floor(Date.now() / 1000) - ago;
+    const attempt = async (dbAal2: boolean, codeAgo: number | null) => {
+      const extra = {
+        tenant_id: TENANT,
+        person_id: PERSON,
+        aal: 'aal2',
+        ...(codeAgo === null ? {} : { amr: [{ method: 'totp', timestamp: seconds(codeAgo) }] }),
+      };
+      const { rt } = runtime({
+        getClaims: () => Promise.resolve(ok(claims(extra))),
+        loadSessionFacts: () => Promise.resolve({ active: true, aal2: dbAal2 }),
+        loadGrants: () =>
+          Promise.resolve([{ permission: sensitive.code, scope: { type: 'tenant' } }]),
+      });
+      const action = createDefineAction(rt)({
+        permission: sensitive,
+        input: z.object({}),
+        handler: () => Promise.resolve(ok(true)),
+      });
+      const result = await action({});
+      return result.ok ? 'ok' : result.error.code;
+    };
+    expect(await attempt(true, 60)).toBe('ok');
+    // A code from an app still waiting for its e-mailed confirmation does not count.
+    expect(await attempt(false, 60)).toBe('STEP_UP_REQUIRED');
+    // Older than 15 minutes, or no code time at all: the /mfa page asks again.
+    expect(await attempt(true, 15 * 60 + 5)).toBe('STEP_UP_REQUIRED');
+    expect(await attempt(true, null)).toBe('STEP_UP_REQUIRED');
   });
 
   it('handler failures roll back and are returned; unexpected errors become INTERNAL_ERROR with a correlation id', async () => {
@@ -272,6 +320,7 @@ describe('defineAction (ADR 0003 §4)', () => {
       { type: 'direct_reports' },
     ] as const) {
       const { rt, log } = runtime({
+        loadSessionFacts: () => Promise.resolve({ active: true, aal2: true }),
         loadGrants: () => Promise.resolve([{ permission: approve.code, scope }]),
       });
       const result = await createDefineAction(rt)({
@@ -285,6 +334,7 @@ describe('defineAction (ADR 0003 §4)', () => {
     expect(handler).not.toHaveBeenCalled();
 
     const tenantWide = runtime({
+      loadSessionFacts: () => Promise.resolve({ active: true, aal2: true }),
       loadGrants: () => Promise.resolve([{ permission: approve.code, scope: { type: 'tenant' } }]),
     });
     const allowed = await createDefineAction(tenantWide.rt)({
@@ -322,5 +372,54 @@ describe('defineAction (ADR 0003 §4)', () => {
     });
     expect((await action({ enrollmentId: ENROLLMENT })).ok).toBe(true);
     expect(audits).toHaveLength(0);
+  });
+
+  it('asks for one retry after a deadlock unless the action acts outside the database (review L1)', async () => {
+    const options: unknown[] = [];
+    const { rt } = runtime();
+    const record: ActionRuntime<FakeTx> = {
+      ...rt,
+      withUserTx: (c, fn, o) => {
+        options.push(o);
+        return rt.withUserTx(c, fn, o);
+      },
+    };
+    await makeAction(record)({ enrollmentId: ENROLLMENT });
+    const external = createDefineAction(record)({
+      permission: approve,
+      input: Input,
+      scoped: true,
+      externalEffects: true,
+      handler: () => Promise.resolve(ok(1)),
+    });
+    await external({ enrollmentId: ENROLLMENT });
+    expect(options).toEqual([{ retryOnConflict: true }, { retryOnConflict: false }]);
+  });
+
+  it('a retried transaction runs the whole pipeline again and audits once', async () => {
+    const logError = vi.fn();
+    const { rt, log, audits } = runtime({ logError });
+    const deadlock = Object.assign(new Error('deadlock detected'), { code: '40P01' });
+    // What platform-db withUserTx does with retryOnConflict (tested there): one more transaction.
+    const retrying: ActionRuntime<FakeTx> = {
+      ...rt,
+      withUserTx: async (c, fn, o) => {
+        try {
+          return await rt.withUserTx(c, fn, o);
+        } catch (error) {
+          if (o?.retryOnConflict !== true || error !== deadlock) throw error;
+          return rt.withUserTx(c, fn, o);
+        }
+      },
+    };
+    let attempts = 0;
+    const result = await makeAction(retrying, () => {
+      attempts += 1;
+      return attempts === 1 ? Promise.reject(deadlock) : Promise.resolve(ok('done'));
+    })({ enrollmentId: ENROLLMENT });
+    expect(result).toEqual(ok('done'));
+    expect(log).toEqual(['begin', 'rollback', 'begin', 'commit']);
+    expect(audits).toHaveLength(1);
+    expect(logError).not.toHaveBeenCalled();
   });
 });

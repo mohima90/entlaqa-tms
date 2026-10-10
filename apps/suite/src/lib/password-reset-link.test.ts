@@ -7,6 +7,7 @@ import {
   noticeFrom,
   pathAfterReset,
   resetFragment,
+  resetLinkFromHash,
   resetTokenFromHash,
 } from './password-reset-link';
 
@@ -45,6 +46,23 @@ describe('resetTokenFromHash (the token travels in the URL fragment)', () => {
   });
 });
 
+describe('a link for an account with an authenticator app (T-M2-10)', () => {
+  it('says the code will be asked (`&mfa=1`), and keeps saying it across the language switch', () => {
+    expect(resetLinkFromHash(`#token_hash=${token}&type=recovery&mfa=1`)).toEqual({
+      token,
+      needsCode: true,
+    });
+    expect(resetLinkFromHash(`#token_hash=${token}&type=recovery`)).toEqual({
+      token,
+      needsCode: false,
+    });
+    expect(resetLinkFromHash(`#token_hash=${token}&type=recovery&mfa=yes`)?.needsCode).toBe(false);
+    expect(resetLinkFromHash(`#token_hash=${token}&mfa=1`)).toBeNull();
+    expect(resetFragment(token, true)).toBe(`#token_hash=${token}&type=recovery&mfa=1`);
+    expect(resetLinkFromHash(resetFragment(token, true))).toEqual({ token, needsCode: true });
+  });
+});
+
 describe('formatCountdown (resend after a minute, screen 10)', () => {
   it('shows m:ss and never a negative time', () => {
     expect(formatCountdown(60)).toBe('1:00');
@@ -63,6 +81,9 @@ describe('after an answer of the reset action', () => {
       'PASSWORD_RESET_WEAK_PASSWORD',
       'PASSWORD_RESET_BREACHED_PASSWORD',
       'PASSWORD_RESET_PASSWORD_REJECTED',
+      'PASSWORD_RESET_TOO_SHORT',
+      'PASSWORD_RESET_CODE_REQUIRED',
+      'PASSWORD_RESET_CODE_INVALID',
     ]) {
       expect(linkIsSpent(code), code).toBe(true);
     }
@@ -79,6 +100,7 @@ describe('after an answer of the reset action', () => {
 
   it('shows only the known notice', () => {
     expect(noticeFrom({ notice: PASSWORD_RESET_NOTICE })).toBe(PASSWORD_RESET_NOTICE);
+    expect(noticeFrom({ notice: 'session-ended' })).toBe('session-ended');
     expect(noticeFrom({ notice: 'anything-else' })).toBeNull();
     expect(noticeFrom({ notice: [PASSWORD_RESET_NOTICE] })).toBeNull();
     expect(noticeFrom({})).toBeNull();

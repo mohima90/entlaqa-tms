@@ -84,9 +84,41 @@ describe('completePasswordResetAction (screen 11)', () => {
     await expect(
       completePasswordResetAction({ tokenHash, password, confirmPassword: password }),
     ).resolves.toEqual({ ok: true, value: { next: 'sign-in' } });
-    expect(flow.completePasswordResetForRequest).toHaveBeenCalledWith({ tokenHash, password });
+    expect(flow.completePasswordResetForRequest).toHaveBeenCalledWith({
+      tokenHash,
+      password,
+      code: undefined,
+    });
     // No trusted client address configured here: the shared key.
     expect(limits.allowCompletion).toHaveBeenCalledWith('unknown');
+  });
+
+  it("passes the authenticator app's code (T-M2-10): six digits in any script, spaces dropped", async () => {
+    flow.completePasswordResetForRequest.mockResolvedValue({
+      ok: true,
+      value: { next: 'sign-in' },
+    });
+    await completePasswordResetAction({
+      tokenHash,
+      password,
+      confirmPassword: password,
+      code: '١٢٣ ٤٥٦',
+    });
+    expect(flow.completePasswordResetForRequest).toHaveBeenCalledWith({
+      tokenHash,
+      password,
+      code: '123456',
+    });
+    for (const code of ['12345', '1234567', 'abcdef', '12-456']) {
+      const refused = await completePasswordResetAction({
+        tokenHash,
+        password,
+        confirmPassword: password,
+        code,
+      });
+      expect(!refused.ok && refused.error.fieldErrors?.map((e) => e.path), code).toEqual(['code']);
+    }
+    expect(flow.completePasswordResetForRequest).toHaveBeenCalledTimes(1);
   });
 
   it('answers RATE_LIMITED without spending the link when the client is limited', async () => {

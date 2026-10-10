@@ -1,6 +1,11 @@
 import { toClientError } from '@jadarat/platform-core';
 import type { UserProfile } from '@jadarat/platform-db';
-import { type AppLocale, formatHijriDate } from '@jadarat/platform-i18n';
+import {
+  type AppLocale,
+  DEFAULT_CALENDAR,
+  DEFAULT_NUMBERING_SYSTEM,
+  formatHijriDate,
+} from '@jadarat/platform-i18n';
 import { routing } from '@jadarat/platform-i18n/routing';
 import { Alert, Card } from '@jadarat/ui';
 import { hasLocale } from 'next-intl';
@@ -8,13 +13,22 @@ import { getFormatter, getTranslations } from 'next-intl/server';
 import { notFound, redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { NotSet } from '../../../../components/not-set';
+import {
+  AuthenticatorCard,
+  type AuthenticatorCardApp,
+} from '../../../../components/profile/authenticator-card';
 import { ChangePasswordForm } from '../../../../components/profile/change-password-form';
 import { PersonalDetailsForm } from '../../../../components/profile/personal-details-form';
+import { SessionsTable } from '../../../../components/sessions/sessions-table';
 import { SuiteShell } from '../../../../components/suite-shell';
+import { mfaErrorTexts } from '../../../../lib/auth-texts';
+import { stepUpHref } from '../../../../lib/mfa-view';
 import { formStateFrom } from '../../../../lib/profile-form';
 import { profileErrorTexts } from '../../../../lib/profile-texts';
+import { sessionLabels, sessionRows } from '../../../../lib/sessions-view';
 import { getSuiteContext } from '../../../../lib/suite-context';
-import { myProfileQuery } from '../../../../lib/users-queries';
+import { myProfileQuery, mySecurityQuery } from '../../../../lib/users-queries';
+import { describeUserAgent } from '../../../../lib/user-agent';
 import { localizedName } from '../../../../lib/users-view';
 
 /**
@@ -49,8 +63,15 @@ export default async function MyProfilePage({ params }: { params: Promise<{ loca
           </Alert>
         );
     } else {
+      // Own sign-in sessions, password rule and authenticator app (T-M2-10).
+      const security = await mySecurityQuery({});
       content = (
-        <MyProfile locale={locale} details={result.value.details} profile={result.value.profile} />
+        <MyProfile
+          locale={locale}
+          details={result.value.details}
+          profile={result.value.profile}
+          security={security.ok ? security.value : null}
+        />
       );
     }
   }
@@ -67,12 +88,16 @@ async function MyProfile({
   locale,
   details,
   profile,
+  security,
 }: {
   locale: AppLocale;
   details: Parameters<typeof formStateFrom>[0];
   profile: UserProfile;
+  security: Extract<Awaited<ReturnType<typeof mySecurityQuery>>, { ok: true }>['value'] | null;
 }) {
+  const reset = await getTranslations({ locale, namespace: 'passwordReset.reset' });
   const t = await getTranslations({ locale, namespace: 'profile' });
+  const mfa = await getTranslations({ locale, namespace: 'mfa' });
   const common = await getTranslations({ locale, namespace: 'common' });
   const fields = await getTranslations({ locale, namespace: 'userProfile' });
   const users = await getTranslations({ locale, namespace: 'users' });
@@ -196,10 +221,19 @@ async function MyProfile({
       <Card title={t('password')}>
         <p className="mb-4 mt-0 text-text-muted">{t('passwordIntro')}</p>
         <ChangePasswordForm
+          minLength={security?.passwordMinLength ?? 12}
+          rules={{
+            rulesLabel: reset('rulesLabel'),
+            ruleMinLength: reset('rules.minLength', { min: '{min}' }),
+            ruleMaxBytes: reset('rules.maxBytes'),
+            ruleMatches: reset('rules.matches'),
+            ruleMet: reset('rules.met'),
+            ruleNotMet: reset('rules.notMet'),
+          }}
           labels={{
             current: t('currentPassword'),
             next: t('newPassword'),
-            nextHint: t('newPasswordHint'),
+            nextHint: t('newPasswordHint', { min: '{min}' }),
             confirm: t('confirmPassword'),
             required: common('required'),
             submit: t('changePassword'),
@@ -207,7 +241,7 @@ async function MyProfile({
             changed: t('passwordChanged'),
           }}
           fieldTexts={{
-            tooShort: t('fieldErrors.tooShort'),
+            tooShort: t('fieldErrors.tooShort', { min: '{min}' }),
             tooLong: t('fieldErrors.tooLong'),
             mismatch: t('fieldErrors.mismatch'),
             currentRequired: t('fieldErrors.currentRequired'),
@@ -215,6 +249,90 @@ async function MyProfile({
           errors={errors}
         />
       </Card>
+
+      {security ? (
+        <>
+          <Card title={t('mfa.title')}>
+            <p className="mb-4 mt-0 text-text-muted">{t('mfa.intro')}</p>
+            <AuthenticatorCard
+              app={await authenticatorApp(locale, security.apps)}
+              setUpHref={stepUpHref(locale, `/${locale}/suite/profile`)}
+              forgotPasswordHref={`/${locale}/forgot-password`}
+              labels={{
+                on: t('mfa.on'),
+                off: t('mfa.off'),
+                setUp: t('mfa.setUp'),
+                remove: t('mfa.remove'),
+                removing: t('mfa.removing'),
+                removed: t('mfa.removed'),
+                removeNeedsCode: t('mfa.removeNeedsCode'),
+                verifyFirst: t('mfa.verifyFirst'),
+                removeWarning: t('mfa.removeWarning'),
+                pending: t('mfa.pending'),
+                pendingText: t('mfa.pendingText'),
+                enterCode: t('mfa.enterCode'),
+                cancel: t('mfa.cancel'),
+                cancelling: t('mfa.cancelling'),
+                cancelled: t('mfa.cancelled'),
+                elsewhere: t('mfa.elsewhere'),
+                removeElsewhere: mfa('elsewhere.remove'),
+                removedElsewhere: mfa('elsewhere.removed'),
+                newPassword: mfa('elsewhere.newPassword'),
+                itWasMe: mfa('elsewhere.itWasMe'),
+                itWasMeText: mfa('elsewhere.itWasMeText'),
+              }}
+              errors={await mfaErrorTexts(locale)}
+            />
+          </Card>
+          <Card title={t('sessions.title')}>
+            <p className="mb-4 mt-0 text-text-muted">{t('sessions.intro')}</p>
+            <SessionsTable
+              target={{ kind: 'own' }}
+              sessions={await sessionRows(locale, security.sessions)}
+              labels={sessionLabels(locale)}
+              errors={errors}
+            />
+          </Card>
+        </>
+      ) : null}
     </div>
   );
+}
+
+/**
+ * The account's authenticator app as this window sees it (re-review N1): an app added from another sign-in
+ * first (a security warning, with when and which browser), then a confirmed app, then this window's set-up.
+ */
+async function authenticatorApp(
+  locale: AppLocale,
+  apps: Extract<Awaited<ReturnType<typeof mySecurityQuery>>, { ok: true }>['value']['apps'],
+): Promise<AuthenticatorCardApp> {
+  const elsewhere = apps.find((app) => !app.confirmed && !app.here);
+  if (elsewhere) {
+    const t = await getTranslations({ locale, namespace: 'profile.mfa' });
+    const mfa = await getTranslations({ locale, namespace: 'mfa.elsewhere' });
+    const format = await getFormatter({ locale });
+    const device = describeUserAgent(elsewhere.userAgent);
+    return {
+      state: 'elsewhere',
+      factorId: elsewhere.factorId,
+      notice: t('elsewhereText', {
+        date: format.dateTime(elsewhere.setUpAt, {
+          dateStyle: 'long',
+          timeStyle: 'short',
+          calendar: DEFAULT_CALENDAR,
+          numberingSystem: DEFAULT_NUMBERING_SYSTEM,
+        }),
+        device:
+          device.browser && device.system
+            ? mfa('device', { browser: device.browser, system: device.system })
+            : (device.browser ?? device.system ?? mfa('unknownDevice')),
+      }),
+    };
+  }
+  const confirmed = apps.find((app) => app.confirmed);
+  if (confirmed) return { state: 'on', factorId: confirmed.factorId };
+  const here = apps.find((app) => !app.confirmed && app.here);
+  if (here) return { state: 'pending', factorId: here.factorId };
+  return { state: 'off' };
 }

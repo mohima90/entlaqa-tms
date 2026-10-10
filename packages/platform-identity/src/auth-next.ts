@@ -6,13 +6,24 @@
 import 'server-only';
 import {
   acceptInvitationAsCaller,
+  applyDeviceLimit,
+  confirmMfaSetup as confirmMfaSetupInDatabase,
+  dismissMfaPrompt,
+  getSessionAccess,
   hashInvitationToken,
   insertAuditEvent,
   invitationByToken,
+  invitationPasswordMinLength,
+  listMyMfaApps,
   listSessionTenants,
+  passwordMinLengthForCaller,
   queueOwnPasswordChangedMail,
+  rejectMfaFactor,
+  removeMfaApp as removeMfaAppInDatabase,
+  requestMfaFactorMail,
   requestPasswordChangedMail,
   requestPasswordResetMail,
+  type SessionAccess,
   switchActiveTenant,
   withUserTx,
 } from '@jadarat/platform-db';
@@ -21,8 +32,9 @@ import {
   createSupabaseStatelessClient,
   createSupabaseVerifierClient,
 } from '@jadarat/platform-db/supabase-server';
+import { type AppError, type Result, actorFromClaims, hasTenant, ok } from '@jadarat/platform-core';
 import { log } from '@jadarat/platform-observability';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { after } from 'next/server';
 import {
   type AuthClientLike,
@@ -31,7 +43,21 @@ import {
   selectOrganization,
   signInWithPassword,
   signOut,
+  signOutEndedSession,
 } from './auth-flow';
+import {
+  type MfaClientLike,
+  type MfaDeps,
+  type MfaOverview,
+  confirmMfaSetup,
+  getMfaOverview,
+  openMfaRemoveLink,
+  removeMfaApp,
+  resendMfaSetupMail,
+  startTotpSetup,
+  verifyTotpCode,
+} from './mfa';
+import { type SupabaseAuthLike, verifyClaims } from './verify-claims';
 import {
   type InvitationAcceptDeps,
   type InvitationLinkView,
@@ -57,21 +83,29 @@ import {
 
 async function requestDeps(): Promise<AuthFlowDeps> {
   const store = await cookies();
-  const supabase = createSupabaseServerClient({
-    getAll: () => store.getAll(),
-    setAll: (toSet) => {
-      try {
-        for (const { name, value, options } of toSet) store.set(name, value, options);
-      } catch {
-        // Server Components cannot write cookies; the request proxy refreshes sessions there.
-      }
+  // The browser's User-Agent goes to Auth with our calls, so a session created at sign-in records the real
+  // browser (session lists, T-M2-10); createSupabaseServerClient drops anything but printable ASCII.
+  const userAgent = (await headers()).get('user-agent');
+  const supabase = createSupabaseServerClient(
+    {
+      getAll: () => store.getAll(),
+      setAll: (toSet) => {
+        try {
+          for (const { name, value, options } of toSet) store.set(name, value, options);
+        } catch {
+          // Server Components cannot write cookies; the request proxy refreshes sessions there.
+        }
+      },
     },
-  });
+    undefined,
+    { userAgent },
+  );
   return {
     supabase: supabase as AuthClientLike | null,
     withUserTx,
     listSessionTenants,
     switchActiveTenant,
+    getSessionAccess,
     insertAuditEvent,
     logWarning: (message, fields) => {
       log.warn(message, fields);
@@ -96,6 +130,131 @@ export async function getSessionOrganizationsForRequest() {
 
 export async function signOutForRequest() {
   return signOut(await requestDeps());
+}
+
+/** The sign-in page signs out a session its organization's rules ended (T-M2-10). */
+export async function signOutEndedSessionForRequest() {
+  return signOutEndedSession(await requestDeps());
+}
+
+// Multi-factor authentication with an authenticator app (FR-IAM-12, T-M2-10): the user's own session
+// only (no Auth secret key). The /mfa page and My profile use these through public actions: a session the
+// organization's MFA policy refuses has no access to the organization until it passes here.
+
+async function mfaDeps(): Promise<MfaDeps> {
+  const auth = await requestDeps();
+  return {
+    supabase: auth.supabase as unknown as MfaClientLike | null,
+    withUserTx,
+    insertAuditEvent,
+    getSessionAccess,
+    listMyMfaApps,
+    requestMfaFactorMail,
+    confirmMfaSetup: confirmMfaSetupInDatabase,
+    removeMfaApp: removeMfaAppInDatabase,
+    applyDeviceLimit,
+    logWarning: auth.logWarning,
+  };
+}
+
+export async function getMfaOverviewForRequest() {
+  return getMfaOverview(await mfaDeps());
+}
+
+/**
+ * What the /mfa page shows: the account's apps as this session sees them (confirmed, waiting for this
+ * window's code, or added from another sign-in — re-review N1), this session's level (Auth), and where the
+ * session stands in its organization (the database: a code or an app needed, or the set-up prompt).
+ */
+export async function getMfaPageStateForRequest(): Promise<
+  Result<MfaOverview & { readonly access: SessionAccess }, AppError>
+> {
+  const deps = await mfaDeps();
+  const overview = await getMfaOverview(deps);
+  if (!overview.ok) return overview;
+  const claims = await verifyClaims(deps.supabase);
+  if (!claims.ok) return claims;
+  const tenantClaims = claims.value;
+  const access: SessionAccess = hasTenant(tenantClaims)
+    ? await withUserTx(tenantClaims, (tx) => getSessionAccess(tx))
+    : { state: 'invalid', mfaDeadline: null, usesApp: false, mfaPending: false, aal2: false };
+  return ok({ ...overview.value, access });
+}
+
+export async function startTotpSetupForRequest() {
+  return startTotpSetup(await mfaDeps());
+}
+
+export async function verifyTotpCodeForRequest(input: {
+  readonly code: string;
+  readonly factorId?: string | undefined;
+}) {
+  return verifyTotpCode(await mfaDeps(), input);
+}
+
+/** The e-mailed code of a new app, in the window that set it up (re-review N1). */
+export async function confirmMfaSetupForRequest(input: { readonly code: string }) {
+  return confirmMfaSetup(await mfaDeps(), input);
+}
+
+/** "Send the e-mail again" from the window that set the app up (re-review N1). */
+export async function resendMfaSetupMailForRequest() {
+  return resendMfaSetupMail(await mfaDeps());
+}
+
+/**
+ * Removes one of the account's apps (re-review N1): a confirmed one (recent code), this window's set-up,
+ * or an app added from another sign-in (the account's other sessions end).
+ */
+export async function removeMfaAppForRequest(input: { readonly factorId: string }) {
+  return removeMfaApp(await mfaDeps(), input);
+}
+
+/**
+ * The set-up e-mail's "not you? remove this app" link (review H1), with the token the page read from the
+ * URL fragment: no session needed. It ends every session of the account; this browser's cookies are
+ * cleared too.
+ */
+export async function openMfaRemoveLinkForRequest(token: string) {
+  const outcome = await openMfaRemoveLink(
+    {
+      rejectMfaFactor,
+      logInfo: (message, fields) => {
+        log.info(message, fields);
+      },
+    },
+    token,
+  );
+  if (outcome === 'removed') {
+    try {
+      await (await requestDeps()).supabase?.auth.signOut({ scope: 'local' });
+    } catch {
+      // Nothing to end, or Auth unreachable: the session has ended in the database either way.
+    }
+  }
+  return outcome;
+}
+
+/**
+ * "Not now" on the Organization Admin prompt (PO decision 2): remembered for the session's organization;
+ * audited there. False when the session has no organization the database accepts.
+ */
+export async function dismissMfaPromptForRequest(): Promise<boolean> {
+  const auth = await requestDeps();
+  const claims = await verifyClaims(auth.supabase);
+  if (!claims.ok || !hasTenant(claims.value)) return false;
+  const tenantClaims = claims.value;
+  return withUserTx(tenantClaims, async (tx) => {
+    const done = await dismissMfaPrompt(tx);
+    if (done) {
+      await insertAuditEvent(tx, actorFromClaims(tenantClaims), {
+        action: 'platform.auth.mfa_prompt_dismissed',
+        entityType: 'user',
+        entityId: tenantClaims.sub,
+      });
+    }
+    return done;
+  });
 }
 
 export async function changePasswordForRequest(input: {
@@ -126,6 +285,7 @@ function invitationDeps(auth: AuthFlowDeps): InvitationAcceptDeps {
     signUpClient: auth.supabase as unknown as InvitationSignUpClientLike | null,
     hashToken: hashInvitationToken,
     invitationByToken,
+    invitationPasswordMinLength,
     acceptInvitationAsCaller,
   };
 }
@@ -136,7 +296,12 @@ function invitationDeps(auth: AuthFlowDeps): InvitationAcceptDeps {
  */
 export async function lookupInvitationLinkForRequest(token: string): Promise<InvitationLinkView> {
   return lookupInvitationLink(
-    { hashToken: hashInvitationToken, invitationByToken, auth: await requestDeps() },
+    {
+      hashToken: hashInvitationToken,
+      invitationByToken,
+      invitationPasswordMinLength,
+      auth: await requestDeps(),
+    },
     token,
   );
 }
@@ -208,11 +373,21 @@ export async function requestPasswordResetForRequest(input: {
 export async function completePasswordResetForRequest(input: {
   readonly tokenHash: string;
   readonly password: string;
+  readonly code?: string | undefined;
 }) {
   const auth = await requestDeps();
+  const client = createSupabaseStatelessClient() as RecoveryClientLike | null;
   return completePasswordReset(
     {
-      client: createSupabaseStatelessClient() as RecoveryClientLike | null,
+      client,
+      // Strictest wins (T-M2-10): asked with the recovery session's own, verified access token.
+      passwordMinLength: async (accessToken) => {
+        const claims = await verifyClaims(
+          client as unknown as SupabaseAuthLike | null,
+          accessToken,
+        );
+        return claims.ok ? withUserTx(claims.value, (tx) => passwordMinLengthForCaller(tx)) : null;
+      },
       logInfo: (message, fields) => {
         log.info(message, fields);
       },

@@ -1,6 +1,7 @@
 import 'server-only';
 import { type SQL, sql } from 'drizzle-orm';
 import { keepUnsplitDisplayNames } from './names';
+import { pgError } from './pg-error';
 import type { UserTx } from './with-user-tx';
 
 /**
@@ -233,29 +234,8 @@ const EMPLOYMENT_FIELDS = [
   ['hireOn', 'hire_on'],
 ] as const;
 
-/** SQLSTATE, constraint and message of a postgres.js error (also wrapped by Drizzle). */
-export function pgError(
-  error: unknown,
-): { code?: string; constraint?: string; message: string } | null {
-  let current: unknown = error;
-  for (let depth = 0; depth < 5 && typeof current === 'object' && current !== null; depth += 1) {
-    const e = current as {
-      code?: unknown;
-      constraint_name?: unknown;
-      message?: unknown;
-      cause?: unknown;
-    };
-    if (typeof e.code === 'string' && /^[0-9A-Z]{5}$/.test(e.code)) {
-      return {
-        code: e.code,
-        ...(typeof e.constraint_name === 'string' ? { constraint: e.constraint_name } : {}),
-        message: typeof e.message === 'string' ? e.message : '',
-      };
-    }
-    current = e.cause;
-  }
-  return null;
-}
+/** SQLSTATE, constraint and message of a postgres.js error (moved to ./pg-error; re-exported). */
+export { pgError };
 
 /** Maps database refusals of a person/placement change to form-level reasons; rethrows the rest. */
 export function refusalOf(error: unknown): UserDetailsRefusal {

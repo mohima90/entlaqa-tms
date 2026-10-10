@@ -28,7 +28,7 @@ const hrefs = (html: string) =>
 describe('password-reset e-mail (T-M2-17, our notification service)', () => {
   it('Arabic first: organization header, button to the Arabic page, the English page below', () => {
     const email = renderEmail('platform.password_reset', 'ar', reset);
-    expect(email.version).toBe(1);
+    expect(email.version).toBe(2);
     expect(email.subject).toBe('إعادة تعيين كلمة المرور · Reset your password');
     expect(email.html).toContain('<html lang="ar" dir="rtl">');
     expect(email.html).toContain('شركة الراية');

@@ -6,6 +6,7 @@ import {
   selectOrganization,
   signInWithPassword,
   signOut,
+  signOutEndedSession,
 } from './auth-flow';
 
 const USER = '11111111-1111-4111-8111-111111111111';
@@ -31,6 +32,9 @@ interface FakeOptions {
   auditFails?: boolean;
   serverUserId?: string | null;
   signOutFails?: boolean;
+  /** The database's view of the session in its organization (T-M2-10); default 'ok'. */
+  access?: string;
+  mfaPending?: boolean;
 }
 
 function setup(options: FakeOptions = {}) {
@@ -94,6 +98,17 @@ function setup(options: FakeOptions = {}) {
       calls.push(`switch:${tenantId}`);
       return Promise.resolve(options.switched ?? true);
     }),
+    getSessionAccess: vi.fn(() =>
+      Promise.resolve({
+        state: (options.access ?? 'ok') as Awaited<
+          ReturnType<AuthFlowDeps['getSessionAccess']>
+        >['state'],
+        mfaDeadline: null,
+        usesApp: false,
+        mfaPending: options.mfaPending ?? false,
+        aal2: false,
+      }),
+    ),
     insertAuditEvent: vi.fn((_tx, actor, event) => {
       if (options.auditFails) return Promise.reject(new Error('db down'));
       audited.push({ action: event.action, actor, entityId: event.entityId });
@@ -207,9 +222,37 @@ describe('selectOrganization', () => {
   it('uses the cookie session when called from the chooser (separate request)', async () => {
     const { deps, auth, audited } = setup({ cookieToken: 'access-1' });
     const result = await selectOrganization(deps, TENANT_A);
-    expect(result).toEqual({ ok: true, value: { tenantId: TENANT_A } });
+    expect(result).toEqual({ ok: true, value: { tenantId: TENANT_A, next: 'home' } });
     expect(auth.getClaims).toHaveBeenCalledWith();
     expect(auth.refreshSession).toHaveBeenCalledWith();
+    expect(audited.map((a) => a.action)).toEqual(['platform.auth.signed_in']);
+  });
+
+  it('sends the session to the MFA page when the organization asks for a code or an app (T-M2-10)', async () => {
+    for (const access of ['mfa_challenge', 'mfa_enrol']) {
+      const { deps, audited } = setup({ cookieToken: 'access-1', access });
+      const result = await selectOrganization(deps, TENANT_A);
+      expect(result).toEqual({ ok: true, value: { tenantId: TENANT_A, next: 'mfa' } });
+      // Refused by the database until the code: the sign-in is audited after it (mfa.ts).
+      expect(audited).toEqual([]);
+    }
+  });
+
+  it('invites to set up an app (grace period, Organization Admin prompt) after auditing the sign-in', async () => {
+    for (const access of ['prompt_grace', 'prompt_admin']) {
+      const { deps, audited } = setup({ cookieToken: 'access-1', access });
+      const result = await selectOrganization(deps, TENANT_A);
+      expect(result).toEqual({ ok: true, value: { tenantId: TENANT_A, next: 'mfa' } });
+      expect(audited.map((a) => a.action)).toEqual(['platform.auth.signed_in']);
+    }
+    const signIn = await signInWithPassword(setup({ access: 'mfa_challenge' }).deps, credentials);
+    expect(signIn).toEqual({ ok: true, value: { next: 'mfa' } });
+  });
+
+  it('shows an app waiting for its e-mailed code — here or added elsewhere — also when nothing requires one (re-review N1)', async () => {
+    const { deps, audited } = setup({ cookieToken: 'access-1', access: 'ok', mfaPending: true });
+    const result = await selectOrganization(deps, TENANT_A);
+    expect(result).toEqual({ ok: true, value: { tenantId: TENANT_A, next: 'mfa' } });
     expect(audited.map((a) => a.action)).toEqual(['platform.auth.signed_in']);
   });
 
@@ -283,6 +326,41 @@ describe('signOut', () => {
     );
 
     const notConfigured = await signOut({ ...noTenant.deps, supabase: null });
+    expect(!notConfigured.ok && notConfigured.error.code).toBe('NOT_CONFIGURED');
+  });
+});
+
+describe('signOutEndedSession (T-M2-10)', () => {
+  it('signs out only a session the organization ended', async () => {
+    const ended = setup({ cookieToken: 'access-2', access: 'ended' });
+    expect(await signOutEndedSession(ended.deps)).toEqual({ ok: true, value: { signedOut: true } });
+    expect(ended.calls).toEqual(['signOut']);
+
+    for (const access of ['ok', 'invalid', 'mfa_challenge']) {
+      const other = setup({ cookieToken: 'access-2', access });
+      expect(await signOutEndedSession(other.deps)).toEqual({
+        ok: true,
+        value: { signedOut: false },
+      });
+      expect(other.calls).toEqual([]);
+    }
+    const noTenant = setup({ cookieToken: 'access-1', access: 'ended' });
+    expect(await signOutEndedSession(noTenant.deps)).toEqual({
+      ok: true,
+      value: { signedOut: false },
+    });
+    const noSession = setup({});
+    expect((await signOutEndedSession(noSession.deps)).ok).toBe(true);
+    expect(noSession.calls).toEqual([]);
+
+    const revokeFails = setup({ cookieToken: 'access-2', access: 'ended', signOutFails: true });
+    expect(await signOutEndedSession(revokeFails.deps)).toEqual({
+      ok: true,
+      value: { signedOut: true },
+    });
+    expect(revokeFails.deps.logWarning).toHaveBeenCalled();
+
+    const notConfigured = await signOutEndedSession({ ...noSession.deps, supabase: null });
     expect(!notConfigured.ok && notConfigured.error.code).toBe('NOT_CONFIGURED');
   });
 });

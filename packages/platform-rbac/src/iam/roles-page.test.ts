@@ -28,6 +28,7 @@ function runtime(grants: readonly Grant[]) {
       return Promise.resolve(ok(r.value));
     },
     withUserTx: (_c, fn) => fn(TX),
+    loadSessionFacts: () => Promise.resolve({ active: true, aal2: true }),
     loadGrants: () => Promise.resolve(grants),
     resolveResource: () => Promise.resolve(null),
     writeAudit: vi.fn(() => Promise.resolve()),

@@ -105,19 +105,30 @@ begin
     if not (has_schema_privilege(v_role, 'auth', 'usage')
             and has_column_privilege(v_role, 'auth.sessions', 'id', 'select')
             and has_column_privilege(v_role, 'auth.sessions', 'user_id', 'select')
-            and has_column_privilege(v_role, 'auth.sessions', 'not_after', 'select')) then
-      failures := failures || format('%s (owner of private.auth_session_validity) must read auth.sessions (id, user_id, not_after)', v_role);
+            and has_column_privilege(v_role, 'auth.sessions', 'not_after', 'select')
+            and has_column_privilege(v_role, 'auth.sessions', 'created_at', 'select')
+            and has_column_privilege(v_role, 'auth.sessions', 'updated_at', 'select')
+            and has_column_privilege(v_role, 'auth.sessions', 'user_agent', 'select')
+            and has_column_privilege(v_role, 'auth.sessions', 'aal', 'select')
+            and has_column_privilege(v_role, 'auth.sessions', 'factor_id', 'select')
+            and has_table_privilege(v_role, 'auth.sessions', 'delete')) then
+      failures := failures || format('%s (owner of private.auth_session_validity) must read auth.sessions (id, user_id, not_after, created_at, updated_at, user_agent, aal, factor_id) and delete from it (T-M2-10, review M1)', v_role);
     end if;
-    -- Exact ACL: tenant_guard may only SELECT; nobody else (besides the owner) holds any privilege, at table
-    -- or column level. The view is a plain projection, i.e. auto-updatable: write privileges on it would
-    -- reach auth.sessions with the owner's rights.
+    if (select string_agg(a.attname, ',' order by a.attnum) from pg_attribute a
+        where a.attrelid = 'private.auth_session_validity'::regclass and a.attnum > 0 and not a.attisdropped)
+       <> 'id,user_id,not_after,created_at,updated_at,user_agent,aal,factor_id' then
+      failures := failures || 'private.auth_session_validity must expose exactly id, user_id, not_after, created_at, updated_at, user_agent, aal, factor_id (never a token)'::text;
+    end if;
+    -- Exact ACL: tenant_guard may only SELECT and DELETE (end a session, T-M2-10 review M1); nobody else
+    -- (besides the owner) holds any privilege, at table or column level. The view is a plain projection,
+    -- i.e. auto-updatable: write privileges on it reach auth.sessions with the owner's rights.
     for r in
       select distinct
         case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end as grantee,
         a.privilege_type
       from pg_class c, aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a
       where c.oid = 'private.auth_session_validity'::regclass and a.grantee <> c.relowner
-        and not (a.grantee <> 0 and pg_get_userbyid(a.grantee) = 'tenant_guard' and a.privilege_type = 'SELECT')
+        and not (a.grantee <> 0 and pg_get_userbyid(a.grantee) = 'tenant_guard' and a.privilege_type in ('SELECT', 'DELETE'))
       union
       select distinct
         case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end,
@@ -126,6 +137,81 @@ begin
       where att.attrelid = 'private.auth_session_validity'::regclass and att.attacl is not null
     loop
       failures := failures || format('%s must not have %s on private.auth_session_validity', r.grantee, r.privilege_type);
+    end loop;
+  end if;
+
+  -- MFA policy (T-M2-10): tenant_guard reads Auth factors only through private.auth_mfa_factor, owned by the
+  -- migration role (never the secret), and deletes through it (removal, resets); nobody else may use it.
+  if to_regclass('private.auth_mfa_factor') is null then
+    failures := failures || 'private.auth_mfa_factor is missing'::text;
+  else
+    v_role := (select pg_get_userbyid(relowner) from pg_class where oid = 'private.auth_mfa_factor'::regclass);
+    if not (has_schema_privilege(v_role, 'auth', 'usage')
+            and has_column_privilege(v_role, 'auth.mfa_factors', 'user_id', 'select')
+            and has_column_privilege(v_role, 'auth.mfa_factors', 'factor_type', 'select')
+            and has_column_privilege(v_role, 'auth.mfa_factors', 'status', 'select')
+            and has_table_privilege(v_role, 'auth.mfa_factors', 'delete')
+            and has_table_privilege(v_role, 'auth.mfa_factors', 'references')) then
+      failures := failures || format('%s (owner of private.auth_mfa_factor) must read, delete from and reference auth.mfa_factors', v_role);
+    end if;
+    if (select string_agg(a.attname, ',' order by a.attnum) from pg_attribute a
+        where a.attrelid = 'private.auth_mfa_factor'::regclass and a.attnum > 0 and not a.attisdropped)
+       <> 'id,user_id,factor_type,status,created_at,updated_at' then
+      failures := failures || 'private.auth_mfa_factor must expose exactly id, user_id, factor_type, status, created_at, updated_at (never the secret)'::text;
+    end if;
+    for r in
+      select distinct
+        case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end as grantee,
+        a.privilege_type
+      from pg_class c, aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a
+      where c.oid = 'private.auth_mfa_factor'::regclass and a.grantee <> c.relowner
+        and not (a.grantee <> 0 and pg_get_userbyid(a.grantee) = 'tenant_guard' and a.privilege_type in ('SELECT', 'DELETE'))
+      union
+      select distinct
+        case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end,
+        a.privilege_type || ' (column ' || att.attname || ')'
+      from pg_attribute att, aclexplode(att.attacl) a
+      where att.attrelid = 'private.auth_mfa_factor'::regclass and att.attacl is not null
+    loop
+      failures := failures || format('%s must not have %s on private.auth_mfa_factor', r.grantee, r.privilege_type);
+    end loop;
+  end if;
+  -- Ended sessions, the MFA prompt answers, the confirmed apps and the wrong set-up codes (T-M2-10):
+  -- tenant_guard alone.
+  for r in
+    select o.obj from (values ('private.revoked_sessions'), ('private.mfa_prompt_dismissals'),
+                              ('private.mfa_factor_confirmations'), ('private.mfa_setup_code_failures')) as o(obj)
+  loop
+    if to_regclass(r.obj) is null then
+      failures := failures || format('%s is missing', r.obj);
+      continue;
+    end if;
+    for v_role in
+      select distinct case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end
+      from pg_class c, aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a
+      where c.oid = to_regclass(r.obj) and a.grantee <> c.relowner
+        and not (a.grantee <> 0 and pg_get_userbyid(a.grantee) = 'tenant_guard'
+                 and a.privilege_type in ('SELECT', 'INSERT', 'UPDATE', 'DELETE'))
+      union
+      select distinct case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end
+      from pg_attribute att, aclexplode(att.attacl) a
+      where att.attrelid = to_regclass(r.obj) and att.attacl is not null
+    loop
+      failures := failures || format('%s must have no privilege on %s', v_role, r.obj);
+    end loop;
+  end loop;
+  -- Security notices held for an account's digest (T-M2-10, final re-review L1): account_mail_guard alone.
+  if to_regclass('private.security_notice_digests') is null then
+    failures := failures || 'private.security_notice_digests is missing'::text;
+  else
+    for v_role in
+      select distinct case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end
+      from pg_class c, aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a
+      where c.oid = 'private.security_notice_digests'::regclass and a.grantee <> c.relowner
+        and not (a.grantee <> 0 and pg_get_userbyid(a.grantee) = 'account_mail_guard'
+                 and a.privilege_type in ('SELECT', 'INSERT', 'UPDATE', 'DELETE'))
+    loop
+      failures := failures || format('%s must have no privilege on private.security_notice_digests', v_role);
     end loop;
   end if;
 
@@ -194,8 +280,55 @@ begin
       -- access-token hook (Auth only).
       ('private.end_member_sessions()', 'membership_guard', array['membership_guard'], true),
       ('private.check_privileged_deactivation()', 'membership_guard', array['membership_guard'], true),
+      -- With T-M2-10 (20261012120000): the statement trigger that ends the Auth sessions of logins left
+      -- without an active membership (residual N2).
+      ('private.end_unserved_logins()', 'membership_guard', array['membership_guard'], true),
       ('private.reactivate_membership(uuid)', 'membership_guard', array['membership_guard', 'authenticated'], true),
-      ('private.account_sign_in_refused(uuid)', 'membership_guard', array['membership_guard', 'supabase_auth_admin'], true)
+      ('private.account_sign_in_refused(uuid)', 'membership_guard', array['membership_guard', 'supabase_auth_admin'], true),
+      -- Security policy, MFA and sign-in sessions (T-M2-10): the decision is tenant_guard's own; the web app
+      -- calls the others (app_server, checked inside).
+      ('private.session_access(uuid, uuid, uuid, boolean, boolean)', 'tenant_guard', array['tenant_guard'], true),
+      ('private.session_access_state()',            'tenant_guard', array['tenant_guard', 'authenticated'], true),
+      -- membership_guard: T-M2-09's authenticator-code rule uses them (20261012120000).
+      ('private.request_aal2()',                    'tenant_guard', array['tenant_guard', 'authenticated', 'membership_guard'], true),
+      ('private.request_code_fresh()',              'tenant_guard', array['tenant_guard', 'authenticated', 'membership_guard'], true),
+      ('private.request_session_facts()',           'tenant_guard', array['tenant_guard', 'authenticated'], true),
+      ('private.dismiss_mfa_prompt()',              'tenant_guard', array['tenant_guard', 'authenticated'], true),
+      ('private.tenant_member_mfa(uuid)',           'tenant_guard', array['tenant_guard', 'authenticated'], true),
+      ('private.password_min_length_for_caller()',  'tenant_guard', array['tenant_guard', 'authenticated'], true),
+      ('private.tenant_lockout_policy(uuid)',       'tenant_guard', array['tenant_guard', 'authenticated'], true),
+      ('private.invitation_password_min_length(bytea)', 'invitation_guard', array['invitation_guard', 'authenticated'], true),
+      ('private.touch_session()',                   'tenant_guard', array['tenant_guard', 'authenticated'], true),
+      ('private.my_sessions()',                     'tenant_guard', array['tenant_guard', 'authenticated'], true),
+      ('private.end_my_sessions(uuid)',             'tenant_guard', array['tenant_guard', 'authenticated'], true),
+      ('private.tenant_member_sessions(uuid)',      'tenant_guard', array['tenant_guard', 'authenticated'], true),
+      ('private.end_member_sessions(uuid, uuid)',   'tenant_guard', array['tenant_guard', 'authenticated'], true),
+      ('private.apply_device_limit()',              'tenant_guard', array['tenant_guard', 'authenticated'], true),
+      ('private.purge_ended_sessions(integer)',     'tenant_guard', array['tenant_guard', 'authenticated'], true),
+      -- Internal helpers of tenant_guard's functions only.
+      ('private.audit_account_event(uuid, text, jsonb, text, uuid, uuid)', 'tenant_guard', array['tenant_guard'], true),
+      ('private.end_sessions(uuid, uuid[], uuid, text, uuid)', 'tenant_guard', array['tenant_guard'], true),
+      ('private.enforce_device_limit(uuid, uuid, uuid)', 'tenant_guard', array['tenant_guard'], true),
+      ('private.queue_mfa_mail(text, uuid, uuid, text, uuid)', 'tenant_guard', array['tenant_guard'], true),
+      ('private.remove_account_factors(uuid, uuid[])', 'tenant_guard', array['tenant_guard'], true),
+      ('private.end_all_account_sessions(uuid, uuid, uuid)', 'tenant_guard', array['tenant_guard'], true),
+      -- A deactivation ends the login's Auth sessions when it belongs nowhere any more (T-M2-09 residual N2,
+      -- 20261012120000): the session-ending trigger (membership_guard) only.
+      ('private.end_unserved_login_sessions(uuid, uuid, uuid)', 'tenant_guard', array['tenant_guard', 'membership_guard'], true),
+      ('private.request_live_user()',               'tenant_guard', array['tenant_guard'], true),
+      ('private.security_policy_changed_mail()',    'tenant_guard', array['tenant_guard'], true),
+      -- Authenticator apps (T-M2-10, review H1/M2, re-review N1/N2): web app and worker (checked inside).
+      ('private.request_mfa_factor_mail(uuid)',     'tenant_guard', array['tenant_guard', 'authenticated'], true),
+      ('private.confirm_mfa_setup(uuid, text)',     'tenant_guard', array['tenant_guard', 'authenticated'], true),
+      ('private.my_mfa_apps()',                     'tenant_guard', array['tenant_guard', 'authenticated'], true),
+      ('private.remove_mfa_app(uuid)',              'tenant_guard', array['tenant_guard', 'authenticated'], true),
+      ('private.issue_mfa_factor_tokens(uuid, uuid, bytea, bytea)', 'tenant_guard', array['tenant_guard', 'authenticated'], true),
+      ('private.account_has_app(uuid)',             'tenant_guard', array['tenant_guard', 'authenticated'], true),
+      ('private.reject_mfa_factor(bytea)',          'tenant_guard', array['tenant_guard', 'authenticated'], true),
+      ('private.purge_unconfirmed_mfa_apps(integer)', 'tenant_guard', array['tenant_guard', 'authenticated'], true),
+      ('private.reset_member_mfa(uuid)',            'tenant_guard', array['tenant_guard', 'authenticated'], true),
+      -- ENTLAQA support's reset: the migration role (operators) only — never the request path.
+      ('private.reset_account_mfa(uuid, text)',     'tenant_guard', array['tenant_guard', current_user::text], true)
     ) as h(fn, owner, allowed, definer)
     left join pg_proc p on p.oid = to_regprocedure(h.fn)
   loop
@@ -233,7 +366,26 @@ begin
         'private.claim_account_mail_request()', 'private.finish_account_mail_request(uuid)',
         'private.retry_account_mail_request(uuid)', 'private.end_member_sessions()',
         'private.check_privileged_deactivation()', 'private.reactivate_membership(uuid)',
-        'private.account_sign_in_refused(uuid)')
+        'private.end_unserved_logins()',
+        'private.account_sign_in_refused(uuid)',
+        'private.session_access(uuid,uuid,uuid,boolean,boolean)', 'private.session_access_state()',
+        'private.dismiss_mfa_prompt()', 'private.tenant_member_mfa(uuid)', 'private.password_min_length_for_caller()',
+        'private.tenant_lockout_policy(uuid)', 'private.invitation_password_min_length(bytea)',
+        'private.touch_session()', 'private.my_sessions()', 'private.end_my_sessions(uuid)',
+        'private.tenant_member_sessions(uuid)', 'private.end_member_sessions(uuid,uuid)',
+        'private.request_aal2()', 'private.request_code_fresh()', 'private.request_session_facts()',
+        'private.apply_device_limit()',
+        'private.purge_ended_sessions(integer)', 'private.audit_account_event(uuid,text,jsonb,text,uuid,uuid)',
+        'private.end_sessions(uuid,uuid[],uuid,text,uuid)', 'private.enforce_device_limit(uuid,uuid,uuid)',
+        'private.queue_mfa_mail(text,uuid,uuid,text,uuid)', 'private.remove_account_factors(uuid,uuid[])',
+        'private.end_all_account_sessions(uuid,uuid,uuid)', 'private.request_live_user()',
+        'private.end_unserved_login_sessions(uuid,uuid,uuid)',
+        'private.security_policy_changed_mail()',
+        'private.request_mfa_factor_mail(uuid)', 'private.confirm_mfa_setup(uuid,text)', 'private.my_mfa_apps()',
+        'private.remove_mfa_app(uuid)', 'private.issue_mfa_factor_tokens(uuid,uuid,bytea,bytea)',
+        'private.account_has_app(uuid)', 'private.reject_mfa_factor(bytea)',
+        'private.purge_unconfirmed_mfa_apps(integer)', 'private.reset_member_mfa(uuid)',
+        'private.reset_account_mfa(uuid,text)')
   loop
     failures := failures || format('%s: unexpected SECURITY DEFINER function (security review)', r.fn);
   end loop;
@@ -257,7 +409,8 @@ begin
 
   -- account_mail_guard (T-M2-17): creates nothing, nobody acts as it; it reads Auth accounts only through
   -- private.auth_account (owned by the migration role, SELECT for account_mail_guard only), and the request
-  -- queue private.account_mail_requests is reachable by account_mail_guard alone.
+  -- queue private.account_mail_requests is reachable by account_mail_guard — and by tenant_guard for the
+  -- authenticator notices (T-M2-10; its policy limits it to those kinds: SELECT, INSERT, DELETE).
   if exists (select 1 from pg_roles where rolname = 'account_mail_guard') then
     for r in select nspname from pg_namespace where nspname = any (module_schemas) loop
       if has_schema_privilege('account_mail_guard', r.nspname, 'create') then
@@ -306,6 +459,8 @@ begin
         and not (a.grantee <> 0 and pg_get_userbyid(a.grantee) = r.reader
                  and (a.privilege_type = 'SELECT' or (r.obj = 'private.account_mail_requests'
                                                      and a.privilege_type in ('INSERT', 'UPDATE', 'DELETE'))))
+        and not (a.grantee <> 0 and pg_get_userbyid(a.grantee) = 'tenant_guard'
+                 and r.obj = 'private.account_mail_requests' and a.privilege_type in ('SELECT', 'INSERT', 'DELETE'))
       union
       select distinct case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end
       from pg_attribute att, aclexplode(att.attacl) a
@@ -343,12 +498,15 @@ begin
     end if;
   end if;
   -- Deactivation (T-M2-09): the triggers that end a member's sessions in the organization and require an
-  -- authenticator code for a privileged member exist and are enabled.
+  -- authenticator code for a privileged member exist and are enabled — and (T-M2-10 integration) the one
+  -- that ends the Auth sessions of a login left without an active membership.
   for r in
     select t.tbl, t.name, t.fn
     from (values ('platform.tenant_memberships', 'tenant_memberships_end_sessions', 'private.end_member_sessions()'),
                  ('platform.tenant_memberships', 'tenant_memberships_privileged_deactivation',
-                  'private.check_privileged_deactivation()')) as t(tbl, name, fn)
+                  'private.check_privileged_deactivation()'),
+                 ('platform.tenant_memberships', 'tenant_memberships_end_login_sessions',
+                  'private.end_unserved_logins()')) as t(tbl, name, fn)
   loop
     if not exists (select 1 from pg_trigger g where g.tgrelid = to_regclass(r.tbl) and g.tgname = r.name
                    and g.tgenabled in ('O', 'A') and g.tgfoid = to_regprocedure(r.fn)) then

@@ -38,9 +38,13 @@ export function SignInForm({ locale, disabled, labels, errors }: SignInFormProps
     startTransition(async () => {
       const result = await signInAction({ email, password });
       if (result.ok) {
-        router.replace(
-          `/${locale}${result.value.next === 'home' ? '/suite' : '/select-organization'}`,
-        );
+        const paths = {
+          home: '/suite',
+          mfa: '/mfa',
+          'choose-organization': '/select-organization',
+        };
+        // 'mfa': the organization asks for an authenticator code or app first (T-M2-10).
+        router.replace(`/${locale}${paths[result.value.next]}`);
         router.refresh();
       } else {
         setMessage(errorText(result.error, errors));

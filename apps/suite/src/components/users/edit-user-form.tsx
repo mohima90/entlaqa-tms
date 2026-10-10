@@ -13,6 +13,7 @@ import { updateUserDetailsAction } from '../../actions/users';
 import { type ManagerChoice, editFieldErrorKey, managersFor } from '../../lib/edit-user-form';
 import { NAME_PARTS, type NamePart, type PersonalDetailsFormState } from '../../lib/profile-form';
 import { type ErrorTexts, errorText } from '../auth/error-text';
+import { useSessionRefusal } from '../auth/session-refusal';
 import { fieldErrorCodes } from '../profile/field-errors';
 
 export interface UnitChoice {
@@ -108,6 +109,7 @@ export function SelectField({
 export function EditUserForm(props: EditUserFormProps) {
   const { labels, fieldTexts, values, names } = props;
   const router = useRouter();
+  const sessionRefused = useSessionRefusal();
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState<{ tone: 'success' | 'danger'; text: string } | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
@@ -163,6 +165,7 @@ export function EditUserForm(props: EditUserFormProps) {
     startTransition(async () => {
       const result = await updateUserDetailsAction(input);
       if (!result.ok) {
+        if (sessionRefused(result.error)) return;
         if (result.error.code === 'VALIDATION_FAILED') {
           const codes = fieldErrorCodes(result.error);
           setFieldErrors(

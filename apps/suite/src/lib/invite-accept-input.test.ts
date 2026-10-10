@@ -26,13 +26,20 @@ function issues(input: unknown) {
 
 describe('passwordRuleState (live rules, screen 8)', () => {
   it('checks length (characters), size (UTF-8 bytes) and the confirmation', () => {
-    expect(passwordRuleState('', '')).toEqual({ minLength: false, maxBytes: true, matches: false });
+    expect(passwordRuleState('', '')).toEqual({
+      min: 12,
+      minLength: false,
+      maxBytes: true,
+      matches: false,
+    });
     expect(passwordRuleState('short', 'short')).toEqual({
+      min: 12,
       minLength: false,
       maxBytes: true,
       matches: true,
     });
     expect(passwordRuleState('a'.repeat(12), 'a'.repeat(11))).toEqual({
+      min: 12,
       minLength: true,
       maxBytes: true,
       matches: false,
@@ -41,6 +48,7 @@ describe('passwordRuleState (live rules, screen 8)', () => {
     const arabic = 'ك'.repeat(37);
     expect(utf8Length(arabic)).toBe(74);
     expect(passwordRuleState(arabic, arabic)).toEqual({
+      min: 12,
       minLength: true,
       maxBytes: false,
       matches: true,

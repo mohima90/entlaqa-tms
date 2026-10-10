@@ -8,9 +8,10 @@ import { getConfigStatus } from '../lib/config-status';
 import { HOST_KIND_HEADER, HOST_REF_HEADER } from '../lib/host-tenant';
 import type { SuiteContext } from '../lib/suite-context';
 import { SignOutButton } from './auth/sign-out-button';
+import { IdleWarning } from './idle-warning';
 import { LanguageToggle } from './language-toggle';
 
-export type SuitePage = 'home' | 'users' | 'roles' | 'profile';
+export type SuitePage = 'home' | 'users' | 'roles' | 'security' | 'profile';
 
 const linkClass = 'block rounded-md px-3 py-2 no-underline';
 const currentClass = 'bg-surface-selected font-medium text-primary-text';
@@ -121,7 +122,7 @@ export async function SuiteShell({
           ),
         )}
       </ul>
-      {context.navigation.users || context.navigation.roles ? (
+      {context.navigation.users || context.navigation.roles || context.navigation.security ? (
         <div className="mt-6">
           <h2 id="nav-admin" className="m-0 px-3 pb-2 text-sm font-semibold text-text-muted">
             {t('admin')}
@@ -138,6 +139,13 @@ export async function SuiteShell({
               <li>
                 <NavLink href={`/${locale}/suite/admin/roles`} current={current === 'roles'}>
                   {t('roles')}
+                </NavLink>
+              </li>
+            ) : null}
+            {context.navigation.security ? (
+              <li>
+                <NavLink href={`/${locale}/suite/admin/security`} current={current === 'security'}>
+                  {t('security')}
                 </NavLink>
               </li>
             ) : null}
@@ -182,6 +190,18 @@ export async function SuiteShell({
       }
     >
       {children}
+      {context.live && context.idleMinutes !== null ? (
+        <IdleWarning
+          locale={locale}
+          idleMinutes={context.idleMinutes}
+          texts={{
+            title: t('idleTitle'),
+            text: t('idleText'),
+            stay: t('idleContinue'),
+            signOut: t('idleSignOut'),
+          }}
+        />
+      ) : null}
     </AppShell>
   );
 }

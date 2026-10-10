@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { type SyntheticEvent, useState, useTransition } from 'react';
 import { updateMyProfileAction } from '../../actions/profile';
 import { type ErrorTexts, errorText } from '../auth/error-text';
+import { useSessionRefusal } from '../auth/session-refusal';
 import {
   NAME_PARTS,
   type NamePart,
@@ -60,6 +61,7 @@ export function PersonalDetailsForm({
     const parts = NAME_PARTS.map((part) => values[`${part}${script}`] ?? '');
     return composedLength(parts) > 200 ? fieldTexts.nameTooLong : fieldTexts.name;
   };
+  const sessionRefused = useSessionRefusal();
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState<{ tone: 'success' | 'danger'; text: string } | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
@@ -88,6 +90,7 @@ export function PersonalDetailsForm({
     startTransition(async () => {
       const result = await updateMyProfileAction(values);
       if (!result.ok) {
+        if (sessionRefused(result.error)) return;
         if (result.error.code === 'VALIDATION_FAILED') {
           const codes = fieldErrorCodes(result.error);
           setFieldErrors(

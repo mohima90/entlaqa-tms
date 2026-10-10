@@ -2,10 +2,16 @@
 import { Alert, Button, TextField } from '@jadarat/ui';
 import { type SyntheticEvent, useRef, useState, useTransition } from 'react';
 import { changeMyPasswordAction } from '../../actions/profile';
+import { minFromParams, passwordRuleState, withMin } from '../../lib/password-rules';
 import { type ErrorTexts, errorText } from '../auth/error-text';
+import { useSessionRefusal } from '../auth/session-refusal';
+import { type PasswordRuleLabels, PasswordRulesList } from '../auth/password-rules-list';
 import { fieldErrorCodes } from './field-errors';
 
 export interface ChangePasswordFormProps {
+  /** The strictest minimum of the account's organizations (PO decision 5, T-M2-10). */
+  readonly minLength: number;
+  readonly rules: PasswordRuleLabels;
   readonly labels: {
     readonly current: string;
     readonly next: string;
@@ -25,9 +31,22 @@ export interface ChangePasswordFormProps {
   readonly errors: ErrorTexts;
 }
 
-/** My profile → change password (FR-IAM-16): current password, new password twice. */
-export function ChangePasswordForm({ labels, fieldTexts, errors }: ChangePasswordFormProps) {
+/**
+ * My profile → change password (FR-IAM-16): current password, new password twice, with the live rules —
+ * the minimum is the strictest of the account's organizations (T-M2-10), named without saying whose.
+ */
+export function ChangePasswordForm({
+  minLength,
+  rules: ruleLabels,
+  labels,
+  fieldTexts,
+  errors,
+}: ChangePasswordFormProps) {
   const formRef = useRef<HTMLFormElement>(null);
+  const [password, setPassword] = useState('');
+  const [confirmation, setConfirmation] = useState('');
+  const rules = passwordRuleState(password, confirmation, minLength);
+  const sessionRefused = useSessionRefusal();
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState<{ tone: 'success' | 'danger'; text: string } | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
@@ -50,9 +69,12 @@ export function ChangePasswordForm({ labels, fieldTexts, errors }: ChangePasswor
       const result = await changeMyPasswordAction(input);
       if (result.ok) {
         formRef.current?.reset();
+        setPassword('');
+        setConfirmation('');
         setMessage({ tone: 'success', text: labels.changed });
         return;
       }
+      if (sessionRefused(result.error)) return;
       if (result.error.code === 'VALIDATION_FAILED') {
         const codes = fieldErrorCodes(result.error);
         setFieldErrors({
@@ -60,7 +82,9 @@ export function ChangePasswordForm({ labels, fieldTexts, errors }: ChangePasswor
           ...(codes.newPassword
             ? {
                 newPassword:
-                  codes.newPassword === 'TOO_SMALL' ? fieldTexts.tooShort : fieldTexts.tooLong,
+                  codes.newPassword === 'TOO_SMALL'
+                    ? withMin(fieldTexts.tooShort, minFromParams(result.error.params, minLength))
+                    : fieldTexts.tooLong,
               }
             : {}),
           ...(codes.confirmPassword ? { confirmPassword: fieldTexts.mismatch } : {}),
@@ -90,15 +114,21 @@ export function ChangePasswordForm({ labels, fieldTexts, errors }: ChangePasswor
         type="password"
         label={labels.next}
         marker={labels.required}
-        hint={labels.nextHint}
+        hint={withMin(labels.nextHint, minLength)}
         autoComplete="new-password"
         required
-        minLength={12}
+        minLength={minLength}
         maxLength={72}
         dir="ltr"
+        value={password}
+        onChange={(event) => {
+          setPassword(event.target.value);
+        }}
+        aria-describedby="password-rules"
         error={fieldErrors.newPassword}
         disabled={pending}
       />
+      <PasswordRulesList id="password-rules" rules={rules} labels={ruleLabels} />
       <TextField
         id="password-confirm"
         name="confirmPassword"
@@ -109,6 +139,10 @@ export function ChangePasswordForm({ labels, fieldTexts, errors }: ChangePasswor
         required
         maxLength={72}
         dir="ltr"
+        value={confirmation}
+        onChange={(event) => {
+          setConfirmation(event.target.value);
+        }}
         error={fieldErrors.confirmPassword}
         disabled={pending}
       />

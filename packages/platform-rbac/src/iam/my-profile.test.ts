@@ -20,6 +20,7 @@ const db = vi.hoisted(() => ({
   getPersonalDetails: vi.fn(),
   getUserProfile: vi.fn(),
   updatePersonalDetails: vi.fn(),
+  passwordMinLengthForCaller: vi.fn(),
 }));
 vi.mock('@jadarat/platform-db', () => db);
 
@@ -41,6 +42,7 @@ function runtime(personId: string | null = ME, grants = MEMBER_GRANTS) {
       return Promise.resolve(ok(r.value));
     },
     withUserTx: (_c, fn) => fn(TX),
+    loadSessionFacts: () => Promise.resolve({ active: true, aal2: true }),
     loadGrants: () => Promise.resolve([...grants]),
     resolveResource: () => Promise.resolve(null),
     writeAudit,
@@ -62,7 +64,10 @@ const form = {
   preferredLocale: 'en' as const,
 };
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  db.passwordMinLengthForCaller.mockResolvedValue(12);
+});
 
 describe('My profile input (FR-IAM-16)', () => {
   it('composes display names, trims, and normalizes the mobile number', () => {
@@ -215,6 +220,13 @@ describe('change my password', () => {
     expect(JSON.stringify(writeAudit.mock.calls)).not.toContain('password-');
   });
 
+  it('is never retried after a deadlock: the password changes at Auth inside the transaction (review L1)', () => {
+    const definition = changeMyPasswordActionDefinition(() =>
+      Promise.resolve(ok({ userId: 'u1' })),
+    );
+    expect(definition.externalEffects).toBe(true);
+  });
+
   it('runs the after-change step (the "password changed" notice) in the action transaction, only on success', async () => {
     const afterChange = vi.fn(() => Promise.resolve());
     const changed = vi.fn(() => Promise.resolve(ok({ userId: 'u1' })));
@@ -250,6 +262,29 @@ describe('change my password', () => {
     expect(changePassword).not.toHaveBeenCalled();
     const limited = await action(input);
     expect(!limited.ok && limited.error.code).toBe('RATE_LIMITED');
+  });
+
+  it("applies the strictest minimum of the account's organizations before Auth (T-M2-10)", async () => {
+    const changePassword = vi.fn(() => Promise.resolve(ok({ userId: 'u1' })));
+    const action = createDefineAction(runtime().rt)(
+      changeMyPasswordActionDefinition(changePassword),
+    );
+    db.passwordMinLengthForCaller.mockResolvedValue(input.newPassword.length + 1);
+    const short = await action(input);
+    expect(!short.ok && short.error).toMatchObject({
+      code: 'VALIDATION_FAILED',
+      fieldErrors: [
+        { path: 'newPassword', code: 'TOO_SMALL', params: { min: input.newPassword.length + 1 } },
+      ],
+    });
+    expect(changePassword).not.toHaveBeenCalled();
+    // Characters, not UTF-16 units; exactly the minimum is enough.
+    db.passwordMinLengthForCaller.mockResolvedValue(Array.from(input.newPassword).length);
+    expect((await action(input)).ok).toBe(true);
+    // A session the database no longer accepts: sign in again.
+    db.passwordMinLengthForCaller.mockResolvedValue(null);
+    const gone = await action(input);
+    expect(!gone.ok && gone.error.code).toBe('UNAUTHENTICATED');
   });
 });
 

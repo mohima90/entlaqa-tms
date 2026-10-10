@@ -171,10 +171,14 @@ end $$;
 rollback;
 
 -- ---------------------------------------------------------------------------------------------------
--- Remove the fixtures of 62 (committed): the accounts (their memberships, roles and sessions go with
+-- Remove the fixtures of 62 (committed): the accounts (their memberships, roles, sessions and apps go with
 -- them), people, placements, departments, the invitation and the helpers.
 -- ---------------------------------------------------------------------------------------------------
 delete from platform.invitations where id = '9d400000-0000-4000-8000-000000000001';
+-- And the authenticator apps of uA and uAB from 00 (T-M2-10 × T-M2-09): the T-M2-10 tests start without them.
+delete from auth.mfa_factors where id in ('20000000-0000-4000-8000-0000000000a1', '20000000-0000-4000-8000-0000000000ab');
+update auth.sessions set aal = null, factor_id = null
+where id in ('10000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000ab');
 delete from auth.users where id::text like '9d000000-%';
 delete from platform.person_employment where person_id::text like '9d100000-%';
 delete from platform.departments where id::text like '9d300000-%';
@@ -185,7 +189,10 @@ drop function tests.t09_holds_lock(text, text);
 do $$
 begin
   perform tests.assert(not exists (select 1 from platform.tenant_memberships where user_id::text like '9d000000-%')
-                       and not exists (select 1 from platform.session_context where user_id::text like '9d000000-%'),
+                       and not exists (select 1 from platform.session_context where user_id::text like '9d000000-%')
+                       and not exists (select 1 from auth.mfa_factors)
+                       and not exists (select 1 from private.mfa_factor_confirmations)
+                       and not exists (select 1 from auth.sessions where aal is not null or factor_id is not null),
     'fixtures removed');
 end $$;
 

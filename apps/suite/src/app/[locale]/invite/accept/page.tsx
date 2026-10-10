@@ -114,7 +114,7 @@ export default async function InviteAcceptPage({
         confirmPassword: t('confirmPassword'),
         showPassword: t('showPassword'),
         rulesLabel: t('rulesLabel'),
-        ruleMinLength: t('rules.minLength'),
+        ruleMinLength: t('rules.minLength', { min: '{min}' }),
         ruleMaxBytes: t('rules.maxBytes'),
         ruleMatches: t('rules.matches'),
         ruleMet: t('rules.met'),
@@ -128,7 +128,7 @@ export default async function InviteAcceptPage({
         signInSubmitting: t('signInToAccept.submitting'),
       }}
       fieldTexts={{
-        tooShort: t('fieldErrors.tooShort'),
+        tooShort: t('fieldErrors.tooShort', { min: '{min}' }),
         tooLong: t('fieldErrors.tooLong'),
         mismatch: t('fieldErrors.mismatch'),
         nameTooLong: t('fieldErrors.nameTooLong'),

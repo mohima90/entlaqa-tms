@@ -30,7 +30,8 @@ export function OrganizationChooser({
     startTransition(async () => {
       const result = await selectOrganizationAction({ tenantId });
       if (result.ok) {
-        router.replace(`/${locale}/suite`);
+        // The organization may ask for an authenticator code or app first (T-M2-10).
+        router.replace(`/${locale}/${result.value.next === 'mfa' ? 'mfa' : 'suite'}`);
         router.refresh();
       } else {
         setMessage(errorText(result.error, errors));

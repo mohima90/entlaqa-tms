@@ -4,12 +4,13 @@ import { hasLocale } from 'next-intl';
 import { getTranslations } from 'next-intl/server';
 import { notFound, redirect } from 'next/navigation';
 import { connection } from 'next/server';
+import { EndedSessionSignOut } from '../../../components/auth/ended-session-sign-out';
 import { SignInForm } from '../../../components/auth/sign-in-form';
 import { LanguageToggle } from '../../../components/language-toggle';
 import { authErrorTexts } from '../../../lib/auth-texts';
 import { getConfigStatus } from '../../../lib/config-status';
 import { noticeFrom } from '../../../lib/password-reset-link';
-import { getSessionState } from '../../../lib/session-state';
+import { getSessionState, redirectFor } from '../../../lib/session-state';
 
 /**
  * Sign-in (T-M1-D03): e-mail + password; MFA off by default for now (PO decision, 1 Oct 2026). Links to
@@ -28,10 +29,11 @@ export default async function SignInPage({
   const status = getConfigStatus();
 
   // Already signed in → onwards. A token the database rejects counts as signed out (the form shows; a
-  // new sign-in replaces the session), so this page and /suite can never redirect to each other.
+  // new sign-in replaces the session), so this page and /suite can never redirect to each other. An
+  // ended session (T-M2-10) shows the notice and is signed out at Auth by the page.
   const session = await getSessionState(status);
-  if (session.kind === 'organization') redirect(`/${locale}/suite`);
-  if (session.kind === 'no-organization') redirect(`/${locale}/select-organization`);
+  const elsewhere = redirectFor(locale, session, 'sign-in');
+  if (elsewhere) redirect(elsewhere);
 
   const t = await getTranslations({ locale, namespace: 'auth' });
   const common = await getTranslations({ locale, namespace: 'common' });
@@ -45,11 +47,17 @@ export default async function SignInPage({
       </header>
       <main id="main" className="mx-auto flex w-full max-w-md flex-1 flex-col gap-6 px-4 py-10">
         <h1 className="m-0 text-2xl font-bold">{t('signInTitle')}</h1>
-        {notice ? (
+        {notice === 'password-reset' ? (
           <Alert tone="success" data-testid="password-reset-notice">
             {resetT('notice')}
           </Alert>
         ) : null}
+        {notice === 'session-ended' || session.kind === 'session-ended' ? (
+          <Alert tone="info" data-testid="session-ended-notice">
+            {t('sessionEnded')}
+          </Alert>
+        ) : null}
+        {session.kind === 'session-ended' ? <EndedSessionSignOut /> : null}
         <Card>
           {status.auth ? (
             <p className="mb-4 mt-0 text-text-muted">{t('signInIntro')}</p>

@@ -10,7 +10,7 @@ import { SignOutButton } from '../../../components/auth/sign-out-button';
 import { LanguageToggle } from '../../../components/language-toggle';
 import { authErrorTexts } from '../../../lib/auth-texts';
 import { getConfigStatus } from '../../../lib/config-status';
-import { getSessionState } from '../../../lib/session-state';
+import { getSessionState, redirectFor } from '../../../lib/session-state';
 
 /** Organization chooser after sign-in when the account belongs to several organizations. */
 export default async function SelectOrganizationPage({
@@ -23,8 +23,8 @@ export default async function SelectOrganizationPage({
   if (!hasLocale(routing.locales, locale)) notFound();
   // TODO(M2, ADR 0002 §3): switching organization from inside the suite; for now: sign out, sign in.
   const session = await getSessionState(getConfigStatus());
-  if (session.kind === 'signed-out') redirect(`/${locale}/sign-in`);
-  if (session.kind === 'organization') redirect(`/${locale}/suite`);
+  const elsewhere = redirectFor(locale, session, 'select-organization');
+  if (elsewhere) redirect(elsewhere);
 
   const organizations = await getSessionOrganizationsForRequest();
   if (!organizations.ok) redirect(`/${locale}/sign-in`);

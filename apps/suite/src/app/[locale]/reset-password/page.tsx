@@ -1,5 +1,6 @@
 import { otherLocale } from '@jadarat/platform-i18n';
 import { routing } from '@jadarat/platform-i18n/routing';
+import { readPasswordResetDelivery } from '@jadarat/platform-identity';
 import { Card } from '@jadarat/ui';
 import type { Metadata } from 'next';
 import { hasLocale } from 'next-intl';
@@ -88,17 +89,23 @@ export default async function ResetPasswordPage({
         showPassword: t('reset.showPassword'),
         required: common('required'),
         rulesLabel: t('reset.rulesLabel'),
-        ruleMinLength: t('reset.rules.minLength'),
+        ruleMinLength: t('reset.rules.minLength', { min: '{min}' }),
         ruleMaxBytes: t('reset.rules.maxBytes'),
         ruleMatches: t('reset.rules.matches'),
         ruleMet: t('reset.rules.met'),
         ruleNotMet: t('reset.rules.notMet'),
         passwordTip: t('reset.passwordTip'),
         sessionsNotice: t('reset.sessionsNotice'),
+        codeIntro: t('reset.codeIntro'),
+        codeOptionalIntro: t('reset.codeOptionalIntro'),
+        optional: common('optional'),
+        codeLabel: t('reset.codeLabel'),
+        codeHint: t('reset.codeHint'),
+        codeFormat: t('fieldErrors.codeFormat'),
         submit: t('reset.submit'),
         submitting: t('reset.submitting'),
         validity: String(t.raw('reset.validity')),
-        tooShort: t('fieldErrors.tooShort'),
+        tooShort: t('fieldErrors.tooShort', { min: '{min}' }),
         tooLong: t('fieldErrors.tooLong'),
         mismatch: t('fieldErrors.mismatch'),
         invalidTitle: t('invalidLink.title'),
@@ -107,6 +114,8 @@ export default async function ResetPasswordPage({
         signIn: t('invalidLink.signIn'),
       }}
       errors={await passwordResetErrorTexts(locale)}
+      // Auth's own mailer cannot say whether the account has an authenticator app (T-M2-10).
+      codeOptional={readPasswordResetDelivery(process.env) !== 'worker'}
     />
   );
 }

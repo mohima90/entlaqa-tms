@@ -5,3 +5,5 @@ export * from './claims';
 export * from './context';
 export * from './validation';
 export * from './person-scope';
+export * from './step-up';
+export * from './user-agent';

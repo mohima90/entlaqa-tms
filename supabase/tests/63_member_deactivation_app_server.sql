@@ -5,7 +5,8 @@
 -- member's access to THIS organization, through the database: claims refused, organization chooser,
 -- session contexts), what it keeps (records, roles, other organizations), the checked reactivation
 -- function, and the authenticator code (AAL2) both directions need for a member who holds a privileged role
--- (in force or future-dated; review M4, D-IAM-01). Fixtures and the helpers tests.t09_as / tests.t09_deactivate
+-- (in force or future-dated; review M4, D-IAM-01) — since T-M2-10 a confirmed app and a code from the last
+-- 15 minutes (20261012120000). Fixtures and the helpers tests.t09_as / tests.t09_deactivate
 -- / tests.t09_holds_lock: 62_member_deactivation_owner.sql. Every block is rolled back.
 \set ON_ERROR_STOP on
 
@@ -197,6 +198,21 @@ begin
     'Organization Admin at AAL2: the privileged member is deactivated');
   perform tests.assert_eq(tests.t09_deactivate('9d100000-0000-4000-8000-0000000000aa'), 1::bigint,
     'and the member with a future-dated privileged role');
+end $$;
+reset role;
+rollback;
+-- AAL2 as T-M2-10 defines it (20261012120000): a confirmed app (62) AND a code from the last 15 minutes
+-- (review L3, D-IAM-06) — as defineAction requires for platform.role.assign_privileged.
+begin;
+set local role authenticated;
+select tests.t09_as('admin', 'aal2_stale');
+do $$
+begin
+  perform tests.assert_fails($q$update platform.tenant_memberships set status = 'suspended' where person_id = '9d100000-0000-4000-8000-0000000000a4'$q$,
+    array['JM003'], 'a code 16 minutes old: the privileged member stays');
+  update platform.persons set status = 'active' where id = '9d100000-0000-4000-8000-0000000000a6';
+  perform tests.assert_fails($q$select private.reactivate_membership('9d100000-0000-4000-8000-0000000000a6')$q$,
+    array['JM003'], 'nor is a privileged member reactivated with it');
 end $$;
 reset role;
 rollback;

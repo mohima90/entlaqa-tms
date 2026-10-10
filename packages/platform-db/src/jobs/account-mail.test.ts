@@ -2,9 +2,14 @@ import { type SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { describe, expect, it } from 'vitest';
 import {
+  accountHasApp,
   claimAccountMailRequest,
   finishAccountMailRequest,
+  issueMfaFactorTokens,
   loadAccountMailContext,
+  loadPersonName,
+  purgeEndedSessions,
+  purgeUnconfirmedMfaApps,
   retryAccountMailRequest,
 } from './account-mail';
 
@@ -13,6 +18,7 @@ const ID = '5b0e7c39-6d4c-4d36-9d0a-1f0d1d6c0f11';
 const USER = '6c1f8d4a-7e5d-4e47-8e1b-2a1e2e7d1f22';
 const TENANT = '7d2a9e5b-8f6e-4f58-9f2c-3b2f3f8e2a33';
 const PERSON = '8e3b0f6c-9a7f-4a69-8a3d-4c3a4a9f3b44';
+const FACTOR = '9f4c1a7d-0b8a-4b7a-9b4e-5d4b5b0a4c55';
 
 function fakeTx(...answers: unknown[][]) {
   const executed: { sql: string; params: unknown[] }[] = [];
@@ -37,8 +43,12 @@ const row = (overrides: Record<string, unknown>) => ({
   person_id: PERSON,
   locale: 'en',
   attempts: 1,
+  factor_id: null,
+  mfa_reason: null,
+  detail: null,
   ...overrides,
 });
+const none = { factorId: null, mfaReason: null, policyChange: null, digest: null };
 
 describe('account e-mail queue, worker side (T-M2-17)', () => {
   it('a lease to send: recipient, organization, person and language', async () => {
@@ -53,6 +63,7 @@ describe('account e-mail queue, worker side (T-M2-17)', () => {
       tenantId: TENANT,
       personId: PERSON,
       locale: 'en',
+      ...none,
     });
     expect(fake.executed[0]?.sql).toBe('select * from private.claim_account_mail_request()');
     // Anything but English is Arabic.
@@ -61,14 +72,134 @@ describe('account e-mail queue, worker side (T-M2-17)', () => {
   });
 
   it('a lease without e-mail carries only why; nothing waiting is null', async () => {
-    for (const outcome of ['unknown_account', 'banned', 'too_soon', 'no_membership']) {
+    for (const outcome of ['unknown_account', 'banned', 'too_soon', 'no_membership', 'held']) {
       expect(
         await claimAccountMailRequest(
           fakeTx([row({ kind: 'password_changed', outcome, email: null, attempts: 2 })]).tx,
         ),
-      ).toEqual({ id: ID, kind: 'password_changed', attempt: 2, outcome });
+      ).toEqual({ id: ID, kind: 'password_changed', attempt: 2, outcome, ...none });
     }
     expect(await claimAccountMailRequest(fakeTx([]).tx)).toBeNull();
+  });
+
+  it('authenticator notices carry the app and why; policy notices what changed (T-M2-10)', async () => {
+    expect(
+      await claimAccountMailRequest(
+        fakeTx([row({ kind: 'mfa_factor_added', factor_id: FACTOR })]).tx,
+      ),
+    ).toMatchObject({ kind: 'mfa_factor_added', factorId: FACTOR, mfaReason: null });
+    expect(
+      await claimAccountMailRequest(
+        fakeTx([row({ kind: 'mfa_factor_removed', mfa_reason: 'admin_reset' })]).tx,
+      ),
+    ).toMatchObject({ kind: 'mfa_factor_removed', factorId: null, mfaReason: 'admin_reset' });
+    await expect(
+      claimAccountMailRequest(fakeTx([row({ kind: 'mfa_factor_removed' })]).tx),
+    ).rejects.toThrow('removal without a reason');
+    const detail = {
+      changed: ['mfaMode', 'passwordMinLength'],
+      changed_by: PERSON,
+      changed_at: '2026-10-09T08:00:00Z',
+    };
+    expect(
+      await claimAccountMailRequest(fakeTx([row({ kind: 'security_policy_changed', detail })]).tx),
+    ).toMatchObject({
+      policyChange: {
+        changed: ['mfaMode', 'passwordMinLength'],
+        changedByPersonId: PERSON,
+        changedAt: new Date('2026-10-09T08:00:00Z'),
+      },
+    });
+    for (const bad of [
+      null,
+      { changed: [] },
+      { changed: ['x y'], changed_at: 'now' },
+      { changed: ['a'] },
+    ]) {
+      await expect(
+        claimAccountMailRequest(fakeTx([row({ kind: 'security_policy_changed', detail: bad })]).tx),
+      ).rejects.toThrow('policy change without its detail');
+    }
+  });
+
+  it('a security digest carries the held notices by kind and since when (final re-review L1)', async () => {
+    const detail = {
+      held: { mfa_factor_added: 3, mfa_factor_removed: 2 },
+      since: '2026-10-10T08:00:00Z',
+    };
+    expect(
+      await claimAccountMailRequest(fakeTx([row({ kind: 'security_digest', detail })]).tx),
+    ).toMatchObject({
+      kind: 'security_digest',
+      outcome: 'send',
+      digest: {
+        held: { mfa_factor_added: 3, mfa_factor_removed: 2 },
+        since: new Date('2026-10-10T08:00:00Z'),
+      },
+    });
+    for (const bad of [
+      null,
+      { held: {}, since: '2026-10-10T08:00:00Z' },
+      { held: { password_reset: 1 }, since: '2026-10-10T08:00:00Z' },
+      { held: { mfa_factor_added: 0 }, since: '2026-10-10T08:00:00Z' },
+      { held: { mfa_factor_added: 1 }, since: 'soon' },
+    ]) {
+      await expect(
+        claimAccountMailRequest(fakeTx([row({ kind: 'security_digest', detail: bad })]).tx),
+      ).rejects.toThrow('security digest without its detail');
+    }
+    expect(
+      await claimAccountMailRequest(
+        fakeTx([row({ kind: 'mfa_factor_removed', mfa_reason: 'too_many_codes' })]).tx,
+      ),
+    ).toMatchObject({ mfaReason: 'too_many_codes' });
+  });
+
+  it('the set-up code and link, whether an account has an app, the purges (T-M2-10)', async () => {
+    const issued = fakeTx([
+      {
+        code_expires_at: '2026-10-12T08:00:00Z',
+        remove_expires_at: '2026-10-16T08:00:00Z',
+        set_up_at: '2026-10-09T08:00:00Z',
+        setup_user_agent: 'Mozilla/5.0 Firefox/131.0',
+      },
+    ]);
+    expect(
+      await issueMfaFactorTokens(issued.tx, FACTOR, USER, Buffer.alloc(32, 1), Buffer.alloc(32, 2)),
+    ).toEqual({
+      codeExpiresAt: new Date('2026-10-12T08:00:00Z'),
+      removeExpiresAt: new Date('2026-10-16T08:00:00Z'),
+      setUpAt: new Date('2026-10-09T08:00:00Z'),
+      setupUserAgent: 'Mozilla/5.0 Firefox/131.0',
+    });
+    expect(issued.executed[0]?.params.slice(0, 2)).toEqual([FACTOR, USER]);
+    expect(issued.executed[0]?.sql).toContain('private.issue_mfa_factor_tokens(');
+    expect(
+      await issueMfaFactorTokens(
+        fakeTx([{ code_expires_at: null, remove_expires_at: null }]).tx,
+        FACTOR,
+        USER,
+        Buffer.alloc(32),
+        Buffer.alloc(32),
+      ),
+    ).toBeNull();
+    expect(await accountHasApp(fakeTx([{ has_app: true }]).tx, USER)).toBe(true);
+    expect(await accountHasApp(fakeTx([]).tx, USER)).toBe(false);
+    const purged = fakeTx([{ purged: '3' }]);
+    expect(await purgeEndedSessions(purged.tx, 500)).toBe(3);
+    expect(purged.executed[0]?.params).toEqual([500]);
+    expect(await purgeEndedSessions(fakeTx([]).tx, 500)).toBe(0);
+    const apps = fakeTx([{ purged: 2 }]);
+    expect(await purgeUnconfirmedMfaApps(apps.tx, 100)).toBe(2);
+    expect(apps.executed[0]).toMatchObject({
+      sql: 'select private.purge_unconfirmed_mfa_apps($1::integer) as purged',
+      params: [100],
+    });
+    expect(await loadPersonName(fakeTx([{ name_ar: 'سارة', name_en: null }]).tx, PERSON)).toEqual({
+      ar: 'سارة',
+      en: null,
+    });
+    expect(await loadPersonName(fakeTx([]).tx, PERSON)).toBeNull();
   });
 
   it('refuses answers it does not understand', async () => {

@@ -7,8 +7,11 @@ import {
   invitationsListQueryDefinition,
   inviteFormQueryDefinition,
   rolesPageQueryDefinition,
+  memberSecurityQueryDefinition,
   myIdentityQueryDefinition,
   myProfileQueryDefinition,
+  mySecurityQueryDefinition,
+  securityPageQueryDefinition,
   userProfileQueryDefinition,
   usersListQueryDefinition,
 } from '@jadarat/platform-rbac';
@@ -32,3 +35,8 @@ export const inviteFormQuery = defineQuery(inviteFormQueryDefinition());
 /** My profile (FR-IAM-16) and the header name of the signed-in member. */
 export const myProfileQuery = defineQuery(myProfileQueryDefinition());
 export const myIdentityQuery = defineQuery(myIdentityQueryDefinition());
+
+/** Security settings (screen 6, T-M2-10), own sessions and password rule, a member's sessions (screen 3). */
+export const securityPageQuery = defineQuery(securityPageQueryDefinition());
+export const mySecurityQuery = defineQuery(mySecurityQueryDefinition());
+export const memberSecurityQuery = defineQuery(memberSecurityQueryDefinition());

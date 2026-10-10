@@ -268,6 +268,10 @@ interface CompleteOptions {
   updateThrows?: boolean;
   signOutError?: unknown;
   signOutThrows?: boolean;
+  /** The account's factors as Auth lists them (T-M2-10). */
+  factors?: { id: string; factor_type: string; status: string }[];
+  listError?: { status?: number; code?: string };
+  challengeError?: { status?: number; code?: string };
 }
 
 function completeSetup(options: CompleteOptions = {}) {
@@ -298,6 +302,19 @@ function completeSetup(options: CompleteOptions = {}) {
       if (options.signOutThrows) return Promise.reject(new TypeError('fetch failed'));
       return Promise.resolve({ error: options.signOutError ?? null });
     }),
+    mfa: {
+      listFactors: vi.fn(() =>
+        Promise.resolve(
+          options.listError
+            ? { data: null, error: options.listError }
+            : { data: { all: options.factors ?? [] }, error: null },
+        ),
+      ),
+      challengeAndVerify: vi.fn((params: { factorId: string; code: string }) => {
+        calls.push(`code:${params.factorId}`);
+        return Promise.resolve({ data: {}, error: options.challengeError ?? null });
+      }),
+    },
   };
   const logInfo = vi.fn();
   const logWarning = vi.fn();
@@ -510,5 +527,118 @@ describe('completePasswordReset (FR-IAM-13)', () => {
     const { deps } = completeSetup();
     const result = await completePasswordReset({ ...deps, client: null }, input);
     expect(!result.ok && result.error.code).toBe('NOT_CONFIGURED');
+  });
+});
+
+describe("completePasswordReset: strictest rule of the account's organizations (T-M2-10)", () => {
+  it("asks with the recovery session's token; a shorter password ends the recovery session unchanged", async () => {
+    const { deps, calls, logWarning } = completeSetup();
+    const passwordMinLength = vi.fn(() => Promise.resolve(30));
+    const result = await completePasswordReset({ ...deps, passwordMinLength }, input);
+    expect(!result.ok && result.error).toMatchObject({
+      code: 'PASSWORD_RESET_TOO_SHORT',
+      params: { min: 30 },
+    });
+    expect(passwordMinLength).toHaveBeenCalledWith('access-otp');
+    expect(calls).toEqual(['verifyOtp:recovery', 'signOut:local']);
+    expect(JSON.stringify(logWarning.mock.calls)).not.toContain(PASSWORD);
+  });
+
+  it("a long enough password, or an unknown rule (Auth's 12 apply), goes on", async () => {
+    for (const min of [24, null]) {
+      const { deps, calls } = completeSetup();
+      const result = await completePasswordReset(
+        { ...deps, passwordMinLength: () => Promise.resolve(min) },
+        input,
+      );
+      expect(result.ok).toBe(true);
+      expect(calls).toContain('updateUser:password');
+    }
+  });
+
+  it('ends the recovery session when the rule cannot be read (then the error surfaces)', async () => {
+    const { deps, calls } = completeSetup();
+    await expect(
+      completePasswordReset(
+        { ...deps, passwordMinLength: () => Promise.reject(new Error('db down')) },
+        input,
+      ),
+    ).rejects.toThrow('db down');
+    expect(calls).toEqual(['verifyOtp:recovery', 'signOut:local']);
+  });
+});
+
+describe('completePasswordReset for an account with an authenticator app (T-M2-10)', () => {
+  const app = { id: 'f-app', factor_type: 'totp', status: 'verified' };
+  const CODE = '123456';
+
+  it('passes the code on the recovery session first (Auth wants AAL2 to set the password)', async () => {
+    const { deps, calls, auth } = completeSetup({
+      factors: [{ id: 'f-old', factor_type: 'totp', status: 'unverified' }, app],
+    });
+    expect(await completePasswordReset(deps, { ...input, code: CODE })).toEqual({
+      ok: true,
+      value: { next: 'sign-in' },
+    });
+    expect(auth.mfa.challengeAndVerify).toHaveBeenCalledWith({ factorId: 'f-app', code: CODE });
+    expect(calls).toEqual([
+      'verifyOtp:recovery',
+      'code:f-app',
+      'updateUser:password',
+      'signOut:global',
+      'endBrowserSession',
+    ]);
+  });
+
+  it('an account without an app ignores a code', async () => {
+    const { deps, calls } = completeSetup({ factors: [] });
+    expect((await completePasswordReset(deps, { ...input, code: CODE })).ok).toBe(true);
+    expect(calls).not.toContain('code:f-app');
+  });
+
+  it('no code: the link is used up, the recovery session ends, a new link is asked for', async () => {
+    const { deps, calls, auth } = completeSetup({ factors: [app] });
+    const result = await completePasswordReset(deps, input);
+    expect(!result.ok && result.error.code).toBe('PASSWORD_RESET_CODE_REQUIRED');
+    expect(auth.updateUser).not.toHaveBeenCalled();
+    expect(calls).toEqual(['verifyOtp:recovery', 'signOut:local']);
+  });
+
+  it('a wrong code: refused with one answer, logged without the code (review M3)', async () => {
+    const { deps, calls, logWarning } = completeSetup({
+      factors: [app],
+      challengeError: { status: 422, code: 'mfa_verification_failed' },
+    });
+    const result = await completePasswordReset(deps, { ...input, code: '000000' });
+    expect(!result.ok && result.error.code).toBe('PASSWORD_RESET_CODE_INVALID');
+    expect(calls).toEqual(['verifyOtp:recovery', 'code:f-app', 'signOut:local']);
+    expect(logWarning).toHaveBeenCalledWith('password reset: authenticator code refused', {
+      action: 'platform.auth.password_reset',
+      outcome: 'failure',
+      errorCode: 'PASSWORD_RESET_CODE_INVALID',
+    });
+    expect(JSON.stringify(logWarning.mock.calls)).not.toContain('000000');
+  });
+
+  it('rate limits and outages of the code check; Auth asking for AAL2 anyway', async () => {
+    const limited = completeSetup({ factors: [app], challengeError: { status: 429 } });
+    const r1 = await completePasswordReset(limited.deps, { ...input, code: CODE });
+    expect(!r1.ok && r1.error.code).toBe('RATE_LIMITED');
+    const down = completeSetup({ factors: [app], challengeError: { status: 503 } });
+    await expect(completePasswordReset(down.deps, { ...input, code: CODE })).rejects.toBeInstanceOf(
+      AuthServiceError,
+    );
+    expect(down.calls).toContain('signOut:local');
+    const listDown = completeSetup({ listError: { status: 500 } });
+    await expect(completePasswordReset(listDown.deps, input)).rejects.toBeInstanceOf(
+      AuthServiceError,
+    );
+    expect(listDown.calls).toEqual(['verifyOtp:recovery', 'signOut:local']);
+    const listRefused = completeSetup({ listError: { status: 403 } });
+    const r2 = await completePasswordReset(listRefused.deps, input);
+    expect(!r2.ok && r2.error.code).toBe('PASSWORD_RESET_LINK_INVALID');
+    const aal = completeSetup({ updateError: { status: 401, code: 'insufficient_aal' } });
+    const r3 = await completePasswordReset(aal.deps, input);
+    expect(!r3.ok && r3.error.code).toBe('PASSWORD_RESET_CODE_REQUIRED');
   });
 });

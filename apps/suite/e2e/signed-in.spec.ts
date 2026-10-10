@@ -3,7 +3,8 @@ import { expect, test } from '@playwright/test';
 /**
  * Real sign-in against a configured deployment (T-M1-D03/D04): runs only when credentials are given,
  * e.g. against the self-hosted stack (infra/docker/smoke.sh) — never in the default CI run, which has
- * no Auth server. Covers: wrong password, sign-in → organization shown, sign-out, /suite protected.
+ * no Auth server. Covers: wrong password, sign-in → the Organization Admin's authenticator prompt
+ * postponed → organization shown, sign-out, /suite protected.
  */
 const email = process.env.SIGNED_IN_E2E_EMAIL;
 const password = process.env.SIGNED_IN_E2E_PASSWORD;
@@ -28,6 +29,11 @@ test.describe('signed-in flow', () => {
     await page.getByLabel('Email').fill(email ?? '');
     await page.getByLabel('Password').fill(password ?? '');
     await page.getByRole('button', { name: 'Sign in' }).click();
+    // PO decision 2 (T-M2-10): the Organization Admin, without an authenticator app yet, is invited to
+    // set one up and may postpone it; the choice is remembered (the later specs land on the suite).
+    await expect(page).toHaveURL(/\/en\/mfa$/);
+    await expect(page.getByTestId('mfa-prompt-admin')).toBeVisible();
+    await page.getByRole('button', { name: 'Not now' }).click();
     await expect(page).toHaveURL(/\/en\/suite$/);
     await expect(page.getByText(`Organization: ${organization ?? ''}`)).toBeVisible();
 

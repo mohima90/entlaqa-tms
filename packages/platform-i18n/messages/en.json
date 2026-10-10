@@ -37,7 +37,12 @@
     "admin": "Organization admin",
     "users": "Users",
     "roles": "Roles & permissions",
-    "myProfile": "My profile"
+    "myProfile": "My profile",
+    "security": "Security",
+    "idleTitle": "Your sign-in session is about to end",
+    "idleText": "Your sign-in session ends in two minutes because of inactivity. Continue to stay signed in.",
+    "idleContinue": "Stay signed in",
+    "idleSignOut": "Sign out"
   },
   "errors": {
     "malformedRequest": "We couldn't process this request. Refresh the page and try again.",
@@ -74,7 +79,8 @@
       "passwordSame": "The new password is the same as the current one. Choose a different password.",
       "reauthenticationNeeded": "For your account's security, sign out and sign in again, then change the password.",
       "passwordRejected": "The new password was not accepted. Choose a different one."
-    }
+    },
+    "sessionEnded": "Your sign-in session has ended. Sign in again to continue."
   },
   "invite": {
     "pageTitle": "Accept invitation",
@@ -91,7 +97,7 @@
     "showPassword": "Show password",
     "rulesLabel": "Password rules",
     "rules": {
-      "minLength": "At least 12 characters",
+      "minLength": "At least {min} characters",
       "maxBytes": "No more than 72 bytes (about 36 Arabic letters)",
       "matches": "Both passwords match",
       "met": "(met)",
@@ -102,7 +108,7 @@
     "submit": "Continue",
     "submitting": "Creating your account…",
     "fieldErrors": {
-      "tooShort": "At least 12 characters.",
+      "tooShort": "At least {min} characters.",
       "tooLong": "The password is too long (no more than 72 bytes, about 36 Arabic letters).",
       "mismatch": "The passwords don't match.",
       "nameTooLong": "The name can't be longer than 200 characters.",
@@ -150,7 +156,8 @@
       "passwordRejected": "This password wasn't accepted because it's weak or common. Choose a longer one that's hard to guess.",
       "otherAccount": "This invitation is for a different account. Sign out, then continue.",
       "alreadyMember": "This account is already a member of the organization. Sign in to continue.",
-      "accountMismatch": "This invitation can't be accepted with this account. Ask your organization's administrator for a new invitation."
+      "accountMismatch": "This invitation can't be accepted with this account. Ask your organization's administrator for a new invitation.",
+      "passwordTooShort": "Your organization requires a password of at least {min} characters."
     }
   },
   "passwordReset": {
@@ -182,7 +189,7 @@
       "showPassword": "Show password",
       "rulesLabel": "Password rules",
       "rules": {
-        "minLength": "At least 12 characters",
+        "minLength": "At least {min} characters",
         "maxBytes": "No more than 72 bytes (about 36 Arabic letters)",
         "matches": "Both passwords match",
         "met": "(met)",
@@ -192,12 +199,17 @@
       "sessionsNotice": "After saving, we end every sign-in session on all devices and send a confirmation to your email. You then sign in with the new password.",
       "submit": "Save password",
       "submitting": "Saving…",
-      "validity": "The link is valid for 60 minutes from when it was requested and works once. If it has expired, request a new one on the <link>Forgot password</link> page."
+      "validity": "The link is valid for 60 minutes from when it was requested and works once. If it has expired, request a new one on the <link>Forgot password</link> page.",
+      "codeIntro": "Your account uses an authenticator app: enter the code it shows now. The link works once, so check the code before saving.",
+      "codeOptionalIntro": "Does your account use an authenticator app? Then also enter the code it shows now: without it the password can't be changed, and the link is used up.",
+      "codeLabel": "Verification code",
+      "codeHint": "6 digits from your authenticator app; the code changes every 30 seconds."
     },
     "fieldErrors": {
-      "tooShort": "At least 12 characters.",
+      "tooShort": "At least {min} characters.",
       "tooLong": "The password is too long (no more than 72 bytes, about 36 Arabic letters).",
-      "mismatch": "The passwords don't match."
+      "mismatch": "The passwords don't match.",
+      "codeFormat": "The verification code has 6 digits."
     },
     "invalidLink": {
       "title": "This link has expired or was already used",
@@ -211,7 +223,10 @@
       "samePassword": "The new password is the same as your current one, so nothing changed. Links work only once: request a new link and choose a different password.",
       "weakPassword": "This password wasn't accepted because it's weak or common, so nothing changed. Links work only once: request a new link and choose a longer password that's hard to guess.",
       "breachedPassword": "This password appears in known data breaches, so nothing changed. Links work only once: request a new link and choose a different password.",
-      "passwordRejected": "The new password wasn't accepted, so nothing changed. Links work only once: request a new link."
+      "passwordRejected": "The new password wasn't accepted, so nothing changed. Links work only once: request a new link.",
+      "tooShort": "Your account needs a password of at least {min} characters, so nothing changed. Links work only once: request a new link and choose a longer password.",
+      "codeRequired": "Your account uses an authenticator app, so its code is needed to set a new password. Nothing changed. Links work only once: request a new link and enter the code with the new password.",
+      "codeInvalid": "The verification code is incorrect or has expired, so nothing changed. Links work only once: request a new link and enter the code your app shows at that time."
     }
   },
   "users": {
@@ -318,12 +333,35 @@
       "platform_user_roles_changed": "Roles changed",
       "platform_user_deactivated": "Account deactivated",
       "platform_user_reactivated": "Account reactivated",
-      "other": "Recorded action ({action})"
+      "other": "Recorded action ({action})",
+      "platform_user_mfa_reset": "Authenticator app reset",
+      "platform_user_sessions_ended": "Sign-in sessions ended"
     },
     "breadcrumbLabel": "Breadcrumb",
     "editDetails": "Edit details",
     "editRoles": "Edit roles",
-    "deactivate": "Deactivate user"
+    "deactivate": "Deactivate user",
+    "mfa": "Multi-factor authentication",
+    "mfaOn": "On · authenticator app since {date}",
+    "mfaOff": "Not set up",
+    "sessionsTitle": "Active sign-in sessions",
+    "mfaPending": "Set up · waiting for the code from the email",
+    "mfaResetTitle": "Lost authenticator app",
+    "mfaResetHint": "The Organization Admin can reset the app of a member who lost it: the app is removed, every sign-in session of the member ends, and the member is emailed and sets up a new app at the next sign-in.",
+    "mfaResetSupport": "If the member's account also belongs to another organization, or the member is the only Organization Admin, ENTLAQA support resets it after checking their identity.",
+    "mfaResetAction": "Reset authenticator app",
+    "mfaResetNeedsCode": "Resetting it needs a code from your own authenticator app, entered in the last 15 minutes.",
+    "mfaResetVerifyFirst": "Verify with your app",
+    "mfaResetConfirmTitle": "Reset the authenticator app?",
+    "mfaResetConfirmText": "{name}'s authenticator app will be removed and all of their sign-in sessions will end. They'll be emailed and asked to set up a new app at their next sign-in. Continue only after confirming the request with them.",
+    "mfaResetConfirm": "Reset the app",
+    "mfaResetting": "Resetting…",
+    "mfaResetCancel": "Cancel",
+    "mfaResetDone": "{name}'s authenticator app was reset. They've been emailed and will set up a new app at their next sign-in.",
+    "errors": {
+      "mfaResetNoApp": "This member has no authenticator app to reset.",
+      "mfaResetOtherOrganization": "This member's account also belongs to another organization, so only ENTLAQA support can reset the app, after checking their identity. Ask the member to contact ENTLAQA support."
+    }
   },
   "profile": {
     "title": "My profile",
@@ -352,7 +390,7 @@
       "required": "This field is required.",
       "name": "Must contain visible letters and be at most 60 characters.",
       "mobile": "Enter the full number with the country code.",
-      "tooShort": "At least 12 characters.",
+      "tooShort": "At least {min} characters.",
       "mismatch": "The passwords do not match.",
       "tooLong": "The password is too long (at most 72 bytes, about 36 Arabic letters).",
       "nameTooLong": "The full name must be at most 200 characters.",
@@ -365,7 +403,7 @@
     "passwordIntro": "After the change, sign-in sessions on other devices end.",
     "currentPassword": "Current password",
     "newPassword": "New password",
-    "newPasswordHint": "At least 12 characters.",
+    "newPasswordHint": "At least {min} characters.",
     "confirmPassword": "Confirm the new password",
     "changePassword": "Change password",
     "changing": "Changing…",
@@ -373,7 +411,32 @@
     "prefilledName": "The full name was placed in \"First name\"; it can be split into the fields.",
     "noProfile": "There is no profile linked to your account in this organization.",
     "currentName": "Current name, to split into the fields:",
-    "currentNameKept": "It is kept as is if the fields are left empty."
+    "currentNameKept": "It is kept as is if the fields are left empty.",
+    "mfa": {
+      "title": "Multi-factor authentication",
+      "intro": "A code from an authenticator app protects your account and is needed for sensitive actions.",
+      "on": "On · authenticator app",
+      "off": "Not set up",
+      "setUp": "Set up the authenticator app",
+      "remove": "Remove the authenticator app",
+      "removing": "Removing…",
+      "removed": "The authenticator app was removed.",
+      "removeNeedsCode": "Removing it needs a code from the app first.",
+      "verifyFirst": "Verify with the app",
+      "removeWarning": "If your organization requires it, you will be asked to set it up again.",
+      "pending": "Waiting for the code from the email",
+      "pendingText": "To turn the app on, enter the code we've emailed you on the authenticator page, in this window.",
+      "enterCode": "Enter the code",
+      "cancel": "Cancel the set-up",
+      "cancelling": "Cancelling…",
+      "cancelled": "The set-up was cancelled.",
+      "elsewhere": "Added from another sign-in",
+      "elsewhereText": "An authenticator app was added to your account from another sign-in on {date} with {device}. If it wasn't you, remove it: your other sign-in sessions end."
+    },
+    "sessions": {
+      "title": "Sign-in sessions",
+      "intro": "Devices and browsers signed in to your account, in every organization."
+    }
   },
   "editUser": {
     "title": "Edit user details",
@@ -681,5 +744,209 @@
       "notDeactivated": "This account isn't deactivated. Refresh the page.",
       "placementDeleted": "This person's department or branch was deleted. Edit their details first, then reactivate the account."
     }
+  },
+  "mfa": {
+    "title": "Multi-factor authentication",
+    "challengeTitle": "Verification code",
+    "challengeIntro": "Your authenticator app shows a 6-digit code for Jadarat. Enter it to continue.",
+    "stepUpIntro": "This action needs a verification code from your authenticator app.",
+    "codeLabel": "Verification code",
+    "codeHint": "6 digits; the code changes every 30 seconds.",
+    "verify": "Verify",
+    "verifying": "Verifying…",
+    "enrolTitle": "Set up an authenticator app",
+    "enrolRequired": "Your organization requires an authenticator app to sign in. Set one up to continue.",
+    "enrolStepUp": "This action needs a code from an authenticator app. Set one up now; it takes about a minute.",
+    "promptAdmin": "As the Organization Admin, protect your account with an authenticator app such as Google Authenticator or Microsoft Authenticator. A code from it is also needed for sensitive actions, such as changing privileged roles or the security settings.",
+    "promptGrace": "Your organization requires an authenticator app. Until {date} you can still sign in without one.",
+    "appsHint": "Any authenticator app works: Google Authenticator, Microsoft Authenticator, Apple Passwords, 1Password and others.",
+    "start": "Set up the app",
+    "starting": "Preparing…",
+    "scanStep": "1. Scan this QR code with your authenticator app.",
+    "qrAlt": "QR code to add Jadarat to an authenticator app",
+    "keyStep": "Can't scan it? Enter this key in the app instead:",
+    "keyLabel": "Set-up key",
+    "codeStep": "2. Enter the 6-digit code the app shows.",
+    "finish": "Verify and turn on",
+    "notNow": "Not now",
+    "notNowHint": "If you choose \"Not now\", we'll ask again in 30 days.",
+    "continueWithout": "Continue without it for now",
+    "back": "Go back",
+    "signOut": "Sign out",
+    "lostDevice": "Lost access to your authenticator app? Your organization's administrator can reset it so you can set up a new one. If your account belongs to more than one organization, or you are the only Organization Admin, ENTLAQA support resets it after checking your identity.",
+    "errors": {
+      "codeInvalid": "The code is incorrect or has expired. Enter the code the app shows now.",
+      "notSetUp": "Your account has no authenticator app yet. Set one up first.",
+      "alreadySetUp": "Your account already has an authenticator app.",
+      "setupExpired": "The set-up has expired. Start again.",
+      "codeFormat": "The verification code has 6 digits.",
+      "emailCodeInvalid": "The code is incorrect. Check the newest email and try again.",
+      "emailCodeExpired": "The code has expired. Send the email again to get a new one.",
+      "emailCodeLocked": "Too many incorrect codes: this code no longer works. Send the email again to get a new one.",
+      "setUpElsewhere": "This app was set up from another sign-in. Its code can only be entered in that window.",
+      "resendTooSoon": "We've just sent the email. You can ask for it again in 2 minutes.",
+      "setupRemoved": "Too many incorrect codes were entered for your account, so the app waiting for its code was removed and the windows that set it up were signed out. If it was you, sign in and set it up again; if not, set a new password."
+    },
+    "stepUpAgainIntro": "For your security, sensitive actions need a code entered in the last 15 minutes. Enter the code your app shows now.",
+    "pending": {
+      "title": "Enter the code from the email",
+      "intro": "Your authenticator app is set up. To turn it on, enter the code we've emailed you in this window. Until then, its codes don't count for signing in or for sensitive actions.",
+      "delay": "The email usually arrives within minutes, sometimes later. Its code works for 72 hours, only in this window.",
+      "codeLabel": "Code from the email",
+      "codeHint": "8 digits",
+      "codeFormat": "The code from the email has 8 digits.",
+      "confirm": "Turn on the app",
+      "confirming": "Turning on…",
+      "notMe": "Didn't set it up yourself? Use \"Not you? Remove this app\" in the same email.",
+      "resend": "Send the email again",
+      "resending": "Sending…",
+      "resent": "We've sent the email again with a new code. Only the newest code works.",
+      "resentWaiting": "An email is already on its way. Check your inbox in a few minutes.",
+      "cancel": "Cancel the set-up",
+      "cancelling": "Cancelling…"
+    },
+    "elsewhere": {
+      "title": "An app was added from another sign-in",
+      "intro": "An authenticator app was added to your account from another sign-in on {date} with {device}. It doesn't count until the code we emailed is entered in that window.",
+      "notMeHint": "If it wasn't you, remove it now: every other sign-in session of your account ends. Then set a new password, as someone may know it.",
+      "remove": "Remove this app",
+      "removing": "Removing…",
+      "removed": "The app was removed and your other sign-in sessions have ended. Set a new password now: someone may know your current one.",
+      "newPassword": "Set a new password",
+      "continue": "Continue",
+      "itWasMe": "It was me",
+      "itWasMeText": "Finish the set-up in the window where you set up the app: enter the code from the email there. This window can't turn it on.",
+      "itWasMeClosed": "Closed that window or signed out there? Remove the app here and set it up again.",
+      "device": "{browser} on {system}",
+      "unknownDevice": "an unknown browser"
+    }
+  },
+  "mfaLink": {
+    "opening": "Opening the link…",
+    "expiredTitle": "This link has expired",
+    "invalidTitle": "This link isn't valid",
+    "newPassword": "Set a new password",
+    "signIn": "Sign in",
+    "remove": {
+      "pageTitle": "Remove this authenticator app",
+      "intro": "Use this if you didn't set up this authenticator app yourself.",
+      "warning": "We'll remove the app and end every sign-in session of your account on all devices. Then set a new password and tell your organization's administrator.",
+      "submit": "Remove the app and sign out everywhere",
+      "submitting": "Removing…",
+      "doneTitle": "The app was removed",
+      "doneText": "Every sign-in session of your account has ended. Someone may know your password: set a new one now, then tell your organization's administrator.",
+      "expiredText": "Removal links work for 7 days. If an app you didn't set up is still on your account, set a new password and ask your organization's administrator to reset the app.",
+      "invalidText": "The link may have been used already. If an app you didn't set up is still on your account, set a new password and ask your organization's administrator to reset the app."
+    }
+  },
+  "security": {
+    "title": "Security",
+    "section": "Organization admin",
+    "intro": "These settings apply to everyone in {organization}. Every change is recorded in the audit log.",
+    "stepUp": "Changing these settings needs a verification code from your authenticator app.",
+    "stepUpLink": "Verify with the authenticator app",
+    "readOnly": "Only the Organization Admin changes these settings.",
+    "comingSoon": "Coming soon",
+    "mfa": {
+      "title": "Multi-factor authentication",
+      "intro": "An extra code at sign-in, after the password.",
+      "modeLegend": "When a code is required",
+      "modes": {
+        "off": "Off",
+        "offHint": "Nobody is asked for a code at sign-in. Sensitive actions still need one.",
+        "optional": "Optional",
+        "optionalHint": "Anyone can turn it on in their profile; it is then asked at every sign-in.",
+        "required_all": "Required for everyone",
+        "required_allHint": "Set up at first sign-in.",
+        "required_roles": "Required for selected roles",
+        "required_rolesHint": "Optional for everyone else."
+      },
+      "roles": "Roles that must use it",
+      "rolesHint": "We recommend the roles that see employee data or money.",
+      "methods": "Allowed methods",
+      "methodTotp": "Authenticator app",
+      "methodEmail": "Code by email",
+      "methodSms": "Code by text message",
+      "grace": "Set-up grace period",
+      "graceHint": "Time allowed before setting it up becomes a condition for signing in (0 to 30 days).",
+      "graceUnit": "days",
+      "trusted": "Remember a trusted device",
+      "trustedHint": "The code isn't asked again on the same device during this period.",
+      "promptAdmins": "Invite Organization Admins to set up an authenticator app at sign-in",
+      "promptAdminsHint": "For those who don't use an app yet; they can postpone it."
+    },
+    "password": {
+      "title": "Password",
+      "intro": "We rely on length rather than complex symbols.",
+      "minLength": "Minimum length",
+      "minLengthHint": "12 to 36 characters. A person in several organizations follows the longest minimum among them; other organizations' settings are never shown.",
+      "minLengthUnit": "characters",
+      "breached": "Refuse leaked passwords",
+      "breachedHint": "Checked by the sign-in service when it is turned on for the server.",
+      "history": "Block reuse of earlier passwords",
+      "expiry": "Password expiry",
+      "expiryHint": "Forced periodic changes lead to weaker passwords, so we don't recommend them.",
+      "expiryNever": "Never expires"
+    },
+    "lockout": {
+      "title": "Account lockout",
+      "intro": "Protects against password guessing.",
+      "pending": "Takes effect with the next update",
+      "threshold": "Lock after consecutive failed attempts",
+      "thresholdHint": "3 to 5 attempts — never more lenient than the platform default (5 attempts).",
+      "thresholdUnit": "attempts",
+      "minutes": "Lockout duration",
+      "minutesHint": "15 to 60 minutes — never shorter than the platform default (15 minutes).",
+      "minutesUnit": "minutes"
+    },
+    "sessions": {
+      "title": "Sign-in sessions",
+      "intro": "When signing in again is required.",
+      "idle": "End the session after inactivity",
+      "idleHint": "We warn the user two minutes before it ends so they can continue (5 to 480 minutes).",
+      "idleUnit": "minutes",
+      "maxHours": "Maximum session length",
+      "maxHoursHint": "1 to 24 hours.",
+      "maxHoursUnit": "hours",
+      "devices": "Maximum devices at the same time",
+      "devicesHint": "When exceeded, the oldest sign-in session ends (1 to 10).",
+      "devicesUnit": "devices"
+    },
+    "lastChanged": "Last changed: {date} by {name}",
+    "lastChangedDefault": "Default settings (not changed yet)",
+    "discard": "Discard changes",
+    "save": "Save changes",
+    "saving": "Saving…",
+    "saved": "Security settings saved.",
+    "noChanges": "There are no changes to save.",
+    "fieldErrors": {
+      "range": "Enter a whole number from {min} to {max}.",
+      "rolesRequired": "Choose at least one role.",
+      "idleAboveMax": "Inactivity can't be longer than the maximum session length.",
+      "invalid": "Check this value."
+    },
+    "notConfigured": "Security settings aren't available in this environment yet.",
+    "stepUpAgain": "Saving needs a code from your authenticator app entered in the last 15 minutes. Your changes weren't saved."
+  },
+  "sessions": {
+    "device": "Device and browser",
+    "organization": "Organization",
+    "started": "Started",
+    "lastActive": "Last activity",
+    "action": "Action",
+    "on": "{browser} on {system}",
+    "unknownBrowser": "Unknown browser",
+    "unknownSystem": "unknown system",
+    "thisDevice": "This device",
+    "withCode": "Verified with a code",
+    "noOrganization": "Not chosen yet",
+    "end": "End",
+    "endLabel": "End the sign-in session: {device}",
+    "endAll": "End all sign-in sessions",
+    "endOthers": "End all other sign-in sessions",
+    "ending": "Ending…",
+    "ended": "The selected sign-in sessions have ended.",
+    "empty": "There are no active sign-in sessions.",
+    "allowed": "({count} of {max} allowed)"
   }
 }

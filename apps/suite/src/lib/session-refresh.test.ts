@@ -63,6 +63,20 @@ describe('session refresh in the proxy (ADR 0003 §2)', () => {
     expect(req.headers.get('cookie')).toContain('new-token');
   });
 
+  it("forwards the browser's User-Agent to Auth: a refresh records it on the session (T-M2-10)", async () => {
+    const create = fakeClient(() => Promise.resolve({ data: { claims: {} }, error: null }));
+    const req = new NextRequest('https://app.example.test/ar/suite', {
+      headers: {
+        cookie: `${SESSION_COOKIE}=x`,
+        'user-agent': 'Mozilla/5.0 (X11; Linux) Firefox/131.0',
+      },
+    });
+    await refreshSessionCookies(req, create);
+    expect(create).toHaveBeenCalledWith(expect.anything(), undefined, {
+      userAgent: 'Mozilla/5.0 (X11; Linux) Firefox/131.0',
+    });
+  });
+
   it('fails open on Auth errors (the page verification fails closed) and without configuration', async () => {
     const throwing = fakeClient(() => Promise.reject(new Error('network')));
     const none = { cookies: [], headers: {} };

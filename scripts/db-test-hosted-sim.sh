@@ -91,6 +91,17 @@ grant select (id, email) on auth.users to $MIGRATOR;
 -- SELECT on every column of auth.users; only the columns the view reads are simulated.
 grant select (banned_until, recovery_sent_at, recovery_token, is_sso_user, deleted_at) on auth.users to $MIGRATOR;
 grant references on auth.sessions, auth.users to $MIGRATOR;
+-- private.auth_mfa_factor (MFA policy, T-M2-10). Assumption: auth.mfa_factors carries the same ACL as
+-- auth.users (postgres=ar*wdDxtm/supabase_auth_admin — Supabase grants postgres its privileges on every Auth
+-- table); only SELECT is simulated. The migration checks it and fails loudly without it (confirmed by the
+-- staging plan run).
+grant select on auth.mfa_factors to $MIGRATOR;
+-- Security review H1 / M1 / M2 (T-M2-10): the views private.auth_mfa_factor and private.auth_session_validity
+-- let tenant_guard DELETE (remove an authenticator app; end a session in Auth), and
+-- private.mfa_factor_confirmations references auth.mfa_factors. Same assumption (postgres=ar*wdDxtm on
+-- every Auth table): d and x are simulated. The migration checks both and fails loudly without them.
+grant delete, references on auth.mfa_factors to $MIGRATOR;
+grant delete on auth.sessions to $MIGRATOR;
 -- TRIGGER on auth.users: the e-mail change guard of migration 20261009090000 (re-review N1). Assumption,
 -- from Supabase's own image (supabase/postgres 17.11.0.003, the version staging runs): auth.users ACL
 -- postgres=ar*wdDxtm/supabase_auth_admin — postgres is not the owner but holds TRIGGER (Supabase keeps
@@ -203,6 +214,39 @@ fi
 grep -qx 'sim-renamed@example.test' <<<"$(q "begin; set local jadarat.allow_auth_email_change = 'on'; update auth.users set email = 'sim-renamed@example.test' where id = '$ADMIN_UID' returning email; rollback")" ||
   { echo "db-test-hosted-sim: the operator flag must allow an e-mail change" >&2; exit 1; }
 echo "db-test-hosted-sim: e-mail change guard OK"
+
+# Ending sessions and removing authenticator apps in Auth (T-M2-10, security review M1/H1/M2): through the
+# views owned by the non-superuser migration role (DELETE for tenant_guard), as deployed.
+SESSION_A="$(node -e 'process.stdout.write(require("node:crypto").randomUUID())')"
+SESSION_B="$(node -e 'process.stdout.write(require("node:crypto").randomUUID())')"
+FACTOR_ID="$(node -e 'process.stdout.write(require("node:crypto").randomUUID())')"
+SIM_TENANT="$(q "select id from platform.tenants where slug = 'sim-org'")"
+q "insert into auth.sessions (id, user_id, created_at) values ('$SESSION_A', '$ADMIN_UID', now()), ('$SESSION_B', '$ADMIN_UID', now());
+   insert into auth.mfa_factors (id, user_id, factor_type, status) values ('$FACTOR_ID', '$ADMIN_UID', 'totp', 'verified')" >/dev/null
+app_server_q() {
+  PGPASSWORD="$APP_SERVER_DB_PASSWORD" psql -X -At --no-psqlrc -v ON_ERROR_STOP=1 -U app_server -d "$DB" -c "$1"
+}
+CLAIMS="{\"sub\":\"$ADMIN_UID\",\"role\":\"authenticated\",\"aal\":\"aal1\",\"session_id\":\"$SESSION_A\"}"
+CLAIMS_TENANT="{\"sub\":\"$ADMIN_UID\",\"role\":\"authenticated\",\"aal\":\"aal1\",\"session_id\":\"$SESSION_A\",\"tenant_id\":\"$SIM_TENANT\"}"
+ended="$(app_server_q "begin; set local role authenticated;
+                       select set_config('request.jwt.claims', '$CLAIMS', true) is not null;
+                       select private.switch_active_tenant('$SIM_TENANT');
+                       select set_config('request.jwt.claims', '$CLAIMS_TENANT', true) is not null;
+                       select 'ended=' || private.end_my_sessions(null); commit")"
+grep -qx 'ended=1' <<<"$ended" || { echo "db-test-hosted-sim: ending another session of the account failed" >&2; exit 1; }
+[[ "$(q "select count(*) from auth.sessions where id = '$SESSION_B'")" == "0" ]] ||
+  { echo "db-test-hosted-sim: an ended session must be deleted in Auth (review M1)" >&2; exit 1; }
+# ENTLAQA support's reset (runbook docs/engineering/mfa-reset.md), as the migration role.
+[[ "$(psql -X -At --no-psqlrc -v ON_ERROR_STOP=1 "$DATABASE_URL" -c "select private.reset_account_mfa('$ADMIN_UID', 'SIM-1')")" == "1" ]] ||
+  { echo "db-test-hosted-sim: the support reset did not remove the authenticator app" >&2; exit 1; }
+[[ "$(q "select (select count(*) from auth.mfa_factors where user_id = '$ADMIN_UID') + (select count(*) from auth.sessions where user_id = '$ADMIN_UID')")" == "0" ]] ||
+  { echo "db-test-hosted-sim: the support reset must delete the apps and end every session in Auth" >&2; exit 1; }
+[[ "$(q "select count(*) from platform.audit_events where action = 'platform.auth.mfa_reset' and data ->> 'reference' = 'SIM-1'")" == "1" ]] ||
+  { echo "db-test-hosted-sim: the support reset must be audited" >&2; exit 1; }
+if app_server_q "begin; set local role authenticated; select private.reset_account_mfa('$ADMIN_UID', 'SIM-2'); rollback" >/dev/null 2>&1; then
+  echo "db-test-hosted-sim: the web app must not run the support reset" >&2; exit 1
+fi
+echo "db-test-hosted-sim: ending sessions and removing apps in Auth OK"
 
 # Background jobs (T-M2-06a), as on staging: the worker installs graphile-worker's schema as app_queue —
 # which holds no database privilege — on a database migrated by the non-superuser role, then dispatches

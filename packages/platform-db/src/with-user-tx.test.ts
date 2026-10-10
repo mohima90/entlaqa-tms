@@ -72,10 +72,26 @@ describe('withUserTx (ADR 0002 §5)', () => {
         ],
       },
       {
-        sql: "select set_config('request.jwt.claim', '', true), set_config('request.jwt.claim.sub', '', true)",
+        sql: "select set_config('request.jwt.claim', '', true), set_config('request.jwt.claim.sub', '', true), private.touch_session()",
         params: [],
       },
     ]);
+  });
+
+  it('records activity only for a session acting in an organization (T-M2-10 inactivity rule)', async () => {
+    const { db, executed } = fakeDatabase();
+    const withUserTx = createWithUserTx(() => db);
+    const preTenant = brandVerifiedClaims({
+      sub: '11111111-1111-4111-8111-111111111111',
+      role: 'authenticated',
+      aal: 'aal1',
+      session_id: '33333333-3333-4333-8333-333333333333',
+    });
+    if (!preTenant.ok) throw new Error('fixture claims invalid');
+    await withUserTx(preTenant.value, () => Promise.resolve(null));
+    expect(executed[2]?.sql).not.toContain('touch_session');
+    await withUserTx(claims(), () => Promise.resolve(null));
+    expect(executed[5]?.sql).toContain('private.touch_session()');
   });
 
   it('never interpolates claim values into SQL text (injection-safe)', async () => {
@@ -118,6 +134,37 @@ describe('withUserTx (ADR 0002 §5)', () => {
     expect(String(executed[1]?.params[0])).not.toMatch(/invitee@|invitation|966500000000/);
   });
 
+  it('adds code_at — when the session last passed an authenticator code — never the amr itself', async () => {
+    const { db, executed } = fakeDatabase();
+    const withUserTx = createWithUserTx(() => db);
+    await withUserTx(
+      claims({
+        aal: 'aal2',
+        amr: [
+          { method: 'password', timestamp: 1_800_000_000 },
+          { method: 'totp', timestamp: 1_800_000_100 },
+          { method: 'totp', timestamp: 1_800_000_050 },
+        ],
+      }),
+      () => Promise.resolve(null),
+    );
+    const forwarded = JSON.parse(String(executed[1]?.params[0])) as Record<string, unknown>;
+    expect(forwarded.code_at).toBe('1800000100');
+    expect(forwarded.aal).toBe('aal2');
+    expect(forwarded).not.toHaveProperty('amr');
+    // Without a code: no code_at (the database then refuses high-risk changes).
+    expect(
+      databaseClaims({ sub: claims().sub, role: 'authenticated', amr: [] }),
+    ).not.toHaveProperty('code_at');
+    expect(
+      databaseClaims({
+        sub: claims().sub,
+        role: 'authenticated',
+        amr: [{ method: 'totp', timestamp: 'soon' }],
+      }),
+    ).not.toHaveProperty('code_at');
+  });
+
   it('databaseClaims leaves out absent claims and non-string values', () => {
     expect(
       databaseClaims({
@@ -137,6 +184,76 @@ describe('withUserTx (ADR 0002 §5)', () => {
         return Promise.reject(new Error('handler failed'));
       }),
     ).rejects.toThrow('handler failed');
+  });
+
+  describe('retryOnConflict (T-M2-09 × T-M2-10 review L1)', () => {
+    // As postgres.js reports it, wrapped by Drizzle (DrizzleQueryError → cause).
+    const conflict = (code: string) =>
+      Object.assign(new Error('Failed query'), {
+        cause: Object.assign(new Error('deadlock detected'), { code }),
+      });
+
+    it('runs the whole unit of work once more, in a new transaction, after a deadlock or a serialization failure', async () => {
+      for (const code of ['40P01', '40001']) {
+        const { db, executed, transactionCount } = fakeDatabase();
+        const withUserTx = createWithUserTx(() => db);
+        let attempts = 0;
+        const result = await withUserTx(
+          claims(),
+          () => {
+            attempts += 1;
+            return attempts === 1 ? Promise.reject(conflict(code)) : Promise.resolve('second');
+          },
+          { retryOnConflict: true },
+        );
+        expect(result).toBe('second');
+        expect(attempts).toBe(2);
+        expect(transactionCount()).toBe(2);
+        // The second transaction sets the session up again (role, claims, activity).
+        expect(executed.map((q) => q.sql)).toHaveLength(6);
+        expect(executed[3]?.sql).toBe('set local role authenticated');
+      }
+    });
+
+    it('retries at most once: a second conflict is thrown', async () => {
+      const { db, transactionCount } = fakeDatabase();
+      const withUserTx = createWithUserTx(() => db);
+      const error = conflict('40P01');
+      await expect(
+        withUserTx(claims(), () => Promise.reject(error), { retryOnConflict: true }),
+      ).rejects.toBe(error);
+      expect(transactionCount()).toBe(2);
+    });
+
+    it('never retries other errors', async () => {
+      const { db, transactionCount } = fakeDatabase();
+      const withUserTx = createWithUserTx(() => db);
+      await expect(
+        withUserTx(claims(), () => Promise.reject(conflict('23505')), { retryOnConflict: true }),
+      ).rejects.toThrow('Failed query');
+      await expect(
+        withUserTx(claims(), () => Promise.reject(new Error('handler failed')), {
+          retryOnConflict: true,
+        }),
+      ).rejects.toThrow('handler failed');
+      expect(transactionCount()).toBe(2);
+    });
+
+    it('is off unless asked for: a unit of work that may act outside the database runs once', async () => {
+      const { db, transactionCount } = fakeDatabase();
+      const withUserTx = createWithUserTx(() => db);
+      let attempts = 0;
+      const unitOfWork = () => {
+        attempts += 1;
+        return Promise.reject(conflict('40P01'));
+      };
+      await expect(withUserTx(claims(), unitOfWork)).rejects.toThrow('Failed query');
+      await expect(withUserTx(claims(), unitOfWork, { retryOnConflict: false })).rejects.toThrow(
+        'Failed query',
+      );
+      expect(attempts).toBe(2);
+      expect(transactionCount()).toBe(2);
+    });
   });
 
   it('refuses claim sets that do not match the verified-claims schema', async () => {

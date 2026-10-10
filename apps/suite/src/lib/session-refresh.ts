@@ -28,6 +28,8 @@ export function hasSessionCookie(request: NextRequest): boolean {
  *
  * Rotated cookies are applied to the REQUEST (so this render sees the new session) and returned for
  * the RESPONSE. This makes no authorization decision: pages verify claims themselves and fail closed.
+ * The browser's User-Agent goes to Auth with the refresh: Auth records it on the session at every refresh,
+ * and the session lists show it (T-M2-10) — never the server's own.
  */
 export async function refreshSessionCookies(
   request: NextRequest,
@@ -36,16 +38,20 @@ export async function refreshSessionCookies(
   if (!hasSessionCookie(request)) return NONE;
   const cookies: CookieWrite[] = [];
   const headers: Record<string, string> = {};
-  const supabase = createClient({
-    getAll: () => request.cookies.getAll(),
-    setAll: (toSet, cacheHeaders) => {
-      for (const cookie of toSet) {
-        cookies.push(cookie);
-        request.cookies.set(cookie.name, cookie.value);
-      }
-      Object.assign(headers, cacheHeaders);
+  const supabase = createClient(
+    {
+      getAll: () => request.cookies.getAll(),
+      setAll: (toSet, cacheHeaders) => {
+        for (const cookie of toSet) {
+          cookies.push(cookie);
+          request.cookies.set(cookie.name, cookie.value);
+        }
+        Object.assign(headers, cacheHeaders);
+      },
     },
-  });
+    undefined,
+    { userAgent: request.headers.get('user-agent') },
+  );
   if (!supabase) return NONE;
   try {
     await supabase.auth.getClaims();

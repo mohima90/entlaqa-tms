@@ -587,7 +587,7 @@ for path in /verify/ /verify; do
   [[ $limited -eq 1 ]] || { echo "smoke: the gateway does not limit /auth/v1$path beyond its burst" >&2; exit 1; }
 done
 
-echo "smoke: deactivate and reactivate members (T-M2-09) — reassignment, sessions end, Auth issues no token"
+echo "smoke: deactivate and reactivate members (T-M2-09) — reassignment, sessions end, Auth issues no token, old refresh tokens stay dead"
 DEACT_EMAIL="deactivate-$STAMP@sovereign.example"
 DEACT_PASSWORD="Deactivate-$(openssl rand -hex 16)"
 DEACT_ID="$(create_user "$DEACT_EMAIL" "$DEACT_PASSWORD")"
@@ -609,12 +609,22 @@ sign_in() {
   code="$(json_field "${answer%$'\n'*}" error_code)"
   echo "${answer##*$'\n'} ${code:--}"
 }
+# refresh <refresh token>: "<HTTP status> <Auth error_code or ->" of a refresh through the gateway; never
+# the body (tokens).
+refresh() {
+  local answer
+  answer="$(auth_api POST '/token?grant_type=refresh_token' '' "{\"refresh_token\":\"$1\"}")"
+  local code
+  code="$(json_field "${answer%$'\n'*}" error_code)"
+  echo "${answer##*$'\n'} ${code:--}"
+}
 # auth_rows <user id>: the account's Auth sessions and refresh tokens, "<sessions> <refresh tokens>".
 auth_rows() {
   q "select (select count(*) from auth.sessions where user_id = '$1') || ' ' ||
             (select count(*) from auth.refresh_tokens where user_id = '$1')"
 }
-# An Auth session of Reem outside the browser: after the deactivation its refresh must be refused.
+# An Auth session of Reem outside the browser: after the deactivation it must be gone, also after the
+# reactivation (T-M2-09 residual N2, closed with T-M2-10).
 response="$(auth_api POST '/token?grant_type=password' '' "{\"email\":\"$DEACT_EMAIL\",\"password\":\"$DEACT_PASSWORD\"}")"
 [[ "${response##*$'\n'}" == "200" ]] || { echo "smoke: the member to deactivate could not sign in" >&2; exit 1; }
 DEACT_REFRESH="$(json_field "${response%$'\n'*}" refresh_token)"
@@ -645,6 +655,13 @@ deactivate_e2e deactivate
 [[ "$(q "select count(*) from platform.session_context c join platform.tenants t on t.id = c.active_tenant_id
         where c.user_id = '$DEACT_ID' and t.slug = 'sovereign-smoke'")" == "0" ]] ||
   { echo "smoke: the deactivated member's sessions in the organization did not end" >&2; exit 1; }
+# Reem belongs nowhere now: every Auth session of her login ended — the browser's and the one above — with its
+# refresh tokens, marked as ended by the organization's admin (20261012120000, residual N2 closed).
+[[ "$(auth_rows "$DEACT_ID")" == "0 0" ]] ||
+  { echo "smoke: the Auth sessions of a login that belongs nowhere any more were not ended" >&2; exit 1; }
+[[ "$(q "select count(*) from private.revoked_sessions where user_id = '$DEACT_ID' and reason = 'admin'
+        and revoked_by is not null and tenant_id = (select id from platform.tenants where slug = 'sovereign-smoke')")" -ge 2 ]] ||
+  { echo "smoke: the deactivated member's ended sessions must be marked as ended by the organization" >&2; exit 1; }
 # The privileged member was not deactivated (no authenticator code in this session; the page said so).
 [[ "$(q "select status from platform.tenant_memberships where person_id = '5eed1000-0000-4000-8000-0000000000d4'")" == "active" ]] ||
   { echo "smoke: the privileged member must stay active without an authenticator code" >&2; exit 1; }
@@ -674,10 +691,10 @@ wrong="$(sign_in "$DEACT_EMAIL" "Wrong-$STAMP-password")"
 unknown="$(sign_in "nobody-$STAMP@sovereign.example" "Wrong-$STAMP-password")"
 [[ "$wrong" == "400 invalid_credentials" && "$unknown" == "$wrong" ]] ||
   { echo "smoke: a wrong password must look like an unknown address (got '$wrong' / '$unknown')" >&2; exit 1; }
-# (c) the session that was signed in before the deactivation cannot be refreshed;
-response="$(auth_api POST '/token?grant_type=refresh_token' '' "{\"refresh_token\":\"$DEACT_REFRESH\"}")"
-[[ "${response##*$'\n'}" == "403" ]] || { echo "smoke: Auth still refreshes the deactivated account's session" >&2; exit 1; }
-unset response
+# (c) the session that was signed in before the deactivation cannot be refreshed: it no longer exists;
+answer="$(refresh "$DEACT_REFRESH")"
+[[ "$answer" == "400 refresh_token_not_found" ]] ||
+  { echo "smoke: Auth still knows the deactivated account's refresh token (got $answer)" >&2; exit 1; }
 # (d) an account without any membership signs in (the parity user), and so does a deactivated account
 #     invited by another organization (Huda: pending invitation of a second organization) — until that
 #     invitation is revoked;
@@ -692,11 +709,18 @@ OTHER_INVITATION="$(q "with t as (insert into platform.tenants (slug, name_ar, n
                        i as (insert into platform.invitations (tenant_id, person_id, email, locale, primary_role, invited_by)
                          select tenant_id, id, '$SECOND_EMAIL', 'ar', 'learner', '$USER_ID' from p returning id)
                   select id from i")"
-[[ "$(sign_in "$SECOND_EMAIL" "$SECOND_PASSWORD")" == "200 -" ]] ||
+response="$(auth_api POST '/token?grant_type=password' '' "{\"email\":\"$SECOND_EMAIL\",\"password\":\"$SECOND_PASSWORD\"}")"
+[[ "${response##*$'\n'}" == "200" ]] ||
   { echo "smoke: a deactivated account with a pending invitation elsewhere must sign in (to accept it)" >&2; exit 1; }
+SECOND_REFRESH="$(json_field "${response%$'\n'*}" refresh_token)"
+unset response
+[[ -n "$SECOND_REFRESH" ]] || { echo "smoke: no refresh token for the invited account" >&2; exit 1; }
 q "update platform.invitations set status = 'revoked', revoked_at = now(), revoked_by = '$USER_ID' where id = '$OTHER_INVITATION'" >/dev/null
 [[ "$(sign_in "$SECOND_EMAIL" "$SECOND_PASSWORD")" == 403* ]] ||
   { echo "smoke: once the invitation is revoked, Huda must be refused again" >&2; exit 1; }
+#     and the session she signed in with meanwhile is not refreshed either (the hook refuses the refresh);
+answer="$(refresh "$SECOND_REFRESH")"
+[[ "$answer" == 403* ]] || { echo "smoke: Auth must refuse refreshing a refused account's session (got $answer)" >&2; exit 1; }
 # (f) the hook fails closed: when its rule cannot be asked (EXECUTE revoked for a moment), Auth issues no
 #     token even to an account that may sign in — with a server error, not the refusal (a 403 would make
 #     auth-js drop the session on refresh, review N1) — keeps no session of the attempt, and the database
@@ -732,11 +756,146 @@ deactivate_e2e reactivate
   { echo "smoke: expected two reactivation audit events and events" >&2; exit 1; }
 [[ "$(sign_in "$DEACT_EMAIL" "$DEACT_PASSWORD")" == "200 -" ]] ||
   { echo "smoke: the reactivated member must sign in again at once" >&2; exit 1; }
+# …with a new sign-in only: the refresh token from before the deactivation stays dead (residual N2 closed).
+answer="$(refresh "$DEACT_REFRESH")"
+[[ "$answer" == "400 refresh_token_not_found" ]] ||
+  { echo "smoke: a refresh token from before the deactivation works again after the reactivation (got $answer)" >&2; exit 1; }
 deactivate_e2e returns
 [[ "$(q "select count(*) from platform.role_assignments ra join platform.tenant_memberships m on m.id = ra.membership_id
         where m.user_id = '$DEACT_ID' and ra.role_code in ('line_manager', 'learner')")" == "2" ]] ||
   { echo "smoke: the reactivated member's roles changed" >&2; exit 1; }
-unset answer wrong unknown rows_before
+unset answer wrong unknown rows_before DEACT_REFRESH SECOND_REFRESH
+echo "smoke: security policy (T-M2-10) — apps turned on with the e-mailed code, the password-only attack, policy with a code, MFA required, sessions, step-up, lost-app reset"
+# The last browser journey: it makes an authenticator app required for everyone in the organization. The
+# spec reads the set-up e-mails' codes and links from Mailpit and ages codes through
+# infra/docker/e2e-helper.sh, and leaves the set-up keys it saw in a private temporary file for the leak
+# checks below.
+[[ "$(q "select p.mfa_mode || ':' || p.password_min_length || ':' || p.session_max_devices from platform.security_policies p join platform.tenants t on t.id = p.tenant_id where t.slug = 'sovereign-smoke'")" == "off:12:3" ]] ||
+  { echo "smoke: the organization must start with the default security policy" >&2; exit 1; }
+SECURITY_KEYS_FILE="$(mktemp)"
+chmod 600 "$SECURITY_KEYS_FILE"
+(cd "$ROOT/apps/suite" && E2E_BASE_URL=http://localhost:3200 SIGNED_IN_E2E_EMAIL="$EMAIL" \
+  SIGNED_IN_E2E_PASSWORD="$PASSWORD" SIGNED_IN_E2E_MANAGER_EMAIL="$MANAGER_EMAIL" \
+  SECURITY_E2E_MANAGER_PASSWORD="$PROFILE_NEW_PASSWORD" SECURITY_E2E_HELPER="$ROOT/infra/docker/e2e-helper.sh" \
+  SECURITY_E2E_KEYS_FILE="$SECURITY_KEYS_FILE" DOCKER="$DOCKER" \
+  pnpm exec playwright test e2e/security.spec.ts --project=desktop-chromium) ||
+  { rm -f "$SECURITY_KEYS_FILE"; exit 1; }
+mapfile -t MFA_KEYS <"$SECURITY_KEYS_FILE"
+rm -f "$SECURITY_KEYS_FILE"
+[[ ${#MFA_KEYS[@]} -eq 5 ]] || { echo "smoke: expected the five set-up keys of the journey (admin 1, member 4: the attacker's two, the owner's two)" >&2; exit 1; }
+[[ "$(q "select p.mfa_mode || ':' || p.mfa_grace_days || ':' || p.password_min_length || ':' || p.lockout_threshold || ':' || p.lockout_minutes || ':' || (p.updated_by is not null) from platform.security_policies p join platform.tenants t on t.id = p.tenant_id where t.slug = 'sovereign-smoke'")" == "required_all:0:16:5:15:true" ]] ||
+  { echo "smoke: the security policy change was not saved" >&2; exit 1; }
+# Audited: the change with the settings before and after; the prompt postponed (signed-in.spec); the apps
+# set up (waiting) and turned on with the e-mailed code (re-review N1); the password-only attacker's apps
+# removed by the e-mail's "not you" link and by the owner's "added from another sign-in" notice; sign-ins
+# completed with a code; the member's sessions ended by the admin; the member's app reset twice.
+[[ "$(q "select count(*) from platform.audit_events where action = 'platform.security.policy_changed' and data -> 'changed' ? 'mfaMode' and data -> 'changed' ? 'passwordMinLength' and data -> 'before' ->> 'mfaMode' = 'off' and data -> 'after' ->> 'mfaMode' = 'required_all'")" == "1" ]] ||
+  { echo "smoke: expected the security policy audit event with the settings before and after" >&2; exit 1; }
+[[ "$(q "select count(*) from platform.audit_events where action = 'platform.auth.mfa_prompt_dismissed' and actor_user_id = '$USER_ID'")" == "1" ]] ||
+  { echo "smoke: expected the Organization Admin's postponed MFA prompt in the audit log" >&2; exit 1; }
+[[ "$(q "select count(*) from platform.audit_events where action = 'platform.auth.mfa_enrolled' and actor_user_id = '$USER_ID'")" == "1" &&
+   "$(q "select count(*) from platform.audit_events where action = 'platform.auth.mfa_enrolled' and actor_user_id = '$MANAGER_ID'")" == "4" ]] ||
+  { echo "smoke: expected every authenticator set-up in the audit log (admin 1, member 4)" >&2; exit 1; }
+[[ "$(q "select count(*) from platform.audit_events where action = 'platform.auth.mfa_confirmed' and actor_user_id in ('$USER_ID', '$MANAGER_ID')")" == "3" ]] ||
+  { echo "smoke: expected the confirmations with the e-mailed code in the audit log (admin 1, member 2)" >&2; exit 1; }
+[[ "$(q "select count(*) from platform.audit_events where action = 'platform.auth.mfa_removed' and actor_user_id = '$MANAGER_ID' and data ->> 'via' = 'email_link'")" == "1" &&
+   "$(q "select count(*) from platform.audit_events where action = 'platform.auth.mfa_removed' and actor_user_id = '$MANAGER_ID' and data ->> 'via' = 'notice'")" == "1" ]] ||
+  { echo "smoke: expected the removals by the e-mail's \"not you\" link and by the \"added from another sign-in\" notice in the audit log" >&2; exit 1; }
+# Unconfirmed apps of the journey's accounts: none left behind (the attacker's were removed). (The Auth
+# parity account's app, set up through Auth's API outside the web app, is never recorded: the worker
+# removes such apps after 72 hours — re-review N2, pgTAP 68.)
+UNCONFIRMED="$(q "select coalesce(string_agg(case f.user_id when '$USER_ID' then 'admin' else 'member' end || ':' || case when k.factor_id is null then 'unrecorded' else 'waiting' end, ',' order by f.created_at), '') from auth.mfa_factors f left join private.mfa_factor_confirmations k on k.factor_id = f.id where f.status = 'verified' and k.confirmed_at is null and f.user_id in ('$USER_ID', '$MANAGER_ID')")"
+[[ -z "$UNCONFIRMED" ]] ||
+  { echo "smoke: an authenticator app nobody confirmed is still there ($UNCONFIRMED)" >&2; exit 1; }
+unset UNCONFIRMED
+[[ "$(q "select count(*) from platform.audit_events where action = 'platform.user.mfa_reset' and actor_user_id = '$USER_ID' and entity_id = '5eed1000-0000-4000-8000-000000000003'")" == "2" ]] ||
+  { echo "smoke: expected the Organization Admin's two resets of the member's app in the audit log" >&2; exit 1; }
+[[ "$(q "select count(*) from platform.audit_events where action = 'platform.auth.signed_in' and data ->> 'method' = 'password+totp' and data ->> 'aal' = 'aal2'")" -ge "4" ]] ||
+  { echo "smoke: expected the sign-ins completed with an authenticator code in the audit log" >&2; exit 1; }
+[[ "$(q "select count(*) from platform.audit_events where action = 'platform.user.sessions_ended' and actor_user_id = '$USER_ID' and (data ->> 'count')::int >= 1")" == "1" ]] ||
+  { echo "smoke: expected the forced sign-out in the audit log" >&2; exit 1; }
+[[ "$(q "select count(*) from private.revoked_sessions where user_id = '$MANAGER_ID' and reason = 'admin' and revoked_by = '$USER_ID'")" -ge "1" &&
+   "$(q "select count(*) from private.revoked_sessions where user_id = '$MANAGER_ID' and reason = 'security'")" -ge "2" ]] ||
+  { echo "smoke: expected the member's sessions ended by the admin, by the \"not you\" link and notice, and by the resets" >&2; exit 1; }
+# Ending a session deletes it in Auth too (review M1): after the last reset the member has no Auth session
+# left (marked or not) and no app; the admin keeps exactly one app, confirmed with the e-mailed code.
+[[ "$(q "select count(*) from auth.sessions where user_id = '$MANAGER_ID'")" == "0" ]] ||
+  { echo "smoke: the member's Auth sessions survived the reset (they must be deleted, not only marked)" >&2; exit 1; }
+[[ "$(q "select count(*) from auth.mfa_factors where user_id = '$MANAGER_ID'")" == "0" ]] ||
+  { echo "smoke: the member still has an authenticator app after the reset" >&2; exit 1; }
+[[ "$(q "select count(*) from auth.mfa_factors f join private.mfa_factor_confirmations k on k.factor_id = f.id where f.user_id = '$USER_ID' and f.status = 'verified' and k.confirmed_at is not null")" == "1" ]] ||
+  { echo "smoke: expected the admin's one confirmed authenticator app" >&2; exit 1; }
+# The e-mails (worker, our notification service): set-up e-mails with their code and "not you" link (admin
+# 2 — "send again" —, member 4), the removal notices (member: the e-mail's "not you" link, the "added from
+# another sign-in" notice, two resets) and the policy-change notice to every Organization Admin (one here);
+# all sent, without content in the delivery log.
+for i in $(seq 1 60); do
+  if [[ "$(mail_count "$EMAIL" 'An authenticator app was added')" == "2" &&
+    "$(mail_count "$EMAIL" 'Security settings changed')" == "1" &&
+    "$(mail_count "$MANAGER_EMAIL" 'An authenticator app was added')" == "4" &&
+    "$(mail_count "$MANAGER_EMAIL" 'Authenticator app removed')" == "4" ]]; then
+    break
+  fi
+  [[ $i -eq 60 ]] && { echo "smoke: the authenticator and policy-change e-mails did not all arrive (or arrived twice)" >&2; exit 1; }
+  sleep 1
+done
+[[ "$(q "select count(*) from platform.message_deliveries where template in ('platform.mfa_factor_added', 'platform.mfa_factor_removed', 'platform.security_policy_changed') and (status <> 'sent' or destination is not null or html_body is not null or text_body is not null)")" == "0" &&
+   "$(q "select count(*) from platform.message_deliveries where template in ('platform.mfa_factor_added', 'platform.mfa_factor_removed', 'platform.security_policy_changed')")" == "11" ]] ||
+  { echo "smoke: expected the eleven authenticator and policy-change e-mails as sent deliveries without content" >&2; exit 1; }
+# The set-up keys (credentials) appear in neither the audit log nor (checked below) any container log.
+for key in "${MFA_KEYS[@]}"; do
+  [[ ${#key} -ge 16 ]] || { echo "smoke: an authenticator set-up key is unexpectedly short" >&2; exit 1; }
+  [[ "$(q "select count(*) from platform.audit_events where data::text like '%$key%'")" == "0" ]] ||
+    { echo "smoke: an authenticator set-up key reached the audit log" >&2; exit 1; }
+done
+
+echo "smoke: password reset of an account with an authenticator app (T-M2-10) — the code is asked with the new password"
+ADMIN_NEW_PASSWORD="Admin-$(openssl rand -hex 16)"
+(cd "$ROOT/apps/suite" && E2E_BASE_URL=http://localhost:3200 RESET_E2E_EMAIL="$EMAIL" \
+  pnpm exec playwright test e2e/password-reset.spec.ts --project=desktop-chromium)
+# app_reset_link <address>: like reset_link, for an account with an app — the link says so (`&mfa=1`).
+app_reset_link() {
+  local id
+  id="$(compose exec -T mailpit wget -qO- 'http://127.0.0.1:8025/api/v1/messages?limit=500' 2>/dev/null |
+    node -e 'let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => {
+      try { for (const m of JSON.parse(s).messages ?? [])
+        if ((m.To ?? []).some((t) => t.Address === process.argv[1]) && /Reset your password/.test(m.Subject ?? ""))
+          { console.log(m.ID); break; } } catch {} })' "$1")"
+  [[ -n "$id" ]] || return 1
+  compose exec -T mailpit wget -qO- "http://127.0.0.1:8025/api/v1/message/$id" 2>/dev/null |
+    node -e 'let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => {
+      let m = {}; try { m = JSON.parse(s); } catch {}
+      const html = (m.HTML ?? "").replace(/&amp;/g, "&"), text = m.Text ?? "";
+      if (/\/verify|token=/.test(html + text)) process.exit(2);
+      const re = /http:\/\/localhost:3200\/(ar|en)\/reset-password#token_hash=[A-Za-z0-9_-]{16,128}&type=recovery&mfa=1(?![A-Za-z0-9_&=-])/;
+      const link = html.match(re), inText = text.match(re);
+      if (!link || !inText || inText[0] !== link[0]) process.exit(1);
+      process.stdout.write(link[0]); })'
+}
+APP_RESET_URL=""
+for i in $(seq 1 30); do
+  APP_RESET_URL="$(app_reset_link "$EMAIL")" && break
+  [[ $i -eq 30 ]] && { echo "smoke: no reset link saying a code is needed (&mfa=1) for the account with an app" >&2; exit 1; }
+  sleep 1
+done
+ADMIN_KEY="$(q "select secret from auth.mfa_factors where user_id = '$USER_ID' and factor_type = 'totp' and status = 'verified'")"
+(cd "$ROOT/apps/suite" && E2E_BASE_URL=http://localhost:3200 RESET_E2E_MFA_LINK_URL="$APP_RESET_URL" \
+  RESET_E2E_NEW_PASSWORD="$ADMIN_NEW_PASSWORD" RESET_E2E_TOTP_KEY="$ADMIN_KEY" \
+  pnpm exec playwright test e2e/password-reset.spec.ts --project=desktop-chromium)
+unset ADMIN_KEY APP_RESET_URL
+# Every session of the account ended; the new password signs in, the old one does not; one notice.
+[[ "$(q "select count(*) from auth.sessions where user_id = '$USER_ID'")" == "0" ]] ||
+  { echo "smoke: sign-in sessions survived the password reset of the account with an app" >&2; exit 1; }
+response="$(auth_api POST '/token?grant_type=password' '' "{\"email\":\"$EMAIL\",\"password\":\"$ADMIN_NEW_PASSWORD\"}")"
+[[ "${response##*$'\n'}" == "200" ]] || { echo "smoke: sign-in with the new password failed (account with an app)" >&2; exit 1; }
+response="$(auth_api POST '/token?grant_type=password' '' "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}")"
+[[ "${response##*$'\n'}" =~ ^4[0-9][0-9]$ ]] || { echo "smoke: the old password still signs in (account with an app)" >&2; exit 1; }
+unset response
+for i in $(seq 1 30); do
+  [[ "$(mail_count "$EMAIL" 'Your password was changed')" == "1" ]] && break
+  [[ $i -eq 30 ]] && { echo "smoke: no (or more than one) password-changed notice after the reset with a code" >&2; exit 1; }
+  sleep 1
+done
 
 # No unconfirmed e-mail account exists after every journey (re-review N3): with "Confirm email" off, Auth
 # would hand a session for such an account to anyone who signs up with its e-mail, without the hook.
@@ -756,8 +915,8 @@ fi
 all_logs="$(compose logs --no-log-prefix 2>&1)"
 app_logs="$(compose logs --no-log-prefix app 2>&1)"
 for value in "$PASSWORD" "$PARITY_PASSWORD" "$MANAGER_PASSWORD" "$PROFILE_NEW_PASSWORD" "$INTRUDER_PASSWORD" \
-  "$GUARD_PASSWORD" "$GUARD_NEW_PASSWORD" "$RESET_OLD_PASSWORD" "$RESET_NEW_PASSWORD" "$DEACT_PASSWORD" \
-  "$SECOND_PASSWORD"; do
+  "$GUARD_PASSWORD" "$GUARD_NEW_PASSWORD" "$RESET_OLD_PASSWORD" "$RESET_NEW_PASSWORD" "$ADMIN_NEW_PASSWORD" \
+  "$DEACT_PASSWORD" "$SECOND_PASSWORD"; do
   if grep -qF "$value" <<<"$all_logs"; then
     echo "smoke: a test user's password appears in the container logs" >&2; exit 1
   fi
@@ -870,6 +1029,12 @@ done
 for token in "${INVITE_TOKENS[@]}"; do
   if grep -qF "$token" <<<"$all_logs"; then
     echo "smoke: an invitation token appears in the container logs" >&2; exit 1
+  fi
+done
+# Nor do the authenticator set-up keys (T-M2-10): shown once to their owner, kept by Auth.
+for key in "${MFA_KEYS[@]}"; do
+  if grep -qF "$key" <<<"$all_logs"; then
+    echo "smoke: an authenticator set-up key appears in the container logs" >&2; exit 1
   fi
 done
 

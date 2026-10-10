@@ -220,6 +220,13 @@ describe('change my password', () => {
     expect(JSON.stringify(writeAudit.mock.calls)).not.toContain('password-');
   });
 
+  it('is never retried after a deadlock: the password changes at Auth inside the transaction (review L1)', () => {
+    const definition = changeMyPasswordActionDefinition(() =>
+      Promise.resolve(ok({ userId: 'u1' })),
+    );
+    expect(definition.externalEffects).toBe(true);
+  });
+
   it('runs the after-change step (the "password changed" notice) in the action transaction, only on success', async () => {
     const afterChange = vi.fn(() => Promise.resolve());
     const changed = vi.fn(() => Promise.resolve(ok({ userId: 'u1' })));

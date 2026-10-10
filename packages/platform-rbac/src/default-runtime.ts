@@ -21,9 +21,9 @@ export const defaultActionRuntime: ActionRuntime<UserTx> = {
     // before sensitive operations (high-risk / AAL2 permissions).
     return strict ? getVerifiedClaimsStrict() : getVerifiedClaims();
   },
-  async withUserTx(claims, fn) {
+  async withUserTx(claims, fn, options) {
     const { withUserTx } = await import('@jadarat/platform-db');
-    return withUserTx(claims, fn);
+    return withUserTx(claims, fn, options);
   },
   // T-M2-10 (review L1/H1): may the session act in its organization, and is it at AAL2 (confirmed app)?
   async loadSessionFacts(tx) {

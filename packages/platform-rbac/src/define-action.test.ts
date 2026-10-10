@@ -373,4 +373,52 @@ describe('defineAction (ADR 0003 §4)', () => {
     expect((await action({ enrollmentId: ENROLLMENT })).ok).toBe(true);
     expect(audits).toHaveLength(0);
   });
+
+  it('asks for one retry after a deadlock unless the action acts outside the database (review L1)', async () => {
+    const options: unknown[] = [];
+    const { rt } = runtime();
+    const record: ActionRuntime<FakeTx> = {
+      ...rt,
+      withUserTx: (c, fn, o) => {
+        options.push(o);
+        return rt.withUserTx(c, fn, o);
+      },
+    };
+    await makeAction(record)({ enrollmentId: ENROLLMENT });
+    const external = createDefineAction(record)({
+      permission: approve,
+      input: Input,
+      scoped: true,
+      externalEffects: true,
+      handler: () => Promise.resolve(ok(1)),
+    });
+    await external({ enrollmentId: ENROLLMENT });
+    expect(options).toEqual([{ retryOnConflict: true }, { retryOnConflict: false }]);
+  });
+
+  it('a retried transaction runs the whole pipeline again and audits once', async () => {
+    const { rt, log, audits } = runtime();
+    const deadlock = Object.assign(new Error('deadlock detected'), { code: '40P01' });
+    // What platform-db withUserTx does with retryOnConflict (tested there): one more transaction.
+    const retrying: ActionRuntime<FakeTx> = {
+      ...rt,
+      withUserTx: async (c, fn, o) => {
+        try {
+          return await rt.withUserTx(c, fn, o);
+        } catch (error) {
+          if (o?.retryOnConflict !== true || error !== deadlock) throw error;
+          return rt.withUserTx(c, fn, o);
+        }
+      },
+    };
+    let attempts = 0;
+    const result = await makeAction(retrying, () => {
+      attempts += 1;
+      return attempts === 1 ? Promise.reject(deadlock) : Promise.resolve(ok('done'));
+    })({ enrollmentId: ENROLLMENT });
+    expect(result).toEqual(ok('done'));
+    expect(log).toEqual(['begin', 'rollback', 'begin', 'commit']);
+    expect(audits).toHaveLength(1);
+    expect(rt.logError).not.toHaveBeenCalled();
+  });
 });

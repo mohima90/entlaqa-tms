@@ -8,6 +8,7 @@ import {
 import { sql } from 'drizzle-orm';
 import { type ClaimsTx, runWithClaims } from './claims-tx';
 import { type AppDatabase, getDatabase } from './client';
+import { isTransactionConflict } from './pg-error';
 
 /** Transaction handle for request-path units of work (connection role app_server). */
 export type UserTx = ClaimsTx;
@@ -40,7 +41,25 @@ export function databaseClaims(claims: JwtClaims): Readonly<Record<string, strin
   return subset;
 }
 
-export type WithUserTx = <T>(claims: VerifiedClaims, fn: (tx: UserTx) => Promise<T>) => Promise<T>;
+/**
+ * `retryOnConflict`: when PostgreSQL rolls the transaction back as a deadlock victim (40P01) or after a
+ * serialization failure (40001), run the WHOLE unit of work once more, in a new transaction (T-M2-09 ×
+ * T-M2-10 review L1: a request recording its activity — private.touch_session() — can deadlock with a
+ * deactivation of the same member). Only for units of work that do nothing outside the database before
+ * they commit: the first attempt's database work is gone, anything else it did (an Auth call, an e-mail, a
+ * log of success) would run twice. defineAction turns it on unless the action declares `externalEffects`.
+ * Work after the commit (outside `fn`) is not repeated. At most one retry; any other error, or a second
+ * conflict, is thrown as is.
+ */
+export interface UserTxOptions {
+  readonly retryOnConflict?: boolean;
+}
+
+export type WithUserTx = <T>(
+  claims: VerifiedClaims,
+  fn: (tx: UserTx) => Promise<T>,
+  options?: UserTxOptions,
+) => Promise<T>;
 
 /**
  * Builds withUserTx over a database handle connected as `app_server`.
@@ -52,15 +71,25 @@ export function createWithUserTx(getDb: () => AppDatabase): WithUserTx {
   return async function withUserTx<T>(
     claims: VerifiedClaims,
     fn: (tx: UserTx) => Promise<T>,
+    options: UserTxOptions = {},
   ): Promise<T> {
     const parsed = JwtClaimsSchema.safeParse(claims);
     if (!parsed.success || parsed.data.role !== 'authenticated' || !parsed.data.session_id) {
       throw new Error('withUserTx: refusing claims that are not a verified user session claim set');
     }
+    const claimsJson = JSON.stringify(databaseClaims(parsed.data));
     // A session acting in an organization records its activity (inactivity rule, T-M2-10).
-    return runWithClaims(getDb(), JSON.stringify(databaseClaims(parsed.data)), fn, {
-      touchSession: typeof parsed.data.tenant_id === 'string',
-    });
+    const run = () =>
+      runWithClaims(getDb(), claimsJson, fn, {
+        touchSession: typeof parsed.data.tenant_id === 'string',
+      });
+    if (options.retryOnConflict !== true) return run();
+    try {
+      return await run();
+    } catch (error) {
+      if (!isTransactionConflict(error)) throw error;
+      return run();
+    }
   };
 }
 

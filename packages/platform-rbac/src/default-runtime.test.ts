@@ -55,10 +55,13 @@ describe('default defineAction runtime', () => {
     expect(identity.getVerifiedClaims).toHaveBeenCalledOnce();
   });
 
-  it('runs units of work through platform-db withUserTx', async () => {
+  it('runs units of work through platform-db withUserTx, with the retry choice of the action', async () => {
     const claims = { sub: 'u' } as never;
-    expect(await defaultActionRuntime.withUserTx(claims, (tx) => Promise.resolve(tx))).toBe('tx');
-    expect(db.withUserTx).toHaveBeenCalledWith(claims, expect.any(Function));
+    const options = { retryOnConflict: true };
+    expect(
+      await defaultActionRuntime.withUserTx(claims, (tx) => Promise.resolve(tx), options),
+    ).toBe('tx');
+    expect(db.withUserTx).toHaveBeenCalledWith(claims, expect.any(Function), options);
   });
 
   it('asks the database whether the session may act and counts as AAL2 (T-M2-10, review L1/H1)', async () => {

@@ -233,6 +233,8 @@ export function changeMyPasswordActionDefinition(
     permission: manageOwn,
     input: ChangePasswordInput,
     scoped: true,
+    // The password changes at Auth inside the transaction: never run twice after a deadlock.
+    externalEffects: true,
     handler: async ({ ctx, input }) => {
       // Strictest wins (PO decision 5, T-M2-10): the longest minimum of the account's organizations,
       // checked before Auth is asked. The answer names the length only, never which organization.

@@ -64,7 +64,9 @@ grant execute on function private.actor_role_codes(uuid, uuid) to authenticated;
 -- waited), the isolation level the application uses. Anything else is refused rather than unsafe.
 -- Actions that change a member's roles AND status in one transaction call this function before their
 -- first write, so the per-tenant lock is always taken before any membership row lock (otherwise two
--- such transactions can deadlock, 40P01; withUserTx also retries once on deadlock — T-M2-03 follow-up).
+-- such transactions can deadlock, 40P01). A transaction that still loses a deadlock is run once more by
+-- defineAction (withUserTx `retryOnConflict`, since the T-M2-10 integration), unless the action acts
+-- outside the database (`externalEffects`).
 create or replace function private.lock_tenant_roles(p_tenant_id uuid)
 returns void
 language plpgsql

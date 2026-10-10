@@ -97,7 +97,15 @@ export interface SessionFacts {
 /** Infrastructure used by defineAction; the default wires identity + platform-db (default-runtime.ts). */
 export interface ActionRuntime<Tx> {
   getClaims(options: GetClaimsOptions): Promise<Result<VerifiedClaims, AppError>>;
-  withUserTx<T>(claims: VerifiedClaims, fn: (tx: Tx) => Promise<T>): Promise<T>;
+  /**
+   * `retryOnConflict`: run `fn` once more in a new transaction after a deadlock (40P01) or a
+   * serialization failure (40001) — see platform-db `UserTxOptions`.
+   */
+  withUserTx<T>(
+    claims: VerifiedClaims,
+    fn: (tx: Tx) => Promise<T>,
+    options?: { readonly retryOnConflict?: boolean },
+  ): Promise<T>;
   loadSessionFacts(tx: Tx): Promise<SessionFacts>;
   loadGrants(tx: Tx, claims: TenantClaims): Promise<readonly Grant[]>;
   resolveResource(
@@ -132,6 +140,13 @@ export type ActionDefinition<S extends z.ZodType, O, Tx> = ActionTarget<S> & {
   readonly input: S;
   /** Audit record for the change (create/update/delete/sensitive read). */
   readonly audit?: (input: z.output<S>, output: O) => AuditRecord | null;
+  /**
+   * true when the handler acts OUTSIDE the database inside the transaction (calls Auth, sends something,
+   * …). Such an action is never run a second time: by default an action whose transaction is rolled back
+   * as a deadlock victim or after a serialization failure is retried once (T-M2-09 × T-M2-10 review L1),
+   * which is safe only while everything it did was in that transaction.
+   */
+  readonly externalEffects?: boolean;
   readonly handler: (args: {
     readonly ctx: ActionContext<Tx>;
     readonly input: z.output<S>;
@@ -179,7 +194,8 @@ export function requiresStrictVerification(permission: PermissionDefinition): bo
  * tenant claim → validate input → withUserTx {
  *   session facts (inactive → UNAUTHENTICATED) → load effective grants → resolve resource → authorize
  *   (deny by default; AAL2 permissions need the database's AAL2 AND a code from the last
- *   STEP_UP_MAX_AGE_SECONDS, else STEP_UP_REQUIRED) → handler → audit } .
+ *   STEP_UP_MAX_AGE_SECONDS, else STEP_UP_REQUIRED) → handler → audit } — the whole transaction run once
+ * more after a deadlock or serialization failure, unless the action declares `externalEffects`.
  */
 export function createDefineAction<Tx>(runtime: ActionRuntime<Tx>) {
   return function defineAction<S extends z.ZodType, O>(
@@ -199,65 +215,69 @@ export function createDefineAction<Tx>(runtime: ActionRuntime<Tx>) {
       if (!input.ok) return input;
 
       try {
-        return await runtime.withUserTx(tenantClaims, async (tx) => {
-          const actor = actorFromClaims(tenantClaims);
-          // Tenant-scoped work only while the database lets the session act there (review L1).
-          const facts = await runtime.loadSessionFacts(tx);
-          if (!facts.active) throw new HandledFailure(appError('UNAUTHENTICATED'));
-          const grants = await runtime.loadGrants(tx, tenantClaims);
-          const resource = definition.resource
-            ? await runtime.resolveResource(tx, definition.resource(input.value), tenantClaims)
-            : undefined;
-          const subject = {
-            tenantId: actor.tenantId,
-            personId: actor.personId,
-            // AAL2 for authorization: the token, the database (confirmed app) and a fresh code (L3).
-            aal:
-              actor.aal === 'aal2' && facts.aal2 && codeIsFresh(tenantClaims)
-                ? ('aal2' as const)
-                : ('aal1' as const),
-            grants,
-          };
-          const decision = authorize(subject, definition.permission, resource, {
-            scoped: definition.scoped === true,
-          });
-          if (!decision.allowed) throw new HandledFailure(denial(decision));
+        return await runtime.withUserTx(
+          tenantClaims,
+          async (tx) => {
+            const actor = actorFromClaims(tenantClaims);
+            // Tenant-scoped work only while the database lets the session act there (review L1).
+            const facts = await runtime.loadSessionFacts(tx);
+            if (!facts.active) throw new HandledFailure(appError('UNAUTHENTICATED'));
+            const grants = await runtime.loadGrants(tx, tenantClaims);
+            const resource = definition.resource
+              ? await runtime.resolveResource(tx, definition.resource(input.value), tenantClaims)
+              : undefined;
+            const subject = {
+              tenantId: actor.tenantId,
+              personId: actor.personId,
+              // AAL2 for authorization: the token, the database (confirmed app) and a fresh code (L3).
+              aal:
+                actor.aal === 'aal2' && facts.aal2 && codeIsFresh(tenantClaims)
+                  ? ('aal2' as const)
+                  : ('aal1' as const),
+              grants,
+            };
+            const decision = authorize(subject, definition.permission, resource, {
+              scoped: definition.scoped === true,
+            });
+            if (!decision.allowed) throw new HandledFailure(denial(decision));
 
-          const output = await definition.handler({
-            ctx: {
-              claims: tenantClaims,
-              actor,
-              grants: decision.grants,
-              resource: resource ?? null,
-              can: (permission, target) =>
-                authorize(subject, permission, typeof target === 'string' ? undefined : target, {
-                  scoped: target === 'any',
-                }).allowed,
-              access: (permission, target) => {
-                const decision = authorize(
-                  subject,
-                  permission,
-                  typeof target === 'string' ? undefined : target,
-                  { scoped: target === 'any' },
-                );
-                if (decision.allowed) return 'allowed';
-                return decision.reason === 'step_up_required' ? 'step_up_required' : 'denied';
+            const output = await definition.handler({
+              ctx: {
+                claims: tenantClaims,
+                actor,
+                grants: decision.grants,
+                resource: resource ?? null,
+                can: (permission, target) =>
+                  authorize(subject, permission, typeof target === 'string' ? undefined : target, {
+                    scoped: target === 'any',
+                  }).allowed,
+                access: (permission, target) => {
+                  const decision = authorize(
+                    subject,
+                    permission,
+                    typeof target === 'string' ? undefined : target,
+                    { scoped: target === 'any' },
+                  );
+                  if (decision.allowed) return 'allowed';
+                  return decision.reason === 'step_up_required' ? 'step_up_required' : 'denied';
+                },
+                grantsFor: (permission) => {
+                  const other = authorize(subject, permission, undefined, { scoped: true });
+                  return other.allowed ? other.grants : [];
+                },
+                tx,
               },
-              grantsFor: (permission) => {
-                const other = authorize(subject, permission, undefined, { scoped: true });
-                return other.allowed ? other.grants : [];
-              },
-              tx,
-            },
-            input: input.value,
-          });
-          // Throwing rolls the transaction back.
-          if (!output.ok) throw new HandledFailure(output.error);
+              input: input.value,
+            });
+            // Throwing rolls the transaction back.
+            if (!output.ok) throw new HandledFailure(output.error);
 
-          const record = definition.audit?.(input.value, output.value);
-          if (record) await runtime.writeAudit(tx, actor, record);
-          return ok(output.value);
-        });
+            const record = definition.audit?.(input.value, output.value);
+            if (record) await runtime.writeAudit(tx, actor, record);
+            return ok(output.value);
+          },
+          { retryOnConflict: definition.externalEffects !== true },
+        );
       } catch (error) {
         if (error instanceof HandledFailure) return err(toClientError(error.error));
         // Unexpected: log with a correlation id; the client gets INTERNAL_ERROR + the same id only.

@@ -168,6 +168,7 @@ export {
 export {
   type SessionTenant,
   type UserTx,
+  type UserTxOptions,
   type WithUserTx,
   createWithUserTx,
   listSessionTenants,

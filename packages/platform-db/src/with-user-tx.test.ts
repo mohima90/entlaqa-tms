@@ -186,6 +186,76 @@ describe('withUserTx (ADR 0002 §5)', () => {
     ).rejects.toThrow('handler failed');
   });
 
+  describe('retryOnConflict (T-M2-09 × T-M2-10 review L1)', () => {
+    // As postgres.js reports it, wrapped by Drizzle (DrizzleQueryError → cause).
+    const conflict = (code: string) =>
+      Object.assign(new Error('Failed query'), {
+        cause: Object.assign(new Error('deadlock detected'), { code }),
+      });
+
+    it('runs the whole unit of work once more, in a new transaction, after a deadlock or a serialization failure', async () => {
+      for (const code of ['40P01', '40001']) {
+        const { db, executed, transactionCount } = fakeDatabase();
+        const withUserTx = createWithUserTx(() => db);
+        let attempts = 0;
+        const result = await withUserTx(
+          claims(),
+          () => {
+            attempts += 1;
+            return attempts === 1 ? Promise.reject(conflict(code)) : Promise.resolve('second');
+          },
+          { retryOnConflict: true },
+        );
+        expect(result).toBe('second');
+        expect(attempts).toBe(2);
+        expect(transactionCount()).toBe(2);
+        // The second transaction sets the session up again (role, claims, activity).
+        expect(executed.map((q) => q.sql)).toHaveLength(6);
+        expect(executed[3]?.sql).toBe('set local role authenticated');
+      }
+    });
+
+    it('retries at most once: a second conflict is thrown', async () => {
+      const { db, transactionCount } = fakeDatabase();
+      const withUserTx = createWithUserTx(() => db);
+      const error = conflict('40P01');
+      await expect(
+        withUserTx(claims(), () => Promise.reject(error), { retryOnConflict: true }),
+      ).rejects.toBe(error);
+      expect(transactionCount()).toBe(2);
+    });
+
+    it('never retries other errors', async () => {
+      const { db, transactionCount } = fakeDatabase();
+      const withUserTx = createWithUserTx(() => db);
+      await expect(
+        withUserTx(claims(), () => Promise.reject(conflict('23505')), { retryOnConflict: true }),
+      ).rejects.toThrow('Failed query');
+      await expect(
+        withUserTx(claims(), () => Promise.reject(new Error('handler failed')), {
+          retryOnConflict: true,
+        }),
+      ).rejects.toThrow('handler failed');
+      expect(transactionCount()).toBe(2);
+    });
+
+    it('is off unless asked for: a unit of work that may act outside the database runs once', async () => {
+      const { db, transactionCount } = fakeDatabase();
+      const withUserTx = createWithUserTx(() => db);
+      let attempts = 0;
+      const unitOfWork = () => {
+        attempts += 1;
+        return Promise.reject(conflict('40P01'));
+      };
+      await expect(withUserTx(claims(), unitOfWork)).rejects.toThrow('Failed query');
+      await expect(withUserTx(claims(), unitOfWork, { retryOnConflict: false })).rejects.toThrow(
+        'Failed query',
+      );
+      expect(attempts).toBe(2);
+      expect(transactionCount()).toBe(2);
+    });
+  });
+
   it('refuses claim sets that do not match the verified-claims schema', async () => {
     const { db, transactionCount } = fakeDatabase();
     const withUserTx = createWithUserTx(() => db);

@@ -344,6 +344,67 @@ begin
 end $$;
 reset role;
 set local session authorization default;
+-- uA now has a CONFIRMED authenticator app; the session sA is still at aal1 (integration review L1).
+select tests.set_claims(null);
+insert into auth.mfa_factors (id, user_id, friendly_name, factor_type, status, secret) values
+  ('20000000-0000-4000-8000-0000000000f1', '00000000-0000-4000-8000-0000000000a1', 'app', 'totp', 'verified', 'NOT-A-REAL-SECRET');
+insert into private.mfa_factor_confirmations (factor_id, user_id, session_id, confirmed_at) values
+  ('20000000-0000-4000-8000-0000000000f1', '00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1', now());
+update auth.sessions set aal = 'aal1', factor_id = null where id = '10000000-0000-4000-8000-0000000000a1';
+set local session authorization supabase_storage_admin;
+set local role authenticated;
+-- (b) mfa_challenge: the account uses a confirmed app, the token is aal1 — refused.
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
+                                          'a0000000-0000-4000-8000-000000000001'));
+do $$
+begin
+  perform tests.assert(private.storage_request_tenant() is null,
+    'mfa_challenge: an aal1 token of an account with a confirmed app gets no tenant from Storage');
+end $$;
+-- An aal2 CLAIM over an Auth session still at aal1: the lower of the two counts — refused.
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
+                                          'a0000000-0000-4000-8000-000000000001') || '{"aal": "aal2"}'::jsonb);
+do $$
+begin
+  perform tests.assert(private.storage_request_tenant() is null,
+    'an aal2 claim over an Auth session at aal1 gets no tenant from Storage');
+end $$;
+reset role;
+set local session authorization default;
+-- (a) The Auth session passed the confirmed app's code (aal2): with an aal2 token, the tenant and the read.
+update auth.sessions set aal = 'aal2', factor_id = '20000000-0000-4000-8000-0000000000f1'
+where id = '10000000-0000-4000-8000-0000000000a1';
+set local session authorization supabase_storage_admin;
+set local role authenticated;
+do $$
+begin
+  perform tests.assert_eq(private.storage_request_tenant(), 'a0000000-0000-4000-8000-000000000001'::uuid,
+    'aal2 token, Auth session at aal2 through a confirmed app, MFA required for everyone: tenant A');
+  perform tests.assert(private.can_read_object('imports',
+      'a0000000-0000-4000-8000-000000000001/platform/user_import/a5000000-0000-4000-8000-000000000001/f0a00000-0000-4000-8000-000000000001'),
+    'and it reads the file it holds a grant for');
+end $$;
+reset role;
+set local session authorization default;
+-- (c) The same session, ended by a revocation marker (T-M2-10: the account, an administrator, the device
+-- limit) while Auth still has it: refused.
+select tests.set_claims(null);
+insert into private.revoked_sessions (session_id, user_id, reason, revoked_by) values
+  ('10000000-0000-4000-8000-0000000000a1', '00000000-0000-4000-8000-0000000000a1', 'user', '00000000-0000-4000-8000-0000000000a1');
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
+                                          'a0000000-0000-4000-8000-000000000001') || '{"aal": "aal2"}'::jsonb);
+set local session authorization supabase_storage_admin;
+set local role authenticated;
+do $$
+begin
+  perform tests.assert(private.storage_request_tenant() is null,
+    'a session ended by a revocation marker gets no tenant from Storage');
+  perform tests.assert(not private.can_read_object('imports',
+      'a0000000-0000-4000-8000-000000000001/platform/user_import/a5000000-0000-4000-8000-000000000001/f0a00000-0000-4000-8000-000000000001'),
+    'nor reads the file, even with a grant');
+end $$;
+reset role;
+set local session authorization default;
 rollback;
 
 \echo '84_files_cleanup_owner: ok'

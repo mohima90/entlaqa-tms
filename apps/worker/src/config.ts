@@ -16,7 +16,8 @@ export interface ScannerSettings {
   readonly port: number;
   /**
    * FILE_SCAN_SIGNATURES_MAX_AGE_DAYS (default 7): older (or undated) signatures and nothing is scanned.
-   * Raised only by test installations whose signatures are pinned (the worker warns at start-up).
+   * Above 7 only with FILE_SCAN_SIGNATURES_TEST_OVERRIDE=1 — test installations whose signatures are
+   * pinned (the smoke test) — and never in a production environment (the worker warns at start-up).
    */
   readonly maxSignatureAgeDays: number;
 }
@@ -164,6 +165,9 @@ function readAuthAdmin(env: NodeJS.ProcessEnv): RunnerSettings['authAdmin'] {
 export const CLAMD_HOST_ENV = 'CLAMD_HOST';
 export const CLAMD_PORT_ENV = 'CLAMD_PORT';
 export const SIGNATURES_MAX_AGE_ENV = 'FILE_SCAN_SIGNATURES_MAX_AGE_DAYS';
+export const SIGNATURES_TEST_OVERRIDE_ENV = 'FILE_SCAN_SIGNATURES_TEST_OVERRIDE';
+/** JADARAT_ENVIRONMENT values that look like production: no test override of the signature limit there. */
+const PRODUCTION_LIKE = /prod|prd|live/i;
 /** The hard limit on the signatures' age (ADR 0006 §8; platform-files SIGNATURE_HARD_MAX_AGE_DAYS). */
 export const DEFAULT_SIGNATURES_MAX_AGE_DAYS = 7;
 const HOST_NAME = /^[A-Za-z0-9]([A-Za-z0-9.-]{0,252})$/;
@@ -194,6 +198,19 @@ function readScanner(env: NodeJS.ProcessEnv): ScannerSettings | undefined {
     throw new ConfigurationError(
       `${SIGNATURES_MAX_AGE_ENV} must be a whole number of days from 1 to 365`,
     );
+  }
+  // Raising the hard limit lets stale signatures pass as fresh: test installations only (re-review L-D).
+  if (maxSignatureAgeDays > DEFAULT_SIGNATURES_MAX_AGE_DAYS) {
+    if (read(env, SIGNATURES_TEST_OVERRIDE_ENV) !== '1') {
+      throw new ConfigurationError(
+        `${SIGNATURES_MAX_AGE_ENV} above ${String(DEFAULT_SIGNATURES_MAX_AGE_DAYS)} needs ${SIGNATURES_TEST_OVERRIDE_ENV}=1 (test installations with pinned signatures only)`,
+      );
+    }
+    if (PRODUCTION_LIKE.test(read(env, 'JADARAT_ENVIRONMENT') ?? '')) {
+      throw new ConfigurationError(
+        `${SIGNATURES_MAX_AGE_ENV} above ${String(DEFAULT_SIGNATURES_MAX_AGE_DAYS)} is refused in a production environment (JADARAT_ENVIRONMENT)`,
+      );
+    }
   }
   if (!HOST_NAME.test(host)) {
     throw new ConfigurationError(`${CLAMD_HOST_ENV} must be a host name or an IPv4 address`);

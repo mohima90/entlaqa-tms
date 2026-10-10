@@ -380,9 +380,11 @@ services:
       # uploads stay unscanned — never clean.
       CLAMD_HOST: clamd
       CLAMD_PORT: '3310'
-      # Signatures older than this (days, default 7) and nothing is scanned (fail closed, alerted). Raised
-      # only by the smoke test, whose clamd keeps the pinned image's signatures (no freshclam).
+      # Signatures older than this (days, default 7) and nothing is scanned (fail closed, alerted). Above 7
+      # only with FILE_SCAN_SIGNATURES_TEST_OVERRIDE=1, never with a production-like JADARAT_ENVIRONMENT:
+      # set by the smoke test alone, whose clamd keeps the pinned image's signatures (no freshclam).
       FILE_SCAN_SIGNATURES_MAX_AGE_DAYS: ${FILE_SCAN_SIGNATURES_MAX_AGE_DAYS:-7}
+      FILE_SCAN_SIGNATURES_TEST_OVERRIDE: ${FILE_SCAN_SIGNATURES_TEST_OVERRIDE:-}
       # Orphan objects (housekeeping): off while a restore is reconciled (docs/engineering/files.md §4).
       # Above FILE_ORPHAN_SWEEP_MAX (500) orphans, or FILE_ORPHAN_SWEEP_MAX_SHARE (10) % of all objects,
       # nothing is removed and an error is logged.

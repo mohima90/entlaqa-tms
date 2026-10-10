@@ -326,6 +326,11 @@ files_journey() {
   check="$(FILE_SCAN_SIGNATURES_MAX_AGE_DAYS=1 compose run --rm --no-deps -T worker main.mjs scanner-check 2>&1)" || status=$?
   [[ $status -eq 3 ]] && grep -q 'scanner_signatures_too_old' <<<"$check" ||
     { echo "smoke: files: signatures older than the limit were not reported as too old (exit $status)" >&2; return 1; }
+  # The raised limit is a test-only setting: without its override flag the worker refuses to start.
+  status=0
+  check="$(FILE_SCAN_SIGNATURES_TEST_OVERRIDE='' compose run --rm --no-deps -T worker main.mjs scanner-check 2>&1)" || status=$?
+  [[ $status -ne 0 ]] && grep -q 'needs FILE_SCAN_SIGNATURES_TEST_OVERRIDE=1' <<<"$check" ||
+    { echo "smoke: files: a raised signature limit was accepted without the test-only override" >&2; return 1; }
 
   echo "smoke: files — Storage's JWT secret (admin-equivalent) is in the storage container only"
   local storage_secret holders=""

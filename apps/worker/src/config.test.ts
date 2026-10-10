@@ -249,8 +249,17 @@ describe('readSettings: malware scanner (T-M2-18)', () => {
 
   it("reads the hard limit on the signatures' age (default 7 days, at most 365)", () => {
     expect(
-      runner([], { ...env, CLAMD_HOST: 'clamd', FILE_SCAN_SIGNATURES_MAX_AGE_DAYS: '365' }).scanner
+      runner([], { ...env, CLAMD_HOST: 'clamd', FILE_SCAN_SIGNATURES_MAX_AGE_DAYS: '3' }).scanner
         ?.maxSignatureAgeDays,
+    ).toBe(3);
+    expect(
+      runner([], {
+        ...env,
+        CLAMD_HOST: 'clamd',
+        FILE_SCAN_SIGNATURES_MAX_AGE_DAYS: '365',
+        FILE_SCAN_SIGNATURES_TEST_OVERRIDE: '1',
+        JADARAT_ENVIRONMENT: 'self-hosted',
+      }).scanner?.maxSignatureAgeDays,
     ).toBe(365);
     for (const value of ['0', '366', '7.5', 'x']) {
       fails(
@@ -264,6 +273,38 @@ describe('readSettings: malware scanner (T-M2-18)', () => {
       { ...env, FILE_SCAN_SIGNATURES_MAX_AGE_DAYS: '30' },
       /FILE_SCAN_SIGNATURES_MAX_AGE_DAYS is set without CLAMD_HOST/,
     );
+  });
+
+  it('raises it above 7 days only with the test override, never in production (re-review L-D)', () => {
+    const raised = { ...env, CLAMD_HOST: 'clamd', FILE_SCAN_SIGNATURES_MAX_AGE_DAYS: '30' };
+    fails([], raised, /above 7 needs FILE_SCAN_SIGNATURES_TEST_OVERRIDE=1/);
+    fails(
+      [],
+      { ...raised, FILE_SCAN_SIGNATURES_TEST_OVERRIDE: 'yes' },
+      /needs FILE_SCAN_SIGNATURES_TEST_OVERRIDE=1/,
+    );
+    for (const environment of ['production', 'Prod-KSA', 'prd', 'live']) {
+      fails(
+        [],
+        { ...raised, FILE_SCAN_SIGNATURES_TEST_OVERRIDE: '1', JADARAT_ENVIRONMENT: environment },
+        /refused in a production environment/,
+      );
+    }
+    // The scanner check reads the same settings.
+    fails(
+      ['scanner-check'],
+      { CLAMD_HOST: 'clamd', FILE_SCAN_SIGNATURES_MAX_AGE_DAYS: '30' },
+      /needs FILE_SCAN_SIGNATURES_TEST_OVERRIDE=1/,
+    );
+    // Up to the 7-day default nothing else is needed, in any environment.
+    expect(
+      runner([], {
+        ...env,
+        CLAMD_HOST: 'clamd',
+        FILE_SCAN_SIGNATURES_MAX_AGE_DAYS: '7',
+        JADARAT_ENVIRONMENT: 'production',
+      }).scanner?.maxSignatureAgeDays,
+    ).toBe(7);
   });
 
   it('refuses a port without host, a bad host or port', () => {

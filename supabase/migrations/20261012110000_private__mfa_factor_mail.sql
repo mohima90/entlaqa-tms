@@ -514,7 +514,9 @@ comment on function private.confirm_mfa_setup(uuid, text) is
   'SECURITY-RELEVANT (T-M2-10, re-review N1, T-IAM-11). The e-mailed code of a new authenticator app, accepted only from the Auth session that set it up (aal2 through that app): from now on it counts for AAL2. Single use, expires, dies after 5 wrong tries.';
 
 -- The account's authenticator apps (verified in Auth) as this session sees them: confirmed or waiting, set up
--- by THIS session or another one (when, with which browser). For the /mfa page and My profile.
+-- by THIS session or another one (when, with which browser). For the /mfa page and My profile. An app not
+-- recorded yet (its set-up e-mail could not be asked for) is "here" for the Auth session that passed its code
+-- ("send the e-mail again" then records it).
 create or replace function private.my_mfa_apps()
 returns table (factor_id uuid, confirmed boolean, here boolean, set_up_at timestamptz, user_agent text)
 language plpgsql stable security definer
@@ -528,7 +530,10 @@ begin
     return;
   end if;
   return query
-    select f.id, k.confirmed_at is not null, coalesce(k.session_id = v_session, false),
+    select f.id, k.confirmed_at is not null,
+           case when k.factor_id is not null then k.session_id = v_session
+                else exists (select 1 from private.auth_session_validity s
+                             where s.id = v_session and s.user_id = v_user and s.factor_id = f.id) end,
            coalesce(k.created_at, f.created_at), k.setup_user_agent
     from private.auth_mfa_factor f
     left join private.mfa_factor_confirmations k on k.factor_id = f.id and k.user_id = f.user_id

@@ -358,6 +358,33 @@ begin
 end $$;
 rollback;
 
+-- An app whose set-up e-mail could not be asked for (not recorded): the Auth session that passed its code sees
+-- it "here" and "send again" records it; another sign-in sees it as added elsewhere.
+begin;
+delete from private.account_mail_requests where user_id = '00000000-0000-4000-8000-000000000c08';
+delete from private.mfa_factor_confirmations where factor_id = '20000000-0000-4000-8000-000000000c08';
+set local session authorization app_server;
+set local role authenticated;
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c08', '10000000-0000-4000-8000-000000000c82',
+                                          'a0000000-0000-4000-8000-000000000001'));
+do $$
+begin
+  perform tests.assert((select not here and not confirmed and user_agent is null from private.my_mfa_apps()),
+    'not recorded: another sign-in sees it as added elsewhere (no browser known)');
+end $$;
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c08', '10000000-0000-4000-8000-000000000c81',
+                                          'a0000000-0000-4000-8000-000000000001') || tests.fresh_code());
+do $$
+begin
+  perform tests.assert((select here and not confirmed from private.my_mfa_apps()),
+    'not recorded: the session that passed its code sees it here');
+  perform tests.assert_eq(private.request_mfa_factor_mail('20000000-0000-4000-8000-000000000c08'), 'queued',
+    '"send again" records it and asks for the e-mail');
+  perform tests.assert((select here and set_up_at > now() - interval '1 minute' and user_agent like '%Firefox/131.0'
+                        from private.my_mfa_apps()), 'recorded with its browser');
+end $$;
+rollback;
+
 -- An expired code, five wrong tries, and "send again" from the session that set the app up.
 begin;
 update private.mfa_factor_confirmations

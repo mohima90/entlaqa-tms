@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { DOWNLOAD_EXTENSIONS } from '../packages/platform-files/src/purposes.ts';
 
 /**
  * Supabase Auth's e-mail templates (FR-IAM-13, T-M2-08; docs/engineering/password-reset.md). Since T-M2-17
@@ -152,10 +153,31 @@ describe('Auth e-mail templates (T-M2-08)', () => {
       /location \^~ \/storage\/v1\/object\/sign\/ \{\n\s+error_log \S+ crit;\n\s+limit_except GET \{ deny all; \}/,
     );
     expect(published).not.toMatch(/limit_except[^{]*POST/);
-    // Downloads only as the app makes the link: token, then a name with one of our types' extensions.
-    expect(published).toContain(
-      'if ($args !~* "^token=[A-Za-z0-9._-]+&download=[^&]+\\.(csv|xlsx|png|jpe?g|webp|pdf)$") { return 403; }',
-    );
+    // Downloads only as the app makes the link: token, then a name with one of our types' extensions —
+    // matched case-sensitively (Storage ignores `DOWNLOAD=`), only the extension's case is free.
+    const rule = /if \(\$args (!~\*?) "(.*)"\) \{ return 403; \}/.exec(published);
+    expect(rule?.[1]).toBe('!~');
+    const shape = new RegExp((rule?.[2] ?? '').replace('(?i:', '(?:'));
+    const ok = 'token=a.b-c_d&download=%D9%85%20x.csv';
+    expect(shape.test(ok)).toBe(true);
+    for (const refused of [
+      'token=a.b&DOWNLOAD=x.csv',
+      'Token=a.b&download=x.csv',
+      'token=a.b&download=x.hta',
+      'token=a.b&download=x.csv&download=y.js',
+      'token=a.b',
+      'download=x.csv&token=a.b',
+    ]) {
+      expect(shape.test(refused), refused).toBe(false);
+    }
+    // Its extensions are exactly platform-files' DOWNLOAD_EXTENSIONS.
+    const alternatives = /\(\?i:([^)]*)\)\$$/.exec(rule?.[2] ?? '')?.[1] ?? '';
+    const gatewayExtensions = alternatives
+      .split('|')
+      .flatMap((alt) => (alt === 'jpe?g' ? ['jpg', 'jpeg'] : [alt]))
+      .map((ext) => `.${ext}`)
+      .sort();
+    expect(gatewayExtensions).toEqual([...DOWNLOAD_EXTENSIONS]);
     // Creating signed URLs: port 8445, the app's network alone, the two sign POSTs and nothing else.
     const signing = gateway.slice(
       gateway.indexOf('listen 8445 ssl;'),

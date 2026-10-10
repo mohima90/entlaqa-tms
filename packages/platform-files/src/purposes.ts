@@ -97,6 +97,15 @@ export const EXTENSION_BY_TYPE: Readonly<Record<string, string>> = {
   'application/pdf': '.pdf',
 };
 
+/**
+ * Every extension a download name can end in (downloadName): the canonical one of each type, and every
+ * other spelling that names one of those types (`.jpeg`), lower-case. The self-hosted gateway serves
+ * download links only with these (infra/docker/gateway/nginx.conf; a config test keeps both equal).
+ */
+export const DOWNLOAD_EXTENSIONS: readonly string[] = Object.keys(BY_EXTENSION)
+  .filter((extension) => Object.hasOwn(EXTENSION_BY_TYPE, BY_EXTENSION[extension] ?? ''))
+  .sort();
+
 /** The name's extension, lower-case with the dot ('' when it has none). */
 export function extensionOf(name: string): string {
   const dot = name.lastIndexOf('.');

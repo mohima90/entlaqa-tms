@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  DOWNLOAD_EXTENSIONS,
   EXTENSION_BY_TYPE,
   FILE_PURPOSES,
   XLSX,
@@ -46,6 +47,19 @@ describe('file purposes', () => {
     }
     expect(Object.keys(EXTENSION_BY_TYPE)).not.toContain('text/html');
     expect(extensionForType('constructor')).toBeNull();
+    // What a download name can end in: every canonical extension, and other spellings of those types.
+    expect(DOWNLOAD_EXTENSIONS).toEqual([
+      '.csv',
+      '.jpeg',
+      '.jpg',
+      '.pdf',
+      '.png',
+      '.webp',
+      '.xlsx',
+    ]);
+    for (const extension of Object.values(EXTENSION_BY_TYPE)) {
+      expect(DOWNLOAD_EXTENSIONS).toContain(extension);
+    }
   });
 });
 

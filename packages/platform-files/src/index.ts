@@ -46,6 +46,7 @@ export {
   type PurposeDefinition,
   type RetentionClass,
   type UploadPurpose,
+  DOWNLOAD_EXTENSIONS,
   EXTENSION_BY_TYPE,
   XLSX,
   declaredTypeFor,

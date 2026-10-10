@@ -190,10 +190,16 @@ files_journey() {
   # it — never a name with another extension (a clean CSV saved as .hta), a second name, or no attachment.
   for altered in "https://localhost:8443/storage/v1${signed}&download=report.hta" \
     "https://localhost:8443/storage/v1${signed}&download=report.csv&download=report.js" \
+    "https://localhost:8443/storage/v1${signed}&DOWNLOAD=report.csv" \
     "https://localhost:8443/storage/v1${signed}"; do
     [[ "$(curl -s -o /dev/null -w '%{http_code}' --cacert .secrets/ca.crt "$altered")" == "403" ]] ||
       { echo "smoke: files: the gateway served a download link the app does not make" >&2; return 1; }
   done
+  # The extension's case is free (an uploader's `.CSV` is kept): still an attachment.
+  curl -sf --cacert .secrets/ca.crt -D "$work/headers-upper" -o /dev/null \
+    "https://localhost:8443/storage/v1${signed}&download=report.CSV" &&
+    grep -qi '^content-disposition: attachment' "$work/headers-upper" ||
+    { echo "smoke: files: a download named with an upper-case extension was not served as an attachment" >&2; return 1; }
 
   echo "smoke: files — Storage refuses what the policies do not allow"
   for path in "/object/upload/sign/imports/$key" \

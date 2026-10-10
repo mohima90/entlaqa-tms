@@ -13,7 +13,7 @@
 | **Inputs** | BRD v2.1 §4.2, §6.2 (FR-IAM-01…15, BR-IAM-1…3), §10.4, §12.1, App. B; Development Plan v1.1 §4.2, §6.4, §8, App. D, App. F (J1–J3, J13); ADR 0002 rev. 2, ADR 0003 rev. 2, ADR 0006, ADR 0011 §4; `docs/architecture/r1-data-model.md` §2.3; code at commit of 3 Oct 2026 (`packages/platform-identity`, `packages/platform-rbac`, `apps/suite/src/auth`, `supabase/migrations`, `supabase/config.toml`); `docs/engineering/staging-sign-in.md` (Known gaps); `STATUS.md` §3 |
 | **Parent** | [TM-0001](TM-0001-platform.md) — this model **inherits every TM-0001 mitigation** and cites its IDs (T-nn, F-nn, EP-nn, TB-n, A-nn, RR-nn) instead of repeating them |
 | **Related** | Sibling M2 models [TM-0002](TM-0002-tenancy-onboarding.md) (TEN) · [TM-0004](TM-0004-people-directory.md) (PEO) · [TM-0005](TM-0005-audit-consent.md) (AUD) · [TM-0006](TM-0006-shell-notifications.md) (SHELL) · [`../risk-register.md`](../risk-register.md) · [`../asvs-l2-mapping.md`](../asvs-l2-mapping.md) · [`../secure-coding-standard.md`](../secure-coding-standard.md) |
-| **ID scheme** | Threats `T-IAM-NN` · findings `F-IAM-NN` · PO decisions `D-IAM-NN` · abuse cases `AB-IAM-NN` · residual risks `RR-IAM-NN` · entry points `IE-NN` · register rows `R-NN` (common scheme of TM-0002…TM-0006; TM-0001 uses unprefixed `T-NN`/`F-NN`). BRD features are cited as `FR-IAM-NN`; feature and requirement IDs are never used as threat IDs |
+| **ID scheme** | Threats `T-IAM-NN` · findings `F-IAM-NN` · PO decisions `D-IAM-NN` · abuse cases `AB-IAM-NN` · residual risks `RR-IAM-NN` (and `RR-FIL-NN` for the files service behind the import, T-M2-18, until it has its own model) · entry points `IE-NN` · register rows `R-NN` (common scheme of TM-0002…TM-0006; TM-0001 uses unprefixed `T-NN`/`F-NN`). BRD features are cited as `FR-IAM-NN`; feature and requirement IDs are never used as threat IDs |
 
 ---
 
@@ -336,6 +336,7 @@ Each abuse case becomes at least one negative test in the epic's stories (Plan �
 | RR-IAM-05 | Access token usable ≤ 15 min on direct Supabase surfaces after deactivation (= TM-0001 RR-06) | JWT design | Tech Lead | Short TTL; DB validation on server paths (in place); service-role allow-list before Storage/Realtime use |
 | RR-IAM-06 | An HR Manager acting within permission can widen scopes through org data; detection only via audit | Scopes follow the org chart by design | PO | Audit + periodic access review report per tenant |
 | RR-IAM-07 | A multi-tenant login has one password and one factor set; a stricter tenant's policy applies only when the login acts there | Global identities (ADR-0003 §1) | Tech Lead | Strictest-policy rule at password set (D-IAM-04); forced change on entering a stricter tenant |
+| RR-FIL-01 | **Hosted Supabase only:** a user holding a valid download grant can call Storage's `POST /storage/v1/object/sign/<bucket>/<key>` directly with their own access token, inside the grant's window (60 s for documents, 300 s for media), and choose `expiresIn` — a signed URL of any lifetime for that one file (import files, error reports, photos: T-IAM-30). It keeps working until the object is removed (retention, deletion). Hosted Storage does not sign a link's `download` parameter either: its holder can change the name the file is saved under (self-hosted, the gateway serves only the link as the app makes it) | Hosted Storage's sign endpoint takes the lifetime from the caller and cannot be fronted by our gateway; the storage policy can check the grant but not the requested lifetime. Self-hosted it is closed: the gateway serves URL creation only on an internal port for the app's network (T-M2-18 security review M2) | Tech Lead; PO accepts | Limited to users the owning module authorized for that file and owner entity, within ≤ 5 minutes of the grant (ADR 0006 §4); grants audited for personal-data purposes (`platform.file.download_granted`); the link dies with the object (import files purged after 7 days, deleted files per retention); revisit if Supabase caps signed-URL lifetimes or when downloads move behind the app. Register R-58 |
 
 ---
 
@@ -354,6 +355,7 @@ Added to the [risk register](../risk-register.md) §3 on 3 Oct 2026 (v0.2), toge
 | R-43 | Audit-trail completeness gaps (authentication failures as security events) | T-IAM-25, 26 |
 | R-47 | Social engineering of tenant recovery paths (tenant without administrator) | T-IAM-38 |
 | R-55 | Bidi-control and confusable spoofing (display names) | T-IAM-15 |
+| R-58 | Signed download URLs of any lifetime on hosted Supabase within a download grant's window (added 10 Oct 2026, T-M2-18 security review M2) | T-IAM-30, RR-FIL-01 |
 
 Existing rows updated: **R-02** → *Treating* (TM-0001 F-01 claim validation implemented and tested, §1.3; credential controls still open) · **R-04** (MFA off by default since 1 Oct 2026; T-IAM-41, D-IAM-01) · **R-15** (T-IAM-27, T-IAM-33) · **R-28** (T-IAM-23).
 

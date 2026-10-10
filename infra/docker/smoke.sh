@@ -773,9 +773,13 @@ rm -f "$SECURITY_KEYS_FILE"
 [[ "$(q "select count(*) from platform.audit_events where action = 'platform.auth.mfa_removed' and actor_user_id = '$MANAGER_ID' and data ->> 'via' = 'email_link'")" == "1" &&
    "$(q "select count(*) from platform.audit_events where action = 'platform.auth.mfa_removed' and actor_user_id = '$MANAGER_ID' and data ->> 'via' = 'notice'")" == "1" ]] ||
   { echo "smoke: expected the removals by the e-mail's \"not you\" link and by the \"added from another sign-in\" notice in the audit log" >&2; exit 1; }
-# Unconfirmed apps: none left behind (the attacker's were removed; re-review N2 purges any after 72 hours).
-[[ "$(q "select count(*) from auth.mfa_factors f left join private.mfa_factor_confirmations k on k.factor_id = f.id where f.status = 'verified' and k.confirmed_at is null")" == "0" ]] ||
-  { echo "smoke: an authenticator app nobody confirmed is still there" >&2; exit 1; }
+# Unconfirmed apps of the journey's accounts: none left behind (the attacker's were removed). (The Auth
+# parity account's app, set up through Auth's API outside the web app, is never recorded: the worker
+# removes such apps after 72 hours — re-review N2, pgTAP 68.)
+UNCONFIRMED="$(q "select coalesce(string_agg(case f.user_id when '$USER_ID' then 'admin' else 'member' end || ':' || case when k.factor_id is null then 'unrecorded' else 'waiting' end, ',' order by f.created_at), '') from auth.mfa_factors f left join private.mfa_factor_confirmations k on k.factor_id = f.id where f.status = 'verified' and k.confirmed_at is null and f.user_id in ('$USER_ID', '$MANAGER_ID')")"
+[[ -z "$UNCONFIRMED" ]] ||
+  { echo "smoke: an authenticator app nobody confirmed is still there ($UNCONFIRMED)" >&2; exit 1; }
+unset UNCONFIRMED
 [[ "$(q "select count(*) from platform.audit_events where action = 'platform.user.mfa_reset' and actor_user_id = '$USER_ID' and entity_id = '5eed1000-0000-4000-8000-000000000003'")" == "2" ]] ||
   { echo "smoke: expected the Organization Admin's two resets of the member's app in the audit log" >&2; exit 1; }
 [[ "$(q "select count(*) from platform.audit_events where action = 'platform.auth.signed_in' and data ->> 'method' = 'password+totp' and data ->> 'aal' = 'aal2'")" -ge "4" ]] ||

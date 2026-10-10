@@ -25,6 +25,7 @@ import type {
 } from '@jadarat/platform-db';
 import type { LogFields } from '@jadarat/platform-observability';
 import { AuthServiceError, recordAudit, sessionTokens } from './auth-flow';
+import type { CodeCheckLimit } from './auth-limits';
 import { type SupabaseAuthLike, verifyClaims, verifyClaimsStrict } from './verify-claims';
 
 /**
@@ -50,11 +51,12 @@ import { type SupabaseAuthLike, verifyClaims, verifyClaimsStrict } from './verif
  * The organization's MFA policy is applied by the database (private.session_access): a session it refuses
  * reads nothing until it passes here. Secrets and codes are never logged or audited.
  *
- * Attempt limits (review M3): Auth limits verifications per IP (all ours come from the app server); the
- * sign-in limiter (T-M2-11, INTEGRATION POINT) wraps verifyTotpCodeAction with per-account limits. Each
- * refused code is logged with a stable action and error code (no personal data). The e-mailed code dies
- * after 5 wrong tries, and 15 wrong codes on the account within 24 hours remove its waiting apps (the
- * database; final re-review L2).
+ * Attempt limits (review M3): Auth limits verifications per IP (all ours come from the app server), so every
+ * code check here — an authenticator code and the e-mailed set-up code — goes through `limitCodeCheck`
+ * (T-M2-11's shared limiter: 5 wrong codes per account, consecutive, and 100 per client per 15 minutes;
+ * wrong codes only; fail closed — TM-0003 T-IAM-12). Each refused code is logged with a stable action and
+ * error code (no personal data). The e-mailed code also dies after 5 wrong tries, and 15 wrong codes on the
+ * account within 24 hours remove its waiting apps (the database; final re-review L2).
  */
 export const MfaErrors = defineErrorCodes({
   /** The code is wrong or expired (one message for both). */
@@ -90,6 +92,11 @@ export const MFA_CONFIRM_ACTION = 'platform.auth.mfa_confirm';
 
 /** The stable name of a refused authenticator code in the logs (review M3; T-M2-11 counts them). */
 export const MFA_VERIFY_ACTION = 'platform.auth.mfa_verify';
+
+/** A wrong (or expired) authenticator code — what the code limiter counts as a failure (T-M2-11). */
+const isWrongAppCode = (error: AppError) => error.code === MfaErrors.MFA_CODE_INVALID.code;
+/** A wrong e-mailed set-up code (the database also counts it). */
+const isWrongEmailCode = (error: AppError) => error.code === MfaErrors.MFA_EMAIL_CODE_INVALID.code;
 
 interface AuthErrorLike {
   readonly status?: number | undefined;
@@ -157,6 +164,11 @@ export interface MfaDeps {
   /** Once a code let the session act in its organization: its device limit (review L1). */
   readonly applyDeviceLimit: (tx: UserTx) => Promise<number>;
   readonly logWarning: (message: string, fields: LogFields) => void;
+  /**
+   * Limits each code check per account and per client (T-M2-11 `withCodeAttemptLimit` bound to the
+   * request's client; NO_CODE_CHECKS for flows that check no code — any use fails closed).
+   */
+  readonly limitCodeCheck: CodeCheckLimit;
 }
 
 /** The authenticator-app label (issuer) shown in the app next to the account's e-mail. */
@@ -335,11 +347,14 @@ export async function verifyTotpCode(
     factorId = confirmed.factorId;
   }
   const wasRefused = enrolled ? false : await wasRefusedBefore(deps, claims.value);
-  const { data, error } = await supabase.auth.mfa.challengeAndVerify({
-    factorId,
-    code: input.code,
-  });
-  if (error) {
+  // Auth's check of the code, limited per account and per client (T-M2-11): a limited check never asks
+  // Auth; a wrong code stays counted, a right one ends the run of wrong codes.
+  const check = async (): Promise<Result<unknown, AppError>> => {
+    const { data, error } = await supabase.auth.mfa.challengeAndVerify({
+      factorId,
+      code: input.code,
+    });
+    if (!error) return ok(data);
     if (
       error.code === 'mfa_verification_failed' ||
       error.code === 'mfa_challenge_expired' ||
@@ -356,9 +371,11 @@ export async function verifyTotpCode(
     }
     if (error.code === 'mfa_factor_not_found') return err(appError(MfaErrors.MFA_SETUP_EXPIRED));
     return authFailure(error, appError(MfaErrors.MFA_CODE_INVALID));
-  }
+  };
+  const verified = await deps.limitCodeCheck(claims.value.sub, check, isWrongAppCode);
+  if (!verified.ok) return verified;
   // Auth answered with the upgraded session (cookies rewritten): continue with ITS claims (aal2).
-  const tokens = sessionTokens({ session: data });
+  const tokens = sessionTokens({ session: verified.value });
   const upgraded = await verifyClaims(supabase, tokens?.accessToken);
   if (!upgraded.ok) return ok({ enrolled });
   const session = upgraded.value;
@@ -417,10 +434,13 @@ export async function confirmMfaSetup(
   const app = await waitingHere(deps, session);
   if (!app.ok) return app;
   const wasRefused = await wasRefusedBefore(deps, session);
-  const outcome = await deps.withUserTx(session, (tx) =>
-    deps.confirmMfaSetup(tx, app.value.factorId, input.code),
-  );
-  if (outcome !== 'confirmed') {
+  // The database's check of the code (5 tries per code, 15 wrong codes a day per account), also limited
+  // per account and per client on the shared limiter like every code (T-M2-11).
+  const check = async (): Promise<Result<null, AppError>> => {
+    const outcome = await deps.withUserTx(session, (tx) =>
+      deps.confirmMfaSetup(tx, app.value.factorId, input.code),
+    );
+    if (outcome === 'confirmed') return ok(null);
     const error =
       outcome === 'invalid'
         ? MfaErrors.MFA_EMAIL_CODE_INVALID
@@ -438,7 +458,9 @@ export async function confirmMfaSetup(
       ...(hasTenant(session) ? { tenantId: session.tenant_id } : {}),
     });
     return err(appError(error));
-  }
+  };
+  const confirmed = await deps.limitCodeCheck(session.sub, check, isWrongEmailCode);
+  if (!confirmed.ok) return confirmed;
   await completeSignIn(deps, session, wasRefused, { auditCode: false });
   return ok({ confirmed: true });
 }

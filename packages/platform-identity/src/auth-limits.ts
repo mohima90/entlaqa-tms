@@ -855,6 +855,26 @@ export async function withCodeAttemptLimit<T>(
   return result;
 }
 
+/**
+ * One code check of a flow, limited per account and per client: `withCodeAttemptLimit` bound to the
+ * request's client by the Next.js adapter (auth-next.ts). Every flow that checks an authenticator code —
+ * or the e-mailed set-up code — takes one (T-M2-10 × T-M2-11; TM-0003 T-IAM-12): the code at sign-in and
+ * before a sensitive action, the first code of a set-up, the e-mailed set-up code and the code on the
+ * password-reset page. `isWrongCode` tells a wrong code from other refusals (logged differently).
+ */
+export type CodeCheckLimit = <T>(
+  userId: string,
+  verify: () => Promise<Result<T, AppError>>,
+  isWrongCode: (error: AppError) => boolean,
+) => Promise<Result<T, AppError>>;
+
+/**
+ * For flows that check no code: any use is a programming error and fails closed (a new code path must bind
+ * the request's client), like NO_SIGN_IN_GUARD.
+ */
+export const NO_CODE_CHECKS: CodeCheckLimit = () =>
+  Promise.reject(new RateLimiterUnavailableError());
+
 // ----- My profile: current-password check -----
 
 /** Counts a current-password check for the user; false = limited. Throws when the limiter fails. */

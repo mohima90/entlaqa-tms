@@ -907,7 +907,7 @@
     "lockout": {
       "title": "Account lockout",
       "intro": "Protects against password guessing.",
-      "pending": "Takes effect with the next update",
+      "scope": "Applies to your organization's members when they sign in at your organization's own address; on the shared sign-in page the platform default applies to everyone (5 attempts, 15 minutes). Browsers a member chose to remember can still sign in while sign-in is paused, and you can unlock a member from their profile.",
       "threshold": "Lock after consecutive failed attempts",
       "thresholdHint": "3 to 5 attempts — never more lenient than the platform default (5 attempts).",
       "thresholdUnit": "attempts",

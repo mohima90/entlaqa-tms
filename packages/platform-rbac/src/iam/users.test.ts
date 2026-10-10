@@ -17,6 +17,8 @@ const db = vi.hoisted(() => ({
   mayManagePerson: vi.fn(),
   getMemberLifecycleTarget: vi.fn(),
   memberSignInLock: vi.fn(),
+  // The organization's security policy (T-M2-10): none — the sign-in lock is measured against 5.
+  getSecurityPolicy: vi.fn(() => Promise.resolve(null)),
 }));
 vi.mock('@jadarat/platform-db', () => db);
 

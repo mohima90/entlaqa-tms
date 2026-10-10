@@ -25,7 +25,8 @@ import { freshCode, wrongCode } from './totp';
  *    removes it — the other sign-in's session ends; the e-mail's "not you? remove this app" link does the
  *    same for every session; the owner then sets up their own app with the code;
  *  - the Organization Admin changes the policy only with a code (AAL2, PO decision D-IAM-01); lockout
- *    limited to the platform default or stricter, applied with the next update (badge);
+ *    limited to the platform default or stricter, enforced by the sign-in limiter (T-M2-11) — the section
+ *    says where (the organization's own address; the platform default on the shared sign-in page);
  *  - an organization that requires MFA makes a member set an app up, then asks for its code at sign-in;
  *  - a new password shorter than the strictest rule of the member's organizations is refused;
  *  - a user manager ends a member's sign-in sessions; the member must sign in again;
@@ -50,6 +51,11 @@ const MONA = '5eed1000-0000-4000-8000-000000000003';
 const KHALID = '5eed1000-0000-4000-8000-000000000002';
 /** At least 12 characters (the platform minimum), shorter than the 16 this spec sets. */
 const SHORTER_PASSWORD = 'shorter-pass14';
+/** Where the lockout settings apply (enforced by T-M2-11; TM-0003 D-IAM-04). */
+const EN_LOCKOUT_SCOPE =
+  "Applies to your organization's members when they sign in at your organization's own address; on the shared sign-in page the platform default applies to everyone (5 attempts, 15 minutes). Browsers a member chose to remember can still sign in while sign-in is paused, and you can unlock a member from their profile.";
+const AR_LOCKOUT_SCOPE =
+  'يسري على أعضاء منشأتك حين يسجّلون الدخول من عنوان منشأتك الخاص؛ أما في صفحة الدخول المشتركة فيسري إعداد المنصة على الجميع (5 محاولات و15 دقيقة). وتبقى المتصفحات التي اختار العضو تذكّرها قادرة على الدخول أثناء الإيقاف، ويمكنك إلغاء الإيقاف من ملف العضو.';
 
 /** Set-up keys of the apps this spec registers (kept in memory only, never logged). */
 let adminKey = '';
@@ -330,10 +336,10 @@ test.describe('Security policy, MFA and sign-in sessions', () => {
     await expect(page).toHaveURL(/\/en\/suite\/admin\/security$/);
     await expect(page.getByTestId('security-step-up')).toHaveCount(0);
 
-    // Lockout: the platform default or stricter (review L5), applied by the sign-in limiter (T-M2-11).
-    await expect(page.getByTestId('security-lockout-pending')).toHaveText(
-      'Takes effect with the next update',
-    );
+    // Lockout: the platform default or stricter (review L5), enforced by the sign-in limiter (T-M2-11):
+    // no "next update" badge any more; the section says where it applies.
+    await expect(page.getByTestId('security-lockout-pending')).toHaveCount(0);
+    await expect(page.getByTestId('security-lockout-note')).toHaveText(EN_LOCKOUT_SCOPE);
     await page.getByTestId('security-lockoutThreshold').fill('10');
     await page.getByTestId('security-lockoutMinutes').fill('5');
     await page.getByTestId('security-save').click();
@@ -369,7 +375,8 @@ test.describe('Security policy, MFA and sign-in sessions', () => {
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('الأمان');
     await expect(page.getByTestId('security-passwordMinLength')).toHaveValue('16');
-    await expect(page.getByTestId('security-lockout-pending')).toHaveText('يسري مع التحديث القادم');
+    await expect(page.getByTestId('security-lockout-pending')).toHaveCount(0);
+    await expect(page.getByTestId('security-lockout-note')).toHaveText(AR_LOCKOUT_SCOPE);
     await expectNoSeriousA11yViolations(page);
   });
 

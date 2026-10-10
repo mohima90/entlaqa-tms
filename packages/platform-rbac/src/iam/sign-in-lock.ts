@@ -2,6 +2,7 @@ import { appError, err, ok } from '@jadarat/platform-core';
 import {
   type MemberSignInLock,
   type UserTx,
+  getSecurityPolicy,
   memberSignInLock,
   unlockMemberSignIn,
 } from '@jadarat/platform-db';
@@ -33,9 +34,7 @@ export type AccountLockBudget = (tx: UserTx, tenantId: string) => Promise<number
  * one function sign-in uses too (clamped to the platform default or stricter). The member is an active
  * member there (the database checks it), so the organization's policy applies. `lockoutPolicyIn` reads that
  * policy IN the admin's transaction — never in another transaction of the pool (security review T-M2-11
- * MEDIUM 2). INTEGRATION (T-M2-10): `memberLockBudget(async (tx) => policyOf(await getSecurityPolicy(tx)))`,
- * passed to both `userProfileQueryDefinition` and `unlockSignInActionDefinition`; the default (no policy)
- * is the platform's 5.
+ * MEDIUM 2). Without a policy, the platform's 5.
  */
 export function memberLockBudget(
   lockoutPolicyIn: (tx: UserTx, tenantId: string) => Promise<LockoutPolicy | null>,
@@ -50,7 +49,25 @@ export function memberLockBudget(
     ).max;
 }
 
-const defaultBudget: AccountLockBudget = memberLockBudget(() => Promise.resolve(null));
+/**
+ * The organization's lockout settings (T-M2-10, platform.security_policies — screen 6), read in the admin's
+ * own transaction: RLS shows only the session's organization, which is `tenantId` (the actor's).
+ */
+async function lockoutPolicyInTransaction(tx: UserTx): Promise<LockoutPolicy | null> {
+  const policy = await getSecurityPolicy(tx);
+  return policy ? { threshold: policy.lockoutThreshold, minutes: policy.lockoutMinutes } : null;
+}
+
+/**
+ * THE budget of the profile's lock state and of the unlock (T-M2-10 × T-M2-11): the organization's own
+ * lockout policy, as sign-in applies it to the organization's members on its host (TM-0003 D-IAM-04).
+ * Both `userProfileQueryDefinition` and `unlockSignInActionDefinition` use it unless a test passes another.
+ */
+export const organizationMemberLockBudget: AccountLockBudget = memberLockBudget(
+  lockoutPolicyInTransaction,
+);
+
+const defaultBudget: AccountLockBudget = organizationMemberLockBudget;
 
 /**
  * For the profile page (inside its query): the member's lock state when the viewer may unlock it

@@ -6,9 +6,18 @@ import type { ActionRuntime } from '../define-action';
 import { createDefineAction } from '../define-action';
 import { grantsForAssignments } from '../role-grants';
 import type { SystemRoleCode } from '../system-roles';
-import { memberLockBudget, unlockSignInActionDefinition } from './sign-in-lock';
+import {
+  memberLockBudget,
+  organizationMemberLockBudget,
+  signInLockForProfile,
+  unlockSignInActionDefinition,
+} from './sign-in-lock';
 
-const db = vi.hoisted(() => ({ memberSignInLock: vi.fn(), unlockMemberSignIn: vi.fn() }));
+const db = vi.hoisted(() => ({
+  memberSignInLock: vi.fn(),
+  unlockMemberSignIn: vi.fn(),
+  getSecurityPolicy: vi.fn(),
+}));
 vi.mock('@jadarat/platform-db', () => db);
 
 const TENANT = '22222222-2222-4222-8222-222222222222';
@@ -54,6 +63,8 @@ function runtime(roles: SystemRoleCode[]) {
 beforeEach(() => {
   vi.clearAllMocks();
   db.unlockMemberSignIn.mockResolvedValue('unlocked');
+  // The organization's security policy (T-M2-10): none here unless a test sets one.
+  db.getSecurityPolicy.mockResolvedValue(null);
 });
 
 describe('unlock sign-in (T-M2-11, PO decision 9 Oct 2026)', () => {
@@ -63,8 +74,9 @@ describe('unlock sign-in (T-M2-11, PO decision 9 Oct 2026)', () => {
       personId: MEMBER,
     });
     expect(result).toEqual(ok({ outcome: 'unlocked' }));
-    // Measured against the account budget sign-in applies (the platform's 5 by default).
+    // Measured against the account budget sign-in applies (the platform's 5 without a policy).
     expect(db.unlockMemberSignIn).toHaveBeenCalledWith(TX, MEMBER, 5);
+    expect(db.getSecurityPolicy).toHaveBeenCalledWith(TX);
     expect(writeAudit).toHaveBeenCalledWith(TX, expect.anything(), {
       action: 'platform.user.sign_in_unlocked',
       entityType: 'person',
@@ -107,7 +119,7 @@ describe('unlock sign-in (T-M2-11, PO decision 9 Oct 2026)', () => {
     expect(
       await memberLockBudget(() => Promise.resolve({ threshold: 9, minutes: 5 }))(TX, TENANT),
     ).toBe(5);
-    // No policy (the default until T-M2-10 is wired): the platform's 5.
+    // No policy: the platform's 5.
     expect(await memberLockBudget(() => Promise.resolve(null))(TX, TENANT)).toBe(5);
     // Wired into the unlock: the database gets that budget.
     const { rt } = runtime(['tenant_admin']);
@@ -115,6 +127,21 @@ describe('unlock sign-in (T-M2-11, PO decision 9 Oct 2026)', () => {
       personId: MEMBER,
     });
     expect(db.unlockMemberSignIn).toHaveBeenLastCalledWith(TX, MEMBER, 3);
+  });
+
+  it("by default the organization's own lockout policy (T-M2-10), read in the admin's transaction — the profile and the unlock agree", async () => {
+    db.getSecurityPolicy.mockResolvedValue({ lockoutThreshold: 3, lockoutMinutes: 30 });
+    expect(await organizationMemberLockBudget(TX, TENANT)).toBe(3);
+    expect(db.getSecurityPolicy).toHaveBeenLastCalledWith(TX);
+    const { rt } = runtime(['tenant_admin']);
+    await createDefineAction(rt)(unlockSignInActionDefinition())({ personId: MEMBER });
+    expect(db.unlockMemberSignIn).toHaveBeenLastCalledWith(TX, MEMBER, 3);
+    db.memberSignInLock.mockResolvedValue({ locked: true, retryAfterSeconds: 60 });
+    await signInLockForProfile(TX, MEMBER, { canUnlock: true, hasAccount: true, tenantId: TENANT });
+    expect(db.memberSignInLock).toHaveBeenLastCalledWith(TX, MEMBER, 3);
+    // Never laxer than the platform default, as at sign-in.
+    db.getSecurityPolicy.mockResolvedValue({ lockoutThreshold: 9, lockoutMinutes: 5 });
+    expect(await organizationMemberLockBudget(TX, TENANT)).toBe(5);
   });
 
   it('nobody else: HR Manager and learner are refused; a person out of reach is not found', async () => {

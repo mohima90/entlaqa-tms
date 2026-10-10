@@ -9,6 +9,7 @@ import {
 } from '@jadarat/platform-core';
 import type { LogFields } from '@jadarat/platform-observability';
 import { AuthServiceError, sessionTokens } from './auth-flow';
+import type { CodeCheckLimit } from './auth-limits';
 
 /**
  * Forgot / reset password (FR-IAM-13, NFR-SEC-01; T-M2-08, screens 10 and 11) on Supabase Auth's
@@ -195,6 +196,11 @@ export interface PasswordResetDeps {
    * recovery session's access token; null when unknown (the platform's 12 applies, Auth enforces it).
    */
   readonly passwordMinLength?: (accessToken: string) => Promise<number | null>;
+  /**
+   * The authenticator code's check for an account with an app (T-M2-10), limited per account and per
+   * client like every code (T-M2-11 `withCodeAttemptLimit`, auth-limits.ts CodeCheckLimit).
+   */
+  readonly limitCodeCheck: CodeCheckLimit;
 }
 
 /**
@@ -305,28 +311,39 @@ async function secondFactor(
     });
     return err(appError(PasswordResetErrors.PASSWORD_RESET_CODE_REQUIRED));
   }
-  let verified: Awaited<ReturnType<RecoveryClientLike['auth']['mfa']['challengeAndVerify']>>;
+  const appId = factorId;
+  // Auth's check of the code, limited per account and per client like every authenticator code (T-M2-11;
+  // TM-0003 T-IAM-12): a limited check never asks Auth. The link is spent by now either way.
+  const check = async (): Promise<Result<null, AppError>> => {
+    const verified = await client.auth.mfa.challengeAndVerify({ factorId: appId, code });
+    if (!verified.error) return ok(null);
+    const { status } = verified.error;
+    if (status === 429 || verified.error.code === 'over_request_rate_limit') {
+      return err(appError('RATE_LIMITED'));
+    }
+    if (status === undefined || status === 0 || status >= 500) throw new AuthServiceError(status);
+    // Logged without the code (review M3); the limiter counts it.
+    deps.logWarning('password reset: authenticator code refused', {
+      action: COMPLETE_ACTION,
+      outcome: 'failure',
+      errorCode: PasswordResetErrors.PASSWORD_RESET_CODE_INVALID.code,
+    });
+    return err(appError(PasswordResetErrors.PASSWORD_RESET_CODE_INVALID));
+  };
+  let checked: Result<null, AppError>;
   try {
-    verified = await client.auth.mfa.challengeAndVerify({ factorId, code });
+    checked = await deps.limitCodeCheck(userId, check, isWrongResetCode);
   } catch (error) {
     await endRecoverySession(deps, client, 'local', userId);
     throw error;
   }
-  if (!verified.error) return ok(null);
-  await endRecoverySession(deps, client, 'local', userId);
-  const { status } = verified.error;
-  if (status === 429 || verified.error.code === 'over_request_rate_limit') {
-    return err(appError('RATE_LIMITED'));
-  }
-  if (status === undefined || status === 0 || status >= 500) throw new AuthServiceError(status);
-  // Logged without the code (review M3: T-M2-11 counts refused codes).
-  deps.logWarning('password reset: authenticator code refused', {
-    action: COMPLETE_ACTION,
-    outcome: 'failure',
-    errorCode: PasswordResetErrors.PASSWORD_RESET_CODE_INVALID.code,
-  });
-  return err(appError(PasswordResetErrors.PASSWORD_RESET_CODE_INVALID));
+  if (!checked.ok) await endRecoverySession(deps, client, 'local', userId);
+  return checked;
 }
+
+/** A wrong authenticator code on the reset page — what the code limiter counts as a failure. */
+const isWrongResetCode = (error: AppError) =>
+  error.code === PasswordResetErrors.PASSWORD_RESET_CODE_INVALID.code;
 
 function linkInvalid(): Result<never, AppError> {
   return err(appError(PasswordResetErrors.PASSWORD_RESET_LINK_INVALID));

@@ -662,10 +662,12 @@ describe('account mailer (T-M2-10): authenticator app and security settings noti
     expect(hashMfaSetupCode(FACTOR.toUpperCase(), v.code)).toEqual(
       hashMfaSetupCode(FACTOR, v.code),
     );
+    // No quiet window: that is the lockout e-mail's (T-M2-11).
     expect(db.loadAccountMailContext).toHaveBeenCalledWith(
       tenantTx,
       PERSON,
       'platform.mfa_factor_added',
+      0,
     );
     expect(db.finishAccountMailRequest).toHaveBeenCalledWith(tenantTx, REQUEST);
     expect(log).toHaveBeenCalledWith('info', 'account e-mail queued (mfa_factor_added)');

@@ -101,7 +101,8 @@ export default async function UserProfilePage({
         );
       }
     } else {
-      const { profile, canOpenManager, canEdit, canEditRoles, lifecycle, signInLock } = result.value;
+      const { profile, canOpenManager, canEdit, canEditRoles, lifecycle, signInLock } =
+        result.value;
       title = localizedName(locale, profile.displayNameAr, profile.displayNameEn);
       // Sign-in and security (screen 3, T-M2-10): user managers only (else the card is left out).
       const security = await memberSecurityQuery({ personId });

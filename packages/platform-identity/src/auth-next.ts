@@ -18,6 +18,7 @@ import {
   applyDeviceLimit,
   confirmMfaSetup as confirmMfaSetupInDatabase,
   dismissMfaPrompt,
+  getLockoutPolicy,
   getSessionAccess,
   hashInvitationToken,
   insertAuditEvent,
@@ -35,6 +36,7 @@ import {
   requestPasswordChangedMail,
   requestPasswordResetMail,
   type SessionAccess,
+  signInAccountInTenant,
   switchActiveTenant,
   withUserTx,
 } from '@jadarat/platform-db';
@@ -57,9 +59,10 @@ import {
   signOutEndedSession,
 } from './auth-flow';
 import {
-  type CodeAttemptLimiter,
+  type CodeCheckLimit,
   DEVICE_TOKEN_PATTERN,
   type LimiterDeps,
+  NO_CODE_CHECKS,
   NO_SIGN_IN_GUARD,
   type RequestClient,
   type SecurityLog,
@@ -73,13 +76,17 @@ import {
   createSignInGuard,
   forgetOtherTrustedBrowsers,
   limitsFor,
+  organizationAccountLockout,
   resetAccountSignIn,
   securityLogLine,
+  withCodeAttemptLimit,
 } from './auth-limits';
 import {
   type MfaClientLike,
   type MfaDeps,
   type MfaOverview,
+  MFA_CONFIRM_ACTION,
+  MFA_VERIFY_ACTION,
   confirmMfaSetup,
   getMfaOverview,
   openMfaRemoveLink,
@@ -172,22 +179,45 @@ function trustedDeviceCookie(store: CookieStore): TrustedDeviceCookie {
 }
 
 /**
+ * The organization of the host this request signs in on (TM-0003 D-IAM-04, PO): on an organization's own
+ * host its lockout policy applies to its own members; on the platform's shared sign-in host the platform
+ * default (5 failures, 15 minutes) applies to everyone.
+ * INTEGRATION POINT (ADR 0002 §4, host → tenant resolution): not built yet — the proxy only classifies the
+ * Host header (apps/suite lib/host-tenant.ts) — so every sign-in is on the platform's host today. Return
+ * the VERIFIED host organization here (never a client-supplied value) once that lookup exists; the guard
+ * below is already wired for it.
+ */
+function hostTenantIdForRequest(): string | null {
+  return null;
+}
+
+/**
  * The sign-in guard for this request's client (the app passes it: apps/suite lib/request-client.ts) and
- * browser (its trusted-device cookie); the lockout e-mail goes through the account-mail queue.
- * INTEGRATION POINT (T-M2-10): an organization's lockout policy on its own host joins as `accountLockout:
- * organizationAccountLockout({ hostTenantId, lockoutPolicyFor: getLockoutPolicy, accountInTenant:
- * signInAccountInTenant }, limits.signIn.accountFailures)` — applied to that organization's members only.
+ * browser (its trusted-device cookie); the lockout e-mail goes through the account-mail queue. The account
+ * budget (T-M2-10 × T-M2-11): `organizationAccountLockout` — the host organization's lockout policy
+ * (platform-db `getLockoutPolicy`, its own pre-session transaction: sign-in holds none) for that
+ * organization's active members only (`signInAccountInTenant`), clamped to the platform default or
+ * stricter; the platform default for everyone else and on the platform's host.
  */
 async function signInGuardFor(
   client: RequestClient,
   action = SIGN_IN_ACTION,
 ): Promise<SignInGuard> {
+  const deps = limiterDeps();
   return createSignInGuard({
-    ...limiterDeps(),
+    ...deps,
     client,
     action,
     device: trustedDeviceCookie(await cookies()),
     requestLockedMail: requestAccountLockedMail,
+    accountLockout: organizationAccountLockout(
+      {
+        hostTenantId: hostTenantIdForRequest(),
+        lockoutPolicyFor: getLockoutPolicy,
+        accountInTenant: signInAccountInTenant,
+      },
+      deps.limits.signIn.accountFailures,
+    ),
   });
 }
 
@@ -270,8 +300,15 @@ export async function signOutEndedSessionForRequest() {
 // only (no Auth secret key). The /mfa page and My profile use these through public actions: a session the
 // organization's MFA policy refuses has no access to the organization until it passes here.
 
-async function mfaDeps(): Promise<MfaDeps> {
-  const auth = await requestDeps();
+/**
+ * `limitCodeCheck`: the code limiter of a flow that checks a code (`codeCheckLimitFor`); the others get
+ * NO_CODE_CHECKS (any use fails closed). `client`: the visitor's key for self-hosted Auth's own limits.
+ */
+async function mfaDeps(
+  limitCodeCheck: CodeCheckLimit = NO_CODE_CHECKS,
+  client: RequestClient | null = null,
+): Promise<MfaDeps> {
+  const auth = await requestDeps(undefined, client);
   return {
     supabase: auth.supabase as unknown as MfaClientLike | null,
     withUserTx,
@@ -283,6 +320,7 @@ async function mfaDeps(): Promise<MfaDeps> {
     removeMfaApp: removeMfaAppInDatabase,
     applyDeviceLimit,
     logWarning: auth.logWarning,
+    limitCodeCheck,
   };
 }
 
@@ -314,16 +352,29 @@ export async function startTotpSetupForRequest() {
   return startTotpSetup(await mfaDeps());
 }
 
-export async function verifyTotpCodeForRequest(input: {
-  readonly code: string;
-  readonly factorId?: string | undefined;
-}) {
-  return verifyTotpCode(await mfaDeps(), input);
+/**
+ * A code from the authenticator app (sign-in, a sensitive action, or a set-up's first code): limited per
+ * account and per client (T-M2-11 — Auth's own per-IP limit sees only the app server).
+ */
+export async function verifyTotpCodeForRequest(
+  input: { readonly code: string; readonly factorId?: string | undefined },
+  client: RequestClient,
+) {
+  return verifyTotpCode(await mfaDeps(codeCheckLimitFor(client, MFA_VERIFY_ACTION), client), input);
 }
 
-/** The e-mailed code of a new app, in the window that set it up (re-review N1). */
-export async function confirmMfaSetupForRequest(input: { readonly code: string }) {
-  return confirmMfaSetup(await mfaDeps(), input);
+/**
+ * The e-mailed code of a new app, in the window that set it up (re-review N1): limited like every code
+ * (T-M2-11), on top of the database's 5 tries per code and 15 wrong codes a day per account.
+ */
+export async function confirmMfaSetupForRequest(
+  input: { readonly code: string },
+  client: RequestClient,
+) {
+  return confirmMfaSetup(
+    await mfaDeps(codeCheckLimitFor(client, MFA_CONFIRM_ACTION), client),
+    input,
+  );
 }
 
 /** "Send the e-mail again" from the window that set the app up (re-review N1). */
@@ -419,12 +470,16 @@ export async function changePasswordForRequest(input: {
 }
 
 /**
- * The authenticator-code limiter for this request's client (T-M2-10 security review, TM-0003 T-IAM-12):
- * INTEGRATION POINT for `verifyTotpCode` (T-M2-10) — wrap its Auth call with `withCodeAttemptLimit`
- * (auth-limits.ts; the signed-in user's id, wrong code = MFA_CODE_INVALID).
+ * The code limiter of one flow for this request's client (T-M2-10 security review, TM-0003 T-IAM-12):
+ * `withCodeAttemptLimit` on the shared limiter — per account (the user whose code is checked) and per
+ * client, wrong codes only, fail closed. Every code check takes it: the authenticator code
+ * (`verifyTotpCode`), the e-mailed set-up code (`confirmMfaSetup`) and the code on the password-reset
+ * page (`completePasswordReset`); `action` names the flow in the security events.
  */
-export function codeAttemptLimiterForRequest(client: RequestClient): CodeAttemptLimiter {
-  return createCodeAttemptLimiter({ ...limiterDeps(), client, action: 'platform.auth.mfa_verify' });
+function codeCheckLimitFor(client: RequestClient, action: string): CodeCheckLimit {
+  const limiter = createCodeAttemptLimiter({ ...limiterDeps(), client, action });
+  return (userId, verify, isWrongCode) =>
+    withCodeAttemptLimit(limiter, userId, verify, isWrongCode);
 }
 
 /**
@@ -614,6 +669,8 @@ export async function completePasswordResetForRequest(
       allowAttempt: () => limiter.allowCompletion(),
       unlockSignIn: (email, remember) =>
         resetAccountSignIn(limiterDeps(), RESET_COMPLETE_ACTION, email, device, remember),
+      // The authenticator code of an account with an app (T-M2-10), limited like every code (T-M2-11).
+      limitCodeCheck: codeCheckLimitFor(client, RESET_COMPLETE_ACTION),
       // Strictest wins (T-M2-10): asked with the recovery session's own, verified access token.
       passwordMinLength: async (accessToken) => {
         const claims = await verifyClaims(

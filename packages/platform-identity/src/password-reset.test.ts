@@ -1,3 +1,4 @@
+import { type AppError, type Result, appError, err } from '@jadarat/platform-core';
 import { describe, expect, it, vi } from 'vitest';
 import { AuthServiceError } from './auth-flow';
 import { RateLimiterUnavailableError } from './auth-limits';
@@ -289,10 +290,13 @@ interface CompleteOptions {
   factors?: { id: string; factor_type: string; status: string }[];
   listError?: { status?: number; code?: string };
   challengeError?: { status?: number; code?: string };
+  /** The code limiter (T-M2-11) refuses the check, or cannot answer: Auth is not asked. */
+  codeLimited?: boolean | Error;
 }
 
 function completeSetup(options: CompleteOptions = {}) {
   const calls: string[] = [];
+  const codeChecks: { userId: string; wrongCode: boolean | null }[] = [];
   const auth = {
     resetPasswordForEmail: vi.fn(),
     verifyOtp: vi.fn((params: { type: 'recovery'; token_hash: string }) => {
@@ -354,8 +358,21 @@ function completeSetup(options: CompleteOptions = {}) {
     logInfo,
     logWarning,
     endBrowserSession,
+    // The code limiter (T-M2-11 withCodeAttemptLimit, tested in auth-limits.test.ts): records whose code
+    // was checked and whether a refusal counted as a wrong code.
+    limitCodeCheck: (async (
+      userId: string,
+      verify: () => Promise<Result<unknown, AppError>>,
+      isWrongCode: (error: AppError) => boolean,
+    ) => {
+      if (options.codeLimited instanceof Error) throw options.codeLimited;
+      if (options.codeLimited) return err(appError('RATE_LIMITED'));
+      const result = await verify();
+      codeChecks.push({ userId, wrongCode: result.ok ? null : isWrongCode(result.error) });
+      return result;
+    }) as PasswordResetDeps['limitCodeCheck'],
   };
-  return { deps, auth, calls, logInfo, logWarning, unlockSignIn };
+  return { deps, auth, calls, logInfo, logWarning, unlockSignIn, codeChecks };
 }
 
 const input = { tokenHash: TOKEN_HASH, password: PASSWORD };
@@ -654,11 +671,13 @@ describe('completePasswordReset for an account with an authenticator app (T-M2-1
       value: { next: 'sign-in' },
     });
     expect(auth.mfa.challengeAndVerify).toHaveBeenCalledWith({ factorId: 'f-app', code: CODE });
+    // …then, as for every completed reset, the sign-in lock ends and this browser is trusted (T-M2-11).
     expect(calls).toEqual([
       'verifyOtp:recovery',
       'code:f-app',
       'updateUser:password',
       'signOut:global',
+      'unlock:account:24h',
       'endBrowserSession',
     ]);
   });
@@ -691,6 +710,31 @@ describe('completePasswordReset for an account with an authenticator app (T-M2-1
       errorCode: 'PASSWORD_RESET_CODE_INVALID',
     });
     expect(JSON.stringify(logWarning.mock.calls)).not.toContain('000000');
+  });
+
+  it("the code check goes through the account's code limit (T-M2-11); a limited one never asks Auth", async () => {
+    const right = completeSetup({ factors: [app] });
+    await completePasswordReset(right.deps, { ...input, code: CODE });
+    expect(right.codeChecks).toEqual([{ userId: USER, wrongCode: null }]);
+    const wrong = completeSetup({
+      factors: [app],
+      challengeError: { status: 422, code: 'mfa_verification_failed' },
+    });
+    await completePasswordReset(wrong.deps, { ...input, code: '000000' });
+    expect(wrong.codeChecks).toEqual([{ userId: USER, wrongCode: true }]);
+    // Limited: Auth is not asked, the recovery session ends (the link is spent by now), no password set.
+    const limited = completeSetup({ factors: [app], codeLimited: true });
+    const result = await completePasswordReset(limited.deps, { ...input, code: CODE });
+    expect(!result.ok && result.error.code).toBe('RATE_LIMITED');
+    expect(limited.auth.mfa.challengeAndVerify).not.toHaveBeenCalled();
+    expect(limited.calls).toEqual(['verifyOtp:recovery', 'signOut:local']);
+    // The limiter cannot answer: fail closed, the recovery session still ends.
+    const down = completeSetup({ factors: [app], codeLimited: new Error('limiter down') });
+    await expect(completePasswordReset(down.deps, { ...input, code: CODE })).rejects.toThrow(
+      'limiter down',
+    );
+    expect(down.auth.mfa.challengeAndVerify).not.toHaveBeenCalled();
+    expect(down.calls).toEqual(['verifyOtp:recovery', 'signOut:local']);
   });
 
   it('rate limits and outages of the code check; Auth asking for AAL2 anyway', async () => {

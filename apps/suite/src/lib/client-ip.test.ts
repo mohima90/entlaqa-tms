@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import { UNKNOWN_CLIENT, clientAddress, clientRateKey } from './client-ip';
+import {
+  UNKNOWN_CLIENT,
+  clientAddress,
+  clientRateKey,
+  readClientIpHeaderSetting,
+} from './client-ip';
 import { requestClientFrom } from './request-client';
 
 vi.mock('server-only', () => ({}));
@@ -32,6 +37,25 @@ describe('clientAddress (TM-0003 T-IAM-03: only a platform-overwritten header)',
         UNKNOWN_CLIENT,
       );
     }
+  });
+
+  it('none names no header; X-Forwarded-For and invalid names are never trusted (the app refuses them at start-up)', () => {
+    const sent = headersOf({ 'x-forwarded-for': '203.0.113.7', 'x-real-ip': '203.0.113.8' });
+    expect(clientAddress(sent, { JADARAT_CLIENT_IP_HEADER: 'none' })).toBe(UNKNOWN_CLIENT);
+    expect(clientAddress(sent, { JADARAT_CLIENT_IP_HEADER: 'NONE', VERCEL: '1' })).toBe(
+      UNKNOWN_CLIENT,
+    );
+    for (const name of ['x-forwarded-for', 'X-Forwarded-For', 'x real ip']) {
+      expect(clientAddress(sent, { JADARAT_CLIENT_IP_HEADER: name }), name).toBe(UNKNOWN_CLIENT);
+      expect(() => readClientIpHeaderSetting({ JADARAT_CLIENT_IP_HEADER: name }), name).toThrow(
+        'JADARAT_CLIENT_IP_HEADER',
+      );
+    }
+    expect(readClientIpHeaderSetting({})).toEqual({ kind: 'unset' });
+    expect(readClientIpHeaderSetting({ JADARAT_CLIENT_IP_HEADER: ' X-Real-IP ' })).toEqual({
+      kind: 'header',
+      name: 'X-Real-IP',
+    });
   });
 });
 

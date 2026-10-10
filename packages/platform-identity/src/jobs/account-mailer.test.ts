@@ -129,6 +129,7 @@ beforeEach(() => {
     recipientName: { ar: 'سارة', en: 'Sara' },
     recentCount: 0,
     quietCount: 0,
+    tenantRecentCount: 0,
   });
   mail.queueEmail.mockResolvedValue('delivery-1');
   db.accountHasApp.mockResolvedValue(false);
@@ -283,12 +284,13 @@ describe('account mailer (T-M2-17): reset e-mail and "password changed" notice',
     const { task, issue, log } = setup();
     await task.run({ jobId: 'j' });
     expect(issue).not.toHaveBeenCalled();
-    // Once per lock period: the context counts this template's e-mails within the lock's minutes.
+    // At most one a day (security review M3): the context counts this template's e-mails to the person
+    // within 24 hours (PLATFORM_AUTH_LIMITS.lockoutMail.personQuietHours), and the organization's.
     expect(db.loadAccountMailContext).toHaveBeenCalledWith(
       tenantTx,
       PERSON,
       'platform.account_locked',
-      15,
+      24 * 60,
     );
     const email = queued();
     expect(email).toMatchObject({
@@ -307,13 +309,14 @@ describe('account mailer (T-M2-17): reset e-mail and "password changed" notice',
     expect(log).toHaveBeenCalledWith('info', 'account e-mail queued (account_locked)');
   });
 
-  it('"account locked": at most one per lock period, and within the hourly cap', async () => {
+  it('"account locked": at most one per person a day, within the hourly cap and the organization\'s ceiling (M3)', async () => {
     queue(send({ kind: 'account_locked', lockMinutes: 15 }));
     db.loadAccountMailContext.mockResolvedValueOnce({
       organizationName: { ar: 'شركة الراية', en: null },
       recipientName: { ar: 'سارة', en: null },
       recentCount: 1,
       quietCount: 1,
+      tenantRecentCount: 0,
     });
     const first = setup();
     await first.task.run({ jobId: 'j' });
@@ -330,6 +333,7 @@ describe('account mailer (T-M2-17): reset e-mail and "password changed" notice',
       recipientName: { ar: 'سارة', en: null },
       recentCount: ACCOUNT_MAIL_HOURLY_CAP,
       quietCount: 0,
+      tenantRecentCount: 0,
     });
     const second = setup();
     await second.task.run({ jobId: 'j' });
@@ -338,6 +342,100 @@ describe('account mailer (T-M2-17): reset e-mail and "password changed" notice',
       'info',
       'account e-mail not sent (hourly_cap) (account_locked)',
     );
+
+    // A spray across a whole organization: beyond its hourly ceiling, no more lockout e-mails there.
+    queue(send({ kind: 'account_locked', lockMinutes: 15 }));
+    db.loadAccountMailContext.mockResolvedValueOnce({
+      organizationName: { ar: 'شركة الراية', en: null },
+      recipientName: { ar: 'سارة', en: null },
+      recentCount: 0,
+      quietCount: 0,
+      tenantRecentCount: 50,
+    });
+    const third = setup();
+    await third.task.run({ jobId: 'j' });
+    expect(mail.queueEmail).not.toHaveBeenCalled();
+    expect(third.log).toHaveBeenCalledWith(
+      'info',
+      'account e-mail not sent (organization_hourly_cap) (account_locked)',
+    );
+  });
+
+  it('the lockout e-mail caps come from the one budgets config, and nonsense is refused', async () => {
+    queue(send({ kind: 'account_locked', lockMinutes: 15 }));
+    db.loadAccountMailContext.mockResolvedValueOnce({
+      organizationName: { ar: 'شركة الراية', en: null },
+      recipientName: { ar: 'سارة', en: null },
+      recentCount: 0,
+      quietCount: 0,
+      tenantRecentCount: 2,
+    });
+    const log = vi.fn();
+    const task = createAccountMailer({
+      appBaseUrl: BASE,
+      recoveryLinks: null,
+      withPlatformTx: ((_a: unknown, fn: (tx: SystemTx) => unknown) =>
+        Promise.resolve(fn(platformTx))) as never,
+      withSystemTx: ((_a: unknown, fn: (tx: SystemTx) => unknown) =>
+        Promise.resolve(fn(tenantTx))) as never,
+      log,
+      lockoutMail: { personQuietHours: 1, tenantPerHour: 2 },
+    });
+    await task.run({ jobId: 'j' });
+    expect(db.loadAccountMailContext).toHaveBeenCalledWith(
+      tenantTx,
+      PERSON,
+      'platform.account_locked',
+      60,
+    );
+    expect(log).toHaveBeenCalledWith(
+      'info',
+      'account e-mail not sent (organization_hourly_cap) (account_locked)',
+    );
+    for (const lockoutMail of [
+      { personQuietHours: 0, tenantPerHour: 2 },
+      { personQuietHours: 25, tenantPerHour: 2 },
+      { personQuietHours: 24, tenantPerHour: 0 },
+    ]) {
+      expect(() =>
+        createAccountMailer({
+          appBaseUrl: BASE,
+          recoveryLinks: null,
+          withPlatformTx: vi.fn() as never,
+          withSystemTx: vi.fn() as never,
+          log,
+          lockoutMail,
+        }),
+      ).toThrow('lockout e-mail caps');
+    }
+  });
+
+  it('"sign-in unlocked" (T-M2-11 M1): the owner is told in the unlocking organization; no Auth call; hourly cap only', async () => {
+    queue(send({ kind: 'sign_in_unlocked', locale: 'ar' }));
+    const { task, issue, log } = setup();
+    await task.run({ jobId: 'j' });
+    expect(issue).not.toHaveBeenCalled();
+    expect(db.loadAccountMailContext).toHaveBeenCalledWith(
+      tenantTx,
+      PERSON,
+      'platform.sign_in_unlocked',
+      0,
+    );
+    const email = queued();
+    expect(email).toMatchObject({
+      template: 'platform.sign_in_unlocked',
+      locale: 'ar',
+      to: EMAIL,
+      recipientPersonId: PERSON,
+    });
+    expect(email.variables).toEqual({
+      organizationName: { ar: 'شركة الراية', en: 'Al Raya' },
+      forgotPasswordUrl: { ar: `${BASE}/ar/forgot-password`, en: `${BASE}/en/forgot-password` },
+      loginEmail: EMAIL,
+    });
+    expect(log).toHaveBeenCalledWith('info', 'account e-mail queued (sign_in_unlocked)');
+    // Logs name kinds and reasons only.
+    expect(JSON.stringify(log.mock.calls)).not.toContain(EMAIL);
   });
 
   it('Auth no longer knows the address (deleted meanwhile): answered, nothing sent', async () => {
@@ -439,6 +537,7 @@ describe('account mailer (T-M2-17): reset e-mail and "password changed" notice',
       recipientName: { ar: 'سارة', en: null },
       recentCount: ACCOUNT_MAIL_HOURLY_CAP,
       quietCount: 0,
+      tenantRecentCount: 0,
     });
     const second = setup();
     await second.task.run({ jobId: 'j' });

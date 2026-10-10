@@ -14,6 +14,8 @@ export interface UnlockSignInProps {
     readonly unlocking: string;
     readonly unlocked: string;
     readonly notLocked: string;
+    /** Refused: 3 unlocks of this account within 24 hours already (the lock stays). */
+    readonly limited: string;
     readonly audited: string;
   };
   readonly errors: ErrorTexts;
@@ -27,8 +29,9 @@ interface Outcome {
 /**
  * «إلغاء إيقاف تسجيل الدخول» (T-M2-11, PO decision 9 Oct 2026): shown on a member's profile to the
  * Organization Admin only while the member's account is locked after repeated failed sign-ins. One click
- * ends the lock (audited); the outcome is announced politely in place of the notice (the next visit of
- * the profile shows no lock).
+ * ends the lock (audited; the member is e-mailed); the outcome is announced politely in place of the
+ * notice (the next visit of the profile shows no lock). A fourth unlock of the account within 24 hours is
+ * refused (security review M1): announced as an error, the notice stays.
  */
 export function UnlockSignIn({ personId, labels, errors }: UnlockSignInProps) {
   const [pending, startTransition] = useTransition();
@@ -38,11 +41,16 @@ export function UnlockSignIn({ personId, labels, errors }: UnlockSignInProps) {
     setOutcome(null);
     startTransition(async () => {
       const result = await unlockSignInAction({ personId });
-      setOutcome(
-        result.ok
-          ? { tone: 'success', text: result.value.unlocked ? labels.unlocked : labels.notLocked }
-          : { tone: 'danger', text: errorText(result.error, errors) },
-      );
+      if (!result.ok) {
+        setOutcome({ tone: 'danger', text: errorText(result.error, errors) });
+      } else if (result.value.outcome === 'limited') {
+        setOutcome({ tone: 'danger', text: labels.limited });
+      } else {
+        setOutcome({
+          tone: 'success',
+          text: result.value.outcome === 'unlocked' ? labels.unlocked : labels.notLocked,
+        });
+      }
     });
   };
 

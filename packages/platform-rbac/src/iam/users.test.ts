@@ -376,7 +376,7 @@ describe('user profile query', () => {
     });
   });
 
-  it('sign-in lock (T-M2-11): only for the Organization Admin, only for a person with an account', async () => {
+  it('sign-in lock (T-M2-11): only for the Organization Admin, only for an active member with an account', async () => {
     db.getUserProfile.mockResolvedValue({
       personId: REPORT,
       roles: [],
@@ -399,16 +399,23 @@ describe('user profile query', () => {
     expect(db.memberSignInLock).toHaveBeenLastCalledWith(TX, REPORT, 5);
 
     db.memberSignInLock.mockClear();
-    // An HR Manager manages users but may not unlock sign-in; a person without an account has no lock.
+    // An HR Manager manages users but may not unlock sign-in; a person without an account has no lock;
+    // nor has a revoked, suspended or invited member (security review M1).
     for (const [role, profile] of [
       ['hr_manager', { personId: REPORT, roles: [], membershipStatus: 'active' }],
       ['tenant_admin', { personId: REPORT, roles: [], membershipStatus: null }],
+      ['tenant_admin', { personId: REPORT, roles: [], membershipStatus: 'revoked' }],
+      ['tenant_admin', { personId: REPORT, roles: [], membershipStatus: 'suspended' }],
+      ['tenant_admin', { personId: REPORT, roles: [], membershipStatus: 'invited' }],
     ] as const) {
       db.getUserProfile.mockResolvedValue(profile);
       const view = await createDefineQuery(runtime([role]))(userProfileQueryDefinition())({
         personId: REPORT,
       });
-      expect(view.ok && view.value.signInLock, role).toBeNull();
+      expect(
+        view.ok && view.value.signInLock,
+        `${role} ${String(profile.membershipStatus)}`,
+      ).toBeNull();
     }
     expect(db.memberSignInLock).not.toHaveBeenCalled();
   });

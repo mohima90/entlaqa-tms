@@ -1,8 +1,10 @@
 import { createHash } from 'node:crypto';
 import type {
+  DeviceTrust,
   RateLimit,
   RateLimitCounter,
   RateLimitStore,
+  RememberDevice,
   SignInBudgets,
   SignInCheck,
   SignInSubjects,
@@ -29,6 +31,8 @@ import {
   createPasswordCheckLimiter,
   createPasswordResetLimiter,
   createSignInGuard,
+  deviceSubject,
+  forgetOtherTrustedBrowsers,
   limitsFor,
   organizationAccountLockout,
   readAuthLimitWindowOverride,
@@ -49,8 +53,10 @@ const hex = (bytes: Uint8Array) => Buffer.from(bytes).toString('hex');
  * the hit that uses the budget up starts a full window; hits beyond are refused and capped; the sign-in
  * check counts the client's attempt, then provisional failures of the client and of the account — or of a
  * browser the account trusts — and gives the client's failure back when the account refuses; a success
- * gives it back too, ends the run and trusts the browser; a reset ends the lock and forgets the browsers.
- * References are derived from the subject like the database's (opaque here).
+ * gives it back too and ends the run, and — only when remembered — trusts the browser under its presented
+ * token if known (for any account), else the fresh one; Auth's 429 gives the account's (or browser's)
+ * failure back; a reset ends the lock, trusts its browser and forgets the others. References are derived
+ * from the subject like the database's (opaque here).
  */
 function memoryStore(now: () => number = () => 0) {
   const rows = new Map<string, { hits: number; resetAt: number }>();
@@ -145,39 +151,69 @@ function memoryStore(now: () => number = () => 0) {
       clientRef: ref(s.client),
     });
   });
+  const DAY = 86_400_000;
+  /** The token the database trusts: the presented one when known (any account, unexpired), else the fresh. */
+  const choose = (device: Uint8Array | null) =>
+    device !== null &&
+    [...trusted].some(([key, until]) => key.endsWith(`|${hex(device)}`) && until > now())
+      ? ('presented' as const)
+      : ('fresh' as const);
+  const trust = (account: string, device: Uint8Array, days: number) => {
+    const until = now() + days * DAY;
+    trusted.set(`${account}|${hex(device)}`, until);
+    return until;
+  };
   const signInSucceeded = vi.fn(
-    (s: SignInSubjects & { device: Uint8Array }, wasTrusted: boolean, days: number) => {
+    (s: SignInSubjects, wasTrusted: boolean, remember: RememberDevice | null) => {
       const account = hex(s.account);
       refund(`${LIMIT_BUCKETS.signInClientFailures}|${hex(s.client)}`);
-      if (wasTrusted)
+      if (wasTrusted && s.device)
         rows.delete(`${LIMIT_BUCKETS.signInDeviceFailures}|${account}${hex(s.device)}`);
       else rows.delete(`${LIMIT_BUCKETS.signInAccountFailures}|${account}`);
-      const until = now() + days * 86_400_000;
-      trusted.set(`${account}|${hex(s.device)}`, until);
-      return Promise.resolve(new Date(until));
+      if (remember === null) return Promise.resolve(null);
+      const device = choose(s.device);
+      const until = trust(
+        account,
+        device === 'presented' && s.device ? s.device : remember.freshDevice,
+        remember.trustDays,
+      );
+      return Promise.resolve<DeviceTrust>({ device, until: new Date(until) });
     },
   );
-  const signInReset = vi.fn((account: Uint8Array) => {
-    rows.delete(`${LIMIT_BUCKETS.signInAccountFailures}|${hex(account)}`);
+  const signInNotChecked = vi.fn((s: SignInSubjects, wasTrusted: boolean) => {
+    const account = hex(s.account);
+    if (wasTrusted && s.device)
+      refund(`${LIMIT_BUCKETS.signInDeviceFailures}|${account}${hex(s.device)}`);
+    else refund(`${LIMIT_BUCKETS.signInAccountFailures}|${account}`);
+    return Promise.resolve();
+  });
+  const forget = (account: string, keep: string | null) => {
     let revoked = 0;
     for (const key of [...trusted.keys()]) {
-      if (key.startsWith(`${hex(account)}|`)) {
+      if (key.startsWith(`${account}|`) && key !== `${account}|${keep ?? ''}`) {
         trusted.delete(key);
         revoked += 1;
       }
     }
-    return Promise.resolve(revoked);
-  });
+    return revoked;
+  };
+  const signInReset = vi.fn(
+    (accountSubject: Uint8Array, device: Uint8Array | null, remember: RememberDevice) => {
+      const account = hex(accountSubject);
+      rows.delete(`${LIMIT_BUCKETS.signInAccountFailures}|${account}`);
+      const chosen = choose(device);
+      const kept = chosen === 'presented' && device ? device : remember.freshDevice;
+      rows.delete(`${LIMIT_BUCKETS.signInDeviceFailures}|${account}${hex(kept)}`);
+      const revoked = forget(account, hex(kept));
+      const until = trust(account, kept, remember.trustDays);
+      return Promise.resolve({ revoked, device: chosen, until: new Date(until) });
+    },
+  );
+  const forgetOtherDevices = vi.fn((accountSubject: Uint8Array, device: Uint8Array | null) =>
+    Promise.resolve(forget(hex(accountSubject), device === null ? null : hex(device))),
+  );
   const store: RateLimitStore = {
     hit,
-    peek: vi.fn((bucket: string, subject: Uint8Array, max: number) => {
-      const row = rows.get(`${bucket}|${hex(subject)}`);
-      const live = row && row.resetAt > now() ? row : { hits: 0, resetAt: 0 };
-      return Promise.resolve({
-        ...answer(subject, live.hits, live.resetAt, max),
-        allowed: live.hits < max,
-      });
-    }),
     clear: vi.fn((bucket: string, subject: Uint8Array) => {
       rows.delete(`${bucket}|${hex(subject)}`);
       return Promise.resolve();
@@ -188,21 +224,35 @@ function memoryStore(now: () => number = () => 0) {
     }),
     signInCheck,
     signInSucceeded,
+    signInNotChecked,
     signInReset,
+    forgetOtherDevices,
   };
-  return { store, hit, signInCheck, signInSucceeded, rows, trusted, subjects };
+  return {
+    store,
+    hit,
+    signInCheck,
+    signInSucceeded,
+    signInNotChecked,
+    signInReset,
+    forgetOtherDevices,
+    rows,
+    trusted,
+    subjects,
+  };
 }
 
 function failingStore(): RateLimitStore {
   const down = () => Promise.reject(new Error('connection refused for someone@example.test'));
   return {
     hit: vi.fn(down),
-    peek: vi.fn(down),
     clear: vi.fn(down),
     giveBack: vi.fn(down),
     signInCheck: vi.fn(down),
     signInSucceeded: vi.fn(down),
+    signInNotChecked: vi.fn(down),
     signInReset: vi.fn(down),
+    forgetOtherDevices: vi.fn(down),
   };
 }
 
@@ -258,12 +308,19 @@ function guardSetup(client: { key: string | null } = CLIENT, store?: RateLimitSt
   };
 }
 
-/** Checks, then reports Auth's verdict the way startPasswordSession does. */
-async function attempt(gate: Promise<SignInGate>, verdict: 'wrong' | 'right'): Promise<SignInGate> {
+/**
+ * Checks, then reports Auth's verdict the way startPasswordSession does: wrong password, right password
+ * (unticked), right password with «تذكّر هذا المتصفح» ticked, or Auth's own 429.
+ */
+async function attempt(
+  gate: Promise<SignInGate>,
+  verdict: 'wrong' | 'right' | 'remember' | 'auth_429',
+): Promise<SignInGate> {
   const answer = await gate;
   if (answer.allowed) {
     if (verdict === 'wrong') await answer.attempt.failed();
-    else await answer.attempt.succeeded();
+    else if (verdict === 'auth_429') await answer.attempt.notChecked();
+    else await answer.attempt.succeeded({ remember: verdict === 'remember' });
   }
   return answer;
 }
@@ -282,6 +339,27 @@ describe('subjects (keys never leave the process readable)', () => {
     expect(accountSubject(' UAB@ab.test ').toString('hex')).toBe(
       '9bab03365a6941124a7dbf7a28cc5eecec8ca5be63308d0317659ce517831db4',
     );
+  });
+
+  it('lower-cases İ and Σ as GoTrue does (Go simple case mapping), and the Kelvin sign as K', () => {
+    // JavaScript alone gives i + U+0307 for İ: a different subject for the same Auth account.
+    expect('\u0130'.toLowerCase()).not.toBe('i');
+    expect(accountSubject('ADM\u0130N@x.test')).toEqual(accountSubject('admin@x.test'));
+    expect(accountSubject('\u212Aate@x.test')).toEqual(accountSubject('kate@x.test'));
+  });
+
+  it('guard: every address that is not printable ASCII shares ONE subject (security review T-M2-11)', () => {
+    const shared = accountSubject('\u0131@x.test'); // dotless ı: Go does not map it to i either
+    // The same vector as supabase/tests/72 (private.rate_limit_account_subject).
+    expect(shared.toString('hex')).toBe(
+      '4644ee3cbaf840b60dad525e47034dcf9c671f09a383121efc87556f94acf4cc',
+    );
+    for (const address of ['\u03A3@x.test', 'sa\u0301ra@x.test', '\u0661@x.test', 'a\tb@x.test']) {
+      expect(accountSubject(address), JSON.stringify(address)).toEqual(shared);
+    }
+    // No spelling of a real (ASCII) account falls into it, nor does the shared one become a real one.
+    expect(accountSubject('i@x.test')).not.toEqual(shared);
+    expect(accountSubject('non-ascii')).not.toEqual(shared);
   });
 
   it('are 32-byte SHA-256 values, separated by kind, never the key itself', () => {
@@ -314,6 +392,8 @@ describe('limitsFor (platform defaults; per-organization policy joins here with 
       sharedClientAttempts: { max: 10_000, windowSeconds: 900 },
     });
     expect(limits.trustedDevice).toEqual({ days: 30 });
+    // The lockout e-mail (security review M3): one per person a day, a ceiling per organization an hour.
+    expect(limits.lockoutMail).toEqual({ personQuietHours: 24, tenantPerHour: 50 });
     expect(limitsFor({ tenantId: '22222222-2222-4222-8222-222222222222' }, {})).toBe(
       PLATFORM_AUTH_LIMITS,
     );
@@ -342,6 +422,7 @@ describe('limitsFor (platform defaults; per-organization policy joins here with 
     }
     expect(limits.signIn.accountFailures.max).toBe(5);
     expect(limits.trustedDevice.days).toBe(30);
+    expect(limits.lockoutMail).toBe(PLATFORM_AUTH_LIMITS.lockoutMail);
   });
 
   it('refuses any other value of the setting, and refuses it in production (review LOW 6)', () => {
@@ -490,13 +571,29 @@ describe('createSignInGuard (FR-IAM-13 lockout, TM-0003 T-IAM-01/03; PO decision
     expect((await shared.guard().check('fresh@example.test')).allowed).toBe(true);
   });
 
-  it('trusts a browser after a success: it signs in while the account is locked for others, with its own budget', async () => {
-    const { guard, lockMails } = guardSetup();
+  it('trusts a browser only after a sign-in with «تذكّر هذا المتصفح» ticked (opt-in, PO decision 9 Oct 2026)', async () => {
+    const { guard, memory } = guardSetup();
     const mine = browser();
-    // A successful sign-in sets the trusted-device cookie: a random token, 30 days.
+    // Unticked: no cookie, nothing trusted.
     await attempt(guard(CLIENT, mine.cookie).check(EMAIL), 'right');
+    expect(mine.jar.token).toBeNull();
+    expect(memory.trusted.size).toBe(0);
+    // Ticked: a random token in the cookie, trusted for 30 days.
+    await attempt(guard(CLIENT, mine.cookie).check(EMAIL), 'remember');
     expect(mine.jar.token).toMatch(DEVICE_TOKEN_PATTERN);
     expect(mine.jar.maxAge).toBe(30 * 86_400);
+    expect(memory.signInSucceeded).toHaveBeenLastCalledWith(
+      expect.objectContaining({ device: null }),
+      false,
+      { freshDevice: deviceSubject(mine.jar.token ?? ''), trustDays: 30 },
+    );
+    expect(memory.trusted.size).toBe(1);
+  });
+
+  it('a trusted browser signs in while the account is locked for others, with its own budget; using it up e-mails the owner too (L1)', async () => {
+    const { guard, lockMails } = guardSetup();
+    const mine = browser();
+    await attempt(guard(CLIENT, mine.cookie).check(EMAIL), 'remember');
     const token = mine.jar.token;
     // Someone else locks the account from unknown browsers.
     const attacker = browser();
@@ -509,22 +606,87 @@ describe('createSignInGuard (FR-IAM-13 lockout, TM-0003 T-IAM-01/03; PO decision
       expect((await attempt(guard(CLIENT, mine.cookie).check(EMAIL), 'wrong')).allowed).toBe(true);
     }
     expect(await guard(CLIENT, mine.cookie).check(EMAIL)).toMatchObject({ allowed: false });
-    // Its own lock sends no e-mail (the account is not newly locked).
-    expect(lockMails).toHaveLength(1);
+    // Its budget used up (a stolen cookie guessing?): the owner hears of it as well — the worker's quiet
+    // window and caps apply alike.
+    expect(lockMails).toEqual([
+      { email: EMAIL, minutes: 15 },
+      { email: EMAIL, minutes: 15 },
+    ]);
     // The cookie names no account and stays the same token for every account of the browser.
-    await attempt(guard(CLIENT, mine.cookie).check('second@example.test'), 'right');
+    await attempt(guard(CLIENT, mine.cookie).check('second@example.test'), 'remember');
     expect(mine.jar.token).toBe(token);
+  });
+
+  it('an unticked sign-in on a trusted browser does not renew its trust (it ends on its date)', async () => {
+    const { guard, memory, advance } = guardSetup();
+    const mine = browser();
+    await attempt(guard(CLIENT, mine.cookie).check(EMAIL), 'remember');
+    const [key, firstUntil] = [...memory.trusted][0] ?? [];
+    mine.jar.maxAge = 0;
+    advance(10 * 86_400);
+    expect((await attempt(guard(CLIENT, mine.cookie).check(EMAIL), 'right')).allowed).toBe(true);
+    expect(memory.trusted.get(key ?? '')).toBe(firstUntil);
+    expect(mine.jar.maxAge).toBe(0); // the cookie was not written again
+    // A ticked one renews it: sliding, 30 days from now.
+    await attempt(guard(CLIENT, mine.cookie).check(EMAIL), 'remember');
+    expect(memory.trusted.get(key ?? '')).toBe((firstUntil ?? 0) + 10 * 86_400_000);
+    expect(mine.jar.maxAge).toBe(30 * 86_400);
+    // After the 30 days without a ticked sign-in, the browser is unknown again.
+    advance(30 * 86_400);
+    const gate = await guard(CLIENT, mine.cookie).check(EMAIL);
+    expect(gate.allowed).toBe(true);
+    expect(memory.signInCheck.mock.results.length).toBeGreaterThan(0);
+    const answer = (await memory.signInCheck.mock.results.at(-1)?.value) as SignInCheck;
+    expect(answer.trusted).toBe(false);
+  });
+
+  it('a token the server never issued is replaced by a fresh one (never trusted as presented)', async () => {
+    const { guard, memory } = guardSetup();
+    const planted = 'p'.repeat(43);
+    const mine = browser(planted);
+    await attempt(guard(CLIENT, mine.cookie).check(EMAIL), 'remember');
+    expect(mine.jar.token).toMatch(DEVICE_TOKEN_PATTERN);
+    expect(mine.jar.token).not.toBe(planted);
+    expect([...memory.trusted.keys()].some((k) => k.endsWith(hex(deviceSubject(planted))))).toBe(
+      false,
+    );
   });
 
   it('a trusted browser’s success does not end the account’s lock for other browsers', async () => {
     const { guard, advance } = guardSetup();
     const mine = browser();
-    await attempt(guard(CLIENT, mine.cookie).check(EMAIL), 'right');
+    await attempt(guard(CLIENT, mine.cookie).check(EMAIL), 'remember');
     for (let i = 0; i < 5; i += 1)
       await attempt(guard(OTHER_CLIENT, browser().cookie).check(EMAIL), 'wrong');
     advance(1);
     expect((await attempt(guard(CLIENT, mine.cookie).check(EMAIL), 'right')).allowed).toBe(true);
     expect((await guard(OTHER_CLIENT, browser().cookie).check(EMAIL)).allowed).toBe(false);
+  });
+
+  it("Auth's 429 gives the account's failure back (no password compared), the client's stays (L6)", async () => {
+    const { guard, memory } = guardSetup();
+    for (let i = 0; i < 20; i += 1) await attempt(guard().check(EMAIL), 'auth_429');
+    // A flood Auth refused by itself did not lock the account…
+    expect((await attempt(guard().check(EMAIL), 'wrong')).allowed).toBe(true);
+    // …but each attempt still counts for the client (20 + 1 of its 100 wrong passwords).
+    const last = (await memory.signInCheck.mock.results.at(-1)?.value) as SignInCheck;
+    expect(last.clientRemaining).toBe(100 - 21);
+    expect(memory.signInNotChecked).toHaveBeenCalledTimes(20);
+    // A failure to give it back is logged, never thrown.
+    const events: SecurityEvent[] = [];
+    const g = createSignInGuard({
+      store: { ...memory.store, signInNotChecked: () => Promise.reject(new Error('down')) },
+      limits: PLATFORM_AUTH_LIMITS,
+      log: (e) => events.push(e),
+      client: CLIENT,
+      action: 'platform.auth.sign_in',
+      device: browser().cookie,
+      requestLockedMail: () => Promise.resolve(),
+    });
+    await attempt(g.check('other@example.test'), 'auth_429');
+    expect(events.map((e) => [e.event, e.reason])).toEqual([
+      ['auth.limiter.unavailable', 'failure_not_given_back'],
+    ]);
   });
 
   it('requests the lockout e-mail once, when the 5th failure locks the account', async () => {
@@ -603,7 +765,7 @@ describe('createSignInGuard (FR-IAM-13 lockout, TM-0003 T-IAM-01/03; PO decision
     ]);
   });
 
-  it('never throws after Auth said yes: an unrecorded success is logged and the browser stays untrusted', async () => {
+  it('never throws after Auth said yes: an unrecorded (ticked) success is logged and the browser stays untrusted', async () => {
     const memory = memoryStore();
     const events: SecurityEvent[] = [];
     const mine = browser();
@@ -616,7 +778,7 @@ describe('createSignInGuard (FR-IAM-13 lockout, TM-0003 T-IAM-01/03; PO decision
       device: mine.cookie,
       requestLockedMail: () => Promise.resolve(),
     });
-    await expect(attempt(g.check(EMAIL), 'right')).resolves.toMatchObject({ allowed: true });
+    await expect(attempt(g.check(EMAIL), 'remember')).resolves.toMatchObject({ allowed: true });
     expect(mine.jar.token).toBeNull();
     expect(events.map((e) => [e.event, e.reason])).toEqual([
       ['auth.limiter.unavailable', 'success_not_recorded'],
@@ -640,30 +802,84 @@ describe('createSignInGuard (FR-IAM-13 lockout, TM-0003 T-IAM-01/03; PO decision
     await expect(NO_SIGN_IN_GUARD.check(EMAIL)).rejects.toBeInstanceOf(RateLimiterUnavailableError);
   });
 
-  it('a completed password reset unlocks the account and forgets its trusted browsers (TM-0003 T-IAM-32)', async () => {
+  it('a completed password reset unlocks the account, TRUSTS the browser that completed it and forgets the others (M2)', async () => {
     const { deps, guard, memory } = guardSetup();
-    const mine = browser();
-    await attempt(guard(CLIENT, mine.cookie).check(EMAIL), 'right');
+    const laptop = browser();
+    await attempt(guard(CLIENT, laptop.cookie).check(EMAIL), 'remember');
     expect(memory.trusted.size).toBe(1);
     for (let i = 0; i < 5; i += 1) await attempt(guard(OTHER_CLIENT).check(EMAIL), 'wrong');
     expect((await guard(OTHER_CLIENT).check(EMAIL)).allowed).toBe(false);
-    await resetAccountSignIn(deps, 'platform.auth.password_reset', 'someone@example.TEST');
+    // The owner resets the password from a phone that never signed in: it gets a fresh token, trusted.
+    const phone = browser();
+    await resetAccountSignIn(
+      deps,
+      'platform.auth.password_reset',
+      'someone@example.TEST',
+      phone.cookie,
+    );
+    expect(phone.jar.token).toMatch(DEVICE_TOKEN_PATTERN);
+    expect(phone.jar.maxAge).toBe(30 * 86_400);
+    // The lock ended for everyone; the phone is trusted — an attacker locking the account again cannot
+    // keep the owner out — and the laptop must be remembered again.
     expect((await guard(OTHER_CLIENT).check(EMAIL)).allowed).toBe(true);
-    // The browser must sign in again to be trusted again.
-    expect(memory.trusted.size).toBe(0);
+    for (let i = 0; i < 5; i += 1) await attempt(guard(OTHER_CLIENT).check(EMAIL), 'wrong');
+    expect((await attempt(guard(CLIENT, phone.cookie).check(EMAIL), 'right')).allowed).toBe(true);
+    expect((await guard(CLIENT, laptop.cookie).check(EMAIL)).allowed).toBe(false);
+    expect(memory.trusted.size).toBe(1);
   });
 
-  it('resetAccountSignIn never throws (logged)', async () => {
+  it('a reset from a browser the server knows keeps its token', async () => {
+    const { deps, guard } = guardSetup();
+    const laptop = browser();
+    await attempt(guard(CLIENT, laptop.cookie).check(EMAIL), 'remember');
+    const token = laptop.jar.token;
+    await resetAccountSignIn(deps, 'platform.auth.password_reset', EMAIL, laptop.cookie);
+    expect(laptop.jar.token).toBe(token);
+  });
+
+  it('resetAccountSignIn never throws (logged), and trusts nothing then', async () => {
     const events: SecurityEvent[] = [];
+    const phone = browser();
     await resetAccountSignIn(
       { store: failingStore(), limits: PLATFORM_AUTH_LIMITS, log: (e) => events.push(e) },
       'platform.auth.password_reset',
       EMAIL,
+      phone.cookie,
     );
     expect(events[0]).toMatchObject({
       event: 'auth.limiter.unavailable',
       reason: 'lock_not_cleared',
     });
+    expect(phone.jar.token).toBeNull();
+  });
+
+  it('after a My profile password change, every trusted browser but this one is forgotten (L2)', async () => {
+    const { deps, guard, memory } = guardSetup();
+    const here = browser();
+    const elsewhere = browser();
+    await attempt(guard(CLIENT, here.cookie).check(EMAIL), 'remember');
+    await attempt(guard(OTHER_CLIENT, elsewhere.cookie).check(EMAIL), 'remember');
+    expect(memory.trusted.size).toBe(2);
+    await forgetOtherTrustedBrowsers(deps, 'platform.auth.change_password', EMAIL, here.jar.token);
+    expect(memory.forgetOtherDevices).toHaveBeenCalledWith(
+      accountSubject(EMAIL),
+      deviceSubject(here.jar.token ?? ''),
+    );
+    expect(memory.trusted.size).toBe(1);
+    // From a browser without a token, all of them go.
+    await forgetOtherTrustedBrowsers(deps, 'platform.auth.change_password', EMAIL, null);
+    expect(memory.trusted.size).toBe(0);
+    // Never throws (logged).
+    const events: SecurityEvent[] = [];
+    await forgetOtherTrustedBrowsers(
+      { store: failingStore(), limits: PLATFORM_AUTH_LIMITS, log: (e) => events.push(e) },
+      'platform.auth.change_password',
+      EMAIL,
+      null,
+    );
+    expect(events.map((e) => [e.event, e.reason])).toEqual([
+      ['auth.limiter.unavailable', 'devices_not_forgotten'],
+    ]);
   });
 });
 
@@ -869,6 +1085,17 @@ describe("authClientHeaders (self-hosted: the visitor's key for Auth's own limit
       ).toThrow(AUTH_CLIENT_HEADER_ENV);
     }
   });
+
+  it('is refused on Vercel: hosted Auth must never receive visitors’ addresses (security review T-M2-11)', () => {
+    expect(() =>
+      authClientHeaders(
+        { key: '203.0.113.7' },
+        { [AUTH_CLIENT_HEADER_ENV]: 'X-Jadarat-Client', VERCEL: '1' },
+      ),
+    ).toThrow('refused on Vercel');
+    // Unset on Vercel: fine.
+    expect(authClientHeaders({ key: '203.0.113.7' }, { VERCEL: '1' })).toBeNull();
+  });
 });
 
 describe('organizationAccountLockout (T-M2-10 policy, members only — T-M2-10 security review)', () => {
@@ -886,7 +1113,8 @@ describe('organizationAccountLockout (T-M2-10 policy, members only — T-M2-10 s
       fallback,
       {},
     );
-    expect(await budget('member@org.test')).toEqual({ max: 20, windowSeconds: 300 });
+    // Clamped to the platform default or stricter (L5): never more than 5 failures, never under 15 minutes.
+    expect(await budget('member@org.test')).toEqual(fallback);
     // Another organization's account on this (lax) host: the platform default, not the host's policy.
     expect(await budget('victim@elsewhere.test')).toEqual(fallback);
     // The platform's own sign-in host: always the default.
@@ -899,7 +1127,7 @@ describe('organizationAccountLockout (T-M2-10 policy, members only — T-M2-10 s
     expect(accountInTenant).toHaveBeenCalledTimes(2);
   });
 
-  it('ignores a missing or out-of-bounds policy; keeps the smoke test’s short window', async () => {
+  it('applies a stricter policy as it is; clamps a laxer one (L5); ignores a missing or malformed one; keeps the smoke test’s short window', async () => {
     const deps = (policy: { threshold: number; minutes: number } | null) => ({
       hostTenantId: ORG,
       lockoutPolicyFor: () => Promise.resolve(policy),
@@ -915,6 +1143,27 @@ describe('organizationAccountLockout (T-M2-10 policy, members only — T-M2-10 s
         fallback,
       );
     }
+    expect(
+      await organizationAccountLockout(
+        deps({ threshold: 3, minutes: 30 }),
+        fallback,
+        {},
+      )('m@org.test'),
+    ).toEqual({ max: 3, windowSeconds: 1800 });
+    expect(
+      await organizationAccountLockout(
+        deps({ threshold: 4, minutes: 10 }),
+        fallback,
+        {},
+      )('m@org.test'),
+    ).toEqual({ max: 4, windowSeconds: 900 });
+    expect(
+      await organizationAccountLockout(
+        deps({ threshold: 8, minutes: 60 }),
+        fallback,
+        {},
+      )('m@org.test'),
+    ).toEqual({ max: 5, windowSeconds: 3600 });
     expect(
       await organizationAccountLockout(deps({ threshold: 3, minutes: 30 }), fallback, {
         [AUTH_RATE_LIMIT_WINDOW_ENV]: '40',

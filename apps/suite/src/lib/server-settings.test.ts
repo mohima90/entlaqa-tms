@@ -31,6 +31,16 @@ describe('server settings at start-up (T-M2-17, T-M2-11)', () => {
     expect(checkServerSettings({ JADARAT_AUTH_CLIENT_HEADER: 'X-Jadarat-Client' })).toMatchObject({
       authClientHeader: 'X-Jadarat-Client',
     });
+    // Self-hosted only: on Vercel it would send visitors' addresses to hosted Auth.
+    expect(() =>
+      checkServerSettings({ JADARAT_AUTH_CLIENT_HEADER: 'X-Jadarat-Client', VERCEL: '1' }),
+    ).toThrow('refused on Vercel');
+    // The client-IP header: a header name or none — never X-Forwarded-For (the visitor chooses its start).
+    for (const value of ['x-forwarded-for', 'X-Forwarded-For', 'not a header', 'x-real-ip:1']) {
+      expect(() => checkServerSettings({ JADARAT_CLIENT_IP_HEADER: value }), value).toThrow(
+        'JADARAT_CLIENT_IP_HEADER',
+      );
+    }
   });
 
   it('warns loudly when the limit windows are shortened (smoke test only)', () => {
@@ -67,7 +77,33 @@ describe('server settings at start-up (T-M2-17, T-M2-11)', () => {
     ).toThrow('production deployment');
   });
 
-  it('logs an ERROR for a self-hosted production server without a trusted client address header', () => {
+  it('refuses to start a self-hosted production server without a client-IP header, unless it says none (L4)', () => {
+    const selfHosted = { NODE_ENV: 'production', JADARAT_ENVIRONMENT: 'self-hosted' };
+    expect(() => checkServerSettings(selfHosted)).toThrow(
+      'JADARAT_CLIENT_IP_HEADER is required on a self-hosted production server',
+    );
+    expect(() => checkServerSettings({ ...selfHosted, JADARAT_CLIENT_IP_HEADER: ' ' })).toThrow(
+      'required',
+    );
+    expect(
+      checkServerSettings({ ...selfHosted, JADARAT_CLIENT_IP_HEADER: 'x-real-ip' }),
+    ).toMatchObject({ clientIpHeader: 'x-real-ip' });
+    // Explicitly none: it starts, with the ERROR at every start.
+    log.error.mockClear();
+    expect(checkServerSettings({ ...selfHosted, JADARAT_CLIENT_IP_HEADER: 'none' })).toMatchObject({
+      clientIpHeader: null,
+    });
+    expect(log.error).toHaveBeenCalledWith(expect.stringContaining('JADARAT_CLIENT_IP_HEADER'), {
+      action: 'app.start',
+      reason: 'client_ip_header_missing',
+    });
+    // Not production (development, tests): no refusal.
+    expect(() =>
+      checkServerSettings({ NODE_ENV: 'development', JADARAT_ENVIRONMENT: 'self-hosted' }),
+    ).not.toThrow();
+  });
+
+  it('logs an ERROR for another production server without a trusted client address header (local and test builds keep starting)', () => {
     log.error.mockClear();
     checkServerSettings({ NODE_ENV: 'production' });
     expect(log.error).toHaveBeenCalledWith(expect.stringContaining('JADARAT_CLIENT_IP_HEADER'), {

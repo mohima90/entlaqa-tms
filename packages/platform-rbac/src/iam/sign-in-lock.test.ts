@@ -52,7 +52,7 @@ function runtime(roles: SystemRoleCode[]) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  db.unlockMemberSignIn.mockResolvedValue(true);
+  db.unlockMemberSignIn.mockResolvedValue('unlocked');
 });
 
 describe('unlock sign-in (T-M2-11, PO decision 9 Oct 2026)', () => {
@@ -61,8 +61,9 @@ describe('unlock sign-in (T-M2-11, PO decision 9 Oct 2026)', () => {
     const result = await createDefineAction(rt)(unlockSignInActionDefinition())({
       personId: MEMBER,
     });
-    expect(result).toEqual(ok({ unlocked: true }));
-    expect(db.unlockMemberSignIn).toHaveBeenCalledWith(TX, MEMBER);
+    expect(result).toEqual(ok({ outcome: 'unlocked' }));
+    // Measured against the account budget sign-in applies (the platform's 5 by default).
+    expect(db.unlockMemberSignIn).toHaveBeenCalledWith(TX, MEMBER, 5);
     expect(writeAudit).toHaveBeenCalledWith(TX, expect.anything(), {
       action: 'platform.user.sign_in_unlocked',
       entityType: 'person',
@@ -70,13 +71,26 @@ describe('unlock sign-in (T-M2-11, PO decision 9 Oct 2026)', () => {
     });
   });
 
-  it('nothing to unlock (the lock lifted meanwhile): answered, not audited', async () => {
-    db.unlockMemberSignIn.mockResolvedValue(false);
+  it('nothing to unlock (the lock lifted meanwhile), or 3 unlocks today already: answered, not audited', async () => {
+    for (const outcome of ['not_locked', 'limited'] as const) {
+      db.unlockMemberSignIn.mockResolvedValue(outcome);
+      const { rt, writeAudit } = runtime(['tenant_admin']);
+      const result = await createDefineAction(rt)(unlockSignInActionDefinition(() => 3))({
+        personId: MEMBER,
+      });
+      expect(result).toEqual(ok({ outcome }));
+      expect(db.unlockMemberSignIn).toHaveBeenLastCalledWith(TX, MEMBER, 3);
+      expect(writeAudit).not.toHaveBeenCalled();
+    }
+  });
+
+  it('a person without an active membership with an account here (revoked, suspended…): NOT_FOUND', async () => {
+    db.unlockMemberSignIn.mockResolvedValue('no_account');
     const { rt, writeAudit } = runtime(['tenant_admin']);
     const result = await createDefineAction(rt)(unlockSignInActionDefinition())({
       personId: MEMBER,
     });
-    expect(result).toEqual(ok({ unlocked: false }));
+    expect(!result.ok && result.error.code).toBe('NOT_FOUND');
     expect(writeAudit).not.toHaveBeenCalled();
   });
 

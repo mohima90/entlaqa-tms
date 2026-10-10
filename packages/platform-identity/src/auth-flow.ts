@@ -26,7 +26,8 @@ import { type SupabaseAuthLike, verifyClaims, verifyClaimsStrict } from './verif
  * supplies a Supabase client bound to the request cookies and the platform-db functions.
  *
  *   signInWithPassword → the sign-in guard (T-M2-11: per account and per client, auth-limits.ts; a
- *     limited attempt never reaches Auth) → Supabase Auth (session cookie set) → the session's organizations
+ *     limited attempt never reaches Auth) → Supabase Auth (session cookie set; with «تذكّر هذا المتصفح»
+ *     ticked the browser is trusted for 30 days — opt-in) → the session's organizations
  *     · none  → sign out again, AUTH_NO_ORGANIZATION
  *     · one   → selectOrganization() automatically
  *     · many  → the caller shows the organization chooser
@@ -145,6 +146,17 @@ export interface PasswordSession {
   readonly claims: VerifiedClaims;
 }
 
+/** E-mail and password, and whether to remember this browser (sign-in page only; default: not). */
+export interface PasswordCredentials {
+  readonly email: string;
+  readonly password: string;
+  /**
+   * «تذكّر هذا المتصفح» / "Remember this browser" was ticked (PO decision 9 Oct 2026: opt-in, unticked
+   * by default): only then does a successful sign-in trust this browser — or renew its trust — for 30 days.
+   */
+  readonly remember?: boolean;
+}
+
 /**
  * Signs in with e-mail + password and verifies the issued access token. No organization is required
  * here: signInWithPassword() continues with the organizations, the invitation flow
@@ -153,12 +165,13 @@ export interface PasswordSession {
  * Limits first (T-M2-11): the attempt is counted BEFORE Auth is asked — a limited attempt gets
  * AUTH_TOO_MANY_ATTEMPTS without asking Auth; when the limiter cannot answer, RateLimiterUnavailableError
  * is thrown (fail closed: the generic internal error). Auth's verdict is then reported to the attempt
- * (failed: events and the lockout e-mail; succeeded: the provisional failure is given back and the browser
- * trusted). Every refusal — limited, or wrong e-mail or password — is answered after the same minimum time.
+ * (failed: events and the lockout e-mail; succeeded: the provisional failure is given back and — only with
+ * `remember` — the browser trusted; Auth's own 429: the account's failure is given back, no password was
+ * compared). Every refusal — limited, or wrong e-mail or password — is answered after the same minimum time.
  */
 export async function startPasswordSession(
   deps: AuthFlowDeps,
-  credentials: { readonly email: string; readonly password: string },
+  credentials: PasswordCredentials,
 ): Promise<Result<PasswordSession, AppError>> {
   const { supabase } = deps;
   if (!supabase) return err(appError('NOT_CONFIGURED'));
@@ -184,10 +197,12 @@ export async function startPasswordSession(
     password: credentials.password,
   });
   if (error) {
-    // Auth refused or could not answer: the attempt's provisional failure stays counted (429 and 5xx
-    // included — security review T-M2-11).
     if (error.status === 429) {
-      // Auth's own limits (on hosted Supabase: the app's egress address, shared by every visitor).
+      // Auth's own limits (on hosted Supabase: the app's egress address, shared by every visitor) answer
+      // before any password is compared: the account's (or trusted browser's) provisional failure is given
+      // back — a flood elsewhere must not lock this account — and the client's stays (security review
+      // T-M2-11 L6).
+      await gate.attempt.notChecked();
       deps.logWarning('sign-in limited by Auth', {
         action: 'platform.auth.sign_in',
         securityEvent: 'auth.rate_limited',
@@ -199,16 +214,16 @@ export async function startPasswordSession(
     // 4xx: refused credentials (wrong e-mail or password, unconfirmed or banned account) — one answer
     // for all of them (no account enumeration). The failure was counted before Auth was asked; the
     // attempt records the security events (keyed references only) and, when the account locks now,
-    // requests the lockout e-mail.
+    // requests the lockout e-mail. 5xx (thrown below): Auth could not answer — the failure stays counted.
     if (error.status !== undefined && error.status >= 400 && error.status < 500) {
       await gate.attempt.failed();
       return refuse(appError(IdentityErrors.AUTH_INVALID_CREDENTIALS));
     }
     throw new AuthServiceError(error.status);
   }
-  // The password was right: the provisional failure is given back, the run of failures ends and the
-  // browser is trusted for the account (30 days).
-  await gate.attempt.succeeded();
+  // The password was right: the provisional failure is given back and the run of failures ends; the
+  // browser is trusted for the account (30 days) only when «تذكّر هذا المتصفح» was ticked.
+  await gate.attempt.succeeded({ remember: credentials.remember === true });
   const tokens = sessionTokens(data);
   if (!tokens) return err(appError('UNAUTHENTICATED'));
 
@@ -218,7 +233,7 @@ export async function startPasswordSession(
 
 export async function signInWithPassword(
   deps: AuthFlowDeps,
-  credentials: { readonly email: string; readonly password: string },
+  credentials: PasswordCredentials,
 ): Promise<Result<SignInOutcome, AppError>> {
   const { supabase } = deps;
   if (!supabase) return err(appError('NOT_CONFIGURED'));

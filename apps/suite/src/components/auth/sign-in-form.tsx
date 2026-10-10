@@ -13,13 +13,21 @@ export interface SignInFormProps {
     readonly password: string;
     /** «(مطلوب)» / "(required)" — both fields are required (design principles §4). */
     readonly required: string;
+    /** «تذكّر هذا المتصفح» / "Remember this browser" and what it does. */
+    readonly rememberBrowser: string;
+    readonly rememberBrowserHint: string;
     readonly submit: string;
     readonly submitting: string;
   };
   readonly errors: ErrorTexts;
 }
 
-/** E-mail + password sign-in (ADR 0003 §2). Runs the server action; never talks to Auth directly. */
+/**
+ * E-mail + password sign-in (ADR 0003 §2). Runs the server action; never talks to Auth directly.
+ * «تذكّر هذا المتصفح» / "Remember this browser" (PO decision 9 Oct 2026, T-M2-11): a native check box,
+ * unticked by default, its explanation tied to it (aria-describedby) — only a sign-in with it ticked trusts
+ * this browser for 30 days.
+ */
 export function SignInForm({ locale, disabled, labels, errors }: SignInFormProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -34,9 +42,10 @@ export function SignInForm({ locale, disabled, labels, errors }: SignInFormProps
     };
     const email = field('email');
     const password = field('password');
+    const remember = form.get('remember') === 'on';
     setMessage(null);
     startTransition(async () => {
-      const result = await signInAction({ email, password });
+      const result = await signInAction({ email, password, remember });
       if (result.ok) {
         const paths = {
           home: '/suite',
@@ -76,6 +85,22 @@ export function SignInForm({ locale, disabled, labels, errors }: SignInFormProps
         dir="ltr"
         disabled={disabled || pending}
       />
+      <div className="flex flex-col gap-1">
+        <label className="flex min-h-11 items-center gap-3">
+          <input
+            type="checkbox"
+            name="remember"
+            aria-describedby="remember-browser-hint"
+            disabled={disabled || pending}
+            className="size-5 shrink-0"
+            data-testid="remember-browser"
+          />
+          {labels.rememberBrowser}
+        </label>
+        <p id="remember-browser-hint" className="m-0 ms-8 text-sm text-text-muted">
+          {labels.rememberBrowserHint}
+        </p>
+      </div>
       {message ? (
         <Alert tone="danger" data-testid="sign-in-error">
           {message}

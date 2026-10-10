@@ -8,6 +8,7 @@ import { passwordChangedTemplate } from './password-changed';
 import { passwordResetTemplate } from './password-reset';
 import { securityDigestTemplate } from './security-digest';
 import { securityPolicyChangedTemplate } from './security-policy-changed';
+import { signInUnlockedTemplate } from './sign-in-unlocked';
 import type { EmailTemplate, RenderedEmail } from './types';
 
 /**
@@ -24,6 +25,7 @@ export const EMAIL_TEMPLATES = {
   'platform.security_policy_changed': securityPolicyChangedTemplate,
   'platform.security_digest': securityDigestTemplate,
   'platform.account_locked': accountLockedTemplate,
+  'platform.sign_in_unlocked': signInUnlockedTemplate,
 } as const;
 
 export type EmailTemplateKey = keyof typeof EMAIL_TEMPLATES;

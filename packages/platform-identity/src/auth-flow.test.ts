@@ -95,14 +95,17 @@ function setup(options: FakeOptions = {}) {
   const claimsSeen: unknown[] = [];
   // The attempt an allowed check hands out: Auth's verdict is reported to it.
   const failed = vi.fn(() => Promise.resolve());
-  const succeeded = vi.fn(() => Promise.resolve());
+  const succeeded = vi.fn((_options?: { remember: boolean }) => Promise.resolve());
+  const notChecked = vi.fn(() => Promise.resolve());
   const check = vi.fn((_email: string): Promise<SignInGate> =>
     options.gate instanceof Error
       ? Promise.reject(options.gate)
-      : Promise.resolve(options.gate ?? { allowed: true, attempt: { failed, succeeded } }),
+      : Promise.resolve(
+          options.gate ?? { allowed: true, attempt: { failed, succeeded, notChecked } },
+        ),
   );
   const signInGuard: SignInGuard = { check };
-  const guard = { check, failed, succeeded };
+  const guard = { check, failed, succeeded, notChecked };
   const deps: AuthFlowDeps = {
     supabase: { auth },
     withUserTx: ((claims: unknown, fn: (tx: unknown) => Promise<unknown>) => {
@@ -247,13 +250,18 @@ describe('signInWithPassword', () => {
     expect(auth.signInWithPassword).not.toHaveBeenCalled();
   });
 
-  it("ends the account's run of failures after a correct password", async () => {
+  it("ends the account's run of failures after a correct password; remembers the browser only when ticked", async () => {
     const { deps, guard } = setup();
     await signInWithPassword(deps, credentials);
     expect(guard.succeeded).toHaveBeenCalledTimes(1);
+    // Opt-in (PO decision 9 Oct 2026): not ticked, not remembered.
+    expect(guard.succeeded).toHaveBeenCalledWith({ remember: false });
     expect(guard.failed).not.toHaveBeenCalled();
     // A successful sign-in is not slowed down.
     expect(deps.sleep).not.toHaveBeenCalled();
+    const ticked = setup();
+    await signInWithPassword(ticked.deps, { ...credentials, remember: true });
+    expect(ticked.guard.succeeded).toHaveBeenCalledWith({ remember: true });
   });
 
   it('never reports an Auth outage as a wrong password; the provisional failure stays counted', async () => {
@@ -263,15 +271,17 @@ describe('signInWithPassword', () => {
       // Neither verdict is reported: nothing is given back (security review T-M2-11).
       expect(guard.failed).not.toHaveBeenCalled();
       expect(guard.succeeded).not.toHaveBeenCalled();
+      expect(guard.notChecked).not.toHaveBeenCalled();
     }
   });
 
-  it('maps Auth rate limiting to RATE_LIMITED (security event, padded answer)', async () => {
+  it('maps Auth rate limiting to RATE_LIMITED; no password was compared, so the account gets its failure back (L6)', async () => {
     const { deps, guard } = setup({ signInError: { status: 429 } });
     const started = deps.now();
     const result = await signInWithPassword(deps, credentials);
     expect(!result.ok && result.error.code).toBe('RATE_LIMITED');
     expect(deps.now() - started).toBe(SIGN_IN_REFUSAL_ANSWER_MS);
+    expect(guard.notChecked).toHaveBeenCalledTimes(1);
     expect(guard.failed).not.toHaveBeenCalled();
     expect(guard.succeeded).not.toHaveBeenCalled();
     expect(deps.logWarning).toHaveBeenCalledWith('sign-in limited by Auth', {

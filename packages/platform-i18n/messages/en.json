@@ -62,6 +62,8 @@
     "signInIntro": "Enter your account's email and password.",
     "emailLabel": "Email",
     "passwordLabel": "Password",
+    "rememberBrowser": "Remember this browser",
+    "rememberBrowserHint": "For 30 days, you can still sign in from this browser even if sign-in to your account is paused after attempts from elsewhere. Don't tick this on a shared computer.",
     "forgotPassword": "Forgot your password?",
     "submit": "Sign in",
     "submitting": "Signing in…",
@@ -366,12 +368,13 @@
     },
     "signInLock": {
       "title": "Sign-in is paused",
-      "body": "Sign-in to this account was paused after too many unsuccessful attempts. It resumes by itself in about {minutes, plural, one {# minute} other {# minutes}}. Browsers this person signed in with before can still sign in.",
+      "body": "Sign-in to this account was paused after too many unsuccessful attempts. It resumes by itself in about {minutes, plural, one {# minute} other {# minutes}}. Browsers where this person chose “Remember this browser” can still sign in.",
       "unlock": "Unlock sign-in",
       "unlocking": "Unlocking…",
       "unlocked": "Sign-in unlocked. This person can sign in again now.",
       "notLocked": "Sign-in was no longer paused.",
-      "audited": "Unlocking is recorded in the audit log."
+      "limited": "Sign-in to this account was unlocked 3 times in the last 24 hours, so the pause stays until it ends by itself. The person can set a new password with “Forgot password?”.",
+      "audited": "Unlocking is recorded in the audit log, and the person is told by email."
     }
   },
   "profile": {

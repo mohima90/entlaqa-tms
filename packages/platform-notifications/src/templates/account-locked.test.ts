@@ -33,6 +33,18 @@ describe('account locked e-mail (T-M2-11, PO decision 9 Oct 2026)', () => {
     expect(email.html).toContain('administrator');
     expect(email.text).toContain('يُرفع الإيقاف تلقائيًا بعد 15 دقيقة');
     expect(email.text).toContain('The pause ends by itself after 15 minutes');
+    // Remembered browsers (opt-in) still sign in; a new password ends the pause at once and keeps the
+    // browser used for it remembered (security review M2); at most one notice a day (M3).
+    expect(email.text).toContain('«تذكّر هذا المتصفح»');
+    expect(email.text).toContain('“Remember this browser” can still sign in');
+    expect(email.text).toContain('يُنهي الإيقاف فورًا، ويتذكّر المتصفح الذي تستخدمه لذلك');
+    expect(email.text).toContain(
+      'Setting a new password ends the pause at once. The browser you use for it is remembered; other browsers need to sign in again.',
+    );
+    expect(email.text).toContain('نرسل هذا التنبيه مرة واحدة في اليوم على الأكثر.');
+    expect(email.html).toContain('We send this notice at most once a day.');
+    // No promise for browsers that merely signed in before (trust is opt-in).
+    expect(email.text).not.toContain('signed in with before');
     // One button (primary language), the other language as a plain link; nothing else is a link.
     expect(email.html.match(/background: #0F665F/g)).toHaveLength(1);
     expect(hrefs(email.html)).toEqual([locked.forgotPasswordUrl.ar, locked.forgotPasswordUrl.en]);

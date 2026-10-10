@@ -49,6 +49,7 @@ import { after } from 'next/server';
 import {
   type AuthClientLike,
   type AuthFlowDeps,
+  type PasswordCredentials,
   getSessionOrganizations,
   selectOrganization,
   signInWithPassword,
@@ -70,6 +71,7 @@ import {
   createPasswordCheckLimiter,
   createPasswordResetLimiter,
   createSignInGuard,
+  forgetOtherTrustedBrowsers,
   limitsFor,
   resetAccountSignIn,
   securityLogLine,
@@ -141,6 +143,8 @@ const SECURE_COOKIES = process.env.NODE_ENV !== 'development';
  * The trusted-device cookie (PO decision 9 Oct 2026; T-M2-11): a random token only — HttpOnly (never
  * readable by scripts), Secure with the `__Host-` prefix (this host only, path /), SameSite=Lax. The
  * account it is trusted for is known to the database alone (keyed hashes); a malformed value is ignored.
+ * Written only by a sign-in with «تذكّر هذا المتصفح» ticked (opt-in) and by a completed password reset,
+ * each for the 30 days of the trust; an unticked sign-in leaves it (and the trust) to expire.
  */
 export const TRUSTED_DEVICE_COOKIE = SECURE_COOKIES ? '__Host-jadarat-device' : 'jadarat-device';
 
@@ -233,9 +237,12 @@ async function requestDeps(
   };
 }
 
-/** Sign-in (screen «تسجيل الدخول»): limited per account and per client before Auth is asked (T-M2-11). */
+/**
+ * Sign-in (screen «تسجيل الدخول»): limited per account and per client before Auth is asked (T-M2-11);
+ * `remember` («تذكّر هذا المتصفح», opt-in) trusts this browser after a successful sign-in.
+ */
 export async function signInWithPasswordForRequest(
-  credentials: { readonly email: string; readonly password: string },
+  credentials: PasswordCredentials,
   client: RequestClient,
 ) {
   return signInWithPassword(await requestDeps(await signInGuardFor(client), client), credentials);
@@ -378,11 +385,19 @@ export async function dismissMfaPromptForRequest(): Promise<boolean> {
   });
 }
 
+const CHANGE_PASSWORD_ACTION = 'platform.auth.change_password';
+
+/**
+ * My profile password change (FR-IAM-16). After a successful change, every browser the account trusted
+ * but this one is forgotten (T-M2-11 security review L2) — with `after()`: the action is still inside its
+ * transaction here, and the limiter's own transaction must never wait for a pooled connection meanwhile.
+ */
 export async function changePasswordForRequest(input: {
   readonly currentPassword: string;
   readonly newPassword: string;
 }) {
   const deps = await requestDeps();
+  const deviceToken = trustedDeviceCookie(await cookies()).read();
   return changePassword(
     {
       supabase: deps.supabase as unknown as PasswordClientLike | null,
@@ -392,6 +407,11 @@ export async function changePasswordForRequest(input: {
       ),
       securityLog,
       logWarning: deps.logWarning,
+      forgetOtherTrustedBrowsers: (email) => {
+        after(() =>
+          forgetOtherTrustedBrowsers(limiterDeps(), CHANGE_PASSWORD_ACTION, email, deviceToken),
+        );
+      },
     },
     input,
   );
@@ -415,7 +435,7 @@ export function codeAttemptLimiterForRequest(client: RequestClient): CodeAttempt
 export function allowPasswordCheckForRequest(userId: string): Promise<boolean> {
   return createPasswordCheckLimiter({
     ...limiterDeps(),
-    action: 'platform.auth.change_password',
+    action: CHANGE_PASSWORD_ACTION,
   })(userId);
 }
 
@@ -567,7 +587,8 @@ export async function requestPasswordResetForRequest(
 
 /**
  * Screen 11: limited per client (fail closed — the link is not spent), verifies the link, sets the
- * password, ends every session of the account and its sign-in lock.
+ * password, ends every session of the account and its sign-in lock; this browser becomes trusted for the
+ * account (its cookie is set) and the account's other trusted browsers are forgotten (T-M2-11 M2).
  */
 export async function completePasswordResetForRequest(
   input: {
@@ -583,11 +604,13 @@ export async function completePasswordResetForRequest(
     undefined,
     authClientOptions(client),
   ) as RecoveryClientLike | null;
+  const device = trustedDeviceCookie(await cookies());
   return completePasswordReset(
     {
       client: recoveryClient,
       allowAttempt: () => limiter.allowCompletion(),
-      unlockSignIn: (email) => resetAccountSignIn(limiterDeps(), RESET_COMPLETE_ACTION, email),
+      unlockSignIn: (email) =>
+        resetAccountSignIn(limiterDeps(), RESET_COMPLETE_ACTION, email, device),
       // Strictest wins (T-M2-10): asked with the recovery session's own, verified access token.
       passwordMinLength: async (accessToken) => {
         const claims = await verifyClaims(

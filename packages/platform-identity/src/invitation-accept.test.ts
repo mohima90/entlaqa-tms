@@ -137,13 +137,16 @@ function setup(options: Options = {}) {
   };
   // The attempt an allowed check hands out: Auth's verdict is reported to it.
   const failed = vi.fn(() => Promise.resolve());
-  const succeeded = vi.fn(() => Promise.resolve());
+  const succeeded = vi.fn((_options?: { remember: boolean }) => Promise.resolve());
+  const notChecked = vi.fn(() => Promise.resolve());
   const check = vi.fn((_email: string): Promise<SignInGate> =>
     options.gate instanceof Error
       ? Promise.reject(options.gate)
-      : Promise.resolve(options.gate ?? { allowed: true, attempt: { failed, succeeded } }),
+      : Promise.resolve(
+          options.gate ?? { allowed: true, attempt: { failed, succeeded, notChecked } },
+        ),
   );
-  const guard = { check, failed, succeeded };
+  const guard = { check, failed, succeeded, notChecked };
   const authDeps: AuthFlowDeps = {
     supabase: { auth },
     withUserTx: ((_claims: unknown, fn: (tx: unknown) => Promise<unknown>) =>
@@ -594,12 +597,14 @@ describe('acceptInvitationWithPassword (sign in to accept)', () => {
   });
 
   it('signs in as the invitation e-mail, accepts as that user and opens the organization', async () => {
-    const { deps, auth, calls } = setup();
+    const { deps, auth, calls, guard } = setup();
     const result = await acceptInvitationWithPassword(deps, { token: TOKEN, password: PASSWORD });
     expect(result).toEqual({ ok: true, value: { next: 'home' } });
     expect(auth.signInWithPassword).toHaveBeenCalledWith({ email: EMAIL, password: PASSWORD });
     expect(calls).toEqual(['signIn', 'acceptAsCaller', `switch:${TENANT}`]);
     expect(auth.refreshSession).toHaveBeenCalledWith({ refresh_token: 'refresh-1' });
+    // No «تذكّر هذا المتصفح» here: the browser is not remembered (opt-in, PO decision 9 Oct 2026).
+    expect(guard.succeeded).toHaveBeenCalledWith({ remember: false });
   });
 
   it('refuses wrong credentials with the usual sign-in answer', async () => {

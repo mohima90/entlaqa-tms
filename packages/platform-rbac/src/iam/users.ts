@@ -193,7 +193,8 @@ export function userProfileQueryDefinition(
         person.id,
         {
           canUnlock: ctx.can(p['platform.user.unlock_sign_in'], person),
-          hasAccount: profile.membershipStatus !== null,
+          // Active members only (security review T-M2-11 M1): revoked, suspended or invited is not ours.
+          hasAccount: profile.membershipStatus === 'active',
         },
         accountLockBudget,
       );

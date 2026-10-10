@@ -426,6 +426,7 @@ async function Profile({
                 unlocking: t('signInLock.unlocking'),
                 unlocked: t('signInLock.unlocked'),
                 notLocked: t('signInLock.notLocked'),
+                limited: t('signInLock.limited'),
                 audited: t('signInLock.audited'),
               }}
               errors={await authErrorTexts(locale)}

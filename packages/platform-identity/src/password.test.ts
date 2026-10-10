@@ -35,18 +35,28 @@ function setup(
   const verifyPassword = vi.fn(() => Promise.resolve(over.verdict ?? 'valid'));
   const logWarning = vi.fn();
   const securityLog = vi.fn();
+  const forgetOtherTrustedBrowsers = vi.fn();
   const deps: PasswordChangeDeps = {
     supabase,
     verifyPassword,
     securityLog,
     logWarning,
+    forgetOtherTrustedBrowsers,
   };
-  return { deps, updateUser, signOut, verifyPassword, logWarning, securityLog };
+  return {
+    deps,
+    updateUser,
+    signOut,
+    verifyPassword,
+    logWarning,
+    securityLog,
+    forgetOtherTrustedBrowsers,
+  };
 }
 
 describe('changePassword (FR-IAM-16)', () => {
-  it('checks the current password, sets the new one and ends the other sessions', async () => {
-    const { deps, updateUser, signOut, verifyPassword } = setup();
+  it('checks the current password, sets the new one, ends the other sessions and forgets the other trusted browsers', async () => {
+    const { deps, updateUser, signOut, verifyPassword, forgetOtherTrustedBrowsers } = setup();
     expect(await changePassword(deps, input)).toEqual({ ok: true, value: { userId: 'u1' } });
     expect(verifyPassword).toHaveBeenCalledWith('u1@example.test', 'Old-password-123');
     expect(updateUser).toHaveBeenCalledWith({
@@ -54,6 +64,20 @@ describe('changePassword (FR-IAM-16)', () => {
       current_password: 'Old-password-123',
     });
     expect(signOut).toHaveBeenCalledWith({ scope: 'others' });
+    // T-M2-11 security review L2: scheduled for the account as Auth stores it (this browser stays).
+    expect(forgetOtherTrustedBrowsers).toHaveBeenCalledWith('u1@example.test');
+  });
+
+  it('forgets no trusted browser when the change is refused', async () => {
+    for (const over of [
+      { verdict: 'invalid' as const },
+      { verdict: 'rate_limited' as const },
+      { updateError: { status: 422, code: 'weak_password' } },
+    ]) {
+      const { deps, forgetOtherTrustedBrowsers } = setup(over);
+      expect((await changePassword(deps, input)).ok).toBe(false);
+      expect(forgetOtherTrustedBrowsers).not.toHaveBeenCalled();
+    }
   });
 
   it('refuses a wrong current password without touching the password (security event)', async () => {

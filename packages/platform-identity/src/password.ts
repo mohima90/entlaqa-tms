@@ -24,7 +24,9 @@ import type { SecurityLog } from './auth-limits';
  *      itself when "require current password" is on (`current_password`);
  *   3. Auth sets the new password and applies its password policy (length, characters, leaked
  *      passwords where available);
- *   4. every OTHER sign-in session of the user ends (`signOut({ scope: 'others' })`).
+ *   4. every OTHER sign-in session of the user ends (`signOut({ scope: 'others' })`);
+ *   5. every OTHER browser the account trusted for the sign-in lock is forgotten — this one stays
+ *      (T-M2-11 security review L2): scheduled to run after the action's transaction.
  * Passwords are never logged or audited.
  */
 export const PasswordErrors = defineErrorCodes({
@@ -68,6 +70,12 @@ export interface PasswordChangeDeps {
   readonly verifyPassword: (email: string, password: string) => Promise<PasswordVerdict>;
   readonly securityLog: SecurityLog;
   readonly logWarning: (message: string, fields: LogFields) => void;
+  /**
+   * After a successful change: SCHEDULES forgetting every browser the account (`email`, as Auth stores it)
+   * trusted except this one (auth-next.ts: after the response, outside the action's transaction —
+   * auth-limits.ts forgetOtherTrustedBrowsers; never throws).
+   */
+  readonly forgetOtherTrustedBrowsers?: (email: string) => void;
 }
 
 const CHANGE_ACTION = 'platform.auth.change_password';
@@ -171,5 +179,7 @@ export async function changePassword(
       action: CHANGE_ACTION,
     });
   }
+  // And the browsers the account trusted, but this one, are no longer trusted (T-M2-11 L2).
+  deps.forgetOtherTrustedBrowsers?.(user.email);
   return ok({ userId: user.id });
 }

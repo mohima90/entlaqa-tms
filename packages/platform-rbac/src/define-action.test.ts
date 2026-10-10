@@ -541,7 +541,8 @@ describe('defineAction (ADR 0003 §4)', () => {
       });
       expect(answer).toEqual(ok('done'));
       expect(order).toEqual([`before ${USER} ${ENROLLMENT}`, 'handler']);
-      expect(allowed.log).toEqual(['begin', 'commit']);
+      // The session check's own short transaction, then the action's (L3).
+      expect(allowed.log).toEqual(['begin', 'commit', 'begin', 'commit']);
 
       const refused = runtime();
       const r = await limitedAction(
@@ -550,7 +551,8 @@ describe('defineAction (ADR 0003 §4)', () => {
         [],
       )({ enrollmentId: ENROLLMENT });
       expect(!r.ok && r.error.code).toBe('RATE_LIMITED');
-      expect(refused.log).toEqual([]);
+      // Only the session check ran; the action's transaction never opened.
+      expect(refused.log).toEqual(['begin', 'commit']);
     });
 
     it('a throw (e.g. the limiter is down) is an internal error with a correlation id; nothing runs', async () => {
@@ -562,8 +564,120 @@ describe('defineAction (ADR 0003 §4)', () => {
         [],
       )({ enrollmentId: ENROLLMENT });
       expect(!r.ok && r.error.code).toBe('INTERNAL_ERROR');
-      expect(failing.log).toEqual([]);
+      expect(failing.log).toEqual(['begin', 'commit']);
       expect(logError).toHaveBeenCalled();
+    });
+
+    it('checks the session first, in its own transaction that ends before beforeTransaction runs (integration review L3)', async () => {
+      // An inactive session (ended, its membership gone, or refused by its organization's MFA policy):
+      // UNAUTHENTICATED, and the per-actor work (e.g. counting a password check) never happens.
+      const order: string[] = [];
+      const inactive = runtime({
+        loadSessionFacts: () => Promise.resolve({ active: false, aal2: false }),
+      });
+      const before = vi.fn(() => Promise.resolve(ok(undefined)));
+      const r = await limitedAction(inactive.rt, before, order)({ enrollmentId: ENROLLMENT });
+      expect(!r.ok && r.error.code).toBe('UNAUTHENTICATED');
+      expect(before).not.toHaveBeenCalled();
+      expect(order).toEqual([]);
+      expect(inactive.log).toEqual(['begin', 'commit']);
+
+      // An active one: the check's transaction is over before beforeTransaction starts — never nested.
+      const steps: string[] = [];
+      let open = 0;
+      const sequential = runtime({
+        withUserTx: async (_c, fn) => {
+          open += 1;
+          steps.push(`begin (${String(open)} open)`);
+          try {
+            return await fn({ log: steps });
+          } finally {
+            open -= 1;
+            steps.push('end');
+          }
+        },
+        loadSessionFacts: () => {
+          steps.push('session facts');
+          return Promise.resolve({ active: true, aal2: false });
+        },
+      });
+      const answer = await createDefineAction(sequential.rt)({
+        permission: approve,
+        input: Input,
+        scoped: true,
+        beforeTransaction: () => {
+          steps.push(`before (${String(open)} open)`);
+          return Promise.resolve(ok(undefined));
+        },
+        handler: () => Promise.resolve(ok('done')),
+      })({ enrollmentId: ENROLLMENT });
+      expect(answer).toEqual(ok('done'));
+      expect(steps).toEqual([
+        'begin (1 open)',
+        'session facts',
+        'end',
+        'before (0 open)',
+        'begin (1 open)',
+        'session facts',
+        'end',
+      ]);
+    });
+
+    it('runs beforeTransaction once, also when the action’s transaction is retried; externalEffects still turns the retry off', async () => {
+      const calls: { retryOnConflict: boolean | undefined }[] = [];
+      const retrying = runtime({
+        withUserTx: async (_c, fn, options) => {
+          calls.push({ retryOnConflict: options?.retryOnConflict });
+          // A retried transaction (deadlock victim): the runtime runs `fn` again.
+          if (options?.retryOnConflict === true) {
+            try {
+              await fn({ log: [] });
+            } catch {
+              // the first run's outcome is discarded, as after a rollback
+            }
+            options.onRetry?.('40P01');
+          }
+          return fn({ log: [] });
+        },
+      });
+      const before = vi.fn(() => Promise.resolve(ok(undefined)));
+      const handler = vi.fn(() => Promise.resolve(ok('done')));
+      const define = createDefineAction(retrying.rt);
+      const plain = define({
+        permission: approve,
+        input: Input,
+        scoped: true,
+        beforeTransaction: before,
+        handler,
+      });
+      expect(await plain({ enrollmentId: ENROLLMENT })).toEqual(ok('done'));
+      expect(before).toHaveBeenCalledTimes(1);
+      expect(handler).toHaveBeenCalledTimes(2);
+      // The session check (no options) and the action's transaction (retry on conflict).
+      expect(calls).toEqual([{ retryOnConflict: undefined }, { retryOnConflict: true }]);
+
+      calls.length = 0;
+      before.mockClear();
+      handler.mockClear();
+      const external = define({
+        permission: approve,
+        input: Input,
+        scoped: true,
+        externalEffects: true,
+        beforeTransaction: before,
+        handler,
+      });
+      expect(await external({ enrollmentId: ENROLLMENT })).toEqual(ok('done'));
+      expect(before).toHaveBeenCalledTimes(1);
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(calls).toEqual([{ retryOnConflict: undefined }, { retryOnConflict: false }]);
+    });
+
+    it('an action without beforeTransaction opens one transaction, as before', async () => {
+      const { rt, log } = runtime();
+      const r = await makeAction(rt)({ enrollmentId: ENROLLMENT });
+      expect(r.ok).toBe(true);
+      expect(log).toEqual(['begin', 'commit']);
     });
 
     it('regression: more concurrent actions than pool connections all complete (none held while waiting for another)', async () => {

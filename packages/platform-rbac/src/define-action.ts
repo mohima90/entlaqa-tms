@@ -164,8 +164,9 @@ export type ActionDefinition<S extends z.ZodType, O, Tx> = ActionTarget<S> & {
    */
   readonly auditFailure?: (error: AppError, actor: ActorContext) => AuditRecord | null;
   /**
-   * Work that must happen BEFORE the action's transaction (after the session and the input were checked,
-   * before authorization): e.g. counting the actor's own attempts on the shared rate limiter, whose short
+   * Work that must happen BEFORE the action's transaction (after the session — the database's session
+   * facts, in their own short transaction first: an inactive session never gets here — and the input were
+   * checked, before authorization): e.g. counting the actor's own attempts on the shared rate limiter, whose short
    * transaction must never run while this action holds a pooled connection (two connections per request
    * can starve the pool — security review T-M2-11), and whose count must survive the action's rollback.
    * An error result is the action's answer (no transaction is opened); a throw is an internal error. Use it
@@ -219,7 +220,8 @@ export function requiresStrictVerification(permission: PermissionDefinition): bo
  * modules/** and packages/platform-*\/** must be created with it (CI: scripts/check-server-actions.mjs).
  *
  * Pipeline: verify session (strict getUser round-trip for high-risk / AAL2 permissions) → require
- * tenant claim → validate input → beforeTransaction (optional) → withUserTx {
+ * tenant claim → validate input → [with beforeTransaction: session facts in their own short
+ * transaction (inactive → UNAUTHENTICATED), then beforeTransaction, once] → withUserTx {
  *   session facts (inactive → UNAUTHENTICATED) → load effective grants → resolve resource → authorize
  *   (deny by default; AAL2 permissions need the database's AAL2 AND a code from the last
  *   STEP_UP_MAX_AGE_SECONDS, else STEP_UP_REQUIRED) → handler → audit } — the whole transaction run once
@@ -262,6 +264,14 @@ export function createDefineAction<Tx>(runtime: ActionRuntime<Tx>) {
       let refused = null as AppError | null;
       try {
         if (definition.beforeTransaction) {
+          // The session check first (integration review T-M2-11 L3), in its own short transaction that
+          // ends before beforeTransaction runs (never nested: one pooled connection at a time): a session
+          // the database no longer lets act in its organization does no per-actor work either — e.g. it
+          // cannot spend the user's password-check budget. The action's transaction checks it again.
+          const facts = await runtime.withUserTx(tenantClaims, (tx) =>
+            runtime.loadSessionFacts(tx),
+          );
+          if (!facts.active) return err(toClientError(appError('UNAUTHENTICATED')));
           const before = await definition.beforeTransaction({
             actor: actorFromClaims(tenantClaims),
             input: input.value,

@@ -123,9 +123,15 @@ describe.skipIf(!configured)('account mailer against PostgreSQL', () => {
       sql`select status, locale, error_code, destination from platform.message_deliveries
           where tenant_id = ${tenant} and template = ${template} order by created_at`,
     );
+  /**
+   * This test's requests still waiting (its addresses or its account). The database is shared with the SQL
+   * tests and the other integration tests, which may leave requests of their own (e.g. the authenticator
+   * set-up notice of the T-M2-10 fixtures): a pass answers those too, but they are not this test's.
+   */
   const waiting = async () => {
     const [row] = await owner.execute<{ n: string }>(
-      sql`select count(*) as n from private.account_mail_requests`,
+      sql`select count(*) as n from private.account_mail_requests
+          where email like ${`%.${tenant.slice(0, 8)}@test.example`} or user_id = ${member.user}`,
     );
     return Number(row?.n ?? 0);
   };

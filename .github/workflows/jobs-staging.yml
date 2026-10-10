@@ -23,6 +23,20 @@
 #   PASSWORD_RESET_DELIVERY=worker; the Auth admin key exists HERE ONLY, never in Vercel (ADR 0002 §7):
 #   variable SUPABASE_URL             the project's API origin (https://<ref>.supabase.co)
 #   secret   SUPABASE_SECRET_KEY      a Supabase secret key (sb_secret_…) of that project
+#   (the same two settings give the worker Storage for the file tasks of T-M2-18: retention housekeeping,
+#   and the malware scan when the scanner below is on)
+#   File scanning (T-M2-18, ADR 0006 §8), optional — uploads stay unscanned (never clean, so never usable)
+#   until it is on:
+#   variable FILE_SCANNING            on = start clamd on the runner for each pass, with signatures
+#                                     refreshed by freshclam at most once a day (kept in the Actions cache);
+#                                     adds about 1–2 minutes of signature loading to every run. Signatures
+#                                     older than 7 days: the worker scans nothing (fail closed, an error in
+#                                     the run log). A continuous worker host is the PO's pending cost
+#                                     decision (docs/engineering/files.md §7). If clamd does not start, the
+#                                     pass still runs (e-mails, housekeeping) without scanning, and the run
+#                                     is marked failed afterwards.
+#   variable FILE_ORPHAN_SWEEP        off = pause the removal of orphan objects (set it BEFORE restoring
+#                                     the database or Storage; docs/engineering/files.md §4); unset = on
 # Until both connection secrets exist each run ends with a notice and does nothing.
 name: Jobs (staging)
 
@@ -49,7 +63,7 @@ jobs:
     name: Worker pass (staging)
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     environment: staging-jobs
     steps:
       - name: Configured?
@@ -80,6 +94,75 @@ jobs:
         run: |
           pnpm install --frozen-lockfile --filter '@jadarat/worker...'
           pnpm --filter @jadarat/worker build
+      # Signatures for this pass's scanner (opt-in): yesterday's (or older) from the Actions cache, refreshed
+      # by freshclam once a day — not every 5 minutes, which would get the runner rate-limited by the public
+      # mirror. freshclam verifies the databases' signatures itself. A failed refresh keeps the cached
+      # signatures (the worker refuses to scan once they are older than 7 days, and says so).
+      - name: Malware signatures (cache)
+        id: signatures
+        if: steps.configured.outputs.ready == 'true' && vars.FILE_SCANNING == 'on' && inputs.mode != 'test-email'
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: ${{ runner.temp }}/clamav-db
+          key: clamav-db-${{ github.run_id }}
+          restore-keys: clamav-db-
+      - name: Malware signatures (refresh, once a day)
+        id: freshclam
+        if: steps.configured.outputs.ready == 'true' && vars.FILE_SCANNING == 'on' && inputs.mode != 'test-email'
+        continue-on-error: true
+        env:
+          DB: ${{ runner.temp }}/clamav-db
+          CACHED_KEY: ${{ steps.signatures.outputs.cache-matched-key }}
+        run: |
+          image='clamav/clamav:1.5.4-debian@sha256:9bb8712a50f0e75166e936c452cd82dd5e5be0b85586598930b5bbb84a99a578'
+          mkdir -p "$DB" && chmod 0777 "$DB"
+          if [[ -z "$(ls -A "$DB")" ]]; then
+            # First run: start from the image's signatures (freshclam then downloads only the differences).
+            docker run --rm --user 1000:1000 -v "$DB:/seed" --entrypoint sh "$image" -c 'cp -a /var/lib/clamav/. /seed/'
+          fi
+          today="clamav-db-$(date -u +%F)"
+          if [[ "$CACHED_KEY" == "$today"* ]]; then
+            echo "signatures already refreshed today"; echo "save=false" >>"$GITHUB_OUTPUT"; exit 0
+          fi
+          docker run --rm --read-only --tmpfs /tmp --user 1000:1000 --cap-drop ALL --security-opt no-new-privileges \
+            -v "$DB:/var/lib/clamav" -v "$PWD/infra/docker/clamav/freshclam.conf:/etc/jadarat/freshclam.conf:ro" \
+            --entrypoint freshclam "$image" --stdout --config-file=/etc/jadarat/freshclam.conf
+          echo "save=true" >>"$GITHUB_OUTPUT"
+          echo "key=$today-$GITHUB_RUN_ID" >>"$GITHUB_OUTPUT"
+      - name: Malware signatures (keep today's)
+        if: steps.freshclam.outputs.save == 'true'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: ${{ runner.temp }}/clamav-db
+          key: ${{ steps.freshclam.outputs.key }}
+      # The malware scanner for this pass: the same clamd image and limits as the self-hosted stack,
+      # unprivileged, read-only, its scratch space bounded, reachable on the runner's loopback only. If it
+      # does not start, only the scanning of this pass is skipped (e-mails and housekeeping still run):
+      # uploads wait for the next pass, never clean; the run is marked failed at its end.
+      - name: Malware scanner (clamd) for this pass
+        id: clamd
+        if: steps.configured.outputs.ready == 'true' && vars.FILE_SCANNING == 'on' && inputs.mode != 'test-email'
+        env:
+          DB: ${{ runner.temp }}/clamav-db
+        run: |
+          mounts=()
+          if [[ -n "$(ls -A "$DB" 2>/dev/null)" ]]; then mounts=(-v "$DB:/var/lib/clamav:ro"); fi
+          docker run -d --name clamd --read-only --tmpfs /tmp:size=2048m --user 1000:1000 --cap-drop ALL \
+            --security-opt no-new-privileges -p 127.0.0.1:3310:3310 "${mounts[@]}" \
+            -v "$PWD/infra/docker/clamav/clamd.conf:/etc/jadarat/clamd.conf:ro" --entrypoint clamd \
+            clamav/clamav:1.5.4-debian@sha256:9bb8712a50f0e75166e936c452cd82dd5e5be0b85586598930b5bbb84a99a578 \
+            --foreground --config-file=/etc/jadarat/clamd.conf || true
+          for _ in $(seq 1 60); do
+            if docker exec clamd clamdcheck.sh >/dev/null 2>&1; then
+              echo "ready=true" >>"$GITHUB_OUTPUT"
+              exit 0
+            fi
+            [[ "$(docker inspect -f '{{.State.Running}}' clamd 2>/dev/null)" == "true" ]] || break
+            sleep 5
+          done
+          echo "::error::clamd did not become ready; this pass runs without scanning (uploads wait for the next pass)"
+          docker logs --tail 30 clamd || true
+          echo "ready=false" >>"$GITHUB_OUTPUT"
       - name: One worker pass (or a test e-mail)
         if: steps.configured.outputs.ready == 'true'
         env:
@@ -94,7 +177,14 @@ jobs:
           APP_BASE_URL: ${{ vars.APP_BASE_URL }}
           SUPABASE_URL: ${{ vars.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          CLAMD_HOST: ${{ steps.clamd.outputs.ready == 'true' && '127.0.0.1' || '' }}
+          FILE_ORPHAN_SWEEP: ${{ vars.FILE_ORPHAN_SWEEP }}
           MODE: ${{ inputs.mode == 'test-email' && 'test-email' || 'once' }}
           JADARAT_ENVIRONMENT: staging
           JADARAT_RELEASE: ${{ github.sha }}
         run: node apps/worker/dist/main.mjs "$MODE"
+      - name: Scanner was not available
+        if: steps.clamd.outcome == 'success' && steps.clamd.outputs.ready != 'true'
+        run: |
+          echo "::error::this pass ran without malware scanning (clamd did not start); see the step above"
+          exit 1

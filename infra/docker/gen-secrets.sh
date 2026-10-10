@@ -110,6 +110,22 @@ add_secret ERRORS_DB_PASSWORD "$(pw2)"
 add_secret GLITCHTIP_SECRET_KEY "$(pw2)$(pw2)"
 add_secret GLITCHTIP_ADMIN_PASSWORD "$(pw2)"
 add_secret APP_QUEUE_DB_PASSWORD "$(pw2)"
+# Supabase Storage (T-M2-18): its database password (the database receives the SCRAM verifier only,
+# db/99-roles.sql) and the secret it signs its own short-lived URL tokens with (never shared with Auth).
+if ! grep -q '^STORAGE_DB_PASSWORD=' "$S/.env"; then
+  storage_pw="$(pw2)"
+  storage_scram="$(STORAGE_DB_PASSWORD="$storage_pw" node --input-type=module -e "
+    import { scramSha256Verifier } from '../../scripts/lib/scram.mjs';
+    process.stdout.write(scramSha256Verifier(process.env.STORAGE_DB_PASSWORD));
+  ")"
+  add_secret STORAGE_DB_PASSWORD "$storage_pw"
+  add_secret STORAGE_DB_PASSWORD_SCRAM "'$storage_scram'"
+  unset storage_pw storage_scram
+fi
+# Storage's own HS secret (URL tokens). ADMIN-EQUIVALENT: Storage accepts any token signed with it, so it
+# must reach the storage container only (smoke-tested). Rotate: delete the STORAGE_JWT_SECRET= line from
+# .secrets/.env, run this script, then `docker compose --env-file .secrets/.env up -d storage` (README.md).
+add_secret STORAGE_JWT_SECRET "$(pw2)$(pw2)"
 # Auth's signing key (written with a new .env; written again after a key rotation, README.md "Auth admin
 # key"). Auth, the worker's token and admin-cli must all use the key in jwt-private.jwk.json.
 add_secret JWT_KEYS "'[$(cat "$S/jwt-private.jwk.json")]'"
@@ -117,6 +133,18 @@ kid="$(node -e 'process.stdout.write(JSON.parse(require("node:fs").readFileSync(
   "$S/jwt-private.jwk.json")"
 grep -q "^JWT_KEYS=.*\"kid\":\"$kid\"" "$S/.env" ||
   { echo "gen-secrets: JWT_KEYS in .env is not the key in jwt-private.jwk.json (README.md, \"Auth admin key\")" >&2; exit 1; }
+# Storage (T-M2-18) verifies the users' access tokens and the worker's token with the PUBLIC half of that
+# key (JWKS); written again whenever the key changes (rotation).
+storage_jwks="$(node -e '
+  const { kty, crv, x, y, kid, alg } = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"));
+  process.stdout.write(JSON.stringify({ keys: [{ kty, crv, x, y, kid, alg, use: "sig", key_ops: ["verify"] }] }));
+' "$S/jwt-private.jwk.json")"
+if ! grep -qxF "STORAGE_JWT_JWKS='$storage_jwks'" "$S/.env"; then
+  { grep -v '^STORAGE_JWT_JWKS=' "$S/.env" || true; } >"$S/.env.new"
+  mv "$S/.env.new" "$S/.env"
+  add_secret STORAGE_JWT_JWKS "'$storage_jwks'"
+fi
+unset storage_jwks
 # The WORKER's Auth admin key (T-M2-17): a service_role token signed with the installation's ES256 key,
 # valid 90 days, for password-reset links (Auth's admin generate_link). Compose hands it to the workers
 # only (SUPABASE_SECRET_KEY) — never to the app — and the gateway serves the admin API only on the

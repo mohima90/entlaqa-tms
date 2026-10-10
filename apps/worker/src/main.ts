@@ -6,12 +6,19 @@ import {
   runDaemon,
   runPass,
 } from '@jadarat/platform-jobs/jobs';
+import {
+  SIGNATURE_HARD_MAX_AGE_DAYS,
+  SIGNATURE_MAX_AGE_HOURS,
+  createClamdScanner,
+  signatureAge,
+} from '@jadarat/platform-files/jobs';
 import { sendTestEmail } from '@jadarat/platform-notifications/jobs';
 import { createLogger, errorName, installConsoleScrubbing } from '@jadarat/platform-observability';
 import { adminKeyExpiryCheck } from './admin-key-expiry';
 import {
   ConfigurationError,
   type RunnerSettings,
+  type ScannerCheckSettings,
   type TestEmailSettings,
   readSettings,
 } from './config';
@@ -43,6 +50,35 @@ async function testEmail(settings: TestEmailSettings): Promise<void> {
     });
   } finally {
     await transport.close?.();
+  }
+}
+
+/**
+ * Operators' check of the malware scanner (T-M2-18, ADR 0006 §8): it answers, and its signatures are at
+ * most SIGNATURE_MAX_AGE_HOURS old (freshclam working). Exit code 2 when they are older (stale: the scan
+ * still runs), 3 when they are older than the hard limit or undated (the scan refuses to run).
+ */
+async function scannerCheck(settings: ScannerCheckSettings): Promise<void> {
+  const scanner = createClamdScanner(settings.scanner);
+  await scanner.ping();
+  const version = await scanner.version();
+  const { age, hours } = signatureAge(version, Date.now(), settings.scanner.maxSignatureAgeDays);
+  const message = `scanner ${version.engine}, signatures ${version.signatures}${hours === null ? ' (undated)' : `, ${String(hours)} hours old`}`;
+  if (age === 'too_old' || age === 'unknown') {
+    logger.error(
+      `${message}: older than ${String(settings.scanner.maxSignatureAgeDays)} days or undated — nothing is scanned`,
+      { action: 'worker.scanner_check', outcome: 'failure', reason: 'scanner_signatures_too_old' },
+    );
+    process.exitCode = 3;
+  } else if (age === 'stale') {
+    logger.warn(`${message}: older than ${String(SIGNATURE_MAX_AGE_HOURS)} hours`, {
+      action: 'worker.scanner_check',
+      outcome: 'failure',
+      reason: 'scanner_signatures_stale',
+    });
+    process.exitCode = 2;
+  } else {
+    logger.info(message, { action: 'worker.scanner_check', outcome: 'success' });
   }
 }
 
@@ -87,6 +123,8 @@ async function runWorker(settings: RunnerSettings): Promise<void> {
       platformTasks: platformTasks({
         appBaseUrl: settings.appBaseUrl,
         authAdmin: settings.authAdmin,
+        scanner: settings.scanner,
+        orphanSweep: settings.orphanSweep,
         withPlatformTx: createWithPlatformTx(() => workerDb),
         withSystemTx,
         log,
@@ -96,13 +134,27 @@ async function runWorker(settings: RunnerSettings): Promise<void> {
       log,
     };
     const resetLinks = settings.authAdmin ? 'on' : 'off';
+    // File scanning needs Storage (the secret key) and the scanner; without them uploads wait unscanned.
+    const fileScanning = settings.authAdmin && settings.scanner ? 'on' : 'off';
     logger.info(
-      `worker starting (${settings.mode}; e-mail: ${settings.email.provider}; reset links: ${resetLinks})`,
+      `worker starting (${settings.mode}; e-mail: ${settings.email.provider}; reset links: ${resetLinks}; file scanning: ${fileScanning})`,
       {
         action: 'worker.start',
       },
     );
     adminKeyCheck?.();
+    if (settings.authAdmin && !settings.orphanSweep.enabled) {
+      logger.warn('file orphan sweep paused (FILE_ORPHAN_SWEEP=off): orphan objects are kept', {
+        action: 'worker.start',
+        reason: 'file_orphan_sweep_off',
+      });
+    }
+    if (settings.scanner && settings.scanner.maxSignatureAgeDays > SIGNATURE_HARD_MAX_AGE_DAYS) {
+      logger.warn(
+        `malware signatures up to ${String(settings.scanner.maxSignatureAgeDays)} days old are accepted (FILE_SCAN_SIGNATURES_MAX_AGE_DAYS): test installations with pinned signatures only`,
+        { action: 'worker.start', reason: 'scanner_signatures_limit_raised' },
+      );
+    }
     if (settings.mode === 'once') {
       // graphile-worker's own signal handling releases the pass's jobs on cancel.
       const { staleEvents } = await runPass(config);
@@ -133,6 +185,7 @@ async function runWorker(settings: RunnerSettings): Promise<void> {
 async function main(): Promise<void> {
   const settings = readSettings(process.argv.slice(2), process.env);
   if (settings.mode === 'test-email') await testEmail(settings);
+  else if (settings.mode === 'scanner-check') await scannerCheck(settings);
   else await runWorker(settings);
 }
 

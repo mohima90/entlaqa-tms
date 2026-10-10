@@ -883,11 +883,15 @@ begin
   perform tests.assert_eq((select string_agg(r.user_id::text, ',' order by r.user_id) from private.account_mail_requests r
                            where r.kind = 'security_policy_changed' and r.tenant_id = 'a0000000-0000-4000-8000-000000000001'),
     '00000000-0000-4000-8000-0000000000a1,00000000-0000-4000-8000-000000000c09', 'one notice per Organization Admin of A');
+  -- (The value check leaves out changed_at: the time itself may contain "14" — the test failed once at 11:14.)
   perform tests.assert((select bool_and(r.detail -> 'changed' = '["passwordMinLength", "sessionMaxDevices"]'::jsonb
                                         and r.detail ->> 'changed_by' = 'a1000000-0000-4000-8000-000000000c09'
-                                        and not (r.detail::text like '%14%'))
+                                        and (select array_agg(k order by k) from jsonb_object_keys(r.detail) as k)
+                                            = array['changed', 'changed_at', 'changed_by']
+                                        and (r.detail ->> 'changed_at')::timestamptz <= now()
+                                        and not ((r.detail - 'changed_at')::text like '%14%'))
                         from private.account_mail_requests r where r.kind = 'security_policy_changed'),
-    'the setting names and the editor, never the values');
+    'the setting names, the editor and the time, never the values');
 end $$;
 rollback;
 

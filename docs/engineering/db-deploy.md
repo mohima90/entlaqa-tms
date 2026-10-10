@@ -53,7 +53,9 @@ Self-hosted Auth gets these from `infra/docker/compose.yaml`; on hosted Supabase
 | Setting | Value | Why |
 |---|---|---|
 | Require current password when updating | On | My profile password change (FR-IAM-16): Auth checks the current password itself, in addition to the app's own check |
-| Minimum password length | 12 | Same rule as the app (screen 6 proposed default, FR-IAM-13) |
+| Minimum password length | 12 | Same rule as the app (screen 6 proposed default, FR-IAM-13). Auth counts **bytes** (6 Arabic letters are 12 bytes); the app counts characters and applies the organization's longer rule (strictest wins, T-M2-10) wherever it sets a password — a password set directly through Auth's API keeps only Auth's floor (TM-0003 RR-IAM-08) |
+| Secure password change | On | A session signed in more than 24 hours ago re-authenticates before it sets a password (T-M2-10 review M1; local `config.toml` and self-hosted `GOTRUE_SECURITY_UPDATE_PASSWORD_REQUIRE_REAUTHENTICATION` the same) |
+| Multi-factor (TOTP) | Enroll and verify **enabled** | Authenticator apps (FR-IAM-12, T-M2-10). Leave the other factor types (phone, WebAuthn) disabled |
 
 ## Auth sign-up gate (T-M2-07, FR-IAM-03, security review H1)
 

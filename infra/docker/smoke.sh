@@ -587,7 +587,7 @@ for path in /verify/ /verify; do
   [[ $limited -eq 1 ]] || { echo "smoke: the gateway does not limit /auth/v1$path beyond its burst" >&2; exit 1; }
 done
 
-echo "smoke: deactivate and reactivate members (T-M2-09) — reassignment, sessions end, Auth issues no token"
+echo "smoke: deactivate and reactivate members (T-M2-09) — reassignment, sessions end, Auth issues no token, old refresh tokens stay dead"
 DEACT_EMAIL="deactivate-$STAMP@sovereign.example"
 DEACT_PASSWORD="Deactivate-$(openssl rand -hex 16)"
 DEACT_ID="$(create_user "$DEACT_EMAIL" "$DEACT_PASSWORD")"
@@ -609,12 +609,22 @@ sign_in() {
   code="$(json_field "${answer%$'\n'*}" error_code)"
   echo "${answer##*$'\n'} ${code:--}"
 }
+# refresh <refresh token>: "<HTTP status> <Auth error_code or ->" of a refresh through the gateway; never
+# the body (tokens).
+refresh() {
+  local answer
+  answer="$(auth_api POST '/token?grant_type=refresh_token' '' "{\"refresh_token\":\"$1\"}")"
+  local code
+  code="$(json_field "${answer%$'\n'*}" error_code)"
+  echo "${answer##*$'\n'} ${code:--}"
+}
 # auth_rows <user id>: the account's Auth sessions and refresh tokens, "<sessions> <refresh tokens>".
 auth_rows() {
   q "select (select count(*) from auth.sessions where user_id = '$1') || ' ' ||
             (select count(*) from auth.refresh_tokens where user_id = '$1')"
 }
-# An Auth session of Reem outside the browser: after the deactivation its refresh must be refused.
+# An Auth session of Reem outside the browser: after the deactivation it must be gone, also after the
+# reactivation (T-M2-09 residual N2, closed with T-M2-10).
 response="$(auth_api POST '/token?grant_type=password' '' "{\"email\":\"$DEACT_EMAIL\",\"password\":\"$DEACT_PASSWORD\"}")"
 [[ "${response##*$'\n'}" == "200" ]] || { echo "smoke: the member to deactivate could not sign in" >&2; exit 1; }
 DEACT_REFRESH="$(json_field "${response%$'\n'*}" refresh_token)"
@@ -645,6 +655,13 @@ deactivate_e2e deactivate
 [[ "$(q "select count(*) from platform.session_context c join platform.tenants t on t.id = c.active_tenant_id
         where c.user_id = '$DEACT_ID' and t.slug = 'sovereign-smoke'")" == "0" ]] ||
   { echo "smoke: the deactivated member's sessions in the organization did not end" >&2; exit 1; }
+# Reem belongs nowhere now: every Auth session of her login ended — the browser's and the one above — with its
+# refresh tokens, marked as ended by the organization's admin (20261012120000, residual N2 closed).
+[[ "$(auth_rows "$DEACT_ID")" == "0 0" ]] ||
+  { echo "smoke: the Auth sessions of a login that belongs nowhere any more were not ended" >&2; exit 1; }
+[[ "$(q "select count(*) from private.revoked_sessions where user_id = '$DEACT_ID' and reason = 'admin'
+        and revoked_by is not null and tenant_id = (select id from platform.tenants where slug = 'sovereign-smoke')")" -ge 2 ]] ||
+  { echo "smoke: the deactivated member's ended sessions must be marked as ended by the organization" >&2; exit 1; }
 # The privileged member was not deactivated (no authenticator code in this session; the page said so).
 [[ "$(q "select status from platform.tenant_memberships where person_id = '5eed1000-0000-4000-8000-0000000000d4'")" == "active" ]] ||
   { echo "smoke: the privileged member must stay active without an authenticator code" >&2; exit 1; }
@@ -674,10 +691,10 @@ wrong="$(sign_in "$DEACT_EMAIL" "Wrong-$STAMP-password")"
 unknown="$(sign_in "nobody-$STAMP@sovereign.example" "Wrong-$STAMP-password")"
 [[ "$wrong" == "400 invalid_credentials" && "$unknown" == "$wrong" ]] ||
   { echo "smoke: a wrong password must look like an unknown address (got '$wrong' / '$unknown')" >&2; exit 1; }
-# (c) the session that was signed in before the deactivation cannot be refreshed;
-response="$(auth_api POST '/token?grant_type=refresh_token' '' "{\"refresh_token\":\"$DEACT_REFRESH\"}")"
-[[ "${response##*$'\n'}" == "403" ]] || { echo "smoke: Auth still refreshes the deactivated account's session" >&2; exit 1; }
-unset response
+# (c) the session that was signed in before the deactivation cannot be refreshed: it no longer exists;
+answer="$(refresh "$DEACT_REFRESH")"
+[[ "$answer" == "400 refresh_token_not_found" ]] ||
+  { echo "smoke: Auth still knows the deactivated account's refresh token (got $answer)" >&2; exit 1; }
 # (d) an account without any membership signs in (the parity user), and so does a deactivated account
 #     invited by another organization (Huda: pending invitation of a second organization) — until that
 #     invitation is revoked;
@@ -692,11 +709,18 @@ OTHER_INVITATION="$(q "with t as (insert into platform.tenants (slug, name_ar, n
                        i as (insert into platform.invitations (tenant_id, person_id, email, locale, primary_role, invited_by)
                          select tenant_id, id, '$SECOND_EMAIL', 'ar', 'learner', '$USER_ID' from p returning id)
                   select id from i")"
-[[ "$(sign_in "$SECOND_EMAIL" "$SECOND_PASSWORD")" == "200 -" ]] ||
+response="$(auth_api POST '/token?grant_type=password' '' "{\"email\":\"$SECOND_EMAIL\",\"password\":\"$SECOND_PASSWORD\"}")"
+[[ "${response##*$'\n'}" == "200" ]] ||
   { echo "smoke: a deactivated account with a pending invitation elsewhere must sign in (to accept it)" >&2; exit 1; }
+SECOND_REFRESH="$(json_field "${response%$'\n'*}" refresh_token)"
+unset response
+[[ -n "$SECOND_REFRESH" ]] || { echo "smoke: no refresh token for the invited account" >&2; exit 1; }
 q "update platform.invitations set status = 'revoked', revoked_at = now(), revoked_by = '$USER_ID' where id = '$OTHER_INVITATION'" >/dev/null
 [[ "$(sign_in "$SECOND_EMAIL" "$SECOND_PASSWORD")" == 403* ]] ||
   { echo "smoke: once the invitation is revoked, Huda must be refused again" >&2; exit 1; }
+#     and the session she signed in with meanwhile is not refreshed either (the hook refuses the refresh);
+answer="$(refresh "$SECOND_REFRESH")"
+[[ "$answer" == 403* ]] || { echo "smoke: Auth must refuse refreshing a refused account's session (got $answer)" >&2; exit 1; }
 # (f) the hook fails closed: when its rule cannot be asked (EXECUTE revoked for a moment), Auth issues no
 #     token even to an account that may sign in — with a server error, not the refusal (a 403 would make
 #     auth-js drop the session on refresh, review N1) — keeps no session of the attempt, and the database
@@ -732,11 +756,15 @@ deactivate_e2e reactivate
   { echo "smoke: expected two reactivation audit events and events" >&2; exit 1; }
 [[ "$(sign_in "$DEACT_EMAIL" "$DEACT_PASSWORD")" == "200 -" ]] ||
   { echo "smoke: the reactivated member must sign in again at once" >&2; exit 1; }
+# …with a new sign-in only: the refresh token from before the deactivation stays dead (residual N2 closed).
+answer="$(refresh "$DEACT_REFRESH")"
+[[ "$answer" == "400 refresh_token_not_found" ]] ||
+  { echo "smoke: a refresh token from before the deactivation works again after the reactivation (got $answer)" >&2; exit 1; }
 deactivate_e2e returns
 [[ "$(q "select count(*) from platform.role_assignments ra join platform.tenant_memberships m on m.id = ra.membership_id
         where m.user_id = '$DEACT_ID' and ra.role_code in ('line_manager', 'learner')")" == "2" ]] ||
   { echo "smoke: the reactivated member's roles changed" >&2; exit 1; }
-unset answer wrong unknown rows_before
+unset answer wrong unknown rows_before DEACT_REFRESH SECOND_REFRESH
 echo "smoke: security policy (T-M2-10) — apps turned on with the e-mailed code, the password-only attack, policy with a code, MFA required, sessions, step-up, lost-app reset"
 # The last browser journey: it makes an authenticator app required for everyone in the organization. The
 # spec reads the set-up e-mails' codes and links from Mailpit and ages codes through

@@ -364,3 +364,18 @@ insert into platform.invitations (id, tenant_id, person_id, email, locale, prima
    'invitee@b.test', 'en', 'learner', '{}', '00000000-0000-4000-8000-0000000000b1');
 update platform.invitations set token_hash = tests.token_hash('tok-a') where id = 'a4000000-0000-4000-8000-000000000001';
 update platform.invitations set token_hash = tests.token_hash('tok-b') where id = 'b4000000-0000-4000-8000-000000000001';
+
+-- Authenticator apps (T-M2-10 × T-M2-09, 20261012120000): a code counts for AAL2 only from a CONFIRMED app
+-- whose code the Auth session passed (private.request_aal2) and within 15 minutes (tests.fresh_code). uA and
+-- uAB — who deactivate privileged members in 20, 24, 36 and 63 — have one, and sA / sAB1 passed its code.
+-- REMOVED again by 64_sign_in_refusal_owner.sql: the T-M2-10 tests (65–69) start from accounts without apps.
+insert into auth.mfa_factors (id, user_id, friendly_name, factor_type, status, secret) values
+  ('20000000-0000-4000-8000-0000000000a1', '00000000-0000-4000-8000-0000000000a1', 'app', 'totp', 'verified', 'NOT-A-REAL-SECRET'),
+  ('20000000-0000-4000-8000-0000000000ab', '00000000-0000-4000-8000-0000000000ab', 'app', 'totp', 'verified', 'NOT-A-REAL-SECRET');
+insert into private.mfa_factor_confirmations (factor_id, user_id, session_id, confirmed_at) values
+  ('20000000-0000-4000-8000-0000000000a1', '00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1', now()),
+  ('20000000-0000-4000-8000-0000000000ab', '00000000-0000-4000-8000-0000000000ab', '10000000-0000-4000-8000-0000000000ab', now());
+update auth.sessions s set aal = 'aal2', factor_id = f.factor_id
+from (values ('10000000-0000-4000-8000-0000000000a1'::uuid, '20000000-0000-4000-8000-0000000000a1'::uuid),
+             ('10000000-0000-4000-8000-0000000000ab', '20000000-0000-4000-8000-0000000000ab')) as f (session_id, factor_id)
+where s.id = f.session_id;

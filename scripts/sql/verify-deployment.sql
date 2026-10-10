@@ -286,8 +286,9 @@ begin
       -- calls the others (app_server, checked inside).
       ('private.session_access(uuid, uuid, uuid, boolean, boolean)', 'tenant_guard', array['tenant_guard'], true),
       ('private.session_access_state()',            'tenant_guard', array['tenant_guard', 'authenticated'], true),
-      ('private.request_aal2()',                    'tenant_guard', array['tenant_guard', 'authenticated'], true),
-      ('private.request_code_fresh()',              'tenant_guard', array['tenant_guard', 'authenticated'], true),
+      -- membership_guard: T-M2-09's authenticator-code rule uses them (20261012120000).
+      ('private.request_aal2()',                    'tenant_guard', array['tenant_guard', 'authenticated', 'membership_guard'], true),
+      ('private.request_code_fresh()',              'tenant_guard', array['tenant_guard', 'authenticated', 'membership_guard'], true),
       ('private.request_session_facts()',           'tenant_guard', array['tenant_guard', 'authenticated'], true),
       ('private.dismiss_mfa_prompt()',              'tenant_guard', array['tenant_guard', 'authenticated'], true),
       ('private.tenant_member_mfa(uuid)',           'tenant_guard', array['tenant_guard', 'authenticated'], true),
@@ -308,6 +309,9 @@ begin
       ('private.queue_mfa_mail(text, uuid, uuid, text, uuid)', 'tenant_guard', array['tenant_guard'], true),
       ('private.remove_account_factors(uuid, uuid[])', 'tenant_guard', array['tenant_guard'], true),
       ('private.end_all_account_sessions(uuid, uuid, uuid)', 'tenant_guard', array['tenant_guard'], true),
+      -- A deactivation ends the login's Auth sessions when it belongs nowhere any more (T-M2-09 residual N2,
+      -- 20261012120000): the session-ending trigger (membership_guard) only.
+      ('private.end_unserved_login_sessions(uuid, uuid, uuid)', 'tenant_guard', array['tenant_guard', 'membership_guard'], true),
       ('private.request_live_user()',               'tenant_guard', array['tenant_guard'], true),
       ('private.security_policy_changed_mail()',    'tenant_guard', array['tenant_guard'], true),
       -- Authenticator apps (T-M2-10, review H1/M2, re-review N1/N2): web app and worker (checked inside).
@@ -371,6 +375,7 @@ begin
         'private.end_sessions(uuid,uuid[],uuid,text,uuid)', 'private.enforce_device_limit(uuid,uuid,uuid)',
         'private.queue_mfa_mail(text,uuid,uuid,text,uuid)', 'private.remove_account_factors(uuid,uuid[])',
         'private.end_all_account_sessions(uuid,uuid,uuid)', 'private.request_live_user()',
+        'private.end_unserved_login_sessions(uuid,uuid,uuid)',
         'private.security_policy_changed_mail()',
         'private.request_mfa_factor_mail(uuid)', 'private.confirm_mfa_setup(uuid,text)', 'private.my_mfa_apps()',
         'private.remove_mfa_app(uuid)', 'private.issue_mfa_factor_tokens(uuid,uuid,bytea,bytea)',

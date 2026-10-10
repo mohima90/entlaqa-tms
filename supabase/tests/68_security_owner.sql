@@ -18,8 +18,9 @@ declare
 begin
   for r in select * from (values
       ('private.session_access(uuid,uuid,uuid,boolean,boolean)', 'tenant_guard', ''),
-      ('private.request_aal2()', 'tenant_guard', 'authenticated'),
-      ('private.request_code_fresh()', 'tenant_guard', 'authenticated'),
+      -- membership_guard: T-M2-09's authenticator-code rule (20261012120000).
+      ('private.request_aal2()', 'tenant_guard', 'authenticated,membership_guard'),
+      ('private.request_code_fresh()', 'tenant_guard', 'authenticated,membership_guard'),
       ('private.request_session_facts()', 'tenant_guard', 'authenticated'),
       ('private.session_access_state()', 'tenant_guard', 'authenticated'),
       ('private.dismiss_mfa_prompt()', 'tenant_guard', 'authenticated'),
@@ -51,6 +52,8 @@ begin
       ('private.queue_mfa_mail(text,uuid,uuid,text,uuid)', 'tenant_guard', ''),
       ('private.remove_account_factors(uuid,uuid[])', 'tenant_guard', ''),
       ('private.end_all_account_sessions(uuid,uuid,uuid)', 'tenant_guard', ''),
+      -- T-M2-09's session-ending trigger only (residual N2, 20261012120000).
+      ('private.end_unserved_login_sessions(uuid,uuid,uuid)', 'tenant_guard', 'membership_guard'),
       ('private.request_live_user()', 'tenant_guard', ''),
       ('private.security_policy_changed_mail()', 'tenant_guard', '')) as f (fn, owner, callers)
   loop

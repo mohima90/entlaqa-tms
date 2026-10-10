@@ -262,11 +262,12 @@ begin
     'memberships: user_id is not updatable (cannot take over a membership)');
 
   -- Allowed transitions: suspend, revoke. uAB is an HR Manager (a privileged role): deactivating them
-  -- needs the authenticator code (T-M2-09, review M4) — refused at AAL1, allowed at AAL2.
+  -- needs the authenticator code (T-M2-09, review M4) — refused at AAL1, allowed at AAL2 (since T-M2-10: uA's
+  -- confirmed app, a code from the last 15 minutes — fixtures in 00).
   perform tests.assert_fails($q$update platform.tenant_memberships set status = 'suspended' where user_id = '00000000-0000-4000-8000-0000000000ab' and tenant_id = 'a0000000-0000-4000-8000-000000000001'$q$,
     array['JM003'], 'memberships: a privileged member is not suspended at AAL1');
   perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1', 'a0000000-0000-4000-8000-000000000001')
-                           || '{"aal": "aal2"}'::jsonb);
+                           || tests.fresh_code());
   perform tests.assert_eq(tests.rows_affected($q$update platform.tenant_memberships set status = 'suspended' where user_id = '00000000-0000-4000-8000-0000000000ab' and tenant_id = 'a0000000-0000-4000-8000-000000000001'$q$),
     1::bigint, 'memberships: active -> suspended is allowed');
   perform tests.assert_fails_like($q$update platform.tenant_memberships set status = 'active' where user_id = '00000000-0000-4000-8000-0000000000ab' and tenant_id = 'a0000000-0000-4000-8000-000000000001'$q$,

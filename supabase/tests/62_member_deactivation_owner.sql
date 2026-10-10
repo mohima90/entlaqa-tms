@@ -11,6 +11,10 @@
 --              uA2  Organization Admin whose role ENDS in 30 days (the fixture admin uA has no end date)
 --              uN   an account without membership; a pending invitation of A for its e-mail
 --              uE   learner whose Auditor role ENDED yesterday     uF  learner with an Auditor role from in 10 days
+--   uA2 (like uA and uAB in 00) has a CONFIRMED authenticator app whose code its session passed: what AAL2
+--   means since T-M2-10 (private.request_aal2, with a code from the last 15 minutes).
+--   With T-M2-10 (20261012120000, residual N2 closed): a login left without any active membership in an
+--   active or trial organization also loses its Auth sessions.
 \set ON_ERROR_STOP on
 
 insert into auth.users (id, email) values
@@ -104,8 +108,18 @@ insert into platform.invitations (id, tenant_id, person_id, email, locale, prima
   ('9d400000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', '9d100000-0000-4000-8000-0000000000a8',
    'dn@a.test', 'ar', 'learner', '00000000-0000-4000-8000-0000000000a1');
 
+-- uA2 acts with an authenticator code in 63: a confirmed app (T-M2-10 review H1) whose code its session passed
+-- in Auth (uA's comes from 00).
+insert into auth.mfa_factors (id, user_id, friendly_name, factor_type, status, secret) values
+  ('9d500000-0000-4000-8000-000000000006', '9d000000-0000-4000-8000-000000000006', 'app', 'totp', 'verified', 'NOT-A-REAL-SECRET');
+insert into private.mfa_factor_confirmations (factor_id, user_id, session_id, confirmed_at) values
+  ('9d500000-0000-4000-8000-000000000006', '9d000000-0000-4000-8000-000000000006', '9d200000-0000-4000-8000-000000000006', now());
+update auth.sessions set aal = 'aal2', factor_id = '9d500000-0000-4000-8000-000000000006'
+where id = '9d200000-0000-4000-8000-000000000006';
+
 -- Helpers for 63 (request path, as app_server — which may not create temporary functions) and 64.
--- SECURITY INVOKER; removed again by 64.
+-- SECURITY INVOKER; removed again by 64. p_aal: 'aal1'; 'aal2' — what withUserTx sends after a code from the
+-- last minute (aal2 and code_at, T-M2-10); 'aal2_stale' — the same with a code 16 minutes old.
 create or replace function tests.t09_as(p_who text, p_aal text default 'aal1') returns void
 language sql as $$
   select tests.set_claims(case p_who
@@ -128,7 +142,9 @@ language sql as $$
     -- uS (deactivated) with a session that once acted in A
     when 'deactivated' then tests.user_claims('9d000000-0000-4000-8000-000000000004', '9d200000-0000-4000-8000-000000000007',
                                               'a0000000-0000-4000-8000-000000000001', '9d100000-0000-4000-8000-0000000000a5')
-  end || jsonb_build_object('aal', p_aal));
+  end || case p_aal when 'aal2' then tests.fresh_code()
+                    when 'aal2_stale' then tests.fresh_code(interval '16 minutes')
+                    else jsonb_build_object('aal', p_aal) end);
 $$;
 
 -- The two writes of a deactivation as the request path does them (the application takes the locks and
@@ -197,6 +213,123 @@ begin
     'suspended → revoked: no lock');
   perform tests.assert_eq((select count(*) from platform.session_context where user_id = '9d000000-0000-4000-8000-000000000004'),
     0::bigint, 'nothing to end');
+  perform tests.assert(not tests.t09_holds_lock('platform.login_sessions:9d000000-0000-4000-8000-000000000004'),
+    'nor the login''s lock');
+end $$;
+rollback;
+
+-- ---------------------------------------------------------------------------------------------------
+-- A login left without any active membership loses its Auth sessions (residual N2 of T-M2-09, closed with
+-- T-M2-10 — 20261012120000): a refresh token from before the deactivation cannot come back with the
+-- reactivation. A login still active in another organization keeps every session (T-IAM-40).
+-- ---------------------------------------------------------------------------------------------------
+-- uR (a member of A only, one session in A), by a platform operation (no claims).
+begin;
+do $$
+begin
+  update platform.tenant_memberships set status = 'suspended'
+  where user_id = '9d000000-0000-4000-8000-000000000002' and tenant_id = 'a0000000-0000-4000-8000-000000000001';
+  perform tests.assert_eq((select count(*) from auth.sessions where user_id = '9d000000-0000-4000-8000-000000000002'),
+    0::bigint, 'no active membership left: the login''s Auth sessions are deleted (their refresh tokens go with them)');
+  perform tests.assert_eq(
+    (select string_agg(session_id || ':' || reason || ':' || tenant_id || ':' || coalesce(revoked_by::text, '-'), ',')
+     from private.revoked_sessions where user_id = '9d000000-0000-4000-8000-000000000002'),
+    '9d200000-0000-4000-8000-000000000005:admin:a0000000-0000-4000-8000-000000000001:-',
+    'marked as ended by the organization (no actor: a platform operation), so an open browser is told why');
+  perform tests.assert(tests.t09_holds_lock('platform.login_sessions:9d000000-0000-4000-8000-000000000002'),
+    'the decision holds the login''s lock until commit (a deactivation of the same login elsewhere decides after it)');
+  perform tests.assert_eq((select count(*) from auth.sessions where user_id = '9d000000-0000-4000-8000-000000000006'),
+    1::bigint, 'other logins keep their sessions');
+  -- Reactivated: the old session does not come back; the member signs in again.
+  update platform.tenant_memberships set status = 'active'
+  where user_id = '9d000000-0000-4000-8000-000000000002' and tenant_id = 'a0000000-0000-4000-8000-000000000001';
+  perform tests.assert_eq((select count(*) from auth.sessions where user_id = '9d000000-0000-4000-8000-000000000002'),
+    0::bigint, 'reactivation brings no Auth session back');
+end $$;
+rollback;
+
+-- uX (active in A and B): leaving A keeps every session; leaving B as well (revoked) ends all four — the one
+-- acting in B and the one before any organization too.
+begin;
+do $$
+begin
+  update platform.tenant_memberships set status = 'suspended'
+  where user_id = '9d000000-0000-4000-8000-000000000001' and tenant_id = 'a0000000-0000-4000-8000-000000000001';
+  perform tests.assert_eq((select count(*) from auth.sessions where user_id = '9d000000-0000-4000-8000-000000000001'),
+    4::bigint, 'still an active member of B: every Auth session stays (T-IAM-40)');
+  perform tests.assert_eq((select count(*) from private.revoked_sessions where user_id = '9d000000-0000-4000-8000-000000000001'),
+    0::bigint, 'and none is marked ended');
+  update platform.tenant_memberships set status = 'revoked'
+  where user_id = '9d000000-0000-4000-8000-000000000001' and tenant_id = 'b0000000-0000-4000-8000-000000000001';
+  perform tests.assert_eq((select count(*) from auth.sessions where user_id = '9d000000-0000-4000-8000-000000000001'),
+    0::bigint, 'the last active membership left: all four Auth sessions end');
+  perform tests.assert_eq((select string_agg(distinct reason || ':' || tenant_id, ',') from private.revoked_sessions
+                           where user_id = '9d000000-0000-4000-8000-000000000001'),
+    'admin:b0000000-0000-4000-8000-000000000001', 'marked: ended by the organization that removed the last membership');
+end $$;
+rollback;
+
+-- An active membership of a suspended organization does not count (Auth issues that login no token either).
+begin;
+do $$
+begin
+  update platform.tenants set status = 'suspended' where id = 'b0000000-0000-4000-8000-000000000001';
+  update platform.tenant_memberships set status = 'suspended'
+  where user_id = '9d000000-0000-4000-8000-000000000001' and tenant_id = 'a0000000-0000-4000-8000-000000000001';
+  perform tests.assert_eq((select count(*) from auth.sessions where user_id = '9d000000-0000-4000-8000-000000000001'),
+    0::bigint, 'only a suspended organization left: the Auth sessions end');
+end $$;
+rollback;
+
+-- The request path records who ended them: the Organization Admin deactivating uR (AAL1: not privileged).
+begin;
+set local session authorization app_server;
+set local role authenticated;
+select tests.t09_as('admin');
+select tests.t09_deactivate('9d100000-0000-4000-8000-0000000000a2');
+set local session authorization default;
+do $$
+begin
+  perform tests.assert_eq((select string_agg(reason || ':' || revoked_by, ',') from private.revoked_sessions
+                           where user_id = '9d000000-0000-4000-8000-000000000002'),
+    'admin:00000000-0000-4000-8000-0000000000a1', 'a request-path deactivation: ended by the Organization Admin who did it');
+  perform tests.assert_eq((select count(*) from auth.sessions where user_id = '9d000000-0000-4000-8000-000000000002'),
+    0::bigint, 'and the Auth session is gone');
+end $$;
+rollback;
+
+-- ---------------------------------------------------------------------------------------------------
+-- The authenticator-code rule uses T-M2-10's AAL2 (20261012120000; review H1): the token's claim is not
+-- enough — the Auth session must have passed a code of a CONFIRMED app (63: and within 15 minutes).
+-- ---------------------------------------------------------------------------------------------------
+-- uA's app still waits for its e-mailed code.
+begin;
+update private.mfa_factor_confirmations set confirmed_at = null where factor_id = '20000000-0000-4000-8000-0000000000a1';
+set local session authorization app_server;
+set local role authenticated;
+select tests.t09_as('admin', 'aal2');
+do $$
+begin
+  perform tests.assert_fails($q$update platform.tenant_memberships set status = 'suspended' where person_id = '9d100000-0000-4000-8000-0000000000a4'$q$,
+    array['JM003'], 'the token says aal2, but the app is not confirmed: a privileged member stays');
+  update platform.persons set status = 'active' where id = '9d100000-0000-4000-8000-0000000000a6';
+  perform tests.assert_fails($q$select private.reactivate_membership('9d100000-0000-4000-8000-0000000000a6')$q$,
+    array['JM003'], 'nor is a privileged member reactivated');
+end $$;
+rollback;
+-- The Auth session itself is at aal1 (the token's claim does not match it).
+begin;
+update auth.sessions set aal = 'aal1' where id = '10000000-0000-4000-8000-0000000000a1';
+set local session authorization app_server;
+set local role authenticated;
+select tests.t09_as('admin', 'aal2');
+do $$
+begin
+  perform tests.assert_fails($q$update platform.tenant_memberships set status = 'suspended' where person_id = '9d100000-0000-4000-8000-0000000000a4'$q$,
+    array['JM003'], 'the token says aal2, the Auth session does not: a privileged member stays');
+  update platform.persons set status = 'active' where id = '9d100000-0000-4000-8000-0000000000a6';
+  perform tests.assert_fails($q$select private.reactivate_membership('9d100000-0000-4000-8000-0000000000a6')$q$,
+    array['JM003'], 'nor is a privileged member reactivated');
 end $$;
 rollback;
 

@@ -7,7 +7,8 @@ import { type Page, expect, test } from '@playwright/test';
  * seed-deactivation.sql, in three phases (DEACTIVATE_E2E_PHASE) around the database and Auth checks of the
  * smoke (memberships, audit, the worker's Auth ban and its lifting):
  *  - deactivate  English: Reem (direct report + department head) with reassignment; her open session loses
- *                access at once. Arabic: Huda (nothing to move). Faisal (Auditor, a privileged role): the
+ *                access at once and, as she belongs nowhere else, is told it ended (T-M2-10: the login's Auth
+ *                sessions end). Arabic: Huda (nothing to move). Faisal (Auditor, a privileged role): the
  *                authenticator-code step only (the admin has none). A Line Manager gets neither.
  *  - reactivate  Arabic from the deactivated tab (Reem), English from the profile (Huda).
  *  - returns     Reem signs in again, into the organization.
@@ -123,9 +124,12 @@ test.describe('deactivate and reactivate members', () => {
     await expect(page.getByTestId('reactivate-button')).toHaveText('Reactivate user');
     await expect(page.getByTestId('user-activity')).toContainText('Account deactivated');
 
-    // Her open session: the next request is refused by the database (no wait for the Auth ban).
+    // Her open session: the next request is refused by the database (no wait for the Auth ban). She belongs
+    // to no other organization, so her login's sessions ended too (T-M2-10 integration, residual N2): the
+    // sign-in page says the session ended and signs it out at Auth.
     await memberPage.goto('/en/suite');
-    await expect(memberPage).toHaveURL(/\/en\/sign-in$/);
+    await expect(memberPage).toHaveURL(/\/en\/sign-in\?notice=session-ended$/);
+    await expect(memberPage.getByTestId('session-ended-notice')).toBeVisible();
     await memberContext.close();
     await adminContext.close();
   });

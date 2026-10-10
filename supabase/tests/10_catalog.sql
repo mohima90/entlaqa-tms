@@ -388,6 +388,7 @@ begin
     'private.end_member_sessions(uuid,uuid) (owner tenant_guard), '
     'private.end_my_sessions(uuid) (owner tenant_guard), '
     'private.end_sessions(uuid,uuid[],uuid,text,uuid) (owner tenant_guard), '
+    'private.end_unserved_login_sessions(uuid,uuid,uuid) (owner tenant_guard), '
     'private.enforce_device_limit(uuid,uuid,uuid) (owner tenant_guard), '
     'private.has_active_membership(uuid,uuid) (owner tenant_guard), '
     'private.invitation_allows_signup(text,text) (owner invitation_guard), '
@@ -639,6 +640,15 @@ begin
   end loop;
   perform tests.assert(has_function_privilege('supabase_auth_admin', 'private.account_sign_in_refused(uuid)', 'execute'),
     'the access-token hook (supabase_auth_admin) may ask the sign-in rule');
+  -- With T-M2-10 (20261012120000): its trigger ends a login's Auth sessions through tenant_guard's helper, and
+  -- its code rule asks tenant_guard's AAL2 and code age — calls only, no table access of its own.
+  perform tests.assert(has_function_privilege('membership_guard', 'private.end_unserved_login_sessions(uuid, uuid, uuid)', 'execute')
+                       and has_function_privilege('membership_guard', 'private.request_aal2()', 'execute')
+                       and has_function_privilege('membership_guard', 'private.request_code_fresh()', 'execute')
+                       and not has_function_privilege('membership_guard', 'private.end_sessions(uuid, uuid[], uuid, text, uuid)', 'execute')
+                       and not has_table_privilege('membership_guard', 'private.auth_session_validity', 'select, delete')
+                       and not has_table_privilege('membership_guard', 'private.revoked_sessions', 'select, insert, delete'),
+    'membership_guard: the login-session helper and the AAL2 checks, not the session tables');
   -- The triggers are in place and enabled.
   perform tests.assert((select count(*) from pg_trigger t
                         where t.tgenabled = 'O' and (t.tgrelid, t.tgname, t.tgfoid) in (

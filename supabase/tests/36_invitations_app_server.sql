@@ -272,7 +272,7 @@ rollback;
 begin;
 set local role authenticated;
 select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
-  'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1') || '{"aal": "aal2"}'::jsonb);
+  'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1') || tests.fresh_code());
 update platform.tenant_memberships set status = 'revoked'
  where user_id = '00000000-0000-4000-8000-0000000000ab' and tenant_id = 'a0000000-0000-4000-8000-000000000001';
 select tests.set_claims(null);
@@ -292,7 +292,7 @@ rollback;
 begin;
 set local role authenticated;
 select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
-  'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1') || '{"aal": "aal2"}'::jsonb);
+  'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1') || tests.fresh_code());
 update platform.tenant_memberships set status = 'suspended'
  where user_id = '00000000-0000-4000-8000-0000000000ab' and tenant_id = 'a0000000-0000-4000-8000-000000000001';
 select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000f9', '10000000-0000-4000-8000-0000000000f9', null));

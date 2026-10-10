@@ -85,11 +85,23 @@ async function reportSheet(download: Download): Promise<string> {
 
 /** Upload on step 1, then wait (the page refreshes itself) for the mapping of step 2. */
 async function upload(page: Page, name: string, content: Buffer) {
+  // The page's Content-Security-Policy, as the app serves it to this browser.
+  const csp = (await page.request.get(page.url())).headers()['content-security-policy'] ?? '';
+  const put = page.waitForRequest((request) => request.method() === 'PUT');
   await page.getByTestId('import-file-input').setInputFiles({
     name,
     mimeType: 'text/csv',
     buffer: content,
   });
+  // The browser PUTs the file straight to Storage's public origin (STORAGE_PUBLIC_URL): connect-src
+  // allows exactly that origin, never a wildcard (T-M2-12 × T-M2-18).
+  const storageOrigin = new URL((await put).url()).origin;
+  const connectSrc = csp
+    .split(';')
+    .map((directive) => directive.trim().split(/\s+/))
+    .find(([name]) => name === 'connect-src');
+  expect(connectSrc).toContain(storageOrigin);
+  expect(connectSrc?.some((source) => source.includes('*'))).toBe(false);
   await expect(page).toHaveURL(/\/suite\/admin\/users\/import\/[0-9a-f-]{36}$/, {
     timeout: 60_000,
   });

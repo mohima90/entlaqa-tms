@@ -73,13 +73,25 @@ export interface CspOptions {
   readonly storagePublicUrl?: string | undefined;
 }
 
-/** The origin of a configured public Storage URL (HTTPS, or HTTP on localhost), else nothing. */
+/**
+ * A host name or IP address a CSP source can name exactly: letters, digits, dots and hyphens (URL already
+ * lower-cases and punycodes it), or an IPv6 literal. Never a wildcard: `https://*.example.com` parses as
+ * a URL, but as a CSP source it would allow every subdomain.
+ */
+const EXACT_HOST = /^(?:[a-z0-9-]+(?:\.[a-z0-9-]+)*|\[[0-9a-f:.]+\])$/;
+
+/**
+ * The origin of the configured public Storage URL (STORAGE_PUBLIC_URL, the same variable the Storage
+ * client signs browser URLs for): HTTPS, or HTTP on localhost, with an exact host; else nothing (the
+ * browser's upload is then blocked by the policy — fail closed).
+ */
 function storageOrigin(value: string | undefined): string[] {
   if (!value) return [];
   try {
     const url = new URL(value);
     const local = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
-    return url.protocol === 'https:' || (url.protocol === 'http:' && local) ? [url.origin] : [];
+    const scheme = url.protocol === 'https:' || (url.protocol === 'http:' && local);
+    return scheme && EXACT_HOST.test(url.hostname) ? [url.origin] : [];
   } catch {
     return [];
   }

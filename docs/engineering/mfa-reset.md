@@ -4,11 +4,11 @@
 |---|---|
 | **Backlog** | T-M2-10 (security policy per organization; security review M2) |
 | **Requirements** | FR-IAM-12 (MFA with any authenticator app) · TM-0003 T-IAM-10 (recovery must not downgrade MFA), abuse case AB-IAM-07 · risk register R-35, R-47 |
-| **Decision** | PO answer, 9 Oct 2026: the **Organization Admin** resets a member's lost app, after entering their own fresh code; **ENTLAQA support** resets the last Organization Admin and people who belong to more than one organization, after an identity check. No recovery codes in R1 (TM-0003 D-IAM-10) |
+| **Decision** | PO answer, 9 Oct 2026: the **Organization Admin** resets a member's lost app, after entering their own fresh code; **ENTLAQA support** resets the last Organization Admin and people who belong to more than one organization, after an identity check. No recovery codes in R1 (Tech Lead, 9 Oct 2026; TM-0003 D-IAM-10); no free-text reason on the in-app reset (Tech Lead, 9 Oct 2026; D-IAM-14) |
 | **Code** | Migration `20261012110000_private__mfa_factor_mail.sql` (`private.reset_member_mfa`, `private.reset_account_mfa`) · `packages/platform-rbac/src/iam/security.ts` (`resetMemberMfaActionDefinition`, permission `platform.user.reset_mfa`) · `apps/suite/src/components/users/reset-authenticator.tsx` (user profile, screen 3) · e-mail `platform.mfa_factor_removed` (worker) |
 | **Status** | In force with T-M2-10 (10 Oct 2026) |
 
-A member who lost their phone (or the app on it) cannot pass the authenticator code their organization asks for, and cannot remove the app themselves (that needs a code from it). Someone else removes the app; the member then sets up a new one at their next sign-in, and confirms it from their mailbox like any new app (review H1). Every reset removes **every** authenticator app of the login, **ends every sign-in session** of it (also in Auth), is **audited** and **e-mailed** to the person.
+A member who lost their phone (or the app on it) cannot pass the authenticator code their organization asks for, and cannot remove the app themselves (that needs a code from it). Someone else removes the app; the member then sets up a new one at their next sign-in, and turns it on with the code e-mailed to them, entered in the same window, like any new app (re-review N1). Every reset removes **every** authenticator app of the login, **ends every sign-in session** of it (also in Auth), is **audited** and **e-mailed** to the person.
 
 ## 1. Who resets what
 
@@ -69,7 +69,7 @@ Run as the **migration role** — the only role that may call `private.reset_acc
    where action = 'platform.auth.mfa_reset' and data ->> 'reference' = 'SUP-1042';  -- one row per organization
    ```
 
-4. Tell the person (on the call or by e-mail to the login address): at the next sign-in they set up a new app and confirm it from the e-mail it sends; if they think someone else knew their password, they set a new one from **Forgot your password?** first. Tell the Organization Admins of the person's organizations that support reset the app (ticket reference only).
+4. Tell the person (on the call or by e-mail to the login address): at the next sign-in they set up a new app and enter, in that window, the code from the e-mail it sends; if they think someone else knew their password, they set a new one from **Forgot your password?** first. Tell the Organization Admins of the person's organizations that support reset the app (ticket reference only).
 5. Close the ticket with the evidence of §2 (who confirmed, when, how) and the result of step 3.
 
 ## 4. Never
@@ -81,6 +81,6 @@ Run as the **migration role** — the only role that may call `private.reset_acc
 
 ## 5. Related
 
-- Threat model: [TM-0003](../security/threat-models/TM-0003-identity-roles.md) T-IAM-10, T-IAM-11, AB-IAM-06, AB-IAM-07, D-IAM-05, D-IAM-10.
+- Threat model: [TM-0003](../security/threat-models/TM-0003-identity-roles.md) T-IAM-10, T-IAM-11, AB-IAM-06, AB-IAM-07, D-IAM-05, D-IAM-10, D-IAM-14.
 - Risk register: [R-35](../security/risk-register.md) (takeover through recovery), [R-47](../security/risk-register.md) (social engineering of support).
 - E-mails: [email.md](email.md) (account e-mails through the worker); a worker that runs late delays the e-mail, never the reset.

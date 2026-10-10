@@ -24,6 +24,7 @@ export {
   type FileScanTaskOptions,
   SIGNATURE_HARD_MAX_AGE_DAYS,
   SIGNATURE_MAX_AGE_HOURS,
+  ScannerCrashSuspectedError,
   type SignatureAge,
   StorageStreamError,
   createFileScanTask,

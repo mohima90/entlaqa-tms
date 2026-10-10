@@ -114,14 +114,16 @@ export async function finishFileScan(
  * The scan could not finish (fail closed: the file stays scanning, never clean): `scanner` — the scanner
  * or Storage is unavailable, not counted against the file, but `error` (scanner_unavailable) once the file
  * has waited 24 hours since its upload; `processing` — this file failed although the scanner answered,
- * `error` (processing_failed) after 5 such failures.
+ * `error` (processing_failed) after 5 such failures; `crash` — clamd lost this file's stream and did not
+ * answer a PING right after (it probably crashed on the file): counted for the file, and at the third the
+ * answer is `crashed` (error, scanner_crashed); below that it waits like `scanner`.
  */
 export async function retryFileScan(
   tx: ClaimsTx,
   fileId: string,
-  kind: 'scanner' | 'processing',
-): Promise<'waiting' | 'error' | 'gone'> {
-  const [row] = await tx.execute<{ state: 'waiting' | 'error' | 'gone' }>(
+  kind: 'scanner' | 'processing' | 'crash',
+): Promise<'waiting' | 'error' | 'crashed' | 'gone'> {
+  const [row] = await tx.execute<{ state: 'waiting' | 'error' | 'crashed' | 'gone' }>(
     sql`select private.retry_file_scan(${fileId}::uuid, ${kind}) as state`,
   );
   if (!row) throw new Error('retryFileScan: no answer');

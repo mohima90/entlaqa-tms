@@ -410,15 +410,58 @@ describe('file scan task', () => {
     }
   });
 
-  it('clamd drops a stream and does not answer a PING: the scanner is down (not counted)', async () => {
+  it('clamd drops a stream and does not answer a PING: a suspected crash on the file — counted, the pass stops', async () => {
+    for (const drop of ['write', 'finish'] as const) {
+      vi.clearAllMocks();
+      db.retryFileScan.mockResolvedValue('waiting');
+      db.claimFileScan.mockResolvedValue(lease());
+      const fake = fakeScanner({ drop, pings: false });
+      const { task: scan, log } = task(fakeStore({ k: [utf8('a,b\n')] }), fake.scanner);
+      await expect(scan.run({ jobId: '1' })).resolves.toBe(false);
+      expect(fake.pinged.count).toBe(1);
+      expect(db.retryFileScan).toHaveBeenCalledWith({}, FILE, 'crash');
+      expect(db.claimFileScan).toHaveBeenCalledTimes(1);
+      expect(db.insertSystemAuditEvent).not.toHaveBeenCalled();
+      // A crash is an error for the operators even before the file gives up.
+      expect(log).toHaveBeenCalledWith('error', expect.stringContaining('SCANNER_CRASHED'));
+    }
+  });
+
+  it('the third crash on the same file: error (scanner_crashed), high-severity security event', async () => {
     db.claimFileScan.mockResolvedValue(lease());
+    db.retryFileScan.mockResolvedValueOnce('crashed');
     const fake = fakeScanner({ drop: 'finish', pings: false });
-    await expect(
-      task(fakeStore({ k: [utf8('a,b\n')] }), fake.scanner).task.run({ jobId: '1' }),
-    ).resolves.toBe(false);
-    expect(fake.pinged.count).toBe(1);
-    expect(db.retryFileScan).toHaveBeenCalledWith({}, FILE, 'scanner');
-    expect(db.claimFileScan).toHaveBeenCalledTimes(1);
+    const { task: scan, log } = task(fakeStore({ k: [utf8('a,b\n')] }), fake.scanner);
+    await expect(scan.run({ jobId: '1' })).resolves.toBe(false);
+    expect(db.insertSystemAuditEvent).toHaveBeenCalledWith(
+      {},
+      {
+        action: 'platform.file.scanner_crashed',
+        entityType: 'file',
+        entityId: FILE,
+        data: { purpose: 'platform.user_import', crashes: 3, severity: 'high' },
+      },
+    );
+    expect(log).toHaveBeenCalledWith(
+      'error',
+      `security: file ${FILE} (platform.user_import) crashed the malware scanner 3 times; error (scanner_crashed)`,
+    );
+    // The event cannot be written (e.g. the organization was suspended): the log line remains.
+    vi.clearAllMocks();
+    db.claimFileScan.mockResolvedValue(lease());
+    db.retryFileScan.mockResolvedValueOnce('crashed');
+    db.insertSystemAuditEvent.mockRejectedValueOnce(
+      Object.assign(new Error('x'), { code: '23502' }),
+    );
+    const second = task(
+      fakeStore({ k: [utf8('a,b\n')] }),
+      fakeScanner({ drop: 'write', pings: false }).scanner,
+    );
+    await expect(second.task.run({ jobId: '2' })).resolves.toBe(false);
+    expect(second.log).toHaveBeenCalledWith(
+      'warning',
+      `file ${FILE}: the scanner-crash security event was not recorded (23502)`,
+    );
   });
 
   it('a Storage stream that breaks off is Storage unavailable, not the file', async () => {

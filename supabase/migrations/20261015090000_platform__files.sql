@@ -159,9 +159,12 @@ create table platform.files (
   scan_finding text,
   scanned_at timestamptz,
   -- Scan leases so far; failures OF THIS FILE (the scanner answered, the file could not be scanned): error
-  -- after 5 (retry_file_scan). Unavailability of the scanner or Storage is not counted against the file.
+  -- after 5; suspected scanner CRASHES on this file (clamd lost its stream and did not answer a PING right
+  -- after): error after 3 (retry_file_scan). Unavailability of the scanner or Storage before the file's
+  -- stream started is not counted against the file.
   scan_attempts smallint not null default 0,
   scan_failures smallint not null default 0,
+  scan_crashes smallint not null default 0,
   scan_not_before timestamptz not null default now(),
   scan_leased_until timestamptz,
   -- When the last scan lease was taken: organizations take turns (claim_file_scan).
@@ -202,7 +205,8 @@ create table platform.files (
     (scan_engine is null or (char_length(scan_engine) <= 100 and scan_engine !~ '[\x01-\x1f\x7f]'))
     and (scan_signatures is null or (char_length(scan_signatures) <= 200 and scan_signatures !~ '[\x01-\x1f\x7f]'))
     and (scan_finding is null or (char_length(scan_finding) <= 200 and scan_finding !~ '[\x01-\x1f\x7f]'))),
-  constraint files_attempts_check check (scan_attempts between 0 and 1000 and scan_failures between 0 and 1000),
+  constraint files_attempts_check check (scan_attempts between 0 and 1000 and scan_failures between 0 and 1000
+    and scan_crashes between 0 and 1000),
   constraint files_retention_check check (retention_class in ('import', 'owner_lifetime', 'record', 'export')),
   -- A clean file has everything the scan established.
   constraint files_clean_check check (status <> 'clean'
@@ -339,7 +343,7 @@ declare
   v_ok boolean;
 begin
   if tg_op = 'INSERT' then
-    if new.status <> 'pending_upload' or new.scan_attempts <> 0 or new.scan_failures <> 0
+    if new.status <> 'pending_upload' or new.scan_attempts <> 0 or new.scan_failures <> 0 or new.scan_crashes <> 0
        or new.scan_claimed_at is not null or new.used_at is not null or new.deleted_at is not null
        or new.uploaded_at is not null or new.quarantined_at is not null or new.object_removed_at is not null
        or new.purged_at is not null or new.detected_mime is not null or new.sha256 is not null or new.size_bytes is not null then
@@ -883,6 +887,11 @@ comment on function private.finish_file_scan(uuid, text, text, bigint, text, tex
 --               (scanner_unavailable; the worker logs it as an error to alert the operators).
 --   processing  this file failed although the scanner answered (e.g. clamd dropped it, or its own limits
 --               failed) — after 5 such failures it becomes `error` (processing_failed).
+--   crash       clamd lost this file's stream and did not answer a PING right after: it probably crashed
+--               on the file (and restarts). Counted for the file; at the 3rd it becomes `error`
+--               (scanner_crashed) — a file that keeps killing the scanner must not take it down for every
+--               organization (answer `crashed`; the worker writes a high-severity security event). Below
+--               that, as `scanner`.
 create or replace function private.retry_file_scan(p_file_id uuid, p_kind text)
 returns text
 language plpgsql volatile security definer
@@ -892,10 +901,11 @@ declare
   v_file record;
 begin
   perform private.file_worker_check();
-  if p_kind is null or p_kind not in ('scanner', 'processing') then
+  if p_kind is null or p_kind not in ('scanner', 'processing', 'crash') then
     raise exception 'unknown retry kind' using errcode = 'check_violation';
   end if;
-  select f.scan_attempts, f.scan_failures, coalesce(f.uploaded_at, f.created_at) as uploaded_at into v_file
+  select f.scan_attempts, f.scan_failures, f.scan_crashes, coalesce(f.uploaded_at, f.created_at) as uploaded_at
+    into v_file
   from platform.files f where f.id = p_file_id and f.status = 'scanning' for update;
   if not found then
     return 'gone';
@@ -907,14 +917,24 @@ begin
     where f.id = p_file_id;
     return 'error';
   end if;
-  if p_kind = 'scanner' and v_file.uploaded_at < now() - interval '24 hours' then
-    update platform.files f set status = 'error', status_reason = 'scanner_unavailable', scan_leased_until = null
+  if p_kind = 'crash' and v_file.scan_crashes + 1 >= 3 then
+    update platform.files f
+    set status = 'error', status_reason = 'scanner_crashed', scan_crashes = least(f.scan_crashes + 1, 1000),
+        scan_leased_until = null
+    where f.id = p_file_id;
+    return 'crashed';
+  end if;
+  if p_kind in ('scanner', 'crash') and v_file.uploaded_at < now() - interval '24 hours' then
+    update platform.files f
+    set status = 'error', status_reason = 'scanner_unavailable', scan_leased_until = null,
+        scan_crashes = case when p_kind = 'crash' then least(f.scan_crashes + 1, 1000) else f.scan_crashes end
     where f.id = p_file_id;
     return 'error';
   end if;
   update platform.files f
   set scan_leased_until = null,
       scan_failures = case when p_kind = 'processing' then least(f.scan_failures + 1, 1000) else f.scan_failures end,
+      scan_crashes = case when p_kind = 'crash' then least(f.scan_crashes + 1, 1000) else f.scan_crashes end,
       scan_not_before = now() + least(interval '15 minutes',
                                       make_interval(secs => 15 * power(2, least(greatest(v_file.scan_attempts - 1, 0), 10))))
   where f.id = p_file_id;
@@ -922,7 +942,7 @@ begin
 end
 $$;
 comment on function private.retry_file_scan(uuid, text) is
-  'SECURITY-RELEVANT (T-M2-18). Worker: puts a file back after a failed scan attempt (fail closed: it stays scanning); error after 5 failures of the file itself, or when still without a verdict 24 hours after its upload. app_worker system claims only.';
+  'SECURITY-RELEVANT (T-M2-18). Worker: puts a file back after a failed scan attempt (fail closed: it stays scanning); error after 5 failures of the file itself, 3 suspected scanner crashes on it, or when still without a verdict 24 hours after its upload. app_worker system claims only.';
 
 -- Housekeeping (ADR 0006 §7). What is due for a file, if anything (one rule, used when leasing and again
 -- under the row lock just before the Storage work):

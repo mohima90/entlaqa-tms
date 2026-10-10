@@ -184,6 +184,33 @@ end $$;
 reset role;
 rollback;
 
+-- A file that crashes the scanner: each suspected crash (stream lost, no PING answer right after) is counted
+-- for the file and waits like an outage; the third makes it `error` (scanner_crashed), so it cannot take the
+-- scanner down for every organization again and again.
+begin;
+set local role authenticated;
+select tests.set_claims(jsonb_build_object('role', 'system', 'job_id', 'tests.files.scan'));
+do $$
+declare
+  r record;
+begin
+  select * into r from private.claim_file_scan();
+  perform tests.assert_eq(r.id, 'f1a00000-0000-4000-8000-00000000000e'::uuid, 'A''s file first');
+  perform tests.assert_eq(private.retry_file_scan(r.id, 'crash'), 'waiting', 'first suspected crash: it waits');
+  perform tests.assert_eq(private.retry_file_scan(r.id, 'crash'), 'waiting', 'second: it waits');
+  perform tests.assert_eq(private.retry_file_scan(r.id, 'crash'), 'crashed', 'third: error (answered as crashed)');
+  perform tests.assert_eq(private.retry_file_scan(r.id, 'crash'), 'gone', 'nothing more once it failed');
+end $$;
+select tests.set_claims(tests.system_claims('a0000000-0000-4000-8000-000000000001', 'tests.files.scan'));
+do $$
+begin
+  perform tests.assert_eq((select concat_ws('|', status, status_reason, scan_crashes, scan_failures) from platform.files
+                           where id = 'f1a00000-0000-4000-8000-00000000000e'),
+    'error|scanner_crashed|3|4', 'error (scanner_crashed); crashes counted apart from the file''s other failures');
+end $$;
+reset role;
+rollback;
+
 -- ---------------------------------------------------------------------------------------------------
 -- Housekeeping (ADR 0006 §7): what is due, per retention class; legal hold respected; a lease per file.
 -- ---------------------------------------------------------------------------------------------------

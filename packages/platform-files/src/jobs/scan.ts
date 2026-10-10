@@ -55,6 +55,18 @@ export class FileScanFailedError extends Error {
   readonly code = 'SCAN_FAILED';
 }
 
+/**
+ * clamd lost this file's stream and did not answer a PING right after: it probably crashed on the file (and
+ * is restarting). The scanner is unavailable for now, but the crash is counted for the file: at the third,
+ * the file is `error` (scanner_crashed) with a high-severity security event — a file that kills the scanner
+ * must not take it down for every organization again and again.
+ */
+export class ScannerCrashSuspectedError extends Error {
+  override readonly name = 'ScannerCrashSuspectedError';
+  readonly code = 'SCANNER_CRASHED';
+  readonly temporary = true;
+}
+
 /** How old the signatures may be, and are: `fresh`, `stale` (warn), `too_old` / `unknown` (refuse). */
 export type SignatureAge = 'fresh' | 'stale' | 'too_old' | 'unknown';
 
@@ -112,7 +124,10 @@ function concat(parts: readonly Uint8Array[], length: number): Uint8Array {
  * unavailable — the file stays `scanning`, is tried again (15 s, 30 s, … every 15 minutes at most) and the
  * pass ends; still without a verdict 24 hours after its upload, it becomes `error` (logged as an error).
  * A failure of the file itself — also when clamd drops its stream but still answers a PING right after —
- * counts against the file: `error` after 5. Nothing is ever `clean` without a verdict.
+ * counts against the file: `error` after 5. When clamd drops the stream and does NOT answer a PING right
+ * after, it probably crashed on the file: that waits like an outage but is counted for the file; at the
+ * third the file is `error` (scanner_crashed) with a high-severity security event
+ * (`platform.file.scanner_crashed`). Nothing is ever `clean` without a verdict.
  */
 export function createFileScanTask(options: FileScanTaskOptions): PlatformTask {
   const now = options.now ?? Date.now;
@@ -186,13 +201,21 @@ export function createFileScanTask(options: FileScanTaskOptions): PlatformTask {
     }
   }
 
-  /** A step talking to clamd once the stream has started: a lost connection is the file's fault if clamd still answers. */
+  /**
+   * A step talking to clamd once the file's stream has started: a lost connection is the file's failure if
+   * clamd still answers a PING, a suspected crash on the file if it does not.
+   */
   async function scannerStep<T>(step: () => Promise<T>): Promise<T> {
     try {
       return await step();
     } catch (error) {
-      if (error instanceof ScannerUnavailableError && (await scannerAnswers())) {
-        throw new FileScanFailedError('clamd dropped the stream of this file but answers');
+      if (error instanceof ScannerUnavailableError) {
+        if (await scannerAnswers()) {
+          throw new FileScanFailedError('clamd dropped the stream of this file but answers');
+        }
+        throw new ScannerCrashSuspectedError(
+          'clamd lost the stream of this file and does not answer',
+        );
       }
       throw error;
     }
@@ -304,22 +327,58 @@ export function createFileScanTask(options: FileScanTaskOptions): PlatformTask {
     }
   }
 
+  /**
+   * The file crashed the scanner for the third time and is `error` (scanner_crashed): a high-severity
+   * security event (it may be an attack on clamd) and an error log. The event is written in the file's
+   * tenant transaction; if that fails (e.g. the organization was suspended), the log line remains.
+   */
+  async function recordScannerCrash(lease: ScanLease, jobId: string): Promise<void> {
+    options.log(
+      'error',
+      `security: file ${lease.fileId} (${lease.purpose}) crashed the malware scanner 3 times; error (scanner_crashed)`,
+    );
+    try {
+      await options.withSystemTx({ tenantId: lease.tenantId, jobId }, (tx) =>
+        insertSystemAuditEvent(tx, {
+          action: 'platform.file.scanner_crashed',
+          entityType: 'file',
+          entityId: lease.fileId,
+          data: { purpose: lease.purpose, crashes: 3, severity: 'high' },
+        }),
+      );
+    } catch (error) {
+      options.log(
+        'warning',
+        `file ${lease.fileId}: the scanner-crash security event was not recorded (${codeOf(error)})`,
+      );
+    }
+  }
+
   /** One file: false when the scanner or Storage is down (the pass stops). */
   async function processLease(lease: ScanLease, jobId: string): Promise<boolean> {
     let outcome: ScanOutcome;
     try {
       outcome = await inspect(lease);
     } catch (error) {
-      const kind = isTemporary(error) ? 'scanner' : 'processing';
+      const kind =
+        error instanceof ScannerCrashSuspectedError
+          ? 'crash'
+          : isTemporary(error)
+            ? 'scanner'
+            : 'processing';
       const state = await options.withPlatformTx({ jobId }, (tx) =>
         retryFileScan(tx, lease.fileId, kind),
       );
+      if (state === 'crashed') {
+        await recordScannerCrash(lease, jobId);
+        return false;
+      }
       if (state === 'error') {
         // The file gave up: 5 failures of its own, or no verdict 24 hours after its upload (scanner or
         // Storage unavailable all that time) — an error for the operators.
         options.log(
           'error',
-          `file ${lease.fileId}: no scan verdict (${codeOf(error)}); error (${kind === 'scanner' ? 'scanner_unavailable' : 'processing_failed'})`,
+          `file ${lease.fileId}: no scan verdict (${codeOf(error)}); error (${kind === 'processing' ? 'processing_failed' : 'scanner_unavailable'})`,
         );
       } else {
         options.log(
@@ -327,7 +386,7 @@ export function createFileScanTask(options: FileScanTaskOptions): PlatformTask {
           `file ${lease.fileId}: scan not finished (${codeOf(error)}); ${state}`,
         );
       }
-      return kind !== 'scanner';
+      return kind === 'processing';
     }
     let recorded: boolean;
     try {

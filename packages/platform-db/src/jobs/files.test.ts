@@ -150,6 +150,9 @@ describe('scan helpers', () => {
   it('schedules retries', async () => {
     expect(await retryFileScan(fakeTx([{ state: 'waiting' }]).tx, FILE, 'scanner')).toBe('waiting');
     expect(await retryFileScan(fakeTx([{ state: 'error' }]).tx, FILE, 'processing')).toBe('error');
+    const crash = fakeTx([{ state: 'crashed' }]);
+    expect(await retryFileScan(crash.tx, FILE, 'crash')).toBe('crashed');
+    expect(crash.executed[0]?.params).toEqual([FILE, 'crash']);
     await expect(retryFileScan(fakeTx([]).tx, FILE, 'scanner')).rejects.toThrow('no answer');
   });
 });

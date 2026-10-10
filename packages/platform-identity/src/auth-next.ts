@@ -76,6 +76,7 @@ import {
   createSignInGuard,
   forgetOtherTrustedBrowsers,
   limitsFor,
+  lockoutHostTenant,
   organizationAccountLockout,
   resetAccountSignIn,
   securityLogLine,
@@ -179,16 +180,24 @@ function trustedDeviceCookie(store: CookieStore): TrustedDeviceCookie {
 }
 
 /**
- * The organization of the host this request signs in on (TM-0003 D-IAM-04, PO): on an organization's own
- * host its lockout policy applies to its own members; on the platform's shared sign-in host the platform
- * default (5 failures, 15 minutes) applies to everyone.
+ * The organization whose own host this request came to, VERIFIED (never a client-supplied value).
  * INTEGRATION POINT (ADR 0002 §4, host → tenant resolution): not built yet — the proxy only classifies the
- * Host header (apps/suite lib/host-tenant.ts) — so every sign-in is on the platform's host today. Return
- * the VERIFIED host organization here (never a client-supplied value) once that lookup exists; the guard
- * below is already wired for it.
+ * Host header (apps/suite lib/host-tenant.ts) — so every request is on the platform's host today. Return
+ * the verified host organization here once that lookup exists, and switch ORGANIZATION_SIGN_IN_HOSTS on.
+ */
+function verifiedHostOrganization(): string | null {
+  return null;
+}
+
+/**
+ * The organization of the host this request signs in on, by THE host rule (auth-limits.ts
+ * `lockoutHostTenant`, TM-0003 D-IAM-04, integration review L1): on an organization's own host its lockout
+ * policy applies to its own members; on the platform's shared sign-in host the platform default (5
+ * failures, 15 minutes) applies to everyone — today every sign-in. The Organization Admin's lock state
+ * and unlock follow the same rule (platform-rbac `memberLockBudget`).
  */
 function hostTenantIdForRequest(): string | null {
-  return null;
+  return lockoutHostTenant(verifiedHostOrganization());
 }
 
 /**

@@ -18,6 +18,7 @@ import {
   DEVICE_TOKEN_PATTERN,
   LIMIT_BUCKETS,
   NO_SIGN_IN_GUARD,
+  ORGANIZATION_SIGN_IN_HOSTS,
   PLATFORM_AUTH_LIMITS,
   RateLimiterUnavailableError,
   type SecurityEvent,
@@ -35,6 +36,7 @@ import {
   deviceSubject,
   forgetOtherTrustedBrowsers,
   limitsFor,
+  lockoutHostTenant,
   organizationAccountLockout,
   readAuthLimitWindowOverride,
   resetAccountSignIn,
@@ -1252,6 +1254,15 @@ describe('organizationAccountLockout (T-M2-10 policy, members only — T-M2-10 s
         {},
       ),
     ).toEqual(fallback);
+  });
+
+  it('THE host rule (integration review L1): no organization hosts yet — the platform default for everyone', () => {
+    expect(ORGANIZATION_SIGN_IN_HOSTS).toBe(false);
+    expect(lockoutHostTenant(ORG)).toBeNull();
+    expect(lockoutHostTenant(null)).toBeNull();
+    // Once organizations have their own hosts: that organization.
+    expect(lockoutHostTenant(ORG, true)).toBe(ORG);
+    expect(lockoutHostTenant(null, true)).toBeNull();
   });
 
   it('the guard applies it per typed address, and fails closed when it cannot be read', async () => {

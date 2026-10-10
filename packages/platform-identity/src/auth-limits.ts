@@ -243,6 +243,30 @@ export interface OrganizationLockoutDeps {
   readonly accountInTenant: (email: string, tenantId: string) => Promise<boolean>;
 }
 
+/**
+ * Organizations' own sign-in hosts (TM-0003 D-IAM-04; ADR 0002 §4, host → tenant resolution): NOT BUILT —
+ * every sign-in happens on the platform's shared host today (the proxy only classifies the Host header,
+ * apps/suite lib/host-tenant.ts). INTEGRATION POINT: true once the request's VERIFIED host organization
+ * is resolved (auth-next.ts `verifiedHostOrganization`).
+ */
+export const ORGANIZATION_SIGN_IN_HOSTS = false;
+
+/**
+ * THE host rule of the lockout (integration review T-M2-11 L1): the organization whose lockout policy
+ * applies on `organizationHost` — that organization's own sign-in host — or null: the platform default (5
+ * failures, 15 minutes). While organizations have no hosts of their own (`hosts` false), null for
+ * everyone. Sign-in (auth-next.ts: the request's host) and the Organization Admin's lock state and unlock
+ * (platform-rbac `memberLockBudget`: the admin's organization, the host its members would sign in on)
+ * both take the host from here, so the profile never shows a pause that sign-in does not apply — and an
+ * unlock never spends one of the 3 daily unlocks, nor e-mails the owner, for one.
+ */
+export function lockoutHostTenant(
+  organizationHost: string | null,
+  hosts: boolean = ORGANIZATION_SIGN_IN_HOSTS,
+): string | null {
+  return hosts ? organizationHost : null;
+}
+
 /** Which host an account is being judged on, and whether it is an active member of the host's organization. */
 export interface LockoutAccount {
   /** The organization of the host (a tenant host; for the Organization Admin, theirs); null: the platform host. */
@@ -254,7 +278,8 @@ export interface LockoutAccount {
 /**
  * THE account budget for an account on a host (INTEGRATION POINT with T-M2-10; security re-review N7):
  * sign-in (`organizationAccountLockout`), the profile's lock state and the Organization Admin's unlock
- * (platform-rbac `memberLockBudget`) all take it from here, so they agree on when an account is locked.
+ * (platform-rbac `memberLockBudget`) all take it from here — each with its host from `lockoutHostTenant`
+ * — so they agree on when an account is locked.
  *
  * The host organization's lockout policy applies when — and only when — the account is an active member
  * of that organization; the platform default (`fallback`: 5 failures, 15 minutes) for everyone else, so

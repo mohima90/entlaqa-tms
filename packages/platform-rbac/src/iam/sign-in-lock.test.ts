@@ -1,6 +1,11 @@
 import { ok } from '@jadarat/platform-core';
 import type { UserTx } from '@jadarat/platform-db';
 import { brandVerifiedClaims } from '@jadarat/platform-core/internal/verified-claims';
+import {
+  PLATFORM_AUTH_LIMITS,
+  lockoutHostTenant,
+  organizationAccountLockout,
+} from '@jadarat/platform-identity';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ActionRuntime } from '../define-action';
 import { createDefineAction } from '../define-action';
@@ -76,7 +81,6 @@ describe('unlock sign-in (T-M2-11, PO decision 9 Oct 2026)', () => {
     expect(result).toEqual(ok({ outcome: 'unlocked' }));
     // Measured against the account budget sign-in applies (the platform's 5 without a policy).
     expect(db.unlockMemberSignIn).toHaveBeenCalledWith(TX, MEMBER, 5);
-    expect(db.getSecurityPolicy).toHaveBeenCalledWith(TX);
     expect(writeAudit).toHaveBeenCalledWith(TX, expect.anything(), {
       action: 'platform.user.sign_in_unlocked',
       entityType: 'person',
@@ -109,39 +113,67 @@ describe('unlock sign-in (T-M2-11, PO decision 9 Oct 2026)', () => {
     expect(writeAudit).not.toHaveBeenCalled();
   });
 
-  it('memberLockBudget: the organization policy, read in the admin’s transaction, clamped like sign-in (N7)', async () => {
+  it('memberLockBudget on an organization host (once they exist): the organization policy, read in the admin’s transaction, clamped like sign-in (N7)', async () => {
     const policyIn = vi.fn((_tx: UserTx, _tenantId: string) =>
       Promise.resolve({ threshold: 3, minutes: 30 }),
     );
-    expect(await memberLockBudget(policyIn)(TX, TENANT)).toBe(3);
+    const onOrganizationHosts = (tenantId: string) => lockoutHostTenant(tenantId, true);
+    expect(await memberLockBudget(policyIn, onOrganizationHosts)(TX, TENANT)).toBe(3);
     expect(policyIn).toHaveBeenCalledWith(TX, TENANT);
     // Laxer than the platform default: clamped to 5, exactly as at sign-in.
     expect(
-      await memberLockBudget(() => Promise.resolve({ threshold: 9, minutes: 5 }))(TX, TENANT),
+      await memberLockBudget(
+        () => Promise.resolve({ threshold: 9, minutes: 5 }),
+        onOrganizationHosts,
+      )(TX, TENANT),
     ).toBe(5);
     // No policy: the platform's 5.
-    expect(await memberLockBudget(() => Promise.resolve(null))(TX, TENANT)).toBe(5);
+    expect(
+      await memberLockBudget(() => Promise.resolve(null), onOrganizationHosts)(TX, TENANT),
+    ).toBe(5);
     // Wired into the unlock: the database gets that budget.
     const { rt } = runtime(['tenant_admin']);
-    await createDefineAction(rt)(unlockSignInActionDefinition(memberLockBudget(policyIn)))({
-      personId: MEMBER,
-    });
+    await createDefineAction(rt)(
+      unlockSignInActionDefinition(memberLockBudget(policyIn, onOrganizationHosts)),
+    )({ personId: MEMBER });
     expect(db.unlockMemberSignIn).toHaveBeenLastCalledWith(TX, MEMBER, 3);
   });
 
-  it("by default the organization's own lockout policy (T-M2-10), read in the admin's transaction — the profile and the unlock agree", async () => {
+  it('by default (no organization hosts yet): the platform default sign-in enforces, whatever the organization’s policy (integration review L1)', async () => {
+    // A stricter policy (3 failures) that sign-in cannot apply on the platform's shared host.
     db.getSecurityPolicy.mockResolvedValue({ lockoutThreshold: 3, lockoutMinutes: 30 });
-    expect(await organizationMemberLockBudget(TX, TENANT)).toBe(3);
-    expect(db.getSecurityPolicy).toHaveBeenLastCalledWith(TX);
-    const { rt } = runtime(['tenant_admin']);
-    await createDefineAction(rt)(unlockSignInActionDefinition())({ personId: MEMBER });
-    expect(db.unlockMemberSignIn).toHaveBeenLastCalledWith(TX, MEMBER, 3);
-    db.memberSignInLock.mockResolvedValue({ locked: true, retryAfterSeconds: 60 });
+    const profileBudget = await organizationMemberLockBudget(TX, TENANT);
+    // The sign-in guard's budget for the same member on the host this request would have (THE host rule).
+    const signInBudget = await organizationAccountLockout(
+      {
+        hostTenantId: lockoutHostTenant(TENANT),
+        lockoutPolicyFor: () => Promise.resolve({ threshold: 3, minutes: 30 }),
+        accountInTenant: () => Promise.resolve(true),
+      },
+      PLATFORM_AUTH_LIMITS.signIn.accountFailures,
+      {},
+    )('member@org.test');
+    expect(profileBudget).toBe(signInBudget.max);
+    expect(profileBudget).toBe(5);
+    // The policy is not even read: only the platform default applies.
+    expect(db.getSecurityPolicy).not.toHaveBeenCalled();
+
+    // The profile shows a lock only at sign-in's 5 failures — never at the policy's 3.
+    db.memberSignInLock.mockResolvedValue({ locked: false, retryAfterSeconds: 0 });
     await signInLockForProfile(TX, MEMBER, { canUnlock: true, hasAccount: true, tenantId: TENANT });
-    expect(db.memberSignInLock).toHaveBeenLastCalledWith(TX, MEMBER, 3);
-    // Never laxer than the platform default, as at sign-in.
-    db.getSecurityPolicy.mockResolvedValue({ lockoutThreshold: 9, lockoutMinutes: 5 });
-    expect(await organizationMemberLockBudget(TX, TENANT)).toBe(5);
+    expect(db.memberSignInLock).toHaveBeenLastCalledWith(TX, MEMBER, 5);
+
+    // The unlock measures against 5 too: an account with 3 or 4 failures — a pause sign-in never
+    // applied — is 'not_locked' in the database, which then counts no unlock (of the 3 a day) and
+    // e-mails nobody (supabase/tests/72).
+    db.unlockMemberSignIn.mockResolvedValue('not_locked');
+    const { rt, writeAudit } = runtime(['tenant_admin']);
+    const result = await createDefineAction(rt)(unlockSignInActionDefinition())({
+      personId: MEMBER,
+    });
+    expect(result).toEqual(ok({ outcome: 'not_locked' }));
+    expect(db.unlockMemberSignIn).toHaveBeenLastCalledWith(TX, MEMBER, 5);
+    expect(writeAudit).not.toHaveBeenCalled();
   });
 
   it('nobody else: HR Manager and learner are refused; a person out of reach is not found', async () => {

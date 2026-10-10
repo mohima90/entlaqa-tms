@@ -388,13 +388,17 @@ describe('readSettings: import invitations (T-M2-12, security review M2)', () =>
   });
 
   it('refuses a pace or daily number out of range, and a trial number above the other', () => {
-    for (const value of ['99', '60001', '1.5', 'x']) {
+    // At least 500 ms: Resend allows 2 requests a second for the whole account.
+    for (const value of ['499', '100', '60001', '1.5', 'x']) {
       fails(
         [],
         { ...env, USER_IMPORT_INVITATION_INTERVAL_MS: value },
-        /USER_IMPORT_INVITATION_INTERVAL_MS must be a whole number of milliseconds from 100 to 60000/,
+        /USER_IMPORT_INVITATION_INTERVAL_MS must be a whole number of milliseconds from 500 to 60000/,
       );
     }
+    expect(
+      runner([], { ...env, USER_IMPORT_INVITATION_INTERVAL_MS: '500' }).importSending.intervalMs,
+    ).toBe(500);
     for (const value of ['0', '100001', '-5']) {
       fails(
         [],

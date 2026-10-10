@@ -58,7 +58,7 @@ export interface RunnerSettings {
   readonly orphanSweep: OrphanSweepSettings;
   /**
    * Sending the invitations of bulk user imports (T-M2-12, security review M2): the platform-wide pace
-   * (USER_IMPORT_INVITATION_INTERVAL_MS, default 1000) and the daily numbers per organization in service
+   * (USER_IMPORT_INVITATION_INTERVAL_MS, default 1000, at least 500) and the daily numbers per organization in service
    * and on trial (USER_IMPORT_DAILY_INVITATIONS, default 5000; USER_IMPORT_TRIAL_DAILY_INVITATIONS,
    * default 200). Every worker of a deployment should use the same values.
    */
@@ -272,8 +272,9 @@ export const IMPORT_DAILY_ENV = 'USER_IMPORT_DAILY_INVITATIONS';
 export const IMPORT_TRIAL_DAILY_ENV = 'USER_IMPORT_TRIAL_DAILY_INVITATIONS';
 
 /**
- * The pace (100 to 60,000 milliseconds) and the daily numbers (1 to 100,000; the trial number no higher
- * than the other) of import invitations.
+ * The pace (500 to 60,000 milliseconds: Resend allows 2 requests a second for the whole account, and
+ * import invitations must leave room for every other e-mail) and the daily numbers (1 to 100,000; the
+ * trial number no higher than the other) of import invitations.
  */
 function readImportSending(env: NodeJS.ProcessEnv): InvitationSending {
   const whole = (name: string, fallback: number, min: number, max: number, unit: string) => {
@@ -289,7 +290,7 @@ function readImportSending(env: NodeJS.ProcessEnv): InvitationSending {
   const intervalMs = whole(
     IMPORT_INTERVAL_ENV,
     DEFAULT_INVITATION_SENDING.intervalMs,
-    100,
+    500,
     60_000,
     'milliseconds',
   );

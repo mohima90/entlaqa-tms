@@ -4,6 +4,7 @@
 -- resolve those duplicates first (keep the newer record).
 drop trigger persons_removal_guard on platform.persons;
 drop function private.check_person_removal();
+drop policy person_employment_not_removed on platform.person_employment;
 drop policy persons_not_removed on platform.persons;
 
 drop index platform.persons_tenant_employee_number_uq;

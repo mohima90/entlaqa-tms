@@ -11,6 +11,10 @@
 --                                      person is inactive.
 --   persons_not_removed                RESTRICTIVE: user claims never read or write a removed person;
 --                                      system jobs do (the undo itself, later bookkeeping).
+--   person_employment_not_removed      RESTRICTIVE: the same for the removed person's placement (their
+--                                      manager, department, branch), so the reports-tree scope, the
+--                                      manager picker and every read see the organization as if the
+--                                      person had never been added (re-review Low 3).
 --   persons_tenant_email_uq,
 --   persons_tenant_employee_number_uq  unique among people who are not removed (same names: the request
 --                                      path maps them to EMAIL_TAKEN / EMPLOYEE_NUMBER_TAKEN).
@@ -42,6 +46,16 @@ create policy persons_not_removed on platform.persons
   using (removed_at is null or (select private.request_claims() ->> 'role') = 'system')
   with check (removed_at is null or (select private.request_claims() ->> 'role') = 'system');
 
+-- A placement is visible to user claims only with its person — under the caller's RLS, so a removed
+-- person's placement disappears with them; system jobs see every person of their tenant, hence every
+-- placement.
+create policy person_employment_not_removed on platform.person_employment
+  as restrictive for all to authenticated
+  using (exists (select 1 from platform.persons p
+                 where p.tenant_id = person_employment.tenant_id and p.id = person_employment.person_id))
+  with check (exists (select 1 from platform.persons p
+                      where p.tenant_id = person_employment.tenant_id and p.id = person_employment.person_id));
+
 -- Who may remove a person, and that a removed person never changes again (SECURITY INVOKER; runs as the
 -- writing role). Platform operations (migrations, tests as the owner) are not checked.
 create or replace function private.check_person_removal()
@@ -65,7 +79,8 @@ begin
   if new.removed_at is null and new.removed_by_import_id is null then
     return new;
   end if;
-  -- Removing: only the undo of the import that CREATED this person (not one it reused), as a system job.
+  -- Removing: only the undo of the import that CREATED this person (not one it reused), as a system job,
+  -- and never a person with a membership (an account that joined: the undo keeps them).
   if (private.request_claims() ->> 'role') is distinct from 'system'
      or new.removed_by_import_id is null
      or not exists (select 1 from platform.user_imports i
@@ -74,6 +89,9 @@ begin
                       and r.person_id = new.id and r.result = 'added' and r.before is null) then
     raise exception 'only the undo of the import that added a person removes them' using errcode = 'insufficient_privilege';
   end if;
+  if exists (select 1 from platform.tenant_memberships m where m.tenant_id = new.tenant_id and m.person_id = new.id) then
+    raise exception 'a person with a membership is never removed' using errcode = 'insufficient_privilege';
+  end if;
   new.removed_at := now();
   return new;
 end
@@ -81,7 +99,7 @@ $$;
 
 revoke all on function private.check_person_removal() from public;
 comment on function private.check_person_removal() is
-  'SECURITY-RELEVANT (T-M2-12, TM-0003 T-IAM-47). Persons are removed only by the undo of the bulk import that created them; a removed person never changes.';
+  'SECURITY-RELEVANT (T-M2-12, TM-0003 T-IAM-47). Persons are removed only by the undo of the bulk import that created them, never with a membership; a removed person never changes.';
 
 create trigger persons_removal_guard before insert or update on platform.persons
   for each row execute function private.check_person_removal();

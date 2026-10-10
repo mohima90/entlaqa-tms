@@ -163,8 +163,10 @@ begin
   -- platform.person_employment (composite FKs to persons, branches, departments; no DELETE grant)
   perform tests.assert_rls_violation($q$insert into platform.person_employment (tenant_id, person_id) values ('b0000000-0000-4000-8000-000000000001', 'b1000000-0000-4000-8000-0000000000b9')$q$,
     'person_employment: insert with tenant B tenant_id is rejected by RLS');
+  -- Rejected before the composite FK by the restrictive person_employment_not_removed policy (a placement
+  -- needs a person the caller sees, migration 20261016090150), else by the FK.
   perform tests.assert_fails($q$insert into platform.person_employment (person_id) values ('b1000000-0000-4000-8000-0000000000b9')$q$,
-    array['23503'], 'person_employment: composite FK rejects a tenant B person');
+    array['42501', '23503'], 'person_employment: a tenant B person is rejected (needs a visible person; composite FK)');
   perform tests.assert_fails($q$update platform.person_employment set department_id = 'b3000000-0000-4000-8000-000000000001' where person_id = 'a1000000-0000-4000-8000-0000000000ab'$q$,
     array['23503'], 'person_employment: composite FK rejects a tenant B department');
   perform tests.assert_fails($q$update platform.person_employment set branch_id = 'b2000000-0000-4000-8000-000000000001' where person_id = 'a1000000-0000-4000-8000-0000000000ab'$q$,

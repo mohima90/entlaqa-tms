@@ -393,6 +393,13 @@ begin
   perform tests.assert_eq(private.user_import_undo_batch(i, 5), 5, 'undo in batches');
   perform tests.assert_eq(private.user_import_undo_batch(i, 5), 2, 'the rest');
   perform tests.assert_eq(private.user_import_undo_batch(i, 5), 0, 'done');
+  perform tests.assert_fails(format($q$update platform.persons set removed_by_import_id = %L where id = %L$q$, i,
+                                    (select person_id from platform.user_import_rows where import_id = i and row_number = 3)),
+    array['42501'], 'a person with a membership is never removed, even by the undo of the import that added them');
+  perform tests.assert_eq((select count(*) from platform.person_employment e
+                           join platform.user_import_rows r on r.person_id = e.person_id
+                           where r.import_id = i and r.undo_result = 'removed' and r.before is null), 2::bigint,
+    'system jobs still see the removed people''s placements (audit, referential integrity)');
   perform tests.assert_eq((select string_agg(row_number || ':' || undo_result, ',' order by row_number)
                            from platform.user_import_rows where import_id = i and undo_result is not null),
     '2:kept_referenced,3:kept_accepted,6:restored,7:kept_changed,11:removed,17:removed,19:removed',
@@ -454,6 +461,22 @@ begin
   perform tests.assert_fails($q$update platform.persons set removed_by_import_id = 'a5000000-0000-4000-8000-0000000000d2'
                                 where id = 'a1000000-0000-4000-8000-000000000c01'$q$,
     array['42501'], 'a user (even an Organization Admin) cannot mark a person removed');
+  -- Their placement is gone with them (re-review Low 3): no manager, department or reports-tree link.
+  perform tests.assert_eq((select count(*) from platform.person_employment e
+                           join platform.user_import_rows r on r.person_id = e.person_id
+                           where r.import_id = i and r.undo_result = 'removed' and r.before is null), 0::bigint,
+    'removed people''s placements are invisible to user claims');
+  perform tests.assert_eq(tests.rows_affected(format($q$update platform.person_employment set job_title_ar = 'تعديل'
+      where person_id in (select person_id from platform.user_import_rows
+                          where import_id = %L and undo_result = 'removed' and before is null)$q$, i)),
+    0::bigint, 'nor can a user change them');
+  perform tests.assert((select count(*) from platform.person_employment) > 0, 'other placements stay visible');
+  -- Nor invite them again: the invitation guard does not rely on the foreign key, which ignores RLS
+  -- (re-review Low 2).
+  perform tests.assert_fails(format($q$insert into platform.invitations (person_id, email, locale, primary_role)
+      values (%L, 'nomgr@imp.test', 'ar', 'learner')$q$,
+      (select person_id from platform.user_import_rows where import_id = i and row_number = 17)),
+    array['23503'], 'a removed person cannot be invited (the person is not found)');
   -- Their e-mail is free again: the invite form creates a new person with it.
   perform tests.assert_eq(tests.rows_affected($q$insert into platform.persons (display_name_ar, email)
                                                  values ('تحت مكرر', 'under.dup@imp.test')$q$), 1::bigint,

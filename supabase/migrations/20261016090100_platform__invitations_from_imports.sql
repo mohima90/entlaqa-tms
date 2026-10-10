@@ -169,7 +169,13 @@ begin
 
     select p.email, p.status into v_person_email, v_person_status
     from platform.persons p where p.tenant_id = new.tenant_id and p.id = new.person_id;
-    if found then  -- otherwise the composite foreign key rejects the row
+    -- Under claims the person must be one the caller sees: the foreign key alone is not enough, because it
+    -- ignores RLS — a person removed by an import undo (hidden from user claims, migration
+    -- 20261016090150) still satisfies it (re-review Low 2). Platform operations rely on the key.
+    if not found and current_user = 'authenticated' then
+      raise exception 'the person to invite does not exist' using errcode = 'foreign_key_violation';
+    end if;
+    if found then  -- platform operations: otherwise the composite foreign key rejects the row
       if v_person_email is distinct from new.email then
         raise exception 'the invitation e-mail must be the person''s e-mail' using errcode = 'check_violation';
       end if;

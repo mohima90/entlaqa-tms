@@ -211,11 +211,15 @@ describe('XlsxWorkbook', () => {
 
 describe('ZipArchive', () => {
   it('stops inflating at the limit (ZIP bomb)', () => {
-    const zip = new ZipArchive(zipSync({ 'big.xml': new Uint8Array(5_000_000) }, { level: 9 }));
-    expect(() => [...zip.chunks('big.xml', 1_000_000)]).toThrow(
+    // 600 KB of zeros compress to well under 1 KB: a bomb in miniature (a 5 MB one made the test slow
+    // under coverage instrumentation); the limit is what is tested, not the size.
+    const bytes = zipSync({ 'big.xml': new Uint8Array(600_000) }, { level: 6 });
+    expect(bytes.length).toBeLessThan(2_000);
+    const zip = new ZipArchive(bytes);
+    expect(() => [...zip.chunks('big.xml', 100_000)]).toThrow(
       expect.objectContaining({ code: 'FILE_UNREADABLE' }),
     );
-    expect([...zip.chunks('big.xml', 5_000_000)].reduce((n, c) => n + c.length, 0)).toBe(5_000_000);
+    expect([...zip.chunks('big.xml', 600_000)].reduce((n, c) => n + c.length, 0)).toBe(600_000);
   });
 
   it('reads stored entries and names without case or leading slash', () => {

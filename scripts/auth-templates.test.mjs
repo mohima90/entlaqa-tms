@@ -126,26 +126,9 @@ describe('Auth e-mail templates (T-M2-08)', () => {
         (m) => m[1],
       ),
     ).toEqual([
+      'auth-internal, auth-admin, auth-tools, edge, errors-ui, storage-internal', // gateway
       'db-app, mail, auth-admin, scan', // workers
       'auth-tools', // admin-cli
-    ]);
-    // The gateway (the one service on both admin networks, written as a map for its fixed address).
-    const gatewayService = compose.slice(
-      compose.indexOf('\n  gateway:\n'),
-      compose.indexOf('\n  app:\n'),
-    );
-    const gatewayNetworks = gatewayService.slice(
-      gatewayService.indexOf('\n    networks:\n'),
-      gatewayService.indexOf('\n    healthcheck:'),
-    );
-    expect([...gatewayNetworks.matchAll(/^ {6}([a-z-]+): \{.*\}$/gm)].map((m) => m[1])).toEqual([
-      'auth-internal',
-      'auth-admin',
-      'auth-tools',
-      'edge',
-      'errors',
-      'storage-internal',
-      'storage-sign',
     ]);
   });
 
@@ -189,11 +172,15 @@ describe('Auth e-mail templates (T-M2-08)', () => {
     expect(signing).toContain('location / { return 404; }');
     expect(signing).toContain('proxy_set_header X-Upsert "";');
     expect(signing).toContain('error_log /var/log/nginx/error.log crit;');
+    // The app and the gateway share `edge` (fixed subnet) and nothing else, so 8445's source rule holds.
     expect(compose).toContain('- { subnet: 10.231.0.32/28, gateway: 10.231.0.33 }');
-    expect(compose).toContain('storage-sign: { ipv4_address: 10.231.0.34 }');
-    expect(compose).toContain("extra_hosts: ['gateway:10.231.0.34']");
     expect(compose).toContain('STORAGE_INTERNAL_URL: https://gateway:8445');
-    expect(compose).toMatch(/^ {4}networks: \[db-app, edge, errors, storage-sign\]$/m); // the app
+    expect(compose).toMatch(/^ {4}networks: \[db-app, edge, errors\]$/m); // the app
+    expect(compose).not.toContain('extra_hosts');
+    expect([...compose.matchAll(/^ {4}networks: \[(.*\bedge\b.*)\]$/gm)].map((m) => m[1])).toEqual([
+      'auth-internal, auth-admin, auth-tools, edge, errors-ui, storage-internal', // gateway
+      'db-app, edge, errors', // app
+    ]);
     expect(compose).not.toMatch(/^\s+- ['"]?[\d.:]*8445(:\d+)?['"]?\s*(#.*)?$/m);
     // clamd's scratch space (memory) is bounded.
     expect(compose).toContain("tmpfs: ['/tmp:size=2048m']");
@@ -203,7 +190,8 @@ describe('Auth e-mail templates (T-M2-08)', () => {
     expect(published).toContain(
       `add_header Content-Security-Policy "default-src 'none'; sandbox" always;`,
     );
-    expect(published.split('add_header X-Content-Type-Options nosniff always;')).toHaveLength(3);
+    // nosniff on uploads, their CORS preflight and downloads.
+    expect(published.split('add_header X-Content-Type-Options nosniff always;')).toHaveLength(4);
     // Storage and clamd sit on internal networks only; Storage logs no request lines (names in URLs).
     expect(compose).toContain('storage-internal: { internal: true }');
     expect(compose).toContain('db-storage: { internal: true }');

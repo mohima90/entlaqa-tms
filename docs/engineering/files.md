@@ -85,7 +85,7 @@ const link = await createDownloadGrant(await fileRequestContext(claims), actorFr
 
 **Why the two transactions.** Storage evaluates our policies on its **own** database connection, so it sees only committed rows. The reservation (for the signed upload URL) and the download grant (for the signed download URL) are therefore committed before Storage is asked — `context.ownTx` runs a transaction of the signed-in user for exactly that (`fileRequestContext` builds it with `withUserTx`). A reservation whose URL is never used expires (15 minutes) and is purged after 24 hours; a grant expires with its URL (60 s / 300 s).
 
-**Who creates signed URLs.** Only the web app's server, with the user's session. Self-hosted, it asks Storage on the gateway's **internal port 8445** (`STORAGE_INTERNAL_URL`; the app's network alone); the browser-facing port 8443 serves only the uploads (`PUT`, with its CORS preflight) and downloads (`GET`) with a URL's token — a user's own token cannot create a URL there, of any lifetime (security review M2, smoke-tested). On hosted Supabase the project URL serves both: see the residual risk in §6.
+**Who creates signed URLs.** Only the web app's server, with the user's session. Self-hosted, it asks Storage on the gateway's **internal port 8445** (`STORAGE_INTERNAL_URL`; the app's network `edge` alone); the browser-facing port 8443 serves only the uploads (`PUT`, with its CORS preflight) and downloads (`GET`) with a URL's token — a user's own token cannot create a URL there, of any lifetime (security review M2, smoke-tested). On hosted Supabase the project URL serves both: see the residual risk in §6.
 
 **What Storage checks** (policies on `storage.objects`, with the user's JWT): the key's first folder is the user's tenant (`private.storage_request_tenant()`: the same claim checks as `private.current_tenant_id()` — live session, active membership, current organization — for Storage's login role `supabase_storage_admin` only); **upload** only to the key of the user's own `pending_upload` reservation of an uploaded purpose, not expired; **read** only a clean, not deleted file with an unexpired grant for this user. No update or delete for users at all (so no upsert over uploaded or scanned bytes); no listing.
 
@@ -145,7 +145,7 @@ Platform tasks (ADR 0005 §4; every wake-up and every minute):
 
 ## 7. Deployments
 
-**Self-hosted:** `infra/docker` runs Storage (file backend here, S3-compatible in production), clamd and freshclam; see its README ("Files and malware scanning") for the object backend, the public origin (`STORAGE_PUBLIC_URL`), the internal signing port (`STORAGE_INTERNAL_URL`, network `storage-sign`), the signature mirror and age limit, the Storage JWT secret and upgrade steps.
+**Self-hosted:** `infra/docker` runs Storage (file backend here, S3-compatible in production), clamd and freshclam; see its README ("Files and malware scanning") for the object backend, the public origin (`STORAGE_PUBLIC_URL`), the internal signing port (`STORAGE_INTERNAL_URL`, answering the `edge` network the app and the gateway alone share), the signature mirror and age limit, the Storage JWT secret and upgrade steps.
 
 **Hosted Supabase (staging), after the merge — Product Owner:**
 1. **Actions → DB deploy** → `plan`, then `apply`. Creates the file tables, the six private buckets and the three `storage.objects` policies (the migration role can create them on hosted Supabase; simulated in CI by `pnpm db:test:hosted-sim`).

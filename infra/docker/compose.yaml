@@ -44,23 +44,23 @@ networks:
       config:
         - { subnet: 10.231.0.16/28, gateway: 10.231.0.17 }
   db-app: {} # db ⇄ app (+ the db host port used for migrations)
-  edge: {} # app ⇄ gateway (+ published ports)
-  # Supabase Storage (T-M2-18, ADR 0006): its database connection (TLS) and the gateway's plain-HTTP hop.
-  db-storage: { internal: true } # db ⇄ Storage
-  storage-internal: { internal: true } # gateway ⇄ Storage
-  # app ⇄ gateway: the gateway's internal port 8445, the ONLY one that creates signed Storage URLs (security
-  # review M2), answers this subnet alone (gateway/nginx.conf — change both files together). The gateway
-  # has a fixed address here and the app reaches `gateway` at it (app: extra_hosts).
-  storage-sign:
-    internal: true
+  # app ⇄ gateway (+ published ports): the ONLY network the two share, so the app always reaches `gateway`
+  # here. The gateway's internal port 8445 — the only one that creates signed Storage URLs (security review
+  # M2) — answers this subnet alone, minus its bridge address (the host): gateway/nginx.conf, change both
+  # files together.
+  edge:
     ipam:
       config:
         - { subnet: 10.231.0.32/28, gateway: 10.231.0.33 }
+  # Supabase Storage (T-M2-18, ADR 0006): its database connection (TLS) and the gateway's plain-HTTP hop.
+  db-storage: { internal: true } # db ⇄ Storage
+  storage-internal: { internal: true } # gateway ⇄ Storage
   # Malware scanning (ADR 0006 §8): workers ⇄ clamd (no route out); freshclam's route to the signature
   # mirror (the only scanning container with egress; a private mirror for in-country installations).
   scan: { internal: true }
   signature-updates: {}
-  errors: { internal: true } # app, gateway ⇄ GlitchTip (plain HTTP; no route out of the installation)
+  errors: { internal: true } # app ⇄ GlitchTip (plain HTTP; no route out of the installation)
+  errors-ui: { internal: true } # gateway ⇄ GlitchTip (its UI over TLS on 8100; plain HTTP inside)
   errors-internal: { internal: true } # GlitchTip ⇄ its own database (error data never in the TMS db)
   mail: { internal: true } # worker ⇄ Mailpit (SMTP with STARTTLS)
 
@@ -275,14 +275,7 @@ services:
     read_only: true
     cap_drop: [ALL]
     tmpfs: [/tmp]
-    networks:
-      auth-internal: {}
-      auth-admin: {}
-      auth-tools: {}
-      edge: {}
-      errors: {}
-      storage-internal: {}
-      storage-sign: { ipv4_address: 10.231.0.34 }
+    networks: [auth-internal, auth-admin, auth-tools, edge, errors-ui, storage-internal]
     healthcheck:
       test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:8081/healthz']
       interval: 5s
@@ -308,10 +301,7 @@ services:
     read_only: true
     cap_drop: [ALL]
     tmpfs: ['/app/apps/suite/.next/cache:uid=65532,gid=65532,mode=0700'] # distroless nonroot
-    networks: [db-app, edge, errors, storage-sign]
-    # The app reaches `gateway` over storage-sign (deterministic: the gateway's port 8445 checks the source
-    # network; Auth on 8443 works from there as well).
-    extra_hosts: ['gateway:10.231.0.34']
+    networks: [db-app, edge, errors]
     depends_on:
       gateway: { condition: service_healthy }
     volumes:
@@ -483,7 +473,7 @@ services:
     cap_drop: [ALL]
     tmpfs: [/tmp]
     command: ['./bin/run-all-in-one.sh']
-    networks: [errors, errors-internal]
+    networks: [errors, errors-ui, errors-internal]
     depends_on:
       errors-db: { condition: service_healthy }
     environment:

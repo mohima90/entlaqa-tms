@@ -174,4 +174,23 @@ describe('default defineAction runtime', () => {
     expect(JSON.stringify(spy.mock.calls)).not.toContain('example.com');
     spy.mockRestore();
   });
+
+  it('warns about a transaction retried after a conflict: permission and SQLSTATE only', () => {
+    const spy = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+    defaultActionRuntime.logTransactionRetry?.({
+      permission: 'platform.user.deactivate',
+      sqlState: '40P01',
+    });
+    const [line] = spy.mock.calls.map(
+      ([written]) => JSON.parse(String(written)) as Record<string, unknown>,
+    );
+    expect(line).toMatchObject({
+      level: 'warn',
+      msg: 'transaction retried after a conflict',
+      permission: 'platform.user.deactivate',
+      reason: 'transaction_conflict',
+      error_code: '40P01',
+    });
+    spy.mockRestore();
+  });
 });

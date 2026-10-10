@@ -99,12 +99,15 @@ export interface ActionRuntime<Tx> {
   getClaims(options: GetClaimsOptions): Promise<Result<VerifiedClaims, AppError>>;
   /**
    * `retryOnConflict`: run `fn` once more in a new transaction after a deadlock (40P01) or a
-   * serialization failure (40001) — see platform-db `UserTxOptions`.
+   * serialization failure (40001), telling `onRetry` the SQLSTATE first — see platform-db `UserTxOptions`.
    */
   withUserTx<T>(
     claims: VerifiedClaims,
     fn: (tx: Tx) => Promise<T>,
-    options?: { readonly retryOnConflict?: boolean },
+    options?: {
+      readonly retryOnConflict?: boolean;
+      readonly onRetry?: (sqlState: string) => void;
+    },
   ): Promise<T>;
   loadSessionFacts(tx: Tx): Promise<SessionFacts>;
   loadGrants(tx: Tx, claims: TenantClaims): Promise<readonly Grant[]>;
@@ -118,6 +121,11 @@ export interface ActionRuntime<Tx> {
     error: unknown,
     meta: { readonly permission: string; readonly correlationId: string },
   ): void;
+  /**
+   * A transaction rolled back by a conflict and run once more (operational warning): the permission and the
+   * SQLSTATE only, never input or personal data.
+   */
+  logTransactionRetry?(meta: { readonly permission: string; readonly sqlState: string }): void;
 }
 
 /**
@@ -276,7 +284,12 @@ export function createDefineAction<Tx>(runtime: ActionRuntime<Tx>) {
             if (record) await runtime.writeAudit(tx, actor, record);
             return ok(output.value);
           },
-          { retryOnConflict: definition.externalEffects !== true },
+          {
+            retryOnConflict: definition.externalEffects !== true,
+            onRetry: (sqlState) => {
+              runtime.logTransactionRetry?.({ permission: definition.permission.code, sqlState });
+            },
+          },
         );
       } catch (error) {
         if (error instanceof HandledFailure) return err(toClientError(error.error));

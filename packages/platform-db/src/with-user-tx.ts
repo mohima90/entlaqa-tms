@@ -8,7 +8,7 @@ import {
 import { sql } from 'drizzle-orm';
 import { type ClaimsTx, runWithClaims } from './claims-tx';
 import { type AppDatabase, getDatabase } from './client';
-import { isTransactionConflict } from './pg-error';
+import { transactionConflictCode } from './pg-error';
 
 /** Transaction handle for request-path units of work (connection role app_server). */
 export type UserTx = ClaimsTx;
@@ -49,10 +49,12 @@ export function databaseClaims(claims: JwtClaims): Readonly<Record<string, strin
  * they commit: the first attempt's database work is gone, anything else it did (an Auth call, an e-mail, a
  * log of success) would run twice. defineAction turns it on unless the action declares `externalEffects`.
  * Work after the commit (outside `fn`) is not repeated. At most one retry; any other error, or a second
- * conflict, is thrown as is.
+ * conflict, is thrown as is. `onRetry` is told the SQLSTATE before the second run (for an operational log:
+ * defineAction logs it with the permission — never anything else of the request).
  */
 export interface UserTxOptions {
   readonly retryOnConflict?: boolean;
+  readonly onRetry?: (sqlState: string) => void;
 }
 
 export type WithUserTx = <T>(
@@ -87,7 +89,9 @@ export function createWithUserTx(getDb: () => AppDatabase): WithUserTx {
     try {
       return await run();
     } catch (error) {
-      if (!isTransactionConflict(error)) throw error;
+      const sqlState = transactionConflictCode(error);
+      if (sqlState === null) throw error;
+      options.onRetry?.(sqlState);
       return run();
     }
   };

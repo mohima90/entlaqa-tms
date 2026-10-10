@@ -1,6 +1,6 @@
 /**
  * The worker's purge of ended sessions against PostgreSQL (T-M2-10, private.purge_ended_sessions; T-M2-09 ×
- * T-M2-10 integration review): it never waits for another transaction. A login whose sessions another
+ * T-M2-10 integration review): it never waits for our locks. A login whose sessions another
  * transaction is ending (its login lock: a deactivation, a force sign-out, the device limit) and a session
  * whose sign-in context row another transaction holds (a request recording its activity, an organization
  * switch, a deactivation) are left to the next run — and purged then.

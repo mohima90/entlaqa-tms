@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { endMemberSessionsAction, endMySessionsAction } from '../../actions/security';
 import { type ErrorTexts, errorText } from '../auth/error-text';
+import { useSessionRefusal } from '../auth/session-refusal';
 
 /**
  * Sign-in sessions (FR-IAM-13, T-M2-10): the member's own on My profile (end one, or all others), and a
@@ -32,6 +33,7 @@ export interface SessionsTableProps {
 export function SessionsTable({ target, sessions, labels, errors }: SessionsTableProps) {
   const t = (key: string) => labels[key] ?? key;
   const router = useRouter();
+  const sessionRefused = useSessionRefusal();
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState<{ tone: 'success' | 'danger'; text: string } | null>(null);
   const others = sessions.filter((s) => !s.isCurrent);
@@ -46,7 +48,7 @@ export function SessionsTable({ target, sessions, labels, errors }: SessionsTabl
       if (result.ok) {
         setMessage({ tone: 'success', text: t('ended') });
         router.refresh();
-      } else {
+      } else if (!sessionRefused(result.error)) {
         setMessage({ tone: 'danger', text: errorText(result.error, errors) });
       }
     });

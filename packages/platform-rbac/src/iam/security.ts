@@ -247,6 +247,11 @@ export interface MemberSecurityView {
   readonly appPending: boolean;
   /** The caller may reset the member's authenticator app (Organization Admin; PO answer 9 Oct 2026). */
   readonly canResetApp: boolean;
+  /**
+   * …after a code of their own from the last 15 minutes first (the session has none, or an older one:
+   * review L3) — the page links to the /mfa step, which returns to the profile.
+   */
+  readonly resetNeedsCode: boolean;
   /** The organization's device limit, for "(2 of 3 allowed)". */
   readonly maxDevices: number | null;
 }
@@ -270,16 +275,18 @@ export function memberSecurityQueryDefinition(): QueryDefinition<
         await getMemberMfa(ctx.tx, input.personId),
         await getSecurityPolicy(ctx.tx),
       ];
+      const resetAccess =
+        ctx.resource !== null && ctx.actor.personId !== input.personId
+          ? ctx.access(p['platform.user.reset_mfa'], ctx.resource)
+          : 'denied';
       return ok({
         sessions,
         usesApp: mfa?.usesApp ?? null,
         appSince: mfa?.since ?? null,
         appPending: mfa?.pending ?? false,
-        // Shown also before the code: the action then asks for it (step-up).
-        canResetApp:
-          ctx.resource !== null &&
-          ctx.access(p['platform.user.reset_mfa'], ctx.resource) !== 'denied' &&
-          ctx.actor.personId !== input.personId,
+        // Shown also before the code: the page then asks for it first (step-up).
+        canResetApp: resetAccess !== 'denied',
+        resetNeedsCode: resetAccess === 'step_up_required',
         maxDevices: policy?.sessionMaxDevices ?? null,
       });
     },
@@ -346,11 +353,11 @@ export function endMemberSessionsActionDefinition(): ActionDefinition<
 
 export const MfaResetErrors = defineErrorCodes({
   /** The member has no authenticator app (nothing to reset). */
-  MFA_RESET_NO_APP: { status: 409, messageKey: 'users.errors.mfaResetNoApp' },
+  MFA_RESET_NO_APP: { status: 409, messageKey: 'userProfile.errors.mfaResetNoApp' },
   /** The member's login belongs to another organization too: ENTLAQA support resets it. */
   MFA_RESET_OTHER_ORGANIZATION: {
     status: 409,
-    messageKey: 'users.errors.mfaResetOtherOrganization',
+    messageKey: 'userProfile.errors.mfaResetOtherOrganization',
   },
 });
 

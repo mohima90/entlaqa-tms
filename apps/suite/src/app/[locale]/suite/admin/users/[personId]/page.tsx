@@ -16,9 +16,11 @@ import type { ReactNode } from 'react';
 import { SessionsTable } from '../../../../../../components/sessions/sessions-table';
 import { SuiteShell } from '../../../../../../components/suite-shell';
 import { ReactivateMemberButton } from '../../../../../../components/users/reactivate-member-button';
+import { ResetAuthenticator } from '../../../../../../components/users/reset-authenticator';
 import { REACTIVATED_FLASH_PARAM } from '../../../../../../lib/deactivate-form';
 import { reactivateLabels } from '../../../../../../lib/deactivation-texts';
-import { profileErrorTexts } from '../../../../../../lib/profile-texts';
+import { stepUpHref } from '../../../../../../lib/mfa-view';
+import { memberSecurityErrorTexts, profileErrorTexts } from '../../../../../../lib/profile-texts';
 import { sessionLabels, sessionRows } from '../../../../../../lib/sessions-view';
 import { getSuiteContext } from '../../../../../../lib/suite-context';
 import { memberSecurityQuery, userProfileQuery } from '../../../../../../lib/users-queries';
@@ -41,14 +43,17 @@ const KNOWN_ACTIONS = new Set([
   'platform.user.roles_changed',
   'platform.user.deactivated',
   'platform.user.reactivated',
+  // T-M2-10: force sign-out and the reset of a lost authenticator app.
+  'platform.user.sessions_ended',
+  'platform.user.mfa_reset',
 ]);
 
 /**
  * User profile (T-M2-04, screen 3 — FR-IAM-01/07): authorized against the person (out of scope or
  * another organization → 404, no existence leak). Roles need role.read, the activity audit.read.
  * "Edit details" (T-M2-13) when the member may change this record; «تعطيل المستخدم» / «إعادة تفعيل
- * المستخدم» (T-M2-09, FR-IAM-05) for HR / the Organization Admin; sign-in sessions, MFA and lockout
- * (FR-IAM-12/13) join with T-M2-10.
+ * المستخدم» (T-M2-09, FR-IAM-05) for HR / the Organization Admin; sign-in sessions, force sign-out and
+ * the authenticator app with its reset (FR-IAM-12/13, T-M2-10); account actions with T-M2-07/09.
  */
 export default async function UserProfilePage({
   params,
@@ -148,6 +153,8 @@ async function Profile({
   const deactivation = await getTranslations({ locale, namespace: 'deactivation' });
   const name = localizedName(locale, profile.displayNameAr, profile.displayNameEn);
   const profileHref = `/${locale}/suite/admin/users/${profile.personId}`;
+  const securityErrors = security ? await memberSecurityErrorTexts(locale) : {};
+  const personName = name;
   const users = await getTranslations({ locale, namespace: 'users' });
   const format = await getFormatter({ locale });
   const none = <NotSet label={users('noneLabel')} />;
@@ -364,14 +371,44 @@ async function Profile({
               <dd className="m-0" data-testid="user-mfa-status">
                 {security.usesApp && security.appSince
                   ? t('mfaOn', { date: format.dateTime(security.appSince, 'medium') })
-                  : t('mfaOff')}
-                {security.usesApp ? (
-                  <span className="block text-sm text-text-muted">{t('mfaReset')}</span>
-                ) : null}
+                  : security.appPending
+                    ? t('mfaPending')
+                    : t('mfaOff')}
               </dd>
             </div>
           ) : null}
         </dl>
+        {/* Lost authenticator app (PO answer, 9 Oct 2026): the Organization Admin resets it here;
+            ENTLAQA support for logins in several organizations and the last Organization Admin. */}
+        {security && (security.usesApp || security.appPending) ? (
+          <div className="mt-5 flex flex-col gap-3 border-t border-border pt-4">
+            <h3 className="m-0 text-base font-semibold">{t('mfaResetTitle')}</h3>
+            <p className="m-0 text-sm text-text-muted">{t('mfaResetHint')}</p>
+            <p className="m-0 text-sm text-text-muted" data-testid="user-mfa-reset-support">
+              {t('mfaResetSupport')}
+            </p>
+            {security.canResetApp ? (
+              <ResetAuthenticator
+                personId={profile.personId}
+                personName={personName}
+                needsCode={security.resetNeedsCode}
+                stepUpHref={stepUpHref(locale, `/${locale}/suite/admin/users/${profile.personId}`)}
+                labels={{
+                  action: t('mfaResetAction'),
+                  needsCode: t('mfaResetNeedsCode'),
+                  verifyFirst: t('mfaResetVerifyFirst'),
+                  confirmTitle: t('mfaResetConfirmTitle'),
+                  confirmText: t('mfaResetConfirmText', { name: '{name}' }),
+                  confirm: t('mfaResetConfirm'),
+                  resetting: t('mfaResetting'),
+                  cancel: t('mfaResetCancel'),
+                  done: t('mfaResetDone', { name: '{name}' }),
+                }}
+                errors={securityErrors}
+              />
+            ) : null}
+          </div>
+        ) : null}
       </Card>
 
       {security ? (
@@ -389,7 +426,7 @@ async function Profile({
             target={{ kind: 'member', personId: profile.personId }}
             sessions={await sessionRows(locale, security.sessions)}
             labels={sessionLabels(locale)}
-            errors={await profileErrorTexts(locale)}
+            errors={securityErrors}
           />
         </Card>
       ) : null}

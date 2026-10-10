@@ -143,6 +143,7 @@ async function Settings({
         texts={flatten(getMessages(locale).security)}
         lastChanged={lastChanged}
         errors={await profileErrorTexts(locale)}
+        stepUpHref={stepUpHref(locale, `/${locale}${PATH}`)}
       />
     </div>
   );

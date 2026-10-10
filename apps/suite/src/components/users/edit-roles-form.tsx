@@ -15,6 +15,7 @@ import {
   touchesPrivileged,
 } from '../../lib/edit-roles-form';
 import { type ErrorTexts, errorText } from '../auth/error-text';
+import { useSessionRefusal } from '../auth/session-refusal';
 import { fieldErrorCodes } from '../profile/field-errors';
 
 const withoutRole = (
@@ -51,6 +52,7 @@ export function EditRolesForm(props: EditRolesFormProps) {
   const { labels, catalogue } = props;
   const text = (key: string) => labels[key] ?? key;
   const router = useRouter();
+  const sessionRefused = useSessionRefusal();
   const [pending, startTransition] = useTransition();
   const [state, setState] = useState<RolesFormState>(() => formStateFromRoles(props.roles));
   const [message, setMessage] = useState<{ tone: 'success' | 'danger'; text: string } | null>(null);
@@ -101,6 +103,7 @@ export function EditRolesForm(props: EditRolesFormProps) {
     startTransition(async () => {
       const result = await action(input);
       if (!result.ok) {
+        if (sessionRefused(result.error)) return;
         // Separation of duties (BR-IAM-4): the reason itself is the message, not "check the fields".
         let conflict = false;
         if (result.error.code === 'VALIDATION_FAILED') {

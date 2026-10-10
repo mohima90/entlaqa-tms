@@ -4,6 +4,7 @@ import { type SyntheticEvent, useRef, useState, useTransition } from 'react';
 import { changeMyPasswordAction } from '../../actions/profile';
 import { minFromParams, passwordRuleState, withMin } from '../../lib/password-rules';
 import { type ErrorTexts, errorText } from '../auth/error-text';
+import { useSessionRefusal } from '../auth/session-refusal';
 import { type PasswordRuleLabels, PasswordRulesList } from '../auth/password-rules-list';
 import { fieldErrorCodes } from './field-errors';
 
@@ -45,6 +46,7 @@ export function ChangePasswordForm({
   const [password, setPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
   const rules = passwordRuleState(password, confirmation, minLength);
+  const sessionRefused = useSessionRefusal();
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState<{ tone: 'success' | 'danger'; text: string } | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
@@ -72,6 +74,7 @@ export function ChangePasswordForm({
         setMessage({ tone: 'success', text: labels.changed });
         return;
       }
+      if (sessionRefused(result.error)) return;
       if (result.error.code === 'VALIDATION_FAILED') {
         const codes = fieldErrorCodes(result.error);
         setFieldErrors({

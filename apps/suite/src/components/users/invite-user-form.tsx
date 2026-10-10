@@ -14,6 +14,7 @@ import {
   rolesShown,
 } from '../../lib/invite-form';
 import { type ErrorTexts, errorText } from '../auth/error-text';
+import { useSessionRefusal } from '../auth/session-refusal';
 import { fieldErrorCodes } from '../profile/field-errors';
 import { SelectField, type UnitChoice } from './edit-user-form';
 
@@ -49,6 +50,7 @@ export function InviteUserForm(props: InviteUserFormProps) {
   const { labels, fieldTexts, catalogue } = props;
   const text = (key: string) => labels[key] ?? key;
   const router = useRouter();
+  const sessionRefused = useSessionRefusal();
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
@@ -104,6 +106,7 @@ export function InviteUserForm(props: InviteUserFormProps) {
         router.push(props.successHref);
         return;
       }
+      if (sessionRefused(result.error)) return;
       if (result.error.code === 'VALIDATION_FAILED') {
         const errors: Record<string, string> = {};
         for (const [path, code] of Object.entries(fieldErrorCodes(result.error))) {

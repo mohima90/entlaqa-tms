@@ -246,6 +246,7 @@ async function MyProfile({
             <p className="mb-4 mt-0 text-text-muted">{t('mfa.intro')}</p>
             <AuthenticatorCard
               usesApp={security.usesApp === true}
+              appPending={security.appPending}
               setUpHref={stepUpHref(locale, `/${locale}/suite/profile`)}
               labels={{
                 on: t('mfa.on'),
@@ -257,6 +258,11 @@ async function MyProfile({
                 removeNeedsCode: t('mfa.removeNeedsCode'),
                 verifyFirst: t('mfa.verifyFirst'),
                 removeWarning: t('mfa.removeWarning'),
+                pending: t('mfa.pending'),
+                pendingText: t('mfa.pendingText'),
+                resend: t('mfa.resend'),
+                resending: t('mfa.resending'),
+                resent: t('mfa.resent'),
               }}
               errors={await mfaErrorTexts(locale)}
             />

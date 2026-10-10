@@ -148,6 +148,9 @@ services:
       # minimum length matching the application's rule (12).
       GOTRUE_SECURITY_UPDATE_PASSWORD_REQUIRE_CURRENT_PASSWORD: 'true'
       GOTRUE_PASSWORD_MIN_LENGTH: '12'
+      # Secure password change (as hosted staging and local config.toml; T-M2-10 review M1): a session
+      # signed in more than 24 hours ago re-authenticates before it sets a password.
+      GOTRUE_SECURITY_UPDATE_PASSWORD_REQUIRE_REAUTHENTICATION: 'true'
       GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_ENABLED: 'true'
       GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_URI: pg-functions://postgres/private/custom_access_token_hook
       GOTRUE_HOOK_BEFORE_USER_CREATED_ENABLED: 'true'

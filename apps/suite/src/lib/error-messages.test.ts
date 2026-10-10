@@ -3,9 +3,11 @@ import { getMessages } from '@jadarat/platform-i18n';
 import {
   IdentityErrors,
   InvitationErrors,
+  MfaErrors,
   PasswordErrors,
   PasswordResetErrors,
 } from '@jadarat/platform-identity';
+import { MfaResetErrors } from '@jadarat/platform-rbac';
 import { describe, expect, it } from 'vitest';
 
 function lookup(messages: unknown, key: string): unknown {
@@ -21,7 +23,7 @@ function lookup(messages: unknown, key: string): unknown {
 }
 
 describe('platform error messages (ADR 0011 §3)', () => {
-  it('every platform, identity, invitation and password error messageKey exists in Arabic and English', () => {
+  it('every platform, identity, invitation, password and authenticator error messageKey exists in Arabic and English', () => {
     for (const locale of ['ar', 'en'] as const) {
       for (const def of [
         ...Object.values(PlatformErrors),
@@ -29,6 +31,8 @@ describe('platform error messages (ADR 0011 §3)', () => {
         ...Object.values(InvitationErrors),
         ...Object.values(PasswordErrors),
         ...Object.values(PasswordResetErrors),
+        ...Object.values(MfaErrors),
+        ...Object.values(MfaResetErrors),
       ]) {
         const message = lookup(getMessages(locale), def.messageKey);
         expect(typeof message, `${locale}: ${def.messageKey}`).toBe('string');

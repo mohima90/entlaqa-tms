@@ -1,16 +1,20 @@
 'use client';
-import { Alert, Badge, Button } from '@jadarat/ui';
+import { Alert, Badge, Button, buttonClasses } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
 import { type ReactNode, type SyntheticEvent, useState, useTransition } from 'react';
 import { updateSecurityPolicyAction } from '../../actions/security';
 import { type ErrorTexts, errorText } from '../auth/error-text';
+import { useSessionRefusal } from '../auth/session-refusal';
+import { SECURITY_FORM_LIMITS, type SecurityNumberField } from '../../lib/security-limits';
 import { fieldErrorCodes } from '../profile/field-errors';
 
 /**
  * Security settings (approved screen 6 «الأمان»; FR-IAM-12/13, T-M2-10). The Organization Admin changes
  * them with an authenticator code (AAL2 — the page explains and links to the code first); everyone else
- * who may open the page reads them. Methods other than the authenticator app, trusted devices and password
- * history are on the screen but not built yet (marked «قريبًا»). Limits mirror the database's floors.
+ * who may open the page reads them. Methods other than the authenticator app (e-mail and SMS codes),
+ * trusted devices (follow-up T-M2-10c) and password history are on the screen but not built yet (marked
+ * «قريبًا»); passwords never expire (PO decision). Limits mirror the database's floors; the lockout
+ * settings are stored now and applied by the sign-in limiter (T-M2-11), as the section's badge says.
  */
 export type MfaMode = 'off' | 'optional' | 'required_all' | 'required_roles';
 
@@ -27,20 +31,11 @@ export interface SecurityFormValues {
   readonly sessionMaxDevices: number;
 }
 
-type NumberField = Exclude<
-  keyof SecurityFormValues,
-  'mfaMode' | 'mfaRequiredRoles' | 'mfaPromptAdmins'
->;
+/** The settings typed as numbers (every key of SecurityFormValues but the MFA mode, roles and prompt). */
+type NumberField = SecurityNumberField;
 
-export const NUMBER_LIMITS: Readonly<Record<NumberField, { min: number; max: number }>> = {
-  mfaGraceDays: { min: 0, max: 30 },
-  passwordMinLength: { min: 12, max: 36 },
-  lockoutThreshold: { min: 3, max: 10 },
-  lockoutMinutes: { min: 5, max: 60 },
-  sessionIdleMinutes: { min: 5, max: 480 },
-  sessionMaxHours: { min: 1, max: 24 },
-  sessionMaxDevices: { min: 1, max: 10 },
-};
+export const NUMBER_LIMITS: Readonly<Record<NumberField, { min: number; max: number }>> =
+  SECURITY_FORM_LIMITS;
 
 const MODES: readonly MfaMode[] = ['off', 'optional', 'required_all', 'required_roles'];
 
@@ -53,6 +48,8 @@ export interface SecurityFormProps {
   readonly texts: Readonly<Record<string, string>>;
   readonly lastChanged: string;
   readonly errors: ErrorTexts;
+  /** /mfa?next=<this page>: a save refused for want of a recent code links there (review L3). */
+  readonly stepUpHref: string;
 }
 
 /** Whole numbers in any script (the inputs are numeric). */
@@ -85,11 +82,14 @@ function Section({
   id,
   title,
   intro,
+  badge,
   children,
 }: {
   readonly id: string;
   readonly title: string;
   readonly intro: string;
+  /** Next to the title, e.g. settings that take effect with a later update. */
+  readonly badge?: ReactNode;
   readonly children: ReactNode;
 }) {
   return (
@@ -98,9 +98,12 @@ function Section({
       className="rounded-lg border border-border bg-surface px-5 py-4"
       data-testid={id}
     >
-      <h2 id={id} className="m-0 text-lg font-semibold">
-        {title}
-      </h2>
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 id={id} className="m-0 text-lg font-semibold">
+          {title}
+        </h2>
+        {badge}
+      </div>
       <p className="m-0 mb-2 text-text-muted">{intro}</p>
       {children}
     </section>
@@ -115,9 +118,11 @@ export function SecuritySettingsForm({
   texts,
   lastChanged,
   errors,
+  stepUpHref,
 }: SecurityFormProps) {
   const t = (key: string) => texts[key] ?? key;
   const router = useRouter();
+  const sessionRefused = useSessionRefusal();
   const [pending, startTransition] = useTransition();
   const [values, setValues] = useState<SecurityFormValues>(initial);
   const [numbers, setNumbers] = useState<Readonly<Record<NumberField, string>>>(
@@ -127,7 +132,11 @@ export function SecuritySettingsForm({
       ) as Record<NumberField, string>,
   );
   const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
-  const [message, setMessage] = useState<{ tone: 'success' | 'danger'; text: string } | null>(null);
+  const [message, setMessage] = useState<{
+    tone: 'success' | 'warning' | 'danger';
+    text: string;
+    stepUp?: boolean;
+  } | null>(null);
   const disabled = !editable || pending;
 
   function numberInput(field: NumberField, label: string, unit: string) {
@@ -208,6 +217,13 @@ export function SecuritySettingsForm({
           text: result.value.changed.length === 0 ? t('noChanges') : t('saved'),
         });
         router.refresh();
+        return;
+      }
+      // The session ended meanwhile: the page sends the member on (review L1).
+      if (sessionRefused(result.error)) return;
+      // The code is older than 15 minutes (review L3): a new one first; the page comes back here.
+      if (result.error.code === 'STEP_UP_REQUIRED') {
+        setMessage({ tone: 'warning', text: t('stepUpAgain'), stepUp: true });
         return;
       }
       if (result.error.code === 'VALIDATION_FAILED') {
@@ -361,7 +377,17 @@ export function SecuritySettingsForm({
         </Row>
       </Section>
 
-      <Section id="security-lockout" title={t('lockout.title')} intro={t('lockout.intro')}>
+      {/* Sign-in applies these with T-M2-11 (the sign-in limiter); until then the badge says so (review L5). */}
+      <Section
+        id="security-lockout"
+        title={t('lockout.title')}
+        intro={t('lockout.intro')}
+        badge={
+          <Badge tone="warning" data-testid="security-lockout-pending">
+            {t('lockout.pending')}
+          </Badge>
+        }
+      >
         <Row title={t('lockout.threshold')} hint={t('lockout.thresholdHint')}>
           {numberInput('lockoutThreshold', t('lockout.threshold'), t('lockout.thresholdUnit'))}
         </Row>
@@ -384,7 +410,18 @@ export function SecuritySettingsForm({
 
       {message ? (
         <Alert tone={message.tone} data-testid="security-message">
-          {message.text}
+          <span className="flex flex-wrap items-center gap-3">
+            <span>{message.text}</span>
+            {message.stepUp ? (
+              <a
+                href={stepUpHref}
+                className={buttonClasses({ variant: 'secondary', size: 'sm' })}
+                data-testid="security-message-step-up"
+              >
+                {t('stepUpLink')}
+              </a>
+            ) : null}
+          </span>
         </Alert>
       ) : null}
       <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-surface px-5 py-3">

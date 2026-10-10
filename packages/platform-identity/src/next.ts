@@ -6,21 +6,28 @@
 import 'server-only';
 import type { AppError, Result, VerifiedClaims } from '@jadarat/platform-core';
 import { createSupabaseServerClient } from '@jadarat/platform-db/supabase-server';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { verifyClaims, verifyClaimsStrict } from './verify-claims';
 
 async function requestSupabase() {
   const store = await cookies();
-  return createSupabaseServerClient({
-    getAll: () => store.getAll(),
-    setAll: (toSet) => {
-      try {
-        for (const { name, value, options } of toSet) store.set(name, value, options);
-      } catch {
-        // Called from a Server Component: cookies are read-only there; the proxy refreshes them.
-      }
+  // A refresh here (server actions) records the browser's User-Agent on the session, as in the proxy
+  // (session lists, T-M2-10).
+  const userAgent = (await headers()).get('user-agent');
+  return createSupabaseServerClient(
+    {
+      getAll: () => store.getAll(),
+      setAll: (toSet) => {
+        try {
+          for (const { name, value, options } of toSet) store.set(name, value, options);
+        } catch {
+          // Called from a Server Component: cookies are read-only there; the proxy refreshes them.
+        }
+      },
     },
-  });
+    undefined,
+    { userAgent },
+  );
 }
 
 export async function getVerifiedClaims(): Promise<Result<VerifiedClaims, AppError>> {

@@ -10,17 +10,25 @@ import { notFound, redirect } from 'next/navigation';
 import { connection } from 'next/server';
 import { SignOutButton } from '../../../components/auth/sign-out-button';
 import { LanguageToggle } from '../../../components/language-toggle';
-import { type MfaTexts, MfaChallenge, MfaSetup } from '../../../components/mfa/mfa-flow';
+import {
+  type MfaTexts,
+  MfaChallenge,
+  MfaPending,
+  MfaSetup,
+} from '../../../components/mfa/mfa-flow';
 import { mfaErrorTexts } from '../../../lib/auth-texts';
 import { getConfigStatus } from '../../../lib/config-status';
-import { mfaPageMode, safeNextPath } from '../../../lib/mfa-view';
+import { mayContinueWithoutApp, mfaPageMode, safeNextPath } from '../../../lib/mfa-view';
 import { getSessionState, redirectFor } from '../../../lib/session-state';
 
 /**
  * Multi-factor authentication (FR-IAM-12, T-M2-10; screens 6 and 8 step 2): the code from the account's
  * authenticator app, or setting one up — when the organization's policy asks for it at sign-in (the
  * database refuses the session until then), when a sensitive action needs a code (`?next=`, PO decision
- * D-IAM-01), or as the set-up prompt (grace period; Organization Admins, PO decision 2).
+ * D-IAM-01; again when the last code is older than 15 minutes, review L3), or as the set-up prompt (grace
+ * period; Organization Admins, PO decision 2). A new app counts only once its owner opened the e-mailed
+ * confirmation link (review H1): until then the page says so and offers to send the e-mail again.
+ * `next` is only ever a suite page in the same language (safeNextPath).
  */
 export async function generateMetadata({
   params,
@@ -57,10 +65,14 @@ export default async function MfaPage({
     if (toClientError(state.error).code === 'UNAUTHENTICATED') redirect(`/${locale}/sign-in`);
     throw new Error('the MFA page state could not be read');
   }
+  const { access } = state.value;
   const mode = mfaPageMode({
-    state: state.value.access.state,
-    usesApp: state.value.usesApp,
-    sessionVerified: state.value.sessionVerified,
+    state: access.state,
+    // What the database counts: a CONFIRMED app, and a code from it in this session (review H1)…
+    usesApp: access.usesApp,
+    pending: access.mfaPending,
+    // …recent enough for a sensitive action (STEP_UP_MAX_AGE_SECONDS, review L3).
+    verified: access.aal2 && state.value.codeFresh,
     stepUp: stepUpPath !== null,
   });
   if (mode === 'done') redirect(next);
@@ -83,18 +95,32 @@ export default async function MfaPage({
     codeStep: t('codeStep'),
     finish: t('finish'),
     notNow: t('notNow'),
+    notNowHint: t('notNowHint'),
     continueWithout: t('continueWithout'),
     appsHint: t('appsHint'),
     codeFormat: t('errors.codeFormat'),
+    pendingDelay: t('pending.delay'),
+    pendingNotMe: t('pending.notMe'),
+    resend: t('pending.resend'),
+    resending: t('pending.resending'),
+    resent: t('pending.resent'),
+    checkAgain: t('pending.checkAgain'),
+    checking: t('pending.checking'),
+    notYet: t('pending.notYet'),
   };
   const errors = await mfaErrorTexts(locale);
-  const deadline = state.value.access.mfaDeadline;
+  const deadline = access.mfaDeadline;
 
   let title: string;
   let intro: string;
   if (mode === 'challenge') {
     title = t('challengeTitle');
-    intro = stepUpPath ? t('stepUpIntro') : t('challengeIntro');
+    // A code from the confirmed app passed in this session, but too long ago for a sensitive action.
+    const stale = state.value.sessionVerified && access.aal2;
+    intro = stepUpPath ? (stale ? t('stepUpAgainIntro') : t('stepUpIntro')) : t('challengeIntro');
+  } else if (mode === 'pending') {
+    title = t('pending.title');
+    intro = t('pending.intro');
   } else {
     title = t('enrolTitle');
     if (mode === 'prompt-admin') intro = t('promptAdmin');
@@ -135,6 +161,13 @@ export default async function MfaPage({
         <Card>
           {mode === 'challenge' ? (
             <MfaChallenge next={next} texts={texts} errors={errors} />
+          ) : mode === 'pending' ? (
+            <MfaPending
+              next={next}
+              mayContinue={mayContinueWithoutApp(access.state, stepUpPath !== null)}
+              texts={texts}
+              errors={errors}
+            />
           ) : (
             <MfaSetup
               next={next}

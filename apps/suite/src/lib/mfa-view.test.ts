@@ -1,15 +1,29 @@
 import { describe, expect, it } from 'vitest';
-import { mfaPageMode, safeNextPath, stepUpHref } from './mfa-view';
+import { mayContinueWithoutApp, mfaPageMode, safeNextPath, stepUpHref } from './mfa-view';
 import { describeUserAgent } from './user-agent';
 
 describe('mfaPageMode (T-M2-10)', () => {
-  const facts = { usesApp: false, sessionVerified: false, stepUp: false };
+  const facts = { usesApp: false, pending: false, verified: false, stepUp: false };
 
   it('the organization refuses the session: a code, or an app first', () => {
     expect(mfaPageMode({ ...facts, state: 'mfa_challenge', usesApp: true })).toBe('challenge');
     // (An app removed meanwhile: set one up.)
     expect(mfaPageMode({ ...facts, state: 'mfa_challenge' })).toBe('enrol');
     expect(mfaPageMode({ ...facts, state: 'mfa_enrol' })).toBe('enrol');
+  });
+
+  it('an app waiting for its e-mailed confirmation (review H1): the pending page, not a new set-up', () => {
+    expect(mfaPageMode({ ...facts, state: 'mfa_enrol', pending: true })).toBe('pending');
+    expect(mfaPageMode({ ...facts, state: 'mfa_challenge', pending: true })).toBe('pending');
+    expect(mfaPageMode({ ...facts, state: 'prompt_grace', pending: true })).toBe('pending');
+    expect(mfaPageMode({ ...facts, state: 'prompt_admin', pending: true })).toBe('pending');
+    expect(mfaPageMode({ ...facts, state: 'ok', pending: true, stepUp: true })).toBe('pending');
+    // Nothing asked: the member goes on.
+    expect(mfaPageMode({ ...facts, state: 'ok', pending: true })).toBe('done');
+    expect(mayContinueWithoutApp('prompt_grace', false)).toBe(true);
+    expect(mayContinueWithoutApp('prompt_admin', false)).toBe(true);
+    expect(mayContinueWithoutApp('prompt_admin', true)).toBe(false);
+    expect(mayContinueWithoutApp('mfa_enrol', false)).toBe(false);
   });
 
   it('prompts while access is allowed; a sensitive action turns them into set-up', () => {
@@ -19,12 +33,12 @@ describe('mfaPageMode (T-M2-10)', () => {
     expect(mfaPageMode({ ...facts, state: 'prompt_grace', stepUp: true })).toBe('enrol');
   });
 
-  it('step-up for a sensitive action: a code with an app, set-up without; done when verified', () => {
+  it('step-up for a sensitive action: a code with an app (again when older than 15 minutes), set-up without', () => {
     expect(mfaPageMode({ ...facts, state: 'ok' })).toBe('done');
     expect(mfaPageMode({ ...facts, state: 'ok', stepUp: true, usesApp: true })).toBe('challenge');
     expect(mfaPageMode({ ...facts, state: 'ok', stepUp: true })).toBe('enrol');
     expect(
-      mfaPageMode({ ...facts, state: 'ok', stepUp: true, usesApp: true, sessionVerified: true }),
+      mfaPageMode({ ...facts, state: 'ok', stepUp: true, usesApp: true, verified: true }),
     ).toBe('done');
     expect(mfaPageMode({ ...facts, state: 'invalid', stepUp: true })).toBe('done');
     expect(mfaPageMode({ ...facts, state: 'ended' })).toBe('done');

@@ -7,6 +7,7 @@ import {
   defineAction,
   endMemberSessionsActionDefinition,
   endMySessionsActionDefinition,
+  resetMemberMfaActionDefinition,
   updateSecurityPolicyActionDefinition,
 } from '@jadarat/platform-rbac';
 
@@ -18,3 +19,9 @@ export const endMySessionsAction = defineAction(endMySessionsActionDefinition())
 
 /** User profile (screen 3): force sign-out of a member's sessions in this organization. */
 export const endMemberSessionsAction = defineAction(endMemberSessionsActionDefinition());
+
+/**
+ * User profile (screen 3): the Organization Admin resets a member's lost authenticator app, with a code of
+ * their own from the last 15 minutes (PO answer, 9 Oct 2026). Checked again by the database; e-mailed.
+ */
+export const resetMemberMfaAction = defineAction(resetMemberMfaActionDefinition());

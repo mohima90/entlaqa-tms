@@ -1,25 +1,43 @@
 /**
- * The password-reset link on screen 11 (FR-IAM-13, T-M2-08). Auth's e-mail links to
- * `/{ar|en}/reset-password#token_hash=…&type=recovery`: the token is in the URL FRAGMENT, which browsers
+ * The password-reset link on screen 11 (FR-IAM-13, T-M2-08). The e-mail links to
+ * `/{ar|en}/reset-password#token_hash=…&type=recovery` (plus `&mfa=1` for an account with an authenticator
+ * app, T-M2-10): the token is in the URL FRAGMENT, which browsers
  * never send with a request (no access log, proxy or Referer header — as for invitations, review M3).
  * The page reads it in the browser, removes it from the address bar at once and sends it only in the
  * body of its server action. Framework-free helpers (used by the client components and pages).
  */
 
-/** The recovery token of a fragment such as `#token_hash=…&type=recovery`; null when absent. */
-export function resetTokenFromHash(hash: string): string | null {
+/** What a reset link's fragment carries. */
+export interface ResetLink {
+  readonly token: string;
+  /**
+   * The account uses an authenticator app (`&mfa=1`, set by the worker's e-mail, T-M2-10): Auth sets the
+   * new password only after a code from it, so the page asks for the code together with the password.
+   */
+  readonly needsCode: boolean;
+}
+
+/** The recovery link of a fragment such as `#token_hash=…&type=recovery[&mfa=1]`; null when absent. */
+export function resetLinkFromHash(hash: string): ResetLink | null {
   const fragment = hash.startsWith('#') ? hash.slice(1) : hash;
   if (fragment === '') return null;
   const params = new URLSearchParams(fragment);
   // Only a recovery link: another kind of Auth link (sign-up, e-mail change) is not ours to use.
   if (params.get('type') !== 'recovery') return null;
   const token = params.get('token_hash');
-  return token === null || token === '' ? null : token;
+  if (token === null || token === '') return null;
+  return { token, needsCode: params.get('mfa') === '1' };
 }
 
-/** The fragment that carries a token (the language switch keeps the link working with it). */
-export function resetFragment(token: string | null): string {
-  return token ? `#token_hash=${encodeURIComponent(token)}&type=recovery` : '';
+/** The recovery token of a fragment such as `#token_hash=…&type=recovery`; null when absent. */
+export function resetTokenFromHash(hash: string): string | null {
+  return resetLinkFromHash(hash)?.token ?? null;
+}
+
+/** The fragment that carries a link (the language switch keeps the link working with it). */
+export function resetFragment(token: string | null, needsCode = false): string {
+  if (!token) return '';
+  return `#token_hash=${encodeURIComponent(token)}&type=recovery${needsCode ? '&mfa=1' : ''}`;
 }
 
 /** Seconds before "send again" is offered (Auth sends one link a minute per account). */
@@ -43,6 +61,9 @@ const LINK_SPENT: ReadonlySet<string> = new Set([
   'PASSWORD_RESET_PASSWORD_REJECTED',
   // Shorter than the account's organizations ask (T-M2-10): known only once the link was used.
   'PASSWORD_RESET_TOO_SHORT',
+  // The account's authenticator code was missing or refused (T-M2-10): the link was used to ask for it.
+  'PASSWORD_RESET_CODE_REQUIRED',
+  'PASSWORD_RESET_CODE_INVALID',
 ]);
 
 export function linkIsSpent(errorCode: string): boolean {

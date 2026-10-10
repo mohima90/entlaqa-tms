@@ -60,7 +60,13 @@ const sara: ResourceAttributes = {
   subjectPersonId: SARA,
 };
 
-function runtime(grants: readonly Grant[], aal: 'aal1' | 'aal2' = 'aal1', found = true) {
+/** `codeAgeSeconds`: how long ago the session passed its authenticator code (aal2). */
+function runtime(
+  grants: readonly Grant[],
+  aal: 'aal1' | 'aal2' = 'aal1',
+  found = true,
+  codeAgeSeconds = 0,
+) {
   const writeAudit = vi.fn(() => Promise.resolve());
   const getClaims = vi.fn(() => {
     const r = brandVerifiedClaims({
@@ -68,7 +74,7 @@ function runtime(grants: readonly Grant[], aal: 'aal1' | 'aal2' = 'aal1', found 
       role: 'authenticated',
       aal,
       ...(aal === 'aal2'
-        ? { amr: [{ method: 'totp', timestamp: Math.floor(Date.now() / 1000) }] }
+        ? { amr: [{ method: 'totp', timestamp: Math.floor(Date.now() / 1000) - codeAgeSeconds }] }
         : {}),
       session_id: SESSION,
       tenant_id: TENANT,
@@ -323,8 +329,10 @@ describe("a member's sessions (screen 3: user managers)", () => {
           usesApp: true,
           appSince: new Date(1),
           appPending: false,
-          // Only the Organization Admin resets a lost authenticator app (PO answer, 9 Oct 2026).
+          // Only the Organization Admin resets a lost authenticator app (PO answer, 9 Oct 2026),
+          // with a code of their own first (this session has none).
           canResetApp: role === 'tenant_admin',
+          resetNeedsCode: role === 'tenant_admin',
           maxDevices: 3,
         }),
       );
@@ -451,5 +459,21 @@ describe("a member's lost authenticator app (screen 3; PO answer 9 Oct 2026)", (
     const query = createDefineQuery(rt)(memberSecurityQueryDefinition());
     const own = await query({ personId: ME });
     expect(own.ok && own.value.canResetApp).toBe(false);
+    expect(own.ok && own.value.resetNeedsCode).toBe(false);
+  });
+
+  it('a code older than 15 minutes is asked again before the reset (review L3, PO answer 9 Oct 2026)', async () => {
+    const fresh = createDefineQuery(runtime(forRoles('tenant_admin'), 'aal2', true, 14 * 60).rt)(
+      memberSecurityQueryDefinition(),
+    );
+    const view = await fresh({ personId: SARA });
+    expect(view.ok && [view.value.canResetApp, view.value.resetNeedsCode]).toEqual([true, false]);
+    const { rt, writeAudit } = runtime(forRoles('tenant_admin'), 'aal2', true, 16 * 60);
+    const stale = await createDefineQuery(rt)(memberSecurityQueryDefinition())({ personId: SARA });
+    expect(stale.ok && [stale.value.canResetApp, stale.value.resetNeedsCode]).toEqual([true, true]);
+    const refused = await reset(rt)({ personId: SARA });
+    expect(!refused.ok && refused.error.code).toBe('STEP_UP_REQUIRED');
+    expect(db.resetMemberMfa).not.toHaveBeenCalled();
+    expect(writeAudit).not.toHaveBeenCalled();
   });
 });

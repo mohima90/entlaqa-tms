@@ -199,12 +199,16 @@
       "sessionsNotice": "After saving, we end every sign-in session on all devices and send a confirmation to your email. You then sign in with the new password.",
       "submit": "Save password",
       "submitting": "Saving…",
-      "validity": "The link is valid for 60 minutes from when it was requested and works once. If it has expired, request a new one on the <link>Forgot password</link> page."
+      "validity": "The link is valid for 60 minutes from when it was requested and works once. If it has expired, request a new one on the <link>Forgot password</link> page.",
+      "codeIntro": "Your account uses an authenticator app: enter the code it shows now. The link works once, so check the code before saving.",
+      "codeLabel": "Verification code",
+      "codeHint": "6 digits from your authenticator app; the code changes every 30 seconds."
     },
     "fieldErrors": {
       "tooShort": "At least {min} characters.",
       "tooLong": "The password is too long (no more than 72 bytes, about 36 Arabic letters).",
-      "mismatch": "The passwords don't match."
+      "mismatch": "The passwords don't match.",
+      "codeFormat": "The verification code has 6 digits."
     },
     "invalidLink": {
       "title": "This link has expired or was already used",
@@ -219,7 +223,9 @@
       "weakPassword": "This password wasn't accepted because it's weak or common, so nothing changed. Links work only once: request a new link and choose a longer password that's hard to guess.",
       "breachedPassword": "This password appears in known data breaches, so nothing changed. Links work only once: request a new link and choose a different password.",
       "passwordRejected": "The new password wasn't accepted, so nothing changed. Links work only once: request a new link.",
-      "tooShort": "Your account needs a password of at least {min} characters, so nothing changed. Links work only once: request a new link and choose a longer password."
+      "tooShort": "Your account needs a password of at least {min} characters, so nothing changed. Links work only once: request a new link and choose a longer password.",
+      "codeRequired": "Your account uses an authenticator app, so its code is needed to set a new password. Nothing changed. Links work only once: request a new link and enter the code with the new password.",
+      "codeInvalid": "The verification code is incorrect or has expired, so nothing changed. Links work only once: request a new link and enter the code your app shows at that time."
     }
   },
   "users": {
@@ -326,7 +332,9 @@
       "platform_user_roles_changed": "Roles changed",
       "platform_user_deactivated": "Account deactivated",
       "platform_user_reactivated": "Account reactivated",
-      "other": "Recorded action ({action})"
+      "other": "Recorded action ({action})",
+      "platform_user_mfa_reset": "Authenticator app reset",
+      "platform_user_sessions_ended": "Sign-in sessions ended"
     },
     "breadcrumbLabel": "Breadcrumb",
     "editDetails": "Edit details",
@@ -335,8 +343,24 @@
     "mfa": "Multi-factor authentication",
     "mfaOn": "On · authenticator app since {date}",
     "mfaOff": "Not set up",
-    "mfaReset": "Resetting it after a lost phone is done by platform support for now.",
-    "sessionsTitle": "Active sign-in sessions"
+    "sessionsTitle": "Active sign-in sessions",
+    "mfaPending": "Set up · waiting for email confirmation",
+    "mfaResetTitle": "Lost authenticator app",
+    "mfaResetHint": "The Organization Admin can reset the app of a member who lost it: the app is removed, every sign-in session of the member ends, and the member is emailed and sets up a new app at the next sign-in.",
+    "mfaResetSupport": "If the member's account also belongs to another organization, or the member is the only Organization Admin, ENTLAQA support resets it after checking their identity.",
+    "mfaResetAction": "Reset authenticator app",
+    "mfaResetNeedsCode": "Resetting it needs a code from your own authenticator app, entered in the last 15 minutes.",
+    "mfaResetVerifyFirst": "Verify with your app",
+    "mfaResetConfirmTitle": "Reset the authenticator app?",
+    "mfaResetConfirmText": "{name}'s authenticator app will be removed and all of their sign-in sessions will end. They'll be emailed and asked to set up a new app at their next sign-in. Continue only after confirming the request with them.",
+    "mfaResetConfirm": "Reset the app",
+    "mfaResetting": "Resetting…",
+    "mfaResetCancel": "Cancel",
+    "mfaResetDone": "{name}'s authenticator app was reset. They've been emailed and will set up a new app at their next sign-in.",
+    "errors": {
+      "mfaResetNoApp": "This member has no authenticator app to reset.",
+      "mfaResetOtherOrganization": "This member's account also belongs to another organization, so only ENTLAQA support can reset the app, after checking their identity. Ask the member to contact ENTLAQA support."
+    }
   },
   "profile": {
     "title": "My profile",
@@ -398,7 +422,12 @@
       "removed": "The authenticator app was removed.",
       "removeNeedsCode": "Removing it needs a code from the app first.",
       "verifyFirst": "Verify with the app",
-      "removeWarning": "If your organization requires it, you will be asked to set it up again."
+      "removeWarning": "If your organization requires it, you will be asked to set it up again.",
+      "pending": "Waiting for email confirmation",
+      "pendingText": "We've emailed you a link to finish turning on the app; its codes count once you open it. Didn't set it up yourself? Use the \"Remove this app\" link in that email.",
+      "resend": "Send the email again",
+      "resending": "Sending…",
+      "resent": "We've sent the email again. Only the link in the newest email works."
     },
     "sessions": {
       "title": "Sign-in sessions",
@@ -736,16 +765,59 @@
     "codeStep": "2. Enter the 6-digit code the app shows.",
     "finish": "Verify and turn on",
     "notNow": "Not now",
+    "notNowHint": "If you choose \"Not now\", we'll ask again in 30 days.",
     "continueWithout": "Continue without it for now",
     "back": "Go back",
     "signOut": "Sign out",
-    "lostDevice": "Lost access to your authenticator app? Contact your organization's administrator.",
+    "lostDevice": "Lost access to your authenticator app? Your organization's administrator can reset it so you can set up a new one. If your account belongs to more than one organization, or you are the only Organization Admin, ENTLAQA support resets it after checking your identity.",
     "errors": {
       "codeInvalid": "The code is incorrect or has expired. Enter the code the app shows now.",
       "notSetUp": "Your account has no authenticator app yet. Set one up first.",
       "alreadySetUp": "Your account already has an authenticator app.",
       "setupExpired": "The set-up has expired. Start again.",
       "codeFormat": "The verification code has 6 digits."
+    },
+    "stepUpAgainIntro": "For your security, sensitive actions need a code entered in the last 15 minutes. Enter the code your app shows now.",
+    "pending": {
+      "title": "Confirm your authenticator app",
+      "intro": "Your authenticator app is set up. To finish turning it on, open the link we've emailed to you. Until then, its codes don't count for signing in or for sensitive actions.",
+      "delay": "Check your email to finish turning it on. The email usually arrives within minutes, sometimes later; its link works for 72 hours. Once you've opened it, select \"Check again\".",
+      "notMe": "Didn't set it up yourself? Use the \"Remove this app\" link in the same email.",
+      "resend": "Send the email again",
+      "resending": "Sending…",
+      "resent": "We've sent the email again. Only the link in the newest email works.",
+      "checkAgain": "Check again",
+      "checking": "Checking…",
+      "notYet": "The app isn't confirmed yet. Open the link in the email first, then check again."
+    }
+  },
+  "mfaLink": {
+    "opening": "Opening the link…",
+    "expiredTitle": "This link has expired",
+    "invalidTitle": "This link isn't valid",
+    "continue": "Continue",
+    "newPassword": "Set a new password",
+    "signIn": "Sign in",
+    "confirm": {
+      "pageTitle": "Confirm your authenticator app",
+      "intro": "Confirm that you set up this authenticator app for your account. Its codes will then count for signing in and for sensitive actions.",
+      "submit": "Confirm the app",
+      "submitting": "Confirming…",
+      "doneTitle": "Authenticator app confirmed",
+      "doneText": "Its codes now count for signing in and for sensitive actions. If the set-up page is still open, select \"Check again\" there.",
+      "expiredText": "Confirmation links work for 72 hours, and only the newest one counts. Sign in and send the email again from the authenticator page.",
+      "invalidText": "The link may have been used already, or a newer email replaced it. If your app isn't confirmed yet, sign in and send the email again."
+    },
+    "remove": {
+      "pageTitle": "Remove this authenticator app",
+      "intro": "Use this if you didn't set up this authenticator app yourself.",
+      "warning": "We'll remove the app and end every sign-in session of your account on all devices. Then set a new password and tell your organization's administrator.",
+      "submit": "Remove the app and sign out everywhere",
+      "submitting": "Removing…",
+      "doneTitle": "The app was removed",
+      "doneText": "Every sign-in session of your account has ended. Someone may know your password: set a new one now, then tell your organization's administrator.",
+      "expiredText": "Removal links work for 7 days. If an app you didn't set up is still on your account, set a new password and ask your organization's administrator to reset the app.",
+      "invalidText": "The link may have been used already. If an app you didn't set up is still on your account, set a new password and ask your organization's administrator to reset the app."
     }
   },
   "security": {
@@ -800,11 +872,12 @@
     "lockout": {
       "title": "Account lockout",
       "intro": "Protects against password guessing.",
+      "pending": "Takes effect with the next update",
       "threshold": "Lock after consecutive failed attempts",
-      "thresholdHint": "3 to 10 attempts.",
+      "thresholdHint": "3 to 5 attempts — never more lenient than the platform default (5 attempts).",
       "thresholdUnit": "attempts",
       "minutes": "Lockout duration",
-      "minutesHint": "5 to 60 minutes.",
+      "minutesHint": "15 to 60 minutes — never shorter than the platform default (15 minutes).",
       "minutesUnit": "minutes"
     },
     "sessions": {
@@ -833,7 +906,8 @@
       "idleAboveMax": "Inactivity can't be longer than the maximum session length.",
       "invalid": "Check this value."
     },
-    "notConfigured": "Security settings aren't available in this environment yet."
+    "notConfigured": "Security settings aren't available in this environment yet.",
+    "stepUpAgain": "Saving needs a code from your authenticator app entered in the last 15 minutes. Your changes weren't saved."
   },
   "sessions": {
     "device": "Device and browser",

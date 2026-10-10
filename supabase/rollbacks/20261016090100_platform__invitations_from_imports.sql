@@ -1,6 +1,6 @@
 -- Rollback of 20261016090100_platform__invitations_from_imports.sql: invitations as in 20261009090000 (the
 -- import columns, their rules and the schedule removed), the sign-in rule as in 20261011090100 and the
--- worker's step as in 20261016090000. Run 20261016090200's rollback first.
+-- worker's step and claim as in 20261016090000. Run 20261016090200's rollback first.
 create or replace function private.user_import_step(p_tenant_id uuid, p_import_id uuid, p_status text,
                                                    p_review_expires_at timestamptz, p_finished_at timestamptz,
                                                    p_undone_at timestamptz, p_confirmed_at timestamptz,
@@ -23,6 +23,41 @@ as $$
     when p_status in ('finished', 'stopped', 'failed', 'undone')
          and greatest(p_finished_at, p_undone_at) <= now() - interval '7 days' then 'purge'
   end;
+$$;
+
+grant user_import_guard to current_user;
+create or replace function private.claim_user_import_work()
+returns table (tenant_id uuid, import_id uuid, step text, lease_token uuid)
+language plpgsql volatile security definer
+set search_path = ''
+as $$
+declare
+  v_id uuid;
+  v_step text;
+  v_token uuid := gen_random_uuid();
+begin
+  perform private.user_import_worker_check();
+  select i.id, private.user_import_step(i.tenant_id, i.id, i.status, i.review_expires_at, i.finished_at, i.undone_at,
+                                        i.confirmed_at, i.data_purged_at, f.status)
+    into v_id, v_step
+  from platform.user_imports i
+  join platform.tenants t on t.id = i.tenant_id and t.status in ('active', 'trial')
+  left join platform.files f on f.tenant_id = i.tenant_id and f.id = i.file_id
+  where i.data_purged_at is null and i.next_attempt_at <= now()
+    and (i.lease_until is null or i.lease_until <= now())
+    and private.user_import_step(i.tenant_id, i.id, i.status, i.review_expires_at, i.finished_at, i.undone_at,
+                                 i.confirmed_at, i.data_purged_at, f.status) is not null
+  order by i.next_attempt_at, i.updated_at, i.id
+  limit 1
+  for update of i skip locked;
+  if v_id is null then
+    return;
+  end if;
+  update platform.user_imports i
+  set lease_until = now() + interval '15 minutes', lease_token = v_token
+  where i.id = v_id;
+  return query select i.tenant_id, i.id, v_step, v_token from platform.user_imports i where i.id = v_id;
+end
 $$;
 
 drop policy invitations_user_import_guard_read on platform.invitations;

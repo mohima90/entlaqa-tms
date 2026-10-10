@@ -468,7 +468,8 @@ create policy invitations_user_import_guard_read on platform.invitations for sel
 grant select (tenant_id, import_id, status, mail_held, send_at) on platform.invitations to user_import_guard;
 
 -- As in 20261016090000, plus `send`: held invitations of the import whose sending time has come (and that
--- are not being undone).
+-- are not being undone) — also after the import's data was deleted: people kept «لم تُرسل الدعوة» can be
+-- sent their invitation from the users list at any time.
 create or replace function private.user_import_step(p_tenant_id uuid, p_import_id uuid, p_status text,
                                                    p_review_expires_at timestamptz, p_finished_at timestamptz,
                                                    p_undone_at timestamptz, p_confirmed_at timestamptz,
@@ -478,7 +479,10 @@ language sql stable
 set search_path = ''
 as $$
   select case
-    when p_data_purged_at is not null then null
+    when p_data_purged_at is not null then
+      case when exists (select 1 from platform.invitations v
+                        where v.tenant_id = p_tenant_id and v.import_id = p_import_id and v.mail_held
+                          and v.status = 'pending' and v.send_at <= now()) then 'send' end
     when p_status = any (private.user_import_draft_statuses()) and p_review_expires_at <= now()
       then 'expire'
     when p_status = 'uploaded'
@@ -494,4 +498,56 @@ as $$
     when p_status in ('finished', 'stopped', 'failed', 'undone')
          and greatest(p_finished_at, p_undone_at) <= now() - interval '7 days' then 'purge'
   end;
+$$;
+
+-- As in 20261016090000, but the imports with work also include those whose held invitations are due —
+-- also after their data was deleted (the step above). Scheduled invitations are few at any time (their
+-- partial index), so the candidates stay cheap to find.
+grant user_import_guard to current_user;
+create or replace function private.claim_user_import_work()
+returns table (tenant_id uuid, import_id uuid, step text, lease_token uuid)
+language plpgsql volatile security definer
+set search_path = ''
+as $$
+declare
+  v_id uuid;
+  v_step text;
+  v_token uuid := gen_random_uuid();
+begin
+  perform private.user_import_worker_check();
+  with candidates as (
+    select i.id from platform.user_imports i where i.data_purged_at is null
+    union
+    select v.import_id from platform.invitations v where v.send_at <= now() and v.import_id is not null)
+  select i.id, private.user_import_step(i.tenant_id, i.id, i.status, i.review_expires_at, i.finished_at, i.undone_at,
+                                        i.confirmed_at, i.data_purged_at, f.status)
+    into v_id, v_step
+  from platform.user_imports i
+  join candidates c on c.id = i.id
+  join platform.tenants t on t.id = i.tenant_id and t.status in ('active', 'trial')
+  left join platform.files f on f.tenant_id = i.tenant_id and f.id = i.file_id
+  where i.next_attempt_at <= now()
+    and (i.lease_until is null or i.lease_until <= now())
+    and private.user_import_step(i.tenant_id, i.id, i.status, i.review_expires_at, i.finished_at, i.undone_at,
+                                 i.confirmed_at, i.data_purged_at, f.status) is not null
+  order by i.next_attempt_at, i.updated_at, i.id
+  limit 1
+  for update of i skip locked;
+  if v_id is null then
+    return;
+  end if;
+  update platform.user_imports i
+  set lease_until = now() + interval '15 minutes', lease_token = v_token
+  where i.id = v_id;
+  return query select i.tenant_id, i.id, v_step, v_token from platform.user_imports i where i.id = v_id;
+end
+$$;
+
+do $$
+begin
+  if pg_catalog.pg_get_userbyid((select p.proowner from pg_catalog.pg_proc p
+       where p.oid = 'private.claim_user_import_work()'::regprocedure)) <> 'user_import_guard' then
+    raise exception 'private.claim_user_import_work must stay owned by user_import_guard';
+  end if;
+end
 $$;

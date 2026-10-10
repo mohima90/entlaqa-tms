@@ -527,4 +527,38 @@ begin
 end $$;
 rollback;
 
+-- People kept «لم تُرسل الدعوة» are sent their invitation from the users list at any time — also after the
+-- import's data was deleted (7 days after it ended): the worker's claim still finds the due invitation.
+begin;
+update platform.user_imports set finished_at = now() - interval '9 days', data_purged_at = now()
+  where id = 'a5000000-0000-4000-8000-000000000011';
+select pg_temp.become_user('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
+                           'a1000000-0000-4000-8000-0000000000a1');
+do $$
+begin
+  perform tests.assert_eq(private.schedule_held_invitations(array['a4000000-0000-4000-8000-000000000c07']::uuid[],
+                                                            interval '1 second'), 1, 'the admin sends the held invitation');
+end $$;
+select pg_temp.become_owner();
+update platform.invitations set send_at = now() - interval '1 second' where id = 'a4000000-0000-4000-8000-000000000c07';
+set local session authorization app_worker;
+set local role authenticated;
+select tests.set_claims(jsonb_build_object('role', 'system', 'job_id', 'tests.user_imports'));
+do $$
+declare
+  r record;
+begin
+  select * into r from private.claim_user_import_work() where import_id = 'a5000000-0000-4000-8000-000000000011';
+  perform tests.assert_eq(r.step, 'send', 'the import whose data is deleted is claimed to send its due invitation');
+end $$;
+select pg_temp.become_worker('a0000000-0000-4000-8000-000000000001');
+do $$
+begin
+  perform tests.assert_eq(private.user_import_release_due('a5000000-0000-4000-8000-000000000011', 10), 1, 'and it is sent');
+  perform tests.assert((select not mail_held and send_at is null from platform.invitations
+                        where id = 'a4000000-0000-4000-8000-000000000c07'), 'released (the mailer gives it its link)');
+end $$;
+select pg_temp.become_owner();
+rollback;
+
 \echo '88_user_imports_flow_owner: ok'

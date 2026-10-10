@@ -289,7 +289,7 @@ export function organizationAccountLockout(
  * The budgets one sign-in attempt is checked against. INTEGRATION POINT (later; PO decision 9 Oct 2026):
  * per-organization trusted office address ranges would give a client inside such a range wider client
  * budgets here (the account and browser budgets stay). Not built: every client gets the platform budgets
- * (the shared ones without a trusted address) — docs/engineering/sign-in-protection.md §3.
+ * (the shared ones without a trusted address) — docs/engineering/sign-in-protection.md §7.
  */
 export function signInBudgets(limits: SignInLimits, client: RequestClient): SignInBudgets {
   const shared = client.key === null;

@@ -601,7 +601,7 @@ done
 
 # Before the T-M2-09 and T-M2-10 journeys, which change the accounts' passwords and the organization's MFA
 # policy; Auth's own per-IP limits (below) come after them: they use up the host's budget for direct Auth calls.
-echo "smoke: sign-in protection (T-M2-11) — 5 wrong passwords lock, a trusted browser still signs in, the lockout e-mail, the Organization Admin unlocks"
+echo "smoke: sign-in protection (T-M2-11) — 5 wrong passwords lock, a remembered browser (opt-in) still signs in, one lockout e-mail a day, the Organization Admin unlocks and the member is told"
 LIMITS_UNKNOWN_EMAIL="nobody-limits-$(date +%s)@sovereign.example"
 MANAGER_PERSON_ID="$(q "select person_id from platform.tenant_memberships where user_id = '$MANAGER_ID'")"
 [[ "$MANAGER_PERSON_ID" =~ ^[0-9a-f-]{36}$ ]] || { echo "smoke: no person for the manager" >&2; exit 1; }
@@ -620,6 +620,22 @@ for i in $(seq 1 60); do
 done
 [[ "$(mail_count "$LIMITS_UNKNOWN_EMAIL" '.')" == "0" ]] ||
   { echo "smoke: an e-mail went to an address without an account" >&2; exit 1; }
+# At most one lockout e-mail per person a day (security review M3): the member was locked twice (Arabic and
+# English journeys); once no lockout request waits any more, exactly one went out.
+for i in $(seq 1 60); do
+  [[ "$(q "select count(*) from private.account_mail_requests where kind = 'account_locked'")" == "0" ]] && break
+  [[ $i -eq 60 ]] && { echo "smoke: lockout e-mail requests are still waiting" >&2; exit 1; }
+  sleep 1
+done
+[[ "$(q "select count(*) from platform.message_deliveries where template = 'platform.account_locked' and recipient_person_id = '$MANAGER_PERSON_ID'")" == "1" ]] ||
+  { echo "smoke: the locked member got more (or fewer) than one lockout e-mail in a day" >&2; exit 1; }
+# Every unlock by the Organization Admin is told to the member (security review M1): the "sign-in unlocked"
+# e-mail, in the organization's brand.
+for i in $(seq 1 60); do
+  [[ "$(mail_count "$MANAGER_EMAIL" 'أُلغي إيقاف تسجيل الدخول إلى حسابك')" -ge 1 ]] && break
+  [[ $i -eq 60 ]] && { echo "smoke: no sign-in unlocked e-mail for the unlocked member" >&2; exit 1; }
+  sleep 1
+done
 # The Organization Admin's unlock is audited, without personal data.
 [[ "$(q "select count(*) from platform.audit_events where action = 'platform.user.sign_in_unlocked' and entity_id = '$MANAGER_PERSON_ID'")" -ge 1 ]] ||
   { echo "smoke: the sign-in unlock was not audited" >&2; exit 1; }

@@ -7,6 +7,8 @@
 --     f1a…07 uploaded 10 minutes ago, object   f1a…08 clean, uploaded by uAB           f1a…09 infected yesterday, not yet quarantined
 --     f1a…0a rejected an hour ago, object      f1a…0b profile photo deleted 31 days ago f1a…0c deleted import on legal hold, 40 days old
 --     f1a…0d clean import used 8 days ago      f1a…0e scanning, left by a dead worker after 5 attempts
+--                                              (4 of them failures of the file itself)
+--     f1a…10 a worker-generated report reserved for uA (pending, object stored)
 --     (00: f0a…01 clean, never used, created now; a grant of uAB on f1a…08 that expired 2 hours ago)
 --   tenant B (uB): f1b…01 pending with object · f1b…02 uploaded 20 minutes ago, object
 --   tenant C (suspended, uC): f1c…01 uploaded 30 minutes ago
@@ -71,6 +73,7 @@ select tests.file_fixture('f1a00000-0000-4000-8000-00000000000b', 'a0000000-0000
 select tests.file_fixture('f1a00000-0000-4000-8000-00000000000c', 'a0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-0000000000a1', 'deleted', '40 days', 'platform.user_import', 20);
 select tests.file_fixture('f1a00000-0000-4000-8000-00000000000d', 'a0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-0000000000a1', 'clean', '9 days', 'platform.user_import', 20);
 select tests.file_fixture('f1a00000-0000-4000-8000-00000000000e', 'a0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-0000000000a1', 'scanning', '40 minutes', 'platform.user_import', 20);
+select tests.file_fixture('f1a00000-0000-4000-8000-000000000010', 'a0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-0000000000a1', 'pending_upload', '0 minutes', 'platform.user_import_report', 20);
 select tests.file_fixture('f1b00000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-0000000000b1', 'pending_upload', '0 minutes', 'platform.user_import', 20);
 select tests.file_fixture('f1b00000-0000-4000-8000-000000000002', 'b0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-0000000000b1', 'uploaded', '20 minutes', 'platform.user_import', 20);
 select tests.file_fixture('f1c00000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-0000000000c1', 'uploaded', '30 minutes', 'platform.user_import', 20);
@@ -79,8 +82,9 @@ alter table platform.files disable trigger files_transition;
 update platform.files set upload_expires_at = now() - interval '5 minutes' where id = 'f1a00000-0000-4000-8000-000000000006';
 update platform.files set legal_hold = true where id = 'f1a00000-0000-4000-8000-00000000000c';
 update platform.files set used_at = now() - interval '8 days' where id = 'f1a00000-0000-4000-8000-00000000000d';
--- f1a…0e: a scan left behind by a dead worker (lease expired) after 5 attempts.
-update platform.files set scan_attempts = 5, scan_not_before = now() - interval '1 minute', scan_leased_until = now() - interval '1 minute'
+-- f1a…0e: a scan left behind by a dead worker (lease expired) after 5 attempts, 4 of them failures of the
+-- file itself (the scanner answered).
+update platform.files set scan_attempts = 5, scan_failures = 4, scan_not_before = now() - interval '1 minute', scan_leased_until = now() - interval '1 minute'
 where id = 'f1a00000-0000-4000-8000-00000000000e';
 alter table platform.files enable trigger files_transition;
 -- A download grant of uAB that expired two hours ago (housekeeping removes it).
@@ -115,6 +119,17 @@ begin
     array['42501'], 'infected stays infected');
   perform tests.assert_fails($q$update platform.files set status = 'pending_upload' where id = 'f1a00000-0000-4000-8000-00000000000b'$q$,
     array['42501'], 'deleted stays deleted');
+  perform tests.assert_fails($q$insert into platform.files (tenant_id, bucket, object_key, purpose, owner_module,
+      owner_entity_type, owner_entity_id, original_name, declared_mime, declared_size, retention_class, upload_expires_at,
+      scan_failures)
+    values ('a0000000-0000-4000-8000-000000000001', 'imports', 'x', 'platform.user_import', 'platform', 'user_import',
+      gen_random_uuid(), 'a.csv', 'text/csv', 1, 'import', now(), 3)$q$,
+    array['42501'], 'a new file has no scan failures');
+  perform tests.assert_eq(tests.rows_affected($q$update platform.files set status = 'deleted', deleted_at = now()
+      where id = 'f1a00000-0000-4000-8000-00000000000e'$q$), 1::bigint,
+    'scanning → deleted is allowed (a file waiting for the scanner; delete_file checks the lease)');
+  perform tests.assert_fails($q$update platform.files set status = 'scanning' where id = 'f1a00000-0000-4000-8000-00000000000e'$q$,
+    array['42501'], 'and it stays deleted');
   perform tests.assert_fails($q$update platform.files set tenant_id = 'b0000000-0000-4000-8000-000000000001' where id = 'f0a00000-0000-4000-8000-000000000001'$q$,
     array['42501', '23514'], 'the tenant of a file cannot change');
   perform tests.assert_fails($q$update platform.files set owner_entity_id = gen_random_uuid() where id = 'f0a00000-0000-4000-8000-000000000001'$q$,
@@ -203,6 +218,13 @@ begin
                            from platform.file_purposes),
     'platform.profile_photo=images/owner_lifetime/user,platform.user_import=imports/import/user,platform.user_import_report=generated/import/worker',
     'the R1 purposes');
+  -- Download links live at most 5 minutes (ADR 0006 §4), in the purposes and in every grant.
+  perform tests.assert_check_constraint($q$update platform.file_purposes set download_ttl_seconds = 301
+      where purpose = 'platform.profile_photo'$q$, 'file_purposes_ttl_check', 'a purpose''s download links live at most 5 minutes');
+  perform tests.assert_check_constraint($q$insert into platform.file_download_grants (tenant_id, file_id, user_id, expires_at)
+      values ('a0000000-0000-4000-8000-000000000001', 'f0a00000-0000-4000-8000-000000000001',
+              '00000000-0000-4000-8000-0000000000a1', now() + interval '5 minutes 1 second')$q$,
+    'file_download_grants_ttl_check', 'a download grant lives at most 5 minutes');
 end $$;
 rollback;
 

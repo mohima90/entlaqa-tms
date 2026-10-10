@@ -22,7 +22,8 @@ begin
       gen_random_uuid(), 'a.csv', 'text/csv', 10)$q$, array['42501'], 'no claims: no upload intent');
   perform tests.assert_fails($q$select private.confirm_file_upload('f1a00000-0000-4000-8000-000000000002')$q$,
     array['42501'], 'no claims: no confirmation');
-  perform tests.assert_fails($q$select * from private.grant_file_download('f0a00000-0000-4000-8000-000000000001')$q$,
+  perform tests.assert_fails($q$select * from private.grant_file_download('f0a00000-0000-4000-8000-000000000001',
+      'platform.user_import', 'platform', 'user_import', 'a5000000-0000-4000-8000-000000000001')$q$,
     array['42501'], 'no claims: no download grant');
 end $$;
 select tests.set_claims(tests.system_claims('a0000000-0000-4000-8000-000000000001', 'tests.forged'));
@@ -75,6 +76,9 @@ begin
   perform tests.assert_fails($q$select private.retry_file_scan('f1a00000-0000-4000-8000-000000000007', 'scanner')$q$,
     array['42501'], 'retry_file_scan: worker only');
   perform tests.assert_fails($q$select * from private.claim_file_housekeeping(10)$q$, array['42501'], 'housekeeping: worker only');
+  perform tests.assert_fails($q$select private.lock_file_housekeeping('f1a00000-0000-4000-8000-00000000000b', 'purge')$q$,
+    array['42501'], 'housekeeping lock: worker only');
+  perform tests.assert_fails($q$select * from private.claim_orphan_objects(10)$q$, array['42501'], 'orphan objects: worker only');
   perform tests.assert_fails($q$select private.finish_file_housekeeping('f1a00000-0000-4000-8000-00000000000b', 'purge')$q$,
     array['42501'], 'housekeeping finish: worker only');
   perform tests.assert_fails($q$select * from private.create_generated_file('platform.user_import_report', 'platform', 'user_import',
@@ -130,7 +134,8 @@ begin
     'a name with a right-to-left override is refused');
   perform tests.assert_fails($q$select * from private.create_file_upload('platform.user_import', 'Platform/../x', 'user_import',
       gen_random_uuid(), 'a.csv', 'text/csv', 10)$q$, array['23514'], 'the module segment of the key is checked');
-  -- 50 unconfirmed uploads a day per user: the fixtures hold 5 recent ones of uA, this block one more.
+  -- 50 unconfirmed uploads a day per user: the fixtures hold 6 recent ones of uA (one a generated report
+-- reserved for them), this block one more.
   loop
     begin
       perform private.create_file_upload('platform.user_import', 'platform', 'user_import', gen_random_uuid(), 'a.csv',
@@ -141,7 +146,7 @@ begin
     end;
     exit when v_count > 60;
   end loop;
-  perform tests.assert_eq(v_count, 44, 'the 51st pending upload of the day is refused');
+  perform tests.assert_eq(v_count, 43, 'the 51st pending upload of the day is refused');
 end $$;
 reset role;
 rollback;
@@ -176,12 +181,15 @@ begin
     'another tenant''s file');
   perform tests.assert_eq(private.confirm_file_upload('f0a00000-0000-4000-8000-000000000001'), 'clean',
     'a file past the confirmation: its status, unchanged');
+  perform tests.assert_fails($q$select private.confirm_file_upload('f1a00000-0000-4000-8000-000000000010')$q$, array['JF004'],
+    'a worker-generated file reserved for uA is never confirmed by uA (it is not an upload)');
 end $$;
 reset role;
 rollback;
 
 -- ---------------------------------------------------------------------------------------------------
--- Download grants (the owning module authorized the download): clean, undeleted files of the tenant only.
+-- Download grants: after the owning module authorized THIS user for files of THIS owner entity and purpose;
+-- clean, undeleted files of the tenant that belong to exactly that owner and purpose.
 -- ---------------------------------------------------------------------------------------------------
 begin;
 set local role authenticated;
@@ -191,22 +199,45 @@ do $$
 declare
   r record;
 begin
-  select * into r from private.grant_file_download('f1a00000-0000-4000-8000-000000000008');
+  select * into r from private.grant_file_download('f1a00000-0000-4000-8000-000000000008', 'platform.user_import', 'platform',
+    'user_import', 'a5000000-0000-4000-8000-000000000008');
   perform tests.assert_eq(r.bucket || '|' || r.ttl_seconds || '|' || r.audit_downloads || '|' || r.detected_mime,
-    'imports|60|true|text/csv', 'a clean file of the tenant (another user''s: the module authorized it)');
+    'imports|60|true|text/csv', 'a clean file of the tenant (another user''s: the module authorized its owner entity)');
   perform tests.assert_eq((select count(*) from platform.file_download_grants
                            where file_id = 'f1a00000-0000-4000-8000-000000000008'
                              and user_id = '00000000-0000-4000-8000-0000000000a1'
                              and expires_at between now() + interval '59 seconds' and now() + interval '61 seconds'),
     1::bigint, 'the grant is for the caller and lives as long as the signed URL (60 s for documents)');
-  perform tests.assert_fails($q$select * from private.grant_file_download('f1a00000-0000-4000-8000-000000000007')$q$, array['JF008'],
+  -- The file must belong to the entity, type, module and purpose the module authorized: as if it did not exist.
+  perform tests.assert_fails($q$select * from private.grant_file_download('f1a00000-0000-4000-8000-000000000008',
+      'platform.user_import', 'platform', 'user_import', 'a5000000-0000-4000-8000-000000000001')$q$, array['JF004'],
+    'a file of another owner entity (the module authorized entity …01, the file belongs to …08)');
+  perform tests.assert_fails($q$select * from private.grant_file_download('f1a00000-0000-4000-8000-000000000008',
+      'platform.user_import', 'platform', 'person', 'a5000000-0000-4000-8000-000000000008')$q$, array['JF004'],
+    'a file of another owner entity type');
+  perform tests.assert_fails($q$select * from private.grant_file_download('f1a00000-0000-4000-8000-000000000008',
+      'platform.user_import', 'tms', 'user_import', 'a5000000-0000-4000-8000-000000000008')$q$, array['JF004'],
+    'a file of another module');
+  perform tests.assert_fails($q$select * from private.grant_file_download('f1a00000-0000-4000-8000-000000000008',
+      'platform.profile_photo', 'platform', 'user_import', 'a5000000-0000-4000-8000-000000000008')$q$, array['JF004'],
+    'a file of another purpose');
+  perform tests.assert_fails($q$select * from private.grant_file_download('f1a00000-0000-4000-8000-000000000008',
+      null, 'platform', 'user_import', 'a5000000-0000-4000-8000-000000000008')$q$, array['JF004'],
+    'no purpose: nothing matches');
+  perform tests.assert_fails($q$select * from private.grant_file_download('f1a00000-0000-4000-8000-000000000007',
+      'platform.user_import', 'platform', 'user_import', 'a5000000-0000-4000-8000-000000000007')$q$, array['JF008'],
     'not scanned yet: no download');
-  perform tests.assert_fails($q$select * from private.grant_file_download('f1a00000-0000-4000-8000-000000000009')$q$, array['JF008'],
+  perform tests.assert_fails($q$select * from private.grant_file_download('f1a00000-0000-4000-8000-000000000009',
+      'platform.user_import', 'platform', 'user_import', 'a5000000-0000-4000-8000-000000000009')$q$, array['JF008'],
     'infected: no download');
-  perform tests.assert_fails($q$select * from private.grant_file_download('f1a00000-0000-4000-8000-00000000000b')$q$, array['JF004'],
+  perform tests.assert_fails($q$select * from private.grant_file_download('f1a00000-0000-4000-8000-00000000000b',
+      'platform.profile_photo', 'platform', 'profile_photo', 'a5000000-0000-4000-8000-00000000000b')$q$, array['JF004'],
     'deleted: no download');
-  perform tests.assert_fails($q$select * from private.grant_file_download('f0b00000-0000-4000-8000-000000000001')$q$, array['JF004'],
+  perform tests.assert_fails($q$select * from private.grant_file_download('f0b00000-0000-4000-8000-000000000001',
+      'platform.user_import', 'platform', 'user_import', 'b5000000-0000-4000-8000-000000000001')$q$, array['JF004'],
     'another tenant''s file: as if it did not exist');
+  perform tests.assert_eq((select count(*) from platform.file_download_grants where user_id = '00000000-0000-4000-8000-0000000000a1'),
+    2::bigint, 'refusals leave no grant (uA: the fixture''s and the one above)');
 end $$;
 reset role;
 rollback;
@@ -239,6 +270,10 @@ begin
   perform tests.assert_fails($q$select private.delete_file('f1b00000-0000-4000-8000-000000000001')$q$, array['JF004'],
     'another tenant''s file');
   perform tests.assert(private.delete_file('f1a00000-0000-4000-8000-000000000001'), 'an abandoned upload intent');
+  perform tests.assert(private.delete_file('f1a00000-0000-4000-8000-00000000000e'),
+    'a file waiting for the scanner (no worker holds its lease): its owner may give up on it');
+  perform tests.assert_eq((select status || '|' || (scan_leased_until is null)::text from platform.files
+                           where id = 'f1a00000-0000-4000-8000-00000000000e'), 'deleted|true', 'deleted, never scanned');
 end $$;
 reset role;
 rollback;

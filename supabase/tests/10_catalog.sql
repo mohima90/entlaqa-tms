@@ -530,13 +530,16 @@ begin
   from pg_proc p where p.proowner = 'file_guard'::regrole;
   perform tests.assert_eq(v_list,
     'private.can_read_object(text,text), private.can_upload_object(text,text), '
-    'private.claim_file_housekeeping(integer), private.claim_file_scan(), private.confirm_file_upload(uuid), '
+    'private.claim_file_housekeeping(integer), private.claim_file_scan(), private.claim_orphan_objects(integer), '
+    'private.confirm_file_upload(uuid), '
     'private.create_file_upload(text,text,text,uuid,text,text,bigint), '
     'private.create_generated_file(text,text,text,uuid,text,text,bigint,uuid), private.delete_file(uuid), '
-    'private.file_for_actor(uuid) (INVOKER), private.file_user_tenant() (INVOKER), private.file_worker_check() (INVOKER), '
+    'private.file_for_actor(uuid) (INVOKER), private.file_housekeeping_action(platform.files) (INVOKER), '
+    'private.file_user_tenant() (INVOKER), private.file_worker_check() (INVOKER), '
     'private.finish_file_housekeeping(uuid,text), '
     'private.finish_file_scan(uuid,text,text,bigint,text,text,text,text,text), '
-    'private.finish_generated_file(uuid,bigint,text), private.grant_file_download(uuid), private.mark_file_used(uuid), '
+    'private.finish_generated_file(uuid,bigint,text), private.grant_file_download(uuid,text,text,text,uuid), '
+    'private.lock_file_housekeeping(uuid,text), private.mark_file_used(uuid), '
     'private.retry_file_scan(uuid,text)',
     'file_guard owns the file functions only');
   perform tests.assert((select prosecdef and pg_get_userbyid(proowner) = 'tenant_guard' from pg_proc
@@ -557,8 +560,8 @@ begin
     'file_guard reads storage.objects only through the view');
   select string_agg(a.attname, ', ' order by a.attnum) into v_list
   from pg_attribute a where a.attrelid = 'private.storage_object_facts'::regclass and a.attnum > 0 and not a.attisdropped;
-  perform tests.assert_eq(v_list, 'bucket_id, name, size_text, created_at',
-    'private.storage_object_facts: where an object is and its reported size, nothing of its content or owner');
+  perform tests.assert_eq(v_list, 'bucket_id, name, size_text, content_type, created_at',
+    'private.storage_object_facts: where an object is, its reported size and stored type, nothing of its content or owner');
   -- No direct writes on the file tables for any application role (writes only through the functions).
   foreach v_role in array array['authenticated', 'anon', 'service_role', 'app_server', 'app_worker', 'app_queue',
                                 'tenant_guard', 'invitation_guard', 'account_mail_guard', 'supabase_storage_admin'] loop

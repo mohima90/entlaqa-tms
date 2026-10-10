@@ -15,6 +15,9 @@ do $$
 begin
   perform tests.assert_fails($q$select * from private.claim_file_scan()$q$, array['42501'], 'no claims: refused');
   perform tests.assert_fails($q$select * from private.claim_file_housekeeping(10)$q$, array['42501'], 'no claims: refused');
+  perform tests.assert_fails($q$select * from private.claim_orphan_objects(10)$q$, array['42501'], 'no claims: refused');
+  perform tests.assert_fails($q$select private.lock_file_housekeeping('f1a00000-0000-4000-8000-00000000000b', 'purge')$q$,
+    array['42501'], 'no claims: refused');
   perform tests.assert_privilege_denied($q$update platform.files set status = 'clean' where id = 'f1a00000-0000-4000-8000-000000000007'$q$,
     'jobs never write platform.files directly either');
   perform tests.assert_privilege_denied($q$select * from private.storage_object_facts$q$, 'nor read Storage objects directly');
@@ -36,8 +39,9 @@ reset role;
 rollback;
 
 -- ---------------------------------------------------------------------------------------------------
--- Scan leases: oldest first (a scan abandoned by a dead worker is taken up again); suspended organizations
--- wait; a leased file is not handed out twice.
+-- Scan leases: organizations take turns, each its oldest file first (a scan abandoned by a dead worker is
+-- taken up again); suspended organizations wait; a leased file is not handed out twice. (Turns against
+-- an organization with older files: 84_files_cleanup_owner.sql.)
 -- ---------------------------------------------------------------------------------------------------
 begin;
 set local role authenticated;
@@ -58,7 +62,7 @@ begin
     'f1a00000-0000-4000-8000-00000000000e|imports|platform.user_import|text/csv|20971520|text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet|6',
     'f1b00000-0000-4000-8000-000000000002|imports|platform.user_import|text/csv|20971520|text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet|1',
     'f1a00000-0000-4000-8000-000000000007|imports|platform.user_import|text/csv|20971520|text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet|1'],
-    'leases: the abandoned scan, then B, then A (oldest upload first); suspended tenant C waits');
+    'leases: A''s abandoned scan (oldest upload), then B''s turn, then A again; suspended tenant C waits');
   perform tests.assert_eq((select count(*) from platform.files), 0::bigint,
     'a platform job (no tenant) leases through the function but reads no file itself');
   -- Outcomes need the file's own tenant: platform claims (no tenant) cannot finish.
@@ -79,6 +83,10 @@ do $$
 begin
   perform tests.assert_eq((select count(*) from platform.files where status = 'scanning' and scan_leased_until > now()), 2::bigint,
     'tenant A''s two leased files are scanning, with a lease');
+  perform tests.assert_eq((select count(*) from platform.files where scan_claimed_at = now()), 2::bigint,
+    'each lease records the organization''s turn');
+  perform tests.assert_fails($q$select private.delete_file('f1a00000-0000-4000-8000-000000000007')$q$, array['JF009'],
+    'a file a worker is scanning cannot be deleted (its verdict is recorded first)');
   perform tests.assert_fails($q$select private.finish_file_scan('f1a00000-0000-4000-8000-000000000007', 'clean', 'image/png', 20,
       repeat('1', 64), 'ClamAV 1.5.4', '28137', null, null)$q$, array['23514'], 'clean needs a type the purpose allows');
   perform tests.assert_fails($q$select private.finish_file_scan('f1a00000-0000-4000-8000-000000000007', 'clean', 'text/csv', 20971521,
@@ -128,8 +136,9 @@ reset role;
 rollback;
 
 -- ---------------------------------------------------------------------------------------------------
--- Fail closed: a file whose scan could not finish stays `scanning` and waits (back-off); repeated
--- processing failures end as `error` after 5 attempts.
+-- Fail closed: a file whose scan could not finish stays `scanning` and waits (back-off); failures of the file
+-- itself end as `error` after 5; the scanner's unavailability is not counted against the file (the
+-- 24-hour limit for that: 84_files_cleanup_owner.sql).
 -- ---------------------------------------------------------------------------------------------------
 begin;
 set local role authenticated;
@@ -140,12 +149,13 @@ declare
 begin
   select * into r from private.claim_file_scan();
   perform tests.assert_eq(r.id, 'f1a00000-0000-4000-8000-00000000000e'::uuid, 'the abandoned scan first');
-  perform tests.assert_eq(private.retry_file_scan(r.id, 'processing'), 'error', 'six attempts with a processing failure: error');
+  perform tests.assert_eq(private.retry_file_scan(r.id, 'processing'), 'error', 'the fifth failure of the file itself: error');
   select * into r from private.claim_file_scan();
   perform tests.assert_eq(r.id, 'f1b00000-0000-4000-8000-000000000002'::uuid, 'next file');
   perform tests.assert_eq(private.retry_file_scan(r.id, 'scanner'), 'waiting', 'scanner unavailable: it waits');
   select * into r from private.claim_file_scan();
   perform tests.assert_eq(r.id, 'f1a00000-0000-4000-8000-000000000007'::uuid, 'a waiting file is not leased again before its time');
+  perform tests.assert_eq(private.retry_file_scan(r.id, 'processing'), 'waiting', 'a first failure of the file: it waits');
   perform tests.assert_eq(private.retry_file_scan(gen_random_uuid(), 'scanner'), 'gone', 'unknown file');
   perform tests.assert_fails($q$select private.retry_file_scan('f1a00000-0000-4000-8000-000000000007', 'never')$q$, array['23514'],
     'unknown retry kind');
@@ -153,16 +163,23 @@ end $$;
 select tests.set_claims(tests.system_claims('a0000000-0000-4000-8000-000000000001', 'tests.files.scan'));
 do $$
 begin
-  perform tests.assert_eq((select status || '|' || status_reason from platform.files where id = 'f1a00000-0000-4000-8000-00000000000e'),
-    'error|processing_failed', 'error with its reason');
+  perform tests.assert_eq((select status || '|' || status_reason || '|' || scan_failures from platform.files
+                           where id = 'f1a00000-0000-4000-8000-00000000000e'),
+    'error|processing_failed|5', 'error with its reason');
+  perform tests.assert_eq((select concat_ws('|', status, scan_failures, scan_attempts) from platform.files
+                           where id = 'f1a00000-0000-4000-8000-000000000007'),
+    'scanning|1|1', 'one failure of the file counted, still waiting');
+  perform tests.assert(private.delete_file('f1a00000-0000-4000-8000-00000000000e'), 'a failed file can be deleted');
+  perform tests.assert(private.delete_file('f1a00000-0000-4000-8000-000000000007'),
+    'a file waiting after a failure (no worker holds its lease) can be deleted');
 end $$;
 select tests.set_claims(tests.system_claims('b0000000-0000-4000-8000-000000000001', 'tests.files.scan'));
 do $$
 begin
-  perform tests.assert_eq((select concat_ws('|', status, scan_leased_until is null,
+  perform tests.assert_eq((select concat_ws('|', status, scan_leased_until is null, scan_failures,
                                             scan_not_before between now() + interval '14 seconds' and now() + interval '16 seconds')
                            from platform.files where id = 'f1b00000-0000-4000-8000-000000000002'),
-    'scanning|t|t', 'scanner unavailable: still scanning (never clean), 15 s back-off');
+    'scanning|t|0|t', 'scanner unavailable: still scanning (never clean), not counted against the file, 15 s back-off');
 end $$;
 reset role;
 rollback;
@@ -186,6 +203,14 @@ begin
     'f1a00000-0000-4000-8000-00000000000d:purge',           -- import used 8 days ago
     'due: unconfirmed > 24 h, imports 7 days after use, deleted photos after 30 days; never the legal hold (…0c), fresh or in-flight files');
   perform tests.assert_eq((select count(*) from private.claim_file_housekeeping(100)), 0::bigint, 'leased: not handed out twice');
+  -- Just before the Storage work: still due? (Legal hold set or use recorded since: 84_files_cleanup_owner.sql.)
+  perform tests.assert(private.lock_file_housekeeping('f1a00000-0000-4000-8000-00000000000b', 'purge'), 'still due: locked for its purge');
+  perform tests.assert(not private.lock_file_housekeeping('f1a00000-0000-4000-8000-00000000000c', 'purge'), 'legal hold: never');
+  perform tests.assert(not private.lock_file_housekeeping('f1a00000-0000-4000-8000-000000000009', 'purge'),
+    'not the action that is due (quarantine)');
+  perform tests.assert(not private.lock_file_housekeeping(gen_random_uuid(), 'purge'), 'unknown file');
+  perform tests.assert_fails($q$select private.lock_file_housekeeping('f1a00000-0000-4000-8000-00000000000b', 'shred')$q$,
+    array['23514'], 'unknown action');
   perform tests.assert(private.finish_file_housekeeping('f1a00000-0000-4000-8000-000000000009', 'quarantine'), 'quarantined');
   perform tests.assert(not private.finish_file_housekeeping('f1a00000-0000-4000-8000-000000000009', 'quarantine'), 'once');
   perform tests.assert(private.finish_file_housekeeping('f1a00000-0000-4000-8000-00000000000a', 'remove_object'), 'object removed');

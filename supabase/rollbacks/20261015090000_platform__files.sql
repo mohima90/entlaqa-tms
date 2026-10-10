@@ -3,8 +3,11 @@
 -- Stored objects are NOT removed: empty the buckets through the Storage API first if that is intended.
 drop function private.finish_generated_file(uuid, bigint, text);
 drop function private.create_generated_file(text, text, text, uuid, text, text, bigint, uuid);
+drop function private.claim_orphan_objects(integer);
 drop function private.finish_file_housekeeping(uuid, text);
+drop function private.lock_file_housekeeping(uuid, text);
 drop function private.claim_file_housekeeping(integer);
+drop function private.file_housekeeping_action(platform.files);
 drop function private.retry_file_scan(uuid, text);
 drop function private.finish_file_scan(uuid, text, text, bigint, text, text, text, text, text);
 drop function private.claim_file_scan();
@@ -14,7 +17,7 @@ drop function private.can_upload_object(text, text);
 drop function private.mark_file_used(uuid);
 drop function private.delete_file(uuid);
 drop function private.file_for_actor(uuid);
-drop function private.grant_file_download(uuid);
+drop function private.grant_file_download(uuid, text, text, text, uuid);
 drop function private.confirm_file_upload(uuid);
 drop function private.create_file_upload(text, text, text, uuid, text, text, bigint);
 drop function private.file_user_tenant();

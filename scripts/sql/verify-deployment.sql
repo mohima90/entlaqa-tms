@@ -196,7 +196,7 @@ begin
       ('private.storage_request_tenant()', 'tenant_guard', array['tenant_guard', 'authenticated', 'file_guard'], true),
       ('private.create_file_upload(text, text, text, uuid, text, text, bigint)', 'file_guard', array['file_guard', 'authenticated'], true),
       ('private.confirm_file_upload(uuid)', 'file_guard', array['file_guard', 'authenticated'], true),
-      ('private.grant_file_download(uuid)', 'file_guard', array['file_guard', 'authenticated'], true),
+      ('private.grant_file_download(uuid, text, text, text, uuid)', 'file_guard', array['file_guard', 'authenticated'], true),
       ('private.delete_file(uuid)', 'file_guard', array['file_guard', 'authenticated'], true),
       ('private.mark_file_used(uuid)', 'file_guard', array['file_guard', 'authenticated'], true),
       ('private.can_upload_object(text, text)', 'file_guard', array['file_guard', 'authenticated'], true),
@@ -205,12 +205,15 @@ begin
       ('private.finish_file_scan(uuid, text, text, bigint, text, text, text, text, text)', 'file_guard', array['file_guard', 'authenticated'], true),
       ('private.retry_file_scan(uuid, text)', 'file_guard', array['file_guard', 'authenticated'], true),
       ('private.claim_file_housekeeping(integer)', 'file_guard', array['file_guard', 'authenticated'], true),
+      ('private.lock_file_housekeeping(uuid, text)', 'file_guard', array['file_guard', 'authenticated'], true),
       ('private.finish_file_housekeeping(uuid, text)', 'file_guard', array['file_guard', 'authenticated'], true),
+      ('private.claim_orphan_objects(integer)', 'file_guard', array['file_guard', 'authenticated'], true),
       ('private.create_generated_file(text, text, text, uuid, text, text, bigint, uuid)', 'file_guard', array['file_guard', 'authenticated'], true),
       ('private.finish_generated_file(uuid, bigint, text)', 'file_guard', array['file_guard', 'authenticated'], true),
       ('private.file_user_tenant()', 'file_guard', array['file_guard'], false),
       ('private.file_for_actor(uuid)', 'file_guard', array['file_guard'], false),
-      ('private.file_worker_check()', 'file_guard', array['file_guard'], false)
+      ('private.file_worker_check()', 'file_guard', array['file_guard'], false),
+      ('private.file_housekeeping_action(platform.files)', 'file_guard', array['file_guard'], false)
     ) as h(fn, owner, allowed, definer)
     left join pg_proc p on p.oid = to_regprocedure(h.fn)
   loop
@@ -249,11 +252,12 @@ begin
         'private.retry_account_mail_request(uuid)',
         -- Files (T-M2-18)
         'private.storage_request_tenant()', 'private.create_file_upload(text,text,text,uuid,text,text,bigint)',
-        'private.confirm_file_upload(uuid)', 'private.grant_file_download(uuid)', 'private.delete_file(uuid)',
+        'private.confirm_file_upload(uuid)', 'private.grant_file_download(uuid,text,text,text,uuid)', 'private.delete_file(uuid)',
         'private.mark_file_used(uuid)', 'private.can_upload_object(text,text)', 'private.can_read_object(text,text)',
         'private.claim_file_scan()', 'private.finish_file_scan(uuid,text,text,bigint,text,text,text,text,text)',
         'private.retry_file_scan(uuid,text)', 'private.claim_file_housekeeping(integer)',
-        'private.finish_file_housekeeping(uuid,text)',
+        'private.lock_file_housekeeping(uuid,text)', 'private.finish_file_housekeeping(uuid,text)',
+        'private.claim_orphan_objects(integer)',
         'private.create_generated_file(text,text,text,uuid,text,text,bigint,uuid)',
         'private.finish_generated_file(uuid,bigint,text)')
   loop

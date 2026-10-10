@@ -69,6 +69,23 @@ begin
     'tenant B''s pending key');
   perform tests.assert_rls_violation(tests.storage_put('quarantine', 'a0000000-0000-4000-8000-000000000001/x'),
     'the quarantine bucket');
+  -- A worker-generated report reserved for uA (pending in `generated`) is the worker's to write, never uA's.
+  perform tests.assert(not private.can_upload_object('generated',
+      'a0000000-0000-4000-8000-000000000001/platform/user_import_report/a5000000-0000-4000-8000-000000000010/f1a00000-0000-4000-8000-000000000010'),
+    'no upload to a generated file''s key, even reserved for this user');
+  -- Storage's upsert (x-upsert: true) is `insert … on conflict do update … returning *`: refused for a pending
+  -- key that already holds the uploaded bytes, and for a clean file uA may read — the scanned bytes are never
+  -- replaced (no UPDATE policy).
+  perform tests.assert_rls_violation(format($q$insert into storage.objects (bucket_id, name, owner, metadata) values ('imports', %L,
+      '00000000-0000-4000-8000-0000000000a1', '{"size": 10}') on conflict (bucket_id, name) do update set metadata = excluded.metadata
+      returning *$q$,
+      'a0000000-0000-4000-8000-000000000001/platform/user_import/a5000000-0000-4000-8000-000000000002/f1a00000-0000-4000-8000-000000000002'),
+    'no upsert over the uploaded bytes of a pending upload');
+  perform tests.assert_rls_violation(format($q$insert into storage.objects (bucket_id, name, owner, metadata) values ('imports', %L,
+      '00000000-0000-4000-8000-0000000000a1', '{"size": 10}') on conflict (bucket_id, name) do update set metadata = excluded.metadata
+      returning *$q$,
+      'a0000000-0000-4000-8000-000000000001/platform/user_import/a5000000-0000-4000-8000-000000000001/f0a00000-0000-4000-8000-000000000001'),
+    'no upsert over a scanned (clean) file');
   -- Never update or delete (no policy: nothing matches, nothing changes).
   perform tests.assert_eq(tests.rows_affected($q$update storage.objects set metadata = '{"size": 1}'$q$), 0::bigint,
     'no update of any object');

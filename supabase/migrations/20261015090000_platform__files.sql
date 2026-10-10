@@ -11,12 +11,14 @@
 --                                  is never part of it), purpose, owner, sanitized name, declared and detected
 --                                  type, size, sha256, status, scan engine/signatures/finding, retention class,
 --                                  legal hold, uploader, timestamps.
---   platform.file_download_grants  short-lived (≤ 10 min) per-user read grants: the Storage SELECT policy
---                                  requires one, so a user token alone reads nothing (TM-0001 F-13, T-34).
+--   platform.file_download_grants  short-lived (≤ 5 min, ADR 0006 §4) per-user read grants for one file of
+--                                  one owner entity: the Storage SELECT policy requires one, so a user token
+--                                  alone reads nothing (TM-0001 F-13, T-34).
 --   file_guard                     NOLOGIN owner of every function below (pattern of account_mail_guard):
 --                                  no BYPASSRLS; explicit grants and `to file_guard` policies.
---   private.storage_object_facts   view of storage.objects (bucket, name, reported size) for file_guard only,
---                                  owned by the migration role (pattern of private.auth_session_validity).
+--   private.storage_object_facts   view of storage.objects (bucket, name, reported size and content type,
+--                                  creation time) for file_guard only, owned by the migration role (pattern
+--                                  of private.auth_session_validity).
 --   private.storage_request_tenant()  (owner tenant_guard) the tenant of USER claims set by Supabase Storage
 --                                  under its own login role, validated exactly like private.current_tenant_id()
 --                                  validates them for app_server (ADR 0002 §6a: live session, active
@@ -25,8 +27,9 @@
 --                                  Storage's login role.
 --
 -- Status (trigger files_transition): pending_upload → uploaded → scanning → clean | infected | rejected |
--- error; pending_upload → rejected (confirmation: empty or too large); pending_upload → clean only for
--- worker-generated purposes; → deleted from pending_upload, uploaded, clean, rejected, error. Nothing is
+-- error; pending_upload → rejected (confirmation: empty, too large, or stored with another content type);
+-- pending_upload → clean only for worker-generated purposes; → deleted from pending_upload, uploaded,
+-- scanning (only while no worker holds its scan lease: delete_file), clean, rejected, error. Nothing is
 -- readable or processed before `clean` (storage policy, openScannedFile, download grants).
 --
 -- Callers (each function checks the LOGIN role and the claims itself; errors: 42501 wrong caller,
@@ -35,7 +38,8 @@
 --                                        delete_file, mark_file_used
 --   Storage (supabase_storage_admin):    can_upload_object, can_read_object (storage.objects policies)
 --   worker (app_worker, system claims):  claim_file_scan, finish_file_scan, retry_file_scan,
---                                        claim_file_housekeeping, finish_file_housekeeping,
+--                                        claim_file_housekeeping, lock_file_housekeeping,
+--                                        finish_file_housekeeping, claim_orphan_objects,
 --                                        create_generated_file, finish_generated_file, delete_file,
 --                                        mark_file_used
 -- Domain SQLSTATEs: JF001 type not allowed · JF002 too large · JF003 unknown purpose · JF004 file not
@@ -91,7 +95,8 @@ create table platform.file_purposes (
   upload_by text not null,
   -- Downloads of these files are audited (personal data: evidence, exports, import reports).
   audit_downloads boolean not null,
-  -- Lifetime of a download grant and of its signed URL (ADR 0006 §5: 60 s documents, 300 s media).
+  -- Lifetime of a download grant and of its signed URL (ADR 0006 §5: 60 s documents, 300 s media; at
+  -- most 5 minutes, ADR 0006 §4).
   download_ttl_seconds integer not null,
   constraint file_purposes_name_check check (purpose ~ '^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$' and char_length(purpose) <= 100),
   constraint file_purposes_bucket_check check (bucket in ('materials', 'images', 'evidence', 'imports', 'generated')),
@@ -101,7 +106,7 @@ create table platform.file_purposes (
   constraint file_purposes_retention_check check (retention_class in ('import', 'owner_lifetime', 'record', 'export')),
   constraint file_purposes_upload_by_check check (upload_by in ('user', 'worker')
     and (upload_by = 'worker') = (bucket = 'generated')),
-  constraint file_purposes_ttl_check check (download_ttl_seconds between 10 and 600)
+  constraint file_purposes_ttl_check check (download_ttl_seconds between 10 and 300)
 );
 comment on table platform.file_purposes is
   'File purposes (ADR 0006 §1, T-M2-18): bucket, size, detected types, retention, download audit/TTL. Global reference data; changed by migrations only.';
@@ -153,9 +158,14 @@ create table platform.files (
   scan_signatures text,
   scan_finding text,
   scanned_at timestamptz,
+  -- Scan leases so far; failures OF THIS FILE (the scanner answered, the file could not be scanned): error
+  -- after 5 (retry_file_scan). Unavailability of the scanner or Storage is not counted against the file.
   scan_attempts smallint not null default 0,
+  scan_failures smallint not null default 0,
   scan_not_before timestamptz not null default now(),
   scan_leased_until timestamptz,
+  -- When the last scan lease was taken: organizations take turns (claim_file_scan).
+  scan_claimed_at timestamptz,
   retention_class text not null,
   legal_hold boolean not null default false,
   used_at timestamptz,
@@ -192,7 +202,7 @@ create table platform.files (
     (scan_engine is null or (char_length(scan_engine) <= 100 and scan_engine !~ '[\x01-\x1f\x7f]'))
     and (scan_signatures is null or (char_length(scan_signatures) <= 200 and scan_signatures !~ '[\x01-\x1f\x7f]'))
     and (scan_finding is null or (char_length(scan_finding) <= 200 and scan_finding !~ '[\x01-\x1f\x7f]'))),
-  constraint files_attempts_check check (scan_attempts between 0 and 1000),
+  constraint files_attempts_check check (scan_attempts between 0 and 1000 and scan_failures between 0 and 1000),
   constraint files_retention_check check (retention_class in ('import', 'owner_lifetime', 'record', 'export')),
   -- A clean file has everything the scan established.
   constraint files_clean_check check (status <> 'clean'
@@ -206,6 +216,8 @@ comment on table platform.files is
 create index files_tenant_idx on platform.files (tenant_id);
 create index files_owner_idx on platform.files (tenant_id, owner_module, owner_entity_type, owner_entity_id);
 create index files_scan_queue_idx on platform.files (uploaded_at, id) where status in ('uploaded', 'scanning');
+-- Each organization's last scan turn (claim_file_scan: organizations take turns).
+create index files_scan_turn_idx on platform.files (tenant_id, scan_claimed_at) where scan_claimed_at is not null;
 create index files_pending_user_idx on platform.files (created_by_user, created_at) where status = 'pending_upload';
 -- Housekeeping candidates: everything not purged yet (small: files leave this index when purged).
 create index files_housekeeping_idx on platform.files (created_at) where purged_at is null;
@@ -240,7 +252,7 @@ create table platform.file_download_grants (
   expires_at timestamptz not null,
   unique (tenant_id, id),
   foreign key (tenant_id, file_id) references platform.files (tenant_id, id) on delete cascade,
-  constraint file_download_grants_ttl_check check (expires_at > created_at and expires_at <= created_at + interval '10 minutes')
+  constraint file_download_grants_ttl_check check (expires_at > created_at and expires_at <= created_at + interval '5 minutes')
 );
 comment on table platform.file_download_grants is
   'Short-lived read grants (ADR 0006 §4–§5, T-M2-18): created by the action that authorized a download; required by the storage SELECT policy. Owner: platform.';
@@ -277,15 +289,18 @@ grant execute on function private.current_tenant_id() to file_guard;
 -- ---------------------------------------------------------------------------------------------------
 -- Storage objects for file_guard (pattern of private.auth_session_validity, ADR 0002 §6a rev. 2): the
 -- migration role reads storage.objects (Supabase grants it ALL WITH GRANT OPTION and BYPASSRLS); a view
--- reads with its owner's rights, so file_guard sees whether an object exists and its reported size —
--- nothing of the content, owner or user metadata.
+-- reads with its owner's rights, so file_guard sees whether an object exists, its reported size, the
+-- content type it was stored with (the uploader's Content-Type, which Storage serves it with) and when
+-- it was created — nothing of the content, owner or user metadata.
 -- ---------------------------------------------------------------------------------------------------
 create or replace view private.storage_object_facts
 with (security_barrier = true)  -- defensive only: the view has no WHERE clause
-as select o.bucket_id, o.name, o.metadata ->> 'size' as size_text, o.created_at from storage.objects o;
+as select o.bucket_id, o.name, o.metadata ->> 'size' as size_text, o.metadata ->> 'mimetype' as content_type,
+          o.created_at
+   from storage.objects o;
 
 comment on view private.storage_object_facts is
-  'SECURITY-RELEVANT (T-M2-18): storage.objects (bucket_id, name, reported size, created_at) for file_guard only. Owned by the migration role.';
+  'SECURITY-RELEVANT (T-M2-18): storage.objects (bucket_id, name, reported size, stored content type, created_at) for file_guard only. Owned by the migration role.';
 
 revoke all on private.storage_object_facts from public;
 grant select on private.storage_object_facts to file_guard;
@@ -324,7 +339,8 @@ declare
   v_ok boolean;
 begin
   if tg_op = 'INSERT' then
-    if new.status <> 'pending_upload' or new.scan_attempts <> 0 or new.used_at is not null or new.deleted_at is not null
+    if new.status <> 'pending_upload' or new.scan_attempts <> 0 or new.scan_failures <> 0
+       or new.scan_claimed_at is not null or new.used_at is not null or new.deleted_at is not null
        or new.uploaded_at is not null or new.quarantined_at is not null or new.object_removed_at is not null
        or new.purged_at is not null or new.detected_mime is not null or new.sha256 is not null or new.size_bytes is not null then
       raise exception 'a file starts as pending_upload' using errcode = 'insufficient_privilege';
@@ -351,7 +367,9 @@ begin
         or (new.status = 'clean' and exists (select 1 from platform.file_purposes p
                                              where p.purpose = new.purpose and p.upload_by = 'worker'))
       when 'uploaded' then new.status in ('scanning', 'deleted')
-      when 'scanning' then new.status in ('clean', 'infected', 'rejected', 'error')
+      -- → deleted: a file waiting for the scanner (its owner gives up; delete_file checks no worker holds
+      -- the scan lease). Never readable or usable before a verdict, so nothing is lost but the wait.
+      when 'scanning' then new.status in ('clean', 'infected', 'rejected', 'error', 'deleted')
       when 'clean' then new.status = 'deleted'
       when 'rejected' then new.status = 'deleted'
       when 'error' then new.status = 'deleted'
@@ -489,9 +507,11 @@ $$;
 comment on function private.create_file_upload(text, text, text, uuid, text, text, bigint) is
   'SECURITY-RELEVANT (T-M2-18). Web app: a pending upload (key, 15-minute window) for the signed-in user, checked against the purpose. User claims under app_server only.';
 
--- After the browser's upload: the object must exist; an empty or oversized object (Storage's reported size)
--- is rejected at once; otherwise the file waits for the scan (`uploaded`). Idempotent: a repeated call
--- returns the current status.
+-- After the browser's upload: the object must exist; an empty or oversized object (Storage's reported size),
+-- or one stored with another content type than the declared one (Storage serves it with that type), is
+-- rejected at once; otherwise the file waits for the scan (`uploaded`). Uploaded purposes only: a
+-- worker-generated file is never confirmed by a user. Idempotent: a repeated call returns the current
+-- status.
 create or replace function private.confirm_file_upload(p_file_id uuid)
 returns text
 language plpgsql volatile security definer
@@ -501,13 +521,15 @@ declare
   v_tenant uuid := private.file_user_tenant();
   v_file record;
   v_size_text text;
+  v_type_text text;
   v_size bigint;
   v_max bigint;
 begin
-  select f.* into v_file from platform.files f
+  select f.*, p.max_bytes into v_file
+  from platform.files f join platform.file_purposes p on p.purpose = f.purpose and p.upload_by = 'user'
   where f.id = p_file_id and f.tenant_id = v_tenant and f.created_by_user = private.request_user_id()
     and f.purged_at is null
-  for update;
+  for update of f;
   if not found then
     raise exception 'file not found' using errcode = 'JF004';
   end if;
@@ -517,12 +539,12 @@ begin
   if v_file.created_at < now() - interval '24 hours' then
     raise exception 'upload expired' using errcode = 'JF006';
   end if;
-  select o.size_text into v_size_text from private.storage_object_facts o
+  select o.size_text, o.content_type into v_size_text, v_type_text from private.storage_object_facts o
   where o.bucket_id = v_file.bucket and o.name = v_file.object_key;
   if not found then
     raise exception 'object not uploaded' using errcode = 'JF005';
   end if;
-  select p.max_bytes into v_max from platform.file_purposes p where p.purpose = v_file.purpose;
+  v_max := v_file.max_bytes;
   v_size := case when v_size_text ~ '^[0-9]{1,15}$' then v_size_text::bigint end;
   if v_size = 0 then
     update platform.files f set status = 'rejected', status_reason = 'empty', uploaded_at = now(), size_bytes = 0
@@ -534,6 +556,13 @@ begin
     where f.id = v_file.id;
     return 'rejected';
   end if;
+  -- The Content-Type of the upload (parameters such as `; charset=utf-8` ignored) must be the declared type
+  -- the upload intent told the browser to send.
+  if v_type_text is null or lower(btrim(split_part(v_type_text, ';', 1))) <> v_file.declared_mime then
+    update platform.files f set status = 'rejected', status_reason = 'type_mismatch', uploaded_at = now()
+    where f.id = v_file.id;
+    return 'rejected';
+  end if;
   -- Storage's reported size (may be unknown); the scan counts the bytes it reads and records those.
   update platform.files f set status = 'uploaded', uploaded_at = now(), scan_not_before = now(), size_bytes = v_size
   where f.id = v_file.id;
@@ -541,11 +570,14 @@ begin
 end
 $$;
 comment on function private.confirm_file_upload(uuid) is
-  'SECURITY-RELEVANT (T-M2-18). Web app: the uploader confirms; the object must exist in Storage; empty/oversized → rejected, else uploaded (queued for the scan). User claims under app_server only.';
+  'SECURITY-RELEVANT (T-M2-18). Web app: the uploader confirms an upload (uploaded purposes only); the object must exist in Storage; empty, oversized or stored with another content type → rejected, else uploaded (queued for the scan). User claims under app_server only.';
 
--- A download grant for the signed-in user (after the owning module authorized the download): clean files
--- only. Returns what the web app needs to create the signed URL (same lifetime) and whether to audit.
-create or replace function private.grant_file_download(p_file_id uuid)
+-- A download grant for the signed-in user, after the owning module authorized THIS user to read files of
+-- THIS owner entity for THIS purpose: the file must belong to exactly that owner and purpose (a module that
+-- checked access to entity X can never hand out a file of entity Y), and be clean. Returns what the web app
+-- needs to create the signed URL (same lifetime) and whether to audit.
+create or replace function private.grant_file_download(
+  p_file_id uuid, p_purpose text, p_owner_module text, p_owner_entity_type text, p_owner_entity_id uuid)
 returns table (bucket text, object_key text, original_name text, detected_mime text, ttl_seconds integer,
                audit_downloads boolean)
 language plpgsql volatile security definer
@@ -560,7 +592,10 @@ begin
          p.audit_downloads
     into v_file
   from platform.files f join platform.file_purposes p on p.purpose = f.purpose
-  where f.id = p_file_id and f.tenant_id = v_tenant and f.deleted_at is null and f.purged_at is null;
+  where f.id = p_file_id and f.tenant_id = v_tenant and f.deleted_at is null and f.purged_at is null
+    -- The owner the module authorized (all four required: a NULL never matches).
+    and f.purpose = p_purpose and f.owner_module = p_owner_module and f.owner_entity_type = p_owner_entity_type
+    and f.owner_entity_id = p_owner_entity_id;
   if not found then
     raise exception 'file not found' using errcode = 'JF004';
   end if;
@@ -574,8 +609,8 @@ begin
                       v_file.download_ttl_seconds, v_file.audit_downloads;
 end
 $$;
-comment on function private.grant_file_download(uuid) is
-  'SECURITY-RELEVANT (T-M2-18). Web app: a short-lived download grant for the signed-in user on a clean file of their tenant (the owning module authorized it). User claims under app_server only.';
+comment on function private.grant_file_download(uuid, text, text, text, uuid) is
+  'SECURITY-RELEVANT (T-M2-18). Web app: a short-lived download grant for the signed-in user on a clean file of their tenant that belongs to the owner entity and purpose the owning module authorized. User claims under app_server only.';
 
 -- The caller acting on a file: the uploader (user claims under app_server) or a job of the file's tenant
 -- (system claims under app_worker; current_tenant_id() checks the login role).
@@ -602,7 +637,9 @@ $$;
 revoke all on function private.file_for_actor(uuid) from public;
 
 -- Deleting a file (soft: the housekeeping job removes the object per retention class, unless on legal
--- hold). Not while it is being scanned, and never an infected file (kept in quarantine for 30 days).
+-- hold). A file waiting for the scanner (or failed: `error`) can be deleted — it was never readable;
+-- not while a worker holds its scan lease (the verdict, e.g. a malware finding, is recorded first), and
+-- never an infected file (kept in quarantine for 30 days).
 create or replace function private.delete_file(p_file_id uuid)
 returns boolean
 language plpgsql volatile security definer
@@ -610,22 +647,25 @@ set search_path = ''
 as $$
 declare
   v_status text;
+  v_leased boolean;
 begin
   perform private.file_for_actor(p_file_id);
-  select f.status into v_status from platform.files f where f.id = p_file_id for update;
+  select f.status, coalesce(f.scan_leased_until > now(), false) into v_status, v_leased
+  from platform.files f where f.id = p_file_id for update;
   if v_status = 'deleted' then
     return false;
   end if;
-  if v_status in ('scanning', 'infected') then
+  if v_status = 'infected' or (v_status = 'scanning' and v_leased) then
     raise exception 'file cannot be deleted now' using errcode = 'JF009';
   end if;
-  update platform.files f set status = 'deleted', deleted_at = now() where f.id = p_file_id;
+  update platform.files f set status = 'deleted', deleted_at = now(), scan_leased_until = null
+  where f.id = p_file_id;
   delete from platform.file_download_grants g where g.file_id = p_file_id;
   return true;
 end
 $$;
 comment on function private.delete_file(uuid) is
-  'SECURITY-RELEVANT (T-M2-18). The uploader or a job of the tenant marks a file deleted (housekeeping removes it per retention class).';
+  'SECURITY-RELEVANT (T-M2-18). The uploader or a job of the tenant marks a file deleted (housekeeping removes it per retention class); not an infected file, nor one a worker is scanning.';
 
 -- The owning module used the file (e.g. an import was confirmed): import files are kept 7 days from then.
 create or replace function private.mark_file_used(p_file_id uuid)
@@ -652,7 +692,8 @@ comment on function private.mark_file_used(uuid) is
 -- ---------------------------------------------------------------------------------------------------
 -- Storage policies' checks (Supabase Storage under its login role, user claims)
 -- ---------------------------------------------------------------------------------------------------
--- INSERT: exactly the pending key of this user, in their tenant, inside the 15-minute window.
+-- INSERT: exactly the pending key of this user, in their tenant, inside the 15-minute window, of a purpose
+-- users upload (never a worker-generated file reserved for them).
 create or replace function private.can_upload_object(p_bucket text, p_name text)
 returns boolean
 language plpgsql stable security definer
@@ -665,13 +706,13 @@ begin
     return false;
   end if;
   return exists (
-    select 1 from platform.files f
+    select 1 from platform.files f join platform.file_purposes p on p.purpose = f.purpose and p.upload_by = 'user'
     where f.bucket = p_bucket and f.object_key = p_name and f.tenant_id = v_tenant and f.status = 'pending_upload'
       and f.created_by_user = private.request_user_id() and f.upload_expires_at > now());
 end
 $$;
 comment on function private.can_upload_object(text, text) is
-  'SECURITY-RELEVANT (ADR 0006 §4, T-M2-18). storage.objects INSERT policy: the pending upload of this user and tenant, unexpired.';
+  'SECURITY-RELEVANT (ADR 0006 §4, T-M2-18). storage.objects INSERT policy: the pending upload of this user and tenant, unexpired, of an uploaded (not worker-generated) purpose.';
 
 -- SELECT: a clean, undeleted file of the caller's tenant with an unexpired grant for the caller.
 create or replace function private.can_read_object(p_bucket text, p_name text)
@@ -715,8 +756,11 @@ end
 $$;
 revoke all on function private.file_worker_check() from public;
 
--- Leases the next file to scan (oldest first; organizations that are not active wait): status scanning,
--- 15-minute lease, one more attempt. The purpose's limits come with it (one source of truth).
+-- Leases the next file to scan: organizations take turns (the one whose last scan turn is longest ago, or
+-- that never had one, first), then that organization's oldest due file — one organization's many uploads,
+-- or a file that keeps failing, never holds up the others. Organizations that are not served (suspended,
+-- closed) wait; a file housekeeping is working on waits. Status scanning, 15-minute lease, one more
+-- attempt. The purpose's limits come with it (one source of truth).
 create or replace function private.claim_file_scan()
 returns table (id uuid, tenant_id uuid, bucket text, object_key text, purpose text, declared_mime text,
                size_bytes bigint, max_bytes bigint, allowed_types text[], attempts integer)
@@ -725,20 +769,35 @@ set search_path = ''
 as $$
 declare
   v_id uuid;
+  v_tenant uuid;
 begin
   perform private.file_worker_check();
-  select f.id into v_id from platform.files f
-  where f.status in ('uploaded', 'scanning') and f.scan_not_before <= now()
-    and (f.scan_leased_until is null or f.scan_leased_until <= now()) and f.purged_at is null
-    and exists (select 1 from platform.tenants t where t.id = f.tenant_id and t.status in ('active', 'trial'))
-  order by f.uploaded_at, f.id
-  limit 1
-  for update of f skip locked;
+  for v_tenant in
+    select d.tenant_id
+    from (select f.tenant_id, min(f.uploaded_at) as oldest
+          from platform.files f
+          where f.status in ('uploaded', 'scanning') and f.scan_not_before <= now()
+            and (f.scan_leased_until is null or f.scan_leased_until <= now()) and f.purged_at is null
+            and (f.housekeeping_leased_until is null or f.housekeeping_leased_until <= now())
+            and exists (select 1 from platform.tenants t where t.id = f.tenant_id and t.status in ('active', 'trial'))
+          group by f.tenant_id) d
+    order by (select max(g.scan_claimed_at) from platform.files g where g.tenant_id = d.tenant_id) nulls first,
+             d.oldest, d.tenant_id
+  loop
+    select f.id into v_id from platform.files f
+    where f.tenant_id = v_tenant and f.status in ('uploaded', 'scanning') and f.scan_not_before <= now()
+      and (f.scan_leased_until is null or f.scan_leased_until <= now()) and f.purged_at is null
+      and (f.housekeeping_leased_until is null or f.housekeeping_leased_until <= now())
+    order by f.uploaded_at, f.id
+    limit 1
+    for update of f skip locked;
+    exit when v_id is not null;
+  end loop;
   if v_id is null then
     return;
   end if;
   update platform.files f
-  set status = 'scanning', scan_leased_until = now() + interval '15 minutes',
+  set status = 'scanning', scan_leased_until = now() + interval '15 minutes', scan_claimed_at = now(),
       scan_attempts = least(f.scan_attempts + 1, 1000)
   where f.id = v_id;
   return query
@@ -749,10 +808,11 @@ begin
 end
 $$;
 comment on function private.claim_file_scan() is
-  'SECURITY-RELEVANT (T-M2-18). Worker: leases the next uploaded file for the type check and malware scan. app_worker system claims only.';
+  'SECURITY-RELEVANT (T-M2-18). Worker: leases the next uploaded file for the type check and malware scan, organizations taking turns. app_worker system claims only.';
 
 -- The scan's outcome, in the file's tenant transaction (system claims of that tenant): clean (type
--- allowed, size within the limit, hash), infected (finding), rejected (reason) or error (reason).
+-- allowed, size within the limit, hash), infected (finding), rejected (reason; the scanner's finding when
+-- it could not look inside: encrypted, unscannable) or error (reason).
 create or replace function private.finish_file_scan(
   p_file_id uuid, p_outcome text, p_detected_mime text, p_size bigint, p_sha256 text, p_engine text,
   p_signatures text, p_finding text, p_reason text)
@@ -806,8 +866,8 @@ begin
     end if;
     update platform.files f
     set status = p_outcome, status_reason = p_reason, detected_mime = p_detected_mime, size_bytes = p_size,
-        sha256 = p_sha256, scan_engine = p_engine, scan_signatures = p_signatures, scanned_at = now(),
-        scan_leased_until = null
+        sha256 = p_sha256, scan_engine = p_engine, scan_signatures = p_signatures, scan_finding = p_finding,
+        scanned_at = now(), scan_leased_until = null
     where f.id = p_file_id;
   end if;
   return true;
@@ -816,49 +876,91 @@ $$;
 comment on function private.finish_file_scan(uuid, text, text, bigint, text, text, text, text, text) is
   'SECURITY-RELEVANT (T-M2-18). Worker: records the scan outcome (clean/infected/rejected/error) in the file''s tenant transaction. app_worker system claims of that tenant only.';
 
--- The scan could not finish. scanner: the scanner or Storage is unavailable — fail closed: the file stays
--- `scanning` and is tried again (15 s, 30 s, … at most every 15 minutes), however long it takes.
--- processing: an unexpected failure with this file — after 5 attempts it becomes `error`.
+-- The scan could not finish (fail closed: the file stays `scanning`, never clean, and is tried again
+-- after 15 s, 30 s, … at most every 15 minutes):
+--   scanner     the scanner or Storage is unavailable — not the file's fault, so not counted against it;
+--               but a file still without a verdict 24 hours after its upload becomes `error`
+--               (scanner_unavailable; the worker logs it as an error to alert the operators).
+--   processing  this file failed although the scanner answered (e.g. clamd dropped it, or its own limits
+--               failed) — after 5 such failures it becomes `error` (processing_failed).
 create or replace function private.retry_file_scan(p_file_id uuid, p_kind text)
 returns text
 language plpgsql volatile security definer
 set search_path = ''
 as $$
 declare
-  v_attempts integer;
+  v_file record;
 begin
   perform private.file_worker_check();
   if p_kind is null or p_kind not in ('scanner', 'processing') then
     raise exception 'unknown retry kind' using errcode = 'check_violation';
   end if;
-  select f.scan_attempts into v_attempts from platform.files f where f.id = p_file_id and f.status = 'scanning' for update;
+  select f.scan_attempts, f.scan_failures, coalesce(f.uploaded_at, f.created_at) as uploaded_at into v_file
+  from platform.files f where f.id = p_file_id and f.status = 'scanning' for update;
   if not found then
     return 'gone';
   end if;
-  if p_kind = 'processing' and v_attempts >= 5 then
-    update platform.files f set status = 'error', status_reason = 'processing_failed', scan_leased_until = null
+  if p_kind = 'processing' and v_file.scan_failures + 1 >= 5 then
+    update platform.files f
+    set status = 'error', status_reason = 'processing_failed', scan_failures = least(f.scan_failures + 1, 1000),
+        scan_leased_until = null
+    where f.id = p_file_id;
+    return 'error';
+  end if;
+  if p_kind = 'scanner' and v_file.uploaded_at < now() - interval '24 hours' then
+    update platform.files f set status = 'error', status_reason = 'scanner_unavailable', scan_leased_until = null
     where f.id = p_file_id;
     return 'error';
   end if;
   update platform.files f
   set scan_leased_until = null,
-      scan_not_before = now() + least(interval '15 minutes', make_interval(secs => 15 * power(2, least(greatest(v_attempts - 1, 0), 10))))
+      scan_failures = case when p_kind = 'processing' then least(f.scan_failures + 1, 1000) else f.scan_failures end,
+      scan_not_before = now() + least(interval '15 minutes',
+                                      make_interval(secs => 15 * power(2, least(greatest(v_file.scan_attempts - 1, 0), 10))))
   where f.id = p_file_id;
   return 'waiting';
 end
 $$;
 comment on function private.retry_file_scan(uuid, text) is
-  'SECURITY-RELEVANT (T-M2-18). Worker: puts a file back after a failed scan attempt (fail closed: it stays scanning); after 5 processing failures it becomes error. app_worker system claims only.';
+  'SECURITY-RELEVANT (T-M2-18). Worker: puts a file back after a failed scan attempt (fail closed: it stays scanning); error after 5 failures of the file itself, or when still without a verdict 24 hours after its upload. app_worker system claims only.';
 
--- Housekeeping (ADR 0006 §7): expired download grants are removed; then up to p_limit files that need
--- Storage work are leased (10 minutes), each with its action:
+-- Housekeeping (ADR 0006 §7). What is due for a file, if anything (one rule, used when leasing and again
+-- under the row lock just before the Storage work):
 --   quarantine     infected, object still in its upload bucket → move it to `quarantine`
 --   remove_object  rejected, object not removed yet → delete the object, keep the record (30 days)
---   purge          retention reached (never under legal hold) → delete the object and the record:
---                  unconfirmed uploads after 24 hours; import files 7 days after use, 24 hours if never
---                  used, at once when deleted; exports after 24 hours; owner-lifetime files 30 days after
---                  deletion; infected (quarantine) 30 days after the scan; rejected/failed records after
---                  30 days. Record-retention files (≥ 10 years, DR-5) are never purged automatically.
+--   purge          retention reached → delete the object and the record: unconfirmed uploads after 24
+--                  hours; import files 7 days after use, 24 hours if never used, at once when deleted;
+--                  exports after 24 hours; owner-lifetime files 30 days after deletion; infected
+--                  (quarantine) 30 days after the scan; rejected/failed records after 30 days.
+--                  Record-retention files (≥ 10 years, DR-5) are never purged automatically.
+-- Nothing while a worker is scanning the file (its lease), and nothing that destroys a file on legal hold
+-- (removal and purge; the quarantine move keeps the object).
+create or replace function private.file_housekeeping_action(f platform.files)
+returns text
+language sql stable
+set search_path = ''
+as $$
+  select case
+    when f.purged_at is not null or (f.status = 'scanning' and f.scan_leased_until > now()) then null
+    when f.status = 'infected' and f.bucket <> 'quarantine' and f.object_removed_at is null then 'quarantine'
+    when f.legal_hold then null
+    when (f.status = 'infected' and f.scanned_at < now() - interval '30 days')
+         or (f.status in ('rejected', 'error') and f.created_at < now() - interval '30 days')
+         or (f.status = 'pending_upload' and f.created_at < now() - interval '24 hours')
+         or (f.status not in ('infected', 'rejected', 'error', 'pending_upload') and (
+               (f.retention_class = 'import' and (f.status = 'deleted'
+                  or (f.used_at is not null and f.used_at < now() - interval '7 days')
+                  or (f.used_at is null and f.created_at < now() - interval '24 hours')))
+               or (f.retention_class = 'export' and (f.status = 'deleted' or f.created_at < now() - interval '24 hours'))
+               or (f.retention_class = 'owner_lifetime' and f.status = 'deleted'
+                   and f.deleted_at < now() - interval '30 days'))) then 'purge'
+    when f.status = 'rejected' and f.object_removed_at is null then 'remove_object'
+  end
+$$;
+revoke all on function private.file_housekeeping_action(platform.files) from public;
+
+-- Expired download grants are removed; then up to p_limit files that need Storage work are leased (10
+-- minutes), each with its action (private.file_housekeeping_action).
 create or replace function private.claim_file_housekeeping(p_limit integer)
 returns table (id uuid, tenant_id uuid, bucket text, object_key text, action text)
 language plpgsql volatile security definer
@@ -869,25 +971,9 @@ begin
   delete from platform.file_download_grants g where g.expires_at < now() - interval '1 hour';
   return query
   with due as (
-    select f.id,
-           case
-             when f.status = 'infected' and f.bucket <> 'quarantine' and f.object_removed_at is null then 'quarantine'
-             when not f.legal_hold and (
-                    (f.status = 'infected' and f.scanned_at < now() - interval '30 days')
-                    or (f.status in ('rejected', 'error') and f.created_at < now() - interval '30 days')
-                    or (f.status = 'pending_upload' and f.created_at < now() - interval '24 hours')
-                    or (f.status not in ('infected', 'rejected', 'error', 'pending_upload') and (
-                          (f.retention_class = 'import' and (f.status = 'deleted'
-                             or (f.used_at is not null and f.used_at < now() - interval '7 days')
-                             or (f.used_at is null and f.created_at < now() - interval '24 hours')))
-                          or (f.retention_class = 'export' and (f.status = 'deleted' or f.created_at < now() - interval '24 hours'))
-                          or (f.retention_class = 'owner_lifetime' and f.status = 'deleted'
-                              and f.deleted_at < now() - interval '30 days')))) then 'purge'
-             when f.status = 'rejected' and f.object_removed_at is null then 'remove_object'
-           end as action
+    select f.id, private.file_housekeeping_action(f) as action
     from platform.files f
     where f.purged_at is null and (f.housekeeping_leased_until is null or f.housekeeping_leased_until <= now())
-      and f.status <> 'scanning'
   ),
   picked as (
     select f.id, d.action from platform.files f join due d on d.id = f.id
@@ -908,6 +994,32 @@ $$;
 comment on function private.claim_file_housekeeping(integer) is
   'SECURITY-RELEVANT (ADR 0006 §7, T-M2-18). Worker: removes expired download grants and leases files due for quarantine, object removal or purge (legal hold respected). app_worker system claims only.';
 
+-- Just before the Storage work of a leased action, in the same transaction as that work and its
+-- finish_file_housekeeping: locks the file's row and answers whether the action is STILL due — a legal hold
+-- set, a use recorded or a scan lease taken since the lease was handed out stops it. Whoever changes the
+-- file meanwhile waits for this transaction, so no hold can slip in between the check and the removal.
+create or replace function private.lock_file_housekeeping(p_file_id uuid, p_action text)
+returns boolean
+language plpgsql volatile security definer
+set search_path = ''
+as $$
+declare
+  v_file platform.files%rowtype;
+begin
+  perform private.file_worker_check();
+  if p_action is null or p_action not in ('quarantine', 'remove_object', 'purge') then
+    raise exception 'unknown housekeeping action' using errcode = 'check_violation';
+  end if;
+  select f.* into v_file from platform.files f where f.id = p_file_id for update;
+  if not found then
+    return false;
+  end if;
+  return private.file_housekeeping_action(v_file) is not distinct from p_action;
+end
+$$;
+comment on function private.lock_file_housekeeping(uuid, text) is
+  'SECURITY-RELEVANT (ADR 0006 §7, T-M2-18). Worker: locks a file and re-checks, just before its Storage work, that the housekeeping action is still due (legal hold, use, scan lease). app_worker system claims only.';
+
 -- After the Storage work of a housekeeping action: record it. A purge deletes the record; when a business
 -- row still references the file (foreign key), the record stays as a tombstone without its name.
 create or replace function private.finish_file_housekeeping(p_file_id uuid, p_action text)
@@ -923,7 +1035,7 @@ begin
     return found;
   elsif p_action = 'remove_object' then
     update platform.files f set object_removed_at = now(), housekeeping_leased_until = null
-    where f.id = p_file_id and f.status = 'rejected' and f.object_removed_at is null;
+    where f.id = p_file_id and f.status = 'rejected' and f.object_removed_at is null and not f.legal_hold;
     return found;
   elsif p_action = 'purge' then
     if exists (select 1 from platform.files f where f.id = p_file_id and f.legal_hold) then
@@ -935,8 +1047,9 @@ begin
     exception when foreign_key_violation then
       update platform.files f
       set purged_at = now(), object_removed_at = coalesce(f.object_removed_at, now()), original_name = 'deleted',
-          housekeeping_leased_until = null,
-          status = case when f.status in ('pending_upload', 'uploaded', 'clean', 'rejected', 'error') then 'deleted' else f.status end,
+          housekeeping_leased_until = null, scan_leased_until = null,
+          status = case when f.status in ('pending_upload', 'uploaded', 'scanning', 'clean', 'rejected', 'error')
+                        then 'deleted' else f.status end,
           deleted_at = coalesce(f.deleted_at, now())
       where f.id = p_file_id;
       return found;
@@ -947,6 +1060,39 @@ end
 $$;
 comment on function private.finish_file_housekeeping(uuid, text) is
   'SECURITY-RELEVANT (T-M2-18). Worker: records a quarantine move, an object removal or a purge (record deleted, or kept as a tombstone while referenced). app_worker system claims only.';
+
+-- Orphan objects (ADR 0006 §7): objects in our buckets that no live file record owns — a generated file
+-- whose job rolled back after writing it, or an object a still-valid signed upload URL created again after
+-- the file was quarantined, its object removed, or purged. Only objects older than the longest signed
+-- upload URL lifetime (hosted Supabase: 2 hours; self-hosted: 15 minutes) plus a margin: 3 hours — so no
+-- upload or generated-file write in flight is touched, and an object created again with a URL is removed
+-- once that URL has expired. Owner: the file whose id is the key's last segment, with that key, neither
+-- purged nor its object removed, in that bucket — or in quarantine while infected (the move and its
+-- record are not atomic). Keys of another shape are not ours to remove (operators').
+create or replace function private.claim_orphan_objects(p_limit integer)
+returns table (bucket text, object_key text)
+language plpgsql stable security definer
+set search_path = ''
+as $$
+begin
+  perform private.file_worker_check();
+  return query
+    select o.bucket_id, o.name
+    from private.storage_object_facts o
+    where o.bucket_id in ('materials', 'images', 'evidence', 'imports', 'generated', 'quarantine')
+      and o.created_at < now() - interval '3 hours'
+      and o.name ~ '^[0-9a-f-]{36}(/[a-z0-9_-]{1,64}){2}/[0-9a-f-]{36}/[0-9a-f-]{36}$'
+      and not exists (
+        select 1 from platform.files f
+        where f.id = private.try_uuid(split_part(o.name, '/', 5)) and f.object_key = o.name
+          and f.purged_at is null and f.object_removed_at is null
+          and (f.bucket = o.bucket_id or (o.bucket_id = 'quarantine' and f.status = 'infected')))
+    order by o.created_at, o.bucket_id, o.name
+    limit greatest(least(coalesce(p_limit, 100), 500), 1);
+end
+$$;
+comment on function private.claim_orphan_objects(integer) is
+  'SECURITY-RELEVANT (ADR 0006 §7, T-M2-18). Worker: objects in our buckets older than 3 hours that no live file record owns (removed by the housekeeping task). app_worker system claims only.';
 
 -- Generated files (e.g. an import's error report, T-M2-12): a job of the tenant reserves the key, uploads
 -- the bytes it produced with the worker's Storage access, then marks the file clean with its size and hash
@@ -1034,7 +1180,7 @@ alter function private.file_for_actor(uuid) owner to file_guard;
 alter function private.file_worker_check() owner to file_guard;
 alter function private.create_file_upload(text, text, text, uuid, text, text, bigint) owner to file_guard;
 alter function private.confirm_file_upload(uuid) owner to file_guard;
-alter function private.grant_file_download(uuid) owner to file_guard;
+alter function private.grant_file_download(uuid, text, text, text, uuid) owner to file_guard;
 alter function private.delete_file(uuid) owner to file_guard;
 alter function private.mark_file_used(uuid) owner to file_guard;
 alter function private.can_upload_object(text, text) owner to file_guard;
@@ -1042,8 +1188,11 @@ alter function private.can_read_object(text, text) owner to file_guard;
 alter function private.claim_file_scan() owner to file_guard;
 alter function private.finish_file_scan(uuid, text, text, bigint, text, text, text, text, text) owner to file_guard;
 alter function private.retry_file_scan(uuid, text) owner to file_guard;
+alter function private.file_housekeeping_action(platform.files) owner to file_guard;
 alter function private.claim_file_housekeeping(integer) owner to file_guard;
+alter function private.lock_file_housekeeping(uuid, text) owner to file_guard;
 alter function private.finish_file_housekeeping(uuid, text) owner to file_guard;
+alter function private.claim_orphan_objects(integer) owner to file_guard;
 alter function private.create_generated_file(text, text, text, uuid, text, text, bigint, uuid) owner to file_guard;
 alter function private.finish_generated_file(uuid, bigint, text) owner to file_guard;
 revoke create on schema private from file_guard;
@@ -1054,7 +1203,7 @@ revoke all on function private.file_for_actor(uuid) from public;
 revoke all on function private.file_worker_check() from public;
 revoke all on function private.create_file_upload(text, text, text, uuid, text, text, bigint) from public;
 revoke all on function private.confirm_file_upload(uuid) from public;
-revoke all on function private.grant_file_download(uuid) from public;
+revoke all on function private.grant_file_download(uuid, text, text, text, uuid) from public;
 revoke all on function private.delete_file(uuid) from public;
 revoke all on function private.mark_file_used(uuid) from public;
 revoke all on function private.can_upload_object(text, text) from public;
@@ -1062,8 +1211,11 @@ revoke all on function private.can_read_object(text, text) from public;
 revoke all on function private.claim_file_scan() from public;
 revoke all on function private.finish_file_scan(uuid, text, text, bigint, text, text, text, text, text) from public;
 revoke all on function private.retry_file_scan(uuid, text) from public;
+revoke all on function private.file_housekeeping_action(platform.files) from public;
 revoke all on function private.claim_file_housekeeping(integer) from public;
+revoke all on function private.lock_file_housekeeping(uuid, text) from public;
 revoke all on function private.finish_file_housekeeping(uuid, text) from public;
+revoke all on function private.claim_orphan_objects(integer) from public;
 revoke all on function private.create_generated_file(text, text, text, uuid, text, text, bigint, uuid) from public;
 revoke all on function private.finish_generated_file(uuid, bigint, text) from public;
 
@@ -1077,7 +1229,7 @@ grant execute on function private.file_worker_check() to file_guard;
 -- Storage's own); each function checks the LOGIN role and the claims itself.
 grant execute on function private.create_file_upload(text, text, text, uuid, text, text, bigint) to authenticated;
 grant execute on function private.confirm_file_upload(uuid) to authenticated;
-grant execute on function private.grant_file_download(uuid) to authenticated;
+grant execute on function private.grant_file_download(uuid, text, text, text, uuid) to authenticated;
 grant execute on function private.delete_file(uuid) to authenticated;
 grant execute on function private.mark_file_used(uuid) to authenticated;
 grant execute on function private.can_upload_object(text, text) to authenticated;
@@ -1086,6 +1238,8 @@ grant execute on function private.claim_file_scan() to authenticated;
 grant execute on function private.finish_file_scan(uuid, text, text, bigint, text, text, text, text, text) to authenticated;
 grant execute on function private.retry_file_scan(uuid, text) to authenticated;
 grant execute on function private.claim_file_housekeeping(integer) to authenticated;
+grant execute on function private.lock_file_housekeeping(uuid, text) to authenticated;
 grant execute on function private.finish_file_housekeeping(uuid, text) to authenticated;
+grant execute on function private.claim_orphan_objects(integer) to authenticated;
 grant execute on function private.create_generated_file(text, text, text, uuid, text, text, bigint, uuid) to authenticated;
 grant execute on function private.finish_generated_file(uuid, bigint, text) to authenticated;

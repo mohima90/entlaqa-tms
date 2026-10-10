@@ -114,6 +114,13 @@ describe('worker file tasks (T-M2-18) and user imports (T-M2-12)', () => {
       scanner: { host: 'clamd', port: 3310 },
       recoveryLinksFor: () => ({ issue: vi.fn() }),
     });
-    expect(tasks).toHaveLength(4);
+    // T-M2-10's session purge, T-M2-18's file tasks and T-M2-12's imports together.
+    expect(tasks.map((t) => t.name)).toEqual([
+      'platform.account_mail',
+      'platform.session_purge',
+      'platform.files.housekeeping',
+      'platform.user_imports',
+      'platform.files.scan',
+    ]);
   });
 });

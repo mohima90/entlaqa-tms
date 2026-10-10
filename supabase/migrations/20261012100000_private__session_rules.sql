@@ -360,8 +360,16 @@ begin
   end if;
   v_user := private.try_uuid(v_claims ->> 'sub');
   v_session := private.try_uuid(v_claims ->> 'session_id');
-  if not private.user_session_is_valid(v_user, v_session)
-     or not private.has_active_membership(v_user, p_tenant_id) then
+  if not private.user_session_is_valid(v_user, v_session) or p_tenant_id is null then
+    return false;
+  end if;
+  -- As in 20261011090000 (T-M2-09, review L3): the membership's advisory lock SHARED from before the
+  -- membership check until commit. A deactivation takes it EXCLUSIVE (private.end_member_sessions()): either
+  -- this switch commits first and its session_context row is then removed, or it waits and then finds the
+  -- membership no longer active.
+  perform pg_catalog.pg_advisory_xact_lock_shared(pg_catalog.hashtextextended(
+    'platform.membership:' || p_tenant_id::text || ':' || v_user::text, 0));
+  if not private.has_active_membership(v_user, p_tenant_id) then
     return false;
   end if;
   -- A session its current organization's rules ended (inactivity, maximum length) signs in again.
@@ -407,7 +415,7 @@ end
 $$;
 
 comment on function private.switch_active_tenant(uuid) is
-  'SECURITY-RELEVANT (ADR 0002 §3, T-M2-10). Sets the active tenant of the caller''s current Auth session only, unless the current or the target organization''s rules end it; applies the device limit once the session may act there.';
+  'SECURITY-RELEVANT (ADR 0002 §3, T-M2-09, T-M2-10). Sets the active tenant of the caller''s current Auth session only, unless the current or the target organization''s rules end it; holds the membership''s advisory lock shared against a concurrent deactivation; applies the device limit once the session may act there.';
 
 -- ---------------------------------------------------------------------------------------------------
 -- Activity (and the device limit of a session that became able to act later, e.g. after a code)

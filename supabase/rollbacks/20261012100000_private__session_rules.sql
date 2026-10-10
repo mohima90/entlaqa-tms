@@ -1,6 +1,7 @@
--- Rollback of 20261012100000_private__session_rules.sql: session validity and tenant switch as in
--- 20260930120100, the access decision as in 20261012090100 (no session rules, no ended sessions), without
--- the activity, the device limit, the lists and sign-out, the purge and the account audit helper.
+-- Rollback of 20261012100000_private__session_rules.sql: session validity as in 20260930120100, the tenant
+-- switch as in 20261011090000 (T-M2-09: the membership's advisory lock, shared), the access decision as in
+-- 20261012090100 (no session rules, no ended sessions), without the activity, the device limit, the lists
+-- and sign-out, the purge and the account audit helper.
 drop function private.purge_ended_sessions(integer);
 drop function private.end_member_sessions(uuid, uuid);
 drop function private.tenant_member_sessions(uuid);
@@ -141,8 +142,12 @@ begin
   end if;
   v_user := private.try_uuid(v_claims ->> 'sub');
   v_session := private.try_uuid(v_claims ->> 'session_id');
-  if not private.user_session_is_valid(v_user, v_session)
-     or not private.has_active_membership(v_user, p_tenant_id) then
+  if not private.user_session_is_valid(v_user, v_session) or p_tenant_id is null then
+    return false;
+  end if;
+  perform pg_catalog.pg_advisory_xact_lock_shared(pg_catalog.hashtextextended(
+    'platform.membership:' || p_tenant_id::text || ':' || v_user::text, 0));
+  if not private.has_active_membership(v_user, p_tenant_id) then
     return false;
   end if;
 

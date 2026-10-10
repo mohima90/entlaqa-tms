@@ -439,4 +439,319 @@ describe('defineAction (ADR 0003 §4)', () => {
     expect(audits).toHaveLength(1);
     expect(logError).not.toHaveBeenCalled();
   });
+
+  describe('auditFailure (refused attempts, T-M2-11)', () => {
+    const refusedAction = (rt: ActionRuntime<FakeTx>, grants = true) =>
+      createDefineAction(rt)({
+        permission: approve,
+        input: Input,
+        scoped: grants,
+        handler: () => Promise.resolve(err(appError('RATE_LIMITED'))),
+        // The error and the actor only — never the input (it may hold secrets: review INFO 9).
+        auditFailure: (error, actor) =>
+          error.code === 'RATE_LIMITED'
+            ? {
+                action: 'tms.enrollment.approve_failed',
+                entityType: 'enrollment',
+                data: { by: actor.userId },
+              }
+            : null,
+      });
+
+    it('writes the refused attempt in a new transaction after the rollback, then returns the refusal', async () => {
+      const { rt, log, audits } = runtime();
+      const result = await refusedAction(rt)({ enrollmentId: ENROLLMENT });
+      expect(!result.ok && result.error.code).toBe('RATE_LIMITED');
+      expect(log).toEqual(['begin', 'rollback', 'begin', 'commit']);
+      expect(audits).toEqual([
+        {
+          actor: expect.objectContaining({ userId: USER, tenantId: TENANT }),
+          record: {
+            action: 'tms.enrollment.approve_failed',
+            entityType: 'enrollment',
+            data: { by: USER },
+          },
+        },
+      ]);
+    });
+
+    it('is not called for authorization denials or when it returns no record', async () => {
+      const denied = runtime({ loadGrants: () => Promise.resolve([]) });
+      const r1 = await refusedAction(denied.rt)({ enrollmentId: ENROLLMENT });
+      expect(!r1.ok && r1.error.code).toBe('FORBIDDEN');
+      expect(denied.log).toEqual(['begin', 'rollback']);
+      expect(denied.audits).toHaveLength(0);
+
+      const other = runtime();
+      const action = createDefineAction(other.rt)({
+        permission: approve,
+        input: Input,
+        scoped: true,
+        handler: () => Promise.resolve(err(appError('CONFLICT_VERSION'))),
+        auditFailure: () => null,
+      });
+      await action({ enrollmentId: ENROLLMENT });
+      expect(other.log).toEqual(['begin', 'rollback']);
+    });
+
+    it('never changes the answer when the failure audit cannot be written (logged)', async () => {
+      const logError = vi.fn();
+      const broken = runtime({
+        logError,
+        writeAudit: () => Promise.reject(new Error('audit table locked')),
+      });
+      const result = await refusedAction(broken.rt)({ enrollmentId: ENROLLMENT });
+      expect(!result.ok && result.error.code).toBe('RATE_LIMITED');
+      expect(logError).toHaveBeenCalledWith(expect.any(Error), {
+        permission: 'tms.enrollment.approve',
+        correlationId: expect.stringMatching(/^[0-9a-f-]{36}$/),
+      });
+    });
+  });
+
+  describe('beforeTransaction (work outside the transaction, T-M2-11 review)', () => {
+    const limitedAction = (
+      rt: ActionRuntime<FakeTx>,
+      before: () => Promise<Result<void, AppError>>,
+      order: string[],
+    ) =>
+      createDefineAction(rt)({
+        permission: approve,
+        input: Input,
+        scoped: true,
+        beforeTransaction: async ({ actor, input }) => {
+          order.push(`before ${actor.userId} ${input.enrollmentId}`);
+          return before();
+        },
+        handler: () => {
+          order.push('handler');
+          return Promise.resolve(ok('done'));
+        },
+      });
+
+    it('runs before the transaction opens; a refusal is the answer and no transaction opens', async () => {
+      const order: string[] = [];
+      const allowed = runtime();
+      const answer = await limitedAction(
+        allowed.rt,
+        () => Promise.resolve(ok(undefined)),
+        order,
+      )({
+        enrollmentId: ENROLLMENT,
+      });
+      expect(answer).toEqual(ok('done'));
+      expect(order).toEqual([`before ${USER} ${ENROLLMENT}`, 'handler']);
+      // The session check's own short transaction, then the action's (L3).
+      expect(allowed.log).toEqual(['begin', 'commit', 'begin', 'commit']);
+
+      const refused = runtime();
+      const r = await limitedAction(
+        refused.rt,
+        () => Promise.resolve(err(appError('RATE_LIMITED'))),
+        [],
+      )({ enrollmentId: ENROLLMENT });
+      expect(!r.ok && r.error.code).toBe('RATE_LIMITED');
+      // Only the session check ran; the action's transaction never opened.
+      expect(refused.log).toEqual(['begin', 'commit']);
+    });
+
+    it('a throw (e.g. the limiter is down) is an internal error with a correlation id; nothing runs', async () => {
+      const logError = vi.fn();
+      const failing = runtime({ logError });
+      const r = await limitedAction(
+        failing.rt,
+        () => Promise.reject(new Error('limiter unavailable')),
+        [],
+      )({ enrollmentId: ENROLLMENT });
+      expect(!r.ok && r.error.code).toBe('INTERNAL_ERROR');
+      expect(failing.log).toEqual(['begin', 'commit']);
+      expect(logError).toHaveBeenCalled();
+    });
+
+    it('checks the session first, in its own transaction that ends before beforeTransaction runs (integration review L3)', async () => {
+      // An inactive session (ended, its membership gone, or refused by its organization's MFA policy):
+      // UNAUTHENTICATED, and the per-actor work (e.g. counting a password check) never happens.
+      const order: string[] = [];
+      const inactive = runtime({
+        loadSessionFacts: () => Promise.resolve({ active: false, aal2: false }),
+      });
+      const before = vi.fn(() => Promise.resolve(ok(undefined)));
+      const r = await limitedAction(inactive.rt, before, order)({ enrollmentId: ENROLLMENT });
+      expect(!r.ok && r.error.code).toBe('UNAUTHENTICATED');
+      expect(before).not.toHaveBeenCalled();
+      expect(order).toEqual([]);
+      expect(inactive.log).toEqual(['begin', 'commit']);
+
+      // An active one: the check's transaction is over before beforeTransaction starts — never nested.
+      const steps: string[] = [];
+      let open = 0;
+      const sequential = runtime({
+        withUserTx: async (_c, fn) => {
+          open += 1;
+          steps.push(`begin (${String(open)} open)`);
+          try {
+            return await fn({ log: steps });
+          } finally {
+            open -= 1;
+            steps.push('end');
+          }
+        },
+        loadSessionFacts: () => {
+          steps.push('session facts');
+          return Promise.resolve({ active: true, aal2: false });
+        },
+      });
+      const answer = await createDefineAction(sequential.rt)({
+        permission: approve,
+        input: Input,
+        scoped: true,
+        beforeTransaction: () => {
+          steps.push(`before (${String(open)} open)`);
+          return Promise.resolve(ok(undefined));
+        },
+        handler: () => Promise.resolve(ok('done')),
+      })({ enrollmentId: ENROLLMENT });
+      expect(answer).toEqual(ok('done'));
+      expect(steps).toEqual([
+        'begin (1 open)',
+        'session facts',
+        'end',
+        'before (0 open)',
+        'begin (1 open)',
+        'session facts',
+        'end',
+      ]);
+    });
+
+    it('runs beforeTransaction once, also when the action’s transaction is retried; externalEffects still turns the retry off', async () => {
+      const calls: { retryOnConflict: boolean | undefined }[] = [];
+      const retrying = runtime({
+        withUserTx: async (_c, fn, options) => {
+          calls.push({ retryOnConflict: options?.retryOnConflict });
+          // A retried transaction (deadlock victim): the runtime runs `fn` again.
+          if (options?.retryOnConflict === true) {
+            try {
+              await fn({ log: [] });
+            } catch {
+              // the first run's outcome is discarded, as after a rollback
+            }
+            options.onRetry?.('40P01');
+          }
+          return fn({ log: [] });
+        },
+      });
+      const before = vi.fn(() => Promise.resolve(ok(undefined)));
+      const handler = vi.fn(() => Promise.resolve(ok('done')));
+      const define = createDefineAction(retrying.rt);
+      const plain = define({
+        permission: approve,
+        input: Input,
+        scoped: true,
+        beforeTransaction: before,
+        handler,
+      });
+      expect(await plain({ enrollmentId: ENROLLMENT })).toEqual(ok('done'));
+      expect(before).toHaveBeenCalledTimes(1);
+      expect(handler).toHaveBeenCalledTimes(2);
+      // The session check (no options) and the action's transaction (retry on conflict).
+      expect(calls).toEqual([{ retryOnConflict: undefined }, { retryOnConflict: true }]);
+
+      calls.length = 0;
+      before.mockClear();
+      handler.mockClear();
+      const external = define({
+        permission: approve,
+        input: Input,
+        scoped: true,
+        externalEffects: true,
+        beforeTransaction: before,
+        handler,
+      });
+      expect(await external({ enrollmentId: ENROLLMENT })).toEqual(ok('done'));
+      expect(before).toHaveBeenCalledTimes(1);
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(calls).toEqual([{ retryOnConflict: undefined }, { retryOnConflict: false }]);
+    });
+
+    it('an action without beforeTransaction opens one transaction, as before', async () => {
+      const { rt, log } = runtime();
+      const r = await makeAction(rt)({ enrollmentId: ENROLLMENT });
+      expect(r.ok).toBe(true);
+      expect(log).toEqual(['begin', 'commit']);
+    });
+
+    it('regression: more concurrent actions than pool connections all complete (none held while waiting for another)', async () => {
+      // A pool of 2 connections shared by the action's transaction and the limiter's own transaction (the
+      // shape of the app_server pool). Holding a connection in withUserTx while the handler waited for a
+      // second one deadlocked with 2+ concurrent requests; beforeTransaction runs with none held.
+      const POOL = 2;
+      let free = POOL;
+      const waiting: (() => void)[] = [];
+      const acquire = async () => {
+        if (free > 0) {
+          free -= 1;
+          return;
+        }
+        await new Promise<void>((resolve) => {
+          waiting.push(resolve);
+        });
+      };
+      const release = () => {
+        const next = waiting.shift();
+        if (next) next();
+        else free += 1;
+      };
+      const pooled = async <T>(fn: () => Promise<T>): Promise<T> => {
+        await acquire();
+        try {
+          // Hold the connection across a turn of the event loop, like a real round trip.
+          await new Promise((resolve) => {
+            setTimeout(resolve, 5);
+          });
+          return await fn();
+        } finally {
+          release();
+        }
+      };
+      const { rt } = runtime({ withUserTx: (_c, fn) => pooled(() => fn({ log: [] })) });
+      const action = createDefineAction(rt)({
+        permission: approve,
+        input: Input,
+        scoped: true,
+        // The limiter's own short transaction on the same pool.
+        beforeTransaction: () => pooled(() => Promise.resolve(ok(undefined))),
+        handler: () => Promise.resolve(ok('done')),
+      });
+      const N = 8;
+      const all = Promise.all(
+        Array.from({ length: N }, () => action({ enrollmentId: ENROLLMENT })),
+      );
+      const timeout = new Promise<'deadlock'>((resolve) => {
+        setTimeout(() => {
+          resolve('deadlock');
+        }, 2_000);
+      });
+      const results = await Promise.race([all, timeout]);
+      expect(results).toEqual(Array.from({ length: N }, () => ok('done')));
+      expect(free).toBe(POOL);
+
+      // Control: the old shape — the limiter's transaction inside the handler — never completes.
+      free = POOL;
+      const nested = createDefineAction(rt)({
+        permission: approve,
+        input: Input,
+        scoped: true,
+        handler: () => pooled(() => Promise.resolve(ok('done'))),
+      });
+      const stuck = Promise.all(
+        Array.from({ length: N }, () => nested({ enrollmentId: ENROLLMENT })),
+      );
+      const control = new Promise<'deadlock'>((resolve) => {
+        setTimeout(() => {
+          resolve('deadlock');
+        }, 500);
+      });
+      expect(await Promise.race([stuck, control])).toBe('deadlock');
+    });
+  });
 });

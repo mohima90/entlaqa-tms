@@ -51,6 +51,7 @@ export { type AuthorizedQuery, type QueryDefinition, createDefineQuery } from '.
 export { createLoadMemberGrants } from './member-grants';
 export * from './iam/users';
 export * from './iam/my-profile';
+export * from './iam/sign-in-lock';
 export * from './iam/edit-user';
 export * from './iam/edit-roles';
 export * from './iam/roles-page';

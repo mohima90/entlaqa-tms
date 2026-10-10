@@ -6,6 +6,7 @@ import type {
   MyMfaApp,
   SessionAccess,
 } from '@jadarat/platform-db';
+import { type AppError, type Result, appError, err } from '@jadarat/platform-core';
 import { describe, expect, it, vi } from 'vitest';
 import { AuthServiceError } from './auth-flow';
 import {
@@ -56,6 +57,8 @@ interface Options {
   listError?: { status?: number; code?: string };
   enrollError?: { status?: number; code?: string };
   verifyError?: { status?: number; code?: string };
+  /** The code limiter (T-M2-11) refuses the check: Auth and the database are not asked. */
+  codeLimited?: boolean;
   /** The session's state before the code, and after it. */
   access?: State;
   accessAfter?: State;
@@ -90,6 +93,7 @@ const waitingElsewhere: MyMfaApp = { ...waitingHere, factorId: 'f-elsewhere', he
 
 function setup(options: Options = {}) {
   const calls: string[] = [];
+  const codeChecks: { userId: string; wrongCode: boolean | null }[] = [];
   const audited: string[] = [];
   const cookie = options.cookie === undefined ? 'aal1' : options.cookie;
   const auth = {
@@ -178,8 +182,20 @@ function setup(options: Options = {}) {
       return Promise.resolve(0);
     }),
     logWarning: vi.fn(),
+    // The code limiter (T-M2-11 withCodeAttemptLimit, tested in auth-limits.test.ts): records whose code
+    // was checked and whether a refusal counted as a wrong code.
+    limitCodeCheck: (async (
+      userId: string,
+      verify: () => Promise<Result<unknown, AppError>>,
+      isWrongCode: (error: AppError) => boolean,
+    ) => {
+      if (options.codeLimited) return err(appError('RATE_LIMITED'));
+      const result = await verify();
+      codeChecks.push({ userId, wrongCode: result.ok ? null : isWrongCode(result.error) });
+      return result;
+    }) as MfaDeps['limitCodeCheck'],
   };
-  return { deps, auth, calls, audited };
+  return { deps, auth, calls, audited, codeChecks };
 }
 
 describe('getMfaOverview', () => {
@@ -324,6 +340,34 @@ describe('verifyTotpCode', () => {
     expect(audited).toEqual(['platform.auth.mfa_verified', 'platform.auth.signed_in']);
   });
 
+  it('a remembered browser is trusted only once a sign-in code passed — never after a set-up or a wrong code (integration review L4)', async () => {
+    const remembered: unknown[] = [];
+    const rememberBrowser = vi.fn((session: unknown) => {
+      remembered.push(session);
+      return Promise.resolve();
+    });
+    // A sign-in code: asked with the UPGRADED session's verified claims (aal2), before the sign-in completes.
+    const signIn = setup({ apps: [confirmedApp], access: 'mfa_challenge', accessAfter: 'ok' });
+    await verifyTotpCode({ ...signIn.deps, rememberBrowser }, { code: '123456' });
+    expect(rememberBrowser).toHaveBeenCalledTimes(1);
+    expect(remembered[0]).toMatchObject({ sub: USER, aal: 'aal2' });
+    // A set-up's first code, a wrong code, a limited check: nothing.
+    const enrol = setup({
+      factors: [{ ...unfinished, id: 'f-new' }],
+      access: 'mfa_enrol',
+      accessAfter: 'mfa_enrol',
+    });
+    await verifyTotpCode({ ...enrol.deps, rememberBrowser }, { code: '123456', factorId: 'f-new' });
+    const wrong = setup({
+      apps: [confirmedApp],
+      verifyError: { status: 422, code: 'mfa_verification_failed' },
+    });
+    await verifyTotpCode({ ...wrong.deps, rememberBrowser }, { code: '000000' });
+    const limited = setup({ apps: [confirmedApp], codeLimited: true });
+    await verifyTotpCode({ ...limited.deps, rememberBrowser }, { code: '123456' });
+    expect(rememberBrowser).toHaveBeenCalledTimes(1);
+  });
+
   it('a step-up code (session already allowed) is not a new sign-in', async () => {
     const { deps, audited, calls } = setup({ apps: [confirmedApp], access: 'ok' });
     await verifyTotpCode(deps, { code: '123456' });
@@ -373,6 +417,30 @@ describe('verifyTotpCode', () => {
       });
       expect(JSON.stringify(vi.mocked(deps.logWarning).mock.calls)).not.toContain('987654');
     }
+  });
+
+  it("every code check goes through the account's code limit (T-M2-11); a limited one never asks Auth", async () => {
+    const right = setup({ apps: [confirmedApp], access: 'mfa_challenge', accessAfter: 'ok' });
+    expect((await verifyTotpCode(right.deps, { code: '123456' })).ok).toBe(true);
+    expect(right.codeChecks).toEqual([{ userId: USER, wrongCode: null }]);
+    const first = setup({ factors: [{ ...unfinished, id: 'f-new' }] });
+    await verifyTotpCode(first.deps, { code: '123456', factorId: 'f-new' });
+    expect(first.codeChecks).toEqual([{ userId: USER, wrongCode: null }]);
+    const wrong = setup({
+      apps: [confirmedApp],
+      verifyError: { status: 422, code: 'mfa_verification_failed' },
+    });
+    await verifyTotpCode(wrong.deps, { code: '987654' });
+    expect(wrong.codeChecks).toEqual([{ userId: USER, wrongCode: true }]);
+    // Auth's own limit is no wrong code (it stays counted, but is not reported as one).
+    const authLimited = setup({ apps: [confirmedApp], verifyError: { status: 429 } });
+    await verifyTotpCode(authLimited.deps, { code: '123456' });
+    expect(authLimited.codeChecks).toEqual([{ userId: USER, wrongCode: false }]);
+    const limited = setup({ apps: [confirmedApp], access: 'mfa_challenge', codeLimited: true });
+    const result = await verifyTotpCode(limited.deps, { code: '123456' });
+    expect(!result.ok && result.error.code).toBe('RATE_LIMITED');
+    expect(limited.calls).toEqual([]);
+    expect(limited.auth.mfa.challengeAndVerify).not.toHaveBeenCalled();
   });
 
   it('needs an app, or a set-up that still exists', async () => {
@@ -456,6 +524,20 @@ describe('confirmMfaSetup (the e-mailed code, re-review N1)', () => {
       code: '40718263',
     });
     expect(!none.ok && none.error.code).toBe('MFA_NOT_SET_UP');
+  });
+
+  it('the e-mailed code goes through the code limit too (T-M2-11); a limited one never reaches the database', async () => {
+    const wrong = setup({ cookie: 'aal2', apps: [waitingHere], confirmOutcome: 'invalid' });
+    await confirmMfaSetup(wrong.deps, { code: '11112222' });
+    expect(wrong.codeChecks).toEqual([{ userId: USER, wrongCode: true }]);
+    const locked = setup({ cookie: 'aal2', apps: [waitingHere], confirmOutcome: 'locked' });
+    await confirmMfaSetup(locked.deps, { code: '11112222' });
+    expect(locked.codeChecks).toEqual([{ userId: USER, wrongCode: false }]);
+    const limited = setup({ cookie: 'aal2', apps: [waitingHere], codeLimited: true });
+    const result = await confirmMfaSetup(limited.deps, { code: '40718263' });
+    expect(!result.ok && result.error.code).toBe('RATE_LIMITED');
+    expect(limited.calls).toEqual([]);
+    expect(limited.deps.confirmMfaSetup).not.toHaveBeenCalled();
   });
 
   it("maps the database's refusals and logs them without the code", async () => {

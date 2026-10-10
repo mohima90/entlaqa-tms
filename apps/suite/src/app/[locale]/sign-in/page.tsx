@@ -73,6 +73,8 @@ export default async function SignInPage({
               email: t('emailLabel'),
               password: t('passwordLabel'),
               required: common('required'),
+              rememberBrowser: t('rememberBrowser'),
+              rememberBrowserHint: t('rememberBrowserHint'),
               submit: t('submit'),
               submitting: t('submitting'),
             }}

@@ -16,6 +16,9 @@ const db = vi.hoisted(() => ({
   loadPersonResourceFacts: vi.fn(),
   mayManagePerson: vi.fn(),
   getMemberLifecycleTarget: vi.fn(),
+  memberSignInLock: vi.fn(),
+  // The organization's security policy (T-M2-10): none — the sign-in lock is measured against 5.
+  getSecurityPolicy: vi.fn(() => Promise.resolve(null)),
 }));
 vi.mock('@jadarat/platform-db', () => db);
 
@@ -76,6 +79,7 @@ beforeEach(() => {
   db.listOrgUnitOptions.mockResolvedValue(orgUnits);
   db.getUserProfile.mockResolvedValue({ personId: REPORT });
   db.mayManagePerson.mockResolvedValue(true);
+  db.memberSignInLock.mockResolvedValue({ locked: false, retryAfterSeconds: 0 });
 });
 
 describe('users list query', () => {
@@ -217,9 +221,11 @@ describe('user profile query', () => {
         canEdit: false,
         canEditRoles: false,
         lifecycle: { canDeactivate: false, reactivate: null, privileged: false },
+        signInLock: null,
       }),
     );
     expect(db.getMemberLifecycleTarget).not.toHaveBeenCalled();
+    expect(db.memberSignInLock).not.toHaveBeenCalled();
     expect(db.getUserProfile).toHaveBeenCalledWith(TX, REPORT, {
       includeRoles: true,
       includeActivity: false,
@@ -370,6 +376,53 @@ describe('user profile query', () => {
         expect(db.getMemberLifecycleTarget).not.toHaveBeenCalled();
       }
     });
+  });
+
+  it('sign-in lock (T-M2-11): only for the Organization Admin, only for an active member with an account', async () => {
+    db.getUserProfile.mockResolvedValue({
+      personId: REPORT,
+      roles: [],
+      membershipStatus: 'active',
+    });
+    db.memberSignInLock.mockResolvedValue({ locked: true, retryAfterSeconds: 600 });
+    const budget = vi.fn(() => Promise.resolve(4));
+    const asAdmin = await createDefineQuery(runtime(['tenant_admin']))(
+      userProfileQueryDefinition(budget),
+    )({ personId: REPORT });
+    expect(asAdmin.ok && asAdmin.value.signInLock).toEqual({
+      locked: true,
+      retryAfterSeconds: 600,
+    });
+    // Measured against the account budget sign-in applies, read in the admin's own transaction for
+    // their organization (re-review N7).
+    expect(budget).toHaveBeenCalledWith(TX, TENANT);
+    expect(db.memberSignInLock).toHaveBeenCalledWith(TX, REPORT, 4);
+    // The default budget: the platform's (5 failures).
+    await createDefineQuery(runtime(['tenant_admin']))(userProfileQueryDefinition())({
+      personId: REPORT,
+    });
+    expect(db.memberSignInLock).toHaveBeenLastCalledWith(TX, REPORT, 5);
+
+    db.memberSignInLock.mockClear();
+    // An HR Manager manages users but may not unlock sign-in; a person without an account has no lock;
+    // nor has a revoked, suspended or invited member (security review M1).
+    for (const [role, profile] of [
+      ['hr_manager', { personId: REPORT, roles: [], membershipStatus: 'active' }],
+      ['tenant_admin', { personId: REPORT, roles: [], membershipStatus: null }],
+      ['tenant_admin', { personId: REPORT, roles: [], membershipStatus: 'revoked' }],
+      ['tenant_admin', { personId: REPORT, roles: [], membershipStatus: 'suspended' }],
+      ['tenant_admin', { personId: REPORT, roles: [], membershipStatus: 'invited' }],
+    ] as const) {
+      db.getUserProfile.mockResolvedValue(profile);
+      const view = await createDefineQuery(runtime([role]))(userProfileQueryDefinition())({
+        personId: REPORT,
+      });
+      expect(
+        view.ok && view.value.signInLock,
+        `${role} ${String(profile.membershipStatus)}`,
+      ).toBeNull();
+    }
+    expect(db.memberSignInLock).not.toHaveBeenCalled();
   });
 
   it('a person that disappeared after authorization → NOT_FOUND', async () => {

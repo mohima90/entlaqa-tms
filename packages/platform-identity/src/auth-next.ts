@@ -5,10 +5,20 @@
  */
 import 'server-only';
 import {
+  type AppError,
+  type Result,
+  actorFromClaims,
+  appError,
+  err,
+  hasTenant,
+  ok,
+} from '@jadarat/platform-core';
+import {
   acceptInvitationAsCaller,
   applyDeviceLimit,
   confirmMfaSetup as confirmMfaSetupInDatabase,
   dismissMfaPrompt,
+  getLockoutPolicy,
   getSessionAccess,
   hashInvitationToken,
   insertAuditEvent,
@@ -18,12 +28,17 @@ import {
   listSessionTenants,
   passwordMinLengthForCaller,
   queueOwnPasswordChangedMail,
+  rateLimitStore,
   rejectMfaFactor,
   removeMfaApp as removeMfaAppInDatabase,
+  requestAccountLockedMail,
+  requestMfaCodeLockedMail,
   requestMfaFactorMail,
   requestPasswordChangedMail,
   requestPasswordResetMail,
   type SessionAccess,
+  trustDeviceAfterCode,
+  signInAccountInTenant,
   switchActiveTenant,
   withUserTx,
 } from '@jadarat/platform-db';
@@ -32,13 +47,13 @@ import {
   createSupabaseStatelessClient,
   createSupabaseVerifierClient,
 } from '@jadarat/platform-db/supabase-server';
-import { type AppError, type Result, actorFromClaims, hasTenant, ok } from '@jadarat/platform-core';
 import { log } from '@jadarat/platform-observability';
 import { cookies, headers } from 'next/headers';
 import { after } from 'next/server';
 import {
   type AuthClientLike,
   type AuthFlowDeps,
+  type PasswordCredentials,
   getSessionOrganizations,
   selectOrganization,
   signInWithPassword,
@@ -46,9 +61,37 @@ import {
   signOutEndedSession,
 } from './auth-flow';
 import {
+  type CodeCheckFlow,
+  type CodeCheckLimit,
+  DEVICE_TOKEN_PATTERN,
+  type LimiterDeps,
+  NO_CODE_CHECKS,
+  NO_SIGN_IN_GUARD,
+  type RequestClient,
+  type SecurityLog,
+  type SignInGuard,
+  type TrustedDeviceCookie,
+  authClientHeaders,
+  createCodeAttemptLimiter,
+  createInvitationLimiter,
+  createPasswordCheckLimiter,
+  createPasswordResetLimiter,
+  createSignInGuard,
+  forgetOtherTrustedBrowsers,
+  limitsFor,
+  lockoutHostTenant,
+  organizationAccountLockout,
+  rememberBrowserAfterCode,
+  resetAccountSignIn,
+  securityLogLine,
+  withCodeAttemptLimit,
+} from './auth-limits';
+import {
   type MfaClientLike,
   type MfaDeps,
   type MfaOverview,
+  MFA_CONFIRM_ACTION,
+  MFA_VERIFY_ACTION,
   confirmMfaSetup,
   getMfaOverview,
   openMfaRemoveLink,
@@ -81,7 +124,129 @@ import {
   createPasswordVerifier,
 } from './password';
 
-async function requestDeps(): Promise<AuthFlowDeps> {
+const sleep = (ms: number) =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
+
+/** Security events (TM-0003 T-IAM-25) as structured log lines: codes and keyed references only. */
+const securityLog: SecurityLog = (event) => {
+  const line = securityLogLine(event);
+  if (line.level === 'error') log.error(line.message, line.fields);
+  else log.warn(line.message, line.fields);
+};
+
+/**
+ * The shared limiter (T-M2-11) with the limits for this flow (platform defaults; per-organization
+ * settings join in limitsFor — T-M2-10).
+ */
+function limiterDeps(): LimiterDeps {
+  return { store: rateLimitStore, limits: limitsFor({}), log: securityLog };
+}
+
+const SIGN_IN_ACTION = 'platform.auth.sign_in';
+
+type CookieStore = Awaited<ReturnType<typeof cookies>>;
+
+/** Secure cookies everywhere but `next dev` (the rule of the session cookies, platform-db supabase/server.ts). */
+const SECURE_COOKIES = process.env.NODE_ENV !== 'development';
+
+/**
+ * The trusted-device cookie (PO decision 9 Oct 2026; T-M2-11): a random token only — HttpOnly (never
+ * readable by scripts), Secure with the `__Host-` prefix (this host only, path /), SameSite=Lax. The
+ * account it is trusted for is known to the database alone (keyed hashes); a malformed value is ignored.
+ * Written only by a sign-in with «تذكّر هذا المتصفح» ticked (opt-in) and by a completed password reset
+ * (30 days ticked, 24 hours not), each until the latest end of its token's trusts; an unticked sign-in
+ * leaves it (and the trust) to expire.
+ */
+export const TRUSTED_DEVICE_COOKIE = SECURE_COOKIES ? '__Host-jadarat-device' : 'jadarat-device';
+
+function trustedDeviceCookie(store: CookieStore): TrustedDeviceCookie {
+  return {
+    read: () => {
+      const value = store.get(TRUSTED_DEVICE_COOKIE)?.value ?? '';
+      return DEVICE_TOKEN_PATTERN.test(value) ? value : null;
+    },
+    write: (token, maxAgeSeconds) => {
+      try {
+        store.set(TRUSTED_DEVICE_COOKIE, token, {
+          httpOnly: true,
+          secure: SECURE_COOKIES,
+          sameSite: 'lax',
+          path: '/',
+          maxAge: maxAgeSeconds,
+        });
+      } catch {
+        // Not in a server action (cookies are read-only there): the browser stays untrusted.
+      }
+    },
+  };
+}
+
+/**
+ * The organization whose own host this request came to, VERIFIED (never a client-supplied value).
+ * INTEGRATION POINT (ADR 0002 §4, host → tenant resolution): not built yet — the proxy only classifies the
+ * Host header (apps/suite lib/host-tenant.ts) — so every request is on the platform's host today. Return
+ * the verified host organization here once that lookup exists, and switch ORGANIZATION_SIGN_IN_HOSTS on.
+ */
+function verifiedHostOrganization(): string | null {
+  return null;
+}
+
+/**
+ * The organization of the host this request signs in on, by THE host rule (auth-limits.ts
+ * `lockoutHostTenant`, TM-0003 D-IAM-04, integration review L1): on an organization's own host its lockout
+ * policy applies to its own members; on the platform's shared sign-in host the platform default (5
+ * failures, 15 minutes) applies to everyone — today every sign-in. The Organization Admin's lock state
+ * and unlock follow the same rule (platform-rbac `memberLockBudget`).
+ */
+function hostTenantIdForRequest(): string | null {
+  return lockoutHostTenant(verifiedHostOrganization());
+}
+
+/**
+ * The sign-in guard for this request's client (the app passes it: apps/suite lib/request-client.ts) and
+ * browser (its trusted-device cookie); the lockout e-mail goes through the account-mail queue. The account
+ * budget (T-M2-10 × T-M2-11): `organizationAccountLockout` — the host organization's lockout policy
+ * (platform-db `getLockoutPolicy`, its own pre-session transaction: sign-in holds none) for that
+ * organization's active members only (`signInAccountInTenant`), clamped to the platform default or
+ * stricter; the platform default for everyone else and on the platform's host.
+ */
+async function signInGuardFor(
+  client: RequestClient,
+  action = SIGN_IN_ACTION,
+): Promise<SignInGuard> {
+  const deps = limiterDeps();
+  return createSignInGuard({
+    ...deps,
+    client,
+    action,
+    device: trustedDeviceCookie(await cookies()),
+    requestLockedMail: requestAccountLockedMail,
+    accountLockout: organizationAccountLockout(
+      {
+        hostTenantId: hostTenantIdForRequest(),
+        lockoutPolicyFor: getLockoutPolicy,
+        accountInTenant: signInAccountInTenant,
+      },
+      deps.limits.signIn.accountFailures,
+    ),
+  });
+}
+
+/**
+ * Self-hosted only: the visitor's rate-limit key on the Auth calls of this request, for Auth's own per-IP
+ * limits behind the installation's gateway (JADARAT_AUTH_CLIENT_HEADER; none on hosted Supabase).
+ */
+function authClientOptions(client: RequestClient | null) {
+  const headers = client ? authClientHeaders(client) : null;
+  return headers ? { headers } : {};
+}
+
+async function requestDeps(
+  signInGuard: SignInGuard = NO_SIGN_IN_GUARD,
+  client: RequestClient | null = null,
+): Promise<AuthFlowDeps> {
   const store = await cookies();
   // The browser's User-Agent goes to Auth with our calls, so a session created at sign-in records the real
   // browser (session lists, T-M2-10); createSupabaseServerClient drops anything but printable ASCII.
@@ -98,7 +263,7 @@ async function requestDeps(): Promise<AuthFlowDeps> {
       },
     },
     undefined,
-    { userAgent },
+    { ...authClientOptions(client), userAgent },
   );
   return {
     supabase: supabase as AuthClientLike | null,
@@ -110,14 +275,21 @@ async function requestDeps(): Promise<AuthFlowDeps> {
     logWarning: (message, fields) => {
       log.warn(message, fields);
     },
+    signInGuard,
+    now: () => Date.now(),
+    sleep,
   };
 }
 
-export async function signInWithPasswordForRequest(credentials: {
-  readonly email: string;
-  readonly password: string;
-}) {
-  return signInWithPassword(await requestDeps(), credentials);
+/**
+ * Sign-in (screen «تسجيل الدخول»): limited per account and per client before Auth is asked (T-M2-11);
+ * `remember` («تذكّر هذا المتصفح», opt-in) trusts this browser after a successful sign-in.
+ */
+export async function signInWithPasswordForRequest(
+  credentials: PasswordCredentials,
+  client: RequestClient,
+) {
+  return signInWithPassword(await requestDeps(await signInGuardFor(client), client), credentials);
 }
 
 export async function selectOrganizationForRequest(tenantId: string) {
@@ -141,8 +313,15 @@ export async function signOutEndedSessionForRequest() {
 // only (no Auth secret key). The /mfa page and My profile use these through public actions: a session the
 // organization's MFA policy refuses has no access to the organization until it passes here.
 
-async function mfaDeps(): Promise<MfaDeps> {
-  const auth = await requestDeps();
+/**
+ * `limitCodeCheck`: the code limiter of a flow that checks a code (`codeCheckLimitFor`); the others get
+ * NO_CODE_CHECKS (any use fails closed). `client`: the visitor's key for self-hosted Auth's own limits.
+ */
+async function mfaDeps(
+  limitCodeCheck: CodeCheckLimit = NO_CODE_CHECKS,
+  client: RequestClient | null = null,
+): Promise<MfaDeps> {
+  const auth = await requestDeps(undefined, client);
   return {
     supabase: auth.supabase as unknown as MfaClientLike | null,
     withUserTx,
@@ -154,6 +333,7 @@ async function mfaDeps(): Promise<MfaDeps> {
     removeMfaApp: removeMfaAppInDatabase,
     applyDeviceLimit,
     logWarning: auth.logWarning,
+    limitCodeCheck,
   };
 }
 
@@ -185,16 +365,46 @@ export async function startTotpSetupForRequest() {
   return startTotpSetup(await mfaDeps());
 }
 
-export async function verifyTotpCodeForRequest(input: {
-  readonly code: string;
-  readonly factorId?: string | undefined;
-}) {
-  return verifyTotpCode(await mfaDeps(), input);
+/**
+ * A code from the authenticator app (sign-in, a sensitive action, or a set-up's first code): limited per
+ * account and per client (T-M2-11 — Auth's own per-IP limit sees only the app server). Once it passed,
+ * this browser becomes trusted when the session ticked «تذكّر هذا المتصفح» at sign-in (integration review
+ * L4): in a transaction with the upgraded session's own claims, after the code check (never nested).
+ */
+export async function verifyTotpCodeForRequest(
+  input: { readonly code: string; readonly factorId?: string | undefined },
+  client: RequestClient,
+) {
+  const deps = await mfaDeps(codeCheckLimitFor(client, MFA_VERIFY_ACTION), client);
+  const device = trustedDeviceCookie(await cookies());
+  return verifyTotpCode(
+    {
+      ...deps,
+      rememberBrowser: (session) =>
+        rememberBrowserAfterCode(
+          limiterDeps(),
+          MFA_VERIFY_ACTION,
+          device,
+          (presented, fresh, days) =>
+            withUserTx(session, (tx) => trustDeviceAfterCode(tx, presented, fresh, days)),
+        ),
+    },
+    input,
+  );
 }
 
-/** The e-mailed code of a new app, in the window that set it up (re-review N1). */
-export async function confirmMfaSetupForRequest(input: { readonly code: string }) {
-  return confirmMfaSetup(await mfaDeps(), input);
+/**
+ * The e-mailed code of a new app, in the window that set it up (re-review N1): limited like every code
+ * (T-M2-11), on top of the database's 5 tries per code and 15 wrong codes a day per account.
+ */
+export async function confirmMfaSetupForRequest(
+  input: { readonly code: string },
+  client: RequestClient,
+) {
+  return confirmMfaSetup(
+    await mfaDeps(codeCheckLimitFor(client, MFA_CONFIRM_ACTION), client),
+    input,
+  );
 }
 
 /** "Send the e-mail again" from the window that set the app up (re-review N1). */
@@ -257,11 +467,19 @@ export async function dismissMfaPromptForRequest(): Promise<boolean> {
   });
 }
 
+const CHANGE_PASSWORD_ACTION = 'platform.auth.change_password';
+
+/**
+ * My profile password change (FR-IAM-16). After a successful change, every browser the account trusted
+ * but this one is forgotten (T-M2-11 security review L2) — with `after()`: the action is still inside its
+ * transaction here, and the limiter's own transaction must never wait for a pooled connection meanwhile.
+ */
 export async function changePasswordForRequest(input: {
   readonly currentPassword: string;
   readonly newPassword: string;
 }) {
   const deps = await requestDeps();
+  const deviceToken = trustedDeviceCookie(await cookies()).read();
   return changePassword(
     {
       supabase: deps.supabase as unknown as PasswordClientLike | null,
@@ -269,17 +487,72 @@ export async function changePasswordForRequest(input: {
         () => createSupabaseVerifierClient() as VerifierClientLike | null,
         deps.logWarning,
       ),
+      securityLog,
       logWarning: deps.logWarning,
+      forgetOtherTrustedBrowsers: (email) => {
+        after(() =>
+          forgetOtherTrustedBrowsers(limiterDeps(), CHANGE_PASSWORD_ACTION, email, deviceToken),
+        );
+      },
     },
     input,
   );
+}
+
+/**
+ * The code limiter of one flow for this request's client (T-M2-10 security review, TM-0003 T-IAM-12):
+ * `withCodeAttemptLimit` on the shared limiter — per account (the user whose code is checked) and per
+ * client, wrong codes only, fail closed. Every code check takes it: the authenticator code
+ * (`verifyTotpCode`), the e-mailed set-up code (`confirmMfaSetup`) and the code on the password-reset
+ * page (`completePasswordReset`); `action` names the flow in the security events.
+ */
+function codeCheckLimitFor(
+  client: RequestClient,
+  action: string,
+  flow: CodeCheckFlow = 'session',
+): CodeCheckLimit {
+  const limiter = createCodeAttemptLimiter({
+    ...limiterDeps(),
+    client,
+    action,
+    flow,
+    // Wrong codes after the password paused code checks: the owner is e-mailed (integration review M1).
+    requestLockedMail: requestMfaCodeLockedMail,
+  });
+  return (userId, verify, isWrongCode, options) =>
+    withCodeAttemptLimit(limiter, userId, verify, isWrongCode, options);
+}
+
+/**
+ * My profile's current-password checks per user (T-M2-11, T-M2-15a security review): counts one; false =
+ * limited; throws RateLimiterUnavailableError when the limiter cannot answer (fail closed). Called by the
+ * action BEFORE its transaction (platform-rbac my-profile.ts beforeTransaction): the limiter's own short
+ * transaction never waits for a pooled connection while the action holds one (security review T-M2-11).
+ */
+export function allowPasswordCheckForRequest(userId: string): Promise<boolean> {
+  return createPasswordCheckLimiter({
+    ...limiterDeps(),
+    action: CHANGE_PASSWORD_ACTION,
+  })(userId);
 }
 
 // Invitations (FR-IAM-03, T-M2-07). The new account signs up through the public Auth API with the same
 // cookie-bound client (publishable key); Auth's before-user-created hook admits only a valid invitation.
 // No Auth secret key in the web app (ADR 0002 §7 note T-M2-07, security review H1).
 
-function invitationDeps(auth: AuthFlowDeps): InvitationAcceptDeps {
+const INVITATION_LOOKUP_ACTION = 'platform.invitation.lookup';
+const INVITATION_ACCEPT_ACTION = 'platform.invitation.accept';
+
+function invitationLimiter(client: RequestClient) {
+  return createInvitationLimiter({
+    ...limiterDeps(),
+    client,
+    lookupAction: INVITATION_LOOKUP_ACTION,
+    signUpAction: INVITATION_ACCEPT_ACTION,
+  });
+}
+
+function invitationDeps(auth: AuthFlowDeps, client: RequestClient): InvitationAcceptDeps {
   return {
     auth,
     signUpClient: auth.supabase as unknown as InvitationSignUpClientLike | null,
@@ -287,40 +560,68 @@ function invitationDeps(auth: AuthFlowDeps): InvitationAcceptDeps {
     invitationByToken,
     invitationPasswordMinLength,
     acceptInvitationAsCaller,
+    allowSignUp: () => invitationLimiter(client).allowSignUp(),
   };
 }
 
 /**
  * What the accept page shows for a link: its state and, when valid, the details and who is looking
  * (no session needed). Called by the page's public lookup action with the token from the URL fragment.
+ * Lookups are limited per client (T-M2-11; RATE_LIMITED when used up).
  */
-export async function lookupInvitationLinkForRequest(token: string): Promise<InvitationLinkView> {
-  return lookupInvitationLink(
-    {
-      hashToken: hashInvitationToken,
-      invitationByToken,
-      invitationPasswordMinLength,
-      auth: await requestDeps(),
-    },
-    token,
+export async function lookupInvitationLinkForRequest(
+  token: string,
+  client: RequestClient,
+): Promise<Result<InvitationLinkView, AppError>> {
+  if (!(await invitationLimiter(client).allowLookup())) return err(appError('RATE_LIMITED'));
+  return ok(
+    await lookupInvitationLink(
+      {
+        hashToken: hashInvitationToken,
+        invitationByToken,
+        invitationPasswordMinLength,
+        auth: await requestDeps(undefined, client),
+      },
+      token,
+    ),
   );
 }
 
 export async function acceptInvitationWithNewAccountForRequest(
   input: Parameters<typeof acceptInvitationWithNewAccount>[1],
+  client: RequestClient,
 ) {
-  return acceptInvitationWithNewAccount(invitationDeps(await requestDeps()), input);
+  return acceptInvitationWithNewAccount(
+    invitationDeps(await requestDeps(undefined, client), client),
+    input,
+  );
 }
 
-export async function acceptInvitationWithPasswordForRequest(input: {
-  readonly token: string;
-  readonly password: string;
-}) {
-  return acceptInvitationWithPassword(invitationDeps(await requestDeps()), input);
+/** "Sign in to accept": the sign-in guard applies (per account and per client), as for sign-in. */
+export async function acceptInvitationWithPasswordForRequest(
+  input: { readonly token: string; readonly password: string },
+  client: RequestClient,
+) {
+  return acceptInvitationWithPassword(
+    invitationDeps(
+      await requestDeps(
+        await signInGuardFor(client, 'platform.invitation.accept_with_sign_in'),
+        client,
+      ),
+      client,
+    ),
+    input,
+  );
 }
 
-export async function acceptInvitationAsSignedInUserForRequest(input: { readonly token: string }) {
-  return acceptInvitationAsSignedInUser(invitationDeps(await requestDeps()), input);
+export async function acceptInvitationAsSignedInUserForRequest(
+  input: { readonly token: string },
+  client: RequestClient,
+) {
+  return acceptInvitationAsSignedInUser(
+    invitationDeps(await requestDeps(undefined, client), client),
+    input,
+  );
 }
 
 // Forgot / reset password (FR-IAM-13, T-M2-08): Supabase Auth's recovery tokens, verified on a STATELESS
@@ -329,34 +630,46 @@ export async function acceptInvitationAsSignedInUserForRequest(input: { readonly
 // mailer or, with PASSWORD_RESET_DELIVERY=worker, by our notification service (T-M2-17): the web app then
 // only queues requests in the database; the worker holds the Auth admin key.
 
-const sleep = (ms: number) =>
-  new Promise<void>((resolve) => {
-    setTimeout(resolve, ms);
-  });
-
 /** Auth's own mailer, or the worker's queue (PASSWORD_RESET_DELIVERY, read on the server only). */
-function resetEmailDelivery(limited: boolean): ResetEmailDelivery {
+function resetEmailDelivery(client: RequestClient): ResetEmailDelivery {
   if (readPasswordResetDelivery(process.env) === 'worker') {
     return { mode: 'worker', enqueue: requestPasswordResetMail };
   }
   return {
     mode: 'auth',
-    client: limited ? null : (createSupabaseStatelessClient() as RecoveryClientLike | null),
+    client: createSupabaseStatelessClient(
+      undefined,
+      authClientOptions(client),
+    ) as RecoveryClientLike | null,
   };
 }
 
+const RESET_REQUEST_ACTION = 'platform.auth.request_password_reset';
+const RESET_COMPLETE_ACTION = 'platform.auth.password_reset';
+
+function resetLimiter(client: RequestClient) {
+  return createPasswordResetLimiter({
+    ...limiterDeps(),
+    client,
+    requestAction: RESET_REQUEST_ACTION,
+    completeAction: RESET_COMPLETE_ACTION,
+  });
+}
+
 /**
- * Screen 10: asks Auth for a reset link, or queues the request for the worker (unless the application
- * limiter refused it), and resolves after a constant time; never throws. The call may finish after the
- * answer (`after()`).
+ * Screen 10: checks the shared limiter (per client, then per account) and asks Auth for a reset link, or
+ * queues the request for the worker, in the background; resolves after a constant time and never throws.
+ * The work may finish after the answer (`after()`).
  */
-export async function requestPasswordResetForRequest(input: {
-  readonly email: string;
-  readonly limited: boolean;
-}): Promise<void> {
+export async function requestPasswordResetForRequest(
+  input: { readonly email: string },
+  client: RequestClient,
+): Promise<void> {
+  const limiter = resetLimiter(client);
   return requestPasswordReset(
     {
-      delivery: resetEmailDelivery(input.limited),
+      delivery: resetEmailDelivery(client),
+      allowRequest: (email) => limiter.allowRequest(email),
       logWarning: (message, fields) => {
         log.warn(message, fields);
       },
@@ -369,21 +682,42 @@ export async function requestPasswordResetForRequest(input: {
   );
 }
 
-/** Screen 11: verifies the link, sets the password, ends every session of the account. */
-export async function completePasswordResetForRequest(input: {
-  readonly tokenHash: string;
-  readonly password: string;
-  readonly code?: string | undefined;
-}) {
-  const auth = await requestDeps();
-  const client = createSupabaseStatelessClient() as RecoveryClientLike | null;
+/**
+ * Screen 11: limited per client (fail closed — the link is not spent), verifies the link, sets the
+ * password, ends every session of the account and its sign-in lock; this browser becomes trusted for the
+ * account — 30 days with `remember` («تذكّر هذا المتصفح»), else 24 hours — (its cookie is set) and the
+ * account's other trusted browsers are forgotten (T-M2-11 M2, re-review N1).
+ */
+export async function completePasswordResetForRequest(
+  input: {
+    readonly tokenHash: string;
+    readonly password: string;
+    readonly code?: string | undefined;
+    readonly remember?: boolean;
+  },
+  client: RequestClient,
+) {
+  const auth = await requestDeps(undefined, client);
+  const limiter = resetLimiter(client);
+  const recoveryClient = createSupabaseStatelessClient(
+    undefined,
+    authClientOptions(client),
+  ) as RecoveryClientLike | null;
+  const device = trustedDeviceCookie(await cookies());
   return completePasswordReset(
     {
-      client,
+      client: recoveryClient,
+      allowAttempt: () => limiter.allowCompletion(),
+      unlockSignIn: (email, remember) =>
+        resetAccountSignIn(limiterDeps(), RESET_COMPLETE_ACTION, email, device, remember),
+      // The authenticator code of an account with an app (T-M2-10), limited like every code (T-M2-11) —
+      // with its own account budget (integration review M1): wrong codes after the password elsewhere
+      // never keep the owner from resetting it.
+      limitCodeCheck: codeCheckLimitFor(client, RESET_COMPLETE_ACTION, 'reset'),
       // Strictest wins (T-M2-10): asked with the recovery session's own, verified access token.
       passwordMinLength: async (accessToken) => {
         const claims = await verifyClaims(
-          client as unknown as SupabaseAuthLike | null,
+          recoveryClient as unknown as SupabaseAuthLike | null,
           accessToken,
         );
         return claims.ok ? withUserTx(claims.value, (tx) => passwordMinLengthForCaller(tx)) : null;

@@ -7,7 +7,7 @@
 
 | Signal | Where it goes | Content |
 |---|---|---|
-| **Logs** | stdout/stderr as one JSON object per line (Vercel runtime logs; `docker compose logs` in containers) | `time, level, msg, service, env, deployment, version` + a **closed** set of fields: `action, permission, correlation_id, tenant_id, status, outcome, duration_ms, error_code, error_name, route` |
+| **Logs** | stdout/stderr as one JSON object per line (Vercel runtime logs; `docker compose logs` in containers) | `time, level, msg, service, env, deployment, version` + a **closed** set of fields: `action, permission, correlation_id, tenant_id, status, outcome, duration_ms, error_code, error_name, route, reason, state, entity_type, entity_id` and, for security events (T-M2-11), `security_event, subject_ref, client_ref, limit, retry_after_s` — the references are keyed hashes (`rk_…`), never an e-mail or address; event names and alerting queries: [sign-in-protection.md](sign-in-protection.md) §8 |
 | **Errors** | Sentry (EU data region, org `entlaqa-qv`, project `javascript-nextjs`) for the cloud; GlitchTip in-country for sovereign installations | Error class, stack locations (file, function, line), route without query string, release, environment, tags `action`, `permission`, `correlation_id`, `tenant_id`, `error_code` (e.g. PostgreSQL SQLSTATE `23505`). The message is `[redacted]`, except for allow-listed error classes whose messages contain no input. **Server and browser** errors; browser reports carry the tag `source: browser` |
 | **Uptime** | GitHub Actions every 15 min → issue "Uptime: staging is down" | HTTP status of `/api/health/ready` |
 
@@ -36,9 +36,9 @@
 | Variable | Example | Purpose |
 |---|---|---|
 | `SENTRY_BROWSER_DSN` (optional) | DSN of a separate Sentry project for browser errors | Browser reports go here instead of `SENTRY_DSN` |
-| `JADARAT_CLIENT_IP_HEADER` (optional) | `x-real-ip` | Header holding the client IP that the load balancer in front of the app **overwrites** (never one it appends to, such as `x-forwarded-for`), for per-client limits. Vercel's `x-real-ip` is trusted automatically; without a trusted header all clients share one limit |
+| `JADARAT_CLIENT_IP_HEADER` (required self-hosted) | `x-real-ip` | Header holding the client IP that the load balancer in front of the app **overwrites** (`x-forwarded-for`, which proxies append to, is refused), for per-client limits. Vercel's `x-real-ip` is trusted automatically; without a trusted header all clients share one limit. A production server outside Vercel that sets `JADARAT_ENVIRONMENT` (to any value) refuses to start without it; `none` says so explicitly (an ERROR at every start) — [sign-in-protection.md](sign-in-protection.md) §7 |
 | `SENTRY_DSN` | Sentry → Settings → Projects → `javascript-nextjs` → **Client Keys (DSN)** | Turns error tracking on. Unset or invalid = logs only. Must be `https://` (plain `http://` only to a single-label host on the installation's private network, e.g. `http://key@glitchtip:8000/1`) |
-| `JADARAT_ENVIRONMENT` | `staging`, `production`, `self-hosted` | `env` in logs, `environment` in Sentry (default: Vercel's `VERCEL_ENV`, else `NODE_ENV`) |
+| `JADARAT_ENVIRONMENT` | `staging`, `production`, `self-hosted` | `env` in logs, `environment` in Sentry (default: Vercel's `VERCEL_ENV`, else `NODE_ENV`). Outside Vercel, setting it (any value) on a production server also makes `JADARAT_CLIENT_IP_HEADER` required (T-M2-11) |
 | `JADARAT_DEPLOYMENT` | `eu-saas-1`, `sa-gov-1` | `deployment` in logs (optional) |
 | `JADARAT_RELEASE` | git SHA | `version` / `release` (default on Vercel: `VERCEL_GIT_COMMIT_SHA`) |
 | `UPTIME_URL` (GitHub **repository variable**) | `https://<staging domain>` | Turns the scheduled uptime check on |
@@ -83,7 +83,7 @@ The server (`lib/error-tunnel.ts`, created with `definePublicRoute`) is a **publ
 | Endpoint | Answers | Use |
 |---|---|---|
 | `GET /api/health/live` | `200 {"status":"ok"}` while the process runs | container health check (`app.Dockerfile`), orchestrators |
-| `GET /api/health/ready` | `200 {"status":"ok"}`, or `503 {"status":"unavailable"}` when the database cannot be reached as `app_server` | uptime monitors, load balancers |
+| `GET /api/health/ready` | `200 {"status":"ok"}`, or `503 {"status":"unavailable"}` when the database cannot be reached as `app_server` or lacks — by name and argument types — the functions sign-in needs (the rate limiter's migrations not applied yet — T-M2-11; one catalog query) | uptime monitors, load balancers |
 
 Both are public and `no-store`, and never return versions, hosts or error details. Each app instance runs at most one readiness probe at a time: concurrent requests share it, and its result is reused for 5 seconds. A probe that takes longer than 3 seconds is cancelled so it does not hold a database connection. More dependencies (Storage, worker heartbeat, ClamAV) join `/ready` when they exist (ADR 0009 §6).
 
@@ -99,7 +99,7 @@ This is a staging baseline. Production needs external checks from at least two r
 
 ## When an incident issue opens or Sentry alerts
 
-1. Open `https://<staging domain>/api/health/ready`. A `503` means the app cannot reach the database: check the Supabase project status and `DATABASE_URL_APP_SERVER` (see [staging-sign-in.md](staging-sign-in.md), Troubleshooting).
+1. Open `https://<staging domain>/api/health/ready`. A `503` means the app cannot reach the database, or a migration it needs is missing: check the Supabase project status, `DATABASE_URL_APP_SERVER` (see [staging-sign-in.md](staging-sign-in.md), Troubleshooting) and that the last **DB deploy** ran after the merge.
 2. Look at Vercel → the deployment → **Logs** (filter `level:error`). Take the `correlation_id` and find the matching Sentry issue.
 3. Record the incident and its fix in `docs/delivery/STATUS.md` (session log).
 

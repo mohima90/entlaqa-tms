@@ -18,13 +18,16 @@ import type {
   WithUserTx,
 } from '@jadarat/platform-db';
 import type { LogFields } from '@jadarat/platform-observability';
+import type { SignInGuard } from './auth-limits';
 import { type SupabaseAuthLike, verifyClaims, verifyClaimsStrict } from './verify-claims';
 
 /**
  * Sign-in flow (ADR 0003 §2, ADR 0002 §3; T-M1-D03). Framework-free: the Next.js adapter (auth-next.ts)
  * supplies a Supabase client bound to the request cookies and the platform-db functions.
  *
- *   signInWithPassword → Supabase Auth (session cookie set) → the session's organizations
+ *   signInWithPassword → the sign-in guard (T-M2-11: per account and per client, auth-limits.ts; a
+ *     limited attempt never reaches Auth) → Supabase Auth (session cookie set; with «تذكّر هذا المتصفح»
+ *     ticked the browser is trusted for 30 days — opt-in) → the session's organizations
  *     · none  → sign out again, AUTH_NO_ORGANIZATION
  *     · one   → selectOrganization() automatically
  *     · many  → the caller shows the organization chooser
@@ -43,7 +46,26 @@ export const IdentityErrors = defineErrorCodes({
   AUTH_INVALID_CREDENTIALS: { status: 401, messageKey: 'auth.errors.invalidCredentials' },
   /** Signed in, but the account has no active membership in an active organization. */
   AUTH_NO_ORGANIZATION: { status: 403, messageKey: 'auth.errors.noOrganization' },
+  /**
+   * Too many sign-in attempts for this account or from this client (T-M2-11). The same for unknown
+   * accounts: the counters are kept per typed e-mail whether or not an account exists.
+   */
+  AUTH_TOO_MANY_ATTEMPTS: { status: 429, messageKey: 'auth.errors.tooManyAttempts' },
 });
+
+/**
+ * Every refused sign-in (wrong e-mail or password, or limited) is answered no sooner than this after the
+ * request started: Supabase Auth answers an unknown e-mail at once but compares the password of an
+ * existing account first (GoTrue v2.197.0 ResourceOwnerPasswordGrant), so the time taken would tell
+ * accounts apart (TM-0003 T-IAM-27). Same constant as the reset request's answer.
+ */
+export const SIGN_IN_REFUSAL_ANSWER_MS = 1_500;
+
+/**
+ * A refusal whose work took longer than this before the padding is logged (codes only): close to the
+ * answer time, a slow limiter or Auth could start to tell accounts apart again (security review T-M2-11).
+ */
+export const SIGN_IN_REFUSAL_WARN_MS = 1_200;
 
 /** The subset of the Supabase Auth client the flow uses (server-side, cookie-bound). */
 export interface AuthClientLike extends SupabaseAuthLike {
@@ -71,6 +93,14 @@ export interface AuthFlowDeps {
   ) => Promise<void>;
   /** Structured warning without personal data (platform-observability logger). */
   readonly logWarning: (message: string, fields: LogFields) => void;
+  /**
+   * Application limits in front of Auth for this request's client (T-M2-11, auth-limits.ts). Flows that
+   * never check a password get NO_SIGN_IN_GUARD, which refuses any use.
+   */
+  readonly signInGuard: SignInGuard;
+  /** Milliseconds clock and sleep for the refusal answer time (SIGN_IN_REFUSAL_ANSWER_MS). */
+  readonly now: () => number;
+  readonly sleep: (ms: number) => Promise<void>;
 }
 
 /**
@@ -116,45 +146,130 @@ export interface PasswordSession {
   readonly claims: VerifiedClaims;
 }
 
+/** E-mail and password, and whether to remember this browser (sign-in page only; default: not). */
+export interface PasswordCredentials {
+  readonly email: string;
+  readonly password: string;
+  /**
+   * «تذكّر هذا المتصفح» / "Remember this browser" was ticked (PO decision 9 Oct 2026: opt-in, unticked
+   * by default): only then does a successful sign-in trust this browser — or renew its trust — for 30 days.
+   */
+  readonly remember?: boolean;
+}
+
+/**
+ * Whether Auth's answer to a password sign-in names a verified authenticator app of the account (GoTrue
+ * returns the user with its factors, and leaves `factors` out when there are none). A missing user counts
+ * as one (the safe side: the browser waits for a code before it is remembered). Not the authority: the
+ * database also looks at the user's factors itself (integration review L4 re-review), so an Auth answer
+ * that stopped carrying `factors` can never make a password alone trust a browser.
+ */
+function usesAuthenticatorApp(data: unknown): boolean {
+  const user = typeof data === 'object' && data !== null && 'user' in data ? data.user : null;
+  if (typeof user !== 'object' || user === null) return true;
+  const factors = 'factors' in user ? user.factors : null;
+  return (
+    Array.isArray(factors) &&
+    factors.some(
+      (f: unknown) =>
+        typeof f === 'object' &&
+        f !== null &&
+        (f as Record<string, unknown>).factor_type === 'totp' &&
+        (f as Record<string, unknown>).status === 'verified',
+    )
+  );
+}
+
 /**
  * Signs in with e-mail + password and verifies the issued access token. No organization is required
  * here: signInWithPassword() continues with the organizations, the invitation flow
  * (invitation-accept.ts) with the invitation.
+ *
+ * Limits first (T-M2-11): the attempt is counted BEFORE Auth is asked — a limited attempt gets
+ * AUTH_TOO_MANY_ATTEMPTS without asking Auth; when the limiter cannot answer, RateLimiterUnavailableError
+ * is thrown (fail closed: the generic internal error). Auth's verdict is then reported to the attempt
+ * (failed: events and the lockout e-mail; succeeded: the provisional failure is given back and — only with
+ * `remember` — the browser trusted; Auth's own 429: the account's failure is given back, no password was
+ * compared). Every refusal — limited, or wrong e-mail or password — is answered after the same minimum time.
+ * For an account with an authenticator app (integration review L4), a ticked «تذكّر هذا المتصفح» trusts
+ * nothing yet: it waits — server-side, bound to this Auth session — for the session's sign-in code
+ * (mfa.ts verifyTotpCode → auth-limits.ts rememberBrowserAfterCode). The database decides whether the
+ * account has one: Auth's answer, the verified token's user (none: nothing is trusted) and the user's
+ * factors it reads itself. So the success is recorded once the issued token is verified.
  */
 export async function startPasswordSession(
   deps: AuthFlowDeps,
-  credentials: { readonly email: string; readonly password: string },
+  credentials: PasswordCredentials,
 ): Promise<Result<PasswordSession, AppError>> {
   const { supabase } = deps;
   if (!supabase) return err(appError('NOT_CONFIGURED'));
+  const started = deps.now();
+  const refuse = async (error: AppError): Promise<Result<never, AppError>> => {
+    const elapsed = deps.now() - started;
+    if (elapsed > SIGN_IN_REFUSAL_WARN_MS) {
+      deps.logWarning('sign-in refusal took longer than its padding allows', {
+        action: 'platform.auth.sign_in',
+        reason: 'refusal_padding_exceeded',
+        durationMs: Math.round(elapsed),
+      });
+    }
+    await deps.sleep(Math.max(0, SIGN_IN_REFUSAL_ANSWER_MS - elapsed));
+    return err(error);
+  };
+
+  const gate = await deps.signInGuard.check(credentials.email);
+  if (!gate.allowed) return refuse(appError(IdentityErrors.AUTH_TOO_MANY_ATTEMPTS));
 
   const { data, error } = await supabase.auth.signInWithPassword({
     email: credentials.email,
     password: credentials.password,
   });
   if (error) {
-    if (error.status === 429) return err(appError('RATE_LIMITED'));
-    // 4xx: refused credentials (wrong e-mail or password, unconfirmed or banned account) — one answer
-    // for all of them (no account enumeration). Logged without personal data (security event).
-    if (error.status !== undefined && error.status >= 400 && error.status < 500) {
-      deps.logWarning('sign-in refused', {
+    if (error.status === 429) {
+      // Auth's own limits (on hosted Supabase: the app's egress address, shared by every visitor) answer
+      // before any password is compared: the account's (or trusted browser's) provisional failure is given
+      // back — a flood elsewhere must not lock this account — and the client's stays (security review
+      // T-M2-11 L6).
+      await gate.attempt.notChecked();
+      deps.logWarning('sign-in limited by Auth', {
         action: 'platform.auth.sign_in',
-        status: error.status,
+        securityEvent: 'auth.rate_limited',
+        reason: 'auth_service',
+        status: 429,
       });
-      return err(appError(IdentityErrors.AUTH_INVALID_CREDENTIALS));
+      return refuse(appError('RATE_LIMITED'));
+    }
+    // 4xx: refused credentials (wrong e-mail or password, unconfirmed or banned account) — one answer
+    // for all of them (no account enumeration). The failure was counted before Auth was asked; the
+    // attempt records the security events (keyed references only) and, when the account locks now,
+    // requests the lockout e-mail. 5xx (thrown below): Auth could not answer — the failure stays counted.
+    if (error.status !== undefined && error.status >= 400 && error.status < 500) {
+      await gate.attempt.failed();
+      return refuse(appError(IdentityErrors.AUTH_INVALID_CREDENTIALS));
     }
     throw new AuthServiceError(error.status);
   }
+  // The password was right: the provisional failure is given back and the run of failures ends; the
+  // browser is trusted for the account (30 days) only when «تذكّر هذا المتصفح» was ticked — and, for an
+  // account with an authenticator app, only once the sign-in code passed (integration review L4; the
+  // database decides, given the verified token's user and session).
   const tokens = sessionTokens(data);
-  if (!tokens) return err(appError('UNAUTHENTICATED'));
-
-  const claims = await verifyClaims(supabase, tokens.accessToken);
+  const claims = tokens ? await verifyClaims(supabase, tokens.accessToken) : null;
+  const verified = claims?.ok
+    ? { userId: claims.value.sub, sessionId: claims.value.session_id ?? null }
+    : null;
+  await gate.attempt.succeeded({
+    remember: credentials.remember === true,
+    verified,
+    authNamesApp: usesAuthenticatorApp(data),
+  });
+  if (!tokens || !claims) return err(appError('UNAUTHENTICATED'));
   return claims.ok ? ok({ tokens, claims: claims.value }) : claims;
 }
 
 export async function signInWithPassword(
   deps: AuthFlowDeps,
-  credentials: { readonly email: string; readonly password: string },
+  credentials: PasswordCredentials,
 ): Promise<Result<SignInOutcome, AppError>> {
   const { supabase } = deps;
   if (!supabase) return err(appError('NOT_CONFIGURED'));

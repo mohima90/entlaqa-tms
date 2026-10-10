@@ -23,12 +23,13 @@ begin
   for r in
     select rolname, rolcanlogin, rolinherit, rolsuper, rolbypassrls, rolcreaterole, rolcreatedb, rolreplication
     from pg_roles where rolname in ('app_server', 'app_worker', 'app_queue', 'tenant_guard', 'invitation_guard',
-                                    'account_mail_guard', 'membership_guard')
+                                    'account_mail_guard', 'membership_guard', 'rate_limit_guard')
   loop
     if r.rolname in ('app_server', 'app_worker', 'app_queue') and not r.rolcanlogin then
       failures := failures || format('%s must be LOGIN', r.rolname);
     end if;
-    if r.rolname in ('tenant_guard', 'invitation_guard', 'account_mail_guard', 'membership_guard') and r.rolcanlogin then
+    if r.rolname in ('tenant_guard', 'invitation_guard', 'account_mail_guard', 'membership_guard', 'rate_limit_guard')
+       and r.rolcanlogin then
       failures := failures || format('%s must be NOLOGIN', r.rolname);
     end if;
     if r.rolinherit or r.rolsuper or r.rolbypassrls or r.rolcreaterole or r.rolcreatedb or r.rolreplication then
@@ -37,8 +38,8 @@ begin
   end loop;
   if (select count(*) from pg_roles
       where rolname in ('app_server', 'app_worker', 'app_queue', 'tenant_guard', 'invitation_guard',
-                        'account_mail_guard', 'membership_guard')) <> 7 then
-    failures := failures || 'roles app_server, app_worker, app_queue, tenant_guard, invitation_guard, account_mail_guard and membership_guard must all exist'::text;
+                        'account_mail_guard', 'membership_guard', 'rate_limit_guard')) <> 8 then
+    failures := failures || 'roles app_server, app_worker, app_queue, tenant_guard, invitation_guard, account_mail_guard, membership_guard and rate_limit_guard must all exist'::text;
   end if;
   -- The job runner (ADR 0005 §2): member of nothing (never authenticated), owner of graphile_worker.
   if exists (select 1 from pg_auth_members m join pg_roles u on u.oid = m.member where u.rolname = 'app_queue') then
@@ -141,7 +142,8 @@ begin
   end if;
 
   -- MFA policy (T-M2-10): tenant_guard reads Auth factors only through private.auth_mfa_factor, owned by the
-  -- migration role (never the secret), and deletes through it (removal, resets); nobody else may use it.
+  -- migration role (never the secret), and deletes through it (removal, resets); rate_limit_guard reads three
+  -- of its columns (whether a signing-in user has an app, T-M2-11); nobody else may use it.
   if to_regclass('private.auth_mfa_factor') is null then
     failures := failures || 'private.auth_mfa_factor is missing'::text;
   else
@@ -172,6 +174,9 @@ begin
         a.privilege_type || ' (column ' || att.attname || ')'
       from pg_attribute att, aclexplode(att.attacl) a
       where att.attrelid = 'private.auth_mfa_factor'::regclass and att.attacl is not null
+        -- rate_limit_guard: whether a signing-in user has an app (T-M2-11 integration review L4).
+        and not (a.grantee <> 0 and pg_get_userbyid(a.grantee) = 'rate_limit_guard' and a.privilege_type = 'SELECT'
+                 and att.attname in ('user_id', 'factor_type', 'status'))
     loop
       failures := failures || format('%s must not have %s on private.auth_mfa_factor', r.grantee, r.privilege_type);
     end loop;
@@ -232,7 +237,9 @@ begin
         a.privilege_type
       from pg_class c, aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a
       where c.oid = 'private.auth_user_email'::regclass and a.grantee <> c.relowner
-        and not (a.grantee <> 0 and pg_get_userbyid(a.grantee) = 'invitation_guard' and a.privilege_type = 'SELECT')
+        -- Readers: invitation_guard (FR-IAM-03) and rate_limit_guard (Organization Admin unlock, T-M2-11).
+        and not (a.grantee <> 0 and pg_get_userbyid(a.grantee) in ('invitation_guard', 'rate_limit_guard')
+                 and a.privilege_type = 'SELECT')
       union
       select distinct
         case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end,
@@ -251,8 +258,8 @@ begin
     select h.fn, h.owner, h.allowed, h.definer, p.oid as poid, p.proowner, p.prosecdef, p.proconfig, p.proacl
     from (values
       ('private.user_session_is_valid(uuid, uuid)', 'tenant_guard', array['tenant_guard', 'invitation_guard'], true),
-      ('private.has_active_membership(uuid, uuid)', 'tenant_guard', array['tenant_guard'], true),
-      ('private.current_tenant_id()',               'tenant_guard', array['tenant_guard', 'authenticated', 'account_mail_guard', 'membership_guard'], true),
+      ('private.has_active_membership(uuid, uuid)', 'tenant_guard', array['tenant_guard', 'rate_limit_guard'], true),
+      ('private.current_tenant_id()',               'tenant_guard', array['tenant_guard', 'authenticated', 'account_mail_guard', 'membership_guard', 'rate_limit_guard'], true),
       ('private.switch_active_tenant(uuid)',        'tenant_guard', array['tenant_guard', 'authenticated'], true),
       ('private.session_tenants()',                 'tenant_guard', array['tenant_guard', 'authenticated'], true),
       ('private.discard_inactive_tenant_delivery(uuid)', 'tenant_guard', array['tenant_guard', 'authenticated'], true),
@@ -290,8 +297,8 @@ begin
       ('private.session_access(uuid, uuid, uuid, boolean, boolean)', 'tenant_guard', array['tenant_guard'], true),
       ('private.session_access_state()',            'tenant_guard', array['tenant_guard', 'authenticated'], true),
       -- membership_guard: T-M2-09's authenticator-code rule uses them (20261012120000).
-      ('private.request_aal2()',                    'tenant_guard', array['tenant_guard', 'authenticated', 'membership_guard'], true),
-      ('private.request_code_fresh()',              'tenant_guard', array['tenant_guard', 'authenticated', 'membership_guard'], true),
+      ('private.request_aal2()',                    'tenant_guard', array['tenant_guard', 'authenticated', 'membership_guard', 'rate_limit_guard'], true),
+      ('private.request_code_fresh()',              'tenant_guard', array['tenant_guard', 'authenticated', 'membership_guard', 'rate_limit_guard'], true),
       ('private.request_session_facts()',           'tenant_guard', array['tenant_guard', 'authenticated'], true),
       ('private.dismiss_mfa_prompt()',              'tenant_guard', array['tenant_guard', 'authenticated'], true),
       ('private.tenant_member_mfa(uuid)',           'tenant_guard', array['tenant_guard', 'authenticated'], true),
@@ -328,7 +335,46 @@ begin
       ('private.purge_unconfirmed_mfa_apps(integer)', 'tenant_guard', array['tenant_guard', 'authenticated'], true),
       ('private.reset_member_mfa(uuid)',            'tenant_guard', array['tenant_guard', 'authenticated'], true),
       -- ENTLAQA support's reset: the migration role (operators) only — never the request path.
-      ('private.reset_account_mfa(uuid, text)',     'tenant_guard', array['tenant_guard', current_user::text], true)
+      ('private.reset_account_mfa(uuid, text)',     'tenant_guard', array['tenant_guard', current_user::text], true),
+      -- The lockout e-mail request (T-M2-11): the web app (app_server, checked inside); the unlock notice:
+      -- the Organization Admin's unlock only (its owner rate_limit_guard).
+      ('private.request_account_locked_mail(text, integer)', 'account_mail_guard', array['account_mail_guard', 'authenticated'], true),
+      ('private.request_sign_in_unlocked_mail(uuid)', 'account_mail_guard', array['account_mail_guard', 'rate_limit_guard'], true),
+      -- The "wrong codes after your password" notice (T-M2-11 integration review M1): the web app.
+      ('private.request_mfa_code_locked_mail(uuid, integer)', 'account_mail_guard', array['account_mail_guard', 'authenticated'], true),
+      -- Shared rate limiter and sign-in protection (ADR 0011 §4, T-M2-11): the web app counts, clears and
+      -- checks sign-ins (app_server, checked inside); the Organization Admin functions also check the
+      -- claims; the helpers and the key rotation are the owner's own.
+      ('private.rate_limit_hit(text, bytea, integer, integer)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
+      ('private.rate_limit_clear(text, bytea)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
+      ('private.rate_limit_give_back(text, bytea)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
+      ('private.sign_in_account_in_tenant(text, uuid)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
+      ('private.rate_limit_sign_in_check(bytea, bytea, bytea, integer, integer, integer, integer, integer, integer, integer, integer)',
+       'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
+      ('private.rate_limit_sign_in_succeeded(bytea, bytea, bytea, bytea, boolean, boolean, integer, uuid, bytea, boolean, integer)', 'rate_limit_guard',
+       array['rate_limit_guard', 'authenticated'], true),
+      ('private.rate_limit_sign_in_not_checked(bytea, bytea, boolean)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
+      ('private.rate_limit_sign_in_reset(bytea, bytea, bytea, integer)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
+      ('private.rate_limit_forget_other_devices(bytea, bytea)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
+      -- «تذكّر هذا المتصفح» after the sign-in code (integration review L4).
+      ('private.rate_limit_trust_after_code(bytea, bytea, integer)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
+      ('private.member_sign_in_lock(uuid, integer)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
+      ('private.unlock_member_sign_in(uuid, integer)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
+      ('private.rotate_rate_limit_keys()', 'rate_limit_guard', array['rate_limit_guard'], true),
+      ('private.rate_limit_generate_keys()', 'rate_limit_guard', array['rate_limit_guard'], false),
+      ('private.rate_limit_key(bytea)', 'rate_limit_guard', array['rate_limit_guard'], false),
+      ('private.rate_limit_ref(bytea)', 'rate_limit_guard', array['rate_limit_guard'], false),
+      ('private.rate_limit_check_call(text, bytea)', 'rate_limit_guard', array['rate_limit_guard'], false),
+      ('private.rate_limit_count(text, bytea, integer, integer, boolean)', 'rate_limit_guard', array['rate_limit_guard'], false),
+      ('private.rate_limit_refund(text, bytea)', 'rate_limit_guard', array['rate_limit_guard'], false),
+      ('private.rate_limit_purge()', 'rate_limit_guard', array['rate_limit_guard'], false),
+      ('private.rate_limit_normalize_email(text)', 'rate_limit_guard', array['rate_limit_guard'], false),
+      ('private.rate_limit_account_subject(text)', 'rate_limit_guard', array['rate_limit_guard'], false),
+      ('private.rate_limit_lock_account_devices(bytea)', 'rate_limit_guard', array['rate_limit_guard'], false),
+      ('private.rate_limit_choose_device(bytea)', 'rate_limit_guard', array['rate_limit_guard'], false),
+      ('private.rate_limit_trust_device(bytea, bytea, integer)', 'rate_limit_guard', array['rate_limit_guard'], false),
+      ('private.rate_limit_member_account(uuid)', 'rate_limit_guard', array['rate_limit_guard'], false),
+      ('private.rate_limit_session_subject(uuid)', 'rate_limit_guard', array['rate_limit_guard'], false)
     ) as h(fn, owner, allowed, definer)
     left join pg_proc p on p.oid = to_regprocedure(h.fn)
   loop
@@ -385,7 +431,18 @@ begin
         'private.remove_mfa_app(uuid)', 'private.issue_mfa_factor_tokens(uuid,uuid,bytea,bytea)',
         'private.account_has_app(uuid)', 'private.reject_mfa_factor(bytea)',
         'private.purge_unconfirmed_mfa_apps(integer)', 'private.reset_member_mfa(uuid)',
-        'private.reset_account_mfa(uuid,text)')
+        'private.reset_account_mfa(uuid,text)',
+        'private.request_account_locked_mail(text,integer)',
+        'private.request_sign_in_unlocked_mail(uuid)', 'private.request_mfa_code_locked_mail(uuid,integer)',
+        'private.rate_limit_hit(text,bytea,integer,integer)', 'private.rate_limit_clear(text,bytea)',
+        'private.rate_limit_give_back(text,bytea)', 'private.sign_in_account_in_tenant(text,uuid)',
+        'private.rate_limit_sign_in_check(bytea,bytea,bytea,integer,integer,integer,integer,integer,integer,integer,integer)',
+        'private.rate_limit_sign_in_succeeded(bytea,bytea,bytea,bytea,boolean,boolean,integer,uuid,bytea,boolean,integer)',
+        'private.rate_limit_sign_in_not_checked(bytea,bytea,boolean)',
+        'private.rate_limit_sign_in_reset(bytea,bytea,bytea,integer)', 'private.rate_limit_forget_other_devices(bytea,bytea)',
+        'private.rate_limit_trust_after_code(bytea,bytea,integer)',
+        'private.member_sign_in_lock(uuid,integer)', 'private.unlock_member_sign_in(uuid,integer)',
+        'private.rotate_rate_limit_keys()')
   loop
     failures := failures || format('%s: unexpected SECURITY DEFINER function (security review)', r.fn);
   end loop;
@@ -585,6 +642,55 @@ begin
        or has_any_column_privilege('account_mail_guard', 'platform.message_deliveries', 'insert, update, references') then
       failures := failures || 'account_mail_guard must have no table-level SELECT and no write on platform.message_deliveries'::text;
     end if;
+  end if;
+
+  -- rate_limit_guard (T-M2-11): creates nothing, nobody acts as it; the limiter's keys
+  -- (private.rate_limit_secret: SELECT, UPDATE for rotation), counters (private.rate_limit_counters) and
+  -- trusted browsers (private.sign_in_trusted_devices: SELECT, INSERT, UPDATE, DELETE) are reachable by
+  -- rate_limit_guard alone, with row level security forced (section 2).
+  if exists (select 1 from pg_roles where rolname = 'rate_limit_guard') then
+    for r in select nspname from pg_namespace where nspname = any (module_schemas) loop
+      if has_schema_privilege('rate_limit_guard', r.nspname, 'create') then
+        failures := failures || format('rate_limit_guard must not have CREATE on schema %s', r.nspname);
+      end if;
+    end loop;
+    for r in
+      select distinct u.rolname from pg_auth_members m
+      join pg_roles g on g.oid = m.roleid join pg_roles u on u.oid = m.member
+      where g.rolname = 'rate_limit_guard' and (m.inherit_option or m.set_option)
+        and not u.rolsuper and u.rolname <> current_user
+    loop
+      failures := failures || format('%s must not be a member of rate_limit_guard', r.rolname);
+    end loop;
+  end if;
+  for r in
+    select o.obj from (values ('private.rate_limit_secret'), ('private.rate_limit_counters'),
+                              ('private.sign_in_trusted_devices')) as o(obj)
+  loop
+    if to_regclass(r.obj) is null then
+      failures := failures || format('%s is missing', r.obj);
+      continue;
+    end if;
+    for v_role in
+      select distinct case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end
+      from pg_class c, aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a
+      where c.oid = to_regclass(r.obj) and a.grantee <> c.relowner
+        and not (a.grantee <> 0 and pg_get_userbyid(a.grantee) = 'rate_limit_guard'
+                 and (a.privilege_type = 'SELECT'
+                      or (r.obj = 'private.rate_limit_secret' and a.privilege_type = 'UPDATE')
+                      or (r.obj in ('private.rate_limit_counters', 'private.sign_in_trusted_devices')
+                          and a.privilege_type in ('INSERT', 'UPDATE', 'DELETE'))))
+      union
+      select distinct case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end
+      from pg_attribute att, aclexplode(att.attacl) a
+      where att.attrelid = to_regclass(r.obj) and att.attacl is not null
+    loop
+      failures := failures || format('%s must have no privilege on %s', v_role, r.obj);
+    end loop;
+  end loop;
+  if to_regclass('private.rate_limit_secret') is not null
+     and (select count(*) from private.rate_limit_secret) <> 1 then
+    failures := failures || 'private.rate_limit_secret must hold exactly one key'::text;
   end if;
 
   -- tenant_guard creates nothing (CREATE on `private` is granted only while ownership is handed over,

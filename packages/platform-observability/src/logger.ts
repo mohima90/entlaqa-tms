@@ -33,6 +33,22 @@ export interface LogFields {
   readonly entityType?: string;
   /** UUID of that entity (allowed identifier, ADR 0009 §2). */
   readonly entityId?: string;
+  /**
+   * Stable security event name (TM-0003 T-IAM-25), e.g. `auth.sign_in.failed`, `auth.lockout`,
+   * `auth.rate_limited` — what alerting queries filter on (docs/engineering/sign-in-protection.md).
+   */
+  readonly securityEvent?: string;
+  /**
+   * Keyed hash reference of the account, user or other subject a security event is about (`rk_…`, from the
+   * shared rate limiter): correlates events without a direct identifier (ADR 0009 §2 `actor_ref` rule).
+   */
+  readonly subjectRef?: string;
+  /** Keyed hash reference of the client (address or /64) — never the address itself. */
+  readonly clientRef?: string;
+  /** Rate-limit bucket concerned, e.g. `sign_in.account_failures`. */
+  readonly limit?: string;
+  /** Seconds until a limited key may try again. */
+  readonly retryAfterS?: number;
 }
 
 export interface Logger {
@@ -58,6 +74,11 @@ const FIELD_NAMES: Readonly<Record<keyof LogFields, string>> = {
   state: 'state',
   entityType: 'entity_type',
   entityId: 'entity_id',
+  securityEvent: 'security_event',
+  subjectRef: 'subject_ref',
+  clientRef: 'client_ref',
+  limit: 'limit',
+  retryAfterS: 'retry_after_s',
 };
 
 /** Runtime environment value (dynamic access: never inlined at build time, see ADR 0010). */

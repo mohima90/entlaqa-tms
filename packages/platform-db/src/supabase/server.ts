@@ -18,6 +18,20 @@ export const SESSION_COOKIE_OPTIONS: CookieOptions = {
   path: '/',
 };
 
+/**
+ * Extra request headers sent with every Auth call of a client. Used for the visitor's rate-limit key on
+ * self-hosted installations, whose gateway trusts it from the app's network only and hands it to Auth's
+ * own per-IP limits (T-M2-11; JADARAT_AUTH_CLIENT_HEADER). Never secrets.
+ */
+export interface AuthClientOptions {
+  readonly headers?: Readonly<Record<string, string>>;
+}
+
+function globalHeaders(options: AuthClientOptions, userAgent: string | null = null) {
+  const headers = { ...options.headers, ...(userAgent ? { 'User-Agent': userAgent } : {}) };
+  return Object.keys(headers).length > 0 ? { global: { headers } } : {};
+}
+
 /** Supabase public config, read from the runtime environment (see readSupabasePublicConfigFromEnv). */
 export function getSupabasePublicConfig(): SupabasePublicConfig | null {
   return readSupabasePublicConfigFromEnv();
@@ -36,19 +50,20 @@ export function forwardableUserAgent(value: string | null | undefined): string |
  * Server-side Supabase client (publishable key + the user's session cookies) for Auth and Storage.
  * Never used to read tenant tables (ADR 0003 §4). Returns null when Supabase is not configured.
  * `userAgent`: the browser's, sent to Auth instead of the server's own so that the session Auth creates at
- * sign-in records the real browser (the session lists show browser and system, T-M2-10).
+ * sign-in records the real browser (the session lists show browser and system, T-M2-10); `headers`: see
+ * AuthClientOptions (T-M2-11).
  */
 export function createSupabaseServerClient(
   cookies: CookieMethodsServer,
   config: SupabasePublicConfig | null = getSupabasePublicConfig(),
-  options: { readonly userAgent?: string | null } = {},
+  options: AuthClientOptions & { readonly userAgent?: string | null } = {},
 ): SupabaseClient | null {
   if (!config) return null;
   const userAgent = forwardableUserAgent(options.userAgent);
   return createServerClient(config.url, config.publishableKey, {
     cookies,
     cookieOptions: SESSION_COOKIE_OPTIONS,
-    ...(userAgent ? { global: { headers: { 'User-Agent': userAgent } } } : {}),
+    ...globalHeaders(options, userAgent),
   });
 }
 
@@ -64,6 +79,7 @@ export function createSupabaseServerClient(
  */
 export function createSupabaseStatelessClient(
   config: SupabasePublicConfig | null = getSupabasePublicConfig(),
+  options: AuthClientOptions = {},
 ): SupabaseClient | null {
   if (!config) return null;
   return createClient(config.url, config.publishableKey, {
@@ -73,6 +89,7 @@ export function createSupabaseStatelessClient(
       detectSessionInUrl: false,
       flowType: 'implicit',
     },
+    ...globalHeaders(options),
   });
 }
 

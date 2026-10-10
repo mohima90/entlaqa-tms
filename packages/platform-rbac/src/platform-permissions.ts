@@ -60,6 +60,18 @@ export const platformPermissions = definePermissions('platform', [
     requiresAal2: true,
   },
   {
+    // T-M2-11 (PO decision 9 Oct 2026): end a member's sign-in lock after repeated failed attempts.
+    // Organization Admin only (the database checks the role again).
+    code: 'platform.user.unlock_sign_in',
+    label: { ar: 'إلغاء إيقاف تسجيل الدخول', en: 'Unlock sign-in' },
+    description: {
+      ar: 'إلغاء إيقاف تسجيل الدخول المؤقت بعد محاولات كثيرة لم تنجح',
+      en: 'End a temporary sign-in lock after too many unsuccessful attempts',
+    },
+    risk: 'medium',
+    requiresAal2: false,
+  },
+  {
     code: 'platform.role.read',
     label: { ar: 'عرض الأدوار والصلاحيات', en: 'View roles and permissions' },
     description: {

@@ -17,6 +17,7 @@ import {
 import type { PlatformTask, WorkerLogLevel } from '@jadarat/platform-jobs/jobs';
 import { isEmailAddress, isSafeLink, renderEmail } from '@jadarat/platform-notifications';
 import { type EmailRequest, queueEmail } from '@jadarat/platform-notifications/jobs';
+import { type AuthLimits, PLATFORM_AUTH_LIMITS } from '../auth-limits-config';
 import { hashToken } from './invitation-mailer';
 
 /** graphile-worker task of the account e-mails (a platform task: requests have no tenant yet). */
@@ -26,15 +27,18 @@ export const ACCOUNT_MAIL_BATCH = 20;
 /** Auth's link lifetime (`otp_exp` = 3600 s), stated in the e-mail. */
 export const RESET_LINK_VALID_MINUTES = 60;
 /**
- * Per person and organization: at most this many reset e-mails an hour (beyond the web app's own limits and
- * Auth's one link a minute) — a further request is answered without an e-mail. Security notices are exempt
- * (SECURITY_NOTICE_KINDS).
+ * Per person and organization: at most this many e-mails of each account template an hour (beyond the web
+ * app's own limits and Auth's one link a minute) — a further request is answered without an e-mail.
+ * Security notices are exempt (SECURITY_NOTICE_KINDS). The "account locked" notice has stricter caps of
+ * its own (PLATFORM_AUTH_LIMITS.lockoutMail, T-M2-11 M3): at most one per person a day and a ceiling per
+ * organization an hour.
  */
 export const ACCOUNT_MAIL_HOURLY_CAP = 5;
 /**
  * Security notices (re-review N3): an authenticator app added (its e-mail carries the set-up code) or removed
  * (also an admin or support reset, an expired set-up), the security settings changed, the password changed,
- * and the digest of held ones. They are never dropped by the per-template hourly cap — the owner must learn
+ * wrong codes after the password (integration review T-M2-11 M1 — at most one per pause: none to the person
+ * within the pause's minutes of the last one), and the digest of held ones. They are never dropped by the per-template hourly cap — the owner must learn
  * of every change to the account's security — and a notice over that cap is logged. Their volume per account
  * is bounded by the database (final re-review L1): 20 in 24 hours one by one, further ones merged into one
  * digest an hour (outcome `held`, then a `security_digest` request).
@@ -44,6 +48,7 @@ export const SECURITY_NOTICE_KINDS: ReadonlySet<AccountMailRequest['kind']> = ne
   'mfa_factor_removed',
   'security_policy_changed',
   'password_changed',
+  'mfa_code_locked',
   'security_digest',
 ]);
 /**
@@ -80,6 +85,8 @@ export interface AccountMailerOptions {
   readonly withPlatformTx: WithPlatformTx;
   readonly withSystemTx: WithSystemTx;
   readonly log: (level: WorkerLogLevel, message: string) => void;
+  /** The lockout e-mail's caps (default: the one budgets config, PLATFORM_AUTH_LIMITS.lockoutMail). */
+  readonly lockoutMail?: AuthLimits['lockoutMail'];
 }
 
 /** A failure worth another attempt: Auth unreachable, rate limited, misconfigured; the database. */
@@ -106,7 +113,10 @@ type AccountTemplate =
   | 'platform.mfa_factor_added'
   | 'platform.mfa_factor_removed'
   | 'platform.security_policy_changed'
-  | 'platform.security_digest';
+  | 'platform.security_digest'
+  | 'platform.account_locked'
+  | 'platform.sign_in_unlocked'
+  | 'platform.mfa_code_locked';
 type AccountEmail = EmailRequest<AccountTemplate>;
 
 const TEMPLATE_OF: Readonly<Record<AccountMailRequest['kind'], AccountTemplate>> = {
@@ -116,6 +126,9 @@ const TEMPLATE_OF: Readonly<Record<AccountMailRequest['kind'], AccountTemplate>>
   mfa_factor_removed: 'platform.mfa_factor_removed',
   security_policy_changed: 'platform.security_policy_changed',
   security_digest: 'platform.security_digest',
+  account_locked: 'platform.account_locked',
+  sign_in_unlocked: 'platform.sign_in_unlocked',
+  mfa_code_locked: 'platform.mfa_code_locked',
 };
 
 /** A new link token: 32 random bytes, base64url (43 characters) — only its SHA-256 is stored. */
@@ -137,7 +150,11 @@ const PLACEHOLDER_TOKEN_HASH = '0'.repeat(56);
 
 /**
  * Account e-mails (FR-NTF-02 as clarified in BRD v2.5, FR-IAM-13, FR-IAM-16; T-M2-17): the
- * password-reset e-mail and the "password changed" notice, sent by our notification service in the
+ * password-reset e-mail, the "password changed" notice and — since T-M2-11 — the "account locked" notice
+ * (at most one per person a day, and at most PLATFORM_AUTH_LIMITS.lockoutMail.tenantPerHour per
+ * organization an hour — security review M3), the "sign-in unlocked" notice after an Organization
+ * Admin's unlock (security review M1) and the "wrong codes after your password" security notice when wrong
+ * codes paused code checks (integration review M1), sent by our notification service in the
  * organization's language and brand instead of Supabase Auth's own mailer. Each pass leases waiting
  * requests (platform transaction: they have no tenant yet); the database says whom to write in which
  * organization and language, or why nothing is sent (unknown address, banned, a link issued less than a
@@ -166,6 +183,18 @@ export function createAccountMailer(options: AccountMailerOptions): PlatformTask
     throw new Error('account mailer: the app base URL must be https (http only for localhost)');
   }
   const { log, recoveryLinks, withPlatformTx, withSystemTx } = options;
+  const lockoutMail = options.lockoutMail ?? PLATFORM_AUTH_LIMITS.lockoutMail;
+  if (
+    !Number.isInteger(lockoutMail.personQuietHours) ||
+    lockoutMail.personQuietHours < 1 ||
+    lockoutMail.personQuietHours > 24 ||
+    !Number.isInteger(lockoutMail.tenantPerHour) ||
+    lockoutMail.tenantPerHour < 1
+  ) {
+    throw new Error(
+      'account mailer: lockout e-mail caps must be 1–24 hours and at least 1 an hour',
+    );
+  }
 
   async function finishUnsent(jobId: string, request: AccountMailRequest, reason: string) {
     await withPlatformTx({ jobId }, (tx) => finishAccountMailRequest(tx, request.id));
@@ -174,17 +203,27 @@ export function createAccountMailer(options: AccountMailerOptions): PlatformTask
 
   /**
    * In the organization's transaction: may this e-mail go to this person now? The organization must
-   * still be served (active or trial) and the person visible, and the hourly cap must not be reached.
-   * When not, the request is answered — removed — in the same transaction and the reason returned.
+   * still be served (active or trial) and the person visible, and the hourly cap must not be reached; a
+   * lockout notice also needs none to the person within the quiet hours and the organization below its
+   * hourly ceiling; a "wrong codes" notice none to the person within its pause's minutes (one per pause).
+   * When not, the request is answered — removed — in the same transaction and the reason returned (the
+   * lock itself is unaffected: only the e-mail is left out).
    */
   async function admissible(
     tx: SystemTx,
     request: Sendable,
   ): Promise<{ readonly organizationName: OrganizationName } | { readonly reason: string }> {
     const template = TEMPLATE_OF[request.kind];
+    const locked = request.kind === 'account_locked';
+    const codesPaused = request.kind === 'mfa_code_locked';
+    const quietMinutes = locked
+      ? lockoutMail.personQuietHours * 60
+      : codesPaused
+        ? Math.min(Math.max(request.lockMinutes ?? 1, 1), 1440)
+        : 0;
     // A suspended or closed organization since the lease: its RLS shows nothing; nothing is sent.
     const context = (await tenantIsServed(tx))
-      ? await loadAccountMailContext(tx, request.personId, template)
+      ? await loadAccountMailContext(tx, request.personId, template, quietMinutes)
       : null;
     if (!context) {
       await finishAccountMailRequest(tx, request.id);
@@ -197,6 +236,14 @@ export function createAccountMailer(options: AccountMailerOptions): PlatformTask
       }
       // Re-review N3: never dropped silently — sent, and the volume shows in the logs.
       log('warning', `security notice over the hourly cap sent anyway (${request.kind})`);
+    }
+    if ((locked || codesPaused) && context.quietCount > 0) {
+      await finishAccountMailRequest(tx, request.id);
+      return { reason: 'already_notified' };
+    }
+    if (locked && context.tenantRecentCount >= lockoutMail.tenantPerHour) {
+      await finishAccountMailRequest(tx, request.id);
+      return { reason: 'organization_hourly_cap' };
     }
     return { organizationName: context.organizationName };
   }
@@ -280,6 +327,47 @@ export function createAccountMailer(options: AccountMailerOptions): PlatformTask
 
   async function send(jobId: string, request: Sendable, appBase: string): Promise<string> {
     const pages = (path: string) => ({ ar: `${appBase}/ar/${path}`, en: `${appBase}/en/${path}` });
+    if (request.kind === 'account_locked') {
+      return queueInTenant(jobId, request, (organizationName) => ({
+        template: 'platform.account_locked',
+        locale: request.locale,
+        to: request.email,
+        recipientPersonId: request.personId,
+        variables: {
+          organizationName,
+          lockMinutes: request.lockMinutes ?? 15,
+          forgotPasswordUrl: pages('forgot-password'),
+          loginEmail: request.email,
+        },
+      }));
+    }
+    if (request.kind === 'mfa_code_locked') {
+      return queueInTenant(jobId, request, (organizationName) => ({
+        template: 'platform.mfa_code_locked',
+        locale: request.locale,
+        to: request.email,
+        recipientPersonId: request.personId,
+        variables: {
+          organizationName,
+          lockMinutes: request.lockMinutes ?? 15,
+          forgotPasswordUrl: pages('forgot-password'),
+          loginEmail: request.email,
+        },
+      }));
+    }
+    if (request.kind === 'sign_in_unlocked') {
+      return queueInTenant(jobId, request, (organizationName) => ({
+        template: 'platform.sign_in_unlocked',
+        locale: request.locale,
+        to: request.email,
+        recipientPersonId: request.personId,
+        variables: {
+          organizationName,
+          forgotPasswordUrl: pages('forgot-password'),
+          loginEmail: request.email,
+        },
+      }));
+    }
     if (request.kind === 'mfa_factor_added') return sendSetUp(jobId, request, pages);
     if (request.kind === 'mfa_factor_removed') {
       const reason = request.mfaReason ?? 'removed';
@@ -432,8 +520,10 @@ export function createAccountMailer(options: AccountMailerOptions): PlatformTask
     }
     try {
       const result = await send(jobId, request, base);
+      // An organization over its hourly ceiling of lockout e-mails is under a spray: worth a warning
+      // (security re-review N4); every other outcome is routine.
       log(
-        'info',
+        result === 'organization_hourly_cap' ? 'warning' : 'info',
         `account e-mail ${result === 'queued' ? 'queued' : `not sent (${result})`} (${request.kind})`,
       );
     } catch (error) {

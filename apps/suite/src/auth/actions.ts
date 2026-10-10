@@ -13,15 +13,24 @@ import {
 } from '@jadarat/platform-identity/auth';
 import { definePublicAction } from '@jadarat/platform-rbac';
 import { z } from 'zod';
+import { requestClient } from '../lib/request-client';
 
+/**
+ * Limited per account and per client on the shared limiter before Auth is asked (T-M2-11): a limited
+ * attempt gets one generic answer (AUTH_TOO_MANY_ATTEMPTS), the same for unknown accounts; when the
+ * limiter cannot answer, sign-in fails closed (the generic internal error). `remember` («تذكّر هذا
+ * المتصفح», unticked by default — PO decision 9 Oct 2026): only a successful sign-in with it ticked trusts
+ * this browser for 30 days.
+ */
 export const signInAction = definePublicAction({
   name: 'platform.auth.sign_in',
   input: z.object({
     email: z.email().max(254),
     // Length bound only: the password policy is enforced by Supabase Auth when passwords are set.
     password: z.string().min(1).max(1024),
+    remember: z.boolean().default(false),
   }),
-  handler: ({ input }) => signInWithPasswordForRequest(input),
+  handler: async ({ input }) => signInWithPasswordForRequest(input, await requestClient()),
 });
 
 export const selectOrganizationAction = definePublicAction({

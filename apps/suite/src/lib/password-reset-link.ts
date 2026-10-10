@@ -64,10 +64,37 @@ const LINK_SPENT: ReadonlySet<string> = new Set([
   // The account's authenticator code was missing or refused (T-M2-10): the link was used to ask for it.
   'PASSWORD_RESET_CODE_REQUIRED',
   'PASSWORD_RESET_CODE_INVALID',
+  // Too many attempts with the code (integration review T-M2-11 M1): the page says when to ask again.
+  'PASSWORD_RESET_CODE_LIMITED',
 ]);
 
 export function linkIsSpent(errorCode: string): boolean {
   return LINK_SPENT.has(errorCode);
+}
+
+/**
+ * "N minutes" as the page says it: in Arabic with the counted noun's agreement (1, 2, 3–10, 11 and more —
+ * as the lockout e-mail says it), in English singular or plural.
+ */
+export function minutesText(locale: 'ar' | 'en', minutes: number): string {
+  const n = Math.max(1, Math.ceil(minutes));
+  if (locale === 'en') return n === 1 ? '1 minute' : `${String(n)} minutes`;
+  if (n === 1) return 'دقيقة واحدة';
+  if (n === 2) return 'دقيقتين';
+  const lastTwo = n % 100;
+  return lastTwo >= 3 && lastTwo <= 10 ? `${String(n)} دقائق` : `${String(n)} دقيقة`;
+}
+
+/**
+ * An answer's `minutes` (PASSWORD_RESET_CODE_LIMITED: when to ask for a new link) in words, for its
+ * message's `{minutes}`; any other answer as it is.
+ */
+export function withMinutesInWords<
+  E extends { readonly params?: Readonly<Record<string, unknown>> },
+>(error: E, locale: 'ar' | 'en'): E {
+  const minutes = error.params?.minutes;
+  if (typeof minutes !== 'number' || !Number.isFinite(minutes)) return error;
+  return { ...error, params: { ...error.params, minutes: minutesText(locale, minutes) } };
 }
 
 /** The notice the sign-in page shows after a password reset (`?notice=password-reset`). */

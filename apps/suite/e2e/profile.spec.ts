@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { type Page, expect, test } from '@playwright/test';
+import { afterSignIn, signInToSuite, submitSignIn } from './sign-in';
 
 /**
  * My profile (FR-IAM-16, T-M2-15a) with a real ordinary member (Line Manager + Learner, no user
@@ -10,13 +11,6 @@ import { type Page, expect, test } from '@playwright/test';
 const email = process.env.SIGNED_IN_E2E_MANAGER_EMAIL;
 const password = process.env.SIGNED_IN_E2E_MANAGER_PASSWORD;
 const newPassword = process.env.PROFILE_E2E_NEW_PASSWORD;
-
-async function signIn(page: Page, secret: string) {
-  await page.goto('/en/sign-in');
-  await page.getByLabel('Email').fill(email ?? '');
-  await page.getByLabel('Password').fill(secret);
-  await page.getByRole('button', { name: 'Sign in' }).click();
-}
 
 async function expectNoSeriousA11yViolations(page: Page) {
   const results = await new AxeBuilder({ page })
@@ -33,8 +27,7 @@ test.describe('My profile', () => {
   test.describe.configure({ mode: 'serial' });
 
   test('changes own personal details; e-mail and job data stay read-only', async ({ page }) => {
-    await signIn(page, password ?? '');
-    await expect(page).toHaveURL(/\/en\/suite$/);
+    await signInToSuite(page, email, password);
     await page.getByTestId('my-profile-link').click();
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('My profile');
     await expectNoSeriousA11yViolations(page);
@@ -77,8 +70,7 @@ test.describe('My profile', () => {
   test('changes the password: the current one is checked, then the new one signs in', async ({
     page,
   }) => {
-    await signIn(page, password ?? '');
-    await expect(page).toHaveURL(/\/en\/suite$/);
+    await signInToSuite(page, email, password);
     await page.goto('/en/suite/profile');
     await page.getByLabel('Current password').fill('not-the-password-123');
     await page.getByLabel(/^New password/).fill(newPassword ?? '');
@@ -104,11 +96,11 @@ test.describe('My profile', () => {
 
     await page.getByRole('button', { name: 'Sign out' }).click();
     await expect(page).toHaveURL(/\/en\/sign-in$/);
-    await signIn(page, password ?? '');
+    await submitSignIn(page, email, password);
     await expect(page.getByTestId('sign-in-error')).toHaveText(
       'The email or password is incorrect.',
+      afterSignIn,
     );
-    await signIn(page, newPassword ?? '');
-    await expect(page).toHaveURL(/\/en\/suite$/);
+    await signInToSuite(page, email, newPassword);
   });
 });

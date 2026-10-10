@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { type Page, expect, test } from '@playwright/test';
+import { signInToSuite } from './sign-in';
 
 /**
  * Deactivate / reactivate a member (T-M2-09, FR-IAM-05; screen 4) against a configured deployment: runs in
@@ -35,11 +36,7 @@ async function signIn(
   page: Page,
   as: { email?: string | undefined; password?: string | undefined },
 ) {
-  await page.goto('/en/sign-in');
-  await page.getByLabel('Email').fill(as.email ?? '');
-  await page.getByLabel('Password').fill(as.password ?? '');
-  await page.getByRole('button', { name: 'Sign in' }).click();
-  await expect(page).toHaveURL(/\/en\/suite$/);
+  await signInToSuite(page, as.email, as.password);
 }
 
 async function expectNoSeriousA11yViolations(page: Page) {

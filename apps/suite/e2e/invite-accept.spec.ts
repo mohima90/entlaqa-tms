@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import AxeBuilder from '@axe-core/playwright';
 import { type Page, expect, test } from '@playwright/test';
+import { afterSignIn } from './sign-in';
 
 /**
  * Accepting an invitation (FR-IAM-03, T-M2-07; screens 8 and 9) on the self-hosted stack
@@ -76,7 +77,7 @@ test.describe('accept an invitation', () => {
     await expect(page.getByText('يلزم الاطلاع على إشعار الخصوصية للمتابعة.')).toBeVisible();
     await page.getByTestId('invite-privacy').check();
     await page.getByRole('button', { name: 'متابعة' }).click();
-    await expect(page).toHaveURL(/\/ar\/(suite|select-organization)$/);
+    await expect(page).toHaveURL(/\/ar\/(suite|select-organization)$/, afterSignIn);
 
     // The link is single-use: it now shows the "already used" state, in Arabic and English.
     await page.goto(url);

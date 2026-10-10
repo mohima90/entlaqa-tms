@@ -153,6 +153,15 @@ describe('security digest (T-M2-10, final re-review L1)', () => {
     expect(email.text).toContain('- Authenticator app added: 7 times');
   });
 
+  it('also counts "wrong codes after your password" notices held for it (integration review M1)', () => {
+    const email = renderEmail('platform.security_digest', 'en', {
+      ...digest,
+      held: { mfa_code_locked: 3 },
+    });
+    expect(email.html).toContain('Code checks paused after wrong codes: <b>3 times</b>');
+    expect(email.html).toContain('إيقاف التحقق من الرموز بعد رموز خاطئة: <b>3 مرات</b>');
+  });
+
   it('refuses an empty digest, unknown kinds and odd counts', () => {
     for (const held of [
       {},

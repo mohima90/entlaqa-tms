@@ -28,7 +28,7 @@ begin
     'account_mail_requests_email_check', 'addresses are stored lower-case');
   perform tests.assert_check_constraint(
     $q$insert into private.account_mail_requests (kind, user_id) values ('magic_link', 'e7000000-0000-4000-8000-000000000001')$q$,
-    'account_mail_requests_kind_check', 'two kinds only');
+    'account_mail_requests_kind_check', 'known kinds only (password_reset, password_changed, account_locked)');
 end $$;
 rollback;
 

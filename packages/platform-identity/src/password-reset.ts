@@ -7,8 +7,10 @@ import {
   err,
   ok,
 } from '@jadarat/platform-core';
+import { PLATFORM_PASSWORD_MIN_LENGTH } from '@jadarat/platform-db';
 import type { LogFields } from '@jadarat/platform-observability';
 import { AuthServiceError, sessionTokens } from './auth-flow';
+import type { CodeCheckLimit } from './auth-limits';
 
 /**
  * Forgot / reset password (FR-IAM-13, NFR-SEC-01; T-M2-08, screens 10 and 11) on Supabase Auth's
@@ -28,17 +30,22 @@ import { AuthServiceError, sessionTokens } from './auth-flow';
  *            held by the worker only — and e-mails it in the organization's language and brand); after a
  *            completed reset (and a My profile change) the "password changed" notice is queued too.
  *
- *   request  → (application limiter, decided by the action) → the delivery above — started at once, never
- *              awaited by the answer: the answer comes after a constant time whatever happened (Auth
+ *   request  → the shared application limiter (per client, then per account — T-M2-11, auth-limits.ts;
+ *              a limiter failure counts as limited) → the delivery above. Both run in the background,
+ *              never awaited by the answer: the answer comes after a constant time whatever happened (Auth
  *              answers an existing account later, and with 429 to a repeat within a minute — both would
  *              tell that the account exists)
- *   complete → verifyOtp(recovery, token_hash) on a STATELESS client: the recovery session lives only in
+ *   complete → the shared limiter per client (fail closed: the link is not spent) →
+ *              verifyOtp(recovery, token_hash) on a STATELESS client: the recovery session lives only in
  *              this request's memory, never in the browser or our session cookies → for an account with an
  *              authenticator app, the code from it (Auth sets a password only from an AAL2 session when
  *              MFA is enabled — GoTrue v2.197.0; T-M2-10) → updateUser(password)
  *              → signOut(global): every session of the account ends, the recovery session included →
- *              security log `platform.auth.password_reset` (user id only) → (worker mode) the "password
- *              changed" notice is queued → the visitor signs in
+ *              security log `platform.auth.password_reset` (user id only) → the account's sign-in lock
+ *              ends (the owner proved the mailbox — TM-0003 T-IAM-32), THIS browser becomes trusted (24
+ *              hours, or 30 days with «تذكّر هذا المتصفح» ticked) and every other browser the account
+ *              trusted is forgotten (T-M2-11 security review M2, re-review N1) → (worker
+ *              mode) the "password changed" notice is queued → the visitor signs in
  *
  * The e-mail, password and token never reach a log.
  */
@@ -72,7 +79,25 @@ export const PasswordResetErrors = defineErrorCodes({
   PASSWORD_RESET_CODE_REQUIRED: { status: 422, messageKey: 'passwordReset.errors.codeRequired' },
   /** The authenticator code was wrong or expired; the link is used up (single use): ask for a new one. */
   PASSWORD_RESET_CODE_INVALID: { status: 422, messageKey: 'passwordReset.errors.codeInvalid' },
+  /**
+   * Too many attempts with the authenticator code (the reset page's own budget, integration review T-M2-11
+   * M1 — or Auth's own limit): the code was not checked and the link is used up. `minutes` in params: when
+   * to ask for a new link (the page says it plainly).
+   */
+  PASSWORD_RESET_CODE_LIMITED: { status: 429, messageKey: 'passwordReset.errors.codeLimited' },
 });
+
+/**
+ * When to ask for a new link after AUTH's own limit refused the code check (it does not say for how long):
+ * the code limiter's window, a wait after which Auth's per-address limits have moved on as well.
+ */
+export const RESET_CODE_AUTH_LIMIT_WAIT_MINUTES = 15;
+
+function codeLimited(minutes: number): AppError {
+  return appError(PasswordResetErrors.PASSWORD_RESET_CODE_LIMITED, {
+    params: { minutes: Math.max(1, Math.ceil(minutes)) },
+  });
+}
 
 /** Server setting: who sends the reset e-mail and the "password changed" notice (T-M2-17). */
 export const PASSWORD_RESET_DELIVERY_ENV = 'PASSWORD_RESET_DELIVERY';
@@ -149,6 +174,11 @@ export type ResetEmailDelivery =
 
 export interface PasswordResetRequestDeps {
   readonly delivery: ResetEmailDelivery;
+  /**
+   * The shared limiter (auth-limits.ts createPasswordResetLimiter): per client, then per account; false =
+   * limited. May throw when the limiter cannot answer: the request then counts as limited.
+   */
+  readonly allowRequest: (email: string) => Promise<boolean>;
   readonly logWarning: (message: string, fields: LogFields) => void;
   readonly sleep: (ms: number) => Promise<void>;
   /** Lets the Auth call finish after the answer was sent (Next.js `after()`). */
@@ -158,6 +188,19 @@ export interface PasswordResetRequestDeps {
 export interface PasswordResetDeps {
   /** A new stateless client for this request only; null when Auth is not configured. */
   readonly client: RecoveryClientLike | null;
+  /**
+   * New-password submissions per client (shared limiter); false = limited (RATE_LIMITED, the link stays
+   * usable). Throws RateLimiterUnavailableError when the limiter cannot answer: fail closed, link unspent.
+   */
+  readonly allowAttempt: () => Promise<boolean>;
+  /**
+   * After a completed reset: ends the account's sign-in lock, trusts the browser that completed it (its
+   * cookie is set) — for 30 days with `remember` («تذكّر هذا المتصفح» ticked on the reset page), else
+   * 24 hours — and forgets every other browser the account trusted (auth-limits.ts resetAccountSignIn;
+   * security review T-M2-11 M2 — an attacker who keeps the account locked cannot keep its owner out; N1 —
+   * no 30-day trust unasked). Never throws.
+   */
+  readonly unlockSignIn: (email: string, remember: boolean) => Promise<void>;
   readonly logInfo: (message: string, fields: LogFields) => void;
   readonly logWarning: (message: string, fields: LogFields) => void;
   /** Ends this browser's own session cookies, if any (after the reset the visitor signs in again). */
@@ -172,27 +215,44 @@ export interface PasswordResetDeps {
    * recovery session's access token; null when unknown (the platform's 12 applies, Auth enforces it).
    */
   readonly passwordMinLength?: (accessToken: string) => Promise<number | null>;
+  /**
+   * The authenticator code's check for an account with an app (T-M2-10), limited per account and per
+   * client like every code (T-M2-11 `withCodeAttemptLimit`, auth-limits.ts CodeCheckLimit).
+   */
+  readonly limitCodeCheck: CodeCheckLimit;
 }
 
 /**
- * Screen 10. Starts the delivery (Auth's request, or the worker's queue) and answers after
- * RESET_REQUEST_ANSWER_MS, never waiting for it: the caller learns nothing from the result or the time
- * taken. `limited`: the application limiter refused this request (per account, per client) — nothing is
- * started, the answer is the same.
+ * Screen 10. Starts the limiter check and then the delivery (Auth's request, or the worker's queue) in the
+ * background and answers after RESET_REQUEST_ANSWER_MS, never waiting for either: the caller learns
+ * nothing from the result or the time taken. A limited request (per client, per account) — or one the
+ * limiter could not answer — starts nothing; the answer is the same.
  */
 export async function requestPasswordReset(
   deps: PasswordResetRequestDeps,
-  input: { readonly email: string; readonly limited: boolean },
+  input: { readonly email: string },
 ): Promise<void> {
-  if (input.limited) {
+  deps.keepAlive(limitThenSend(deps, input.email));
+  await deps.sleep(RESET_REQUEST_ANSWER_MS);
+}
+
+/** Never rejects. */
+async function limitThenSend(deps: PasswordResetRequestDeps, email: string): Promise<void> {
+  let allowed: boolean;
+  try {
+    allowed = await deps.allowRequest(email);
+  } catch {
+    // Fail closed: no e-mail (the limiter recorded the security event).
+    allowed = false;
+  }
+  if (!allowed) {
     deps.logWarning('password reset request limited', {
       action: REQUEST_ACTION,
       reason: 'rate_limited',
     });
-  } else {
-    deps.keepAlive(sendRecoveryLink(deps, input.email));
+    return;
   }
-  await deps.sleep(RESET_REQUEST_ANSWER_MS);
+  await sendRecoveryLink(deps, email);
 }
 
 /** Never rejects: every outcome is logged as a code (never the address) and treated as success. */
@@ -270,28 +330,54 @@ async function secondFactor(
     });
     return err(appError(PasswordResetErrors.PASSWORD_RESET_CODE_REQUIRED));
   }
-  let verified: Awaited<ReturnType<RecoveryClientLike['auth']['mfa']['challengeAndVerify']>>;
+  const appId = factorId;
+  // Auth's check of the code, limited per account — on this page's OWN budget (integration review M1:
+  // wrong codes after the password, at sign-in, never lock the owner out of resetting it) — and per client
+  // like every authenticator code (T-M2-11; TM-0003 T-IAM-12): a limited check never asks Auth. The link
+  // is spent by now either way: a limited check answers plainly when to ask for a new one.
+  const check = async (): Promise<Result<null, AppError>> => {
+    const verified = await client.auth.mfa.challengeAndVerify({ factorId: appId, code });
+    if (!verified.error) return ok(null);
+    const { status } = verified.error;
+    if (status === 429 || verified.error.code === 'over_request_rate_limit') {
+      return err(appError('RATE_LIMITED'));
+    }
+    if (status === undefined || status === 0 || status >= 500) throw new AuthServiceError(status);
+    // Logged without the code (review M3); the limiter counts it.
+    deps.logWarning('password reset: authenticator code refused', {
+      action: COMPLETE_ACTION,
+      outcome: 'failure',
+      errorCode: PasswordResetErrors.PASSWORD_RESET_CODE_INVALID.code,
+    });
+    return err(appError(PasswordResetErrors.PASSWORD_RESET_CODE_INVALID));
+  };
+  let checked: Result<null, AppError>;
   try {
-    verified = await client.auth.mfa.challengeAndVerify({ factorId, code });
+    checked = await deps.limitCodeCheck(userId, check, isWrongResetCode, {
+      limited: (retryAfterSeconds) => codeLimited(retryAfterSeconds / 60),
+    });
   } catch (error) {
     await endRecoverySession(deps, client, 'local', userId);
     throw error;
   }
-  if (!verified.error) return ok(null);
+  if (checked.ok) return checked;
   await endRecoverySession(deps, client, 'local', userId);
-  const { status } = verified.error;
-  if (status === 429 || verified.error.code === 'over_request_rate_limit') {
-    return err(appError('RATE_LIMITED'));
+  // Auth's own limit (the code was not compared; the limiter gave the account's failure back): the link
+  // is used up all the same — say when to ask for a new one.
+  if (checked.error.code === 'RATE_LIMITED') {
+    deps.logWarning('password reset: the code check was limited by Auth', {
+      action: COMPLETE_ACTION,
+      reason: 'auth_service',
+      status: 429,
+    });
+    return err(codeLimited(RESET_CODE_AUTH_LIMIT_WAIT_MINUTES));
   }
-  if (status === undefined || status === 0 || status >= 500) throw new AuthServiceError(status);
-  // Logged without the code (review M3: T-M2-11 counts refused codes).
-  deps.logWarning('password reset: authenticator code refused', {
-    action: COMPLETE_ACTION,
-    outcome: 'failure',
-    errorCode: PasswordResetErrors.PASSWORD_RESET_CODE_INVALID.code,
-  });
-  return err(appError(PasswordResetErrors.PASSWORD_RESET_CODE_INVALID));
+  return checked;
 }
+
+/** A wrong authenticator code on the reset page — what the code limiter counts as a failure. */
+const isWrongResetCode = (error: AppError) =>
+  error.code === PasswordResetErrors.PASSWORD_RESET_CODE_INVALID.code;
 
 function linkInvalid(): Result<never, AppError> {
   return err(appError(PasswordResetErrors.PASSWORD_RESET_LINK_INVALID));
@@ -324,11 +410,17 @@ function passwordRefusal(error: AuthErrorLike & { readonly reasons?: unknown }):
   return appError(PasswordResetErrors.PASSWORD_RESET_PASSWORD_REJECTED);
 }
 
-/** The user id Auth returned with the recovery session (for the security log only). */
-function userIdOf(data: unknown): string | null {
+/** The user Auth returned with the recovery session: its id (security log) and e-mail (unlock). */
+function userOf(data: unknown): { readonly id: string | null; readonly email: string | null } {
   const user = typeof data === 'object' && data !== null && 'user' in data ? data.user : null;
-  const id = typeof user === 'object' && user !== null && 'id' in user ? user.id : null;
-  return typeof id === 'string' ? id : null;
+  const field = (name: 'id' | 'email') => {
+    const value =
+      typeof user === 'object' && user !== null && name in user
+        ? (user as Record<string, unknown>)[name]
+        : null;
+    return typeof value === 'string' && value !== '' ? value : null;
+  };
+  return { id: field('id'), email: field('email') };
 }
 
 /** Ends the recovery session (memory-only); a failure is logged, never shown. */
@@ -368,15 +460,34 @@ export async function completePasswordReset(
     readonly password: string;
     /** The code from the account's authenticator app (asked when the link says the account has one). */
     readonly code?: string | undefined;
+    /** «تذكّر هذا المتصفح» ticked on the reset page (default: not). */
+    readonly remember?: boolean;
   },
 ): Promise<Result<{ readonly next: 'sign-in' }, AppError>> {
   const { client } = deps;
   if (!client) return err(appError('NOT_CONFIGURED'));
+  // Below the platform's minimum (12 characters as people count them — an emoji is one): refused before it
+  // is counted or the link is spent, as the action's own check does (integration review, 5c).
+  if (Array.from(input.password).length < PLATFORM_PASSWORD_MIN_LENGTH) {
+    return err(
+      appError('VALIDATION_FAILED', {
+        fieldErrors: [
+          {
+            path: 'password',
+            code: 'TOO_SMALL',
+            params: { minimum: PLATFORM_PASSWORD_MIN_LENGTH },
+          },
+        ],
+      }),
+    );
+  }
+  // Every other submission counts, malformed links included; nothing is spent when limited.
+  if (!(await deps.allowAttempt())) return err(appError('RATE_LIMITED'));
   if (!RECOVERY_TOKEN_HASH_PATTERN.test(input.tokenHash)) return linkInvalid();
 
   const verified = await client.auth.verifyOtp({ type: 'recovery', token_hash: input.tokenHash });
   if (verified.error) return verifyRefusal(verified.error);
-  const userId = userIdOf(verified.data);
+  const { id: userId, email: accountEmail } = userOf(verified.data);
   const tokens = sessionTokens(verified.data);
   if (!tokens || !userId) {
     await endRecoverySession(deps, client, 'local', userId);
@@ -439,6 +550,10 @@ export async function completePasswordReset(
     entityType: 'auth_user',
     entityId: userId,
   });
+  // The owner proved control of the mailbox: a sign-in lock on the account ends, this browser is trusted
+  // for it, and every other browser it trusted must be remembered again (T-M2-11, PO decision 9 Oct 2026;
+  // security review M2).
+  if (accountEmail) await deps.unlockSignIn(accountEmail, input.remember === true);
   if (deps.queuePasswordChangedNotice) {
     try {
       await deps.queuePasswordChangedNotice(userId);

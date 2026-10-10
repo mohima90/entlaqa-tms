@@ -83,3 +83,23 @@ describe('createSupabaseStatelessClient (password recovery, T-M2-08)', () => {
     expect(auth.flowType).toBe('implicit');
   });
 });
+
+describe('extra Auth headers (self-hosted client-IP forwarding, T-M2-11)', () => {
+  const config = { url: 'https://example.supabase.co', publishableKey: 'sb_publishable_test' };
+  const authHeaders = (client: unknown) =>
+    (client as { auth: { headers: Record<string, string> } }).auth.headers;
+
+  it('sends the given headers with every Auth call of the client, and none by default', () => {
+    const headers = { 'X-Jadarat-Client': '203.0.113.7' };
+    expect(authHeaders(createSupabaseServerClient(cookies, config, { headers }))).toMatchObject(
+      headers,
+    );
+    expect(authHeaders(createSupabaseStatelessClient(config, { headers }))).toMatchObject(headers);
+    expect(authHeaders(createSupabaseServerClient(cookies, config))).not.toHaveProperty(
+      'X-Jadarat-Client',
+    );
+    expect(authHeaders(createSupabaseStatelessClient(config))).not.toHaveProperty(
+      'X-Jadarat-Client',
+    );
+  });
+});

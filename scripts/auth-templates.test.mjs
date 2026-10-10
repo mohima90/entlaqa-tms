@@ -194,6 +194,16 @@ describe('Auth e-mail templates (T-M2-08)', () => {
     expect(signing).toContain('location / { return 404; }');
     expect(signing).toContain('proxy_set_header X-Upsert "";');
     expect(signing).toContain('error_log /var/log/nginx/error.log crit;');
+    // No visitor or client-address header reaches Storage from the app (integration review L2).
+    for (const header of [
+      'X-Jadarat-Client',
+      'X-Jadarat-Rate-Limit-Key',
+      'X-Real-IP',
+      'X-Forwarded-For',
+      'Forwarded',
+    ]) {
+      expect(signing.split(`proxy_set_header ${header} "";`)).toHaveLength(3);
+    }
     // The app and the gateway share `edge` (fixed subnet) and nothing else, so 8445's source rule holds.
     expect(compose).toContain('- { subnet: 10.231.0.32/28, gateway: 10.231.0.33 }');
     expect(compose).toContain('STORAGE_INTERNAL_URL: https://gateway:8445');

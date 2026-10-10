@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { describe, expect, it } from 'vitest';
 import {
   FileStorageError,
+  STORAGE_STRIPPED_HEADERS,
   createUserFileStorage,
   readStorageInternalOrigin,
   readStoragePublicOrigin,
@@ -100,6 +101,51 @@ describe('readStorageInternalOrigin and storageRoutingFetch (security review M2)
       'https://gateway:8443/auth/v1/token?grant_type=refresh_token',
       'https://gateway:8443/storagex/v1/object',
     ]);
+  });
+
+  it('strips visitor and client-address headers from Storage calls only (integration review L2)', async () => {
+    const seen: { url: string; headers: Headers }[] = [];
+    const base = ((input: RequestInfo | URL, init?: RequestInit) => {
+      if (input instanceof Request) {
+        seen.push({ url: input.url, headers: new Headers(init?.headers ?? input.headers) });
+      } else {
+        seen.push({
+          url: input instanceof URL ? input.href : input,
+          headers: new Headers(init?.headers),
+        });
+      }
+      return Promise.resolve(new Response('{}'));
+    }) as typeof fetch;
+    const visitor = {
+      'X-Visitor-Key': 'k',
+      'X-Jadarat-Client': 'k',
+      'X-Real-IP': '203.0.113.7',
+      'X-Forwarded-For': '203.0.113.7',
+      Forwarded: 'for=203.0.113.7',
+      apikey: 'self-hosted',
+    };
+    for (const origin of ['https://gateway:8445', null]) {
+      seen.length = 0;
+      const routed = storageRoutingFetch(origin, base, ['X-Visitor-Key']);
+      await routed('https://gateway:8443/storage/v1/object/sign/imports/a', {
+        method: 'POST',
+        headers: visitor,
+      });
+      await routed(
+        new Request('https://gateway:8443/storage/v1/object/sign/imports/b', {
+          method: 'POST',
+          headers: visitor,
+        }),
+      );
+      await routed('https://gateway:8443/auth/v1/user', { headers: visitor });
+      const [byInit, byRequest, auth] = seen;
+      for (const call of [byInit, byRequest]) {
+        expect([...(call?.headers.keys() ?? [])]).toEqual(['apikey']);
+      }
+      expect(auth?.headers.get('x-visitor-key')).toBe('k');
+      expect(auth?.headers.get('x-jadarat-client')).toBe('k');
+    }
+    expect(STORAGE_STRIPPED_HEADERS).toContain('x-jadarat-client');
   });
 });
 

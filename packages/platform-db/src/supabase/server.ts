@@ -37,13 +37,19 @@ function globalHeaders(
 }
 
 /**
- * The server client's `global` options: the headers above and, with a Storage origin, the fetch that sends
- * Storage's API calls there (T-M2-18).
+ * A client's `global` options: the headers above and, when there is a Storage origin or a visitor header,
+ * the fetch that sends Storage's API calls to that origin (T-M2-18) and strips every visitor and
+ * client-address header from them (integration review L2: the visitor key is for Auth's limits only).
  */
-function globalOptions(options: SupabaseServerClientOptions, userAgent: string | null) {
+function globalOptions(
+  options: AuthClientOptions & { readonly storageOrigin?: string | null },
+  userAgent: string | null = null,
+) {
   const { global } = globalHeaders(options, userAgent);
-  if (!options.storageOrigin) return global ? { global } : {};
-  return { global: { ...global, fetch: storageRoutingFetch(options.storageOrigin) } };
+  const visitorHeaders = Object.keys(options.headers ?? {});
+  if (!options.storageOrigin && visitorHeaders.length === 0) return global ? { global } : {};
+  const fetch = storageRoutingFetch(options.storageOrigin ?? null, undefined, visitorHeaders);
+  return { global: { ...global, fetch } };
 }
 
 /** Supabase public config, read from the runtime environment (see readSupabasePublicConfigFromEnv). */
@@ -115,7 +121,7 @@ export function createSupabaseStatelessClient(
       detectSessionInUrl: false,
       flowType: 'implicit',
     },
-    ...globalHeaders(options),
+    ...globalOptions(options),
   });
 }
 
@@ -131,6 +137,7 @@ export {
   type SignedUpload,
   STORAGE_INTERNAL_URL_ENV,
   STORAGE_PUBLIC_URL_ENV,
+  STORAGE_STRIPPED_HEADERS,
   type UserFileStorage,
   createUserFileStorage,
   readStorageInternalOrigin,

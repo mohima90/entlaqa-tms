@@ -115,17 +115,51 @@ export function readStorageInternalOrigin(
 }
 
 /**
- * A fetch for the server's Supabase client that sends Storage's API calls (`/storage/v1/…`) to `origin`
- * — path and query unchanged — and everything else (Auth) where it was going. The signed URLs Storage
- * returns stay relative to the configured Supabase URL (then STORAGE_PUBLIC_URL for browsers).
+ * Visitor and client-address headers that never reach Storage (integration review L2): T-M2-11's visitor
+ * key for Auth's per-IP limits (`X-Jadarat-Client` — its configured name is passed on top, see
+ * storageRoutingFetch), the key the gateway hands to Auth, and the usual client-IP headers. Storage needs
+ * none of them, and the visitor's address must not reach it (nor its logs).
  */
-export function storageRoutingFetch(origin: string, base: typeof fetch = fetch): typeof fetch {
+export const STORAGE_STRIPPED_HEADERS: readonly string[] = [
+  'x-jadarat-client',
+  'x-jadarat-rate-limit-key',
+  'x-real-ip',
+  'x-forwarded-for',
+  'forwarded',
+];
+
+function withoutHeaders(headers: HeadersInit | undefined, strip: ReadonlySet<string>): Headers {
+  const copy = new Headers(headers);
+  for (const name of strip) copy.delete(name);
+  return copy;
+}
+
+/**
+ * A fetch for the server's Supabase client. Storage's API calls (`/storage/v1/…`) go to `origin` when one
+ * is given (self-hosted: the gateway's internal port) — path and query unchanged — and never carry the
+ * visitor or client-address headers (STORAGE_STRIPPED_HEADERS plus `stripHeaders`, e.g. the configured
+ * JADARAT_AUTH_CLIENT_HEADER), wherever they go; everything else (Auth) is untouched. The signed URLs
+ * Storage returns stay relative to the configured Supabase URL (then STORAGE_PUBLIC_URL for browsers).
+ */
+export function storageRoutingFetch(
+  origin: string | null,
+  base: typeof fetch = fetch,
+  stripHeaders: readonly string[] = [],
+): typeof fetch {
+  const strip = new Set([...STORAGE_STRIPPED_HEADERS, ...stripHeaders.map((h) => h.toLowerCase())]);
   return (input, init) => {
     const raw = input instanceof Request ? input.url : String(input);
     const url = new URL(raw);
     if (!url.pathname.startsWith('/storage/v1/')) return base(input, init);
-    const routed = new URL(`${url.pathname}${url.search}`, origin);
-    return base(input instanceof Request ? new Request(routed, input) : routed, init);
+    const target = origin === null ? url : new URL(`${url.pathname}${url.search}`, origin);
+    const headers = init?.headers === undefined ? undefined : withoutHeaders(init.headers, strip);
+    const options = init === undefined ? undefined : { ...init, ...(headers ? { headers } : {}) };
+    if (input instanceof Request) {
+      const request = new Request(target, input);
+      for (const name of strip) request.headers.delete(name);
+      return base(request, options);
+    }
+    return base(target, options);
   };
 }
 

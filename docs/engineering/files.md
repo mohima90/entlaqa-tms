@@ -46,46 +46,57 @@ Buckets (ADR 0006 §1, all private): `materials` 200 MB, `images` 10 MB, `eviden
 
 ## 3. Request path (modules)
 
-The owning **module authorizes first** (may this user attach a file to / read files of this entity?), then calls the files service. Example for an import screen (T-M2-12):
+The owning **module authorizes first** (may this user attach a file to / read files of this entity?), then calls the files service from its own `defineAction`. Every step that writes runs in the **action's transaction** (the handler); Storage signs **after the commit**, in the action's `afterCommit` (no database connection held). Example for an import screen (T-M2-12):
 
 ```ts
-import { createUploadIntent, confirmUpload, getFileStatus, createDownloadGrant } from '@jadarat/platform-files';
-import { fileRequestContext } from '@jadarat/platform-files/next';
+import {
+  confirmUpload, grantDownload, reserveUploadIntent, signDownload, signUploadIntent,
+} from '@jadarat/platform-files';
+import { requestFileStorage } from '@jadarat/platform-files/next';
 
-// 1. Server action "start upload" — after checking the user may import:
-const owner = { module: 'platform', entityType: 'user_import', entityId: importId };
-const intent = await createUploadIntent(await fileRequestContext(claims), {
-  purpose: 'platform.user_import',
-  owner,
-  declaredName: file.name, // its extension decides the declared type (.csv / .xlsx here)
-  size: file.size,
+// 1. Server action "start upload" — after checking, in the handler, that the user may import:
+export const startUpload = defineAction({
+  permission, input, // …
+  handler: async ({ ctx, input }) =>
+    ok(await reserveUploadIntent(ctx.tx, {
+      purpose: 'platform.user_import',
+      owner: { module: 'platform', entityType: 'user_import', entityId: input.importId },
+      declaredName: input.name, // its extension decides the declared type (.csv / .xlsx here)
+      size: input.size,
+    })),
+  // Committed: Storage now sees the reservation.
+  afterCommit: async ({ result }) => ok(await signUploadIntent(await requestFileStorage(), result)),
 });
 // → { fileId, url, method: 'PUT', contentType, maxBytes, expiresAt }
 // 2. The browser PUTs the bytes to `url` with Content-Type `contentType` (no session needed).
-// 3. Server action "upload done":
-const view = await withUserTx(claims, (tx) => confirmUpload(tx, intent.fileId)); // status 'uploaded'
+// 3. Server action "upload done" (handler only): confirmUpload(ctx.tx, fileId) → status 'uploaded'.
 // 4. The UI polls getFileStatus (or listens for file.scanned) until a FINAL_STATUSES value.
-// 5. Download, after the module's own check that this user may read files of `owner`:
-const link = await createDownloadGrant(await fileRequestContext(claims), actorFromClaims(claims), {
-  fileId,
-  purpose: 'platform.user_import',
-  owner, // the entity the module authorized: a file of any other entity is FILE_NOT_FOUND
+// 5. Download, after the module's own check (handler) that this user may read files of `owner`:
+export const downloadImportFile = defineAction({
+  permission, input, // …
+  handler: async ({ ctx, input }) =>
+    ok(await grantDownload(ctx.tx, ctx.actor, {
+      fileId: input.fileId,
+      purpose: 'platform.user_import',
+      owner, // the entity the module authorized: a file of any other entity is FILE_NOT_FOUND
+    })),
+  afterCommit: async ({ result }) => ok(await signDownload(await requestFileStorage(), result)),
 });
 // → { url, expiresAt, name } — `name`: the original name with the extension of the detected type
 ```
 
-| Function | What it does | Refusals (DomainError codes) |
-|---|---|---|
-| `createUploadIntent(context, { purpose, owner, declaredName, size })` | Validates purpose, owner and size; sanitizes the name, whose **extension must name a type the purpose accepts** (`declaredTypeFor`); **reserves the upload in its own committed transaction**, then asks Storage — with the user's session — for a signed upload URL for exactly that key | `UNKNOWN_PURPOSE`, `INVALID_FILE_DATA`, `TOO_LARGE`, `TYPE_NOT_ALLOWED` (no or unknown extension, or one the purpose does not accept), `TOO_MANY_PENDING_UPLOADS` (50 unconfirmed uploads per user in 24 hours), `STORAGE_REFUSED`, `STORAGE_UNAVAILABLE` |
-| `confirmUpload(tx, fileId)` | The uploader confirms after the PUT; checks the object exists; `uploaded` (queued) or `rejected` (empty, too large, stored with another Content-Type) | `FILE_NOT_FOUND`, `OBJECT_NOT_UPLOADED`, `UPLOAD_EXPIRED` (reservation older than 24 h) |
-| `getFileStatus(tx, fileId)` | Status view (name, types, size, hash, reason) for its uploader or a job of its tenant; `null` otherwise | — |
-| `createDownloadGrant(context, actor, { fileId, purpose, owner })` | **Clean files of exactly that owner entity and purpose only** (checked by the database: `private.grant_file_download`). Writes a download grant (and, for audited purposes, the audit event `platform.file.download_granted`) in its own committed transaction, then asks Storage for a signed URL of the purpose's lifetime that downloads as an attachment named `downloadName(original, detected type)` | `FILE_NOT_FOUND` (also: another owner entity, module or purpose), `FILE_NOT_CLEAN`, `STORAGE_REFUSED`, `STORAGE_UNAVAILABLE` |
-| `deleteFile(tx, fileId)` | Soft delete by its uploader — also a file still waiting for the scanner, or failed; the object goes with housekeeping | `FILE_NOT_FOUND`, `FILE_BUSY` (a worker is scanning it right now — try again shortly —, or infected) |
-| `markFileUsed(tx, fileId)` | Records the first use of a clean file (imports: kept 7 days from then) | `FILE_NOT_FOUND`, `FILE_NOT_CLEAN` |
+| Function | Where | What it does | Refusals (DomainError codes) |
+|---|---|---|---|
+| `reserveUploadIntent(tx, { purpose, owner, declaredName, size })` | handler (action's transaction) | Validates purpose, owner and size; sanitizes the name, whose **extension must name a type the purpose accepts** (`declaredTypeFor`); reserves the upload (pending, 15 minutes) for one object key | `UNKNOWN_PURPOSE`, `INVALID_FILE_DATA`, `TOO_LARGE`, `TYPE_NOT_ALLOWED` (no or unknown extension, or one the purpose does not accept), `TOO_MANY_PENDING_UPLOADS` (50 unconfirmed uploads per user in 24 hours) |
+| `signUploadIntent(storage, reservation)` | `afterCommit` | Asks Storage — with the user's session — for a signed upload URL for exactly that key | `STORAGE_REFUSED`, `STORAGE_UNAVAILABLE` |
+| `confirmUpload(tx, fileId)` | handler | The uploader confirms after the PUT; checks the object exists; `uploaded` (queued) or `rejected` (empty, too large, stored with another Content-Type) | `FILE_NOT_FOUND`, `OBJECT_NOT_UPLOADED`, `UPLOAD_EXPIRED` (reservation older than 24 h) |
+| `getFileStatus(tx, fileId)` | handler / query | Status view (name, types, size, hash, reason) for its uploader or a job of its tenant; `null` otherwise | — |
+| `grantDownload(tx, actor, { fileId, purpose, owner })` | handler | **Clean files of exactly that owner entity and purpose only** (checked by the database: `private.grant_file_download`). Writes the download grant and, for audited purposes, the audit event `platform.file.download_granted`; returns the saved name `downloadName(original, detected type)` | `FILE_NOT_FOUND` (also: another owner entity, module or purpose), `FILE_NOT_CLEAN` |
+| `signDownload(storage, granted)` | `afterCommit` | Asks Storage for a signed URL of the purpose's lifetime that downloads as an attachment under that name | `STORAGE_REFUSED`, `STORAGE_UNAVAILABLE` |
+| `deleteFile(tx, fileId)` | handler | Soft delete by its uploader — also a file still waiting for the scanner, or failed; the object goes with housekeeping | `FILE_NOT_FOUND`, `FILE_BUSY` (a worker is scanning it right now — try again shortly —, or infected) |
+| `markFileUsed(tx, fileId)` | handler | Records the first use of a clean file (imports: kept 7 days from then) | `FILE_NOT_FOUND`, `FILE_NOT_CLEAN` |
 
-**Why the two transactions.** Storage evaluates our policies on its **own** database connection, so it sees only committed rows. The reservation (for the signed upload URL) and the download grant (for the signed download URL) are therefore committed before Storage is asked — `context.ownTx` runs a transaction of the signed-in user for exactly that (`fileRequestContext` builds it with `withUserTx`). A reservation whose URL is never used expires (15 minutes) and is purged after 24 hours; a grant expires with its URL (60 s / 300 s).
-
-**From a server action (`defineAction`, T-M2-10).** `createUploadIntent` and `createDownloadGrant` act outside the action's transaction (their own committed transaction, then Storage). An action that calls them declares **`externalEffects: true`**: `defineAction` otherwise runs the handler once more after a deadlock or serialization failure of its transaction (40P01 / 40001), which would reserve or grant (and audit) a second time and sign a second URL. `confirmUpload`, `getFileStatus`, `deleteFile` and `markFileUsed` work in the action's own transaction and need no flag. `ownTx` takes a **second pooled connection** while the action holds its own — the pattern the T-M2-11 security review keeps away from the request path for the rate limiter (`beforeTransaction`); the first caller (T-M2-12) settles the shape with its reviewer.
+**Why the transaction step and `afterCommit` (integration review M1).** Storage evaluates our policies on its **own** database connection, so it sees only committed rows: the reservation and the grant must be committed before Storage is asked. They are written in the **action's own transaction** — one pooled connection per request, retried as a whole by `defineAction` after a deadlock or serialization failure (T-M2-10), the audit row with them — and signed in `afterCommit`, which runs **once**, after the commit, with **no connection held**. So file actions need no `externalEffects`, and there is no second transaction inside the first: an earlier design (`ownTx`) opened one, which could exhaust the pool (`max: 5`, no queue timeout: five concurrent uploads each holding a connection and waiting for a sixth) and wait on row locks of its own outer transaction (a self-deadlock PostgreSQL cannot detect). `signUploadIntent` / `signDownload` (and the user Storage client itself) **refuse to run inside a transaction** of the request (`assertNoDatabaseTransaction`, marked by platform-db's transaction helpers), so the wrong shape fails at once instead of hanging. If signing fails after the commit, what stays is harmless: a reservation expires unused (15 minutes) and is purged after 24 hours; a grant expires with its URL (60 s / 300 s). `requestFileStorage()` (`@jadarat/platform-files/next`) is the user's Storage client for `afterCommit`.
 
 **Who creates signed URLs.** Only the web app's server, with the user's session. Self-hosted, it asks Storage on the gateway's **internal port 8445** (`STORAGE_INTERNAL_URL`; the app's network `edge` alone); the browser-facing port 8443 serves only the uploads (`PUT`, with its CORS preflight) and downloads (`GET`) with a URL's token — a user's own token cannot create a URL there, of any lifetime (security review M2, smoke-tested). On hosted Supabase the project URL serves both: see the residual risk in §6.
 
@@ -165,7 +176,7 @@ Platform tasks (ADR 0005 §4; every wake-up and every minute):
 
 ## 8. Follow-ups (not in T-M2-18)
 
-- **T-M2-12**: the upload screen — browser `PUT` with progress, polling `getFileStatus`, calling `markFileUsed` when the import runs; downloads through `createDownloadGrant` with the import as owner; self-hosted: add `STORAGE_PUBLIC_URL`'s origin to the CSP `connect-src`.
+- **T-M2-12**: the upload screen — browser `PUT` with progress, polling `getFileStatus`, calling `markFileUsed` when the import runs; downloads through `grantDownload` + `signDownload` (§3) with the import as owner; self-hosted: add `STORAGE_PUBLIC_URL`'s origin to the CSP `connect-src`.
 - **T-M2-15b**: profile photos — ADR 0006 §3 also asks to re-encode images and strip metadata (EXIF/GPS) with `sharp` before use; not built yet (needs the PO's acceptance of `sharp`/libvips licensing, LGPL-3.0).
 - **Notifications of an infected file** to the uploader and the organization's admin (ADR 0006 §3.4): a separate task (Tech Lead, 10 Oct 2026); the `file.scanned` event and the audit events are in place.
 - **Quotas** (security review L7): per-tenant storage quota (SUB-01) and a per-tenant cap on pending uploads (today: 50 per user per day), with CAT-06; resumable (TUS) uploads for large materials, 200 MB end-to-end on staging (ADR 0006 Verification 2).
@@ -179,7 +190,7 @@ Platform tasks (ADR 0005 §4; every wake-up and every minute):
 | M1 one user could stall scanning for every tenant | clamd `MaxScanTime` 90 s, verdict wait 150 s; a dropped stream counts against the file when clamd still answers a PING; failures of the file itself counted separately (`scan_failures`, `error` after 5); suspected crashes (no PING answer) counted too (`scan_crashes`, `error` `scanner_crashed` with a high-severity event after 3 — re-review L-B); no verdict 24 h after upload → `error` (`scanner_unavailable`) with an error log; organizations take turns (`claim_file_scan`); the owner may delete a file waiting for the scanner or failed; housekeeping's retention applies to waiting files (never during a scan); clamd's `/tmp` bounded to 2 GB |
 | M2 download links were not short-lived | self-hosted: URL creation only on the gateway's internal port 8445 for the app (`STORAGE_INTERNAL_URL`), the published port serves only `PUT` (+ `OPTIONS`) and `GET`; hosted: residual risk RR-FIL-01 / R-58; grant lifetime ≤ 5 minutes in ADR, migration and docs |
 | M3 downloads kept the uploader's extension | download name = sanitized name + extension of the detected type (`downloadName`); upload intents refuse names without an extension of an accepted type (`declaredTypeFor`); self-hosted gateway serves downloads only with such a name |
-| M4 grants were not tied to the authorized entity | `grant_file_download(file, purpose, module, entity type, entity id)` and `createDownloadGrant(context, actor, { fileId, purpose, owner })` |
+| M4 grants were not tied to the authorized entity | `grant_file_download(file, purpose, module, entity type, entity id)` and `grantDownload(tx, actor, { fileId, purpose, owner })` (then `signDownload` after the commit — integration review M1) |
 | M5 orphan objects were never removed | hourly sweep of objects older than 3 h without a live record (`claim_orphan_objects`) — also the original key of a quarantined, removed or purged file, if a URL created it again; with a configurable brake (500 orphans / 10 % of objects: none removed, an error) and a switch for restores (re-review L-C) |
 | L1 signature age | hard limit 7 days (or undated): nothing scanned, error hourly; `scanner-check` exit code 3; raising it needs a test-only flag and no production environment (re-review L-D) |
 | L2 users could upload to or confirm a generated file's key | `can_upload_object` and `confirm_file_upload` require a purpose users upload |
@@ -197,7 +208,7 @@ Platform tasks (ADR 0005 §4; every wake-up and every minute):
 | Where | What |
 |---|---|
 | Storage's tenant check | `private.storage_request_tenant()` asks the same decision as `private.current_tenant_id()`, `private.session_access` (T-M2-10): an idle session, one past the organization's maximum length or one that does not meet its MFA policy gets no tenant from Storage (pgTAP 84) |
-| Server actions | `externalEffects: true` for an action that calls `createUploadIntent` or `createDownloadGrant` (§3, "From a server action") |
-| Supabase server client | one `global` object: T-M2-11's visitor header and T-M2-10's User-Agent together with Storage's routing fetch; `fileRequestContext` forwards the browser's User-Agent (a refresh records the real browser) |
+| Server actions | Transaction step in the handler (`reserveUploadIntent`, `grantDownload` with its audit row), Storage signing in `defineAction`'s `afterCommit` (`signUploadIntent`, `signDownload`; integration review M1) — no `externalEffects`, no second transaction; signing refuses to run inside one (§3) |
+| Supabase server client | one `global` object: T-M2-11's visitor header and T-M2-10's User-Agent together with Storage's routing fetch; `requestFileStorage` forwards the browser's User-Agent (a refresh records the real browser); no visitor or client-address header reaches Storage (integration review L2) |
 | Worker | platform tasks: account mail (reset links, lock notices), the session purge (T-M2-10), file housekeeping and the scan |
 | Self-hosted smoke | the file journey runs before the sign-in protection, deactivation and security-policy journeys (it signs in with the first account's original password, before the policy requires an authenticator app); `front` (T-M2-11) and Storage/clamd in the service checks |

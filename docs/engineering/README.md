@@ -89,7 +89,7 @@ packages/
   platform-observability/   JSON logger without PII, scrubbing, error-reporting hook (Sentry EU / GlitchTip) — runbook: observability.md
   platform-jobs/            ./jobs only: graphile-worker runner (app_queue), event dispatcher + deliveries, subscriber registry (ADR 0004/0005)
   platform-notifications/   bilingual e-mail templates (.); ./jobs: queueEmail, e-mail sender, Resend/SMTP transports (ADR 0008) — runbook: email.md
-  platform-files/           files service (ADR 0006): upload intents, confirmation, download grants (.); ./next request context; ./jobs: clamd scan, housekeeping, scanned-file streams — runbook: files.md
+  platform-files/           files service (ADR 0006): upload reservations and their signing after the commit, confirmation, download grants (.); ./next the user's Storage client; ./jobs: clamd scan, housekeeping, scanned-file streams — runbook: files.md
   ui/                       RTL-first primitives (Button, Card, AppShell); imports docs/design/tokens/tokens.css
   contracts/                cross-module contracts (example: TmsSessionScheduledV1 event)
 modules/tms/                TMS module skeleton: permissions, a domain service, an example server action

@@ -3,11 +3,13 @@ import {
   FINAL_STATUSES,
   XLSX,
   confirmUpload,
-  createDownloadGrant,
-  createUploadIntent,
   deleteFile,
   getFileStatus,
+  grantDownload,
   markFileUsed,
+  reserveUploadIntent,
+  signDownload,
+  signUploadIntent,
 } from './index';
 
 const db = vi.hoisted(() => {
@@ -21,6 +23,8 @@ const db = vi.hoisted(() => {
   }
   return {
     DomainError,
+    inTransaction: false,
+    assertNoDatabaseTransaction: vi.fn(),
     reserveUpload: vi.fn(),
     confirmFileUpload: vi.fn(),
     getFileStatus: vi.fn(),
@@ -37,9 +41,8 @@ const ENTITY = '0d9c8b7a-6f5e-4d3c-9b2a-1f0e9d8c7b6a';
 const TX = { tx: true } as never;
 const ACTOR = { userId: 'u', tenantId: 't' } as never;
 
-function context() {
-  const ownTx = vi.fn(<T>(fn: (tx: never) => Promise<T>) => fn(TX));
-  const storage = {
+function storage() {
+  return {
     createSignedUploadUrl: vi.fn(() =>
       Promise.resolve({
         url: 'https://tms.example/storage/v1/object/upload/sign/k?token=t',
@@ -50,7 +53,6 @@ function context() {
       Promise.resolve('https://tms.example/storage/v1/object/sign/k?token=t&download=a.csv'),
     ),
   };
-  return { ownTx, storage, context: { ownTx: ownTx as never, storage } };
 }
 
 const intent = {
@@ -60,8 +62,21 @@ const intent = {
   size: 120,
 };
 
+const reservation = {
+  fileId: FILE,
+  bucket: 'imports',
+  objectKey: 'k',
+  contentType: 'text/csv',
+  maxBytes: 20971520,
+  expiresAt: new Date('2026-10-09T08:15:00Z'),
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
+  db.assertNoDatabaseTransaction.mockImplementation((what: string) => {
+    if (db.inTransaction) throw new Error(`${what} must run after the transaction commits`);
+  });
+  db.inTransaction = false;
   db.reserveUpload.mockResolvedValue({
     fileId: FILE,
     bucket: 'imports',
@@ -71,11 +86,21 @@ beforeEach(() => {
   });
 });
 
-describe('createUploadIntent', () => {
-  it('reserves in its own transaction, then asks Storage for exactly that key', async () => {
-    const { ownTx, storage, context: ctx } = context();
-    const result = await createUploadIntent(ctx, intent);
-    expect(result).toEqual({
+describe('reserveUploadIntent (transaction step) and signUploadIntent (after the commit)', () => {
+  it("reserves in the caller's transaction only — no Storage call there", async () => {
+    expect(await reserveUploadIntent(TX, intent)).toEqual(reservation);
+    expect(db.reserveUpload).toHaveBeenCalledExactlyOnceWith(TX, {
+      purpose: 'platform.user_import',
+      owner: intent.owner,
+      name: 'موظفو_الرياض.CSV',
+      declaredType: 'text/csv',
+      size: 120,
+    });
+  });
+
+  it('signs exactly the reserved key, after the commit', async () => {
+    const files = storage();
+    expect(await signUploadIntent(files, reservation)).toEqual({
       fileId: FILE,
       url: 'https://tms.example/storage/v1/object/upload/sign/k?token=t',
       method: 'PUT',
@@ -83,25 +108,22 @@ describe('createUploadIntent', () => {
       maxBytes: 20971520,
       expiresAt: new Date('2026-10-09T08:15:00Z'),
     });
-    expect(ownTx).toHaveBeenCalledTimes(1);
-    expect(db.reserveUpload).toHaveBeenCalledWith(TX, {
-      purpose: 'platform.user_import',
-      owner: intent.owner,
-      name: 'موظفو_الرياض.CSV',
-      declaredType: 'text/csv',
-      size: 120,
-    });
-    expect(storage.createSignedUploadUrl).toHaveBeenCalledWith('imports', 'k');
-    // The reservation is committed BEFORE Storage is asked (Storage reads committed rows only).
-    expect(ownTx.mock.invocationCallOrder[0]).toBeLessThan(
-      storage.createSignedUploadUrl.mock.invocationCallOrder[0] ?? 0,
+    expect(files.createSignedUploadUrl).toHaveBeenCalledExactlyOnceWith('imports', 'k');
+    expect(db.assertNoDatabaseTransaction).toHaveBeenCalledWith('signUploadIntent');
+  });
+
+  it('refuses to sign inside a transaction (integration review M1): never reaches Storage', async () => {
+    const files = storage();
+    db.inTransaction = true;
+    await expect(signUploadIntent(files, reservation)).rejects.toThrow(
+      /signUploadIntent must run after the transaction commits/,
     );
+    expect(files.createSignedUploadUrl).not.toHaveBeenCalled();
   });
 
   it('refuses early what the purpose does not allow', async () => {
-    const { context: ctx, ownTx } = context();
     const refused = async (overrides: Record<string, unknown>) =>
-      createUploadIntent(ctx, { ...intent, ...overrides }).then(
+      reserveUploadIntent(TX, { ...intent, ...overrides }).then(
         () => 'accepted',
         (error: unknown) => (error as { code: string }).code,
       );
@@ -131,24 +153,24 @@ describe('createUploadIntent', () => {
       );
     }
     expect(await refused({ declaredName: 'staff.xlsx' })).toBe('accepted');
-    expect(ownTx).toHaveBeenCalledTimes(1);
+    expect(db.reserveUpload).toHaveBeenCalledTimes(1);
     expect(db.reserveUpload.mock.calls[0]?.[1]).toMatchObject({ declaredType: XLSX });
   });
 
   it('reports a Storage refusal or outage without its message', async () => {
-    const { storage, context: ctx } = context();
-    storage.createSignedUploadUrl.mockRejectedValueOnce({
+    const files = storage();
+    files.createSignedUploadUrl.mockRejectedValueOnce({
       code: 'STORAGE_FORBIDDEN',
       temporary: false,
     });
-    await expect(createUploadIntent(ctx, intent)).rejects.toMatchObject({
+    await expect(signUploadIntent(files, reservation)).rejects.toMatchObject({
       code: 'STORAGE_REFUSED',
     });
-    storage.createSignedUploadUrl.mockRejectedValueOnce({
+    files.createSignedUploadUrl.mockRejectedValueOnce({
       code: 'STORAGE_UNAVAILABLE',
       temporary: true,
     });
-    await expect(createUploadIntent(ctx, intent)).rejects.toMatchObject({
+    await expect(signUploadIntent(files, reservation)).rejects.toMatchObject({
       code: 'STORAGE_UNAVAILABLE',
     });
   });
@@ -174,7 +196,7 @@ describe('confirmUpload, getFileStatus, deleteFile, markFileUsed', () => {
   });
 });
 
-describe('createDownloadGrant', () => {
+describe('grantDownload (transaction step) and signDownload (after the commit)', () => {
   const grant = {
     bucket: 'imports',
     objectKey: 'k',
@@ -188,15 +210,11 @@ describe('createDownloadGrant', () => {
     purpose: 'platform.user_import' as const,
     owner: { module: 'platform', entityType: 'user_import', entityId: ENTITY },
   };
+  const granted = { bucket: 'imports', objectKey: 'k', name: 'a.csv', ttlSeconds: 60 };
 
-  it('grants and audits in its own transaction for the authorized owner, then asks Storage for a URL of the same lifetime', async () => {
+  it("grants and audits in the caller's transaction for the authorized owner — no Storage call there", async () => {
     db.grantFileDownload.mockResolvedValue(grant);
-    const { ownTx, storage, context: ctx } = context();
-    const before = Date.now();
-    const link = await createDownloadGrant(ctx, ACTOR, request);
-    expect(link.url).toContain('download=a.csv');
-    expect(link.name).toBe('a.csv');
-    expect(link.expiresAt.getTime()).toBeGreaterThanOrEqual(before + 60_000);
+    expect(await grantDownload(TX, ACTOR, request)).toEqual(granted);
     expect(db.grantFileDownload).toHaveBeenCalledWith(TX, request);
     expect(db.insertAuditEvent).toHaveBeenCalledWith(TX, ACTOR, {
       action: 'platform.file.download_granted',
@@ -204,24 +222,40 @@ describe('createDownloadGrant', () => {
       entityId: FILE,
       data: { purpose: 'platform.user_import', ttlSeconds: 60 },
     });
-    expect(storage.createSignedDownloadUrl).toHaveBeenCalledWith('imports', 'k', 60, 'a.csv');
-    expect(ownTx.mock.invocationCallOrder[0]).toBeLessThan(
-      storage.createSignedDownloadUrl.mock.invocationCallOrder[0] ?? 0,
+  });
+
+  it('signs a URL of the same lifetime after the commit; refuses inside a transaction', async () => {
+    const files = storage();
+    const before = Date.now();
+    const link = await signDownload(files, granted);
+    expect(link.url).toContain('download=a.csv');
+    expect(link.name).toBe('a.csv');
+    expect(link.expiresAt.getTime()).toBeGreaterThanOrEqual(before + 60_000);
+    expect(files.createSignedDownloadUrl).toHaveBeenCalledExactlyOnceWith(
+      'imports',
+      'k',
+      60,
+      'a.csv',
     );
+    db.inTransaction = true;
+    await expect(signDownload(files, granted)).rejects.toThrow(
+      /signDownload must run after the transaction commits/,
+    );
+    expect(files.createSignedDownloadUrl).toHaveBeenCalledTimes(1);
   });
 
   it("names the download by the type found by content, never by the uploader's extension", async () => {
     db.grantFileDownload.mockResolvedValue({ ...grant, name: 'payroll.hta' });
-    const { storage, context: ctx } = context();
-    const link = await createDownloadGrant(ctx, ACTOR, request);
-    expect(link.name).toBe('payroll.csv');
-    expect(storage.createSignedDownloadUrl).toHaveBeenCalledWith('imports', 'k', 60, 'payroll.csv');
+    const named = await grantDownload(TX, ACTOR, request);
+    expect(named.name).toBe('payroll.csv');
+    const files = storage();
+    await signDownload(files, named);
+    expect(files.createSignedDownloadUrl).toHaveBeenCalledWith('imports', 'k', 60, 'payroll.csv');
   });
 
   it('does not audit media downloads; refuses bad requests and Storage refusals', async () => {
     db.grantFileDownload.mockResolvedValue({ ...grant, auditDownloads: false, ttlSeconds: 300 });
-    const { storage, context: ctx } = context();
-    await createDownloadGrant(ctx, ACTOR, request);
+    await grantDownload(TX, ACTOR, request);
     expect(db.insertAuditEvent).not.toHaveBeenCalled();
     for (const bad of [
       { ...request, fileId: 'not-a-uuid' },
@@ -230,13 +264,14 @@ describe('createDownloadGrant', () => {
       { ...request, owner: { ...request.owner, module: 'Platform' } },
       { ...request, owner: { ...request.owner, entityType: '../x' } },
     ]) {
-      await expect(createDownloadGrant(ctx, ACTOR, bad)).rejects.toMatchObject({
+      await expect(grantDownload(TX, ACTOR, bad)).rejects.toMatchObject({
         code: 'FILE_NOT_FOUND',
       });
     }
     expect(db.grantFileDownload).toHaveBeenCalledTimes(1);
-    storage.createSignedDownloadUrl.mockRejectedValueOnce(new Error('x'));
-    await expect(createDownloadGrant(ctx, ACTOR, request)).rejects.toMatchObject({
+    const files = storage();
+    files.createSignedDownloadUrl.mockRejectedValueOnce(new Error('x'));
+    await expect(signDownload(files, granted)).rejects.toMatchObject({
       code: 'STORAGE_REFUSED',
     });
   });

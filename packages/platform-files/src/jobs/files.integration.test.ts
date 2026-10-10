@@ -15,11 +15,15 @@ import type { UserFileStorage } from '@jadarat/platform-db/supabase-server';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
+  type DownloadRequest,
   FILE_PURPOSES,
+  type UploadIntentInput,
   confirmUpload,
-  createDownloadGrant,
-  createUploadIntent,
   getFileStatus,
+  grantDownload,
+  reserveUploadIntent,
+  signDownload,
+  signUploadIntent,
 } from '../index';
 import { collect, streamOf } from '../test-fixtures';
 import type { Scanner } from './clamd';
@@ -115,15 +119,17 @@ describe.skipIf(!configured)('files against PostgreSQL', () => {
     scanner,
     log: (level, message) => logs.push(`${level}: ${message}`),
   });
-  const context = {
-    ownTx: <T>(fn: Parameters<typeof withUserTx<T>>[1]) => withUserTx(claims, fn),
-    storage,
-  };
+  // The shape of a file action (defineAction): the step in the action's transaction, Storage after the
+  // commit (afterCommit) — never a second transaction inside the first (integration review M1).
+  const createUploadIntent = async (input: UploadIntentInput) =>
+    signUploadIntent(storage, await withUserTx(claims, (tx) => reserveUploadIntent(tx, input)));
+  const createDownloadLink = async (request: DownloadRequest) =>
+    signDownload(storage, await withUserTx(claims, (tx) => grantDownload(tx, actor, request)));
 
   /** The member uploads `bytes`: intent, the browser's PUT (Storage's insert), confirmation. */
   async function upload(bytes: Uint8Array, name: string) {
     const owner = { module: 'platform', entityType: 'user_import', entityId: randomUUID() };
-    const intent = await createUploadIntent(context, {
+    const intent = await createUploadIntent({
       purpose: 'platform.user_import',
       owner,
       declaredName: name,
@@ -229,12 +235,19 @@ describe.skipIf(!configured)('files against PostgreSQL', () => {
 
     // Only for the owner entity the module authorized: another entity's request finds nothing.
     await expect(
-      createDownloadGrant(context, actor, {
+      createDownloadLink({
         ...request,
         owner: { ...request.owner, entityId: randomUUID() },
       }),
     ).rejects.toMatchObject({ code: 'FILE_NOT_FOUND' });
-    const link = await createDownloadGrant(context, actor, request);
+    // Signing inside the action's transaction is refused (Storage would not see the grant yet, and the
+    // request would hold its connection meanwhile): integration review M1.
+    await expect(
+      withUserTx(claims, async (tx) =>
+        signDownload(storage, await grantDownload(tx, actor, request)),
+      ),
+    ).rejects.toThrow(/signDownload must run after the transaction commits/);
+    const link = await createDownloadLink(request);
     expect(link.url).toContain('ttl=60');
     expect(link.name).toBe('موظفو الرياض.csv');
     const [audit] = await db.execute<{
@@ -262,7 +275,7 @@ describe.skipIf(!configured)('files against PostgreSQL', () => {
     }>(sql`select count(*) as n from platform.audit_events
       where action = 'platform.file.infected' and entity_id = ${id} and actor_user_id is null`);
     expect(Number(audit?.n)).toBe(1);
-    await expect(createDownloadGrant(context, actor, request)).rejects.toMatchObject({
+    await expect(createDownloadLink(request)).rejects.toMatchObject({
       code: 'FILE_NOT_CLEAN',
     });
     await expect(
@@ -275,7 +288,7 @@ describe.skipIf(!configured)('files against PostgreSQL', () => {
 
   it('housekeeping purges an abandoned upload (lock, removal and record in one transaction) and removes orphan objects', async () => {
     // An upload intent never used, 25 hours old: due for purge.
-    const intent = await createUploadIntent(context, {
+    const intent = await createUploadIntent({
       purpose: 'platform.user_import',
       owner: { module: 'platform', entityType: 'user_import', entityId: randomUUID() },
       declaredName: 'abandoned.csv',

@@ -7,6 +7,7 @@ import {
   type FileStatus,
   type FileStatusView,
   type UserTx,
+  assertNoDatabaseTransaction,
   confirmFileUpload,
   deleteFileRecord,
   getFileStatus as loadFileStatus,
@@ -32,11 +33,17 @@ import {
  * calls these functions. The web app holds no Storage key: Storage checks our storage.objects policies
  * with the user's own session.
  *
- * Upload: createUploadIntent → the browser PUTs the bytes to `url` (with `contentType`) → confirmUpload →
- * the worker scans → getFileStatus shows `clean` (or infected / rejected). Download: createDownloadGrant
- * for a file of the owner entity the module authorized → a signed URL valid for the purpose's TTL (60 s
- * documents, 300 s media), saved under the original name with the extension of the type found by
- * content. Nothing is readable before `clean`.
+ * Every step that writes runs in the CALLER's transaction (defineAction's handler: one pooled connection,
+ * retried as a whole after a conflict); Storage signs only AFTER the commit (defineAction `afterCommit`,
+ * no connection held), because it sees committed rows only, on its own connection (integration review M1):
+ *
+ *   handler:     reserveUploadIntent(tx, …)      → afterCommit: signUploadIntent(storage, reservation)
+ *   handler:     grantDownload(tx, actor, …)     → afterCommit: signDownload(storage, granted)
+ *
+ * Upload: the browser PUTs the bytes to the intent's `url` (with `contentType`) → confirmUpload → the
+ * worker scans → getFileStatus shows `clean` (or infected / rejected). Download: a signed URL valid for
+ * the purpose's TTL (60 s documents, 300 s media), saved under the original name with the extension of
+ * the type found by content. Nothing is readable before `clean`.
  */
 
 export {
@@ -58,21 +65,6 @@ export {
 export { MAX_NAME_LENGTH, downloadName, sanitizeFileName } from './names';
 export { DETECTION_HEAD_BYTES, detectType, sniffText } from './detect';
 export type { FileErrorCode, FileOwner, FileStatus, FileStatusView } from '@jadarat/platform-db';
-
-/**
- * What a request needs beside its own transaction. Storage sees only COMMITTED rows (it has its own
- * database connection), so the upload reservation and the download grant are written in a transaction of
- * their own, committed before Storage is asked — `ownTx` runs one for the signed-in user (e.g.
- * `(fn) => withUserTx(ctx.claims, fn)`; @jadarat/platform-files/next builds the whole context).
- * createUploadIntent and createDownloadGrant therefore act outside a calling action's transaction: an
- * action (defineAction) that calls them declares `externalEffects: true`, so a deadlock retry never
- * reserves, grants or signs twice (T-M2-10; docs/engineering/files.md §3).
- */
-export interface FileRequestContext {
-  readonly ownTx: <T>(fn: (tx: UserTx) => Promise<T>) => Promise<T>;
-  /** Supabase Storage with the user's session (createUserFileStorage). */
-  readonly storage: UserFileStorage;
-}
 
 export interface UploadIntentInput {
   readonly purpose: UploadPurpose;
@@ -99,6 +91,20 @@ export interface UploadIntent {
   readonly expiresAt: Date;
 }
 
+/**
+ * An upload reservation, written in the caller's transaction by reserveUploadIntent: pending, 15 minutes,
+ * for exactly one object key. Hand it to signUploadIntent after the commit.
+ */
+export interface UploadReservation {
+  readonly fileId: string;
+  readonly bucket: string;
+  readonly objectKey: string;
+  /** The Content-Type the browser must send (the type the name's extension declares). */
+  readonly contentType: string;
+  readonly maxBytes: number;
+  readonly expiresAt: Date;
+}
+
 /** File refusals: the database codes plus Storage's (unavailable: worth another try). */
 export type FileServiceErrorCode = FileErrorCode | 'STORAGE_REFUSED' | 'STORAGE_UNAVAILABLE';
 
@@ -116,16 +122,16 @@ function storageRefusal(error: unknown): never {
 }
 
 /**
- * Reserves the upload (pending, 15 minutes, in its own committed transaction) and asks Storage — with the
- * user's session — for a signed upload URL for exactly that key. Throws DomainError UNKNOWN_PURPOSE,
- * TYPE_NOT_ALLOWED (the name's extension is missing or names no type the purpose accepts), TOO_LARGE,
- * TOO_MANY_PENDING_UPLOADS, INVALID_FILE_DATA, STORAGE_REFUSED or STORAGE_UNAVAILABLE. A reservation
- * without upload is purged after 24 hours.
+ * Transaction step (the action's handler): validates purpose, owner, size and the name's extension, then
+ * reserves the upload in `tx` (pending, 15 minutes) — committed with the action, retried with it. Throws
+ * DomainError UNKNOWN_PURPOSE, TYPE_NOT_ALLOWED (the name's extension is missing or names no type the
+ * purpose accepts), TOO_LARGE, TOO_MANY_PENDING_UPLOADS or INVALID_FILE_DATA. A reservation that is never
+ * signed or used expires and is purged after 24 hours.
  */
-export async function createUploadIntent(
-  context: FileRequestContext,
+export async function reserveUploadIntent(
+  tx: UserTx,
   input: UploadIntentInput,
-): Promise<UploadIntent> {
+): Promise<UploadReservation> {
   // Checked at run time too: callers outside TypeScript may pass any string.
   if (!isFilePurpose(input.purpose) || purposeOf(input.purpose).uploadBy !== 'user') {
     refuse('UNKNOWN_PURPOSE');
@@ -144,28 +150,46 @@ export async function createUploadIntent(
   const name = sanitizeFileName(input.declaredName);
   const contentType = declaredTypeFor(input.purpose, name);
   if (contentType === null) refuse('TYPE_NOT_ALLOWED');
-  const reserved = await context.ownTx((tx) =>
-    reserveUpload(tx, {
-      purpose: input.purpose,
-      owner: input.owner,
-      name,
-      declaredType: contentType,
-      size: input.size,
-    }),
-  );
+  const reserved = await reserveUpload(tx, {
+    purpose: input.purpose,
+    owner: input.owner,
+    name,
+    declaredType: contentType,
+    size: input.size,
+  });
+  return {
+    fileId: reserved.fileId,
+    bucket: reserved.bucket,
+    objectKey: reserved.objectKey,
+    contentType,
+    maxBytes: reserved.maxBytes,
+    expiresAt: reserved.uploadExpiresAt,
+  };
+}
+
+/**
+ * After the commit (the action's `afterCommit`, no transaction open — else it throws): asks Storage, with
+ * the user's session, for a signed upload URL for exactly the reserved key. Throws DomainError
+ * STORAGE_REFUSED or STORAGE_UNAVAILABLE (the reservation stays; it expires unused).
+ */
+export async function signUploadIntent(
+  storage: UserFileStorage,
+  reservation: UploadReservation,
+): Promise<UploadIntent> {
+  assertNoDatabaseTransaction('signUploadIntent');
   let signed: { url: string };
   try {
-    signed = await context.storage.createSignedUploadUrl(reserved.bucket, reserved.objectKey);
+    signed = await storage.createSignedUploadUrl(reservation.bucket, reservation.objectKey);
   } catch (error) {
     storageRefusal(error);
   }
   return {
-    fileId: reserved.fileId,
+    fileId: reservation.fileId,
     url: signed.url,
     method: 'PUT',
-    contentType,
-    maxBytes: reserved.maxBytes,
-    expiresAt: reserved.uploadExpiresAt,
+    contentType: reservation.contentType,
+    maxBytes: reservation.maxBytes,
+    expiresAt: reservation.expiresAt,
   };
 }
 
@@ -204,19 +228,29 @@ export interface DownloadRequest {
 }
 
 /**
- * A short-lived download link for a clean file — only after the owning module authorized THIS user for
- * files of THIS owner entity: the file must belong to exactly `request.owner` and `request.purpose` (else
- * FILE_NOT_FOUND, as if it did not exist). Writes the download grant (and, for purposes with audited
- * downloads, the audit event `platform.file.download_granted`) in its own committed transaction, then
- * asks Storage, with the user's session, for a signed URL of the same lifetime that downloads as an
- * attachment named like the original, with the extension of the type the scan found by content. Throws
- * DomainError FILE_NOT_FOUND, FILE_NOT_CLEAN, STORAGE_REFUSED or STORAGE_UNAVAILABLE.
+ * A download grant, written in the caller's transaction by grantDownload. Hand it to signDownload after the
+ * commit.
  */
-export async function createDownloadGrant(
-  context: FileRequestContext,
+export interface GrantedDownload {
+  readonly bucket: string;
+  readonly objectKey: string;
+  /** The name the file is saved under (original name, extension of the type found by content). */
+  readonly name: string;
+  readonly ttlSeconds: number;
+}
+
+/**
+ * Transaction step (the action's handler) — only after the owning module authorized THIS user for files
+ * of THIS owner entity: writes the download grant for a clean file of exactly `request.owner` and
+ * `request.purpose` (else FILE_NOT_FOUND, as if it did not exist) and, for purposes with audited
+ * downloads, the audit event `platform.file.download_granted` — both in `tx`, committed and retried with
+ * the action. Throws DomainError FILE_NOT_FOUND or FILE_NOT_CLEAN.
+ */
+export async function grantDownload(
+  tx: UserTx,
   actor: ActorContext,
   request: DownloadRequest,
-): Promise<DownloadLink> {
+): Promise<GrantedDownload> {
   const { fileId, purpose, owner } = request;
   if (
     !UUID.test(fileId) ||
@@ -227,31 +261,45 @@ export async function createDownloadGrant(
   ) {
     refuse('FILE_NOT_FOUND');
   }
-  const grant = await context.ownTx(async (tx) => {
-    const granted = await grantFileDownload(tx, { fileId, purpose, owner });
-    if (granted.auditDownloads) {
-      await insertAuditEvent(tx, actor, {
-        action: 'platform.file.download_granted',
-        entityType: 'file',
-        entityId: fileId,
-        data: { purpose, ttlSeconds: granted.ttlSeconds },
-      });
-    }
-    return granted;
-  });
-  const name = downloadName(grant.name, grant.detectedType);
+  const granted = await grantFileDownload(tx, { fileId, purpose, owner });
+  if (granted.auditDownloads) {
+    await insertAuditEvent(tx, actor, {
+      action: 'platform.file.download_granted',
+      entityType: 'file',
+      entityId: fileId,
+      data: { purpose, ttlSeconds: granted.ttlSeconds },
+    });
+  }
+  return {
+    bucket: granted.bucket,
+    objectKey: granted.objectKey,
+    name: downloadName(granted.name, granted.detectedType),
+    ttlSeconds: granted.ttlSeconds,
+  };
+}
+
+/**
+ * After the commit (the action's `afterCommit`, no transaction open — else it throws): asks Storage, with
+ * the user's session, for a signed URL of the grant's lifetime that downloads as an attachment named
+ * `granted.name`. Throws DomainError STORAGE_REFUSED or STORAGE_UNAVAILABLE (the grant expires unused).
+ */
+export async function signDownload(
+  storage: UserFileStorage,
+  granted: GrantedDownload,
+): Promise<DownloadLink> {
+  assertNoDatabaseTransaction('signDownload');
   let url: string;
   try {
-    url = await context.storage.createSignedDownloadUrl(
-      grant.bucket,
-      grant.objectKey,
-      grant.ttlSeconds,
-      name,
+    url = await storage.createSignedDownloadUrl(
+      granted.bucket,
+      granted.objectKey,
+      granted.ttlSeconds,
+      granted.name,
     );
   } catch (error) {
     storageRefusal(error);
   }
-  return { url, expiresAt: new Date(Date.now() + grant.ttlSeconds * 1000), name };
+  return { url, expiresAt: new Date(Date.now() + granted.ttlSeconds * 1000), name: granted.name };
 }
 
 /**

@@ -282,3 +282,43 @@ describe('readSettings: malware scanner (T-M2-18)', () => {
     fails(['scan'], env, /expected daemon, once, test-email or scanner-check/);
   });
 });
+
+describe('readSettings: the orphan sweep (T-M2-18, re-review L-C)', () => {
+  it('is on with a brake of 500 orphans or 10 % of all objects by default', () => {
+    expect(runner([], env).orphanSweep).toEqual({
+      enabled: true,
+      maxOrphans: 500,
+      maxSharePercent: 10,
+    });
+  });
+
+  it('can be paused, and its brake set', () => {
+    expect(
+      runner([], {
+        ...env,
+        FILE_ORPHAN_SWEEP: 'OFF',
+        FILE_ORPHAN_SWEEP_MAX: '2000',
+        FILE_ORPHAN_SWEEP_MAX_SHARE: '2',
+      }).orphanSweep,
+    ).toEqual({ enabled: false, maxOrphans: 2000, maxSharePercent: 2 });
+  });
+
+  it('refuses anything else', () => {
+    fails([], { ...env, FILE_ORPHAN_SWEEP: 'paused' }, /FILE_ORPHAN_SWEEP must be on or off/);
+    fails(
+      [],
+      { ...env, FILE_ORPHAN_SWEEP_MAX: '0' },
+      /FILE_ORPHAN_SWEEP_MAX must be a whole number/,
+    );
+    fails(
+      [],
+      { ...env, FILE_ORPHAN_SWEEP_MAX_SHARE: '101' },
+      /FILE_ORPHAN_SWEEP_MAX_SHARE must be/,
+    );
+    fails(
+      [],
+      { ...env, FILE_ORPHAN_SWEEP_MAX_SHARE: '2.5' },
+      /FILE_ORPHAN_SWEEP_MAX_SHARE must be/,
+    );
+  });
+});

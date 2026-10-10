@@ -228,6 +228,9 @@ update storage.objects set created_at = now() - interval '4 hours' where name li
   or name like '%/f1a00000-0000-4000-8000-000000000008';
 -- The rejected file's object was removed; a still-valid signed upload URL created it again: orphan.
 update platform.files set object_removed_at = now() - interval '1 hour' where id = 'f1a00000-0000-4000-8000-00000000000a';
+-- How many objects our buckets hold (the totals the sweep reports; counted here, where they are visible).
+select set_config('tests.objects', (select count(*) from storage.objects
+  where bucket_id in ('materials', 'images', 'evidence', 'imports', 'generated', 'quarantine'))::text, true);
 set session authorization app_worker;
 set local role authenticated;
 select tests.set_claims(jsonb_build_object('role', 'system', 'job_id', 'tests.files.housekeeping'));
@@ -237,6 +240,11 @@ begin
                            from private.claim_orphan_objects(100)),
     'generated:f3a00000-0000-4000-8000-000000000001,imports:f1a00000-0000-4000-8000-00000000000a',
     'orphans: the object recreated after its removal and the rolled-back report; never a live file''s object, a fresh one, a quarantined one, or a foreign key shape');
+  perform tests.assert_eq((select string_agg(distinct orphans || '/' || objects, ',') from private.claim_orphan_objects(100)),
+    '2/' || current_setting('tests.objects'), 'each row carries the totals: 2 orphans, all objects of our buckets');
+  perform tests.assert_eq((select count(*) from private.claim_orphan_objects(1)), 1::bigint,
+    'the limit applies to the rows, not to the totals');
+  perform tests.assert_eq((select orphans from private.claim_orphan_objects(1)), 2::bigint, 'totals with a limit of 1');
 end $$;
 reset role;
 reset session authorization;

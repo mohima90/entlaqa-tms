@@ -193,19 +193,33 @@ export interface OrphanObject {
   readonly objectKey: string;
 }
 
+/** One batch of orphan objects, with the totals the sweep's brake needs. */
+export interface OrphanBatch {
+  readonly orphans: readonly OrphanObject[];
+  /** How many orphan objects there are in all (the batch is at most `limit` of them). */
+  readonly totalOrphans: number;
+  /** How many objects our buckets hold in all. */
+  readonly totalObjects: number;
+}
+
 /**
  * Objects in our buckets older than 3 hours (the longest signed upload URL lifetime plus a margin) that no
  * live file record owns: a generated file whose job rolled back after writing it, or an object a
- * still-valid upload URL created again after quarantine, removal or purge. The caller removes them.
+ * still-valid upload URL created again after quarantine, removal or purge — up to `limit` of them, with
+ * the totals. The caller removes them, unless the totals trip its brake.
  */
-export async function claimOrphanObjects(
-  tx: ClaimsTx,
-  limit: number,
-): Promise<readonly OrphanObject[]> {
-  const rows = await tx.execute<{ bucket: string; object_key: string }>(
-    sql`select * from private.claim_orphan_objects(${limit}::integer)`,
-  );
-  return rows.map((row) => ({ bucket: row.bucket, objectKey: row.object_key }));
+export async function claimOrphanObjects(tx: ClaimsTx, limit: number): Promise<OrphanBatch> {
+  const rows = await tx.execute<{
+    bucket: string;
+    object_key: string;
+    orphans: string | number;
+    objects: string | number;
+  }>(sql`select * from private.claim_orphan_objects(${limit}::integer)`);
+  return {
+    orphans: rows.map((row) => ({ bucket: row.bucket, objectKey: row.object_key })),
+    totalOrphans: rows.length === 0 ? 0 : Number(rows[0]?.orphans),
+    totalObjects: rows.length === 0 ? 0 : Number(rows[0]?.objects),
+  };
 }
 
 /** Records the Storage work of a housekeeping action (false when nothing was left to record). */

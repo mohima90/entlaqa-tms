@@ -31,7 +31,17 @@ const item = (id: string, action: string) => ({
   action,
 });
 
-function setup(now: () => number = () => 0) {
+/** A batch as claimOrphanObjects returns it (totals default: these orphans of 10,000 objects). */
+const batch = (
+  orphans: { bucket: string; objectKey: string }[],
+  totalOrphans = orphans.length,
+  totalObjects = 10_000,
+) => ({ orphans, totalOrphans, totalObjects });
+
+function setup(
+  now: () => number = () => 0,
+  orphanSweep?: { enabled: boolean; maxOrphans: number; maxSharePercent: number },
+) {
   const store = {
     read: vi.fn(),
     move: vi.fn(() => Promise.resolve('moved' as const)),
@@ -39,7 +49,13 @@ function setup(now: () => number = () => 0) {
     write: vi.fn(),
   };
   const log = vi.fn();
-  const task = createFileHousekeepingTask({ withPlatformTx: tx as never, store, log, now });
+  const task = createFileHousekeepingTask({
+    withPlatformTx: tx as never,
+    store,
+    log,
+    now,
+    ...(orphanSweep ? { orphanSweep } : {}),
+  });
   return { store, log, task };
 }
 
@@ -47,7 +63,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   db.lockFileHousekeeping.mockResolvedValue(true);
   db.finishFileHousekeeping.mockResolvedValue(true);
-  db.claimOrphanObjects.mockResolvedValue([]);
+  db.claimOrphanObjects.mockResolvedValue(batch([]));
 });
 
 describe('file housekeeping task', () => {
@@ -123,10 +139,12 @@ describe('file housekeeping task', () => {
     db.claimFileHousekeeping.mockResolvedValue([]);
     let clock = 0;
     const { store, log, task } = setup(() => clock);
-    db.claimOrphanObjects.mockResolvedValueOnce([
-      { bucket: 'generated', objectKey: 'orphan-1' },
-      { bucket: 'imports', objectKey: 'orphan-2' },
-    ]);
+    db.claimOrphanObjects.mockResolvedValueOnce(
+      batch([
+        { bucket: 'generated', objectKey: 'orphan-1' },
+        { bucket: 'imports', objectKey: 'orphan-2' },
+      ]),
+    );
     await expect(task.run({ jobId: 'j' })).resolves.toBe(false);
     expect(db.claimOrphanObjects).toHaveBeenCalledWith(expect.anything(), ORPHAN_SWEEP_BATCH);
     expect(store.remove.mock.calls).toEqual([
@@ -141,10 +159,13 @@ describe('file housekeeping task', () => {
     // An hour later, a full batch: another pass is asked for, and it sweeps again at once.
     clock += 1;
     db.claimOrphanObjects.mockResolvedValueOnce(
-      Array.from({ length: ORPHAN_SWEEP_BATCH }, (_, i) => ({
-        bucket: 'imports',
-        objectKey: `o-${String(i)}`,
-      })),
+      batch(
+        Array.from({ length: ORPHAN_SWEEP_BATCH }, (_, i) => ({
+          bucket: 'imports',
+          objectKey: `o-${String(i)}`,
+        })),
+        300,
+      ),
     );
     await expect(task.run({ jobId: 'j' })).resolves.toBe(true);
     await task.run({ jobId: 'j' });
@@ -154,7 +175,9 @@ describe('file housekeeping task', () => {
   it('an orphan that cannot be removed is logged by bucket only; a failing sweep waits', async () => {
     db.claimFileHousekeeping.mockResolvedValue([]);
     const { store, log, task } = setup();
-    db.claimOrphanObjects.mockResolvedValueOnce([{ bucket: 'imports', objectKey: 'secret-key' }]);
+    db.claimOrphanObjects.mockResolvedValueOnce(
+      batch([{ bucket: 'imports', objectKey: 'secret-key' }]),
+    );
     store.remove.mockRejectedValueOnce(Object.assign(new Error('x'), { code: 'STORAGE_HTTP_503' }));
     await task.run({ jobId: 'j' });
     expect(log).toHaveBeenCalledWith(
@@ -169,6 +192,48 @@ describe('file housekeeping task', () => {
       'warning',
       'file housekeeping: orphan sweep postponed (57014)',
     );
+  });
+
+  it('brakes above the orphan limit or an unusual share of all objects: none removed, an error', async () => {
+    db.claimFileHousekeeping.mockResolvedValue([]);
+    const some = [{ bucket: 'imports', objectKey: 'o-1' }];
+    const cases: [ReturnType<typeof batch>, string][] = [
+      // More than 500 in all (the default).
+      [batch(some, 501, 1_000_000), '501 orphan objects (0.1% of 1000000)'],
+      // More than 10 % of all objects, above the floor of 50.
+      [batch(some, 60, 400), '60 orphan objects (15.0% of 400)'],
+    ];
+    for (const [answer, text] of cases) {
+      const { store, log, task } = setup();
+      db.claimOrphanObjects.mockResolvedValueOnce(answer);
+      await expect(task.run({ jobId: 'j' })).resolves.toBe(false);
+      expect(store.remove).not.toHaveBeenCalled();
+      expect(log).toHaveBeenCalledWith('error', expect.stringContaining(text));
+      expect(log).toHaveBeenCalledWith('error', expect.stringContaining('none removed'));
+    }
+    // A small installation's few orphans are no signal (under the floor), whatever their share.
+    const small = setup();
+    db.claimOrphanObjects.mockResolvedValueOnce(batch(some, 3, 10));
+    await small.task.run({ jobId: 'j' });
+    expect(small.store.remove).toHaveBeenCalledWith('imports', 'o-1');
+    // The limits are settings.
+    const strict = setup(() => 0, { enabled: true, maxOrphans: 2, maxSharePercent: 10 });
+    db.claimOrphanObjects.mockResolvedValueOnce(batch(some, 3, 10_000));
+    await strict.task.run({ jobId: 'j' });
+    expect(strict.store.remove).not.toHaveBeenCalled();
+  });
+
+  it('can be paused (FILE_ORPHAN_SWEEP=off, e.g. during a restore)', async () => {
+    db.claimFileHousekeeping.mockResolvedValue([item('1', 'purge')]);
+    const { store, task } = setup(() => 0, {
+      enabled: false,
+      maxOrphans: 500,
+      maxSharePercent: 10,
+    });
+    await task.run({ jobId: 'j' });
+    expect(db.claimOrphanObjects).not.toHaveBeenCalled();
+    // The rest of housekeeping goes on.
+    expect(store.remove).toHaveBeenCalledWith('imports', 'key-1');
   });
 });
 

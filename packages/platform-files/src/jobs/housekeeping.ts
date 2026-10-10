@@ -18,11 +18,34 @@ export const FILE_HOUSEKEEPING_BATCH = 50;
 export const ORPHAN_SWEEP_BATCH = 100;
 /** The orphan sweep reads every object row of Storage: at most once an hour per worker process. */
 export const ORPHAN_SWEEP_INTERVAL_MS = 60 * 60_000;
+/** The share brake applies only above this many orphans (a small installation's few are no signal). */
+export const ORPHAN_SHARE_FLOOR = 50;
+
+/**
+ * The orphan sweep's switch and brake (worker settings FILE_ORPHAN_SWEEP, FILE_ORPHAN_SWEEP_MAX,
+ * FILE_ORPHAN_SWEEP_MAX_SHARE). Mass orphans mean a restore or a fault that lost file records, not
+ * leftovers: above the brake nothing is removed and an error is logged.
+ */
+export interface OrphanSweepSettings {
+  /** Off pauses the sweep (e.g. while a database or Storage restore is being reconciled). */
+  readonly enabled: boolean;
+  /** More orphans than this in all: none removed. */
+  readonly maxOrphans: number;
+  /** More than this share of all objects, in percent (above ORPHAN_SHARE_FLOOR orphans): none removed. */
+  readonly maxSharePercent: number;
+}
+
+export const DEFAULT_ORPHAN_SWEEP: OrphanSweepSettings = {
+  enabled: true,
+  maxOrphans: 500,
+  maxSharePercent: 10,
+};
 
 export interface FileHousekeepingTaskOptions {
   readonly withPlatformTx: WithPlatformTx;
   readonly store: FileObjectStore;
   readonly log: (level: WorkerLogLevel, message: string) => void;
+  readonly orphanSweep?: OrphanSweepSettings;
   readonly now?: () => number;
 }
 
@@ -65,23 +88,37 @@ export async function performHousekeeping(
  * Storage work fails is tried again when its 10-minute lease ends. At most hourly, ORPHAN objects are
  * removed too: objects in our buckets, older than 3 hours, that no live file record owns (a generated file
  * whose job rolled back, or an object a still-valid upload URL created again after quarantine, removal or
- * purge). Deleting objects never depends on the request path: only the worker holds the Storage key.
+ * purge) — unless switched off, and never above its brake (OrphanSweepSettings). Deleting objects never
+ * depends on the request path: only the worker holds the Storage key.
  */
 export function createFileHousekeepingTask(options: FileHousekeepingTaskOptions): PlatformTask {
   const now = options.now ?? Date.now;
+  const sweep = options.orphanSweep ?? DEFAULT_ORPHAN_SWEEP;
   let lastOrphanSweep = -Infinity;
 
   /** Orphan objects, at most hourly; true when a full batch was removed (more may wait). */
   async function sweepOrphans(jobId: string): Promise<boolean> {
-    if (now() - lastOrphanSweep < ORPHAN_SWEEP_INTERVAL_MS) return false;
+    if (!sweep.enabled || now() - lastOrphanSweep < ORPHAN_SWEEP_INTERVAL_MS) return false;
     lastOrphanSweep = now();
-    let orphans;
+    let batch;
     try {
-      orphans = await options.withPlatformTx({ jobId }, (tx) =>
+      batch = await options.withPlatformTx({ jobId }, (tx) =>
         claimOrphanObjects(tx, ORPHAN_SWEEP_BATCH),
       );
     } catch (error) {
       options.log('warning', `file housekeeping: orphan sweep postponed (${codeOf(error)})`);
+      return false;
+    }
+    const { orphans, totalOrphans, totalObjects } = batch;
+    const share = totalObjects === 0 ? 0 : (totalOrphans * 100) / totalObjects;
+    if (
+      totalOrphans > sweep.maxOrphans ||
+      (totalOrphans > ORPHAN_SHARE_FLOOR && share > sweep.maxSharePercent)
+    ) {
+      options.log(
+        'error',
+        `file housekeeping: ${String(totalOrphans)} orphan objects (${share.toFixed(1)}% of ${String(totalObjects)}) exceed the sweep's brake (${String(sweep.maxOrphans)} objects, ${String(sweep.maxSharePercent)}%): none removed — check for a restore or lost file records (FILE_ORPHAN_SWEEP, docs/engineering/files.md §4)`,
+      );
       return false;
     }
     let removed = 0;

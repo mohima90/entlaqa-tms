@@ -1090,29 +1090,42 @@ comment on function private.finish_file_housekeeping(uuid, text) is
 -- purged nor its object removed, in that bucket — or in quarantine while infected (the move and its
 -- record are not atomic). Keys of another shape are not ours to remove (operators').
 create or replace function private.claim_orphan_objects(p_limit integer)
-returns table (bucket text, object_key text)
+returns table (bucket text, object_key text, orphans bigint, objects bigint)
 language plpgsql stable security definer
 set search_path = ''
 as $$
 begin
   perform private.file_worker_check();
+  -- With each row: how many orphans there are in all, and how many objects our buckets hold — the worker
+  -- removes nothing above its brake (a restore, or a fault that lost records, looks like mass orphans).
   return query
-    select o.bucket_id, o.name
-    from private.storage_object_facts o
-    where o.bucket_id in ('materials', 'images', 'evidence', 'imports', 'generated', 'quarantine')
-      and o.created_at < now() - interval '3 hours'
-      and o.name ~ '^[0-9a-f-]{36}(/[a-z0-9_-]{1,64}){2}/[0-9a-f-]{36}/[0-9a-f-]{36}$'
-      and not exists (
-        select 1 from platform.files f
-        where f.id = private.try_uuid(split_part(o.name, '/', 5)) and f.object_key = o.name
-          and f.purged_at is null and f.object_removed_at is null
-          and (f.bucket = o.bucket_id or (o.bucket_id = 'quarantine' and f.status = 'infected')))
-    order by o.created_at, o.bucket_id, o.name
-    limit greatest(least(coalesce(p_limit, 100), 500), 1);
+    with orphan as (
+      select o.bucket_id, o.name, o.created_at
+      from private.storage_object_facts o
+      where o.bucket_id in ('materials', 'images', 'evidence', 'imports', 'generated', 'quarantine')
+        and o.created_at < now() - interval '3 hours'
+        and o.name ~ '^[0-9a-f-]{36}(/[a-z0-9_-]{1,64}){2}/[0-9a-f-]{36}/[0-9a-f-]{36}$'
+        and not exists (
+          select 1 from platform.files f
+          where f.id = private.try_uuid(split_part(o.name, '/', 5)) and f.object_key = o.name
+            and f.purged_at is null and f.object_removed_at is null
+            and (f.bucket = o.bucket_id or (o.bucket_id = 'quarantine' and f.status = 'infected')))
+    ),
+    totals as (
+      select (select count(*) from orphan) as orphans,
+             (select count(*) from private.storage_object_facts o
+              where o.bucket_id in ('materials', 'images', 'evidence', 'imports', 'generated', 'quarantine')) as objects
+    )
+    select picked.bucket_id, picked.name, t.orphans, t.objects
+    from (select r.bucket_id, r.name, r.created_at from orphan r
+          order by r.created_at, r.bucket_id, r.name
+          limit greatest(least(coalesce(p_limit, 100), 500), 1)) picked
+    cross join totals t
+    order by picked.created_at, picked.bucket_id, picked.name;
 end
 $$;
 comment on function private.claim_orphan_objects(integer) is
-  'SECURITY-RELEVANT (ADR 0006 §7, T-M2-18). Worker: objects in our buckets older than 3 hours that no live file record owns (removed by the housekeeping task). app_worker system claims only.';
+  'SECURITY-RELEVANT (ADR 0006 §7, T-M2-18). Worker: objects in our buckets older than 3 hours that no live file record owns, with the number of orphans and of objects (the worker brakes above its limits before removing any). app_worker system claims only.';
 
 -- Generated files (e.g. an import's error report, T-M2-12): a job of the tenant reserves the key, uploads
 -- the bytes it produced with the worker's Storage access, then marks the file clean with its size and hash

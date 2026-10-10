@@ -35,6 +35,8 @@
 #                                     decision (docs/engineering/files.md §7). If clamd does not start, the
 #                                     pass still runs (e-mails, housekeeping) without scanning, and the run
 #                                     is marked failed afterwards.
+#   variable FILE_ORPHAN_SWEEP        off = pause the removal of orphan objects (set it BEFORE restoring
+#                                     the database or Storage; docs/engineering/files.md §4); unset = on
 # Until both connection secrets exist each run ends with a notice and does nothing.
 name: Jobs (staging)
 
@@ -176,6 +178,7 @@ jobs:
           SUPABASE_URL: ${{ vars.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           CLAMD_HOST: ${{ steps.clamd.outputs.ready == 'true' && '127.0.0.1' || '' }}
+          FILE_ORPHAN_SWEEP: ${{ vars.FILE_ORPHAN_SWEEP }}
           MODE: ${{ inputs.mode == 'test-email' && 'test-email' || 'once' }}
           JADARAT_ENVIRONMENT: staging
           JADARAT_RELEASE: ${{ github.sha }}

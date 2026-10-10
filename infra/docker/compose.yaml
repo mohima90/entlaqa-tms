@@ -383,6 +383,10 @@ services:
       # Signatures older than this (days, default 7) and nothing is scanned (fail closed, alerted). Raised
       # only by the smoke test, whose clamd keeps the pinned image's signatures (no freshclam).
       FILE_SCAN_SIGNATURES_MAX_AGE_DAYS: ${FILE_SCAN_SIGNATURES_MAX_AGE_DAYS:-7}
+      # Orphan objects (housekeeping): off while a restore is reconciled (docs/engineering/files.md §4).
+      # Above FILE_ORPHAN_SWEEP_MAX (500) orphans, or FILE_ORPHAN_SWEEP_MAX_SHARE (10) % of all objects,
+      # nothing is removed and an error is logged.
+      FILE_ORPHAN_SWEEP: ${FILE_ORPHAN_SWEEP:-on}
       # E-mail (ADR 0008 §2): SMTP with verified STARTTLS. Here Mailpit catches every message. A real
       # installation sets SMTP_URL (smtp://user:password@relay:587) and SMTP_CA_CERT_FILE for its relay
       # (set it empty for a publicly trusted certificate), removes the mailpit service, its depends_on

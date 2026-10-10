@@ -124,6 +124,7 @@ async function runWorker(settings: RunnerSettings): Promise<void> {
         appBaseUrl: settings.appBaseUrl,
         authAdmin: settings.authAdmin,
         scanner: settings.scanner,
+        orphanSweep: settings.orphanSweep,
         withPlatformTx: createWithPlatformTx(() => workerDb),
         withSystemTx,
         log,
@@ -142,6 +143,12 @@ async function runWorker(settings: RunnerSettings): Promise<void> {
       },
     );
     adminKeyCheck?.();
+    if (settings.authAdmin && !settings.orphanSweep.enabled) {
+      logger.warn('file orphan sweep paused (FILE_ORPHAN_SWEEP=off): orphan objects are kept', {
+        action: 'worker.start',
+        reason: 'file_orphan_sweep_off',
+      });
+    }
     if (settings.scanner && settings.scanner.maxSignatureAgeDays > SIGNATURE_HARD_MAX_AGE_DAYS) {
       logger.warn(
         `malware signatures up to ${String(settings.scanner.maxSignatureAgeDays)} days old are accepted (FILE_SCAN_SIGNATURES_MAX_AGE_DAYS): test installations with pinned signatures only`,

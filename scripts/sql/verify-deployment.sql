@@ -417,6 +417,47 @@ begin
       failures := failures || format('%s must not have %s on private.storage_object_facts', r.grantee, r.privilege_type);
     end loop;
   end if;
+  -- The file tables' policies (T-M2-18, re-review L-C): the permissive policies of platform.files and
+  -- platform.file_download_grants are exactly ours; the `using (true)` guard policies (files_guard,
+  -- file_download_grants_guard) — and every policy naming file_guard anywhere — apply to file_guard ALONE:
+  -- one widened to authenticated would open every file of the organization.
+  for r in
+    select c.relname, p.polname, p.polcmd,
+           array(select g.rolname::text from pg_roles g where g.oid = any (p.polroles) order by 1) as roles,
+           coalesce(pg_get_expr(p.polqual, p.polrelid), '') as qual,
+           coalesce(pg_get_expr(p.polwithcheck, p.polrelid), '') as chk
+    from pg_policy p join pg_class c on c.oid = p.polrelid join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'platform' and c.relname in ('files', 'file_download_grants') and p.polpermissive
+  loop
+    if not ((r.relname = 'files' and r.polname = 'files_guard' and r.polcmd = '*'
+               and r.roles = array['file_guard'] and r.qual = 'true' and r.chk = 'true')
+            or (r.relname = 'files' and r.polname = 'files_read' and r.polcmd = 'r'
+                and r.roles = array['authenticated'] and r.qual like '%private.request_user_id()%'
+                and r.qual not like '%true%')
+            or (r.relname = 'file_download_grants' and r.polname = 'file_download_grants_guard' and r.polcmd = '*'
+                and r.roles = array['file_guard'] and r.qual = 'true' and r.chk = 'true')
+            or (r.relname = 'file_download_grants' and r.polname = 'file_download_grants_read' and r.polcmd = 'r'
+                and r.roles = array['authenticated']
+                and r.qual = '(user_id = ( SELECT private.request_user_id() AS request_user_id))')) then
+      failures := failures || format('platform.%s: unexpected or altered permissive policy %s (security review)',
+                                     r.relname, r.polname);
+    end if;
+  end loop;
+  if (select count(*) from pg_policy p
+      where (p.polrelid = 'platform.files'::regclass and p.polname = 'files_guard')
+         or (p.polrelid = 'platform.file_download_grants'::regclass and p.polname = 'file_download_grants_guard')) <> 2 then
+    failures := failures || 'the file tables'' guard policies (files_guard, file_download_grants_guard) are missing'::text;
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'file_guard') then
+    for r in
+      select p.polrelid::regclass::text as t, p.polname from pg_policy p
+      where 'file_guard'::regrole::oid = any (p.polroles)
+        and p.polroles <> array['file_guard'::regrole::oid]
+    loop
+      failures := failures || format('%s: policy %s applies to file_guard and other roles (security review)', r.t, r.polname);
+    end loop;
+  end if;
+
   -- Storage (ADR 0006 §1, §4): our six buckets exist and NO bucket is public; storage.objects carries our
   -- three policies exactly, and every other policy on it is restrictive (a dashboard "allow all" policy
   -- would widen what the files service grants).

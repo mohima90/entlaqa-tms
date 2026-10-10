@@ -189,13 +189,21 @@ describe('housekeeping helpers', () => {
     expect(await lockFileHousekeeping(fakeTx([]).tx, FILE, 'quarantine')).toBe(false);
   });
 
-  it('lists orphan objects', async () => {
-    const fake = fakeTx([{ bucket: 'generated', object_key: 'k' }]);
-    expect(await claimOrphanObjects(fake.tx, 100)).toEqual([
-      { bucket: 'generated', objectKey: 'k' },
+  it('lists orphan objects with the totals', async () => {
+    const fake = fakeTx([
+      { bucket: 'generated', object_key: 'k', orphans: '612', objects: '9000' },
     ]);
+    expect(await claimOrphanObjects(fake.tx, 100)).toEqual({
+      orphans: [{ bucket: 'generated', objectKey: 'k' }],
+      totalOrphans: 612,
+      totalObjects: 9000,
+    });
     expect(fake.executed[0]?.params).toEqual([100]);
-    expect(await claimOrphanObjects(fakeTx([]).tx, 100)).toEqual([]);
+    expect(await claimOrphanObjects(fakeTx([]).tx, 100)).toEqual({
+      orphans: [],
+      totalOrphans: 0,
+      totalObjects: 0,
+    });
   });
 });
 

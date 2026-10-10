@@ -35,6 +35,7 @@ export {
   type GeneratedFileInput,
   type HousekeepingAction,
   type HousekeepingItem,
+  type OrphanBatch,
   type OrphanObject,
   type ScanLease,
   type ScanOutcome,

@@ -47,6 +47,18 @@ export interface RunnerSettings {
    * with Storage AND the scanner. Without the scanner, uploaded files wait unscanned (never clean).
    */
   readonly scanner: ScannerSettings | undefined;
+  /**
+   * The file housekeeping's orphan sweep (T-M2-18): FILE_ORPHAN_SWEEP (on | off, default on — off while a
+   * restore is reconciled), FILE_ORPHAN_SWEEP_MAX (default 500 orphans) and FILE_ORPHAN_SWEEP_MAX_SHARE
+   * (default 10 % of all objects): above either brake nothing is removed and an error is logged.
+   */
+  readonly orphanSweep: OrphanSweepSettings;
+}
+
+export interface OrphanSweepSettings {
+  readonly enabled: boolean;
+  readonly maxOrphans: number;
+  readonly maxSharePercent: number;
 }
 
 /** Operators' check of the malware scanner: PING, VERSION and the signatures' age, no database. */
@@ -193,6 +205,42 @@ function readScanner(env: NodeJS.ProcessEnv): ScannerSettings | undefined {
   return { host, port, maxSignatureAgeDays };
 }
 
+export const ORPHAN_SWEEP_ENV = 'FILE_ORPHAN_SWEEP';
+export const ORPHAN_SWEEP_MAX_ENV = 'FILE_ORPHAN_SWEEP_MAX';
+export const ORPHAN_SWEEP_MAX_SHARE_ENV = 'FILE_ORPHAN_SWEEP_MAX_SHARE';
+
+/** A whole number from `min` to `max`, or the default when the variable is unset. */
+function readWhole(
+  env: NodeJS.ProcessEnv,
+  name: string,
+  fallback: number,
+  min: number,
+  max: number,
+  unit: string,
+): number {
+  const raw = read(env, name);
+  const value = Number(raw ?? String(fallback));
+  if (!Number.isInteger(value) || value < min || value > max) {
+    throw new ConfigurationError(
+      `${name} must be a whole number ${unit} from ${String(min)} to ${String(max)}`,
+    );
+  }
+  return value;
+}
+
+/** The orphan sweep's switch and brake (see RunnerSettings.orphanSweep). */
+function readOrphanSweep(env: NodeJS.ProcessEnv): OrphanSweepSettings {
+  const switchValue = (read(env, ORPHAN_SWEEP_ENV) ?? 'on').toLowerCase();
+  if (switchValue !== 'on' && switchValue !== 'off') {
+    throw new ConfigurationError(`${ORPHAN_SWEEP_ENV} must be on or off`);
+  }
+  return {
+    enabled: switchValue === 'on',
+    maxOrphans: readWhole(env, ORPHAN_SWEEP_MAX_ENV, 500, 1, 1_000_000, 'of objects'),
+    maxSharePercent: readWhole(env, ORPHAN_SWEEP_MAX_SHARE_ENV, 10, 1, 100, '(percent)'),
+  };
+}
+
 /** The worker warns (at start-up, then daily) once the Auth admin token has fewer days than this left. */
 export const ADMIN_KEY_WARN_DAYS = 30;
 
@@ -273,5 +321,17 @@ export function readSettings(
   }
   const appBaseUrl = readAppBaseUrl(env, email.provider !== 'none');
   const authAdmin = readAuthAdmin(env);
-  return { mode, queueUrl, workerUrl, caPem, concurrency, email, appBaseUrl, authAdmin, scanner };
+  const orphanSweep = readOrphanSweep(env);
+  return {
+    mode,
+    queueUrl,
+    workerUrl,
+    caPem,
+    concurrency,
+    email,
+    appBaseUrl,
+    authAdmin,
+    scanner,
+    orphanSweep,
+  };
 }

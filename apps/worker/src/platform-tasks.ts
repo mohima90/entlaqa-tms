@@ -2,6 +2,7 @@ import { createRecoveryLinkIssuer, createStorageAdmin } from '@jadarat/platform-
 import type { WithPlatformTx, WithSystemTx } from '@jadarat/platform-db/jobs';
 import {
   type FileObjectStore,
+  type OrphanSweepSettings,
   type Scanner,
   createClamdScanner,
   createFileHousekeepingTask,
@@ -22,6 +23,8 @@ export interface PlatformTaskDependencies {
   readonly scanner?:
     | { readonly host: string; readonly port: number; readonly maxSignatureAgeDays?: number }
     | undefined;
+  /** The orphan sweep's switch and brake (FILE_ORPHAN_SWEEP…); absent: on, with the default brake. */
+  readonly orphanSweep?: OrphanSweepSettings | undefined;
   readonly withPlatformTx: WithPlatformTx;
   readonly withSystemTx: WithSystemTx;
   readonly log: (level: WorkerLogLevel, message: string) => void;
@@ -83,7 +86,12 @@ export function platformTasks(deps: PlatformTaskDependencies): readonly Platform
   if (deps.authAdmin) {
     const store = (deps.storeFor ?? workerStore)(deps.authAdmin);
     tasks.push(
-      createFileHousekeepingTask({ withPlatformTx: deps.withPlatformTx, store, log: deps.log }),
+      createFileHousekeepingTask({
+        withPlatformTx: deps.withPlatformTx,
+        store,
+        log: deps.log,
+        ...(deps.orphanSweep ? { orphanSweep: deps.orphanSweep } : {}),
+      }),
     );
     if (deps.scanner) {
       const { host, port, maxSignatureAgeDays } = deps.scanner;

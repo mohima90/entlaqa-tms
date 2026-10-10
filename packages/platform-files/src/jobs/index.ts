@@ -31,12 +31,15 @@ export {
   signatureAge,
 } from './scan';
 export {
+  DEFAULT_ORPHAN_SWEEP,
   FILE_HOUSEKEEPING_BATCH,
   FILE_HOUSEKEEPING_TASK,
   type FileHousekeepingTaskOptions,
   type HousekeepingWork,
+  ORPHAN_SHARE_FLOOR,
   ORPHAN_SWEEP_BATCH,
   ORPHAN_SWEEP_INTERVAL_MS,
+  type OrphanSweepSettings,
   createFileHousekeepingTask,
   performHousekeeping,
 } from './housekeeping';

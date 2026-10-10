@@ -11,6 +11,11 @@ import { queueEmail } from '@jadarat/platform-notifications/jobs';
 export const INVITATION_MAILER_NAME = 'platform.invitations.mailer';
 export const INVITATION_CREATED_EVENT = 'com.entlaqa.platform.invitation.created';
 export const INVITATION_RESEND_REQUESTED_EVENT = 'com.entlaqa.platform.invitation.resend_requested';
+/**
+ * A held invitation of a user import whose sending time came (T-M2-12): released by the import's worker
+ * task (system actor) — mailed as the importer's, while the importer may still manage it.
+ */
+export const INVITATION_RELEASED_EVENT = 'com.entlaqa.platform.invitation.released';
 /** First e-mail plus three resends (invitations contract §1 step 3). */
 export const INVITATION_MAX_SENDS = 4;
 /**
@@ -60,7 +65,7 @@ export function createInvitationMailer(options: InvitationMailerOptions): Transa
   const { log, roleName } = options;
   return {
     name: INVITATION_MAILER_NAME,
-    types: [INVITATION_CREATED_EVENT, INVITATION_RESEND_REQUESTED_EVENT],
+    types: [INVITATION_CREATED_EVENT, INVITATION_RESEND_REQUESTED_EVENT, INVITATION_RELEASED_EVENT],
     maxAttempts: INVITATION_MAILER_MAX_ATTEMPTS,
     async handle({ tx, event }) {
       const id = event.subject;
@@ -68,21 +73,34 @@ export function createInvitationMailer(options: InvitationMailerOptions): Transa
         log('warning', 'invitation event without subject; ignored');
         return;
       }
-      // Invitations and resend requests come from members (user events). The mailer acts only while
-      // that member still may manage this invitation — current roles, privileged roles by an
-      // Organization Admin (security review M2): a revoked, suspended or demoted member's request
+      // Invitations and resend requests come from members (user events); released invitations of a user
+      // import from its worker task (system events), on behalf of the importer, who invited. The mailer
+      // acts only while that member still may manage this invitation — current roles, privileged roles
+      // by an Organization Admin (security review M2): a revoked, suspended or demoted member's request
       // sends nothing.
-      if (event.actorType !== 'user' || !event.actorId) {
+      const released = event.type === INVITATION_RELEASED_EVENT;
+      if (released && event.actorType !== 'system') {
+        log('warning', 'invitation release not from the import task; ignored');
+        return;
+      }
+      if (!released && (event.actorType !== 'user' || !event.actorId)) {
         log('warning', 'invitation event not from a member; ignored');
         return;
       }
-      if (!(await invitationActorMayManage(tx, id, event.actorId))) {
+      // A release acts for the importer (the inviter); a member's event for that member.
+      const releasedInvitation = released ? await loadInvitationForMail(tx, id) : null;
+      const actor = released ? releasedInvitation?.invitedBy : event.actorId;
+      if (!actor || !(await invitationActorMayManage(tx, id, actor))) {
         log('warning', 'invitation event from a member who may no longer manage it; no e-mail');
         return;
       }
-      const invitation = await loadInvitationForMail(tx, id);
+      const invitation = releasedInvitation ?? (await loadInvitationForMail(tx, id));
       if (invitation?.status !== 'pending' || invitation.sendCount >= INVITATION_MAX_SENDS) {
         log('info', 'invitation not pending or send limit reached; no e-mail');
+        return;
+      }
+      if (invitation.mailHeld) {
+        log('info', 'invitation not sent yet (held); no e-mail');
         return;
       }
       const role = roleName(invitation.primaryRole);

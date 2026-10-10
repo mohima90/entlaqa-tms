@@ -73,7 +73,10 @@ describe('issueInvitationToken', () => {
     await expect(issueInvitationToken(fake.tx, ID, HASH)).resolves.toEqual({
       expiresAt: new Date('2026-10-14T10:00:00Z'),
     });
-    expect(fake.executed[0]?.sql).toContain("status = 'pending' and send_count < $3");
+    // Never for a held invitation of a user import (not sent yet, T-M2-12).
+    expect(fake.executed[0]?.sql).toContain(
+      "status = 'pending' and not mail_held and send_count < $3",
+    );
     expect(fake.executed[0]?.params).toEqual([HASH, ID, 4]);
     const asDate = new Date('2026-10-14T10:00:00Z');
     await expect(

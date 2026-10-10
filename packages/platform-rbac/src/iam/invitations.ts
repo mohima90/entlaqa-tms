@@ -303,13 +303,16 @@ export function revokeInvitationActionDefinition(): ActionDefinition<
 }
 
 export interface InvitationsView {
-  /** Pending and expired invitations (accepted and revoked ones are not listed), newest first. */
+  /**
+   * Pending, expired, held and scheduled invitations (held: added by an import without sending, T-M2-12;
+   * accepted and revoked ones are not listed), newest first.
+   */
   readonly invitations: readonly InvitationRow[];
 }
 
 export const InvitationsListInput = z.strictObject({});
 
-/** The invitations shown on the users list (`invited` tab): pending and expired. */
+/** The invitations shown on the users list (`invited` tab): pending, expired, held and scheduled. */
 export function invitationsListQueryDefinition(): QueryDefinition<
   typeof InvitationsListInput,
   InvitationsView,
@@ -321,7 +324,13 @@ export function invitationsListQueryDefinition(): QueryDefinition<
     handler: async ({ ctx }) => {
       const rows = await listInvitations(ctx.tx);
       const invitations = rows
-        .filter((row) => row.state === 'pending' || row.state === 'expired')
+        .filter(
+          (row) =>
+            row.state === 'pending' ||
+            row.state === 'expired' ||
+            row.state === 'held' ||
+            row.state === 'scheduled',
+        )
         .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
       return ok({ invitations });
     },

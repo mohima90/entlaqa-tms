@@ -70,6 +70,38 @@ export {
   issueInvitationToken,
   loadInvitationForMail,
 } from './invitations';
+export {
+  IMPORTER_NOT_ALLOWED,
+  type ReportSourceRow,
+  type StagedColumn,
+  type StagedRow,
+  type StatusChange,
+  type UserImportClaim,
+  type UserImportJobView,
+  type UserImportStep,
+  applyUserImportBatch,
+  classifyUserImport,
+  claimUserImportWork,
+  clearUserImportSchedule,
+  deleteUserImportStaged,
+  finishUserImportRows,
+  jobFileStatus,
+  loadUserImportForJob,
+  loadUserImportHeaders,
+  loadUserImportReportRows,
+  markUserImportPurged,
+  recheckUserImport,
+  releaseDueUserImportInvitations,
+  releaseUserImportLease,
+  renewUserImportLease,
+  saveUserImportColumns,
+  scheduleUserImportInvitations,
+  setUserImportStatus,
+  stageUserImportRows,
+  undoUserImportBatch,
+  userImportReviewCounts,
+  userImportUndoCounts,
+} from './user-imports';
 import { type AppDatabase, getDatabase } from '../client';
 
 export type SystemTx = ClaimsTx;

@@ -7,18 +7,23 @@ import {
   createClamdScanner,
   createFileHousekeepingTask,
   createFileScanTask,
+  createWorkerFiles,
 } from '@jadarat/platform-files/jobs';
 import {
   type RecoveryLinks,
   createAccountMailer,
   createSessionPurger,
 } from '@jadarat/platform-identity/jobs';
+import { createUserImportTask } from '@jadarat/platform-import/jobs';
 import type { PlatformTask, WorkerLogLevel } from '@jadarat/platform-jobs/jobs';
 
 export interface PlatformTaskDependencies {
   /** Public origin of the web app (APP_BASE_URL); absent while e-mail is switched off. */
   readonly appBaseUrl: string | undefined;
-  /** SUPABASE_URL + SUPABASE_SECRET_KEY (worker only); absent: no reset links, no file tasks. */
+  /**
+   * SUPABASE_URL + SUPABASE_SECRET_KEY (worker only); absent: no reset links, no file tasks and no user
+   * imports (they read and write files).
+   */
   readonly authAdmin: { readonly url: string; readonly secretKey: string } | undefined;
   /**
    * CLAMD_HOST + CLAMD_PORT (+ the signatures' hard age limit, default 7 days); absent: uploaded files are
@@ -101,6 +106,13 @@ export function platformTasks(deps: PlatformTaskDependencies): readonly Platform
         store,
         log: deps.log,
         ...(deps.orphanSweep ? { orphanSweep: deps.orphanSweep } : {}),
+      }),
+      // Bulk user imports (T-M2-12): they read scanned files and write their reports through Storage.
+      createUserImportTask({
+        withPlatformTx: deps.withPlatformTx,
+        withSystemTx: deps.withSystemTx,
+        files: createWorkerFiles({ store }),
+        log: deps.log,
       }),
     );
     if (deps.scanner) {

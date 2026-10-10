@@ -39,7 +39,11 @@ export type InvitationErrorCode =
   | 'INVITATION_ACCOUNT_MISMATCH'
   | 'ALREADY_MEMBER';
 
-export type InvitationState = 'pending' | 'expired' | 'accepted' | 'revoked';
+/**
+ * `held`: added by a user import without sending («لم تُرسل الدعوة», T-M2-12) — no link yet; `scheduled`:
+ * held and due to be sent shortly; `expired`: pending past its expiry.
+ */
+export type InvitationState = 'pending' | 'expired' | 'held' | 'scheduled' | 'accepted' | 'revoked';
 
 export interface NewInvitation {
   /** Lowercase work e-mail (trimmed and lower-cased again here). */
@@ -68,6 +72,8 @@ export interface InvitationRow {
   readonly sendCount: number;
   readonly expiresAt: Date;
   readonly createdAt: Date;
+  /** The user import that added the person (T-M2-12), or null when invited by hand. */
+  readonly importId: string | null;
 }
 
 export type TokenLookup =
@@ -177,8 +183,13 @@ export async function createInvitation(
   }
 }
 
-/** The SQL expression of an invitation's state (pending past its expiry reads as expired). */
-const STATE = sql`case when i.status = 'pending' and i.expires_at <= now() then 'expired'
+/**
+ * The SQL expression of an invitation's state: held (not sent: no link, no expiry yet) and scheduled
+ * first, then pending past its expiry reads as expired.
+ */
+const STATE = sql`case when i.status = 'pending' and i.mail_held and i.send_at is null then 'held'
+                       when i.status = 'pending' and i.mail_held then 'scheduled'
+                       when i.status = 'pending' and i.expires_at <= now() then 'expired'
                        when i.status = 'pending' then 'pending' else i.status end`;
 
 /**
@@ -200,9 +211,10 @@ export async function listInvitations(
     send_count: number;
     expires_at: Date | string;
     created_at: Date | string;
+    import_id: string | null;
   }>(sql`
     select i.id, i.person_id, i.email, p.display_name_ar, p.display_name_en, i.primary_role,
-           ${STATE} as state, i.send_count, i.expires_at, i.created_at
+           ${STATE} as state, i.send_count, i.expires_at, i.created_at, i.import_id
     from platform.invitations i
     join platform.persons p on p.tenant_id = i.tenant_id and p.id = i.person_id
     where ${filter.state === undefined ? sql`true` : sql`${STATE} = ${filter.state}`}
@@ -218,6 +230,7 @@ export async function listInvitations(
     sendCount: r.send_count,
     expiresAt: toDate(r.expires_at),
     createdAt: toDate(r.created_at),
+    importId: r.import_id,
   }));
 }
 
@@ -271,15 +284,15 @@ export async function requestInvitationResend(
     // clock_timestamp(): a second request in the same transaction is still a change the trigger checks.
     requested = await tx.execute(sql`
       update platform.invitations set resend_requested_at = clock_timestamp()
-      where id = ${id}::uuid and status = 'pending' and send_count < ${INVITATION_MAX_SENDS}
+      where id = ${id}::uuid and status = 'pending' and not mail_held and send_count < ${INVITATION_MAX_SENDS}
       returning id`);
   } catch (error) {
     throw invitationErrorOf(error);
   }
   if (requested.length === 0) {
-    const [row] = await tx.execute<{ status: string; send_count: number }>(sql`
-      select status, send_count from platform.invitations where id = ${id}::uuid`);
-    return row?.status === 'pending' && row.send_count >= INVITATION_MAX_SENDS
+    const [row] = await tx.execute<{ status: string; send_count: number; mail_held: boolean }>(sql`
+      select status, send_count, mail_held from platform.invitations where id = ${id}::uuid`);
+    return row?.status === 'pending' && !row.mail_held && row.send_count >= INVITATION_MAX_SENDS
       ? 'limit_reached'
       : 'not_pending';
   }

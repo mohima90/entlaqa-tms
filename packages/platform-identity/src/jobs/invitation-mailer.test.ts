@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   INVITATION_CREATED_EVENT,
   INVITATION_MAILER_NAME,
+  INVITATION_RELEASED_EVENT,
   INVITATION_RESEND_REQUESTED_EVENT,
   createInvitationMailer,
   hashToken,
@@ -36,6 +37,8 @@ const invitation: InvitationForMail = {
   inviterName: { ar: 'محمد العتيبي', en: null },
   organizationName: { ar: 'شركة الراية', en: 'Al Raya' },
   primaryRole: 'learner',
+  invitedBy: 'u1',
+  mailHeld: false,
 };
 
 const event = (
@@ -83,11 +86,15 @@ afterEach(() => {
 });
 
 describe('invitation mailer', () => {
-  it('is a transactional subscriber of invitation created / resend requested', () => {
+  it('is a transactional subscriber of invitation created / resend requested / released', () => {
     const { subscriber } = mailer();
     expect(subscriber).toMatchObject({
       name: INVITATION_MAILER_NAME,
-      types: [INVITATION_CREATED_EVENT, INVITATION_RESEND_REQUESTED_EVENT],
+      types: [
+        INVITATION_CREATED_EVENT,
+        INVITATION_RESEND_REQUESTED_EVENT,
+        INVITATION_RELEASED_EVENT,
+      ],
       maxAttempts: 10,
     });
     expect(subscriber.kind).toBeUndefined();
@@ -249,5 +256,51 @@ describe('invitation mailer', () => {
       expect(() => mailer(bad)).toThrow('app base URL');
     }
     expect(() => mailer('http://127.0.0.1:3200')).not.toThrow();
+  });
+
+  describe('released invitations of a user import (T-M2-12)', () => {
+    const system = { actorType: 'system', actorId: null } as const;
+
+    it('mails a released invitation as the importer, while the importer may still manage it', async () => {
+      db.loadInvitationForMail.mockResolvedValue({ ...invitation, invitedBy: 'importer-1' });
+      db.issueInvitationToken.mockResolvedValue({ expiresAt: EXPIRES });
+      const { subscriber } = mailer();
+      await subscriber.handle({ tx, event: event(INVITATION_RELEASED_EVENT, ID, system) });
+      expect(db.invitationActorMayManage).toHaveBeenCalledWith(tx, ID, 'importer-1');
+      expect(db.loadInvitationForMail).toHaveBeenCalledTimes(1);
+      expect(mail.queueEmail).toHaveBeenCalledTimes(1);
+      expect(queued().variables.inviterName).toEqual({ ar: 'محمد العتيبي', en: null });
+    });
+
+    it('ignores a release that a member sent, or one for an importer who may no longer invite', async () => {
+      db.loadInvitationForMail.mockResolvedValue(invitation);
+      const { subscriber, log } = mailer();
+      await subscriber.handle({ tx, event: event(INVITATION_RELEASED_EVENT) });
+      expect(log).toHaveBeenCalledWith(
+        'warning',
+        'invitation release not from the import task; ignored',
+      );
+      db.invitationActorMayManage.mockResolvedValue(false);
+      await subscriber.handle({ tx, event: event(INVITATION_RELEASED_EVENT, ID, system) });
+      expect(log).toHaveBeenCalledWith(
+        'warning',
+        'invitation event from a member who may no longer manage it; no e-mail',
+      );
+      db.loadInvitationForMail.mockResolvedValue({ ...invitation, invitedBy: null });
+      db.invitationActorMayManage.mockResolvedValue(true);
+      await subscriber.handle({ tx, event: event(INVITATION_RELEASED_EVENT, ID, system) });
+      expect(db.issueInvitationToken).not.toHaveBeenCalled();
+      expect(mail.queueEmail).not.toHaveBeenCalled();
+    });
+
+    it('never mails an invitation that is still held', async () => {
+      db.loadInvitationForMail.mockResolvedValue({ ...invitation, mailHeld: true });
+      const { subscriber, log } = mailer();
+      await subscriber.handle({ tx, event: event(INVITATION_RELEASED_EVENT, ID, system) });
+      await subscriber.handle({ tx, event: event(INVITATION_RESEND_REQUESTED_EVENT) });
+      expect(log).toHaveBeenCalledWith('info', 'invitation not sent yet (held); no e-mail');
+      expect(db.issueInvitationToken).not.toHaveBeenCalled();
+      expect(mail.queueEmail).not.toHaveBeenCalled();
+    });
   });
 });

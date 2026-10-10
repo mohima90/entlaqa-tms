@@ -197,11 +197,13 @@ describe('Auth e-mail templates (T-M2-08)', () => {
     // The app and the gateway share `edge` (fixed subnet) and nothing else, so 8445's source rule holds.
     expect(compose).toContain('- { subnet: 10.231.0.32/28, gateway: 10.231.0.33 }');
     expect(compose).toContain('STORAGE_INTERNAL_URL: https://gateway:8445');
-    expect(compose).toMatch(/^ {4}networks: \[db-app, edge, errors\]$/m); // the app
+    // The app (with T-M2-11's `front`, its visitors' way in — the front proxy is not on `edge`).
+    expect(compose).toMatch(/^ {4}networks: \[db-app, edge, errors, front\]$/m);
+    expect(compose).toMatch(/^ {4}networks: \[front\]$/m); // the front proxy
     expect(compose).not.toContain('extra_hosts');
     expect([...compose.matchAll(/^ {4}networks: \[(.*\bedge\b.*)\]$/gm)].map((m) => m[1])).toEqual([
       'auth-internal, auth-admin, auth-tools, edge, errors-ui, storage-internal', // gateway
-      'db-app, edge, errors', // app
+      'db-app, edge, errors, front', // app
     ]);
     expect(compose).not.toMatch(/^\s+- ['"]?[\d.:]*8445(:\d+)?['"]?\s*(#.*)?$/m);
     // clamd's scratch space (memory) is bounded.

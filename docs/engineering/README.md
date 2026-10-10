@@ -39,7 +39,7 @@ No Supabase project or secrets are needed to build, test or run the app: without
 | `DB_TEST_INTEGRATION=1 pnpm db:test` | …plus the TypeScript integration tests (`withUserTx` / `withSystemTx` and the job runner against real PostgreSQL) | 6 |
 | `pnpm db:test:hosted-sim` | Runs the real deploy path (`db-deploy.sh` plan + apply + `verify-deployment.sql`) as a **non-superuser** migration role shaped like hosted Supabase's `postgres` — catches superuser-only statements that `db:test` cannot see | 4 |
 | `pnpm build` | Production build (`output: 'standalone'`) + copies static assets into `.next/standalone` | — |
-| `pnpm --filter @jadarat/suite check:budget` | Client JS / CSS gzip budget (`apps/suite/performance-budget.json`) | 9 |
+| `pnpm --filter @jadarat/suite check:budget` | Client JS gzip budget **per page** (first load: shared chunks + the page's layouts, page and synchronous client components; PO decision 10 Oct 2026) and total CSS gzip (`apps/suite/performance-budget.json`); prints the heaviest pages and, for information, the total of all chunks | 9 |
 | `pnpm e2e` | Playwright smoke against the standalone server: Arabic + English, `dir`, no console/CSP errors, no horizontal overflow at 390 px, axe (0 serious/critical) | 7, 8 |
 | `pnpm --filter @jadarat/ui storybook` | Component library (Storybook) on http://localhost:6006 — toolbar: Arabic RTL / English LTR, light / dark | — |
 | `pnpm --filter @jadarat/ui build-storybook` then `… test:stories` | Static Storybook, then Playwright opens **every story** in Arabic/English × light/dark: `lang`/`dir`/`data-theme`, no console errors, axe WCAG 2.2 AA with **no** violations | 8 |

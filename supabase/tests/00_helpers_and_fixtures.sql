@@ -410,3 +410,22 @@ insert into storage.objects (bucket_id, name, owner, metadata) values
 insert into platform.file_download_grants (tenant_id, file_id, user_id, expires_at) values
   ('a0000000-0000-4000-8000-000000000001', 'f0a00000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-0000000000a1', now() + interval '5 minutes'),
   ('b0000000-0000-4000-8000-000000000001', 'f0b00000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-0000000000b1', now() + interval '5 minutes');
+
+-- User imports (T-M2-12): one import per tenant A (by uA, file f0a…) and B (by uB, file f0b…), in review,
+-- each with one column and one staged row. More states are built inside the tests (86_*, 87_*, 88_*).
+insert into platform.user_imports (id, tenant_id, created_by, created_by_person, file_id, file_name, file_size,
+    status, sheets, sheet_index, mapping, review_counts, rows_total) values
+  ('a5000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-0000000000a1',
+   'a1000000-0000-4000-8000-0000000000a1', 'f0a00000-0000-4000-8000-000000000001', 'موظفون.csv', 12, 'review',
+   '[{"name": "", "rows": 1, "columns": 1}]', 0, '{"0": "email"}', '{"new": 1}', 1),
+  ('b5000000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-0000000000b1',
+   'b1000000-0000-4000-8000-0000000000b1', 'f0b00000-0000-4000-8000-000000000001', 'staff.csv', 12, 'review',
+   '[{"name": "", "rows": 1, "columns": 1}]', 0, '{"0": "email"}', '{"new": 1}', 1);
+insert into platform.user_import_columns (tenant_id, import_id, sheet_index, column_index, header, samples) values
+  ('a0000000-0000-4000-8000-000000000001', 'a5000000-0000-4000-8000-000000000001', 0, 0, 'Email', '{new.a@a.test}'),
+  ('b0000000-0000-4000-8000-000000000001', 'b5000000-0000-4000-8000-000000000001', 0, 0, 'Email', '{new.b@b.test}');
+insert into platform.user_import_rows (tenant_id, import_id, row_number, cells, data, review_kind) values
+  ('a0000000-0000-4000-8000-000000000001', 'a5000000-0000-4000-8000-000000000001', 2, '{"email": "new.a@a.test"}',
+   '{"email": "new.a@a.test"}', 'new'),
+  ('b0000000-0000-4000-8000-000000000001', 'b5000000-0000-4000-8000-000000000001', 2, '{"email": "new.b@b.test"}',
+   '{"email": "new.b@b.test"}', 'new');

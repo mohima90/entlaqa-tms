@@ -241,7 +241,7 @@ declare
 begin
   foreach v_role in array array['anon', 'authenticated', 'app_server', 'app_worker', 'app_queue', 'tenant_guard',
                                 'invitation_guard', 'account_mail_guard', 'membership_guard',
-                                'rate_limit_guard', 'file_guard'] loop
+                                'rate_limit_guard', 'file_guard', 'user_import_guard'] loop
     perform tests.assert(not has_database_privilege(v_role, current_database(), 'TEMPORARY'),
       format('%s must not create temporary objects', v_role));
   end loop;
@@ -378,6 +378,7 @@ begin
     and p.proowner <> 'membership_guard'::regrole     -- checked in its own block below (T-M2-09)
     and p.proowner <> 'rate_limit_guard'::regrole     -- checked in 70_rate_limiter_owner.sql (T-M2-11)
     and p.proowner <> 'file_guard'::regrole           -- checked in its own block below (T-M2-18)
+    and p.proowner <> 'user_import_guard'::regrole    -- checked in its own block below (T-M2-12)
     and p.oid <> 'private.storage_request_tenant()'::regprocedure;  -- files block below (T-M2-18)
   perform tests.assert_eq(v_list,
     'private.accept_invitation_as_caller(bytea,text,text) (owner invitation_guard), '
@@ -765,6 +766,87 @@ begin
                            from pg_policy where polrelid = 'storage.objects'::regclass),
     'jadarat_files_read:r:true,jadarat_files_upload:a:true,jadarat_tenant_prefix:*:false',
     'storage.objects: exactly our three policies (no UPDATE/DELETE policy)');
+end $$;
+
+-- user_import_guard (T-M2-12, user imports): owns exactly the worker's claim (SECURITY DEFINER) and its
+-- check (INVOKER, nobody else may run it); nobody acts as it, it creates nothing and owns no relation; it
+-- reads the imports' lifecycle columns, their file's status, the organizations' status and the due held
+-- invitations, and writes the lease only. Users never write the staged columns and rows (jobs only:
+-- policies), and an import's file is the importer's own upload (trigger).
+do $$
+declare
+  v_list text;
+begin
+  perform tests.assert(not (select rolbypassrls or rolcanlogin or rolsuper or rolinherit or rolcreaterole or rolcreatedb
+                            from pg_roles where rolname = 'user_import_guard'),
+    'user_import_guard must be NOLOGIN NOINHERIT and not BYPASSRLS / superuser / createrole / createdb');
+  select string_agg(format('%s%s', p.oid::regprocedure, case when p.prosecdef then '' else ' (INVOKER)' end), ', '
+                    order by p.oid::regprocedure::text) into v_list
+  from pg_proc p where p.proowner = 'user_import_guard'::regrole;
+  perform tests.assert_eq(v_list, 'private.claim_user_import_work(), private.user_import_worker_check() (INVOKER)',
+    'user_import_guard owns the claim and its check only');
+  perform tests.assert(not exists (select 1 from pg_class c where c.relowner = 'user_import_guard'::regrole),
+    'user_import_guard owns no relations');
+  perform tests.assert(not exists (
+      select 1 from pg_auth_members m join pg_roles u on u.oid = m.member
+      where m.roleid = 'user_import_guard'::regrole and (m.inherit_option or m.set_option)
+        and not u.rolsuper and u.rolname <> current_user),
+    'nobody acts as user_import_guard');
+  perform tests.assert(not has_schema_privilege('user_import_guard', 'private', 'CREATE')
+                       and not has_schema_privilege('user_import_guard', 'platform', 'CREATE'),
+    'user_import_guard creates nothing');
+  -- What it reads and writes, column by column (no names, no row data).
+  select string_agg(format('%s.%s:%s', c.relname, a.attname, x.privilege_type), ', '
+                    order by c.relname, a.attname, x.privilege_type) into v_list
+  from pg_class c
+  join pg_namespace n on n.oid = c.relnamespace
+  join pg_attribute a on a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped
+  cross join lateral aclexplode(a.attacl) x
+  where n.nspname = 'platform' and x.grantee = 'user_import_guard'::regrole;
+  perform tests.assert_eq(v_list,
+    'files.id:SELECT, files.status:SELECT, files.tenant_id:SELECT, '
+    'invitations.import_id:SELECT, invitations.mail_held:SELECT, invitations.send_at:SELECT, '
+    'invitations.status:SELECT, invitations.tenant_id:SELECT, '
+    'tenants.id:SELECT, tenants.status:SELECT, '
+    'user_imports.confirmed_at:SELECT, user_imports.created_at:SELECT, user_imports.data_purged_at:SELECT, '
+    'user_imports.file_id:SELECT, user_imports.finished_at:SELECT, user_imports.id:SELECT, '
+    'user_imports.lease_token:SELECT, user_imports.lease_token:UPDATE, user_imports.lease_until:SELECT, '
+    'user_imports.lease_until:UPDATE, user_imports.next_attempt_at:SELECT, user_imports.review_expires_at:SELECT, '
+    'user_imports.status:SELECT, user_imports.tenant_id:SELECT, user_imports.undone_at:SELECT, '
+    'user_imports.updated_at:SELECT',
+    'user_import_guard: exactly the lifecycle columns, the file status, the organizations'' status and the lease');
+  perform tests.assert(not exists (
+      select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
+      where n.nspname in ('platform', 'private', 'tms') and c.relkind in ('r', 'v', 'm', 'p')
+        and has_table_privilege('user_import_guard', c.oid, 'select, insert, update, delete, truncate, references, trigger')),
+    'user_import_guard has no table-wide privilege anywhere');
+  for v_list in
+    select distinct format('%s → %s', p.oid::regprocedure,
+                           case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end)
+    from pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+    where p.proowner = 'user_import_guard'::regrole and a.privilege_type = 'EXECUTE' and a.grantee <> p.proowner
+      and (a.grantee = 0 or pg_get_userbyid(a.grantee) <> 'authenticated' or not p.prosecdef)
+  loop
+    perform tests.assert(false, format('unexpected EXECUTE: %s', v_list));
+  end loop;
+  -- The lifecycle trigger is in place; users never write staged data (no user policy for writes).
+  perform tests.assert(exists (select 1 from pg_trigger where tgrelid = 'platform.user_imports'::regclass
+                               and tgname = 'user_imports_check' and tgenabled = 'O'),
+    'user_imports: the lifecycle trigger must exist and be enabled');
+  perform tests.assert_eq((select string_agg(polname || ':' || polcmd::text, ',' order by polname) from pg_policy
+                           where polrelid in ('platform.user_import_rows'::regclass, 'platform.user_import_columns'::regclass)
+                             and polpermissive and polcmd <> 'r'),
+    'user_import_columns_jobs:*,user_import_rows_jobs:*',
+    'staged columns and rows: written by jobs only');
+  perform tests.assert(not has_column_privilege('authenticated', 'platform.user_imports', 'created_by', 'update')
+                       and not has_column_privilege('authenticated', 'platform.user_imports', 'file_id', 'update')
+                       and not has_column_privilege('authenticated', 'platform.user_imports', 'tenant_id', 'update')
+                       and not has_table_privilege('authenticated', 'platform.user_imports', 'delete'),
+    'user_imports: what an import is never changes, and imports are never deleted');
+  -- Every staged-row write is defined by the processing functions: none of them is SECURITY DEFINER.
+  perform tests.assert(not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                                   where n.nspname = 'private' and p.proname like 'user_import%' and p.prosecdef),
+    'the import''s processing functions run as their caller (RLS and every guard apply)');
 end $$;
 
 rollback;

@@ -46,26 +46,34 @@ describe('organization brand colours (FR-ADM-07): never below WCAG 2.2 AA', () =
   // instrumentation on a busy CI runner. Same assertions, explicit time budget instead of the 5 s default.
   const SWEEP_TIMEOUT_MS = 30_000;
 
-  it(`passes every contract pair in light and dark for ${colours.length} colours`, () => {
-    const failures: string[] = [];
-    for (const primary of colours) {
-      const brand = deriveOrganizationBrand({ primary });
-      for (const c of checkTheme(jadaratTheme, brand.layer)) {
-        if (!c.pass) failures.push(`${primary} ${c.mode} ${c.fg}/${c.bg} ${c.ratio.toFixed(2)}`);
+  it(
+    `passes every contract pair in light and dark for ${colours.length} colours`,
+    () => {
+      const failures: string[] = [];
+      for (const primary of colours) {
+        const brand = deriveOrganizationBrand({ primary });
+        for (const c of checkTheme(jadaratTheme, brand.layer)) {
+          if (!c.pass) failures.push(`${primary} ${c.mode} ${c.fg}/${c.bg} ${c.ratio.toFixed(2)}`);
+        }
       }
-    }
-    expect(failures).toEqual([]);
-  }, SWEEP_TIMEOUT_MS);
+      expect(failures).toEqual([]);
+    },
+    SWEEP_TIMEOUT_MS,
+  );
 
-  it('passes with a different accent colour too', () => {
-    const accents = [...seededColours(60, 7)];
-    const primaries = [...seededColours(60, 11)];
-    for (const [i, primary] of primaries.entries()) {
-      const brand = deriveOrganizationBrand({ primary, accent: accents[i] });
-      expect(brand.checks.every((c) => c.pass)).toBe(true);
-      expect(brand.layer.light.accent).toBeDefined();
-    }
-  }, SWEEP_TIMEOUT_MS);
+  it(
+    'passes with a different accent colour too',
+    () => {
+      const accents = [...seededColours(60, 7)];
+      const primaries = [...seededColours(60, 11)];
+      for (const [i, primary] of primaries.entries()) {
+        const brand = deriveOrganizationBrand({ primary, accent: accents[i] });
+        expect(brand.checks.every((c) => c.pass)).toBe(true);
+        expect(brand.layer.light.accent).toBeDefined();
+      }
+    },
+    SWEEP_TIMEOUT_MS,
+  );
 
   it('works on top of every theme (including the Jadarat LMS slot)', () => {
     for (const primary of EDGE_CASES) {

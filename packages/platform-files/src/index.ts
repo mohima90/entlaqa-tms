@@ -64,6 +64,9 @@ export type { FileErrorCode, FileOwner, FileStatus, FileStatusView } from '@jada
  * database connection), so the upload reservation and the download grant are written in a transaction of
  * their own, committed before Storage is asked — `ownTx` runs one for the signed-in user (e.g.
  * `(fn) => withUserTx(ctx.claims, fn)`; @jadarat/platform-files/next builds the whole context).
+ * createUploadIntent and createDownloadGrant therefore act outside a calling action's transaction: an
+ * action (defineAction) that calls them declares `externalEffects: true`, so a deadlock retry never
+ * reserves, grants or signs twice (T-M2-10; docs/engineering/files.md §3).
  */
 export interface FileRequestContext {
   readonly ownTx: <T>(fn: (tx: UserTx) => Promise<T>) => Promise<T>;

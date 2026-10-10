@@ -12,11 +12,14 @@ import {
   createUserFileStorage,
   readStorageInternalOrigin,
 } from '@jadarat/platform-db/supabase-server';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import type { FileRequestContext } from './index';
 
 export async function fileRequestContext(claims: VerifiedClaims): Promise<FileRequestContext> {
   const store = await cookies();
+  // Should this client refresh the session, Auth records the browser's User-Agent, as everywhere else
+  // (session lists, T-M2-10; platform-identity next.ts).
+  const userAgent = (await headers()).get('user-agent');
   const supabase = createSupabaseServerClient(
     {
       getAll: () => store.getAll(),
@@ -29,7 +32,7 @@ export async function fileRequestContext(claims: VerifiedClaims): Promise<FileRe
       },
     },
     undefined,
-    { storageOrigin: readStorageInternalOrigin() },
+    { storageOrigin: readStorageInternalOrigin(), userAgent },
   );
   if (!supabase) throw new Error('Supabase is not configured');
   return {

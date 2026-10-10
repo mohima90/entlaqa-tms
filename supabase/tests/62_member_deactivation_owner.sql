@@ -298,6 +298,42 @@ begin
 end $$;
 rollback;
 
+-- One statement, several logins (a bulk change, T-M2-12): the statement trigger ends each login's sessions —
+-- their login locks taken in user-id order — after the row trigger ended their sessions in A.
+begin;
+do $$
+begin
+  update platform.tenant_memberships set status = 'suspended'
+  where tenant_id = 'a0000000-0000-4000-8000-000000000001'
+    and user_id in ('9d000000-0000-4000-8000-000000000006', '9d000000-0000-4000-8000-000000000002');
+  perform tests.assert_eq((select count(*) from auth.sessions where user_id in ('9d000000-0000-4000-8000-000000000002',
+                                                                                '9d000000-0000-4000-8000-000000000006')),
+    0::bigint, 'both logins belong nowhere now: their Auth sessions end');
+  perform tests.assert(tests.t09_holds_lock('platform.login_sessions:9d000000-0000-4000-8000-000000000002')
+                       and tests.t09_holds_lock('platform.login_sessions:9d000000-0000-4000-8000-000000000006'),
+    'both login locks held until commit');
+  perform tests.assert_eq((select count(*) from auth.sessions where user_id = '9d000000-0000-4000-8000-000000000001'),
+    4::bigint, 'an untouched login keeps its sessions');
+end $$;
+rollback;
+
+-- Every path that ends sessions takes the login's lock first (one order with the worker's purge), then the
+-- markers and the Auth sessions by session id.
+begin;
+do $$
+begin
+  perform tests.assert_eq(private.end_sessions('9d000000-0000-4000-8000-000000000001',
+                                               array['9d200000-0000-4000-8000-000000000002', '9d200000-0000-4000-8000-000000000001',
+                                                     '9d200000-0000-4000-8000-000000000002']::uuid[],
+                                               'a0000000-0000-4000-8000-000000000001', 'admin', null), 2,
+    'two distinct sessions ended (a repeated id counts once)');
+  perform tests.assert(tests.t09_holds_lock('platform.login_sessions:9d000000-0000-4000-8000-000000000001'),
+    'under the login''s lock');
+  perform tests.assert_eq((select count(*) from auth.sessions where user_id = '9d000000-0000-4000-8000-000000000001'),
+    2::bigint, 'only those two left Auth');
+end $$;
+rollback;
+
 -- ---------------------------------------------------------------------------------------------------
 -- The authenticator-code rule uses T-M2-10's AAL2 (20261012120000; review H1): the token's claim is not
 -- enough — the Auth session must have passed a code of a CONFIRMED app (63: and within 15 minutes).

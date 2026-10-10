@@ -280,6 +280,9 @@ begin
       -- access-token hook (Auth only).
       ('private.end_member_sessions()', 'membership_guard', array['membership_guard'], true),
       ('private.check_privileged_deactivation()', 'membership_guard', array['membership_guard'], true),
+      -- With T-M2-10 (20261012120000): the statement trigger that ends the Auth sessions of logins left
+      -- without an active membership (residual N2).
+      ('private.end_unserved_logins()', 'membership_guard', array['membership_guard'], true),
       ('private.reactivate_membership(uuid)', 'membership_guard', array['membership_guard', 'authenticated'], true),
       ('private.account_sign_in_refused(uuid)', 'membership_guard', array['membership_guard', 'supabase_auth_admin'], true),
       -- Security policy, MFA and sign-in sessions (T-M2-10): the decision is tenant_guard's own; the web app
@@ -363,6 +366,7 @@ begin
         'private.claim_account_mail_request()', 'private.finish_account_mail_request(uuid)',
         'private.retry_account_mail_request(uuid)', 'private.end_member_sessions()',
         'private.check_privileged_deactivation()', 'private.reactivate_membership(uuid)',
+        'private.end_unserved_logins()',
         'private.account_sign_in_refused(uuid)',
         'private.session_access(uuid,uuid,uuid,boolean,boolean)', 'private.session_access_state()',
         'private.dismiss_mfa_prompt()', 'private.tenant_member_mfa(uuid)', 'private.password_min_length_for_caller()',
@@ -494,12 +498,15 @@ begin
     end if;
   end if;
   -- Deactivation (T-M2-09): the triggers that end a member's sessions in the organization and require an
-  -- authenticator code for a privileged member exist and are enabled.
+  -- authenticator code for a privileged member exist and are enabled — and (T-M2-10 integration) the one
+  -- that ends the Auth sessions of a login left without an active membership.
   for r in
     select t.tbl, t.name, t.fn
     from (values ('platform.tenant_memberships', 'tenant_memberships_end_sessions', 'private.end_member_sessions()'),
                  ('platform.tenant_memberships', 'tenant_memberships_privileged_deactivation',
-                  'private.check_privileged_deactivation()')) as t(tbl, name, fn)
+                  'private.check_privileged_deactivation()'),
+                 ('platform.tenant_memberships', 'tenant_memberships_end_login_sessions',
+                  'private.end_unserved_logins()')) as t(tbl, name, fn)
   loop
     if not exists (select 1 from pg_trigger g where g.tgrelid = to_regclass(r.tbl) and g.tgname = r.name
                    and g.tgenabled in ('O', 'A') and g.tgfoid = to_regprocedure(r.fn)) then

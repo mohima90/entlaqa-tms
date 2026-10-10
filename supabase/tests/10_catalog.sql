@@ -578,7 +578,7 @@ begin
   from pg_proc p where p.proowner = 'membership_guard'::regrole;
   perform tests.assert_eq(v_list,
     'private.account_sign_in_refused(uuid), private.check_privileged_deactivation(), '
-    'private.end_member_sessions(), private.reactivate_membership(uuid)',
+    'private.end_member_sessions(), private.end_unserved_logins(), private.reactivate_membership(uuid)',
     'membership_guard owns the deactivation, reactivation and sign-in refusal functions only');
   perform tests.assert(not exists (select 1 from pg_class c where c.relowner = 'membership_guard'::regrole),
     'membership_guard owns no relations');
@@ -654,8 +654,13 @@ begin
                         where t.tgenabled = 'O' and (t.tgrelid, t.tgname, t.tgfoid) in (
                           ('platform.tenant_memberships'::regclass, 'tenant_memberships_end_sessions', 'private.end_member_sessions()'::regprocedure),
                           ('platform.tenant_memberships'::regclass, 'tenant_memberships_privileged_deactivation',
-                           'private.check_privileged_deactivation()'::regprocedure))) = 2,
-    'deactivation triggers (sessions, privileged members at AAL2) exist and are enabled');
+                           'private.check_privileged_deactivation()'::regprocedure),
+                          ('platform.tenant_memberships'::regclass, 'tenant_memberships_end_login_sessions',
+                           'private.end_unserved_logins()'::regprocedure))) = 3,
+    'deactivation triggers (sessions, privileged members at AAL2, the login''s Auth sessions) exist and are enabled');
+  perform tests.assert((select t.tgtype & 1 = 0 and t.tgnewtable is not null and t.tgoldtable is not null
+                        from pg_trigger t where t.tgname = 'tenant_memberships_end_login_sessions'),
+    'the login-session trigger runs once per statement, over the rows it changed (user-id order)');
 end $$;
 
 rollback;

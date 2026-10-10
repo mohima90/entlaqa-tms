@@ -15,16 +15,28 @@
 --     as still active: the decision takes a per-login advisory lock held until commit, so the second one
 --     decides after the first committed (READ COMMITTED: its check is a later statement).
 --     private.end_unserved_login_sessions(user, tenant, actor): SECURITY DEFINER, owner tenant_guard (it owns
---     the session-ending path), EXECUTE for membership_guard only — called by private.end_member_sessions()
---     (the T-M2-09 trigger, owner membership_guard), redefined here.
+--     the session-ending path), EXECUTE for membership_guard only — called by the statement-level trigger
+--     private.end_unserved_logins() (owner membership_guard) once per login the statement took out of
+--     `active`, in user-id order: a statement that deactivates several logins (bulk, T-M2-12) takes their
+--     login locks in one order. It runs after T-M2-09's row trigger has ended each membership's sessions in
+--     its organization (private.end_member_sessions(), unchanged).
+--   * One order for ending sessions (integration review): every path that ends a login's sessions —
+--     private.end_sessions (the account, a user manager, the device limit, an authenticator reset, the
+--     deactivation above) and the worker's private.purge_ended_sessions — takes the login's lock first, then
+--     writes the markers and deletes the Auth sessions by session id. The purge never waits: it takes the
+--     login locks with pg_try_advisory_xact_lock and the sessions' sign-in context rows FOR UPDATE SKIP
+--     LOCKED (a request recording its activity, an organization switch, a deactivation), and leaves what it
+--     cannot take to its next run. (auth.sessions itself cannot be locked FOR UPDATE: tenant_guard has no
+--     UPDATE on it, on purpose.)
 --   * T-M2-09's authenticator-code rule in the database (deactivating or reactivating a member who holds a
 --     privileged role, D-IAM-01, review M4) now uses T-M2-10's AAL2 (security review H1, review L3): the
 --     token's `aal` claim alone is not enough any more — private.request_aal2() (claim aal2, the Auth session
 --     at aal2, through a CONFIRMED app) and private.request_code_fresh() (a code from the last 15 minutes),
 --     as defineAction already requires for platform.role.assign_privileged. EXECUTE on both for
 --     membership_guard (its trigger and reactivation function call them).
--- Lock order (deadlock-free): the membership lock (private.end_member_sessions(), exclusive) → the login lock
--- (here). No other path takes the login lock.
+-- Lock order: the membership lock (private.end_member_sessions(), exclusive; the organization switch takes it
+-- shared) → the login lock (private.end_unserved_logins(), then private.end_sessions; user-id order within a
+-- statement) → markers → Auth sessions (session-id order).
 
 grant tenant_guard to current_user;
 grant membership_guard to current_user;
@@ -58,34 +70,186 @@ $$;
 comment on function private.end_unserved_login_sessions(uuid, uuid, uuid) is
   'SECURITY-RELEVANT (FR-IAM-05, T-M2-09 residual N2, T-M2-10; TM-0003 T-IAM-39/40). Internal: after a membership left active, ends every Auth session of the login (marker, then the Auth session) when it is an active member of no active or trial organization any more. Per-login lock. tenant_guard; EXECUTE membership_guard only.';
 
--- As in 20261011090000, plus: the login's Auth sessions end when no active membership remains.
-create or replace function private.end_member_sessions()
+-- After T-M2-09's row trigger (each membership's sessions in its organization), once per statement: the
+-- logins it took out of `active`, in user-id order. The actor is recorded for a request-path change (user
+-- claims), never for a platform operation or a job.
+create or replace function private.end_unserved_logins()
 returns trigger
 language plpgsql volatile security definer
 set search_path = ''
 as $$
 declare
   v_claims jsonb := private.request_claims();
+  v_actor uuid;
+  r record;
 begin
-  if old.status = 'active' and new.status <> 'active' then
-    -- Waits for an organization switch of this membership in flight (it holds the lock shared until it
-    -- commits); the DELETE below is a later statement, so it sees that switch's row (READ COMMITTED).
-    perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(
-      'platform.membership:' || new.tenant_id::text || ':' || new.user_id::text, 0));
-    delete from platform.session_context c
-    where c.active_tenant_id = new.tenant_id and c.user_id = new.user_id;
-    -- Residual N2 (T-IAM-39): no active membership left → every Auth session of the login ends. The actor is
-    -- recorded for a request-path change (user claims), never for a platform operation or a job.
-    perform private.end_unserved_login_sessions(
-      new.user_id, new.tenant_id,
-      case when coalesce(v_claims ->> 'role', '') = 'authenticated' then private.request_user_id() end);
+  if coalesce(v_claims ->> 'role', '') = 'authenticated' then
+    v_actor := private.request_user_id();
   end if;
+  for r in
+    select distinct on (n.user_id) n.user_id, n.tenant_id
+    from old_memberships o
+    join new_memberships n on n.id = o.id
+    where o.status = 'active' and n.status <> 'active' and n.user_id is not null
+    order by n.user_id, n.tenant_id
+  loop
+    perform private.end_unserved_login_sessions(r.user_id, r.tenant_id, v_actor);
+  end loop;
   return null;
 end
 $$;
 
-comment on function private.end_member_sessions() is
-  'SECURITY-RELEVANT (FR-IAM-05, T-IAM-39/40). Trigger: a membership leaving active ends that organization''s sign-in sessions of the user (session_context rows) and, when the login is an active member nowhere any more, every Auth session of the login (private.end_unserved_login_sessions). membership_guard.';
+comment on function private.end_unserved_logins() is
+  'SECURITY-RELEVANT (FR-IAM-05, T-M2-09 residual N2, T-IAM-39/40). Statement trigger: for each login a statement took out of active (user-id order), ends every Auth session of the login when no active membership in a served organization remains (private.end_unserved_login_sessions). membership_guard.';
+
+revoke all on function private.end_unserved_logins() from public;
+
+-- Transition tables (not allowed with a column list): every UPDATE of memberships; the function picks the
+-- rows that left `active`.
+create trigger tenant_memberships_end_login_sessions after update on platform.tenant_memberships
+  referencing old table as old_memberships new table as new_memberships
+  for each statement execute function private.end_unserved_logins();
+
+-- ---------------------------------------------------------------------------------------------------
+-- One order for ending sessions (integration review)
+-- ---------------------------------------------------------------------------------------------------
+-- As in 20261012100000, plus: the login's lock first, then the markers and the Auth sessions by session id.
+create or replace function private.end_sessions(
+  p_user_id uuid, p_session_ids uuid[], p_tenant_id uuid, p_reason text, p_revoked_by uuid)
+returns integer
+language plpgsql volatile security definer
+set search_path = ''
+as $$
+declare
+  v_count integer;
+  v_id uuid;
+begin
+  if p_user_id is null or p_session_ids is null or cardinality(p_session_ids) = 0 then
+    return 0;
+  end if;
+  perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('platform.login_sessions:' || p_user_id::text, 0));
+  insert into private.revoked_sessions (session_id, user_id, tenant_id, reason, revoked_by)
+  select x.id, p_user_id, p_tenant_id, p_reason, p_revoked_by
+  from (select distinct u.id from unnest(p_session_ids) as u (id) where u.id is not null) x
+  order by x.id
+  on conflict (session_id) do nothing;
+  get diagnostics v_count = row_count;
+  -- Auth forgets them too (security review M1): refresh tokens and MFA claims go with them (Auth's cascades).
+  for v_id in
+    select s.id from private.auth_session_validity s
+    where s.user_id = p_user_id and s.id = any (p_session_ids)
+    order by s.id
+  loop
+    delete from private.auth_session_validity s where s.id = v_id and s.user_id = p_user_id;
+  end loop;
+  return v_count;
+end
+$$;
+
+comment on function private.end_sessions(uuid, uuid[], uuid, text, uuid) is
+  'SECURITY-RELEVANT (T-M2-10, review M1; integration review). Internal: ends sessions of an account under its login lock — revocation markers, then the Auth sessions are deleted, each by session id. tenant_guard only.';
+
+-- As in 20261012100000, plus: candidates by session id; a login another transaction is ending sessions of
+-- (its lock) and a session whose sign-in context another transaction holds are left to the next run — the
+-- worker never waits for, nor deadlocks with, a request.
+create or replace function private.purge_ended_sessions(p_limit integer)
+returns integer
+language plpgsql volatile security definer
+set search_path = ''
+as $$
+declare
+  v_claims jsonb := private.request_claims();
+  v_limit integer := least(greatest(coalesce(p_limit, 0), 0), 1000);
+  v_candidates uuid[];
+  v_users uuid[];
+  v_user uuid;
+  v_taken uuid[];
+  v_ids uuid[];
+  v_locked uuid[];
+  v_id uuid;
+  v_count integer := 0;
+begin
+  if session_user <> 'app_worker' or coalesce(v_claims ->> 'role', '') <> 'system'
+     or coalesce(btrim(v_claims ->> 'job_id'), '') = '' then
+    raise exception 'reserved to the worker' using errcode = 'insufficient_privilege';
+  end if;
+  delete from private.revoked_sessions r where r.revoked_at < now() - interval '25 hours';
+  -- Auth sessions with a marker, older than the platform's 24 hours, or ended by their organization's
+  -- inactivity or maximum-length rule — the first p_limit by session id.
+  select array_agg(e.id order by e.id) into v_candidates
+  from (
+    select e.id
+    from (
+      select s.id
+      from private.revoked_sessions r
+      join private.auth_session_validity s on s.id = r.session_id and s.user_id = r.user_id
+      union
+      select s.id
+      from private.auth_session_validity s
+      left join platform.session_context c on c.session_id = s.id and c.user_id = s.user_id
+      left join platform.security_policies p on p.tenant_id = c.active_tenant_id
+      where (s.created_at <= now() - interval '24 hours'
+             or s.created_at <= now() - make_interval(hours => p.session_max_hours)
+             or c.last_seen_at <= now() - make_interval(mins => p.session_idle_minutes))
+        and not exists (select 1 from private.revoked_sessions r where r.session_id = s.id)
+    ) e
+    order by e.id
+    limit v_limit
+  ) e;
+  if v_candidates is null then
+    return 0;
+  end if;
+  -- Their logins' locks, without waiting (user-id order): a login whose sessions another transaction is
+  -- ending is skipped.
+  select array_agg(distinct s.user_id order by s.user_id) into v_users
+  from private.auth_session_validity s where s.id = any (v_candidates);
+  v_taken := '{}';
+  foreach v_user in array coalesce(v_users, '{}') loop
+    if pg_catalog.pg_try_advisory_xact_lock(pg_catalog.hashtextextended('platform.login_sessions:' || v_user::text, 0)) then
+      v_taken := v_taken || v_user;
+    end if;
+  end loop;
+  select array_agg(s.id order by s.id) into v_ids
+  from private.auth_session_validity s
+  where s.id = any (v_candidates) and s.user_id = any (v_taken);
+  if v_ids is null then
+    return 0;
+  end if;
+  -- Their sign-in context rows, without waiting: a session in use right now (a request recording its
+  -- activity, an organization switch, a deactivation) is skipped.
+  select array_agg(c.session_id) into v_locked
+  from (select c.session_id
+        from platform.session_context c
+        where c.session_id = any (v_ids)
+        order by c.session_id
+        for update of c skip locked) c;
+  select array_agg(x.id order by x.id) into v_ids
+  from unnest(v_ids) as x (id)
+  where x.id = any (coalesce(v_locked, '{}'))
+     or not exists (select 1 from platform.session_context c where c.session_id = x.id);
+  if v_ids is null then
+    return 0;
+  end if;
+  -- Sessions ended by time get an 'expired' marker first (a browser that comes back is told why).
+  insert into private.revoked_sessions (session_id, user_id, tenant_id, reason)
+  select s.id, s.user_id, c.active_tenant_id, 'expired'
+  from private.auth_session_validity s
+  left join platform.session_context c on c.session_id = s.id and c.user_id = s.user_id
+  where s.id = any (v_ids) and not exists (select 1 from private.revoked_sessions r where r.session_id = s.id)
+  order by s.id
+  on conflict (session_id) do nothing;
+  foreach v_id in array v_ids loop
+    delete from private.auth_session_validity s where s.id = v_id;
+    if found then
+      v_count := v_count + 1;
+    end if;
+  end loop;
+  return v_count;
+end
+$$;
+
+comment on function private.purge_ended_sessions(integer) is
+  'SECURITY-RELEVANT (T-M2-10, review M1; integration review). Worker: deletes Auth sessions that ended (markers, 24 hours, the organization''s inactivity or maximum length), at most p_limit, by session id; skips logins and sessions other transactions hold (no waiting). app_worker system claims only.';
 
 -- ---------------------------------------------------------------------------------------------------
 -- The authenticator-code rule with T-M2-10's AAL2
@@ -188,10 +352,14 @@ comment on function private.reactivate_membership(uuid) is
 -- Ownership and privileges
 -- ---------------------------------------------------------------------------------------------------
 -- Ownership hand-over as in migration 20260930120100 (non-superuser migration role on hosted Supabase). The
--- three redefined functions keep their owner (membership_guard) and privileges.
+-- redefined functions keep their owners (membership_guard; tenant_guard for end_sessions and the purge) and
+-- privileges.
 grant create on schema private to tenant_guard;
 alter function private.end_unserved_login_sessions(uuid, uuid, uuid) owner to tenant_guard;
 revoke create on schema private from tenant_guard;
+grant create on schema private to membership_guard;
+alter function private.end_unserved_logins() owner to membership_guard;
+revoke create on schema private from membership_guard;
 
 revoke all on function private.end_unserved_login_sessions(uuid, uuid, uuid) from public;
 grant execute on function private.end_unserved_login_sessions(uuid, uuid, uuid) to membership_guard;

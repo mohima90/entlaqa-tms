@@ -261,8 +261,9 @@ describe('change my password', () => {
   });
 
   it('is never retried after a deadlock: the password changes at Auth inside the transaction (review L1)', () => {
-    const definition = changeMyPasswordActionDefinition(() =>
-      Promise.resolve(ok({ userId: 'u1' })),
+    const definition = changeMyPasswordActionDefinition(
+      () => Promise.resolve(ok({ userId: 'u1' })),
+      LIMITS,
     );
     expect(definition.externalEffects).toBe(true);
   });
@@ -341,7 +342,7 @@ describe('change my password', () => {
   it("applies the strictest minimum of the account's organizations before Auth (T-M2-10)", async () => {
     const changePassword = vi.fn(() => Promise.resolve(ok({ userId: 'u1' })));
     const action = createDefineAction(runtime().rt)(
-      changeMyPasswordActionDefinition(changePassword),
+      changeMyPasswordActionDefinition(changePassword, LIMITS),
     );
     db.passwordMinLengthForCaller.mockResolvedValue(input.newPassword.length + 1);
     const short = await action(input);

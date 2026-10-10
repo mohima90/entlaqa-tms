@@ -31,6 +31,7 @@ function runtime(roles: SystemRoleCode[]) {
       return Promise.resolve(ok(r.value));
     },
     withUserTx: (_c, fn) => fn(TX),
+    loadSessionFacts: () => Promise.resolve({ active: true, aal2: false }),
     loadGrants: () =>
       Promise.resolve(
         grantsForAssignments(

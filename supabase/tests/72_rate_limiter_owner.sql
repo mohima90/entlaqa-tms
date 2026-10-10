@@ -145,7 +145,30 @@ begin
   perform tests.assert_check_constraint(
     $q$insert into private.account_mail_requests (kind, user_id) values ('sign_in_unlocked', '00000000-0000-4000-8000-0000000000ab')$q$,
     'account_mail_requests_shape_check', 'an unlock notice names the organization');
+  -- Built on T-M2-10's pipeline (20261012110000): its kinds keep their lifetimes and shapes; the lockout
+  -- e-mail lives as long as a reset request, the unlock notice as long as a security notice.
+  perform tests.assert(private.account_mail_request_expired('account_locked', now() - interval '61 minutes')
+                       and not private.account_mail_request_expired('account_locked', now() - interval '59 minutes'),
+    'a lockout e-mail request lives 60 minutes (a lock lasts at most 60)');
+  perform tests.assert(not private.account_mail_request_expired('sign_in_unlocked', now() - interval '23 hours')
+                       and private.account_mail_request_expired('sign_in_unlocked', now() - interval '25 hours'),
+    'an unlock notice request lives 24 hours, like T-M2-10''s security notices');
+  perform tests.assert(not private.account_mail_request_expired('mfa_factor_added', now() - interval '23 hours')
+                       and private.account_mail_request_expired('password_reset', now() - interval '61 minutes'),
+    'T-M2-10''s lifetimes unchanged (authenticator notices 24 hours, reset requests 60 minutes)');
+  perform tests.assert_check_constraint(
+    $q$insert into private.account_mail_requests (kind, user_id, factor_id, lock_minutes)
+       values ('mfa_factor_added', '00000000-0000-4000-8000-0000000000ab', gen_random_uuid(), 15)$q$,
+    'account_mail_requests_shape_check', 'only a lockout e-mail request carries lock minutes');
+  perform tests.assert_check_constraint(
+    $q$insert into private.account_mail_requests (kind, email, lock_minutes, detail)
+       values ('account_locked', 'x@a.test', 15, '{}'::jsonb)$q$,
+    'account_mail_requests_shape_check', 'a lockout e-mail request carries none of T-M2-10''s fields');
 end $$;
+
+-- Requests other files left waiting (T-M2-10's authenticator and policy notices live 24 hours) would be
+-- leased first: only this file's lockout and unlock requests stay in the queue.
+delete from private.account_mail_requests where kind not in ('account_locked', 'sign_in_unlocked');
 
 -- The worker answers them: the known account is written in its organization's language with the lock's
 -- minutes; the unknown address gets nothing; the unlock notice goes to the account in the unlocking

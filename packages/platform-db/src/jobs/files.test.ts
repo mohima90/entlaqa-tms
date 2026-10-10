@@ -4,12 +4,14 @@ import { describe, expect, it } from 'vitest';
 import {
   claimFileHousekeeping,
   claimFileScan,
+  claimOrphanObjects,
   createGeneratedFile,
   finishFileHousekeeping,
   finishFileScan,
   finishGeneratedFile,
   insertSystemAuditEvent,
   loadCleanFile,
+  lockFileHousekeeping,
   retryFileScan,
 } from './files';
 
@@ -132,6 +134,17 @@ describe('scan helpers', () => {
       null,
       'too_large',
     ]);
+    const encrypted = fakeTx([{ finished: true }]);
+    await finishFileScan(encrypted.tx, FILE, {
+      outcome: 'rejected',
+      reason: 'encrypted',
+      finding: 'Heuristics.Encrypted.Zip',
+      engine: 'ClamAV 1.5.4',
+    });
+    expect(encrypted.executed[0]?.params.slice(7)).toEqual([
+      'Heuristics.Encrypted.Zip',
+      'encrypted',
+    ]);
   });
 
   it('schedules retries', async () => {
@@ -163,6 +176,23 @@ describe('housekeeping helpers', () => {
       true,
     );
     expect(await finishFileHousekeeping(fakeTx([]).tx, FILE, 'remove_object')).toBe(false);
+  });
+
+  it('locks a file for its Storage work only while the action is still due', async () => {
+    const fake = fakeTx([{ due: true }]);
+    expect(await lockFileHousekeeping(fake.tx, FILE, 'purge')).toBe(true);
+    expect(fake.executed[0]?.params).toEqual([FILE, 'purge']);
+    expect(await lockFileHousekeeping(fakeTx([{ due: false }]).tx, FILE, 'purge')).toBe(false);
+    expect(await lockFileHousekeeping(fakeTx([]).tx, FILE, 'quarantine')).toBe(false);
+  });
+
+  it('lists orphan objects', async () => {
+    const fake = fakeTx([{ bucket: 'generated', object_key: 'k' }]);
+    expect(await claimOrphanObjects(fake.tx, 100)).toEqual([
+      { bucket: 'generated', objectKey: 'k' },
+    ]);
+    expect(fake.executed[0]?.params).toEqual([100]);
+    expect(await claimOrphanObjects(fakeTx([]).tx, 100)).toEqual([]);
   });
 });
 

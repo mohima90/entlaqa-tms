@@ -2,14 +2,23 @@ import { createHash } from 'node:crypto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { EXE, streamOf, workbook } from '../test-fixtures';
 import { ScannerError, ScannerUnavailableError, type Scanner } from './clamd';
-import { FILE_SCAN_BATCH, FILE_SCAN_TASK, createFileScanTask } from './scan';
+import {
+  FILE_SCAN_BATCH,
+  FILE_SCAN_TASK,
+  SIGNATURE_HARD_MAX_AGE_DAYS,
+  createFileScanTask,
+  signatureAge,
+} from './scan';
 import type { FileObjectStore } from './store';
 
 const db = vi.hoisted(() => ({
   claimFileScan: vi.fn(),
   finishFileScan: vi.fn(),
   retryFileScan: vi.fn(),
+  lockFileHousekeeping: vi.fn(),
   finishFileHousekeeping: vi.fn(),
+  claimFileHousekeeping: vi.fn(),
+  claimOrphanObjects: vi.fn(),
   insertSystemAuditEvent: vi.fn(),
 }));
 vi.mock('@jadarat/platform-db/jobs', () => db);
@@ -58,13 +67,28 @@ function fakeStore(objects: Record<string, Uint8Array[] | null | Error>) {
   return store satisfies FileObjectStore;
 }
 
-/** A scanner that finds `EVIL` in the stream; `signaturesDate` for the age check. */
+/**
+ * A scanner that finds `EVIL` in the stream; `signaturesDate` for the age check; `drop`: the connection is
+ * lost while streaming (`write`) or waiting for the verdict (`finish`); `pings`: whether PING answers.
+ */
 function fakeScanner(
-  options: { down?: boolean; signaturesDate?: Date | null; fail?: boolean } = {},
+  options: {
+    down?: boolean;
+    signaturesDate?: Date | null;
+    fail?: boolean;
+    drop?: 'write' | 'finish';
+    pings?: boolean;
+  } = {},
 ) {
   const sessions: { bytes: number; aborted: boolean }[] = [];
+  const pinged = { count: 0 };
   const scanner: Scanner = {
-    ping: () => Promise.resolve(),
+    ping: () => {
+      pinged.count += 1;
+      return options.pings === false || options.down
+        ? Promise.reject(new ScannerUnavailableError('down'))
+        : Promise.resolve();
+    },
     version: () =>
       options.down
         ? Promise.reject(new ScannerUnavailableError('down'))
@@ -83,6 +107,8 @@ function fakeScanner(
       sessions.push(session);
       return Promise.resolve({
         write: (chunk: Uint8Array) => {
+          if (options.drop === 'write')
+            return Promise.reject(new ScannerUnavailableError('clamd connection lost'));
           seen.push(chunk);
           session.bytes += chunk.length;
           return Promise.resolve();
@@ -90,12 +116,24 @@ function fakeScanner(
         finish: () => {
           if (options.fail)
             return Promise.reject(new ScannerError('clamd could not scan the stream'));
+          if (options.drop === 'finish') {
+            return Promise.reject(
+              new ScannerUnavailableError('clamd closed the connection without an answer'),
+            );
+          }
           const text = Buffer.concat(seen).toString('latin1');
           if (text.includes('LIMIT')) {
             return Promise.resolve({
               clean: false as const,
-              finding: 'Heuristics.Limits.Exceeded.MaxScanSize',
+              finding: 'Heuristics.Limits.Exceeded.MaxScanTime',
             });
+          }
+          if (text.includes('LOCKED')) {
+            return Promise.resolve({ clean: false as const, finding: 'Heuristics.Encrypted.Zip' });
+          }
+          if (text.includes('ENCRYPTEDISH')) {
+            // Not the exact prefix: any other finding is malware.
+            return Promise.resolve({ clean: false as const, finding: 'Heuristics.EncryptedX.Zip' });
           }
           return Promise.resolve(
             text.includes('EVIL')
@@ -109,10 +147,15 @@ function fakeScanner(
       });
     },
   };
-  return { scanner, sessions };
+  return { scanner, sessions, pinged };
 }
 
-function task(store: FileObjectStore, scanner: Scanner, log = vi.fn()) {
+function task(
+  store: FileObjectStore,
+  scanner: Scanner,
+  log = vi.fn(),
+  extra: { maxSignatureAgeDays?: number; now?: () => number } = {},
+) {
   return {
     log,
     task: createFileScanTask({
@@ -122,6 +165,7 @@ function task(store: FileObjectStore, scanner: Scanner, log = vi.fn()) {
       scanner,
       log,
       now: () => NOW,
+      ...extra,
     }),
   };
 }
@@ -130,6 +174,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   db.finishFileScan.mockResolvedValue(true);
   db.retryFileScan.mockResolvedValue('waiting');
+  db.lockFileHousekeeping.mockResolvedValue(true);
   db.finishFileHousekeeping.mockResolvedValue(true);
 });
 
@@ -193,8 +238,20 @@ describe('file scan task', () => {
     });
     expect(db.insertSystemAuditEvent).toHaveBeenCalledWith(
       {},
-      expect.objectContaining({ action: 'platform.file.infected', entityId: FILE }),
+      {
+        action: 'platform.file.infected',
+        entityType: 'file',
+        entityId: FILE,
+        data: {
+          purpose: 'platform.user_import',
+          finding: 'Eicar-Test-Signature',
+          engine: 'ClamAV 1.5.4',
+          severity: 'high',
+        },
+      },
     );
+    // The quarantine move: locked and re-checked first, then moved, then recorded.
+    expect(db.lockFileHousekeeping).toHaveBeenCalledWith({}, FILE, 'quarantine');
     expect(store.move).toHaveBeenCalledWith('imports', 'k', 'quarantine');
     expect(db.finishFileHousekeeping).toHaveBeenCalledWith({}, FILE, 'quarantine');
     expect(log).toHaveBeenCalledWith(
@@ -226,7 +283,6 @@ describe('file scan task', () => {
         { outcome: 'rejected', reason: 'too_large', size: 1200 },
       ],
       [[], { outcome: 'rejected', reason: 'empty', size: 0 }],
-      [[utf8('a,b\nLIMIT\n')], { outcome: 'rejected', reason: 'unscannable' }],
       [
         [new Uint8Array([0xc7, 0xe1, 0x2c, 0x41])],
         { outcome: 'rejected', reason: 'type_not_allowed', detectedType: null },
@@ -240,10 +296,70 @@ describe('file scan task', () => {
       const fake = fakeScanner();
       await task(store, fake.scanner).task.run({ jobId: '1' });
       expect(db.finishFileScan.mock.calls[0]?.[2]).toMatchObject(expected);
+      expect(db.lockFileHousekeeping).toHaveBeenCalledWith({}, FILE, 'remove_object');
       expect(store.remove).toHaveBeenCalledWith('imports', 'k');
       expect(db.finishFileHousekeeping).toHaveBeenCalledWith({}, FILE, 'remove_object');
       expect(db.insertSystemAuditEvent).not.toHaveBeenCalled();
     }
+  });
+
+  it('encrypted and unscannable: rejected (not malware), object removed, low-severity audit event', async () => {
+    const cases: [string, string, string][] = [
+      ['a,b\nLOCKED\n', 'encrypted', 'Heuristics.Encrypted.Zip'],
+      ['a,b\nLIMIT\n', 'unscannable', 'Heuristics.Limits.Exceeded.MaxScanTime'],
+    ];
+    for (const [content, reason, finding] of cases) {
+      vi.clearAllMocks();
+      db.finishFileScan.mockResolvedValue(true);
+      db.lockFileHousekeeping.mockResolvedValue(true);
+      db.claimFileScan.mockResolvedValueOnce(lease()).mockResolvedValueOnce(null);
+      const store = fakeStore({ k: [utf8(content)] });
+      const { task: scan, log } = task(store, fakeScanner().scanner);
+      await scan.run({ jobId: '1' });
+      expect(db.finishFileScan.mock.calls[0]?.[2]).toMatchObject({
+        outcome: 'rejected',
+        reason,
+        finding,
+      });
+      expect(db.insertSystemAuditEvent).toHaveBeenCalledWith(
+        {},
+        {
+          action: 'platform.file.unscannable',
+          entityType: 'file',
+          entityId: FILE,
+          data: {
+            purpose: 'platform.user_import',
+            reason,
+            finding,
+            engine: 'ClamAV 1.5.4',
+            severity: 'low',
+          },
+        },
+      );
+      expect(store.remove).toHaveBeenCalledWith('imports', 'k');
+      expect(store.move).not.toHaveBeenCalled();
+      expect(JSON.stringify(log.mock.calls)).not.toContain('security:');
+    }
+  });
+
+  it('any other finding — even one that merely looks like the encrypted prefix — is malware', async () => {
+    db.claimFileScan.mockResolvedValueOnce(lease()).mockResolvedValueOnce(null);
+    const store = fakeStore({ k: [utf8('ENCRYPTEDISH')] });
+    await task(store, fakeScanner().scanner).task.run({ jobId: '1' });
+    expect(db.finishFileScan.mock.calls[0]?.[2]).toMatchObject({
+      outcome: 'infected',
+      finding: 'Heuristics.EncryptedX.Zip',
+    });
+    expect(store.move).toHaveBeenCalledWith('imports', 'k', 'quarantine');
+  });
+
+  it('a removal no longer due (legal hold set meanwhile) is left alone', async () => {
+    db.claimFileScan.mockResolvedValueOnce(lease()).mockResolvedValueOnce(null);
+    db.lockFileHousekeeping.mockResolvedValueOnce(false);
+    const store = fakeStore({ k: [EXE] });
+    await task(store, fakeScanner().scanner).task.run({ jobId: '1' });
+    expect(store.remove).not.toHaveBeenCalled();
+    expect(db.finishFileHousekeeping).not.toHaveBeenCalled();
   });
 
   it('fails closed when the scanner is down: the file waits and the pass stops', async () => {
@@ -253,6 +369,7 @@ describe('file scan task', () => {
       fakeScanner({ down: true }).scanner,
     );
     await expect(scan.run({ jobId: '1' })).resolves.toBe(false);
+    expect(db.claimFileScan).toHaveBeenCalledTimes(1);
     expect(db.retryFileScan).toHaveBeenCalledWith({}, FILE, 'scanner');
     expect(db.finishFileScan).not.toHaveBeenCalled();
     expect(log).toHaveBeenCalledWith('warning', expect.stringContaining('SCANNER_UNAVAILABLE'));
@@ -260,6 +377,61 @@ describe('file scan task', () => {
       'warning',
       expect.stringContaining('malware scanner not available'),
     );
+  });
+
+  it('a file still without a verdict 24 hours after its upload gives up: logged as an error', async () => {
+    db.claimFileScan.mockResolvedValue(lease());
+    db.retryFileScan.mockResolvedValueOnce('error');
+    const { task: scan, log } = task(
+      fakeStore({ k: [utf8('a,b\n')] }),
+      fakeScanner({ down: true }).scanner,
+    );
+    await expect(scan.run({ jobId: '1' })).resolves.toBe(false);
+    expect(db.retryFileScan).toHaveBeenCalledWith({}, FILE, 'scanner');
+    expect(log).toHaveBeenCalledWith(
+      'error',
+      `file ${FILE}: no scan verdict (SCANNER_UNAVAILABLE); error (scanner_unavailable)`,
+    );
+  });
+
+  it('clamd drops a stream but answers a PING: the file is at fault (counted), the pass goes on', async () => {
+    for (const drop of ['write', 'finish'] as const) {
+      vi.clearAllMocks();
+      db.retryFileScan.mockResolvedValue('waiting');
+      db.claimFileScan.mockResolvedValueOnce(lease()).mockResolvedValueOnce(null);
+      const fake = fakeScanner({ drop });
+      const { task: scan, log } = task(fakeStore({ k: [utf8('a,b\n')] }), fake.scanner);
+      await expect(scan.run({ jobId: '1' })).resolves.toBe(false);
+      expect(fake.pinged.count).toBe(1);
+      expect(db.retryFileScan).toHaveBeenCalledWith({}, FILE, 'processing');
+      // The pass did not stop at this file: it asked for the next one.
+      expect(db.claimFileScan).toHaveBeenCalledTimes(2);
+      expect(log).toHaveBeenCalledWith('error', expect.stringContaining('SCAN_FAILED'));
+    }
+  });
+
+  it('clamd drops a stream and does not answer a PING: the scanner is down (not counted)', async () => {
+    db.claimFileScan.mockResolvedValue(lease());
+    const fake = fakeScanner({ drop: 'finish', pings: false });
+    await expect(
+      task(fakeStore({ k: [utf8('a,b\n')] }), fake.scanner).task.run({ jobId: '1' }),
+    ).resolves.toBe(false);
+    expect(fake.pinged.count).toBe(1);
+    expect(db.retryFileScan).toHaveBeenCalledWith({}, FILE, 'scanner');
+    expect(db.claimFileScan).toHaveBeenCalledTimes(1);
+  });
+
+  it('a Storage stream that breaks off is Storage unavailable, not the file', async () => {
+    db.claimFileScan.mockResolvedValue(lease());
+    const broken = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.error(new TypeError('terminated'));
+      },
+    });
+    const store = fakeStore({});
+    store.read.mockResolvedValueOnce({ body: broken, size: null });
+    await expect(task(store, fakeScanner().scanner).task.run({ jobId: '1' })).resolves.toBe(false);
+    expect(db.retryFileScan).toHaveBeenCalledWith({}, FILE, 'scanner');
   });
 
   it('fails closed when Storage is down; a failure of the file itself counts towards error', async () => {
@@ -322,7 +494,7 @@ describe('file scan task', () => {
     );
   });
 
-  it('reports stale signatures at most hourly', async () => {
+  it('reports stale signatures at most hourly, and still scans', async () => {
     db.claimFileScan.mockResolvedValue(null);
     const stale = fakeScanner({ signaturesDate: new Date(NOW - 30 * 3_600_000) });
     const { task: scan, log } = task(fakeStore({}), stale.scanner);
@@ -332,8 +504,63 @@ describe('file scan task', () => {
       String(message).includes('30 hours old'),
     );
     expect(warnings).toHaveLength(1);
-    const undated = task(fakeStore({}), fakeScanner({ signaturesDate: null }).scanner);
-    await undated.task.run({ jobId: '3' });
-    expect(undated.log).not.toHaveBeenCalled();
+    expect(db.claimFileScan).toHaveBeenCalledTimes(2);
+  });
+
+  it('fails closed above the hard signature age, or with an undated database: nothing is claimed, an error hourly', async () => {
+    for (const signaturesDate of [new Date(NOW - (7 * 24 + 1) * 3_600_000), null]) {
+      vi.clearAllMocks();
+      db.claimFileScan.mockResolvedValue(lease());
+      let clock = NOW;
+      const { task: scan, log } = task(
+        fakeStore({ k: [utf8('a,b\n')] }),
+        fakeScanner({ signaturesDate }).scanner,
+        vi.fn(),
+        { now: () => clock },
+      );
+      await expect(scan.run({ jobId: '1' })).resolves.toBe(false);
+      await expect(scan.run({ jobId: '2' })).resolves.toBe(false);
+      expect(db.claimFileScan).not.toHaveBeenCalled();
+      expect(db.finishFileScan).not.toHaveBeenCalled();
+      const errors = log.mock.calls.filter(([level]) => level === 'error');
+      expect(errors).toHaveLength(1);
+      expect(String(errors[0]?.[1])).toContain('NOTHING is scanned');
+      clock += 61 * 60_000;
+      await scan.run({ jobId: '3' });
+      expect(log.mock.calls.filter(([level]) => level === 'error')).toHaveLength(2);
+    }
+  });
+
+  it('a test installation may raise the hard limit (pinned signatures)', async () => {
+    db.claimFileScan.mockResolvedValueOnce(lease()).mockResolvedValueOnce(null);
+    const old = fakeScanner({ signaturesDate: new Date(NOW - 30 * 24 * 3_600_000) });
+    await task(fakeStore({ k: [utf8('a,b\n')] }), old.scanner, vi.fn(), {
+      maxSignatureAgeDays: 365,
+    }).task.run({ jobId: '1' });
+    expect(db.finishFileScan.mock.calls[0]?.[2]).toMatchObject({ outcome: 'clean' });
+  });
+});
+
+describe('signatureAge', () => {
+  const version = (signaturesDate: Date | null) => ({
+    engine: 'ClamAV 1.5.4',
+    signatures: '28137',
+    signaturesDate,
+  });
+  it('tells fresh, stale, too old and unknown apart', () => {
+    expect(signatureAge(version(new Date(NOW - 3_600_000)), NOW)).toEqual({
+      age: 'fresh',
+      hours: 1,
+    });
+    expect(signatureAge(version(new Date(NOW - 25 * 3_600_000)), NOW).age).toBe('stale');
+    expect(
+      signatureAge(version(new Date(NOW - SIGNATURE_HARD_MAX_AGE_DAYS * 24 * 3_600_000)), NOW).age,
+    ).toBe('stale');
+    expect(
+      signatureAge(version(new Date(NOW - (SIGNATURE_HARD_MAX_AGE_DAYS * 24 + 1) * 3_600_000)), NOW)
+        .age,
+    ).toBe('too_old');
+    expect(signatureAge(version(null), NOW)).toEqual({ age: 'unknown', hours: null });
+    expect(signatureAge(version(new Date(NOW - 10 * 24 * 3_600_000)), NOW, 30).age).toBe('stale');
   });
 });

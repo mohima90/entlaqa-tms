@@ -2,6 +2,7 @@ import 'server-only';
 import { type CookieMethodsServer, type CookieOptions, createServerClient } from '@supabase/ssr';
 import { type SupabaseClient, createClient } from '@supabase/supabase-js';
 import { type SupabasePublicConfig, readSupabasePublicConfigFromEnv } from './config';
+import { storageRoutingFetch } from './storage';
 
 export { type SupabasePublicConfig } from './config';
 export type { CookieMethodsServer };
@@ -23,6 +24,14 @@ export function getSupabasePublicConfig(): SupabasePublicConfig | null {
   return readSupabasePublicConfigFromEnv();
 }
 
+export interface SupabaseServerClientOptions {
+  /**
+   * Where Storage's API is reached (readStorageInternalOrigin; self-hosted: the gateway's internal port).
+   * Null or absent: the Supabase URL.
+   */
+  readonly storageOrigin?: string | null;
+}
+
 /**
  * Server-side Supabase client (publishable key + the user's session cookies) for Auth and Storage.
  * Never used to read tenant tables (ADR 0003 §4). Returns null when Supabase is not configured.
@@ -30,11 +39,15 @@ export function getSupabasePublicConfig(): SupabasePublicConfig | null {
 export function createSupabaseServerClient(
   cookies: CookieMethodsServer,
   config: SupabasePublicConfig | null = getSupabasePublicConfig(),
+  options: SupabaseServerClientOptions = {},
 ): SupabaseClient | null {
   if (!config) return null;
   return createServerClient(config.url, config.publishableKey, {
     cookies,
     cookieOptions: SESSION_COOKIE_OPTIONS,
+    ...(options.storageOrigin
+      ? { global: { fetch: storageRoutingFetch(options.storageOrigin) } }
+      : {}),
   });
 }
 
@@ -72,10 +85,13 @@ export function createSupabaseVerifierClient(
 export {
   FileStorageError,
   type SignedUpload,
+  STORAGE_INTERNAL_URL_ENV,
   STORAGE_PUBLIC_URL_ENV,
   type UserFileStorage,
   createUserFileStorage,
+  readStorageInternalOrigin,
   readStoragePublicOrigin,
   storageErrorOf,
+  storageRoutingFetch,
   toPublicUrl,
 } from './storage';

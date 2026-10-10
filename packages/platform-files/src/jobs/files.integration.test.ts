@@ -23,6 +23,7 @@ import {
 } from '../index';
 import { collect, streamOf } from '../test-fixtures';
 import type { Scanner } from './clamd';
+import { createFileHousekeepingTask } from './housekeeping';
 import { createFileScanTask } from './scan';
 import type { FileObjectStore } from './store';
 import { createWorkerFiles } from './worker-files';
@@ -37,7 +38,7 @@ if ((process.env.CI || process.env.JADARAT_REQUIRE_INTEGRATION) && !configured) 
 }
 
 describe.skipIf(!configured)('files against PostgreSQL', () => {
-  const owner = createDatabase(ownerUrl ?? '', { max: 1 });
+  const db = createDatabase(ownerUrl ?? '', { max: 1 });
   const serverDb = createDatabase(appServerUrl ?? '', { max: 2 });
   const workerDb = createDatabase(appWorkerUrl ?? '', { max: 2 });
   const withUserTx = createWithUserTx(() => serverDb);
@@ -72,13 +73,17 @@ describe.skipIf(!configured)('files against PostgreSQL', () => {
       );
     },
   };
+  const removed: string[] = [];
   const store: FileObjectStore = {
     read(_bucket, key) {
       const bytes = objects.get(key);
       return Promise.resolve(bytes ? { body: streamOf(bytes), size: bytes.length } : null);
     },
     move: () => Promise.resolve('moved'),
-    remove: () => Promise.resolve(),
+    remove: (bucket, key) => {
+      removed.push(`${bucket}/${key}`);
+      return Promise.resolve();
+    },
     write: () => Promise.resolve(),
   };
   const scanner: Scanner = {
@@ -117,23 +122,30 @@ describe.skipIf(!configured)('files against PostgreSQL', () => {
 
   /** The member uploads `bytes`: intent, the browser's PUT (Storage's insert), confirmation. */
   async function upload(bytes: Uint8Array, name: string) {
+    const owner = { module: 'platform', entityType: 'user_import', entityId: randomUUID() };
     const intent = await createUploadIntent(context, {
       purpose: 'platform.user_import',
-      owner: { module: 'platform', entityType: 'user_import', entityId: randomUUID() },
+      owner,
       declaredName: name,
-      declaredType: 'text/csv',
       size: bytes.length,
     });
-    const [row] = await owner.execute<{ object_key: string }>(
+    expect(intent.contentType).toBe('text/csv');
+    const [row] = await db.execute<{ object_key: string }>(
       sql`select object_key from platform.files where id = ${intent.fileId}::uuid`,
     );
     const key = row?.object_key ?? '';
     objects.set(key, bytes);
-    await owner.execute(sql`insert into storage.objects (bucket_id, name, owner, metadata)
-      values ('imports', ${key}, ${member.user}, ${JSON.stringify({ size: bytes.length })}::jsonb)`);
+    // Storage records the PUT's Content-Type (the intent's contentType) with the object.
+    await db.execute(sql`insert into storage.objects (bucket_id, name, owner, metadata)
+      values ('imports', ${key}, ${member.user},
+              ${JSON.stringify({ size: bytes.length, mimetype: intent.contentType })}::jsonb)`);
     const confirmed = await withUserTx(claims, (tx) => confirmUpload(tx, intent.fileId));
     expect(confirmed.status).toBe('uploaded');
-    return { id: intent.fileId, key };
+    return {
+      id: intent.fileId,
+      key,
+      request: { fileId: intent.fileId, purpose: 'platform.user_import' as const, owner },
+    };
   }
 
   /** Scan passes until the file has a result (other files of the database may come first). */
@@ -147,30 +159,30 @@ describe.skipIf(!configured)('files against PostgreSQL', () => {
   }
 
   beforeAll(async () => {
-    await owner.execute(sql`insert into platform.tenants (id, slug, name_ar, name_en, status)
+    await db.execute(sql`insert into platform.tenants (id, slug, name_ar, name_en, status)
       values (${tenant}, ${`files-${tenant.slice(0, 8)}`}, 'شركة الملفات', 'Files Company', 'active')`);
-    await owner.execute(sql`insert into auth.users (id, email)
+    await db.execute(sql`insert into auth.users (id, email)
       values (${member.user}, ${`sara.${tenant.slice(0, 8)}@test.example`})`);
-    await owner.execute(sql`insert into platform.persons (id, tenant_id, display_name_ar, display_name_en)
+    await db.execute(sql`insert into platform.persons (id, tenant_id, display_name_ar, display_name_en)
       values (${member.person}, ${tenant}, 'سارة', 'Sara')`);
-    await owner.execute(sql`insert into platform.tenant_memberships (tenant_id, user_id, person_id, status)
+    await db.execute(sql`insert into platform.tenant_memberships (tenant_id, user_id, person_id, status)
       values (${tenant}, ${member.user}, ${member.person}, 'active')`);
-    await owner.execute(
+    await db.execute(
       sql`insert into auth.sessions (id, user_id) values (${member.session}, ${member.user})`,
     );
-    await owner.execute(sql`insert into platform.session_context (session_id, user_id, active_tenant_id)
+    await db.execute(sql`insert into platform.session_context (session_id, user_id, active_tenant_id)
       values (${member.session}, ${member.user}, ${tenant})`);
   });
 
   afterAll(async () => {
-    await owner.execute(sql`delete from storage.objects where name like ${`${tenant}/%`}`);
-    await owner.$client.end({ timeout: 5 });
+    await db.execute(sql`delete from storage.objects where name like ${`${tenant}/%`}`);
+    await db.$client.end({ timeout: 5 });
     await serverDb.$client.end({ timeout: 5 });
     await workerDb.$client.end({ timeout: 5 });
   });
 
   it('the purposes mirror platform.file_purposes exactly', async () => {
-    const rows = await owner.execute<{
+    const rows = await db.execute<{
       purpose: string;
       bucket: string;
       max_bytes: string;
@@ -199,7 +211,7 @@ describe.skipIf(!configured)('files against PostgreSQL', () => {
 
   it('upload → clean → download grant (audited) → a job streams the verified bytes', async () => {
     const csv = new TextEncoder().encode('email,first_name\nsara@files.example,سارة\n');
-    const { id, key } = await upload(csv, 'موظفو الرياض.csv');
+    const { id, key, request } = await upload(csv, 'موظفو الرياض.csv');
     expect(signed).toContain(`imports/${key}`);
     const view = await scanned(id);
     expect(view).toMatchObject({
@@ -209,15 +221,23 @@ describe.skipIf(!configured)('files against PostgreSQL', () => {
       size: csv.length,
       sha256: createHash('sha256').update(csv).digest('hex'),
     });
-    const [events] = await owner.execute<{
+    const [events] = await db.execute<{
       n: string;
     }>(sql`select count(*) as n from platform.event_outbox
       where subject = ${id}::uuid and type in ('com.entlaqa.platform.file.uploaded', 'com.entlaqa.platform.file.scanned')`);
     expect(Number(events?.n)).toBe(2);
 
-    const link = await createDownloadGrant(context, actor, id);
+    // Only for the owner entity the module authorized: another entity's request finds nothing.
+    await expect(
+      createDownloadGrant(context, actor, {
+        ...request,
+        owner: { ...request.owner, entityId: randomUUID() },
+      }),
+    ).rejects.toMatchObject({ code: 'FILE_NOT_FOUND' });
+    const link = await createDownloadGrant(context, actor, request);
     expect(link.url).toContain('ttl=60');
-    const [audit] = await owner.execute<{
+    expect(link.name).toBe('موظفو الرياض.csv');
+    const [audit] = await db.execute<{
       n: string;
     }>(sql`select count(*) as n from platform.audit_events
       where action = 'platform.file.download_granted' and entity_id = ${id} and actor_user_id = ${member.user}::uuid`);
@@ -230,19 +250,19 @@ describe.skipIf(!configured)('files against PostgreSQL', () => {
   });
 
   it('infected: quarantined, audited as a security event, never granted', async () => {
-    const { id } = await upload(new TextEncoder().encode('a,b\nEVIL\n'), 'تقرير.csv');
+    const { id, request } = await upload(new TextEncoder().encode('a,b\nEVIL\n'), 'تقرير.csv');
     const view = await scanned(id);
     expect(view).toMatchObject({ status: 'infected', reason: 'malware' });
-    const [row] = await owner.execute<{ bucket: string; scan_finding: string }>(
+    const [row] = await db.execute<{ bucket: string; scan_finding: string }>(
       sql`select bucket, scan_finding from platform.files where id = ${id}::uuid`,
     );
     expect(row).toEqual({ bucket: 'quarantine', scan_finding: 'Eicar-Test-Signature' });
-    const [audit] = await owner.execute<{
+    const [audit] = await db.execute<{
       n: string;
     }>(sql`select count(*) as n from platform.audit_events
       where action = 'platform.file.infected' and entity_id = ${id} and actor_user_id is null`);
     expect(Number(audit?.n)).toBe(1);
-    await expect(createDownloadGrant(context, actor, id)).rejects.toMatchObject({
+    await expect(createDownloadGrant(context, actor, request)).rejects.toMatchObject({
       code: 'FILE_NOT_CLEAN',
     });
     await expect(
@@ -251,5 +271,41 @@ describe.skipIf(!configured)('files against PostgreSQL', () => {
       ),
     ).rejects.toMatchObject({ code: 'FILE_NOT_CLEAN' });
     expect(logs.join('\n')).not.toContain('تقرير');
+  });
+
+  it('housekeeping purges an abandoned upload (lock, removal and record in one transaction) and removes orphan objects', async () => {
+    // An upload intent never used, 25 hours old: due for purge.
+    const intent = await createUploadIntent(context, {
+      purpose: 'platform.user_import',
+      owner: { module: 'platform', entityType: 'user_import', entityId: randomUUID() },
+      declaredName: 'abandoned.csv',
+      size: 10,
+    });
+    await db.execute(sql`alter table platform.files disable trigger files_transition`);
+    await db.execute(
+      sql`update platform.files set created_at = now() - interval '25 hours' where id = ${intent.fileId}::uuid`,
+    );
+    await db.execute(sql`alter table platform.files enable trigger files_transition`);
+    const [row] = await db.execute<{ object_key: string }>(
+      sql`select object_key from platform.files where id = ${intent.fileId}::uuid`,
+    );
+    // An object no file owns, written 4 hours ago (e.g. a report whose job rolled back).
+    const orphanKey = `${tenant}/platform/user_import_report/${randomUUID()}/${randomUUID()}`;
+    await db.execute(sql`insert into storage.objects (bucket_id, name, metadata, created_at)
+      values ('generated', ${orphanKey}, '{"size": 5}', now() - interval '4 hours')`);
+    const housekeeping = createFileHousekeepingTask({
+      withPlatformTx,
+      store,
+      log: (level, message) => logs.push(`${level}: ${message}`),
+    });
+    for (let i = 0; i < 5 && !removed.includes(`imports/${row?.object_key ?? ''}`); i += 1) {
+      await housekeeping.run({ jobId: randomUUID() });
+    }
+    expect(removed).toContain(`imports/${row?.object_key ?? ''}`);
+    expect(removed).toContain(`generated/${orphanKey}`);
+    const [left] = await db.execute<{ n: string }>(
+      sql`select count(*) as n from platform.files where id = ${intent.fileId}::uuid`,
+    );
+    expect(Number(left?.n)).toBe(0);
   });
 });

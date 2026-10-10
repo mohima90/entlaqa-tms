@@ -16,12 +16,13 @@ import {
   reserveUpload,
 } from '@jadarat/platform-db';
 import type { UserFileStorage } from '@jadarat/platform-db/supabase-server';
-import { sanitizeFileName } from './names';
+import { downloadName, sanitizeFileName } from './names';
 import {
   FILE_PURPOSES,
+  type FilePurpose,
   type UploadPurpose,
+  declaredTypeFor,
   isFilePurpose,
-  normalizeDeclaredType,
   purposeOf,
 } from './purposes';
 
@@ -33,8 +34,9 @@ import {
  *
  * Upload: createUploadIntent → the browser PUTs the bytes to `url` (with `contentType`) → confirmUpload →
  * the worker scans → getFileStatus shows `clean` (or infected / rejected). Download: createDownloadGrant
- * → a signed URL valid for the purpose's TTL (60 s documents, 300 s media). Nothing is readable before
- * `clean`.
+ * for a file of the owner entity the module authorized → a signed URL valid for the purpose's TTL (60 s
+ * documents, 300 s media), saved under the original name with the extension of the type found by
+ * content. Nothing is readable before `clean`.
  */
 
 export {
@@ -44,12 +46,15 @@ export {
   type PurposeDefinition,
   type RetentionClass,
   type UploadPurpose,
+  EXTENSION_BY_TYPE,
   XLSX,
+  declaredTypeFor,
+  extensionOf,
   isFilePurpose,
-  normalizeDeclaredType,
   purposeOf,
+  typeOfExtension,
 } from './purposes';
-export { MAX_NAME_LENGTH, sanitizeFileName } from './names';
+export { MAX_NAME_LENGTH, downloadName, sanitizeFileName } from './names';
 export { DETECTION_HEAD_BYTES, detectType, sniffText } from './detect';
 export type { FileErrorCode, FileOwner, FileStatus, FileStatusView } from '@jadarat/platform-db';
 
@@ -69,10 +74,11 @@ export interface UploadIntentInput {
   readonly purpose: UploadPurpose;
   /** The entity the file belongs to; the module checked the user may attach it. */
   readonly owner: FileOwner;
-  /** The name the browser reports (sanitized here). */
+  /**
+   * The name the browser reports (sanitized here). Its extension decides the declared type: it must name
+   * a type the purpose accepts (`.csv`, `.xlsx`, `.png`, …); the browser's own type is not used.
+   */
   readonly declaredName: string;
-  /** The type the browser reports (advisory; the scan detects the real type). */
-  readonly declaredType: string | null | undefined;
   /** The size the browser reports, in bytes. */
   readonly size: number;
 }
@@ -108,8 +114,9 @@ function storageRefusal(error: unknown): never {
 /**
  * Reserves the upload (pending, 15 minutes, in its own committed transaction) and asks Storage — with the
  * user's session — for a signed upload URL for exactly that key. Throws DomainError UNKNOWN_PURPOSE,
- * TYPE_NOT_ALLOWED, TOO_LARGE, TOO_MANY_PENDING_UPLOADS, INVALID_FILE_DATA, STORAGE_REFUSED or
- * STORAGE_UNAVAILABLE. A reservation without upload is purged after 24 hours.
+ * TYPE_NOT_ALLOWED (the name's extension is missing or names no type the purpose accepts), TOO_LARGE,
+ * TOO_MANY_PENDING_UPLOADS, INVALID_FILE_DATA, STORAGE_REFUSED or STORAGE_UNAVAILABLE. A reservation
+ * without upload is purged after 24 hours.
  */
 export async function createUploadIntent(
   context: FileRequestContext,
@@ -131,7 +138,7 @@ export async function createUploadIntent(
     refuse('TOO_LARGE');
   }
   const name = sanitizeFileName(input.declaredName);
-  const contentType = normalizeDeclaredType(input.purpose, name, input.declaredType);
+  const contentType = declaredTypeFor(input.purpose, name);
   if (contentType === null) refuse('TYPE_NOT_ALLOWED');
   const reserved = await context.ownTx((tx) =>
     reserveUpload(tx, {
@@ -178,51 +185,75 @@ export function getFileStatus(tx: UserTx, fileId: string): Promise<FileStatusVie
 export interface DownloadLink {
   readonly url: string;
   readonly expiresAt: Date;
+  /** The name the file is saved under (original name, extension of the type found by content). */
   readonly name: string;
 }
 
 /**
+ * What the owning module authorized: THIS file, which must belong to THIS owner entity (the one whose
+ * access the module checked) and purpose. The database grants nothing else.
+ */
+export interface DownloadRequest {
+  readonly fileId: string;
+  readonly purpose: FilePurpose;
+  readonly owner: FileOwner;
+}
+
+/**
  * A short-lived download link for a clean file — only after the owning module authorized THIS user for
- * THIS file. Writes the download grant (and, for purposes with audited downloads, the audit event
- * `platform.file.download_granted`) in its own committed transaction, then asks Storage, with the user's
- * session, for a signed URL of the same lifetime that downloads as an attachment named like the original.
- * Throws DomainError FILE_NOT_FOUND, FILE_NOT_CLEAN, STORAGE_REFUSED or STORAGE_UNAVAILABLE.
+ * files of THIS owner entity: the file must belong to exactly `request.owner` and `request.purpose` (else
+ * FILE_NOT_FOUND, as if it did not exist). Writes the download grant (and, for purposes with audited
+ * downloads, the audit event `platform.file.download_granted`) in its own committed transaction, then
+ * asks Storage, with the user's session, for a signed URL of the same lifetime that downloads as an
+ * attachment named like the original, with the extension of the type the scan found by content. Throws
+ * DomainError FILE_NOT_FOUND, FILE_NOT_CLEAN, STORAGE_REFUSED or STORAGE_UNAVAILABLE.
  */
 export async function createDownloadGrant(
   context: FileRequestContext,
   actor: ActorContext,
-  fileId: string,
+  request: DownloadRequest,
 ): Promise<DownloadLink> {
-  if (!UUID.test(fileId)) refuse('FILE_NOT_FOUND');
+  const { fileId, purpose, owner } = request;
+  if (
+    !UUID.test(fileId) ||
+    !isFilePurpose(purpose) ||
+    !MODULE.test(owner.module) ||
+    !ENTITY.test(owner.entityType) ||
+    !UUID.test(owner.entityId)
+  ) {
+    refuse('FILE_NOT_FOUND');
+  }
   const grant = await context.ownTx(async (tx) => {
-    const granted = await grantFileDownload(tx, fileId);
+    const granted = await grantFileDownload(tx, { fileId, purpose, owner });
     if (granted.auditDownloads) {
       await insertAuditEvent(tx, actor, {
         action: 'platform.file.download_granted',
         entityType: 'file',
         entityId: fileId,
-        data: { ttlSeconds: granted.ttlSeconds },
+        data: { purpose, ttlSeconds: granted.ttlSeconds },
       });
     }
     return granted;
   });
+  const name = downloadName(grant.name, grant.detectedType);
   let url: string;
   try {
     url = await context.storage.createSignedDownloadUrl(
       grant.bucket,
       grant.objectKey,
       grant.ttlSeconds,
-      grant.name,
+      name,
     );
   } catch (error) {
     storageRefusal(error);
   }
-  return { url, expiresAt: new Date(Date.now() + grant.ttlSeconds * 1000), name: grant.name };
+  return { url, expiresAt: new Date(Date.now() + grant.ttlSeconds * 1000), name };
 }
 
 /**
- * Deletes a file of the signed-in user (soft: the object is removed by housekeeping per retention class).
- * False when already deleted. Throws DomainError FILE_NOT_FOUND or FILE_BUSY (being scanned, or infected).
+ * Deletes a file of the signed-in user (soft: the object is removed by housekeeping per retention class) —
+ * also one still waiting for the scanner, or failed. False when already deleted. Throws DomainError
+ * FILE_NOT_FOUND or FILE_BUSY (a worker is scanning it right now — try again shortly —, or infected).
  */
 export function deleteFile(tx: UserTx, fileId: string): Promise<boolean> {
   return deleteFileRecord(tx, fileId);

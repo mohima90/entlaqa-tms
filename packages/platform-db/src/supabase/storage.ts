@@ -10,6 +10,10 @@ import { readEnv } from '../env';
  * The URLs themselves are then valid without a session for their lifetime (upload: Storage's
  * UPLOAD_SIGNED_URL_EXPIRATION_TIME — 2 hours on hosted Supabase, 15 minutes self-hosted; download: the
  * grant's TTL), each for exactly one key.
+ *
+ * Self-hosted, the server asks for signed URLs on the gateway's INTERNAL port (STORAGE_INTERNAL_URL): the
+ * browser-facing port serves only the uploads (PUT) and downloads (GET) with a URL's token, never the
+ * POSTs that create URLs — a user's own token cannot mint a long-lived link there (security review M2).
  */
 export interface UserFileStorage {
   createSignedUploadUrl(bucket: string, objectKey: string): Promise<SignedUpload>;
@@ -62,21 +66,17 @@ export function storageErrorOf(error: unknown): FileStorageError {
 
 /** STORAGE_PUBLIC_URL: the Storage origin browsers use, when the app reaches Supabase by an internal name. */
 export const STORAGE_PUBLIC_URL_ENV = 'STORAGE_PUBLIC_URL';
+/** STORAGE_INTERNAL_URL: the origin the SERVER asks Storage for signed URLs at (self-hosted only). */
+export const STORAGE_INTERNAL_URL_ENV = 'STORAGE_INTERNAL_URL';
 
-/**
- * The browser-facing origin for signed URLs. Hosted Supabase: unset (the app and browsers use the same
- * project URL). Self-hosted: the app reaches the gateway as https://gateway:8443 while browsers use the
- * installation's public name — STORAGE_PUBLIC_URL (an https origin; http only for localhost).
- */
-export function readStoragePublicOrigin(
-  value: string | undefined = readEnv(STORAGE_PUBLIC_URL_ENV),
-): string | null {
+/** An https origin (http only for localhost) without credentials, path, query or fragment; else throws. */
+function readOrigin(name: string, value: string | undefined): string | null {
   if (value === undefined) return null;
   let url: URL;
   try {
     url = new URL(value);
   } catch {
-    throw new Error(`${STORAGE_PUBLIC_URL_ENV} is not a valid URL`);
+    throw new Error(`${name} is not a valid URL`);
   }
   const local = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
   if (
@@ -87,9 +87,46 @@ export function readStoragePublicOrigin(
     url.search !== '' ||
     url.hash !== ''
   ) {
-    throw new Error(`${STORAGE_PUBLIC_URL_ENV} must be an https origin without path or query`);
+    throw new Error(`${name} must be an https origin without path or query`);
   }
   return url.origin;
+}
+
+/**
+ * The browser-facing origin for signed URLs. Hosted Supabase: unset (the app and browsers use the same
+ * project URL). Self-hosted: the app reaches the gateway as https://gateway:8443 while browsers use the
+ * installation's public name — STORAGE_PUBLIC_URL (an https origin; http only for localhost).
+ */
+export function readStoragePublicOrigin(
+  value: string | undefined = readEnv(STORAGE_PUBLIC_URL_ENV),
+): string | null {
+  return readOrigin(STORAGE_PUBLIC_URL_ENV, value);
+}
+
+/**
+ * The origin the server asks Storage for signed URLs at. Hosted Supabase: unset (the project URL; the
+ * residual risk of a user's own token minting a URL there is TM-0003 RR-FIL-01). Self-hosted: the
+ * gateway's internal port, https://gateway:8445, which only the app's network reaches.
+ */
+export function readStorageInternalOrigin(
+  value: string | undefined = readEnv(STORAGE_INTERNAL_URL_ENV),
+): string | null {
+  return readOrigin(STORAGE_INTERNAL_URL_ENV, value);
+}
+
+/**
+ * A fetch for the server's Supabase client that sends Storage's API calls (`/storage/v1/…`) to `origin`
+ * — path and query unchanged — and everything else (Auth) where it was going. The signed URLs Storage
+ * returns stay relative to the configured Supabase URL (then STORAGE_PUBLIC_URL for browsers).
+ */
+export function storageRoutingFetch(origin: string, base: typeof fetch = fetch): typeof fetch {
+  return (input, init) => {
+    const raw = input instanceof Request ? input.url : String(input);
+    const url = new URL(raw);
+    if (!url.pathname.startsWith('/storage/v1/')) return base(input, init);
+    const routed = new URL(`${url.pathname}${url.search}`, origin);
+    return base(input instanceof Request ? new Request(routed, input) : routed, init);
+  };
 }
 
 /** Replaces the origin of a Storage URL with the public one (path and query unchanged). */

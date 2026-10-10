@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { FILE_PURPOSES, XLSX, isFilePurpose, normalizeDeclaredType, purposeOf } from './purposes';
+import {
+  EXTENSION_BY_TYPE,
+  FILE_PURPOSES,
+  XLSX,
+  declaredTypeFor,
+  extensionForType,
+  extensionOf,
+  isFilePurpose,
+  purposeOf,
+  typeOfExtension,
+} from './purposes';
 
 describe('file purposes', () => {
   it('knows the platform purposes and nothing inherited', () => {
@@ -19,33 +29,54 @@ describe('file purposes', () => {
     expect(FILE_PURPOSES['platform.profile_photo'].types).not.toContain('image/svg+xml');
     expect(FILE_PURPOSES['platform.profile_photo'].types).not.toContain('image/gif');
   });
+
+  it('download links live at most 5 minutes (ADR 0006 §4)', () => {
+    for (const purpose of Object.values(FILE_PURPOSES)) {
+      expect(purpose.downloadTtlSeconds).toBeLessThanOrEqual(300);
+    }
+  });
+
+  it('every type a purpose may hold has a download extension that names it again', () => {
+    for (const purpose of Object.values(FILE_PURPOSES)) {
+      for (const type of purpose.types) {
+        const extension = extensionForType(type);
+        expect(extension, type).not.toBeNull();
+        expect(typeOfExtension(`file${extension ?? ''}`)).toBe(type);
+      }
+    }
+    expect(Object.keys(EXTENSION_BY_TYPE)).not.toContain('text/html');
+    expect(extensionForType('constructor')).toBeNull();
+  });
 });
 
-describe('normalizeDeclaredType', () => {
+describe('declaredTypeFor', () => {
   it('takes the type from the extension when the purpose accepts it', () => {
-    expect(
-      normalizeDeclaredType('platform.user_import', 'staff.CSV', 'application/octet-stream'),
-    ).toBe('text/csv');
-    expect(normalizeDeclaredType('platform.user_import', 'staff.xlsx', '')).toBe(XLSX);
-    expect(normalizeDeclaredType('platform.profile_photo', 'me.JPG', null)).toBe('image/jpeg');
+    expect(declaredTypeFor('platform.user_import', 'staff.CSV')).toBe('text/csv');
+    expect(declaredTypeFor('platform.user_import', 'staff.xlsx')).toBe(XLSX);
+    expect(declaredTypeFor('platform.profile_photo', 'me.JPG')).toBe('image/jpeg');
+    expect(declaredTypeFor('platform.profile_photo', 'me.jpeg')).toBe('image/jpeg');
   });
 
-  it('refuses a known extension the purpose does not accept, whatever the browser says', () => {
-    expect(normalizeDeclaredType('platform.user_import', 'cv.pdf', 'text/csv')).toBeNull();
-    expect(normalizeDeclaredType('platform.profile_photo', 'staff.csv', 'image/png')).toBeNull();
+  it('refuses a known extension the purpose does not accept', () => {
+    expect(declaredTypeFor('platform.user_import', 'cv.pdf')).toBeNull();
+    expect(declaredTypeFor('platform.profile_photo', 'staff.csv')).toBeNull();
   });
 
-  it("otherwise uses the browser's type, aliases resolved", () => {
-    expect(
-      normalizeDeclaredType('platform.user_import', 'export', 'application/vnd.ms-excel'),
-    ).toBe('text/csv');
-    expect(normalizeDeclaredType('platform.profile_photo', 'photo', ' IMAGE/JPG ')).toBe(
-      'image/jpeg',
-    );
-    expect(normalizeDeclaredType('platform.user_import', '.csv', 'text/csv')).toBe('text/csv');
-    expect(
-      normalizeDeclaredType('platform.user_import', 'run.exe', 'application/x-msdownload'),
-    ).toBeNull();
-    expect(normalizeDeclaredType('platform.user_import', 'data', undefined)).toBeNull();
+  it('refuses a name without an extension, or with one we do not know (executables, scripts)', () => {
+    for (const name of [
+      'export',
+      'staff.csv.hta',
+      'run.exe',
+      'setup.js',
+      'tool.bat',
+      'page.html',
+      'x.svg',
+      '.csv',
+      'a.constructor',
+    ]) {
+      expect(declaredTypeFor('platform.user_import', name), name).toBeNull();
+    }
+    expect(extensionOf('archive.tar.GZ')).toBe('.gz');
+    expect(extensionOf('noext')).toBe('');
   });
 });

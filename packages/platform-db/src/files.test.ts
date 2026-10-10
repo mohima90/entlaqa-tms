@@ -187,20 +187,23 @@ describe('confirmFileUpload', () => {
 });
 
 describe('grantFileDownload, deleteFileRecord, markFileUsed', () => {
-  it('grants a download of a clean file', async () => {
-    const grant = await grantFileDownload(
-      fakeTx([
-        {
-          bucket: 'imports',
-          object_key: 'k',
-          original_name: 'a.csv',
-          detected_mime: 'text/csv',
-          ttl_seconds: 60,
-          audit_downloads: true,
-        },
-      ]).tx,
-      FILE,
-    );
+  it('grants a download of a clean file of the authorized owner and purpose', async () => {
+    const request = {
+      fileId: FILE,
+      purpose: 'platform.user_import',
+      owner: { module: 'platform', entityType: 'user_import', entityId: ENTITY },
+    };
+    const fake = fakeTx([
+      {
+        bucket: 'imports',
+        object_key: 'k',
+        original_name: 'a.csv',
+        detected_mime: 'text/csv',
+        ttl_seconds: 60,
+        audit_downloads: true,
+      },
+    ]);
+    const grant = await grantFileDownload(fake.tx, request);
     expect(grant).toEqual({
       bucket: 'imports',
       objectKey: 'k',
@@ -209,10 +212,22 @@ describe('grantFileDownload, deleteFileRecord, markFileUsed', () => {
       ttlSeconds: 60,
       auditDownloads: true,
     });
-    await expect(grantFileDownload(fakeTx(pg('JF008')).tx, FILE)).rejects.toMatchObject({
+    // The owner and purpose go to the database, which checks them (never trusted from the file id alone).
+    expect(fake.executed[0]?.sql).toContain('private.grant_file_download($1::uuid, $2,');
+    expect(fake.executed[0]?.params).toEqual([
+      FILE,
+      'platform.user_import',
+      'platform',
+      'user_import',
+      ENTITY,
+    ]);
+    await expect(grantFileDownload(fakeTx(pg('JF008')).tx, request)).rejects.toMatchObject({
       code: 'FILE_NOT_CLEAN',
     });
-    await expect(grantFileDownload(fakeTx([]).tx, FILE)).rejects.toThrow('no row returned');
+    await expect(grantFileDownload(fakeTx(pg('JF004')).tx, request)).rejects.toMatchObject({
+      code: 'FILE_NOT_FOUND',
+    });
+    await expect(grantFileDownload(fakeTx([]).tx, request)).rejects.toThrow('no row returned');
   });
 
   it('deletes and marks use, reporting whether anything changed', async () => {

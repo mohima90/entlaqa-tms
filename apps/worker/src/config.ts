@@ -14,6 +14,11 @@ export type WorkerMode = 'daemon' | 'once' | 'test-email' | 'scanner-check';
 export interface ScannerSettings {
   readonly host: string;
   readonly port: number;
+  /**
+   * FILE_SCAN_SIGNATURES_MAX_AGE_DAYS (default 7): older (or undated) signatures and nothing is scanned.
+   * Raised only by test installations whose signatures are pinned (the worker warns at start-up).
+   */
+  readonly maxSignatureAgeDays: number;
 }
 
 export interface RunnerSettings {
@@ -146,17 +151,37 @@ function readAuthAdmin(env: NodeJS.ProcessEnv): RunnerSettings['authAdmin'] {
 
 export const CLAMD_HOST_ENV = 'CLAMD_HOST';
 export const CLAMD_PORT_ENV = 'CLAMD_PORT';
+export const SIGNATURES_MAX_AGE_ENV = 'FILE_SCAN_SIGNATURES_MAX_AGE_DAYS';
+/** The hard limit on the signatures' age (ADR 0006 §8; platform-files SIGNATURE_HARD_MAX_AGE_DAYS). */
+export const DEFAULT_SIGNATURES_MAX_AGE_DAYS = 7;
 const HOST_NAME = /^[A-Za-z0-9]([A-Za-z0-9.-]{0,252})$/;
 
-/** CLAMD_HOST (a host name or IPv4 address on the internal network) and CLAMD_PORT (default 3310). */
+/**
+ * CLAMD_HOST (a host name or IPv4 address on the internal network), CLAMD_PORT (default 3310) and
+ * FILE_SCAN_SIGNATURES_MAX_AGE_DAYS (default 7, at most 365).
+ */
 function readScanner(env: NodeJS.ProcessEnv): ScannerSettings | undefined {
   const host = read(env, CLAMD_HOST_ENV);
   const rawPort = read(env, CLAMD_PORT_ENV);
+  const rawMaxAge = read(env, SIGNATURES_MAX_AGE_ENV);
   if (host === undefined) {
     if (rawPort !== undefined) {
       throw new ConfigurationError(`${CLAMD_PORT_ENV} is set without ${CLAMD_HOST_ENV}`);
     }
+    if (rawMaxAge !== undefined) {
+      throw new ConfigurationError(`${SIGNATURES_MAX_AGE_ENV} is set without ${CLAMD_HOST_ENV}`);
+    }
     return undefined;
+  }
+  const maxSignatureAgeDays = Number(rawMaxAge ?? String(DEFAULT_SIGNATURES_MAX_AGE_DAYS));
+  if (
+    !Number.isInteger(maxSignatureAgeDays) ||
+    maxSignatureAgeDays < 1 ||
+    maxSignatureAgeDays > 365
+  ) {
+    throw new ConfigurationError(
+      `${SIGNATURES_MAX_AGE_ENV} must be a whole number of days from 1 to 365`,
+    );
   }
   if (!HOST_NAME.test(host)) {
     throw new ConfigurationError(`${CLAMD_HOST_ENV} must be a host name or an IPv4 address`);
@@ -165,7 +190,7 @@ function readScanner(env: NodeJS.ProcessEnv): ScannerSettings | undefined {
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     throw new ConfigurationError(`${CLAMD_PORT_ENV} must be a port number`);
   }
-  return { host, port };
+  return { host, port, maxSignatureAgeDays };
 }
 
 /** The worker warns (at start-up, then daily) once the Auth admin token has fewer days than this left. */

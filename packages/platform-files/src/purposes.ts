@@ -73,7 +73,7 @@ export function purposeOf(purpose: FilePurpose): PurposeDefinition {
   return FILE_PURPOSES[purpose];
 }
 
-/** The canonical type for a file extension (lower-case, with the dot). */
+/** The type each file extension names (lower-case, with the dot). */
 const BY_EXTENSION: Readonly<Record<string, string>> = {
   '.csv': 'text/csv',
   '.xlsx': XLSX,
@@ -84,36 +84,45 @@ const BY_EXTENSION: Readonly<Record<string, string>> = {
   '.pdf': 'application/pdf',
 };
 
-/** Types browsers report for the same files (Windows reports CSV as an Excel type, some report nothing). */
-const ALIASES: Readonly<Record<string, string>> = {
-  'application/vnd.ms-excel': 'text/csv',
-  'text/comma-separated-values': 'text/csv',
-  'application/csv': 'text/csv',
-  'text/x-csv': 'text/csv',
-  'image/jpg': 'image/jpeg',
-  'image/pjpeg': 'image/jpeg',
+/**
+ * The extension a download of each type gets (downloadName): every type a purpose may hold has one (a unit
+ * test keeps it so).
+ */
+export const EXTENSION_BY_TYPE: Readonly<Record<string, string>> = {
+  'text/csv': '.csv',
+  [XLSX]: '.xlsx',
+  'image/png': '.png',
+  'image/jpeg': '.jpg',
+  'image/webp': '.webp',
+  'application/pdf': '.pdf',
 };
 
-function extensionOf(name: string): string {
+/** The name's extension, lower-case with the dot ('' when it has none). */
+export function extensionOf(name: string): string {
   const dot = name.lastIndexOf('.');
   return dot <= 0 ? '' : name.slice(dot).toLowerCase();
 }
 
+/** The type the name's extension names, or null (no extension, or one we do not know). */
+export function typeOfExtension(name: string): string | null {
+  const extension = extensionOf(name);
+  return Object.hasOwn(BY_EXTENSION, extension) ? (BY_EXTENSION[extension] ?? null) : null;
+}
+
+/** The extension a download of this type gets, or null when we know none. */
+export function extensionForType(type: string): string | null {
+  return Object.hasOwn(EXTENSION_BY_TYPE, type) ? (EXTENSION_BY_TYPE[type] ?? null) : null;
+}
+
 /**
- * The declared type to record and to send as the upload's Content-Type: from the file's extension when it
- * names a type the purpose accepts, else the browser's type (aliases resolved) when the purpose accepts
- * it; null when neither does (refused before anything is stored). Declared types are a first filter only:
- * the scan detects the real type by content.
+ * The declared type of an upload — recorded, and sent by the browser as the upload's Content-Type: the
+ * type the name's extension names, when the purpose accepts it; null otherwise (no extension, an unknown
+ * one such as `.hta`, `.js` or `.bat`, or one the purpose does not accept): refused before anything is
+ * stored. The browser's own type is never used (it follows the name anyway, or is forged). Declared types
+ * are a first filter only: the scan detects the real type by content, and downloads are named by it.
  */
-export function normalizeDeclaredType(
-  purpose: FilePurpose,
-  name: string,
-  browserType: string | null | undefined,
-): string | null {
+export function declaredTypeFor(purpose: FilePurpose, name: string): string | null {
   const allowed: readonly string[] = FILE_PURPOSES[purpose].types;
-  const byExtension = BY_EXTENSION[extensionOf(name)];
-  if (byExtension !== undefined) return allowed.includes(byExtension) ? byExtension : null;
-  const reported = (browserType ?? '').trim().toLowerCase();
-  const canonical = ALIASES[reported] ?? reported;
-  return allowed.includes(canonical) ? canonical : null;
+  const byExtension = typeOfExtension(name);
+  return byExtension !== null && allowed.includes(byExtension) ? byExtension : null;
 }

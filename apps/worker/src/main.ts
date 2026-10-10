@@ -6,7 +6,12 @@ import {
   runDaemon,
   runPass,
 } from '@jadarat/platform-jobs/jobs';
-import { SIGNATURE_MAX_AGE_HOURS, createClamdScanner } from '@jadarat/platform-files/jobs';
+import {
+  SIGNATURE_HARD_MAX_AGE_DAYS,
+  SIGNATURE_MAX_AGE_HOURS,
+  createClamdScanner,
+  signatureAge,
+} from '@jadarat/platform-files/jobs';
 import { sendTestEmail } from '@jadarat/platform-notifications/jobs';
 import { createLogger, errorName, installConsoleScrubbing } from '@jadarat/platform-observability';
 import { adminKeyExpiryCheck } from './admin-key-expiry';
@@ -50,19 +55,22 @@ async function testEmail(settings: TestEmailSettings): Promise<void> {
 
 /**
  * Operators' check of the malware scanner (T-M2-18, ADR 0006 §8): it answers, and its signatures are at
- * most SIGNATURE_MAX_AGE_HOURS old (freshclam working). Fails otherwise.
+ * most SIGNATURE_MAX_AGE_HOURS old (freshclam working). Exit code 2 when they are older (stale: the scan
+ * still runs), 3 when they are older than the hard limit or undated (the scan refuses to run).
  */
 async function scannerCheck(settings: ScannerCheckSettings): Promise<void> {
   const scanner = createClamdScanner(settings.scanner);
   await scanner.ping();
   const version = await scanner.version();
-  const hours =
-    version.signaturesDate === null
-      ? null
-      : Math.floor((Date.now() - version.signaturesDate.getTime()) / 3_600_000);
-  const stale = hours === null || hours > SIGNATURE_MAX_AGE_HOURS;
-  const message = `scanner ${version.engine}, signatures ${version.signatures}${hours === null ? '' : `, ${String(hours)} hours old`}`;
-  if (stale) {
+  const { age, hours } = signatureAge(version, Date.now(), settings.scanner.maxSignatureAgeDays);
+  const message = `scanner ${version.engine}, signatures ${version.signatures}${hours === null ? ' (undated)' : `, ${String(hours)} hours old`}`;
+  if (age === 'too_old' || age === 'unknown') {
+    logger.error(
+      `${message}: older than ${String(settings.scanner.maxSignatureAgeDays)} days or undated — nothing is scanned`,
+      { action: 'worker.scanner_check', outcome: 'failure', reason: 'scanner_signatures_too_old' },
+    );
+    process.exitCode = 3;
+  } else if (age === 'stale') {
     logger.warn(`${message}: older than ${String(SIGNATURE_MAX_AGE_HOURS)} hours`, {
       action: 'worker.scanner_check',
       outcome: 'failure',
@@ -134,6 +142,12 @@ async function runWorker(settings: RunnerSettings): Promise<void> {
       },
     );
     adminKeyCheck?.();
+    if (settings.scanner && settings.scanner.maxSignatureAgeDays > SIGNATURE_HARD_MAX_AGE_DAYS) {
+      logger.warn(
+        `malware signatures up to ${String(settings.scanner.maxSignatureAgeDays)} days old are accepted (FILE_SCAN_SIGNATURES_MAX_AGE_DAYS): test installations with pinned signatures only`,
+        { action: 'worker.start', reason: 'scanner_signatures_limit_raised' },
+      );
+    }
     if (settings.mode === 'once') {
       // graphile-worker's own signal handling releases the pass's jobs on cancel.
       const { staleEvents } = await runPass(config);

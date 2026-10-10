@@ -1,3 +1,5 @@
+import { extensionForType, typeOfExtension } from './purposes';
+
 /**
  * Original file names (ADR 0006 §2): kept only for display and the download's Content-Disposition (RFC
  * 6266, `filename*` in UTF-8, so Arabic names work) — never part of a Storage key. Sanitized here, checked
@@ -50,4 +52,20 @@ export function sanitizeFileName(raw: string): string {
     cleaned = trimEdges(chars.slice(0, MAX_NAME_LENGTH - keep.length).join('')) + keep.join('');
   }
   return cleaned === '' ? FALLBACK : cleaned;
+}
+
+/**
+ * The name a download is saved under (Content-Disposition): the sanitized original name, but with the
+ * extension of the type the scan DETECTED by content — never an extension the uploader chose (`.hta`,
+ * `.js`, `.bat` would make the saved file run as a program). The uploader's own extension is kept only
+ * when it names that same type (`photo.JPEG` for a JPEG); without a known extension for the type the
+ * name gets none.
+ */
+export function downloadName(name: string, detectedType: string | null): string {
+  const clean = sanitizeFileName(name);
+  if (detectedType !== null && typeOfExtension(clean) === detectedType) return clean;
+  const dot = clean.lastIndexOf('.');
+  const base = dot > 0 ? clean.slice(0, dot) : clean;
+  const extension = detectedType === null ? null : extensionForType(detectedType);
+  return extension === null ? base : `${base}${extension}`;
 }

@@ -85,7 +85,7 @@ export interface ReserveUploadInput {
   readonly owner: FileOwner;
   /** Sanitized original name (platform-files `sanitizeFileName`). */
   readonly name: string;
-  /** Canonical declared type (platform-files `normalizeDeclaredType`). */
+  /** Canonical declared type (platform-files `declaredTypeFor`: from the name's extension). */
   readonly declaredType: string;
   readonly size: number;
 }
@@ -242,12 +242,26 @@ export interface DownloadGrant {
   readonly auditDownloads: boolean;
 }
 
+/** What the owning module authorized: this file, of this owner entity, for this purpose. */
+export interface DownloadGrantRequest {
+  readonly fileId: string;
+  /** The file's purpose (e.g. `platform.user_import`). */
+  readonly purpose: string;
+  /** The entity whose files the module authorized the user to read. */
+  readonly owner: FileOwner;
+}
+
 /**
- * A download grant for the signed-in user on a clean file of their tenant
- * (private.grant_file_download) — only after the owning module authorized the download. Throws
- * DomainError FILE_NOT_FOUND or FILE_NOT_CLEAN.
+ * A download grant for the signed-in user (private.grant_file_download) — only after the owning module
+ * authorized THIS user to read files of THIS owner entity: the database grants the file only when it is
+ * clean and belongs to exactly that owner and purpose (else FILE_NOT_FOUND, as if it did not exist), so a
+ * module that checked access to one entity can never hand out a file of another. Throws DomainError
+ * FILE_NOT_FOUND or FILE_NOT_CLEAN.
  */
-export async function grantFileDownload(tx: ClaimsTx, fileId: string): Promise<DownloadGrant> {
+export async function grantFileDownload(
+  tx: ClaimsTx,
+  request: DownloadGrantRequest,
+): Promise<DownloadGrant> {
   const rows = await guarded(() =>
     tx.execute<{
       bucket: string;
@@ -256,7 +270,8 @@ export async function grantFileDownload(tx: ClaimsTx, fileId: string): Promise<D
       detected_mime: string | null;
       ttl_seconds: number;
       audit_downloads: boolean;
-    }>(sql`select * from private.grant_file_download(${fileId}::uuid)`),
+    }>(sql`select * from private.grant_file_download(${request.fileId}::uuid, ${request.purpose},
+      ${request.owner.module}, ${request.owner.entityType}, ${request.owner.entityId}::uuid)`),
   );
   const row = rows[0];
   if (!row) throw new Error('grantFileDownload: no row returned');
@@ -272,8 +287,9 @@ export async function grantFileDownload(tx: ClaimsTx, fileId: string): Promise<D
 
 /**
  * Deletes a file (soft; housekeeping removes the object per retention class): its uploader, or a job of
- * its tenant. False when it was already deleted. Throws DomainError FILE_NOT_FOUND or FILE_BUSY (being
- * scanned, or infected and kept in quarantine).
+ * its tenant — also a file still waiting for the scanner, or failed. False when it was already deleted.
+ * Throws DomainError FILE_NOT_FOUND or FILE_BUSY (a worker is scanning it right now, or it is infected
+ * and kept in quarantine).
  */
 export async function deleteFileRecord(tx: ClaimsTx, fileId: string): Promise<boolean> {
   const rows = await guarded(() =>

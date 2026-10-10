@@ -15,8 +15,13 @@ export interface PlatformTaskDependencies {
   readonly appBaseUrl: string | undefined;
   /** SUPABASE_URL + SUPABASE_SECRET_KEY (worker only); absent: no reset links, no file tasks. */
   readonly authAdmin: { readonly url: string; readonly secretKey: string } | undefined;
-  /** CLAMD_HOST + CLAMD_PORT; absent: uploaded files are not scanned (they wait, never clean). */
-  readonly scanner?: { readonly host: string; readonly port: number } | undefined;
+  /**
+   * CLAMD_HOST + CLAMD_PORT (+ the signatures' hard age limit, default 7 days); absent: uploaded files are
+   * not scanned (they wait, never clean).
+   */
+  readonly scanner?:
+    | { readonly host: string; readonly port: number; readonly maxSignatureAgeDays?: number }
+    | undefined;
   readonly withPlatformTx: WithPlatformTx;
   readonly withSystemTx: WithSystemTx;
   readonly log: (level: WorkerLogLevel, message: string) => void;
@@ -81,13 +86,15 @@ export function platformTasks(deps: PlatformTaskDependencies): readonly Platform
       createFileHousekeepingTask({ withPlatformTx: deps.withPlatformTx, store, log: deps.log }),
     );
     if (deps.scanner) {
+      const { host, port, maxSignatureAgeDays } = deps.scanner;
       tasks.push(
         createFileScanTask({
           withPlatformTx: deps.withPlatformTx,
           withSystemTx: deps.withSystemTx,
           store,
-          scanner: (deps.scannerFor ?? createClamdScanner)(deps.scanner),
+          scanner: (deps.scannerFor ?? createClamdScanner)({ host, port }),
           log: deps.log,
+          ...(maxSignatureAgeDays === undefined ? {} : { maxSignatureAgeDays }),
         }),
       );
     }

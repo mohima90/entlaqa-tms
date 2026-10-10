@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_NAME_LENGTH, sanitizeFileName } from './names';
+import { MAX_NAME_LENGTH, downloadName, sanitizeFileName } from './names';
+import { XLSX as XLSX_TYPE } from './purposes';
 
 /** Invisible characters are built from code points: never literally in the source (Trojan Source). */
 const cp = (...points: number[]) => String.fromCodePoint(...points);
@@ -46,5 +47,30 @@ describe('sanitizeFileName', () => {
     expect(oddExtension).toHaveLength(MAX_NAME_LENGTH);
     // Characters outside the BMP count once.
     expect(Array.from(sanitizeFileName(cp(0x1f600).repeat(250)))).toHaveLength(MAX_NAME_LENGTH);
+  });
+});
+
+describe('downloadName', () => {
+  it('keeps the name when its extension names the type found by content', () => {
+    expect(downloadName('موظفو الرياض.csv', 'text/csv')).toBe('موظفو الرياض.csv');
+    expect(downloadName('photo.JPEG', 'image/jpeg')).toBe('photo.JPEG');
+  });
+
+  it('replaces an extension the uploader chose with the one of the detected type', () => {
+    expect(downloadName('payroll.hta', 'text/csv')).toBe('payroll.csv');
+    expect(downloadName('update.js', 'text/csv')).toBe('update.csv');
+    expect(downloadName('run.bat', 'image/png')).toBe('run.png');
+    expect(downloadName('staff.csv.exe', XLSX_TYPE)).toBe('staff.csv.xlsx');
+    expect(downloadName('photo.png', 'image/webp')).toBe('photo.webp');
+  });
+
+  it('adds the extension when the name has none; drops it when the type has no known one', () => {
+    expect(downloadName('export', 'text/csv')).toBe('export.csv');
+    expect(downloadName('evil.hta', 'text/html')).toBe('evil');
+    expect(downloadName('evil.hta', null)).toBe('evil');
+  });
+
+  it('sanitizes the name again', () => {
+    expect(downloadName(`photo${RLO}gpj.exe`, 'image/png')).toBe('photogpj.png');
   });
 });

@@ -3,8 +3,10 @@ import { describe, expect, it } from 'vitest';
 import {
   FileStorageError,
   createUserFileStorage,
+  readStorageInternalOrigin,
   readStoragePublicOrigin,
   storageErrorOf,
+  storageRoutingFetch,
   toPublicUrl,
 } from './storage';
 
@@ -62,6 +64,42 @@ describe('readStoragePublicOrigin and toPublicUrl', () => {
     expect(toPublicUrl('https://x.supabase.co/a?token=t', null)).toBe(
       'https://x.supabase.co/a?token=t',
     );
+  });
+});
+
+describe('readStorageInternalOrigin and storageRoutingFetch (security review M2)', () => {
+  it('reads the internal origin like the public one', () => {
+    expect(readStorageInternalOrigin(undefined)).toBeNull();
+    expect(readStorageInternalOrigin('https://gateway:8445')).toBe('https://gateway:8445');
+    expect(() => readStorageInternalOrigin('http://gateway:8445')).toThrow('STORAGE_INTERNAL_URL');
+    expect(() => readStorageInternalOrigin('https://gateway:8445/storage')).toThrow(
+      'STORAGE_INTERNAL_URL',
+    );
+  });
+
+  it('sends Storage calls (only) to the internal origin, path and query unchanged', async () => {
+    const seen: string[] = [];
+    const base = ((input: RequestInfo | URL) => {
+      seen.push(input instanceof Request ? input.url : String(input));
+      return Promise.resolve(new Response('{}'));
+    }) as typeof fetch;
+    const routed = storageRoutingFetch('https://gateway:8445', base);
+    await routed('https://gateway:8443/storage/v1/object/upload/sign/imports/a/b', {
+      method: 'POST',
+    });
+    await routed(new URL('https://gateway:8443/storage/v1/object/sign/imports/a/b?x=1'));
+    await routed(
+      new Request('https://gateway:8443/storage/v1/object/sign/imports/c', { method: 'POST' }),
+    );
+    await routed('https://gateway:8443/auth/v1/token?grant_type=refresh_token', { method: 'POST' });
+    await routed('https://gateway:8443/storagex/v1/object');
+    expect(seen).toEqual([
+      'https://gateway:8445/storage/v1/object/upload/sign/imports/a/b',
+      'https://gateway:8445/storage/v1/object/sign/imports/a/b?x=1',
+      'https://gateway:8445/storage/v1/object/sign/imports/c',
+      'https://gateway:8443/auth/v1/token?grant_type=refresh_token',
+      'https://gateway:8443/storagex/v1/object',
+    ]);
   });
 });
 

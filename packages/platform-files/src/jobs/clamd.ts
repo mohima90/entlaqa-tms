@@ -12,9 +12,22 @@ export interface ClamdOptions {
   readonly port: number;
   /** Connecting (default 5 s). */
   readonly connectTimeoutMs?: number;
-  /** No bytes moving in either direction (default 60 s): clamd is stuck or gone. */
+  /** No bytes moving in either direction while a command or the stream is sent (default 60 s). */
   readonly idleTimeoutMs?: number;
+  /**
+   * Waiting for the verdict once the whole stream is sent (default CLAMD_VERDICT_TIMEOUT_MS): clamd scans
+   * only then, for up to its MaxScanTime, and answers nothing meanwhile.
+   */
+  readonly verdictTimeoutMs?: number;
 }
+
+/**
+ * clamd's MaxScanTime (infra/docker/clamav/clamd.conf, 90 s): past it clamd stops and reports
+ * `Heuristics.Limits.Exceeded.MaxScanTime` (AlertExceedsMax) — a verdict, so the file is `unscannable`.
+ */
+export const CLAMD_MAX_SCAN_TIME_MS = 90_000;
+/** How long the client waits for a verdict: longer than MaxScanTime, so clamd always answers first. */
+export const CLAMD_VERDICT_TIMEOUT_MS = 150_000;
 
 /** clamd cannot be reached or stopped answering: the scan is tried again later (fail closed). */
 export class ScannerUnavailableError extends Error {
@@ -115,6 +128,7 @@ const MAX_REPLY = 4096;
 export function createClamdScanner(options: ClamdOptions): Scanner {
   const connectTimeout = options.connectTimeoutMs ?? 5000;
   const idleTimeout = options.idleTimeoutMs ?? 60_000;
+  const verdictTimeout = options.verdictTimeoutMs ?? CLAMD_VERDICT_TIMEOUT_MS;
 
   /** A connection whose reply (until the null byte or close) is collected from the start. */
   function connect(): Promise<{ socket: Socket; reply: Promise<string> }> {
@@ -253,6 +267,8 @@ export function createClamdScanner(options: ClamdOptions): Scanner {
               if (!(await earlyAnswer())) throw error;
             }
           }
+          // clamd scans now (up to its MaxScanTime) and is silent until the verdict.
+          socket.setTimeout(verdictTimeout);
           return parseVerdict(await reply);
         },
         abort() {

@@ -77,8 +77,10 @@ export type ScanOutcome =
     }
   | {
       readonly outcome: 'rejected' | 'error';
-      /** `type_not_allowed`, `too_large`, `empty`, `object_missing`, … */
+      /** `type_not_allowed`, `too_large`, `empty`, `encrypted`, `unscannable`, `object_missing`, … */
       readonly reason: string;
+      /** The scanner's finding behind a rejection (`Heuristics.Encrypted.Zip`, `Heuristics.Limits.…`). */
+      readonly finding?: string | null;
       readonly detectedType?: string | null;
       readonly size?: number | null;
       readonly sha256?: string | null;
@@ -100,7 +102,7 @@ export async function finishFileScan(
   const sha256 = 'sha256' in result ? (result.sha256 ?? null) : null;
   const engine = 'engine' in result ? (result.engine ?? null) : null;
   const signatures = 'signatures' in result ? (result.signatures ?? null) : null;
-  const finding = result.outcome === 'infected' ? result.finding : null;
+  const finding = 'finding' in result ? (result.finding ?? null) : null;
   const reason = result.outcome === 'rejected' || result.outcome === 'error' ? result.reason : null;
   const [row] = await tx.execute<{ finished: boolean }>(sql`
     select private.finish_file_scan(${fileId}::uuid, ${result.outcome}, ${detected}, ${size}::bigint,
@@ -109,8 +111,10 @@ export async function finishFileScan(
 }
 
 /**
- * The scan could not finish: `scanner` (scanner or Storage unavailable — the file stays scanning and
- * waits, however long: fail closed) or `processing` (this file failed; `error` after 5 attempts).
+ * The scan could not finish (fail closed: the file stays scanning, never clean): `scanner` — the scanner
+ * or Storage is unavailable, not counted against the file, but `error` (scanner_unavailable) once the file
+ * has waited 24 hours since its upload; `processing` — this file failed although the scanner answered,
+ * `error` (processing_failed) after 5 such failures.
  */
 export async function retryFileScan(
   tx: ClaimsTx,
@@ -162,6 +166,44 @@ export async function claimFileHousekeeping(
       action: row.action as HousekeepingAction,
     };
   });
+}
+
+/**
+ * Just before the Storage work of a leased action, IN THE SAME TRANSACTION as that work's
+ * finishFileHousekeeping: locks the file's row and answers whether the action is still due (a legal hold
+ * set, a use recorded or a scan lease taken since the lease stops it). Whoever changes the file meanwhile
+ * waits for this transaction.
+ */
+export async function lockFileHousekeeping(
+  tx: ClaimsTx,
+  fileId: string,
+  action: HousekeepingAction,
+): Promise<boolean> {
+  const [row] = await tx.execute<{ due: boolean }>(
+    sql`select private.lock_file_housekeeping(${fileId}::uuid, ${action}) as due`,
+  );
+  return row?.due === true;
+}
+
+/** An object in our buckets that no live file record owns (claimOrphanObjects). */
+export interface OrphanObject {
+  readonly bucket: string;
+  readonly objectKey: string;
+}
+
+/**
+ * Objects in our buckets older than 3 hours (the longest signed upload URL lifetime plus a margin) that no
+ * live file record owns: a generated file whose job rolled back after writing it, or an object a
+ * still-valid upload URL created again after quarantine, removal or purge. The caller removes them.
+ */
+export async function claimOrphanObjects(
+  tx: ClaimsTx,
+  limit: number,
+): Promise<readonly OrphanObject[]> {
+  const rows = await tx.execute<{ bucket: string; object_key: string }>(
+    sql`select * from private.claim_orphan_objects(${limit}::integer)`,
+  );
+  return rows.map((row) => ({ bucket: row.bucket, objectKey: row.object_key }));
 }
 
 /** Records the Storage work of a housekeeping action (false when nothing was left to record). */

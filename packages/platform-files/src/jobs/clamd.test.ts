@@ -1,6 +1,9 @@
+import { readFileSync } from 'node:fs';
 import { type AddressInfo, type Server, type Socket, createServer } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  CLAMD_MAX_SCAN_TIME_MS,
+  CLAMD_VERDICT_TIMEOUT_MS,
   ScannerError,
   ScannerUnavailableError,
   createClamdScanner,
@@ -11,11 +14,13 @@ import {
 
 /**
  * A stand-in clamd: answers zPING / zVERSION, and for zINSTREAM collects the chunks until the zero-length
- * one, then answers what `verdict` says about the received bytes. `early`: answer (and close) as soon as
- * this many bytes arrived, like clamd at its StreamMaxLength.
+ * one, then answers what `verdict` says about the received bytes — after `verdictDelayMs` (clamd scans
+ * silently first). `early`: answer (and close) as soon as this many bytes arrived, like clamd at its
+ * StreamMaxLength.
  */
 function fakeClamd(options: {
   verdict?: (data: Buffer) => string;
+  verdictDelayMs?: number;
   early?: number;
   silent?: boolean;
   version?: string;
@@ -49,7 +54,13 @@ function fakeClamd(options: {
       while (buffer.length >= 4) {
         const length = buffer.readUInt32BE(0);
         if (length === 0) {
-          socket.end(`${(options.verdict ?? (() => 'stream: OK'))(Buffer.concat(received))}\0`);
+          const answer = `${(options.verdict ?? (() => 'stream: OK'))(Buffer.concat(received))}\0`;
+          if (options.verdictDelayMs === undefined) socket.end(answer);
+          else {
+            setTimeout(() => {
+              if (!socket.destroyed) socket.end(answer);
+            }, options.verdictDelayMs);
+          }
           return;
         }
         if (buffer.length < 4 + length) return;
@@ -86,13 +97,18 @@ afterEach(async () => {
   close = undefined;
 });
 
-async function scannerFor(options: Parameters<typeof fakeClamd>[0], idleTimeoutMs?: number) {
+async function scannerFor(
+  options: Parameters<typeof fakeClamd>[0],
+  idleTimeoutMs?: number,
+  verdictTimeoutMs?: number,
+) {
   const fake = await fakeClamd(options);
   close = fake.close;
   return createClamdScanner({
     host: '127.0.0.1',
     port: fake.port,
     ...(idleTimeoutMs === undefined ? {} : { idleTimeoutMs }),
+    ...(verdictTimeoutMs === undefined ? {} : { verdictTimeoutMs }),
   });
 }
 
@@ -151,6 +167,30 @@ describe('clamd client', () => {
     await close?.();
     const odd = await scannerFor({ version: 'something else' });
     await expect(odd.version()).rejects.toBeInstanceOf(ScannerError);
+  });
+
+  it('waits for the verdict longer than the idle limit (clamd scans silently), up to its own limit', async () => {
+    // Silent for 400 ms after the stream: longer than the 150 ms idle limit, within the verdict limit.
+    const slow = await scannerFor({ verdictDelayMs: 400 }, 150, 2000);
+    const session = await slow.start();
+    await session.write(new Uint8Array([1, 2, 3]));
+    expect(await session.finish()).toEqual({ clean: true });
+    await close?.();
+    // Silent past the verdict limit: unavailable (never clean).
+    const stuck = await scannerFor({ verdictDelayMs: 2000 }, 150, 300);
+    const stuckSession = await stuck.start();
+    await stuckSession.write(new Uint8Array([1]));
+    await expect(stuckSession.finish()).rejects.toBeInstanceOf(ScannerUnavailableError);
+  });
+
+  it('waits longer for a verdict than clamd.conf lets clamd scan', () => {
+    const conf = readFileSync(
+      new URL('../../../../infra/docker/clamav/clamd.conf', import.meta.url),
+      'utf8',
+    );
+    const maxScanTime = /^MaxScanTime (\d+)$/m.exec(conf)?.[1];
+    expect(Number(maxScanTime)).toBe(CLAMD_MAX_SCAN_TIME_MS);
+    expect(CLAMD_VERDICT_TIMEOUT_MS).toBeGreaterThan(CLAMD_MAX_SCAN_TIME_MS + 30_000);
   });
 
   it('can abandon a scan', async () => {

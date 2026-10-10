@@ -23,6 +23,7 @@ export {
 export { DomainError, isDomainError } from './domain-error';
 export {
   type DownloadGrant,
+  type DownloadGrantRequest,
   FILE_EVENTS,
   type FileErrorCode,
   type FileOwner,

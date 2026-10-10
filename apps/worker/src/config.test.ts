@@ -238,11 +238,32 @@ describe('readSettings: malware scanner (T-M2-18)', () => {
     expect(runner([], { ...env, CLAMD_HOST: 'clamd' }).scanner).toEqual({
       host: 'clamd',
       port: 3310,
+      maxSignatureAgeDays: 7,
     });
     expect(runner([], { ...env, CLAMD_HOST: '10.0.0.5', CLAMD_PORT: '3311' }).scanner).toEqual({
       host: '10.0.0.5',
       port: 3311,
+      maxSignatureAgeDays: 7,
     });
+  });
+
+  it("reads the hard limit on the signatures' age (default 7 days, at most 365)", () => {
+    expect(
+      runner([], { ...env, CLAMD_HOST: 'clamd', FILE_SCAN_SIGNATURES_MAX_AGE_DAYS: '365' }).scanner
+        ?.maxSignatureAgeDays,
+    ).toBe(365);
+    for (const value of ['0', '366', '7.5', 'x']) {
+      fails(
+        [],
+        { ...env, CLAMD_HOST: 'clamd', FILE_SCAN_SIGNATURES_MAX_AGE_DAYS: value },
+        /FILE_SCAN_SIGNATURES_MAX_AGE_DAYS must be a whole number of days from 1 to 365/,
+      );
+    }
+    fails(
+      [],
+      { ...env, FILE_SCAN_SIGNATURES_MAX_AGE_DAYS: '30' },
+      /FILE_SCAN_SIGNATURES_MAX_AGE_DAYS is set without CLAMD_HOST/,
+    );
   });
 
   it('refuses a port without host, a bad host or port', () => {
@@ -255,7 +276,7 @@ describe('readSettings: malware scanner (T-M2-18)', () => {
   it('scanner-check needs only the scanner (no database, no e-mail)', () => {
     expect(readSettings(['scanner-check'], { CLAMD_HOST: 'clamd' }, noCa)).toEqual({
       mode: 'scanner-check',
-      scanner: { host: 'clamd', port: 3310 },
+      scanner: { host: 'clamd', port: 3310, maxSignatureAgeDays: 7 },
     });
     fails(['scanner-check'], {}, /CLAMD_HOST must be set/);
     fails(['scan'], env, /expected daemon, once, test-email or scanner-check/);

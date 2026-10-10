@@ -20,6 +20,11 @@
 --   * An app still unconfirmed after 72 hours is removed by the worker (private.purge_unconfirmed_mfa_apps,
 --     re-review N2) and the owner e-mailed: a waiting app never blocks the owner's password change, reset or
 --     set-up (Auth asks for a code from every verified app).
+--   * 15 wrong e-mailed codes on one account within 24 hours (any app, any e-mail) remove its waiting apps,
+--     end the sessions that passed their code and tell the owner once (final re-review L2).
+--   * Security notices are never dropped: up to private.security_notice_daily_ceiling() per account in 24
+--     hours are sent one by one, further ones are merged into one digest e-mail an hour (final re-review L1;
+--     private.claim_account_mail_request, private.security_notice_digests).
 --   * Every removal and reset is e-mailed and audited (in every organization of the account).
 --   * A change of the security policy is e-mailed to every Organization Admin of the organization (TM-0003
 --     T-IAM-24; security review L5): queued by the database itself (trigger), so no path can skip it.
@@ -54,15 +59,15 @@ grant account_mail_guard to current_user;
 -- ---------------------------------------------------------------------------------------------------
 alter table private.account_mail_requests add column factor_id uuid;
 -- Why an app was removed: by the account (My profile, or its own set-up cancelled), as "not you" (the e-mail's
--- link, or "added from another sign-in"), by an Organization Admin, by ENTLAQA support, or never confirmed
--- (the worker, re-review N2).
+-- link, or "added from another sign-in"), by an Organization Admin, by ENTLAQA support, never confirmed (the
+-- worker, re-review N2), or too many wrong e-mailed codes on the account (final re-review L2).
 alter table private.account_mail_requests add column mfa_reason text;
 -- security_policy_changed: which settings changed (names, never values) and who changed them (person id).
 alter table private.account_mail_requests add column detail jsonb;
 alter table private.account_mail_requests drop constraint account_mail_requests_kind_check;
 alter table private.account_mail_requests add constraint account_mail_requests_kind_check
   check (kind in ('password_reset', 'password_changed', 'mfa_factor_added', 'mfa_factor_removed',
-                  'security_policy_changed'));
+                  'security_policy_changed', 'security_digest'));
 alter table private.account_mail_requests drop constraint account_mail_requests_shape_check;
 alter table private.account_mail_requests add constraint account_mail_requests_shape_check check (
   (kind = 'password_reset' and email is not null and user_id is null and tenant_id is null
@@ -73,15 +78,64 @@ alter table private.account_mail_requests add constraint account_mail_requests_s
       and mfa_reason is null and detail is null)
   or (kind = 'mfa_factor_removed' and email is null and user_id is not null and mfa_reason is not null and detail is null)
   or (kind = 'security_policy_changed' and email is null and user_id is not null and tenant_id is not null
-      and factor_id is null and mfa_reason is null and jsonb_typeof(detail) = 'object'));
+      and factor_id is null and mfa_reason is null and jsonb_typeof(detail) = 'object')
+  or (kind = 'security_digest' and email is null and user_id is not null and factor_id is null
+      and mfa_reason is null and jsonb_typeof(detail) = 'object'));
 alter table private.account_mail_requests add constraint account_mail_requests_mfa_reason_check
-  check (mfa_reason is null or mfa_reason in ('removed', 'not_me', 'admin_reset', 'support_reset', 'expired'));
+  check (mfa_reason is null or mfa_reason in ('removed', 'not_me', 'admin_reset', 'support_reset', 'expired',
+                                              'too_many_codes'));
 
 -- tenant_guard queues the authenticator notices and the policy-change notices (and only those).
 create policy account_mail_requests_tenant_guard on private.account_mail_requests for all to tenant_guard
   using (kind in ('mfa_factor_added', 'mfa_factor_removed', 'security_policy_changed'))
   with check (kind in ('mfa_factor_added', 'mfa_factor_removed', 'security_policy_changed'));
 grant select, insert, delete on private.account_mail_requests to tenant_guard;
+
+-- ---------------------------------------------------------------------------------------------------
+-- Security notices never dropped, never a flood (final re-review L1)
+-- ---------------------------------------------------------------------------------------------------
+-- Per account and 24 hours: this many security notices are sent one by one (every organization of the
+-- account counted: our delivery log); further ones are merged into one digest e-mail an hour.
+create or replace function private.security_notice_daily_ceiling()
+returns integer
+language sql immutable
+set search_path = ''
+as $$ select 20 $$;
+
+create or replace function private.security_digest_after()
+returns interval
+language sql immutable
+set search_path = ''
+as $$ select interval '1 hour' $$;
+
+comment on function private.security_notice_daily_ceiling() is
+  'T-M2-10 (final re-review L1): security notices per account and 24 hours sent one by one; further ones are merged into a digest.';
+comment on function private.security_digest_after() is
+  'T-M2-10 (final re-review L1): a digest of held security notices is sent this long after the first one was held.';
+
+revoke all on function private.security_notice_daily_ceiling() from public;
+revoke all on function private.security_digest_after() from public;
+grant execute on function private.security_notice_daily_ceiling() to account_mail_guard;
+grant execute on function private.security_digest_after() to account_mail_guard;
+
+-- The security notices held for an account's next digest: how many of each kind, since when, in which
+-- organization the first was (its language and brand). Ids and counts only. account_mail_guard only (the
+-- worker's claim function).
+create table private.security_notice_digests (
+  user_id uuid primary key references auth.users (id) on delete cascade,
+  tenant_id uuid,
+  held jsonb not null,
+  first_held_at timestamptz not null default now(),
+  constraint security_notice_digests_held_check check (jsonb_typeof(held) = 'object')
+);
+comment on table private.security_notice_digests is
+  'SECURITY-RELEVANT (T-M2-10, final re-review L1). Security notices over an account''s daily ceiling, merged for its next digest e-mail (kind counts only). account_mail_guard only.';
+alter table private.security_notice_digests enable row level security;
+alter table private.security_notice_digests force row level security;
+create policy security_notice_digests_guard on private.security_notice_digests for all to account_mail_guard
+  using (true) with check (true);
+revoke all on private.security_notice_digests from public;
+grant select, insert, update, delete on private.security_notice_digests to account_mail_guard;
 
 -- How long a request may wait for the worker: a reset link lives 60 minutes (the request is useless after
 -- it); an authenticator notice is useful for a day (a worker on a schedule may answer late).
@@ -188,6 +242,15 @@ begin
   delete from private.account_mail_requests r
   where private.account_mail_request_expired(r.kind, r.created_at)
      or (r.attempts >= 5 and coalesce(r.leased_until, now()) <= now());
+  -- Digests due (final re-review L1): the notices held since an hour or more go out as one e-mail.
+  with due as (
+    delete from private.security_notice_digests g
+    where g.first_held_at <= now() - private.security_digest_after()
+    returning g.user_id, g.tenant_id, g.held, g.first_held_at)
+  insert into private.account_mail_requests (kind, user_id, tenant_id, detail)
+  select 'security_digest', due.user_id, due.tenant_id,
+         jsonb_build_object('held', due.held, 'since', due.first_held_at)
+  from due;
 
   update private.account_mail_requests r
   set leased_until = now() + interval '5 minutes', attempts = r.attempts + 1
@@ -250,6 +313,27 @@ begin
                         v_request.detail;
     return;
   end if;
+  -- A security notice over the account's daily ceiling (every organization: our delivery log) is merged
+  -- into the account's next digest instead of being sent on its own — never dropped (final re-review L1).
+  if v_request.kind in ('mfa_factor_added', 'mfa_factor_removed', 'security_policy_changed', 'password_changed')
+     and (select count(*) from (
+            select 1 from platform.message_deliveries d
+            join platform.tenant_memberships m on m.tenant_id = d.tenant_id and m.person_id = d.recipient_person_id
+            where m.user_id = v_account.id and d.created_at > now() - interval '24 hours'
+              and d.template in ('platform.mfa_factor_added', 'platform.mfa_factor_removed',
+                                 'platform.security_policy_changed', 'platform.password_changed',
+                                 'platform.security_digest')
+            limit private.security_notice_daily_ceiling()) n) >= private.security_notice_daily_ceiling() then
+    insert into private.security_notice_digests as g (user_id, tenant_id, held)
+    values (v_account.id, v_member.tenant_id, jsonb_build_object(v_request.kind, 1))
+    on conflict on constraint security_notice_digests_pkey do update
+      set held = g.held || jsonb_build_object(v_request.kind, coalesce((g.held ->> v_request.kind)::integer, 0) + 1);
+    delete from private.account_mail_requests r where r.id = v_request.id;
+    return query select v_request.id, v_request.kind, 'held'::text, null::text, v_account.id, null::uuid,
+                        null::uuid, null::text, v_request.attempts::integer, v_request.factor_id, v_request.mfa_reason,
+                        v_request.detail;
+    return;
+  end if;
   return query select v_request.id, v_request.kind, 'send'::text, v_account.email::text, v_account.id, v_member.tenant_id,
                       v_member.person_id, case when v_member.preferred_locale = 'en' then 'en' else 'ar' end,
                       v_request.attempts::integer, v_request.factor_id, v_request.mfa_reason, v_request.detail;
@@ -257,7 +341,7 @@ end
 $$;
 
 comment on function private.claim_account_mail_request() is
-  'SECURITY-RELEVANT (T-M2-17, T-M2-10). Worker: leases the oldest waiting account e-mail request and resolves account, organization and language (and, for authenticator notices, the app and why; for policy-change notices, what changed and who changed it). app_worker system claims only.';
+  'SECURITY-RELEVANT (T-M2-17, T-M2-10). Worker: leases the oldest waiting account e-mail request and resolves account, organization and language (and, for authenticator notices, the app and why; for policy-change notices, what changed and who changed it). Security notices over the account''s daily ceiling are held for its hourly digest (outcome held); due digests are queued. app_worker system claims only.';
 
 grant create on schema private to account_mail_guard;
 alter function private.claim_account_mail_request() owner to account_mail_guard;
@@ -293,6 +377,44 @@ returns interval
 language sql immutable
 set search_path = ''
 as $$ select interval '7 days' $$;
+
+-- Final re-review L2: wrong e-mailed codes per ACCOUNT (any app, any e-mail) within the window before its waiting
+-- apps are removed.
+create or replace function private.mfa_code_account_max_failures()
+returns integer
+language sql immutable
+set search_path = ''
+as $$ select 15 $$;
+
+create or replace function private.mfa_code_failure_window()
+returns interval
+language sql immutable
+set search_path = ''
+as $$ select interval '24 hours' $$;
+
+comment on function private.mfa_code_account_max_failures() is
+  'T-M2-10 (final re-review L2): wrong e-mailed set-up codes per account within private.mfa_code_failure_window() before its waiting apps are removed.';
+comment on function private.mfa_code_failure_window() is
+  'T-M2-10 (final re-review L2): the window of the per-account count of wrong e-mailed set-up codes.';
+revoke all on function private.mfa_code_account_max_failures() from public;
+revoke all on function private.mfa_code_failure_window() from public;
+grant execute on function private.mfa_code_account_max_failures() to tenant_guard;
+grant execute on function private.mfa_code_failure_window() to tenant_guard;
+
+-- Each wrong e-mailed code (account and time only; final re-review L2). tenant_guard only.
+create table private.mfa_setup_code_failures (
+  user_id uuid not null references auth.users (id) on delete cascade,
+  failed_at timestamptz not null default now()
+);
+create index mfa_setup_code_failures_user_idx on private.mfa_setup_code_failures (user_id, failed_at);
+comment on table private.mfa_setup_code_failures is
+  'SECURITY-RELEVANT (T-M2-10, final re-review L2). Wrong e-mailed set-up codes per account (time only), kept for private.mfa_code_failure_window(). tenant_guard only.';
+alter table private.mfa_setup_code_failures enable row level security;
+alter table private.mfa_setup_code_failures force row level security;
+create policy mfa_setup_code_failures_guard on private.mfa_setup_code_failures for all to tenant_guard
+  using (true) with check (true);
+revoke all on private.mfa_setup_code_failures from public;
+grant select, insert, delete on private.mfa_setup_code_failures to tenant_guard;
 
 comment on function private.mfa_code_lifetime() is
   'T-M2-10 (re-review N1): how long the e-mailed code of a new authenticator app works — and how long an app may stay unconfirmed before the worker removes it (N2).';
@@ -456,8 +578,11 @@ comment on function private.request_mfa_factor_mail(uuid) is
 
 -- The e-mailed code, entered in the session that set the app up (re-review N1): possession of the app (that
 -- session passed its code, aal2 through this factor) and of the mailbox (the code). Single use; dies after
--- private.mfa_code_max_attempts() wrong tries (the counter is kept: this function returns, never raises).
---   confirmed | invalid | expired | locked | refused (not this session's waiting app)
+-- private.mfa_code_max_attempts() wrong tries (the counter is kept: this function returns, never raises). Per
+-- account, private.mfa_code_account_max_failures() wrong codes within private.mfa_code_failure_window() remove
+-- every waiting app of the account (final re-review L2).
+--   confirmed | invalid | expired | locked | removed (too many wrong codes on the account) | refused (not this
+--   session's waiting app)
 create or replace function private.confirm_mfa_setup(p_factor_id uuid, p_code text)
 returns text
 language plpgsql volatile security definer
@@ -469,6 +594,7 @@ declare
   v_session uuid := private.try_uuid(v_claims ->> 'session_id');
   v record;
   v_attempts smallint;
+  v_apps uuid[];
 begin
   if v_user is null or v_session is null or p_factor_id is null then
     return 'refused';
@@ -499,6 +625,30 @@ begin
         code_hash = case when v_attempts >= private.mfa_code_max_attempts() then null else k.code_hash end,
         code_expires_at = case when v_attempts >= private.mfa_code_max_attempts() then null else k.code_expires_at end
     where k.factor_id = p_factor_id;
+    -- Per account (final re-review L2): new apps and new e-mails reset an app's tries, not the account's.
+    delete from private.mfa_setup_code_failures x
+    where x.user_id = v_user and x.failed_at < now() - private.mfa_code_failure_window();
+    insert into private.mfa_setup_code_failures (user_id) values (v_user);
+    if (select count(*) from private.mfa_setup_code_failures x where x.user_id = v_user)
+       >= private.mfa_code_account_max_failures() then
+      -- Every waiting app of the account goes, the sessions that passed their code end (this one too), the
+      -- owner is told once; the count starts again.
+      v_apps := array(select f.id from private.auth_mfa_factor f
+                      left join private.mfa_factor_confirmations c on c.factor_id = f.id and c.user_id = f.user_id
+                      where f.user_id = v_user and f.factor_type = 'totp' and f.status = 'verified'
+                        and c.confirmed_at is null);
+      perform private.end_sessions(
+        v_user, array(select s.id from private.auth_session_validity s
+                      where s.user_id = v_user and s.factor_id = any (v_apps)),
+        private.current_tenant_id(), 'security', null);
+      perform private.remove_account_factors(v_user, v_apps);
+      delete from private.mfa_setup_code_failures x where x.user_id = v_user;
+      perform private.audit_account_event(v_user, 'platform.auth.mfa_removed',
+                                          jsonb_build_object('method', 'totp', 'via', 'too_many_codes',
+                                                             'apps', cardinality(v_apps)), 'platform');
+      perform private.queue_mfa_mail('mfa_factor_removed', v_user, null, 'too_many_codes', null);
+      return 'removed';
+    end if;
     return case when v_attempts >= private.mfa_code_max_attempts() then 'locked' else 'invalid' end;
   end if;
   update private.mfa_factor_confirmations k
@@ -511,7 +661,7 @@ end
 $$;
 
 comment on function private.confirm_mfa_setup(uuid, text) is
-  'SECURITY-RELEVANT (T-M2-10, re-review N1, T-IAM-11). The e-mailed code of a new authenticator app, accepted only from the Auth session that set it up (aal2 through that app): from now on it counts for AAL2. Single use, expires, dies after 5 wrong tries.';
+  'SECURITY-RELEVANT (T-M2-10, re-review N1, T-IAM-11). The e-mailed code of a new authenticator app, accepted only from the Auth session that set it up (aal2 through that app): from now on it counts for AAL2. Single use, expires, dies after 5 wrong tries; 15 wrong codes on the account within 24 hours remove its waiting apps (final re-review L2).';
 
 -- The account's authenticator apps (verified in Auth) as this session sees them: confirmed or waiting, set up
 -- by THIS session or another one (when, with which browser). For the /mfa page and My profile. An app not
@@ -545,7 +695,8 @@ $$;
 comment on function private.my_mfa_apps() is
   'T-M2-10 (re-review N1). The signed-in account''s authenticator apps: confirmed or waiting, set up by this session or another (when, which browser). app_server, user claims of a live session.';
 
--- Removing an app from the web app (also the explicit factor id, never "the first one"):
+-- Removing an app from the web app (also the explicit factor id, never "the first one"). An unfinished set-up
+-- (not verified in Auth) is simply deleted (final re-review L1). A VERIFIED app:
 --   * a CONFIRMED app (My profile): this session at AAL2 through a confirmed app with a code from the last 15
 --     minutes — otherwise step_up;
 --   * a WAITING app set up by this session: cancelled;
@@ -565,13 +716,23 @@ declare
   v_tenant uuid := private.current_tenant_id();
   v record;
   v_found boolean;
+  v_status text;
   v_via text;
   v_reason text;
 begin
-  if v_user is null or v_session is null or p_factor_id is null
-     or not exists (select 1 from private.auth_mfa_factor f
-                    where f.id = p_factor_id and f.user_id = v_user and f.factor_type = 'totp') then
+  if v_user is null or v_session is null or p_factor_id is null then
     return 'refused';
+  end if;
+  select f.status::text into v_status from private.auth_mfa_factor f
+  where f.id = p_factor_id and f.user_id = v_user and f.factor_type = 'totp';
+  if not found then
+    return 'refused';
+  end if;
+  if v_status <> 'verified' then
+    -- An unfinished set-up never counted and nobody was told of it: it is simply deleted — no session ends, no
+    -- e-mail, no audit row (final re-review L1: no loop of "create, remove" can flood the owner).
+    perform private.remove_account_factors(v_user, array[p_factor_id]);
+    return 'removed';
   end if;
   select k.session_id, k.confirmed_at into v
   from private.mfa_factor_confirmations k
@@ -721,6 +882,7 @@ begin
      or coalesce(btrim(v_claims ->> 'job_id'), '') = '' then
     raise exception 'reserved to the worker' using errcode = 'insufficient_privilege';
   end if;
+  delete from private.mfa_setup_code_failures x where x.failed_at < now() - private.mfa_code_failure_window();
   for v in
     select f.id, f.user_id
     from private.auth_mfa_factor f

@@ -78,6 +78,11 @@ begin
   perform tests.assert_eq(private.mfa_code_max_attempts(), 5::smallint, 'the set-up code: 5 tries');
   perform tests.assert_eq(private.mfa_code_resend_after(), interval '2 minutes', '"send again": every 2 minutes at most');
   perform tests.assert_eq(private.mfa_remove_link_lifetime(), interval '7 days', '"not you" link: 7 days');
+  perform tests.assert_eq(private.mfa_code_account_max_failures(), 15, 'per account: 15 wrong set-up codes…');
+  perform tests.assert_eq(private.mfa_code_failure_window(), interval '24 hours', '…within 24 hours (final re-review L2)');
+  perform tests.assert_eq(private.security_notice_daily_ceiling(), 20,
+    'per account: 20 security notices a day one by one… (final re-review L1)');
+  perform tests.assert_eq(private.security_digest_after(), interval '1 hour', '…then one digest an hour');
   perform tests.assert(private.mfa_code_lifetime() > interval '24 hours'
                        and private.mfa_code_max_attempts() = (select (regexp_match(pg_get_constraintdef(c.oid), '<= (\d+)'))[1]::smallint
                                                               from pg_constraint c
@@ -93,14 +98,22 @@ begin
     'id, user_id, not_after, created_at, updated_at, user_agent, aal, factor_id', 'private.auth_session_validity: no address, no token');
   for r in select * from (values ('private.auth_mfa_factor'), ('private.auth_session_validity'),
                                  ('private.revoked_sessions'), ('private.mfa_prompt_dismissals'),
-                                 ('private.mfa_factor_confirmations')) as o (obj) loop
+                                 ('private.mfa_factor_confirmations'), ('private.mfa_setup_code_failures'),
+                                 ('private.security_notice_digests')) as o (obj) loop
     foreach v_list in array array['anon', 'authenticated', 'app_server', 'app_worker', 'app_queue', 'invitation_guard',
-                                  'account_mail_guard', 'service_role', 'supabase_auth_admin'] loop
+                                  'account_mail_guard', 'tenant_guard', 'service_role', 'supabase_auth_admin'] loop
+      continue when v_list = case when r.obj = 'private.security_notice_digests' then 'account_mail_guard'
+                                  else 'tenant_guard' end;
       perform tests.assert(not has_table_privilege(v_list, r.obj, 'select, insert, update, delete, truncate, references, trigger'),
         format('%s must have no privilege on %s', v_list, r.obj));
     end loop;
-    perform tests.assert(has_table_privilege('tenant_guard', r.obj, 'select'), format('tenant_guard reads %s', r.obj));
+    perform tests.assert(has_table_privilege(case when r.obj = 'private.security_notice_digests' then 'account_mail_guard'
+                                                  else 'tenant_guard' end, r.obj, 'select'),
+      format('its guard reads %s', r.obj));
   end loop;
+  perform tests.assert(not has_table_privilege('tenant_guard', 'private.security_notice_digests', 'select, insert, update, delete')
+                       and not has_table_privilege('account_mail_guard', 'private.mfa_setup_code_failures', 'select, insert, delete'),
+    'the digests are account_mail_guard''s alone, the wrong-code count tenant_guard''s alone');
   perform tests.assert(has_table_privilege('tenant_guard', 'private.auth_mfa_factor', 'delete')
                        and has_table_privilege('tenant_guard', 'private.auth_session_validity', 'delete')
                        and not has_table_privilege('tenant_guard', 'private.auth_mfa_factor', 'insert, update')
@@ -108,7 +121,9 @@ begin
     'tenant_guard deletes through the Auth views (removal, sign-out), never inserts or changes');
   perform tests.assert((select bool_and(relrowsecurity and relforcerowsecurity) from pg_class
                         where oid in ('private.revoked_sessions'::regclass, 'private.mfa_prompt_dismissals'::regclass,
-                                      'private.mfa_factor_confirmations'::regclass)),
+                                      'private.mfa_factor_confirmations'::regclass,
+                                      'private.mfa_setup_code_failures'::regclass,
+                                      'private.security_notice_digests'::regclass)),
     'private tables: row level security ENABLED and FORCED');
   -- tenant_guard: ends sessions and records "not now" — it cannot change ended sessions or Auth's data.
   perform tests.assert(not has_table_privilege('tenant_guard', 'private.revoked_sessions', 'update'),
@@ -535,6 +550,174 @@ begin
   perform tests.assert_eq((select data from platform.audit_events where action = 'platform.auth.mfa_removed'
                              and entity_id = '00000000-0000-4000-8000-000000000c04'),
     '{"via": "profile", "method": "totp"}'::jsonb, 'audited');
+end $$;
+rollback;
+
+-- An unfinished set-up (not verified in Auth) is simply deleted (final re-review L1): no session ends, no e-mail,
+-- no audit row — a loop of "create in Auth, remove here" tells nobody anything and ends nothing.
+begin;
+set local session authorization app_server;
+set local role authenticated;
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c05', '10000000-0000-4000-8000-000000000c51',
+                                          'a0000000-0000-4000-8000-000000000001'));
+do $$
+begin
+  perform tests.assert_eq(private.remove_mfa_app('20000000-0000-4000-8000-000000000c05'), 'removed', 'an unfinished set-up is deleted');
+end $$;
+set local session authorization default;
+do $$
+begin
+  perform tests.assert_eq((select count(*) from auth.mfa_factors where id = '20000000-0000-4000-8000-000000000c05'), 0::bigint,
+    'gone in Auth');
+  perform tests.assert_eq((select count(*) from auth.sessions where user_id = '00000000-0000-4000-8000-000000000c05'), 1::bigint,
+    'no session ends');
+  perform tests.assert_eq((select count(*) from private.revoked_sessions where user_id = '00000000-0000-4000-8000-000000000c05'),
+    0::bigint, 'nothing marked');
+  perform tests.assert_eq((select count(*) from private.account_mail_requests where user_id = '00000000-0000-4000-8000-000000000c05'),
+    0::bigint, 'no e-mail');
+  perform tests.assert_eq((select count(*) from platform.audit_events where entity_id = '00000000-0000-4000-8000-000000000c05'
+                             and action like 'platform.auth.mfa%'), 0::bigint, 'no audit row');
+end $$;
+rollback;
+
+-- 15 wrong e-mailed codes on one account within 24 hours (any app, any e-mail; final re-review L2): its waiting
+-- apps go, the sessions that passed their code end, the owner is told once, the count starts again.
+begin;
+delete from private.account_mail_requests where user_id = '00000000-0000-4000-8000-000000000c08';
+update private.mfa_factor_confirmations
+set code_hash = tests.mfa_code_hash('20000000-0000-4000-8000-000000000c08', '40718263'),
+    code_expires_at = now() + interval '1 hour', code_issued_at = now()
+where factor_id = '20000000-0000-4000-8000-000000000c08';
+-- 13 recent wrong codes (earlier apps and e-mails) and one from yesterday (outside the window).
+insert into private.mfa_setup_code_failures (user_id, failed_at)
+select '00000000-0000-4000-8000-000000000c08', now() - make_interval(mins => i) from generate_series(1, 13) i;
+insert into private.mfa_setup_code_failures (user_id, failed_at)
+values ('00000000-0000-4000-8000-000000000c08', now() - interval '25 hours');
+set local session authorization app_server;
+set local role authenticated;
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c08', '10000000-0000-4000-8000-000000000c81',
+                                          'a0000000-0000-4000-8000-000000000001') || tests.fresh_code());
+do $$
+begin
+  perform tests.assert_eq(private.confirm_mfa_setup('20000000-0000-4000-8000-000000000c08', '12345678'), 'invalid',
+    'the 14th wrong code within 24 hours (yesterday''s does not count)');
+  perform tests.assert_eq(private.confirm_mfa_setup('20000000-0000-4000-8000-000000000c08', '12345679'), 'removed',
+    'the 15th: the waiting app is removed');
+end $$;
+set local session authorization default;
+do $$
+begin
+  perform tests.assert_eq((select count(*) from auth.mfa_factors where id = '20000000-0000-4000-8000-000000000c08'), 0::bigint,
+    'the waiting app is gone in Auth');
+  perform tests.assert_eq((select string_agg(id::text, ',') from auth.sessions where user_id = '00000000-0000-4000-8000-000000000c08'),
+    '10000000-0000-4000-8000-000000000c82', 'the session that passed its code ended; the other stays');
+  perform tests.assert_eq((select string_agg(reason, ',') from private.revoked_sessions where user_id = '00000000-0000-4000-8000-000000000c08'),
+    'security', 'marked: security');
+  perform tests.assert_eq((select string_agg(mfa_reason || ':' || coalesce(factor_id::text, 'all'), ',') from private.account_mail_requests
+                           where kind = 'mfa_factor_removed' and user_id = '00000000-0000-4000-8000-000000000c08'),
+    'too_many_codes:all', 'the owner is told once');
+  perform tests.assert_eq((select data from platform.audit_events where action = 'platform.auth.mfa_removed'
+                             and entity_id = '00000000-0000-4000-8000-000000000c08' and actor_user_id is null),
+    '{"via": "too_many_codes", "apps": 1, "method": "totp"}'::jsonb, 'audited, by the platform');
+  perform tests.assert_eq((select count(*) from private.mfa_setup_code_failures where user_id = '00000000-0000-4000-8000-000000000c08'),
+    0::bigint, 'the count starts again');
+end $$;
+rollback;
+
+-- Security notices over the account's daily ceiling are merged into an hourly digest, never dropped (final
+-- re-review L1): 20 security e-mails to uM4 in the last 24 hours (any organization).
+begin;
+delete from private.account_mail_requests where user_id is distinct from '00000000-0000-4000-8000-000000000c08';
+alter table platform.message_deliveries disable trigger message_deliveries_check;
+insert into platform.message_deliveries (tenant_id, template, template_version, locale, recipient_person_id,
+    destination_masked, status, provider, sent_at, created_at)
+select 'a0000000-0000-4000-8000-000000000001', 'platform.mfa_factor_removed', 1, 'ar', 'a1000000-0000-4000-8000-000000000c08',
+       'u***@a.test', 'sent', 'smtp', now() - make_interval(hours => i), now() - make_interval(hours => i)
+from generate_series(1, 19) i;
+-- One more, but from yesterday: outside the 24 hours.
+insert into platform.message_deliveries (tenant_id, template, template_version, locale, recipient_person_id,
+    destination_masked, status, provider, sent_at, created_at)
+values ('a0000000-0000-4000-8000-000000000001', 'platform.password_changed', 1, 'ar', 'a1000000-0000-4000-8000-000000000c08',
+        'u***@a.test', 'sent', 'smtp', now() - interval '25 hours', now() - interval '25 hours');
+alter table platform.message_deliveries enable trigger message_deliveries_check;
+set local session authorization app_worker;
+set local role authenticated;
+select tests.set_claims(jsonb_build_object('role', 'system', 'job_id', 'tests.account_mail'));
+do $$
+declare
+  r record;
+begin
+  -- 19 within 24 hours: still sent on its own.
+  select * into r from private.claim_account_mail_request();
+  perform tests.assert(r.kind = 'mfa_factor_added' and r.outcome = 'send', 'under the ceiling: sent on its own');
+end $$;
+rollback;
+
+begin;
+delete from private.account_mail_requests where user_id is distinct from '00000000-0000-4000-8000-000000000c08';
+alter table platform.message_deliveries disable trigger message_deliveries_check;
+insert into platform.message_deliveries (tenant_id, template, template_version, locale, recipient_person_id,
+    destination_masked, status, provider, sent_at, created_at)
+select 'a0000000-0000-4000-8000-000000000001', 'platform.mfa_factor_removed', 1, 'ar', 'a1000000-0000-4000-8000-000000000c08',
+       'u***@a.test', 'sent', 'smtp', now() - make_interval(hours => i), now() - make_interval(hours => i)
+from generate_series(1, 20) i;
+alter table platform.message_deliveries enable trigger message_deliveries_check;
+set local session authorization app_worker;
+set local role authenticated;
+select tests.set_claims(jsonb_build_object('role', 'system', 'job_id', 'tests.account_mail'));
+do $$
+declare
+  r record;
+begin
+  select * into r from private.claim_account_mail_request();
+  perform tests.assert(r.kind = 'mfa_factor_added' and r.outcome = 'held' and r.email is null
+                       and r.user_id = '00000000-0000-4000-8000-000000000c08',
+    'at the ceiling: held for the digest, nothing to send now');
+end $$;
+set local session authorization default;
+do $$
+begin
+  perform tests.assert_eq((select count(*) from private.account_mail_requests where user_id = '00000000-0000-4000-8000-000000000c08'),
+    0::bigint, 'the request is answered');
+  perform tests.assert_eq((select held from private.security_notice_digests where user_id = '00000000-0000-4000-8000-000000000c08'),
+    '{"mfa_factor_added": 1}'::jsonb, 'merged into the account''s digest');
+  -- Another one an hour later: merged too; then the digest is due.
+  insert into private.account_mail_requests (kind, user_id, factor_id, mfa_reason)
+  values ('mfa_factor_removed', '00000000-0000-4000-8000-000000000c08', '20000000-0000-4000-8000-000000000c08', 'not_me');
+end $$;
+set local session authorization app_worker;
+set local role authenticated;
+select tests.set_claims(jsonb_build_object('role', 'system', 'job_id', 'tests.account_mail'));
+do $$
+declare
+  r record;
+begin
+  select * into r from private.claim_account_mail_request();
+  perform tests.assert(r.kind = 'mfa_factor_removed' and r.outcome = 'held', 'merged too');
+  select * into r from private.claim_account_mail_request();
+  perform tests.assert(r.id is null, 'the digest waits for its hour');
+end $$;
+set local session authorization default;
+update private.security_notice_digests set first_held_at = now() - interval '61 minutes'
+where user_id = '00000000-0000-4000-8000-000000000c08';
+set local session authorization app_worker;
+set local role authenticated;
+select tests.set_claims(jsonb_build_object('role', 'system', 'job_id', 'tests.account_mail'));
+do $$
+declare
+  r record;
+begin
+  select * into r from private.claim_account_mail_request();
+  perform tests.assert(r.kind = 'security_digest' and r.outcome = 'send' and r.email = 'um4@a.test'
+                       and r.tenant_id = 'a0000000-0000-4000-8000-000000000001'
+                       and r.detail -> 'held' = '{"mfa_factor_added": 1, "mfa_factor_removed": 1}'::jsonb
+                       and r.detail ? 'since',
+    'the digest is sent — over the ceiling too — with the held notices by kind');
+end $$;
+set local session authorization default;
+do $$
+begin
+  perform tests.assert_eq((select count(*) from private.security_notice_digests), 0::bigint, 'the digest starts again');
 end $$;
 rollback;
 

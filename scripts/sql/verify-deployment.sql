@@ -176,10 +176,11 @@ begin
       failures := failures || format('%s must not have %s on private.auth_mfa_factor', r.grantee, r.privilege_type);
     end loop;
   end if;
-  -- Ended sessions, the MFA prompt answers and the confirmed apps (T-M2-10): tenant_guard alone.
+  -- Ended sessions, the MFA prompt answers, the confirmed apps and the wrong set-up codes (T-M2-10):
+  -- tenant_guard alone.
   for r in
     select o.obj from (values ('private.revoked_sessions'), ('private.mfa_prompt_dismissals'),
-                              ('private.mfa_factor_confirmations')) as o(obj)
+                              ('private.mfa_factor_confirmations'), ('private.mfa_setup_code_failures')) as o(obj)
   loop
     if to_regclass(r.obj) is null then
       failures := failures || format('%s is missing', r.obj);
@@ -199,6 +200,20 @@ begin
       failures := failures || format('%s must have no privilege on %s', v_role, r.obj);
     end loop;
   end loop;
+  -- Security notices held for an account's digest (T-M2-10, final re-review L1): account_mail_guard alone.
+  if to_regclass('private.security_notice_digests') is null then
+    failures := failures || 'private.security_notice_digests is missing'::text;
+  else
+    for v_role in
+      select distinct case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end
+      from pg_class c, aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a
+      where c.oid = 'private.security_notice_digests'::regclass and a.grantee <> c.relowner
+        and not (a.grantee <> 0 and pg_get_userbyid(a.grantee) = 'account_mail_guard'
+                 and a.privilege_type in ('SELECT', 'INSERT', 'UPDATE', 'DELETE'))
+    loop
+      failures := failures || format('%s must have no privilege on private.security_notice_digests', v_role);
+    end loop;
+  end if;
 
   -- Invitation acceptance (FR-IAM-03): invitation_guard reads Auth users only through the view
   -- private.auth_user_email, owned by the migration role; nobody else may read the view.

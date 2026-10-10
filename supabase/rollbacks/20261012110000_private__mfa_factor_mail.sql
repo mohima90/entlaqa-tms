@@ -1,6 +1,6 @@
 -- Rollback of 20261012110000_private__mfa_factor_mail.sql: the account e-mail functions and table as in
 -- 20261010120000 (no authenticator notices), without the authenticator confirmation, removal, purge and reset
--- functions and the policy-change notice.
+-- functions, the policy-change notice, the security digests and the per-account count of wrong set-up codes.
 drop trigger security_policies_changed_mail on platform.security_policies;
 drop function private.security_policy_changed_mail();
 drop function private.reset_account_mfa(uuid, text);
@@ -17,12 +17,18 @@ drop function private.request_live_user();
 drop function private.end_all_account_sessions(uuid, uuid, uuid);
 drop function private.remove_account_factors(uuid, uuid[]);
 drop function private.queue_mfa_mail(text, uuid, uuid, text, uuid);
+drop table private.mfa_setup_code_failures;
+drop function private.mfa_code_failure_window();
+drop function private.mfa_code_account_max_failures();
 drop function private.mfa_remove_link_lifetime();
 drop function private.mfa_code_resend_after();
 drop function private.mfa_code_max_attempts();
 drop function private.mfa_code_lifetime();
 
 drop function private.claim_account_mail_request();
+drop table private.security_notice_digests;
+drop function private.security_digest_after();
+drop function private.security_notice_daily_ceiling();
 create function private.claim_account_mail_request()
 returns table (id uuid, kind text, outcome text, email text, user_id uuid, tenant_id uuid, person_id uuid,
                locale text, attempts integer)
@@ -182,7 +188,8 @@ drop policy account_mail_requests_tenant_guard on private.account_mail_requests;
 revoke all on private.account_mail_requests from tenant_guard;
 
 -- No authenticator notices may wait when this runs (they would break the restored checks).
-delete from private.account_mail_requests where kind in ('mfa_factor_added', 'mfa_factor_removed', 'security_policy_changed');
+delete from private.account_mail_requests
+where kind in ('mfa_factor_added', 'mfa_factor_removed', 'security_policy_changed', 'security_digest');
 alter table private.account_mail_requests drop constraint account_mail_requests_mfa_reason_check;
 alter table private.account_mail_requests drop constraint account_mail_requests_shape_check;
 alter table private.account_mail_requests drop constraint account_mail_requests_kind_check;

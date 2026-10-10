@@ -32,6 +32,7 @@ import {
   rejectMfaFactor,
   removeMfaApp as removeMfaAppInDatabase,
   requestAccountLockedMail,
+  requestMfaCodeLockedMail,
   requestMfaFactorMail,
   requestPasswordChangedMail,
   requestPasswordResetMail,
@@ -491,7 +492,14 @@ function codeCheckLimitFor(
   action: string,
   flow: CodeCheckFlow = 'session',
 ): CodeCheckLimit {
-  const limiter = createCodeAttemptLimiter({ ...limiterDeps(), client, action, flow });
+  const limiter = createCodeAttemptLimiter({
+    ...limiterDeps(),
+    client,
+    action,
+    flow,
+    // Wrong codes after the password paused code checks: the owner is e-mailed (integration review M1).
+    requestLockedMail: requestMfaCodeLockedMail,
+  });
   return (userId, verify, isWrongCode, options) =>
     withCodeAttemptLimit(limiter, userId, verify, isWrongCode, options);
 }

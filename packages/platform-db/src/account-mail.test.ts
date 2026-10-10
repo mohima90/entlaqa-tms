@@ -69,6 +69,22 @@ describe('account e-mail requests on the request path (T-M2-17)', () => {
     }
   });
 
+  it('queues the "wrong codes after your password" notice for the user with the pause minutes (integration review M1)', async () => {
+    const { db, executed } = fakeDb();
+    const api = createAccountMailApi(() => db);
+    await expect(api.requestMfaCodeLockedMail(USER, 15)).resolves.toBeUndefined();
+    // Without claims (the limiter's own short transaction, after the session's verified token).
+    expect(executed[1]?.params).toEqual(['']);
+    expect(executed.at(-1)).toMatchObject({
+      sql: 'select private.request_mfa_code_locked_mail($1::uuid, $2::integer)',
+      params: [USER, 15],
+    });
+    await expect(api.requestMfaCodeLockedMail('not-a-uuid', 15)).rejects.toThrow('invalid user id');
+    for (const minutes of [0, 1441, 1.5]) {
+      await expect(api.requestMfaCodeLockedMail(USER, minutes)).rejects.toThrow('lock minutes');
+    }
+  });
+
   it('passes database failures to the caller (it logs a code and answers the same)', async () => {
     const { db } = fakeDb(new Error('connection refused'));
     await expect(

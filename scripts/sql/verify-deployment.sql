@@ -336,6 +336,8 @@ begin
       -- the Organization Admin's unlock only (its owner rate_limit_guard).
       ('private.request_account_locked_mail(text, integer)', 'account_mail_guard', array['account_mail_guard', 'authenticated'], true),
       ('private.request_sign_in_unlocked_mail(uuid)', 'account_mail_guard', array['account_mail_guard', 'rate_limit_guard'], true),
+      -- The "wrong codes after your password" notice (T-M2-11 integration review M1): the web app.
+      ('private.request_mfa_code_locked_mail(uuid, integer)', 'account_mail_guard', array['account_mail_guard', 'authenticated'], true),
       -- Shared rate limiter and sign-in protection (ADR 0011 §4, T-M2-11): the web app counts, clears and
       -- checks sign-ins (app_server, checked inside); the Organization Admin functions also check the
       -- claims; the helpers and the key rotation are the owner's own.
@@ -424,7 +426,7 @@ begin
         'private.purge_unconfirmed_mfa_apps(integer)', 'private.reset_member_mfa(uuid)',
         'private.reset_account_mfa(uuid,text)',
         'private.request_account_locked_mail(text,integer)',
-        'private.request_sign_in_unlocked_mail(uuid)',
+        'private.request_sign_in_unlocked_mail(uuid)', 'private.request_mfa_code_locked_mail(uuid,integer)',
         'private.rate_limit_hit(text,bytea,integer,integer)', 'private.rate_limit_clear(text,bytea)',
         'private.rate_limit_give_back(text,bytea)', 'private.sign_in_account_in_tenant(text,uuid)',
         'private.rate_limit_sign_in_check(bytea,bytea,bytea,integer,integer,integer,integer,integer,integer,integer,integer)',

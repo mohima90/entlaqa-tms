@@ -790,6 +790,13 @@ export interface CodeAttemptLimiterDeps extends LimiterDeps {
   readonly action: string;
   /** Which account budget (default `session`: `mfaCode.accountFailures`; `reset`: `resetFailures`). */
   readonly flow?: CodeCheckFlow | undefined;
+  /**
+   * `session` flow (integration review T-M2-11 M1): requests the "wrong codes after your password" e-mail
+   * for the account (platform-db requestMfaCodeLockedMail) when a wrong code pauses its code checks —
+   * reaching a code takes the password, so someone else may know it. `lockMinutes`: how long the pause
+   * lasts. Best effort (a failure is logged); the worker sends at most one per pause.
+   */
+  readonly requestLockedMail?: ((userId: string, lockMinutes: number) => Promise<void>) | undefined;
 }
 
 export function createCodeAttemptLimiter(deps: CodeAttemptLimiterDeps): CodeAttemptLimiter {
@@ -848,7 +855,7 @@ export function createCodeAttemptLimiter(deps: CodeAttemptLimiterDeps): CodeAtte
         return { allowed: false, retryAfterSeconds };
       }
       const attempt: CodeAttempt = {
-        failed() {
+        async failed() {
           log({ event: 'auth.mfa_code.failed', action, reason: 'invalid_code', ...refs });
           for (const [bucket, counter] of [
             [accountBucket, byAccount],
@@ -865,7 +872,22 @@ export function createCodeAttemptLimiter(deps: CodeAttemptLimiterDeps): CodeAtte
               });
             }
           }
-          return Promise.resolve();
+          // This wrong code paused the session's code checks for the account (once per pause: the hit that
+          // used the budget up): its owner is told someone who knows the password is trying codes.
+          if (reset || byAccount.remaining !== 0 || !deps.requestLockedMail) return;
+          try {
+            await deps.requestLockedMail(
+              userId,
+              Math.max(1, Math.ceil(accountFailures.windowSeconds / 60)),
+            );
+          } catch (error) {
+            log({
+              event: 'auth.limiter.unavailable',
+              action,
+              reason: 'lock_mail_not_requested',
+              errorName: errorNameOf(error),
+            });
+          }
         },
         async succeeded() {
           // The run of wrong codes ends for the account; the client's provisional failure is given back.

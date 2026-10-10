@@ -20,6 +20,7 @@ export const REQUIRED_DATABASE_FUNCTIONS = [
   'rate_limit_forget_other_devices(bytea, bytea)',
   'member_sign_in_lock(uuid, integer)',
   'request_account_locked_mail(text, integer)',
+  'request_mfa_code_locked_mail(uuid, integer)',
   'unlock_member_sign_in(uuid, integer)',
 ] as const;
 

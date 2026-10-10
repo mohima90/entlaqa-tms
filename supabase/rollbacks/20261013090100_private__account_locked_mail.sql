@@ -1,9 +1,17 @@
 -- Rollback of 20261013090100_private__account_locked_mail.sql: the account-mail pipeline as T-M2-10 left it
--- (20261012110000) — its lease, kinds, shapes and request lifetimes — without `account_locked` and
--- `sign_in_unlocked`; no Organization Admin unlock. Waiting requests of both kinds are dropped (the locks
--- themselves are unaffected). Roll back the web app and the worker first.
-delete from private.account_mail_requests where kind in ('account_locked', 'sign_in_unlocked');
+-- (20261012110000) — its lease, kinds, shapes and request lifetimes — without `account_locked`,
+-- `sign_in_unlocked` and `mfa_code_locked`; no Organization Admin unlock. Waiting requests of these kinds
+-- are dropped, and held "wrong codes" notices leave the security digests (T-M2-10's digest knows only its
+-- own kinds); the locks themselves are unaffected. Roll back the web app and the worker first.
+delete from private.account_mail_requests where kind in ('account_locked', 'sign_in_unlocked', 'mfa_code_locked');
+update private.security_notice_digests g set held = g.held - 'mfa_code_locked' where g.held ? 'mfa_code_locked';
+delete from private.security_notice_digests g where g.held = '{}'::jsonb;
+update private.account_mail_requests r
+set detail = pg_catalog.jsonb_set(r.detail, '{held}', (r.detail -> 'held') - 'mfa_code_locked')
+where r.kind = 'security_digest' and r.detail -> 'held' ? 'mfa_code_locked';
+delete from private.account_mail_requests r where r.kind = 'security_digest' and r.detail -> 'held' = '{}'::jsonb;
 
+drop function private.request_mfa_code_locked_mail(uuid, integer);
 drop function private.unlock_member_sign_in(uuid, integer);
 drop function private.request_sign_in_unlocked_mail(uuid);
 drop function private.request_account_locked_mail(text, integer);

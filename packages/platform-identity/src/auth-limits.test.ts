@@ -1300,6 +1300,8 @@ describe('createCodeAttemptLimiter / withCodeAttemptLimit (authenticator codes, 
   const setup = (client: { key: string | null } = CLIENT, store?: RateLimitStore) => {
     const memory = memoryStore();
     const events: SecurityEvent[] = [];
+    const lockMails: { userId: string; minutes: number }[] = [];
+    let mailFails = false;
     const limiter = (c = client, flow: CodeCheckFlow = 'session') =>
       createCodeAttemptLimiter({
         store: store ?? memory.store,
@@ -1308,8 +1310,21 @@ describe('createCodeAttemptLimiter / withCodeAttemptLimit (authenticator codes, 
         client: c,
         action: flow === 'reset' ? 'platform.auth.password_reset' : 'platform.auth.mfa_verify',
         flow,
+        requestLockedMail: (userId, minutes) => {
+          if (mailFails) return Promise.reject(new Error('queue down for someone@example.test'));
+          lockMails.push({ userId, minutes });
+          return Promise.resolve();
+        },
       });
-    return { limiter, events, memory };
+    return {
+      limiter,
+      events,
+      memory,
+      lockMails,
+      failMails: () => {
+        mailFails = true;
+      },
+    };
   };
   const wrongCode = () => Promise.resolve(err(appError('VALIDATION_FAILED')));
   const isWrong = (e: { code: string }) => e.code === 'VALIDATION_FAILED';
@@ -1418,6 +1433,44 @@ describe('createCodeAttemptLimiter / withCodeAttemptLimit (authenticator codes, 
     ]);
     // Wrong codes on the reset page do not count against the session's budget either.
     expect((await session().check(USER)).allowed).toBe(true);
+  });
+
+  it('the wrong code that pauses code checks e-mails the owner — once per pause, never from the reset page (integration review M1)', async () => {
+    const { limiter, lockMails } = setup();
+    for (let i = 0; i < 4; i += 1) await withCodeAttemptLimit(limiter(), USER, wrongCode, isWrong);
+    expect(lockMails).toEqual([]);
+    // The 5th wrong code pauses code checks: one request, with the pause's minutes.
+    await withCodeAttemptLimit(limiter(), USER, wrongCode, isWrong);
+    expect(lockMails).toEqual([{ userId: USER, minutes: 15 }]);
+    // Further tries while paused are refused before Auth and request nothing more.
+    for (let i = 0; i < 3; i += 1) {
+      const r = await withCodeAttemptLimit(limiter(OTHER_CLIENT), USER, wrongCode, isWrong);
+      expect(!r.ok && r.error.code).toBe('RATE_LIMITED');
+    }
+    expect(lockMails).toHaveLength(1);
+    // Wrong codes on the reset page (the mailbox's owner) never send it.
+    const other = '22222222-2222-4222-8222-222222222222';
+    for (let i = 0; i < 6; i += 1) {
+      await withCodeAttemptLimit(limiter(CLIENT, 'reset'), other, wrongCode, isWrong);
+    }
+    expect(lockMails).toHaveLength(1);
+  });
+
+  it('a lock e-mail that cannot be requested is logged, never thrown (the wrong code still counts)', async () => {
+    const { limiter, events, failMails } = setup();
+    failMails();
+    for (let i = 0; i < 5; i += 1) {
+      const r = await withCodeAttemptLimit(limiter(), USER, wrongCode, isWrong);
+      expect(!r.ok && r.error.code).toBe('VALIDATION_FAILED');
+    }
+    expect(events.find((e) => e.reason === 'lock_mail_not_requested')).toEqual({
+      event: 'auth.limiter.unavailable',
+      action: 'platform.auth.mfa_verify',
+      reason: 'lock_mail_not_requested',
+      errorName: 'Error',
+    });
+    expect(JSON.stringify(events)).not.toContain('someone@example.test');
+    expect((await limiter().check(USER)).allowed).toBe(false);
   });
 
   it('fails closed when the limiter cannot answer: Auth is never asked', async () => {

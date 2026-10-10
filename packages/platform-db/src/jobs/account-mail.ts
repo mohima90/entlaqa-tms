@@ -8,8 +8,9 @@ import type { ClaimsTx } from '../claims-tx';
  * organization's transaction that queues the e-mail. Only the definer functions reach the queue. T-M2-10
  * adds the security notices: the authenticator set-up e-mail (its one-time code and "not you" link) and
  * removal notice, the policy-change notice, and the digest of the notices over an account's daily ceiling.
- * T-M2-11 (migration 20261013090100) adds `account_locked` (sign-in paused after failed attempts) and `sign_in_unlocked`
- * (the Organization Admin ended the pause).
+ * T-M2-11 (migration 20261013090100) adds `account_locked` (sign-in paused after failed attempts),
+ * `sign_in_unlocked` (the Organization Admin ended the pause) and `mfa_code_locked` (wrong codes after the
+ * password paused code checks — a security notice, integration review M1).
  */
 export const ACCOUNT_MAIL_KINDS = [
   'password_reset',
@@ -20,6 +21,7 @@ export const ACCOUNT_MAIL_KINDS = [
   'security_digest',
   'account_locked',
   'sign_in_unlocked',
+  'mfa_code_locked',
 ] as const;
 export type AccountMailKind = (typeof ACCOUNT_MAIL_KINDS)[number];
 
@@ -32,6 +34,7 @@ export const DIGESTED_KINDS = [
   'mfa_factor_removed',
   'security_policy_changed',
   'password_changed',
+  'mfa_code_locked',
 ] as const;
 export type DigestedKind = (typeof DIGESTED_KINDS)[number];
 
@@ -119,7 +122,10 @@ export type AccountMailRequest =
       readonly tenantId: string;
       readonly personId: string;
       readonly locale: 'ar' | 'en';
-      /** account_locked (T-M2-11): how long the sign-in lock lasts; null for the other kinds. */
+      /**
+       * account_locked (T-M2-11): how long the sign-in lock lasts; mfa_code_locked: how long code checks
+       * pause; null for the other kinds.
+       */
       readonly lockMinutes: number | null;
     })
   | (RequestBase & { readonly outcome: AccountMailSkip });
@@ -180,7 +186,8 @@ export async function claimAccountMailRequest(tx: ClaimsTx): Promise<AccountMail
     if (!row.email || !row.user_id || !row.tenant_id || !row.person_id) {
       throw new Error('claimAccountMailRequest: incomplete recipient');
     }
-    if (kind === 'account_locked' && !(Number(row.lock_minutes) >= 1)) {
+    const locked = kind === 'account_locked' || kind === 'mfa_code_locked';
+    if (locked && !(Number(row.lock_minutes) >= 1)) {
       throw new Error('claimAccountMailRequest: lock minutes missing');
     }
     return {
@@ -191,7 +198,7 @@ export async function claimAccountMailRequest(tx: ClaimsTx): Promise<AccountMail
       tenantId: row.tenant_id,
       personId: row.person_id,
       locale: row.locale === 'en' ? 'en' : 'ar',
-      lockMinutes: kind === 'account_locked' ? Number(row.lock_minutes) : null,
+      lockMinutes: locked ? Number(row.lock_minutes) : null,
     };
   }
   if (!SKIPS.has(row.outcome)) throw new Error('claimAccountMailRequest: unknown outcome');

@@ -385,6 +385,17 @@ select private.request_account_locked_mail('nobody@nowhere.test', 15);
 select private.request_account_locked_mail('not an address', 15);
 select private.request_account_locked_mail('uab2@ab.test', 0);
 
+-- The "wrong codes after your password" request (integration review M1): without claims (the limiter's own
+-- transaction), one waiting request per account (checked in 72), nothing for an unknown account or an
+-- invalid duration; a user is required.
+select private.request_mfa_code_locked_mail('00000000-0000-4000-8000-0000000000ab', 15);
+select private.request_mfa_code_locked_mail('00000000-0000-4000-8000-0000000000ab', 15);
+select private.request_mfa_code_locked_mail('00000000-0000-4000-8000-00000000dead', 15);
+select private.request_mfa_code_locked_mail('00000000-0000-4000-8000-0000000000a1', 0);
+select private.request_mfa_code_locked_mail('00000000-0000-4000-8000-0000000000a1', 1441);
+select tests.assert_fails($$select private.request_mfa_code_locked_mail(null, 15)$$, array['42501'],
+  'the "wrong codes" notice names its account');
+
 -- No direct access: neither the keys, nor the counters, nor the trusted browsers, nor the helpers, nor the
 -- unlock notice (requested by the unlock itself only).
 select tests.assert_privilege_denied('select * from private.rate_limit_secret', 'app_server cannot read the limiter keys');
@@ -401,6 +412,16 @@ select tests.assert_privilege_denied($$select private.rotate_rate_limit_keys()$$
 select tests.assert_privilege_denied($$select private.request_sign_in_unlocked_mail('00000000-0000-4000-8000-0000000000ab')$$,
   'app_server cannot request the unlock notice itself');
 commit;
+
+-- With claims, the "wrong codes" notice is only ever for the signed-in user (integration review M1).
+begin;
+set local role authenticated;
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
+                                          'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1'));
+select tests.assert_fails($$select private.request_mfa_code_locked_mail('00000000-0000-4000-8000-0000000000ab', 15)$$,
+  array['42501'], 'with claims: never for another account');
+select private.request_mfa_code_locked_mail('00000000-0000-4000-8000-0000000000a1', 15);
+rollback;
 
 -- Accounts locked by failures (uAB 'uab@ab.test' and the former member uRev 'urev@a.test', subjects as the
 -- web app derives them), then the Organization Admin of A (uA) sees the lock of their member and ends it.

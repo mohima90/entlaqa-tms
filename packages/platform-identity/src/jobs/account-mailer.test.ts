@@ -411,6 +411,71 @@ describe('account mailer (T-M2-17): reset e-mail and "password changed" notice',
     }
   });
 
+  it('"wrong codes after your password" (integration review M1): a security notice, at most one per pause', async () => {
+    expect(SECURITY_NOTICE_KINDS.has('mfa_code_locked')).toBe(true);
+    queue(send({ kind: 'mfa_code_locked', locale: 'en', lockMinutes: 15 }));
+    const { task, issue, log } = setup();
+    await task.run({ jobId: 'j' });
+    expect(issue).not.toHaveBeenCalled();
+    // One per pause: the context counts this template's e-mails to the person within the pause's minutes.
+    expect(db.loadAccountMailContext).toHaveBeenCalledWith(
+      tenantTx,
+      PERSON,
+      'platform.mfa_code_locked',
+      15,
+    );
+    const email = queued();
+    expect(email).toMatchObject({
+      template: 'platform.mfa_code_locked',
+      locale: 'en',
+      to: EMAIL,
+      recipientPersonId: PERSON,
+    });
+    expect(email.variables).toEqual({
+      organizationName: { ar: 'شركة الراية', en: 'Al Raya' },
+      lockMinutes: 15,
+      forgotPasswordUrl: { ar: `${BASE}/ar/forgot-password`, en: `${BASE}/en/forgot-password` },
+      loginEmail: EMAIL,
+    });
+    expect(log).toHaveBeenCalledWith('info', 'account e-mail queued (mfa_code_locked)');
+
+    // Already told within this pause: answered without another e-mail.
+    mail.queueEmail.mockClear();
+    queue(send({ kind: 'mfa_code_locked', lockMinutes: 15 }));
+    db.loadAccountMailContext.mockResolvedValueOnce({
+      organizationName: { ar: 'شركة الراية', en: null },
+      recipientName: { ar: 'سارة', en: null },
+      recentCount: 1,
+      quietCount: 1,
+      tenantRecentCount: 0,
+    });
+    const again = setup();
+    await again.task.run({ jobId: 'j' });
+    expect(mail.queueEmail).not.toHaveBeenCalled();
+    expect(again.log).toHaveBeenCalledWith(
+      'info',
+      'account e-mail not sent (already_notified) (mfa_code_locked)',
+    );
+
+    // A security notice: never dropped by the hourly cap (logged), and no organization ceiling (that is
+    // the lockout e-mail's); the database holds it for the digest over the daily ceiling.
+    queue(send({ kind: 'mfa_code_locked', lockMinutes: 15 }));
+    db.loadAccountMailContext.mockResolvedValueOnce({
+      organizationName: { ar: 'شركة الراية', en: null },
+      recipientName: { ar: 'سارة', en: null },
+      recentCount: ACCOUNT_MAIL_HOURLY_CAP,
+      quietCount: 0,
+      tenantRecentCount: 500,
+    });
+    const busy = setup();
+    await busy.task.run({ jobId: 'j' });
+    expect(mail.queueEmail).toHaveBeenCalledTimes(1);
+    expect(busy.log).toHaveBeenCalledWith(
+      'warning',
+      'security notice over the hourly cap sent anyway (mfa_code_locked)',
+    );
+  });
+
   it('"sign-in unlocked" (T-M2-11 M1): the owner is told in the unlocking organization; no Auth call; hourly cap only', async () => {
     queue(send({ kind: 'sign_in_unlocked', locale: 'ar' }));
     const { task, issue, log } = setup();
@@ -692,6 +757,7 @@ describe('account mailer (T-M2-10): authenticator app and security settings noti
 
   it('security notices are never dropped by the hourly cap — logged instead (re-review N3)', async () => {
     expect([...SECURITY_NOTICE_KINDS].sort()).toEqual([
+      'mfa_code_locked',
       'mfa_factor_added',
       'mfa_factor_removed',
       'password_changed',

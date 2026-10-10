@@ -18,6 +18,7 @@ export {
   createAccountMailApi,
   queueOwnPasswordChangedMail,
   requestAccountLockedMail,
+  requestMfaCodeLockedMail,
   requestPasswordChangedMail,
   requestPasswordResetMail,
 } from './account-mail';

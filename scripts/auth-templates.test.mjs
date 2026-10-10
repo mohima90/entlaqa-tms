@@ -221,6 +221,22 @@ describe('Auth e-mail templates (T-M2-08)', () => {
     // Everything else of Storage is refused; uploads never replace an object; downloads never render.
     expect(published).toContain('location ^~ /storage/ { return 404; }');
     expect(published).toContain('proxy_set_header X-Upsert "";');
+    // No visitor or client-address header reaches Storage from the browser either: both Storage locations
+    // clear each one, and nothing forwards the caller's address (integration review).
+    const storageRoutes = published.slice(
+      published.indexOf('location ^~ /storage/v1/object/upload/sign/'),
+      published.indexOf('location ^~ /storage/ {'),
+    );
+    for (const header of [
+      'X-Jadarat-Client',
+      'X-Jadarat-Rate-Limit-Key',
+      'X-Real-IP',
+      'X-Forwarded-For',
+      'Forwarded',
+    ]) {
+      expect(storageRoutes.split(`proxy_set_header ${header} "";`)).toHaveLength(3);
+    }
+    expect(storageRoutes).not.toContain('$proxy_add_x_forwarded_for');
     expect(published).toContain(
       `add_header Content-Security-Policy "default-src 'none'; sandbox" always;`,
     );

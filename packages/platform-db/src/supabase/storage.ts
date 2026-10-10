@@ -119,7 +119,8 @@ export function readStorageInternalOrigin(
  * Visitor and client-address headers that never reach Storage (integration review L2): T-M2-11's visitor
  * key for Auth's per-IP limits (`X-Jadarat-Client` — its configured name is passed on top, see
  * storageRoutingFetch), the key the gateway hands to Auth, and the usual client-IP headers. Storage needs
- * none of them, and the visitor's address must not reach it (nor its logs).
+ * none of them, and the visitor's address must not reach it (nor its logs). Self-hosted, the gateway clears
+ * the same set on every Storage route — the app's signing port 8445 and the browsers' port 8443.
  */
 export const STORAGE_STRIPPED_HEADERS: readonly string[] = [
   'x-jadarat-client',

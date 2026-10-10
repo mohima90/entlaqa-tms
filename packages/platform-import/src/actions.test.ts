@@ -58,6 +58,7 @@ function record(overrides: Record<string, unknown> = {}) {
     fileId: 'f1',
     fileName: 'staff.csv',
     mine: true,
+    mayUndo: true,
     sheets: [{ name: '', rows: 3, columns: 3 }],
     reviewCounts: { total: 3, new: 2, existing: 1, skipped: 0, errors: 0, warnings: 'x' },
     reviewFileId: 'r1',
@@ -424,7 +425,14 @@ describe('queries', () => {
     ]);
     expect(view.roles).not.toContain('hr_manager');
 
-    db.getUserImport.mockResolvedValueOnce(record({ mine: false }));
+    // An Organization Admin viewing someone else's import: no columns, but the undo preview (counts).
+    db.getUserImport.mockResolvedValueOnce(record({ status: 'finished', mine: false }));
+    const admin = await run(actions.userImportQueryDefinition(), { importId: ID });
+    expect(admin.value).toMatchObject({ columns: [], undo: { added: 2, accepted: 0, updated: 1 } });
+    // Anyone else: neither.
+    db.getUserImport.mockResolvedValueOnce(
+      record({ status: 'finished', mine: false, mayUndo: false }),
+    );
     const other = await run(actions.userImportQueryDefinition(), { importId: ID });
     expect(other.value).toMatchObject({ columns: [], undo: null });
     db.getUserImport.mockResolvedValueOnce(null);

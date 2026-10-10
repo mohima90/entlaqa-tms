@@ -10,11 +10,19 @@ const Link = z.string().max(2000).refine(isSafeLink, 'https link');
 
 /**
  * "Authenticator app removed" (FR-IAM-12; T-M2-10; TM-0003 T-IAM-10/11): every removal or reset of an
- * account's authenticator app is e-mailed — by the account itself (My profile), with the "not you" link of
- * the set-up e-mail, by an Organization Admin, or by ENTLAQA support after an identity check. Its only link
- * is the "forgot password" page in each language — nothing that signs anyone in.
+ * account's authenticator app is e-mailed — by the account itself (My profile, or its own set-up cancelled),
+ * as "not you" (the set-up e-mail's link, or "an app was added from another sign-in" → Remove), by an
+ * Organization Admin, by ENTLAQA support after an identity check, or because nobody entered the e-mailed code
+ * within 72 hours (re-review N2). Its only link is the "forgot password" page in each language — nothing that
+ * signs anyone in.
  */
-export const MFA_REMOVAL_REASONS = ['removed', 'not_me', 'admin_reset', 'support_reset'] as const;
+export const MFA_REMOVAL_REASONS = [
+  'removed',
+  'not_me',
+  'admin_reset',
+  'support_reset',
+  'expired',
+] as const;
 type Reason = (typeof MFA_REMOVAL_REASONS)[number];
 
 export const MfaFactorRemovedVariables = z.strictObject({
@@ -33,12 +41,15 @@ const LEAD: Readonly<Record<AppLocale, Readonly<Record<Reason, string>>>> = {
     not_me: 'بناءً على طلبك، أُزيل تطبيق المصادقة الذي أُعدّ للتو من الحساب',
     admin_reset: 'أعاد مدير المنشأة ضبط تطبيق المصادقة للحساب',
     support_reset: 'أعاد دعم ENTLAQA ضبط تطبيق المصادقة للحساب بعد التحقق من الهوية',
+    expired: 'أُزيل تطبيق مصادقة لم يُدخَل رمز تأكيده خلال 72 ساعة من الحساب',
   },
   en: {
     removed: 'The authenticator app was removed from',
     not_me: 'As you asked, the authenticator app that was just set up was removed from',
     admin_reset: "Your organization's administrator reset the authenticator app of",
     support_reset: 'After checking your identity, ENTLAQA support reset the authenticator app of',
+    expired:
+      'An authenticator app whose e-mailed code was not entered within 72 hours was removed from',
   },
 };
 
@@ -60,6 +71,10 @@ const AROUND: Readonly<Record<AppLocale, Readonly<Record<Reason, readonly [strin
     ],
     admin_reset: [RESET_AR, ' وإبلاغ مدير المنشأة.'],
     support_reset: [RESET_AR, ' وإبلاغ مدير المنشأة.'],
+    expired: [
+      'أُنهيت جلسات الدخول التي استخدمته. إن كان منك، يمكنك إعداده من جديد. وإن لم يكن منك، يلزم تعيين كلمة مرور جديدة من صفحة ',
+      ' وإبلاغ مدير المنشأة.',
+    ],
   },
   en: {
     removed: [
@@ -72,6 +87,10 @@ const AROUND: Readonly<Record<AppLocale, Readonly<Record<Reason, readonly [strin
     ],
     admin_reset: [RESET_EN, " page and tell your organization's administrator."],
     support_reset: [RESET_EN, " page and tell your organization's administrator."],
+    expired: [
+      "The sign-in sessions that used it have ended. If it was you, set it up again. If it wasn't, set a new password on the ",
+      " page and tell your organization's administrator.",
+    ],
   },
 };
 

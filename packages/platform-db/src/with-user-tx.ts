@@ -1,5 +1,10 @@
 import 'server-only';
-import { type JwtClaims, JwtClaimsSchema, type VerifiedClaims } from '@jadarat/platform-core';
+import {
+  type JwtClaims,
+  JwtClaimsSchema,
+  type VerifiedClaims,
+  codeVerifiedAt,
+} from '@jadarat/platform-core';
 import { sql } from 'drizzle-orm';
 import { type ClaimsTx, runWithClaims } from './claims-tx';
 import { type AppDatabase, getDatabase } from './client';
@@ -16,12 +21,21 @@ export type UserTx = ClaimsTx;
  */
 const DATABASE_CLAIM_KEYS = ['sub', 'role', 'session_id', 'tenant_id', 'person_id', 'aal'] as const;
 
-/** The allow-listed subset of verified user claims that withUserTx hands to PostgreSQL. */
+/**
+ * Plus one DERIVED claim, `code_at` (T-M2-10 re-review): when the session last passed an authenticator code
+ * (the newest `totp` entry of the verified token's `amr`, seconds since the epoch, as a string). The database
+ * checks the 15-minute rule of high-risk changes with it itself (private.request_code_fresh) — the `amr`
+ * array itself stays out.
+ */
 export function databaseClaims(claims: JwtClaims): Readonly<Record<string, string>> {
   const subset: Record<string, string> = {};
   for (const key of DATABASE_CLAIM_KEYS) {
     const value = claims[key];
     if (typeof value === 'string') subset[key] = value;
+  }
+  const codeAt = codeVerifiedAt(claims);
+  if (codeAt !== null && codeAt.getTime() > 0) {
+    subset.code_at = String(Math.floor(codeAt.getTime() / 1000));
   }
   return subset;
 }

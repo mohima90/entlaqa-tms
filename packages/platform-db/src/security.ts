@@ -166,7 +166,7 @@ export interface SessionAccess {
   readonly mfaDeadline: Date | null;
   /** The account uses a CONFIRMED authenticator app (review H1). */
   readonly usesApp: boolean;
-  /** An app was set up but waits for its e-mailed confirmation (it does not count yet). */
+  /** An app was set up but waits for its e-mailed code (it does not count yet) — here or elsewhere. */
   readonly mfaPending: boolean;
   /** The session is at AAL2 as the database counts it: a code from a confirmed app. */
   readonly aal2: boolean;
@@ -207,24 +207,88 @@ export async function applyDeviceLimit(tx: UserTx): Promise<number> {
   return Number(row?.ended ?? 0);
 }
 
+export const MFA_FACTOR_MAIL_OUTCOMES = ['queued', 'waiting', 'too_soon', 'refused'] as const;
+export type MfaFactorMailOutcome = (typeof MFA_FACTOR_MAIL_OUTCOMES)[number];
+
 /**
- * After the signed-in account set up an authenticator app (or "send the e-mail again" with null): the
- * database records it as waiting for confirmation, audits it and queues the set-up e-mail with its
- * confirmation and "not you" links (review H1). True when an e-mail was queued.
+ * After this session set up an authenticator app (it passed the app's first code), or "send the e-mail
+ * again" from that session (re-review N1): the database records the app as waiting with THIS session, audits
+ * it and queues the set-up e-mail (one-time code, "not you" link). queued | waiting (one is on its way) |
+ * too_soon (the last one is under 2 minutes old) | refused (not this session's app).
  */
-export async function requestMfaFactorMail(tx: UserTx, factorId: string | null): Promise<boolean> {
+export async function requestMfaFactorMail(
+  tx: UserTx,
+  factorId: string,
+): Promise<MfaFactorMailOutcome> {
   const [row] = await tx.execute(
-    sql`select private.request_mfa_factor_mail(${factorId}::uuid) as queued`,
+    sql`select private.request_mfa_factor_mail(${factorId}::uuid) as outcome`,
   );
-  return row?.queued === true;
+  return MFA_FACTOR_MAIL_OUTCOMES.find((o) => o === row?.outcome) ?? 'refused';
 }
 
-/** After the account removed its own app in Auth: audit row and notice. True when queued. */
-export async function requestMfaRemovedMail(tx: UserTx, factorId: string): Promise<boolean> {
+export const MFA_SETUP_CONFIRMATIONS = [
+  'confirmed',
+  'invalid',
+  'expired',
+  'locked',
+  'refused',
+] as const;
+export type MfaSetupConfirmation = (typeof MFA_SETUP_CONFIRMATIONS)[number];
+
+/**
+ * The e-mailed code of a new app (re-review N1), accepted only from the session that set the app up (aal2
+ * through that app): from then on it counts for AAL2. invalid (wrong code — tries are counted) | expired |
+ * locked (5 wrong tries: "send again") | refused (not this session's waiting app).
+ */
+export async function confirmMfaSetup(
+  tx: UserTx,
+  factorId: string,
+  code: string,
+): Promise<MfaSetupConfirmation> {
   const [row] = await tx.execute(
-    sql`select private.request_mfa_removed_mail(${factorId}::uuid) as queued`,
+    sql`select private.confirm_mfa_setup(${factorId}::uuid, ${code}) as outcome`,
   );
-  return row?.queued === true;
+  return MFA_SETUP_CONFIRMATIONS.find((o) => o === row?.outcome) ?? 'refused';
+}
+
+/** One of the account's authenticator apps, as this session sees it (re-review N1). */
+export interface MyMfaApp {
+  readonly factorId: string;
+  /** Confirmed with the e-mailed code: it counts for AAL2. */
+  readonly confirmed: boolean;
+  /** Set up by THIS session (only it can confirm it). */
+  readonly here: boolean;
+  readonly setUpAt: Date;
+  /** The browser that set it up (Auth's user agent; shown parsed, never logged). */
+  readonly userAgent: string | null;
+}
+
+/** The account's authenticator apps (verified in Auth): confirmed first. Empty without a live session. */
+export async function listMyMfaApps(tx: UserTx): Promise<MyMfaApp[]> {
+  const rows = await tx.execute(
+    sql`select factor_id, confirmed, here, set_up_at, user_agent from private.my_mfa_apps()`,
+  );
+  return rows.map((row) => ({
+    factorId: row.factor_id as string,
+    confirmed: row.confirmed === true,
+    here: row.here === true,
+    setUpAt: date(row.set_up_at) ?? new Date(0),
+    userAgent: (row.user_agent as string | null) ?? null,
+  }));
+}
+
+export const MFA_APP_REMOVALS = ['removed', 'step_up', 'refused'] as const;
+export type MfaAppRemoval = (typeof MFA_APP_REMOVALS)[number];
+
+/**
+ * Removes one of the account's apps in the database (never Auth's own unenroll; re-review N1): a confirmed
+ * one needs AAL2 with a code from the last 15 minutes (else step_up); this session's own set-up is
+ * cancelled; an app added from ANOTHER sign-in is removed and every other session of the account ends.
+ * Audited and e-mailed by the database.
+ */
+export async function removeMfaApp(tx: UserTx, factorId: string): Promise<MfaAppRemoval> {
+  const [row] = await tx.execute(sql`select private.remove_mfa_app(${factorId}::uuid) as outcome`);
+  return MFA_APP_REMOVALS.find((o) => o === row?.outcome) ?? 'refused';
 }
 
 export const MEMBER_MFA_RESETS = [
@@ -238,8 +302,9 @@ export type MemberMfaReset = (typeof MEMBER_MFA_RESETS)[number];
 
 /**
  * An Organization Admin resets a member's authenticator apps (PO answer, 9 Oct 2026; TM-0003 T-IAM-10):
- * checked by the database too (Organization Admin, AAL2 through a confirmed app, a member they may
- * manage whose login belongs to no other organization). Throws insufficient_privilege (42501) otherwise.
+ * checked by the database too (Organization Admin, AAL2 through a confirmed app with a code from the last
+ * 15 minutes, a member they may manage whose login belongs to no other organization). Throws
+ * insufficient_privilege (42501) otherwise.
  */
 export async function resetMemberMfa(tx: UserTx, personId: string): Promise<MemberMfaReset> {
   const [row] = await tx.execute(
@@ -302,13 +367,11 @@ export const DEFAULT_LOCKOUT_POLICY: LockoutPolicy = { threshold: 5, minutes: 15
 
 const Uuid = z.uuid();
 
-/** What an e-mailed authenticator link did (review H1). */
-export type MfaLinkOutcome = 'confirmed' | 'removed' | 'expired' | 'invalid';
+/** What the e-mailed "not you? remove this app" link did (review H1). */
+export type MfaLinkOutcome = 'removed' | 'expired' | 'invalid';
 
 /** Request-path calls that run before any session (app_server, no claims). */
 export interface PreSessionSecurityApi {
-  /** The set-up e-mail's confirmation link (SHA-256 of its token): the app counts from now on. */
-  confirmMfaFactor(tokenHash: Buffer): Promise<'confirmed' | 'expired' | 'invalid'>;
   /** The set-up e-mail's "not you" link: removes that app and ends every session of the account. */
   rejectMfaFactor(tokenHash: Buffer): Promise<'removed' | 'expired' | 'invalid'>;
   /** A new account accepting this invitation follows its organization's rule (at least 12). */
@@ -328,12 +391,6 @@ export function createPreSessionSecurityApi(getDb: () => AppDatabase): PreSessio
   const linkOutcome = <T extends string>(value: unknown, allowed: readonly T[]): T | 'invalid' =>
     allowed.find((o) => o === value) ?? 'invalid';
   return {
-    async confirmMfaFactor(tokenHash) {
-      const [row] = await withoutClaims((tx) =>
-        tx.execute(sql`select private.confirm_mfa_factor(${tokenHash}::bytea) as outcome`),
-      );
-      return linkOutcome(row?.outcome, ['confirmed', 'expired'] as const);
-    },
     async rejectMfaFactor(tokenHash) {
       const [row] = await withoutClaims((tx) =>
         tx.execute(sql`select private.reject_mfa_factor(${tokenHash}::bytea) as outcome`),
@@ -366,10 +423,6 @@ export function createPreSessionSecurityApi(getDb: () => AppDatabase): PreSessio
 }
 
 const defaultPreSessionApi = createPreSessionSecurityApi(() => getDatabase('app_server'));
-
-export function confirmMfaFactor(tokenHash: Buffer): Promise<'confirmed' | 'expired' | 'invalid'> {
-  return defaultPreSessionApi.confirmMfaFactor(tokenHash);
-}
 
 export function rejectMfaFactor(tokenHash: Buffer): Promise<'removed' | 'expired' | 'invalid'> {
   return defaultPreSessionApi.rejectMfaFactor(tokenHash);

@@ -12,10 +12,12 @@ import {
   ACCOUNT_MAIL_BATCH,
   ACCOUNT_MAIL_HOURLY_CAP,
   ACCOUNT_MAIL_TASK,
-  MFA_CONFIRM_VALID_HOURS,
+  MFA_CODE_VALID_HOURS,
   MFA_REMOVE_VALID_DAYS,
   type RecoveryLinks,
+  SECURITY_NOTICE_KINDS,
   createAccountMailer,
+  hashMfaSetupCode,
 } from './index';
 
 const db = vi.hoisted(() => ({
@@ -126,8 +128,11 @@ beforeEach(() => {
   mail.queueEmail.mockResolvedValue('delivery-1');
   db.accountHasApp.mockResolvedValue(false);
   db.issueMfaFactorTokens.mockResolvedValue({
-    confirmExpiresAt: new Date(Date.now() + 72 * 3600_000),
+    codeExpiresAt: new Date(Date.now() + 72 * 3600_000),
     removeExpiresAt: new Date(Date.now() + 7 * 86_400_000),
+    setUpAt: new Date('2026-10-09T08:05:00Z'),
+    setupUserAgent:
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0; rv:131.0) Gecko/20100101 Firefox/131.0',
   });
   db.loadPersonName.mockResolvedValue({ ar: 'محمد العتيبي', en: 'Mohammed Alotaibi' });
 });
@@ -444,7 +449,7 @@ describe('account mailer (T-M2-10): authenticator app and security settings noti
   /** The token in a link's fragment (`#token=…`). */
   const tokenOf = (url: string) => new URL(url).hash.replace('#token=', '');
 
-  it('set-up e-mail: two new links whose hashes are stored in the transaction that queues it (review H1)', async () => {
+  it('set-up e-mail: a new code and "not you" link whose hashes are stored in the transaction that queues it (re-review N1)', async () => {
     queue(send({ kind: 'mfa_factor_added', factorId: FACTOR, locale: 'ar' }));
     const { task, log } = setup({ recoveryLinks: null });
     await task.run({ jobId: 'j' });
@@ -456,35 +461,37 @@ describe('account mailer (T-M2-10): authenticator app and security settings noti
       recipientPersonId: PERSON,
     });
     expect(() => MfaFactorAddedVariables.parse(email.variables)).not.toThrow();
-    const v = email.variables as {
-      confirmUrl: { ar: string; en: string };
-      removeUrl: { ar: string; en: string };
-    };
-    const confirm = tokenOf(v.confirmUrl.ar);
+    const v = email.variables as { code: string; removeUrl: { ar: string; en: string } };
     const remove = tokenOf(v.removeUrl.ar);
-    expect(v.confirmUrl).toEqual({
-      ar: `${BASE}/ar/mfa/confirm#token=${confirm}`,
-      en: `${BASE}/en/mfa/confirm#token=${confirm}`,
-    });
     expect(v.removeUrl).toEqual({
       ar: `${BASE}/ar/mfa/remove#token=${remove}`,
       en: `${BASE}/en/mfa/remove#token=${remove}`,
     });
-    // 32 random bytes each (base64url), different, never in a query string.
-    expect(confirm).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    // 8 random digits; 32 random bytes (base64url) for the link, never in a query string; no confirm link.
+    expect(v.code).toMatch(/^[0-9]{8}$/);
     expect(remove).toMatch(/^[A-Za-z0-9_-]{43}$/);
-    expect(confirm).not.toBe(remove);
+    expect(JSON.stringify(email.variables)).not.toContain('mfa/confirm');
+    // When and from which browser (well-known names, never the raw user agent).
     expect(email.variables).toMatchObject({
-      confirmValidHours: MFA_CONFIRM_VALID_HOURS,
+      setUpAt: '2026-10-09T08:05:00.000Z',
+      timeZone: 'Asia/Riyadh',
+      browser: 'Firefox',
+      system: 'macOS',
+      codeValidHours: MFA_CODE_VALID_HOURS,
       removeValidDays: MFA_REMOVE_VALID_DAYS,
     });
-    // Only the hashes reach the database — in the organization transaction, after the checks.
+    expect(JSON.stringify(email.variables)).not.toContain('Gecko');
+    // Only the hashes reach the database — the code bound to its app — in the organization transaction.
     expect(db.issueMfaFactorTokens).toHaveBeenCalledWith(
       tenantTx,
       FACTOR,
       USER,
-      sha256(confirm),
+      hashMfaSetupCode(FACTOR, v.code),
       sha256(remove),
+    );
+    expect(hashMfaSetupCode(FACTOR, v.code)).toEqual(sha256(`${FACTOR}:${v.code}`));
+    expect(hashMfaSetupCode(FACTOR.toUpperCase(), v.code)).toEqual(
+      hashMfaSetupCode(FACTOR, v.code),
     );
     expect(db.loadAccountMailContext).toHaveBeenCalledWith(
       tenantTx,
@@ -493,24 +500,57 @@ describe('account mailer (T-M2-10): authenticator app and security settings noti
     );
     expect(db.finishAccountMailRequest).toHaveBeenCalledWith(tenantTx, REQUEST);
     expect(log).toHaveBeenCalledWith('info', 'account e-mail queued (mfa_factor_added)');
-    expect(JSON.stringify(log.mock.calls)).not.toContain(confirm);
+    expect(JSON.stringify(log.mock.calls)).not.toContain(v.code);
+    expect(JSON.stringify(log.mock.calls)).not.toContain(remove);
   });
 
-  it('set-up e-mail: capped or for an organization no longer served — the links already sent stay valid', async () => {
-    queue(send({ kind: 'mfa_factor_added', factorId: FACTOR }));
-    db.loadAccountMailContext.mockResolvedValueOnce({
+  it('set-up e-mail: each e-mail gets a new code (a resend replaces it)', async () => {
+    queue(
+      send({ kind: 'mfa_factor_added', factorId: FACTOR }),
+      send({ kind: 'mfa_factor_added', factorId: FACTOR }),
+    );
+    const { task } = setup();
+    await task.run({ jobId: 'j' });
+    const codes = mail.queueEmail.mock.calls.map(
+      (call) => (call[1] as { variables: { code: string } }).variables.code,
+    );
+    expect(codes).toHaveLength(2);
+    // Two random 8-digit codes: equal only by a 1-in-100-million chance.
+    expect(codes[0]).not.toBe(codes[1]);
+  });
+
+  it('security notices are never dropped by the hourly cap — logged instead (re-review N3)', async () => {
+    expect([...SECURITY_NOTICE_KINDS].sort()).toEqual([
+      'mfa_factor_added',
+      'mfa_factor_removed',
+      'password_changed',
+      'security_policy_changed',
+    ]);
+    const kinds = [
+      send({ kind: 'mfa_factor_added', factorId: FACTOR }),
+      send({ kind: 'mfa_factor_removed', factorId: FACTOR, mfaReason: 'removed' }),
+      send({ kind: 'password_changed' }),
+      send({
+        kind: 'security_policy_changed',
+        policyChange: { changed: ['mfaMode'], changedByPersonId: null, changedAt: new Date() },
+      }),
+    ];
+    queue(...kinds);
+    db.loadAccountMailContext.mockResolvedValue({
       organizationName: { ar: 'شركة الراية', en: null },
       recipientName: { ar: 'سارة', en: null },
-      recentCount: ACCOUNT_MAIL_HOURLY_CAP,
+      recentCount: ACCOUNT_MAIL_HOURLY_CAP + 3,
     });
     const { task, log } = setup();
     await task.run({ jobId: 'j' });
-    expect(db.issueMfaFactorTokens).not.toHaveBeenCalled();
-    expect(mail.queueEmail).not.toHaveBeenCalled();
-    expect(log).toHaveBeenCalledWith(
-      'info',
-      'account e-mail not sent (hourly_cap) (mfa_factor_added)',
-    );
+    expect(mail.queueEmail).toHaveBeenCalledTimes(4);
+    for (const request of kinds) {
+      expect(log).toHaveBeenCalledWith(
+        'warning',
+        `security notice over the hourly cap sent anyway (${request.kind})`,
+      );
+    }
+    expect(JSON.stringify(log.mock.calls)).not.toContain('hourly_cap)');
   });
 
   it('set-up e-mail: an app removed or already confirmed meanwhile — answered, nothing sent', async () => {
@@ -529,7 +569,7 @@ describe('account mailer (T-M2-10): authenticator app and security settings noti
     );
   });
 
-  it.each(['removed', 'not_me', 'admin_reset', 'support_reset'] as const)(
+  it.each(['removed', 'not_me', 'admin_reset', 'support_reset', 'expired'] as const)(
     '"app removed" notice (%s): the reason, the forgot-password page',
     async (reason) => {
       queue(send({ kind: 'mfa_factor_removed', factorId: FACTOR, mfaReason: reason }));

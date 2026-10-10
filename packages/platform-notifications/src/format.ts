@@ -21,6 +21,28 @@ export function formatEmailDate(
   }).format(typeof instant === 'string' ? new Date(instant) : instant);
 }
 
+/**
+ * «الجمعة، 9 أكتوبر 2026 الساعة 11:05 غرينتش+3» / "Friday, 9 October 2026 at 11:05 GMT+3": local time in
+ * `timeZone`, with its offset (the reader may be elsewhere).
+ */
+export function formatEmailDateTime(
+  instant: string | Date,
+  locale: AppLocale,
+  timeZone: string,
+): string {
+  const at = typeof instant === 'string' ? new Date(instant) : instant;
+  const time = new Intl.DateTimeFormat(DATE_LOCALES[locale], {
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+    timeZoneName: 'shortOffset',
+    timeZone,
+  }).format(at);
+  return locale === 'ar'
+    ? `${formatEmailDate(at, locale, timeZone)} الساعة ${time}`
+    : `${formatEmailDate(at, locale, timeZone)} at ${time}`;
+}
+
 export function isTimeZone(value: string): boolean {
   try {
     new Intl.DateTimeFormat('en', { timeZone: value });

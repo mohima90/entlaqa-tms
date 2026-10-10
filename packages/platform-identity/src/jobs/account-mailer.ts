@@ -1,4 +1,5 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomInt } from 'node:crypto';
+import { describeUserAgent } from '@jadarat/platform-core';
 import {
   type AccountMailRequest,
   type SystemTx,
@@ -25,18 +26,32 @@ export const ACCOUNT_MAIL_BATCH = 20;
 /** Auth's link lifetime (`otp_exp` = 3600 s), stated in the e-mail. */
 export const RESET_LINK_VALID_MINUTES = 60;
 /**
- * Per person and organization: at most this many reset e-mails, and as many "password changed" notices,
- * an hour (beyond the web app's own limits and Auth's one link a minute) — a further request is answered
- * without an e-mail.
+ * Per person and organization: at most this many reset e-mails an hour (beyond the web app's own limits and
+ * Auth's one link a minute) — a further request is answered without an e-mail. Security notices are exempt
+ * (SECURITY_NOTICE_KINDS).
  */
 export const ACCOUNT_MAIL_HOURLY_CAP = 5;
 /**
- * The set-up e-mail's link lifetimes, stated in it — the database's private.mfa_confirm_link_lifetime() /
+ * Security notices (re-review N3): an authenticator app added (its e-mail carries the set-up code) or removed
+ * (also an admin or support reset, an expired set-up), the security settings changed, the password changed.
+ * They are never dropped by the hourly cap — the owner must learn of every change to the account's security —
+ * and a notice over the cap is logged. Their own volume is bounded where they start: one set-up e-mail per
+ * app and 2 minutes ("send again"), one waiting notice per account, kind and app, Auth's limits on set-ups and
+ * password changes, and only Organization Admins change the settings.
+ */
+export const SECURITY_NOTICE_KINDS: ReadonlySet<AccountMailRequest['kind']> = new Set([
+  'mfa_factor_added',
+  'mfa_factor_removed',
+  'security_policy_changed',
+  'password_changed',
+]);
+/**
+ * The set-up e-mail's code and link lifetimes, stated in it — the database's private.mfa_code_lifetime() /
  * mfa_remove_link_lifetime() decide; pgTAP 68 checks they are these values.
  */
-export const MFA_CONFIRM_VALID_HOURS = 72;
+export const MFA_CODE_VALID_HOURS = 72;
 export const MFA_REMOVE_VALID_DAYS = 7;
-/** Dates in the policy-change notice, until organizations have their own time-zone setting. */
+/** Dates in the security notices (policy change, app set-up), until organizations have their own time zone. */
 const TIME_ZONE = 'Asia/Riyadh';
 
 /** The Auth admin API's recovery links (platform-db/admin `createRecoveryLinkIssuer`), worker only. */
@@ -103,6 +118,17 @@ const TEMPLATE_OF: Readonly<Record<AccountMailRequest['kind'], AccountTemplate>>
 /** A new link token: 32 random bytes, base64url (43 characters) — only its SHA-256 is stored. */
 const newToken = () => randomBytes(32).toString('base64url');
 
+/** A new set-up code: 8 random digits (re-review N1) — only its SHA-256 with the app's id is stored. */
+const newSetupCode = () => String(randomInt(0, 100_000_000)).padStart(8, '0');
+
+/**
+ * SHA-256 of a set-up code bound to its app — as the database checks it (private.confirm_mfa_setup:
+ * sha256(factor id || ':' || code)). The same code for another app is another hash.
+ */
+export function hashMfaSetupCode(factorId: string, code: string): Buffer {
+  return createHash('sha256').update(`${factorId.toLowerCase()}:${code}`, 'utf8').digest();
+}
+
 /** Stands in for the token while the reset e-mail's content is checked before a token exists. */
 const PLACEHOLDER_TOKEN_HASH = '0'.repeat(56);
 
@@ -123,9 +149,11 @@ const PLACEHOLDER_TOKEN_HASH = '0'.repeat(56);
  * never addresses, tokens or ids of people.
  *
  * T-M2-10 adds the security notices queued by the database: the set-up e-mail of an authenticator app
- * (its confirmation and "not you" links, review H1), the "app removed" notice (every removal or reset) and
- * the "security settings changed" notice to every Organization Admin (review L5). A reset e-mail for an
- * account with an app says the page will ask for a code (`&mfa=1`): Auth wants AAL2 to set the password.
+ * (when and from which browser, "not you? remove this app", and the one-time code for the window that set it
+ * up — re-review N1), the "app removed" notice (every removal, reset or expired set-up) and the "security
+ * settings changed" notice to every Organization Admin (review L5). Security notices are never dropped by
+ * the hourly cap (re-review N3). A reset e-mail for an account with an app says the page will ask for a code
+ * (`&mfa=1`): Auth wants AAL2 to set the password.
  */
 export function createAccountMailer(options: AccountMailerOptions): PlatformTask {
   let base = options.appBaseUrl;
@@ -160,8 +188,12 @@ export function createAccountMailer(options: AccountMailerOptions): PlatformTask
       return { reason: 'organization_unavailable' };
     }
     if (context.recentCount >= ACCOUNT_MAIL_HOURLY_CAP) {
-      await finishAccountMailRequest(tx, request.id);
-      return { reason: 'hourly_cap' };
+      if (!SECURITY_NOTICE_KINDS.has(request.kind)) {
+        await finishAccountMailRequest(tx, request.id);
+        return { reason: 'hourly_cap' };
+      }
+      // Re-review N3: never dropped silently — sent, and the volume shows in the logs.
+      log('warning', `security notice over the hourly cap sent anyway (${request.kind})`);
     }
     return { organizationName: context.organizationName };
   }
@@ -186,10 +218,12 @@ export function createAccountMailer(options: AccountMailerOptions): PlatformTask
   }
 
   /**
-   * The set-up e-mail of an authenticator app (review H1): two new link tokens whose hashes are stored —
-   * replacing the links of an earlier e-mail — in the same organization transaction that queues this one,
-   * after the organization, the person and the hourly cap were checked: a refused or failed e-mail never
-   * spoils the links already sent. Nothing is sent for an app that is gone or already confirmed.
+   * The set-up e-mail of an authenticator app (re-review N1): a new one-time code and a new "not you" link
+   * token whose hashes are stored — replacing those of an earlier e-mail, and resetting the code's tries — in
+   * the same organization transaction that queues this one, after the organization and the person were
+   * checked: a refused or failed e-mail never spoils the code already sent. Nothing is sent for an app that
+   * is gone or already confirmed. The e-mail says when and from which browser (well-known names only) the
+   * app was set up.
    */
   async function sendSetUp(
     jobId: string,
@@ -200,14 +234,14 @@ export function createAccountMailer(options: AccountMailerOptions): PlatformTask
     return withSystemTx({ tenantId: request.tenantId, jobId }, async (tx: SystemTx) => {
       const checked = await admissible(tx, request);
       if ('reason' in checked) return checked.reason;
-      const confirm = newToken();
+      const code = newSetupCode();
       const remove = newToken();
       const issued = factorId
         ? await issueMfaFactorTokens(
             tx,
             factorId,
             request.userId,
-            hashToken(confirm),
+            hashMfaSetupCode(factorId, code),
             hashToken(remove),
           )
         : null;
@@ -215,7 +249,9 @@ export function createAccountMailer(options: AccountMailerOptions): PlatformTask
         await finishAccountMailRequest(tx, request.id);
         return 'factor_gone';
       }
-      // In the URL FRAGMENT: never sent to the server with the page request; the page asks for a click.
+      const device = describeUserAgent(issued.setupUserAgent);
+      // The link's token in the URL FRAGMENT: never sent to the server with the page request; the page
+      // asks for a click.
       await queueEmail(tx, {
         template: 'platform.mfa_factor_added',
         locale: request.locale,
@@ -223,9 +259,13 @@ export function createAccountMailer(options: AccountMailerOptions): PlatformTask
         recipientPersonId: request.personId,
         variables: {
           organizationName: checked.organizationName,
-          confirmUrl: pages(`mfa/confirm#token=${confirm}`),
+          code,
+          setUpAt: issued.setUpAt.toISOString(),
+          timeZone: TIME_ZONE,
+          browser: device.browser,
+          system: device.system,
           removeUrl: pages(`mfa/remove#token=${remove}`),
-          confirmValidHours: MFA_CONFIRM_VALID_HOURS,
+          codeValidHours: MFA_CODE_VALID_HOURS,
           removeValidDays: MFA_REMOVE_VALID_DAYS,
           loginEmail: request.email,
         },

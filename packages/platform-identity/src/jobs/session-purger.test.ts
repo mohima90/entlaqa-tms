@@ -1,13 +1,14 @@
 import type { SystemTx } from '@jadarat/platform-db/jobs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  MFA_APP_PURGE_BATCH,
   SESSION_PURGE_BATCH,
   SESSION_PURGE_INTERVAL_MS,
   SESSION_PURGE_TASK,
   createSessionPurger,
 } from './index';
 
-const db = vi.hoisted(() => ({ purgeEndedSessions: vi.fn() }));
+const db = vi.hoisted(() => ({ purgeEndedSessions: vi.fn(), purgeUnconfirmedMfaApps: vi.fn() }));
 vi.mock('@jadarat/platform-db/jobs', () => db);
 
 const platformTx = { kind: 'platform' } as unknown as SystemTx;
@@ -40,6 +41,7 @@ afterEach(() => {
 describe('session purger (T-M2-10, review M1): ended sessions leave Auth', () => {
   it('a platform task that asks the database for a batch, logging the count only', async () => {
     db.purgeEndedSessions.mockResolvedValueOnce(3);
+    db.purgeUnconfirmedMfaApps.mockResolvedValue(0);
     const { task, log, withPlatformTx } = setup();
     expect(task.name).toBe(SESSION_PURGE_TASK);
     expect(await task.run({ jobId: 'j1' })).toBe(false);
@@ -50,6 +52,7 @@ describe('session purger (T-M2-10, review M1): ended sessions leave Auth', () =>
 
   it('a full batch asks for another pass at once; caught up, it waits a minute', async () => {
     db.purgeEndedSessions.mockResolvedValueOnce(SESSION_PURGE_BATCH).mockResolvedValue(0);
+    db.purgeUnconfirmedMfaApps.mockResolvedValue(0);
     const { task, log, advance } = setup();
     expect(await task.run({ jobId: 'j' })).toBe(true);
     expect(await task.run({ jobId: 'j' })).toBe(false);
@@ -65,8 +68,22 @@ describe('session purger (T-M2-10, review M1): ended sessions leave Auth', () =>
     expect(log).toHaveBeenCalledTimes(1);
   });
 
+  it('also removes authenticator apps nobody confirmed within 72 hours (re-review N2)', async () => {
+    db.purgeEndedSessions.mockResolvedValue(0);
+    db.purgeUnconfirmedMfaApps.mockResolvedValueOnce(2).mockResolvedValue(0);
+    const { task, log } = setup();
+    expect(await task.run({ jobId: 'j' })).toBe(false);
+    expect(db.purgeUnconfirmedMfaApps).toHaveBeenCalledWith(platformTx, MFA_APP_PURGE_BATCH);
+    expect(log).toHaveBeenCalledWith('info', 'unconfirmed authenticator apps removed (2)');
+    // A full batch of apps: another pass at once.
+    db.purgeUnconfirmedMfaApps.mockResolvedValueOnce(MFA_APP_PURGE_BATCH);
+    const again = setup();
+    expect(await again.task.run({ jobId: 'j' })).toBe(true);
+  });
+
   it('a database failure fails the pass (graphile-worker retries) and does not count as caught up', async () => {
     db.purgeEndedSessions.mockRejectedValueOnce(new Error('db down')).mockResolvedValue(0);
+    db.purgeUnconfirmedMfaApps.mockResolvedValue(0);
     const { task } = setup();
     await expect(task.run({ jobId: 'j' })).rejects.toThrow('db down');
     expect(await task.run({ jobId: 'j' })).toBe(false);

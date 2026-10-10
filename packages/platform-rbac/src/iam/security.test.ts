@@ -38,6 +38,7 @@ const db = vi.hoisted(() => ({
   updateSecurityPolicy: vi.fn(),
   passwordMinLengthForCaller: vi.fn(),
   getMemberMfa: vi.fn(),
+  listMyMfaApps: vi.fn(),
   listMySessions: vi.fn(),
   endMySessions: vi.fn(),
   listMemberSessions: vi.fn(),
@@ -52,6 +53,13 @@ const TENANT = '22222222-2222-4222-8222-222222222222';
 const ME = '33333333-3333-4333-8333-333333333333';
 const SARA = '44444444-4444-4444-8444-444444444444';
 const SESSION = '55555555-5555-4555-8555-555555555555';
+const APP = {
+  factorId: '66666666-6666-4666-8666-666666666666',
+  confirmed: false,
+  here: false,
+  setUpAt: new Date('2026-10-09T08:05:00Z'),
+  userAgent: 'Mozilla/5.0 Firefox/131.0',
+};
 
 const sara: ResourceAttributes = {
   type: 'person',
@@ -126,6 +134,7 @@ beforeEach(() => {
   db.getSecurityPolicy.mockResolvedValue(policy);
   db.passwordMinLengthForCaller.mockResolvedValue(16);
   db.getMemberMfa.mockResolvedValue({ usesApp: true, since: new Date(1), pending: false });
+  db.listMyMfaApps.mockResolvedValue([APP]);
   db.listMySessions.mockResolvedValue([]);
   db.listMemberSessions.mockResolvedValue([]);
   db.endMySessions.mockResolvedValue(1);
@@ -292,10 +301,10 @@ describe('changing the policy (high risk, Organization Admin at AAL2)', () => {
 describe('own sign-in sessions (My profile)', () => {
   it('every member lists their own sessions and password rule', async () => {
     const query = createDefineQuery(runtime([]).rt)(mySecurityQueryDefinition());
-    expect(await query({})).toEqual(
-      ok({ sessions: [], passwordMinLength: 16, usesApp: true, appPending: false }),
-    );
-    expect(db.getMemberMfa).toHaveBeenCalledWith(TX, ME);
+    expect(await query({})).toEqual(ok({ sessions: [], passwordMinLength: 16, apps: [APP] }));
+    // The apps as this session sees them (re-review N1), never another person's.
+    expect(db.listMyMfaApps).toHaveBeenCalledWith(TX);
+    expect(db.getMemberMfa).not.toHaveBeenCalled();
     db.passwordMinLengthForCaller.mockResolvedValue(null);
     const gone = await query({});
     expect(!gone.ok && gone.error.code).toBe('UNAUTHENTICATED');

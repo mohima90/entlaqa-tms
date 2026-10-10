@@ -6,6 +6,7 @@ import {
   DEFAULT_LOCKOUT_POLICY,
   applyDeviceLimit,
   changedSettings,
+  confirmMfaSetup,
   createPreSessionSecurityApi,
   dismissMfaPrompt,
   endMemberSessions,
@@ -14,11 +15,12 @@ import {
   getSecurityPolicy,
   getSessionAccess,
   listMemberSessions,
+  listMyMfaApps,
   listMySessions,
   loadSessionFacts,
   passwordMinLengthForCaller,
+  removeMfaApp,
   requestMfaFactorMail,
-  requestMfaRemovedMail,
   resetMemberMfa,
   updateSecurityPolicy,
 } from './security';
@@ -28,6 +30,7 @@ const dialect = new PgDialect();
 const PERSON = '4f6c1a2e-1111-4a5b-8c9d-0123456789ab';
 const SESSION = '9a8b7c6d-2222-4e5f-8a1b-0123456789ab';
 const TENANT = 'a0000000-0000-4000-8000-000000000001';
+const FACTOR = '5d4b5b0a-3333-4c55-9f4c-0123456789ab';
 
 /** A transaction answering each statement with the next prepared result set. */
 function fakeTx(...results: Record<string, unknown>[][]) {
@@ -184,13 +187,64 @@ describe('authenticator apps and the device limit (review H1, L1; PO answer on r
     expect(await applyDeviceLimit(fakeTx([]).tx)).toBe(0);
   });
 
-  it('queues the set-up and removal e-mails through the database', async () => {
-    const added = fakeTx([{ queued: true }]);
-    expect(await requestMfaFactorMail(added.tx, SESSION)).toBe(true);
-    expect(added.executed[0]?.params).toEqual([SESSION]);
-    expect(await requestMfaFactorMail(fakeTx([{ queued: false }]).tx, null)).toBe(false);
-    expect(await requestMfaRemovedMail(fakeTx([{ queued: true }]).tx, SESSION)).toBe(true);
-    expect(await requestMfaRemovedMail(fakeTx([]).tx, SESSION)).toBe(false);
+  it('the set-up e-mail and "send again": the database\'s outcome (re-review N1)', async () => {
+    const added = fakeTx([{ outcome: 'queued' }]);
+    expect(await requestMfaFactorMail(added.tx, FACTOR)).toBe('queued');
+    expect(added.executed[0]).toMatchObject({
+      sql: 'select private.request_mfa_factor_mail($1::uuid) as outcome',
+      params: [FACTOR],
+    });
+    for (const outcome of ['waiting', 'too_soon', 'refused'] as const) {
+      expect(await requestMfaFactorMail(fakeTx([{ outcome }]).tx, FACTOR)).toBe(outcome);
+    }
+    expect(await requestMfaFactorMail(fakeTx([{ outcome: 'sent' }]).tx, FACTOR)).toBe('refused');
+    expect(await requestMfaFactorMail(fakeTx([]).tx, FACTOR)).toBe('refused');
+  });
+
+  it('the e-mailed code, entered in the session that set the app up (re-review N1)', async () => {
+    const confirmed = fakeTx([{ outcome: 'confirmed' }]);
+    expect(await confirmMfaSetup(confirmed.tx, FACTOR, '40718263')).toBe('confirmed');
+    expect(confirmed.executed[0]).toMatchObject({
+      sql: 'select private.confirm_mfa_setup($1::uuid, $2) as outcome',
+      params: [FACTOR, '40718263'],
+    });
+    for (const outcome of ['invalid', 'expired', 'locked', 'refused'] as const) {
+      expect(await confirmMfaSetup(fakeTx([{ outcome }]).tx, FACTOR, '00000000')).toBe(outcome);
+    }
+    expect(await confirmMfaSetup(fakeTx([]).tx, FACTOR, '00000000')).toBe('refused');
+  });
+
+  it("the account's apps as this session sees them, and removing one (re-review N1)", async () => {
+    const listed = fakeTx([
+      {
+        factor_id: FACTOR,
+        confirmed: false,
+        here: false,
+        set_up_at: '2026-10-09T08:00:00Z',
+        user_agent: 'Mozilla/5.0 Firefox/131.0',
+      },
+    ]);
+    expect(await listMyMfaApps(listed.tx)).toEqual([
+      {
+        factorId: FACTOR,
+        confirmed: false,
+        here: false,
+        setUpAt: new Date('2026-10-09T08:00:00Z'),
+        userAgent: 'Mozilla/5.0 Firefox/131.0',
+      },
+    ]);
+    expect(listed.executed[0]?.sql).toBe(
+      'select factor_id, confirmed, here, set_up_at, user_agent from private.my_mfa_apps()',
+    );
+    expect(await listMyMfaApps(fakeTx([]).tx)).toEqual([]);
+    const removed = fakeTx([{ outcome: 'removed' }]);
+    expect(await removeMfaApp(removed.tx, FACTOR)).toBe('removed');
+    expect(removed.executed[0]).toMatchObject({
+      sql: 'select private.remove_mfa_app($1::uuid) as outcome',
+      params: [FACTOR],
+    });
+    expect(await removeMfaApp(fakeTx([{ outcome: 'step_up' }]).tx, FACTOR)).toBe('step_up');
+    expect(await removeMfaApp(fakeTx([{ outcome: 'gone' }]).tx, FACTOR)).toBe('refused');
   });
 
   it("an Organization Admin's reset: the database's outcome, nothing else", async () => {
@@ -232,28 +286,24 @@ describe('before any session (app_server, no claims)', () => {
     ).toBe(12);
   });
 
-  it('the e-mailed confirmation and "not you" links (review H1)', async () => {
-    const confirm = fakeDb([{ outcome: 'confirmed' }]);
-    const api = createPreSessionSecurityApi(() => confirm.db);
-    expect(await api.confirmMfaFactor(Buffer.alloc(32))).toBe('confirmed');
-    expect(confirm.executed.at(-1)?.sql).toBe(
-      'select private.confirm_mfa_factor($1::bytea) as outcome',
+  it('the e-mailed "not you" link (review H1)', async () => {
+    const reject = fakeDb([{ outcome: 'removed' }]);
+    expect(
+      await createPreSessionSecurityApi(() => reject.db).rejectMfaFactor(Buffer.alloc(32)),
+    ).toBe('removed');
+    expect(reject.executed.at(-1)?.sql).toBe(
+      'select private.reject_mfa_factor($1::bytea) as outcome',
     );
     expect(
-      await createPreSessionSecurityApi(() => fakeDb([{ outcome: 'expired' }]).db).confirmMfaFactor(
+      await createPreSessionSecurityApi(() => fakeDb([{ outcome: 'expired' }]).db).rejectMfaFactor(
         Buffer.alloc(32),
       ),
     ).toBe('expired');
     expect(
-      await createPreSessionSecurityApi(() => fakeDb([{ outcome: 'removed' }]).db).confirmMfaFactor(
-        Buffer.alloc(32),
-      ),
+      await createPreSessionSecurityApi(
+        () => fakeDb([{ outcome: 'confirmed' }]).db,
+      ).rejectMfaFactor(Buffer.alloc(32)),
     ).toBe('invalid');
-    expect(
-      await createPreSessionSecurityApi(() => fakeDb([{ outcome: 'removed' }]).db).rejectMfaFactor(
-        Buffer.alloc(32),
-      ),
-    ).toBe('removed');
     expect(
       await createPreSessionSecurityApi(() => fakeDb([]).db).rejectMfaFactor(Buffer.alloc(32)),
     ).toBe('invalid');

@@ -8,6 +8,7 @@ const db = vi.hoisted(() => ({
   loadAccountMailContext: vi.fn(),
   tenantIsServed: vi.fn(),
   purgeEndedSessions: vi.fn(),
+  purgeUnconfirmedMfaApps: vi.fn(),
 }));
 vi.mock('@jadarat/platform-db/jobs', () => db);
 
@@ -21,14 +22,16 @@ const deps = {
 };
 
 describe('worker platform tasks (T-M2-17, T-M2-10)', () => {
-  it('removes ended sessions from Auth (review M1), with or without the admin key check', async () => {
+  it('removes ended sessions from Auth (review M1) and unconfirmed apps (re-review N2), with or without the admin key check', async () => {
     db.purgeEndedSessions.mockResolvedValue(0);
+    db.purgeUnconfirmedMfaApps.mockResolvedValue(0);
     for (const adminKeyCheck of [undefined, vi.fn()]) {
       const tasks = platformTasks({ ...deps, authAdmin: undefined, adminKeyCheck });
       const purger = tasks.find((t) => t.name === 'platform.session_purge');
       await expect(purger?.run({ jobId: 'p' })).resolves.toBe(false);
     }
     expect(db.purgeEndedSessions).toHaveBeenCalledTimes(2);
+    expect(db.purgeUnconfirmedMfaApps).toHaveBeenCalledTimes(2);
   });
 
   it('registers the account mailer; the Auth admin API only when it is configured', () => {

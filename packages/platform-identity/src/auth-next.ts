@@ -7,19 +7,20 @@ import 'server-only';
 import {
   acceptInvitationAsCaller,
   applyDeviceLimit,
-  confirmMfaFactor,
+  confirmMfaSetup as confirmMfaSetupInDatabase,
   dismissMfaPrompt,
   getSessionAccess,
   hashInvitationToken,
   insertAuditEvent,
   invitationByToken,
   invitationPasswordMinLength,
+  listMyMfaApps,
   listSessionTenants,
   passwordMinLengthForCaller,
   queueOwnPasswordChangedMail,
   rejectMfaFactor,
+  removeMfaApp as removeMfaAppInDatabase,
   requestMfaFactorMail,
-  requestMfaRemovedMail,
   requestPasswordChangedMail,
   requestPasswordResetMail,
   type SessionAccess,
@@ -48,10 +49,11 @@ import {
   type MfaClientLike,
   type MfaDeps,
   type MfaOverview,
+  confirmMfaSetup,
   getMfaOverview,
-  openMfaLink,
-  removeTotp,
-  requestMfaConfirmationMail,
+  openMfaRemoveLink,
+  removeMfaApp,
+  resendMfaSetupMail,
   startTotpSetup,
   verifyTotpCode,
 } from './mfa';
@@ -146,8 +148,10 @@ async function mfaDeps(): Promise<MfaDeps> {
     withUserTx,
     insertAuditEvent,
     getSessionAccess,
+    listMyMfaApps,
     requestMfaFactorMail,
-    requestMfaRemovedMail,
+    confirmMfaSetup: confirmMfaSetupInDatabase,
+    removeMfaApp: removeMfaAppInDatabase,
     applyDeviceLimit,
     logWarning: auth.logWarning,
   };
@@ -158,8 +162,9 @@ export async function getMfaOverviewForRequest() {
 }
 
 /**
- * What the /mfa page shows: the account's app and this session's level (Auth), and where the session
- * stands in its organization (the database: a code or an app needed, or the set-up prompt).
+ * What the /mfa page shows: the account's apps as this session sees them (confirmed, waiting for this
+ * window's code, or added from another sign-in — re-review N1), this session's level (Auth), and where the
+ * session stands in its organization (the database: a code or an app needed, or the set-up prompt).
  */
 export async function getMfaPageStateForRequest(): Promise<
   Result<MfaOverview & { readonly access: SessionAccess }, AppError>
@@ -187,29 +192,37 @@ export async function verifyTotpCodeForRequest(input: {
   return verifyTotpCode(await mfaDeps(), input);
 }
 
-export async function removeTotpForRequest() {
-  return removeTotp(await mfaDeps());
+/** The e-mailed code of a new app, in the window that set it up (re-review N1). */
+export async function confirmMfaSetupForRequest(input: { readonly code: string }) {
+  return confirmMfaSetup(await mfaDeps(), input);
 }
 
-/** "Send the e-mail again" for an app waiting for its confirmation (review H1). */
-export async function requestMfaConfirmationMailForRequest() {
-  return requestMfaConfirmationMail(await mfaDeps());
+/** "Send the e-mail again" from the window that set the app up (re-review N1). */
+export async function resendMfaSetupMailForRequest() {
+  return resendMfaSetupMail(await mfaDeps());
 }
 
 /**
- * The set-up e-mail's links (review H1), with the token the page read from the URL fragment: no session
- * needed. "remove" ends every session of the account; this browser's cookies are cleared too.
+ * Removes one of the account's apps (re-review N1): a confirmed one (recent code), this window's set-up,
+ * or an app added from another sign-in (the account's other sessions end).
  */
-export async function openMfaLinkForRequest(kind: 'confirm' | 'remove', token: string) {
-  const outcome = await openMfaLink(
+export async function removeMfaAppForRequest(input: { readonly factorId: string }) {
+  return removeMfaApp(await mfaDeps(), input);
+}
+
+/**
+ * The set-up e-mail's "not you? remove this app" link (review H1), with the token the page read from the
+ * URL fragment: no session needed. It ends every session of the account; this browser's cookies are
+ * cleared too.
+ */
+export async function openMfaRemoveLinkForRequest(token: string) {
+  const outcome = await openMfaRemoveLink(
     {
-      confirmMfaFactor,
       rejectMfaFactor,
       logInfo: (message, fields) => {
         log.info(message, fields);
       },
     },
-    kind,
     token,
   );
   if (outcome === 'removed') {

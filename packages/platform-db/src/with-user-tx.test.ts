@@ -134,6 +134,37 @@ describe('withUserTx (ADR 0002 §5)', () => {
     expect(String(executed[1]?.params[0])).not.toMatch(/invitee@|invitation|966500000000/);
   });
 
+  it('adds code_at — when the session last passed an authenticator code — never the amr itself', async () => {
+    const { db, executed } = fakeDatabase();
+    const withUserTx = createWithUserTx(() => db);
+    await withUserTx(
+      claims({
+        aal: 'aal2',
+        amr: [
+          { method: 'password', timestamp: 1_800_000_000 },
+          { method: 'totp', timestamp: 1_800_000_100 },
+          { method: 'totp', timestamp: 1_800_000_050 },
+        ],
+      }),
+      () => Promise.resolve(null),
+    );
+    const forwarded = JSON.parse(String(executed[1]?.params[0])) as Record<string, unknown>;
+    expect(forwarded.code_at).toBe('1800000100');
+    expect(forwarded.aal).toBe('aal2');
+    expect(forwarded).not.toHaveProperty('amr');
+    // Without a code: no code_at (the database then refuses high-risk changes).
+    expect(
+      databaseClaims({ sub: claims().sub, role: 'authenticated', amr: [] }),
+    ).not.toHaveProperty('code_at');
+    expect(
+      databaseClaims({
+        sub: claims().sub,
+        role: 'authenticated',
+        amr: [{ method: 'totp', timestamp: 'soon' }],
+      }),
+    ).not.toHaveProperty('code_at');
+  });
+
   it('databaseClaims leaves out absent claims and non-string values', () => {
     expect(
       databaseClaims({

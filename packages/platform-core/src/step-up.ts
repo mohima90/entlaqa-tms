@@ -1,7 +1,9 @@
 /**
  * How recent the authenticator code must be for a high-risk action (PO answer, 9 Oct 2026; security review
- * L3; TM-0003 T-IAM-41): the session passed a code within the last 15 minutes. The ONLY place of the value:
- * defineAction (platform-rbac) refuses older codes with STEP_UP_REQUIRED and the /mfa page asks again.
+ * L3; TM-0003 T-IAM-41): the session passed a code within the last 15 minutes. defineAction (platform-rbac)
+ * refuses older codes with STEP_UP_REQUIRED and the /mfa page asks again. The database checks the same rule
+ * for the policy update and the member reset (private.step_up_max_age(), from the `code_at` claim withUserTx
+ * derives; a drift check in step-up.test.ts keeps both equal).
  */
 export const STEP_UP_MAX_AGE_SECONDS = 15 * 60;
 

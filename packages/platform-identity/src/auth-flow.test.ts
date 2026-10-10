@@ -34,6 +34,7 @@ interface FakeOptions {
   signOutFails?: boolean;
   /** The database's view of the session in its organization (T-M2-10); default 'ok'. */
   access?: string;
+  mfaPending?: boolean;
 }
 
 function setup(options: FakeOptions = {}) {
@@ -104,7 +105,7 @@ function setup(options: FakeOptions = {}) {
         >['state'],
         mfaDeadline: null,
         usesApp: false,
-        mfaPending: false,
+        mfaPending: options.mfaPending ?? false,
         aal2: false,
       }),
     ),
@@ -246,6 +247,13 @@ describe('selectOrganization', () => {
     }
     const signIn = await signInWithPassword(setup({ access: 'mfa_challenge' }).deps, credentials);
     expect(signIn).toEqual({ ok: true, value: { next: 'mfa' } });
+  });
+
+  it('shows an app waiting for its e-mailed code — here or added elsewhere — also when nothing requires one (re-review N1)', async () => {
+    const { deps, audited } = setup({ cookieToken: 'access-1', access: 'ok', mfaPending: true });
+    const result = await selectOrganization(deps, TENANT_A);
+    expect(result).toEqual({ ok: true, value: { tenantId: TENANT_A, next: 'mfa' } });
+    expect(audited.map((a) => a.action)).toEqual(['platform.auth.signed_in']);
   });
 
   it('never continues without the tenant claim (hook disabled or another tenant)', async () => {

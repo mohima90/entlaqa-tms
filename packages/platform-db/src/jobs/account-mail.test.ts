@@ -9,6 +9,7 @@ import {
   loadAccountMailContext,
   loadPersonName,
   purgeEndedSessions,
+  purgeUnconfirmedMfaApps,
   retryAccountMailRequest,
 } from './account-mail';
 
@@ -121,20 +122,28 @@ describe('account e-mail queue, worker side (T-M2-17)', () => {
     }
   });
 
-  it('the set-up links, whether an account has an app, the purge (T-M2-10)', async () => {
+  it('the set-up code and link, whether an account has an app, the purges (T-M2-10)', async () => {
     const issued = fakeTx([
-      { confirm_expires_at: '2026-10-12T08:00:00Z', remove_expires_at: '2026-10-16T08:00:00Z' },
+      {
+        code_expires_at: '2026-10-12T08:00:00Z',
+        remove_expires_at: '2026-10-16T08:00:00Z',
+        set_up_at: '2026-10-09T08:00:00Z',
+        setup_user_agent: 'Mozilla/5.0 Firefox/131.0',
+      },
     ]);
     expect(
       await issueMfaFactorTokens(issued.tx, FACTOR, USER, Buffer.alloc(32, 1), Buffer.alloc(32, 2)),
     ).toEqual({
-      confirmExpiresAt: new Date('2026-10-12T08:00:00Z'),
+      codeExpiresAt: new Date('2026-10-12T08:00:00Z'),
       removeExpiresAt: new Date('2026-10-16T08:00:00Z'),
+      setUpAt: new Date('2026-10-09T08:00:00Z'),
+      setupUserAgent: 'Mozilla/5.0 Firefox/131.0',
     });
     expect(issued.executed[0]?.params.slice(0, 2)).toEqual([FACTOR, USER]);
+    expect(issued.executed[0]?.sql).toContain('private.issue_mfa_factor_tokens(');
     expect(
       await issueMfaFactorTokens(
-        fakeTx([{ confirm_expires_at: null, remove_expires_at: null }]).tx,
+        fakeTx([{ code_expires_at: null, remove_expires_at: null }]).tx,
         FACTOR,
         USER,
         Buffer.alloc(32),
@@ -147,6 +156,12 @@ describe('account e-mail queue, worker side (T-M2-17)', () => {
     expect(await purgeEndedSessions(purged.tx, 500)).toBe(3);
     expect(purged.executed[0]?.params).toEqual([500]);
     expect(await purgeEndedSessions(fakeTx([]).tx, 500)).toBe(0);
+    const apps = fakeTx([{ purged: 2 }]);
+    expect(await purgeUnconfirmedMfaApps(apps.tx, 100)).toBe(2);
+    expect(apps.executed[0]).toMatchObject({
+      sql: 'select private.purge_unconfirmed_mfa_apps($1::integer) as purged',
+      params: [100],
+    });
     expect(await loadPersonName(fakeTx([{ name_ar: 'سارة', name_en: null }]).tx, PERSON)).toEqual({
       ar: 'سارة',
       en: null,

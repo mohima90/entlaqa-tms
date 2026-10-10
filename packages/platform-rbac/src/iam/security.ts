@@ -1,6 +1,7 @@
 import { appError, defineErrorCodes, err, ok } from '@jadarat/platform-core';
 import {
   MFA_MODES,
+  type MyMfaApp,
   type MySignInSession,
   SECURITY_LIMITS,
   type SecurityPolicy,
@@ -13,6 +14,7 @@ import {
   getMemberMfa,
   getSecurityPolicy,
   listMemberSessions,
+  listMyMfaApps,
   listMySessions,
   mayManagePerson,
   passwordMinLengthForCaller,
@@ -158,10 +160,11 @@ export interface MySecurityView {
   readonly sessions: readonly MySignInSession[];
   /** The strictest minimum password length of the account's organizations (PO decision 5). */
   readonly passwordMinLength: number;
-  /** Whether the account uses a confirmed authenticator app (null: unknown). */
-  readonly usesApp: boolean | null;
-  /** An app waits for its e-mailed confirmation (review H1): it does not count yet. */
-  readonly appPending: boolean;
+  /**
+   * The account's authenticator apps as this session sees them (re-review N1): confirmed (it counts),
+   * waiting for the e-mailed code in THIS window, or added from another sign-in (when, which browser).
+   */
+  readonly apps: readonly MyMfaApp[];
 }
 
 export function mySecurityQueryDefinition(): QueryDefinition<
@@ -176,12 +179,10 @@ export function mySecurityQueryDefinition(): QueryDefinition<
     handler: async ({ ctx }) => {
       const minLength = await passwordMinLengthForCaller(ctx.tx);
       if (minLength === null) return err(appError('UNAUTHENTICATED'));
-      const mfa = ctx.actor.personId ? await getMemberMfa(ctx.tx, ctx.actor.personId) : null;
       return ok({
         sessions: await listMySessions(ctx.tx),
         passwordMinLength: minLength,
-        usesApp: mfa?.usesApp ?? null,
-        appPending: mfa?.pending ?? false,
+        apps: await listMyMfaApps(ctx.tx),
       });
     },
   };

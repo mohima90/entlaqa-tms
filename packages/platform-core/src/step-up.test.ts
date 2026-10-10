@@ -1,3 +1,5 @@
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { STEP_UP_MAX_AGE_SECONDS, codeIsFresh, codeVerifiedAt } from './step-up';
 
@@ -30,5 +32,20 @@ describe('step-up freshness (PO answer: 15 minutes)', () => {
     expect(codeIsFresh(claims, new Date('2026-10-09T08:15:01Z'))).toBe(false);
     expect(codeIsFresh(claims, new Date('2026-10-09T07:59:58Z'))).toBe(true);
     expect(codeIsFresh({}, new Date())).toBe(false);
+  });
+});
+
+describe('the database checks the same 15 minutes (T-M2-10 re-review)', () => {
+  it('private.step_up_max_age() equals STEP_UP_MAX_AGE_SECONDS (drift check)', () => {
+    const migrationsDir = new URL('../../../supabase/migrations/', import.meta.url).pathname;
+    const definitions = readdirSync(migrationsDir)
+      .map((file) => readFileSync(join(migrationsDir, file), 'utf8'))
+      .flatMap((text) => [
+        ...text.matchAll(
+          /function private\.step_up_max_age\(\)[\s\S]*?as \$\$ select interval '(\d+) minutes' \$\$/g,
+        ),
+      ]);
+    expect(definitions).toHaveLength(1);
+    expect(Number(definitions[0]?.[1]) * 60).toBe(STEP_UP_MAX_AGE_SECONDS);
   });
 });

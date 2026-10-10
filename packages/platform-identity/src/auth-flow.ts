@@ -34,7 +34,8 @@ import { type SupabaseAuthLike, verifyClaims, verifyClaimsStrict } from './verif
  *
  * After the selection the organization's MFA policy may ask for more (T-M2-10, database decision
  * private.session_access): a code from the account's authenticator app, setting one up, or — allowed
- * meanwhile — the set-up prompt (grace period; Organization Admins, PO decision 2): next = 'mfa'.
+ * meanwhile — the set-up prompt (grace period; Organization Admins, PO decision 2), or an app waiting for
+ * its e-mailed code (here, or added from another sign-in — re-review N1): next = 'mfa'.
  */
 
 export const IdentityErrors = defineErrorCodes({
@@ -222,7 +223,9 @@ export async function selectOrganization(
   }
   await recordAudit(deps, tenantClaims.value, 'platform.auth.signed_in');
   const prompt = access.state === 'prompt_grace' || access.state === 'prompt_admin';
-  return ok({ tenantId, next: prompt ? 'mfa' : 'home' });
+  // An app waits for its e-mailed code (re-review N1): the window that set it up enters the code; every
+  // other sign-in is told "an app was added from another sign-in" — also when nothing requires an app.
+  return ok({ tenantId, next: prompt || access.mfaPending ? 'mfa' : 'home' });
 }
 
 export async function signOut(deps: AuthFlowDeps): Promise<Result<null, AppError>> {

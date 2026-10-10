@@ -28,6 +28,7 @@ export {
   type AccountMailRequest,
   type AccountMailSkip,
   MFA_REMOVAL_REASONS,
+  type MfaFactorTokens,
   type MfaRemovalReason,
   type PolicyChange,
   accountHasApp,
@@ -36,6 +37,7 @@ export {
   issueMfaFactorTokens,
   loadAccountMailContext,
   purgeEndedSessions,
+  purgeUnconfirmedMfaApps,
   loadPersonName,
   retryAccountMailRequest,
 } from './account-mail';

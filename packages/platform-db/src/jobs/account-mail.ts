@@ -19,7 +19,13 @@ export const ACCOUNT_MAIL_KINDS = [
 export type AccountMailKind = (typeof ACCOUNT_MAIL_KINDS)[number];
 
 /** Why an authenticator app was removed (the removal notice says so). */
-export const MFA_REMOVAL_REASONS = ['removed', 'not_me', 'admin_reset', 'support_reset'] as const;
+export const MFA_REMOVAL_REASONS = [
+  'removed',
+  'not_me',
+  'admin_reset',
+  'support_reset',
+  'expired',
+] as const;
 export type MfaRemovalReason = (typeof MFA_REMOVAL_REASONS)[number];
 
 /** Why no e-mail is sent for a request (decided by the database, never by the web app). */
@@ -192,28 +198,41 @@ export async function loadAccountMailContext(
   };
 }
 
+/** What the set-up e-mail states: the code's and link's lifetimes, when and with which browser. */
+export interface MfaFactorTokens {
+  readonly codeExpiresAt: Date;
+  readonly removeExpiresAt: Date;
+  readonly setUpAt: Date;
+  /** The set-up session's browser (Auth's user agent): shown parsed in the e-mail, never logged. */
+  readonly setupUserAgent: string | null;
+}
+
 /**
- * The worker stores the SHA-256 of the set-up e-mail's confirmation and "not you" links right before
- * queueing it (each new e-mail replaces the previous links). Null when the app is gone or already confirmed:
- * nothing to send.
+ * The worker stores the SHA-256 of the set-up e-mail's one-time code (with the factor id) and of its "not
+ * you" link right before queueing it (each new e-mail replaces the previous code and link and resets the
+ * tries; re-review N1). Null when the app is gone or already confirmed: nothing to send.
  */
 export async function issueMfaFactorTokens(
   tx: ClaimsTx,
   factorId: string,
   userId: string,
-  confirmHash: Buffer,
+  codeHash: Buffer,
   removeHash: Buffer,
-): Promise<{ readonly confirmExpiresAt: Date; readonly removeExpiresAt: Date } | null> {
+): Promise<MfaFactorTokens | null> {
   const [row] = await tx.execute<{
-    confirm_expires_at: Date | string | null;
+    code_expires_at: Date | string | null;
     remove_expires_at: Date | string | null;
-  }>(sql`select confirm_expires_at, remove_expires_at
-         from private.issue_mfa_factor_tokens(${factorId}::uuid, ${userId}::uuid, ${confirmHash}::bytea,
+    set_up_at: Date | string | null;
+    setup_user_agent: string | null;
+  }>(sql`select code_expires_at, remove_expires_at, set_up_at, setup_user_agent
+         from private.issue_mfa_factor_tokens(${factorId}::uuid, ${userId}::uuid, ${codeHash}::bytea,
                                               ${removeHash}::bytea)`);
-  if (!row?.confirm_expires_at || !row.remove_expires_at) return null;
+  if (!row?.code_expires_at || !row.remove_expires_at) return null;
   return {
-    confirmExpiresAt: new Date(row.confirm_expires_at),
+    codeExpiresAt: new Date(row.code_expires_at),
     removeExpiresAt: new Date(row.remove_expires_at),
+    setUpAt: new Date(row.set_up_at ?? row.code_expires_at),
+    setupUserAgent: row.setup_user_agent ?? null,
   };
 }
 
@@ -233,6 +252,18 @@ export async function accountHasApp(tx: ClaimsTx, userId: string): Promise<boole
 export async function purgeEndedSessions(tx: ClaimsTx, limit: number): Promise<number> {
   const [row] = await tx.execute<{ purged: number | string }>(
     sql`select private.purge_ended_sessions(${limit}::integer) as purged`,
+  );
+  return Number(row?.purged ?? 0);
+}
+
+/**
+ * Authenticator apps nobody confirmed within 72 hours (re-review N2) are removed: the sessions that passed
+ * their code end, the account is e-mailed (reason "expired") and the removal audited — a waiting app never
+ * blocks its owner (Auth asks a code from every verified app). At most `limit`; returns how many.
+ */
+export async function purgeUnconfirmedMfaApps(tx: ClaimsTx, limit: number): Promise<number> {
+  const [row] = await tx.execute<{ purged: number | string }>(
+    sql`select private.purge_unconfirmed_mfa_apps(${limit}::integer) as purged`,
   );
   return Number(row?.purged ?? 0);
 }

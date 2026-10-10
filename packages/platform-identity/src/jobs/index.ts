@@ -20,11 +20,14 @@ export {
   type AccountMailerOptions,
   RESET_LINK_VALID_MINUTES,
   type RecoveryLinks,
-  MFA_CONFIRM_VALID_HOURS,
+  MFA_CODE_VALID_HOURS,
   MFA_REMOVE_VALID_DAYS,
+  SECURITY_NOTICE_KINDS,
   createAccountMailer,
+  hashMfaSetupCode,
 } from './account-mailer';
 export {
+  MFA_APP_PURGE_BATCH,
   SESSION_PURGE_BATCH,
   SESSION_PURGE_INTERVAL_MS,
   SESSION_PURGE_TASK,

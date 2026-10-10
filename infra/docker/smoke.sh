@@ -737,10 +737,11 @@ deactivate_e2e returns
         where m.user_id = '$DEACT_ID' and ra.role_code in ('line_manager', 'learner')")" == "2" ]] ||
   { echo "smoke: the reactivated member's roles changed" >&2; exit 1; }
 unset answer wrong unknown rows_before
-echo "smoke: security policy (T-M2-10) — confirmed apps, policy with a code, MFA required, sessions, step-up, lost-app reset"
+echo "smoke: security policy (T-M2-10) — apps turned on with the e-mailed code, the password-only attack, policy with a code, MFA required, sessions, step-up, lost-app reset"
 # The last browser journey: it makes an authenticator app required for everyone in the organization. The
-# spec reads the set-up e-mails' links from Mailpit and ages a code through infra/docker/e2e-helper.sh, and
-# leaves the set-up keys it saw in a private temporary file for the leak checks below.
+# spec reads the set-up e-mails' codes and links from Mailpit and ages codes through
+# infra/docker/e2e-helper.sh, and leaves the set-up keys it saw in a private temporary file for the leak
+# checks below.
 [[ "$(q "select p.mfa_mode || ':' || p.password_min_length || ':' || p.session_max_devices from platform.security_policies p join platform.tenants t on t.id = p.tenant_id where t.slug = 'sovereign-smoke'")" == "off:12:3" ]] ||
   { echo "smoke: the organization must start with the default security policy" >&2; exit 1; }
 SECURITY_KEYS_FILE="$(mktemp)"
@@ -753,23 +754,28 @@ chmod 600 "$SECURITY_KEYS_FILE"
   { rm -f "$SECURITY_KEYS_FILE"; exit 1; }
 mapfile -t MFA_KEYS <"$SECURITY_KEYS_FILE"
 rm -f "$SECURITY_KEYS_FILE"
-[[ ${#MFA_KEYS[@]} -eq 4 ]] || { echo "smoke: expected the four set-up keys of the journey (admin 1, member 3)" >&2; exit 1; }
+[[ ${#MFA_KEYS[@]} -eq 5 ]] || { echo "smoke: expected the five set-up keys of the journey (admin 1, member 4: the attacker's two, the owner's two)" >&2; exit 1; }
 [[ "$(q "select p.mfa_mode || ':' || p.mfa_grace_days || ':' || p.password_min_length || ':' || p.lockout_threshold || ':' || p.lockout_minutes || ':' || (p.updated_by is not null) from platform.security_policies p join platform.tenants t on t.id = p.tenant_id where t.slug = 'sovereign-smoke'")" == "required_all:0:16:5:15:true" ]] ||
   { echo "smoke: the security policy change was not saved" >&2; exit 1; }
 # Audited: the change with the settings before and after; the prompt postponed (signed-in.spec); the apps
-# set up (waiting) and confirmed from the mailbox; the member's first app removed by its "not you" link;
-# sign-ins completed with a code; the member's sessions ended by the admin; the member's app reset twice.
+# set up (waiting) and turned on with the e-mailed code (re-review N1); the password-only attacker's apps
+# removed by the e-mail's "not you" link and by the owner's "added from another sign-in" notice; sign-ins
+# completed with a code; the member's sessions ended by the admin; the member's app reset twice.
 [[ "$(q "select count(*) from platform.audit_events where action = 'platform.security.policy_changed' and data -> 'changed' ? 'mfaMode' and data -> 'changed' ? 'passwordMinLength' and data -> 'before' ->> 'mfaMode' = 'off' and data -> 'after' ->> 'mfaMode' = 'required_all'")" == "1" ]] ||
   { echo "smoke: expected the security policy audit event with the settings before and after" >&2; exit 1; }
 [[ "$(q "select count(*) from platform.audit_events where action = 'platform.auth.mfa_prompt_dismissed' and actor_user_id = '$USER_ID'")" == "1" ]] ||
   { echo "smoke: expected the Organization Admin's postponed MFA prompt in the audit log" >&2; exit 1; }
 [[ "$(q "select count(*) from platform.audit_events where action = 'platform.auth.mfa_enrolled' and actor_user_id = '$USER_ID'")" == "1" &&
-   "$(q "select count(*) from platform.audit_events where action = 'platform.auth.mfa_enrolled' and actor_user_id = '$MANAGER_ID'")" == "3" ]] ||
-  { echo "smoke: expected every authenticator set-up in the audit log (admin 1, member 3)" >&2; exit 1; }
+   "$(q "select count(*) from platform.audit_events where action = 'platform.auth.mfa_enrolled' and actor_user_id = '$MANAGER_ID'")" == "4" ]] ||
+  { echo "smoke: expected every authenticator set-up in the audit log (admin 1, member 4)" >&2; exit 1; }
 [[ "$(q "select count(*) from platform.audit_events where action = 'platform.auth.mfa_confirmed' and actor_user_id in ('$USER_ID', '$MANAGER_ID')")" == "3" ]] ||
-  { echo "smoke: expected the mailbox confirmations in the audit log (admin 1, member 2)" >&2; exit 1; }
-[[ "$(q "select count(*) from platform.audit_events where action = 'platform.auth.mfa_removed' and actor_user_id = '$MANAGER_ID' and data ->> 'via' = 'email_link'")" == "1" ]] ||
-  { echo "smoke: expected the removal by the e-mail's \"not you\" link in the audit log" >&2; exit 1; }
+  { echo "smoke: expected the confirmations with the e-mailed code in the audit log (admin 1, member 2)" >&2; exit 1; }
+[[ "$(q "select count(*) from platform.audit_events where action = 'platform.auth.mfa_removed' and actor_user_id = '$MANAGER_ID' and data ->> 'via' = 'email_link'")" == "1" &&
+   "$(q "select count(*) from platform.audit_events where action = 'platform.auth.mfa_removed' and actor_user_id = '$MANAGER_ID' and data ->> 'via' = 'notice'")" == "1" ]] ||
+  { echo "smoke: expected the removals by the e-mail's \"not you\" link and by the \"added from another sign-in\" notice in the audit log" >&2; exit 1; }
+# Unconfirmed apps: none left behind (the attacker's were removed; re-review N2 purges any after 72 hours).
+[[ "$(q "select count(*) from auth.mfa_factors f left join private.mfa_factor_confirmations k on k.factor_id = f.id where f.status = 'verified' and k.confirmed_at is null")" == "0" ]] ||
+  { echo "smoke: an authenticator app nobody confirmed is still there" >&2; exit 1; }
 [[ "$(q "select count(*) from platform.audit_events where action = 'platform.user.mfa_reset' and actor_user_id = '$USER_ID' and entity_id = '5eed1000-0000-4000-8000-000000000003'")" == "2" ]] ||
   { echo "smoke: expected the Organization Admin's two resets of the member's app in the audit log" >&2; exit 1; }
 [[ "$(q "select count(*) from platform.audit_events where action = 'platform.auth.signed_in' and data ->> 'method' = 'password+totp' and data ->> 'aal' = 'aal2'")" -ge "4" ]] ||
@@ -778,31 +784,32 @@ rm -f "$SECURITY_KEYS_FILE"
   { echo "smoke: expected the forced sign-out in the audit log" >&2; exit 1; }
 [[ "$(q "select count(*) from private.revoked_sessions where user_id = '$MANAGER_ID' and reason = 'admin' and revoked_by = '$USER_ID'")" -ge "1" &&
    "$(q "select count(*) from private.revoked_sessions where user_id = '$MANAGER_ID' and reason = 'security'")" -ge "2" ]] ||
-  { echo "smoke: expected the member's sessions ended by the admin and by the \"not you\" link and the resets" >&2; exit 1; }
+  { echo "smoke: expected the member's sessions ended by the admin, by the \"not you\" link and notice, and by the resets" >&2; exit 1; }
 # Ending a session deletes it in Auth too (review M1): after the last reset the member has no Auth session
-# left (marked or not) and no app; the admin keeps exactly one app, confirmed from the mailbox.
+# left (marked or not) and no app; the admin keeps exactly one app, confirmed with the e-mailed code.
 [[ "$(q "select count(*) from auth.sessions where user_id = '$MANAGER_ID'")" == "0" ]] ||
   { echo "smoke: the member's Auth sessions survived the reset (they must be deleted, not only marked)" >&2; exit 1; }
 [[ "$(q "select count(*) from auth.mfa_factors where user_id = '$MANAGER_ID'")" == "0" ]] ||
   { echo "smoke: the member still has an authenticator app after the reset" >&2; exit 1; }
 [[ "$(q "select count(*) from auth.mfa_factors f join private.mfa_factor_confirmations k on k.factor_id = f.id where f.user_id = '$USER_ID' and f.status = 'verified' and k.confirmed_at is not null")" == "1" ]] ||
   { echo "smoke: expected the admin's one confirmed authenticator app" >&2; exit 1; }
-# The e-mails (worker, our notification service): set-up e-mails with their links (admin 2 — "send again"
-# —, member 3), the removal notices (member: "not you", two resets) and the policy-change notice to every
-# Organization Admin (one here); all sent, without content in the delivery log.
+# The e-mails (worker, our notification service): set-up e-mails with their code and "not you" link (admin
+# 2 — "send again" —, member 4), the removal notices (member: the e-mail's "not you" link, the "added from
+# another sign-in" notice, two resets) and the policy-change notice to every Organization Admin (one here);
+# all sent, without content in the delivery log.
 for i in $(seq 1 60); do
-  if [[ "$(mail_count "$EMAIL" 'Confirm your authenticator app')" == "2" &&
+  if [[ "$(mail_count "$EMAIL" 'An authenticator app was added')" == "2" &&
     "$(mail_count "$EMAIL" 'Security settings changed')" == "1" &&
-    "$(mail_count "$MANAGER_EMAIL" 'Confirm your authenticator app')" == "3" &&
-    "$(mail_count "$MANAGER_EMAIL" 'Authenticator app removed')" == "3" ]]; then
+    "$(mail_count "$MANAGER_EMAIL" 'An authenticator app was added')" == "4" &&
+    "$(mail_count "$MANAGER_EMAIL" 'Authenticator app removed')" == "4" ]]; then
     break
   fi
   [[ $i -eq 60 ]] && { echo "smoke: the authenticator and policy-change e-mails did not all arrive (or arrived twice)" >&2; exit 1; }
   sleep 1
 done
 [[ "$(q "select count(*) from platform.message_deliveries where template in ('platform.mfa_factor_added', 'platform.mfa_factor_removed', 'platform.security_policy_changed') and (status <> 'sent' or destination is not null or html_body is not null or text_body is not null)")" == "0" &&
-   "$(q "select count(*) from platform.message_deliveries where template in ('platform.mfa_factor_added', 'platform.mfa_factor_removed', 'platform.security_policy_changed')")" == "9" ]] ||
-  { echo "smoke: expected the nine authenticator and policy-change e-mails as sent deliveries without content" >&2; exit 1; }
+   "$(q "select count(*) from platform.message_deliveries where template in ('platform.mfa_factor_added', 'platform.mfa_factor_removed', 'platform.security_policy_changed')")" == "11" ]] ||
+  { echo "smoke: expected the eleven authenticator and policy-change e-mails as sent deliveries without content" >&2; exit 1; }
 # The set-up keys (credentials) appear in neither the audit log nor (checked below) any container log.
 for key in "${MFA_KEYS[@]}"; do
   [[ ${#key} -ge 16 ]] || { echo "smoke: an authenticator set-up key is unexpectedly short" >&2; exit 1; }

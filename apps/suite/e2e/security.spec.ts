@@ -17,9 +17,13 @@ import { freshCode, wrongCode } from './totp';
  * authenticator app required for everyone in the smoke organization). Real Auth, real TOTP codes computed
  * from the set-up key the page shows (RFC 6238), real e-mails read from the stand-in relay through
  * infra/docker/e2e-helper.sh. Covers, in Arabic and English:
- *  - a new app counts only once its owner opened the e-mailed confirmation link (review H1): the waiting
- *    state, "send again" (only the newest link works), single use, the link opened on another device;
- *  - "not you? remove this app": the app is removed and every session of the account ends;
+ *  - a new app counts only once the window that set it up entered the one-time code e-mailed to its owner
+ *    (re-review N1): the waiting state, a wrong code, "send again" (too soon, then a new code — only the
+ *    newest works); another sign-in of the same account is told "an app was added from another sign-in",
+ *    has nothing to enter, and "it was me" explains where to finish;
+ *  - THE ATTACK: someone who knows only the password sets up an app; the owner, signing in, sees it and
+ *    removes it — the other sign-in's session ends; the e-mail's "not you? remove this app" link does the
+ *    same for every session; the owner then sets up their own app with the code;
  *  - the Organization Admin changes the policy only with a code (AAL2, PO decision D-IAM-01); lockout
  *    limited to the platform default or stricter, applied with the next update (badge);
  *  - an organization that requires MFA makes a member set an app up, then asks for its code at sign-in;
@@ -36,7 +40,7 @@ const adminPassword = process.env.SIGNED_IN_E2E_PASSWORD ?? '';
 const memberEmail = process.env.SIGNED_IN_E2E_MANAGER_EMAIL ?? '';
 /** The member's password after profile.spec changed it. */
 const memberPassword = process.env.SECURITY_E2E_MANAGER_PASSWORD ?? '';
-/** infra/docker/e2e-helper.sh: the set-up e-mail's links (the relay) and an older code (Auth). */
+/** infra/docker/e2e-helper.sh: the set-up e-mail's code and link (the relay), older codes (Auth, ours). */
 const helper = process.env.SECURITY_E2E_HELPER ?? '';
 /** A private temporary file of the smoke test: the set-up keys, for its leak checks (never printed). */
 const keysFile = process.env.SECURITY_E2E_KEYS_FILE;
@@ -55,9 +59,25 @@ function runHelper(args: readonly string[]): string {
   return execFileSync('bash', [helper, ...args], { encoding: 'utf8', timeout: 150_000 }).trim();
 }
 
-/** The confirm / remove link of the newest set-up e-mail once at least `count` reached `address`. */
-function mfaLink(address: string, kind: 'confirm' | 'remove', locale: 'ar' | 'en', count: number) {
-  return runHelper(['mfa-link', address, kind, locale, String(count)]);
+/** The one-time code of the newest set-up e-mail once at least `count` reached `address` (N1). */
+function mailedCode(address: string, count: number) {
+  return runHelper(['mfa-mail', address, 'code', 'en', String(count)]);
+}
+
+/** The "not you? remove this app" link of the newest set-up e-mail once at least `count` arrived. */
+function removeLink(address: string, locale: 'ar' | 'en', count: number) {
+  return runHelper(['mfa-mail', address, 'remove', locale, String(count)]);
+}
+
+/** Another 8-digit code (never the right one). */
+function otherCode(code: string): string {
+  return String((Number(code) + 1) % 100_000_000).padStart(8, '0');
+}
+
+/** Enters the e-mailed code in the window that set the app up. */
+async function enterMailedCode(page: Page, code: string) {
+  await page.getByTestId('mfa-email-code').fill(code);
+  await page.getByTestId('mfa-email-code-submit').click();
 }
 
 function rememberKey(key: string) {
@@ -66,12 +86,12 @@ function rememberKey(key: string) {
 
 async function enterCode(page: Page, key: string) {
   await page.getByTestId('mfa-code').fill(await freshCode(key));
-  await page.getByTestId('mfa-verify').click();
+  await page.getByTestId('mfa-code-submit').click();
 }
 
 /**
- * Sets up an app on the /mfa page: start → QR code and key → first code. The app then waits for its
- * e-mailed confirmation (review H1): the page shows that state. Returns the key.
+ * Sets up an app on the /mfa page: start → QR code and key → first code. The app then waits for the
+ * e-mailed code (re-review N1): the page asks for it. Returns the key.
  */
 async function setUpApp(page: Page): Promise<string> {
   await page.getByTestId('mfa-start').click();
@@ -93,7 +113,7 @@ async function openLink(page: Page, url: string): Promise<Response | null> {
   return page.goto(url);
 }
 
-/** Opens an e-mailed authenticator link and clicks its one button (the token leaves the address bar). */
+/** Opens the e-mailed "not you" link and clicks its one button (the token leaves the address bar). */
 async function useMfaLink(page: Page, url: string) {
   await openLink(page, url);
   await expect.poll(() => new URL(page.url()).hash).toBe('');
@@ -215,7 +235,7 @@ test.describe('Security policy, MFA and sign-in sessions', () => {
   );
   test.describe.configure({ mode: 'serial' });
 
-  test('the Organization Admin confirms a new app from the mailbox, then changes the policy with a code', async ({
+  test('the Organization Admin turns on a new app with the e-mailed code in its own window, then changes the policy with a code', async ({
     page,
     browser,
   }) => {
@@ -241,64 +261,72 @@ test.describe('Security policy, MFA and sign-in sessions', () => {
     await expect(page.getByTestId('mfa-enrol')).toBeVisible();
     await expectNoSeriousA11yViolations(page);
     adminKey = await setUpApp(page);
-    // …which counts only once it is confirmed from the mailbox (review H1): the page says so and stays.
+    // …which counts only once THIS window entered the code e-mailed to the owner (re-review N1): the page
+    // asks for it and stays.
     await expect(page).toHaveURL(stepUpUrl);
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(
-      'Confirm your authenticator app',
+      'Enter the code from the email',
     );
     await expect(page.getByTestId('mfa-pending-steps')).toContainText(
-      'Check your email to finish turning it on.',
+      'Its code works for 72 hours, only in this window.',
     );
     await expectNoSeriousA11yViolations(page);
-    await page.getByTestId('mfa-pending-check').click();
-    await expect(page.getByTestId('mfa-pending-message')).toHaveText(
-      "The app isn't confirmed yet. Open the link in the email first, then check again.",
-    );
-    await expect(page).toHaveURL(stepUpUrl);
     // The settings are still read only: a code from an unconfirmed app does not count.
     await page.goto('/en/suite/admin/security');
     await expect(page.getByTestId('security-step-up')).toBeVisible();
     await page.getByTestId('security-step-up-link').click();
     await expect(page.getByTestId('mfa-pending')).toBeVisible();
+    const first = mailedCode(adminEmail, 1);
+    expect(first).toMatch(/^[0-9]{8}$/);
 
-    // "Send the email again": only the newest link works.
-    const first = mfaLink(adminEmail, 'confirm', 'en', 1);
-    await page.getByTestId('mfa-pending-resend').click();
-    await expect(page.getByTestId('mfa-pending-message')).toHaveText(
-      "We've sent the email again. Only the link in the newest email works.",
-    );
-    const newest = mfaLink(adminEmail, 'confirm', 'en', 2);
-    expect(newest).not.toBe(first);
-
-    // The e-mail opened on another device, without a session: one click confirms; the replaced link and a
-    // second use of the newest change nothing.
-    await withContext(browser, async (mail) => {
-      await useMfaLink(mail, first);
-      await expect(mail.getByTestId('mfa-link-invalid')).toBeVisible();
-      await expect(mail.getByRole('heading', { level: 1 })).toHaveText("This link isn't valid");
-
-      const response = await openLink(mail, newest);
-      expect(response?.headers()['referrer-policy']).toBe('no-referrer');
-      await expect(mail.locator('meta[name="referrer"]')).toHaveAttribute('content', 'no-referrer');
-      await expect(mail.getByRole('heading', { level: 1 })).toHaveText(
-        'Confirm your authenticator app',
+    // Another sign-in of the same account (a password is enough for that): it is told an app was added
+    // from another sign-in, when and with which browser, and has NO way to enter the code; "it was me"
+    // explains where to finish. (The database refuses its code anyway: pgTAP 67/68.)
+    await withContext(browser, async (other) => {
+      await signIn(other, 'en', adminEmail, adminPassword);
+      await expect(other).toHaveURL(/\/en\/mfa$/);
+      await expect(other.getByTestId('mfa-pending-elsewhere')).toBeVisible();
+      await expect(other.getByRole('heading', { level: 1 })).toHaveText(
+        'An app was added from another sign-in',
       );
-      await expectNoSeriousA11yViolations(mail);
-      await useMfaLink(mail, newest);
-      await expect(mail.getByTestId('mfa-link-confirmed')).toBeVisible();
-      await expect(mail.getByRole('heading', { level: 1 })).toHaveText(
-        'Authenticator app confirmed',
+      await expect(other.getByTestId('mfa-intro')).toContainText(
+        'An authenticator app was added to your account from another sign-in on',
       );
-      await expect(mail.getByRole('heading', { level: 1 })).toBeFocused();
-      await expect(mail.getByTestId('mfa-link-continue')).toHaveAttribute('href', '/en/suite');
-      await expectNoSeriousA11yViolations(mail);
-
-      await useMfaLink(mail, newest);
-      await expect(mail.getByTestId('mfa-link-invalid')).toBeVisible();
+      await expect(other.getByTestId('mfa-email-code')).toHaveCount(0);
+      await expectNoSeriousA11yViolations(other);
+      await other.getByTestId('mfa-elsewhere-it-was-me').click();
+      await expect(other.getByTestId('mfa-elsewhere-it-was-me-text')).toContainText(
+        'Finish the set-up in the window where you set up the app',
+      );
+      // Nothing requires an app yet: this sign-in may go on.
+      await other.getByTestId('mfa-skip').click();
+      await expect(other).toHaveURL(/\/en\/suite$/);
     });
 
-    // Back on the set-up page: "check again" goes on to the settings, now editable.
-    await page.getByTestId('mfa-pending-check').click();
+    // A wrong code is refused (the database counts the tries).
+    await enterMailedCode(page, otherCode(first));
+    await expect(page.getByTestId('mfa-error')).toHaveText(
+      'The code is incorrect. Check the newest email and try again.',
+    );
+    // "Send the email again": not within 2 minutes of the last one…
+    await page.getByTestId('mfa-pending-resend').click();
+    await expect(page.getByTestId('mfa-pending-message')).toHaveText(
+      "We've just sent the email. You can ask for it again in 2 minutes.",
+    );
+    // …then a new e-mail with a new code: only the newest works.
+    expect(Number(runHelper(['age-setup-mail', adminEmail]))).toBe(1);
+    await page.getByTestId('mfa-pending-resend').click();
+    await expect(page.getByTestId('mfa-pending-message')).toHaveText(
+      "We've sent the email again with a new code. Only the newest code works.",
+    );
+    const newest = mailedCode(adminEmail, 2);
+    expect(newest).not.toBe(first);
+    await enterMailedCode(page, first);
+    await expect(page.getByTestId('mfa-error')).toHaveText(
+      'The code is incorrect. Check the newest email and try again.',
+    );
+    await enterMailedCode(page, newest);
+    // Confirmed: on to the settings, now editable.
     await expect(page).toHaveURL(/\/en\/suite\/admin\/security$/);
     await expect(page.getByTestId('security-step-up')).toHaveCount(0);
 
@@ -345,62 +373,97 @@ test.describe('Security policy, MFA and sign-in sessions', () => {
     await expectNoSeriousA11yViolations(page);
   });
 
-  test('"not you": the e-mailed link removes an app and ends every session; a confirmed app is asked for at sign-in', async ({
+  test('the attack: an app set up with the password only is removed by its owner ("not you" link, "added from another sign-in"); the owner turns on their own', async ({
     page,
     browser,
   }) => {
-    test.setTimeout(300_000);
-    await signIn(page, 'ar', memberEmail, memberPassword);
-    // Required for everyone, no grace period: setting an app up is the way in (no "later").
-    await expect(page).toHaveURL(/\/ar\/mfa$/);
-    await expect(page.getByTestId('mfa-enrol')).toBeVisible();
-    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('إعداد تطبيق المصادقة');
-    await expect(page.getByTestId('mfa-skip')).toHaveCount(0);
-    await expectNoSeriousA11yViolations(page);
-    // The database refuses the session until then: the suite sends it back.
-    await page.goto('/ar/suite');
-    await expect(page).toHaveURL(/\/ar\/mfa$/);
-    await setUpApp(page);
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('تأكيد تطبيق المصادقة');
-    await expect(page.getByTestId('mfa-skip')).toHaveCount(0);
-    await expectNoSeriousA11yViolations(page);
-    // Not confirmed: still refused.
-    await page.goto('/ar/suite');
-    await expect(page).toHaveURL(/\/ar\/mfa$/);
-    await expect(page.getByTestId('mfa-pending')).toBeVisible();
+    test.setTimeout(360_000);
+    // Someone who knows only the password: required for everyone, so the set-up is the way in.
+    const attackerContext = await browser.newContext();
+    const attacker = await attackerContext.newPage();
+    try {
+      await signIn(attacker, 'en', memberEmail, memberPassword);
+      await expect(attacker).toHaveURL(/\/en\/mfa$/);
+      await expect(attacker.getByTestId('mfa-enrol')).toBeVisible();
+      await expect(attacker.getByTestId('mfa-skip')).toHaveCount(0);
+      // The database refuses the session until then: the suite sends it back.
+      await attacker.goto('/en/suite');
+      await expect(attacker).toHaveURL(/\/en\/mfa$/);
+      await setUpApp(attacker);
+      // Without the owner's mailbox there is no code: still refused.
+      await enterMailedCode(attacker, otherCode(mailedCode(memberEmail, 1)));
+      await expect(attacker.getByTestId('mfa-error')).toBeVisible();
+      await attacker.goto('/en/suite');
+      await expect(attacker).toHaveURL(/\/en\/mfa$/);
 
-    // "Not you? Remove this app" from the e-mail, opened elsewhere: the app goes, every session ends.
-    const remove = mfaLink(memberEmail, 'remove', 'ar', 1);
-    await withContext(browser, async (mail) => {
-      await openLink(mail, remove);
-      await expect(mail.locator('html')).toHaveAttribute('dir', 'rtl');
-      await expect(mail.getByRole('heading', { level: 1 })).toHaveText('إزالة تطبيق المصادقة');
-      await expect(mail.getByTestId('mfa-link-submit')).toHaveText(
-        'إزالة التطبيق وتسجيل الخروج من كل الأجهزة',
+      // The owner's e-mail: "Not you? Remove this app", opened elsewhere — the app goes, every session ends.
+      const remove = removeLink(memberEmail, 'ar', 1);
+      await withContext(browser, async (mail) => {
+        await openLink(mail, remove);
+        await expect(mail.locator('html')).toHaveAttribute('dir', 'rtl');
+        await expect(mail.getByRole('heading', { level: 1 })).toHaveText('إزالة تطبيق المصادقة');
+        await expect(mail.getByTestId('mfa-link-submit')).toHaveText(
+          'إزالة التطبيق وتسجيل الخروج من كل الأجهزة',
+        );
+        await expectNoSeriousA11yViolations(mail);
+        await useMfaLink(mail, remove);
+        await expect(mail.getByTestId('mfa-link-removed')).toBeVisible();
+        await expect(mail.getByRole('heading', { level: 1 })).toHaveText('أُزيل التطبيق');
+        await expect(mail.getByTestId('mfa-link-new-password')).toHaveAttribute(
+          'href',
+          '/ar/forgot-password',
+        );
+        await expectNoSeriousA11yViolations(mail);
+        // Single use.
+        await useMfaLink(mail, remove);
+        await expect(mail.getByTestId('mfa-link-invalid')).toBeVisible();
+      });
+      await expectSessionEnded(attacker, 'en');
+
+      // Again: another app with the password only…
+      await signIn(attacker, 'en', memberEmail, memberPassword);
+      await expect(attacker).toHaveURL(/\/en\/mfa$/);
+      await setUpApp(attacker);
+      mailedCode(memberEmail, 2);
+
+      // …the owner signs in (Arabic): an app was added from another sign-in — Remove is the main action,
+      // there is nothing to enter here.
+      await signIn(page, 'ar', memberEmail, memberPassword);
+      await expect(page).toHaveURL(/\/ar\/mfa$/);
+      await expect(page.getByTestId('mfa-pending-elsewhere')).toBeVisible();
+      await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+      await expect(page.getByRole('heading', { level: 1 })).toHaveText('أُضيف تطبيق من دخول آخر');
+      await expect(page.getByTestId('mfa-intro')).toContainText(
+        'أُضيف تطبيق مصادقة إلى حسابك من دخول آخر يوم',
       );
-      await expectNoSeriousA11yViolations(mail);
-      await useMfaLink(mail, remove);
-      await expect(mail.getByTestId('mfa-link-removed')).toBeVisible();
-      await expect(mail.getByRole('heading', { level: 1 })).toHaveText('أُزيل التطبيق');
-      await expect(mail.getByTestId('mfa-link-new-password')).toHaveAttribute(
+      await expect(page.getByTestId('mfa-email-code')).toHaveCount(0);
+      await expect(page.getByTestId('mfa-elsewhere-remove')).toHaveText('إزالة هذا التطبيق');
+      await expectNoSeriousA11yViolations(page);
+      await page.getByTestId('mfa-elsewhere-remove').click();
+      await expect(page.getByTestId('mfa-elsewhere-removed')).toContainText(
+        'أُزيل التطبيق وانتهت جلسات الدخول الأخرى لحسابك',
+      );
+      await expect(page.getByTestId('mfa-elsewhere-new-password')).toHaveAttribute(
         'href',
         '/ar/forgot-password',
       );
-      await expectNoSeriousA11yViolations(mail);
-    });
-    await expectSessionEnded(page, 'ar');
+      await expectNoSeriousA11yViolations(page);
+      // Whoever set it up keeps nothing: that session has ended.
+      await expectSessionEnded(attacker, 'en');
+    } finally {
+      await attackerContext.close();
+    }
 
-    // A new app, confirmed from the e-mail on the same device: "continue" goes on into the suite.
-    await signIn(page, 'ar', memberEmail, memberPassword);
-    await expect(page).toHaveURL(/\/ar\/mfa$/);
+    // The owner goes on and sets up their own app; the code from the e-mail turns it on in this window.
+    await page.getByTestId('mfa-elsewhere-continue').click();
     await expect(page.getByTestId('mfa-enrol')).toBeVisible();
     memberKey = await setUpApp(page);
-    const confirm = mfaLink(memberEmail, 'confirm', 'ar', 2);
-    await useMfaLink(page, confirm);
-    await expect(page.getByTestId('mfa-link-confirmed')).toBeVisible();
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('تم تأكيد تطبيق المصادقة');
-    await page.getByTestId('mfa-link-continue').click();
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+      'إدخال الرمز من البريد الإلكتروني',
+    );
+    await expect(page.getByTestId('mfa-skip')).toHaveCount(0);
+    await expectNoSeriousA11yViolations(page);
+    await enterMailedCode(page, mailedCode(memberEmail, 3));
     await expect(page).toHaveURL(/\/ar\/suite$/);
 
     // The next sign-in asks for the app's code; a wrong code is refused.
@@ -412,7 +475,7 @@ test.describe('Security policy, MFA and sign-in sessions', () => {
     // Lost the app: the administrator resets it, or ENTLAQA support (no contradicting texts).
     await expect(page.getByText(/فريق دعم ENTLAQA/)).toBeVisible();
     await page.getByTestId('mfa-code').fill(wrongCode(memberKey));
-    await page.getByTestId('mfa-verify').click();
+    await page.getByTestId('mfa-code-submit').click();
     await expect(page.getByTestId('mfa-error')).toHaveText(
       'الرمز غير صحيح أو انتهت صلاحيته. يمكنك إدخال الرمز الظاهر الآن في التطبيق.',
     );
@@ -534,12 +597,7 @@ test.describe('Security policy, MFA and sign-in sessions', () => {
       await expect(member.getByTestId('mfa-enrol')).toBeVisible();
       memberKey = await setUpApp(member);
       await expect(member.getByTestId('mfa-pending-steps')).toContainText('72 hours');
-      const confirm = mfaLink(memberEmail, 'confirm', 'en', 3);
-      const mail = await member.context().newPage();
-      await useMfaLink(mail, confirm);
-      await expect(mail.getByTestId('mfa-link-confirmed')).toBeVisible();
-      await mail.close();
-      await member.getByTestId('mfa-pending-check').click();
+      await enterMailedCode(member, mailedCode(memberEmail, 4));
       await expect(member).toHaveURL(/\/en\/suite$/);
       // A line manager (no user management): her report's profile has no sessions and no reset.
       await member.goto(`/en/suite/admin/users/${KHALID}`);

@@ -1,16 +1,21 @@
 #!/usr/bin/env bash
 # Smoke-test helper for the browser journeys of infra/docker/smoke.sh (security.spec, T-M2-10). It does
 # what a person does outside the browser, on the running self-hosted stack only:
-#   e2e-helper.sh mfa-link <address> <confirm|remove> <ar|en> <n>
-#       waits (up to 90 s) until <address> has received at least <n> "Confirm your authenticator app"
-#       e-mails in the stand-in relay (Mailpit) and prints the <confirm|remove> link of the NEWEST one in
-#       <ar|en> — the same link in the text and HTML parts, whole and unchanged (the token travels in the
-#       fragment). The link is a credential: callers never log it.
+#   e2e-helper.sh mfa-mail <address> <code|remove> <ar|en> <n>
+#       waits (up to 90 s) until <address> has received at least <n> "An authenticator app was added" e-mails
+#       in the stand-in relay (Mailpit) and prints, from the NEWEST one, its one-time set-up code (re-review
+#       N1: the same 8 digits in the text part and, grouped, in the HTML part) or its "not you? remove this
+#       app" link in <ar|en> (the same link in the text and HTML parts, whole and unchanged: the token
+#       travels in the fragment). Both are credentials: callers never log them.
 #   e2e-helper.sh age-code <address>
 #       makes the authenticator code of every session of <address> 20 minutes old in Auth
 #       (auth.mfa_amr_claims), as if it had been entered then — Auth puts that time into the next access
 #       token (amr), and high-risk actions want a code from the last 15 minutes (review L3). Prints how many
 #       sessions were changed.
+#   e2e-helper.sh age-setup-mail <address>
+#       makes the last set-up e-mail of every app of <address> still waiting for its code 3 minutes old
+#       (private.mfa_factor_confirmations.code_issued_at), as if it had been sent then — "send the e-mail
+#       again" is refused for 2 minutes after one. Prints how many apps were changed.
 # Reads only the values it needs from .secrets/.env (as smoke.sh); prints nothing else.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
@@ -19,9 +24,9 @@ compose() { $DOCKER compose --env-file .secrets/.env "$@"; }
 secret() { sed -n "s/^$1=//p" .secrets/.env; }
 
 case "${1:-}" in
-  mfa-link)
+  mfa-mail)
     address="$2" kind="$3" locale="$4" want="$5"
-    [[ "$kind" == confirm || "$kind" == remove ]] || { echo "e2e-helper: kind is confirm or remove" >&2; exit 2; }
+    [[ "$kind" == code || "$kind" == remove ]] || { echo "e2e-helper: kind is code or remove" >&2; exit 2; }
     [[ "$locale" == ar || "$locale" == en ]] || { echo "e2e-helper: locale is ar or en" >&2; exit 2; }
     [[ "$want" =~ ^[1-9][0-9]?$ ]] || { echo "e2e-helper: n is a small positive number" >&2; exit 2; }
     for _ in $(seq 1 90); do
@@ -29,7 +34,7 @@ case "${1:-}" in
       mapfile -t ids < <(compose exec -T mailpit wget -qO- 'http://127.0.0.1:8025/api/v1/messages?limit=500' 2>/dev/null |
         node -e 'let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => {
           try { for (const m of JSON.parse(s).messages ?? [])
-            if ((m.To ?? []).some((t) => t.Address === process.argv[1]) && /Confirm your authenticator app/.test(m.Subject ?? ""))
+            if ((m.To ?? []).some((t) => t.Address === process.argv[1]) && /An authenticator app was added/.test(m.Subject ?? ""))
               console.log(m.ID); } catch {} })' "$address")
       if [[ ${#ids[@]} -ge $want ]]; then
         compose exec -T mailpit wget -qO- "http://127.0.0.1:8025/api/v1/message/${ids[0]}" 2>/dev/null |
@@ -37,7 +42,14 @@ case "${1:-}" in
             let m = {}; try { m = JSON.parse(s); } catch {}
             const [kind, locale] = process.argv.slice(1);
             const html = (m.HTML ?? "").replace(/&amp;/g, "&"), text = m.Text ?? "";
-            const re = new RegExp(`http://localhost:3200/${locale}/mfa/${kind}#token=[A-Za-z0-9_-]{43}(?![A-Za-z0-9_-])`);
+            if (kind === "code") {
+              // One code, on a line of its own in the text part (both languages), grouped 4 + 4 in the HTML.
+              const codes = [...new Set([...text.matchAll(/^([0-9]{8})\r?$/gm)].map((x) => x[1]))];
+              if (codes.length !== 1 || !html.includes(`${codes[0].slice(0, 4)} ${codes[0].slice(4)}`)) process.exit(1);
+              process.stdout.write(codes[0]);
+              return;
+            }
+            const re = new RegExp(`http://localhost:3200/${locale}/mfa/remove#token=[A-Za-z0-9_-]{43}(?![A-Za-z0-9_-])`);
             const a = html.match(re), b = text.match(re);
             if (!a || !b || a[0] !== b[0]) process.exit(1);
             process.stdout.write(a[0]); })' "$kind" "$locale"
@@ -60,8 +72,20 @@ with aged as (
 select count(*) from aged;
 SQL
     ;;
+  age-setup-mail)
+    address="$2"
+    PGPASSWORD="$(secret POSTGRES_PASSWORD)" PGSSLMODE=verify-full PGSSLROOTCERT=.secrets/ca.crt \
+      psql -h localhost -p 55432 -U postgres -d postgres -X -At -q -v ON_ERROR_STOP=1 -v address="$address" <<'SQL'
+with aged as (
+  update private.mfa_factor_confirmations k set code_issued_at = now() - interval '3 minutes'
+  from auth.users u
+  where u.id = k.user_id and u.email = :'address' and k.confirmed_at is null and k.code_issued_at is not null
+  returning k.factor_id)
+select count(*) from aged;
+SQL
+    ;;
   *)
-    echo "usage: e2e-helper.sh mfa-link <address> <confirm|remove> <ar|en> <n> | age-code <address>" >&2
+    echo "usage: e2e-helper.sh mfa-mail <address> <code|remove> <ar|en> <n> | age-code <address> | age-setup-mail <address>" >&2
     exit 2
     ;;
 esac

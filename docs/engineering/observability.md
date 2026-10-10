@@ -36,9 +36,9 @@
 | Variable | Example | Purpose |
 |---|---|---|
 | `SENTRY_BROWSER_DSN` (optional) | DSN of a separate Sentry project for browser errors | Browser reports go here instead of `SENTRY_DSN` |
-| `JADARAT_CLIENT_IP_HEADER` (required self-hosted) | `x-real-ip` | Header holding the client IP that the load balancer in front of the app **overwrites** (`x-forwarded-for`, which proxies append to, is refused), for per-client limits. Vercel's `x-real-ip` is trusted automatically; without a trusted header all clients share one limit. A self-hosted production server (`JADARAT_ENVIRONMENT=self-hosted`) refuses to start without it; `none` says so explicitly (an ERROR at every start) — [sign-in-protection.md](sign-in-protection.md) §7 |
+| `JADARAT_CLIENT_IP_HEADER` (required self-hosted) | `x-real-ip` | Header holding the client IP that the load balancer in front of the app **overwrites** (`x-forwarded-for`, which proxies append to, is refused), for per-client limits. Vercel's `x-real-ip` is trusted automatically; without a trusted header all clients share one limit. A production server outside Vercel that sets `JADARAT_ENVIRONMENT` (to any value) refuses to start without it; `none` says so explicitly (an ERROR at every start) — [sign-in-protection.md](sign-in-protection.md) §7 |
 | `SENTRY_DSN` | Sentry → Settings → Projects → `javascript-nextjs` → **Client Keys (DSN)** | Turns error tracking on. Unset or invalid = logs only. Must be `https://` (plain `http://` only to a single-label host on the installation's private network, e.g. `http://key@glitchtip:8000/1`) |
-| `JADARAT_ENVIRONMENT` | `staging`, `production`, `self-hosted` | `env` in logs, `environment` in Sentry (default: Vercel's `VERCEL_ENV`, else `NODE_ENV`) |
+| `JADARAT_ENVIRONMENT` | `staging`, `production`, `self-hosted` | `env` in logs, `environment` in Sentry (default: Vercel's `VERCEL_ENV`, else `NODE_ENV`). Outside Vercel, setting it (any value) on a production server also makes `JADARAT_CLIENT_IP_HEADER` required (T-M2-11) |
 | `JADARAT_DEPLOYMENT` | `eu-saas-1`, `sa-gov-1` | `deployment` in logs (optional) |
 | `JADARAT_RELEASE` | git SHA | `version` / `release` (default on Vercel: `VERCEL_GIT_COMMIT_SHA`) |
 | `UPTIME_URL` (GitHub **repository variable**) | `https://<staging domain>` | Turns the scheduled uptime check on |

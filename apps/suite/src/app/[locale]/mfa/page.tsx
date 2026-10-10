@@ -157,7 +157,12 @@ export default async function MfaPage({
           <p className="m-0 text-sm text-text-muted">{t('title')}</p>
           <h1 className="m-0 text-2xl font-bold">{title}</h1>
         </div>
-        <Alert tone={mode === 'challenge' || mode === 'enrol' ? 'info' : 'warning'}>{intro}</Alert>
+        <Alert
+          tone={mode === 'challenge' || mode === 'enrol' ? 'info' : 'warning'}
+          data-testid="mfa-intro"
+        >
+          {intro}
+        </Alert>
         <Card>
           {mode === 'challenge' ? (
             <MfaChallenge next={next} texts={texts} errors={errors} />

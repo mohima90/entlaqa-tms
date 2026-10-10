@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import AxeBuilder from '@axe-core/playwright';
 import { type Page, expect, test } from '@playwright/test';
+import { freshCode } from './totp';
 
 /**
  * Forgot / reset password (FR-IAM-13, T-M2-08; screens 10 and 11) on the self-hosted stack
@@ -12,11 +13,16 @@ import { type Page, expect, test } from '@playwright/test';
  *   RESET_E2E_LINK_URL      step 2: the reset link of the newest e-mail to that account
  *   RESET_E2E_NEW_PASSWORD  step 2: the new password to set (the smoke then signs in with it and checks
  *                           that the old one is refused)
+ *   RESET_E2E_MFA_LINK_URL  step 2 for an account WITH an authenticator app (T-M2-10): its reset link
+ *                           (`&mfa=1`), set with RESET_E2E_NEW_PASSWORD and
+ *   RESET_E2E_TOTP_KEY      that app's set-up key (the page asks for its code with the new password)
  * The referrer test runs everywhere (no Auth needed).
  */
 const resetEmail = process.env.RESET_E2E_EMAIL;
 const linkUrl = process.env.RESET_E2E_LINK_URL;
 const newPassword = process.env.RESET_E2E_NEW_PASSWORD;
+const mfaLinkUrl = process.env.RESET_E2E_MFA_LINK_URL;
+const totpKey = process.env.RESET_E2E_TOTP_KEY;
 
 /** The path and fragment of an e-mailed link (its host is the Auth site URL), in the given language. */
 function inLocale(url: string, locale: 'ar' | 'en'): string {
@@ -153,4 +159,58 @@ test.describe('set a new password from the e-mailed link', () => {
       await expectNoSeriousA11yViolations(page);
     });
   }
+});
+
+test.describe('an account with an authenticator app (T-M2-10)', () => {
+  test.skip(
+    !mfaLinkUrl || !newPassword || !totpKey,
+    'RESET_E2E_MFA_LINK_URL / RESET_E2E_NEW_PASSWORD / RESET_E2E_TOTP_KEY not set',
+  );
+  test.describe.configure({ mode: 'serial' });
+
+  test("Arabic: the page asks for the app's code with the new password (Auth wants it)", async ({
+    page,
+  }) => {
+    await page.goto(inLocale(mfaLinkUrl ?? '', 'ar'));
+    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await expect.poll(() => new URL(page.url()).hash).toBe('');
+    const step = page.getByTestId('reset-code-step');
+    await expect(step).toContainText('يستخدم حسابك تطبيق مصادقة');
+    await expectNoSeriousA11yViolations(page);
+
+    await page.locator('#reset-password').fill(newPassword ?? '');
+    await page.locator('#reset-password-confirm').fill(newPassword ?? '');
+    // A malformed code is refused in the page: the single-use link is not spent.
+    await page.getByTestId('reset-code').fill('12ab');
+    await page.getByRole('button', { name: 'حفظ كلمة المرور' }).click();
+    await expect(page.locator('#reset-code-error')).toHaveText('رمز التحقق 6 أرقام.');
+    await expectNoSeriousA11yViolations(page);
+
+    // Typed as the app shows it, in Arabic digits with a space.
+    const code = (await freshCode(totpKey ?? '')).replace(/\d/g, (d) =>
+      String.fromCharCode(0x0660 + Number(d)),
+    );
+    await page.getByTestId('reset-code').fill(`${code.slice(0, 3)} ${code.slice(3)}`);
+    await page.getByRole('button', { name: 'حفظ كلمة المرور' }).click();
+    await expect(page).toHaveURL(/\/ar\/sign-in\?notice=password-reset$/);
+  });
+
+  test('English: the language switch keeps asking for the code; a used link asks for a new one', async ({
+    page,
+  }) => {
+    await page.goto(inLocale(mfaLinkUrl ?? '', 'ar'));
+    await expect(page.getByTestId('reset-code-step')).toBeVisible();
+    await page.getByTestId('language-toggle').click();
+    await expect(page).toHaveURL(/\/en\/reset-password$/);
+    await expect(page.getByTestId('reset-code-step')).toContainText(
+      'Your account uses an authenticator app',
+    );
+    const again = `Again-${randomUUID()}`;
+    await page.locator('#reset-password').fill(again);
+    await page.locator('#reset-password-confirm').fill(again);
+    await page.getByTestId('reset-code').fill(await freshCode(totpKey ?? ''));
+    await page.getByRole('button', { name: 'Save password' }).click();
+    await expect(page.getByTestId('reset-link-invalid')).toBeVisible();
+    await expectNoSeriousA11yViolations(page);
+  });
 });

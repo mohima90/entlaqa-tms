@@ -22,7 +22,9 @@ import { fieldErrorCodes } from '../profile/field-errors';
  * once and sent only in the body of the server action, together with the new password. Opening the page
  * verifies nothing (a link scanner cannot spend the single-use token). The token is kept in memory only.
  * An account with an authenticator app (`&mfa=1` in the link, T-M2-10) also enters the app's code: Auth
- * sets the password only after it, and the single-use link is spent by that one attempt.
+ * sets the password only after it, and the single-use link is spent by that one attempt. When Auth's own
+ * mailer sends the link (PASSWORD_RESET_DELIVERY=auth) it cannot say so: the code field is then offered
+ * as optional, for accounts with an app.
  */
 export interface ResetPasswordTexts extends PasswordRuleLabels {
   readonly pageTitle: string;
@@ -36,6 +38,9 @@ export interface ResetPasswordTexts extends PasswordRuleLabels {
   readonly sessionsNotice: string;
   /** The account uses an authenticator app: why its code is asked, the field, its format error. */
   readonly codeIntro: string;
+  /** The link cannot tell (Auth's mailer): the code only for an account with an app. */
+  readonly codeOptionalIntro: string;
+  readonly optional: string;
   readonly codeLabel: string;
   readonly codeHint: string;
   readonly codeFormat: string;
@@ -64,6 +69,8 @@ export interface ResetPasswordViewProps {
   };
   readonly texts: ResetPasswordTexts;
   readonly errors: ErrorTexts;
+  /** Auth's own mailer sends the links (they never say whether the account has an app). */
+  readonly codeOptional: boolean;
 }
 
 type View =
@@ -75,6 +82,7 @@ function ResetForm({
   locale,
   token,
   needsCode,
+  codeOptional,
   texts,
   errors,
   onSpent,
@@ -82,6 +90,7 @@ function ResetForm({
   readonly locale: 'ar' | 'en';
   readonly token: string;
   readonly needsCode: boolean;
+  readonly codeOptional: boolean;
   readonly texts: ResetPasswordTexts;
   readonly errors: ErrorTexts;
   readonly onSpent: (reason: string) => void;
@@ -113,7 +122,8 @@ function ResetForm({
       return;
     }
     // Checked before the single-use link is spent by the one attempt.
-    if (needsCode && !looksLikeTotpCode(code)) {
+    const withCode = needsCode || (codeOptional && code.trim() !== '');
+    if (withCode && !looksLikeTotpCode(code)) {
       setFieldErrors({ code: texts.codeFormat });
       return;
     }
@@ -122,7 +132,7 @@ function ResetForm({
         tokenHash: token,
         password,
         confirmPassword: confirmation,
-        ...(needsCode ? { code } : {}),
+        ...(withCode ? { code } : {}),
       });
       if (result.ok) {
         router.replace(pathAfterReset(locale));
@@ -195,19 +205,21 @@ function ResetForm({
             error={fieldErrors.confirmPassword}
             disabled={pending}
           />
-          {needsCode ? (
+          {needsCode || codeOptional ? (
             <div className="flex flex-col gap-2" data-testid="reset-code-step">
-              <p className="m-0 text-sm text-text-muted">{texts.codeIntro}</p>
+              <p className="m-0 text-sm text-text-muted">
+                {needsCode ? texts.codeIntro : texts.codeOptionalIntro}
+              </p>
               <TextField
                 id="reset-code"
                 name="code"
                 label={texts.codeLabel}
                 hint={texts.codeHint}
-                marker={texts.required}
+                marker={needsCode ? texts.required : texts.optional}
                 inputMode="numeric"
                 autoComplete="one-time-code"
                 maxLength={12}
-                required
+                required={needsCode}
                 dir="ltr"
                 value={code}
                 onChange={(event) => {
@@ -263,6 +275,7 @@ export function ResetPasswordView({
   toggle,
   texts,
   errors,
+  codeOptional,
 }: ResetPasswordViewProps) {
   const [view, setView] = useState<View>({ kind: 'opening' });
   const started = useRef(false);
@@ -298,6 +311,7 @@ export function ResetPasswordView({
         locale={locale}
         token={view.token}
         needsCode={view.needsCode}
+        codeOptional={codeOptional}
         texts={texts}
         errors={errors}
         onSpent={(reason) => {

@@ -14,6 +14,9 @@ import { useSessionRefusal } from '../auth/session-refusal';
  * A login that also belongs to another organization is reset by ENTLAQA support (the answer says so).
  */
 export interface ResetAuthenticatorLabels {
+  readonly title: string;
+  readonly hint: string;
+  readonly support: string;
   readonly action: string;
   readonly needsCode: string;
   readonly verifyFirst: string;
@@ -30,6 +33,8 @@ export interface ResetAuthenticatorLabels {
 export function ResetAuthenticator({
   personId,
   personName,
+  hasApp,
+  canReset,
   needsCode,
   stepUpHref,
   labels,
@@ -37,6 +42,10 @@ export function ResetAuthenticator({
 }: {
   readonly personId: string;
   readonly personName: string;
+  /** The member has an app (confirmed or waiting for its confirmation): something to reset. */
+  readonly hasApp: boolean;
+  /** The caller may reset it (Organization Admin); others read how a lost app is reset. */
+  readonly canReset: boolean;
   /** No code of the admin's own from the last 15 minutes: the /mfa step first. */
   readonly needsCode: boolean;
   /** /mfa?next=<this profile>. */
@@ -86,9 +95,23 @@ export function ResetAuthenticator({
     </a>
   );
 
+  // Kept mounted after a reset (the page refreshes without the app) so its answer stays on screen.
+  if (!hasApp && message === null) return null;
   return (
-    <div className="flex flex-col gap-3" data-testid="user-mfa-reset">
-      {needsCode ? (
+    <div
+      className="mt-5 flex flex-col gap-3 border-t border-border pt-4"
+      data-testid="user-mfa-reset"
+    >
+      {hasApp ? (
+        <>
+          <h3 className="m-0 text-base font-semibold">{labels.title}</h3>
+          <p className="m-0 text-sm text-text-muted">{labels.hint}</p>
+          <p className="m-0 text-sm text-text-muted" data-testid="user-mfa-reset-support">
+            {labels.support}
+          </p>
+        </>
+      ) : null}
+      {!hasApp || !canReset ? null : needsCode ? (
         <Alert tone="warning">
           <span className="flex flex-wrap items-center gap-3">
             <span>{labels.needsCode}</span>

@@ -380,34 +380,30 @@ async function Profile({
         </dl>
         {/* Lost authenticator app (PO answer, 9 Oct 2026): the Organization Admin resets it here;
             ENTLAQA support for logins in several organizations and the last Organization Admin. */}
-        {security && (security.usesApp || security.appPending) ? (
-          <div className="mt-5 flex flex-col gap-3 border-t border-border pt-4">
-            <h3 className="m-0 text-base font-semibold">{t('mfaResetTitle')}</h3>
-            <p className="m-0 text-sm text-text-muted">{t('mfaResetHint')}</p>
-            <p className="m-0 text-sm text-text-muted" data-testid="user-mfa-reset-support">
-              {t('mfaResetSupport')}
-            </p>
-            {security.canResetApp ? (
-              <ResetAuthenticator
-                personId={profile.personId}
-                personName={personName}
-                needsCode={security.resetNeedsCode}
-                stepUpHref={stepUpHref(locale, `/${locale}/suite/admin/users/${profile.personId}`)}
-                labels={{
-                  action: t('mfaResetAction'),
-                  needsCode: t('mfaResetNeedsCode'),
-                  verifyFirst: t('mfaResetVerifyFirst'),
-                  confirmTitle: t('mfaResetConfirmTitle'),
-                  confirmText: t('mfaResetConfirmText', { name: '{name}' }),
-                  confirm: t('mfaResetConfirm'),
-                  resetting: t('mfaResetting'),
-                  cancel: t('mfaResetCancel'),
-                  done: t('mfaResetDone', { name: '{name}' }),
-                }}
-                errors={securityErrors}
-              />
-            ) : null}
-          </div>
+        {security ? (
+          <ResetAuthenticator
+            personId={profile.personId}
+            personName={personName}
+            hasApp={security.usesApp === true || security.appPending}
+            canReset={security.canResetApp}
+            needsCode={security.resetNeedsCode}
+            stepUpHref={stepUpHref(locale, `/${locale}/suite/admin/users/${profile.personId}`)}
+            labels={{
+              title: t('mfaResetTitle'),
+              hint: t('mfaResetHint'),
+              support: t('mfaResetSupport'),
+              action: t('mfaResetAction'),
+              needsCode: t('mfaResetNeedsCode'),
+              verifyFirst: t('mfaResetVerifyFirst'),
+              confirmTitle: t('mfaResetConfirmTitle'),
+              confirmText: t('mfaResetConfirmText', { name: '{name}' }),
+              confirm: t('mfaResetConfirm'),
+              resetting: t('mfaResetting'),
+              cancel: t('mfaResetCancel'),
+              done: t('mfaResetDone', { name: '{name}' }),
+            }}
+            errors={securityErrors}
+          />
         ) : null}
       </Card>
 

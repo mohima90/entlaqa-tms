@@ -737,42 +737,125 @@ deactivate_e2e returns
         where m.user_id = '$DEACT_ID' and ra.role_code in ('line_manager', 'learner')")" == "2" ]] ||
   { echo "smoke: the reactivated member's roles changed" >&2; exit 1; }
 unset answer wrong unknown rows_before
-echo "smoke: security policy (T-M2-10) — change needs a code; MFA required; strictest password rule; force sign-out"
-# The last browser journey: it makes an authenticator app required for everyone in the organization.
+echo "smoke: security policy (T-M2-10) — confirmed apps, policy with a code, MFA required, sessions, step-up, lost-app reset"
+# The last browser journey: it makes an authenticator app required for everyone in the organization. The
+# spec reads the set-up e-mails' links from Mailpit and ages a code through infra/docker/e2e-helper.sh, and
+# leaves the set-up keys it saw in a private temporary file for the leak checks below.
 [[ "$(q "select p.mfa_mode || ':' || p.password_min_length || ':' || p.session_max_devices from platform.security_policies p join platform.tenants t on t.id = p.tenant_id where t.slug = 'sovereign-smoke'")" == "off:12:3" ]] ||
   { echo "smoke: the organization must start with the default security policy" >&2; exit 1; }
+SECURITY_KEYS_FILE="$(mktemp)"
+chmod 600 "$SECURITY_KEYS_FILE"
 (cd "$ROOT/apps/suite" && E2E_BASE_URL=http://localhost:3200 SIGNED_IN_E2E_EMAIL="$EMAIL" \
   SIGNED_IN_E2E_PASSWORD="$PASSWORD" SIGNED_IN_E2E_MANAGER_EMAIL="$MANAGER_EMAIL" \
-  SECURITY_E2E_MANAGER_PASSWORD="$PROFILE_NEW_PASSWORD" \
-  pnpm exec playwright test e2e/security.spec.ts --project=desktop-chromium)
-[[ "$(q "select p.mfa_mode || ':' || p.mfa_grace_days || ':' || p.password_min_length || ':' || (p.updated_by is not null) from platform.security_policies p join platform.tenants t on t.id = p.tenant_id where t.slug = 'sovereign-smoke'")" == "required_all:0:16:true" ]] ||
+  SECURITY_E2E_MANAGER_PASSWORD="$PROFILE_NEW_PASSWORD" SECURITY_E2E_HELPER="$ROOT/infra/docker/e2e-helper.sh" \
+  SECURITY_E2E_KEYS_FILE="$SECURITY_KEYS_FILE" DOCKER="$DOCKER" \
+  pnpm exec playwright test e2e/security.spec.ts --project=desktop-chromium) ||
+  { rm -f "$SECURITY_KEYS_FILE"; exit 1; }
+mapfile -t MFA_KEYS <"$SECURITY_KEYS_FILE"
+rm -f "$SECURITY_KEYS_FILE"
+[[ ${#MFA_KEYS[@]} -eq 4 ]] || { echo "smoke: expected the four set-up keys of the journey (admin 1, member 3)" >&2; exit 1; }
+[[ "$(q "select p.mfa_mode || ':' || p.mfa_grace_days || ':' || p.password_min_length || ':' || p.lockout_threshold || ':' || p.lockout_minutes || ':' || (p.updated_by is not null) from platform.security_policies p join platform.tenants t on t.id = p.tenant_id where t.slug = 'sovereign-smoke'")" == "required_all:0:16:5:15:true" ]] ||
   { echo "smoke: the security policy change was not saved" >&2; exit 1; }
-# Audited: the change with the settings before and after; the prompt postponed (signed-in.spec); both
-# apps set up; sign-ins completed with a code (the member twice, then again after the forced sign-out;
-# the admin once); the member's sessions ended by the admin.
+# Audited: the change with the settings before and after; the prompt postponed (signed-in.spec); the apps
+# set up (waiting) and confirmed from the mailbox; the member's first app removed by its "not you" link;
+# sign-ins completed with a code; the member's sessions ended by the admin; the member's app reset twice.
 [[ "$(q "select count(*) from platform.audit_events where action = 'platform.security.policy_changed' and data -> 'changed' ? 'mfaMode' and data -> 'changed' ? 'passwordMinLength' and data -> 'before' ->> 'mfaMode' = 'off' and data -> 'after' ->> 'mfaMode' = 'required_all'")" == "1" ]] ||
   { echo "smoke: expected the security policy audit event with the settings before and after" >&2; exit 1; }
 [[ "$(q "select count(*) from platform.audit_events where action = 'platform.auth.mfa_prompt_dismissed' and actor_user_id = '$USER_ID'")" == "1" ]] ||
   { echo "smoke: expected the Organization Admin's postponed MFA prompt in the audit log" >&2; exit 1; }
-[[ "$(q "select count(distinct actor_user_id) from platform.audit_events where action = 'platform.auth.mfa_enrolled' and actor_user_id in ('$USER_ID', '$MANAGER_ID')")" == "2" ]] ||
-  { echo "smoke: expected both authenticator set-ups in the audit log" >&2; exit 1; }
+[[ "$(q "select count(*) from platform.audit_events where action = 'platform.auth.mfa_enrolled' and actor_user_id = '$USER_ID'")" == "1" &&
+   "$(q "select count(*) from platform.audit_events where action = 'platform.auth.mfa_enrolled' and actor_user_id = '$MANAGER_ID'")" == "3" ]] ||
+  { echo "smoke: expected every authenticator set-up in the audit log (admin 1, member 3)" >&2; exit 1; }
+[[ "$(q "select count(*) from platform.audit_events where action = 'platform.auth.mfa_confirmed' and actor_user_id in ('$USER_ID', '$MANAGER_ID')")" == "3" ]] ||
+  { echo "smoke: expected the mailbox confirmations in the audit log (admin 1, member 2)" >&2; exit 1; }
+[[ "$(q "select count(*) from platform.audit_events where action = 'platform.auth.mfa_removed' and actor_user_id = '$MANAGER_ID' and data ->> 'via' = 'email_link'")" == "1" ]] ||
+  { echo "smoke: expected the removal by the e-mail's \"not you\" link in the audit log" >&2; exit 1; }
+[[ "$(q "select count(*) from platform.audit_events where action = 'platform.user.mfa_reset' and actor_user_id = '$USER_ID' and entity_id = '5eed1000-0000-4000-8000-000000000003'")" == "2" ]] ||
+  { echo "smoke: expected the Organization Admin's two resets of the member's app in the audit log" >&2; exit 1; }
 [[ "$(q "select count(*) from platform.audit_events where action = 'platform.auth.signed_in' and data ->> 'method' = 'password+totp' and data ->> 'aal' = 'aal2'")" -ge "4" ]] ||
   { echo "smoke: expected the sign-ins completed with an authenticator code in the audit log" >&2; exit 1; }
 [[ "$(q "select count(*) from platform.audit_events where action = 'platform.user.sessions_ended' and actor_user_id = '$USER_ID' and (data ->> 'count')::int >= 1")" == "1" ]] ||
   { echo "smoke: expected the forced sign-out in the audit log" >&2; exit 1; }
-# Every earlier session of the member was ended (revocation marker, or signed out at Auth): only the
-# sign-in after the forced sign-out is live.
-[[ "$(q "select count(*) from auth.sessions s where s.user_id = '$MANAGER_ID' and not exists (select 1 from private.revoked_sessions r where r.session_id = s.id)")" == "1" ]] ||
-  { echo "smoke: a session of the member survived the forced sign-out" >&2; exit 1; }
-[[ "$(q "select count(*) from private.revoked_sessions where user_id = '$MANAGER_ID' and reason = 'admin' and revoked_by = '$USER_ID'")" -ge "1" ]] ||
-  { echo "smoke: expected the admin's revocation markers on the member's sessions" >&2; exit 1; }
+[[ "$(q "select count(*) from private.revoked_sessions where user_id = '$MANAGER_ID' and reason = 'admin' and revoked_by = '$USER_ID'")" -ge "1" &&
+   "$(q "select count(*) from private.revoked_sessions where user_id = '$MANAGER_ID' and reason = 'security'")" -ge "2" ]] ||
+  { echo "smoke: expected the member's sessions ended by the admin and by the \"not you\" link and the resets" >&2; exit 1; }
+# Ending a session deletes it in Auth too (review M1): after the last reset the member has no Auth session
+# left (marked or not) and no app; the admin keeps exactly one app, confirmed from the mailbox.
+[[ "$(q "select count(*) from auth.sessions where user_id = '$MANAGER_ID'")" == "0" ]] ||
+  { echo "smoke: the member's Auth sessions survived the reset (they must be deleted, not only marked)" >&2; exit 1; }
+[[ "$(q "select count(*) from auth.mfa_factors where user_id = '$MANAGER_ID'")" == "0" ]] ||
+  { echo "smoke: the member still has an authenticator app after the reset" >&2; exit 1; }
+[[ "$(q "select count(*) from auth.mfa_factors f join private.mfa_factor_confirmations k on k.factor_id = f.id where f.user_id = '$USER_ID' and f.status = 'verified' and k.confirmed_at is not null")" == "1" ]] ||
+  { echo "smoke: expected the admin's one confirmed authenticator app" >&2; exit 1; }
+# The e-mails (worker, our notification service): set-up e-mails with their links (admin 2 — "send again"
+# —, member 3), the removal notices (member: "not you", two resets) and the policy-change notice to every
+# Organization Admin (one here); all sent, without content in the delivery log.
+for i in $(seq 1 60); do
+  if [[ "$(mail_count "$EMAIL" 'Confirm your authenticator app')" == "2" &&
+    "$(mail_count "$EMAIL" 'Security settings changed')" == "1" &&
+    "$(mail_count "$MANAGER_EMAIL" 'Confirm your authenticator app')" == "3" &&
+    "$(mail_count "$MANAGER_EMAIL" 'Authenticator app removed')" == "3" ]]; then
+    break
+  fi
+  [[ $i -eq 60 ]] && { echo "smoke: the authenticator and policy-change e-mails did not all arrive (or arrived twice)" >&2; exit 1; }
+  sleep 1
+done
+[[ "$(q "select count(*) from platform.message_deliveries where template in ('platform.mfa_factor_added', 'platform.mfa_factor_removed', 'platform.security_policy_changed') and (status <> 'sent' or destination is not null or html_body is not null or text_body is not null)")" == "0" &&
+   "$(q "select count(*) from platform.message_deliveries where template in ('platform.mfa_factor_added', 'platform.mfa_factor_removed', 'platform.security_policy_changed')")" == "9" ]] ||
+  { echo "smoke: expected the nine authenticator and policy-change e-mails as sent deliveries without content" >&2; exit 1; }
 # The set-up keys (credentials) appear in neither the audit log nor (checked below) any container log.
-mapfile -t MFA_KEYS < <(q "select secret from auth.mfa_factors where user_id in ('$USER_ID', '$MANAGER_ID') and factor_type = 'totp' and status = 'verified'")
-[[ ${#MFA_KEYS[@]} -eq 2 ]] || { echo "smoke: expected the two verified authenticator apps" >&2; exit 1; }
 for key in "${MFA_KEYS[@]}"; do
   [[ ${#key} -ge 16 ]] || { echo "smoke: an authenticator set-up key is unexpectedly short" >&2; exit 1; }
   [[ "$(q "select count(*) from platform.audit_events where data::text like '%$key%'")" == "0" ]] ||
     { echo "smoke: an authenticator set-up key reached the audit log" >&2; exit 1; }
+done
+
+echo "smoke: password reset of an account with an authenticator app (T-M2-10) — the code is asked with the new password"
+ADMIN_NEW_PASSWORD="Admin-$(openssl rand -hex 16)"
+(cd "$ROOT/apps/suite" && E2E_BASE_URL=http://localhost:3200 RESET_E2E_EMAIL="$EMAIL" \
+  pnpm exec playwright test e2e/password-reset.spec.ts --project=desktop-chromium)
+# app_reset_link <address>: like reset_link, for an account with an app — the link says so (`&mfa=1`).
+app_reset_link() {
+  local id
+  id="$(compose exec -T mailpit wget -qO- 'http://127.0.0.1:8025/api/v1/messages?limit=500' 2>/dev/null |
+    node -e 'let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => {
+      try { for (const m of JSON.parse(s).messages ?? [])
+        if ((m.To ?? []).some((t) => t.Address === process.argv[1]) && /Reset your password/.test(m.Subject ?? ""))
+          { console.log(m.ID); break; } } catch {} })' "$1")"
+  [[ -n "$id" ]] || return 1
+  compose exec -T mailpit wget -qO- "http://127.0.0.1:8025/api/v1/message/$id" 2>/dev/null |
+    node -e 'let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => {
+      let m = {}; try { m = JSON.parse(s); } catch {}
+      const html = (m.HTML ?? "").replace(/&amp;/g, "&"), text = m.Text ?? "";
+      if (/\/verify|token=/.test(html + text)) process.exit(2);
+      const re = /http:\/\/localhost:3200\/(ar|en)\/reset-password#token_hash=[A-Za-z0-9_-]{16,128}&type=recovery&mfa=1(?![A-Za-z0-9_&=-])/;
+      const link = html.match(re), inText = text.match(re);
+      if (!link || !inText || inText[0] !== link[0]) process.exit(1);
+      process.stdout.write(link[0]); })'
+}
+APP_RESET_URL=""
+for i in $(seq 1 30); do
+  APP_RESET_URL="$(app_reset_link "$EMAIL")" && break
+  [[ $i -eq 30 ]] && { echo "smoke: no reset link saying a code is needed (&mfa=1) for the account with an app" >&2; exit 1; }
+  sleep 1
+done
+ADMIN_KEY="$(q "select secret from auth.mfa_factors where user_id = '$USER_ID' and factor_type = 'totp' and status = 'verified'")"
+(cd "$ROOT/apps/suite" && E2E_BASE_URL=http://localhost:3200 RESET_E2E_MFA_LINK_URL="$APP_RESET_URL" \
+  RESET_E2E_NEW_PASSWORD="$ADMIN_NEW_PASSWORD" RESET_E2E_TOTP_KEY="$ADMIN_KEY" \
+  pnpm exec playwright test e2e/password-reset.spec.ts --project=desktop-chromium)
+unset ADMIN_KEY APP_RESET_URL
+# Every session of the account ended; the new password signs in, the old one does not; one notice.
+[[ "$(q "select count(*) from auth.sessions where user_id = '$USER_ID'")" == "0" ]] ||
+  { echo "smoke: sign-in sessions survived the password reset of the account with an app" >&2; exit 1; }
+response="$(auth_api POST '/token?grant_type=password' '' "{\"email\":\"$EMAIL\",\"password\":\"$ADMIN_NEW_PASSWORD\"}")"
+[[ "${response##*$'\n'}" == "200" ]] || { echo "smoke: sign-in with the new password failed (account with an app)" >&2; exit 1; }
+response="$(auth_api POST '/token?grant_type=password' '' "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}")"
+[[ "${response##*$'\n'}" =~ ^4[0-9][0-9]$ ]] || { echo "smoke: the old password still signs in (account with an app)" >&2; exit 1; }
+unset response
+for i in $(seq 1 30); do
+  [[ "$(mail_count "$EMAIL" 'Your password was changed')" == "1" ]] && break
+  [[ $i -eq 30 ]] && { echo "smoke: no (or more than one) password-changed notice after the reset with a code" >&2; exit 1; }
+  sleep 1
 done
 
 # No unconfirmed e-mail account exists after every journey (re-review N3): with "Confirm email" off, Auth
@@ -793,8 +876,8 @@ fi
 all_logs="$(compose logs --no-log-prefix 2>&1)"
 app_logs="$(compose logs --no-log-prefix app 2>&1)"
 for value in "$PASSWORD" "$PARITY_PASSWORD" "$MANAGER_PASSWORD" "$PROFILE_NEW_PASSWORD" "$INTRUDER_PASSWORD" \
-  "$GUARD_PASSWORD" "$GUARD_NEW_PASSWORD" "$RESET_OLD_PASSWORD" "$RESET_NEW_PASSWORD" "$DEACT_PASSWORD" \
-  "$SECOND_PASSWORD"; do
+  "$GUARD_PASSWORD" "$GUARD_NEW_PASSWORD" "$RESET_OLD_PASSWORD" "$RESET_NEW_PASSWORD" "$ADMIN_NEW_PASSWORD" \
+  "$DEACT_PASSWORD" "$SECOND_PASSWORD"; do
   if grep -qF "$value" <<<"$all_logs"; then
     echo "smoke: a test user's password appears in the container logs" >&2; exit 1
   fi

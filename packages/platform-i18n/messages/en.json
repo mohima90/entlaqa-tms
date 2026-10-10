@@ -201,6 +201,7 @@
       "submitting": "Saving…",
       "validity": "The link is valid for 60 minutes from when it was requested and works once. If it has expired, request a new one on the <link>Forgot password</link> page.",
       "codeIntro": "Your account uses an authenticator app: enter the code it shows now. The link works once, so check the code before saving.",
+      "codeOptionalIntro": "Does your account use an authenticator app? Then also enter the code it shows now: without it the password can't be changed, and the link is used up.",
       "codeLabel": "Verification code",
       "codeHint": "6 digits from your authenticator app; the code changes every 30 seconds."
     },

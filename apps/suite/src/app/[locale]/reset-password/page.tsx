@@ -1,5 +1,6 @@
 import { otherLocale } from '@jadarat/platform-i18n';
 import { routing } from '@jadarat/platform-i18n/routing';
+import { readPasswordResetDelivery } from '@jadarat/platform-identity';
 import { Card } from '@jadarat/ui';
 import type { Metadata } from 'next';
 import { hasLocale } from 'next-intl';
@@ -96,6 +97,8 @@ export default async function ResetPasswordPage({
         passwordTip: t('reset.passwordTip'),
         sessionsNotice: t('reset.sessionsNotice'),
         codeIntro: t('reset.codeIntro'),
+        codeOptionalIntro: t('reset.codeOptionalIntro'),
+        optional: common('optional'),
         codeLabel: t('reset.codeLabel'),
         codeHint: t('reset.codeHint'),
         codeFormat: t('fieldErrors.codeFormat'),
@@ -111,6 +114,8 @@ export default async function ResetPasswordPage({
         signIn: t('invalidLink.signIn'),
       }}
       errors={await passwordResetErrorTexts(locale)}
+      // Auth's own mailer cannot say whether the account has an authenticator app (T-M2-10).
+      codeOptional={readPasswordResetDelivery(process.env) !== 'worker'}
     />
   );
 }

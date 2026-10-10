@@ -48,6 +48,7 @@ export {
   type RateLimit,
   type RateLimitCounter,
   type RateLimitStore,
+  type RememberAtSignIn,
   type RememberDevice,
   type SignInBudgets,
   type SignInCheck,

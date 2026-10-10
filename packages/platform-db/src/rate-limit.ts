@@ -125,13 +125,15 @@ export interface RateLimitStore {
   /**
    * Auth accepted the password (`trusted`: what the check answered for `subjects.device`, the presented
    * token): the client's provisional failure is given back, the account's (or the trusted browser's) run
-   * ends; with `remember` (opt-in), the browser is trusted for the account. Null without `remember`:
-   * nothing about trust changed (a trusted browser's trust is not renewed).
+   * ends; with `remember` (opt-in), the browser is trusted for the account — unless the account has an
+   * authenticator app (the database decides: `RememberAtSignIn`), when the tick waits for the session's
+   * sign-in code instead. Null when nothing about trust changed (unticked: a trusted browser's trust is not
+   * renewed; or the tick waits for the code).
    */
   signInSucceeded(
     subjects: SignInSubjects,
     trusted: boolean,
-    remember: RememberDevice | null,
+    remember: RememberAtSignIn | null,
   ): Promise<DeviceTrust | null>;
   /**
    * Auth answered before comparing the password (its own rate limit): the account's (or the trusted
@@ -149,17 +151,30 @@ export interface RateLimitStore {
   ): Promise<DeviceTrust & { readonly revoked: number }>;
   /** After a password change on My profile: forgets every trusted browser of the account but `device`. */
   forgetOtherDevices(account: Uint8Array, device: Uint8Array | null): Promise<number>;
-  /**
-   * «تذكّر هذا المتصفح» ticked at sign-in for an account with an authenticator app (integration review
-   * T-M2-11 L4): the tick waits `minutes` (1–60) for the sign-in code of the Auth session `session` (the
-   * SHA-256 subject of its verified session id). Trusts nothing: `trustDeviceAfterCode` does, after the code.
-   */
-  rememberAfterCode(session: Uint8Array, minutes: number): Promise<void>;
 }
 
 /** Same rules as the database (private.rate_limit_check_call): checked before any round trip. */
 export const RATE_LIMIT_BUCKET_PATTERN = /^[a-z][a-z0-9_.]{2,62}$/;
+/**
+ * A ticked «تذكّر هذا المتصفح» at sign-in (integration review T-M2-11 L4 and its re-review): the browser is
+ * trusted only for an account WITHOUT an authenticator app, and the database has the last word — it treats
+ * the account as one with an app when Auth's answer named one (`authNamesApp`), when the user is unknown, or
+ * when it finds a verified app of the user in Auth itself (T-M2-10's view of Auth's factors). For such an
+ * account nothing is trusted: the tick waits `codeWaitMinutes` (1–60) for the sign-in code of `session`
+ * (`trustDeviceAfterCode` trusts the browser then).
+ */
+export interface RememberAtSignIn extends RememberDevice {
+  /** The user of the token Auth just issued, verified by the web app; null: unknown — nothing is trusted. */
+  readonly userId: string | null;
+  /** SHA-256 subject of that token's Auth session id; null: no tick can wait for a code. */
+  readonly session: Uint8Array | null;
+  /** Auth's answer to the password named a verified authenticator app of the account. */
+  readonly authNamesApp: boolean;
+  readonly codeWaitMinutes: number;
+}
+
 const SUBJECT_BYTES = 32;
+const USER_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** A limiter call that takes longer is cancelled (and fails: the caller's policy applies). */
 export const RATE_LIMIT_STATEMENT_TIMEOUT_MS = 3_000;
 
@@ -317,13 +332,29 @@ export function createRateLimitStore(getDb: () => AppDatabase): RateLimitStore {
       const device = subjects.device === null ? null : checkSubject(subjects.device);
       if (trusted && device === null) throw new Error('rate limit: a trusted browser has a token');
       const fresh = remember === null ? null : checkSubject(remember.freshDevice);
-      if (remember !== null) checkTrustDays(remember.trustDays);
+      if (remember !== null) {
+        checkTrustDays(remember.trustDays);
+        if (remember.userId !== null && !USER_ID_PATTERN.test(remember.userId)) {
+          throw new Error('rate limit: a user id is a UUID');
+        }
+        if (
+          !Number.isInteger(remember.codeWaitMinutes) ||
+          remember.codeWaitMinutes < 1 ||
+          remember.codeWaitMinutes > 60
+        ) {
+          throw new Error('rate limit: the tick waits 1–60 minutes for the code');
+        }
+      }
+      const presentedSession = remember?.session ?? null;
+      const session = presentedSession === null ? null : checkSubject(presentedSession);
       return run(
         sql`select device, trusted_until
             from private.rate_limit_sign_in_succeeded(
               ${client}::bytea, ${account}::bytea, ${device}::bytea, ${fresh}::bytea,
               ${trusted}::boolean, ${remember !== null}::boolean,
-              ${remember?.trustDays ?? null}::integer)`,
+              ${remember?.trustDays ?? null}::integer, ${remember?.userId ?? null}::uuid,
+              ${session}::bytea, ${remember?.authNamesApp ?? null}::boolean,
+              ${remember?.codeWaitMinutes ?? null}::integer)`,
         (rows) => {
           const row = rows[0] as DeviceTrustRow | undefined;
           if (!row) throw new Error('rate limit: no answer from the database');
@@ -358,16 +389,6 @@ export function createRateLimitStore(getDb: () => AppDatabase): RateLimitStore {
         },
       );
     },
-    async rememberAfterCode(session, minutes) {
-      const key = checkSubject(session);
-      if (!Number.isInteger(minutes) || minutes < 1 || minutes > 60) {
-        throw new Error('rate limit: the tick waits 1–60 minutes for the code');
-      }
-      await run(
-        sql`select private.rate_limit_remember_after_code(${key}::bytea, ${minutes}::integer)`,
-        () => undefined,
-      );
-    },
     forgetOtherDevices(account, device) {
       const accountKey = checkSubject(account);
       const deviceKey = device === null ? null : checkSubject(device);
@@ -391,7 +412,7 @@ export const rateLimitStore: RateLimitStore = createRateLimitStore(() => getData
 /**
  * After a session's sign-in code passed (integration review T-M2-11 L4), in a transaction with THAT
  * session's verified claims (withUserTx — its own, never nested in another): when the session ticked
- * «تذكّر هذا المتصفح» at sign-in (`rememberAfterCode`), the browser is trusted for the account for
+ * «تذكّر هذا المتصفح» at sign-in (`signInSucceeded`: an account with an app), the browser is trusted for the account for
  * `trustDays` — the presented token (`device`, the subject of its cookie's token) when the server knows it,
  * else `freshDevice` — and the tick is used up. The database decides: only a session it sees at AAL2
  * through a confirmed app with a fresh code (T-M2-10). Null: nothing was trusted.

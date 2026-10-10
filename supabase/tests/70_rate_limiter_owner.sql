@@ -30,12 +30,12 @@ begin
     'private.rate_limit_key(bytea) (INVOKER), private.rate_limit_lock_account_devices(bytea) (INVOKER), '
     'private.rate_limit_member_account(uuid) (INVOKER), private.rate_limit_normalize_email(text) (INVOKER), '
     'private.rate_limit_purge() (INVOKER), private.rate_limit_ref(bytea) (INVOKER), '
-    'private.rate_limit_refund(text,bytea) (INVOKER), private.rate_limit_remember_after_code(bytea,integer), '
+    'private.rate_limit_refund(text,bytea) (INVOKER), '
     'private.rate_limit_session_subject(uuid) (INVOKER), '
     'private.rate_limit_sign_in_check(bytea,bytea,bytea,integer,integer,integer,integer,integer,integer,integer,integer), '
     'private.rate_limit_sign_in_not_checked(bytea,bytea,boolean), '
     'private.rate_limit_sign_in_reset(bytea,bytea,bytea,integer), '
-    'private.rate_limit_sign_in_succeeded(bytea,bytea,bytea,bytea,boolean,boolean,integer), '
+    'private.rate_limit_sign_in_succeeded(bytea,bytea,bytea,bytea,boolean,boolean,integer,uuid,bytea,boolean,integer), '
     'private.rate_limit_trust_after_code(bytea,bytea,integer), private.rate_limit_trust_device(bytea,bytea,integer) (INVOKER), '
     'private.rotate_rate_limit_keys(), private.sign_in_account_in_tenant(text,uuid), '
     'private.unlock_member_sign_in(uuid,integer)',
@@ -78,6 +78,18 @@ begin
   perform tests.assert(not has_table_privilege('rate_limit_guard', 'auth.users', 'select')
                        and has_table_privilege('rate_limit_guard', 'private.auth_user_email', 'select'),
     'rate_limit_guard reads Auth addresses only through private.auth_user_email');
+  -- Whether a signing-in user has an authenticator app (integration review L4): three columns of T-M2-10's
+  -- view of Auth's factors, never the secret, never a write.
+  perform tests.assert_eq(
+    (select string_agg(a.attname, ', ' order by a.attnum) from pg_attribute a
+     where a.attrelid = 'private.auth_mfa_factor'::regclass and a.attnum > 0 and not a.attisdropped
+       and has_column_privilege('rate_limit_guard', a.attrelid, a.attnum, 'select')),
+    'user_id, factor_type, status', 'rate_limit_guard reads exactly user_id, factor_type, status of private.auth_mfa_factor');
+  perform tests.assert(not has_table_privilege('rate_limit_guard', 'private.auth_mfa_factor',
+                                               'select, insert, update, delete, truncate, references, trigger')
+                       and not has_any_column_privilege('rate_limit_guard', 'private.auth_mfa_factor', 'insert, update, references')
+                       and not has_table_privilege('rate_limit_guard', 'auth.mfa_factors', 'select'),
+    'rate_limit_guard: no table-level privilege on the factors view, and none on auth.mfa_factors');
 
   -- Callers: the entry points are executable by authenticated (each checks session_user = app_server —
   -- and the Organization Admin ones the claims — itself) and nobody else besides the owner; the helpers
@@ -95,7 +107,7 @@ begin
   perform tests.assert_eq(
     (select count(*)::int from pg_proc p
      where p.proowner = 'rate_limit_guard'::regrole and has_function_privilege('authenticated', p.oid, 'execute')),
-    13, 'the web app (as authenticated) may call the thirteen entry points');
+    12, 'the web app (as authenticated) may call the twelve entry points');
   -- Beyond its own: the unlock notice of the account-mail pipeline (inside unlock_member_sign_in).
   perform tests.assert_eq(
     (select string_agg(p.oid::regprocedure::text, ', ' order by p.oid::regprocedure::text)
@@ -166,6 +178,34 @@ insert into platform.persons (id, tenant_id, display_name_ar, email) values
 insert into platform.tenant_memberships (tenant_id, user_id, person_id, status) values
   ('a0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-0000000000a5', 'a1000000-0000-4000-8000-0000000000a5', 'revoked');
 -- Subjects are SHA-256 values like the app's (tests use sha256 of a label).
+-- Accounts that sign in (rate_limit_sign_in_succeeded in 71) are real: the token's user must be the
+-- account that signed in (integration review hardening), so each has an Auth user whose address gives its
+-- subject — tests.rate_limit_account(address), the web app's accountSubject computed independently here
+-- (checked against private.rate_limit_account_subject below) — and 71 passes that user's id. 7108 has no
+-- address (a phone-only account): it never counts as the signed-in account.
+create or replace function tests.rate_limit_account(p_email text) returns bytea
+language sql immutable as $$
+  select sha256(convert_to('jadarat.rate-limit.v1' || chr(10) || 'account' || chr(10) || p_email, 'UTF8'));
+$$;
+grant execute on function tests.rate_limit_account(text) to public;
+do $$ begin
+  perform tests.assert_eq(tests.rate_limit_account('rl-y@a.test'), private.rate_limit_account_subject(' RL-Y@a.test '),
+    'tests.rate_limit_account is the account subject of a (normalised) address');
+end $$;
+insert into auth.users (id, email) values
+  ('00000000-0000-4000-8000-000000007101', 'rl-y@a.test'),
+  ('00000000-0000-4000-8000-000000007102', 'rl-z@a.test'),
+  ('00000000-0000-4000-8000-000000007103', 'rl-q@a.test'),
+  ('00000000-0000-4000-8000-000000007104', 'rl-p@a.test'),
+  ('00000000-0000-4000-8000-000000007105', 'rl-w@a.test'),
+  ('00000000-0000-4000-8000-000000007106', 'rl-renewed@a.test'),
+  ('00000000-0000-4000-8000-000000007107', 'rl-kept@a.test'),
+  ('00000000-0000-4000-8000-000000007108', null),
+  ('00000000-0000-4000-8000-000000007111', 'rl-ok-1@a.test'),
+  ('00000000-0000-4000-8000-000000007112', 'rl-ok-2@a.test'),
+  ('00000000-0000-4000-8000-000000007113', 'rl-ok-3@a.test'),
+  ('00000000-0000-4000-8000-000000007114', 'rl-ok-4@a.test'),
+  ('00000000-0000-4000-8000-000000007115', 'rl-ok-5@a.test');
 -- 30 counters expired an hour ago (bucket tests.purge): the hits of 71 remove them (20 per hit at most).
 insert into private.rate_limit_counters (bucket, key_hash, hits, reset_at)
 select 'tests.purge', sha256(convert_to('purge-' || i, 'UTF8')), 3, now() - interval '1 hour'
@@ -176,16 +216,16 @@ insert into private.rate_limit_counters (bucket, key_hash, hits, reset_at)
 values ('tests.window', private.rate_limit_key(sha256(convert_to('window', 'UTF8'))), 4, now() - interval '1 second');
 -- A trusted browser whose trust ended a day ago (account 'purged-account', browser 'purged-device'): the
 -- calls of 71 remove it, and it trusts nothing meanwhile. Two browsers trusted for 10 more days (accounts
--- 'renewed-account' / 'kept-account', browsers 'renewed-device' / 'kept-device'): a ticked sign-in renews
+-- rl-renewed@a.test / rl-kept@a.test, browsers 'renewed-device' / 'kept-device'): a ticked sign-in renews
 -- the trust (sliding), an unticked one does not.
 insert into private.sign_in_trusted_devices (account_key, device_key, created_at, expires_at)
 values (private.rate_limit_key(sha256(convert_to('purged-account', 'UTF8'))),
         private.rate_limit_key(sha256(convert_to('purged-device', 'UTF8'))),
         now() - interval '31 days', now() - interval '1 day'),
-       (private.rate_limit_key(sha256(convert_to('renewed-account', 'UTF8'))),
+       (private.rate_limit_key(tests.rate_limit_account('rl-renewed@a.test')),
         private.rate_limit_key(sha256(convert_to('renewed-device', 'UTF8'))),
         now() - interval '20 days', now() + interval '10 days'),
-       (private.rate_limit_key(sha256(convert_to('kept-account', 'UTF8'))),
+       (private.rate_limit_key(tests.rate_limit_account('rl-kept@a.test')),
         private.rate_limit_key(sha256(convert_to('kept-device', 'UTF8'))),
         now() - interval '20 days', now() + interval '10 days');
 

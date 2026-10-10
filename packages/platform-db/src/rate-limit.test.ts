@@ -8,6 +8,14 @@ import { RATE_LIMIT_STATEMENT_TIMEOUT_MS, createRateLimitStore } from './rate-li
 const dialect = new PgDialect();
 const SUBJECT = createHash('sha256').update('subject').digest();
 const FRESH = createHash('sha256').update('fresh').digest();
+const SESSION = createHash('sha256').update('session').digest();
+/** A ticked sign-in: the verified token's user and session; Auth named no app (the database looks too). */
+const SIGNED_IN = {
+  userId: '11111111-1111-4111-8111-111111111111',
+  session: SESSION,
+  authNamesApp: false,
+  codeWaitMinutes: 15,
+};
 
 /** A database whose transactions record the statements and answer the limiter call with `row`. */
 function fakeDb(row: Record<string, unknown> | null, fail?: Error) {
@@ -125,11 +133,24 @@ describe('createRateLimitStore (ADR 0011 §4, T-M2-11)', () => {
     const trust = await store.signInSucceeded(
       { client: SUBJECT, account: SUBJECT, device: SUBJECT },
       true,
-      { freshDevice: FRESH, trustDays: 30 },
+      { freshDevice: FRESH, trustDays: 30, ...SIGNED_IN },
     );
     expect(trust).toEqual({ device: 'fresh', until: new Date('2026-11-08T10:00:00.000Z') });
     expect(executed.at(-1)?.sql).toContain('from private.rate_limit_sign_in_succeeded(');
-    expect(executed.at(-1)?.params).toEqual([SUBJECT, SUBJECT, SUBJECT, FRESH, true, true, 30]);
+    // The token's user, its session and Auth's word on an app go to the database, which decides (L4).
+    expect(executed.at(-1)?.params).toEqual([
+      SUBJECT,
+      SUBJECT,
+      SUBJECT,
+      FRESH,
+      true,
+      true,
+      30,
+      SIGNED_IN.userId,
+      SESSION,
+      false,
+      15,
+    ]);
   });
 
   it('records an unticked success without trust (opt-in)', async () => {
@@ -138,7 +159,19 @@ describe('createRateLimitStore (ADR 0011 §4, T-M2-11)', () => {
     expect(
       await store.signInSucceeded({ client: SUBJECT, account: SUBJECT, device: null }, false, null),
     ).toBeNull();
-    expect(executed.at(-1)?.params).toEqual([SUBJECT, SUBJECT, null, null, false, false, null]);
+    expect(executed.at(-1)?.params).toEqual([
+      SUBJECT,
+      SUBJECT,
+      null,
+      null,
+      false,
+      false,
+      null,
+      null,
+      null,
+      null,
+      null,
+    ]);
   });
 
   it('gives a failure back when Auth did not compare the password', async () => {
@@ -179,7 +212,7 @@ describe('createRateLimitStore (ADR 0011 §4, T-M2-11)', () => {
       createRateLimitStore(() => db).signInSucceeded(
         { client: SUBJECT, account: SUBJECT, device: null },
         false,
-        { freshDevice: FRESH, trustDays: 30 },
+        { freshDevice: FRESH, trustDays: 30, ...SIGNED_IN },
       ),
     ).rejects.toThrow('unknown trusted-browser answer');
   });
@@ -207,8 +240,33 @@ describe('createRateLimitStore (ADR 0011 §4, T-M2-11)', () => {
       store.signInSucceeded({ client: SUBJECT, account: SUBJECT, device: SUBJECT }, false, {
         freshDevice: FRESH,
         trustDays: 0,
+        ...SIGNED_IN,
       }),
     ).toThrow('days');
+    expect(() =>
+      store.signInSucceeded({ client: SUBJECT, account: SUBJECT, device: null }, false, {
+        freshDevice: FRESH,
+        trustDays: 30,
+        ...SIGNED_IN,
+        userId: 'not-a-user',
+      }),
+    ).toThrow('UUID');
+    expect(() =>
+      store.signInSucceeded({ client: SUBJECT, account: SUBJECT, device: null }, false, {
+        freshDevice: FRESH,
+        trustDays: 30,
+        ...SIGNED_IN,
+        codeWaitMinutes: 61,
+      }),
+    ).toThrow('minutes');
+    expect(() =>
+      store.signInSucceeded({ client: SUBJECT, account: SUBJECT, device: null }, false, {
+        freshDevice: FRESH,
+        trustDays: 30,
+        ...SIGNED_IN,
+        session: Buffer.from('short'),
+      }),
+    ).toThrow('32-byte');
     expect(() =>
       store.signInSucceeded({ client: SUBJECT, account: SUBJECT, device: null }, true, null),
     ).toThrow('token');

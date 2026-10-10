@@ -145,7 +145,8 @@ begin
   end if;
 
   -- MFA policy (T-M2-10): tenant_guard reads Auth factors only through private.auth_mfa_factor, owned by the
-  -- migration role (never the secret), and deletes through it (removal, resets); nobody else may use it.
+  -- migration role (never the secret), and deletes through it (removal, resets); rate_limit_guard reads three
+  -- of its columns (whether a signing-in user has an app, T-M2-11); nobody else may use it.
   if to_regclass('private.auth_mfa_factor') is null then
     failures := failures || 'private.auth_mfa_factor is missing'::text;
   else
@@ -176,6 +177,9 @@ begin
         a.privilege_type || ' (column ' || att.attname || ')'
       from pg_attribute att, aclexplode(att.attacl) a
       where att.attrelid = 'private.auth_mfa_factor'::regclass and att.attacl is not null
+        -- rate_limit_guard: whether a signing-in user has an app (T-M2-11 integration review L4).
+        and not (a.grantee <> 0 and pg_get_userbyid(a.grantee) = 'rate_limit_guard' and a.privilege_type = 'SELECT'
+                 and att.attname in ('user_id', 'factor_type', 'status'))
     loop
       failures := failures || format('%s must not have %s on private.auth_mfa_factor', r.grantee, r.privilege_type);
     end loop;
@@ -350,13 +354,12 @@ begin
       ('private.sign_in_account_in_tenant(text, uuid)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
       ('private.rate_limit_sign_in_check(bytea, bytea, bytea, integer, integer, integer, integer, integer, integer, integer, integer)',
        'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
-      ('private.rate_limit_sign_in_succeeded(bytea, bytea, bytea, bytea, boolean, boolean, integer)', 'rate_limit_guard',
+      ('private.rate_limit_sign_in_succeeded(bytea, bytea, bytea, bytea, boolean, boolean, integer, uuid, bytea, boolean, integer)', 'rate_limit_guard',
        array['rate_limit_guard', 'authenticated'], true),
       ('private.rate_limit_sign_in_not_checked(bytea, bytea, boolean)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
       ('private.rate_limit_sign_in_reset(bytea, bytea, bytea, integer)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
       ('private.rate_limit_forget_other_devices(bytea, bytea)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
       -- «تذكّر هذا المتصفح» after the sign-in code (integration review L4).
-      ('private.rate_limit_remember_after_code(bytea, integer)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
       ('private.rate_limit_trust_after_code(bytea, bytea, integer)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
       ('private.member_sign_in_lock(uuid, integer)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
       ('private.unlock_member_sign_in(uuid, integer)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
@@ -468,10 +471,10 @@ begin
         'private.rate_limit_hit(text,bytea,integer,integer)', 'private.rate_limit_clear(text,bytea)',
         'private.rate_limit_give_back(text,bytea)', 'private.sign_in_account_in_tenant(text,uuid)',
         'private.rate_limit_sign_in_check(bytea,bytea,bytea,integer,integer,integer,integer,integer,integer,integer,integer)',
-        'private.rate_limit_sign_in_succeeded(bytea,bytea,bytea,bytea,boolean,boolean,integer)',
+        'private.rate_limit_sign_in_succeeded(bytea,bytea,bytea,bytea,boolean,boolean,integer,uuid,bytea,boolean,integer)',
         'private.rate_limit_sign_in_not_checked(bytea,bytea,boolean)',
         'private.rate_limit_sign_in_reset(bytea,bytea,bytea,integer)', 'private.rate_limit_forget_other_devices(bytea,bytea)',
-        'private.rate_limit_remember_after_code(bytea,integer)', 'private.rate_limit_trust_after_code(bytea,bytea,integer)',
+        'private.rate_limit_trust_after_code(bytea,bytea,integer)',
         'private.member_sign_in_lock(uuid,integer)', 'private.unlock_member_sign_in(uuid,integer)',
         'private.rotate_rate_limit_keys()',
         -- Files (T-M2-18)

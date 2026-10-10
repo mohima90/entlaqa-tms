@@ -159,8 +159,10 @@ export interface PasswordCredentials {
 
 /**
  * Whether Auth's answer to a password sign-in names a verified authenticator app of the account (GoTrue
- * returns the user with its factors). A missing user counts as one (the safe side: the browser waits for a
- * code before it is remembered).
+ * returns the user with its factors, and leaves `factors` out when there are none). A missing user counts
+ * as one (the safe side: the browser waits for a code before it is remembered). Not the authority: the
+ * database also looks at the user's factors itself (integration review L4 re-review), so an Auth answer
+ * that stopped carrying `factors` can never make a password alone trust a browser.
  */
 function usesAuthenticatorApp(data: unknown): boolean {
   const user = typeof data === 'object' && data !== null && 'user' in data ? data.user : null;
@@ -191,7 +193,9 @@ function usesAuthenticatorApp(data: unknown): boolean {
  * compared). Every refusal — limited, or wrong e-mail or password — is answered after the same minimum time.
  * For an account with an authenticator app (integration review L4), a ticked «تذكّر هذا المتصفح» trusts
  * nothing yet: it waits — server-side, bound to this Auth session — for the session's sign-in code
- * (mfa.ts verifyTotpCode → auth-limits.ts rememberBrowserAfterCode).
+ * (mfa.ts verifyTotpCode → auth-limits.ts rememberBrowserAfterCode). The database decides whether the
+ * account has one: Auth's answer, the verified token's user (none: nothing is trusted) and the user's
+ * factors it reads itself. So the success is recorded once the issued token is verified.
  */
 export async function startPasswordSession(
   deps: AuthFlowDeps,
@@ -247,18 +251,20 @@ export async function startPasswordSession(
   }
   // The password was right: the provisional failure is given back and the run of failures ends; the
   // browser is trusted for the account (30 days) only when «تذكّر هذا المتصفح» was ticked — and, for an
-  // account with an authenticator app, only once the sign-in code passed (integration review L4).
-  const remember = credentials.remember === true;
-  const afterCode = remember && usesAuthenticatorApp(data);
-  await gate.attempt.succeeded({ remember: remember && !afterCode });
+  // account with an authenticator app, only once the sign-in code passed (integration review L4; the
+  // database decides, given the verified token's user and session).
   const tokens = sessionTokens(data);
-  if (!tokens) return err(appError('UNAUTHENTICATED'));
-
-  const claims = await verifyClaims(supabase, tokens.accessToken);
-  if (!claims.ok) return claims;
-  const sessionId = claims.value.session_id;
-  if (afterCode && sessionId !== undefined) await gate.attempt.rememberAfterCode(sessionId);
-  return ok({ tokens, claims: claims.value });
+  const claims = tokens ? await verifyClaims(supabase, tokens.accessToken) : null;
+  const verified = claims?.ok
+    ? { userId: claims.value.sub, sessionId: claims.value.session_id ?? null }
+    : null;
+  await gate.attempt.succeeded({
+    remember: credentials.remember === true,
+    verified,
+    authNamesApp: usesAuthenticatorApp(data),
+  });
+  if (!tokens || !claims) return err(appError('UNAUTHENTICATED'));
+  return claims.ok ? ok({ tokens, claims: claims.value }) : claims;
 }
 
 export async function signInWithPassword(

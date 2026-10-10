@@ -4,6 +4,7 @@ import type {
   RateLimit,
   RateLimitCounter,
   RateLimitStore,
+  RememberAtSignIn,
   RememberDevice,
   SignInBudgets,
   SignInCheck,
@@ -176,14 +177,25 @@ function memoryStore(now: () => number = () => 0) {
     );
     return new Date(Date.now() + (latest - now()));
   };
+  /** Users with a verified authenticator app in Auth, as the database sees them (integration review L4). */
+  const appUsers = new Set<string>();
+  /** Ticks waiting for a session's sign-in code (integration review L4): session subject → until. */
+  const pending = new Map<string, number>();
   const signInSucceeded = vi.fn(
-    (s: SignInSubjects, wasTrusted: boolean, remember: RememberDevice | null) => {
+    (s: SignInSubjects, wasTrusted: boolean, remember: RememberAtSignIn | null) => {
       const account = hex(s.account);
       refund(`${LIMIT_BUCKETS.signInClientFailures}|${hex(s.client)}`);
       if (wasTrusted && s.device)
         rows.delete(`${LIMIT_BUCKETS.signInDeviceFailures}|${account}${hex(s.device)}`);
       else rows.delete(`${LIMIT_BUCKETS.signInAccountFailures}|${account}`);
       if (remember === null) return Promise.resolve(null);
+      // The database's own decision: an app when Auth named one, the user is unknown, or it finds one.
+      if (remember.authNamesApp || remember.userId === null || appUsers.has(remember.userId)) {
+        if (remember.session !== null) {
+          pending.set(hex(remember.session), now() + remember.codeWaitMinutes * 60_000);
+        }
+        return Promise.resolve(null);
+      }
       const device = choose(s.device);
       const until = trust(
         account,
@@ -225,12 +237,6 @@ function memoryStore(now: () => number = () => 0) {
   const forgetOtherDevices = vi.fn((accountSubject: Uint8Array, device: Uint8Array | null) =>
     Promise.resolve(forget(hex(accountSubject), device === null ? null : hex(device))),
   );
-  /** Ticks waiting for a session's sign-in code (integration review L4): session subject → until. */
-  const pending = new Map<string, number>();
-  const rememberAfterCode = vi.fn((session: Uint8Array, minutes: number) => {
-    pending.set(hex(session), now() + minutes * 60_000);
-    return Promise.resolve();
-  });
   const store: RateLimitStore = {
     hit,
     clear: vi.fn((bucket: string, subject: Uint8Array) => {
@@ -246,11 +252,10 @@ function memoryStore(now: () => number = () => 0) {
     signInNotChecked,
     signInReset,
     forgetOtherDevices,
-    rememberAfterCode,
   };
   return {
     store,
-    rememberAfterCode,
+    appUsers,
     pending,
     hit,
     signInCheck,
@@ -275,7 +280,6 @@ function failingStore(): RateLimitStore {
     signInNotChecked: vi.fn(down),
     signInReset: vi.fn(down),
     forgetOtherDevices: vi.fn(down),
-    rememberAfterCode: vi.fn(down),
   };
 }
 
@@ -343,7 +347,14 @@ async function attempt(
   if (answer.allowed) {
     if (verdict === 'wrong') await answer.attempt.failed();
     else if (verdict === 'auth_429') await answer.attempt.notChecked();
-    else await answer.attempt.succeeded({ remember: verdict === 'remember' });
+    else {
+      // A verified token of a user without an authenticator app (Auth named none, the database finds none).
+      await answer.attempt.succeeded({
+        remember: verdict === 'remember',
+        verified: { userId: '11111111-1111-4111-8111-111111111111', sessionId: null },
+        authNamesApp: false,
+      });
+    }
   }
   return answer;
 }
@@ -545,7 +556,7 @@ describe('createSignInGuard (FR-IAM-13 lockout, TM-0003 T-IAM-01/03; PO decision
   it('an account with an authenticator app: a ticked password sign-in trusts no browser — the tick waits for the session’s code (integration review L4)', async () => {
     const { guard, memory } = guardSetup();
     const SESSION = '33333333-3333-4333-8333-333333333333';
-    const signIn = (factors: { factor_type: string; status: string }[]) =>
+    const signIn = (factors?: { factor_type: string; status: string }[]) =>
       ({
         supabase: {
           auth: {
@@ -553,7 +564,10 @@ describe('createSignInGuard (FR-IAM-13 lockout, TM-0003 T-IAM-01/03; PO decision
               Promise.resolve({
                 data: {
                   session: { access_token: 'access-1', refresh_token: 'refresh-1' },
-                  user: { id: '11111111-1111-4111-8111-111111111111', factors },
+                  user:
+                    factors === undefined
+                      ? { id: '11111111-1111-4111-8111-111111111111' }
+                      : { id: '11111111-1111-4111-8111-111111111111', factors },
                 },
                 error: null,
               }),
@@ -583,25 +597,108 @@ describe('createSignInGuard (FR-IAM-13 lockout, TM-0003 T-IAM-01/03; PO decision
       remember: true,
     });
     expect(answer.ok).toBe(true);
-    // Password only: no trust row, no cookie — the success is recorded without remembering.
+    // Password only: no trust row, no cookie — the database is asked with the verified user and session.
     expect(memory.trusted.size).toBe(0);
-    expect(memory.signInSucceeded).toHaveBeenCalledWith(expect.anything(), false, null);
+    expect(memory.signInSucceeded).toHaveBeenCalledWith(
+      expect.anything(),
+      false,
+      expect.objectContaining({
+        userId: '11111111-1111-4111-8111-111111111111',
+        session: sessionSubject(SESSION),
+        authNamesApp: true,
+        codeWaitMinutes: 15,
+      }),
+    );
     // The tick waits server-side for THIS Auth session's sign-in code (15 minutes), keyed by its subject.
-    expect(memory.rememberAfterCode).toHaveBeenCalledWith(sessionSubject(SESSION), 15);
     expect([...memory.pending.keys()]).toEqual([hex(sessionSubject(SESSION))]);
 
-    // Unticked: nothing waits. An account without an app (or with an unfinished one): trusted as before.
-    memory.rememberAfterCode.mockClear();
+    // Unticked: nothing waits, nothing is trusted.
+    memory.pending.clear();
     await startPasswordSession(signIn(app), { email: EMAIL, password: 'right horse battery' });
-    expect(memory.rememberAfterCode).not.toHaveBeenCalled();
+    expect(memory.pending.size).toBe(0);
     expect(memory.trusted.size).toBe(0);
+    // An account without an app (or with an unfinished one): trusted as before.
     await startPasswordSession(signIn([{ factor_type: 'totp', status: 'unverified' }]), {
       email: EMAIL,
       password: 'right horse battery',
       remember: true,
     });
-    expect(memory.rememberAfterCode).not.toHaveBeenCalled();
+    expect(memory.pending.size).toBe(0);
     expect(memory.trusted.size).toBe(1);
+  });
+
+  it('Auth’s answer without `factors` (re-review): the database still finds the app — no trust row, the tick waits', async () => {
+    const { guard, memory } = guardSetup();
+    const USER_WITH_APP = '11111111-1111-4111-8111-111111111111';
+    memory.appUsers.add(USER_WITH_APP);
+    const SESSION = '33333333-3333-4333-8333-333333333333';
+    const deps = {
+      supabase: {
+        auth: {
+          // An Auth answer that carries no `factors` at all (an upgrade that stopped sending them).
+          signInWithPassword: () =>
+            Promise.resolve({
+              data: {
+                session: { access_token: 'access-1', refresh_token: 'refresh-1' },
+                user: { id: USER_WITH_APP },
+              },
+              error: null,
+            }),
+          getClaims: () =>
+            Promise.resolve({
+              data: {
+                claims: {
+                  sub: USER_WITH_APP,
+                  role: 'authenticated',
+                  aal: 'aal1',
+                  session_id: SESSION,
+                },
+              },
+              error: null,
+            }),
+        },
+      },
+      signInGuard: guard(),
+      now: () => 0,
+      sleep: () => Promise.resolve(),
+      logWarning: () => undefined,
+    } as unknown as AuthFlowDeps;
+    const answer = await startPasswordSession(deps, {
+      email: EMAIL,
+      password: 'right horse battery',
+      remember: true,
+    });
+    expect(answer.ok).toBe(true);
+    expect(memory.signInSucceeded).toHaveBeenCalledWith(
+      expect.anything(),
+      false,
+      expect.objectContaining({ userId: USER_WITH_APP, authNamesApp: false }),
+    );
+    expect(memory.trusted.size).toBe(0);
+    expect([...memory.pending.keys()]).toEqual([hex(sessionSubject(SESSION))]);
+    // The same answer for a user the database knows no app of: trusted at the password step.
+    memory.appUsers.clear();
+    memory.pending.clear();
+    await startPasswordSession(deps, {
+      email: EMAIL,
+      password: 'right horse battery',
+      remember: true,
+    });
+    expect(memory.trusted.size).toBe(1);
+    expect(memory.pending.size).toBe(0);
+  });
+
+  it('a success that names neither the verified user nor Auth’s word on an app trusts nothing (fail safe)', async () => {
+    const { guard, memory } = guardSetup();
+    const gate = await guard().check(EMAIL);
+    expect(gate.allowed).toBe(true);
+    if (gate.allowed) await gate.attempt.succeeded({ remember: true });
+    expect(memory.signInSucceeded).toHaveBeenCalledWith(
+      expect.anything(),
+      false,
+      expect.objectContaining({ userId: null, session: null, authNamesApp: true }),
+    );
+    expect(memory.trusted.size).toBe(0);
   });
 
   it('the shared session vector: the web app and the database derive the same subject (supabase/tests/71)', () => {
@@ -715,7 +812,14 @@ describe('createSignInGuard (FR-IAM-13 lockout, TM-0003 T-IAM-01/03; PO decision
     expect(memory.signInSucceeded).toHaveBeenLastCalledWith(
       expect.objectContaining({ device: null }),
       false,
-      { freshDevice: deviceSubject(mine.jar.token ?? ''), trustDays: 30 },
+      {
+        freshDevice: deviceSubject(mine.jar.token ?? ''),
+        trustDays: 30,
+        userId: '11111111-1111-4111-8111-111111111111',
+        session: null,
+        authNamesApp: false,
+        codeWaitMinutes: 15,
+      },
     );
     expect(memory.trusted.size).toBe(1);
   });

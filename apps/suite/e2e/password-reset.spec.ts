@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import AxeBuilder from '@axe-core/playwright';
 import { type Page, expect, test } from '@playwright/test';
+import { afterSignIn } from './sign-in';
 import { freshCode } from './totp';
 
 /**
@@ -151,7 +152,7 @@ test.describe('set a new password from the e-mailed link', () => {
     await expect(remember).not.toBeChecked();
     await expect(remember).toHaveAccessibleDescription(REMEMBER.ar.hint);
     await page.getByRole('button', { name: 'حفظ كلمة المرور' }).click();
-    await expect(page).toHaveURL(/\/ar\/sign-in\?notice=password-reset$/);
+    await expect(page).toHaveURL(/\/ar\/sign-in\?notice=password-reset$/, afterSignIn);
     await expect(page.getByTestId('password-reset-notice')).toContainText(
       'حُفظت كلمة المرور الجديدة',
     );
@@ -169,7 +170,7 @@ test.describe('set a new password from the e-mailed link', () => {
     await page.locator('#reset-password').fill(again);
     await page.locator('#reset-password-confirm').fill(again);
     await page.getByRole('button', { name: 'Save password' }).click();
-    await expect(page.getByTestId('reset-link-invalid')).toBeVisible();
+    await expect(page.getByTestId('reset-link-invalid')).toBeVisible(afterSignIn);
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(
       'This link has expired or was already used',
     );
@@ -225,7 +226,7 @@ test.describe('an account with an authenticator app (T-M2-10)', () => {
     );
     await page.getByTestId('reset-code').fill(`${code.slice(0, 3)} ${code.slice(3)}`);
     await page.getByRole('button', { name: 'حفظ كلمة المرور' }).click();
-    await expect(page).toHaveURL(/\/ar\/sign-in\?notice=password-reset$/);
+    await expect(page).toHaveURL(/\/ar\/sign-in\?notice=password-reset$/, afterSignIn);
   });
 
   test('English: the language switch keeps asking for the code; a used link asks for a new one', async ({
@@ -243,7 +244,7 @@ test.describe('an account with an authenticator app (T-M2-10)', () => {
     await page.locator('#reset-password-confirm').fill(again);
     await page.getByTestId('reset-code').fill(await freshCode(totpKey ?? ''));
     await page.getByRole('button', { name: 'Save password' }).click();
-    await expect(page.getByTestId('reset-link-invalid')).toBeVisible();
+    await expect(page.getByTestId('reset-link-invalid')).toBeVisible(afterSignIn);
     await expectNoSeriousA11yViolations(page);
   });
 });
@@ -270,7 +271,7 @@ test.describe('set a new password with «Remember this browser» ticked', () => 
     await expect(remember).toBeChecked();
     await expectNoSeriousA11yViolations(page);
     await page.getByRole('button', { name: 'Save password' }).click();
-    await expect(page).toHaveURL(/\/en\/sign-in\?notice=password-reset$/);
+    await expect(page).toHaveURL(/\/en\/sign-in\?notice=password-reset$/, afterSignIn);
     const seconds = await deviceCookieSeconds(page);
     expect(seconds).toBeGreaterThan(29 * 86_400);
     expect(seconds).toBeLessThanOrEqual(30 * 86_400 + 60);

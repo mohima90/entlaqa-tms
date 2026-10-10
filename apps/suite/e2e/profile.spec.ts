@@ -1,5 +1,7 @@
+import { execFileSync } from 'node:child_process';
 import AxeBuilder from '@axe-core/playwright';
 import { type Page, expect, test } from '@playwright/test';
+import { afterSignIn, signInToSuite, submitSignIn } from './sign-in';
 
 /**
  * My profile (FR-IAM-16, T-M2-15a) with a real ordinary member (Line Manager + Learner, no user
@@ -10,12 +12,27 @@ import { type Page, expect, test } from '@playwright/test';
 const email = process.env.SIGNED_IN_E2E_MANAGER_EMAIL;
 const password = process.env.SIGNED_IN_E2E_MANAGER_PASSWORD;
 const newPassword = process.env.PROFILE_E2E_NEW_PASSWORD;
+/** infra/docker/e2e-helper.sh (smoke.sh sets it): the account's trusted browsers, counted in the database. */
+const helper = process.env.PROFILE_E2E_HELPER ?? '';
 
-async function signIn(page: Page, secret: string) {
+/** How many unexpired browsers the account trusts for the sign-in lock (T-M2-11). */
+function trustedBrowsers(address: string): number {
+  return Number(
+    execFileSync('bash', [helper, 'trusted-browsers', address], {
+      encoding: 'utf8',
+      timeout: 30_000,
+    }).trim(),
+  );
+}
+
+/** Signs in with the English form, «Remember this browser» ticked, and waits for the suite. */
+async function signInRemembered(page: Page) {
   await page.goto('/en/sign-in');
   await page.getByLabel('Email').fill(email ?? '');
-  await page.getByLabel('Password').fill(secret);
+  await page.getByLabel('Password').fill(password ?? '');
+  await page.getByRole('checkbox', { name: 'Remember this browser' }).check();
   await page.getByRole('button', { name: 'Sign in' }).click();
+  await expect(page).toHaveURL(/\/en\/suite$/, afterSignIn);
 }
 
 async function expectNoSeriousA11yViolations(page: Page) {
@@ -33,8 +50,7 @@ test.describe('My profile', () => {
   test.describe.configure({ mode: 'serial' });
 
   test('changes own personal details; e-mail and job data stay read-only', async ({ page }) => {
-    await signIn(page, password ?? '');
-    await expect(page).toHaveURL(/\/en\/suite$/);
+    await signInToSuite(page, email, password);
     await page.getByTestId('my-profile-link').click();
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('My profile');
     await expectNoSeriousA11yViolations(page);
@@ -74,11 +90,20 @@ test.describe('My profile', () => {
     await expectNoSeriousA11yViolations(page);
   });
 
-  test('changes the password: the current one is checked, then the new one signs in', async ({
+  test('changes the password: the current one is checked, then the new one signs in; other remembered browsers are forgotten', async ({
     page,
+    browser,
   }) => {
-    await signIn(page, password ?? '');
-    await expect(page).toHaveURL(/\/en\/suite$/);
+    expect(
+      helper,
+      'PROFILE_E2E_HELPER (infra/docker/e2e-helper.sh) must be set with the credentials',
+    ).not.toBe('');
+    // Another browser the member asked to remember, then this one (T-M2-11 security review L2).
+    const other = await browser.newContext();
+    await signInRemembered(await other.newPage());
+    await other.close();
+    await signInRemembered(page);
+    expect(trustedBrowsers(email ?? '')).toBeGreaterThanOrEqual(2);
     await page.goto('/en/suite/profile');
     await page.getByLabel('Current password').fill('not-the-password-123');
     await page.getByLabel(/^New password/).fill(newPassword ?? '');
@@ -98,17 +123,22 @@ test.describe('My profile', () => {
     await expect(page.getByTestId('password-message')).toHaveText(
       'Password changed. Sign-in sessions on other devices have ended.',
     );
+    // Every OTHER remembered browser is forgotten — in Next.js after(), once the answer was sent, outside the
+    // action's transaction (integration review: proves the transaction rules let it run); this one stays.
+    await expect
+      .poll(() => trustedBrowsers(email ?? ''), { timeout: 20_000, intervals: [500] })
+      .toBe(1);
     // This session stays signed in.
     await page.reload();
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('My profile');
 
     await page.getByRole('button', { name: 'Sign out' }).click();
     await expect(page).toHaveURL(/\/en\/sign-in$/);
-    await signIn(page, password ?? '');
+    await submitSignIn(page, email, password);
     await expect(page.getByTestId('sign-in-error')).toHaveText(
       'The email or password is incorrect.',
+      afterSignIn,
     );
-    await signIn(page, newPassword ?? '');
-    await expect(page).toHaveURL(/\/en\/suite$/);
+    await signInToSuite(page, email, newPassword);
   });
 });

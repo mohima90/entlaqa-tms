@@ -1358,6 +1358,25 @@ describe('createCodeAttemptLimiter / withCodeAttemptLimit (authenticator codes, 
     expect((await limiter().check(USER)).allowed).toBe(false);
   });
 
+  it("Auth's 429 gives the account's failure back (no code compared), the client's stays (integration review L2)", async () => {
+    const { limiter, memory } = setup();
+    const authLimited = vi.fn(() => Promise.resolve(err(appError('RATE_LIMITED'))));
+    // Any number of Auth refusals before a code is compared never locks the account.
+    for (let i = 0; i < 8; i += 1) {
+      const r = await withCodeAttemptLimit(limiter(), USER, authLimited, isWrong);
+      expect(!r.ok && r.error.code).toBe('RATE_LIMITED');
+    }
+    expect(authLimited).toHaveBeenCalledTimes(8);
+    expect(memory.rows.get(`mfa_code.account_failures|${hex(userSubject(USER))}`)).toBeUndefined();
+    // The client's provisional failures stay counted: the client is the one Auth limited.
+    expect(memory.rows.get(`mfa_code.client_failures|${hex(clientSubject(CLIENT))}`)).toMatchObject(
+      { hits: 8 },
+    );
+    // Wrong codes still count as before: the 5th locks the account.
+    for (let i = 0; i < 5; i += 1) await withCodeAttemptLimit(limiter(), USER, wrongCode, isWrong);
+    expect((await limiter().check(USER)).allowed).toBe(false);
+  });
+
   it('fails closed when the limiter cannot answer: Auth is never asked', async () => {
     const { limiter, events } = setup(CLIENT, failingStore());
     const verify = vi.fn(wrongCode);

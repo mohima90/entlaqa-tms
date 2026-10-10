@@ -731,6 +731,15 @@ export async function forgetOtherTrustedBrowsers(
 
 // ----- Authenticator-app codes (T-M2-10 security review; TM-0003 T-IAM-12) -----
 
+/** One code check that reached Auth (or the database). No method throws. */
+export interface CodeAttempt extends LimitedAttempt {
+  /**
+   * Auth answered before checking the code (its own rate limit, HTTP 429 — integration review T-M2-11
+   * L2, as for passwords): the account's provisional failure is given back; the client's stays.
+   */
+  notChecked(): Promise<void>;
+}
+
 /** Auth's per-IP limit sees only the app server: codes are limited here, per account and per client. */
 export interface CodeAttemptLimiter {
   /**
@@ -738,7 +747,7 @@ export interface CodeAttemptLimiter {
    * client; refused when either budget is used up. Throws RateLimiterUnavailableError when the limiter
    * cannot answer (fail closed). Report Auth's verdict to the returned attempt.
    */
-  check(userId: string): Promise<LimitGate<LimitedAttempt>>;
+  check(userId: string): Promise<LimitGate<CodeAttempt>>;
 }
 
 export function createCodeAttemptLimiter(
@@ -795,7 +804,7 @@ export function createCodeAttemptLimiter(
         });
         return { allowed: false, retryAfterSeconds };
       }
-      const attempt: LimitedAttempt = {
+      const attempt: CodeAttempt = {
         failed() {
           log({ event: 'auth.mfa_code.failed', action, reason: 'invalid_code', ...refs });
           for (const [bucket, counter] of [
@@ -829,6 +838,11 @@ export function createCodeAttemptLimiter(
           }
           await giveBack(B.mfaCodeClient, clientKey);
         },
+        async notChecked() {
+          // No code was compared: the account's provisional failure goes back (a flood elsewhere must not
+          // lock this account); the client's stays — it is the one Auth limited.
+          await giveBack(B.mfaCodeAccount, account);
+        },
       };
       return { allowed: true, attempt };
     },
@@ -839,7 +853,9 @@ export function createCodeAttemptLimiter(
  * The hook for the code check (T-M2-10 `verifyTotpCode`): limits it per account and per client, counting
  * wrong codes only. `verify` asks Auth; `isWrongCode` tells a wrong or expired code from other refusals.
  * A limited check answers RATE_LIMITED without asking Auth; a wrong code stays counted; a right one gives
- * its provisional failure back; any other refusal, or an Auth outage (thrown), keeps it counted.
+ * its provisional failure back; Auth's own rate limit (`verify` answers RATE_LIMITED — Auth's 429, no code
+ * compared; integration review T-M2-11 L2) gives the account's back and keeps the client's; any other
+ * refusal, or an Auth outage (thrown), keeps both counted.
  */
 export async function withCodeAttemptLimit<T>(
   limiter: CodeAttemptLimiter,
@@ -852,6 +868,7 @@ export async function withCodeAttemptLimit<T>(
   const result = await verify();
   if (result.ok) await gate.attempt.succeeded();
   else if (isWrongCode(result.error)) await gate.attempt.failed();
+  else if (result.error.code === 'RATE_LIMITED') await gate.attempt.notChecked();
   return result;
 }
 

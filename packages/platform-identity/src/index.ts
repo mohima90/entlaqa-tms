@@ -46,6 +46,7 @@ export {
   AUTH_RATE_LIMIT_WINDOW_SMOKE_ENV,
   type AuthLimitContext,
   type AuthLimits,
+  type CodeAttempt,
   type CodeAttemptLimiter,
   type CodeCheckLimit,
   DEVICE_TOKEN_PATTERN,

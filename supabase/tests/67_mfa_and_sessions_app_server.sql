@@ -17,10 +17,10 @@ declare
   v_a constant uuid := 'a0000000-0000-4000-8000-000000000001';
   -- uA2: an Organization Admin of A at AAL2 through a confirmed app (changes the policy below).
   v_admin_aal2 constant jsonb := tests.user_claims('00000000-0000-4000-8000-000000000c09', '10000000-0000-4000-8000-000000000c91',
-                                                   'a0000000-0000-4000-8000-000000000001') || '{"aal": "aal2"}';
+                                                   'a0000000-0000-4000-8000-000000000001') || tests.fresh_code();
   -- uM4 set up an app that waits for its e-mailed confirmation; its session passed the code in Auth.
   v_m4 constant jsonb := tests.user_claims('00000000-0000-4000-8000-000000000c08', '10000000-0000-4000-8000-000000000c81',
-                                           'a0000000-0000-4000-8000-000000000001') || '{"aal": "aal2"}';
+                                           'a0000000-0000-4000-8000-000000000001') || tests.fresh_code();
   -- uM1 has a verified authenticator app, uM2 an unverified one only, uS1 none; uM3 is a Training Manager.
   v_m1 constant jsonb := tests.user_claims('00000000-0000-4000-8000-000000000c04', '10000000-0000-4000-8000-000000000c41', 'a0000000-0000-4000-8000-000000000001');
   v_m2 constant jsonb := tests.user_claims('00000000-0000-4000-8000-000000000c05', '10000000-0000-4000-8000-000000000c51', 'a0000000-0000-4000-8000-000000000001');
@@ -53,7 +53,7 @@ begin
   perform tests.assert_eq((select count(*) from platform.persons), 0::bigint, 'optional: it reads nothing');
   perform tests.assert_eq((select state from private.session_access_state()), 'mfa_challenge', 'optional: challenge');
   -- A token claiming aal2 on an Auth session that did not pass the code (sM1 is aal1): still refused.
-  perform tests.set_claims(v_m1 || '{"aal": "aal2"}');
+  perform tests.set_claims(v_m1 || tests.fresh_code());
   perform tests.assert(private.current_tenant_id() is null, 'optional: a claimed aal2 alone does not count (review H1)');
   perform tests.assert_eq((select state from private.session_access_state()), 'mfa_challenge', 'optional: still the code');
   -- An app waiting for its e-mailed confirmation does not count (nothing to challenge): AAL1 acts, the page
@@ -155,6 +155,51 @@ begin
 end $$;
 rollback;
 
+-- The account's apps as each of its sessions sees them (re-review N1): the session that set an app up sees it
+-- waiting for the e-mailed code; every OTHER session of the account sees "an app was added from another
+-- sign-in" (when, which browser) — and can neither confirm it nor ask for its e-mail.
+begin;
+set local role authenticated;
+do $$
+declare
+  v_a constant uuid := 'a0000000-0000-4000-8000-000000000001';
+  r record;
+begin
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c08', '10000000-0000-4000-8000-000000000c81', v_a)
+                           || tests.fresh_code());
+  select * into r from private.my_mfa_apps();
+  perform tests.assert(r.factor_id = '20000000-0000-4000-8000-000000000c08' and not r.confirmed and r.here
+                       and r.set_up_at > now() - interval '1 minute' and r.user_agent like '%Firefox/131.0',
+    'the session that set the app up: waiting for its code, here');
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c08', '10000000-0000-4000-8000-000000000c82', v_a));
+  select * into r from private.my_mfa_apps();
+  perform tests.assert(r.factor_id = '20000000-0000-4000-8000-000000000c08' and not r.confirmed and not r.here
+                       and r.user_agent like '%Firefox/131.0',
+    'another sign-in of the account: added elsewhere, with when and which browser');
+  perform tests.assert_eq(private.confirm_mfa_setup('20000000-0000-4000-8000-000000000c08', '12345678'), 'refused',
+    'another sign-in cannot confirm the app');
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c08', '10000000-0000-4000-8000-000000000c82', v_a)
+                           || tests.fresh_code());
+  perform tests.assert_eq(private.confirm_mfa_setup('20000000-0000-4000-8000-000000000c08', '12345678'), 'refused',
+    '…not even claiming AAL2');
+  perform tests.assert_eq(private.request_mfa_factor_mail('20000000-0000-4000-8000-000000000c08'), 'refused',
+    '…nor ask for its e-mail');
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c04', '10000000-0000-4000-8000-000000000c41', v_a));
+  select * into r from private.my_mfa_apps();
+  perform tests.assert(r.factor_id = '20000000-0000-4000-8000-000000000c04' and r.confirmed, 'uM1: a confirmed app');
+  perform tests.assert_eq((select count(*) from private.my_mfa_apps()), 1::bigint, '…its only one');
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c05', '10000000-0000-4000-8000-000000000c51', v_a));
+  perform tests.assert_eq((select count(*) from private.my_mfa_apps()), 0::bigint, 'an unverified factor is no app');
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c08', '10000000-0000-4000-8000-000000000c41', v_a));
+  perform tests.assert_eq((select count(*) from private.my_mfa_apps()), 0::bigint, 'another account''s session: nothing');
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c01', '10000000-0000-4000-8000-000000000c15', v_a));
+  perform tests.assert_eq((select count(*) from private.my_mfa_apps()), 0::bigint, 'an ended session: nothing');
+  perform tests.set_claims(tests.system_claims(v_a));
+  perform tests.assert_eq((select count(*) from private.my_mfa_apps()), 0::bigint, 'system claims: nothing');
+  perform tests.assert_eq(private.remove_mfa_app('20000000-0000-4000-8000-000000000c08'), 'refused', 'system claims remove nothing');
+end $$;
+rollback;
+
 -- ---------------------------------------------------------------------------------------------------
 -- Session rules (defaults: 30 minutes inactive, 12 hours, 3 devices; platform: 24 hours)
 -- ---------------------------------------------------------------------------------------------------
@@ -189,7 +234,7 @@ do $$
 declare
   v_a constant uuid := 'a0000000-0000-4000-8000-000000000001';
 begin
-  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c09', '10000000-0000-4000-8000-000000000c91', v_a) || '{"aal": "aal2"}');
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c09', '10000000-0000-4000-8000-000000000c91', v_a) || tests.fresh_code());
   perform tests.assert_eq(tests.rows_affected('update platform.security_policies set session_idle_minutes = 5, session_max_hours = 24'),
     1::bigint, 'A: 5 minutes, 24 hours');
   perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c01', '10000000-0000-4000-8000-000000000c16', v_a));
@@ -220,12 +265,12 @@ declare
   v_s3b constant jsonb := jsonb_build_object('role', 'authenticated', 'sub', '00000000-0000-4000-8000-000000000c03',
                                              'session_id', '10000000-0000-4000-8000-000000000c32');
 begin
-  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000b1', '10000000-0000-4000-8000-0000000000b1', v_b) || '{"aal": "aal2"}');
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000b1', '10000000-0000-4000-8000-0000000000b1', v_b) || tests.fresh_code());
   perform tests.assert_eq(tests.rows_affected('update platform.security_policies set session_idle_minutes = 5'), 1::bigint,
     'B: 5 minutes');
   perform tests.set_claims(v_s3b);
   perform tests.assert(not private.switch_active_tenant(v_b), 'inactive longer than B allows: cannot enter B');
-  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000b1', '10000000-0000-4000-8000-0000000000b1', v_b) || '{"aal": "aal2"}');
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000b1', '10000000-0000-4000-8000-0000000000b1', v_b) || tests.fresh_code());
   perform tests.assert_eq(tests.rows_affected('update platform.security_policies set session_idle_minutes = 30'), 1::bigint,
     'B: 30 minutes');
   perform tests.set_claims(v_s3b);
@@ -293,7 +338,7 @@ do $$
 declare
   v_a constant uuid := 'a0000000-0000-4000-8000-000000000001';
   v_admin_aal2 constant jsonb := tests.user_claims('00000000-0000-4000-8000-000000000c09', '10000000-0000-4000-8000-000000000c91',
-                                                   'a0000000-0000-4000-8000-000000000001') || '{"aal": "aal2"}';
+                                                   'a0000000-0000-4000-8000-000000000001') || tests.fresh_code();
 begin
   perform tests.set_claims(v_admin_aal2);
   perform tests.assert_eq(tests.rows_affected('update platform.security_policies set mfa_mode = ''required_all'', mfa_grace_days = 0'),
@@ -352,10 +397,10 @@ begin
   perform tests.assert_eq(private.current_tenant_id(), v_a, 'other accounts are untouched');
   -- A session its organization refuses (an app waiting for confirmation under "required for everyone")
   -- neither lists nor ends sessions (review L1).
-  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c09', '10000000-0000-4000-8000-000000000c91', v_a) || '{"aal": "aal2"}');
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c09', '10000000-0000-4000-8000-000000000c91', v_a) || tests.fresh_code());
   perform tests.assert_eq(tests.rows_affected('update platform.security_policies set mfa_mode = ''required_all'', mfa_grace_days = 0'),
     1::bigint, 'A requires an app from everyone');
-  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c08', '10000000-0000-4000-8000-000000000c81', v_a) || '{"aal": "aal2"}');
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c08', '10000000-0000-4000-8000-000000000c81', v_a) || tests.fresh_code());
   perform tests.assert_eq((select count(*) from private.my_sessions()), 0::bigint, 'a refused session lists nothing');
   perform tests.assert_eq(private.end_my_sessions(null), 0, 'a refused session ends nothing');
 end $$;
@@ -429,10 +474,12 @@ begin
   perform tests.set_claims(tests.system_claims(v_a));
   perform tests.assert_eq(private.end_my_sessions(null), 0, 'system claims: nothing');
   perform tests.assert_eq((select count(*) from private.my_sessions()), 0::bigint, 'system claims: no list');
-  -- The worker's purge and the link hashes are not the web app's.
+  -- The worker's purges and the code and link hashes are not the web app's.
   perform tests.assert_fails($q$select private.purge_ended_sessions(10)$q$, array['42501'], 'the web app cannot purge sessions');
   perform tests.assert_fails($q$select private.issue_mfa_factor_tokens('20000000-0000-4000-8000-000000000c08', '00000000-0000-4000-8000-000000000c08', sha256('a'), sha256('b'))$q$,
-    array['42501'], 'the web app cannot issue link hashes');
+    array['42501'], 'the web app cannot issue code or link hashes');
+  perform tests.assert_fails($q$select private.purge_unconfirmed_mfa_apps(10)$q$, array['42501'],
+    'the web app cannot purge unconfirmed apps');
 end $$;
 rollback;
 

@@ -1,22 +1,26 @@
 -- Rollback of 20261012110000_private__mfa_factor_mail.sql: the account e-mail functions and table as in
--- 20261010120000 (no authenticator notices), without the authenticator confirmation, removal and reset
+-- 20261010120000 (no authenticator notices), without the authenticator confirmation, removal, purge and reset
 -- functions and the policy-change notice.
 drop trigger security_policies_changed_mail on platform.security_policies;
 drop function private.security_policy_changed_mail();
 drop function private.reset_account_mfa(uuid, text);
 drop function private.reset_member_mfa(uuid);
+drop function private.purge_unconfirmed_mfa_apps(integer);
 drop function private.reject_mfa_factor(bytea);
-drop function private.confirm_mfa_factor(bytea);
 drop function private.account_has_app(uuid);
 drop function private.issue_mfa_factor_tokens(uuid, uuid, bytea, bytea);
-drop function private.request_mfa_removed_mail(uuid);
+drop function private.remove_mfa_app(uuid);
+drop function private.my_mfa_apps();
+drop function private.confirm_mfa_setup(uuid, text);
 drop function private.request_mfa_factor_mail(uuid);
 drop function private.request_live_user();
 drop function private.end_all_account_sessions(uuid, uuid, uuid);
 drop function private.remove_account_factors(uuid, uuid[]);
 drop function private.queue_mfa_mail(text, uuid, uuid, text, uuid);
 drop function private.mfa_remove_link_lifetime();
-drop function private.mfa_confirm_link_lifetime();
+drop function private.mfa_code_resend_after();
+drop function private.mfa_code_max_attempts();
+drop function private.mfa_code_lifetime();
 
 drop function private.claim_account_mail_request();
 create function private.claim_account_mail_request()

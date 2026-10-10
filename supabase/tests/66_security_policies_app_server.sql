@@ -8,7 +8,8 @@
 do $$ begin perform tests.assert(session_user = 'app_server', 'must run connected as app_server'); end $$;
 
 -- Who may change the policy: an Organization Admin of A at AAL2 only — AAL2 being the lower of the token's
--- claim and the Auth session's own level, through a CONFIRMED app (review H1): uA2 has one; uA has none.
+-- claim and the Auth session's own level, through a CONFIRMED app (review H1): uA2 has one; uA has none —
+-- with a code from the last 15 minutes (code_at claim, private.request_code_fresh).
 begin;
 set local role authenticated;
 do $$
@@ -23,7 +24,7 @@ begin
   perform tests.assert_eq(tests.rows_affected(v_set), 0::bigint, 'AAL1: the Organization Admin cannot change the policy');
   -- A token CLAIMING aal2 is not enough: uA's Auth session is not aal2 and uA has no confirmed app.
   perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1', v_a,
-                                             'a1000000-0000-4000-8000-0000000000a1') || '{"aal": "aal2"}');
+                                             'a1000000-0000-4000-8000-0000000000a1') || tests.fresh_code());
   perform tests.assert(not private.request_aal2(), 'the claim alone is not AAL2');
   perform tests.assert_eq(tests.rows_affected(v_set), 0::bigint, 'a claimed aal2 without the Auth session: no change');
   -- …nor is an aal2 Auth session with an AAL1 token (the lower of both counts).
@@ -33,21 +34,39 @@ begin
   perform tests.assert_eq(tests.rows_affected(v_set), 0::bigint, 'the lower of the claim and the session: no change');
   -- …nor an app that was never confirmed from the mailbox (uM4).
   perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c08', '10000000-0000-4000-8000-000000000c81', v_a,
-                                             'a1000000-0000-4000-8000-000000000c08') || '{"aal": "aal2"}');
+                                             'a1000000-0000-4000-8000-000000000c08') || tests.fresh_code());
   perform tests.assert(not private.request_aal2(), 'an unconfirmed app does not give AAL2');
   perform tests.assert_eq((select aal2 from private.request_session_facts()), false, 'session facts: not AAL2');
   -- HR Manager of A claiming AAL2: not an Organization Admin.
   perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000ab', '10000000-0000-4000-8000-0000000000ab', v_a,
-                                             'a1000000-0000-4000-8000-0000000000ab') || '{"aal": "aal2"}');
+                                             'a1000000-0000-4000-8000-0000000000ab') || tests.fresh_code());
   perform tests.assert_eq(tests.rows_affected(v_set), 0::bigint, 'an HR Manager cannot change the policy');
   -- A learner at AAL2 reads it (password rules) but cannot change it.
   perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c01', '10000000-0000-4000-8000-000000000c11', v_a,
-                                             'a1000000-0000-4000-8000-000000000c01') || '{"aal": "aal2"}');
+                                             'a1000000-0000-4000-8000-000000000c01') || tests.fresh_code());
   perform tests.assert_eq((select password_min_length from platform.security_policies), 12::smallint, 'members read their organization''s rule');
   perform tests.assert_eq(tests.rows_affected(v_set), 0::bigint, 'a learner cannot change the policy');
-  -- An Organization Admin at AAL2 (confirmed app): changed, stamped with the admin's person, version 2.
+  -- …nor an Organization Admin at AAL2 whose code is older than 15 minutes (PO answer, 9 Oct 2026), or whose
+  -- claims do not say when the code was passed: checked here too, not only by the web app (re-review info).
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c09', '10000000-0000-4000-8000-000000000c91', v_a,
+                                             'a1000000-0000-4000-8000-000000000c09') || tests.fresh_code(interval '16 minutes'));
+  perform tests.assert(private.request_aal2() and not private.request_code_fresh(), 'AAL2, but a code from 16 minutes ago');
+  perform tests.assert(not private.actor_may_change_security_policy(v_a), 'a stale code: may not change the policy');
+  perform tests.assert_eq(tests.rows_affected(v_set), 0::bigint, 'a stale code: no change');
   perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c09', '10000000-0000-4000-8000-000000000c91', v_a,
                                              'a1000000-0000-4000-8000-000000000c09') || '{"aal": "aal2"}');
+  perform tests.assert(not private.request_code_fresh(), 'no code time: not fresh');
+  perform tests.assert_eq(tests.rows_affected(v_set), 0::bigint, 'no code time: no change');
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c09', '10000000-0000-4000-8000-000000000c91', v_a,
+                                             'a1000000-0000-4000-8000-000000000c09') || '{"aal": "aal2", "code_at": "1.7e9"}');
+  perform tests.assert(not private.request_code_fresh(), 'a malformed code time: not fresh');
+  -- An Organization Admin at AAL2 (confirmed app) with a code from the last 15 minutes: changed, stamped with
+  -- the admin's person, version 2.
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c09', '10000000-0000-4000-8000-000000000c91', v_a,
+                                             'a1000000-0000-4000-8000-000000000c09') || tests.fresh_code(interval '14 minutes'));
+  perform tests.assert(private.request_code_fresh(), 'a code from 14 minutes ago is fresh');
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c09', '10000000-0000-4000-8000-000000000c91', v_a,
+                                             'a1000000-0000-4000-8000-000000000c09') || tests.fresh_code());
   perform tests.assert(private.request_aal2(), 'uA2 is at AAL2');
   perform tests.assert((select active and aal2 from private.request_session_facts()), 'session facts: active, AAL2');
   perform tests.assert_eq(tests.rows_affected(v_set), 1::bigint, 'the Organization Admin at AAL2 changes the policy');
@@ -76,7 +95,7 @@ set local role authenticated;
 do $$
 begin
   perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c06', '10000000-0000-4000-8000-000000000c61',
-                                             'a0000000-0000-4000-8000-000000000001') || '{"aal": "aal2"}');
+                                             'a0000000-0000-4000-8000-000000000001') || tests.fresh_code());
   perform tests.assert(not private.actor_may_change_security_policy('a0000000-0000-4000-8000-000000000001'),
     'a Training Manager may not change the policy');
 end $$;
@@ -91,10 +110,10 @@ declare
   v_a constant uuid := 'a0000000-0000-4000-8000-000000000001';
   v_b constant uuid := 'b0000000-0000-4000-8000-000000000001';
 begin
-  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000b1', '10000000-0000-4000-8000-0000000000b1', v_b) || '{"aal": "aal2"}');
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000b1', '10000000-0000-4000-8000-0000000000b1', v_b) || tests.fresh_code());
   perform tests.assert_eq(tests.rows_affected('update platform.security_policies set password_min_length = 20'), 1::bigint,
     'B''s admin sets 20');
-  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c09', '10000000-0000-4000-8000-000000000c91', v_a) || '{"aal": "aal2"}');
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c09', '10000000-0000-4000-8000-000000000c91', v_a) || tests.fresh_code());
   perform tests.assert_eq(tests.rows_affected('update platform.security_policies set password_min_length = 16'), 1::bigint,
     'A''s admin sets 16');
 
@@ -124,10 +143,10 @@ begin
   perform tests.assert(private.password_min_length_for_caller() is null, 'system claims: no answer');
   -- A session its organization refuses (MFA required, uM4's app not confirmed): no answer in the
   -- organization (review L1); the same account without an organization (a recovery session) still gets it.
-  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c09', '10000000-0000-4000-8000-000000000c91', v_a) || '{"aal": "aal2"}');
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c09', '10000000-0000-4000-8000-000000000c91', v_a) || tests.fresh_code());
   perform tests.assert_eq(tests.rows_affected('update platform.security_policies set mfa_mode = ''required_all'', mfa_grace_days = 0'),
     1::bigint, 'A requires an app from everyone');
-  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c08', '10000000-0000-4000-8000-000000000c81', v_a) || '{"aal": "aal2"}');
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c08', '10000000-0000-4000-8000-000000000c81', v_a) || tests.fresh_code());
   perform tests.assert(private.password_min_length_for_caller() is null, 'a session its organization refuses: no answer');
   perform tests.set_claims(jsonb_build_object('role', 'authenticated', 'sub', '00000000-0000-4000-8000-000000000c08',
                                               'session_id', '10000000-0000-4000-8000-000000000c81'));
@@ -154,7 +173,7 @@ declare
   r record;
 begin
   perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c09', '10000000-0000-4000-8000-000000000c91',
-                                             'a0000000-0000-4000-8000-000000000001') || '{"aal": "aal2"}');
+                                             'a0000000-0000-4000-8000-000000000001') || tests.fresh_code());
   perform tests.assert_eq(tests.rows_affected('update platform.security_policies set lockout_threshold = 3, lockout_minutes = 30'),
     1::bigint, 'A''s admin makes the lockout stricter');
   perform tests.set_claims(null);

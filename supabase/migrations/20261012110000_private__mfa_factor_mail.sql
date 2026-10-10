@@ -1,15 +1,25 @@
--- Authenticator apps: mailbox confirmation, e-mailed notices, removal and resets (FR-IAM-12; T-M2-10; TM-0003
--- T-IAM-10, T-IAM-11; security review H1 / M2). PII: none stored (account ids; token hashes).
+-- Authenticator apps: confirmation by the session that set them up, e-mailed notices, removal and resets
+-- (FR-IAM-12; T-M2-10; TM-0003 T-IAM-10, T-IAM-11; security review H1 / M2, re-review N1 / N2). PII: none
+-- stored (account ids; the set-up session's browser string; code and token hashes).
 --
 -- SECURITY-RELEVANT.
---   * Set-up (security review H1, T-IAM-11): after an app is set up in the web app, the account gets an
---     e-mail — our notification service (account e-mails, 20261010120000, worker) — with a single-use
---     CONFIRMATION link (72 hours) and a "not you? remove this app" link (7 days). Only the SHA-256 of each
---     token is stored (private.mfa_factor_confirmations, 20261012090100); the worker creates them when it
---     writes the e-mail, so a delayed worker delays the e-mail, never the set-up. The app counts for AAL2 only
---     once confirmed (private.session_access, private.request_aal2).
---   * "Not you?": removes that app in Auth and ends EVERY session of the account (the e-mail tells to set a
---     new password).
+--   * Set-up (re-review N1, T-IAM-11 as specified): the Auth session that passed a new app's first code
+--     records it (private.request_mfa_factor_mail) and is the ONLY one that can confirm it: the account gets
+--     an e-mail — our notification service (account e-mails, 20261010120000, worker) — with a one-time
+--     8-digit CODE to type into that window (private.confirm_mfa_setup: that session, aal2 through that app;
+--     72 hours; 5 tries) and a "not you? remove this app" link (7 days). Possession of the app AND the mailbox:
+--     a password-only attacker cannot confirm (no mailbox) and the mailbox owner cannot confirm someone else's
+--     app (another session). Only SHA-256 hashes are stored (private.mfa_factor_confirmations,
+--     20261012090100); the worker creates code and token when it writes the e-mail, so a delayed worker
+--     delays the e-mail, never the set-up; "send again" works from that session. The app counts for AAL2
+--     only once confirmed (private.session_access, private.request_aal2).
+--   * Every other session of the account sees "an app was added from another sign-in" (private.my_mfa_apps)
+--     and can remove it (private.remove_mfa_app): every OTHER session then ends.
+--   * "Not you?" link: removes that app in Auth and ends EVERY session of the account (the e-mail tells to
+--     set a new password).
+--   * An app still unconfirmed after 72 hours is removed by the worker (private.purge_unconfirmed_mfa_apps,
+--     re-review N2) and the owner e-mailed: a waiting app never blocks the owner's password change, reset or
+--     set-up (Auth asks for a code from every verified app).
 --   * Every removal and reset is e-mailed and audited (in every organization of the account).
 --   * A change of the security policy is e-mailed to every Organization Admin of the organization (TM-0003
 --     T-IAM-24; security review L5): queued by the database itself (trigger), so no path can skip it.
@@ -20,12 +30,16 @@
 -- Factors are deleted through private.auth_mfa_factor and sessions through private.auth_session_validity
 -- (views owned by the migration role; DELETE for tenant_guard only — 20261012090100).
 --
---   private.request_mfa_factor_mail(factor)    web app (user claims, live session): the set-up e-mail of
---       the caller's app (NULL: the newest app waiting for confirmation — "send the e-mail again")
---   private.request_mfa_removed_mail(factor)   web app: the notice after the account removed its own app
---   private.issue_mfa_factor_tokens(…)         worker: stores the hashes of the links it e-mails
+--   private.request_mfa_factor_mail(factor)    web app (user claims, the session that set the app up): the
+--       set-up e-mail, and "send the e-mail again"
+--   private.confirm_mfa_setup(factor, code)    web app (that session): the e-mailed code
+--   private.my_mfa_apps()                      web app: the account's apps — confirmed or waiting, here or
+--       added from another sign-in (when, which browser)
+--   private.remove_mfa_app(factor)             web app: remove a confirmed app (recent code), cancel this
+--       session's set-up, or remove an app added from another sign-in (other sessions end)
+--   private.issue_mfa_factor_tokens(…)         worker: stores the hashes of the code and link it e-mails
 --   private.account_has_app(user)              worker: the reset e-mail says a code will be asked
---   private.confirm_mfa_factor(token hash)     web app (no session): the confirmation link
+--   private.purge_unconfirmed_mfa_apps(limit)  worker: apps unconfirmed after 72 hours (re-review N2)
 --   private.reject_mfa_factor(token hash)      web app (no session): the "not you" link
 --   private.reset_member_mfa(person)           web app: an Organization Admin's reset (checked here too)
 --   private.reset_account_mfa(user, reference) operators only (support runbook)
@@ -39,8 +53,9 @@ grant account_mail_guard to current_user;
 -- Account e-mails for authenticator apps
 -- ---------------------------------------------------------------------------------------------------
 alter table private.account_mail_requests add column factor_id uuid;
--- Why an app was removed: by the account (My profile), by its "not you" link, by an Organization Admin, by
--- ENTLAQA support.
+-- Why an app was removed: by the account (My profile, or its own set-up cancelled), as "not you" (the e-mail's
+-- link, or "added from another sign-in"), by an Organization Admin, by ENTLAQA support, or never confirmed
+-- (the worker, re-review N2).
 alter table private.account_mail_requests add column mfa_reason text;
 -- security_policy_changed: which settings changed (names, never values) and who changed them (person id).
 alter table private.account_mail_requests add column detail jsonb;
@@ -60,7 +75,7 @@ alter table private.account_mail_requests add constraint account_mail_requests_s
   or (kind = 'security_policy_changed' and email is null and user_id is not null and tenant_id is not null
       and factor_id is null and mfa_reason is null and jsonb_typeof(detail) = 'object'));
 alter table private.account_mail_requests add constraint account_mail_requests_mfa_reason_check
-  check (mfa_reason is null or mfa_reason in ('removed', 'not_me', 'admin_reset', 'support_reset'));
+  check (mfa_reason is null or mfa_reason in ('removed', 'not_me', 'admin_reset', 'support_reset', 'expired'));
 
 -- tenant_guard queues the authenticator notices and the policy-change notices (and only those).
 create policy account_mail_requests_tenant_guard on private.account_mail_requests for all to tenant_guard
@@ -253,12 +268,25 @@ grant execute on function private.claim_account_mail_request() to authenticated;
 -- ---------------------------------------------------------------------------------------------------
 -- tenant_guard: authenticator notices, confirmation, removal, resets
 -- ---------------------------------------------------------------------------------------------------
--- Link lifetimes (one place each).
-create or replace function private.mfa_confirm_link_lifetime()
+-- The set-up e-mail's code and link (one place each). The code lives at least as long as the session that set
+-- the app up can (a sign-in session ends after at most 24 hours): a worker that sends late still leaves time.
+create or replace function private.mfa_code_lifetime()
 returns interval
 language sql immutable
 set search_path = ''
 as $$ select interval '72 hours' $$;
+
+create or replace function private.mfa_code_max_attempts()
+returns smallint
+language sql immutable
+set search_path = ''
+as $$ select 5::smallint $$;
+
+create or replace function private.mfa_code_resend_after()
+returns interval
+language sql immutable
+set search_path = ''
+as $$ select interval '2 minutes' $$;
 
 create or replace function private.mfa_remove_link_lifetime()
 returns interval
@@ -266,14 +294,22 @@ language sql immutable
 set search_path = ''
 as $$ select interval '7 days' $$;
 
-comment on function private.mfa_confirm_link_lifetime() is
-  'T-M2-10 (review H1): how long the e-mailed confirmation link of a new authenticator app works.';
+comment on function private.mfa_code_lifetime() is
+  'T-M2-10 (re-review N1): how long the e-mailed code of a new authenticator app works — and how long an app may stay unconfirmed before the worker removes it (N2).';
+comment on function private.mfa_code_max_attempts() is
+  'T-M2-10 (re-review N1): wrong tries before the e-mailed code dies (a new e-mail brings a new one).';
+comment on function private.mfa_code_resend_after() is
+  'T-M2-10 (re-review N1/N3): the least time between two set-up e-mails of one app ("send again").';
 comment on function private.mfa_remove_link_lifetime() is
   'T-M2-10 (review H1): how long the e-mailed "not you? remove this app" link works.';
 
-revoke all on function private.mfa_confirm_link_lifetime() from public;
+revoke all on function private.mfa_code_lifetime() from public;
+revoke all on function private.mfa_code_max_attempts() from public;
+revoke all on function private.mfa_code_resend_after() from public;
 revoke all on function private.mfa_remove_link_lifetime() from public;
-grant execute on function private.mfa_confirm_link_lifetime() to tenant_guard;
+grant execute on function private.mfa_code_lifetime() to tenant_guard;
+grant execute on function private.mfa_code_max_attempts() to tenant_guard;
+grant execute on function private.mfa_code_resend_after() to tenant_guard;
 grant execute on function private.mfa_remove_link_lifetime() to tenant_guard;
 
 -- Internal: queues an authenticator notice (at most 10,000 waiting; one waiting per account, kind and app).
@@ -360,73 +396,218 @@ $$;
 comment on function private.request_live_user() is
   'T-M2-10. Internal: the account of the current user session when it is live (app_server, user claims), else NULL. tenant_guard only.';
 
--- After set-up (or "send the e-mail again"): the set-up e-mail with its links, and the audit row. Any session
--- of the account (also before an organization is chosen). True when an e-mail was queued.
+-- After set-up, or "send the e-mail again": the set-up e-mail (code and "not you" link) of THIS session's app,
+-- and the audit row. Only the Auth session that passed the app's first code (Auth records the factor on that
+-- session; re-review N1) records it, and only it asks again — never another session of the account. Also
+-- before an organization is chosen.
+--   queued | waiting (an e-mail is already on its way) | too_soon (the last one is under
+--   private.mfa_code_resend_after() old) | refused
 create or replace function private.request_mfa_factor_mail(p_factor_id uuid)
-returns boolean
+returns text
 language plpgsql volatile security definer
 set search_path = ''
 as $$
 declare
+  v_claims jsonb := private.request_claims();
   v_user uuid := private.request_live_user();
-  v_factor uuid;
-  v_new integer;
+  v_session uuid := private.try_uuid(v_claims ->> 'session_id');
+  v_row record;
+  v_agent text;
 begin
-  if v_user is null then
-    return false;
+  if v_user is null or v_session is null or p_factor_id is null
+     or not exists (select 1 from private.auth_mfa_factor f
+                    where f.id = p_factor_id and f.user_id = v_user and f.factor_type = 'totp' and f.status = 'verified') then
+    return 'refused';
   end if;
-  select f.id into v_factor
-  from private.auth_mfa_factor f
-  left join private.mfa_factor_confirmations k on k.factor_id = f.id and k.user_id = f.user_id
-  where f.user_id = v_user and f.factor_type = 'totp' and f.status = 'verified' and k.confirmed_at is null
-    and (p_factor_id is null or f.id = p_factor_id)
-  order by f.created_at desc, f.id
-  limit 1;
-  if v_factor is null then
-    return false;
-  end if;
-  insert into private.mfa_factor_confirmations (factor_id, user_id) values (v_factor, v_user)
-  on conflict (factor_id) do nothing;
-  get diagnostics v_new = row_count;
-  if v_new > 0 then
+  select k.session_id, k.confirmed_at, k.code_issued_at into v_row
+  from private.mfa_factor_confirmations k
+  where k.factor_id = p_factor_id and k.user_id = v_user
+  for update;
+  if found then
+    if v_row.confirmed_at is not null or v_row.session_id <> v_session then
+      return 'refused';
+    end if;
+    if v_row.code_issued_at > now() - private.mfa_code_resend_after() then
+      return 'too_soon';
+    end if;
+  else
+    -- First request: this session passed the app's first code (aal2 through this factor, claim and Auth).
+    select s.user_agent into v_agent
+    from private.auth_session_validity s
+    where s.id = v_session and s.user_id = v_user and s.aal = 'aal2' and s.factor_id = p_factor_id;
+    if not found or coalesce(v_claims ->> 'aal', '') <> 'aal2' then
+      return 'refused';
+    end if;
+    insert into private.mfa_factor_confirmations (factor_id, user_id, session_id, setup_user_agent)
+    values (p_factor_id, v_user, v_session,
+            case when char_length(v_agent) <= 512 then v_agent end);
     perform private.audit_account_event(v_user, 'platform.auth.mfa_enrolled',
                                         jsonb_build_object('method', 'totp', 'confirmed', false), 'account');
   end if;
-  return private.queue_mfa_mail('mfa_factor_added', v_user, v_factor, null, private.current_tenant_id());
+  if private.queue_mfa_mail('mfa_factor_added', v_user, p_factor_id, null, private.current_tenant_id()) then
+    return 'queued';
+  end if;
+  return 'waiting';
 end
 $$;
 
 comment on function private.request_mfa_factor_mail(uuid) is
-  'SECURITY-RELEVANT (T-M2-10, review H1, T-IAM-11). After the signed-in account set up an authenticator app: records it as waiting for confirmation, audits it and queues the set-up e-mail (or sends it again). True when queued.';
+  'SECURITY-RELEVANT (T-M2-10, re-review N1, T-IAM-11). After the signed-in session set up an authenticator app (it passed its first code): records the app as waiting, with that session, audits it and queues the set-up e-mail; later "send again" from that session only. queued | waiting | too_soon | refused.';
 
--- After the account removed its own app in Auth (My profile): the notice and the audit row.
-create or replace function private.request_mfa_removed_mail(p_factor_id uuid)
-returns boolean
+-- The e-mailed code, entered in the session that set the app up (re-review N1): possession of the app (that
+-- session passed its code, aal2 through this factor) and of the mailbox (the code). Single use; dies after
+-- private.mfa_code_max_attempts() wrong tries (the counter is kept: this function returns, never raises).
+--   confirmed | invalid | expired | locked | refused (not this session's waiting app)
+create or replace function private.confirm_mfa_setup(p_factor_id uuid, p_code text)
+returns text
 language plpgsql volatile security definer
 set search_path = ''
 as $$
 declare
+  v_claims jsonb := private.request_claims();
   v_user uuid := private.request_live_user();
+  v_session uuid := private.try_uuid(v_claims ->> 'session_id');
+  v record;
+  v_attempts smallint;
 begin
-  if v_user is null or p_factor_id is null
-     or exists (select 1 from private.auth_mfa_factor f where f.id = p_factor_id and f.user_id = v_user) then
-    return false;  -- only an app this account no longer has
+  if v_user is null or v_session is null or p_factor_id is null then
+    return 'refused';
   end if;
-  delete from private.mfa_factor_confirmations k where k.factor_id = p_factor_id and k.user_id = v_user;
-  perform private.audit_account_event(v_user, 'platform.auth.mfa_removed',
-                                      jsonb_build_object('method', 'totp', 'via', 'profile'), 'account');
-  return private.queue_mfa_mail('mfa_factor_removed', v_user, p_factor_id, 'removed', private.current_tenant_id());
+  select k.session_id, k.confirmed_at, k.code_hash, k.code_expires_at, k.code_attempts into v
+  from private.mfa_factor_confirmations k
+  where k.factor_id = p_factor_id and k.user_id = v_user
+  for update;
+  if not found or v.confirmed_at is not null or v.session_id <> v_session
+     or coalesce(v_claims ->> 'aal', '') <> 'aal2'
+     or not exists (select 1 from private.auth_session_validity s
+                    where s.id = v_session and s.user_id = v_user and s.aal = 'aal2' and s.factor_id = p_factor_id)
+     or not exists (select 1 from private.auth_mfa_factor f
+                    where f.id = p_factor_id and f.user_id = v_user and f.status = 'verified') then
+    return 'refused';
+  end if;
+  if v.code_hash is null then
+    return case when v.code_attempts >= private.mfa_code_max_attempts() then 'locked' else 'invalid' end;
+  end if;
+  if v.code_expires_at <= now() then
+    return 'expired';
+  end if;
+  if p_code is null or p_code !~ '^[0-9]{8}$'
+     or sha256(convert_to(p_factor_id::text || ':' || p_code, 'UTF8')) <> v.code_hash then
+    v_attempts := v.code_attempts + 1;
+    update private.mfa_factor_confirmations k
+    set code_attempts = v_attempts,
+        code_hash = case when v_attempts >= private.mfa_code_max_attempts() then null else k.code_hash end,
+        code_expires_at = case when v_attempts >= private.mfa_code_max_attempts() then null else k.code_expires_at end
+    where k.factor_id = p_factor_id;
+    return case when v_attempts >= private.mfa_code_max_attempts() then 'locked' else 'invalid' end;
+  end if;
+  update private.mfa_factor_confirmations k
+  set confirmed_at = now(), code_hash = null, code_expires_at = null, code_attempts = 0
+  where k.factor_id = p_factor_id;
+  perform private.audit_account_event(v_user, 'platform.auth.mfa_confirmed', jsonb_build_object('method', 'totp'),
+                                      'account');
+  return 'confirmed';
 end
 $$;
 
-comment on function private.request_mfa_removed_mail(uuid) is
-  'SECURITY-RELEVANT (T-M2-10). After the signed-in account removed its own authenticator app: audit row and notice. True when queued.';
+comment on function private.confirm_mfa_setup(uuid, text) is
+  'SECURITY-RELEVANT (T-M2-10, re-review N1, T-IAM-11). The e-mailed code of a new authenticator app, accepted only from the Auth session that set it up (aal2 through that app): from now on it counts for AAL2. Single use, expires, dies after 5 wrong tries.';
 
--- Worker: the hashes of the links it is about to e-mail (each new e-mail replaces the previous links).
--- NULLs when the app is gone or already confirmed (nothing to send).
+-- The account's authenticator apps (verified in Auth) as this session sees them: confirmed or waiting, set up
+-- by THIS session or another one (when, with which browser). For the /mfa page and My profile.
+create or replace function private.my_mfa_apps()
+returns table (factor_id uuid, confirmed boolean, here boolean, set_up_at timestamptz, user_agent text)
+language plpgsql stable security definer
+set search_path = ''
+as $$
+declare
+  v_user uuid := private.request_live_user();
+  v_session uuid := private.try_uuid(private.request_claims() ->> 'session_id');
+begin
+  if v_user is null then
+    return;
+  end if;
+  return query
+    select f.id, k.confirmed_at is not null, coalesce(k.session_id = v_session, false),
+           coalesce(k.created_at, f.created_at), k.setup_user_agent
+    from private.auth_mfa_factor f
+    left join private.mfa_factor_confirmations k on k.factor_id = f.id and k.user_id = f.user_id
+    where f.user_id = v_user and f.factor_type = 'totp' and f.status = 'verified'
+    order by (k.confirmed_at is not null) desc, coalesce(k.created_at, f.created_at) desc, f.id;
+end
+$$;
+
+comment on function private.my_mfa_apps() is
+  'T-M2-10 (re-review N1). The signed-in account''s authenticator apps: confirmed or waiting, set up by this session or another (when, which browser). app_server, user claims of a live session.';
+
+-- Removing an app from the web app (also the explicit factor id, never "the first one"):
+--   * a CONFIRMED app (My profile): this session at AAL2 through a confirmed app with a code from the last 15
+--     minutes — otherwise step_up;
+--   * a WAITING app set up by this session: cancelled;
+--   * a WAITING app set up by ANOTHER session ("an app was added from another sign-in" → Remove, re-review
+--     N1): removed, and every OTHER session of the account ends (whoever set it up keeps nothing).
+-- Audited and e-mailed. Auth's own unenroll is not used: the database knows which app it removes.
+--   removed | step_up | refused
+create or replace function private.remove_mfa_app(p_factor_id uuid)
+returns text
+language plpgsql volatile security definer
+set search_path = ''
+as $$
+declare
+  v_claims jsonb := private.request_claims();
+  v_user uuid := private.request_live_user();
+  v_session uuid := private.try_uuid(v_claims ->> 'session_id');
+  v_tenant uuid := private.current_tenant_id();
+  v record;
+  v_found boolean;
+  v_via text;
+  v_reason text;
+begin
+  if v_user is null or v_session is null or p_factor_id is null
+     or not exists (select 1 from private.auth_mfa_factor f
+                    where f.id = p_factor_id and f.user_id = v_user and f.factor_type = 'totp') then
+    return 'refused';
+  end if;
+  select k.session_id, k.confirmed_at into v
+  from private.mfa_factor_confirmations k
+  where k.factor_id = p_factor_id and k.user_id = v_user
+  for update;
+  v_found := found;
+  if v_found and v.confirmed_at is not null then
+    if not (private.request_aal2() and private.request_code_fresh()) then
+      return 'step_up';
+    end if;
+    v_via := 'profile';
+    v_reason := 'removed';
+  elsif v_found and v.session_id = v_session then
+    v_via := 'cancelled';
+    v_reason := 'removed';
+  else
+    -- Set up elsewhere (or outside the web app): whoever did it keeps no session.
+    v_via := 'notice';
+    v_reason := 'not_me';
+    perform private.end_sessions(
+      v_user, array(select s.id from private.auth_session_validity s where s.user_id = v_user and s.id <> v_session),
+      v_tenant, 'security', v_user);
+  end if;
+  perform private.remove_account_factors(v_user, array[p_factor_id]);
+  perform private.audit_account_event(v_user, 'platform.auth.mfa_removed',
+                                      jsonb_build_object('method', 'totp', 'via', v_via), 'account');
+  perform private.queue_mfa_mail('mfa_factor_removed', v_user, p_factor_id, v_reason, v_tenant);
+  return 'removed';
+end
+$$;
+
+comment on function private.remove_mfa_app(uuid) is
+  'SECURITY-RELEVANT (T-M2-10, re-review N1). The signed-in account removes one of its authenticator apps: a confirmed one at AAL2 with a recent code; one waiting for this session''s confirmation; or one added from another sign-in (every other session then ends). Audited and e-mailed. removed | step_up | refused.';
+
+-- Worker: the hashes of the code and link it is about to e-mail (each new e-mail replaces the previous code and
+-- link, and resets the tries). NULLs when the app is gone or already confirmed (nothing to send). Also when and
+-- with which browser the app was set up (the e-mail says so).
 create or replace function private.issue_mfa_factor_tokens(
-  p_factor_id uuid, p_user_id uuid, p_confirm_hash bytea, p_remove_hash bytea,
-  out confirm_expires_at timestamptz, out remove_expires_at timestamptz)
+  p_factor_id uuid, p_user_id uuid, p_code_hash bytea, p_remove_hash bytea,
+  out code_expires_at timestamptz, out remove_expires_at timestamptz, out set_up_at timestamptz,
+  out setup_user_agent text)
 language plpgsql volatile security definer
 set search_path = ''
 as $$
@@ -437,21 +618,23 @@ begin
      or coalesce(btrim(v_claims ->> 'job_id'), '') = '' then
     raise exception 'reserved to the worker' using errcode = 'insufficient_privilege';
   end if;
-  if octet_length(p_confirm_hash) is distinct from 32 or octet_length(p_remove_hash) is distinct from 32 then
-    raise exception 'token hashes must be SHA-256' using errcode = 'invalid_parameter_value';
+  if octet_length(p_code_hash) is distinct from 32 or octet_length(p_remove_hash) is distinct from 32 then
+    raise exception 'code and token hashes must be SHA-256' using errcode = 'invalid_parameter_value';
   end if;
   update private.mfa_factor_confirmations k
-  set confirm_token_hash = p_confirm_hash, confirm_expires_at = now() + private.mfa_confirm_link_lifetime(),
+  set code_hash = p_code_hash, code_expires_at = now() + private.mfa_code_lifetime(), code_issued_at = now(),
+      code_attempts = 0,
       remove_token_hash = p_remove_hash, remove_expires_at = now() + private.mfa_remove_link_lifetime()
   where k.factor_id = p_factor_id and k.user_id = p_user_id and k.confirmed_at is null
     and exists (select 1 from private.auth_mfa_factor f
                 where f.id = k.factor_id and f.user_id = k.user_id and f.status = 'verified')
-  returning k.confirm_expires_at, k.remove_expires_at into confirm_expires_at, remove_expires_at;
+  returning k.code_expires_at, k.remove_expires_at, k.created_at, k.setup_user_agent
+    into code_expires_at, remove_expires_at, set_up_at, setup_user_agent;
 end
 $$;
 
 comment on function private.issue_mfa_factor_tokens(uuid, uuid, bytea, bytea) is
-  'SECURITY-RELEVANT (T-M2-10, review H1). Worker: stores the SHA-256 of the set-up e-mail''s confirmation and removal links (replacing earlier ones). app_worker system claims only.';
+  'SECURITY-RELEVANT (T-M2-10, re-review N1). Worker: stores the SHA-256 of the set-up e-mail''s code (with the factor id) and "not you" link (replacing earlier ones); returns their lifetimes and when / with which browser the app was set up. app_worker system claims only.';
 
 -- Worker: does the account use an app (verified in Auth)? The reset e-mail then says a code will be asked.
 create or replace function private.account_has_app(p_user_id uuid)
@@ -474,46 +657,7 @@ $$;
 comment on function private.account_has_app(uuid) is
   'T-M2-10. Worker: whether an account has a verified authenticator app in Auth (the reset e-mail asks for its code). app_worker system claims only.';
 
--- The confirmation link (no session needed: opening the e-mailed link proves the mailbox). Single use.
---   confirmed | expired | invalid (unknown, used, or the app is gone)
-create or replace function private.confirm_mfa_factor(p_token_hash bytea)
-returns text
-language plpgsql volatile security definer
-set search_path = ''
-as $$
-declare
-  v record;
-begin
-  if session_user <> 'app_server' then
-    raise exception 'reserved to the web app' using errcode = 'insufficient_privilege';
-  end if;
-  if octet_length(p_token_hash) is distinct from 32 then
-    return 'invalid';
-  end if;
-  select k.factor_id, k.user_id, k.confirm_expires_at into v
-  from private.mfa_factor_confirmations k
-  where k.confirm_token_hash = p_token_hash
-  for update;
-  if not found or not exists (select 1 from private.auth_mfa_factor f
-                              where f.id = v.factor_id and f.user_id = v.user_id and f.status = 'verified') then
-    return 'invalid';
-  end if;
-  if v.confirm_expires_at <= now() then
-    return 'expired';
-  end if;
-  update private.mfa_factor_confirmations k
-  set confirmed_at = now(), confirm_token_hash = null, confirm_expires_at = null
-  where k.factor_id = v.factor_id;
-  perform private.audit_account_event(v.user_id, 'platform.auth.mfa_confirmed', jsonb_build_object('method', 'totp'),
-                                      'account');
-  return 'confirmed';
-end
-$$;
-
-comment on function private.confirm_mfa_factor(bytea) is
-  'SECURITY-RELEVANT (T-M2-10, review H1, T-IAM-11). The e-mailed confirmation link of a new authenticator app (mailbox proved): from now on it counts for AAL2. Single use. app_server only.';
-
--- The "not you?" link: removes that app in Auth and ends every session of the account. Single use.
+-- The "not you?" link: removes that app and ends every session of the account. Single use.
 --   removed | expired | invalid
 create or replace function private.reject_mfa_factor(p_token_hash bytea)
 returns text
@@ -539,7 +683,8 @@ begin
   if v.remove_expires_at <= now() then
     return 'expired';
   end if;
-  update private.mfa_factor_confirmations k set remove_token_hash = null, remove_expires_at = null
+  update private.mfa_factor_confirmations k
+  set remove_token_hash = null, remove_expires_at = null, code_hash = null, code_expires_at = null
   where k.factor_id = v.factor_id;
   perform private.remove_account_factors(v.user_id, array[v.factor_id]);
   perform private.end_all_account_sessions(v.user_id, null, null);
@@ -553,11 +698,54 @@ $$;
 comment on function private.reject_mfa_factor(bytea) is
   'SECURITY-RELEVANT (T-M2-10, review H1, T-IAM-11). The e-mailed "not you? remove this app" link: removes that authenticator app in Auth and ends every session of the account. Single use. app_server only.';
 
+-- Worker (re-review N2): an app still unconfirmed after private.mfa_code_lifetime() — or set up outside the
+-- web app and never recorded — is removed, so a waiting app nobody confirmed never blocks the owner (Auth asks
+-- a code from every verified app for a password change, a reset or a new set-up). The sessions that passed
+-- its code end; the account is e-mailed and the removal audited. Returns how many apps were removed.
+create or replace function private.purge_unconfirmed_mfa_apps(p_limit integer)
+returns integer
+language plpgsql volatile security definer
+set search_path = ''
+as $$
+declare
+  v_claims jsonb := private.request_claims();
+  v record;
+  v_count integer := 0;
+begin
+  if session_user <> 'app_worker' or coalesce(v_claims ->> 'role', '') <> 'system'
+     or coalesce(btrim(v_claims ->> 'job_id'), '') = '' then
+    raise exception 'reserved to the worker' using errcode = 'insufficient_privilege';
+  end if;
+  for v in
+    select f.id, f.user_id
+    from private.auth_mfa_factor f
+    left join private.mfa_factor_confirmations k on k.factor_id = f.id and k.user_id = f.user_id
+    where f.factor_type = 'totp' and f.status = 'verified' and k.confirmed_at is null
+      and coalesce(k.created_at, f.created_at) < now() - private.mfa_code_lifetime()
+    order by coalesce(k.created_at, f.created_at), f.id
+    limit greatest(coalesce(p_limit, 0), 0)
+  loop
+    perform private.end_sessions(
+      v.user_id, array(select s.id from private.auth_session_validity s where s.user_id = v.user_id and s.factor_id = v.id),
+      null, 'security', null);
+    perform private.remove_account_factors(v.user_id, array[v.id]);
+    perform private.audit_account_event(v.user_id, 'platform.auth.mfa_removed',
+                                        jsonb_build_object('method', 'totp', 'via', 'expired'), 'platform');
+    perform private.queue_mfa_mail('mfa_factor_removed', v.user_id, v.id, 'expired', null);
+    v_count := v_count + 1;
+  end loop;
+  return v_count;
+end
+$$;
+
+comment on function private.purge_unconfirmed_mfa_apps(integer) is
+  'SECURITY-RELEVANT (T-M2-10, re-review N2). Worker: removes authenticator apps still unconfirmed after private.mfa_code_lifetime() (or never recorded), ends the sessions that passed their code, audits and e-mails it. app_worker system claims only.';
+
 -- An Organization Admin resets a member's authenticator apps (PO answer, 9 Oct 2026; TM-0003 T-IAM-10).
--- Checked here as in the web app: Organization Admin role in force, AAL2 with a confirmed app (the freshness
--- of the code is the web app's: defineAction), a member they may manage, not themself (My profile), and a
--- login that is an active member of NO other organization (otherwise ENTLAQA support). Every session of the
--- member ends; the member is e-mailed. The web app audits the action.
+-- Checked here as in the web app: Organization Admin role in force, AAL2 with a confirmed app and a code from
+-- the last 15 minutes (private.request_code_fresh — also checked by defineAction), a member they may manage,
+-- not themself (My profile), and a login that is an active member of NO other organization (otherwise
+-- ENTLAQA support). Every session of the member ends; the member is e-mailed. The web app audits the action.
 --   reset | no_app | other_organization | self | not_found ; 42501 for a caller who may not
 create or replace function private.reset_member_mfa(p_person_id uuid)
 returns text
@@ -570,7 +758,8 @@ declare
   v_member uuid;
 begin
   if v_tenant is null or v_actor is null
-     or not ('tenant_admin' = any (private.actor_role_codes(v_tenant, v_actor))) or not private.request_aal2() then
+     or not ('tenant_admin' = any (private.actor_role_codes(v_tenant, v_actor)))
+     or not private.request_aal2() or not private.request_code_fresh() then
     raise exception 'only an Organization Admin with an authenticator code resets authenticator apps'
       using errcode = 'insufficient_privilege';
   end if;
@@ -694,11 +883,13 @@ alter function private.remove_account_factors(uuid, uuid[]) owner to tenant_guar
 alter function private.end_all_account_sessions(uuid, uuid, uuid) owner to tenant_guard;
 alter function private.request_live_user() owner to tenant_guard;
 alter function private.request_mfa_factor_mail(uuid) owner to tenant_guard;
-alter function private.request_mfa_removed_mail(uuid) owner to tenant_guard;
+alter function private.confirm_mfa_setup(uuid, text) owner to tenant_guard;
+alter function private.my_mfa_apps() owner to tenant_guard;
+alter function private.remove_mfa_app(uuid) owner to tenant_guard;
 alter function private.issue_mfa_factor_tokens(uuid, uuid, bytea, bytea) owner to tenant_guard;
 alter function private.account_has_app(uuid) owner to tenant_guard;
-alter function private.confirm_mfa_factor(bytea) owner to tenant_guard;
 alter function private.reject_mfa_factor(bytea) owner to tenant_guard;
+alter function private.purge_unconfirmed_mfa_apps(integer) owner to tenant_guard;
 alter function private.reset_member_mfa(uuid) owner to tenant_guard;
 alter function private.reset_account_mfa(uuid, text) owner to tenant_guard;
 revoke create on schema private from tenant_guard;
@@ -709,11 +900,13 @@ revoke all on function private.remove_account_factors(uuid, uuid[]) from public;
 revoke all on function private.end_all_account_sessions(uuid, uuid, uuid) from public;
 revoke all on function private.request_live_user() from public;
 revoke all on function private.request_mfa_factor_mail(uuid) from public;
-revoke all on function private.request_mfa_removed_mail(uuid) from public;
+revoke all on function private.confirm_mfa_setup(uuid, text) from public;
+revoke all on function private.my_mfa_apps() from public;
+revoke all on function private.remove_mfa_app(uuid) from public;
 revoke all on function private.issue_mfa_factor_tokens(uuid, uuid, bytea, bytea) from public;
 revoke all on function private.account_has_app(uuid) from public;
-revoke all on function private.confirm_mfa_factor(bytea) from public;
 revoke all on function private.reject_mfa_factor(bytea) from public;
+revoke all on function private.purge_unconfirmed_mfa_apps(integer) from public;
 revoke all on function private.reset_member_mfa(uuid) from public;
 revoke all on function private.reset_account_mfa(uuid, text) from public;
 grant execute on function private.queue_mfa_mail(text, uuid, uuid, text, uuid) to tenant_guard;
@@ -722,11 +915,13 @@ grant execute on function private.end_all_account_sessions(uuid, uuid, uuid) to 
 grant execute on function private.request_live_user() to tenant_guard;
 -- Called inside `set local role authenticated` transactions; each function checks the LOGIN role itself.
 grant execute on function private.request_mfa_factor_mail(uuid) to authenticated;
-grant execute on function private.request_mfa_removed_mail(uuid) to authenticated;
+grant execute on function private.confirm_mfa_setup(uuid, text) to authenticated;
+grant execute on function private.my_mfa_apps() to authenticated;
+grant execute on function private.remove_mfa_app(uuid) to authenticated;
 grant execute on function private.issue_mfa_factor_tokens(uuid, uuid, bytea, bytea) to authenticated;
 grant execute on function private.account_has_app(uuid) to authenticated;
-grant execute on function private.confirm_mfa_factor(bytea) to authenticated;
 grant execute on function private.reject_mfa_factor(bytea) to authenticated;
+grant execute on function private.purge_unconfirmed_mfa_apps(integer) to authenticated;
 grant execute on function private.reset_member_mfa(uuid) to authenticated;
 -- Operators only: the migration role (ENTLAQA support runs the runbook as the migration role).
 grant execute on function private.reset_account_mfa(uuid, text) to current_user;

@@ -124,6 +124,13 @@ language sql immutable as $$
     'person_id', p_person));
 $$;
 
+-- What withUserTx() adds after an authenticator code: aal2 and when the code was passed (code_at, seconds
+-- since the epoch — derived from the verified token's amr). Default: a code passed a minute ago (fresh).
+create or replace function tests.fresh_code(p_age interval default interval '1 minute') returns jsonb
+language sql stable as $$
+  select jsonb_build_object('aal', 'aal2', 'code_at', floor(extract(epoch from now() - p_age))::bigint::text);
+$$;
+
 create or replace function tests.system_claims(p_tenant uuid, p_job text default 'tests.job') returns jsonb
 language sql immutable as $$
   select jsonb_strip_nulls(jsonb_build_object('role', 'system', 'tenant_id', p_tenant, 'job_id', p_job));
@@ -212,6 +219,12 @@ $$;
 create or replace function tests.token_hash(p_token text) returns bytea
 language sql immutable as $$
   select sha256(convert_to(p_token, 'UTF8'));
+$$;
+
+-- SHA-256 of an authenticator set-up code with its app (factor id), as packages/platform-identity hashes it.
+create or replace function tests.mfa_code_hash(p_factor uuid, p_code text) returns bytea
+language sql immutable as $$
+  select sha256(convert_to(p_factor::text || ':' || p_code, 'UTF8'));
 $$;
 
 grant execute on all functions in schema tests to public;

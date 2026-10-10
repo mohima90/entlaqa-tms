@@ -74,8 +74,10 @@ $$;
 comment on function private.actor_may_change_security_policy(uuid) is
   'SECURITY-RELEVANT (T-IAM-24, D-IAM-01): an Organization Admin at AAL2 may change the security policy.';
 
+drop function private.request_code_fresh();
 drop function private.request_aal2();
 drop function private.session_access(uuid, uuid, uuid, boolean, boolean);
+drop function private.step_up_max_age();
 drop function private.mfa_no_grace_roles();
 drop function private.mfa_prompt_reask_after();
 

@@ -272,6 +272,7 @@ begin
       ('private.session_access(uuid, uuid, uuid, boolean, boolean)', 'tenant_guard', array['tenant_guard'], true),
       ('private.session_access_state()',            'tenant_guard', array['tenant_guard', 'authenticated'], true),
       ('private.request_aal2()',                    'tenant_guard', array['tenant_guard', 'authenticated'], true),
+      ('private.request_code_fresh()',              'tenant_guard', array['tenant_guard', 'authenticated'], true),
       ('private.request_session_facts()',           'tenant_guard', array['tenant_guard', 'authenticated'], true),
       ('private.dismiss_mfa_prompt()',              'tenant_guard', array['tenant_guard', 'authenticated'], true),
       ('private.tenant_member_mfa(uuid)',           'tenant_guard', array['tenant_guard', 'authenticated'], true),
@@ -294,13 +295,15 @@ begin
       ('private.end_all_account_sessions(uuid, uuid, uuid)', 'tenant_guard', array['tenant_guard'], true),
       ('private.request_live_user()',               'tenant_guard', array['tenant_guard'], true),
       ('private.security_policy_changed_mail()',    'tenant_guard', array['tenant_guard'], true),
-      -- Authenticator apps (T-M2-10, review H1/M2): web app and worker (checked inside).
+      -- Authenticator apps (T-M2-10, review H1/M2, re-review N1/N2): web app and worker (checked inside).
       ('private.request_mfa_factor_mail(uuid)',     'tenant_guard', array['tenant_guard', 'authenticated'], true),
-      ('private.request_mfa_removed_mail(uuid)',    'tenant_guard', array['tenant_guard', 'authenticated'], true),
+      ('private.confirm_mfa_setup(uuid, text)',     'tenant_guard', array['tenant_guard', 'authenticated'], true),
+      ('private.my_mfa_apps()',                     'tenant_guard', array['tenant_guard', 'authenticated'], true),
+      ('private.remove_mfa_app(uuid)',              'tenant_guard', array['tenant_guard', 'authenticated'], true),
       ('private.issue_mfa_factor_tokens(uuid, uuid, bytea, bytea)', 'tenant_guard', array['tenant_guard', 'authenticated'], true),
       ('private.account_has_app(uuid)',             'tenant_guard', array['tenant_guard', 'authenticated'], true),
-      ('private.confirm_mfa_factor(bytea)',         'tenant_guard', array['tenant_guard', 'authenticated'], true),
       ('private.reject_mfa_factor(bytea)',          'tenant_guard', array['tenant_guard', 'authenticated'], true),
+      ('private.purge_unconfirmed_mfa_apps(integer)', 'tenant_guard', array['tenant_guard', 'authenticated'], true),
       ('private.reset_member_mfa(uuid)',            'tenant_guard', array['tenant_guard', 'authenticated'], true),
       -- ENTLAQA support's reset: the migration role (operators) only — never the request path.
       ('private.reset_account_mfa(uuid, text)',     'tenant_guard', array['tenant_guard', current_user::text], true)
@@ -347,15 +350,17 @@ begin
         'private.tenant_lockout_policy(uuid)', 'private.invitation_password_min_length(bytea)',
         'private.touch_session()', 'private.my_sessions()', 'private.end_my_sessions(uuid)',
         'private.tenant_member_sessions(uuid)', 'private.end_member_sessions(uuid,uuid)',
-        'private.request_aal2()', 'private.request_session_facts()', 'private.apply_device_limit()',
+        'private.request_aal2()', 'private.request_code_fresh()', 'private.request_session_facts()',
+        'private.apply_device_limit()',
         'private.purge_ended_sessions(integer)', 'private.audit_account_event(uuid,text,jsonb,text,uuid,uuid)',
         'private.end_sessions(uuid,uuid[],uuid,text,uuid)', 'private.enforce_device_limit(uuid,uuid,uuid)',
         'private.queue_mfa_mail(text,uuid,uuid,text,uuid)', 'private.remove_account_factors(uuid,uuid[])',
         'private.end_all_account_sessions(uuid,uuid,uuid)', 'private.request_live_user()',
         'private.security_policy_changed_mail()',
-        'private.request_mfa_factor_mail(uuid)', 'private.request_mfa_removed_mail(uuid)',
-        'private.issue_mfa_factor_tokens(uuid,uuid,bytea,bytea)', 'private.account_has_app(uuid)',
-        'private.confirm_mfa_factor(bytea)', 'private.reject_mfa_factor(bytea)', 'private.reset_member_mfa(uuid)',
+        'private.request_mfa_factor_mail(uuid)', 'private.confirm_mfa_setup(uuid,text)', 'private.my_mfa_apps()',
+        'private.remove_mfa_app(uuid)', 'private.issue_mfa_factor_tokens(uuid,uuid,bytea,bytea)',
+        'private.account_has_app(uuid)', 'private.reject_mfa_factor(bytea)',
+        'private.purge_unconfirmed_mfa_apps(integer)', 'private.reset_member_mfa(uuid)',
         'private.reset_account_mfa(uuid,text)')
   loop
     failures := failures || format('%s: unexpected SECURITY DEFINER function (security review)', r.fn);

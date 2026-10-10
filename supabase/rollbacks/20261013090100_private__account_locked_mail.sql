@@ -1,8 +1,10 @@
 -- Rollback of 20261013090100_private__account_locked_mail.sql: the worker's lease as in 20261010120000,
--- without `account_locked`. Waiting `account_locked` requests are dropped (the lock itself is unaffected).
--- Roll back the web app and the worker first.
-delete from private.account_mail_requests where kind = 'account_locked';
+-- without `account_locked` and `sign_in_unlocked`; no Organization Admin unlock. Waiting requests of both
+-- kinds are dropped (the locks themselves are unaffected). Roll back the web app and the worker first.
+delete from private.account_mail_requests where kind in ('account_locked', 'sign_in_unlocked');
 
+drop function private.unlock_member_sign_in(uuid, integer);
+drop function private.request_sign_in_unlocked_mail(uuid);
 drop function private.request_account_locked_mail(text, integer);
 drop function private.claim_account_mail_request();
 
@@ -103,3 +105,5 @@ alter table private.account_mail_requests drop constraint account_mail_requests_
 alter table private.account_mail_requests add constraint account_mail_requests_kind_check
   check (kind in ('password_reset', 'password_changed'));
 alter table private.account_mail_requests drop column lock_minutes;
+
+drop index platform.message_deliveries_template_idx;

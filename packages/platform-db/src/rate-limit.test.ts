@@ -7,6 +7,7 @@ import { RATE_LIMIT_STATEMENT_TIMEOUT_MS, createRateLimitStore } from './rate-li
 
 const dialect = new PgDialect();
 const SUBJECT = createHash('sha256').update('subject').digest();
+const FRESH = createHash('sha256').update('fresh').digest();
 
 /** A database whose transactions record the statements and answer the limiter call with `row`. */
 function fakeDb(row: Record<string, unknown> | null, fail?: Error) {
@@ -46,25 +47,13 @@ describe('createRateLimitStore (ADR 0011 §4, T-M2-11)', () => {
     expect(call?.params).toEqual(['sign_in.account_failures', SUBJECT, 5, 900]);
   });
 
-  it('peeks and clears with the same checks', async () => {
-    const { db, executed } = fakeDb({
-      ...answer,
-      allowed: true,
-      remaining: 3,
-      retry_after_seconds: 0,
-    });
+  it('clears and gives back with the same checks', async () => {
+    const { db, executed } = fakeDb(answer);
     const store = createRateLimitStore(() => db);
-    expect(await store.peek('sign_in.client_failures', SUBJECT, 3)).toEqual({
-      allowed: true,
-      remaining: 3,
-      retryAfterSeconds: 0,
-      ref: 'rk_00',
-    });
-    expect(executed.at(-1)?.sql).toContain(
-      'from private.rate_limit_peek($1, $2::bytea, $3::integer)',
-    );
     await store.clear('sign_in.account_failures', SUBJECT);
     expect(executed.at(-1)?.sql).toBe('select private.rate_limit_clear($1, $2::bytea)');
+    await store.giveBack('mfa.code_failures', SUBJECT);
+    expect(executed.at(-1)?.sql).toBe('select private.rate_limit_give_back($1, $2::bytea)');
   });
 
   it('refuses readable keys, bad buckets and bad limits before any round trip', async () => {
@@ -73,10 +62,10 @@ describe('createRateLimitStore (ADR 0011 §4, T-M2-11)', () => {
     expect(() =>
       store.hit('x.y', Buffer.from('user@example.test'), { max: 1, windowSeconds: 1 }),
     ).toThrow('32-byte');
-    expect(() => store.peek('Sign In', SUBJECT, 1)).toThrow('bucket');
+    expect(() => store.hit('Sign In', SUBJECT, { max: 1, windowSeconds: 1 })).toThrow('bucket');
     expect(() => store.hit('x.y', SUBJECT, { max: 1.5, windowSeconds: 1 })).toThrow('max');
     expect(() => store.hit('x.y', SUBJECT, { max: 1, windowSeconds: 0 })).toThrow('window');
-    expect(() => store.peek('x.y', SUBJECT, 2_000_000)).toThrow('max');
+    expect(() => store.hit('x.y', SUBJECT, { max: 2_000_000, windowSeconds: 1 })).toThrow('max');
     await expect(store.clear('x.y', new Uint8Array(31))).rejects.toThrow('32-byte');
     expect(executed).toHaveLength(0);
   });
@@ -130,19 +119,69 @@ describe('createRateLimitStore (ADR 0011 §4, T-M2-11)', () => {
     ]);
   });
 
-  it('records a success and a reset in one call each', async () => {
-    const { db, executed } = fakeDb({ until: '2026-11-08T10:00:00.000Z', revoked: 2 });
+  it('records a ticked success: the database chooses the token, the app gets its trust', async () => {
+    const { db, executed } = fakeDb({ device: 'fresh', trusted_until: '2026-11-08T10:00:00.000Z' });
     const store = createRateLimitStore(() => db);
-    const until = await store.signInSucceeded(
+    const trust = await store.signInSucceeded(
       { client: SUBJECT, account: SUBJECT, device: SUBJECT },
       true,
-      30,
+      { freshDevice: FRESH, trustDays: 30 },
     );
-    expect(until.toISOString()).toBe('2026-11-08T10:00:00.000Z');
-    expect(executed.at(-1)?.sql).toContain('private.rate_limit_sign_in_succeeded(');
-    expect(executed.at(-1)?.params).toEqual([SUBJECT, SUBJECT, SUBJECT, true, 30]);
-    expect(await store.signInReset(SUBJECT)).toBe(2);
-    expect(executed.at(-1)?.sql).toContain('private.rate_limit_sign_in_reset(');
+    expect(trust).toEqual({ device: 'fresh', until: new Date('2026-11-08T10:00:00.000Z') });
+    expect(executed.at(-1)?.sql).toContain('from private.rate_limit_sign_in_succeeded(');
+    expect(executed.at(-1)?.params).toEqual([SUBJECT, SUBJECT, SUBJECT, FRESH, true, true, 30]);
+  });
+
+  it('records an unticked success without trust (opt-in)', async () => {
+    const { db, executed } = fakeDb({ device: null, trusted_until: null });
+    const store = createRateLimitStore(() => db);
+    expect(
+      await store.signInSucceeded({ client: SUBJECT, account: SUBJECT, device: null }, false, null),
+    ).toBeNull();
+    expect(executed.at(-1)?.params).toEqual([SUBJECT, SUBJECT, null, null, false, false, null]);
+  });
+
+  it('gives a failure back when Auth did not compare the password', async () => {
+    const { db, executed } = fakeDb({});
+    await createRateLimitStore(() => db).signInNotChecked(
+      { client: SUBJECT, account: SUBJECT, device: SUBJECT },
+      true,
+    );
+    expect(executed.at(-1)?.sql).toContain('private.rate_limit_sign_in_not_checked(');
+    expect(executed.at(-1)?.params).toEqual([SUBJECT, SUBJECT, true]);
+  });
+
+  it('records a reset (the completing browser trusted) and forgets the other browsers', async () => {
+    const { db, executed } = fakeDb({
+      revoked: 2,
+      device: 'presented',
+      trusted_until: new Date('2026-11-08T10:00:00.000Z'),
+    });
+    const store = createRateLimitStore(() => db);
+    expect(
+      await store.signInReset(SUBJECT, SUBJECT, { freshDevice: FRESH, trustDays: 30 }),
+    ).toEqual({
+      revoked: 2,
+      device: 'presented',
+      until: new Date('2026-11-08T10:00:00.000Z'),
+    });
+    expect(executed.at(-1)?.sql).toContain('from private.rate_limit_sign_in_reset(');
+    expect(executed.at(-1)?.params).toEqual([SUBJECT, SUBJECT, FRESH, 30]);
+    const forget = fakeDb({ revoked: 3 });
+    expect(await createRateLimitStore(() => forget.db).forgetOtherDevices(SUBJECT, null)).toBe(3);
+    expect(forget.executed.at(-1)?.sql).toContain('private.rate_limit_forget_other_devices(');
+    expect(forget.executed.at(-1)?.params).toEqual([SUBJECT, null]);
+  });
+
+  it('rejects an unknown trusted-browser answer', async () => {
+    const { db } = fakeDb({ device: 'someone-else', trusted_until: '2026-11-08T10:00:00.000Z' });
+    await expect(
+      createRateLimitStore(() => db).signInSucceeded(
+        { client: SUBJECT, account: SUBJECT, device: null },
+        false,
+        { freshDevice: FRESH, trustDays: 30 },
+      ),
+    ).rejects.toThrow('unknown trusted-browser answer');
   });
 
   it('refuses bad sign-in arguments before any round trip', () => {
@@ -165,8 +204,17 @@ describe('createRateLimitStore (ADR 0011 §4, T-M2-11)', () => {
       ),
     ).toThrow('32-byte');
     expect(() =>
-      store.signInSucceeded({ client: SUBJECT, account: SUBJECT, device: SUBJECT }, false, 0),
+      store.signInSucceeded({ client: SUBJECT, account: SUBJECT, device: SUBJECT }, false, {
+        freshDevice: FRESH,
+        trustDays: 0,
+      }),
     ).toThrow('days');
+    expect(() =>
+      store.signInSucceeded({ client: SUBJECT, account: SUBJECT, device: null }, true, null),
+    ).toThrow('token');
+    expect(() =>
+      store.signInReset(SUBJECT, null, { freshDevice: new Uint8Array(8), trustDays: 30 }),
+    ).toThrow('32-byte');
     expect(executed).toHaveLength(0);
   });
 
@@ -191,8 +239,11 @@ describe('createRateLimitStore (ADR 0011 §4, T-M2-11)', () => {
       createRateLimitStore(() => failing.db).hit('x.y', SUBJECT, { max: 1, windowSeconds: 1 }),
     ).rejects.toThrow('connection refused');
     const empty = fakeDb(null);
-    await expect(createRateLimitStore(() => empty.db).peek('x.y', SUBJECT, 1)).rejects.toThrow(
-      'no answer',
-    );
+    await expect(
+      createRateLimitStore(() => empty.db).hit('x.y', SUBJECT, { max: 1, windowSeconds: 1 }),
+    ).rejects.toThrow('no answer');
+    await expect(
+      createRateLimitStore(() => empty.db).forgetOtherDevices(SUBJECT, null),
+    ).rejects.toThrow('no answer');
   });
 });

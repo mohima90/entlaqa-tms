@@ -332,22 +332,26 @@ begin
       ('private.reset_member_mfa(uuid)',            'tenant_guard', array['tenant_guard', 'authenticated'], true),
       -- ENTLAQA support's reset: the migration role (operators) only — never the request path.
       ('private.reset_account_mfa(uuid, text)',     'tenant_guard', array['tenant_guard', current_user::text], true),
-      -- The lockout e-mail request (T-M2-11): the web app (app_server, checked inside).
+      -- The lockout e-mail request (T-M2-11): the web app (app_server, checked inside); the unlock notice:
+      -- the Organization Admin's unlock only (its owner rate_limit_guard).
       ('private.request_account_locked_mail(text, integer)', 'account_mail_guard', array['account_mail_guard', 'authenticated'], true),
-      -- Shared rate limiter and sign-in protection (ADR 0011 §4, T-M2-11): the web app counts, peeks, clears
-      -- and checks sign-ins (app_server, checked inside); the Organization Admin functions also check the
+      ('private.request_sign_in_unlocked_mail(uuid)', 'account_mail_guard', array['account_mail_guard', 'rate_limit_guard'], true),
+      -- Shared rate limiter and sign-in protection (ADR 0011 §4, T-M2-11): the web app counts, clears and
+      -- checks sign-ins (app_server, checked inside); the Organization Admin functions also check the
       -- claims; the helpers and the key rotation are the owner's own.
       ('private.rate_limit_hit(text, bytea, integer, integer)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
-      ('private.rate_limit_peek(text, bytea, integer)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
       ('private.rate_limit_clear(text, bytea)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
       ('private.rate_limit_give_back(text, bytea)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
       ('private.sign_in_account_in_tenant(text, uuid)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
       ('private.rate_limit_sign_in_check(bytea, bytea, bytea, integer, integer, integer, integer, integer, integer, integer, integer)',
        'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
-      ('private.rate_limit_sign_in_succeeded(bytea, bytea, bytea, boolean, integer)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
-      ('private.rate_limit_sign_in_reset(bytea)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
+      ('private.rate_limit_sign_in_succeeded(bytea, bytea, bytea, bytea, boolean, boolean, integer)', 'rate_limit_guard',
+       array['rate_limit_guard', 'authenticated'], true),
+      ('private.rate_limit_sign_in_not_checked(bytea, bytea, boolean)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
+      ('private.rate_limit_sign_in_reset(bytea, bytea, bytea, integer)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
+      ('private.rate_limit_forget_other_devices(bytea, bytea)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
       ('private.member_sign_in_lock(uuid, integer)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
-      ('private.unlock_member_sign_in(uuid)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
+      ('private.unlock_member_sign_in(uuid, integer)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
       ('private.rotate_rate_limit_keys()', 'rate_limit_guard', array['rate_limit_guard'], true),
       ('private.rate_limit_generate_keys()', 'rate_limit_guard', array['rate_limit_guard'], false),
       ('private.rate_limit_key(bytea)', 'rate_limit_guard', array['rate_limit_guard'], false),
@@ -356,9 +360,12 @@ begin
       ('private.rate_limit_count(text, bytea, integer, integer, boolean)', 'rate_limit_guard', array['rate_limit_guard'], false),
       ('private.rate_limit_refund(text, bytea)', 'rate_limit_guard', array['rate_limit_guard'], false),
       ('private.rate_limit_purge()', 'rate_limit_guard', array['rate_limit_guard'], false),
+      ('private.rate_limit_normalize_email(text)', 'rate_limit_guard', array['rate_limit_guard'], false),
       ('private.rate_limit_account_subject(text)', 'rate_limit_guard', array['rate_limit_guard'], false),
       ('private.rate_limit_lock_account_devices(bytea)', 'rate_limit_guard', array['rate_limit_guard'], false),
-      ('private.rate_limit_member_account_key(uuid)', 'rate_limit_guard', array['rate_limit_guard'], false)
+      ('private.rate_limit_choose_device(bytea)', 'rate_limit_guard', array['rate_limit_guard'], false),
+      ('private.rate_limit_trust_device(bytea, bytea, integer)', 'rate_limit_guard', array['rate_limit_guard'], false),
+      ('private.rate_limit_member_account(uuid)', 'rate_limit_guard', array['rate_limit_guard'], false)
     ) as h(fn, owner, allowed, definer)
     left join pg_proc p on p.oid = to_regprocedure(h.fn)
   loop
@@ -417,12 +424,14 @@ begin
         'private.purge_unconfirmed_mfa_apps(integer)', 'private.reset_member_mfa(uuid)',
         'private.reset_account_mfa(uuid,text)',
         'private.request_account_locked_mail(text,integer)',
-        'private.rate_limit_hit(text,bytea,integer,integer)',
-        'private.rate_limit_peek(text,bytea,integer)', 'private.rate_limit_clear(text,bytea)',
+        'private.request_sign_in_unlocked_mail(uuid)',
+        'private.rate_limit_hit(text,bytea,integer,integer)', 'private.rate_limit_clear(text,bytea)',
         'private.rate_limit_give_back(text,bytea)', 'private.sign_in_account_in_tenant(text,uuid)',
         'private.rate_limit_sign_in_check(bytea,bytea,bytea,integer,integer,integer,integer,integer,integer,integer,integer)',
-        'private.rate_limit_sign_in_succeeded(bytea,bytea,bytea,boolean,integer)', 'private.rate_limit_sign_in_reset(bytea)',
-        'private.member_sign_in_lock(uuid,integer)', 'private.unlock_member_sign_in(uuid)',
+        'private.rate_limit_sign_in_succeeded(bytea,bytea,bytea,bytea,boolean,boolean,integer)',
+        'private.rate_limit_sign_in_not_checked(bytea,bytea,boolean)',
+        'private.rate_limit_sign_in_reset(bytea,bytea,bytea,integer)', 'private.rate_limit_forget_other_devices(bytea,bytea)',
+        'private.member_sign_in_lock(uuid,integer)', 'private.unlock_member_sign_in(uuid,integer)',
         'private.rotate_rate_limit_keys()')
   loop
     failures := failures || format('%s: unexpected SECURITY DEFINER function (security review)', r.fn);

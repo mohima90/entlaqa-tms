@@ -32,18 +32,31 @@ describe('member sign-in lock (T-M2-11, in the Organization Admin transaction)',
     });
   });
 
-  it('ends the lock; says whether there was one', async () => {
-    const { tx, executed } = fakeTx([{ unlocked: true }]);
-    expect(await unlockMemberSignIn(tx, PERSON)).toBe(true);
-    expect(executed[0]?.sql).toBe('select private.unlock_member_sign_in($1::uuid) as unlocked');
-    expect(await unlockMemberSignIn(fakeTx([{ unlocked: false }]).tx, PERSON)).toBe(false);
+  it('ends the lock against the account budget; passes the database outcome on', async () => {
+    const { tx, executed } = fakeTx([{ outcome: 'unlocked' }]);
+    expect(await unlockMemberSignIn(tx, PERSON, 5)).toBe('unlocked');
+    expect(executed[0]?.sql).toBe(
+      'select private.unlock_member_sign_in($1::uuid, $2::integer) as outcome',
+    );
+    expect(executed[0]?.params).toEqual([PERSON, 5]);
+    for (const outcome of ['not_locked', 'limited', 'no_account'] as const) {
+      expect(await unlockMemberSignIn(fakeTx([{ outcome }]).tx, PERSON, 5)).toBe(outcome);
+    }
+  });
+
+  it('refuses an unknown or missing answer', async () => {
+    await expect(unlockMemberSignIn(fakeTx([{ outcome: 'maybe' }]).tx, PERSON, 5)).rejects.toThrow(
+      'no answer',
+    );
+    await expect(unlockMemberSignIn(fakeTx([]).tx, PERSON, 5)).rejects.toThrow('no answer');
   });
 
   it('refuses malformed arguments before any round trip', async () => {
     const { tx, executed } = fakeTx([]);
     await expect(memberSignInLock(tx, 'not-a-uuid', 5)).rejects.toThrow('invalid person id');
     await expect(memberSignInLock(tx, PERSON, 0)).rejects.toThrow('invalid budget');
-    await expect(unlockMemberSignIn(tx, 'x')).rejects.toThrow('invalid person id');
+    await expect(unlockMemberSignIn(tx, 'x', 5)).rejects.toThrow('invalid person id');
+    await expect(unlockMemberSignIn(tx, PERSON, 1.5)).rejects.toThrow('invalid budget');
     expect(executed).toHaveLength(0);
   });
 });

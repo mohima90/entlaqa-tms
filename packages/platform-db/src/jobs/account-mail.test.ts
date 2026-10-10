@@ -81,6 +81,14 @@ describe('account e-mail queue, worker side (T-M2-17)', () => {
     ).rejects.toThrow('lock minutes');
   });
 
+  it('a sign_in_unlocked lease is sent to the account, without lock minutes (T-M2-11)', async () => {
+    expect(
+      await claimAccountMailRequest(
+        fakeTx([row({ kind: 'sign_in_unlocked', lock_minutes: null })]).tx,
+      ),
+    ).toMatchObject({ kind: 'sign_in_unlocked', outcome: 'send', lockMinutes: null });
+  });
+
   it('a lease without e-mail carries only why; nothing waiting is null', async () => {
     for (const outcome of ['unknown_account', 'banned', 'too_soon', 'no_membership', 'held']) {
       expect(
@@ -240,7 +248,7 @@ describe('account e-mail queue, worker side (T-M2-17)', () => {
     expect(await retryAccountMailRequest(fakeTx([]).tx, ID)).toBe(false);
   });
 
-  it('loads the names for the e-mail and the hourly count, in the tenant transaction', async () => {
+  it('loads the names for the e-mail and the counts of the person and the organization (tenant transaction)', async () => {
     const fake = fakeTx([
       {
         organization_ar: 'شركة الراية',
@@ -249,20 +257,26 @@ describe('account e-mail queue, worker side (T-M2-17)', () => {
         recipient_en: 'Sara',
         recent: '2',
         quiet: '1',
+        tenant_recent: '7',
       },
     ]);
-    expect(await loadAccountMailContext(fake.tx, PERSON, 'platform.account_locked', 15)).toEqual({
+    expect(await loadAccountMailContext(fake.tx, PERSON, 'platform.account_locked', 1440)).toEqual({
       organizationName: { ar: 'شركة الراية', en: null },
       recipientName: { ar: 'سارة', en: 'Sara' },
       recentCount: 2,
       quietCount: 1,
+      tenantRecentCount: 7,
     });
     expect(fake.executed[0]?.params).toEqual([
       'platform.account_locked',
       'platform.account_locked',
-      15,
+      1440,
+      'platform.account_locked',
       PERSON,
     ]);
+    expect(fake.executed[0]?.sql).toContain(
+      "where d.tenant_id = p.tenant_id and d.template = $4\n              and d.created_at > now() - interval '1 hour') as tenant_recent",
+    );
     await expect(loadAccountMailContext(fake.tx, PERSON, 'x.y', 1441)).rejects.toThrow(
       'quiet minutes',
     );

@@ -1,8 +1,9 @@
 -- db-test: run-as=owner
--- Shared rate limiter and sign-in protection (ADR 0011 §4, T-M2-11; migration 20261013090000): owner,
--- grants and shape, then the fixtures for 71_rate_limiter_app_server.sql (committed): expired counters and
--- an expired trusted browser that the app's calls must purge, and an expired, used-up counter whose window
--- must start again. Checked in 72_rate_limiter_owner.sql.
+-- Shared rate limiter and sign-in protection (ADR 0011 §4, T-M2-11; migrations 20261013090000/0100):
+-- owner, grants and shape, then the fixtures for 71_rate_limiter_app_server.sql (committed): expired
+-- counters and an expired trusted browser that the app's calls must purge, an expired, used-up counter
+-- whose window must start again, two trusted browsers (renewal), a former (revoked) member of A. Checked in
+-- 72_rate_limiter_owner.sql.
 \set ON_ERROR_STOP on
 
 -- rate_limit_guard owns exactly the limiter functions (SECURITY DEFINER entry points, SECURITY INVOKER
@@ -21,18 +22,22 @@ begin
   perform tests.assert_eq(v_list,
     'private.member_sign_in_lock(uuid,integer), '
     'private.rate_limit_account_subject(text) (INVOKER), private.rate_limit_check_call(text,bytea) (INVOKER), '
+    'private.rate_limit_choose_device(bytea) (INVOKER), '
     'private.rate_limit_clear(text,bytea), private.rate_limit_count(text,bytea,integer,integer,boolean) (INVOKER), '
+    'private.rate_limit_forget_other_devices(bytea,bytea), '
     'private.rate_limit_generate_keys() (INVOKER), private.rate_limit_give_back(text,bytea), '
     'private.rate_limit_hit(text,bytea,integer,integer), '
     'private.rate_limit_key(bytea) (INVOKER), private.rate_limit_lock_account_devices(bytea) (INVOKER), '
-    'private.rate_limit_member_account_key(uuid) (INVOKER), private.rate_limit_peek(text,bytea,integer), '
+    'private.rate_limit_member_account(uuid) (INVOKER), private.rate_limit_normalize_email(text) (INVOKER), '
     'private.rate_limit_purge() (INVOKER), private.rate_limit_ref(bytea) (INVOKER), '
     'private.rate_limit_refund(text,bytea) (INVOKER), '
     'private.rate_limit_sign_in_check(bytea,bytea,bytea,integer,integer,integer,integer,integer,integer,integer,integer), '
-    'private.rate_limit_sign_in_reset(bytea), '
-    'private.rate_limit_sign_in_succeeded(bytea,bytea,bytea,boolean,integer), '
+    'private.rate_limit_sign_in_not_checked(bytea,bytea,boolean), '
+    'private.rate_limit_sign_in_reset(bytea,bytea,bytea,integer), '
+    'private.rate_limit_sign_in_succeeded(bytea,bytea,bytea,bytea,boolean,boolean,integer), '
+    'private.rate_limit_trust_device(bytea,bytea,integer) (INVOKER), '
     'private.rotate_rate_limit_keys(), private.sign_in_account_in_tenant(text,uuid), '
-    'private.unlock_member_sign_in(uuid)',
+    'private.unlock_member_sign_in(uuid,integer)',
     'rate_limit_guard owns the limiter functions only; the entry points are SECURITY DEFINER');
   perform tests.assert(not exists (
       select 1 from pg_proc p where p.proowner = 'rate_limit_guard'::regrole
@@ -89,7 +94,17 @@ begin
   perform tests.assert_eq(
     (select count(*)::int from pg_proc p
      where p.proowner = 'rate_limit_guard'::regrole and has_function_privilege('authenticated', p.oid, 'execute')),
-    10, 'the web app (as authenticated) may call the ten entry points');
+    11, 'the web app (as authenticated) may call the eleven entry points');
+  -- Beyond its own: the unlock notice of the account-mail pipeline (inside unlock_member_sign_in).
+  perform tests.assert_eq(
+    (select string_agg(p.oid::regprocedure::text, ', ' order by p.oid::regprocedure::text)
+     from pg_proc p
+     where p.proowner <> 'rate_limit_guard'::regrole
+       and exists (select 1 from aclexplode(p.proacl) a where pg_get_userbyid(a.grantee) = 'rate_limit_guard')),
+    'private.actor_role_codes(uuid,uuid), private.current_tenant_id(), private.has_active_membership(uuid,uuid), '
+    'private.request_claims(), private.request_sign_in_unlocked_mail(uuid), private.request_user_id(), '
+    'private.try_uuid(text)',
+    'rate_limit_guard may call exactly these other functions');
 
   -- The keys, the counters and the trusted browsers: RLS forced, reachable by rate_limit_guard alone (no
   -- application role, no Supabase role, no other guard has any privilege, table or column).
@@ -141,7 +156,14 @@ begin
     'rate_limit_secret_single_row', 'only one limiter key row can exist');
 end $$;
 
--- Fixtures for 71 (committed). Subjects are SHA-256 values like the app's (tests use sha256 of a label).
+-- Fixtures for 71 (committed). A former member of A (uRev, urev@a.test, membership revoked): its account
+-- is no longer the business of A's Organization Admin (security review T-M2-11 M1). Removed in 72.
+insert into auth.users (id, email) values ('00000000-0000-4000-8000-0000000000a5', 'urev@a.test');
+insert into platform.persons (id, tenant_id, display_name_ar, email) values
+  ('a1000000-0000-4000-8000-0000000000a5', 'a0000000-0000-4000-8000-000000000001', 'عضو سابق', 'urev@a.test');
+insert into platform.tenant_memberships (tenant_id, user_id, person_id, status) values
+  ('a0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-0000000000a5', 'a1000000-0000-4000-8000-0000000000a5', 'revoked');
+-- Subjects are SHA-256 values like the app's (tests use sha256 of a label).
 -- 30 counters expired an hour ago (bucket tests.purge): the hits of 71 remove them (20 per hit at most).
 insert into private.rate_limit_counters (bucket, key_hash, hits, reset_at)
 select 'tests.purge', sha256(convert_to('purge-' || i, 'UTF8')), 3, now() - interval '1 hour'
@@ -151,10 +173,18 @@ from generate_series(1, 30) i;
 insert into private.rate_limit_counters (bucket, key_hash, hits, reset_at)
 values ('tests.window', private.rate_limit_key(sha256(convert_to('window', 'UTF8'))), 4, now() - interval '1 second');
 -- A trusted browser whose trust ended a day ago (account 'purged-account', browser 'purged-device'): the
--- calls of 71 remove it, and it trusts nothing meanwhile.
+-- calls of 71 remove it, and it trusts nothing meanwhile. Two browsers trusted for 10 more days (accounts
+-- 'renewed-account' / 'kept-account', browsers 'renewed-device' / 'kept-device'): a ticked sign-in renews
+-- the trust (sliding), an unticked one does not.
 insert into private.sign_in_trusted_devices (account_key, device_key, created_at, expires_at)
 values (private.rate_limit_key(sha256(convert_to('purged-account', 'UTF8'))),
         private.rate_limit_key(sha256(convert_to('purged-device', 'UTF8'))),
-        now() - interval '31 days', now() - interval '1 day');
+        now() - interval '31 days', now() - interval '1 day'),
+       (private.rate_limit_key(sha256(convert_to('renewed-account', 'UTF8'))),
+        private.rate_limit_key(sha256(convert_to('renewed-device', 'UTF8'))),
+        now() - interval '20 days', now() + interval '10 days'),
+       (private.rate_limit_key(sha256(convert_to('kept-account', 'UTF8'))),
+        private.rate_limit_key(sha256(convert_to('kept-device', 'UTF8'))),
+        now() - interval '20 days', now() + interval '10 days');
 
 \echo '70_rate_limiter_owner: ok'

@@ -8,10 +8,11 @@ import type { UserTx } from './with-user-tx';
 /**
  * A member's sign-in lock, for the Organization Admin (T-M2-11, PO decision 9 Oct 2026; FR-IAM-13;
  * migration 20261013090000). In the admin's own transaction (withUserTx, their claims): the database
- * checks that the caller is an active Organization Admin of the session's organization and the person a
- * member there, finds the member's account address itself and answers only "locked or not" — the web app
- * never sees the address or a key. Another organization's person reads as "not locked" (no existence
- * leak). Errors: 42501 for any other caller (the action's own authorization comes first).
+ * checks that the caller is an active Organization Admin of the session's organization and the person an
+ * ACTIVE member there, finds the member's account address itself and answers only "locked or not" — the
+ * web app never sees the address or a key. Another organization's person, or a revoked or suspended
+ * member, reads as "not locked" (no existence leak). Errors: 42501 for any other caller (the action's own
+ * authorization comes first).
  */
 export interface MemberSignInLock {
   readonly locked: boolean;
@@ -38,14 +39,43 @@ export async function memberSignInLock(
   return { locked: row?.locked === true, retryAfterSeconds: row?.retry_after_seconds ?? 0 };
 }
 
-/** Ends the member's sign-in lock; true when there was a run of failures to end. */
-export async function unlockMemberSignIn(tx: UserTx, personId: string): Promise<boolean> {
+/**
+ * What an unlock did (migration 20261013090100; security review T-M2-11 M1), measured against the account
+ * budget the app applies (as for memberSignInLock):
+ *  - `unlocked`    the lock ended; the account's owner is e-mailed (account-mail pipeline);
+ *  - `not_locked`  no lock to end (none, or a run of failures below the budget): nothing counted or sent;
+ *  - `limited`     the account was unlocked 3 times within 24 hours already — the lock stays;
+ *  - `no_account`  the person has no active membership with an account in the admin's organization (a
+ *                  revoked or suspended member, another organization's person, no sign-in).
+ */
+export type UnlockSignInOutcome = 'unlocked' | 'not_locked' | 'limited' | 'no_account';
+
+const UNLOCK_OUTCOMES: ReadonlySet<string> = new Set<UnlockSignInOutcome>([
+  'unlocked',
+  'not_locked',
+  'limited',
+  'no_account',
+]);
+
+/**
+ * Ends an active member's sign-in lock against `maxFailures` (at most 3 unlocks a day per account; the
+ * owner is e-mailed).
+ */
+export async function unlockMemberSignIn(
+  tx: UserTx,
+  personId: string,
+  maxFailures: number,
+): Promise<UnlockSignInOutcome> {
   if (!PersonId.safeParse(personId).success)
     throw new Error('unlockMemberSignIn: invalid person id');
-  const [row] = await tx.execute<{ unlocked: boolean }>(
-    sql`select private.unlock_member_sign_in(${personId}::uuid) as unlocked`,
+  if (!Number.isInteger(maxFailures) || maxFailures < 1 || maxFailures > 1_000_000) {
+    throw new Error('unlockMemberSignIn: invalid budget');
+  }
+  const [row] = await tx.execute<{ outcome: string }>(
+    sql`select private.unlock_member_sign_in(${personId}::uuid, ${maxFailures}::integer) as outcome`,
   );
-  return row?.unlocked === true;
+  if (!row || !UNLOCK_OUTCOMES.has(row.outcome)) throw new Error('unlockMemberSignIn: no answer');
+  return row.outcome as UnlockSignInOutcome;
 }
 
 /**

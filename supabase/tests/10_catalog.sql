@@ -492,7 +492,7 @@ begin
     'private.claim_account_mail_request(), private.finish_account_mail_request(uuid), '
     'private.request_account_locked_mail(text,integer), '
     'private.request_password_changed_mail(uuid), private.request_password_reset_mail(text), '
-    'private.retry_account_mail_request(uuid)',
+    'private.request_sign_in_unlocked_mail(uuid), private.retry_account_mail_request(uuid)',
     'account_mail_guard owns the account e-mail functions only, all SECURITY DEFINER');
   perform tests.assert(not exists (select 1 from pg_class c where c.relowner = 'account_mail_guard'::regrole),
     'account_mail_guard owns no relations');
@@ -555,16 +555,22 @@ begin
     'account_mail_requests_tenant_guard:(kind = ANY (ARRAY[''mfa_factor_added''::text, ''mfa_factor_removed''::text, ''security_policy_changed''::text]))',
     'tenant_guard''s policy on the queue: the authenticator and policy-change notices only');
   -- Callers: the request functions and the worker functions are executable by authenticated (the
-  -- functions check the login role themselves) and nobody else besides the owner.
+  -- functions check the login role themselves) and nobody else besides the owner — except the unlock
+  -- notice, executable by rate_limit_guard alone (private.unlock_member_sign_in, T-M2-11).
   for v_list in
     select distinct format('%s → %s', p.oid::regprocedure,
                            case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end)
     from pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
     where p.proowner = 'account_mail_guard'::regrole and a.privilege_type = 'EXECUTE' and a.grantee <> p.proowner
-      and (a.grantee = 0 or pg_get_userbyid(a.grantee) <> 'authenticated')
+      and (a.grantee = 0
+           or pg_get_userbyid(a.grantee) <> case when p.oid = 'private.request_sign_in_unlocked_mail(uuid)'::regprocedure
+                                                 then 'rate_limit_guard' else 'authenticated' end)
   loop
     perform tests.assert(false, format('unexpected EXECUTE: %s', v_list));
   end loop;
+  perform tests.assert(has_function_privilege('rate_limit_guard', 'private.request_sign_in_unlocked_mail(uuid)', 'execute')
+                       and not has_function_privilege('authenticated', 'private.request_sign_in_unlocked_mail(uuid)', 'execute'),
+    'the unlock notice is requested through the Organization Admin''s unlock only');
 end $$;
 
 -- membership_guard (T-M2-09, deactivate / reactivate): owns exactly the session-ending and

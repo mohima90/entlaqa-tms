@@ -4,7 +4,8 @@
  * lock of INSERT … ON CONFLICT) — nor do concurrent sign-in checks of one account (counted BEFORE Auth:
  * at most 5 attempts reach Auth, security review T-M2-11); the stored key is HMAC-SHA-256 under the
  * database's counter key and the log reference under its log key (computed here independently from the
- * secret, read as the owner); a trusted browser and a password reset; readiness; and the TypeScript checks
+ * secret, read as the owner); an opt-in trusted browser, Auth's own refusal and a password reset;
+ * readiness; and the TypeScript checks
  * refuse readable keys before any round trip. The SQL behaviour (windows, purge, grants) is in
  * supabase/tests/70–72.
  */
@@ -52,7 +53,7 @@ describe.skipIf(!configured)('rate limiter against PostgreSQL', () => {
     const [row] = await owner<{ hits: number }[]>`
       select hits from private.rate_limit_counters where bucket = ${bucket}`;
     expect(row?.hits).toBe(8); // capped at max + 1
-    expect((await store.peek(bucket, key, 7)).allowed).toBe(false);
+    expect((await store.hit(bucket, key, { max: 7, windowSeconds: 600 })).allowed).toBe(false);
   });
 
   it('keeps different keys apart under concurrency', async () => {
@@ -88,22 +89,14 @@ describe.skipIf(!configured)('rate limiter against PostgreSQL', () => {
     expect(counter.ref).not.toBe(`rk_${expected.subarray(0, 12).toString('hex')}`);
   });
 
-  it('peeks without counting and clears a key', async () => {
+  it('clears a key', async () => {
     const key = subject(`clear-${tag}`);
     await store.hit(`${bucket}.clear`, key, { max: 2, windowSeconds: 60 });
     await store.hit(`${bucket}.clear`, key, { max: 2, windowSeconds: 60 });
-    expect(await store.peek(`${bucket}.clear`, key, 2)).toMatchObject({
-      allowed: false,
-      remaining: 0,
-    });
-    expect(await store.peek(`${bucket}.clear`, key, 2)).toMatchObject({
-      allowed: false,
-      remaining: 0,
-    });
     await store.clear(`${bucket}.clear`, key);
-    expect(await store.peek(`${bucket}.clear`, key, 2)).toMatchObject({
+    expect(await store.hit(`${bucket}.clear`, key, { max: 2, windowSeconds: 60 })).toMatchObject({
       allowed: true,
-      remaining: 2,
+      remaining: 1,
     });
   });
 
@@ -133,14 +126,18 @@ describe.skipIf(!configured)('rate limiter against PostgreSQL', () => {
     expect(new Set(answers.map((a) => a.subjectRef)).size).toBe(1);
   });
 
-  it('trusts a browser after a success: it passes the account lock with its own budget; a reset forgets it', async () => {
+  it('trusts a browser after a ticked success: it passes the account lock with its own budget; a reset trusts only the browser that completed it', async () => {
     const account = subject(`trusted-${tag}`);
     const browser = subject(`browser-${tag}`);
     const client = subject(`trusted-client-${tag}`);
-    const first = await store.signInCheck({ client, account, device: browser }, budgets);
+    const first = await store.signInCheck({ client, account, device: null }, budgets);
     expect(first).toMatchObject({ allowed: true, trusted: false, remaining: 4 });
-    const until = await store.signInSucceeded({ client, account, device: browser }, false, 30);
-    expect(until.getTime()).toBeGreaterThan(Date.now() + 29 * 86_400_000);
+    const trust = await store.signInSucceeded({ client, account, device: null }, false, {
+      freshDevice: browser,
+      trustDays: 30,
+    });
+    expect(trust?.device).toBe('fresh');
+    expect(trust?.until.getTime()).toBeGreaterThan(Date.now() + 29 * 86_400_000);
     // Five failures from unknown browsers lock the account.
     for (let i = 0; i < 6; i += 1) {
       await store.signInCheck(
@@ -157,11 +154,32 @@ describe.skipIf(!configured)('rate limiter against PostgreSQL', () => {
       trusted: true,
       remaining: 9,
     });
-    expect(await store.signInReset(account)).toBe(1);
+    // Auth refused to compare (429): the browser's failure is given back.
+    await store.signInNotChecked({ client, account, device: browser }, true);
+    expect(await store.signInCheck({ client, account, device: browser }, budgets)).toMatchObject({
+      trusted: true,
+      remaining: 9,
+    });
+    const other = subject(`reset-browser-${tag}`);
+    const reset = await store.signInReset(account, null, { freshDevice: other, trustDays: 30 });
+    expect(reset).toMatchObject({ revoked: 1, device: 'fresh' });
     expect(await store.signInCheck({ client, account, device: browser }, budgets)).toMatchObject({
       allowed: true,
       trusted: false,
     });
+    expect(await store.signInCheck({ client, account, device: other }, budgets)).toMatchObject({
+      allowed: true,
+      trusted: true,
+    });
+    expect(await store.forgetOtherDevices(account, null)).toBe(1);
+  });
+
+  it('trusts nothing after an unticked success (opt-in)', async () => {
+    const account = subject(`unticked-${tag}`);
+    const client = subject(`unticked-client-${tag}`);
+    await store.signInCheck({ client, account, device: null }, budgets);
+    expect(await store.signInSucceeded({ client, account, device: null }, false, null)).toBeNull();
+    expect(await store.forgetOtherDevices(account, null)).toBe(0);
   });
 
   it('is ready only when the sign-in functions exist (deploy readiness)', async () => {
@@ -171,7 +189,9 @@ describe.skipIf(!configured)('rate limiter against PostgreSQL', () => {
   it('refuses readable keys and bad limits before any round trip', () => {
     const readable = Buffer.from('someone@example.test');
     expect(() => store.hit(bucket, readable, { max: 1, windowSeconds: 60 })).toThrow(/32-byte/);
-    expect(() => store.peek('Bad Bucket', subject('x'), 1)).toThrow(/bucket/);
+    expect(() => store.hit('Bad Bucket', subject('x'), { max: 1, windowSeconds: 60 })).toThrow(
+      /bucket/,
+    );
     expect(() => store.hit(bucket, subject('x'), { max: 0, windowSeconds: 60 })).toThrow(/max/);
     expect(() => store.hit(bucket, subject('x'), { max: 1, windowSeconds: 86_401 })).toThrow(
       /window/,

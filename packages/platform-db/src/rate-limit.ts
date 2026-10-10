@@ -21,9 +21,9 @@ export interface RateLimit {
   readonly windowSeconds: number;
 }
 
-/** A counter's state after a hit or a peek. */
+/** A counter's state after a hit. */
 export interface RateLimitCounter {
-  /** This hit is within the limit (hit), or the key is not used up (peek). */
+  /** This hit is within the limit. */
   readonly allowed: boolean;
   /** Hits left in the current window. */
   readonly remaining: number;
@@ -82,11 +82,29 @@ export interface SignInCheck {
   readonly clientRef: string;
 }
 
+/**
+ * Which browser token the database made trusted: the one the browser presented (the server knows it —
+ * one cookie per browser, for every account that trusts it) or the fresh one the app minted for the
+ * request (the server never starts trusting a token it did not issue). The app writes that token's cookie.
+ */
+export type TrustedDeviceChoice = 'presented' | 'fresh';
+
+/** A browser trusted (again) for an account. */
+export interface DeviceTrust {
+  readonly device: TrustedDeviceChoice;
+  readonly until: Date;
+}
+
+/** «تذكّر هذا المتصفح» ticked: trust the browser for `trustDays`, under `freshDevice` unless it presented a known token. */
+export interface RememberDevice {
+  /** SHA-256 subject of the fresh random token minted for this request. */
+  readonly freshDevice: Uint8Array;
+  readonly trustDays: number;
+}
+
 export interface RateLimitStore {
   /** Counts one hit of the key in `bucket`. */
   hit(bucket: string, subject: Uint8Array, limit: RateLimit): Promise<RateLimitCounter>;
-  /** The key's state against `max`, without counting. */
-  peek(bucket: string, subject: Uint8Array, max: number): Promise<RateLimitCounter>;
   /** Forgets the key's counter in `bucket`. */
   clear(bucket: string, subject: Uint8Array): Promise<void>;
   /** Gives one hit of the key back (failures-only counting: the attempt turned out right). */
@@ -97,17 +115,32 @@ export interface RateLimitStore {
    */
   signInCheck(subjects: SignInSubjects, budgets: SignInBudgets): Promise<SignInCheck>;
   /**
-   * Auth accepted the password: the client's provisional failure is given back, the account's (or the
-   * trusted browser's) run ends, and the browser is trusted for the account for `trustDays`. Returns the
-   * end of the trust.
+   * Auth accepted the password (`trusted`: what the check answered for `subjects.device`, the presented
+   * token): the client's provisional failure is given back, the account's (or the trusted browser's) run
+   * ends; with `remember` (opt-in), the browser is trusted for the account. Null without `remember`:
+   * nothing about trust changed (a trusted browser's trust is not renewed).
    */
   signInSucceeded(
-    subjects: SignInSubjects & { readonly device: Uint8Array },
+    subjects: SignInSubjects,
     trusted: boolean,
-    trustDays: number,
-  ): Promise<Date>;
-  /** A completed password reset: the account's lock ends, its trusted browsers are forgotten. */
-  signInReset(account: Uint8Array): Promise<number>;
+    remember: RememberDevice | null,
+  ): Promise<DeviceTrust | null>;
+  /**
+   * Auth answered before comparing the password (its own rate limit): the account's (or the trusted
+   * browser's) provisional failure is given back; the client's stays.
+   */
+  signInNotChecked(subjects: SignInSubjects, trusted: boolean): Promise<void>;
+  /**
+   * A completed password reset: the account's lock ends, the browser that completed it (`device`: its
+   * presented token, if any) is trusted, every other browser the account trusted is forgotten.
+   */
+  signInReset(
+    account: Uint8Array,
+    device: Uint8Array | null,
+    remember: RememberDevice,
+  ): Promise<DeviceTrust & { readonly revoked: number }>;
+  /** After a password change on My profile: forgets every trusted browser of the account but `device`. */
+  forgetOtherDevices(account: Uint8Array, device: Uint8Array | null): Promise<number>;
 }
 
 /** Same rules as the database (private.rate_limit_check_call): checked before any round trip. */
@@ -126,6 +159,26 @@ function checkSubject(subject: Uint8Array): Buffer {
 function checkArguments(bucket: string, subject: Uint8Array): Buffer {
   if (!RATE_LIMIT_BUCKET_PATTERN.test(bucket)) throw new Error('rate limit: invalid bucket name');
   return checkSubject(subject);
+}
+
+function checkTrustDays(trustDays: number): void {
+  if (!Number.isInteger(trustDays) || trustDays < 1 || trustDays > 400) {
+    throw new Error('rate limit: a browser is trusted for 1–400 days');
+  }
+}
+
+interface DeviceTrustRow extends Record<string, unknown> {
+  readonly device: string | null;
+  readonly trusted_until: Date | string | null;
+}
+
+function deviceTrustOf(row: DeviceTrustRow): DeviceTrust | null {
+  if (row.device === null && row.trusted_until === null) return null;
+  if ((row.device !== 'presented' && row.device !== 'fresh') || row.trusted_until === null) {
+    throw new Error('rate limit: unknown trusted-browser answer');
+  }
+  const until = row.trusted_until instanceof Date ? row.trusted_until : new Date(row.trusted_until);
+  return { device: row.device, until };
 }
 
 function checkLimit(limit: RateLimit): void {
@@ -213,15 +266,6 @@ export function createRateLimitStore(getDb: () => AppDatabase): RateLimitStore {
         counterOf,
       );
     },
-    peek(bucket, subject, max) {
-      const key = checkArguments(bucket, subject);
-      checkLimit({ max, windowSeconds: 1 });
-      return run(
-        sql`select allowed, remaining, retry_after_seconds, key_ref
-            from private.rate_limit_peek(${bucket}, ${key}::bytea, ${max}::integer)`,
-        counterOf,
-      );
-    },
     async clear(bucket, subject) {
       const key = checkArguments(bucket, subject);
       await run(sql`select private.rate_limit_clear(${bucket}, ${key}::bytea)`, () => undefined);
@@ -253,28 +297,65 @@ export function createRateLimitStore(getDb: () => AppDatabase): RateLimitStore {
         signInCheckOf,
       );
     },
-    signInSucceeded(subjects, trusted, trustDays) {
+    signInSucceeded(subjects, trusted, remember) {
       const client = checkSubject(subjects.client);
       const account = checkSubject(subjects.account);
-      const device = checkSubject(subjects.device);
-      if (!Number.isInteger(trustDays) || trustDays < 1 || trustDays > 400) {
-        throw new Error('rate limit: a browser is trusted for 1–400 days');
-      }
+      const device = subjects.device === null ? null : checkSubject(subjects.device);
+      if (trusted && device === null) throw new Error('rate limit: a trusted browser has a token');
+      const fresh = remember === null ? null : checkSubject(remember.freshDevice);
+      if (remember !== null) checkTrustDays(remember.trustDays);
       return run(
-        sql`select private.rate_limit_sign_in_succeeded(${client}::bytea, ${account}::bytea,
-                                                        ${device}::bytea, ${trusted}::boolean,
-                                                        ${trustDays}::integer) as until`,
+        sql`select device, trusted_until
+            from private.rate_limit_sign_in_succeeded(
+              ${client}::bytea, ${account}::bytea, ${device}::bytea, ${fresh}::bytea,
+              ${trusted}::boolean, ${remember !== null}::boolean,
+              ${remember?.trustDays ?? null}::integer)`,
         (rows) => {
-          const until = rows[0]?.until as Date | string | undefined;
-          if (until === undefined) throw new Error('rate limit: no answer from the database');
-          return until instanceof Date ? until : new Date(until);
+          const row = rows[0] as DeviceTrustRow | undefined;
+          if (!row) throw new Error('rate limit: no answer from the database');
+          return deviceTrustOf(row);
         },
       );
     },
-    signInReset(account) {
-      const key = checkSubject(account);
-      return run(sql`select private.rate_limit_sign_in_reset(${key}::bytea) as revoked`, (rows) =>
-        Number(rows[0]?.revoked ?? 0),
+    async signInNotChecked(subjects, trusted) {
+      const account = checkSubject(subjects.account);
+      const device = subjects.device === null ? null : checkSubject(subjects.device);
+      if (trusted && device === null) throw new Error('rate limit: a trusted browser has a token');
+      await run(
+        sql`select private.rate_limit_sign_in_not_checked(${account}::bytea, ${device}::bytea,
+                                                          ${trusted}::boolean)`,
+        () => undefined,
+      );
+    },
+    signInReset(account, device, remember) {
+      const accountKey = checkSubject(account);
+      const deviceKey = device === null ? null : checkSubject(device);
+      const fresh = checkSubject(remember.freshDevice);
+      checkTrustDays(remember.trustDays);
+      return run(
+        sql`select revoked, device, trusted_until
+            from private.rate_limit_sign_in_reset(${accountKey}::bytea, ${deviceKey}::bytea,
+                                                  ${fresh}::bytea, ${remember.trustDays}::integer)`,
+        (rows) => {
+          const row = rows[0] as (DeviceTrustRow & { readonly revoked: number }) | undefined;
+          const trust = row ? deviceTrustOf(row) : null;
+          if (!row || !trust) throw new Error('rate limit: no answer from the database');
+          return { ...trust, revoked: row.revoked };
+        },
+      );
+    },
+    forgetOtherDevices(account, device) {
+      const accountKey = checkSubject(account);
+      const deviceKey = device === null ? null : checkSubject(device);
+      return run(
+        sql`select private.rate_limit_forget_other_devices(${accountKey}::bytea, ${deviceKey}::bytea)
+                   as revoked`,
+        (rows) => {
+          const revoked = rows[0]?.revoked;
+          if (typeof revoked !== 'number')
+            throw new Error('rate limit: no answer from the database');
+          return revoked;
+        },
       );
     },
   };

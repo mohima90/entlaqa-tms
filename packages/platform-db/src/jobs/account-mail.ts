@@ -8,7 +8,8 @@ import type { ClaimsTx } from '../claims-tx';
  * organization's transaction that queues the e-mail. Only the definer functions reach the queue. T-M2-10
  * adds the security notices: the authenticator set-up e-mail (its one-time code and "not you" link) and
  * removal notice, the policy-change notice, and the digest of the notices over an account's daily ceiling.
- * T-M2-11 (migration 20261013090100) adds `account_locked` (sign-in paused after failed attempts).
+ * T-M2-11 (migration 20261013090100) adds `account_locked` (sign-in paused after failed attempts) and `sign_in_unlocked`
+ * (the Organization Admin ended the pause).
  */
 export const ACCOUNT_MAIL_KINDS = [
   'password_reset',
@@ -18,6 +19,7 @@ export const ACCOUNT_MAIL_KINDS = [
   'security_policy_changed',
   'security_digest',
   'account_locked',
+  'sign_in_unlocked',
 ] as const;
 export type AccountMailKind = (typeof ACCOUNT_MAIL_KINDS)[number];
 
@@ -218,14 +220,22 @@ export interface AccountMailContext {
   readonly recipientName: { readonly ar: string; readonly en: string | null };
   /** Account e-mails of this template queued for the person in the last hour (a per-person cap). */
   readonly recentCount: number;
-  /** Of those, the ones queued in the last `quietMinutes` (one per lock period, T-M2-11; 0 when not asked). */
+  /**
+   * E-mails of this template queued for the person in the last `quietMinutes` (the lockout e-mail: at most
+   * one a day, security review T-M2-11 M3; 0 when not asked).
+   */
   readonly quietCount: number;
+  /**
+   * E-mails of this template queued in the whole organization in the last hour (the organization's hourly
+   * ceiling of lockout e-mails, T-M2-11 M3).
+   */
+  readonly tenantRecentCount: number;
 }
 
 /**
  * The organization's and the person's names for an account e-mail, in the job's tenant transaction, and
- * how many e-mails of `template` the person was sent in the last hour (and in the last `quietMinutes`).
- * Null when the person is not visible in this tenant.
+ * how many e-mails of `template` the person was sent in the last hour (and in the last `quietMinutes`),
+ * and the organization in the last hour. Null when the person is not visible in this tenant.
  */
 export async function loadAccountMailContext(
   tx: ClaimsTx,
@@ -243,6 +253,7 @@ export async function loadAccountMailContext(
     recipient_en: string | null;
     recent: number | string;
     quiet: number | string;
+    tenant_recent: number | string;
   }>(sql`
     select t.name_ar as organization_ar, t.name_en as organization_en,
            p.display_name_ar as recipient_ar, p.display_name_en as recipient_en,
@@ -251,7 +262,10 @@ export async function loadAccountMailContext(
               and d.created_at > now() - interval '1 hour') as recent,
            (select count(*) from platform.message_deliveries d
             where d.tenant_id = p.tenant_id and d.recipient_person_id = p.id and d.template = ${template}
-              and d.created_at > now() - make_interval(mins => ${quietMinutes}::integer)) as quiet
+              and d.created_at > now() - make_interval(mins => ${quietMinutes}::integer)) as quiet,
+           (select count(*) from platform.message_deliveries d
+            where d.tenant_id = p.tenant_id and d.template = ${template}
+              and d.created_at > now() - interval '1 hour') as tenant_recent
     from platform.persons p
     join platform.tenants t on t.id = p.tenant_id
     where p.id = ${personId}::uuid`);
@@ -261,6 +275,7 @@ export async function loadAccountMailContext(
     recipientName: { ar: row.recipient_ar, en: row.recipient_en },
     recentCount: Number(row.recent),
     quietCount: Number(row.quiet),
+    tenantRecentCount: Number(row.tenant_recent),
   };
 }
 

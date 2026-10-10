@@ -25,18 +25,22 @@ export { DomainError, isDomainError } from './domain-error';
 export {
   RATE_LIMIT_BUCKET_PATTERN,
   RATE_LIMIT_STATEMENT_TIMEOUT_MS,
+  type DeviceTrust,
   type RateLimit,
   type RateLimitCounter,
   type RateLimitStore,
+  type RememberDevice,
   type SignInBudgets,
   type SignInCheck,
   type SignInRefusal,
   type SignInSubjects,
+  type TrustedDeviceChoice,
   createRateLimitStore,
   rateLimitStore,
 } from './rate-limit';
 export {
   type MemberSignInLock,
+  type UnlockSignInOutcome,
   createSignInMembershipLookup,
   memberSignInLock,
   signInAccountInTenant,

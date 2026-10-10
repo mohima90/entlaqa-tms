@@ -86,6 +86,15 @@ begin
       returning *$q$,
       'a0000000-0000-4000-8000-000000000001/platform/user_import/a5000000-0000-4000-8000-000000000001/f0a00000-0000-4000-8000-000000000001'),
     'no upsert over a scanned (clean) file');
+  -- And for a fresh pending key without any object yet (the upload hosted Storage makes with x-upsert:
+  -- true): refused too — an upload is only ever a plain insert, so nothing can later replace its bytes.
+  perform tests.assert_rls_violation(format($q$insert into storage.objects (bucket_id, name, owner, metadata) values ('imports', %L,
+      '00000000-0000-4000-8000-0000000000a1', '{"size": 10}') on conflict (bucket_id, name) do update set metadata = excluded.metadata
+      returning *$q$,
+      'a0000000-0000-4000-8000-000000000001/platform/user_import/a5000000-0000-4000-8000-000000000001/f1a00000-0000-4000-8000-000000000001'),
+    'no upsert even at a fresh pending key without an object');
+  perform tests.assert_eq((select count(*) from storage.objects where name like '%/f1a00000-0000-4000-8000-000000000001'),
+    0::bigint, 'the refused upsert left no object');
   -- Never update or delete (no policy: nothing matches, nothing changes).
   perform tests.assert_eq(tests.rows_affected($q$update storage.objects set metadata = '{"size": 1}'$q$), 0::bigint,
     'no update of any object');

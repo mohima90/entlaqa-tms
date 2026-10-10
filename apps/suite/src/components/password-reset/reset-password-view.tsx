@@ -9,6 +9,7 @@ import {
   pathAfterReset,
   resetFragment,
   resetLinkFromHash,
+  withMinutesInWords,
 } from '../../lib/password-reset-link';
 import { PASSWORD_MIN_LENGTH, passwordRuleState, withMin } from '../../lib/password-rules';
 import { looksLikeTotpCode } from '../../lib/totp-code-shape';
@@ -147,7 +148,7 @@ function ResetForm({
         return;
       }
       if (linkIsSpent(result.error.code)) {
-        onSpent(errorText(result.error, errors));
+        onSpent(errorText(withMinutesInWords(result.error, locale), errors));
         return;
       }
       if (result.error.code === 'VALIDATION_FAILED') {

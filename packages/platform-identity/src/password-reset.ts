@@ -7,6 +7,7 @@ import {
   err,
   ok,
 } from '@jadarat/platform-core';
+import { PLATFORM_PASSWORD_MIN_LENGTH } from '@jadarat/platform-db';
 import type { LogFields } from '@jadarat/platform-observability';
 import { AuthServiceError, sessionTokens } from './auth-flow';
 import type { CodeCheckLimit } from './auth-limits';
@@ -78,7 +79,25 @@ export const PasswordResetErrors = defineErrorCodes({
   PASSWORD_RESET_CODE_REQUIRED: { status: 422, messageKey: 'passwordReset.errors.codeRequired' },
   /** The authenticator code was wrong or expired; the link is used up (single use): ask for a new one. */
   PASSWORD_RESET_CODE_INVALID: { status: 422, messageKey: 'passwordReset.errors.codeInvalid' },
+  /**
+   * Too many attempts with the authenticator code (the reset page's own budget, integration review T-M2-11
+   * M1 — or Auth's own limit): the code was not checked and the link is used up. `minutes` in params: when
+   * to ask for a new link (the page says it plainly).
+   */
+  PASSWORD_RESET_CODE_LIMITED: { status: 429, messageKey: 'passwordReset.errors.codeLimited' },
 });
+
+/**
+ * When to ask for a new link after AUTH's own limit refused the code check (it does not say for how long):
+ * the code limiter's window, a wait after which Auth's per-address limits have moved on as well.
+ */
+export const RESET_CODE_AUTH_LIMIT_WAIT_MINUTES = 15;
+
+function codeLimited(minutes: number): AppError {
+  return appError(PasswordResetErrors.PASSWORD_RESET_CODE_LIMITED, {
+    params: { minutes: Math.max(1, Math.ceil(minutes)) },
+  });
+}
 
 /** Server setting: who sends the reset e-mail and the "password changed" notice (T-M2-17). */
 export const PASSWORD_RESET_DELIVERY_ENV = 'PASSWORD_RESET_DELIVERY';
@@ -312,8 +331,10 @@ async function secondFactor(
     return err(appError(PasswordResetErrors.PASSWORD_RESET_CODE_REQUIRED));
   }
   const appId = factorId;
-  // Auth's check of the code, limited per account and per client like every authenticator code (T-M2-11;
-  // TM-0003 T-IAM-12): a limited check never asks Auth. The link is spent by now either way.
+  // Auth's check of the code, limited per account — on this page's OWN budget (integration review M1:
+  // wrong codes after the password, at sign-in, never lock the owner out of resetting it) — and per client
+  // like every authenticator code (T-M2-11; TM-0003 T-IAM-12): a limited check never asks Auth. The link
+  // is spent by now either way: a limited check answers plainly when to ask for a new one.
   const check = async (): Promise<Result<null, AppError>> => {
     const verified = await client.auth.mfa.challengeAndVerify({ factorId: appId, code });
     if (!verified.error) return ok(null);
@@ -332,12 +353,25 @@ async function secondFactor(
   };
   let checked: Result<null, AppError>;
   try {
-    checked = await deps.limitCodeCheck(userId, check, isWrongResetCode);
+    checked = await deps.limitCodeCheck(userId, check, isWrongResetCode, {
+      limited: (retryAfterSeconds) => codeLimited(retryAfterSeconds / 60),
+    });
   } catch (error) {
     await endRecoverySession(deps, client, 'local', userId);
     throw error;
   }
-  if (!checked.ok) await endRecoverySession(deps, client, 'local', userId);
+  if (checked.ok) return checked;
+  await endRecoverySession(deps, client, 'local', userId);
+  // Auth's own limit (the code was not compared; the limiter gave the account's failure back): the link
+  // is used up all the same — say when to ask for a new one.
+  if (checked.error.code === 'RATE_LIMITED') {
+    deps.logWarning('password reset: the code check was limited by Auth', {
+      action: COMPLETE_ACTION,
+      reason: 'auth_service',
+      status: 429,
+    });
+    return err(codeLimited(RESET_CODE_AUTH_LIMIT_WAIT_MINUTES));
+  }
   return checked;
 }
 
@@ -432,7 +466,22 @@ export async function completePasswordReset(
 ): Promise<Result<{ readonly next: 'sign-in' }, AppError>> {
   const { client } = deps;
   if (!client) return err(appError('NOT_CONFIGURED'));
-  // Every submission counts, malformed ones included; nothing is spent when limited.
+  // Below the platform's minimum (12 characters as people count them — an emoji is one): refused before it
+  // is counted or the link is spent, as the action's own check does (integration review, 5c).
+  if (Array.from(input.password).length < PLATFORM_PASSWORD_MIN_LENGTH) {
+    return err(
+      appError('VALIDATION_FAILED', {
+        fieldErrors: [
+          {
+            path: 'password',
+            code: 'TOO_SMALL',
+            params: { minimum: PLATFORM_PASSWORD_MIN_LENGTH },
+          },
+        ],
+      }),
+    );
+  }
+  // Every other submission counts, malformed links included; nothing is spent when limited.
   if (!(await deps.allowAttempt())) return err(appError('RATE_LIMITED'));
   if (!RECOVERY_TOKEN_HASH_PATTERN.test(input.tokenHash)) return linkInvalid();
 

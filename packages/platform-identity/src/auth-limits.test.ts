@@ -18,8 +18,10 @@ import {
   DEVICE_TOKEN_PATTERN,
   LIMIT_BUCKETS,
   NO_SIGN_IN_GUARD,
+  ORGANIZATION_SIGN_IN_HOSTS,
   PLATFORM_AUTH_LIMITS,
   RateLimiterUnavailableError,
+  type CodeCheckFlow,
   type SecurityEvent,
   type SignInGate,
   type TrustedDeviceCookie,
@@ -35,10 +37,13 @@ import {
   deviceSubject,
   forgetOtherTrustedBrowsers,
   limitsFor,
+  lockoutHostTenant,
   organizationAccountLockout,
   readAuthLimitWindowOverride,
+  rememberBrowserAfterCode,
   resetAccountSignIn,
   securityLogLine,
+  sessionSubject,
   signInBudgets,
   userSubject,
   withCodeAttemptLimit,
@@ -220,6 +225,12 @@ function memoryStore(now: () => number = () => 0) {
   const forgetOtherDevices = vi.fn((accountSubject: Uint8Array, device: Uint8Array | null) =>
     Promise.resolve(forget(hex(accountSubject), device === null ? null : hex(device))),
   );
+  /** Ticks waiting for a session's sign-in code (integration review L4): session subject → until. */
+  const pending = new Map<string, number>();
+  const rememberAfterCode = vi.fn((session: Uint8Array, minutes: number) => {
+    pending.set(hex(session), now() + minutes * 60_000);
+    return Promise.resolve();
+  });
   const store: RateLimitStore = {
     hit,
     clear: vi.fn((bucket: string, subject: Uint8Array) => {
@@ -235,9 +246,12 @@ function memoryStore(now: () => number = () => 0) {
     signInNotChecked,
     signInReset,
     forgetOtherDevices,
+    rememberAfterCode,
   };
   return {
     store,
+    rememberAfterCode,
+    pending,
     hit,
     signInCheck,
     signInSucceeded,
@@ -261,6 +275,7 @@ function failingStore(): RateLimitStore {
     signInNotChecked: vi.fn(down),
     signInReset: vi.fn(down),
     forgetOtherDevices: vi.fn(down),
+    rememberAfterCode: vi.fn(down),
   };
 }
 
@@ -400,7 +415,7 @@ describe('limitsFor (platform defaults; per-organization policy joins here with 
       sharedClientAttempts: { max: 10_000, windowSeconds: 900 },
     });
     // Opt-in: 30 days when ticked; an unticked password reset trusts its browser for 24 hours (N1).
-    expect(limits.trustedDevice).toEqual({ days: 30, resetDays: 1 });
+    expect(limits.trustedDevice).toEqual({ days: 30, resetDays: 1, codeWaitMinutes: 15 });
     // The lockout e-mail (security review M3): one per person a day, a ceiling per organization an hour.
     expect(limits.lockoutMail).toEqual({ personQuietHours: 24, tenantPerHour: 50 });
     expect(limitsFor({ tenantId: '22222222-2222-4222-8222-222222222222' }, {})).toBe(
@@ -525,6 +540,112 @@ describe('createSignInGuard (FR-IAM-13 lockout, TM-0003 T-IAM-01/03; PO decision
     expect(answers.filter((a) => !a.ok && a.error.code === 'AUTH_TOO_MANY_ATTEMPTS')).toHaveLength(
       25,
     );
+  });
+
+  it('an account with an authenticator app: a ticked password sign-in trusts no browser — the tick waits for the session’s code (integration review L4)', async () => {
+    const { guard, memory } = guardSetup();
+    const SESSION = '33333333-3333-4333-8333-333333333333';
+    const signIn = (factors: { factor_type: string; status: string }[]) =>
+      ({
+        supabase: {
+          auth: {
+            signInWithPassword: () =>
+              Promise.resolve({
+                data: {
+                  session: { access_token: 'access-1', refresh_token: 'refresh-1' },
+                  user: { id: '11111111-1111-4111-8111-111111111111', factors },
+                },
+                error: null,
+              }),
+            getClaims: () =>
+              Promise.resolve({
+                data: {
+                  claims: {
+                    sub: '11111111-1111-4111-8111-111111111111',
+                    role: 'authenticated',
+                    aal: 'aal1',
+                    session_id: SESSION,
+                  },
+                },
+                error: null,
+              }),
+          },
+        },
+        signInGuard: guard(),
+        now: () => 0,
+        sleep: () => Promise.resolve(),
+        logWarning: () => undefined,
+      }) as unknown as AuthFlowDeps;
+    const app = [{ factor_type: 'totp', status: 'verified' }];
+    const answer = await startPasswordSession(signIn(app), {
+      email: EMAIL,
+      password: 'right horse battery',
+      remember: true,
+    });
+    expect(answer.ok).toBe(true);
+    // Password only: no trust row, no cookie — the success is recorded without remembering.
+    expect(memory.trusted.size).toBe(0);
+    expect(memory.signInSucceeded).toHaveBeenCalledWith(expect.anything(), false, null);
+    // The tick waits server-side for THIS Auth session's sign-in code (15 minutes), keyed by its subject.
+    expect(memory.rememberAfterCode).toHaveBeenCalledWith(sessionSubject(SESSION), 15);
+    expect([...memory.pending.keys()]).toEqual([hex(sessionSubject(SESSION))]);
+
+    // Unticked: nothing waits. An account without an app (or with an unfinished one): trusted as before.
+    memory.rememberAfterCode.mockClear();
+    await startPasswordSession(signIn(app), { email: EMAIL, password: 'right horse battery' });
+    expect(memory.rememberAfterCode).not.toHaveBeenCalled();
+    expect(memory.trusted.size).toBe(0);
+    await startPasswordSession(signIn([{ factor_type: 'totp', status: 'unverified' }]), {
+      email: EMAIL,
+      password: 'right horse battery',
+      remember: true,
+    });
+    expect(memory.rememberAfterCode).not.toHaveBeenCalled();
+    expect(memory.trusted.size).toBe(1);
+  });
+
+  it('the shared session vector: the web app and the database derive the same subject (supabase/tests/71)', () => {
+    expect(hex(sessionSubject(' 10000000-0000-4000-8000-000000000C91 '))).toBe(
+      hex(sessionSubject('10000000-0000-4000-8000-000000000c91')),
+    );
+    expect(hex(sessionSubject('10000000-0000-4000-8000-000000000c91'))).toBe(
+      '291dc6033ad349160f5b283a29178503019810558330ae234b920e2209aa8e6f',
+    );
+  });
+
+  it('rememberBrowserAfterCode: after the code, the database decides; the cookie follows its answer; never throws (L4)', async () => {
+    const { deps, events } = guardSetup();
+    const until = new Date(Date.now() + 30 * 86_400_000);
+    // Trusted under a fresh token (the browser had none the server knows).
+    const fresh = browser();
+    const trust = vi.fn(() => Promise.resolve({ device: 'fresh' as const, until }));
+    await rememberBrowserAfterCode(deps, 'platform.auth.mfa_verify', fresh.cookie, trust);
+    expect(trust).toHaveBeenCalledWith(null, expect.any(Buffer), 30);
+    expect(fresh.jar.token).toMatch(DEVICE_TOKEN_PATTERN);
+    expect(fresh.jar.maxAge).toBeGreaterThan(29 * 86_400);
+    // A known token is kept.
+    const known = browser('k'.repeat(43));
+    await rememberBrowserAfterCode(deps, 'platform.auth.mfa_verify', known.cookie, () =>
+      Promise.resolve({ device: 'presented' as const, until }),
+    );
+    expect(known.jar.token).toBe('k'.repeat(43));
+    // Nothing to remember (no tick, not AAL2, an old code): the cookie is left alone.
+    const none = browser();
+    await rememberBrowserAfterCode(deps, 'platform.auth.mfa_verify', none.cookie, () =>
+      Promise.resolve(null),
+    );
+    expect(none.jar.token).toBeNull();
+    // A failure is logged, never thrown: the sign-in goes on, the browser is not remembered.
+    await rememberBrowserAfterCode(deps, 'platform.auth.mfa_verify', none.cookie, () =>
+      Promise.reject(new Error('db down')),
+    );
+    expect(none.jar.token).toBeNull();
+    expect(events.at(-1)).toEqual({
+      event: 'auth.limiter.unavailable',
+      action: 'platform.auth.mfa_verify',
+      reason: 'trust_not_recorded',
+      errorName: 'Error',
+    });
   });
 
   it('treats an unknown account exactly like an existing one (counters per typed e-mail)', async () => {
@@ -1254,6 +1375,15 @@ describe('organizationAccountLockout (T-M2-10 policy, members only — T-M2-10 s
     ).toEqual(fallback);
   });
 
+  it('THE host rule (integration review L1): no organization hosts yet — the platform default for everyone', () => {
+    expect(ORGANIZATION_SIGN_IN_HOSTS).toBe(false);
+    expect(lockoutHostTenant(ORG)).toBeNull();
+    expect(lockoutHostTenant(null)).toBeNull();
+    // Once organizations have their own hosts: that organization.
+    expect(lockoutHostTenant(ORG, true)).toBe(ORG);
+    expect(lockoutHostTenant(null, true)).toBeNull();
+  });
+
   it('the guard applies it per typed address, and fails closed when it cannot be read', async () => {
     const { deps } = guardSetup();
     const strict = createSignInGuard({
@@ -1288,15 +1418,31 @@ describe('createCodeAttemptLimiter / withCodeAttemptLimit (authenticator codes, 
   const setup = (client: { key: string | null } = CLIENT, store?: RateLimitStore) => {
     const memory = memoryStore();
     const events: SecurityEvent[] = [];
-    const limiter = (c = client) =>
+    const lockMails: { userId: string; minutes: number }[] = [];
+    let mailFails = false;
+    const limiter = (c = client, flow: CodeCheckFlow = 'session') =>
       createCodeAttemptLimiter({
         store: store ?? memory.store,
         limits: PLATFORM_AUTH_LIMITS,
         log: (e) => events.push(e),
         client: c,
-        action: 'platform.auth.mfa_verify',
+        action: flow === 'reset' ? 'platform.auth.password_reset' : 'platform.auth.mfa_verify',
+        flow,
+        requestLockedMail: (userId, minutes) => {
+          if (mailFails) return Promise.reject(new Error('queue down for someone@example.test'));
+          lockMails.push({ userId, minutes });
+          return Promise.resolve();
+        },
       });
-    return { limiter, events, memory };
+    return {
+      limiter,
+      events,
+      memory,
+      lockMails,
+      failMails: () => {
+        mailFails = true;
+      },
+    };
   };
   const wrongCode = () => Promise.resolve(err(appError('VALIDATION_FAILED')));
   const isWrong = (e: { code: string }) => e.code === 'VALIDATION_FAILED';
@@ -1355,6 +1501,93 @@ describe('createCodeAttemptLimiter / withCodeAttemptLimit (authenticator codes, 
     await expect(
       withCodeAttemptLimit(limiter(), USER, () => Promise.reject(new Error('auth down')), isWrong),
     ).rejects.toThrow('auth down');
+    expect((await limiter().check(USER)).allowed).toBe(false);
+  });
+
+  it("Auth's 429 gives the account's failure back (no code compared), the client's stays (integration review L2)", async () => {
+    const { limiter, memory } = setup();
+    const authLimited = vi.fn(() => Promise.resolve(err(appError('RATE_LIMITED'))));
+    // Any number of Auth refusals before a code is compared never locks the account.
+    for (let i = 0; i < 8; i += 1) {
+      const r = await withCodeAttemptLimit(limiter(), USER, authLimited, isWrong);
+      expect(!r.ok && r.error.code).toBe('RATE_LIMITED');
+    }
+    expect(authLimited).toHaveBeenCalledTimes(8);
+    expect(memory.rows.get(`mfa_code.account_failures|${hex(userSubject(USER))}`)).toBeUndefined();
+    // The client's provisional failures stay counted: the client is the one Auth limited.
+    expect(memory.rows.get(`mfa_code.client_failures|${hex(clientSubject(CLIENT))}`)).toMatchObject(
+      { hits: 8 },
+    );
+    // Wrong codes still count as before: the 5th locks the account.
+    for (let i = 0; i < 5; i += 1) await withCodeAttemptLimit(limiter(), USER, wrongCode, isWrong);
+    expect((await limiter().check(USER)).allowed).toBe(false);
+  });
+
+  it('the reset page’s code has its own account budget (integration review M1): wrong codes after the password never block the owner’s reset', async () => {
+    const { limiter, events } = setup();
+    const session = () => limiter(CLIENT, 'session');
+    const reset = () => limiter(CLIENT, 'reset');
+    // Someone who knows the password uses the session's code budget up (sign-in or step-up codes).
+    for (let i = 0; i < 5; i += 1) await withCodeAttemptLimit(session(), USER, wrongCode, isWrong);
+    expect((await session().check(USER)).allowed).toBe(false);
+    // The owner's reset page still checks the code (and the right one goes through).
+    const verify = vi.fn(() => Promise.resolve(ok('aal2')));
+    expect(await withCodeAttemptLimit(reset(), USER, verify, isWrong)).toEqual(ok('aal2'));
+    expect(verify).toHaveBeenCalledTimes(1);
+    // …which also ends the run of the session's codes: whoever typed it holds the mailbox and the app.
+    expect((await session().check(USER)).allowed).toBe(true);
+
+    // The reset budget has its own limit (5 wrong codes per 15 minutes), and its own lockout event.
+    for (let i = 0; i < 5; i += 1) await withCodeAttemptLimit(reset(), USER, wrongCode, isWrong);
+    const limited = vi.fn(() => Promise.resolve(ok('never')));
+    const answer = await withCodeAttemptLimit(reset(), USER, limited, isWrong, {
+      limited: (seconds) => appError('VALIDATION_FAILED', { params: { seconds } }),
+    });
+    expect(answer).toEqual(err(appError('VALIDATION_FAILED', { params: { seconds: 900 } })));
+    expect(limited).not.toHaveBeenCalled();
+    expect(events.filter((e) => e.event === 'auth.lockout').map((e) => e.limit)).toEqual([
+      'mfa_code.account_failures',
+      'mfa_code.reset_failures',
+    ]);
+    // Wrong codes on the reset page do not count against the session's budget either.
+    expect((await session().check(USER)).allowed).toBe(true);
+  });
+
+  it('the wrong code that pauses code checks e-mails the owner — once per pause, never from the reset page (integration review M1)', async () => {
+    const { limiter, lockMails } = setup();
+    for (let i = 0; i < 4; i += 1) await withCodeAttemptLimit(limiter(), USER, wrongCode, isWrong);
+    expect(lockMails).toEqual([]);
+    // The 5th wrong code pauses code checks: one request, with the pause's minutes.
+    await withCodeAttemptLimit(limiter(), USER, wrongCode, isWrong);
+    expect(lockMails).toEqual([{ userId: USER, minutes: 15 }]);
+    // Further tries while paused are refused before Auth and request nothing more.
+    for (let i = 0; i < 3; i += 1) {
+      const r = await withCodeAttemptLimit(limiter(OTHER_CLIENT), USER, wrongCode, isWrong);
+      expect(!r.ok && r.error.code).toBe('RATE_LIMITED');
+    }
+    expect(lockMails).toHaveLength(1);
+    // Wrong codes on the reset page (the mailbox's owner) never send it.
+    const other = '22222222-2222-4222-8222-222222222222';
+    for (let i = 0; i < 6; i += 1) {
+      await withCodeAttemptLimit(limiter(CLIENT, 'reset'), other, wrongCode, isWrong);
+    }
+    expect(lockMails).toHaveLength(1);
+  });
+
+  it('a lock e-mail that cannot be requested is logged, never thrown (the wrong code still counts)', async () => {
+    const { limiter, events, failMails } = setup();
+    failMails();
+    for (let i = 0; i < 5; i += 1) {
+      const r = await withCodeAttemptLimit(limiter(), USER, wrongCode, isWrong);
+      expect(!r.ok && r.error.code).toBe('VALIDATION_FAILED');
+    }
+    expect(events.find((e) => e.reason === 'lock_mail_not_requested')).toEqual({
+      event: 'auth.limiter.unavailable',
+      action: 'platform.auth.mfa_verify',
+      reason: 'lock_mail_not_requested',
+      errorName: 'Error',
+    });
+    expect(JSON.stringify(events)).not.toContain('someone@example.test');
     expect((await limiter().check(USER)).allowed).toBe(false);
   });
 

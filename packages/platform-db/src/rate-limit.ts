@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { runWithClaims } from './claims-tx';
+import { type ClaimsTx, runWithClaims } from './claims-tx';
 import { type AppDatabase, getDatabase } from './client';
 
 /**
@@ -149,6 +149,12 @@ export interface RateLimitStore {
   ): Promise<DeviceTrust & { readonly revoked: number }>;
   /** After a password change on My profile: forgets every trusted browser of the account but `device`. */
   forgetOtherDevices(account: Uint8Array, device: Uint8Array | null): Promise<number>;
+  /**
+   * «تذكّر هذا المتصفح» ticked at sign-in for an account with an authenticator app (integration review
+   * T-M2-11 L4): the tick waits `minutes` (1–60) for the sign-in code of the Auth session `session` (the
+   * SHA-256 subject of its verified session id). Trusts nothing: `trustDeviceAfterCode` does, after the code.
+   */
+  rememberAfterCode(session: Uint8Array, minutes: number): Promise<void>;
 }
 
 /** Same rules as the database (private.rate_limit_check_call): checked before any round trip. */
@@ -352,6 +358,16 @@ export function createRateLimitStore(getDb: () => AppDatabase): RateLimitStore {
         },
       );
     },
+    async rememberAfterCode(session, minutes) {
+      const key = checkSubject(session);
+      if (!Number.isInteger(minutes) || minutes < 1 || minutes > 60) {
+        throw new Error('rate limit: the tick waits 1–60 minutes for the code');
+      }
+      await run(
+        sql`select private.rate_limit_remember_after_code(${key}::bytea, ${minutes}::integer)`,
+        () => undefined,
+      );
+    },
     forgetOtherDevices(account, device) {
       const accountKey = checkSubject(account);
       const deviceKey = device === null ? null : checkSubject(device);
@@ -371,3 +387,28 @@ export function createRateLimitStore(getDb: () => AppDatabase): RateLimitStore {
 
 /** The limiter of this app instance (app_server pool). */
 export const rateLimitStore: RateLimitStore = createRateLimitStore(() => getDatabase('app_server'));
+
+/**
+ * After a session's sign-in code passed (integration review T-M2-11 L4), in a transaction with THAT
+ * session's verified claims (withUserTx — its own, never nested in another): when the session ticked
+ * «تذكّر هذا المتصفح» at sign-in (`rememberAfterCode`), the browser is trusted for the account for
+ * `trustDays` — the presented token (`device`, the subject of its cookie's token) when the server knows it,
+ * else `freshDevice` — and the tick is used up. The database decides: only a session it sees at AAL2
+ * through a confirmed app with a fresh code (T-M2-10). Null: nothing was trusted.
+ */
+export async function trustDeviceAfterCode(
+  tx: ClaimsTx,
+  device: Uint8Array | null,
+  freshDevice: Uint8Array,
+  trustDays: number,
+): Promise<DeviceTrust | null> {
+  const deviceKey = device === null ? null : checkSubject(device);
+  const fresh = checkSubject(freshDevice);
+  checkTrustDays(trustDays);
+  const rows = await tx.execute<DeviceTrustRow>(
+    sql`select trusted_until, device
+        from private.rate_limit_trust_after_code(${deviceKey}::bytea, ${fresh}::bytea, ${trustDays}::integer)`,
+  );
+  const row = rows[0];
+  return row ? deviceTrustOf(row) : null;
+}

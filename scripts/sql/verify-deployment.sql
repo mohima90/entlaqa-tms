@@ -294,8 +294,8 @@ begin
       ('private.session_access(uuid, uuid, uuid, boolean, boolean)', 'tenant_guard', array['tenant_guard'], true),
       ('private.session_access_state()',            'tenant_guard', array['tenant_guard', 'authenticated'], true),
       -- membership_guard: T-M2-09's authenticator-code rule uses them (20261012120000).
-      ('private.request_aal2()',                    'tenant_guard', array['tenant_guard', 'authenticated', 'membership_guard'], true),
-      ('private.request_code_fresh()',              'tenant_guard', array['tenant_guard', 'authenticated', 'membership_guard'], true),
+      ('private.request_aal2()',                    'tenant_guard', array['tenant_guard', 'authenticated', 'membership_guard', 'rate_limit_guard'], true),
+      ('private.request_code_fresh()',              'tenant_guard', array['tenant_guard', 'authenticated', 'membership_guard', 'rate_limit_guard'], true),
       ('private.request_session_facts()',           'tenant_guard', array['tenant_guard', 'authenticated'], true),
       ('private.dismiss_mfa_prompt()',              'tenant_guard', array['tenant_guard', 'authenticated'], true),
       ('private.tenant_member_mfa(uuid)',           'tenant_guard', array['tenant_guard', 'authenticated'], true),
@@ -337,6 +337,8 @@ begin
       -- the Organization Admin's unlock only (its owner rate_limit_guard).
       ('private.request_account_locked_mail(text, integer)', 'account_mail_guard', array['account_mail_guard', 'authenticated'], true),
       ('private.request_sign_in_unlocked_mail(uuid)', 'account_mail_guard', array['account_mail_guard', 'rate_limit_guard'], true),
+      -- The "wrong codes after your password" notice (T-M2-11 integration review M1): the web app.
+      ('private.request_mfa_code_locked_mail(uuid, integer)', 'account_mail_guard', array['account_mail_guard', 'authenticated'], true),
       -- Shared rate limiter and sign-in protection (ADR 0011 §4, T-M2-11): the web app counts, clears and
       -- checks sign-ins (app_server, checked inside); the Organization Admin functions also check the
       -- claims; the helpers and the key rotation are the owner's own.
@@ -351,6 +353,9 @@ begin
       ('private.rate_limit_sign_in_not_checked(bytea, bytea, boolean)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
       ('private.rate_limit_sign_in_reset(bytea, bytea, bytea, integer)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
       ('private.rate_limit_forget_other_devices(bytea, bytea)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
+      -- «تذكّر هذا المتصفح» after the sign-in code (integration review L4).
+      ('private.rate_limit_remember_after_code(bytea, integer)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
+      ('private.rate_limit_trust_after_code(bytea, bytea, integer)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
       ('private.member_sign_in_lock(uuid, integer)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
       ('private.unlock_member_sign_in(uuid, integer)', 'rate_limit_guard', array['rate_limit_guard', 'authenticated'], true),
       ('private.rotate_rate_limit_keys()', 'rate_limit_guard', array['rate_limit_guard'], true),
@@ -367,6 +372,7 @@ begin
       ('private.rate_limit_choose_device(bytea)', 'rate_limit_guard', array['rate_limit_guard'], false),
       ('private.rate_limit_trust_device(bytea, bytea, integer)', 'rate_limit_guard', array['rate_limit_guard'], false),
       ('private.rate_limit_member_account(uuid)', 'rate_limit_guard', array['rate_limit_guard'], false),
+      ('private.rate_limit_session_subject(uuid)', 'rate_limit_guard', array['rate_limit_guard'], false),
       -- Files (T-M2-18, ADR 0006). Storage's user claims: the storage.objects policies (authenticated) and
       -- file_guard's checks. The file functions are called as authenticated by the web app, Storage's
       -- policies and the worker; each checks the login role and the claims itself. Three helpers run
@@ -450,13 +456,14 @@ begin
         'private.purge_unconfirmed_mfa_apps(integer)', 'private.reset_member_mfa(uuid)',
         'private.reset_account_mfa(uuid,text)',
         'private.request_account_locked_mail(text,integer)',
-        'private.request_sign_in_unlocked_mail(uuid)',
+        'private.request_sign_in_unlocked_mail(uuid)', 'private.request_mfa_code_locked_mail(uuid,integer)',
         'private.rate_limit_hit(text,bytea,integer,integer)', 'private.rate_limit_clear(text,bytea)',
         'private.rate_limit_give_back(text,bytea)', 'private.sign_in_account_in_tenant(text,uuid)',
         'private.rate_limit_sign_in_check(bytea,bytea,bytea,integer,integer,integer,integer,integer,integer,integer,integer)',
         'private.rate_limit_sign_in_succeeded(bytea,bytea,bytea,bytea,boolean,boolean,integer)',
         'private.rate_limit_sign_in_not_checked(bytea,bytea,boolean)',
         'private.rate_limit_sign_in_reset(bytea,bytea,bytea,integer)', 'private.rate_limit_forget_other_devices(bytea,bytea)',
+        'private.rate_limit_remember_after_code(bytea,integer)', 'private.rate_limit_trust_after_code(bytea,bytea,integer)',
         'private.member_sign_in_lock(uuid,integer)', 'private.unlock_member_sign_in(uuid,integer)',
         'private.rotate_rate_limit_keys()',
         -- Files (T-M2-18)

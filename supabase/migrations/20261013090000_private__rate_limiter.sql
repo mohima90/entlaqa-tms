@@ -55,6 +55,11 @@
 --                                attacker keeps the account locked) — and every other browser is forgotten.
 --   rate_limit_forget_other_devices  after a My profile password change: every trusted browser of the
 --                                account but the current one is forgotten.
+--   rate_limit_remember_after_code / rate_limit_trust_after_code  «تذكّر هذا المتصفح» ticked for an account
+--                                with an authenticator app (integration review L4): the tick waits for
+--                                that Auth session's sign-in code (bucket sign_in.remember_after_code);
+--                                only then — at AAL2 through a confirmed app with a fresh code, with the
+--                                session's claims — is the browser trusted.
 --   member_sign_in_lock          Organization Admin (own organization's ACTIVE members only): whether a
 --                                member's account is locked. Unlocking: 20261013090100.
 --   sign_in_account_in_tenant    whether a typed address is an active member of the host's organization
@@ -241,6 +246,9 @@ grant execute on function private.request_user_id() to rate_limit_guard;
 grant execute on function private.current_tenant_id() to rate_limit_guard;
 grant execute on function private.actor_role_codes(uuid, uuid) to rate_limit_guard;
 grant execute on function private.has_active_membership(uuid, uuid) to rate_limit_guard;
+-- The trust after a sign-in code (integration review L4) asks T-M2-10's own AAL2 and fresh-code checks.
+grant execute on function private.request_aal2() to rate_limit_guard;
+grant execute on function private.request_code_fresh() to rate_limit_guard;
 
 -- ---------------------------------------------------------------------------------------------------
 -- Helpers (owner rate_limit_guard, SECURITY INVOKER: called by its definer functions only)
@@ -863,6 +871,111 @@ comment on function private.rate_limit_forget_other_devices(bytea, bytea) is
   'SECURITY-RELEVANT (T-M2-11, security review L2). After a My profile password change: forgets every browser the account trusted except the current one. app_server only.';
 
 -- ---------------------------------------------------------------------------------------------------
+-- «تذكّر هذا المتصفح» for an account with an authenticator app (integration review T-M2-11 L4): the
+-- browser is trusted only once the session's sign-in CODE passed — never after the password alone, and
+-- never on a flag the browser sends back. The tick waits server-side, bound to the Auth session.
+-- ---------------------------------------------------------------------------------------------------
+
+-- The subject of an Auth session (the session id of a verified token), exactly as the web app derives it
+-- (auth-limits.ts sessionSubject): SHA-256 under the domain prefix of the lower-case id.
+create or replace function private.rate_limit_session_subject(p_session uuid)
+returns bytea
+language sql immutable
+set search_path = ''
+as $$
+  select pg_catalog.sha256(pg_catalog.convert_to(
+           'jadarat.rate-limit.v1' || pg_catalog.chr(10) || 'session' || pg_catalog.chr(10)
+           || pg_catalog.lower(p_session::text), 'UTF8'))
+$$;
+
+-- The password was right and «تذكّر هذا المتصفح» was ticked, for an account with an authenticator app: the
+-- tick is kept for THIS Auth session (p_session: the subject of the session id of the token Auth just
+-- issued, verified by the web app) for p_minutes (bucket sign_in.remember_after_code). Nothing is trusted
+-- here: rate_limit_trust_after_code does it once that session's code passed.
+create or replace function private.rate_limit_remember_after_code(p_session bytea, p_minutes integer)
+returns void
+language plpgsql volatile security definer
+set search_path = ''
+as $$
+begin
+  perform private.rate_limit_check_call('sign_in.remember_after_code', p_session);
+  if p_minutes is null or p_minutes not between 1 and 60 then
+    raise exception 'the tick waits 1–60 minutes for the code' using errcode = 'invalid_parameter_value';
+  end if;
+  insert into private.rate_limit_counters as c (bucket, key_hash, hits, reset_at)
+  values ('sign_in.remember_after_code', private.rate_limit_key(p_session), 1,
+          pg_catalog.now() + pg_catalog.make_interval(mins => p_minutes))
+  on conflict (bucket, key_hash) do update set hits = 1, reset_at = excluded.reset_at;
+  perform private.rate_limit_purge();
+end
+$$;
+
+comment on function private.rate_limit_remember_after_code(bytea, integer) is
+  'SECURITY-RELEVANT (T-M2-11, integration review L4). Keeps a ticked «Remember this browser» of an account with an authenticator app for one Auth session, until its sign-in code passes (rate_limit_trust_after_code). Trusts nothing. app_server only.';
+
+-- After a session's sign-in code passed (the web app, with that session's verified claims): when the
+-- session carries the tick (unexpired), the browser is trusted for the account — the presented token when
+-- the server knows it, else the web app's fresh one — for p_trust_days, and the tick is used up. Only for a
+-- session the database itself sees at AAL2 through a CONFIRMED app with a recent code (T-M2-10:
+-- private.request_aal2() — the token, Auth's own session level and a confirmed app — and
+-- private.request_code_fresh()). Returns the trusted token ('presented' / 'fresh') and until when its
+-- cookie must live; no row when nothing was trusted.
+create or replace function private.rate_limit_trust_after_code(p_device bytea, p_fresh_device bytea, p_trust_days integer)
+returns table (trusted_until timestamptz, device text)
+language plpgsql volatile security definer
+set search_path = ''
+as $$
+declare
+  v_claims jsonb := private.request_claims();
+  v_user uuid;
+  v_session uuid;
+  v_email text;
+  v_account_key bytea;
+  v_choice text;
+  v_until timestamptz;
+begin
+  if session_user <> 'app_server' or coalesce(v_claims ->> 'role', '') <> 'authenticated' then
+    raise exception 'reserved to signed-in users of the web app' using errcode = 'insufficient_privilege';
+  end if;
+  if p_device is not null then
+    perform private.rate_limit_check_call('sign_in.device_failures', p_device);
+  end if;
+  perform private.rate_limit_check_call('sign_in.device_failures', p_fresh_device);
+  if p_trust_days is null or p_trust_days not between 1 and 400 then
+    raise exception 'a browser is trusted for 1–400 days' using errcode = 'invalid_parameter_value';
+  end if;
+  v_user := private.request_user_id();
+  v_session := private.try_uuid(v_claims ->> 'session_id');
+  if v_user is null or v_session is null or not private.request_aal2() or not private.request_code_fresh() then
+    return;
+  end if;
+  select e.email into v_email from private.auth_user_email e where e.id = v_user;
+  if v_email is null then
+    return;
+  end if;
+  v_account_key := private.rate_limit_key(private.rate_limit_account_subject(v_email));
+  -- The account's advisory lock first, then the counter, then its trusted browsers (the limiter's order).
+  perform private.rate_limit_lock_account_devices(v_account_key);
+  delete from private.rate_limit_counters c
+  where c.bucket = 'sign_in.remember_after_code'
+    and c.key_hash = private.rate_limit_key(private.rate_limit_session_subject(v_session))
+    and c.reset_at > pg_catalog.now();
+  if not found then
+    return;
+  end if;
+  v_choice := private.rate_limit_choose_device(p_device);
+  v_until := private.rate_limit_trust_device(
+    v_account_key, private.rate_limit_key(case when v_choice = 'presented' then p_device else p_fresh_device end),
+    p_trust_days);
+  perform private.rate_limit_purge();
+  return query select v_until, v_choice;
+end
+$$;
+
+comment on function private.rate_limit_trust_after_code(bytea, bytea, integer) is
+  'SECURITY-RELEVANT (T-M2-11, integration review L4). After a session''s sign-in code: trusts the browser for the account only when that session ticked «Remember this browser» and the database sees it at AAL2 with a confirmed app and a fresh code. app_server with the user''s claims only.';
+
+-- ---------------------------------------------------------------------------------------------------
 -- Organization Admin (owner rate_limit_guard, SECURITY DEFINER, app_server with the admin's claims)
 -- ---------------------------------------------------------------------------------------------------
 
@@ -955,6 +1068,9 @@ alter function private.rate_limit_sign_in_succeeded(bytea, bytea, bytea, bytea, 
 alter function private.rate_limit_sign_in_not_checked(bytea, bytea, boolean) owner to rate_limit_guard;
 alter function private.rate_limit_sign_in_reset(bytea, bytea, bytea, integer) owner to rate_limit_guard;
 alter function private.rate_limit_forget_other_devices(bytea, bytea) owner to rate_limit_guard;
+alter function private.rate_limit_session_subject(uuid) owner to rate_limit_guard;
+alter function private.rate_limit_remember_after_code(bytea, integer) owner to rate_limit_guard;
+alter function private.rate_limit_trust_after_code(bytea, bytea, integer) owner to rate_limit_guard;
 alter function private.member_sign_in_lock(uuid, integer) owner to rate_limit_guard;
 alter function private.rotate_rate_limit_keys() owner to rate_limit_guard;
 revoke create on schema private from rate_limit_guard;
@@ -980,6 +1096,9 @@ revoke all on function private.rate_limit_sign_in_succeeded(bytea, bytea, bytea,
 revoke all on function private.rate_limit_sign_in_not_checked(bytea, bytea, boolean) from public;
 revoke all on function private.rate_limit_sign_in_reset(bytea, bytea, bytea, integer) from public;
 revoke all on function private.rate_limit_forget_other_devices(bytea, bytea) from public;
+revoke all on function private.rate_limit_session_subject(uuid) from public;
+revoke all on function private.rate_limit_remember_after_code(bytea, integer) from public;
+revoke all on function private.rate_limit_trust_after_code(bytea, bytea, integer) from public;
 revoke all on function private.member_sign_in_lock(uuid, integer) from public;
 revoke all on function private.rotate_rate_limit_keys() from public;
 -- Called inside the web app's `set local role authenticated` transactions; each function checks the LOGIN
@@ -993,4 +1112,6 @@ grant execute on function private.rate_limit_sign_in_succeeded(bytea, bytea, byt
 grant execute on function private.rate_limit_sign_in_not_checked(bytea, bytea, boolean) to authenticated;
 grant execute on function private.rate_limit_sign_in_reset(bytea, bytea, bytea, integer) to authenticated;
 grant execute on function private.rate_limit_forget_other_devices(bytea, bytea) to authenticated;
+grant execute on function private.rate_limit_remember_after_code(bytea, integer) to authenticated;
+grant execute on function private.rate_limit_trust_after_code(bytea, bytea, integer) to authenticated;
 grant execute on function private.member_sign_in_lock(uuid, integer) to authenticated;

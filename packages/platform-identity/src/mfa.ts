@@ -169,6 +169,13 @@ export interface MfaDeps {
    * request's client; NO_CODE_CHECKS for flows that check no code — any use fails closed).
    */
   readonly limitCodeCheck: CodeCheckLimit;
+  /**
+   * After a code from the account's confirmed app passed (sign-in or a sensitive action; not a set-up's
+   * first code), with the upgraded session's claims: trusts this browser when the session ticked
+   * «تذكّر هذا المتصفح» at sign-in (integration review L4; auth-limits.ts rememberBrowserAfterCode — the
+   * database decides). Never throws. Absent: nothing to remember.
+   */
+  readonly rememberBrowser?: ((session: VerifiedClaims) => Promise<void>) | undefined;
 }
 
 /** The authenticator-app label (issuer) shown in the app next to the account's e-mail. */
@@ -395,6 +402,8 @@ export async function verifyTotpCode(
     });
     return ok({ enrolled });
   }
+  // The sign-in code passed: a browser the session asked to remember is trusted only now (L4).
+  if (deps.rememberBrowser) await deps.rememberBrowser(session);
   await completeSignIn(deps, session, wasRefused, { auditCode: true });
   return ok({ enrolled });
 }

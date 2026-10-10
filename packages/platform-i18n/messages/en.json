@@ -231,7 +231,8 @@
       "passwordRejected": "The new password wasn't accepted, so nothing changed. Links work only once: request a new link.",
       "tooShort": "Your account needs a password of at least {min} characters, so nothing changed. Links work only once: request a new link and choose a longer password.",
       "codeRequired": "Your account uses an authenticator app, so its code is needed to set a new password. Nothing changed. Links work only once: request a new link and enter the code with the new password.",
-      "codeInvalid": "The verification code is incorrect or has expired, so nothing changed. Links work only once: request a new link and enter the code your app shows at that time."
+      "codeInvalid": "The verification code is incorrect or has expired, so nothing changed. Links work only once: request a new link and enter the code your app shows at that time.",
+      "codeLimited": "Too many attempts with the authenticator code in a short time, so nothing changed and this link can no longer be used. Request a new link in {minutes}, then enter the code your app shows at that time."
     }
   },
   "users": {

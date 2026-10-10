@@ -6,7 +6,12 @@ import {
   memberSignInLock,
   unlockMemberSignIn,
 } from '@jadarat/platform-db';
-import { type LockoutPolicy, accountLockoutBudget, limitsFor } from '@jadarat/platform-identity';
+import {
+  type LockoutPolicy,
+  accountLockoutBudget,
+  limitsFor,
+  lockoutHostTenant,
+} from '@jadarat/platform-identity';
 import { z } from 'zod';
 import type { ActionDefinition } from '../define-action';
 import { platformPermissions } from '../platform-permissions';
@@ -25,24 +30,29 @@ const p = platformPermissions;
 /**
  * The account budget a member's lock is measured against (failures), in the Organization Admin's own
  * transaction (`tx`) for their organization (`tenantId`) — the same budget sign-in applies to that member
- * on the organization's host (security re-review N7). Build it with `memberLockBudget`.
+ * (security re-review N7). Build it with `memberLockBudget`.
  */
 export type AccountLockBudget = (tx: UserTx, tenantId: string) => Promise<number>;
 
 /**
  * The budget of a member of the admin's organization, from platform-identity `accountLockoutBudget` — THE
- * one function sign-in uses too (clamped to the platform default or stricter). The member is an active
- * member there (the database checks it), so the organization's policy applies. `lockoutPolicyIn` reads that
- * policy IN the admin's transaction — never in another transaction of the pool (security review T-M2-11
- * MEDIUM 2). Without a policy, the platform's 5.
+ * one function sign-in uses too (clamped to the platform default or stricter) — on the host THE host rule
+ * gives (`lockoutHostTenant`, integration review T-M2-11 L1): the organization's own sign-in host once
+ * organizations have one (the member is an active member there — the database checks it — so the
+ * organization's policy applies); until then the platform's shared host, where sign-in applies the
+ * platform default to everyone, so the profile and the unlock do too (the policy is not read). `hostOf`:
+ * that rule (a test may pass another). `lockoutPolicyIn` reads the policy IN the admin's transaction —
+ * never in another transaction of the pool (security review T-M2-11 MEDIUM 2). Without a policy, the
+ * platform's 5.
  */
 export function memberLockBudget(
   lockoutPolicyIn: (tx: UserTx, tenantId: string) => Promise<LockoutPolicy | null>,
+  hostOf: (tenantId: string) => string | null = lockoutHostTenant,
 ): AccountLockBudget {
   return async (tx, tenantId) =>
     (
       await accountLockoutBudget(
-        { hostTenantId: tenantId, memberOfHost: () => Promise.resolve(true) },
+        { hostTenantId: hostOf(tenantId), memberOfHost: () => Promise.resolve(true) },
         (t) => lockoutPolicyIn(tx, t),
         limitsFor({}).signIn.accountFailures,
       )
@@ -59,9 +69,11 @@ async function lockoutPolicyInTransaction(tx: UserTx): Promise<LockoutPolicy | n
 }
 
 /**
- * THE budget of the profile's lock state and of the unlock (T-M2-10 × T-M2-11): the organization's own
- * lockout policy, as sign-in applies it to the organization's members on its host (TM-0003 D-IAM-04).
- * Both `userProfileQueryDefinition` and `unlockSignInActionDefinition` use it unless a test passes another.
+ * THE budget of the profile's lock state and of the unlock (T-M2-10 × T-M2-11): the budget sign-in
+ * applies to the organization's members (TM-0003 D-IAM-04) — today, without organization hosts, the
+ * platform default (integration review L1); the organization's own lockout policy once its members sign
+ * in on its own host. Both `userProfileQueryDefinition` and `unlockSignInActionDefinition` use it unless
+ * a test passes another.
  */
 export const organizationMemberLockBudget: AccountLockBudget = memberLockBudget(
   lockoutPolicyInTransaction,

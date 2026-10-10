@@ -4,6 +4,9 @@
 -- a generic error; docs/engineering/sign-in-protection.md). Roll back 20261013090100 before this one.
 drop function private.rotate_rate_limit_keys();
 drop function private.member_sign_in_lock(uuid, integer);
+drop function private.rate_limit_trust_after_code(bytea, bytea, integer);
+drop function private.rate_limit_remember_after_code(bytea, integer);
+drop function private.rate_limit_session_subject(uuid);
 drop function private.rate_limit_forget_other_devices(bytea, bytea);
 drop function private.rate_limit_sign_in_reset(bytea, bytea, bytea, integer);
 drop function private.rate_limit_sign_in_not_checked(bytea, bytea, boolean);
@@ -39,6 +42,8 @@ revoke execute on function private.request_user_id() from rate_limit_guard;
 revoke execute on function private.current_tenant_id() from rate_limit_guard;
 revoke execute on function private.actor_role_codes(uuid, uuid) from rate_limit_guard;
 revoke execute on function private.has_active_membership(uuid, uuid) from rate_limit_guard;
+revoke execute on function private.request_aal2() from rate_limit_guard;
+revoke execute on function private.request_code_fresh() from rate_limit_guard;
 
 drop table private.sign_in_trusted_devices;
 drop table private.rate_limit_counters;

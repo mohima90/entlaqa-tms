@@ -15,6 +15,7 @@ export const DIGEST_KINDS = [
   'mfa_factor_removed',
   'security_policy_changed',
   'password_changed',
+  'mfa_code_locked',
 ] as const;
 type DigestKind = (typeof DIGEST_KINDS)[number];
 
@@ -34,6 +35,7 @@ export const SecurityDigestVariables = z.strictObject({
       mfa_factor_removed: Count.optional(),
       security_policy_changed: Count.optional(),
       password_changed: Count.optional(),
+      mfa_code_locked: Count.optional(),
     })
     .refine((h) => Object.values(h).some((n) => n !== undefined), 'at least one kind'),
   since: z.iso.datetime({ offset: true }),
@@ -50,12 +52,14 @@ const LABELS: Readonly<Record<AppLocale, Readonly<Record<DigestKind, string>>>> 
     mfa_factor_removed: 'إزالة تطبيق مصادقة',
     security_policy_changed: 'تغيير إعدادات الأمان',
     password_changed: 'تغيير كلمة المرور',
+    mfa_code_locked: 'إيقاف التحقق من الرموز بعد رموز خاطئة',
   },
   en: {
     mfa_factor_added: 'Authenticator app added',
     mfa_factor_removed: 'Authenticator app removed',
     security_policy_changed: 'Security settings changed',
     password_changed: 'Password changed',
+    mfa_code_locked: 'Code checks paused after wrong codes',
   },
 };
 

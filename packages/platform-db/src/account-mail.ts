@@ -25,6 +25,13 @@ export interface AccountMailApi {
    * long the lock lasts (1–1440); anything else is dropped by the database.
    */
   requestAccountLockedMail(email: string, lockMinutes: number): Promise<void>;
+  /**
+   * Wrong codes after the password paused code checks for an account (integration review T-M2-11 M1;
+   * migration 20261013090100): queues the "wrong codes after your password" notice for the signed-in user
+   * whose code it was (`userId` from the session's verified token). `lockMinutes`: how long the pause
+   * lasts (1–1440). One request waits per account; the worker sends at most one per pause.
+   */
+  requestMfaCodeLockedMail(userId: string, lockMinutes: number): Promise<void>;
 }
 
 const UserId = z.uuid();
@@ -58,6 +65,18 @@ export function createAccountMailApi(getDb: () => AppDatabase): AccountMailApi {
         ),
       );
     },
+    async requestMfaCodeLockedMail(userId, lockMinutes) {
+      if (!UserId.safeParse(userId).success)
+        throw new Error('requestMfaCodeLockedMail: invalid user id');
+      if (!Number.isInteger(lockMinutes) || lockMinutes < 1 || lockMinutes > 1440) {
+        throw new Error('requestMfaCodeLockedMail: lock minutes must be 1–1440');
+      }
+      await withoutClaims((tx) =>
+        tx.execute(
+          sql`select private.request_mfa_code_locked_mail(${userId}::uuid, ${lockMinutes}::integer)`,
+        ),
+      );
+    },
   };
 }
 
@@ -73,6 +92,10 @@ export function requestPasswordChangedMail(userId: string): Promise<void> {
 
 export function requestAccountLockedMail(email: string, lockMinutes: number): Promise<void> {
   return defaultAccountMailApi.requestAccountLockedMail(email, lockMinutes);
+}
+
+export function requestMfaCodeLockedMail(userId: string, lockMinutes: number): Promise<void> {
+  return defaultAccountMailApi.requestMfaCodeLockedMail(userId, lockMinutes);
 }
 
 /**

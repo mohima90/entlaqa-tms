@@ -492,7 +492,7 @@ begin
   from pg_proc p where p.proowner = 'account_mail_guard'::regrole;
   perform tests.assert_eq(v_list,
     'private.claim_account_mail_request(), private.finish_account_mail_request(uuid), '
-    'private.request_account_locked_mail(text,integer), '
+    'private.request_account_locked_mail(text,integer), private.request_mfa_code_locked_mail(uuid,integer), '
     'private.request_password_changed_mail(uuid), private.request_password_reset_mail(text), '
     'private.request_sign_in_unlocked_mail(uuid), private.retry_account_mail_request(uuid)',
     'account_mail_guard owns the account e-mail functions only, all SECURITY DEFINER');

@@ -18,6 +18,7 @@ export {
   createAccountMailApi,
   queueOwnPasswordChangedMail,
   requestAccountLockedMail,
+  requestMfaCodeLockedMail,
   requestPasswordChangedMail,
   requestPasswordResetMail,
 } from './account-mail';
@@ -55,6 +56,7 @@ export {
   type TrustedDeviceChoice,
   createRateLimitStore,
   rateLimitStore,
+  trustDeviceAfterCode,
 } from './rate-limit';
 export {
   type MemberSignInLock,

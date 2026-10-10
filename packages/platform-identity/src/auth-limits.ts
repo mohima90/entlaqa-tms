@@ -2,6 +2,7 @@ import 'server-only';
 import { createHash, randomBytes } from 'node:crypto';
 import { type AppError, type Result, appError, err } from '@jadarat/platform-core';
 import type {
+  DeviceTrust,
   RateLimit,
   RateLimitCounter,
   RateLimitStore,
@@ -60,7 +61,10 @@ export interface RequestClient {
 
 const SUBJECT_DOMAIN = 'jadarat.rate-limit.v1';
 
-function subject(kind: 'account' | 'client' | 'user' | 'device', value: string): Buffer {
+function subject(
+  kind: 'account' | 'client' | 'user' | 'device' | 'session',
+  value: string,
+): Buffer {
   return createHash('sha256').update(`${SUBJECT_DOMAIN}\n${kind}\n${value}`).digest();
 }
 
@@ -111,6 +115,16 @@ export function userSubject(userId: string): Buffer {
   return subject('user', userId.trim().toLowerCase());
 }
 
+/**
+ * An Auth session's subject (the session id of a verified token): where a ticked «تذكّر هذا المتصفح» waits
+ * for that session's sign-in code (integration review L4). The database derives the same from the
+ * session's claims (private.rate_limit_session_subject; shared test vector in auth-limits.test.ts and
+ * supabase/tests/71).
+ */
+export function sessionSubject(sessionId: string): Buffer {
+  return subject('session', sessionId.trim().toLowerCase());
+}
+
 // ----- Trusted browsers (PO decision 9 Oct 2026; screen 6 «تذكّر الجهاز الموثوق»; TM-0003 IA-02) -----
 
 /** A browser's trusted-device token: 32 random bytes, base64url without padding (43 characters). */
@@ -150,6 +164,7 @@ export const LIMIT_BUCKETS = {
   invitationLookupClient: 'invitation.lookup_client',
   invitationSignUpClient: 'invitation.sign_up_client',
   mfaCodeAccount: 'mfa_code.account_failures',
+  mfaCodeReset: 'mfa_code.reset_failures',
   mfaCodeClient: 'mfa_code.client_failures',
 } as const;
 
@@ -243,6 +258,30 @@ export interface OrganizationLockoutDeps {
   readonly accountInTenant: (email: string, tenantId: string) => Promise<boolean>;
 }
 
+/**
+ * Organizations' own sign-in hosts (TM-0003 D-IAM-04; ADR 0002 §4, host → tenant resolution): NOT BUILT —
+ * every sign-in happens on the platform's shared host today (the proxy only classifies the Host header,
+ * apps/suite lib/host-tenant.ts). INTEGRATION POINT: true once the request's VERIFIED host organization
+ * is resolved (auth-next.ts `verifiedHostOrganization`).
+ */
+export const ORGANIZATION_SIGN_IN_HOSTS = false;
+
+/**
+ * THE host rule of the lockout (integration review T-M2-11 L1): the organization whose lockout policy
+ * applies on `organizationHost` — that organization's own sign-in host — or null: the platform default (5
+ * failures, 15 minutes). While organizations have no hosts of their own (`hosts` false), null for
+ * everyone. Sign-in (auth-next.ts: the request's host) and the Organization Admin's lock state and unlock
+ * (platform-rbac `memberLockBudget`: the admin's organization, the host its members would sign in on)
+ * both take the host from here, so the profile never shows a pause that sign-in does not apply — and an
+ * unlock never spends one of the 3 daily unlocks, nor e-mails the owner, for one.
+ */
+export function lockoutHostTenant(
+  organizationHost: string | null,
+  hosts: boolean = ORGANIZATION_SIGN_IN_HOSTS,
+): string | null {
+  return hosts ? organizationHost : null;
+}
+
 /** Which host an account is being judged on, and whether it is an active member of the host's organization. */
 export interface LockoutAccount {
   /** The organization of the host (a tenant host; for the Organization Admin, theirs); null: the platform host. */
@@ -254,7 +293,8 @@ export interface LockoutAccount {
 /**
  * THE account budget for an account on a host (INTEGRATION POINT with T-M2-10; security re-review N7):
  * sign-in (`organizationAccountLockout`), the profile's lock state and the Organization Admin's unlock
- * (platform-rbac `memberLockBudget`) all take it from here, so they agree on when an account is locked.
+ * (platform-rbac `memberLockBudget`) all take it from here — each with its host from `lockoutHostTenant`
+ * — so they agree on when an account is locked.
  *
  * The host organization's lockout policy applies when — and only when — the account is an active member
  * of that organization; the platform default (`fallback`: 5 failures, 15 minutes) for everyone else, so
@@ -512,6 +552,13 @@ export interface SignInAttempt extends LimitedAttempt {
    */
   succeeded(options?: SignInSuccessOptions): Promise<void>;
   /**
+   * «تذكّر هذا المتصفح» was ticked for an account with an authenticator app (integration review L4): the
+   * browser is NOT trusted now — the tick waits for the sign-in code of this Auth session (`sessionId`,
+   * from the verified token Auth just issued), server-side, `trustedDevice.codeWaitMinutes` at most;
+   * `rememberBrowserAfterCode` trusts it once the code passed. Never throws (logged).
+   */
+  rememberAfterCode(sessionId: string): Promise<void>;
+  /**
    * Auth answered before comparing the password (its own rate limit, HTTP 429 — security review T-M2-11
    * L6): the account's (or the trusted browser's) provisional failure is given back; the client's stays.
    */
@@ -648,6 +695,17 @@ export function createSignInGuard(deps: SignInGuardDeps): SignInGuard {
             unavailable('failure_not_given_back', error);
           }
         },
+        async rememberAfterCode(sessionId) {
+          try {
+            await store.rememberAfterCode(
+              sessionSubject(sessionId),
+              deps.limits.trustedDevice.codeWaitMinutes,
+            );
+          } catch (error) {
+            // The browser is simply not remembered: it only tightens the limits.
+            unavailable('remember_not_recorded', error);
+          }
+        },
       };
       return { allowed: true, attempt };
     },
@@ -703,6 +761,47 @@ export async function resetAccountSignIn(
 }
 
 /**
+ * After a session's sign-in code passed (integration review L4; mfa.ts verifyTotpCode): when that session
+ * ticked «تذكّر هذا المتصفح» at sign-in (`SignInAttempt.rememberAfterCode`), the browser becomes trusted
+ * for the account (30 days) and its cookie is set — the browser's own token when the server knows it,
+ * else a fresh one. `trustAfterCode` is platform-db `trustDeviceAfterCode` in a transaction with the
+ * session's verified claims: the database trusts only a session it sees at AAL2 through a confirmed app
+ * with a fresh code, and only once per tick. Never throws (logged).
+ */
+export async function rememberBrowserAfterCode(
+  deps: LimiterDeps,
+  action: string,
+  device: TrustedDeviceCookie,
+  trustAfterCode: (
+    device: Uint8Array | null,
+    freshDevice: Uint8Array,
+    trustDays: number,
+  ) => Promise<DeviceTrust | null>,
+): Promise<void> {
+  const token = device.read();
+  const fresh = newDeviceToken();
+  try {
+    const trust = await trustAfterCode(
+      token === null ? null : deviceSubject(token),
+      deviceSubject(fresh),
+      deps.limits.trustedDevice.days,
+    );
+    if (trust === null) return;
+    device.write(
+      trust.device === 'presented' && token !== null ? token : fresh,
+      cookieSeconds(trust.until),
+    );
+  } catch (error) {
+    deps.log({
+      event: 'auth.limiter.unavailable',
+      action,
+      reason: 'trust_not_recorded',
+      errorName: errorNameOf(error),
+    });
+  }
+}
+
+/**
  * After a password change on My profile (security review T-M2-11 L2): every browser the account trusted
  * is forgotten except this one (`deviceToken`: its cookie's token, null when it has none). Runs AFTER the
  * action's transaction (the limiter's own transaction must never wait for a pooled connection while the
@@ -731,6 +830,24 @@ export async function forgetOtherTrustedBrowsers(
 
 // ----- Authenticator-app codes (T-M2-10 security review; TM-0003 T-IAM-12) -----
 
+/**
+ * Which code check a limiter counts (integration review T-M2-11 M1): `session` — a signed-in session's
+ * code (at sign-in, before a sensitive action, the e-mailed set-up code), reached only with the password —
+ * or `reset`, the code on the password-reset page (reached only with the mailbox: every try spends an
+ * e-mailed link). Each has its own account budget, so wrong codes after the password never lock the owner
+ * out of resetting it.
+ */
+export type CodeCheckFlow = 'session' | 'reset';
+
+/** One code check that reached Auth (or the database). No method throws. */
+export interface CodeAttempt extends LimitedAttempt {
+  /**
+   * Auth answered before checking the code (its own rate limit, HTTP 429 — integration review T-M2-11
+   * L2, as for passwords): the account's provisional failure is given back; the client's stays.
+   */
+  notChecked(): Promise<void>;
+}
+
 /** Auth's per-IP limit sees only the app server: codes are limited here, per account and per client. */
 export interface CodeAttemptLimiter {
   /**
@@ -738,16 +855,31 @@ export interface CodeAttemptLimiter {
    * client; refused when either budget is used up. Throws RateLimiterUnavailableError when the limiter
    * cannot answer (fail closed). Report Auth's verdict to the returned attempt.
    */
-  check(userId: string): Promise<LimitGate<LimitedAttempt>>;
+  check(userId: string): Promise<LimitGate<CodeAttempt>>;
 }
 
-export function createCodeAttemptLimiter(
-  deps: LimiterDeps & { readonly client: RequestClient; readonly action: string },
-): CodeAttemptLimiter {
+export interface CodeAttemptLimiterDeps extends LimiterDeps {
+  readonly client: RequestClient;
+  readonly action: string;
+  /** Which account budget (default `session`: `mfaCode.accountFailures`; `reset`: `resetFailures`). */
+  readonly flow?: CodeCheckFlow | undefined;
+  /**
+   * `session` flow (integration review T-M2-11 M1): requests the "wrong codes after your password" e-mail
+   * for the account (platform-db requestMfaCodeLockedMail) when a wrong code pauses its code checks —
+   * reaching a code takes the password, so someone else may know it. `lockMinutes`: how long the pause
+   * lasts. Best effort (a failure is logged); the worker sends at most one per pause.
+   */
+  readonly requestLockedMail?: ((userId: string, lockMinutes: number) => Promise<void>) | undefined;
+}
+
+export function createCodeAttemptLimiter(deps: CodeAttemptLimiterDeps): CodeAttemptLimiter {
   const { store, client, action, log } = deps;
   const limits = deps.limits.mfaCode;
   const clientFailures = client.key === null ? limits.sharedClientFailures : limits.clientFailures;
   const B = LIMIT_BUCKETS;
+  const reset = deps.flow === 'reset';
+  const accountBucket = reset ? B.mfaCodeReset : B.mfaCodeAccount;
+  const accountFailures = reset ? limits.resetFailures : limits.accountFailures;
   const giveBack = async (bucket: string, subject: Uint8Array) => {
     try {
       await store.giveBack(bucket, subject);
@@ -766,7 +898,7 @@ export function createCodeAttemptLimiter(
       const clientKey = clientSubject(client);
       const [byAccount, byClient] = await failClosed(deps, action, () =>
         Promise.all([
-          store.hit(B.mfaCodeAccount, account, limits.accountFailures),
+          store.hit(accountBucket, account, accountFailures),
           store.hit(B.mfaCodeClient, clientKey, clientFailures),
         ]),
       );
@@ -778,9 +910,9 @@ export function createCodeAttemptLimiter(
       };
       if (!byAccount.allowed || !byClient.allowed) {
         // Refused before Auth: no wrong code — the other budget gets its provisional failure back.
-        if (byAccount.allowed) await giveBack(B.mfaCodeAccount, account);
+        if (byAccount.allowed) await giveBack(accountBucket, account);
         if (byClient.allowed) await giveBack(B.mfaCodeClient, clientKey);
-        const limit = byAccount.allowed ? B.mfaCodeClient : B.mfaCodeAccount;
+        const limit = byAccount.allowed ? B.mfaCodeClient : accountBucket;
         const retryAfterSeconds = Math.max(
           byAccount.allowed ? 0 : byAccount.retryAfterSeconds,
           byClient.allowed ? 0 : byClient.retryAfterSeconds,
@@ -795,11 +927,11 @@ export function createCodeAttemptLimiter(
         });
         return { allowed: false, retryAfterSeconds };
       }
-      const attempt: LimitedAttempt = {
-        failed() {
+      const attempt: CodeAttempt = {
+        async failed() {
           log({ event: 'auth.mfa_code.failed', action, reason: 'invalid_code', ...refs });
           for (const [bucket, counter] of [
-            [B.mfaCodeAccount, byAccount],
+            [accountBucket, byAccount],
             [B.mfaCodeClient, byClient],
           ] as const) {
             if (counter.remaining === 0) {
@@ -813,12 +945,30 @@ export function createCodeAttemptLimiter(
               });
             }
           }
-          return Promise.resolve();
+          // This wrong code paused the session's code checks for the account (once per pause: the hit that
+          // used the budget up): its owner is told someone who knows the password is trying codes.
+          if (reset || byAccount.remaining !== 0 || !deps.requestLockedMail) return;
+          try {
+            await deps.requestLockedMail(
+              userId,
+              Math.max(1, Math.ceil(accountFailures.windowSeconds / 60)),
+            );
+          } catch (error) {
+            log({
+              event: 'auth.limiter.unavailable',
+              action,
+              reason: 'lock_mail_not_requested',
+              errorName: errorNameOf(error),
+            });
+          }
         },
         async succeeded() {
           // The run of wrong codes ends for the account; the client's provisional failure is given back.
+          // A right code on the reset page also ends the run of the session's codes: whoever typed it holds
+          // the mailbox AND the app — the owner — who then signs in with the new password at once.
           try {
-            await store.clear(B.mfaCodeAccount, account);
+            await store.clear(accountBucket, account);
+            if (reset) await store.clear(B.mfaCodeAccount, account);
           } catch (error) {
             log({
               event: 'auth.limiter.unavailable',
@@ -829,29 +979,50 @@ export function createCodeAttemptLimiter(
           }
           await giveBack(B.mfaCodeClient, clientKey);
         },
+        async notChecked() {
+          // No code was compared: the account's provisional failure goes back (a flood elsewhere must not
+          // lock this account); the client's stays — it is the one Auth limited.
+          await giveBack(accountBucket, account);
+        },
       };
       return { allowed: true, attempt };
     },
   };
 }
 
+/** How a flow answers a limited code check (default RATE_LIMITED). */
+export interface CodeCheckOptions {
+  /**
+   * The answer when a budget is used up, from the seconds until it frees up — e.g. the reset page's plain
+   * "request a new link in N minutes" (integration review T-M2-11 M1).
+   */
+  readonly limited?: ((retryAfterSeconds: number) => AppError) | undefined;
+}
+
 /**
  * The hook for the code check (T-M2-10 `verifyTotpCode`): limits it per account and per client, counting
  * wrong codes only. `verify` asks Auth; `isWrongCode` tells a wrong or expired code from other refusals.
- * A limited check answers RATE_LIMITED without asking Auth; a wrong code stays counted; a right one gives
- * its provisional failure back; any other refusal, or an Auth outage (thrown), keeps it counted.
+ * A limited check answers RATE_LIMITED (or `options.limited`) without asking Auth; a wrong code stays
+ * counted; a right one gives
+ * its provisional failure back; Auth's own rate limit (`verify` answers RATE_LIMITED — Auth's 429, no code
+ * compared; integration review T-M2-11 L2) gives the account's back and keeps the client's; any other
+ * refusal, or an Auth outage (thrown), keeps both counted.
  */
 export async function withCodeAttemptLimit<T>(
   limiter: CodeAttemptLimiter,
   userId: string,
   verify: () => Promise<Result<T, AppError>>,
   isWrongCode: (error: AppError) => boolean,
+  options: CodeCheckOptions = {},
 ): Promise<Result<T, AppError>> {
   const gate = await limiter.check(userId);
-  if (!gate.allowed) return err(appError('RATE_LIMITED'));
+  if (!gate.allowed) {
+    return err(options.limited?.(gate.retryAfterSeconds) ?? appError('RATE_LIMITED'));
+  }
   const result = await verify();
   if (result.ok) await gate.attempt.succeeded();
   else if (isWrongCode(result.error)) await gate.attempt.failed();
+  else if (result.error.code === 'RATE_LIMITED') await gate.attempt.notChecked();
   return result;
 }
 
@@ -859,13 +1030,15 @@ export async function withCodeAttemptLimit<T>(
  * One code check of a flow, limited per account and per client: `withCodeAttemptLimit` bound to the
  * request's client by the Next.js adapter (auth-next.ts). Every flow that checks an authenticator code —
  * or the e-mailed set-up code — takes one (T-M2-10 × T-M2-11; TM-0003 T-IAM-12): the code at sign-in and
- * before a sensitive action, the first code of a set-up, the e-mailed set-up code and the code on the
- * password-reset page. `isWrongCode` tells a wrong code from other refusals (logged differently).
+ * before a sensitive action, the first code of a set-up, the e-mailed set-up code (one account budget:
+ * `session`) and the code on the password-reset page (its own: `reset`, integration review M1).
+ * `isWrongCode` tells a wrong code from other refusals (logged differently).
  */
 export type CodeCheckLimit = <T>(
   userId: string,
   verify: () => Promise<Result<T, AppError>>,
   isWrongCode: (error: AppError) => boolean,
+  options?: CodeCheckOptions,
 ) => Promise<Result<T, AppError>>;
 
 /**

@@ -246,7 +246,9 @@ export interface ChangeMyPasswordOptions {
  * `changePassword` is the identity flow bound to the request (platform-identity/auth); the per-user limit
  * on current-password checks runs BEFORE the action's transaction (`beforeTransaction`: the limiter's own
  * short transaction never runs while the action holds a pooled connection, and its count survives the
- * rollback of a refused change — security review T-M2-11); `afterChange` runs once it succeeded
+ * rollback of a refused change — security review T-M2-11), after defineAction checked the session in its
+ * own short transaction (a session the database no longer lets act spends no check — integration review
+ * T-M2-11 L3); `afterChange` runs once it succeeded
  * (platform-identity/auth `queueOwnPasswordChangedNoticeForRequest`). A wrong current password is audited
  * as `platform.auth.password_change_failed` (no password, the reason code only); the flow records
  * security events for both.

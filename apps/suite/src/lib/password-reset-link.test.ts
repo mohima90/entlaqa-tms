@@ -4,11 +4,13 @@ import {
   PASSWORD_RESET_NOTICE,
   formatCountdown,
   linkIsSpent,
+  minutesText,
   noticeFrom,
   pathAfterReset,
   resetFragment,
   resetLinkFromHash,
   resetTokenFromHash,
+  withMinutesInWords,
 } from './password-reset-link';
 
 vi.mock('server-only', () => ({}));
@@ -84,6 +86,7 @@ describe('after an answer of the reset action', () => {
       'PASSWORD_RESET_TOO_SHORT',
       'PASSWORD_RESET_CODE_REQUIRED',
       'PASSWORD_RESET_CODE_INVALID',
+      'PASSWORD_RESET_CODE_LIMITED',
     ]) {
       expect(linkIsSpent(code), code).toBe(true);
     }
@@ -91,6 +94,28 @@ describe('after an answer of the reset action', () => {
     for (const code of ['RATE_LIMITED', 'VALIDATION_FAILED', 'INTERNAL_ERROR', 'NOT_CONFIGURED']) {
       expect(linkIsSpent(code), code).toBe(false);
     }
+  });
+
+  it('says when to ask for a new link in words (integration review M1), with Arabic number agreement', () => {
+    expect(['ar', 'en'].map((l) => minutesText(l as 'ar' | 'en', 1))).toEqual([
+      'دقيقة واحدة',
+      '1 minute',
+    ]);
+    expect(minutesText('ar', 2)).toBe('دقيقتين');
+    expect(minutesText('ar', 10)).toBe('10 دقائق');
+    expect(minutesText('ar', 15)).toBe('15 دقيقة');
+    expect(minutesText('en', 15)).toBe('15 minutes');
+    expect(minutesText('en', 0.2)).toBe('1 minute');
+    const limited = {
+      code: 'PASSWORD_RESET_CODE_LIMITED',
+      messageKey: 'passwordReset.errors.codeLimited',
+      params: { minutes: 15 },
+    };
+    expect(withMinutesInWords(limited, 'ar').params).toEqual({ minutes: '15 دقيقة' });
+    expect(withMinutesInWords(limited, 'en').params).toEqual({ minutes: '15 minutes' });
+    // Any other answer is left as it is.
+    const other = { code: 'PASSWORD_RESET_TOO_SHORT', params: { min: 14 } };
+    expect(withMinutesInWords(other, 'ar')).toBe(other);
   });
 
   it('goes on to sign in, with the notice', () => {

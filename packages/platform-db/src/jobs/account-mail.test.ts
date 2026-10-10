@@ -81,6 +81,17 @@ describe('account e-mail queue, worker side (T-M2-17)', () => {
     ).rejects.toThrow('lock minutes');
   });
 
+  it('an mfa_code_locked lease carries the pause minutes (integration review M1); without them it is refused', async () => {
+    expect(
+      await claimAccountMailRequest(
+        fakeTx([row({ kind: 'mfa_code_locked', lock_minutes: 15 })]).tx,
+      ),
+    ).toMatchObject({ kind: 'mfa_code_locked', outcome: 'send', lockMinutes: 15 });
+    await expect(
+      claimAccountMailRequest(fakeTx([row({ kind: 'mfa_code_locked', lock_minutes: null })]).tx),
+    ).rejects.toThrow('lock minutes');
+  });
+
   it('a sign_in_unlocked lease is sent to the account, without lock minutes (T-M2-11)', async () => {
     expect(
       await claimAccountMailRequest(
@@ -142,7 +153,7 @@ describe('account e-mail queue, worker side (T-M2-17)', () => {
 
   it('a security digest carries the held notices by kind and since when (final re-review L1)', async () => {
     const detail = {
-      held: { mfa_factor_added: 3, mfa_factor_removed: 2 },
+      held: { mfa_factor_added: 3, mfa_factor_removed: 2, mfa_code_locked: 4 },
       since: '2026-10-10T08:00:00Z',
     };
     expect(
@@ -151,7 +162,8 @@ describe('account e-mail queue, worker side (T-M2-17)', () => {
       kind: 'security_digest',
       outcome: 'send',
       digest: {
-        held: { mfa_factor_added: 3, mfa_factor_removed: 2 },
+        // The "wrong codes" notices are held like T-M2-10's (integration review M1).
+        held: { mfa_factor_added: 3, mfa_factor_removed: 2, mfa_code_locked: 4 },
         since: new Date('2026-10-10T08:00:00Z'),
       },
     });

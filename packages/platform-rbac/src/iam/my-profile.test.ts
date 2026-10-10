@@ -223,10 +223,15 @@ describe('change my password', () => {
     await createDefineAction(rt)(
       changeMyPasswordActionDefinition(changePassword, { allowPasswordCheck }),
     )(input);
-    // The verified user's own id; the limiter ran before the action's transaction opened.
+    // The verified user's own id; the limiter ran after the session check's own transaction (integration
+    // review L3) and before the action's transaction opened.
     expect(order).toEqual(['limit 11111111-1111-4111-8111-111111111111', 'change']);
+    expect(tx).toHaveBeenCalledTimes(2);
+    expect(allowPasswordCheck.mock.invocationCallOrder[0]).toBeGreaterThan(
+      tx.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    );
     expect(allowPasswordCheck.mock.invocationCallOrder[0]).toBeLessThan(
-      tx.mock.invocationCallOrder[0] ?? 0,
+      tx.mock.invocationCallOrder[1] ?? 0,
     );
 
     changePassword.mockClear();
@@ -239,6 +244,22 @@ describe('change my password', () => {
     expect(!limited.ok && limited.error.code).toBe('RATE_LIMITED');
     expect(changePassword).not.toHaveBeenCalled();
     expect(writeAudit).not.toHaveBeenCalled();
+  });
+
+  it('a session the database no longer lets act spends no password check (integration review L3)', async () => {
+    const allowPasswordCheck = vi.fn(() => Promise.resolve(true));
+    const changePassword = vi.fn(() => Promise.resolve(ok({ userId: 'u1' })));
+    const { rt } = runtime();
+    const inactive = {
+      ...rt,
+      loadSessionFacts: () => Promise.resolve({ active: false, aal2: false }),
+    };
+    const r = await createDefineAction(inactive)(
+      changeMyPasswordActionDefinition(changePassword, { allowPasswordCheck }),
+    )(input);
+    expect(!r.ok && r.error.code).toBe('UNAUTHENTICATED');
+    expect(allowPasswordCheck).not.toHaveBeenCalled();
+    expect(changePassword).not.toHaveBeenCalled();
   });
 
   it('changes the password and audits without any password', async () => {

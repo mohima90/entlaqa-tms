@@ -118,6 +118,9 @@ begin
     'the Kelvin sign K is K (NFC), as Go lower-cases it');
   -- Guard: whatever is not printable ASCII after normalisation shares one subject (no account has such an
   -- address; the same vector in auth-limits.test.ts).
+  -- The session subject (integration review L4), as the web app derives it (auth-limits.test.ts).
+  perform tests.assert_eq(encode(private.rate_limit_session_subject('10000000-0000-4000-8000-000000000C91'), 'hex'),
+    '291dc6033ad349160f5b283a29178503019810558330ae234b920e2209aa8e6f', 'the session subject (same vector as the web app)');
   perform tests.assert_eq(encode(private.rate_limit_account_subject(U&'\0131@x.test'), 'hex'),
     '4644ee3cbaf840b60dad525e47034dcf9c671f09a383121efc87556f94acf4cc',
     'a non-ASCII address: the shared subject (same vector as the web app)');
@@ -145,6 +148,22 @@ begin
   perform tests.assert_check_constraint(
     $q$insert into private.account_mail_requests (kind, user_id) values ('sign_in_unlocked', '00000000-0000-4000-8000-0000000000ab')$q$,
     'account_mail_requests_shape_check', 'an unlock notice names the organization');
+  -- The "wrong codes" notices of 71 (integration review M1): one waiting request for uAB's account, with the
+  -- pause's minutes and no organization; none for an unknown account or a bad duration.
+  perform tests.assert_eq(
+    (select string_agg(concat_ws('|', kind, user_id::text, coalesce(tenant_id::text, '-'), lock_minutes::text), ', ')
+     from private.account_mail_requests where kind = 'mfa_code_locked'),
+    'mfa_code_locked|00000000-0000-4000-8000-0000000000ab|-|15',
+    '"wrong codes" notices: one waiting request per account');
+  perform tests.assert_check_constraint(
+    $q$insert into private.account_mail_requests (kind, user_id) values ('mfa_code_locked', '00000000-0000-4000-8000-0000000000a1')$q$,
+    'account_mail_requests_shape_check', 'a "wrong codes" notice states the pause''s minutes');
+  perform tests.assert_check_constraint(
+    $q$insert into private.account_mail_requests (kind, email, lock_minutes) values ('mfa_code_locked', 'x@a.test', 15)$q$,
+    'account_mail_requests_shape_check', 'a "wrong codes" notice names an account, never a typed address');
+  perform tests.assert(not private.account_mail_request_expired('mfa_code_locked', now() - interval '23 hours')
+                       and private.account_mail_request_expired('mfa_code_locked', now() - interval '25 hours'),
+    'a "wrong codes" notice request lives 24 hours, like the security notices');
   -- Built on T-M2-10's pipeline (20261012110000): its kinds keep their lifetimes and shapes; the lockout
   -- e-mail lives as long as a reset request, the unlock notice as long as a security notice.
   perform tests.assert(private.account_mail_request_expired('account_locked', now() - interval '61 minutes')
@@ -167,8 +186,8 @@ begin
 end $$;
 
 -- Requests other files left waiting (T-M2-10's authenticator and policy notices live 24 hours) would be
--- leased first: only this file's lockout and unlock requests stay in the queue.
-delete from private.account_mail_requests where kind not in ('account_locked', 'sign_in_unlocked');
+-- leased first: only this file's lockout, unlock and "wrong codes" requests stay in the queue.
+delete from private.account_mail_requests where kind not in ('account_locked', 'sign_in_unlocked', 'mfa_code_locked');
 
 -- The worker answers them: the known account is written in its organization's language with the lock's
 -- minutes; the unknown address gets nothing; the unlock notice goes to the account in the unlocking
@@ -182,16 +201,21 @@ declare
   r record;
   v_got text[] := '{}';
 begin
-  for i in 1..3 loop
+  for i in 1..4 loop
     select * into r from private.claim_account_mail_request();
+    -- The "wrong codes" notice goes to one of the account's organizations (the database's choice).
     v_got := v_got || concat_ws('|', r.kind, r.outcome, coalesce(r.email, ''), coalesce(r.locale, ''),
-                                coalesce(r.tenant_id::text, ''), coalesce(r.lock_minutes::text, ''));
+                                case when r.kind = 'mfa_code_locked' then (r.tenant_id is not null)::text
+                                     else coalesce(r.tenant_id::text, '') end,
+                                coalesce(r.lock_minutes::text, ''));
     perform private.finish_account_mail_request(r.id);
   end loop;
   perform tests.assert_eq(array_to_string((select array_agg(g order by g) from unnest(v_got) g), ', '),
     'account_locked|send|uab@ab.test|ar|a0000000-0000-4000-8000-000000000001|15, account_locked|unknown_account||||, '
+    'mfa_code_locked|send|uab@ab.test|ar|true|15, '
     'sign_in_unlocked|send|uab@ab.test|ar|a0000000-0000-4000-8000-000000000001|',
-    'the worker: the known account is written (lock minutes), the unknown address is not; the unlock notice in A');
+    'the worker: the known account is written (lock minutes), the unknown address is not; the unlock notice in A; '
+    'the "wrong codes" notice with the pause''s minutes');
 end $$;
 commit;
 
@@ -221,6 +245,40 @@ select tests.assert_fails($$select private.rate_limit_give_back('tests.args', sh
   array['42501'], 'app_worker may not give hits back');
 commit;
 reset session authorization;
+
+-- A "wrong codes" notice is a security notice (integration review M1): its own e-mails count toward the
+-- account's daily ceiling of security notices, and beyond it the notice is held for the hourly digest.
+begin;
+delete from private.account_mail_requests;
+insert into private.account_mail_requests (kind, user_id, lock_minutes)
+values ('mfa_code_locked', '00000000-0000-4000-8000-0000000000ab', 15);
+alter table platform.message_deliveries disable trigger message_deliveries_check;
+insert into platform.message_deliveries (tenant_id, template, template_version, locale, recipient_person_id,
+    destination_masked, status, provider, sent_at, created_at)
+select 'a0000000-0000-4000-8000-000000000001', 'platform.mfa_code_locked', 1, 'ar', 'a1000000-0000-4000-8000-0000000000ab',
+       'u***@ab.test', 'sent', 'smtp', now() - make_interval(hours => i), now() - make_interval(hours => i)
+from generate_series(1, 20) i;
+alter table platform.message_deliveries enable trigger message_deliveries_check;
+set local session authorization app_worker;
+set local role authenticated;
+select tests.set_claims(jsonb_build_object('role', 'system', 'job_id', 'tests.mfa_code_locked'));
+do $$
+declare
+  r record;
+begin
+  select * into r from private.claim_account_mail_request();
+  perform tests.assert(r.kind = 'mfa_code_locked' and r.outcome = 'held' and r.email is null
+                       and r.user_id = '00000000-0000-4000-8000-0000000000ab',
+    'over the daily ceiling (its own e-mails count): held for the digest, nothing sent now');
+end $$;
+set local session authorization default;
+do $$
+begin
+  perform tests.assert_eq((select held from private.security_notice_digests
+                           where user_id = '00000000-0000-4000-8000-0000000000ab'),
+    '{"mfa_code_locked": 1}'::jsonb, 'merged into the account''s digest by kind');
+end $$;
+rollback;
 
 -- Any other login acting as authenticated (here the test owner; on hosted Supabase e.g. its API role) is
 -- refused too.

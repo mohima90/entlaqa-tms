@@ -42,6 +42,9 @@ const EDGE_CASES = [
 
 describe('organization brand colours (FR-ADM-07): never below WCAG 2.2 AA', () => {
   const colours = [...EDGE_CASES, ...grid, ...seededColours(300)];
+  // Hundreds of full theme contrast checks: well under a second locally, but slower with coverage
+  // instrumentation on a busy CI runner. Same assertions, explicit time budget instead of the 5 s default.
+  const SWEEP_TIMEOUT_MS = 30_000;
 
   it(`passes every contract pair in light and dark for ${colours.length} colours`, () => {
     const failures: string[] = [];
@@ -52,7 +55,7 @@ describe('organization brand colours (FR-ADM-07): never below WCAG 2.2 AA', () =
       }
     }
     expect(failures).toEqual([]);
-  });
+  }, SWEEP_TIMEOUT_MS);
 
   it('passes with a different accent colour too', () => {
     const accents = [...seededColours(60, 7)];
@@ -62,7 +65,7 @@ describe('organization brand colours (FR-ADM-07): never below WCAG 2.2 AA', () =
       expect(brand.checks.every((c) => c.pass)).toBe(true);
       expect(brand.layer.light.accent).toBeDefined();
     }
-  });
+  }, SWEEP_TIMEOUT_MS);
 
   it('works on top of every theme (including the Jadarat LMS slot)', () => {
     for (const primary of EDGE_CASES) {

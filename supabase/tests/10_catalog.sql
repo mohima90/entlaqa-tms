@@ -370,7 +370,7 @@ declare
   v_list text;
 begin
   select string_agg(format('%s (owner %s)', p.oid::regprocedure, pg_get_userbyid(p.proowner)), ', '
-                    order by p.oid::regprocedure::text) into v_list
+                    order by p.oid::regprocedure::text collate "C") into v_list
   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'private' and p.prosecdef
     and p.proowner <> 'account_mail_guard'::regrole   -- checked in its own block below (T-M2-17)
@@ -422,7 +422,7 @@ begin
     'private.touch_session() (owner tenant_guard), '
     'private.user_session_is_valid(uuid,uuid) (owner tenant_guard)',
     'SECURITY DEFINER functions and owners (security review for any change)');
-  select string_agg(p.oid::regprocedure::text, ', ' order by p.oid::regprocedure::text) into v_list
+  select string_agg(p.oid::regprocedure::text, ', ' order by p.oid::regprocedure::text collate "C") into v_list
   from pg_proc p where p.proowner = 'invitation_guard'::regrole;
   perform tests.assert_eq(v_list,
     'private.accept_invitation_as_caller(bytea,text,text), '
@@ -480,7 +480,7 @@ begin
                             from pg_roles where rolname = 'account_mail_guard'),
     'account_mail_guard must be NOLOGIN NOINHERIT and not BYPASSRLS / superuser / createrole / createdb');
   select string_agg(format('%s%s', p.oid::regprocedure, case when p.prosecdef then '' else ' (INVOKER)' end), ', '
-                    order by p.oid::regprocedure::text) into v_list
+                    order by p.oid::regprocedure::text collate "C") into v_list
   from pg_proc p where p.proowner = 'account_mail_guard'::regrole;
   perform tests.assert_eq(v_list,
     'private.claim_account_mail_request(), private.finish_account_mail_request(uuid), '
@@ -574,7 +574,7 @@ begin
                             from pg_roles where rolname = 'membership_guard'),
     'membership_guard must be NOLOGIN NOINHERIT and not BYPASSRLS / superuser / createrole / createdb');
   select string_agg(format('%s%s', p.oid::regprocedure, case when p.prosecdef then '' else ' (INVOKER)' end), ', '
-                    order by p.oid::regprocedure::text) into v_list
+                    order by p.oid::regprocedure::text collate "C") into v_list
   from pg_proc p where p.proowner = 'membership_guard'::regrole;
   perform tests.assert_eq(v_list,
     'private.account_sign_in_refused(uuid), private.check_privileged_deactivation(), '

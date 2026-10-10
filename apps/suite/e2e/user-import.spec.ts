@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { inflateRawSync } from 'node:zlib';
 import AxeBuilder from '@axe-core/playwright';
 import { type Download, type Page, expect, test } from '@playwright/test';
+import { signInToSuite } from './sign-in';
 
 /**
  * Bulk user import (T-M2-12, FR-IAM-04; approved import screens 1–13) against a configured deployment:
@@ -19,12 +20,9 @@ const WORKER_WAIT = 150_000;
 
 test.use({ ignoreHTTPSErrors: true });
 
-async function signIn(page: Page) {
-  await page.goto('/en/sign-in');
-  await page.getByLabel('Email').fill(email ?? '');
-  await page.getByLabel('Password').fill(password ?? '');
-  await page.getByRole('button', { name: 'Sign in' }).click();
-  await expect(page).toHaveURL(/\/en\/suite$/);
+/** The shared sign-in of the smoke journeys (its longer wait for the page after a sign-in, T-M2-11). */
+function signIn(page: Page) {
+  return signInToSuite(page, email, password);
 }
 
 async function expectNoSeriousA11yViolations(page: Page) {

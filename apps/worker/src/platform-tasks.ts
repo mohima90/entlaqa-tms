@@ -75,7 +75,8 @@ function workerStore(settings: { url: string; secretKey: string }): FileObjectSt
 /**
  * Work without a tenant (ADR 0005 §4), run on every wake-up and every minute: account e-mails (reset
  * links, lock notices), ended sessions removed from Auth (T-M2-10, at most once a minute), and — with
- * Storage configured — file housekeeping and, with a scanner, the malware scan (T-M2-18).
+ * Storage configured — file housekeeping, bulk user imports (T-M2-12: they read scanned files and write
+ * their reports) and, with a scanner, the malware scan (T-M2-18).
  */
 export function platformTasks(deps: PlatformTaskDependencies): readonly PlatformTask[] {
   const recoveryLinksFor = deps.recoveryLinksFor ?? authAdminRecoveryLinks;

@@ -132,9 +132,14 @@ describe.skipIf(!configured)('rate limiter against PostgreSQL', () => {
     const client = subject(`trusted-client-${tag}`);
     const first = await store.signInCheck({ client, account, device: null }, budgets);
     expect(first).toMatchObject({ allowed: true, trusted: false, remaining: 4 });
+    // A user without an authenticator app (none in Auth): trusted at the password step.
     const trust = await store.signInSucceeded({ client, account, device: null }, false, {
       freshDevice: browser,
       trustDays: 30,
+      userId: randomUUID(),
+      session: null,
+      authNamesApp: false,
+      codeWaitMinutes: 15,
     });
     expect(trust?.device).toBe('fresh');
     expect(trust?.until.getTime()).toBeGreaterThan(Date.now() + 29 * 86_400_000);

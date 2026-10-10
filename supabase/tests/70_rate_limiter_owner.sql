@@ -30,12 +30,12 @@ begin
     'private.rate_limit_key(bytea) (INVOKER), private.rate_limit_lock_account_devices(bytea) (INVOKER), '
     'private.rate_limit_member_account(uuid) (INVOKER), private.rate_limit_normalize_email(text) (INVOKER), '
     'private.rate_limit_purge() (INVOKER), private.rate_limit_ref(bytea) (INVOKER), '
-    'private.rate_limit_refund(text,bytea) (INVOKER), private.rate_limit_remember_after_code(bytea,integer), '
+    'private.rate_limit_refund(text,bytea) (INVOKER), '
     'private.rate_limit_session_subject(uuid) (INVOKER), '
     'private.rate_limit_sign_in_check(bytea,bytea,bytea,integer,integer,integer,integer,integer,integer,integer,integer), '
     'private.rate_limit_sign_in_not_checked(bytea,bytea,boolean), '
     'private.rate_limit_sign_in_reset(bytea,bytea,bytea,integer), '
-    'private.rate_limit_sign_in_succeeded(bytea,bytea,bytea,bytea,boolean,boolean,integer), '
+    'private.rate_limit_sign_in_succeeded(bytea,bytea,bytea,bytea,boolean,boolean,integer,uuid,bytea,boolean,integer), '
     'private.rate_limit_trust_after_code(bytea,bytea,integer), private.rate_limit_trust_device(bytea,bytea,integer) (INVOKER), '
     'private.rotate_rate_limit_keys(), private.sign_in_account_in_tenant(text,uuid), '
     'private.unlock_member_sign_in(uuid,integer)',
@@ -78,6 +78,18 @@ begin
   perform tests.assert(not has_table_privilege('rate_limit_guard', 'auth.users', 'select')
                        and has_table_privilege('rate_limit_guard', 'private.auth_user_email', 'select'),
     'rate_limit_guard reads Auth addresses only through private.auth_user_email');
+  -- Whether a signing-in user has an authenticator app (integration review L4): three columns of T-M2-10's
+  -- view of Auth's factors, never the secret, never a write.
+  perform tests.assert_eq(
+    (select string_agg(a.attname, ', ' order by a.attnum) from pg_attribute a
+     where a.attrelid = 'private.auth_mfa_factor'::regclass and a.attnum > 0 and not a.attisdropped
+       and has_column_privilege('rate_limit_guard', a.attrelid, a.attnum, 'select')),
+    'user_id, factor_type, status', 'rate_limit_guard reads exactly user_id, factor_type, status of private.auth_mfa_factor');
+  perform tests.assert(not has_table_privilege('rate_limit_guard', 'private.auth_mfa_factor',
+                                               'select, insert, update, delete, truncate, references, trigger')
+                       and not has_any_column_privilege('rate_limit_guard', 'private.auth_mfa_factor', 'insert, update, references')
+                       and not has_table_privilege('rate_limit_guard', 'auth.mfa_factors', 'select'),
+    'rate_limit_guard: no table-level privilege on the factors view, and none on auth.mfa_factors');
 
   -- Callers: the entry points are executable by authenticated (each checks session_user = app_server —
   -- and the Organization Admin ones the claims — itself) and nobody else besides the owner; the helpers
@@ -95,7 +107,7 @@ begin
   perform tests.assert_eq(
     (select count(*)::int from pg_proc p
      where p.proowner = 'rate_limit_guard'::regrole and has_function_privilege('authenticated', p.oid, 'execute')),
-    13, 'the web app (as authenticated) may call the thirteen entry points');
+    12, 'the web app (as authenticated) may call the twelve entry points');
   -- Beyond its own: the unlock notice of the account-mail pipeline (inside unlock_member_sign_in).
   perform tests.assert_eq(
     (select string_agg(p.oid::regprocedure::text, ', ' order by p.oid::regprocedure::text)

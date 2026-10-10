@@ -540,6 +540,16 @@ export interface LimitedAttempt {
 export interface SignInSuccessOptions {
   /** «تذكّر هذا المتصفح» / "Remember this browser" was ticked: trust (or renew) this browser for 30 days. */
   readonly remember: boolean;
+  /**
+   * The token Auth just issued, verified: its user and Auth session (integration review L4). Without it a
+   * tick trusts nothing.
+   */
+  readonly verified?: { readonly userId: string; readonly sessionId: string | null } | null;
+  /**
+   * Auth's answer named a verified authenticator app of the account. Unless it says `false`, the account
+   * is taken to have one; either way the database also looks for itself (fail safe).
+   */
+  readonly authNamesApp?: boolean;
 }
 
 /** One sign-in attempt that reached Auth. No method throws. */
@@ -548,16 +558,13 @@ export interface SignInAttempt extends LimitedAttempt {
   failed(): Promise<void>;
   /**
    * Auth accepted them: the client's provisional failure is given back and the run ends; only with
-   * `remember` is the browser trusted (or its trust renewed). Without options: not remembered.
+   * `remember` is the browser trusted (or its trust renewed) — and only for an account without an
+   * authenticator app, as the database decides (integration review L4: Auth's answer, an unknown user, or
+   * a verified app it finds itself); for an account with one, the tick waits server-side for this Auth
+   * session's sign-in code (`trustedDevice.codeWaitMinutes`; `rememberBrowserAfterCode` trusts the browser
+   * once the code passed). Without options: not remembered.
    */
   succeeded(options?: SignInSuccessOptions): Promise<void>;
-  /**
-   * «تذكّر هذا المتصفح» was ticked for an account with an authenticator app (integration review L4): the
-   * browser is NOT trusted now — the tick waits for the sign-in code of this Auth session (`sessionId`,
-   * from the verified token Auth just issued), server-side, `trustedDevice.codeWaitMinutes` at most;
-   * `rememberBrowserAfterCode` trusts it once the code passed. Never throws (logged).
-   */
-  rememberAfterCode(sessionId: string): Promise<void>;
   /**
    * Auth answered before comparing the password (its own rate limit, HTTP 429 — security review T-M2-11
    * L6): the account's (or the trusted browser's) provisional failure is given back; the client's stays.
@@ -673,11 +680,23 @@ export function createSignInGuard(deps: SignInGuardDeps): SignInGuard {
           // Opt-in (PO decision 9 Oct 2026): a fresh token is minted only to be offered for trust; the
           // database keeps the browser's own token when it already knows it.
           const fresh = options?.remember === true ? newDeviceToken() : null;
+          const verified = options?.verified ?? null;
           try {
             const trust = await store.signInSucceeded(
               subjects,
               result.trusted,
-              fresh === null ? null : { freshDevice: deviceSubject(fresh), trustDays },
+              fresh === null
+                ? null
+                : {
+                    freshDevice: deviceSubject(fresh),
+                    trustDays,
+                    userId: verified?.userId ?? null,
+                    session:
+                      verified?.sessionId == null ? null : sessionSubject(verified.sessionId),
+                    // Fail safe: an app unless Auth's answer said otherwise (the database looks too).
+                    authNamesApp: options?.authNamesApp !== false,
+                    codeWaitMinutes: deps.limits.trustedDevice.codeWaitMinutes,
+                  },
             );
             const value = trust === null ? null : trust.device === 'presented' ? token : fresh;
             if (trust !== null && value !== null) device.write(value, cookieSeconds(trust.until));
@@ -693,17 +712,6 @@ export function createSignInGuard(deps: SignInGuardDeps): SignInGuard {
           } catch (error) {
             // The provisional failure stays counted: it only tightens the limit.
             unavailable('failure_not_given_back', error);
-          }
-        },
-        async rememberAfterCode(sessionId) {
-          try {
-            await store.rememberAfterCode(
-              sessionSubject(sessionId),
-              deps.limits.trustedDevice.codeWaitMinutes,
-            );
-          } catch (error) {
-            // The browser is simply not remembered: it only tightens the limits.
-            unavailable('remember_not_recorded', error);
           }
         },
       };
@@ -762,7 +770,7 @@ export async function resetAccountSignIn(
 
 /**
  * After a session's sign-in code passed (integration review L4; mfa.ts verifyTotpCode): when that session
- * ticked «تذكّر هذا المتصفح» at sign-in (`SignInAttempt.rememberAfterCode`), the browser becomes trusted
+ * ticked «تذكّر هذا المتصفح» at sign-in (`SignInAttempt.succeeded`, an account with an app), the browser becomes trusted
  * for the account (30 days) and its cookie is set — the browser's own token when the server knows it,
  * else a fresh one. `trustAfterCode` is platform-db `trustDeviceAfterCode` in a transaction with the
  * session's verified claims: the database trusts only a session it sees at AAL2 through a confirmed app

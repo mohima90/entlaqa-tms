@@ -229,7 +229,7 @@ select tests.assert_fails($$select private.rate_limit_clear('tests.args', sha256
   array['42501'], 'app_worker may not clear');
 select tests.assert_fails($$select * from private.rate_limit_sign_in_check(sha256('\x01'::bytea), sha256('\x02'::bytea), null, 8, 900, 6, 900, 3, 900, 2, 900)$$,
   array['42501'], 'app_worker may not check sign-ins');
-select tests.assert_fails($$select * from private.rate_limit_sign_in_succeeded(sha256('\x01'::bytea), sha256('\x02'::bytea), null, sha256('\x03'::bytea), false, true, 30)$$,
+select tests.assert_fails($$select * from private.rate_limit_sign_in_succeeded(sha256('\x01'::bytea), sha256('\x02'::bytea), null, sha256('\x03'::bytea), false, true, 30, '00000000-0000-4000-8000-0000000000a1', null, false, 15)$$,
   array['42501'], 'app_worker may not trust browsers');
 select tests.assert_fails($$select private.rate_limit_sign_in_not_checked(sha256('\x02'::bytea), null, false)$$,
   array['42501'], 'app_worker may not give sign-in failures back');

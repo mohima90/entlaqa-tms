@@ -126,11 +126,29 @@ async function useMfaLink(page: Page, url: string) {
   await page.getByTestId('mfa-link-submit').click();
 }
 
-async function signIn(page: Page, locale: 'ar' | 'en', email: string, secret: string) {
+async function signIn(
+  page: Page,
+  locale: 'ar' | 'en',
+  email: string,
+  secret: string,
+  options: { readonly remember?: boolean } = {},
+) {
   await page.goto(`/${locale}/sign-in`);
   await page.locator('#email').fill(email);
   await page.locator('#password').fill(secret);
+  if (options.remember) {
+    await page
+      .getByRole('checkbox', {
+        name: locale === 'ar' ? 'تذكّر هذا المتصفح' : 'Remember this browser',
+      })
+      .check();
+  }
   await page.getByRole('button', { name: locale === 'ar' ? 'تسجيل الدخول' : 'Sign in' }).click();
+}
+
+/** The browser's trusted-device cookie, if any (`__Host-jadarat-device`, T-M2-11). */
+async function deviceCookie(page: Page) {
+  return (await page.context().cookies()).find((c) => c.name.endsWith('jadarat-device'));
 }
 
 /** Signs in and passes the code of an organization that requires one. */
@@ -505,7 +523,16 @@ test.describe('Security policy, MFA and sign-in sessions', () => {
     const member = await memberContext.newPage();
     const admin = await adminContext.newPage();
     try {
-      await signInWithCode(member, 'en', memberEmail, memberPassword, memberKey);
+      // «Remember this browser» ticked on an account with an app (T-M2-11 integration review L4): the
+      // password alone trusts nothing — no trusted-device cookie on the code page; once the sign-in code
+      // passed, the browser is remembered.
+      await signIn(member, 'en', memberEmail, memberPassword, { remember: true });
+      await expect(member).toHaveURL(/\/en\/mfa$/);
+      await expect(member.getByTestId('mfa-challenge')).toBeVisible();
+      expect(await deviceCookie(member)).toBeUndefined();
+      await enterCode(member, memberKey);
+      await expect(member).toHaveURL(/\/en\/suite$/);
+      await expect.poll(async () => (await deviceCookie(member))?.httpOnly).toBe(true);
       await member.goto('/en/suite/profile');
       const own = member.getByTestId('sessions-own');
       await expect(own.locator('[data-testid="session-row"][data-current="true"]')).toHaveCount(1);

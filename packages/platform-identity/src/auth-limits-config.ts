@@ -61,9 +61,14 @@ export interface AuthLimits {
   /**
    * Authenticator-app codes (T-M2-10 security review, TM-0003 T-IAM-12): wrong codes only, as for
    * passwords — per account (consecutive, a success ends the run) and per client address.
+   * `accountFailures` counts the codes of a signed-in session (sign-in, a sensitive action, the e-mailed
+   * set-up code): only someone who knows the password reaches them. The password-reset page's code has its
+   * own account budget, `resetFailures` (integration review T-M2-11 M1): wrong codes after the password
+   * cannot also lock the owner out of resetting it.
    */
   readonly mfaCode: {
     readonly accountFailures: RateLimit;
+    readonly resetFailures: RateLimit;
     readonly clientFailures: RateLimit;
     readonly sharedClientFailures: RateLimit;
   };
@@ -105,6 +110,7 @@ export const PLATFORM_AUTH_LIMITS: AuthLimits = {
   },
   mfaCode: {
     accountFailures: { max: 5, windowSeconds: WINDOW },
+    resetFailures: { max: 5, windowSeconds: WINDOW },
     clientFailures: { max: 100, windowSeconds: WINDOW },
     sharedClientFailures: { max: 1000, windowSeconds: WINDOW },
   },

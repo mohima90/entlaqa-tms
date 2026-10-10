@@ -59,6 +59,7 @@ import {
   signOutEndedSession,
 } from './auth-flow';
 import {
+  type CodeCheckFlow,
   type CodeCheckLimit,
   DEVICE_TOKEN_PATTERN,
   type LimiterDeps,
@@ -485,10 +486,14 @@ export async function changePasswordForRequest(input: {
  * (`verifyTotpCode`), the e-mailed set-up code (`confirmMfaSetup`) and the code on the password-reset
  * page (`completePasswordReset`); `action` names the flow in the security events.
  */
-function codeCheckLimitFor(client: RequestClient, action: string): CodeCheckLimit {
-  const limiter = createCodeAttemptLimiter({ ...limiterDeps(), client, action });
-  return (userId, verify, isWrongCode) =>
-    withCodeAttemptLimit(limiter, userId, verify, isWrongCode);
+function codeCheckLimitFor(
+  client: RequestClient,
+  action: string,
+  flow: CodeCheckFlow = 'session',
+): CodeCheckLimit {
+  const limiter = createCodeAttemptLimiter({ ...limiterDeps(), client, action, flow });
+  return (userId, verify, isWrongCode, options) =>
+    withCodeAttemptLimit(limiter, userId, verify, isWrongCode, options);
 }
 
 /**
@@ -678,8 +683,10 @@ export async function completePasswordResetForRequest(
       allowAttempt: () => limiter.allowCompletion(),
       unlockSignIn: (email, remember) =>
         resetAccountSignIn(limiterDeps(), RESET_COMPLETE_ACTION, email, device, remember),
-      // The authenticator code of an account with an app (T-M2-10), limited like every code (T-M2-11).
-      limitCodeCheck: codeCheckLimitFor(client, RESET_COMPLETE_ACTION),
+      // The authenticator code of an account with an app (T-M2-10), limited like every code (T-M2-11) —
+      // with its own account budget (integration review M1): wrong codes after the password elsewhere
+      // never keep the owner from resetting it.
+      limitCodeCheck: codeCheckLimitFor(client, RESET_COMPLETE_ACTION, 'reset'),
       // Strictest wins (T-M2-10): asked with the recovery session's own, verified access token.
       passwordMinLength: async (accessToken) => {
         const claims = await verifyClaims(

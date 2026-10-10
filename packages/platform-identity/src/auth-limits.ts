@@ -150,6 +150,7 @@ export const LIMIT_BUCKETS = {
   invitationLookupClient: 'invitation.lookup_client',
   invitationSignUpClient: 'invitation.sign_up_client',
   mfaCodeAccount: 'mfa_code.account_failures',
+  mfaCodeReset: 'mfa_code.reset_failures',
   mfaCodeClient: 'mfa_code.client_failures',
 } as const;
 
@@ -756,6 +757,15 @@ export async function forgetOtherTrustedBrowsers(
 
 // ----- Authenticator-app codes (T-M2-10 security review; TM-0003 T-IAM-12) -----
 
+/**
+ * Which code check a limiter counts (integration review T-M2-11 M1): `session` — a signed-in session's
+ * code (at sign-in, before a sensitive action, the e-mailed set-up code), reached only with the password —
+ * or `reset`, the code on the password-reset page (reached only with the mailbox: every try spends an
+ * e-mailed link). Each has its own account budget, so wrong codes after the password never lock the owner
+ * out of resetting it.
+ */
+export type CodeCheckFlow = 'session' | 'reset';
+
 /** One code check that reached Auth (or the database). No method throws. */
 export interface CodeAttempt extends LimitedAttempt {
   /**
@@ -775,13 +785,21 @@ export interface CodeAttemptLimiter {
   check(userId: string): Promise<LimitGate<CodeAttempt>>;
 }
 
-export function createCodeAttemptLimiter(
-  deps: LimiterDeps & { readonly client: RequestClient; readonly action: string },
-): CodeAttemptLimiter {
+export interface CodeAttemptLimiterDeps extends LimiterDeps {
+  readonly client: RequestClient;
+  readonly action: string;
+  /** Which account budget (default `session`: `mfaCode.accountFailures`; `reset`: `resetFailures`). */
+  readonly flow?: CodeCheckFlow | undefined;
+}
+
+export function createCodeAttemptLimiter(deps: CodeAttemptLimiterDeps): CodeAttemptLimiter {
   const { store, client, action, log } = deps;
   const limits = deps.limits.mfaCode;
   const clientFailures = client.key === null ? limits.sharedClientFailures : limits.clientFailures;
   const B = LIMIT_BUCKETS;
+  const reset = deps.flow === 'reset';
+  const accountBucket = reset ? B.mfaCodeReset : B.mfaCodeAccount;
+  const accountFailures = reset ? limits.resetFailures : limits.accountFailures;
   const giveBack = async (bucket: string, subject: Uint8Array) => {
     try {
       await store.giveBack(bucket, subject);
@@ -800,7 +818,7 @@ export function createCodeAttemptLimiter(
       const clientKey = clientSubject(client);
       const [byAccount, byClient] = await failClosed(deps, action, () =>
         Promise.all([
-          store.hit(B.mfaCodeAccount, account, limits.accountFailures),
+          store.hit(accountBucket, account, accountFailures),
           store.hit(B.mfaCodeClient, clientKey, clientFailures),
         ]),
       );
@@ -812,9 +830,9 @@ export function createCodeAttemptLimiter(
       };
       if (!byAccount.allowed || !byClient.allowed) {
         // Refused before Auth: no wrong code — the other budget gets its provisional failure back.
-        if (byAccount.allowed) await giveBack(B.mfaCodeAccount, account);
+        if (byAccount.allowed) await giveBack(accountBucket, account);
         if (byClient.allowed) await giveBack(B.mfaCodeClient, clientKey);
-        const limit = byAccount.allowed ? B.mfaCodeClient : B.mfaCodeAccount;
+        const limit = byAccount.allowed ? B.mfaCodeClient : accountBucket;
         const retryAfterSeconds = Math.max(
           byAccount.allowed ? 0 : byAccount.retryAfterSeconds,
           byClient.allowed ? 0 : byClient.retryAfterSeconds,
@@ -833,7 +851,7 @@ export function createCodeAttemptLimiter(
         failed() {
           log({ event: 'auth.mfa_code.failed', action, reason: 'invalid_code', ...refs });
           for (const [bucket, counter] of [
-            [B.mfaCodeAccount, byAccount],
+            [accountBucket, byAccount],
             [B.mfaCodeClient, byClient],
           ] as const) {
             if (counter.remaining === 0) {
@@ -851,8 +869,11 @@ export function createCodeAttemptLimiter(
         },
         async succeeded() {
           // The run of wrong codes ends for the account; the client's provisional failure is given back.
+          // A right code on the reset page also ends the run of the session's codes: whoever typed it holds
+          // the mailbox AND the app — the owner — who then signs in with the new password at once.
           try {
-            await store.clear(B.mfaCodeAccount, account);
+            await store.clear(accountBucket, account);
+            if (reset) await store.clear(B.mfaCodeAccount, account);
           } catch (error) {
             log({
               event: 'auth.limiter.unavailable',
@@ -866,7 +887,7 @@ export function createCodeAttemptLimiter(
         async notChecked() {
           // No code was compared: the account's provisional failure goes back (a flood elsewhere must not
           // lock this account); the client's stays — it is the one Auth limited.
-          await giveBack(B.mfaCodeAccount, account);
+          await giveBack(accountBucket, account);
         },
       };
       return { allowed: true, attempt };
@@ -874,10 +895,20 @@ export function createCodeAttemptLimiter(
   };
 }
 
+/** How a flow answers a limited code check (default RATE_LIMITED). */
+export interface CodeCheckOptions {
+  /**
+   * The answer when a budget is used up, from the seconds until it frees up — e.g. the reset page's plain
+   * "request a new link in N minutes" (integration review T-M2-11 M1).
+   */
+  readonly limited?: ((retryAfterSeconds: number) => AppError) | undefined;
+}
+
 /**
  * The hook for the code check (T-M2-10 `verifyTotpCode`): limits it per account and per client, counting
  * wrong codes only. `verify` asks Auth; `isWrongCode` tells a wrong or expired code from other refusals.
- * A limited check answers RATE_LIMITED without asking Auth; a wrong code stays counted; a right one gives
+ * A limited check answers RATE_LIMITED (or `options.limited`) without asking Auth; a wrong code stays
+ * counted; a right one gives
  * its provisional failure back; Auth's own rate limit (`verify` answers RATE_LIMITED — Auth's 429, no code
  * compared; integration review T-M2-11 L2) gives the account's back and keeps the client's; any other
  * refusal, or an Auth outage (thrown), keeps both counted.
@@ -887,9 +918,12 @@ export async function withCodeAttemptLimit<T>(
   userId: string,
   verify: () => Promise<Result<T, AppError>>,
   isWrongCode: (error: AppError) => boolean,
+  options: CodeCheckOptions = {},
 ): Promise<Result<T, AppError>> {
   const gate = await limiter.check(userId);
-  if (!gate.allowed) return err(appError('RATE_LIMITED'));
+  if (!gate.allowed) {
+    return err(options.limited?.(gate.retryAfterSeconds) ?? appError('RATE_LIMITED'));
+  }
   const result = await verify();
   if (result.ok) await gate.attempt.succeeded();
   else if (isWrongCode(result.error)) await gate.attempt.failed();
@@ -901,13 +935,15 @@ export async function withCodeAttemptLimit<T>(
  * One code check of a flow, limited per account and per client: `withCodeAttemptLimit` bound to the
  * request's client by the Next.js adapter (auth-next.ts). Every flow that checks an authenticator code —
  * or the e-mailed set-up code — takes one (T-M2-10 × T-M2-11; TM-0003 T-IAM-12): the code at sign-in and
- * before a sensitive action, the first code of a set-up, the e-mailed set-up code and the code on the
- * password-reset page. `isWrongCode` tells a wrong code from other refusals (logged differently).
+ * before a sensitive action, the first code of a set-up, the e-mailed set-up code (one account budget:
+ * `session`) and the code on the password-reset page (its own: `reset`, integration review M1).
+ * `isWrongCode` tells a wrong code from other refusals (logged differently).
  */
 export type CodeCheckLimit = <T>(
   userId: string,
   verify: () => Promise<Result<T, AppError>>,
   isWrongCode: (error: AppError) => boolean,
+  options?: CodeCheckOptions,
 ) => Promise<Result<T, AppError>>;
 
 /**

@@ -1,10 +1,12 @@
 import { type AppError, type Result, appError, err } from '@jadarat/platform-core';
 import { describe, expect, it, vi } from 'vitest';
 import { AuthServiceError } from './auth-flow';
-import { RateLimiterUnavailableError } from './auth-limits';
+import { type CodeCheckOptions, RateLimiterUnavailableError } from './auth-limits';
 import {
+  PasswordResetErrors,
   type PasswordResetDeps,
   type PasswordResetRequestDeps,
+  RESET_CODE_AUTH_LIMIT_WAIT_MINUTES,
   RESET_REQUEST_ANSWER_MS,
   type RecoveryClientLike,
   completePasswordReset,
@@ -290,8 +292,11 @@ interface CompleteOptions {
   factors?: { id: string; factor_type: string; status: string }[];
   listError?: { status?: number; code?: string };
   challengeError?: { status?: number; code?: string };
-  /** The code limiter (T-M2-11) refuses the check, or cannot answer: Auth is not asked. */
-  codeLimited?: boolean | Error;
+  /**
+   * The code limiter (T-M2-11) refuses the check (true: for a full window; a number: that many seconds
+   * left), or cannot answer: Auth is not asked.
+   */
+  codeLimited?: boolean | number | Error;
 }
 
 function completeSetup(options: CompleteOptions = {}) {
@@ -364,9 +369,13 @@ function completeSetup(options: CompleteOptions = {}) {
       userId: string,
       verify: () => Promise<Result<unknown, AppError>>,
       isWrongCode: (error: AppError) => boolean,
+      checkOptions?: CodeCheckOptions,
     ) => {
       if (options.codeLimited instanceof Error) throw options.codeLimited;
-      if (options.codeLimited) return err(appError('RATE_LIMITED'));
+      if (options.codeLimited !== undefined && options.codeLimited !== false) {
+        const seconds = options.codeLimited === true ? 900 : options.codeLimited;
+        return err(checkOptions?.limited?.(seconds) ?? appError('RATE_LIMITED'));
+      }
       const result = await verify();
       codeChecks.push({ userId, wrongCode: result.ok ? null : isWrongCode(result.error) });
       return result;
@@ -392,6 +401,23 @@ describe('completePasswordReset (FR-IAM-13)', () => {
       RateLimiterUnavailableError,
     );
     expect(auth.verifyOtp).not.toHaveBeenCalled();
+  });
+
+  it('a password below the platform minimum is refused before it is counted or the link is spent (5c)', async () => {
+    for (const password of ['short-pass1', '\u{1F600}'.repeat(6)]) {
+      // 11 characters; six emoji are 12 UTF-16 units but 6 characters as people count them.
+      const { deps, auth } = completeSetup();
+      const result = await completePasswordReset(deps, { ...input, password });
+      expect(result).toEqual(
+        err(
+          appError('VALIDATION_FAILED', {
+            fieldErrors: [{ path: 'password', code: 'TOO_SMALL', params: { minimum: 12 } }],
+          }),
+        ),
+      );
+      expect(deps.allowAttempt).not.toHaveBeenCalled();
+      expect(auth.verifyOtp).not.toHaveBeenCalled();
+    }
   });
 
   it('counts malformed submissions too, and unlocks nothing when the password was not changed', async () => {
@@ -722,12 +748,26 @@ describe('completePasswordReset for an account with an authenticator app (T-M2-1
     });
     await completePasswordReset(wrong.deps, { ...input, code: '000000' });
     expect(wrong.codeChecks).toEqual([{ userId: USER, wrongCode: true }]);
-    // Limited: Auth is not asked, the recovery session ends (the link is spent by now), no password set.
+    // Limited (this page's own budget used up — integration review M1): Auth is not asked, the recovery
+    // session ends (the link is spent by now), no password set — and the answer says plainly when to ask
+    // for a new link (the page shows it with the link-spent view).
     const limited = completeSetup({ factors: [app], codeLimited: true });
     const result = await completePasswordReset(limited.deps, { ...input, code: CODE });
-    expect(!result.ok && result.error.code).toBe('RATE_LIMITED');
+    expect(result).toEqual(
+      err(appError(PasswordResetErrors.PASSWORD_RESET_CODE_LIMITED, { params: { minutes: 15 } })),
+    );
     expect(limited.auth.mfa.challengeAndVerify).not.toHaveBeenCalled();
     expect(limited.calls).toEqual(['verifyOtp:recovery', 'signOut:local']);
+    // Rounded up to whole minutes, at least one.
+    for (const [seconds, minutes] of [
+      [61, 2],
+      [1, 1],
+      [600, 10],
+    ] as const) {
+      const soon = completeSetup({ factors: [app], codeLimited: seconds });
+      const r = await completePasswordReset(soon.deps, { ...input, code: CODE });
+      expect(!r.ok && r.error.params).toEqual({ minutes });
+    }
     // The limiter cannot answer: fail closed, the recovery session still ends.
     const down = completeSetup({ factors: [app], codeLimited: new Error('limiter down') });
     await expect(completePasswordReset(down.deps, { ...input, code: CODE })).rejects.toThrow(
@@ -738,9 +778,19 @@ describe('completePasswordReset for an account with an authenticator app (T-M2-1
   });
 
   it('rate limits and outages of the code check; Auth asking for AAL2 anyway', async () => {
+    // Auth's own limit: the code was not compared (not counted as a wrong code — integration review L2),
+    // the link is spent all the same: the plain answer with the code window's wait.
     const limited = completeSetup({ factors: [app], challengeError: { status: 429 } });
     const r1 = await completePasswordReset(limited.deps, { ...input, code: CODE });
-    expect(!r1.ok && r1.error.code).toBe('RATE_LIMITED');
+    expect(r1).toEqual(
+      err(
+        appError(PasswordResetErrors.PASSWORD_RESET_CODE_LIMITED, {
+          params: { minutes: RESET_CODE_AUTH_LIMIT_WAIT_MINUTES },
+        }),
+      ),
+    );
+    expect(limited.codeChecks).toEqual([{ userId: USER, wrongCode: false }]);
+    expect(limited.calls).toEqual(['verifyOtp:recovery', 'code:f-app', 'signOut:local']);
     const down = completeSetup({ factors: [app], challengeError: { status: 503 } });
     await expect(completePasswordReset(down.deps, { ...input, code: CODE })).rejects.toBeInstanceOf(
       AuthServiceError,

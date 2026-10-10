@@ -21,6 +21,7 @@ import {
   ORGANIZATION_SIGN_IN_HOSTS,
   PLATFORM_AUTH_LIMITS,
   RateLimiterUnavailableError,
+  type CodeCheckFlow,
   type SecurityEvent,
   type SignInGate,
   type TrustedDeviceCookie,
@@ -1299,13 +1300,14 @@ describe('createCodeAttemptLimiter / withCodeAttemptLimit (authenticator codes, 
   const setup = (client: { key: string | null } = CLIENT, store?: RateLimitStore) => {
     const memory = memoryStore();
     const events: SecurityEvent[] = [];
-    const limiter = (c = client) =>
+    const limiter = (c = client, flow: CodeCheckFlow = 'session') =>
       createCodeAttemptLimiter({
         store: store ?? memory.store,
         limits: PLATFORM_AUTH_LIMITS,
         log: (e) => events.push(e),
         client: c,
-        action: 'platform.auth.mfa_verify',
+        action: flow === 'reset' ? 'platform.auth.password_reset' : 'platform.auth.mfa_verify',
+        flow,
       });
     return { limiter, events, memory };
   };
@@ -1386,6 +1388,36 @@ describe('createCodeAttemptLimiter / withCodeAttemptLimit (authenticator codes, 
     // Wrong codes still count as before: the 5th locks the account.
     for (let i = 0; i < 5; i += 1) await withCodeAttemptLimit(limiter(), USER, wrongCode, isWrong);
     expect((await limiter().check(USER)).allowed).toBe(false);
+  });
+
+  it('the reset page’s code has its own account budget (integration review M1): wrong codes after the password never block the owner’s reset', async () => {
+    const { limiter, events } = setup();
+    const session = () => limiter(CLIENT, 'session');
+    const reset = () => limiter(CLIENT, 'reset');
+    // Someone who knows the password uses the session's code budget up (sign-in or step-up codes).
+    for (let i = 0; i < 5; i += 1) await withCodeAttemptLimit(session(), USER, wrongCode, isWrong);
+    expect((await session().check(USER)).allowed).toBe(false);
+    // The owner's reset page still checks the code (and the right one goes through).
+    const verify = vi.fn(() => Promise.resolve(ok('aal2')));
+    expect(await withCodeAttemptLimit(reset(), USER, verify, isWrong)).toEqual(ok('aal2'));
+    expect(verify).toHaveBeenCalledTimes(1);
+    // …which also ends the run of the session's codes: whoever typed it holds the mailbox and the app.
+    expect((await session().check(USER)).allowed).toBe(true);
+
+    // The reset budget has its own limit (5 wrong codes per 15 minutes), and its own lockout event.
+    for (let i = 0; i < 5; i += 1) await withCodeAttemptLimit(reset(), USER, wrongCode, isWrong);
+    const limited = vi.fn(() => Promise.resolve(ok('never')));
+    const answer = await withCodeAttemptLimit(reset(), USER, limited, isWrong, {
+      limited: (seconds) => appError('VALIDATION_FAILED', { params: { seconds } }),
+    });
+    expect(answer).toEqual(err(appError('VALIDATION_FAILED', { params: { seconds: 900 } })));
+    expect(limited).not.toHaveBeenCalled();
+    expect(events.filter((e) => e.event === 'auth.lockout').map((e) => e.limit)).toEqual([
+      'mfa_code.account_failures',
+      'mfa_code.reset_failures',
+    ]);
+    // Wrong codes on the reset page do not count against the session's budget either.
+    expect((await session().check(USER)).allowed).toBe(true);
   });
 
   it('fails closed when the limiter cannot answer: Auth is never asked', async () => {

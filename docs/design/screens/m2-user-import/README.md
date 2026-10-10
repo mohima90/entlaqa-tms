@@ -246,3 +246,24 @@ Copy follows the glossary and style guide (verbal nouns on buttons, «يمكنك
 - **Scanning on hosted staging** needs ClamAV next to the worker; it exists only in the self-hosted stack today (ADR 0006) — plan it with the file-storage work (also needed by T-M2-15b profile photos).
 - **Manager depth:** T-M2-02 note — the manager-depth check scans the moved person's reports under a per-tenant lock; batch writes should take it once per batch.
 - **Header synonyms** and Arabic normalization reuse `private.search_key` rules (hamza, teh marbuta, alef maqsura, diacritics).
+
+## 18. Build notes — differences from the approved screens (T-M2-12, 10 Oct 2026)
+
+Built as approved except for these points (runbook: [`docs/engineering/user-import.md`](../../../engineering/user-import.md)):
+
+| # | Screen / rule | As built | Why |
+|---|---|---|---|
+| 1 | Undo (12) «نزيل من المنشأة …» | People removed by an undo become **inactive** records and their invitations are revoked; the record is not deleted | The people directory never deletes people (retention and audit, TM-0004); for the organization the effect is the same: not on the lists of active people, links stop working |
+| 2 | Users list (1), invitation states | A fourth state **«تُرسل قريبًا»** (scheduled) between «لم تُرسل الدعوة» and «مدعو» | Invitations leave at one a second (e-mail provider limits, §10), so a sent batch is "on its way" for a while |
+| 3 | Retention (§8) | The uploaded file is kept 7 days from the **start of the run** (the files service counts from first use), the error report 7 days from its creation, the review's list of problems 24 hours (as long as the review), the staged rows 7 days after the end | The files service has one rule per purpose (ADR 0006); the difference is the run's duration (minutes) |
+| 4 | Notification at the end (§9) and to the Organization Admin about an infected file (§8) | Not built: the result page, the users-list banners and the import's page carry the outcome | The in-app inbox does not exist yet (ADR 0008); tracked with the files follow-ups |
+| 5 | Template guide (3, a dialog) | An expandable section «ما الأعمدة المطلوبة وكيف تُكتب؟» under the template download on step 1 | Same content without a modal dialog (keyboard and screen readers, phone width) |
+| 6 | «بلغة المنشأة» (invitation language when the row has none) | Arabic | Organizations have no language setting yet; Arabic is the platform default |
+| 7 | Steps 4 and 5 | The options travel in the page address and step 4 is a plain form (works without JavaScript); the server checks them again at «بدء الاستيراد» | Nothing half-chosen is stored; back and forward work |
+| 8 | Who may import (§2) | The invite permission (`platform.user.invite`) plus the database rule "active Organization Admin or HR Manager"; updating existing people also needs the edit permission | No new permission in the catalogue; the same people as the decision |
+| 9 | Error report (11) | Column headers, outcomes and the file name in the importer's **preferred language** (their profile, as for e-mails — not the page's language at the time); the reason always in **both** Arabic and English (two columns) plus the reason code | One file serves Arabic- and English-speaking HR teams and support |
+| 10 | Review table (6) | 25 rows per page with «السابق» / «التالي»; reason groups link to the filtered rows | Pages of 10,000 rows would be too heavy for the browser |
+| 11 | Users list, «مدعو» tab | Shows the newest 500 open invitations, with a note when there are more (search reaches the others) | The invited tab loads every open invitation; an import can add thousands |
+| 12 | Counted sentences | Arabic plural forms (one, two, 3–10, 11–99, 100+) and English singular/plural; «تعرّفنا تلقائيًا على الأعمدة … (9 من 11)» instead of «… على 9 أعمدة من 11» | The approved copy showed one count; the build fills any count correctly (the mapping sentence is filled in the browser, without plural rules) |
+| 13 | «القسم» matching | Codes or names; a name shared by two departments is a warning «القسم … يطابق أكثر من قسم» (`DEPARTMENT_AMBIGUOUS`), as for branches | Names are not unique in the organization's tree |
+| 14 | Progress (9) | One progress bar for the rows (phases listed with their state); invitations show "sent so far" on the result page | The run's invitation phase only schedules them; sending continues after the run |

@@ -118,3 +118,9 @@ Built as decided, with these refinements (runbook: `docs/engineering/files.md`):
 - **Not yet built:** image re-encoding and metadata stripping with `sharp` (with T-M2-15b, licence check pending), notifications on an infected file (a separate task; the `com.entlaqa.platform.file.scanned` event and audit events are in place), storage quotas (SUB-01), encrypted-document alerts (`AlertEncryptedDoc`, with the first PDF purpose), resumable uploads and the 200 MB staging test (with CAT-06).
 - **Verification.** 1: pgTAP `80`–`84_files_*.sql` (also as Storage's role); 2: unit and integration tests (EICAR-like finding → infected + quarantine, renamed executable → rejected) and the self-hosted smoke with the real EICAR string built at run time (`infra/docker/smoke-files.sh`); 4: self-hosted smoke (CI gate 15).
 
+## Implementation note T-M2-12 (10 Oct 2026) — the first consumer
+
+- The bulk user import (`packages/platform-import`) uses the request-path API as decided: `createUploadIntent` (purpose `platform.user_import`, owner `platform/user_import/<import id>`) and `confirmUpload` in its actions, the browser's `PUT` with progress straight to Storage (self-hosted: the CSP's `connect-src` allows `STORAGE_PUBLIC_URL`'s origin), `createDownloadGrant` for the importer's downloads of the list of problems and the error report (`platform.user_import_report`, written by the worker with `storeGeneratedFile` for the importer), `markFileUsed` when the run starts (the upload) and when the error report is written — so the `import` retention class counts 7 days from then.
+- The worker reads only **clean** files (`openScannedFile`): an infected, rejected or failed upload ends the import as `rejected` with the file's reason; a deleted one as `FILE_DELETED`. Parsing never starts before the verdict (§3.4).
+- Runbook: `docs/engineering/user-import.md`; threat model TM-0003 T-IAM-19, 30, 46.
+

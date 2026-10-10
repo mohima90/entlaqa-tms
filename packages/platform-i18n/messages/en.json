@@ -784,7 +784,8 @@
       "emailCodeExpired": "The code has expired. Send the email again to get a new one.",
       "emailCodeLocked": "Too many incorrect codes: this code no longer works. Send the email again to get a new one.",
       "setUpElsewhere": "This app was set up from another sign-in. Its code can only be entered in that window.",
-      "resendTooSoon": "We've just sent the email. You can ask for it again in 2 minutes."
+      "resendTooSoon": "We've just sent the email. You can ask for it again in 2 minutes.",
+      "setupRemoved": "Too many incorrect codes were entered for your account, so the app waiting for its code was removed and the windows that set it up were signed out. If it was you, sign in and set it up again; if not, set a new password."
     },
     "stepUpAgainIntro": "For your security, sensitive actions need a code entered in the last 15 minutes. Enter the code your app shows now.",
     "pending": {

@@ -97,6 +97,7 @@ describe('authenticator app removed notice (T-M2-10)', () => {
       ['admin_reset', 'أعاد مدير المنشأة ضبط', 'administrator reset the authenticator app'],
       ['support_reset', 'أعاد دعم ENTLAQA ضبط', 'ENTLAQA support reset'],
       ['expired', 'لم يُدخَل رمز تأكيده خلال 72 ساعة', 'was not entered within 72 hours'],
+      ['too_many_codes', 'بعد إدخال رموز تأكيد خاطئة كثيرة', 'After many wrong confirmation codes'],
     ] as const;
     for (const [reason, ar, en] of cases) {
       const email = renderEmail('platform.mfa_factor_removed', 'ar', {
@@ -119,6 +120,48 @@ describe('authenticator app removed notice (T-M2-10)', () => {
         loginEmail: 'sara@raya.example',
       }),
     ).toThrow();
+  });
+});
+
+describe('security digest (T-M2-10, final re-review L1)', () => {
+  const digest: EmailVariables<'platform.security_digest'> = {
+    organizationName,
+    held: { mfa_factor_added: 7, mfa_factor_removed: 1 },
+    since: '2026-10-10T05:00:00Z',
+    timeZone: 'Asia/Riyadh',
+    forgotPasswordUrl,
+    loginEmail: 'sara@raya.example',
+  };
+
+  it('counts the held notices by kind since when; its only link is the forgot-password page', () => {
+    const email = renderEmail('platform.security_digest', 'ar', digest);
+    expect(email.subject).toBe(
+      'تغييرات أمان كثيرة في حسابك · Many security changes on your account',
+    );
+    for (const text of [
+      'إضافة تطبيق مصادقة: <b>7 مرات</b>',
+      'إزالة تطبيق مصادقة: <b>مرة واحدة</b>',
+      'Authenticator app added: <b>7 times</b>',
+      'Authenticator app removed: <b>1 time</b>',
+      '10 أكتوبر 2026 الساعة 08:00',
+      '10 October 2026 at 08:00',
+    ]) {
+      expect(email.html).toContain(text);
+    }
+    expect(email.html).not.toContain('Password changed');
+    expect(hrefs(email.html)).toEqual([forgotPasswordUrl.ar, forgotPasswordUrl.en]);
+    expect(email.text).toContain('- Authenticator app added: 7 times');
+  });
+
+  it('refuses an empty digest, unknown kinds and odd counts', () => {
+    for (const held of [
+      {},
+      { password_reset: 1 },
+      { mfa_factor_added: 0 },
+      { mfa_factor_added: 1.5 },
+    ]) {
+      expect(() => renderEmail('platform.security_digest', 'en', { ...digest, held })).toThrow();
+    }
   });
 });
 

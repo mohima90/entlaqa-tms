@@ -33,17 +33,18 @@ export const RESET_LINK_VALID_MINUTES = 60;
 export const ACCOUNT_MAIL_HOURLY_CAP = 5;
 /**
  * Security notices (re-review N3): an authenticator app added (its e-mail carries the set-up code) or removed
- * (also an admin or support reset, an expired set-up), the security settings changed, the password changed.
- * They are never dropped by the hourly cap — the owner must learn of every change to the account's security —
- * and a notice over the cap is logged. Their own volume is bounded where they start: one set-up e-mail per
- * app and 2 minutes ("send again"), one waiting notice per account, kind and app, Auth's limits on set-ups and
- * password changes, and only Organization Admins change the settings.
+ * (also an admin or support reset, an expired set-up), the security settings changed, the password changed,
+ * and the digest of held ones. They are never dropped by the per-template hourly cap — the owner must learn
+ * of every change to the account's security — and a notice over that cap is logged. Their volume per account
+ * is bounded by the database (final re-review L1): 20 in 24 hours one by one, further ones merged into one
+ * digest an hour (outcome `held`, then a `security_digest` request).
  */
 export const SECURITY_NOTICE_KINDS: ReadonlySet<AccountMailRequest['kind']> = new Set([
   'mfa_factor_added',
   'mfa_factor_removed',
   'security_policy_changed',
   'password_changed',
+  'security_digest',
 ]);
 /**
  * The set-up e-mail's code and link lifetimes, stated in it — the database's private.mfa_code_lifetime() /
@@ -104,7 +105,8 @@ type AccountTemplate =
   | 'platform.password_changed'
   | 'platform.mfa_factor_added'
   | 'platform.mfa_factor_removed'
-  | 'platform.security_policy_changed';
+  | 'platform.security_policy_changed'
+  | 'platform.security_digest';
 type AccountEmail = EmailRequest<AccountTemplate>;
 
 const TEMPLATE_OF: Readonly<Record<AccountMailRequest['kind'], AccountTemplate>> = {
@@ -113,6 +115,7 @@ const TEMPLATE_OF: Readonly<Record<AccountMailRequest['kind'], AccountTemplate>>
   mfa_factor_added: 'platform.mfa_factor_added',
   mfa_factor_removed: 'platform.mfa_factor_removed',
   security_policy_changed: 'platform.security_policy_changed',
+  security_digest: 'platform.security_digest',
 };
 
 /** A new link token: 32 random bytes, base64url (43 characters) — only its SHA-256 is stored. */
@@ -320,6 +323,29 @@ export function createAccountMailer(options: AccountMailerOptions): PlatformTask
         },
       }));
     }
+    if (request.kind === 'security_digest') {
+      const digest = request.digest;
+      if (!digest) {
+        throw Object.assign(new Error('security digest without its detail'), {
+          code: 'SECURITY_DIGEST_DETAIL_MISSING',
+          temporary: false,
+        });
+      }
+      return queueInTenant(jobId, request, (organizationName) => ({
+        template: 'platform.security_digest',
+        locale: request.locale,
+        to: request.email,
+        recipientPersonId: request.personId,
+        variables: {
+          organizationName,
+          held: digest.held,
+          since: digest.since.toISOString(),
+          timeZone: TIME_ZONE,
+          forgotPasswordUrl: pages('forgot-password'),
+          loginEmail: request.email,
+        },
+      }));
+    }
     if (request.kind === 'password_changed') {
       return queueInTenant(jobId, request, (organizationName) => ({
         template: 'platform.password_changed',
@@ -391,6 +417,11 @@ export function createAccountMailer(options: AccountMailerOptions): PlatformTask
   }
 
   async function answer(jobId: string, request: AccountMailRequest): Promise<void> {
+    if (request.outcome === 'held') {
+      // The database answered it already: merged into the account's next digest (final re-review L1).
+      log('info', `security notice merged into the account's digest (${request.kind})`);
+      return;
+    }
     if (request.outcome !== 'send') {
       await finishUnsent(jobId, request, request.outcome);
       return;

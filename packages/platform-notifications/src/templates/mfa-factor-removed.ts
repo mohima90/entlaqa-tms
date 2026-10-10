@@ -12,8 +12,9 @@ const Link = z.string().max(2000).refine(isSafeLink, 'https link');
  * "Authenticator app removed" (FR-IAM-12; T-M2-10; TM-0003 T-IAM-10/11): every removal or reset of an
  * account's authenticator app is e-mailed — by the account itself (My profile, or its own set-up cancelled),
  * as "not you" (the set-up e-mail's link, or "an app was added from another sign-in" → Remove), by an
- * Organization Admin, by ENTLAQA support after an identity check, or because nobody entered the e-mailed code
- * within 72 hours (re-review N2). Its only link is the "forgot password" page in each language — nothing that
+ * Organization Admin, by ENTLAQA support after an identity check, because nobody entered the e-mailed code
+ * within 72 hours (re-review N2), or after 15 wrong e-mailed codes on the account in 24 hours (final re-review
+ * L2). Its only link is the "forgot password" page in each language — nothing that
  * signs anyone in.
  */
 export const MFA_REMOVAL_REASONS = [
@@ -22,6 +23,7 @@ export const MFA_REMOVAL_REASONS = [
   'admin_reset',
   'support_reset',
   'expired',
+  'too_many_codes',
 ] as const;
 type Reason = (typeof MFA_REMOVAL_REASONS)[number];
 
@@ -42,6 +44,8 @@ const LEAD: Readonly<Record<AppLocale, Readonly<Record<Reason, string>>>> = {
     admin_reset: 'أعاد مدير المنشأة ضبط تطبيق المصادقة للحساب',
     support_reset: 'أعاد دعم ENTLAQA ضبط تطبيق المصادقة للحساب بعد التحقق من الهوية',
     expired: 'أُزيل تطبيق مصادقة لم يُدخَل رمز تأكيده خلال 72 ساعة من الحساب',
+    too_many_codes:
+      'بعد إدخال رموز تأكيد خاطئة كثيرة، أُزيل تطبيق المصادقة الذي ينتظر التأكيد من الحساب',
   },
   en: {
     removed: 'The authenticator app was removed from',
@@ -50,6 +54,8 @@ const LEAD: Readonly<Record<AppLocale, Readonly<Record<Reason, string>>>> = {
     support_reset: 'After checking your identity, ENTLAQA support reset the authenticator app of',
     expired:
       'An authenticator app whose e-mailed code was not entered within 72 hours was removed from',
+    too_many_codes:
+      'After many wrong confirmation codes, the authenticator app waiting to be confirmed was removed from',
   },
 };
 
@@ -75,6 +81,10 @@ const AROUND: Readonly<Record<AppLocale, Readonly<Record<Reason, readonly [strin
       'أُنهيت جلسات الدخول التي استخدمته. إن كان منك، يمكنك إعداده من جديد. وإن لم يكن منك، يلزم تعيين كلمة مرور جديدة من صفحة ',
       ' وإبلاغ مدير المنشأة.',
     ],
+    too_many_codes: [
+      'أُنهيت جلسات الدخول التي أعدّته. إن كان منك، يمكنك إعداده من جديد بعد قليل. وإن لم يكن منك، فربما يعرف شخص آخر كلمة مرورك: يلزم تعيين كلمة مرور جديدة من صفحة ',
+      ' وإبلاغ مدير المنشأة.',
+    ],
   },
   en: {
     removed: [
@@ -89,6 +99,10 @@ const AROUND: Readonly<Record<AppLocale, Readonly<Record<Reason, readonly [strin
     support_reset: [RESET_EN, " page and tell your organization's administrator."],
     expired: [
       "The sign-in sessions that used it have ended. If it was you, set it up again. If it wasn't, set a new password on the ",
+      " page and tell your organization's administrator.",
+    ],
+    too_many_codes: [
+      "The sign-in sessions that set it up have ended. If it was you, set it up again a little later. If it wasn't, someone may know your password: set a new one on the ",
       " page and tell your organization's administrator.",
     ],
   },

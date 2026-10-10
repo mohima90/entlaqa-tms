@@ -463,6 +463,7 @@ describe('confirmMfaSetup (the e-mailed code, re-review N1)', () => {
       ['invalid', 'MFA_EMAIL_CODE_INVALID'],
       ['expired', 'MFA_EMAIL_CODE_EXPIRED'],
       ['locked', 'MFA_EMAIL_CODE_LOCKED'],
+      ['removed', 'MFA_SETUP_REMOVED'],
       ['refused', 'MFA_SET_UP_ELSEWHERE'],
     ];
     for (const [confirmOutcome, code] of cases) {

@@ -6,8 +6,8 @@ import type { ClaimsTx } from '../claims-tx';
  * leases a request in a platform transaction (system claims without a tenant), learns whom to write in
  * which organization and language — or why nothing is sent — and finishes the request in the
  * organization's transaction that queues the e-mail. Only the definer functions reach the queue. T-M2-10
- * adds the authenticator notices: the set-up e-mail (with its confirmation and "not you" links, review H1)
- * and the removal notice.
+ * adds the security notices: the authenticator set-up e-mail (its one-time code and "not you" link) and
+ * removal notice, the policy-change notice, and the digest of the notices over an account's daily ceiling.
  */
 export const ACCOUNT_MAIL_KINDS = [
   'password_reset',
@@ -15,8 +15,42 @@ export const ACCOUNT_MAIL_KINDS = [
   'mfa_factor_added',
   'mfa_factor_removed',
   'security_policy_changed',
+  'security_digest',
 ] as const;
 export type AccountMailKind = (typeof ACCOUNT_MAIL_KINDS)[number];
+
+/**
+ * The security notices the database merges into an account's digest once its daily ceiling is reached
+ * (final re-review L1).
+ */
+export const DIGESTED_KINDS = [
+  'mfa_factor_added',
+  'mfa_factor_removed',
+  'security_policy_changed',
+  'password_changed',
+] as const;
+export type DigestedKind = (typeof DIGESTED_KINDS)[number];
+
+/** A security digest: how many notices of each kind were held, since when. */
+export interface SecurityDigest {
+  readonly held: Readonly<Partial<Record<DigestedKind, number>>>;
+  readonly since: Date;
+}
+
+function securityDigestOf(detail: unknown): SecurityDigest | null {
+  if (typeof detail !== 'object' || detail === null) return null;
+  const { held, since } = detail as Record<string, unknown>;
+  if (typeof held !== 'object' || held === null || typeof since !== 'string') return null;
+  const counts: Partial<Record<DigestedKind, number>> = {};
+  for (const [kind, count] of Object.entries(held as Record<string, unknown>)) {
+    const known = DIGESTED_KINDS.find((k) => k === kind);
+    if (!known || typeof count !== 'number' || !Number.isInteger(count) || count < 1) return null;
+    counts[known] = count;
+  }
+  const at = new Date(since);
+  if (Object.keys(counts).length === 0 || Number.isNaN(at.getTime())) return null;
+  return { held: counts, since: at };
+}
 
 /** Why an authenticator app was removed (the removal notice says so). */
 export const MFA_REMOVAL_REASONS = [
@@ -25,11 +59,15 @@ export const MFA_REMOVAL_REASONS = [
   'admin_reset',
   'support_reset',
   'expired',
+  'too_many_codes',
 ] as const;
 export type MfaRemovalReason = (typeof MFA_REMOVAL_REASONS)[number];
 
-/** Why no e-mail is sent for a request (decided by the database, never by the web app). */
-export type AccountMailSkip = 'unknown_account' | 'banned' | 'too_soon' | 'no_membership';
+/**
+ * Why no e-mail is sent for a request now (decided by the database, never by the web app). `held`: a security
+ * notice over the account's daily ceiling, merged into its hourly digest (final re-review L1).
+ */
+export type AccountMailSkip = 'unknown_account' | 'banned' | 'too_soon' | 'no_membership' | 'held';
 
 interface RequestBase {
   readonly id: string;
@@ -42,6 +80,8 @@ interface RequestBase {
   readonly mfaReason: MfaRemovalReason | null;
   /** security_policy_changed: the settings that changed (names only) and who changed them. */
   readonly policyChange: PolicyChange | null;
+  /** security_digest: the held notices by kind, since when. */
+  readonly digest: SecurityDigest | null;
 }
 
 /** What a policy-change notice says (T-IAM-24): setting names, the editor's person, when. */
@@ -86,6 +126,7 @@ const SKIPS: ReadonlySet<string> = new Set<AccountMailSkip>([
   'banned',
   'too_soon',
   'no_membership',
+  'held',
 ]);
 
 /** Leases the oldest waiting request (5 minutes), or null when none waits. */
@@ -115,6 +156,10 @@ export async function claimAccountMailRequest(tx: ClaimsTx): Promise<AccountMail
   if (kind === 'security_policy_changed' && !policyChange) {
     throw new Error('claimAccountMailRequest: policy change without its detail');
   }
+  const digest = kind === 'security_digest' ? securityDigestOf(row.detail) : null;
+  if (kind === 'security_digest' && !digest) {
+    throw new Error('claimAccountMailRequest: security digest without its detail');
+  }
   const base = {
     id: row.id,
     kind,
@@ -122,6 +167,7 @@ export async function claimAccountMailRequest(tx: ClaimsTx): Promise<AccountMail
     factorId: row.factor_id,
     mfaReason: reason,
     policyChange,
+    digest,
   } as const;
   if (row.outcome === 'send') {
     if (!row.email || !row.user_id || !row.tenant_id || !row.person_id) {

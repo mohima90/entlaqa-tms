@@ -5,6 +5,7 @@ import {
   MfaFactorRemovedVariables,
   PasswordChangedVariables,
   PasswordResetVariables,
+  SecurityDigestVariables,
   SecurityPolicyChangedVariables,
 } from '@jadarat/platform-notifications';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -61,6 +62,7 @@ const send = (overrides: Partial<Extract<AccountMailRequest, { outcome: 'send' }
     factorId: null,
     mfaReason: null,
     policyChange: null,
+    digest: null,
     ...overrides,
   }) as const;
 
@@ -74,6 +76,7 @@ const skipped = (outcome: 'unknown_account' | 'banned' | 'too_soon' | 'no_member
     factorId: null,
     mfaReason: null,
     policyChange: null,
+    digest: null,
   }) as const;
 
 function setup(
@@ -524,6 +527,7 @@ describe('account mailer (T-M2-10): authenticator app and security settings noti
       'mfa_factor_added',
       'mfa_factor_removed',
       'password_changed',
+      'security_digest',
       'security_policy_changed',
     ]);
     const kinds = [
@@ -569,24 +573,81 @@ describe('account mailer (T-M2-10): authenticator app and security settings noti
     );
   });
 
-  it.each(['removed', 'not_me', 'admin_reset', 'support_reset', 'expired'] as const)(
-    '"app removed" notice (%s): the reason, the forgot-password page',
-    async (reason) => {
-      queue(send({ kind: 'mfa_factor_removed', factorId: FACTOR, mfaReason: reason }));
-      const { task, issue } = setup();
-      await task.run({ jobId: 'j' });
-      expect(issue).not.toHaveBeenCalled();
-      const email = queued();
-      expect(email.template).toBe('platform.mfa_factor_removed');
-      expect(email.variables).toEqual({
-        organizationName: { ar: 'شركة الراية', en: 'Al Raya' },
-        reason,
-        forgotPasswordUrl: { ar: `${BASE}/ar/forgot-password`, en: `${BASE}/en/forgot-password` },
-        loginEmail: EMAIL,
-      });
-      expect(() => MfaFactorRemovedVariables.parse(email.variables)).not.toThrow();
-    },
-  );
+  it('a notice the database held for the digest is not sent now, only logged (final re-review L1)', async () => {
+    queue({
+      id: REQUEST,
+      kind: 'mfa_factor_removed',
+      attempt: 1,
+      outcome: 'held',
+      factorId: FACTOR,
+      mfaReason: 'not_me',
+      policyChange: null,
+      digest: null,
+    });
+    const { task, log, withSystemTx } = setup();
+    await task.run({ jobId: 'j' });
+    expect(mail.queueEmail).not.toHaveBeenCalled();
+    expect(withSystemTx).not.toHaveBeenCalled();
+    // The database already answered the request (merged into the digest).
+    expect(db.finishAccountMailRequest).not.toHaveBeenCalled();
+    expect(log).toHaveBeenCalledWith(
+      'info',
+      "security notice merged into the account's digest (mfa_factor_removed)",
+    );
+  });
+
+  it('the security digest: the held notices by kind, since when, the forgot-password page — never capped', async () => {
+    const since = new Date('2026-10-10T05:00:00Z');
+    queue(
+      send({
+        kind: 'security_digest',
+        locale: 'ar',
+        digest: { held: { mfa_factor_added: 7, mfa_factor_removed: 7 }, since },
+      }),
+    );
+    db.loadAccountMailContext.mockResolvedValueOnce({
+      organizationName: { ar: 'شركة الراية', en: 'Al Raya' },
+      recipientName: { ar: 'سارة', en: 'Sara' },
+      recentCount: ACCOUNT_MAIL_HOURLY_CAP + 10,
+    });
+    const { task } = setup();
+    await task.run({ jobId: 'j' });
+    const email = queued();
+    expect(email.template).toBe('platform.security_digest');
+    expect(email.variables).toEqual({
+      organizationName: { ar: 'شركة الراية', en: 'Al Raya' },
+      held: { mfa_factor_added: 7, mfa_factor_removed: 7 },
+      since: '2026-10-10T05:00:00.000Z',
+      timeZone: 'Asia/Riyadh',
+      forgotPasswordUrl: { ar: `${BASE}/ar/forgot-password`, en: `${BASE}/en/forgot-password` },
+      loginEmail: EMAIL,
+    });
+    expect(() => SecurityDigestVariables.parse(email.variables)).not.toThrow();
+    expect(SECURITY_NOTICE_KINDS.has('security_digest')).toBe(true);
+  });
+
+  it.each([
+    'removed',
+    'not_me',
+    'admin_reset',
+    'support_reset',
+    'expired',
+    'too_many_codes',
+  ] as const)('"app removed" notice (%s): the reason, the forgot-password page', async (reason) => {
+    queue(send({ kind: 'mfa_factor_removed', factorId: FACTOR, mfaReason: reason }));
+    const { task, issue } = setup();
+    await task.run({ jobId: 'j' });
+    expect(issue).not.toHaveBeenCalled();
+    const email = queued();
+    expect(email.template).toBe('platform.mfa_factor_removed');
+    expect(email.variables).toEqual({
+      organizationName: { ar: 'شركة الراية', en: 'Al Raya' },
+      reason,
+      forgotPasswordUrl: { ar: `${BASE}/ar/forgot-password`, en: `${BASE}/en/forgot-password` },
+      loginEmail: EMAIL,
+    });
+    expect(() => MfaFactorRemovedVariables.parse(email.variables)).not.toThrow();
+  });
 
   it('"security settings changed": which settings, who (their name in the organization), when (review L5)', async () => {
     const changedAt = new Date('2026-10-11T09:30:00Z');

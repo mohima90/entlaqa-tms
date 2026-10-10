@@ -208,7 +208,7 @@ describe('authenticator apps and the device limit (review H1, L1; PO answer on r
       sql: 'select private.confirm_mfa_setup($1::uuid, $2) as outcome',
       params: [FACTOR, '40718263'],
     });
-    for (const outcome of ['invalid', 'expired', 'locked', 'refused'] as const) {
+    for (const outcome of ['invalid', 'expired', 'locked', 'removed', 'refused'] as const) {
       expect(await confirmMfaSetup(fakeTx([{ outcome }]).tx, FACTOR, '00000000')).toBe(outcome);
     }
     expect(await confirmMfaSetup(fakeTx([]).tx, FACTOR, '00000000')).toBe('refused');

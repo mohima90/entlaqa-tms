@@ -48,7 +48,7 @@ const row = (overrides: Record<string, unknown>) => ({
   detail: null,
   ...overrides,
 });
-const none = { factorId: null, mfaReason: null, policyChange: null };
+const none = { factorId: null, mfaReason: null, policyChange: null, digest: null };
 
 describe('account e-mail queue, worker side (T-M2-17)', () => {
   it('a lease to send: recipient, organization, person and language', async () => {
@@ -72,7 +72,7 @@ describe('account e-mail queue, worker side (T-M2-17)', () => {
   });
 
   it('a lease without e-mail carries only why; nothing waiting is null', async () => {
-    for (const outcome of ['unknown_account', 'banned', 'too_soon', 'no_membership']) {
+    for (const outcome of ['unknown_account', 'banned', 'too_soon', 'no_membership', 'held']) {
       expect(
         await claimAccountMailRequest(
           fakeTx([row({ kind: 'password_changed', outcome, email: null, attempts: 2 })]).tx,
@@ -120,6 +120,39 @@ describe('account e-mail queue, worker side (T-M2-17)', () => {
         claimAccountMailRequest(fakeTx([row({ kind: 'security_policy_changed', detail: bad })]).tx),
       ).rejects.toThrow('policy change without its detail');
     }
+  });
+
+  it('a security digest carries the held notices by kind and since when (final re-review L1)', async () => {
+    const detail = {
+      held: { mfa_factor_added: 3, mfa_factor_removed: 2 },
+      since: '2026-10-10T08:00:00Z',
+    };
+    expect(
+      await claimAccountMailRequest(fakeTx([row({ kind: 'security_digest', detail })]).tx),
+    ).toMatchObject({
+      kind: 'security_digest',
+      outcome: 'send',
+      digest: {
+        held: { mfa_factor_added: 3, mfa_factor_removed: 2 },
+        since: new Date('2026-10-10T08:00:00Z'),
+      },
+    });
+    for (const bad of [
+      null,
+      { held: {}, since: '2026-10-10T08:00:00Z' },
+      { held: { password_reset: 1 }, since: '2026-10-10T08:00:00Z' },
+      { held: { mfa_factor_added: 0 }, since: '2026-10-10T08:00:00Z' },
+      { held: { mfa_factor_added: 1 }, since: 'soon' },
+    ]) {
+      await expect(
+        claimAccountMailRequest(fakeTx([row({ kind: 'security_digest', detail: bad })]).tx),
+      ).rejects.toThrow('security digest without its detail');
+    }
+    expect(
+      await claimAccountMailRequest(
+        fakeTx([row({ kind: 'mfa_factor_removed', mfa_reason: 'too_many_codes' })]).tx,
+      ),
+    ).toMatchObject({ mfaReason: 'too_many_codes' });
   });
 
   it('the set-up code and link, whether an account has an app, the purges (T-M2-10)', async () => {

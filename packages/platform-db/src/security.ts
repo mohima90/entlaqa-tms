@@ -231,6 +231,7 @@ export const MFA_SETUP_CONFIRMATIONS = [
   'invalid',
   'expired',
   'locked',
+  'removed',
   'refused',
 ] as const;
 export type MfaSetupConfirmation = (typeof MFA_SETUP_CONFIRMATIONS)[number];
@@ -238,7 +239,8 @@ export type MfaSetupConfirmation = (typeof MFA_SETUP_CONFIRMATIONS)[number];
 /**
  * The e-mailed code of a new app (re-review N1), accepted only from the session that set the app up (aal2
  * through that app): from then on it counts for AAL2. invalid (wrong code — tries are counted) | expired |
- * locked (5 wrong tries: "send again") | refused (not this session's waiting app).
+ * locked (5 wrong tries: "send again") | removed (15 wrong codes on the account within 24 hours: its waiting
+ * apps were removed and this session ended — final re-review L2) | refused (not this session's waiting app).
  */
 export async function confirmMfaSetup(
   tx: UserTx,

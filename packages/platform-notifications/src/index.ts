@@ -16,6 +16,11 @@ export {
   securityPolicyChangedTemplate,
 } from './templates/security-policy-changed';
 export {
+  DIGEST_KINDS,
+  SecurityDigestVariables,
+  securityDigestTemplate,
+} from './templates/security-digest';
+export {
   EMAIL_TEMPLATES,
   type EmailTemplateKey,
   type EmailVariables,

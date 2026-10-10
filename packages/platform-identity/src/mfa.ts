@@ -53,7 +53,8 @@ import { type SupabaseAuthLike, verifyClaims, verifyClaimsStrict } from './verif
  * Attempt limits (review M3): Auth limits verifications per IP (all ours come from the app server); the
  * sign-in limiter (T-M2-11, INTEGRATION POINT) wraps verifyTotpCodeAction with per-account limits. Each
  * refused code is logged with a stable action and error code (no personal data). The e-mailed code dies
- * after 5 wrong tries (the database).
+ * after 5 wrong tries, and 15 wrong codes on the account within 24 hours remove its waiting apps (the
+ * database; final re-review L2).
  */
 export const MfaErrors = defineErrorCodes({
   /** The code is wrong or expired (one message for both). */
@@ -74,6 +75,11 @@ export const MfaErrors = defineErrorCodes({
   MFA_SET_UP_ELSEWHERE: { status: 409, messageKey: 'mfa.errors.setUpElsewhere' },
   /** "Send the e-mail again" within 2 minutes of the last one. */
   MFA_RESEND_TOO_SOON: { status: 429, messageKey: 'mfa.errors.resendTooSoon' },
+  /**
+   * 15 wrong e-mailed codes on the account within 24 hours (final re-review L2): its waiting apps were removed
+   * and the windows that set them up signed out; the owner was e-mailed.
+   */
+  MFA_SETUP_REMOVED: { status: 409, messageKey: 'mfa.errors.setupRemoved' },
 });
 
 /** The e-mailed set-up code (re-review N1): 8 digits. */
@@ -422,7 +428,9 @@ export async function confirmMfaSetup(
           ? MfaErrors.MFA_EMAIL_CODE_EXPIRED
           : outcome === 'locked'
             ? MfaErrors.MFA_EMAIL_CODE_LOCKED
-            : MfaErrors.MFA_SET_UP_ELSEWHERE;
+            : outcome === 'removed'
+              ? MfaErrors.MFA_SETUP_REMOVED
+              : MfaErrors.MFA_SET_UP_ELSEWHERE;
     deps.logWarning('e-mailed authenticator set-up code refused', {
       action: MFA_CONFIRM_ACTION,
       outcome: 'failure',

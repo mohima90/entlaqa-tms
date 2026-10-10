@@ -6,7 +6,7 @@
 | **Epic** | `EP-M2-PEO` — People directory & suite mode (M2) |
 | **Features** | **STE-01** Suite mode and standalone mode per tenant (FR-STE-01, M, R1) · **STE-02** Shared people & organization directory, single person record across suite modules (FR-STE-02, M, R1) |
 | **Template** | Development Plan Appendix D (extended, same section structure as TM-0001) |
-| **Version** | 0.1 — 3 Oct 2026 |
+| **Version** | 0.2 — 10 Oct 2026 (T-M2-12, bulk user import: status notes on T-PEO-20, 21, 24, 28 — import logs and audit carry ids and counts only, files and staged rows deleted 7 days after the end, batches of 500 with checkpoints, privileged roles never given by import) · 0.1 — 3 Oct 2026 |
 | **Status** | Proposed (awaiting Tech Lead review and PO merge) |
 | **Owner** | Security Lead (Claude agent) |
 | **Reviewers** | Tech Lead (Claude agent), Product Owner; Legal counsel for the L-PEO items (§10) |

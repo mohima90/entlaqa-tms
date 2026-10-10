@@ -9,7 +9,12 @@ import {
   signOut,
   signOutEndedSession,
 } from './auth-flow';
-import { RateLimiterUnavailableError, type SignInGate, type SignInGuard } from './auth-limits';
+import {
+  RateLimiterUnavailableError,
+  type SignInGate,
+  type SignInGuard,
+  type SignInSuccessOptions,
+} from './auth-limits';
 
 const USER = '11111111-1111-4111-8111-111111111111';
 const SESSION = '33333333-3333-4333-8333-333333333333';
@@ -41,8 +46,8 @@ interface FakeOptions {
   gate?: SignInGate | Error;
   /** Milliseconds Auth takes to answer (the fake clock moves on by this much). */
   authLatencyMs?: number;
-  /** The account's factors in Auth's answer (default: none — no authenticator app). */
-  factors?: { factor_type: string; status: string }[];
+  /** The account's factors in Auth's answer (default: none — no authenticator app); null: no `factors`. */
+  factors?: { factor_type: string; status: string }[] | null;
 }
 
 function setup(options: FakeOptions = {}) {
@@ -57,7 +62,10 @@ function setup(options: FakeOptions = {}) {
           : {
               data: {
                 session: { access_token: 'access-1', refresh_token: 'refresh-1' },
-                user: { id: USER, factors: options.factors ?? [] },
+                user:
+                  options.factors === null
+                    ? { id: USER }
+                    : { id: USER, factors: options.factors ?? [] },
               },
               error: null,
             },
@@ -100,21 +108,17 @@ function setup(options: FakeOptions = {}) {
   const claimsSeen: unknown[] = [];
   // The attempt an allowed check hands out: Auth's verdict is reported to it.
   const failed = vi.fn(() => Promise.resolve());
-  const succeeded = vi.fn((_options?: { remember: boolean }) => Promise.resolve());
+  const succeeded = vi.fn((_options?: SignInSuccessOptions) => Promise.resolve());
   const notChecked = vi.fn(() => Promise.resolve());
-  const rememberAfterCode = vi.fn((_sessionId: string) => Promise.resolve());
   const check = vi.fn((_email: string): Promise<SignInGate> =>
     options.gate instanceof Error
       ? Promise.reject(options.gate)
       : Promise.resolve(
-          options.gate ?? {
-            allowed: true,
-            attempt: { failed, succeeded, notChecked, rememberAfterCode },
-          },
+          options.gate ?? { allowed: true, attempt: { failed, succeeded, notChecked } },
         ),
   );
   const signInGuard: SignInGuard = { check };
-  const guard = { check, failed, succeeded, notChecked, rememberAfterCode };
+  const guard = { check, failed, succeeded, notChecked };
   const deps: AuthFlowDeps = {
     supabase: { auth },
     withUserTx: ((claims: unknown, fn: (tx: unknown) => Promise<unknown>) => {
@@ -264,35 +268,64 @@ describe('signInWithPassword', () => {
     await signInWithPassword(deps, credentials);
     expect(guard.succeeded).toHaveBeenCalledTimes(1);
     // Opt-in (PO decision 9 Oct 2026): not ticked, not remembered.
-    expect(guard.succeeded).toHaveBeenCalledWith({ remember: false });
+    expect(guard.succeeded).toHaveBeenCalledWith({
+      remember: false,
+      verified: { userId: USER, sessionId: SESSION },
+      authNamesApp: false,
+    });
     expect(guard.failed).not.toHaveBeenCalled();
     // A successful sign-in is not slowed down.
     expect(deps.sleep).not.toHaveBeenCalled();
+    // Ticked: the verified token's user and session go with it — the database decides (L4).
     const ticked = setup();
     await signInWithPassword(ticked.deps, { ...credentials, remember: true });
-    expect(ticked.guard.succeeded).toHaveBeenCalledWith({ remember: true });
-    expect(ticked.guard.rememberAfterCode).not.toHaveBeenCalled();
+    expect(ticked.guard.succeeded).toHaveBeenCalledWith({
+      remember: true,
+      verified: { userId: USER, sessionId: SESSION },
+      authNamesApp: false,
+    });
   });
 
-  it('an account with an authenticator app: the password alone remembers nothing — a ticked box waits for this session’s code (integration review L4)', async () => {
+  it('an account with an authenticator app: Auth naming it is passed on; the database decides (integration review L4)', async () => {
     const app = [{ factor_type: 'totp', status: 'verified' }];
     const ticked = setup({ factors: app });
     expect((await signInWithPassword(ticked.deps, { ...credentials, remember: true })).ok).toBe(
       true,
     );
-    expect(ticked.guard.succeeded).toHaveBeenCalledWith({ remember: false });
-    // The session of the token Auth just issued, verified.
-    expect(ticked.guard.rememberAfterCode).toHaveBeenCalledWith(SESSION);
-    // Unticked: nothing waits.
-    const unticked = setup({ factors: app });
-    await signInWithPassword(unticked.deps, credentials);
-    expect(unticked.guard.succeeded).toHaveBeenCalledWith({ remember: false });
-    expect(unticked.guard.rememberAfterCode).not.toHaveBeenCalled();
-    // A set-up that never passed its first code is no app yet: today's behaviour.
+    expect(ticked.guard.succeeded).toHaveBeenCalledWith({
+      remember: true,
+      verified: { userId: USER, sessionId: SESSION },
+      authNamesApp: true,
+    });
+    // A set-up that never passed its first code is not named as an app (the database still looks).
     const unfinished = setup({ factors: [{ factor_type: 'totp', status: 'unverified' }] });
     await signInWithPassword(unfinished.deps, { ...credentials, remember: true });
-    expect(unfinished.guard.succeeded).toHaveBeenCalledWith({ remember: true });
-    expect(unfinished.guard.rememberAfterCode).not.toHaveBeenCalled();
+    expect(unfinished.guard.succeeded).toHaveBeenCalledWith(
+      expect.objectContaining({ remember: true, authNamesApp: false }),
+    );
+  });
+
+  it('Auth’s answer without `factors` (re-review): not taken as "no app" by itself — the verified user goes to the database', async () => {
+    const { deps, guard } = setup({ factors: null });
+    expect((await signInWithPassword(deps, { ...credentials, remember: true })).ok).toBe(true);
+    // Auth said nothing about an app; the database looks at this user's factors itself (pgTAP 71).
+    expect(guard.succeeded).toHaveBeenCalledWith({
+      remember: true,
+      verified: { userId: USER, sessionId: SESSION },
+      authNamesApp: false,
+    });
+  });
+
+  it('a token that cannot be verified: the success is recorded without a user — nothing can be trusted', async () => {
+    const { deps, guard, auth } = setup();
+    auth.getClaims.mockResolvedValueOnce({ data: null, error: new Error('bad token') });
+    const result = await signInWithPassword(deps, { ...credentials, remember: true });
+    expect(!result.ok && result.error.code).toBe('UNAUTHENTICATED');
+    expect(guard.succeeded).toHaveBeenCalledWith({
+      remember: true,
+      verified: null,
+      authNamesApp: false,
+    });
   });
 
   it('never reports an Auth outage as a wrong password; the provisional failure stays counted', async () => {

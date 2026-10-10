@@ -139,15 +139,11 @@ function setup(options: Options = {}) {
   const failed = vi.fn(() => Promise.resolve());
   const succeeded = vi.fn((_options?: { remember: boolean }) => Promise.resolve());
   const notChecked = vi.fn(() => Promise.resolve());
-  const rememberAfterCode = vi.fn((_sessionId: string) => Promise.resolve());
   const check = vi.fn((_email: string): Promise<SignInGate> =>
     options.gate instanceof Error
       ? Promise.reject(options.gate)
       : Promise.resolve(
-          options.gate ?? {
-            allowed: true,
-            attempt: { failed, succeeded, notChecked, rememberAfterCode },
-          },
+          options.gate ?? { allowed: true, attempt: { failed, succeeded, notChecked } },
         ),
   );
   const guard = { check, failed, succeeded, notChecked };
@@ -608,7 +604,7 @@ describe('acceptInvitationWithPassword (sign in to accept)', () => {
     expect(calls).toEqual(['signIn', 'acceptAsCaller', `switch:${TENANT}`]);
     expect(auth.refreshSession).toHaveBeenCalledWith({ refresh_token: 'refresh-1' });
     // No «تذكّر هذا المتصفح» here: the browser is not remembered (opt-in, PO decision 9 Oct 2026).
-    expect(guard.succeeded).toHaveBeenCalledWith({ remember: false });
+    expect(guard.succeeded).toHaveBeenCalledWith(expect.objectContaining({ remember: false }));
   });
 
   it('refuses wrong credentials with the usual sign-in answer', async () => {

@@ -1,4 +1,4 @@
--- Rollback of 20261016090000_platform__user_imports.sql. Run the rollbacks of 20261016090200 and
+-- Rollback of 20261016090000_platform__user_imports.sql. Run the rollbacks of 20261016090200, 20261016090150 and
 -- 20261016090100 first. The cluster-wide role user_import_guard is kept (other databases may use it); its
 -- privileges here are removed. The imports' files stay in platform.files (purged by the file housekeeping
 -- per their retention class).

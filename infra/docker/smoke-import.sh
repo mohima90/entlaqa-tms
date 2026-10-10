@@ -20,13 +20,19 @@ import_journey() {
   (cd "$ROOT/apps/suite" && E2E_BASE_URL=http://localhost:3200 SIGNED_IN_E2E_EMAIL="$email" \
     SIGNED_IN_E2E_PASSWORD="$password" pnpm exec playwright test e2e/user-import.spec.ts --project=desktop-chromium)
 
-  # The English import was run, then undone: its person is inactive again and the invitation revoked;
-  # the refused rows added nobody.
+  # The English import was run, then undone: its person is removed (inactive, marked, invisible to the app)
+  # and the invitation revoked — and the address was invited again by hand (a new record, as if never
+  # added); the refused rows added nobody.
   [[ "$(q "select string_agg(status, ',' order by created_at) from platform.user_imports where file_name like 'staff-en-%'")" == "undone" ]] ||
     { echo "smoke: import: the English import must be undone" >&2; return 1; }
   [[ "$(q "select count(*) from platform.persons p join platform.invitations i on i.tenant_id = p.tenant_id and i.person_id = p.id
-          where p.email like 'import-en-new-%' and p.status = 'inactive' and i.status = 'revoked' and i.import_id is not null")" == "1" ]] ||
-    { echo "smoke: import: the undo must revoke the invitation and leave the added person inactive" >&2; return 1; }
+          join platform.user_imports u on u.tenant_id = p.tenant_id and u.id = p.removed_by_import_id
+          where p.email like 'import-en-new-%' and p.status = 'inactive' and p.removed_at is not null
+            and u.file_name like 'staff-en-%' and i.status = 'revoked' and i.import_id = u.id")" == "1" ]] ||
+    { echo "smoke: import: the undo must revoke the invitation and mark the added person removed" >&2; return 1; }
+  [[ "$(q "select count(*) from platform.persons p join platform.invitations i on i.tenant_id = p.tenant_id and i.person_id = p.id
+          where p.email like 'import-en-new-%' and p.removed_at is null and i.status = 'pending' and i.import_id is null")" == "1" ]] ||
+    { echo "smoke: import: the removed person's address must be free for a new invitation by hand" >&2; return 1; }
   [[ "$(q "select count(*) from platform.persons where email like 'import-en-admin-%' or email like 'import-en-twice-%' or email = 'not-an-email'")" == "0" ]] ||
     { echo "smoke: import: a refused row added a person" >&2; return 1; }
   [[ "$(q "select (result_counts ->> 'added') || ',' || (result_counts ->> 'failed') from platform.user_imports where file_name like 'staff-en-%'")" == "1,4" ]] ||

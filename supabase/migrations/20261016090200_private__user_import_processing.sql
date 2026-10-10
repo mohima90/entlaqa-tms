@@ -180,12 +180,13 @@ begin
   from d
   where r.tenant_id = v_tenant and r.import_id = p_import_id and r.data ->> 'employee_number' = d.number;
 
-  -- The key: the work e-mail (lower-cased on both sides), this organization's people only.
+  -- The key: the work e-mail (lower-cased on both sides), this organization's people only — never a person
+  -- removed by an earlier undo (as if never added: migration 20261016090150).
   update platform.user_import_rows r
   set target_person_id = p.id
   from platform.persons p
   where r.tenant_id = v_tenant and r.import_id = p_import_id and p.tenant_id = v_tenant
-    and p.email = r.data ->> 'email';
+    and p.email = r.data ->> 'email' and p.removed_at is null;
 
   -- Who they are now: the importer (never changed by import), an active member (existing), a deactivated
   -- or removed member, someone with an invitation not accepted yet (skipped); a person without any
@@ -224,7 +225,7 @@ begin
   where r.tenant_id = v_tenant and r.import_id = p_import_id and r.data ? 'employee_number'
     and exists (select 1 from platform.persons p
                 where p.tenant_id = v_tenant and p.employee_number = r.data ->> 'employee_number'
-                  and p.id is distinct from r.target_person_id);
+                  and p.removed_at is null and p.id is distinct from r.target_person_id);
 
   -- Department and branch: by code (letter case ignored), else by name (Arabic or English, letter variants,
   -- diacritics and case ignored: private.search_key). Not found or two by that name: the person is added
@@ -607,7 +608,8 @@ begin
     select r.row_number,
            case
              when r.review_kind = 'new' and r.target_person_id is null
-                  and exists (select 1 from platform.persons p where p.tenant_id = v_tenant and p.email = r.data ->> 'email')
+                  and exists (select 1 from platform.persons p where p.tenant_id = v_tenant and p.email = r.data ->> 'email'
+                                                                  and p.removed_at is null)
                then 'EMAIL_TAKEN'
              when r.review_kind = 'new' and r.target_person_id is not null
                   and (exists (select 1 from platform.tenant_memberships m
@@ -626,7 +628,7 @@ begin
              when r.data ? 'employee_number'
                   and exists (select 1 from platform.persons p
                               where p.tenant_id = v_tenant and p.employee_number = r.data ->> 'employee_number'
-                                and p.id is distinct from r.target_person_id)
+                                and p.removed_at is null and p.id is distinct from r.target_person_id)
                then 'EMPLOYEE_NUMBER_TAKEN'
            end as reason
     from platform.user_import_rows r
@@ -760,7 +762,8 @@ begin
                                 where a <> v_primary order by a);
           if v_row.target_person_id is null then
             -- Fresh check: nobody has this e-mail now (e.g. invited by hand since the review).
-            if exists (select 1 from platform.persons p where p.tenant_id = v_tenant and p.email = d ->> 'email') then
+            if exists (select 1 from platform.persons p where p.tenant_id = v_tenant and p.email = d ->> 'email'
+                                                         and p.removed_at is null) then
               raise exception 'changed since the review' using errcode = 'JU002', detail = 'CHANGED_SINCE_REVIEW';
             end if;
             insert into platform.persons (display_name_ar, display_name_en, first_name_ar, father_name_ar,
@@ -780,8 +783,9 @@ begin
             v_before := null;
             v_versions := null;
           else
-            -- A person without account or invitation (e.g. removed by an earlier undo): invited again, the
-            -- record updated from the file and made active; undo restores it.
+            -- A person without account or invitation (e.g. whose invitation was revoked by hand; never one
+            -- removed by an undo — those are not matched): invited again, the record updated from the file
+            -- and made active; undo restores it.
             perform 1 from platform.persons p where p.tenant_id = v_tenant and p.id = v_row.target_person_id for update;
             select m.status into v_member from platform.tenant_memberships m
             where m.tenant_id = v_tenant and m.person_id = v_row.target_person_id;
@@ -1067,7 +1071,10 @@ begin
           update platform.invitations i set status = 'revoked'
           where i.tenant_id = v_tenant and i.id = v_row.invitation_id;
           if v_row.before is null then
-            update platform.persons p set status = 'inactive' where p.tenant_id = v_tenant and p.id = v_row.person_id;
+            -- Created by this import: removed, as if never added (migration 20261016090150) — kept inactive for
+            -- the audit trail and referential integrity only, invisible to user claims.
+            update platform.persons p set status = 'inactive', removed_by_import_id = p_import_id
+            where p.tenant_id = v_tenant and p.id = v_row.person_id;
           else
             perform private.user_import_write_person(v_tenant, v_row.person_id, v_row.before - 'status',
                                                      coalesce(v_row.before ->> 'status', 'inactive'));

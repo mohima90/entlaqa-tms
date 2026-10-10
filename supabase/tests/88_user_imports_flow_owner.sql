@@ -2,7 +2,8 @@
 -- User imports end to end (T-M2-12, FR-IAM-04, BRD §10.4): the dry run (private.user_import_classify) on a
 -- file that meets every rule of the approved design, the run in batches with the fresh check, held
 -- invitations of the importer scheduled and sent, an HR Manager's limits, an importer who loses the role
--- mid-run, the sign-in rule for held invitations (T-M2-09) and the undo. The owner connection switches
+-- mid-run, the sign-in rule for held invitations (T-M2-09) and the undo (people it removes disappear as if
+-- never added: migration 20261016090150). The owner connection switches
 -- between the worker (app_worker, system claims) and the importer (app_server, user claims) like
 -- 64_sign_in_refusal_owner.sql. Fixtures: 00_helpers_and_fixtures.sql, 85_user_imports_fixtures.sql. Every
 -- block is rolled back.
@@ -357,9 +358,15 @@ begin
                         from platform.invitations where id = (select invitation_id from platform.user_import_rows
                                                               where import_id = i and row_number = 17)),
     'a removed person''s invitation is revoked (by the member who asked for the undo): the link stops');
-  perform tests.assert((select status = 'inactive' from platform.persons
+  perform tests.assert((select status = 'inactive' and removed_by_import_id = i and removed_at is not null
+                        from platform.persons
                         where id = (select person_id from platform.user_import_rows where import_id = i and row_number = 17)),
-    'their record is kept, inactive');
+    'their record is kept, inactive and marked removed by this import (audit, referential integrity only)');
+  perform tests.assert_eq((select count(*) from platform.persons p join platform.user_import_rows r on r.person_id = p.id
+                           where r.import_id = i and r.undo_result = 'removed' and p.removed_at is not null), 2::bigint,
+    'both people the import created and the undo removed carry the marker');
+  perform tests.assert((select removed_at is null from platform.persons where id = 'a1000000-0000-4000-8000-000000000c05'),
+    'row 11: a record the import reused is put back, never marked removed');
   perform tests.assert((select status = 'inactive' and job_title_ar is null from platform.persons p
                         left join platform.person_employment e on e.person_id = p.id
                         where p.id = 'a1000000-0000-4000-8000-000000000c05'), 'row 11: the reused record is put back as it was');
@@ -370,8 +377,47 @@ begin
     4::bigint, 'every removal and restore is audited');
 end $$;
 update platform.user_imports set status = 'undone' where id = 'a5000000-0000-4000-8000-0000000000d2';
+-- Removing is the undo's alone; a removed person never changes again (TM-0003 T-IAM-47).
+do $$
+declare
+  i constant uuid := 'a5000000-0000-4000-8000-0000000000d2';
+  v_removed uuid := (select person_id from platform.user_import_rows where import_id = i and row_number = 17);
+  v_kept uuid := (select person_id from platform.user_import_rows where import_id = i and row_number = 2);
+begin
+  perform tests.assert_fails(format($q$update platform.persons set removed_by_import_id = %L where id = %L$q$, i, v_kept),
+    array['42501'],
+    'a system job cannot remove a person outside the undo of the import that added them');
+  perform tests.assert_fails(format($q$update platform.persons set display_name_ar = 'تغيير' where id = %L$q$, v_removed),
+    array['42501'], 'a removed person is never changed again, not even by a system job');
+  perform tests.assert_fails($q$insert into platform.persons (display_name_ar, email, removed_at, removed_by_import_id)
+                                values ('مزيف', 'fake.removed@imp.test', now(), 'a5000000-0000-4000-8000-0000000000d2')$q$,
+    array['42501'], 'a person is never created removed');
+end $$;
+-- As if they had never been added: the importer (and every user claim) no longer sees them.
+select pg_temp.become_user('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
+                           'a1000000-0000-4000-8000-0000000000a1');
+do $$
+declare
+  i constant uuid := 'a5000000-0000-4000-8000-0000000000d2';
+begin
+  perform tests.assert_eq((select count(*) from platform.persons
+                           where email in ('nomgr@imp.test', 'under.dup@imp.test')), 0::bigint,
+    'removed people are invisible to user claims: users list, tabs, search, counts, profiles and pickers');
+  perform tests.assert_eq((select count(*) from platform.persons where removed_at is not null), 0::bigint,
+    'no removed person at all is visible to user claims');
+  perform tests.assert_eq(tests.rows_affected(format($q$update platform.persons set display_name_ar = 'تعديل'
+                                                       where removed_by_import_id = %L$q$, i)), 0::bigint,
+    'nor can a user change them');
+  perform tests.assert_fails($q$update platform.persons set removed_by_import_id = 'a5000000-0000-4000-8000-0000000000d2'
+                                where id = 'a1000000-0000-4000-8000-000000000c01'$q$,
+    array['42501'], 'a user (even an Organization Admin) cannot mark a person removed');
+  -- Their e-mail is free again: the invite form creates a new person with it.
+  perform tests.assert_eq(tests.rows_affected($q$insert into platform.persons (display_name_ar, email)
+                                                 values ('تحت مكرر', 'under.dup@imp.test')$q$), 1::bigint,
+    'the e-mail of a removed person can be invited again (a new record)');
+end $$;
 select pg_temp.become_owner();
--- A removed person can be imported again: invited again with the same record.
+-- A removed person can be imported again: a new record, as if never added.
 select pg_temp.new_import('a5000000-0000-4000-8000-0000000000d3', '00000000-0000-4000-8000-0000000000a1',
                           'a1000000-0000-4000-8000-0000000000a1', 'f0a00000-0000-4000-8000-0000000000d3');
 select pg_temp.stage('a5000000-0000-4000-8000-0000000000d3', 2, '{"email": "nomgr@imp.test", "first_name_ar": "بلا", "family_name_ar": "مدير"}');
@@ -381,6 +427,9 @@ do $$
 begin
   perform tests.assert_eq(pg_temp.kind('a5000000-0000-4000-8000-0000000000d3', 2), 'new',
     'after the undo, the same file can be imported again');
+  perform tests.assert((select target_person_id is null from platform.user_import_rows
+                        where import_id = 'a5000000-0000-4000-8000-0000000000d3' and row_number = 2),
+    'the removed record is not matched: the person is added as a new record');
 end $$;
 select pg_temp.become_owner();
 rollback;

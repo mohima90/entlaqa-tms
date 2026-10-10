@@ -197,10 +197,23 @@ test.describe('bulk user import', () => {
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('The import was undone', {
       timeout: WORKER_WAIT,
     });
-    await page.goto('/en/suite/admin/users?tab=invited');
+    // As if never added: no tab, search or count shows the person…
+    for (const tab of ['all', 'invited', 'deactivated']) {
+      await page.goto(`/en/suite/admin/users?tab=${tab}&q=${encodeURIComponent(added)}`);
+      await expect(page.getByTestId('users-empty')).toBeVisible();
+    }
+    // …and the address can be invited again by hand (a new record).
+    await page.goto('/en/suite/admin/users/invite');
+    const form = page.getByTestId('invite-user');
+    await form.locator('#invite-email').fill(added);
+    await form.locator('#invite-firstNameAr').fill('سلمان');
+    await form.locator('#invite-familyNameAr').fill('العتيبي');
+    await form.getByRole('radio', { name: /^Learner/ }).check();
+    await form.getByRole('button', { name: 'Send invitation' }).click();
+    await expect(page).toHaveURL(/\/en\/suite\/admin\/users\?tab=invited&invited=1$/);
     await expect(
       page.getByTestId('invitations-table').getByRole('row').filter({ hasText: added }),
-    ).toHaveCount(0);
+    ).toHaveCount(1);
   });
 
   test('Arabic: right to left, add people without invitations, then send them', async ({

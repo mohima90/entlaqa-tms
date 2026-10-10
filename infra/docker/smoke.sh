@@ -19,6 +19,10 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT/infra/docker"
 DOCKER="${DOCKER:-docker}"
 compose() { $DOCKER compose --env-file .secrets/.env "$@"; }
+# This stack's clamd keeps the pinned image's signatures (no freshclam: no egress in the test), which are
+# days or weeks old: the workers' hard limit (default 7 days: nothing scanned beyond it) is raised to a
+# year for this test only. smoke-files.sh checks that a short limit refuses them, end to end.
+export FILE_SCAN_SIGNATURES_MAX_AGE_DAYS=365
 # File storage and malware scanning journey (T-M2-18): files_journey.
 # shellcheck source=smoke-files.sh
 source "$ROOT/infra/docker/smoke-files.sh"

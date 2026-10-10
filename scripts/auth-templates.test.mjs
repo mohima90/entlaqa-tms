@@ -126,9 +126,26 @@ describe('Auth e-mail templates (T-M2-08)', () => {
         (m) => m[1],
       ),
     ).toEqual([
-      'auth-internal, auth-admin, auth-tools, edge, errors, storage-internal', // gateway
       'db-app, mail, auth-admin, scan', // workers
       'auth-tools', // admin-cli
+    ]);
+    // The gateway (the one service on both admin networks, written as a map for its fixed address).
+    const gatewayService = compose.slice(
+      compose.indexOf('\n  gateway:\n'),
+      compose.indexOf('\n  app:\n'),
+    );
+    const gatewayNetworks = gatewayService.slice(
+      gatewayService.indexOf('\n    networks:\n'),
+      gatewayService.indexOf('\n    healthcheck:'),
+    );
+    expect([...gatewayNetworks.matchAll(/^ {6}([a-z-]+): \{.*\}$/gm)].map((m) => m[1])).toEqual([
+      'auth-internal',
+      'auth-admin',
+      'auth-tools',
+      'edge',
+      'errors',
+      'storage-internal',
+      'storage-sign',
     ]);
   });
 
@@ -137,19 +154,49 @@ describe('Auth e-mail templates (T-M2-08)', () => {
     const compose = read('infra/docker/compose.yaml');
     const published = gateway.slice(
       gateway.indexOf('listen 8443 ssl;'),
-      gateway.indexOf('listen 8444 ssl;'),
+      gateway.indexOf('listen 8445 ssl;'),
     );
-    // Exactly two Storage routes: creating/using signed upload URLs and signed download URLs.
+    // Exactly two Storage routes, for USING signed URLs only (security review M2): the browser's upload
+    // (PUT, and its CORS preflight) and download (GET). Creating them (POST) is not served here.
     expect([...published.matchAll(/proxy_pass (http:\/\/storage\S+);/g)].map((m) => m[1])).toEqual([
       'http://storage:5000/object/upload/sign/',
       'http://storage:5000/object/sign/',
     ]);
     expect(published).toMatch(
-      /location \^~ \/storage\/v1\/object\/upload\/sign\/ \{\n\s+limit_except POST PUT \{ deny all; \}/,
+      /location \^~ \/storage\/v1\/object\/upload\/sign\/ \{\n\s+error_log \S+ crit;\n\s+limit_except PUT OPTIONS \{ deny all; \}/,
     );
     expect(published).toMatch(
-      /location \^~ \/storage\/v1\/object\/sign\/ \{\n\s+limit_except GET POST \{ deny all; \}/,
+      /location \^~ \/storage\/v1\/object\/sign\/ \{\n\s+error_log \S+ crit;\n\s+limit_except GET \{ deny all; \}/,
     );
+    expect(published).not.toMatch(/limit_except[^{]*POST/);
+    // Downloads only as the app makes the link: token, then a name with one of our types' extensions.
+    expect(published).toContain(
+      'if ($args !~* "^token=[A-Za-z0-9._-]+&download=[^&]+\\.(csv|xlsx|png|jpe?g|webp|pdf)$") { return 403; }',
+    );
+    // Creating signed URLs: port 8445, the app's network alone, the two sign POSTs and nothing else.
+    const signing = gateway.slice(
+      gateway.indexOf('listen 8445 ssl;'),
+      gateway.indexOf('listen 8444 ssl;'),
+    );
+    expect([...signing.matchAll(/proxy_pass (\S+);/g)].map((m) => m[1])).toEqual([
+      'http://storage:5000/object/upload/sign/',
+      'http://storage:5000/object/sign/',
+    ]);
+    expect(signing).toMatch(
+      /\n\s+deny 10\.231\.0\.33;\n\s+allow 10\.231\.0\.32\/28;\n\s+deny all;\n/,
+    );
+    expect(signing.split('limit_except POST { deny all; }')).toHaveLength(3);
+    expect(signing).toContain('location / { return 404; }');
+    expect(signing).toContain('proxy_set_header X-Upsert "";');
+    expect(signing).toContain('error_log /var/log/nginx/error.log crit;');
+    expect(compose).toContain('- { subnet: 10.231.0.32/28, gateway: 10.231.0.33 }');
+    expect(compose).toContain('storage-sign: { ipv4_address: 10.231.0.34 }');
+    expect(compose).toContain("extra_hosts: ['gateway:10.231.0.34']");
+    expect(compose).toContain('STORAGE_INTERNAL_URL: https://gateway:8445');
+    expect(compose).toMatch(/^ {4}networks: \[db-app, edge, errors, storage-sign\]$/m); // the app
+    expect(compose).not.toMatch(/^\s+- ['"]?[\d.:]*8445(:\d+)?['"]?\s*(#.*)?$/m);
+    // clamd's scratch space (memory) is bounded.
+    expect(compose).toContain("tmpfs: ['/tmp:size=2048m']");
     // Everything else of Storage is refused; uploads never replace an object; downloads never render.
     expect(published).toContain('location ^~ /storage/ { return 404; }');
     expect(published).toContain('proxy_set_header X-Upsert "";');

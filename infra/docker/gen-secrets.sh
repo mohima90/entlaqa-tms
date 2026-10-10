@@ -122,6 +122,9 @@ if ! grep -q '^STORAGE_DB_PASSWORD=' "$S/.env"; then
   add_secret STORAGE_DB_PASSWORD_SCRAM "'$storage_scram'"
   unset storage_pw storage_scram
 fi
+# Storage's own HS secret (URL tokens). ADMIN-EQUIVALENT: Storage accepts any token signed with it, so it
+# must reach the storage container only (smoke-tested). Rotate: delete the STORAGE_JWT_SECRET= line from
+# .secrets/.env, run this script, then `docker compose --env-file .secrets/.env up -d storage` (README.md).
 add_secret STORAGE_JWT_SECRET "$(pw2)$(pw2)"
 # Auth's signing key (written with a new .env; written again after a key rotation, README.md "Auth admin
 # key"). Auth, the worker's token and admin-cli must all use the key in jwt-private.jwk.json.

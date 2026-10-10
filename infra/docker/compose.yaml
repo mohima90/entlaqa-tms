@@ -48,6 +48,14 @@ networks:
   # Supabase Storage (T-M2-18, ADR 0006): its database connection (TLS) and the gateway's plain-HTTP hop.
   db-storage: { internal: true } # db ⇄ Storage
   storage-internal: { internal: true } # gateway ⇄ Storage
+  # app ⇄ gateway: the gateway's internal port 8445, the ONLY one that creates signed Storage URLs (security
+  # review M2), answers this subnet alone (gateway/nginx.conf — change both files together). The gateway
+  # has a fixed address here and the app reaches `gateway` at it (app: extra_hosts).
+  storage-sign:
+    internal: true
+    ipam:
+      config:
+        - { subnet: 10.231.0.32/28, gateway: 10.231.0.33 }
   # Malware scanning (ADR 0006 §8): workers ⇄ clamd (no route out); freshclam's route to the signature
   # mirror (the only scanning container with egress; a private mirror for in-country installations).
   scan: { internal: true }
@@ -186,7 +194,9 @@ services:
       # connection) reads it; the driver loads the CA from the mounted file.
       DATABASE_URL: postgres://supabase_storage_admin:${STORAGE_DB_PASSWORD:?run gen-secrets.sh, then compose with --env-file .secrets/.env}@db:5432/postgres?sslmode=verify-full&sslrootcert=/certs/ca.crt
       # Its own HS secret for the short-lived URL tokens it signs; users' and the worker's tokens are
-      # verified against the public half of the installation's ES256 key.
+      # verified against the public half of the installation's ES256 key. ADMIN-EQUIVALENT: Storage also
+      # accepts any token signed with this secret, so whoever holds it can forge a service_role token (every
+      # object, every bucket). Only this container holds it (smoke-tested); rotation: README.md.
       AUTH_JWT_SECRET: ${STORAGE_JWT_SECRET:?run gen-secrets.sh, then compose with --env-file .secrets/.env}
       JWT_JWKS: '${STORAGE_JWT_JWKS:?run gen-secrets.sh, then compose with --env-file .secrets/.env}'
       DB_INSTALL_ROLES: 'false'
@@ -219,7 +229,11 @@ services:
     read_only: true
     cap_drop: [ALL]
     user: '1000:1000' # clamav
-    tmpfs: [/tmp]
+    # clamd writes each stream here before scanning it, and unpacks archives here (memory): bounded, so no
+    # upload can exhaust the host's memory. 2 GB: two scans at a time (one per worker replica) of the largest
+    # stream (210 MB) and what clamd unpacks from it (MaxScanSize 400 MB). Over it, that scan fails — retried,
+    # never clean.
+    tmpfs: ['/tmp:size=2048m']
     networks: [scan]
     entrypoint: ['clamd', '--foreground', '--config-file=/etc/jadarat/clamd.conf']
     volumes:
@@ -261,7 +275,14 @@ services:
     read_only: true
     cap_drop: [ALL]
     tmpfs: [/tmp]
-    networks: [auth-internal, auth-admin, auth-tools, edge, errors, storage-internal]
+    networks:
+      auth-internal: {}
+      auth-admin: {}
+      auth-tools: {}
+      edge: {}
+      errors: {}
+      storage-internal: {}
+      storage-sign: { ipv4_address: 10.231.0.34 }
     healthcheck:
       test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:8081/healthz']
       interval: 5s
@@ -287,7 +308,10 @@ services:
     read_only: true
     cap_drop: [ALL]
     tmpfs: ['/app/apps/suite/.next/cache:uid=65532,gid=65532,mode=0700'] # distroless nonroot
-    networks: [db-app, edge, errors]
+    networks: [db-app, edge, errors, storage-sign]
+    # The app reaches `gateway` over storage-sign (deterministic: the gateway's port 8445 checks the source
+    # network; Auth on 8443 works from there as well).
+    extra_hosts: ['gateway:10.231.0.34']
     depends_on:
       gateway: { condition: service_healthy }
     volumes:
@@ -300,8 +324,10 @@ services:
       # The app has no Auth secret key: invitees sign up through the public API (T-M2-07), and reset
       # links are created by the worker (T-M2-17).
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: self-hosted
-      # Files (T-M2-18): the app asks Storage for signed URLs at https://gateway:8443 with the user's own
-      # session (no Storage key); browsers use them at the installation's public gateway origin.
+      # Files (T-M2-18): the app asks Storage for signed URLs on the gateway's internal port 8445 (its network
+      # only) with the user's own session (no Storage key); browsers only use them, at the installation's
+      # public gateway origin (port 8443: uploads and downloads with a URL's token, nothing else).
+      STORAGE_INTERNAL_URL: https://gateway:8445
       STORAGE_PUBLIC_URL: ${STORAGE_PUBLIC_URL:-https://localhost:8443}
       # Password-reset and "password changed" e-mails through our notification service: the app queues
       # requests in the database; the worker (always running here) sends them (T-M2-17).
@@ -364,6 +390,9 @@ services:
       # uploads stay unscanned — never clean.
       CLAMD_HOST: clamd
       CLAMD_PORT: '3310'
+      # Signatures older than this (days, default 7) and nothing is scanned (fail closed, alerted). Raised
+      # only by the smoke test, whose clamd keeps the pinned image's signatures (no freshclam).
+      FILE_SCAN_SIGNATURES_MAX_AGE_DAYS: ${FILE_SCAN_SIGNATURES_MAX_AGE_DAYS:-7}
       # E-mail (ADR 0008 §2): SMTP with verified STARTTLS. Here Mailpit catches every message. A real
       # installation sets SMTP_URL (smtp://user:password@relay:587) and SMTP_CA_CERT_FILE for its relay
       # (set it empty for a publicly trusted certificate), removes the mailpit service, its depends_on

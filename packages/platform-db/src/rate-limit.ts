@@ -345,8 +345,8 @@ export function createRateLimitStore(getDb: () => AppDatabase): RateLimitStore {
           throw new Error('rate limit: the tick waits 1–60 minutes for the code');
         }
       }
-      const session =
-        remember === null || remember.session === null ? null : checkSubject(remember.session);
+      const presentedSession = remember?.session ?? null;
+      const session = presentedSession === null ? null : checkSubject(presentedSession);
       return run(
         sql`select device, trusted_until
             from private.rate_limit_sign_in_succeeded(

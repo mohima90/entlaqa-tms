@@ -268,8 +268,12 @@ describe('XlsxWorkbook: bounded work (security review H1)', () => {
     expect(await rowsOf(XlsxWorkbook.open(bytes))).toHaveLength(1);
   });
 
-  it('lets the event loop run while it reads a large sheet', async () => {
-    const book = XlsxWorkbook.open(workbook([{ name: 'A', xml: bigSheet(40_000) }])); // ≈ 3 MB
+  // ≈ 1.5 MB of sheet XML: the reader yields after each megabyte, so the event loop runs before the
+  // last rows. (A 3 MB sheet timed out under coverage instrumentation on a loaded machine; the yield is
+  // what is tested, not the size.)
+  it('lets the event loop run while it reads a large sheet', { timeout: 20_000 }, async () => {
+    const rows = 20_000;
+    const book = XlsxWorkbook.open(workbook([{ name: 'A', xml: bigSheet(rows) }]));
     const seen = { ran: false, duringRead: false };
     setImmediate(() => {
       seen.ran = true;
@@ -277,9 +281,9 @@ describe('XlsxWorkbook: bounded work (security review H1)', () => {
     let count = 0;
     for await (const _row of book.rows(0)) {
       count += 1;
-      if (seen.ran && count < 40_000) seen.duringRead = true;
+      if (seen.ran && count < rows) seen.duringRead = true;
     }
-    expect(count).toBe(40_000);
+    expect(count).toBe(rows);
     expect(seen.duringRead).toBe(true);
   });
 });

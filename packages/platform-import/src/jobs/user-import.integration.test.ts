@@ -3,7 +3,9 @@
  * (app_server, an Organization Admin's verified claims) and the worker task under withPlatformTx /
  * withSystemTx (app_worker), with stand-ins for Storage and clamd. A CSV file goes upload → scan →
  * read → mapping → dry run → review → confirm → run → held invitations scheduled and sent → result and
- * error report → undo → purge; an XLSX file is read and cancelled. Nothing of a row reaches the logs.
+ * error report → undo → purge; an XLSX file is read and cancelled; an HR Manager deactivated mid-run ends
+ * their import `failed` without a report, and the Organization Admin undoes it (security review M1).
+ * Nothing of a row reaches the logs.
  */
 import { randomUUID } from 'node:crypto';
 import { hasTenant } from '@jadarat/platform-core';
@@ -21,7 +23,11 @@ import {
   requestUserImportUndo,
   scheduleHeldInvitations,
 } from '@jadarat/platform-db';
-import { createWithPlatformTx, createWithSystemTx } from '@jadarat/platform-db/jobs';
+import {
+  type WithSystemTx,
+  createWithPlatformTx,
+  createWithSystemTx,
+} from '@jadarat/platform-db/jobs';
 import type { UserFileStorage } from '@jadarat/platform-db/supabase-server';
 import { confirmUpload, createUploadIntent } from '@jadarat/platform-files';
 import {
@@ -65,18 +71,23 @@ describe.skipIf(!configured)('user import against PostgreSQL', () => {
   const tenant = randomUUID();
   const tag = tenant.slice(0, 8);
   const admin = { user: randomUUID(), person: randomUUID(), session: randomUUID() };
+  const hr = { user: randomUUID(), person: randomUUID(), session: randomUUID() };
   const existing = { user: randomUUID(), person: randomUUID() };
   const department = randomUUID();
-  const verified = brandVerifiedClaims({
-    sub: admin.user,
-    role: 'authenticated',
-    aal: 'aal1',
-    session_id: admin.session,
-    tenant_id: tenant,
-    person_id: admin.person,
-  });
-  if (!verified.ok || !hasTenant(verified.value)) throw new Error('bad fixture');
-  const claims = verified.value;
+  const claimsOf = (who: { user: string; person: string; session: string }) => {
+    const verified = brandVerifiedClaims({
+      sub: who.user,
+      role: 'authenticated',
+      aal: 'aal1',
+      session_id: who.session,
+      tenant_id: tenant,
+      person_id: who.person,
+    });
+    if (!verified.ok || !hasTenant(verified.value)) throw new Error('bad fixture');
+    return verified.value;
+  };
+  const claims = claimsOf(admin);
+  const hrClaims = claimsOf(hr);
 
   const objects = new Map<string, Uint8Array>();
   const storage: UserFileStorage = {
@@ -113,28 +124,34 @@ describe.skipIf(!configured)('user import against PostgreSQL', () => {
   const logs: string[] = [];
   const log = (level: string, message: string) => logs.push(`${level}: ${message}`);
   const scan = createFileScanTask({ withPlatformTx, withSystemTx, store, scanner, log });
+  const sending = { intervalMs: 100, dailyCap: 1000, trialDailyCap: 100 };
   const task = createUserImportTask({
     withPlatformTx,
     withSystemTx,
     files: createWorkerFiles({ store }),
     log,
-    invitationPaceSeconds: 0,
+    sending,
   });
-  const context = {
-    ownTx: <T>(fn: Parameters<typeof withUserTx<T>>[1]) => withUserTx(claims, fn),
-    storage,
-  };
 
-  /** The admin starts an import with `bytes`: upload intent, import, the browser's PUT, confirmation. */
-  async function upload(bytes: Uint8Array, name: string, type: string): Promise<string> {
+  /** Someone starts an import with `bytes`: upload intent, import, the browser's PUT, confirmation. */
+  async function upload(
+    bytes: Uint8Array,
+    name: string,
+    type: string,
+    as: typeof claims = claims,
+  ): Promise<string> {
     const importId = randomUUID();
+    const context = {
+      ownTx: <T>(fn: Parameters<typeof withUserTx<T>>[1]) => withUserTx(as, fn),
+      storage,
+    };
     const intent = await createUploadIntent(context, {
       purpose: 'platform.user_import',
       owner: { module: 'platform', entityType: 'user_import', entityId: importId },
       declaredName: name,
       size: bytes.length,
     });
-    await withUserTx(claims, (tx) =>
+    await withUserTx(as, (tx) =>
       createUserImport(tx, {
         id: importId,
         fileId: intent.fileId,
@@ -148,17 +165,17 @@ describe.skipIf(!configured)('user import against PostgreSQL', () => {
     const key = row?.object_key ?? '';
     objects.set(key, bytes);
     await db.execute(sql`insert into storage.objects (bucket_id, name, owner, metadata)
-      values ('imports', ${key}, ${admin.user},
+      values ('imports', ${key}, ${as.userId},
               ${JSON.stringify({ size: bytes.length, mimetype: type })}::jsonb)`);
-    await withUserTx(claims, (tx) => confirmUpload(tx, intent.fileId));
+    await withUserTx(as, (tx) => confirmUpload(tx, intent.fileId));
     return importId;
   }
 
   /** Scan and import passes until the import has the status (other organizations' work may come first). */
-  async function until(importId: string, status: string) {
+  async function until(importId: string, status: string, importTask = task) {
     for (let i = 0; i < 25; i += 1) {
       await scan.run({ jobId: randomUUID() });
-      await task.run({ jobId: randomUUID() });
+      await importTask.run({ jobId: randomUUID() });
       const record = await withUserTx(claims, (tx) => getUserImport(tx, importId));
       if (record?.status === status) return record;
     }
@@ -180,22 +197,26 @@ describe.skipIf(!configured)('user import against PostgreSQL', () => {
     await db.execute(sql`insert into platform.tenants (id, slug, name_ar, name_en, status)
       values (${tenant}, ${`import-${tag}`}, 'شركة الاستيراد', 'Import Company', 'active')`);
     await db.execute(sql`insert into auth.users (id, email) values
-      (${admin.user}, ${`admin.${tag}@import.example`}), (${existing.user}, ${`old.${tag}@import.example`})`);
+      (${admin.user}, ${`admin.${tag}@import.example`}), (${existing.user}, ${`old.${tag}@import.example`}),
+      (${hr.user}, ${`hr.${tag}@import.example`})`);
     await db.execute(sql`insert into platform.persons (id, tenant_id, display_name_ar, first_name_ar, family_name_ar, email) values
       (${admin.person}, ${tenant}, 'مدير المنشأة', 'مدير', 'المنشأة', ${`admin.${tag}@import.example`}),
-      (${existing.person}, ${tenant}, 'خالد الشهري', 'خالد', 'الشهري', ${`old.${tag}@import.example`})`);
+      (${existing.person}, ${tenant}, 'خالد الشهري', 'خالد', 'الشهري', ${`old.${tag}@import.example`}),
+      (${hr.person}, ${tenant}, 'مدير الموارد', 'مدير', 'الموارد', ${`hr.${tag}@import.example`})`);
     await db.execute(sql`insert into platform.tenant_memberships (tenant_id, user_id, person_id, status) values
-      (${tenant}, ${admin.user}, ${admin.person}, 'active'), (${tenant}, ${existing.user}, ${existing.person}, 'active')`);
+      (${tenant}, ${admin.user}, ${admin.person}, 'active'), (${tenant}, ${existing.user}, ${existing.person}, 'active'),
+      (${tenant}, ${hr.user}, ${hr.person}, 'active')`);
     await db.execute(sql`insert into platform.role_assignments (tenant_id, membership_id, role_code, is_primary)
-      select tenant_id, id, case when user_id = ${admin.user}::uuid then 'tenant_admin' else 'learner' end, true
+      select tenant_id, id, case when user_id = ${admin.user}::uuid then 'tenant_admin'
+                                 when user_id = ${hr.user}::uuid then 'hr_manager' else 'learner' end, true
       from platform.tenant_memberships where tenant_id = ${tenant}::uuid`);
     await db.execute(sql`insert into platform.departments (id, tenant_id, code, name_ar, name_en)
       values (${department}, ${tenant}, 'SAL', 'المبيعات', 'Sales')`);
     await db.execute(
-      sql`insert into auth.sessions (id, user_id) values (${admin.session}, ${admin.user})`,
+      sql`insert into auth.sessions (id, user_id) values (${admin.session}, ${admin.user}), (${hr.session}, ${hr.user})`,
     );
     await db.execute(sql`insert into platform.session_context (session_id, user_id, active_tenant_id)
-      values (${admin.session}, ${admin.user}, ${tenant})`);
+      values (${admin.session}, ${admin.user}, ${tenant}), (${hr.session}, ${hr.user}, ${tenant})`);
   });
 
   afterAll(async () => {
@@ -337,7 +358,7 @@ describe.skipIf(!configured)('user import against PostgreSQL', () => {
     );
     expect(updated?.family_name_ar).toBe('الشهراني');
 
-    // Invitations: held, scheduled at once (pace 0), then released for the mailer.
+    // Invitations: held, scheduled at the pace, then released for the mailer one at a time.
     for (let i = 0; i < 5; i += 1) await task.run({ jobId: randomUUID() });
     const invitations = await db.execute<{
       mail_held: boolean;
@@ -345,7 +366,7 @@ describe.skipIf(!configured)('user import against PostgreSQL', () => {
       invited_by: string;
       primary_role: string;
     }>(
-      sql`select mail_held, send_at, invited_by, primary_role from platform.invitations where import_id = ${importId}::uuid order by primary_role`,
+      sql`select mail_held, send_at, invited_by, primary_role, released_at from platform.invitations where import_id = ${importId}::uuid order by primary_role`,
     );
     expect(invitations).toHaveLength(2);
     expect(
@@ -478,11 +499,87 @@ describe.skipIf(!configured)('user import against PostgreSQL', () => {
     const finished = await until(importId, 'finished');
     expect(finished.invitations).toEqual({ held: 1, scheduled: 0, sent: 0, accepted: 0 });
     const scheduled = await withUserTx(claims, (tx) =>
-      scheduleHeldInvitations(tx, { importId }, 0),
+      scheduleHeldInvitations(tx, { importId }, 0.1),
     );
     expect(scheduled).toBe(1);
     for (let i = 0; i < 5; i += 1) await task.run({ jobId: randomUUID() });
     const sent = await withUserTx(claims, (tx) => getUserImport(tx, importId));
     expect(sent?.invitations).toEqual({ held: 0, scheduled: 0, sent: 1, accepted: 0 });
+  });
+  it('an importer deactivated mid-run: the import ends failed without a report; the Organization Admin undoes it', async () => {
+    // The HR Manager is deactivated once the run reaches its batches (after the fresh check).
+    let watched: string | null = null;
+    const hookedSystemTx: WithSystemTx = async (actor, fn) => {
+      const result = await withSystemTx(actor, fn);
+      if (watched !== null) {
+        const [row] = await db.execute<{ status: string }>(
+          sql`select status from platform.user_imports where id = ${watched}::uuid`,
+        );
+        if (row?.status === 'importing') {
+          watched = null;
+          await db.execute(sql`update platform.tenant_memberships set status = 'suspended'
+            where tenant_id = ${tenant}::uuid and user_id = ${hr.user}::uuid`);
+        }
+      }
+      return result;
+    };
+    const hookedTask = createUserImportTask({
+      withPlatformTx,
+      withSystemTx: hookedSystemTx,
+      files: createWorkerFiles({ store }),
+      log,
+      sending,
+    });
+    const csv = new TextEncoder().encode(
+      CSV_BOM +
+        csvLine(['Email', 'الاسم الأول', 'اسم العائلة']) +
+        csvLine([`mid1.${tag}@import.example`, 'ريم', 'القحطاني']) +
+        csvLine([`mid2.${tag}@import.example`, 'سعد', 'الغامدي']),
+    );
+    const importId = await upload(csv, 'منتصف.csv', 'text/csv', hrClaims);
+    await until(importId, 'mapping', hookedTask);
+    await withUserTx(hrClaims, (tx) =>
+      chooseUserImportMapping(tx, importId, {
+        sheetIndex: 0,
+        mapping: { '0': 'email', '1': 'first_name_ar', '2': 'family_name_ar' },
+      }),
+    );
+    await until(importId, 'review', hookedTask);
+    await withUserTx(hrClaims, (tx) =>
+      confirmUserImport(tx, importId, {
+        existing: 'skip',
+        defaultRole: 'learner',
+        invitations: 'send',
+      }),
+    );
+    watched = importId;
+    const failed = await until(importId, 'failed', hookedTask);
+    expect(watched).toBeNull();
+    expect(failed).toMatchObject({
+      failureCode: 'IMPORTER_NOT_ALLOWED',
+      reportFileId: null,
+      reportCode: 'IMPORTER_NOT_ALLOWED',
+      resultCounts: expect.objectContaining({ added: 0, notProcessed: 2 }),
+    });
+    const [reports] = await db.execute<{ n: string }>(sql`select count(*) as n from platform.files
+      where tenant_id = ${tenant}::uuid and purpose = 'platform.user_import_report' and owner_entity_id = ${importId}::uuid
+        and status <> 'pending_upload'`);
+    // Clean rows: no list of problems; and no error report for a deactivated importer.
+    expect(Number(reports?.n)).toBe(0);
+    const [ended] = await db.execute<{
+      n: string;
+    }>(sql`select count(*) as n from platform.audit_events
+      where tenant_id = ${tenant}::uuid and action = 'platform.user_import.failed' and entity_id = ${importId}
+        and data ->> 'reportCode' = 'IMPORTER_NOT_ALLOWED'`);
+    expect(Number(ended?.n)).toBe(1);
+    // The run did not go round in circles: one pass ended it.
+    expect(logs.filter((l) => l.includes(`${importId}: failed`))).toHaveLength(1);
+
+    // Tech Lead decision (10 Oct 2026): the Organization Admin undoes it although its importer is gone.
+    const record = await withUserTx(claims, (tx) => getUserImport(tx, importId));
+    expect(record).toMatchObject({ mine: false, mayUndo: true });
+    await withUserTx(claims, (tx) => requestUserImportUndo(tx, importId, 'wrong_data'));
+    const undone = await until(importId, 'undone', hookedTask);
+    expect(undone.resultCounts).toMatchObject({ undo: {} });
   });
 });

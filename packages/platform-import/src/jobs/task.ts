@@ -1,6 +1,7 @@
 import { deleteFileRecord, isDomainError, markFileUsed } from '@jadarat/platform-db';
 import {
   IMPORTER_NOT_ALLOWED,
+  type InvitationSending,
   type SystemTx,
   type UserImportClaim,
   type UserImportJobView,
@@ -18,7 +19,7 @@ import {
   markUserImportPurged,
   noteUserImportLeaseLost,
   recheckUserImport,
-  releaseDueUserImportInvitations,
+  releaseNextUserImportInvitation,
   releaseUserImportLease,
   renewUserImportLease,
   saveUserImportColumns,
@@ -47,9 +48,15 @@ import { buildReport, reportColumns } from './report';
  *   run       queued → checking (the fresh check) → importing (batches of 500, each with its checkpoint:
  *             a restart continues after the last batch) → inviting (held invitations scheduled at the
  *             pace) → finished, with the error report; stopped after a batch when asked; failed when
- *             the importer may no longer import;
- *   send      held invitations whose time has come are released (the invitation mailer e-mails them);
- *   undo      batches of 500 (→ undone);
+ *             the importer may no longer import. The run ends even when its error report cannot be
+ *             made (security review M1): none for an importer who may no longer import, and after the
+ *             step's last attempt `report_code` says why;
+ *   send      held invitations whose time has come are released one at a time at the platform-wide pace
+ *             (the send clock: every organization's imports share the e-mail provider's rate) and under
+ *             the organization's daily number (security review M2); the invitation mailer e-mails them.
+ *             A pass sends at most SEND_SHARE of one import, then hands over (imports take turns);
+ *   undo      batches of 500 (→ undone), while the member who asked may still undo it (security review
+ *             L1; otherwise → failed, UNDO_NOT_ALLOWED);
  *   expire    a review not confirmed in 24 hours (→ expired);
  *   purge     files and staged data deleted (7 days after the end; at once for refused, cancelled and
  *             expired imports). The import record stays with the audit log.
@@ -63,14 +70,25 @@ import { buildReport, reportColumns } from './report';
 export const USER_IMPORT_TASK = 'platform.user_imports';
 /** Rows written per transaction (design README §9). */
 export const USER_IMPORT_BATCH = 500;
-/** Invitations released per transaction. */
-export const SEND_BATCH = 100;
+/** Invitations one pass sends of one import before it hands over to the others (fair turns). */
+export const SEND_SHARE = 30;
+/** The longest wait for the send clock within a pass; a longer one is left to a later pass. */
+export const SEND_MAX_WAIT_MS = 5_000;
 /** A pass hands over after this long (the next pass is queued at once). */
 export const PASS_BUDGET_MS = 4 * 60_000;
 /** Failed attempts of one step before the import ends. */
 export const MAX_FAILURES = 6;
-/** Default pace of an import's invitations: one a second (Resend's default API limit: 2 a second). */
-export const DEFAULT_INVITATION_PACE_SECONDS = 1;
+/**
+ * Sending import invitations (security review M2): one a second for the whole platform (Resend's default
+ * API limit is 2 a second for the whole account: the other e-mails keep the rest), at most 5,000 a day
+ * per organization in service and 200 on trial. Operators change them with the worker's settings
+ * (USER_IMPORT_INVITATION_INTERVAL_MS, USER_IMPORT_DAILY_INVITATIONS, USER_IMPORT_TRIAL_DAILY_INVITATIONS).
+ */
+export const DEFAULT_INVITATION_SENDING: InvitationSending = {
+  intervalMs: 1_000,
+  dailyCap: 5_000,
+  trialDailyCap: 200,
+};
 /** Reading the file's sheets (step `read`) gives up after this long: the file is refused as unreadable. */
 export const READ_BUDGET_MS = 5 * 60_000;
 /** Staging and checking the chosen sheet's rows (step `validate`) gives up after this long. */
@@ -81,10 +99,17 @@ export interface UserImportTaskOptions {
   readonly withSystemTx: WithSystemTx;
   readonly files: WorkerFiles;
   readonly log: (level: WorkerLogLevel, message: string) => void;
-  /** Seconds between two invitations of an import (0–60). */
-  readonly invitationPaceSeconds?: number;
+  /** The pace and daily numbers of import invitations (default DEFAULT_INVITATION_SENDING). */
+  readonly sending?: InvitationSending;
   readonly now?: () => number;
+  /** Waits for the send clock (tests: a fake). */
+  readonly sleep?: (ms: number) => Promise<void>;
 }
+
+const realSleep = (ms: number) =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
 
 /** Why a file the scan did not pass cannot be imported (screen 13's file states). */
 export function fileRefusalCode(status: string | null, reason: string | null): string {
@@ -142,10 +167,10 @@ function numbersOf(counts: Readonly<Record<string, unknown>>): Record<string, nu
 export function createUserImportTask(options: UserImportTaskOptions): PlatformTask {
   const { withPlatformTx, withSystemTx, files, log } = options;
   const now = options.now ?? Date.now;
-  const pace = Math.min(
-    60,
-    Math.max(0, options.invitationPaceSeconds ?? DEFAULT_INVITATION_PACE_SECONDS),
-  );
+  const sleep = options.sleep ?? realSleep;
+  const sending = options.sending ?? DEFAULT_INVITATION_SENDING;
+  // The import's own schedule follows the same pace (seconds, as private.schedule_held_invitations takes).
+  const pace = Math.min(60, Math.max(0.1, sending.intervalMs / 1000));
 
   /** A tenant transaction of the import, while the lease holds (each one renews it). */
   function inImport<T>(
@@ -222,6 +247,25 @@ export function createUserImportTask(options: UserImportTaskOptions): PlatformTa
     return fileId;
   }
 
+  /**
+   * The error report at the end of a run (security review M1): none for an importer who may no longer
+   * import (it is theirs alone); stored in a savepoint, so that a failure never blocks the end of the run
+   * — tried again with the step while attempts are left, then the run ends without it (REPORT_FAILED).
+   */
+  async function resultReport(
+    tx: SystemTx,
+    view: UserImportJobView,
+  ): Promise<{ readonly fileId: string | null; readonly code: string | null }> {
+    if (!view.importerMayImport) return { fileId: null, code: 'IMPORTER_NOT_ALLOWED' };
+    try {
+      return { fileId: await tx.transaction((sp) => storeReport(sp, view, 'result')), code: null };
+    } catch (error) {
+      if (view.failures + 1 < MAX_FAILURES) throw error;
+      log('warning', `user import ${view.id}: error report not stored (${codeOf(error)})`);
+      return { fileId: null, code: 'REPORT_FAILED' };
+    }
+  }
+
   /** Ends a run: every row's result, the numbers, the error report, the audit record. */
   async function endRun(
     tx: SystemTx,
@@ -233,17 +277,19 @@ export function createUserImportTask(options: UserImportTaskOptions): PlatformTa
     if (to !== 'finished') await clearUserImportSchedule(tx, view.id);
     await markUsed(tx, view.fileId);
     const counts = await finishUserImportRows(tx, view.id);
-    const reportFileId = await storeReport(tx, view, 'result');
+    const report = await resultReport(tx, view);
     await setUserImportStatus(tx, view.id, [view.status], to, {
       resultCounts: counts,
-      reportFileId,
+      reportFileId: report.fileId,
+      reportCode: report.code,
       ...(failureCode === null ? {} : { failureCode }),
     });
     await audit(tx, `platform.user_import.${to}`, view.id, {
       counts: numbersOf(counts),
       ...(failureCode === null ? {} : { failureCode }),
+      ...(report.code === null ? {} : { reportCode: report.code }),
     });
-    log('info', `user import ${view.id}: ${to}`);
+    log('info', `user import ${view.id}: ${to}${report.code === null ? '' : ` (${report.code})`}`);
   }
 
   async function expire(jobId: string, claim: UserImportClaim): Promise<StepResult> {
@@ -325,6 +371,14 @@ export function createUserImportTask(options: UserImportTaskOptions): PlatformTa
     // One transaction: the staged rows, the dry run and the review appear together, or not at all.
     await inImport(jobId, claim, async (tx, view) => {
       if (view.step !== 'validate' || view.sheetIndex === null || view.mapping === null) return;
+      // Only the importer could go on with it, and the review is theirs alone (security review M1).
+      if (!view.importerMayImport) {
+        await setUserImportStatus(tx, view.id, ['validating'], 'failed', {
+          failureCode: 'IMPORTER_NOT_ALLOWED',
+        });
+        log('info', `user import ${view.id}: failed (IMPORTER_NOT_ALLOWED)`);
+        return;
+      }
       const kind = kindOfType(view.fileType);
       if (view.fileStatus !== 'clean' || kind === null) {
         await refuse(tx, view, fileRefusalCode(view.fileStatus, view.fileStatusReason));
@@ -427,30 +481,55 @@ export function createUserImportTask(options: UserImportTaskOptions): PlatformTa
     }
   }
 
+  /**
+   * Sends the import's due invitations one at a time, each in its own transaction, at the send clock's
+   * pace: waits up to SEND_MAX_WAIT_MS for the next slot, sends at most SEND_SHARE, then hands over (the
+   * import's next attempt is the next slot — other imports' turns come first). A capped organization
+   * waits for the next day (the database moved its next attempt there).
+   */
   async function send(
     jobId: string,
     claim: UserImportClaim,
     deadline: number,
   ): Promise<StepResult> {
-    for (;;) {
-      const released = await inImport(jobId, claim, (tx, view) =>
+    let sent = 0;
+    let waits = 0;
+    let outcome = 'share';
+    while (sent < SEND_SHARE) {
+      const next = await inImport(jobId, claim, (tx, view) =>
         view.step === 'send'
-          ? releaseDueUserImportInvitations(tx, view.id, SEND_BATCH)
-          : Promise.resolve(0),
+          ? releaseNextUserImportInvitation(tx, view.id, sending)
+          : Promise.resolve({ state: 'none' as const, notBefore: null }),
       );
-      if (released < 0) {
-        log(
-          'warning',
-          `user import ${claim.importId}: the importer may no longer invite; invitations kept`,
-        );
-        return 'done';
+      if (next.state === 'released') {
+        sent += 1;
+        continue;
       }
-      if (released > 0) {
-        log('info', `user import ${claim.importId}: ${String(released)} invitations sent`);
+      if (next.state === 'wait' && next.notBefore !== null && waits < 2 * SEND_SHARE) {
+        const wait = next.notBefore.getTime() - now();
+        if (wait <= SEND_MAX_WAIT_MS && now() + wait <= deadline) {
+          waits += 1;
+          // At least a little: the database's clock decides, and the worker's may run behind it.
+          await sleep(Math.max(20, wait));
+          continue;
+        }
       }
-      if (released < SEND_BATCH) return 'done';
-      if (now() > deadline) return 'more';
+      outcome = next.state;
+      break;
     }
+    if (sent > 0) log('info', `user import ${claim.importId}: ${String(sent)} invitations sent`);
+    if (outcome === 'not_allowed') {
+      log(
+        'warning',
+        `user import ${claim.importId}: the importer may no longer invite; invitations kept`,
+      );
+    } else if (outcome === 'capped') {
+      log(
+        'info',
+        `user import ${claim.importId}: the organization's daily number of invitations is reached; the rest tomorrow`,
+      );
+    }
+    return 'done';
   }
 
   async function undo(
@@ -461,9 +540,23 @@ export function createUserImportTask(options: UserImportTaskOptions): PlatformTa
     for (;;) {
       const finished = await inImport(jobId, claim, async (tx, view) => {
         if (view.step !== 'undo') return true;
-        if ((await undoUserImportBatch(tx, view.id, USER_IMPORT_BATCH)) > 0) return false;
+        const done = await undoUserImportBatch(tx, view.id, USER_IMPORT_BATCH);
+        if (done > 0) return false;
         const counts = await userImportUndoCounts(tx, view.id);
-        await setUserImportStatus(tx, view.id, ['undoing'], 'undone');
+        if (done < 0) {
+          // The member who asked may no longer undo it (security review L1): what was undone stays.
+          await setUserImportStatus(tx, view.id, ['undoing'], 'failed', {
+            failureCode: 'UNDO_NOT_ALLOWED',
+            undoCounts: counts,
+          });
+          await audit(tx, 'platform.user_import.undo_failed', view.id, {
+            counts,
+            failureCode: 'UNDO_NOT_ALLOWED',
+          });
+          log('warning', `user import ${view.id}: undo failed (UNDO_NOT_ALLOWED)`);
+          return true;
+        }
+        await setUserImportStatus(tx, view.id, ['undoing'], 'undone', { undoCounts: counts });
         await audit(tx, 'platform.user_import.undone', view.id, { counts });
         log('info', `user import ${view.id}: undone`);
         return true;
@@ -501,11 +594,14 @@ export function createUserImportTask(options: UserImportTaskOptions): PlatformTa
         });
         log('warning', `user import ${view.id}: failed (SYSTEM_FAULT)`);
       } else if (view.step === 'undo') {
+        const counts = await userImportUndoCounts(tx, view.id);
         await setUserImportStatus(tx, view.id, ['undoing'], 'failed', {
           failureCode: 'UNDO_FAILED',
+          undoCounts: counts,
         });
         await audit(tx, 'platform.user_import.undo_failed', view.id, {
-          counts: await userImportUndoCounts(tx, view.id),
+          counts,
+          failureCode: 'UNDO_FAILED',
         });
         log('warning', `user import ${view.id}: undo failed`);
       }

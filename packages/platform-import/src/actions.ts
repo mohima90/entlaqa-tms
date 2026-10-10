@@ -403,7 +403,11 @@ export const UndoUserImportInput = z.strictObject({
   reason: z.enum(['wrong_file', 'wrong_data', 'wrong_options', 'other']).nullable(),
 });
 
-/** Undoes an import within 7 days (BRD §10.4, PO decision 10); it cannot itself be undone. */
+/**
+ * Undoes an import within 7 days (BRD §10.4, PO decision 10); it cannot itself be undone. Its importer,
+ * or an Organization Admin for any import of the organization (Tech Lead decision 10 Oct 2026, security
+ * review M1) — the database decides.
+ */
 export function undoUserImportActionDefinition(): ActionDefinition<
   typeof UndoUserImportInput,
   { readonly importId: string; readonly reason: string | null },
@@ -603,8 +607,9 @@ export function userImportQueryDefinition(): QueryDefinition<
       } else {
         columns = [];
       }
+      // Its importer, or an Organization Admin (Tech Lead decision 10 Oct 2026): the preview is counts only.
       const undo =
-        record.mine &&
+        record.mayUndo &&
         ['finished', 'stopped', 'failed'].includes(record.status) &&
         record.dataPurgedAt === null
           ? await getUndoPreview(ctx.tx, record.id)

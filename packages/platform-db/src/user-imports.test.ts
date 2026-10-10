@@ -67,6 +67,8 @@ const ROW = {
   undo_reason: null,
   review_file_id: 'r1',
   report_file_id: null,
+  report_code: 'REPORT_FAILED',
+  may_undo: true,
   created_at: new Date('2026-10-10T08:00:00Z'),
   updated_at: '2026-10-10T08:05:00Z',
   read_at: '2026-10-10T08:01:00Z',
@@ -136,17 +138,35 @@ describe('user imports, request path', () => {
       reviewCounts: { total: 3 },
       resultCounts: null,
       reviewFileId: 'r1',
+      reportCode: 'REPORT_FAILED',
+      mayUndo: true,
       fileStatus: 'clean',
       invitations: { held: 2, scheduled: 0, sent: 5, accepted: 1 },
     });
     expect(record?.updatedAt).toEqual(new Date('2026-10-10T08:05:00Z'));
     expect(await getUserImport(fakeTx([]).tx, ID)).toBeNull();
     const odd = await getUserImport(
-      fakeTx([{ ...ROW, options: { existing: 'x' }, sheets: null, sheet_index: null, mine: null }])
-        .tx,
+      fakeTx([
+        {
+          ...ROW,
+          options: { existing: 'x' },
+          sheets: null,
+          sheet_index: null,
+          mine: null,
+          may_undo: null,
+          report_code: null,
+        },
+      ]).tx,
       ID,
     );
-    expect(odd).toMatchObject({ options: null, sheets: [], sheetIndex: null, mine: false });
+    expect(odd).toMatchObject({
+      options: null,
+      sheets: [],
+      sheetIndex: null,
+      mine: false,
+      mayUndo: false,
+      reportCode: null,
+    });
   });
 
   it('lists recent imports and the running one', async () => {
@@ -226,17 +246,58 @@ describe('user imports, request path', () => {
     const stop = fakeTx([{ status: 'inviting', mine: true }], [{ id: ID }]);
     await stopUserImport(stop.tx, ID);
     expect(stop.executed[1]?.sql).toContain('stop_requested_at = now()');
-    const undo = fakeTx([{ status: 'stopped', mine: true }], [{ id: ID }], []);
+    const undo = fakeTx([{ status: 'stopped', mine: true, may_undo: true }], [{ id: ID }], []);
     await requestUserImportUndo(undo.tx, ID, 'wrong_data');
+    expect(undo.executed[0]?.sql).toContain('private.user_import_actor_may_undo(');
     expect(undo.executed[1]?.params).toEqual(['wrong_data', ID]);
     expect(undo.executed[2]?.params).toContain('com.entlaqa.platform.user_import.undo_requested');
   });
 
-  it('previews an undo', async () => {
-    expect(
-      await getUndoPreview(fakeTx([{ added: '10', accepted: 2, updated: '3' }]).tx, ID),
-    ).toEqual({ added: 10, accepted: 2, updated: 3 });
+  it('undo: its importer, or an Organization Admin for any import (Tech Lead decision 10 Oct 2026)', async () => {
+    const admin = fakeTx([{ status: 'finished', mine: false, may_undo: true }], [{ id: ID }], []);
+    await requestUserImportUndo(admin.tx, ID, null);
+    expect(admin.executed[1]?.sql).toContain("status = 'undoing'");
+    await expect(
+      requestUserImportUndo(
+        fakeTx([{ status: 'finished', mine: false, may_undo: false }]).tx,
+        ID,
+        null,
+      ),
+    ).rejects.toMatchObject({ code: 'NOT_IMPORTER' });
+    await expect(
+      requestUserImportUndo(
+        fakeTx([{ status: 'finished', mine: true, may_undo: false }]).tx,
+        ID,
+        null,
+      ),
+    ).rejects.toMatchObject({ code: 'NOT_ALLOWED' });
+    await expect(requestUserImportUndo(fakeTx([]).tx, ID, null)).rejects.toMatchObject({
+      code: 'IMPORT_NOT_FOUND',
+    });
+    await expect(
+      requestUserImportUndo(
+        fakeTx([{ status: 'undone', mine: true, may_undo: true }]).tx,
+        ID,
+        null,
+      ),
+    ).rejects.toMatchObject({ code: 'IMPORT_STATE_CHANGED' });
+    await expect(
+      requestUserImportUndo(
+        fakeTx([{ status: 'failed', mine: true, may_undo: true }], []).tx,
+        ID,
+        'other',
+      ),
+    ).rejects.toMatchObject({ code: 'IMPORT_STATE_CHANGED' });
+  });
+
+  it('previews an undo from the result numbers and the invitations (no staged rows)', async () => {
+    const preview = fakeTx([{ added: '10', accepted: 2, updated: '3' }]);
+    expect(await getUndoPreview(preview.tx, ID)).toEqual({ added: 10, accepted: 2, updated: 3 });
+    expect(preview.executed[0]?.sql).not.toContain('user_import_rows');
     expect(await getUndoPreview(fakeTx([]).tx, ID)).toEqual({ added: 0, accepted: 0, updated: 0 });
+    expect(
+      await getUndoPreview(fakeTx([{ added: null, accepted: '0', updated: null }]).tx, ID),
+    ).toEqual({ added: 0, accepted: 0, updated: 0 });
   });
 
   it('lists a page of rows per view and code', async () => {

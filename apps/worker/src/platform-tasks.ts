@@ -1,5 +1,5 @@
 import { createRecoveryLinkIssuer, createStorageAdmin } from '@jadarat/platform-db/admin';
-import type { WithPlatformTx, WithSystemTx } from '@jadarat/platform-db/jobs';
+import type { InvitationSending, WithPlatformTx, WithSystemTx } from '@jadarat/platform-db/jobs';
 import {
   type FileObjectStore,
   type OrphanSweepSettings,
@@ -37,6 +37,8 @@ export interface PlatformTaskDependencies {
   readonly withPlatformTx: WithPlatformTx;
   readonly withSystemTx: WithSystemTx;
   readonly log: (level: WorkerLogLevel, message: string) => void;
+  /** The pace and daily numbers of import invitations (default: the import task's). */
+  readonly importSending?: InvitationSending | undefined;
   /** Injectable for tests: the Auth admin API's recovery links. */
   readonly recoveryLinksFor?: (settings: { url: string; secretKey: string }) => RecoveryLinks;
   /** Injectable for tests: Storage with the worker's key. */
@@ -113,6 +115,7 @@ export function platformTasks(deps: PlatformTaskDependencies): readonly Platform
         withSystemTx: deps.withSystemTx,
         files: createWorkerFiles({ store }),
         log: deps.log,
+        ...(deps.importSending ? { sending: deps.importSending } : {}),
       }),
     );
     if (deps.scanner) {

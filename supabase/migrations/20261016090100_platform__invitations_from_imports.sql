@@ -6,9 +6,15 @@
 --                 that belongs nowhere sign in (private.account_sign_in_refused, below). It is RELEASED
 --                 (sent) when its sending time comes; the mailer's first token then gives the link its 7
 --                 days, so the 7 days start when it is sent (PO decision 6).
---   * send_at     when a held invitation is due to be sent (null: held until someone sends it). Thousands of
---                 invitations go out gradually: an import's invitations are scheduled one after the other
---                 at a fixed pace (private.schedule_held_invitations), and the worker releases those due.
+--   * send_at     when a held invitation may be sent, at the earliest (null: held until someone sends it).
+--                 Thousands of invitations go out gradually: an import's invitations are scheduled one after
+--                 the other at a fixed pace (private.schedule_held_invitations), and the worker releases
+--                 those due — one at a time, platform-wide, at the pace of the send clock below, and at most
+--                 a daily number per organization (private.user_import_release_next, migration
+--                 20261016090200; security review M2). Overdue invitations (e.g. after the worker was down)
+--                 are therefore spaced out again instead of going out in a burst.
+--   * released_at when a held invitation was sent (released); stamped by the trigger. The organization's
+--                 daily number of import invitations counts them.
 --
 -- Who may do what (private.check_invitation, replaced below; everything else as in 20261009090000 and
 -- 20261010090000):
@@ -23,7 +29,8 @@
 --          or system jobs for an import sending its invitations (status `inviting`) whose importer may
 --          still invite. System jobs may also clear the schedule (the importer may no longer invite).
 --   release (mail_held → false, when due): system jobs only, while the importer (invited_by) may still
---          invite. Never held again. A held invitation gets no token and no resend request.
+--          invite; released_at stamped. Never held again. A held invitation gets no token and no resend
+--          request.
 --   revoke by system jobs (new): only an import's invitation while that import is being undone (status
 --          `undoing`); recorded as revoked by the member who asked for the undo.
 -- The mailer (platform-identity invitation-mailer) mails a released invitation on its
@@ -32,23 +39,30 @@
 alter table platform.invitations
   add column import_id uuid,
   add column mail_held boolean not null default false,
-  add column send_at timestamptz;
+  add column send_at timestamptz,
+  add column released_at timestamptz;
 
 alter table platform.invitations
   add constraint invitations_import_fk foreign key (tenant_id, import_id) references platform.user_imports (tenant_id, id),
   -- Held: nothing was sent, so there is no token yet; only an import holds invitations.
   add constraint invitations_mail_held_check check (
     not mail_held or (token_hash is null and send_count = 0 and import_id is not null)),
-  add constraint invitations_send_at_check check (send_at is null or (mail_held and status = 'pending'));
+  add constraint invitations_send_at_check check (send_at is null or (mail_held and status = 'pending')),
+  -- Sent by the worker after being held: an import's invitation that is no longer held.
+  add constraint invitations_released_check check (released_at is null or (import_id is not null and not mail_held));
 
 comment on column platform.invitations.import_id is 'The user import that created this invitation (T-M2-12); null when invited by hand.';
 comment on column platform.invitations.mail_held is
   'SECURITY-RELEVANT. Not sent yet («لم تُرسل الدعوة», T-M2-12): no token, no e-mail, no sign-in until released; the 7 days start when it is sent.';
-comment on column platform.invitations.send_at is 'When a held invitation is due to be sent (T-M2-12); null: held until someone sends it.';
+comment on column platform.invitations.send_at is 'When a held invitation may be sent at the earliest (T-M2-12); null: held until someone sends it.';
+comment on column platform.invitations.released_at is 'When a held import invitation was sent (T-M2-12): the organization''s daily number counts them.';
 
 create index invitations_import_idx on platform.invitations (tenant_id, import_id) where import_id is not null;
 -- Held invitations due for sending (the worker's claim and release).
 create index invitations_send_due_idx on platform.invitations (import_id, send_at) where send_at is not null;
+-- Import invitations sent today in the organization (the daily number, private.user_import_release_next).
+create index invitations_released_idx on platform.invitations (tenant_id, released_at)
+  where released_at is not null;
 
 -- The importer of an import in the given status, if they may still invite people (Organization Admin or HR
 -- Manager in force), or null. SECURITY INVOKER (jobs and user managers read their tenant's imports).
@@ -92,7 +106,8 @@ begin
     if new.status <> 'pending' or new.token_hash is not null or new.token_issued_at is not null
        or new.send_count <> 0 or new.accepted_at is not null or new.accepted_user_id is not null
        or new.revoked_at is not null or new.revoked_by is not null
-       or new.resend_requested_at is not null or new.resend_requested_by is not null or new.send_at is not null then
+       or new.resend_requested_at is not null or new.resend_requested_by is not null or new.send_at is not null
+       or new.released_at is not null then
       raise exception 'an invitation starts pending, with no token and no outcome' using errcode = 'check_violation';
     end if;
     new.created_at := now();
@@ -185,6 +200,9 @@ begin
   new.updated_at := now();
   v_release := old.mail_held and not new.mail_held;
   v_schedule := new.send_at is distinct from old.send_at and not v_release;
+  if new.released_at is distinct from old.released_at and not v_release then
+    raise exception 'only sending a held invitation stamps when it was sent' using errcode = 'check_violation';
+  end if;
   v_resend := (new.resend_requested_at, new.resend_requested_by)
               is distinct from (old.resend_requested_at, old.resend_requested_by);
   if v_resend and new.status <> 'pending' then
@@ -234,6 +252,7 @@ begin
       end if;
     end if;
     new.send_at := null;
+    new.released_at := now();
     new.expires_at := now() + interval '7 days';
     return new;
   end if;
@@ -371,7 +390,7 @@ create policy invitations_import_revoke on platform.invitations for update to au
 -- (Scheduling and releasing stay pending → pending: the users' resend policy and the jobs' issue policy
 -- of 20261009090000 cover them; the trigger decides who may.)
 
-grant select (import_id, mail_held, send_at) on platform.invitations to authenticated;
+grant select (import_id, mail_held, send_at, released_at) on platform.invitations to authenticated;
 -- (invited_by stays out of the grant: the trigger stamps the importer — for users, themselves.)
 grant insert (import_id, mail_held) on platform.invitations to authenticated;
 -- send_at: schedule a held invitation (users: «إرسال الدعوة»; jobs: the import's sending phase);
@@ -421,6 +440,79 @@ comment on function private.schedule_held_invitations(uuid[], interval) is
 
 revoke all on function private.schedule_held_invitations(uuid[], interval) from public;
 grant execute on function private.schedule_held_invitations(uuid[], interval) to authenticated;
+
+-- ---------------------------------------------------------------------------------------------------
+-- The send clock (security review M2): import invitations go out one at a time, platform-wide
+-- ---------------------------------------------------------------------------------------------------
+-- The e-mail provider limits the sending rate of the whole platform (docs/engineering/email.md), and the
+-- imports of every organization share it. One row: the earliest time the next import invitation may be
+-- released. private.take_invitation_send_slot takes the slot when it has come (and moves the clock on by
+-- the pace) or says when it comes; the row lock serialises the workers of every organization, and a
+-- release that rolls back gives its slot back. No burst: invitations due long ago go out at the pace too.
+-- Nothing of a tenant is stored here.
+create table private.invitation_send_clock (
+  id boolean primary key default true,
+  next_slot timestamptz not null default now(),
+  constraint invitation_send_clock_one_row_check check (id)
+);
+comment on table private.invitation_send_clock is
+  'SECURITY-RELEVANT (T-M2-12, security review M2). The platform-wide pace of import invitations: when the next one may be sent. One row; only user_import_guard''s slot function reaches it.';
+insert into private.invitation_send_clock (id, next_slot) values (true, now());
+
+alter table private.invitation_send_clock enable row level security;
+alter table private.invitation_send_clock force row level security;
+create policy invitation_send_clock_guard on private.invitation_send_clock for all to user_import_guard
+  using (true) with check (true);
+revoke all on private.invitation_send_clock from public;
+grant select (id, next_slot), update (next_slot) on private.invitation_send_clock to user_import_guard;
+
+-- Takes the next send slot: null when it was taken (the caller releases ONE invitation in this
+-- transaction), or the time the next slot comes (the caller waits; nothing changed). `p_interval`: the
+-- pace (0.1 to 60 seconds; the worker's setting). Worker system claims only (app_worker); a job of any
+-- organization takes from the same clock.
+grant user_import_guard to current_user;
+create or replace function private.take_invitation_send_slot(p_interval interval)
+returns timestamptz
+language plpgsql volatile security definer
+set search_path = ''
+as $$
+declare
+  v_next timestamptz;
+begin
+  perform private.user_import_worker_check();
+  if p_interval is null or p_interval < interval '100 milliseconds' or p_interval > interval '1 minute' then
+    raise exception 'invalid sending pace' using errcode = 'invalid_parameter_value';
+  end if;
+  select c.next_slot into v_next from private.invitation_send_clock c where c.id for update;
+  if not found then
+    raise exception 'the send clock is missing' using errcode = 'no_data_found';
+  end if;
+  if v_next > clock_timestamp() then
+    return v_next;
+  end if;
+  update private.invitation_send_clock c set next_slot = clock_timestamp() + p_interval where c.id;
+  return null;
+end
+$$;
+
+comment on function private.take_invitation_send_slot(interval) is
+  'SECURITY-RELEVANT (T-M2-12, security review M2). Worker: takes the platform-wide slot to send one import invitation now (null), or returns when the next slot comes. app_worker system claims only; owner user_import_guard.';
+
+grant create on schema private to user_import_guard;
+alter function private.take_invitation_send_slot(interval) owner to user_import_guard;
+revoke create on schema private from user_import_guard;
+revoke all on function private.take_invitation_send_slot(interval) from public;
+-- The function checks the LOGIN role (app_worker) and the system claims itself.
+grant execute on function private.take_invitation_send_slot(interval) to authenticated;
+
+do $$
+begin
+  if pg_catalog.pg_get_userbyid((select p.proowner from pg_catalog.pg_proc p
+       where p.oid = 'private.take_invitation_send_slot(interval)'::regprocedure)) <> 'user_import_guard' then
+    raise exception 'private.take_invitation_send_slot must stay owned by user_import_guard';
+  end if;
+end
+$$;
 
 -- ---------------------------------------------------------------------------------------------------
 -- Sign-in rule (T-M2-09): a held invitation is not an invitation to accept yet

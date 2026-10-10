@@ -1,6 +1,6 @@
 -- Rollback of 20261016090200_private__user_import_processing.sql: the processing functions of user imports.
 drop function private.user_import_undo_batch(uuid, integer);
-drop function private.user_import_release_due(uuid, integer);
+drop function private.user_import_release_next(uuid, interval, integer, integer);
 drop function private.user_import_result_counts(uuid);
 drop function private.user_import_finish_rows(uuid);
 drop function private.user_import_apply_batch(uuid, integer);

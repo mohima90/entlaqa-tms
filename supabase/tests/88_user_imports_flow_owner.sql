@@ -92,6 +92,34 @@ begin
   perform pg_temp.stage(p_import, 20, '{"email": "race@imp.test", "first_name_ar": "سباق", "family_name_ar": "يدوي"}');
 end $$;
 
+-- The file above imported to its end by `p_user` with `p_options` (review, confirm, fresh check, batches),
+-- as the steps do it; back to the owner connection afterwards.
+create or replace function pg_temp.run_import(p_import uuid, p_user uuid, p_session uuid, p_person uuid, p_file uuid,
+                                              p_options jsonb) returns void language plpgsql as $$
+begin
+  perform pg_temp.new_import(p_import, p_user, p_person, p_file);
+  perform pg_temp.stage_file(p_import);
+  perform pg_temp.become_worker('a0000000-0000-4000-8000-000000000001');
+  perform private.user_import_classify(p_import);
+  update platform.user_imports set status = 'review' where id = p_import;
+  perform pg_temp.become_user(p_user, p_session, p_person);
+  update platform.user_imports set status = 'queued', options = p_options where id = p_import;
+  perform pg_temp.become_worker('a0000000-0000-4000-8000-000000000001');
+  update platform.user_imports set status = 'checking' where id = p_import;
+  perform private.user_import_recheck(p_import);
+  update platform.user_imports set status = 'importing' where id = p_import;
+  while private.user_import_apply_batch(p_import, 50) > 0 loop
+  end loop;
+  perform private.user_import_finish_rows(p_import);
+  update platform.user_imports set status = 'finished' where id = p_import;
+  perform pg_temp.become_owner();
+end $$;
+-- The undo results of an import: 'row:result,…'.
+create or replace function pg_temp.undo_results(p_import uuid) returns text language sql as $$
+  select string_agg(row_number || ':' || undo_result, ',' order by row_number)
+  from platform.user_import_rows where import_id = p_import and undo_result is not null;
+$$;
+
 -- ---------------------------------------------------------------------------------------------------
 -- The dry run.
 -- ---------------------------------------------------------------------------------------------------
@@ -300,20 +328,35 @@ begin
     'result numbers');
 end $$;
 
--- Invitations: scheduled at the pace (here: at once) during the inviting phase, then sent by the worker.
+-- Invitations: scheduled at the pace (here: all at once) during the inviting phase, then sent by the
+-- worker one at a time at the platform-wide pace (security review M2): due is not a burst.
 update platform.user_imports set status = 'inviting' where id = 'a5000000-0000-4000-8000-0000000000d2';
 do $$
 declare
   i constant uuid := 'a5000000-0000-4000-8000-0000000000d2';
   v_ids uuid[];
+  r record;
 begin
   select array_agg(id) into v_ids from platform.invitations where import_id = i;
   perform tests.assert_eq(private.schedule_held_invitations(v_ids, interval '0 seconds'), 5, 'the import''s five invitations scheduled');
-  perform tests.assert_eq(private.user_import_release_due(i, 4), 4, 'due ones sent, at most the batch');
-  perform tests.assert_eq(private.user_import_release_due(i, 4), 1, 'then the rest');
-  perform tests.assert_eq(private.user_import_release_due(i, 4), 0, 'nothing left');
-  perform tests.assert((select bool_and(not mail_held and send_at is null and expires_at > now() + interval '6 days')
-                        from platform.invitations where import_id = i), 'released: no longer held, 7 days from now');
+  perform tests.assert((select bool_and(send_at <= now()) from platform.invitations where import_id = i), 'all five due now');
+  select * into r from private.user_import_release_next(i, interval '100 milliseconds', 1000, 100);
+  perform tests.assert_eq(r.state, 'released', 'the first one is sent');
+  select * into r from private.user_import_release_next(i, interval '100 milliseconds', 1000, 100);
+  perform tests.assert(r.state = 'wait' and r.not_before > now(), 'the second one, due as well, waits for the pace');
+  perform tests.assert((select next_attempt_at = r.not_before from platform.user_imports where id = i),
+    'the import''s next attempt is the next slot');
+  for n in 1..4 loop
+    perform pg_sleep(0.12);
+    select * into r from private.user_import_release_next(i, interval '100 milliseconds', 1000, 100);
+    perform tests.assert_eq(r.state, 'released', format('one more after the pace (%s)', n));
+  end loop;
+  perform pg_sleep(0.12);
+  perform tests.assert_eq((select x.state from private.user_import_release_next(i, interval '100 milliseconds', 1000, 100) x),
+    'none', 'nothing left');
+  perform tests.assert((select bool_and(not mail_held and send_at is null and released_at is not null
+                                        and expires_at > now() + interval '6 days')
+                        from platform.invitations where import_id = i), 'released: no longer held, sent time stamped, 7 days from now');
 end $$;
 update platform.user_imports set status = 'finished' where id = 'a5000000-0000-4000-8000-0000000000d2';
 
@@ -551,7 +594,8 @@ do $$
 declare
   i constant uuid := 'a5000000-0000-4000-8000-0000000000d6';
 begin
-  perform tests.assert_eq(private.user_import_release_due(i, 10), -1, 'the importer may no longer invite: nothing sent');
+  perform tests.assert_eq((select x.state from private.user_import_release_next(i, interval '100 milliseconds', 1000, 100) x),
+    'not_allowed', 'the importer may no longer invite: nothing sent');
   perform tests.assert((select bool_and(mail_held and send_at is null) from platform.invitations where import_id = i),
     'the schedule is cleared: «لم تُرسل الدعوة»');
 end $$;
@@ -603,9 +647,219 @@ end $$;
 select pg_temp.become_worker('a0000000-0000-4000-8000-000000000001');
 do $$
 begin
-  perform tests.assert_eq(private.user_import_release_due('a5000000-0000-4000-8000-000000000011', 10), 1, 'and it is sent');
+  perform tests.assert_eq((select x.state from private.user_import_release_next('a5000000-0000-4000-8000-000000000011',
+                                                                               interval '100 milliseconds', 1000, 100) x),
+    'released', 'and it is sent');
   perform tests.assert((select not mail_held and send_at is null from platform.invitations
                         where id = 'a4000000-0000-4000-8000-000000000c07'), 'released (the mailer gives it its link)');
+end $$;
+select pg_temp.become_owner();
+rollback;
+
+-- ---------------------------------------------------------------------------------------------------
+-- Sending at the platform-wide pace (security review M2): one send clock for every organization; overdue
+-- invitations spaced out again, never a burst; a daily number of import invitations per organization,
+-- lower on trial — above it they wait for the next day, never dropped.
+-- ---------------------------------------------------------------------------------------------------
+begin;
+insert into platform.persons (id, tenant_id, display_name_ar, email) values
+  ('a1000000-0000-4000-8000-000000000f11', 'a0000000-0000-4000-8000-000000000001', 'متأخر أول', 'late1@imp.test'),
+  ('a1000000-0000-4000-8000-000000000f12', 'a0000000-0000-4000-8000-000000000001', 'متأخر ثان', 'late2@imp.test'),
+  ('a1000000-0000-4000-8000-000000000f13', 'a0000000-0000-4000-8000-000000000001', 'متأخر ثالث', 'late3@imp.test'),
+  ('b1000000-0000-4000-8000-000000000f11', 'b0000000-0000-4000-8000-000000000001', 'في المنشأة ب', 'in.b@imp.test');
+insert into platform.invitations (id, tenant_id, person_id, email, locale, primary_role, invited_by, import_id, mail_held) values
+  ('a4000000-0000-4000-8000-000000000f11', 'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-000000000f11',
+   'late1@imp.test', 'ar', 'learner', '00000000-0000-4000-8000-0000000000a1', 'a5000000-0000-4000-8000-000000000011', true),
+  ('a4000000-0000-4000-8000-000000000f12', 'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-000000000f12',
+   'late2@imp.test', 'ar', 'learner', '00000000-0000-4000-8000-0000000000a1', 'a5000000-0000-4000-8000-000000000011', true),
+  ('a4000000-0000-4000-8000-000000000f13', 'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-000000000f13',
+   'late3@imp.test', 'ar', 'learner', '00000000-0000-4000-8000-0000000000a1', 'a5000000-0000-4000-8000-000000000011', true),
+  ('b4000000-0000-4000-8000-000000000f11', 'b0000000-0000-4000-8000-000000000001', 'b1000000-0000-4000-8000-000000000f11',
+   'in.b@imp.test', 'ar', 'learner', '00000000-0000-4000-8000-0000000000b1', 'b5000000-0000-4000-8000-000000000001', true);
+-- All overdue by an hour (e.g. the worker was down).
+update platform.invitations set send_at = now() - interval '1 hour'
+  where id in ('a4000000-0000-4000-8000-000000000c07', 'a4000000-0000-4000-8000-000000000f11',
+               'a4000000-0000-4000-8000-000000000f12', 'a4000000-0000-4000-8000-000000000f13',
+               'b4000000-0000-4000-8000-000000000f11');
+select pg_temp.become_worker('a0000000-0000-4000-8000-000000000001');
+do $$
+declare
+  r record;
+begin
+  select * into r from private.user_import_release_next('a5000000-0000-4000-8000-000000000011', interval '100 milliseconds', 3, 2);
+  perform tests.assert_eq(r.state, 'released', 'tenant A: the first overdue invitation is sent');
+  select * into r from private.user_import_release_next('a5000000-0000-4000-8000-000000000011', interval '100 milliseconds', 3, 2);
+  perform tests.assert(r.state = 'wait' and r.not_before > now(),
+    'the next overdue one waits for the pace: overdue invitations are spaced out again, not sent in a burst');
+end $$;
+select pg_temp.become_worker('b0000000-0000-4000-8000-000000000001');
+do $$
+declare
+  r record;
+begin
+  select * into r from private.user_import_release_next('b5000000-0000-4000-8000-000000000001', interval '100 milliseconds', 3, 2);
+  perform tests.assert_eq(r.state, 'wait', 'tenant B waits for the slot tenant A just took: one clock for the platform');
+  perform pg_sleep(0.12);
+  select * into r from private.user_import_release_next('b5000000-0000-4000-8000-000000000001', interval '100 milliseconds', 3, 2);
+  perform tests.assert_eq(r.state, 'released', 'then it is tenant B''s turn');
+end $$;
+select pg_temp.become_worker('a0000000-0000-4000-8000-000000000001');
+do $$
+declare
+  i constant uuid := 'a5000000-0000-4000-8000-000000000011';
+  r record;
+begin
+  perform pg_sleep(0.12);
+  perform tests.assert_eq((select x.state from private.user_import_release_next(i, interval '100 milliseconds', 3, 2) x),
+    'released', 'tenant A: the second today');
+  perform pg_sleep(0.12);
+  perform tests.assert_eq((select x.state from private.user_import_release_next(i, interval '100 milliseconds', 3, 2) x),
+    'released', 'the third today');
+  perform pg_sleep(0.12);
+  select * into r from private.user_import_release_next(i, interval '100 milliseconds', 3, 2);
+  perform tests.assert(r.state = 'capped' and r.not_before = date_trunc('day', now(), 'UTC') + interval '1 day',
+    'the daily number reached (3): the rest waits for the next day (UTC)');
+  perform tests.assert((select next_attempt_at = r.not_before from platform.user_imports where id = i),
+    'the import is not tried again before then');
+  perform tests.assert_eq((select count(*) from platform.invitations where import_id = i and mail_held and send_at is not null),
+    1::bigint, 'the invitation over the number stays scheduled: never dropped');
+  perform tests.assert_fails(format($q$select * from private.user_import_release_next(%L, interval '1 second', 0, 2)$q$, i),
+    array['22023'], 'the daily numbers are positive');
+end $$;
+-- On trial: the lower daily number applies.
+select pg_temp.become_owner();
+update platform.tenants set status = 'trial' where id = 'a0000000-0000-4000-8000-000000000001';
+update platform.user_imports set next_attempt_at = now() where id = 'a5000000-0000-4000-8000-000000000011';
+select pg_temp.become_worker('a0000000-0000-4000-8000-000000000001');
+do $$
+begin
+  perform tests.assert_eq((select x.state from private.user_import_release_next('a5000000-0000-4000-8000-000000000011',
+                                                                               interval '100 milliseconds', 1000, 3) x),
+    'capped', 'an organization on trial: its lower daily number (3) is reached');
+end $$;
+select pg_temp.become_owner();
+rollback;
+
+-- ---------------------------------------------------------------------------------------------------
+-- Undo by an HR Manager (security review L1): members who hold a privileged role now keep their data; a
+-- record the import invited again and that changed since is kept as it is.
+-- ---------------------------------------------------------------------------------------------------
+begin;
+select pg_temp.run_import('a5000000-0000-4000-8000-0000000000d7', '00000000-0000-4000-8000-0000000000ab',
+                          '10000000-0000-4000-8000-0000000000ab', 'a1000000-0000-4000-8000-0000000000ab',
+                          'f0a00000-0000-4000-8000-0000000000d7',
+                          '{"existing": "upsert", "defaultRole": "learner", "invitations": "hold"}');
+do $$
+begin
+  perform tests.assert_eq((select string_agg(row_number || ':' || result, ',' order by row_number) from platform.user_import_rows
+                           where import_id = 'a5000000-0000-4000-8000-0000000000d7' and result in ('added', 'updated')),
+    '2:added,3:added,6:updated,11:added,17:added,19:added,20:added', 'the HR Manager''s import added and updated people');
+end $$;
+-- After the import: row 6's member is given a privileged role; row 11's record (invited again) is edited.
+insert into platform.role_assignments (tenant_id, membership_id, role_code, is_primary)
+  select tenant_id, id, 'finance_manager', false from platform.tenant_memberships
+  where person_id = 'a1000000-0000-4000-8000-000000000c01';
+update platform.persons set mobile_e164 = '+966500000011' where id = 'a1000000-0000-4000-8000-000000000c05';
+select pg_temp.become_user('00000000-0000-4000-8000-0000000000ab', '10000000-0000-4000-8000-0000000000ab',
+                           'a1000000-0000-4000-8000-0000000000ab');
+update platform.user_imports set status = 'undoing', undo_reason = 'wrong_data' where id = 'a5000000-0000-4000-8000-0000000000d7';
+select pg_temp.become_worker('a0000000-0000-4000-8000-000000000001');
+do $$
+declare
+  i constant uuid := 'a5000000-0000-4000-8000-0000000000d7';
+begin
+  perform tests.assert_eq(private.user_import_undo_batch(i, 50), 7, 'one batch');
+  perform tests.assert_eq(private.user_import_undo_batch(i, 50), 0, 'done');
+  perform tests.assert_eq(pg_temp.undo_results(i), '2:removed,3:removed,6:kept_privileged,11:kept_changed,17:removed,19:removed,20:removed',
+    'an HR Manager''s undo keeps the data of a member who now holds a privileged role, and a record invited again that changed since');
+  perform tests.assert((select job_title_ar = 'مدير' from platform.person_employment
+                        where person_id = 'a1000000-0000-4000-8000-000000000c01'),
+    'row 6: the privileged member''s record is not changed by the undo');
+  perform tests.assert((select i.status = 'pending' and p.status = 'active' and p.mobile_e164 = '+966500000011'
+                        from platform.user_import_rows r
+                        join platform.invitations i on i.id = r.invitation_id
+                        join platform.persons p on p.id = r.person_id
+                        where r.import_id = 'a5000000-0000-4000-8000-0000000000d7' and r.row_number = 11),
+    'row 11: changed since the import, so kept as it is (its invitation included)');
+end $$;
+select pg_temp.become_owner();
+rollback;
+
+-- ---------------------------------------------------------------------------------------------------
+-- An Organization Admin undoes an HR Manager's import whose importer is gone (Tech Lead decision 10 Oct
+-- 2026, security review M1); the importer themselves no longer may.
+-- ---------------------------------------------------------------------------------------------------
+begin;
+select pg_temp.run_import('a5000000-0000-4000-8000-0000000000d8', '00000000-0000-4000-8000-0000000000ab',
+                          '10000000-0000-4000-8000-0000000000ab', 'a1000000-0000-4000-8000-0000000000ab',
+                          'f0a00000-0000-4000-8000-0000000000d8',
+                          '{"existing": "upsert", "defaultRole": "learner", "invitations": "hold"}');
+-- Row 6's member now holds a privileged role; the HR Manager loses theirs.
+insert into platform.role_assignments (tenant_id, membership_id, role_code, is_primary)
+  select tenant_id, id, 'finance_manager', false from platform.tenant_memberships
+  where person_id = 'a1000000-0000-4000-8000-000000000c01';
+delete from platform.role_assignments where role_code = 'hr_manager'
+  and membership_id = (select id from platform.tenant_memberships where user_id = '00000000-0000-4000-8000-0000000000ab'
+                         and tenant_id = 'a0000000-0000-4000-8000-000000000001');
+select pg_temp.become_user('00000000-0000-4000-8000-0000000000ab', '10000000-0000-4000-8000-0000000000ab',
+                           'a1000000-0000-4000-8000-0000000000ab');
+do $$
+begin
+  perform tests.assert_eq(tests.rows_affected($q$update platform.user_imports set status = 'undoing' where id = 'a5000000-0000-4000-8000-0000000000d8'$q$),
+    0::bigint, 'an importer who may no longer import cannot undo their import (they no longer see the imports)');
+end $$;
+select pg_temp.become_user('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
+                           'a1000000-0000-4000-8000-0000000000a1');
+do $$
+begin
+  perform tests.assert_eq(tests.rows_affected($q$update platform.user_imports set status = 'undoing', undo_reason = 'wrong_file'
+                                                 where id = 'a5000000-0000-4000-8000-0000000000d8'$q$),
+    1::bigint, 'the Organization Admin undoes it');
+end $$;
+select pg_temp.become_worker('a0000000-0000-4000-8000-000000000001');
+do $$
+declare
+  i constant uuid := 'a5000000-0000-4000-8000-0000000000d8';
+begin
+  perform tests.assert_eq(private.user_import_undo_batch(i, 50), 7, 'the undo runs although the importer is gone');
+  perform tests.assert_eq(pg_temp.undo_results(i), '2:removed,3:removed,6:restored,11:removed,17:removed,19:removed,20:removed',
+    'an Organization Admin''s undo restores privileged members too');
+  perform tests.assert((select revoked_by = '00000000-0000-4000-8000-0000000000a1' from platform.invitations
+                        where id = (select invitation_id from platform.user_import_rows where import_id = i and row_number = 17)),
+    'the invitations are revoked by the Organization Admin who asked for the undo');
+end $$;
+select pg_temp.become_owner();
+rollback;
+
+-- ---------------------------------------------------------------------------------------------------
+-- The member who asked for the undo is checked again for every batch (security review L1).
+-- ---------------------------------------------------------------------------------------------------
+begin;
+select pg_temp.run_import('a5000000-0000-4000-8000-0000000000d9', '00000000-0000-4000-8000-0000000000ab',
+                          '10000000-0000-4000-8000-0000000000ab', 'a1000000-0000-4000-8000-0000000000ab',
+                          'f0a00000-0000-4000-8000-0000000000d9',
+                          '{"existing": "upsert", "defaultRole": "learner", "invitations": "hold"}');
+select pg_temp.become_user('00000000-0000-4000-8000-0000000000ab', '10000000-0000-4000-8000-0000000000ab',
+                           'a1000000-0000-4000-8000-0000000000ab');
+update platform.user_imports set status = 'undoing', undo_reason = 'other' where id = 'a5000000-0000-4000-8000-0000000000d9';
+select pg_temp.become_worker('a0000000-0000-4000-8000-000000000001');
+do $$
+begin
+  perform tests.assert_eq(private.user_import_undo_batch('a5000000-0000-4000-8000-0000000000d9', 2), 2, 'a first batch');
+end $$;
+select pg_temp.become_owner();
+delete from platform.role_assignments where role_code = 'hr_manager'
+  and membership_id = (select id from platform.tenant_memberships where user_id = '00000000-0000-4000-8000-0000000000ab'
+                         and tenant_id = 'a0000000-0000-4000-8000-000000000001');
+select pg_temp.become_worker('a0000000-0000-4000-8000-000000000001');
+do $$
+declare
+  i constant uuid := 'a5000000-0000-4000-8000-0000000000d9';
+begin
+  perform tests.assert_eq(private.user_import_undo_batch(i, 2), -1,
+    'the HR Manager lost the role: the undo goes no further (the worker ends it)');
+  perform tests.assert_eq((select count(*) from platform.user_import_rows where import_id = i and undo_result is not null),
+    2::bigint, 'nothing more was undone');
 end $$;
 select pg_temp.become_owner();
 rollback;

@@ -18,6 +18,7 @@ import {
   refreshSeconds,
   runningPhase,
   undoDeadline,
+  undoSummary,
 } from './user-import-view';
 
 describe('user import view', () => {
@@ -81,11 +82,29 @@ describe('user import view', () => {
     expect(codeCounts(null, 'errorCodes')).toEqual([]);
   });
 
-  it('undo: the importer, after the run, within 7 days, while the data is kept', () => {
+  it('undo summary: rows by undo result, grouped as the result page says them', () => {
+    expect(undoSummary(null)).toBeNull();
+    expect(undoSummary({ added: 3 })).toBeNull();
+    expect(
+      undoSummary({
+        undo: {
+          removed: 4,
+          kept_accepted: 1,
+          kept_referenced: 2,
+          restored: 3,
+          kept_changed: 1,
+          kept_privileged: 2,
+          kept_error: 1,
+        },
+      }),
+    ).toEqual({ removed: 4, kept: 3, restored: 3, changed: 1, privileged: 2, errors: 1 });
+  });
+
+  it('undo: its importer or an Organization Admin (mayUndo), after the run, within 7 days, while the data is kept', () => {
     const finishedAt = new Date('2026-10-10T10:00:00Z');
     const record = {
       status: 'finished',
-      mine: true,
+      mayUndo: true,
       confirmedAt: finishedAt,
       finishedAt,
       dataPurgedAt: null,
@@ -95,7 +114,7 @@ describe('user import view', () => {
     const day1 = new Date('2026-10-11T10:00:00Z');
     expect(mayUndo(record, day1)).toBe(true);
     expect(mayUndo(record, new Date('2026-10-17T10:00:01Z'))).toBe(false);
-    expect(mayUndo({ ...record, mine: false }, day1)).toBe(false);
+    expect(mayUndo({ ...record, mayUndo: false }, day1)).toBe(false);
     expect(mayUndo({ ...record, status: 'undone' }, day1)).toBe(false);
     expect(mayUndo({ ...record, confirmedAt: null }, day1)).toBe(false);
     expect(mayUndo({ ...record, dataPurgedAt: day1 }, day1)).toBe(false);

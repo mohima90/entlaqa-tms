@@ -12,6 +12,7 @@ drop table platform.user_imports;
 drop function private.check_user_import();
 drop function private.user_import_mapping_is_valid(jsonb);
 drop function private.user_import_draft_statuses();
+drop function private.user_import_actor_may_undo(uuid, uuid, uuid);
 drop function private.user_import_actor_may_import(uuid, uuid);
 
 drop policy files_user_import_guard_read on platform.files;

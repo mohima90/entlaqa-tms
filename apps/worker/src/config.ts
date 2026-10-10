@@ -4,6 +4,8 @@ import {
   readDatabaseCaPem,
   tlsOptionsFor,
 } from '@jadarat/platform-db';
+import type { InvitationSending } from '@jadarat/platform-db/jobs';
+import { DEFAULT_INVITATION_SENDING } from '@jadarat/platform-import/jobs';
 import { DATABASE_URL_APP_QUEUE_ENV, assertQueueRole } from '@jadarat/platform-jobs/jobs';
 import { isEmailAddress } from '@jadarat/platform-notifications';
 import { type EmailSettings, readEmailSettings } from '@jadarat/platform-notifications/jobs';
@@ -54,6 +56,13 @@ export interface RunnerSettings {
    * (default 10 % of all objects): above either brake nothing is removed and an error is logged.
    */
   readonly orphanSweep: OrphanSweepSettings;
+  /**
+   * Sending the invitations of bulk user imports (T-M2-12, security review M2): the platform-wide pace
+   * (USER_IMPORT_INVITATION_INTERVAL_MS, default 1000) and the daily numbers per organization in service
+   * and on trial (USER_IMPORT_DAILY_INVITATIONS, default 5000; USER_IMPORT_TRIAL_DAILY_INVITATIONS,
+   * default 200). Every worker of a deployment should use the same values.
+   */
+  readonly importSending: InvitationSending;
 }
 
 export interface OrphanSweepSettings {
@@ -258,6 +267,54 @@ function readOrphanSweep(env: NodeJS.ProcessEnv): OrphanSweepSettings {
   };
 }
 
+export const IMPORT_INTERVAL_ENV = 'USER_IMPORT_INVITATION_INTERVAL_MS';
+export const IMPORT_DAILY_ENV = 'USER_IMPORT_DAILY_INVITATIONS';
+export const IMPORT_TRIAL_DAILY_ENV = 'USER_IMPORT_TRIAL_DAILY_INVITATIONS';
+
+/**
+ * The pace (100 to 60,000 milliseconds) and the daily numbers (1 to 100,000; the trial number no higher
+ * than the other) of import invitations.
+ */
+function readImportSending(env: NodeJS.ProcessEnv): InvitationSending {
+  const whole = (name: string, fallback: number, min: number, max: number, unit: string) => {
+    const raw = read(env, name);
+    const value = raw === undefined ? fallback : Number(raw);
+    if (!Number.isInteger(value) || value < min || value > max) {
+      throw new ConfigurationError(
+        `${name} must be a whole number of ${unit} from ${String(min)} to ${String(max)}`,
+      );
+    }
+    return value;
+  };
+  const intervalMs = whole(
+    IMPORT_INTERVAL_ENV,
+    DEFAULT_INVITATION_SENDING.intervalMs,
+    100,
+    60_000,
+    'milliseconds',
+  );
+  const dailyCap = whole(
+    IMPORT_DAILY_ENV,
+    DEFAULT_INVITATION_SENDING.dailyCap,
+    1,
+    100_000,
+    'invitations',
+  );
+  const trialDailyCap = whole(
+    IMPORT_TRIAL_DAILY_ENV,
+    Math.min(DEFAULT_INVITATION_SENDING.trialDailyCap, dailyCap),
+    1,
+    100_000,
+    'invitations',
+  );
+  if (trialDailyCap > dailyCap) {
+    throw new ConfigurationError(
+      `${IMPORT_TRIAL_DAILY_ENV} must not be higher than ${IMPORT_DAILY_ENV}`,
+    );
+  }
+  return { intervalMs, dailyCap, trialDailyCap };
+}
+
 /** The worker warns (at start-up, then daily) once the Auth admin token has fewer days than this left. */
 export const ADMIN_KEY_WARN_DAYS = 30;
 
@@ -339,6 +396,7 @@ export function readSettings(
   const appBaseUrl = readAppBaseUrl(env, email.provider !== 'none');
   const authAdmin = readAuthAdmin(env);
   const orphanSweep = readOrphanSweep(env);
+  const importSending = readImportSending(env);
   return {
     mode,
     queueUrl,
@@ -350,5 +408,6 @@ export function readSettings(
     authAdmin,
     scanner,
     orphanSweep,
+    importSending,
   };
 }

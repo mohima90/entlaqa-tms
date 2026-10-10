@@ -125,6 +125,7 @@ async function runWorker(settings: RunnerSettings): Promise<void> {
         authAdmin: settings.authAdmin,
         scanner: settings.scanner,
         orphanSweep: settings.orphanSweep,
+        importSending: settings.importSending,
         withPlatformTx: createWithPlatformTx(() => workerDb),
         withSystemTx,
         log,

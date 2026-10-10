@@ -783,8 +783,9 @@ begin
   select string_agg(format('%s%s', p.oid::regprocedure, case when p.prosecdef then '' else ' (INVOKER)' end), ', '
                     order by p.oid::regprocedure::text) into v_list
   from pg_proc p where p.proowner = 'user_import_guard'::regrole;
-  perform tests.assert_eq(v_list, 'private.claim_user_import_work(), private.user_import_worker_check() (INVOKER)',
-    'user_import_guard owns the claim and its check only');
+  perform tests.assert_eq(v_list, 'private.claim_user_import_work(), private.take_invitation_send_slot(interval), '
+                                 'private.user_import_worker_check() (INVOKER)',
+    'user_import_guard owns the claim, the send clock''s slot function and their check only');
   perform tests.assert(not exists (select 1 from pg_class c where c.relowner = 'user_import_guard'::regrole),
     'user_import_guard owns no relations');
   perform tests.assert(not exists (
@@ -820,6 +821,21 @@ begin
       where n.nspname in ('platform', 'private', 'tms') and c.relkind in ('r', 'v', 'm', 'p')
         and has_table_privilege('user_import_guard', c.oid, 'select, insert, update, delete, truncate, references, trigger')),
     'user_import_guard has no table-wide privilege anywhere');
+  -- The send clock (security review M2): RLS forced; user_import_guard reads it and moves next_slot;
+  -- nobody else has any privilege on it.
+  perform tests.assert((select relrowsecurity and relforcerowsecurity from pg_class
+                        where oid = 'private.invitation_send_clock'::regclass),
+    'invitation_send_clock: row level security must be ENABLED and FORCED');
+  select string_agg(format('%s:%s:%s', a.attname, pg_get_userbyid(x.grantee), x.privilege_type), ', '
+                    order by a.attname, x.privilege_type) into v_list
+  from pg_attribute a cross join lateral aclexplode(a.attacl) x
+  where a.attrelid = 'private.invitation_send_clock'::regclass and a.attnum > 0 and not a.attisdropped;
+  perform tests.assert_eq(v_list, 'id:user_import_guard:SELECT, next_slot:user_import_guard:SELECT, next_slot:user_import_guard:UPDATE',
+    'invitation_send_clock: column privileges of user_import_guard only');
+  perform tests.assert(not exists (
+      select 1 from pg_class c, aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) x
+      where c.oid = 'private.invitation_send_clock'::regclass and x.grantee <> c.relowner),
+    'invitation_send_clock: no table privilege for anyone but its owner');
   for v_list in
     select distinct format('%s → %s', p.oid::regprocedure,
                            case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end)

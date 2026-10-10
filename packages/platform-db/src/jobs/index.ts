@@ -72,6 +72,8 @@ export {
 } from './invitations';
 export {
   IMPORTER_NOT_ALLOWED,
+  type InvitationSending,
+  type ReleaseState,
   type ReportSourceRow,
   type StagedColumn,
   type StagedRow,
@@ -91,7 +93,7 @@ export {
   loadUserImportReportRows,
   markUserImportPurged,
   recheckUserImport,
-  releaseDueUserImportInvitations,
+  releaseNextUserImportInvitation,
   noteUserImportLeaseLost,
   releaseUserImportLease,
   renewUserImportLease,

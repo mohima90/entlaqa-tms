@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CSV_BOM, csvLine } from '../spreadsheet/csv';
 import {
   MAX_FAILURES,
-  SEND_BATCH,
+  SEND_MAX_WAIT_MS,
+  SEND_SHARE,
   USER_IMPORT_TASK,
   codeOf,
   createUserImportTask,
@@ -26,7 +27,7 @@ const db = vi.hoisted(() => ({
   applyUserImportBatch: vi.fn(),
   finishUserImportRows: vi.fn(),
   scheduleUserImportInvitations: vi.fn(),
-  releaseDueUserImportInvitations: vi.fn(),
+  releaseNextUserImportInvitation: vi.fn(),
   undoUserImportBatch: vi.fn(),
   userImportUndoCounts: vi.fn(),
   clearUserImportSchedule: vi.fn(),
@@ -85,6 +86,7 @@ const base: UserImportJobView = {
   confirmedAt: null,
   failures: 0,
   importerLocale: 'ar',
+  importerMayImport: true,
 };
 
 const STEP_OF: Record<string, UserImportJobView['step']> = {
@@ -113,17 +115,28 @@ const streamOf = (bytes: Uint8Array) =>
 
 const files = { openScannedFile: vi.fn(), storeGeneratedFile: vi.fn() };
 const logs: string[] = [];
+const slept: number[] = [];
 let clock = 0;
-const withPlatformTx = (_actor: unknown, fn: (tx: unknown) => unknown) => Promise.resolve(fn({}));
-const withSystemTx = (_actor: unknown, fn: (tx: unknown) => unknown) => Promise.resolve(fn({}));
+/** The transaction handle: equal to `{}` in the assertions; its savepoints run in it. */
+const TX: object = Object.defineProperty({}, 'transaction', {
+  value: (fn: (tx: unknown) => unknown) => Promise.resolve(fn(TX)),
+  enumerable: false,
+});
+const withPlatformTx = (_actor: unknown, fn: (tx: unknown) => unknown) => Promise.resolve(fn(TX));
+const withSystemTx = (_actor: unknown, fn: (tx: unknown) => unknown) => Promise.resolve(fn(TX));
 const task = () =>
   createUserImportTask({
     withPlatformTx: withPlatformTx as never,
     withSystemTx: withSystemTx as never,
     files,
     log: (level, message) => logs.push(`${level}: ${message}`),
-    invitationPaceSeconds: 2,
+    sending: { intervalMs: 2000, dailyCap: 10, trialDailyCap: 5 },
     now: () => clock,
+    sleep: (ms) => {
+      slept.push(ms);
+      clock += ms;
+      return Promise.resolve();
+    },
   });
 
 /** One claim, then nothing. */
@@ -135,6 +148,7 @@ beforeEach(() => {
   state = { ...base };
   clock = 0;
   logs.length = 0;
+  slept.length = 0;
   db.loadUserImportForJob.mockImplementation(() => Promise.resolve({ ...state }));
   db.setUserImportStatus.mockImplementation(
     (
@@ -365,45 +379,210 @@ describe('user import task', () => {
     expect(db.clearUserImportSchedule).toHaveBeenCalledWith({}, ID);
   });
 
-  it('run: the importer may no longer import → failed, the rest reported', async () => {
-    state = { ...base, status: 'importing', step: 'run' };
-    db.applyUserImportBatch.mockRejectedValue(new core.DomainError('IMPORTER_NOT_ALLOWED'));
+  it('run: the importer may no longer import → failed, no report for them (security review M1)', async () => {
+    state = {
+      ...base,
+      status: 'importing',
+      step: 'run',
+      sheetIndex: 0,
+      mapping: { '0': 'email' },
+    };
+    db.applyUserImportBatch.mockImplementation(() => {
+      // Demoted or deactivated meanwhile: the next load sees it.
+      state = { ...state, importerMayImport: false };
+      return Promise.reject(new core.DomainError('IMPORTER_NOT_ALLOWED'));
+    });
     claimOnce('run');
     await task().run({ jobId: 'j' });
     expect(state.status).toBe('failed');
+    expect(files.storeGeneratedFile).not.toHaveBeenCalled();
     expect(db.setUserImportStatus).toHaveBeenLastCalledWith({}, ID, ['importing'], 'failed', {
       resultCounts: expect.any(Object),
       reportFileId: null,
+      reportCode: 'IMPORTER_NOT_ALLOWED',
+      failureCode: 'IMPORTER_NOT_ALLOWED',
+    });
+    expect(db.insertSystemAuditEvent).toHaveBeenLastCalledWith(
+      {},
+      expect.objectContaining({
+        action: 'platform.user_import.failed',
+        data: expect.objectContaining({
+          failureCode: 'IMPORTER_NOT_ALLOWED',
+          reportCode: 'IMPORTER_NOT_ALLOWED',
+        }),
+      }),
+    );
+  });
+
+  it('run: the invitation guard refuses the schedule (importer gone, 42501 mapped) → failed', async () => {
+    state = { ...base, status: 'inviting', step: 'run' };
+    db.scheduleUserImportInvitations.mockRejectedValue(
+      new core.DomainError('IMPORTER_NOT_ALLOWED'),
+    );
+    claimOnce('run');
+    await task().run({ jobId: 'j' });
+    expect(state.status).toBe('failed');
+    expect(db.clearUserImportSchedule).toHaveBeenCalledWith({}, ID);
+  });
+
+  it('run: an error report that cannot be stored is tried again with the step, then the run ends without it', async () => {
+    const running = {
+      ...base,
+      status: 'importing' as const,
+      step: 'run' as const,
+      sheetIndex: 0,
+      mapping: { '0': 'email' },
+      options: { existing: 'skip' as const, defaultRole: 'learner', invitations: 'hold' as const },
+    };
+    db.applyUserImportBatch.mockResolvedValue(0);
+    files.storeGeneratedFile.mockRejectedValue(
+      Object.assign(new Error('storage'), { code: 'ECONNRESET' }),
+    );
+    state = { ...running, failures: 0 };
+    claimOnce('run');
+    await task().run({ jobId: 'j' });
+    expect(state.status).toBe('importing');
+    expect(db.releaseUserImportLease).toHaveBeenLastCalledWith({}, ID, 'lease', 'retry');
+
+    // The step's last attempt: the run ends, report_code says why.
+    state = { ...running, failures: MAX_FAILURES - 1 };
+    claimOnce('run');
+    await task().run({ jobId: 'j' });
+    expect(state.status).toBe('finished');
+    expect(db.setUserImportStatus).toHaveBeenCalledWith(
+      {},
+      ID,
+      ['importing'],
+      'finished',
+      expect.objectContaining({ reportFileId: null, reportCode: 'REPORT_FAILED' }),
+    );
+    expect(logs.join('\n')).toContain('error report not stored (ECONNRESET)');
+  });
+
+  it('validate: an importer who may no longer import → failed (the review is theirs alone)', async () => {
+    state = {
+      ...base,
+      status: 'validating',
+      step: 'validate',
+      sheetIndex: 0,
+      mapping: { '0': 'email' },
+      importerMayImport: false,
+    };
+    claimOnce('validate');
+    await task().run({ jobId: 'j' });
+    expect(files.openScannedFile).not.toHaveBeenCalled();
+    expect(db.setUserImportStatus).toHaveBeenLastCalledWith({}, ID, ['validating'], 'failed', {
       failureCode: 'IMPORTER_NOT_ALLOWED',
     });
   });
 
-  it('send: releases due invitations in batches; an importer who may not invite keeps them', async () => {
+  it("send: one invitation per transaction at the send clock's pace, settings passed on", async () => {
     state = { ...base, status: 'finished', step: 'send' };
-    db.releaseDueUserImportInvitations.mockResolvedValueOnce(SEND_BATCH).mockResolvedValueOnce(7);
+    db.releaseNextUserImportInvitation
+      .mockResolvedValueOnce({ state: 'released', notBefore: null })
+      .mockImplementationOnce(() =>
+        Promise.resolve({ state: 'wait', notBefore: new Date(clock + 2000) }),
+      )
+      .mockResolvedValueOnce({ state: 'released', notBefore: null })
+      .mockResolvedValueOnce({ state: 'none', notBefore: null });
     claimOnce('send');
     await task().run({ jobId: 'j' });
-    expect(db.releaseDueUserImportInvitations).toHaveBeenCalledTimes(2);
-    expect(logs.join('\n')).toContain(`${String(SEND_BATCH)} invitations sent`);
+    expect(db.releaseNextUserImportInvitation).toHaveBeenCalledTimes(4);
+    expect(db.releaseNextUserImportInvitation).toHaveBeenCalledWith({}, ID, {
+      intervalMs: 2000,
+      dailyCap: 10,
+      trialDailyCap: 5,
+    });
+    expect(slept).toEqual([2000]);
+    expect(logs.join('\n')).toContain('2 invitations sent');
+    expect(db.releaseUserImportLease).toHaveBeenLastCalledWith({}, ID, 'lease', 'done');
+  });
 
-    db.releaseDueUserImportInvitations.mockResolvedValueOnce(-1);
+  it('send: imports take turns — at most SEND_SHARE per claim, then the next import', async () => {
+    state = { ...base, status: 'finished', step: 'send' };
+    db.releaseNextUserImportInvitation.mockResolvedValue({ state: 'released', notBefore: null });
+    const other = { ...claim('send'), importId: 'a5000000-0000-4000-8000-000000000002' };
+    db.claimUserImportWork
+      .mockResolvedValueOnce(claim('send'))
+      .mockResolvedValueOnce(other)
+      .mockResolvedValue(null);
+    await task().run({ jobId: 'j' });
+    expect(db.releaseNextUserImportInvitation).toHaveBeenCalledTimes(2 * SEND_SHARE);
+    expect(db.releaseUserImportLease.mock.calls.map((c) => c[1] as string)).toEqual([
+      ID,
+      other.importId,
+    ]);
+  });
+
+  it('send: a long wait, a capped organization and an importer who may not invite end the turn', async () => {
+    state = { ...base, status: 'finished', step: 'send' };
+    db.releaseNextUserImportInvitation.mockImplementationOnce(() =>
+      Promise.resolve({ state: 'wait', notBefore: new Date(clock + SEND_MAX_WAIT_MS + 1) }),
+    );
+    claimOnce('send');
+    await task().run({ jobId: 'j' });
+    expect(slept).toEqual([]);
+    expect(db.releaseNextUserImportInvitation).toHaveBeenCalledTimes(1);
+
+    db.releaseNextUserImportInvitation.mockResolvedValueOnce({
+      state: 'capped',
+      notBefore: new Date('2026-10-11T00:00:00Z'),
+    });
+    claimOnce('send');
+    await task().run({ jobId: 'j' });
+    expect(logs.join('\n')).toContain('daily number of invitations is reached');
+
+    db.releaseNextUserImportInvitation.mockResolvedValueOnce({
+      state: 'not_allowed',
+      notBefore: null,
+    });
     claimOnce('send');
     await task().run({ jobId: 'j' });
     expect(logs.join('\n')).toContain('may no longer invite');
+    // Never more than the waits allowed per turn, even when the clock keeps saying "wait".
+    db.releaseNextUserImportInvitation.mockImplementation(() =>
+      Promise.resolve({ state: 'wait', notBefore: new Date(clock) }),
+    );
+    claimOnce('send');
+    await task().run({ jobId: 'j' });
+    expect(slept.length).toBe(2 * SEND_SHARE);
   });
 
-  it('undo: batches, then undone and audited', async () => {
+  it('undo: batches, then undone with its numbers, audited', async () => {
     state = { ...base, status: 'undoing', step: 'undo' };
     db.undoUserImportBatch.mockResolvedValueOnce(500).mockResolvedValue(0);
     db.userImportUndoCounts.mockResolvedValue({ removed: 480, kept_accepted: 20 });
     claimOnce('undo');
     await task().run({ jobId: 'j' });
     expect(state.status).toBe('undone');
+    expect(db.setUserImportStatus).toHaveBeenLastCalledWith({}, ID, ['undoing'], 'undone', {
+      undoCounts: { removed: 480, kept_accepted: 20 },
+    });
     expect(db.insertSystemAuditEvent).toHaveBeenCalledWith(
       {},
       expect.objectContaining({
         action: 'platform.user_import.undone',
         data: { counts: { removed: 480, kept_accepted: 20 } },
+      }),
+    );
+  });
+
+  it('undo: the member who asked may no longer undo it (security review L1) → failed, what was undone stays', async () => {
+    state = { ...base, status: 'undoing', step: 'undo' };
+    db.undoUserImportBatch.mockResolvedValueOnce(500).mockResolvedValue(-1);
+    db.userImportUndoCounts.mockResolvedValue({ removed: 500 });
+    claimOnce('undo');
+    await task().run({ jobId: 'j' });
+    expect(state.status).toBe('failed');
+    expect(db.setUserImportStatus).toHaveBeenLastCalledWith({}, ID, ['undoing'], 'failed', {
+      failureCode: 'UNDO_NOT_ALLOWED',
+      undoCounts: { removed: 500 },
+    });
+    expect(db.insertSystemAuditEvent).toHaveBeenLastCalledWith(
+      {},
+      expect.objectContaining({
+        action: 'platform.user_import.undo_failed',
+        data: { counts: { removed: 500 }, failureCode: 'UNDO_NOT_ALLOWED' },
       }),
     );
   });

@@ -15,7 +15,7 @@ import {
   loadUserImportReportRows,
   markUserImportPurged,
   recheckUserImport,
-  releaseDueUserImportInvitations,
+  releaseNextUserImportInvitation,
   releaseUserImportLease,
   renewUserImportLease,
   saveUserImportColumns,
@@ -84,6 +84,7 @@ describe('user imports, worker side', () => {
         file_status_reason: null,
         file_type: 'text/csv',
         importer_locale: 'en',
+        importer_may_import: true,
         step: 'validate',
       },
     ]);
@@ -97,8 +98,12 @@ describe('user imports, worker side', () => {
       confirmedAt: new Date('2026-10-10T09:00:00Z'),
       failures: 2,
       importerLocale: 'en',
+      importerMayImport: true,
     });
     expect(fake.executed[0]?.sql).toContain('for update of i');
+    expect(fake.executed[0]?.sql).toContain(
+      'private.user_import_actor_may_import(i.tenant_id, i.created_by)',
+    );
     expect(fake.executed[0]?.params).toEqual([ID, LEASE]);
     expect(await loadUserImportForJob(fakeTx([]).tx, ID, LEASE)).toBeNull();
     const bare = await loadUserImportForJob(
@@ -130,7 +135,13 @@ describe('user imports, worker side', () => {
       ID,
       LEASE,
     );
-    expect(bare).toMatchObject({ step: null, sheets: [], options: null, importerLocale: 'ar' });
+    expect(bare).toMatchObject({
+      step: null,
+      sheets: [],
+      options: null,
+      importerLocale: 'ar',
+      importerMayImport: false,
+    });
     expect(bare?.confirmedAt).toEqual(new Date('2026-10-10T09:00:00Z'));
   });
 
@@ -141,7 +152,10 @@ describe('user imports, worker side', () => {
     expect(await releaseUserImportLease(retry.tx, ID, LEASE, 'retry')).toBe(3);
     expect(retry.executed[0]?.sql).toContain('power(2, least(failures, 10))');
     expect(retry.executed[0]?.params.slice(0, 2)).toEqual(['retry', 'retry']);
-    expect(await releaseUserImportLease(fakeTx([]).tx, ID, LEASE, 'done')).toBe(0);
+    const done = fakeTx([]);
+    expect(await releaseUserImportLease(done.tx, ID, LEASE, 'done')).toBe(0);
+    // A step that set a later next attempt (the send clock, a capped organization) keeps it.
+    expect(done.executed[0]?.sql).toContain('greatest(now(), next_attempt_at)');
   });
 
   it('moves the import with what the step found', async () => {
@@ -155,6 +169,8 @@ describe('user imports, worker side', () => {
         resultCounts: { added: 1 },
         reviewFileId: 'r1',
         reportFileId: null,
+        reportCode: 'REPORT_FAILED',
+        undoCounts: { removed: 2 },
         checkpoint: 0,
       }),
     ).toBe(true);
@@ -168,11 +184,23 @@ describe('user imports, worker side', () => {
       'result_counts',
       'review_file_id',
       'report_file_id',
+      'report_code',
       'checkpoint',
     ]) {
       expect(query?.sql).toContain(`${column} = `);
     }
-    expect(query?.params).toEqual(expect.arrayContaining(['review', 'validating', 5, 'r1', 0]));
+    expect(query?.sql).toContain("jsonb_build_object('undo', ");
+    expect(query?.params).toEqual(
+      expect.arrayContaining([
+        'review',
+        'validating',
+        5,
+        'r1',
+        0,
+        'REPORT_FAILED',
+        '{"removed":2}',
+      ]),
+    );
     const plain = fakeTx([]);
     expect(await setUserImportStatus(plain.tx, ID, ['queued', 'checking'], 'stopped')).toBe(false);
     expect(plain.executed[0]?.sql).not.toContain('failure_code');
@@ -238,8 +266,36 @@ describe('user imports, worker side', () => {
     expect(await finishUserImportRows(finish.tx, ID)).toEqual({ added: 1 });
     expect(await finishUserImportRows(fakeTx([], []).tx, ID)).toEqual({});
     expect(await scheduleUserImportInvitations(fakeTx([{ scheduled: 3 }]).tx, ID, 1)).toBe(3);
-    expect(await releaseDueUserImportInvitations(fakeTx([{ released: -1 }]).tx, ID, 100)).toBe(-1);
+    // The invitation guard refuses an importer who may no longer invite (42501): the run fails.
+    await expect(
+      scheduleUserImportInvitations(
+        fakeTx(Object.assign(new Error('x'), { cause: { code: '42501', message: '' } })).tx,
+        ID,
+        1,
+      ),
+    ).rejects.toMatchObject({ code: IMPORTER_NOT_ALLOWED });
+    const deadlock = Object.assign(new Error('x'), { cause: { code: '40P01', message: '' } });
+    await expect(scheduleUserImportInvitations(fakeTx(deadlock).tx, ID, 1)).rejects.toBe(deadlock);
+    const sending = { intervalMs: 1000, dailyCap: 5000, trialDailyCap: 200 };
+    const release = fakeTx([{ state: 'wait', not_before: '2026-10-10T09:00:01Z' }]);
+    expect(await releaseNextUserImportInvitation(release.tx, ID, sending)).toEqual({
+      state: 'wait',
+      notBefore: new Date('2026-10-10T09:00:01Z'),
+    });
+    expect(release.executed[0]?.sql).toContain('private.user_import_release_next(');
+    expect(release.executed[0]?.params).toEqual([ID, 1, 5000, 200]);
+    expect(
+      await releaseNextUserImportInvitation(
+        fakeTx([{ state: 'released', not_before: null }]).tx,
+        ID,
+        sending,
+      ),
+    ).toEqual({ state: 'released', notBefore: null });
+    expect(
+      await releaseNextUserImportInvitation(fakeTx([{ state: 'odd' }]).tx, ID, sending),
+    ).toEqual({ state: 'none', notBefore: null });
     expect(await undoUserImportBatch(fakeTx([{ done: '0' }]).tx, ID, 500)).toBe(0);
+    expect(await undoUserImportBatch(fakeTx([{ done: -1 }]).tx, ID, 500)).toBe(-1);
     expect(await userImportUndoCounts(fakeTx([{ undo_result: 'removed', n: '2' }]).tx, ID)).toEqual(
       { removed: 2 },
     );

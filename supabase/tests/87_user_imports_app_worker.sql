@@ -15,6 +15,8 @@ select tests.set_claims(null);
 do $$
 begin
   perform tests.assert_fails($q$select * from private.claim_user_import_work()$q$, array['42501'], 'no claims: refused');
+  perform tests.assert_fails($q$select private.take_invitation_send_slot(interval '1 second')$q$, array['42501'],
+    'no claims: the send clock is refused');
 end $$;
 select tests.set_claims(jsonb_build_object('role', 'system'));
 do $$
@@ -26,6 +28,29 @@ select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1'
 do $$
 begin
   perform tests.assert_fails($q$select * from private.claim_user_import_work()$q$, array['42501'], 'user claims under the worker: refused');
+  perform tests.assert_fails($q$select private.take_invitation_send_slot(interval '1 second')$q$, array['42501'],
+    'user claims under the worker: the send clock is refused');
+end $$;
+rollback;
+
+-- The send clock (security review M2): one slot at a time for the whole platform, at a bounded pace;
+-- jobs reach it only through the slot function.
+begin;
+set local role authenticated;
+select tests.set_claims(tests.system_claims('b0000000-0000-4000-8000-000000000001', 'tests.user_imports'));
+do $$
+begin
+  perform tests.assert_fails($q$select private.take_invitation_send_slot(interval '2 minutes')$q$, array['22023'],
+    'the pace is bounded (at most a minute)');
+  perform tests.assert_fails($q$select private.take_invitation_send_slot(interval '10 milliseconds')$q$, array['22023'],
+    'and at least 100 milliseconds');
+  perform tests.assert(private.take_invitation_send_slot(interval '1 minute') is null, 'a job takes the free slot');
+  perform tests.assert(private.take_invitation_send_slot(interval '1 minute') > now(),
+    'the next one is a minute later, for the job of any organization');
+  perform tests.assert_privilege_denied($q$update private.invitation_send_clock set next_slot = now() - interval '1 hour'$q$,
+    'jobs cannot move the clock themselves');
+  perform tests.assert_fails($q$select * from private.user_import_release_next('a5000000-0000-4000-8000-000000000011', interval '1 second', 10, 10)$q$,
+    array['P0002'], 'tenant A''s import is unknown to tenant B''s job: it sends none of its invitations');
 end $$;
 rollback;
 

@@ -403,7 +403,9 @@ begin
       -- User imports (T-M2-12): the worker's claim across organizations (app_worker system claims, checked
       -- inside; ids, step and lease only) and its check.
       ('private.claim_user_import_work()', 'user_import_guard', array['user_import_guard', 'authenticated'], true),
-      ('private.user_import_worker_check()', 'user_import_guard', array['user_import_guard'], false)
+      ('private.user_import_worker_check()', 'user_import_guard', array['user_import_guard'], false),
+      -- The platform-wide send clock of import invitations (security review M2): app_worker system claims.
+      ('private.take_invitation_send_slot(interval)', 'user_import_guard', array['user_import_guard', 'authenticated'], true)
     ) as h(fn, owner, allowed, definer)
     left join pg_proc p on p.oid = to_regprocedure(h.fn)
   loop
@@ -483,7 +485,7 @@ begin
         'private.create_generated_file(text,text,text,uuid,text,text,bigint,uuid)',
         'private.finish_generated_file(uuid,bigint,text)',
         -- User imports (T-M2-12)
-        'private.claim_user_import_work()')
+        'private.claim_user_import_work()', 'private.take_invitation_send_slot(interval)')
   loop
     failures := failures || format('%s: unexpected SECURITY DEFINER function (security review)', r.fn);
   end loop;
@@ -544,7 +546,8 @@ begin
   for r in
     select o.obj, o.reader
     from (values ('private.auth_account', 'account_mail_guard'), ('private.account_mail_requests', 'account_mail_guard'),
-                 ('private.auth_account_email', 'membership_guard')) as o(obj, reader)
+                 ('private.auth_account_email', 'membership_guard'),
+                 ('private.invitation_send_clock', 'user_import_guard')) as o(obj, reader)
   loop
     if to_regclass(r.obj) is null then
       failures := failures || format('%s is missing', r.obj);
@@ -563,6 +566,8 @@ begin
       select distinct case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end
       from pg_attribute att, aclexplode(att.attacl) a
       where att.attrelid = to_regclass(r.obj) and att.attacl is not null
+        -- The send clock's reader has column privileges (listed exactly in the user_import_guard block).
+        and not (r.obj = 'private.invitation_send_clock' and a.grantee <> 0 and pg_get_userbyid(a.grantee) = r.reader)
     loop
       failures := failures || format('%s must have no privilege on %s', v_role, r.obj);
     end loop;
@@ -737,7 +742,8 @@ begin
 
   -- user_import_guard (T-M2-12): creates nothing, owns no relation, nobody acts as it; it reads the
   -- imports' lifecycle columns, their file's status, the organizations' status and due held invitations,
-  -- and writes the lease only (column privileges; no table-wide privilege anywhere).
+  -- and writes the lease and the send clock only (column privileges; no table-wide privilege anywhere).
+  -- The send clock (private.invitation_send_clock, security review M2) is reachable by it alone.
   if exists (select 1 from pg_roles where rolname = 'user_import_guard') then
     for r in select nspname from pg_namespace where nspname = any (module_schemas) loop
       if has_schema_privilege('user_import_guard', r.nspname, 'create') then
@@ -776,7 +782,9 @@ begin
                    ('platform.invitations', 'tenant_id', 'SELECT'), ('platform.invitations', 'import_id', 'SELECT'),
                    ('platform.invitations', 'status', 'SELECT'), ('platform.invitations', 'mail_held', 'SELECT'),
                    ('platform.invitations', 'send_at', 'SELECT'),
-                   ('platform.user_imports', 'lease_until', 'UPDATE'), ('platform.user_imports', 'lease_token', 'UPDATE'))
+                   ('platform.user_imports', 'lease_until', 'UPDATE'), ('platform.user_imports', 'lease_token', 'UPDATE'),
+                   ('private.invitation_send_clock', 'id', 'SELECT'), ('private.invitation_send_clock', 'next_slot', 'SELECT'),
+                   ('private.invitation_send_clock', 'next_slot', 'UPDATE'))
                  or (c.oid = 'platform.user_imports'::regclass and x.privilege_type = 'SELECT'
                      and a.attname in ('id', 'tenant_id', 'file_id', 'status', 'review_expires_at', 'finished_at',
                                        'undone_at', 'confirmed_at', 'data_purged_at', 'lease_until', 'lease_token',

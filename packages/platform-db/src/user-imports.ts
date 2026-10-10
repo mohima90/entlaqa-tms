@@ -60,7 +60,7 @@ export const USER_IMPORT_EVENTS = {
 
 export type UserImportErrorCode =
   | 'IMPORT_NOT_FOUND'
-  /** Someone else's import: only its importer moves it on. */
+  /** Someone else's import: only its importer moves it on (an Organization Admin may undo it). */
   | 'NOT_IMPORTER'
   /** The importer may no longer import (no longer Organization Admin or HR Manager). */
   | 'NOT_ALLOWED'
@@ -120,6 +120,13 @@ export interface UserImportRecord {
   readonly undoReason: string | null;
   readonly reviewFileId: string | null;
   readonly reportFileId: string | null;
+  /** Why the run ended without its error report (IMPORTER_NOT_ALLOWED, REPORT_FAILED), or null. */
+  readonly reportCode: string | null;
+  /**
+   * The signed-in member may undo this import (its importer who may still import, or an Organization
+   * Admin — Tech Lead decision 10 Oct 2026), the window and status aside.
+   */
+  readonly mayUndo: boolean;
   readonly createdAt: Date;
   readonly updatedAt: Date;
   readonly readAt: Date | null;
@@ -191,7 +198,9 @@ const SELECT = sql`
          i.created_by = private.request_user_id() as mine,
          i.sheets, i.sheet_index, i.mapping, i.options, i.review_counts, i.result_counts, i.rows_total,
          i.rows_done, i.stop_requested_at, i.undo_requested_at, i.undo_reason, i.review_file_id,
-         i.report_file_id, i.created_at, i.updated_at, i.read_at, i.reviewed_at, i.confirmed_at,
+         i.report_file_id, i.report_code,
+         private.user_import_actor_may_undo(i.tenant_id, private.request_user_id(), i.created_by) as may_undo,
+         i.created_at, i.updated_at, i.read_at, i.reviewed_at, i.confirmed_at,
          i.started_at, i.finished_at, i.undone_at, i.review_expires_at, i.data_purged_at,
          f.status as file_status, f.status_reason as file_status_reason,
          coalesce(v.held, 0) as held, coalesce(v.scheduled, 0) as scheduled, coalesce(v.sent, 0) as sent,
@@ -231,6 +240,8 @@ function recordOf(r: Row): UserImportRecord {
     undoReason: str(r.undo_reason),
     reviewFileId: str(r.review_file_id),
     reportFileId: str(r.report_file_id),
+    reportCode: str(r.report_code),
+    mayUndo: r.may_undo === true,
     createdAt: toDate(r.created_at),
     updatedAt: toDate(r.updated_at),
     readAt: toDateOrNull(r.read_at),
@@ -460,17 +471,39 @@ export async function stopUserImport(tx: ClaimsTx, id: string): Promise<void> {
 
 export type UndoReason = 'wrong_file' | 'wrong_data' | 'wrong_options' | 'other';
 
-/** Asks for the undo (within 7 days of the end); the worker undoes it in batches. */
+/**
+ * Asks for the undo (within 7 days of the end); the worker undoes it in batches. Its importer while they
+ * may still import, or an Organization Admin — also for an import whose importer is gone (Tech Lead
+ * decision 10 Oct 2026, security review M1); the database checks it again. Throws DomainError
+ * IMPORT_NOT_FOUND, NOT_IMPORTER (someone else's import, and not an Organization Admin), NOT_ALLOWED,
+ * UNDO_EXPIRED, ANOTHER_IMPORT_RUNNING or IMPORT_STATE_CHANGED.
+ */
 export async function requestUserImportUndo(
   tx: ClaimsTx,
   id: string,
   reason: UndoReason | null,
 ): Promise<void> {
-  await moveOwnImport(tx, id, sql`status = 'undoing', undo_reason = ${reason}`, [
-    'finished',
-    'stopped',
-    'failed',
-  ]);
+  const [current] = await tx.execute<{
+    status: UserImportStatus;
+    mine: boolean;
+    may_undo: boolean;
+  }>(sql`
+    select status, created_by = private.request_user_id() as mine,
+           private.user_import_actor_may_undo(tenant_id, private.request_user_id(), created_by) as may_undo
+    from platform.user_imports where id = ${id}::uuid`);
+  if (!current) throw new DomainError<UserImportErrorCode>('IMPORT_NOT_FOUND');
+  if (!current.may_undo) {
+    throw new DomainError<UserImportErrorCode>(current.mine ? 'NOT_ALLOWED' : 'NOT_IMPORTER');
+  }
+  if (!['finished', 'stopped', 'failed'].includes(current.status)) {
+    throw new DomainError<UserImportErrorCode>('IMPORT_STATE_CHANGED');
+  }
+  const updated = await guarded(() =>
+    tx.execute(sql`
+      update platform.user_imports set status = 'undoing', undo_reason = ${reason}
+      where id = ${id}::uuid returning id`),
+  );
+  if (updated.length === 0) throw new DomainError<UserImportErrorCode>('IMPORT_STATE_CHANGED');
   await emitEvent(tx, { type: USER_IMPORT_EVENTS.undoRequested, subject: id });
 }
 
@@ -483,25 +516,28 @@ export interface UndoPreview {
   readonly updated: number;
 }
 
-/** What an undo would do, in counts (the importer only: the staged rows are theirs). */
+/**
+ * What an undo would do, in counts — from the result's numbers and the import's invitations, so that an
+ * Organization Admin undoing someone else's import sees it too (the staged rows stay the importer's).
+ */
 export async function getUndoPreview(tx: ClaimsTx, id: string): Promise<UndoPreview> {
   const [row] = await tx.execute<{
-    added: number | string;
+    added: number | string | null;
     accepted: number | string;
-    updated: number | string;
+    updated: number | string | null;
   }>(sql`
-    select count(*) filter (where r.result = 'added') as added,
-           count(*) filter (where r.result = 'added' and (v.status = 'accepted'
-                            or exists (select 1 from platform.tenant_memberships m
-                                       where m.tenant_id = r.tenant_id and m.person_id = r.person_id))) as accepted,
-           count(*) filter (where r.result = 'updated') as updated
-    from platform.user_import_rows r
-    left join platform.invitations v on v.tenant_id = r.tenant_id and v.id = r.invitation_id
-    where r.import_id = ${id}::uuid`);
+    select i.result_counts ->> 'added' as added, i.result_counts ->> 'updated' as updated,
+           (select count(*) from platform.invitations v
+            where v.tenant_id = i.tenant_id and v.import_id = i.id
+              and (v.status = 'accepted'
+                   or exists (select 1 from platform.tenant_memberships m
+                              where m.tenant_id = v.tenant_id and m.person_id = v.person_id))) as accepted
+    from platform.user_imports i
+    where i.id = ${id}::uuid`);
   return {
-    added: Number(row?.added ?? 0),
-    accepted: Number(row?.accepted ?? 0),
-    updated: Number(row?.updated ?? 0),
+    added: int(row?.added),
+    accepted: int(row?.accepted),
+    updated: int(row?.updated),
   };
 }
 

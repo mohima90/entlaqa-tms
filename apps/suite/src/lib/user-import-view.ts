@@ -81,6 +81,34 @@ export function count(counts: Readonly<Record<string, unknown>> | null, key: str
   return Number.isFinite(value) ? value : 0;
 }
 
+export interface UndoSummary {
+  readonly removed: number;
+  /** Accepted their invitation, or others depend on them. */
+  readonly kept: number;
+  readonly restored: number;
+  /** Their record changed after the import: kept as it is. */
+  readonly changed: number;
+  /** Hold a privileged role now and the undo was not an Organization Admin's (security review L1). */
+  readonly privileged: number;
+  /** Could not be undone (a fault). */
+  readonly errors: number;
+}
+
+/** What an undo did (`resultCounts.undo`: rows by undo result), or null before any undo. */
+export function undoSummary(counts: Readonly<Record<string, unknown>> | null): UndoSummary | null {
+  const raw = counts?.undo;
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null;
+  const undo = raw as Readonly<Record<string, unknown>>;
+  return {
+    removed: count(undo, 'removed'),
+    kept: count(undo, 'kept_accepted') + count(undo, 'kept_referenced'),
+    restored: count(undo, 'restored'),
+    changed: count(undo, 'kept_changed'),
+    privileged: count(undo, 'kept_privileged'),
+    errors: count(undo, 'kept_error'),
+  };
+}
+
 /** `{code: rows}` of the counts, largest first. */
 export function codeCounts(
   counts: Readonly<Record<string, unknown>> | null,
@@ -101,11 +129,14 @@ export function undoDeadline(finishedAt: Date | null): Date | null {
   return finishedAt === null ? null : new Date(finishedAt.getTime() + 7 * DAY_MS);
 }
 
-/** May the importer undo it now (PO decision 10)? */
+/**
+ * May the signed-in member undo it now (PO decision 10)? Its importer, or an Organization Admin for any
+ * import of the organization (`mayUndo` from the database; Tech Lead decision 10 Oct 2026).
+ */
 export function mayUndo(
   record: {
     readonly status: string;
-    readonly mine: boolean;
+    readonly mayUndo: boolean;
     readonly confirmedAt: Date | null;
     readonly finishedAt: Date | null;
     readonly dataPurgedAt: Date | null;
@@ -114,7 +145,7 @@ export function mayUndo(
 ): boolean {
   const deadline = undoDeadline(record.finishedAt);
   return (
-    record.mine &&
+    record.mayUndo &&
     ['finished', 'stopped', 'failed'].includes(record.status) &&
     record.confirmedAt !== null &&
     record.dataPurgedAt === null &&

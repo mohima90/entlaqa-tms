@@ -27,7 +27,9 @@
 --   users (Organization Admin, HR Manager — private.user_import_actor_may_import): create an import
 --     (status `uploaded`, from their verified claims); only its importer moves it on, while they may
 --     still import: mapping (mapping | review → validating), confirm with options (review → queued,
---     before the review expires), cancel before it runs, stop while it runs, undo within 7 days.
+--     before the review expires), cancel before it runs, stop while it runs, undo within 7 days. An
+--     Organization Admin may also undo any import of the organization within the 7 days, also one whose
+--     importer is gone (Tech Lead decision 10 Oct 2026, security review M1; private.user_import_actor_may_undo).
 --     The lifecycle trigger below checks each move; users never write columns or rows.
 --   system jobs (withSystemTx, the import's tenant): everything else along the lifecycle, and the
 --     columns and rows (the processing functions of migration 20261016090200).
@@ -92,6 +94,27 @@ comment on function private.user_import_actor_may_import(uuid, uuid) is
 revoke all on function private.user_import_actor_may_import(uuid, uuid) from public;
 grant execute on function private.user_import_actor_may_import(uuid, uuid) to authenticated;
 
+-- May this member (Auth user id) undo an import that `p_importer` ran, NOW? Its importer while they may
+-- still import, or any active Organization Admin of the organization — also when the importer is gone
+-- (Tech Lead decision 10 Oct 2026, security review M1). An HR Manager undoes only their own imports. Read
+-- by the lifecycle trigger and again by every batch of the undo (security review L1). SECURITY INVOKER.
+create or replace function private.user_import_actor_may_undo(p_tenant_id uuid, p_user_id uuid, p_importer uuid)
+returns boolean
+language sql stable
+set search_path = ''
+as $$
+  select p_user_id is not null
+         and coalesce((select case when p_user_id = p_importer then x.roles && array['tenant_admin', 'hr_manager']::text[]
+                                   else 'tenant_admin' = any (x.roles) end
+                       from (select private.actor_role_codes(p_tenant_id, p_user_id) as roles) x), false);
+$$;
+
+comment on function private.user_import_actor_may_undo(uuid, uuid, uuid) is
+  'SECURITY-RELEVANT (FR-IAM-04, T-M2-12, security review M1/L1). May this member undo an import now (its importer who may still import, or an active Organization Admin)?';
+
+revoke all on function private.user_import_actor_may_undo(uuid, uuid, uuid) from public;
+grant execute on function private.user_import_actor_may_undo(uuid, uuid, uuid) to authenticated;
+
 -- ---------------------------------------------------------------------------------------------------
 -- platform.user_imports
 -- ---------------------------------------------------------------------------------------------------
@@ -134,6 +157,10 @@ create table platform.user_imports (
   -- of problems and the error report after the run.
   review_file_id uuid,
   report_file_id uuid,
+  -- Why a run ended without its error report although rows belong in it (security review M1):
+  -- IMPORTER_NOT_ALLOWED (the importer may no longer import: the report is theirs alone, so none is made)
+  -- or REPORT_FAILED (it could not be stored after the step's attempts). The run ends either way.
+  report_code text,
   -- Worker lease (private.claim_user_import_work) and back-off after a failed step.
   lease_until timestamptz,
   lease_token uuid,
@@ -160,6 +187,8 @@ create table platform.user_imports (
     'uploaded', 'rejected', 'mapping', 'validating', 'review', 'queued', 'checking', 'importing', 'inviting',
     'finished', 'stopped', 'failed', 'cancelled', 'expired', 'undoing', 'undone')),
   constraint user_imports_failure_code_check check (failure_code is null or failure_code ~ '^[A-Z][A-Z0-9_]{1,63}$'),
+  constraint user_imports_report_code_check check (
+    report_code is null or (report_code in ('IMPORTER_NOT_ALLOWED', 'REPORT_FAILED') and report_file_id is null)),
   constraint user_imports_file_name_check check (
     char_length(file_name) between 1 and 255 and private.has_visible_text(file_name)),
   constraint user_imports_file_size_check check (file_size between 1 and 20971520),
@@ -245,7 +274,9 @@ grant execute on function private.user_import_mapping_is_valid(jsonb) to authent
 --              review                    → queued       options, before the review expires
 --              uploaded … review         → cancelled
 --              queued … inviting         stop_requested_at (the run stops after its batch)
---              finished|stopped|failed   → undoing      within 7 days, data not yet deleted, not undone
+--              finished|stopped|failed   → undoing      within 7 days, data not yet deleted, not undone —
+--                                                       also any active Organization Admin
+--                                                       (private.user_import_actor_may_undo)
 --            System jobs: the transitions of the table below; times stamped here.
 --            user_import_guard (the claim): the lease only.
 -- Platform operations (migrations, tests) are not checked beyond the immutable columns.
@@ -288,7 +319,7 @@ begin
        or new.result_counts is not null or new.stop_requested_at is not null or new.undo_requested_by is not null
        or new.undo_requested_at is not null or new.undo_reason is not null or new.data_purged_at is not null
        or new.sheets <> '[]'::jsonb or new.review_file_id is not null or new.report_file_id is not null
-       or new.lease_until is not null or new.lease_token is not null then
+       or new.report_code is not null or new.lease_until is not null or new.lease_token is not null then
       raise exception 'an import starts uploaded, with nothing read yet' using errcode = 'check_violation';
     end if;
     -- The uploaded file must be the importer's own upload for this import (purpose and owner).
@@ -377,8 +408,12 @@ begin
   if v_kind is distinct from 'authenticated' or v_user is null then
     raise exception 'unexpected claims for an import change' using errcode = 'insufficient_privilege';
   end if;
-  if old.created_by is distinct from v_user then
-    raise exception 'only the person who started an import changes it' using errcode = 'insufficient_privilege';
+  -- Someone else's import: only an undo, by an Organization Admin (Tech Lead decision 10 Oct 2026).
+  if old.created_by is distinct from v_user
+     and not (new.status = 'undoing' and old.status in ('finished', 'stopped', 'failed')
+              and private.user_import_actor_may_undo(new.tenant_id, v_user, old.created_by)) then
+    raise exception 'only the person who started an import changes it (an Organization Admin may undo it)'
+      using errcode = 'insufficient_privilege';
   end if;
   if not private.user_import_actor_may_import(new.tenant_id, v_user) then
     raise exception 'only an Organization Admin or an HR Manager imports people' using errcode = 'insufficient_privilege';
@@ -386,12 +421,13 @@ begin
   if (new.failure_code, new.sheets, new.review_counts, new.result_counts, new.rows_total, new.rows_done,
       new.checkpoint, new.read_at, new.reviewed_at, new.started_at, new.finished_at, new.undone_at,
       new.review_expires_at, new.data_purged_at, new.confirmed_at, new.undo_requested_at, new.undo_requested_by,
-      new.review_file_id, new.report_file_id, new.lease_until, new.lease_token, new.next_attempt_at, new.failures)
+      new.review_file_id, new.report_file_id, new.report_code, new.lease_until, new.lease_token,
+      new.next_attempt_at, new.failures)
      is distinct from (old.failure_code, old.sheets, old.review_counts, old.result_counts, old.rows_total,
                        old.rows_done, old.checkpoint, old.read_at, old.reviewed_at, old.started_at, old.finished_at,
                        old.undone_at, old.review_expires_at, old.data_purged_at, old.confirmed_at,
                        old.undo_requested_at, old.undo_requested_by, old.review_file_id, old.report_file_id,
-                       old.lease_until, old.lease_token, old.next_attempt_at, old.failures) then
+                       old.report_code, old.lease_until, old.lease_token, old.next_attempt_at, old.failures) then
     raise exception 'progress and results of an import are written by the import itself' using errcode = 'insufficient_privilege';
   end if;
   new.updated_at := now();
@@ -498,6 +534,13 @@ create policy user_imports_importer_update on platform.user_imports for update t
          and created_by = (select private.request_user_id()))
   with check ((select private.request_claims() ->> 'role') = 'authenticated'
               and created_by = (select private.request_user_id()));
+-- An Organization Admin's undo of someone else's import (Tech Lead decision 10 Oct 2026, security review
+-- M1): the ended import may be moved to `undoing` only (the trigger checks the move and the window).
+create policy user_imports_admin_undo on platform.user_imports for update to authenticated
+  using ((select private.request_claims() ->> 'role') = 'authenticated'
+         and status in ('finished', 'stopped', 'failed')
+         and private.user_import_actor_may_undo(tenant_id, (select private.request_user_id()), created_by))
+  with check ((select private.request_claims() ->> 'role') = 'authenticated' and status = 'undoing');
 create policy user_imports_jobs_update on platform.user_imports for update to authenticated
   using ((select private.request_claims() ->> 'role') = 'system')
   with check ((select private.request_claims() ->> 'role') = 'system');
@@ -509,7 +552,8 @@ grant insert (id, tenant_id, file_id, file_name, file_size) on platform.user_imp
 -- results, files and their back-off. The lease belongs to the claim (user_import_guard).
 grant update (status, sheet_index, mapping, options, stop_requested_at, undo_reason,
               failure_code, sheets, review_counts, result_counts, rows_total, rows_done, checkpoint,
-              review_file_id, report_file_id, lease_until, lease_token, next_attempt_at, failures, data_purged_at)
+              review_file_id, report_file_id, report_code, lease_until, lease_token, next_attempt_at, failures,
+              data_purged_at)
   on platform.user_imports to authenticated;
 
 -- ---------------------------------------------------------------------------------------------------
@@ -612,7 +656,8 @@ create table platform.user_import_rows (
     result is null or result in ('added', 'updated', 'skipped', 'failed', 'not_processed')),
   constraint user_import_rows_undo_result_check check (
     undo_result is null
-    or undo_result in ('removed', 'restored', 'kept_accepted', 'kept_changed', 'kept_referenced', 'kept_error'))
+    or undo_result in ('removed', 'restored', 'kept_accepted', 'kept_changed', 'kept_referenced', 'kept_privileged',
+                       'kept_error'))
 );
 comment on table platform.user_import_rows is
   'Staged rows of a user import (T-M2-12): mapped values, dry-run issues, results, what undo restores. Importer and jobs only; deleted 7 days after the import (24 h unconfirmed). Class: T.';

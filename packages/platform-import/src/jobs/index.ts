@@ -3,11 +3,12 @@
  * `admin-jobs-folders-are-private`, `no-admin-or-jobs-reachable-from-suite`; ADR 0005).
  */
 export {
-  DEFAULT_INVITATION_PACE_SECONDS,
+  DEFAULT_INVITATION_SENDING,
   LeaseLost,
   MAX_FAILURES,
   PASS_BUDGET_MS,
-  SEND_BATCH,
+  SEND_MAX_WAIT_MS,
+  SEND_SHARE,
   USER_IMPORT_BATCH,
   USER_IMPORT_TASK,
   type UserImportTaskOptions,

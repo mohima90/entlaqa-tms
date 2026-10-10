@@ -16,8 +16,11 @@
 --                                                (a refused row is recorded, the others go on).
 --   private.user_import_finish_rows(import)      the result of every row not written.
 --   private.user_import_result_counts(import)   numbers for the result screen.
---   private.user_import_release_due(import, n)   sends held invitations whose time has come.
---   private.user_import_undo_batch(import, n)    undoes the next n rows (BRD §10.4).
+--   private.user_import_release_next(import, …) sends the next held invitation whose time has come, at
+--                                                the platform-wide pace and under the organization's
+--                                                daily number (security review M2).
+--   private.user_import_undo_batch(import, n)    undoes the next n rows (BRD §10.4), while the member who
+--                                                asked may still undo it (security review L1).
 --
 -- People are added with a HELD invitation of the importer (migration 20261016090100): never a
 -- privileged role (PO decision 3), never a role for people who already exist (PO decision 5), never a
@@ -968,62 +971,107 @@ grant execute on function private.user_import_result_counts(uuid) to authenticat
 -- ---------------------------------------------------------------------------------------------------
 -- Sending the invitations
 -- ---------------------------------------------------------------------------------------------------
--- Releases up to `p_limit` held invitations of the import whose sending time has come and announces each
--- (`invitation.released`: the mailer gives it a token and e-mails it). When the importer may no longer
--- invite, the import's schedule is cleared (they stay «لم تُرسل الدعوة») and -1 is returned.
-create or replace function private.user_import_release_due(p_import_id uuid, p_limit integer)
-returns integer
+-- Sends the next held invitation of the import whose time has come — ONE per call (security review M2):
+-- only when the platform-wide send clock gives a slot (private.take_invitation_send_slot: imports of every
+-- organization share the e-mail provider's rate, and overdue invitations are spaced out again instead of
+-- going out in a burst) and the organization is under its daily number of import invitations. Returns:
+--   released     one was sent: released (stamped released_at) and announced (`invitation.released`: the
+--                mailer gives it a token and e-mails it);
+--   wait         the next slot comes at not_before; the import's next attempt is moved there;
+--   capped       the organization sent its daily number of import invitations today (UTC day): the import
+--                waits until not_before (the next day). Its invitations stay scheduled — never dropped;
+--   none         nothing due;
+--   not_allowed  the importer may no longer invite: the import's schedule is cleared (its people stay
+--                «لم تُرسل الدعوة»; a user manager can send them from the users list).
+-- p_interval: the pace (worker setting); p_daily_cap, p_trial_daily_cap: the daily numbers for
+-- organizations in service and on trial (worker settings). System claims of the import's tenant.
+create or replace function private.user_import_release_next(p_import_id uuid, p_interval interval,
+                                                           p_daily_cap integer, p_trial_daily_cap integer)
+returns table (state text, not_before timestamptz)
 language plpgsql volatile
 set search_path = ''
 as $$
 declare
   v_tenant uuid := private.user_import_job_tenant();
   v_importer uuid;
-  v_count integer;
+  v_trial boolean;
+  v_cap integer;
+  v_sent integer;
+  v_invitation uuid;
+  v_next_day timestamptz := date_trunc('day', now(), 'UTC') + interval '1 day';
+  v_slot timestamptz;
 begin
+  if p_daily_cap is null or p_daily_cap < 1 or p_trial_daily_cap is null or p_trial_daily_cap < 1 then
+    raise exception 'invalid daily number of invitations' using errcode = 'invalid_parameter_value';
+  end if;
   select i.created_by into v_importer from platform.user_imports i where i.id = p_import_id;
   if not found then
     raise exception 'unknown import' using errcode = 'no_data_found';
   end if;
+  -- The per-tenant roles lock: the importer's right, and the daily count, are read once per organization
+  -- at a time.
   perform private.lock_tenant_roles(v_tenant);
   if not private.user_import_actor_may_import(v_tenant, v_importer) then
     update platform.invitations i set send_at = null
     where i.tenant_id = v_tenant and i.import_id = p_import_id and i.mail_held and i.send_at is not null
       and i.status = 'pending';
-    return -1;
+    return query select 'not_allowed'::text, null::timestamptz;
+    return;
   end if;
-  with due as (
-    select i.id from platform.invitations i
-    where i.tenant_id = v_tenant and i.import_id = p_import_id and i.mail_held and i.status = 'pending'
-      and i.send_at <= now()
-    order by i.send_at, i.id
-    limit greatest(1, least(coalesce(p_limit, 100), 1000))
-    for update skip locked),
-  released as (
-    update platform.invitations i set mail_held = false
-    from due where i.id = due.id
-    returning i.id)
+  select i.id into v_invitation from platform.invitations i
+  where i.tenant_id = v_tenant and i.import_id = p_import_id and i.mail_held and i.status = 'pending'
+    and i.send_at <= now()
+  order by i.send_at, i.id
+  limit 1
+  for update skip locked;
+  if v_invitation is null then
+    return query select 'none'::text, null::timestamptz;
+    return;
+  end if;
+  select t.status = 'trial' into v_trial from platform.tenants t where t.id = v_tenant;
+  v_cap := case when coalesce(v_trial, false) then p_trial_daily_cap else p_daily_cap end;
+  select count(*) into v_sent
+  from (select 1 from platform.invitations i
+        where i.tenant_id = v_tenant and i.released_at >= v_next_day - interval '1 day'
+        limit v_cap) x;
+  if v_sent >= v_cap then
+    update platform.user_imports i set next_attempt_at = v_next_day where i.id = p_import_id;
+    return query select 'capped'::text, v_next_day;
+    return;
+  end if;
+  v_slot := private.take_invitation_send_slot(p_interval);
+  if v_slot is not null then
+    update platform.user_imports i set next_attempt_at = v_slot where i.id = p_import_id;
+    return query select 'wait'::text, v_slot;
+    return;
+  end if;
+  update platform.invitations i set mail_held = false where i.id = v_invitation;
   insert into platform.event_outbox (id, type, subject)
-  select gen_random_uuid(), 'com.entlaqa.platform.invitation.released', released.id from released;
-  get diagnostics v_count = row_count;
-  return v_count;
+  values (gen_random_uuid(), 'com.entlaqa.platform.invitation.released', v_invitation);
+  return query select 'released'::text, null::timestamptz;
 end
 $$;
-comment on function private.user_import_release_due(uuid, integer) is
-  'SECURITY-RELEVANT (FR-IAM-03, T-M2-12). Sends the held invitations of an import that are due (released + event for the mailer), while the importer may still invite. System claims.';
-revoke all on function private.user_import_release_due(uuid, integer) from public;
-grant execute on function private.user_import_release_due(uuid, integer) to authenticated;
+comment on function private.user_import_release_next(uuid, interval, integer, integer) is
+  'SECURITY-RELEVANT (FR-IAM-03, T-M2-12, security review M2). Sends the next due held invitation of an import (released + event for the mailer) at the platform-wide pace and under the organization''s daily number, while the importer may still invite. System claims.';
+revoke all on function private.user_import_release_next(uuid, interval, integer, integer) from public;
+grant execute on function private.user_import_release_next(uuid, interval, integer, integer) to authenticated;
 
 -- ---------------------------------------------------------------------------------------------------
 -- Undo (BRD §10.4, PO decision 10)
 -- ---------------------------------------------------------------------------------------------------
 -- One batch of an undo: the next `p_limit` rows the import added or updated (people who report to
 -- others first). Added people who have not accepted their invitation are removed from the organization:
--- their invitation revoked (the link stops at once), their record made inactive — records are kept, as
--- for a deactivation — or, for a record the import invited again, put back as it was. People who
--- accepted stay; so do people someone else now reports to, or who head a department (reassign first).
--- Updated people get their previous values back unless their record changed since. Returns the number
--- of rows processed (0: nothing left).
+-- their invitation revoked (the link stops at once) and, for a record the import created, the record
+-- removed as if never added (migration 20261016090150) — or, for a record the import invited again, put
+-- back as it was. People who accepted stay; so do people someone else now reports to, or who head a
+-- department (reassign first). Updated people get their previous values back unless their record changed
+-- since; so does a record invited again (security review L1: kept as it is when changed since).
+-- The member who asked for the undo must still be allowed to undo it — its importer who may still
+-- import, or an Organization Admin (private.user_import_actor_may_undo) — read again for every batch
+-- (security review L1); otherwise -1 is returned and nothing changes (the worker ends the undo). When they
+-- are not an Organization Admin, members who hold a privileged role now keep their data (kept_privileged:
+-- an HR Manager never changes such a record, TM-0003 T-IAM-18). Returns the number of rows processed
+-- (0: nothing left).
 create or replace function private.user_import_undo_batch(p_import_id uuid, p_limit integer)
 returns integer
 language plpgsql volatile
@@ -1032,6 +1080,7 @@ as $$
 declare
   v_tenant uuid := private.user_import_job_tenant();
   v_import record;
+  v_admin boolean;
   v_row platform.user_import_rows;
   v_count integer := 0;
   v_result text;
@@ -1039,11 +1088,16 @@ declare
   v_versions jsonb;
   v_restore jsonb;
 begin
-  select i.id, i.status into v_import from platform.user_imports i where i.id = p_import_id for update;
+  select i.id, i.status, i.created_by, i.undo_requested_by into v_import
+  from platform.user_imports i where i.id = p_import_id for update;
   if not found or v_import.status <> 'undoing' then
     raise exception 'the import is not being undone' using errcode = 'check_violation';
   end if;
   perform private.user_import_lock_tenant(v_tenant);
+  if not private.user_import_actor_may_undo(v_tenant, v_import.undo_requested_by, v_import.created_by) then
+    return -1;
+  end if;
+  v_admin := 'tenant_admin' = any (private.actor_role_codes(v_tenant, v_import.undo_requested_by));
   for v_row in
     select r.* from platform.user_import_rows r
     where r.tenant_id = v_tenant and r.import_id = p_import_id and r.result in ('added', 'updated')
@@ -1053,6 +1107,14 @@ begin
   loop
     v_count := v_count + 1;
     begin
+      v_versions := null;
+      if v_row.person_id is not null then
+        select jsonb_build_object('person', p.version, 'employment', e.version) into v_versions
+        from platform.persons p
+        left join platform.person_employment e on e.tenant_id = p.tenant_id and e.person_id = p.id
+        where p.tenant_id = v_tenant and p.id = v_row.person_id
+        for update of p;
+      end if;
       if v_row.result = 'added' then
         select i.status into v_status from platform.invitations i
         where i.tenant_id = v_tenant and i.id = v_row.invitation_id for update;
@@ -1067,6 +1129,9 @@ begin
               or exists (select 1 from platform.departments x
                          where x.tenant_id = v_tenant and x.head_person_id = v_row.person_id and x.deleted_at is null) then
           v_result := 'kept_referenced';
+        elsif v_row.before is not null and v_versions is distinct from v_row.after_versions then
+          -- Invited again by the import, and the record changed since: kept as it is (invitation included).
+          v_result := 'kept_changed';
         else
           update platform.invitations i set status = 'revoked'
           where i.tenant_id = v_tenant and i.id = v_row.invitation_id;
@@ -1085,24 +1150,21 @@ begin
                                      'job', private.request_claims() ->> 'job_id'));
           v_result := 'removed';
         end if;
+      elsif not v_admin and exists (select 1 from platform.tenant_memberships m
+                                    where m.tenant_id = v_tenant and m.person_id = v_row.person_id
+                                      and private.membership_is_privileged(m.tenant_id, m.id)) then
+        v_result := 'kept_privileged';
+      elsif v_versions is distinct from v_row.after_versions then
+        v_result := 'kept_changed';
       else
-        select jsonb_build_object('person', p.version, 'employment', e.version) into v_versions
-        from platform.persons p
-        left join platform.person_employment e on e.tenant_id = p.tenant_id and e.person_id = p.id
-        where p.tenant_id = v_tenant and p.id = v_row.person_id
-        for update of p;
-        if v_versions is distinct from v_row.after_versions then
-          v_result := 'kept_changed';
-        else
-          v_restore := v_row.before;
-          perform private.user_import_write_person(v_tenant, v_row.person_id, v_restore, null);
-          insert into platform.audit_events (action, entity_type, entity_id, data)
-          values ('platform.user.updated', 'person', v_row.person_id::text,
-                  jsonb_build_object('changed', (select jsonb_agg(k order by k) from jsonb_object_keys(v_restore) k
-                                                 where k not like 'display\_name\_%'),
-                                     'importId', p_import_id, 'undo', true, 'job', private.request_claims() ->> 'job_id'));
-          v_result := 'restored';
-        end if;
+        v_restore := v_row.before;
+        perform private.user_import_write_person(v_tenant, v_row.person_id, v_restore, null);
+        insert into platform.audit_events (action, entity_type, entity_id, data)
+        values ('platform.user.updated', 'person', v_row.person_id::text,
+                jsonb_build_object('changed', (select jsonb_agg(k order by k) from jsonb_object_keys(v_restore) k
+                                               where k not like 'display\_name\_%'),
+                                   'importId', p_import_id, 'undo', true, 'job', private.request_claims() ->> 'job_id'));
+        v_result := 'restored';
       end if;
     exception when others then
       v_result := 'kept_error';
@@ -1114,6 +1176,6 @@ begin
 end
 $$;
 comment on function private.user_import_undo_batch(uuid, integer) is
-  'SECURITY-RELEVANT (FR-IAM-04, BRD §10.4, T-M2-12). One batch of undoing a user import. System claims of the import''s tenant.';
+  'SECURITY-RELEVANT (FR-IAM-04, BRD §10.4, T-M2-12, security review L1). One batch of undoing a user import, while the member who asked may still undo it (-1 otherwise). System claims of the import''s tenant.';
 revoke all on function private.user_import_undo_batch(uuid, integer) from public;
 grant execute on function private.user_import_undo_batch(uuid, integer) to authenticated;

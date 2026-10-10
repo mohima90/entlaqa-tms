@@ -60,6 +60,9 @@ begin
 end
 $$;
 
+drop function private.take_invitation_send_slot(interval);
+drop table private.invitation_send_clock;
+
 drop policy invitations_user_import_guard_read on platform.invitations;
 revoke all on platform.invitations from user_import_guard;
 
@@ -90,7 +93,7 @@ drop function private.schedule_held_invitations(uuid[], interval);
 
 drop policy invitations_import_revoke on platform.invitations;
 drop policy invitations_import_insert on platform.invitations;
-revoke select (import_id, mail_held, send_at) on platform.invitations from authenticated;
+revoke select (import_id, mail_held, send_at, released_at) on platform.invitations from authenticated;
 revoke insert (import_id, mail_held) on platform.invitations from authenticated;
 revoke update (send_at, mail_held) on platform.invitations from authenticated;
 
@@ -274,13 +277,16 @@ comment on function private.check_invitation() is
 
 drop function private.user_import_inviter(uuid, uuid, text);
 
+drop index platform.invitations_released_idx;
 drop index platform.invitations_send_due_idx;
 drop index platform.invitations_import_idx;
 alter table platform.invitations
+  drop constraint invitations_released_check,
   drop constraint invitations_send_at_check,
   drop constraint invitations_mail_held_check,
   drop constraint invitations_import_fk;
 alter table platform.invitations
+  drop column released_at,
   drop column send_at,
   drop column mail_held,
   drop column import_id;

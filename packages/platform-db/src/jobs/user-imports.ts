@@ -76,6 +76,11 @@ export interface UserImportJobView {
   readonly failures: number;
   /** The importer's preferred language (their reports' headers). */
   readonly importerLocale: 'ar' | 'en';
+  /**
+   * The importer may still import now (active Organization Admin or HR Manager): the reports are theirs
+   * alone, so none is made otherwise (security review M1).
+   */
+  readonly importerMayImport: boolean;
 }
 
 /**
@@ -93,6 +98,7 @@ export async function loadUserImportForJob(
            i.review_file_id, i.report_file_id, i.confirmed_at, i.failures,
            f.status as file_status, f.status_reason as file_status_reason, f.detected_mime as file_type,
            coalesce(p.preferred_locale, 'ar') as importer_locale,
+           private.user_import_actor_may_import(i.tenant_id, i.created_by) as importer_may_import,
            private.user_import_step(i.tenant_id, i.id, i.status, i.review_expires_at, i.finished_at,
                                     i.undone_at, i.confirmed_at, i.data_purged_at, f.status) as step
     from platform.user_imports i
@@ -131,6 +137,7 @@ export async function loadUserImportForJob(
     confirmedAt: dateOrNull(row.confirmed_at),
     failures: Number(row.failures),
     importerLocale: row.importer_locale === 'en' ? 'en' : 'ar',
+    importerMayImport: row.importer_may_import === true,
   };
 }
 
@@ -148,7 +155,9 @@ export async function renewUserImportLease(
 
 /**
  * Ends the lease. `retry`: the step failed for a reason worth another attempt — the next one waits
- * 2^failures minutes (at most an hour). `done`: the failure count starts again.
+ * 2^failures minutes (at most an hour). `done`: the failure count starts again, and the import is due
+ * again at once — or when the step said (the send clock's next slot, the next day of a capped
+ * organization: private.user_import_release_next).
  */
 export async function releaseUserImportLease(
   tx: ClaimsTx,
@@ -162,7 +171,7 @@ export async function releaseUserImportLease(
         failures = case when ${outcome} = 'retry' then least(failures + 1, 1000) else 0 end,
         next_attempt_at = case when ${outcome} = 'retry'
                                then now() + least(power(2, least(failures, 10)), 60) * interval '1 minute'
-                               else now() end
+                               else greatest(now(), next_attempt_at) end
     where id = ${id}::uuid and lease_token = ${leaseToken}::uuid
     returning failures`);
   return Number(row?.failures ?? 0);
@@ -190,6 +199,10 @@ export async function noteUserImportLeaseLost(
 
 export interface StatusChange {
   readonly failureCode?: string | null;
+  /** Why the run ended without its error report (IMPORTER_NOT_ALLOWED, REPORT_FAILED), or null. */
+  readonly reportCode?: string | null;
+  /** The undo's numbers (rows by undo result), kept with the result's numbers (`resultCounts.undo`). */
+  readonly undoCounts?: Readonly<Record<string, number>>;
   readonly sheets?: readonly Record<string, unknown>[];
   readonly rowsTotal?: number;
   readonly reviewCounts?: Readonly<Record<string, unknown>>;
@@ -209,6 +222,12 @@ export async function setUserImportStatus(
 ): Promise<boolean> {
   const sets = [sql`status = ${to}`];
   if (change.failureCode !== undefined) sets.push(sql`failure_code = ${change.failureCode}`);
+  if (change.reportCode !== undefined) sets.push(sql`report_code = ${change.reportCode}`);
+  if (change.undoCounts !== undefined) {
+    sets.push(
+      sql`result_counts = coalesce(result_counts, '{}'::jsonb) || jsonb_build_object('undo', ${JSON.stringify(change.undoCounts)}::jsonb)`,
+    );
+  }
   if (change.sheets !== undefined) sets.push(sql`sheets = ${JSON.stringify(change.sheets)}::jsonb`);
   if (change.rowsTotal !== undefined) sets.push(sql`rows_total = ${change.rowsTotal}`);
   if (change.reviewCounts !== undefined) {
@@ -365,33 +384,71 @@ export async function finishUserImportRows(
   return row?.counts ?? {};
 }
 
-/** Schedules the import's held invitations at the pace (the import is in `inviting`). */
+/**
+ * Schedules the import's held invitations at the pace (the import is in `inviting`). Throws DomainError
+ * IMPORTER_NOT_ALLOWED when the importer may no longer invite (the invitation guard refuses: 42501).
+ */
 export async function scheduleUserImportInvitations(
   tx: ClaimsTx,
   id: string,
   paceSeconds: number,
 ): Promise<number> {
-  const [row] = await tx.execute<{ scheduled: number | string }>(sql`
-    select private.schedule_held_invitations(
-      array(select v.id from platform.invitations v
-            where v.import_id = ${id}::uuid and v.status = 'pending' and v.mail_held and v.send_at is null),
-      make_interval(secs => ${paceSeconds})) as scheduled`);
-  return Number(row?.scheduled ?? 0);
+  try {
+    const [row] = await tx.execute<{ scheduled: number | string }>(sql`
+      select private.schedule_held_invitations(
+        array(select v.id from platform.invitations v
+              where v.import_id = ${id}::uuid and v.status = 'pending' and v.mail_held and v.send_at is null),
+        make_interval(secs => ${paceSeconds})) as scheduled`);
+    return Number(row?.scheduled ?? 0);
+  } catch (error) {
+    if (pgError(error)?.code === '42501')
+      throw new DomainError(IMPORTER_NOT_ALLOWED, { cause: error });
+    throw error;
+  }
 }
 
-/** Sends due held invitations of the import (-1: the importer may no longer invite; none sent). */
-export async function releaseDueUserImportInvitations(
+/** The worker's settings for sending import invitations (security review M2). */
+export interface InvitationSending {
+  /** Platform-wide pace: milliseconds between two import invitations (100–60,000). */
+  readonly intervalMs: number;
+  /** Import invitations an organization in service may send per day (UTC). */
+  readonly dailyCap: number;
+  /** The same for an organization on trial (lower). */
+  readonly trialDailyCap: number;
+}
+
+export type ReleaseState = 'released' | 'wait' | 'capped' | 'none' | 'not_allowed';
+
+const RELEASE_STATES: readonly ReleaseState[] = [
+  'released',
+  'wait',
+  'capped',
+  'none',
+  'not_allowed',
+];
+
+/**
+ * Sends the next due held invitation of the import, one per call (private.user_import_release_next):
+ * `released`; `wait` until notBefore (the platform-wide send clock); `capped` until notBefore (the
+ * organization's daily number reached — the next day); `none` due; `not_allowed` (the importer may no
+ * longer invite: the schedule is cleared). The import's next attempt is moved to notBefore.
+ */
+export async function releaseNextUserImportInvitation(
   tx: ClaimsTx,
   id: string,
-  limit: number,
-): Promise<number> {
-  const [row] = await tx.execute<{ released: number | string }>(
-    sql`select private.user_import_release_due(${id}::uuid, ${limit}) as released`,
-  );
-  return Number(row?.released ?? 0);
+  sending: InvitationSending,
+): Promise<{ readonly state: ReleaseState; readonly notBefore: Date | null }> {
+  const [row] = await tx.execute<{ state: string; not_before: unknown }>(sql`
+    select state, not_before from private.user_import_release_next(
+      ${id}::uuid, make_interval(secs => ${sending.intervalMs / 1000}), ${sending.dailyCap}, ${sending.trialDailyCap})`);
+  const state = RELEASE_STATES.find((s) => s === row?.state) ?? 'none';
+  return { state, notBefore: dateOrNull(row?.not_before) };
 }
 
-/** One batch of an undo; returns the rows processed (0: done). */
+/**
+ * One batch of an undo; returns the rows processed (0: done), or -1 when the member who asked for the
+ * undo may no longer undo it (security review L1: nothing changed; the worker ends the undo).
+ */
 export async function undoUserImportBatch(
   tx: ClaimsTx,
   id: string,

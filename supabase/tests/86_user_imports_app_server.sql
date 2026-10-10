@@ -236,7 +236,40 @@ select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000ab'
 do $$
 begin
   perform tests.assert_eq(tests.rows_affected($q$update platform.user_imports set status = 'undoing', undo_reason = 'other' where id = 'a5000000-0000-4000-8000-000000000011'$q$),
-    0::bigint, 'another user manager cannot undo someone''s import');
+    0::bigint, 'an HR Manager cannot undo someone else''s import');
+  perform tests.assert_eq(tests.rows_affected($q$update platform.user_imports set status = 'undoing', undo_reason = 'other' where id = 'a5000000-0000-4000-8000-000000000018'$q$),
+    1::bigint, 'an HR Manager undoes their own import');
+end $$;
+rollback;
+
+-- An Organization Admin may undo any import of the organization within the 7 days (Tech Lead decision
+-- 10 Oct 2026, security review M1) — an undo only; every other move stays the importer's.
+begin;
+set local role authenticated;
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
+  'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1'));
+do $$
+declare
+  v_row record;
+begin
+  perform tests.assert_eq(tests.rows_affected($q$update platform.user_imports set status = 'cancelled' where id = 'a5000000-0000-4000-8000-000000000014'$q$),
+    0::bigint, 'the Organization Admin does not cancel the HR Manager''s review');
+  perform tests.assert_fails($q$update platform.user_imports set undo_reason = 'other' where id = 'a5000000-0000-4000-8000-000000000018'$q$,
+    array['42501'], 'nor changes the HR Manager''s ended import in any other way');
+  perform tests.assert_fails($q$update platform.user_imports set report_code = 'REPORT_FAILED' where id = 'a5000000-0000-4000-8000-000000000011'$q$,
+    array['42501'], 'users never write the report code, not even on their own import');
+  perform tests.assert_eq(tests.rows_affected($q$update platform.user_imports set status = 'undoing', undo_reason = 'wrong_data' where id = 'a5000000-0000-4000-8000-000000000018'$q$),
+    1::bigint, 'the Organization Admin undoes the HR Manager''s import');
+  select * into v_row from platform.user_imports where id = 'a5000000-0000-4000-8000-000000000018';
+  perform tests.assert(v_row.undo_requested_by = '00000000-0000-4000-8000-0000000000a1' and v_row.created_by = '00000000-0000-4000-8000-0000000000ab',
+    'the undo is recorded as the Organization Admin''s; the importer stays the HR Manager');
+  perform tests.assert(private.user_import_actor_may_undo('a0000000-0000-4000-8000-000000000001',
+                         '00000000-0000-4000-8000-0000000000a1', '00000000-0000-4000-8000-0000000000ab')
+                       and not private.user_import_actor_may_undo('a0000000-0000-4000-8000-000000000001',
+                         '00000000-0000-4000-8000-0000000000ab', '00000000-0000-4000-8000-0000000000a1')
+                       and not private.user_import_actor_may_undo('a0000000-0000-4000-8000-000000000001',
+                         '00000000-0000-4000-8000-0000000000f7', '00000000-0000-4000-8000-0000000000f7'),
+    'who may undo: an Organization Admin any import, an HR Manager their own, a member without the role none');
 end $$;
 rollback;
 
@@ -275,6 +308,10 @@ begin
     'the run needs system claims');
   perform tests.assert_fails($q$select private.user_import_undo_batch('a5000000-0000-4000-8000-000000000011', 10)$q$, array['42501'],
     'an undo needs system claims');
+  perform tests.assert_fails($q$select * from private.user_import_release_next('a5000000-0000-4000-8000-000000000011', interval '1 second', 10, 10)$q$,
+    array['42501'], 'sending needs system claims');
+  perform tests.assert_fails($q$select private.take_invitation_send_slot(interval '1 second')$q$, array['42501'],
+    'the send clock is the worker''s alone');
 end $$;
 rollback;
 

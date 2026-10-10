@@ -12,6 +12,7 @@
 -- Imports of tenant A (uA = Organization Admin, uAB = HR Manager):
 --   a5…01 review (00_helpers_and_fixtures.sql)   a5…10 mapping, uA      a5…11 finished yesterday, uA
 --   a5…12 finished 8 days ago, uA                 a5…13 stopped 2 days ago, uA   a5…14 review, uAB (HR)
+--   a5…18 finished yesterday, uAB (HR)
 -- No import runs (queued … inviting, undoing): the tests start one where they need it.
 -- held@imp.test: a person added by a5…11 whose invitation is held (not sent: no token, no schedule).
 -- uM (member without a role, 35_invitations_fixtures.sql) gets a session in tenant A.
@@ -88,6 +89,8 @@ select tests.import_file('a5000000-0000-4000-8000-000000000013', 'a0000000-0000-
                          '00000000-0000-4000-8000-0000000000a1', 'f0a00000-0000-4000-8000-000000000013');
 select tests.import_file('a5000000-0000-4000-8000-000000000014', 'a0000000-0000-4000-8000-000000000001',
                          '00000000-0000-4000-8000-0000000000ab', 'f0a00000-0000-4000-8000-000000000014');
+select tests.import_file('a5000000-0000-4000-8000-000000000018', 'a0000000-0000-4000-8000-000000000001',
+                         '00000000-0000-4000-8000-0000000000ab', 'f0a00000-0000-4000-8000-000000000018');
 
 -- Platform operations: the lifecycle trigger stamps nothing for them (times written here).
 insert into platform.user_imports (id, tenant_id, created_by, created_by_person, file_id, file_name, file_size, status,
@@ -113,7 +116,12 @@ insert into platform.user_imports (id, tenant_id, created_by, created_by_person,
   ('a5000000-0000-4000-8000-000000000014', 'a0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-0000000000ab',
    'a1000000-0000-4000-8000-0000000000ab', 'f0a00000-0000-4000-8000-000000000014', 'hr.csv', 100, 'review',
    '[{"name": "", "rows": 3, "columns": 3}]', 0, '{"0": "email", "1": "first_name_ar", "2": "family_name_ar"}',
-   null, '{"new": 1}', 1, 0, null, null);
+   null, '{"new": 1}', 1, 0, null, null),
+  ('a5000000-0000-4000-8000-000000000018', 'a0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-0000000000ab',
+   'a1000000-0000-4000-8000-0000000000ab', 'f0a00000-0000-4000-8000-000000000018', 'hr-done.csv', 100, 'finished',
+   '[{"name": "", "rows": 3, "columns": 3}]', 0, '{"0": "email", "1": "first_name_ar", "2": "family_name_ar"}',
+   '{"existing": "skip", "defaultRole": "learner", "invitations": "hold"}', '{"new": 1}', 1, 1,
+   now() - interval '1 day 2 hours', now() - interval '1 day');
 insert into platform.user_import_columns (tenant_id, import_id, sheet_index, column_index, header, samples) values
   ('a0000000-0000-4000-8000-000000000001', 'a5000000-0000-4000-8000-000000000010', 0, 0, 'Email', '{x@imp.test}'),
   ('a0000000-0000-4000-8000-000000000001', 'a5000000-0000-4000-8000-000000000014', 0, 0, 'Email', '{hr@imp.test}');

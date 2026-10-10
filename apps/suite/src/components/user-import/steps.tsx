@@ -26,6 +26,7 @@ import {
   optionsQuery,
   runningPhase,
   undoDeadline,
+  undoSummary,
 } from '../../lib/user-import-view';
 import { localizedName } from '../../lib/users-view';
 import { ConfirmActions } from './confirm-actions';
@@ -1004,6 +1005,10 @@ export async function resultView(locale: AppLocale, view: UserImportView): Promi
   const failed = count(counts, 'failed');
   const skipped = count(counts, 'skipped');
   const warned = count(counts, 'warned');
+  // An undo that stopped before finishing (security review L1) leaves the import `failed` with its code.
+  const undoStopped =
+    record.status === 'failed' &&
+    (record.failureCode === 'UNDO_NOT_ALLOWED' || record.failureCode === 'UNDO_FAILED');
   const heading =
     record.status === 'finished'
       ? t('result.finished')
@@ -1011,7 +1016,9 @@ export async function resultView(locale: AppLocale, view: UserImportView): Promi
         ? t('result.stopped')
         : record.status === 'undone'
           ? t('result.undone')
-          : t('result.failed');
+          : undoStopped
+            ? t('result.undoStopped')
+            : t('result.failed');
   const summary =
     record.status === 'undone'
       ? t('result.undoneBody')
@@ -1020,10 +1027,31 @@ export async function resultView(locale: AppLocale, view: UserImportView): Promi
         : record.status === 'failed'
           ? record.failureCode === 'IMPORTER_NOT_ALLOWED'
             ? t('result.failedImporter')
-            : t('result.failedSystem')
+            : record.failureCode === 'UNDO_NOT_ALLOWED'
+              ? t('result.undoNotAllowed')
+              : record.failureCode === 'UNDO_FAILED'
+                ? t('result.undoFailedSystem')
+                : t('result.failedSystem')
           : failed > 0
             ? t('result.someFailed', { count: failed })
             : t('result.allImported');
+  const undone = undoSummary(counts);
+  const undoneSentences: string[] = [];
+  if (undone) {
+    undoneSentences.push(
+      t('result.undoCounts', {
+        removed: undone.removed,
+        kept: undone.kept,
+        restored: undone.restored,
+        changed: undone.changed,
+      }),
+    );
+    if (undone.privileged > 0) {
+      undoneSentences.push(t('result.undoKeptPrivileged', { count: undone.privileged }));
+    }
+    if (undone.errors > 0)
+      undoneSentences.push(t('result.undoKeptError', { count: undone.errors }));
+  }
   const deadline = undoDeadline(record.finishedAt);
   const errors = await profileErrorTexts(locale);
   const codes = await refusalCodes(locale);
@@ -1039,7 +1067,15 @@ export async function resultView(locale: AppLocale, view: UserImportView): Promi
     report = <p className="m-0">{t('result.reportDeleted')}</p>;
   } else if (record.reportFileId === null) {
     report = (
-      <p className="m-0">{reportRows === 0 ? t('result.noReport') : t('result.reportDeleted')}</p>
+      <p className="m-0" data-testid="result-report-missing">
+        {reportRows === 0
+          ? t('result.noReport')
+          : record.reportCode === 'IMPORTER_NOT_ALLOWED'
+            ? t('result.reportNotMadeImporter')
+            : record.reportCode === 'REPORT_FAILED'
+              ? t('result.reportFailed')
+              : t('result.reportDeleted')}
+      </p>
     );
   } else {
     report = (
@@ -1102,6 +1138,13 @@ export async function resultView(locale: AppLocale, view: UserImportView): Promi
           {summary}
         </Alert>
       </div>
+      {undoneSentences.length > 0 ? (
+        <ul className="m-0 flex flex-col gap-1 ps-5" data-testid="result-undo-counts">
+          {undoneSentences.map((sentence) => (
+            <li key={sentence}>{sentence}</li>
+          ))}
+        </ul>
+      ) : null}
 
       <section aria-labelledby="result-counts">
         <h2 id="result-counts" className="mb-3 mt-0 text-lg font-semibold">

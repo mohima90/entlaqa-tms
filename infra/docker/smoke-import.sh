@@ -85,6 +85,11 @@ import_journey() {
   [[ "$(q "select count(*) from platform.files f join platform.user_imports u on u.tenant_id = f.tenant_id and f.id = u.review_file_id
           where u.file_name like 'staff-en-%' and f.retention_class = 'import' and f.purpose = 'platform.user_import_report'")" == "1" ]] ||
     { echo "smoke: import: the English import's list of problems must be a report with the import retention" >&2; return 1; }
+  # Both reports are XLSX workbooks of plain text (security review L2), as the worker stored them.
+  [[ "$(q "select count(*) from platform.files f join platform.user_imports u on u.tenant_id = f.tenant_id and f.id in (u.review_file_id, u.report_file_id)
+          where u.file_name like 'staff-en-%' and f.detected_mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            and f.original_name like '%.xlsx'")" == "2" ]] ||
+    { echo "smoke: import: the list of problems and the error report must be XLSX" >&2; return 1; }
   # No address, name, cell or file name of the imports in the logs (the files' contents are personal data).
   local logs leak
   logs="$(compose logs --no-log-prefix app worker storage gateway clamd 2>&1)"

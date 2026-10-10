@@ -73,6 +73,15 @@ grant user_import_guard to current_user;
 grant usage on schema platform, private to user_import_guard;
 
 -- ---------------------------------------------------------------------------------------------------
+-- The reports are XLSX workbooks of plain text (security review L2): inline strings in text columns, so
+-- no spreadsheet runs a cell as a formula (CSV needed a leading quote). Purpose of migration
+-- 20261015090000; the file service's mirror (@jadarat/platform-files purposes.ts) says the same.
+-- ---------------------------------------------------------------------------------------------------
+update platform.file_purposes
+set allowed_types = array['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']
+where purpose = 'platform.user_import_report';
+
+-- ---------------------------------------------------------------------------------------------------
 -- Who may import (the people and rules of inviting one person: T-M2-07, T-M2-16)
 -- ---------------------------------------------------------------------------------------------------
 -- May this member (Auth user id) of the organization import people NOW? An active Organization Admin or
@@ -153,7 +162,7 @@ create table platform.user_imports (
   undo_requested_at timestamptz,
   -- A code from the undo dialog's list (wrong_file | wrong_data | wrong_options | other).
   undo_reason text,
-  -- Generated CSV files (purpose platform.user_import_report, for the importer only): the review's list
+  -- Generated XLSX files (purpose platform.user_import_report, for the importer only): the review's list
   -- of problems and the error report after the run.
   review_file_id uuid,
   report_file_id uuid,

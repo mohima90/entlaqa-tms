@@ -1,5 +1,6 @@
+import { unzipSync } from 'fflate';
 import { describe, expect, it } from 'vitest';
-import { readCsvRows, unneutralizeFormula } from '../spreadsheet/csv';
+import { readCsvRows } from '../spreadsheet/csv';
 import type { SheetRow } from '../spreadsheet/errors';
 import { XlsxWorkbook } from '../spreadsheet/xlsx';
 import { FIELD_DEFINITIONS, IMPORT_FIELDS, NEVER_IMPORTED } from './fields';
@@ -486,7 +487,7 @@ describe('template (screen 3)', () => {
 });
 
 describe('report (screen 11)', () => {
-  it('writes our five columns, then the file’s columns; formulas as text; recognized back as ignored', async () => {
+  it('writes an XLSX of plain text: our five columns, then the file’s columns; recognized back as ignored', async () => {
     const builder = new ReportBuilder(
       'ar',
       [
@@ -511,8 +512,10 @@ describe('report (screen 11)', () => {
       cells: { email: 'w@x.test', family_name_ar: '=HYPERLINK("https://x.test")' },
     });
     expect(builder.rows).toBe(2);
-    const rows = [];
-    for await (const row of readCsvRows([builder.bytes()])) rows.push(row);
+    const bytes = builder.bytes();
+    const book = XlsxWorkbook.open(bytes);
+    expect(book.sheets.map((sheet) => sheet.name)).toEqual(['تقرير الأخطاء']);
+    const rows = await rowsOf(book, 0);
     expect(rows[0]?.cells).toEqual([
       'الصف في الملف',
       'النتيجة',
@@ -526,8 +529,13 @@ describe('report (screen 11)', () => {
     expect(rows[1]?.cells[4]).toBe('EMAIL_DUPLICATE_IN_FILE');
     expect(rows[2]?.cells[4]).toBe('NAME_TOO_LONG MOBILE_INVALID');
     expect(rows[2]?.cells[2]).toContain(' · ');
-    expect(rows[2]?.cells[6]).toBe('\'=HYPERLINK("https://x.test")');
-    expect(unneutralizeFormula(rows[2]?.cells[6] ?? '')).toBe('=HYPERLINK("https://x.test")');
+    // Security review L2: the value exactly as it was, as an inline string — never a formula cell.
+    expect(rows[2]?.cells[6]).toBe('=HYPERLINK("https://x.test")');
+    const sheet = new TextDecoder().decode(unzipSync(bytes)['xl/worksheets/sheet1.xml']);
+    expect(sheet).toContain('t="inlineStr"');
+    expect(sheet).not.toContain('<f>');
+    expect(sheet).not.toContain('<f ');
+    expect(sheet).toContain('rightToLeft="1"');
     // Uploaded again: our five columns are never imported; the file's columns are recognized.
     const recognized = recognizeColumns(
       (rows[0]?.cells ?? []).map((header, index) => ({ index, header, samples: [] })),
@@ -537,14 +545,23 @@ describe('report (screen 11)', () => {
       { kind: 'recognized', field: 'email' },
       { kind: 'recognized', field: 'family_name_ar' },
     ]);
-    expect(reportFileName('موظفو-الراية.xlsx', 'ar', 'result')).toBe(
-      'تقرير-الأخطاء-موظفو-الراية.csv',
+    expect(reportFileName('موظفو-الراية.csv', 'ar', 'result')).toBe(
+      'تقرير-الأخطاء-موظفو-الراية.xlsx',
     );
-    expect(reportFileName('staff', 'en', 'review')).toBe('problems-staff.csv');
+    expect(reportFileName('staff', 'en', 'review')).toBe('problems-staff.xlsx');
     const english = new ReportBuilder('en', [], 'review');
     english.add({ rowNumber: 2, outcome: 'will_skip', issues: [], cells: {} });
-    expect(new TextDecoder().decode(english.bytes())).toContain(
-      'Row in file,Result,السبب,Reason,Reason code',
-    );
+    const englishBook = XlsxWorkbook.open(english.bytes());
+    expect(englishBook.sheets.map((s) => s.name)).toEqual(['Problems']);
+    expect((await rowsOf(englishBook, 0))[0]?.cells).toEqual([
+      'Row in file',
+      'Result',
+      'السبب',
+      'Reason',
+      'Reason code',
+    ]);
+    expect(
+      new TextDecoder().decode(unzipSync(english.bytes())['xl/worksheets/sheet1.xml']),
+    ).not.toContain('rightToLeft');
   });
 });

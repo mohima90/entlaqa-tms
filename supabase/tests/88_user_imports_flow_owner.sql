@@ -474,6 +474,32 @@ begin
                         where import_id = 'a5000000-0000-4000-8000-0000000000d3' and row_number = 2),
     'the removed record is not matched: the person is added as a new record');
 end $$;
+-- Run it: a new record; the removed one is never re-activated (PO decision 11: imports never reactivate).
+update platform.user_imports set status = 'review' where id = 'a5000000-0000-4000-8000-0000000000d3';
+select pg_temp.become_user('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
+                           'a1000000-0000-4000-8000-0000000000a1');
+update platform.user_imports set status = 'queued',
+  options = '{"existing": "upsert", "defaultRole": "learner", "invitations": "hold"}'
+  where id = 'a5000000-0000-4000-8000-0000000000d3';
+select pg_temp.become_worker('a0000000-0000-4000-8000-000000000001');
+update platform.user_imports set status = 'checking' where id = 'a5000000-0000-4000-8000-0000000000d3';
+select private.user_import_recheck('a5000000-0000-4000-8000-0000000000d3');
+update platform.user_imports set status = 'importing' where id = 'a5000000-0000-4000-8000-0000000000d3';
+do $$
+declare
+  v_removed uuid := (select person_id from platform.user_import_rows
+                     where import_id = 'a5000000-0000-4000-8000-0000000000d2' and row_number = 17);
+begin
+  perform tests.assert_eq(private.user_import_apply_batch('a5000000-0000-4000-8000-0000000000d3', 10), 1, 'the row is written');
+  perform tests.assert((select result = 'added' and person_id <> v_removed from platform.user_import_rows
+                        where import_id = 'a5000000-0000-4000-8000-0000000000d3' and row_number = 2),
+    'a new record is added');
+  perform tests.assert((select status = 'inactive' and removed_at is not null and removed_by_import_id = 'a5000000-0000-4000-8000-0000000000d2'
+                        from platform.persons where id = v_removed),
+    'the record removed by the earlier undo stays removed and inactive: a later import never re-activates it');
+  perform tests.assert_eq((select count(*) from platform.persons where email = 'nomgr@imp.test' and removed_at is null),
+    1::bigint, 'one live record with the e-mail: the new one');
+end $$;
 select pg_temp.become_owner();
 rollback;
 

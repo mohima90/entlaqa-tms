@@ -280,9 +280,9 @@ describe('user import task', () => {
       {},
       expect.objectContaining({
         purpose: 'platform.user_import_report',
-        name: 'قائمة-المشكلات-staff.csv',
+        name: 'قائمة-المشكلات-staff.xlsx',
         forUserId: 'u1',
-        type: 'text/csv',
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       }),
     );
     expect(core.markFileUsed).not.toHaveBeenCalled();

@@ -1250,7 +1250,7 @@
     "review": {
       "heading": "Review the data",
       "intro": "{total, plural, one {We checked {total, number, integer} row in {name}; nothing has been saved yet.} other {We checked {total, number, integer} rows in {name}; nothing has been saved yet.}}",
-      "downloadProblems": "Download the list of problems (CSV)",
+      "downloadProblems": "Download the list of problems (XLSX)",
       "cards": {
         "new": "New",
         "newHint": "{warnings, plural, =0 {Ready to add} other {Ready to add, {warnings, number, integer} of them with warnings}}",
@@ -1478,7 +1478,7 @@
       "reportHeading": "Error report",
       "reportIntro": "Holds the rows not imported ({failed, number, integer}), skipped ({skipped, number, integer}) or added with warnings ({warned, number, integer}), with each row's reason in Arabic and English.",
       "reportFix": "To fix them, you can edit the rows in the report itself and upload it as a new file; we ignore the result and reason columns automatically.",
-      "downloadReport": "Download the error report (CSV)",
+      "downloadReport": "Download the error report (XLSX)",
       "reportAvailable": "Available to you only until {date}; then it's deleted with the original file.",
       "reportNotYours": "This report is available to the person who ran the import only: the error report holds employees' data, so only the person who ran the import downloads it. You see the result's counts without the report.",
       "reportDeleted": "The error report was deleted: the report and the original file are deleted 7 days after the import ends. The result's counts stay on this page and in the audit log.",

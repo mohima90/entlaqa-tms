@@ -32,7 +32,7 @@ import {
 import { FileIntegrityError, type WorkerFiles, isTemporary } from '@jadarat/platform-files/jobs';
 import type { PlatformTask, WorkerLogLevel } from '@jadarat/platform-jobs/jobs';
 import { isSpreadsheetError, kindOfType, openSpreadsheet } from '../spreadsheet/index';
-import { reportFileName } from '../users/report';
+import { REPORT_TYPE, reportFileName } from '../users/report';
 import { toImportMapping } from '../users/rows';
 import { MAX_IMPORT_FILE_BYTES } from '../users/limits';
 import { type ReadGuard, type ReadOutcome, readSheets, stagedBatches } from './read';
@@ -238,7 +238,7 @@ export function createUserImportTask(options: UserImportTaskOptions): PlatformTa
       purpose: 'platform.user_import_report',
       owner: { module: 'platform', entityType: 'user_import', entityId: view.id },
       name: reportFileName(view.fileName, view.importerLocale, phase),
-      type: 'text/csv',
+      type: REPORT_TYPE,
       bytes: report.bytes,
       forUserId: view.createdBy,
     });

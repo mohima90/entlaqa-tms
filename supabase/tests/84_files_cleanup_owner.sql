@@ -53,7 +53,8 @@ declare
   v_id uuid;
 begin
   select id into v_id from private.create_generated_file('platform.user_import_report', 'platform', 'user_import',
-    'a5000000-0000-4000-8000-0000000000f3', 'report.csv', 'text/csv', 120, '00000000-0000-4000-8000-0000000000a1');
+    'a5000000-0000-4000-8000-0000000000f3', 'report.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 120,
+    '00000000-0000-4000-8000-0000000000a1');
   perform tests.assert(not private.finish_generated_file(v_id, 120, repeat('5', 64)), 'not yet stored');
 end $$;
 reset role;
@@ -67,7 +68,8 @@ insert into platform.files (id, tenant_id, bucket, object_key, purpose, owner_mo
     original_name, declared_mime, declared_size, retention_class, created_by_user, upload_expires_at)
 values ('f2a00000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'generated',
   'a0000000-0000-4000-8000-000000000001/platform/user_import/a5000000-0000-4000-8000-0000000000f3/f2a00000-0000-4000-8000-000000000001',
-  'platform.user_import_report', 'platform', 'user_import', 'a5000000-0000-4000-8000-0000000000f3', 'report.csv', 'text/csv', 120,
+  'platform.user_import_report', 'platform', 'user_import', 'a5000000-0000-4000-8000-0000000000f3', 'report.xlsx',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 120,
   'import', '00000000-0000-4000-8000-0000000000a1', now() + interval '15 minutes');
 alter table platform.files enable trigger files_transition;
 insert into storage.objects (bucket_id, name, metadata) values ('generated',
@@ -84,7 +86,7 @@ begin
     'stored: clean');
   perform tests.assert_eq((select concat_ws('|', status, detected_mime, size_bytes, scan_engine) from platform.files
                            where id = 'f2a00000-0000-4000-8000-000000000001'),
-    'clean|text/csv|120|generated', 'clean, marked as generated (not scanned)');
+    'clean|application/vnd.openxmlformats-officedocument.spreadsheetml.sheet|120|generated', 'clean, marked as generated (not scanned)');
 end $$;
 reset role;
 reset session authorization;

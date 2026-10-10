@@ -1,14 +1,16 @@
-import { CSV_BOM, csvLine } from '../spreadsheet/csv';
+import { type WriterColumn, writeXlsx } from '../spreadsheet/xlsx-writer';
 import type { ImportField } from './fields';
 import { type ImportIssue, type Locale, type Phase, issueMessage } from './issues';
 
 /**
- * The error report and the review's list of problems (T-M2-12; approved screen 11, PO decision 9): CSV,
- * UTF-8 with BOM, five columns of ours first — row in the file, outcome, the reason in Arabic and in
- * English, the reason code — then the file's own imported columns with their headers and the values as
- * they were read, so the report itself can be corrected and uploaded again (our five columns are then
- * recognized and ignored). Only what the file contained, minus the columns that are not imported. Every
- * cell that a spreadsheet could run as a formula is written as text (TM-0003 T-IAM-19).
+ * The error report and the review's list of problems (T-M2-12; approved screen 11, PO decision 9): an
+ * XLSX workbook of one sheet, five columns of ours first — row in the file, outcome, the reason in Arabic
+ * and in English, the reason code — then the file's own imported columns with their headers and the
+ * values as they were read, so the report itself can be corrected and uploaded again (our five columns
+ * are then recognized and ignored). Only what the file contained, minus the columns that are not
+ * imported. Every cell is an inline string in a text-formatted column (security review L2, TM-0003
+ * T-IAM-19): a value such as `=HYPERLINK(…)` is shown and kept exactly, and no spreadsheet ever runs it
+ * as a formula — unlike CSV, where it had to carry a leading quote.
  */
 export type ReportOutcome =
   | 'not_imported'
@@ -47,9 +49,17 @@ export interface ReportRow {
   readonly cells: Readonly<Partial<Record<string, string>>>;
 }
 
-/** Builds the CSV row by row (a few megabytes at most: 10,000 rows). */
+/** The reports' type: XLSX (security review L2). */
+export const REPORT_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+const SHEET_NAMES: Readonly<Record<Phase, Readonly<Record<Locale, string>>>> = {
+  review: { ar: 'قائمة المشكلات', en: 'Problems' },
+  result: { ar: 'تقرير الأخطاء', en: 'Error report' },
+};
+
+/** Collects the rows (10,000 at most), then writes the workbook. */
 export class ReportBuilder {
-  private readonly lines: string[] = [];
+  private readonly lines: string[][] = [];
   private count = 0;
 
   constructor(
@@ -57,23 +67,21 @@ export class ReportBuilder {
     private readonly columns: readonly ReportColumn[],
     private readonly phase: Phase,
   ) {
-    this.lines.push(CSV_BOM + csvLine([...HEADERS[locale], ...columns.map((c) => c.header)]));
+    this.lines.push([...HEADERS[locale], ...columns.map((c) => c.header)]);
   }
 
   add(row: ReportRow): void {
     const issues = row.issues.length > 0 ? row.issues : [];
     const message = (locale: Locale) =>
       issues.map((issue) => issueMessage(issue, locale, this.phase)).join(' · ');
-    this.lines.push(
-      csvLine([
-        String(row.rowNumber),
-        OUTCOMES[row.outcome][this.locale],
-        message('ar'),
-        message('en'),
-        issues.map((issue) => issue.c).join(' '),
-        ...this.columns.map((column) => row.cells[column.field] ?? ''),
-      ]),
-    );
+    this.lines.push([
+      String(row.rowNumber),
+      OUTCOMES[row.outcome][this.locale],
+      message('ar'),
+      message('en'),
+      issues.map((issue) => issue.c).join(' '),
+      ...this.columns.map((column) => row.cells[column.field] ?? ''),
+    ]);
     this.count += 1;
   }
 
@@ -82,11 +90,26 @@ export class ReportBuilder {
   }
 
   bytes(): Uint8Array<ArrayBuffer> {
-    return new TextEncoder().encode(this.lines.join(''));
+    const ours: WriterColumn[] = [
+      { width: 12, format: 'text' },
+      { width: 22, format: 'text' },
+      { width: 48, format: 'wrap' },
+      { width: 48, format: 'wrap' },
+      { width: 28, format: 'text' },
+    ];
+    return writeXlsx([
+      {
+        name: SHEET_NAMES[this.phase][this.locale],
+        rightToLeft: this.locale === 'ar',
+        columns: [...ours, ...this.columns.map(() => ({ width: 24, format: 'text' as const }))],
+        rows: this.lines,
+        freezeHeader: true,
+      },
+    ]);
   }
 }
 
-/** The report's file name: «تقرير-الأخطاء-<file name without extension>.csv». */
+/** The report's file name: «تقرير-الأخطاء-<file name without extension>.xlsx». */
 export function reportFileName(fileName: string, locale: Locale, phase: Phase): string {
   const dot = fileName.lastIndexOf('.');
   const base = (dot > 0 ? fileName.slice(0, dot) : fileName).slice(0, 120);
@@ -98,5 +121,5 @@ export function reportFileName(fileName: string, locale: Locale, phase: Phase): 
       : locale === 'ar'
         ? 'تقرير-الأخطاء'
         : 'error-report';
-  return `${prefix}-${base}.csv`;
+  return `${prefix}-${base}.xlsx`;
 }

@@ -38,7 +38,8 @@ import {
 } from '@jadarat/platform-files/jobs';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { CSV_BOM, csvLine, readCsvRows, unneutralizeFormula } from '../spreadsheet/csv';
+import { CSV_BOM, csvLine } from '../spreadsheet/csv';
+import { XlsxWorkbook } from '../spreadsheet/xlsx';
 import { writeXlsx } from '../spreadsheet/xlsx-writer';
 import { proposedMapping, recognizeColumns } from '../users/headers';
 import { createUserImportTask } from './task';
@@ -165,7 +166,7 @@ describe.skipIf(!configured)('user import against PostgreSQL', () => {
     const key = row?.object_key ?? '';
     objects.set(key, bytes);
     await db.execute(sql`insert into storage.objects (bucket_id, name, owner, metadata)
-      values ('imports', ${key}, ${as.userId},
+      values ('imports', ${key}, ${as.sub},
               ${JSON.stringify({ size: bytes.length, mimetype: type })}::jsonb)`);
     await withUserTx(as, (tx) => confirmUpload(tx, intent.fileId));
     return importId;
@@ -185,9 +186,10 @@ describe.skipIf(!configured)('user import against PostgreSQL', () => {
     );
   }
 
-  async function readCsv(bytes: Uint8Array) {
+  /** A report's rows (XLSX, security review L2). */
+  async function readReport(bytes: Uint8Array) {
     const rows: string[][] = [];
-    for await (const row of readCsvRows([bytes])) {
+    for await (const row of XlsxWorkbook.open(bytes).rows(0)) {
       rows.push([...row.cells]);
     }
     return rows;
@@ -249,15 +251,8 @@ describe.skipIf(!configured)('user import against PostgreSQL', () => {
           'سعودية',
         ]) +
         csvLine([`old.${tag}@import.example`, 'خالد', 'الشهراني', 'المبيعات', '', '', '']) +
-        csvLine([
-          `bad@`,
-          'سارة',
-          '=HYPERLINK("https://x.test")',
-          '',
-          '',
-          'مدير الموارد البشرية',
-          '',
-        ]) +
+        // A formula as a spreadsheet program would save it (csvLine would quote it as text).
+        'bad@,سارة,"=HYPERLINK(""https://x.test"")",,,مدير الموارد البشرية,\r\n' +
         csvLine([`admin.${tag}@import.example`, 'مدير', 'المنشأة', '', '', '', '']),
     );
     const importId = await upload(csv, 'موظفو-الاستيراد.csv', 'text/csv');
@@ -300,12 +295,13 @@ describe.skipIf(!configured)('user import against PostgreSQL', () => {
       listUserImportRows(tx, importId, { view: 'errors', offset: 0, limit: 25 }),
     );
     expect(errors.rows.map((r) => r.rowNumber)).toEqual([5]);
-    // The review's list of problems: our five columns, then the file's imported ones; formulas as text.
+    // The review's list of problems: our five columns, then the file's imported ones; values exactly as
+    // they were, as plain text (XLSX inline strings — never formulas).
     expect(reviewed.reviewFileId).not.toBeNull();
     const [reviewKey] = await db.execute<{ object_key: string }>(
       sql`select object_key from platform.files where id = ${reviewed.reviewFileId}::uuid`,
     );
-    const review = await readCsv(objects.get(reviewKey?.object_key ?? '') ?? new Uint8Array());
+    const review = await readReport(objects.get(reviewKey?.object_key ?? '') ?? new Uint8Array());
     expect(review[0]).toEqual([
       'الصف في الملف',
       'النتيجة',
@@ -321,8 +317,7 @@ describe.skipIf(!configured)('user import against PostgreSQL', () => {
     ]);
     const errorLine = review.find((r) => r[0] === '5');
     expect(errorLine?.[4]).toBe('EMAIL_INVALID ROLE_PRIVILEGED');
-    expect(errorLine?.[7]).toBe('\'=HYPERLINK("https://x.test")');
-    expect(unneutralizeFormula(errorLine?.[7] ?? '')).toBe('=HYPERLINK("https://x.test")');
+    expect(errorLine?.[7]).toBe('=HYPERLINK("https://x.test")');
 
     // Confirm: add and update, send invitations; the run adds managers first.
     await withUserTx(claims, (tx) =>
@@ -384,7 +379,7 @@ describe.skipIf(!configured)('user import against PostgreSQL', () => {
       sql`select object_key, used_at from platform.files where id = ${finished.reportFileId}::uuid`,
     );
     expect(report?.used_at).not.toBeNull();
-    const lines = await readCsv(objects.get(report?.object_key ?? '') ?? new Uint8Array());
+    const lines = await readReport(objects.get(report?.object_key ?? '') ?? new Uint8Array());
     expect(lines.slice(1).map((r) => [r[0], r[1], r[4]])).toEqual([
       ['3', 'أُضيف مع تنبيه', 'DEPARTMENT_NOT_FOUND'],
       ['5', 'لم يُستورد', 'EMAIL_INVALID ROLE_PRIVILEGED'],

@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { inflateRawSync } from 'node:zlib';
 import AxeBuilder from '@axe-core/playwright';
 import { type Download, type Page, expect, test } from '@playwright/test';
 
@@ -58,6 +59,28 @@ function savedName(download: Download): string {
 async function downloadedText(download: Download): Promise<string> {
   const path = await download.path();
   return readFile(path, 'utf8');
+}
+
+/**
+ * The worksheet XML of a downloaded report (XLSX, security review L2): the ZIP's local entries, as our
+ * writer stores them (sizes in the local headers, stored or deflated).
+ */
+async function reportSheet(download: Download): Promise<string> {
+  const zip = await readFile(await download.path());
+  for (let at = 0; at + 30 <= zip.length && zip.readUInt32LE(at) === 0x04034b50;) {
+    const method = zip.readUInt16LE(at + 8);
+    const size = zip.readUInt32LE(at + 18);
+    const nameLength = zip.readUInt16LE(at + 26);
+    const extraLength = zip.readUInt16LE(at + 28);
+    const name = zip.subarray(at + 30, at + 30 + nameLength).toString('utf8');
+    const start = at + 30 + nameLength + extraLength;
+    const data = zip.subarray(start, start + size);
+    if (name === 'xl/worksheets/sheet1.xml') {
+      return (method === 8 ? inflateRawSync(data) : data).toString('utf8');
+    }
+    at = start + size;
+  }
+  throw new Error('no worksheet in the report');
 }
 
 /** Upload on step 1, then wait (the page refreshes itself) for the mapping of step 2. */
@@ -147,11 +170,13 @@ test.describe('bulk user import', () => {
     const problemsDownload = page.waitForEvent('download');
     await page.getByTestId('download-review').click();
     const problemsFile = await problemsDownload;
-    expect(savedName(problemsFile)).toMatch(/^(problems|قائمة-المشكلات)-staff-en-.*\.csv$/);
-    const problems = await downloadedText(problemsFile);
-    // Formula injection (TM-0003): the cell is written as text, never as a formula.
-    expect(problems).toContain(",'=1+2,");
-    expect(problems).not.toMatch(/(^|,)=1\+2/m);
+    expect(savedName(problemsFile)).toMatch(/^(problems|قائمة-المشكلات)-staff-en-.*\.xlsx$/);
+    const problems = await reportSheet(problemsFile);
+    // Formula injection (TM-0003 T-IAM-19, security review L2): the value as it was, as an inline
+    // string — never a formula cell.
+    expect(problems).toContain('t="inlineStr"');
+    expect(problems).toContain('<t xml:space="preserve">=1+2</t>');
+    expect(problems).not.toMatch(/<f[ >]/);
     expect(problems).toContain('The email address is incomplete.');
 
     // Step 4: options (existing people skipped, invitations sent), step 5: confirmation.
@@ -175,9 +200,10 @@ test.describe('bulk user import', () => {
     const reportDownload = page.waitForEvent('download');
     await page.getByTestId('download-report').click();
     const report = await reportDownload;
-    expect(savedName(report)).toMatch(/^(error-report|تقرير-الأخطاء)-staff-en-.*\.csv$/);
-    const reportText = await downloadedText(report);
-    expect(reportText).toContain(",'=1+2,");
+    expect(savedName(report)).toMatch(/^(error-report|تقرير-الأخطاء)-staff-en-.*\.xlsx$/);
+    const reportText = await reportSheet(report);
+    expect(reportText).toContain('<t xml:space="preserve">=1+2</t>');
+    expect(reportText).not.toMatch(/<f[ >]/);
     // Headers in the importer's preferred language; every reason in Arabic and English.
     expect(reportText).toContain('The email address is incomplete.');
     expect(reportText).toContain('البريد الإلكتروني غير مكتمل.');

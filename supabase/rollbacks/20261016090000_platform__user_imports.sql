@@ -26,3 +26,5 @@ revoke execute on function private.has_visible_text(text) from user_import_guard
 
 revoke usage on schema platform, private from user_import_guard;
 revoke user_import_guard from current_user;
+
+update platform.file_purposes set allowed_types = array['text/csv'] where purpose = 'platform.user_import_report';

@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>تقرير الأخطاء (CSV)</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&amp;family=IBM+Plex+Sans:wght@400;600&amp;family=IBM+Plex+Mono:wght@400&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#0C534D}a:hover{color:#09403C}
+*{box-sizing:border-box}
+.ltr{direction:ltr;unicode-bidi:isolate}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.grid{border-collapse:collapse;font-size:13.5px;line-height:1.5;background:#fff}
+.grid th,.grid td{border:1px solid #CBD4D6;padding:5px 8px;text-align:start;vertical-align:top;white-space:nowrap}
+.grid thead th{background:#E3E9EA;color:#333E41;font-weight:600;text-align:center;font-size:12.5px}
+.grid tbody th{background:#E3E9EA;color:#333E41;font-weight:600;text-align:center;font-size:12.5px;min-width:36px}
+.grid tr.hd td{background:#F8FAFA;font-weight:700}
+.grid td.res{font-weight:600}
+.grid td.wrap{white-space:normal;min-width:240px}
+.mono{font-family:'IBM Plex Mono',Consolas,monospace;font-size:12.5px}
+.en{font-family:'IBM Plex Sans','Segoe UI',Arial,sans-serif;direction:ltr;text-align:left;unicode-bidi:isolate}
+</style>
+</helmet>
+<div style="min-height: 100vh; box-sizing: border-box; padding: 24px 32px; background: #E3E9EA; font-family: 'IBM Plex Sans Arabic', 'Noto Sans Arabic', Tahoma, sans-serif; color: #121A1C; font-size: 15.5px; line-height: 1.7; display: flex; flex-direction: column; gap: 14px">
+
+  <div style="background: #FFFFFF; border-radius: 10px; padding: 12px 16px; font-size: 14px; color: #333E41; display: flex; flex-wrap: wrap; gap: 4px 24px">
+    <div><span style="color: #5B6A6E">الملف:</span> <b><bdi>تقرير-الأخطاء-موظفو-الراية-2026.csv</bdi></b></div>
+    <div><span style="color: #5B6A6E">كما يظهر عند فتحه في</span> <span lang="en">Excel</span></div>
+    <div><span style="color: #5B6A6E">الصفوف:</span> 262 (85 لم تُستورد · 49 تُخطّيت · 128 أُضيفت مع تنبيهات)</div>
+  </div>
+
+  <div style="background: #FFFFFF; border-radius: 10px; overflow: auto; padding: 0">
+    <table class="grid" style="min-width: 1500px">
+      <caption class="sr">أول صفوف تقرير الأخطاء: أعمدة النتيجة والسبب أولًا، ثم أعمدة القالب بقيم الصف كما وردت في الملف</caption>
+      <thead>
+        <tr><th></th><th>A</th><th>B</th><th>C</th><th>D</th><th>E</th><th>F</th><th>G</th><th>H</th><th>I</th><th>J</th><th>K</th><th>…</th></tr>
+      </thead>
+      <tbody>
+        <tr class="hd"><th>1</th><td>الصف في الملف</td><td>النتيجة</td><td>السبب</td><td class="en" lang="en">Reason</td><td>رمز السبب</td><td>Email</td><td>الاسم الأول</td><td>العائلة</td><td>الدور</td><td>الإدارة</td><td>المشرف</td><td>…</td></tr>
+        <tr><th>2</th><td>14</td><td class="res" style="color: #B42318">لم يُستورد</td><td class="wrap">البريد نفسه مكرر في الصفين 14 و203.</td><td class="wrap en" lang="en">The same email is in rows 14 and 203.</td><td class="mono ltr">EMAIL_DUPLICATE_IN_FILE</td><td class="ltr">n.alharbi@alraya.example</td><td>نوف</td><td>الحربي</td><td>متدرب</td><td>خدمة العملاء</td><td class="ltr">m.alzahrani@alraya.example</td><td></td></tr>
+        <tr><th>3</th><td>203</td><td class="res" style="color: #B42318">لم يُستورد</td><td class="wrap">البريد نفسه مكرر في الصفين 14 و203.</td><td class="wrap en" lang="en">The same email is in rows 14 and 203.</td><td class="mono ltr">EMAIL_DUPLICATE_IN_FILE</td><td class="ltr">n.alharbi@alraya.example</td><td>نوف</td><td>الحربي</td><td>منسق التدريب</td><td>التدريب والتطوير</td><td class="ltr">k.alshehri@alraya.example</td><td></td></tr>
+        <tr><th>4</th><td>27</td><td class="res" style="color: #B42318">لم يُستورد</td><td class="wrap">البريد الإلكتروني غير مكتمل.</td><td class="wrap en" lang="en">The email address is incomplete.</td><td class="mono ltr">EMAIL_INVALID</td><td class="ltr">ahmed.alqarni@alraya</td><td>أحمد</td><td>القرني</td><td>متدرب</td><td>العمليات</td><td></td><td></td></tr>
+        <tr><th>5</th><td>240</td><td class="res" style="color: #B42318">لم يُستورد</td><td class="wrap">«مدير الموارد البشرية» دور مميز، ولا يُسند بالاستيراد.</td><td class="wrap en" lang="en">"HR Manager" is a privileged role and can't be given by import.</td><td class="mono ltr">ROLE_PRIVILEGED</td><td class="ltr">r.alqahtani@alraya.example</td><td>ريم</td><td>القحطاني</td><td>مدير الموارد البشرية</td><td>الموارد البشرية</td><td></td><td></td></tr>
+        <tr><th>6</th><td>655</td><td class="res" style="color: #B42318">لم يُستورد</td><td class="wrap">اسم العائلة أطول من 60 حرفًا.</td><td class="wrap en" lang="en">Family name is longer than 60 characters.</td><td class="mono ltr">NAME_TOO_LONG</td><td class="ltr">w.alharbi@alraya.example</td><td>وليد</td><td class="ltr mono" style="background: #FFF5E0">'=HYPERLINK("https://…</td><td>متدرب</td><td>المبيعات</td><td></td><td></td></tr>
+        <tr><th>7</th><td>76</td><td class="res" style="color: #7A4800">أُضيف مع تنبيه</td><td class="wrap">القسم «التسويق الرقمي» غير موجود، فأُضيف الشخص دون قسم.</td><td class="wrap en" lang="en">Department "التسويق الرقمي" was not found; added without a department.</td><td class="mono ltr">DEPARTMENT_NOT_FOUND</td><td class="ltr">l.alotaibi@alraya.example</td><td>لمى</td><td>العتيبي</td><td>متدرب</td><td>التسويق الرقمي</td><td></td><td></td></tr>
+        <tr><th>8</th><td>9</td><td class="res" style="color: #333E41">تُخطّي</td><td class="wrap">مستخدم موجود من قبل، واختير تخطي الموجودين.</td><td class="wrap en" lang="en">Already a user; existing users were skipped.</td><td class="mono ltr">EXISTING_SKIPPED</td><td class="ltr">k.alshehri@alraya.example</td><td>خالد</td><td>الشهري</td><td>مدير التدريب</td><td>الجودة</td><td></td><td></td></tr>
+        <tr><th>9</th><td>301</td><td class="res" style="color: #333E41">تُخطّي</td><td class="wrap">حساب هذا الشخص معطّل، فلم يتغير.</td><td class="wrap en" lang="en">This person's account is deactivated; nothing changed.</td><td class="mono ltr">MEMBER_DEACTIVATED</td><td class="ltr">h.alanazi@alraya.example</td><td>هند</td><td>العنزي</td><td>مدرب داخلي</td><td>الجودة</td><td></td><td></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div style="background: #FFFFFF; border-radius: 10px; padding: 14px 18px; font-size: 14.5px; color: #333E41">
+    <div style="font-weight: 700; color: #121A1C; margin-bottom: 4px">ملاحظات التصميم</div>
+    <ul style="margin: 0; padding-inline-start: 20px; display: flex; flex-direction: column; gap: 4px">
+      <li>الأعمدة A إلى E خاصة بالتقرير، وبعدها أعمدة الملف الأصلي بعناوينها وقيمها كما وردت، فيمكن تصحيح الصفوف ورفع التقرير ملفًا جديدًا؛ نتعرّف على أعمدة التقرير الخمسة ونتجاهلها.</li>
+      <li>القيم التي تبدأ بـ <span class="ltr mono">=</span> أو <span class="ltr mono">+</span> أو <span class="ltr mono">-</span> أو <span class="ltr mono">@</span> تُكتب مسبوقة بعلامة <span class="ltr mono">'</span> حتى لا يشغّلها Excel معادلةً (الصف 6).</li>
+      <li>ترميز UTF-8 مع علامة BOM، فتظهر الحروف العربية سليمة عند فتح الملف في Excel.</li>
+      <li>لا يضم التقرير إلا ما في ملفك، ولا تُكتب فيه الأعمدة المتجاهَلة. ينزّله من أجرى الاستيراد فقط، ويُسجَّل كل تنزيل في سجل التدقيق، ويُحذف بعد 7 أيام.</li>
+      <li>رمز السبب ثابت ومتطابق في العربية والإنجليزية، ويستعمله الدعم الفني دون الحاجة إلى رؤية البيانات.</li>
+    </ul>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

@@ -11,7 +11,8 @@
         "$TURBO_DEFAULT$",
         "!**/*.test.*",
         "!e2e/**",
-        "../../docs/design/tokens/tokens.css"
+        "../../docs/design/tokens/tokens.css",
+        "../../docs/design/tokens/themes/*.css"
       ],
       "outputs": [".next/**", "!.next/cache/**", "dist/**"],
       "env": [

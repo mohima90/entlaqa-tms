@@ -1,6 +1,8 @@
-# Contrast report — Jadarat design tokens v1
+# Contrast report — Jadarat design tokens
 
-Generated from the token source on 30 Sep 2026 with the WCAG 2.x relative-luminance formula (`(L1 + 0.05) / (L2 + 0.05)`). Every text/background pair and every UI-component/background pair defined by the semantic tokens is checked in **light** and **dark** themes.
+> **Generated** by `packages/ui/src/theme/theme.test.ts` from the theme contract (`packages/ui/src/theme/contract.ts`) and the shipped theme «jadarat». Do not edit by hand; after a theme change run `pnpm --filter @jadarat/ui exec vitest run -u`. CI fails when this file is out of date or when any pair fails.
+
+WCAG 2.x relative-luminance formula (`(L1 + 0.05) / (L2 + 0.05)`); ratios shown to 2 decimals, pass/fail decided on the exact ratio. Every text/background pair and every UI-component/background pair the components use is checked in **light** and **dark**.
 
 | Requirement | Threshold | WCAG 2.2 SC |
 |---|---|---|
@@ -8,17 +10,19 @@ Generated from the token source on 30 Sep 2026 with the WCAG 2.x relative-lumina
 | Large text (≥ 24 px regular / ≥ 18.66 px bold) | ≥ 3 : 1 — we still hold all text to 4.5 : 1 | 1.4.3 |
 | UI components and graphical objects (input borders, icons, focus ring) | ≥ 3 : 1 | 1.4.11 Non-text Contrast; 2.4.13 is AAA and not targeted |
 
-**Result: 108 of 108 pairs pass (0 failures).**
+**Result for «jadarat»: 138 of 138 pairs pass (0 failures).** Tightest pair relative to its threshold: `text-subtle` on `surface-hover` (light) = **4.59 : 1** (needs 4.5).
+
+The same 69 pairs per mode are also checked automatically for:
+
+- every theme in `packages/ui/src/theme/themes/` (including the pending «Jadarat LMS» slot);
+- organization brand colours (FR-ADM-07): `deriveOrganizationBrand` derives the brand roles so that they always pass, re-checks all pairs and refuses to return a failing brand; its tests run it on hundreds of colours (white, black, pure yellow, mid greys, a colour grid and random colours).
 
 Notes
 
 - `text-disabled` is intentionally excluded (disabled controls are exempt under SC 1.4.3); disabled states must also be conveyed by the `disabled` attribute / `aria-disabled`.
 - `border` (decorative divider) is intentionally below 3 : 1; it must never be the only boundary of an interactive control — inputs use `border-strong`.
-- The focus ring is drawn as a 2 px ring separated from the component by a 2 px `--color-bg` gap (`--focus-ring`), so the ring is measured against `bg`/`surface`, not against the button fill.
-- Brand tokens are placeholders. **Any brand change must re-run this check.** The pair list below is the contract; the script in *How to re-verify* recomputes every listed pair from `tokens.json`. It moves into `packages/ui` as a CI check with T-M1-A02.
-- Tightest pair relative to its threshold: `text-subtle` on `surface-hover` (light) = **4.59 : 1** (needs 4.5).
-- Lowest text pair: `text-subtle` on `surface-hover` (light) = **4.59 : 1**. Lowest UI-component pair: `warning-strong` on `bg` (light) = **3.23 : 1**.
-- Tenant branding (FR-ADM-07, R1) must run the same pair list against tenant-chosen colors and block colors that fail.
+- The focus ring is drawn as a 2 px ring separated from the component by a 2 px `--color-bg` gap (`--focus-ring`), so the ring is measured against `bg`/`surface` (and the header and navigation colours), not against the button fill.
+- Accent and suite-shell roles (`accent*`, `header*`, `nav*`) are slots for the visual design round (T-M2-04c); in «jadarat» they are aliases of the primary and surface roles.
 
 ## Light theme
 
@@ -77,7 +81,22 @@ Notes
 | `warning-strong` | `surface` | `#C47600` | `#FFFFFF` | 3.54 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
 | `danger` | `bg` | `#B42318` | `#F2F5F5` | 6.00 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
 | `danger` | `surface` | `#B42318` | `#FFFFFF` | 6.57 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
-| `focus-ring` | `primary` | `#177D74` | `#0F665F` | 1.37 | 3.0 | Focus ring adjacent to primary button (with 2px offset: bg between) | n/a (offset gap) |
+| `accent-text` | `bg` | `#0C534D` | `#F2F5F5` | 8.12 | 4.5 | Normal text | ✅ |
+| `accent-text` | `surface` | `#0C534D` | `#FFFFFF` | 8.90 | 4.5 | Normal text | ✅ |
+| `accent-text` | `accent-subtle` | `#0C534D` | `#E7F3F1` | 7.83 | 4.5 | Badge / alert text | ✅ |
+| `text` | `accent-subtle` | `#121A1C` | `#E7F3F1` | 15.53 | 4.5 | Badge / alert text | ✅ |
+| `on-accent` | `accent` | `#FFFFFF` | `#0F665F` | 6.80 | 4.5 | Text on filled control | ✅ |
+| `on-accent` | `accent-hover` | `#FFFFFF` | `#0C534D` | 8.90 | 4.5 | Text on filled control | ✅ |
+| `accent` | `bg` | `#0F665F` | `#F2F5F5` | 6.21 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `accent` | `surface` | `#0F665F` | `#FFFFFF` | 6.80 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `on-header` | `header` | `#121A1C` | `#FFFFFF` | 17.64 | 4.5 | Normal text | ✅ |
+| `on-header-muted` | `header` | `#465357` | `#FFFFFF` | 7.97 | 4.5 | Normal text | ✅ |
+| `on-nav` | `nav` | `#121A1C` | `#FFFFFF` | 17.64 | 4.5 | Normal text | ✅ |
+| `on-nav-muted` | `nav` | `#465357` | `#FFFFFF` | 7.97 | 4.5 | Normal text | ✅ |
+| `on-nav` | `nav-item-hover` | `#121A1C` | `#E3E9EA` | 14.38 | 4.5 | Normal text | ✅ |
+| `on-nav-item-current` | `nav-item-current` | `#0C534D` | `#E7F3F1` | 7.83 | 4.5 | Normal text | ✅ |
+| `focus-ring` | `header` | `#177D74` | `#FFFFFF` | 4.97 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `focus-ring` | `nav` | `#177D74` | `#FFFFFF` | 4.97 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
 
 ## Dark theme
 
@@ -136,37 +155,19 @@ Notes
 | `warning-strong` | `surface` | `#F3BD5A` | `#151D1F` | 9.97 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
 | `danger` | `bg` | `#FF998D` | `#0E1415` | 9.02 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
 | `danger` | `surface` | `#FF998D` | `#151D1F` | 8.30 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
-| `focus-ring` | `primary` | `#86D3C9` | `#62B5AB` | 1.40 | 3.0 | Focus ring adjacent to primary button (with 2px offset: bg between) | n/a (offset gap) |
-
-## How to re-verify
-
-Save as `verify_contrast.py` (outside the repo or in `packages/ui/scripts/` once it exists) and run from the repository root:
-
-```python
-# Re-verify every pair listed in contrast-report.md against tokens.json.
-# Usage (repo root): python3 verify_contrast.py
-import json, re
-t = json.load(open("docs/design/tokens/tokens.json"))
-def res(v):  # resolve "{color.brand.600}" aliases
-    m = re.fullmatch(r"\{color\.(\w+)\.(\w+)\}", v)
-    return t["color"][m[1]][m[2]]["$value"] if m else v
-def col(name, mode):
-    s = t["semantic"][name]
-    return res(s["$value"] if mode == "light" else s["$extensions"]["com.entlaqa.modes"]["dark"])
-def lum(h):
-    c = [int(h[i:i + 2], 16) / 255 for i in (1, 3, 5)]
-    c = [x / 12.92 if x <= 0.04045 else ((x + 0.055) / 1.055) ** 2.4 for x in c]
-    return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
-def ratio(a, b):
-    hi, lo = sorted([lum(a), lum(b)], reverse=True)
-    return (hi + 0.05) / (lo + 0.05)
-mode, checked, fails = "light", 0, 0
-for line in open("docs/design/tokens/contrast-report.md", encoding="utf-8"):
-    if line.startswith("## Dark"): mode = "dark"
-    m = re.match(r"\| `([\w-]+)` \| `([\w-]+)` \| .*? \| ([\d.]+) \| ([\d.]+) \|", line)
-    if not m or (m[1] == "focus-ring" and m[2] == "primary"): continue
-    r, need = ratio(col(m[1], mode), col(m[2], mode)), float(m[4])
-    checked += 1
-    if r < need: fails += 1; print("FAIL", mode, m[1], "on", m[2], round(r, 2), "<", need)
-print(f"checked {checked} pairs, {fails} failures")
-```
+| `accent-text` | `bg` | `#86D3C9` | `#0E1415` | 10.78 | 4.5 | Normal text | ✅ |
+| `accent-text` | `surface` | `#86D3C9` | `#151D1F` | 9.92 | 4.5 | Normal text | ✅ |
+| `accent-text` | `accent-subtle` | `#86D3C9` | `#12302D` | 8.19 | 4.5 | Badge / alert text | ✅ |
+| `text` | `accent-subtle` | `#E8EEEF` | `#12302D` | 12.05 | 4.5 | Badge / alert text | ✅ |
+| `on-accent` | `accent` | `#041F1D` | `#62B5AB` | 7.15 | 4.5 | Text on filled control | ✅ |
+| `on-accent` | `accent-hover` | `#041F1D` | `#94CCC5` | 9.60 | 4.5 | Text on filled control | ✅ |
+| `accent` | `bg` | `#62B5AB` | `#0E1415` | 7.72 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `accent` | `surface` | `#62B5AB` | `#151D1F` | 7.10 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `on-header` | `header` | `#E8EEEF` | `#151D1F` | 14.59 | 4.5 | Normal text | ✅ |
+| `on-header-muted` | `header` | `#AAB7BA` | `#151D1F` | 8.30 | 4.5 | Normal text | ✅ |
+| `on-nav` | `nav` | `#E8EEEF` | `#151D1F` | 14.59 | 4.5 | Normal text | ✅ |
+| `on-nav-muted` | `nav` | `#AAB7BA` | `#151D1F` | 8.30 | 4.5 | Normal text | ✅ |
+| `on-nav` | `nav-item-hover` | `#E8EEEF` | `#223033` | 11.64 | 4.5 | Normal text | ✅ |
+| `on-nav-item-current` | `nav-item-current` | `#86D3C9` | `#12302D` | 8.19 | 4.5 | Normal text | ✅ |
+| `focus-ring` | `header` | `#86D3C9` | `#151D1F` | 9.92 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `focus-ring` | `nav` | `#86D3C9` | `#151D1F` | 9.92 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |

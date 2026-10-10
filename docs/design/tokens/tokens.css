@@ -1,98 +1,21 @@
 /*
- * Jadarat Design Tokens v1 — CSS custom properties
- * Source of truth: tokens.json (same values). Contrast verified: contrast-report.md
- * Brand tokens (--color-primary*, --color-brand-*) are PLACEHOLDERS until ENTLAQA supplies brand colors.
+ * Jadarat Design Tokens v1 — FOUNDATION (brand-neutral) CSS custom properties.
+ *
+ * Layers (T-M2-04c, see ../theming.md), loaded in this order by packages/ui/src/styles.css:
+ *   1. tokens.css (this file) — type scale, line heights, weights, spacing, fixed radii, motion, z-index,
+ *      sizes, focus ring, active-script switching. The same for every brand.
+ *   2. themes/<id>.css — the swappable BRAND THEME: palette, colour roles (light + dark), font stacks,
+ *      radii sm–xl, shadows. GENERATED from packages/ui/src/theme/themes/<id>.ts — do not edit by hand.
+ *   3. Organization brand (FR-ADM-07, later) — colour roles derived from an organization's colour,
+ *      loaded last (packages/ui/src/theme/organization-brand.ts).
+ * tokens.json documents every token with the same values (checked by packages/ui tests).
+ * Contrast is verified automatically for every theme and organization colour (contrast-report.md).
  * Themes: light on :root; dark via prefers-color-scheme (unless data-theme="light") or data-theme="dark".
  * Language: set lang="ar" or lang="en" on <html>; type tokens switch automatically.
  * Breakpoints cannot be used as var() inside @media; use the documented px values (--bp-* are for JS/reference).
  */
 :root {
-  /* primitives */
-  --color-neutral-0: #FFFFFF;
-  --color-neutral-25: #F8FAFA;
-  --color-neutral-50: #F2F5F5;
-  --color-neutral-100: #E3E9EA;
-  --color-neutral-200: #CBD4D6;
-  --color-neutral-300: #A7B4B7;
-  --color-neutral-400: #7A898D;
-  --color-neutral-500: #5B6A6E;
-  --color-neutral-600: #465357;
-  --color-neutral-700: #333E41;
-  --color-neutral-800: #222B2E;
-  --color-neutral-850: #192123;
-  --color-neutral-900: #121A1C;
-  --color-neutral-950: #0B1112;
-  /* PLACEHOLDER brand ramp — replace when ENTLAQA brand is supplied */
-  --color-brand-50: #E7F3F1;
-  --color-brand-100: #C6E4E0;
-  --color-brand-200: #94CCC5;
-  --color-brand-300: #62B5AB;
-  --color-brand-400: #34998F;
-  --color-brand-500: #177D74;
-  --color-brand-600: #0F665F;
-  --color-brand-700: #0C534D;
-  --color-brand-800: #09403C;
-  --color-brand-900: #07302D;
-  --color-brand-950: #041F1D;
-  --color-green-50: #E9F6EE;
-  --color-green-300: #76D39A;
-  --color-green-600: #1D7A43;
-  --color-green-700: #166236;
-  --color-green-900: #0F2A1B;
-  --color-amber-50: #FFF5E0;
-  --color-amber-300: #F3BD5A;
-  --color-amber-500: #C47600;
-  --color-amber-600: #955800;
-  --color-amber-900: #2F2311;
-  --color-red-50: #FDEEEC;
-  --color-red-300: #FF998D;
-  --color-red-600: #B42318;
-  --color-red-700: #931C14;
-  --color-red-900: #3A1714;
-  --color-blue-50: #EAF1FB;
-  --color-blue-300: #8FBDF5;
-  --color-blue-600: #1F5DAA;
-  --color-blue-700: #194C8C;
-  --color-blue-900: #102338;
-
-  /* semantic (light) */
-  --color-bg: var(--color-neutral-50);
-  --color-surface: var(--color-neutral-0);
-  --color-surface-raised: var(--color-neutral-0);
-  --color-surface-sunken: var(--color-neutral-25);
-  --color-surface-hover: var(--color-neutral-100);
-  --color-surface-selected: var(--color-brand-50);
-  --color-text: var(--color-neutral-900);
-  --color-text-muted: var(--color-neutral-600);
-  --color-text-subtle: var(--color-neutral-500);
-  --color-text-disabled: var(--color-neutral-400);
-  --color-border: var(--color-neutral-200);
-  --color-border-strong: var(--color-neutral-400);
-  --color-primary: var(--color-brand-600);
-  --color-primary-hover: var(--color-brand-700);
-  --color-on-primary: var(--color-neutral-0);
-  --color-primary-subtle: var(--color-brand-50);
-  --color-primary-text: var(--color-brand-700);
-  --color-focus-ring: var(--color-brand-500);
-  --color-success: var(--color-green-600);
-  --color-success-subtle: var(--color-green-50);
-  --color-warning: var(--color-amber-600);
-  --color-warning-strong: var(--color-amber-500);
-  --color-warning-subtle: var(--color-amber-50);
-  --color-danger: var(--color-red-600);
-  --color-danger-hover: var(--color-red-700);
-  --color-on-danger: var(--color-neutral-0);
-  --color-danger-subtle: var(--color-red-50);
-  --color-info: var(--color-blue-600);
-  --color-info-subtle: var(--color-blue-50);
-  --color-inverse-surface: var(--color-neutral-850);
-  --color-inverse-text: var(--color-neutral-25);
-  --color-overlay: rgba(11, 17, 18, 0.55);
-
-  /* typography */
-  --font-family-arabic: "IBM Plex Sans Arabic", "Noto Sans Arabic", "Noto Kufi Arabic", "Segoe UI", Tahoma, "Geeza Pro", system-ui, sans-serif;
-  --font-family-latin: "IBM Plex Sans", "Segoe UI", Roboto, "Helvetica Neue", Arial, system-ui, sans-serif;
-  --font-family-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  /* typography (font stacks come from the brand theme) */
   --font-size-latin-xs: 0.75rem; --font-size-arabic-xs: 0.84375rem;
   --font-size-latin-sm: 0.875rem; --font-size-arabic-sm: 0.96875rem;
   --font-size-latin-md: 1rem; --font-size-arabic-md: 1.125rem;
@@ -136,19 +59,11 @@
   --space-10: 2.5rem;
   --space-12: 3rem;
   --space-16: 4rem;
-  /* radius */
+  /* radius (sm–xl come from the brand theme) */
   --radius-none: 0;
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: 10px;
-  --radius-xl: 16px;
   --radius-full: 9999px;
-  /* elevation */
+  /* elevation (1–4 come from the brand theme) */
   --elevation-0: none;
-  --elevation-1: 0 1px 2px rgba(18, 26, 28, 0.06), 0 1px 3px rgba(18, 26, 28, 0.08);
-  --elevation-2: 0 2px 4px rgba(18, 26, 28, 0.06), 0 4px 10px rgba(18, 26, 28, 0.08);
-  --elevation-3: 0 6px 12px rgba(18, 26, 28, 0.08), 0 12px 28px rgba(18, 26, 28, 0.12);
-  --elevation-4: 0 12px 24px rgba(18, 26, 28, 0.12), 0 24px 56px rgba(18, 26, 28, 0.18);
   /* motion */
   --duration-instant: 0ms;
   --duration-fast: 100ms;
@@ -187,7 +102,6 @@
   --size-content-max: 1280px;
   --size-text-max: 720px;
   --focus-ring: 0 0 0 2px var(--color-bg), 0 0 0 4px var(--color-focus-ring);
-  color-scheme: light;
 }
 
 :root:lang(en), [lang="en"] {
@@ -203,90 +117,6 @@
   --line-height-body: var(--line-height-latin-body);
   --line-height-heading: var(--line-height-latin-heading);
   --letter-spacing-caps: 0.04em;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --color-bg: #0E1415;
-    --color-surface: #151D1F;
-    --color-surface-raised: #1C2628;
-    --color-surface-sunken: #0A0F10;
-    --color-surface-hover: #223033;
-    --color-surface-selected: #12302D;
-    --color-text: #E8EEEF;
-    --color-text-muted: #AAB7BA;
-    --color-text-subtle: #8E9CA0;
-    --color-text-disabled: #5E6C70;
-    --color-border: #2B3639;
-    --color-border-strong: #6B7B7F;
-    --color-primary: var(--color-brand-300);
-    --color-primary-hover: var(--color-brand-200);
-    --color-on-primary: var(--color-brand-950);
-    --color-primary-subtle: #12302D;
-    --color-primary-text: #86D3C9;
-    --color-focus-ring: #86D3C9;
-    --color-success: var(--color-green-300);
-    --color-success-subtle: var(--color-green-900);
-    --color-warning: var(--color-amber-300);
-    --color-warning-strong: var(--color-amber-300);
-    --color-warning-subtle: var(--color-amber-900);
-    --color-danger: var(--color-red-300);
-    --color-danger-hover: #FFB3AA;
-    --color-on-danger: #2A0906;
-    --color-danger-subtle: var(--color-red-900);
-    --color-info: var(--color-blue-300);
-    --color-info-subtle: var(--color-blue-900);
-    --color-inverse-surface: #E8EEEF;
-    --color-inverse-text: var(--color-neutral-900);
-    --color-overlay: rgba(0, 0, 0, 0.65);
-    --elevation-0: none;
-    --elevation-1: 0 1px 2px rgba(0, 0, 0, 0.40);
-    --elevation-2: 0 2px 6px rgba(0, 0, 0, 0.45);
-    --elevation-3: 0 8px 20px rgba(0, 0, 0, 0.50);
-    --elevation-4: 0 16px 40px rgba(0, 0, 0, 0.60);
-    color-scheme: dark;
-  }
-}
-
-:root[data-theme="dark"] {
-  --color-bg: #0E1415;
-  --color-surface: #151D1F;
-  --color-surface-raised: #1C2628;
-  --color-surface-sunken: #0A0F10;
-  --color-surface-hover: #223033;
-  --color-surface-selected: #12302D;
-  --color-text: #E8EEEF;
-  --color-text-muted: #AAB7BA;
-  --color-text-subtle: #8E9CA0;
-  --color-text-disabled: #5E6C70;
-  --color-border: #2B3639;
-  --color-border-strong: #6B7B7F;
-  --color-primary: var(--color-brand-300);
-  --color-primary-hover: var(--color-brand-200);
-  --color-on-primary: var(--color-brand-950);
-  --color-primary-subtle: #12302D;
-  --color-primary-text: #86D3C9;
-  --color-focus-ring: #86D3C9;
-  --color-success: var(--color-green-300);
-  --color-success-subtle: var(--color-green-900);
-  --color-warning: var(--color-amber-300);
-  --color-warning-strong: var(--color-amber-300);
-  --color-warning-subtle: var(--color-amber-900);
-  --color-danger: var(--color-red-300);
-  --color-danger-hover: #FFB3AA;
-  --color-on-danger: #2A0906;
-  --color-danger-subtle: var(--color-red-900);
-  --color-info: var(--color-blue-300);
-  --color-info-subtle: var(--color-blue-900);
-  --color-inverse-surface: #E8EEEF;
-  --color-inverse-text: var(--color-neutral-900);
-  --color-overlay: rgba(0, 0, 0, 0.65);
-  --elevation-0: none;
-  --elevation-1: 0 1px 2px rgba(0, 0, 0, 0.40);
-  --elevation-2: 0 2px 6px rgba(0, 0, 0, 0.45);
-  --elevation-3: 0 8px 20px rgba(0, 0, 0, 0.50);
-  --elevation-4: 0 16px 40px rgba(0, 0, 0, 0.60);
-  color-scheme: dark;
 }
 
 @media (prefers-reduced-motion: reduce) {

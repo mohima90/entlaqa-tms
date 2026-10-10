@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>التأكيد — استيراد المستخدمين</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#F2F5F5}
+a{color:#0C534D}a:hover{color:#09403C}
+*{box-sizing:border-box}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid #177D74;outline-offset:2px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 18px;border-radius:6px;border:1px solid transparent;font-weight:600;font-size:15px;cursor:pointer;text-decoration:none;white-space:nowrap}
+.btn-primary{background:#0F665F;color:#fff}.btn-primary:hover{background:#0C534D;color:#fff}
+.btn-secondary{background:#fff;color:#121A1C;border-color:#7A898D}.btn-secondary:hover{background:#F2F5F5;color:#121A1C}
+.btn-ghost{background:transparent;color:#0C534D}.btn-ghost:hover{background:#E7F3F1}
+.btn-danger-ghost{background:transparent;color:#B42318}.btn-danger-ghost:hover{background:#FDEEEC;color:#931C14}
+.btn-sm{min-height:36px;padding:0 12px;font-size:14px}
+.icon-btn{display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;border-radius:6px;border:0;background:transparent;color:#333E41;cursor:pointer;position:relative}
+.icon-btn:hover{background:#E3E9EA}
+.count{position:absolute;top:4px;inset-inline-end:2px;min-width:18px;height:18px;border-radius:9px;background:#B42318;color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 4px;line-height:1}
+.nav-item{display:flex;align-items:center;gap:12px;min-height:44px;padding:0 12px;border-radius:6px;color:#333E41;text-decoration:none;font-size:15.5px}
+.nav-item:hover{background:#F2F5F5;color:#121A1C}
+.nav-item.on{background:#E7F3F1;color:#0C534D;font-weight:600}
+.card{background:#fff;border:1px solid #CBD4D6;border-radius:10px}
+.out{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+.out li{display:flex;gap:14px;align-items:flex-start;padding:14px 16px;border:1px solid #E3E9EA;border-radius:10px}
+.out .ic{width:40px;height:40px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;flex:none}
+.out .v{font-size:24px;font-weight:700;line-height:1.3;min-width:72px}
+.out .t{flex:1 1 auto}
+.out .t span{display:block;font-size:14px;color:#465357}
+dl{margin:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px 24px}
+dt{font-size:14px;color:#465357}
+dd{margin:0;font-weight:600}
+th{font-weight:600;font-size:14px;color:#465357;text-align:start;padding:8px 14px;background:#F8FAFA;border-bottom:1px solid #CBD4D6}
+td{padding:8px 14px;border-bottom:1px solid #E3E9EA;font-size:15px}
+.steps{display:flex;flex-wrap:wrap;align-items:center;gap:8px;list-style:none;margin:0;padding:0}
+.step{display:flex;align-items:center;gap:8px;color:#465357;font-weight:500;font-size:15px}
+.step:not(:first-child)::before{content:"";width:28px;height:2px;background:#CBD4D6}
+.step .n{width:30px;height:30px;flex:none;border-radius:50%;border:2px solid #7A898D;display:inline-flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;background:#fff;color:#333E41}
+.step.on{color:#0C534D;font-weight:700}
+.step.on .n{background:#0F665F;border-color:#0F665F;color:#fff}
+.step.done{color:#166236}
+.step.done .n{background:#E9F6EE;border-color:#166236;color:#166236}
+.foot{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:16px 24px;border-top:1px solid #CBD4D6;background:#F8FAFA;border-radius:0 0 10px 10px}
+.show-md{display:none}
+@media (max-width:900px){.hide-md{display:none !important}.show-md{display:block !important}}
+</style>
+</helmet>
+<div style="min-height: 100vh; display: flex; flex-direction: column; font-family: 'IBM Plex Sans Arabic', 'Noto Sans Arabic', Tahoma, sans-serif; color: #121A1C; font-size: 15.5px; line-height: 1.7; background: #F2F5F5">
+
+<header style="height: 56px; display: flex; align-items: center; gap: 8px; padding: 0 16px; background: #FFFFFF; border-bottom: 1px solid #CBD4D6">
+  <a href="Entry.dc.html" style="display: flex; align-items: center; gap: 10px; text-decoration: none; color: #121A1C; font-weight: 700; font-size: 18px; white-space: nowrap">
+    <span style="width: 32px; height: 32px; border-radius: 8px; background: #0F665F; color: #FFFFFF; display: inline-flex; align-items: center; justify-content: center; font-size: 17px">ج</span>جدارات · التدريب</a>
+  <div style="flex: 1 1 auto"></div>
+  <button type="button" class="icon-btn" aria-label="الإشعارات: 5 غير مقروءة">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M6 9a6 6 0 1 1 12 0c0 6 3 8 3 8H3s3-2 3-8"></path><path d="M10 21h4"></path></svg><span class="count">5</span></button>
+  <button type="button" class="btn btn-ghost btn-sm hide-md" style="color: #333E41; font-weight: 500">شركة الراية · فرع الرياض</button>
+  <button type="button" aria-label="قائمة المستخدم: محمد العتيبي" style="width: 40px; height: 40px; border-radius: 50%; border: 0; background: #0C534D; color: #FFFFFF; font-weight: 700; cursor: pointer">م</button>
+</header>
+
+<div style="display: flex; flex-wrap: wrap; flex: 1 1 auto">
+  <nav aria-label="التنقل الرئيسي" style="flex: 1 1 240px; background: #FFFFFF; border-inline-end: 1px solid #CBD4D6; padding: 16px 12px; display: flex; flex-direction: column; gap: 2px">
+    <a href="#" class="nav-item">الرئيسية</a>
+    <div style="font-size: 13.5px; font-weight: 600; color: #5B6A6E; padding: 16px 12px 6px">إدارة المنشأة</div>
+    <a href="#" class="nav-item">نظرة عامة</a>
+    <a href="#" class="nav-item">بيانات المنشأة</a>
+    <a href="Entry.dc.html" class="nav-item on" aria-current="page">المستخدمون</a>
+    <a href="../m2-users-roles/Roles.dc.html" class="nav-item">الأدوار والصلاحيات</a>
+    <a href="../m2-users-roles/Security.dc.html" class="nav-item">الأمان</a>
+    <a href="#" class="nav-item">سجل التدقيق</a>
+  </nav>
+
+  <main id="main" style="flex: 999 1 560px; min-width: 0; padding: 20px 32px 40px">
+    <div style="max-width: 1000px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px">
+
+      <nav aria-label="مسار التنقل" style="font-size: 14px; color: #465357; display: flex; align-items: center; gap: 6px">
+        <a href="Entry.dc.html">المستخدمون</a>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 6l-6 6 6 6"></path></svg>
+        <span aria-current="page">استيراد من ملف</span>
+      </nav>
+
+      <h1 style="margin: 0; font-size: 27px; line-height: 1.45">استيراد المستخدمين من ملف</h1>
+
+      <ol class="steps hide-md" aria-label="خطوات الاستيراد">
+        <li class="step done"><span class="n" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M5 12l5 5 9-10"></path></svg></span>الملف<span class="sr"> (مكتملة)</span></li>
+        <li class="step done"><span class="n" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M5 12l5 5 9-10"></path></svg></span>مطابقة الأعمدة<span class="sr"> (مكتملة)</span></li>
+        <li class="step done"><span class="n" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M5 12l5 5 9-10"></path></svg></span>المراجعة<span class="sr"> (مكتملة)</span></li>
+        <li class="step done"><span class="n" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M5 12l5 5 9-10"></path></svg></span>الخيارات<span class="sr"> (مكتملة)</span></li>
+        <li class="step on" aria-current="step"><span class="n" aria-hidden="true">5</span>التأكيد</li>
+      </ol>
+      <div class="show-md" style="font-weight: 600; color: #0C534D">الخطوة 5 من 5 · التأكيد</div>
+
+      <section class="card" aria-labelledby="step-h">
+        <div style="padding: 20px 24px; display: flex; flex-direction: column; gap: 18px">
+          <div>
+            <h2 id="step-h" style="margin: 0; font-size: 22px; line-height: 1.45">تأكيد الاستيراد</h2>
+            <p style="margin: 2px 0 0; color: #333E41">هذا ما سيحدث عند بدء الاستيراد. يمكنك الرجوع إلى أي خطوة قبل البدء.</p>
+          </div>
+
+          <ul class="out">
+            <li>
+              <span class="ic" style="background: #E9F6EE" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#166236" stroke-width="2"><path d="M12 5v14M5 12h14"></path></svg></span>
+              <span class="v">4,728</span>
+              <span class="t">شخصًا جديدًا يُضافون إلى شركة الراية، وتُرسل إليهم الدعوات فور انتهاء الاستيراد.<span>منهم 128 تُترك لهم بعض القيم فارغة بسبب التنبيهات. <a href="Review.dc.html">عرض التنبيهات</a></span></span>
+            </li>
+            <li>
+              <span class="ic" style="background: #EAF1FB" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#194C8C" stroke-width="1.8"><circle cx="12" cy="8" r="3.5"></circle><path d="M5 20a7 7 0 0 1 14 0"></path></svg></span>
+              <span class="v">37</span>
+              <span class="t">مستخدمًا موجودًا يُتخطَّون دون تغيير.<span>اخترت تخطي الموجودين. <a href="Options.dc.html">تغيير الخيار</a></span></span>
+            </li>
+            <li>
+              <span class="ic" style="background: #E3E9EA" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#333E41" stroke-width="1.8"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></span>
+              <span class="v">12</span>
+              <span class="t">صفًا تُتخطى.<span>8 حسابات معطّلة، و3 أشخاص لديهم دعوات لم تُقبل بعد، وبياناتك أنت.</span></span>
+            </li>
+            <li style="border-color: #F4C7C2">
+              <span class="ic" style="background: #FDEEEC" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#B42318" stroke-width="2"><circle cx="12" cy="12" r="9"></circle><path d="M9 9l6 6M15 9l-6 6"></path></svg></span>
+              <span class="v">85</span>
+              <span class="t">صفًا لن تُستورد بسبب أخطاء.<span>تجدها مع سبب كل صف في تقرير الأخطاء بعد الاستيراد. <a href="Review.dc.html">عرض الأخطاء</a></span></span>
+            </li>
+          </ul>
+
+          <section aria-labelledby="roles-h" style="border: 1px solid #E3E9EA; border-radius: 10px; overflow: hidden">
+            <h3 id="roles-h" style="margin: 0; padding: 10px 14px; font-size: 16.5px; background: #F8FAFA; border-bottom: 1px solid #E3E9EA">الأدوار التي تُسند إلى الجدد</h3>
+            <table style="width: 100%; border-collapse: collapse">
+              <caption class="sr">عدد الأشخاص الجدد لكل دور أساسي</caption>
+              <thead><tr><th scope="col">الدور الأساسي</th><th scope="col">العدد</th></tr></thead>
+              <tbody>
+                <tr><td>متدرب</td><td>4,288 <span style="font-size: 14px; color: #465357">(منهم 212 بالدور الافتراضي)</span></td></tr>
+                <tr><td>المدير المباشر</td><td>298</td></tr>
+                <tr><td>منسق التدريب</td><td>52</td></tr>
+                <tr><td>مدرب داخلي</td><td>49</td></tr>
+                <tr><td>رئيس القسم</td><td>41</td></tr>
+              </tbody>
+            </table>
+            <p style="margin: 0; padding: 10px 14px; font-size: 14.5px; color: #333E41">ودور إضافي «متدرب» لـ 377 شخصًا. لا يُسند أي دور مميز.</p>
+          </section>
+
+          <dl>
+            <div><dt>الملف</dt><dd><bdi>موظفو-الراية-2026.xlsx</bdi> · الورقة «الموظفين»</dd></div>
+            <div><dt>الموجودون من قبل</dt><dd>تخطيهم دون تغيير</dd></div>
+            <div><dt>الدور الافتراضي</dt><dd>متدرب</dd></div>
+            <div><dt>الدعوات</dt><dd>فور انتهاء الاستيراد</dd></div>
+          </dl>
+
+          <ul style="margin: 0; padding-inline-start: 20px; display: flex; flex-direction: column; gap: 4px; font-size: 14.5px; color: #333E41">
+            <li>نراجع كل صف مرة أخرى لحظة استيراده؛ فإن تغيّر شيء منذ المراجعة، كأن يُدعى الشخص نفسه يدويًا، ينتقل الصف إلى تقرير الأخطاء.</li>
+            <li>يُسجَّل في سجل التدقيق أنك أجريت هذا الاستيراد، وكل شخص أُضيف به.</li>
+            <li>يمكن التراجع عن الاستيراد خلال 7 أيام لمن لم يقبل دعوته بعد.</li>
+          </ul>
+        </div>
+
+        <div class="foot">
+          <button type="button" class="btn btn-danger-ghost">إلغاء الاستيراد وحذف الملف</button>
+          <div style="flex: 1 1 auto"></div>
+          <a href="Options.dc.html" class="btn btn-secondary">رجوع</a>
+          <a href="Progress.dc.html" class="btn btn-primary">بدء الاستيراد</a>
+        </div>
+      </section>
+
+    </div>
+  </main>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1500}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

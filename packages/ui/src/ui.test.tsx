@@ -30,6 +30,9 @@ describe('Button', () => {
     expect(html).toContain('min-h-12');
     expect(buttonClasses({ variant: 'ghost', size: 'sm', className: 'x' })).toContain('x');
     expect(buttonClasses({ variant: 'secondary' })).toContain('border-border-strong');
+    expect(buttonClasses({ variant: 'danger-outline' })).toContain(
+      'text-danger border border-danger',
+    );
   });
 });
 

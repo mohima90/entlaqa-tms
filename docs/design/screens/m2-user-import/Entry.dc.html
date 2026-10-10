@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>المستخدمون — استيراد من ملف</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#F2F5F5}
+a{color:#0C534D}a:hover{color:#09403C}
+*{box-sizing:border-box}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid #177D74;outline-offset:2px}
+.ltr{direction:ltr;unicode-bidi:isolate}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 18px;border-radius:6px;border:1px solid transparent;font-weight:600;font-size:15px;cursor:pointer;text-decoration:none;white-space:nowrap}
+.btn-primary{background:#0F665F;color:#fff}.btn-primary:hover{background:#0C534D;color:#fff}
+.btn-secondary{background:#fff;color:#121A1C;border-color:#7A898D}.btn-secondary:hover{background:#F2F5F5;color:#121A1C}
+.btn-ghost{background:transparent;color:#0C534D}.btn-ghost:hover{background:#E7F3F1}
+.btn-sm{min-height:36px;padding:0 12px;font-size:14px}
+.icon-btn{display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;border-radius:6px;border:0;background:transparent;color:#333E41;cursor:pointer;position:relative}
+.icon-btn:hover{background:#E3E9EA}
+.count{position:absolute;top:4px;inset-inline-end:2px;min-width:18px;height:18px;border-radius:9px;background:#B42318;color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 4px;line-height:1}
+.nav-item{display:flex;align-items:center;gap:12px;min-height:44px;padding:0 12px;border-radius:6px;color:#333E41;text-decoration:none;font-size:15.5px}
+.nav-item:hover{background:#F2F5F5;color:#121A1C}
+.nav-item.on{background:#E7F3F1;color:#0C534D;font-weight:600}
+.card{background:#fff;border:1px solid #CBD4D6;border-radius:10px}
+.badge{display:inline-flex;align-items:center;gap:6px;padding:1px 10px;border-radius:999px;font-size:13.5px;font-weight:600;white-space:nowrap;line-height:1.8}
+.dot{width:7px;height:7px;border-radius:50%;background:currentColor}
+.input{width:100%;height:44px;border:1px solid #7A898D;border-radius:6px;padding:0 12px;background:#fff;font-size:15.5px}
+.tab{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 14px;border:0;border-bottom:3px solid transparent;background:transparent;cursor:pointer;color:#465357;font-weight:500}
+.tab.on{color:#0C534D;border-bottom-color:#0F665F;font-weight:700}
+.tab .n{font-size:13px;background:#E3E9EA;color:#333E41;border-radius:999px;padding:0 8px;font-weight:600}
+th{font-weight:600;font-size:14px;color:#465357;text-align:start;padding:10px 16px;background:#F8FAFA;border-bottom:1px solid #CBD4D6;white-space:nowrap}
+td{padding:12px 16px;border-bottom:1px solid #E3E9EA;vertical-align:middle}
+.cap{font-size:13px;font-weight:600;color:#465357}
+.who{display:flex;gap:12px;align-items:flex-start;padding:12px 14px;border:1px solid #CBD4D6;border-radius:10px;flex:1 1 280px}
+@media (max-width:900px){.hide-md{display:none !important}}
+</style>
+</helmet>
+<div style="min-height: 100vh; display: flex; flex-direction: column; font-family: 'IBM Plex Sans Arabic', 'Noto Sans Arabic', Tahoma, sans-serif; color: #121A1C; font-size: 15.5px; line-height: 1.7; background: #F2F5F5">
+
+<header style="height: 56px; display: flex; align-items: center; gap: 8px; padding: 0 16px; background: #FFFFFF; border-bottom: 1px solid #CBD4D6">
+  <a href="Entry.dc.html" style="display: flex; align-items: center; gap: 10px; text-decoration: none; color: #121A1C; font-weight: 700; font-size: 18px; white-space: nowrap">
+    <span style="width: 32px; height: 32px; border-radius: 8px; background: #0F665F; color: #FFFFFF; display: inline-flex; align-items: center; justify-content: center; font-size: 17px">ج</span>جدارات · التدريب</a>
+  <div class="hide-md" style="flex: 1 1 auto; max-width: 520px; margin-inline-start: 24px; position: relative">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5B6A6E" stroke-width="1.8" aria-hidden="true" style="position: absolute; inset-inline-start: 12px; top: 11px"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
+    <input type="search" aria-label="ابحث في جدارات" placeholder="ابحث في جدارات…" style="width: 100%; height: 40px; border: 1px solid #7A898D; border-radius: 6px; padding-inline-start: 40px; background: #F8FAFA">
+  </div>
+  <div style="flex: 1 1 auto"></div>
+  <button type="button" class="icon-btn" aria-label="الإشعارات: 5 غير مقروءة">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M6 9a6 6 0 1 1 12 0c0 6 3 8 3 8H3s3-2 3-8"></path><path d="M10 21h4"></path></svg><span class="count">5</span></button>
+  <button type="button" class="btn btn-ghost btn-sm hide-md" style="color: #333E41; font-weight: 500">شركة الراية · فرع الرياض</button>
+  <button type="button" aria-label="قائمة المستخدم: محمد العتيبي" style="width: 40px; height: 40px; border-radius: 50%; border: 0; background: #0C534D; color: #FFFFFF; font-weight: 700; cursor: pointer">م</button>
+</header>
+
+<div style="display: flex; flex-wrap: wrap; flex: 1 1 auto">
+  <nav aria-label="التنقل الرئيسي" style="flex: 1 1 240px; background: #FFFFFF; border-inline-end: 1px solid #CBD4D6; padding: 16px 12px; display: flex; flex-direction: column; gap: 2px">
+    <a href="#" class="nav-item">الرئيسية</a>
+    <div style="font-size: 13.5px; font-weight: 600; color: #5B6A6E; padding: 16px 12px 6px">إدارة المنشأة</div>
+    <a href="#" class="nav-item">نظرة عامة</a>
+    <a href="#" class="nav-item">بيانات المنشأة</a>
+    <a href="Entry.dc.html" class="nav-item on" aria-current="page">المستخدمون</a>
+    <a href="../m2-users-roles/Roles.dc.html" class="nav-item">الأدوار والصلاحيات</a>
+    <a href="../m2-users-roles/Security.dc.html" class="nav-item">الأمان</a>
+    <a href="#" class="nav-item">الإشعارات</a>
+    <a href="#" class="nav-item">التكاملات</a>
+    <a href="#" class="nav-item">سجل التدقيق</a>
+    <a href="#" class="nav-item">الاشتراك</a>
+  </nav>
+
+  <main id="main" style="flex: 999 1 560px; min-width: 0; padding: 24px 32px 40px">
+    <div style="max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px">
+
+      <div style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px">
+        <div>
+          <div style="font-size: 14px; color: #465357">إدارة المنشأة</div>
+          <h1 style="margin: 0; font-size: 27px; line-height: 1.45">المستخدمون</h1>
+          <p style="margin: 2px 0 0; color: #465357">578 مستخدمًا في شركة الراية · 12 دعوة لم تُقبل بعد · 318 لم تُرسل دعواتهم بعد</p>
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: 8px">
+          <a href="Upload.dc.html" class="btn btn-secondary" style="box-shadow: 0 0 0 3px #F3BD5A">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M4 20h16"></path></svg>استيراد من ملف</a>
+          <a href="../m2-users-roles/Invite.dc.html" class="btn btn-primary">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>دعوة مستخدم</a>
+        </div>
+      </div>
+
+      <div class="cap">حالة يظهر فيها الشريط · أثناء استيراد جارٍ (يراه كل من يرى زر الاستيراد)</div>
+      <div role="status" style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 16px; border-radius: 10px; background: #EAF1FB; color: #102338; margin-top: -12px">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#194C8C" stroke-width="1.8" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M4 20h16"></path></svg>
+        <span style="flex: 1 1 320px">يجري استيراد المستخدمين من <bdi>موظفو-الراية-2026.xlsx</bdi>: أُضيف 2,350 من 4,728 شخصًا حتى الآن.</span>
+        <a href="Progress.dc.html" class="btn btn-secondary btn-sm">عرض التقدم</a>
+      </div>
+
+      <div class="cap">حالة يظهر فيها الشريط · بعد استيراد اختير فيه إرسال الدعوات لاحقًا</div>
+      <div role="status" style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 16px; border-radius: 10px; background: #FFF5E0; border: 1px solid #F3BD5A; margin-top: -12px">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#955800" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="M3 7l9 6 9-6"></path></svg>
+        <span style="flex: 1 1 320px">أُضيف 318 شخصًا من <bdi>موظفو-فرع-جدة.xlsx</bdi> دون إرسال دعوات. لن يتمكنوا من الدخول قبل أن تصلهم الدعوات ويقبلوها.</span>
+        <button type="button" class="btn btn-secondary btn-sm">إرسال الدعوات (318)</button>
+      </div>
+
+      <div class="card" style="overflow: hidden">
+        <div role="tablist" aria-label="حالة المستخدم" style="display: flex; flex-wrap: wrap; gap: 4px; padding: 0 12px; border-bottom: 1px solid #CBD4D6">
+          <button type="button" role="tab" aria-selected="false" class="tab">الكل <span class="n">578</span></button>
+          <button type="button" role="tab" aria-selected="false" class="tab">نشط <span class="n">236</span></button>
+          <button type="button" role="tab" aria-selected="true" class="tab on">مدعو <span class="n">330</span></button>
+          <button type="button" role="tab" aria-selected="false" class="tab">معطّل <span class="n">12</span></button>
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: 12px; padding: 16px">
+          <div style="flex: 3 1 300px; position: relative">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5B6A6E" stroke-width="1.8" aria-hidden="true" style="position: absolute; inset-inline-start: 12px; top: 13px"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
+            <input class="input" type="search" aria-label="بحث في المستخدمين" placeholder="ابحث بالاسم أو البريد الإلكتروني أو الرقم الوظيفي" style="padding-inline-start: 40px">
+          </div>
+          <select class="input" aria-label="الدور" style="flex: 1 1 160px; width: auto"><option>كل الأدوار</option></select>
+          <select class="input" aria-label="القسم" style="flex: 1 1 160px; width: auto"><option>كل الأقسام</option></select>
+          <select class="input" aria-label="الفرع" style="flex: 1 1 140px; width: auto"><option>فرع جدة</option></select>
+        </div>
+        <div style="overflow-x: auto">
+          <table style="width: 100%; border-collapse: collapse; min-width: 860px">
+            <caption class="sr">المدعوون في فرع جدة</caption>
+            <thead>
+              <tr><th>الاسم</th><th>الرقم الوظيفي</th><th>الدور الأساسي</th><th>القسم</th><th>الحالة</th><th>الدعوة</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><div style="font-weight: 600">عبدالإله سامي الجهني</div><div class="ltr" style="font-size: 13.5px; color: #465357; text-align: right">a.aljohani@alraya.example</div></td>
+                <td class="ltr" style="font-size: 14px; color: #333E41; text-align: right">EMP-2210</td>
+                <td>متدرب</td><td style="color: #333E41">المبيعات</td>
+                <td><span class="badge" style="background: #E3E9EA; color: #333E41"><span class="dot"></span>لم تُرسل الدعوة</span></td>
+                <td style="font-size: 14px; color: #333E41"><div>من استيراد في 8 أكتوبر 2026</div><button type="button" class="btn btn-ghost btn-sm" style="padding: 0 8px; margin-inline-start: -8px">إرسال الدعوة</button></td>
+              </tr>
+              <tr>
+                <td><div style="font-weight: 600">منيرة خالد الزهراني</div><div class="ltr" style="font-size: 13.5px; color: #465357; text-align: right">m.alzahrani@alraya.example</div></td>
+                <td class="ltr" style="font-size: 14px; color: #333E41; text-align: right">EMP-2214</td>
+                <td>المدير المباشر</td><td style="color: #333E41">خدمة العملاء</td>
+                <td><span class="badge" style="background: #E3E9EA; color: #333E41"><span class="dot"></span>لم تُرسل الدعوة</span></td>
+                <td style="font-size: 14px; color: #333E41"><div>من استيراد في 8 أكتوبر 2026</div><button type="button" class="btn btn-ghost btn-sm" style="padding: 0 8px; margin-inline-start: -8px">إرسال الدعوة</button></td>
+              </tr>
+              <tr>
+                <td><div style="font-weight: 600">نورة فهد الدوسري</div><div class="ltr" style="font-size: 13.5px; color: #465357; text-align: right">n.aldossari@alraya.example</div></td>
+                <td class="ltr" style="font-size: 14px; color: #333E41; text-align: right">—</td>
+                <td>منسق التدريب</td><td style="color: #333E41">التدريب والتطوير</td>
+                <td><span class="badge" style="background: #EAF1FB; color: #194C8C"><span class="dot"></span>مدعو</span></td>
+                <td style="font-size: 14px; color: #333E41"><div>أُرسلت قبل يومين · تنتهي بعد 5 أيام</div></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <section class="card" aria-labelledby="who-h" style="padding: 16px 20px; display: flex; flex-direction: column; gap: 12px; border-style: dashed">
+        <h2 id="who-h" style="margin: 0; font-size: 18px; line-height: 1.45">ملاحظة التصميم: من يرى «استيراد من ملف»؟</h2>
+        <div style="display: flex; flex-wrap: wrap; gap: 12px">
+          <div class="who">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#166236" stroke-width="2.2" aria-hidden="true" style="flex: none; margin-top: 3px"><path d="M5 12l5 5 9-10"></path></svg>
+            <div><b style="display: block">مدير المنشأة</b><span style="font-size: 14px; color: #465357">يستورد ويدعو بالأدوار غير المميزة، ثم يسند الأدوار المميزة من ملف كل مستخدم عند الحاجة.</span></div>
+          </div>
+          <div class="who">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#166236" stroke-width="2.2" aria-hidden="true" style="flex: none; margin-top: 3px"><path d="M5 12l5 5 9-10"></path></svg>
+            <div><b style="display: block">مدير الموارد البشرية</b><span style="font-size: 14px; color: #465357">يستورد بالقواعد نفسها، لكن لا تتغير بالاستيراد بيانات أصحاب الأدوار المميزة، كما في تعديل البيانات اليوم.</span></div>
+          </div>
+          <div class="who">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5B6A6E" stroke-width="2" aria-hidden="true" style="flex: none; margin-top: 3px"><circle cx="12" cy="12" r="9"></circle><path d="M6 18L18 6"></path></svg>
+            <div><b style="display: block">باقي الأدوار</b><span style="font-size: 14px; color: #465357">لا يظهر لهم الزر ولا شريط الاستيراد. من يفتح رابط الاستيراد مباشرة تظهر له رسالة «ليست لديك صلاحية».</span></div>
+          </div>
+        </div>
+        <p style="margin: 0; font-size: 14px; color: #465357">الحالة «لم تُرسل الدعوة» جديدة: تظهر تحت تبويب «مدعو»، ولا تبدأ الأيام السبعة لصلاحية الدعوة إلا عند إرسالها.</p>
+      </section>
+
+    </div>
+  </main>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1240}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

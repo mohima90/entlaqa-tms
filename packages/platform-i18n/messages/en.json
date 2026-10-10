@@ -243,7 +243,8 @@
       "primaryRole": "Primary role",
       "department": "Department",
       "status": "Status",
-      "lastSignIn": "Last sign-in"
+      "lastSignIn": "Last sign-in",
+      "actions": "Actions"
     },
     "otherRoles": "{count, plural, one {and {count, number, integer} additional role} other {and {count, number, integer} additional roles}}",
     "status": {
@@ -315,11 +316,14 @@
       "platform_tenant_admin_role_restored": "Organization Admin role restored",
       "platform_user_updated": "Details updated",
       "platform_user_roles_changed": "Roles changed",
+      "platform_user_deactivated": "Account deactivated",
+      "platform_user_reactivated": "Account reactivated",
       "other": "Recorded action ({action})"
     },
     "breadcrumbLabel": "Breadcrumb",
     "editDetails": "Edit details",
-    "editRoles": "Edit roles"
+    "editRoles": "Edit roles",
+    "deactivate": "Deactivate user"
   },
   "profile": {
     "title": "My profile",
@@ -604,6 +608,78 @@
       "expiredBanner": "{count, plural, one {{count, number, integer} invitation expired before it was accepted. You can resend it now; it stays valid for 7 days.} other {{count, number, integer} invitations expired before they were accepted. You can resend them now; each stays valid for 7 days.}}",
       "resendExpired": "Resend expired invitations ({count, number, integer})",
       "resentExpired": "Expired invitations resent ({count})."
+    }
+  },
+  "deactivation": {
+    "breadcrumbLabel": "Breadcrumb",
+    "breadcrumb": "Users",
+    "title": "Deactivate account",
+    "titleFor": "Deactivate {name}'s account?",
+    "effects": {
+      "signIn": "Signing in to this organization with this account stops immediately, and its active sign-in sessions here end.",
+      "records": "All records stay as they are: enrollments, attendance, certificates and the audit log.",
+      "roles": "The account's roles are kept and come back as they were when it is reactivated.",
+      "reactivate": "The account can be reactivated later from the Deactivated tab of the users list."
+    },
+    "itemsHeading": "Items assigned to this user need a new owner",
+    "moveAllTo": "Move all to",
+    "choosePerson": "Choose the new owner",
+    "moreItems": "(+{count, number, integer})",
+    "noCandidates": "Nobody can take these over yet: an active member first needs the Department Head or Line Manager role.",
+    "items": {
+      "platform_direct_reports": {
+        "title": "{count, plural, one {{count, number, integer} person reports directly to this user} other {{count, number, integer} people report directly to this user}}",
+        "picker": "New direct manager"
+      },
+      "platform_headed_departments": {
+        "title": "{count, plural, one {{count, number, integer} department headed by this user} other {{count, number, integer} departments headed by this user}}",
+        "picker": "New department head"
+      }
+    },
+    "itemsBlocked": {
+      "permission": "Your permissions don't cover moving these items; the Organization Admin can deactivate this account.",
+      "item_not_allowed": "Some of these items are outside your permissions; the Organization Admin can deactivate this account."
+    },
+    "reason": "Reason for deactivation",
+    "reasonHint": "(optional, recorded in the audit log)",
+    "reasonNone": "Not stated",
+    "reasons": {
+      "end_of_service": "End of service",
+      "long_leave": "Long leave",
+      "transfer": "Moved to another organization",
+      "other": "Other reason"
+    },
+    "cancel": "Cancel",
+    "submit": "Deactivate the account",
+    "submitMove": "Move the items and deactivate the account",
+    "working": "Deactivating…",
+    "fieldErrors": {
+      "ownerRequired": "Choose the new owner.",
+      "ownerInvalid": "These items can't be moved to the person chosen. Choose another active member.",
+      "ownerReportsToPerson": "This move would create a loop in the reporting line: the person chosen reports to someone they would manage. Choose someone else.",
+      "changed": "The items assigned to this user changed after the page was opened. Refresh the page and try again.",
+      "notActive": "This account is no longer active; it may have just been deactivated. Refresh the page."
+    },
+    "blocked": {
+      "own_account": "You can't deactivate your own account.",
+      "no_account": "This person has no sign-in account in the organization, so there is nothing to deactivate.",
+      "not_active": "This account isn't active (it is deactivated, or its invitation isn't accepted yet), so it can't be deactivated.",
+      "last_admin": "This is the last active account with the Organization Admin role and no end date. Give the role to another member before deactivating this account.",
+      "step_up_required": "Deactivating an account that holds a privileged role needs a code from an authenticator app; this becomes available once multi-factor authentication is set up."
+    },
+    "backToProfile": "Back to the profile",
+    "deactivated": "The account was deactivated and its sign-in sessions in the organization ended. It can be reactivated from this tab.",
+    "reactivate": {
+      "button": "Reactivate user",
+      "rowButton": "Reactivate",
+      "confirm": "Reactivate {name}'s account? Signing in to the organization works again, with the same roles.",
+      "confirmButton": "Reactivate",
+      "keep": "Cancel",
+      "working": "Reactivating…",
+      "done": "The account was reactivated. Signing in to the organization works again, with the same roles.",
+      "stepUp": "Reactivating an account that holds a privileged role needs a code from an authenticator app; this becomes available once multi-factor authentication is set up.",
+      "notDeactivated": "This account isn't deactivated. Refresh the page.",
+      "placementDeleted": "This person's department or branch was deleted. Edit their details first, then reactivate the account."
     }
   }
 }

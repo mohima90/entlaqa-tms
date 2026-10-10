@@ -15,6 +15,7 @@ const db = vi.hoisted(() => ({
   getUserProfile: vi.fn(),
   loadPersonResourceFacts: vi.fn(),
   mayManagePerson: vi.fn(),
+  getMemberLifecycleTarget: vi.fn(),
 }));
 vi.mock('@jadarat/platform-db', () => db);
 
@@ -95,6 +96,9 @@ describe('users list query', () => {
         canReadRoles: true,
         orgUnits,
         canInvite: true,
+        canDeactivate: true,
+        // aal1: privileged members come back after an authenticator code (D-IAM-01).
+        privilegedReactivation: 'step_up_required',
       }),
     );
     expect(db.listUsers).toHaveBeenCalledWith(TX, {
@@ -118,6 +122,8 @@ describe('users list query', () => {
       canReadRoles: false,
       orgUnits: null,
       canInvite: false,
+      canDeactivate: false,
+      privilegedReactivation: null,
     });
     expect(db.listOrgUnitOptions).not.toHaveBeenCalled();
     expect(db.listUsers).toHaveBeenCalledWith(TX, {
@@ -163,6 +169,25 @@ describe('users list query', () => {
     );
   });
 
+  it('deactivated tab: rows say whether the member may manage each person (T-M2-09)', async () => {
+    const hr = await createDefineQuery(runtime(['hr_manager']))(usersListQueryDefinition())({
+      tab: 'deactivated',
+    });
+    // HR Manager: never privileged members (D-IAM-01).
+    expect(hr.ok && hr.value.privilegedReactivation).toBeNull();
+    expect(db.listUsers).toHaveBeenLastCalledWith(
+      TX,
+      expect.objectContaining({ tab: 'deactivated', includeManageable: true }),
+    );
+    // Other tabs, or members who do not deactivate: not asked.
+    await createDefineQuery(runtime(['hr_manager']))(usersListQueryDefinition())({ tab: 'active' });
+    expect(db.listUsers.mock.lastCall?.[1]).not.toHaveProperty('includeManageable');
+    await createDefineQuery(runtime(['training_manager']))(usersListQueryDefinition())({
+      tab: 'deactivated',
+    });
+    expect(db.listUsers.mock.lastCall?.[1]).not.toHaveProperty('includeManageable');
+  });
+
   it('rejects malformed input before any database work; no role → 403', async () => {
     const list = createDefineQuery(runtime(['tenant_admin']))(usersListQueryDefinition());
     for (const input of [
@@ -190,8 +215,10 @@ describe('user profile query', () => {
         canOpenManager: false,
         canEdit: false,
         canEditRoles: false,
+        lifecycle: { canDeactivate: false, reactivate: null, privileged: false },
       }),
     );
+    expect(db.getMemberLifecycleTarget).not.toHaveBeenCalled();
     expect(db.getUserProfile).toHaveBeenCalledWith(TX, REPORT, {
       includeRoles: true,
       includeActivity: false,
@@ -265,6 +292,83 @@ describe('user profile query', () => {
       expect(view.ok && view.value.canEditRoles, JSON.stringify(profile)).toBe(false);
     }
     expect(db.loadPersonResourceFacts).toHaveBeenCalledWith(TX, ME);
+  });
+
+  describe('deactivate / reactivate offers (T-M2-09)', () => {
+    const target = (over: Record<string, unknown> = {}) => ({
+      personId: REPORT,
+      displayNameAr: 'س',
+      displayNameEn: null,
+      personStatus: 'active',
+      membershipId: 'm1',
+      membershipStatus: 'active',
+      isSelf: false,
+      mayManage: true,
+      privileged: false,
+      lastAdmin: false,
+      ...over,
+    });
+    const offer = async (roles: SystemRoleCode[], membershipStatus: string) => {
+      db.getUserProfile.mockResolvedValue({ personId: REPORT, roles: [], membershipStatus });
+      const view = await createDefineQuery(runtime(roles))(userProfileQueryDefinition())({
+        personId: REPORT,
+      });
+      return view.ok ? view.value.lifecycle : null;
+    };
+
+    it('an active member: deactivate; a deactivated one: reactivate', async () => {
+      db.getMemberLifecycleTarget.mockResolvedValue(target());
+      expect(await offer(['hr_manager'], 'active')).toEqual({
+        canDeactivate: true,
+        reactivate: null,
+        privileged: false,
+      });
+      db.getMemberLifecycleTarget.mockResolvedValue(
+        target({ membershipStatus: 'suspended', personStatus: 'inactive' }),
+      );
+      expect(await offer(['hr_manager'], 'suspended')).toEqual({
+        canDeactivate: false,
+        reactivate: 'allowed',
+        privileged: false,
+      });
+    });
+
+    it('a privileged deactivated member: the Organization Admin after an authenticator code; not HR', async () => {
+      db.getMemberLifecycleTarget.mockResolvedValue(
+        target({ membershipStatus: 'suspended', privileged: true }),
+      );
+      expect(await offer(['tenant_admin'], 'suspended')).toEqual({
+        canDeactivate: false,
+        reactivate: 'step_up_required',
+        privileged: true,
+      });
+      db.getMemberLifecycleTarget.mockResolvedValue(
+        target({ membershipStatus: 'suspended', privileged: true, mayManage: false }),
+      );
+      db.mayManagePerson.mockResolvedValue(false);
+      expect(await offer(['hr_manager'], 'suspended')).toEqual({
+        canDeactivate: false,
+        reactivate: null,
+        privileged: false,
+      });
+    });
+
+    it('nothing without the permission, without an account, for a revoked or invited membership', async () => {
+      for (const [roles, status] of [
+        [['line_manager'], 'active'],
+        [['hr_manager'], null],
+        [['hr_manager'], 'revoked'],
+        [['hr_manager'], 'invited'],
+      ] as const) {
+        db.getMemberLifecycleTarget.mockClear();
+        expect(await offer([...roles], status as never)).toEqual({
+          canDeactivate: false,
+          reactivate: null,
+          privileged: false,
+        });
+        expect(db.getMemberLifecycleTarget).not.toHaveBeenCalled();
+      }
+    });
   });
 
   it('a person that disappeared after authorization → NOT_FOUND', async () => {

@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>حالات الاستيراد: الأخطاء والصلاحيات</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#F2F5F5}
+a{color:#0C534D}a:hover{color:#09403C}
+*{box-sizing:border-box}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid #177D74;outline-offset:2px}
+.ltr{direction:ltr;unicode-bidi:isolate}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 18px;border-radius:6px;border:1px solid transparent;font-weight:600;font-size:15px;cursor:pointer;text-decoration:none;white-space:nowrap}
+.btn-primary{background:#0F665F;color:#fff}.btn-primary:hover{background:#0C534D;color:#fff}
+.btn-secondary{background:#fff;color:#121A1C;border-color:#7A898D}.btn-secondary:hover{background:#F2F5F5;color:#121A1C}
+.btn-ghost{background:transparent;color:#0C534D}.btn-ghost:hover{background:#E7F3F1}
+.btn-danger{background:#B42318;color:#fff}.btn-danger:hover{background:#931C14;color:#fff}
+.btn-sm{min-height:36px;padding:0 12px;font-size:14px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:16px}
+.state{background:#fff;border:1px solid #CBD4D6;border-radius:10px;padding:20px;display:flex;flex-direction:column;gap:10px;align-items:flex-start}
+.state h3{margin:0;font-size:18.5px;line-height:1.45}
+.state p{margin:0;color:#333E41;font-size:14.5px}
+.cap{font-size:13px;font-weight:600;color:#465357}
+.ic{width:44px;height:44px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;flex:none}
+.acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
+h2.sec{margin:8px 0 0;font-size:21px;line-height:1.45}
+</style>
+</helmet>
+<div style="min-height: 100vh; display: flex; flex-direction: column; font-family: 'IBM Plex Sans Arabic', 'Noto Sans Arabic', Tahoma, sans-serif; color: #121A1C; font-size: 15.5px; line-height: 1.7; background: #F2F5F5">
+  <header style="height: 56px; display: flex; align-items: center; gap: 10px; padding: 0 16px; background: #FFFFFF; border-bottom: 1px solid #CBD4D6; font-weight: 700; font-size: 18px">
+    <span style="width: 32px; height: 32px; border-radius: 8px; background: #0F665F; color: #FFFFFF; display: inline-flex; align-items: center; justify-content: center; font-size: 17px">ج</span>جدارات · التدريب
+  </header>
+
+  <main id="main" style="flex: 1 1 auto; padding: 24px 32px 40px">
+    <div style="max-width: 1240px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px">
+      <div>
+        <div style="font-size: 14px; color: #465357">المستخدمون · استيراد من ملف</div>
+        <h1 style="margin: 0; font-size: 27px; line-height: 1.45">حالات الاستيراد: الفراغ والأخطاء والصلاحيات</h1>
+        <p style="margin: 2px 0 0; color: #465357">كل بطاقة تظهر مكان محتوى الخطوة المعنية. الرسائل تقول ما حدث ثم ما يمكن فعله، دون لوم.</p>
+      </div>
+
+      <h2 class="sec">الخطوة 1 · الملف</h2>
+      <div class="grid">
+        <section class="state" aria-labelledby="f0">
+          <span class="cap">قبل الرفع · الحالة الفارغة</span>
+          <span class="ic" style="background: #E7F3F1" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0C534D" stroke-width="1.8"><path d="M12 16V4M7 9l5-5 5 5M4 20h16"></path></svg></span>
+          <h3 id="f0">لم يُرفع ملف بعد</h3>
+          <p>هي الخطوة الأولى نفسها: قالب اختياري ومنطقة رفع، ويبقى زر «التالي» غير متاح حتى يجهز الملف.</p>
+          <div class="acts"><a href="Upload.dc.html" class="btn btn-secondary btn-sm">عرض الخطوة الأولى</a></div>
+        </section>
+
+        <section class="state" aria-labelledby="f1">
+          <span class="cap">نوع غير مدعوم</span>
+          <span class="ic" style="background: #FDEEEC" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#B42318" stroke-width="1.8"><circle cx="12" cy="12" r="9"></circle><path d="M9 9l6 6M15 9l-6 6"></path></svg></span>
+          <h3 id="f1">لا يمكن استيراد هذا النوع من الملفات</h3>
+          <p>الملف <bdi>الموظفين.xls</bdi> بصيغة Excel القديمة. يمكنك فتحه في Excel وحفظه بصيغة XLSX أو CSV، ثم رفعه.</p>
+          <div class="acts"><button type="button" class="btn btn-primary btn-sm">اختيار ملف آخر</button></div>
+        </section>
+
+        <section class="state" aria-labelledby="f2">
+          <span class="cap">حجم كبير</span>
+          <span class="ic" style="background: #FDEEEC" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#B42318" stroke-width="1.8"><circle cx="12" cy="12" r="9"></circle><path d="M9 9l6 6M15 9l-6 6"></path></svg></span>
+          <h3 id="f2">حجم الملف أكبر من المسموح</h3>
+          <p>حجم الملف 24 ميجابايت، والحد 20 ميجابايت. يمكنك حذف الأعمدة التي لا تحتاج إليها، أو تقسيم الملف إلى ملفين.</p>
+          <div class="acts"><button type="button" class="btn btn-primary btn-sm">اختيار ملف آخر</button></div>
+        </section>
+
+        <section class="state" aria-labelledby="f3">
+          <span class="cap">صفوف أكثر من الحد</span>
+          <span class="ic" style="background: #FDEEEC" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#B42318" stroke-width="1.8"><circle cx="12" cy="12" r="9"></circle><path d="M9 9l6 6M15 9l-6 6"></path></svg></span>
+          <h3 id="f3">في الملف صفوف أكثر من الحد</h3>
+          <p>في الملف 12,400 صف، والحد 10,000 صف في الملف الواحد. يمكنك تقسيمه إلى ملفين، مثلًا حسب الفرع، واستيرادهما واحدًا بعد الآخر.</p>
+          <div class="acts"><button type="button" class="btn btn-primary btn-sm">اختيار ملف آخر</button></div>
+        </section>
+
+        <section class="state" aria-labelledby="f4" style="border-color: #B42318">
+          <span class="cap">الفحص وجد برنامجًا ضارًا</span>
+          <span class="ic" style="background: #FDEEEC" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#B42318" stroke-width="1.8"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"></path><path d="M12 8v5M12 16h.01"></path></svg></span>
+          <h3 id="f4">لم نقبل الملف لأسباب أمنية</h3>
+          <p>وجد الفحص في الملف برنامجًا ضارًا، فعزلناه ولم نقرأ محتواه، وأبلغنا مدير المنشأة بذلك. يمكنك فحص جهازك، ثم تنزيل الملف من مصدره من جديد ورفعه.</p>
+          <div class="acts"><button type="button" class="btn btn-secondary btn-sm">اختيار ملف آخر</button></div>
+        </section>
+
+        <section class="state" aria-labelledby="f5">
+          <span class="cap">الفحص متأخر</span>
+          <span class="ic" style="background: #EAF1FB" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#194C8C" stroke-width="1.8"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg></span>
+          <h3 id="f5">يستغرق الفحص وقتًا أطول من المعتاد</h3>
+          <p>الملف محفوظ لدينا، ولن نقرأه قبل انتهاء الفحص. يمكنك البقاء في هذه الصفحة، أو العودة لاحقًا من «عمليات الاستيراد الأخيرة».</p>
+        </section>
+
+        <section class="state" aria-labelledby="f6">
+          <span class="cap">ترميز الحروف</span>
+          <span class="ic" style="background: #FDEEEC" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#B42318" stroke-width="1.8"><circle cx="12" cy="12" r="9"></circle><path d="M9 9l6 6M15 9l-6 6"></path></svg></span>
+          <h3 id="f6">تعذّرت قراءة الحروف العربية في الملف</h3>
+          <p>الملف محفوظ بترميز غير UTF-8، فتظهر الحروف العربية رموزًا غير مفهومة. يمكنك حفظه من Excel بنوع «CSV UTF-8»، أو رفعه بصيغة XLSX.</p>
+          <div class="acts"><button type="button" class="btn btn-primary btn-sm">اختيار ملف آخر</button></div>
+        </section>
+
+        <section class="state" aria-labelledby="f7">
+          <span class="cap">ملف بلا بيانات</span>
+          <span class="ic" style="background: #E3E9EA" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#333E41" stroke-width="1.8"><path d="M6 2h9l5 5v15H6z"></path><path d="M14 2v6h6"></path></svg></span>
+          <h3 id="f7">لا توجد بيانات في الملف</h3>
+          <p>وجدنا صف العناوين فقط. تبدأ بيانات الأشخاص من الصف الثاني، صف لكل شخص.</p>
+          <div class="acts"><button type="button" class="btn btn-primary btn-sm">اختيار ملف آخر</button></div>
+        </section>
+
+        <section class="state" aria-labelledby="f8">
+          <span class="cap">ملف محمي</span>
+          <span class="ic" style="background: #FDEEEC" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#B42318" stroke-width="1.8"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg></span>
+          <h3 id="f8">الملف محمي بكلمة مرور</h3>
+          <p>لا يمكننا قراءة ملف محمي. يمكنك إزالة الحماية في Excel ثم رفعه.</p>
+          <div class="acts"><button type="button" class="btn btn-primary btn-sm">اختيار ملف آخر</button></div>
+        </section>
+
+        <section class="state" aria-labelledby="f9">
+          <span class="cap">انقطاع الرفع</span>
+          <span class="ic" style="background: #FFF5E0" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#955800" stroke-width="1.8"><path d="M12 3l10 18H2z"></path><path d="M12 10v5M12 18h.01"></path></svg></span>
+          <h3 id="f9">انقطع رفع الملف</h3>
+          <p>لم يكتمل الرفع، ربما بسبب الاتصال، ولم يُحفظ شيء. يمكنك إعادة المحاولة.</p>
+          <div class="acts"><button type="button" class="btn btn-primary btn-sm">إعادة الرفع</button></div>
+        </section>
+      </div>
+
+      <h2 class="sec">الخطوتان 2 و3 · المطابقة والمراجعة</h2>
+      <div class="grid">
+        <section class="state" aria-labelledby="m1">
+          <span class="cap">حقل مطلوب غير مطابق</span>
+          <span class="ic" style="background: #FDEEEC" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#B42318" stroke-width="1.8"><circle cx="12" cy="12" r="9"></circle><path d="M9 9l6 6M15 9l-6 6"></path></svg></span>
+          <h3 id="m1">لم نجد عمود «البريد الإلكتروني للعمل»</h3>
+          <p>هذا الحقل مطلوب. يمكنك اختيار العمود المقابل له من القائمة، أو إضافته إلى الملف ورفعه من جديد. يبقى زر «التالي» غير متاح حتى تُطابَق الحقول المطلوبة.</p>
+        </section>
+
+        <section class="state" aria-labelledby="m2">
+          <span class="cap">لا صف جاهز للاستيراد</span>
+          <span class="ic" style="background: #FDEEEC" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#B42318" stroke-width="1.8"><circle cx="12" cy="12" r="9"></circle><path d="M9 9l6 6M15 9l-6 6"></path></svg></span>
+          <h3 id="m2">لا يوجد صف جاهز للاستيراد</h3>
+          <p>في كل الصفوف أخطاء، أو هي لمستخدمين موجودين من قبل. يمكنك تنزيل قائمة المشكلات وتصحيح الملف، ثم رفعه من جديد.</p>
+          <div class="acts"><button type="button" class="btn btn-secondary btn-sm">تنزيل قائمة المشكلات (CSV)</button><a href="Upload.dc.html" class="btn btn-primary btn-sm">رفع ملف مصحَّح</a></div>
+        </section>
+
+        <section class="state" aria-labelledby="m3">
+          <span class="cap">انتهت مدة المراجعة</span>
+          <span class="ic" style="background: #E3E9EA" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#333E41" stroke-width="1.8"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg></span>
+          <h3 id="m3">انتهت مدة هذه المراجعة</h3>
+          <p>تبقى المراجعة متاحة 24 ساعة قبل بدء الاستيراد، ثم نحذف الملف. يمكنك رفعه من جديد.</p>
+          <div class="acts"><a href="Upload.dc.html" class="btn btn-primary btn-sm">رفع الملف من جديد</a></div>
+        </section>
+      </div>
+
+      <h2 class="sec">أثناء الاستيراد</h2>
+      <div class="grid">
+        <section class="state" aria-labelledby="r1">
+          <span class="cap">استيراد آخر جارٍ</span>
+          <span class="ic" style="background: #EAF1FB" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#194C8C" stroke-width="1.8"><circle cx="12" cy="12" r="9"></circle><path d="M12 11v5M12 8h.01"></path></svg></span>
+          <h3 id="r1">يجري استيراد آخر الآن</h3>
+          <p>بدأ عبدالله المطيري استيرادًا اليوم 10:42 ص ولم ينتهِ بعد. في المنشأة استيراد واحد في كل مرة؛ يمكنك رفع ملفك بعد انتهائه، ونرسل إليك إشعارًا حينها.</p>
+        </section>
+
+        <section id="stop" class="state" role="alertdialog" aria-modal="false" aria-labelledby="r2" aria-describedby="r2d" style="border-color: #B42318; box-shadow: 0 12px 24px rgba(18, 26, 28, 0.12)">
+          <span class="cap">نافذة تأكيد · إيقاف الاستيراد</span>
+          <h3 id="r2">إيقاف الاستيراد؟</h3>
+          <p id="r2d">نتوقف بعد الدفعة الجارية. يبقى من أُضيف حتى الآن (2,350 شخصًا) دون إرسال دعوات إليهم، ويمكنك إرسالها من قائمة المستخدمين أو التراجع عن الاستيراد كله من صفحة النتيجة.</p>
+          <div class="acts"><a href="Progress.dc.html" class="btn btn-secondary btn-sm">رجوع</a><button type="button" class="btn btn-danger btn-sm">إيقاف الاستيراد</button></div>
+        </section>
+
+        <section class="state" aria-labelledby="r3">
+          <span class="cap">تعذّر الإكمال بسبب خلل لدينا</span>
+          <span class="ic" style="background: #FDEEEC" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#B42318" stroke-width="1.8"><path d="M12 3l10 18H2z"></path><path d="M12 10v5M12 18h.01"></path></svg></span>
+          <h3 id="r3">توقف الاستيراد قبل اكتماله</h3>
+          <p>تعذّر إكمال الاستيراد بسبب خلل لدينا بعد عدة محاولات. أُضيف 2,350 شخصًا ولم نفقد شيئًا منهم، والصفوف الباقية (2,378) في تقرير الأخطاء، فيمكنك استيرادها منه لاحقًا. المرجع: <span class="ltr">7F3A-21</span></p>
+          <div class="acts"><a href="Result.dc.html" class="btn btn-primary btn-sm">عرض النتيجة</a></div>
+        </section>
+      </div>
+
+      <h2 class="sec">الصلاحيات والتقرير</h2>
+      <div class="grid">
+        <section class="state" aria-labelledby="p1">
+          <span class="cap">من لا يملك صلاحية الاستيراد (رابط مباشر)</span>
+          <span class="ic" style="background: #E3E9EA" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#333E41" stroke-width="1.8"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg></span>
+          <h3 id="p1">ليست لديك صلاحية لاستيراد المستخدمين</h3>
+          <p>يستورد المستخدمين مدير المنشأة ومدير الموارد البشرية. يمكنك التواصل مع أحدهما إن احتجت إلى إضافة موظفين.</p>
+          <div class="acts"><a href="#" class="btn btn-secondary btn-sm">العودة إلى الرئيسية</a></div>
+        </section>
+
+        <section class="state" aria-labelledby="p2">
+          <span class="cap">تقرير استيراد أجراه شخص آخر</span>
+          <span class="ic" style="background: #E3E9EA" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#333E41" stroke-width="1.8"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg></span>
+          <h3 id="p2">هذا التقرير متاح لمن أجرى الاستيراد فقط</h3>
+          <p>يحتوي تقرير الأخطاء على بيانات موظفين، فلا ينزّله إلا من أجرى الاستيراد. تظهر لك أعداد النتيجة دون التقرير.</p>
+        </section>
+
+        <section class="state" aria-labelledby="p3">
+          <span class="cap">انتهت مدة التقرير</span>
+          <span class="ic" style="background: #E3E9EA" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#333E41" stroke-width="1.8"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg></span>
+          <h3 id="p3">حُذف تقرير الأخطاء</h3>
+          <p>يُحذف التقرير والملف الأصلي بعد 7 أيام من انتهاء الاستيراد. تبقى أعداد النتيجة في هذه الصفحة وفي سجل التدقيق.</p>
+        </section>
+
+        <section class="state" aria-labelledby="p4">
+          <span class="cap">عند استيراد مدير الموارد البشرية</span>
+          <span class="ic" style="background: #EAF1FB" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#194C8C" stroke-width="1.8"><circle cx="12" cy="12" r="9"></circle><path d="M12 11v5M12 8h.01"></path></svg></span>
+          <h3 id="p4">ما يختلف لمدير الموارد البشرية</h3>
+          <p>الخطوات نفسها. وعند اختيار تحديث الموجودين يُتخطى أصحاب الأدوار المميزة برسالة: «لهذا الشخص دور مميز، فيغيّر بياناته مدير المنشأة من ملفه.»</p>
+        </section>
+      </div>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":2300}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

@@ -35,7 +35,7 @@ cleanup() {
                    where g.rolname = 'app_queue' and u.rolname = '$MIGRATOR' and gr.rolname = '$MIGRATOR') then
           execute 'revoke app_queue from $MIGRATOR granted by $MIGRATOR';
         end if;
-        -- The migrations' own 'grant tenant_guard / invitation_guard to current_user': not wanted beyond this run.
+        -- The migrations' own 'grant <guard role> to current_user': not wanted beyond this run.
         if exists (select 1 from pg_auth_members m join pg_roles g on g.oid = m.roleid
                      join pg_roles u on u.oid = m.member join pg_roles gr on gr.oid = m.grantor
                    where g.rolname = 'tenant_guard' and u.rolname = '$MIGRATOR' and gr.rolname = '$MIGRATOR') then
@@ -50,6 +50,11 @@ cleanup() {
                      join pg_roles u on u.oid = m.member join pg_roles gr on gr.oid = m.grantor
                    where g.rolname = 'account_mail_guard' and u.rolname = '$MIGRATOR' and gr.rolname = '$MIGRATOR') then
           execute 'revoke account_mail_guard from $MIGRATOR granted by $MIGRATOR';
+        end if;
+        if exists (select 1 from pg_auth_members m join pg_roles g on g.oid = m.roleid
+                     join pg_roles u on u.oid = m.member join pg_roles gr on gr.oid = m.grantor
+                   where g.rolname = 'membership_guard' and u.rolname = '$MIGRATOR' and gr.rolname = '$MIGRATOR') then
+          execute 'revoke membership_guard from $MIGRATOR granted by $MIGRATOR';
         end if;
       end if;
     end \$\$;" >/dev/null 2>&1 || echo "db-test-hosted-sim: WARNING: cleanup of cluster-wide roles failed" >&2
@@ -98,7 +103,7 @@ do \$\$
 declare r text;
 begin
   foreach r in array array['app_server', 'app_worker', 'app_queue', 'tenant_guard', 'invitation_guard',
-                          'account_mail_guard'] loop
+                          'account_mail_guard', 'membership_guard'] loop
     if exists (select 1 from pg_roles where rolname = r) then
       execute format('grant %I to $MIGRATOR with admin option, inherit false, set false', r);
     end if;

@@ -14,6 +14,7 @@ const VARIANTS: { variant: ButtonVariant; ar: string; en: string }[] = [
   { variant: 'secondary', ar: 'حفظ كمسودة', en: 'Save as draft' },
   { variant: 'ghost', ar: 'رفض', en: 'Reject' },
   { variant: 'danger', ar: 'إلغاء الجلسة', en: 'Cancel session' },
+  { variant: 'danger-outline', ar: 'تعطيل المستخدم', en: 'Deactivate user' },
 ];
 
 export const Variants: Story = {

@@ -8,11 +8,17 @@ import { hasLocale } from 'next-intl';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { notFound, redirect } from 'next/navigation';
 import { SuiteShell } from '../../../../../components/suite-shell';
+import { ReactivateMemberButton } from '../../../../../components/users/reactivate-member-button';
 import {
   ExpiredInvitationsBanner,
   type InvitationRowView,
   InvitationsTable,
 } from '../../../../../components/users/invitations-table';
+import {
+  DEACTIVATED_FLASH_PARAM,
+  REACTIVATED_FLASH_PARAM,
+} from '../../../../../lib/deactivate-form';
+import { reactivateLabels } from '../../../../../lib/deactivation-texts';
 import { INVITED_FLASH_PARAM, canResend } from '../../../../../lib/invite-form';
 import { filterInvitations } from '../../../../../lib/invitations-view';
 import { profileErrorTexts } from '../../../../../lib/profile-texts';
@@ -66,7 +72,8 @@ const INVITATION_RAW_KEYS = ['revokeConfirm', 'resentExpired'] as const;
 /**
  * Users list (T-M2-04, screen 1 — FR-IAM-01): only the people the member may see (ADR 0003 §4.2).
  * Holders of `platform.user.invite` also see «دعوة مستخدم» and, on the `invited` tab, the pending and
- * expired invitations with resend and revoke (T-M2-07, FR-IAM-03).
+ * expired invitations with resend and revoke (T-M2-07, FR-IAM-03). Holders of `platform.user.deactivate`
+ * reactivate members from the `deactivated` tab (T-M2-09, FR-IAM-05).
  */
 export default async function UsersPage({
   params,
@@ -80,6 +87,7 @@ export default async function UsersPage({
   const context = await getSuiteContext(locale);
   const t = await getTranslations({ locale, namespace: 'users' });
   const invitationTexts = await getTranslations({ locale, namespace: 'invitations' });
+  const deactivationTexts = await getTranslations({ locale, namespace: 'deactivation' });
 
   let body;
   let canInvite = false;
@@ -123,6 +131,16 @@ export default async function UsersPage({
           {raw[INVITED_FLASH_PARAM] === '1' && canInvite ? (
             <Alert tone="success" data-testid="invitation-created">
               {invitationTexts('list.created')}
+            </Alert>
+          ) : null}
+          {raw[DEACTIVATED_FLASH_PARAM] === '1' && result.value.canDeactivate ? (
+            <Alert tone="success" data-testid="member-deactivated">
+              {deactivationTexts('deactivated')}
+            </Alert>
+          ) : null}
+          {raw[REACTIVATED_FLASH_PARAM] === '1' && result.value.canDeactivate ? (
+            <Alert tone="success" data-testid="member-reactivated">
+              {deactivationTexts('reactivate.done')}
             </Alert>
           ) : null}
           {invalidFilters ? <Alert tone="warning">{t('invalidFilters')}</Alert> : null}
@@ -204,6 +222,17 @@ async function UsersList({
       : [];
   const expired = (invitations ?? []).filter((row) => row.state === 'expired');
   const nothingToShow = list.rows.length === 0 && invitationRows.length === 0;
+  // «إعادة التفعيل» on the deactivated tab (T-M2-09): rows the member may manage; privileged members only
+  // with role.assign_privileged (after an authenticator code).
+  const showActions = activeTab === 'deactivated' && view.canDeactivate;
+  const reactivation = showActions
+    ? {
+        labels: await reactivateLabels(locale),
+        errors: await profileErrorTexts(locale),
+        stepUp: (await getTranslations({ locale, namespace: 'deactivation' }))('reactivate.stepUp'),
+        successHref: withFlash(usersListHref(locale, params), REACTIVATED_FLASH_PARAM),
+      }
+    : null;
 
   return (
     <>
@@ -376,6 +405,11 @@ async function UsersList({
                 <th scope="col" className="px-4 py-3 text-start font-semibold">
                   {t('columns.lastSignIn')}
                 </th>
+                {reactivation ? (
+                  <th scope="col" className="px-4 py-3 text-start font-semibold">
+                    {t('columns.actions')}
+                  </th>
+                ) : null}
               </tr>
             </thead>
             <tbody>
@@ -430,6 +464,31 @@ async function UsersList({
                   <td className="px-4 py-3 text-sm">
                     {row.lastSignInAt ? format.dateTime(row.lastSignInAt, 'dateTime') : t('never')}
                   </td>
+                  {reactivation ? (
+                    <td className="px-4 py-3">
+                      {row.status !== 'suspended' || !row.mayManage ? (
+                        <NotSet label={t('noneLabel')} />
+                      ) : row.privileged && view.privilegedReactivation !== 'allowed' ? (
+                        view.privilegedReactivation === 'step_up_required' ? (
+                          <p className="m-0 max-w-56 text-sm text-text-muted">
+                            {reactivation.stepUp}
+                          </p>
+                        ) : (
+                          <NotSet label={t('noneLabel')} />
+                        )
+                      ) : (
+                        <ReactivateMemberButton
+                          personId={row.personId}
+                          name={localizedName(locale, row.displayNameAr, row.displayNameEn)}
+                          privileged={row.privileged}
+                          labels={reactivation.labels}
+                          errors={reactivation.errors}
+                          successHref={reactivation.successHref}
+                          compact
+                        />
+                      )}
+                    </td>
+                  ) : null}
                 </tr>
               ))}
             </tbody>
@@ -469,6 +528,11 @@ async function UsersList({
       ) : null}
     </>
   );
+}
+
+/** `href` with a flash parameter (`…?x=1` or `…&x=1`). */
+function withFlash(href: string, param: string): string {
+  return `${href}${href.includes('?') ? '&' : '?'}${param}=1`;
 }
 
 async function invitationLabels(locale: AppLocale): Promise<Record<string, string>> {

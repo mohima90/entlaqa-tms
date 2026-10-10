@@ -38,3 +38,21 @@ The built template (`packages/platform-notifications/src/templates/invitation.ts
 | English block: link and expiry on one line | English block has the same lines as the Arabic one (expiry, sign-in e-mail, ignore notice) | When English is the chosen language its block comes first with the button, so both blocks carry the full text |
 
 The two wording changes are listed for the PO in the T-M2-06b pull request; changing them later means a new template version.
+
+## Build differences in deactivate / reactivate (screen 4, T-M2-09)
+
+The built screens (`apps/suite/src/app/[locale]/suite/admin/users/[personId]/deactivate/page.tsx`, the profile and the «معطّل» tab of the users list) follow screen 4 and screen 3's «تعطيل المستخدم» button, with these differences:
+
+| Screen | Built | Why |
+|---|---|---|
+| A dialog over the profile | A page of its own (breadcrumb back to the profile), like «تعديل الأدوار» | Works without scripts, keeps the browser's back button, no focus trap to maintain; same content and order |
+| «…وتنتهي جلسات الدخول النشطة (2).» | No count; «…إلى المنشأة فورًا، وتنتهي جلسات الدخول النشطة فيها.» | The sign-in sessions list arrives with T-M2-10; a login may also belong to another organization, where it keeps working |
+| — | Extra line: «تبقى أدوار الحساب محفوظة، وتعود كما هي عند إعادة تفعيله.» | Reactivation restores the same roles (FR-IAM-05) |
+| Items: sessions, enrollment requests, logistics tasks | Items today: direct reports («المدير المباشر الجديد») and departments the person heads («رئيس القسم الجديد»); module items join through the reassignment hook as their modules ship (M3, M4) | Those records do not exist yet |
+| «نقل الكل إلى» preselects a person | Starts at «اختيار المسؤول الجديد»; shown when there are two kinds or more | No silent default owner; nothing is sent until every kind has one |
+| Confirm goes to the users list | Goes to the «معطّل» tab with a confirmation | The person is then in that tab, where reactivation is offered |
+| Reactivation (not drawn) | «إعادة تفعيل المستخدم» on the profile and «إعادة التفعيل» per row of the «معطّل» tab, each with a confirmation step | New: screen 4 only says reactivation is possible from that tab |
+| Reason list | Adds «دون ذكر سبب» as the first choice | The reason is optional |
+| — | A member who holds a privileged role: the page first says that an authenticator code is needed (as reactivation does), and only the Organization Admin with that code sees the form | PO decision D-IAM-01 (security review M4) |
+
+New copy (Arabic and English) for the lines above, the blocked states and the error messages is in `packages/platform-i18n/messages` (namespace `deactivation`) and needs the UX writer's review.

@@ -12,10 +12,12 @@ import {
 } from '@jadarat/platform-db';
 import { normalizeDigits } from '@jadarat/platform-i18n';
 import { z } from 'zod';
+import type { ActionContext } from '../define-action';
 import type { QueryDefinition } from '../define-query';
 import { personResourceAttributes, personScopeFromGrants } from '../person-scope';
 import { platformPermissions } from '../platform-permissions';
 import { SYSTEM_ROLE_CODES } from '../system-roles';
+import { type LifecycleOffer, NO_LIFECYCLE_OFFER, lifecycleOffer } from './deactivation';
 
 /**
  * Reads behind the users screens (T-M2-04, FR-IAM-01; screens 1 and 3). Kept as definitions so they
@@ -49,6 +51,22 @@ export interface UsersListView {
   readonly orgUnits: OrgUnitOptions | null;
   /** «دعوة مستخدم» and the invitations on the `invited` tab (T-M2-07): `platform.user.invite`. */
   readonly canInvite: boolean;
+  /**
+   * Deactivate / reactivate (T-M2-09): `platform.user.deactivate`. On the deactivated tab the rows then say
+   * whether the member may manage each person (`mayManage`) and whether the person holds a privileged role
+   * (`privileged`), for «إعادة التفعيل».
+   */
+  readonly canDeactivate: boolean;
+  /**
+   * Reactivating a privileged member (`platform.role.assign_privileged`): allowed now, after an
+   * authenticator code, or not at all (null; also without `canDeactivate`).
+   */
+  readonly privilegedReactivation: 'allowed' | 'step_up_required' | null;
+}
+
+function privilegedAccess(ctx: ActionContext<UserTx>): 'allowed' | 'step_up_required' | null {
+  const access = ctx.access(p['platform.role.assign_privileged'], 'tenant');
+  return access === 'denied' ? null : access;
 }
 
 /**
@@ -75,6 +93,7 @@ export function usersListQueryDefinition(): QueryDefinition<
       const orgUnits = ctx.can(p['platform.org.read'], 'tenant')
         ? await listOrgUnitOptions(ctx.tx)
         : null;
+      const canDeactivate = ctx.can(p['platform.user.deactivate'], 'tenant');
       const list = await listUsers(ctx.tx, {
         scope: personScopeFromGrants(ctx.grants, p['platform.user.read']),
         actorPersonId: ctx.actor.personId,
@@ -86,6 +105,7 @@ export function usersListQueryDefinition(): QueryDefinition<
         ...(input.branch && orgUnits ? { branchId: input.branch } : {}),
         limit: USERS_PAGE_SIZE,
         offset: (input.page - 1) * USERS_PAGE_SIZE,
+        ...(canDeactivate && input.tab === 'deactivated' ? { includeManageable: true } : {}),
       });
       return ok({
         list,
@@ -94,6 +114,8 @@ export function usersListQueryDefinition(): QueryDefinition<
         canReadRoles,
         orgUnits,
         canInvite: ctx.can(p['platform.user.invite'], 'tenant'),
+        canDeactivate,
+        privilegedReactivation: canDeactivate ? privilegedAccess(ctx) : null,
       });
     },
   };
@@ -112,6 +134,8 @@ export interface UserProfileView {
    * a membership that is not revoked, and it is not the member's own.
    */
   readonly canEditRoles: boolean;
+  /** Deactivate / reactivate (T-M2-09): user.deactivate + the manage rule, never one's own account. */
+  readonly lifecycle: LifecycleOffer;
 }
 
 /**
@@ -150,7 +174,14 @@ export function userProfileQueryDefinition(): QueryDefinition<
         profile.membershipStatus !== null &&
         profile.membershipStatus !== 'revoked' &&
         person.id !== ctx.actor.personId;
-      return ok({ profile, canOpenManager, canEdit, canEditRoles });
+      const lifecycle =
+        mayManage &&
+        ctx.can(p['platform.user.deactivate'], person) &&
+        (profile.membershipStatus === 'active' || profile.membershipStatus === 'suspended') &&
+        person.id !== ctx.actor.personId
+          ? await lifecycleOffer(ctx, person.id)
+          : NO_LIFECYCLE_OFFER;
+      return ok({ profile, canOpenManager, canEdit, canEditRoles, lifecycle });
     },
   };
 }

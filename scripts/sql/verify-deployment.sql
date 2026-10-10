@@ -23,12 +23,12 @@ begin
   for r in
     select rolname, rolcanlogin, rolinherit, rolsuper, rolbypassrls, rolcreaterole, rolcreatedb, rolreplication
     from pg_roles where rolname in ('app_server', 'app_worker', 'app_queue', 'tenant_guard', 'invitation_guard',
-                                    'account_mail_guard')
+                                    'account_mail_guard', 'membership_guard')
   loop
     if r.rolname in ('app_server', 'app_worker', 'app_queue') and not r.rolcanlogin then
       failures := failures || format('%s must be LOGIN', r.rolname);
     end if;
-    if r.rolname in ('tenant_guard', 'invitation_guard', 'account_mail_guard') and r.rolcanlogin then
+    if r.rolname in ('tenant_guard', 'invitation_guard', 'account_mail_guard', 'membership_guard') and r.rolcanlogin then
       failures := failures || format('%s must be NOLOGIN', r.rolname);
     end if;
     if r.rolinherit or r.rolsuper or r.rolbypassrls or r.rolcreaterole or r.rolcreatedb or r.rolreplication then
@@ -37,8 +37,8 @@ begin
   end loop;
   if (select count(*) from pg_roles
       where rolname in ('app_server', 'app_worker', 'app_queue', 'tenant_guard', 'invitation_guard',
-                        'account_mail_guard')) <> 6 then
-    failures := failures || 'roles app_server, app_worker, app_queue, tenant_guard, invitation_guard and account_mail_guard must all exist'::text;
+                        'account_mail_guard', 'membership_guard')) <> 7 then
+    failures := failures || 'roles app_server, app_worker, app_queue, tenant_guard, invitation_guard, account_mail_guard and membership_guard must all exist'::text;
   end if;
   -- The job runner (ADR 0005 §2): member of nothing (never authenticated), owner of graphile_worker.
   if exists (select 1 from pg_auth_members m join pg_roles u on u.oid = m.member where u.rolname = 'app_queue') then
@@ -166,7 +166,7 @@ begin
     from (values
       ('private.user_session_is_valid(uuid, uuid)', 'tenant_guard', array['tenant_guard', 'invitation_guard'], true),
       ('private.has_active_membership(uuid, uuid)', 'tenant_guard', array['tenant_guard'], true),
-      ('private.current_tenant_id()',               'tenant_guard', array['tenant_guard', 'authenticated', 'account_mail_guard'], true),
+      ('private.current_tenant_id()',               'tenant_guard', array['tenant_guard', 'authenticated', 'account_mail_guard', 'membership_guard'], true),
       ('private.switch_active_tenant(uuid)',        'tenant_guard', array['tenant_guard', 'authenticated'], true),
       ('private.session_tenants()',                 'tenant_guard', array['tenant_guard', 'authenticated'], true),
       ('private.discard_inactive_tenant_delivery(uuid)', 'tenant_guard', array['tenant_guard', 'authenticated'], true),
@@ -188,7 +188,14 @@ begin
       ('private.request_password_changed_mail(uuid)', 'account_mail_guard', array['account_mail_guard', 'authenticated'], true),
       ('private.claim_account_mail_request()', 'account_mail_guard', array['account_mail_guard', 'authenticated'], true),
       ('private.finish_account_mail_request(uuid)', 'account_mail_guard', array['account_mail_guard', 'authenticated'], true),
-      ('private.retry_account_mail_request(uuid)', 'account_mail_guard', array['account_mail_guard', 'authenticated'], true)
+      ('private.retry_account_mail_request(uuid)', 'account_mail_guard', array['account_mail_guard', 'authenticated'], true),
+      -- Deactivation / reactivation (T-M2-09): the session-ending and privileged-deactivation (AAL2) triggers,
+      -- the checked reactivation (app_server user claims, checked inside) and the sign-in refusal rule of the
+      -- access-token hook (Auth only).
+      ('private.end_member_sessions()', 'membership_guard', array['membership_guard'], true),
+      ('private.check_privileged_deactivation()', 'membership_guard', array['membership_guard'], true),
+      ('private.reactivate_membership(uuid)', 'membership_guard', array['membership_guard', 'authenticated'], true),
+      ('private.account_sign_in_refused(uuid)', 'membership_guard', array['membership_guard', 'supabase_auth_admin'], true)
     ) as h(fn, owner, allowed, definer)
     left join pg_proc p on p.oid = to_regprocedure(h.fn)
   loop
@@ -224,7 +231,9 @@ begin
         'private.accept_invitation_as_caller(bytea,text,text)', 'private.invitation_allows_signup(text,text)',
         'private.request_password_reset_mail(text)', 'private.request_password_changed_mail(uuid)',
         'private.claim_account_mail_request()', 'private.finish_account_mail_request(uuid)',
-        'private.retry_account_mail_request(uuid)')
+        'private.retry_account_mail_request(uuid)', 'private.end_member_sessions()',
+        'private.check_privileged_deactivation()', 'private.reactivate_membership(uuid)',
+        'private.account_sign_in_refused(uuid)')
   loop
     failures := failures || format('%s: unexpected SECURITY DEFINER function (security review)', r.fn);
   end loop;
@@ -264,9 +273,27 @@ begin
       failures := failures || format('%s must not be a member of account_mail_guard', r.rolname);
     end loop;
   end if;
+  -- membership_guard (T-M2-09): the same rules; it reads Auth accounts only through
+  -- private.auth_account_email (id and e-mail).
+  if exists (select 1 from pg_roles where rolname = 'membership_guard') then
+    for r in select nspname from pg_namespace where nspname = any (module_schemas) loop
+      if has_schema_privilege('membership_guard', r.nspname, 'create') then
+        failures := failures || format('membership_guard must not have CREATE on schema %s', r.nspname);
+      end if;
+    end loop;
+    for r in
+      select distinct u.rolname from pg_auth_members m
+      join pg_roles g on g.oid = m.roleid join pg_roles u on u.oid = m.member
+      where g.rolname = 'membership_guard' and (m.inherit_option or m.set_option)
+        and not u.rolsuper and u.rolname <> current_user
+    loop
+      failures := failures || format('%s must not be a member of membership_guard', r.rolname);
+    end loop;
+  end if;
   for r in
     select o.obj, o.reader
-    from (values ('private.auth_account', 'account_mail_guard'), ('private.account_mail_requests', 'account_mail_guard')) as o(obj, reader)
+    from (values ('private.auth_account', 'account_mail_guard'), ('private.account_mail_requests', 'account_mail_guard'),
+                 ('private.auth_account_email', 'membership_guard')) as o(obj, reader)
   loop
     if to_regclass(r.obj) is null then
       failures := failures || format('%s is missing', r.obj);
@@ -302,6 +329,80 @@ begin
        <> 'id,email,banned_until,recovery_sent_at,recovery_pending,is_sso_user,deleted_at' then
       failures := failures || 'private.auth_account must expose exactly id, email, banned_until, recovery_sent_at, recovery_pending, is_sso_user, deleted_at'::text;
     end if;
+  end if;
+  if to_regclass('private.auth_account_email') is not null then
+    v_role := (select pg_get_userbyid(relowner) from pg_class where oid = 'private.auth_account_email'::regclass);
+    if not (has_schema_privilege(v_role, 'auth', 'usage')
+            and has_column_privilege(v_role, 'auth.users', 'email', 'select')) then
+      failures := failures || format('%s (owner of private.auth_account_email) must read auth.users', v_role);
+    end if;
+    if (select string_agg(a.attname, ',' order by a.attnum) from pg_attribute a
+        where a.attrelid = 'private.auth_account_email'::regclass and a.attnum > 0 and not a.attisdropped)
+       <> 'id,email' then
+      failures := failures || 'private.auth_account_email must expose exactly id, email'::text;
+    end if;
+  end if;
+  -- Deactivation (T-M2-09): the triggers that end a member's sessions in the organization and require an
+  -- authenticator code for a privileged member exist and are enabled.
+  for r in
+    select t.tbl, t.name, t.fn
+    from (values ('platform.tenant_memberships', 'tenant_memberships_end_sessions', 'private.end_member_sessions()'),
+                 ('platform.tenant_memberships', 'tenant_memberships_privileged_deactivation',
+                  'private.check_privileged_deactivation()')) as t(tbl, name, fn)
+  loop
+    if not exists (select 1 from pg_trigger g where g.tgrelid = to_regclass(r.tbl) and g.tgname = r.name
+                   and g.tgenabled in ('O', 'A') and g.tgfoid = to_regprocedure(r.fn)) then
+      failures := failures || format('trigger %s on %s (T-M2-09) is missing, disabled or altered', r.name, r.tbl);
+    end if;
+  end loop;
+  -- membership_guard's table access is exactly what its triggers, the reactivation and the sign-in rule
+  -- read or change (T-M2-09, review I3): column SELECT grants, UPDATE (status) on memberships, DELETE on
+  -- session contexts, SELECT on the e-mail view — nothing else, and no other table-level privilege.
+  if exists (select 1 from pg_roles where rolname = 'membership_guard') then
+    for r in
+      select x.tbl, string_agg(x.priv, ',' order by x.priv) as privs
+      from (
+        select c.oid::regclass::text as tbl, a.privilege_type || '(' || att.attname || ')' as priv
+        from pg_class c
+        join pg_attribute att on att.attrelid = c.oid and att.attnum > 0 and not att.attisdropped
+        cross join lateral aclexplode(att.attacl) a
+        where a.grantee = (select oid from pg_roles where rolname = 'membership_guard')
+          and c.relnamespace in ('platform'::regnamespace, 'private'::regnamespace)
+        union all
+        select c.oid::regclass::text, a.privilege_type
+        from pg_class c
+        cross join lateral aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a
+        where a.grantee = (select oid from pg_roles where rolname = 'membership_guard')
+          and c.relnamespace in ('platform'::regnamespace, 'private'::regnamespace)
+      ) x
+      group by x.tbl
+    loop
+      if r.privs is distinct from (case r.tbl
+           when 'platform.tenant_memberships'
+             then 'SELECT(id),SELECT(person_id),SELECT(status),SELECT(tenant_id),SELECT(user_id),UPDATE(status)'
+           when 'platform.session_context' then 'DELETE,SELECT(active_tenant_id),SELECT(session_id),SELECT(user_id)'
+           when 'platform.role_assignments'
+             then 'SELECT(membership_id),SELECT(role_code),SELECT(tenant_id),SELECT(valid_from),SELECT(valid_until)'
+           when 'platform.ref_roles' then 'SELECT(code),SELECT(is_privileged)'
+           when 'platform.persons' then 'SELECT(id),SELECT(status),SELECT(tenant_id)'
+           when 'platform.tenants' then 'SELECT(id),SELECT(status)'
+           when 'platform.invitations' then 'SELECT(email),SELECT(expires_at),SELECT(status),SELECT(tenant_id)'
+           when 'private.auth_account_email' then 'SELECT'
+         end) then
+        failures := failures || format('membership_guard on %s: %s (T-M2-09: unexpected privileges)', r.tbl, r.privs);
+      end if;
+    end loop;
+  end if;
+  -- The access-token hook asks the sign-in rule (T-M2-09): a hook that no longer calls it would issue
+  -- tokens to logins that belong nowhere any more; without EXECUTE for Auth nobody could sign in (the hook
+  -- fails closed).
+  if to_regprocedure('private.account_sign_in_refused(uuid)') is null
+     or not has_function_privilege('supabase_auth_admin', 'private.account_sign_in_refused(uuid)', 'execute') then
+    failures := failures || 'supabase_auth_admin must execute private.account_sign_in_refused (T-M2-09: every sign-in asks it)'::text;
+  end if;
+  if to_regprocedure(hook) is not null
+     and position('private.account_sign_in_refused(' in (select prosrc from pg_proc where oid = to_regprocedure(hook))) = 0 then
+    failures := failures || format('%s must refuse tokens through private.account_sign_in_refused (T-M2-09)', hook);
   end if;
   -- account_mail_guard on our deliveries (security re-verification): SELECT on exactly (tenant_id,
   -- recipient_person_id, template, created_at) — never the address or the content (html_body holds live

@@ -240,7 +240,7 @@ declare
   v_role text;
 begin
   foreach v_role in array array['anon', 'authenticated', 'app_server', 'app_worker', 'app_queue', 'tenant_guard',
-                                'invitation_guard', 'account_mail_guard'] loop
+                                'invitation_guard', 'account_mail_guard', 'membership_guard'] loop
     perform tests.assert(not has_database_privilege(v_role, current_database(), 'TEMPORARY'),
       format('%s must not create temporary objects', v_role));
   end loop;
@@ -373,7 +373,8 @@ begin
                     order by p.oid::regprocedure::text) into v_list
   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'private' and p.prosecdef
-    and p.proowner <> 'account_mail_guard'::regrole;  -- checked in its own block below (T-M2-17)
+    and p.proowner <> 'account_mail_guard'::regrole   -- checked in its own block below (T-M2-17)
+    and p.proowner <> 'membership_guard'::regrole;    -- checked in its own block below (T-M2-09)
   perform tests.assert_eq(v_list,
     'private.accept_invitation_as_caller(bytea,text,text) (owner invitation_guard), '
     'private.current_tenant_id() (owner tenant_guard), '
@@ -509,6 +510,95 @@ begin
   loop
     perform tests.assert(false, format('unexpected EXECUTE: %s', v_list));
   end loop;
+end $$;
+
+-- membership_guard (T-M2-09, deactivate / reactivate): owns exactly the session-ending and
+-- privileged-deactivation triggers, the checked reactivation and the sign-in refusal rule; nobody acts as
+-- it, it creates nothing and owns no relation; it reads Auth accounts only through
+-- private.auth_account_email; only the reactivation (authenticated: it checks the login role itself) and
+-- the sign-in rule (supabase_auth_admin: the access-token hook) are callable.
+do $$
+declare
+  v_list text;
+  v_role text;
+begin
+  perform tests.assert(not (select rolbypassrls or rolcanlogin or rolsuper or rolinherit or rolcreaterole or rolcreatedb
+                            from pg_roles where rolname = 'membership_guard'),
+    'membership_guard must be NOLOGIN NOINHERIT and not BYPASSRLS / superuser / createrole / createdb');
+  select string_agg(format('%s%s', p.oid::regprocedure, case when p.prosecdef then '' else ' (INVOKER)' end), ', '
+                    order by p.oid::regprocedure::text) into v_list
+  from pg_proc p where p.proowner = 'membership_guard'::regrole;
+  perform tests.assert_eq(v_list,
+    'private.account_sign_in_refused(uuid), private.check_privileged_deactivation(), '
+    'private.end_member_sessions(), private.reactivate_membership(uuid)',
+    'membership_guard owns the deactivation, reactivation and sign-in refusal functions only');
+  perform tests.assert(not exists (select 1 from pg_class c where c.relowner = 'membership_guard'::regrole),
+    'membership_guard owns no relations');
+  perform tests.assert(not exists (
+      select 1 from pg_auth_members m join pg_roles u on u.oid = m.member
+      where m.roleid = 'membership_guard'::regrole and (m.inherit_option or m.set_option)
+        and not u.rolsuper and u.rolname <> current_user),
+    'nobody acts as membership_guard');
+  perform tests.assert(not has_schema_privilege('membership_guard', 'private', 'CREATE')
+                       and not has_schema_privilege('membership_guard', 'platform', 'CREATE'),
+    'membership_guard creates nothing');
+  perform tests.assert(not has_table_privilege('membership_guard', 'auth.users', 'select')
+                       and has_table_privilege('membership_guard', 'private.auth_account_email', 'select'),
+    'membership_guard reads auth.users only through the view');
+  select string_agg(a.attname, ', ' order by a.attnum) into v_list
+  from pg_attribute a where a.attrelid = 'private.auth_account_email'::regclass and a.attnum > 0 and not a.attisdropped;
+  perform tests.assert_eq(v_list, 'id, email', 'private.auth_account_email: id and e-mail only');
+  -- What it may change: memberships suspended → active (status only), session_context rows (delete only);
+  -- never roles, persons, organizations, invitations or audit records.
+  perform tests.assert(has_column_privilege('membership_guard', 'platform.tenant_memberships', 'status', 'update')
+                       and not has_column_privilege('membership_guard', 'platform.tenant_memberships', 'user_id', 'update')
+                       and not has_column_privilege('membership_guard', 'platform.tenant_memberships', 'person_id', 'update')
+                       and not has_table_privilege('membership_guard', 'platform.tenant_memberships', 'insert, delete'),
+    'membership_guard: changes a membership''s status only');
+  perform tests.assert_eq(
+    (select pg_get_expr(polqual, polrelid) || ' / ' || pg_get_expr(polwithcheck, polrelid) from pg_policy
+     where polrelid = 'platform.tenant_memberships'::regclass and polname = 'tenant_memberships_membership_guard_reactivate'),
+    '(status = ''suspended''::text) / (status = ''active''::text)',
+    'membership_guard: only suspended → active');
+  perform tests.assert(has_table_privilege('membership_guard', 'platform.session_context', 'delete')
+                       and not has_table_privilege('membership_guard', 'platform.session_context', 'insert, update'),
+    'membership_guard: removes sign-in session contexts, never creates or moves them');
+  foreach v_role in array array['platform.persons', 'platform.role_assignments', 'platform.ref_roles',
+                                'platform.tenants', 'platform.invitations'] loop
+    perform tests.assert(not has_table_privilege('membership_guard', v_role, 'insert, update, delete, truncate, references, trigger')
+                         and not has_any_column_privilege('membership_guard', v_role, 'insert, update, references'),
+      format('membership_guard must not change %s', v_role));
+  end loop;
+  perform tests.assert(not has_table_privilege('membership_guard', 'platform.audit_events', 'select, insert, update, delete')
+                       and not has_table_privilege('membership_guard', 'platform.event_outbox', 'select, insert, update, delete'),
+    'membership_guard writes no audit record or event (the calling action does)');
+  -- The e-mail view: no privilege for any other role.
+  foreach v_role in array array['anon', 'authenticated', 'service_role', 'app_server', 'app_worker', 'app_queue',
+                                'tenant_guard', 'invitation_guard', 'account_mail_guard', 'supabase_auth_admin'] loop
+    perform tests.assert(
+      not has_table_privilege(v_role, 'private.auth_account_email', 'select, insert, update, delete, truncate, references, trigger'),
+      format('%s must have no privilege on private.auth_account_email', v_role));
+  end loop;
+  for v_list in
+    select distinct format('%s → %s', p.oid::regprocedure,
+                           case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end)
+    from pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+    where p.proowner = 'membership_guard'::regrole and a.privilege_type = 'EXECUTE' and a.grantee <> p.proowner
+      and not (pg_get_userbyid(a.grantee) = 'authenticated' and p.oid = 'private.reactivate_membership(uuid)'::regprocedure)
+      and not (pg_get_userbyid(a.grantee) = 'supabase_auth_admin'
+               and p.oid = 'private.account_sign_in_refused(uuid)'::regprocedure)
+  loop
+    perform tests.assert(false, format('unexpected EXECUTE: %s', v_list));
+  end loop;
+  perform tests.assert(has_function_privilege('supabase_auth_admin', 'private.account_sign_in_refused(uuid)', 'execute'),
+    'the access-token hook (supabase_auth_admin) may ask the sign-in rule');
+  -- The triggers are in place and enabled.
+  perform tests.assert((select count(*) from pg_trigger t
+                        where t.tgenabled = 'O' and (t.tgrelid, t.tgname, t.tgfoid) in (
+                          ('platform.tenant_memberships'::regclass, 'tenant_memberships_end_sessions', 'private.end_member_sessions()'::regprocedure),
+                          ('platform.tenant_memberships'::regclass, 'tenant_memberships_privileged_deactivation',
+                           'private.check_privileged_deactivation()'::regprocedure))) = 2,
+    'deactivation triggers (sessions, privileged members at AAL2) exist and are enabled');
 end $$;
 
 rollback;

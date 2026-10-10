@@ -8,8 +8,9 @@
 # refuses sign-ups without a valid invitation for that e-mail), runs the password reset (forgot page, OUR
 # e-mail from Mailpit — sent by the worker, T-M2-17 — new password, old one refused, link single use, our
 # "password changed" notice; Auth's admin API only on the gateway's internal port, one call per network),
-# sends a browser and a server error to the in-country error tracker (GlitchTip) and checks they arrive
-# without personal data, then tears everything down.
+# deactivates and reactivates members (reassignment, sessions end at once, Auth issues no token to a login
+# that belongs nowhere any more — T-M2-09), sends a browser and a server error to the in-country error
+# tracker (GlitchTip) and checks they arrive without personal data, then tears everything down.
 #
 #   bash infra/docker/smoke.sh            # KEEP=1 leaves the stack running; SKIP_BUILD=1 reuses the build
 #
@@ -586,6 +587,157 @@ for path in /verify/ /verify; do
   [[ $limited -eq 1 ]] || { echo "smoke: the gateway does not limit /auth/v1$path beyond its burst" >&2; exit 1; }
 done
 
+echo "smoke: deactivate and reactivate members (T-M2-09) — reassignment, sessions end, Auth issues no token"
+DEACT_EMAIL="deactivate-$STAMP@sovereign.example"
+DEACT_PASSWORD="Deactivate-$(openssl rand -hex 16)"
+DEACT_ID="$(create_user "$DEACT_EMAIL" "$DEACT_PASSWORD")"
+SECOND_EMAIL="deactivate-second-$STAMP@sovereign.example"
+SECOND_PASSWORD="Second-$(openssl rand -hex 16)"
+SECOND_ID="$(create_user "$SECOND_EMAIL" "$SECOND_PASSWORD")"
+PGPASSWORD="$POSTGRES_PASSWORD" PGSSLMODE=verify-full PGSSLROOTCERT=.secrets/ca.crt \
+  psql -h localhost -p 55432 -U postgres -d postgres -X -q -v ON_ERROR_STOP=1 -v admin_user="$USER_ID" \
+  -v deact_user="$DEACT_ID" -v deact_email="$DEACT_EMAIL" -v second_user="$SECOND_ID" \
+  -v second_email="$SECOND_EMAIL" -f seed-deactivation.sql >/dev/null
+DEACT_PERSON=5eed1000-0000-4000-8000-0000000000d1
+SECOND_PERSON=5eed1000-0000-4000-8000-0000000000d2
+# sign_in <email> <password>: "<HTTP status> <Auth error_code or ->" of a password sign-in through the
+# gateway, as any client could send it; never the body (tokens).
+sign_in() {
+  local answer
+  answer="$(auth_api POST '/token?grant_type=password' '' "{\"email\":\"$1\",\"password\":\"$2\"}")"
+  local code
+  code="$(json_field "${answer%$'\n'*}" error_code)"
+  echo "${answer##*$'\n'} ${code:--}"
+}
+# auth_rows <user id>: the account's Auth sessions and refresh tokens, "<sessions> <refresh tokens>".
+auth_rows() {
+  q "select (select count(*) from auth.sessions where user_id = '$1') || ' ' ||
+            (select count(*) from auth.refresh_tokens where user_id = '$1')"
+}
+# An Auth session of Reem outside the browser: after the deactivation its refresh must be refused.
+response="$(auth_api POST '/token?grant_type=password' '' "{\"email\":\"$DEACT_EMAIL\",\"password\":\"$DEACT_PASSWORD\"}")"
+[[ "${response##*$'\n'}" == "200" ]] || { echo "smoke: the member to deactivate could not sign in" >&2; exit 1; }
+DEACT_REFRESH="$(json_field "${response%$'\n'*}" refresh_token)"
+unset response
+[[ -n "$DEACT_REFRESH" ]] || { echo "smoke: no refresh token for the member to deactivate" >&2; exit 1; }
+# deactivate_e2e <phase>: the browser journey of deactivate.spec.ts for one phase (Mona's password is the one
+# she set in the My profile journey).
+deactivate_e2e() {
+  (cd "$ROOT/apps/suite" && E2E_BASE_URL=http://localhost:3200 DEACTIVATE_E2E_PHASE="$1" \
+    SIGNED_IN_E2E_EMAIL="$EMAIL" SIGNED_IN_E2E_PASSWORD="$PASSWORD" \
+    SIGNED_IN_E2E_MANAGER_EMAIL="$MANAGER_EMAIL" SIGNED_IN_E2E_MANAGER_PASSWORD="$PROFILE_NEW_PASSWORD" \
+    DEACTIVATE_E2E_MEMBER_EMAIL="$DEACT_EMAIL" DEACTIVATE_E2E_MEMBER_PASSWORD="$DEACT_PASSWORD" \
+    pnpm exec playwright test e2e/deactivate.spec.ts --project=desktop-chromium)
+}
+deactivate_e2e deactivate
+# The database after the deactivations: memberships suspended, people inactive, records and roles kept;
+# Reem's report and department handed over to Mona; her sessions in the organization ended.
+[[ "$(q "select count(*) from platform.tenant_memberships m join platform.persons p on p.tenant_id = m.tenant_id and p.id = m.person_id
+        where m.user_id in ('$DEACT_ID', '$SECOND_ID') and m.status = 'suspended' and p.status = 'inactive'")" == "2" ]] ||
+  { echo "smoke: expected both members deactivated (membership suspended, person inactive)" >&2; exit 1; }
+[[ "$(q "select count(*) from platform.role_assignments ra join platform.tenant_memberships m on m.id = ra.membership_id
+        where m.user_id = '$DEACT_ID' and ra.role_code in ('line_manager', 'learner')")" == "2" ]] ||
+  { echo "smoke: a deactivated member's roles must be kept" >&2; exit 1; }
+[[ "$(q "select count(*) from platform.person_employment e join platform.departments d on d.tenant_id = e.tenant_id
+        where e.person_id = '5eed1000-0000-4000-8000-0000000000d3' and e.manager_person_id = '5eed1000-0000-4000-8000-000000000003'
+          and d.code = 'QLT' and d.head_person_id = '5eed1000-0000-4000-8000-000000000003'")" == "1" ]] ||
+  { echo "smoke: the direct report and the department were not handed over to the chosen person" >&2; exit 1; }
+[[ "$(q "select count(*) from platform.session_context c join platform.tenants t on t.id = c.active_tenant_id
+        where c.user_id = '$DEACT_ID' and t.slug = 'sovereign-smoke'")" == "0" ]] ||
+  { echo "smoke: the deactivated member's sessions in the organization did not end" >&2; exit 1; }
+# The privileged member was not deactivated (no authenticator code in this session; the page said so).
+[[ "$(q "select status from platform.tenant_memberships where person_id = '5eed1000-0000-4000-8000-0000000000d4'")" == "active" ]] ||
+  { echo "smoke: the privileged member must stay active without an authenticator code" >&2; exit 1; }
+# Audited with changed facts only (ids and codes: reason, what moved to whom) and announced as events.
+[[ "$(q "select count(*) from platform.audit_events where action = 'platform.user.deactivated'
+        and entity_id in ('$DEACT_PERSON', '$SECOND_PERSON') and data ? 'membershipId' and data ? 'reassigned'")" == "2" ]] ||
+  { echo "smoke: expected two deactivation audit events" >&2; exit 1; }
+[[ "$(q "select count(*) from platform.audit_events where action = 'platform.user.deactivated' and entity_id = '$DEACT_PERSON'
+        and data ->> 'reason' = 'long_leave' and jsonb_array_length(data -> 'reassigned') = 2")" == "1" ]] ||
+  { echo "smoke: the deactivation audit event must carry the reason and both hand-overs" >&2; exit 1; }
+[[ "$(q "select count(*) from platform.event_outbox where type = 'com.entlaqa.platform.user.deactivated'")" == "2" ]] ||
+  { echo "smoke: expected two user.deactivated events" >&2; exit 1; }
+if [[ "$(q "select count(*) from platform.audit_events a where a.action like 'platform.user.%activated'
+           and (a.data::text like '%@%' or a.data::text like '%Reem%' or a.data::text like '%ريم%' or a.data::text like '%EMP-41%')")" != "0" ]]; then
+  echo "smoke: personal data reached the deactivation audit events" >&2; exit 1
+fi
+# Auth issues no token to a login that belongs nowhere any more (the access-token hook, GoTrue v2.197.0):
+# (a) the right password is refused at once, and Auth keeps no session or refresh token of the attempt;
+rows_before="$(auth_rows "$DEACT_ID")"
+answer="$(sign_in "$DEACT_EMAIL" "$DEACT_PASSWORD")"
+[[ "$answer" == 403* ]] || { echo "smoke: Auth must refuse the deactivated account's sign-in (got $answer)" >&2; exit 1; }
+echo "smoke: Auth answers a deactivated account's sign-in with the right password: $answer"
+[[ "$(auth_rows "$DEACT_ID")" == "$rows_before" ]] ||
+  { echo "smoke: a refused sign-in left a session or refresh token behind" >&2; exit 1; }
+# (b) a wrong password gets exactly the answer of an unknown address (the hook is never reached);
+wrong="$(sign_in "$DEACT_EMAIL" "Wrong-$STAMP-password")"
+unknown="$(sign_in "nobody-$STAMP@sovereign.example" "Wrong-$STAMP-password")"
+[[ "$wrong" == "400 invalid_credentials" && "$unknown" == "$wrong" ]] ||
+  { echo "smoke: a wrong password must look like an unknown address (got '$wrong' / '$unknown')" >&2; exit 1; }
+# (c) the session that was signed in before the deactivation cannot be refreshed;
+response="$(auth_api POST '/token?grant_type=refresh_token' '' "{\"refresh_token\":\"$DEACT_REFRESH\"}")"
+[[ "${response##*$'\n'}" == "403" ]] || { echo "smoke: Auth still refreshes the deactivated account's session" >&2; exit 1; }
+unset response
+# (d) an account without any membership signs in (the parity user), and so does a deactivated account
+#     invited by another organization (Huda: pending invitation of a second organization) — until that
+#     invitation is revoked;
+[[ "$(sign_in "$PARITY_EMAIL" "$PARITY_PASSWORD")" == "200 -" ]] ||
+  { echo "smoke: an account without membership must still sign in" >&2; exit 1; }
+[[ "$(sign_in "$SECOND_EMAIL" "$SECOND_PASSWORD")" == 403* ]] ||
+  { echo "smoke: Huda (deactivated, no invitation) must be refused" >&2; exit 1; }
+OTHER_INVITATION="$(q "with t as (insert into platform.tenants (slug, name_ar, name_en, status)
+                         values ('smoke-other-$STAMP', 'منشأة أخرى', 'Other organization', 'active') returning id),
+                       p as (insert into platform.persons (tenant_id, display_name_ar, email)
+                         select id, 'هدى علي القرني', '$SECOND_EMAIL' from t returning tenant_id, id),
+                       i as (insert into platform.invitations (tenant_id, person_id, email, locale, primary_role, invited_by)
+                         select tenant_id, id, '$SECOND_EMAIL', 'ar', 'learner', '$USER_ID' from p returning id)
+                  select id from i")"
+[[ "$(sign_in "$SECOND_EMAIL" "$SECOND_PASSWORD")" == "200 -" ]] ||
+  { echo "smoke: a deactivated account with a pending invitation elsewhere must sign in (to accept it)" >&2; exit 1; }
+q "update platform.invitations set status = 'revoked', revoked_at = now(), revoked_by = '$USER_ID' where id = '$OTHER_INVITATION'" >/dev/null
+[[ "$(sign_in "$SECOND_EMAIL" "$SECOND_PASSWORD")" == 403* ]] ||
+  { echo "smoke: once the invitation is revoked, Huda must be refused again" >&2; exit 1; }
+# (f) the hook fails closed: when its rule cannot be asked (EXECUTE revoked for a moment), Auth issues no
+#     token even to an account that may sign in — with a server error, not the refusal (a 403 would make
+#     auth-js drop the session on refresh, review N1) — keeps no session of the attempt, and the database
+#     logs a warning for alerting (prefix custom_access_token_hook:, SQLSTATE only).
+PARITY_ID="$(q "select id from auth.users where email = '$PARITY_EMAIL'")"
+rows_before="$(auth_rows "$PARITY_ID")"
+q "revoke execute on function private.account_sign_in_refused(uuid) from supabase_auth_admin" >/dev/null
+answer="$(sign_in "$PARITY_EMAIL" "$PARITY_PASSWORD")"
+q "grant execute on function private.account_sign_in_refused(uuid) to supabase_auth_admin" >/dev/null
+[[ "$answer" == 5* ]] ||
+  { echo "smoke: when its rule raised, the access-token hook must answer a server error (got $answer)" >&2; exit 1; }
+[[ "$(auth_rows "$PARITY_ID")" == "$rows_before" ]] ||
+  { echo "smoke: a refused sign-in (hook error) left a session or refresh token behind" >&2; exit 1; }
+[[ "$(sign_in "$PARITY_EMAIL" "$PARITY_PASSWORD")" == "200 -" ]] ||
+  { echo "smoke: the parity user must sign in again once the rule is back" >&2; exit 1; }
+db_logs="$(compose logs --no-log-prefix db 2>&1)"
+grep -qE 'custom_access_token_hook: no token issued after an error \(SQLSTATE 42501\)' <<<"$db_logs" ||
+  { echo "smoke: the hook's error was not logged with its alerting prefix" >&2; exit 1; }
+# The warning lines themselves (PostgreSQL's prefix names the role, e.g. supabase_auth_admin@postgres):
+# no account id and no e-mail address.
+hook_lines="$(grep 'custom_access_token_hook:' <<<"$db_logs" || true)"
+if grep -qE "$PARITY_ID|[[:alnum:]._%+-]+@[[:alnum:]-]+(\.[[:alnum:]-]+)*\.[[:alpha:]]{2,}" <<<"$hook_lines"; then
+  echo "smoke: the hook's warning carries personal data" >&2; exit 1
+fi
+unset db_logs hook_lines
+# Reactivation: the members come back with the same roles, and (e) Reem signs in again at once (no queue).
+deactivate_e2e reactivate
+[[ "$(q "select count(*) from platform.tenant_memberships m join platform.persons p on p.tenant_id = m.tenant_id and p.id = m.person_id
+        where m.user_id in ('$DEACT_ID', '$SECOND_ID') and m.status = 'active' and p.status = 'active'")" == "2" ]] ||
+  { echo "smoke: expected both members active again" >&2; exit 1; }
+[[ "$(q "select count(*) from platform.audit_events where action = 'platform.user.reactivated' and entity_id in ('$DEACT_PERSON', '$SECOND_PERSON')")" == "2" &&
+   "$(q "select count(*) from platform.event_outbox where type = 'com.entlaqa.platform.user.reactivated'")" == "2" ]] ||
+  { echo "smoke: expected two reactivation audit events and events" >&2; exit 1; }
+[[ "$(sign_in "$DEACT_EMAIL" "$DEACT_PASSWORD")" == "200 -" ]] ||
+  { echo "smoke: the reactivated member must sign in again at once" >&2; exit 1; }
+deactivate_e2e returns
+[[ "$(q "select count(*) from platform.role_assignments ra join platform.tenant_memberships m on m.id = ra.membership_id
+        where m.user_id = '$DEACT_ID' and ra.role_code in ('line_manager', 'learner')")" == "2" ]] ||
+  { echo "smoke: the reactivated member's roles changed" >&2; exit 1; }
+unset answer wrong unknown rows_before
+
 # No unconfirmed e-mail account exists after every journey (re-review N3): with "Confirm email" off, Auth
 # would hand a session for such an account to anyone who signs up with its e-mail, without the hook.
 # Accounts as Auth looks them up for a sign-up (GoTrue FindUserByEmailAndAudience); the sample people of
@@ -604,12 +756,13 @@ fi
 all_logs="$(compose logs --no-log-prefix 2>&1)"
 app_logs="$(compose logs --no-log-prefix app 2>&1)"
 for value in "$PASSWORD" "$PARITY_PASSWORD" "$MANAGER_PASSWORD" "$PROFILE_NEW_PASSWORD" "$INTRUDER_PASSWORD" \
-  "$GUARD_PASSWORD" "$GUARD_NEW_PASSWORD" "$RESET_OLD_PASSWORD" "$RESET_NEW_PASSWORD"; do
+  "$GUARD_PASSWORD" "$GUARD_NEW_PASSWORD" "$RESET_OLD_PASSWORD" "$RESET_NEW_PASSWORD" "$DEACT_PASSWORD" \
+  "$SECOND_PASSWORD"; do
   if grep -qF "$value" <<<"$all_logs"; then
     echo "smoke: a test user's password appears in the container logs" >&2; exit 1
   fi
 done
-for value in "$EMAIL" "$PARITY_EMAIL" "$MANAGER_EMAIL" "$RESET_EMAIL"; do
+for value in "$EMAIL" "$PARITY_EMAIL" "$MANAGER_EMAIL" "$RESET_EMAIL" "$DEACT_EMAIL" "$SECOND_EMAIL"; do
   if grep -qF "$value" <<<"$app_logs"; then
     echo "smoke: a test user's e-mail address appears in the app logs" >&2; exit 1
   fi

@@ -108,6 +108,8 @@ describe('listUsers', () => {
           department_name_ar: 'التدريب',
           department_name_en: null,
           last_sign_in_at: '2026-10-05T08:00:00.000Z',
+          may_manage: false,
+          privileged: false,
         },
       ],
     );
@@ -136,9 +138,13 @@ describe('listUsers', () => {
         departmentNameAr: 'التدريب',
         departmentNameEn: null,
         lastSignInAt: new Date('2026-10-05T08:00:00.000Z'),
+        mayManage: false,
+        privileged: false,
       },
     ]);
     const [counts, rows] = fake.executed;
+    expect(rows?.sql).not.toContain('actor_may_manage_person');
+    expect(rows?.sql).not.toContain('membership_is_privileged');
     expect(counts?.sql).toContain("m.status in ('active', 'invited', 'suspended')");
     expect(rows?.sql).toContain('and m.status = $');
     expect(rows?.params).toContain('%50\\%\\_off\\\\%');
@@ -146,6 +152,40 @@ describe('listUsers', () => {
     expect(rows?.sql).toContain('ra.valid_until > now()');
     expect(rows?.params).toContain('learner');
     expect(rows?.params).toEqual(expect.arrayContaining([D1, B1, 25, 0]));
+  });
+
+  it('says per row whether the caller may manage the person (and if privileged) only when asked (T-M2-09)', async () => {
+    const fake = fakeTx(
+      [{ all: 1, active: 0, invited: 0, deactivated: 1 }],
+      [
+        {
+          person_id: 'p1',
+          membership_id: 'm1',
+          display_name_ar: 'سارة',
+          display_name_en: null,
+          email: null,
+          employee_number: null,
+          status: 'suspended',
+          roles_visible: false,
+          primary_role: null,
+          other_roles: null,
+          department_name_ar: null,
+          department_name_en: null,
+          last_sign_in_at: null,
+          may_manage: true,
+          privileged: true,
+        },
+      ],
+    );
+    const list = await listUsers(fake.tx, {
+      ...baseFilter,
+      tab: 'deactivated',
+      includeManageable: true,
+    });
+    expect(list.rows[0]?.mayManage).toBe(true);
+    expect(list.rows[0]?.privileged).toBe(true);
+    expect(fake.executed[1]?.sql).toContain('private.actor_may_manage_person(p.tenant_id, p.id)');
+    expect(fake.executed[1]?.sql).toContain('private.membership_is_privileged(m.tenant_id, m.id)');
   });
 
   it('maps the deactivated tab to suspended memberships and survives an empty result', async () => {

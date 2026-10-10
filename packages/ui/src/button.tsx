@@ -1,7 +1,7 @@
 import type { ButtonHTMLAttributes } from 'react';
 import { cn } from './cn';
 
-export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
+export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'danger-outline';
 export type ButtonSize = 'sm' | 'md' | 'lg';
 
 const variants: Record<ButtonVariant, string> = {
@@ -9,6 +9,8 @@ const variants: Record<ButtonVariant, string> = {
   secondary: 'bg-surface text-text border border-border-strong hover:bg-surface-hover',
   ghost: 'bg-transparent text-primary-text hover:bg-surface-hover',
   danger: 'bg-danger text-on-danger hover:bg-danger-hover',
+  /* A destructive action that only opens its confirmation (e.g. «تعطيل المستخدم», screen 3). */
+  'danger-outline': 'bg-surface text-danger border border-danger hover:bg-danger-subtle',
 };
 
 /* Heights follow --size-control-*; md/lg meet the 44px touch target. */

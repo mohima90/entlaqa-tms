@@ -2,9 +2,11 @@ import { strToU8, zipSync } from 'fflate';
 import { describe, expect, it } from 'vitest';
 import type { SheetRow } from './errors';
 import {
+  SHARED_STRING_KEEP,
   XlsxWorkbook,
   columnIndex,
   isDateFormat,
+  keptSharedString,
   numberText,
   resolveTarget,
   serialToIsoDate,
@@ -249,6 +251,38 @@ describe('XlsxWorkbook: bounded work (security review H1)', () => {
     const again = XlsxWorkbook.open(bytes, { ...LIMITS, maxUnpackedBytes: 120_000 });
     await rowsOf(again, 0);
     await expect(rowsOf(again, 0)).rejects.toThrow(
+      expect.objectContaining({ code: 'FILE_UNREADABLE' }),
+    );
+  });
+
+  it('keeps a padded shared string short once, however many cells use it (security review, Low 1)', async () => {
+    const padded = `${' '.repeat(20_000)}نورة${'x'.repeat(12_000)}`; // 32,004 characters, under the cell limit
+    const blank = ' '.repeat(32_000);
+    const rows = Array.from(
+      { length: 3000 },
+      (_v, i) =>
+        `<row r="${String(i + 1)}"><c r="A${String(i + 1)}" t="s"><v>0</v></c><c r="B${String(i + 1)}" t="s"><v>1</v></c><c r="C${String(i + 1)}" t="s"><v>2</v></c></row>`,
+    );
+    const bytes = workbook([{ name: 'A', xml: sheetXml(rows.join('')) }], {
+      sharedStrings: `<sst xmlns="${MAIN}"><si><t xml:space="preserve">${padded}</t></si><si><t xml:space="preserve">${blank}</t></si><si><t>عادي</t></si></sst>`,
+    });
+    const read = await rowsOf(XlsxWorkbook.open(bytes));
+    expect(read).toHaveLength(3000);
+    for (const row of read) {
+      // From the first visible character, 501 kept: still "too long" for every field (500).
+      expect(row.cells[0]).toBe(`نورة${'x'.repeat(497)}`);
+      expect(row.cells[1]).toBe(''); // blank, worked out once
+      expect(row.cells[2]).toBe('عادي'); // short strings unchanged
+    }
+    expect(keptSharedString(' '.repeat(600))).toBe('');
+    expect(keptSharedString(`  ${'y'.repeat(499)}`)).toBe(`  ${'y'.repeat(499)}`);
+    expect(keptSharedString('z'.repeat(SHARED_STRING_KEEP + 10))).toHaveLength(SHARED_STRING_KEEP);
+    // Over the cell limit is still refused (the whole string is checked as it is read).
+    const over = workbook(
+      [{ name: 'A', xml: sheetXml('<row r="1"><c r="A1" t="s"><v>0</v></c></row>') }],
+      { sharedStrings: `<sst xmlns="${MAIN}"><si><t>${'w'.repeat(32_768)}</t></si></sst>` },
+    );
+    await expect(rowsOf(XlsxWorkbook.open(over))).rejects.toThrow(
       expect.objectContaining({ code: 'FILE_UNREADABLE' }),
     );
   });

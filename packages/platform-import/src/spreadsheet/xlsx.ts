@@ -153,6 +153,22 @@ function readDateStyles(zip: ZipArchive, path: string | null): Set<number> {
   return styles;
 }
 
+/**
+ * Characters of a shared string kept for the cells that use it (security review, Low 1): one shared
+ * string may be referenced by every cell of the sheet, and each cell's blank check would scan it whole.
+ * The import works on at most 500 characters of a cell (users/rows.ts CELL_LIMIT); one more still says
+ * "too long". A longer string is kept from its first visible character — worked out once per shared
+ * string —, so a padded value is neither scanned per cell nor mistaken for a blank one.
+ */
+export const SHARED_STRING_KEEP = 501;
+
+/** A shared string as the cells that use it see it. */
+export function keptSharedString(value: string): string {
+  if (value.length <= SHARED_STRING_KEEP) return value;
+  const start = value.search(/\S/);
+  return start < 0 ? '' : value.slice(start, start + SHARED_STRING_KEEP);
+}
+
 async function readSharedStrings(
   zip: ZipArchive,
   path: string | null,
@@ -175,7 +191,8 @@ async function readSharedStrings(
       else if (name === 'rPh') phonetic -= 1;
       else if (name === 'si' && current !== null) {
         if (strings.length >= SHARED_STRINGS_COUNT) throw unreadable();
-        strings.push(current);
+        // The whole string was checked against the cell limit as it was read (text() below).
+        strings.push(keptSharedString(current));
         current = null;
       }
     },

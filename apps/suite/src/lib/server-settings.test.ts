@@ -77,11 +77,22 @@ describe('server settings at start-up (T-M2-17, T-M2-11)', () => {
     ).toThrow('production deployment');
   });
 
-  it('refuses to start a self-hosted production server without a client-IP header, unless it says none (L4)', () => {
+  it('refuses to start a production server outside Vercel that names its environment without a client-IP header, unless it says none (L4, N2)', () => {
     const selfHosted = { NODE_ENV: 'production', JADARAT_ENVIRONMENT: 'self-hosted' };
     expect(() => checkServerSettings(selfHosted)).toThrow(
-      'JADARAT_CLIENT_IP_HEADER is required on a self-hosted production server',
+      'JADARAT_CLIENT_IP_HEADER is required on a production server outside Vercel',
     );
+    // Any label, whatever its spelling (re-review N2): the rule does not hang on the free-form value.
+    for (const label of ['Self-Hosted', 'selfhosted', 'production', 'staging', 'ksa-prod', ' x ']) {
+      expect(
+        () => checkServerSettings({ NODE_ENV: 'production', JADARAT_ENVIRONMENT: label }),
+        label,
+      ).toThrow('required');
+    }
+    // On Vercel (x-real-ip is the platform's) a label is fine: staging sets JADARAT_ENVIRONMENT=staging.
+    expect(
+      checkServerSettings({ NODE_ENV: 'production', VERCEL: '1', JADARAT_ENVIRONMENT: 'staging' }),
+    ).toMatchObject({ clientIpHeader: null });
     expect(() => checkServerSettings({ ...selfHosted, JADARAT_CLIENT_IP_HEADER: ' ' })).toThrow(
       'required',
     );

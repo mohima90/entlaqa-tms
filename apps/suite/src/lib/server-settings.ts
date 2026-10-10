@@ -29,12 +29,13 @@ export function readClientIpHeader(env: Env): string | null {
  * visitor's key to Auth's own limits) and JADARAT_CLIENT_IP_HEADER (a header name, never X-Forwarded-For,
  * or `none`) — docs/engineering/sign-in-protection.md. Read again on use; never sent to the browser.
  *
- * Client address (security review T-M2-11 L4): a SELF-HOSTED production server (JADARAT_ENVIRONMENT=
- * self-hosted, NODE_ENV=production) refuses to start without JADARAT_CLIENT_IP_HEADER — every visitor would
- * share one client key, so one abuser could use up the per-client budgets for all — unless it is set to
- * `none` explicitly (then, and for any other production server without one but Vercel, an ERROR is logged
- * at every start: `client_ip_header_missing`). Local and test production builds (`next start`, the E2E
- * server) set no JADARAT_ENVIRONMENT and keep starting.
+ * Client address (security review T-M2-11 L4, re-review N2): a production server outside Vercel
+ * (NODE_ENV=production, VERCEL≠1) that names its environment — JADARAT_ENVIRONMENT set to ANY value, so the
+ * rule never hangs on the free-form label's spelling — refuses to start without JADARAT_CLIENT_IP_HEADER:
+ * every visitor would share one client key, so one abuser could use up the per-client budgets for all.
+ * `none` says so explicitly (then, and for any other production server without one but Vercel, an ERROR is
+ * logged at every start: `client_ip_header_missing`). Local and test production builds (`next start`, the
+ * E2E server) set no JADARAT_ENVIRONMENT and keep starting.
  */
 export function checkServerSettings(env: Env = process.env) {
   const delivery = readPasswordResetDelivery(env);
@@ -60,11 +61,12 @@ export function checkServerSettings(env: Env = process.env) {
   const clientIp = readClientIpHeaderSetting(env);
   if (
     env.NODE_ENV === 'production' &&
-    env.JADARAT_ENVIRONMENT?.trim() === 'self-hosted' &&
+    env.VERCEL !== '1' &&
+    (env.JADARAT_ENVIRONMENT?.trim() ?? '') !== '' &&
     clientIp.kind === 'unset'
   ) {
     throw new Error(
-      `${CLIENT_IP_HEADER_ENV} is required on a self-hosted production server: name the header your proxy overwrites with the visitor's address (e.g. x-real-ip), or set it to none to run knowingly with one shared budget`,
+      `${CLIENT_IP_HEADER_ENV} is required on a production server outside Vercel (JADARAT_ENVIRONMENT is set): name the header your proxy overwrites with the visitor's address (e.g. x-real-ip), or set it to none to run knowingly with one shared budget`,
     );
   }
   const clientIpHeader = clientIp.kind === 'header' ? clientIp.name : null;

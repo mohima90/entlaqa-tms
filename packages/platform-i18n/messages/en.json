@@ -190,6 +190,8 @@
       "password": "New password",
       "confirmPassword": "Confirm password",
       "showPassword": "Show password",
+      "rememberBrowser": "Remember this browser",
+      "rememberBrowserHint": "If ticked, you can still sign in from this browser for 30 days even if sign-in to your account is paused after attempts from elsewhere; if not, for one day only. Don't tick this on a shared computer.",
       "rulesLabel": "Password rules",
       "rules": {
         "minLength": "At least {min} characters",

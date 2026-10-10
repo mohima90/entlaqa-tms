@@ -23,6 +23,7 @@ import {
   type SecurityEvent,
   type SignInGate,
   type TrustedDeviceCookie,
+  accountLockoutBudget,
   accountSubject,
   authClientHeaders,
   clientSubject,
@@ -158,10 +159,17 @@ function memoryStore(now: () => number = () => 0) {
     [...trusted].some(([key, until]) => key.endsWith(`|${hex(device)}`) && until > now())
       ? ('presented' as const)
       : ('fresh' as const);
+  /**
+   * Trusts for `days` (a longer trust is kept) and answers until when the cookie must live: the latest
+   * trust of the token for any account — as a real-time Date, like the database's answer.
+   */
   const trust = (account: string, device: Uint8Array, days: number) => {
-    const until = now() + days * DAY;
-    trusted.set(`${account}|${hex(device)}`, until);
-    return until;
+    const key = `${account}|${hex(device)}`;
+    trusted.set(key, Math.max(trusted.get(key) ?? 0, now() + days * DAY));
+    const latest = Math.max(
+      ...[...trusted].filter(([k]) => k.endsWith(`|${hex(device)}`)).map(([, until]) => until),
+    );
+    return new Date(Date.now() + (latest - now()));
   };
   const signInSucceeded = vi.fn(
     (s: SignInSubjects, wasTrusted: boolean, remember: RememberDevice | null) => {
@@ -177,7 +185,7 @@ function memoryStore(now: () => number = () => 0) {
         device === 'presented' && s.device ? s.device : remember.freshDevice,
         remember.trustDays,
       );
-      return Promise.resolve<DeviceTrust>({ device, until: new Date(until) });
+      return Promise.resolve<DeviceTrust>({ device, until });
     },
   );
   const signInNotChecked = vi.fn((s: SignInSubjects, wasTrusted: boolean) => {
@@ -206,7 +214,7 @@ function memoryStore(now: () => number = () => 0) {
       rows.delete(`${LIMIT_BUCKETS.signInDeviceFailures}|${account}${hex(kept)}`);
       const revoked = forget(account, hex(kept));
       const until = trust(account, kept, remember.trustDays);
-      return Promise.resolve({ revoked, device: chosen, until: new Date(until) });
+      return Promise.resolve({ revoked, device: chosen, until });
     },
   );
   const forgetOtherDevices = vi.fn((accountSubject: Uint8Array, device: Uint8Array | null) =>
@@ -391,7 +399,8 @@ describe('limitsFor (platform defaults; per-organization policy joins here with 
       sharedClientFailures: { max: 1000, windowSeconds: 900 },
       sharedClientAttempts: { max: 10_000, windowSeconds: 900 },
     });
-    expect(limits.trustedDevice).toEqual({ days: 30 });
+    // Opt-in: 30 days when ticked; an unticked password reset trusts its browser for 24 hours (N1).
+    expect(limits.trustedDevice).toEqual({ days: 30, resetDays: 1 });
     // The lockout e-mail (security review M3): one per person a day, a ceiling per organization an hour.
     expect(limits.lockoutMail).toEqual({ personQuietHours: 24, tenantPerHour: 50 });
     expect(limitsFor({ tenantId: '22222222-2222-4222-8222-222222222222' }, {})).toBe(
@@ -809,16 +818,22 @@ describe('createSignInGuard (FR-IAM-13 lockout, TM-0003 T-IAM-01/03; PO decision
     expect(memory.trusted.size).toBe(1);
     for (let i = 0; i < 5; i += 1) await attempt(guard(OTHER_CLIENT).check(EMAIL), 'wrong');
     expect((await guard(OTHER_CLIENT).check(EMAIL)).allowed).toBe(false);
-    // The owner resets the password from a phone that never signed in: it gets a fresh token, trusted.
+    // The owner resets the password from a phone that never signed in, «تذكّر هذا المتصفح» NOT ticked:
+    // it gets a fresh token, trusted for 24 hours only (re-review N1).
     const phone = browser();
     await resetAccountSignIn(
       deps,
       'platform.auth.password_reset',
       'someone@example.TEST',
       phone.cookie,
+      false,
     );
     expect(phone.jar.token).toMatch(DEVICE_TOKEN_PATTERN);
-    expect(phone.jar.maxAge).toBe(30 * 86_400);
+    expect(phone.jar.maxAge).toBe(86_400);
+    expect(memory.signInReset).toHaveBeenLastCalledWith(accountSubject(EMAIL), null, {
+      freshDevice: deviceSubject(phone.jar.token ?? ''),
+      trustDays: 1,
+    });
     // The lock ended for everyone; the phone is trusted — an attacker locking the account again cannot
     // keep the owner out — and the laptop must be remembered again.
     expect((await guard(OTHER_CLIENT).check(EMAIL)).allowed).toBe(true);
@@ -828,13 +843,38 @@ describe('createSignInGuard (FR-IAM-13 lockout, TM-0003 T-IAM-01/03; PO decision
     expect(memory.trusted.size).toBe(1);
   });
 
-  it('a reset from a browser the server knows keeps its token', async () => {
+  it('a reset with «تذكّر هذا المتصفح» ticked trusts for 30 days; an unticked one never shortens a longer trust', async () => {
+    const { deps, guard, memory, advance } = guardSetup();
+    const tablet = browser();
+    await resetAccountSignIn(deps, 'platform.auth.password_reset', EMAIL, tablet.cookie, true);
+    expect(tablet.jar.maxAge).toBe(30 * 86_400);
+    expect(memory.signInReset).toHaveBeenLastCalledWith(
+      accountSubject(EMAIL),
+      null,
+      expect.objectContaining({ trustDays: 30 }),
+    );
+    // A day later it resets again without ticking: it keeps its token and the rest of its 30 days.
+    const token = tablet.jar.token;
+    advance(86_400);
+    await resetAccountSignIn(deps, 'platform.auth.password_reset', EMAIL, tablet.cookie, false);
+    expect(tablet.jar.token).toBe(token);
+    expect(tablet.jar.maxAge).toBe(29 * 86_400);
+    // Two more days on, beyond any 24-hour trust, it is still trusted.
+    advance(2 * 86_400);
+    await guard(CLIENT, tablet.cookie).check(EMAIL);
+    expect(((await memory.signInCheck.mock.results.at(-1)?.value) as SignInCheck).trusted).toBe(
+      true,
+    );
+  });
+
+  it('the cookie lives as long as the longest trust of its token (one cookie, several accounts)', async () => {
     const { deps, guard } = guardSetup();
-    const laptop = browser();
-    await attempt(guard(CLIENT, laptop.cookie).check(EMAIL), 'remember');
-    const token = laptop.jar.token;
-    await resetAccountSignIn(deps, 'platform.auth.password_reset', EMAIL, laptop.cookie);
-    expect(laptop.jar.token).toBe(token);
+    const shared = browser();
+    await attempt(guard(CLIENT, shared.cookie).check('first@example.test'), 'remember');
+    // An unticked reset of another account from the same browser: 24 hours for that account, but the
+    // cookie must keep serving the first account's 30 days.
+    await resetAccountSignIn(deps, 'platform.auth.password_reset', EMAIL, shared.cookie, false);
+    expect(shared.jar.maxAge).toBe(30 * 86_400);
   });
 
   it('resetAccountSignIn never throws (logged), and trusts nothing then', async () => {
@@ -845,6 +885,7 @@ describe('createSignInGuard (FR-IAM-13 lockout, TM-0003 T-IAM-01/03; PO decision
       'platform.auth.password_reset',
       EMAIL,
       phone.cookie,
+      true,
     );
     expect(events[0]).toMatchObject({
       event: 'auth.limiter.unavailable',
@@ -1169,6 +1210,48 @@ describe('organizationAccountLockout (T-M2-10 policy, members only — T-M2-10 s
         [AUTH_RATE_LIMIT_WINDOW_ENV]: '40',
       })('m@org.test'),
     ).toEqual({ max: 3, windowSeconds: 40 });
+  });
+
+  it('accountLockoutBudget is the one budget for an account and host (re-review N7): sign-in and the Organization Admin agree', async () => {
+    const policy = { threshold: 3, minutes: 30 };
+    const lockoutPolicyFor = vi.fn(() => Promise.resolve(policy));
+    // The Organization Admin's views: the member is an active member of the admin's organization.
+    const member = { hostTenantId: ORG, memberOfHost: () => Promise.resolve(true) };
+    expect(await accountLockoutBudget(member, lockoutPolicyFor, fallback, {})).toEqual({
+      max: 3,
+      windowSeconds: 1800,
+    });
+    // Sign-in on that organization's host for the same (member) account: the same budget.
+    const signIn = organizationAccountLockout(
+      { hostTenantId: ORG, lockoutPolicyFor, accountInTenant: () => Promise.resolve(true) },
+      fallback,
+      {},
+    );
+    expect(await signIn('member@org.test')).toEqual(
+      await accountLockoutBudget(member, lockoutPolicyFor, fallback, {}),
+    );
+    // The platform host: the default, without asking about membership or the policy.
+    const memberOfHost = vi.fn(() => Promise.resolve(true));
+    lockoutPolicyFor.mockClear();
+    expect(
+      await accountLockoutBudget(
+        { hostTenantId: null, memberOfHost },
+        lockoutPolicyFor,
+        fallback,
+        {},
+      ),
+    ).toEqual(fallback);
+    expect(memberOfHost).not.toHaveBeenCalled();
+    expect(lockoutPolicyFor).not.toHaveBeenCalled();
+    // A lax policy is clamped the same way everywhere.
+    expect(
+      await accountLockoutBudget(
+        member,
+        () => Promise.resolve({ threshold: 9, minutes: 5 }),
+        fallback,
+        {},
+      ),
+    ).toEqual(fallback);
   });
 
   it('the guard applies it per typed address, and fails closed when it cannot be read', async () => {

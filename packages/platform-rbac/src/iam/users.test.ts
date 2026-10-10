@@ -383,15 +383,18 @@ describe('user profile query', () => {
       membershipStatus: 'active',
     });
     db.memberSignInLock.mockResolvedValue({ locked: true, retryAfterSeconds: 600 });
+    const budget = vi.fn(() => Promise.resolve(4));
     const asAdmin = await createDefineQuery(runtime(['tenant_admin']))(
-      userProfileQueryDefinition(() => 7),
+      userProfileQueryDefinition(budget),
     )({ personId: REPORT });
     expect(asAdmin.ok && asAdmin.value.signInLock).toEqual({
       locked: true,
       retryAfterSeconds: 600,
     });
-    // Measured against the account budget sign-in applies.
-    expect(db.memberSignInLock).toHaveBeenCalledWith(TX, REPORT, 7);
+    // Measured against the account budget sign-in applies, read in the admin's own transaction for
+    // their organization (re-review N7).
+    expect(budget).toHaveBeenCalledWith(TX, TENANT);
+    expect(db.memberSignInLock).toHaveBeenCalledWith(TX, REPORT, 4);
     // The default budget: the platform's (5 failures).
     await createDefineQuery(runtime(['tenant_admin']))(userProfileQueryDefinition())({
       personId: REPORT,

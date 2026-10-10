@@ -50,8 +50,9 @@
 --   rate_limit_sign_in_not_checked  Auth refused to compare the password (its own rate limit): the
 --                                account's (or browser's) provisional failure is given back; the client's stays.
 --   rate_limit_sign_in_reset     a completed password reset: the account's lock ends, the browser that
---                                completed it becomes trusted (the owner is not stranded while an attacker
---                                keeps the account locked) and every other browser is forgotten.
+--                                completed it becomes trusted — for 24 hours, or 30 days with «تذكّر هذا
+--                                المتصفح» ticked on the reset page (the owner is not stranded while an
+--                                attacker keeps the account locked) — and every other browser is forgotten.
 --   rate_limit_forget_other_devices  after a My profile password change: every trusted browser of the
 --                                account but the current one is forgotten.
 --   member_sign_in_lock          Organization Admin (own organization's ACTIVE members only): whether a
@@ -426,27 +427,30 @@ as $$
               then 'presented' else 'fresh' end
 $$;
 
--- Trusts a browser (keyed hash) for an account (keyed hash) until now + p_trust_days, under the account's
--- advisory lock (the caller takes it). At most 10 trusted browsers per account: the ones whose trust ends
--- first go. Returns the trust's end.
+-- Trusts a browser (keyed hash) for an account (keyed hash) for p_trust_days × 24 hours from now (exact
+-- hours, whatever the session's time zone), under the account's advisory lock (the caller takes it). A
+-- longer trust the browser already has for the account is never shortened (an unticked reset trusts for
+-- one day only, and must not cut a remembered browser's 30 days). At most 10 trusted browsers per
+-- account: the ones whose trust ends first go. Returns how long the browser's COOKIE must live: the latest
+-- end of any trust of this token, for any account (one cookie serves every account that trusts it).
 create or replace function private.rate_limit_trust_device(p_account_key bytea, p_device_key bytea, p_trust_days integer)
 returns timestamptz
 language plpgsql volatile
 set search_path = ''
 as $$
 declare
-  v_until timestamptz := pg_catalog.now() + pg_catalog.make_interval(days => p_trust_days);
+  v_until timestamptz := pg_catalog.now() + pg_catalog.make_interval(hours => p_trust_days * 24);
 begin
   insert into private.sign_in_trusted_devices as d (account_key, device_key, expires_at)
   values (p_account_key, p_device_key, v_until)
-  on conflict (account_key, device_key) do update set expires_at = excluded.expires_at;
+  on conflict (account_key, device_key) do update set expires_at = greatest(d.expires_at, excluded.expires_at);
   delete from private.sign_in_trusted_devices d
   where d.account_key = p_account_key
     and d.device_key in (select x.device_key from private.sign_in_trusted_devices x
                          where x.account_key = p_account_key
                          order by x.expires_at desc, x.device_key
                          offset 10);
-  return v_until;
+  return (select max(x.expires_at) from private.sign_in_trusted_devices x where x.device_key = p_device_key);
 end
 $$;
 
@@ -694,8 +698,9 @@ comment on function private.rate_limit_sign_in_check(bytea, bytea, bytea, intege
 -- opt-in), the browser is trusted for the account until now + p_trust_days (again, if it was: a sliding
 -- trust renewed by ticked sign-ins only): under the presented token when the server knows it, otherwise
 -- under the web app's fresh one (p_fresh_device). Without it, nothing about trust changes — a trusted
--- browser's trust is not renewed and ends on its date. Returns the trust's end and which token was trusted
--- ('presented' / 'fresh'; both null without p_remember): the web app writes that token's cookie.
+-- browser's trust is not renewed and ends on its date. Returns which token was trusted ('presented' /
+-- 'fresh') and until when its cookie must live (rate_limit_trust_device; both null without p_remember):
+-- the web app writes that token's cookie.
 create or replace function private.rate_limit_sign_in_succeeded(p_client bytea, p_account bytea, p_device bytea,
                                                                 p_fresh_device bytea, p_trusted boolean,
                                                                 p_remember boolean, p_trust_days integer)
@@ -780,8 +785,11 @@ comment on function private.rate_limit_sign_in_not_checked(bytea, bytea, boolean
 -- lock ends; the browser that completed the reset is trusted for the account (the presented token when the
 -- server knows it, else the web app's fresh one; its own run of failures ends) — so an attacker who keeps
 -- the account locked cannot keep its owner out (security review T-M2-11 M2) — and every OTHER browser the
--- account trusted is forgotten. Returns how many were forgotten, which token is now trusted ('presented' /
--- 'fresh': the web app writes its cookie) and until when.
+-- account trusted is forgotten. For how long is the person's choice (security re-review N1, the PO's
+-- opt-in): the web app passes 30 days with «تذكّر هذا المتصفح» ticked on the reset page, otherwise 1
+-- (24 hours — enough to ride out a lock attack; a longer trust the browser already had is kept). Returns
+-- how many were forgotten, which token is now trusted ('presented' / 'fresh': the web app writes its
+-- cookie) and until when that cookie must live.
 create or replace function private.rate_limit_sign_in_reset(p_account bytea, p_device bytea, p_fresh_device bytea,
                                                             p_trust_days integer)
 returns table (revoked integer, device text, trusted_until timestamptz)

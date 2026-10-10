@@ -499,8 +499,10 @@ export function createAccountMailer(options: AccountMailerOptions): PlatformTask
     }
     try {
       const result = await send(jobId, request, base);
+      // An organization over its hourly ceiling of lockout e-mails is under a spray: worth a warning
+      // (security re-review N4); every other outcome is routine.
       log(
-        'info',
+        result === 'organization_hourly_cap' ? 'warning' : 'info',
         `account e-mail ${result === 'queued' ? 'queued' : `not sent (${result})`} (${request.kind})`,
       );
     } catch (error) {

@@ -531,6 +531,10 @@ done
 # Every session of the account ended (the earlier sign-in and the recovery session).
 [[ "$(q "select count(*) from auth.sessions where user_id = '$RESET_ID'")" == "0" ]] ||
   { echo "smoke: sign-in sessions survived the password reset" >&2; exit 1; }
+# «تذكّر هذا المتصفح» was not ticked (T-M2-11 re-review N1): the browser that completed the reset is
+# trusted for 24 hours only — a keyed hash, nothing readable.
+[[ "$(q "select count(*) from private.sign_in_trusted_devices where expires_at between now() + interval '23 hours' and now() + interval '24 hours'")" -ge 1 ]] ||
+  { echo "smoke: an unticked reset must trust its browser for 24 hours" >&2; exit 1; }
 response="$(auth_api POST '/token?grant_type=password' '' "{\"email\":\"$RESET_EMAIL\",\"password\":\"$RESET_NEW_PASSWORD\"}")"
 [[ "${response##*$'\n'}" == "200" ]] || { echo "smoke: sign-in with the new password failed" >&2; exit 1; }
 response="$(auth_api POST '/token?grant_type=password' '' "{\"email\":\"$RESET_EMAIL\",\"password\":\"$RESET_OLD_PASSWORD\"}")"
@@ -577,15 +581,26 @@ done
 q_app_server "begin; set local role authenticated; select private.request_password_changed_mail('$UNUSED_ID'); commit" >/dev/null
 [[ "$(q "select count(*) from private.account_mail_requests where user_id = '$UNUSED_ID'")" == "0" ]] ||
   { echo "smoke: a password-changed notice was queued although the reset link was never used" >&2; exit 1; }
-# The token (a credential) appears nowhere but the e-mail: not in any container log or the audit trail.
-RESET_TOKEN="${RESET_URL#*token_hash=}"
-RESET_TOKEN="${RESET_TOKEN%%&*}"
-if compose logs --no-log-prefix app worker 2>&1 | grep -qF "$RESET_TOKEN"; then
-  echo "smoke: the reset token appears in the app or worker logs" >&2; exit 1
-fi
-[[ "$(q "select count(*) from platform.audit_events where data::text like '%$RESET_TOKEN%'")" == "0" ]] ||
-  { echo "smoke: the reset token reached the audit log" >&2; exit 1; }
-unset RESET_URL RESET_TOKEN
+# Step 3 (T-M2-11 re-review N1): that link, now completed in English with «Remember this browser» ticked —
+# the browser is trusted for 30 days (the unticked Arabic reset above: 24 hours).
+UNUSED_URL="$(reset_link "$UNUSED_EMAIL")" || { echo "smoke: no reset link for the second account" >&2; exit 1; }
+UNUSED_NEW_PASSWORD="Unused-$(openssl rand -hex 16)"
+(cd "$ROOT/apps/suite" && E2E_BASE_URL=http://localhost:3200 RESET_E2E_REMEMBER_LINK_URL="$UNUSED_URL" \
+  RESET_E2E_REMEMBER_PASSWORD="$UNUSED_NEW_PASSWORD" \
+  pnpm exec playwright test e2e/password-reset.spec.ts --project=desktop-chromium)
+[[ "$(q "select count(*) from private.sign_in_trusted_devices where expires_at > now() + interval '29 days'")" -ge 1 ]] ||
+  { echo "smoke: a ticked reset must trust its browser for 30 days" >&2; exit 1; }
+# The tokens (credentials) appear nowhere but the e-mails: not in any container log or the audit trail.
+for url in "$RESET_URL" "$UNUSED_URL"; do
+  RESET_TOKEN="${url#*token_hash=}"
+  RESET_TOKEN="${RESET_TOKEN%%&*}"
+  if compose logs --no-log-prefix app worker 2>&1 | grep -qF "$RESET_TOKEN"; then
+    echo "smoke: a reset token appears in the app or worker logs" >&2; exit 1
+  fi
+  [[ "$(q "select count(*) from platform.audit_events where data::text like '%$RESET_TOKEN%'")" == "0" ]] ||
+    { echo "smoke: a reset token reached the audit log" >&2; exit 1; }
+done
+unset RESET_URL UNUSED_URL RESET_TOKEN url
 # The gateway limits Auth's /verify per source address (30 a minute, burst 10) — also with a trailing
 # slash, which Auth's router serves too (security review M). Beyond the burst: 429. Nothing else calls
 # /verify from this host's address (the app has its own).
@@ -1031,7 +1046,7 @@ all_logs="$(compose logs --no-log-prefix 2>&1)"
 app_logs="$(compose logs --no-log-prefix app 2>&1)"
 for value in "$PASSWORD" "$PARITY_PASSWORD" "$MANAGER_PASSWORD" "$PROFILE_NEW_PASSWORD" "$INTRUDER_PASSWORD" \
   "$GUARD_PASSWORD" "$GUARD_NEW_PASSWORD" "$RESET_OLD_PASSWORD" "$RESET_NEW_PASSWORD" "$ADMIN_NEW_PASSWORD" \
-  "$DEACT_PASSWORD" "$SECOND_PASSWORD"; do
+  "$DEACT_PASSWORD" "$SECOND_PASSWORD" "$UNUSED_NEW_PASSWORD"; do
   if grep -qF "$value" <<<"$all_logs"; then
     echo "smoke: a test user's password appears in the container logs" >&2; exit 1
   fi

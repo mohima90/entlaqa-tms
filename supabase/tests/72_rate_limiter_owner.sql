@@ -84,6 +84,15 @@ begin
      where account_key = private.rate_limit_key(sha256(convert_to('account-z', 'UTF8')))),
     encode(private.rate_limit_key(sha256(convert_to('fresh-2', 'UTF8'))), 'hex'),
     'after the password reset, account z trusts the browser that completed it, and no other');
+  perform tests.assert(exists (select 1 from private.sign_in_trusted_devices
+                               where account_key = private.rate_limit_key(sha256(convert_to('account-z', 'UTF8')))
+                                 and expires_at > now() + interval '29 days'),
+    'a ticked reset trusted for 30 days, and a later unticked one did not shorten it');
+  perform tests.assert(exists (select 1 from private.sign_in_trusted_devices
+                               where account_key = private.rate_limit_key(sha256(convert_to('account-k', 'UTF8')))
+                                 and device_key = private.rate_limit_key(sha256(convert_to('device-1', 'UTF8')))
+                                 and expires_at between now() + interval '23 hours' and now() + interval '24 hours'),
+    'an unticked reset trusts its browser for 24 hours only (security re-review N1)');
   perform tests.assert(not exists (select 1 from private.sign_in_trusted_devices
                                    where account_key in (private.rate_limit_key(sha256(convert_to('account-q', 'UTF8'))),
                                                          private.rate_limit_key(sha256(convert_to('account-p', 'UTF8'))))),

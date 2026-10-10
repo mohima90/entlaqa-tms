@@ -19,7 +19,9 @@ export const RequestPasswordResetInput = z.strictObject({
  * Screen 11. `tokenHash` is the link's token (read from the URL fragment in the browser). Same password
  * rules as My profile and the invitation (12+ characters — Auth's own minimum is 12 too — and at most
  * 72 bytes), checked BEFORE the single-use link is spent. `code`: the authenticator app's code, for an
- * account that uses one (the link says so, T-M2-10) — six digits in any script.
+ * account that uses one (the link says so, T-M2-10) — six digits in any script. `remember`: «تذكّر هذا
+ * المتصفح», unticked by default (T-M2-11 re-review N1): ticked, this browser is trusted for 30 days;
+ * otherwise for 24 hours.
  */
 export const CompletePasswordResetInput = z
   .strictObject({
@@ -30,6 +32,7 @@ export const CompletePasswordResetInput = z
       .refine((v) => utf8Length(v) <= PASSWORD_MAX_BYTES, { message: 'too_long' }),
     confirmPassword: z.string().max(128),
     code: TotpCode.optional(),
+    remember: z.boolean().default(false),
   })
   .refine((v) => v.password === v.confirmPassword, {
     path: ['confirmPassword'],

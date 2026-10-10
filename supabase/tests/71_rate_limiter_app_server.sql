@@ -227,18 +227,32 @@ begin
   perform tests.assert(not r.allowed and r.refused_by = 'sign_in.account_failures',
     'the trusted browser''s success does not end the account''s lock');
 
-  -- A completed password reset from a browser with a token the server never issued (d2): the lock ends,
-  -- the browser gets the fresh token (f2) and is trusted, every other browser (d1) is forgotten.
-  select * into r from private.rate_limit_sign_in_reset(z, d2, f2, 30);
-  perform tests.assert(r.revoked = 1 and r.device = 'fresh' and r.trusted_until > now() + interval '29 days',
-    'reset: d1 forgotten, the fresh token trusted for 30 days');
+  -- A completed password reset from a browser with a token the server never issued (d2), «تذكّر هذا
+  -- المتصفح» NOT ticked on the reset page (the web app passes 1 day): the lock ends, the browser gets the
+  -- fresh token (f2) and is trusted for 24 hours only (security re-review N1), every other browser (d1) is
+  -- forgotten.
+  select * into r from private.rate_limit_sign_in_reset(z, d2, f2, 1);
+  perform tests.assert(r.revoked = 1 and r.device = 'fresh'
+                       and r.trusted_until between now() + interval '24 hours' - interval '1 minute' and now() + interval '24 hours',
+    'reset, unticked: d1 forgotten, the fresh token trusted for 24 hours');
   select * into r from private.rate_limit_sign_in_check(c3, z, d1, 8, 900, 6, 900, 3, 900, 2, 900);
   perform tests.assert(r.allowed and not r.trusted and r.remaining = 2, 'after a reset: unlocked, d1 no longer trusted');
   select * into r from private.rate_limit_sign_in_check(c3, z, f2, 8, 900, 6, 900, 3, 900, 2, 900);
   perform tests.assert(r.allowed and r.trusted, 'after a reset: the browser that completed it is trusted');
-  -- A reset from that (known) browser keeps its token and forgets nothing else (there is nothing else).
+  -- A reset from that (known) browser, ticked (30 days): it keeps its token and forgets nothing else (there
+  -- is nothing else); its trust now lasts 30 days.
   select * into r from private.rate_limit_sign_in_reset(z, f2, f3, 30);
-  perform tests.assert(r.revoked = 0 and r.device = 'presented', 'reset from a trusted browser: it keeps its token');
+  perform tests.assert(r.revoked = 0 and r.device = 'presented' and r.trusted_until > now() + interval '29 days',
+    'reset from a trusted browser, ticked: it keeps its token, trusted for 30 days');
+  -- Unticked again: a longer trust is never shortened (72: still 30 days).
+  select * into r from private.rate_limit_sign_in_reset(z, f2, f3, 1);
+  perform tests.assert(r.device = 'presented' and r.trusted_until > now() + interval '29 days',
+    'reset, unticked, from a browser trusted for 30 days: its trust is kept');
+  -- One cookie serves every account: an unticked reset of account k from d1 (trusted by y for 30 days)
+  -- trusts d1 for k for 24 hours, but the cookie must keep living for y's 30 days (72 checks k's 24 hours).
+  select * into r from private.rate_limit_sign_in_reset(sha256(convert_to('account-k', 'UTF8')), d1, f3, 1);
+  perform tests.assert(r.device = 'presented' and r.revoked = 0 and r.trusted_until > now() + interval '29 days',
+    'the cookie lives as long as the longest trust of its token (any account)');
 
   -- After a password change on My profile: every other trusted browser is forgotten.
   perform private.rate_limit_sign_in_succeeded(c5, p, null, sha256(convert_to('p-1', 'UTF8')), false, true, 30);

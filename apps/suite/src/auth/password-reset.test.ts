@@ -75,9 +75,9 @@ describe('completePasswordResetAction (screen 11)', () => {
     await expect(
       completePasswordResetAction({ tokenHash, password, confirmPassword: password }),
     ).resolves.toEqual({ ok: true, value: { next: 'sign-in' } });
-    // No trusted client address configured here: the shared key.
+    // No trusted client address configured here: the shared key. «تذكّر هذا المتصفح» not ticked.
     expect(flow.completePasswordResetForRequest).toHaveBeenCalledWith(
-      { tokenHash, password, code: undefined },
+      { tokenHash, password, code: undefined, remember: false },
       { key: null },
     );
   });
@@ -94,7 +94,7 @@ describe('completePasswordResetAction (screen 11)', () => {
       code: '١٢٣ ٤٥٦',
     });
     expect(flow.completePasswordResetForRequest).toHaveBeenCalledWith(
-      { tokenHash, password, code: '123456' },
+      { tokenHash, password, code: '123456', remember: false },
       { key: null },
     );
     for (const code of ['12345', '1234567', 'abcdef', '12-456']) {
@@ -107,6 +107,32 @@ describe('completePasswordResetAction (screen 11)', () => {
       expect(!refused.ok && refused.error.fieldErrors?.map((e) => e.path), code).toEqual(['code']);
     }
     expect(flow.completePasswordResetForRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('passes «تذكّر هذا المتصفح» through when ticked; refuses anything but a boolean', async () => {
+    flow.completePasswordResetForRequest.mockResolvedValue({
+      ok: true,
+      value: { next: 'sign-in' },
+    });
+    await completePasswordResetAction({
+      tokenHash,
+      password,
+      confirmPassword: password,
+      remember: true,
+    });
+    expect(flow.completePasswordResetForRequest).toHaveBeenLastCalledWith(
+      { tokenHash, password, code: undefined, remember: true },
+      { key: null },
+    );
+    flow.completePasswordResetForRequest.mockClear();
+    const refused = await completePasswordResetAction({
+      tokenHash,
+      password,
+      confirmPassword: password,
+      remember: 'yes' as unknown as boolean,
+    });
+    expect(!refused.ok && refused.error.code).toBe('VALIDATION_FAILED');
+    expect(flow.completePasswordResetForRequest).not.toHaveBeenCalled();
   });
 
   it("passes the flow's RATE_LIMITED through (the link is not spent)", async () => {

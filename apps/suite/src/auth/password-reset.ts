@@ -37,14 +37,20 @@ export const requestPasswordResetAction = definePublicAction({
  * account that uses one (Auth sets the password only after it, T-M2-10). Limited per client before the
  * link is used (RATE_LIMITED; the generic internal error when the limiter cannot answer — the link stays
  * usable). On success every session of the account has ended, its sign-in lock too, and the visitor signs
- * in with the new password.
+ * in with the new password; this browser is trusted for 30 days with «تذكّر هذا المتصفح» ticked,
+ * otherwise for 24 hours (T-M2-11).
  */
 export const completePasswordResetAction = definePublicAction({
   name: 'platform.auth.password_reset',
   input: CompletePasswordResetInput,
   handler: async ({ input }) =>
     completePasswordResetForRequest(
-      { tokenHash: input.tokenHash, password: input.password, code: input.code },
+      {
+        tokenHash: input.tokenHash,
+        password: input.password,
+        code: input.code,
+        remember: input.remember,
+      },
       await requestClient(),
     ),
 });

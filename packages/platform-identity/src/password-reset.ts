@@ -40,8 +40,9 @@ import { AuthServiceError, sessionTokens } from './auth-flow';
  *              MFA is enabled — GoTrue v2.197.0; T-M2-10) → updateUser(password)
  *              → signOut(global): every session of the account ends, the recovery session included →
  *              security log `platform.auth.password_reset` (user id only) → the account's sign-in lock
- *              ends (the owner proved the mailbox — TM-0003 T-IAM-32), THIS browser becomes trusted and
- *              every other browser the account trusted is forgotten (T-M2-11 security review M2) → (worker
+ *              ends (the owner proved the mailbox — TM-0003 T-IAM-32), THIS browser becomes trusted (24
+ *              hours, or 30 days with «تذكّر هذا المتصفح» ticked) and every other browser the account
+ *              trusted is forgotten (T-M2-11 security review M2, re-review N1) → (worker
  *              mode) the "password changed" notice is queued → the visitor signs in
  *
  * The e-mail, password and token never reach a log.
@@ -174,11 +175,12 @@ export interface PasswordResetDeps {
   readonly allowAttempt: () => Promise<boolean>;
   /**
    * After a completed reset: ends the account's sign-in lock, trusts the browser that completed it (its
-   * cookie is set) and forgets every other browser the account trusted (auth-limits.ts
-   * resetAccountSignIn; security review T-M2-11 M2 — an attacker who keeps the account locked cannot keep
-   * its owner out). Never throws.
+   * cookie is set) — for 30 days with `remember` («تذكّر هذا المتصفح» ticked on the reset page), else
+   * 24 hours — and forgets every other browser the account trusted (auth-limits.ts resetAccountSignIn;
+   * security review T-M2-11 M2 — an attacker who keeps the account locked cannot keep its owner out; N1 —
+   * no 30-day trust unasked). Never throws.
    */
-  readonly unlockSignIn: (email: string) => Promise<void>;
+  readonly unlockSignIn: (email: string, remember: boolean) => Promise<void>;
   readonly logInfo: (message: string, fields: LogFields) => void;
   readonly logWarning: (message: string, fields: LogFields) => void;
   /** Ends this browser's own session cookies, if any (after the reset the visitor signs in again). */
@@ -407,6 +409,8 @@ export async function completePasswordReset(
     readonly password: string;
     /** The code from the account's authenticator app (asked when the link says the account has one). */
     readonly code?: string | undefined;
+    /** «تذكّر هذا المتصفح» ticked on the reset page (default: not). */
+    readonly remember?: boolean;
   },
 ): Promise<Result<{ readonly next: 'sign-in' }, AppError>> {
   const { client } = deps;
@@ -483,7 +487,7 @@ export async function completePasswordReset(
   // The owner proved control of the mailbox: a sign-in lock on the account ends, this browser is trusted
   // for it, and every other browser it trusted must be remembered again (T-M2-11, PO decision 9 Oct 2026;
   // security review M2).
-  if (accountEmail) await deps.unlockSignIn(accountEmail);
+  if (accountEmail) await deps.unlockSignIn(accountEmail, input.remember === true);
   if (deps.queuePasswordChangedNotice) {
     try {
       await deps.queuePasswordChangedNotice(userId);

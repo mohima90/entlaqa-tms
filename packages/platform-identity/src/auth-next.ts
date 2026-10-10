@@ -143,8 +143,9 @@ const SECURE_COOKIES = process.env.NODE_ENV !== 'development';
  * The trusted-device cookie (PO decision 9 Oct 2026; T-M2-11): a random token only — HttpOnly (never
  * readable by scripts), Secure with the `__Host-` prefix (this host only, path /), SameSite=Lax. The
  * account it is trusted for is known to the database alone (keyed hashes); a malformed value is ignored.
- * Written only by a sign-in with «تذكّر هذا المتصفح» ticked (opt-in) and by a completed password reset,
- * each for the 30 days of the trust; an unticked sign-in leaves it (and the trust) to expire.
+ * Written only by a sign-in with «تذكّر هذا المتصفح» ticked (opt-in) and by a completed password reset
+ * (30 days ticked, 24 hours not), each until the latest end of its token's trusts; an unticked sign-in
+ * leaves it (and the trust) to expire.
  */
 export const TRUSTED_DEVICE_COOKIE = SECURE_COOKIES ? '__Host-jadarat-device' : 'jadarat-device';
 
@@ -588,13 +589,15 @@ export async function requestPasswordResetForRequest(
 /**
  * Screen 11: limited per client (fail closed — the link is not spent), verifies the link, sets the
  * password, ends every session of the account and its sign-in lock; this browser becomes trusted for the
- * account (its cookie is set) and the account's other trusted browsers are forgotten (T-M2-11 M2).
+ * account — 30 days with `remember` («تذكّر هذا المتصفح»), else 24 hours — (its cookie is set) and the
+ * account's other trusted browsers are forgotten (T-M2-11 M2, re-review N1).
  */
 export async function completePasswordResetForRequest(
   input: {
     readonly tokenHash: string;
     readonly password: string;
     readonly code?: string | undefined;
+    readonly remember?: boolean;
   },
   client: RequestClient,
 ) {
@@ -609,8 +612,8 @@ export async function completePasswordResetForRequest(
     {
       client: recoveryClient,
       allowAttempt: () => limiter.allowCompletion(),
-      unlockSignIn: (email) =>
-        resetAccountSignIn(limiterDeps(), RESET_COMPLETE_ACTION, email, device),
+      unlockSignIn: (email, remember) =>
+        resetAccountSignIn(limiterDeps(), RESET_COMPLETE_ACTION, email, device, remember),
       // Strictest wins (T-M2-10): asked with the recovery session's own, verified access token.
       passwordMinLength: async (accessToken) => {
         const claims = await verifyClaims(

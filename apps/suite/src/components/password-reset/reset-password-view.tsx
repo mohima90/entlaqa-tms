@@ -25,6 +25,8 @@ import { fieldErrorCodes } from '../profile/field-errors';
  * sets the password only after it, and the single-use link is spent by that one attempt. When Auth's own
  * mailer sends the link (PASSWORD_RESET_DELIVERY=auth) it cannot say so: the code field is then offered
  * as optional, for accounts with an app.
+ * «تذكّر هذا المتصفح» (T-M2-11 re-review N1, the PO's opt-in): a native check box, unticked by default,
+ * its explanation tied to it — ticked, this browser is trusted for 30 days; otherwise for 24 hours.
  */
 export interface ResetPasswordTexts extends PasswordRuleLabels {
   readonly pageTitle: string;
@@ -33,6 +35,9 @@ export interface ResetPasswordTexts extends PasswordRuleLabels {
   readonly password: string;
   readonly confirmPassword: string;
   readonly showPassword: string;
+  /** «تذكّر هذا المتصفح» / "Remember this browser" (unticked by default) and what it does here. */
+  readonly rememberBrowser: string;
+  readonly rememberBrowserHint: string;
   readonly required: string;
   readonly passwordTip: string;
   readonly sessionsNotice: string;
@@ -101,6 +106,7 @@ function ResetForm({
   const [confirmation, setConfirmation] = useState('');
   const [code, setCode] = useState('');
   const [reveal, setReveal] = useState(false);
+  const [remember, setRemember] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
   const rules = passwordRuleState(password, confirmation);
@@ -133,6 +139,7 @@ function ResetForm({
         password,
         confirmPassword: confirmation,
         ...(withCode ? { code } : {}),
+        remember,
       });
       if (result.ok) {
         router.replace(pathAfterReset(locale));
@@ -242,6 +249,26 @@ function ResetForm({
             />
             {texts.showPassword}
           </label>
+          <div className="flex flex-col gap-1">
+            <label className="flex min-h-11 items-center gap-3">
+              <input
+                type="checkbox"
+                name="remember"
+                checked={remember}
+                onChange={(event) => {
+                  setRemember(event.target.checked);
+                }}
+                aria-describedby="reset-remember-browser-hint"
+                disabled={pending}
+                className="size-5 shrink-0"
+                data-testid="reset-remember-browser"
+              />
+              {texts.rememberBrowser}
+            </label>
+            <p id="reset-remember-browser-hint" className="m-0 ms-8 text-sm text-text-muted">
+              {texts.rememberBrowserHint}
+            </p>
+          </div>
           <Alert tone="info">{texts.sessionsNotice}</Alert>
           {message ? (
             <Alert tone="danger" data-testid="reset-error">

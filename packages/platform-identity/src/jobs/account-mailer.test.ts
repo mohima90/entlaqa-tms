@@ -343,7 +343,8 @@ describe('account mailer (T-M2-17): reset e-mail and "password changed" notice',
       'account e-mail not sent (hourly_cap) (account_locked)',
     );
 
-    // A spray across a whole organization: beyond its hourly ceiling, no more lockout e-mails there.
+    // A spray across a whole organization: beyond its hourly ceiling, no more lockout e-mails there —
+    // logged as a warning (re-review N4).
     queue(send({ kind: 'account_locked', lockMinutes: 15 }));
     db.loadAccountMailContext.mockResolvedValueOnce({
       organizationName: { ar: 'شركة الراية', en: null },
@@ -356,7 +357,7 @@ describe('account mailer (T-M2-17): reset e-mail and "password changed" notice',
     await third.task.run({ jobId: 'j' });
     expect(mail.queueEmail).not.toHaveBeenCalled();
     expect(third.log).toHaveBeenCalledWith(
-      'info',
+      'warning',
       'account e-mail not sent (organization_hourly_cap) (account_locked)',
     );
   });
@@ -389,7 +390,7 @@ describe('account mailer (T-M2-17): reset e-mail and "password changed" notice',
       60,
     );
     expect(log).toHaveBeenCalledWith(
-      'info',
+      'warning',
       'account e-mail not sent (organization_hourly_cap) (account_locked)',
     );
     for (const lockoutMail of [

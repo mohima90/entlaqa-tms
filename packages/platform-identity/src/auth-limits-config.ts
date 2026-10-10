@@ -23,11 +23,14 @@ export interface SignInLimits {
 export interface AuthLimits {
   readonly signIn: SignInLimits;
   /**
-   * How long a browser stays trusted after a sign-in with «تذكّر هذا المتصفح» / "Remember this browser"
-   * ticked, or after it completed a password reset (screen 6: 30 days). Sliding: renewed by every ticked
-   * sign-in only — an unticked one leaves the trust to end on its date (PO decision 9 Oct 2026).
+   * How long a browser stays trusted (PO decision 9 Oct 2026: opt-in). `days`: after a sign-in — or a
+   * completed password reset — with «تذكّر هذا المتصفح» / "Remember this browser" ticked (screen 6: 30
+   * days); sliding, renewed by ticked sign-ins only — an unticked one leaves the trust to end on its date.
+   * `resetDays`: after a completed reset with the box NOT ticked — 1 (24 hours), enough for the owner to
+   * ride out a lock attack (security review M2) without remembering the browser unasked (re-review N1). A
+   * longer trust the browser already has is never shortened.
    */
-  readonly trustedDevice: { readonly days: number };
+  readonly trustedDevice: { readonly days: number; readonly resetDays: number };
   /**
    * The "account locked" e-mail (security review T-M2-11 M3; the worker enforces both): at most one per
    * person in `personQuietHours`, and at most `tenantPerHour` per organization an hour (a spray against a
@@ -84,7 +87,7 @@ export const PLATFORM_AUTH_LIMITS: AuthLimits = {
     sharedClientFailures: { max: 1000, windowSeconds: WINDOW },
     sharedClientAttempts: { max: 10_000, windowSeconds: WINDOW },
   },
-  trustedDevice: { days: 30 },
+  trustedDevice: { days: 30, resetDays: 1 },
   lockoutMail: { personQuietHours: 24, tenantPerHour: 50 },
   passwordCheck: { userAttempts: { max: 5, windowSeconds: WINDOW } },
   passwordReset: {

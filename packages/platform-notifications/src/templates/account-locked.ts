@@ -13,8 +13,9 @@ const Link = z.string().max(2000).refine(isSafeLink, 'https link');
  * notification service when repeated failed attempts lock an account (or use up the budget of a browser
  * the account trusts). It says what happened, that the lock lifts by itself after `lockMinutes`, that
  * browsers remembered with «تذكّر هذا المتصفح» still sign in, that setting a new password (the "forgot
- * password" page — nothing that signs anyone in) ends the pause at once and keeps the browser used for it
- * remembered while the others must sign in again (security review M2), to tell the Organization Admin when
+ * password" page — nothing that signs anyone in) ends the pause at once and lets the browser used for it
+ * sign in for a day even under a new pause — 30 days if «تذكّر هذا المتصفح» is ticked there — while the
+ * others must sign in again (security review M2, re-review N1), to tell the Organization Admin when
  * the attempts were not the person's, and that we send this at most once a day (security review M3).
  * Arabic copy to be confirmed by the UX writer (docs/design/content/glossary-ar-en.md: «مدير المنشأة»,
  * «كلمة المرور», «نسيت كلمة المرور»).
@@ -54,7 +55,7 @@ function body(v: AccountLockedVariables, locale: AppLocale, primary: boolean): S
       ${paragraph(markup`بعد عدة محاولات لم تنجح لتسجيل الدخول إلى الحساب ${ltr(v.loginEmail)}، أوقفنا تسجيل الدخول إليه مؤقتًا.`)}
       ${paragraph(markup`يُرفع الإيقاف تلقائيًا بعد <b>${arabicMinutes(v.lockMinutes)}</b>. ويبقى بإمكانك الدخول من المتصفحات التي اخترت فيها «تذكّر هذا المتصفح».`)}
       ${primary ? actionButton('تعيين كلمة مرور جديدة', url) : paragraph(link('تعيين كلمة مرور جديدة', url))}
-      ${paragraph(markup`تعيين كلمة مرور جديدة يُنهي الإيقاف فورًا، ويتذكّر المتصفح الذي تستخدمه لذلك، أما المتصفحات الأخرى فيلزمها تسجيل الدخول من جديد.`)}
+      ${paragraph(markup`تعيين كلمة مرور جديدة يُنهي الإيقاف فورًا، ويبقى بإمكان المتصفح الذي تستخدمه لذلك الدخول يومًا واحدًا إن أُوقف تسجيل الدخول من جديد، أو 30 يومًا إن اخترت فيه «تذكّر هذا المتصفح»، أما المتصفحات الأخرى فيلزمها تسجيل الدخول من جديد.`)}
       ${paragraph(markup`إن لم تكن هذه المحاولات منك، فعيّن كلمة مرور جديدة وأبلغ مدير المنشأة.`, true, true)}
       ${paragraph(markup`نرسل هذا التنبيه مرة واحدة في اليوم على الأكثر.`, true, true)}`;
   }
@@ -66,7 +67,7 @@ function body(v: AccountLockedVariables, locale: AppLocale, primary: boolean): S
     ${paragraph(markup`After several unsuccessful attempts to sign in to ${v.loginEmail}, we paused sign-in to this account for now.`)}
     ${paragraph(markup`The pause ends by itself after <b>${englishMinutes(v.lockMinutes)}</b>. Browsers where you chose “Remember this browser” can still sign in.`)}
     ${primary ? actionButton('Set a new password', url) : paragraph(link('Set a new password', url))}
-    ${paragraph(markup`Setting a new password ends the pause at once. The browser you use for it is remembered; other browsers need to sign in again.`)}
+    ${paragraph(markup`Setting a new password ends the pause at once. The browser you use for it can still sign in for a day if sign-in is paused again — or for 30 days if you tick “Remember this browser” there; other browsers need to sign in again.`)}
     ${paragraph(markup`If these attempts weren't yours, set a new password and tell your organization's administrator.`, true, true)}
     ${paragraph(markup`We send this notice at most once a day.`, true, true)}`;
 }
@@ -81,7 +82,7 @@ function plain(v: AccountLockedVariables, locale: AppLocale): string {
       `يُرفع الإيقاف تلقائيًا بعد ${arabicMinutes(v.lockMinutes)}. ويبقى بإمكانك الدخول من المتصفحات التي اخترت فيها «تذكّر هذا المتصفح».`,
       'تعيين كلمة مرور جديدة:',
       url,
-      'تعيين كلمة مرور جديدة يُنهي الإيقاف فورًا، ويتذكّر المتصفح الذي تستخدمه لذلك، أما المتصفحات الأخرى فيلزمها تسجيل الدخول من جديد.',
+      'تعيين كلمة مرور جديدة يُنهي الإيقاف فورًا، ويبقى بإمكان المتصفح الذي تستخدمه لذلك الدخول يومًا واحدًا إن أُوقف تسجيل الدخول من جديد، أو 30 يومًا إن اخترت فيه «تذكّر هذا المتصفح»، أما المتصفحات الأخرى فيلزمها تسجيل الدخول من جديد.',
       '',
       'إن لم تكن هذه المحاولات منك، فعيّن كلمة مرور جديدة وأبلغ مدير المنشأة.',
       'نرسل هذا التنبيه مرة واحدة في اليوم على الأكثر.',
@@ -94,7 +95,7 @@ function plain(v: AccountLockedVariables, locale: AppLocale): string {
     `The pause ends by itself after ${englishMinutes(v.lockMinutes)}. Browsers where you chose “Remember this browser” can still sign in.`,
     'Set a new password:',
     url,
-    'Setting a new password ends the pause at once. The browser you use for it is remembered; other browsers need to sign in again.',
+    'Setting a new password ends the pause at once. The browser you use for it can still sign in for a day if sign-in is paused again — or for 30 days if you tick “Remember this browser” there; other browsers need to sign in again.',
     '',
     `If these attempts weren't yours, set a new password and tell your organization's administrator.`,
     'We send this notice at most once a day.',

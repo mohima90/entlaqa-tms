@@ -92,10 +92,18 @@ export type TrustedDeviceChoice = 'presented' | 'fresh';
 /** A browser trusted (again) for an account. */
 export interface DeviceTrust {
   readonly device: TrustedDeviceChoice;
+  /**
+   * Until when the browser's cookie must live: the latest end of any trust of its token, for any account
+   * (one cookie serves every account that trusts the browser; a shorter trust never shortens it).
+   */
   readonly until: Date;
 }
 
-/** «تذكّر هذا المتصفح» ticked: trust the browser for `trustDays`, under `freshDevice` unless it presented a known token. */
+/**
+ * Trust the browser for `trustDays` × 24 hours (a longer trust it already has is kept), under
+ * `freshDevice` unless it presented a known token: a ticked «تذكّر هذا المتصفح» (30 days), or a completed
+ * reset (30 days ticked, 1 day unticked).
+ */
 export interface RememberDevice {
   /** SHA-256 subject of the fresh random token minted for this request. */
   readonly freshDevice: Uint8Array;

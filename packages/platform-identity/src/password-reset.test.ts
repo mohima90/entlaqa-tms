@@ -339,8 +339,8 @@ function completeSetup(options: CompleteOptions = {}) {
     calls.push('endBrowserSession');
     return Promise.resolve();
   });
-  const unlockSignIn = vi.fn((email: string) => {
-    calls.push(`unlock:${email === EMAIL ? 'account' : 'other'}`);
+  const unlockSignIn = vi.fn((email: string, remember: boolean) => {
+    calls.push(`unlock:${email === EMAIL ? 'account' : 'other'}:${remember ? 'remember' : '24h'}`);
     return Promise.resolve();
   });
   const deps: PasswordResetDeps = {
@@ -408,8 +408,9 @@ describe('completePasswordReset (FR-IAM-13)', () => {
       'verifyOtp:recovery',
       'updateUser:password',
       'signOut:global',
-      // The owner proved control of the mailbox: the account's sign-in lock ends (T-M2-11).
-      'unlock:account',
+      // The owner proved control of the mailbox: the account's sign-in lock ends (T-M2-11), and this
+      // browser is trusted — 24 hours, «تذكّر هذا المتصفح» not ticked (re-review N1).
+      'unlock:account:24h',
       'endBrowserSession',
     ]);
     // Security event with the user id only: no token, password or e-mail.
@@ -424,6 +425,12 @@ describe('completePasswordReset (FR-IAM-13)', () => {
     expect(logged).not.toContain(PASSWORD);
   });
 
+  it('«تذكّر هذا المتصفح» ticked on the reset page: the browser is remembered (30 days)', async () => {
+    const { deps, unlockSignIn } = completeSetup();
+    await completePasswordReset(deps, { ...input, remember: true });
+    expect(unlockSignIn).toHaveBeenCalledWith(EMAIL, true);
+  });
+
   it('worker mode: queues the "password changed" notice for the account after the sessions ended', async () => {
     const { deps, calls } = completeSetup();
     const queuePasswordChangedNotice = vi.fn((userId: string) => {
@@ -436,7 +443,7 @@ describe('completePasswordReset (FR-IAM-13)', () => {
       'verifyOtp:recovery',
       'updateUser:password',
       'signOut:global',
-      'unlock:account',
+      'unlock:account:24h',
       `notice:${USER}`,
       'endBrowserSession',
     ]);

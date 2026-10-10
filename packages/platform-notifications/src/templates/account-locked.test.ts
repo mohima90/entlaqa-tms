@@ -33,14 +33,18 @@ describe('account locked e-mail (T-M2-11, PO decision 9 Oct 2026)', () => {
     expect(email.html).toContain('administrator');
     expect(email.text).toContain('يُرفع الإيقاف تلقائيًا بعد 15 دقيقة');
     expect(email.text).toContain('The pause ends by itself after 15 minutes');
-    // Remembered browsers (opt-in) still sign in; a new password ends the pause at once and keeps the
-    // browser used for it remembered (security review M2); at most one notice a day (M3).
+    // Remembered browsers (opt-in) still sign in; a new password ends the pause at once (security review
+    // M2); at most one notice a day (M3).
     expect(email.text).toContain('«تذكّر هذا المتصفح»');
     expect(email.text).toContain('“Remember this browser” can still sign in');
-    expect(email.text).toContain('يُنهي الإيقاف فورًا، ويتذكّر المتصفح الذي تستخدمه لذلك');
+    // Re-review N1: the reset trusts its browser for a day, or 30 days with the box ticked.
     expect(email.text).toContain(
-      'Setting a new password ends the pause at once. The browser you use for it is remembered; other browsers need to sign in again.',
+      'يُنهي الإيقاف فورًا، ويبقى بإمكان المتصفح الذي تستخدمه لذلك الدخول يومًا واحدًا إن أُوقف تسجيل الدخول من جديد، أو 30 يومًا إن اخترت فيه «تذكّر هذا المتصفح»',
     );
+    expect(email.text).toContain(
+      'The browser you use for it can still sign in for a day if sign-in is paused again — or for 30 days if you tick “Remember this browser” there; other browsers need to sign in again.',
+    );
+    expect(email.text).not.toContain('The browser you use for it is remembered;');
     expect(email.text).toContain('نرسل هذا التنبيه مرة واحدة في اليوم على الأكثر.');
     expect(email.html).toContain('We send this notice at most once a day.');
     // No promise for browsers that merely signed in before (trust is opt-in).

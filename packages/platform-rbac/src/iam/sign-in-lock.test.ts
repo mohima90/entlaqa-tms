@@ -6,7 +6,7 @@ import type { ActionRuntime } from '../define-action';
 import { createDefineAction } from '../define-action';
 import { grantsForAssignments } from '../role-grants';
 import type { SystemRoleCode } from '../system-roles';
-import { unlockSignInActionDefinition } from './sign-in-lock';
+import { memberLockBudget, unlockSignInActionDefinition } from './sign-in-lock';
 
 const db = vi.hoisted(() => ({ memberSignInLock: vi.fn(), unlockMemberSignIn: vi.fn() }));
 vi.mock('@jadarat/platform-db', () => db);
@@ -75,10 +75,12 @@ describe('unlock sign-in (T-M2-11, PO decision 9 Oct 2026)', () => {
     for (const outcome of ['not_locked', 'limited'] as const) {
       db.unlockMemberSignIn.mockResolvedValue(outcome);
       const { rt, writeAudit } = runtime(['tenant_admin']);
-      const result = await createDefineAction(rt)(unlockSignInActionDefinition(() => 3))({
+      const budget = vi.fn(() => Promise.resolve(3));
+      const result = await createDefineAction(rt)(unlockSignInActionDefinition(budget))({
         personId: MEMBER,
       });
       expect(result).toEqual(ok({ outcome }));
+      expect(budget).toHaveBeenCalledWith(TX, TENANT);
       expect(db.unlockMemberSignIn).toHaveBeenLastCalledWith(TX, MEMBER, 3);
       expect(writeAudit).not.toHaveBeenCalled();
     }
@@ -92,6 +94,26 @@ describe('unlock sign-in (T-M2-11, PO decision 9 Oct 2026)', () => {
     });
     expect(!result.ok && result.error.code).toBe('NOT_FOUND');
     expect(writeAudit).not.toHaveBeenCalled();
+  });
+
+  it('memberLockBudget: the organization policy, read in the admin’s transaction, clamped like sign-in (N7)', async () => {
+    const policyIn = vi.fn((_tx: UserTx, _tenantId: string) =>
+      Promise.resolve({ threshold: 3, minutes: 30 }),
+    );
+    expect(await memberLockBudget(policyIn)(TX, TENANT)).toBe(3);
+    expect(policyIn).toHaveBeenCalledWith(TX, TENANT);
+    // Laxer than the platform default: clamped to 5, exactly as at sign-in.
+    expect(
+      await memberLockBudget(() => Promise.resolve({ threshold: 9, minutes: 5 }))(TX, TENANT),
+    ).toBe(5);
+    // No policy (the default until T-M2-10 is wired): the platform's 5.
+    expect(await memberLockBudget(() => Promise.resolve(null))(TX, TENANT)).toBe(5);
+    // Wired into the unlock: the database gets that budget.
+    const { rt } = runtime(['tenant_admin']);
+    await createDefineAction(rt)(unlockSignInActionDefinition(memberLockBudget(policyIn)))({
+      personId: MEMBER,
+    });
+    expect(db.unlockMemberSignIn).toHaveBeenLastCalledWith(TX, MEMBER, 3);
   });
 
   it('nobody else: HR Manager and learner are refused; a person out of reach is not found', async () => {

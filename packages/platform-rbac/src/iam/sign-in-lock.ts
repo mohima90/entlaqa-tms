@@ -5,7 +5,7 @@ import {
   memberSignInLock,
   unlockMemberSignIn,
 } from '@jadarat/platform-db';
-import { limitsFor } from '@jadarat/platform-identity';
+import { type LockoutPolicy, accountLockoutBudget, limitsFor } from '@jadarat/platform-identity';
 import { z } from 'zod';
 import type { ActionDefinition } from '../define-action';
 import { platformPermissions } from '../platform-permissions';
@@ -21,10 +21,36 @@ import { platformPermissions } from '../platform-permissions';
  */
 const p = platformPermissions;
 
-/** The account budget the lock is measured against: the one sign-in applies (per organization: T-M2-10). */
-export type AccountLockBudget = () => number;
+/**
+ * The account budget a member's lock is measured against (failures), in the Organization Admin's own
+ * transaction (`tx`) for their organization (`tenantId`) — the same budget sign-in applies to that member
+ * on the organization's host (security re-review N7). Build it with `memberLockBudget`.
+ */
+export type AccountLockBudget = (tx: UserTx, tenantId: string) => Promise<number>;
 
-const defaultBudget: AccountLockBudget = () => limitsFor({}).signIn.accountFailures.max;
+/**
+ * The budget of a member of the admin's organization, from platform-identity `accountLockoutBudget` — THE
+ * one function sign-in uses too (clamped to the platform default or stricter). The member is an active
+ * member there (the database checks it), so the organization's policy applies. `lockoutPolicyIn` reads that
+ * policy IN the admin's transaction — never in another transaction of the pool (security review T-M2-11
+ * MEDIUM 2). INTEGRATION (T-M2-10): `memberLockBudget(async (tx) => policyOf(await getSecurityPolicy(tx)))`,
+ * passed to both `userProfileQueryDefinition` and `unlockSignInActionDefinition`; the default (no policy)
+ * is the platform's 5.
+ */
+export function memberLockBudget(
+  lockoutPolicyIn: (tx: UserTx, tenantId: string) => Promise<LockoutPolicy | null>,
+): AccountLockBudget {
+  return async (tx, tenantId) =>
+    (
+      await accountLockoutBudget(
+        { hostTenantId: tenantId, memberOfHost: () => Promise.resolve(true) },
+        (t) => lockoutPolicyIn(tx, t),
+        limitsFor({}).signIn.accountFailures,
+      )
+    ).max;
+}
+
+const defaultBudget: AccountLockBudget = memberLockBudget(() => Promise.resolve(null));
 
 /**
  * For the profile page (inside its query): the member's lock state when the viewer may unlock it
@@ -35,11 +61,16 @@ const defaultBudget: AccountLockBudget = () => limitsFor({}).signIn.accountFailu
 export async function signInLockForProfile(
   tx: UserTx,
   personId: string,
-  options: { readonly canUnlock: boolean; readonly hasAccount: boolean },
+  options: {
+    readonly canUnlock: boolean;
+    readonly hasAccount: boolean;
+    /** The admin's organization (the session's). */
+    readonly tenantId: string;
+  },
   budget: AccountLockBudget = defaultBudget,
 ): Promise<MemberSignInLock | null> {
   if (!options.hasAccount || !options.canUnlock) return null;
-  return memberSignInLock(tx, personId, budget());
+  return memberSignInLock(tx, personId, await budget(tx, options.tenantId));
 }
 
 export const UnlockSignInInput = z.object({ personId: z.uuid() });
@@ -66,7 +97,11 @@ export function unlockSignInActionDefinition(
     resource: (input) => ({ type: 'person', id: input.personId }),
     handler: async ({ ctx, input }) => {
       if (!ctx.resource) return err(appError('NOT_FOUND'));
-      const outcome = await unlockMemberSignIn(ctx.tx, input.personId, budget());
+      const outcome = await unlockMemberSignIn(
+        ctx.tx,
+        input.personId,
+        await budget(ctx.tx, ctx.actor.tenantId),
+      );
       if (outcome === 'no_account') return err(appError('NOT_FOUND'));
       return ok({ outcome });
     },

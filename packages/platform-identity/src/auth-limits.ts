@@ -243,46 +243,81 @@ export interface OrganizationLockoutDeps {
   readonly accountInTenant: (email: string, tenantId: string) => Promise<boolean>;
 }
 
+/** Which host an account is being judged on, and whether it is an active member of the host's organization. */
+export interface LockoutAccount {
+  /** The organization of the host (a tenant host; for the Organization Admin, theirs); null: the platform host. */
+  readonly hostTenantId: string | null;
+  /** Whether the account is an active member of that organization (asked only for a tenant host). */
+  readonly memberOfHost: (tenantId: string) => Promise<boolean>;
+}
+
 /**
- * The account budget of a typed address (INTEGRATION POINT with T-M2-10; T-M2-10 security review): the
- * host organization's lockout policy when — and only when — the address belongs to an active member of
- * that organization; the platform default (`fallback`: 5 failures, 15 minutes) for everyone else, so an
- * attacker cannot pick the laxest organization's host to try more passwords on another organization's
- * accounts. The policy is CLAMPED to the default or stricter (security review T-M2-11 L5): never more
- * failures than `fallback.max`, never a shorter lock than `fallback.windowSeconds` (T-M2-10's settings
- * allow 3–5 failures and 15–60 minutes). A policy that is not whole numbers within 1–1,000 failures and
- * 1–1,440 minutes is ignored (the default applies). The smoke test's shortened window
- * (AUTH_RATE_LIMIT_WINDOW_SECONDS) still applies. Lookup failures throw (the caller fails closed).
- * Residual (TM-0003 T-IAM-27): a stricter policy makes the number of attempts before the lock depend on
- * membership of the host's organization — observable only by locking the account, which e-mails its
- * owner (docs/engineering/sign-in-protection.md §6).
+ * THE account budget for an account on a host (INTEGRATION POINT with T-M2-10; security re-review N7):
+ * sign-in (`organizationAccountLockout`), the profile's lock state and the Organization Admin's unlock
+ * (platform-rbac `memberLockBudget`) all take it from here, so they agree on when an account is locked.
+ *
+ * The host organization's lockout policy applies when — and only when — the account is an active member
+ * of that organization; the platform default (`fallback`: 5 failures, 15 minutes) for everyone else, so
+ * an attacker cannot pick the laxest organization's host to try more passwords on another organization's
+ * accounts (T-M2-10 security review). The policy is CLAMPED to the default or stricter (security review
+ * T-M2-11 L5): never more failures than `fallback.max`, never a shorter lock than
+ * `fallback.windowSeconds` (T-M2-10's settings allow 3–5 failures and 15–60 minutes). A policy that is not
+ * whole numbers within 1–1,000 failures and 1–1,440 minutes is ignored (the default applies). The smoke
+ * test's shortened window (AUTH_RATE_LIMIT_WINDOW_SECONDS) still applies. Lookup failures throw (the
+ * caller fails closed). `lockoutPolicyFor` must not open a transaction of the app's pool while the caller
+ * holds one (security review T-M2-11 MEDIUM 2): sign-in has none; the Organization Admin's views read the
+ * policy in their own transaction. Residual (TM-0003 T-IAM-27): a stricter policy makes the number of
+ * attempts before the lock depend on membership of the host's organization — observable only by locking
+ * the account, which e-mails its owner (docs/engineering/sign-in-protection.md §6).
+ */
+export async function accountLockoutBudget(
+  account: LockoutAccount,
+  lockoutPolicyFor: (tenantId: string) => Promise<LockoutPolicy | null>,
+  fallback: RateLimit,
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): Promise<RateLimit> {
+  const windowOverride = readAuthLimitWindowOverride(env);
+  const tenantId = account.hostTenantId;
+  if (tenantId === null || !(await account.memberOfHost(tenantId))) return fallback;
+  const policy = await lockoutPolicyFor(tenantId);
+  if (
+    policy === null ||
+    !Number.isInteger(policy.threshold) ||
+    policy.threshold < 1 ||
+    policy.threshold > 1_000 ||
+    !Number.isInteger(policy.minutes) ||
+    policy.minutes < 1 ||
+    policy.minutes > 1_440
+  ) {
+    return fallback;
+  }
+  return {
+    max: Math.min(policy.threshold, fallback.max),
+    windowSeconds: windowOverride ?? Math.max(policy.minutes * 60, fallback.windowSeconds),
+  };
+}
+
+/**
+ * The sign-in guard's `accountLockout` for a typed address on the request's host: `accountLockoutBudget`
+ * with membership looked up by address (platform-db signInAccountInTenant). The smoke-only window setting
+ * is checked here once, when the guard is built.
  */
 export function organizationAccountLockout(
   deps: OrganizationLockoutDeps,
   fallback: RateLimit,
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): (email: string) => Promise<RateLimit> {
-  const windowOverride = readAuthLimitWindowOverride(env);
-  return async (email) => {
-    const tenantId = deps.hostTenantId;
-    if (tenantId === null || !(await deps.accountInTenant(email, tenantId))) return fallback;
-    const policy = await deps.lockoutPolicyFor(tenantId);
-    if (
-      policy === null ||
-      !Number.isInteger(policy.threshold) ||
-      policy.threshold < 1 ||
-      policy.threshold > 1_000 ||
-      !Number.isInteger(policy.minutes) ||
-      policy.minutes < 1 ||
-      policy.minutes > 1_440
-    ) {
-      return fallback;
-    }
-    return {
-      max: Math.min(policy.threshold, fallback.max),
-      windowSeconds: windowOverride ?? Math.max(policy.minutes * 60, fallback.windowSeconds),
-    };
-  };
+  readAuthLimitWindowOverride(env);
+  return (email) =>
+    accountLockoutBudget(
+      {
+        hostTenantId: deps.hostTenantId,
+        memberOfHost: (tenantId) => deps.accountInTenant(email, tenantId),
+      },
+      deps.lockoutPolicyFor,
+      fallback,
+      env,
+    );
 }
 
 /**
@@ -419,6 +454,11 @@ export class RateLimiterUnavailableError extends Error {
 
 function errorNameOf(error: unknown): string {
   return error instanceof Error ? error.name : 'unknown';
+}
+
+/** The cookie's Max-Age for a trust the database answered: until its latest end (at least a second). */
+function cookieSeconds(until: Date): number {
+  return Math.max(1, Math.ceil((until.getTime() - Date.now()) / 1000));
 }
 
 /** What every limiter of a request is bound to. */
@@ -593,7 +633,7 @@ export function createSignInGuard(deps: SignInGuardDeps): SignInGuard {
               fresh === null ? null : { freshDevice: deviceSubject(fresh), trustDays },
             );
             const value = trust === null ? null : trust.device === 'presented' ? token : fresh;
-            if (value !== null) device.write(value, trustDays * 86_400);
+            if (trust !== null && value !== null) device.write(value, cookieSeconds(trust.until));
           } catch (error) {
             // Auth said yes: the sign-in continues. The provisional failure stays counted and the
             // browser is not (newly) trusted — both only tighten the limits.
@@ -627,17 +667,21 @@ export const NO_SIGN_IN_GUARD: SignInGuard = {
  * self-unlock; PO decision 9 Oct 2026; security review T-M2-11 M2): the account's sign-in lock ends, the
  * browser that completed the reset is TRUSTED for the account — its own token when the server knows it,
  * else a fresh one — and its cookie is set, so an attacker who keeps the account locked cannot keep its
- * owner out; every OTHER browser the account trusted is forgotten. Never throws (logged).
+ * owner out; every OTHER browser the account trusted is forgotten. How long is the person's choice
+ * (security re-review N1): with «تذكّر هذا المتصفح» ticked on the reset page (`remember`), 30 days;
+ * otherwise 24 hours (`trustedDevice.resetDays`) — a longer trust the browser already has is kept. Never
+ * throws (logged).
  */
 export async function resetAccountSignIn(
   deps: LimiterDeps,
   action: string,
   email: string,
   device: TrustedDeviceCookie,
+  remember: boolean,
 ): Promise<void> {
   const token = device.read();
   const fresh = newDeviceToken();
-  const trustDays = deps.limits.trustedDevice.days;
+  const trustDays = remember ? deps.limits.trustedDevice.days : deps.limits.trustedDevice.resetDays;
   try {
     const trust = await deps.store.signInReset(
       accountSubject(email),
@@ -646,7 +690,7 @@ export async function resetAccountSignIn(
     );
     device.write(
       trust.device === 'presented' && token !== null ? token : fresh,
-      trustDays * 86_400,
+      cookieSeconds(trust.until),
     );
   } catch (error) {
     deps.log({

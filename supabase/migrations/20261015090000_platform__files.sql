@@ -21,8 +21,9 @@
 --                                  of private.auth_session_validity).
 --   private.storage_request_tenant()  (owner tenant_guard) the tenant of USER claims set by Supabase Storage
 --                                  under its own login role, validated exactly like private.current_tenant_id()
---                                  validates them for app_server (ADR 0002 §6a: live session, active
---                                  membership, the session's active tenant). Used by the storage policies
+--                                  validates them for app_server (ADR 0002 §6a, private.session_access: live
+--                                  session, active membership, the session's active tenant, the session
+--                                  rules and MFA policy of T-M2-10). Used by the storage policies
 --                                  (migration 20261015090100) only; tenant tables stay unreadable under
 --                                  Storage's login role.
 --
@@ -410,7 +411,11 @@ create trigger files_uploaded_notify after update of status on platform.files
 -- ---------------------------------------------------------------------------------------------------
 -- Supabase Storage connects with its own LOGIN role (supabase_storage_admin: self-hosted compose and
 -- hosted Supabase; checked on staging after deployment, docs/engineering/files.md §7) and sets the caller's
--- JWT payload as request.jwt.claims. Same validation as private.current_tenant_id() for app_server.
+-- JWT payload as request.jwt.claims. Same validation as private.current_tenant_id() for app_server, through
+-- the same decision since T-M2-10 (private.session_access, ADR 0002 §6a): a live Auth session of this user,
+-- not ended (revocation marker, platform 24-hour floor, the organization's idle and maximum-length rules),
+-- acting in this organization as an active member of an active/trial one, and the organization's MFA
+-- policy met (AAL2 = the token's aal claim AND the Auth session at aal2 through a confirmed app).
 create or replace function private.storage_request_tenant()
 returns uuid
 language plpgsql stable security definer
@@ -419,28 +424,22 @@ as $$
 declare
   v_claims jsonb := private.request_claims();
   v_tenant uuid;
-  v_user uuid;
-  v_session uuid;
 begin
   if session_user <> 'supabase_storage_admin' or v_claims is null
      or coalesce(v_claims ->> 'role', '') <> 'authenticated' then
     return null;
   end if;
   v_tenant := private.try_uuid(v_claims ->> 'tenant_id');
-  v_user := private.try_uuid(v_claims ->> 'sub');
-  v_session := private.try_uuid(v_claims ->> 'session_id');
   if v_tenant is not null
-     and private.user_session_is_valid(v_user, v_session)
-     and private.has_active_membership(v_user, v_tenant)
-     and exists (select 1 from platform.session_context c
-                 where c.session_id = v_session and c.user_id = v_user and c.active_tenant_id = v_tenant) then
+     and (private.session_access(private.try_uuid(v_claims ->> 'sub'), private.try_uuid(v_claims ->> 'session_id'),
+                                 v_tenant, coalesce(v_claims ->> 'aal', '') = 'aal2', false)).state = 'ok' then
     return v_tenant;
   end if;
   return null;
 end
 $$;
 comment on function private.storage_request_tenant() is
-  'SECURITY-RELEVANT (ADR 0002 §6a, T-M2-18). Tenant of the USER claims Supabase Storage sets under its login role supabase_storage_admin, validated like current_tenant_id(); else NULL. For the storage.objects policies.';
+  'SECURITY-RELEVANT (ADR 0002 §6a, T-M2-18, T-M2-10). Tenant of the USER claims Supabase Storage sets under its login role supabase_storage_admin, validated like current_tenant_id() (private.session_access: session, membership, session context, session rules, MFA policy); else NULL. For the storage.objects policies.';
 
 -- ---------------------------------------------------------------------------------------------------
 -- Request path (web app: app_server, user claims)

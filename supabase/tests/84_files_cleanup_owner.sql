@@ -2,7 +2,8 @@
 -- Files (T-M2-18): the paths that need a set-up only the owner can make — a business table referencing a
 -- file (a purge keeps a tombstone without the name), a stored generated object (the job marks it clean) —
 -- run under the worker's login role through SET SESSION AUTHORIZATION, so the functions see session_user =
--- app_worker exactly as in production. Then the fixtures of 80_files_owner.sql are removed again.
+-- app_worker exactly as in production. Then the fixtures of 80_files_owner.sql are removed again. Last,
+-- Storage's tenant check under the session rules and MFA policy of T-M2-10 (Storage's login role).
 \set ON_ERROR_STOP on
 
 begin;
@@ -265,5 +266,84 @@ begin
   perform tests.assert_eq((select count(*) from storage.objects), 2::bigint, 'their two objects remain');
 end $$;
 commit;
+
+-- Storage's tenant check decides like the web app's (T-M2-10 × T-M2-18): private.storage_request_tenant()
+-- asks private.session_access, so a session idle for longer than its organization allows, one older than
+-- the organization's maximum length, or one that does not meet the organization's MFA policy gets no
+-- tenant under Storage's login role either — not only a missing session, membership or session context
+-- (83_files_storage.sql). uA's session sA in tenant A, under Storage's login role through SET SESSION
+-- AUTHORIZATION. Rolled back.
+begin;
+update platform.security_policies set mfa_mode = 'off', session_idle_minutes = 30, session_max_hours = 12
+where tenant_id = 'a0000000-0000-4000-8000-000000000001';
+update platform.session_context set last_seen_at = now() where session_id = '10000000-0000-4000-8000-0000000000a1';
+update auth.sessions set created_at = now() - interval '1 hour' where id = '10000000-0000-4000-8000-0000000000a1';
+insert into platform.file_download_grants (tenant_id, file_id, user_id, expires_at) values
+  ('a0000000-0000-4000-8000-000000000001', 'f0a00000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-0000000000a1',
+   now() + interval '1 minute');
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
+                                          'a0000000-0000-4000-8000-000000000001'));
+set local session authorization supabase_storage_admin;
+set local role authenticated;
+do $$
+begin
+  perform tests.assert(session_user = 'supabase_storage_admin', 'acting under Storage''s login role');
+  perform tests.assert_eq(private.storage_request_tenant(), 'a0000000-0000-4000-8000-000000000001'::uuid,
+    'a live, recently active session in an organization without MFA: tenant A');
+  perform tests.assert(private.can_read_object('imports',
+      'a0000000-0000-4000-8000-000000000001/platform/user_import/a5000000-0000-4000-8000-000000000001/f0a00000-0000-4000-8000-000000000001'),
+    'and it reads the clean file it holds a grant for');
+end $$;
+reset role;
+set local session authorization default;
+-- Idle for longer than the organization allows (30 minutes).
+update platform.session_context set last_seen_at = now() - interval '31 minutes'
+where session_id = '10000000-0000-4000-8000-0000000000a1';
+set local session authorization supabase_storage_admin;
+set local role authenticated;
+do $$
+begin
+  perform tests.assert(private.storage_request_tenant() is null, 'an idle session gets no tenant from Storage');
+  perform tests.assert(not private.can_read_object('imports',
+      'a0000000-0000-4000-8000-000000000001/platform/user_import/a5000000-0000-4000-8000-000000000001/f0a00000-0000-4000-8000-000000000001'),
+    'an idle session reads nothing, even with a grant');
+end $$;
+reset role;
+set local session authorization default;
+update platform.session_context set last_seen_at = now() where session_id = '10000000-0000-4000-8000-0000000000a1';
+-- Older than the organization's maximum session length (12 hours).
+update auth.sessions set created_at = now() - interval '13 hours' where id = '10000000-0000-4000-8000-0000000000a1';
+set local session authorization supabase_storage_admin;
+set local role authenticated;
+do $$
+begin
+  perform tests.assert(private.storage_request_tenant() is null, 'a session past the maximum length gets no tenant from Storage');
+  perform tests.assert(not private.can_read_object('imports',
+      'a0000000-0000-4000-8000-000000000001/platform/user_import/a5000000-0000-4000-8000-000000000001/f0a00000-0000-4000-8000-000000000001'),
+    'nor reads the file, even with a grant');
+end $$;
+reset role;
+set local session authorization default;
+update auth.sessions set created_at = now() - interval '1 hour' where id = '10000000-0000-4000-8000-0000000000a1';
+-- An authenticator app required for everyone, without grace: an aal1 session (uA has no app) is refused.
+select tests.set_claims(null);
+update platform.security_policies
+set mfa_mode = 'required_all', mfa_grace_days = 0, mfa_required_since = now() - interval '1 day'
+where tenant_id = 'a0000000-0000-4000-8000-000000000001';
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
+                                          'a0000000-0000-4000-8000-000000000001'));
+set local session authorization supabase_storage_admin;
+set local role authenticated;
+do $$
+begin
+  perform tests.assert(private.storage_request_tenant() is null,
+    'a session that does not meet the organization''s MFA policy gets no tenant from Storage');
+  perform tests.assert(not private.can_read_object('imports',
+      'a0000000-0000-4000-8000-000000000001/platform/user_import/a5000000-0000-4000-8000-000000000001/f0a00000-0000-4000-8000-000000000001'),
+    'nor reads the file, even with a grant');
+end $$;
+reset role;
+set local session authorization default;
+rollback;
 
 \echo '84_files_cleanup_owner: ok'

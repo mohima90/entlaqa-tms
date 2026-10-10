@@ -754,4 +754,317 @@ describe('defineAction (ADR 0003 §4)', () => {
       expect(await Promise.race([stuck, control])).toBe('deadlock');
     });
   });
+
+  describe('afterCommit (work after the commit, T-M2-18 integration review M1)', () => {
+    const conflict = Object.assign(new Error('could not serialize access'), { code: '40001' });
+    // What platform-db withUserTx does with retryOnConflict (tested there): one more transaction; `open`
+    // counts the transactions in progress (a pooled connection held).
+    const retryingRuntime = (over: Partial<ActionRuntime<FakeTx>> = {}) => {
+      const state = { open: 0 };
+      const base = runtime(over);
+      const rt: ActionRuntime<FakeTx> = {
+        ...base.rt,
+        withUserTx: async (c, fn, o) => {
+          const once = async () => {
+            state.open += 1;
+            try {
+              return await base.rt.withUserTx(c, fn, o);
+            } finally {
+              state.open -= 1;
+            }
+          };
+          try {
+            return await once();
+          } catch (error) {
+            if (o?.retryOnConflict !== true || error !== conflict) throw error;
+            o.onRetry?.('40001');
+            return once();
+          }
+        },
+      };
+      return { ...base, rt, state };
+    };
+
+    it('runs once after the commit, with no transaction open, and shapes the answer from the result', async () => {
+      const { rt, log, audits, state } = retryingRuntime();
+      const seen: unknown[] = [];
+      const action = createDefineAction(rt)({
+        permission: approve,
+        input: Input,
+        resource: (input) => ({ type: 'enrollment', id: input.enrollmentId }),
+        audit: (input) => ({ action: 'tms.enrollment.reserved', entityId: input.enrollmentId }),
+        handler: ({ input }) => Promise.resolve(ok({ reservation: input.enrollmentId })),
+        afterCommit: ({ actor, input, result }) => {
+          seen.push({
+            open: state.open,
+            log: [...log],
+            user: actor.userId,
+            input: input.enrollmentId,
+            result,
+          });
+          return Promise.resolve(ok(`signed ${result.reservation}`));
+        },
+      });
+      expect(await action({ enrollmentId: ENROLLMENT })).toEqual(ok(`signed ${ENROLLMENT}`));
+      expect(seen).toEqual([
+        {
+          open: 0,
+          log: ['begin', 'commit'],
+          user: USER,
+          input: ENROLLMENT,
+          result: { reservation: ENROLLMENT },
+        },
+      ]);
+      expect(audits).toHaveLength(1);
+    });
+
+    it("the transaction step runs twice on 40001, afterCommit once (with the second attempt's result)", async () => {
+      const logTransactionRetry = vi.fn();
+      const { rt, log, audits } = retryingRuntime({ logTransactionRetry });
+      let attempts = 0;
+      const after = vi.fn(({ result }: { result: number }) => Promise.resolve(ok(result * 10)));
+      const action = createDefineAction(rt)({
+        permission: approve,
+        input: Input,
+        scoped: true,
+        audit: () => ({ action: 'tms.enrollment.reserved' }),
+        handler: () => {
+          attempts += 1;
+          return attempts === 1 ? Promise.reject(conflict) : Promise.resolve(ok(attempts));
+        },
+        afterCommit: after,
+      });
+      expect(await action({ enrollmentId: ENROLLMENT })).toEqual(ok(20));
+      expect(attempts).toBe(2);
+      expect(log).toEqual(['begin', 'rollback', 'begin', 'commit']);
+      expect(after).toHaveBeenCalledOnce();
+      expect(audits).toHaveLength(1);
+      expect(logTransactionRetry).toHaveBeenCalledExactlyOnceWith({
+        permission: 'tms.enrollment.approve',
+        sqlState: '40001',
+      });
+    });
+
+    it('externalEffects still turns the retry off with afterCommit present', async () => {
+      const options: unknown[] = [];
+      const { rt } = retryingRuntime();
+      const recording: ActionRuntime<FakeTx> = {
+        ...rt,
+        withUserTx: (c, fn, o) => {
+          options.push(o?.retryOnConflict);
+          return rt.withUserTx(c, fn, o);
+        },
+      };
+      const after = vi.fn(() => Promise.resolve(ok('after')));
+      const define = createDefineAction(recording);
+      const external = define({
+        permission: approve,
+        input: Input,
+        scoped: true,
+        externalEffects: true,
+        handler: () => Promise.reject(conflict),
+        afterCommit: after,
+      });
+      const refused = await external({ enrollmentId: ENROLLMENT });
+      expect(!refused.ok && refused.error.code).toBe('INTERNAL_ERROR');
+      expect(after).not.toHaveBeenCalled();
+      const plain = define({
+        permission: approve,
+        input: Input,
+        scoped: true,
+        handler: () => Promise.resolve(ok(1)),
+        afterCommit: after,
+      });
+      expect(await plain({ enrollmentId: ENROLLMENT })).toEqual(ok('after'));
+      expect(options).toEqual([false, true]);
+    });
+
+    it('never runs for a refused, denied, inactive-session or failed action', async () => {
+      const after = vi.fn(() => Promise.resolve(ok('after')));
+      const define = (
+        rt: ActionRuntime<FakeTx>,
+        handler: () => Promise<Result<string, AppError>>,
+      ) =>
+        createDefineAction(rt)({
+          permission: approve,
+          input: Input,
+          resource: (input) => ({ type: 'enrollment', id: input.enrollmentId }),
+          handler,
+          afterCommit: after,
+        });
+      const refused = await define(runtime().rt, () =>
+        Promise.resolve(err(appError('CONFLICT_VERSION'))),
+      )({
+        enrollmentId: ENROLLMENT,
+      });
+      expect(!refused.ok && refused.error.code).toBe('CONFLICT_VERSION');
+      const denied = await define(runtime({ loadGrants: () => Promise.resolve([]) }).rt, () =>
+        Promise.resolve(ok('x')),
+      )({ enrollmentId: ENROLLMENT });
+      expect(!denied.ok && denied.error.code).toBe('FORBIDDEN');
+      const inactive = await define(
+        runtime({ loadSessionFacts: () => Promise.resolve({ active: false, aal2: false }) }).rt,
+        () => Promise.resolve(ok('x')),
+      )({ enrollmentId: ENROLLMENT });
+      expect(!inactive.ok && inactive.error.code).toBe('UNAUTHENTICATED');
+      const failed = await define(runtime().rt, () => Promise.reject(new Error('boom')))({
+        enrollmentId: ENROLLMENT,
+      });
+      expect(!failed.ok && failed.error.code).toBe('INTERNAL_ERROR');
+      expect(after).not.toHaveBeenCalled();
+    });
+
+    it('its refusal is the answer and its throw an internal error; the committed work stays', async () => {
+      const logError = vi.fn();
+      const { rt, log, audits } = runtime({ logError });
+      const define = (afterCommit: () => Promise<Result<string, AppError>>) =>
+        createDefineAction(rt)({
+          permission: approve,
+          input: Input,
+          scoped: true,
+          audit: () => ({ action: 'tms.enrollment.reserved' }),
+          handler: () => Promise.resolve(ok('reserved')),
+          afterCommit,
+        });
+      const refusal = await define(() => Promise.resolve(err(appError('CONFLICT_VERSION'))))({
+        enrollmentId: ENROLLMENT,
+      });
+      expect(!refusal.ok && refusal.error.code).toBe('CONFLICT_VERSION');
+      const thrown = await define(() => Promise.reject(new Error('storage down')))({
+        enrollmentId: ENROLLMENT,
+      });
+      expect(!thrown.ok && thrown.error.code).toBe('INTERNAL_ERROR');
+      expect(logError).toHaveBeenCalledOnce();
+      // Each action committed once; nothing was rolled back or run again.
+      expect(log).toEqual(['begin', 'commit', 'begin', 'commit']);
+      expect(audits).toHaveLength(2);
+    });
+
+    it("with beforeTransaction: session check, beforeTransaction, the action's transaction, then afterCommit — never nested", async () => {
+      const steps: string[] = [];
+      let open = 0;
+      const { rt } = runtime({
+        withUserTx: async (_c, fn) => {
+          open += 1;
+          steps.push(`begin (${String(open)} open)`);
+          try {
+            return await fn({ log: steps });
+          } finally {
+            open -= 1;
+            steps.push('end');
+          }
+        },
+        loadSessionFacts: () => {
+          steps.push('session facts');
+          return Promise.resolve({ active: true, aal2: false });
+        },
+      });
+      const action = createDefineAction(rt)({
+        permission: approve,
+        input: Input,
+        scoped: true,
+        beforeTransaction: () => {
+          steps.push(`before (${String(open)} open)`);
+          return Promise.resolve(ok(undefined));
+        },
+        handler: () => {
+          steps.push('handler');
+          return Promise.resolve(ok('reserved'));
+        },
+        afterCommit: ({ result }) => {
+          steps.push(`after ${result} (${String(open)} open)`);
+          return Promise.resolve(ok('signed'));
+        },
+      });
+      expect(await action({ enrollmentId: ENROLLMENT })).toEqual(ok('signed'));
+      expect(steps).toEqual([
+        'begin (1 open)',
+        'session facts',
+        'end',
+        'before (0 open)',
+        'begin (1 open)',
+        'session facts',
+        'handler',
+        'end',
+        'after reserved (0 open)',
+      ]);
+      // An inactive session: neither beforeTransaction nor afterCommit.
+      const after = vi.fn(() => Promise.resolve(ok('signed')));
+      const before = vi.fn(() => Promise.resolve(ok(undefined)));
+      const inactive = runtime({
+        loadSessionFacts: () => Promise.resolve({ active: false, aal2: false }),
+      });
+      const r = await createDefineAction(inactive.rt)({
+        permission: approve,
+        input: Input,
+        scoped: true,
+        beforeTransaction: before,
+        handler: () => Promise.resolve(ok('reserved')),
+        afterCommit: after,
+      })({ enrollmentId: ENROLLMENT });
+      expect(!r.ok && r.error.code).toBe('UNAUTHENTICATED');
+      expect(before).not.toHaveBeenCalled();
+      expect(after).not.toHaveBeenCalled();
+    });
+
+    it('regression: more concurrent actions than pool connections all complete when the service call runs in afterCommit', async () => {
+      // The files service before M1 opened its own transaction inside the action's (ownTx): with more
+      // concurrent actions than connections, each held one and waited for another. afterCommit holds none.
+      const POOL = 2;
+      let free = POOL;
+      const waiting: (() => void)[] = [];
+      const acquire = async () => {
+        if (free > 0) {
+          free -= 1;
+          return;
+        }
+        await new Promise<void>((resolve) => {
+          waiting.push(resolve);
+        });
+      };
+      const release = () => {
+        const next = waiting.shift();
+        if (next) next();
+        else free += 1;
+      };
+      const pooled = async <T>(fn: () => Promise<T>): Promise<T> => {
+        await acquire();
+        try {
+          await new Promise((resolve) => {
+            setTimeout(resolve, 5);
+          });
+          return await fn();
+        } finally {
+          release();
+        }
+      };
+      const { rt } = runtime({ withUserTx: (_c, fn) => pooled(() => fn({ log: [] })) });
+      const action = createDefineAction(rt)({
+        permission: approve,
+        input: Input,
+        scoped: true,
+        handler: () => Promise.resolve(ok('reserved')),
+        // A network call (Storage) that holds no connection, then the answer.
+        afterCommit: async ({ result }) => {
+          await new Promise((resolve) => {
+            setTimeout(resolve, 5);
+          });
+          return ok(`${result} and signed`);
+        },
+      });
+      const N = 8;
+      const all = Promise.all(
+        Array.from({ length: N }, () => action({ enrollmentId: ENROLLMENT })),
+      );
+      const timeout = new Promise<'deadlock'>((resolve) => {
+        setTimeout(() => {
+          resolve('deadlock');
+        }, 2_000);
+      });
+      expect(await Promise.race([all, timeout])).toEqual(
+        Array.from({ length: N }, () => ok('reserved and signed')),
+      );
+      expect(free).toBe(POOL);
+    });
+  });
 });

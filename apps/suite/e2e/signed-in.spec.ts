@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { afterSignIn, submitSignIn } from './sign-in';
 
 /**
  * Real sign-in against a configured deployment (T-M1-D03/D04): runs only when credentials are given,
@@ -15,23 +16,18 @@ test.describe('signed-in flow', () => {
   test.describe.configure({ mode: 'serial' });
 
   test('a wrong password gets the generic message', async ({ page }) => {
-    await page.goto('/en/sign-in');
-    await page.getByLabel('Email').fill(email ?? '');
-    await page.getByLabel('Password').fill('not-the-password');
-    await page.getByRole('button', { name: 'Sign in' }).click();
+    await submitSignIn(page, email, 'not-the-password');
     await expect(page.getByTestId('sign-in-error')).toHaveText(
       'The email or password is incorrect.',
+      afterSignIn,
     );
   });
 
   test('sign in shows the organization; sign out protects the suite again', async ({ page }) => {
-    await page.goto('/en/sign-in');
-    await page.getByLabel('Email').fill(email ?? '');
-    await page.getByLabel('Password').fill(password ?? '');
-    await page.getByRole('button', { name: 'Sign in' }).click();
+    await submitSignIn(page, email, password);
     // PO decision 2 (T-M2-10): the Organization Admin, without an authenticator app yet, is invited to
     // set one up and may postpone it; the choice is remembered (the later specs land on the suite).
-    await expect(page).toHaveURL(/\/en\/mfa$/);
+    await expect(page).toHaveURL(/\/en\/mfa$/, afterSignIn);
     await expect(page.getByTestId('mfa-prompt-admin')).toBeVisible();
     await page.getByRole('button', { name: 'Not now' }).click();
     await expect(page).toHaveURL(/\/en\/suite$/);

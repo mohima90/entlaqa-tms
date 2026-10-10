@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { type Page, expect, test } from '@playwright/test';
+import { signInToSuite } from './sign-in';
 
 /**
  * Invitations, admin side (T-M2-07, FR-IAM-03; screens 1 and 2) against a configured deployment:
@@ -12,11 +13,7 @@ const password = process.env.SIGNED_IN_E2E_PASSWORD;
 const run = Date.now().toString(36);
 
 async function signIn(page: Page) {
-  await page.goto('/en/sign-in');
-  await page.getByLabel('Email').fill(email ?? '');
-  await page.getByLabel('Password').fill(password ?? '');
-  await page.getByRole('button', { name: 'Sign in' }).click();
-  await expect(page).toHaveURL(/\/en\/suite$/);
+  await signInToSuite(page, email, password);
 }
 
 async function expectNoSeriousA11yViolations(page: Page) {

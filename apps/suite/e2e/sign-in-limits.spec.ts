@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { type Browser, type Page, expect, test } from '@playwright/test';
+import { afterSignIn } from './sign-in';
 
 /**
  * Sign-in protection (T-M2-11, FR-IAM-13; TM-0003 T-IAM-01/27; PO decisions 9 Oct 2026): runs only
@@ -87,7 +88,7 @@ async function expectNoSeriousA11yViolations(page: Page) {
 }
 
 async function expectError(page: Page, text: string) {
-  await expect(page.getByTestId('sign-in-error')).toHaveText(text);
+  await expect(page.getByTestId('sign-in-error')).toHaveText(text, afterSignIn);
 }
 
 test.describe('sign-in protection', () => {
@@ -149,7 +150,7 @@ test.describe('sign-in protection', () => {
       // After the window the right password signs in (and ends the run of failures).
       await page.waitForTimeout((windowSeconds + 2) * 1_000);
       await attempt(page, locale, email ?? '', password ?? '');
-      await expect(page).toHaveURL(new RegExp(`/${locale}/suite$`));
+      await expect(page).toHaveURL(new RegExp(`/${locale}/suite$`), afterSignIn);
       await page.getByRole('button', { name: t.signOut }).click();
       await expect(page).toHaveURL(new RegExp(`/${locale}/sign-in$`));
     });
@@ -169,7 +170,7 @@ test.describe('sign-in protection', () => {
     options: { readonly remember?: boolean } = {},
   ) {
     await attempt(page, locale, address, secret, options);
-    await expect(page).toHaveURL(new RegExp(`/${locale}/suite$`));
+    await expect(page).toHaveURL(new RegExp(`/${locale}/suite$`), afterSignIn);
   }
 
   async function signOut(page: Page, locale: Locale) {

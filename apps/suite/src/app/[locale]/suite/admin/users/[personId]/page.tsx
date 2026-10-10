@@ -154,7 +154,6 @@ async function Profile({
   const name = localizedName(locale, profile.displayNameAr, profile.displayNameEn);
   const profileHref = `/${locale}/suite/admin/users/${profile.personId}`;
   const securityErrors = security ? await memberSecurityErrorTexts(locale) : {};
-  const personName = name;
   const users = await getTranslations({ locale, namespace: 'users' });
   const format = await getFormatter({ locale });
   const none = <NotSet label={users('noneLabel')} />;
@@ -383,7 +382,7 @@ async function Profile({
         {security ? (
           <ResetAuthenticator
             personId={profile.personId}
-            personName={personName}
+            personName={name}
             hasApp={security.usesApp === true || security.appPending}
             canReset={security.canResetApp}
             needsCode={security.resetNeedsCode}

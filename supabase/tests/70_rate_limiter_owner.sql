@@ -113,7 +113,8 @@ begin
                        and (select relrowsecurity and relforcerowsecurity from pg_class where oid = 'private.sign_in_trusted_devices'::regclass),
     'rate_limit_secret / rate_limit_counters / sign_in_trusted_devices: row level security must be ENABLED and FORCED');
   for v_role in select unnest(array['anon', 'authenticated', 'service_role', 'app_server', 'app_worker', 'app_queue',
-                                    'tenant_guard', 'invitation_guard', 'account_mail_guard', 'supabase_auth_admin']) loop
+                                    'tenant_guard', 'invitation_guard', 'account_mail_guard', 'file_guard',
+                                    'supabase_auth_admin']) loop
     perform tests.assert(
       not has_table_privilege(v_role, 'private.rate_limit_secret', 'select, insert, update, delete, truncate, references, trigger')
         and not has_any_column_privilege(v_role, 'private.rate_limit_secret', 'select, insert, update, references')

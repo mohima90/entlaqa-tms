@@ -729,7 +729,8 @@ begin
     'private.storage_object_facts: where an object is, its reported size and stored type, nothing of its content or owner');
   -- No direct writes on the file tables for any application role (writes only through the functions).
   foreach v_role in array array['authenticated', 'anon', 'service_role', 'app_server', 'app_worker', 'app_queue',
-                                'tenant_guard', 'invitation_guard', 'account_mail_guard', 'supabase_storage_admin'] loop
+                                'tenant_guard', 'invitation_guard', 'account_mail_guard', 'membership_guard',
+                                'rate_limit_guard', 'supabase_storage_admin'] loop
     perform tests.assert(
       not has_table_privilege(v_role, 'platform.files', 'insert, update, delete, truncate, references, trigger')
         and not has_any_column_privilege(v_role, 'platform.files', 'insert, update, references')

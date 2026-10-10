@@ -89,8 +89,9 @@ export function UploadPanel({ importBase, labels, codes, errors, locale }: Uploa
   const upload = async (file: File) => {
     setFailure(null);
     const lower = file.name.toLowerCase();
+    // The files service's codes (FileErrors), as the server would answer.
     if (!EXTENSIONS.some((ext) => lower.endsWith(ext))) {
-      refuse('TYPE_NOT_ALLOWED');
+      refuse('FILE_TYPE_NOT_ALLOWED');
       return;
     }
     if (file.size < 1) {
@@ -98,15 +99,19 @@ export function UploadPanel({ importBase, labels, codes, errors, locale }: Uploa
       return;
     }
     if (file.size > MAX_BYTES) {
-      refuse('TOO_LARGE');
+      refuse('FILE_TOO_LARGE');
       return;
     }
     setPhase({ kind: 'uploading', name: file.name, loaded: 0, total: file.size });
     setAnnouncement(text('announceStart'));
     const started = await startUserImportAction({ fileName: file.name, size: file.size });
     if (!started.ok) {
-      const code = fieldErrorCodes(started.error).file;
-      refuse(code ?? '', errorText(started.error, errors));
+      // The import's own refusals are field errors of `file`; the files service's are codes
+      // (FILE_TOO_LARGE, FILE_STORAGE_UNAVAILABLE, …) with the import's own wording where it has one.
+      refuse(
+        fieldErrorCodes(started.error).file ?? started.error.code,
+        errorText(started.error, errors),
+      );
       return;
     }
     const outcome = await put(started.value.upload.url, started.value.upload.contentType, file);
@@ -121,8 +126,10 @@ export function UploadPanel({ importBase, labels, codes, errors, locale }: Uploa
     }
     const confirmed = await confirmUserImportUploadAction({ importId: started.value.importId });
     if (!confirmed.ok) {
-      const code = fieldErrorCodes(confirmed.error).file;
-      refuse(code ?? '', errorText(confirmed.error, errors));
+      refuse(
+        fieldErrorCodes(confirmed.error).file ?? confirmed.error.code,
+        errorText(confirmed.error, errors),
+      );
       return;
     }
     setAnnouncement(text('announceDone'));

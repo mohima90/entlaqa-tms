@@ -11,7 +11,7 @@ import type { ReactNode } from 'react';
 import { SuiteShell } from '../../../../../../components/suite-shell';
 import { Stepper } from '../../../../../../components/user-import/stepper';
 import { UploadPanel } from '../../../../../../components/user-import/upload-panel';
-import { profileErrorTexts } from '../../../../../../lib/profile-texts';
+import { fileActionErrorTexts } from '../../../../../../lib/profile-texts';
 import { getSuiteContext } from '../../../../../../lib/suite-context';
 import { userImportStartQuery } from '../../../../../../lib/user-import-queries';
 import { count } from '../../../../../../lib/user-import-view';
@@ -179,7 +179,7 @@ async function stepOne(locale: AppLocale, view: UserImportStartView, organizatio
             importBase={base}
             labels={labels}
             codes={codes}
-            errors={await profileErrorTexts(locale)}
+            errors={await fileActionErrorTexts(locale)}
             locale={locale}
           />
         )}

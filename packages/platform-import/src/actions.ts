@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { type AppError, type VerifiedClaims, appError, err, ok } from '@jadarat/platform-core';
+import { type AppError, appError, err, ok } from '@jadarat/platform-core';
 import {
   type HeldInvitationsSummary,
   type ImportRowView,
@@ -25,11 +25,15 @@ import {
   stopUserImport,
 } from '@jadarat/platform-db';
 import {
-  type FileRequestContext,
+  type GrantedDownload,
+  type UploadReservation,
   confirmUpload,
-  createDownloadGrant,
-  createUploadIntent,
+  fileResult,
+  grantDownload,
+  reserveUploadIntent,
   sanitizeFileName,
+  signDownload,
+  signUploadIntent,
 } from '@jadarat/platform-files';
 import {
   type ActionDefinition,
@@ -54,8 +58,11 @@ import type { TemplateLists } from './users/template';
 const p = platformPermissions;
 const PERMISSION = p['platform.user.invite'];
 
-/** The request's Storage access with the user's session (apps: @jadarat/platform-files/next). */
-export type FileContextFactory = (claims: VerifiedClaims) => Promise<FileRequestContext>;
+/**
+ * Storage with the signed-in user's session, for `afterCommit` (apps: `requestFileStorage` of
+ * @jadarat/platform-files/next). Signing refuses to run inside a transaction (T-M2-18 integration review M1).
+ */
+export type FileStorageFactory = () => Promise<Parameters<typeof signUploadIntent>[0]>;
 
 function fieldError(path: string, code: string): AppError {
   return appError('VALIDATION_FAILED', { fieldErrors: [{ path, code }] });
@@ -125,14 +132,27 @@ export interface StartedUserImport {
   };
 }
 
+/** What the start handler commits: the import and its upload reservation (signed after the commit). */
+export interface ReservedUserImport {
+  readonly importId: string;
+  readonly reservation: UploadReservation;
+}
+
 /**
- * Starts an import: reserves the upload (purpose platform.user_import, owner this import — the files
- * service checks name, type and size), creates the import and returns the signed upload URL for the
- * browser's PUT. Refused while another import runs in the organization.
+ * Starts an import, in the files API's two steps (T-M2-18 × T-M2-12; docs/engineering/files.md §3). In the
+ * action's transaction: refused while another import runs in the organization; reserves the upload
+ * (purpose platform.user_import, owner this import — the files service checks name, type and size) and
+ * creates the import. After the commit (`afterCommit`: Storage sees committed rows only, on its own
+ * connection; run once, no connection held): Storage signs the upload URL for the browser's PUT. Expected
+ * file refusals are error results (`fileResult`: FILE_TYPE_NOT_ALLOWED, FILE_TOO_LARGE,
+ * FILE_TOO_MANY_UPLOADS, FILE_STORAGE_UNAVAILABLE; FORBIDDEN when Storage refuses). The handler's work is
+ * all in its transaction, so the action needs no `externalEffects` and may be retried after a conflict.
+ * If signing fails, what stays is what a cut upload leaves: an import waiting for its file, whose
+ * reservation expires unused (15 minutes) and whose draft ends with its review window (24 hours).
  */
 export function startUserImportActionDefinition(
-  fileContext: FileContextFactory,
-): ActionDefinition<typeof StartUserImportInput, StartedUserImport, UserTx> {
+  storage: FileStorageFactory,
+): ActionDefinition<typeof StartUserImportInput, ReservedUserImport, UserTx, StartedUserImport> {
   return {
     permission: PERMISSION,
     input: StartUserImportInput,
@@ -140,29 +160,32 @@ export function startUserImportActionDefinition(
       if (await getRunningUserImport(ctx.tx))
         return err(fieldError('file', 'ANOTHER_IMPORT_RUNNING'));
       const importId = randomUUID();
-      let intent;
-      try {
-        intent = await createUploadIntent(await fileContext(ctx.claims), {
+      const reserved = await fileResult(
+        reserveUploadIntent(ctx.tx, {
           purpose: 'platform.user_import',
           owner: { module: 'platform', entityType: 'user_import', entityId: importId },
           declaredName: input.fileName,
           size: input.size,
-        });
-      } catch (error) {
-        if (!isDomainError(error)) throw error;
-        return err(fieldError('file', error.code));
-      }
+        }),
+      );
+      if (!reserved.ok) return reserved;
       const created = await guarded(() =>
         createUserImport(ctx.tx, {
           id: importId,
-          fileId: intent.fileId,
+          fileId: reserved.value.fileId,
           fileName: sanitizeFileName(input.fileName),
           fileSize: input.size,
         }),
       );
       if (!created.ok) return err(created.error);
+      return ok({ importId, reservation: reserved.value });
+    },
+    afterCommit: async ({ result }) => {
+      const signed = await fileResult(signUploadIntent(await storage(), result.reservation));
+      if (!signed.ok) return signed;
+      const intent = signed.value;
       return ok({
-        importId,
+        importId: result.importId,
         fileId: intent.fileId,
         upload: {
           url: intent.url,
@@ -197,13 +220,11 @@ export function confirmUserImportUploadActionDefinition(): ActionDefinition<
       const record = await ownImport(ctx.tx, input.importId);
       if ('code' in record) return err(record);
       if (record.status !== 'uploaded') return err(fieldError('import', 'IMPORT_STATE_CHANGED'));
-      try {
-        const view = await confirmUpload(ctx.tx, record.fileId);
-        return ok({ importId: record.id, fileId: record.fileId, fileStatus: view.status });
-      } catch (error) {
-        if (!isDomainError(error)) throw error;
-        return err(fieldError('file', error.code));
-      }
+      // No PUT yet (FILE_NOT_UPLOADED), too late (FILE_UPLOAD_EXPIRED), gone (NOT_FOUND): answers, not
+      // internal errors; the transaction rolls back.
+      const view = await fileResult(confirmUpload(ctx.tx, record.fileId));
+      if (!view.ok) return view;
+      return ok({ importId: record.id, fileId: record.fileId, fileStatus: view.value.status });
     },
     audit: (_input, output) => ({
       action: 'platform.user_import.uploaded',
@@ -445,9 +466,26 @@ export interface ReportLink {
   readonly name: string;
 }
 
+/** What the download handler commits: the download grant (signed after the commit). */
+export interface GrantedReport {
+  readonly importId: string;
+  readonly which: 'report' | 'review';
+  readonly granted: GrantedDownload;
+}
+
+/**
+ * The error report or the review's list of problems, for the importer alone (T-M2-18 × T-M2-12; files.md
+ * §3). In the action's transaction: the import is the actor's own; the download grant for exactly this
+ * import's report (`grantDownload`, with the files service's audit event `platform.file.download_granted`)
+ * and the import's audit event `platform.user_import.report_downloaded` — both record the grant, the
+ * right to download for 60 seconds. After the commit (`afterCommit`): Storage signs the link. A report
+ * that is gone or not clean is REPORT_DELETED; a Storage refusal is FILE_STORAGE_UNAVAILABLE or FORBIDDEN
+ * (`fileResult`). No `externalEffects`: the handler's work is all in its transaction. If signing fails,
+ * the grant expires unused with its 60 seconds.
+ */
 export function downloadUserImportReportActionDefinition(
-  fileContext: FileContextFactory,
-): ActionDefinition<typeof DownloadReportInput, ReportLink, UserTx> {
+  storage: FileStorageFactory,
+): ActionDefinition<typeof DownloadReportInput, GrantedReport, UserTx, ReportLink> {
   return {
     permission: PERMISSION,
     input: DownloadReportInput,
@@ -460,24 +498,20 @@ export function downloadUserImportReportActionDefinition(
       if (fileId === null || record.dataPurgedAt !== null) {
         return err(fieldError('import', 'REPORT_DELETED'));
       }
-      try {
-        const link = await createDownloadGrant(await fileContext(ctx.claims), ctx.actor, {
+      const granted = await fileResult(
+        grantDownload(ctx.tx, ctx.actor, {
           fileId,
           purpose: 'platform.user_import_report',
           owner: { module: 'platform', entityType: 'user_import', entityId: record.id },
-        });
-        return ok({ importId: record.id, which: input.which, url: link.url, name: link.name });
-      } catch (error) {
-        if (!isDomainError(error)) throw error;
-        return err(
-          fieldError(
-            'import',
-            error.code === 'FILE_NOT_FOUND' || error.code === 'FILE_NOT_CLEAN'
-              ? 'REPORT_DELETED'
-              : error.code,
-          ),
-        );
+        }),
+      );
+      if (!granted.ok) {
+        // Purged or not clean (FILE_NOT_FOUND → NOT_FOUND, FILE_NOT_CLEAN → FILE_NOT_READY): as the
+        // screens say it.
+        const gone = granted.error.code === 'NOT_FOUND' || granted.error.code === 'FILE_NOT_READY';
+        return err(gone ? fieldError('import', 'REPORT_DELETED') : granted.error);
       }
+      return ok({ importId: record.id, which: input.which, granted: granted.value });
     },
     audit: (_input, output) => ({
       action: 'platform.user_import.report_downloaded',
@@ -485,6 +519,16 @@ export function downloadUserImportReportActionDefinition(
       entityId: output.importId,
       data: { which: output.which },
     }),
+    afterCommit: async ({ result }) => {
+      const link = await fileResult(signDownload(await storage(), result.granted));
+      if (!link.ok) return link;
+      return ok({
+        importId: result.importId,
+        which: result.which,
+        url: link.value.url,
+        name: link.value.name,
+      });
+    },
   };
 }
 

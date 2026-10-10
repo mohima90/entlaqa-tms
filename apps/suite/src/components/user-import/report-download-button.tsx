@@ -18,7 +18,7 @@ export interface ReportDownloadButtonProps {
 
 /**
  * Downloads the error report or the review's list of problems: a short-lived link for the importer
- * (each download audited), opened at once so the browser saves the CSV.
+ * (each download audited), opened at once so the browser saves the workbook.
  */
 export function ReportDownloadButton(props: ReportDownloadButtonProps) {
   const [pending, startTransition] = useTransition();
@@ -34,8 +34,10 @@ export function ReportDownloadButton(props: ReportDownloadButtonProps) {
         window.location.assign(result.value.url);
         return;
       }
-      const code = fieldErrorCodes(result.error).import;
-      setFailure((code ? props.codes[code] : undefined) ?? errorText(result.error, props.errors));
+      // The import's refusals (field errors of `import`) or the files service's codes, e.g.
+      // FILE_STORAGE_UNAVAILABLE when Storage cannot sign the link after the grant was committed.
+      const code = fieldErrorCodes(result.error).import ?? result.error.code;
+      setFailure(props.codes[code] ?? errorText(result.error, props.errors));
     });
   };
   return (

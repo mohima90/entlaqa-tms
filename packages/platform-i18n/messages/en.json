@@ -1141,15 +1141,13 @@
         "retry": "Upload again"
       },
       "uploadErrors": {
-        "TYPE_NOT_ALLOWED": "This type of file can't be imported. You can upload an XLSX or CSV file.",
-        "TOO_LARGE": "The file is larger than 20 MB. You can split it in two.",
-        "TOO_MANY_PENDING_UPLOADS": "You have many files whose upload didn't finish. Wait a moment and try again.",
+        "FILE_TYPE_NOT_ALLOWED": "This type of file can't be imported. You can upload an XLSX or CSV file.",
+        "FILE_TOO_LARGE": "The file is larger than 20 MB. You can split it in two.",
+        "FILE_TOO_MANY_UPLOADS": "You have many files whose upload didn't finish. Wait a moment and try again.",
         "ANOTHER_IMPORT_RUNNING": "Another import is running now, so a new file can't be uploaded until it ends.",
-        "STORAGE_UNAVAILABLE": "The file service isn't available right now. You can try again shortly.",
-        "STORAGE_REFUSED": "The file service refused the upload. Refresh the page and try again.",
-        "OBJECT_NOT_UPLOADED": "The file didn't arrive in full. You can upload it again.",
-        "UPLOAD_EXPIRED": "The upload took too long. You can upload it again.",
-        "INVALID_FILE_DATA": "The file's name couldn't be accepted. You can rename it and upload it.",
+        "FILE_STORAGE_UNAVAILABLE": "The file service isn't available right now. You can try again shortly.",
+        "FILE_NOT_UPLOADED": "The file didn't arrive in full. You can upload it again.",
+        "FILE_UPLOAD_EXPIRED": "The upload took too long. You can upload it again.",
         "TOO_MANY_DRAFTS": "You have 5 unfinished imports, or the organization has 20. Complete or cancel them before uploading another file; a review that isn't confirmed ends after 24 hours."
       }
     },
@@ -1402,7 +1400,7 @@
         "REPORT_NOT_YOURS": "This report is available to the person who ran the import only.",
         "REPORT_DELETED": "The report was deleted 7 days after the import ended.",
         "NOTHING_TO_SEND": "There are no invitations left to send.",
-        "STORAGE_UNAVAILABLE": "The file service isn't available right now. You can try again shortly."
+        "FILE_STORAGE_UNAVAILABLE": "The file service isn't available right now. You can try again shortly."
       }
     },
     "progress": {

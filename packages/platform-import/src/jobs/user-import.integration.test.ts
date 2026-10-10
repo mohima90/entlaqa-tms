@@ -29,7 +29,7 @@ import {
   createWithSystemTx,
 } from '@jadarat/platform-db/jobs';
 import type { UserFileStorage } from '@jadarat/platform-db/supabase-server';
-import { confirmUpload, createUploadIntent } from '@jadarat/platform-files';
+import { confirmUpload, reserveUploadIntent, signUploadIntent } from '@jadarat/platform-files';
 import {
   type FileObjectStore,
   type Scanner,
@@ -142,24 +142,24 @@ describe.skipIf(!configured)('user import against PostgreSQL', () => {
     as: typeof claims = claims,
   ): Promise<string> {
     const importId = randomUUID();
-    const context = {
-      ownTx: <T>(fn: Parameters<typeof withUserTx<T>>[1]) => withUserTx(as, fn),
-      storage,
-    };
-    const intent = await createUploadIntent(context, {
-      purpose: 'platform.user_import',
-      owner: { module: 'platform', entityType: 'user_import', entityId: importId },
-      declaredName: name,
-      size: bytes.length,
-    });
-    await withUserTx(as, (tx) =>
-      createUserImport(tx, {
+    // The start action's shape (startUserImportActionDefinition): the reservation and the import in one
+    // transaction, Storage's signing after the commit — never a transaction inside another (T-M2-18).
+    const reservation = await withUserTx(as, async (tx) => {
+      const reserved = await reserveUploadIntent(tx, {
+        purpose: 'platform.user_import',
+        owner: { module: 'platform', entityType: 'user_import', entityId: importId },
+        declaredName: name,
+        size: bytes.length,
+      });
+      await createUserImport(tx, {
         id: importId,
-        fileId: intent.fileId,
+        fileId: reserved.fileId,
         fileName: name,
         fileSize: bytes.length,
-      }),
-    );
+      });
+      return reserved;
+    });
+    const intent = await signUploadIntent(storage, reservation);
     const [row] = await db.execute<{ object_key: string }>(
       sql`select object_key from platform.files where id = ${intent.fileId}::uuid`,
     );

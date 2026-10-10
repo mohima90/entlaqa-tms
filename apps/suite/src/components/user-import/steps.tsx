@@ -13,7 +13,7 @@ import { Alert, Badge, type BadgeTone, Card, buttonClasses } from '@jadarat/ui';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
-import { profileErrorTexts } from '../../lib/profile-texts';
+import { fileActionErrorTexts, profileErrorTexts } from '../../lib/profile-texts';
 import { userImportRowsQuery } from '../../lib/user-import-queries';
 import {
   codeCounts,
@@ -458,7 +458,7 @@ export async function reviewStep(
             label={t('review.downloadProblems')}
             workingLabel={t('progress.working')}
             codes={await refusalCodes(locale)}
-            errors={await profileErrorTexts(locale)}
+            errors={await fileActionErrorTexts(locale)}
           />
         ) : null}
       </div>
@@ -1053,7 +1053,7 @@ export async function resultView(locale: AppLocale, view: UserImportView): Promi
       undoneSentences.push(t('result.undoKeptError', { count: undone.errors }));
   }
   const deadline = undoDeadline(record.finishedAt);
-  const errors = await profileErrorTexts(locale);
+  const errors = await fileActionErrorTexts(locale);
   const codes = await refusalCodes(locale);
   const sendHold = record.options?.invitations === 'hold';
   const invitations = record.invitations;

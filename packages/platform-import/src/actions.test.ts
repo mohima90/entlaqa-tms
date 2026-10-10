@@ -20,8 +20,10 @@ const db = vi.hoisted(() => ({
 }));
 const files = vi.hoisted(() => ({
   confirmUpload: vi.fn(),
-  createDownloadGrant: vi.fn(),
-  createUploadIntent: vi.fn(),
+  grantDownload: vi.fn(),
+  reserveUploadIntent: vi.fn(),
+  signDownload: vi.fn(),
+  signUploadIntent: vi.fn(),
 }));
 vi.mock('@jadarat/platform-db', async (original) => ({
   ...(await original<Record<string, unknown>>()),
@@ -36,7 +38,9 @@ const { DomainError } = await import('@jadarat/platform-db');
 const actions = await import('./actions');
 
 const ID = '6f1d2c3b-4a5e-4f60-8a7b-9c0d1e2f3a4b';
-const fileContext = vi.fn(() => Promise.resolve({ ownTx: vi.fn(), storage: {} } as never));
+/** The user's Storage client for afterCommit (apps: requestFileStorage). */
+const userStorage = { storage: 'user' };
+const storage = vi.fn(() => Promise.resolve(userStorage as never));
 
 function context(can: (code: string) => boolean = () => true): ActionContext<never> {
   return {
@@ -71,17 +75,40 @@ function record(overrides: Record<string, unknown> = {}) {
 interface Runnable {
   handler: (args: never) => unknown;
   input: { parse: (v: unknown) => unknown };
+  afterCommit?: (args: never) => unknown;
 }
 
+interface Outcome {
+  ok: boolean;
+  value?: Record<string, unknown>;
+  error?: { code: string; fieldErrors?: { path: string; code: string }[] };
+}
+
+/** The handler alone (what runs in the action's transaction). */
 async function run(definition: Runnable, input: unknown, ctx = context()) {
-  return (await definition.handler({ ctx, input: definition.input.parse(input) } as never)) as {
-    ok: boolean;
-    value?: Record<string, unknown>;
-    error?: { code: string; fieldErrors?: { path: string; code: string }[] };
-  };
+  return (await definition.handler({
+    ctx,
+    input: definition.input.parse(input),
+  } as never)) as Outcome;
 }
 
-const fieldCode = (result: Awaited<ReturnType<typeof run>>) => result.error?.fieldErrors?.[0]?.code;
+/**
+ * As defineAction runs it: the handler (in the transaction), then — only after a committed success —
+ * afterCommit with the handler's result (outside it).
+ */
+async function runCommitted(definition: Runnable, input: unknown, ctx = context()) {
+  const parsed = definition.input.parse(input);
+  const handled = (await definition.handler({ ctx, input: parsed } as never)) as Outcome;
+  if (!handled.ok || !definition.afterCommit) return { handled, answer: handled };
+  const answer = (await definition.afterCommit({
+    actor: ctx.actor,
+    input: parsed,
+    result: handled.value,
+  } as never)) as Outcome;
+  return { handled, answer };
+}
+
+const fieldCode = (result: Outcome) => result.error?.fieldErrors?.[0]?.code;
 
 beforeEach(() => {
   db.getRunningUserImport.mockResolvedValue(null);
@@ -98,65 +125,128 @@ afterEach(() => {
 });
 
 describe('start and upload (step 1)', () => {
-  it('reserves the upload for a new import and returns the signed URL', async () => {
-    files.createUploadIntent.mockResolvedValue({
-      fileId: 'f1',
-      url: 'https://storage.test/u',
-      method: 'PUT',
-      contentType: 'text/csv',
-      maxBytes: 20971520,
-      expiresAt: new Date('2026-10-10T10:00:00Z'),
-    });
-    const result = await run(actions.startUserImportActionDefinition(fileContext), {
+  const reservation = {
+    fileId: 'f1',
+    bucket: 'imports',
+    objectKey: 't/platform/user_import/i/f1',
+    contentType: 'text/csv',
+    maxBytes: 20971520,
+    expiresAt: new Date('2026-10-10T10:00:00Z'),
+  };
+  const intent = {
+    fileId: 'f1',
+    url: 'https://storage.test/u',
+    method: 'PUT',
+    contentType: 'text/csv',
+    maxBytes: 20971520,
+    expiresAt: new Date('2026-10-10T10:00:00Z'),
+  };
+
+  it('reserves the upload and creates the import in the transaction, then signs after the commit', async () => {
+    files.reserveUploadIntent.mockResolvedValue(reservation);
+    files.signUploadIntent.mockResolvedValue(intent);
+    const definition = actions.startUserImportActionDefinition(storage);
+    // T-M2-18 × T-M2-12: no Storage call inside the transaction, so the action may be retried after a
+    // conflict — no externalEffects.
+    expect(definition.externalEffects).toBeUndefined();
+    const { handled, answer } = await runCommitted(definition, {
       fileName: 'موظفو الرياض.csv',
       size: 120,
     });
-    expect(result.ok).toBe(true);
-    expect(result.value).toMatchObject({
-      fileId: 'f1',
-      upload: {
-        url: 'https://storage.test/u',
-        method: 'PUT',
-        expiresAt: '2026-10-10T10:00:00.000Z',
-      },
-    });
-    const [, intent] = files.createUploadIntent.mock.calls[0] as [unknown, Record<string, unknown>];
-    expect(intent).toMatchObject({
+    // The transaction's part: the reservation and the import — nothing signed yet.
+    expect(handled.value).toEqual({ importId: expect.any(String), reservation });
+    const importId = handled.value?.importId;
+    const [tx, input] = files.reserveUploadIntent.mock.calls[0] as [
+      unknown,
+      Record<string, unknown>,
+    ];
+    expect(tx).toEqual({});
+    expect(input).toMatchObject({
       purpose: 'platform.user_import',
-      owner: { module: 'platform', entityType: 'user_import', entityId: result.value?.importId },
+      owner: { module: 'platform', entityType: 'user_import', entityId: importId },
+      declaredName: 'موظفو الرياض.csv',
       size: 120,
     });
     expect(db.createUserImport).toHaveBeenCalledWith(
       {},
-      expect.objectContaining({ fileId: 'f1', fileSize: 120 }),
+      expect.objectContaining({ id: importId, fileId: 'f1', fileSize: 120 }),
     );
+    // After the commit: the user's Storage signs exactly the reservation.
+    expect(storage).toHaveBeenCalledTimes(1);
+    expect(files.signUploadIntent).toHaveBeenCalledWith(userStorage, reservation);
+    expect(answer).toEqual({
+      ok: true,
+      value: {
+        importId,
+        fileId: 'f1',
+        upload: {
+          url: 'https://storage.test/u',
+          method: 'PUT',
+          contentType: 'text/csv',
+          maxBytes: 20971520,
+          expiresAt: '2026-10-10T10:00:00.000Z',
+        },
+      },
+    });
   });
 
   it('refuses while another import runs, and the files service’s refusals', async () => {
     db.getRunningUserImport.mockResolvedValueOnce(record({ status: 'importing' }));
-    const definition = actions.startUserImportActionDefinition(fileContext);
+    const definition = actions.startUserImportActionDefinition(storage);
     expect(fieldCode(await run(definition, { fileName: 'a.csv', size: 1 }))).toBe(
       'ANOTHER_IMPORT_RUNNING',
     );
-    files.createUploadIntent.mockRejectedValueOnce(new DomainError('TYPE_NOT_ALLOWED'));
-    expect(fieldCode(await run(definition, { fileName: 'a.xls', size: 1 }))).toBe(
-      'TYPE_NOT_ALLOWED',
-    );
-    files.createUploadIntent.mockRejectedValueOnce(new Error('boom'));
-    await expect(run(definition, { fileName: 'a.csv', size: 1 })).rejects.toThrow('boom');
-    files.createUploadIntent.mockResolvedValueOnce({
-      fileId: 'f1',
-      url: 'u',
-      method: 'PUT',
-      contentType: 'text/csv',
-      maxBytes: 1,
-      expiresAt: new Date(),
+    expect(files.reserveUploadIntent).not.toHaveBeenCalled();
+    // Expected refusals are error results with the files service's codes (fileResult); nothing is
+    // created and nothing signed.
+    for (const [code, answer] of [
+      ['TYPE_NOT_ALLOWED', 'FILE_TYPE_NOT_ALLOWED'],
+      ['TOO_LARGE', 'FILE_TOO_LARGE'],
+      ['TOO_MANY_PENDING_UPLOADS', 'FILE_TOO_MANY_UPLOADS'],
+    ] as const) {
+      files.reserveUploadIntent.mockRejectedValueOnce(new DomainError(code));
+      const { answer: result } = await runCommitted(definition, { fileName: 'a.xls', size: 1 });
+      expect(result.ok).toBe(false);
+      expect(result.error?.code).toBe(answer);
+    }
+    expect(db.createUserImport).not.toHaveBeenCalled();
+    expect(files.signUploadIntent).not.toHaveBeenCalled();
+    // A module bug or an outage stays an internal error.
+    files.reserveUploadIntent.mockRejectedValueOnce(new DomainError('INVALID_FILE_DATA'));
+    await expect(run(definition, { fileName: 'a.csv', size: 1 })).rejects.toMatchObject({
+      code: 'INVALID_FILE_DATA',
     });
+    files.reserveUploadIntent.mockRejectedValueOnce(new Error('boom'));
+    await expect(run(definition, { fileName: 'a.csv', size: 1 })).rejects.toThrow('boom');
+    files.reserveUploadIntent.mockResolvedValueOnce(reservation);
     db.createUserImport.mockRejectedValueOnce(new DomainError('NOT_ALLOWED'));
     expect((await run(definition, { fileName: 'a.csv', size: 1 })).error?.code).toBe('FORBIDDEN');
+    files.reserveUploadIntent.mockResolvedValueOnce(reservation);
+    db.createUserImport.mockRejectedValueOnce(new DomainError('TOO_MANY_DRAFTS'));
+    expect(fieldCode(await run(definition, { fileName: 'a.csv', size: 1 }))).toBe(
+      'TOO_MANY_DRAFTS',
+    );
     expect(() =>
       definition.input.parse({ fileName: 'a.csv', size: 20 * 1024 * 1024 + 1 }),
     ).toThrow();
+  });
+
+  it('answers a Storage refusal after the commit as an error result (the import waits for a file)', async () => {
+    const definition = actions.startUserImportActionDefinition(storage);
+    files.reserveUploadIntent.mockResolvedValue(reservation);
+    files.signUploadIntent.mockRejectedValueOnce(new DomainError('STORAGE_UNAVAILABLE'));
+    const unavailable = await runCommitted(definition, { fileName: 'a.csv', size: 1 });
+    expect(unavailable.handled.ok).toBe(true);
+    expect(unavailable.answer.error?.code).toBe('FILE_STORAGE_UNAVAILABLE');
+    files.signUploadIntent.mockRejectedValueOnce(new DomainError('STORAGE_REFUSED'));
+    expect(
+      (await runCommitted(definition, { fileName: 'a.csv', size: 1 })).answer.error?.code,
+    ).toBe('FORBIDDEN');
+    // Signing inside a transaction (or any other failure) is a bug: thrown, an internal error.
+    files.signUploadIntent.mockRejectedValueOnce(new Error('inside a transaction'));
+    await expect(runCommitted(definition, { fileName: 'a.csv', size: 1 })).rejects.toThrow(
+      'inside a transaction',
+    );
   });
 
   it('confirms the importer’s own upload (audited)', async () => {
@@ -171,8 +261,13 @@ describe('start and upload (step 1)', () => {
       entityId: ID,
       data: { fileId: 'f1' },
     });
+    expect(definition.afterCommit).toBeUndefined();
     files.confirmUpload.mockRejectedValueOnce(new DomainError('OBJECT_NOT_UPLOADED'));
-    expect(fieldCode(await run(definition, { importId: ID }))).toBe('OBJECT_NOT_UPLOADED');
+    expect((await run(definition, { importId: ID })).error?.code).toBe('FILE_NOT_UPLOADED');
+    files.confirmUpload.mockRejectedValueOnce(new DomainError('UPLOAD_EXPIRED'));
+    expect((await run(definition, { importId: ID })).error?.code).toBe('FILE_UPLOAD_EXPIRED');
+    files.confirmUpload.mockRejectedValueOnce(new DomainError('FILE_NOT_FOUND'));
+    expect((await run(definition, { importId: ID })).error?.code).toBe('NOT_FOUND');
     files.confirmUpload.mockRejectedValueOnce(new Error('boom'));
     await expect(run(definition, { importId: ID })).rejects.toThrow('boom');
     db.getUserImport.mockResolvedValueOnce(record({ status: 'mapping' }));
@@ -312,21 +407,25 @@ describe('confirm, cancel, stop, undo', () => {
 
 describe('reports and held invitations', () => {
   it('the importer alone downloads the report or the review list (audited)', async () => {
-    files.createDownloadGrant.mockResolvedValue({
+    const granted = {
+      bucket: 'generated',
+      objectKey: 't/platform/user_import/i/p1',
+      name: 'r.xlsx',
+      ttlSeconds: 60,
+    };
+    files.grantDownload.mockResolvedValue(granted);
+    files.signDownload.mockResolvedValue({
       url: 'https://storage.test/d',
-      name: 'r.csv',
+      name: 'r.xlsx',
       expiresAt: new Date(),
     });
-    const definition = actions.downloadUserImportReportActionDefinition(fileContext);
-    const result = await run(definition, { importId: ID, which: 'report' });
-    expect(result.value).toEqual({
-      importId: ID,
-      which: 'report',
-      url: 'https://storage.test/d',
-      name: 'r.csv',
-    });
-    expect(files.createDownloadGrant).toHaveBeenCalledWith(
-      expect.anything(),
+    const definition = actions.downloadUserImportReportActionDefinition(storage);
+    expect(definition.externalEffects).toBeUndefined();
+    const { handled, answer } = await runCommitted(definition, { importId: ID, which: 'report' });
+    // In the transaction: the grant (for exactly this import's report) and the audit record.
+    expect(handled.value).toEqual({ importId: ID, which: 'report', granted });
+    expect(files.grantDownload).toHaveBeenCalledWith(
+      {},
       { userId: 'u1' },
       {
         fileId: 'p1',
@@ -335,17 +434,32 @@ describe('reports and held invitations', () => {
       },
     );
     expect(
-      definition.audit?.({ importId: ID, which: 'report' }, result.value as never),
+      definition.audit?.({ importId: ID, which: 'report' }, handled.value as never),
     ).toMatchObject({
       action: 'platform.user_import.report_downloaded',
       data: { which: 'report' },
     });
+    // After the commit: the user's Storage signs the grant.
+    expect(files.signDownload).toHaveBeenCalledWith(userStorage, granted);
+    expect(answer).toEqual({
+      ok: true,
+      value: { importId: ID, which: 'report', url: 'https://storage.test/d', name: 'r.xlsx' },
+    });
     await run(definition, { importId: ID, which: 'review' });
-    expect(files.createDownloadGrant).toHaveBeenLastCalledWith(
+    expect(files.grantDownload).toHaveBeenLastCalledWith(
       expect.anything(),
       expect.anything(),
       expect.objectContaining({ fileId: 'r1' }),
     );
+    // Storage refusing after the commit: an answer, not an internal error (the grant expires unused).
+    files.signDownload.mockRejectedValueOnce(new DomainError('STORAGE_UNAVAILABLE'));
+    expect(
+      (await runCommitted(definition, { importId: ID, which: 'report' })).answer.error?.code,
+    ).toBe('FILE_STORAGE_UNAVAILABLE');
+    files.signDownload.mockRejectedValueOnce(new DomainError('STORAGE_REFUSED'));
+    expect(
+      (await runCommitted(definition, { importId: ID, which: 'report' })).answer.error?.code,
+    ).toBe('FORBIDDEN');
     db.getUserImport.mockResolvedValueOnce(record({ mine: false }));
     expect(fieldCode(await run(definition, { importId: ID, which: 'report' }))).toBe(
       'REPORT_NOT_YOURS',
@@ -358,15 +472,14 @@ describe('reports and held invitations', () => {
     expect(fieldCode(await run(definition, { importId: ID, which: 'report' }))).toBe(
       'REPORT_DELETED',
     );
-    files.createDownloadGrant.mockRejectedValueOnce(new DomainError('FILE_NOT_FOUND'));
-    expect(fieldCode(await run(definition, { importId: ID, which: 'report' }))).toBe(
-      'REPORT_DELETED',
-    );
-    files.createDownloadGrant.mockRejectedValueOnce(new DomainError('STORAGE_UNAVAILABLE'));
-    expect(fieldCode(await run(definition, { importId: ID, which: 'report' }))).toBe(
-      'STORAGE_UNAVAILABLE',
-    );
-    files.createDownloadGrant.mockRejectedValueOnce(new Error('boom'));
+    // Purged, or never clean: the report is gone (as the screens say it).
+    for (const code of ['FILE_NOT_FOUND', 'FILE_NOT_CLEAN']) {
+      files.grantDownload.mockRejectedValueOnce(new DomainError(code));
+      expect(fieldCode(await run(definition, { importId: ID, which: 'report' }))).toBe(
+        'REPORT_DELETED',
+      );
+    }
+    files.grantDownload.mockRejectedValueOnce(new Error('boom'));
     await expect(run(definition, { importId: ID, which: 'report' })).rejects.toThrow('boom');
   });
 
@@ -493,14 +606,14 @@ describe('queries', () => {
 
   it('every definition needs platform.user.invite (Organization Admin, HR Manager)', () => {
     for (const definition of [
-      actions.startUserImportActionDefinition(fileContext),
+      actions.startUserImportActionDefinition(storage),
       actions.confirmUserImportUploadActionDefinition(),
       actions.chooseUserImportMappingActionDefinition(),
       actions.confirmUserImportActionDefinition(),
       actions.cancelUserImportActionDefinition(),
       actions.stopUserImportActionDefinition(),
       actions.undoUserImportActionDefinition(),
-      actions.downloadUserImportReportActionDefinition(fileContext),
+      actions.downloadUserImportReportActionDefinition(storage),
       actions.sendHeldInvitationsActionDefinition(),
       actions.userImportStartQueryDefinition(),
       actions.userImportQueryDefinition(),

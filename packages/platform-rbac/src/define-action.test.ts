@@ -393,7 +393,24 @@ describe('defineAction (ADR 0003 §4)', () => {
       handler: () => Promise.resolve(ok(1)),
     });
     await external({ enrollmentId: ENROLLMENT });
-    expect(options).toEqual([{ retryOnConflict: true }, { retryOnConflict: false }]);
+    expect(options).toMatchObject([{ retryOnConflict: true }, { retryOnConflict: false }]);
+  });
+
+  it('logs a retried transaction with the permission and the SQLSTATE only', async () => {
+    const logTransactionRetry = vi.fn();
+    const { rt } = runtime({ logTransactionRetry });
+    const record: ActionRuntime<FakeTx> = {
+      ...rt,
+      withUserTx: (c, fn, o) => {
+        o?.onRetry?.('40P01');
+        return rt.withUserTx(c, fn, o);
+      },
+    };
+    await makeAction(record)({ enrollmentId: ENROLLMENT });
+    expect(logTransactionRetry).toHaveBeenCalledExactlyOnceWith({
+      permission: 'tms.enrollment.approve',
+      sqlState: '40P01',
+    });
   });
 
   it('a retried transaction runs the whole pipeline again and audits once', async () => {

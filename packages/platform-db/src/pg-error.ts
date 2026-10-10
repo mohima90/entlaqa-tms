@@ -28,8 +28,8 @@ export function pgError(
  */
 export const TRANSACTION_CONFLICT_CODES: readonly string[] = ['40P01', '40001'];
 
-/** True when `error` is a deadlock or serialization failure (see TRANSACTION_CONFLICT_CODES). */
-export function isTransactionConflict(error: unknown): boolean {
+/** The SQLSTATE when `error` is a deadlock or serialization failure (TRANSACTION_CONFLICT_CODES), else null. */
+export function transactionConflictCode(error: unknown): string | null {
   const code = pgError(error)?.code;
-  return code !== undefined && TRANSACTION_CONFLICT_CODES.includes(code);
+  return code !== undefined && TRANSACTION_CONFLICT_CODES.includes(code) ? code : null;
 }

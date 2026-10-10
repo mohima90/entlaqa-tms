@@ -1,6 +1,6 @@
 import 'server-only';
 import { type UserTx } from '@jadarat/platform-db';
-import { reportError } from '@jadarat/platform-observability';
+import { log, reportError } from '@jadarat/platform-observability';
 import type { ActionRuntime } from './define-action';
 import { personResourceAttributes } from './person-scope';
 import { MEMBER_GRANTS } from './member-permissions';
@@ -62,5 +62,13 @@ export const defaultActionRuntime: ActionRuntime<UserTx> = {
   logError(error, meta) {
     // Logged (error class, permission, correlation id — no personal data) and sent to the error tracker.
     reportError(error, { permission: meta.permission, correlationId: meta.correlationId });
+  },
+  logTransactionRetry({ permission, sqlState }) {
+    // A deadlock or serialization failure the retry absorbed (integration review): permission and SQLSTATE.
+    log.warn('transaction retried after a conflict', {
+      permission,
+      reason: 'transaction_conflict',
+      errorCode: sqlState,
+    });
   },
 };

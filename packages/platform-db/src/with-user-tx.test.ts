@@ -198,16 +198,19 @@ describe('withUserTx (ADR 0002 §5)', () => {
         const { db, executed, transactionCount } = fakeDatabase();
         const withUserTx = createWithUserTx(() => db);
         let attempts = 0;
+        const retried: string[] = [];
         const result = await withUserTx(
           claims(),
           () => {
             attempts += 1;
             return attempts === 1 ? Promise.reject(conflict(code)) : Promise.resolve('second');
           },
-          { retryOnConflict: true },
+          { retryOnConflict: true, onRetry: (sqlState) => retried.push(sqlState) },
         );
         expect(result).toBe('second');
         expect(attempts).toBe(2);
+        // The caller hears of the retry: the SQLSTATE only (defineAction logs it with the permission).
+        expect(retried).toEqual([code]);
         expect(transactionCount()).toBe(2);
         // The second transaction sets the session up again (role, claims, activity).
         expect(executed.map((q) => q.sql)).toHaveLength(6);
@@ -228,9 +231,14 @@ describe('withUserTx (ADR 0002 §5)', () => {
     it('never retries other errors', async () => {
       const { db, transactionCount } = fakeDatabase();
       const withUserTx = createWithUserTx(() => db);
+      const retried: string[] = [];
       await expect(
-        withUserTx(claims(), () => Promise.reject(conflict('23505')), { retryOnConflict: true }),
+        withUserTx(claims(), () => Promise.reject(conflict('23505')), {
+          retryOnConflict: true,
+          onRetry: (sqlState) => retried.push(sqlState),
+        }),
       ).rejects.toThrow('Failed query');
+      expect(retried).toEqual([]);
       await expect(
         withUserTx(claims(), () => Promise.reject(new Error('handler failed')), {
           retryOnConflict: true,

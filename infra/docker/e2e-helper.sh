@@ -16,6 +16,10 @@
 #       makes the last set-up e-mail of every app of <address> still waiting for its code 3 minutes old
 #       (private.mfa_factor_confirmations.code_issued_at), as if it had been sent then — "send the e-mail
 #       again" is refused for 2 minutes after one. Prints how many apps were changed.
+#   e2e-helper.sh trusted-browsers <address>
+#       prints how many unexpired browsers the account of <address> trusts for the sign-in lock
+#       (private.sign_in_trusted_devices, T-M2-11), counted as the rate limiter itself keys them — as
+#       rate_limit_guard, with its own functions (the account's keyed hash; nothing readable is stored).
 # Reads only the values it needs from .secrets/.env (as smoke.sh); prints nothing else.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
@@ -84,8 +88,20 @@ with aged as (
 select count(*) from aged;
 SQL
     ;;
+  trusted-browsers)
+    address="$2"
+    PGPASSWORD="$(secret POSTGRES_PASSWORD)" PGSSLMODE=verify-full PGSSLROOTCERT=.secrets/ca.crt \
+      psql -h localhost -p 55432 -U postgres -d postgres -X -At -q -v ON_ERROR_STOP=1 -v address="$address" <<'SQL'
+begin;
+set local role rate_limit_guard;
+select count(*) from private.sign_in_trusted_devices d
+where d.account_key = private.rate_limit_key(private.rate_limit_account_subject(:'address'))
+  and d.expires_at > now();
+rollback;
+SQL
+    ;;
   *)
-    echo "usage: e2e-helper.sh mfa-mail <address> <code|remove> <ar|en> <n> | age-code <address> | age-setup-mail <address>" >&2
+    echo "usage: e2e-helper.sh mfa-mail <address> <code|remove> <ar|en> <n> | age-code <address> | age-setup-mail <address> | trusted-browsers <address>" >&2
     exit 2
     ;;
 esac

@@ -390,9 +390,12 @@ echo "smoke: My profile (T-M2-15a) — own details and password change as an ord
 PROFILE_NEW_PASSWORD="Profile-$(openssl rand -hex 16)"
 (cd "$ROOT/apps/suite" && E2E_BASE_URL=http://localhost:3200 SIGNED_IN_E2E_MANAGER_EMAIL="$MANAGER_EMAIL" \
   SIGNED_IN_E2E_MANAGER_PASSWORD="$MANAGER_PASSWORD" PROFILE_E2E_NEW_PASSWORD="$PROFILE_NEW_PASSWORD" \
+  PROFILE_E2E_HELPER="$ROOT/infra/docker/e2e-helper.sh" \
   pnpm exec playwright test e2e/profile.spec.ts --project=desktop-chromium)
 [[ "$(q "select count(distinct action) from platform.audit_events where action in ('platform.profile.updated', 'platform.auth.password_changed')")" == "2" ]] ||
   { echo "smoke: expected profile and password-change audit events" >&2; exit 1; }
+# The member's other remembered browser was forgotten after the change (profile.spec polls for it: Next.js
+# after(), outside the action's transaction — T-M2-11 L2 × the T-M2-18 transaction rules).
 # After the password change, every other sign-in session of the member ended (and the password-check
 # sessions too): only the last sign-in with the new password remains.
 [[ "$(q "select count(*) from auth.sessions where user_id = '$MANAGER_ID'")" == "1" ]] ||

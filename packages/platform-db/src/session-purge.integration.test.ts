@@ -24,7 +24,12 @@ function signal() {
   const promise = new Promise<void>((resolve) => {
     fire = resolve;
   });
-  return { promise, fire: () => fire() };
+  return {
+    promise,
+    fire: () => {
+      fire();
+    },
+  };
 }
 
 describe.skipIf(!configured)('purge of ended sessions against PostgreSQL', () => {

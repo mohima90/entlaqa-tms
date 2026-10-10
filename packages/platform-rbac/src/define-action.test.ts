@@ -397,7 +397,8 @@ describe('defineAction (ADR 0003 §4)', () => {
   });
 
   it('a retried transaction runs the whole pipeline again and audits once', async () => {
-    const { rt, log, audits } = runtime();
+    const logError = vi.fn();
+    const { rt, log, audits } = runtime({ logError });
     const deadlock = Object.assign(new Error('deadlock detected'), { code: '40P01' });
     // What platform-db withUserTx does with retryOnConflict (tested there): one more transaction.
     const retrying: ActionRuntime<FakeTx> = {
@@ -419,6 +420,6 @@ describe('defineAction (ADR 0003 §4)', () => {
     expect(result).toEqual(ok('done'));
     expect(log).toEqual(['begin', 'rollback', 'begin', 'commit']);
     expect(audits).toHaveLength(1);
-    expect(rt.logError).not.toHaveBeenCalled();
+    expect(logError).not.toHaveBeenCalled();
   });
 });

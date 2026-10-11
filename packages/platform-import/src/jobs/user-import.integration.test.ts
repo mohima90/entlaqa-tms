@@ -190,6 +190,24 @@ describe.skipIf(!configured)('user import against PostgreSQL', () => {
     );
   }
 
+  /**
+   * Import passes until every invitation of the import has been released. They go out one at a time at
+   * the pace (`sending.intervalMs`, the database's floor of 500 ms), each when its scheduled time has
+   * come, so a fixed number of quick passes may end before the last one is due; at most 15 seconds.
+   */
+  async function releaseAll(importId: string) {
+    const deadline = Date.now() + 15_000;
+    for (;;) {
+      await task.run({ jobId: randomUUID() });
+      const [held] = await db.execute<{ n: string }>(
+        sql`select count(*) as n from platform.invitations
+            where import_id = ${importId}::uuid and mail_held and status = 'pending'`,
+      );
+      if (Number(held?.n) === 0 || Date.now() > deadline) return;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+
   /** A report's rows (XLSX, security review L2). */
   async function readReport(bytes: Uint8Array) {
     const rows: string[][] = [];
@@ -358,7 +376,7 @@ describe.skipIf(!configured)('user import against PostgreSQL', () => {
     expect(updated?.family_name_ar).toBe('الشهراني');
 
     // Invitations: held, scheduled at the pace, then released for the mailer one at a time.
-    for (let i = 0; i < 5; i += 1) await task.run({ jobId: randomUUID() });
+    await releaseAll(importId);
     const invitations = await db.execute<{
       mail_held: boolean;
       send_at: Date | null;
@@ -501,7 +519,7 @@ describe.skipIf(!configured)('user import against PostgreSQL', () => {
       scheduleHeldInvitations(tx, { importId }, 0.1),
     );
     expect(scheduled).toBe(1);
-    for (let i = 0; i < 5; i += 1) await task.run({ jobId: randomUUID() });
+    await releaseAll(importId);
     const sent = await withUserTx(claims, (tx) => getUserImport(tx, importId));
     expect(sent?.invitations).toEqual({ held: 0, scheduled: 0, sent: 1, accepted: 0 });
   });

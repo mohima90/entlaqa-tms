@@ -45,6 +45,9 @@ describe('user import view', () => {
     expect(refreshSeconds('undoing')).toBe(3);
     expect(refreshSeconds('review')).toBeNull();
     expect(refreshSeconds('finished')).toBeNull();
+    // A cut upload waits for nobody (integration review L1); a scanned file is waited for.
+    expect(refreshSeconds('uploaded', 'pending_upload')).toBeNull();
+    expect(refreshSeconds('uploaded', 'scanning')).toBe(2);
     expect(runningPhase('queued')).toBe('checking');
     expect(runningPhase('importing')).toBe('importing');
     expect(runningPhase('inviting')).toBe('inviting');

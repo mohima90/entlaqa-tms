@@ -1,7 +1,7 @@
 import { toClientError } from '@jadarat/platform-core';
 import type { AppLocale } from '@jadarat/platform-i18n';
 import { routing } from '@jadarat/platform-i18n/routing';
-import type { UserImportView } from '@jadarat/platform-import';
+import { type UserImportView, userImportVersion } from '@jadarat/platform-import';
 import { Alert, Card, buttonClasses } from '@jadarat/ui';
 import type { Metadata } from 'next';
 import { hasLocale } from 'next-intl';
@@ -60,7 +60,8 @@ export async function generateMetadata({
  * One bulk user import (T-M2-12, FR-IAM-04; approved screens 4–13): the step its status calls for —
  * the scan and the reading, the mapping, the review (dry run), the options and the confirmation, the
  * progress of the run, the result with the error report and the undo — and the other states (refused
- * file, cancelled, expired). The page refreshes itself while the worker works. Only the importer follows
+ * file, cancelled, expired). While the worker works the page polls a passive status read and refreshes
+ * itself when something changed (integration review L1: never keeping an idle session alive). Only the importer follows
  * the steps before the run (the file holds employees' data); other user managers see the progress and
  * the result's counts.
  */
@@ -80,7 +81,12 @@ export default async function UserImportStatusPage({
   const path = `/suite/admin/users/import/${encodeURIComponent(importId)}`;
 
   let body: ReactNode;
-  let poll: { seconds: number; announcement: string } | null = null;
+  let poll: {
+    seconds: number;
+    statusUrl: string;
+    version: string;
+    announcement: string;
+  } | null = null;
   if (!context.live) {
     body = (
       <Alert tone="info" data-testid="users-not-configured">
@@ -104,9 +110,14 @@ export default async function UserImportStatusPage({
     } else {
       const view = result.value;
       body = await content(locale, view, query, context.organizationName ?? '');
-      const seconds = refreshSeconds(view.record.status);
+      const seconds = refreshSeconds(view.record.status, view.record.fileStatus);
       if (seconds !== null && (view.record.mine || !isDraft(view.record.status))) {
-        poll = { seconds, announcement: await announcement(locale, view) };
+        poll = {
+          seconds,
+          statusUrl: `/${locale}/suite/admin/users/import/${view.record.id}/status`,
+          version: userImportVersion(view.record),
+          announcement: await announcement(locale, view),
+        };
       }
     }
   }
@@ -123,7 +134,14 @@ export default async function UserImportStatusPage({
         </a>
       </nav>
       <div className="flex flex-col gap-6">{body}</div>
-      {poll ? <ImportPoller seconds={poll.seconds} announcement={poll.announcement} /> : null}
+      {poll ? (
+        <ImportPoller
+          seconds={poll.seconds}
+          statusUrl={poll.statusUrl}
+          version={poll.version}
+          announcement={poll.announcement}
+        />
+      ) : null}
     </SuiteShell>
   );
 }

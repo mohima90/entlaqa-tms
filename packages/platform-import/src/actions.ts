@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { type AppError, appError, err, ok } from '@jadarat/platform-core';
 import {
   type HeldInvitationsSummary,
@@ -639,6 +639,55 @@ export interface UserImportView {
 }
 
 /** One import, as each step and the result page show it. */
+/**
+ * What the import page shows of the worker's progress, as one opaque value (T-M2-12 integration review
+ * L1): the status, its reasons, the file's scan, the rows done and the counts — not timestamps the worker
+ * moves without anything to show (leases, next attempts). The page and its status read compare it; a
+ * hash, so no counts or codes travel in it.
+ */
+export function userImportVersion(record: UserImportRecord): string {
+  const shown = [
+    record.status,
+    record.failureCode,
+    record.fileStatus,
+    record.fileStatusReason,
+    record.rowsDone,
+    record.rowsTotal,
+    record.sheets.length,
+    record.stopRequestedAt?.toISOString() ?? null,
+    record.undoRequestedAt?.toISOString() ?? null,
+    record.reviewCounts,
+    record.resultCounts,
+    record.reportCode,
+    record.reportFileId,
+    record.dataPurgedAt?.toISOString() ?? null,
+  ];
+  return createHash('sha256').update(JSON.stringify(shown)).digest('base64url').slice(0, 22);
+}
+
+/**
+ * «Is there anything new?» — what the import page polls while the worker works (T-M2-12 integration
+ * review L1). A **passive read** (platform-db PASSIVE_READS): read-only, and NOT the session's activity, so
+ * a page left open cannot keep an idle session alive (the organization's inactivity rule, T-M2-10); the
+ * page refreshes itself only when the version changed. Same permission and visibility as the page.
+ */
+export function userImportStatusQueryDefinition(): QueryDefinition<
+  typeof UserImportIdInput,
+  { readonly version: string },
+  UserTx
+> {
+  return {
+    permission: PERMISSION,
+    input: UserImportIdInput,
+    passiveRead: 'platform.user_import.status',
+    handler: async ({ ctx, input }) => {
+      const record = await getUserImport(ctx.tx, input.importId);
+      if (!record) return err(appError('NOT_FOUND'));
+      return ok({ version: userImportVersion(record) });
+    },
+  };
+}
+
 export function userImportQueryDefinition(): QueryDefinition<
   typeof UserImportIdInput,
   UserImportView,

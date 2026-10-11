@@ -566,6 +566,32 @@ describe('reports and held invitations', () => {
 });
 
 describe('queries', () => {
+  it('the page’s status poll: a passive read of the version only (integration review L1)', async () => {
+    const definition = actions.userImportStatusQueryDefinition();
+    expect(definition.passiveRead).toBe('platform.user_import.status');
+    expect(definition).not.toHaveProperty('audit');
+    expect(definition).not.toHaveProperty('afterCommit');
+    const running = record({ status: 'importing', rowsDone: 500, rowsTotal: 3 });
+    db.getUserImport.mockResolvedValueOnce(running);
+    const result = await run(definition, { importId: ID });
+    expect(result.value).toEqual({ version: actions.userImportVersion(running as never) });
+    expect(String(result.value?.version)).toMatch(/^[A-Za-z0-9_-]{22}$/);
+    db.getUserImport.mockResolvedValueOnce(null);
+    expect((await run(definition, { importId: ID })).error?.code).toBe('NOT_FOUND');
+  });
+
+  it('the version moves with what the page shows, not with the worker’s bookkeeping', () => {
+    const v = (over: Record<string, unknown>) =>
+      actions.userImportVersion(record({ status: 'importing', rowsDone: 500, ...over }) as never);
+    const base = v({});
+    expect(v({ updatedAt: new Date(), nextAttemptAt: new Date() })).toBe(base);
+    expect(v({ rowsDone: 1000 })).not.toBe(base);
+    expect(v({ status: 'inviting' })).not.toBe(base);
+    expect(v({ stopRequestedAt: new Date('2026-10-11T08:00:00Z') })).not.toBe(base);
+    expect(v({ fileStatus: 'clean' })).not.toBe(v({ fileStatus: 'scanning' }));
+    expect(v({ resultCounts: { added: 1 } })).not.toBe(base);
+  });
+
   it('step 1: the running and recent imports', async () => {
     db.listUserImports.mockResolvedValue([record()]);
     const result = await run(actions.userImportStartQueryDefinition(), {});

@@ -35,8 +35,12 @@ export function draftStep(status: string, requested: string | undefined): Import
   return 'review';
 }
 
-/** Seconds between two refreshes while the page waits for the worker (null: no refresh). */
-export function refreshSeconds(status: string): number | null {
+/**
+ * Seconds between two status reads while the page waits for the worker (null: none). A cut upload — the
+ * file never arrived (`pending_upload`) — waits for nobody: no polling (integration review L1).
+ */
+export function refreshSeconds(status: string, fileStatus: string | null = null): number | null {
+  if (status === 'uploaded' && fileStatus === 'pending_upload') return null;
   if (status === 'uploaded' || status === 'validating') return 2;
   if (isRunning(status) || status === 'undoing') return 3;
   return null;

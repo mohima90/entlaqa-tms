@@ -693,10 +693,13 @@ begin
     'who asked is never written directly');
 end $$;
 select pg_temp.become_owner();
--- The HR Manager is demoted again before theirs goes out, and it is due first.
+-- The HR Manager — the importer — is deactivated before theirs goes out (their privileged role taken
+-- first: deactivating its holder needs an authenticator code), and it is due first.
 delete from platform.role_assignments where role_code = 'hr_manager'
   and membership_id = (select id from platform.tenant_memberships where user_id = '00000000-0000-4000-8000-0000000000ab'
                          and tenant_id = 'a0000000-0000-4000-8000-000000000001');
+update platform.tenant_memberships set status = 'suspended'
+  where user_id = '00000000-0000-4000-8000-0000000000ab' and tenant_id = 'a0000000-0000-4000-8000-000000000001';
 update platform.invitations set send_at = now() - interval '2 seconds' where id = (current_setting('tests.d6')::uuid[])[2];
 update platform.invitations set send_at = now() - interval '1 second' where id = (current_setting('tests.d6')::uuid[])[1];
 select pg_temp.become_worker('a0000000-0000-4000-8000-000000000001');
@@ -716,7 +719,7 @@ begin
     array['42501'], 'nor can it be released directly');
   perform pg_sleep(0.52);
   select * into r from private.user_import_release_next('a5000000-0000-4000-8000-0000000000d6', interval '500 milliseconds', 1000, 100);
-  perform tests.assert_eq(r.state, 'released', 'the Organization Admin''s is sent, though the importer may no longer invite');
+  perform tests.assert_eq(r.state, 'released', 'the Organization Admin''s is sent, though the importer was deactivated');
   perform tests.assert((select not mail_held and released_at is not null and send_requested_by = '00000000-0000-4000-8000-0000000000a1'
                         from platform.invitations where id = v_ids[1]),
     'released; who asked is kept (the mailer acts for them)');
@@ -729,7 +732,7 @@ begin
     'written by the job');
   perform tests.assert_eq((select count(*) from platform.audit_events
                            where action = 'platform.invitation.released' and entity_id = v_ids[2]::text), 0::bigint,
-    'nothing sent, nothing audited, for the demoted member');
+    'nothing sent, nothing audited, for the deactivated member');
 end $$;
 select pg_temp.become_owner();
 rollback;

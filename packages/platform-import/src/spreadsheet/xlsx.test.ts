@@ -1,5 +1,5 @@
 import { strToU8, zipSync } from 'fflate';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { SheetRow } from './errors';
 import {
   SHARED_STRING_KEEP,
@@ -274,7 +274,23 @@ describe('XlsxWorkbook: bounded work (security review H1)', () => {
       const bytes = workbook([{ name: 'A', xml: sheetXml(rows.join('')) }], {
         sharedStrings: `<sst xmlns="${MAIN}"><si><t xml:space="preserve">${padded}</t></si><si><t xml:space="preserve">${blank}</t></si><si><t>عادي</t></si></sst>`,
       });
-      const read = await rowsOf(XlsxWorkbook.open(bytes));
+      // Kept short ONCE per shared string, never per cell (integration review): the first visible
+      // character of a long string is searched for 2 times here (the padded and the blank string), not
+      // 6,000 (once for each of their cells).
+      const search = vi.spyOn(String.prototype, 'search');
+      let read: SheetRow[];
+      let searched: unknown[];
+      try {
+        read = await rowsOf(XlsxWorkbook.open(bytes));
+      } finally {
+        searched = [...search.mock.contexts];
+        search.mockRestore();
+      }
+      const longSearches = searched.filter((value) => String(value).length > SHARED_STRING_KEEP);
+      expect(longSearches.map((value) => String(value).length)).toEqual([
+        padded.length,
+        blank.length,
+      ]);
       expect(read).toHaveLength(3000);
       for (const row of read) {
         // From the first visible character, 501 kept: still "too long" for every field (500).

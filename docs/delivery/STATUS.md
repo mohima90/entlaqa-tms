@@ -206,6 +206,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
+| 11 Oct 2026 | **PR #49 opened** (T-M2-11 sign-in protection) after the PO's "yes"; DB deploy right after merge |
 | 11 Oct 2026 | PO turned on Supabase "Secure password change" (Authentication → Email) — T-M2-10 staging set-up complete |
 | 11 Oct 2026 | T-M2-12 integrated on T-M2-18 (all gates green), integration security review (3 Medium, 1 Low) fixed; final gates pending. Weekly usage limit pauses the agents until 15 Oct 16:00 UTC. T-M2-11 PR waits for the PO's "yes" |
 | 10 Oct 2026 | T-M2-11 sign-in protection integrated on main + T-M2-10, integration security review (1 Medium, 4 Low) fixed and re-reviewed OK; PR next. T-M2-18 integrated on top (review + re-review OK). T-M2-12 re-review fixes done. Usage limit stopped agents 18:00–20:00 UTC; resumed by the hourly check-in |

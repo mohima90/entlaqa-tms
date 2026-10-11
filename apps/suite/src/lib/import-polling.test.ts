@@ -141,13 +141,18 @@ describe('readImportStatus', () => {
         ok: init.status >= 200 && init.status < 300,
         type: init.type ?? 'basic',
         json: () =>
-          init.body === undefined ? Promise.reject(new Error('no json')) : Promise.resolve(init.body),
+          init.body === undefined
+            ? Promise.reject(new Error('no json'))
+            : Promise.resolve(init.body),
       } as Response),
     );
 
   it('reads the version without following redirects or caching', async () => {
     const fetcher = answer({ status: 200, body: { version: 'abc' } });
-    expect(await readImportStatus('/ar/x/status', fetcher)).toEqual({ kind: 'version', version: 'abc' });
+    expect(await readImportStatus('/ar/x/status', fetcher)).toEqual({
+      kind: 'version',
+      version: 'abc',
+    });
     expect(fetcher).toHaveBeenCalledWith('/ar/x/status', {
       cache: 'no-store',
       credentials: 'same-origin',
@@ -169,7 +174,10 @@ describe('readImportStatus', () => {
       kind: 'error',
     });
     expect(
-      await readImportStatus('/s', vi.fn(() => Promise.reject(new Error('offline')))),
+      await readImportStatus(
+        '/s',
+        vi.fn(() => Promise.reject(new Error('offline'))),
+      ),
     ).toEqual({ kind: 'error' });
   });
 });

@@ -102,7 +102,9 @@ export function createWithUserTx(getDb: () => AppDatabase): WithUserTx {
     }
     const passive = options.passiveRead !== undefined;
     if (passive && !isPassiveRead(options.passiveRead)) {
-      throw new Error('withUserTx: refusing a passive read that is not on the list (PASSIVE_READS)');
+      throw new Error(
+        'withUserTx: refusing a passive read that is not on the list (PASSIVE_READS)',
+      );
     }
     const claimsJson = JSON.stringify(databaseClaims(parsed.data));
     // A session acting in an organization records its activity (inactivity rule, T-M2-10) — except for

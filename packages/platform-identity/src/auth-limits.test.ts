@@ -1276,7 +1276,10 @@ describe('createInvitationLimiter', () => {
     return { limiter, events, memory };
   };
   /** The SHA-256 of the n-th link's token (what the database keeps). */
-  const link = (n: number) => createHash('sha256').update(`token-${String(n)}`).digest();
+  const link = (n: number) =>
+    createHash('sha256')
+      .update(`token-${String(n)}`)
+      .digest();
 
   it('gives each link its own small budget: 30 lookups and 5 new-account sign-ups (integration review M3)', async () => {
     const { limiter, events } = setup();

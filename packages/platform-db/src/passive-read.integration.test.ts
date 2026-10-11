@@ -96,7 +96,9 @@ describe.skipIf(!configured)('passive reads against PostgreSQL (integration revi
     const error: unknown = await withUserTx(
       claims(),
       (tx) =>
-        tx.execute(sql`update platform.persons set display_name_ar = 'ب' where id = ${person}::uuid`),
+        tx.execute(
+          sql`update platform.persons set display_name_ar = 'ب' where id = ${person}::uuid`,
+        ),
       passive,
     ).then(
       () => undefined,

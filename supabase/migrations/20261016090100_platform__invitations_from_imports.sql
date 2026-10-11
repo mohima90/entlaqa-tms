@@ -525,8 +525,9 @@ grant select (id, next_slot), update (next_slot) on private.invitation_send_cloc
 
 -- Takes the next send slot: null when it was taken (the caller releases ONE invitation in this
 -- transaction), or the time the next slot comes (the caller waits; nothing changed). `p_interval`: the
--- pace (0.1 to 60 seconds; the worker's setting). Worker system claims only (app_worker); a job of any
--- organization takes from the same clock.
+-- pace (0.5 to 60 seconds; the worker's setting, USER_IMPORT_INVITATION_INTERVAL_MS, has the same floor:
+-- Resend allows 2 requests a second for the whole account — integration review). Worker system claims
+-- only (app_worker); a job of any organization takes from the same clock.
 grant user_import_guard to current_user;
 create or replace function private.take_invitation_send_slot(p_interval interval)
 returns timestamptz
@@ -537,7 +538,7 @@ declare
   v_next timestamptz;
 begin
   perform private.user_import_worker_check();
-  if p_interval is null or p_interval < interval '100 milliseconds' or p_interval > interval '1 minute' then
+  if p_interval is null or p_interval < interval '500 milliseconds' or p_interval > interval '1 minute' then
     raise exception 'invalid sending pace' using errcode = 'invalid_parameter_value';
   end if;
   select c.next_slot into v_next from private.invitation_send_clock c where c.id for update;

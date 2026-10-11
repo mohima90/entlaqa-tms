@@ -42,8 +42,8 @@ do $$
 begin
   perform tests.assert_fails($q$select private.take_invitation_send_slot(interval '2 minutes')$q$, array['22023'],
     'the pace is bounded (at most a minute)');
-  perform tests.assert_fails($q$select private.take_invitation_send_slot(interval '10 milliseconds')$q$, array['22023'],
-    'and at least 100 milliseconds');
+  perform tests.assert_fails($q$select private.take_invitation_send_slot(interval '499 milliseconds')$q$, array['22023'],
+    'and at least 500 milliseconds, as the worker''s setting (integration review)');
   perform tests.assert(private.take_invitation_send_slot(interval '1 minute') is null, 'a job takes the free slot');
   perform tests.assert(private.take_invitation_send_slot(interval '1 minute') > now(),
     'the next one is a minute later, for the job of any organization');

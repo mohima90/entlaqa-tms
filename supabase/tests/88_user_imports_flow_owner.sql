@@ -340,19 +340,19 @@ begin
   select array_agg(id) into v_ids from platform.invitations where import_id = i;
   perform tests.assert_eq(private.schedule_held_invitations(v_ids, interval '0 seconds'), 5, 'the import''s five invitations scheduled');
   perform tests.assert((select bool_and(send_at <= now()) from platform.invitations where import_id = i), 'all five due now');
-  select * into r from private.user_import_release_next(i, interval '100 milliseconds', 1000, 100);
+  select * into r from private.user_import_release_next(i, interval '500 milliseconds', 1000, 100);
   perform tests.assert_eq(r.state, 'released', 'the first one is sent');
-  select * into r from private.user_import_release_next(i, interval '100 milliseconds', 1000, 100);
+  select * into r from private.user_import_release_next(i, interval '500 milliseconds', 1000, 100);
   perform tests.assert(r.state = 'wait' and r.not_before > now(), 'the second one, due as well, waits for the pace');
   perform tests.assert((select next_attempt_at = r.not_before from platform.user_imports where id = i),
     'the import''s next attempt is the next slot');
   for n in 1..4 loop
-    perform pg_sleep(0.12);
-    select * into r from private.user_import_release_next(i, interval '100 milliseconds', 1000, 100);
+    perform pg_sleep(0.52);
+    select * into r from private.user_import_release_next(i, interval '500 milliseconds', 1000, 100);
     perform tests.assert_eq(r.state, 'released', format('one more after the pace (%s)', n));
   end loop;
-  perform pg_sleep(0.12);
-  perform tests.assert_eq((select x.state from private.user_import_release_next(i, interval '100 milliseconds', 1000, 100) x),
+  perform pg_sleep(0.52);
+  perform tests.assert_eq((select x.state from private.user_import_release_next(i, interval '500 milliseconds', 1000, 100) x),
     'none', 'nothing left');
   perform tests.assert((select bool_and(not mail_held and send_at is null and released_at is not null
                                         and expires_at > now() + interval '6 days')
@@ -645,7 +645,7 @@ do $$
 declare
   i constant uuid := 'a5000000-0000-4000-8000-0000000000d6';
 begin
-  perform tests.assert_eq((select x.state from private.user_import_release_next(i, interval '100 milliseconds', 1000, 100) x),
+  perform tests.assert_eq((select x.state from private.user_import_release_next(i, interval '500 milliseconds', 1000, 100) x),
     'not_allowed', 'the importer may no longer invite: nothing sent');
   perform tests.assert((select bool_and(mail_held and send_at is null) from platform.invitations where import_id = i),
     'the schedule is cleared: «لم تُرسل الدعوة»');
@@ -705,7 +705,7 @@ declare
   v_ids uuid[] := current_setting('tests.d6')::uuid[];
   r record;
 begin
-  perform tests.assert_eq((select x.state from private.user_import_release_next('a5000000-0000-4000-8000-0000000000d6', interval '100 milliseconds', 1000, 100) x),
+  perform tests.assert_eq((select x.state from private.user_import_release_next('a5000000-0000-4000-8000-0000000000d6', interval '500 milliseconds', 1000, 100) x),
     'not_allowed', 'the member who asked may no longer invite: theirs is not sent');
   perform tests.assert((select mail_held and send_at is null and send_requested_by is null from platform.invitations where id = v_ids[2]),
     'its schedule is cleared («لم تُرسل الدعوة»), and who asked with it');
@@ -714,8 +714,8 @@ begin
     'the Organization Admin''s stays scheduled');
   perform tests.assert_fails(format($q$update platform.invitations set mail_held = false where id = %L$q$, v_ids[2]),
     array['42501'], 'nor can it be released directly');
-  perform pg_sleep(0.12);
-  select * into r from private.user_import_release_next('a5000000-0000-4000-8000-0000000000d6', interval '100 milliseconds', 1000, 100);
+  perform pg_sleep(0.52);
+  select * into r from private.user_import_release_next('a5000000-0000-4000-8000-0000000000d6', interval '500 milliseconds', 1000, 100);
   perform tests.assert_eq(r.state, 'released', 'the Organization Admin''s is sent, though the importer may no longer invite');
   perform tests.assert((select not mail_held and released_at is not null and send_requested_by = '00000000-0000-4000-8000-0000000000a1'
                         from platform.invitations where id = v_ids[1]),
@@ -780,7 +780,7 @@ select pg_temp.become_worker('a0000000-0000-4000-8000-000000000001');
 do $$
 begin
   perform tests.assert_eq((select x.state from private.user_import_release_next('a5000000-0000-4000-8000-000000000011',
-                                                                               interval '100 milliseconds', 1000, 100) x),
+                                                                               interval '500 milliseconds', 1000, 100) x),
     'released', 'and it is sent');
   perform tests.assert((select not mail_held and send_at is null from platform.invitations
                         where id = 'a4000000-0000-4000-8000-000000000e07'), 'released (the mailer gives it its link)');
@@ -818,9 +818,9 @@ do $$
 declare
   r record;
 begin
-  select * into r from private.user_import_release_next('a5000000-0000-4000-8000-000000000011', interval '100 milliseconds', 3, 2);
+  select * into r from private.user_import_release_next('a5000000-0000-4000-8000-000000000011', interval '500 milliseconds', 3, 2);
   perform tests.assert_eq(r.state, 'released', 'tenant A: the first overdue invitation is sent');
-  select * into r from private.user_import_release_next('a5000000-0000-4000-8000-000000000011', interval '100 milliseconds', 3, 2);
+  select * into r from private.user_import_release_next('a5000000-0000-4000-8000-000000000011', interval '500 milliseconds', 3, 2);
   perform tests.assert(r.state = 'wait' and r.not_before > now(),
     'the next overdue one waits for the pace: overdue invitations are spaced out again, not sent in a burst');
 end $$;
@@ -829,10 +829,10 @@ do $$
 declare
   r record;
 begin
-  select * into r from private.user_import_release_next('b5000000-0000-4000-8000-000000000001', interval '100 milliseconds', 3, 2);
+  select * into r from private.user_import_release_next('b5000000-0000-4000-8000-000000000001', interval '500 milliseconds', 3, 2);
   perform tests.assert_eq(r.state, 'wait', 'tenant B waits for the slot tenant A just took: one clock for the platform');
-  perform pg_sleep(0.12);
-  select * into r from private.user_import_release_next('b5000000-0000-4000-8000-000000000001', interval '100 milliseconds', 3, 2);
+  perform pg_sleep(0.52);
+  select * into r from private.user_import_release_next('b5000000-0000-4000-8000-000000000001', interval '500 milliseconds', 3, 2);
   perform tests.assert_eq(r.state, 'released', 'then it is tenant B''s turn');
 end $$;
 select pg_temp.become_worker('a0000000-0000-4000-8000-000000000001');
@@ -841,14 +841,14 @@ declare
   i constant uuid := 'a5000000-0000-4000-8000-000000000011';
   r record;
 begin
-  perform pg_sleep(0.12);
-  perform tests.assert_eq((select x.state from private.user_import_release_next(i, interval '100 milliseconds', 3, 2) x),
+  perform pg_sleep(0.52);
+  perform tests.assert_eq((select x.state from private.user_import_release_next(i, interval '500 milliseconds', 3, 2) x),
     'released', 'tenant A: the second today');
-  perform pg_sleep(0.12);
-  perform tests.assert_eq((select x.state from private.user_import_release_next(i, interval '100 milliseconds', 3, 2) x),
+  perform pg_sleep(0.52);
+  perform tests.assert_eq((select x.state from private.user_import_release_next(i, interval '500 milliseconds', 3, 2) x),
     'released', 'the third today');
-  perform pg_sleep(0.12);
-  select * into r from private.user_import_release_next(i, interval '100 milliseconds', 3, 2);
+  perform pg_sleep(0.52);
+  select * into r from private.user_import_release_next(i, interval '500 milliseconds', 3, 2);
   perform tests.assert(r.state = 'capped' and r.not_before = date_trunc('day', now(), 'UTC') + interval '1 day',
     'the daily number reached (3): the rest waits for the next day (UTC)');
   perform tests.assert((select next_attempt_at = r.not_before from platform.user_imports where id = i),
@@ -866,7 +866,7 @@ select pg_temp.become_worker('a0000000-0000-4000-8000-000000000001');
 do $$
 begin
   perform tests.assert_eq((select x.state from private.user_import_release_next('a5000000-0000-4000-8000-000000000011',
-                                                                               interval '100 milliseconds', 1000, 3) x),
+                                                                               interval '500 milliseconds', 1000, 3) x),
     'capped', 'an organization on trial: its lower daily number (3) is reached');
 end $$;
 select pg_temp.become_owner();

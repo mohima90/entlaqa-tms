@@ -125,7 +125,8 @@ describe.skipIf(!configured)('user import against PostgreSQL', () => {
   const logs: string[] = [];
   const log = (level: string, message: string) => logs.push(`${level}: ${message}`);
   const scan = createFileScanTask({ withPlatformTx, withSystemTx, store, scanner, log });
-  const sending = { intervalMs: 100, dailyCap: 1000, trialDailyCap: 100 };
+  // The database's floor (and the worker's): one invitation every 500 ms at most.
+  const sending = { intervalMs: 500, dailyCap: 1000, trialDailyCap: 100 };
   const task = createUserImportTask({
     withPlatformTx,
     withSystemTx,

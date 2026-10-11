@@ -87,6 +87,8 @@ export default async function ResetPasswordPage({
         password: t('reset.password'),
         confirmPassword: t('reset.confirmPassword'),
         showPassword: t('reset.showPassword'),
+        rememberBrowser: t('reset.rememberBrowser'),
+        rememberBrowserHint: t('reset.rememberBrowserHint'),
         required: common('required'),
         rulesLabel: t('reset.rulesLabel'),
         ruleMinLength: t('reset.rules.minLength', { min: '{min}' }),

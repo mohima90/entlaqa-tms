@@ -1,8 +1,9 @@
 'use server';
 /**
  * Users administration: HR / Organization Admin edits a person's details and placement (T-M2-13), a
- * member's roles (T-M2-14), and deactivates or reactivates a member (T-M2-09). Definitions and tests in
- * @jadarat/platform-rbac (iam/edit-user.ts, iam/edit-roles.ts, iam/deactivation.ts).
+ * member's roles (T-M2-14), deactivates or reactivates a member (T-M2-09) and ends a member's sign-in
+ * lock (T-M2-11). Definitions and tests in @jadarat/platform-rbac (iam/edit-user.ts, iam/edit-roles.ts,
+ * iam/deactivation.ts, iam/sign-in-lock.ts).
  */
 import {
   deactivateMemberActionDefinition,
@@ -10,6 +11,7 @@ import {
   defineAction,
   reactivateMemberActionDefinition,
   reactivatePrivilegedMemberActionDefinition,
+  unlockSignInActionDefinition,
   updateMemberPrivilegedRolesActionDefinition,
   updateMemberRolesActionDefinition,
   updateUserDetailsActionDefinition,
@@ -43,3 +45,6 @@ export const reactivateMemberAction = defineAction(reactivateMemberActionDefinit
 export const reactivatePrivilegedMemberAction = defineAction(
   reactivatePrivilegedMemberActionDefinition(),
 );
+
+/** «إلغاء إيقاف تسجيل الدخول» on a member's profile: Organization Admin only (T-M2-11). */
+export const unlockSignInAction = defineAction(unlockSignInActionDefinition());

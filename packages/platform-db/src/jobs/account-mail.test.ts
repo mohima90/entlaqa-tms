@@ -64,11 +64,40 @@ describe('account e-mail queue, worker side (T-M2-17)', () => {
       personId: PERSON,
       locale: 'en',
       ...none,
+      lockMinutes: null,
     });
     expect(fake.executed[0]?.sql).toBe('select * from private.claim_account_mail_request()');
     // Anything but English is Arabic.
     const ar = await claimAccountMailRequest(fakeTx([row({ locale: 'fr' })]).tx);
     expect(ar).toMatchObject({ locale: 'ar' });
+  });
+
+  it('an account_locked lease carries the lock minutes (T-M2-11); without them it is refused', async () => {
+    expect(
+      await claimAccountMailRequest(fakeTx([row({ kind: 'account_locked', lock_minutes: 15 })]).tx),
+    ).toMatchObject({ kind: 'account_locked', outcome: 'send', lockMinutes: 15 });
+    await expect(
+      claimAccountMailRequest(fakeTx([row({ kind: 'account_locked', lock_minutes: null })]).tx),
+    ).rejects.toThrow('lock minutes');
+  });
+
+  it('an mfa_code_locked lease carries the pause minutes (integration review M1); without them it is refused', async () => {
+    expect(
+      await claimAccountMailRequest(
+        fakeTx([row({ kind: 'mfa_code_locked', lock_minutes: 15 })]).tx,
+      ),
+    ).toMatchObject({ kind: 'mfa_code_locked', outcome: 'send', lockMinutes: 15 });
+    await expect(
+      claimAccountMailRequest(fakeTx([row({ kind: 'mfa_code_locked', lock_minutes: null })]).tx),
+    ).rejects.toThrow('lock minutes');
+  });
+
+  it('a sign_in_unlocked lease is sent to the account, without lock minutes (T-M2-11)', async () => {
+    expect(
+      await claimAccountMailRequest(
+        fakeTx([row({ kind: 'sign_in_unlocked', lock_minutes: null })]).tx,
+      ),
+    ).toMatchObject({ kind: 'sign_in_unlocked', outcome: 'send', lockMinutes: null });
   });
 
   it('a lease without e-mail carries only why; nothing waiting is null', async () => {
@@ -124,7 +153,7 @@ describe('account e-mail queue, worker side (T-M2-17)', () => {
 
   it('a security digest carries the held notices by kind and since when (final re-review L1)', async () => {
     const detail = {
-      held: { mfa_factor_added: 3, mfa_factor_removed: 2 },
+      held: { mfa_factor_added: 3, mfa_factor_removed: 2, mfa_code_locked: 4 },
       since: '2026-10-10T08:00:00Z',
     };
     expect(
@@ -133,7 +162,8 @@ describe('account e-mail queue, worker side (T-M2-17)', () => {
       kind: 'security_digest',
       outcome: 'send',
       digest: {
-        held: { mfa_factor_added: 3, mfa_factor_removed: 2 },
+        // The "wrong codes" notices are held like T-M2-10's (integration review M1).
+        held: { mfa_factor_added: 3, mfa_factor_removed: 2, mfa_code_locked: 4 },
         since: new Date('2026-10-10T08:00:00Z'),
       },
     });
@@ -230,7 +260,7 @@ describe('account e-mail queue, worker side (T-M2-17)', () => {
     expect(await retryAccountMailRequest(fakeTx([]).tx, ID)).toBe(false);
   });
 
-  it('loads the names for the e-mail and the hourly count, in the tenant transaction', async () => {
+  it('loads the names for the e-mail and the counts of the person and the organization (tenant transaction)', async () => {
     const fake = fakeTx([
       {
         organization_ar: 'شركة الراية',
@@ -238,14 +268,30 @@ describe('account e-mail queue, worker side (T-M2-17)', () => {
         recipient_ar: 'سارة',
         recipient_en: 'Sara',
         recent: '2',
+        quiet: '1',
+        tenant_recent: '7',
       },
     ]);
-    expect(await loadAccountMailContext(fake.tx, PERSON, 'platform.password_reset')).toEqual({
+    expect(await loadAccountMailContext(fake.tx, PERSON, 'platform.account_locked', 1440)).toEqual({
       organizationName: { ar: 'شركة الراية', en: null },
       recipientName: { ar: 'سارة', en: 'Sara' },
       recentCount: 2,
+      quietCount: 1,
+      tenantRecentCount: 7,
     });
-    expect(fake.executed[0]?.params).toEqual(['platform.password_reset', PERSON]);
+    expect(fake.executed[0]?.params).toEqual([
+      'platform.account_locked',
+      'platform.account_locked',
+      1440,
+      'platform.account_locked',
+      PERSON,
+    ]);
+    expect(fake.executed[0]?.sql).toContain(
+      "where d.tenant_id = p.tenant_id and d.template = $4\n              and d.created_at > now() - interval '1 hour') as tenant_recent",
+    );
+    await expect(loadAccountMailContext(fake.tx, PERSON, 'x.y', 1441)).rejects.toThrow(
+      'quiet minutes',
+    );
     expect(await loadAccountMailContext(fakeTx([]).tx, PERSON, 'x.y')).toBeNull();
   });
 });

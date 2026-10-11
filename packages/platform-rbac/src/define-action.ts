@@ -155,6 +155,27 @@ export type ActionDefinition<S extends z.ZodType, O, Tx> = ActionTarget<S> & {
    * which is safe only while everything it did was in that transaction.
    */
   readonly externalEffects?: boolean;
+  /**
+   * Audit record for a REFUSED attempt the handler returned (e.g. a wrong current password —
+   * `platform.auth.password_change_failed`, T-M2-11). The action's transaction has rolled back, so it is
+   * written in a new transaction with the same verified claims. Best effort: a failure to write it is
+   * logged and the caller still gets the handler's answer. Authorization denials are not passed here. It
+   * gets the error and the actor only — never the input (which may hold secrets, e.g. passwords).
+   */
+  readonly auditFailure?: (error: AppError, actor: ActorContext) => AuditRecord | null;
+  /**
+   * Work that must happen BEFORE the action's transaction (after the session — the database's session
+   * facts, in their own short transaction first: an inactive session never gets here — and the input were
+   * checked, before authorization): e.g. counting the actor's own attempts on the shared rate limiter, whose short
+   * transaction must never run while this action holds a pooled connection (two connections per request
+   * can starve the pool — security review T-M2-11), and whose count must survive the action's rollback.
+   * An error result is the action's answer (no transaction is opened); a throw is an internal error. Use it
+   * only for per-actor work that is harmless for a caller the action would then refuse.
+   */
+  readonly beforeTransaction?: (args: {
+    readonly actor: ActorContext;
+    readonly input: z.output<S>;
+  }) => Promise<Result<void, AppError>>;
   readonly handler: (args: {
     readonly ctx: ActionContext<Tx>;
     readonly input: z.output<S>;
@@ -199,7 +220,8 @@ export function requiresStrictVerification(permission: PermissionDefinition): bo
  * modules/** and packages/platform-*\/** must be created with it (CI: scripts/check-server-actions.mjs).
  *
  * Pipeline: verify session (strict getUser round-trip for high-risk / AAL2 permissions) → require
- * tenant claim → validate input → withUserTx {
+ * tenant claim → validate input → [with beforeTransaction: session facts in their own short
+ * transaction (inactive → UNAUTHENTICATED), then beforeTransaction, once] → withUserTx {
  *   session facts (inactive → UNAUTHENTICATED) → load effective grants → resolve resource → authorize
  *   (deny by default; AAL2 permissions need the database's AAL2 AND a code from the last
  *   STEP_UP_MAX_AGE_SECONDS, else STEP_UP_REQUIRED) → handler → audit } — the whole transaction run once
@@ -209,6 +231,22 @@ export function createDefineAction<Tx>(runtime: ActionRuntime<Tx>) {
   return function defineAction<S extends z.ZodType, O>(
     definition: ActionDefinition<S, O, Tx>,
   ): ServerAction<z.input<S>, O> {
+    // The refused attempt's audit row, in its own transaction (the action's one rolled back).
+    const writeFailureAudit = async (
+      claims: TenantClaims,
+      actor: ActorContext,
+      record: AuditRecord | null,
+    ): Promise<void> => {
+      if (!record) return;
+      try {
+        await runtime.withUserTx(claims, (tx) => runtime.writeAudit(tx, actor, record));
+      } catch (error) {
+        runtime.logError(error, {
+          permission: definition.permission.code,
+          correlationId: newCorrelationId(),
+        });
+      }
+    };
     const action = async (rawInput: z.input<S>): Promise<ActionResult<O>> => {
       const claims = await runtime.getClaims({
         strict: requiresStrictVerification(definition.permission),
@@ -222,10 +260,28 @@ export function createDefineAction<Tx>(runtime: ActionRuntime<Tx>) {
       const input = parseInput(definition.input, rawInput);
       if (!input.ok) return input;
 
+      // A refusal the handler returned (not an authorization denial), for `auditFailure`.
+      let refused = null as AppError | null;
       try {
+        if (definition.beforeTransaction) {
+          // The session check first (integration review T-M2-11 L3), in its own short transaction that
+          // ends before beforeTransaction runs (never nested: one pooled connection at a time): a session
+          // the database no longer lets act in its organization does no per-actor work either — e.g. it
+          // cannot spend the user's password-check budget. The action's transaction checks it again.
+          const facts = await runtime.withUserTx(tenantClaims, (tx) =>
+            runtime.loadSessionFacts(tx),
+          );
+          if (!facts.active) return err(toClientError(appError('UNAUTHENTICATED')));
+          const before = await definition.beforeTransaction({
+            actor: actorFromClaims(tenantClaims),
+            input: input.value,
+          });
+          if (!before.ok) return err(toClientError(before.error));
+        }
         return await runtime.withUserTx(
           tenantClaims,
           async (tx) => {
+            refused = null; // a retried transaction starts again
             const actor = actorFromClaims(tenantClaims);
             // Tenant-scoped work only while the database lets the session act there (review L1).
             const facts = await runtime.loadSessionFacts(tx);
@@ -278,7 +334,10 @@ export function createDefineAction<Tx>(runtime: ActionRuntime<Tx>) {
               input: input.value,
             });
             // Throwing rolls the transaction back.
-            if (!output.ok) throw new HandledFailure(output.error);
+            if (!output.ok) {
+              refused = output.error;
+              throw new HandledFailure(output.error);
+            }
 
             const record = definition.audit?.(input.value, output.value);
             if (record) await runtime.writeAudit(tx, actor, record);
@@ -292,7 +351,13 @@ export function createDefineAction<Tx>(runtime: ActionRuntime<Tx>) {
           },
         );
       } catch (error) {
-        if (error instanceof HandledFailure) return err(toClientError(error.error));
+        if (error instanceof HandledFailure) {
+          if (refused && definition.auditFailure) {
+            const actor = actorFromClaims(tenantClaims);
+            await writeFailureAudit(tenantClaims, actor, definition.auditFailure(refused, actor));
+          }
+          return err(toClientError(error.error));
+        }
         // Unexpected: log with a correlation id; the client gets INTERNAL_ERROR + the same id only.
         const correlationId = newCorrelationId();
         runtime.logError(error, { permission: definition.permission.code, correlationId });

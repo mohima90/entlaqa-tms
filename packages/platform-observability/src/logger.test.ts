@@ -60,6 +60,33 @@ describe('formatLogLine', () => {
     });
   });
 
+  it('writes security events with keyed references only (T-M2-11, TM-0003 T-IAM-25)', () => {
+    const line = formatLogLine(
+      'warn',
+      'sign-in refused',
+      {
+        action: 'platform.auth.sign_in',
+        securityEvent: 'auth.sign_in.failed',
+        reason: 'invalid_credentials',
+        subjectRef: 'rk_0012ab34cd56ef7890ab12cd',
+        clientRef: 'rk_00203011205543210987abcd',
+        limit: 'sign_in.account_failures',
+        retryAfterS: 900,
+      },
+      {},
+      new Date('2026-10-13T10:00:00Z'),
+    );
+    expect(JSON.parse(line)).toMatchObject({
+      security_event: 'auth.sign_in.failed',
+      reason: 'invalid_credentials',
+      // The references survive the scrubber unchanged (no digit run is taken for a phone or an ID).
+      subject_ref: 'rk_0012ab34cd56ef7890ab12cd',
+      client_ref: 'rk_00203011205543210987abcd',
+      limit: 'sign_in.account_failures',
+      retry_after_s: 900,
+    });
+  });
+
   it('ignores fields outside the closed list and non-finite numbers', () => {
     const fields = { status: Number.NaN, email: 'a@b.co' } as unknown as Record<string, never>;
     const parsed = JSON.parse(formatLogLine('info', 'x', fields, {})) as Record<string, unknown>;

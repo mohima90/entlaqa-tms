@@ -16,10 +16,19 @@ describe('checkDatabase', () => {
     await expect(checkDatabase()).resolves.toBe('not-configured');
   });
 
-  it('is ok when the probe query answers', async () => {
+  it('is ok when the probe query finds every required function', async () => {
     await expect(
-      checkDatabase({ getDb: fakeDb(() => Promise.resolve([{ ok: 1 }])) }),
+      checkDatabase({ getDb: fakeDb(() => Promise.resolve([{ missing: 0 }])) }),
     ).resolves.toBe('ok');
+  });
+
+  it('is unavailable while a required function is missing (app deployed before its migration)', async () => {
+    await expect(
+      checkDatabase({ getDb: fakeDb(() => Promise.resolve([{ missing: 1 }])) }),
+    ).resolves.toBe('unavailable');
+    await expect(checkDatabase({ getDb: fakeDb(() => Promise.resolve([])) })).resolves.toBe(
+      'unavailable',
+    );
   });
 
   it('is unavailable when the query fails, hangs or the handle cannot be created', async () => {

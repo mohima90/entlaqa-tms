@@ -4,6 +4,7 @@
  * @jadarat/platform-rbac (iam/my-profile.ts); the password flow in @jadarat/platform-identity.
  */
 import {
+  allowPasswordCheckForRequest,
   changePasswordForRequest,
   queueOwnPasswordChangedNoticeForRequest,
 } from '@jadarat/platform-identity/auth';
@@ -15,11 +16,12 @@ import {
 
 export const updateMyProfileAction = defineAction(updateMyProfileActionDefinition());
 
-// After a successful change: the "password changed" notice through our notification service when
+// Current-password checks are limited per user before the action's transaction (T-M2-11). After a
+// successful change: the "password changed" notice through our notification service when
 // PASSWORD_RESET_DELIVERY=worker (T-M2-17); never fails the change.
 export const changeMyPasswordAction = defineAction(
-  changeMyPasswordActionDefinition(
-    changePasswordForRequest,
-    queueOwnPasswordChangedNoticeForRequest,
-  ),
+  changeMyPasswordActionDefinition(changePasswordForRequest, {
+    allowPasswordCheck: allowPasswordCheckForRequest,
+    afterChange: queueOwnPasswordChangedNoticeForRequest,
+  }),
 );

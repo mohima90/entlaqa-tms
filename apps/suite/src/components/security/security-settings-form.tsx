@@ -14,7 +14,8 @@ import { fieldErrorCodes } from '../profile/field-errors';
  * who may open the page reads them. Methods other than the authenticator app (e-mail and SMS codes),
  * trusted devices (follow-up T-M2-10c) and password history are on the screen but not built yet (marked
  * «قريبًا»); passwords never expire (PO decision). Limits mirror the database's floors; the lockout
- * settings are stored now and applied by the sign-in limiter (T-M2-11), as the section's badge says.
+ * settings are enforced by the sign-in limiter (T-M2-11) for the organization's members on its own host —
+ * the platform default on the shared sign-in host (TM-0003 D-IAM-04) — as the section says.
  */
 export type MfaMode = 'off' | 'optional' | 'required_all' | 'required_roles';
 
@@ -82,12 +83,15 @@ function Section({
   id,
   title,
   intro,
+  note,
   badge,
   children,
 }: {
   readonly id: string;
   readonly title: string;
   readonly intro: string;
+  /** Under the intro: where or how the section's settings apply. */
+  readonly note?: string;
   /** Next to the title, e.g. settings that take effect with a later update. */
   readonly badge?: ReactNode;
   readonly children: ReactNode;
@@ -105,6 +109,11 @@ function Section({
         {badge}
       </div>
       <p className="m-0 mb-2 text-text-muted">{intro}</p>
+      {note ? (
+        <p className="m-0 mb-2 text-sm text-text-muted" data-testid={`${id}-note`}>
+          {note}
+        </p>
+      ) : null}
       {children}
     </section>
   );
@@ -377,16 +386,13 @@ export function SecuritySettingsForm({
         </Row>
       </Section>
 
-      {/* Sign-in applies these with T-M2-11 (the sign-in limiter); until then the badge says so (review L5). */}
+      {/* Enforced by the sign-in limiter (T-M2-11): the organization's members on its own host; the platform
+          default on the shared sign-in host (TM-0003 D-IAM-04) — the note says so. */}
       <Section
         id="security-lockout"
         title={t('lockout.title')}
         intro={t('lockout.intro')}
-        badge={
-          <Badge tone="warning" data-testid="security-lockout-pending">
-            {t('lockout.pending')}
-          </Badge>
-        }
+        note={t('lockout.scope')}
       >
         <Row title={t('lockout.threshold')} hint={t('lockout.thresholdHint')}>
           {numberInput('lockoutThreshold', t('lockout.threshold'), t('lockout.thresholdUnit'))}

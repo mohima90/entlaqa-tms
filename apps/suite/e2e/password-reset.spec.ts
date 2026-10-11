@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import AxeBuilder from '@axe-core/playwright';
 import { type Page, expect, test } from '@playwright/test';
+import { afterSignIn } from './sign-in';
 import { freshCode } from './totp';
 
 /**
@@ -16,13 +17,38 @@ import { freshCode } from './totp';
  *   RESET_E2E_MFA_LINK_URL  step 2 for an account WITH an authenticator app (T-M2-10): its reset link
  *                           (`&mfa=1`), set with RESET_E2E_NEW_PASSWORD and
  *   RESET_E2E_TOTP_KEY      that app's set-up key (the page asks for its code with the new password)
- * The referrer test runs everywhere (no Auth needed).
+ *   RESET_E2E_REMEMBER_LINK_URL / RESET_E2E_REMEMBER_PASSWORD  step 3: another account's unused link,
+ *                           completed in English with «Remember this browser» ticked
+ * «تذكّر هذا المتصفح» on the reset page (T-M2-11 re-review N1): unticked by default — the browser that
+ * completed the reset is then trusted for 24 hours only; ticked, for 30 days (the trusted-device cookie's
+ * lifetime shows it). The referrer test runs everywhere (no Auth needed).
  */
 const resetEmail = process.env.RESET_E2E_EMAIL;
 const linkUrl = process.env.RESET_E2E_LINK_URL;
 const newPassword = process.env.RESET_E2E_NEW_PASSWORD;
 const mfaLinkUrl = process.env.RESET_E2E_MFA_LINK_URL;
 const totpKey = process.env.RESET_E2E_TOTP_KEY;
+const rememberLinkUrl = process.env.RESET_E2E_REMEMBER_LINK_URL;
+const rememberPassword = process.env.RESET_E2E_REMEMBER_PASSWORD;
+
+const REMEMBER = {
+  ar: {
+    label: 'تذكّر هذا المتصفح',
+    hint: 'إن اخترته، يبقى بإمكانك الدخول من هذا المتصفح 30 يومًا حتى إن أُوقف تسجيل الدخول إلى حسابك مؤقتًا بسبب محاولات من مكان آخر؛ وإن لم تختره، فليوم واحد فقط. لا تختره على جهاز مشترك.',
+  },
+  en: {
+    label: 'Remember this browser',
+    hint: "If ticked, you can still sign in from this browser for 30 days even if sign-in to your account is paused after attempts from elsewhere; if not, for one day only. Don't tick this on a shared computer.",
+  },
+} as const;
+
+/** Seconds until the trusted-device cookie expires (it must exist). */
+async function deviceCookieSeconds(page: Page): Promise<number> {
+  const cookie = (await page.context().cookies()).find((c) => c.name.endsWith('jadarat-device'));
+  expect(cookie?.httpOnly).toBe(true);
+  expect(cookie?.value).toMatch(/^[A-Za-z0-9_-]{43}$/);
+  return (cookie?.expires ?? 0) - Date.now() / 1000;
+}
 
 /** The path and fragment of an e-mailed link (its host is the Auth site URL), in the given language. */
 function inLocale(url: string, locale: 'ar' | 'en'): string {
@@ -121,11 +147,19 @@ test.describe('set a new password from the e-mailed link', () => {
     await page.locator('#reset-password').fill(newPassword ?? '');
     await page.locator('#reset-password-confirm').fill(newPassword ?? '');
     await expect(rules.getByText('كلمتا المرور متطابقتان')).toContainText('(متحقق)');
+    // «تذكّر هذا المتصفح»: offered, unticked by default, its explanation announced with it — left unticked.
+    const remember = page.getByRole('checkbox', { name: REMEMBER.ar.label, exact: true });
+    await expect(remember).not.toBeChecked();
+    await expect(remember).toHaveAccessibleDescription(REMEMBER.ar.hint);
     await page.getByRole('button', { name: 'حفظ كلمة المرور' }).click();
-    await expect(page).toHaveURL(/\/ar\/sign-in\?notice=password-reset$/);
+    await expect(page).toHaveURL(/\/ar\/sign-in\?notice=password-reset$/, afterSignIn);
     await expect(page.getByTestId('password-reset-notice')).toContainText(
       'حُفظت كلمة المرور الجديدة',
     );
+    // Not ticked: this browser is trusted for 24 hours only (enough to ride out a lock attack).
+    const seconds = await deviceCookieSeconds(page);
+    expect(seconds).toBeGreaterThan(23 * 3600);
+    expect(seconds).toBeLessThanOrEqual(24 * 3600 + 60);
     await expectNoSeriousA11yViolations(page);
   });
 
@@ -136,7 +170,7 @@ test.describe('set a new password from the e-mailed link', () => {
     await page.locator('#reset-password').fill(again);
     await page.locator('#reset-password-confirm').fill(again);
     await page.getByRole('button', { name: 'Save password' }).click();
-    await expect(page.getByTestId('reset-link-invalid')).toBeVisible();
+    await expect(page.getByTestId('reset-link-invalid')).toBeVisible(afterSignIn);
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(
       'This link has expired or was already used',
     );
@@ -192,7 +226,7 @@ test.describe('an account with an authenticator app (T-M2-10)', () => {
     );
     await page.getByTestId('reset-code').fill(`${code.slice(0, 3)} ${code.slice(3)}`);
     await page.getByRole('button', { name: 'حفظ كلمة المرور' }).click();
-    await expect(page).toHaveURL(/\/ar\/sign-in\?notice=password-reset$/);
+    await expect(page).toHaveURL(/\/ar\/sign-in\?notice=password-reset$/, afterSignIn);
   });
 
   test('English: the language switch keeps asking for the code; a used link asks for a new one', async ({
@@ -210,7 +244,36 @@ test.describe('an account with an authenticator app (T-M2-10)', () => {
     await page.locator('#reset-password-confirm').fill(again);
     await page.getByTestId('reset-code').fill(await freshCode(totpKey ?? ''));
     await page.getByRole('button', { name: 'Save password' }).click();
-    await expect(page.getByTestId('reset-link-invalid')).toBeVisible();
+    await expect(page.getByTestId('reset-link-invalid')).toBeVisible(afterSignIn);
     await expectNoSeriousA11yViolations(page);
+  });
+});
+
+test.describe('set a new password with «Remember this browser» ticked', () => {
+  test.skip(
+    !rememberLinkUrl || !rememberPassword,
+    'RESET_E2E_REMEMBER_LINK_URL / RESET_E2E_REMEMBER_PASSWORD not set',
+  );
+
+  test('English: the box is keyboard-operable; ticked, this browser is trusted for 30 days', async ({
+    page,
+  }) => {
+    await page.goto(inLocale(rememberLinkUrl ?? '', 'en'));
+    await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Set a new password');
+    await page.locator('#reset-password').fill(rememberPassword ?? '');
+    await page.locator('#reset-password-confirm').fill(rememberPassword ?? '');
+    const remember = page.getByRole('checkbox', { name: REMEMBER.en.label, exact: true });
+    await expect(remember).not.toBeChecked();
+    await expect(remember).toHaveAccessibleDescription(REMEMBER.en.hint);
+    await remember.focus();
+    await page.keyboard.press('Space');
+    await expect(remember).toBeChecked();
+    await expectNoSeriousA11yViolations(page);
+    await page.getByRole('button', { name: 'Save password' }).click();
+    await expect(page).toHaveURL(/\/en\/sign-in\?notice=password-reset$/, afterSignIn);
+    const seconds = await deviceCookieSeconds(page);
+    expect(seconds).toBeGreaterThan(29 * 86_400);
+    expect(seconds).toBeLessThanOrEqual(30 * 86_400 + 60);
   });
 });

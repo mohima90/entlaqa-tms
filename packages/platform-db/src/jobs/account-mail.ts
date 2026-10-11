@@ -8,6 +8,9 @@ import type { ClaimsTx } from '../claims-tx';
  * organization's transaction that queues the e-mail. Only the definer functions reach the queue. T-M2-10
  * adds the security notices: the authenticator set-up e-mail (its one-time code and "not you" link) and
  * removal notice, the policy-change notice, and the digest of the notices over an account's daily ceiling.
+ * T-M2-11 (migration 20261013090100) adds `account_locked` (sign-in paused after failed attempts),
+ * `sign_in_unlocked` (the Organization Admin ended the pause) and `mfa_code_locked` (wrong codes after the
+ * password paused code checks — a security notice, integration review M1).
  */
 export const ACCOUNT_MAIL_KINDS = [
   'password_reset',
@@ -16,6 +19,9 @@ export const ACCOUNT_MAIL_KINDS = [
   'mfa_factor_removed',
   'security_policy_changed',
   'security_digest',
+  'account_locked',
+  'sign_in_unlocked',
+  'mfa_code_locked',
 ] as const;
 export type AccountMailKind = (typeof ACCOUNT_MAIL_KINDS)[number];
 
@@ -28,6 +34,7 @@ export const DIGESTED_KINDS = [
   'mfa_factor_removed',
   'security_policy_changed',
   'password_changed',
+  'mfa_code_locked',
 ] as const;
 export type DigestedKind = (typeof DIGESTED_KINDS)[number];
 
@@ -115,6 +122,11 @@ export type AccountMailRequest =
       readonly tenantId: string;
       readonly personId: string;
       readonly locale: 'ar' | 'en';
+      /**
+       * account_locked (T-M2-11): how long the sign-in lock lasts; mfa_code_locked: how long code checks
+       * pause; null for the other kinds.
+       */
+      readonly lockMinutes: number | null;
     })
   | (RequestBase & { readonly outcome: AccountMailSkip });
 
@@ -144,6 +156,7 @@ export async function claimAccountMailRequest(tx: ClaimsTx): Promise<AccountMail
     factor_id: string | null;
     mfa_reason: string | null;
     detail: unknown;
+    lock_minutes: number | null;
   }>(sql`select * from private.claim_account_mail_request()`);
   if (!row) return null;
   const kind = ACCOUNT_MAIL_KINDS.find((k) => k === row.kind);
@@ -173,6 +186,10 @@ export async function claimAccountMailRequest(tx: ClaimsTx): Promise<AccountMail
     if (!row.email || !row.user_id || !row.tenant_id || !row.person_id) {
       throw new Error('claimAccountMailRequest: incomplete recipient');
     }
+    const locked = kind === 'account_locked' || kind === 'mfa_code_locked';
+    if (locked && !(Number(row.lock_minutes) >= 1)) {
+      throw new Error('claimAccountMailRequest: lock minutes missing');
+    }
     return {
       ...base,
       outcome: 'send',
@@ -181,6 +198,7 @@ export async function claimAccountMailRequest(tx: ClaimsTx): Promise<AccountMail
       tenantId: row.tenant_id,
       personId: row.person_id,
       locale: row.locale === 'en' ? 'en' : 'ar',
+      lockMinutes: locked ? Number(row.lock_minutes) : null,
     };
   }
   if (!SKIPS.has(row.outcome)) throw new Error('claimAccountMailRequest: unknown outcome');
@@ -209,30 +227,52 @@ export interface AccountMailContext {
   readonly recipientName: { readonly ar: string; readonly en: string | null };
   /** Account e-mails of this template queued for the person in the last hour (a per-person cap). */
   readonly recentCount: number;
+  /**
+   * E-mails of this template queued for the person in the last `quietMinutes` (the lockout e-mail: at most
+   * one a day, security review T-M2-11 M3; 0 when not asked).
+   */
+  readonly quietCount: number;
+  /**
+   * E-mails of this template queued in the whole organization in the last hour (the organization's hourly
+   * ceiling of lockout e-mails, T-M2-11 M3).
+   */
+  readonly tenantRecentCount: number;
 }
 
 /**
  * The organization's and the person's names for an account e-mail, in the job's tenant transaction, and
- * how many e-mails of `template` the person was sent in the last hour. Null when the person is not
- * visible in this tenant.
+ * how many e-mails of `template` the person was sent in the last hour (and in the last `quietMinutes`),
+ * and the organization in the last hour. Null when the person is not visible in this tenant.
  */
 export async function loadAccountMailContext(
   tx: ClaimsTx,
   personId: string,
   template: string,
+  quietMinutes = 0,
 ): Promise<AccountMailContext | null> {
+  if (!Number.isInteger(quietMinutes) || quietMinutes < 0 || quietMinutes > 1440) {
+    throw new Error('loadAccountMailContext: quiet minutes must be 0–1440');
+  }
   const [row] = await tx.execute<{
     organization_ar: string;
     organization_en: string | null;
     recipient_ar: string;
     recipient_en: string | null;
     recent: number | string;
+    quiet: number | string;
+    tenant_recent: number | string;
   }>(sql`
     select t.name_ar as organization_ar, t.name_en as organization_en,
            p.display_name_ar as recipient_ar, p.display_name_en as recipient_en,
            (select count(*) from platform.message_deliveries d
             where d.tenant_id = p.tenant_id and d.recipient_person_id = p.id and d.template = ${template}
-              and d.created_at > now() - interval '1 hour') as recent
+              and d.created_at > now() - interval '1 hour') as recent,
+           (select count(*) from platform.message_deliveries d
+            where d.tenant_id = p.tenant_id and d.recipient_person_id = p.id and d.template = ${template}
+              and d.created_at > now() - make_interval(mins => ${quietMinutes}::integer)) as quiet,
+           (select count(*) from platform.message_deliveries d
+            where d.tenant_id = p.tenant_id and d.template = ${template}
+              and d.created_at > now() - interval '1 hour') as tenant_recent
     from platform.persons p
     join platform.tenants t on t.id = p.tenant_id
     where p.id = ${personId}::uuid`);
@@ -241,6 +281,8 @@ export async function loadAccountMailContext(
     organizationName: { ar: row.organization_ar, en: row.organization_en },
     recipientName: { ar: row.recipient_ar, en: row.recipient_en },
     recentCount: Number(row.recent),
+    quietCount: Number(row.quiet),
+    tenantRecentCount: Number(row.tenant_recent),
   };
 }
 

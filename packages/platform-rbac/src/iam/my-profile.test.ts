@@ -1,4 +1,4 @@
-import { appError, err, ok } from '@jadarat/platform-core';
+import { appError, defineErrorCodes, err, ok } from '@jadarat/platform-core';
 import { brandVerifiedClaims } from '@jadarat/platform-core/internal/verified-claims';
 import type { UserTx } from '@jadarat/platform-db';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -25,6 +25,11 @@ const db = vi.hoisted(() => ({
 vi.mock('@jadarat/platform-db', () => db);
 
 const TX = 'tx' as unknown as UserTx;
+/** The identity flow's codes (platform-identity PasswordErrors), as the action sees them. */
+const Codes = defineErrorCodes({
+  AUTH_CURRENT_PASSWORD_INVALID: { status: 422, messageKey: 'auth.errors.currentPasswordInvalid' },
+  AUTH_PASSWORD_TOO_WEAK: { status: 422, messageKey: 'auth.errors.passwordTooWeak' },
+});
 const ME = '33333333-3333-4333-8333-333333333333';
 
 function runtime(personId: string | null = ME, grants = MEMBER_GRANTS) {
@@ -200,13 +205,69 @@ describe('change my password', () => {
     newPassword: 'New-password-4567',
     confirmPassword: 'New-password-4567',
   };
+  /** The per-user limit on current-password checks: allowed. */
+  const LIMITS = { allowPasswordCheck: () => Promise.resolve(true) };
+
+  it('limits the checks per user BEFORE the transaction; a limited check never reaches the flow (T-M2-11)', async () => {
+    const order: string[] = [];
+    const allowPasswordCheck = vi.fn((userId: string) => {
+      order.push(`limit ${userId}`);
+      return Promise.resolve(true);
+    });
+    const changePassword = vi.fn(() => {
+      order.push('change');
+      return Promise.resolve(ok({ userId: 'u1' }));
+    });
+    const { rt, writeAudit } = runtime();
+    const tx = vi.spyOn(rt, 'withUserTx');
+    await createDefineAction(rt)(
+      changeMyPasswordActionDefinition(changePassword, { allowPasswordCheck }),
+    )(input);
+    // The verified user's own id; the limiter ran after the session check's own transaction (integration
+    // review L3) and before the action's transaction opened.
+    expect(order).toEqual(['limit 11111111-1111-4111-8111-111111111111', 'change']);
+    expect(tx).toHaveBeenCalledTimes(2);
+    expect(allowPasswordCheck.mock.invocationCallOrder[0]).toBeGreaterThan(
+      tx.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    );
+    expect(allowPasswordCheck.mock.invocationCallOrder[0]).toBeLessThan(
+      tx.mock.invocationCallOrder[1] ?? 0,
+    );
+
+    changePassword.mockClear();
+    writeAudit.mockClear();
+    const limited = await createDefineAction(rt)(
+      changeMyPasswordActionDefinition(changePassword, {
+        allowPasswordCheck: () => Promise.resolve(false),
+      }),
+    )(input);
+    expect(!limited.ok && limited.error.code).toBe('RATE_LIMITED');
+    expect(changePassword).not.toHaveBeenCalled();
+    expect(writeAudit).not.toHaveBeenCalled();
+  });
+
+  it('a session the database no longer lets act spends no password check (integration review L3)', async () => {
+    const allowPasswordCheck = vi.fn(() => Promise.resolve(true));
+    const changePassword = vi.fn(() => Promise.resolve(ok({ userId: 'u1' })));
+    const { rt } = runtime();
+    const inactive = {
+      ...rt,
+      loadSessionFacts: () => Promise.resolve({ active: false, aal2: false }),
+    };
+    const r = await createDefineAction(inactive)(
+      changeMyPasswordActionDefinition(changePassword, { allowPasswordCheck }),
+    )(input);
+    expect(!r.ok && r.error.code).toBe('UNAUTHENTICATED');
+    expect(allowPasswordCheck).not.toHaveBeenCalled();
+    expect(changePassword).not.toHaveBeenCalled();
+  });
 
   it('changes the password and audits without any password', async () => {
     const changePassword = vi.fn(() => Promise.resolve(ok({ userId: 'u1' })));
     const { rt, writeAudit } = runtime();
-    const result = await createDefineAction(rt)(changeMyPasswordActionDefinition(changePassword))(
-      input,
-    );
+    const result = await createDefineAction(rt)(
+      changeMyPasswordActionDefinition(changePassword, LIMITS),
+    )(input);
     expect(result).toEqual(ok({ userId: 'u1' }));
     expect(changePassword).toHaveBeenCalledWith({
       currentPassword: 'Old-password-123',
@@ -221,8 +282,9 @@ describe('change my password', () => {
   });
 
   it('is never retried after a deadlock: the password changes at Auth inside the transaction (review L1)', () => {
-    const definition = changeMyPasswordActionDefinition(() =>
-      Promise.resolve(ok({ userId: 'u1' })),
+    const definition = changeMyPasswordActionDefinition(
+      () => Promise.resolve(ok({ userId: 'u1' })),
+      LIMITS,
     );
     expect(definition.externalEffects).toBe(true);
   });
@@ -231,23 +293,57 @@ describe('change my password', () => {
     const afterChange = vi.fn(() => Promise.resolve());
     const changed = vi.fn(() => Promise.resolve(ok({ userId: 'u1' })));
     const result = await createDefineAction(runtime().rt)(
-      changeMyPasswordActionDefinition(changed, afterChange),
+      changeMyPasswordActionDefinition(changed, { ...LIMITS, afterChange }),
     )(input);
     expect(result).toEqual(ok({ userId: 'u1' }));
     expect(afterChange).toHaveBeenCalledWith(TX, 'u1');
 
     afterChange.mockClear();
     const refused = vi.fn(() => Promise.resolve(err(appError('RATE_LIMITED'))));
-    await createDefineAction(runtime().rt)(changeMyPasswordActionDefinition(refused, afterChange))(
-      input,
-    );
+    await createDefineAction(runtime().rt)(
+      changeMyPasswordActionDefinition(refused, { ...LIMITS, afterChange }),
+    )(input);
     expect(afterChange).not.toHaveBeenCalled();
+  });
+
+  it('audits a wrong current password as password_change_failed (T-M2-11)', async () => {
+    for (const [error, reason] of [
+      [appError(Codes.AUTH_CURRENT_PASSWORD_INVALID), 'current_password'],
+    ] as const) {
+      const { rt, writeAudit } = runtime();
+      const result = await createDefineAction(rt)(
+        changeMyPasswordActionDefinition(() => Promise.resolve(err(error)), LIMITS),
+      )(input);
+      expect(!result.ok && result.error.code).toBe(error.code);
+      expect(writeAudit).toHaveBeenCalledTimes(1);
+      expect(writeAudit).toHaveBeenCalledWith(
+        TX,
+        expect.objectContaining({ userId: '11111111-1111-4111-8111-111111111111' }),
+        {
+          action: 'platform.auth.password_change_failed',
+          entityType: 'user',
+          entityId: '11111111-1111-4111-8111-111111111111',
+          data: { reason },
+        },
+      );
+      expect(JSON.stringify(writeAudit.mock.calls)).not.toContain('password-');
+    }
+  });
+
+  it('does not audit other refusals — a weak new password, or a limited attempt (bounded audit volume)', async () => {
+    for (const error of [appError(Codes.AUTH_PASSWORD_TOO_WEAK), appError('RATE_LIMITED')]) {
+      const { rt, writeAudit } = runtime();
+      await createDefineAction(rt)(
+        changeMyPasswordActionDefinition(() => Promise.resolve(err(error)), LIMITS),
+      )(input);
+      expect(writeAudit).not.toHaveBeenCalled();
+    }
   });
 
   it('validates length and confirmation before calling Auth; passes Auth errors through', async () => {
     const changePassword = vi.fn(() => Promise.resolve(err(appError('RATE_LIMITED'))));
     const action = createDefineAction(runtime().rt)(
-      changeMyPasswordActionDefinition(changePassword),
+      changeMyPasswordActionDefinition(changePassword, LIMITS),
     );
     for (const bad of [
       { ...input, newPassword: 'short', confirmPassword: 'short' },
@@ -267,7 +363,7 @@ describe('change my password', () => {
   it("applies the strictest minimum of the account's organizations before Auth (T-M2-10)", async () => {
     const changePassword = vi.fn(() => Promise.resolve(ok({ userId: 'u1' })));
     const action = createDefineAction(runtime().rt)(
-      changeMyPasswordActionDefinition(changePassword),
+      changeMyPasswordActionDefinition(changePassword, LIMITS),
     );
     db.passwordMinLengthForCaller.mockResolvedValue(input.newPassword.length + 1);
     const short = await action(input);

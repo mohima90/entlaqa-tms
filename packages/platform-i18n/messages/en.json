@@ -62,6 +62,8 @@
     "signInIntro": "Enter your account's email and password.",
     "emailLabel": "Email",
     "passwordLabel": "Password",
+    "rememberBrowser": "Remember this browser",
+    "rememberBrowserHint": "For 30 days, you can still sign in from this browser even if sign-in to your account is paused after attempts from elsewhere. Don't tick this on a shared computer.",
     "forgotPassword": "Forgot your password?",
     "submit": "Sign in",
     "submitting": "Signing in…",
@@ -78,7 +80,8 @@
       "passwordTooWeak": "The new password is too weak. Use a longer password that mixes letters, digits and symbols.",
       "passwordSame": "The new password is the same as the current one. Choose a different password.",
       "reauthenticationNeeded": "For your account's security, sign out and sign in again, then change the password.",
-      "passwordRejected": "The new password was not accepted. Choose a different one."
+      "passwordRejected": "The new password was not accepted. Choose a different one.",
+      "tooManyAttempts": "Sign-in is paused for now after too many unsuccessful attempts. Try again later, or reset your password with “Forgot password?”."
     },
     "sessionEnded": "Your sign-in session has ended. Sign in again to continue."
   },
@@ -187,6 +190,8 @@
       "password": "New password",
       "confirmPassword": "Confirm password",
       "showPassword": "Show password",
+      "rememberBrowser": "Remember this browser",
+      "rememberBrowserHint": "If ticked, you can still sign in from this browser for 30 days even if sign-in to your account is paused after attempts from elsewhere; if not, for one day only. Don't tick this on a shared computer.",
       "rulesLabel": "Password rules",
       "rules": {
         "minLength": "At least {min} characters",
@@ -226,7 +231,8 @@
       "passwordRejected": "The new password wasn't accepted, so nothing changed. Links work only once: request a new link.",
       "tooShort": "Your account needs a password of at least {min} characters, so nothing changed. Links work only once: request a new link and choose a longer password.",
       "codeRequired": "Your account uses an authenticator app, so its code is needed to set a new password. Nothing changed. Links work only once: request a new link and enter the code with the new password.",
-      "codeInvalid": "The verification code is incorrect or has expired, so nothing changed. Links work only once: request a new link and enter the code your app shows at that time."
+      "codeInvalid": "The verification code is incorrect or has expired, so nothing changed. Links work only once: request a new link and enter the code your app shows at that time.",
+      "codeLimited": "Too many attempts with the authenticator code in a short time, so nothing changed and this link can no longer be used. Request a new link in {minutes}, then enter the code your app shows at that time."
     }
   },
   "users": {
@@ -335,7 +341,8 @@
       "platform_user_reactivated": "Account reactivated",
       "other": "Recorded action ({action})",
       "platform_user_mfa_reset": "Authenticator app reset",
-      "platform_user_sessions_ended": "Sign-in sessions ended"
+      "platform_user_sessions_ended": "Sign-in sessions ended",
+      "platform_user_sign_in_unlocked": "Sign-in unlocked"
     },
     "breadcrumbLabel": "Breadcrumb",
     "editDetails": "Edit details",
@@ -361,6 +368,16 @@
     "errors": {
       "mfaResetNoApp": "This member has no authenticator app to reset.",
       "mfaResetOtherOrganization": "This member's account also belongs to another organization, so only ENTLAQA support can reset the app, after checking their identity. Ask the member to contact ENTLAQA support."
+    },
+    "signInLock": {
+      "title": "Sign-in is paused",
+      "body": "Sign-in to this account was paused after too many unsuccessful attempts. It resumes by itself in about {minutes, plural, one {# minute} other {# minutes}}. Browsers where this person chose “Remember this browser” can still sign in.",
+      "unlock": "Unlock sign-in",
+      "unlocking": "Unlocking…",
+      "unlocked": "Sign-in unlocked. This person can sign in again now.",
+      "notLocked": "Sign-in was no longer paused.",
+      "limited": "Sign-in to this account was unlocked 3 times in the last 24 hours, so the pause stays until it ends by itself. The person can set a new password with “Forgot password?”.",
+      "audited": "Unlocking is recorded in the audit log, and the person is told by email."
     }
   },
   "profile": {
@@ -891,7 +908,7 @@
     "lockout": {
       "title": "Account lockout",
       "intro": "Protects against password guessing.",
-      "pending": "Takes effect with the next update",
+      "scope": "Applies to your organization's members when they sign in at your organization's own address; on the shared sign-in page the platform default applies to everyone (5 attempts, 15 minutes). Browsers a member chose to remember can still sign in while sign-in is paused, and you can unlock a member from their profile.",
       "threshold": "Lock after consecutive failed attempts",
       "thresholdHint": "3 to 5 attempts — never more lenient than the platform default (5 attempts).",
       "thresholdUnit": "attempts",

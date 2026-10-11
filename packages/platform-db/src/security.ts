@@ -381,9 +381,12 @@ export interface PreSessionSecurityApi {
   /**
    * The lockout settings of an organization (null / unknown / inactive: the platform default).
    *
-   * INTEGRATION POINT (T-M2-11): the sign-in limiter owns enforcement — counting failed sign-ins and
-   * locking accounts. It reads the threshold and duration here: the organization of a tenant host, the
-   * platform default on the platform's sign-in host (TM-0003 D-IAM-04). T-M2-10 stores and shows them only.
+   * The sign-in limiter (T-M2-11) owns enforcement — counting failed sign-ins and locking accounts. Its
+   * guard reads the threshold and duration here for the organization of a tenant host, for that
+   * organization's active members only (platform-identity auth-next.ts `signInGuardFor`); the platform
+   * default on the platform's sign-in host (TM-0003 D-IAM-04). Its own pre-session transaction: sign-in holds
+   * none. The Organization Admin's views read the policy in their own transaction instead (platform-rbac
+   * sign-in-lock.ts `organizationMemberLockBudget`).
    */
   getLockoutPolicy(tenantId: string | null): Promise<LockoutPolicy>;
 }

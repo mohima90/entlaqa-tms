@@ -143,6 +143,32 @@ test('the sign-in form is disabled and explains why when sign-in is not configur
   await expect(page.getByRole('button', { name: 'Sign in' })).toBeDisabled();
 });
 
+// «تذكّر هذا المتصفح» (T-M2-11, PO decision 9 Oct 2026: opt-in): a labelled check box, unticked by default,
+// its explanation announced with it. Using it end to end (keyboard, trust, lock): e2e/sign-in-limits.spec.ts
+// on the self-hosted stack.
+for (const { locale, label, hint } of [
+  {
+    locale: 'ar',
+    label: 'تذكّر هذا المتصفح',
+    hint: 'يبقى بإمكانك الدخول من هذا المتصفح 30 يومًا حتى إن أُوقف تسجيل الدخول إلى حسابك مؤقتًا بسبب محاولات من مكان آخر. لا تختره على جهاز مشترك.',
+  },
+  {
+    locale: 'en',
+    label: 'Remember this browser',
+    hint: "For 30 days, you can still sign in from this browser even if sign-in to your account is paused after attempts from elsewhere. Don't tick this on a shared computer.",
+  },
+] as const) {
+  test(`${locale}: the sign-in page offers «Remember this browser», unticked and described`, async ({
+    page,
+  }) => {
+    await page.goto(`/${locale}/sign-in`);
+    const box = page.getByRole('checkbox', { name: label, exact: true });
+    await expect(box).toHaveCount(1);
+    await expect(box).not.toBeChecked();
+    await expect(box).toHaveAccessibleDescription(hint);
+  });
+}
+
 test('the skip link is the first focusable element and targets main', async ({ page }) => {
   await page.goto('/ar/suite');
   await page.keyboard.press('Tab');

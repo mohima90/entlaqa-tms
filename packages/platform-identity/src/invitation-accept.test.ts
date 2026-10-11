@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import type { TokenLookup } from '@jadarat/platform-db';
 import { describe, expect, it, vi } from 'vitest';
 import { AuthServiceError, type AuthFlowDeps } from './auth-flow';
+import { RateLimiterUnavailableError, type SignInGate } from './auth-limits';
 import {
   type InvitationAcceptDeps,
   InvitationAccountError,
@@ -63,6 +64,10 @@ interface Options {
   minLength?: number;
   /** The database's view of the new session in its organization (T-M2-10). */
   access?: 'ok' | 'prompt_grace' | 'mfa_enrol';
+  /** The sign-in guard's answer ("sign in to accept"); an Error = limiter unavailable. */
+  gate?: SignInGate | Error;
+  /** The new-account sign-up limiter's answer; an Error = limiter unavailable. */
+  signUpAllowed?: boolean | Error;
 }
 
 function setup(options: Options = {}) {
@@ -130,6 +135,18 @@ function setup(options: Options = {}) {
     ),
     signOut: vi.fn(() => Promise.resolve({ error: null })),
   };
+  // The attempt an allowed check hands out: Auth's verdict is reported to it.
+  const failed = vi.fn(() => Promise.resolve());
+  const succeeded = vi.fn((_options?: { remember: boolean }) => Promise.resolve());
+  const notChecked = vi.fn(() => Promise.resolve());
+  const check = vi.fn((_email: string): Promise<SignInGate> =>
+    options.gate instanceof Error
+      ? Promise.reject(options.gate)
+      : Promise.resolve(
+          options.gate ?? { allowed: true, attempt: { failed, succeeded, notChecked } },
+        ),
+  );
+  const guard = { check, failed, succeeded, notChecked };
   const authDeps: AuthFlowDeps = {
     supabase: { auth },
     withUserTx: ((_claims: unknown, fn: (tx: unknown) => Promise<unknown>) =>
@@ -158,6 +175,9 @@ function setup(options: Options = {}) {
     ),
     insertAuditEvent: vi.fn(() => Promise.resolve()),
     logWarning: vi.fn(),
+    signInGuard: { check },
+    now: () => 0,
+    sleep: vi.fn(() => Promise.resolve()),
   };
   const hashToken = vi.fn((token: string) => createHash('sha256').update(token).digest());
   const deps: InvitationAcceptDeps = {
@@ -172,8 +192,13 @@ function setup(options: Options = {}) {
         ? Promise.resolve({ tenantId: TENANT })
         : Promise.reject(options.callerError);
     }),
+    allowSignUp: vi.fn(() =>
+      options.signUpAllowed instanceof Error
+        ? Promise.reject(options.signUpAllowed)
+        : Promise.resolve(options.signUpAllowed ?? true),
+    ),
   };
-  return { deps, auth, calls, hashToken };
+  return { deps, auth, calls, hashToken, guard };
 }
 
 const newAccount = {
@@ -285,6 +310,28 @@ describe("the organization's password rule and MFA step (T-M2-10)", () => {
 });
 
 describe('acceptInvitationWithNewAccount (public sign-up gated by the Auth hook)', () => {
+  it('limits new-account sign-ups per client before Auth is asked (T-M2-11)', async () => {
+    const { deps, auth, calls } = setup({ signUpAllowed: false });
+    const result = await acceptInvitationWithNewAccount(deps, newAccount);
+    expect(result).toMatchObject({ ok: false, error: { code: 'RATE_LIMITED' } });
+    expect(auth.signUp).not.toHaveBeenCalled();
+    expect(calls).toEqual([]);
+  });
+
+  it('fails closed when the limiter cannot answer (no sign-up)', async () => {
+    const { deps, auth } = setup({ signUpAllowed: new RateLimiterUnavailableError() });
+    await expect(acceptInvitationWithNewAccount(deps, newAccount)).rejects.toBeInstanceOf(
+      RateLimiterUnavailableError,
+    );
+    expect(auth.signUp).not.toHaveBeenCalled();
+  });
+
+  it('counts no sign-up attempt for a link that is not valid', async () => {
+    const { deps } = setup({ lookup: { state: 'expired' } });
+    await acceptInvitationWithNewAccount(deps, newAccount);
+    expect(deps.allowSignUp).not.toHaveBeenCalled();
+  });
+
   it('signs up as the invitation e-mail with the raw token, clears it, accepts as the new user, opens the organization', async () => {
     const { deps, calls, auth } = setup();
     const result = await acceptInvitationWithNewAccount(deps, newAccount);
@@ -524,13 +571,40 @@ describe('acceptInvitationWithNewAccount (public sign-up gated by the Auth hook)
 });
 
 describe('acceptInvitationWithPassword (sign in to accept)', () => {
+  it('is limited like sign-in, per account (the invitation e-mail) and per client (T-M2-11)', async () => {
+    const { deps, auth, guard } = setup({ gate: { allowed: false, retryAfterSeconds: 300 } });
+    const result = await acceptInvitationWithPassword(deps, { token: TOKEN, password: PASSWORD });
+    expect(result).toMatchObject({ ok: false, error: { code: 'AUTH_TOO_MANY_ATTEMPTS' } });
+    expect(guard.check).toHaveBeenCalledWith(EMAIL);
+    expect(auth.signInWithPassword).not.toHaveBeenCalled();
+    expect(deps.acceptInvitationAsCaller).not.toHaveBeenCalled();
+  });
+
+  it('counts a wrong password as a sign-in failure of the invitation e-mail', async () => {
+    const { deps, guard } = setup({ signInError: { status: 400 } });
+    await acceptInvitationWithPassword(deps, { token: TOKEN, password: 'wrong' });
+    expect(guard.check).toHaveBeenCalledWith(EMAIL);
+    expect(guard.failed).toHaveBeenCalledTimes(1);
+    expect(guard.succeeded).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when the limiter cannot answer', async () => {
+    const { deps, auth } = setup({ gate: new RateLimiterUnavailableError() });
+    await expect(
+      acceptInvitationWithPassword(deps, { token: TOKEN, password: PASSWORD }),
+    ).rejects.toBeInstanceOf(RateLimiterUnavailableError);
+    expect(auth.signInWithPassword).not.toHaveBeenCalled();
+  });
+
   it('signs in as the invitation e-mail, accepts as that user and opens the organization', async () => {
-    const { deps, auth, calls } = setup();
+    const { deps, auth, calls, guard } = setup();
     const result = await acceptInvitationWithPassword(deps, { token: TOKEN, password: PASSWORD });
     expect(result).toEqual({ ok: true, value: { next: 'home' } });
     expect(auth.signInWithPassword).toHaveBeenCalledWith({ email: EMAIL, password: PASSWORD });
     expect(calls).toEqual(['signIn', 'acceptAsCaller', `switch:${TENANT}`]);
     expect(auth.refreshSession).toHaveBeenCalledWith({ refresh_token: 'refresh-1' });
+    // No «تذكّر هذا المتصفح» here: the browser is not remembered (opt-in, PO decision 9 Oct 2026).
+    expect(guard.succeeded).toHaveBeenCalledWith(expect.objectContaining({ remember: false }));
   });
 
   it('refuses wrong credentials with the usual sign-in answer', async () => {

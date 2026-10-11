@@ -93,6 +93,8 @@ describe('system roles (FR-IAM-07, BRD Appendix B)', () => {
       'platform.user.update',
       'platform.user.deactivate',
       'platform.user.reset_mfa',
+      // T-M2-11 (PO decision 9 Oct 2026): end a member's sign-in lock — a security setup task.
+      'platform.user.unlock_sign_in',
       'platform.role.read',
       'platform.role.assign',
       'platform.role.assign_privileged',

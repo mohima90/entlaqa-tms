@@ -9,9 +9,11 @@
  * session. Each flow verifies the caller's own session with Auth (platform-identity mfa.ts) and acts on that
  * account only; the database applies the organization's policy and decides who may confirm or remove what.
  *
- * INTEGRATION POINT (T-M2-11, review M3): per-account attempt limits wrap verifyTotpCodeAction's handler;
- * refused codes are logged as `platform.auth.mfa_verify` / MFA_CODE_INVALID (the e-mailed code:
- * `platform.auth.mfa_confirm`; it dies after 5 wrong tries in the database).
+ * Attempt limits (T-M2-11, review M3; TM-0003 T-IAM-12): the authenticator code and the e-mailed set-up
+ * code are limited per account and per client on the shared limiter (5 wrong codes per account,
+ * consecutive, 100 per client per 15 minutes; RATE_LIMITED when used up; the generic internal error when
+ * the limiter cannot answer), so these actions pass the request's client (lib/request-client.ts). Refused
+ * codes are logged as `platform.auth.mfa_verify` / MFA_CODE_INVALID and `platform.auth.mfa_confirm`.
  */
 import { ok } from '@jadarat/platform-core';
 import {
@@ -25,6 +27,7 @@ import {
 } from '@jadarat/platform-identity/auth';
 import { definePublicAction } from '@jadarat/platform-rbac';
 import { z } from 'zod';
+import { requestClient } from '../lib/request-client';
 import { EmailSetupCode, TotpCode } from '../lib/totp-code';
 
 export const startTotpSetupAction = definePublicAction({
@@ -36,14 +39,14 @@ export const startTotpSetupAction = definePublicAction({
 export const verifyTotpCodeAction = definePublicAction({
   name: 'platform.auth.mfa_verify',
   input: z.strictObject({ code: TotpCode, factorId: z.uuid().optional() }),
-  handler: ({ input }) => verifyTotpCodeForRequest(input),
+  handler: async ({ input }) => verifyTotpCodeForRequest(input, await requestClient()),
 });
 
 /** The e-mailed code of a new app, in the window that set it up (re-review N1). */
 export const confirmMfaSetupAction = definePublicAction({
   name: 'platform.auth.mfa_confirm',
   input: z.strictObject({ code: EmailSetupCode }),
-  handler: ({ input }) => confirmMfaSetupForRequest(input),
+  handler: async ({ input }) => confirmMfaSetupForRequest(input, await requestClient()),
 });
 
 /** "Send the e-mail again" from the window that set the app up (re-review N1). */

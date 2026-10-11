@@ -1,12 +1,15 @@
 import type { AppLocale } from '@jadarat/platform-i18n';
 import type { z } from 'zod';
+import { accountLockedTemplate } from './account-locked';
 import { invitationTemplate } from './invitation';
+import { mfaCodeLockedTemplate } from './mfa-code-locked';
 import { mfaFactorAddedTemplate } from './mfa-factor-added';
 import { mfaFactorRemovedTemplate } from './mfa-factor-removed';
 import { passwordChangedTemplate } from './password-changed';
 import { passwordResetTemplate } from './password-reset';
 import { securityDigestTemplate } from './security-digest';
 import { securityPolicyChangedTemplate } from './security-policy-changed';
+import { signInUnlockedTemplate } from './sign-in-unlocked';
 import type { EmailTemplate, RenderedEmail } from './types';
 
 /**
@@ -22,6 +25,9 @@ export const EMAIL_TEMPLATES = {
   'platform.mfa_factor_removed': mfaFactorRemovedTemplate,
   'platform.security_policy_changed': securityPolicyChangedTemplate,
   'platform.security_digest': securityDigestTemplate,
+  'platform.account_locked': accountLockedTemplate,
+  'platform.sign_in_unlocked': signInUnlockedTemplate,
+  'platform.mfa_code_locked': mfaCodeLockedTemplate,
 } as const;
 
 export type EmailTemplateKey = keyof typeof EMAIL_TEMPLATES;

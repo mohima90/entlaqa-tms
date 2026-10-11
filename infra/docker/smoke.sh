@@ -9,8 +9,10 @@
 # e-mail from Mailpit — sent by the worker, T-M2-17 — new password, old one refused, link single use, our
 # "password changed" notice; Auth's admin API only on the gateway's internal port, one call per network),
 # deactivates and reactivates members (reassignment, sessions end at once, Auth issues no token to a login
-# that belongs nowhere any more — T-M2-09), sends a browser and a server error to the in-country error
-# tracker (GlitchTip) and checks they arrive without personal data, then tears everything down.
+# that belongs nowhere any more — T-M2-09), runs the sign-in protection journey (T-M2-11: lock after 5 wrong
+# passwords, generic answers in Arabic and English, the shared limiter; Auth's own per-IP limits keyed by the
+# gateway), sends a browser and a server error to the in-country error tracker (GlitchTip) and checks they
+# arrive without personal data, then tears everything down.
 #
 #   bash infra/docker/smoke.sh            # KEEP=1 leaves the stack running; SKIP_BUILD=1 reuses the build
 #
@@ -19,7 +21,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT/infra/docker"
 DOCKER="${DOCKER:-docker}"
-compose() { $DOCKER compose --env-file .secrets/.env "$@"; }
+# compose.smoke.yaml (this test only): the app's limit windows — the 15-minute lock included — last
+# AUTH_RATE_LIMIT_WINDOW_SECONDS seconds, so the journeys below do not wait 15 minutes (T-M2-11).
+compose() { $DOCKER compose -f compose.yaml -f compose.smoke.yaml --env-file .secrets/.env "$@"; }
+export AUTH_RATE_LIMIT_WINDOW_SECONDS="${AUTH_RATE_LIMIT_WINDOW_SECONDS:-45}"
 
 cleanup() {
   local status=$?
@@ -82,11 +87,18 @@ for target in "('example.com', 443)" "('1.1.1.1', 443)"; do # by name and by add
   fi
 done
 
-echo "smoke: starting the app container"
-compose up -d --build --wait app
+echo "smoke: starting the app container behind its front proxy"
+compose up -d --build --wait app front
 curl -sf http://localhost:3200/api/health/live >/dev/null || { echo "smoke: liveness check failed" >&2; exit 1; }
 curl -sf http://localhost:3200/api/health/ready >/dev/null ||
-  { echo "smoke: readiness check failed (app cannot reach the database)" >&2; exit 1; }
+  { echo "smoke: readiness check failed (app cannot reach the database, or its migrations are missing)" >&2; exit 1; }
+# The app is reachable only through the front proxy, which sets the visitor's address (T-M2-11 review):
+# its own port is not published, and it started with a trusted client-address header (no ERROR about it).
+code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://localhost:3000/api/health/live || true)"
+[[ "$code" == "000" ]] || { echo "smoke: the app's own port must not be published (got $code)" >&2; exit 1; }
+if compose logs --no-log-prefix app 2>&1 | grep -qF 'client_ip_header_missing'; then
+  echo "smoke: the app runs without a trusted client address header" >&2; exit 1
+fi
 
 EMAIL="smoke-$(date +%s)@sovereign.example"
 PASSWORD="Smoke-$(openssl rand -hex 16)"
@@ -519,6 +531,10 @@ done
 # Every session of the account ended (the earlier sign-in and the recovery session).
 [[ "$(q "select count(*) from auth.sessions where user_id = '$RESET_ID'")" == "0" ]] ||
   { echo "smoke: sign-in sessions survived the password reset" >&2; exit 1; }
+# «تذكّر هذا المتصفح» was not ticked (T-M2-11 re-review N1): the browser that completed the reset is
+# trusted for 24 hours only — a keyed hash, nothing readable.
+[[ "$(q "select count(*) from private.sign_in_trusted_devices where expires_at between now() + interval '23 hours' and now() + interval '24 hours'")" -ge 1 ]] ||
+  { echo "smoke: an unticked reset must trust its browser for 24 hours" >&2; exit 1; }
 response="$(auth_api POST '/token?grant_type=password' '' "{\"email\":\"$RESET_EMAIL\",\"password\":\"$RESET_NEW_PASSWORD\"}")"
 [[ "${response##*$'\n'}" == "200" ]] || { echo "smoke: sign-in with the new password failed" >&2; exit 1; }
 response="$(auth_api POST '/token?grant_type=password' '' "{\"email\":\"$RESET_EMAIL\",\"password\":\"$RESET_OLD_PASSWORD\"}")"
@@ -565,15 +581,26 @@ done
 q_app_server "begin; set local role authenticated; select private.request_password_changed_mail('$UNUSED_ID'); commit" >/dev/null
 [[ "$(q "select count(*) from private.account_mail_requests where user_id = '$UNUSED_ID'")" == "0" ]] ||
   { echo "smoke: a password-changed notice was queued although the reset link was never used" >&2; exit 1; }
-# The token (a credential) appears nowhere but the e-mail: not in any container log or the audit trail.
-RESET_TOKEN="${RESET_URL#*token_hash=}"
-RESET_TOKEN="${RESET_TOKEN%%&*}"
-if compose logs --no-log-prefix app worker 2>&1 | grep -qF "$RESET_TOKEN"; then
-  echo "smoke: the reset token appears in the app or worker logs" >&2; exit 1
-fi
-[[ "$(q "select count(*) from platform.audit_events where data::text like '%$RESET_TOKEN%'")" == "0" ]] ||
-  { echo "smoke: the reset token reached the audit log" >&2; exit 1; }
-unset RESET_URL RESET_TOKEN
+# Step 3 (T-M2-11 re-review N1): that link, now completed in English with «Remember this browser» ticked —
+# the browser is trusted for 30 days (the unticked Arabic reset above: 24 hours).
+UNUSED_URL="$(reset_link "$UNUSED_EMAIL")" || { echo "smoke: no reset link for the second account" >&2; exit 1; }
+UNUSED_NEW_PASSWORD="Unused-$(openssl rand -hex 16)"
+(cd "$ROOT/apps/suite" && E2E_BASE_URL=http://localhost:3200 RESET_E2E_REMEMBER_LINK_URL="$UNUSED_URL" \
+  RESET_E2E_REMEMBER_PASSWORD="$UNUSED_NEW_PASSWORD" \
+  pnpm exec playwright test e2e/password-reset.spec.ts --project=desktop-chromium)
+[[ "$(q "select count(*) from private.sign_in_trusted_devices where expires_at > now() + interval '29 days'")" -ge 1 ]] ||
+  { echo "smoke: a ticked reset must trust its browser for 30 days" >&2; exit 1; }
+# The tokens (credentials) appear nowhere but the e-mails: not in any container log or the audit trail.
+for url in "$RESET_URL" "$UNUSED_URL"; do
+  RESET_TOKEN="${url#*token_hash=}"
+  RESET_TOKEN="${RESET_TOKEN%%&*}"
+  if compose logs --no-log-prefix app worker 2>&1 | grep -qF "$RESET_TOKEN"; then
+    echo "smoke: a reset token appears in the app or worker logs" >&2; exit 1
+  fi
+  [[ "$(q "select count(*) from platform.audit_events where data::text like '%$RESET_TOKEN%'")" == "0" ]] ||
+    { echo "smoke: a reset token reached the audit log" >&2; exit 1; }
+done
+unset RESET_URL UNUSED_URL RESET_TOKEN url
 # The gateway limits Auth's /verify per source address (30 a minute, burst 10) — also with a trailing
 # slash, which Auth's router serves too (security review M). Beyond the burst: 429. Nothing else calls
 # /verify from this host's address (the app has its own).
@@ -586,6 +613,61 @@ for path in /verify/ /verify; do
   done
   [[ $limited -eq 1 ]] || { echo "smoke: the gateway does not limit /auth/v1$path beyond its burst" >&2; exit 1; }
 done
+
+# Before the T-M2-09 and T-M2-10 journeys, which change the accounts' passwords and the organization's MFA
+# policy; Auth's own per-IP limits (below) come after them: they use up the host's budget for direct Auth calls.
+echo "smoke: sign-in protection (T-M2-11) — 5 wrong passwords lock, a remembered browser (opt-in) still signs in, one lockout e-mail a day, the Organization Admin unlocks and the member is told"
+LIMITS_UNKNOWN_EMAIL="nobody-limits-$(date +%s)@sovereign.example"
+MANAGER_PERSON_ID="$(q "select person_id from platform.tenant_memberships where user_id = '$MANAGER_ID'")"
+[[ "$MANAGER_PERSON_ID" =~ ^[0-9a-f-]{36}$ ]] || { echo "smoke: no person for the manager" >&2; exit 1; }
+(cd "$ROOT/apps/suite" && E2E_BASE_URL=http://localhost:3200 SIGN_IN_LIMITS_E2E_EMAIL="$EMAIL" \
+  SIGN_IN_LIMITS_E2E_PASSWORD="$PASSWORD" SIGN_IN_LIMITS_E2E_UNKNOWN_EMAIL="$LIMITS_UNKNOWN_EMAIL" \
+  SIGN_IN_LIMITS_E2E_WINDOW_SECONDS="$AUTH_RATE_LIMIT_WINDOW_SECONDS" \
+  SIGN_IN_LIMITS_E2E_MEMBER_EMAIL="$MANAGER_EMAIL" SIGN_IN_LIMITS_E2E_MEMBER_PASSWORD="$PROFILE_NEW_PASSWORD" \
+  SIGN_IN_LIMITS_E2E_MEMBER_PERSON_ID="$MANAGER_PERSON_ID" \
+  pnpm exec playwright test e2e/sign-in-limits.spec.ts --project=desktop-chromium)
+# The lockout e-mail (PO decision 9 Oct 2026): the worker wrote the locked member, in the organization's
+# brand (Arabic first); nothing went to the address without an account.
+for i in $(seq 1 60); do
+  [[ "$(mail_count "$MANAGER_EMAIL" 'أُوقف تسجيل الدخول إلى حسابك مؤقتًا')" -ge 1 ]] && break
+  [[ $i -eq 60 ]] && { echo "smoke: no lockout e-mail for the locked member" >&2; exit 1; }
+  sleep 1
+done
+[[ "$(mail_count "$LIMITS_UNKNOWN_EMAIL" '.')" == "0" ]] ||
+  { echo "smoke: an e-mail went to an address without an account" >&2; exit 1; }
+# At most one lockout e-mail per person a day (security review M3): the member was locked twice (Arabic and
+# English journeys); once no lockout request waits any more, exactly one went out.
+for i in $(seq 1 60); do
+  [[ "$(q "select count(*) from private.account_mail_requests where kind = 'account_locked'")" == "0" ]] && break
+  [[ $i -eq 60 ]] && { echo "smoke: lockout e-mail requests are still waiting" >&2; exit 1; }
+  sleep 1
+done
+[[ "$(q "select count(*) from platform.message_deliveries where template = 'platform.account_locked' and recipient_person_id = '$MANAGER_PERSON_ID'")" == "1" ]] ||
+  { echo "smoke: the locked member got more (or fewer) than one lockout e-mail in a day" >&2; exit 1; }
+# Every unlock by the Organization Admin is told to the member (security review M1): the "sign-in unlocked"
+# e-mail, in the organization's brand.
+for i in $(seq 1 60); do
+  [[ "$(mail_count "$MANAGER_EMAIL" 'أُلغي إيقاف تسجيل الدخول إلى حسابك')" -ge 1 ]] && break
+  [[ $i -eq 60 ]] && { echo "smoke: no sign-in unlocked e-mail for the unlocked member" >&2; exit 1; }
+  sleep 1
+done
+# The Organization Admin's unlock is audited, without personal data.
+[[ "$(q "select count(*) from platform.audit_events where action = 'platform.user.sign_in_unlocked' and entity_id = '$MANAGER_PERSON_ID'")" -ge 1 ]] ||
+  { echo "smoke: the sign-in unlock was not audited" >&2; exit 1; }
+# A trusted browser is a keyed hash in the database (never the cookie's token or the address).
+[[ "$(q "select count(*) from private.sign_in_trusted_devices")" -ge 1 ]] ||
+  { echo "smoke: no trusted browser was recorded" >&2; exit 1; }
+# Failed sign-ins are security events (TM-0003 T-IAM-25): stable names, keyed references (rk_…) only.
+app_logs="$(compose logs --no-log-prefix app 2>&1)"
+for event in auth.sign_in.failed auth.lockout auth.rate_limited; do
+  grep -qE "\"security_event\":\"$event\".*\"subject_ref\":\"rk_[0-9a-f]{24}\"" <<<"$app_logs" ||
+    { echo "smoke: no $event security event with a keyed reference in the app logs" >&2; exit 1; }
+done
+# The shared limiter stores keyed hashes only: nothing readable (no address, no e-mail) in its counters.
+[[ "$(q "select count(*) from private.rate_limit_counters where octet_length(key_hash) <> 32 or encode(key_hash, 'escape') like '%sovereign.example%'")" == "0" ]] ||
+  { echo "smoke: the rate limiter stores something readable" >&2; exit 1; }
+[[ "$(q "select count(*) from private.rate_limit_secret")" == "1" ]] ||
+  { echo "smoke: the rate limiter has no key" >&2; exit 1; }
 
 echo "smoke: deactivate and reactivate members (T-M2-09) — reassignment, sessions end, Auth issues no token, old refresh tokens stay dead"
 DEACT_EMAIL="deactivate-$STAMP@sovereign.example"
@@ -897,6 +979,54 @@ for i in $(seq 1 30); do
   sleep 1
 done
 
+echo "smoke: Auth's own per-IP limits (T-M2-11) — keyed by the gateway, never by the caller"
+# Password grants for an address without an account (Auth answers 400 at once; burst 30, then 429).
+# token_codes <source: app|host> <visitor key or ''> <count>: the HTTP status codes, space-separated.
+token_codes() {
+  local body='{"email":"nobody-ratelimit@sovereign.example","password":"not-a-password"}'
+  if [[ "$1" == "app" ]]; then
+    # From the app's network: the visitor key the app sends with its Auth calls (X-Jadarat-Client).
+    compose exec -T app /nodejs/bin/node -e '
+      const [key, count, body] = process.argv.slice(1);
+      (async () => {
+        const codes = [];
+        for (let i = 0; i < Number(count); i += 1) {
+          const headers = { "content-type": "application/json", apikey: "self-hosted" };
+          if (key) headers["X-Jadarat-Client"] = key;
+          const answer = await fetch("https://gateway:8443/auth/v1/token?grant_type=password",
+            { method: "POST", headers, body });
+          codes.push(answer.status);
+        }
+        console.log(codes.join(" "));
+      })().catch(() => process.exit(1));' "$2" "$3" "$body"
+  else
+    # From the host (published port): whatever the caller claims, its own address is the key.
+    local codes=()
+    for i in $(seq 1 "$3"); do
+      codes+=("$(curl -s -o /dev/null -w '%{http_code}' --cacert .secrets/ca.crt -H "$AUTH_APIKEY_HEADER" \
+        -H 'Content-Type: application/json' -H "X-Jadarat-Client: 198.51.100.$i" \
+        -H "X-Jadarat-Rate-Limit-Key: 198.51.100.$i" --data-binary "$body" \
+        'https://localhost:8443/auth/v1/token?grant_type=password')")
+    done
+    echo "${codes[*]}"
+  fi
+}
+codes="$(token_codes app 198.51.100.7 40)"
+[[ " $codes " == *" 429 "* ]] ||
+  { echo "smoke: Auth does not limit one visitor key from the app (got: $codes)" >&2; exit 1; }
+codes="$(token_codes app 198.51.100.8 3)"
+[[ " $codes " != *" 429 "* ]] ||
+  { echo "smoke: another visitor key shares the limit (got: $codes)" >&2; exit 1; }
+# An app call without a trusted visitor address is not limited by Auth (one budget for every visitor
+# would let one abuser block everyone); the app's shared limiter covers it.
+codes="$(token_codes app '' 40)"
+[[ " $codes " != *" 429 "* ]] ||
+  { echo "smoke: Auth limits app calls without a visitor key (got: $codes)" >&2; exit 1; }
+# A direct caller rotating made-up keys is still limited by its own address.
+codes="$(token_codes host '' 40)"
+[[ " $codes " == *" 429 "* ]] ||
+  { echo "smoke: a direct caller chose its own rate-limit key (got: $codes)" >&2; exit 1; }
+
 # No unconfirmed e-mail account exists after every journey (re-review N3): with "Confirm email" off, Auth
 # would hand a session for such an account to anyone who signs up with its e-mail, without the hook.
 # Accounts as Auth looks them up for a sign-up (GoTrue FindUserByEmailAndAudience); the sample people of
@@ -916,7 +1046,7 @@ all_logs="$(compose logs --no-log-prefix 2>&1)"
 app_logs="$(compose logs --no-log-prefix app 2>&1)"
 for value in "$PASSWORD" "$PARITY_PASSWORD" "$MANAGER_PASSWORD" "$PROFILE_NEW_PASSWORD" "$INTRUDER_PASSWORD" \
   "$GUARD_PASSWORD" "$GUARD_NEW_PASSWORD" "$RESET_OLD_PASSWORD" "$RESET_NEW_PASSWORD" "$ADMIN_NEW_PASSWORD" \
-  "$DEACT_PASSWORD" "$SECOND_PASSWORD"; do
+  "$DEACT_PASSWORD" "$SECOND_PASSWORD" "$UNUSED_NEW_PASSWORD"; do
   if grep -qF "$value" <<<"$all_logs"; then
     echo "smoke: a test user's password appears in the container logs" >&2; exit 1
   fi
@@ -1005,7 +1135,7 @@ done
 # all — has a secret/service-role key or a service_role token.
 grep -q '^SUPABASE_SECRET_KEY=' .secrets/.env && { echo "smoke: .secrets/.env still holds SUPABASE_SECRET_KEY" >&2; exit 1; }
 [[ -n "$(compose ps -a -q app)" ]] || { echo "smoke: no app container to inspect" >&2; exit 1; }
-for service in app db auth gateway worker mailpit glitchtip errors-db; do
+for service in app front db auth gateway worker mailpit glitchtip errors-db; do
   for id in $(compose ps -a -q "$service"); do
     env_vars="$($DOCKER inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$id")"
     service_role=0

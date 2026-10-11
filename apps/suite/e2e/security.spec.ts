@@ -9,6 +9,7 @@ import {
   expect,
   test,
 } from '@playwright/test';
+import { afterSignIn } from './sign-in';
 import { freshCode, wrongCode } from './totp';
 
 /**
@@ -25,7 +26,8 @@ import { freshCode, wrongCode } from './totp';
  *    removes it — the other sign-in's session ends; the e-mail's "not you? remove this app" link does the
  *    same for every session; the owner then sets up their own app with the code;
  *  - the Organization Admin changes the policy only with a code (AAL2, PO decision D-IAM-01); lockout
- *    limited to the platform default or stricter, applied with the next update (badge);
+ *    limited to the platform default or stricter, enforced by the sign-in limiter (T-M2-11) — the section
+ *    says where (the organization's own address; the platform default on the shared sign-in page);
  *  - an organization that requires MFA makes a member set an app up, then asks for its code at sign-in;
  *  - a new password shorter than the strictest rule of the member's organizations is refused;
  *  - a user manager ends a member's sign-in sessions; the member must sign in again;
@@ -50,6 +52,11 @@ const MONA = '5eed1000-0000-4000-8000-000000000003';
 const KHALID = '5eed1000-0000-4000-8000-000000000002';
 /** At least 12 characters (the platform minimum), shorter than the 16 this spec sets. */
 const SHORTER_PASSWORD = 'shorter-pass14';
+/** Where the lockout settings apply (enforced by T-M2-11; TM-0003 D-IAM-04). */
+const EN_LOCKOUT_SCOPE =
+  "Applies to your organization's members when they sign in at your organization's own address; on the shared sign-in page the platform default applies to everyone (5 attempts, 15 minutes). Browsers a member chose to remember can still sign in while sign-in is paused, and you can unlock a member from their profile.";
+const AR_LOCKOUT_SCOPE =
+  'يسري على أعضاء منشأتك حين يسجّلون الدخول من عنوان منشأتك الخاص؛ أما في صفحة الدخول المشتركة فيسري إعداد المنصة على الجميع (5 محاولات و15 دقيقة). وتبقى المتصفحات التي اختار العضو تذكّرها قادرة على الدخول أثناء الإيقاف، ويمكنك إلغاء الإيقاف من ملف العضو.';
 
 /** Set-up keys of the apps this spec registers (kept in memory only, never logged). */
 let adminKey = '';
@@ -100,7 +107,7 @@ async function setUpApp(page: Page): Promise<string> {
   expect(key).toMatch(/^[A-Z2-7]{16,64}$/);
   rememberKey(key);
   await enterCode(page, key);
-  await expect(page.getByTestId('mfa-pending')).toBeVisible();
+  await expect(page.getByTestId('mfa-pending')).toBeVisible(afterSignIn);
   return key;
 }
 
@@ -120,11 +127,29 @@ async function useMfaLink(page: Page, url: string) {
   await page.getByTestId('mfa-link-submit').click();
 }
 
-async function signIn(page: Page, locale: 'ar' | 'en', email: string, secret: string) {
+async function signIn(
+  page: Page,
+  locale: 'ar' | 'en',
+  email: string,
+  secret: string,
+  options: { readonly remember?: boolean } = {},
+) {
   await page.goto(`/${locale}/sign-in`);
   await page.locator('#email').fill(email);
   await page.locator('#password').fill(secret);
+  if (options.remember) {
+    await page
+      .getByRole('checkbox', {
+        name: locale === 'ar' ? 'تذكّر هذا المتصفح' : 'Remember this browser',
+      })
+      .check();
+  }
   await page.getByRole('button', { name: locale === 'ar' ? 'تسجيل الدخول' : 'Sign in' }).click();
+}
+
+/** The browser's trusted-device cookie, if any (`__Host-jadarat-device`, T-M2-11). */
+async function deviceCookie(page: Page) {
+  return (await page.context().cookies()).find((c) => c.name.endsWith('jadarat-device'));
 }
 
 /** Signs in and passes the code of an organization that requires one. */
@@ -136,10 +161,10 @@ async function signInWithCode(
   key: string,
 ) {
   await signIn(page, locale, email, secret);
-  await expect(page).toHaveURL(new RegExp(`/${locale}/mfa$`));
+  await expect(page).toHaveURL(new RegExp(`/${locale}/mfa$`), afterSignIn);
   await expect(page.getByTestId('mfa-challenge')).toBeVisible();
   await enterCode(page, key);
-  await expect(page).toHaveURL(new RegExp(`/${locale}/suite$`));
+  await expect(page).toHaveURL(new RegExp(`/${locale}/suite$`), afterSignIn);
 }
 
 /** The browser's next request ends on the sign-in page with the notice (and the session is signed out). */
@@ -242,7 +267,7 @@ test.describe('Security policy, MFA and sign-in sessions', () => {
     test.setTimeout(300_000);
     await signIn(page, 'en', adminEmail, adminPassword);
     // The set-up prompt was postponed in signed-in.spec (PO decision 2): it is not shown again.
-    await expect(page).toHaveURL(/\/en\/suite$/);
+    await expect(page).toHaveURL(/\/en\/suite$/, afterSignIn);
     await page.getByRole('link', { name: 'Security', exact: true }).click();
     await expect(page).toHaveURL(/\/en\/suite\/admin\/security$/);
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Security');
@@ -284,7 +309,7 @@ test.describe('Security policy, MFA and sign-in sessions', () => {
     // explains where to finish. (The database refuses its code anyway: pgTAP 67/68.)
     await withContext(browser, async (other) => {
       await signIn(other, 'en', adminEmail, adminPassword);
-      await expect(other).toHaveURL(/\/en\/mfa$/);
+      await expect(other).toHaveURL(/\/en\/mfa$/, afterSignIn);
       await expect(other.getByTestId('mfa-pending-elsewhere')).toBeVisible();
       await expect(other.getByRole('heading', { level: 1 })).toHaveText(
         'An app was added from another sign-in',
@@ -307,6 +332,7 @@ test.describe('Security policy, MFA and sign-in sessions', () => {
     await enterMailedCode(page, otherCode(first));
     await expect(page.getByTestId('mfa-error')).toHaveText(
       'The code is incorrect. Check the newest email and try again.',
+      afterSignIn,
     );
     // "Send the email again": not within 2 minutes of the last one…
     await page.getByTestId('mfa-pending-resend').click();
@@ -324,16 +350,17 @@ test.describe('Security policy, MFA and sign-in sessions', () => {
     await enterMailedCode(page, first);
     await expect(page.getByTestId('mfa-error')).toHaveText(
       'The code is incorrect. Check the newest email and try again.',
+      afterSignIn,
     );
     await enterMailedCode(page, newest);
     // Confirmed: on to the settings, now editable.
-    await expect(page).toHaveURL(/\/en\/suite\/admin\/security$/);
+    await expect(page).toHaveURL(/\/en\/suite\/admin\/security$/, afterSignIn);
     await expect(page.getByTestId('security-step-up')).toHaveCount(0);
 
-    // Lockout: the platform default or stricter (review L5), applied by the sign-in limiter (T-M2-11).
-    await expect(page.getByTestId('security-lockout-pending')).toHaveText(
-      'Takes effect with the next update',
-    );
+    // Lockout: the platform default or stricter (review L5), enforced by the sign-in limiter (T-M2-11):
+    // no "next update" badge any more; the section says where it applies.
+    await expect(page.getByTestId('security-lockout-pending')).toHaveCount(0);
+    await expect(page.getByTestId('security-lockout-note')).toHaveText(EN_LOCKOUT_SCOPE);
     await page.getByTestId('security-lockoutThreshold').fill('10');
     await page.getByTestId('security-lockoutMinutes').fill('5');
     await page.getByTestId('security-save').click();
@@ -369,7 +396,8 @@ test.describe('Security policy, MFA and sign-in sessions', () => {
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('الأمان');
     await expect(page.getByTestId('security-passwordMinLength')).toHaveValue('16');
-    await expect(page.getByTestId('security-lockout-pending')).toHaveText('يسري مع التحديث القادم');
+    await expect(page.getByTestId('security-lockout-pending')).toHaveCount(0);
+    await expect(page.getByTestId('security-lockout-note')).toHaveText(AR_LOCKOUT_SCOPE);
     await expectNoSeriousA11yViolations(page);
   });
 
@@ -383,7 +411,7 @@ test.describe('Security policy, MFA and sign-in sessions', () => {
     const attacker = await attackerContext.newPage();
     try {
       await signIn(attacker, 'en', memberEmail, memberPassword);
-      await expect(attacker).toHaveURL(/\/en\/mfa$/);
+      await expect(attacker).toHaveURL(/\/en\/mfa$/, afterSignIn);
       await expect(attacker.getByTestId('mfa-enrol')).toBeVisible();
       await expect(attacker.getByTestId('mfa-skip')).toHaveCount(0);
       // The database refuses the session until then: the suite sends it back.
@@ -392,7 +420,7 @@ test.describe('Security policy, MFA and sign-in sessions', () => {
       await setUpApp(attacker);
       // Without the owner's mailbox there is no code: still refused.
       await enterMailedCode(attacker, otherCode(mailedCode(memberEmail, 1)));
-      await expect(attacker.getByTestId('mfa-error')).toBeVisible();
+      await expect(attacker.getByTestId('mfa-error')).toBeVisible(afterSignIn);
       await attacker.goto('/en/suite');
       await expect(attacker).toHaveURL(/\/en\/mfa$/);
 
@@ -422,14 +450,14 @@ test.describe('Security policy, MFA and sign-in sessions', () => {
 
       // Again: another app with the password only…
       await signIn(attacker, 'en', memberEmail, memberPassword);
-      await expect(attacker).toHaveURL(/\/en\/mfa$/);
+      await expect(attacker).toHaveURL(/\/en\/mfa$/, afterSignIn);
       await setUpApp(attacker);
       mailedCode(memberEmail, 2);
 
       // …the owner signs in (Arabic): an app was added from another sign-in — Remove is the main action,
       // there is nothing to enter here.
       await signIn(page, 'ar', memberEmail, memberPassword);
-      await expect(page).toHaveURL(/\/ar\/mfa$/);
+      await expect(page).toHaveURL(/\/ar\/mfa$/, afterSignIn);
       await expect(page.getByTestId('mfa-pending-elsewhere')).toBeVisible();
       await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
       await expect(page.getByRole('heading', { level: 1 })).toHaveText('أُضيف تطبيق من دخول آخر');
@@ -464,13 +492,13 @@ test.describe('Security policy, MFA and sign-in sessions', () => {
     await expect(page.getByTestId('mfa-skip')).toHaveCount(0);
     await expectNoSeriousA11yViolations(page);
     await enterMailedCode(page, mailedCode(memberEmail, 3));
-    await expect(page).toHaveURL(/\/ar\/suite$/);
+    await expect(page).toHaveURL(/\/ar\/suite$/, afterSignIn);
 
     // The next sign-in asks for the app's code; a wrong code is refused.
     await page.getByRole('button', { name: 'تسجيل الخروج' }).click();
     await expect(page).toHaveURL(/\/ar\/sign-in$/);
     await signIn(page, 'ar', memberEmail, memberPassword);
-    await expect(page).toHaveURL(/\/ar\/mfa$/);
+    await expect(page).toHaveURL(/\/ar\/mfa$/, afterSignIn);
     await expect(page.getByTestId('mfa-challenge')).toBeVisible();
     // Lost the app: the administrator resets it, or ENTLAQA support (no contradicting texts).
     await expect(page.getByText(/فريق دعم ENTLAQA/)).toBeVisible();
@@ -478,10 +506,11 @@ test.describe('Security policy, MFA and sign-in sessions', () => {
     await page.getByTestId('mfa-code-submit').click();
     await expect(page.getByTestId('mfa-error')).toHaveText(
       'الرمز غير صحيح أو انتهت صلاحيته. يمكنك إدخال الرمز الظاهر الآن في التطبيق.',
+      afterSignIn,
     );
     await expectNoSeriousA11yViolations(page);
     await enterCode(page, memberKey);
-    await expect(page).toHaveURL(/\/ar\/suite$/);
+    await expect(page).toHaveURL(/\/ar\/suite$/, afterSignIn);
 
     // PO decision 5: the strictest rule of the member's organizations (16 here), Arabic then English.
     await expectShorterPasswordRefused(page, 'ar');
@@ -498,7 +527,16 @@ test.describe('Security policy, MFA and sign-in sessions', () => {
     const member = await memberContext.newPage();
     const admin = await adminContext.newPage();
     try {
-      await signInWithCode(member, 'en', memberEmail, memberPassword, memberKey);
+      // «Remember this browser» ticked on an account with an app (T-M2-11 integration review L4): the
+      // password alone trusts nothing — no trusted-device cookie on the code page; once the sign-in code
+      // passed, the browser is remembered.
+      await signIn(member, 'en', memberEmail, memberPassword, { remember: true });
+      await expect(member).toHaveURL(/\/en\/mfa$/, afterSignIn);
+      await expect(member.getByTestId('mfa-challenge')).toBeVisible();
+      expect(await deviceCookie(member)).toBeUndefined();
+      await enterCode(member, memberKey);
+      await expect(member).toHaveURL(/\/en\/suite$/, afterSignIn);
+      await expect.poll(async () => (await deviceCookie(member))?.httpOnly).toBe(true);
       await member.goto('/en/suite/profile');
       const own = member.getByTestId('sessions-own');
       await expect(own.locator('[data-testid="session-row"][data-current="true"]')).toHaveCount(1);
@@ -567,7 +605,7 @@ test.describe('Security policy, MFA and sign-in sessions', () => {
       'For your security, sensitive actions need a code entered in the last 15 minutes. Enter the code your app shows now.',
     );
     await enterCode(page, adminKey);
-    await expect(page).toHaveURL(new RegExp(`${profile}$`));
+    await expect(page).toHaveURL(new RegExp(`${profile}$`), afterSignIn);
 
     // Reset, with a confirmation step (cancel first: nothing happens).
     await page.getByTestId('user-mfa-reset-open').click();
@@ -593,12 +631,12 @@ test.describe('Security policy, MFA and sign-in sessions', () => {
     test.setTimeout(240_000);
     await withContext(browser, async (member) => {
       await signIn(member, 'en', memberEmail, memberPassword);
-      await expect(member).toHaveURL(/\/en\/mfa$/);
+      await expect(member).toHaveURL(/\/en\/mfa$/, afterSignIn);
       await expect(member.getByTestId('mfa-enrol')).toBeVisible();
       memberKey = await setUpApp(member);
       await expect(member.getByTestId('mfa-pending-steps')).toContainText('72 hours');
       await enterMailedCode(member, mailedCode(memberEmail, 4));
-      await expect(member).toHaveURL(/\/en\/suite$/);
+      await expect(member).toHaveURL(/\/en\/suite$/, afterSignIn);
       // A line manager (no user management): her report's profile has no sessions and no reset.
       await member.goto(`/en/suite/admin/users/${KHALID}`);
       await expect(member.getByTestId('user-profile')).toBeVisible();

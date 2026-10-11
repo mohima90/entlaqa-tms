@@ -3,22 +3,59 @@ import { isIP } from 'node:net';
 /** All clients share this key when the platform gives no trustworthy client address. */
 export const UNKNOWN_CLIENT = 'unknown';
 
+/** Server setting: the client-IP header the proxy in front of the app OVERWRITES (self-hosted). */
+export const CLIENT_IP_HEADER_ENV = 'JADARAT_CLIENT_IP_HEADER';
+
+/**
+ * JADARAT_CLIENT_IP_HEADER as configured: `unset`; `none` — explicitly no trusted header (every visitor
+ * shares one key; for an installation that knowingly runs without one, security review T-M2-11 L4); or a
+ * header name. Throws for anything else, and for X-Forwarded-For: proxies APPEND to it, so its value can
+ * start with whatever the visitor sent (TM-0003 T-IAM-03) — name a header the proxy overwrites instead.
+ */
+export type ClientIpHeaderSetting =
+  | { readonly kind: 'unset' }
+  | { readonly kind: 'none' }
+  | { readonly kind: 'header'; readonly name: string };
+
+export function readClientIpHeaderSetting(
+  env: Readonly<Record<string, string | undefined>>,
+): ClientIpHeaderSetting {
+  const raw = env[CLIENT_IP_HEADER_ENV]?.trim() ?? '';
+  if (raw === '') return { kind: 'unset' };
+  if (raw.toLowerCase() === 'none') return { kind: 'none' };
+  if (!/^[A-Za-z][A-Za-z0-9-]{0,63}$/.test(raw)) {
+    throw new Error(`${CLIENT_IP_HEADER_ENV} must be an HTTP header name, or none`);
+  }
+  if (raw.toLowerCase() === 'x-forwarded-for') {
+    throw new Error(
+      `${CLIENT_IP_HEADER_ENV} must not be X-Forwarded-For (a proxy appends to it, so the visitor chooses its start): name the header your proxy overwrites, e.g. X-Real-IP`,
+    );
+  }
+  return { kind: 'header', name: raw };
+}
+
 /**
  * The client address for application rate limits (TM-0003 T-IAM-03): only a client-IP header that the
  * platform in front of the app OVERWRITES — `x-real-ip` on Vercel (trusted automatically there);
  * elsewhere only the header named in `JADARAT_CLIENT_IP_HEADER` (set it only when a load balancer
- * overwrites that header). Otherwise, or when the value is not a single IP address, UNKNOWN_CLIENT: a
+ * overwrites that header; `none` names none). Otherwise, or when the value is not a single IP address, or
+ * the setting is invalid (the app refuses to start with it — server-settings.ts), UNKNOWN_CLIENT: a
  * client-sent header can never mint keys. The address stays in memory only and is never logged.
  */
 export function clientAddress(
   header: (name: string) => string | null,
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): string {
-  const configured = env.JADARAT_CLIENT_IP_HEADER?.trim();
+  let setting: ClientIpHeaderSetting;
+  try {
+    setting = readClientIpHeaderSetting(env);
+  } catch {
+    return UNKNOWN_CLIENT;
+  }
   const name =
-    configured !== undefined && configured !== ''
-      ? configured
-      : env.VERCEL === '1'
+    setting.kind === 'header'
+      ? setting.name
+      : setting.kind === 'unset' && env.VERCEL === '1'
         ? 'x-real-ip'
         : undefined;
   if (name === undefined) return UNKNOWN_CLIENT;

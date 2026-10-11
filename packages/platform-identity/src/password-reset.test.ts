@@ -1,8 +1,12 @@
+import { type AppError, type Result, appError, err } from '@jadarat/platform-core';
 import { describe, expect, it, vi } from 'vitest';
 import { AuthServiceError } from './auth-flow';
+import { type CodeCheckOptions, RateLimiterUnavailableError } from './auth-limits';
 import {
+  PasswordResetErrors,
   type PasswordResetDeps,
   type PasswordResetRequestDeps,
+  RESET_CODE_AUTH_LIMIT_WAIT_MINUTES,
   RESET_REQUEST_ANSWER_MS,
   type RecoveryClientLike,
   completePasswordReset,
@@ -44,7 +48,17 @@ describe('readPasswordResetDelivery (PASSWORD_RESET_DELIVERY)', () => {
 
 type ResetForEmail = RecoveryClientLike['auth']['resetPasswordForEmail'];
 
-function requestSetup(resetPasswordForEmail: ResetForEmail | null) {
+/** The shared limiter's answer: allowed, limited, or unavailable (an Error). */
+function limiter(answer: boolean | Error = true) {
+  return vi.fn((_email: string) =>
+    answer instanceof Error ? Promise.reject(answer) : Promise.resolve(answer),
+  );
+}
+
+function requestSetup(
+  resetPasswordForEmail: ResetForEmail | null,
+  allowed: boolean | Error = true,
+) {
   const order: string[] = [];
   const kept: Promise<unknown>[] = [];
   const logWarning = vi.fn();
@@ -55,6 +69,7 @@ function requestSetup(resetPasswordForEmail: ResetForEmail | null) {
         ? ({ auth: { resetPasswordForEmail } } as unknown as RecoveryClientLike)
         : null,
     },
+    allowRequest: limiter(allowed),
     logWarning,
     sleep: vi.fn((ms: number) => {
       order.push(`sleep:${String(ms)}`);
@@ -86,9 +101,7 @@ describe('requestPasswordReset (no account enumeration)', () => {
     async (_name, resetPasswordForEmail) => {
       const { deps, order, kept } = requestSetup(resetPasswordForEmail);
       // Same resolved value (undefined) — the action turns it into one fixed answer.
-      await expect(
-        requestPasswordReset(deps, { email: EMAIL, limited: false }),
-      ).resolves.toBeUndefined();
+      await expect(requestPasswordReset(deps, { email: EMAIL })).resolves.toBeUndefined();
       // The Auth call is handed over first (it may outlive the answer), then the fixed wait.
       expect(order).toEqual(['keepAlive', `sleep:${String(RESET_REQUEST_ANSWER_MS)}`]);
       // The kept work never rejects (nothing reaches the error reporter with request data).
@@ -105,32 +118,39 @@ describe('requestPasswordReset (no account enumeration)', () => {
         };
       });
     const { deps, kept } = requestSetup(slow);
-    await requestPasswordReset(deps, { email: EMAIL, limited: false });
+    await requestPasswordReset(deps, { email: EMAIL });
     expect(kept).toHaveLength(1);
     release?.();
     await Promise.all(kept);
   });
 
-  it('does not ask Auth when the application limiter refused — same answer, same time', async () => {
-    const resetPasswordForEmail = vi.fn<ResetForEmail>(() => Promise.resolve({ error: null }));
-    const { deps, order, logWarning } = requestSetup(resetPasswordForEmail);
-    await expect(
-      requestPasswordReset(deps, { email: EMAIL, limited: true }),
-    ).resolves.toBeUndefined();
-    expect(resetPasswordForEmail).not.toHaveBeenCalled();
-    expect(order).toEqual([`sleep:${String(RESET_REQUEST_ANSWER_MS)}`]);
-    expect(logWarning).toHaveBeenCalledWith('password reset request limited', {
-      action: 'platform.auth.request_password_reset',
-      reason: 'rate_limited',
-    });
-  });
+  it.each([
+    ['limited', false],
+    ['the limiter could not answer (fail closed)', new RateLimiterUnavailableError()],
+  ] as const)(
+    'does not ask Auth when %s — same answer, same time, same steps',
+    async (_name, allowed) => {
+      const resetPasswordForEmail = vi.fn<ResetForEmail>(() => Promise.resolve({ error: null }));
+      const { deps, order, kept, logWarning } = requestSetup(resetPasswordForEmail, allowed);
+      await expect(requestPasswordReset(deps, { email: EMAIL })).resolves.toBeUndefined();
+      // The limiter runs in the background too: the answer cannot tell a limited request apart.
+      expect(order).toEqual(['keepAlive', `sleep:${String(RESET_REQUEST_ANSWER_MS)}`]);
+      await expect(Promise.all(kept)).resolves.toBeDefined();
+      expect(deps.allowRequest).toHaveBeenCalledWith(EMAIL);
+      expect(resetPasswordForEmail).not.toHaveBeenCalled();
+      expect(logWarning).toHaveBeenCalledWith('password reset request limited', {
+        action: 'platform.auth.request_password_reset',
+        reason: 'rate_limited',
+      });
+    },
+  );
 
   it('asks Auth with the address and logs codes only — never the address', async () => {
     const resetPasswordForEmail = vi.fn<ResetForEmail>(() =>
       Promise.resolve({ error: { status: 429, code: 'over_email_send_rate_limit' } }),
     );
     const { deps, kept, logWarning } = requestSetup(resetPasswordForEmail);
-    await requestPasswordReset(deps, { email: EMAIL, limited: false });
+    await requestPasswordReset(deps, { email: EMAIL });
     await Promise.all(kept);
     expect(resetPasswordForEmail).toHaveBeenCalledWith(EMAIL);
     expect(logWarning).toHaveBeenCalledWith('password reset request not accepted by Auth', {
@@ -145,7 +165,7 @@ describe('requestPasswordReset (no account enumeration)', () => {
     const thrown = requestSetup(() =>
       Promise.reject(new Error(`could not reach Auth for ${EMAIL}`)),
     );
-    await requestPasswordReset(thrown.deps, { email: EMAIL, limited: false });
+    await requestPasswordReset(thrown.deps, { email: EMAIL });
     await Promise.all(thrown.kept);
     expect(thrown.logWarning).toHaveBeenCalledWith('password reset request failed', {
       action: 'platform.auth.request_password_reset',
@@ -154,14 +174,14 @@ describe('requestPasswordReset (no account enumeration)', () => {
     expect(JSON.stringify(thrown.logWarning.mock.calls)).not.toContain('example.test');
 
     const bare = requestSetup(() => Promise.resolve({ error: {} }));
-    await requestPasswordReset(bare.deps, { email: EMAIL, limited: false });
+    await requestPasswordReset(bare.deps, { email: EMAIL });
     await Promise.all(bare.kept);
     expect(bare.logWarning).toHaveBeenCalledWith('password reset request not accepted by Auth', {
       action: 'platform.auth.request_password_reset',
     });
 
     const accepted = requestSetup(() => Promise.resolve({ error: null }));
-    await requestPasswordReset(accepted.deps, { email: EMAIL, limited: false });
+    await requestPasswordReset(accepted.deps, { email: EMAIL });
     await Promise.all(accepted.kept);
     expect(accepted.logWarning).not.toHaveBeenCalled();
 
@@ -179,7 +199,7 @@ describe('requestPasswordReset (no account enumeration)', () => {
         } as unknown as RecoveryClientLike,
       },
     };
-    await requestPasswordReset(throwsString.deps, { email: EMAIL, limited: false });
+    await requestPasswordReset(throwsString.deps, { email: EMAIL });
     await Promise.all(throwsString.kept);
     expect(throwsString.logWarning).toHaveBeenCalledWith('password reset request failed', {
       action: 'platform.auth.request_password_reset',
@@ -189,12 +209,13 @@ describe('requestPasswordReset (no account enumeration)', () => {
 });
 
 describe('requestPasswordReset, worker mode (T-M2-17: our notification service)', () => {
-  function workerSetup(enqueue: (email: string) => Promise<void>) {
+  function workerSetup(enqueue: (email: string) => Promise<void>, allowed: boolean | Error = true) {
     const order: string[] = [];
     const kept: Promise<unknown>[] = [];
     const logWarning = vi.fn();
     const deps: PasswordResetRequestDeps = {
       delivery: { mode: 'worker', enqueue },
+      allowRequest: limiter(allowed),
       logWarning,
       sleep: vi.fn((ms: number) => {
         order.push(`sleep:${String(ms)}`);
@@ -211,9 +232,7 @@ describe('requestPasswordReset, worker mode (T-M2-17: our notification service)'
   it('queues the typed address unconditionally, then answers after the same fixed time', async () => {
     const enqueue = vi.fn(() => Promise.resolve());
     const { deps, order, kept, logWarning } = workerSetup(enqueue);
-    await expect(
-      requestPasswordReset(deps, { email: EMAIL, limited: false }),
-    ).resolves.toBeUndefined();
+    await expect(requestPasswordReset(deps, { email: EMAIL })).resolves.toBeUndefined();
     await Promise.all(kept);
     expect(enqueue).toHaveBeenCalledWith(EMAIL);
     expect(order).toEqual(['keepAlive', `sleep:${String(RESET_REQUEST_ANSWER_MS)}`]);
@@ -224,9 +243,7 @@ describe('requestPasswordReset, worker mode (T-M2-17: our notification service)'
     const { deps, order, kept, logWarning } = workerSetup(() =>
       Promise.reject(new Error(`insert failed for ${EMAIL}`)),
     );
-    await expect(
-      requestPasswordReset(deps, { email: EMAIL, limited: false }),
-    ).resolves.toBeUndefined();
+    await expect(requestPasswordReset(deps, { email: EMAIL })).resolves.toBeUndefined();
     await expect(Promise.all(kept)).resolves.toBeDefined();
     expect(order).toEqual(['keepAlive', `sleep:${String(RESET_REQUEST_ANSWER_MS)}`]);
     expect(logWarning).toHaveBeenCalledWith('password reset request could not be queued', {
@@ -246,15 +263,16 @@ describe('requestPasswordReset, worker mode (T-M2-17: our notification service)'
         }),
     );
     const { deps, kept } = workerSetup(enqueue);
-    await requestPasswordReset(deps, { email: EMAIL, limited: false });
+    await requestPasswordReset(deps, { email: EMAIL });
     expect(kept).toHaveLength(1);
     release?.();
     await Promise.all(kept);
 
-    const limited = workerSetup(enqueue);
-    await requestPasswordReset(limited.deps, { email: EMAIL, limited: true });
+    const limited = workerSetup(enqueue, false);
+    await requestPasswordReset(limited.deps, { email: EMAIL });
+    await Promise.all(limited.kept);
     expect(enqueue).toHaveBeenCalledTimes(1);
-    expect(limited.order).toEqual([`sleep:${String(RESET_REQUEST_ANSWER_MS)}`]);
+    expect(limited.order).toEqual(['keepAlive', `sleep:${String(RESET_REQUEST_ANSWER_MS)}`]);
   });
 });
 
@@ -262,6 +280,8 @@ describe('requestPasswordReset, worker mode (T-M2-17: our notification service)'
 // Complete (screen 11)
 
 interface CompleteOptions {
+  /** The shared limiter's answer for new-password submissions (default: allowed). */
+  allowed?: boolean | Error;
   verifyError?: { status?: number; code?: string } | null;
   verifyData?: unknown;
   updateError?: { status?: number; code?: string; reasons?: unknown } | null;
@@ -272,10 +292,16 @@ interface CompleteOptions {
   factors?: { id: string; factor_type: string; status: string }[];
   listError?: { status?: number; code?: string };
   challengeError?: { status?: number; code?: string };
+  /**
+   * The code limiter (T-M2-11) refuses the check (true: for a full window; a number: that many seconds
+   * left), or cannot answer: Auth is not asked.
+   */
+  codeLimited?: boolean | number | Error;
 }
 
 function completeSetup(options: CompleteOptions = {}) {
   const calls: string[] = [];
+  const codeChecks: { userId: string; wrongCode: boolean | null }[] = [];
   const auth = {
     resetPasswordForEmail: vi.fn(),
     verifyOtp: vi.fn((params: { type: 'recovery'; token_hash: string }) => {
@@ -285,7 +311,7 @@ function completeSetup(options: CompleteOptions = {}) {
         data:
           options.verifyData === undefined
             ? {
-                user: { id: USER },
+                user: { id: USER, email: EMAIL },
                 session: { access_token: 'access-otp', refresh_token: 'refresh-otp' },
               }
             : options.verifyData,
@@ -322,18 +348,98 @@ function completeSetup(options: CompleteOptions = {}) {
     calls.push('endBrowserSession');
     return Promise.resolve();
   });
+  const unlockSignIn = vi.fn((email: string, remember: boolean) => {
+    calls.push(`unlock:${email === EMAIL ? 'account' : 'other'}:${remember ? 'remember' : '24h'}`);
+    return Promise.resolve();
+  });
   const deps: PasswordResetDeps = {
     client: { auth },
+    allowAttempt: vi.fn(() =>
+      options.allowed instanceof Error
+        ? Promise.reject(options.allowed)
+        : Promise.resolve(options.allowed ?? true),
+    ),
+    unlockSignIn,
     logInfo,
     logWarning,
     endBrowserSession,
+    // The code limiter (T-M2-11 withCodeAttemptLimit, tested in auth-limits.test.ts): records whose code
+    // was checked and whether a refusal counted as a wrong code.
+    limitCodeCheck: (async (
+      userId: string,
+      verify: () => Promise<Result<unknown, AppError>>,
+      isWrongCode: (error: AppError) => boolean,
+      checkOptions?: CodeCheckOptions,
+    ) => {
+      if (options.codeLimited instanceof Error) throw options.codeLimited;
+      if (options.codeLimited !== undefined && options.codeLimited !== false) {
+        const seconds = options.codeLimited === true ? 900 : options.codeLimited;
+        return err(checkOptions?.limited?.(seconds) ?? appError('RATE_LIMITED'));
+      }
+      const result = await verify();
+      codeChecks.push({ userId, wrongCode: result.ok ? null : isWrongCode(result.error) });
+      return result;
+    }) as PasswordResetDeps['limitCodeCheck'],
   };
-  return { deps, auth, calls, logInfo, logWarning };
+  return { deps, auth, calls, logInfo, logWarning, unlockSignIn, codeChecks };
 }
 
 const input = { tokenHash: TOKEN_HASH, password: PASSWORD };
 
 describe('completePasswordReset (FR-IAM-13)', () => {
+  it('limits new-password submissions per client before the single-use link is spent (T-M2-11)', async () => {
+    const { deps, auth, unlockSignIn } = completeSetup({ allowed: false });
+    const result = await completePasswordReset(deps, input);
+    expect(result).toMatchObject({ ok: false, error: { code: 'RATE_LIMITED' } });
+    expect(auth.verifyOtp).not.toHaveBeenCalled();
+    expect(unlockSignIn).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when the limiter cannot answer: the link is not spent', async () => {
+    const { deps, auth } = completeSetup({ allowed: new RateLimiterUnavailableError() });
+    await expect(completePasswordReset(deps, input)).rejects.toBeInstanceOf(
+      RateLimiterUnavailableError,
+    );
+    expect(auth.verifyOtp).not.toHaveBeenCalled();
+  });
+
+  it('a password below the platform minimum is refused before it is counted or the link is spent (5c)', async () => {
+    for (const password of ['short-pass1', '\u{1F600}'.repeat(6)]) {
+      // 11 characters; six emoji are 12 UTF-16 units but 6 characters as people count them.
+      const { deps, auth } = completeSetup();
+      const result = await completePasswordReset(deps, { ...input, password });
+      expect(result).toEqual(
+        err(
+          appError('VALIDATION_FAILED', {
+            fieldErrors: [{ path: 'password', code: 'TOO_SMALL', params: { minimum: 12 } }],
+          }),
+        ),
+      );
+      expect(deps.allowAttempt).not.toHaveBeenCalled();
+      expect(auth.verifyOtp).not.toHaveBeenCalled();
+    }
+  });
+
+  it('counts malformed submissions too, and unlocks nothing when the password was not changed', async () => {
+    const malformed = completeSetup();
+    await completePasswordReset(malformed.deps, { ...input, tokenHash: 'x' });
+    expect(malformed.deps.allowAttempt).toHaveBeenCalled();
+    for (const options of [
+      { verifyError: { status: 403, code: 'otp_expired' } },
+      { updateError: { status: 422, code: 'weak_password' } },
+    ]) {
+      const { deps, unlockSignIn } = completeSetup(options);
+      await completePasswordReset(deps, input);
+      expect(unlockSignIn).not.toHaveBeenCalled();
+    }
+    // An answer without the account's e-mail: the reset succeeds, nothing to unlock.
+    const noEmail = completeSetup({
+      verifyData: { user: { id: USER }, session: { access_token: 'a', refresh_token: 'r' } },
+    });
+    expect((await completePasswordReset(noEmail.deps, input)).ok).toBe(true);
+    expect(noEmail.unlockSignIn).not.toHaveBeenCalled();
+  });
+
   it('verifies the link, sets the password, ends every session, then sends to sign-in — in that order', async () => {
     const { deps, auth, calls, logInfo } = completeSetup();
     expect(await completePasswordReset(deps, input)).toEqual({
@@ -345,6 +451,9 @@ describe('completePasswordReset (FR-IAM-13)', () => {
       'verifyOtp:recovery',
       'updateUser:password',
       'signOut:global',
+      // The owner proved control of the mailbox: the account's sign-in lock ends (T-M2-11), and this
+      // browser is trusted — 24 hours, «تذكّر هذا المتصفح» not ticked (re-review N1).
+      'unlock:account:24h',
       'endBrowserSession',
     ]);
     // Security event with the user id only: no token, password or e-mail.
@@ -359,6 +468,12 @@ describe('completePasswordReset (FR-IAM-13)', () => {
     expect(logged).not.toContain(PASSWORD);
   });
 
+  it('«تذكّر هذا المتصفح» ticked on the reset page: the browser is remembered (30 days)', async () => {
+    const { deps, unlockSignIn } = completeSetup();
+    await completePasswordReset(deps, { ...input, remember: true });
+    expect(unlockSignIn).toHaveBeenCalledWith(EMAIL, true);
+  });
+
   it('worker mode: queues the "password changed" notice for the account after the sessions ended', async () => {
     const { deps, calls } = completeSetup();
     const queuePasswordChangedNotice = vi.fn((userId: string) => {
@@ -371,6 +486,7 @@ describe('completePasswordReset (FR-IAM-13)', () => {
       'verifyOtp:recovery',
       'updateUser:password',
       'signOut:global',
+      'unlock:account:24h',
       `notice:${USER}`,
       'endBrowserSession',
     ]);
@@ -581,11 +697,13 @@ describe('completePasswordReset for an account with an authenticator app (T-M2-1
       value: { next: 'sign-in' },
     });
     expect(auth.mfa.challengeAndVerify).toHaveBeenCalledWith({ factorId: 'f-app', code: CODE });
+    // …then, as for every completed reset, the sign-in lock ends and this browser is trusted (T-M2-11).
     expect(calls).toEqual([
       'verifyOtp:recovery',
       'code:f-app',
       'updateUser:password',
       'signOut:global',
+      'unlock:account:24h',
       'endBrowserSession',
     ]);
   });
@@ -620,10 +738,59 @@ describe('completePasswordReset for an account with an authenticator app (T-M2-1
     expect(JSON.stringify(logWarning.mock.calls)).not.toContain('000000');
   });
 
+  it("the code check goes through the account's code limit (T-M2-11); a limited one never asks Auth", async () => {
+    const right = completeSetup({ factors: [app] });
+    await completePasswordReset(right.deps, { ...input, code: CODE });
+    expect(right.codeChecks).toEqual([{ userId: USER, wrongCode: null }]);
+    const wrong = completeSetup({
+      factors: [app],
+      challengeError: { status: 422, code: 'mfa_verification_failed' },
+    });
+    await completePasswordReset(wrong.deps, { ...input, code: '000000' });
+    expect(wrong.codeChecks).toEqual([{ userId: USER, wrongCode: true }]);
+    // Limited (this page's own budget used up — integration review M1): Auth is not asked, the recovery
+    // session ends (the link is spent by now), no password set — and the answer says plainly when to ask
+    // for a new link (the page shows it with the link-spent view).
+    const limited = completeSetup({ factors: [app], codeLimited: true });
+    const result = await completePasswordReset(limited.deps, { ...input, code: CODE });
+    expect(result).toEqual(
+      err(appError(PasswordResetErrors.PASSWORD_RESET_CODE_LIMITED, { params: { minutes: 15 } })),
+    );
+    expect(limited.auth.mfa.challengeAndVerify).not.toHaveBeenCalled();
+    expect(limited.calls).toEqual(['verifyOtp:recovery', 'signOut:local']);
+    // Rounded up to whole minutes, at least one.
+    for (const [seconds, minutes] of [
+      [61, 2],
+      [1, 1],
+      [600, 10],
+    ] as const) {
+      const soon = completeSetup({ factors: [app], codeLimited: seconds });
+      const r = await completePasswordReset(soon.deps, { ...input, code: CODE });
+      expect(!r.ok && r.error.params).toEqual({ minutes });
+    }
+    // The limiter cannot answer: fail closed, the recovery session still ends.
+    const down = completeSetup({ factors: [app], codeLimited: new Error('limiter down') });
+    await expect(completePasswordReset(down.deps, { ...input, code: CODE })).rejects.toThrow(
+      'limiter down',
+    );
+    expect(down.auth.mfa.challengeAndVerify).not.toHaveBeenCalled();
+    expect(down.calls).toEqual(['verifyOtp:recovery', 'signOut:local']);
+  });
+
   it('rate limits and outages of the code check; Auth asking for AAL2 anyway', async () => {
+    // Auth's own limit: the code was not compared (not counted as a wrong code — integration review L2),
+    // the link is spent all the same: the plain answer with the code window's wait.
     const limited = completeSetup({ factors: [app], challengeError: { status: 429 } });
     const r1 = await completePasswordReset(limited.deps, { ...input, code: CODE });
-    expect(!r1.ok && r1.error.code).toBe('RATE_LIMITED');
+    expect(r1).toEqual(
+      err(
+        appError(PasswordResetErrors.PASSWORD_RESET_CODE_LIMITED, {
+          params: { minutes: RESET_CODE_AUTH_LIMIT_WAIT_MINUTES },
+        }),
+      ),
+    );
+    expect(limited.codeChecks).toEqual([{ userId: USER, wrongCode: false }]);
+    expect(limited.calls).toEqual(['verifyOtp:recovery', 'code:f-app', 'signOut:local']);
     const down = completeSetup({ factors: [app], challengeError: { status: 503 } });
     await expect(completePasswordReset(down.deps, { ...input, code: CODE })).rejects.toBeInstanceOf(
       AuthServiceError,

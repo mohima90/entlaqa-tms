@@ -240,7 +240,8 @@ declare
   v_role text;
 begin
   foreach v_role in array array['anon', 'authenticated', 'app_server', 'app_worker', 'app_queue', 'tenant_guard',
-                                'invitation_guard', 'account_mail_guard', 'membership_guard'] loop
+                                'invitation_guard', 'account_mail_guard', 'membership_guard',
+                                'rate_limit_guard'] loop
     perform tests.assert(not has_database_privilege(v_role, current_database(), 'TEMPORARY'),
       format('%s must not create temporary objects', v_role));
   end loop;
@@ -374,7 +375,8 @@ begin
   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'private' and p.prosecdef
     and p.proowner <> 'account_mail_guard'::regrole   -- checked in its own block below (T-M2-17)
-    and p.proowner <> 'membership_guard'::regrole;    -- checked in its own block below (T-M2-09)
+    and p.proowner <> 'membership_guard'::regrole     -- checked in its own block below (T-M2-09)
+    and p.proowner <> 'rate_limit_guard'::regrole;    -- checked in 70_rate_limiter_owner.sql (T-M2-11)
   perform tests.assert_eq(v_list,
     'private.accept_invitation_as_caller(bytea,text,text) (owner invitation_guard), '
     'private.account_has_app(uuid) (owner tenant_guard), '
@@ -454,10 +456,14 @@ begin
   perform tests.assert(not has_function_privilege('authenticated',
       'private.apply_invitation_acceptance(bytea,uuid,text,text)', 'execute'),
     'only the acceptance functions run the acceptance effects');
+  -- Readers: invitation_guard (FR-IAM-03) and rate_limit_guard (the Organization Admin's sign-in unlock,
+  -- T-M2-11: a member's address → the account's limiter key).
   perform tests.assert(not has_table_privilege('authenticated', 'private.auth_user_email', 'select')
                        and not has_table_privilege('tenant_guard', 'private.auth_user_email', 'select')
-                       and has_table_privilege('invitation_guard', 'private.auth_user_email', 'select'),
-    'private.auth_user_email: invitation_guard only');
+                       and not has_table_privilege('account_mail_guard', 'private.auth_user_email', 'select')
+                       and has_table_privilege('invitation_guard', 'private.auth_user_email', 'select')
+                       and has_table_privilege('rate_limit_guard', 'private.auth_user_email', 'select'),
+    'private.auth_user_email: invitation_guard and rate_limit_guard only');
   perform tests.assert(not has_table_privilege('invitation_guard', 'auth.users', 'select'),
     'invitation_guard reads auth.users only through the view');
   -- Request path: every invitation column but the token hash.
@@ -484,8 +490,9 @@ begin
   from pg_proc p where p.proowner = 'account_mail_guard'::regrole;
   perform tests.assert_eq(v_list,
     'private.claim_account_mail_request(), private.finish_account_mail_request(uuid), '
+    'private.request_account_locked_mail(text,integer), private.request_mfa_code_locked_mail(uuid,integer), '
     'private.request_password_changed_mail(uuid), private.request_password_reset_mail(text), '
-    'private.retry_account_mail_request(uuid)',
+    'private.request_sign_in_unlocked_mail(uuid), private.retry_account_mail_request(uuid)',
     'account_mail_guard owns the account e-mail functions only, all SECURITY DEFINER');
   perform tests.assert(not exists (select 1 from pg_class c where c.relowner = 'account_mail_guard'::regrole),
     'account_mail_guard owns no relations');
@@ -548,16 +555,22 @@ begin
     'account_mail_requests_tenant_guard:(kind = ANY (ARRAY[''mfa_factor_added''::text, ''mfa_factor_removed''::text, ''security_policy_changed''::text]))',
     'tenant_guard''s policy on the queue: the authenticator and policy-change notices only');
   -- Callers: the request functions and the worker functions are executable by authenticated (the
-  -- functions check the login role themselves) and nobody else besides the owner.
+  -- functions check the login role themselves) and nobody else besides the owner — except the unlock
+  -- notice, executable by rate_limit_guard alone (private.unlock_member_sign_in, T-M2-11).
   for v_list in
     select distinct format('%s → %s', p.oid::regprocedure,
                            case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end)
     from pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
     where p.proowner = 'account_mail_guard'::regrole and a.privilege_type = 'EXECUTE' and a.grantee <> p.proowner
-      and (a.grantee = 0 or pg_get_userbyid(a.grantee) <> 'authenticated')
+      and (a.grantee = 0
+           or pg_get_userbyid(a.grantee) <> case when p.oid = 'private.request_sign_in_unlocked_mail(uuid)'::regprocedure
+                                                 then 'rate_limit_guard' else 'authenticated' end)
   loop
     perform tests.assert(false, format('unexpected EXECUTE: %s', v_list));
   end loop;
+  perform tests.assert(has_function_privilege('rate_limit_guard', 'private.request_sign_in_unlocked_mail(uuid)', 'execute')
+                       and not has_function_privilege('authenticated', 'private.request_sign_in_unlocked_mail(uuid)', 'execute'),
+    'the unlock notice is requested through the Organization Admin''s unlock only');
 end $$;
 
 -- membership_guard (T-M2-09, deactivate / reactivate): owns exactly the session-ending and

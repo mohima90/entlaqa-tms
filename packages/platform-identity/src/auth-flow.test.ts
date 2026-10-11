@@ -2,12 +2,19 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   AuthServiceError,
   type AuthFlowDeps,
+  SIGN_IN_REFUSAL_ANSWER_MS,
   getSessionOrganizations,
   selectOrganization,
   signInWithPassword,
   signOut,
   signOutEndedSession,
 } from './auth-flow';
+import {
+  RateLimiterUnavailableError,
+  type SignInGate,
+  type SignInGuard,
+  type SignInSuccessOptions,
+} from './auth-limits';
 
 const USER = '11111111-1111-4111-8111-111111111111';
 const SESSION = '33333333-3333-4333-8333-333333333333';
@@ -35,21 +42,35 @@ interface FakeOptions {
   /** The database's view of the session in its organization (T-M2-10); default 'ok'. */
   access?: string;
   mfaPending?: boolean;
+  /** The sign-in guard's answer before Auth (default: allowed); an Error = limiter unavailable. */
+  gate?: SignInGate | Error;
+  /** Milliseconds Auth takes to answer (the fake clock moves on by this much). */
+  authLatencyMs?: number;
+  /** The account's factors in Auth's answer (default: none — no authenticator app); null: no `factors`. */
+  factors?: { factor_type: string; status: string }[] | null;
 }
 
 function setup(options: FakeOptions = {}) {
   const calls: string[] = [];
+  let clock = 1_000_000;
   const auth = {
-    signInWithPassword: vi.fn(() =>
-      Promise.resolve(
+    signInWithPassword: vi.fn(() => {
+      clock += options.authLatencyMs ?? 0;
+      return Promise.resolve(
         options.signInError
           ? { data: { session: null }, error: options.signInError }
           : {
-              data: { session: { access_token: 'access-1', refresh_token: 'refresh-1' } },
+              data: {
+                session: { access_token: 'access-1', refresh_token: 'refresh-1' },
+                user:
+                  options.factors === null
+                    ? { id: USER }
+                    : { id: USER, factors: options.factors ?? [] },
+              },
               error: null,
             },
-      ),
-    ),
+      );
+    }),
     getClaims: vi.fn((jwt?: string) => {
       const token = jwt ?? options.cookieToken;
       const claims = token ? tokenClaims[token] : undefined;
@@ -85,6 +106,19 @@ function setup(options: FakeOptions = {}) {
   };
   const audited: { action: string; actor: unknown; entityId?: string | undefined }[] = [];
   const claimsSeen: unknown[] = [];
+  // The attempt an allowed check hands out: Auth's verdict is reported to it.
+  const failed = vi.fn(() => Promise.resolve());
+  const succeeded = vi.fn((_options?: SignInSuccessOptions) => Promise.resolve());
+  const notChecked = vi.fn(() => Promise.resolve());
+  const check = vi.fn((_email: string): Promise<SignInGate> =>
+    options.gate instanceof Error
+      ? Promise.reject(options.gate)
+      : Promise.resolve(
+          options.gate ?? { allowed: true, attempt: { failed, succeeded, notChecked } },
+        ),
+  );
+  const signInGuard: SignInGuard = { check };
+  const guard = { check, failed, succeeded, notChecked };
   const deps: AuthFlowDeps = {
     supabase: { auth },
     withUserTx: ((claims: unknown, fn: (tx: unknown) => Promise<unknown>) => {
@@ -115,8 +149,14 @@ function setup(options: FakeOptions = {}) {
       return Promise.resolve();
     }),
     logWarning: vi.fn(),
+    signInGuard,
+    now: () => clock,
+    sleep: vi.fn((ms: number) => {
+      clock += ms;
+      return Promise.resolve();
+    }),
   };
-  return { deps, auth, audited, calls, claimsSeen };
+  return { deps, auth, audited, calls, claimsSeen, guard };
 }
 
 const credentials = { email: 'user@example.test', password: 'correct horse battery staple' };
@@ -149,29 +189,171 @@ describe('signInWithPassword', () => {
   });
 
   it('answers wrong e-mail and wrong password identically (no account enumeration)', async () => {
-    const { deps } = setup({ signInError: { status: 400 } });
+    const { deps, guard, auth } = setup({ signInError: { status: 400 } });
     const result = await signInWithPassword(deps, credentials);
     expect(result.ok).toBe(false);
     expect(!result.ok && result.error.code).toBe('AUTH_INVALID_CREDENTIALS');
     expect(!result.ok && result.error.status).toBe(401);
-    // Security event without personal data (no e-mail, no password).
-    expect(deps.logWarning).toHaveBeenCalledWith('sign-in refused', {
-      action: 'platform.auth.sign_in',
-      status: 400,
+    // The failure was counted BEFORE Auth was asked (check); the attempt records the security event
+    // (keyed refs only) and requests the lockout e-mail when the account locks now.
+    expect(guard.check).toHaveBeenCalledWith(credentials.email);
+    expect(guard.check.mock.invocationCallOrder[0]).toBeLessThan(
+      auth.signInWithPassword.mock.invocationCallOrder[0] ?? 0,
+    );
+    expect(guard.failed).toHaveBeenCalledTimes(1);
+    expect(guard.succeeded).not.toHaveBeenCalled();
+  });
+
+  it('warns (codes only) when a refusal took longer than the padding allows', async () => {
+    const slow = setup({ signInError: { status: 400 }, authLatencyMs: 1_300 });
+    const result = await signInWithPassword(slow.deps, credentials);
+    expect(!result.ok && result.error.code).toBe('AUTH_INVALID_CREDENTIALS');
+    expect(slow.deps.logWarning).toHaveBeenCalledWith(
+      'sign-in refusal took longer than its padding allows',
+      { action: 'platform.auth.sign_in', reason: 'refusal_padding_exceeded', durationMs: 1_300 },
+    );
+    const fast = setup({ signInError: { status: 400 }, authLatencyMs: 1_100 });
+    await signInWithPassword(fast.deps, credentials);
+    expect(fast.deps.logWarning).not.toHaveBeenCalled();
+  });
+
+  it('answers an unknown account and a wrong password after the same time (timing, T-IAM-27)', async () => {
+    // GoTrue answers an unknown e-mail at once and compares the password of an existing account first.
+    const unknown = setup({ signInError: { status: 400 }, authLatencyMs: 20 });
+    const wrongPassword = setup({ signInError: { status: 400 }, authLatencyMs: 180 });
+    const answers = [];
+    for (const { deps } of [unknown, wrongPassword]) {
+      const started = deps.now();
+      const result = await signInWithPassword(deps, credentials);
+      answers.push({ result, took: deps.now() - started });
+    }
+    expect(answers[0]).toEqual(answers[1]);
+    expect(answers[0]?.took).toBe(SIGN_IN_REFUSAL_ANSWER_MS);
+    expect(answers[0]?.result).toMatchObject({
+      ok: false,
+      error: { code: 'AUTH_INVALID_CREDENTIALS' },
     });
   });
 
-  it('never reports an Auth outage as a wrong password', async () => {
+  it('refuses a limited attempt without asking Auth, after the same time, with one generic answer', async () => {
+    const { deps, auth, guard } = setup({ gate: { allowed: false, retryAfterSeconds: 600 } });
+    const started = deps.now();
+    const result = await signInWithPassword(deps, credentials);
+    expect(result).toMatchObject({
+      ok: false,
+      error: {
+        code: 'AUTH_TOO_MANY_ATTEMPTS',
+        status: 429,
+        messageKey: 'auth.errors.tooManyAttempts',
+      },
+    });
+    // The answer says nothing about the account: no retry time, no account state.
+    expect(!result.ok && result.error.params).toBeUndefined();
+    expect(deps.now() - started).toBe(SIGN_IN_REFUSAL_ANSWER_MS);
+    expect(guard.check).toHaveBeenCalledWith(credentials.email);
+    expect(auth.signInWithPassword).not.toHaveBeenCalled();
+    expect(guard.failed).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when the limiter cannot answer: Auth is never asked', async () => {
+    const { deps, auth } = setup({ gate: new RateLimiterUnavailableError() });
+    await expect(signInWithPassword(deps, credentials)).rejects.toBeInstanceOf(
+      RateLimiterUnavailableError,
+    );
+    expect(auth.signInWithPassword).not.toHaveBeenCalled();
+  });
+
+  it("ends the account's run of failures after a correct password; remembers the browser only when ticked", async () => {
+    const { deps, guard } = setup();
+    await signInWithPassword(deps, credentials);
+    expect(guard.succeeded).toHaveBeenCalledTimes(1);
+    // Opt-in (PO decision 9 Oct 2026): not ticked, not remembered.
+    expect(guard.succeeded).toHaveBeenCalledWith({
+      remember: false,
+      verified: { userId: USER, sessionId: SESSION },
+      authNamesApp: false,
+    });
+    expect(guard.failed).not.toHaveBeenCalled();
+    // A successful sign-in is not slowed down.
+    expect(deps.sleep).not.toHaveBeenCalled();
+    // Ticked: the verified token's user and session go with it — the database decides (L4).
+    const ticked = setup();
+    await signInWithPassword(ticked.deps, { ...credentials, remember: true });
+    expect(ticked.guard.succeeded).toHaveBeenCalledWith({
+      remember: true,
+      verified: { userId: USER, sessionId: SESSION },
+      authNamesApp: false,
+    });
+  });
+
+  it('an account with an authenticator app: Auth naming it is passed on; the database decides (integration review L4)', async () => {
+    const app = [{ factor_type: 'totp', status: 'verified' }];
+    const ticked = setup({ factors: app });
+    expect((await signInWithPassword(ticked.deps, { ...credentials, remember: true })).ok).toBe(
+      true,
+    );
+    expect(ticked.guard.succeeded).toHaveBeenCalledWith({
+      remember: true,
+      verified: { userId: USER, sessionId: SESSION },
+      authNamesApp: true,
+    });
+    // A set-up that never passed its first code is not named as an app (the database still looks).
+    const unfinished = setup({ factors: [{ factor_type: 'totp', status: 'unverified' }] });
+    await signInWithPassword(unfinished.deps, { ...credentials, remember: true });
+    expect(unfinished.guard.succeeded).toHaveBeenCalledWith(
+      expect.objectContaining({ remember: true, authNamesApp: false }),
+    );
+  });
+
+  it('Auth’s answer without `factors` (re-review): not taken as "no app" by itself — the verified user goes to the database', async () => {
+    const { deps, guard } = setup({ factors: null });
+    expect((await signInWithPassword(deps, { ...credentials, remember: true })).ok).toBe(true);
+    // Auth said nothing about an app; the database looks at this user's factors itself (pgTAP 71).
+    expect(guard.succeeded).toHaveBeenCalledWith({
+      remember: true,
+      verified: { userId: USER, sessionId: SESSION },
+      authNamesApp: false,
+    });
+  });
+
+  it('a token that cannot be verified: the success is recorded without a user — nothing can be trusted', async () => {
+    const { deps, guard, auth } = setup();
+    auth.getClaims.mockResolvedValueOnce({ data: null, error: new Error('bad token') });
+    const result = await signInWithPassword(deps, { ...credentials, remember: true });
+    expect(!result.ok && result.error.code).toBe('UNAUTHENTICATED');
+    expect(guard.succeeded).toHaveBeenCalledWith({
+      remember: true,
+      verified: null,
+      authNamesApp: false,
+    });
+  });
+
+  it('never reports an Auth outage as a wrong password; the provisional failure stays counted', async () => {
     for (const status of [500, 503, 0, undefined]) {
-      const { deps } = setup({ signInError: { status } });
+      const { deps, guard } = setup({ signInError: { status } });
       await expect(signInWithPassword(deps, credentials)).rejects.toBeInstanceOf(AuthServiceError);
+      // Neither verdict is reported: nothing is given back (security review T-M2-11).
+      expect(guard.failed).not.toHaveBeenCalled();
+      expect(guard.succeeded).not.toHaveBeenCalled();
+      expect(guard.notChecked).not.toHaveBeenCalled();
     }
   });
 
-  it('maps Auth rate limiting to RATE_LIMITED', async () => {
-    const { deps } = setup({ signInError: { status: 429 } });
+  it('maps Auth rate limiting to RATE_LIMITED; no password was compared, so the account gets its failure back (L6)', async () => {
+    const { deps, guard } = setup({ signInError: { status: 429 } });
+    const started = deps.now();
     const result = await signInWithPassword(deps, credentials);
     expect(!result.ok && result.error.code).toBe('RATE_LIMITED');
+    expect(deps.now() - started).toBe(SIGN_IN_REFUSAL_ANSWER_MS);
+    expect(guard.notChecked).toHaveBeenCalledTimes(1);
+    expect(guard.failed).not.toHaveBeenCalled();
+    expect(guard.succeeded).not.toHaveBeenCalled();
+    expect(deps.logWarning).toHaveBeenCalledWith('sign-in limited by Auth', {
+      action: 'platform.auth.sign_in',
+      securityEvent: 'auth.rate_limited',
+      reason: 'auth_service',
+      status: 429,
+    });
   });
 
   it('signs the session out again when the account has no active organization', async () => {

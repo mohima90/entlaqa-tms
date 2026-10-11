@@ -6,7 +6,6 @@
  * account signs up through the public Auth API, gated by Auth's before-user-created hook: the web app
  * holds no Auth secret key (ADR 0002 §7 implementation note T-M2-07, security review H1).
  */
-import { ok } from '@jadarat/platform-core';
 import {
   acceptInvitationAsSignedInUserForRequest,
   acceptInvitationWithNewAccountForRequest,
@@ -20,6 +19,7 @@ import {
   LookupInvitationInput,
   SignInToAcceptInput,
 } from '../lib/invite-accept-input';
+import { requestClient } from '../lib/request-client';
 
 /**
  * What a link is (screens 8 and 9): the page reads the token from the URL fragment in the browser —
@@ -30,32 +30,41 @@ import {
 export const lookupInvitationAction = definePublicAction({
   name: 'platform.invitation.lookup',
   input: LookupInvitationInput,
-  handler: async ({ input }) => ok(await lookupInvitationLinkForRequest(input.token)),
+  // Limited per client (T-M2-11): RATE_LIMITED when used up.
+  handler: async ({ input }) => lookupInvitationLinkForRequest(input.token, await requestClient()),
 });
 
-/** New account: set the password (and display names), then land signed in. */
+/** New account: set the password (and display names), then land signed in. Sign-ups limited per client. */
 export const acceptInvitationAction = definePublicAction({
   name: 'platform.invitation.accept',
   input: AcceptInvitationInput,
-  handler: ({ input }) =>
-    acceptInvitationWithNewAccountForRequest({
-      token: input.token,
-      password: input.password,
-      displayNameAr: input.displayNameAr,
-      displayNameEn: input.displayNameEn,
-    }),
+  handler: async ({ input }) =>
+    acceptInvitationWithNewAccountForRequest(
+      {
+        token: input.token,
+        password: input.password,
+        displayNameAr: input.displayNameAr,
+        displayNameEn: input.displayNameEn,
+      },
+      await requestClient(),
+    ),
 });
 
-/** "Sign in to accept": the invitation e-mail already has an account (contract §1 step 5). */
+/**
+ * "Sign in to accept": the invitation e-mail already has an account (contract §1 step 5). Limited like
+ * sign-in: per account (the invitation e-mail) and per client.
+ */
 export const acceptInvitationWithSignInAction = definePublicAction({
   name: 'platform.invitation.accept_with_sign_in',
   input: SignInToAcceptInput,
-  handler: ({ input }) => acceptInvitationWithPasswordForRequest(input),
+  handler: async ({ input }) =>
+    acceptInvitationWithPasswordForRequest(input, await requestClient()),
 });
 
 /** Already signed in with the invited account: accept with the current session. */
 export const acceptInvitationAsSignedInUser = definePublicAction({
   name: 'platform.invitation.accept_as_signed_in',
   input: AcceptAsSignedInInput,
-  handler: ({ input }) => acceptInvitationAsSignedInUserForRequest(input),
+  handler: async ({ input }) =>
+    acceptInvitationAsSignedInUserForRequest(input, await requestClient()),
 });

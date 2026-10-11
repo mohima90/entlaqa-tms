@@ -9,12 +9,13 @@ import { getFormatter, getTranslations } from 'next-intl/server';
 import { notFound, redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { SuiteShell } from '../../../../../../components/suite-shell';
+import { CancelDraftButton } from '../../../../../../components/user-import/cancel-draft-button';
 import { Stepper } from '../../../../../../components/user-import/stepper';
 import { UploadPanel } from '../../../../../../components/user-import/upload-panel';
 import { fileActionErrorTexts } from '../../../../../../lib/profile-texts';
 import { getSuiteContext } from '../../../../../../lib/suite-context';
 import { userImportStartQuery } from '../../../../../../lib/user-import-queries';
-import { count } from '../../../../../../lib/user-import-view';
+import { count, isDraft } from '../../../../../../lib/user-import-view';
 import { localizedName } from '../../../../../../lib/users-view';
 import { importForbidden, stepperProps } from '../../../../../../components/user-import/page-parts';
 
@@ -110,7 +111,11 @@ async function stepOne(locale: AppLocale, view: UserImportStartView, organizatio
   labels.cutBody = t('fileStates.uploadCut.body');
   labels.cutRetry = t('fileStates.uploadCut.retry');
   labels.emptyFile = t('fileStates.refused.FILE_EMPTY.title');
-  const codes = t.raw('fileStates.uploadErrors') as Record<string, string>;
+  // The import's own refusals (confirm.errors: IMPORT_STATE_CHANGED, …) with the upload's own wording.
+  const codes = {
+    ...(t.raw('confirm.errors') as Record<string, string>),
+    ...(t.raw('fileStates.uploadErrors') as Record<string, string>),
+  };
   const running = view.running;
 
   return (
@@ -286,6 +291,9 @@ async function recentImports(locale: AppLocale, view: UserImportStartView, organ
   const t = await getTranslations({ locale, namespace: 'userImport' });
   const format = await getFormatter({ locale });
   const base = `/${locale}/suite/admin/users/import`;
+  // The importer's own imports that have not run can be cancelled here (integration review M1).
+  const codes = t.raw('confirm.errors') as Record<string, string>;
+  const errors = await fileActionErrorTexts(locale);
   return (
     <section aria-labelledby="recent-imports" data-testid="recent-imports">
       <h2 id="recent-imports" className="mb-1 mt-0 text-lg font-semibold">
@@ -328,7 +336,11 @@ async function recentImports(locale: AppLocale, view: UserImportStartView, organ
                     {format.dateTime(record.createdAt, 'dateTime')}
                   </td>
                   <td className="min-w-48 px-4 py-3 text-sm">
-                    <Badge>{t(`status.${record.status}`)}</Badge>
+                    <Badge>
+                      {record.status === 'expired' && record.failureCode === 'UPLOAD_NOT_FINISHED'
+                        ? t('status.uploadNotFinished')
+                        : t(`status.${record.status}`)}
+                    </Badge>
                     {record.resultCounts ? (
                       <div className="mt-1 text-text-muted">
                         {t('resultSummary', {
@@ -340,11 +352,30 @@ async function recentImports(locale: AppLocale, view: UserImportStartView, organ
                       </div>
                     ) : null}
                   </td>
-                  <td className="whitespace-nowrap px-4 py-3">
-                    <a href={`${base}/${record.id}`} className="underline">
-                      {t('recent.view')}
-                      <span className="sr-only">{` (${record.fileName})`}</span>
-                    </a>
+                  <td className="px-4 py-3">
+                    <div className="flex flex-col items-start gap-2">
+                      <a href={`${base}/${record.id}`} className="whitespace-nowrap underline">
+                        {t('recent.view')}
+                        <span className="sr-only">{` (${record.fileName})`}</span>
+                      </a>
+                      {record.mine && isDraft(record.status) && record.dataPurgedAt === null ? (
+                        <CancelDraftButton
+                          importId={record.id}
+                          label={t('confirm.cancel')}
+                          srDetail={record.fileName}
+                          workingLabel={t('progress.working')}
+                          confirm={{
+                            question: t('confirm.cancelConfirm'),
+                            confirmButton: t('confirm.cancelConfirmButton'),
+                            keep: t('confirm.keep'),
+                          }}
+                          variant="ghost"
+                          codes={codes}
+                          errors={errors}
+                          testId="recent-cancel"
+                        />
+                      ) : null}
+                    </div>
                   </td>
                 </tr>
               ))}

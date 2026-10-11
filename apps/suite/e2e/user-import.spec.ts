@@ -276,6 +276,30 @@ test.describe('bulk user import', () => {
       [first, 'لمى', 'سعد', 'المطيري', 'متدرب', 'العربية'],
       [second, 'نواف', 'علي', 'الدوسري', '', ''],
     ]);
+
+    // A cut upload (integration review M1): Storage never gets the file. The import is cancelled at once,
+    // so it neither waits for its window nor counts toward the imports not yet run.
+    const cutName = `مقطوع-${run}.csv`;
+    await page.route('**/*', (route, request) =>
+      request.method() === 'PUT' ? route.abort() : route.fallback(),
+    );
+    await page.getByTestId('import-file-input').setInputFiles({
+      name: cutName,
+      mimeType: 'text/csv',
+      buffer: file,
+    });
+    await expect(page.getByTestId('upload-cut')).toContainText('لم يكتمل رفع الملف', {
+      timeout: 60_000,
+    });
+    await expectNoSeriousA11yViolations(page);
+    await page.unroute('**/*');
+    const cutRow = page.getByTestId('recent-imports').getByRole('row').filter({ hasText: cutName });
+    await expect(async () => {
+      await page.reload();
+      await expect(cutRow).toContainText('أُلغي', { timeout: 2_000 });
+    }).toPass({ timeout: 30_000 });
+    await expect(cutRow.getByTestId('recent-cancel')).toHaveCount(0);
+
     await upload(page, `موظفو-${run}.csv`, file);
     await expect(page.getByTestId('mapping-table')).toContainText('البريد الإلكتروني للعمل');
     await expectNoSeriousA11yViolations(page);

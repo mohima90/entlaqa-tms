@@ -1137,7 +1137,7 @@
       },
       "uploadCut": {
         "title": "The upload was cut off",
-        "body": "The upload didn't finish, perhaps because of the connection, and nothing was saved. You can try again.",
+        "body": "The upload didn't finish, perhaps because of the connection. You can upload the file again.",
         "retry": "Upload again"
       },
       "uploadErrors": {
@@ -1148,7 +1148,8 @@
         "FILE_STORAGE_UNAVAILABLE": "The file service isn't available right now. You can try again shortly.",
         "FILE_NOT_UPLOADED": "The file didn't arrive in full. You can upload it again.",
         "FILE_UPLOAD_EXPIRED": "The upload took too long. You can upload it again.",
-        "TOO_MANY_DRAFTS": "You have 5 unfinished imports, or the organization has 20. Complete or cancel them before uploading another file; a review that isn't confirmed ends after 24 hours."
+        "TOO_MANY_DRAFTS": "You have 5 unfinished imports, or the organization has 20. Complete or cancel them before uploading another file; a review that isn't confirmed ends after 24 hours.",
+        "IMPORT_STATE_CHANGED": "This import ended before the upload finished. You can upload the file again."
       }
     },
     "recent": {
@@ -1181,6 +1182,7 @@
       "failed": "Didn't finish",
       "cancelled": "Cancelled",
       "expired": "Review expired",
+      "uploadNotFinished": "Upload not finished",
       "undoing": "Undoing",
       "undone": "Undone"
     },

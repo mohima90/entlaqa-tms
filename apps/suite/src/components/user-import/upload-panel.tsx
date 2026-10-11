@@ -2,7 +2,11 @@
 import { Alert, Button } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
-import { confirmUserImportUploadAction, startUserImportAction } from '../../actions/user-import';
+import {
+  cancelUserImportAction,
+  confirmUserImportUploadAction,
+  startUserImportAction,
+} from '../../actions/user-import';
 import { fillText } from '../../lib/fill-text';
 import { type ErrorTexts, errorText } from '../auth/error-text';
 import { fieldErrorCodes } from '../profile/field-errors';
@@ -57,6 +61,18 @@ export function UploadPanel({ importBase, labels, codes, errors, locale }: Uploa
     setPhase({ kind: 'idle' });
     setFailure(codes[code] ?? fallback ?? code);
   };
+  /** The refusal's code: the import's own (field `file` or `import`), else the files service's. */
+  const codeOf = (error: Parameters<typeof errorText>[0]) => {
+    const fields = fieldErrorCodes(error);
+    return fields.file ?? fields.import ?? error.code;
+  };
+  /**
+   * An upload that did not finish leaves nothing waiting (integration review M1): its import is cancelled
+   * at once (best effort — otherwise it ends with its upload window and no longer counts meanwhile).
+   */
+  const drop = (importId: string) => {
+    void cancelUserImportAction({ importId }).catch(() => undefined);
+  };
 
   const put = (url: string, contentType: string, file: File) =>
     new Promise<'done' | 'cut' | 'aborted'>((resolve) => {
@@ -108,28 +124,25 @@ export function UploadPanel({ importBase, labels, codes, errors, locale }: Uploa
     if (!started.ok) {
       // The import's own refusals are field errors of `file`; the files service's are codes
       // (FILE_TOO_LARGE, FILE_STORAGE_UNAVAILABLE, …) with the import's own wording where it has one.
-      refuse(
-        fieldErrorCodes(started.error).file ?? started.error.code,
-        errorText(started.error, errors),
-      );
+      refuse(codeOf(started.error), errorText(started.error, errors));
       return;
     }
     const outcome = await put(started.value.upload.url, started.value.upload.contentType, file);
     xhr.current = null;
     if (outcome === 'aborted') {
+      drop(started.value.importId);
       setPhase({ kind: 'idle' });
       return;
     }
     if (outcome === 'cut') {
+      drop(started.value.importId);
       setPhase({ kind: 'cut' });
       return;
     }
     const confirmed = await confirmUserImportUploadAction({ importId: started.value.importId });
     if (!confirmed.ok) {
-      refuse(
-        fieldErrorCodes(confirmed.error).file ?? confirmed.error.code,
-        errorText(confirmed.error, errors),
-      );
+      drop(started.value.importId);
+      refuse(codeOf(confirmed.error), errorText(confirmed.error, errors));
       return;
     }
     setAnnouncement(text('announceDone'));

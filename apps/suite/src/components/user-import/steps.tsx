@@ -29,6 +29,7 @@ import {
   undoSummary,
 } from '../../lib/user-import-view';
 import { localizedName } from '../../lib/users-view';
+import { CancelDraftButton } from './cancel-draft-button';
 import { ConfirmActions } from './confirm-actions';
 import { type MappingColumn, MappingForm, type MappingSheet } from './mapping-form';
 import { OptionsForm } from './options-form';
@@ -80,15 +81,48 @@ export async function fileState(locale: AppLocale, view: UserImportView): Promis
   const format = await getFormatter({ locale });
   const { record } = view;
   if (record.status === 'uploaded' && record.fileStatus === 'pending_upload') {
+    // Integration review M1: «إعادة الرفع» cancels this import first (it no longer waits for its window to
+    // end), and it can be cancelled on its own.
+    const codes = await refusalCodes(locale);
+    const errors = await fileActionErrorTexts(locale);
     return (
       <Alert tone="warning" title={t('fileStates.uploadCut.title')} data-testid="import-upload-cut">
         <p className="m-0">{t('fileStates.uploadCut.body')}</p>
-        <a
-          href={base(locale)}
-          className={`${buttonClasses({ variant: 'secondary', size: 'md' })} mt-3`}
-        >
-          {t('fileStates.uploadCut.retry')}
-        </a>
+        {record.mine ? (
+          <div className="mt-3 flex flex-wrap items-start gap-3">
+            <CancelDraftButton
+              importId={record.id}
+              label={t('fileStates.uploadCut.retry')}
+              workingLabel={t('progress.working')}
+              then={base(locale)}
+              variant="primary"
+              codes={codes}
+              errors={errors}
+              testId="upload-cut-retry"
+            />
+            <CancelDraftButton
+              importId={record.id}
+              label={t('confirm.cancel')}
+              workingLabel={t('progress.working')}
+              confirm={{
+                question: t('confirm.cancelConfirm'),
+                confirmButton: t('confirm.cancelConfirmButton'),
+                keep: t('confirm.keep'),
+              }}
+              variant="ghost"
+              codes={codes}
+              errors={errors}
+              testId="upload-cut-cancel"
+            />
+          </div>
+        ) : (
+          <a
+            href={base(locale)}
+            className={`${buttonClasses({ variant: 'secondary', size: 'md' })} mt-3`}
+          >
+            {t('fileStates.uploadCut.retry')}
+          </a>
+        )}
       </Alert>
     );
   }
@@ -980,14 +1014,23 @@ export async function resultView(locale: AppLocale, view: UserImportView): Promi
   }
   if (record.status === 'cancelled' || record.status === 'expired') {
     const cancelled = record.status === 'cancelled';
+    // Expired while still waiting for its file (integration review M1): the cut upload's words.
+    const uploadCut = record.status === 'expired' && record.failureCode === 'UPLOAD_NOT_FINISHED';
+    const title = cancelled
+      ? t('result.cancelledTitle')
+      : uploadCut
+        ? t('fileStates.uploadCut.title')
+        : t('review.expired.title');
+    const body = cancelled
+      ? t('result.cancelledBody')
+      : uploadCut
+        ? t('fileStates.uploadCut.body')
+        : t('review.expired.body');
     return (
       <>
         <h1 className="m-0 text-2xl font-bold">{t('title')}</h1>
-        <Card
-          title={cancelled ? t('result.cancelledTitle') : t('review.expired.title')}
-          data-testid={`import-${record.status}`}
-        >
-          <p className="mt-0">{cancelled ? t('result.cancelledBody') : t('review.expired.body')}</p>
+        <Card title={title} data-testid={`import-${record.status}`}>
+          <p className="mt-0">{body}</p>
           <a href={base(locale)} className={buttonClasses({ variant: 'primary', size: 'md' })}>
             {t('result.uploadAgain')}
           </a>

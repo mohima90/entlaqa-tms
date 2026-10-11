@@ -83,7 +83,9 @@ export function createStorageAdmin(
   settings: StorageAdminSettings,
   fetchImpl: typeof fetch = fetch,
 ): StorageAdmin {
-  const base = `${settings.url.replace(/\/+$/, '')}/storage/v1`;
+  let root = settings.url;
+  while (root.endsWith('/')) root = root.slice(0, -1);
+  const base = `${root}/storage/v1`;
   const headers = { apikey: settings.secretKey, authorization: `Bearer ${settings.secretKey}` };
   const path = (bucket: string, key: string) => `${encodeURIComponent(bucket)}/${key}`;
 

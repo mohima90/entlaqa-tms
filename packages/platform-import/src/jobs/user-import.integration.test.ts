@@ -178,7 +178,10 @@ describe.skipIf(!configured)('user import against PostgreSQL', () => {
     for (let i = 0; i < 25; i += 1) {
       await scan.run({ jobId: randomUUID() });
       await importTask.run({ jobId: randomUUID() });
-      const record = await withUserTx(claims, (tx) => getUserImport(tx, importId));
+      // As the page polls (integration review L1): a passive, read-only read of the import.
+      const record = await withUserTx(claims, (tx) => getUserImport(tx, importId), {
+        passiveRead: 'platform.user_import.status',
+      });
       if (record?.status === status) return record;
     }
     const record = await withUserTx(claims, (tx) => getUserImport(tx, importId));

@@ -981,8 +981,12 @@ grant execute on function private.user_import_result_counts(uuid) to authenticat
 --   capped       the organization sent its daily number of import invitations today (UTC day): the import
 --                waits until not_before (the next day). Its invitations stay scheduled — never dropped;
 --   none         nothing due;
---   not_allowed  the importer may no longer invite: the import's schedule is cleared (its people stay
---                «لم تُرسل الدعوة»; a user manager can send them from the users list).
+--   not_allowed  the member the next invitation is sent for — who asked to send it from the users list,
+--                else the importer — may no longer invite (integration review M2): the import's invitations
+--                scheduled for that member are cleared (they stay «لم تُرسل الدعوة»), and a user manager can
+--                send them from the users list: they are then sent for that manager.
+-- Each release is audited (`platform.invitation.released`, by the job) with the member it is sent for and
+-- who asked, so the member who caused the e-mail is accountable (TM-0003 T-IAM-45).
 -- p_interval: the pace (worker setting); p_daily_cap, p_trial_daily_cap: the daily numbers for
 -- organizations in service and on trial (worker settings). System claims of the import's tenant.
 create or replace function private.user_import_release_next(p_import_id uuid, p_interval interval,
@@ -994,6 +998,10 @@ as $$
 declare
   v_tenant uuid := private.user_import_job_tenant();
   v_importer uuid;
+  v_actor uuid;
+  v_requested_by uuid;
+  v_primary text;
+  v_additional text[];
   v_trial boolean;
   v_cap integer;
   v_sent integer;
@@ -1008,17 +1016,12 @@ begin
   if not found then
     raise exception 'unknown import' using errcode = 'no_data_found';
   end if;
-  -- The per-tenant roles lock: the importer's right, and the daily count, are read once per organization
-  -- at a time.
+  -- The per-tenant roles lock: the sender's right, and the daily count, are read once per organization at
+  -- a time.
   perform private.lock_tenant_roles(v_tenant);
-  if not private.user_import_actor_may_import(v_tenant, v_importer) then
-    update platform.invitations i set send_at = null
-    where i.tenant_id = v_tenant and i.import_id = p_import_id and i.mail_held and i.send_at is not null
-      and i.status = 'pending';
-    return query select 'not_allowed'::text, null::timestamptz;
-    return;
-  end if;
-  select i.id into v_invitation from platform.invitations i
+  select i.id, i.send_requested_by, coalesce(i.send_requested_by, v_importer), i.primary_role, i.additional_roles
+    into v_invitation, v_requested_by, v_actor, v_primary, v_additional
+  from platform.invitations i
   where i.tenant_id = v_tenant and i.import_id = p_import_id and i.mail_held and i.status = 'pending'
     and i.send_at <= now()
   order by i.send_at, i.id
@@ -1026,6 +1029,14 @@ begin
   for update skip locked;
   if v_invitation is null then
     return query select 'none'::text, null::timestamptz;
+    return;
+  end if;
+  -- Sent for the member who asked, else the importer, while they may invite (integration review M2).
+  if not private.invitation_actor_may_send(v_tenant, v_actor, v_primary, v_additional) then
+    update platform.invitations i set send_at = null
+    where i.tenant_id = v_tenant and i.import_id = p_import_id and i.mail_held and i.send_at is not null
+      and i.status = 'pending' and coalesce(i.send_requested_by, v_importer) = v_actor;
+    return query select 'not_allowed'::text, null::timestamptz;
     return;
   end if;
   select t.status = 'trial' into v_trial from platform.tenants t where t.id = v_tenant;
@@ -1048,11 +1059,15 @@ begin
   update platform.invitations i set mail_held = false where i.id = v_invitation;
   insert into platform.event_outbox (id, type, subject)
   values (gen_random_uuid(), 'com.entlaqa.platform.invitation.released', v_invitation);
+  insert into platform.audit_events (action, entity_type, entity_id, data)
+  values ('platform.invitation.released', 'invitation', v_invitation::text,
+          jsonb_build_object('importId', p_import_id, 'sentFor', v_actor, 'requestedBy', v_requested_by,
+                             'job', private.request_claims() ->> 'job_id'));
   return query select 'released'::text, null::timestamptz;
 end
 $$;
 comment on function private.user_import_release_next(uuid, interval, integer, integer) is
-  'SECURITY-RELEVANT (FR-IAM-03, T-M2-12, security review M2). Sends the next due held invitation of an import (released + event for the mailer) at the platform-wide pace and under the organization''s daily number, while the importer may still invite. System claims.';
+  'SECURITY-RELEVANT (FR-IAM-03, T-M2-12, security review M2, integration review M2). Sends the next due held invitation of an import (released + event for the mailer + audit) at the platform-wide pace and under the organization''s daily number, while the member it is sent for (who asked, else the importer) may still invite. System claims.';
 revoke all on function private.user_import_release_next(uuid, interval, integer, integer) from public;
 grant execute on function private.user_import_release_next(uuid, interval, integer, integer) to authenticated;
 

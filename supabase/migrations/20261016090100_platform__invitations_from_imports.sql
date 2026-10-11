@@ -15,6 +15,12 @@
 --                 are therefore spaced out again instead of going out in a burst.
 --   * released_at when a held invitation was sent (released); stamped by the trigger. The organization's
 --                 daily number of import invitations counts them.
+--   * send_requested_by  the member who asked to send it from the users list («إرسال الدعوة» / «إرسال
+--                 الدعوات»), stamped by the trigger (integration review M2); null when the import sends its
+--                 own invitations. The release and the e-mail act for that member — or, when null, for the
+--                 importer — while they may invite (the rules of inviting one person, read again when it is
+--                 sent): an importer who left or was demoted does not make the invitations unsendable, and
+--                 the member who caused the e-mail is the one the audit names.
 --
 -- Who may do what (private.check_invitation, replaced below; everything else as in 20261009090000 and
 -- 20261010090000):
@@ -25,22 +31,24 @@
 --          by import, for anyone). BR-IAM-4 (Organization Admin held alone) is checked by the existing
 --          trigger invitations_separation_of_duties for every writer.
 --   insert by users: as before; they can neither link an invitation to an import nor hold it.
---   schedule (send_at of a held invitation): users who may manage the invitation (the rules of a resend),
---          or system jobs for an import sending its invitations (status `inviting`) whose importer may
---          still invite. System jobs may also clear the schedule (the importer may no longer invite).
---   release (mail_held → false, when due): system jobs only, while the importer (invited_by) may still
---          invite; released_at stamped. Never held again. A held invitation gets no token and no resend
---          request.
+--   schedule (send_at of a held invitation): users who may manage the invitation (the rules of a resend;
+--          send_requested_by stamped with the member), or system jobs for an import sending its invitations
+--          (status `inviting`) whose importer may still invite. System jobs may also clear the schedule (the
+--          member it is sent for may no longer invite); clearing it clears send_requested_by too.
+--   release (mail_held → false, when due): system jobs only, while the member it is sent for —
+--          send_requested_by, else the importer (invited_by) — may still invite; released_at stamped. Never
+--          held again. A held invitation gets no token and no resend request.
 --   revoke by system jobs (new): only an import's invitation while that import is being undone (status
 --          `undoing`); recorded as revoked by the member who asked for the undo.
 -- The mailer (platform-identity invitation-mailer) mails a released invitation on its
--- `invitation.released` event (system actor) only while its inviter may still manage it.
+-- `invitation.released` event (system actor) only while the member it is sent for may still manage it.
 
 alter table platform.invitations
   add column import_id uuid,
   add column mail_held boolean not null default false,
   add column send_at timestamptz,
-  add column released_at timestamptz;
+  add column released_at timestamptz,
+  add column send_requested_by uuid;
 
 alter table platform.invitations
   add constraint invitations_import_fk foreign key (tenant_id, import_id) references platform.user_imports (tenant_id, id),
@@ -49,13 +57,17 @@ alter table platform.invitations
     not mail_held or (token_hash is null and send_count = 0 and import_id is not null)),
   add constraint invitations_send_at_check check (send_at is null or (mail_held and status = 'pending')),
   -- Sent by the worker after being held: an import's invitation that is no longer held.
-  add constraint invitations_released_check check (released_at is null or (import_id is not null and not mail_held));
+  add constraint invitations_released_check check (released_at is null or (import_id is not null and not mail_held)),
+  -- Only an import's invitations are sent on request after being held.
+  add constraint invitations_send_requested_check check (send_requested_by is null or import_id is not null);
 
 comment on column platform.invitations.import_id is 'The user import that created this invitation (T-M2-12); null when invited by hand.';
 comment on column platform.invitations.mail_held is
   'SECURITY-RELEVANT. Not sent yet («لم تُرسل الدعوة», T-M2-12): no token, no e-mail, no sign-in until released; the 7 days start when it is sent.';
 comment on column platform.invitations.send_at is 'When a held invitation may be sent at the earliest (T-M2-12); null: held until someone sends it.';
 comment on column platform.invitations.released_at is 'When a held import invitation was sent (T-M2-12): the organization''s daily number counts them.';
+comment on column platform.invitations.send_requested_by is
+  'SECURITY-RELEVANT. The member (Auth user) who asked to send this held import invitation (integration review M2): its release and e-mail act for them; null: for the importer.';
 
 create index invitations_import_idx on platform.invitations (tenant_id, import_id) where import_id is not null;
 -- Held invitations due for sending (the worker's claim and release).
@@ -83,6 +95,31 @@ comment on function private.user_import_inviter(uuid, uuid, text) is
 revoke all on function private.user_import_inviter(uuid, uuid, text) from public;
 grant execute on function private.user_import_inviter(uuid, uuid, text) to authenticated;
 
+-- May this member send this invitation now? The rules of inviting one person (T-M2-07, T-M2-16): an active
+-- Organization Admin, or an active HR Manager when it gives no privileged role (an import's never does).
+-- Read when a held invitation is released, for the member it is sent for (integration review M2), as the
+-- mailer reads it again before the e-mail. SECURITY INVOKER.
+create or replace function private.invitation_actor_may_send(p_tenant_id uuid, p_user_id uuid, p_primary_role text,
+                                                             p_additional_roles text[])
+returns boolean
+language sql stable
+set search_path = ''
+as $$
+  select p_user_id is not null
+         and coalesce((select 'tenant_admin' = any (x.codes)
+                              or ('hr_manager' = any (x.codes)
+                                  and not exists (select 1 from platform.ref_roles r
+                                                  where r.code = any (array[p_primary_role] || p_additional_roles)
+                                                    and r.is_privileged))
+                       from (select private.actor_role_codes(p_tenant_id, p_user_id) as codes) x), false);
+$$;
+
+comment on function private.invitation_actor_may_send(uuid, uuid, text, text[]) is
+  'SECURITY-RELEVANT (FR-IAM-03, T-M2-12 integration review M2). May this member send this invitation now (the rules of inviting one person)?';
+
+revoke all on function private.invitation_actor_may_send(uuid, uuid, text, text[]) from public;
+grant execute on function private.invitation_actor_may_send(uuid, uuid, text, text[]) to authenticated;
+
 -- As in 20261009090000, plus import invitations (header above).
 create or replace function private.check_invitation()
 returns trigger
@@ -107,7 +144,7 @@ begin
        or new.send_count <> 0 or new.accepted_at is not null or new.accepted_user_id is not null
        or new.revoked_at is not null or new.revoked_by is not null
        or new.resend_requested_at is not null or new.resend_requested_by is not null or new.send_at is not null
-       or new.released_at is not null then
+       or new.released_at is not null or new.send_requested_by is not null then
       raise exception 'an invitation starts pending, with no token and no outcome' using errcode = 'check_violation';
     end if;
     new.created_at := now();
@@ -197,6 +234,11 @@ begin
                        old.additional_roles, old.invited_by, old.created_at, old.import_id) then
     raise exception 'what an invitation is for cannot change' using errcode = 'check_violation';
   end if;
+  -- Who asked to send it is stamped by the schedule below (integration review M2), never written directly.
+  if new.send_requested_by is distinct from old.send_requested_by
+     and new.send_at is not distinct from old.send_at and current_user = 'authenticated' then
+    raise exception 'who asked to send an invitation is recorded by sending it' using errcode = 'check_violation';
+  end if;
   if old.status <> 'pending' then
     raise exception 'an accepted or revoked invitation cannot change' using errcode = 'check_violation';
   end if;
@@ -243,17 +285,22 @@ begin
     return new;
   end if;
 
-  -- Releasing (system jobs only): a held invitation whose time has come, while its inviter (the importer)
-  -- may still invite. The mailer then gives it a token and its 7 days.
+  -- Releasing (system jobs only): a held invitation whose time has come, while the member it is sent for —
+  -- who asked to send it, else its inviter (the importer) — may still invite (integration review M2). The
+  -- mailer then gives it a token and its 7 days.
   if v_release then
     if current_user = 'authenticated' and v_kind is distinct from 'system' then
       raise exception 'held invitations are sent by the worker' using errcode = 'insufficient_privilege';
     end if;
+    if new.send_requested_by is distinct from old.send_requested_by then
+      raise exception 'sending an invitation keeps who asked for it' using errcode = 'check_violation';
+    end if;
     if current_user = 'authenticated' then
       perform private.lock_tenant_roles(new.tenant_id);
       if old.send_at is null or old.send_at > now()
-         or not private.user_import_actor_may_import(old.tenant_id, old.invited_by) then
-        raise exception 'only a due invitation of an importer who may still invite is sent'
+         or not private.invitation_actor_may_send(old.tenant_id, coalesce(old.send_requested_by, old.invited_by),
+                                                  old.primary_role, old.additional_roles) then
+        raise exception 'only a due invitation, for a member who may still invite, is sent'
           using errcode = 'insufficient_privilege';
       end if;
     end if;
@@ -275,6 +322,8 @@ begin
         raise exception 'system jobs schedule only the invitations of an import sending them'
           using errcode = 'insufficient_privilege';
       end if;
+      -- The import sends its own invitations (for its importer); a cleared schedule asks for nobody.
+      new.send_requested_by := null;
       return new;
     end if;
     -- Users: see the actor rules below (the rules of a resend).
@@ -309,6 +358,8 @@ begin
         raise exception 'a held invitation is scheduled once, and not unscheduled, by a member'
           using errcode = 'check_violation';
       end if;
+      -- It is sent for this member (integration review M2): checked again when it is released.
+      new.send_requested_by := v_user;
       return new;
     end if;
   elsif v_schedule then
@@ -396,7 +447,7 @@ create policy invitations_import_revoke on platform.invitations for update to au
 -- (Scheduling and releasing stay pending → pending: the users' resend policy and the jobs' issue policy
 -- of 20261009090000 cover them; the trigger decides who may.)
 
-grant select (import_id, mail_held, send_at, released_at) on platform.invitations to authenticated;
+grant select (import_id, mail_held, send_at, released_at, send_requested_by) on platform.invitations to authenticated;
 -- (invited_by stays out of the grant: the trigger stamps the importer — for users, themselves.)
 grant insert (import_id, mail_held) on platform.invitations to authenticated;
 -- send_at: schedule a held invitation (users: «إرسال الدعوة»; jobs: the import's sending phase);

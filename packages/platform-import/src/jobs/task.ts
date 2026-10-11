@@ -537,7 +537,7 @@ export function createUserImportTask(options: UserImportTaskOptions): PlatformTa
     if (outcome === 'not_allowed') {
       log(
         'warning',
-        `user import ${claim.importId}: the importer may no longer invite; invitations kept`,
+        `user import ${claim.importId}: the member these invitations are sent for may no longer invite; their invitations kept`,
       );
     } else if (outcome === 'capped') {
       log(

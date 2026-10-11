@@ -95,7 +95,7 @@ drop function private.schedule_held_invitations(uuid[], interval);
 
 drop policy invitations_import_revoke on platform.invitations;
 drop policy invitations_import_insert on platform.invitations;
-revoke select (import_id, mail_held, send_at, released_at) on platform.invitations from authenticated;
+revoke select (import_id, mail_held, send_at, released_at, send_requested_by) on platform.invitations from authenticated;
 revoke insert (import_id, mail_held) on platform.invitations from authenticated;
 revoke update (send_at, mail_held) on platform.invitations from authenticated;
 
@@ -277,17 +277,20 @@ $$;
 comment on function private.check_invitation() is
   'SECURITY-RELEVANT (FR-IAM-03, ADR 0003 §5). Lifecycle of platform.invitations and who may invite / revoke (same rules as the role guard).';
 
+drop function private.invitation_actor_may_send(uuid, uuid, text, text[]);
 drop function private.user_import_inviter(uuid, uuid, text);
 
 drop index platform.invitations_released_idx;
 drop index platform.invitations_send_due_idx;
 drop index platform.invitations_import_idx;
 alter table platform.invitations
+  drop constraint invitations_send_requested_check,
   drop constraint invitations_released_check,
   drop constraint invitations_send_at_check,
   drop constraint invitations_mail_held_check,
   drop constraint invitations_import_fk;
 alter table platform.invitations
+  drop column send_requested_by,
   drop column released_at,
   drop column send_at,
   drop column mail_held,

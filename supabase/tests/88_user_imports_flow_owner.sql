@@ -610,13 +610,15 @@ select pg_temp.become_owner();
 rollback;
 
 -- ---------------------------------------------------------------------------------------------------
--- Sending: an importer who may no longer invite → the schedule is cleared, nothing is sent.
+-- Sending: an importer who may no longer invite → the schedule is cleared, nothing is sent; a user manager
+-- then sends them from the users list, for themselves (integration review M2).
 -- Sign-in (T-M2-09): a held invitation does not let a login that belongs nowhere sign in; a sent one does.
 -- ---------------------------------------------------------------------------------------------------
 begin;
 select pg_temp.new_import('a5000000-0000-4000-8000-0000000000d6', '00000000-0000-4000-8000-0000000000ab',
                           'a1000000-0000-4000-8000-0000000000ab', 'f0a00000-0000-4000-8000-0000000000d6');
 select pg_temp.stage('a5000000-0000-4000-8000-0000000000d6', 2, '{"email": "send1@imp.test", "first_name_ar": "إرسال", "family_name_ar": "أول"}');
+select pg_temp.stage('a5000000-0000-4000-8000-0000000000d6', 3, '{"email": "send2@imp.test", "first_name_ar": "إرسال", "family_name_ar": "ثان"}');
 select pg_temp.become_worker('a0000000-0000-4000-8000-000000000001');
 select private.user_import_classify('a5000000-0000-4000-8000-0000000000d6');
 update platform.user_imports set status = 'review' where id = 'a5000000-0000-4000-8000-0000000000d6';
@@ -647,6 +649,87 @@ begin
     'not_allowed', 'the importer may no longer invite: nothing sent');
   perform tests.assert((select bool_and(mail_held and send_at is null) from platform.invitations where import_id = i),
     'the schedule is cleared: «لم تُرسل الدعوة»');
+  perform tests.assert_eq((select count(*) from platform.invitations where import_id = i), 2::bigint, 'two invitations');
+end $$;
+-- Integration review M2: sent for the member who asks from the users list — checked again when each one
+-- goes out, and named in the audit — not for the importer.
+select set_config('tests.d6', (select array_agg(id order by id)::text from platform.invitations
+                               where import_id = 'a5000000-0000-4000-8000-0000000000d6'), true);
+select pg_temp.become_user('00000000-0000-4000-8000-0000000000ab', '10000000-0000-4000-8000-0000000000ab',
+                           'a1000000-0000-4000-8000-0000000000ab');
+do $$
+begin
+  perform tests.assert_eq(private.schedule_held_invitations(current_setting('tests.d6')::uuid[], interval '0 seconds'), 0,
+    'a member who may no longer invite cannot send them: refused up front (they no longer see them)');
+end $$;
+select pg_temp.become_owner();
+insert into platform.role_assignments (tenant_id, membership_id, role_code, is_primary)
+  select tenant_id, id, 'hr_manager', true from platform.tenant_memberships
+  where user_id = '00000000-0000-4000-8000-0000000000ab' and tenant_id = 'a0000000-0000-4000-8000-000000000001';
+select pg_temp.become_user('00000000-0000-4000-8000-0000000000ab', '10000000-0000-4000-8000-0000000000ab',
+                           'a1000000-0000-4000-8000-0000000000ab');
+do $$
+declare
+  v_ids uuid[] := current_setting('tests.d6')::uuid[];
+begin
+  perform tests.assert_eq(private.schedule_held_invitations(v_ids[2:2], interval '0 seconds'), 1,
+    'an HR Manager again: asks to send one');
+  perform tests.assert_eq((select send_requested_by from platform.invitations where id = v_ids[2]),
+    '00000000-0000-4000-8000-0000000000ab'::uuid, 'who asked is recorded');
+end $$;
+select pg_temp.become_user('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
+                           'a1000000-0000-4000-8000-0000000000a1');
+do $$
+declare
+  v_ids uuid[] := current_setting('tests.d6')::uuid[];
+begin
+  perform tests.assert_eq(private.schedule_held_invitations(v_ids, interval '0 seconds'), 1,
+    'the Organization Admin sends the rest (the one already asked for keeps its member)');
+  perform tests.assert_eq((select string_agg(send_requested_by::text, ',' order by id) from platform.invitations
+                           where id = any (v_ids)),
+    '00000000-0000-4000-8000-0000000000a1,00000000-0000-4000-8000-0000000000ab', 'each is sent for the member who asked');
+  perform tests.assert_privilege_denied(format($q$update platform.invitations set send_requested_by = %L where id = %L$q$,
+                                               '00000000-0000-4000-8000-0000000000ab', v_ids[1]),
+    'who asked is never written directly');
+end $$;
+select pg_temp.become_owner();
+-- The HR Manager is demoted again before theirs goes out, and it is due first.
+delete from platform.role_assignments where role_code = 'hr_manager'
+  and membership_id = (select id from platform.tenant_memberships where user_id = '00000000-0000-4000-8000-0000000000ab'
+                         and tenant_id = 'a0000000-0000-4000-8000-000000000001');
+update platform.invitations set send_at = now() - interval '2 seconds' where id = (current_setting('tests.d6')::uuid[])[2];
+update platform.invitations set send_at = now() - interval '1 second' where id = (current_setting('tests.d6')::uuid[])[1];
+select pg_temp.become_worker('a0000000-0000-4000-8000-000000000001');
+do $$
+declare
+  v_ids uuid[] := current_setting('tests.d6')::uuid[];
+  r record;
+begin
+  perform tests.assert_eq((select x.state from private.user_import_release_next('a5000000-0000-4000-8000-0000000000d6', interval '100 milliseconds', 1000, 100) x),
+    'not_allowed', 'the member who asked may no longer invite: theirs is not sent');
+  perform tests.assert((select mail_held and send_at is null and send_requested_by is null from platform.invitations where id = v_ids[2]),
+    'its schedule is cleared («لم تُرسل الدعوة»), and who asked with it');
+  perform tests.assert((select mail_held and send_at is not null and send_requested_by = '00000000-0000-4000-8000-0000000000a1'
+                        from platform.invitations where id = v_ids[1]),
+    'the Organization Admin''s stays scheduled');
+  perform tests.assert_fails(format($q$update platform.invitations set mail_held = false where id = %L$q$, v_ids[2]),
+    array['42501'], 'nor can it be released directly');
+  perform pg_sleep(0.12);
+  select * into r from private.user_import_release_next('a5000000-0000-4000-8000-0000000000d6', interval '100 milliseconds', 1000, 100);
+  perform tests.assert_eq(r.state, 'released', 'the Organization Admin''s is sent, though the importer may no longer invite');
+  perform tests.assert((select not mail_held and released_at is not null and send_requested_by = '00000000-0000-4000-8000-0000000000a1'
+                        from platform.invitations where id = v_ids[1]),
+    'released; who asked is kept (the mailer acts for them)');
+  perform tests.assert_eq((select data - 'job' from platform.audit_events
+                           where action = 'platform.invitation.released' and entity_id = v_ids[1]::text),
+    jsonb_build_object('importId', 'a5000000-0000-4000-8000-0000000000d6', 'sentFor', '00000000-0000-4000-8000-0000000000a1', 'requestedBy', '00000000-0000-4000-8000-0000000000a1'),
+    'the audit names the member it was sent for (TM-0003 T-IAM-45)');
+  perform tests.assert((select actor_user_id is null and data ->> 'job' = 'tests.user_imports' from platform.audit_events
+                        where action = 'platform.invitation.released' and entity_id = v_ids[1]::text),
+    'written by the job');
+  perform tests.assert_eq((select count(*) from platform.audit_events
+                           where action = 'platform.invitation.released' and entity_id = v_ids[2]::text), 0::bigint,
+    'nothing sent, nothing audited, for the demoted member');
 end $$;
 select pg_temp.become_owner();
 rollback;

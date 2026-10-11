@@ -38,6 +38,7 @@ const invitation: InvitationForMail = {
   organizationName: { ar: 'شركة الراية', en: 'Al Raya' },
   primaryRole: 'learner',
   invitedBy: 'u1',
+  sendRequestedBy: null,
   mailHeld: false,
 };
 
@@ -270,6 +271,45 @@ describe('invitation mailer', () => {
       expect(db.loadInvitationForMail).toHaveBeenCalledTimes(1);
       expect(mail.queueEmail).toHaveBeenCalledTimes(1);
       expect(queued().variables.inviterName).toEqual({ ar: 'محمد العتيبي', en: null });
+    });
+
+    it('mails a release that a member asked for as theirs, while they may still manage it (integration review M2)', async () => {
+      // The importer left or was demoted; an Organization Admin asked to send it from the users list.
+      db.loadInvitationForMail.mockResolvedValue({
+        ...invitation,
+        invitedBy: 'importer-1',
+        sendRequestedBy: 'admin-1',
+      });
+      db.invitationActorMayManage.mockImplementation((_tx: unknown, _id: string, actor: string) =>
+        Promise.resolve(actor === 'admin-1'),
+      );
+      db.issueInvitationToken.mockResolvedValue({ expiresAt: EXPIRES });
+      const { subscriber } = mailer();
+      await subscriber.handle({ tx, event: event(INVITATION_RELEASED_EVENT, ID, system) });
+      expect(db.invitationActorMayManage).toHaveBeenCalledTimes(1);
+      expect(db.invitationActorMayManage).toHaveBeenCalledWith(tx, ID, 'admin-1');
+      expect(mail.queueEmail).toHaveBeenCalledTimes(1);
+    });
+
+    it('sends nothing when the member who asked may no longer manage it, even if the importer may', async () => {
+      db.loadInvitationForMail.mockResolvedValue({
+        ...invitation,
+        invitedBy: 'importer-1',
+        sendRequestedBy: 'admin-1',
+      });
+      db.invitationActorMayManage.mockImplementation((_tx: unknown, _id: string, actor: string) =>
+        Promise.resolve(actor === 'importer-1'),
+      );
+      const { subscriber, log } = mailer();
+      await subscriber.handle({ tx, event: event(INVITATION_RELEASED_EVENT, ID, system) });
+      expect(db.invitationActorMayManage).toHaveBeenCalledWith(tx, ID, 'admin-1');
+      expect(db.invitationActorMayManage).not.toHaveBeenCalledWith(tx, ID, 'importer-1');
+      expect(log).toHaveBeenCalledWith(
+        'warning',
+        'invitation event from a member who may no longer manage it; no e-mail',
+      );
+      expect(db.issueInvitationToken).not.toHaveBeenCalled();
+      expect(mail.queueEmail).not.toHaveBeenCalled();
     });
 
     it('ignores a release that a member sent, or one for an importer who may no longer invite', async () => {

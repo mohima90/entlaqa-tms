@@ -1228,6 +1228,7 @@ export async function resultView(locale: AppLocale, view: UserImportView): Promi
                         workingLabel={t('result.sending')}
                         doneText={t('result.sendDone', { count: invitations.held })}
                         nothingText={codes.NOTHING_TO_SEND ?? ''}
+                        notAllowedText={codes.SEND_NOT_ALLOWED ?? ''}
                         errors={errors}
                         testId="result-send-invitations"
                       />

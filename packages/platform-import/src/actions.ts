@@ -572,7 +572,14 @@ export function sendHeldInvitationsActionDefinition(): ActionDefinition<
           SEND_PACE_SECONDS,
         ),
       );
-      if (!sent.ok) return err(sent.error);
+      // Sent for this member (integration review M2): refused up front when they may not invite.
+      if (!sent.ok) {
+        return err(
+          sent.error.code === 'FORBIDDEN'
+            ? fieldError('invitations', 'SEND_NOT_ALLOWED')
+            : sent.error,
+        );
+      }
       if (sent.value === 0) return err(fieldError('invitations', 'NOTHING_TO_SEND'));
       return ok({ scheduled: sent.value, importId: input.importId ?? null });
     },

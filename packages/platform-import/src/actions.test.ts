@@ -555,8 +555,12 @@ describe('reports and held invitations', () => {
     });
     db.scheduleHeldInvitations.mockResolvedValueOnce(0);
     expect(fieldCode(await run(definition, {}))).toBe('NOTHING_TO_SEND');
+    // Sent for the member who asks (integration review M2): refused up front, with its own code, when
+    // they may not invite.
     db.scheduleHeldInvitations.mockRejectedValueOnce(new DomainError('NOT_ALLOWED'));
-    expect((await run(definition, {})).error?.code).toBe('FORBIDDEN');
+    expect(fieldCode(await run(definition, {}))).toBe('SEND_NOT_ALLOWED');
+    db.scheduleHeldInvitations.mockRejectedValueOnce(new DomainError('IMPORT_NOT_FOUND'));
+    expect((await run(definition, {})).error?.code).toBe('NOT_FOUND');
     expect(() => definition.input.parse({ importId: ID, invitationIds: [ID] })).toThrow();
   });
 });

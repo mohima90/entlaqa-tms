@@ -57,6 +57,9 @@ export function invitationErrorText(
   if (fieldErrorCodes(error).invitations === 'NOTHING_TO_SEND') {
     return labels.nothingToSend ?? errorText(error, errors);
   }
+  if (fieldErrorCodes(error).invitations === 'SEND_NOT_ALLOWED') {
+    return labels.sendNotAllowed ?? errorText(error, errors);
+  }
   return errorText(error, errors);
 }
 

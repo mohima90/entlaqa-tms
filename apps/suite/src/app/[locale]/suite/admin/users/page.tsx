@@ -63,6 +63,7 @@ const INVITATION_LIST_KEYS = [
   'sendHeld',
   'sentHeld',
   'nothingToSend',
+  'sendNotAllowed',
   'resend',
   'resent',
   'resendLimit',
@@ -681,6 +682,9 @@ async function importBanners(locale: AppLocale, banners: UserImportBannersView) 
               doneText={t('banners.sent')}
               nothingText={(await getTranslations({ locale, namespace: 'invitations' }))(
                 'list.nothingToSend',
+              )}
+              notAllowedText={(await getTranslations({ locale, namespace: 'invitations' }))(
+                'list.sendNotAllowed',
               )}
               errors={await profileErrorTexts(locale)}
               variant="secondary"

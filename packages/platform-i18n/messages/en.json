@@ -695,6 +695,7 @@
       "sendHeld": "Send the invitation",
       "sentHeld": "We're sending the invitation now. It stays valid for 7 days from when it's sent.",
       "nothingToSend": "This invitation is no longer waiting to be sent; it may have been sent or revoked. Refresh the page to see the latest status.",
+      "sendNotAllowed": "Only the Organization Admin or an HR Manager can send invitations.",
       "capped": "Showing the latest {shown, number, integer} of {total, number, integer} invitations. You can search by name or email to reach the others."
     }
   },
@@ -1402,6 +1403,7 @@
         "REPORT_NOT_YOURS": "This report is available to the person who ran the import only.",
         "REPORT_DELETED": "The report was deleted 7 days after the import ended.",
         "NOTHING_TO_SEND": "There are no invitations left to send.",
+        "SEND_NOT_ALLOWED": "Only the Organization Admin or an HR Manager can send invitations.",
         "FILE_STORAGE_UNAVAILABLE": "The file service isn't available right now. You can try again shortly."
       }
     },

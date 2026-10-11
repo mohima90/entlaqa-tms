@@ -14,6 +14,8 @@ export interface SendInvitationsButtonProps {
   readonly workingLabel: string;
   readonly doneText: string;
   readonly nothingText: string;
+  /** The member may not invite (integration review M2): «يرسل الدعوات مدير المنشأة …». */
+  readonly notAllowedText?: string;
   readonly errors: ErrorTexts;
   readonly variant?: 'primary' | 'secondary';
   readonly testId?: string;
@@ -39,10 +41,13 @@ export function SendInvitationsButton(props: SendInvitationsButtonProps) {
         router.refresh();
         return;
       }
+      const code = fieldErrorCodes(result.error).invitations;
       setFailure(
-        fieldErrorCodes(result.error).invitations === 'NOTHING_TO_SEND'
+        code === 'NOTHING_TO_SEND'
           ? props.nothingText
-          : errorText(result.error, props.errors),
+          : code === 'SEND_NOT_ALLOWED' && props.notAllowedText
+            ? props.notAllowedText
+            : errorText(result.error, props.errors),
       );
     });
   };

@@ -142,7 +142,8 @@ declare
   v_role text;
 begin
   foreach v_role in array array['anon', 'authenticated', 'service_role', 'app_server', 'app_worker', 'app_queue',
-                                'tenant_guard', 'invitation_guard', 'account_mail_guard', 'user_import_guard'] loop
+                                'tenant_guard', 'invitation_guard', 'account_mail_guard', 'rate_limit_guard',
+                                'file_guard', 'user_import_guard'] loop
     perform tests.assert(not has_function_privilege(v_role, 'private.account_sign_in_refused(uuid)', 'execute'),
       format('%s must not execute the sign-in rule', v_role));
   end loop;

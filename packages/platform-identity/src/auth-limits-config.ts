@@ -58,8 +58,16 @@ export interface AuthLimits {
     readonly sharedClientRequests: RateLimit;
     readonly sharedClientCompletions: RateLimit;
   };
+  /**
+   * Invitation links (T-M2-11; integration review M3 with T-M2-12). A bulk import invites many people who
+   * may share one address (an office), so each link has its own small budget — keyed on the link's token
+   * hash, never the token — and the address only a ceiling that a whole office accepting at once stays
+   * under. Lookups and sign-ups of a malformed link count against the address only.
+   */
   readonly invitation: {
+    readonly lookupsPerInvitation: RateLimit;
     readonly lookupsPerClient: RateLimit;
+    readonly signUpsPerInvitation: RateLimit;
     readonly signUpsPerClient: RateLimit;
     readonly sharedClientLookups: RateLimit;
     readonly sharedClientSignUps: RateLimit;
@@ -109,10 +117,12 @@ export const PLATFORM_AUTH_LIMITS: AuthLimits = {
     sharedClientCompletions: { max: 100, windowSeconds: WINDOW },
   },
   invitation: {
-    lookupsPerClient: { max: 60, windowSeconds: WINDOW },
-    signUpsPerClient: { max: 10, windowSeconds: WINDOW },
-    sharedClientLookups: { max: 600, windowSeconds: WINDOW },
-    sharedClientSignUps: { max: 100, windowSeconds: WINDOW },
+    lookupsPerInvitation: { max: 30, windowSeconds: WINDOW },
+    lookupsPerClient: { max: 600, windowSeconds: WINDOW },
+    signUpsPerInvitation: { max: 5, windowSeconds: WINDOW },
+    signUpsPerClient: { max: 200, windowSeconds: WINDOW },
+    sharedClientLookups: { max: 6000, windowSeconds: WINDOW },
+    sharedClientSignUps: { max: 2000, windowSeconds: WINDOW },
   },
   mfaCode: {
     accountFailures: { max: 5, windowSeconds: WINDOW },

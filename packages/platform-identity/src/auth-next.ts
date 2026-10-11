@@ -102,6 +102,7 @@ import {
 } from './mfa';
 import { type SupabaseAuthLike, verifyClaims } from './verify-claims';
 import {
+  INVITATION_TOKEN_PATTERN,
   type InvitationAcceptDeps,
   type InvitationLinkView,
   type InvitationSignUpClientLike,
@@ -560,7 +561,7 @@ function invitationDeps(auth: AuthFlowDeps, client: RequestClient): InvitationAc
     invitationByToken,
     invitationPasswordMinLength,
     acceptInvitationAsCaller,
-    allowSignUp: () => invitationLimiter(client).allowSignUp(),
+    allowSignUp: (tokenHash) => invitationLimiter(client).allowSignUp(tokenHash),
   };
 }
 
@@ -573,7 +574,11 @@ export async function lookupInvitationLinkForRequest(
   token: string,
   client: RequestClient,
 ): Promise<Result<InvitationLinkView, AppError>> {
-  if (!(await invitationLimiter(client).allowLookup())) return err(appError('RATE_LIMITED'));
+  // Per link (its token hash; a malformed link: the client only) and per client (integration review M3).
+  const tokenHash = INVITATION_TOKEN_PATTERN.test(token) ? hashInvitationToken(token) : null;
+  if (!(await invitationLimiter(client).allowLookup(tokenHash))) {
+    return err(appError('RATE_LIMITED'));
+  }
   return ok(
     await lookupInvitationLink(
       {

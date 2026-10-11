@@ -208,6 +208,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 | Date | Summary |
 |---|---|
 | 11 Oct 2026 | **PR #50 opened** (T-M2-18 file storage + malware scanning) after the PO's "yes"; all local gates green on `9a73a40`. After merge: DB deploy, Storage role check, S3 connection and image transformation off; PO to accept residual risk R-58 |
+| 11 Oct 2026 | PR #50 CI fix: the clamd early-answer test was flaky on CI (the fake clamd closed with unread data → TCP reset, answer lost). The fake now keeps reading after answering, like a real server; new test: a reset without an answer fails closed (never clean) |
 | 11 Oct 2026 | PR #49 (T-M2-11) merged by the PO and deployed to staging (plan → apply green). Sales demo prototype prepared and reviewed (BRD-aligned roles, feature IDs and releases; not in the repository). PO decision: HR Manager maintains branches and departments — BRD v2.7, feature list, new task T-M2-19 |
 | 11 Oct 2026 | **PR #49 opened** (T-M2-11 sign-in protection) after the PO's "yes"; DB deploy right after merge |
 | 11 Oct 2026 | PO turned on Supabase "Secure password change" (Authentication → Email) — T-M2-10 staging set-up complete |

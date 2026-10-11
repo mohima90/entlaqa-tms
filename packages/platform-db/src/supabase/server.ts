@@ -2,6 +2,7 @@ import 'server-only';
 import { type CookieMethodsServer, type CookieOptions, createServerClient } from '@supabase/ssr';
 import { type SupabaseClient, createClient } from '@supabase/supabase-js';
 import { type SupabasePublicConfig, readSupabasePublicConfigFromEnv } from './config';
+import { storageRoutingFetch } from './storage';
 
 export { type SupabasePublicConfig } from './config';
 export type { CookieMethodsServer };
@@ -27,9 +28,28 @@ export interface AuthClientOptions {
   readonly headers?: Readonly<Record<string, string>>;
 }
 
-function globalHeaders(options: AuthClientOptions, userAgent: string | null = null) {
+function globalHeaders(
+  options: AuthClientOptions,
+  userAgent: string | null = null,
+): { global?: { headers: Record<string, string> } } {
   const headers = { ...options.headers, ...(userAgent ? { 'User-Agent': userAgent } : {}) };
   return Object.keys(headers).length > 0 ? { global: { headers } } : {};
+}
+
+/**
+ * A client's `global` options: the headers above and, when there is a Storage origin or a visitor header,
+ * the fetch that sends Storage's API calls to that origin (T-M2-18) and strips every visitor and
+ * client-address header from them (integration review L2: the visitor key is for Auth's limits only).
+ */
+function globalOptions(
+  options: AuthClientOptions & { readonly storageOrigin?: string | null },
+  userAgent: string | null = null,
+) {
+  const { global } = globalHeaders(options, userAgent);
+  const visitorHeaders = Object.keys(options.headers ?? {});
+  if (!options.storageOrigin && visitorHeaders.length === 0) return global ? { global } : {};
+  const fetch = storageRoutingFetch(options.storageOrigin ?? null, undefined, visitorHeaders);
+  return { global: { ...global, fetch } };
 }
 
 /** Supabase public config, read from the runtime environment (see readSupabasePublicConfigFromEnv). */
@@ -46,24 +66,36 @@ export function forwardableUserAgent(value: string | null | undefined): string |
   return USER_AGENT.test(trimmed) ? trimmed : null;
 }
 
+export interface SupabaseServerClientOptions extends AuthClientOptions {
+  /**
+   * The browser's User-Agent, sent to Auth instead of the server's own (T-M2-10); see forwardableUserAgent.
+   */
+  readonly userAgent?: string | null;
+  /**
+   * Where Storage's API is reached (readStorageInternalOrigin; self-hosted: the gateway's internal port).
+   * Null or absent: the Supabase URL (T-M2-18).
+   */
+  readonly storageOrigin?: string | null;
+}
+
 /**
  * Server-side Supabase client (publishable key + the user's session cookies) for Auth and Storage.
  * Never used to read tenant tables (ADR 0003 §4). Returns null when Supabase is not configured.
  * `userAgent`: the browser's, sent to Auth instead of the server's own so that the session Auth creates at
  * sign-in records the real browser (the session lists show browser and system, T-M2-10); `headers`: see
- * AuthClientOptions (T-M2-11).
+ * AuthClientOptions (T-M2-11); `storageOrigin`: where Storage's API is asked (T-M2-18).
  */
 export function createSupabaseServerClient(
   cookies: CookieMethodsServer,
   config: SupabasePublicConfig | null = getSupabasePublicConfig(),
-  options: AuthClientOptions & { readonly userAgent?: string | null } = {},
+  options: SupabaseServerClientOptions = {},
 ): SupabaseClient | null {
   if (!config) return null;
   const userAgent = forwardableUserAgent(options.userAgent);
   return createServerClient(config.url, config.publishableKey, {
     cookies,
     cookieOptions: SESSION_COOKIE_OPTIONS,
-    ...globalHeaders(options, userAgent),
+    ...globalOptions(options, userAgent),
   });
 }
 
@@ -89,7 +121,7 @@ export function createSupabaseStatelessClient(
       detectSessionInUrl: false,
       flowType: 'implicit',
     },
-    ...globalHeaders(options),
+    ...globalOptions(options),
   });
 }
 
@@ -99,3 +131,18 @@ export function createSupabaseVerifierClient(
 ): SupabaseClient | null {
   return createSupabaseStatelessClient(config);
 }
+
+export {
+  FileStorageError,
+  type SignedUpload,
+  STORAGE_INTERNAL_URL_ENV,
+  STORAGE_PUBLIC_URL_ENV,
+  STORAGE_STRIPPED_HEADERS,
+  type UserFileStorage,
+  createUserFileStorage,
+  readStorageInternalOrigin,
+  readStoragePublicOrigin,
+  storageErrorOf,
+  storageRoutingFetch,
+  toPublicUrl,
+} from './storage';

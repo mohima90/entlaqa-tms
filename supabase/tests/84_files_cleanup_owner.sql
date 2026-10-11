@@ -1,0 +1,452 @@
+-- db-test: run-as=owner
+-- Files (T-M2-18): the paths that need a set-up only the owner can make — a business table referencing a
+-- file (a purge keeps a tombstone without the name), a stored generated object (the job marks it clean) —
+-- run under the worker's login role through SET SESSION AUTHORIZATION, so the functions see session_user =
+-- app_worker exactly as in production. Then the fixtures of 80_files_owner.sql are removed again. Last,
+-- Storage's tenant check under the session rules and MFA policy of T-M2-10 (Storage's login role).
+\set ON_ERROR_STOP on
+
+begin;
+-- A module table referencing files (composite FK, as docs/engineering/files.md tells modules to do).
+create table tests.file_refs (tenant_id uuid not null, file_id uuid not null,
+  foreign key (tenant_id, file_id) references platform.files (tenant_id, id));
+insert into tests.file_refs values ('a0000000-0000-4000-8000-000000000001', 'f1a00000-0000-4000-8000-00000000000d');
+-- The bytes of a generated report, as the worker stores them through the Storage API.
+insert into storage.objects (bucket_id, name, metadata) values ('generated',
+  'a0000000-0000-4000-8000-000000000001/platform/user_import/a5000000-0000-4000-8000-0000000000f3/f2a00000-0000-4000-8000-000000000001',
+  '{"size": 120}');
+set session authorization app_worker;
+set local role authenticated;
+select tests.set_claims(jsonb_build_object('role', 'system', 'job_id', 'tests.files.housekeeping'));
+do $$
+begin
+  perform tests.assert(session_user = 'app_worker', 'acting under the worker''s login role');
+  perform tests.assert(exists (select 1 from private.claim_file_housekeeping(100)
+                               where id = 'f1a00000-0000-4000-8000-00000000000d' and action = 'purge'),
+    'the import used 8 days ago is due');
+  perform tests.assert(private.finish_file_housekeeping('f1a00000-0000-4000-8000-00000000000d', 'purge'), 'purged');
+end $$;
+reset role;
+reset session authorization;
+do $$
+begin
+  perform tests.assert_eq((select concat_ws('|', status, original_name, purged_at is not null, object_removed_at is not null)
+                           from platform.files where id = 'f1a00000-0000-4000-8000-00000000000d'),
+    'deleted|deleted|t|t', 'still referenced: a tombstone without its name');
+  perform tests.assert_eq((select count(*) from platform.file_download_grants where expires_at < now() - interval '1 hour'),
+    0::bigint, 'housekeeping removed the download grant that expired two hours ago');
+  perform tests.assert_eq((select count(*) from platform.file_download_grants where expires_at > now()), 2::bigint,
+    'unexpired grants stay');
+end $$;
+set session authorization app_worker;
+set local role authenticated;
+select tests.set_claims(jsonb_build_object('role', 'system', 'job_id', 'tests.files.housekeeping'));
+do $$
+begin
+  perform tests.assert(not exists (select 1 from private.claim_file_housekeeping(100)
+                                   where id = 'f1a00000-0000-4000-8000-00000000000d'), 'a tombstone is never due again');
+end $$;
+-- A generated report: reserved, stored, then clean (size and hash recorded) — only with its object.
+select tests.set_claims(tests.system_claims('a0000000-0000-4000-8000-000000000001', 'tests.files.generated'));
+do $$
+declare
+  v_id uuid;
+begin
+  select id into v_id from private.create_generated_file('platform.user_import_report', 'platform', 'user_import',
+    'a5000000-0000-4000-8000-0000000000f3', 'report.csv', 'text/csv', 120, '00000000-0000-4000-8000-0000000000a1');
+  perform tests.assert(not private.finish_generated_file(v_id, 120, repeat('5', 64)), 'not yet stored');
+end $$;
+reset role;
+reset session authorization;
+rollback;
+
+-- The generated path end to end with a known id (the key must match the stored object).
+begin;
+alter table platform.files disable trigger files_transition;
+insert into platform.files (id, tenant_id, bucket, object_key, purpose, owner_module, owner_entity_type, owner_entity_id,
+    original_name, declared_mime, declared_size, retention_class, created_by_user, upload_expires_at)
+values ('f2a00000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'generated',
+  'a0000000-0000-4000-8000-000000000001/platform/user_import/a5000000-0000-4000-8000-0000000000f3/f2a00000-0000-4000-8000-000000000001',
+  'platform.user_import_report', 'platform', 'user_import', 'a5000000-0000-4000-8000-0000000000f3', 'report.csv', 'text/csv', 120,
+  'import', '00000000-0000-4000-8000-0000000000a1', now() + interval '15 minutes');
+alter table platform.files enable trigger files_transition;
+insert into storage.objects (bucket_id, name, metadata) values ('generated',
+  'a0000000-0000-4000-8000-000000000001/platform/user_import/a5000000-0000-4000-8000-0000000000f3/f2a00000-0000-4000-8000-000000000001',
+  '{"size": 120}');
+set session authorization app_worker;
+set local role authenticated;
+select tests.set_claims(tests.system_claims('a0000000-0000-4000-8000-000000000001', 'tests.files.generated'));
+do $$
+begin
+  perform tests.assert(not private.finish_generated_file('f2a00000-0000-4000-8000-000000000001', 121, repeat('5', 64)),
+    'the size must be the reserved one');
+  perform tests.assert(private.finish_generated_file('f2a00000-0000-4000-8000-000000000001', 120, repeat('5', 64)),
+    'stored: clean');
+  perform tests.assert_eq((select concat_ws('|', status, detected_mime, size_bytes, scan_engine) from platform.files
+                           where id = 'f2a00000-0000-4000-8000-000000000001'),
+    'clean|text/csv|120|generated', 'clean, marked as generated (not scanned)');
+end $$;
+reset role;
+reset session authorization;
+rollback;
+
+-- Organizations take turns: A has two files older than B's only one, yet B's comes second; an organization
+-- served a moment ago waits behind one that was not, whatever the age of its files.
+begin;
+alter table platform.files disable trigger files_transition;
+update platform.files set uploaded_at = now() - interval '30 minutes' where id = 'f1a00000-0000-4000-8000-000000000007';
+alter table platform.files enable trigger files_transition;
+set session authorization app_worker;
+set local role authenticated;
+select tests.set_claims(jsonb_build_object('role', 'system', 'job_id', 'tests.files.scan'));
+do $$
+begin
+  perform tests.assert_eq(array[(select id from private.claim_file_scan()), (select id from private.claim_file_scan()),
+                                (select id from private.claim_file_scan())],
+    array['f1a00000-0000-4000-8000-00000000000e', 'f1b00000-0000-4000-8000-000000000002',
+          'f1a00000-0000-4000-8000-000000000007']::uuid[],
+    'A (oldest), then B''s turn although A''s second file is older, then A');
+end $$;
+reset role;
+reset session authorization;
+rollback;
+
+begin;
+-- A was served a minute ago (another of its files was scanned), B never.
+alter table platform.files disable trigger files_transition;
+update platform.files set scan_claimed_at = now() - interval '1 minute' where id = 'f1a00000-0000-4000-8000-000000000008';
+alter table platform.files enable trigger files_transition;
+set session authorization app_worker;
+set local role authenticated;
+select tests.set_claims(jsonb_build_object('role', 'system', 'job_id', 'tests.files.scan'));
+do $$
+begin
+  perform tests.assert_eq((select id from private.claim_file_scan()), 'f1b00000-0000-4000-8000-000000000002'::uuid,
+    'B first: A had the last turn, although A''s file is older');
+end $$;
+reset role;
+reset session authorization;
+rollback;
+
+-- The scanner unavailable for a file uploaded more than 24 hours ago: no more waiting — error, so the
+-- operators are alerted (the worker logs it as an error) instead of the file waiting for ever.
+begin;
+alter table platform.files disable trigger files_transition;
+update platform.files set uploaded_at = now() - interval '25 hours' where id = 'f1b00000-0000-4000-8000-000000000002';
+alter table platform.files enable trigger files_transition;
+set session authorization app_worker;
+set local role authenticated;
+select tests.set_claims(jsonb_build_object('role', 'system', 'job_id', 'tests.files.scan'));
+do $$
+declare
+  r record;
+begin
+  select * into r from private.claim_file_scan();
+  perform tests.assert_eq(r.id, 'f1b00000-0000-4000-8000-000000000002'::uuid, 'B''s file uploaded 25 hours ago');
+  perform tests.assert_eq(private.retry_file_scan(r.id, 'scanner'), 'error', 'no verdict 24 hours after the upload: error');
+end $$;
+select tests.set_claims(tests.system_claims('b0000000-0000-4000-8000-000000000001', 'tests.files.scan'));
+do $$
+begin
+  perform tests.assert_eq((select status || '|' || status_reason from platform.files where id = 'f1b00000-0000-4000-8000-000000000002'),
+    'error|scanner_unavailable', 'error, with the reason');
+end $$;
+reset role;
+reset session authorization;
+rollback;
+
+-- Confirmation compares the Content-Type Storage stored (and serves the object with) to the declared type.
+begin;
+update storage.objects set metadata = metadata || '{"mimetype": "text/html"}'
+where name like '%/f1a00000-0000-4000-8000-000000000002';
+update storage.objects set metadata = metadata || '{"mimetype": "TEXT/CSV; charset=utf-8"}'
+where name like '%/f1b00000-0000-4000-8000-000000000001';
+set session authorization app_server;
+set local role authenticated;
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
+                                          'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1'));
+do $$
+begin
+  perform tests.assert_eq(private.confirm_file_upload('f1a00000-0000-4000-8000-000000000002'), 'rejected',
+    'stored as text/html, declared text/csv: rejected');
+  perform tests.assert_eq((select status_reason from platform.files where id = 'f1a00000-0000-4000-8000-000000000002'),
+    'type_mismatch', 'rejected for the type mismatch');
+end $$;
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000b1', '10000000-0000-4000-8000-0000000000b1',
+                                          'b0000000-0000-4000-8000-000000000001'));
+do $$
+begin
+  perform tests.assert_eq(private.confirm_file_upload('f1b00000-0000-4000-8000-000000000001'), 'uploaded',
+    'the declared type with a charset parameter (any case): accepted');
+end $$;
+reset role;
+reset session authorization;
+rollback;
+
+-- Housekeeping re-checks under the row lock, just before the Storage work: a legal hold set, or a use
+-- recorded, after the lease was handed out stops the removal.
+begin;
+set session authorization app_worker;
+set local role authenticated;
+select tests.set_claims(jsonb_build_object('role', 'system', 'job_id', 'tests.files.housekeeping'));
+do $$
+begin
+  perform tests.assert(exists (select 1 from private.claim_file_housekeeping(100)
+                               where id = 'f1a00000-0000-4000-8000-00000000000b' and action = 'purge'), 'the deleted photo is due');
+end $$;
+reset role;
+reset session authorization;
+update platform.files set legal_hold = true where id = 'f1a00000-0000-4000-8000-00000000000b';
+set session authorization app_worker;
+set local role authenticated;
+select tests.set_claims(jsonb_build_object('role', 'system', 'job_id', 'tests.files.housekeeping'));
+do $$
+begin
+  perform tests.assert(not private.lock_file_housekeeping('f1a00000-0000-4000-8000-00000000000b', 'purge'),
+    'a legal hold set after the lease: not removed');
+  perform tests.assert(not private.finish_file_housekeeping('f1a00000-0000-4000-8000-00000000000b', 'purge'),
+    'and never recorded as purged');
+end $$;
+reset role;
+reset session authorization;
+rollback;
+
+-- Orphan objects: in our buckets, older than 3 hours, owned by no live file — removed by housekeeping.
+begin;
+insert into storage.objects (bucket_id, name, metadata, created_at) values
+  -- A generated report whose job rolled back after writing it (no file record), 4 hours ago: orphan.
+  ('generated', 'a0000000-0000-4000-8000-000000000001/platform/user_import_report/a5000000-0000-4000-8000-0000000000f4/f3a00000-0000-4000-8000-000000000001',
+   '{"size": 5}', now() - interval '4 hours'),
+  -- The same, an hour ago: a write may still be in flight.
+  ('generated', 'a0000000-0000-4000-8000-000000000001/platform/user_import_report/a5000000-0000-4000-8000-0000000000f4/f3a00000-0000-4000-8000-000000000002',
+   '{"size": 5}', now() - interval '1 hour'),
+  -- The infected file's object already moved to quarantine, its record not yet updated: owned.
+  ('quarantine', 'a0000000-0000-4000-8000-000000000001/platform/user_import/a5000000-0000-4000-8000-000000000009/f1a00000-0000-4000-8000-000000000009',
+   '{"size": 20}', now() - interval '4 hours'),
+  -- Not our key shape: not ours to remove.
+  ('imports', 'a0000000-0000-4000-8000-000000000001/operator-notes.txt', '{"size": 5}', now() - interval '4 hours');
+update storage.objects set created_at = now() - interval '4 hours' where name like '%/f1a00000-0000-4000-8000-00000000000a'
+  or name like '%/f1a00000-0000-4000-8000-000000000008';
+-- The rejected file's object was removed; a still-valid signed upload URL created it again: orphan.
+update platform.files set object_removed_at = now() - interval '1 hour' where id = 'f1a00000-0000-4000-8000-00000000000a';
+-- How many objects our buckets hold (the totals the sweep reports; counted here, where they are visible).
+select set_config('tests.objects', (select count(*) from storage.objects
+  where bucket_id in ('materials', 'images', 'evidence', 'imports', 'generated', 'quarantine'))::text, true);
+set session authorization app_worker;
+set local role authenticated;
+select tests.set_claims(jsonb_build_object('role', 'system', 'job_id', 'tests.files.housekeeping'));
+do $$
+begin
+  perform tests.assert_eq((select string_agg(bucket || ':' || split_part(object_key, '/', 5), ',' order by bucket)
+                           from private.claim_orphan_objects(100)),
+    'generated:f3a00000-0000-4000-8000-000000000001,imports:f1a00000-0000-4000-8000-00000000000a',
+    'orphans: the object recreated after its removal and the rolled-back report; never a live file''s object, a fresh one, a quarantined one, or a foreign key shape');
+  perform tests.assert_eq((select string_agg(distinct orphans || '/' || objects, ',') from private.claim_orphan_objects(100)),
+    '2/' || current_setting('tests.objects'), 'each row carries the totals: 2 orphans, all objects of our buckets');
+  perform tests.assert_eq((select count(*) from private.claim_orphan_objects(1)), 1::bigint,
+    'the limit applies to the rows, not to the totals');
+  perform tests.assert_eq((select orphans from private.claim_orphan_objects(1)), 2::bigint, 'totals with a limit of 1');
+end $$;
+reset role;
+reset session authorization;
+rollback;
+
+-- Remove the fixtures of 80_files_owner.sql (files, their objects and grants); 00's remain.
+begin;
+delete from platform.file_download_grants where file_id in (select id from platform.files where id::text like 'f1%');
+select set_config('storage.allow_delete_query', 'true', true);
+delete from storage.objects o using platform.files f
+where f.id::text like 'f1%' and o.bucket_id = f.bucket and o.name = f.object_key;
+alter table platform.files disable trigger files_transition;
+delete from platform.files where id::text like 'f1%';
+alter table platform.files enable trigger files_transition;
+do $$
+begin
+  perform tests.assert_eq((select count(*) from platform.files), 2::bigint, 'the two files of 00 remain');
+  perform tests.assert_eq((select count(*) from storage.objects), 2::bigint, 'their two objects remain');
+end $$;
+commit;
+
+-- Storage's tenant check decides like the web app's (T-M2-10 × T-M2-18): private.storage_request_tenant()
+-- asks private.session_access, so a session idle for longer than its organization allows, one older than
+-- the organization's maximum length, or one that does not meet the organization's MFA policy gets no
+-- tenant under Storage's login role either — not only a missing session, membership or session context
+-- (83_files_storage.sql). uA's session sA in tenant A, under Storage's login role through SET SESSION
+-- AUTHORIZATION. Rolled back.
+begin;
+update platform.security_policies set mfa_mode = 'off', session_idle_minutes = 30, session_max_hours = 12
+where tenant_id = 'a0000000-0000-4000-8000-000000000001';
+update platform.session_context set last_seen_at = now() where session_id = '10000000-0000-4000-8000-0000000000a1';
+update auth.sessions set created_at = now() - interval '1 hour' where id = '10000000-0000-4000-8000-0000000000a1';
+insert into platform.file_download_grants (tenant_id, file_id, user_id, expires_at) values
+  ('a0000000-0000-4000-8000-000000000001', 'f0a00000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-0000000000a1',
+   now() + interval '1 minute');
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
+                                          'a0000000-0000-4000-8000-000000000001'));
+set local session authorization supabase_storage_admin;
+set local role authenticated;
+do $$
+begin
+  perform tests.assert(session_user = 'supabase_storage_admin', 'acting under Storage''s login role');
+  perform tests.assert_eq(private.storage_request_tenant(), 'a0000000-0000-4000-8000-000000000001'::uuid,
+    'a live, recently active session in an organization without MFA: tenant A');
+  perform tests.assert(private.can_read_object('imports',
+      'a0000000-0000-4000-8000-000000000001/platform/user_import/a5000000-0000-4000-8000-000000000001/f0a00000-0000-4000-8000-000000000001'),
+    'and it reads the clean file it holds a grant for');
+end $$;
+reset role;
+set local session authorization default;
+-- Idle for longer than the organization allows (30 minutes).
+update platform.session_context set last_seen_at = now() - interval '31 minutes'
+where session_id = '10000000-0000-4000-8000-0000000000a1';
+set local session authorization supabase_storage_admin;
+set local role authenticated;
+do $$
+begin
+  perform tests.assert(private.storage_request_tenant() is null, 'an idle session gets no tenant from Storage');
+  perform tests.assert(not private.can_read_object('imports',
+      'a0000000-0000-4000-8000-000000000001/platform/user_import/a5000000-0000-4000-8000-000000000001/f0a00000-0000-4000-8000-000000000001'),
+    'an idle session reads nothing, even with a grant');
+end $$;
+reset role;
+set local session authorization default;
+update platform.session_context set last_seen_at = now() where session_id = '10000000-0000-4000-8000-0000000000a1';
+-- Older than the organization's maximum session length (12 hours).
+update auth.sessions set created_at = now() - interval '13 hours' where id = '10000000-0000-4000-8000-0000000000a1';
+set local session authorization supabase_storage_admin;
+set local role authenticated;
+do $$
+begin
+  perform tests.assert(private.storage_request_tenant() is null, 'a session past the maximum length gets no tenant from Storage');
+  perform tests.assert(not private.can_read_object('imports',
+      'a0000000-0000-4000-8000-000000000001/platform/user_import/a5000000-0000-4000-8000-000000000001/f0a00000-0000-4000-8000-000000000001'),
+    'nor reads the file, even with a grant');
+end $$;
+reset role;
+set local session authorization default;
+update auth.sessions set created_at = now() - interval '1 hour' where id = '10000000-0000-4000-8000-0000000000a1';
+-- An authenticator app required for everyone, without grace: an aal1 session (uA has no app) is refused.
+select tests.set_claims(null);
+update platform.security_policies
+set mfa_mode = 'required_all', mfa_grace_days = 0, mfa_required_since = now() - interval '1 day'
+where tenant_id = 'a0000000-0000-4000-8000-000000000001';
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
+                                          'a0000000-0000-4000-8000-000000000001'));
+set local session authorization supabase_storage_admin;
+set local role authenticated;
+do $$
+begin
+  perform tests.assert(private.storage_request_tenant() is null,
+    'a session that does not meet the organization''s MFA policy gets no tenant from Storage');
+  perform tests.assert(not private.can_read_object('imports',
+      'a0000000-0000-4000-8000-000000000001/platform/user_import/a5000000-0000-4000-8000-000000000001/f0a00000-0000-4000-8000-000000000001'),
+    'nor reads the file, even with a grant');
+end $$;
+reset role;
+set local session authorization default;
+-- (b) mfa_challenge in isolation (integration review L-a): an authenticator app OPTIONAL in the organization,
+-- so nothing but "the account uses a confirmed app and the token is aal1" can refuse the session.
+select tests.set_claims(null);
+update platform.security_policies set mfa_mode = 'optional'
+where tenant_id = 'a0000000-0000-4000-8000-000000000001';
+update auth.sessions set aal = 'aal1', factor_id = null where id = '10000000-0000-4000-8000-0000000000a1';
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
+                                          'a0000000-0000-4000-8000-000000000001'));
+set local session authorization supabase_storage_admin;
+set local role authenticated;
+do $$
+begin
+  perform tests.assert_eq(private.storage_request_tenant(), 'a0000000-0000-4000-8000-000000000001'::uuid,
+    'control: MFA optional, no app, aal1 — tenant A');
+end $$;
+reset role;
+set local session authorization default;
+-- uA now has a CONFIRMED authenticator app; the session sA is still at aal1.
+select tests.set_claims(null);
+insert into auth.mfa_factors (id, user_id, friendly_name, factor_type, status, secret) values
+  ('20000000-0000-4000-8000-0000000000f1', '00000000-0000-4000-8000-0000000000a1', 'app', 'totp', 'verified', 'NOT-A-REAL-SECRET');
+insert into private.mfa_factor_confirmations (factor_id, user_id, session_id, confirmed_at) values
+  ('20000000-0000-4000-8000-0000000000f1', '00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1', now());
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
+                                          'a0000000-0000-4000-8000-000000000001'));
+set local session authorization supabase_storage_admin;
+set local role authenticated;
+do $$
+begin
+  perform tests.assert(private.storage_request_tenant() is null,
+    'mfa_challenge: MFA optional, an aal1 token of an account with a confirmed app gets no tenant from Storage');
+end $$;
+-- An aal2 CLAIM over an Auth session still at aal1: the lower of the two counts — refused.
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
+                                          'a0000000-0000-4000-8000-000000000001') || '{"aal": "aal2"}'::jsonb);
+do $$
+begin
+  perform tests.assert(private.storage_request_tenant() is null,
+    'an aal2 claim over an Auth session at aal1 gets no tenant from Storage');
+end $$;
+reset role;
+set local session authorization default;
+-- The Auth session passed the confirmed app's code (aal2).
+update auth.sessions set aal = 'aal2', factor_id = '20000000-0000-4000-8000-0000000000f1'
+where id = '10000000-0000-4000-8000-0000000000a1';
+set local session authorization supabase_storage_admin;
+set local role authenticated;
+-- An aal1 CLAIM over that aal2 Auth session (e.g. a token from before the code): the lower counts — refused.
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
+                                          'a0000000-0000-4000-8000-000000000001'));
+do $$
+begin
+  perform tests.assert(private.storage_request_tenant() is null,
+    'an aal1 claim over an Auth session at aal2 gets no tenant from Storage');
+end $$;
+-- Both at aal2 (still MFA optional): the tenant.
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
+                                          'a0000000-0000-4000-8000-000000000001') || '{"aal": "aal2"}'::jsonb);
+do $$
+begin
+  perform tests.assert_eq(private.storage_request_tenant(), 'a0000000-0000-4000-8000-000000000001'::uuid,
+    'aal2 token over an aal2 Auth session through a confirmed app, MFA optional: tenant A');
+end $$;
+reset role;
+set local session authorization default;
+-- (a) An authenticator app required for everyone, without grace: the aal2 session gets the tenant and the read.
+select tests.set_claims(null);
+update platform.security_policies
+set mfa_mode = 'required_all', mfa_grace_days = 0, mfa_required_since = now() - interval '1 day'
+where tenant_id = 'a0000000-0000-4000-8000-000000000001';
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
+                                          'a0000000-0000-4000-8000-000000000001') || '{"aal": "aal2"}'::jsonb);
+set local session authorization supabase_storage_admin;
+set local role authenticated;
+do $$
+begin
+  perform tests.assert_eq(private.storage_request_tenant(), 'a0000000-0000-4000-8000-000000000001'::uuid,
+    'aal2 token, Auth session at aal2 through a confirmed app, MFA required for everyone: tenant A');
+  perform tests.assert(private.can_read_object('imports',
+      'a0000000-0000-4000-8000-000000000001/platform/user_import/a5000000-0000-4000-8000-000000000001/f0a00000-0000-4000-8000-000000000001'),
+    'and it reads the file it holds a grant for');
+end $$;
+reset role;
+set local session authorization default;
+-- (c) The same session, ended by a revocation marker (T-M2-10: the account, an administrator, the device
+-- limit) while Auth still has it: refused.
+select tests.set_claims(null);
+insert into private.revoked_sessions (session_id, user_id, reason, revoked_by) values
+  ('10000000-0000-4000-8000-0000000000a1', '00000000-0000-4000-8000-0000000000a1', 'user', '00000000-0000-4000-8000-0000000000a1');
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
+                                          'a0000000-0000-4000-8000-000000000001') || '{"aal": "aal2"}'::jsonb);
+set local session authorization supabase_storage_admin;
+set local role authenticated;
+do $$
+begin
+  perform tests.assert(private.storage_request_tenant() is null,
+    'a session ended by a revocation marker gets no tenant from Storage');
+  perform tests.assert(not private.can_read_object('imports',
+      'a0000000-0000-4000-8000-000000000001/platform/user_import/a5000000-0000-4000-8000-000000000001/f0a00000-0000-4000-8000-000000000001'),
+    'nor reads the file, even with a grant');
+end $$;
+reset role;
+set local session authorization default;
+rollback;
+
+\echo '84_files_cleanup_owner: ok'

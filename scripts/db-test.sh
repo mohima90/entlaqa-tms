@@ -8,6 +8,8 @@
 #   -- db-test: run-as=owner       the superuser/owner connection
 #   -- db-test: run-as=app_server  connected as login role app_server (session_user = app_server)
 #   -- db-test: run-as=app_worker  connected as login role app_worker
+#   -- db-test: run-as=storage     connected as supabase_storage_admin, Supabase Storage's login role
+#                                  (storage.objects policies, T-M2-18); LOGIN only for the run
 # Exits non-zero on the first failure. Drops the database and clears test passwords on exit.
 #
 # Connection: standard libpq variables (PGHOST, PGPORT, PGUSER = a superuser, PGPASSWORD).
@@ -32,6 +34,7 @@ DB="jadarat_test_$(date +%s)_$$"
 APP_SERVER_PW="test-$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
 APP_WORKER_PW="test-$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
 APP_QUEUE_PW="test-$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+STORAGE_PW="test-$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
 
 PSQL=(psql -X -q -v ON_ERROR_STOP=1 --no-psqlrc -o /dev/null)
 
@@ -41,6 +44,9 @@ cleanup() {
       if exists (select 1 from pg_roles where rolname = 'app_server') then execute 'alter role app_server password null'; end if;
       if exists (select 1 from pg_roles where rolname = 'app_worker') then execute 'alter role app_worker password null'; end if;
       if exists (select 1 from pg_roles where rolname = 'app_queue') then execute 'alter role app_queue password null'; end if;
+      if exists (select 1 from pg_roles where rolname = 'supabase_storage_admin') then
+        execute 'alter role supabase_storage_admin nologin password null';
+      end if;
     end \$\$;" >/dev/null 2>&1 || true
   if [[ "${DB_TEST_KEEP:-0}" != "1" ]]; then
     dropdb --if-exists "$DB" >/dev/null 2>&1 || true
@@ -89,6 +95,8 @@ echo "db-test: verify-deployment.sql"
 "${PSQL[@]}" -d "$DB" -f "$ROOT/scripts/sql/verify-deployment.sql"
 
 "${PSQL[@]}" -d "$DB" -c "alter role app_server password '$APP_SERVER_PW'; alter role app_worker password '$APP_WORKER_PW'; alter role app_queue password '$APP_QUEUE_PW';"
+# Supabase Storage's login role (shim): LOGIN only while the tests run (cleanup turns it off again).
+"${PSQL[@]}" -d "$DB" -c "alter role supabase_storage_admin login password '$STORAGE_PW';"
 
 for test_file in "$TESTS_DIR"/[0-9]*.sql; do
   name="$(basename "$test_file")"
@@ -100,9 +108,11 @@ for test_file in "$TESTS_DIR"/[0-9]*.sql; do
       PGPASSWORD="$APP_WORKER_PW" "${PSQL[@]}" -U app_worker -d "$DB" -f "$test_file" ;;
     app_queue) echo "db-test: run $name (as app_queue)"
       PGPASSWORD="$APP_QUEUE_PW" "${PSQL[@]}" -U app_queue -d "$DB" -f "$test_file" ;;
+    storage) echo "db-test: run $name (as supabase_storage_admin)"
+      PGPASSWORD="$STORAGE_PW" "${PSQL[@]}" -U supabase_storage_admin -d "$DB" -f "$test_file" ;;
     owner) echo "db-test: run $name (as $PGUSER)"
       "${PSQL[@]}" -d "$DB" -f "$test_file" ;;
-    *) echo "db-test: $name must start with '-- db-test: run-as=owner|app_server|app_worker|app_queue'" >&2; exit 1 ;;
+    *) echo "db-test: $name must start with '-- db-test: run-as=owner|app_server|app_worker|app_queue|storage'" >&2; exit 1 ;;
   esac
 done
 

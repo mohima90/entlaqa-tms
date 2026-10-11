@@ -126,6 +126,11 @@ export interface ActionRuntime<Tx> {
    * SQLSTATE only, never input or personal data.
    */
   logTransactionRetry?(meta: { readonly permission: string; readonly sqlState: string }): void;
+  /**
+   * `afterCommit` answered with an error after the transaction committed (operational warning, integration
+   * review L-b): the permission and the error code only, never input or personal data.
+   */
+  logAfterCommitRefusal?(meta: { readonly permission: string; readonly code: string }): void;
 }
 
 /**
@@ -142,7 +147,7 @@ export type ActionTarget<S extends z.ZodType> =
     }
   | { readonly resource?: never; readonly scoped?: boolean };
 
-export type ActionDefinition<S extends z.ZodType, O, Tx> = ActionTarget<S> & {
+export type ActionDefinition<S extends z.ZodType, O, Tx, R = O> = ActionTarget<S> & {
   readonly permission: PermissionDefinition;
   /** zod schema — untrusted input is validated before authorization and the handler run. */
   readonly input: S;
@@ -180,6 +185,23 @@ export type ActionDefinition<S extends z.ZodType, O, Tx> = ActionTarget<S> & {
     readonly ctx: ActionContext<Tx>;
     readonly input: z.output<S>;
   }) => Promise<Result<O, AppError>>;
+  /**
+   * Work AFTER the action's transaction has committed (T-M2-18 integration review M1): run ONCE — never
+   * inside the conflict retry, never for a refused or failed action — with no database connection held.
+   * It gets the handler's committed result and returns the action's answer. For calls to another service
+   * that must see the committed rows, e.g. asking Supabase Storage (its own database connection) for a
+   * signed URL for the upload reservation or download grant the handler wrote. Keep the handler's work
+   * complete on its own: if afterCommit fails, the transaction stays committed (an error result is the
+   * answer, logged as a warning with the permission and the code; a throw is an internal error with a
+   * correlation id, reported to the error tracker — so return expected refusals as results, e.g. with
+   * platform-files `fileResult`) — what it leaves must be harmless (an unsigned reservation expires and is
+   * purged). Never open a transaction of your own here.
+   */
+  readonly afterCommit?: (args: {
+    readonly actor: ActorContext;
+    readonly input: z.output<S>;
+    readonly result: O;
+  }) => Promise<Result<R, AppError>>;
 };
 
 /** What a server action returns to the client: serializable, no internals. */
@@ -225,12 +247,13 @@ export function requiresStrictVerification(permission: PermissionDefinition): bo
  *   session facts (inactive → UNAUTHENTICATED) → load effective grants → resolve resource → authorize
  *   (deny by default; AAL2 permissions need the database's AAL2 AND a code from the last
  *   STEP_UP_MAX_AGE_SECONDS, else STEP_UP_REQUIRED) → handler → audit } — the whole transaction run once
- * more after a deadlock or serialization failure, unless the action declares `externalEffects`.
+ * more after a deadlock or serialization failure, unless the action declares `externalEffects` →
+ * [afterCommit, once, after the commit, no connection held].
  */
 export function createDefineAction<Tx>(runtime: ActionRuntime<Tx>) {
-  return function defineAction<S extends z.ZodType, O>(
-    definition: ActionDefinition<S, O, Tx>,
-  ): ServerAction<z.input<S>, O> {
+  return function defineAction<S extends z.ZodType, O, R = O>(
+    definition: ActionDefinition<S, O, Tx, R>,
+  ): ServerAction<z.input<S>, R> {
     // The refused attempt's audit row, in its own transaction (the action's one rolled back).
     const writeFailureAudit = async (
       claims: TenantClaims,
@@ -247,7 +270,7 @@ export function createDefineAction<Tx>(runtime: ActionRuntime<Tx>) {
         });
       }
     };
-    const action = async (rawInput: z.input<S>): Promise<ActionResult<O>> => {
+    const action = async (rawInput: z.input<S>): Promise<ActionResult<R>> => {
       const claims = await runtime.getClaims({
         strict: requiresStrictVerification(definition.permission),
       });
@@ -278,7 +301,7 @@ export function createDefineAction<Tx>(runtime: ActionRuntime<Tx>) {
           });
           if (!before.ok) return err(toClientError(before.error));
         }
-        return await runtime.withUserTx(
+        const committed = await runtime.withUserTx(
           tenantClaims,
           async (tx) => {
             refused = null; // a retried transaction starts again
@@ -341,7 +364,7 @@ export function createDefineAction<Tx>(runtime: ActionRuntime<Tx>) {
 
             const record = definition.audit?.(input.value, output.value);
             if (record) await runtime.writeAudit(tx, actor, record);
-            return ok(output.value);
+            return output.value;
           },
           {
             retryOnConflict: definition.externalEffects !== true,
@@ -350,6 +373,19 @@ export function createDefineAction<Tx>(runtime: ActionRuntime<Tx>) {
             },
           },
         );
+        // Committed. Without afterCommit the handler's result is the answer (R defaults to O).
+        if (!definition.afterCommit) return ok(committed as unknown as R);
+        const after = await definition.afterCommit({
+          actor: actorFromClaims(tenantClaims),
+          input: input.value,
+          result: committed,
+        });
+        if (after.ok) return ok(after.value);
+        runtime.logAfterCommitRefusal?.({
+          permission: definition.permission.code,
+          code: after.error.code,
+        });
+        return err(toClientError(after.error));
       } catch (error) {
         if (error instanceof HandledFailure) {
           if (refused && definition.auditFailure) {

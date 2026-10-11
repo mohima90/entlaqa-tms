@@ -8,7 +8,8 @@
 # refuses sign-ups without a valid invitation for that e-mail), runs the password reset (forgot page, OUR
 # e-mail from Mailpit — sent by the worker, T-M2-17 — new password, old one refused, link single use, our
 # "password changed" notice; Auth's admin API only on the gateway's internal port, one call per network),
-# deactivates and reactivates members (reassignment, sessions end at once, Auth issues no token to a login
+# runs the file journey (T-M2-18, smoke-files.sh: Storage behind the gateway, signed URLs created on its
+# internal port for the app only, clamd scan, EICAR quarantined, fail closed), deactivates and reactivates members (reassignment, sessions end at once, Auth issues no token to a login
 # that belongs nowhere any more — T-M2-09), runs the sign-in protection journey (T-M2-11: lock after 5 wrong
 # passwords, generic answers in Arabic and English, the shared limiter; Auth's own per-IP limits keyed by the
 # gateway), sends a browser and a server error to the in-country error tracker (GlitchTip) and checks they
@@ -25,6 +26,14 @@ DOCKER="${DOCKER:-docker}"
 # AUTH_RATE_LIMIT_WINDOW_SECONDS seconds, so the journeys below do not wait 15 minutes (T-M2-11).
 compose() { $DOCKER compose -f compose.yaml -f compose.smoke.yaml --env-file .secrets/.env "$@"; }
 export AUTH_RATE_LIMIT_WINDOW_SECONDS="${AUTH_RATE_LIMIT_WINDOW_SECONDS:-45}"
+# This stack's clamd keeps the pinned image's signatures (no freshclam: no egress in the test), which are
+# days or weeks old: the workers' hard limit (default 7 days: nothing scanned beyond it) is raised to a
+# year for this test only — which the worker accepts only with the test-only override flag, and never in
+# a production environment. smoke-files.sh checks that a short limit refuses them, end to end.
+export FILE_SCAN_SIGNATURES_MAX_AGE_DAYS=365 FILE_SCAN_SIGNATURES_TEST_OVERRIDE=1
+# File storage and malware scanning journey (T-M2-18): files_journey.
+# shellcheck source=smoke-files.sh
+source "$ROOT/infra/docker/smoke-files.sh"
 
 cleanup() {
   local status=$?
@@ -58,8 +67,10 @@ if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
   (cd "$ROOT" && pnpm --filter @jadarat/suite --filter @jadarat/worker build >/dev/null)
 fi
 
-echo "smoke: starting PostgreSQL, Auth, the TLS gateway and the error tracker (GlitchTip)"
-compose up -d --wait db auth gateway errors-db glitchtip
+echo "smoke: starting PostgreSQL, Auth, Storage, the TLS gateway and the error tracker (GlitchTip)"
+compose up -d --wait db auth storage gateway errors-db glitchtip
+# The malware scanner loads its signatures meanwhile (about a minute); the file journey waits for it.
+compose up -d clamd
 curl -sf --cacert .secrets/ca.crt https://localhost:8443/auth/v1/health >/dev/null ||
   { echo "smoke: Auth is not reachable through the TLS gateway" >&2; exit 1; }
 
@@ -379,9 +390,12 @@ echo "smoke: My profile (T-M2-15a) — own details and password change as an ord
 PROFILE_NEW_PASSWORD="Profile-$(openssl rand -hex 16)"
 (cd "$ROOT/apps/suite" && E2E_BASE_URL=http://localhost:3200 SIGNED_IN_E2E_MANAGER_EMAIL="$MANAGER_EMAIL" \
   SIGNED_IN_E2E_MANAGER_PASSWORD="$MANAGER_PASSWORD" PROFILE_E2E_NEW_PASSWORD="$PROFILE_NEW_PASSWORD" \
+  PROFILE_E2E_HELPER="$ROOT/infra/docker/e2e-helper.sh" \
   pnpm exec playwright test e2e/profile.spec.ts --project=desktop-chromium)
 [[ "$(q "select count(distinct action) from platform.audit_events where action in ('platform.profile.updated', 'platform.auth.password_changed')")" == "2" ]] ||
   { echo "smoke: expected profile and password-change audit events" >&2; exit 1; }
+# The member's other remembered browser was forgotten after the change (profile.spec polls for it: Next.js
+# after(), outside the action's transaction — T-M2-11 L2 × the T-M2-18 transaction rules).
 # After the password change, every other sign-in session of the member ended (and the password-check
 # sessions too): only the last sign-in with the new password remains.
 [[ "$(q "select count(*) from auth.sessions where user_id = '$MANAGER_ID'")" == "1" ]] ||
@@ -613,6 +627,12 @@ for path in /verify/ /verify; do
   done
   [[ $limited -eq 1 ]] || { echo "smoke: the gateway does not limit /auth/v1$path beyond its burst" >&2; exit 1; }
 done
+
+# File storage and malware scanning (T-M2-18, ADR 0006): smoke-files.sh. First of the later journeys: it
+# signs in with the first account's own password (two direct Auth calls from the host), before the T-M2-11
+# lockout, the T-M2-09 deactivations and the T-M2-10 policy (MFA required, new passwords) change the accounts.
+compose up -d --wait clamd >/dev/null
+files_journey "$EMAIL" "$PASSWORD" sovereign-smoke
 
 # Before the T-M2-09 and T-M2-10 journeys, which change the accounts' passwords and the organization's MFA
 # policy; Auth's own per-IP limits (below) come after them: they use up the host's budget for direct Auth calls.
@@ -1123,7 +1143,7 @@ if grep -qE '[[:alnum:]._%+-]+@[[:alnum:]-]+(\.[[:alnum:]-]+)*\.[[:alpha:]]{2,}'
   echo "smoke: an e-mail address appears in the app logs after the error checks" >&2; exit 1
 fi
 for name in AUTH_DB_PASSWORD APP_SERVER_DB_PASSWORD APP_WORKER_DB_PASSWORD APP_QUEUE_DB_PASSWORD \
-  ERRORS_DB_PASSWORD GLITCHTIP_ADMIN_PASSWORD GLITCHTIP_SECRET_KEY; do
+  ERRORS_DB_PASSWORD GLITCHTIP_ADMIN_PASSWORD GLITCHTIP_SECRET_KEY STORAGE_DB_PASSWORD STORAGE_JWT_SECRET; do
   value="$(secret "$name")"
   [[ ${#value} -ge 32 ]] || { echo "smoke: the secret $name is missing from .secrets/.env" >&2; exit 1; }
   if grep -qF "$value" <<<"$all_logs"; then
@@ -1135,7 +1155,7 @@ done
 # all — has a secret/service-role key or a service_role token.
 grep -q '^SUPABASE_SECRET_KEY=' .secrets/.env && { echo "smoke: .secrets/.env still holds SUPABASE_SECRET_KEY" >&2; exit 1; }
 [[ -n "$(compose ps -a -q app)" ]] || { echo "smoke: no app container to inspect" >&2; exit 1; }
-for service in app front db auth gateway worker mailpit glitchtip errors-db; do
+for service in app front db auth gateway worker mailpit glitchtip errors-db storage clamd; do
   for id in $(compose ps -a -q "$service"); do
     env_vars="$($DOCKER inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$id")"
     service_role=0

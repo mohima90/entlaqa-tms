@@ -24,6 +24,24 @@ export {
 } from './account-mail';
 export { DomainError, isDomainError } from './domain-error';
 export {
+  type DownloadGrant,
+  type DownloadGrantRequest,
+  FILE_EVENTS,
+  type FileErrorCode,
+  type FileOwner,
+  type FileStatus,
+  type FileStatusView,
+  type ReserveUploadInput,
+  type ReservedUpload,
+  confirmFileUpload,
+  deleteFileRecord,
+  fileErrorOf,
+  getFileStatus,
+  grantFileDownload,
+  markFileUsed,
+  reserveUpload,
+} from './files';
+export {
   RATE_LIMIT_BUCKET_PATTERN,
   RATE_LIMIT_STATEMENT_TIMEOUT_MS,
   type DeviceTrust,
@@ -203,4 +221,5 @@ export {
   switchActiveTenant,
   withUserTx,
 } from './with-user-tx';
+export { assertNoDatabaseTransaction, inDatabaseTransaction } from './claims-tx';
 export * as schema from './schema';

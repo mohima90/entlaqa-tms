@@ -193,4 +193,23 @@ describe('default defineAction runtime', () => {
     });
     spy.mockRestore();
   });
+
+  it('warns about a refusal after the commit: permission and code only (integration review L-b)', () => {
+    const spy = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+    defaultActionRuntime.logAfterCommitRefusal?.({
+      permission: 'platform.user.import',
+      code: 'FILE_STORAGE_UNAVAILABLE',
+    });
+    const [line] = spy.mock.calls.map(
+      ([written]) => JSON.parse(String(written)) as Record<string, unknown>,
+    );
+    expect(line).toMatchObject({
+      level: 'warn',
+      msg: 'action refused after its commit',
+      permission: 'platform.user.import',
+      reason: 'after_commit_refused',
+      error_code: 'FILE_STORAGE_UNAVAILABLE',
+    });
+    spy.mockRestore();
+  });
 });

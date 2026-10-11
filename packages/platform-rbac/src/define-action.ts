@@ -107,6 +107,8 @@ export interface ActionRuntime<Tx> {
     options?: {
       readonly retryOnConflict?: boolean;
       readonly onRetry?: (sqlState: string) => void;
+      /** An allow-listed read that is not the session's activity (platform-db PASSIVE_READS). */
+      readonly passiveRead?: string;
     },
   ): Promise<T>;
   loadSessionFacts(tx: Tx): Promise<SessionFacts>;
@@ -160,6 +162,15 @@ export type ActionDefinition<S extends z.ZodType, O, Tx, R = O> = ActionTarget<S
    * which is safe only while everything it did was in that transaction.
    */
   readonly externalEffects?: boolean;
+  /**
+   * The name of an allow-listed read that does NOT count as the session's activity (platform-db
+   * `PASSIVE_READS`, which refuses any other name; T-M2-12 integration review L1): its transaction is READ
+   * ONLY and does not move the session's last activity, so a page polling it cannot keep an idle session
+   * alive. The session is still verified and must still be active. Only for a status read a page polls
+   * by itself — never with `audit`, `auditFailure`, `beforeTransaction`, `afterCommit` or
+   * `externalEffects` (refused when the action is defined).
+   */
+  readonly passiveRead?: string;
   /**
    * Audit record for a REFUSED attempt the handler returned (e.g. a wrong current password —
    * `platform.auth.password_change_failed`, T-M2-11). The action's transaction has rolled back, so it is
@@ -254,6 +265,18 @@ export function createDefineAction<Tx>(runtime: ActionRuntime<Tx>) {
   return function defineAction<S extends z.ZodType, O, R = O>(
     definition: ActionDefinition<S, O, Tx, R>,
   ): ServerAction<z.input<S>, R> {
+    if (
+      definition.passiveRead !== undefined &&
+      (definition.audit !== undefined ||
+        definition.auditFailure !== undefined ||
+        definition.beforeTransaction !== undefined ||
+        definition.afterCommit !== undefined ||
+        definition.externalEffects === true)
+    ) {
+      throw new Error(
+        `defineAction: the passive read ${definition.passiveRead} must only read (no audit, no work before or after its transaction)`,
+      );
+    }
     // The refused attempt's audit row, in its own transaction (the action's one rolled back).
     const writeFailureAudit = async (
       claims: TenantClaims,
@@ -371,6 +394,9 @@ export function createDefineAction<Tx>(runtime: ActionRuntime<Tx>) {
             onRetry: (sqlState) => {
               runtime.logTransactionRetry?.({ permission: definition.permission.code, sqlState });
             },
+            ...(definition.passiveRead === undefined
+              ? {}
+              : { passiveRead: definition.passiveRead }),
           },
         );
         // Committed. Without afterCommit the handler's result is the answer (R defaults to O).

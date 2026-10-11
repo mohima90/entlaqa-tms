@@ -22,8 +22,14 @@ export const defaultActionRuntime: ActionRuntime<UserTx> = {
     return strict ? getVerifiedClaimsStrict() : getVerifiedClaims();
   },
   async withUserTx(claims, fn, options) {
-    const { withUserTx } = await import('@jadarat/platform-db');
-    return withUserTx(claims, fn, options);
+    const { isPassiveRead, withUserTx } = await import('@jadarat/platform-db');
+    const { passiveRead, ...rest } = options ?? {};
+    if (passiveRead === undefined) return withUserTx(claims, fn, rest);
+    // Only platform-db's named passive reads (integration review L1); anything else is a defect.
+    if (!isPassiveRead(passiveRead)) {
+      throw new Error('defineAction: not an allow-listed passive read (platform-db PASSIVE_READS)');
+    }
+    return withUserTx(claims, fn, { ...rest, passiveRead });
   },
   // T-M2-10 (review L1/H1): may the session act in its organization, and is it at AAL2 (confirmed app)?
   async loadSessionFacts(tx) {

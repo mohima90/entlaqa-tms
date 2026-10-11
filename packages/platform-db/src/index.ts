@@ -247,11 +247,14 @@ export {
   loadMemberAuthorizationFacts,
 } from './roles';
 export {
+  PASSIVE_READS,
+  type PassiveRead,
   type SessionTenant,
   type UserTx,
   type UserTxOptions,
   type WithUserTx,
   createWithUserTx,
+  isPassiveRead,
   listSessionTenants,
   switchActiveTenant,
   withUserTx,

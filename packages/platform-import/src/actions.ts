@@ -9,6 +9,7 @@ import {
   type UserTx,
   cancelUserImport,
   chooseUserImportMapping,
+  closeUserImportUploadWindow,
   confirmUserImport,
   createUserImport,
   getHeldInvitationsSummary,
@@ -224,6 +225,10 @@ export function confirmUserImportUploadActionDefinition(): ActionDefinition<
       // internal errors; the transaction rolls back.
       const view = await fileResult(confirmUpload(ctx.tx, record.fileId));
       if (!view.ok) return view;
+      // The upload window no longer applies: the import is not taken for an abandoned upload
+      // (integration review M1).
+      const closed = await guarded(() => closeUserImportUploadWindow(ctx.tx, record.id));
+      if (!closed.ok) return err(closed.error);
       return ok({ importId: record.id, fileId: record.fileId, fileStatus: view.value.status });
     },
     audit: (_input, output) => ({

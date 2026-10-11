@@ -4,13 +4,14 @@
 -- per their retention class).
 drop function private.claim_user_import_work();
 drop function private.user_import_worker_check();
-drop function private.user_import_step(uuid, uuid, text, timestamptz, timestamptz, timestamptz, timestamptz, timestamptz, text);
+drop function private.user_import_step(uuid, uuid, text, timestamptz, timestamptz, timestamptz, timestamptz, timestamptz, text, timestamptz);
 
 drop table platform.user_import_rows;
 drop table platform.user_import_columns;
 drop table platform.user_imports;
 drop function private.check_user_import();
 drop function private.user_import_mapping_is_valid(jsonb);
+drop function private.user_import_upload_abandoned(text, timestamptz);
 drop function private.user_import_draft_statuses();
 drop function private.user_import_actor_may_undo(uuid, uuid, uuid);
 drop function private.user_import_actor_may_import(uuid, uuid);

@@ -791,7 +791,7 @@ begin
                  or (c.oid = 'platform.user_imports'::regclass and x.privilege_type = 'SELECT'
                      and a.attname in ('id', 'tenant_id', 'file_id', 'status', 'review_expires_at', 'finished_at',
                                        'undone_at', 'confirmed_at', 'data_purged_at', 'lease_until', 'lease_token',
-                                       'next_attempt_at', 'updated_at', 'created_at')))
+                                       'next_attempt_at', 'updated_at', 'created_at', 'upload_due_at')))
     loop
       failures := failures || format('user_import_guard: unexpected privilege %s (T-M2-12)', r.p);
     end loop;

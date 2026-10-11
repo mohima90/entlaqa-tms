@@ -87,6 +87,7 @@ const base: UserImportJobView = {
   failures: 0,
   importerLocale: 'ar',
   importerMayImport: true,
+  uploadAbandoned: false,
 };
 
 const STEP_OF: Record<string, UserImportJobView['step']> = {
@@ -592,6 +593,49 @@ describe('user import task', () => {
     claimOnce('expire');
     await task().run({ jobId: 'j' });
     expect(state.status).toBe('expired');
+    expect(db.setUserImportStatus).toHaveBeenLastCalledWith(
+      {},
+      ID,
+      ['uploaded', 'mapping', 'validating', 'review'],
+      'expired',
+      {},
+    );
+    expect(db.insertSystemAuditEvent).toHaveBeenLastCalledWith(
+      {},
+      expect.objectContaining({
+        action: 'platform.user_import.expired',
+        entityId: ID,
+        data: { reason: 'review_window' },
+      }),
+    );
+
+    // Integration review M1: still waiting for its file after the upload window (a cut upload, or a URL
+    // Storage would not sign) — expired with its own code, so it stops counting and says why.
+    state = {
+      ...base,
+      status: 'uploaded',
+      step: 'expire',
+      fileStatus: 'pending_upload',
+      uploadAbandoned: true,
+    };
+    claimOnce('expire');
+    await task().run({ jobId: 'j' });
+    expect(state.status).toBe('expired');
+    expect(db.setUserImportStatus).toHaveBeenLastCalledWith(
+      {},
+      ID,
+      ['uploaded', 'mapping', 'validating', 'review'],
+      'expired',
+      { failureCode: 'UPLOAD_NOT_FINISHED' },
+    );
+    expect(db.insertSystemAuditEvent).toHaveBeenLastCalledWith(
+      {},
+      expect.objectContaining({
+        action: 'platform.user_import.expired',
+        data: { reason: 'upload_window' },
+      }),
+    );
+    expect(logs.at(-1)).toContain('upload not finished expired');
 
     state = { ...base, status: 'finished', step: 'purge', reviewFileId: 'r1', reportFileId: 'p1' };
     db.jobFileStatus

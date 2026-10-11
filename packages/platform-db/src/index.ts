@@ -127,6 +127,7 @@ export {
   type UserImportStatus,
   cancelUserImport,
   chooseUserImportMapping,
+  closeUserImportUploadWindow,
   confirmUserImport,
   createUserImport,
   getHeldInvitationsSummary,

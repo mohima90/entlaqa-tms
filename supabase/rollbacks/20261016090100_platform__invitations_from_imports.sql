@@ -4,7 +4,8 @@
 create or replace function private.user_import_step(p_tenant_id uuid, p_import_id uuid, p_status text,
                                                    p_review_expires_at timestamptz, p_finished_at timestamptz,
                                                    p_undone_at timestamptz, p_confirmed_at timestamptz,
-                                                   p_data_purged_at timestamptz, p_file_status text)
+                                                   p_data_purged_at timestamptz, p_file_status text,
+                                                   p_upload_due_at timestamptz)
 returns text
 language sql stable
 set search_path = ''
@@ -13,6 +14,7 @@ as $$
     when p_data_purged_at is not null then null
     when p_status = any (private.user_import_draft_statuses()) and p_review_expires_at <= now()
       then 'expire'
+    when private.user_import_upload_abandoned(p_status, p_upload_due_at) then 'expire'
     when p_status = 'uploaded'
          and p_file_status in ('clean', 'infected', 'rejected', 'error', 'deleted') then 'read'
     when p_status = 'validating' then 'validate'
@@ -38,7 +40,7 @@ declare
 begin
   perform private.user_import_worker_check();
   select i.id, private.user_import_step(i.tenant_id, i.id, i.status, i.review_expires_at, i.finished_at, i.undone_at,
-                                        i.confirmed_at, i.data_purged_at, f.status)
+                                        i.confirmed_at, i.data_purged_at, f.status, i.upload_due_at)
     into v_id, v_step
   from platform.user_imports i
   join platform.tenants t on t.id = i.tenant_id and t.status in ('active', 'trial')
@@ -46,7 +48,7 @@ begin
   where i.data_purged_at is null and i.next_attempt_at <= now()
     and (i.lease_until is null or i.lease_until <= now())
     and private.user_import_step(i.tenant_id, i.id, i.status, i.review_expires_at, i.finished_at, i.undone_at,
-                                 i.confirmed_at, i.data_purged_at, f.status) is not null
+                                 i.confirmed_at, i.data_purged_at, f.status, i.upload_due_at) is not null
   order by i.next_attempt_at, i.updated_at, i.id
   limit 1
   for update of i skip locked;

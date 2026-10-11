@@ -314,6 +314,29 @@ export async function createUserImport(
   );
 }
 
+/**
+ * The importer confirmed the upload (integration review M1): the import's upload window no longer applies,
+ * so it is never taken for an abandoned upload. The database checks the move (the importer, status
+ * `uploaded`, the file no longer waiting for its bytes). Throws DomainError IMPORT_STATE_CHANGED or
+ * NOT_ALLOWED.
+ */
+export async function closeUserImportUploadWindow(tx: ClaimsTx, id: string): Promise<void> {
+  const updated = await guarded(() =>
+    tx.execute(sql`
+      update platform.user_imports set upload_due_at = null
+      where id = ${id}::uuid and status = 'uploaded' and upload_due_at is not null
+      returning id`),
+  );
+  if (updated.length > 0) return;
+  // Nothing to close: already closed (a repeated confirmation), or the import moved on meanwhile.
+  const [current] = await tx.execute<{ status: string }>(
+    sql`select status from platform.user_imports where id = ${id}::uuid`,
+  );
+  if (current?.status !== 'uploaded') {
+    throw new DomainError<UserImportErrorCode>('IMPORT_STATE_CHANGED');
+  }
+}
+
 /** An import of the organization (user managers), or null. */
 export async function getUserImport(tx: ClaimsTx, id: string): Promise<UserImportRecord | null> {
   const rows = await tx.execute<Row>(sql`${SELECT} where i.id = ${id}::uuid`);

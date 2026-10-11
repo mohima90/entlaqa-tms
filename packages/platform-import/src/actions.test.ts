@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const db = vi.hoisted(() => ({
   cancelUserImport: vi.fn(),
   chooseUserImportMapping: vi.fn(),
+  closeUserImportUploadWindow: vi.fn(),
   confirmUserImport: vi.fn(),
   createUserImport: vi.fn(),
   getHeldInvitationsSummary: vi.fn(),
@@ -256,6 +257,8 @@ describe('start and upload (step 1)', () => {
     const definition = actions.confirmUserImportUploadActionDefinition();
     const result = await run(definition, { importId: ID });
     expect(result.value).toEqual({ importId: ID, fileId: 'f1', fileStatus: 'uploaded' });
+    // Integration review M1: the confirmed import is no longer subject to its upload window.
+    expect(db.closeUserImportUploadWindow).toHaveBeenCalledWith({}, ID);
     expect(definition.audit?.({ importId: ID }, result.value as never)).toEqual({
       action: 'platform.user_import.uploaded',
       entityType: 'user_import',
@@ -271,6 +274,16 @@ describe('start and upload (step 1)', () => {
     expect((await run(definition, { importId: ID })).error?.code).toBe('NOT_FOUND');
     files.confirmUpload.mockRejectedValueOnce(new Error('boom'));
     await expect(run(definition, { importId: ID })).rejects.toThrow('boom');
+    // The worker expired it meanwhile (its window passed): the screens say the status changed.
+    db.closeUserImportUploadWindow.mockClear();
+    files.confirmUpload.mockResolvedValueOnce({ status: 'uploaded' });
+    db.closeUserImportUploadWindow.mockRejectedValueOnce(new DomainError('IMPORT_STATE_CHANGED'));
+    expect(fieldCode(await run(definition, { importId: ID }))).toBe('IMPORT_STATE_CHANGED');
+    // A file not confirmed leaves the window open.
+    db.closeUserImportUploadWindow.mockClear();
+    files.confirmUpload.mockRejectedValueOnce(new DomainError('OBJECT_NOT_UPLOADED'));
+    await run(definition, { importId: ID });
+    expect(db.closeUserImportUploadWindow).not.toHaveBeenCalled();
     db.getUserImport.mockResolvedValueOnce(record({ status: 'mapping' }));
     expect(fieldCode(await run(definition, { importId: ID }))).toBe('IMPORT_STATE_CHANGED');
     db.getUserImport.mockResolvedValueOnce(record({ mine: false }));

@@ -971,4 +971,103 @@ end $$;
 select pg_temp.become_owner();
 rollback;
 
+-- ---------------------------------------------------------------------------------------------------
+-- Abandoned uploads (integration review M1): an import still waiting for its file after its upload window
+-- (a cut upload, or a URL Storage would not sign after the commit) no longer counts as unfinished — for
+-- its importer and for the organization — and the worker expires it (UPLOAD_NOT_FINISHED). The window is
+-- the file's reservation; only the importer's confirmation of an uploaded file ends it.
+-- ---------------------------------------------------------------------------------------------------
+begin;
+-- 20 imports waiting for files whose windows are over: 10 of the HR Manager (uAB), 10 of the Organization
+-- Admin (uA) — platform operations. Without the rule, either the member's 5 or the organization's 20 is hit.
+do $$
+declare
+  v_user uuid;
+  v_person uuid;
+  v_id uuid;
+  v_file uuid;
+begin
+  for n in 10 .. 29 loop
+    v_user := case when n < 20 then '00000000-0000-4000-8000-0000000000ab' else '00000000-0000-4000-8000-0000000000a1' end;
+    v_person := case when n < 20 then 'a1000000-0000-4000-8000-0000000000ab' else 'a1000000-0000-4000-8000-0000000000a1' end;
+    v_id := ('a5000000-0000-4000-8000-0000000001' || n)::uuid;
+    v_file := ('f0a00000-0000-4000-8000-0000000001' || n)::uuid;
+    perform tests.import_file(v_id, 'a0000000-0000-4000-8000-000000000001', v_user, v_file, 'cut.csv', 'pending_upload');
+    insert into platform.user_imports (id, tenant_id, created_by, created_by_person, file_id, file_name, file_size, status,
+                                       sheets, review_expires_at, upload_due_at)
+    values (v_id, 'a0000000-0000-4000-8000-000000000001', v_user, v_person, v_file, 'cut.csv', 100, 'uploaded', '[]',
+            now() + interval '23 hours', now() - interval '1 minute');
+  end loop;
+end $$;
+select pg_temp.become_worker('a0000000-0000-4000-8000-000000000001');
+do $$
+begin
+  perform tests.assert_eq((select string_agg(distinct private.user_import_step(i.tenant_id, i.id, i.status, i.review_expires_at,
+                             i.finished_at, i.undone_at, i.confirmed_at, i.data_purged_at, f.status, i.upload_due_at), ',')
+                           from platform.user_imports i join platform.files f on f.id = i.file_id
+                           where i.id between 'a5000000-0000-4000-8000-000000000110' and 'a5000000-0000-4000-8000-000000000129'),
+    'expire', 'an import waiting for its file after the upload window is expired by the worker');
+  perform tests.assert_eq(tests.rows_affected($q$update platform.user_imports set status = 'expired', failure_code = 'UPLOAD_NOT_FINISHED'
+                                                 where id = 'a5000000-0000-4000-8000-000000000110'$q$),
+    1::bigint, 'the worker expires it with its own code');
+  perform tests.assert_fails($q$update platform.user_imports set upload_due_at = now() + interval '1 hour'
+                                where id = 'a5000000-0000-4000-8000-000000000111'$q$,
+    array['42501'], 'system jobs never move an upload window');
+end $$;
+select pg_temp.become_user('00000000-0000-4000-8000-0000000000ab', '10000000-0000-4000-8000-0000000000ab',
+                           'a1000000-0000-4000-8000-0000000000ab');
+do $$
+declare
+  v_file uuid;
+begin
+  select id into v_file from private.create_file_upload('platform.user_import', 'platform', 'user_import',
+    'a5000000-0000-4000-8000-000000000140', 'next.csv', 'text/csv', 10);
+  perform tests.assert_eq(tests.rows_affected(format($q$insert into platform.user_imports (id, file_id, file_name, file_size)
+                                                       values ('a5000000-0000-4000-8000-000000000140', %L, 'next.csv', 10)$q$, v_file)),
+    1::bigint, 'abandoned uploads count neither against the member''s 5 nor against the organization''s 20');
+  perform tests.assert((select upload_due_at = (select upload_expires_at from platform.files where id = v_file)
+                        from platform.user_imports where id = 'a5000000-0000-4000-8000-000000000140'),
+    'a new import''s upload window is its file''s reservation');
+  -- The window ends with the confirmed upload only.
+  perform tests.assert_fails($q$update platform.user_imports set upload_due_at = null where id = 'a5000000-0000-4000-8000-000000000140'$q$,
+    array['23514'], 'not while the file is still waiting for its bytes');
+  perform tests.assert_fails($q$update platform.user_imports set upload_due_at = now() + interval '1 day' where id = 'a5000000-0000-4000-8000-000000000140'$q$,
+    array['23514'], 'the importer cannot extend it');
+end $$;
+select pg_temp.become_owner();
+-- The browser's PUT and the files service's confirmation, as T-M2-18 leaves the file (platform operation).
+alter table platform.files disable trigger files_transition;
+update platform.files set status = 'uploaded', uploaded_at = now()
+where id = (select file_id from platform.user_imports where id = 'a5000000-0000-4000-8000-000000000140');
+alter table platform.files enable trigger files_transition;
+select pg_temp.become_user('00000000-0000-4000-8000-0000000000ab', '10000000-0000-4000-8000-0000000000ab',
+                           'a1000000-0000-4000-8000-0000000000ab');
+do $$
+begin
+  perform tests.assert_eq(tests.rows_affected($q$update platform.user_imports set upload_due_at = null where id = 'a5000000-0000-4000-8000-000000000140'$q$),
+    1::bigint, 'the importer''s confirmation of the uploaded file ends the window');
+  perform tests.assert_fails($q$update platform.user_imports set upload_due_at = now() + interval '1 minute' where id = 'a5000000-0000-4000-8000-000000000140'$q$,
+    array['23514'], 'and it never opens again');
+  perform tests.assert_fails($q$update platform.user_imports set upload_due_at = null, status = 'cancelled' where id = 'a5000000-0000-4000-8000-000000000111'$q$,
+    array['23514'], 'nor does it end with another change');
+end $$;
+select pg_temp.become_owner();
+-- Windows still open count as before: five of the HR Manager's, and a sixth is refused.
+update platform.user_imports set upload_due_at = now() + interval '10 minutes'
+where id between 'a5000000-0000-4000-8000-000000000110' and 'a5000000-0000-4000-8000-000000000119' and status = 'uploaded';
+select pg_temp.become_user('00000000-0000-4000-8000-0000000000ab', '10000000-0000-4000-8000-0000000000ab',
+                           'a1000000-0000-4000-8000-0000000000ab');
+do $$
+declare
+  v_file uuid;
+begin
+  select id into v_file from private.create_file_upload('platform.user_import', 'platform', 'user_import',
+    'a5000000-0000-4000-8000-000000000141', 'more.csv', 'text/csv', 10);
+  perform tests.assert_fails(format($q$insert into platform.user_imports (id, file_id, file_name, file_size)
+                                      values ('a5000000-0000-4000-8000-000000000141', %L, 'more.csv', 10)$q$, v_file),
+    array['23514'], 'imports whose upload window is still open count (TOO_MANY_DRAFTS)');
+end $$;
+select pg_temp.become_owner();
+rollback;
+
 \echo '88_user_imports_flow_owner: ok'

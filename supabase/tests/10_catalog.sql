@@ -815,7 +815,7 @@ begin
     'user_imports.lease_token:SELECT, user_imports.lease_token:UPDATE, user_imports.lease_until:SELECT, '
     'user_imports.lease_until:UPDATE, user_imports.next_attempt_at:SELECT, user_imports.review_expires_at:SELECT, '
     'user_imports.status:SELECT, user_imports.tenant_id:SELECT, user_imports.undone_at:SELECT, '
-    'user_imports.updated_at:SELECT',
+    'user_imports.updated_at:SELECT, user_imports.upload_due_at:SELECT',
     'user_import_guard: exactly the lifecycle columns, the file status, the organizations'' status and the lease');
   perform tests.assert(not exists (
       select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace

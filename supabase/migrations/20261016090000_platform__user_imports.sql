@@ -185,6 +185,11 @@ create table platform.user_imports (
   undone_at timestamptz,
   -- Unconfirmed reviews end 24 hours after the upload (PO decision 8): the file and data are deleted.
   review_expires_at timestamptz not null default now() + interval '24 hours',
+  -- The upload window (integration review M1): until when the file's reservation lets the browser upload
+  -- (copied from it when the import starts); cleared once the importer confirms the upload. An import
+  -- still waiting for its file after this time is abandoned — a cut upload, or Storage refused to sign
+  -- the URL after the commit: it no longer counts as unfinished, and the worker expires it.
+  upload_due_at timestamptz,
   -- When the files, columns and rows were deleted (housekeeping); the import record stays.
   data_purged_at timestamptz,
   unique (tenant_id, id),
@@ -246,6 +251,22 @@ $$;
 revoke all on function private.user_import_draft_statuses() from public;
 grant execute on function private.user_import_draft_statuses() to authenticated, user_import_guard;
 
+-- An import still waiting for its file after the upload window (integration review M1): its upload was cut,
+-- or Storage would not sign the URL after the commit. It no longer counts as unfinished and the worker
+-- expires it (failure code UPLOAD_NOT_FINISHED). The window ends with the file's reservation
+-- (platform.files.upload_expires_at: a signed URL can be asked for until then; self-hosted, the URL itself
+-- lives as long); the importer's confirmation clears it.
+create or replace function private.user_import_upload_abandoned(p_status text, p_upload_due_at timestamptz)
+returns boolean
+language sql stable
+set search_path = ''
+as $$
+  select p_status = 'uploaded' and p_upload_due_at is not null and p_upload_due_at <= now();
+$$;
+
+revoke all on function private.user_import_upload_abandoned(text, timestamptz) from public;
+grant execute on function private.user_import_upload_abandoned(text, timestamptz) to authenticated, user_import_guard;
+
 -- The fields a file column may be mapped to (TM-0003 T-IAM-20: a fixed allow-list — never status,
 -- passwords, roles of existing users, memberships, restricted data or tenant columns), each at most once,
 -- with the three required ones present: {"<column index 0…199>": "<field>"}.
@@ -297,6 +318,7 @@ as $$
 declare
   v_kind text := private.request_claims() ->> 'role';
   v_user uuid := private.request_user_id();
+  v_upload_due timestamptz;
 begin
   if tg_op = 'INSERT' then
     if current_user <> 'authenticated' then
@@ -313,14 +335,18 @@ begin
     end if;
     -- Bounded work (security review H1): at most 5 unfinished imports (uploaded … review, review window
     -- still open: each may be read and checked by the worker) per member and 20 per organization; finish,
-    -- cancel or let them expire.
+    -- cancel or let them expire. An import still waiting for its file after its upload window does not
+    -- count (integration review M1: a cut upload, or a URL Storage would not sign, must not lock anyone
+    -- out for 24 hours; the worker expires it).
     perform pg_advisory_xact_lock(hashtextextended('platform.user_imports.unfinished:' || new.tenant_id::text, 0));
     if (select count(*) from platform.user_imports i
         where i.tenant_id = new.tenant_id and i.created_by = v_user and i.review_expires_at > now()
-          and i.status = any (private.user_import_draft_statuses())) >= 5
+          and i.status = any (private.user_import_draft_statuses())
+          and not private.user_import_upload_abandoned(i.status, i.upload_due_at)) >= 5
        or (select count(*) from platform.user_imports i
            where i.tenant_id = new.tenant_id and i.review_expires_at > now()
-             and i.status = any (private.user_import_draft_statuses())) >= 20 then
+             and i.status = any (private.user_import_draft_statuses())
+             and not private.user_import_upload_abandoned(i.status, i.upload_due_at)) >= 20 then
       raise exception 'too many unfinished imports' using errcode = 'check_violation';
     end if;
     if new.status <> 'uploaded' or new.failure_code is not null or new.sheet_index is not null
@@ -331,13 +357,17 @@ begin
        or new.report_code is not null or new.lease_until is not null or new.lease_token is not null then
       raise exception 'an import starts uploaded, with nothing read yet' using errcode = 'check_violation';
     end if;
-    -- The uploaded file must be the importer's own upload for this import (purpose and owner).
-    if not exists (select 1 from platform.files f
-                   where f.tenant_id = new.tenant_id and f.id = new.file_id and f.purpose = 'platform.user_import'
-                     and f.owner_module = 'platform' and f.owner_entity_type = 'user_import'
-                     and f.owner_entity_id = new.id and f.created_by_user = v_user and f.deleted_at is null) then
+    -- The uploaded file must be the importer's own upload for this import (purpose and owner); its
+    -- reservation's end is the import's upload window (integration review M1).
+    select f.upload_expires_at into v_upload_due
+    from platform.files f
+    where f.tenant_id = new.tenant_id and f.id = new.file_id and f.purpose = 'platform.user_import'
+      and f.owner_module = 'platform' and f.owner_entity_type = 'user_import'
+      and f.owner_entity_id = new.id and f.created_by_user = v_user and f.deleted_at is null;
+    if not found then
       raise exception 'the file must be this import''s own upload' using errcode = 'check_violation';
     end if;
+    new.upload_due_at := v_upload_due;
     new.created_by := v_user;
     new.created_by_person := private.request_person_id();
     new.created_at := now();
@@ -390,9 +420,9 @@ begin
       raise exception 'an import does not go from % to %', old.status, new.status using errcode = 'check_violation';
     end if;
     if (new.options, new.mapping, new.sheet_index, new.undo_requested_by, new.undo_requested_at, new.undo_reason,
-        new.stop_requested_at)
+        new.stop_requested_at, new.upload_due_at)
        is distinct from (old.options, old.mapping, old.sheet_index, old.undo_requested_by, old.undo_requested_at,
-                         old.undo_reason, old.stop_requested_at) then
+                         old.undo_reason, old.stop_requested_at, old.upload_due_at) then
       raise exception 'only the importer chooses the mapping and options, stops or undoes an import'
         using errcode = 'insufficient_privilege';
     end if;
@@ -440,6 +470,24 @@ begin
     raise exception 'progress and results of an import are written by the import itself' using errcode = 'insufficient_privilege';
   end if;
   new.updated_at := now();
+
+  -- The importer confirmed the upload (integration review M1): the upload window no longer applies. Only
+  -- once the file is no longer waiting for its bytes; nothing else changes with it.
+  if new.upload_due_at is distinct from old.upload_due_at then
+    if not (old.status = 'uploaded' and new.status = 'uploaded' and old.upload_due_at is not null
+            and new.upload_due_at is null) then
+      raise exception 'the upload window ends only with the confirmed upload' using errcode = 'check_violation';
+    end if;
+    if (new.mapping, new.sheet_index, new.options, new.stop_requested_at, new.undo_reason)
+       is distinct from (old.mapping, old.sheet_index, old.options, old.stop_requested_at, old.undo_reason) then
+      raise exception 'confirming the upload changes nothing else' using errcode = 'check_violation';
+    end if;
+    if exists (select 1 from platform.files f
+               where f.tenant_id = new.tenant_id and f.id = new.file_id and f.status = 'pending_upload') then
+      raise exception 'the file has not been uploaded yet' using errcode = 'check_violation';
+    end if;
+    return new;
+  end if;
 
   if new.status = 'validating' and old.status in ('mapping', 'review') then
     if old.review_expires_at <= now() then
@@ -559,7 +607,7 @@ grant select on platform.user_imports to authenticated;
 grant insert (id, tenant_id, file_id, file_name, file_size) on platform.user_imports to authenticated;
 -- Users change the first group (the trigger allows the importer's moves only); jobs also write progress,
 -- results, files and their back-off. The lease belongs to the claim (user_import_guard).
-grant update (status, sheet_index, mapping, options, stop_requested_at, undo_reason,
+grant update (status, sheet_index, mapping, options, stop_requested_at, undo_reason, upload_due_at,
               failure_code, sheets, review_counts, result_counts, rows_total, rows_done, checkpoint,
               review_file_id, report_file_id, report_code, lease_until, lease_token, next_attempt_at, failures,
               data_purged_at)
@@ -720,7 +768,7 @@ create policy user_imports_guard_read on platform.user_imports for select to use
 create policy user_imports_guard_lease on platform.user_imports for update to user_import_guard
   using (true) with check (true);
 grant select (id, tenant_id, file_id, status, review_expires_at, finished_at, undone_at, confirmed_at,
-              data_purged_at, lease_until, lease_token, next_attempt_at, updated_at, created_at)
+              data_purged_at, lease_until, lease_token, next_attempt_at, updated_at, created_at, upload_due_at)
   on platform.user_imports to user_import_guard;
 grant update (lease_until, lease_token) on platform.user_imports to user_import_guard;
 create policy files_user_import_guard_read on platform.files for select to user_import_guard using (true);
@@ -735,7 +783,8 @@ grant execute on function private.request_user_id() to user_import_guard;
 grant execute on function private.has_visible_text(text) to user_import_guard;
 
 -- The step an import needs now (the claim and the worker agree on it), or null:
---   expire  a review not confirmed within 24 hours (file and data deleted);
+--   expire  a review not confirmed within 24 hours (file and data deleted), or an import still waiting
+--           for its file after the upload window (integration review M1);
 --   read    the uploaded file has its verdict (clean, or refused): read its sheets and columns;
 --   validate / run / undo   the worker's part of those statuses;
 --   send    held invitations of the import whose sending time has come (migration 20261016090100);
@@ -744,7 +793,8 @@ grant execute on function private.has_visible_text(text) to user_import_guard;
 create or replace function private.user_import_step(p_tenant_id uuid, p_import_id uuid, p_status text,
                                                    p_review_expires_at timestamptz, p_finished_at timestamptz,
                                                    p_undone_at timestamptz, p_confirmed_at timestamptz,
-                                                   p_data_purged_at timestamptz, p_file_status text)
+                                                   p_data_purged_at timestamptz, p_file_status text,
+                                                   p_upload_due_at timestamptz)
 returns text
 language sql stable
 set search_path = ''
@@ -753,6 +803,7 @@ as $$
     when p_data_purged_at is not null then null
     when p_status = any (private.user_import_draft_statuses()) and p_review_expires_at <= now()
       then 'expire'
+    when private.user_import_upload_abandoned(p_status, p_upload_due_at) then 'expire'
     when p_status = 'uploaded'
          and p_file_status in ('clean', 'infected', 'rejected', 'error', 'deleted') then 'read'
     when p_status = 'validating' then 'validate'
@@ -765,11 +816,11 @@ as $$
   end;
 $$;
 
-comment on function private.user_import_step(uuid, uuid, text, timestamptz, timestamptz, timestamptz, timestamptz, timestamptz, text) is
+comment on function private.user_import_step(uuid, uuid, text, timestamptz, timestamptz, timestamptz, timestamptz, timestamptz, text, timestamptz) is
   'The worker step an import needs now (expire, read, validate, run, undo, purge) or null (T-M2-12).';
 
-revoke all on function private.user_import_step(uuid, uuid, text, timestamptz, timestamptz, timestamptz, timestamptz, timestamptz, text) from public;
-grant execute on function private.user_import_step(uuid, uuid, text, timestamptz, timestamptz, timestamptz, timestamptz, timestamptz, text) to authenticated, user_import_guard;
+revoke all on function private.user_import_step(uuid, uuid, text, timestamptz, timestamptz, timestamptz, timestamptz, timestamptz, text, timestamptz) from public;
+grant execute on function private.user_import_step(uuid, uuid, text, timestamptz, timestamptz, timestamptz, timestamptz, timestamptz, text, timestamptz) to authenticated, user_import_guard;
 
 -- A job of the worker without a tenant (withPlatformTx): system claims with a job id under app_worker.
 create or replace function private.user_import_worker_check()
@@ -804,7 +855,7 @@ declare
 begin
   perform private.user_import_worker_check();
   select i.id, private.user_import_step(i.tenant_id, i.id, i.status, i.review_expires_at, i.finished_at, i.undone_at,
-                                        i.confirmed_at, i.data_purged_at, f.status)
+                                        i.confirmed_at, i.data_purged_at, f.status, i.upload_due_at)
     into v_id, v_step
   from platform.user_imports i
   join platform.tenants t on t.id = i.tenant_id and t.status in ('active', 'trial')
@@ -812,7 +863,7 @@ begin
   where i.data_purged_at is null and i.next_attempt_at <= now()
     and (i.lease_until is null or i.lease_until <= now())
     and private.user_import_step(i.tenant_id, i.id, i.status, i.review_expires_at, i.finished_at, i.undone_at,
-                                 i.confirmed_at, i.data_purged_at, f.status) is not null
+                                 i.confirmed_at, i.data_purged_at, f.status, i.upload_due_at) is not null
   order by i.next_attempt_at, i.updated_at, i.id
   limit 1
   for update of i skip locked;

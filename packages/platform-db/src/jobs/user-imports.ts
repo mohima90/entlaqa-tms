@@ -81,6 +81,11 @@ export interface UserImportJobView {
    * alone, so none is made otherwise (security review M1).
    */
   readonly importerMayImport: boolean;
+  /**
+   * Still waiting for its file after the upload window (integration review M1): the `expire` step ends it
+   * with UPLOAD_NOT_FINISHED instead of the review's expiry.
+   */
+  readonly uploadAbandoned: boolean;
 }
 
 /**
@@ -100,7 +105,9 @@ export async function loadUserImportForJob(
            coalesce(p.preferred_locale, 'ar') as importer_locale,
            private.user_import_actor_may_import(i.tenant_id, i.created_by) as importer_may_import,
            private.user_import_step(i.tenant_id, i.id, i.status, i.review_expires_at, i.finished_at,
-                                    i.undone_at, i.confirmed_at, i.data_purged_at, f.status) as step
+                                    i.undone_at, i.confirmed_at, i.data_purged_at, f.status,
+                                    i.upload_due_at) as step,
+           private.user_import_upload_abandoned(i.status, i.upload_due_at) as upload_abandoned
     from platform.user_imports i
     left join platform.files f on f.tenant_id = i.tenant_id and f.id = i.file_id and f.purged_at is null
     left join platform.persons p on p.tenant_id = i.tenant_id and p.id = i.created_by_person
@@ -138,6 +145,7 @@ export async function loadUserImportForJob(
     failures: Number(row.failures),
     importerLocale: row.importer_locale === 'en' ? 'en' : 'ar',
     importerMayImport: row.importer_may_import === true,
+    uploadAbandoned: row.upload_abandoned === true,
   };
 }
 

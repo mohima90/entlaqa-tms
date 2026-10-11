@@ -57,7 +57,8 @@ import { buildReport, reportColumns } from './report';
  *             A pass sends at most SEND_SHARE of one import, then hands over (imports take turns);
  *   undo      batches of 500 (→ undone), while the member who asked may still undo it (security review
  *             L1; otherwise → failed, UNDO_NOT_ALLOWED);
- *   expire    a review not confirmed in 24 hours (→ expired);
+ *   expire    a review not confirmed in 24 hours, or an import still waiting for its file after the
+ *             upload window (→ expired; UPLOAD_NOT_FINISHED — integration review M1);
  *   purge     files and staged data deleted (7 days after the end; at once for refused, cancelled and
  *             expired imports). The import record stays with the audit log.
  *
@@ -78,6 +79,8 @@ export const SEND_MAX_WAIT_MS = 5_000;
 export const PASS_BUDGET_MS = 4 * 60_000;
 /** Failed attempts of one step before the import ends. */
 export const MAX_FAILURES = 6;
+/** Failure code of an import expired while still waiting for its file (integration review M1). */
+export const UPLOAD_NOT_FINISHED = 'UPLOAD_NOT_FINISHED';
 /**
  * Sending import invitations (security review M2): one a second for the whole platform (Resend's default
  * API limit is 2 a second for the whole account: the other e-mails keep the rest), at most 5,000 a day
@@ -292,16 +295,29 @@ export function createUserImportTask(options: UserImportTaskOptions): PlatformTa
     log('info', `user import ${view.id}: ${to}${report.code === null ? '' : ` (${report.code})`}`);
   }
 
+  /**
+   * A review not confirmed within 24 hours, or — integration review M1 — an import still waiting for its
+   * file after the upload window (a cut upload, or a URL Storage would not sign): expired, with the
+   * reason in the failure code and the audit record (`platform.user_import.expired`); the purge then
+   * deletes the file and data.
+   */
   async function expire(jobId: string, claim: UserImportClaim): Promise<StepResult> {
     await inImport(jobId, claim, async (tx, view) => {
       if (view.step !== 'expire') return;
-      await setUserImportStatus(
+      const reason = view.uploadAbandoned ? 'upload_window' : 'review_window';
+      const moved = await setUserImportStatus(
         tx,
         view.id,
         ['uploaded', 'mapping', 'validating', 'review'],
         'expired',
+        view.uploadAbandoned ? { failureCode: UPLOAD_NOT_FINISHED } : {},
       );
-      log('info', `user import ${view.id}: review expired`);
+      if (!moved) return;
+      await audit(tx, 'platform.user_import.expired', view.id, { reason });
+      log(
+        'info',
+        `user import ${view.id}: ${view.uploadAbandoned ? 'upload not finished' : 'review'} expired`,
+      );
     });
     return 'done';
   }

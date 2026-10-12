@@ -12,7 +12,7 @@ declare
   outsiders constant text[] := array['anon', 'service_role'];
   -- Global (non-tenant) reference tables: RLS enabled + forced, read-only for authenticated, no
   -- tenant_isolation policy. Same allow-list as tests.global_tables() (security review required).
-  global_tables constant text[] := array['platform.ref_roles'];
+  global_tables constant text[] := array['platform.ref_roles', 'platform.file_purposes'];
   hook constant text := 'private.custom_access_token_hook(jsonb)';
   signup_hook constant text := 'private.before_user_created_hook(jsonb)';
   r record;
@@ -23,12 +23,13 @@ begin
   for r in
     select rolname, rolcanlogin, rolinherit, rolsuper, rolbypassrls, rolcreaterole, rolcreatedb, rolreplication
     from pg_roles where rolname in ('app_server', 'app_worker', 'app_queue', 'tenant_guard', 'invitation_guard',
-                                    'account_mail_guard', 'membership_guard', 'rate_limit_guard')
+                                    'account_mail_guard', 'membership_guard', 'rate_limit_guard', 'file_guard')
   loop
     if r.rolname in ('app_server', 'app_worker', 'app_queue') and not r.rolcanlogin then
       failures := failures || format('%s must be LOGIN', r.rolname);
     end if;
-    if r.rolname in ('tenant_guard', 'invitation_guard', 'account_mail_guard', 'membership_guard', 'rate_limit_guard')
+    if r.rolname in ('tenant_guard', 'invitation_guard', 'account_mail_guard', 'membership_guard', 'rate_limit_guard',
+                     'file_guard')
        and r.rolcanlogin then
       failures := failures || format('%s must be NOLOGIN', r.rolname);
     end if;
@@ -38,8 +39,8 @@ begin
   end loop;
   if (select count(*) from pg_roles
       where rolname in ('app_server', 'app_worker', 'app_queue', 'tenant_guard', 'invitation_guard',
-                        'account_mail_guard', 'membership_guard', 'rate_limit_guard')) <> 8 then
-    failures := failures || 'roles app_server, app_worker, app_queue, tenant_guard, invitation_guard, account_mail_guard, membership_guard and rate_limit_guard must all exist'::text;
+                        'account_mail_guard', 'membership_guard', 'rate_limit_guard', 'file_guard')) <> 9 then
+    failures := failures || 'roles app_server, app_worker, app_queue, tenant_guard, invitation_guard, account_mail_guard, membership_guard, rate_limit_guard and file_guard must all exist'::text;
   end if;
   -- The job runner (ADR 0005 §2): member of nothing (never authenticated), owner of graphile_worker.
   if exists (select 1 from pg_auth_members m join pg_roles u on u.oid = m.member where u.rolname = 'app_queue') then
@@ -259,7 +260,7 @@ begin
     from (values
       ('private.user_session_is_valid(uuid, uuid)', 'tenant_guard', array['tenant_guard', 'invitation_guard'], true),
       ('private.has_active_membership(uuid, uuid)', 'tenant_guard', array['tenant_guard', 'rate_limit_guard'], true),
-      ('private.current_tenant_id()',               'tenant_guard', array['tenant_guard', 'authenticated', 'account_mail_guard', 'membership_guard', 'rate_limit_guard'], true),
+      ('private.current_tenant_id()',               'tenant_guard', array['tenant_guard', 'authenticated', 'account_mail_guard', 'membership_guard', 'rate_limit_guard', 'file_guard'], true),
       ('private.switch_active_tenant(uuid)',        'tenant_guard', array['tenant_guard', 'authenticated'], true),
       ('private.session_tenants()',                 'tenant_guard', array['tenant_guard', 'authenticated'], true),
       ('private.discard_inactive_tenant_delivery(uuid)', 'tenant_guard', array['tenant_guard', 'authenticated'], true),
@@ -374,7 +375,32 @@ begin
       ('private.rate_limit_choose_device(bytea)', 'rate_limit_guard', array['rate_limit_guard'], false),
       ('private.rate_limit_trust_device(bytea, bytea, integer)', 'rate_limit_guard', array['rate_limit_guard'], false),
       ('private.rate_limit_member_account(uuid)', 'rate_limit_guard', array['rate_limit_guard'], false),
-      ('private.rate_limit_session_subject(uuid)', 'rate_limit_guard', array['rate_limit_guard'], false)
+      ('private.rate_limit_session_subject(uuid)', 'rate_limit_guard', array['rate_limit_guard'], false),
+      -- Files (T-M2-18, ADR 0006). Storage's user claims: the storage.objects policies (authenticated) and
+      -- file_guard's checks. The file functions are called as authenticated by the web app, Storage's
+      -- policies and the worker; each checks the login role and the claims itself. Three helpers run
+      -- inside them only.
+      ('private.storage_request_tenant()', 'tenant_guard', array['tenant_guard', 'authenticated', 'file_guard'], true),
+      ('private.create_file_upload(text, text, text, uuid, text, text, bigint)', 'file_guard', array['file_guard', 'authenticated'], true),
+      ('private.confirm_file_upload(uuid)', 'file_guard', array['file_guard', 'authenticated'], true),
+      ('private.grant_file_download(uuid, text, text, text, uuid)', 'file_guard', array['file_guard', 'authenticated'], true),
+      ('private.delete_file(uuid)', 'file_guard', array['file_guard', 'authenticated'], true),
+      ('private.mark_file_used(uuid)', 'file_guard', array['file_guard', 'authenticated'], true),
+      ('private.can_upload_object(text, text)', 'file_guard', array['file_guard', 'authenticated'], true),
+      ('private.can_read_object(text, text)', 'file_guard', array['file_guard', 'authenticated'], true),
+      ('private.claim_file_scan()', 'file_guard', array['file_guard', 'authenticated'], true),
+      ('private.finish_file_scan(uuid, text, text, bigint, text, text, text, text, text)', 'file_guard', array['file_guard', 'authenticated'], true),
+      ('private.retry_file_scan(uuid, text)', 'file_guard', array['file_guard', 'authenticated'], true),
+      ('private.claim_file_housekeeping(integer)', 'file_guard', array['file_guard', 'authenticated'], true),
+      ('private.lock_file_housekeeping(uuid, text)', 'file_guard', array['file_guard', 'authenticated'], true),
+      ('private.finish_file_housekeeping(uuid, text)', 'file_guard', array['file_guard', 'authenticated'], true),
+      ('private.claim_orphan_objects(integer)', 'file_guard', array['file_guard', 'authenticated'], true),
+      ('private.create_generated_file(text, text, text, uuid, text, text, bigint, uuid)', 'file_guard', array['file_guard', 'authenticated'], true),
+      ('private.finish_generated_file(uuid, bigint, text)', 'file_guard', array['file_guard', 'authenticated'], true),
+      ('private.file_user_tenant()', 'file_guard', array['file_guard'], false),
+      ('private.file_for_actor(uuid)', 'file_guard', array['file_guard'], false),
+      ('private.file_worker_check()', 'file_guard', array['file_guard'], false),
+      ('private.file_housekeeping_action(platform.files)', 'file_guard', array['file_guard'], false)
     ) as h(fn, owner, allowed, definer)
     left join pg_proc p on p.oid = to_regprocedure(h.fn)
   loop
@@ -442,7 +468,17 @@ begin
         'private.rate_limit_sign_in_reset(bytea,bytea,bytea,integer)', 'private.rate_limit_forget_other_devices(bytea,bytea)',
         'private.rate_limit_trust_after_code(bytea,bytea,integer)',
         'private.member_sign_in_lock(uuid,integer)', 'private.unlock_member_sign_in(uuid,integer)',
-        'private.rotate_rate_limit_keys()')
+        'private.rotate_rate_limit_keys()',
+        -- Files (T-M2-18)
+        'private.storage_request_tenant()', 'private.create_file_upload(text,text,text,uuid,text,text,bigint)',
+        'private.confirm_file_upload(uuid)', 'private.grant_file_download(uuid,text,text,text,uuid)', 'private.delete_file(uuid)',
+        'private.mark_file_used(uuid)', 'private.can_upload_object(text,text)', 'private.can_read_object(text,text)',
+        'private.claim_file_scan()', 'private.finish_file_scan(uuid,text,text,bigint,text,text,text,text,text)',
+        'private.retry_file_scan(uuid,text)', 'private.claim_file_housekeeping(integer)',
+        'private.lock_file_housekeeping(uuid,text)', 'private.finish_file_housekeeping(uuid,text)',
+        'private.claim_orphan_objects(integer)',
+        'private.create_generated_file(text,text,text,uuid,text,text,bigint,uuid)',
+        'private.finish_generated_file(uuid,bigint,text)')
   loop
     failures := failures || format('%s: unexpected SECURITY DEFINER function (security review)', r.fn);
   end loop;
@@ -691,6 +727,141 @@ begin
   if to_regclass('private.rate_limit_secret') is not null
      and (select count(*) from private.rate_limit_secret) <> 1 then
     failures := failures || 'private.rate_limit_secret must hold exactly one key'::text;
+  end if;
+
+  -- Files (T-M2-18, ADR 0006). file_guard: the same attributes as the other guard roles; it creates
+  -- nothing and nobody acts as it; it reads storage.objects only through the view
+  -- private.storage_object_facts (owned by the migration role, which must bypass RLS on storage.objects;
+  -- SELECT for file_guard only).
+  if not exists (select 1 from pg_roles where rolname = 'file_guard') then
+    failures := failures || 'role file_guard must exist'::text;
+  else
+    if exists (select 1 from pg_roles where rolname = 'file_guard'
+               and (rolcanlogin or rolinherit or rolsuper or rolbypassrls or rolcreaterole or rolcreatedb or rolreplication)) then
+      failures := failures || 'file_guard must be NOLOGIN NOINHERIT NOSUPERUSER NOBYPASSRLS NOCREATEROLE NOCREATEDB NOREPLICATION'::text;
+    end if;
+    for r in select nspname from pg_namespace where nspname = any (module_schemas) loop
+      if has_schema_privilege('file_guard', r.nspname, 'create') then
+        failures := failures || format('file_guard must not have CREATE on schema %s', r.nspname);
+      end if;
+    end loop;
+    for r in
+      select distinct u.rolname from pg_auth_members m
+      join pg_roles g on g.oid = m.roleid join pg_roles u on u.oid = m.member
+      where g.rolname = 'file_guard' and (m.inherit_option or m.set_option)
+        and not u.rolsuper and u.rolname <> current_user
+    loop
+      failures := failures || format('%s must not be a member of file_guard', r.rolname);
+    end loop;
+    if to_regclass('storage.objects') is not null and has_table_privilege('file_guard', 'storage.objects', 'select') then
+      failures := failures || 'file_guard must read storage.objects only through private.storage_object_facts'::text;
+    end if;
+  end if;
+  if to_regclass('private.storage_object_facts') is null then
+    failures := failures || 'private.storage_object_facts is missing'::text;
+  else
+    v_role := (select pg_get_userbyid(relowner) from pg_class where oid = 'private.storage_object_facts'::regclass);
+    if not (has_schema_privilege(v_role, 'storage', 'usage')
+            and has_column_privilege(v_role, 'storage.objects', 'bucket_id', 'select')
+            and has_column_privilege(v_role, 'storage.objects', 'name', 'select')
+            and has_column_privilege(v_role, 'storage.objects', 'metadata', 'select')
+            and exists (select 1 from pg_roles where rolname = v_role and (rolsuper or rolbypassrls))) then
+      failures := failures || format('%s (owner of private.storage_object_facts) must read storage.objects and bypass its RLS', v_role);
+    end if;
+    for r in
+      select distinct
+        case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end as grantee, a.privilege_type
+      from pg_class c, aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a
+      where c.oid = 'private.storage_object_facts'::regclass and a.grantee <> c.relowner
+        and not (a.grantee <> 0 and pg_get_userbyid(a.grantee) = 'file_guard' and a.privilege_type = 'SELECT')
+      union
+      select distinct case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end,
+        a.privilege_type || ' (column ' || att.attname || ')'
+      from pg_attribute att, aclexplode(att.attacl) a
+      where att.attrelid = 'private.storage_object_facts'::regclass and att.attacl is not null
+    loop
+      failures := failures || format('%s must not have %s on private.storage_object_facts', r.grantee, r.privilege_type);
+    end loop;
+  end if;
+  -- The file tables' policies (T-M2-18, re-review L-C): the permissive policies of platform.files and
+  -- platform.file_download_grants are exactly ours; the `using (true)` guard policies (files_guard,
+  -- file_download_grants_guard) — and every policy naming file_guard anywhere — apply to file_guard ALONE:
+  -- one widened to authenticated would open every file of the organization.
+  for r in
+    select c.relname, p.polname, p.polcmd,
+           array(select g.rolname::text from pg_roles g where g.oid = any (p.polroles) order by 1) as roles,
+           coalesce(pg_get_expr(p.polqual, p.polrelid), '') as qual,
+           coalesce(pg_get_expr(p.polwithcheck, p.polrelid), '') as chk
+    from pg_policy p join pg_class c on c.oid = p.polrelid join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'platform' and c.relname in ('files', 'file_download_grants') and p.polpermissive
+  loop
+    if not ((r.relname = 'files' and r.polname = 'files_guard' and r.polcmd = '*'
+               and r.roles = array['file_guard'] and r.qual = 'true' and r.chk = 'true')
+            or (r.relname = 'files' and r.polname = 'files_read' and r.polcmd = 'r'
+                and r.roles = array['authenticated'] and r.qual like '%private.request_user_id()%'
+                and r.qual not like '%true%')
+            or (r.relname = 'file_download_grants' and r.polname = 'file_download_grants_guard' and r.polcmd = '*'
+                and r.roles = array['file_guard'] and r.qual = 'true' and r.chk = 'true')
+            or (r.relname = 'file_download_grants' and r.polname = 'file_download_grants_read' and r.polcmd = 'r'
+                and r.roles = array['authenticated']
+                and r.qual = '(user_id = ( SELECT private.request_user_id() AS request_user_id))')) then
+      failures := failures || format('platform.%s: unexpected or altered permissive policy %s (security review)',
+                                     r.relname, r.polname);
+    end if;
+  end loop;
+  if (select count(*) from pg_policy p
+      where (p.polrelid = 'platform.files'::regclass and p.polname = 'files_guard')
+         or (p.polrelid = 'platform.file_download_grants'::regclass and p.polname = 'file_download_grants_guard')) <> 2 then
+    failures := failures || 'the file tables'' guard policies (files_guard, file_download_grants_guard) are missing'::text;
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'file_guard') then
+    for r in
+      select p.polrelid::regclass::text as t, p.polname from pg_policy p
+      where 'file_guard'::regrole::oid = any (p.polroles)
+        and p.polroles <> array['file_guard'::regrole::oid]
+    loop
+      failures := failures || format('%s: policy %s applies to file_guard and other roles (security review)', r.t, r.polname);
+    end loop;
+  end if;
+
+  -- Storage (ADR 0006 §1, §4): our six buckets exist and NO bucket is public; storage.objects carries our
+  -- three policies exactly, and every other policy on it is restrictive (a dashboard "allow all" policy
+  -- would widen what the files service grants).
+  if to_regclass('storage.buckets') is null or to_regclass('storage.objects') is null then
+    failures := failures || 'Supabase Storage (storage.buckets, storage.objects) is missing'::text;
+  else
+    if (select count(*) from storage.buckets
+        where id in ('materials', 'images', 'evidence', 'imports', 'generated', 'quarantine')) <> 6 then
+      failures := failures || 'the storage buckets materials, images, evidence, imports, generated and quarantine must exist'::text;
+    end if;
+    for r in select b.id from storage.buckets b where b.public loop
+      failures := failures || format('storage bucket %s must be private', r.id);
+    end loop;
+    if not exists (select 1 from pg_policy p where p.polrelid = 'storage.objects'::regclass
+                   and p.polname = 'jadarat_tenant_prefix' and not p.polpermissive and p.polcmd = '*'
+                   and p.polroles = array[(select oid from pg_roles where rolname = 'authenticated')]::oid[]
+                   and pg_get_expr(p.polqual, p.polrelid)
+                       = '(split_part(name, ''/''::text, 1) = (( SELECT private.storage_request_tenant() AS storage_request_tenant))::text)'
+                   and pg_get_expr(p.polwithcheck, p.polrelid) = pg_get_expr(p.polqual, p.polrelid)) then
+      failures := failures || 'storage.objects: RESTRICTIVE policy jadarat_tenant_prefix (ALL, authenticated) missing or altered'::text;
+    end if;
+    if not exists (select 1 from pg_policy p where p.polrelid = 'storage.objects'::regclass
+                   and p.polname = 'jadarat_files_upload' and p.polpermissive and p.polcmd = 'a'
+                   and p.polroles = array[(select oid from pg_roles where rolname = 'authenticated')]::oid[]
+                   and pg_get_expr(p.polwithcheck, p.polrelid) = 'private.can_upload_object(bucket_id, name)') then
+      failures := failures || 'storage.objects: policy jadarat_files_upload (INSERT, authenticated) missing or altered'::text;
+    end if;
+    if not exists (select 1 from pg_policy p where p.polrelid = 'storage.objects'::regclass
+                   and p.polname = 'jadarat_files_read' and p.polpermissive and p.polcmd = 'r'
+                   and p.polroles = array[(select oid from pg_roles where rolname = 'authenticated')]::oid[]
+                   and pg_get_expr(p.polqual, p.polrelid) = 'private.can_read_object(bucket_id, name)') then
+      failures := failures || 'storage.objects: policy jadarat_files_read (SELECT, authenticated) missing or altered'::text;
+    end if;
+    for r in select p.polname from pg_policy p
+             where p.polrelid = 'storage.objects'::regclass and p.polpermissive
+               and p.polname not in ('jadarat_files_upload', 'jadarat_files_read') loop
+      failures := failures || format('storage.objects: unexpected permissive policy %s (security review)', r.polname);
+    end loop;
   end if;
 
   -- tenant_guard creates nothing (CREATE on `private` is granted only while ownership is handed over,

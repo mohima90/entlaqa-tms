@@ -160,7 +160,8 @@ language sql stable as $$
   select c.oid::regclass
   from pg_class c join pg_namespace n on n.oid = c.relnamespace
   where (n.nspname, c.relname) in (
-    ('platform', 'ref_roles')  -- system role codes (T-M2-03): no tenant data
+    ('platform', 'ref_roles'),  -- system role codes (T-M2-03): no tenant data
+    ('platform', 'file_purposes')  -- file purposes (T-M2-18): limits per purpose, no tenant data
   )
 $$;
 
@@ -379,3 +380,33 @@ update auth.sessions s set aal = 'aal2', factor_id = f.factor_id
 from (values ('10000000-0000-4000-8000-0000000000a1'::uuid, '20000000-0000-4000-8000-0000000000a1'::uuid),
              ('10000000-0000-4000-8000-0000000000ab', '20000000-0000-4000-8000-0000000000ab')) as f (session_id, factor_id)
 where s.id = f.session_id;
+
+-- Files (T-M2-18): one clean import file per tenant A (uploaded by uA) and B (by uB), stored in Storage,
+-- each with an unexpired download grant for its uploader. Written as scanned (the write guard makes every
+-- new file start pending_upload, so it is off for this insert only). More states: 80_files_owner.sql.
+insert into storage.buckets (id, name, public) values ('imports', 'imports', false) on conflict (id) do nothing;
+begin;
+alter table platform.files disable trigger files_transition;
+insert into platform.files (id, tenant_id, bucket, object_key, purpose, owner_module, owner_entity_type, owner_entity_id,
+    original_name, declared_mime, declared_size, detected_mime, size_bytes, sha256, status, scan_engine, scan_signatures,
+    scanned_at, retention_class, created_by_user, upload_expires_at, uploaded_at) values
+  ('f0a00000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'imports',
+   'a0000000-0000-4000-8000-000000000001/platform/user_import/a5000000-0000-4000-8000-000000000001/f0a00000-0000-4000-8000-000000000001',
+   'platform.user_import', 'platform', 'user_import', 'a5000000-0000-4000-8000-000000000001', 'موظفون.csv', 'text/csv', 12,
+   'text/csv', 12, repeat('a', 64), 'clean', 'ClamAV 1.5.4', '28137', now(), 'import', '00000000-0000-4000-8000-0000000000a1',
+   now() + interval '15 minutes', now()),
+  ('f0b00000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000001', 'imports',
+   'b0000000-0000-4000-8000-000000000001/platform/user_import/b5000000-0000-4000-8000-000000000001/f0b00000-0000-4000-8000-000000000001',
+   'platform.user_import', 'platform', 'user_import', 'b5000000-0000-4000-8000-000000000001', 'staff.csv', 'text/csv', 12,
+   'text/csv', 12, repeat('b', 64), 'clean', 'ClamAV 1.5.4', '28137', now(), 'import', '00000000-0000-4000-8000-0000000000b1',
+   now() + interval '15 minutes', now());
+alter table platform.files enable trigger files_transition;
+commit;
+insert into storage.objects (bucket_id, name, owner, metadata) values
+  ('imports', 'a0000000-0000-4000-8000-000000000001/platform/user_import/a5000000-0000-4000-8000-000000000001/f0a00000-0000-4000-8000-000000000001',
+   '00000000-0000-4000-8000-0000000000a1', '{"size": 12, "mimetype": "text/csv"}'),
+  ('imports', 'b0000000-0000-4000-8000-000000000001/platform/user_import/b5000000-0000-4000-8000-000000000001/f0b00000-0000-4000-8000-000000000001',
+   '00000000-0000-4000-8000-0000000000b1', '{"size": 12, "mimetype": "text/csv"}');
+insert into platform.file_download_grants (tenant_id, file_id, user_id, expires_at) values
+  ('a0000000-0000-4000-8000-000000000001', 'f0a00000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-0000000000a1', now() + interval '5 minutes'),
+  ('b0000000-0000-4000-8000-000000000001', 'f0b00000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-0000000000b1', now() + interval '5 minutes');

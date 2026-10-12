@@ -8,7 +8,19 @@ import { DATABASE_URL_APP_QUEUE_ENV, assertQueueRole } from '@jadarat/platform-j
 import { isEmailAddress } from '@jadarat/platform-notifications';
 import { type EmailSettings, readEmailSettings } from '@jadarat/platform-notifications/jobs';
 
-export type WorkerMode = 'daemon' | 'once' | 'test-email';
+export type WorkerMode = 'daemon' | 'once' | 'test-email' | 'scanner-check';
+
+/** The malware scanner (clamd, ADR 0006 §8): CLAMD_HOST and CLAMD_PORT (default 3310). */
+export interface ScannerSettings {
+  readonly host: string;
+  readonly port: number;
+  /**
+   * FILE_SCAN_SIGNATURES_MAX_AGE_DAYS (default 7): older (or undated) signatures and nothing is scanned.
+   * Above 7 only with FILE_SCAN_SIGNATURES_TEST_OVERRIDE=1 — test installations whose signatures are
+   * pinned (the smoke test) — and never in a production environment (the worker warns at start-up).
+   */
+  readonly maxSignatureAgeDays: number;
+}
 
 export interface RunnerSettings {
   readonly mode: 'daemon' | 'once';
@@ -30,6 +42,30 @@ export interface RunnerSettings {
    * queued by the web app (PASSWORD_RESET_DELIVERY=worker) then wait and expire unanswered.
    */
   readonly authAdmin: { readonly url: string; readonly secretKey: string } | undefined;
+  /**
+   * The malware scanner for uploaded files (T-M2-18; CLAMD_HOST, CLAMD_PORT). The file tasks also need
+   * Storage (the same SUPABASE_URL + SUPABASE_SECRET_KEY): housekeeping runs with Storage alone, the scan
+   * with Storage AND the scanner. Without the scanner, uploaded files wait unscanned (never clean).
+   */
+  readonly scanner: ScannerSettings | undefined;
+  /**
+   * The file housekeeping's orphan sweep (T-M2-18): FILE_ORPHAN_SWEEP (on | off, default on — off while a
+   * restore is reconciled), FILE_ORPHAN_SWEEP_MAX (default 500 orphans) and FILE_ORPHAN_SWEEP_MAX_SHARE
+   * (default 10 % of all objects): above either brake nothing is removed and an error is logged.
+   */
+  readonly orphanSweep: OrphanSweepSettings;
+}
+
+export interface OrphanSweepSettings {
+  readonly enabled: boolean;
+  readonly maxOrphans: number;
+  readonly maxSharePercent: number;
+}
+
+/** Operators' check of the malware scanner: PING, VERSION and the signatures' age, no database. */
+export interface ScannerCheckSettings {
+  readonly mode: 'scanner-check';
+  readonly scanner: ScannerSettings;
 }
 
 /** Operators' check of the e-mail settings: one sample message to EMAIL_TEST_TO, no database. */
@@ -39,7 +75,7 @@ export interface TestEmailSettings {
   readonly testTo: string;
 }
 
-export type WorkerSettings = RunnerSettings | TestEmailSettings;
+export type WorkerSettings = RunnerSettings | TestEmailSettings | ScannerCheckSettings;
 
 /** A configuration problem; its message is ours (names variables, never values) and safe to log. */
 export class ConfigurationError extends Error {
@@ -126,6 +162,102 @@ function readAuthAdmin(env: NodeJS.ProcessEnv): RunnerSettings['authAdmin'] {
   return { url, secretKey };
 }
 
+export const CLAMD_HOST_ENV = 'CLAMD_HOST';
+export const CLAMD_PORT_ENV = 'CLAMD_PORT';
+export const SIGNATURES_MAX_AGE_ENV = 'FILE_SCAN_SIGNATURES_MAX_AGE_DAYS';
+export const SIGNATURES_TEST_OVERRIDE_ENV = 'FILE_SCAN_SIGNATURES_TEST_OVERRIDE';
+/** JADARAT_ENVIRONMENT values that look like production: no test override of the signature limit there. */
+const PRODUCTION_LIKE = /prod|prd|live/i;
+/** The hard limit on the signatures' age (ADR 0006 §8; platform-files SIGNATURE_HARD_MAX_AGE_DAYS). */
+export const DEFAULT_SIGNATURES_MAX_AGE_DAYS = 7;
+const HOST_NAME = /^[A-Za-z0-9]([A-Za-z0-9.-]{0,252})$/;
+
+/**
+ * CLAMD_HOST (a host name or IPv4 address on the internal network), CLAMD_PORT (default 3310) and
+ * FILE_SCAN_SIGNATURES_MAX_AGE_DAYS (default 7, at most 365).
+ */
+function readScanner(env: NodeJS.ProcessEnv): ScannerSettings | undefined {
+  const host = read(env, CLAMD_HOST_ENV);
+  const rawPort = read(env, CLAMD_PORT_ENV);
+  const rawMaxAge = read(env, SIGNATURES_MAX_AGE_ENV);
+  if (host === undefined) {
+    if (rawPort !== undefined) {
+      throw new ConfigurationError(`${CLAMD_PORT_ENV} is set without ${CLAMD_HOST_ENV}`);
+    }
+    if (rawMaxAge !== undefined) {
+      throw new ConfigurationError(`${SIGNATURES_MAX_AGE_ENV} is set without ${CLAMD_HOST_ENV}`);
+    }
+    return undefined;
+  }
+  const maxSignatureAgeDays = Number(rawMaxAge ?? String(DEFAULT_SIGNATURES_MAX_AGE_DAYS));
+  if (
+    !Number.isInteger(maxSignatureAgeDays) ||
+    maxSignatureAgeDays < 1 ||
+    maxSignatureAgeDays > 365
+  ) {
+    throw new ConfigurationError(
+      `${SIGNATURES_MAX_AGE_ENV} must be a whole number of days from 1 to 365`,
+    );
+  }
+  // Raising the hard limit lets stale signatures pass as fresh: test installations only (re-review L-D).
+  if (maxSignatureAgeDays > DEFAULT_SIGNATURES_MAX_AGE_DAYS) {
+    if (read(env, SIGNATURES_TEST_OVERRIDE_ENV) !== '1') {
+      throw new ConfigurationError(
+        `${SIGNATURES_MAX_AGE_ENV} above ${String(DEFAULT_SIGNATURES_MAX_AGE_DAYS)} needs ${SIGNATURES_TEST_OVERRIDE_ENV}=1 (test installations with pinned signatures only)`,
+      );
+    }
+    if (PRODUCTION_LIKE.test(read(env, 'JADARAT_ENVIRONMENT') ?? '')) {
+      throw new ConfigurationError(
+        `${SIGNATURES_MAX_AGE_ENV} above ${String(DEFAULT_SIGNATURES_MAX_AGE_DAYS)} is refused in a production environment (JADARAT_ENVIRONMENT)`,
+      );
+    }
+  }
+  if (!HOST_NAME.test(host)) {
+    throw new ConfigurationError(`${CLAMD_HOST_ENV} must be a host name or an IPv4 address`);
+  }
+  const port = Number(rawPort ?? '3310');
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new ConfigurationError(`${CLAMD_PORT_ENV} must be a port number`);
+  }
+  return { host, port, maxSignatureAgeDays };
+}
+
+export const ORPHAN_SWEEP_ENV = 'FILE_ORPHAN_SWEEP';
+export const ORPHAN_SWEEP_MAX_ENV = 'FILE_ORPHAN_SWEEP_MAX';
+export const ORPHAN_SWEEP_MAX_SHARE_ENV = 'FILE_ORPHAN_SWEEP_MAX_SHARE';
+
+/** A whole number from `min` to `max`, or the default when the variable is unset. */
+function readWhole(
+  env: NodeJS.ProcessEnv,
+  name: string,
+  fallback: number,
+  min: number,
+  max: number,
+  unit: string,
+): number {
+  const raw = read(env, name);
+  const value = Number(raw ?? String(fallback));
+  if (!Number.isInteger(value) || value < min || value > max) {
+    throw new ConfigurationError(
+      `${name} must be a whole number ${unit} from ${String(min)} to ${String(max)}`,
+    );
+  }
+  return value;
+}
+
+/** The orphan sweep's switch and brake (see RunnerSettings.orphanSweep). */
+function readOrphanSweep(env: NodeJS.ProcessEnv): OrphanSweepSettings {
+  const switchValue = (read(env, ORPHAN_SWEEP_ENV) ?? 'on').toLowerCase();
+  if (switchValue !== 'on' && switchValue !== 'off') {
+    throw new ConfigurationError(`${ORPHAN_SWEEP_ENV} must be on or off`);
+  }
+  return {
+    enabled: switchValue === 'on',
+    maxOrphans: readWhole(env, ORPHAN_SWEEP_MAX_ENV, 500, 1, 1_000_000, 'of objects'),
+    maxSharePercent: readWhole(env, ORPHAN_SWEEP_MAX_SHARE_ENV, 10, 1, 100, '(percent)'),
+  };
+}
+
 /** The worker warns (at start-up, then daily) once the Auth admin token has fewer days than this left. */
 export const ADMIN_KEY_WARN_DAYS = 30;
 
@@ -164,8 +296,16 @@ export function readSettings(
   readCaPem: () => string | undefined = readDatabaseCaPem,
 ): WorkerSettings {
   const mode = argv[0] ?? 'daemon';
-  if (mode !== 'daemon' && mode !== 'once' && mode !== 'test-email') {
-    throw new ConfigurationError(`unknown mode "${mode}" (expected daemon, once or test-email)`);
+  if (mode !== 'daemon' && mode !== 'once' && mode !== 'test-email' && mode !== 'scanner-check') {
+    throw new ConfigurationError(
+      `unknown mode "${mode}" (expected daemon, once, test-email or scanner-check)`,
+    );
+  }
+  const scanner = readScanner(env);
+  if (mode === 'scanner-check') {
+    if (!scanner)
+      throw new ConfigurationError(`${CLAMD_HOST_ENV} must be set to check the scanner`);
+    return { mode, scanner };
   }
   const email = check(() => readEmailSettings(env));
   if (mode === 'test-email') {
@@ -198,5 +338,17 @@ export function readSettings(
   }
   const appBaseUrl = readAppBaseUrl(env, email.provider !== 'none');
   const authAdmin = readAuthAdmin(env);
-  return { mode, queueUrl, workerUrl, caPem, concurrency, email, appBaseUrl, authAdmin };
+  const orphanSweep = readOrphanSweep(env);
+  return {
+    mode,
+    queueUrl,
+    workerUrl,
+    caPem,
+    concurrency,
+    email,
+    appBaseUrl,
+    authAdmin,
+    scanner,
+    orphanSweep,
+  };
 }

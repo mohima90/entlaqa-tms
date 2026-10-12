@@ -231,3 +231,135 @@ describe('adminKeyDaysLeft (T-M2-17, security review)', () => {
     }
   });
 });
+
+describe('readSettings: malware scanner (T-M2-18)', () => {
+  it('reads CLAMD_HOST and CLAMD_PORT (default 3310); absent means no scanning', () => {
+    expect(runner([], env).scanner).toBeUndefined();
+    expect(runner([], { ...env, CLAMD_HOST: 'clamd' }).scanner).toEqual({
+      host: 'clamd',
+      port: 3310,
+      maxSignatureAgeDays: 7,
+    });
+    expect(runner([], { ...env, CLAMD_HOST: '10.0.0.5', CLAMD_PORT: '3311' }).scanner).toEqual({
+      host: '10.0.0.5',
+      port: 3311,
+      maxSignatureAgeDays: 7,
+    });
+  });
+
+  it("reads the hard limit on the signatures' age (default 7 days, at most 365)", () => {
+    expect(
+      runner([], { ...env, CLAMD_HOST: 'clamd', FILE_SCAN_SIGNATURES_MAX_AGE_DAYS: '3' }).scanner
+        ?.maxSignatureAgeDays,
+    ).toBe(3);
+    expect(
+      runner([], {
+        ...env,
+        CLAMD_HOST: 'clamd',
+        FILE_SCAN_SIGNATURES_MAX_AGE_DAYS: '365',
+        FILE_SCAN_SIGNATURES_TEST_OVERRIDE: '1',
+        JADARAT_ENVIRONMENT: 'self-hosted',
+      }).scanner?.maxSignatureAgeDays,
+    ).toBe(365);
+    for (const value of ['0', '366', '7.5', 'x']) {
+      fails(
+        [],
+        { ...env, CLAMD_HOST: 'clamd', FILE_SCAN_SIGNATURES_MAX_AGE_DAYS: value },
+        /FILE_SCAN_SIGNATURES_MAX_AGE_DAYS must be a whole number of days from 1 to 365/,
+      );
+    }
+    fails(
+      [],
+      { ...env, FILE_SCAN_SIGNATURES_MAX_AGE_DAYS: '30' },
+      /FILE_SCAN_SIGNATURES_MAX_AGE_DAYS is set without CLAMD_HOST/,
+    );
+  });
+
+  it('raises it above 7 days only with the test override, never in production (re-review L-D)', () => {
+    const raised = { ...env, CLAMD_HOST: 'clamd', FILE_SCAN_SIGNATURES_MAX_AGE_DAYS: '30' };
+    fails([], raised, /above 7 needs FILE_SCAN_SIGNATURES_TEST_OVERRIDE=1/);
+    fails(
+      [],
+      { ...raised, FILE_SCAN_SIGNATURES_TEST_OVERRIDE: 'yes' },
+      /needs FILE_SCAN_SIGNATURES_TEST_OVERRIDE=1/,
+    );
+    for (const environment of ['production', 'Prod-KSA', 'prd', 'live']) {
+      fails(
+        [],
+        { ...raised, FILE_SCAN_SIGNATURES_TEST_OVERRIDE: '1', JADARAT_ENVIRONMENT: environment },
+        /refused in a production environment/,
+      );
+    }
+    // The scanner check reads the same settings.
+    fails(
+      ['scanner-check'],
+      { CLAMD_HOST: 'clamd', FILE_SCAN_SIGNATURES_MAX_AGE_DAYS: '30' },
+      /needs FILE_SCAN_SIGNATURES_TEST_OVERRIDE=1/,
+    );
+    // Up to the 7-day default nothing else is needed, in any environment.
+    expect(
+      runner([], {
+        ...env,
+        CLAMD_HOST: 'clamd',
+        FILE_SCAN_SIGNATURES_MAX_AGE_DAYS: '7',
+        JADARAT_ENVIRONMENT: 'production',
+      }).scanner?.maxSignatureAgeDays,
+    ).toBe(7);
+  });
+
+  it('refuses a port without host, a bad host or port', () => {
+    fails([], { ...env, CLAMD_PORT: '3310' }, /CLAMD_PORT is set without CLAMD_HOST/);
+    fails([], { ...env, CLAMD_HOST: 'clamd;rm' }, /CLAMD_HOST must be/);
+    fails([], { ...env, CLAMD_HOST: 'clamd', CLAMD_PORT: '70000' }, /CLAMD_PORT must be/);
+    fails([], { ...env, CLAMD_HOST: 'clamd', CLAMD_PORT: 'x' }, /CLAMD_PORT must be/);
+  });
+
+  it('scanner-check needs only the scanner (no database, no e-mail)', () => {
+    expect(readSettings(['scanner-check'], { CLAMD_HOST: 'clamd' }, noCa)).toEqual({
+      mode: 'scanner-check',
+      scanner: { host: 'clamd', port: 3310, maxSignatureAgeDays: 7 },
+    });
+    fails(['scanner-check'], {}, /CLAMD_HOST must be set/);
+    fails(['scan'], env, /expected daemon, once, test-email or scanner-check/);
+  });
+});
+
+describe('readSettings: the orphan sweep (T-M2-18, re-review L-C)', () => {
+  it('is on with a brake of 500 orphans or 10 % of all objects by default', () => {
+    expect(runner([], env).orphanSweep).toEqual({
+      enabled: true,
+      maxOrphans: 500,
+      maxSharePercent: 10,
+    });
+  });
+
+  it('can be paused, and its brake set', () => {
+    expect(
+      runner([], {
+        ...env,
+        FILE_ORPHAN_SWEEP: 'OFF',
+        FILE_ORPHAN_SWEEP_MAX: '2000',
+        FILE_ORPHAN_SWEEP_MAX_SHARE: '2',
+      }).orphanSweep,
+    ).toEqual({ enabled: false, maxOrphans: 2000, maxSharePercent: 2 });
+  });
+
+  it('refuses anything else', () => {
+    fails([], { ...env, FILE_ORPHAN_SWEEP: 'paused' }, /FILE_ORPHAN_SWEEP must be on or off/);
+    fails(
+      [],
+      { ...env, FILE_ORPHAN_SWEEP_MAX: '0' },
+      /FILE_ORPHAN_SWEEP_MAX must be a whole number/,
+    );
+    fails(
+      [],
+      { ...env, FILE_ORPHAN_SWEEP_MAX_SHARE: '101' },
+      /FILE_ORPHAN_SWEEP_MAX_SHARE must be/,
+    );
+    fails(
+      [],
+      { ...env, FILE_ORPHAN_SWEEP_MAX_SHARE: '2.5' },
+      /FILE_ORPHAN_SWEEP_MAX_SHARE must be/,
+    );
+  });
+});

@@ -17,6 +17,7 @@
   "dependencies": {
     "@jadarat/platform-core": "workspace:*",
     "@jadarat/platform-db": "workspace:*",
+    "@jadarat/platform-files": "workspace:*",
     "@jadarat/platform-i18n": "workspace:*",
     "@jadarat/platform-identity": "workspace:*",
     "@jadarat/platform-observability": "workspace:*",

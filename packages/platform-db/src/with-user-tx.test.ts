@@ -1,7 +1,9 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { brandVerifiedClaims } from '@jadarat/platform-core/internal/verified-claims';
 import { type SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { describe, expect, it } from 'vitest';
+import { assertNoDatabaseTransaction, inDatabaseTransaction, runWithClaims } from './claims-tx';
 import type { AppDatabase } from './client';
 import {
   createWithUserTx,
@@ -262,6 +264,73 @@ describe('withUserTx (ADR 0002 §5)', () => {
       expect(attempts).toBe(2);
       expect(transactionCount()).toBe(2);
     });
+  });
+
+  it('marks its async context as inside a transaction, and only there (integration review M1)', async () => {
+    const { db } = fakeDatabase();
+    const withUserTx = createWithUserTx(() => db);
+    expect(inDatabaseTransaction()).toBe(false);
+    const seen: boolean[] = [];
+    const sibling = (async () => {
+      // A concurrent request that holds no transaction: not marked.
+      await Promise.resolve();
+      seen.push(inDatabaseTransaction());
+    })();
+    await withUserTx(claims(), async () => {
+      await Promise.resolve();
+      seen.push(inDatabaseTransaction());
+      expect(() => {
+        assertNoDatabaseTransaction('Signing a Storage URL');
+      }).toThrow(/Signing a Storage URL must run after the transaction commits/);
+    });
+    await sibling;
+    // After the commit (where defineAction's afterCommit runs): outside again.
+    expect(inDatabaseTransaction()).toBe(false);
+    expect(() => {
+      assertNoDatabaseTransaction('Signing a Storage URL');
+    }).not.toThrow();
+    expect(seen.sort()).toEqual([false, true]);
+  });
+
+  it('refuses a transaction inside another — before taking a connection — and allows them one after another (integration review info 2)', async () => {
+    const { db, transactionCount } = fakeDatabase();
+    const withUserTx = createWithUserTx(() => db);
+    await expect(
+      withUserTx(claims(), () => withUserTx(claims(), () => Promise.resolve('inner'))),
+    ).rejects.toThrow(/A database transaction must run after the transaction commits/);
+    // The inner one never opened (no second connection taken).
+    expect(transactionCount()).toBe(1);
+    // Any helper built on runWithClaims (withSystemTx, withPlatformTx, the claim-less ones) alike.
+    await expect(
+      withUserTx(claims(), () => runWithClaims(db, '', () => Promise.resolve('inner'))),
+    ).rejects.toThrow(/A database transaction must run after the transaction commits/);
+    expect(transactionCount()).toBe(2);
+    // Sequential transactions, and concurrent ones of different requests, are fine.
+    expect(await withUserTx(claims(), () => Promise.resolve('first'))).toBe('first');
+    expect(await withUserTx(claims(), () => Promise.resolve('second'))).toBe('second');
+    expect(
+      await Promise.all([
+        withUserTx(claims(), () => Promise.resolve(1)),
+        withUserTx(claims(), () => Promise.resolve(2)),
+      ]),
+    ).toEqual([1, 2]);
+  });
+
+  it('a callback bound inside a transaction and run after it (Next.js after()) is outside it', async () => {
+    const { db, transactionCount } = fakeDatabase();
+    const withUserTx = createWithUserTx(() => db);
+    let later: (() => Promise<boolean>) | undefined;
+    await withUserTx(claims(), () => {
+      // What Next.js after() does with its callback: bind every AsyncLocalStorage of the call site.
+      later = AsyncLocalStorage.bind(async () => {
+        const inside = inDatabaseTransaction();
+        await withUserTx(claims(), () => Promise.resolve('after the commit'));
+        return inside;
+      });
+      return Promise.resolve();
+    });
+    expect(await later?.()).toBe(false);
+    expect(transactionCount()).toBe(2);
   });
 
   it('refuses claim sets that do not match the verified-claims schema', async () => {

@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { DOWNLOAD_EXTENSIONS } from '../packages/platform-files/src/purposes.ts';
 
 /**
  * Supabase Auth's e-mail templates (FR-IAM-13, T-M2-08; docs/engineering/password-reset.md). Since T-M2-17
@@ -90,7 +91,8 @@ describe('Auth e-mail templates (T-M2-08)', () => {
     for (const path of ['admin', 'invite']) {
       expect(gateway).toContain(`location ^~ /auth/v1/${path} { return 404; }`);
     }
-    // Port 8444: generate_link for the workers' subnet, user creation for admin-cli's — nothing else.
+    // Port 8444: generate_link for the workers' subnet, user creation for admin-cli's, and Storage's
+    // object calls for the workers' subnet (file tasks, T-M2-18) — nothing else.
     const admin = gateway.slice(
       gateway.indexOf('listen 8444 ssl;'),
       gateway.indexOf('listen 8100 ssl;'),
@@ -98,6 +100,7 @@ describe('Auth e-mail templates (T-M2-08)', () => {
     expect([...admin.matchAll(/proxy_pass (\S+);/g)].map((m) => m[1])).toEqual([
       'http://auth:9999/admin/generate_link',
       'http://auth:9999/admin/users',
+      'http://storage:5000/object/',
     ]);
     expect(admin).toMatch(
       /location = \/auth\/v1\/admin\/generate_link \{\n\s+deny 10\.231\.0\.1;\n\s+allow 10\.231\.0\.0\/28;\n\s+deny all;\n\s+limit_except POST \{ deny all; \}/,
@@ -105,10 +108,13 @@ describe('Auth e-mail templates (T-M2-08)', () => {
     expect(admin).toMatch(
       /location = \/auth\/v1\/admin\/users \{\n\s+deny 10\.231\.0\.17;\n\s+allow 10\.231\.0\.16\/28;\n\s+deny all;\n\s+limit_except POST \{ deny all; \}/,
     );
+    expect(admin).toMatch(
+      /location \^~ \/storage\/v1\/object\/ \{\n\s+deny 10\.231\.0\.1;\n\s+allow 10\.231\.0\.0\/28;\n\s+deny all;\n\s+limit_except GET POST DELETE \{ deny all; \}/,
+    );
     expect(admin).toContain('location / { return 404; }');
-    // No method-override header reaches Auth from either admin location.
+    // No method-override header reaches Auth or Storage from any admin location.
     for (const header of ['X-HTTP-Method-Override', 'X-HTTP-Method', 'X-Method-Override']) {
-      expect(admin.split(`proxy_set_header ${header} "";`)).toHaveLength(3);
+      expect(admin.split(`proxy_set_header ${header} "";`)).toHaveLength(4);
     }
     // The same subnets in compose; the admin port is never published; who sits on which network.
     expect(compose).toContain('- { subnet: 10.231.0.0/28, gateway: 10.231.0.1 }');
@@ -121,9 +127,142 @@ describe('Auth e-mail templates (T-M2-08)', () => {
         (m) => m[1],
       ),
     ).toEqual([
-      'auth-internal, auth-admin, auth-tools, edge, errors', // gateway
-      'db-app, mail, auth-admin', // workers
+      'auth-internal, auth-admin, auth-tools, edge, errors-ui, storage-internal', // gateway
+      'db-app, mail, auth-admin, scan', // workers
       'auth-tools', // admin-cli
     ]);
+  });
+
+  it('the self-hosted stack: Storage only through its signed-URL paths on the published port (T-M2-18)', () => {
+    const gateway = read('infra/docker/gateway/nginx.conf');
+    const compose = read('infra/docker/compose.yaml');
+    const published = gateway.slice(
+      gateway.indexOf('listen 8443 ssl;'),
+      gateway.indexOf('listen 8445 ssl;'),
+    );
+    // Exactly two Storage routes, for USING signed URLs only (security review M2): the browser's upload
+    // (PUT, and its CORS preflight) and download (GET). Creating them (POST) is not served here.
+    expect([...published.matchAll(/proxy_pass (http:\/\/storage\S+);/g)].map((m) => m[1])).toEqual([
+      'http://storage:5000/object/upload/sign/',
+      'http://storage:5000/object/sign/',
+    ]);
+    expect(published).toMatch(
+      /location \^~ \/storage\/v1\/object\/upload\/sign\/ \{\n\s+error_log \S+ crit;\n\s+limit_except PUT OPTIONS \{ deny all; \}/,
+    );
+    expect(published).toMatch(
+      /location \^~ \/storage\/v1\/object\/sign\/ \{\n\s+error_log \S+ crit;\n\s+limit_except GET \{ deny all; \}/,
+    );
+    expect(published).not.toMatch(/limit_except[^{]*POST/);
+    // Downloads only as the app makes the link: token, then a name with one of our types' extensions —
+    // matched case-sensitively (Storage ignores `DOWNLOAD=`), only the extension's case is free.
+    const rule = /if \(\$args (!~\*?) "(.*)"\) \{ return 403; \}/.exec(published);
+    expect(rule?.[1]).toBe('!~');
+    const shape = new RegExp((rule?.[2] ?? '').replace('(?i:', '(?:'));
+    const ok = 'token=a.b-c_d&download=%D9%85%20x.csv';
+    expect(shape.test(ok)).toBe(true);
+    for (const refused of [
+      'token=a.b&DOWNLOAD=x.csv',
+      'Token=a.b&download=x.csv',
+      'token=a.b&download=x.hta',
+      'token=a.b&download=x.csv&download=y.js',
+      'token=a.b',
+      'download=x.csv&token=a.b',
+    ]) {
+      expect(shape.test(refused), refused).toBe(false);
+    }
+    // Its extensions are exactly platform-files' DOWNLOAD_EXTENSIONS.
+    const alternatives = /\(\?i:([^)]*)\)\$$/.exec(rule?.[2] ?? '')?.[1] ?? '';
+    const gatewayExtensions = alternatives
+      .split('|')
+      .flatMap((alt) => (alt === 'jpe?g' ? ['jpg', 'jpeg'] : [alt]))
+      .map((ext) => `.${ext}`)
+      .sort();
+    expect(gatewayExtensions).toEqual([...DOWNLOAD_EXTENSIONS]);
+    // Creating signed URLs: port 8445, the app's network alone, the two sign POSTs and nothing else.
+    const signing = gateway.slice(
+      gateway.indexOf('listen 8445 ssl;'),
+      gateway.indexOf('listen 8444 ssl;'),
+    );
+    expect([...signing.matchAll(/proxy_pass (\S+);/g)].map((m) => m[1])).toEqual([
+      'http://storage:5000/object/upload/sign/',
+      'http://storage:5000/object/sign/',
+    ]);
+    expect(signing).toMatch(
+      /\n\s+deny 10\.231\.0\.33;\n\s+allow 10\.231\.0\.32\/28;\n\s+deny all;\n/,
+    );
+    expect(signing.split('limit_except POST { deny all; }')).toHaveLength(3);
+    expect(signing).toContain('location / { return 404; }');
+    expect(signing).toContain('proxy_set_header X-Upsert "";');
+    expect(signing).toContain('error_log /var/log/nginx/error.log crit;');
+    // No visitor or client-address header reaches Storage from the app (integration review L2).
+    for (const header of [
+      'X-Jadarat-Client',
+      'X-Jadarat-Rate-Limit-Key',
+      'X-Real-IP',
+      'X-Forwarded-For',
+      'Forwarded',
+    ]) {
+      expect(signing.split(`proxy_set_header ${header} "";`)).toHaveLength(3);
+    }
+    // The app and the gateway share `edge` (fixed subnet) and nothing else, so 8445's source rule holds.
+    expect(compose).toContain('- { subnet: 10.231.0.32/28, gateway: 10.231.0.33 }');
+    expect(compose).toContain('STORAGE_INTERNAL_URL: https://gateway:8445');
+    // The app (with T-M2-11's `front`, its visitors' way in — the front proxy is not on `edge`).
+    expect(compose).toMatch(/^ {4}networks: \[db-app, edge, errors, front\]$/m);
+    expect(compose).toMatch(/^ {4}networks: \[front\]$/m); // the front proxy
+    expect(compose).not.toContain('extra_hosts');
+    expect([...compose.matchAll(/^ {4}networks: \[(.*\bedge\b.*)\]$/gm)].map((m) => m[1])).toEqual([
+      'auth-internal, auth-admin, auth-tools, edge, errors-ui, storage-internal', // gateway
+      'db-app, edge, errors, front', // app
+    ]);
+    expect(compose).not.toMatch(/^\s+- ['"]?[\d.:]*8445(:\d+)?['"]?\s*(#.*)?$/m);
+    // clamd's scratch space (memory) is bounded.
+    expect(compose).toContain("tmpfs: ['/tmp:size=2048m']");
+    // Everything else of Storage is refused; uploads never replace an object; downloads never render.
+    expect(published).toContain('location ^~ /storage/ { return 404; }');
+    expect(published).toContain('proxy_set_header X-Upsert "";');
+    // No visitor or client-address header reaches Storage from the browser either: both Storage locations
+    // clear each one, and nothing forwards the caller's address (integration review).
+    const storageRoutes = published.slice(
+      published.indexOf('location ^~ /storage/v1/object/upload/sign/'),
+      published.indexOf('location ^~ /storage/ {'),
+    );
+    for (const header of [
+      'X-Jadarat-Client',
+      'X-Jadarat-Rate-Limit-Key',
+      'X-Real-IP',
+      'X-Forwarded-For',
+      'Forwarded',
+    ]) {
+      expect(storageRoutes.split(`proxy_set_header ${header} "";`)).toHaveLength(3);
+    }
+    expect(storageRoutes).not.toContain('$proxy_add_x_forwarded_for');
+    expect(published).toContain(
+      `add_header Content-Security-Policy "default-src 'none'; sandbox" always;`,
+    );
+    // CORS only on uploads, for any origin and never with credentials (a signed URL needs no cookie);
+    // downloads carry no CORS header, so no other site's script reads a file (security re-review).
+    expect(gateway).not.toMatch(/Access-Control-Allow-Credentials/i);
+    expect(
+      [...gateway.matchAll(/add_header Access-Control-Allow-Origin (\S+) always;/g)].map(
+        (m) => m[1],
+      ),
+    ).toEqual(['"*"', '"*"']);
+    const download = published.slice(
+      published.indexOf('location ^~ /storage/v1/object/sign/'),
+      published.indexOf('location ^~ /storage/ {'),
+    );
+    expect(download).toContain('proxy_pass http://storage:5000/object/sign/;');
+    expect(download).not.toMatch(/Access-Control/i);
+    // nosniff on uploads, their CORS preflight and downloads.
+    expect(published.split('add_header X-Content-Type-Options nosniff always;')).toHaveLength(4);
+    // Storage and clamd sit on internal networks only; Storage logs no request lines (names in URLs).
+    expect(compose).toContain('storage-internal: { internal: true }');
+    expect(compose).toContain('db-storage: { internal: true }');
+    expect(compose).toContain('scan: { internal: true }');
+    expect(compose).toMatch(/^ {4}networks: \[db-storage, storage-internal\]$/m);
+    expect(compose).toMatch(/^ {4}networks: \[scan\]$/m);
+    expect(compose).toContain('LOG_LEVEL: error');
+    expect(compose).toContain('sslmode=verify-full&sslrootcert=/certs/ca.crt');
   });
 });

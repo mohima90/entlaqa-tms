@@ -965,5 +965,17 @@
     "ended": "The selected sign-in sessions have ended.",
     "empty": "There are no active sign-in sessions.",
     "allowed": "({count} of {max} allowed)"
+  },
+  "files": {
+    "errors": {
+      "typeNotAllowed": "This file type isn't accepted here. Choose a file with one of the allowed extensions.",
+      "tooLarge": "The file is larger than the allowed size.",
+      "tooManyUploads": "Too many uploads are still unfinished. Finish them or wait a while, then try again.",
+      "notReady": "This file can't be used yet: it is still being checked, or it didn't pass the check.",
+      "notUploaded": "The file hasn't finished uploading. Upload it again.",
+      "uploadExpired": "This upload has expired. Start the upload again.",
+      "busy": "This file is being checked right now, or it can't be deleted. Try again shortly.",
+      "storageUnavailable": "File storage isn't available right now. Try again in a moment."
+    }
   }
 }

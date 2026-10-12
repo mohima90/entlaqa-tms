@@ -170,3 +170,13 @@ export function createServiceRoleSupabaseClient(
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
   });
 }
+
+export {
+  STORAGE_ADMIN_TIMEOUT_MS,
+  STORAGE_READ_TIMEOUT_MS,
+  type StorageAdmin,
+  StorageAdminError,
+  type StorageAdminSettings,
+  type StoredObject,
+  createStorageAdmin,
+} from './storage';

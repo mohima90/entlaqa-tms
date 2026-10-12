@@ -71,4 +71,13 @@ export const defaultActionRuntime: ActionRuntime<UserTx> = {
       errorCode: sqlState,
     });
   },
+  logAfterCommitRefusal({ permission, code }) {
+    // An expected refusal after the commit (e.g. Storage unavailable while signing a file URL): a warning
+    // with the permission and the code — not an error-tracker event (integration review L-b).
+    log.warn('action refused after its commit', {
+      permission,
+      reason: 'after_commit_refused',
+      errorCode: code,
+    });
+  },
 };

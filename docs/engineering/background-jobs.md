@@ -73,6 +73,8 @@ The guide in chat gives one step at a time; this is the full list for reference.
 4. **Variable of `staging-jobs`**: `DATABASE_CA_CERT` = the same PEM text as the variable of the same name in `staging`.
 5. **Check:** Actions → Jobs (staging) → Run workflow (branch `main`). The run must be green and its log must show `worker starting (once)` and `worker stopped`. Later runs turn red when events wait for more than 10 minutes; GitHub notifies about failed scheduled runs (by default the person who last changed the workflow's schedule).
 
+6. **Optional — files (T-M2-18):** with `SUPABASE_URL` and `SUPABASE_SECRET_KEY` set (step of [password-reset.md](password-reset.md)) the worker also runs file housekeeping; the variable `FILE_SCANNING` = `on` adds the malware scan ([files.md](files.md) §7).
+
 Until steps 3–4 are done, every scheduled run ends after a notice ("not configured yet") — harmless. Good to know:
 - Scheduled runs start late when GitHub is busy, so on staging an event can take several minutes to be handled; run the workflow by hand for an immediate pass.
 - The repository is public, so **anyone can read these run logs**: they hold task names, job ids and cleaned errors — never payloads, personal data or passwords. A connection failure may show the database host name and the user name `app_queue.<project-ref>` (nothing secret).

@@ -61,6 +61,15 @@ cleanup() {
                    where g.rolname = 'rate_limit_guard' and u.rolname = '$MIGRATOR' and gr.rolname = '$MIGRATOR') then
           execute 'revoke rate_limit_guard from $MIGRATOR granted by $MIGRATOR';
         end if;
+        if exists (select 1 from pg_auth_members m join pg_roles g on g.oid = m.roleid
+                     join pg_roles u on u.oid = m.member join pg_roles gr on gr.oid = m.grantor
+                   where g.rolname = 'file_guard' and u.rolname = '$MIGRATOR' and gr.rolname = '$MIGRATOR') then
+          execute 'revoke file_guard from $MIGRATOR granted by $MIGRATOR';
+        end if;
+        -- The supautils.policy_grants simulation below (T-M2-18).
+        if pg_has_role('$MIGRATOR', 'supabase_storage_admin', 'MEMBER') then
+          execute 'revoke supabase_storage_admin from $MIGRATOR';
+        end if;
       end if;
     end \$\$;" >/dev/null 2>&1 || echo "db-test-hosted-sim: WARNING: cleanup of cluster-wide roles failed" >&2
   if [[ "${DB_TEST_KEEP:-0}" == "1" ]]; then echo "db-test-hosted-sim: kept database $DB"; else
@@ -113,13 +122,22 @@ grant delete on auth.sessions to $MIGRATOR;
 -- triggers on auth tables allowed, like its handle_new_user pattern). Only that privilege is simulated
 -- here; the migration checks it and fails loudly without it (confirmed by the staging plan run).
 grant trigger on auth.users to $MIGRATOR;
+-- Storage (T-M2-18), as on supabase/postgres 17.11.0.003 + storage-api v1.74.0 (checked 9 Oct 2026):
+-- storage.buckets/objects belong to supabase_storage_admin; storage migration 0049 grants the migration role
+-- ALL WITH GRANT OPTION (bucket rows; SELECT for the view private.storage_object_facts), and supautils'
+-- policy_grants lets it create policies on storage.objects although it does not own the table. Plain
+-- PostgreSQL has no policy grant: membership of the owner role stands in for it (it allows more than
+-- supautils does, e.g. ALTER TABLE — the migrations only insert buckets and create policies there).
+grant usage on schema storage to $MIGRATOR;
+grant all on storage.buckets, storage.objects to $MIGRATOR with grant option;
+grant supabase_storage_admin to $MIGRATOR;
 -- Login roles left by an earlier run on this cluster: on Supabase they would have been created by the
 -- migration role itself, which then holds ADMIN OPTION on them.
 do \$\$
 declare r text;
 begin
   foreach r in array array['app_server', 'app_worker', 'app_queue', 'tenant_guard', 'invitation_guard',
-                          'account_mail_guard', 'membership_guard', 'rate_limit_guard'] loop
+                          'account_mail_guard', 'membership_guard', 'rate_limit_guard', 'file_guard'] loop
     if exists (select 1 from pg_roles where rolname = r) then
       execute format('grant %I to $MIGRATOR with admin option, inherit false, set false', r);
     end if;
@@ -208,6 +226,20 @@ echo "db-test-hosted-sim: provisioning OK"
                 private.before_user_created_hook('{}'::jsonb)::text" | tail -n 1)" == 'false|{"error": {"message": "Sign-up is by invitation only.", "http_code": 403}}' ]] ||
   { echo "db-test-hosted-sim: supabase_auth_admin cannot run the sign-up hook as deployed" >&2; exit 1; }
 echo "db-test-hosted-sim: sign-up hook OK"
+
+# Storage policies (T-M2-18), created by the non-superuser migration role: under Storage's own login role
+# and the authenticated role, without valid user claims, the policy functions answer (no privilege error)
+# and an object cannot be created.
+[[ "$(q "set session authorization supabase_storage_admin; set role authenticated;
+         select coalesce(private.storage_request_tenant()::text, 'none') || '|' ||
+                private.can_upload_object('imports', 'x/y')::text || '|' || private.can_read_object('imports', 'x/y')::text" |
+      tail -n 1)" == 'none|false|false' ]] ||
+  { echo "db-test-hosted-sim: the storage policy functions do not answer under Storage's role" >&2; exit 1; }
+storage_err="$(q "set session authorization supabase_storage_admin; set role authenticated;
+                  insert into storage.objects (bucket_id, name) values ('imports', 'x/y')" 2>&1 || true)"
+[[ "$storage_err" == *"violates row-level security policy"* ]] ||
+  { echo "db-test-hosted-sim: an object without a pending upload was not refused by the storage policies" >&2; exit 1; }
+echo "db-test-hosted-sim: storage policies OK"
 
 # E-mail change guard (re-review N1): created on auth.users by the non-superuser migration role, enabled,
 # and it refuses an e-mail change (whoever updates: here even a superuser) unless the operator flag is set.

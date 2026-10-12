@@ -18,7 +18,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "next-intl": "4.14.8"
+    "next-intl": "4.14.9"
   },
   "peerDependencies": {
     "next": "^16.0.0",
@@ -26,10 +26,10 @@
   },
   "devDependencies": {
     "@jadarat/config": "workspace:*",
-    "@types/node": "24.19.0",
+    "@types/node": "24.19.1",
     "@types/react": "19.3.0",
     "@vitest/coverage-v8": "5.0.3",
-    "next": "16.3.8",
+    "next": "16.4.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "typescript": "6.0.3",

@@ -73,12 +73,25 @@ describe('system roles (FR-IAM-07, BRD Appendix B)', () => {
     }
   });
 
-  it('gives the Organization Admin every platform permission tenant-wide', () => {
+  it('gives the Organization Admin every platform permission tenant-wide, except the organization structure', () => {
     const admin = getSystemRole('tenant_admin');
     expect(admin.grants.map((g) => g.permission.code).sort()).toEqual(
-      Object.keys(platformPermissions).sort(),
+      Object.keys(platformPermissions)
+        .filter((code) => code !== 'platform.org.manage')
+        .sort(),
     );
     expect(admin.grants.every((g) => g.scope === 'tenant')).toBe(true);
+  });
+
+  it('lets only the HR Manager maintain the organization structure (PO, 11 Oct 2026; T-M2-19)', () => {
+    // BRD v2.7 FR-ADM-04/05: the HR Manager maintains branches and departments, not the Organization Admin.
+    const managing = SYSTEM_ROLES.filter((r) =>
+      r.grants.some((g) => g.permission.code === 'platform.org.manage'),
+    );
+    expect(managing.map((r) => r.code)).toEqual(['hr_manager']);
+    expect(
+      managing[0]?.grants.find((g) => g.permission.code === 'platform.org.manage')?.scope,
+    ).toBe('tenant');
   });
 
   it('keeps the Organization Admin a setup role: setup permissions only, never module permissions', () => {
@@ -99,7 +112,6 @@ describe('system roles (FR-IAM-07, BRD Appendix B)', () => {
       'platform.role.assign',
       'platform.role.assign_privileged',
       'platform.org.read',
-      'platform.org.manage',
       'platform.tenant.read',
       'platform.tenant.manage',
       'platform.security.manage',

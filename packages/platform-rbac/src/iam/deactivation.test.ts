@@ -126,10 +126,12 @@ beforeEach(() => {
 });
 
 describe('responsibility kinds (the reassignment hook)', () => {
-  it('platform kinds: direct reports (user.update) and headed departments (org.manage)', () => {
+  it('platform kinds: direct reports (user.update) and headed departments (user.deactivate)', () => {
+    // Handing over a leaver's departments is part of the deactivation (PO 12 Oct 2026, T-M2-19), not the
+    // organization-structure permission (org.manage, the HR Manager's).
     expect(PLATFORM_RESPONSIBILITIES.map((k) => [k.code, k.permission.code])).toEqual([
       ['platform.direct_reports', 'platform.user.update'],
-      ['platform.headed_departments', 'platform.org.manage'],
+      ['platform.headed_departments', 'platform.user.deactivate'],
     ]);
   });
 
@@ -171,6 +173,7 @@ describe('deactivation screen query', () => {
         privileged: false,
         responsibilities: [
           { code: 'platform.direct_reports', items: [report], blocked: null },
+          // Without org.manage (the HR Manager's): handing over is part of the deactivation (T-M2-19).
           { code: 'platform.headed_departments', items: [department], blocked: null },
         ],
         candidates: [{ personId: NEW_MANAGER, nameAr: 'خالد', nameEn: null }],
@@ -179,13 +182,13 @@ describe('deactivation screen query', () => {
     expect(db.listReplacementCandidates).toHaveBeenCalledWith(TX, SARA);
   });
 
-  it('HR Manager: departments need org.manage, a privileged report needs the Organization Admin', async () => {
+  it('HR Manager: moves departments; a privileged report needs the Organization Admin', async () => {
     db.listDirectReports.mockResolvedValue([report, { ...report, id: 'r2', movable: false }]);
     db.listHeadedDepartments.mockResolvedValue([department]);
     const result = await query(['hr_manager'])({ personId: SARA });
     expect(result.ok && result.value.responsibilities.map((r) => [r.code, r.blocked])).toEqual([
       ['platform.direct_reports', 'item_not_allowed'],
-      ['platform.headed_departments', 'permission'],
+      ['platform.headed_departments', null],
     ]);
   });
 
@@ -280,7 +283,8 @@ describe('deactivate action', () => {
     db.listDirectReports.mockResolvedValue([report]);
     db.listHeadedDepartments.mockResolvedValue([department]);
     db.revokePendingInvitationsOf.mockResolvedValue(['i1']);
-    const { run, writeAudit, getClaims } = action(['tenant_admin']);
+    // The HR Manager moves both kinds (user.update, org.manage) for a non-privileged member.
+    const { run, writeAudit, getClaims } = action(['hr_manager']);
     const result = await run(deactivateInput());
     expect(result).toEqual(
       ok({
@@ -394,14 +398,7 @@ describe('deactivate action', () => {
     expect(db.deactivateMembership).not.toHaveBeenCalled();
   });
 
-  it('HR Manager: departments they cannot restructure, or a privileged report → NOT_ALLOWED', async () => {
-    db.listHeadedDepartments.mockResolvedValue([department]);
-    const departments = await action(['hr_manager']).run(deactivateInput());
-    expect(!departments.ok && departments.error.fieldErrors).toEqual([
-      { path: 'reassign.platform.headed_departments', code: 'NOT_ALLOWED' },
-    ]);
-    expect(db.reassignHeadedDepartments).not.toHaveBeenCalled();
-    db.listHeadedDepartments.mockResolvedValue([]);
+  it('HR Manager: a privileged report → NOT_ALLOWED', async () => {
     db.listDirectReports.mockResolvedValue([{ ...report, movable: false }]);
     const privilegedReport = await action(['hr_manager']).run(deactivateInput());
     expect(!privilegedReport.ok && privilegedReport.error.fieldErrors).toEqual([
@@ -492,6 +489,22 @@ describe('deactivating a member who holds a privileged role (review M4, D-IAM-01
       personId: SARA,
       membershipId: 'm1',
     });
+  });
+
+  it('a privileged department head: the Organization Admin hands the department over (T-M2-19, option 1)', async () => {
+    // Without org.manage (the HR Manager's) the Organization Admin, the only one who may deactivate a
+    // privileged member, still moves the leaver's departments: no one would be left who could.
+    db.listHeadedDepartments.mockResolvedValue([department]);
+    const { run, writeAudit } = privileged(['tenant_admin'], 'aal2');
+    const result = await run(deactivateInput());
+    expect(result.ok && result.value.reassigned).toContainEqual({
+      kind: 'platform.headed_departments',
+      toPersonId: NEW_MANAGER,
+      ids: ['d1'],
+    });
+    expect(db.reassignHeadedDepartments).toHaveBeenCalledWith(TX, SARA, NEW_MANAGER);
+    expect(writeAudit.mock.calls[0]?.[2]).toMatchObject({ action: 'platform.user.deactivated' });
+    expect(db.deactivateMembership).toHaveBeenCalledOnce();
   });
 
   it('authorization negatives: AAL1 → STEP_UP_REQUIRED; HR Manager → FORBIDDEN; nothing touched', async () => {

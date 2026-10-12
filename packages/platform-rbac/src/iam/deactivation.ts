@@ -56,7 +56,7 @@ export interface ResponsibilityKind {
   readonly code: string;
   /**
    * Needed (tenant-wide) to move these items: without it the deactivation is blocked with the reason, and
-   * someone who holds it (the Organization Admin) deactivates instead.
+   * someone who holds it deactivates instead.
    */
   readonly permission: PermissionDefinition;
   /** The person's items now, with whether the signed-in member may move each. */
@@ -79,10 +79,15 @@ export const directReportsResponsibility: ResponsibilityKind = {
   reassign: (tx, fromPersonId, toPersonId) => reassignDirectReports(tx, fromPersonId, toPersonId),
 };
 
-/** Departments get a new head (organization structure: `platform.org.manage`). */
+/**
+ * Departments get a new head. The HR Manager maintains the organization structure (`platform.org.manage`,
+ * PO 11 Oct 2026), but handing over a leaver's departments is part of deactivating them: whoever may
+ * deactivate the person moves them (PO decision 12 Oct 2026, T-M2-19 option 1). Otherwise a privileged
+ * department head — deactivated by the Organization Admin only — could not be deactivated by anyone.
+ */
 export const headedDepartmentsResponsibility: ResponsibilityKind = {
   code: 'platform.headed_departments',
-  permission: p['platform.org.manage'],
+  permission: p['platform.user.deactivate'],
   list: (tx, personId) => listHeadedDepartments(tx, personId),
   reassign: (tx, fromPersonId, toPersonId) =>
     reassignHeadedDepartments(tx, fromPersonId, toPersonId),

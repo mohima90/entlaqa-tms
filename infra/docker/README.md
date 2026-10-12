@@ -6,16 +6,16 @@ The whole product running on servers we (or the customer) control, with no Verce
 
 | Container | Image (pinned by digest in `compose.yaml`) | Role |
 |---|---|---|
-| `db` | `supabase/postgres:17.11.0.003` | PostgreSQL 17.11 (same version as the cloud), TLS on |
+| `db` | `supabase/postgres:17.11.0.004` | PostgreSQL 17.11 (same version as the cloud), TLS on |
 | `auth` | `supabase/gotrue:v2.197.0` | Supabase Auth: password sign-in, ES256 keys, TOTP MFA, Custom Access Token hook, invitation-only sign-up hook (before user created), recovery tokens. **Sends no e-mail** (no mail relay; T-M2-17) |
-| `storage` | `supabase/storage-api:v1.74.0` | Supabase Storage (T-M2-18, ADR 0006): private buckets, signed upload/download URLs, our `storage.objects` policies. File backend on the `storage-data` volume here; a real installation uses an in-country S3-compatible backend (below) |
+| `storage` | `supabase/storage-api:v1.80.2` | Supabase Storage (T-M2-18, ADR 0006): private buckets, signed upload/download URLs, our `storage.objects` policies. File backend on the `storage-data` volume here; a real installation uses an in-country S3-compatible backend (below) |
 | `clamd` | `clamav/clamav:1.5.4-debian` (GPL-2.0, run unmodified as a separate service) | Malware scanner for every upload (ADR 0006 §8): limits in `clamav/clamd.conf`, reachable from the workers only |
 | `freshclam` | same image | Signature updates into the shared `clamav-db` volume (`clamav/freshclam.conf`); clamd reloads them. **Not started by the smoke test** |
 | `gateway` | `nginxinc/nginx-unprivileged:stable-alpine-slim` | TLS in front of Auth and Storage, Supabase URL layout (`/auth/v1/…`, `/storage/v1/…`); refuses Auth's public token-by-e-mail endpoints (`/recover`, `/otp`, `/magiclink`, `/resend`) and every Storage path except the use of signed URLs; signed URLs are created on its internal port 8445, for the app alone |
 | `front` | `nginxinc/nginx-unprivileged:stable-alpine-slim` | The web app's front door on `127.0.0.1:3200` (`front/nginx.conf`): sets `X-Real-IP` from the connecting address, overwriting whatever the visitor sent (T-M2-11 security review). Behind a load balancer: replace it, or configure `set_real_ip_from` + `real_ip_header` (below) |
 | `app` | `jadarat/suite:local` (`app.Dockerfile`, distroless Node 24, non-root) | The web app (standalone build); its own port is not published |
 | `worker` ×2 | `jadarat/worker:local` (`worker.Dockerfile`, distroless Node 24, non-root) | Background jobs and domain events (ADR 0004/0005; runbook `docs/engineering/background-jobs.md`), **every e-mail** over SMTP — invitations, password reset and "password changed" (ADR 0008; `docs/engineering/email.md`, `password-reset.md`), **file scanning and retention** (T-M2-18, `docs/engineering/files.md`). The only container with an Auth/Storage admin key (password-reset links, T-M2-17; reading uploads to scan them, quarantine, retention, T-M2-18) |
-| `mailpit` | `axllent/mailpit:v1.29.7` (MIT) | **Stand-in for the installation's mail relay**: keeps every message for inspection and sends nothing on; STARTTLS required. Receives every e-mail (all sent by the worker). A real installation points `SMTP_URL` at its own relay and drops this service |
+| `mailpit` | `axllent/mailpit:v1.31.4` (MIT) | **Stand-in for the installation's mail relay**: keeps every message for inspection and sends nothing on; STARTTLS required. Receives every e-mail (all sent by the worker). A real installation points `SMTP_URL` at its own relay and drops this service |
 | `glitchtip` | `glitchtip/glitchtip:6.2.6` (MIT) | In-country error tracker, Sentry-compatible (ADR 0009 §4). All-in-one mode (web + worker, no Valkey); no route out of the installation; UI over TLS through the gateway at `https://localhost:8100`; events kept 90 days |
 | `errors-db` | `postgres:17.11` | GlitchTip's own database: error data never shares the TMS database |
 

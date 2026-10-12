@@ -17,6 +17,9 @@ async function signIn(page: Page) {
 }
 
 async function expectNoSeriousA11yViolations(page: Page) {
+  // After an in-app navigation (router.replace + refresh) the framework swaps the page's <title> while the
+  // new tree streams in: check the page once it has its title again (and fail if it never gets one).
+  await expect(page).toHaveTitle(/\S/);
   const results = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
     .analyze();

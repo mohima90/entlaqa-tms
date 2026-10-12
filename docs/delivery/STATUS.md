@@ -211,6 +211,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
+| 12 Oct 2026 | Main CI red after the three Dependabot merges (Gate 15): an axe check right after the password-reset redirect (`router.replace` + `refresh`) found the page without its `<title>` while the new tree streamed in (Next.js 16.4); not reproduced locally (full gates green). The e2e accessibility helpers now wait for the page's title before axe (and fail if it never comes); fix rides on the T-M2-19 PR |
 | 12 Oct 2026 | T-M2-19 part 1: security review found that a privileged department head could not be deactivated by anyone (High) and an e2e assertion the HR Manager could not meet; PO chose option 1 (hand-over within the deactivation needs `user.deactivate`); smoke/e2e changes reverted, test added, threat models / ADR 0003 / design notes updated |
 | 12 Oct 2026 | Dependabot PRs #52 (actions), #53 (npm minor/patch, Next.js 16.4), #54 (self-hosted images: supabase/postgres 17.11.0.004, storage-api v1.80.2, Mailpit v1.31.4) merged by the PO; main CI on the combined result being checked. T-M2-19 part 1 started: `platform.org.manage` moves to the HR Manager |
 | 12 Oct 2026 | PR #55 (T-M2-12 bulk user import) merged by the PO and deployed to staging (DB deploy plan → apply green, 4 migrations); PO set hosted Auth "Rate limit for sign ups and sign ins" to 300 per 5 min. CI fixes before merge: fake platform-db export (Gate 3), smoke waits for the worker's release (Gate 15) |

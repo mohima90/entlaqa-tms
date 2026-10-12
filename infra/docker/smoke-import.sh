@@ -41,10 +41,15 @@ import_journey() {
   # The Arabic import finished with two people whose invitations were held, then sent from the users list.
   [[ "$(q "select string_agg(status, ',') from platform.user_imports where file_name like 'موظفو-%'")" == "finished" ]] ||
     { echo "smoke: import: the Arabic import must be finished" >&2; return 1; }
-  [[ "$(q "select count(*) from platform.invitations i join platform.user_imports u on u.tenant_id = i.tenant_id and u.id = i.import_id
-          where u.file_name like 'موظفو-%' and i.email like 'import-ar-%' and i.status = 'pending' and not i.mail_held and i.send_count = 1")" == "2" ]] ||
-    { echo "smoke: import: both held invitations must have been sent from the users list" >&2; return 1; }
+  # Sending only schedules them: the worker releases them at the send clock's pace and the mailer counts
+  # each send, so wait for both (as for the e-mails below).
   local first second i
+  for i in $(seq 1 60); do
+    [[ "$(q "select count(*) from platform.invitations i join platform.user_imports u on u.tenant_id = i.tenant_id and u.id = i.import_id
+            where u.file_name like 'موظفو-%' and i.email like 'import-ar-%' and i.status = 'pending' and not i.mail_held and i.send_count = 1")" == "2" ]] && break
+    [[ $i -eq 60 ]] && { echo "smoke: import: both held invitations must have been sent from the users list" >&2; return 1; }
+    sleep 1
+  done
   first="$(q "select email from platform.invitations where email like 'import-ar-1-%' order by created_at desc limit 1")"
   second="$(q "select email from platform.invitations where email like 'import-ar-2-%' order by created_at desc limit 1")"
   for i in $(seq 1 60); do

@@ -149,7 +149,7 @@ export interface ReservedUserImport {
  * FILE_TOO_MANY_UPLOADS, FILE_STORAGE_UNAVAILABLE; FORBIDDEN when Storage refuses). The handler's work is
  * all in its transaction, so the action needs no `externalEffects` and may be retried after a conflict.
  * If signing fails, what stays is what a cut upload leaves: an import waiting for its file, whose
- * reservation expires unused (15 minutes) and whose draft ends with its review window (24 hours).
+ * reservation expires unused (15 minutes) and which ends with that upload window (`UPLOAD_NOT_FINISHED`).
  */
 export function startUserImportActionDefinition(
   storage: FileStorageFactory,

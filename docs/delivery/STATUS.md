@@ -52,6 +52,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | ID | Decision |
 |---|---|---|
+| 12 Oct 2026 | — | **A leaver's departments are handed over by whoever deactivates them** (PO, T-M2-19 option 1): the HR Manager maintains the structure (`platform.org.manage`), but moving a deactivated head's departments needs `platform.user.deactivate`, so the Organization Admin can still deactivate a privileged department head (security review High) |
 | 12 Oct 2026 | D-IAM-01 | **No authenticator code to start an import** (PO, T-M2-12): an import never gives a privileged role, so it is the ordinary invite/edit (`platform.user.invite`, `platform.user.update`); an import that updates mobile numbers must require step-up once SMS codes arrive (T-M2-10c, TM-0003 T-IAM-45) |
 | 12 Oct 2026 | — | **Import invitation sending limits** (PO, T-M2-12): one import invitation a second for the whole installation; at most **5,000** a day per organization (**200** on trial); above the daily limit they wait for the next day, never dropped (`user-import.md` §4) |
 | 12 Oct 2026 | — | **Residual risk R-58 / RR-FIL-01 accepted** (PO): on hosted Supabase an authorized user can turn a short download grant into a long-lived link to that one file; bounded by the grant, audited, retention; closed self-hosted; review by 30 Nov 2026 |
@@ -210,6 +211,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
+| 12 Oct 2026 | T-M2-19 part 1: security review found that a privileged department head could not be deactivated by anyone (High) and an e2e assertion the HR Manager could not meet; PO chose option 1 (hand-over within the deactivation needs `user.deactivate`); smoke/e2e changes reverted, test added, threat models / ADR 0003 / design notes updated |
 | 12 Oct 2026 | Dependabot PRs #52 (actions), #53 (npm minor/patch, Next.js 16.4), #54 (self-hosted images: supabase/postgres 17.11.0.004, storage-api v1.80.2, Mailpit v1.31.4) merged by the PO; main CI on the combined result being checked. T-M2-19 part 1 started: `platform.org.manage` moves to the HR Manager |
 | 12 Oct 2026 | PR #55 (T-M2-12 bulk user import) merged by the PO and deployed to staging (DB deploy plan → apply green, 4 migrations); PO set hosted Auth "Rate limit for sign ups and sign ins" to 300 per 5 min. CI fixes before merge: fake platform-db export (Gate 3), smoke waits for the worker's release (Gate 15) |
 | 12 Oct 2026 | PR #55 CI fix: Gate 15 (self-hosted smoke) read the held invitations' send count right after the browser test, but the worker releases them at the send clock's pace and the mailer counts the send later — the check now waits up to 60 s for the same condition |

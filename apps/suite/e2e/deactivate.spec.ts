@@ -7,9 +7,7 @@ import { signInToSuite } from './sign-in';
  * the self-hosted smoke (infra/docker/smoke.sh) after infra/docker/seed-users.sql and
  * seed-deactivation.sql, in three phases (DEACTIVATE_E2E_PHASE) around the database and Auth checks of the
  * smoke (memberships, audit, the worker's Auth ban and its lifting):
- *  - deactivate  English: Reem (direct report + department head): the Organization Admin cannot hand the
- *                department over (organization structure: the HR Manager's, T-M2-19); the HR Manager deactivates
- *                her with reassignment; her open session loses
+ *  - deactivate  English: Reem (direct report + department head) with reassignment; her open session loses
  *                access at once and, as she belongs nowhere else, is told it ended (T-M2-10: the login's Auth
  *                sessions end). Arabic: Huda (nothing to move). Faisal (Auditor, a privileged role): the
  *                authenticator-code step only (the admin has none). A Line Manager gets neither.
@@ -29,11 +27,6 @@ const manager = {
 const member = {
   email: process.env.DEACTIVATE_E2E_MEMBER_EMAIL,
   password: process.env.DEACTIVATE_E2E_MEMBER_PASSWORD,
-};
-// The HR Manager (Noura, seed-deactivation.sql): branches and departments are hers to maintain.
-const hr = {
-  email: process.env.DEACTIVATE_E2E_HR_EMAIL,
-  password: process.env.DEACTIVATE_E2E_HR_PASSWORD,
 };
 // infra/docker/seed-deactivation.sql
 const REEM = '5eed1000-0000-4000-8000-0000000000d1';
@@ -68,30 +61,14 @@ test.describe('deactivate and reactivate members', () => {
   }) => {
     test.skip(phase !== 'deactivate', 'phase');
     test.skip(!member.email || !member.password, 'DEACTIVATE_E2E_MEMBER_* not set');
-    test.skip(!hr.email || !hr.password, 'DEACTIVATE_E2E_HR_* not set');
     // Reem is signed in and working in the organization.
     const memberContext = await browser.newContext();
     const memberPage = await memberContext.newPage();
     await signIn(memberPage, member);
 
-    // The Organization Admin may move her report but not her department (PO, 11 Oct 2026): the form says
-    // who can, and the form cannot be sent.
-    const orgAdminContext = await browser.newContext();
-    const orgAdminPage = await orgAdminContext.newPage();
-    await signIn(orgAdminPage, admin);
-    await orgAdminPage.goto(`/en/suite/admin/users/${REEM}/deactivate`);
-    await expect(orgAdminPage.getByTestId('kind-platform.headed_departments')).toContainText(
-      'the HR Manager',
-    );
-    await expect(
-      orgAdminPage.getByRole('button', { name: 'Move the items and deactivate the account' }),
-    ).toBeDisabled();
-    await expectNoSeriousA11yViolations(orgAdminPage);
-    await orgAdminContext.close();
-
     const adminContext = await browser.newContext();
     const page = await adminContext.newPage();
-    await signIn(page, hr);
+    await signIn(page, admin);
     await page.goto(`/en/suite/admin/users/${REEM}`);
     await page.getByTestId('deactivate-user-link').click();
     await expect(page).toHaveURL(new RegExp(`/en/suite/admin/users/${REEM}/deactivate$`));

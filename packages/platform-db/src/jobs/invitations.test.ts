@@ -38,6 +38,9 @@ const row = {
   organization_ar: 'المنشأة',
   organization_en: 'Org',
   primary_role: 'learner',
+  invited_by: 'u1',
+  send_requested_by: 'u2',
+  mail_held: false,
 };
 
 describe('loadInvitationForMail', () => {
@@ -54,8 +57,15 @@ describe('loadInvitationForMail', () => {
       inviterName: { ar: 'أحمد', en: null },
       organizationName: { ar: 'المنشأة', en: 'Org' },
       primaryRole: 'learner',
+      invitedBy: 'u1',
+      sendRequestedBy: 'u2',
+      mailHeld: false,
     });
     expect(fake.executed[0]?.params).toEqual([ID]);
+    // The inviter shown is the member it is sent for (integration review M2).
+    expect(fake.executed[0]?.sql).toContain(
+      'm.user_id = coalesce(i.send_requested_by, i.invited_by)',
+    );
   });
 
   it('falls back to the organization as inviter, Arabic as language; null when unknown', async () => {
@@ -73,7 +83,10 @@ describe('issueInvitationToken', () => {
     await expect(issueInvitationToken(fake.tx, ID, HASH)).resolves.toEqual({
       expiresAt: new Date('2026-10-14T10:00:00Z'),
     });
-    expect(fake.executed[0]?.sql).toContain("status = 'pending' and send_count < $3");
+    // Never for a held invitation of a user import (not sent yet, T-M2-12).
+    expect(fake.executed[0]?.sql).toContain(
+      "status = 'pending' and not mail_held and send_count < $3",
+    );
     expect(fake.executed[0]?.params).toEqual([HASH, ID, 4]);
     const asDate = new Date('2026-10-14T10:00:00Z');
     await expect(

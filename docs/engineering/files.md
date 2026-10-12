@@ -37,7 +37,7 @@ A module never picks a bucket or a type list itself: it names a **purpose**. The
 | Purpose | Bucket | Max | Types (by content) | Retention class | Written by | Downloads |
 |---|---|---|---|---|---|---|
 | `platform.user_import` | `imports` | 20 MB | CSV (strict UTF-8), XLSX (not XLSM) | `import` | user (scanned) | audited, 60 s |
-| `platform.user_import_report` | `generated` | 50 MB | CSV | `import` | worker (clean) | audited, 60 s |
+| `platform.user_import_report` | `generated` | 50 MB | XLSX (T-M2-12: inline strings only, no formula ever runs) | `import` | worker (clean) | audited, 60 s |
 | `platform.profile_photo` | `images` | 10 MB | PNG, JPEG, WebP (never SVG/GIF) | `owner_lifetime` | user (scanned) | 300 s |
 
 Buckets (ADR 0006 §1, all private): `materials` 200 MB, `images` 10 MB, `evidence` 25 MB, `imports` 20 MB, `generated`, `quarantine`. Object keys: `<tenant_id>/<module>/<entity_type>/<entity_id>/<file_id>` — the original name is **never** in the key; it is kept sanitized (NFC, no controls or bidirectional overrides, no path characters) for display and the download's `Content-Disposition` (Arabic names work).
@@ -178,7 +178,7 @@ Platform tasks (ADR 0005 §4; every wake-up and every minute):
 
 ## 8. Follow-ups (not in T-M2-18)
 
-- **T-M2-12**: the upload screen — browser `PUT` with progress, polling `getFileStatus`, calling `markFileUsed` when the import runs; downloads through `grantDownload` + `signDownload` (§3) with the import as owner; self-hosted: add `STORAGE_PUBLIC_URL`'s origin to the CSP `connect-src`.
+- ~~**T-M2-12**: the upload screen — browser `PUT` with progress, polling `getFileStatus`, calling `markFileUsed` when the import runs; downloads through `grantDownload` + `signDownload` (§3) with the import as owner; self-hosted: add `STORAGE_PUBLIC_URL`'s origin to the CSP `connect-src`.~~ Done with T-M2-12 (`docs/engineering/user-import.md`): the start and download actions follow §3 exactly; the CSP's `connect-src` names exactly `STORAGE_PUBLIC_URL`'s origin — an `https` origin (`http` on localhost) with an exact host, never a wildcard (unit test; the smoke's import journey checks the page's policy against the origin the browser uploads to).
 - **T-M2-15b**: profile photos — ADR 0006 §3 also asks to re-encode images and strip metadata (EXIF/GPS) with `sharp` before use; not built yet (needs the PO's acceptance of `sharp`/libvips licensing, LGPL-3.0).
 - **Notifications of an infected file** to the uploader and the organization's admin (ADR 0006 §3.4): a separate task (Tech Lead, 10 Oct 2026); the `file.scanned` event and the audit events are in place.
 - **Quotas** (security review L7): per-tenant storage quota (SUB-01) and a per-tenant cap on pending uploads (today: 50 per user per day), with CAT-06; resumable (TUS) uploads for large materials, 200 MB end-to-end on staging (ADR 0006 Verification 2).
@@ -215,3 +215,4 @@ Platform tasks (ADR 0005 §4; every wake-up and every minute):
 | Transactions (platform-db) | one open transaction per request or job: `runWithClaims` refuses a nested one before taking a connection (integration review info 2); `inDatabaseTransaction()` / `assertNoDatabaseTransaction()` follow the transaction's own lifetime, also in callbacks bound inside it (Next.js `after()`) |
 | Worker | platform tasks: account mail (reset links, lock notices), the session purge (T-M2-10), file housekeeping and the scan |
 | Self-hosted smoke | the file journey runs before the sign-in protection, deactivation and security-policy journeys (it signs in with the first account's original password, before the policy requires an authenticator app); `front` (T-M2-11) and Storage/clamd in the service checks |
+| Bulk user import (T-M2-12, the first consumer) | `startUserImport`: `reserveUploadIntent` and the import in the handler, `signUploadIntent` in `afterCommit`; `downloadUserImportReport`: `grantDownload` (with the import's audit record) in the handler, `signDownload` in `afterCommit`; `fileResult` everywhere; no `externalEffects`. The worker's import task uses `createWorkerFiles` (`openScannedFile`, `storeGeneratedFile`) with the job's own transaction — never one inside another. Its smoke journey runs right after the file journey, for the same reason |

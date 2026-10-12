@@ -2,6 +2,7 @@ import { type AppError, toClientError } from '@jadarat/platform-core';
 import type { AppLocale } from '@jadarat/platform-i18n';
 import { routing } from '@jadarat/platform-i18n/routing';
 import type { InvitationRow } from '@jadarat/platform-db';
+import type { UserImportBannersView } from '@jadarat/platform-import';
 import { SYSTEM_ROLES, type UsersListView } from '@jadarat/platform-rbac';
 import { Alert, Badge, type BadgeTone, buttonClasses } from '@jadarat/ui';
 import { hasLocale } from 'next-intl';
@@ -34,6 +35,9 @@ import {
   usersPaging,
 } from '../../../../../lib/users-view';
 import { NotSet } from '../../../../../components/not-set';
+import { SendInvitationsButton } from '../../../../../components/user-import/send-invitations-button';
+import { userImportBannersQuery } from '../../../../../lib/user-import-queries';
+import { count, isolate } from '../../../../../lib/user-import-view';
 
 const TABS = ['all', 'active', 'invited', 'deactivated'] as const;
 const STATUS_TONE: Record<'active' | 'invited' | 'suspended', BadgeTone> = {
@@ -54,6 +58,12 @@ const INVITATION_LIST_KEYS = [
   'columns.actions',
   'status.pending',
   'status.expired',
+  'status.held',
+  'status.scheduled',
+  'sendHeld',
+  'sentHeld',
+  'nothingToSend',
+  'sendNotAllowed',
   'resend',
   'resent',
   'resendLimit',
@@ -68,12 +78,16 @@ const INVITATION_LIST_KEYS = [
 ] as const;
 /** Keys whose `{name}` / `{count}` the client fills in (read raw). */
 const INVITATION_RAW_KEYS = ['revokeConfirm', 'resentExpired'] as const;
+/** The invited tab shows at most this many invitations (newest first); search reaches the others. */
+const INVITATIONS_SHOWN = 500;
 
 /**
  * Users list (T-M2-04, screen 1 — FR-IAM-01): only the people the member may see (ADR 0003 §4.2).
  * Holders of `platform.user.invite` also see «دعوة مستخدم» and, on the `invited` tab, the pending and
  * expired invitations with resend and revoke (T-M2-07, FR-IAM-03). Holders of `platform.user.deactivate`
- * reactivate members from the `deactivated` tab (T-M2-09, FR-IAM-05).
+ * reactivate members from the `deactivated` tab (T-M2-09, FR-IAM-05). Bulk import (T-M2-12, FR-IAM-04;
+ * approved import screen 1): «استيراد من ملف», a banner while an import runs, and a banner with
+ * «إرسال الدعوات (N)» for people an import added without their invitations («لم تُرسل الدعوة»).
  */
 export default async function UsersPage({
   params,
@@ -88,6 +102,7 @@ export default async function UsersPage({
   const t = await getTranslations({ locale, namespace: 'users' });
   const invitationTexts = await getTranslations({ locale, namespace: 'invitations' });
   const deactivationTexts = await getTranslations({ locale, namespace: 'deactivation' });
+  const importTexts = await getTranslations({ locale, namespace: 'userImport' });
 
   let body;
   let canInvite = false;
@@ -126,6 +141,8 @@ export default async function UsersPage({
       const invitations = canInvite ? await invitationsListQuery({}) : null;
       const invitationsError =
         invitations !== null && !invitations.ok ? toClientError(invitations.error) : null;
+      // The import banners (T-M2-12) share the invite permission; a failure only hides them.
+      const banners = canInvite ? await userImportBannersQuery({}) : null;
       body = (
         <>
           {raw[INVITED_FLASH_PARAM] === '1' && canInvite ? (
@@ -154,6 +171,7 @@ export default async function UsersPage({
             view={result.value}
             params={current}
             invitations={invitations?.ok ? invitations.value.invitations : null}
+            banners={banners?.ok ? banners.value : null}
           />
         </>
       );
@@ -165,13 +183,22 @@ export default async function UsersPage({
       <div className="mb-2 flex flex-wrap items-end justify-between gap-4">
         <h1 className="m-0 text-2xl font-bold">{t('title')}</h1>
         {canInvite ? (
-          <a
-            href={`/${locale}/suite/admin/users/invite`}
-            className={buttonClasses({ variant: 'primary', size: 'md' })}
-            data-testid="invite-user-link"
-          >
-            {invitationTexts('inviteUser')}
-          </a>
+          <div className="flex flex-wrap gap-2">
+            <a
+              href={`/${locale}/suite/admin/users/import`}
+              className={buttonClasses({ variant: 'secondary', size: 'md' })}
+              data-testid="import-users-link"
+            >
+              {importTexts('entry')}
+            </a>
+            <a
+              href={`/${locale}/suite/admin/users/invite`}
+              className={buttonClasses({ variant: 'primary', size: 'md' })}
+              data-testid="invite-user-link"
+            >
+              {invitationTexts('inviteUser')}
+            </a>
+          </div>
         ) : null}
       </div>
       <div className="flex flex-col gap-6">{body}</div>
@@ -194,14 +221,18 @@ async function UsersList({
   view,
   params,
   invitations,
+  banners,
 }: {
   locale: AppLocale;
   view: UsersListView;
   params: UsersListParams;
-  /** Pending and expired invitations (null: the member may not invite, or they did not load). */
+  /** Open invitations (null: the member may not invite, or they did not load). */
   invitations: readonly InvitationRow[] | null;
+  /** A running import; people added without invitations (null: not shown). */
+  banners: UserImportBannersView | null;
 }) {
   const t = await getTranslations({ locale, namespace: 'users' });
+  const importTexts = await getTranslations({ locale, namespace: 'userImport' });
   const format = await getFormatter({ locale });
   const { list, canReadRoles, orgUnits } = view;
   const activeTab = (TABS as readonly string[]).includes(params.tab ?? '')
@@ -221,6 +252,7 @@ async function UsersList({
         })
       : [];
   const expired = (invitations ?? []).filter((row) => row.state === 'expired');
+  const held = (invitations ?? []).filter((row) => row.state === 'held').length;
   const nothingToShow = list.rows.length === 0 && invitationRows.length === 0;
   // «إعادة التفعيل» on the deactivated tab (T-M2-09): rows the member may manage; privileged members only
   // with role.assign_privileged (after an authenticator code).
@@ -238,9 +270,13 @@ async function UsersList({
     <>
       <p className="m-0 text-text-muted" data-testid="users-summary">
         {t('summary', { count: list.counts.all })}
-        {counts.invited > 0 ? ` · ${t('pendingInvitations', { count: counts.invited })}` : ''}
+        {counts.invited - held > 0
+          ? ` · ${t('pendingInvitations', { count: counts.invited - held })}`
+          : ''}
+        {held > 0 ? ` · ${importTexts('heldSummary', { count: held })}` : ''}
       </p>
 
+      {banners ? await importBanners(locale, banners) : null}
       {expired.length > 0 ? await expiredBanner(locale, expired) : null}
 
       <nav aria-label={t('tabsLabel')}>
@@ -544,7 +580,10 @@ async function invitationLabels(locale: AppLocale): Promise<Record<string, strin
   return labels;
 }
 
-/** Pending and expired invitations of the `invited` tab (T-M2-07, screen 1). */
+/**
+ * Open invitations of the `invited` tab (T-M2-07, screen 1): pending, expired, and — from a bulk import
+ * (T-M2-12) — held («لم تُرسل الدعوة») and scheduled. At most INVITATIONS_SHOWN rows (newest first).
+ */
 async function invitationsTable(
   locale: AppLocale,
   rows: readonly InvitationRow[],
@@ -552,28 +591,109 @@ async function invitationsTable(
 ) {
   const t = await getTranslations({ locale, namespace: 'invitations' });
   const format = await getFormatter({ locale });
-  const views: InvitationRowView[] = rows.map((row) => {
-    const expired = row.state === 'expired';
+  const shown = rows.slice(0, INVITATIONS_SHOWN);
+  const views: InvitationRowView[] = [];
+  for (const row of shown) {
+    if (row.state === 'accepted' || row.state === 'revoked') continue;
     const date = format.dateTime(row.expiresAt, 'medium');
-    return {
+    const fromImport = row.importId
+      ? t('list.fromImport', { date: format.dateTime(row.createdAt, 'medium') })
+      : null;
+    views.push({
       id: row.id,
       name: localizedName(locale, row.displayNameAr, row.displayNameEn),
       email: row.email,
       profileHref: `/${locale}/suite/admin/users/${row.personId}`,
       roleName: canReadRoles ? roleName(locale, row.primaryRole) : null,
       sentText: t('list.sentCount', { count: row.sendCount }),
-      expiryText: expired ? t('list.expiredOn', { date }) : t('list.expiresOn', { date }),
-      expired,
+      expiryText:
+        row.state === 'held'
+          ? ''
+          : row.state === 'scheduled'
+            ? t('list.scheduledHint')
+            : row.state === 'expired'
+              ? t('list.expiredOn', { date })
+              : t('list.expiresOn', { date }),
+      state: row.state,
+      fromImportText: fromImport,
       canResend: canResend(row),
-    };
-  });
+    });
+  }
   return (
-    <InvitationsTable
-      rows={views}
-      showRole={canReadRoles}
-      labels={await invitationLabels(locale)}
-      errors={await profileErrorTexts(locale)}
-    />
+    <>
+      {rows.length > shown.length ? (
+        <Alert tone="info" data-testid="invitations-capped">
+          {t('list.capped', { shown: shown.length, total: rows.length })}
+        </Alert>
+      ) : null}
+      <InvitationsTable
+        rows={views}
+        showRole={canReadRoles}
+        labels={await invitationLabels(locale)}
+        errors={await profileErrorTexts(locale)}
+      />
+    </>
+  );
+}
+
+/**
+ * Import banners of screen 1 (T-M2-12, approved import screen 1): an import running (or being undone),
+ * with «عرض التقدم»; people the latest import added without invitations, with «إرسال الدعوات (N)».
+ */
+async function importBanners(locale: AppLocale, banners: UserImportBannersView) {
+  const t = await getTranslations({ locale, namespace: 'userImport' });
+  const { running, held } = banners;
+  const planned = running
+    ? count(running.reviewCounts, 'new') + count(running.reviewCounts, 'existing')
+    : 0;
+  return (
+    <>
+      {running ? (
+        <Alert tone="info" data-testid="import-running-banner">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="min-w-0 flex-1 basis-80">
+              {running.status === 'undoing'
+                ? t('banners.runningUndo', { name: isolate(running.fileName) })
+                : t('banners.running', {
+                    name: isolate(running.fileName),
+                    done: Math.min(running.rowsDone, planned),
+                    total: planned,
+                  })}
+            </span>
+            <a
+              href={`/${locale}/suite/admin/users/import/${running.id}`}
+              className={buttonClasses({ variant: 'secondary', size: 'md' })}
+            >
+              {t('banners.viewProgress')}
+            </a>
+          </div>
+        </Alert>
+      ) : null}
+      {held.latest ? (
+        <Alert tone="warning" data-testid="import-held-banner">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="min-w-0 flex-1 basis-80">
+              {t('banners.held', { count: held.latest.held, name: isolate(held.latest.fileName) })}
+            </span>
+            <SendInvitationsButton
+              importId={held.latest.importId}
+              label={t('banners.sendAll', { count: held.latest.held })}
+              workingLabel={t('banners.sending')}
+              doneText={t('banners.sent')}
+              nothingText={(await getTranslations({ locale, namespace: 'invitations' }))(
+                'list.nothingToSend',
+              )}
+              notAllowedText={(await getTranslations({ locale, namespace: 'invitations' }))(
+                'list.sendNotAllowed',
+              )}
+              errors={await profileErrorTexts(locale)}
+              variant="secondary"
+              testId="import-send-held"
+            />
+          </div>
+        </Alert>
+      ) : null}
+    </>
   );
 }
 

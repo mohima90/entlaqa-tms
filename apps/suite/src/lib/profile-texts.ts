@@ -1,5 +1,6 @@
 import 'server-only';
 import { PlatformErrors } from '@jadarat/platform-core';
+import { FileErrors } from '@jadarat/platform-files';
 import { PasswordErrors } from '@jadarat/platform-identity';
 import { MfaResetErrors } from '@jadarat/platform-rbac';
 import { getTranslations } from 'next-intl/server';
@@ -8,6 +9,15 @@ import { getTranslations } from 'next-intl/server';
 export const PROFILE_ERROR_KEYS: readonly string[] = [
   ...Object.values(PlatformErrors).map((def) => def.messageKey),
   ...Object.values(PasswordErrors).map((def) => def.messageKey),
+];
+
+/**
+ * Message keys of actions that upload or download a file (T-M2-12 × T-M2-18): the platform's and the files
+ * service's expected refusals (FileErrors: too large, Storage unavailable, …).
+ */
+export const FILE_ACTION_ERROR_KEYS: readonly string[] = [
+  ...Object.values(PlatformErrors).map((def) => def.messageKey),
+  ...Object.values(FileErrors).map((def) => def.messageKey),
 ];
 
 /** Message keys of a member's sign-in and security actions on screen 3 (sessions, app reset; T-M2-10). */
@@ -24,6 +34,11 @@ async function rawTexts(locale: string, keys: readonly string[]): Promise<Record
 /** Raw (unformatted) error texts for the client forms; `{correlationId}` stays a placeholder. */
 export async function profileErrorTexts(locale: string): Promise<Record<string, string>> {
   return rawTexts(locale, PROFILE_ERROR_KEYS);
+}
+
+/** Error texts for actions that upload or download a file (the bulk user import). */
+export async function fileActionErrorTexts(locale: string): Promise<Record<string, string>> {
+  return rawTexts(locale, FILE_ACTION_ERROR_KEYS);
 }
 
 /** Error texts for a member's sessions and authenticator reset (user profile, screen 3). */

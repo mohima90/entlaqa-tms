@@ -4,12 +4,15 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useId, useRef, useState, useTransition } from 'react';
 import { signOutAction } from '../auth/actions';
 import { keepSessionAliveAction } from '../actions/session';
+import { IDLE_WARNING_DISMISSED, IDLE_WARNING_SHOWN } from '../lib/import-polling';
 
 /**
  * Screen 6: «ننبّه المستخدم قبل الانتهاء بدقيقتين ليختار المتابعة» (T-M2-10). The organization's
  * inactivity limit is enforced by the database (activity = requests that reach it); this page counts the
  * time since it was loaded or last kept alive, warns two minutes before the limit and then sends the
  * member to sign-in, where the ended session is signed out. "Stay signed in" is a request (activity).
+ * Pages that poll by themselves (the import page) pause while the warning is shown (window events
+ * IDLE_WARNING_SHOWN / IDLE_WARNING_DISMISSED; T-M2-12 integration review L1).
  */
 export function IdleWarning({
   locale,
@@ -36,6 +39,7 @@ export function IdleWarning({
   useEffect(() => {
     const warn = window.setTimeout(() => {
       if (!dialog.current?.open) dialog.current?.showModal();
+      window.dispatchEvent(new Event(IDLE_WARNING_SHOWN));
     }, warnMs);
     const end = window.setTimeout(() => {
       router.replace(`/${locale}/sign-in?notice=session-ended`);
@@ -51,8 +55,10 @@ export function IdleWarning({
     startTransition(async () => {
       const result = await keepSessionAliveAction({});
       dialog.current?.close();
-      if (result.ok) setLastActive(Date.now());
-      else router.refresh(); // the session already ended: the page sends the member on
+      if (result.ok) {
+        setLastActive(Date.now());
+        window.dispatchEvent(new Event(IDLE_WARNING_DISMISSED));
+      } else router.refresh(); // the session already ended: the page sends the member on
     });
   }, [router]);
 

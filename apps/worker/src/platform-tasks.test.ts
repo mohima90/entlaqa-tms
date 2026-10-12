@@ -73,7 +73,7 @@ describe('worker platform tasks (T-M2-17, T-M2-10)', () => {
   });
 });
 
-describe('worker file tasks (T-M2-18)', () => {
+describe('worker file tasks (T-M2-18) and user imports (T-M2-12)', () => {
   const settings = { url: 'https://ref.supabase.co', secretKey: 'sb_secret_sample_only' };
   const store = { read: vi.fn(), move: vi.fn(), remove: vi.fn(), write: vi.fn() };
   const scanner = { ping: vi.fn(), version: vi.fn(), start: vi.fn() };
@@ -86,6 +86,7 @@ describe('worker file tasks (T-M2-18)', () => {
       'platform.account_mail',
       'platform.session_purge',
       'platform.files.housekeeping',
+      'platform.user_imports',
     ]);
     expect(storeFor).toHaveBeenCalledWith(settings);
     expect(scannerFor).not.toHaveBeenCalled();
@@ -96,6 +97,7 @@ describe('worker file tasks (T-M2-18)', () => {
       'platform.account_mail',
       'platform.session_purge',
       'platform.files.housekeeping',
+      'platform.user_imports',
       'platform.files.scan',
     ]);
     expect(scannerFor).toHaveBeenCalledWith(scanner3310);
@@ -112,6 +114,13 @@ describe('worker file tasks (T-M2-18)', () => {
       scanner: { host: 'clamd', port: 3310 },
       recoveryLinksFor: () => ({ issue: vi.fn() }),
     });
-    expect(tasks).toHaveLength(4);
+    // T-M2-10's session purge, T-M2-18's file tasks and T-M2-12's imports together.
+    expect(tasks.map((t) => t.name)).toEqual([
+      'platform.account_mail',
+      'platform.session_purge',
+      'platform.files.housekeeping',
+      'platform.user_imports',
+      'platform.files.scan',
+    ]);
   });
 });

@@ -15,10 +15,22 @@ export interface InvitationForMail {
   readonly locale: 'ar' | 'en';
   readonly personId: string;
   readonly recipientName: { ar: string; en: string | null };
-  /** The inviter's person in this organization; the organization's name when there is none. */
+  /**
+   * The inviter's person in this organization — for a held invitation sent on request, the member who
+   * asked to send it (integration review M2) — or the organization's name when there is none.
+   */
   readonly inviterName: { ar: string; en: string | null };
   readonly organizationName: { ar: string; en: string | null };
   readonly primaryRole: string;
+  /** The member who invited (an import's importer). */
+  readonly invitedBy: string | null;
+  /**
+   * The member who asked to send this held import invitation from the users list (integration review
+   * M2): its release and e-mail act for them. Null when the import sent it (for the importer).
+   */
+  readonly sendRequestedBy: string | null;
+  /** Not sent yet (T-M2-12): held invitations are never mailed. */
+  readonly mailHeld: boolean;
 }
 
 /** Everything the invitation e-mail needs, or null when the invitation is unknown in this tenant. */
@@ -40,15 +52,20 @@ export async function loadInvitationForMail(
     organization_ar: string;
     organization_en: string | null;
     primary_role: string;
+    invited_by: string | null;
+    send_requested_by: string | null;
+    mail_held: boolean;
   }>(sql`
-    select i.id, i.status, i.send_count, i.email, i.locale, i.person_id,
+    select i.id, i.status, i.send_count, i.email, i.locale, i.person_id, i.invited_by,
+           i.send_requested_by, i.mail_held,
            p.display_name_ar as recipient_ar, p.display_name_en as recipient_en,
            ip.display_name_ar as inviter_ar, ip.display_name_en as inviter_en,
            t.name_ar as organization_ar, t.name_en as organization_en, i.primary_role
     from platform.invitations i
     join platform.persons p on p.tenant_id = i.tenant_id and p.id = i.person_id
     join platform.tenants t on t.id = i.tenant_id
-    left join platform.tenant_memberships m on m.tenant_id = i.tenant_id and m.user_id = i.invited_by
+    left join platform.tenant_memberships m
+           on m.tenant_id = i.tenant_id and m.user_id = coalesce(i.send_requested_by, i.invited_by)
     left join platform.persons ip on ip.tenant_id = m.tenant_id and ip.id = m.person_id
     where i.id = ${id}::uuid`);
   if (!row) return null;
@@ -65,6 +82,9 @@ export async function loadInvitationForMail(
       row.inviter_ar === null ? organizationName : { ar: row.inviter_ar, en: row.inviter_en },
     organizationName,
     primaryRole: row.primary_role,
+    invitedBy: row.invited_by,
+    sendRequestedBy: row.send_requested_by,
+    mailHeld: row.mail_held,
   };
 }
 
@@ -100,8 +120,8 @@ const MAX_SENDS = 4;
 
 /**
  * Stores the SHA-256 of a new token for a pending invitation that has had fewer than 4 e-mails, and
- * returns the link's new expiry. Null when the invitation is not pending (accepted, revoked, unknown) or
- * the limit is reached: send nothing.
+ * returns the link's new expiry. Null when the invitation is not pending (accepted, revoked, unknown),
+ * still held (an import's, not sent yet: T-M2-12) or the limit is reached: send nothing.
  */
 export async function issueInvitationToken(
   tx: ClaimsTx,
@@ -111,7 +131,7 @@ export async function issueInvitationToken(
   if (tokenHash.length !== 32) throw new Error('issueInvitationToken: expected a SHA-256 hash');
   const [row] = await tx.execute<{ expires_at: Date | string }>(sql`
     update platform.invitations set token_hash = ${tokenHash}::bytea
-    where id = ${id}::uuid and status = 'pending' and send_count < ${MAX_SENDS}
+    where id = ${id}::uuid and status = 'pending' and not mail_held and send_count < ${MAX_SENDS}
     returning expires_at`);
   if (!row) return null;
   return {

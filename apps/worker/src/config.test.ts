@@ -363,3 +363,53 @@ describe('readSettings: the orphan sweep (T-M2-18, re-review L-C)', () => {
     );
   });
 });
+
+describe('readSettings: import invitations (T-M2-12, security review M2)', () => {
+  it('defaults to one a second platform-wide, 5000 a day per organization and 200 on trial', () => {
+    expect(runner([], env).importSending).toEqual({
+      intervalMs: 1000,
+      dailyCap: 5000,
+      trialDailyCap: 200,
+    });
+    expect(
+      runner([], {
+        ...env,
+        USER_IMPORT_INVITATION_INTERVAL_MS: '500',
+        USER_IMPORT_DAILY_INVITATIONS: '20000',
+        USER_IMPORT_TRIAL_DAILY_INVITATIONS: '50',
+      }).importSending,
+    ).toEqual({ intervalMs: 500, dailyCap: 20000, trialDailyCap: 50 });
+    // A daily number below the trial default lowers the trial one with it.
+    expect(runner([], { ...env, USER_IMPORT_DAILY_INVITATIONS: '100' }).importSending).toEqual({
+      intervalMs: 1000,
+      dailyCap: 100,
+      trialDailyCap: 100,
+    });
+  });
+
+  it('refuses a pace or daily number out of range, and a trial number above the other', () => {
+    // At least 500 ms: Resend allows 2 requests a second for the whole account.
+    for (const value of ['499', '100', '60001', '1.5', 'x']) {
+      fails(
+        [],
+        { ...env, USER_IMPORT_INVITATION_INTERVAL_MS: value },
+        /USER_IMPORT_INVITATION_INTERVAL_MS must be a whole number of milliseconds from 500 to 60000/,
+      );
+    }
+    expect(
+      runner([], { ...env, USER_IMPORT_INVITATION_INTERVAL_MS: '500' }).importSending.intervalMs,
+    ).toBe(500);
+    for (const value of ['0', '100001', '-5']) {
+      fails(
+        [],
+        { ...env, USER_IMPORT_DAILY_INVITATIONS: value },
+        /USER_IMPORT_DAILY_INVITATIONS must be a whole number of invitations from 1 to 100000/,
+      );
+    }
+    fails(
+      [],
+      { ...env, USER_IMPORT_DAILY_INVITATIONS: '100', USER_IMPORT_TRIAL_DAILY_INVITATIONS: '101' },
+      /USER_IMPORT_TRIAL_DAILY_INVITATIONS must not be higher than USER_IMPORT_DAILY_INVITATIONS/,
+    );
+  });
+});

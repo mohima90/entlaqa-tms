@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Backlog** | T-M2-06 part b (e-mail delivery); used by T-M2-07 (invitations), T-M2-17 (password reset and "password changed", BRD v2.5 FR-NTF-02) |
+| **Backlog** | T-M2-06 part b (e-mail delivery); used by T-M2-07 (invitations), T-M2-17 (password reset and "password changed", BRD v2.5 FR-NTF-02), T-M2-12 (invitations of bulk user imports, paced) |
 | **Architecture** | ADR 0008 (notification service), ADR 0004/0005 (events and jobs) — runbook [background-jobs.md](background-jobs.md) |
 | **Code** | `packages/platform-notifications` (templates, `queueEmail`, sender, Resend/SMTP transports) · `platform.message_deliveries` (migration `20261008090000`) · `apps/worker` |
 | **Provider** | Regional cloud: **Resend** (PO, 6 Oct 2026), sending domain `lms.entlaqa.com`, sender «ENTLAQA LMS» <noreply@lms.entlaqa.com>. Sovereign: SMTP to the installation's relay |
@@ -57,5 +57,6 @@ All in GitHub → Settings → Environments → **staging-jobs** (where the work
 | `DELIVERY_ERROR` | The last attempt failed on the database, not at the provider — the message may still have gone out: check the Resend dashboard (or the relay's log) and the worker logs at that time before triggering it again |
 | `VALIDATION_ERROR` / `ADDRESS_REJECTED` | The address or message was refused for good; correct the person's e-mail and trigger the message again (e.g. resend the invitation) |
 | Deliverability | SPF, DKIM and DMARC records of the sending domain are set in Resend → Domains; a dedicated TMS sending subdomain is planned before real customers (PO follow-up) |
+| A bulk import with thousands of people (T-M2-12) | Import invitations leave at **one per second for the whole installation** — every organization's imports share one send clock, overdue ones are spaced out again — and at most 5,000 a day per organization, 200 on trial ([user-import.md](user-import.md) §4; worker settings `USER_IMPORT_*`): 10,000 take about 3 hours when one organization sends alone. Resend's default API limit is 2 requests per second per team (import invitations take at most half of it, whatever the number of organizations; a 429 is still waited out) and the plan sets daily and monthly quotas (free plan: 100 a day, 3,000 a month) — check Resend → Usage and the plan **before** a large customer import (design decision 13), or add the people with «الإضافة دون إرسال الدعوات الآن» and send in parts from the users list. Messages over the quota are refused by the provider (retried as temporary failures for about 3.5 hours, §1, then recorded `failed`); their invitations stay pending and can be resent from the users list |
 
 Not built yet (ADR 0008): in-app inbox, notification rules and preferences, quiet hours, tenant-edited templates (LiquidJS), provider status webhooks (delivered/bounced), keyed hashes of addresses, retention housekeeping, alerts on failure rates.

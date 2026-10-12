@@ -6,8 +6,10 @@ import { describe, expect, it } from 'vitest';
 import { assertNoDatabaseTransaction, inDatabaseTransaction, runWithClaims } from './claims-tx';
 import type { AppDatabase } from './client';
 import {
+  PASSIVE_READS,
   createWithUserTx,
   databaseClaims,
+  isPassiveRead,
   listSessionTenants,
   switchActiveTenant,
 } from './with-user-tx';
@@ -94,6 +96,29 @@ describe('withUserTx (ADR 0002 §5)', () => {
     expect(executed[2]?.sql).not.toContain('touch_session');
     await withUserTx(claims(), () => Promise.resolve(null));
     expect(executed[5]?.sql).toContain('private.touch_session()');
+  });
+
+  it('a passive read (integration review L1): READ ONLY from the start, no activity recorded, only listed names', async () => {
+    const { db, executed, transactionCount } = fakeDatabase();
+    const withUserTx = createWithUserTx(() => db);
+    await withUserTx(claims(), () => Promise.resolve(null), {
+      passiveRead: 'platform.user_import.status',
+    });
+    expect(executed.map((q) => q.sql)).toEqual([
+      'set transaction read only',
+      'set local role authenticated',
+      "select set_config('request.jwt.claims', $1, true)",
+      "select set_config('request.jwt.claim', '', true), set_config('request.jwt.claim.sub', '', true)",
+    ]);
+    expect(PASSIVE_READS).toEqual(['platform.user_import.status']);
+    expect(isPassiveRead('platform.user_import.status')).toBe(true);
+    expect(isPassiveRead('platform.users.list')).toBe(false);
+    await expect(
+      withUserTx(claims(), () => Promise.resolve(null), {
+        passiveRead: 'platform.users.list' as never,
+      }),
+    ).rejects.toThrow('not on the list');
+    expect(transactionCount()).toBe(1);
   });
 
   it('never interpolates claim values into SQL text (injection-safe)', async () => {

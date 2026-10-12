@@ -59,6 +59,41 @@ describe('buildContentSecurityPolicy', () => {
     expect(directive(bad, 'connect-src')).toBe("connect-src 'self'");
   });
 
+  it('allows the public Storage origin for the browser’s signed uploads (T-M2-12)', () => {
+    const csp = (storagePublicUrl: string | undefined, supabaseUrl?: string) =>
+      directive(
+        buildContentSecurityPolicy({
+          nonce: 'n',
+          isDev: false,
+          upgradeInsecureRequests: false,
+          supabaseUrl,
+          storagePublicUrl,
+        }),
+        'connect-src',
+      );
+    expect(csp('https://files.example.com/')).toBe("connect-src 'self' https://files.example.com");
+    expect(csp('https://localhost:8443')).toBe("connect-src 'self' https://localhost:8443");
+    expect(csp('http://localhost:8443')).toBe("connect-src 'self' http://localhost:8443");
+    expect(csp('http://files.example.com')).toBe("connect-src 'self'");
+    expect(csp('javascript:alert(1)')).toBe("connect-src 'self'");
+    expect(csp('nonsense')).toBe("connect-src 'self'");
+    expect(csp(undefined)).toBe("connect-src 'self'");
+    // Never a wildcard (a URL parses `*` as a host name; as a CSP source it means every host).
+    expect(csp('https://*.example.com')).toBe("connect-src 'self'");
+    expect(csp('https://*')).toBe("connect-src 'self'");
+    expect(csp('https://files.example.com:*')).toBe("connect-src 'self'");
+    // Only the origin, never a path; IP addresses and ports as given.
+    expect(csp('https://files.example.com/storage/v1')).toBe(
+      "connect-src 'self' https://files.example.com",
+    );
+    expect(csp('https://10.0.0.5:8443')).toBe("connect-src 'self' https://10.0.0.5:8443");
+    expect(csp('https://[::1]:8443')).toBe("connect-src 'self' https://[::1]:8443");
+    // The same origin as Supabase's is listed once.
+    expect(csp('https://proj.supabase.co', 'https://proj.supabase.co')).toBe(
+      "connect-src 'self' https://proj.supabase.co wss://proj.supabase.co",
+    );
+  });
+
   it('relaxes only what React/Next dev tooling needs in development', () => {
     const dev = buildContentSecurityPolicy({
       nonce: 'n',

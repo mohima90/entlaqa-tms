@@ -102,11 +102,13 @@ export interface InvitationAcceptDeps {
     displayName?: { readonly ar?: string | null; readonly en?: string | null },
   ) => Promise<{ tenantId: string }>;
   /**
-   * New-account sign-ups per client (T-M2-11, auth-limits.ts; each one is an Auth call): false = limited;
-   * throws RateLimiterUnavailableError when the limiter cannot answer (fail closed). "Sign in to accept"
-   * is limited by the sign-in guard of `auth` instead.
+   * New-account sign-ups per invitation link — its token hash, never the token — and per client
+   * (T-M2-11, auth-limits.ts; integration review M3: an office accepting a bulk import's invitations
+   * shares one address; each one is an Auth call): false = limited; throws RateLimiterUnavailableError
+   * when the limiter cannot answer (fail closed). "Sign in to accept" is limited by the sign-in guard of
+   * `auth` instead.
    */
-  readonly allowSignUp: () => Promise<boolean>;
+  readonly allowSignUp: (tokenHash: Buffer) => Promise<boolean>;
 }
 
 /** Thrown (→ INTERNAL_ERROR with a correlation id) when Auth refused the sign-up unexpectedly. */
@@ -305,7 +307,7 @@ export async function acceptInvitationWithNewAccount(
   const { invitation, tokenHash } = valid;
   const client = deps.signUpClient;
   if (!client || !deps.auth.supabase) return err(appError('NOT_CONFIGURED'));
-  if (!(await deps.allowSignUp())) return err(appError('RATE_LIMITED'));
+  if (!(await deps.allowSignUp(tokenHash))) return err(appError('RATE_LIMITED'));
   // A new account belongs to the invited organization only: its rule applies (T-M2-10, PO decision 5),
   // checked before Auth creates anything. The answer names the length, never the organization's settings.
   const min = await deps.invitationPasswordMinLength(tokenHash);

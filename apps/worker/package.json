@@ -15,6 +15,7 @@
     "@jadarat/platform-db": "workspace:*",
     "@jadarat/platform-files": "workspace:*",
     "@jadarat/platform-identity": "workspace:*",
+    "@jadarat/platform-import": "workspace:*",
     "@jadarat/platform-jobs": "workspace:*",
     "@jadarat/platform-notifications": "workspace:*",
     "@jadarat/platform-observability": "workspace:*",

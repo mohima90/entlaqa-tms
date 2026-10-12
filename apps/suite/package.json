@@ -20,6 +20,7 @@
     "@jadarat/platform-files": "workspace:*",
     "@jadarat/platform-i18n": "workspace:*",
     "@jadarat/platform-identity": "workspace:*",
+    "@jadarat/platform-import": "workspace:*",
     "@jadarat/platform-observability": "workspace:*",
     "@jadarat/platform-rbac": "workspace:*",
     "@jadarat/tms": "workspace:*",

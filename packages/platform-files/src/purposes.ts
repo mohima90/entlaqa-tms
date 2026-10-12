@@ -33,11 +33,14 @@ export const FILE_PURPOSES = {
     auditDownloads: true,
     downloadTtlSeconds: 60,
   },
-  /** The import's error report, written by the import job (T-M2-12). */
+  /**
+   * The import's list of problems and error report, written by the import job (T-M2-12): XLSX of plain
+   * text only (security review L2: no formula ever runs).
+   */
   'platform.user_import_report': {
     bucket: 'generated',
     maxBytes: 50 * MB,
-    types: ['text/csv'],
+    types: [XLSX],
     retention: 'import',
     uploadBy: 'worker',
     auditDownloads: true,

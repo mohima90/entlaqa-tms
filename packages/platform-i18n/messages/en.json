@@ -668,7 +668,9 @@
       },
       "status": {
         "pending": "Invited",
-        "expired": "Invitation expired"
+        "expired": "Invitation expired",
+        "held": "Invitation not sent",
+        "scheduled": "Sending shortly"
       },
       "sentCount": "{count, plural, =0 {Not sent yet} one {Sent once} =2 {Sent twice} other {Sent {count, number, integer} times}}",
       "expiresOn": "Expires on {date}",
@@ -687,7 +689,14 @@
       "roleNotAllowed": "Only the Organization Admin can resend or revoke an invitation with a privileged role.",
       "expiredBanner": "{count, plural, one {{count, number, integer} invitation expired before it was accepted. You can resend it now; it stays valid for 7 days.} other {{count, number, integer} invitations expired before they were accepted. You can resend them now; each stays valid for 7 days.}}",
       "resendExpired": "Resend expired invitations ({count, number, integer})",
-      "resentExpired": "Expired invitations resent ({count})."
+      "resentExpired": "Expired invitations resent ({count}).",
+      "fromImport": "From an import on {date}",
+      "scheduledHint": "In the sending queue; arrives within minutes.",
+      "sendHeld": "Send the invitation",
+      "sentHeld": "We're sending the invitation now. It stays valid for 7 days from when it's sent.",
+      "nothingToSend": "This invitation is no longer waiting to be sent; it may have been sent or revoked. Refresh the page to see the latest status.",
+      "sendNotAllowed": "Only the Organization Admin or an HR Manager can send invitations.",
+      "capped": "Showing the latest {shown, number, integer} of {total, number, integer} invitations. You can search by name or email to reach the others."
     }
   },
   "deactivation": {
@@ -977,5 +986,624 @@
       "busy": "This file is being checked right now, or it can't be deleted. Try again shortly.",
       "storageUnavailable": "File storage isn't available right now. Try again in a moment."
     }
+  },
+  "userImport": {
+    "entry": "Import from file",
+    "title": "Import users from a file",
+    "breadcrumb": "Users",
+    "breadcrumbImport": "Import from file",
+    "breadcrumbLabel": "Breadcrumb",
+    "intro": "You can add many employees at once from an Excel or CSV file. We check every row and show you the outcome before importing; nothing is saved until you confirm.",
+    "loadFailed": "We couldn't load the import because of a fault on our side. You can try again. Reference: {correlationId}",
+    "forbidden": {
+      "title": "You don't have permission to import users",
+      "body": "The Organization Admin and the HR Manager import users. You can contact one of them if you need to add employees.",
+      "home": "Back to home"
+    },
+    "notYours": {
+      "title": "Someone else started this import",
+      "body": "Only the person who started an import follows its steps, because the file holds employees' data. You'll see the result's counts once it ends."
+    },
+    "steps": {
+      "label": "Import steps",
+      "file": "File",
+      "mapping": "Column mapping",
+      "review": "Review",
+      "options": "Options",
+      "confirm": "Confirmation",
+      "done": "(completed)",
+      "short": "Step {current, number, integer} of {total, number, integer} · {name}",
+      "pageTitle": "{name} — Import users"
+    },
+    "fields": {
+      "email": "Work email",
+      "first_name_ar": "First name (Arabic)",
+      "father_name_ar": "Father's name (Arabic)",
+      "grandfather_name_ar": "Grandfather's name (Arabic)",
+      "family_name_ar": "Family name (Arabic)",
+      "first_name_en": "First name (English)",
+      "father_name_en": "Father's name (English)",
+      "grandfather_name_en": "Grandfather's name (English)",
+      "family_name_en": "Family name (English)",
+      "mobile": "Mobile",
+      "employee_number": "Employee number",
+      "job_title_ar": "Job title (Arabic)",
+      "job_title_en": "Job title (English)",
+      "department": "Department",
+      "branch": "Branch",
+      "manager_email": "Direct manager's email",
+      "hire_date": "Hire date",
+      "primary_role": "Primary role",
+      "additional_roles": "Additional roles",
+      "language": "Preferred language"
+    },
+    "upload": {
+      "templateHeading": "Download the template (optional)",
+      "templateIntro": "A ready template with Jadarat's columns, and lists of {organization}'s departments, branches and roles to pick values from.",
+      "templateLanguage": "Column headers language",
+      "templateXlsx": "Download template (XLSX)",
+      "templateCsv": "Download template (CSV)",
+      "hrSystemHint": "Have a file from your HR system? You can upload it as it is, without the template; we'll match its columns with you in the next step.",
+      "uploadHeading": "Upload the file",
+      "dropHint": "Drag and drop the file here, or",
+      "choose": "Choose a file",
+      "limits": "CSV or XLSX · up to 10,000 rows · up to 20 MB",
+      "rowsHint": "The first row holds the column headers; each row after it is one person.",
+      "scanHint": "We scan the file for viruses before reading it.",
+      "retentionHint": "The file is deleted automatically 7 days after the import ends.",
+      "back": "Back",
+      "nextDisabled": "Available once the file is uploaded and scanned.",
+      "uploading": "Uploading the file…",
+      "uploaded": "{loaded} of {total}",
+      "percent": "{percent, number, integer}% · You can follow the upload on this page.",
+      "cancelUpload": "Stop the upload",
+      "announceStart": "Upload started",
+      "announceDone": "Upload complete; scanning the file for viruses",
+      "megabytes": "{value, number} MB",
+      "progressLabel": "File upload progress",
+      "otherRunning": "Another import is running now, so a new file can't be uploaded until it ends.",
+      "mbUnit": "MB"
+    },
+    "fileStates": {
+      "scanning": "Scanning the file for viruses…",
+      "scanningHint": "We don't read the file before the scan ends. It usually takes a moment.",
+      "scanSlow": "The scan is taking longer than usual",
+      "scanSlowHint": "The file is safe with us, and we won't read it before the scan ends. You can stay on this page, or come back later from Recent imports.",
+      "reading": "The file is clean. Reading the rows…",
+      "readingHint": "We're reading the file's sheets and columns; no person's data is saved yet.",
+      "announceReading": "The file is clean; reading the rows",
+      "ready": "The file is ready for the next step",
+      "readySummary": "{size} · scanned, no viruses found",
+      "validating": "Checking every row…",
+      "validatingHint": "We're checking the rows against the organization's data; nothing has been saved yet.",
+      "progressLabel": "Scan and read progress",
+      "chooseAnother": "Choose another file",
+      "refused": {
+        "FILE_TYPE": {
+          "title": "This type of file can't be imported",
+          "body": "By its content, {name} isn't an XLSX or CSV file. You can open it in Excel, save it as XLSX or CSV, and upload it."
+        },
+        "FILE_TOO_LARGE": {
+          "title": "The file is larger than allowed",
+          "body": "The limit is 20 MB. You can delete columns you don't need, or split the file in two."
+        },
+        "FILE_TOO_MANY_ROWS": {
+          "title": "The file has more rows than allowed",
+          "body": "The file has more than 10,000 rows, the limit per file. You can split it in two, for example by branch, and import them one after the other."
+        },
+        "FILE_INFECTED": {
+          "title": "We didn't accept the file for security reasons",
+          "body": "The scan found malware in the file, so we quarantined it without reading it, and told the Organization Admin. You can scan your device, download the file again from its source and upload it."
+        },
+        "FILE_ENCODING": {
+          "title": "The Arabic letters in the file can't be read",
+          "body": "The file isn't saved as UTF-8, so Arabic letters show as unreadable symbols. You can save it from Excel as \"CSV UTF-8\", or upload it as XLSX."
+        },
+        "FILE_EMPTY": {
+          "title": "There's no data in the file",
+          "body": "We found the header row only, or nothing. People's data starts on the second row, one row per person."
+        },
+        "FILE_PROTECTED": {
+          "title": "The file is password-protected",
+          "body": "We can't read a protected file. You can remove the protection in Excel and upload it."
+        },
+        "FILE_MACROS": {
+          "title": "A file with macros can't be imported",
+          "body": "The file is an Excel workbook with macros. You can save it in Excel as a regular XLSX file and upload it."
+        },
+        "FILE_TOO_MANY_COLUMNS": {
+          "title": "The file has more columns than allowed",
+          "body": "The limit is 200 columns. You can delete columns you don't need and upload it."
+        },
+        "FILE_TOO_MANY_SHEETS": {
+          "title": "The file has more sheets than allowed",
+          "body": "The limit is 50 sheets per file. You can move the employees' sheet into a new file and upload it."
+        },
+        "FILE_UNREADABLE": {
+          "title": "The file can't be read",
+          "body": "The file seems damaged or incomplete. You can open it in Excel, save it again as XLSX or CSV, and upload it."
+        },
+        "FILE_SCAN_FAILED": {
+          "title": "The file couldn't be scanned",
+          "body": "The virus scan didn't finish, so we didn't read the file. You can upload it again."
+        },
+        "FILE_DELETED": {
+          "title": "The file was deleted before it was read",
+          "body": "You can upload it again."
+        },
+        "SYSTEM_FAULT": {
+          "title": "We couldn't read the file because of a fault on our side",
+          "body": "We tried several times without success, and nothing from the file was saved. You can upload it again."
+        }
+      },
+      "uploadCut": {
+        "title": "The upload was cut off",
+        "body": "The upload didn't finish, perhaps because of the connection. You can upload the file again.",
+        "retry": "Upload again"
+      },
+      "uploadErrors": {
+        "FILE_TYPE_NOT_ALLOWED": "This type of file can't be imported. You can upload an XLSX or CSV file.",
+        "FILE_TOO_LARGE": "The file is larger than 20 MB. You can split it in two.",
+        "FILE_TOO_MANY_UPLOADS": "You have many files whose upload didn't finish. Wait a moment and try again.",
+        "ANOTHER_IMPORT_RUNNING": "Another import is running now, so a new file can't be uploaded until it ends.",
+        "FILE_STORAGE_UNAVAILABLE": "The file service isn't available right now. You can try again shortly.",
+        "FILE_NOT_UPLOADED": "The file didn't arrive in full. You can upload it again.",
+        "FILE_UPLOAD_EXPIRED": "The upload took too long. You can upload it again.",
+        "TOO_MANY_DRAFTS": "You have 5 unfinished imports, or the organization has 20. Complete or cancel them before uploading another file; a review that isn't confirmed ends after 24 hours.",
+        "IMPORT_STATE_CHANGED": "This import ended before the upload finished. You can upload the file again."
+      }
+    },
+    "recent": {
+      "heading": "Recent imports",
+      "intro": "{organization}'s latest imports. The error report is available to the person who ran the import only, for 7 days.",
+      "caption": "The organization's recent imports",
+      "columns": {
+        "file": "File",
+        "by": "By",
+        "date": "Date",
+        "result": "Result",
+        "action": "Action"
+      },
+      "you": "You",
+      "view": "View",
+      "empty": "No imports yet."
+    },
+    "status": {
+      "uploaded": "Scanning",
+      "rejected": "File not accepted",
+      "mapping": "Column mapping",
+      "validating": "Checking",
+      "review": "Waiting for confirmation",
+      "queued": "Importing",
+      "checking": "Importing",
+      "importing": "Importing",
+      "inviting": "Importing",
+      "finished": "Finished",
+      "stopped": "Stopped",
+      "failed": "Didn't finish",
+      "cancelled": "Cancelled",
+      "expired": "Review expired",
+      "uploadNotFinished": "Upload not finished",
+      "undoing": "Undoing",
+      "undone": "Undone"
+    },
+    "resultSummary": "Added {added, number, integer} · updated {updated, number, integer} · skipped {skipped, number, integer} · not imported {failed, number, integer}",
+    "mapping": {
+      "heading": "Column mapping",
+      "intro": "We recognized {recognized, number, integer} of {total, number, integer} columns by their Arabic or English headers. You can change any mapping.",
+      "suggestionsIntro": "{count, plural, one {One column needs your confirmation.} other {{count, number, integer} columns need your confirmation.}}",
+      "file": "File: {name}",
+      "sheet": "Sheet",
+      "sheetOption": "{name} ({rows, plural, one {{rows, number, integer} row} other {{rows, number, integer} rows}})",
+      "sheetUnnamed": "Sheet {index, number, integer}",
+      "sheetOverLimit": "{name} — more than 10,000 rows",
+      "sheetEmpty": "{name} — no data",
+      "changeSheet": "Show the sheet's columns",
+      "required": "Required fields",
+      "requiredFound": "{field}: column \"{column}\"",
+      "requiredMissing": "{field}: no column found",
+      "caption": "The file's columns, sample values and the field each column is imported into",
+      "columns": {
+        "column": "Column in the file",
+        "samples": "Values from the first rows",
+        "target": "Imported into",
+        "state": "Status"
+      },
+      "selectLabel": "Column \"{column}\" is imported into",
+      "ignore": "Ignore this column",
+      "recognized": "Recognized",
+      "suggested": "Suggestion to confirm",
+      "suggestedBecause": {
+        "emails": "We didn't recognize the header, but its values are email addresses, so we suggest \"{field}\".",
+        "dates": "We didn't recognize the header, but its values are dates, so we suggest \"{field}\".",
+        "phones": "We didn't recognize the header, but its values are phone numbers, so we suggest \"{field}\"."
+      },
+      "confirmSuggestion": "Confirm the suggestion",
+      "confirmed": "Confirmed",
+      "ignored": "Ignored",
+      "chosen": "Your choice",
+      "never": "Not imported",
+      "neverReason": {
+        "status": "Account status isn't imported from a file: new people are added with an invitation, and accounts are deactivated from each profile.",
+        "password": "Passwords aren't imported from a file: each person sets theirs when accepting the invitation.",
+        "restricted": "This field isn't imported from a file.",
+        "report": "A column of our error report; it's ignored."
+      },
+      "noHeader": "(no header)",
+      "noSamples": "No values",
+      "missingOptional": "Optional fields not in the file: {fields}.",
+      "rules": "Two columns can't map to the same field. Ignored columns' values aren't read or saved.",
+      "back": "Back",
+      "next": "Next: review the data",
+      "nextHint": "Available once the required fields are mapped and the suggestions confirmed or changed.",
+      "working": "Saving…",
+      "listSeparator": ", ",
+      "errors": {
+        "MISSING": "We didn't find the \"{field}\" column. It's required; you can pick its column from the list, or add it to the file and upload it again.",
+        "TWICE": "\"{field}\" was chosen for more than one column. Two columns can't map to the same field.",
+        "NOT_IMPORTABLE": "A field was chosen for a column that isn't imported.",
+        "NO_COLUMN": "The file's columns changed. Refresh the page and map again.",
+        "SHEET_EMPTY": "There's no data on this sheet. Choose another sheet.",
+        "SHEET_TOO_MANY_ROWS": "This sheet has more than 10,000 rows. You can split it in two files.",
+        "NO_SUCH_SHEET": "We didn't find this sheet in the file."
+      }
+    },
+    "review": {
+      "heading": "Review the data",
+      "intro": "{total, plural, one {We checked {total, number, integer} row in {name}; nothing has been saved yet.} other {We checked {total, number, integer} rows in {name}; nothing has been saved yet.}}",
+      "downloadProblems": "Download the list of problems (XLSX)",
+      "cards": {
+        "new": "New",
+        "newHint": "{warnings, plural, =0 {Ready to add} other {Ready to add, {warnings, number, integer} of them with warnings}}",
+        "existing": "Already users",
+        "existingHint": "In the next step you choose to skip them or update their data",
+        "skipped": "Skipped",
+        "skippedHint": "Deactivated accounts, pending invitations and your own data",
+        "errors": "Errors",
+        "errorsHint": "Rows not imported until they're fixed"
+      },
+      "defaultRoleNote": "{count, plural, one {{count, number, integer} row has no primary role; it gets the default role you choose in the next step.} other {{count, number, integer} rows have no primary role; they get the default role you choose in the next step.}}",
+      "errorsGroup": "Errors: the row isn't imported",
+      "warningsGroup": "Warnings: the row is imported and the value left empty",
+      "skippedGroup": "Skipped without changes",
+      "showRows": "Show",
+      "showRowsFor": "Show rows: {reason}",
+      "tabs": {
+        "label": "Review rows",
+        "errors": "Errors",
+        "warnings": "Warnings",
+        "existing": "Already users",
+        "skipped": "Skipped",
+        "all": "All rows"
+      },
+      "caption": "{tab}, with each row's reason",
+      "filteredBy": "Showing rows with: {reason}",
+      "clearFilter": "Show all rows of the tab",
+      "columns": {
+        "row": "Row",
+        "email": "Email",
+        "name": "Name",
+        "problem": "Problem"
+      },
+      "noName": "— no name",
+      "kind": {
+        "error": "Error",
+        "warning": "Warning",
+        "existing": "Already a user",
+        "skip": "Skipped",
+        "info": "Note",
+        "new": "New"
+      },
+      "column": "Column: {column}",
+      "existingChanges": "Active user. If you choose to update existing users, this changes: {changes}.",
+      "existingNoChanges": "Active user; nothing in the file differs from their data.",
+      "changeItem": "{field} (from \"{from}\" to \"{to}\")",
+      "changeItemNew": "{field} (to \"{to}\")",
+      "readyNew": "Ready to add.",
+      "emptyTab": "No rows in this tab.",
+      "pageRange": "Showing {from, number, integer}–{to, number, integer} of {total, number, integer}",
+      "pagination": "Pages of the review rows",
+      "pagePrevious": "Previous",
+      "pageNext": "Next",
+      "continueNote": "You can go on now: the good rows are imported, and the rows with errors are in the error report with their reasons after the import. Or you can fix the file and upload it again. This review stays available until {date}.",
+      "nothingReady": {
+        "title": "No row is ready to import",
+        "body": "Every row has errors, or belongs to someone who is already a user. You can download the list of problems, fix the file and upload it again."
+      },
+      "uploadCorrected": "Upload a corrected file",
+      "back": "Back",
+      "changeMapping": "Change the column mapping",
+      "toOptions": "Next: options",
+      "expired": {
+        "title": "This review has expired",
+        "body": "A review stays available for 24 hours before the import starts; then we delete the file. You can upload it again.",
+        "upload": "Upload the file again"
+      }
+    },
+    "options": {
+      "heading": "Import options",
+      "existingHeading": "People already in the organization ({count, number, integer})",
+      "existingHint": "We recognize them by their work email.",
+      "existing": {
+        "skip": "Skip them, without changes",
+        "skipHint": "Only new rows are added; no existing user's data changes.",
+        "upsert": "Add new people and update existing users' data",
+        "upsertHint": "Existing users' data changes to what's in the file. An empty cell never clears the current value.",
+        "update_only": "Only update existing users' data",
+        "update_onlyHint": "No one new is added. Useful for updating job data after a restructuring, for example."
+      },
+      "existingNote": "An import never changes the work email, roles or account status of an existing user; those are changed from each user's profile. Every update is recorded in the audit log.",
+      "updateNotAllowed": "Updating existing users' data needs the permission to edit users.",
+      "defaultRole": "Default primary role",
+      "defaultRoleHint": "{count, plural, =0 {Every row has a primary role.} one {Given to {count, number, integer} row without a primary role.} other {Given to {count, number, integer} rows without a primary role.}}",
+      "privilegedNote": "Privileged roles (Organization Admin, HR Manager, Finance Manager, Compliance Officer, Auditor) can't be given by import; you can give them afterwards from each user's profile.",
+      "rolesHelp": "What can each role do?",
+      "invitationsHeading": "Invitations",
+      "invitations": {
+        "send": "Send the invitations as soon as the import ends",
+        "sendHint": "We send each new person an invitation in their preferred language, or the organization's if none is given. Each invitation stays valid for 7 days.",
+        "hold": "Add the people without sending invitations now",
+        "holdHint": "They appear on the users list as \"Invitation not sent\", and you can send their invitations later, all or some. The 7 days start when an invitation is sent."
+      },
+      "invitationsNote": "Invitations are sent in {organization}'s name by Jadarat's message service, and show that the invitation comes from you. With many people we send them in batches, so they may take a while to arrive.",
+      "back": "Back",
+      "next": "Next: confirmation"
+    },
+    "confirm": {
+      "heading": "Confirm the import",
+      "intro": "This is what happens when the import starts. You can go back to any step before starting.",
+      "newSend": "{count, plural, =0 {No one new is added to {organization}.} one {{count, number, integer} new person is added to {organization}, and their invitation is sent as soon as the import ends.} other {{count, number, integer} new people are added to {organization}, and their invitations are sent as soon as the import ends.}}",
+      "newHold": "{count, plural, =0 {No one new is added to {organization}.} one {{count, number, integer} new person is added to {organization} without sending their invitation now.} other {{count, number, integer} new people are added to {organization} without sending invitations now.}}",
+      "newSkipped": "No one new is added ({count, plural, one {{count, number, integer} row of a person who isn't a user is skipped} other {{count, number, integer} rows of people who aren't users are skipped}}), because you chose to update existing users only.",
+      "newWarnings": "{count, plural, one {{count, number, integer} of them will have some values left empty because of warnings.} other {{count, number, integer} of them will have some values left empty because of warnings.}}",
+      "existingSkip": "{count, plural, one {{count, number, integer} existing user is skipped without changes.} other {{count, number, integer} existing users are skipped without changes.}} You chose to skip existing users.",
+      "existingUpdate": "{count, plural, one {{count, number, integer} existing user has their data updated} other {{count, number, integer} existing users have their data updated}} ({changed, plural, =0 {none of them differ from the file} other {{changed, number, integer} of them differ from the file}}).",
+      "existingPrivileged": "{count, plural, one {{count, number, integer} of them holds privileged roles, so they're skipped because you're the HR Manager.} other {{count, number, integer} of them hold privileged roles, so they're skipped because you're the HR Manager.}}",
+      "skipped": "{count, plural, one {{count, number, integer} row is skipped} other {{count, number, integer} rows are skipped}} (deactivated accounts, invitations not accepted yet, and your own data).",
+      "errorRows": "{count, plural, one {{count, number, integer} row won't be imported because of errors. You'll find it with its reason in the error report after the import.} other {{count, number, integer} rows won't be imported because of errors. You'll find them with each row's reason in the error report after the import.}}",
+      "changeOption": "Change the option",
+      "showWarnings": "Show the warnings",
+      "showErrors": "Show the errors",
+      "rolesHeading": "Roles given to the new people",
+      "rolesCaption": "New people per primary role",
+      "rolesColumns": {
+        "role": "Primary role",
+        "count": "Count"
+      },
+      "roleDefaultCount": "{count, number, integer} ({defaults, number, integer} of them with the default role)",
+      "additionalRoles": "And additional roles: {roles}. No privileged role is given.",
+      "noAdditionalRoles": "No privileged role is given.",
+      "summary": {
+        "file": "File",
+        "fileValue": "{name} · sheet \"{sheet}\"",
+        "fileValueCsv": "{name}",
+        "existing": "Existing users",
+        "defaultRole": "Default role",
+        "invitations": "Invitations",
+        "invitationsSend": "As soon as the import ends",
+        "invitationsHold": "Later, from the users list"
+      },
+      "notes": {
+        "recheck": "We check every row again as it's imported; if something changed since the review, for example the same person was invited by hand, the row moves to the error report.",
+        "audit": "The audit log records that you ran this import, and every person it added.",
+        "undo": "The import can be undone within 7 days for people who haven't accepted their invitation yet."
+      },
+      "cancel": "Cancel the import and delete the file",
+      "cancelConfirm": "Cancel this import? We delete the file and the review's results, and no one is added.",
+      "cancelConfirmButton": "Cancel the import",
+      "keep": "Back",
+      "back": "Back",
+      "start": "Start the import",
+      "starting": "Starting…",
+      "errors": {
+        "ANOTHER_IMPORT_RUNNING": "Another import is running now. The organization runs one import at a time; you can start after it ends.",
+        "REVIEW_EXPIRED": "This review has expired. You can upload the file again.",
+        "IMPORT_STATE_CHANGED": "This import's status changed. Refresh the page to see the latest status.",
+        "UNDO_EXPIRED": "This import can no longer be undone.",
+        "REPORT_NOT_YOURS": "This report is available to the person who ran the import only.",
+        "REPORT_DELETED": "The report was deleted 7 days after the import ended.",
+        "NOTHING_TO_SEND": "There are no invitations left to send.",
+        "SEND_NOT_ALLOWED": "Only the Organization Admin or an HR Manager can send invitations.",
+        "FILE_STORAGE_UNAVAILABLE": "The file service isn't available right now. You can try again shortly."
+      }
+    },
+    "progress": {
+      "heading": "Importing users",
+      "undoHeading": "Undoing the import",
+      "startedBy": "{name} · started {date} · by {person}",
+      "progressLabel": "Import progress",
+      "phaseCounts": "{done, number, integer} of {total, number, integer}",
+      "phases": {
+        "checking": "Checking the rows again",
+        "importing": "Adding people and giving roles",
+        "inviting": "Preparing and sending invitations"
+      },
+      "phaseState": {
+        "done": "Done",
+        "current": "In progress",
+        "waiting": "Starts after everyone is added; then we send them in batches",
+        "skipped": "Invitations aren't sent now"
+      },
+      "announce": {
+        "checking": "Checking the rows again started.",
+        "importing": "Adding people and giving roles started.",
+        "inviting": "Preparing the invitations started.",
+        "undoing": "Undoing the import started."
+      },
+      "leaveNote": "You can leave this page or close the browser; the import continues on our side, and its progress also shows at the top of the users list.",
+      "oneAtATime": "The organization runs one import at a time, so another import can't start until this one ends.",
+      "stopRequested": "You asked to stop the import; we stop after the current batch.",
+      "backToUsers": "Back to users",
+      "stop": "Stop the import",
+      "stopTitle": "Stop the import?",
+      "stopBody": "We stop after the current batch. The people added so far ({count, number, integer}) stay, without invitations; you can send them from the users list, or undo the whole import from the result page.",
+      "stopConfirm": "Stop the import",
+      "keep": "Back",
+      "working": "Working…",
+      "undoingBody": "We're removing the people this import added who haven't accepted their invitation, and restoring the previous data of the users it updated. You can leave this page."
+    },
+    "result": {
+      "finished": "The import finished",
+      "stopped": "The import was stopped",
+      "failed": "The import stopped before finishing",
+      "undoStopped": "The undo stopped before finishing",
+      "undone": "The import was undone",
+      "endedBy": "{name} · ended {date} · by {person}",
+      "allImported": "The whole file was imported.",
+      "someFailed": "The file was imported except {count, plural, one {{count, number, integer} row with errors} other {{count, number, integer} rows with errors}}. Each row's reason is in the error report; you can fix them and import them again.",
+      "stoppedBody": "We stopped after the batch in progress. The people added so far stay, without invitations, and the remaining rows are in the error report.",
+      "failedImporter": "The import stopped because the person who ran it is no longer Organization Admin or HR Manager. The people added before that stay, and the remaining rows are in the error report.",
+      "failedSystem": "We couldn't finish the import because of a fault on our side, after several attempts. Nothing was lost of the people added, and the remaining rows are in the error report, so you can import them from it later.",
+      "undoNotAllowed": "The undo stopped because the person who asked for it can no longer undo this import. What was undone stays undone; an Organization Admin can undo the rest until the undo period ends.",
+      "undoFailedSystem": "We couldn't finish the undo because of a fault on our side, after several attempts. What was undone stays undone; you can ask for the undo again until the undo period ends.",
+      "undoneBody": "We removed the people this import added who hadn't accepted their invitation, and restored the previous data of the updated users unless it changed since.",
+      "countsHeading": "Counts",
+      "added": "added to the organization",
+      "addedWarnings": "{count, plural, one {{count, number, integer} of them has some values left empty.} other {{count, number, integer} of them have some values left empty.}}",
+      "invitationsSent": "receive their invitations",
+      "invitationsProgress": "{sent, plural, =0 {No invitations sent yet; we send them automatically within minutes.} one {{sent, number, integer} invitation sent so far; we send the rest automatically.} other {{sent, number, integer} invitations sent so far; we send the rest automatically.}}",
+      "invitationsAllSent": "All invitations were sent.",
+      "invitationsHeld": "invitations not sent",
+      "invitationsHeldHint": "They appear on the users list as \"Invitation not sent\".",
+      "sendInvitations": "Send the invitations ({count, number, integer})",
+      "sending": "Sending…",
+      "sendDone": "{count, plural, one {We're sending the invitation now.} other {We're sending {count, number, integer} invitations now, in batches.}}",
+      "updated": "had their data updated",
+      "updatedSkip": "You chose to skip existing users.",
+      "skipped": "skipped without changes",
+      "skippedHint": "{existing, number, integer} already users, and {other, number, integer} for other reasons.",
+      "failedCount": "not imported because of errors",
+      "failedHint": "The reasons are below and in the error report.",
+      "undoCounts": "Removed {removed, number, integer} · kept {kept, number, integer} (accepted their invitation or others depend on them) · data restored for {restored, number, integer} · data kept for {changed, number, integer} changed after the import",
+      "undoKeptPrivileged": "Data kept for {count, number, integer} who now hold a privileged role: only an Organization Admin changes their data.",
+      "undoKeptError": "{count, number, integer} couldn't be undone because of a fault; they stay as the import left them.",
+      "reportHeading": "Error report",
+      "reportIntro": "Holds the rows not imported ({failed, number, integer}), skipped ({skipped, number, integer}) or added with warnings ({warned, number, integer}), with each row's reason in Arabic and English.",
+      "reportFix": "To fix them, you can edit the rows in the report itself and upload it as a new file; we ignore the result and reason columns automatically.",
+      "downloadReport": "Download the error report (XLSX)",
+      "reportAvailable": "Available to you only until {date}; then it's deleted with the original file.",
+      "reportNotYours": "This report is available to the person who ran the import only: the error report holds employees' data, so only the person who ran the import downloads it. You see the result's counts without the report.",
+      "reportDeleted": "The error report was deleted: the report and the original file are deleted 7 days after the import ends. The result's counts stay on this page and in the audit log.",
+      "noReport": "There are no rows in the error report.",
+      "reportNotMadeImporter": "No error report was made: it's for the person who ran the import only, and they're no longer Organization Admin or HR Manager. The reasons below show what wasn't imported.",
+      "reportFailed": "We couldn't make the error report because of a fault on our side. The reasons below show what wasn't imported; you can import the remaining rows from your original file.",
+      "reasonsCaption": "Rows not imported by reason",
+      "reasonsColumns": {
+        "reason": "Reason not imported",
+        "rows": "Rows"
+      },
+      "nextHeading": "Next steps",
+      "viewInvited": "See the invited people on the users list",
+      "importAnother": "Import another file",
+      "importAnotherHint": "Such as the report after fixing it.",
+      "privilegedHint": "To give a privileged role, such as HR Manager, to someone added, open their profile and choose \"Change roles\".",
+      "undoAvailable": "Undoing this import is available until {date}, for people who haven't accepted their invitation yet.",
+      "undoAction": "Undo this import",
+      "refusedTitle": "The file wasn't accepted",
+      "cancelledTitle": "The import was cancelled",
+      "cancelledBody": "No one was added; we deleted the file and the review's results.",
+      "expiredTitle": "The review expired",
+      "uploadAgain": "Upload a file"
+    },
+    "undo": {
+      "title": "Undo the import of {name}?",
+      "removes": "{count, plural, =0 {The undo removes no one from the organization.} one {We remove from the organization {count, number, integer} person this import added who hasn't accepted their invitation; their invitation link stops working at once.} other {We remove from the organization {count, number, integer} people this import added who haven't accepted their invitation; their invitation links stop working at once.}}",
+      "keeps": "{count, plural, one {{count, number, integer} person who accepted their invitation and started using Jadarat stays. You can deactivate their account from their profile if needed.} other {{count, number, integer} people who accepted their invitation and started using Jadarat stay. You can deactivate any of them from their profile if needed.}}",
+      "restores": "{count, plural, one {We restore the previous data of {count, number, integer} user this import updated, unless it changed since.} other {We restore the previous data of {count, number, integer} users this import updated, unless it changed since.}}",
+      "noUpdates": "This import updated no existing user's data, so there are no values to restore.",
+      "referenced": "Anyone others depend on (someone's direct manager, or a department head) stays until their responsibilities are moved.",
+      "audit": "The undo is recorded in the audit log, and it can't be reversed once done.",
+      "reason": "Reason for undoing (optional, shown in the audit log)",
+      "reasons": {
+        "wrong_file": "The wrong file was uploaded",
+        "wrong_data": "Wrong data in the file",
+        "wrong_options": "Wrong role or options chosen",
+        "other": "Another reason"
+      },
+      "noReason": "No reason",
+      "after": "After undoing, you can upload a corrected file and import it again. Undo is available until {date}.",
+      "back": "Back",
+      "confirm": "Undo the import",
+      "working": "Working…"
+    },
+    "banners": {
+      "running": "Importing users from {name}: {done, number, integer} of {total, plural, one {{total, number, integer} person} other {{total, number, integer} people}} added so far.",
+      "runningUndo": "Undoing the import of {name}.",
+      "viewProgress": "View progress",
+      "held": "{count, plural, one {One person was added from {name} without sending their invitation.} other {{count, number, integer} people were added from {name} without sending invitations.}} They can't sign in until their invitations arrive and they accept them.",
+      "sendAll": "Send the invitations ({count, number, integer})",
+      "sending": "Sending…",
+      "sent": "We're sending the invitations now in batches; each one stays valid for 7 days from when it's sent."
+    },
+    "guide": {
+      "toggle": "Which columns are required and how are they written?",
+      "title": "Import template columns",
+      "intro": "Write each column's header in the first row, in Arabic or English. Column order doesn't matter, and you can delete optional columns you don't need.",
+      "caption": "Template columns: Arabic and English header, required or optional, description and example",
+      "columns": {
+        "column": "Column",
+        "required": "Required",
+        "description": "Description",
+        "example": "Example"
+      },
+      "required": "Required",
+      "optional": "Optional",
+      "groups": {
+        "identity": "Identity and name",
+        "work": "Contact and work",
+        "roles": "Roles and language"
+      },
+      "inTemplateHeading": "What's in the template",
+      "inTemplateXlsx": "XLSX file: a \"Users\" sheet to fill in, with drop-down lists for department, branch, roles and language; an \"Instructions\" sheet with this table; and a \"Lists\" sheet with the departments, branches and roles available to you.",
+      "inTemplateCsv": "CSV file: the header row only, as UTF-8 so Arabic letters show correctly in Excel.",
+      "noExamples": "The template has no example rows, so none can be imported by mistake.",
+      "neverHeading": "Never imported from a file",
+      "neverStatus": "Account status and passwords: new people are added with an invitation, and accounts are deactivated from each profile.",
+      "neverPrivileged": "Privileged roles (Organization Admin, HR Manager, Finance Manager, Compliance Officer, Auditor): given from each user's profile.",
+      "neverRestricted": "Restricted personal data such as gender, date of birth and national ID."
+    },
+    "codes": {
+      "EMAIL_REQUIRED": "Work email empty",
+      "EMAIL_INVALID": "Invalid email",
+      "NAME_AR_REQUIRED": "Arabic first or family name empty",
+      "NAME_TOO_LONG": "Name longer than 60 characters",
+      "FULL_NAME_TOO_LONG": "Full name longer than 200 characters",
+      "EMAIL_DUPLICATE_IN_FILE": "Email repeated in the file",
+      "EMPLOYEE_NUMBER_DUPLICATE_IN_FILE": "Employee number repeated in the file",
+      "EMPLOYEE_NUMBER_TAKEN": "Employee number of someone else",
+      "EMPLOYEE_NUMBER_INVALID": "Employee number longer than 40 characters",
+      "KEY_CONFLICT": "Email and employee number of different people",
+      "ROLE_UNKNOWN": "Unknown role",
+      "ROLE_PRIVILEGED": "Privileged role not given by import",
+      "ROLE_ORG_ADMIN": "Organization Admin role",
+      "MANAGER_LOOP": "Loop in the reporting line",
+      "MANAGER_SELF": "Person is their own manager",
+      "CHANGED_SINCE_REVIEW": "Changed since the review",
+      "NOT_PROCESSED": "Not reached by the import",
+      "NOT_ALLOWED": "You may no longer add people",
+      "WRITE_FAILED": "Fault on our side while saving",
+      "DEPARTMENT_NOT_FOUND": "Department not in Organization data",
+      "DEPARTMENT_AMBIGUOUS": "Department name matches several departments",
+      "BRANCH_NOT_FOUND": "Branch not in Organization data",
+      "BRANCH_AMBIGUOUS": "Branch name matches several branches",
+      "MANAGER_NOT_FOUND": "Direct manager not found",
+      "MANAGER_EMAIL_INVALID": "Invalid direct manager email",
+      "MOBILE_NO_COUNTRY_CODE": "Mobile without country code",
+      "MOBILE_INVALID": "Invalid mobile",
+      "HIRE_DATE_INVALID": "Unreadable hire date",
+      "LANGUAGE_UNKNOWN": "Unavailable language; the organization’s is used",
+      "JOB_TITLE_TOO_LONG": "Job title longer than 150 characters",
+      "TEXT_TOO_LONG": "Value too long",
+      "ROLES_IGNORED_EXISTING": "Role column ignored for existing users",
+      "EXISTING_SKIPPED": "Already users",
+      "INVITATION_PENDING": "Invitations not accepted yet",
+      "MEMBER_DEACTIVATED": "Deactivated accounts",
+      "OWN_ROW": "Your own record",
+      "PRIVILEGED_MEMBER": "Holders of privileged roles",
+      "NEW_SKIPPED_UPDATE_ONLY": "Not users (update only)",
+      "NO_CHANGES": "Nothing differs from their data",
+      "ROLE_REPEATED": "Role repeated in the row"
+    },
+    "heldSummary": "{count, plural, one {one invitation not sent yet} other {{count, number, integer} invitations not sent yet}}"
   }
 }

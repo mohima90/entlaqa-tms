@@ -62,7 +62,7 @@ export interface RequestClient {
 const SUBJECT_DOMAIN = 'jadarat.rate-limit.v1';
 
 function subject(
-  kind: 'account' | 'client' | 'user' | 'device' | 'session',
+  kind: 'account' | 'client' | 'user' | 'device' | 'session' | 'invitation',
   value: string,
 ): Buffer {
   return createHash('sha256').update(`${SUBJECT_DOMAIN}\n${kind}\n${value}`).digest();
@@ -125,6 +125,15 @@ export function sessionSubject(sessionId: string): Buffer {
   return subject('session', sessionId.trim().toLowerCase());
 }
 
+/**
+ * An invitation link's subject (integration review M3): from the SHA-256 of its token — the hash the
+ * database keeps — never the token itself, so the limiter's keys and log references cannot give a link
+ * back.
+ */
+export function invitationSubject(tokenHash: Buffer): Buffer {
+  return subject('invitation', tokenHash.toString('hex'));
+}
+
 // ----- Trusted browsers (PO decision 9 Oct 2026; screen 6 «تذكّر الجهاز الموثوق»; TM-0003 IA-02) -----
 
 /** A browser's trusted-device token: 32 random bytes, base64url without padding (43 characters). */
@@ -162,7 +171,9 @@ export const LIMIT_BUCKETS = {
   resetRequestAccount: 'password_reset.request_account',
   resetCompletionClient: 'password_reset.completion_client',
   invitationLookupClient: 'invitation.lookup_client',
+  invitationLookupInvitation: 'invitation.lookup_invitation',
   invitationSignUpClient: 'invitation.sign_up_client',
+  invitationSignUpInvitation: 'invitation.sign_up_invitation',
   mfaCodeAccount: 'mfa_code.account_failures',
   mfaCodeReset: 'mfa_code.reset_failures',
   mfaCodeClient: 'mfa_code.client_failures',
@@ -1157,11 +1168,19 @@ export function createPasswordResetLimiter(
 
 // ----- Invitation links -----
 
+/**
+ * Invitation links (integration review M3): each link has its own small budget (its token hash, never the
+ * token), the client address a ceiling — an office whose people accept a bulk import's invitations at
+ * once shares one address. The client is counted first, then — only for an allowed client — the link.
+ */
 export interface InvitationLimiter {
-  /** Link lookups per client. Fails OPEN when the limiter fails (logged): a lookup checks no credential. */
-  allowLookup(): Promise<boolean>;
-  /** New-account sign-ups per client (each one is an Auth call). Throws when the limiter fails. */
-  allowSignUp(): Promise<boolean>;
+  /**
+   * Link lookups per link and client (`tokenHash` null for a malformed link: the client only). Fails OPEN
+   * when the limiter fails (logged): a lookup checks no credential.
+   */
+  allowLookup(tokenHash: Buffer | null): Promise<boolean>;
+  /** New-account sign-ups per link and client (each one is an Auth call). Throws when the limiter fails. */
+  allowSignUp(tokenHash: Buffer): Promise<boolean>;
 }
 
 export function createInvitationLimiter(
@@ -1188,14 +1207,21 @@ export function createInvitationLimiter(
     return false;
   };
   return {
-    async allowLookup() {
-      let counter: RateLimitCounter;
+    async allowLookup(tokenHash) {
       try {
-        counter = await deps.store.hit(
+        const client = await deps.store.hit(
           B.invitationLookupClient,
           clientKey,
           shared ? limits.sharedClientLookups : limits.lookupsPerClient,
         );
+        if (!verdict(deps.lookupAction, B.invitationLookupClient, client)) return false;
+        if (tokenHash === null) return true;
+        const link = await deps.store.hit(
+          B.invitationLookupInvitation,
+          invitationSubject(tokenHash),
+          limits.lookupsPerInvitation,
+        );
+        return verdict(deps.lookupAction, B.invitationLookupInvitation, link);
       } catch (error) {
         deps.log({
           event: 'auth.limiter.unavailable',
@@ -1205,17 +1231,24 @@ export function createInvitationLimiter(
         });
         return true;
       }
-      return verdict(deps.lookupAction, B.invitationLookupClient, counter);
     },
-    async allowSignUp() {
-      const counter = await failClosed(deps, deps.signUpAction, () =>
+    async allowSignUp(tokenHash) {
+      const client = await failClosed(deps, deps.signUpAction, () =>
         deps.store.hit(
           B.invitationSignUpClient,
           clientKey,
           shared ? limits.sharedClientSignUps : limits.signUpsPerClient,
         ),
       );
-      return verdict(deps.signUpAction, B.invitationSignUpClient, counter);
+      if (!verdict(deps.signUpAction, B.invitationSignUpClient, client)) return false;
+      const link = await failClosed(deps, deps.signUpAction, () =>
+        deps.store.hit(
+          B.invitationSignUpInvitation,
+          invitationSubject(tokenHash),
+          limits.signUpsPerInvitation,
+        ),
+      );
+      return verdict(deps.signUpAction, B.invitationSignUpInvitation, link);
     },
   };
 }

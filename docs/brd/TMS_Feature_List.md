@@ -1,6 +1,6 @@
 # Jadarat TMS — Full Feature List
 
-**Date:** 8 Oct 2026 (v2.6) · **Status:** Decisions D1, D2, D6, D7 applied; IAM-16 added (PO, 5 Oct 2026); ADM-17 extended with platform settings (PO, 6 Oct 2026); IAM-07 role CRUD per tenant (PO, 7 Oct 2026); NTF-10/11 organization e-mail texts and own mail server in R2 (PO, 7 Oct 2026); BR-IAM-4 Org Admin held alone (PO, 8 Oct 2026) · **BRD:** `docs/brd/Jadarat_TMS_BRD_v2.md` · **Basis:** Market research in `docs/research/TMS_Market_Comparison_vs_BRD.md` + Jadarat TMS BRD v1.0
+**Date:** 11 Oct 2026 (v2.7) · **Status:** Decisions D1, D2, D6, D7 applied; IAM-16 added (PO, 5 Oct 2026); ADM-17 extended with platform settings (PO, 6 Oct 2026); IAM-07 role CRUD per tenant (PO, 7 Oct 2026); NTF-10/11 organization e-mail texts and own mail server in R2 (PO, 7 Oct 2026); BR-IAM-4 Org Admin held alone (PO, 8 Oct 2026); ADM-04/05 maintained by the HR Manager (PO, 11 Oct 2026) · **BRD:** `docs/brd/Jadarat_TMS_BRD_v2.md` · **Basis:** Market research in `docs/research/TMS_Market_Comparison_vs_BRD.md` + Jadarat TMS BRD v1.0
 
 **Legend**
 
@@ -19,8 +19,8 @@
 | ADM-01 | Self-service tenant sign-up, trial and onboarding wizard (org → branding → users → first course) | Core | R1 | ✅ |
 | ADM-02 | Organization profile (AR/EN names, CR number, VAT number, country, currency, timezone) | Core | R1 | ✅ |
 | ADM-03 | Legal entities (multiple companies under one tenant, own currency/VAT/branding) | Plus | R3 | ❌ |
-| ADM-04 | Branches with hierarchy, GPS, working week and hours per branch | Core | R1 | ✅ |
-| ADM-05 | Hierarchical departments, cost centers, department heads | Core | R1 | ✅ |
+| ADM-04 | Branches with hierarchy, GPS, working week and hours per branch (maintained by the HR Manager — PO, 11 Oct 2026) | Core | R1 | ✅ |
+| ADM-05 | Hierarchical departments, cost centers, department heads (maintained by the HR Manager — PO, 11 Oct 2026) | Core | R1 | ✅ |
 | ADM-06 | Interactive org chart with head-count and compliance overlay | Plus | R3 | ✅ |
 | ADM-07 | Branding: logos, colors, fonts, WCAG contrast check | Core | R1 | ✅ |
 | ADM-08 | Theme builder with live preview, presets, version history, dark mode | Plus | R2 | ✅ |

@@ -7,7 +7,7 @@
 | **Product** | Jadarat TMS — Training Management System (module of the Jadarat HR Suite; also sold standalone) |
 | **Company** | ENTLAQA |
 | **Document type** | Business Requirements Document |
-| **Version** | 2.6 — Draft for stakeholder review |
+| **Version** | 2.7 — Draft for stakeholder review |
 | **Date** | 30 September 2026 |
 | **Supersedes** | *Jadarat TMS BRD v1.0* (15 March 2026) |
 | **Companion documents** | `docs/delivery/Jadarat_TMS_Development_Plan.md` (development plan & delivery guide) · `docs/brd/TMS_Feature_List.md` (feature list, 292 features) · `docs/research/TMS_Market_Comparison_vs_BRD.md` (market & regulatory research) |
@@ -21,6 +21,7 @@
 |---|---|---|---|
 | 1.0 | 15 Mar 2026 | ENTLAQA Product Team | Initial Jadarat TMS BRD (offline training, Jadarat-specific) |
 | 2.0 | 27 Sep 2026 | ENTLAQA Product Team | Full rewrite: comprehensive TMS scope, training planning cycle, vendor & finance depth, assessment engine, generic LMS integration framework, corrected regulatory content, sovereign deployment, requirement IDs with priority & release |
+| 2.7 | 11 Oct 2026 | Product Owner (via Claude) | Organization structure moved to HR (PO, 11 Oct 2026): FR-ADM-04 (branches) and FR-ADM-05 (departments) are maintained by the **HR Manager**, not the Tenant Admin; §4.2 HR Manager scope and the Appendix B note updated. Feature list ADM-04/05 |
 | 2.6 | 8 Oct 2026 | Product Owner (via Claude) | BR-IAM-4 widened (PO, 8 Oct 2026): the Organization Admin role is held alone — no other role for the same person in the organization (not even Learner); scheduled hand-overs allowed; second-account circumvention accepted as residual risk (audit log only). Feature list IAM-07 |
 | 2.5 | 7 Oct 2026 | Product Owner (via Claude) | E-mail ownership (PO, 7 Oct 2026): FR-NTF-02 clarified — R1 sends every e-mail, account e-mails included (invitation, password reset, password changed), through the platform's notification service in the organization's language and brand, not the sign-in provider's mailer; new FR-NTF-10 organization-editable e-mail texts (R2) and FR-NTF-11 organization's own mail server — Resend, Mailgun, SMTP, Microsoft Graph (R2). Feature list NTF-02, NTF-10, NTF-11 |
 | 2.4 | 7 Oct 2026 | Product Owner (via Claude) | FR-IAM-07 extended (PO, 7 Oct 2026): full role management per tenant in R2 — create, edit and delete custom roles, remove unused system roles and restore them (SMEs using 3–4 roles); Organization Admin role never removable; roles in use cannot be deleted; audited. Organization Admin becomes a setup role without core training features (Appendix B) and never shares a person with HR Manager (BR-IAM-4). Feature list IAM-07 |
@@ -290,7 +291,7 @@ Fifteen default roles ship with every tenant; tenants may clone and create custo
 | Tenant Admin | مدير المنشأة | Setup of one tenant (settings, branding, users and roles, security, integrations, audit); no core training features (PO, 7 Oct 2026) |
 | Training Manager | مدير التدريب | Plans, catalog, sessions, resources, enrollments, reports |
 | Training Coordinator | منسق التدريب | Day-to-day session operations, logistics, attendance |
-| HR Manager | مدير الموارد البشرية | Records, mandatory training, compliance, HRIS |
+| HR Manager | مدير الموارد البشرية | Records, organization structure (branches, departments), mandatory training, compliance, reports, HRIS |
 | Finance Manager | المدير المالي | Budgets, POs, invoices, chargebacks, payments |
 | Compliance Officer | مسؤول الامتثال | Compliance dashboards, regulatory reports, audit (read) |
 | Department Head | رئيس القسم | Department plan, approvals, department reports |
@@ -388,8 +389,8 @@ Columns: **Pri** = MoSCoW priority · **Rel** = target release.
 | FR-ADM-01 | The system shall provide self-service sign-up that creates a tenant in *trial* status, provisions default roles, templates and workflows, and launches an onboarding wizard (organization → branding → first users → first course → first session). Trial length is configurable by ENTLAQA (default 14 days). | M | R1 |
 | FR-ADM-02 | Tenant Admin shall maintain the organization profile: legal name (AR/EN), commercial registration no., VAT/tax no., industry, headquarters country, default currency, default timezone, default language, fiscal-year start month, authorized signatory. | M | R1 |
 | FR-ADM-03 | The system shall support multiple legal entities under one tenant, each with its own currency, VAT number, branding variant, certificate numbering and invoice sequence; users, budgets and reports can be scoped by entity. | S | R3 |
-| FR-ADM-04 | Tenant Admin shall maintain branches (AR/EN name, code, country, city, address, GPS, timezone, headquarters flag, parent branch) with branch-specific working week (including half-days) and working hours. | M | R1 |
-| FR-ADM-05 | Tenant Admin shall maintain a hierarchical department tree (AR/EN name, code, cost center, head, parent, branch) with drag-and-drop reordering and CSV import. | M | R1 |
+| FR-ADM-04 | HR Manager shall maintain branches (AR/EN name, code, country, city, address, GPS, timezone, headquarters flag, parent branch) with branch-specific working week (including half-days) and working hours. | M | R1 |
+| FR-ADM-05 | HR Manager shall maintain a hierarchical department tree (AR/EN name, code, cost center, head, parent, branch) with drag-and-drop reordering and CSV import. | M | R1 |
 | FR-ADM-06 | The system shall display an interactive org chart (branch → department → team) showing head-count and compliance percentage per node, exportable to PDF/PNG. | C | R3 |
 | FR-ADM-07 | Tenant Admin shall configure brand identity: logo variants (full, icon, light, dark), primary/secondary/accent colors with generated shades, Arabic and Latin fonts from an approved list; the system shall warn when color contrast fails WCAG 2.2 AA. | M | R1 |
 | FR-ADM-08 | The system shall provide a theme builder with live preview (dashboard, login, certificate, e-mail, mobile), ≥ 10 presets, draft/publish, version history and dark-mode enablement. | S | R2 |
@@ -1546,7 +1547,7 @@ Detailed per-requirement release tags are in §6–§9.
 | AI features | F (config) | Use | Use | Use | Use | Use | Use | Use | Use | — | — | Use | Use | V (logs) |
 | Audit log | V | — | — | — | — | V | — | — | — | — | — | — | — | V |
 
-**Organization Admin = setup role (PO, 7 Oct 2026):** the Tenant Admin (Organization Admin, مدير المنشأة) sets the organization up from the IT and marketing side — tenant settings, branding and domains, users and roles (full people records), security, integrations, AI configuration, audit log — and hands it over to the HR department; it has **no access to core training features** (requests, plans, catalog, sessions, enrollments, attendance, assessments, certificates, compliance, OJT, budgets, training reports). The Organization Admin holds no other role in the same organization — not even Learner (BR-IAM-4, PO 8 Oct 2026).
+**Organization Admin = setup role (PO, 7 Oct 2026):** the Tenant Admin (Organization Admin, مدير المنشأة) sets the organization up from the IT and marketing side — tenant settings, branding and domains, users and roles (full people records), security, integrations, AI configuration, audit log — and hands it over to the HR department, which maintains the organization structure — branches and departments (FR-ADM-04/05; PO, 11 Oct 2026); it has **no access to core training features** (requests, plans, catalog, sessions, enrollments, attendance, assessments, certificates, compliance, OJT, budgets, training reports). The Organization Admin holds no other role in the same organization — not even Learner (BR-IAM-4, PO 8 Oct 2026).
 
 The Platform Super Admin (ENTLAQA) operates outside tenant roles, through the platform console (FR-ADM-17).
 

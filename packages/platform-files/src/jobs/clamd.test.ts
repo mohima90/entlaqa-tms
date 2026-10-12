@@ -15,13 +15,15 @@ import {
 /**
  * A stand-in clamd: answers zPING / zVERSION, and for zINSTREAM collects the chunks until the zero-length
  * one, then answers what `verdict` says about the received bytes — after `verdictDelayMs` (clamd scans
- * silently first). `early`: answer (and close) as soon as this many bytes arrived, like clamd at its
- * StreamMaxLength.
+ * silently first). `early`: answer (and close its side) as soon as this many bytes arrived, like clamd
+ * at its StreamMaxLength; it keeps reading (and ignoring) what is still in flight, so the answer is not
+ * lost to a reset. `reset`: reset the connection without an answer once this many bytes arrived.
  */
 function fakeClamd(options: {
   verdict?: (data: Buffer) => string;
   verdictDelayMs?: number;
   early?: number;
+  reset?: number;
   silent?: boolean;
   version?: string;
 }) {
@@ -32,8 +34,10 @@ function fakeClamd(options: {
     let command: string | null = null;
     const received: Buffer[] = [];
     let total = 0;
+    let answered = false;
     socket.on('error', () => undefined);
     socket.on('data', (data: Buffer) => {
+      if (answered) return;
       buffer = Buffer.concat([buffer, data]);
       if (command === null) {
         const end = buffer.indexOf(0);
@@ -67,9 +71,13 @@ function fakeClamd(options: {
         received.push(buffer.subarray(4, 4 + length));
         total += length;
         buffer = buffer.subarray(4 + length);
+        if (options.reset !== undefined && total >= options.reset) {
+          socket.resetAndDestroy();
+          return;
+        }
         if (options.early !== undefined && total >= options.early) {
+          answered = true;
           socket.end('stream: Heuristics.Limits.Exceeded.MaxFileSize FOUND\0');
-          socket.destroySoon();
           return;
         }
       }
@@ -145,6 +153,16 @@ describe('clamd client', () => {
       clean: false,
       finding: 'Heuristics.Limits.Exceeded.MaxFileSize',
     });
+  });
+
+  it('fails closed when clamd resets the stream without an answer', async () => {
+    const scanner = await scannerFor({ reset: 1024 * 1024 });
+    const session = await scanner.start();
+    const scan = async () => {
+      for (let i = 0; i < 8; i += 1) await session.write(new Uint8Array(1024 * 1024));
+      return session.finish();
+    };
+    await expect(scan()).rejects.toBeInstanceOf(ScannerUnavailableError);
   });
 
   it('fails closed: unreachable, silent or unexpected answers are never clean', async () => {

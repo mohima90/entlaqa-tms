@@ -210,6 +210,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
+| 12 Oct 2026 | Dependabot PRs #52 (actions), #53 (npm minor/patch, Next.js 16.4), #54 (self-hosted images: supabase/postgres 17.11.0.004, storage-api v1.80.2, Mailpit v1.31.4) merged by the PO; main CI on the combined result being checked. T-M2-19 part 1 started: `platform.org.manage` moves to the HR Manager |
 | 12 Oct 2026 | PR #55 (T-M2-12 bulk user import) merged by the PO and deployed to staging (DB deploy plan → apply green, 4 migrations); PO set hosted Auth "Rate limit for sign ups and sign ins" to 300 per 5 min. CI fixes before merge: fake platform-db export (Gate 3), smoke waits for the worker's release (Gate 15) |
 | 12 Oct 2026 | PR #55 CI fix: Gate 15 (self-hosted smoke) read the held invitations' send count right after the browser test, but the worker releases them at the send clock's pace and the mailer counts the send later — the check now waits up to 60 s for the same condition |
 | 12 Oct 2026 | PR #55 CI fix: Gate 3 failed in `modules/tms` — its fake `@jadarat/platform-db` lacked `isPassiveRead`, which the default runtime now reads (L1); fake completed. The local gate had passed on a cached turbo result: re-run with `--force` before a PR |

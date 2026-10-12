@@ -726,7 +726,7 @@
       }
     },
     "itemsBlocked": {
-      "permission": "Your permissions don't cover moving these items; the Organization Admin can deactivate this account.",
+      "permission": "Your permissions don't cover moving these items; someone whose role does — for departments, the HR Manager — can deactivate this account.",
       "item_not_allowed": "Some of these items are outside your permissions; the Organization Admin can deactivate this account."
     },
     "reason": "Reason for deactivation",

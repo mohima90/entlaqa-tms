@@ -160,7 +160,7 @@ describe('deactivation screen query', () => {
     aal: 'aal1' | 'aal2' = 'aal1',
   ) => createDefineQuery(runtime(roles, aal).rt)(deactivationQueryDefinition(kinds));
 
-  it('Organization Admin: the person, what they hold and who can take it over', async () => {
+  it('Organization Admin: the person, what they hold and who can take it over; not the departments (T-M2-19)', async () => {
     db.listDirectReports.mockResolvedValue([report]);
     db.listHeadedDepartments.mockResolvedValue([department]);
     const result = await query(['tenant_admin'])({ personId: SARA });
@@ -171,7 +171,8 @@ describe('deactivation screen query', () => {
         privileged: false,
         responsibilities: [
           { code: 'platform.direct_reports', items: [report], blocked: null },
-          { code: 'platform.headed_departments', items: [department], blocked: null },
+          // The organization structure is the HR Manager's (org.manage, PO 11 Oct 2026).
+          { code: 'platform.headed_departments', items: [department], blocked: 'permission' },
         ],
         candidates: [{ personId: NEW_MANAGER, nameAr: 'خالد', nameEn: null }],
       }),
@@ -179,13 +180,13 @@ describe('deactivation screen query', () => {
     expect(db.listReplacementCandidates).toHaveBeenCalledWith(TX, SARA);
   });
 
-  it('HR Manager: departments need org.manage, a privileged report needs the Organization Admin', async () => {
+  it('HR Manager: moves departments (org.manage); a privileged report needs the Organization Admin', async () => {
     db.listDirectReports.mockResolvedValue([report, { ...report, id: 'r2', movable: false }]);
     db.listHeadedDepartments.mockResolvedValue([department]);
     const result = await query(['hr_manager'])({ personId: SARA });
     expect(result.ok && result.value.responsibilities.map((r) => [r.code, r.blocked])).toEqual([
       ['platform.direct_reports', 'item_not_allowed'],
-      ['platform.headed_departments', 'permission'],
+      ['platform.headed_departments', null],
     ]);
   });
 
@@ -280,7 +281,8 @@ describe('deactivate action', () => {
     db.listDirectReports.mockResolvedValue([report]);
     db.listHeadedDepartments.mockResolvedValue([department]);
     db.revokePendingInvitationsOf.mockResolvedValue(['i1']);
-    const { run, writeAudit, getClaims } = action(['tenant_admin']);
+    // The HR Manager moves both kinds (user.update, org.manage) for a non-privileged member.
+    const { run, writeAudit, getClaims } = action(['hr_manager']);
     const result = await run(deactivateInput());
     expect(result).toEqual(
       ok({
@@ -394,9 +396,9 @@ describe('deactivate action', () => {
     expect(db.deactivateMembership).not.toHaveBeenCalled();
   });
 
-  it('HR Manager: departments they cannot restructure, or a privileged report → NOT_ALLOWED', async () => {
+  it('Organization Admin: departments (the HR Manager\'s); HR Manager: a privileged report → NOT_ALLOWED', async () => {
     db.listHeadedDepartments.mockResolvedValue([department]);
-    const departments = await action(['hr_manager']).run(deactivateInput());
+    const departments = await action(['tenant_admin']).run(deactivateInput());
     expect(!departments.ok && departments.error.fieldErrors).toEqual([
       { path: 'reassign.platform.headed_departments', code: 'NOT_ALLOWED' },
     ]);

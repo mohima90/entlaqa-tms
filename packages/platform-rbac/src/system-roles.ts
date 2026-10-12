@@ -75,7 +75,11 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
       en: 'Sets up the organization: settings, branding, users and roles, security, integrations and audit. No access to training features.',
     },
     privileged: true,
-    grants: tenantWide(...Object.values(p)),
+    // Every platform permission except the organization structure, which the HR Manager maintains
+    // (PO decision 11 Oct 2026, BRD v2.7 FR-ADM-04/05; T-M2-19).
+    grants: tenantWide(
+      ...Object.values(p).filter((permission) => permission !== p['platform.org.manage']),
+    ),
   },
   {
     code: 'training_manager',
@@ -101,8 +105,8 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
     code: 'hr_manager',
     name: { ar: 'مدير الموارد البشرية', en: 'HR Manager' },
     description: {
-      ar: 'سجلات الموظفين والتدريب الإلزامي والامتثال، ودعوة المستخدمين وإسناد الأدوار غير المميزة.',
-      en: 'Employee records, mandatory training and compliance; invites users and gives non-privileged roles.',
+      ar: 'سجلات الموظفين والهيكل التنظيمي والتدريب الإلزامي والامتثال، ودعوة المستخدمين وإسناد الأدوار غير المميزة.',
+      en: 'Employee records, organization structure, mandatory training and compliance; invites users and gives non-privileged roles.',
     },
     privileged: true,
     grants: tenantWide(
@@ -113,6 +117,8 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
       p['platform.role.read'],
       p['platform.role.assign'],
       p['platform.org.read'],
+      // Branches and departments (PO decision 11 Oct 2026, BRD v2.7 FR-ADM-04/05; T-M2-19).
+      p['platform.org.manage'],
     ),
   },
   {

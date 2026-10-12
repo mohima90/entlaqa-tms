@@ -705,10 +705,14 @@ DEACT_ID="$(create_user "$DEACT_EMAIL" "$DEACT_PASSWORD")"
 SECOND_EMAIL="deactivate-second-$STAMP@sovereign.example"
 SECOND_PASSWORD="Second-$(openssl rand -hex 16)"
 SECOND_ID="$(create_user "$SECOND_EMAIL" "$SECOND_PASSWORD")"
+# The HR Manager hands Reem's department over (organization structure, PO 11 Oct 2026; T-M2-19).
+HR_EMAIL="deactivate-hr-$STAMP@sovereign.example"
+HR_PASSWORD="Hr-$(openssl rand -hex 16)"
+HR_ID="$(create_user "$HR_EMAIL" "$HR_PASSWORD")"
 PGPASSWORD="$POSTGRES_PASSWORD" PGSSLMODE=verify-full PGSSLROOTCERT=.secrets/ca.crt \
   psql -h localhost -p 55432 -U postgres -d postgres -X -q -v ON_ERROR_STOP=1 -v admin_user="$USER_ID" \
   -v deact_user="$DEACT_ID" -v deact_email="$DEACT_EMAIL" -v second_user="$SECOND_ID" \
-  -v second_email="$SECOND_EMAIL" -f seed-deactivation.sql >/dev/null
+  -v second_email="$SECOND_EMAIL" -v hr_user="$HR_ID" -v hr_email="$HR_EMAIL" -f seed-deactivation.sql >/dev/null
 DEACT_PERSON=5eed1000-0000-4000-8000-0000000000d1
 SECOND_PERSON=5eed1000-0000-4000-8000-0000000000d2
 # sign_in <email> <password>: "<HTTP status> <Auth error_code or ->" of a password sign-in through the
@@ -748,6 +752,7 @@ deactivate_e2e() {
     SIGNED_IN_E2E_EMAIL="$EMAIL" SIGNED_IN_E2E_PASSWORD="$PASSWORD" \
     SIGNED_IN_E2E_MANAGER_EMAIL="$MANAGER_EMAIL" SIGNED_IN_E2E_MANAGER_PASSWORD="$PROFILE_NEW_PASSWORD" \
     DEACTIVATE_E2E_MEMBER_EMAIL="$DEACT_EMAIL" DEACTIVATE_E2E_MEMBER_PASSWORD="$DEACT_PASSWORD" \
+    DEACTIVATE_E2E_HR_EMAIL="$HR_EMAIL" DEACTIVATE_E2E_HR_PASSWORD="$HR_PASSWORD" \
     pnpm exec playwright test e2e/deactivate.spec.ts --project=desktop-chromium)
 }
 deactivate_e2e deactivate

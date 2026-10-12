@@ -207,7 +207,8 @@ begin
 
   perform tests.assert_eq(
     (select array_agg(tgname::text order by tgname::text) from pg_trigger where tgrelid = 'platform.persons'::regclass and not tgisinternal),
-    array['persons_deactivation', 'persons_guard_writer', 'persons_reactivation', 'persons_stamp_row'], 'persons: triggers');
+    array['persons_deactivation', 'persons_guard_writer', 'persons_reactivation', 'persons_removal_guard', 'persons_stamp_row'],
+    'persons: triggers (persons_removal_guard: people removed by an import undo, T-M2-12)');
   perform tests.assert_eq(
     (select array_agg(tgname::text order by tgname::text) from pg_trigger where tgrelid = 'platform.person_employment'::regclass and not tgisinternal),
     array['person_employment_guard_writer', 'person_employment_stamp_row', 'person_employment_validate'], 'person_employment: triggers');

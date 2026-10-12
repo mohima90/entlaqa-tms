@@ -7,6 +7,7 @@ const identity = vi.hoisted(() => ({
 }));
 const db = vi.hoisted(() => ({
   withUserTx: vi.fn((_claims: unknown, fn: (tx: unknown) => Promise<unknown>) => fn('tx')),
+  isPassiveRead: vi.fn((name: string) => name === 'platform.user_import.status'),
   insertAuditEvent: vi.fn(() => Promise.resolve()),
   loadSessionFacts: vi.fn(() => Promise.resolve({ active: true, aal2: false })),
   loadPersonResourceFacts: vi.fn((_tx: unknown, id: string) =>
@@ -62,6 +63,19 @@ describe('default defineAction runtime', () => {
       await defaultActionRuntime.withUserTx(claims, (tx) => Promise.resolve(tx), options),
     ).toBe('tx');
     expect(db.withUserTx).toHaveBeenCalledWith(claims, expect.any(Function), options);
+  });
+
+  it('passes a passive read on only when platform-db lists it (integration review L1)', async () => {
+    const claims = { sub: 'u' } as never;
+    const passive = { retryOnConflict: true, passiveRead: 'platform.user_import.status' };
+    await defaultActionRuntime.withUserTx(claims, (tx) => Promise.resolve(tx), passive);
+    expect(db.withUserTx).toHaveBeenCalledWith(claims, expect.any(Function), passive);
+    await expect(
+      defaultActionRuntime.withUserTx(claims, (tx) => Promise.resolve(tx), {
+        passiveRead: 'platform.users.list',
+      }),
+    ).rejects.toThrow('not an allow-listed passive read');
+    expect(db.withUserTx).toHaveBeenCalledTimes(1);
   });
 
   it('asks the database whether the session may act and counts as AAL2 (T-M2-10, review L1/H1)', async () => {

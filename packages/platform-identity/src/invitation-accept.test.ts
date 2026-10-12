@@ -310,12 +310,15 @@ describe("the organization's password rule and MFA step (T-M2-10)", () => {
 });
 
 describe('acceptInvitationWithNewAccount (public sign-up gated by the Auth hook)', () => {
-  it('limits new-account sign-ups per client before Auth is asked (T-M2-11)', async () => {
-    const { deps, auth, calls } = setup({ signUpAllowed: false });
+  it('limits new-account sign-ups per link and client before Auth is asked (T-M2-11, integration review M3)', async () => {
+    const { deps, auth, calls, hashToken } = setup({ signUpAllowed: false });
     const result = await acceptInvitationWithNewAccount(deps, newAccount);
     expect(result).toMatchObject({ ok: false, error: { code: 'RATE_LIMITED' } });
     expect(auth.signUp).not.toHaveBeenCalled();
     expect(calls).toEqual([]);
+    // Keyed on the link's token hash (what the database keeps), never the token.
+    expect(deps.allowSignUp).toHaveBeenCalledWith(hashToken.mock.results[0]?.value);
+    expect(deps.allowSignUp).not.toHaveBeenCalledWith(newAccount.token);
   });
 
   it('fails closed when the limiter cannot answer (no sign-up)', async () => {

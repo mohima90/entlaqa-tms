@@ -23,13 +23,14 @@ begin
   for r in
     select rolname, rolcanlogin, rolinherit, rolsuper, rolbypassrls, rolcreaterole, rolcreatedb, rolreplication
     from pg_roles where rolname in ('app_server', 'app_worker', 'app_queue', 'tenant_guard', 'invitation_guard',
-                                    'account_mail_guard', 'membership_guard', 'rate_limit_guard', 'file_guard')
+                                    'account_mail_guard', 'membership_guard', 'rate_limit_guard', 'file_guard',
+                                    'user_import_guard')
   loop
     if r.rolname in ('app_server', 'app_worker', 'app_queue') and not r.rolcanlogin then
       failures := failures || format('%s must be LOGIN', r.rolname);
     end if;
     if r.rolname in ('tenant_guard', 'invitation_guard', 'account_mail_guard', 'membership_guard', 'rate_limit_guard',
-                     'file_guard')
+                     'file_guard', 'user_import_guard')
        and r.rolcanlogin then
       failures := failures || format('%s must be NOLOGIN', r.rolname);
     end if;
@@ -39,8 +40,9 @@ begin
   end loop;
   if (select count(*) from pg_roles
       where rolname in ('app_server', 'app_worker', 'app_queue', 'tenant_guard', 'invitation_guard',
-                        'account_mail_guard', 'membership_guard', 'rate_limit_guard', 'file_guard')) <> 9 then
-    failures := failures || 'roles app_server, app_worker, app_queue, tenant_guard, invitation_guard, account_mail_guard, membership_guard, rate_limit_guard and file_guard must all exist'::text;
+                        'account_mail_guard', 'membership_guard', 'rate_limit_guard', 'file_guard',
+                        'user_import_guard')) <> 10 then
+    failures := failures || 'roles app_server, app_worker, app_queue, tenant_guard, invitation_guard, account_mail_guard, membership_guard, rate_limit_guard, file_guard and user_import_guard must all exist'::text;
   end if;
   -- The job runner (ADR 0005 §2): member of nothing (never authenticated), owner of graphile_worker.
   if exists (select 1 from pg_auth_members m join pg_roles u on u.oid = m.member where u.rolname = 'app_queue') then
@@ -400,7 +402,13 @@ begin
       ('private.file_user_tenant()', 'file_guard', array['file_guard'], false),
       ('private.file_for_actor(uuid)', 'file_guard', array['file_guard'], false),
       ('private.file_worker_check()', 'file_guard', array['file_guard'], false),
-      ('private.file_housekeeping_action(platform.files)', 'file_guard', array['file_guard'], false)
+      ('private.file_housekeeping_action(platform.files)', 'file_guard', array['file_guard'], false),
+      -- User imports (T-M2-12): the worker's claim across organizations (app_worker system claims, checked
+      -- inside; ids, step and lease only) and its check.
+      ('private.claim_user_import_work()', 'user_import_guard', array['user_import_guard', 'authenticated'], true),
+      ('private.user_import_worker_check()', 'user_import_guard', array['user_import_guard'], false),
+      -- The platform-wide send clock of import invitations (security review M2): app_worker system claims.
+      ('private.take_invitation_send_slot(interval)', 'user_import_guard', array['user_import_guard', 'authenticated'], true)
     ) as h(fn, owner, allowed, definer)
     left join pg_proc p on p.oid = to_regprocedure(h.fn)
   loop
@@ -478,7 +486,9 @@ begin
         'private.lock_file_housekeeping(uuid,text)', 'private.finish_file_housekeeping(uuid,text)',
         'private.claim_orphan_objects(integer)',
         'private.create_generated_file(text,text,text,uuid,text,text,bigint,uuid)',
-        'private.finish_generated_file(uuid,bigint,text)')
+        'private.finish_generated_file(uuid,bigint,text)',
+        -- User imports (T-M2-12)
+        'private.claim_user_import_work()', 'private.take_invitation_send_slot(interval)')
   loop
     failures := failures || format('%s: unexpected SECURITY DEFINER function (security review)', r.fn);
   end loop;
@@ -539,7 +549,8 @@ begin
   for r in
     select o.obj, o.reader
     from (values ('private.auth_account', 'account_mail_guard'), ('private.account_mail_requests', 'account_mail_guard'),
-                 ('private.auth_account_email', 'membership_guard')) as o(obj, reader)
+                 ('private.auth_account_email', 'membership_guard'),
+                 ('private.invitation_send_clock', 'user_import_guard')) as o(obj, reader)
   loop
     if to_regclass(r.obj) is null then
       failures := failures || format('%s is missing', r.obj);
@@ -558,6 +569,8 @@ begin
       select distinct case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end
       from pg_attribute att, aclexplode(att.attacl) a
       where att.attrelid = to_regclass(r.obj) and att.attacl is not null
+        -- The send clock's reader has column privileges (listed exactly in the user_import_guard block).
+        and not (r.obj = 'private.invitation_send_clock' and a.grantee <> 0 and pg_get_userbyid(a.grantee) = r.reader)
     loop
       failures := failures || format('%s must have no privilege on %s', v_role, r.obj);
     end loop;
@@ -637,7 +650,8 @@ begin
            when 'platform.ref_roles' then 'SELECT(code),SELECT(is_privileged)'
            when 'platform.persons' then 'SELECT(id),SELECT(status),SELECT(tenant_id)'
            when 'platform.tenants' then 'SELECT(id),SELECT(status)'
-           when 'platform.invitations' then 'SELECT(email),SELECT(expires_at),SELECT(status),SELECT(tenant_id)'
+           -- mail_held: a held invitation (T-M2-12, not sent yet) does not let a login sign in.
+           when 'platform.invitations' then 'SELECT(email),SELECT(expires_at),SELECT(mail_held),SELECT(status),SELECT(tenant_id)'
            when 'private.auth_account_email' then 'SELECT'
          end) then
         failures := failures || format('membership_guard on %s: %s (T-M2-09: unexpected privileges)', r.tbl, r.privs);
@@ -729,6 +743,60 @@ begin
     failures := failures || 'private.rate_limit_secret must hold exactly one key'::text;
   end if;
 
+  -- user_import_guard (T-M2-12): creates nothing, owns no relation, nobody acts as it; it reads the
+  -- imports' lifecycle columns, their file's status, the organizations' status and due held invitations,
+  -- and writes the lease and the send clock only (column privileges; no table-wide privilege anywhere).
+  -- The send clock (private.invitation_send_clock, security review M2) is reachable by it alone.
+  if exists (select 1 from pg_roles where rolname = 'user_import_guard') then
+    for r in select nspname from pg_namespace where nspname = any (module_schemas) loop
+      if has_schema_privilege('user_import_guard', r.nspname, 'create') then
+        failures := failures || format('user_import_guard must not have CREATE on schema %s', r.nspname);
+      end if;
+    end loop;
+    if exists (select 1 from pg_class c where c.relowner = (select oid from pg_roles where rolname = 'user_import_guard')) then
+      failures := failures || 'user_import_guard must own no relations'::text;
+    end if;
+    for r in
+      select distinct u.rolname from pg_auth_members m
+      join pg_roles g on g.oid = m.roleid join pg_roles u on u.oid = m.member
+      where g.rolname = 'user_import_guard' and (m.inherit_option or m.set_option)
+        and not u.rolsuper and u.rolname <> current_user
+    loop
+      failures := failures || format('%s must not be a member of user_import_guard', r.rolname);
+    end loop;
+    for r in
+      select c.oid::regclass::text as t from pg_class c join pg_namespace n on n.oid = c.relnamespace
+      where c.relkind in ('r', 'p', 'v', 'm', 'f') and n.nspname = any (module_schemas)
+        and has_table_privilege('user_import_guard', c.oid, 'select, insert, update, delete, truncate, references, trigger')
+    loop
+      failures := failures || format('user_import_guard must have no table-wide privilege on %s', r.t);
+    end loop;
+    for r in
+      select format('%s.%s %s', c.oid::regclass, a.attname, x.privilege_type) as p
+      from pg_class c
+      join pg_namespace n on n.oid = c.relnamespace
+      join pg_attribute a on a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped
+      cross join lateral aclexplode(a.attacl) x
+      where n.nspname = any (module_schemas) and x.grantee = (select oid from pg_roles where rolname = 'user_import_guard')
+        and not ((c.oid::regclass::text, a.attname::text, x.privilege_type) in (
+                   ('platform.files', 'id', 'SELECT'), ('platform.files', 'tenant_id', 'SELECT'),
+                   ('platform.files', 'status', 'SELECT'),
+                   ('platform.tenants', 'id', 'SELECT'), ('platform.tenants', 'status', 'SELECT'),
+                   ('platform.invitations', 'tenant_id', 'SELECT'), ('platform.invitations', 'import_id', 'SELECT'),
+                   ('platform.invitations', 'status', 'SELECT'), ('platform.invitations', 'mail_held', 'SELECT'),
+                   ('platform.invitations', 'send_at', 'SELECT'),
+                   ('platform.user_imports', 'lease_until', 'UPDATE'), ('platform.user_imports', 'lease_token', 'UPDATE'),
+                   ('private.invitation_send_clock', 'id', 'SELECT'), ('private.invitation_send_clock', 'next_slot', 'SELECT'),
+                   ('private.invitation_send_clock', 'next_slot', 'UPDATE'))
+                 or (c.oid = 'platform.user_imports'::regclass and x.privilege_type = 'SELECT'
+                     and a.attname in ('id', 'tenant_id', 'file_id', 'status', 'review_expires_at', 'finished_at',
+                                       'undone_at', 'confirmed_at', 'data_purged_at', 'lease_until', 'lease_token',
+                                       'next_attempt_at', 'updated_at', 'created_at', 'upload_due_at')))
+    loop
+      failures := failures || format('user_import_guard: unexpected privilege %s (T-M2-12)', r.p);
+    end loop;
+  end if;
+
   -- Files (T-M2-18, ADR 0006). file_guard: the same attributes as the other guard roles; it creates
   -- nothing and nobody acts as it; it reads storage.objects only through the view
   -- private.storage_object_facts (owned by the migration role, which must bypass RLS on storage.objects;
@@ -800,6 +868,10 @@ begin
             or (r.relname = 'files' and r.polname = 'files_read' and r.polcmd = 'r'
                 and r.roles = array['authenticated'] and r.qual like '%private.request_user_id()%'
                 and r.qual not like '%true%')
+            -- T-M2-12: the import worker's claim reads a file's tenant and status (column privileges id,
+            -- tenant_id, status only — checked in the user_import_guard block), for user_import_guard alone.
+            or (r.relname = 'files' and r.polname = 'files_user_import_guard_read' and r.polcmd = 'r'
+                and r.roles = array['user_import_guard'] and r.qual = 'true' and r.chk = '')
             or (r.relname = 'file_download_grants' and r.polname = 'file_download_grants_guard' and r.polcmd = '*'
                 and r.roles = array['file_guard'] and r.qual = 'true' and r.chk = 'true')
             or (r.relname = 'file_download_grants' and r.polname = 'file_download_grants_read' and r.polcmd = 'r'

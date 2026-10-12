@@ -275,7 +275,8 @@ declare
   r record;
 begin
   select * into r from private.create_generated_file('platform.user_import_report', 'platform', 'user_import',
-    'a5000000-0000-4000-8000-0000000000f2', 'تقرير الأخطاء.csv', 'text/csv', 120, '00000000-0000-4000-8000-0000000000a1');
+    'a5000000-0000-4000-8000-0000000000f2', 'تقرير الأخطاء.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 120,
+    '00000000-0000-4000-8000-0000000000a1');
   perform tests.assert_eq(r.bucket, 'generated', 'reports go to the generated bucket');
   perform tests.assert(r.object_key like 'a0000000-0000-4000-8000-000000000001/platform/user_import/a5000000-0000-4000-8000-0000000000f2/%',
     'tenant-prefixed key');
@@ -283,10 +284,10 @@ begin
   perform tests.assert_fails($q$select * from private.create_generated_file('platform.user_import', 'platform', 'user_import',
       gen_random_uuid(), 'a.csv', 'text/csv', 10, null)$q$, array['JF003'], 'user purposes are uploaded, never generated');
   perform tests.assert_fails($q$select * from private.create_generated_file('platform.user_import_report', 'platform', 'user_import',
-      gen_random_uuid(), 'a.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 10, null)$q$,
-    array['JF001'], 'a type the purpose does not allow');
+      gen_random_uuid(), 'a.csv', 'text/csv', 10, null)$q$,
+    array['JF001'], 'a type the purpose does not allow (the import''s reports are XLSX: security review L2)');
   perform tests.assert_fails($q$select * from private.create_generated_file('platform.user_import_report', 'platform', 'user_import',
-      gen_random_uuid(), 'a.csv', 'text/csv', 10, '00000000-0000-4000-8000-0000000000b1')$q$,
+      gen_random_uuid(), 'a.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 10, '00000000-0000-4000-8000-0000000000b1')$q$,
     array['42501'], 'only for an active member of the job''s tenant');
   perform tests.assert(private.delete_file('f1a00000-0000-4000-8000-000000000008'), 'a job of the tenant may delete a file');
 end $$;

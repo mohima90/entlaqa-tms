@@ -1,0 +1,38 @@
+{
+  "name": "@jadarat/platform-import",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Bulk user import (T-M2-12, FR-IAM-04): spreadsheet reading and writing (CSV, XLSX — bounded, no formulas run), the template, column recognition and row checks, the error report (formula-neutralized), the import's actions and queries, and its worker task under ./jobs.",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts",
+    "./jobs": "./src/jobs/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:integration": "vitest run --config vitest.integration.config.ts"
+  },
+  "dependencies": {
+    "@jadarat/platform-core": "workspace:*",
+    "@jadarat/platform-db": "workspace:*",
+    "@jadarat/platform-files": "workspace:*",
+    "@jadarat/platform-i18n": "workspace:*",
+    "@jadarat/platform-jobs": "workspace:*",
+    "@jadarat/platform-rbac": "workspace:*",
+    "fflate": "0.8.3",
+    "saxes": "6.0.0",
+    "server-only": "0.0.1",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@jadarat/config": "workspace:*",
+    "@types/node": "24.19.0",
+    "@vitest/coverage-v8": "5.0.3",
+    "drizzle-orm": "0.45.3",
+    "typescript": "6.0.3",
+    "vitest": "5.0.3"
+  }
+}

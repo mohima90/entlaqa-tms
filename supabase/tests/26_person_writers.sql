@@ -152,8 +152,8 @@ begin
     array['created_at', 'created_by', 'deactivated_at', 'display_name_ar', 'display_name_en', 'email', 'employee_number',
           'family_name_ar', 'family_name_en', 'father_name_ar', 'father_name_en', 'first_name_ar', 'first_name_en',
           'grandfather_name_ar', 'grandfather_name_en', 'id', 'is_national', 'mobile_e164', 'nationality_code', 'person_type',
-          'preferred_locale', 'status', 'tenant_id', 'updated_at', 'updated_by', 'version'],
-    'persons: columns reviewed for the write guard (self-service list in private.person_self_service_columns)');
+          'preferred_locale', 'removed_at', 'removed_by_import_id', 'status', 'tenant_id', 'updated_at', 'updated_by', 'version'],
+    'persons: columns reviewed for the write guard (self-service list in private.person_self_service_columns; removed_*: never self-service, private.check_person_removal)');
 end $$;
 rollback;
 

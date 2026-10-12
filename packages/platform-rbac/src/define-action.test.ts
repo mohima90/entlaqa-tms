@@ -396,6 +396,51 @@ describe('defineAction (ADR 0003 §4)', () => {
     expect(options).toMatchObject([{ retryOnConflict: true }, { retryOnConflict: false }]);
   });
 
+  it('a passive read (integration review L1): asks the runtime for it by name, and only reads', async () => {
+    const options: unknown[] = [];
+    const { rt, log } = runtime();
+    const record: ActionRuntime<FakeTx> = {
+      ...rt,
+      withUserTx: (c, fn, o) => {
+        options.push(o);
+        return rt.withUserTx(c, fn, o);
+      },
+    };
+    const define = createDefineAction(record);
+    const status = define({
+      permission: approve,
+      input: Input,
+      resource: (input) => ({ type: 'enrollment', id: input.enrollmentId }),
+      passiveRead: 'platform.user_import.status',
+      handler: () => Promise.resolve(ok('v1')),
+    });
+    expect(await status({ enrollmentId: ENROLLMENT })).toEqual(ok('v1'));
+    expect(options).toMatchObject([
+      { retryOnConflict: true, passiveRead: 'platform.user_import.status' },
+    ]);
+    expect(log).toEqual(['begin', 'commit']);
+    // An ordinary action never asks for it.
+    await makeAction(record)({ enrollmentId: ENROLLMENT });
+    expect(options[1]).not.toHaveProperty('passiveRead');
+    // A passive read only reads: no audit, nothing before or after its transaction, no external effects.
+    const base = {
+      permission: approve,
+      input: Input,
+      scoped: true,
+      passiveRead: 'platform.user_import.status',
+      handler: () => Promise.resolve(ok(1)),
+    } as const;
+    for (const extra of [
+      { audit: () => ({ action: 'tms.enrollment.read', entityType: 'enrollment' }) },
+      { auditFailure: () => null },
+      { beforeTransaction: () => Promise.resolve(ok(undefined)) },
+      { afterCommit: ({ result }: { result: number }) => Promise.resolve(ok(result)) },
+      { externalEffects: true },
+    ]) {
+      expect(() => define({ ...base, ...extra })).toThrow('must only read');
+    }
+  });
+
   it('logs a retried transaction with the permission and the SQLSTATE only', async () => {
     const logTransactionRetry = vi.fn();
     const { rt } = runtime({ logTransactionRetry });

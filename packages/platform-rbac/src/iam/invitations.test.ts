@@ -101,6 +101,7 @@ const row = (over: Partial<InvitationRow> = {}): InvitationRow => ({
   sendCount: 1,
   expiresAt: new Date('2026-10-14T09:00:00Z'),
   createdAt: new Date('2026-10-07T09:00:00Z'),
+  importId: null,
   ...over,
 });
 

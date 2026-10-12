@@ -1,5 +1,5 @@
 import { createRecoveryLinkIssuer, createStorageAdmin } from '@jadarat/platform-db/admin';
-import type { WithPlatformTx, WithSystemTx } from '@jadarat/platform-db/jobs';
+import type { InvitationSending, WithPlatformTx, WithSystemTx } from '@jadarat/platform-db/jobs';
 import {
   type FileObjectStore,
   type OrphanSweepSettings,
@@ -7,18 +7,23 @@ import {
   createClamdScanner,
   createFileHousekeepingTask,
   createFileScanTask,
+  createWorkerFiles,
 } from '@jadarat/platform-files/jobs';
 import {
   type RecoveryLinks,
   createAccountMailer,
   createSessionPurger,
 } from '@jadarat/platform-identity/jobs';
+import { createUserImportTask } from '@jadarat/platform-import/jobs';
 import type { PlatformTask, WorkerLogLevel } from '@jadarat/platform-jobs/jobs';
 
 export interface PlatformTaskDependencies {
   /** Public origin of the web app (APP_BASE_URL); absent while e-mail is switched off. */
   readonly appBaseUrl: string | undefined;
-  /** SUPABASE_URL + SUPABASE_SECRET_KEY (worker only); absent: no reset links, no file tasks. */
+  /**
+   * SUPABASE_URL + SUPABASE_SECRET_KEY (worker only); absent: no reset links, no file tasks and no user
+   * imports (they read and write files).
+   */
   readonly authAdmin: { readonly url: string; readonly secretKey: string } | undefined;
   /**
    * CLAMD_HOST + CLAMD_PORT (+ the signatures' hard age limit, default 7 days); absent: uploaded files are
@@ -32,6 +37,8 @@ export interface PlatformTaskDependencies {
   readonly withPlatformTx: WithPlatformTx;
   readonly withSystemTx: WithSystemTx;
   readonly log: (level: WorkerLogLevel, message: string) => void;
+  /** The pace and daily numbers of import invitations (default: the import task's). */
+  readonly importSending?: InvitationSending | undefined;
   /** Injectable for tests: the Auth admin API's recovery links. */
   readonly recoveryLinksFor?: (settings: { url: string; secretKey: string }) => RecoveryLinks;
   /** Injectable for tests: Storage with the worker's key. */
@@ -68,7 +75,8 @@ function workerStore(settings: { url: string; secretKey: string }): FileObjectSt
 /**
  * Work without a tenant (ADR 0005 §4), run on every wake-up and every minute: account e-mails (reset
  * links, lock notices), ended sessions removed from Auth (T-M2-10, at most once a minute), and — with
- * Storage configured — file housekeeping and, with a scanner, the malware scan (T-M2-18).
+ * Storage configured — file housekeeping, bulk user imports (T-M2-12: they read scanned files and write
+ * their reports) and, with a scanner, the malware scan (T-M2-18).
  */
 export function platformTasks(deps: PlatformTaskDependencies): readonly PlatformTask[] {
   const recoveryLinksFor = deps.recoveryLinksFor ?? authAdminRecoveryLinks;
@@ -101,6 +109,14 @@ export function platformTasks(deps: PlatformTaskDependencies): readonly Platform
         store,
         log: deps.log,
         ...(deps.orphanSweep ? { orphanSweep: deps.orphanSweep } : {}),
+      }),
+      // Bulk user imports (T-M2-12): they read scanned files and write their reports through Storage.
+      createUserImportTask({
+        withPlatformTx: deps.withPlatformTx,
+        withSystemTx: deps.withSystemTx,
+        files: createWorkerFiles({ store }),
+        log: deps.log,
+        ...(deps.importSending ? { sending: deps.importSending } : {}),
       }),
     );
     if (deps.scanner) {

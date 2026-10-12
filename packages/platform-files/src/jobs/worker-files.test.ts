@@ -75,8 +75,8 @@ describe('storeGeneratedFile', () => {
   const report = {
     purpose: 'platform.user_import_report' as const,
     owner: { module: 'platform', entityType: 'user_import', entityId: FILE },
-    name: 'errors/report.csv',
-    type: 'text/csv',
+    name: 'errors/report.xlsx',
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     bytes: new Uint8Array(csv),
     forUserId: null,
   };
@@ -92,9 +92,9 @@ describe('storeGeneratedFile', () => {
     expect(await createWorkerFiles({ store }).storeGeneratedFile(tx, report)).toBe(FILE);
     expect(db.createGeneratedFile).toHaveBeenCalledWith(
       tx,
-      expect.objectContaining({ name: 'errors_report.csv', size: csv.length }),
+      expect.objectContaining({ name: 'errors_report.xlsx', size: csv.length }),
     );
-    expect(store.write).toHaveBeenCalledWith('generated', 'g', report.bytes, 'text/csv');
+    expect(store.write).toHaveBeenCalledWith('generated', 'g', report.bytes, report.type);
     expect(db.finishGeneratedFile).toHaveBeenCalledWith(tx, FILE, csv.length, sha(csv));
   });
 
@@ -103,6 +103,13 @@ describe('storeGeneratedFile', () => {
       createWorkerFiles({ store: fakeStore(null) }).storeGeneratedFile(tx, {
         ...report,
         type: 'application/pdf',
+      }),
+    ).rejects.toMatchObject({ code: 'TYPE_NOT_ALLOWED' });
+    // The import's reports are XLSX only (security review L2).
+    await expect(
+      createWorkerFiles({ store: fakeStore(null) }).storeGeneratedFile(tx, {
+        ...report,
+        type: 'text/csv',
       }),
     ).rejects.toMatchObject({ code: 'TYPE_NOT_ALLOWED' });
     await expect(

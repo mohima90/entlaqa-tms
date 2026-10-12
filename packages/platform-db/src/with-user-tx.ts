@@ -55,6 +55,27 @@ export function databaseClaims(claims: JwtClaims): Readonly<Record<string, strin
 export interface UserTxOptions {
   readonly retryOnConflict?: boolean;
   readonly onRetry?: (sqlState: string) => void;
+  /**
+   * A read that is NOT the session's activity (PASSIVE_READS): no private.touch_session(), and a READ ONLY
+   * transaction. Anything not on the list is refused.
+   */
+  readonly passiveRead?: PassiveRead;
+}
+
+/**
+ * Reads that do not count as activity for the organization's inactivity rule (T-M2-10; T-M2-12
+ * integration review L1): a page that polls for the worker's progress must not keep an idle session
+ * alive. Each is named here, on purpose: only a small status read a page polls on its own belongs on this
+ * list — never a read a person asks for, and never a write (the transaction is READ ONLY). The session
+ * must still be valid (the claims are checked as for any request); it is only not kept alive.
+ *   platform.user_import.status — the import page's «is there anything new?» (platform-import
+ *   userImportStatusQueryDefinition), every few seconds while the worker works.
+ */
+export const PASSIVE_READS = ['platform.user_import.status'] as const;
+export type PassiveRead = (typeof PASSIVE_READS)[number];
+
+export function isPassiveRead(name: string): name is PassiveRead {
+  return (PASSIVE_READS as readonly string[]).includes(name);
 }
 
 export type WithUserTx = <T>(
@@ -79,11 +100,19 @@ export function createWithUserTx(getDb: () => AppDatabase): WithUserTx {
     if (!parsed.success || parsed.data.role !== 'authenticated' || !parsed.data.session_id) {
       throw new Error('withUserTx: refusing claims that are not a verified user session claim set');
     }
+    const passive = options.passiveRead !== undefined;
+    if (passive && !isPassiveRead(options.passiveRead)) {
+      throw new Error(
+        'withUserTx: refusing a passive read that is not on the list (PASSIVE_READS)',
+      );
+    }
     const claimsJson = JSON.stringify(databaseClaims(parsed.data));
-    // A session acting in an organization records its activity (inactivity rule, T-M2-10).
+    // A session acting in an organization records its activity (inactivity rule, T-M2-10) — except for
+    // an allow-listed passive read, which runs read-only (integration review L1).
     const run = () =>
       runWithClaims(getDb(), claimsJson, fn, {
-        touchSession: typeof parsed.data.tenant_id === 'string',
+        touchSession: !passive && typeof parsed.data.tenant_id === 'string',
+        readOnly: passive,
       });
     if (options.retryOnConflict !== true) return run();
     try {

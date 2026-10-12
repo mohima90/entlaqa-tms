@@ -57,12 +57,13 @@ export type ClaimsTx = Parameters<Parameters<AppDatabase['transaction']>[0]>[0];
  * `touchSession` (user sessions, withUserTx): the same third statement also records the session's
  * activity for the organization's inactivity rule (private.touch_session(), T-M2-10) — no extra round
  * trip; the database moves it at most once a minute and never revives an inactive session.
+ * `readOnly`: the transaction is READ ONLY from its first statement (withUserTx's passive reads).
  */
 export async function runWithClaims<T>(
   db: AppDatabase,
   claimsJson: string,
   fn: (tx: ClaimsTx) => Promise<T>,
-  options: { readonly touchSession?: boolean } = {},
+  options: { readonly touchSession?: boolean; readonly readOnly?: boolean } = {},
 ): Promise<T> {
   // One pooled connection per request or job at a time (integration review info 2): a transaction opened
   // inside another would take a second connection while holding the first — the pool (max 5, no queue
@@ -83,9 +84,10 @@ async function runInTransaction<T>(
   db: AppDatabase,
   claimsJson: string,
   fn: (tx: ClaimsTx) => Promise<T>,
-  options: { readonly touchSession?: boolean },
+  options: { readonly touchSession?: boolean; readonly readOnly?: boolean },
 ): Promise<T> {
   return db.transaction(async (tx) => {
+    if (options.readOnly === true) await tx.execute(sql`set transaction read only`);
     await tx.execute(sql`set local role authenticated`);
     await tx.execute(sql`select set_config('request.jwt.claims', ${claimsJson}, true)`);
     await tx.execute(

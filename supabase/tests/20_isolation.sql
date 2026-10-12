@@ -21,7 +21,9 @@ begin
     'platform.invitations', 'platform.security_policies',
     -- Files (T-M2-18): no direct writes at all (file_guard's functions only); cross-tenant, FK and
     -- function tests in 81_files_app_server.sql, 82_files_app_worker.sql and 83_files_storage.sql.
-    'platform.files', 'platform.file_download_grants')
+    'platform.files', 'platform.file_download_grants',
+    -- User imports (T-M2-12): insert/FK tests below; lifecycle and per-user tests in 86_*, jobs in 87_*.
+    'platform.user_imports', 'platform.user_import_columns', 'platform.user_import_rows')
     and t.table_name not in (select table_name from tests.job_only_tables());
   perform tests.assert(v_missing is null, format('isolation tests missing for: %s', v_missing));
   perform tests.assert(session_user = 'app_server', 'this file must run connected as app_server');
@@ -161,8 +163,10 @@ begin
   -- platform.person_employment (composite FKs to persons, branches, departments; no DELETE grant)
   perform tests.assert_rls_violation($q$insert into platform.person_employment (tenant_id, person_id) values ('b0000000-0000-4000-8000-000000000001', 'b1000000-0000-4000-8000-0000000000b9')$q$,
     'person_employment: insert with tenant B tenant_id is rejected by RLS');
+  -- Rejected before the composite FK by the restrictive person_employment_not_removed policy (a placement
+  -- needs a person the caller sees, migration 20261016090150), else by the FK.
   perform tests.assert_fails($q$insert into platform.person_employment (person_id) values ('b1000000-0000-4000-8000-0000000000b9')$q$,
-    array['23503'], 'person_employment: composite FK rejects a tenant B person');
+    array['42501', '23503'], 'person_employment: a tenant B person is rejected (needs a visible person; composite FK)');
   perform tests.assert_fails($q$update platform.person_employment set department_id = 'b3000000-0000-4000-8000-000000000001' where person_id = 'a1000000-0000-4000-8000-0000000000ab'$q$,
     array['23503'], 'person_employment: composite FK rejects a tenant B department');
   perform tests.assert_fails($q$update platform.person_employment set branch_id = 'b2000000-0000-4000-8000-000000000001' where person_id = 'a1000000-0000-4000-8000-0000000000ab'$q$,
@@ -279,6 +283,51 @@ begin
     2::bigint, 'memberships: suspended -> revoked and invited -> revoked are allowed');
   perform tests.assert_fails_like($q$update platform.tenant_memberships set status = 'invited' where user_id = '00000000-0000-4000-8000-0000000000a2'$q$,
     'membership status transition revoked -> invited is not allowed', 'memberships: revoked is final for members');
+end $$;
+rollback;
+
+-- User imports (T-M2-12): an import's file must be the importer's own upload of the same tenant; users
+-- create and move their own imports only; columns and rows are written by jobs alone.
+begin;
+set local role authenticated;
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
+  'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1'));
+do $$
+begin
+  perform tests.assert_rls_violation($q$insert into platform.user_imports (id, tenant_id, file_id, file_name, file_size) values ('b5000000-0000-4000-8000-000000000009', 'b0000000-0000-4000-8000-000000000001', 'f0b00000-0000-4000-8000-000000000001', 'x.csv', 1)$q$,
+    'user_imports: insert with tenant B tenant_id is rejected by RLS');
+  perform tests.assert_fails($q$insert into platform.user_imports (id, file_id, file_name, file_size) values ('b5000000-0000-4000-8000-000000000001', 'f0b00000-0000-4000-8000-000000000001', 'x.csv', 1)$q$,
+    array['23514', '23503'], 'user_imports: a tenant B file is refused (not the importer''s own upload; composite FK)');
+  perform tests.assert_privilege_denied($q$update platform.user_imports set tenant_id = 'b0000000-0000-4000-8000-000000000001'$q$,
+    'user_imports: tenant_id is not updatable');
+  perform tests.assert_privilege_denied($q$update platform.user_imports set created_by = '00000000-0000-4000-8000-0000000000b1'$q$,
+    'user_imports: the importer is not updatable');
+  perform tests.assert_privilege_denied($q$update platform.user_imports set file_id = 'f0b00000-0000-4000-8000-000000000001'$q$,
+    'user_imports: the file is not updatable');
+  perform tests.assert_eq(tests.rows_affected($q$update platform.user_imports set status = 'cancelled' where tenant_id = 'b0000000-0000-4000-8000-000000000001'$q$),
+    0::bigint, 'user_imports: RLS filters tenant B rows');
+  perform tests.assert_eq((select count(*) from platform.user_imports where id = 'b5000000-0000-4000-8000-000000000001'),
+    0::bigint, 'user_imports: tenant B import invisible by id');
+  perform tests.assert_privilege_denied($q$delete from platform.user_imports$q$, 'user_imports: no DELETE grant');
+
+  perform tests.assert_rls_violation($q$insert into platform.user_import_columns (tenant_id, import_id, sheet_index, column_index, header) values ('b0000000-0000-4000-8000-000000000001', 'b5000000-0000-4000-8000-000000000001', 0, 1, 'x')$q$,
+    'user_import_columns: insert with tenant B tenant_id is rejected by RLS');
+  perform tests.assert_rls_violation($q$insert into platform.user_import_columns (import_id, sheet_index, column_index, header) values ('a5000000-0000-4000-8000-000000000001', 0, 1, 'x')$q$,
+    'user_import_columns: users never write columns, not even of their own import');
+  perform tests.assert_eq(tests.rows_affected($q$delete from platform.user_import_columns$q$), 0::bigint,
+    'user_import_columns: users delete nothing');
+  perform tests.assert_rls_violation($q$insert into platform.user_import_rows (tenant_id, import_id, row_number) values ('b0000000-0000-4000-8000-000000000001', 'b5000000-0000-4000-8000-000000000001', 3)$q$,
+    'user_import_rows: insert with tenant B tenant_id is rejected by RLS');
+  perform tests.assert_rls_violation($q$insert into platform.user_import_rows (import_id, row_number) values ('a5000000-0000-4000-8000-000000000001', 3)$q$,
+    'user_import_rows: users never write rows');
+  perform tests.assert_fails($q$insert into platform.user_import_rows (import_id, row_number) values ('b5000000-0000-4000-8000-000000000001', 3)$q$,
+    array['42501', '23503'], 'user_import_rows: never under another tenant''s import');
+  perform tests.assert_eq(tests.rows_affected($q$update platform.user_import_rows set result = 'added'$q$), 0::bigint,
+    'user_import_rows: users update nothing');
+  perform tests.assert_eq(tests.rows_affected($q$delete from platform.user_import_rows$q$), 0::bigint,
+    'user_import_rows: users delete nothing');
+  perform tests.assert_eq((select count(*) from platform.user_import_rows where tenant_id = 'b0000000-0000-4000-8000-000000000001'),
+    0::bigint, 'user_import_rows: tenant B rows invisible');
 end $$;
 rollback;
 

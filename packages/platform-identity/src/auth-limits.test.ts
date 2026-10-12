@@ -37,6 +37,7 @@ import {
   createSignInGuard,
   deviceSubject,
   forgetOtherTrustedBrowsers,
+  invitationSubject,
   limitsFor,
   lockoutHostTenant,
   organizationAccountLockout,
@@ -1261,37 +1262,88 @@ describe('createPasswordResetLimiter (T-M2-08 limits on the shared limiter)', ()
 });
 
 describe('createInvitationLimiter', () => {
-  const setup = (store?: RateLimitStore) => {
+  const setup = (store?: RateLimitStore, client: { key: string | null } = CLIENT) => {
     const memory = memoryStore();
     const events: SecurityEvent[] = [];
     const limiter = createInvitationLimiter({
       store: store ?? memory.store,
       limits: PLATFORM_AUTH_LIMITS,
       log: (e) => events.push(e),
-      client: CLIENT,
+      client,
       lookupAction: 'platform.invitation.lookup',
       signUpAction: 'platform.invitation.accept',
     });
-    return { limiter, events };
+    return { limiter, events, memory };
   };
+  /** The SHA-256 of the n-th link's token (what the database keeps). */
+  const link = (n: number) =>
+    createHash('sha256')
+      .update(`token-${String(n)}`)
+      .digest();
 
-  it('limits link lookups (60) and new-account sign-ups (10) per client', async () => {
+  it('gives each link its own small budget: 30 lookups and 5 new-account sign-ups (integration review M3)', async () => {
     const { limiter, events } = setup();
-    for (let i = 0; i < 60; i += 1) expect(await limiter.allowLookup()).toBe(true);
-    expect(await limiter.allowLookup()).toBe(false);
-    for (let i = 0; i < 10; i += 1) expect(await limiter.allowSignUp()).toBe(true);
-    expect(await limiter.allowSignUp()).toBe(false);
+    for (let i = 0; i < 30; i += 1) expect(await limiter.allowLookup(link(1))).toBe(true);
+    expect(await limiter.allowLookup(link(1))).toBe(false);
+    expect(await limiter.allowLookup(link(2))).toBe(true);
+    for (let i = 0; i < 5; i += 1) expect(await limiter.allowSignUp(link(1))).toBe(true);
+    expect(await limiter.allowSignUp(link(1))).toBe(false);
+    expect(await limiter.allowSignUp(link(2))).toBe(true);
     expect(events.map((e) => e.reason)).toEqual([
-      'invitation.lookup_client',
-      'invitation.sign_up_client',
+      'invitation.lookup_invitation',
+      'invitation.sign_up_invitation',
     ]);
+  });
+
+  it('lets a whole office behind one address accept a bulk import: the address is a ceiling (600 lookups, 200 sign-ups)', async () => {
+    const { limiter, events } = setup();
+    for (let i = 0; i < 200; i += 1) {
+      expect(await limiter.allowLookup(link(i))).toBe(true);
+      expect(await limiter.allowSignUp(link(i))).toBe(true);
+    }
+    expect(await limiter.allowSignUp(link(200))).toBe(false);
+    for (let i = 200; i < 600; i += 1) expect(await limiter.allowLookup(link(i))).toBe(true);
+    expect(await limiter.allowLookup(link(600))).toBe(false);
+    // A malformed link counts against the address only.
+    expect(await limiter.allowLookup(null)).toBe(false);
+    expect(events.map((e) => e.reason)).toEqual([
+      'invitation.sign_up_client',
+      'invitation.lookup_client',
+      'invitation.lookup_client',
+    ]);
+  });
+
+  it('counts the client first, and the link only for an allowed client; shared clients get 6,000 and 2,000', async () => {
+    const { limiter, memory } = setup(undefined, { key: null });
+    await limiter.allowSignUp(link(1));
+    await limiter.allowLookup(null);
+    expect(memory.hit.mock.calls.map(([bucket, , limit]) => [bucket, limit.max])).toEqual([
+      ['invitation.sign_up_client', 2000],
+      ['invitation.sign_up_invitation', 5],
+      ['invitation.lookup_client', 6000],
+    ]);
+  });
+
+  it('keys a link on its token hash, never the token: the subject is derived again from the hash', async () => {
+    const { limiter, memory } = setup();
+    await limiter.allowSignUp(link(1));
+    const subject = memory.hit.mock.calls[1]?.[1];
+    expect(hex(subject ?? new Uint8Array())).toBe(hex(invitationSubject(link(1))));
+    expect(hex(invitationSubject(link(1)))).toBe(
+      createHash('sha256')
+        .update(`jadarat.rate-limit.v1\ninvitation\n${link(1).toString('hex')}`)
+        .digest('hex'),
+    );
+    expect(hex(invitationSubject(link(1)))).not.toBe(hex(link(1)));
   });
 
   it('lookups fail open (no credential is checked), sign-ups fail closed', async () => {
     const { limiter, events } = setup(failingStore());
-    expect(await limiter.allowLookup()).toBe(true);
-    await expect(limiter.allowSignUp()).rejects.toBeInstanceOf(RateLimiterUnavailableError);
+    expect(await limiter.allowLookup(link(1))).toBe(true);
+    expect(await limiter.allowLookup(null)).toBe(true);
+    await expect(limiter.allowSignUp(link(1))).rejects.toBeInstanceOf(RateLimiterUnavailableError);
     expect(events.map((e) => [e.event, e.reason])).toEqual([
+      ['auth.limiter.unavailable', 'fail_open'],
       ['auth.limiter.unavailable', 'fail_open'],
       ['auth.limiter.unavailable', 'fail_closed'],
     ]);

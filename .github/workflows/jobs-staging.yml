@@ -37,6 +37,12 @@
 #                                     is marked failed afterwards.
 #   variable FILE_ORPHAN_SWEEP        off = pause the removal of orphan objects (set it BEFORE restoring
 #                                     the database or Storage; docs/engineering/files.md §4); unset = on
+#   Bulk user imports (T-M2-12; they run with Storage, above), optional — unset = the defaults
+#   (docs/engineering/user-import.md §4; the PO may change the numbers):
+#   variable USER_IMPORT_INVITATION_INTERVAL_MS   pace of import invitations for the whole installation
+#                                     (default 1000; at least 500, the provider's 2 requests a second)
+#   variable USER_IMPORT_DAILY_INVITATIONS        per organization and UTC day (default 5000)
+#   variable USER_IMPORT_TRIAL_DAILY_INVITATIONS  the same on trial (default 200)
 # Until both connection secrets exist each run ends with a notice and does nothing.
 name: Jobs (staging)
 
@@ -179,6 +185,9 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           CLAMD_HOST: ${{ steps.clamd.outputs.ready == 'true' && '127.0.0.1' || '' }}
           FILE_ORPHAN_SWEEP: ${{ vars.FILE_ORPHAN_SWEEP }}
+          USER_IMPORT_INVITATION_INTERVAL_MS: ${{ vars.USER_IMPORT_INVITATION_INTERVAL_MS }}
+          USER_IMPORT_DAILY_INVITATIONS: ${{ vars.USER_IMPORT_DAILY_INVITATIONS }}
+          USER_IMPORT_TRIAL_DAILY_INVITATIONS: ${{ vars.USER_IMPORT_TRIAL_DAILY_INVITATIONS }}
           MODE: ${{ inputs.mode == 'test-email' && 'test-email' || 'once' }}
           JADARAT_ENVIRONMENT: staging
           JADARAT_RELEASE: ${{ github.sha }}

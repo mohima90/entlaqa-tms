@@ -431,6 +431,13 @@ services:
       # Above FILE_ORPHAN_SWEEP_MAX (500) orphans, or FILE_ORPHAN_SWEEP_MAX_SHARE (10) % of all objects,
       # nothing is removed and an error is logged.
       FILE_ORPHAN_SWEEP: ${FILE_ORPHAN_SWEEP:-on}
+      # Bulk user imports (T-M2-12, security review M2): their invitations go out one at a time for the
+      # whole installation (every worker takes turns on the database's send clock), at most a daily number
+      # per organization (lower on trial); above it they wait for the next day. Same values on every worker;
+      # the pace is at least 500 ms (Resend allows 2 requests a second for the whole account).
+      USER_IMPORT_INVITATION_INTERVAL_MS: ${USER_IMPORT_INVITATION_INTERVAL_MS:-1000}
+      USER_IMPORT_DAILY_INVITATIONS: ${USER_IMPORT_DAILY_INVITATIONS:-5000}
+      USER_IMPORT_TRIAL_DAILY_INVITATIONS: ${USER_IMPORT_TRIAL_DAILY_INVITATIONS:-200}
       # E-mail (ADR 0008 §2): SMTP with verified STARTTLS. Here Mailpit catches every message. A real
       # installation sets SMTP_URL (smtp://user:password@relay:587) and SMTP_CA_CERT_FILE for its relay
       # (set it empty for a publicly trusted certificate), removes the mailpit service, its depends_on

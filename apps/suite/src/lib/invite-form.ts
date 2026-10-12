@@ -92,11 +92,18 @@ export interface InvitationListItem {
   readonly displayNameAr: string;
   readonly displayNameEn: string | null;
   readonly primaryRole: string;
-  readonly state: 'pending' | 'expired' | 'accepted' | 'revoked';
+  /**
+   * `held`: added by a bulk import with «لا تُرسل الدعوات الآن» (T-M2-12) — no e-mail yet; `scheduled`:
+   * its e-mail goes out shortly (the import's pace).
+   */
+  readonly state: 'pending' | 'expired' | 'held' | 'scheduled' | 'accepted' | 'revoked';
   readonly sendCount: number;
 }
 
-/** Resend is offered while pending (also after expiry) until the last of the 4 e-mails. */
+/**
+ * Resend is offered while pending (also after expiry) until the last of the 4 e-mails. A held invitation
+ * is sent with «إرسال الدعوة» instead (T-M2-12); a scheduled one is on its way.
+ */
 export function canResend(row: Pick<InvitationListItem, 'state' | 'sendCount'>): boolean {
   return (row.state === 'pending' || row.state === 'expired') && row.sendCount < MAX_SENDS;
 }

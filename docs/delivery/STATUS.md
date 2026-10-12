@@ -211,6 +211,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
+| 12 Oct 2026 | **PR #56 opened** (T-M2-19 part 1: HR Manager holds `platform.org.manage`; departments handed over within the deactivation; main CI e2e title fix) after the PO's "yes"; no DB deploy needed |
 | 12 Oct 2026 | Main CI red after the three Dependabot merges (Gate 15): an axe check right after the password-reset redirect (`router.replace` + `refresh`) found the page without its `<title>` while the new tree streamed in (Next.js 16.4); not reproduced locally (full gates green). The e2e accessibility helpers now wait for the page's title before axe (and fail if it never comes); fix rides on the T-M2-19 PR |
 | 12 Oct 2026 | T-M2-19 part 1: security review found that a privileged department head could not be deactivated by anyone (High) and an e2e assertion the HR Manager could not meet; PO chose option 1 (hand-over within the deactivation needs `user.deactivate`); smoke/e2e changes reverted, test added, threat models / ADR 0003 / design notes updated |
 | 12 Oct 2026 | Dependabot PRs #52 (actions), #53 (npm minor/patch, Next.js 16.4), #54 (self-hosted images: supabase/postgres 17.11.0.004, storage-api v1.80.2, Mailpit v1.31.4) merged by the PO; main CI on the combined result being checked. T-M2-19 part 1 started: `platform.org.manage` moves to the HR Manager |

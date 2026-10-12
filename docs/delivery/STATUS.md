@@ -52,6 +52,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | ID | Decision |
 |---|---|---|
+| 12 Oct 2026 | D-IAM-01 | **No authenticator code to start an import** (PO, T-M2-12): an import never gives a privileged role, so it is the ordinary invite/edit (`platform.user.invite`, `platform.user.update`); an import that updates mobile numbers must require step-up once SMS codes arrive (T-M2-10c, TM-0003 T-IAM-45) |
 | 12 Oct 2026 | — | **Import invitation sending limits** (PO, T-M2-12): one import invitation a second for the whole installation; at most **5,000** a day per organization (**200** on trial); above the daily limit they wait for the next day, never dropped (`user-import.md` §4) |
 | 11 Oct 2026 | — | **Organization structure (branches, departments) is maintained by the HR Manager**, not the Organization Admin (PO) — BRD v2.7 FR-ADM-04/05, feature list ADM-04/05; code change is task T-M2-19 |
 | 27 Sep 2026 | — | Old codebase removed from `main`; rebuild from new BRD |

@@ -72,7 +72,7 @@ networks:
 
 services:
   db:
-    image: supabase/postgres:17.11.0.003@sha256:7374d196da7e301512cc5329e18040e0f7bb856287b323777cdadecccbc6c7e4
+    image: supabase/postgres:17.11.0.004@sha256:06ddc7962e11ab0f4f0334fd05671e97c30ea202f6e6a7113800bd3d6e416108
     <<: *hardening
     networks: [db-auth, db-app, db-storage]
     environment:
@@ -192,7 +192,7 @@ services:
   # Logs only its own errors (LOG_LEVEL error): its request lines (also refused requests, at warn) carry
   # the URL, and a download URL carries the original file name (Storage redacts only the token).
   storage:
-    image: supabase/storage-api:v1.74.0@sha256:f1546fac6d1c7e345428ac904bfaa7be7cecd50a1f549fe1cf38c628a7b15c85
+    image: supabase/storage-api:v1.80.2@sha256:95b217a9c59e0ac06c6dcb539df3189a1668a2445fb43dbf29660d6968ffd7d2
     <<: *hardening
     read_only: true
     cap_drop: [ALL]
@@ -472,7 +472,7 @@ services:
   # (invitations, password reset and "password changed", T-M2-17). Remove it when SMTP_URL points at a
   # real relay.
   mailpit:
-    image: axllent/mailpit:v1.29.7@sha256:757f22b56c1da03570afdb3d259effe5091018008a81bbedc8158cee7e16fdbc
+    image: axllent/mailpit:v1.31.4@sha256:b68349e3a014b90c5610bfb26b2ae36f3892d7b8cf25ee140c6c71c98d2fcf48
     <<: *hardening
     read_only: true
     cap_drop: [ALL]
@@ -496,7 +496,7 @@ services:
   # In-country error tracking (ADR 0009 §4, T-M1-D06): GlitchTip in all-in-one mode (web + worker, no
   # Valkey) with its own PostgreSQL. Errors arrive already scrubbed by the app; retention 90 days.
   errors-db:
-    image: postgres:17.11@sha256:d74eeac9a635390a49bc21bd49fccd973de707e2a53a76ac49b552b8712ec46f
+    image: postgres:17.11@sha256:2d2b8998d31037bf721cfdf764d76ba74171b4fab3431b7f72c27c56ddbdf9e3
     <<: *hardening
     cap_drop: [ALL]
     cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]

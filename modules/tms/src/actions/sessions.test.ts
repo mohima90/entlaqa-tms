@@ -38,6 +38,8 @@ const db = vi.hoisted(() => ({
   },
   // The session may act in its organization (T-M2-10, review L1).
   loadSessionFacts: vi.fn(() => Promise.resolve({ active: true, aal2: false })),
+  // Read by the default runtime's withUserTx (passive reads, T-M2-12 integration review L1).
+  isPassiveRead: vi.fn(() => false),
 }));
 vi.mock('@jadarat/platform-identity/next', () => identity);
 vi.mock('@jadarat/platform-db', () => db);

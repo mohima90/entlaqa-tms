@@ -208,7 +208,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
-| 12 Oct 2026 | PR #50 (T-M2-18) merged by the PO and deployed to staging (DB deploy plan → apply green); Storage role check OK, S3 connection off, image transformation already off; PO accepted residual risk R-58 (risk register v0.7, TM-0003 RR-FIL-01). CodeQL fix on the way (Storage URL trimmed without a regex) |
+| 12 Oct 2026 | PR #50 (T-M2-18) merged by the PO and deployed to staging (DB deploy plan → apply green); Storage role check OK, S3 connection off, image transformation already off; PO accepted residual risk R-58 (risk register v0.7, TM-0003 RR-FIL-01). The PR also carried the clamd test fix and the CodeQL fix (Storage URL trimmed without a regex) |
 | 11 Oct 2026 | **PR #50 opened** (T-M2-18 file storage + malware scanning) after the PO's "yes"; all local gates green on `9a73a40`. After merge: DB deploy, Storage role check, S3 connection and image transformation off; PO to accept residual risk R-58 |
 | 11 Oct 2026 | PR #50 CI fix: the clamd early-answer test was flaky on CI (the fake clamd closed with unread data → TCP reset, answer lost). The fake now keeps reading after answering, like a real server; new test: a reset without an answer fails closed (never clean). CodeQL then flagged the trailing-slash regex on the Storage URL (polynomial regex, high): replaced with a plain loop |
 | 11 Oct 2026 | PR #49 (T-M2-11) merged by the PO and deployed to staging (plan → apply green). Sales demo prototype prepared and reviewed (BRD-aligned roles, feature IDs and releases; not in the repository). PO decision: HR Manager maintains branches and departments — BRD v2.7, feature list, new task T-M2-19 |

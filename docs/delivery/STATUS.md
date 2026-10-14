@@ -217,6 +217,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
+| 14 Oct 2026 | T-M2-21 built on the branch: Jadarat theme light/dark with gradient sidebar (148/148 contrast pairs), organization colours drive the gradient, self-hosted Poppins + IBM Plex Sans Arabic, Meridian shell with phone drawer, role menus (Org Admin groups per the PO), English default, L&D Manager label; all local gates and self-hosted smoke green. Open: phone table fix, Org Admin home card, independent review, PO screenshots, OFL licence exception for the PO |
 | 14 Oct 2026 | PO comments on the Organization Admin list applied: Training Manager → L&D Manager, profile display data only, no font choice, notifications and e-mail content to the L&D Manager, Domain management section, one-person invitation link, no SMS anywhere, ADM-15/16 removed (BRD v2.9) |
 | 14 Oct 2026 | Organization Admin feature list (50 features from the BRD) approved by the PO with the recommendations (R1 first; workflows → Training Manager; wizard ends with inviting the Training Manager); BRD v2.8, feature list, role page and BACKLOG `EP-OA` updated |
 | 14 Oct 2026 | **UI design approved by the PO**: Meridian with the Jadarat palette and a Jadarat-gradient sidebar that an organization's own branding replaces (example screen added); fonts Poppins (English) and IBM Plex Sans Arabic (Arabic) |

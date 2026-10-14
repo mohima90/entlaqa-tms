@@ -126,7 +126,7 @@ Way of working (PO, 14 Oct 2026): UI first, then role by role with full features
 
 | ID | Task | Owner | Status | Notes / PR |
 |---|---|---|---|---|
-| T-M2-21 | Apply the approved design to the product: Jadarat theme (palette, Poppins + IBM Plex Sans Arabic bundled with the app), gradient sidebar from brand tokens, new app shell with menus per role, English default locale | Claude | ⚪ | Design approved 14 Oct 2026; `docs/design/theming.md` layers 2–3 |
+| T-M2-21 | Apply the approved design to the product: Jadarat theme (palette, Poppins + IBM Plex Sans Arabic bundled with the app), gradient sidebar from brand tokens, new app shell with menus per role, English default locale | Claude | 🔵 | Design approved 14 Oct 2026; `docs/design/theming.md` layers 2–3. Built on the branch (9 commits, all local gates + self-hosted smoke green); phone table fix, Org Admin home card and independent review in progress; then screenshots to the PO and PR after the PO's "yes" |
 | T-M2-22 | Organization profile + regional settings (#3, #4) | Claude | ⚪ | FR-ADM-02, FR-SCH-07, BR-ADM-3 |
 | T-M2-23 | Brand identity (logos, colours → sidebar gradient; no font choice) + e-mail sender name and address (#10, #11) | Claude | ⚪ | FR-ADM-07, FR-NTF-02 (sending part); logo uploads use `platform-files` (T-M2-18). E-mail look and texts belong to the L&D Manager |
 | T-M2-24 | Self-service sign-up + setup wizard ending with "invite your L&D Manager" (#2) | Claude | ⚪ | FR-ADM-01 (BRD v2.8) |

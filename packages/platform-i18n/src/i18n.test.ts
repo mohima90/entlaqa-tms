@@ -11,11 +11,14 @@ function keys(obj: object, prefix = ''): string[] {
 }
 
 describe('locales', () => {
-  it('defaults to Arabic and supports English', () => {
-    expect(defaultLocale).toBe('ar');
+  it('defaults to English for now (PO, 14 Oct 2026) and supports Arabic', () => {
+    expect(defaultLocale).toBe('en');
     expect(locales).toEqual(['ar', 'en']);
-    expect(routing.defaultLocale).toBe('ar');
+    expect(routing.defaultLocale).toBe('en');
     expect(routing.localePrefix).toBe('always');
+    // No Accept-Language guessing and no locale cookie: the URL decides.
+    expect(routing.localeDetection).toBe(false);
+    expect(routing.localeCookie).toBe(false);
   });
 
   it('maps direction and toggles locales', () => {

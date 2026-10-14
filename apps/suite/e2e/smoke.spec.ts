@@ -111,10 +111,24 @@ for (const { path, lang, dir, heading } of pages) {
   });
 }
 
-test('the root redirects to Arabic', async ({ page }) => {
+test('the root redirects to English, the default for now (PO, 14 Oct 2026)', async ({ page }) => {
   await page.goto('/');
+  await expect(page).toHaveURL(/\/en$/);
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+  await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
+});
+
+test('an Arabic browser still lands in English at the root, and Arabic stays one click away', async ({
+  browser,
+}) => {
+  const context = await browser.newContext({ locale: 'ar-SA' });
+  const page = await context.newPage();
+  await page.goto('/');
+  await expect(page).toHaveURL(/\/en$/);
+  await page.getByTestId('language-toggle').click();
   await expect(page).toHaveURL(/\/ar$/);
   await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+  await context.close();
 });
 
 test('the language toggle switches between Arabic and English on the same page', async ({

@@ -20,6 +20,7 @@
 ### 1. Locales and routing
 - next-intl with locales `ar` (default) and `en`, **always-prefixed** routes (`/ar/...`, `/en/...`). The request proxy composes next-intl's locale handling with tenant resolution (ADR 0002 §4); protected paths are matched on real URL prefixes (CLAUDE.md).
 - Locale resolution: URL → user preference → tenant default → `ar`. For **Arabic-only tenants** the proxy redirects `/en/*` to `/ar/*` and the language switcher is hidden (FR-DEP-05).
+- *Amendment (14 Oct 2026, T-M2-21):* **English is the default locale for now** (PO decision, 14 Oct 2026): `/` lands on `/en`, the last step of the resolution above is `en`, and Arabic stays fully supported at `/ar/...` with the same features. Still no Accept-Language detection and no locale cookie. Stored per-person language preferences keep their own default (database), so e-mail links follow each person's language.
 - `<html lang dir>` is set per locale in the root `[locale]` layout; all server-rendered e-mails and PDFs set `dir`/`lang` explicitly.
 - Formatting locales carry explicit Unicode extensions, e.g. `ar-SA-u-nu-latn-ca-gregory`; code never relies on a runtime's default numbering system or calendar for `ar` (they differ between CLDR versions and regional variants).
 

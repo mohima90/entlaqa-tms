@@ -251,7 +251,7 @@ export const PEOPLE: readonly SamplePerson[] = [
     name: { ar: 'خالد إبراهيم الشهري', en: 'Khalid Ibrahim Alshehri' },
     email: 'k.alshehri@alraya.example',
     employeeNumber: 'EMP-1042',
-    role: { ar: 'مدير التدريب', en: 'Training Manager' },
+    role: { ar: 'مدير التعلم والتطوير', en: 'L&D Manager' },
     otherRoles: 0,
     department: D.td,
     status: 'active',

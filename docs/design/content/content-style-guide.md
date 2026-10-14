@@ -90,7 +90,7 @@ Short masculine imperatives are the accepted generic in a few places where a ver
 | Validation (field) | «يتكون رقم الجوال السعودي من 9 أرقام ويبدأ بالرقم 5.» | "Enter a 9-digit Saudi mobile number starting with 5." |
 | Required | «اسم الدورة بالعربية مطلوب.» | "Course name in Arabic is required." |
 | Conflict (blocking) | «لا يمكن حفظ الجلسة: القاعة «الياسمين» محجوزة يوم الأحد 1 نوفمبر من 9:00 ص إلى 12:00 م. يمكنك اختيار قاعة أخرى أو تغيير الوقت.» | "Can't save the session: Jasmine room is booked on Sun 1 Nov, 9:00 AM–12:00 PM. Choose another room or change the time." |
-| Permission | «ليست لديك صلاحية لاعتماد الخطة. يمكنك إرسالها إلى مدير التدريب.» | "You don't have permission to approve the plan. Send it to the Training Manager." |
+| Permission | «ليست لديك صلاحية لاعتماد الخطة. يمكنك إرسالها إلى مدير التعلم والتطوير.» | "You don't have permission to approve the plan. Send it to the L&D Manager." |
 | Expired QR | «انتهت صلاحية هذا الرمز. يمكنك مسح الرمز المعروض الآن على شاشة المدرب.» | "This code has expired. Scan the code on the instructor's screen now." |
 | Out of range | «أنت خارج نطاق مقر التدريب (على بُعد 1.4 كم تقريبًا). أرسلنا طلبك إلى المدرب لمراجعته.» | "You're outside the venue range (about 1.4 km away). We've sent your check-in to the instructor to review." |
 | System fault | «تعذّر حفظ التغييرات بسبب خلل لدينا. لم نفقد بياناتك؛ يمكنك إعادة المحاولة. المرجع: 7F3A-21» | "We couldn't save your changes because of a problem on our side. Your data is safe; try again. Reference: 7F3A-21" |

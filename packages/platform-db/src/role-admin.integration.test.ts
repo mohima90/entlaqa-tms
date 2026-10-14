@@ -328,7 +328,7 @@ describe.skipIf(!configured)('changing roles against PostgreSQL', () => {
         if (outcome) return outcome as { ok: false; refusal: string };
         throw error;
       });
-    // Organization Admin (primary) until `last`, then learner and Training Manager from `first`.
+    // Organization Admin (primary) until `last`, then learner and L&D Manager from `first`.
     const handOver = (last: string, first: string) => [
       role('tenant_admin', { isPrimary: true, validUntil: last }),
       role('learner', { validFrom: first }),

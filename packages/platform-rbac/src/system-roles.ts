@@ -83,7 +83,8 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
   },
   {
     code: 'training_manager',
-    name: { ar: 'مدير التدريب', en: 'Training Manager' },
+    // Display name «مدير التعلم والتطوير» / "L&D Manager" (PO, 14 Oct 2026; BRD v2.9); the code stays.
+    name: { ar: 'مدير التعلم والتطوير', en: 'L&D Manager' },
     description: {
       ar: 'الخطط ودليل الدورات والجلسات والموارد والتسجيلات والتقارير.',
       en: 'Plans, catalog, sessions, resources, enrollments and reports.',

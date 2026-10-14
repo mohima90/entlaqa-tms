@@ -322,7 +322,7 @@ test.describe('users pages', () => {
     );
     await expectNoSeriousA11yViolations(page);
 
-    await form.getByRole('radio', { name: /^Training Manager/ }).check();
+    await form.getByRole('radio', { name: /^L&D Manager/ }).check();
     await form.locator('#role-learner-validUntil').fill('2030-12-31');
     await form.getByRole('checkbox', { name: /^Mentor/ }).check();
     await form.locator('#role-mentor-validFrom').fill('2026-01-01');
@@ -335,7 +335,7 @@ test.describe('users pages', () => {
 
     await page.goto(`/en/suite/admin/users/${SARA}`);
     const roles = page.getByTestId('user-roles');
-    await expect(roles).toContainText('Training ManagerPrimary role');
+    await expect(roles).toContainText('L&D ManagerPrimary role');
     await expect(roles).toContainText('Until Dec 31, 2030');
     await expect(roles).toContainText('Mentor');
     await expect(page.getByTestId('user-activity')).toContainText('Roles changed');

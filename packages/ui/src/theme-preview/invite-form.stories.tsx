@@ -61,7 +61,7 @@ const COPY = {
       ],
       [
         'training_manager',
-        'مدير التدريب',
+        'مدير التعلم والتطوير',
         'الخطط ودليل الدورات والجلسات والموارد والتسجيلات والتقارير.',
         false,
       ],
@@ -117,7 +117,7 @@ const COPY = {
       ],
       [
         'training_manager',
-        'Training Manager',
+        'L&D Manager',
         'Plans, catalog, sessions, resources, enrollments and reports.',
         false,
       ],

@@ -110,4 +110,5 @@
   --shadow-1: var(--elevation-1);
   --shadow-2: var(--elevation-2);
   --shadow-3: var(--elevation-3);
+  --shadow-4: var(--elevation-4);
 }

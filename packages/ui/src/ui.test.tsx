@@ -87,8 +87,11 @@ describe('AppShell', () => {
     );
     expect(html).toContain('id="app-navigation"');
     expect(html).toMatch(/<button[^>]*aria-label="إغلاق القائمة"/);
-    // Closed: the drawer is not displayed below 900 px, nothing is inert.
+    // Closed: the drawer is not displayed below 900 px, nothing is inert, and it is no dialog.
     expect(html).not.toContain('inert');
+    expect(html).not.toContain('role="dialog"');
+    // No nested complementary landmark around the <nav>.
+    expect(html).not.toContain('<aside');
     // Both buttons are 44 px touch targets (size-11).
     expect([...html.matchAll(/<button[^>]*class="([^"]*)"/g)].map((m) => m[1])).toEqual([
       expect.stringContaining('size-11'),

@@ -250,10 +250,22 @@ for (const { locale, menu, close, home } of [
     await expect(navigation).toBeVisible();
     await expect(menuButton).toHaveAttribute('aria-expanded', 'true');
     await expect(page.getByRole('button', { name: close })).toBeFocused();
-    // The page behind the drawer is inert while it is open.
+    // Open, the drawer is a modal dialog named like the menu button; the page behind it (skip link
+    // included) is inert.
+    const dialog = page.getByRole('dialog', { name: menu });
+    await expect(dialog).toHaveAttribute('aria-modal', 'true');
     expect(await page.locator('main#main').evaluate((el) => el.closest('[inert]') !== null)).toBe(
       true,
     );
+    await expect(page.locator('a[href="#main"]')).toHaveAttribute('inert', '');
+    // Tab loops inside: from the last entry back to the close button, and Shift+Tab the other way.
+    const entries = dialog.locator('a[href], button');
+    await entries.last().focus();
+    await page.keyboard.press('Tab');
+    await expect(page.getByRole('button', { name: close })).toBeFocused();
+    await page.keyboard.press('Shift+Tab');
+    await expect(entries.last()).toBeFocused();
+    await page.getByRole('button', { name: close }).focus();
     const results = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
       .analyze();
@@ -275,6 +287,14 @@ for (const { locale, menu, close, home } of [
     await page.getByRole('button', { name: close }).click();
     await expect(navigation).toBeHidden();
     await expect(menuButton).toBeFocused();
+    // Widening the window with the drawer open: the navigation stays in place, no longer a dialog,
+    // and focus moves from the (now hidden) close button to the current entry, not to the body.
+    await menuButton.click();
+    await expect(page.getByRole('button', { name: close })).toBeFocused();
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await expect(navigation).toBeVisible();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(navigation.getByRole('link', { name: home })).toBeFocused();
   });
 }
 

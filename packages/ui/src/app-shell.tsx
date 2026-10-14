@@ -27,6 +27,7 @@ export interface AppShellProps {
 /** Width from which the navigation is always shown (Tailwind `lg`, --bp-lg). */
 const WIDE = '(min-width: 900px)';
 const NAV_ID = 'app-navigation';
+const FOCUSABLE = 'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 /**
  * Suite shell, approved design «Meridian» (T-M2-21; docs/design/suite-shell.md): a full-height side
@@ -35,8 +36,9 @@ const NAV_ID = 'app-navigation';
  * page (max 1280 px). Logical properties only (RTL/LTR).
  *
  * Below 900 px the navigation is a drawer behind a menu button (disclosure: `aria-expanded`,
- * `aria-controls`): opening moves focus into it, the rest of the page is `inert`, Escape, the close
- * button or the scrim close it and return focus to the menu button. Touch targets are ≥ 44 px.
+ * `aria-controls`): open, it is a modal dialog — focus moves into it and Tab loops inside, the rest of
+ * the page (skip link included) is `inert`; Escape, the close button or the scrim close it and return
+ * focus to the menu button. Touch targets are ≥ 44 px.
  */
 export function AppShell({
   brand,
@@ -53,6 +55,7 @@ export function AppShell({
   const [open, setOpen] = useState(false);
   const menuButton = useRef<HTMLButtonElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
+  const drawer = useRef<HTMLDivElement>(null);
 
   // Focus goes back to the menu button once the drawer is closed and the page is no longer inert.
   const restoreFocus = useRef(false);
@@ -70,13 +73,49 @@ export function AppShell({
   useEffect(() => {
     if (!open) return undefined;
     closeButton.current?.focus();
+    const focusable = () =>
+      [...(drawer.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [])].filter(
+        (el) => el.getClientRects().length > 0,
+      );
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') close();
+      if (event.key === 'Escape') {
+        close();
+        return;
+      }
+      // Modal drawer: Tab and Shift+Tab loop inside it.
+      if (event.key !== 'Tab') return;
+      const items = focusable();
+      const first = items[0];
+      const last = items.at(-1);
+      if (!first || !last) return;
+      const active = document.activeElement;
+      if (event.shiftKey && (active === first || !drawer.current?.contains(active))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (active === last || !drawer.current?.contains(active))) {
+        event.preventDefault();
+        first.focus();
+      }
     };
-    // Widening the window shows the navigation in place: the drawer state no longer applies.
+    // Widening the window shows the navigation in place: the drawer state no longer applies. Focus
+    // stays on its entry; from the close button (hidden when wide) it moves to the current entry or
+    // the first one, never to the page's body.
     const wide = window.matchMedia(WIDE);
     const onWide = () => {
-      if (wide.matches) setOpen(false);
+      if (!wide.matches) return;
+      const active = document.activeElement;
+      if (
+        !(active instanceof HTMLElement) ||
+        active === closeButton.current ||
+        !drawer.current?.contains(active)
+      ) {
+        const entry =
+          drawer.current?.querySelector<HTMLElement>('nav [aria-current="page"]') ??
+          drawer.current?.querySelector<HTMLElement>('nav a[href]');
+        entry?.focus();
+      }
+      restoreFocus.current = false;
+      setOpen(false);
     };
     document.addEventListener('keydown', onKey);
     wide.addEventListener('change', onWide);
@@ -90,6 +129,7 @@ export function AppShell({
     <div className="min-h-dvh bg-surface lg:flex">
       <a
         href="#main"
+        inert={open || undefined}
         className="absolute start-2 top-2 z-[60] -translate-y-24 rounded-md bg-surface px-4 py-2 text-primary-text focus:translate-y-0"
       >
         {skipToContentLabel}
@@ -101,9 +141,15 @@ export function AppShell({
           onClick={close}
         />
       ) : null}
-      <aside
+      {/* A plain container (the <nav> inside is the landmark); while open on a phone it is a modal
+          dialog named like the menu button. */}
+      <div
+        ref={drawer}
         id={NAV_ID}
         data-nav-scope=""
+        role={open ? 'dialog' : undefined}
+        aria-modal={open || undefined}
+        aria-label={open ? menuLabel : undefined}
         className={cn(
           'w-66 shrink-0 flex-col gap-1 border-e border-nav-border bg-nav-gradient p-3 text-on-nav',
           open
@@ -135,7 +181,7 @@ export function AppShell({
         <nav aria-label={navigationLabel} className="mt-2 flex flex-col">
           {navigation}
         </nav>
-      </aside>
+      </div>
       <div className="flex min-w-0 flex-1 flex-col" inert={open || undefined}>
         <header className="sticky top-0 z-30 flex min-h-14 items-center gap-3 border-b border-header-border bg-header px-4 text-on-header lg:px-6">
           <button

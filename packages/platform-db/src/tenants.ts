@@ -17,7 +17,7 @@ export interface TenantRegional {
 export const DEFAULT_TENANT_REGIONAL: TenantRegional = {
   dateDisplay: 'gregorian',
   timeZone: 'Asia/Riyadh',
-  defaultLocale: 'ar',
+  defaultLocale: 'en',
 };
 
 /** The organization the current claims act in (RLS returns only that tenant), or null. */
@@ -57,7 +57,7 @@ export async function getCurrentTenant(tx: UserTx): Promise<CurrentTenant | null
         regional: {
           dateDisplay: TENANT_DATE_DISPLAYS.find((d) => d === row.date_display) ?? 'gregorian',
           timeZone: row.timezone ?? DEFAULT_TENANT_REGIONAL.timeZone,
-          defaultLocale: row.default_locale === 'en' ? 'en' : 'ar',
+          defaultLocale: row.default_locale === 'ar' ? 'ar' : 'en',
         },
       }
     : null;

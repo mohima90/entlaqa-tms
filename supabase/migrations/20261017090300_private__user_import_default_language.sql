@@ -1,6 +1,6 @@
 -- Bulk user import (FR-IAM-04) × organization default language (FR-ADM-02; T-M2-22): a person added by an
 -- import without a language in the file gets the organization's default language
--- (platform.tenant_settings.default_locale, 20261017090000) instead of Arabic — as the import template
+-- (platform.tenant_settings.default_locale, 20261017090000; English unless the admin chose Arabic) instead of Arabic — as the import template
 -- already says ("If empty, the organization's language applies"). A re-invited person without one keeps
 -- their own language. Only private.user_import_apply_batch changes (two expressions and the lookup);
 -- everything else is as in 20261016090200. Members whose data an import updates keep their language
@@ -60,7 +60,7 @@ begin
   from platform.tenant_memberships m where m.tenant_id = v_tenant and m.user_id = v_import.created_by;
   -- The language of new people without one in the file (T-M2-22).
   select s.default_locale into v_locale from platform.tenant_settings s where s.tenant_id = v_tenant;
-  v_locale := coalesce(v_locale, 'ar');
+  v_locale := coalesce(v_locale, 'en');
 
   for v_row in
     select r.* from platform.user_import_rows r

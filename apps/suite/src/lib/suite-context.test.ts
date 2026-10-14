@@ -179,7 +179,7 @@ describe('getSuiteContext: organization name and regional settings (T-M2-22)', (
     expect((await getSuiteContext('en')).regional).toEqual({
       dateDisplay: 'gregorian',
       timeZone: 'Asia/Riyadh',
-      defaultLocale: 'ar',
+      defaultLocale: 'en',
     });
   });
 });

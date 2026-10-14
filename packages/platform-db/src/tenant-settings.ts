@@ -61,7 +61,7 @@ function profileOf(row: Row): OrganizationProfile {
     currencyCode: String(row.currency_code),
     timeZone: String(row.timezone),
     fiscalYearStartMonth: Number(row.fiscal_year_start_month),
-    defaultLocale: row.default_locale === 'en' ? 'en' : 'ar',
+    defaultLocale: row.default_locale === 'ar' ? 'ar' : 'en',
     dateDisplay: (TENANT_DATE_DISPLAYS as readonly unknown[]).includes(row.date_display)
       ? (row.date_display as TenantDateDisplay)
       : 'gregorian',

@@ -1026,7 +1026,7 @@ echo "smoke: organization profile (T-M2-22) — the Organization Admin saves it 
 # After the security journey: the organization requires an authenticator code, so the admin (new password,
 # its one confirmed app) signs in at AAL2 and may save. The HR Manager belongs to the phone organization
 # (no code needed there): the page and the action refuse it all the same.
-[[ "$(q "select coalesce(s.country_code, '-') || ':' || s.date_display || ':' || s.default_locale || ':' || s.version from platform.tenant_settings s join platform.tenants t on t.id = s.tenant_id where t.slug = 'sovereign-smoke'")" == "-:gregorian:ar:1" ]] ||
+[[ "$(q "select coalesce(s.country_code, '-') || ':' || s.date_display || ':' || s.default_locale || ':' || s.version from platform.tenant_settings s join platform.tenants t on t.id = s.tenant_id where t.slug = 'sovereign-smoke'")" == "-:gregorian:en:1" ]] ||
   { echo "smoke: the organization must start with the default settings (backfill / new organization)" >&2; exit 1; }
 HR_EMAIL="hr-$(date +%s)@sovereign.example"
 HR_PASSWORD="Hr-$(openssl rand -hex 16)"

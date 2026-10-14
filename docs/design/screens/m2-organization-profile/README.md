@@ -33,7 +33,7 @@ Notes: «الدولة تملأ الباقي» / "Country fills in the rest" and 
 
 - The organization name in the menu is the display name in the UI language (the other one when empty).
 - Dates across the app (users list "Last sign-in", invitation dates, user profile and its audit trail, sign-in sessions, "last changed" lines, recent imports) follow the date display and the organization's time zone: e.g. "Oct 14, 2026, 2:05 PM · Jumada I 3, 1448 AH" (Both) or «3 جمادى الأولى 1448 هـ في 2:05 م» (Hijri). One formatter: `formatDisplayDate` in `platform-i18n`.
-- New people get the default language unless one is given: the invite form preselects it; a bulk import row without a language uses it (a re-invited person keeps theirs).
+- New people get the default language unless one is given — **English** for existing and new organizations until the admin chooses Arabic (PO decision, 14 Oct 2026): the invite form preselects it; a bulk import row without a language uses it (a re-invited person keeps theirs).
 
 ## New Arabic strings (for the UX writer's review)
 

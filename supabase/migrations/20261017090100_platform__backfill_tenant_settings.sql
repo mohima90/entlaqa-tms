@@ -1,8 +1,9 @@
 -- Data backfill for platform.tenant_settings (T-M2-22; separate from the schema change, conventions §2):
 -- every existing organization gets the default settings — Saudi riyal, Sunday–Thursday 08:00–16:00,
--- fiscal year from January, Arabic for new people, Gregorian dates — and as its time zone the one the app
+-- fiscal year from January, English for new people (PO decision, 14 Oct 2026), Gregorian dates — and as
+-- its time zone the one the app
 -- already used for its calendar days: its headquarters branch's (ORG_TIME_ZONE before T-M2-22), else
--- Asia/Riyadh (review M2), so nothing changes for its members until the Organization Admin saves the
+-- Asia/Riyadh (review M2), so dates do not change for its members until the Organization Admin saves the
 -- profile. A branch zone PostgreSQL no longer knows falls back to Asia/Riyadh (the trigger would refuse
 -- it). Industry and country stay empty: provisioning never asked for them, so none is guessed.
 -- Runs without user claims (platform operation). New organizations get theirs from the trigger: they have

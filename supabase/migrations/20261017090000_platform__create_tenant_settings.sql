@@ -19,8 +19,9 @@
 --                                calendars — data model §2.2)
 --       work_starts_at / _ends_at  default working hours (local wall-clock time in `timezone`)
 --   Defaults for existing and new organizations: Saudi riyal, Asia/Riyadh, Sunday–Thursday 08:00–16:00,
---   fiscal year from January, Arabic for new people and Gregorian dates — what the app did before this
---   table existed, so nothing changes until the Organization Admin saves the profile.
+--   fiscal year from January, English for new people (PO decision, 14 Oct 2026: English is the default
+--   language for now) and Gregorian dates; dates and time zone stay what the app showed before this
+--   table existed (the backfill takes the headquarters branch's zone, 20261017090100).
 --   Writers: an Organization Admin at AAL2 with a recent code — the action checks platform.tenant.manage
 --   (high risk, AAL2, getUser()); the update policy checks the same here. Members read their organization's
 --   settings (every page formats dates with them). Only the settings columns are updatable; the trigger
@@ -33,7 +34,7 @@ create table platform.tenant_settings (
   currency_code text not null default 'SAR',
   timezone text not null default 'Asia/Riyadh',
   fiscal_year_start_month smallint not null default 1,
-  default_locale text not null default 'ar',
+  default_locale text not null default 'en',
   date_display text not null default 'gregorian',
   working_days smallint[] not null default '{0,1,2,3,4}',
   work_starts_at time not null default '08:00',

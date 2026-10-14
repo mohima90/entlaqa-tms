@@ -19,12 +19,12 @@ begin
   perform tests.assert_eq((select count(*) from platform.tenant_settings), (select count(*) from platform.tenants),
     'one row per organization');
   perform tests.assert((select industry is null and country_code is null and currency_code = 'SAR'
-                               and timezone = 'Asia/Riyadh' and fiscal_year_start_month = 1 and default_locale = 'ar'
+                               and timezone = 'Asia/Riyadh' and fiscal_year_start_month = 1 and default_locale = 'en'
                                and date_display = 'gregorian' and working_days = '{0,1,2,3,4}'
                                and work_starts_at = '08:00' and work_ends_at = '16:00' and version = 1
                                and updated_by is null
                         from platform.tenant_settings where tenant_id = 'a0000000-0000-4000-8000-000000000001'),
-    'the defaults: no industry or country guessed, Saudi riyal, Riyadh, Sunday–Thursday 08:00–16:00, Arabic, Gregorian');
+    'the defaults: no industry or country guessed, Saudi riyal, Riyadh, Sunday–Thursday 08:00–16:00, English (PO 14 Oct 2026), Gregorian');
   insert into platform.tenants (slug, name_ar) values ('settings-new', 'منشأة جديدة') returning id into v_new;
   perform tests.assert_eq((select count(*) from platform.tenant_settings where tenant_id = v_new), 1::bigint,
     'a new organization gets its settings');
@@ -169,6 +169,7 @@ returns void language sql as $$
 $$;
 
 begin;
+-- (English is the default since the PO decision of 14 Oct 2026; set explicitly so the test says so.)
 update platform.tenant_settings set default_locale = 'en' where tenant_id = 'a0000000-0000-4000-8000-000000000001';
 select tests.import_file('a5000000-0000-4000-8000-0000000000f1', 'a0000000-0000-4000-8000-000000000001',
                          '00000000-0000-4000-8000-0000000000ab', 'f0a00000-0000-4000-8000-0000000000f1');

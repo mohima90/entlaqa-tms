@@ -51,7 +51,7 @@ export const tenantSettings = platform.table('tenant_settings', {
   fiscalYearStartMonth: smallint('fiscal_year_start_month').notNull().default(1),
   defaultLocale: text('default_locale', { enum: ['ar', 'en'] })
     .notNull()
-    .default('ar'),
+    .default('en'),
   dateDisplay: text('date_display', { enum: ['gregorian', 'hijri', 'dual'] })
     .notNull()
     .default('gregorian'),

@@ -114,11 +114,62 @@ export function isoCurrencyCodes(): readonly string[] {
   return currencyCache;
 }
 
+/**
+ * ICU still names some zones by their old IANA names (CLDR keeps them stable), but those names are only
+ * backward-compatibility links in tzdata — and distributions now ship them separately (Debian/Ubuntu
+ * `tzdata-legacy`), so PostgreSQL may not know them and the database refuses them (T-M2-22 review M1).
+ * The profile offers and stores the canonical IANA name instead. The list is every name
+ * `Intl.supportedValuesOf('timeZone')` returns (Node 22, ICU 78) that tzdata 2025b's `tzdata.zi` declares
+ * as a link (`L <target> <name>`); a test keeps it in step with the runtime.
+ */
+export const LEGACY_TIME_ZONES: Readonly<Record<string, string>> = {
+  'Africa/Asmera': 'Africa/Asmara',
+  'America/Buenos_Aires': 'America/Argentina/Buenos_Aires',
+  'America/Catamarca': 'America/Argentina/Catamarca',
+  'America/Coral_Harbour': 'America/Atikokan',
+  'America/Cordoba': 'America/Argentina/Cordoba',
+  'America/Godthab': 'America/Nuuk',
+  'America/Indianapolis': 'America/Indiana/Indianapolis',
+  'America/Jujuy': 'America/Argentina/Jujuy',
+  'America/Kralendijk': 'America/Curacao',
+  'America/Louisville': 'America/Kentucky/Louisville',
+  'America/Lower_Princes': 'America/Curacao',
+  'America/Marigot': 'America/Port_of_Spain',
+  'America/Mendoza': 'America/Argentina/Mendoza',
+  'America/St_Barthelemy': 'America/Port_of_Spain',
+  'Arctic/Longyearbyen': 'Europe/Oslo',
+  'Asia/Calcutta': 'Asia/Kolkata',
+  'Asia/Katmandu': 'Asia/Kathmandu',
+  'Asia/Rangoon': 'Asia/Yangon',
+  'Asia/Saigon': 'Asia/Ho_Chi_Minh',
+  'Atlantic/Faeroe': 'Atlantic/Faroe',
+  'Europe/Bratislava': 'Europe/Prague',
+  'Europe/Busingen': 'Europe/Zurich',
+  'Europe/Kiev': 'Europe/Kyiv',
+  'Europe/Mariehamn': 'Europe/Helsinki',
+  'Europe/Podgorica': 'Europe/Belgrade',
+  'Europe/San_Marino': 'Europe/Rome',
+  'Europe/Vatican': 'Europe/Rome',
+  'Pacific/Enderbury': 'Pacific/Kanton',
+  'Pacific/Ponape': 'Pacific/Pohnpei',
+  'Pacific/Truk': 'Pacific/Chuuk',
+};
+
+/** The canonical IANA name of a zone (the zone itself when it is not a legacy link). */
+export function canonicalTimeZone(zone: string): string {
+  return Object.hasOwn(LEGACY_TIME_ZONES, zone) ? (LEGACY_TIME_ZONES[zone] ?? zone) : zone;
+}
+
 let zoneCache: readonly string[] | null = null;
 
-/** IANA time zones this runtime knows (Intl.supportedValuesOf('timeZone')). */
+/**
+ * Canonical IANA time zones this runtime knows: Intl.supportedValuesOf('timeZone') with legacy names
+ * replaced by their canonical ones (no duplicates), and only zones Intl can format in.
+ */
 export function ianaTimeZones(): readonly string[] {
-  zoneCache ??= Intl.supportedValuesOf('timeZone');
+  zoneCache ??= [...new Set(Intl.supportedValuesOf('timeZone').map(canonicalTimeZone))]
+    .filter((zone) => isTimeZone(zone))
+    .sort();
   return zoneCache;
 }
 
@@ -175,7 +226,6 @@ const ARABIC_CITIES: Readonly<Record<string, string>> = {
   'Africa/Algiers': 'الجزائر',
   'Africa/Tripoli': 'طرابلس',
   'Europe/London': 'لندن',
-  UTC: 'التوقيت العالمي',
 };
 
 /** The friendly city of a zone: "Riyadh" for Asia/Riyadh, "Buenos Aires" for America/Argentina/Buenos_Aires. */
@@ -205,7 +255,7 @@ export function countryTimeZones(country: string): readonly string[] {
     timeZones?: string[];
   };
   try {
-    return locale.getTimeZones?.() ?? locale.timeZones ?? [];
+    return [...new Set((locale.getTimeZones?.() ?? locale.timeZones ?? []).map(canonicalTimeZone))];
   } catch {
     return [];
   }

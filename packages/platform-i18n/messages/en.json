@@ -1693,6 +1693,7 @@
     "fieldErrors": {
       "nameRequired": "Enter the display name.",
       "nameTooLong": "Use at most 80 characters.",
+      "nameInvalid": "Remove the hidden text-direction characters from the name.",
       "industryRequired": "Choose an industry.",
       "countryRequired": "Choose a country.",
       "daysRequired": "Choose at least one working day.",

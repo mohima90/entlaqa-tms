@@ -1693,6 +1693,7 @@
     "fieldErrors": {
       "nameRequired": "أدخل الاسم المعروض.",
       "nameTooLong": "استخدم 80 حرفًا على الأكثر.",
+      "nameInvalid": "احذف رموز اتجاه النص المخفية من الاسم.",
       "industryRequired": "اختر القطاع.",
       "countryRequired": "اختر الدولة.",
       "daysRequired": "اختر يوم عمل واحدًا على الأقل.",

@@ -79,4 +79,18 @@ describe('formatDisplayDate (FR-SCH-07, T-M2-22)', () => {
     expect(plain(f.dateTime(AT))).toBe('Oct 14, 2026, 2:05 PM · Jumada I 3, 1448 AH');
     expect(f.full(AT)).toBe('Wednesday, October 14, 2026 · Jumada I 3, 1448 AH');
   });
+
+  it('long styles (e-mail-like sentences) and the same text from the cached formatters', () => {
+    const plain = (text: string) => text.replace(/[\u202f\u00a0]/gu, ' ');
+    const f = displayDateFormatter('en', 'gregorian', 'Asia/Riyadh');
+    expect(f.long(AT)).toBe('October 14, 2026');
+    expect(plain(f.longDateTime(AT))).toBe('October 14, 2026 at 2:05 PM');
+    expect(plain(f.longDateTime(AT))).toBe(plain(f.longDateTime(AT)));
+    const hijri = displayDateFormatter('en', 'hijri', 'Asia/Riyadh');
+    expect(hijri.long(AT)).toBe('Jumada I 3, 1448 AH');
+    expect(plain(hijri.longDateTime(AT))).toBe('Jumada I 3, 1448 AH at 2:05 PM');
+    expect(displayDateFormatter('en', 'dual', 'Asia/Riyadh').long(AT)).toBe(
+      'October 14, 2026 · Jumada I 3, 1448 AH',
+    );
+  });
 });

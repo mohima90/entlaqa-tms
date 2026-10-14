@@ -1,6 +1,9 @@
+import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   DATE_DISPLAYS,
+  LEGACY_TIME_ZONES,
+  canonicalTimeZone,
   INDUSTRIES,
   countryName,
   countryTimeZones,
@@ -121,5 +124,38 @@ describe('regional reference data (T-M2-22)', () => {
   it('knows the time zones of a country', () => {
     expect(countryTimeZones('SA')).toEqual(['Asia/Riyadh']);
     expect(countryTimeZones('US').length).toBeGreaterThan(1);
+  });
+
+  it('offers canonical IANA names, never the legacy links ICU still uses (review M1)', () => {
+    const zones = ianaTimeZones();
+    for (const [legacy, canonical] of Object.entries(LEGACY_TIME_ZONES)) {
+      expect(zones).not.toContain(legacy);
+      expect(isTimeZone(canonical)).toBe(true);
+      expect(canonicalTimeZone(legacy)).toBe(canonical);
+    }
+    for (const zone of [
+      'Asia/Kolkata',
+      'Asia/Ho_Chi_Minh',
+      'Asia/Kathmandu',
+      'Asia/Yangon',
+      'Europe/Kyiv',
+    ]) {
+      expect(zones).toContain(zone);
+    }
+    expect(new Set(zones).size).toBe(zones.length);
+    expect(canonicalTimeZone('Asia/Riyadh')).toBe('Asia/Riyadh');
+    expect(canonicalTimeZone('toString')).toBe('toString');
+    expect(countryTimeZones('IN')).toEqual(['Asia/Kolkata']);
+  });
+
+  // The system's tzdata (when present) says which names are only links: none of them may be offered.
+  it.skipIf(!existsSync('/usr/share/zoneinfo/tzdata.zi'))('offers no tzdata link name', () => {
+    const links = new Set(
+      readFileSync('/usr/share/zoneinfo/tzdata.zi', 'utf8')
+        .split('\n')
+        .filter((line) => line.startsWith('L '))
+        .map((line) => line.split(' ')[2]),
+    );
+    expect(ianaTimeZones().filter((zone) => links.has(zone))).toEqual([]);
   });
 });

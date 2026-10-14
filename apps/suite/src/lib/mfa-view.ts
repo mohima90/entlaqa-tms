@@ -2,8 +2,9 @@
  * What the /mfa page shows (FR-IAM-12, T-M2-10; screens 6 and 8 step 2). Framework-free and client-safe.
  *
  *   challenge          a code from the account's app — the organization requires it at sign-in (the
- *                      database refuses the session until then), or a sensitive action asked for it (step-up),
- *                      also when the last code is older than 15 minutes (review L3)
+ *                      database refuses the session until then), or the member's own authenticator app asked
+ *                      for it (step-up on My profile; no organization-level action does since the PO decision
+ *                      of 14 Oct 2026), also when the last code is older than 15 minutes (review L3)
  *   enrol              an app must be set up first (required by the organization, grace over; or a sensitive
  *                      action asked for a code and the account has no app yet)
  *   pending            THIS window set an app up and it waits for the e-mailed code (re-review N1): enter the

@@ -1,7 +1,7 @@
 'use client';
 import { formatDisplayDate } from '@jadarat/platform-i18n/dates';
 import { type RegionalPreset, applyPreset } from '@jadarat/platform-i18n/regional-presets';
-import { Alert, Button, Card, Icon, TextField, buttonClasses } from '@jadarat/ui';
+import { Alert, Button, Card, Icon, TextField } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
 import {
   type ReactNode,
@@ -47,8 +47,6 @@ export interface OrganizationProfileFormProps {
   readonly texts: Readonly<Record<string, string>>;
   readonly lastChanged: string;
   readonly errors: ErrorTexts;
-  /** /mfa?next=<this page>: a save refused for want of a recent code links there. */
-  readonly stepUpHref: string;
 }
 
 /** No subscription: whether this renders in the browser never changes after hydration. */
@@ -57,7 +55,6 @@ const subscribeNothing = () => () => undefined;
 interface Message {
   readonly tone: 'success' | 'warning' | 'danger' | 'info';
   readonly text: string;
-  readonly stepUp?: boolean;
 }
 
 function Radio({
@@ -204,10 +201,6 @@ export function OrganizationProfileForm(props: OrganizationProfileFormProps) {
         return;
       }
       if (sessionRefused(result.error)) return;
-      if (result.error.code === 'STEP_UP_REQUIRED') {
-        setMessage({ tone: 'warning', text: t('stepUpAgain'), stepUp: true });
-        return;
-      }
       if (result.error.code === 'VALIDATION_FAILED') {
         const fromServer: Partial<Record<ProfileField, ProfileFieldError>> = {};
         for (const fieldError of result.error.fieldErrors ?? []) {
@@ -506,18 +499,7 @@ export function OrganizationProfileForm(props: OrganizationProfileFormProps) {
       <div role="status" data-testid="organization-status">
         {message && message.tone !== 'danger' ? (
           <Alert tone={message.tone} role="none" data-testid="organization-message">
-            <span className="flex flex-wrap items-center gap-3">
-              <span>{message.text}</span>
-              {message.stepUp ? (
-                <a
-                  href={props.stepUpHref}
-                  className={buttonClasses({ variant: 'secondary', size: 'sm' })}
-                  data-testid="organization-message-step-up"
-                >
-                  {t('stepUpLink')}
-                </a>
-              ) : null}
-            </span>
+            {message.text}
           </Alert>
         ) : null}
       </div>

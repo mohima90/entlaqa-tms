@@ -1,5 +1,5 @@
 'use client';
-import { Alert, Button, buttonClasses } from '@jadarat/ui';
+import { Alert, Button } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
 import { useId, useRef, useState, useTransition } from 'react';
 import { resetMemberMfaAction } from '../../actions/security';
@@ -8,8 +8,8 @@ import { useSessionRefusal } from '../auth/session-refusal';
 
 /**
  * "Reset authenticator app" on a member's profile (screen 3; FR-IAM-12, T-M2-10; PO answer 9 Oct 2026;
- * TM-0003 T-IAM-10): the Organization Admin removes the app of a member who lost it, after a code of their
- * own from the last 15 minutes (the /mfa step returns here) and a confirmation. Every sign-in session of
+ * TM-0003 T-IAM-10): the Organization Admin removes the app of a member who lost it, after a confirmation
+ * (no authenticator code of their own: PO decision, 14 Oct 2026). Every sign-in session of
  * the member ends; the member is e-mailed and sets up a new app at the next sign-in; the reset is audited.
  * A login that also belongs to another organization is reset by ENTLAQA support (the answer says so).
  */
@@ -18,8 +18,6 @@ export interface ResetAuthenticatorLabels {
   readonly hint: string;
   readonly support: string;
   readonly action: string;
-  readonly needsCode: string;
-  readonly verifyFirst: string;
   readonly confirmTitle: string;
   /** `{name}`: the member. */
   readonly confirmText: string;
@@ -35,8 +33,6 @@ export function ResetAuthenticator({
   personName,
   hasApp,
   canReset,
-  needsCode,
-  stepUpHref,
   labels,
   errors,
 }: {
@@ -46,10 +42,6 @@ export function ResetAuthenticator({
   readonly hasApp: boolean;
   /** The caller may reset it (Organization Admin); others read how a lost app is reset. */
   readonly canReset: boolean;
-  /** No code of the admin's own from the last 15 minutes: the /mfa step first. */
-  readonly needsCode: boolean;
-  /** /mfa?next=<this profile>. */
-  readonly stepUpHref: string;
   readonly labels: ResetAuthenticatorLabels;
   readonly errors: ErrorTexts;
 }) {
@@ -61,7 +53,6 @@ export function ResetAuthenticator({
   const [message, setMessage] = useState<{
     tone: 'success' | 'warning' | 'danger';
     text: string;
-    stepUp?: boolean;
   } | null>(null);
   const named = (text: string) => text.replaceAll('{name}', personName);
 
@@ -73,9 +64,6 @@ export function ResetAuthenticator({
       if (result.ok) {
         setMessage({ tone: 'success', text: named(labels.done) });
         router.refresh();
-      } else if (result.error.code === 'STEP_UP_REQUIRED') {
-        // The code is older than 15 minutes now: ask for a new one, then come back.
-        setMessage({ tone: 'warning', text: labels.needsCode, stepUp: true });
       } else if (!sessionRefused(result.error)) {
         setMessage({
           tone: result.error.code === 'MFA_RESET_OTHER_ORGANIZATION' ? 'warning' : 'danger',
@@ -84,16 +72,6 @@ export function ResetAuthenticator({
       }
     });
   }
-
-  const verifyLink = (
-    <a
-      href={stepUpHref}
-      className={buttonClasses({ variant: 'secondary', size: 'sm' })}
-      data-testid="user-mfa-reset-step-up"
-    >
-      {labels.verifyFirst}
-    </a>
-  );
 
   // Kept mounted after a reset (the page refreshes without the app) so its answer stays on screen.
   if (!hasApp && message === null) return null;
@@ -111,14 +89,7 @@ export function ResetAuthenticator({
           </p>
         </>
       ) : null}
-      {!hasApp || !canReset ? null : needsCode ? (
-        <Alert tone="warning">
-          <span className="flex flex-wrap items-center gap-3">
-            <span>{labels.needsCode}</span>
-            {verifyLink}
-          </span>
-        </Alert>
-      ) : (
+      {!hasApp || !canReset ? null : (
         <div>
           <Button
             type="button"
@@ -136,10 +107,7 @@ export function ResetAuthenticator({
       )}
       {message ? (
         <Alert tone={message.tone} data-testid="user-mfa-reset-message">
-          <span className="flex flex-wrap items-center gap-3">
-            <span>{message.text}</span>
-            {message.stepUp ? verifyLink : null}
-          </span>
+          {message.text}
         </Alert>
       ) : null}
       <dialog

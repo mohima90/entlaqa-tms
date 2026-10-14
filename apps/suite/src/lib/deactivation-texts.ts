@@ -10,7 +10,6 @@ const REACTIVATE_KEYS = [
   'keep',
   'working',
   'done',
-  'stepUp',
   'notDeactivated',
   'placementDeleted',
 ] as const;

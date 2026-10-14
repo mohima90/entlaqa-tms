@@ -134,10 +134,7 @@ async function rolesForm(
   const labels: Record<string, string> = Object.fromEntries(LABEL_KEYS.map((k) => [k, t(k)]));
   labels.required = common('required');
   labels.optional = common('optional');
-  labels.privilegedLocked =
-    view.privilegedAccess === 'step_up_required'
-      ? t('privilegedNeedsCode')
-      : t('privilegedAdminOnly');
+  labels.privilegedLocked = t('privilegedAdminOnly');
   return (
     <Card title={t('roles')}>
       <EditRolesForm

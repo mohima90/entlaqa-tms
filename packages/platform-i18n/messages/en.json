@@ -377,8 +377,6 @@
     "mfaResetHint": "The Organization Admin can reset the app of a member who lost it: the app is removed, every sign-in session of the member ends, and the member is emailed and sets up a new app at the next sign-in.",
     "mfaResetSupport": "If the member's account also belongs to another organization, or the member is the only Organization Admin, ENTLAQA support resets it after checking their identity.",
     "mfaResetAction": "Reset authenticator app",
-    "mfaResetNeedsCode": "Resetting it needs a code from your own authenticator app, entered in the last 15 minutes.",
-    "mfaResetVerifyFirst": "Verify with your app",
     "mfaResetConfirmTitle": "Reset the authenticator app?",
     "mfaResetConfirmText": "{name}'s authenticator app will be removed and all of their sign-in sessions will end. They'll be emailed and asked to set up a new app at their next sign-in. Continue only after confirming the request with them.",
     "mfaResetConfirm": "Reset the app",
@@ -451,7 +449,7 @@
     "currentNameKept": "It is kept as is if the fields are left empty.",
     "mfa": {
       "title": "Multi-factor authentication",
-      "intro": "A code from an authenticator app protects your account and is needed for sensitive actions.",
+      "intro": "A code from an authenticator app protects your account when you sign in.",
       "on": "On · authenticator app",
       "off": "Not set up",
       "setUp": "Set up the authenticator app",
@@ -550,7 +548,6 @@
     "privileged": "Privileged role",
     "ended": "Ended",
     "scheduled": "Not started yet",
-    "privilegedNeedsCode": "Changing privileged roles (Organization Admin, HR Manager, Finance Manager, Compliance Officer, Auditor) needs a code from an authenticator app; this becomes available once multi-factor authentication is set up. You can change the other roles now.",
     "privilegedAdminOnly": "Only the Organization Admin changes privileged roles (Organization Admin, HR Manager, Finance Manager, Compliance Officer, Auditor).",
     "validFrom": "Starts on",
     "validUntil": "Ends on",
@@ -650,7 +647,6 @@
       "additionalRolesHint": "The effective permissions are those of the primary role plus the additional roles.",
       "roleConflictHint": "Organization Admin is a setup-only role and can't be combined with any other role.",
       "privileged": "Privileged role",
-      "privilegedNeedsCode": "Giving privileged roles (Organization Admin, HR Manager, Finance Manager, Compliance Officer, Auditor) needs a code from an authenticator app; this becomes available once multi-factor authentication is set up. You can invite with the other roles now.",
       "privilegedAdminOnly": "Only the Organization Admin gives privileged roles (Organization Admin, HR Manager, Finance Manager, Compliance Officer, Auditor). You can invite with the other roles.",
       "language": "Invitation email language",
       "languages": {
@@ -773,8 +769,7 @@
       "own_account": "You can't deactivate your own account.",
       "no_account": "This person has no sign-in account in the organization, so there is nothing to deactivate.",
       "not_active": "This account isn't active (it is deactivated, or its invitation isn't accepted yet), so it can't be deactivated.",
-      "last_admin": "This is the last active account with the Organization Admin role and no end date. Give the role to another member before deactivating this account.",
-      "step_up_required": "Deactivating an account that holds a privileged role needs a code from an authenticator app; this becomes available once multi-factor authentication is set up."
+      "last_admin": "This is the last active account with the Organization Admin role and no end date. Give the role to another member before deactivating this account."
     },
     "backToProfile": "Back to the profile",
     "deactivated": "The account was deactivated and its sign-in sessions in the organization ended. It can be reactivated from this tab.",
@@ -786,7 +781,6 @@
       "keep": "Cancel",
       "working": "Reactivating…",
       "done": "The account was reactivated. Signing in to the organization works again, with the same roles.",
-      "stepUp": "Reactivating an account that holds a privileged role needs a code from an authenticator app; this becomes available once multi-factor authentication is set up.",
       "notDeactivated": "This account isn't deactivated. Refresh the page.",
       "placementDeleted": "This person's department or branch was deleted. Edit their details first, then reactivate the account."
     }
@@ -803,7 +797,7 @@
     "enrolTitle": "Set up an authenticator app",
     "enrolRequired": "Your organization requires an authenticator app to sign in. Set one up to continue.",
     "enrolStepUp": "This action needs a code from an authenticator app. Set one up now; it takes about a minute.",
-    "promptAdmin": "As the Organization Admin, protect your account with an authenticator app such as Google Authenticator or Microsoft Authenticator. A code from it is also needed for sensitive actions, such as changing privileged roles or the security settings.",
+    "promptAdmin": "As the Organization Admin, protect your account with an authenticator app such as Google Authenticator or Microsoft Authenticator.",
     "promptGrace": "Your organization requires an authenticator app. Until {date} you can still sign in without one.",
     "appsHint": "Any authenticator app works: Google Authenticator, Microsoft Authenticator, Apple Passwords, 1Password and others.",
     "start": "Set up the app",
@@ -889,8 +883,6 @@
     "title": "Security",
     "section": "Organization admin",
     "intro": "These settings apply to everyone in {organization}. Every change is recorded in the audit log.",
-    "stepUp": "Changing these settings needs a verification code from your authenticator app.",
-    "stepUpLink": "Verify with the authenticator app",
     "readOnly": "Only the Organization Admin changes these settings.",
     "comingSoon": "Coming soon",
     "mfa": {
@@ -971,8 +963,7 @@
       "idleAboveMax": "Inactivity can't be longer than the maximum session length.",
       "invalid": "Check this value."
     },
-    "notConfigured": "Security settings aren't available in this environment yet.",
-    "stepUpAgain": "Saving needs a code from your authenticator app entered in the last 15 minutes. Your changes weren't saved."
+    "notConfigured": "Security settings aren't available in this environment yet."
   },
   "sessions": {
     "device": "Device and browser",
@@ -1632,9 +1623,6 @@
     "breadcrumbSection": "Organization",
     "intro": "How your organization appears in Jadarat TMS, and the defaults everyone starts with. People can still change their own language.",
     "notConfigured": "The organization profile isn't available in this environment yet.",
-    "stepUp": "Changing the organization profile needs a verification code from your authenticator app.",
-    "stepUpLink": "Verify with the authenticator app",
-    "stepUpAgain": "Saving needs a code from your authenticator app entered in the last 15 minutes. Your changes weren't saved.",
     "readOnly": "You can view these settings. Only the Organization Admin can change them.",
     "organization": {
       "title": "Organization",

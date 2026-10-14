@@ -6,8 +6,9 @@ import { freshCode } from './totp';
 /**
  * Organization profile and regional settings (approved screen «بيانات المنشأة» / "Organization profile",
  * PO 14 Oct 2026; FR-ADM-02, FR-SCH-07; T-M2-22) on the self-hosted stack (infra/docker/smoke.sh, after
- * the security journey: the smoke organization requires an authenticator code, so the Organization Admin
- * signs in at AAL2 and may save). In English and Arabic:
+ * the security journey: the smoke organization requires an authenticator code at sign-in, so the
+ * Organization Admin signs in with one; saving itself needs no code — PO decision, 14 Oct 2026). In English
+ * and Arabic:
  *  - the Organization Admin opens the page from the menu (no longer «Coming soon»), sees a field error and
  *    keeps what was typed, picks a country (its suggestions fill in), saves; the new display name shows in
  *    the menu and the users list shows dates in the chosen display (Gregorian + Hijri, then Hijri);
@@ -32,7 +33,7 @@ async function signIn(page: Page, locale: 'ar' | 'en', email: string, secret: st
   await page.getByRole('button', { name: locale === 'ar' ? 'تسجيل الدخول' : 'Sign in' }).click();
 }
 
-/** Password, then the authenticator code the organization requires (AAL2 with a fresh code). */
+/** Password, then the authenticator code the organization requires at sign-in (its MFA policy). */
 async function signInWithCode(page: Page, locale: 'ar' | 'en') {
   await signIn(page, locale, adminEmail, adminPassword);
   await expect(page).toHaveURL(new RegExp(`/${locale}/mfa$`), afterSignIn);
@@ -75,7 +76,7 @@ test.describe('organization profile', () => {
     await expect(page.getByTestId('org-industry')).toHaveValue('');
     await expect(page.getByTestId('org-countryCode')).toHaveValue('');
     await expect(page.getByTestId('org-display-gregorian')).toBeChecked();
-    await expect(page.getByTestId('organization-step-up')).toHaveCount(0);
+    await expect(page.getByTestId('organization-read-only')).toHaveCount(0);
     await expectNoSeriousA11yViolations(page);
 
     // A field error: announced, tied to its field, and nothing typed is lost.

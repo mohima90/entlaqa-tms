@@ -260,13 +260,12 @@ async function UsersList({
   const held = (invitations ?? []).filter((row) => row.state === 'held').length;
   const nothingToShow = list.rows.length === 0 && invitationRows.length === 0;
   // «إعادة التفعيل» on the deactivated tab (T-M2-09): rows the member may manage; privileged members only
-  // with role.assign_privileged (after an authenticator code).
+  // with role.assign_privileged (the Organization Admin; no authenticator code since 14 Oct 2026).
   const showActions = activeTab === 'deactivated' && view.canDeactivate;
   const reactivation = showActions
     ? {
         labels: await reactivateLabels(locale),
         errors: await profileErrorTexts(locale),
-        stepUp: (await getTranslations({ locale, namespace: 'deactivation' }))('reactivate.stepUp'),
         successHref: withFlash(usersListHref(locale, params), REACTIVATED_FLASH_PARAM),
       }
     : null;
@@ -510,13 +509,7 @@ async function UsersList({
                       {row.status !== 'suspended' || !row.mayManage ? (
                         <NotSet label={t('noneLabel')} />
                       ) : row.privileged && view.privilegedReactivation !== 'allowed' ? (
-                        view.privilegedReactivation === 'step_up_required' ? (
-                          <p className="m-0 max-w-56 text-sm text-text-muted">
-                            {reactivation.stepUp}
-                          </p>
-                        ) : (
-                          <NotSet label={t('noneLabel')} />
-                        )
+                        <NotSet label={t('noneLabel')} />
                       ) : (
                         <ReactivateMemberButton
                           personId={row.personId}

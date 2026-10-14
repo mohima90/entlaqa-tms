@@ -14,7 +14,6 @@ import { ReactivateMemberButton } from '../../../../../../components/users/react
 import { ResetAuthenticator } from '../../../../../../components/users/reset-authenticator';
 import { REACTIVATED_FLASH_PARAM } from '../../../../../../lib/deactivate-form';
 import { reactivateLabels } from '../../../../../../lib/deactivation-texts';
-import { stepUpHref } from '../../../../../../lib/mfa-view';
 import { memberSecurityErrorTexts, profileErrorTexts } from '../../../../../../lib/profile-texts';
 import { sessionLabels, sessionRows } from '../../../../../../lib/sessions-view';
 import { type SuiteContext, getSuiteContext } from '../../../../../../lib/suite-context';
@@ -160,7 +159,6 @@ async function Profile({
 }) {
   const sessionsT = await getTranslations({ locale, namespace: 'sessions' });
   const t = await getTranslations({ locale, namespace: 'userProfile' });
-  const deactivation = await getTranslations({ locale, namespace: 'deactivation' });
   const name = localizedName(locale, profile.displayNameAr, profile.displayNameEn);
   const profileHref = `/${locale}/suite/admin/users/${profile.personId}`;
   const securityErrors = security ? await memberSecurityErrorTexts(locale) : {};
@@ -292,10 +290,6 @@ async function Profile({
           errors={await profileErrorTexts(locale)}
           successHref={`${profileHref}?${REACTIVATED_FLASH_PARAM}=1`}
         />
-      ) : lifecycle.reactivate === 'step_up_required' ? (
-        <Alert tone="info" data-testid="reactivate-step-up">
-          {deactivation('reactivate.stepUp')}
-        </Alert>
       ) : null}
 
       <Card title={t('basicData')}>
@@ -389,15 +383,11 @@ async function Profile({
             personName={name}
             hasApp={security.usesApp === true || security.appPending}
             canReset={security.canResetApp}
-            needsCode={security.resetNeedsCode}
-            stepUpHref={stepUpHref(locale, `/${locale}/suite/admin/users/${profile.personId}`)}
             labels={{
               title: t('mfaResetTitle'),
               hint: t('mfaResetHint'),
               support: t('mfaResetSupport'),
               action: t('mfaResetAction'),
-              needsCode: t('mfaResetNeedsCode'),
-              verifyFirst: t('mfaResetVerifyFirst'),
               confirmTitle: t('mfaResetConfirmTitle'),
               confirmText: t('mfaResetConfirmText', { name: '{name}' }),
               confirm: t('mfaResetConfirm'),

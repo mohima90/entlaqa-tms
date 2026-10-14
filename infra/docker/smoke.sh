@@ -787,9 +787,10 @@ deactivate_e2e deactivate
 [[ "$(q "select count(*) from private.revoked_sessions where user_id = '$DEACT_ID' and reason = 'admin'
         and revoked_by is not null and tenant_id = (select id from platform.tenants where slug = 'sovereign-smoke')")" -ge 2 ]] ||
   { echo "smoke: the deactivated member's ended sessions must be marked as ended by the organization" >&2; exit 1; }
-# The privileged member was not deactivated (no authenticator code in this session; the page said so).
+# The privileged member's form was opened without an authenticator code (PO decision, 14 Oct 2026) but not
+# submitted: he stays active for the later journeys.
 [[ "$(q "select status from platform.tenant_memberships where person_id = '5eed1000-0000-4000-8000-0000000000d4'")" == "active" ]] ||
-  { echo "smoke: the privileged member must stay active without an authenticator code" >&2; exit 1; }
+  { echo "smoke: the privileged member must stay active (the journey does not submit his form)" >&2; exit 1; }
 # Audited with changed facts only (ids and codes: reason, what moved to whom) and announced as events.
 [[ "$(q "select count(*) from platform.audit_events where action = 'platform.user.deactivated'
         and entity_id in ('$DEACT_PERSON', '$SECOND_PERSON') and data ? 'membershipId' and data ? 'reassigned'")" == "2" ]] ||
@@ -890,7 +891,7 @@ deactivate_e2e returns
         where m.user_id = '$DEACT_ID' and ra.role_code in ('line_manager', 'learner')")" == "2" ]] ||
   { echo "smoke: the reactivated member's roles changed" >&2; exit 1; }
 unset answer wrong unknown rows_before DEACT_REFRESH SECOND_REFRESH
-echo "smoke: security policy (T-M2-10) — apps turned on with the e-mailed code, the password-only attack, policy with a code, MFA required, sessions, step-up, lost-app reset"
+echo "smoke: security policy (T-M2-10) — apps turned on with the e-mailed code, the password-only attack, policy without a code (PO decision 14 Oct 2026), MFA required, sessions, lost-app reset"
 # The last browser journey: it makes an authenticator app required for everyone in the organization. The
 # spec reads the set-up e-mails' codes and links from Mailpit and ages codes through
 # infra/docker/e2e-helper.sh, and leaves the set-up keys it saw in a private temporary file for the leak
@@ -1022,10 +1023,11 @@ for i in $(seq 1 30); do
   sleep 1
 done
 
-echo "smoke: organization profile (T-M2-22) — the Organization Admin saves it with a code; the menu name and dates follow; an HR Manager is refused"
-# After the security journey: the organization requires an authenticator code, so the admin (new password,
-# its one confirmed app) signs in at AAL2 and may save. The HR Manager belongs to the phone organization
-# (no code needed there): the page and the action refuse it all the same.
+echo "smoke: organization profile (T-M2-22) — the Organization Admin saves it (no code for the save); the menu name and dates follow; an HR Manager is refused"
+# After the security journey: the organization requires an authenticator code at sign-in, so the admin (new
+# password, its one confirmed app) signs in with one; the save itself needs none (PO decision, 14 Oct 2026).
+# The HR Manager belongs to the phone organization (no code needed there): the page and the action refuse
+# it all the same.
 [[ "$(q "select coalesce(s.country_code, '-') || ':' || s.date_display || ':' || s.default_locale || ':' || s.version from platform.tenant_settings s join platform.tenants t on t.id = s.tenant_id where t.slug = 'sovereign-smoke'")" == "-:gregorian:en:1" ]] ||
   { echo "smoke: the organization must start with the default settings (backfill / new organization)" >&2; exit 1; }
 HR_EMAIL="hr-$(date +%s)@sovereign.example"

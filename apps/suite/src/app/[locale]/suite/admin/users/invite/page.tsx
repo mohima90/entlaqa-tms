@@ -137,12 +137,7 @@ async function inviteForm(
   labels.expiryNotice = t('form.expiryNotice', {
     date: pageDates(locale, context).long(expiryFrom(new Date())),
   });
-  if (view.privilegedAccess !== 'allowed') {
-    labels.privilegedLocked =
-      view.privilegedAccess === 'step_up_required'
-        ? t('form.privilegedNeedsCode')
-        : t('form.privilegedAdminOnly');
-  }
+  if (view.privilegedAccess !== 'allowed') labels.privilegedLocked = t('form.privilegedAdminOnly');
   const fieldTexts: Record<string, string> = Object.fromEntries(
     FIELD_ERROR_KEYS.map((k) => [k, t(`form.fieldErrors.${k}`)]),
   );

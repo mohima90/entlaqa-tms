@@ -101,7 +101,7 @@ describe('deactivation form (T-M2-09, screen 4)', () => {
   });
 
   it('maps reactivation refusals; anything else falls back to the general text', () => {
-    expect(reactivationErrorKey(appError('STEP_UP_REQUIRED'))).toBe('reactivate.stepUp');
+    expect(reactivationErrorKey(appError('STEP_UP_REQUIRED'))).toBeNull();
     expect(reactivationErrorKey(invalid({ path: 'personId', code: 'NOT_DEACTIVATED' }))).toBe(
       'reactivate.notDeactivated',
     );

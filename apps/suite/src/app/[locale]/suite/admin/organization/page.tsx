@@ -1,7 +1,7 @@
 import { toClientError } from '@jadarat/platform-core';
 import { type AppLocale, INDUSTRIES, getMessages } from '@jadarat/platform-i18n';
 import { routing } from '@jadarat/platform-i18n/routing';
-import { Alert, buttonClasses } from '@jadarat/ui';
+import { Alert } from '@jadarat/ui';
 import { hasLocale } from 'next-intl';
 import { getTranslations } from 'next-intl/server';
 import { notFound, redirect } from 'next/navigation';
@@ -9,7 +9,6 @@ import type { ReactNode } from 'react';
 import { OrganizationProfileForm } from '../../../../../components/organization/organization-profile-form';
 import { SuiteShell } from '../../../../../components/suite-shell';
 import { flattenTexts } from '../../../../../lib/flatten-texts';
-import { stepUpHref } from '../../../../../lib/mfa-view';
 import { organizationChoices } from '../../../../../lib/organization-options';
 import { pageDates } from '../../../../../lib/page-dates';
 import { profileErrorTexts } from '../../../../../lib/profile-texts';
@@ -103,24 +102,9 @@ async function Profile({
         date: dates.dateTime(profile.updatedAt),
       })
     : t('lastChangedDefault');
-  const here = stepUpHref(locale, `/${locale}${PATH}`);
   const choices = organizationChoices(locale, new Date(), profile);
   return (
     <div className="flex flex-col gap-5">
-      {editAccess === 'step_up_required' ? (
-        <Alert tone="warning" data-testid="organization-step-up">
-          <span className="flex flex-wrap items-center gap-3">
-            <span>{t('stepUp')}</span>
-            <a
-              href={here}
-              className={buttonClasses({ variant: 'secondary', size: 'sm' })}
-              data-testid="organization-step-up-link"
-            >
-              {t('stepUpLink')}
-            </a>
-          </span>
-        </Alert>
-      ) : null}
       {editAccess === 'denied' ? (
         <Alert tone="info" data-testid="organization-read-only">
           {t('readOnly')}
@@ -149,7 +133,6 @@ async function Profile({
         texts={flattenTexts(getMessages(locale).organizationProfile)}
         lastChanged={lastChanged}
         errors={await profileErrorTexts(locale)}
-        stepUpHref={here}
       />
     </div>
   );

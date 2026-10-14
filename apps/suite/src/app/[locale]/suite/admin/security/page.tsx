@@ -2,7 +2,7 @@ import { toClientError } from '@jadarat/platform-core';
 import { type AppLocale, getMessages } from '@jadarat/platform-i18n';
 import { routing } from '@jadarat/platform-i18n/routing';
 import { SYSTEM_ROLES } from '@jadarat/platform-rbac';
-import { Alert, buttonClasses } from '@jadarat/ui';
+import { Alert } from '@jadarat/ui';
 import { hasLocale } from 'next-intl';
 import { getTranslations } from 'next-intl/server';
 import { notFound, redirect } from 'next/navigation';
@@ -10,7 +10,6 @@ import type { ReactNode } from 'react';
 import { SuiteShell } from '../../../../../components/suite-shell';
 import { SecuritySettingsForm } from '../../../../../components/security/security-settings-form';
 import { profileErrorTexts } from '../../../../../lib/profile-texts';
-import { stepUpHref } from '../../../../../lib/mfa-view';
 import { type SuiteContext, getSuiteContext } from '../../../../../lib/suite-context';
 import { securityPageQuery } from '../../../../../lib/users-queries';
 import { localizedName } from '../../../../../lib/users-view';
@@ -99,20 +98,6 @@ async function Settings({
   return (
     <div className="flex flex-col gap-5">
       <p className="m-0 text-text-muted">{t('intro', { organization })}</p>
-      {editAccess === 'step_up_required' ? (
-        <Alert tone="warning" data-testid="security-step-up">
-          <span className="flex flex-wrap items-center gap-3">
-            <span>{t('stepUp')}</span>
-            <a
-              href={stepUpHref(locale, `/${locale}${PATH}`)}
-              className={buttonClasses({ variant: 'secondary', size: 'sm' })}
-              data-testid="security-step-up-link"
-            >
-              {t('stepUpLink')}
-            </a>
-          </span>
-        </Alert>
-      ) : null}
       {editAccess === 'denied' ? (
         <Alert tone="info" data-testid="security-read-only">
           {t('readOnly')}
@@ -137,7 +122,6 @@ async function Settings({
         texts={flattenTexts(getMessages(locale).security)}
         lastChanged={lastChanged}
         errors={await profileErrorTexts(locale)}
-        stepUpHref={stepUpHref(locale, `/${locale}${PATH}`)}
       />
     </div>
   );

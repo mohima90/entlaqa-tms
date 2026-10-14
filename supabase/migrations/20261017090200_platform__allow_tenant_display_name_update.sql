@@ -1,8 +1,8 @@
 -- The organization's display names (FR-ADM-02; T-M2-22; approved screen «بيانات المنشأة»): the
 -- Organization Admin changes name_ar / name_en from the profile page. Until now platform.tenants was
 -- read-only for users (provisioned by platform operations only); this opens exactly these two columns, to
--- the same writer as platform.tenant_settings (private.actor_may_manage_tenant: Organization Admin at
--- AAL2 with a recent code). Slug, status, edition, mode and data residency stay platform-only.
+-- the same writer as platform.tenant_settings (private.actor_may_manage_tenant: the Organization Admin).
+-- Slug, status, edition, mode and data residency stay platform-only.
 -- The action normalizes the names (NFC), trims them and limits them to 80 characters (the screen); the
 -- database keeps the provisioning limit (200, scripts/sql/provision-tenant.sql), refuses a blank English
 -- name (empty means none: null) and bidirectional override/isolate marks (U+202A–U+202E, U+2066–U+2069),

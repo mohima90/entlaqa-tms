@@ -1,7 +1,8 @@
 -- db-test: run-as=app_server
--- Organization profile and regional settings (T-M2-22; FR-ADM-02, FR-SCH-07): only an Organization Admin at
--- AAL2 with a recent code changes them (and the organization's display names), only in their own
--- organization; every member reads their own organization's settings; the stamps come from the claims.
+-- Organization profile and regional settings (T-M2-22; FR-ADM-02, FR-SCH-07): only an Organization Admin
+-- changes them (and the organization's display names; no authenticator code: PO decision, 14 Oct 2026),
+-- only in their own organization; every member reads their own organization's settings; the stamps come
+-- from the claims.
 -- Runs CONNECTED AS app_server (fixtures: 00, 65).
 \set ON_ERROR_STOP on
 
@@ -15,16 +16,6 @@ declare
   v_set constant text := 'update platform.tenant_settings set currency_code = ''AED'', date_display = ''dual''';
   v_names constant text := 'update platform.tenants set name_en = ''Renamed'', name_ar = ''اسم جديد''';
 begin
-  -- Organization Admin, AAL1: reads, changes nothing.
-  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1', v_a,
-                                             'a1000000-0000-4000-8000-0000000000a1'));
-  perform tests.assert_eq((select count(*) from platform.tenant_settings), 1::bigint, 'the Organization Admin reads the settings');
-  perform tests.assert_eq(tests.rows_affected(v_set), 0::bigint, 'AAL1: the Organization Admin cannot change the settings');
-  perform tests.assert_eq(tests.rows_affected(v_names), 0::bigint, 'AAL1: … nor the display names');
-  -- A token CLAIMING aal2 without a confirmed app: not enough.
-  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1', v_a,
-                                             'a1000000-0000-4000-8000-0000000000a1') || tests.fresh_code());
-  perform tests.assert_eq(tests.rows_affected(v_set), 0::bigint, 'a claimed aal2 without the Auth session: no change');
   -- HR Manager of A (claiming a fresh code; a real AAL2 session: 90_tenant_settings_owner.sql): not an
   -- Organization Admin.
   perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000ab', '10000000-0000-4000-8000-0000000000ab', v_a,
@@ -44,26 +35,31 @@ begin
   perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c06', '10000000-0000-4000-8000-000000000c61', v_a,
                                              'a1000000-0000-4000-8000-000000000c06') || tests.fresh_code());
   perform tests.assert(not private.actor_may_manage_tenant(v_a), 'a Training Manager may not manage the organization');
-  -- The second Organization Admin at AAL2 with a code older than 15 minutes: no change.
-  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c09', '10000000-0000-4000-8000-000000000c91', v_a,
-                                             'a1000000-0000-4000-8000-000000000c09') || tests.fresh_code(interval '16 minutes'));
-  perform tests.assert(not private.actor_may_manage_tenant(v_a), 'a stale code: may not manage the organization');
-  perform tests.assert_eq(tests.rows_affected(v_set), 0::bigint, 'a stale code: no change');
-  perform tests.assert_eq(tests.rows_affected(v_names), 0::bigint, 'a stale code: no rename');
+  perform tests.assert_eq(tests.rows_affected(v_set), 0::bigint, 'a Training Manager cannot change the settings');
 
-  -- …with a fresh code: changed, stamped with the admin's person, version 2.
-  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c09', '10000000-0000-4000-8000-000000000c91', v_a,
-                                             'a1000000-0000-4000-8000-000000000c09') || tests.fresh_code());
-  perform tests.assert(private.actor_may_manage_tenant(v_a), 'the Organization Admin at AAL2 may manage the organization');
+  -- The Organization Admin uA at AAL1, without a confirmed app (no authenticator code: PO decision,
+  -- 14 Oct 2026): changed, stamped with the admin's person, version 2.
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1', v_a,
+                                             'a1000000-0000-4000-8000-0000000000a1'));
+  perform tests.assert_eq((select count(*) from platform.tenant_settings), 1::bigint, 'the Organization Admin reads the settings');
+  perform tests.assert(private.actor_may_manage_tenant(v_a), 'the Organization Admin at AAL1 may manage the organization');
   perform tests.assert_eq(tests.rows_affected(v_set || ', working_days = ''{5,1,1,2,3,4}'''), 1::bigint,
-    'the Organization Admin at AAL2 changes the settings');
+    'the Organization Admin at AAL1 changes the settings');
   perform tests.assert((select currency_code = 'AED' and date_display = 'dual' and working_days = '{1,2,3,4,5}'
-                               and version = 2 and updated_by = 'a1000000-0000-4000-8000-000000000c09'
+                               and version = 2 and updated_by = 'a1000000-0000-4000-8000-0000000000a1'
                         from platform.tenant_settings),
     'stamped with the editor and a new version; the week normalized');
+  -- The second Organization Admin at AAL2 with a code older than 15 minutes: no freshness rule either.
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c09', '10000000-0000-4000-8000-000000000c91', v_a,
+                                             'a1000000-0000-4000-8000-000000000c09') || tests.fresh_code(interval '16 minutes'));
+  perform tests.assert(private.actor_may_manage_tenant(v_a), 'a stale code: may manage the organization all the same');
   perform tests.assert_eq(tests.rows_affected(v_names), 1::bigint, 'the Organization Admin renames the organization');
   perform tests.assert((select name_en = 'Renamed' and name_ar = 'اسم جديد' from platform.tenants),
     'the display names changed');
+  perform tests.assert_eq(tests.rows_affected($q$update platform.tenant_settings set fiscal_year_start_month = 4$q$), 1::bigint,
+    'and changes the settings');
+  perform tests.assert((select version = 3 and updated_by = 'a1000000-0000-4000-8000-000000000c09' from platform.tenant_settings),
+    'stamped with the second editor, version 3');
   -- Only the settings and the display names: not the stamps, the organization, its slug or status.
   perform tests.assert_privilege_denied($q$update platform.tenant_settings set updated_by = null$q$, 'updated_by is not updatable');
   perform tests.assert_privilege_denied($q$update platform.tenant_settings set version = 1$q$, 'version is not updatable');
@@ -100,7 +96,7 @@ begin
 end $$;
 rollback;
 
--- B's Organization Admin at AAL2 changes B's settings, never A's; a member of A and B sees the settings of
+-- B's Organization Admin changes B's settings, never A's; a member of A and B sees the settings of
 -- the organization the session acts in only.
 begin;
 set local role authenticated;

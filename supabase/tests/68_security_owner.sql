@@ -18,10 +18,10 @@ declare
 begin
   for r in select * from (values
       ('private.session_access(uuid,uuid,uuid,boolean,boolean)', 'tenant_guard', ''),
-      -- membership_guard: T-M2-09's authenticator-code rule (20261012120000); rate_limit_guard: the trust
-      -- of a remembered browser after the sign-in code (T-M2-11 integration review L4, 20261013090000).
-      ('private.request_aal2()', 'tenant_guard', 'authenticated,membership_guard,rate_limit_guard'),
-      ('private.request_code_fresh()', 'tenant_guard', 'authenticated,membership_guard,rate_limit_guard'),
+      -- rate_limit_guard: the trust of a remembered browser after the sign-in code (T-M2-11 integration
+      -- review L4, 20261013090000). membership_guard no longer (20261017090400: no authenticator-code rule).
+      ('private.request_aal2()', 'tenant_guard', 'authenticated,rate_limit_guard'),
+      ('private.request_code_fresh()', 'tenant_guard', 'authenticated,rate_limit_guard'),
       ('private.request_session_facts()', 'tenant_guard', 'authenticated'),
       ('private.session_access_state()', 'tenant_guard', 'authenticated'),
       ('private.dismiss_mfa_prompt()', 'tenant_guard', 'authenticated'),
@@ -76,7 +76,7 @@ begin
   -- Platform constants, one place each (PO answers of 9 Oct 2026; TM-0003 T-IAM-11; review H1, re-review N1).
   perform tests.assert_eq(private.mfa_prompt_reask_after(), interval '30 days', '"not now" asks again after 30 days');
   perform tests.assert_eq(private.mfa_no_grace_roles(), array['tenant_admin'], 'no grace period: the Organization Admin');
-  perform tests.assert_eq(private.step_up_max_age(), interval '15 minutes', 'a high-risk action: a code from the last 15 minutes');
+  perform tests.assert_eq(private.step_up_max_age(), interval '15 minutes', 'removing one''s own confirmed app: a code from the last 15 minutes');
   perform tests.assert_eq(private.mfa_code_lifetime(), interval '72 hours',
     'the set-up code: 72 hours (longer than any sign-in session: 24 hours at most)');
   perform tests.assert_eq(private.mfa_code_max_attempts(), 5::smallint, 'the set-up code: 5 tries');
@@ -826,23 +826,24 @@ begin
   perform tests.assert_eq(private.reset_member_mfa('b1000000-0000-4000-8000-0000000000b1'), 'not_found',
     'never another organization''s member (not found in this one)');
 end $$;
--- Who may not: an Organization Admin whose code is older than 15 minutes (checked here too) or not from a
--- confirmed app, a learner, an HR Manager.
+-- No authenticator code needed (PO decision, 14 Oct 2026, reversing D-IAM-01; 20261017090400): an
+-- Organization Admin whose code is older than 15 minutes, or who is at AAL1 without a confirmed app, resets.
 select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c09', '10000000-0000-4000-8000-000000000c91',
                                           'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-000000000c09')
                         || tests.fresh_code(interval '16 minutes'));
 do $$
 begin
-  perform tests.assert_fails($q$select private.reset_member_mfa('a1000000-0000-4000-8000-000000000c08')$q$,
-    array['42501'], 'an Organization Admin at AAL2 with a code from 16 minutes ago');
+  perform tests.assert_eq(private.reset_member_mfa('a1000000-0000-4000-8000-000000000c08'), 'reset',
+    'an Organization Admin at AAL2 with a code from 16 minutes ago');
 end $$;
 select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
-                                          'a0000000-0000-4000-8000-000000000001') || tests.fresh_code());
+                                          'a0000000-0000-4000-8000-000000000001'));
 do $$
 begin
-  perform tests.assert_fails($q$select private.reset_member_mfa('a1000000-0000-4000-8000-000000000c08')$q$,
-    array['42501'], 'an Organization Admin whose code did not come from a confirmed app');
+  perform tests.assert_eq(private.reset_member_mfa('a1000000-0000-4000-8000-000000000c08'), 'no_app',
+    'an Organization Admin at AAL1 without a confirmed app (the app is already gone)');
 end $$;
+-- Who may not: a learner, an HR Manager (at AAL2 too).
 select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c01', '10000000-0000-4000-8000-000000000c11',
                                           'a0000000-0000-4000-8000-000000000001'));
 do $$
@@ -855,7 +856,7 @@ select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000ab'
 do $$
 begin
   perform tests.assert_fails($q$select private.reset_member_mfa('a1000000-0000-4000-8000-000000000c08')$q$,
-    array['42501'], 'an HR Manager');
+    array['42501'], 'an HR Manager at AAL2');
 end $$;
 set local session authorization default;
 do $$

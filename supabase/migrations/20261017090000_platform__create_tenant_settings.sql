@@ -22,10 +22,11 @@
 --   fiscal year from January, English for new people (PO decision, 14 Oct 2026: English is the default
 --   language for now) and Gregorian dates; dates and time zone stay what the app showed before this
 --   table existed (the backfill takes the headquarters branch's zone, 20261017090100).
---   Writers: an Organization Admin at AAL2 with a recent code — the action checks platform.tenant.manage
---   (high risk, AAL2, getUser()); the update policy checks the same here. Members read their organization's
---   settings (every page formats dates with them). Only the settings columns are updatable; the trigger
---   stamps updated_* / version and checks the time zone against the database's own list.
+--   Writers: the Organization Admin — the action checks platform.tenant.manage (high risk: getUser());
+--   the update policy checks the role here. No authenticator code (PO decision, 14 Oct 2026). Members
+--   read their organization's settings (every page formats dates with them). Only the settings columns
+--   are updatable; the trigger stamps updated_* / version and checks the time zone against the database's
+--   own list.
 
 create table platform.tenant_settings (
   tenant_id uuid primary key references platform.tenants (id),
@@ -68,27 +69,25 @@ create table platform.tenant_settings (
     foreign key (tenant_id, updated_by) references platform.persons (tenant_id, id)
 );
 comment on table platform.tenant_settings is
-  'Organization profile and regional settings (FR-ADM-02, FR-SCH-07, BR-ADM-3; T-M2-22). Owner: platform. Class: T. Changed only by an Organization Admin at AAL2; read by every member.';
+  'Organization profile and regional settings (FR-ADM-02, FR-SCH-07, BR-ADM-3; T-M2-22). Owner: platform. Class: T. Changed only by the Organization Admin; read by every member.';
 comment on column platform.tenant_settings.working_days is
   'Default working week: 0 = Sunday … 6 = Saturday, sorted, no duplicates. Branches override it later (working calendars).';
 comment on column platform.tenant_settings.date_display is
   'gregorian / hijri (Umm al-Qura) / dual — how dates are shown to the organization''s members (FR-SCH-07).';
 
 -- May the signed-in member change the organization's profile and settings? An Organization Admin (role
--- in force now) at AAL2 through a confirmed app with a code from the last 15 minutes — the same rule as the
--- security policy (platform.tenant.manage is high risk and needs AAL2 in the permission registry; PO
--- decision D-IAM-01). SECURITY INVOKER: the caller reads its own organization's roles.
+-- in force now) — no authenticator code (PO decision, 14 Oct 2026, reversing D-IAM-01; the organization's
+-- MFA sign-in policy is the second factor). SECURITY INVOKER: the caller reads its own organization's roles.
 create or replace function private.actor_may_manage_tenant(p_tenant_id uuid)
 returns boolean
 language sql stable
 set search_path = ''
 as $$
-  select private.request_aal2() and private.request_code_fresh()
-     and 'tenant_admin' = any (private.actor_role_codes(p_tenant_id, private.request_user_id()));
+  select 'tenant_admin' = any (private.actor_role_codes(p_tenant_id, private.request_user_id()));
 $$;
 
 comment on function private.actor_may_manage_tenant(uuid) is
-  'SECURITY-RELEVANT (T-M2-22, D-IAM-01): an Organization Admin at AAL2 (confirmed app) with a code from the last 15 minutes may change the organization''s profile and settings.';
+  'SECURITY-RELEVANT (T-M2-22): an Organization Admin (role in force now) may change the organization''s profile and settings.';
 
 revoke all on function private.actor_may_manage_tenant(uuid) from public;
 grant execute on function private.actor_may_manage_tenant(uuid) to authenticated;

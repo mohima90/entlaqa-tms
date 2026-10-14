@@ -593,7 +593,7 @@ begin
                     order by p.oid::regprocedure::text collate "C") into v_list
   from pg_proc p where p.proowner = 'membership_guard'::regrole;
   perform tests.assert_eq(v_list,
-    'private.account_sign_in_refused(uuid), private.check_privileged_deactivation(), '
+    'private.account_sign_in_refused(uuid), '
     'private.end_member_sessions(), private.end_unserved_logins(), private.reactivate_membership(uuid)',
     'membership_guard owns the deactivation, reactivation and sign-in refusal functions only');
   perform tests.assert(not exists (select 1 from pg_class c where c.relowner = 'membership_guard'::regrole),
@@ -657,24 +657,26 @@ begin
   end loop;
   perform tests.assert(has_function_privilege('supabase_auth_admin', 'private.account_sign_in_refused(uuid)', 'execute'),
     'the access-token hook (supabase_auth_admin) may ask the sign-in rule');
-  -- With T-M2-10 (20261012120000): its trigger ends a login's Auth sessions through tenant_guard's helper, and
-  -- its code rule asks tenant_guard's AAL2 and code age — calls only, no table access of its own.
+  -- With T-M2-10 (20261012120000): its trigger ends a login's Auth sessions through tenant_guard's helper —
+  -- a call only, no table access of its own. Since 20261017090400 (no authenticator-code rule) it no longer
+  -- asks tenant_guard's AAL2 and code age.
   perform tests.assert(has_function_privilege('membership_guard', 'private.end_unserved_login_sessions(uuid, uuid, uuid)', 'execute')
-                       and has_function_privilege('membership_guard', 'private.request_aal2()', 'execute')
-                       and has_function_privilege('membership_guard', 'private.request_code_fresh()', 'execute')
+                       and not has_function_privilege('membership_guard', 'private.request_aal2()', 'execute')
+                       and not has_function_privilege('membership_guard', 'private.request_code_fresh()', 'execute')
                        and not has_function_privilege('membership_guard', 'private.end_sessions(uuid, uuid[], uuid, text, uuid)', 'execute')
                        and not has_table_privilege('membership_guard', 'private.auth_session_validity', 'select, delete')
                        and not has_table_privilege('membership_guard', 'private.revoked_sessions', 'select, insert, delete'),
-    'membership_guard: the login-session helper and the AAL2 checks, not the session tables');
+    'membership_guard: the login-session helper, not the AAL2 checks or the session tables');
   -- The triggers are in place and enabled.
   perform tests.assert((select count(*) from pg_trigger t
                         where t.tgenabled = 'O' and (t.tgrelid, t.tgname, t.tgfoid) in (
                           ('platform.tenant_memberships'::regclass, 'tenant_memberships_end_sessions', 'private.end_member_sessions()'::regprocedure),
-                          ('platform.tenant_memberships'::regclass, 'tenant_memberships_privileged_deactivation',
-                           'private.check_privileged_deactivation()'::regprocedure),
                           ('platform.tenant_memberships'::regclass, 'tenant_memberships_end_login_sessions',
-                           'private.end_unserved_logins()'::regprocedure))) = 3,
-    'deactivation triggers (sessions, privileged members at AAL2, the login''s Auth sessions) exist and are enabled');
+                           'private.end_unserved_logins()'::regprocedure))) = 2,
+    'deactivation triggers (sessions, the login''s Auth sessions) exist and are enabled');
+  perform tests.assert(to_regprocedure('private.check_privileged_deactivation()') is null
+                       and not exists (select 1 from pg_trigger where tgname = 'tenant_memberships_privileged_deactivation'),
+    'no authenticator-code step for deactivating a privileged member (PO decision, 14 Oct 2026)');
   perform tests.assert((select t.tgtype & 1 = 0 and t.tgnewtable is not null and t.tgoldtable is not null
                         from pg_trigger t where t.tgname = 'tenant_memberships_end_login_sessions'),
     'the login-session trigger runs once per statement, over the rows it changed (user-id order)');

@@ -268,7 +268,7 @@ reset role;
 rollback;
 
 -- Inviter revoked (and, separately, suspended): their pending invitations stop working. The inviter is an
--- HR Manager (a privileged role): the Organization Admin acts at AAL2 (T-M2-09, review M4).
+-- HR Manager (a privileged role): the Organization Admin acts (no authenticator code since 20261017090400).
 begin;
 set local role authenticated;
 select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',

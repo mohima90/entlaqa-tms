@@ -2,7 +2,7 @@
 -- Deactivate / reactivate a member (FR-IAM-05, T-M2-09): committed fixtures for 63 (request path, as
 -- app_server) and 64 (sign-in refusal of the access-token hook), then the checks that need the owner
 -- connection: the session-ending trigger for every writer (with the lock it shares with the organization
--- switch), the privileged-deactivation rule for platform operations, and the lock order of the people
+-- switch), privileged members without an authenticator code, and the lock order of the people
 -- responsibilities. 64 removes these fixtures again.
 --   tenant A:  uX   learner (also an active learner in tenant B), heads department DX, manages pR, pR2
 --                   (no login) and pP; sessions sX1, sX2 (A), sXB (B), sX0 (no organization selected)
@@ -11,8 +11,8 @@
 --              uA2  Organization Admin whose role ENDS in 30 days (the fixture admin uA has no end date)
 --              uN   an account without membership; a pending invitation of A for its e-mail
 --              uE   learner whose Auditor role ENDED yesterday     uF  learner with an Auditor role from in 10 days
---   uA2 (like uA and uAB in 00) has a CONFIRMED authenticator app whose code its session passed: what AAL2
---   means since T-M2-10 (private.request_aal2, with a code from the last 15 minutes).
+--   uA2 (like uA and uAB in 00) has a CONFIRMED authenticator app whose code its session passed (AAL2,
+--   T-M2-10); since 20261017090400 no organization-level action needs it.
 --   With T-M2-10 (20261012120000, residual N2 closed): a login left without any active membership in an
 --   active or trial organization also loses its Auth sessions.
 \set ON_ERROR_STOP on
@@ -335,43 +335,30 @@ end $$;
 rollback;
 
 -- ---------------------------------------------------------------------------------------------------
--- The authenticator-code rule uses T-M2-10's AAL2 (20261012120000; review H1): the token's claim is not
--- enough — the Auth session must have passed a code of a CONFIRMED app (63: and within 15 minutes).
+-- No authenticator code for organization-level actions (PO decision, 14 Oct 2026, reversing D-IAM-01;
+-- 20261017090400): an Organization Admin whose app is not confirmed and whose Auth session is at aal1
+-- still deactivates and reactivates a privileged member. Only the role rules remain (63).
 -- ---------------------------------------------------------------------------------------------------
--- uA's app still waits for its e-mailed code.
 begin;
 update private.mfa_factor_confirmations set confirmed_at = null where factor_id = '20000000-0000-4000-8000-0000000000a1';
-set local session authorization app_server;
-set local role authenticated;
-select tests.t09_as('admin', 'aal2');
-do $$
-begin
-  perform tests.assert_fails($q$update platform.tenant_memberships set status = 'suspended' where person_id = '9d100000-0000-4000-8000-0000000000a4'$q$,
-    array['JM003'], 'the token says aal2, but the app is not confirmed: a privileged member stays');
-  update platform.persons set status = 'active' where id = '9d100000-0000-4000-8000-0000000000a6';
-  perform tests.assert_fails($q$select private.reactivate_membership('9d100000-0000-4000-8000-0000000000a6')$q$,
-    array['JM003'], 'nor is a privileged member reactivated');
-end $$;
-rollback;
--- The Auth session itself is at aal1 (the token's claim does not match it).
-begin;
 update auth.sessions set aal = 'aal1' where id = '10000000-0000-4000-8000-0000000000a1';
 set local session authorization app_server;
 set local role authenticated;
-select tests.t09_as('admin', 'aal2');
+select tests.t09_as('admin', 'aal1');
 do $$
 begin
-  perform tests.assert_fails($q$update platform.tenant_memberships set status = 'suspended' where person_id = '9d100000-0000-4000-8000-0000000000a4'$q$,
-    array['JM003'], 'the token says aal2, the Auth session does not: a privileged member stays');
+  perform tests.assert_eq(tests.rows_affected($q$update platform.tenant_memberships set status = 'suspended' where person_id = '9d100000-0000-4000-8000-0000000000a4'$q$),
+    1::bigint, 'no authenticator code: the Organization Admin suspends a privileged member');
   update platform.persons set status = 'active' where id = '9d100000-0000-4000-8000-0000000000a6';
-  perform tests.assert_fails($q$select private.reactivate_membership('9d100000-0000-4000-8000-0000000000a6')$q$,
-    array['JM003'], 'nor is a privileged member reactivated');
+  perform private.reactivate_membership('9d100000-0000-4000-8000-0000000000a6');
+  perform tests.assert_eq((select status::text from platform.tenant_memberships where person_id = '9d100000-0000-4000-8000-0000000000a6'),
+    'active', 'and reactivates one');
 end $$;
 rollback;
 
 -- ---------------------------------------------------------------------------------------------------
--- Privileged members (review M4): the authenticator-code rule binds request-path deactivations only
--- (63); a platform operation without claims (an operator's provisioning fix) is not one.
+-- Privileged members: a platform operation without claims (an operator's provisioning fix) suspends one
+-- too (the authenticator-code rule of review M4 is gone since 20261017090400).
 -- ---------------------------------------------------------------------------------------------------
 begin;
 do $$

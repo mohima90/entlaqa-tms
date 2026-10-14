@@ -184,21 +184,39 @@ export function isTimeZone(value: string): boolean {
 }
 
 /** The country's name in the UI language (the code when ICU has none). */
+const regionNames = new Map<AppLocale, Intl.DisplayNames>();
+const currencyNames = new Map<AppLocale, Intl.DisplayNames>();
+
 export function countryName(code: string, locale: AppLocale): string {
-  return new Intl.DisplayNames([locale], { type: 'region', fallback: 'code' }).of(code) ?? code;
+  let names = regionNames.get(locale);
+  if (!names) {
+    names = new Intl.DisplayNames([locale], { type: 'region', fallback: 'code' });
+    regionNames.set(locale, names);
+  }
+  return names.of(code) ?? code;
 }
 
 /** "SAR — Saudi riyal" / «SAR — ريال سعودي». */
 export function currencyLabel(code: string, locale: AppLocale): string {
-  const name = new Intl.DisplayNames([locale], { type: 'currency', fallback: 'none' }).of(code);
+  let names = currencyNames.get(locale);
+  if (!names) {
+    names = new Intl.DisplayNames([locale], { type: 'currency', fallback: 'none' });
+    currencyNames.set(locale, names);
+  }
+  const name = names.of(code);
   return name ? `${code} — ${name}` : code;
 }
 
+const offsetFormats = new Map<string, Intl.DateTimeFormat>();
+
 /** The zone's offset from UTC at `at`, as "UTC+03:00" (Western digits in both languages). */
 export function utcOffset(zone: string, at: Date): string {
-  const part = new Intl.DateTimeFormat('en', { timeZone: zone, timeZoneName: 'longOffset' })
-    .formatToParts(at)
-    .find((p) => p.type === 'timeZoneName')?.value;
+  let format = offsetFormats.get(zone);
+  if (!format) {
+    format = new Intl.DateTimeFormat('en', { timeZone: zone, timeZoneName: 'longOffset' });
+    offsetFormats.set(zone, format);
+  }
+  const part = format.formatToParts(at).find((p) => p.type === 'timeZoneName')?.value;
   // ICU writes "GMT+03:00", and plain "GMT" for a zero offset.
   if (!part || part === 'GMT') return 'UTC+00:00';
   return part.replace('GMT', 'UTC');

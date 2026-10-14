@@ -48,11 +48,98 @@ export interface OrganizationChoices {
 }
 
 /** A value saved earlier that this runtime no longer lists stays selectable (never silently changed). */
-function withCurrent(choices: Choice[], current: string | null, label: (v: string) => string) {
+function withCurrent(
+  choices: readonly Choice[],
+  current: string | null,
+  label: (v: string) => string,
+): readonly Choice[] {
   if (current && !choices.some((c) => c.value === current)) {
-    choices.unshift({ value: current, label: label(current) });
+    return [{ value: current, label: label(current) }, ...choices];
   }
   return choices;
+}
+
+/** What does not depend on the instant: built once per language (the lists are ICU's, fixed per process). */
+interface StaticChoices {
+  readonly countries: readonly Choice[];
+  readonly currencies: readonly Choice[];
+  readonly months: readonly Choice[];
+  readonly weekdays: OrganizationChoices['weekdays'];
+}
+
+const staticCache = new Map<AppLocale, StaticChoices>();
+let suggestionCache: Readonly<Record<string, RegionalPreset>> | null = null;
+/** Zone labels and order depend on the offsets (daylight saving): rebuilt each UTC hour. */
+const zoneCache = new Map<string, readonly Choice[]>();
+
+function staticChoices(locale: AppLocale): StaticChoices {
+  const cached = staticCache.get(locale);
+  if (cached) return cached;
+  const collator = new Intl.Collator(locale);
+  const monthName = new Intl.DateTimeFormat(`${locale}-u-ca-gregory-nu-latn`, {
+    month: 'long',
+    timeZone: 'UTC',
+  });
+  const dayFormat = (style: 'short' | 'long') =>
+    new Intl.DateTimeFormat(`${locale}-u-ca-gregory-nu-latn`, { weekday: style, timeZone: 'UTC' });
+  const short = dayFormat('short');
+  const long = dayFormat('long');
+  const built: StaticChoices = {
+    countries: isoCountryCodes()
+      .map((code) => ({ value: code, label: countryName(code, locale) }))
+      .sort((a, b) => collator.compare(a.label, b.label)),
+    currencies: isoCurrencyCodes().map((code) => ({
+      value: code,
+      label: currencyLabel(code, locale),
+    })),
+    months: Array.from({ length: 12 }, (_, index) => ({
+      value: String(index + 1),
+      label: monthName.format(new Date(Date.UTC(2026, index, 1))),
+    })),
+    // 4 Jan 2026 was a Sunday.
+    weekdays: WEEKDAYS.map((day) => {
+      const date = new Date(Date.UTC(2026, 0, 4 + day));
+      return { value: day, short: short.format(date), long: long.format(date) };
+    }),
+  };
+  staticCache.set(locale, built);
+  return built;
+}
+
+function suggestions(): Readonly<Record<string, RegionalPreset>> {
+  if (suggestionCache) return suggestionCache;
+  const catalog = {
+    currencies: isoCurrencyCodes(),
+    timeZones: ianaTimeZones(),
+    timeZonesOf: countryTimeZones,
+  };
+  const built: Record<string, RegionalPreset> = {};
+  for (const code of isoCountryCodes()) {
+    const preset = regionalPreset(code, catalog);
+    if (Object.keys(preset).length > 0) built[code] = preset;
+  }
+  suggestionCache = built;
+  return built;
+}
+
+function zoneChoices(locale: AppLocale, now: Date): readonly Choice[] {
+  const key = `${locale}|${String(Math.floor(now.getTime() / 3_600_000))}`;
+  const cached = zoneCache.get(key);
+  if (cached) return cached;
+  const collator = new Intl.Collator(locale);
+  const built = ianaTimeZones()
+    .map((zone) => ({
+      value: zone,
+      label: timeZoneLabel(zone, locale, now),
+      offset: offsetMinutes(zone, now),
+    }))
+    .sort((a, b) => a.offset - b.offset || collator.compare(a.label, b.label))
+    .map(({ value, label }) => ({ value, label }));
+  // Keep the current hour's lists only (one per language).
+  for (const old of zoneCache.keys())
+    if (!old.endsWith(key.slice(key.indexOf('|')))) zoneCache.delete(old);
+  zoneCache.set(key, built);
+  return built;
 }
 
 export function organizationChoices(
@@ -64,59 +151,7 @@ export function organizationChoices(
     readonly timeZone: string;
   },
 ): OrganizationChoices {
-  const collator = new Intl.Collator(locale);
-  const countries = withCurrent(
-    isoCountryCodes()
-      .map((code) => ({ value: code, label: countryName(code, locale) }))
-      .sort((a, b) => collator.compare(a.label, b.label)),
-    current.countryCode,
-    (code) => countryName(code, locale),
-  );
-  const currencies = withCurrent(
-    isoCurrencyCodes().map((code) => ({ value: code, label: currencyLabel(code, locale) })),
-    current.currencyCode,
-    (code) => currencyLabel(code, locale),
-  );
-  const zones = ianaTimeZones()
-    .map((zone) => ({
-      value: zone,
-      label: timeZoneLabel(zone, locale, now),
-      offset: offsetMinutes(zone, now),
-    }))
-    .sort((a, b) => a.offset - b.offset || collator.compare(a.label, b.label))
-    .map(({ value, label }) => ({ value, label }));
-  const timeZones = withCurrent(zones, current.timeZone, (zone) =>
-    timeZoneLabel(zone, locale, now),
-  );
-  const monthName = new Intl.DateTimeFormat(`${locale}-u-ca-gregory-nu-latn`, {
-    month: 'long',
-    timeZone: 'UTC',
-  });
-  const months = Array.from({ length: 12 }, (_, index) => ({
-    value: String(index + 1),
-    label: monthName.format(new Date(Date.UTC(2026, index, 1))),
-  }));
-  const dayFormat = (style: 'short' | 'long') =>
-    new Intl.DateTimeFormat(`${locale}-u-ca-gregory-nu-latn`, { weekday: style, timeZone: 'UTC' });
-  // 4 Jan 2026 was a Sunday.
-  const weekdays = WEEKDAYS.map((day) => {
-    const date = new Date(Date.UTC(2026, 0, 4 + day));
-    return {
-      value: day,
-      short: dayFormat('short').format(date),
-      long: dayFormat('long').format(date),
-    };
-  });
-  const catalog = {
-    currencies: isoCurrencyCodes(),
-    timeZones: ianaTimeZones(),
-    timeZonesOf: countryTimeZones,
-  };
-  const suggestions: Record<string, RegionalPreset> = {};
-  for (const code of isoCountryCodes()) {
-    const preset = regionalPreset(code, catalog);
-    if (Object.keys(preset).length > 0) suggestions[code] = preset;
-  }
+  const fixed = staticChoices(locale);
   const previews = Object.fromEntries(
     DATE_DISPLAYS.map((display) => [
       display,
@@ -124,12 +159,18 @@ export function organizationChoices(
     ]),
   ) as Record<DateDisplay, string>;
   return {
-    countries,
-    currencies,
-    timeZones,
-    months,
-    weekdays,
-    suggestions,
+    countries: withCurrent(fixed.countries, current.countryCode, (code) =>
+      countryName(code, locale),
+    ),
+    currencies: withCurrent(fixed.currencies, current.currencyCode, (code) =>
+      currencyLabel(code, locale),
+    ),
+    timeZones: withCurrent(zoneChoices(locale, now), current.timeZone, (zone) =>
+      timeZoneLabel(zone, locale, now),
+    ),
+    months: fixed.months,
+    weekdays: fixed.weekdays,
+    suggestions: suggestions(),
     previews,
     now: now.toISOString(),
   };

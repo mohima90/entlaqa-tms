@@ -128,19 +128,6 @@ echo "smoke: signing in through a real browser"
   SIGNED_IN_E2E_PASSWORD="$PASSWORD" SIGNED_IN_E2E_ORGANIZATION_EN='Sovereign Smoke' \
   pnpm exec playwright test e2e/signed-in.spec.ts --project=desktop-chromium)
 
-echo "smoke: the same sign-in on a phone (T-M2-21: navigation drawer, 44 px controls), own organization"
-# A fresh Organization Admin in its own organization: the authenticator prompt is new again, and the
-# journeys below keep their single organization.
-PHONE_EMAIL="phone-$(date +%s)@sovereign.example"
-PHONE_PASSWORD="Phone-$(openssl rand -hex 16)"
-PHONE_ID="$(create_user "$PHONE_EMAIL" "$PHONE_PASSWORD")"
-(cd "$ROOT" && DATABASE_URL="$MIGRATION_URL" DATABASE_CA_CERT="$CA_PEM" TENANT_SLUG=sovereign-phone \
-  TENANT_NAME_AR='منشأة اختبار الجوال' TENANT_NAME_EN='Sovereign Phone' ADMIN_USER_ID="$PHONE_ID" \
-  ADD_TO_EXISTING=false bash scripts/provision-tenant.sh apply >/dev/null)
-(cd "$ROOT/apps/suite" && E2E_BASE_URL=http://localhost:3200 SIGNED_IN_E2E_EMAIL="$PHONE_EMAIL" \
-  SIGNED_IN_E2E_PASSWORD="$PHONE_PASSWORD" SIGNED_IN_E2E_ORGANIZATION_EN='Sovereign Phone' \
-  pnpm exec playwright test e2e/signed-in.spec.ts --project=mobile-chromium)
-
 echo "smoke: Auth parity checks (ADR 0010 §3a: ES256/JWKS, session_id, TOTP MFA → aal2)"
 PARITY_EMAIL="parity-$(date +%s)@sovereign.example"
 PARITY_PASSWORD="Parity-$(openssl rand -hex 16)"
@@ -163,6 +150,20 @@ no_tls="$(PGPASSWORD="$POSTGRES_PASSWORD" PGSSLMODE=disable PGCONNECT_TIMEOUT=5 
   psql -h localhost -p 55432 -U postgres -d postgres -X -At -c 'select 1' 2>&1 || true)"
 [[ "$no_tls" == *"pg_hba.conf rejects connection"* ]] ||
   { echo "smoke: PostgreSQL must refuse connections without TLS (got: $no_tls)" >&2; exit 1; }
+
+echo "smoke: the same sign-in on a phone (T-M2-21: navigation drawer, 44 px controls), own organization"
+# A fresh Organization Admin in its own organization: the authenticator prompt is new again, and the
+# journeys below keep their single organization. After the audit-trail check above, which counts the
+# first sign-in and sign-out exactly.
+PHONE_EMAIL="phone-$(date +%s)@sovereign.example"
+PHONE_PASSWORD="Phone-$(openssl rand -hex 16)"
+PHONE_ID="$(create_user "$PHONE_EMAIL" "$PHONE_PASSWORD")"
+(cd "$ROOT" && DATABASE_URL="$MIGRATION_URL" DATABASE_CA_CERT="$CA_PEM" TENANT_SLUG=sovereign-phone \
+  TENANT_NAME_AR='منشأة اختبار الجوال' TENANT_NAME_EN='Sovereign Phone' ADMIN_USER_ID="$PHONE_ID" \
+  ADD_TO_EXISTING=false bash scripts/provision-tenant.sh apply >/dev/null)
+(cd "$ROOT/apps/suite" && E2E_BASE_URL=http://localhost:3200 SIGNED_IN_E2E_EMAIL="$PHONE_EMAIL" \
+  SIGNED_IN_E2E_PASSWORD="$PHONE_PASSWORD" SIGNED_IN_E2E_ORGANIZATION_EN='Sovereign Phone' \
+  pnpm exec playwright test e2e/signed-in.spec.ts --project=mobile-chromium)
 
 echo "smoke: background jobs (T-M2-06a) — two workers install the queue and dispatch an event"
 compose up -d --build --wait worker

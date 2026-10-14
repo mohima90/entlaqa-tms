@@ -193,7 +193,22 @@ export {
   resetMemberMfa,
   updateSecurityPolicy,
 } from './security';
-export { type CurrentTenant, getCurrentTenant } from './tenants';
+export {
+  type CurrentTenant,
+  DEFAULT_TENANT_REGIONAL,
+  type TenantRegional,
+  getCurrentTenant,
+} from './tenants';
+export {
+  type OrganizationProfile,
+  type OrganizationProfileRecord,
+  type OrganizationProfileUpdate,
+  TENANT_DATE_DISPLAYS,
+  type TenantDateDisplay,
+  changedProfileFields,
+  getOrganizationProfile,
+  updateOrganizationProfile,
+} from './tenant-settings';
 export { type OrgUnitOption, type OrgUnitOptions, listOrgUnitOptions } from './org';
 export { EVENT_TYPE_PATTERN, type EmittedEvent, emitEvent } from './events';
 export { type PersonalDetails, getPersonalDetails, updatePersonalDetails } from './my-profile';

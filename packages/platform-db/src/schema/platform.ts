@@ -3,7 +3,8 @@
  * The source of truth is SQL in supabase/migrations (RLS, grants and functions are first-class there).
  * Keep in sync with: 20260930120200_platform__tenancy_core.sql, 20260930120300_platform__audit_events.sql,
  * 20261004120100_platform__create_branches.sql, 20261004120200_platform__create_departments.sql,
- * 20261005090000_platform__add_persons_profile.sql, 20261005090100_platform__create_person_employment.sql
+ * 20261005090000_platform__add_persons_profile.sql, 20261005090100_platform__create_person_employment.sql,
+ * 20261017090000_platform__create_tenant_settings.sql
  */
 import {
   boolean,
@@ -12,7 +13,9 @@ import {
   integer,
   jsonb,
   pgSchema,
+  smallint,
   text,
+  time,
   timestamp,
   uuid,
 } from 'drizzle-orm/pg-core';
@@ -36,6 +39,29 @@ export const tenants = platform.table('tenants', {
   dataResidency: text('data_residency').notNull().default('eu-central-1'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Organization profile and regional settings (FR-ADM-02, FR-SCH-07; T-M2-22): one row per tenant. */
+export const tenantSettings = platform.table('tenant_settings', {
+  tenantId: uuid('tenant_id').primaryKey(),
+  industry: text('industry'),
+  countryCode: text('country_code'),
+  currencyCode: text('currency_code').notNull().default('SAR'),
+  timezone: text('timezone').notNull().default('Asia/Riyadh'),
+  fiscalYearStartMonth: smallint('fiscal_year_start_month').notNull().default(1),
+  defaultLocale: text('default_locale', { enum: ['ar', 'en'] })
+    .notNull()
+    .default('ar'),
+  dateDisplay: text('date_display', { enum: ['gregorian', 'hijri', 'dual'] })
+    .notNull()
+    .default('gregorian'),
+  workingDays: smallint('working_days').array().notNull(),
+  workStartsAt: time('work_starts_at').notNull().default('08:00'),
+  workEndsAt: time('work_ends_at').notNull().default('16:00'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedBy: uuid('updated_by'),
+  version: integer('version').notNull().default(1),
 });
 
 export const tenantDomains = platform.table('tenant_domains', {

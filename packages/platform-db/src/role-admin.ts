@@ -8,8 +8,9 @@ import type { UserTx } from './with-user-tx';
  * Changing a member's roles from their profile (T-M2-14, FR-IAM-07, BR-IAM-1, BR-IAM-3). The caller
  * holds `platform.role.assign` (ordinary roles) or `platform.role.assign_privileged` (AAL2) for the
  * person; the database guard (private.check_role_assignment_actor, last-admin triggers) has the final
- * word. Validity dates are calendar days in the organization's time zone (its headquarters branch,
- * else Asia/Riyadh): a role starts at the beginning of its first day and ends after its last day.
+ * word. Validity dates are calendar days in the organization's time zone (its profile's — T-M2-22 —, else
+ * its headquarters branch's, else Asia/Riyadh: ORG_TIME_ZONE): a role starts at the beginning of its first
+ * day and ends after its last day.
  */
 export interface AssignedRole {
   readonly roleCode: string;

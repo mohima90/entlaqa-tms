@@ -38,7 +38,7 @@ Code: `packages/ui/src/app-shell.tsx` (`AppShell`), `nav-item.tsx` (`NavGroup`, 
 | Focus | Page: 2 px ring with a 2 px gap (`--focus-ring`). Inside the navigation: 2 px Jadarat amber outline (`nav-focus-ring`), 2 px away from the entry; checked against both gradient ends |
 | Top bar | White (`header`), bottom hairline, 56 px; only controls that work today: language switch (globe + «English» / «العربية»), My profile (initial + name), sign-out. No search or notifications until they exist (§3, §5, §7) |
 | Content | `<main id="main">`, max 1280 px, 14 px UI text (Arabic 15.5 px), white surface; cards and tables with hairline borders, 8 px radius |
-| Phone and tablet (< 900 px) | The navigation is a drawer: the top bar shows a 44 px menu button (`aria-expanded`, `aria-controls="app-navigation"`) and the product name. Opening moves focus to the drawer's close button and makes the page `inert`; Escape, the close button or the scrim close it and return focus to the menu button; widening the window closes it. The rail (900–1199 px) and the bottom navigation (§8) are not built yet |
+| Phone and tablet (< 900 px) | The navigation is a drawer: the top bar shows a 44 px menu button (`aria-expanded`, `aria-controls="app-navigation"`), and the product name from 600 px (on phones it is in the drawer only). Opening moves focus to the drawer's close button and makes the page `inert`; Escape, the close button or the scrim close it and return focus to the menu button; widening the window closes it. The rail (900–1199 px) and the bottom navigation (§8) are not built yet |
 
 ### Menus per role (T-M2-21)
 

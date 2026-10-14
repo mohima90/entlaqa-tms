@@ -271,7 +271,7 @@ test.describe('Security policy, MFA and sign-in sessions', () => {
     await signIn(page, 'en', adminEmail, adminPassword);
     // The set-up prompt was postponed in signed-in.spec (PO decision 2): it is not shown again.
     await expect(page).toHaveURL(/\/en\/suite$/, afterSignIn);
-    await page.getByRole('link', { name: 'Security', exact: true }).click();
+    await page.getByRole('link', { name: 'Security policy', exact: true }).click();
     await expect(page).toHaveURL(/\/en\/suite\/admin\/security$/);
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Security');
 

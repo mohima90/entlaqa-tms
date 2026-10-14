@@ -162,7 +162,7 @@ describe('organization brand colours: derivation', () => {
     const input = { primary: '#0F6E5A', font: 'Comic Sans MS' } as unknown as { primary: string };
     const { layer } = deriveOrganizationBrand(input);
     for (const mode of ['light', 'dark'] as const) {
-      expect(Object.keys(layer[mode]).filter((role) => /font/.test(role))).toEqual([]);
+      expect(Object.keys(layer[mode]).filter((role) => role.includes('font'))).toEqual([]);
       for (const value of Object.values(layer[mode])) expect(normalizeHex(value)).toBe(value);
     }
   });

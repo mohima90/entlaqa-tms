@@ -23,7 +23,10 @@ test.describe('signed-in flow', () => {
     );
   });
 
-  test('sign in shows the organization; sign out protects the suite again', async ({ page }) => {
+  test('sign in shows the organization; sign out protects the suite again', async ({
+    page,
+    isMobile,
+  }) => {
     await submitSignIn(page, email, password);
     // PO decision 2 (T-M2-10): the Organization Admin, without an authenticator app yet, is invited to
     // set one up and may postpone it; the choice is remembered (the later specs land on the suite).
@@ -31,7 +34,10 @@ test.describe('signed-in flow', () => {
     await expect(page.getByTestId('mfa-prompt-admin')).toBeVisible();
     await page.getByRole('button', { name: 'Not now' }).click();
     await expect(page).toHaveURL(/\/en\/suite$/);
+    // The organization is named in the navigation's organization block (behind the menu on a phone).
+    if (isMobile) await page.getByRole('button', { name: 'Menu' }).click();
     await expect(page.getByText(`Organization: ${organization ?? ''}`)).toBeVisible();
+    if (isMobile) await page.keyboard.press('Escape');
 
     await page.getByRole('button', { name: 'Sign out' }).click();
     await expect(page).toHaveURL(/\/en\/sign-in$/);

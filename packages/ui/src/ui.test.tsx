@@ -54,10 +54,13 @@ describe('AppShell', () => {
   const html = renderToStaticMarkup(
     <AppShell
       brand="جدارات · التدريب"
+      organization="شركة الراية"
       headerEnd={<span>EN</span>}
       navigation={<a href="/ar/suite">الرئيسية</a>}
       navigationLabel="التنقل الرئيسي"
       skipToContentLabel="تخطَّ إلى المحتوى"
+      menuLabel="القائمة"
+      closeMenuLabel="إغلاق القائمة"
     >
       <h1>الرئيسية</h1>
     </AppShell>,
@@ -70,6 +73,29 @@ describe('AppShell', () => {
     expect(html).toMatch(/<a href="#main"[^>]*>تخطَّ إلى المحتوى<\/a>/);
   });
 
+  it('shows the product and organization names on the gradient navigation, with the Jadarat mark', () => {
+    expect(html).toContain('bg-nav-gradient');
+    expect(html).toContain('data-nav-scope');
+    expect(html).toContain('جدارات · التدريب');
+    expect(html).toContain('شركة الراية');
+    expect(html).toMatch(/<svg[^>]*aria-hidden="true"/);
+  });
+
+  it('opens the navigation on narrow screens with a disclosure button (closed at first)', () => {
+    expect(html).toMatch(
+      /<button[^>]*aria-label="القائمة"[^>]*aria-expanded="false"[^>]*aria-controls="app-navigation"/,
+    );
+    expect(html).toContain('id="app-navigation"');
+    expect(html).toMatch(/<button[^>]*aria-label="إغلاق القائمة"/);
+    // Closed: the drawer is not displayed below 900 px, nothing is inert.
+    expect(html).not.toContain('inert');
+    // Both buttons are 44 px touch targets (size-11).
+    expect([...html.matchAll(/<button[^>]*class="([^"]*)"/g)].map((m) => m[1])).toEqual([
+      expect.stringContaining('size-11'),
+      expect.stringContaining('size-11'),
+    ]);
+  });
+
   it('uses logical (direction-agnostic) utilities only', () => {
     const classes = [...html.matchAll(/class="([^"]*)"/g)].map((m) => m[1]).join(' ');
     expect(classes).not.toMatch(PHYSICAL);
@@ -77,13 +103,21 @@ describe('AppShell', () => {
     expect(classes).toContain('start-2');
   });
 
-  it('omits the header end slot when not provided', () => {
+  it('omits the header end slot and the organization line when not provided', () => {
     const minimal = renderToStaticMarkup(
-      <AppShell brand="b" navigation={null} navigationLabel="n" skipToContentLabel="s">
+      <AppShell
+        brand="b"
+        navigation={null}
+        navigationLabel="n"
+        skipToContentLabel="s"
+        menuLabel="m"
+        closeMenuLabel="c"
+      >
         x
       </AppShell>,
     );
-    expect(minimal).not.toContain('shrink-0 items-center gap-3');
+    expect(minimal).not.toContain('ms-auto flex shrink-0');
+    expect(minimal).not.toContain('text-on-nav-muted');
   });
 });
 

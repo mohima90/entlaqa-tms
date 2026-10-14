@@ -2,13 +2,13 @@ import { appError, err, ok } from '@jadarat/platform-core';
 import {
   type OrganizationProfile,
   type OrganizationProfileRecord,
-  TENANT_DATE_DISPLAYS,
   type UserTx,
   changedProfileFields,
   getOrganizationProfile,
   updateOrganizationProfile,
 } from '@jadarat/platform-db';
 import {
+  DATE_DISPLAYS,
   INDUSTRIES,
   ianaTimeZones,
   isoCountryCodes,
@@ -64,7 +64,7 @@ export const OrganizationProfileInput = z
     timeZone: listed(ianaTimeZones),
     fiscalYearStartMonth: z.int().min(1).max(12),
     defaultLocale: z.enum(['ar', 'en']),
-    dateDisplay: z.enum(TENANT_DATE_DISPLAYS),
+    dateDisplay: z.enum(DATE_DISPLAYS),
     workingDays: z
       .array(z.int().min(0).max(6))
       .min(1)

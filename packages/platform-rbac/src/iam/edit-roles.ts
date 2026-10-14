@@ -8,7 +8,7 @@ import {
   replaceMemberRoles,
 } from '@jadarat/platform-db';
 import { z } from 'zod';
-import type { ActionDefinition, PermissionAccess } from '../define-action';
+import type { ActionDefinition } from '../define-action';
 import type { QueryDefinition } from '../define-query';
 import type { PermissionDefinition } from '../permissions';
 import { platformPermissions } from '../platform-permissions';
@@ -19,8 +19,8 @@ import { SYSTEM_ROLES, SYSTEM_ROLE_CODES, type SystemRoleCode } from '../system-
  * Changing a member's roles from their profile (T-M2-14, FR-IAM-07, BR-IAM-1, BR-IAM-3; screen 3
  * «تعديل الأدوار», role choice of screen 2). One primary role plus optional additional roles with
  * optional first/last days. Ordinary roles: `platform.role.assign` (HR Manager, Organization Admin);
- * privileged roles: `platform.role.assign_privileged` — Organization Admin with an authenticator code
- * (AAL2, PO decision D-IAM-01, 6 Oct 2026). Nobody changes their own roles; a privileged member's roles
+ * privileged roles: `platform.role.assign_privileged` — the Organization Admin (no authenticator code
+ * since the PO decision of 14 Oct 2026, which reverses D-IAM-01). Nobody changes their own roles; a privileged member's roles
  * only an Organization Admin (database guard); the Organization Admin holds no other role (BR-IAM-4,
  * T-M2-16: ROLE_CONFLICT). Audited with the roles before and after.
  */
@@ -43,8 +43,8 @@ export interface EditRolesView {
   readonly roles: EditableRoles;
   /** Why the roles cannot be changed here at all, if so. */
   readonly blocked: RolesBlock | null;
-  /** Privileged roles of this member: allowed, needs an authenticator code, or not for this member. */
-  readonly privilegedAccess: PermissionAccess;
+  /** Privileged roles of this member: allowed (the Organization Admin) or not for this member. */
+  readonly privilegedAccess: 'allowed' | 'denied';
 }
 
 export const EditRolesQueryInput = z.strictObject({ personId: z.uuid() });
@@ -73,10 +73,9 @@ export function editRolesQueryDefinition(): QueryDefinition<
       return ok({
         roles,
         blocked,
-        privilegedAccess: ctx.access(
-          p['platform.role.assign_privileged'],
-          ctx.resource ?? 'tenant',
-        ),
+        privilegedAccess: ctx.can(p['platform.role.assign_privileged'], ctx.resource ?? 'tenant')
+          ? 'allowed'
+          : 'denied',
       });
     },
   };
@@ -178,7 +177,7 @@ function rolesAction(
     resource: (input) => ({ type: 'person', id: input.personId }),
     handler: async ({ ctx, input }) => {
       // Ordinary path: a change that touches a privileged role must go through the privileged action
-      // (AAL2, strict session check). Checked after the role lock against the stored roles, like the
+      // (the Organization Admin; strict session check). Checked after the role lock against the stored roles, like the
       // separation of duties (BR-IAM-4), which needs the stored days of the primary role.
       const outcome = await replaceMemberRoles(
         ctx.tx,
@@ -190,8 +189,7 @@ function rolesAction(
           : { lockedCodes: PRIVILEGED, conflicts: rolesHeldTogether, soleRoles: SOLE },
       );
       if (!outcome.ok && outcome.refusal === 'privileged_change') {
-        const access = ctx.access(p['platform.role.assign_privileged'], ctx.resource ?? 'tenant');
-        return err(appError(access === 'step_up_required' ? 'STEP_UP_REQUIRED' : 'FORBIDDEN'));
+        return err(appError('FORBIDDEN'));
       }
       if (!outcome.ok) return err(refusalError(outcome.refusal));
       return ok({
@@ -219,7 +217,7 @@ export function updateMemberRolesActionDefinition() {
   return rolesAction(p['platform.role.assign'], false);
 }
 
-/** Any role, privileged ones included: Organization Admin with an authenticator code (AAL2). */
+/** Any role, privileged ones included: the Organization Admin. */
 export function updateMemberPrivilegedRolesActionDefinition() {
   return rolesAction(p['platform.role.assign_privileged'], true);
 }

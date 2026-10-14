@@ -60,15 +60,14 @@ export interface UsersListView {
    */
   readonly canDeactivate: boolean;
   /**
-   * Reactivating a privileged member (`platform.role.assign_privileged`): allowed now, after an
-   * authenticator code, or not at all (null; also without `canDeactivate`).
+   * Reactivating a privileged member (`platform.role.assign_privileged`, the Organization Admin): allowed,
+   * or not at all (null; also without `canDeactivate`).
    */
-  readonly privilegedReactivation: 'allowed' | 'step_up_required' | null;
+  readonly privilegedReactivation: 'allowed' | null;
 }
 
-function privilegedAccess(ctx: ActionContext<UserTx>): 'allowed' | 'step_up_required' | null {
-  const access = ctx.access(p['platform.role.assign_privileged'], 'tenant');
-  return access === 'denied' ? null : access;
+function privilegedAccess(ctx: ActionContext<UserTx>): 'allowed' | null {
+  return ctx.can(p['platform.role.assign_privileged'], 'tenant') ? 'allowed' : null;
 }
 
 /**

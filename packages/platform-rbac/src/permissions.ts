@@ -15,8 +15,16 @@ export interface PermissionDefinition<C extends PermissionCode = PermissionCode>
   readonly code: C;
   readonly label: LocalizedText;
   readonly description: LocalizedText;
+  /**
+   * `high`: the session is confirmed with the Auth server (getUser) before the action, so a revoked
+   * session is refused at once (ADR 0003 §2); audited.
+   */
   readonly risk: RiskLevel;
-  /** Privileged permissions require MFA (AAL2) on the session. */
+  /**
+   * The session must have passed an authenticator code recently (AAL2, step-up). No organization-level
+   * permission requires it (PO decision, 14 Oct 2026 — reverses D-IAM-01: an organization that wants a
+   * second factor requires MFA at sign-in); kept for the ENTLAQA platform console (ADR 0003 §6).
+   */
   readonly requiresAal2: boolean;
 }
 
@@ -27,8 +35,8 @@ export class PermissionDefinitionError extends Error {
 }
 
 /**
- * Declares a module's permissions. Validates format, namespace, uniqueness and that high-risk
- * permissions require AAL2. Returns a record keyed by code for type-safe references.
+ * Declares a module's permissions. Validates format, namespace, uniqueness and the AR/EN labels.
+ * Returns a record keyed by code for type-safe references.
  */
 export function definePermissions<const D extends readonly PermissionDefinition[]>(
   moduleNamespace: string,
@@ -47,9 +55,6 @@ export function definePermissions<const D extends readonly PermissionDefinition[
     }
     if (seen.has(def.code))
       throw new PermissionDefinitionError(`Duplicate permission "${def.code}"`);
-    if (def.risk === 'high' && !def.requiresAal2) {
-      throw new PermissionDefinitionError(`High-risk permission "${def.code}" must require AAL2`);
-    }
     if (!def.label.ar.trim() || !def.label.en.trim()) {
       throw new PermissionDefinitionError(
         `Permission "${def.code}" needs Arabic and English labels`,

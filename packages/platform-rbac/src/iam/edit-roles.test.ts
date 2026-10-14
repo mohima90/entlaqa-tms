@@ -149,14 +149,13 @@ describe('edit roles query', () => {
   const query = (roles: SystemRoleCode[], aal: 'aal1' | 'aal2' = 'aal1') =>
     createDefineQuery(runtime(roles, aal).rt)(editRolesQueryDefinition())({ personId: SARA });
 
-  it('Organization Admin: privileged roles need an authenticator code until the session has one', async () => {
-    expect(await query(['tenant_admin'])).toMatchObject({
-      ok: true,
-      value: { blocked: null, privilegedAccess: 'step_up_required' },
-    });
-    expect(await query(['tenant_admin'], 'aal2')).toMatchObject({
-      value: { privilegedAccess: 'allowed' },
-    });
+  it('Organization Admin: privileged roles without an authenticator code (PO decision, 14 Oct 2026)', async () => {
+    for (const aal of ['aal1', 'aal2'] as const) {
+      expect(await query(['tenant_admin'], aal)).toMatchObject({
+        ok: true,
+        value: { blocked: null, privilegedAccess: 'allowed' },
+      });
+    }
     expect(await query(['hr_manager'])).toMatchObject({ value: { privilegedAccess: 'denied' } });
   });
 
@@ -213,7 +212,8 @@ describe('update roles actions', () => {
     const admin = await createDefineAction(runtime(['tenant_admin']).rt)(
       updateMemberRolesActionDefinition(),
     )(withAuditor);
-    expect(!admin.ok && admin.error.code).toBe('STEP_UP_REQUIRED');
+    // The Organization Admin uses the privileged action for that (the form does).
+    expect(!admin.ok && admin.error.code).toBe('FORBIDDEN');
     const hr = await createDefineAction(runtime(['hr_manager']).rt)(
       updateMemberRolesActionDefinition(),
     )(withAuditor);
@@ -226,26 +226,25 @@ describe('update roles actions', () => {
     });
   });
 
-  it('privileged action: needs AAL2 (strict session check), then saves', async () => {
+  it('privileged action: the Organization Admin at AAL1 (strict session check) saves; HR never', async () => {
     const withAuditor = {
       ...form,
       additional: [{ roleCode: 'auditor' as const, validFrom: '', validUntil: '' }],
     };
-    const aal1 = await createDefineAction(runtime(['tenant_admin']).rt)(
-      updateMemberPrivilegedRolesActionDefinition(),
-    )(withAuditor);
-    expect(!aal1.ok && aal1.error.code).toBe('STEP_UP_REQUIRED');
-    const hr = await createDefineAction(runtime(['hr_manager'], 'aal2').rt)(
-      updateMemberPrivilegedRolesActionDefinition(),
-    )(withAuditor);
-    expect(!hr.ok && hr.error.code).toBe('FORBIDDEN');
+    for (const aal of ['aal1', 'aal2'] as const) {
+      const hr = await createDefineAction(runtime(['hr_manager'], aal).rt)(
+        updateMemberPrivilegedRolesActionDefinition(),
+      )(withAuditor);
+      expect(!hr.ok && hr.error.code, aal).toBe('FORBIDDEN');
+    }
+    expect(db.replaceMemberRoles).not.toHaveBeenCalled();
     db.replaceMemberRoles.mockResolvedValue({
       ok: true,
       changed: true,
       before: current,
       after: [],
     });
-    const { rt, getClaims } = runtime(['tenant_admin'], 'aal2');
+    const { rt, getClaims } = runtime(['tenant_admin']);
     const saved = await createDefineAction(rt)(updateMemberPrivilegedRolesActionDefinition())(
       withAuditor,
     );
@@ -287,7 +286,7 @@ describe('update roles actions', () => {
       ['last_admin', 'VALIDATION_FAILED', 'primary'],
       ['dates_invalid', 'VALIDATION_FAILED', 'additional'],
       ['role_conflict', 'VALIDATION_FAILED', 'additional'],
-      ['privileged_change', 'STEP_UP_REQUIRED', undefined], // Organization Admin without a code
+      ['privileged_change', 'FORBIDDEN', undefined], // the ordinary action (the privileged one is for that)
     ];
     for (const [refusal, code, path] of cases) {
       db.replaceMemberRoles.mockResolvedValue({ ok: false, refusal });

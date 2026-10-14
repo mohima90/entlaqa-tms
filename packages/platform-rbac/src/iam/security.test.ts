@@ -144,15 +144,13 @@ beforeEach(() => {
 });
 
 describe('security settings page (screen 6)', () => {
-  it('the Organization Admin reads it; editing needs a code first (AAL2, PO D-IAM-01)', async () => {
-    const admin = createDefineQuery(runtime(forRoles('tenant_admin')).rt)(
-      securityPageQueryDefinition(),
-    );
-    expect(await admin({})).toEqual(ok({ policy, editAccess: 'step_up_required' }));
-    const verified = createDefineQuery(runtime(forRoles('tenant_admin'), 'aal2').rt)(
-      securityPageQueryDefinition(),
-    );
-    expect(await verified({})).toEqual(ok({ policy, editAccess: 'allowed' }));
+  it('the Organization Admin reads and edits it, without an authenticator code (PO decision, 14 Oct 2026)', async () => {
+    for (const aal of ['aal1', 'aal2'] as const) {
+      const admin = createDefineQuery(runtime(forRoles('tenant_admin'), aal).rt)(
+        securityPageQueryDefinition(),
+      );
+      expect(await admin({}), aal).toEqual(ok({ policy, editAccess: 'allowed' }));
+    }
   });
 
   it('the Auditor reads it, cannot edit; roles without organization settings: FORBIDDEN', async () => {
@@ -170,16 +168,16 @@ describe('security settings page (screen 6)', () => {
   });
 });
 
-describe('changing the policy (high risk, Organization Admin at AAL2)', () => {
+describe('changing the policy (high risk, Organization Admin)', () => {
   const input = { ...settings, version: 4, passwordMinLength: 16, sessionIdleMinutes: 15 };
 
-  it('the Organization Admin at AAL2 saves; audited with before/after of the changed settings', async () => {
+  it('the Organization Admin at AAL1 saves; audited with before/after of the changed settings', async () => {
     db.updateSecurityPolicy.mockResolvedValue({
       outcome: 'updated',
       before: settings,
       after: { ...settings, passwordMinLength: 16, sessionIdleMinutes: 15 },
     });
-    const { rt, writeAudit, getClaims } = runtime(forRoles('tenant_admin'), 'aal2');
+    const { rt, writeAudit, getClaims } = runtime(forRoles('tenant_admin'), 'aal1');
     const result = await createDefineAction(rt)(updateSecurityPolicyActionDefinition())(input);
     expect(result).toEqual(
       ok({
@@ -207,19 +205,14 @@ describe('changing the policy (high risk, Organization Admin at AAL2)', () => {
     });
   });
 
-  it('at AAL1 the Organization Admin gets STEP_UP_REQUIRED; nothing is written', async () => {
-    const { rt, writeAudit } = runtime(forRoles('tenant_admin'), 'aal1');
-    const result = await createDefineAction(rt)(updateSecurityPolicyActionDefinition())(input);
-    expect(!result.ok && result.error.code).toBe('STEP_UP_REQUIRED');
-    expect(db.updateSecurityPolicy).not.toHaveBeenCalled();
-    expect(writeAudit).not.toHaveBeenCalled();
-  });
-
-  it('every other role is FORBIDDEN, even at AAL2 (no role but the Organization Admin holds it)', async () => {
+  it('every other role is FORBIDDEN, at AAL1 and AAL2 (no role but the Organization Admin holds it)', async () => {
     for (const role of SYSTEM_ROLES.filter((r) => r.code !== 'tenant_admin')) {
-      const { rt } = runtime(forRoles(role.code), 'aal2');
-      const result = await createDefineAction(rt)(updateSecurityPolicyActionDefinition())(input);
-      expect(!result.ok && result.error.code, role.code).toBe('FORBIDDEN');
+      for (const aal of ['aal1', 'aal2'] as const) {
+        const { rt, writeAudit } = runtime(forRoles(role.code), aal);
+        const result = await createDefineAction(rt)(updateSecurityPolicyActionDefinition())(input);
+        expect(!result.ok && result.error.code, `${role.code} ${aal}`).toBe('FORBIDDEN');
+        expect(writeAudit).not.toHaveBeenCalled();
+      }
     }
     expect(db.updateSecurityPolicy).not.toHaveBeenCalled();
   });
@@ -338,10 +331,9 @@ describe("a member's sessions (screen 3: user managers)", () => {
           usesApp: true,
           appSince: new Date(1),
           appPending: false,
-          // Only the Organization Admin resets a lost authenticator app (PO answer, 9 Oct 2026),
-          // with a code of their own first (this session has none).
+          // Only the Organization Admin resets a lost authenticator app (PO answer, 9 Oct 2026), without
+          // a code of their own (PO decision, 14 Oct 2026; this session has none).
           canResetApp: role === 'tenant_admin',
-          resetNeedsCode: role === 'tenant_admin',
           maxDevices: 3,
         }),
       );
@@ -412,8 +404,8 @@ describe("a member's lost authenticator app (screen 3; PO answer 9 Oct 2026)", (
   const reset = (rt: ActionRuntime<UserTx>) =>
     createDefineAction(rt)(resetMemberMfaActionDefinition());
 
-  it('the Organization Admin with a recent code resets it; audited without personal data', async () => {
-    const { rt, writeAudit, getClaims } = runtime(forRoles('tenant_admin'), 'aal2');
+  it('the Organization Admin resets it at AAL1 (no authenticator code); audited without personal data', async () => {
+    const { rt, writeAudit, getClaims } = runtime(forRoles('tenant_admin'));
     expect(await reset(rt)({ personId: SARA })).toEqual(ok({ personId: SARA }));
     expect(db.resetMemberMfa).toHaveBeenCalledWith(TX, SARA);
     expect(getClaims).toHaveBeenCalledWith({ strict: true });
@@ -425,14 +417,13 @@ describe("a member's lost authenticator app (screen 3; PO answer 9 Oct 2026)", (
     });
   });
 
-  it('authorization negatives: no code, every other role, out of scope, the manage rule, the database', async () => {
-    // Without a code (AAL1): STEP_UP_REQUIRED — the /mfa page asks for one first.
-    const aal1 = await reset(runtime(forRoles('tenant_admin')).rt)({ personId: SARA });
-    expect(!aal1.ok && aal1.error.code).toBe('STEP_UP_REQUIRED');
+  it('authorization negatives: every other role, out of scope, the manage rule, the database', async () => {
     // No other role holds the permission, not even the HR Manager who signs members out.
     for (const role of SYSTEM_ROLES.map((r) => r.code).filter((c) => c !== 'tenant_admin')) {
-      const result = await reset(runtime(forRoles(role), 'aal2').rt)({ personId: SARA });
-      expect(!result.ok && result.error.code, role).toBe('FORBIDDEN');
+      for (const aal of ['aal1', 'aal2'] as const) {
+        const result = await reset(runtime(forRoles(role), aal).rt)({ personId: SARA });
+        expect(!result.ok && result.error.code, `${role} ${aal}`).toBe('FORBIDDEN');
+      }
     }
     const outOfScope = await reset(runtime(forRoles('tenant_admin'), 'aal2', false).rt)({
       personId: SARA,
@@ -468,21 +459,14 @@ describe("a member's lost authenticator app (screen 3; PO answer 9 Oct 2026)", (
     const query = createDefineQuery(rt)(memberSecurityQueryDefinition());
     const own = await query({ personId: ME });
     expect(own.ok && own.value.canResetApp).toBe(false);
-    expect(own.ok && own.value.resetNeedsCode).toBe(false);
   });
 
-  it('a code older than 15 minutes is asked again before the reset (review L3, PO answer 9 Oct 2026)', async () => {
-    const fresh = createDefineQuery(runtime(forRoles('tenant_admin'), 'aal2', true, 14 * 60).rt)(
-      memberSecurityQueryDefinition(),
-    );
-    const view = await fresh({ personId: SARA });
-    expect(view.ok && [view.value.canResetApp, view.value.resetNeedsCode]).toEqual([true, false]);
+  it('a code older than 15 minutes changes nothing: no freshness rule for the reset any more', async () => {
     const { rt, writeAudit } = runtime(forRoles('tenant_admin'), 'aal2', true, 16 * 60);
     const stale = await createDefineQuery(rt)(memberSecurityQueryDefinition())({ personId: SARA });
-    expect(stale.ok && [stale.value.canResetApp, stale.value.resetNeedsCode]).toEqual([true, true]);
-    const refused = await reset(rt)({ personId: SARA });
-    expect(!refused.ok && refused.error.code).toBe('STEP_UP_REQUIRED');
-    expect(db.resetMemberMfa).not.toHaveBeenCalled();
-    expect(writeAudit).not.toHaveBeenCalled();
+    expect(stale.ok && stale.value.canResetApp).toBe(true);
+    expect(await reset(rt)({ personId: SARA })).toEqual(ok({ personId: SARA }));
+    expect(db.resetMemberMfa).toHaveBeenCalledWith(TX, SARA);
+    expect(writeAudit).toHaveBeenCalledOnce();
   });
 });

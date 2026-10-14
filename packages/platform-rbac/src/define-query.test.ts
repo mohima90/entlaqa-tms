@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Grant } from './authorize';
 import { type ActionRuntime, DEFINE_ACTION_MARKER } from './define-action';
 import { createDefineQuery } from './define-query';
+import type { PermissionDefinition } from './permissions';
 import { platformPermissions } from './platform-permissions';
 
 const TENANT = '22222222-2222-4222-8222-222222222222';
@@ -12,6 +13,14 @@ const USER = '11111111-1111-4111-8111-111111111111';
 const PERSON = '33333333-3333-4333-8333-333333333333';
 const OTHER = '44444444-4444-4444-8444-444444444444';
 const read = platformPermissions['platform.user.read'];
+/** No platform permission needs AAL2 any more (PO decision, 14 Oct 2026): a test one keeps the framework covered. */
+const AAL2_PERMISSION: PermissionDefinition = {
+  code: 'platform.role.assign_privileged',
+  label: { ar: 'اختبار', en: 'test' },
+  description: { ar: 'اختبار', en: 'test' },
+  risk: 'high',
+  requiresAal2: true,
+};
 
 function claims() {
   const r = brandVerifiedClaims({
@@ -118,12 +127,12 @@ describe('defineQuery (authorized reads, ADR 0003 §4)', () => {
               tenantId: OTHER,
               subjectManagerPersonId: PERSON,
             }),
-            needsAal2: ctx.can(p['platform.role.assign_privileged'], 'tenant'),
-            accessAal2: ctx.access(p['platform.role.assign_privileged'], 'tenant'),
+            needsAal2: ctx.can(AAL2_PERMISSION, 'tenant'),
+            accessAal2: ctx.access(AAL2_PERMISSION, 'tenant'),
             accessRoles: ctx.access(p['platform.role.read'], ctx.resource ?? 'tenant'),
             accessAudit: ctx.access(p['platform.audit.read'], 'tenant'),
             roleReadGrants: ctx.grantsFor(p['platform.role.read']).map((g) => g.scope.type),
-            aal2Grants: ctx.grantsFor(p['platform.role.assign_privileged']).length,
+            aal2Grants: ctx.grantsFor(AAL2_PERMISSION).length,
           }),
         ),
     });

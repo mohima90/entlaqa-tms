@@ -244,18 +244,18 @@ describe.skipIf(!configured)('deactivate / reactivate against PostgreSQL', () =>
     expect(rule?.refused).toBe(false);
   });
 
-  it('a member who holds a privileged role: refused at AAL1 (review M4), nothing changed', async () => {
-    const refused = await withUserTx(claimsOf(admin), async (tx) => {
+  it('a member who holds a privileged role: the Organization Admin deactivates without an authenticator code (PO 14 Oct 2026)', async () => {
+    // Run and rolled back (the member stays for the next tests).
+    const outcome = await withUserTx(claimsOf(admin), async (tx) => {
       const target = await getMemberLifecycleTarget(tx, auditor.person);
       expect(target?.privileged).toBe(true);
       const outcome = await deactivateMembership(tx, {
         personId: auditor.person,
         membershipId: target?.membershipId ?? 'missing-membership',
       });
-      // The caller rolls the transaction back on a refusal.
-      throw Object.assign(new Error('refused'), { outcome });
+      throw Object.assign(new Error('rolled back'), { outcome });
     }).catch((error: unknown) => (error as { outcome?: unknown }).outcome ?? error);
-    expect(refused).toEqual({ ok: false, refusal: 'step_up_required' });
+    expect(outcome).toEqual({ ok: true });
     const [state] = await owner<{ person: string; membership: string }[]>`
       select p.status as person, m.status as membership
       from platform.persons p join platform.tenant_memberships m on m.person_id = p.id

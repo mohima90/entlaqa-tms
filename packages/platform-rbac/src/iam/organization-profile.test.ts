@@ -91,18 +91,16 @@ beforeEach(() => {
 });
 
 describe('organization profile page (T-M2-22)', () => {
-  it('the Organization Admin opens it; at AAL1 saving needs a code first (step-up)', async () => {
-    const query = createDefineQuery(runtime(forRoles('tenant_admin')).rt)(
-      organizationProfileQueryDefinition(),
-    );
-    expect(await query({})).toEqual({
-      ok: true,
-      value: { profile: record, editAccess: 'step_up_required' },
-    });
-    const fresh = createDefineQuery(runtime(forRoles('tenant_admin'), 'aal2').rt)(
-      organizationProfileQueryDefinition(),
-    );
-    expect(await fresh({})).toMatchObject({ ok: true, value: { editAccess: 'allowed' } });
+  it('the Organization Admin opens and edits it at AAL1 (no authenticator code, PO 14 Oct 2026)', async () => {
+    for (const aal of ['aal1', 'aal2'] as const) {
+      const query = createDefineQuery(runtime(forRoles('tenant_admin'), aal).rt)(
+        organizationProfileQueryDefinition(),
+      );
+      expect(await query({})).toEqual({
+        ok: true,
+        value: { profile: record, editAccess: 'allowed' },
+      });
+    }
   });
 
   it('the Auditor reads it, read only (BRD Appendix B; PO 14 Oct 2026)', async () => {
@@ -143,8 +141,8 @@ describe('organization profile page (T-M2-22)', () => {
 });
 
 describe('saving the organization profile (T-M2-22)', () => {
-  it('the Organization Admin at AAL2 saves; audited with the changed values before and after', async () => {
-    const { rt, writeAudit, getClaims } = runtime(forRoles('tenant_admin'), 'aal2');
+  it('the Organization Admin at AAL1 saves; audited with the changed values before and after', async () => {
+    const { rt, writeAudit, getClaims } = runtime(forRoles('tenant_admin'));
     const save = createDefineAction(rt)(updateOrganizationProfileActionDefinition());
     const result = await save({
       ...input,
@@ -216,29 +214,25 @@ describe('saving the organization profile (T-M2-22)', () => {
     });
   });
 
-  it('asks the Organization Admin for a code at AAL1 or with a code older than 15 minutes', async () => {
-    for (const rt of [
-      runtime(forRoles('tenant_admin')).rt,
-      runtime(forRoles('tenant_admin'), 'aal2', 16 * 60).rt,
-    ]) {
-      const result = await createDefineAction(rt)(updateOrganizationProfileActionDefinition())(
-        input,
-      );
-      expect(!result.ok && result.error.code).toBe('STEP_UP_REQUIRED');
-    }
-    expect(db.updateOrganizationProfile).not.toHaveBeenCalled();
+  it('never asks for an authenticator code: a code older than 15 minutes saves too', async () => {
+    const { rt } = runtime(forRoles('tenant_admin'), 'aal2', 16 * 60);
+    const result = await createDefineAction(rt)(updateOrganizationProfileActionDefinition())(input);
+    expect(result.ok).toBe(true);
+    expect(db.updateOrganizationProfile).toHaveBeenCalledOnce();
   });
 
   it.each([['hr_manager'], ['learner'], ['auditor'], ['finance_manager']] as const)(
-    'refuses the %s at AAL2 (deny by default)',
+    'refuses the %s at AAL1 and AAL2 (deny by default)',
     async (role) => {
-      const { rt, writeAudit } = runtime(forRoles(role), 'aal2');
-      const result = await createDefineAction(rt)(updateOrganizationProfileActionDefinition())(
-        input,
-      );
-      expect(!result.ok && result.error.code).toBe('FORBIDDEN');
+      for (const aal of ['aal1', 'aal2'] as const) {
+        const { rt, writeAudit } = runtime(forRoles(role), aal);
+        const result = await createDefineAction(rt)(updateOrganizationProfileActionDefinition())(
+          input,
+        );
+        expect(!result.ok && result.error.code, aal).toBe('FORBIDDEN');
+        expect(writeAudit).not.toHaveBeenCalled();
+      }
       expect(db.updateOrganizationProfile).not.toHaveBeenCalled();
-      expect(writeAudit).not.toHaveBeenCalled();
     },
   );
 

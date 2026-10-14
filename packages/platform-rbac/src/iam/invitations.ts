@@ -14,7 +14,7 @@ import {
 } from '@jadarat/platform-db';
 import { hasVisibleText, normalizeDigits } from '@jadarat/platform-i18n';
 import { z } from 'zod';
-import type { ActionContext, ActionDefinition, PermissionAccess } from '../define-action';
+import type { ActionContext, ActionDefinition } from '../define-action';
 import type { QueryDefinition } from '../define-query';
 import type { PermissionDefinition } from '../permissions';
 import { platformPermissions } from '../platform-permissions';
@@ -26,8 +26,8 @@ import { namePart } from './my-profile';
  * Invitations, admin side (T-M2-07, FR-IAM-03, BR-IAM-1; approved screens 1 and 2;
  * docs/engineering/invitations-contract.md §1 steps 1 and 3). Permission `platform.user.invite`
  * (HR Manager, Organization Admin). Privileged roles may be given only by holders of
- * `platform.role.assign_privileged` (Organization Admin with an authenticator code, PO decision
- * D-IAM-01) — the same split as changing roles (edit-roles.ts): an ordinary action that refuses
+ * `platform.role.assign_privileged` (the Organization Admin; no authenticator code since the PO
+ * decision of 14 Oct 2026) — the same split as changing roles (edit-roles.ts): an ordinary action that refuses
  * privileged roles and a privileged action with the strict session check. The database guard applies
  * the same rule. An invitation never gives the Organization Admin role together with another role (BR-IAM-4,
  * T-M2-16: ROLE_CONFLICT on the additional roles). Audit records carry ids and role codes only (no names,
@@ -177,11 +177,8 @@ function inviteAction(
         // The privileged path is authorized by role.assign_privileged; inviting stays user.invite.
         if (!ctx.can(p['platform.user.invite'], 'tenant')) return err(appError('FORBIDDEN'));
       } else if (invitationGivesPrivilegedRole(input)) {
-        // Ordinary path: privileged roles go through the privileged action (AAL2, strict check).
-        const access = ctx.access(p['platform.role.assign_privileged'], 'tenant');
-        return err(
-          access === 'step_up_required' ? appError('STEP_UP_REQUIRED') : roleNotAllowed(input),
-        );
+        // Ordinary path: privileged roles go through the privileged action (strict session check).
+        return err(roleNotAllowed(input));
       }
       try {
         return ok(await invite(ctx, input));
@@ -211,7 +208,7 @@ export function inviteUserActionDefinition() {
   return inviteAction(p['platform.user.invite'], false);
 }
 
-/** Invite with a privileged role: Organization Admin with an authenticator code (AAL2). */
+/** Invite with a privileged role: the Organization Admin. */
 export function invitePrivilegedUserActionDefinition() {
   return inviteAction(p['platform.role.assign_privileged'], true);
 }
@@ -230,7 +227,7 @@ function invitationRoleNotAllowed(): AppError {
 /**
  * Resend while pending (also after expiry), up to MAX_INVITATION_SENDS e-mails in total. An invitation
  * with a privileged role is resent only by holders of `platform.role.assign_privileged` (as inviting
- * with it: ROLE_NOT_ALLOWED, or STEP_UP_REQUIRED without an authenticator code); the database applies
+ * with it: ROLE_NOT_ALLOWED); the database applies
  * the same rule to the request (security review M2).
  */
 export function resendInvitationActionDefinition(): ActionDefinition<
@@ -244,9 +241,9 @@ export function resendInvitationActionDefinition(): ActionDefinition<
     handler: async ({ ctx, input }) => {
       const roles = await getInvitationRoles(ctx.tx, input.invitationId);
       if (roles && invitationGivesPrivilegedRole(roles)) {
-        const access = ctx.access(p['platform.role.assign_privileged'], 'tenant');
-        if (access === 'step_up_required') return err(appError('STEP_UP_REQUIRED'));
-        if (access !== 'allowed') return err(invitationRoleNotAllowed());
+        if (!ctx.can(p['platform.role.assign_privileged'], 'tenant')) {
+          return err(invitationRoleNotAllowed());
+        }
       }
       let outcome: Awaited<ReturnType<typeof requestInvitationResend>>;
       try {
@@ -340,8 +337,8 @@ export function invitationsListQueryDefinition(): QueryDefinition<
 export interface InviteFormView {
   readonly managers: readonly ManagerOption[];
   readonly orgUnits: OrgUnitOptions;
-  /** Privileged roles: allowed, need an authenticator code first, or not for this member. */
-  readonly privilegedAccess: PermissionAccess;
+  /** Privileged roles: allowed (the Organization Admin) or not for this member. */
+  readonly privilegedAccess: 'allowed' | 'denied';
 }
 
 export const InviteFormInput = z.strictObject({});
@@ -365,7 +362,9 @@ export function inviteFormQueryDefinition(): QueryDefinition<
       return ok({
         managers: managers.filter((m) => m.active),
         orgUnits,
-        privilegedAccess: ctx.access(p['platform.role.assign_privileged'], 'tenant'),
+        privilegedAccess: ctx.can(p['platform.role.assign_privileged'], 'tenant')
+          ? 'allowed'
+          : 'denied',
       });
     },
   };

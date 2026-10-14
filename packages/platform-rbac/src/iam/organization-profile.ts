@@ -17,7 +17,7 @@ import {
   isoCurrencyCodes,
 } from '@jadarat/platform-i18n';
 import { z } from 'zod';
-import type { ActionDefinition, PermissionAccess } from '../define-action';
+import type { ActionDefinition } from '../define-action';
 import type { QueryDefinition } from '../define-query';
 import { platformPermissions as p } from '../platform-permissions';
 
@@ -30,10 +30,10 @@ import { platformPermissions as p } from '../platform-permissions';
  *   - The page: members who read the organization's settings organization-wide (`platform.tenant.read`):
  *     the Organization Admin edits, the Auditor reads (BRD Appendix B; PO decision 14 Oct 2026); HR
  *     Manager, Learner and the other roles are refused.
- *   - Saving: `platform.tenant.manage` — high risk, AAL2 (ADR 0003 §3: the registry's risk decides; the
- *     permission also covers branding and domains; PO decision D-IAM-01: a code even when MFA is off),
- *     getUser() before the change, a code from the last 15 minutes. Audited with the changed fields' values
- *     before and after (BR-IAM-3 style); organization names and settings are not personal data.
+ *   - Saving: `platform.tenant.manage` — high risk (the session is confirmed with Auth, getUser) for the
+ *     Organization Admin; no authenticator code (PO decision, 14 Oct 2026, reversing D-IAM-01). Audited
+ *     with the changed fields' values before and after (BR-IAM-3 style); organization names and settings
+ *     are not personal data.
  *   - Every member's pages read the date display, time zone and default language through getCurrentTenant
  *     (platform-db), not through this page.
  */
@@ -103,10 +103,10 @@ export const OrganizationProfileInput = z
 export interface OrganizationProfilePageView {
   readonly profile: OrganizationProfileRecord;
   /**
-   * allowed (the Organization Admin) · step_up_required (an Organization Admin at AAL1: a code first) ·
-   * denied (read only: the Auditor — BRD Appendix B "tenant settings: V", PO decision 14 Oct 2026).
+   * allowed (the Organization Admin) · denied (read only: the Auditor — BRD Appendix B "tenant
+   * settings: V", PO decision 14 Oct 2026).
    */
-  readonly editAccess: PermissionAccess;
+  readonly editAccess: 'allowed' | 'denied';
 }
 
 export function organizationProfileQueryDefinition(): QueryDefinition<
@@ -120,7 +120,7 @@ export function organizationProfileQueryDefinition(): QueryDefinition<
     permission: p['platform.tenant.read'],
     input: z.strictObject({}),
     handler: async ({ ctx }) => {
-      const editAccess = ctx.access(p['platform.tenant.manage'], 'tenant');
+      const editAccess = ctx.can(p['platform.tenant.manage'], 'tenant') ? 'allowed' : 'denied';
       const profile = await getOrganizationProfile(ctx.tx);
       if (!profile) return err(appError('NOT_FOUND'));
       return ok({ profile, editAccess });

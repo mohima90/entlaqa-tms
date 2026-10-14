@@ -22,7 +22,7 @@ import {
   updateSecurityPolicy,
 } from '@jadarat/platform-db';
 import { z } from 'zod';
-import type { ActionDefinition, PermissionAccess } from '../define-action';
+import type { ActionDefinition } from '../define-action';
 import type { QueryDefinition } from '../define-query';
 import { memberPermissions } from '../member-permissions';
 import { platformPermissions as p } from '../platform-permissions';
@@ -34,13 +34,13 @@ import { SYSTEM_ROLE_CODES } from '../system-roles';
  * platform.security_policies, the session functions); these definitions authorize, validate and audit.
  *
  *   - The page: every member with `platform.tenant.read` (Organization Admin, Auditor) reads the policy;
- *     changing it needs `platform.security.manage` — high risk, AAL2 (an authenticator code even when the
- *     organization keeps MFA off: PO decision D-IAM-01), Organization Admin only.
+ *     changing it needs `platform.security.manage` — high risk (session confirmed with Auth), Organization
+ *     Admin only; no authenticator code (PO decision, 14 Oct 2026, reversing D-IAM-01).
  *   - My sessions: every member (own scope) lists and ends their own other sessions.
  *   - A member's sessions: user managers (`platform.user.deactivate` on the person, and the manage rule —
  *     only an Organization Admin for a member with a privileged role) list them and sign them out.
  *   - A member's lost authenticator app (PO answer, 9 Oct 2026): the Organization Admin resets it
- *     (`platform.user.reset_mfa` — high risk, a recent code of their own), for a member whose login belongs
+ *     (`platform.user.reset_mfa` — high risk), for a member whose login belongs
  *     to no other organization; ENTLAQA support otherwise (docs/engineering/mfa-reset.md).
  */
 const manageOwn = memberPermissions['platform.profile.manage_own'];
@@ -75,8 +75,8 @@ export const SecuritySettingsInput = z
 
 export interface SecurityPageView {
   readonly policy: SecurityPolicy;
-  /** allowed · step_up_required (an Organization Admin at AAL1: a code first) · denied (read only). */
-  readonly editAccess: PermissionAccess;
+  /** allowed (the Organization Admin) · denied (read only, e.g. the Auditor). */
+  readonly editAccess: 'allowed' | 'denied';
 }
 
 export function securityPageQueryDefinition(): QueryDefinition<
@@ -90,7 +90,10 @@ export function securityPageQueryDefinition(): QueryDefinition<
     handler: async ({ ctx }) => {
       const policy = await getSecurityPolicy(ctx.tx);
       if (!policy) return err(appError('NOT_FOUND'));
-      return ok({ policy, editAccess: ctx.access(p['platform.security.manage'], 'tenant') });
+      return ok({
+        policy,
+        editAccess: ctx.can(p['platform.security.manage'], 'tenant') ? 'allowed' : 'denied',
+      });
     },
   };
 }
@@ -248,11 +251,6 @@ export interface MemberSecurityView {
   readonly appPending: boolean;
   /** The caller may reset the member's authenticator app (Organization Admin; PO answer 9 Oct 2026). */
   readonly canResetApp: boolean;
-  /**
-   * …after a code of their own from the last 15 minutes first (the session has none, or an older one:
-   * review L3) — the page links to the /mfa step, which returns to the profile.
-   */
-  readonly resetNeedsCode: boolean;
   /** The organization's device limit, for "(2 of 3 allowed)". */
   readonly maxDevices: number | null;
 }
@@ -276,18 +274,16 @@ export function memberSecurityQueryDefinition(): QueryDefinition<
         await getMemberMfa(ctx.tx, input.personId),
         await getSecurityPolicy(ctx.tx),
       ];
-      const resetAccess =
-        ctx.resource !== null && ctx.actor.personId !== input.personId
-          ? ctx.access(p['platform.user.reset_mfa'], ctx.resource)
-          : 'denied';
+      const canResetApp =
+        ctx.resource !== null &&
+        ctx.actor.personId !== input.personId &&
+        ctx.can(p['platform.user.reset_mfa'], ctx.resource);
       return ok({
         sessions,
         usesApp: mfa?.usesApp ?? null,
         appSince: mfa?.since ?? null,
         appPending: mfa?.pending ?? false,
-        // Shown also before the code: the page then asks for it first (step-up).
-        canResetApp: resetAccess !== 'denied',
-        resetNeedsCode: resetAccess === 'step_up_required',
+        canResetApp,
         maxDevices: policy?.sessionMaxDevices ?? null,
       });
     },
@@ -365,10 +361,10 @@ export const MfaResetErrors = defineErrorCodes({
 export const ResetMemberMfaInput = z.strictObject({ personId: z.uuid() });
 
 /**
- * "Reset authenticator app" on a user's profile: the Organization Admin, with a code of their own from the
- * last 15 minutes (`platform.user.reset_mfa`: high risk, AAL2), removes the apps of a member they may
- * manage. The database checks the same again (private.reset_member_mfa: Organization Admin, AAL2 through a
- * confirmed app, the manage rule, not themself — My profile — and a login that is an active member of no
+ * "Reset authenticator app" on a user's profile: the Organization Admin (`platform.user.reset_mfa`: high
+ * risk — session confirmed with Auth; no code of their own since the PO decision of 14 Oct 2026) removes
+ * the apps of a member they may manage. The database checks the same again (private.reset_member_mfa:
+ * Organization Admin, the manage rule, not themself — My profile — and a login that is an active member of no
  * other organization), deletes the apps in Auth, ends every session of the member and e-mails them; the
  * member sets up a new app at their next sign-in. Audited here.
  */

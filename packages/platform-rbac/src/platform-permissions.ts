@@ -3,7 +3,9 @@ import { definePermissions } from './permissions';
 /**
  * Platform permission registry (ADR 0003 §3): people directory, roles, organization structure,
  * organization settings, security policy, audit log. Module permissions (tms.*, …) are declared by the
- * modules. Labels follow docs/design/content/glossary-ar-en.md. High-risk permissions require AAL2.
+ * modules. Labels follow docs/design/content/glossary-ar-en.md. High-risk permissions confirm the session
+ * with Auth (getUser); none requires an authenticator code (AAL2) — PO decision, 14 Oct 2026, reversing
+ * D-IAM-01: a second factor is the organization's sign-in MFA policy.
  */
 export const platformPermissions = definePermissions('platform', [
   {
@@ -48,7 +50,7 @@ export const platformPermissions = definePermissions('platform', [
   },
   {
     // PO answer (9 Oct 2026; TM-0003 T-IAM-10): the Organization Admin resets a lost authenticator app of a
-    // member of their organization, after entering their own code. Last Organization Admin and people in
+    // member of their organization (no code of their own needed since the PO decision of 14 Oct 2026). Last Organization Admin and people in
     // several organizations: ENTLAQA support (docs/engineering/mfa-reset.md).
     code: 'platform.user.reset_mfa',
     label: { ar: 'إعادة ضبط تطبيق المصادقة', en: 'Reset authenticator apps' },
@@ -57,7 +59,7 @@ export const platformPermissions = definePermissions('platform', [
       en: 'Remove the authenticator app of a member who lost it, so they set up a new one at their next sign-in',
     },
     risk: 'high',
-    requiresAal2: true,
+    requiresAal2: false,
   },
   {
     // T-M2-11 (PO decision 9 Oct 2026): end a member's sign-in lock after repeated failed attempts.
@@ -99,7 +101,7 @@ export const platformPermissions = definePermissions('platform', [
       en: 'Give and remove the Organization Admin role and other privileged roles',
     },
     risk: 'high',
-    requiresAal2: true,
+    requiresAal2: false,
   },
   {
     code: 'platform.org.read',
@@ -136,7 +138,7 @@ export const platformPermissions = definePermissions('platform', [
       en: 'Change the organization’s profile, branding and domains',
     },
     risk: 'high',
-    requiresAal2: true,
+    requiresAal2: false,
   },
   {
     code: 'platform.security.manage',
@@ -146,7 +148,7 @@ export const platformPermissions = definePermissions('platform', [
       en: 'Multi-factor authentication, password policy, lockout and sign-in sessions',
     },
     risk: 'high',
-    requiresAal2: true,
+    requiresAal2: false,
   },
   {
     code: 'platform.audit.read',

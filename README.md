@@ -17,4 +17,4 @@ Arabic-first, multi-tenant **Training Management System** by **ENTLAQA** — the
 
 ## Planned stack
 
-Next.js (App Router, TypeScript) · Supabase (PostgreSQL, self-hostable) · Tailwind CSS + shadcn/ui (RTL-first) · next-intl (Arabic default) · deployable to regional cloud and in-country (KSA/UAE).
+Next.js (App Router, TypeScript) · Supabase (PostgreSQL, self-hostable) · Tailwind CSS + shadcn/ui (RTL-first) · next-intl (Arabic and English; English default for now) · deployable to regional cloud and in-country (KSA/UAE).

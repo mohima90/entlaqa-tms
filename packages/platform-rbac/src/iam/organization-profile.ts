@@ -1,5 +1,6 @@
 import { appError, err, ok } from '@jadarat/platform-core';
 import {
+  type OfferedProfileField,
   type OrganizationProfile,
   type OrganizationProfileRecord,
   type UserTx,
@@ -10,6 +11,7 @@ import {
 import {
   DATE_DISPLAYS,
   INDUSTRIES,
+  canonicalTimeZone,
   ianaTimeZones,
   isoCountryCodes,
   isoCurrencyCodes,
@@ -39,29 +41,42 @@ import { platformPermissions as p } from '../platform-permissions';
 /** Display names: required, trimmed, at most 80 characters (the screen). */
 export const ORGANIZATION_NAME_MAX = 80;
 
+/**
+ * Bidirectional embedding, override and isolate marks (U+202A–U+202E, U+2066–U+2069): they can reorder
+ * how a name is shown next to other text (review L3, ADR 0007 §3). Joiners (ZWNJ U+200C, ZWJ U+200D),
+ * which Arabic and Persian spelling needs, stay allowed. The database refuses them too
+ * (tenants_names_bidi_check).
+ */
+export const BIDI_CONTROLS = /[\u202A-\u202E\u2066-\u2069]/u;
+
 const name = z
   .string()
+  .normalize('NFC')
   .trim()
   .min(1)
   .max(ORGANIZATION_NAME_MAX)
-  // No control characters (as provisioning).
-  .refine((value) => !/\p{Cc}/u.test(value));
+  // No control characters (as provisioning) and no bidi controls.
+  .refine((value) => !/\p{Cc}/u.test(value) && !BIDI_CONTROLS.test(value));
 
 const clock = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 
-const listed = (list: () => readonly string[]) =>
-  z.string().refine((value) => list().includes(value));
-
-/** The profile as saved. Unknown fields are refused; codes must be ones this server offers. */
+/**
+ * The profile as saved. Unknown fields are refused. Country, currency and time zone are checked for their
+ * shape here; the handler accepts them when this server offers them OR when they are the stored value
+ * (a value saved earlier never blocks a save — review M1).
+ */
 export const OrganizationProfileInput = z
   .strictObject({
     version: z.int().min(1),
     nameEn: name,
     nameAr: name,
     industry: z.enum(INDUSTRIES),
-    countryCode: listed(isoCountryCodes),
-    currencyCode: listed(isoCurrencyCodes),
-    timeZone: listed(ianaTimeZones),
+    countryCode: z.string().regex(/^[A-Z]{2}$/),
+    currencyCode: z.string().regex(/^[A-Z]{3}$/),
+    timeZone: z
+      .string()
+      .max(64)
+      .regex(/^[A-Za-z][A-Za-z0-9_+-]*(\/[A-Za-z0-9_+-]+){0,2}$/),
     fiscalYearStartMonth: z.int().min(1).max(12),
     defaultLocale: z.enum(['ar', 'en']),
     dateDisplay: z.enum(DATE_DISPLAYS),
@@ -113,6 +128,8 @@ export function organizationProfileQueryDefinition(): QueryDefinition<
 
 export interface OrganizationProfileSaved {
   readonly tenantId: string;
+  /** The profile's version now: the page saves again with it (review L8). */
+  readonly version: number;
   readonly changed: readonly (keyof OrganizationProfile)[];
   readonly before: Partial<OrganizationProfile>;
   readonly after: Partial<OrganizationProfile>;
@@ -124,6 +141,13 @@ function pick(
 ): Partial<OrganizationProfile> {
   return Object.fromEntries(keys.map((key) => [key, profile[key]]));
 }
+
+/** What this server offers (built from its ICU data, as the page's choices). */
+const OFFERED: Readonly<Record<OfferedProfileField, () => readonly string[]>> = {
+  countryCode: isoCountryCodes,
+  currencyCode: isoCurrencyCodes,
+  timeZone: ianaTimeZones,
+};
 
 export function updateOrganizationProfileActionDefinition(): ActionDefinition<
   typeof OrganizationProfileInput,
@@ -139,21 +163,44 @@ export function updateOrganizationProfileActionDefinition(): ActionDefinition<
         ctx.tx,
         {
           ...profile,
+          timeZone: canonicalTimeZone(profile.timeZone),
           // Stored sorted (the database sorts too).
           workingDays: [...profile.workingDays].sort((a, b) => a - b),
         },
         version,
+        (field, value) => OFFERED[field]().includes(value),
       );
-      if (saved.outcome !== 'updated') {
-        return err(appError(saved.outcome === 'conflict' ? 'CONFLICT_VERSION' : 'FORBIDDEN'));
+      switch (saved.outcome) {
+        case 'unchanged':
+          // Nothing to write (review L1): no new version, no audit record.
+          return ok({
+            tenantId: ctx.claims.tenant_id,
+            version: saved.version,
+            changed: [],
+            before: {},
+            after: {},
+          });
+        case 'invalid':
+          return err(
+            appError('VALIDATION_FAILED', {
+              fieldErrors: [{ path: saved.field, code: 'INVALID' }],
+            }),
+          );
+        case 'conflict':
+          return err(appError('CONFLICT_VERSION'));
+        case 'refused':
+          return err(appError('FORBIDDEN'));
+        case 'updated': {
+          const changed = changedProfileFields(saved.before, saved.after);
+          return ok({
+            tenantId: ctx.claims.tenant_id,
+            version: saved.version,
+            changed,
+            before: pick(saved.before, changed),
+            after: pick(saved.after, changed),
+          });
+        }
       }
-      const changed = changedProfileFields(saved.before, saved.after);
-      return ok({
-        tenantId: ctx.claims.tenant_id,
-        changed,
-        before: pick(saved.before, changed),
-        after: pick(saved.after, changed),
-      });
     },
     // Organization settings changes are audited with the values before and after (BR-IAM-3 style).
     audit: (_input, output) =>

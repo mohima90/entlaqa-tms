@@ -247,10 +247,13 @@ describe.skipIf(!configured)('changing roles against PostgreSQL', () => {
     await owner`update platform.tenant_memberships set status = 'active' where user_id = ${sara.user}`;
   });
 
-  it("days follow the headquarters' time zone, also across a daylight-saving change", async () => {
-    // Cairo moved its clocks forward at midnight on 26 April 2024: that midnight does not exist.
+  it("days follow the organization's time zone, also across a daylight-saving change", async () => {
+    // The organization's own zone (its profile, T-M2-22) — not a branch's: a headquarters elsewhere
+    // does not move the organization's calendar days.
     await owner`insert into platform.branches (tenant_id, code, name_ar, is_headquarters, timezone)
-      values (${tenant}, 'CAI', 'القاهرة', true, 'Africa/Cairo')`;
+      values (${tenant}, 'DXB', 'دبي', true, 'Asia/Dubai')`;
+    // Cairo moved its clocks forward at midnight on 26 April 2024: that midnight does not exist.
+    await owner`update platform.tenant_settings set timezone = 'Africa/Cairo' where tenant_id = ${tenant}`;
     const saved = await change(admin, sara.person, [
       role('learner', { isPrimary: true, validUntil: '2029-12-31' }),
       role('mentor', { validFrom: '2024-04-01', validUntil: '2024-04-25' }),

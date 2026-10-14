@@ -202,6 +202,7 @@ export {
 export {
   type OrganizationProfile,
   type OrganizationProfileRecord,
+  type OfferedProfileField,
   type OrganizationProfileUpdate,
   TENANT_DATE_DISPLAYS,
   type TenantDateDisplay,

@@ -101,7 +101,7 @@ describe('organization profile (T-M2-22)', () => {
     expect(await getOrganizationProfile(fakeTx([]).tx)).toBeNull();
   });
 
-  it('saves the settings and, when they changed, the display names; returns before and after', async () => {
+  it('saves the settings and, when they changed, the display names; returns before, after and the version', async () => {
     const renamed = {
       ...profile,
       nameEn: 'Al Raya Group',
@@ -112,11 +112,19 @@ describe('organization profile (T-M2-22)', () => {
       [{ ...row, version: 3 }],
       [{ tenant_id: 't' }],
       [{ id: 't' }],
-      [{ ...row, name_en: 'Al Raya Group', working_days: [1, 2, 3, 4, 5], date_display: 'hijri' }],
+      [
+        {
+          ...row,
+          name_en: 'Al Raya Group',
+          working_days: [1, 2, 3, 4, 5],
+          date_display: 'hijri',
+          version: 4,
+        },
+      ],
     );
     const saved = await updateOrganizationProfile(tx, renamed, 3);
-    expect(saved).toEqual({ outcome: 'updated', before: profile, after: renamed });
-    expect(executed[0]?.sql).toContain('for update of s, t');
+    expect(saved).toEqual({ outcome: 'updated', before: profile, after: renamed, version: 4 });
+    expect(executed[0]?.sql).toContain('for no key update of s, t');
     expect(executed[1]?.sql).toContain('update platform.tenant_settings');
     expect(executed[1]?.params).toEqual(
       expect.arrayContaining(['{1,2,3,4,5}', 'hijri', '08:00', '16:00', 3]),
@@ -126,22 +134,97 @@ describe('organization profile (T-M2-22)', () => {
   });
 
   it('leaves the names alone when they did not change', async () => {
-    const { tx, executed } = fakeTx([{ ...row, version: 3 }], [{ tenant_id: 't' }], [row]);
-    expect(await updateOrganizationProfile(tx, profile, 3)).toMatchObject({ outcome: 'updated' });
+    const { tx, executed } = fakeTx(
+      [{ ...row, version: 3 }],
+      [{ tenant_id: 't' }],
+      [{ ...row, currency_code: 'AED', version: 4 }],
+    );
+    expect(
+      await updateOrganizationProfile(tx, { ...profile, currencyCode: 'AED' }, 3),
+    ).toMatchObject({ outcome: 'updated', version: 4 });
     expect(executed.some((q) => q.sql.includes('update platform.tenants'))).toBe(false);
   });
 
-  it('conflict on another version; refused when the database lets nothing change', async () => {
+  it('writes nothing when nothing changed (no new version)', async () => {
+    const { tx, executed } = fakeTx([{ ...row, version: 3 }]);
+    expect(await updateOrganizationProfile(tx, profile, 3)).toEqual({
+      outcome: 'unchanged',
+      version: 3,
+    });
+    expect(executed).toHaveLength(1);
+  });
+
+  it('accepts a country, currency or zone only when offered, or when it is the stored one', async () => {
+    const offered = (field: string, value: string) =>
+      !(field === 'timeZone' && value === 'Asia/Calcutta');
     expect(
-      await updateOrganizationProfile(fakeTx([{ ...row, version: 4 }]).tx, profile, 3),
+      await updateOrganizationProfile(
+        fakeTx([{ ...row, version: 3 }]).tx,
+        { ...profile, timeZone: 'Asia/Calcutta' },
+        3,
+        offered,
+      ),
+    ).toEqual({ outcome: 'invalid', field: 'timeZone' });
+    // The stored zone stays accepted even when no longer offered.
+    const stored = fakeTx(
+      [{ ...row, timezone: 'Asia/Calcutta', version: 3 }],
+      [{ tenant_id: 't' }],
+      [row],
+    );
+    expect(
+      await updateOrganizationProfile(
+        stored.tx,
+        { ...profile, timeZone: 'Asia/Calcutta', currencyCode: 'AED' },
+        3,
+        offered,
+      ),
+    ).toMatchObject({ outcome: 'updated' });
+  });
+
+  it("a zone the database does not know is the field's error, not a fault; other errors are thrown", async () => {
+    const failing = (error: Error) =>
+      ({
+        execute: (() => {
+          let call = 0;
+          return () => {
+            call += 1;
+            return call === 1 ? Promise.resolve([{ ...row, version: 3 }]) : Promise.reject(error);
+          };
+        })(),
+      }) as unknown as UserTx;
+    expect(
+      await updateOrganizationProfile(
+        failing(
+          Object.assign(new Error('x'), {
+            code: '23514',
+            constraint_name: 'tenant_settings_timezone_check',
+          }),
+        ),
+        { ...profile, timeZone: 'Asia/Dubai' },
+        3,
+      ),
+    ).toEqual({ outcome: 'invalid', field: 'timeZone' });
+    await expect(
+      updateOrganizationProfile(
+        failing(new Error('boom')),
+        { ...profile, timeZone: 'Asia/Dubai' },
+        3,
+      ),
+    ).rejects.toThrow('boom');
+  });
+
+  it('conflict on another version; refused when the database lets nothing change', async () => {
+    const changed = { ...profile, currencyCode: 'AED' };
+    expect(
+      await updateOrganizationProfile(fakeTx([{ ...row, version: 4 }]).tx, changed, 3),
     ).toEqual({
       outcome: 'conflict',
     });
-    expect(await updateOrganizationProfile(fakeTx([]).tx, profile, 3)).toEqual({
+    expect(await updateOrganizationProfile(fakeTx([]).tx, changed, 3)).toEqual({
       outcome: 'refused',
     });
     expect(
-      await updateOrganizationProfile(fakeTx([{ ...row, version: 3 }], []).tx, profile, 3),
+      await updateOrganizationProfile(fakeTx([{ ...row, version: 3 }], []).tx, changed, 3),
     ).toEqual({
       outcome: 'refused',
     });
@@ -156,7 +239,7 @@ describe('organization profile (T-M2-22)', () => {
     expect(
       await updateOrganizationProfile(
         fakeTx([{ ...row, version: 3 }], [{ tenant_id: 't' }], []).tx,
-        profile,
+        changed,
         3,
       ),
     ).toEqual({ outcome: 'refused' });

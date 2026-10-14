@@ -86,7 +86,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   db.getOrganizationProfile.mockResolvedValue(record);
   db.updateOrganizationProfile.mockImplementation((_tx: unknown, after: typeof profile) =>
-    Promise.resolve({ outcome: 'updated', before: profile, after }),
+    Promise.resolve({ outcome: 'updated', before: profile, after, version: 4 }),
   );
 });
 
@@ -144,6 +144,7 @@ describe('saving the organization profile (T-M2-22)', () => {
       ok: true,
       value: {
         tenantId: TENANT,
+        version: 4,
         changed: ['nameEn', 'dateDisplay', 'workingDays'],
         before: { nameEn: 'Al Raya Company', dateDisplay: 'dual', workingDays: [0, 1, 2, 3, 4] },
         after: { nameEn: 'Al Raya Group', dateDisplay: 'hijri', workingDays: [1, 2, 3, 4, 5] },
@@ -154,6 +155,7 @@ describe('saving the organization profile (T-M2-22)', () => {
       TX,
       expect.objectContaining({ nameEn: 'Al Raya Group', workingDays: [1, 2, 3, 4, 5] }),
       3,
+      expect.any(Function),
     );
     expect(getClaims).toHaveBeenCalledWith({ strict: true });
     expect(writeAudit).toHaveBeenCalledWith(TX, expect.anything(), {
@@ -168,11 +170,38 @@ describe('saving the organization profile (T-M2-22)', () => {
     });
   });
 
-  it('nothing changed: no audit record', async () => {
+  it('nothing changed: no write, the same version, no audit record (review L1)', async () => {
+    db.updateOrganizationProfile.mockResolvedValueOnce({ outcome: 'unchanged', version: 3 });
     const { rt, writeAudit } = runtime(forRoles('tenant_admin'), 'aal2');
     const result = await createDefineAction(rt)(updateOrganizationProfileActionDefinition())(input);
-    expect(result).toMatchObject({ ok: true, value: { changed: [] } });
+    expect(result).toEqual({
+      ok: true,
+      value: { tenantId: TENANT, version: 3, changed: [], before: {}, after: {} },
+    });
     expect(writeAudit).not.toHaveBeenCalled();
+  });
+
+  it('accepts only offered codes and canonical zones; a refused zone is a field error (review M1)', async () => {
+    const { rt } = runtime(forRoles('tenant_admin'), 'aal2');
+    const save = createDefineAction(rt)(updateOrganizationProfileActionDefinition());
+    await save({ ...input, timeZone: 'Asia/Calcutta' });
+    const [, sent, , accepts] = db.updateOrganizationProfile.mock.calls[0] as [
+      unknown,
+      { timeZone: string },
+      number,
+      (field: string, value: string) => boolean,
+    ];
+    expect(sent.timeZone).toBe('Asia/Kolkata');
+    expect(accepts('timeZone', 'Asia/Kolkata')).toBe(true);
+    expect(accepts('timeZone', 'Asia/Calcutta')).toBe(false);
+    expect(accepts('countryCode', 'SA')).toBe(true);
+    expect(accepts('countryCode', 'EU')).toBe(false);
+    expect(accepts('currencyCode', 'XAU')).toBe(false);
+    db.updateOrganizationProfile.mockResolvedValueOnce({ outcome: 'invalid', field: 'timeZone' });
+    expect(await save({ ...input, timeZone: 'Asia/Dubai' })).toMatchObject({
+      ok: false,
+      error: { code: 'VALIDATION_FAILED', fieldErrors: [{ path: 'timeZone', code: 'INVALID' }] },
+    });
   });
 
   it('asks the Organization Admin for a code at AAL1 or with a code older than 15 minutes', async () => {
@@ -233,12 +262,34 @@ describe('the profile input (validation)', () => {
     expect(fields({ ...input, nameEn: 'Al\u0000Raya' })).toEqual(['nameEn']);
   });
 
+  it('refuses bidi controls in names, keeps joiners, normalizes to NFC (review L3)', () => {
+    for (const mark of [
+      '\u202A',
+      '\u202B',
+      '\u202C',
+      '\u202D',
+      '\u202E',
+      '\u2066',
+      '\u2067',
+      '\u2068',
+      '\u2069',
+    ]) {
+      expect(fields({ ...input, nameEn: `Al ${mark}Raya` })).toEqual(['nameEn']);
+    }
+    expect(fields({ ...input, nameAr: 'می\u200Cخواهم و\u200Dشركة' })).toEqual([]);
+    expect(OrganizationProfileInput.parse({ ...input, nameEn: 'Cafe\u0301' }).nameEn).toBe(
+      'Caf\u00e9',
+    );
+  });
+
   it('accepts only listed codes', () => {
     expect(fields({ ...input, industry: 'mining' })).toEqual(['industry']);
-    expect(fields({ ...input, countryCode: 'EU' })).toEqual(['countryCode']);
+    // Shapes here; whether a code or zone is on offer is the handler's check (above).
     expect(fields({ ...input, countryCode: 'sa' })).toEqual(['countryCode']);
-    expect(fields({ ...input, currencyCode: 'XAU' })).toEqual(['currencyCode']);
-    expect(fields({ ...input, timeZone: 'Mars/Olympus_Mons' })).toEqual(['timeZone']);
+    expect(fields({ ...input, countryCode: 'SAU' })).toEqual(['countryCode']);
+    expect(fields({ ...input, currencyCode: 'SR' })).toEqual(['currencyCode']);
+    expect(fields({ ...input, timeZone: 'Asia/Riyadh; drop table x' })).toEqual(['timeZone']);
+    expect(fields({ ...input, timeZone: 'America/Argentina/Buenos_Aires' })).toEqual([]);
     expect(fields({ ...input, defaultLocale: 'fr' })).toEqual(['defaultLocale']);
     expect(fields({ ...input, dateDisplay: 'julian' })).toEqual(['dateDisplay']);
     expect(fields({ ...input, fiscalYearStartMonth: 13 })).toEqual(['fiscalYearStartMonth']);

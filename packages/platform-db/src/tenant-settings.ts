@@ -1,5 +1,6 @@
 import 'server-only';
 import { sql } from 'drizzle-orm';
+import { pgError } from './pg-error';
 import type { UserTx } from './with-user-tx';
 
 /**
@@ -96,45 +97,80 @@ export async function getOrganizationProfile(
   };
 }
 
+/** Values the caller only accepts when they are on offer (or already stored): codes and time zone. */
+export type OfferedProfileField = 'countryCode' | 'currencyCode' | 'timeZone';
+
 export type OrganizationProfileUpdate =
   | {
       readonly outcome: 'updated';
       readonly before: OrganizationProfile;
       readonly after: OrganizationProfile;
+      /** The new concurrency token (the page saves again with it). */
+      readonly version: number;
     }
+  /** Nothing differs from what is stored: no write, the version stays (review L1). */
+  | { readonly outcome: 'unchanged'; readonly version: number }
+  /** A value that is neither on offer nor the stored one, or one the database refuses (time zone). */
+  | { readonly outcome: 'invalid'; readonly field: OfferedProfileField }
   /** Someone saved it since the page was loaded (version), or this session may not change it. */
   | { readonly outcome: 'conflict' | 'refused' };
 
+const OFFERED_FIELDS: readonly OfferedProfileField[] = ['countryCode', 'currencyCode', 'timeZone'];
+
 /**
- * Saves the profile when it is still at `version`: the settings row always (it records who saved and
- * when, and moves the version on), the display names when they changed. The database lets only an
- * Organization Admin at AAL2 with a recent code change either (policies tenant_settings_update and
- * tenants_update); a refused write changes nothing — the caller's transaction is rolled back.
+ * Saves the profile when it is still at `version` and differs from what is stored: the settings row (it
+ * records who saved and when, and moves the version on), the display names when they changed. A country,
+ * currency or time zone must be on offer (`accepts`) unless it is the stored one — a value saved earlier
+ * stays accepted even when this runtime no longer lists it. The database lets only an Organization Admin
+ * at AAL2 with a recent code change either row (policies tenant_settings_update and tenants_update); any
+ * refusal changes nothing — the caller's transaction is rolled back.
  */
 export async function updateOrganizationProfile(
   tx: UserTx,
   profile: OrganizationProfile,
   version: number,
+  accepts: (field: OfferedProfileField, value: string) => boolean = () => true,
 ): Promise<OrganizationProfileUpdate> {
+  // Row locks that do not block foreign-key checks against the organization (review L2).
   const [current] = await tx.execute(sql`
     select ${COLUMNS}, s.version
     from platform.tenant_settings s
     join platform.tenants t on t.id = s.tenant_id
     where s.tenant_id = (select private.current_tenant_id())
-    for update of s, t`);
+    for no key update of s, t`);
   if (!current) return { outcome: 'refused' };
   if (Number(current.version) !== version) return { outcome: 'conflict' };
   const before = profileOf(current);
+  if (changedProfileFields(before, profile).length === 0) {
+    return { outcome: 'unchanged', version };
+  }
+  for (const field of OFFERED_FIELDS) {
+    const value = profile[field];
+    if (value !== null && value !== before[field] && !accepts(field, value)) {
+      return { outcome: 'invalid', field };
+    }
+  }
   const workingDays = `{${profile.workingDays.join(',')}}`;
-  const [settings] = await tx.execute(sql`
-    update platform.tenant_settings
-    set industry = ${profile.industry}, country_code = ${profile.countryCode},
-        currency_code = ${profile.currencyCode}, timezone = ${profile.timeZone},
-        fiscal_year_start_month = ${profile.fiscalYearStartMonth}, default_locale = ${profile.defaultLocale},
-        date_display = ${profile.dateDisplay}, working_days = ${workingDays}::smallint[],
-        work_starts_at = ${profile.workStartsAt}::time, work_ends_at = ${profile.workEndsAt}::time
-    where tenant_id = (select private.current_tenant_id()) and version = ${version}
-    returning tenant_id`);
+  let settings: Record<string, unknown> | undefined;
+  try {
+    [settings] = await tx.execute(sql`
+      update platform.tenant_settings
+      set industry = ${profile.industry}, country_code = ${profile.countryCode},
+          currency_code = ${profile.currencyCode}, timezone = ${profile.timeZone},
+          fiscal_year_start_month = ${profile.fiscalYearStartMonth},
+          default_locale = ${profile.defaultLocale}, date_display = ${profile.dateDisplay},
+          working_days = ${workingDays}::smallint[],
+          work_starts_at = ${profile.workStartsAt}::time, work_ends_at = ${profile.workEndsAt}::time
+      where tenant_id = (select private.current_tenant_id()) and version = ${version}
+      returning tenant_id`);
+  } catch (error) {
+    // A zone Intl knows but this PostgreSQL does not (the trigger's check): the field, not a fault.
+    const pg = pgError(error);
+    if (pg?.code === '23514' && pg.constraint === 'tenant_settings_timezone_check') {
+      return { outcome: 'invalid', field: 'timeZone' };
+    }
+    throw error;
+  }
   if (!settings) return { outcome: 'refused' };
   if (profile.nameAr !== before.nameAr || profile.nameEn !== before.nameEn) {
     const [names] = await tx.execute(sql`
@@ -144,12 +180,12 @@ export async function updateOrganizationProfile(
     if (!names) return { outcome: 'refused' };
   }
   const [after] = await tx.execute(sql`
-    select ${COLUMNS}
+    select ${COLUMNS}, s.version
     from platform.tenant_settings s
     join platform.tenants t on t.id = s.tenant_id
     where s.tenant_id = (select private.current_tenant_id())`);
   if (!after) return { outcome: 'refused' };
-  return { outcome: 'updated', before, after: profileOf(after) };
+  return { outcome: 'updated', before, after: profileOf(after), version: Number(after.version) };
 }
 
 /** The fields whose values differ (audit: before/after of these only). */

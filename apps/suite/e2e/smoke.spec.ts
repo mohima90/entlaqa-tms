@@ -41,6 +41,9 @@ const pages = [
     heading: 'تعديل الأدوار',
   },
   { path: '/ar/suite/admin/roles', lang: 'ar', dir: 'rtl', heading: 'الأدوار والصلاحيات' },
+  // Organization profile (T-M2-22): the frame and the "not available here" state without a database.
+  { path: '/ar/suite/admin/organization', lang: 'ar', dir: 'rtl', heading: 'بيانات المنشأة' },
+  { path: '/en/suite/admin/organization', lang: 'en', dir: 'ltr', heading: 'Organization profile' },
   {
     path: '/en/suite/admin/roles?role=auditor',
     lang: 'en',

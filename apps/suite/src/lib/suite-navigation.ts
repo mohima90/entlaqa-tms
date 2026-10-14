@@ -134,3 +134,18 @@ export function suiteNavigation(access: SuiteNavigationAccess): NavGroupModel[] 
   ];
   return groups.filter((group) => group.entries.length > 0);
 }
+
+/**
+ * The home page for the member (T-M2-21): the Organization Admin (organization set-up, no training
+ * features) gets a set-up card with the pages that exist today until the admin home (FR-ADM-14) is
+ * built; everyone else keeps the training home. Same source as the menu: the member's grants.
+ */
+export function suiteHome(
+  access: SuiteNavigationAccess,
+): { readonly kind: 'training' } | { readonly kind: 'setup'; readonly links: readonly NavEntry[] } {
+  if (!access.organizationSetup) return { kind: 'training' };
+  const links = suiteNavigation(access)
+    .flatMap((group) => group.entries)
+    .filter((entry) => entry.link !== undefined && entry.key !== 'home');
+  return { kind: 'setup', links };
+}

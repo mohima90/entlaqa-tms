@@ -33,6 +33,8 @@
     "pageTitle": "Home",
     "emptyTitle": "No training data yet",
     "emptyBody": "Sessions and courses will appear here once the Training module is set up for your organization.",
+    "setupTitle": "Set up your organization",
+    "setupBody": "Invite your people, check their roles and set your security policy. More set-up pages are coming soon.",
     "comingSoon": "Coming soon",
     "users": "Users",
     "roles": "Roles & permissions",

@@ -34,6 +34,22 @@ test.describe('signed-in flow', () => {
     await expect(page.getByTestId('mfa-prompt-admin')).toBeVisible();
     await page.getByRole('button', { name: 'Not now' }).click();
     await expect(page).toHaveURL(/\/en\/suite$/);
+    // The Organization Admin's home (T-M2-21): a set-up card with the pages that exist, never the
+    // training home; its menu has the set-up sections and no training entries.
+    const setup = page.getByTestId('setup-home');
+    await expect(setup.getByRole('heading', { name: 'Set up your organization' })).toBeVisible();
+    await expect(setup.getByRole('link')).toHaveText([
+      'Users',
+      'Roles & permissions',
+      'Security policy',
+    ]);
+    await expect(page.getByText('No training data yet')).toHaveCount(0);
+    await expect(page.getByText('Calendar')).toHaveCount(0);
+    await page.goto('/ar/suite');
+    await expect(
+      page.getByTestId('setup-home').getByRole('heading', { name: 'إعداد منشأتك' }),
+    ).toBeVisible();
+    await page.goto('/en/suite');
     // The organization is named in the navigation's organization block (behind the menu on a phone).
     if (isMobile) await page.getByRole('button', { name: 'Menu' }).click();
     await expect(page.getByText(`Organization: ${organization ?? ''}`)).toBeVisible();

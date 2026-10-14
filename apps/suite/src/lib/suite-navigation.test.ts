@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { SuiteNavigationAccess } from './suite-context';
 import { ICON_NAMES } from '@jadarat/ui';
-import { suiteNavigation } from './suite-navigation';
+import { suiteHome, suiteNavigation } from './suite-navigation';
 
 const NONE: SuiteNavigationAccess = {
   users: false,
@@ -81,5 +81,34 @@ describe('suiteNavigation (menus per role, T-M2-21)', () => {
     }).flatMap((group) => group.entries);
     expect(all.length).toBe(17);
     expect(all.filter((entry) => !ICON_NAMES.includes(entry.icon))).toEqual([]);
+  });
+});
+
+describe('suiteHome (T-M2-21)', () => {
+  it('gives the Organization Admin a set-up home with only the pages that exist', () => {
+    const home = suiteHome({
+      users: true,
+      roles: true,
+      security: true,
+      organizationSetup: true,
+      training: false,
+    });
+    expect(home.kind).toBe('setup');
+    expect(home.kind === 'setup' ? home.links.map((l) => l.link?.href) : []).toEqual([
+      '/suite/admin/users',
+      '/suite/admin/roles',
+      '/suite/admin/security',
+    ]);
+  });
+
+  it('links only what the grants open, and keeps the training home for every other role', () => {
+    const home = suiteHome({ ...NONE, organizationSetup: true, users: true });
+    expect(home.kind === 'setup' ? home.links.map((l) => l.key) : []).toEqual(['users']);
+    expect(
+      suiteHome({ ...NONE, users: true, roles: true, security: true, training: true }),
+    ).toEqual({
+      kind: 'training',
+    });
+    expect(suiteHome(NONE)).toEqual({ kind: 'training' });
   });
 });

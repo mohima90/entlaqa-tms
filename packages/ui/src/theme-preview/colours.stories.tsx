@@ -36,8 +36,8 @@ const COPY = {
     title: 'الألوان والتباين',
     brand: 'الهوية المعروضة',
     brands: {
-      jadarat: 'جدارات: الشكل الحالي',
-      'jadarat-lms': 'جدارات LMS: بانتظار المواد، فالقيم مطابقة للشكل الحالي',
+      jadarat: 'جدارات: التصميم المعتمد',
+      'jadarat-lms': 'جدارات LMS: بانتظار المواد، فالقيم مطابقة للتصميم المعتمد',
       organization: 'لون المنشأة',
     },
     mode: { light: 'الوضع الفاتح', dark: 'الوضع الداكن' },
@@ -62,8 +62,8 @@ const COPY = {
     title: 'Colours and contrast',
     brand: 'Brand shown',
     brands: {
-      jadarat: 'Jadarat: current look',
-      'jadarat-lms': 'Jadarat LMS: waiting for material, so the values equal the current look',
+      jadarat: 'Jadarat: approved design',
+      'jadarat-lms': 'Jadarat LMS: waiting for material, so the values equal the approved design',
       organization: 'Organization colour',
     },
     mode: { light: 'Light mode', dark: 'Dark mode' },

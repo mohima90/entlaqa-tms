@@ -1,6 +1,6 @@
 # Jadarat TMS — Full Feature List
 
-**Date:** 11 Oct 2026 (v2.7) · **Status:** Decisions D1, D2, D6, D7 applied; IAM-16 added (PO, 5 Oct 2026); ADM-17 extended with platform settings (PO, 6 Oct 2026); IAM-07 role CRUD per tenant (PO, 7 Oct 2026); NTF-10/11 organization e-mail texts and own mail server in R2 (PO, 7 Oct 2026); BR-IAM-4 Org Admin held alone (PO, 8 Oct 2026); ADM-04/05 maintained by the HR Manager (PO, 11 Oct 2026) · **BRD:** `docs/brd/Jadarat_TMS_BRD_v2.md` · **Basis:** Market research in `docs/research/TMS_Market_Comparison_vs_BRD.md` + Jadarat TMS BRD v1.0
+**Date:** 14 Oct 2026 (v2.9) · **Status:** Decisions D1, D2, D6, D7 applied; IAM-16 added (PO, 5 Oct 2026); ADM-17 extended with platform settings (PO, 6 Oct 2026); IAM-07 role CRUD per tenant (PO, 7 Oct 2026); NTF-10/11 organization e-mail texts and own mail server in R2 (PO, 7 Oct 2026); BR-IAM-4 Org Admin held alone (PO, 8 Oct 2026); ADM-04/05 maintained by the HR Manager (PO, 11 Oct 2026); ADM-01 wizard ends with inviting the L&D Manager, NTF-07 rules set by the Org Admin, WFL-01 workflows set by the L&D Manager (PO, 14 Oct 2026); v2.9: L&D Manager renamed L&D Manager, ADM-02 display data only, ADM-07 no font choice, ADM-10 Domain management, ADM-15/16 removed, IAM-03 invitation link, no SMS (IAM-12, NTF-04 removed), NTF-02/07/10 owned by the L&D Manager (PO, 14 Oct 2026) · **BRD:** `docs/brd/Jadarat_TMS_BRD_v2.md` · **Basis:** Market research in `docs/research/TMS_Market_Comparison_vs_BRD.md` + Jadarat TMS BRD v1.0
 
 **Legend**
 
@@ -8,7 +8,7 @@
 - **Proposed release:** `R1` MVP (months 0–4) · `R2` Growth (5–8) · `R3` Enterprise & Sovereign (9–12) · `R4` Intelligence & Scale (13–18) · `Suite` = when the related Jadarat HR Suite module ships · `—` = removed from scope
 - **In v1 BRD?** `✅` covered · `⚠️` partial · `❌` new (not in v1 BRD)
 
-**Totals:** 29 modules · 292 features, of which 283 in scope and 9 removed by decision D1 (Commerce, public registration) · In scope: 109 new and 40 partial vs. v1 BRD · By release: R1 97 · R2 112 · R3 56 · R4 13 · Suite 5
+**Totals:** 29 modules · 292 features, of which 280 in scope and 12 removed (9 by decision D1 — Commerce, public registration; 3 by the PO on 14 Oct 2026 — ADM-15, ADM-16, NTF-04) · In scope: 107 new and 40 partial vs. v1 BRD · By release: R1 97 · R2 111 · R3 54 · R4 13 · Suite 5
 
 ---
 
@@ -16,22 +16,22 @@
 
 | ID | Feature | Tier | Release | In v1? |
 |---|---|---|---|---|
-| ADM-01 | Self-service tenant sign-up, trial and onboarding wizard (org → branding → users → first course) | Core | R1 | ✅ |
-| ADM-02 | Organization profile (AR/EN names, CR number, VAT number, country, currency, timezone) | Core | R1 | ✅ |
+| ADM-01 | Self-service tenant sign-up, trial and onboarding wizard (org → branding → users → invite the L&D Manager; first course at the L&D Manager's first sign-in — PO, 14 Oct 2026) | Core | R1 | ✅ |
+| ADM-02 | Organization profile: display name (AR/EN), industry, country, currency, timezone, default language, fiscal-year start — no registration data (PO, 14 Oct 2026) | Core | R1 | ✅ |
 | ADM-03 | Legal entities (multiple companies under one tenant, own currency/VAT/branding) | Plus | R3 | ❌ |
 | ADM-04 | Branches with hierarchy, GPS, working week and hours per branch (maintained by the HR Manager — PO, 11 Oct 2026) | Core | R1 | ✅ |
 | ADM-05 | Hierarchical departments, cost centers, department heads (maintained by the HR Manager — PO, 11 Oct 2026) | Core | R1 | ✅ |
 | ADM-06 | Interactive org chart with head-count and compliance overlay | Plus | R3 | ✅ |
-| ADM-07 | Branding: logos, colors, fonts, WCAG contrast check | Core | R1 | ✅ |
+| ADM-07 | Branding: logos and colors (drive the navigation gradient), WCAG contrast check; app fonts only (PO, 14 Oct 2026) | Core | R1 | ✅ |
 | ADM-08 | Theme builder with live preview, presets, version history, dark mode | Plus | R2 | ✅ |
 | ADM-09 | Custom login page (backgrounds, seasonal themes e.g. Ramadan/National Day) | Plus | R2 | ✅ |
-| ADM-10 | Default subdomain + custom domains with DNS wizard and auto SSL | Plus | R2 | ✅ |
+| ADM-10 | Domain management: subdomain under the product domain or custom domain (DNS wizard, auto SSL), instructions for both (PO, 14 Oct 2026) | Plus | R2 | ✅ |
 | ADM-11 | Custom fields builder for users, courses, sessions, enrollments, vendors | Core | R1 | ✅ |
 | ADM-12 | Terminology overrides (e.g., "Course" → "Program") in AR/EN | Plus | R2 | ✅ |
 | ADM-13 | Feature toggles per tenant, driven by edition | Core | R1 | ✅ |
 | ADM-14 | Admin overview dashboard (usage vs. limits, integration health, AI spend, pending items) | Core | R1 | ✅ |
-| ADM-15 | Sandbox / test tenant cloned from production configuration | Plus | R3 | ❌ |
-| ADM-16 | Configuration export/import between tenants (templates, workflows, roles) | Plus | R3 | ❌ |
+| ADM-15 | ~~Sandbox / test tenant cloned from production configuration~~ — removed (PO, 14 Oct 2026) | Plus | — | ❌ |
+| ADM-16 | ~~Configuration export/import between tenants (templates, workflows, roles)~~ — removed (PO, 14 Oct 2026) | Plus | — | ❌ |
 | ADM-17 | ENTLAQA platform super-admin console (tenants, plans, impersonation with audit, announcements, platform settings such as the e-mail provider key, sender and test message) | Core | R1 | ⚠️ |
 
 ## 2. Identity, Users & Access (IAM)
@@ -40,7 +40,7 @@
 |---|---|---|---|---|
 | IAM-01 | User directory with AR/EN names, 4-part Arabic name, employee ID, manager, nationality | Core | R1 | ✅ |
 | IAM-02 | Add gender, date of birth, employment category, grade (for ESG & ministry reports) | Core | R1 | ❌ |
-| IAM-03 | E-mail invitations: resend, revoke, bulk | Core | R1 | ✅ |
+| IAM-03 | E-mail invitations: resend, revoke, bulk; one-person invitation link to share personally (single use, expires) (PO, 14 Oct 2026) | Core | R1 | ✅ |
 | IAM-04 | Bulk import wizard (CSV/XLSX, mapping, validation, dry run, upsert modes) | Core | R1 | ✅ |
 | IAM-05 | User lifecycle: deactivate with reassignment, archive, reactivate | Core | R1 | ✅ |
 | IAM-06 | Static and dynamic (rule-based) groups / audiences | Core | R2 | ✅ |
@@ -49,7 +49,7 @@
 | IAM-09 | Separation-of-duties rules (requester ≠ approver, creator ≠ approver) | Plus | R2 | ⚠️ |
 | IAM-10 | SSO: SAML 2.0 / OIDC, multiple identity providers, just-in-time provisioning, force SSO | Plus | R2 | ✅ |
 | IAM-11 | SCIM 2.0 provisioning (Entra ID, Okta, Google) | Plus | R3 | ❌ |
-| IAM-12 | MFA (TOTP, e-mail, SMS) with per-role enforcement | Core | R1 | ✅ |
+| IAM-12 | MFA (TOTP, e-mail; no SMS — PO, 14 Oct 2026) with per-role enforcement | Core | R1 | ✅ |
 | IAM-13 | Password policy, lockout, session timeout, IP allow-list, access hours | Core | R1/R3 | ✅ |
 | IAM-14 | Delegation (approver out-of-office delegate) | Plus | R2 | ❌ |
 | IAM-15 | Non-employee users (provider staff, external instructors, contractor learners) | Plus | R2 | ❌ |
@@ -314,15 +314,15 @@
 | ID | Feature | Tier | Release | In v1? |
 |---|---|---|---|---|
 | NTF-01 | In-app notification center (real-time) | Core | R1 | ✅ |
-| NTF-02 | E-mail with branded bilingual templates and variables; R1: the organization's brand (logo, colours, sender name, default language) on standard texts; account e-mails (invitation, password reset, password changed) sent by the platform, not the sign-in provider | Core | R1 | ✅ |
+| NTF-02 | E-mail with branded bilingual templates and variables (look and content: L&D Manager; sending set-up: Org Admin — PO, 14 Oct 2026); R1: the organization's brand (logo, colours, sender name, default language) on standard texts; account e-mails (invitation, password reset, password changed) sent by the platform, not the sign-in provider | Core | R1 | ✅ |
 | NTF-03 | WhatsApp Business (templates, reminders, approvals, check-in links) | ★ | R2 | ✅ |
-| NTF-04 | SMS (MENA gateways, e.g. Unifonic or Twilio) | Core | R2 | ✅ |
+| NTF-04 | ~~SMS (MENA gateways, e.g. Unifonic or Twilio)~~ — removed: no SMS anywhere (PO, 14 Oct 2026) | Core | — | ✅ |
 | NTF-05 | Web push notifications | Core | R2 | ✅ |
 | NTF-06 | Microsoft Teams / Slack notifications and approvals | Plus | R3 | ⚠️ |
-| NTF-07 | Event catalog with per-event, per-role, per-channel rules and quiet hours | Core | R1 | ✅ |
+| NTF-07 | Event catalog with per-event, per-role, per-channel rules and quiet hours, incl. bell notifications (set by the L&D Manager — PO, 14 Oct 2026) | Core | R1 | ✅ |
 | NTF-08 | Scheduled reminders (7 days / 3 days / 1 day / 1 hour) and digests | Core | R1 | ✅ |
 | NTF-09 | Broadcast messages to audiences / session participants | Core | R2 | ❌ |
-| NTF-10 | Organization-editable e-mail texts (subject and body per e-mail, Arabic and English, variables, preview with sample data, reset to default) | Core | R2 | ❌ |
+| NTF-10 | E-mail texts edited by the L&D Manager (subject and body per e-mail, Arabic and English, variables, preview with sample data, reset to default) | Core | R2 | ❌ |
 | NTF-11 | Organization's own mail server for all its e-mails (Resend, Mailgun, SMTP, Microsoft 365 / Graph): encrypted credentials, test send, fallback to the platform sender | Plus | R2 | ❌ |
 
 ## 21. Reporting & Analytics (RPT)
@@ -375,7 +375,7 @@
 
 | ID | Feature | Tier | Release | In v1? |
 |---|---|---|---|---|
-| WFL-01 | Visual approval-workflow builder (enrollment, plan, budget, expense, session, certificate, OJT) | Core | R2 | ✅ |
+| WFL-01 | Visual approval-workflow builder (enrollment, plan, budget, expense, session, certificate, OJT), set by the L&D Manager (PO, 14 Oct 2026) | Core | R2 | ✅ |
 | WFL-02 | Conditions, thresholds, parallel/sequential steps, escalation, delegation | Core | R2 | ✅ |
 | WFL-03 | Automation rules ("when X then Y", e.g., when fill rate < 50% at T-7, alert and suggest merge) | Plus | R3 | ❌ |
 | WFL-04 | SLA timers and overdue dashboards | Plus | R3 | ❌ |
@@ -459,7 +459,7 @@
 | D2 | Is the Government segment a Year-1 target? | Yes → in-country hosting in R3 · No → R4 | **Decided: Yes** (30 Sep 2026) |
 | D3 | Pull the planning cycle (PLN) into R1? | R1 · R2 | **Decided: R2** (30 Sep 2026), with only PLN-01 (requests) in R1 |
 | D4 | First LMS connectors after Jadarat | Moodle · Docebo · SAP SF · Cornerstone | **Moodle** (MENA gov/edu footprint), then SAP SF |
-| D5 | Messaging vendor for SMS / WhatsApp | Unifonic (MENA) · Twilio · Meta Cloud API direct | Unifonic for SMS + Meta Cloud API for WhatsApp |
+| D5 | Messaging vendor for WhatsApp (no SMS — PO, 14 Oct 2026) | Meta Cloud API direct · regional BSP | Meta Cloud API for WhatsApp |
 | D6 | Keep the Next.js / Supabase / Vercel stack for in-country deployments? | Keep + self-host variant · Change | **Decided: Next.js + Supabase, self-hostable**, for the whole HR Suite (30 Sep 2026) |
 | D7 | Product name | ENTLAQA TMS · Jadarat TMS · new | **Decided: Jadarat TMS** (30 Sep 2026) |
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { contrastRatio, mix, normalizeHex, relativeLuminance } from './color';
-import { BRAND_ROLES } from './contract';
+import { BRAND_ROLES, NAV_ROLES } from './contract';
 import { InvalidBrandColorError, deriveOrganizationBrand } from './organization-brand';
 import { checkTheme, resolveThemeColors } from './resolve';
 import { jadaratLmsTheme } from './themes/jadarat-lms';
@@ -114,11 +114,12 @@ describe('organization brand colours: derivation', () => {
     }
   });
 
-  it('sets only brand roles, the selected surface and the focus ring', () => {
+  it('sets only brand roles, the selected surface, the focus ring and the navigation', () => {
     const { layer } = deriveOrganizationBrand({ primary: '#7B2CBF' });
     const allowed = new Set<string>([
       ...BRAND_ROLES.primary,
       ...BRAND_ROLES.accent,
+      ...NAV_ROLES,
       'surface-selected',
       'focus-ring',
     ]);
@@ -149,9 +150,69 @@ describe('organization brand colours: derivation', () => {
       expect(after.danger).toBe(before.danger);
       expect(after.bg).toBe(before.bg);
       expect(after.text).toBe(before.text);
-      // Shell and accent aliases follow the organization colour.
-      expect(after['nav-item-current']).toBe(after['surface-selected']);
+      expect(after.header).toBe(before.header);
+      // Accent aliases follow the organization colour; the navigation is the organization's gradient.
+      expect(after.accent).toBe(after.primary);
+      expect(after.nav).not.toBe(before.nav);
     }
+  });
+
+  it('accepts colours only: no font (or any other) choice reaches the layer', () => {
+    // PO, 14 Oct 2026 (BRD v2.9 FR-ADM-07): organizations always use Poppins / IBM Plex Sans Arabic.
+    const input = { primary: '#0F6E5A', font: 'Comic Sans MS' } as unknown as { primary: string };
+    const { layer } = deriveOrganizationBrand(input);
+    for (const mode of ['light', 'dark'] as const) {
+      expect(Object.keys(layer[mode]).filter((role) => role.includes('font'))).toEqual([]);
+      for (const value of Object.values(layer[mode])) expect(normalizeHex(value)).toBe(value);
+    }
+  });
+});
+
+describe('organization brand colours: the navigation gradient (T-M2-21)', () => {
+  it('replaces the Jadarat gradient with a darker shade of the primary → the primary', () => {
+    // The approved example (A-Home-Tenant): #0F6E5A runs from a dark green to the green itself.
+    const { layer } = deriveOrganizationBrand({ primary: '#0F6E5A' });
+    expect(layer.light['nav-end']).toBe('#0F6E5A');
+    expect(layer.light.nav).toBe(mix('#0F6E5A', '#000000', 0.3));
+    expect(relativeLuminance(layer.light.nav ?? '')).toBeLessThan(
+      relativeLuminance(layer.light['nav-end'] ?? ''),
+    );
+    expect(layer.light['nav-item-current']).toBe('#FFFFFF');
+  });
+
+  it('keeps every navigation colour readable on BOTH ends of the gradient, light and dark', () => {
+    for (const primary of [...EDGE_CASES, ...grid]) {
+      const { layer } = deriveOrganizationBrand({ primary });
+      for (const mode of ['light', 'dark'] as const) {
+        const colors = resolveThemeColors(jadaratTheme, mode, layer);
+        for (const end of [colors.nav, colors['nav-end']]) {
+          expect(contrastRatio(colors['on-nav'], end)).toBeGreaterThanOrEqual(4.5);
+          expect(contrastRatio(colors['on-nav-muted'], end)).toBeGreaterThanOrEqual(4.5);
+          expect(contrastRatio(colors['nav-focus-ring'], end)).toBeGreaterThanOrEqual(3);
+          expect(contrastRatio(colors['nav-item-current'], end)).toBeGreaterThanOrEqual(3);
+        }
+        expect(contrastRatio(colors['on-nav'], colors['nav-item-hover'])).toBeGreaterThanOrEqual(
+          4.5,
+        );
+      }
+    }
+  });
+
+  it('darkens a light colour for the navigation and keeps the amber focus ring where it shows', () => {
+    const yellow = deriveOrganizationBrand({ primary: '#FFD500' }).layer.light;
+    expect(yellow['nav-end']).not.toBe('#FFD500');
+    expect(contrastRatio('#FFFFFF', yellow['nav-item-hover'] ?? '')).toBeGreaterThanOrEqual(4.5);
+    const green = deriveOrganizationBrand({ primary: '#0F6E5A' }).layer.light;
+    expect(green['nav-focus-ring']).toBe('#F6AE2D');
+  });
+
+  it('falls back to a white focus ring when the amber would not show on the gradient', () => {
+    // A mid blue: amber on it is below 3 : 1, white passes by construction.
+    const { layer } = deriveOrganizationBrand({ primary: '#3A7CA5' });
+    const colors = resolveThemeColors(jadaratTheme, 'light', layer);
+    expect(contrastRatio('#F6AE2D', colors['nav-end'])).toBeLessThan(3);
+    expect(colors['nav-focus-ring']).toBe('#FFFFFF');
+    expect(contrastRatio(colors['nav-focus-ring'], colors['nav-end'])).toBeGreaterThanOrEqual(3);
   });
 });
 

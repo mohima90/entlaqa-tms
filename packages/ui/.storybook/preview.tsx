@@ -69,7 +69,7 @@ const withLocaleAndTheme: Decorator = (Story, context) => {
 };
 
 const BRAND_TITLES: Record<BrandId, string> = {
-  jadarat: 'Jadarat — current look (shipped)',
+  jadarat: 'Jadarat — approved design (shipped)',
   'jadarat-lms': 'Jadarat LMS — waiting for material',
   organization: 'Organization colour (FR-ADM-07)',
 };

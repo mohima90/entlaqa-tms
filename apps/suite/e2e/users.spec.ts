@@ -1,6 +1,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import { type Page, expect, test } from '@playwright/test';
 import { signInToSuite } from './sign-in';
+import { expectReadableTables } from './tables';
 
 /**
  * Users pages with real data (T-M2-04, screens 1 and 3; editing details T-M2-13) against a configured
@@ -21,6 +22,9 @@ async function signIn(
 ) {
   await signInToSuite(page, as.email, as.password);
 }
+
+/** The side navigation (the Organization Admin's home links to the same pages). */
+const mainNavigation = (page: Page) => page.getByRole('navigation', { name: 'Main navigation' });
 
 async function expectNoSeriousA11yViolations(page: Page) {
   // After an in-app navigation (router.replace + refresh) the framework swaps the page's <title> while the
@@ -43,12 +47,21 @@ test.describe('users pages', () => {
     page,
   }) => {
     await signIn(page);
-    await page.getByRole('link', { name: 'Users' }).click();
+    // The navigation's entry (the Organization Admin's home also links to Users, T-M2-21).
+    await mainNavigation(page).getByRole('link', { name: 'Users' }).click();
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Users');
     const table = page.getByTestId('users-table');
     await expect(table.getByRole('row')).toHaveCount(5); // header + admin, Sarah, Khalid, Mona
     await expect(page.getByRole('link', { name: /Invited/ })).toContainText('1');
     await expectNoSeriousA11yViolations(page);
+    // On a phone (390 px) the table scrolls in its box; no header or name is broken mid-word (T-M2-21).
+    const desktop = page.viewportSize();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expectReadableTables(page);
+    await page.goto(page.url().replace('/en/', '/ar/'));
+    await expectReadableTables(page);
+    await page.goto(page.url().replace('/ar/', '/en/'));
+    if (desktop) await page.setViewportSize(desktop);
 
     // Invited tab
     await page.getByRole('link', { name: /Invited/ }).click();
@@ -132,6 +145,11 @@ test.describe('users pages', () => {
   }) => {
     test.skip(!managerEmail || !managerPassword, 'SIGNED_IN_E2E_MANAGER_* not set');
     await signIn(page, { email: managerEmail, password: managerPassword });
+    // Not an Organization Admin: the training home and the training entries, no set-up card (T-M2-21).
+    await expect(page.getByRole('heading', { name: 'No training data yet' })).toBeVisible();
+    await expect(page.getByTestId('setup-home')).toHaveCount(0);
+    await expect(page.getByText('Coming soon').first()).toBeVisible();
+    await expect(page.getByText('Organization profile')).toHaveCount(0);
     await page.getByRole('link', { name: 'Users' }).click();
     const table = page.getByTestId('users-table');
     await expect(table.getByRole('row')).toHaveCount(3); // header + Mona herself, Khalid
@@ -249,7 +267,7 @@ test.describe('users pages', () => {
     page,
   }) => {
     await signIn(page);
-    await page.getByRole('link', { name: 'Roles & permissions' }).click();
+    await mainNavigation(page).getByRole('link', { name: 'Roles & permissions' }).click();
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Roles & permissions');
     const list = page.getByTestId('role-list');
     await expect(list.getByRole('link')).toHaveCount(14);
@@ -322,7 +340,7 @@ test.describe('users pages', () => {
     );
     await expectNoSeriousA11yViolations(page);
 
-    await form.getByRole('radio', { name: /^Training Manager/ }).check();
+    await form.getByRole('radio', { name: /^L&D Manager/ }).check();
     await form.locator('#role-learner-validUntil').fill('2030-12-31');
     await form.getByRole('checkbox', { name: /^Mentor/ }).check();
     await form.locator('#role-mentor-validFrom').fill('2026-01-01');
@@ -335,7 +353,7 @@ test.describe('users pages', () => {
 
     await page.goto(`/en/suite/admin/users/${SARA}`);
     const roles = page.getByTestId('user-roles');
-    await expect(roles).toContainText('Training ManagerPrimary role');
+    await expect(roles).toContainText('L&D ManagerPrimary role');
     await expect(roles).toContainText('Until Dec 31, 2030');
     await expect(roles).toContainText('Mentor');
     await expect(page.getByTestId('user-activity')).toContainText('Roles changed');

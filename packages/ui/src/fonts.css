@@ -1,0 +1,24 @@
+/*
+ * The product's fonts, self-hosted (ADR 0007 §4 as amended 14 Oct 2026; T-M2-21): no request to a
+ * font CDN at runtime or at build time, so builds work air-gapped and sovereign deployments serve
+ * everything themselves. The files come from the @fontsource npm packages (SIL Open Font License 1.1,
+ * notices: packages/ui/THIRD_PARTY_NOTICES.md); the bundler (Next.js, Vite) copies the woff2 files
+ * into the build. Each face carries a unicode-range, so a browser downloads only the subsets a page
+ * uses (Arabic and Latin in practice).
+ *
+ *   Poppins               — English / Latin UI text (PO decision, 14 Oct 2026)
+ *   IBM Plex Sans Arabic  — Arabic UI text, and Arabic words inside English text
+ *   IBM Plex Mono         — codes and IDs
+ *
+ * Weights 400 / 500 / 600 (regular, medium, semibold; no synthetic bold or italic). The font stacks
+ * that use these families are part of the theme (src/theme/themes/<id>.ts → --font-family-*).
+ * Organizations cannot choose fonts (BRD v2.9 FR-ADM-07).
+ */
+@import '@fontsource/poppins/400.css';
+@import '@fontsource/poppins/500.css';
+@import '@fontsource/poppins/600.css';
+@import '@fontsource/ibm-plex-sans-arabic/400.css';
+@import '@fontsource/ibm-plex-sans-arabic/500.css';
+@import '@fontsource/ibm-plex-sans-arabic/600.css';
+@import '@fontsource/ibm-plex-mono/400.css';
+@import '@fontsource/ibm-plex-mono/500.css';

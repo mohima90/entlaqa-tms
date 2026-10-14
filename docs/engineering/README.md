@@ -28,7 +28,7 @@ No Supabase project or secrets are needed to build, test or run the app: without
 |---|---|---|
 | `pnpm install` | Install with the committed lockfile (CI: `--frozen-lockfile`; dependency install scripts are blocked) | 1 |
 | `pnpm check:licenses` | Fails on disallowed licences (`scripts/lib/licenses.mjs`) | 1 |
-| `pnpm dev` | Next.js dev server for `apps/suite` on http://localhost:3000 (redirects to `/ar`) | — |
+| `pnpm dev` | Next.js dev server for `apps/suite` on http://localhost:3000 (redirects to `/en`, the default for now; Arabic at `/ar`) | — |
 | `pnpm typecheck` | `tsc --noEmit` in every package (+ `next typegen` for the app) | 2 |
 | `pnpm lint` | ESLint (type-aware, jsx-a11y, Next rules, security syntax bans) + RTL logical-properties check + `defineAction` check | 2 |
 | `pnpm format:check` / `pnpm format` | Prettier | 2 |
@@ -75,7 +75,7 @@ PW_CHROMIUM_EXECUTABLE=/path/to/chromium pnpm e2e   # or an existing Chromium bi
 ```
 apps/suite/                 Next.js 16 App Router — the web app (standalone output)
   src/proxy.ts              request proxy: host → tenant classification (placeholder), locale routing, CSP nonce. No authz.
-  src/app/[locale]/         thin route files (landing, /suite shell); Arabic default, English
+  src/app/[locale]/         thin route files (landing, /suite shell); English default for now (PO, 14 Oct 2026), Arabic
   src/lib/                  security headers, host classification, config status
   e2e/                      Playwright smoke + axe
 apps/worker/                background-job process (graphile-worker; daemon / one-pass), bundled to one file — runbook: background-jobs.md
@@ -172,7 +172,7 @@ Make the aggregate job **`CI gates`** and the CodeQL checks required status chec
 | Grants / roles | `defineAction` default runtime loads **no grants** → every action is denied (403) | Roles, role assignments and resource resolvers (M2) |
 | Audit | `defineAction` writes `platform.audit_events` rows | `platform-audit` package, `actor_type`, before/after, partitioning (M2, data model §2.5) |
 | DB types | Hand-written Drizzle definitions for the six platform tables | `pnpm db:types` (supabase gen types + drizzle-kit pull) with a drift gate (migration-conventions §8) |
-| Design tokens & components | `packages/ui` imports `docs/design/tokens/tokens.css` directly (single source of truth). Component library v1: Button, Card, TextField, Alert, Badge, AppShell — Storybook with RTL/LTR and light/dark, axe-gated in CI (T-M1-A02) | Dialog, select/combobox, date picker (Hijri/Gregorian, ADR 0007), table, toast, empty/loading states — added with the M2 screens that need them; visual regression snapshots |
+| Design tokens & components | `packages/ui` imports `docs/design/tokens/tokens.css` directly (single source of truth). Component library v1: Button, Card, TextField, Alert, Badge, AppShell (approved «Meridian» shell with the gradient navigation and phone drawer, T-M2-21), NavGroup/NavItem, Icon — Storybook with RTL/LTR and light/dark, axe-gated in CI (T-M1-A02). Fonts self-hosted from `@fontsource/*` (`packages/ui/src/fonts.css`) | Dialog, select/combobox, date picker (Hijri/Gregorian, ADR 0007), table, toast, empty/loading states — added with the M2 screens that need them; visual regression snapshots |
 | Observability | JSON logs without personal data, server-side error tracking (runtime `SENTRY_DSN`; Sentry EU / GlitchTip), `/api/health/live` + `/ready`, scheduled staging uptime check (T-M1-D06a). Runbook: [observability.md](observability.md) | Source-map upload, browser errors, GlitchTip in `infra/docker` (D06b); OpenTelemetry traces/metrics, alerting, status page (M2/M3) |
 | Background jobs and events | Outbox/inbox, graphile-worker runner as `app_queue`, dispatcher and deliveries, `apps/worker` (daemon / one pass), two replicas in the self-hosted stack, staging pass every 5 minutes from GitHub Actions (T-M2-06a; [background-jobs.md](background-jobs.md)) | Dead letters, alerts and retention housekeeping; production worker host (PO cost decision) |
 | E-mail | Delivery log (jobs-only, content removed once final), bilingual invitation template, `queueEmail`, sender with Resend and SMTP transports, `test-email` mode, Mailpit in the self-hosted stack (T-M2-06b; [email.md](email.md)) | Invitations (T-M2-07) as the first sender; in-app inbox, rules, preferences, quiet hours, status webhooks (ADR 0008) |

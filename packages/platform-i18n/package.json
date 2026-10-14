@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "i18n: locales (Arabic default + English), direction, next-intl routing, messages (ADR 0007 pending).",
+  "description": "i18n: locales (English default for now + Arabic), direction, next-intl routing, messages (ADR 0007).",
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",

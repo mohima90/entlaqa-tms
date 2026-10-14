@@ -5,10 +5,51 @@
 | **Backlog** | T-M1-A03 (suite shell design) |
 | **Requirement** | FR-STE-08 (M, R1): one navigation shell, module switcher, unified notification inbox, unified search, one approvals inbox across modules, one installable PWA with module sections — designed in R1 even when only TMS is licensed |
 | **Also** | FR-NTF-01 (notification center), FR-MGR-02 (approvals inbox), FR-LRN-04 (PWA), FR-LRN-07 (preferences), CAT-10 (Arabic search), NFR-UX-01…04, NFR-L10N-01…13, SUB-01 (feature gating), DEP-05 (Arabic-only mode) |
-| **Status** | Draft v1 — 30 Sep 2026; interactive reference in `prototype/index.html` (shell on every signed-in screen) |
+| **Status** | Draft v1 — 30 Sep 2026; interactive reference in `prototype/index.html`. **Built (T-M2-21, 14 Oct 2026):** the approved «Meridian» layout in §0 — the rest of this spec (module switcher, search, inboxes, bottom navigation, rail) is still the target |
 | **Owner** | Platform (`packages/platform-*`, `packages/ui`) — not the TMS module |
 
 The shell is a **platform component**. Modules register their navigation, search providers, notification types and approval types with the shell; they never render their own header or side navigation (Development Plan §1 Q9, BRD Appendix H.5).
+
+---
+
+## 0. What is built — the approved layout (T-M2-21, PO 14 Oct 2026)
+
+Code: `packages/ui/src/app-shell.tsx` (`AppShell`), `nav-item.tsx` (`NavGroup`, `NavItem`, `NavUnavailable`), `icons.tsx`; the app's frame `apps/suite/src/components/suite-shell.tsx`; the menus `apps/suite/src/lib/suite-navigation.ts`. Stories: «Layout/AppShell» and the «Theme preview» pages.
+
+```
+┌─────────────────┬──────────────────────────────────────────────────────────┐
+│ [J] Jadarat TMS │                             [🌐 العربية] [(M) Mona] [Sign out] │ ← white top bar, bottom hairline
+│     Al Raya Co. ├──────────────────────────────────────────────────────────┤
+│ ▣ Home          │                                                          │
+│ ORGANIZATION    │  Page (max 1280 px, white surface)                       │
+│ ▢ Org. profile  │                                                          │
+│   …  Coming soon│                                                          │
+│ PEOPLE          │                                                          │
+│ ▢ Users         │                                                          │
+└─────────────────┴──────────────────────────────────────────────────────────┘
+  264 px, full height, Jadarat gradient (slate → steel), at the inline-start edge (left in English, right in Arabic)
+```
+
+| Part | As built |
+|---|---|
+| Side navigation | Full height (sticky), 264 px, `bg-nav-gradient` = `linear-gradient(170deg, nav, nav-end)` — Jadarat slate `#2F4858` → steel `#33658A`; an organization's colour replaces it (FR-ADM-07, [theming.md](theming.md) §3). Logical properties only |
+| Organization block | Logo on a small white rounded tile (the Jadarat «J» mark until the organization's logo exists, FR-ADM-07), product name «جدارات · التدريب» / "Jadarat TMS", organization name under it (display only; "Organization:" for screen readers; `data-testid="tenant-context"`) |
+| Entries | `NavGroup` (heading labels its list) → `NavItem` (16 px line icon, `aria-hidden`; optional count) or `NavUnavailable` («قريبًا» / "Coming soon", text with `aria-disabled`). Text `on-nav` (white 92 %), headings and notes `on-nav-muted`, hover `nav-item-hover`, current page = white pill with brand-slate text and `aria-current="page"`. 36 px entries on desktop, 44 px in the drawer and on touch screens |
+| Focus | Page: 2 px ring with a 2 px gap (`--focus-ring`). Inside the navigation: 2 px Jadarat amber outline (`nav-focus-ring`), 2 px away from the entry; checked against both gradient ends |
+| Top bar | White (`header`), bottom hairline, 56 px; only controls that work today: language switch (globe + «English» / «العربية»), My profile (initial + name), sign-out. No search or notifications until they exist (§3, §5, §7) |
+| Content | `<main id="main">`, max 1280 px, 14 px UI text (Arabic 15.5 px), white surface; cards and tables with hairline borders, 8 px radius. Data tables never break a word inside a cell and keep column headers on one line: a table wider than its box scrolls inside it (base styles; e2e `expectReadableTables`) |
+| Home | Organization Admin: «إعداد منشأتك» / "Set up your organization" with links to the pages that exist and that its grants open (Users, Roles & permissions, Security policy) until the admin home (FR-ADM-14); other roles: the training home |
+| Phone and tablet (< 900 px) | The navigation is a drawer: the top bar shows a 44 px menu button (`aria-expanded`, `aria-controls="app-navigation"`), and the product name from 600 px (on phones it is in the drawer only). Open, the drawer is a modal dialog (`role="dialog"`, `aria-modal`, named like the menu button): focus moves to its close button, Tab loops inside it and the page (skip link included) is `inert`; Escape, the close button or the scrim close it and return focus to the menu button; widening the window closes it and keeps focus on the navigation (the current entry when focus was on the close button). Small buttons in the top bar (sign-out) are 44 px on touch screens. The rail (900–1199 px) and the bottom navigation (§8) are not built yet |
+
+### Menus per role (T-M2-21)
+
+Entries come from the member's grants (`navigationFor` → `suiteNavigation`); deny by default — a group appears only when one of its entries is allowed. The menu only shows or hides: every page still authorizes on the server.
+
+| Who | Menu |
+|---|---|
+| **Organization Admin** (organization-wide `platform.tenant.manage`; the role is held alone, BR-IAM-4) | Home · **Organization**: Organization profile, Branding, Custom fields, Features & plan · **Domain management**: Domains · **People**: Users, Roles & permissions · **Security**: Security policy, Audit log, Consent · **E-mail sending**: Sender settings · **Integrations**: LMS connection, HR system. Upcoming sections are «قريبًا» / "Coming soon". No training entries, no notifications (moved to the L&D Manager — BRD v2.9; [organization-admin.md](../delivery/roles/organization-admin.md)) |
+| Other roles | Home and the training module's entries (Calendar, Sessions, Courses — «قريبًا»), then **People** (Users for members who see more than themselves; Roles & permissions with organization-wide `platform.role.read`) and **Security** (Security policy with organization-wide `platform.tenant.read`, e.g. the Auditor) |
+| Preview without data (local, CI) | Every entry, so every pattern renders |
 
 ---
 
@@ -59,7 +100,7 @@ Landmarks: `<header role="banner">`, `<nav aria-label="التنقل الرئيس
 | 600–899 px | Hidden; opens as drawer from the inline-start edge (☰) | Icon → full-width overlay | Learner, instructor, manager roles |
 | < 600 px (min 360) | Drawer | Icon → full-screen search | Learner, instructor, manager roles |
 
-Coordinator, Training Manager and Tenant Admin roles are desktop-first but fully responsive (drawer + header on mobile; no bottom navigation, because their navigation is too wide for 5 slots).
+Coordinator, L&D Manager and Tenant Admin roles are desktop-first but fully responsive (drawer + header on mobile; no bottom navigation, because their navigation is too wide for 5 slots).
 
 ## 3. App header (56 px, sticky, `--z-header`)
 
@@ -183,7 +224,7 @@ Preferences apply immediately without reload, are stored on the user profile (no
 
 Items labeled *(R2)* are shown to the roles below only when the feature ships; they are listed so the IA does not change shape later. Items appear only when the user's permissions allow (Appendix B); the list is the union of the user's roles (BR-IAM-1).
 
-### 11.1 Training Coordinator / Training Manager (desktop-first)
+### 11.1 Training Coordinator / L&D Manager (desktop-first)
 | Group | Item (AR) | Item (EN) | Features |
 |---|---|---|---|
 | — | الرئيسية | Home | Today's sessions, tasks due, conflicts, sessions under minimum (SCH-08) |
@@ -242,6 +283,9 @@ Items labeled *(R2)* are shown to the roles below only when the feature ships; t
 External instructors see only assigned sessions and no directory data (Appendix B).
 
 ### 11.5 Tenant Admin
+
+> **Superseded for R1 by §0 «Menus per role»** (PO, 14 Oct 2026; BRD v2.9): Organization · Domain management · People · Security · E-mail sending · Integrations; notifications belong to the L&D Manager. The table below is the original draft.
+
 | Item (AR) | Item (EN) | Features |
 |---|---|---|
 | نظرة عامة | Overview | ADM-14 |

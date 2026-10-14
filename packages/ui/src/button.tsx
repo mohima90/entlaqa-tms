@@ -15,7 +15,8 @@ const variants: Record<ButtonVariant, string> = {
 
 /* Heights follow --size-control-*; md/lg meet the 44px touch target. */
 const sizes: Record<ButtonSize, string> = {
-  sm: 'min-h-8 px-3 text-sm',
+  /* 32 px for dense desktop layouts; 44 px on touch screens (pointer: coarse). */
+  sm: 'min-h-8 px-3 text-sm pointer-coarse:min-h-11',
   md: 'min-h-11 px-4 text-base',
   lg: 'min-h-12 px-6 text-lg',
 };

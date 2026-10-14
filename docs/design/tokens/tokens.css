@@ -32,7 +32,7 @@
   --font-weight-medium: 500;
   --font-weight-semibold: 600;
   --font-weight-bold: 700;
-  /* active script (defaults to Arabic: the product default language) */
+  /* active script: Arabic metrics unless lang="en" (every page sets lang on <html>) */
   --font-family-base: var(--font-family-arabic);
   --font-size-xs: var(--font-size-arabic-xs);
   --font-size-sm: var(--font-size-arabic-sm);

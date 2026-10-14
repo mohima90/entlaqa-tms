@@ -23,7 +23,10 @@ test.describe('signed-in flow', () => {
     );
   });
 
-  test('sign in shows the organization; sign out protects the suite again', async ({ page }) => {
+  test('sign in shows the organization; sign out protects the suite again', async ({
+    page,
+    isMobile,
+  }) => {
     await submitSignIn(page, email, password);
     // PO decision 2 (T-M2-10): the Organization Admin, without an authenticator app yet, is invited to
     // set one up and may postpone it; the choice is remembered (the later specs land on the suite).
@@ -31,7 +34,37 @@ test.describe('signed-in flow', () => {
     await expect(page.getByTestId('mfa-prompt-admin')).toBeVisible();
     await page.getByRole('button', { name: 'Not now' }).click();
     await expect(page).toHaveURL(/\/en\/suite$/);
+    // The Organization Admin's home (T-M2-21): a set-up card with the pages that exist, never the
+    // training home; its menu has the set-up sections and no training entries.
+    const setup = page.getByTestId('setup-home');
+    await expect(setup.getByRole('heading', { name: 'Set up your organization' })).toBeVisible();
+    await expect(setup.getByRole('link')).toHaveText([
+      'Users',
+      'Roles & permissions',
+      'Security policy',
+    ]);
+    await expect(page.getByText('No training data yet')).toHaveCount(0);
+    await expect(page.getByText('Calendar')).toHaveCount(0);
+    await page.goto('/ar/suite');
+    await expect(
+      page.getByTestId('setup-home').getByRole('heading', { name: 'إعداد منشأتك' }),
+    ).toBeVisible();
+    await page.goto('/en/suite');
+    // Top-bar controls are 44 px touch targets on a phone (sign-out is a small button on desktop).
+    if (isMobile) {
+      for (const control of [
+        page.getByRole('button', { name: 'Menu' }),
+        page.getByTestId('language-toggle'),
+        page.getByTestId('my-profile-link'),
+        page.getByRole('button', { name: 'Sign out' }),
+      ]) {
+        expect((await control.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+      }
+    }
+    // The organization is named in the navigation's organization block (behind the menu on a phone).
+    if (isMobile) await page.getByRole('button', { name: 'Menu' }).click();
     await expect(page.getByText(`Organization: ${organization ?? ''}`)).toBeVisible();
+    if (isMobile) await page.keyboard.press('Escape');
 
     await page.getByRole('button', { name: 'Sign out' }).click();
     await expect(page).toHaveURL(/\/en\/sign-in$/);

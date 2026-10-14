@@ -11,7 +11,10 @@ export { AppShell, type AppShellProps } from './app-shell';
 export { TextField, type TextFieldProps } from './text-field';
 export { Alert, type AlertProps, type AlertTone } from './alert';
 export { Badge, type BadgeProps, type BadgeTone } from './badge';
+export { ICON_NAMES, Icon, type IconName, type IconProps, JadaratMark } from './icons';
 export {
+  NavGroup,
+  type NavGroupProps,
   NavItem,
   type NavItemProps,
   NavUnavailable,

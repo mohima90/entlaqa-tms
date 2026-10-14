@@ -20,6 +20,7 @@
 ### 1. Locales and routing
 - next-intl with locales `ar` (default) and `en`, **always-prefixed** routes (`/ar/...`, `/en/...`). The request proxy composes next-intl's locale handling with tenant resolution (ADR 0002 §4); protected paths are matched on real URL prefixes (CLAUDE.md).
 - Locale resolution: URL → user preference → tenant default → `ar`. For **Arabic-only tenants** the proxy redirects `/en/*` to `/ar/*` and the language switcher is hidden (FR-DEP-05).
+- *Amendment (14 Oct 2026, T-M2-21):* **English is the default locale for now** (PO decision, 14 Oct 2026): `/` lands on `/en`, the last step of the resolution above is `en`, and Arabic stays fully supported at `/ar/...` with the same features. Still no Accept-Language detection and no locale cookie. Stored per-person language preferences keep their own default (database), so e-mail links follow each person's language.
 - `<html lang dir>` is set per locale in the root `[locale]` layout; all server-rendered e-mails and PDFs set `dir`/`lang` explicitly.
 - Formatting locales carry explicit Unicode extensions, e.g. `ar-SA-u-nu-latn-ca-gregory`; code never relies on a runtime's default numbering system or calendar for `ar` (they differ between CLDR versions and regional variants).
 
@@ -37,6 +38,7 @@
 
 ### 4. Fonts
 Self-hosted with `next/font/local` (no runtime or build-time call to Google Fonts, so builds work in air-gapped CI): IBM Plex Sans Arabic + IBM Plex Sans (+ Plex Mono) as in `docs/design/tokens` (SIL OFL). Arabic base size +10–15 %, line-height 1.5–1.7, no synthetic italics (NFR-L10N-02). Tenant brand fonts (ADM-07) come from an approved, licence-checked list shipped with the app. The same font files are used by the PDF renderer.
+- *Amendment (14 Oct 2026, T-M2-21):* the **Latin font is now Poppins** (PO decision, 14 Oct 2026); Arabic stays IBM Plex Sans Arabic and codes IBM Plex Mono. The fonts are self-hosted as `@font-face` rules in `packages/ui/src/fonts.css`, importing the woff2 files of the `@fontsource/*` npm packages (SIL OFL 1.1, exact versions, reviewed licence exceptions; notices in `packages/ui/THIRD_PARTY_NOTICES.md`) instead of `next/font/local`, so Storybook and the app load the same files with the theme's family names; there is still no call to a font CDN at runtime or build time. Organizations have **no font choice** (PO, 14 Oct 2026; BRD v2.9 FR-ADM-07), which replaces "tenant brand fonts from an approved list" above.
 
 ### 5. Numerals and inputs
 - Display: Western (`latn`) or Eastern Arabic (`arab`) digits per tenant default and user preference (NFR-L10N-03), applied through one formatting module (`platform-i18n/format`) used by UI, e-mail, WhatsApp/SMS text and PDFs.

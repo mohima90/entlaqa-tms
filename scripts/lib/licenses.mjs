@@ -22,7 +22,11 @@ export const ALLOWED = new Set([
   'WTFPL',
 ]);
 
-/** Reviewed exceptions: package name → reason. */
+/**
+ * Reviewed exceptions: package name → reason, or → { license, reason } when the review was for one
+ * licence only — the package then fails again if its licence changes (a new review is needed).
+ * @type {Map<string, string | { license: string, reason: string }>}
+ */
 export const EXCEPTIONS = new Map([
   [
     '@img/sharp-libvips-linux-x64',
@@ -31,6 +35,22 @@ export const EXCEPTIONS = new Map([
   ['@img/sharp-libvips-linuxmusl-x64', 'as above (musl build)'],
   ['@img/sharp-libvips-linux-arm64', 'as above (arm64 build)'],
   ['@img/sharp-libvips-darwin-arm64', 'as above (macOS build)'],
+  // Fonts (T-M2-21, ADR 0007 §4): SIL Open Font License 1.1 — free to use, bundle and embed in
+  // software; the fonts may not be sold on their own and the licence travels with them
+  // (packages/ui/THIRD_PARTY_NOTICES.md). Reviewed per package and for OFL-1.1 only.
+  [
+    '@fontsource/poppins',
+    {
+      license: 'OFL-1.1',
+      reason:
+        'Poppins font files, bundled unmodified with the app; notice in packages/ui/THIRD_PARTY_NOTICES.md',
+    },
+  ],
+  [
+    '@fontsource/ibm-plex-sans-arabic',
+    { license: 'OFL-1.1', reason: 'as above (IBM Plex Sans Arabic)' },
+  ],
+  ['@fontsource/ibm-plex-mono', { license: 'OFL-1.1', reason: 'as above (IBM Plex Mono)' }],
 ]);
 
 /** Splits an SPDX expression into identifiers, operators and parentheses. */
@@ -118,7 +138,15 @@ export function checkLicenses(byLicense) {
   for (const [license, packages] of Object.entries(byLicense)) {
     if (isAllowedExpression(license)) continue;
     for (const pkg of packages) {
-      if (EXCEPTIONS.has(pkg.name)) continue;
+      const exception = EXCEPTIONS.get(pkg.name);
+      if (typeof exception === 'string') continue;
+      if (exception && exception.license === license) continue;
+      if (exception) {
+        errors.push(
+          `${pkg.name}@${(pkg.versions ?? []).join(',')}: licence "${license}" is not the reviewed "${exception.license}"`,
+        );
+        continue;
+      }
       errors.push(
         `${pkg.name}@${(pkg.versions ?? []).join(',')}: licence "${license}" is not allowed`,
       );

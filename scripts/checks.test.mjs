@@ -340,6 +340,23 @@ describe('licence policy', () => {
       'mystery@: licence "Unknown" is not allowed',
     ]);
   });
+
+  it('accepts a font exception only under the licence it was reviewed for (OFL-1.1)', () => {
+    expect(
+      checkLicenses({
+        'OFL-1.1': [
+          { name: '@fontsource/poppins', versions: ['5.3.0'] },
+          { name: '@fontsource/ibm-plex-sans-arabic', versions: ['5.3.0'] },
+          { name: '@fontsource/ibm-plex-mono', versions: ['5.3.0'] },
+          { name: 'some-other-font', versions: ['1.0.0'] },
+        ],
+        'GPL-3.0': [{ name: '@fontsource/poppins', versions: ['6.0.0'] }],
+      }),
+    ).toEqual([
+      'some-other-font@1.0.0: licence "OFL-1.1" is not allowed',
+      '@fontsource/poppins@6.0.0: licence "GPL-3.0" is not the reviewed "OFL-1.1"',
+    ]);
+  });
 });
 
 describe('ESLint security syntax bans (packages/config/eslint)', async () => {

@@ -1,5 +1,5 @@
 import { type AppLocale, otherLocale } from '@jadarat/platform-i18n';
-import { buttonClasses } from '@jadarat/ui';
+import { Icon } from '@jadarat/ui';
 import { getTranslations } from 'next-intl/server';
 
 /** Switches the UI language, keeping the current path. `path` is locale-less, e.g. "/suite". */
@@ -12,9 +12,10 @@ export async function LanguageToggle({ locale, path }: { locale: AppLocale; path
       hrefLang={target}
       lang={target}
       aria-label={t('switchLanguageAria')}
-      className={buttonClasses({ variant: 'secondary', size: 'sm' })}
+      className="inline-flex min-h-11 items-center gap-2 rounded-md px-3 text-sm font-medium text-text-muted no-underline hover:bg-surface-hover hover:text-text"
       data-testid="language-toggle"
     >
+      <Icon name="globe" />
       {t('switchLanguage')}
     </a>
   );

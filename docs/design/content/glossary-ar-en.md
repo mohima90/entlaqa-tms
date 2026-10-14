@@ -44,7 +44,7 @@ Legend — **Form**: n = noun, v = verb/action (button form given as a verbal no
 | # | English | Arabic (chosen) | Rejected alternatives — why | Notes |
 |---|---|---|---|---|
 | 18 | Tenant Admin | مدير المنشأة | «مسؤول النظام» — IT connotation | BRD label |
-| 19 | Training Manager | مدير التدريب | — | BRD label |
+| 19 | L&D Manager (Learning & Development Manager) | مدير التعلم والتطوير | «مدير التدريب» — the role's former name, replaced by the PO on 14 Oct 2026 (BRD v2.9) | BRD label. Display name only: the role code `training_manager` is unchanged |
 | 20 | Training Coordinator | منسق التدريب | «منظم التدريب» — sounds like event organizer | BRD label |
 | 21 | Line manager | المدير المباشر | «المشرف» — lower supervisory level; «الرئيس المباشر» — acceptable in Egypt, kept as override | BRD label |
 | 22 | Department head | رئيس القسم | «مدير الإدارة» — see #7 | BRD label |

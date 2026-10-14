@@ -739,35 +739,37 @@ export async function confirmStep(
       </ul>
       {options.existing !== 'update_only' && roleCounts.size > 0 ? (
         <Card title={t('confirm.rolesHeading')} headingLevel={3}>
-          <table className="w-full border-collapse text-start">
-            <caption className="sr-only">{t('confirm.rolesCaption')}</caption>
-            <thead className="bg-surface-sunken text-sm">
-              <tr>
-                <th scope="col" className="px-3 py-2 text-start">
-                  {t('confirm.rolesColumns.role')}
-                </th>
-                <th scope="col" className="px-3 py-2 text-start">
-                  {t('confirm.rolesColumns.count')}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {[...roleCounts.entries()]
-                .sort((a, b) => b[1] - a[1])
-                .map(([code, n]) => (
-                  <tr key={code} className="border-t border-border">
-                    <th scope="row" className="px-3 py-2 text-start font-medium">
-                      {roleName(code, locale)}
-                    </th>
-                    <td className="px-3 py-2">
-                      {code === options.defaultRole && defaults > 0
-                        ? t('confirm.roleDefaultCount', { count: n, defaults })
-                        : format.number(n, 'integer')}
-                    </td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-start">
+              <caption className="sr-only">{t('confirm.rolesCaption')}</caption>
+              <thead className="bg-surface-sunken text-sm">
+                <tr>
+                  <th scope="col" className="px-3 py-2 text-start">
+                    {t('confirm.rolesColumns.role')}
+                  </th>
+                  <th scope="col" className="px-3 py-2 text-start">
+                    {t('confirm.rolesColumns.count')}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...roleCounts.entries()]
+                  .sort((a, b) => b[1] - a[1])
+                  .map(([code, n]) => (
+                    <tr key={code} className="border-t border-border">
+                      <th scope="row" className="px-3 py-2 text-start font-medium">
+                        {roleName(code, locale)}
+                      </th>
+                      <td className="px-3 py-2">
+                        {code === options.defaultRole && defaults > 0
+                          ? t('confirm.roleDefaultCount', { count: n, defaults })
+                          : format.number(n, 'integer')}
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
           <p className="mb-0 mt-3 text-sm">
             {additional.length > 0
               ? t('confirm.additionalRoles', {
@@ -1282,29 +1284,33 @@ export async function resultView(locale: AppLocale, view: UserImportView): Promi
       <Card title={t('result.reportHeading')} data-testid="result-report">
         {report}
         {reasons.length > 0 ? (
-          <table className="mt-4 w-full border-collapse text-start">
-            <caption className="mb-2 text-start font-medium">{t('result.reasonsCaption')}</caption>
-            <thead className="bg-surface-sunken text-sm">
-              <tr>
-                <th scope="col" className="px-3 py-2 text-start">
-                  {t('result.reasonsColumns.reason')}
-                </th>
-                <th scope="col" className="px-3 py-2 text-start">
-                  {t('result.reasonsColumns.rows')}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {reasons.map((reason) => (
-                <tr key={reason.code} className="border-t border-border">
-                  <th scope="row" className="px-3 py-2 text-start font-medium">
-                    {t(`codes.${reason.code}` as 'codes.EMAIL_INVALID')}
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full border-collapse text-start">
+              <caption className="mb-2 text-start font-medium">
+                {t('result.reasonsCaption')}
+              </caption>
+              <thead className="bg-surface-sunken text-sm">
+                <tr>
+                  <th scope="col" className="px-3 py-2 text-start">
+                    {t('result.reasonsColumns.reason')}
                   </th>
-                  <td className="px-3 py-2">{format.number(reason.rows, 'integer')}</td>
+                  <th scope="col" className="px-3 py-2 text-start">
+                    {t('result.reasonsColumns.rows')}
+                  </th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {reasons.map((reason) => (
+                  <tr key={reason.code} className="border-t border-border">
+                    <th scope="row" className="px-3 py-2 text-start font-medium">
+                      {t(`codes.${reason.code}` as 'codes.EMAIL_INVALID')}
+                    </th>
+                    <td className="px-3 py-2">{format.number(reason.rows, 'integer')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         ) : null}
       </Card>
 

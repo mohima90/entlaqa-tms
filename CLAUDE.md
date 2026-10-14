@@ -46,7 +46,7 @@ The delivery team is the **user as Product Owner + Claude Code sessions and sub-
 
 - **Security:** no known critical/high vulnerabilities at any release; deny-by-default authorization; validate all inputs; no secrets or personal data in code or logs.
 - **Tenant isolation:** every table has row-level security (RLS) and an automated cross-tenant test. Tenant ID comes from the server-verified JWT, never from client input.
-- **Arabic-first:** Arabic is the default language; RTL via CSS logical properties; Hijri/Gregorian dates; Arabic copy from the UX writer/glossary, not machine translation.
+- **Arabic-first → English default for now (PO, 14 Oct 2026):** English is the default language until the PO says otherwise; Arabic stays fully supported with the same features; RTL via CSS logical properties; Hijri/Gregorian dates; Arabic copy from the UX writer/glossary, not machine translation.
 - **Accessibility:** WCAG 2.2 AA in Arabic and English.
 - **Sovereign-ready:** everything must run self-hosted in-country (KSA/UAE); no hard dependency on Vercel-only or other vendor-only features in critical paths.
 - **Suite-ready:** platform services live in platform packages; modules never read another module's tables directly (use services or events).

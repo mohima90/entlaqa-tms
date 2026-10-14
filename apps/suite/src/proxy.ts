@@ -5,7 +5,7 @@
  *  1. on EVERY request path (pages, /api, files with an extension): remove client-supplied internal
  *     headers (`x-jadarat-*`, `x-nonce`), set the host classification and a per-request CSP nonce
  *  2. host → tenant resolution (placeholder classification; DB lookup in T-M1-D03)
- *  3. locale routing (/ar default, /en) via next-intl — page paths only
+ *  3. locale routing (/en default, /ar) via next-intl — page paths only
  *  4. Supabase session refresh on page requests (lib/session-refresh.ts, T-M1-D03)
  * It makes NO authorization decisions: pages verify the session themselves and fail closed.
  * Only `/_next/static/*` (immutable build assets) bypasses the proxy; next.config.ts gives those a

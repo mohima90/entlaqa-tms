@@ -12,10 +12,19 @@ function forwarded(response: Response, name: string) {
 }
 
 describe('proxy', () => {
-  it('redirects the root to the Arabic default locale', () => {
+  it('redirects the root to the English default locale (PO, 14 Oct 2026)', () => {
     const response = run('http://localhost:3000/');
     expect(response.status).toBe(307);
-    expect(response.headers.get('location')).toBe('http://localhost:3000/ar');
+    expect(response.headers.get('location')).toBe('http://localhost:3000/en');
+  });
+
+  it('ignores the browser language: an Arabic browser also lands in English (no detection)', () => {
+    const response = run('http://localhost:3000/', { 'accept-language': 'ar-SA,ar;q=0.9' });
+    expect(response.headers.get('location')).toBe('http://localhost:3000/en');
+  });
+
+  it('keeps Arabic fully reachable at /ar', () => {
+    expect(run('http://localhost:3000/ar/suite').status).toBe(200);
   });
 
   it('passes locale-prefixed routes through with a nonce-based CSP on request and response', () => {

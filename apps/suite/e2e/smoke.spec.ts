@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { type Page, expect, test } from '@playwright/test';
+import { expectReadableTables } from './tables';
 
 /**
  * Smoke E2E (Development Plan §5.3 gates 7–8): Arabic + English render, `dir`, no console errors
@@ -111,10 +112,24 @@ for (const { path, lang, dir, heading } of pages) {
   });
 }
 
-test('the root redirects to Arabic', async ({ page }) => {
+test('the root redirects to English, the default for now (PO, 14 Oct 2026)', async ({ page }) => {
   await page.goto('/');
+  await expect(page).toHaveURL(/\/en$/);
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+  await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
+});
+
+test('an Arabic browser still lands in English at the root, and Arabic stays one click away', async ({
+  browser,
+}) => {
+  const context = await browser.newContext({ locale: 'ar-SA' });
+  const page = await context.newPage();
+  await page.goto('/');
+  await expect(page).toHaveURL(/\/en$/);
+  await page.getByTestId('language-toggle').click();
   await expect(page).toHaveURL(/\/ar$/);
   await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+  await context.close();
 });
 
 test('the language toggle switches between Arabic and English on the same page', async ({
@@ -181,16 +196,137 @@ test('the users pages explain that they need a configured environment (preview)'
   page,
   isMobile,
 }) => {
-  if (isMobile) {
-    // The side navigation is desktop-only for now (AppShell); open the page directly.
-    await page.goto('/en/suite/admin/users');
-  } else {
-    await page.goto('/en/suite');
-    await page.getByRole('link', { name: 'Users' }).click();
-    await expect(page.getByRole('link', { name: 'Users' })).toHaveAttribute('aria-current', 'page');
-  }
+  await page.goto('/en/suite');
+  // On a phone the navigation is behind the menu button (T-M2-21).
+  // (The preview home also links to Users from its set-up card: use the navigation's entry.)
+  const navigation = page.getByRole('navigation', { name: 'Main navigation' });
+  if (isMobile) await page.getByRole('button', { name: 'Menu' }).click();
+  await navigation.getByRole('link', { name: 'Users' }).click();
   await expect(page).toHaveURL(/\/en\/suite\/admin\/users$/);
+  if (isMobile) await page.getByRole('button', { name: 'Menu' }).click();
+  await expect(navigation.getByRole('link', { name: 'Users' })).toHaveAttribute(
+    'aria-current',
+    'page',
+  );
+  if (isMobile) await page.keyboard.press('Escape');
   await expect(page.getByTestId('users-not-configured')).toContainText('connected to the database');
   await page.getByTestId('language-toggle').click();
   await expect(page).toHaveURL(/\/ar\/suite\/admin\/users$/);
 });
+
+// The approved shell (T-M2-21): navigation at the inline-start edge, a drawer on phones.
+for (const { locale, menu, close, home } of [
+  { locale: 'en', menu: 'Menu', close: 'Close menu', home: 'Home' },
+  { locale: 'ar', menu: 'القائمة', close: 'إغلاق القائمة', home: 'الرئيسية' },
+] as const) {
+  test(`${locale}: the navigation sits at the inline-start edge (desktop) or opens as a drawer (phone)`, async ({
+    page,
+    isMobile,
+  }) => {
+    await page.goto(`/${locale}/suite`);
+    const navigation = page.locator('#app-navigation');
+    const menuButton = page.getByRole('button', { name: menu, exact: true });
+    if (!isMobile) {
+      await expect(menuButton).toBeHidden();
+      await expect(navigation).toBeVisible();
+      const box = await navigation.boundingBox();
+      const width = await page.evaluate(() => document.documentElement.clientWidth);
+      // Left in English, right in Arabic.
+      if (locale === 'en') expect(box?.x ?? -1).toBe(0);
+      else expect(Math.round((box?.x ?? 0) + (box?.width ?? 0))).toBe(width);
+      await expect(navigation.getByRole('link', { name: home })).toHaveAttribute(
+        'aria-current',
+        'page',
+      );
+      return;
+    }
+    // Phone: closed, then a disclosure that moves focus in and gives it back.
+    await expect(navigation).toBeHidden();
+    await expect(menuButton).toHaveAttribute('aria-expanded', 'false');
+    const size = await menuButton.boundingBox();
+    expect(size?.width ?? 0).toBeGreaterThanOrEqual(44);
+    expect(size?.height ?? 0).toBeGreaterThanOrEqual(44);
+    await menuButton.click();
+    await expect(navigation).toBeVisible();
+    await expect(menuButton).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.getByRole('button', { name: close })).toBeFocused();
+    // Open, the drawer is a modal dialog named like the menu button; the page behind it (skip link
+    // included) is inert.
+    const dialog = page.getByRole('dialog', { name: menu });
+    await expect(dialog).toHaveAttribute('aria-modal', 'true');
+    expect(await page.locator('main#main').evaluate((el) => el.closest('[inert]') !== null)).toBe(
+      true,
+    );
+    await expect(page.locator('a[href="#main"]')).toHaveAttribute('inert', '');
+    // Tab loops inside: from the last entry back to the close button, and Shift+Tab the other way.
+    const entries = dialog.locator('a[href], button');
+    await entries.last().focus();
+    await page.keyboard.press('Tab');
+    await expect(page.getByRole('button', { name: close })).toBeFocused();
+    await page.keyboard.press('Shift+Tab');
+    await expect(entries.last()).toBeFocused();
+    // A modal opened over the drawer (e.g. the idle-session warning) keeps its own Tab order.
+    await page.evaluate(() => {
+      const modal = document.createElement('dialog');
+      modal.id = 'over-drawer';
+      for (const label of ['First', 'Second']) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = label;
+        modal.append(button);
+      }
+      document.body.append(modal);
+      modal.showModal();
+    });
+    const overDrawer = page.locator('#over-drawer');
+    await expect(overDrawer.getByRole('button', { name: 'First' })).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(overDrawer.getByRole('button', { name: 'Second' })).toBeFocused();
+    await page.evaluate(() => {
+      const modal = document.querySelector<HTMLDialogElement>('#over-drawer');
+      modal?.close();
+      modal?.remove();
+    });
+    await expect(navigation).toBeVisible();
+    await page.getByRole('button', { name: close }).focus();
+    const results = await new AxeBuilder({ page })
+      .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
+      .analyze();
+    expect(
+      results.violations
+        .filter((v) => v.impact === 'serious' || v.impact === 'critical')
+        .map((v) => `${v.id}: ${v.help} (${v.nodes.length})`),
+    ).toEqual([]);
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    expect(overflow).toBeLessThanOrEqual(0);
+    await page.keyboard.press('Escape');
+    await expect(navigation).toBeHidden();
+    await expect(menuButton).toBeFocused();
+    await expect(menuButton).toHaveAttribute('aria-expanded', 'false');
+    // The close button closes it too.
+    await menuButton.click();
+    await page.getByRole('button', { name: close }).click();
+    await expect(navigation).toBeHidden();
+    await expect(menuButton).toBeFocused();
+    // Widening the window with the drawer open: the navigation stays in place, no longer a dialog,
+    // and focus moves from the (now hidden) close button to the current entry, not to the body.
+    await menuButton.click();
+    await expect(page.getByRole('button', { name: close })).toBeFocused();
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await expect(navigation).toBeVisible();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(navigation.getByRole('link', { name: home })).toBeFocused();
+  });
+}
+
+// Tables on phones and desktops (T-M2-21): the roles matrix renders without data in the preview.
+for (const locale of ['en', 'ar'] as const) {
+  test(`${locale}: table cells never break inside a word, and wide tables scroll in their box`, async ({
+    page,
+  }) => {
+    await page.goto(`/${locale}/suite/admin/roles?role=hr_manager`);
+    await expectReadableTables(page);
+  });
+}

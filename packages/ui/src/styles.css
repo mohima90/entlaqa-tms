@@ -5,10 +5,20 @@
  *   1. tokens.css — the brand-neutral foundation (type scale, spacing, motion, z-index, sizes);
  *   2. themes/jadarat.css — the shipped brand theme (colours, fonts, radii, shadows), generated from
  *      src/theme/themes/jadarat.ts. Swapping the look = importing another theme file here.
+ *   then fonts.css — the self-hosted font files (@font-face only).
  * An organization's brand colours (FR-ADM-07) are a third layer loaded after these (src/theme).
  */
 @import '../../../docs/design/tokens/tokens.css';
 @import '../../../docs/design/tokens/themes/jadarat.css';
+/* Self-hosted fonts (Poppins, IBM Plex Sans Arabic, IBM Plex Mono) — src/fonts.css. */
+@import './fonts.css';
+
+/* The side navigation's background: the gradient from `nav` to `nav-end` (a plain colour first, for
+   forced-colours mode and old browsers). */
+@utility bg-nav-gradient {
+  background-color: var(--color-nav);
+  background-image: linear-gradient(170deg, var(--color-nav), var(--color-nav-end));
+}
 
 @layer base {
   html {
@@ -28,10 +38,43 @@
     overflow-wrap: anywhere;
   }
 
+  /* Text marked as Arabic uses IBM Plex Sans Arabic first, also inside an English page (and the
+     reverse), e.g. the «العربية» language switch. */
+  [lang='ar'] {
+    font-family: var(--font-family-arabic);
+  }
+
+  [lang='en'] {
+    font-family: var(--font-family-latin);
+  }
+
   :focus-visible {
     outline: none;
     box-shadow: var(--focus-ring);
     border-radius: var(--radius-sm);
+  }
+
+  /* Inside the side navigation (data-nav-scope) the ring sits on the navigation gradient: an outline in
+     `nav-focus-ring`, 2 px away from the entry (contrast checked on both gradient ends). */
+  [data-nav-scope] :focus-visible {
+    box-shadow: none;
+    outline: 2px solid var(--color-nav-focus-ring);
+    outline-offset: 2px;
+  }
+
+  /* Data tables: body text may break anywhere (long e-mails in prose), but never a word inside a table
+     cell — that squeezed columns until headers broke letter by letter on phones. A table wider than its
+     box scrolls inside its `overflow-x-auto` wrapper; column headers stay on one line; free text in a
+     cell still wraps between words. The table is the containing block of its absolutely positioned
+     content (e.g. `sr-only` text in a cell), so that content scrolls and clips with the table instead of
+     widening the page. */
+  table {
+    position: relative;
+    overflow-wrap: normal;
+  }
+
+  th[scope='col'] {
+    white-space: nowrap;
   }
 
   h1,

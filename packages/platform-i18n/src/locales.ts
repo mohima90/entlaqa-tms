@@ -1,7 +1,10 @@
-/** Supported locales. Arabic is the product default (CLAUDE.md non-negotiable: Arabic-first). */
+/**
+ * Supported locales. English is the default for now (PO decision, 14 Oct 2026; CLAUDE.md "Arabic-first
+ * → English default for now"); Arabic stays fully supported with the same features at `/ar/...`.
+ */
 export const locales = ['ar', 'en'] as const;
 export type AppLocale = (typeof locales)[number];
-export const defaultLocale: AppLocale = 'ar';
+export const defaultLocale: AppLocale = 'en';
 
 export type Direction = 'rtl' | 'ltr';
 

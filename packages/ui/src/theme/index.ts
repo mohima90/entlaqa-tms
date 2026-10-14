@@ -16,6 +16,8 @@ export {
   COLOR_ROLES,
   CONTRAST_PAIRS,
   CONTRAST_USE_LABEL,
+  NAV_ROLES,
+  type NavRole,
   type ColorMode,
   type ColorRole,
   type ContrastPair,

@@ -96,6 +96,33 @@ begin
 end $$;
 rollback;
 
+
+-- The Auditor reads the organization profile (BRD Appendix B, PO decision 14 Oct 2026) but changes nothing:
+-- the Organization Admin gives uM2 (…c05, a learner of A) the Auditor role in this transaction.
+begin;
+set local role authenticated;
+do $$
+declare
+  v_a constant uuid := 'a0000000-0000-4000-8000-000000000001';
+begin
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1', v_a,
+                                             'a1000000-0000-4000-8000-0000000000a1'));
+  insert into platform.role_assignments (tenant_id, membership_id, role_code, is_primary)
+  select m.tenant_id, m.id, 'auditor', false from platform.tenant_memberships m
+  where m.user_id = '00000000-0000-4000-8000-000000000c05' and m.tenant_id = v_a;
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c05', '10000000-0000-4000-8000-000000000c51', v_a,
+                                             'a1000000-0000-4000-8000-000000000c05') || tests.fresh_code());
+  perform tests.assert('auditor' = any (private.actor_role_codes(v_a, '00000000-0000-4000-8000-000000000c05')),
+    'uM2 is an Auditor now');
+  perform tests.assert(not private.actor_may_manage_tenant(v_a), 'an Auditor may not manage the organization');
+  perform tests.assert_eq((select count(*) from platform.tenant_settings), 1::bigint, 'the Auditor reads the settings');
+  perform tests.assert_eq(tests.rows_affected('update platform.tenant_settings set currency_code = ''AED'''), 0::bigint,
+    'an Auditor changes no setting');
+  perform tests.assert_eq(tests.rows_affected('update platform.tenants set name_en = ''Audited'', name_ar = ''مدقق'''), 0::bigint,
+    'an Auditor cannot rename the organization');
+end $$;
+rollback;
+
 -- B's Organization Admin changes B's settings, never A's; a member of A and B sees the settings of
 -- the organization the session acts in only.
 begin;

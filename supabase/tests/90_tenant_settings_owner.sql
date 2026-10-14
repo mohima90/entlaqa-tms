@@ -169,8 +169,9 @@ returns void language sql as $$
 $$;
 
 begin;
--- (English is the default since the PO decision of 14 Oct 2026; set explicitly so the test says so.)
-update platform.tenant_settings set default_locale = 'en' where tenant_id = 'a0000000-0000-4000-8000-000000000001';
+-- Arabic as the organization's default here: the import's own fallback is English (the platform default
+-- since the PO decision of 14 Oct 2026), so a test with 'en' could not tell the two apart.
+update platform.tenant_settings set default_locale = 'ar' where tenant_id = 'a0000000-0000-4000-8000-000000000001';
 select tests.import_file('a5000000-0000-4000-8000-0000000000f1', 'a0000000-0000-4000-8000-000000000001',
                          '00000000-0000-4000-8000-0000000000ab', 'f0a00000-0000-4000-8000-0000000000f1');
 insert into platform.user_imports (id, tenant_id, created_by, created_by_person, file_id, file_name, file_size, status,
@@ -183,7 +184,7 @@ values ('a5000000-0000-4000-8000-0000000000f1', 'a0000000-0000-4000-8000-0000000
 select pg_temp.stage('a5000000-0000-4000-8000-0000000000f1', 2,
   '{"email": "lang.none@imp.test", "first_name_ar": "بلا", "family_name_ar": "لغة"}');
 select pg_temp.stage('a5000000-0000-4000-8000-0000000000f1', 3,
-  '{"email": "lang.ar@imp.test", "first_name_ar": "عربي", "family_name_ar": "صريح", "language": "ar"}');
+  '{"email": "lang.en@imp.test", "first_name_ar": "إنجليزي", "family_name_ar": "صريح", "language": "en"}');
 select pg_temp.stage('a5000000-0000-4000-8000-0000000000f1', 4,
   '{"email": "noacc@imp.test", "first_name_ar": "بلا", "family_name_ar": "حساب"}');
 select pg_temp.become_worker('a0000000-0000-4000-8000-000000000001');
@@ -211,8 +212,8 @@ begin
                            join platform.persons p on p.id = r.person_id
                            join platform.invitations v on v.id = r.invitation_id
                            where r.import_id = i),
-    '2:added:en:en,3:added:ar:ar,4:added:ar:ar',
-    'no language in the file: the organization''s (English); given: kept; invited again: the person''s own');
+    '2:added:ar:ar,3:added:en:en,4:added:ar:ar',
+    'no language in the file: the organization''s (Arabic, not the fallback); given (English): kept; invited again: the person''s own');
 end $$;
 rollback;
 \echo '90_tenant_settings_owner: ok'

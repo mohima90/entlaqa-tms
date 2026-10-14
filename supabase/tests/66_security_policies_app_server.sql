@@ -64,6 +64,19 @@ begin
   perform tests.assert((select session_idle_minutes = 20 and version = 3
                                and updated_by = 'a1000000-0000-4000-8000-000000000c09'
                         from platform.security_policies), 'stamped with the second editor, version 3');
+  -- The AAL2 and code-age helpers themselves (still security-relevant: removing one's own confirmed app,
+  -- 68, and remembering a browser after the sign-in code, 71): a malformed code time is not fresh; a code
+  -- 14 minutes old is (the boundary is 15); a session through a confirmed app is active and at AAL2.
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c09', '10000000-0000-4000-8000-000000000c91', v_a,
+                                             'a1000000-0000-4000-8000-000000000c09') || '{"aal": "aal2", "code_at": "1.7e9"}');
+  perform tests.assert(not private.request_code_fresh(), 'a malformed code time: not fresh');
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c09', '10000000-0000-4000-8000-000000000c91', v_a,
+                                             'a1000000-0000-4000-8000-000000000c09') || tests.fresh_code(interval '14 minutes'));
+  perform tests.assert(private.request_code_fresh(), 'a code from 14 minutes ago is fresh');
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000c09', '10000000-0000-4000-8000-000000000c91', v_a,
+                                             'a1000000-0000-4000-8000-000000000c09') || tests.fresh_code());
+  perform tests.assert(private.request_aal2(), 'uA2 (confirmed app) is at AAL2');
+  perform tests.assert((select active and aal2 from private.request_session_facts()), 'session facts: active, AAL2');
   -- … but only the settings: not the stamps, the start of a requirement or the organization.
   perform tests.assert_privilege_denied($q$update platform.security_policies set updated_by = null$q$, 'updated_by is not updatable');
   perform tests.assert_privilege_denied($q$update platform.security_policies set mfa_required_since = now()$q$,

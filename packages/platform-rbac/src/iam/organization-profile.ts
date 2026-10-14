@@ -122,7 +122,7 @@ function pick(
   profile: OrganizationProfile,
   keys: readonly (keyof OrganizationProfile)[],
 ): Partial<OrganizationProfile> {
-  return Object.fromEntries(keys.map((key) => [key, profile[key]])) as Partial<OrganizationProfile>;
+  return Object.fromEntries(keys.map((key) => [key, profile[key]]));
 }
 
 export function updateOrganizationProfileActionDefinition(): ActionDefinition<

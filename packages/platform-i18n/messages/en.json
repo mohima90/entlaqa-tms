@@ -34,7 +34,7 @@
     "emptyTitle": "No training data yet",
     "emptyBody": "Sessions and courses will appear here once the Training module is set up for your organization.",
     "setupTitle": "Set up your organization",
-    "setupBody": "Invite your people, check their roles and set your security policy. More set-up pages are coming soon.",
+    "setupBody": "Fill in your organization profile, invite your people, check their roles and set your security policy. More set-up pages are coming soon.",
     "comingSoon": "Coming soon",
     "users": "Users",
     "roles": "Roles & permissions",
@@ -1625,5 +1625,97 @@
       "ROLE_REPEATED": "Role repeated in the row"
     },
     "heldSummary": "{count, plural, one {one invitation not sent yet} other {{count, number, integer} invitations not sent yet}}"
+  },
+  "organizationProfile": {
+    "title": "Organization profile",
+    "breadcrumbLabel": "Breadcrumb",
+    "breadcrumbSection": "Organization",
+    "intro": "How your organization appears in Jadarat TMS, and the defaults everyone starts with. People can still change their own language.",
+    "notConfigured": "The organization profile isn't available in this environment yet.",
+    "stepUp": "Changing the organization profile needs a verification code from your authenticator app.",
+    "stepUpLink": "Verify with the authenticator app",
+    "stepUpAgain": "Saving needs a code from your authenticator app entered in the last 15 minutes. Your changes weren't saved.",
+    "organization": {
+      "title": "Organization",
+      "intro": "Shown in the sidebar, on e-mails and on certificates.",
+      "nameEn": "Display name (English)",
+      "nameEnHint": "Up to 80 characters.",
+      "nameAr": "Display name (Arabic)",
+      "nameArHint": "Shown when the interface is in Arabic. Up to 80 characters.",
+      "industry": "Industry",
+      "industryChoose": "Choose an industry",
+      "country": "Country",
+      "countryChoose": "Choose a country",
+      "countryHint": "Choosing a country suggests its currency, timezone and working week."
+    },
+    "defaults": {
+      "title": "Defaults",
+      "intro": "Used for new users, dates, amounts and reports.",
+      "currency": "Currency",
+      "timeZone": "Timezone",
+      "fiscalYear": "Fiscal year starts in",
+      "fiscalYearHint": "Training plans and budgets follow this year.",
+      "language": "Default language",
+      "languageHint": "For new users and your organization's e-mails. Each person can switch in My profile."
+    },
+    "calendar": {
+      "title": "Calendar & working week",
+      "intro": "How dates are shown, and when training can be scheduled.",
+      "dateDisplay": "Date display",
+      "displays": {
+        "gregorian": "Gregorian",
+        "hijri": "Hijri (Umm al-Qura)",
+        "dual": "Both"
+      },
+      "preview": "Today, as it will be shown",
+      "workingDays": "Working days",
+      "workingDaysHint": "Sessions on other days get a warning before they are saved.",
+      "hoursStart": "Working hours start",
+      "hoursEnd": "Working hours end",
+      "hoursHint": "24-hour time, for example 08:00.",
+      "branchesNote": "Branches can have their own working week and hours (set by HR)."
+    },
+    "notes": {
+      "label": "Tips",
+      "countryTitle": "Country fills in the rest",
+      "countryBody": "When you pick a country we suggest its currency, timezone, working week and date display. Check them, then save.",
+      "notCollectedTitle": "Not collected",
+      "notCollectedBody": "We don't ask for legal or registration details such as commercial registration or VAT number."
+    },
+    "presetApplied": "Suggestions for {country} filled in. Check them, then save.",
+    "lastChanged": "Last changed by {name} · {date}",
+    "lastChangedDefault": "Not changed since your organization was set up.",
+    "cancel": "Cancel",
+    "save": "Save changes",
+    "saving": "Saving…",
+    "saved": "Organization profile saved.",
+    "noChanges": "There are no changes to save.",
+    "fieldErrors": {
+      "nameRequired": "Enter the display name.",
+      "nameTooLong": "Use at most 80 characters.",
+      "industryRequired": "Choose an industry.",
+      "countryRequired": "Choose a country.",
+      "daysRequired": "Choose at least one working day.",
+      "timeInvalid": "Enter the time as HH:MM, for example 08:00.",
+      "endBeforeStart": "The end must be after the start.",
+      "invalid": "Check this value."
+    },
+    "industries": {
+      "government": "Government",
+      "banking_financial": "Banking & financial services",
+      "insurance": "Insurance",
+      "healthcare": "Healthcare",
+      "education": "Education",
+      "oil_gas_energy": "Oil, gas & energy",
+      "manufacturing": "Manufacturing",
+      "retail_consumer": "Retail & consumer goods",
+      "telecom_technology": "Telecommunications & technology",
+      "construction_real_estate": "Construction & real estate",
+      "transport_logistics": "Transport & logistics",
+      "hospitality_tourism": "Hospitality & tourism",
+      "professional_services": "Professional services",
+      "non_profit": "Non-profit",
+      "other": "Other"
+    }
   }
 }

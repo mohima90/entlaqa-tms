@@ -8,6 +8,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./hijri": "./src/hijri.ts",
+    "./regional-presets": "./src/regional-presets.ts",
+    "./text": "./src/text.ts",
     "./routing": "./src/routing.ts",
     "./messages/ar.json": "./messages/ar.json",
     "./messages/en.json": "./messages/en.json"

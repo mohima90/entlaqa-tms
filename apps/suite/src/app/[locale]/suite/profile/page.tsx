@@ -4,6 +4,7 @@ import {
   type AppLocale,
   DEFAULT_CALENDAR,
   DEFAULT_NUMBERING_SYSTEM,
+  type DisplayDateFormatter,
   formatHijriDate,
 } from '@jadarat/platform-i18n';
 import { routing } from '@jadarat/platform-i18n/routing';
@@ -27,6 +28,7 @@ import { formStateFrom } from '../../../../lib/profile-form';
 import { profileErrorTexts } from '../../../../lib/profile-texts';
 import { sessionLabels, sessionRows } from '../../../../lib/sessions-view';
 import { getSuiteContext } from '../../../../lib/suite-context';
+import { pageDates } from '../../../../lib/page-dates';
 import { myProfileQuery, mySecurityQuery } from '../../../../lib/users-queries';
 import { describeUserAgent } from '../../../../lib/user-agent';
 import { localizedName } from '../../../../lib/users-view';
@@ -71,6 +73,7 @@ export default async function MyProfilePage({ params }: { params: Promise<{ loca
           details={result.value.details}
           profile={result.value.profile}
           security={security.ok ? security.value : null}
+          dates={pageDates(locale, context)}
         />
       );
     }
@@ -89,8 +92,11 @@ async function MyProfile({
   details,
   profile,
   security,
+  dates,
 }: {
   locale: AppLocale;
+  /** Dates as the organization shows them (T-M2-22). */
+  dates: DisplayDateFormatter;
   details: Parameters<typeof formStateFrom>[0];
   profile: UserProfile;
   security: Extract<Awaited<ReturnType<typeof mySecurityQuery>>, { ok: true }>['value'] | null;
@@ -288,7 +294,7 @@ async function MyProfile({
             <p className="mb-4 mt-0 text-text-muted">{t('sessions.intro')}</p>
             <SessionsTable
               target={{ kind: 'own' }}
-              sessions={await sessionRows(locale, security.sessions)}
+              sessions={await sessionRows(locale, security.sessions, dates)}
               labels={sessionLabels(locale)}
               errors={errors}
             />

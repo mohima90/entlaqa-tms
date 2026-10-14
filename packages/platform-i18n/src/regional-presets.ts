@@ -101,7 +101,7 @@ export function applyPreset<
   T extends {
     readonly currencyCode: string;
     readonly timeZone: string;
-    readonly workingDays: readonly Weekday[];
+    readonly workingDays: readonly number[];
     readonly dateDisplay: DateDisplay;
   },
 >(values: T, preset: RegionalPreset): T {

@@ -111,6 +111,13 @@ const PATHS = {
       <path d="M12 16v5" />
     </>
   ),
+  // A note or tip (organization profile, T-M2-22).
+  info: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 11v5M12 8h.01" />
+    </>
+  ),
   sync: (
     <>
       <path d="M20 11a8 8 0 0 0-14.3-4.9L4 8" />

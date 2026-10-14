@@ -16,9 +16,12 @@ import {
 import { type ErrorTexts, errorText } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
 import { fieldErrorCodes } from '../profile/field-errors';
-import { SelectField, type UnitChoice } from './edit-user-form';
+import { SelectField } from '../select-field';
+import type { UnitChoice } from './edit-user-form';
 
 export interface InviteUserFormProps {
+  /** The organization's default language for new people (T-M2-22): the invitation language preselected. */
+  readonly defaultLocale: 'ar' | 'en';
   readonly departments: readonly UnitChoice[];
   readonly branches: readonly UnitChoice[];
   readonly managers: readonly ManagerChoice[];
@@ -62,7 +65,7 @@ export function InviteUserForm(props: InviteUserFormProps) {
   const [allRoles, setAllRoles] = useState(false);
   const [primary, setPrimary] = useState('');
   const [additional, setAdditional] = useState<readonly string[]>([]);
-  const [invitationLocale, setInvitationLocale] = useState<'ar' | 'en'>('ar');
+  const [invitationLocale, setInvitationLocale] = useState<'ar' | 'en'>(props.defaultLocale);
   const locked = lockedRoleCodes(catalogue, props.privilegedAllowed);
   const soleBlocked = (code: string, as: 'primary' | 'additional') =>
     blockedBySole(code, as, primary, additional, props.soleRoles);

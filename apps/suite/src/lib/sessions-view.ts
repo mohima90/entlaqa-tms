@@ -1,19 +1,22 @@
 import 'server-only';
 import type { MySignInSession, SignInSession } from '@jadarat/platform-db';
 import { getMessages } from '@jadarat/platform-i18n';
-import type { AppLocale } from '@jadarat/platform-i18n';
-import { getFormatter, getTranslations } from 'next-intl/server';
+import type { AppLocale, DisplayDateFormatter } from '@jadarat/platform-i18n';
+import { getTranslations } from 'next-intl/server';
 import type { SessionRow } from '../components/sessions/sessions-table';
 import { describeUserAgent } from './user-agent';
 import { localizedName } from './users-view';
 
-/** The sessions table's rows: the browser described, dates formatted (T-M2-10, screen 3). */
+/**
+ * The sessions table's rows: the browser described, dates formatted (T-M2-10, screen 3) as the
+ * organization shows them (T-M2-22: Gregorian / Hijri / both, its time zone).
+ */
 export async function sessionRows(
   locale: AppLocale,
   sessions: readonly (SignInSession | MySignInSession)[],
+  dates: DisplayDateFormatter,
 ): Promise<SessionRow[]> {
   const t = await getTranslations({ locale, namespace: 'sessions' });
-  const format = await getFormatter({ locale });
   return sessions.map((session) => {
     const { browser, system } = describeUserAgent(session.userAgent);
     const device = browser
@@ -27,8 +30,8 @@ export async function sessionRows(
       sessionId: session.sessionId,
       device,
       organization,
-      started: format.dateTime(session.startedAt, 'dateTime'),
-      lastActive: format.dateTime(session.lastActiveAt, 'dateTime'),
+      started: dates.dateTime(session.startedAt),
+      lastActive: dates.dateTime(session.lastActiveAt),
       isCurrent: session.isCurrent,
       withCode: session.withCode,
     };

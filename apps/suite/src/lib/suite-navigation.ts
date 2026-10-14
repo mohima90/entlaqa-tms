@@ -3,7 +3,7 @@ import { tmsNavigation } from '@jadarat/tms';
 import type { SuiteNavigationAccess } from './suite-context';
 
 /** Pages of the suite that have a navigation entry (`current` of the shell). */
-export type SuitePage = 'home' | 'users' | 'roles' | 'security' | 'profile';
+export type SuitePage = 'home' | 'organization' | 'users' | 'roles' | 'security' | 'profile';
 
 /** Message keys (namespace `shell`) of every navigation label and group heading. */
 export type NavLabelKey =
@@ -80,7 +80,12 @@ export function suiteNavigation(access: SuiteNavigationAccess): NavGroupModel[] 
       key: 'groupOrganization',
       entries: setup
         ? [
-            soon('organizationProfile', 'building'),
+            // Organization profile (T-M2-22): the Organization Admin's (organization-wide tenant.manage).
+            {
+              key: 'organizationProfile',
+              icon: 'building',
+              link: { href: '/suite/admin/organization', page: 'organization' },
+            },
             soon('branding', 'palette'),
             soon('customFields', 'fields'),
             soon('featuresPlan', 'plan'),

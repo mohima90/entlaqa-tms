@@ -1,12 +1,7 @@
 import { toClientError } from '@jadarat/platform-core';
 import type { MemberSignInLock, UserProfile } from '@jadarat/platform-db';
 import type { LifecycleOffer } from '@jadarat/platform-rbac';
-import {
-  type AppLocale,
-  DEFAULT_CALENDAR,
-  DEFAULT_NUMBERING_SYSTEM,
-  formatHijriDate,
-} from '@jadarat/platform-i18n';
+import { type AppLocale, displayDateFormatter, formatHijriDate } from '@jadarat/platform-i18n';
 import { routing } from '@jadarat/platform-i18n/routing';
 import { Alert, Badge, type BadgeTone, Card, buttonClasses } from '@jadarat/ui';
 import { hasLocale } from 'next-intl';
@@ -22,7 +17,8 @@ import { reactivateLabels } from '../../../../../../lib/deactivation-texts';
 import { stepUpHref } from '../../../../../../lib/mfa-view';
 import { memberSecurityErrorTexts, profileErrorTexts } from '../../../../../../lib/profile-texts';
 import { sessionLabels, sessionRows } from '../../../../../../lib/sessions-view';
-import { getSuiteContext } from '../../../../../../lib/suite-context';
+import { type SuiteContext, getSuiteContext } from '../../../../../../lib/suite-context';
+import { pageDates } from '../../../../../../lib/page-dates';
 import { memberSecurityQuery, userProfileQuery } from '../../../../../../lib/users-queries';
 import { localizedName, roleName } from '../../../../../../lib/users-view';
 import { NotSet } from '../../../../../../components/not-set';
@@ -122,6 +118,7 @@ export default async function UserProfilePage({
             lifecycle={lifecycle}
             security={security.ok ? security.value : null}
             signInLock={signInLock}
+            regional={context.regional}
           />
         </>
       );
@@ -148,8 +145,11 @@ async function Profile({
   lifecycle,
   security,
   signInLock,
+  regional,
 }: {
   locale: AppLocale;
+  /** The organization's date display and time zone (T-M2-22). */
+  regional: SuiteContext['regional'];
   profile: UserProfile;
   canOpenManager: boolean;
   canEdit: boolean;
@@ -166,6 +166,8 @@ async function Profile({
   const securityErrors = security ? await memberSecurityErrorTexts(locale) : {};
   const users = await getTranslations({ locale, namespace: 'users' });
   const format = await getFormatter({ locale });
+  // Dates as the organization shows them (T-M2-22: Gregorian / Hijri / both, its time zone).
+  const dates = pageDates(locale, { regional });
   const none = <NotSet label={users('noneLabel')} />;
   const department = profile.departmentNameAr
     ? localizedName(locale, profile.departmentNameAr, profile.departmentNameEn)
@@ -178,14 +180,8 @@ async function Profile({
   const accountStatus: AccountStatus = profile.membershipStatus ?? 'none';
   const subtitle = [jobTitle, department, branch].filter(Boolean).join(' · ');
   const now = new Date();
-  // Role days in the organization's time zone, as on the edit-roles page (T-M2-14).
-  const roleDay = (value: Date) =>
-    format.dateTime(value, {
-      dateStyle: 'medium',
-      timeZone: profile.timeZone,
-      calendar: DEFAULT_CALENDAR,
-      numberingSystem: DEFAULT_NUMBERING_SYSTEM,
-    });
+  // Role days in the organization's time zone, as on the edit-roles page (T-M2-14), in its date display.
+  const roleDay = displayDateFormatter(locale, regional.dateDisplay, profile.timeZone).date;
 
   const fields: { key: string; label: string; value: ReactNode }[] = [
     {
@@ -369,9 +365,7 @@ async function Profile({
           <div className="flex flex-col gap-1">
             <dt className="text-sm text-text-muted">{t('lastSignIn')}</dt>
             <dd className="m-0">
-              {profile.lastSignInAt
-                ? format.dateTime(profile.lastSignInAt, 'dateTime')
-                : t('never')}
+              {profile.lastSignInAt ? dates.dateTime(profile.lastSignInAt) : t('never')}
             </dd>
           </div>
           {security && security.usesApp !== null ? (
@@ -379,7 +373,7 @@ async function Profile({
               <dt className="text-sm text-text-muted">{t('mfa')}</dt>
               <dd className="m-0" data-testid="user-mfa-status">
                 {security.usesApp && security.appSince
-                  ? t('mfaOn', { date: format.dateTime(security.appSince, 'medium') })
+                  ? t('mfaOn', { date: dates.date(security.appSince) })
                   : security.appPending
                     ? t('mfaPending')
                     : t('mfaOff')}
@@ -449,7 +443,7 @@ async function Profile({
         >
           <SessionsTable
             target={{ kind: 'member', personId: profile.personId }}
-            sessions={await sessionRows(locale, security.sessions)}
+            sessions={await sessionRows(locale, security.sessions, dates)}
             labels={sessionLabels(locale)}
             errors={securityErrors}
           />
@@ -477,7 +471,7 @@ async function Profile({
                         : t('actions.other', { action: event.action })}
                     </span>
                     <span className="text-sm text-text-muted">
-                      {format.dateTime(event.occurredAt, 'dateTime')} · {actor}
+                      {dates.dateTime(event.occurredAt)} · {actor}
                     </span>
                   </li>
                 );

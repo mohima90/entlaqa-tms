@@ -1,4 +1,5 @@
 import 'server-only';
+import { DEFAULT_TENANT_REGIONAL, type TenantRegional } from '@jadarat/platform-db';
 import type { AppLocale } from '@jadarat/platform-i18n';
 import { type Grant, loadMemberGrants, platformPermissions } from '@jadarat/platform-rbac';
 import { redirect } from 'next/navigation';
@@ -17,6 +18,11 @@ export interface SuiteContext {
   readonly me: { readonly nameAr: string; readonly nameEn: string | null } | null;
   /** The organization's inactivity limit in minutes (T-M2-10): the page warns before it ends. */
   readonly idleMinutes: number | null;
+  /**
+   * How the organization shows dates (Gregorian / Hijri / both) and in which time zone, and the language
+   * of new people (T-M2-22, organization profile). The defaults in the preview without data.
+   */
+  readonly regional: TenantRegional;
 }
 
 /** Which navigation entries the member's grants open (deny by default: everything starts false). */
@@ -75,6 +81,7 @@ export async function getSuiteContext(locale: AppLocale): Promise<SuiteContext> 
       navigation: navigationFor(null),
       me: null,
       idleMinutes: null,
+      regional: DEFAULT_TENANT_REGIONAL,
     };
   }
   const session = await getSessionState(status);
@@ -82,11 +89,13 @@ export async function getSuiteContext(locale: AppLocale): Promise<SuiteContext> 
   if (elsewhere !== null || session.kind !== 'organization')
     redirect(elsewhere ?? `/${locale}/sign-in`);
   const { tenant } = session;
+  // The display name in the UI language, else the other one (T-M2-22: the profile page sets both).
   const organizationName = tenant
     ? locale === 'en'
       ? (tenant.nameEn ?? tenant.nameAr)
-      : tenant.nameAr
+      : tenant.nameAr || (tenant.nameEn ?? '')
     : null;
+  const regional = tenant?.regional ?? DEFAULT_TENANT_REGIONAL;
   if (!status.database) {
     return {
       live: false,
@@ -94,6 +103,7 @@ export async function getSuiteContext(locale: AppLocale): Promise<SuiteContext> 
       navigation: navigationFor(null),
       me: null,
       idleMinutes: null,
+      regional,
     };
   }
   const grants = await loadMemberGrants();
@@ -106,5 +116,6 @@ export async function getSuiteContext(locale: AppLocale): Promise<SuiteContext> 
       ? { nameAr: identity.value.displayNameAr, nameEn: identity.value.displayNameEn }
       : null,
     idleMinutes: tenant?.sessionIdleMinutes ?? null,
+    regional,
   };
 }

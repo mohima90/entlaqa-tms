@@ -101,7 +101,7 @@ export default async function InviteUserPage({ params }: { params: Promise<{ loc
         );
       }
     } else {
-      content = await inviteForm(locale, result.value, usersHref);
+      content = await inviteForm(locale, result.value, usersHref, context.regional.defaultLocale);
     }
   }
 
@@ -121,6 +121,7 @@ async function inviteForm(
   locale: AppLocale,
   view: InviteFormView,
   usersHref: string,
+  defaultLocale: 'ar' | 'en',
 ): Promise<ReactNode> {
   const t = await getTranslations({ locale, namespace: 'invitations' });
   const common = await getTranslations({ locale, namespace: 'common' });
@@ -153,6 +154,7 @@ async function inviteForm(
   return (
     <Card>
       <InviteUserForm
+        defaultLocale={defaultLocale}
         departments={view.orgUnits.departments.map(unit)}
         branches={view.orgUnits.branches.map(unit)}
         managers={view.managers.map((m) => ({

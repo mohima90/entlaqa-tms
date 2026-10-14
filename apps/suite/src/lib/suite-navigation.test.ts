@@ -32,7 +32,7 @@ describe('suiteNavigation (menus per role, T-M2-21)', () => {
       }),
     ).toEqual([
       'main: home→/suite',
-      'groupOrganization: organizationProfile(soon) branding(soon) customFields(soon) featuresPlan(soon)',
+      'groupOrganization: organizationProfile→/suite/admin/organization branding(soon) customFields(soon) featuresPlan(soon)',
       'groupDomains: domains(soon)',
       'groupPeople: users→/suite/admin/users roles→/suite/admin/roles',
       'groupSecurity: securityPolicy→/suite/admin/security auditLog(soon) consent(soon)',
@@ -95,6 +95,7 @@ describe('suiteHome (T-M2-21)', () => {
     });
     expect(home.kind).toBe('setup');
     expect(home.kind === 'setup' ? home.links.map((l) => l.link?.href) : []).toEqual([
+      '/suite/admin/organization',
       '/suite/admin/users',
       '/suite/admin/roles',
       '/suite/admin/security',
@@ -103,7 +104,10 @@ describe('suiteHome (T-M2-21)', () => {
 
   it('links only what the grants open, and keeps the training home for every other role', () => {
     const home = suiteHome({ ...NONE, organizationSetup: true, users: true });
-    expect(home.kind === 'setup' ? home.links.map((l) => l.key) : []).toEqual(['users']);
+    expect(home.kind === 'setup' ? home.links.map((l) => l.key) : []).toEqual([
+      'organizationProfile',
+      'users',
+    ]);
     expect(
       suiteHome({ ...NONE, users: true, roles: true, security: true, training: true }),
     ).toEqual({

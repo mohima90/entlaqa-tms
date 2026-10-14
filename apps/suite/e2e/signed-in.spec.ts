@@ -50,6 +50,17 @@ test.describe('signed-in flow', () => {
       page.getByTestId('setup-home').getByRole('heading', { name: 'إعداد منشأتك' }),
     ).toBeVisible();
     await page.goto('/en/suite');
+    // Top-bar controls are 44 px touch targets on a phone (sign-out is a small button on desktop).
+    if (isMobile) {
+      for (const control of [
+        page.getByRole('button', { name: 'Menu' }),
+        page.getByTestId('language-toggle'),
+        page.getByTestId('my-profile-link'),
+        page.getByRole('button', { name: 'Sign out' }),
+      ]) {
+        expect((await control.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+      }
+    }
     // The organization is named in the navigation's organization block (behind the menu on a phone).
     if (isMobile) await page.getByRole('button', { name: 'Menu' }).click();
     await expect(page.getByText(`Organization: ${organization ?? ''}`)).toBeVisible();

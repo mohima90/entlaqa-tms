@@ -27,9 +27,9 @@ import { platformPermissions as p } from '../platform-permissions';
  * every rule (platform.tenant_settings, the tenants_update policy); these definitions authorize, validate
  * and audit.
  *
- *   - The page: only members who may change the profile — `platform.tenant.manage` organization-wide, i.e.
- *     the Organization Admin (PO, 14 Oct 2026: HR Manager, Learner and Auditor are refused). At AAL1 the
- *     admin sees the form and is asked for an authenticator code first (step-up), as on the security page.
+ *   - The page: members who read the organization's settings organization-wide (`platform.tenant.read`):
+ *     the Organization Admin edits, the Auditor reads (BRD Appendix B; PO decision 14 Oct 2026); HR
+ *     Manager, Learner and the other roles are refused.
  *   - Saving: `platform.tenant.manage` — high risk, AAL2 (ADR 0003 §3: the registry's risk decides; the
  *     permission also covers branding and domains; PO decision D-IAM-01: a code even when MFA is off),
  *     getUser() before the change, a code from the last 15 minutes. Audited with the changed fields' values
@@ -102,8 +102,11 @@ export const OrganizationProfileInput = z
 
 export interface OrganizationProfilePageView {
   readonly profile: OrganizationProfileRecord;
-  /** allowed · step_up_required (an Organization Admin at AAL1: a code first). Never denied here. */
-  readonly editAccess: Exclude<PermissionAccess, 'denied'>;
+  /**
+   * allowed (the Organization Admin) · step_up_required (an Organization Admin at AAL1: a code first) ·
+   * denied (read only: the Auditor — BRD Appendix B "tenant settings: V", PO decision 14 Oct 2026).
+   */
+  readonly editAccess: PermissionAccess;
 }
 
 export function organizationProfileQueryDefinition(): QueryDefinition<
@@ -112,13 +115,12 @@ export function organizationProfileQueryDefinition(): QueryDefinition<
   UserTx
 > {
   return {
-    // Organization-wide read first (Organization Admin, Auditor) — then the manage permission decides.
+    // Organization-wide read (Organization Admin, Auditor); everyone else is refused (deny by default).
+    // Whether the member may also change it is the manage permission's answer.
     permission: p['platform.tenant.read'],
     input: z.strictObject({}),
     handler: async ({ ctx }) => {
       const editAccess = ctx.access(p['platform.tenant.manage'], 'tenant');
-      // Deny by default: the page is for members who may change the profile (not the Auditor).
-      if (editAccess === 'denied') return err(appError('FORBIDDEN'));
       const profile = await getOrganizationProfile(ctx.tx);
       if (!profile) return err(appError('NOT_FOUND'));
       return ok({ profile, editAccess });

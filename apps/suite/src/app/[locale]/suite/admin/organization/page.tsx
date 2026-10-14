@@ -21,8 +21,9 @@ const PATH = '/suite/admin/organization';
 
 /**
  * Organization profile and regional settings (approved screen «بيانات المنشأة» / "Organization profile",
- * PO 14 Oct 2026; FR-ADM-02, FR-SCH-07, BR-ADM-3; T-M2-22). For the Organization Admin only
- * (organization-wide platform.tenant.manage): everyone else — HR Manager, Learner, Auditor… — is refused.
+ * PO 14 Oct 2026; FR-ADM-02, FR-SCH-07, BR-ADM-3; T-M2-22). The Organization Admin edits it
+ * (organization-wide platform.tenant.manage); the Auditor reads it (platform.tenant.read, BRD Appendix B;
+ * PO decision 14 Oct 2026); everyone else — HR Manager, Learner… — is refused.
  * Saving needs an authenticator code (AAL2, as the security policy): at AAL1 the page says so, links to
  * the code and shows the profile read-only. The database enforces who may change it and every rule.
  */
@@ -118,6 +119,11 @@ async function Profile({
               {t('stepUpLink')}
             </a>
           </span>
+        </Alert>
+      ) : null}
+      {editAccess === 'denied' ? (
+        <Alert tone="info" data-testid="organization-read-only">
+          {t('readOnly')}
         </Alert>
       ) : null}
       <OrganizationProfileForm

@@ -34,6 +34,11 @@ export interface SuiteNavigationAccess {
   /** Security policy (T-M2-10). */
   readonly security: boolean;
   /**
+   * Organization profile (T-M2-22): members who read the organization's settings organization-wide —
+   * the Organization Admin (edits) and the Auditor (reads; PO decision 14 Oct 2026).
+   */
+  readonly organizationProfile: boolean;
+  /**
    * The Organization Admin's own sections still to come (organization profile, branding, custom
    * fields, features & plan, domains, audit log, consent, e-mail sender, integrations), shown as
    * «قريبًا» / "Coming soon" (docs/delivery/roles/organization-admin.md, BRD v2.9).
@@ -54,7 +59,14 @@ export interface SuiteNavigationAccess {
 export function navigationFor(grants: readonly Grant[] | null): SuiteNavigationAccess {
   // Preview without data (local development, CI): every entry, so every pattern renders.
   if (grants === null) {
-    return { users: true, roles: true, security: true, organizationSetup: true, training: true };
+    return {
+      users: true,
+      roles: true,
+      security: true,
+      organizationProfile: true,
+      organizationSetup: true,
+      training: true,
+    };
   }
   const tenantWide = (code: string) =>
     grants.some((g) => g.permission === code && g.scope.type === 'tenant');
@@ -66,6 +78,7 @@ export function navigationFor(grants: readonly Grant[] | null): SuiteNavigationA
     roles: tenantWide(platformPermissions['platform.role.read'].code),
     // Security settings (T-M2-10): members who read the organization's settings.
     security: tenantWide(platformPermissions['platform.tenant.read'].code),
+    organizationProfile: tenantWide(platformPermissions['platform.tenant.read'].code),
     organizationSetup,
     training: !organizationSetup,
   };

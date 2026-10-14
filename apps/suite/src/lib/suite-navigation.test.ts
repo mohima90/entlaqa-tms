@@ -7,6 +7,7 @@ const NONE: SuiteNavigationAccess = {
   users: false,
   roles: false,
   security: false,
+  organizationProfile: false,
   organizationSetup: false,
   training: false,
 };
@@ -27,6 +28,7 @@ describe('suiteNavigation (menus per role, T-M2-21)', () => {
         users: true,
         roles: true,
         security: true,
+        organizationProfile: true,
         organizationSetup: true,
         training: false,
       }),
@@ -56,9 +58,19 @@ describe('suiteNavigation (menus per role, T-M2-21)', () => {
     ]);
   });
 
-  it('shows an Auditor the security policy but none of the set-up sections', () => {
-    expect(outline({ ...NONE, users: true, roles: true, security: true, training: true })).toEqual([
+  it('shows an Auditor the security policy and the organization profile (read only), no set-up sections', () => {
+    expect(
+      outline({
+        ...NONE,
+        users: true,
+        roles: true,
+        security: true,
+        organizationProfile: true,
+        training: true,
+      }),
+    ).toEqual([
       'main: home→/suite calendar(soon) sessions(soon) courses(soon)',
+      'groupOrganization: organizationProfile→/suite/admin/organization',
       'groupPeople: users→/suite/admin/users roles→/suite/admin/roles',
       'groupSecurity: securityPolicy→/suite/admin/security',
     ]);
@@ -76,6 +88,7 @@ describe('suiteNavigation (menus per role, T-M2-21)', () => {
       users: true,
       roles: true,
       security: true,
+      organizationProfile: true,
       organizationSetup: true,
       training: true,
     }).flatMap((group) => group.entries);
@@ -90,6 +103,7 @@ describe('suiteHome (T-M2-21)', () => {
       users: true,
       roles: true,
       security: true,
+      organizationProfile: true,
       organizationSetup: true,
       training: false,
     });

@@ -26,6 +26,7 @@ describe('navigationFor', () => {
       users: true,
       roles: false,
       security: false,
+      organizationProfile: false,
       organizationSetup: false,
       training: true,
     });
@@ -35,6 +36,7 @@ describe('navigationFor', () => {
       users: true,
       roles: false,
       security: false,
+      organizationProfile: false,
       organizationSetup: false,
       training: true,
     });
@@ -45,6 +47,7 @@ describe('navigationFor', () => {
       users: false,
       roles: false,
       security: false,
+      organizationProfile: false,
       organizationSetup: false,
       training: true,
     });
@@ -53,6 +56,7 @@ describe('navigationFor', () => {
         users: false,
         roles: false,
         security: false,
+        organizationProfile: false,
         organizationSetup: false,
         training: true,
       },
@@ -61,6 +65,7 @@ describe('navigationFor', () => {
       users: false,
       roles: false,
       security: false,
+      organizationProfile: false,
       organizationSetup: false,
       training: true,
     });
@@ -76,6 +81,7 @@ describe('navigationFor', () => {
       users: true,
       roles: true,
       security: false,
+      organizationProfile: false,
       organizationSetup: false,
       training: true,
     });
@@ -85,6 +91,7 @@ describe('navigationFor', () => {
       users: false,
       roles: false,
       security: false,
+      organizationProfile: false,
       organizationSetup: false,
       training: true,
     });
@@ -97,11 +104,19 @@ describe('navigationFor', () => {
       users: false,
       roles: false,
       security: true,
+      organizationProfile: true,
       organizationSetup: false,
       training: true,
     });
     expect(navigationFor([{ permission: 'platform.tenant.read', scope: { type: 'own' } }])).toEqual(
-      { users: false, roles: false, security: false, organizationSetup: false, training: true },
+      {
+        users: false,
+        roles: false,
+        security: false,
+        organizationProfile: false,
+        organizationSetup: false,
+        training: true,
+      },
     );
   });
 
@@ -110,6 +125,7 @@ describe('navigationFor', () => {
       users: true,
       roles: true,
       security: true,
+      organizationProfile: true,
       organizationSetup: true,
       training: true,
     });
@@ -122,6 +138,7 @@ describe('navigationFor', () => {
       users: false,
       roles: false,
       security: false,
+      organizationProfile: false,
       organizationSetup: true,
       training: false,
     });

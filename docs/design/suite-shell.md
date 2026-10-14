@@ -48,7 +48,7 @@ Entries come from the member's grants (`navigationFor` → `suiteNavigation`); d
 | Who | Menu |
 |---|---|
 | **Organization Admin** (organization-wide `platform.tenant.manage`; the role is held alone, BR-IAM-4) | Home · **Organization**: Organization profile (built, T-M2-22), Branding, Custom fields, Features & plan · **Domain management**: Domains · **People**: Users, Roles & permissions · **Security**: Security policy, Audit log, Consent · **E-mail sending**: Sender settings · **Integrations**: LMS connection, HR system. Upcoming sections are «قريبًا» / "Coming soon". No training entries, no notifications (moved to the L&D Manager — BRD v2.9; [organization-admin.md](../delivery/roles/organization-admin.md)) |
-| Other roles | Home and the training module's entries (Calendar, Sessions, Courses — «قريبًا»), then **People** (Users for members who see more than themselves; Roles & permissions with organization-wide `platform.role.read`) and **Security** (Security policy with organization-wide `platform.tenant.read`, e.g. the Auditor) |
+| Other roles | Home and the training module's entries (Calendar, Sessions, Courses — «قريبًا»), then **People** (Users for members who see more than themselves; Roles & permissions with organization-wide `platform.role.read`) and **Security** (Security policy with organization-wide `platform.tenant.read`, e.g. the Auditor); the Auditor also gets **Organization → Organization profile** (read only, T-M2-22) |
 | Preview without data (local, CI) | Every entry, so every pattern renders |
 
 ---

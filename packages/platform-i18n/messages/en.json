@@ -1635,6 +1635,7 @@
     "stepUp": "Changing the organization profile needs a verification code from your authenticator app.",
     "stepUpLink": "Verify with the authenticator app",
     "stepUpAgain": "Saving needs a code from your authenticator app entered in the last 15 minutes. Your changes weren't saved.",
+    "readOnly": "You can view these settings. Only the Organization Admin can change them.",
     "organization": {
       "title": "Organization",
       "intro": "Shown in the sidebar, on e-mails and on certificates.",

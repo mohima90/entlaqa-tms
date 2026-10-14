@@ -6,8 +6,8 @@
 
 ## Where and who
 
-- Route `/{ar|en}/suite/admin/organization`; menu **Organization → Organization profile** («المنشأة ← بيانات المنشأة»), a link for the Organization Admin (organization-wide `platform.tenant.manage`) instead of «قريبًا» / "Coming soon"; also on the set-up home.
-- Everyone else (HR Manager, Auditor, Learner, …) gets «ليست لديك صلاحية لتنفيذ هذا الإجراء.» / "You don't have permission to do this." — no read-only view (PO, 14 Oct 2026; Appendix B gives the Auditor "V" on tenant settings — see open point 1).
+- Route `/{ar|en}/suite/admin/organization`; menu **Organization → Organization profile** («المنشأة ← بيانات المنشأة»), a link for the Organization Admin (organization-wide `platform.tenant.manage`) instead of «قريبًا» / "Coming soon" — also on the set-up home — and for the Auditor.
+- The **Auditor** (organization-wide `platform.tenant.read`; BRD Appendix B "tenant settings: V") opens it **read only** (PO decision, 14 Oct 2026): every field disabled, no Save / Cancel, the note «يمكنك الاطلاع على هذه الإعدادات، ولا يغيّرها إلا مدير المنشأة.» / "You can view these settings. Only the Organization Admin can change them."; the menu shows it the entry. Everyone else (HR Manager, Learner, …) gets «ليست لديك صلاحية لتنفيذ هذا الإجراء.» / "You don't have permission to do this."
 - Saving needs an authenticator code from the last 15 minutes (`platform.tenant.manage` is high risk / AAL2 in the permission registry, as the security policy). At AAL1 the page shows a warning with «التحقق بتطبيق المصادقة» / "Verify with the authenticator app" and the form read-only; a save refused for a stale code says so and links to the code (nothing typed is lost).
 
 ## Layout (as the mock-up)
@@ -41,6 +41,6 @@ All under `organizationProfile.*` in `packages/platform-i18n/messages/ar.json`. 
 
 ## Open points
 
-1. Appendix B gives the Auditor "V" on tenant settings; the PO asked for the page to refuse the Auditor. A read-only view for the Auditor can be added later if wanted.
+1. ~~Auditor access~~ — decided by the PO (14 Oct 2026): read only, as Appendix B.
 2. The working-days hint promises a warning for sessions on other days: sessions are not built yet (M3); the warning comes with scheduling.
 3. BR-ADM-2 (currency change after transactions needs a conversion confirmation) is not enforced yet: no amounts exist until the finance features.

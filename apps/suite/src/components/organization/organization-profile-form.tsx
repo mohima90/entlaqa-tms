@@ -526,27 +526,30 @@ export function OrganizationProfileForm(props: OrganizationProfileFormProps) {
           {message.text}
         </Alert>
       ) : null}
-      <div
-        className="sticky bottom-0 z-10 flex flex-wrap items-center gap-3 rounded-lg border border-border bg-surface px-4 py-3 shadow-1 sm:px-5"
-        data-testid="organization-footer"
-      >
-        <span
-          className="flex-[1_1_16rem] text-sm text-text-muted"
-          data-testid="organization-last-changed"
+      {editable ? (
+        <div
+          className="sticky bottom-0 z-10 flex flex-wrap items-center gap-3 rounded-lg border border-border bg-surface px-4 py-3 shadow-1 sm:px-5"
+          data-testid="organization-footer"
         >
+          <span
+            className="flex-[1_1_16rem] text-sm text-text-muted"
+            data-testid="organization-last-changed"
+          >
+            {props.lastChanged}
+          </span>
+          <Button type="button" variant="secondary" onClick={cancel} disabled={pending}>
+            {t('cancel')}
+          </Button>
+          <Button type="submit" disabled={pending} data-testid="organization-save">
+            {pending ? t('saving') : t('save')}
+          </Button>
+        </div>
+      ) : (
+        // Read only (the Auditor): no Save / Cancel, only who changed it last.
+        <p className="m-0 text-sm text-text-muted" data-testid="organization-last-changed">
           {props.lastChanged}
-        </span>
-        {editable ? (
-          <>
-            <Button type="button" variant="secondary" onClick={cancel} disabled={pending}>
-              {t('cancel')}
-            </Button>
-            <Button type="submit" disabled={pending} data-testid="organization-save">
-              {pending ? t('saving') : t('save')}
-            </Button>
-          </>
-        ) : null}
-      </div>
+        </p>
+      )}
     </form>
   );
 }

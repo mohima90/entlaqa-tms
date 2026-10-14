@@ -105,8 +105,20 @@ describe('organization profile page (T-M2-22)', () => {
     expect(await fresh({})).toMatchObject({ ok: true, value: { editAccess: 'allowed' } });
   });
 
-  it.each([['hr_manager'], ['learner'], ['auditor'], ['training_manager']] as const)(
-    'refuses the %s (not the Organization Admin), also at AAL2',
+  it('the Auditor reads it, read only (BRD Appendix B; PO 14 Oct 2026)', async () => {
+    for (const aal of ['aal1', 'aal2'] as const) {
+      const query = createDefineQuery(runtime(forRoles('auditor'), aal).rt)(
+        organizationProfileQueryDefinition(),
+      );
+      expect(await query({})).toEqual({
+        ok: true,
+        value: { profile: record, editAccess: 'denied' },
+      });
+    }
+  });
+
+  it.each([['hr_manager'], ['learner'], ['training_manager'], ['line_manager']] as const)(
+    'refuses the %s (no organization-wide settings read), also at AAL2',
     async (role) => {
       for (const aal of ['aal1', 'aal2'] as const) {
         const query = createDefineQuery(runtime(forRoles(role), aal).rt)(

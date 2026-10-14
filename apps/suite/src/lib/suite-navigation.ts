@@ -78,19 +78,25 @@ export function suiteNavigation(access: SuiteNavigationAccess): NavGroupModel[] 
     { key: 'main', entries: main },
     {
       key: 'groupOrganization',
-      entries: setup
-        ? [
-            // Organization profile (T-M2-22): the Organization Admin's (organization-wide tenant.manage).
-            {
-              key: 'organizationProfile',
-              icon: 'building',
-              link: { href: '/suite/admin/organization', page: 'organization' },
-            },
-            soon('branding', 'palette'),
-            soon('customFields', 'fields'),
-            soon('featuresPlan', 'plan'),
-          ]
-        : [],
+      entries: [
+        // Organization profile (T-M2-22): the Organization Admin edits it, the Auditor reads it.
+        ...(access.organizationProfile || setup
+          ? [
+              {
+                key: 'organizationProfile',
+                icon: 'building',
+                link: { href: '/suite/admin/organization', page: 'organization' },
+              } as const,
+            ]
+          : []),
+        ...(setup
+          ? [
+              soon('branding', 'palette'),
+              soon('customFields', 'fields'),
+              soon('featuresPlan', 'plan'),
+            ]
+          : []),
+      ],
     },
     { key: 'groupDomains', entries: setup ? [soon('domains', 'globe')] : [] },
     {

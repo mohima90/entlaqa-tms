@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { type Page, expect, test } from '@playwright/test';
+import { expectReadableTables } from './tables';
 
 /**
  * Smoke E2E (Development Plan §5.3 gates 7–8): Arabic + English render, `dir`, no console errors
@@ -197,11 +198,16 @@ test('the users pages explain that they need a configured environment (preview)'
 }) => {
   await page.goto('/en/suite');
   // On a phone the navigation is behind the menu button (T-M2-21).
+  // (The preview home also links to Users from its set-up card: use the navigation's entry.)
+  const navigation = page.getByRole('navigation', { name: 'Main navigation' });
   if (isMobile) await page.getByRole('button', { name: 'Menu' }).click();
-  await page.getByRole('link', { name: 'Users' }).click();
+  await navigation.getByRole('link', { name: 'Users' }).click();
   await expect(page).toHaveURL(/\/en\/suite\/admin\/users$/);
   if (isMobile) await page.getByRole('button', { name: 'Menu' }).click();
-  await expect(page.getByRole('link', { name: 'Users' })).toHaveAttribute('aria-current', 'page');
+  await expect(navigation.getByRole('link', { name: 'Users' })).toHaveAttribute(
+    'aria-current',
+    'page',
+  );
   if (isMobile) await page.keyboard.press('Escape');
   await expect(page.getByTestId('users-not-configured')).toContainText('connected to the database');
   await page.getByTestId('language-toggle').click();
@@ -269,5 +275,15 @@ for (const { locale, menu, close, home } of [
     await page.getByRole('button', { name: close }).click();
     await expect(navigation).toBeHidden();
     await expect(menuButton).toBeFocused();
+  });
+}
+
+// Tables on phones and desktops (T-M2-21): the roles matrix renders without data in the preview.
+for (const locale of ['en', 'ar'] as const) {
+  test(`${locale}: table cells never break inside a word, and wide tables scroll in their box`, async ({
+    page,
+  }) => {
+    await page.goto(`/${locale}/suite/admin/roles?role=hr_manager`);
+    await expectReadableTables(page);
   });
 }

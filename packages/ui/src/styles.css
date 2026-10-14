@@ -62,6 +62,18 @@
     outline-offset: 2px;
   }
 
+  /* Data tables: body text may break anywhere (long e-mails in prose), but never a word inside a table
+     cell — that squeezed columns until headers broke letter by letter on phones. A table wider than its
+     box scrolls inside its `overflow-x-auto` wrapper; column headers stay on one line; free text in a
+     cell still wraps between words. */
+  table {
+    overflow-wrap: normal;
+  }
+
+  th[scope='col'] {
+    white-space: nowrap;
+  }
+
   h1,
   h2,
   h3 {

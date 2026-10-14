@@ -7,7 +7,7 @@
 | **Product** | Jadarat TMS — Training Management System (module of the Jadarat HR Suite; also sold standalone) |
 | **Company** | ENTLAQA |
 | **Document type** | Business Requirements Document |
-| **Version** | 2.7 — Draft for stakeholder review |
+| **Version** | 2.8 — Draft for stakeholder review |
 | **Date** | 30 September 2026 |
 | **Supersedes** | *Jadarat TMS BRD v1.0* (15 March 2026) |
 | **Companion documents** | `docs/delivery/Jadarat_TMS_Development_Plan.md` (development plan & delivery guide) · `docs/brd/TMS_Feature_List.md` (feature list, 292 features) · `docs/research/TMS_Market_Comparison_vs_BRD.md` (market & regulatory research) |
@@ -21,6 +21,7 @@
 |---|---|---|---|
 | 1.0 | 15 Mar 2026 | ENTLAQA Product Team | Initial Jadarat TMS BRD (offline training, Jadarat-specific) |
 | 2.0 | 27 Sep 2026 | ENTLAQA Product Team | Full rewrite: comprehensive TMS scope, training planning cycle, vendor & finance depth, assessment engine, generic LMS integration framework, corrected regulatory content, sovereign deployment, requirement IDs with priority & release |
+| 2.8 | 14 Oct 2026 | Product Owner (via Claude) | Organization Admin feature list approved (PO, 14 Oct 2026): FR-ADM-01 onboarding wizard ends with inviting the Training Manager — the first course and first session become the Training Manager's first-sign-in steps (the Organization Admin has no training features); FR-NTF-07 notification rules are configured by the Organization Admin; FR-WFL-01/02 approval workflows are configured by the Training Manager; Appendix B note. Feature list ADM-01, NTF-07, WFL-01 |
 | 2.7 | 11 Oct 2026 | Product Owner (via Claude) | Organization structure moved to HR (PO, 11 Oct 2026): FR-ADM-04 (branches) and FR-ADM-05 (departments) are maintained by the **HR Manager**, not the Tenant Admin; §4.2 HR Manager scope and the Appendix B note updated. Feature list ADM-04/05 |
 | 2.6 | 8 Oct 2026 | Product Owner (via Claude) | BR-IAM-4 widened (PO, 8 Oct 2026): the Organization Admin role is held alone — no other role for the same person in the organization (not even Learner); scheduled hand-overs allowed; second-account circumvention accepted as residual risk (audit log only). Feature list IAM-07 |
 | 2.5 | 7 Oct 2026 | Product Owner (via Claude) | E-mail ownership (PO, 7 Oct 2026): FR-NTF-02 clarified — R1 sends every e-mail, account e-mails included (invitation, password reset, password changed), through the platform's notification service in the organization's language and brand, not the sign-in provider's mailer; new FR-NTF-10 organization-editable e-mail texts (R2) and FR-NTF-11 organization's own mail server — Resend, Mailgun, SMTP, Microsoft Graph (R2). Feature list NTF-02, NTF-10, NTF-11 |
@@ -386,7 +387,7 @@ Columns: **Pri** = MoSCoW priority · **Rel** = target release.
 
 | ID | Requirement | Pri | Rel |
 |---|---|---|---|
-| FR-ADM-01 | The system shall provide self-service sign-up that creates a tenant in *trial* status, provisions default roles, templates and workflows, and launches an onboarding wizard (organization → branding → first users → first course → first session). Trial length is configurable by ENTLAQA (default 14 days). | M | R1 |
+| FR-ADM-01 | The system shall provide self-service sign-up that creates a tenant in *trial* status, provisions default roles, templates and workflows, and launches an onboarding wizard for the Tenant Admin (organization → branding → first users → invite the Training Manager); the first course and first session are the Training Manager's first-sign-in steps, because the Tenant Admin has no training features (PO, 14 Oct 2026). Trial length is configurable by ENTLAQA (default 14 days). | M | R1 |
 | FR-ADM-02 | Tenant Admin shall maintain the organization profile: legal name (AR/EN), commercial registration no., VAT/tax no., industry, headquarters country, default currency, default timezone, default language, fiscal-year start month, authorized signatory. | M | R1 |
 | FR-ADM-03 | The system shall support multiple legal entities under one tenant, each with its own currency, VAT number, branding variant, certificate numbering and invoice sequence; users, budgets and reports can be scoped by entity. | S | R3 |
 | FR-ADM-04 | HR Manager shall maintain branches (AR/EN name, code, country, city, address, GPS, timezone, headquarters flag, parent branch) with branch-specific working week (including half-days) and working hours. | M | R1 |
@@ -410,7 +411,7 @@ Columns: **Pri** = MoSCoW priority · **Rel** = target release.
 - BR-ADM-3: Weekend/working-hour settings resolve in order: branch → legal entity → tenant → country default.
 
 **Acceptance criteria (examples)**
-- *Given* a new sign-up, *when* the wizard is completed, *then* the tenant has 15 default roles, default notification templates, default approval workflow, and can create a course and session within 15 minutes.
+- *Given* a new sign-up, *when* the wizard is completed, *then* the tenant has 15 default roles, default notification templates, default approval workflow, and its Training Manager can create a course and session within 15 minutes of first sign-in.
 - *Given* a branch with Friday–Saturday weekend, *when* a session is scheduled on Friday, *then* the system warns before saving.
 
 ---
@@ -792,7 +793,7 @@ Columns: **Pri** = MoSCoW priority · **Rel** = target release.
 | FR-NTF-04 | SMS through configurable gateways (MENA-native provider and an international fallback), sender ID per tenant/country. | M | R2 |
 | FR-NTF-05 | Web push notifications for PWA users. | S | R2 |
 | FR-NTF-06 | Microsoft Teams (and Slack) notifications with actionable cards for approvals and reminders. | S | R3 |
-| FR-NTF-07 | A notification event catalog (Appendix D) with per-event configuration: recipients by role, channels, timing, language resolution (recipient's locale), and quiet hours respecting prayer times and weekends. | M | R1 |
+| FR-NTF-07 | A notification event catalog (Appendix D) with per-event configuration: recipients by role, channels, timing, language resolution (recipient's locale), and quiet hours respecting prayer times and weekends. The rules are configured by the Tenant Admin (PO, 14 Oct 2026). | M | R1 |
 | FR-NTF-08 | Scheduled reminders (default T-7d, T-3d, T-1d, T-1h) and daily/weekly digests for managers and coordinators. | M | R1 |
 | FR-NTF-09 | Coordinators shall broadcast messages to session participants or audiences via chosen channels, with delivery statistics. | M | R2 |
 | FR-NTF-10 | Organization Admins shall edit the subject and body of each e-mail in Arabic and English, with variables, preview with sample data and reset to the default text; changes audited (PO, 7 Oct 2026). | S | R2 |
@@ -870,7 +871,7 @@ Columns: **Pri** = MoSCoW priority · **Rel** = target release.
 
 | ID | Requirement | Pri | Rel |
 |---|---|---|---|
-| FR-WFL-01 | A visual workflow builder shall define approval workflows for: enrollment, training request, plan, budget, expense, PO, invoice, session creation, certificate issuance, OJT plan, external certification. | M | R2 |
+| FR-WFL-01 | A visual workflow builder shall define approval workflows for: enrollment, training request, plan, budget, expense, PO, invoice, session creation, certificate issuance, OJT plan, external certification. Approval workflows are configured by the Training Manager (PO, 14 Oct 2026). | M | R2 |
 | FR-WFL-02 | Steps support approver types (line manager, N-level manager, department head, role, specific user, cost-center owner, finance), conditions (amount, category, department, delivery type, external/internal, travel), sequential and parallel (all/any) logic, escalation and reminders, auto-approval, delegation, and default workflows per entity. | M | R2 |
 | FR-WFL-03 | Automation rules ("when *event* and *condition* then *action*") shall allow actions such as notify, create task, enroll, change status, call webhook (e.g., "when fill rate < 50% at T-7 notify coordinator and suggest merge"). | S | R3 |
 | FR-WFL-04 | SLA timers on approvals and tasks with overdue dashboards. | S | R3 |
@@ -1547,7 +1548,7 @@ Detailed per-requirement release tags are in §6–§9.
 | AI features | F (config) | Use | Use | Use | Use | Use | Use | Use | Use | — | — | Use | Use | V (logs) |
 | Audit log | V | — | — | — | — | V | — | — | — | — | — | — | — | V |
 
-**Organization Admin = setup role (PO, 7 Oct 2026):** the Tenant Admin (Organization Admin, مدير المنشأة) sets the organization up from the IT and marketing side — tenant settings, branding and domains, users and roles (full people records), security, integrations, AI configuration, audit log — and hands it over to the HR department, which maintains the organization structure — branches and departments (FR-ADM-04/05; PO, 11 Oct 2026); it has **no access to core training features** (requests, plans, catalog, sessions, enrollments, attendance, assessments, certificates, compliance, OJT, budgets, training reports). The Organization Admin holds no other role in the same organization — not even Learner (BR-IAM-4, PO 8 Oct 2026).
+**Organization Admin = setup role (PO, 7 Oct 2026):** the Tenant Admin (Organization Admin, مدير المنشأة) sets the organization up from the IT and marketing side — tenant settings, branding and domains, users and roles (full people records), security, integrations, AI configuration, audit log — and hands it over to the HR department, which maintains the organization structure — branches and departments (FR-ADM-04/05; PO, 11 Oct 2026); it has **no access to core training features** (requests, plans, catalog, sessions, enrollments, attendance, assessments, certificates, compliance, OJT, budgets, training reports). The Organization Admin holds no other role in the same organization — not even Learner (BR-IAM-4, PO 8 Oct 2026). The Organization Admin configures notification rules (FR-NTF-07); the Training Manager configures approval workflows (FR-WFL-01/02) (PO, 14 Oct 2026).
 
 The Platform Super Admin (ENTLAQA) operates outside tenant roles, through the platform console (FR-ADM-17).
 

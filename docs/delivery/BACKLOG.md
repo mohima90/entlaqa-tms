@@ -120,7 +120,30 @@ Screens are approved by the PO before each feature is built (PO decision 4 Oct 2
 | T-M2-19 | Organization structure maintained by the **HR Manager** (PO decision 11 Oct 2026, BRD v2.7 FR-ADM-04/05): move `platform.org.manage` from the Organization Admin to the HR Manager (system roles, tests, department-head reassignment on deactivation), then the branches & departments screens | Claude | ⏸ | **Part 1 merged (#56, 12 Oct 2026; no DB deploy needed; main CI green). Part 2 paused (PO, 14 Oct 2026: UI/UX first, then role by role).** `platform.org.manage` moved from `tenant_admin` to `hr_manager`; a leaver's departments are handed over by whoever deactivates them (`platform.user.deactivate`, PO option 1, 12 Oct 2026 — security review High: otherwise a privileged department head could not be deactivated). Part 2: the branches & departments screens (`EP-M2-TEN`); **open before part 2:** `platform.org.manage` risk/AAL2 (TM-0004 T-PEO-07 asks high + AAL2, the registry has medium) — PO decision |
 | T-M2-20 | Released invitation the mailer refused shows as sent (re-review N1, Low; also manual invitations since T-M2-07): if the member an invitation is sent for loses the right between its release and the mailer, it stays `pending` with no link and `send_count` 0 — show it as «لم تُرسل الدعوة» (or put it back to held) and add a test | Claude | ⏸ | Paused (PO, 14 Oct 2026). Found in the T-M2-12 re-review (12 Oct 2026); no e-mail goes out, so no exposure — the list is misleading |
 
+### `EP-OA` Organization Admin, R1 — feature list approved 14 Oct 2026 ([`roles/organization-admin.md`](roles/organization-admin.md))
+
+Way of working (PO, 14 Oct 2026): UI first, then role by role with full features. Each task's screens are designed in the approved style (Meridian + Jadarat palette) and shown to the PO before building. R2 items follow as "Organization Admin part 2".
+
+| ID | Task | Owner | Status | Notes / PR |
+|---|---|---|---|---|
+| T-M2-21 | Apply the approved design to the product: Jadarat theme (palette, Poppins + IBM Plex Sans Arabic bundled with the app), gradient sidebar from brand tokens, new app shell with menus per role, English default locale | Claude | ⚪ | Design approved 14 Oct 2026; `docs/design/theming.md` layers 2–3 |
+| T-M2-22 | Organization profile + regional settings (#3, #4) | Claude | ⚪ | FR-ADM-02, FR-SCH-07, BR-ADM-3 |
+| T-M2-23 | Brand identity + branded e-mails (#10, #11) | Claude | ⚪ | FR-ADM-07, FR-NTF-02; logo uploads use `platform-files` (T-M2-18) |
+| T-M2-24 | Self-service sign-up + setup wizard ending with "invite your Training Manager" (#2) | Claude | ⚪ | FR-ADM-01 (BRD v2.8) |
+| T-M2-25 | Users completion: more profile fields, organization's invitation wording (#16, #20) | Claude | ⚪ | FR-IAM-01/02/03 |
+| T-M2-26 | Custom fields builder (#6) | Claude | ⚪ | FR-ADM-11 |
+| T-M2-27 | Feature toggles + plan and limits overview (#5, #49) | Claude | ⚪ | FR-ADM-13, FR-SUB-01 |
+| T-M2-28 | E-mail / SMS one-time codes, trusted devices (#30) | Claude + PO | ⚪ | = T-M2-10c; SMS provider decision needed from the PO |
+| T-M2-29 | Notification rules + channels/languages users may choose (#34, #35) | Claude | ⚪ | FR-NTF-07, FR-LRN-07; training events join as their modules ship |
+| T-M2-30 | Audit log screen (#44) | Claude | ⚪ | FR-AUD-01 |
+| T-M2-31 | Consent settings (#45) | Claude | ⚪ | FR-AUD-05; lawful-basis questions stay with legal (security decision 13) |
+| T-M2-32 | Standalone / HR Suite mode + HR system CSV/SFTP sync (#40, #41) | Claude | ⚪ | FR-STE-01, FR-INT-01 (R1 part) |
+| T-M2-33 | LMS connection: Jadarat LMS setup wizard, SSO, mapping, sync schedule, health (#39) | Claude | ⚪ | FR-LMS-01/02/03/10; catalog and enrollment sync complete with the Training Manager's features |
+| T-M2-34 | Admin home (#1) | Claude | ⚪ | FR-ADM-14; last, when its data sources exist |
+
 ## M2–M7 — R1 build (epics; tasks are broken down at the start of each milestone)
+
+> Since 14 Oct 2026 the build follows **roles** (Organization Admin → Platform Super Admin → HR Manager → Training Manager → …), each role's full feature list approved by the PO first. The epics below remain the requirement map; their features are picked up in each role's plan.
 
 | Milestone | Epic | Features | Status |
 |---|---|---|---|

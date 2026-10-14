@@ -1,6 +1,6 @@
 # Jadarat TMS — Full Feature List
 
-**Date:** 11 Oct 2026 (v2.7) · **Status:** Decisions D1, D2, D6, D7 applied; IAM-16 added (PO, 5 Oct 2026); ADM-17 extended with platform settings (PO, 6 Oct 2026); IAM-07 role CRUD per tenant (PO, 7 Oct 2026); NTF-10/11 organization e-mail texts and own mail server in R2 (PO, 7 Oct 2026); BR-IAM-4 Org Admin held alone (PO, 8 Oct 2026); ADM-04/05 maintained by the HR Manager (PO, 11 Oct 2026) · **BRD:** `docs/brd/Jadarat_TMS_BRD_v2.md` · **Basis:** Market research in `docs/research/TMS_Market_Comparison_vs_BRD.md` + Jadarat TMS BRD v1.0
+**Date:** 14 Oct 2026 (v2.8) · **Status:** Decisions D1, D2, D6, D7 applied; IAM-16 added (PO, 5 Oct 2026); ADM-17 extended with platform settings (PO, 6 Oct 2026); IAM-07 role CRUD per tenant (PO, 7 Oct 2026); NTF-10/11 organization e-mail texts and own mail server in R2 (PO, 7 Oct 2026); BR-IAM-4 Org Admin held alone (PO, 8 Oct 2026); ADM-04/05 maintained by the HR Manager (PO, 11 Oct 2026); ADM-01 wizard ends with inviting the Training Manager, NTF-07 rules set by the Org Admin, WFL-01 workflows set by the Training Manager (PO, 14 Oct 2026) · **BRD:** `docs/brd/Jadarat_TMS_BRD_v2.md` · **Basis:** Market research in `docs/research/TMS_Market_Comparison_vs_BRD.md` + Jadarat TMS BRD v1.0
 
 **Legend**
 
@@ -16,7 +16,7 @@
 
 | ID | Feature | Tier | Release | In v1? |
 |---|---|---|---|---|
-| ADM-01 | Self-service tenant sign-up, trial and onboarding wizard (org → branding → users → first course) | Core | R1 | ✅ |
+| ADM-01 | Self-service tenant sign-up, trial and onboarding wizard (org → branding → users → invite the Training Manager; first course at the Training Manager's first sign-in — PO, 14 Oct 2026) | Core | R1 | ✅ |
 | ADM-02 | Organization profile (AR/EN names, CR number, VAT number, country, currency, timezone) | Core | R1 | ✅ |
 | ADM-03 | Legal entities (multiple companies under one tenant, own currency/VAT/branding) | Plus | R3 | ❌ |
 | ADM-04 | Branches with hierarchy, GPS, working week and hours per branch (maintained by the HR Manager — PO, 11 Oct 2026) | Core | R1 | ✅ |
@@ -319,7 +319,7 @@
 | NTF-04 | SMS (MENA gateways, e.g. Unifonic or Twilio) | Core | R2 | ✅ |
 | NTF-05 | Web push notifications | Core | R2 | ✅ |
 | NTF-06 | Microsoft Teams / Slack notifications and approvals | Plus | R3 | ⚠️ |
-| NTF-07 | Event catalog with per-event, per-role, per-channel rules and quiet hours | Core | R1 | ✅ |
+| NTF-07 | Event catalog with per-event, per-role, per-channel rules and quiet hours (set by the Org Admin — PO, 14 Oct 2026) | Core | R1 | ✅ |
 | NTF-08 | Scheduled reminders (7 days / 3 days / 1 day / 1 hour) and digests | Core | R1 | ✅ |
 | NTF-09 | Broadcast messages to audiences / session participants | Core | R2 | ❌ |
 | NTF-10 | Organization-editable e-mail texts (subject and body per e-mail, Arabic and English, variables, preview with sample data, reset to default) | Core | R2 | ❌ |
@@ -375,7 +375,7 @@
 
 | ID | Feature | Tier | Release | In v1? |
 |---|---|---|---|---|
-| WFL-01 | Visual approval-workflow builder (enrollment, plan, budget, expense, session, certificate, OJT) | Core | R2 | ✅ |
+| WFL-01 | Visual approval-workflow builder (enrollment, plan, budget, expense, session, certificate, OJT), set by the Training Manager (PO, 14 Oct 2026) | Core | R2 | ✅ |
 | WFL-02 | Conditions, thresholds, parallel/sequential steps, escalation, delegation | Core | R2 | ✅ |
 | WFL-03 | Automation rules ("when X then Y", e.g., when fill rate < 50% at T-7, alert and suggest merge) | Plus | R3 | ❌ |
 | WFL-04 | SLA timers and overdue dashboards | Plus | R3 | ❌ |

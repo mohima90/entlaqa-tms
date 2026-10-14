@@ -221,6 +221,8 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
+| 14 Oct 2026 | T-M2-22 complete on the branch: review fixes (canonical time zones, HQ time-zone backfill, no-op saves, bidi-safe names, a11y, every date through the organization formatter) and the PO decisions (English default, Auditor read-only, no step-up — migration `20261017090400`); focused security re-review clean (no Critical/High/Medium), its Lows fixed; all local gates green (self-hosted journeys nightly). Waiting for the PO's "yes" to open the PR; after merge: DB deploy (5 migrations) |
+|---|---|
 | 14 Oct 2026 | T-M2-22 built (profile, regional settings, organization date display, default language); independent review: 2 Medium (legacy time-zone names refused by the DB; backfill would move HQ-branch time zones to Riyadh) + Lows — fixes in progress. PO decisions: English default, Auditor read-only, **no authenticator step-up for organization actions (D-IAM-01 reversed)** |
 |---|---|
 | 14 Oct 2026 | PO: self-hosted stack tested once a day at 23:59 (Riyadh) — Gate 15 moved to `selfhosted-nightly.yml`, out of the per-PR `CI gates` |

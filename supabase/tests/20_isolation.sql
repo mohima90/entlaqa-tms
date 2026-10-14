@@ -18,7 +18,7 @@ begin
     'platform.tenants', 'platform.tenant_domains', 'platform.persons',
     'platform.tenant_memberships', 'platform.session_context', 'platform.audit_events',
     'platform.branches', 'platform.departments', 'platform.person_employment', 'platform.role_assignments',
-    'platform.invitations', 'platform.security_policies',
+    'platform.invitations', 'platform.security_policies', 'platform.tenant_settings',
     -- Files (T-M2-18): no direct writes at all (file_guard's functions only); cross-tenant, FK and
     -- function tests in 81_files_app_server.sql, 82_files_app_worker.sql and 83_files_storage.sql.
     'platform.files', 'platform.file_download_grants',
@@ -86,12 +86,20 @@ set local role authenticated;
 select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1', 'a0000000-0000-4000-8000-000000000001'));
 do $$
 begin
-  -- platform.tenants: read-only for users (no INSERT/UPDATE grants).
+  -- platform.tenants: users never create organizations; only the display names are updatable (T-M2-22:
+  -- by an Organization Admin at AAL2, 89_tenant_settings_app_server.sql) and never another organization's.
   perform tests.assert_eq((select count(*) from platform.tenants), 1::bigint, 'tenants: only own tenant visible');
   perform tests.assert_privilege_denied($q$insert into platform.tenants (slug, name_ar) values ('evil', 'x')$q$,
     'tenants: users cannot create tenants');
-  perform tests.assert_privilege_denied($q$update platform.tenants set name_ar = 'x' where id = 'b0000000-0000-4000-8000-000000000001'$q$,
-    'tenants: users cannot update tenants');
+  perform tests.assert_eq(tests.rows_affected($q$update platform.tenants set name_ar = 'x' where id = 'b0000000-0000-4000-8000-000000000001'$q$),
+    0::bigint, 'tenants: RLS filters tenant B''s names');
+  perform tests.assert_privilege_denied($q$update platform.tenants set slug = 'evil' where id = 'a0000000-0000-4000-8000-000000000001'$q$,
+    'tenants: the slug is not updatable');
+  perform tests.assert_privilege_denied($q$update platform.tenants set status = 'active'$q$,
+    'tenants: the status is not updatable');
+  perform tests.assert_privilege_denied($q$update platform.tenants set id = 'b0000000-0000-4000-8000-000000000001'$q$,
+    'tenants: the id is not updatable');
+  perform tests.assert_privilege_denied($q$delete from platform.tenants$q$, 'tenants: no DELETE grant');
 
   -- platform.tenant_domains: read-only; cannot claim tenant B's hostname.
   perform tests.assert_privilege_denied($q$insert into platform.tenant_domains (tenant_id, hostname, kind) values ('b0000000-0000-4000-8000-000000000001', 'x.test', 'custom')$q$,
@@ -238,6 +246,21 @@ begin
     0::bigint, 'security_policies: RLS filters tenant B''s policy');
   perform tests.assert_privilege_denied($q$delete from platform.security_policies$q$,
     'security_policies: no DELETE grant');
+
+  -- platform.tenant_settings (T-M2-22): one row per organization, created with it; only the settings
+  -- columns are updatable (and only by an Organization Admin at AAL2: 89_tenant_settings_app_server.sql).
+  perform tests.assert_eq((select count(*) from platform.tenant_settings), 1::bigint,
+    'tenant_settings: only own organization''s settings visible');
+  perform tests.assert_privilege_denied($q$insert into platform.tenant_settings (tenant_id) values ('b0000000-0000-4000-8000-000000000001')$q$,
+    'tenant_settings: no INSERT grant');
+  perform tests.assert_privilege_denied($q$update platform.tenant_settings set tenant_id = 'b0000000-0000-4000-8000-000000000001'$q$,
+    'tenant_settings: tenant_id is not updatable');
+  perform tests.assert_eq(tests.rows_affected($q$update platform.tenant_settings set currency_code = 'EUR' where tenant_id = 'b0000000-0000-4000-8000-000000000001'$q$),
+    0::bigint, 'tenant_settings: RLS filters tenant B''s settings');
+  perform tests.assert_privilege_denied($q$update platform.tenant_settings set updated_by = 'b1000000-0000-4000-8000-0000000000b1'$q$,
+    'tenant_settings: updated_by is not updatable (no person of another organization can be planted)');
+  perform tests.assert_privilege_denied($q$delete from platform.tenant_settings$q$,
+    'tenant_settings: no DELETE grant');
 end $$;
 rollback;
 

@@ -10,6 +10,13 @@ const declarations = () => parseTokenCss(...shippedTokenSheets().map((sheet) => 
  * (only added tokens may appear); a deliberate look change (T-M2-04c) updates it with `vitest -u`.
  */
 describe('shipped design tokens (golden record)', () => {
+  it('reads both token sheets styles.css imports (foundation, then the shipped theme)', () => {
+    expect(shippedTokenSheets().map((sheet) => sheet.path.split('/').slice(-2).join('/'))).toEqual([
+      'tokens/tokens.css',
+      'themes/jadarat.css',
+    ]);
+  });
+
   for (const [name, ctx] of Object.entries(PAGE_CONTEXTS)) {
     it(`resolve to the recorded values: ${name}`, () => {
       expect(resolveTokens(declarations(), ctx)).toMatchSnapshot();

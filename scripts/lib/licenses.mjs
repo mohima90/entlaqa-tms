@@ -31,6 +31,15 @@ export const EXCEPTIONS = new Map([
   ['@img/sharp-libvips-linuxmusl-x64', 'as above (musl build)'],
   ['@img/sharp-libvips-linux-arm64', 'as above (arm64 build)'],
   ['@img/sharp-libvips-darwin-arm64', 'as above (macOS build)'],
+  // Fonts (T-M2-21, ADR 0007 §4): SIL Open Font License 1.1 — free to use, bundle and embed in
+  // software; the fonts may not be sold on their own and the licence travels with them
+  // (packages/ui/THIRD_PARTY_NOTICES.md). Reviewed per package, not allowed for code in general.
+  [
+    '@fontsource/poppins',
+    'OFL-1.1 font files (Poppins), bundled unmodified with the app; notice in packages/ui/THIRD_PARTY_NOTICES.md',
+  ],
+  ['@fontsource/ibm-plex-sans-arabic', 'as above (IBM Plex Sans Arabic, OFL-1.1)'],
+  ['@fontsource/ibm-plex-mono', 'as above (IBM Plex Mono, OFL-1.1)'],
 ]);
 
 /** Splits an SPDX expression into identifiers, operators and parentheses. */

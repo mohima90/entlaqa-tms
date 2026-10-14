@@ -37,6 +37,7 @@
 
 ### 4. Fonts
 Self-hosted with `next/font/local` (no runtime or build-time call to Google Fonts, so builds work in air-gapped CI): IBM Plex Sans Arabic + IBM Plex Sans (+ Plex Mono) as in `docs/design/tokens` (SIL OFL). Arabic base size +10–15 %, line-height 1.5–1.7, no synthetic italics (NFR-L10N-02). Tenant brand fonts (ADM-07) come from an approved, licence-checked list shipped with the app. The same font files are used by the PDF renderer.
+- *Amendment (14 Oct 2026, T-M2-21):* the **Latin font is now Poppins** (PO decision, 14 Oct 2026); Arabic stays IBM Plex Sans Arabic and codes IBM Plex Mono. The fonts are self-hosted as `@font-face` rules in `packages/ui/src/fonts.css`, importing the woff2 files of the `@fontsource/*` npm packages (SIL OFL 1.1, exact versions, reviewed licence exceptions; notices in `packages/ui/THIRD_PARTY_NOTICES.md`) instead of `next/font/local`, so Storybook and the app load the same files with the theme's family names; there is still no call to a font CDN at runtime or build time. Organizations have **no font choice** (PO, 14 Oct 2026; BRD v2.9 FR-ADM-07), which replaces "tenant brand fonts from an approved list" above.
 
 ### 5. Numerals and inputs
 - Display: Western (`latn`) or Eastern Arabic (`arab`) digits per tenant default and user preference (NFR-L10N-03), applied through one formatting module (`platform-i18n/format`) used by UI, e-mail, WhatsApp/SMS text and PDFs.

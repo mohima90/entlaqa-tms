@@ -128,13 +128,13 @@ Way of working (PO, 14 Oct 2026): UI first, then role by role with full features
 |---|---|---|---|---|
 | T-M2-21 | Apply the approved design to the product: Jadarat theme (palette, Poppins + IBM Plex Sans Arabic bundled with the app), gradient sidebar from brand tokens, new app shell with menus per role, English default locale | Claude | ⚪ | Design approved 14 Oct 2026; `docs/design/theming.md` layers 2–3 |
 | T-M2-22 | Organization profile + regional settings (#3, #4) | Claude | ⚪ | FR-ADM-02, FR-SCH-07, BR-ADM-3 |
-| T-M2-23 | Brand identity + branded e-mails (#10, #11) | Claude | ⚪ | FR-ADM-07, FR-NTF-02; logo uploads use `platform-files` (T-M2-18) |
-| T-M2-24 | Self-service sign-up + setup wizard ending with "invite your Training Manager" (#2) | Claude | ⚪ | FR-ADM-01 (BRD v2.8) |
-| T-M2-25 | Users completion: more profile fields, organization's invitation wording (#16, #20) | Claude | ⚪ | FR-IAM-01/02/03 |
+| T-M2-23 | Brand identity (logos, colours → sidebar gradient; no font choice) + e-mail sender name and address (#10, #11) | Claude | ⚪ | FR-ADM-07, FR-NTF-02 (sending part); logo uploads use `platform-files` (T-M2-18). E-mail look and texts belong to the L&D Manager |
+| T-M2-24 | Self-service sign-up + setup wizard ending with "invite your L&D Manager" (#2) | Claude | ⚪ | FR-ADM-01 (BRD v2.8) |
+| T-M2-25 | Users completion: invitation link for one person (single use, 7 days, revocable) + more profile fields (#16, #20) | Claude | ⚪ | FR-IAM-01/02/03 (BRD v2.9); threat-model update for the link (TM-0003) |
 | T-M2-26 | Custom fields builder (#6) | Claude | ⚪ | FR-ADM-11 |
 | T-M2-27 | Feature toggles + plan and limits overview (#5, #49) | Claude | ⚪ | FR-ADM-13, FR-SUB-01 |
-| T-M2-28 | E-mail / SMS one-time codes, trusted devices (#30) | Claude + PO | ⚪ | = T-M2-10c; SMS provider decision needed from the PO |
-| T-M2-29 | Notification rules + channels/languages users may choose (#34, #35) | Claude | ⚪ | FR-NTF-07, FR-LRN-07; training events join as their modules ship |
+| T-M2-28 | E-mail one-time codes, trusted devices (#30) | Claude | ⚪ | = T-M2-10c without SMS (no SMS anywhere — PO, 14 Oct 2026) |
+| T-M2-29 | ~~Notification rules + channels/languages users may choose~~ | — | ✖ | Moved to the **L&D Manager** (PO, 14 Oct 2026; BRD v2.9) — planned with that role |
 | T-M2-30 | Audit log screen (#44) | Claude | ⚪ | FR-AUD-01 |
 | T-M2-31 | Consent settings (#45) | Claude | ⚪ | FR-AUD-05; lawful-basis questions stay with legal (security decision 13) |
 | T-M2-32 | Standalone / HR Suite mode + HR system CSV/SFTP sync (#40, #41) | Claude | ⚪ | FR-STE-01, FR-INT-01 (R1 part) |

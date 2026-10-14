@@ -8,7 +8,7 @@
 
 - Route `/{ar|en}/suite/admin/organization`; menu **Organization → Organization profile** («المنشأة ← بيانات المنشأة»), a link for the Organization Admin (organization-wide `platform.tenant.manage`) instead of «قريبًا» / "Coming soon" — also on the set-up home — and for the Auditor.
 - The **Auditor** (organization-wide `platform.tenant.read`; BRD Appendix B "tenant settings: V") opens it **read only** (PO decision, 14 Oct 2026): every field disabled, no Save / Cancel, the note «يمكنك الاطلاع على هذه الإعدادات، ولا يغيّرها إلا مدير المنشأة.» / "You can view these settings. Only the Organization Admin can change them."; the menu shows it the entry. Everyone else (HR Manager, Learner, …) gets «ليست لديك صلاحية لتنفيذ هذا الإجراء.» / "You don't have permission to do this."
-- Saving needs an authenticator code from the last 15 minutes (`platform.tenant.manage` is high risk / AAL2 in the permission registry, as the security policy). At AAL1 the page shows a warning with «التحقق بتطبيق المصادقة» / "Verify with the authenticator app" and the form read-only; a save refused for a stale code says so and links to the code (nothing typed is lost).
+- Saving needs **no authenticator code** (PO decision, 14 Oct 2026, reversing D-IAM-01 — ADR 0003 amendment): `platform.tenant.manage` stays high risk (the session is confirmed with Auth before the save, and the save is audited) but asks for no step-up; the organization's MFA sign-in policy is what protects the Organization Admin's session.
 
 ## Layout (as the mock-up)
 

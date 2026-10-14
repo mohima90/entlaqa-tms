@@ -54,10 +54,18 @@ export function AppShell({
   const menuButton = useRef<HTMLButtonElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
 
+  // Focus goes back to the menu button once the drawer is closed and the page is no longer inert.
+  const restoreFocus = useRef(false);
   const close = useCallback(() => {
+    restoreFocus.current = true;
     setOpen(false);
-    menuButton.current?.focus();
   }, []);
+
+  useEffect(() => {
+    if (open || !restoreFocus.current) return;
+    restoreFocus.current = false;
+    menuButton.current?.focus();
+  }, [open]);
 
   useEffect(() => {
     if (!open) return undefined;

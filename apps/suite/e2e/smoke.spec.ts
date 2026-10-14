@@ -199,8 +199,10 @@ test('the users pages explain that they need a configured environment (preview)'
   // On a phone the navigation is behind the menu button (T-M2-21).
   if (isMobile) await page.getByRole('button', { name: 'Menu' }).click();
   await page.getByRole('link', { name: 'Users' }).click();
-  await expect(page.getByRole('link', { name: 'Users' })).toHaveAttribute('aria-current', 'page');
   await expect(page).toHaveURL(/\/en\/suite\/admin\/users$/);
+  if (isMobile) await page.getByRole('button', { name: 'Menu' }).click();
+  await expect(page.getByRole('link', { name: 'Users' })).toHaveAttribute('aria-current', 'page');
+  if (isMobile) await page.keyboard.press('Escape');
   await expect(page.getByTestId('users-not-configured')).toContainText('connected to the database');
   await page.getByTestId('language-toggle').click();
   await expect(page).toHaveURL(/\/ar\/suite\/admin\/users$/);

@@ -52,6 +52,8 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | ID | Decision |
 |---|---|---|
+| 14 Oct 2026 | D-IAM-01 | **No authenticator step-up for organization-level actions** (PO: "no need for authenticator to change anything as long as I'm logged in as org admin; it's not a banking system"). **Reverses the 6 Oct 2026 decision** (authenticator code always required for high-risk actions): role changes incl. privileged roles, security policy, organization profile, deactivation/reactivation, invitations, import, resetting another member's authenticator no longer ask for a code. Permission checks, separation of duties, no-escalation and tenant isolation stay unchanged. Kept: the organization's own MFA-at-sign-in policy (an organization that wants a second factor can still require it), a member managing their own authenticator, and the ENTLAQA platform console. Accepted residual risk (PO): a stolen admin session can act without a second factor unless the organization requires MFA at sign-in |
+| 14 Oct 2026 | — | **T-M2-22 decisions** (PO): existing and new organizations default to **English** for new people; the **Auditor** sees the Organization profile **read-only** (BRD Appendix B) |
 | 14 Oct 2026 | — | **Self-hosted stack tested once a day at 23:59 Riyadh time** (PO): Gate 15 moves from every PR to the scheduled workflow `selfhosted-nightly.yml` (20:59 UTC, on `main`, also runnable by hand); it is no longer part of the required `CI gates`; tasks no longer run the self-hosted smoke locally unless they change `infra/docker`. A failed nightly run opens/updates a `selfhosted-nightly` issue, fixed before further merges. Trade-off accepted: a signed-in or container regression can reach `main` and is caught the same night |
 | 14 Oct 2026 | — | **T-M2-21 accepted for PR (PO "yes")**: the three font packages (Poppins, IBM Plex Sans Arabic, IBM Plex Mono) are accepted under **SIL OFL-1.1** as reviewed licence exceptions pinned to that licence; Arabic «موافقات الخصوصية» for Consent (UX-writer review list) |
 | 14 Oct 2026 | — | **Organization Admin list revised** (PO comments; BRD v2.9): **Training Manager renamed L&D Manager** (مدير التعلم والتطوير); organization profile = display data only (no legal/registration data); branding without font choice; e-mail look/texts and all notification set-up (bell + e-mail) move to the L&D Manager — the Organization Admin keeps e-mail sending (sender, own mail server); **Domain management** section (product subdomain or custom domain, instructions for both; stays R2); **invitation link for one person** (single use, 7 days); **no SMS anywhere**; sandbox and configuration export/import removed |
@@ -185,7 +187,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 13. With the T-M2-06b PR: glance at two wording changes in the invitation e-mail versus approved screen 7 («لديك دعوة من …» instead of «أضافك …»; "invited you … with the role …") — reasons in `docs/design/screens/m2-users-roles/README.md`. No action unless you prefer the original wording.
 
 **Security decisions for M2 (from TM-0002…0006, 3 Oct 2026)** — needed before the related M2 stories start; Claude will bring them one at a time:
-1. ~~Always require an authenticator code for high-risk actions (role changes, exports), even when an organization turns MFA off?~~ **Answered 6 Oct 2026: yes** (TM-0003 D-IAM-01)
+1. ~~Always require an authenticator code for high-risk actions (role changes, exports), even when an organization turns MFA off?~~ **Answered 6 Oct 2026: yes** (TM-0003 D-IAM-01) — **reversed by the PO on 14 Oct 2026: no step-up for organization-level actions**
 2. ~~Ask each new organization's first administrator to set up an authenticator app during onboarding?~~ **Answered 9 Oct 2026: recommended, not required** — admins are prompted at first sign-in and may skip; the organization decides later (decision 1 still applies: high-risk actions always need a code) (TM-0002 F-TEN-05)
 3. ~~"Platform Super Admin" only for ENTLAQA staff → 14 roles per organization?~~ **Answered 4 Oct 2026** with the approved screens (14 roles shown) — BRD §4.2 wording to be aligned in the next BRD revision (TM-0003 D-IAM-02)
 4. ~~HR Managers may invite users and give ordinary roles; only a Tenant Admin can create another Tenant Admin?~~ **Answered 5 Oct 2026: yes** (TM-0003 D-IAM-03)
@@ -218,6 +220,8 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 ## 6. Session Log
 
 | Date | Summary |
+|---|---|
+| 14 Oct 2026 | T-M2-22 built (profile, regional settings, organization date display, default language); independent review: 2 Medium (legacy time-zone names refused by the DB; backfill would move HQ-branch time zones to Riyadh) + Lows — fixes in progress. PO decisions: English default, Auditor read-only, **no authenticator step-up for organization actions (D-IAM-01 reversed)** |
 |---|---|
 | 14 Oct 2026 | PO: self-hosted stack tested once a day at 23:59 (Riyadh) — Gate 15 moved to `selfhosted-nightly.yml`, out of the per-PR `CI gates` |
 | 14 Oct 2026 | T-M2-22 Organization profile screens (EN + AR) approved by the PO; build started |

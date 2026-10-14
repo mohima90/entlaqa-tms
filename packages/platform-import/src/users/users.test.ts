@@ -14,7 +14,14 @@ import {
 import { ISSUES, ISSUE_CODES, issue, issueMessage, parseIssues, severityOf } from './issues';
 import { ReportBuilder, reportFileName } from './report';
 import { SYSTEM_ROLES } from '@jadarat/platform-rbac/system-roles';
-import { IMPORTABLE_ROLES, isPrivilegedRole, roleForName, roleName, splitRoles } from './roles';
+import {
+  FORMER_ROLE_NAMES,
+  IMPORTABLE_ROLES,
+  isPrivilegedRole,
+  roleForName,
+  roleName,
+  splitRoles,
+} from './roles';
 import { compactMobile, isEmail, isoDate, languageFor, normalizeRow } from './rows';
 import { csvTemplate, templateFileName, templateHeaders, xlsxTemplate } from './template';
 import { cleanText, excerpt, matchKey } from './text';
@@ -158,6 +165,31 @@ describe('roles', () => {
     expect(IMPORTABLE_ROLES.every((r) => !r.privileged)).toBe(true);
     expect(roleName('learner', 'ar')).toBe('متدرب');
     expect(roleName('nope', 'en')).toBe('nope');
+  });
+
+  it('still reads the L&D Manager by its former name (renamed by the PO, 14 Oct 2026)', () => {
+    for (const name of [
+      'مدير التدريب',
+      'Training Manager',
+      'training manager',
+      'TRAINING MANAGER',
+    ]) {
+      expect(roleForName(name)).toBe('training_manager');
+    }
+    // Today's names and the code keep working; the template shows only today's names.
+    expect(roleForName('مدير التعلم والتطوير')).toBe('training_manager');
+    expect(roleForName('L&D Manager')).toBe('training_manager');
+    expect(roleForName('training_manager')).toBe('training_manager');
+    expect(roleName('training_manager', 'en')).toBe('L&D Manager');
+    expect(IMPORTABLE_ROLES.flatMap((r) => [r.name.ar, r.name.en])).not.toContain(
+      'Training Manager',
+    );
+    // A former name never takes over a current role's name.
+    for (const names of Object.values(FORMER_ROLE_NAMES)) {
+      for (const name of names) {
+        expect(IMPORTABLE_ROLES.some((r) => r.name.ar === name || r.name.en === name)).toBe(false);
+      }
+    }
     expect(splitRoles('متدرب، مدرب داخلي; Mentor / Assessor ,,')).toEqual([
       'متدرب',
       'مدرب داخلي',
@@ -506,6 +538,7 @@ describe('template (screen 3)', () => {
         .map((r) => r[4])
         .filter(Boolean),
     ).toHaveLength(IMPORTABLE_ROLES.length);
+    expect(lists.flat()).not.toContain('مدير التدريب'); // former role name: read, never listed
     const guide = (await rowsOf(book, 1)).map((r) => r.cells);
     expect(guide[1]?.[0]).toBe('البريد الإلكتروني للعمل');
     expect(guide[1]?.[2]).toBe('مطلوب');

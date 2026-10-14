@@ -12,6 +12,22 @@ for (const role of SYSTEM_ROLES) {
     ROLE_BY_KEY.set(matchKey(name), role.code);
 }
 
+/**
+ * Former display names still accepted in files (read only: the template lists show today's names).
+ * «مدير التدريب» / "Training Manager" became «مدير التعلم والتطوير» / "L&D Manager" (PO, 14 Oct 2026;
+ * BRD v2.9), and files made from an older template or an HR export still carry the old name.
+ */
+export const FORMER_ROLE_NAMES: Readonly<Partial<Record<SystemRoleCode, readonly string[]>>> = {
+  training_manager: ['مدير التدريب', 'Training Manager'],
+};
+for (const [code, names] of Object.entries(FORMER_ROLE_NAMES) as [SystemRoleCode, string[]][]) {
+  for (const name of names) {
+    const key = matchKey(name);
+    // Never let a former name shadow a current one.
+    if (!ROLE_BY_KEY.has(key)) ROLE_BY_KEY.set(key, code);
+  }
+}
+
 /** The role a cell names, or null. */
 export function roleForName(name: string): SystemRoleCode | null {
   return ROLE_BY_KEY.get(matchKey(name)) ?? null;

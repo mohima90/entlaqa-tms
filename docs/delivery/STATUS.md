@@ -218,6 +218,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
+| 14 Oct 2026 | T-M2-22 Organization profile screens (EN + AR) approved by the PO; build started |
 | 14 Oct 2026 | **PR #57 (T-M2-21) merged by the PO** — approved design, role menus, English default and L&D Manager label on main; all 19 checks green; no DB deploy. Next: T-M2-22 organization profile + regional settings — screen design for the PO first |
 | 14 Oct 2026 | T-M2-21: review findings fixed (import former role names, modal phone drawer, focus on resize, touch sizes, shadow-4, phone sign-in in the self-hosted smoke, licence exceptions pinned to OFL-1.1, landmarks, modal-over-drawer keys); PO approved the screenshots, the OFL exception and «موافقات الخصوصية» → **PR opened** |
 | 14 Oct 2026 | T-M2-21 built on the branch: Jadarat theme light/dark with gradient sidebar (148/148 contrast pairs), organization colours drive the gradient, self-hosted Poppins + IBM Plex Sans Arabic, Meridian shell with phone drawer, role menus (Org Admin groups per the PO), English default, L&D Manager label; all local gates and self-hosted smoke green. Open: phone table fix, Org Admin home card, independent review, PO screenshots, OFL licence exception for the PO |

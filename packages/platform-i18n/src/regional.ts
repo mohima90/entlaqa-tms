@@ -115,41 +115,31 @@ export function isoCurrencyCodes(): readonly string[] {
 }
 
 /**
- * ICU still names some zones by their old IANA names (CLDR keeps them stable), but those names are only
- * backward-compatibility links in tzdata — and distributions now ship them separately (Debian/Ubuntu
- * `tzdata-legacy`), so PostgreSQL may not know them and the database refuses them (T-M2-22 review M1).
- * The profile offers and stores the canonical IANA name instead. The list is every name
- * `Intl.supportedValuesOf('timeZone')` returns (Node 22, ICU 78) that tzdata 2025b's `tzdata.zi` declares
- * as a link (`L <target> <name>`); a test keeps it in step with the runtime.
+ * ICU still names some zones by their old IANA names (CLDR keeps them stable), but some of those names are
+ * only backward-compatibility links that distributions now ship separately (Debian/Ubuntu
+ * `tzdata-legacy`), so PostgreSQL does not know them and the database refuses them (T-M2-22 review M1).
+ * The profile offers and stores the current IANA name for exactly those: the names
+ * `Intl.supportedValuesOf('timeZone')` returns (Node 22, ICU 78) that PostgreSQL 16 with Ubuntu's tzdata
+ * lacks. Links PostgreSQL still knows (Europe/Bratislava, America/Kralendijk, Arctic/Longyearbyen, …) stay
+ * as they are — a country's own name is clearer than its neighbour's. The integration test keeps every
+ * offered zone known to the database.
  */
 export const LEGACY_TIME_ZONES: Readonly<Record<string, string>> = {
   'Africa/Asmera': 'Africa/Asmara',
   'America/Buenos_Aires': 'America/Argentina/Buenos_Aires',
   'America/Catamarca': 'America/Argentina/Catamarca',
-  'America/Coral_Harbour': 'America/Atikokan',
   'America/Cordoba': 'America/Argentina/Cordoba',
   'America/Godthab': 'America/Nuuk',
   'America/Indianapolis': 'America/Indiana/Indianapolis',
   'America/Jujuy': 'America/Argentina/Jujuy',
-  'America/Kralendijk': 'America/Curacao',
   'America/Louisville': 'America/Kentucky/Louisville',
-  'America/Lower_Princes': 'America/Curacao',
-  'America/Marigot': 'America/Port_of_Spain',
   'America/Mendoza': 'America/Argentina/Mendoza',
-  'America/St_Barthelemy': 'America/Port_of_Spain',
-  'Arctic/Longyearbyen': 'Europe/Oslo',
   'Asia/Calcutta': 'Asia/Kolkata',
   'Asia/Katmandu': 'Asia/Kathmandu',
   'Asia/Rangoon': 'Asia/Yangon',
   'Asia/Saigon': 'Asia/Ho_Chi_Minh',
   'Atlantic/Faeroe': 'Atlantic/Faroe',
-  'Europe/Bratislava': 'Europe/Prague',
-  'Europe/Busingen': 'Europe/Zurich',
   'Europe/Kiev': 'Europe/Kyiv',
-  'Europe/Mariehamn': 'Europe/Helsinki',
-  'Europe/Podgorica': 'Europe/Belgrade',
-  'Europe/San_Marino': 'Europe/Rome',
-  'Europe/Vatican': 'Europe/Rome',
   'Pacific/Enderbury': 'Pacific/Kanton',
   'Pacific/Ponape': 'Pacific/Pohnpei',
   'Pacific/Truk': 'Pacific/Chuuk',

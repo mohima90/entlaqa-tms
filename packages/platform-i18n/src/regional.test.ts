@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   DATE_DISPLAYS,
@@ -142,20 +142,26 @@ describe('regional reference data (T-M2-22)', () => {
     ]) {
       expect(zones).toContain(zone);
     }
+    // Links PostgreSQL still knows keep their own name (the country's), mapped to nothing.
+    expect(Object.keys(LEGACY_TIME_ZONES)).toHaveLength(18);
+    for (const zone of ['Europe/Bratislava', 'America/Kralendijk', 'Arctic/Longyearbyen']) {
+      expect(canonicalTimeZone(zone)).toBe(zone);
+      expect(zones).toContain(zone);
+    }
     expect(new Set(zones).size).toBe(zones.length);
     expect(canonicalTimeZone('Asia/Riyadh')).toBe('Asia/Riyadh');
     expect(canonicalTimeZone('toString')).toBe('toString');
     expect(countryTimeZones('IN')).toEqual(['Asia/Kolkata']);
   });
 
-  // The system's tzdata (when present) says which names are only links: none of them may be offered.
-  it.skipIf(!existsSync('/usr/share/zoneinfo/tzdata.zi'))('offers no tzdata link name', () => {
-    const links = new Set(
-      readFileSync('/usr/share/zoneinfo/tzdata.zi', 'utf8')
-        .split('\n')
-        .filter((line) => line.startsWith('L '))
-        .map((line) => line.split(' ')[2]),
-    );
-    expect(ianaTimeZones().filter((zone) => links.has(zone))).toEqual([]);
-  });
+  // The system's tzdata (what PostgreSQL reads on Debian/Ubuntu) has a file for every zone offered: no
+  // name only the separately shipped legacy links provide (the integration test asks the database itself).
+  it.skipIf(!existsSync('/usr/share/zoneinfo/tzdata.zi'))(
+    'offers only zones the system tzdata has a file for',
+    () => {
+      expect(ianaTimeZones().filter((zone) => !existsSync(`/usr/share/zoneinfo/${zone}`))).toEqual(
+        [],
+      );
+    },
+  );
 });

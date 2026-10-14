@@ -6,8 +6,8 @@ import type { UserTx } from './with-user-tx';
 /**
  * The organization's profile and regional settings (FR-ADM-02, FR-SCH-07; T-M2-22; migrations
  * 20261017090000–20261017090200): display names on platform.tenants, everything else on
- * platform.tenant_settings. The database decides who may change them (Organization Admin at AAL2 with a
- * recent code) and every rule; these are its request-path calls.
+ * platform.tenant_settings. The database decides who may change them (the Organization Admin; no
+ * authenticator code since the PO decision of 14 Oct 2026) and every rule; these are its request-path calls.
  */
 
 export const TENANT_DATE_DISPLAYS = ['gregorian', 'hijri', 'dual'] as const;
@@ -122,7 +122,7 @@ const OFFERED_FIELDS: readonly OfferedProfileField[] = ['countryCode', 'currency
  * records who saved and when, and moves the version on), the display names when they changed. A country,
  * currency or time zone must be on offer (`accepts`) unless it is the stored one — a value saved earlier
  * stays accepted even when this runtime no longer lists it. The database lets only an Organization Admin
- * at AAL2 with a recent code change either row (policies tenant_settings_update and tenants_update); any
+ * change either row (policies tenant_settings_update and tenants_update); any
  * refusal changes nothing — the caller's transaction is rolled back.
  */
 export async function updateOrganizationProfile(

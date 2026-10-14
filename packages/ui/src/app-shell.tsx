@@ -78,6 +78,8 @@ export function AppShell({
         (el) => el.getClientRects().length > 0,
       );
     const onKey = (event: KeyboardEvent) => {
+      // Another modal opened over the drawer (e.g. the idle-session warning) handles its own keys.
+      if (document.activeElement?.closest('dialog[open]')) return;
       if (event.key === 'Escape') {
         close();
         return;

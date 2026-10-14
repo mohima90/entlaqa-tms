@@ -265,6 +265,29 @@ for (const { locale, menu, close, home } of [
     await expect(page.getByRole('button', { name: close })).toBeFocused();
     await page.keyboard.press('Shift+Tab');
     await expect(entries.last()).toBeFocused();
+    // A modal opened over the drawer (e.g. the idle-session warning) keeps its own Tab order.
+    await page.evaluate(() => {
+      const modal = document.createElement('dialog');
+      modal.id = 'over-drawer';
+      for (const label of ['First', 'Second']) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = label;
+        modal.append(button);
+      }
+      document.body.append(modal);
+      modal.showModal();
+    });
+    const overDrawer = page.locator('#over-drawer');
+    await expect(overDrawer.getByRole('button', { name: 'First' })).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(overDrawer.getByRole('button', { name: 'Second' })).toBeFocused();
+    await page.evaluate(() => {
+      const modal = document.querySelector<HTMLDialogElement>('#over-drawer');
+      modal?.close();
+      modal?.remove();
+    });
+    await expect(navigation).toBeVisible();
     await page.getByRole('button', { name: close }).focus();
     const results = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])

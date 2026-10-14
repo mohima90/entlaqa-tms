@@ -4,7 +4,7 @@ import { routing } from '@jadarat/platform-i18n/routing';
 import { SOLE_ROLE_CODES, type InviteFormView, SYSTEM_ROLES } from '@jadarat/platform-rbac';
 import { Alert, Card } from '@jadarat/ui';
 import { hasLocale } from 'next-intl';
-import { getFormatter, getTranslations } from 'next-intl/server';
+import { getTranslations } from 'next-intl/server';
 import { notFound, redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { SuiteShell } from '../../../../../../components/suite-shell';
@@ -12,7 +12,8 @@ import { InviteUserForm } from '../../../../../../components/users/invite-user-f
 import { INVITED_FLASH_PARAM } from '../../../../../../lib/invite-form';
 import { expiryFrom } from '../../../../../../lib/invitations-view';
 import { profileErrorTexts } from '../../../../../../lib/profile-texts';
-import { getSuiteContext } from '../../../../../../lib/suite-context';
+import { type SuiteContext, getSuiteContext } from '../../../../../../lib/suite-context';
+import { pageDates } from '../../../../../../lib/page-dates';
 import { inviteFormQuery } from '../../../../../../lib/users-queries';
 import { localizedName } from '../../../../../../lib/users-view';
 
@@ -101,7 +102,7 @@ export default async function InviteUserPage({ params }: { params: Promise<{ loc
         );
       }
     } else {
-      content = await inviteForm(locale, result.value, usersHref, context.regional.defaultLocale);
+      content = await inviteForm(locale, result.value, usersHref, context);
     }
   }
 
@@ -121,11 +122,10 @@ async function inviteForm(
   locale: AppLocale,
   view: InviteFormView,
   usersHref: string,
-  defaultLocale: 'ar' | 'en',
+  context: SuiteContext,
 ): Promise<ReactNode> {
   const t = await getTranslations({ locale, namespace: 'invitations' });
   const common = await getTranslations({ locale, namespace: 'common' });
-  const format = await getFormatter({ locale });
   const labels: Record<string, string> = Object.fromEntries(
     LABEL_KEYS.map((k) => [k, t(`form.${k}`)]),
   );
@@ -135,7 +135,7 @@ async function inviteForm(
   labels['language.ar'] = t('form.languages.ar');
   labels['language.en'] = t('form.languages.en');
   labels.expiryNotice = t('form.expiryNotice', {
-    date: format.dateTime(expiryFrom(new Date()), 'long'),
+    date: pageDates(locale, context).long(expiryFrom(new Date())),
   });
   if (view.privilegedAccess !== 'allowed') {
     labels.privilegedLocked =
@@ -154,7 +154,7 @@ async function inviteForm(
   return (
     <Card>
       <InviteUserForm
-        defaultLocale={defaultLocale}
+        defaultLocale={context.regional.defaultLocale}
         departments={view.orgUnits.departments.map(unit)}
         branches={view.orgUnits.branches.map(unit)}
         managers={view.managers.map((m) => ({

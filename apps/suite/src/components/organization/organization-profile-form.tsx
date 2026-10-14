@@ -1,14 +1,24 @@
 'use client';
+import { formatDisplayDate } from '@jadarat/platform-i18n/dates';
 import { type RegionalPreset, applyPreset } from '@jadarat/platform-i18n/regional-presets';
 import { Alert, Button, Card, Icon, TextField, buttonClasses } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
-import { type ReactNode, type SyntheticEvent, useState, useTransition } from 'react';
+import {
+  type ReactNode,
+  type SyntheticEvent,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+  useTransition,
+} from 'react';
 import { updateOrganizationProfileAction } from '../../actions/organization';
 import type { Choice, OrganizationChoices } from '../../lib/organization-options';
 import {
   type ProfileField,
   type ProfileFieldError,
   type ProfileFormValues,
+  firstInvalidField,
   profileInput,
   serverFieldError,
   toggleDay,
@@ -40,6 +50,9 @@ export interface OrganizationProfileFormProps {
   /** /mfa?next=<this page>: a save refused for want of a recent code links there. */
   readonly stepUpHref: string;
 }
+
+/** No subscription: whether this renders in the browser never changes after hydration. */
+const subscribeNothing = () => () => undefined;
 
 interface Message {
   readonly tone: 'success' | 'warning' | 'danger' | 'info';
@@ -103,7 +116,51 @@ export function OrganizationProfileForm(props: OrganizationProfileFormProps) {
   const [message, setMessage] = useState<Message | null>(null);
   // A polite announcement when the country fills in suggestions (the fields change without a page load).
   const [presetNote, setPresetNote] = useState('');
+  // The concurrency token: the saved version comes back with each save (review L8), so a quick second
+  // save does not conflict with the first; a refreshed page brings it too (versions only grow).
+  const [savedVersion, setSavedVersion] = useState(props.version);
+  const version = Math.max(props.version, savedVersion);
+  // After a refused save, the first field with an error gets the focus (review L4).
+  const [focusField, setFocusField] = useState<{ field: ProfileField } | null>(null);
+  // In the browser the preview follows the chosen display AND time zone for today (review L6); on the
+  // server (and while hydrating) it is the server's preview for the saved zone.
+  const inBrowser = useSyncExternalStore(
+    subscribeNothing,
+    () => true,
+    () => false,
+  );
   const disabled = !editable || pending;
+
+  useEffect(() => {
+    if (!focusField) return;
+    const id =
+      focusField.field === 'workingDays'
+        ? 'org-day-0'
+        : focusField.field === 'defaultLocale' || focusField.field === 'dateDisplay'
+          ? null
+          : `org-${focusField.field}`;
+    if (id) document.getElementById(id)?.focus();
+  }, [focusField]);
+
+  const preview = useMemo(() => {
+    if (!inBrowser) return choices.previews[values.dateDisplay];
+    try {
+      return formatDisplayDate(choices.now, {
+        locale: props.locale,
+        display: values.dateDisplay,
+        timeZone: values.timeZone,
+        style: 'full',
+      });
+    } catch {
+      return choices.previews[values.dateDisplay];
+    }
+  }, [inBrowser, values.dateDisplay, values.timeZone, props.locale, choices.previews, choices.now]);
+
+  function showErrors(found: Partial<Record<ProfileField, ProfileFieldError>>) {
+    setFieldErrors(found);
+    const field = firstInvalidField(found);
+    if (field) setFocusField({ field });
+  }
 
   const set = <K extends ProfileField>(field: K, value: ProfileFormValues[K]) => {
     setValues((current) => ({ ...current, [field]: value }));
@@ -127,7 +184,7 @@ export function OrganizationProfileForm(props: OrganizationProfileFormProps) {
     event.preventDefault();
     setMessage(null);
     const found = validateProfile(values);
-    setFieldErrors(found);
+    showErrors(found);
     if (Object.keys(found).length > 0) {
       setMessage({ tone: 'danger', text: props.errors['errors.validationFailed'] ?? '' });
       return;
@@ -135,9 +192,10 @@ export function OrganizationProfileForm(props: OrganizationProfileFormProps) {
     startTransition(async () => {
       const result = await updateOrganizationProfileAction({
         ...profileInput(values),
-        version: props.version,
+        version,
       } as Parameters<typeof updateOrganizationProfileAction>[0]);
       if (result.ok) {
+        setSavedVersion(result.value.version);
         setMessage({
           tone: 'success',
           text: result.value.changed.length === 0 ? t('noChanges') : t('saved'),
@@ -156,7 +214,7 @@ export function OrganizationProfileForm(props: OrganizationProfileFormProps) {
           const field = fieldError.path.split('.')[0] as ProfileField;
           fromServer[field] ??= serverFieldError(fieldError.path, values);
         }
-        setFieldErrors(fromServer);
+        showErrors(fromServer);
       }
       setMessage({ tone: 'danger', text: errorText(result.error, props.errors) });
     });
@@ -215,7 +273,8 @@ export function OrganizationProfileForm(props: OrganizationProfileFormProps) {
 
   return (
     <form
-      className="flex flex-col gap-6"
+      // A focused field never hides behind the sticky footer (WCAG 2.4.11; review L4).
+      className="flex flex-col gap-6 [&_button]:scroll-mb-40 [&_input]:scroll-mb-40 [&_select]:scroll-mb-40"
       onSubmit={onSubmit}
       noValidate
       data-testid="organization-profile-form"
@@ -352,7 +411,7 @@ export function OrganizationProfileForm(props: OrganizationProfileFormProps) {
               >
                 <Icon name="calendar" />
                 <span className="sr-only">{t('calendar.preview')}: </span>
-                <span>{choices.previews[values.dateDisplay]}</span>
+                <span>{preview}</span>
               </p>
             </fieldset>
             <fieldset
@@ -367,6 +426,7 @@ export function OrganizationProfileForm(props: OrganizationProfileFormProps) {
                     <button
                       key={day.value}
                       type="button"
+                      id={`org-day-${String(day.value)}`}
                       aria-pressed={on}
                       aria-label={day.long}
                       disabled={disabled}
@@ -441,20 +501,29 @@ export function OrganizationProfileForm(props: OrganizationProfileFormProps) {
       <p className="sr-only" role="status" data-testid="org-preset-note">
         {presetNote}
       </p>
-      {message ? (
-        <Alert tone={message.tone} data-testid="organization-message">
-          <span className="flex flex-wrap items-center gap-3">
-            <span>{message.text}</span>
-            {message.stepUp ? (
-              <a
-                href={props.stepUpHref}
-                className={buttonClasses({ variant: 'secondary', size: 'sm' })}
-                data-testid="organization-message-step-up"
-              >
-                {t('stepUpLink')}
-              </a>
-            ) : null}
-          </span>
+      {/* Success and warnings: a polite live region that stays mounted, so a message that appears after
+          a save is announced (Alert's contract; review L4). Errors: an assertive alert, read on mount. */}
+      <div role="status" data-testid="organization-status">
+        {message && message.tone !== 'danger' ? (
+          <Alert tone={message.tone} role="none" data-testid="organization-message">
+            <span className="flex flex-wrap items-center gap-3">
+              <span>{message.text}</span>
+              {message.stepUp ? (
+                <a
+                  href={props.stepUpHref}
+                  className={buttonClasses({ variant: 'secondary', size: 'sm' })}
+                  data-testid="organization-message-step-up"
+                >
+                  {t('stepUpLink')}
+                </a>
+              ) : null}
+            </span>
+          </Alert>
+        ) : null}
+      </div>
+      {message?.tone === 'danger' ? (
+        <Alert tone="danger" data-testid="organization-message">
+          {message.text}
         </Alert>
       ) : null}
       <div

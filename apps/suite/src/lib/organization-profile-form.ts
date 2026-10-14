@@ -31,6 +31,7 @@ export type ProfileField = keyof ProfileFormValues;
 export type ProfileFieldError =
   | 'nameRequired'
   | 'nameTooLong'
+  | 'nameInvalid'
   | 'industryRequired'
   | 'countryRequired'
   | 'daysRequired'
@@ -54,15 +55,47 @@ export function normalizeClock(value: string): string {
 
 const CLOCK = /^([01]\d|2[0-3]):[0-5]\d$/;
 
+/** Control characters and bidirectional override/isolate marks (joiners are allowed) — as the server. */
+const NAME_FORBIDDEN = /[\p{Cc}\u202A-\u202E\u2066-\u2069]/u;
+
+/** A display name as it is saved: Unicode NFC, trimmed. */
+export function cleanName(value: string): string {
+  return value.normalize('NFC').trim();
+}
+
+/** The fields in the order of the page (the first one with an error gets the focus). */
+export const PROFILE_FIELD_ORDER: readonly ProfileField[] = [
+  'nameEn',
+  'nameAr',
+  'industry',
+  'countryCode',
+  'currencyCode',
+  'timeZone',
+  'fiscalYearStartMonth',
+  'defaultLocale',
+  'dateDisplay',
+  'workingDays',
+  'workStartsAt',
+  'workEndsAt',
+];
+
+/** The first field (in page order) that has an error, or null. */
+export function firstInvalidField(
+  errors: Partial<Record<ProfileField, ProfileFieldError>>,
+): ProfileField | null {
+  return PROFILE_FIELD_ORDER.find((field) => errors[field] !== undefined) ?? null;
+}
+
 /** Field errors of the values as the admin typed them (empty: ready to send). */
 export function validateProfile(
   values: ProfileFormValues,
 ): Partial<Record<ProfileField, ProfileFieldError>> {
   const errors: Partial<Record<ProfileField, ProfileFieldError>> = {};
   for (const field of ['nameEn', 'nameAr'] as const) {
-    const name = values[field].trim();
+    const name = cleanName(values[field]);
     if (name === '') errors[field] = 'nameRequired';
     else if (Array.from(name).length > ORGANIZATION_NAME_MAX) errors[field] = 'nameTooLong';
+    else if (NAME_FORBIDDEN.test(name)) errors[field] = 'nameInvalid';
   }
   if (values.industry === '') errors.industry = 'industryRequired';
   if (values.countryCode === '') errors.countryCode = 'countryRequired';
@@ -81,7 +114,7 @@ export function serverFieldError(path: string, values: ProfileFormValues): Profi
   const local = validateProfile(values)[field];
   if (local) return local;
   if (field === 'workEndsAt') return 'endBeforeStart';
-  if (field === 'nameEn' || field === 'nameAr') return 'nameTooLong';
+  if (field === 'nameEn' || field === 'nameAr') return 'nameInvalid';
   return 'invalid';
 }
 
@@ -94,8 +127,8 @@ export function toggleDay(days: readonly number[], day: number): number[] {
 export function profileInput(values: ProfileFormValues) {
   return {
     ...values,
-    nameEn: values.nameEn.trim(),
-    nameAr: values.nameAr.trim(),
+    nameEn: cleanName(values.nameEn),
+    nameAr: cleanName(values.nameAr),
     workingDays: [...values.workingDays],
     workStartsAt: normalizeClock(values.workStartsAt),
     workEndsAt: normalizeClock(values.workEndsAt),

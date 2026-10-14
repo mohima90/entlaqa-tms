@@ -84,6 +84,8 @@ test.describe('organization profile', () => {
     await page.getByTestId('org-workStartsAt').fill('17:00');
     await page.getByTestId('organization-save').click();
     await expect(page.getByTestId('organization-message')).toHaveAttribute('role', 'alert');
+    // The first field with an error has the focus (review L4).
+    await expect(page.getByTestId('org-nameEn')).toBeFocused();
     await expect(page.getByTestId('org-nameEn')).toHaveAttribute('aria-invalid', 'true');
     await expect(page.locator('#org-nameEn-error')).toHaveText('Enter the display name.');
     await expect(page.getByTestId('org-nameEn')).toHaveAttribute(

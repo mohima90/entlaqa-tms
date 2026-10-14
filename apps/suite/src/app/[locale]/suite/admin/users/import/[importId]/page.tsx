@@ -1,5 +1,5 @@
 import { toClientError } from '@jadarat/platform-core';
-import type { AppLocale } from '@jadarat/platform-i18n';
+import type { AppLocale, DisplayDateFormatter } from '@jadarat/platform-i18n';
 import { routing } from '@jadarat/platform-i18n/routing';
 import { type UserImportView, userImportVersion } from '@jadarat/platform-import';
 import { Alert, Card, buttonClasses } from '@jadarat/ui';
@@ -25,6 +25,7 @@ import {
   reviewStep,
 } from '../../../../../../../components/user-import/steps';
 import { getSuiteContext } from '../../../../../../../lib/suite-context';
+import { pageDates } from '../../../../../../../lib/page-dates';
 import { userImportQuery } from '../../../../../../../lib/user-import-queries';
 import {
   IMPORT_STEPS,
@@ -109,7 +110,13 @@ export default async function UserImportStatusPage({
         );
     } else {
       const view = result.value;
-      body = await content(locale, view, query, context.organizationName ?? '');
+      body = await content(
+        locale,
+        view,
+        query,
+        context.organizationName ?? '',
+        pageDates(locale, context),
+      );
       const seconds = refreshSeconds(view.record.status, view.record.fileStatus);
       if (seconds !== null && (view.record.mine || !isDraft(view.record.status))) {
         poll = {
@@ -165,6 +172,7 @@ async function content(
   view: UserImportView,
   query: SearchParams,
   organization: string,
+  dates: DisplayDateFormatter,
 ): Promise<ReactNode> {
   const t = await getTranslations({ locale, namespace: 'userImport' });
   const { record } = view;
@@ -191,7 +199,7 @@ async function content(
     const stepper = <Stepper {...await stepperProps(locale, step)} />;
     let main: ReactNode;
     if (record.status === 'uploaded' || record.status === 'validating') {
-      main = await fileState(locale, view);
+      main = await fileState(locale, view, dates);
     } else if (step === 'mapping') {
       main = await mappingStep(locale, view);
     } else if (step === 'options') {
@@ -199,7 +207,7 @@ async function content(
     } else if (step === 'confirm') {
       main = await confirmStep(locale, view, query, organization);
     } else {
-      main = await reviewStep(locale, view, query);
+      main = await reviewStep(locale, view, query, dates);
     }
     return (
       <>
@@ -210,7 +218,7 @@ async function content(
     );
   }
   if (isRunning(record.status) || record.status === 'undoing') {
-    return progressView(locale, view);
+    return progressView(locale, view, dates);
   }
-  return resultView(locale, view);
+  return resultView(locale, view, dates);
 }

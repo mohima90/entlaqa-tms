@@ -1,12 +1,6 @@
 import { toClientError } from '@jadarat/platform-core';
 import type { UserProfile } from '@jadarat/platform-db';
-import {
-  type AppLocale,
-  DEFAULT_CALENDAR,
-  DEFAULT_NUMBERING_SYSTEM,
-  type DisplayDateFormatter,
-  formatHijriDate,
-} from '@jadarat/platform-i18n';
+import { type AppLocale, type DisplayDateFormatter, formatHijriDate } from '@jadarat/platform-i18n';
 import { routing } from '@jadarat/platform-i18n/routing';
 import { Alert, Card } from '@jadarat/ui';
 import { hasLocale } from 'next-intl';
@@ -261,7 +255,7 @@ async function MyProfile({
           <Card title={t('mfa.title')}>
             <p className="mb-4 mt-0 text-text-muted">{t('mfa.intro')}</p>
             <AuthenticatorCard
-              app={await authenticatorApp(locale, security.apps)}
+              app={await authenticatorApp(locale, security.apps, dates)}
               setUpHref={stepUpHref(locale, `/${locale}/suite/profile`)}
               forgotPasswordHref={`/${locale}/forgot-password`}
               labels={{
@@ -312,23 +306,18 @@ async function MyProfile({
 async function authenticatorApp(
   locale: AppLocale,
   apps: Extract<Awaited<ReturnType<typeof mySecurityQuery>>, { ok: true }>['value']['apps'],
+  dates: DisplayDateFormatter,
 ): Promise<AuthenticatorCardApp> {
   const elsewhere = apps.find((app) => !app.confirmed && !app.here);
   if (elsewhere) {
     const t = await getTranslations({ locale, namespace: 'profile.mfa' });
     const mfa = await getTranslations({ locale, namespace: 'mfa.elsewhere' });
-    const format = await getFormatter({ locale });
     const device = describeUserAgent(elsewhere.userAgent);
     return {
       state: 'elsewhere',
       factorId: elsewhere.factorId,
       notice: t('elsewhereText', {
-        date: format.dateTime(elsewhere.setUpAt, {
-          dateStyle: 'long',
-          timeStyle: 'short',
-          calendar: DEFAULT_CALENDAR,
-          numberingSystem: DEFAULT_NUMBERING_SYSTEM,
-        }),
+        date: dates.longDateTime(elsewhere.setUpAt),
         device:
           device.browser && device.system
             ? mfa('device', { browser: device.browser, system: device.system })

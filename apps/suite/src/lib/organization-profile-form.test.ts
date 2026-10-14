@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   type ProfileFormValues,
+  cleanName,
+  firstInvalidField,
   normalizeClock,
   profileInput,
   serverFieldError,
@@ -69,7 +71,7 @@ describe('organization profile form (T-M2-22)', () => {
 
   it('maps a server field error to the form message', () => {
     expect(serverFieldError('nameEn', { ...values, nameEn: '' })).toBe('nameRequired');
-    expect(serverFieldError('nameEn', values)).toBe('nameTooLong');
+    expect(serverFieldError('nameEn', values)).toBe('nameInvalid');
     expect(serverFieldError('workEndsAt', values)).toBe('endBeforeStart');
     expect(serverFieldError('workingDays.0', values)).toBe('invalid');
     expect(serverFieldError('countryCode', values)).toBe('invalid');
@@ -85,5 +87,27 @@ describe('organization profile form (T-M2-22)', () => {
     expect(
       profileInput({ ...values, nameEn: ' Al Raya ', workStartsAt: '٠٨:٠٠', workEndsAt: '4:00' }),
     ).toMatchObject({ nameEn: 'Al Raya', workStartsAt: '08:00', workEndsAt: '04:00' });
+  });
+
+  it('refuses bidi controls, keeps joiners, saves names in NFC (review L3)', () => {
+    expect(validateProfile({ ...values, nameEn: 'Al \u202ERaya' })).toEqual({
+      nameEn: 'nameInvalid',
+    });
+    expect(validateProfile({ ...values, nameAr: 'شركة \u2067الراية' })).toEqual({
+      nameAr: 'nameInvalid',
+    });
+    expect(validateProfile({ ...values, nameAr: 'شركة\u200Cالراية' })).toEqual({});
+    expect(cleanName(' Cafe\u0301 ')).toBe('Caf\u00e9');
+    expect(serverFieldError('nameAr', values)).toBe('nameInvalid');
+  });
+
+  it('focuses the first field with an error, in page order (review L4)', () => {
+    expect(firstInvalidField({ workEndsAt: 'endBeforeStart', nameAr: 'nameRequired' })).toBe(
+      'nameAr',
+    );
+    expect(firstInvalidField({ workingDays: 'daysRequired', timeZone: 'invalid' })).toBe(
+      'timeZone',
+    );
+    expect(firstInvalidField({})).toBeNull();
   });
 });

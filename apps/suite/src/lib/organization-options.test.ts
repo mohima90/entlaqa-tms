@@ -45,6 +45,7 @@ describe('organization profile choices (T-M2-22)', () => {
     expect(organizationChoices('ar', NOW, current).weekdays[5]?.long).toBe('الجمعة');
     expect(en.suggestions.SA).toMatchObject({ currencyCode: 'SAR', dateDisplay: 'dual' });
     expect(en.suggestions.DE).toBeUndefined();
+    expect(en.now).toBe(NOW.toISOString());
     expect(en.previews.gregorian).toBe('Wednesday, October 14, 2026');
     expect(en.previews.hijri).toBe('Wednesday, Jumada I 3, 1448 AH');
     expect(en.previews.dual).toBe('Wednesday, October 14, 2026 · Jumada I 3, 1448 AH');

@@ -41,8 +41,10 @@ export interface OrganizationChoices {
   }[];
   /** What changing to a country suggests (only countries with a suggestion). */
   readonly suggestions: Readonly<Record<string, RegionalPreset>>;
-  /** Today in each date display, in the organization's time zone (the live preview). */
+  /** Today in each date display, in the organization's time zone (the preview before hydration). */
   readonly previews: Readonly<Record<DateDisplay, string>>;
+  /** The instant of the previews (ISO): the browser formats it again for another display or zone. */
+  readonly now: string;
 }
 
 /** A value saved earlier that this runtime no longer lists stays selectable (never silently changed). */
@@ -121,5 +123,14 @@ export function organizationChoices(
       formatDisplayDate(now, { locale, display, timeZone: current.timeZone, style: 'full' }),
     ]),
   ) as Record<DateDisplay, string>;
-  return { countries, currencies, timeZones, months, weekdays, suggestions, previews };
+  return {
+    countries,
+    currencies,
+    timeZones,
+    months,
+    weekdays,
+    suggestions,
+    previews,
+    now: now.toISOString(),
+  };
 }

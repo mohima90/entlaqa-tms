@@ -1,5 +1,5 @@
 import 'server-only';
-import type { AppLocale } from '@jadarat/platform-i18n';
+import type { AppLocale, DisplayDateFormatter } from '@jadarat/platform-i18n';
 import {
   IMPORT_FIELDS,
   IMPORTABLE_ROLES,
@@ -76,9 +76,12 @@ async function refusalCodes(locale: AppLocale): Promise<Record<string, string>> 
 // Step 1 states: scanning, reading; the dry run running
 // ---------------------------------------------------------------------------------------------------
 
-export async function fileState(locale: AppLocale, view: UserImportView): Promise<ReactNode> {
+export async function fileState(
+  locale: AppLocale,
+  view: UserImportView,
+  dates: DisplayDateFormatter,
+): Promise<ReactNode> {
   const t = await getTranslations({ locale, namespace: 'userImport' });
-  const format = await getFormatter({ locale });
   const { record } = view;
   if (record.status === 'uploaded' && record.fileStatus === 'pending_upload') {
     // Integration review M1: «إعادة الرفع» cancels this import first (it no longer waits for its window to
@@ -142,7 +145,7 @@ export async function fileState(locale: AppLocale, view: UserImportView): Promis
       </p>
       <p className="mb-3 mt-0 text-sm text-text-muted">
         {t('upload.megabytes', { value: megabytes(record.fileSize) })} ·{' '}
-        {format.dateTime(record.createdAt, 'dateTime')}
+        {dates.dateTime(record.createdAt)}
       </p>
       <p className="mb-1 mt-0 text-lg font-semibold" data-testid="import-file-state-title">
         {title}
@@ -279,6 +282,7 @@ export async function reviewStep(
   locale: AppLocale,
   view: UserImportView,
   query: SearchParams,
+  dates: DisplayDateFormatter,
 ): Promise<ReactNode> {
   const t = await getTranslations({ locale, namespace: 'userImport' });
   const format = await getFormatter({ locale });
@@ -571,7 +575,7 @@ export async function reviewStep(
         </Card>
       ) : (
         <p className="m-0">
-          {t('review.continueNote', { date: format.dateTime(record.reviewExpiresAt, 'dateTime') })}
+          {t('review.continueNote', { date: dates.dateTime(record.reviewExpiresAt) })}
         </p>
       )}
       <div className="flex flex-wrap gap-3">
@@ -824,15 +828,15 @@ export async function confirmStep(
 // The run and the undo in progress
 // ---------------------------------------------------------------------------------------------------
 
-export async function progressView(locale: AppLocale, view: UserImportView): Promise<ReactNode> {
+export async function progressView(
+  locale: AppLocale,
+  view: UserImportView,
+  dates: DisplayDateFormatter,
+): Promise<ReactNode> {
   const t = await getTranslations({ locale, namespace: 'userImport' });
-  const format = await getFormatter({ locale });
   const { record } = view;
   const person = await importer(locale, view);
-  const started = format.dateTime(
-    record.startedAt ?? record.confirmedAt ?? record.createdAt,
-    'dateTime',
-  );
+  const started = dates.dateTime(record.startedAt ?? record.confirmedAt ?? record.createdAt);
   if (record.status === 'undoing') {
     return (
       <section
@@ -984,7 +988,11 @@ const REFUSED = new Set([
   'SYSTEM_FAULT',
 ]);
 
-export async function resultView(locale: AppLocale, view: UserImportView): Promise<ReactNode> {
+export async function resultView(
+  locale: AppLocale,
+  view: UserImportView,
+  dates: DisplayDateFormatter,
+): Promise<ReactNode> {
   const t = await getTranslations({ locale, namespace: 'userImport' });
   const format = await getFormatter({ locale });
   const { record } = view;
@@ -1043,10 +1051,7 @@ export async function resultView(locale: AppLocale, view: UserImportView): Promi
 
   const counts = record.resultCounts;
   const person = await importer(locale, view);
-  const ended = format.dateTime(
-    record.undoneAt ?? record.finishedAt ?? record.updatedAt,
-    'dateTime',
-  );
+  const ended = dates.dateTime(record.undoneAt ?? record.finishedAt ?? record.updatedAt);
   const failed = count(counts, 'failed');
   const skipped = count(counts, 'skipped');
   const warned = count(counts, 'warned');
@@ -1138,7 +1143,7 @@ export async function resultView(locale: AppLocale, view: UserImportView): Promi
         />
         {deadline ? (
           <p className="mb-0 mt-3 text-sm text-text-muted">
-            {t('result.reportAvailable', { date: format.dateTime(deadline, 'medium') })}
+            {t('result.reportAvailable', { date: dates.date(deadline) })}
           </p>
         ) : null}
       </>
@@ -1156,8 +1161,7 @@ export async function resultView(locale: AppLocale, view: UserImportView): Promi
         : t('undo.noUpdates'),
     );
     undoSentences.push(t('undo.referenced'), t('undo.audit'));
-    if (deadline)
-      undoSentences.push(t('undo.after', { date: format.dateTime(deadline, 'medium') }));
+    if (deadline) undoSentences.push(t('undo.after', { date: dates.date(deadline) }));
   }
 
   return (
@@ -1334,7 +1338,7 @@ export async function resultView(locale: AppLocale, view: UserImportView): Promi
           </li>
           {record.status !== 'undone' ? <li>{t('result.privilegedHint')}</li> : null}
           {mayUndo(record) && deadline ? (
-            <li>{t('result.undoAvailable', { date: format.dateTime(deadline, 'medium') })}</li>
+            <li>{t('result.undoAvailable', { date: dates.date(deadline) })}</li>
           ) : null}
         </ul>
       </section>

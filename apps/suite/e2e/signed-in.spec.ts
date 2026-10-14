@@ -39,6 +39,7 @@ test.describe('signed-in flow', () => {
     const setup = page.getByTestId('setup-home');
     await expect(setup.getByRole('heading', { name: 'Set up your organization' })).toBeVisible();
     await expect(setup.getByRole('link')).toHaveText([
+      'Organization profile',
       'Users',
       'Roles & permissions',
       'Security policy',

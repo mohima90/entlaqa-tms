@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { displayRatio } from './color';
 import { COLOR_ROLES, CONTRAST_PAIRS, CONTRAST_USE_LABEL, type ThemeDefinition } from './contract';
@@ -42,6 +43,19 @@ describe('theme slots waiting for design material', () => {
       expect(visual(theme)).toEqual(visual(SHIPPED_THEME));
     },
   );
+});
+
+describe('Tailwind preset', () => {
+  it('names every colour role of the contract (so every role has its utilities)', () => {
+    const preset = readFileSync(
+      new URL('../../../config/tailwind/preset.css', import.meta.url),
+      'utf8',
+    );
+    const missing = COLOR_ROLES.filter(
+      (role) => !preset.includes(`--color-${role}: var(--color-${role});`),
+    );
+    expect(missing).toEqual([]);
+  });
 });
 
 describe('generated files', () => {
@@ -98,8 +112,9 @@ Notes
 
 - \`text-disabled\` is intentionally excluded (disabled controls are exempt under SC 1.4.3); disabled states must also be conveyed by the \`disabled\` attribute / \`aria-disabled\`.
 - \`border\` (decorative divider) is intentionally below 3 : 1; it must never be the only boundary of an interactive control — inputs use \`border-strong\`.
-- The focus ring is drawn as a 2 px ring separated from the component by a 2 px \`--color-bg\` gap (\`--focus-ring\`), so the ring is measured against \`bg\`/\`surface\` (and the header and navigation colours), not against the button fill.
-- Accent and suite-shell roles (\`accent*\`, \`header*\`, \`nav*\`) are slots for the visual design round (T-M2-04c); in «jadarat» they are aliases of the primary and surface roles.
+- The focus ring is drawn as a 2 px ring separated from the component by a 2 px \`--color-bg\` gap (\`--focus-ring\`), so the ring is measured against \`bg\`/\`surface\` and the header, not against the button fill. Inside the side navigation the ring is \`nav-focus-ring\` (an outline 2 px away from the entry), measured against both ends of the navigation gradient.
+- The side navigation is a gradient from \`nav\` (top) to \`nav-end\` (bottom): its text, the current entry's pill and its focus ring are checked against **both** ends; the hover fill is an opaque colour so its text can be checked too.
+- \`accent*\` roles are aliases of the primary roles in «jadarat»; the header roles are aliases of the surface and text roles (a white top bar).
 
 ## Light theme
 

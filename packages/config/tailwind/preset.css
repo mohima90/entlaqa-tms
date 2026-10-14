@@ -84,12 +84,14 @@
   --color-on-header-muted: var(--color-on-header-muted);
   --color-header-border: var(--color-header-border);
   --color-nav: var(--color-nav);
+  --color-nav-end: var(--color-nav-end);
   --color-on-nav: var(--color-on-nav);
   --color-on-nav-muted: var(--color-on-nav-muted);
   --color-nav-border: var(--color-nav-border);
   --color-nav-item-hover: var(--color-nav-item-hover);
   --color-nav-item-current: var(--color-nav-item-current);
   --color-on-nav-item-current: var(--color-on-nav-item-current);
+  --color-nav-focus-ring: var(--color-nav-focus-ring);
 }
 
 @theme inline {

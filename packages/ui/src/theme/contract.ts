@@ -53,18 +53,22 @@ export const COLOR_ROLES = [
   'inverse-surface',
   'inverse-text',
   'overlay',
-  // Suite shell (header and side navigation; default to the surface roles)
+  // Suite shell (header and side navigation). The navigation is a gradient from `nav` (top) to
+  // `nav-end` (bottom); a plain navigation sets both to the same colour.
   'header',
   'on-header',
   'on-header-muted',
   'header-border',
   'nav',
+  'nav-end',
   'on-nav',
   'on-nav-muted',
   'nav-border',
   'nav-item-hover',
   'nav-item-current',
   'on-nav-item-current',
+  /** Focus ring inside the navigation (it sits on the nav colours, not on the page). */
+  'nav-focus-ring',
 ] as const;
 export type ColorRole = (typeof COLOR_ROLES)[number];
 
@@ -73,6 +77,23 @@ export const BRAND_ROLES = {
   primary: ['primary', 'primary-hover', 'on-primary', 'primary-subtle', 'primary-text'],
   accent: ['accent', 'accent-hover', 'on-accent', 'accent-subtle', 'accent-text'],
 } as const satisfies Record<string, readonly ColorRole[]>;
+
+/**
+ * Side-navigation roles an organization's brand also replaces (T-M2-21): the gradient is derived from
+ * the organization's primary colour, so its branding replaces the Jadarat gradient.
+ */
+export const NAV_ROLES = [
+  'nav',
+  'nav-end',
+  'on-nav',
+  'on-nav-muted',
+  'nav-border',
+  'nav-item-hover',
+  'nav-item-current',
+  'on-nav-item-current',
+  'nav-focus-ring',
+] as const satisfies readonly ColorRole[];
+export type NavRole = (typeof NAV_ROLES)[number];
 
 /**
  * A token value: `#RRGGBB`, an alias to a palette step `{color.<ramp>.<step>}` or to another role
@@ -186,13 +207,18 @@ export const CONTRAST_PAIRS: readonly ContrastPair[] = [
   pair('on-accent', 'accent-hover', 'on-fill'),
   pair('accent', 'bg', 'ui'),
   pair('accent', 'surface', 'ui'),
-  // Suite shell (T-M2-04c slot): header and side navigation may get their own colours
+  // Suite shell: header, and the side navigation, checked against BOTH ends of its gradient
+  // (T-M2-21: the Jadarat gradient, or one derived from an organization's colour, FR-ADM-07)
   pair('on-header', 'header', 'text'),
   pair('on-header-muted', 'header', 'text'),
-  pair('on-nav', 'nav', 'text'),
-  pair('on-nav-muted', 'nav', 'text'),
+  pair('focus-ring', 'header', 'ui'),
+  ...(['nav', 'nav-end'] as const).flatMap((bg) => [
+    pair('on-nav', bg, 'text'),
+    pair('on-nav-muted', bg, 'text'),
+    // The current entry's pill must stand out from the navigation around it.
+    pair('nav-item-current', bg, 'ui'),
+    pair('nav-focus-ring', bg, 'ui'),
+  ]),
   pair('on-nav', 'nav-item-hover', 'text'),
   pair('on-nav-item-current', 'nav-item-current', 'text'),
-  pair('focus-ring', 'header', 'ui'),
-  pair('focus-ring', 'nav', 'ui'),
 ];

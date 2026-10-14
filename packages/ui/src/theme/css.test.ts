@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { brandLayerCss, fontStack, themeCss, tokenCss } from './css';
+import { deriveOrganizationBrand } from './organization-brand';
 import { jadaratTheme } from './themes/jadarat';
 import { parseTokenCss, resolveTokens } from './resolve-css';
 
@@ -41,7 +42,21 @@ describe('theme CSS generation', () => {
       '#abcdef',
     );
     // Roles the layer does not set keep the theme's values.
-    expect(resolveTokens(declarations, { lang: 'ar' })['--color-danger']).toBe('#b42318');
+    expect(resolveTokens(declarations, { lang: 'ar' })['--color-danger']).toBe('#be2a2f');
+  });
+
+  it('writes colour roles only: an organization layer has no font, radius or other override', () => {
+    const css = brandLayerCss(deriveOrganizationBrand({ primary: '#0F6E5A' }).layer);
+    const properties = [...css.matchAll(/(--[\w-]+):/g)].map((m) => m[1] ?? '');
+    expect(properties.length).toBeGreaterThan(0);
+    expect(properties.filter((p) => !p.startsWith('--color-'))).toEqual([]);
+    expect(css).not.toMatch(/font|radius|elevation/);
+    // Even a layer object carrying other keys (e.g. a font sneaked in through a cast) writes none of them.
+    const sneaky = {
+      light: { primary: '#123456', 'font-family-latin': '#000000' },
+      dark: {},
+    } as unknown as Parameters<typeof brandLayerCss>[0];
+    expect(brandLayerCss(sneaky)).toBe(':root {\n  --color-primary: #123456;\n}\n');
   });
 
   it('only ever writes #RRGGBB values (organization input cannot inject CSS)', () => {

@@ -10,9 +10,9 @@ WCAG 2.x relative-luminance formula (`(L1 + 0.05) / (L2 + 0.05)`); ratios shown 
 | Large text (≥ 24 px regular / ≥ 18.66 px bold) | ≥ 3 : 1 — we still hold all text to 4.5 : 1 | 1.4.3 |
 | UI components and graphical objects (input borders, icons, focus ring) | ≥ 3 : 1 | 1.4.11 Non-text Contrast; 2.4.13 is AAA and not targeted |
 
-**Result for «jadarat»: 138 of 138 pairs pass (0 failures).** Tightest pair relative to its threshold: `text-subtle` on `surface-hover` (light) = **4.59 : 1** (needs 4.5).
+**Result for «jadarat»: 148 of 148 pairs pass (0 failures).** Tightest pair relative to its threshold: `text-subtle` on `surface-selected` (light) = **4.61 : 1** (needs 4.5).
 
-The same 69 pairs per mode are also checked automatically for:
+The same 74 pairs per mode are also checked automatically for:
 
 - every theme in `packages/ui/src/theme/themes/` (including the pending «Jadarat LMS» slot);
 - organization brand colours (FR-ADM-07): `deriveOrganizationBrand` derives the brand roles so that they always pass, re-checks all pairs and refuses to return a failing brand; its tests run it on hundreds of colours (white, black, pure yellow, mid greys, a colour grid and random colours).
@@ -21,153 +21,164 @@ Notes
 
 - `text-disabled` is intentionally excluded (disabled controls are exempt under SC 1.4.3); disabled states must also be conveyed by the `disabled` attribute / `aria-disabled`.
 - `border` (decorative divider) is intentionally below 3 : 1; it must never be the only boundary of an interactive control — inputs use `border-strong`.
-- The focus ring is drawn as a 2 px ring separated from the component by a 2 px `--color-bg` gap (`--focus-ring`), so the ring is measured against `bg`/`surface` (and the header and navigation colours), not against the button fill.
-- Accent and suite-shell roles (`accent*`, `header*`, `nav*`) are slots for the visual design round (T-M2-04c); in «jadarat» they are aliases of the primary and surface roles.
+- The focus ring is drawn as a 2 px ring separated from the component by a 2 px `--color-bg` gap (`--focus-ring`), so the ring is measured against `bg`/`surface` and the header, not against the button fill. Inside the side navigation the ring is `nav-focus-ring` (an outline 2 px away from the entry), measured against both ends of the navigation gradient.
+- The side navigation is a gradient from `nav` (top) to `nav-end` (bottom): its text, the current entry's pill and its focus ring are checked against **both** ends; the hover fill is an opaque colour so its text can be checked too.
+- `accent*` roles are aliases of the primary roles in «jadarat»; the header roles are aliases of the surface and text roles (a white top bar).
 
 ## Light theme
 
 | Foreground token | Background token | FG | BG | Ratio | Needs | Use | Pass |
 |---|---|---|---|---:|---:|---|---|
-| `text` | `bg` | `#121A1C` | `#F2F5F5` | 16.09 | 4.5 | Normal text | ✅ |
-| `text-muted` | `bg` | `#465357` | `#F2F5F5` | 7.27 | 4.5 | Normal text | ✅ |
-| `text-subtle` | `bg` | `#5B6A6E` | `#F2F5F5` | 5.13 | 4.5 | Normal text | ✅ |
-| `primary-text` | `bg` | `#0C534D` | `#F2F5F5` | 8.12 | 4.5 | Normal text | ✅ |
-| `text` | `surface` | `#121A1C` | `#FFFFFF` | 17.64 | 4.5 | Normal text | ✅ |
-| `text-muted` | `surface` | `#465357` | `#FFFFFF` | 7.97 | 4.5 | Normal text | ✅ |
-| `text-subtle` | `surface` | `#5B6A6E` | `#FFFFFF` | 5.63 | 4.5 | Normal text | ✅ |
-| `primary-text` | `surface` | `#0C534D` | `#FFFFFF` | 8.90 | 4.5 | Normal text | ✅ |
-| `text` | `surface-sunken` | `#121A1C` | `#F8FAFA` | 16.84 | 4.5 | Normal text | ✅ |
-| `text-muted` | `surface-sunken` | `#465357` | `#F8FAFA` | 7.61 | 4.5 | Normal text | ✅ |
-| `text-subtle` | `surface-sunken` | `#5B6A6E` | `#F8FAFA` | 5.37 | 4.5 | Normal text | ✅ |
-| `primary-text` | `surface-sunken` | `#0C534D` | `#F8FAFA` | 8.49 | 4.5 | Normal text | ✅ |
-| `text` | `surface-hover` | `#121A1C` | `#E3E9EA` | 14.38 | 4.5 | Normal text | ✅ |
-| `text-muted` | `surface-hover` | `#465357` | `#E3E9EA` | 6.49 | 4.5 | Normal text | ✅ |
-| `text-subtle` | `surface-hover` | `#5B6A6E` | `#E3E9EA` | 4.59 | 4.5 | Normal text | ✅ |
-| `primary-text` | `surface-hover` | `#0C534D` | `#E3E9EA` | 7.25 | 4.5 | Normal text | ✅ |
-| `text` | `surface-selected` | `#121A1C` | `#E7F3F1` | 15.53 | 4.5 | Normal text | ✅ |
-| `text-muted` | `surface-selected` | `#465357` | `#E7F3F1` | 7.02 | 4.5 | Normal text | ✅ |
-| `text-subtle` | `surface-selected` | `#5B6A6E` | `#E7F3F1` | 4.95 | 4.5 | Normal text | ✅ |
-| `primary-text` | `surface-selected` | `#0C534D` | `#E7F3F1` | 7.83 | 4.5 | Normal text | ✅ |
-| `success` | `bg` | `#1D7A43` | `#F2F5F5` | 4.89 | 4.5 | Status text on page/card | ✅ |
-| `warning` | `bg` | `#955800` | `#F2F5F5` | 5.21 | 4.5 | Status text on page/card | ✅ |
-| `danger` | `bg` | `#B42318` | `#F2F5F5` | 6.00 | 4.5 | Status text on page/card | ✅ |
-| `info` | `bg` | `#1F5DAA` | `#F2F5F5` | 5.98 | 4.5 | Status text on page/card | ✅ |
-| `success` | `surface` | `#1D7A43` | `#FFFFFF` | 5.36 | 4.5 | Status text on page/card | ✅ |
-| `warning` | `surface` | `#955800` | `#FFFFFF` | 5.72 | 4.5 | Status text on page/card | ✅ |
-| `danger` | `surface` | `#B42318` | `#FFFFFF` | 6.57 | 4.5 | Status text on page/card | ✅ |
-| `info` | `surface` | `#1F5DAA` | `#FFFFFF` | 6.55 | 4.5 | Status text on page/card | ✅ |
-| `success` | `success-subtle` | `#1D7A43` | `#E9F6EE` | 4.82 | 4.5 | Badge / alert text | ✅ |
-| `warning` | `warning-subtle` | `#955800` | `#FFF5E0` | 5.28 | 4.5 | Badge / alert text | ✅ |
-| `danger` | `danger-subtle` | `#B42318` | `#FDEEEC` | 5.83 | 4.5 | Badge / alert text | ✅ |
-| `info` | `info-subtle` | `#1F5DAA` | `#EAF1FB` | 5.76 | 4.5 | Badge / alert text | ✅ |
-| `primary-text` | `primary-subtle` | `#0C534D` | `#E7F3F1` | 7.83 | 4.5 | Badge / alert text | ✅ |
-| `text` | `warning-subtle` | `#121A1C` | `#FFF5E0` | 16.29 | 4.5 | Badge / alert text | ✅ |
-| `text` | `danger-subtle` | `#121A1C` | `#FDEEEC` | 15.64 | 4.5 | Badge / alert text | ✅ |
-| `text` | `success-subtle` | `#121A1C` | `#E9F6EE` | 15.86 | 4.5 | Badge / alert text | ✅ |
-| `text` | `info-subtle` | `#121A1C` | `#EAF1FB` | 15.52 | 4.5 | Badge / alert text | ✅ |
-| `text` | `primary-subtle` | `#121A1C` | `#E7F3F1` | 15.53 | 4.5 | Badge / alert text | ✅ |
-| `on-primary` | `primary` | `#FFFFFF` | `#0F665F` | 6.80 | 4.5 | Text on filled control | ✅ |
-| `on-primary` | `primary-hover` | `#FFFFFF` | `#0C534D` | 8.90 | 4.5 | Text on filled control | ✅ |
-| `on-danger` | `danger` | `#FFFFFF` | `#B42318` | 6.57 | 4.5 | Text on filled control | ✅ |
-| `on-danger` | `danger-hover` | `#FFFFFF` | `#931C14` | 8.69 | 4.5 | Text on filled control | ✅ |
-| `inverse-text` | `inverse-surface` | `#F8FAFA` | `#192123` | 15.62 | 4.5 | Text on filled control | ✅ |
-| `border-strong` | `bg` | `#7A898D` | `#F2F5F5` | 3.31 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
-| `border-strong` | `surface` | `#7A898D` | `#FFFFFF` | 3.63 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
-| `primary` | `bg` | `#0F665F` | `#F2F5F5` | 6.21 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
-| `primary` | `surface` | `#0F665F` | `#FFFFFF` | 6.80 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
-| `focus-ring` | `bg` | `#177D74` | `#F2F5F5` | 4.54 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
-| `focus-ring` | `surface` | `#177D74` | `#FFFFFF` | 4.97 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
-| `warning-strong` | `bg` | `#C47600` | `#F2F5F5` | 3.23 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
-| `warning-strong` | `surface` | `#C47600` | `#FFFFFF` | 3.54 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
-| `danger` | `bg` | `#B42318` | `#F2F5F5` | 6.00 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
-| `danger` | `surface` | `#B42318` | `#FFFFFF` | 6.57 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
-| `accent-text` | `bg` | `#0C534D` | `#F2F5F5` | 8.12 | 4.5 | Normal text | ✅ |
-| `accent-text` | `surface` | `#0C534D` | `#FFFFFF` | 8.90 | 4.5 | Normal text | ✅ |
-| `accent-text` | `accent-subtle` | `#0C534D` | `#E7F3F1` | 7.83 | 4.5 | Badge / alert text | ✅ |
-| `text` | `accent-subtle` | `#121A1C` | `#E7F3F1` | 15.53 | 4.5 | Badge / alert text | ✅ |
-| `on-accent` | `accent` | `#FFFFFF` | `#0F665F` | 6.80 | 4.5 | Text on filled control | ✅ |
-| `on-accent` | `accent-hover` | `#FFFFFF` | `#0C534D` | 8.90 | 4.5 | Text on filled control | ✅ |
-| `accent` | `bg` | `#0F665F` | `#F2F5F5` | 6.21 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
-| `accent` | `surface` | `#0F665F` | `#FFFFFF` | 6.80 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
-| `on-header` | `header` | `#121A1C` | `#FFFFFF` | 17.64 | 4.5 | Normal text | ✅ |
-| `on-header-muted` | `header` | `#465357` | `#FFFFFF` | 7.97 | 4.5 | Normal text | ✅ |
-| `on-nav` | `nav` | `#121A1C` | `#FFFFFF` | 17.64 | 4.5 | Normal text | ✅ |
-| `on-nav-muted` | `nav` | `#465357` | `#FFFFFF` | 7.97 | 4.5 | Normal text | ✅ |
-| `on-nav` | `nav-item-hover` | `#121A1C` | `#E3E9EA` | 14.38 | 4.5 | Normal text | ✅ |
-| `on-nav-item-current` | `nav-item-current` | `#0C534D` | `#E7F3F1` | 7.83 | 4.5 | Normal text | ✅ |
-| `focus-ring` | `header` | `#177D74` | `#FFFFFF` | 4.97 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
-| `focus-ring` | `nav` | `#177D74` | `#FFFFFF` | 4.97 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `text` | `bg` | `#1F3340` | `#F5F7F9` | 12.18 | 4.5 | Normal text | ✅ |
+| `text-muted` | `bg` | `#46596A` | `#F5F7F9` | 6.75 | 4.5 | Normal text | ✅ |
+| `text-subtle` | `bg` | `#5F6F7C` | `#F5F7F9` | 4.83 | 4.5 | Normal text | ✅ |
+| `primary-text` | `bg` | `#2B5677` | `#F5F7F9` | 7.24 | 4.5 | Normal text | ✅ |
+| `text` | `surface` | `#1F3340` | `#FFFFFF` | 13.08 | 4.5 | Normal text | ✅ |
+| `text-muted` | `surface` | `#46596A` | `#FFFFFF` | 7.25 | 4.5 | Normal text | ✅ |
+| `text-subtle` | `surface` | `#5F6F7C` | `#FFFFFF` | 5.18 | 4.5 | Normal text | ✅ |
+| `primary-text` | `surface` | `#2B5677` | `#FFFFFF` | 7.78 | 4.5 | Normal text | ✅ |
+| `text` | `surface-sunken` | `#1F3340` | `#FAFBFC` | 12.62 | 4.5 | Normal text | ✅ |
+| `text-muted` | `surface-sunken` | `#46596A` | `#FAFBFC` | 7.00 | 4.5 | Normal text | ✅ |
+| `text-subtle` | `surface-sunken` | `#5F6F7C` | `#FAFBFC` | 5.00 | 4.5 | Normal text | ✅ |
+| `primary-text` | `surface-sunken` | `#2B5677` | `#FAFBFC` | 7.51 | 4.5 | Normal text | ✅ |
+| `text` | `surface-hover` | `#1F3340` | `#EEF3F7` | 11.71 | 4.5 | Normal text | ✅ |
+| `text-muted` | `surface-hover` | `#46596A` | `#EEF3F7` | 6.49 | 4.5 | Normal text | ✅ |
+| `text-subtle` | `surface-hover` | `#5F6F7C` | `#EEF3F7` | 4.64 | 4.5 | Normal text | ✅ |
+| `primary-text` | `surface-hover` | `#2B5677` | `#EEF3F7` | 6.96 | 4.5 | Normal text | ✅ |
+| `text` | `surface-selected` | `#1F3340` | `#EAF3F9` | 11.64 | 4.5 | Normal text | ✅ |
+| `text-muted` | `surface-selected` | `#46596A` | `#EAF3F9` | 6.45 | 4.5 | Normal text | ✅ |
+| `text-subtle` | `surface-selected` | `#5F6F7C` | `#EAF3F9` | 4.61 | 4.5 | Normal text | ✅ |
+| `primary-text` | `surface-selected` | `#2B5677` | `#EAF3F9` | 6.92 | 4.5 | Normal text | ✅ |
+| `success` | `bg` | `#16794A` | `#F5F7F9` | 5.06 | 4.5 | Status text on page/card | ✅ |
+| `warning` | `bg` | `#8A5300` | `#F5F7F9` | 5.89 | 4.5 | Status text on page/card | ✅ |
+| `danger` | `bg` | `#BE2A2F` | `#F5F7F9` | 5.49 | 4.5 | Status text on page/card | ✅ |
+| `info` | `bg` | `#2B5677` | `#F5F7F9` | 7.24 | 4.5 | Status text on page/card | ✅ |
+| `success` | `surface` | `#16794A` | `#FFFFFF` | 5.43 | 4.5 | Status text on page/card | ✅ |
+| `warning` | `surface` | `#8A5300` | `#FFFFFF` | 6.33 | 4.5 | Status text on page/card | ✅ |
+| `danger` | `surface` | `#BE2A2F` | `#FFFFFF` | 5.90 | 4.5 | Status text on page/card | ✅ |
+| `info` | `surface` | `#2B5677` | `#FFFFFF` | 7.78 | 4.5 | Status text on page/card | ✅ |
+| `success` | `success-subtle` | `#16794A` | `#E9F5EE` | 4.85 | 4.5 | Badge / alert text | ✅ |
+| `warning` | `warning-subtle` | `#8A5300` | `#FEF4DF` | 5.79 | 4.5 | Badge / alert text | ✅ |
+| `danger` | `danger-subtle` | `#BE2A2F` | `#FCECEC` | 5.15 | 4.5 | Badge / alert text | ✅ |
+| `info` | `info-subtle` | `#2B5677` | `#EAF3F9` | 6.92 | 4.5 | Badge / alert text | ✅ |
+| `primary-text` | `primary-subtle` | `#2B5677` | `#EAF3F9` | 6.92 | 4.5 | Badge / alert text | ✅ |
+| `text` | `warning-subtle` | `#1F3340` | `#FEF4DF` | 11.97 | 4.5 | Badge / alert text | ✅ |
+| `text` | `danger-subtle` | `#1F3340` | `#FCECEC` | 11.43 | 4.5 | Badge / alert text | ✅ |
+| `text` | `success-subtle` | `#1F3340` | `#E9F5EE` | 11.68 | 4.5 | Badge / alert text | ✅ |
+| `text` | `info-subtle` | `#1F3340` | `#EAF3F9` | 11.64 | 4.5 | Badge / alert text | ✅ |
+| `text` | `primary-subtle` | `#1F3340` | `#EAF3F9` | 11.64 | 4.5 | Badge / alert text | ✅ |
+| `on-primary` | `primary` | `#FFFFFF` | `#33658A` | 6.23 | 4.5 | Text on filled control | ✅ |
+| `on-primary` | `primary-hover` | `#FFFFFF` | `#2A5574` | 7.92 | 4.5 | Text on filled control | ✅ |
+| `on-danger` | `danger` | `#FFFFFF` | `#BE2A2F` | 5.90 | 4.5 | Text on filled control | ✅ |
+| `on-danger` | `danger-hover` | `#FFFFFF` | `#9E2227` | 7.74 | 4.5 | Text on filled control | ✅ |
+| `inverse-text` | `inverse-surface` | `#F5F7F9` | `#1F3340` | 12.18 | 4.5 | Text on filled control | ✅ |
+| `border-strong` | `bg` | `#7A8A97` | `#F5F7F9` | 3.31 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `border-strong` | `surface` | `#7A8A97` | `#FFFFFF` | 3.55 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `primary` | `bg` | `#33658A` | `#F5F7F9` | 5.80 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `primary` | `surface` | `#33658A` | `#FFFFFF` | 6.23 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `focus-ring` | `bg` | `#33658A` | `#F5F7F9` | 5.80 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `focus-ring` | `surface` | `#33658A` | `#FFFFFF` | 6.23 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `warning-strong` | `bg` | `#A36500` | `#F5F7F9` | 4.43 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `warning-strong` | `surface` | `#A36500` | `#FFFFFF` | 4.75 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `danger` | `bg` | `#BE2A2F` | `#F5F7F9` | 5.49 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `danger` | `surface` | `#BE2A2F` | `#FFFFFF` | 5.90 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `accent-text` | `bg` | `#2B5677` | `#F5F7F9` | 7.24 | 4.5 | Normal text | ✅ |
+| `accent-text` | `surface` | `#2B5677` | `#FFFFFF` | 7.78 | 4.5 | Normal text | ✅ |
+| `accent-text` | `accent-subtle` | `#2B5677` | `#EAF3F9` | 6.92 | 4.5 | Badge / alert text | ✅ |
+| `text` | `accent-subtle` | `#1F3340` | `#EAF3F9` | 11.64 | 4.5 | Badge / alert text | ✅ |
+| `on-accent` | `accent` | `#FFFFFF` | `#33658A` | 6.23 | 4.5 | Text on filled control | ✅ |
+| `on-accent` | `accent-hover` | `#FFFFFF` | `#2A5574` | 7.92 | 4.5 | Text on filled control | ✅ |
+| `accent` | `bg` | `#33658A` | `#F5F7F9` | 5.80 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `accent` | `surface` | `#33658A` | `#FFFFFF` | 6.23 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `on-header` | `header` | `#1F3340` | `#FFFFFF` | 13.08 | 4.5 | Normal text | ✅ |
+| `on-header-muted` | `header` | `#46596A` | `#FFFFFF` | 7.25 | 4.5 | Normal text | ✅ |
+| `focus-ring` | `header` | `#33658A` | `#FFFFFF` | 6.23 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `on-nav` | `nav` | `#EFF3F6` | `#2F4858` | 8.60 | 4.5 | Normal text | ✅ |
+| `on-nav-muted` | `nav` | `#E0E8ED` | `#2F4858` | 7.74 | 4.5 | Normal text | ✅ |
+| `nav-item-current` | `nav` | `#FFFFFF` | `#2F4858` | 9.59 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `nav-focus-ring` | `nav` | `#F6AE2D` | `#2F4858` | 5.03 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `on-nav` | `nav-end` | `#EFF3F6` | `#33658A` | 5.59 | 4.5 | Normal text | ✅ |
+| `on-nav-muted` | `nav-end` | `#E0E8ED` | `#33658A` | 5.03 | 4.5 | Normal text | ✅ |
+| `nav-item-current` | `nav-end` | `#FFFFFF` | `#33658A` | 6.23 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `nav-focus-ring` | `nav-end` | `#F6AE2D` | `#33658A` | 3.27 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `on-nav` | `nav-item-hover` | `#EFF3F6` | `#437193` | 4.68 | 4.5 | Normal text | ✅ |
+| `on-nav-item-current` | `nav-item-current` | `#2F4858` | `#FFFFFF` | 9.59 | 4.5 | Normal text | ✅ |
 
 ## Dark theme
 
 | Foreground token | Background token | FG | BG | Ratio | Needs | Use | Pass |
 |---|---|---|---|---:|---:|---|---|
-| `text` | `bg` | `#E8EEEF` | `#0E1415` | 15.85 | 4.5 | Normal text | ✅ |
-| `text-muted` | `bg` | `#AAB7BA` | `#0E1415` | 9.02 | 4.5 | Normal text | ✅ |
-| `text-subtle` | `bg` | `#8E9CA0` | `#0E1415` | 6.56 | 4.5 | Normal text | ✅ |
-| `primary-text` | `bg` | `#86D3C9` | `#0E1415` | 10.78 | 4.5 | Normal text | ✅ |
-| `text` | `surface` | `#E8EEEF` | `#151D1F` | 14.59 | 4.5 | Normal text | ✅ |
-| `text-muted` | `surface` | `#AAB7BA` | `#151D1F` | 8.30 | 4.5 | Normal text | ✅ |
-| `text-subtle` | `surface` | `#8E9CA0` | `#151D1F` | 6.04 | 4.5 | Normal text | ✅ |
-| `primary-text` | `surface` | `#86D3C9` | `#151D1F` | 9.92 | 4.5 | Normal text | ✅ |
-| `text` | `surface-sunken` | `#E8EEEF` | `#0A0F10` | 16.45 | 4.5 | Normal text | ✅ |
-| `text-muted` | `surface-sunken` | `#AAB7BA` | `#0A0F10` | 9.36 | 4.5 | Normal text | ✅ |
-| `text-subtle` | `surface-sunken` | `#8E9CA0` | `#0A0F10` | 6.81 | 4.5 | Normal text | ✅ |
-| `primary-text` | `surface-sunken` | `#86D3C9` | `#0A0F10` | 11.18 | 4.5 | Normal text | ✅ |
-| `text` | `surface-hover` | `#E8EEEF` | `#223033` | 11.64 | 4.5 | Normal text | ✅ |
-| `text-muted` | `surface-hover` | `#AAB7BA` | `#223033` | 6.62 | 4.5 | Normal text | ✅ |
-| `text-subtle` | `surface-hover` | `#8E9CA0` | `#223033` | 4.82 | 4.5 | Normal text | ✅ |
-| `primary-text` | `surface-hover` | `#86D3C9` | `#223033` | 7.91 | 4.5 | Normal text | ✅ |
-| `text` | `surface-selected` | `#E8EEEF` | `#12302D` | 12.05 | 4.5 | Normal text | ✅ |
-| `text-muted` | `surface-selected` | `#AAB7BA` | `#12302D` | 6.86 | 4.5 | Normal text | ✅ |
-| `text-subtle` | `surface-selected` | `#8E9CA0` | `#12302D` | 4.99 | 4.5 | Normal text | ✅ |
-| `primary-text` | `surface-selected` | `#86D3C9` | `#12302D` | 8.19 | 4.5 | Normal text | ✅ |
-| `success` | `bg` | `#76D39A` | `#0E1415` | 10.23 | 4.5 | Status text on page/card | ✅ |
-| `warning` | `bg` | `#F3BD5A` | `#0E1415` | 10.83 | 4.5 | Status text on page/card | ✅ |
-| `danger` | `bg` | `#FF998D` | `#0E1415` | 9.02 | 4.5 | Status text on page/card | ✅ |
-| `info` | `bg` | `#8FBDF5` | `#0E1415` | 9.53 | 4.5 | Status text on page/card | ✅ |
-| `success` | `surface` | `#76D39A` | `#151D1F` | 9.41 | 4.5 | Status text on page/card | ✅ |
-| `warning` | `surface` | `#F3BD5A` | `#151D1F` | 9.97 | 4.5 | Status text on page/card | ✅ |
-| `danger` | `surface` | `#FF998D` | `#151D1F` | 8.30 | 4.5 | Status text on page/card | ✅ |
-| `info` | `surface` | `#8FBDF5` | `#151D1F` | 8.77 | 4.5 | Status text on page/card | ✅ |
-| `success` | `success-subtle` | `#76D39A` | `#0F2A1B` | 8.45 | 4.5 | Badge / alert text | ✅ |
-| `warning` | `warning-subtle` | `#F3BD5A` | `#2F2311` | 8.94 | 4.5 | Badge / alert text | ✅ |
-| `danger` | `danger-subtle` | `#FF998D` | `#3A1714` | 7.77 | 4.5 | Badge / alert text | ✅ |
-| `info` | `info-subtle` | `#8FBDF5` | `#102338` | 8.16 | 4.5 | Badge / alert text | ✅ |
-| `primary-text` | `primary-subtle` | `#86D3C9` | `#12302D` | 8.19 | 4.5 | Badge / alert text | ✅ |
-| `text` | `warning-subtle` | `#E8EEEF` | `#2F2311` | 13.08 | 4.5 | Badge / alert text | ✅ |
-| `text` | `danger-subtle` | `#E8EEEF` | `#3A1714` | 13.64 | 4.5 | Badge / alert text | ✅ |
-| `text` | `success-subtle` | `#E8EEEF` | `#0F2A1B` | 13.10 | 4.5 | Badge / alert text | ✅ |
-| `text` | `info-subtle` | `#E8EEEF` | `#102338` | 13.57 | 4.5 | Badge / alert text | ✅ |
-| `text` | `primary-subtle` | `#E8EEEF` | `#12302D` | 12.05 | 4.5 | Badge / alert text | ✅ |
-| `on-primary` | `primary` | `#041F1D` | `#62B5AB` | 7.15 | 4.5 | Text on filled control | ✅ |
-| `on-primary` | `primary-hover` | `#041F1D` | `#94CCC5` | 9.60 | 4.5 | Text on filled control | ✅ |
-| `on-danger` | `danger` | `#2A0906` | `#FF998D` | 8.94 | 4.5 | Text on filled control | ✅ |
-| `on-danger` | `danger-hover` | `#2A0906` | `#FFB3AA` | 10.77 | 4.5 | Text on filled control | ✅ |
-| `inverse-text` | `inverse-surface` | `#121A1C` | `#E8EEEF` | 15.05 | 4.5 | Text on filled control | ✅ |
-| `border-strong` | `bg` | `#6B7B7F` | `#0E1415` | 4.22 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
-| `border-strong` | `surface` | `#6B7B7F` | `#151D1F` | 3.88 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
-| `primary` | `bg` | `#62B5AB` | `#0E1415` | 7.72 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
-| `primary` | `surface` | `#62B5AB` | `#151D1F` | 7.10 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
-| `focus-ring` | `bg` | `#86D3C9` | `#0E1415` | 10.78 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
-| `focus-ring` | `surface` | `#86D3C9` | `#151D1F` | 9.92 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
-| `warning-strong` | `bg` | `#F3BD5A` | `#0E1415` | 10.83 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
-| `warning-strong` | `surface` | `#F3BD5A` | `#151D1F` | 9.97 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
-| `danger` | `bg` | `#FF998D` | `#0E1415` | 9.02 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
-| `danger` | `surface` | `#FF998D` | `#151D1F` | 8.30 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
-| `accent-text` | `bg` | `#86D3C9` | `#0E1415` | 10.78 | 4.5 | Normal text | ✅ |
-| `accent-text` | `surface` | `#86D3C9` | `#151D1F` | 9.92 | 4.5 | Normal text | ✅ |
-| `accent-text` | `accent-subtle` | `#86D3C9` | `#12302D` | 8.19 | 4.5 | Badge / alert text | ✅ |
-| `text` | `accent-subtle` | `#E8EEEF` | `#12302D` | 12.05 | 4.5 | Badge / alert text | ✅ |
-| `on-accent` | `accent` | `#041F1D` | `#62B5AB` | 7.15 | 4.5 | Text on filled control | ✅ |
-| `on-accent` | `accent-hover` | `#041F1D` | `#94CCC5` | 9.60 | 4.5 | Text on filled control | ✅ |
-| `accent` | `bg` | `#62B5AB` | `#0E1415` | 7.72 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
-| `accent` | `surface` | `#62B5AB` | `#151D1F` | 7.10 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
-| `on-header` | `header` | `#E8EEEF` | `#151D1F` | 14.59 | 4.5 | Normal text | ✅ |
-| `on-header-muted` | `header` | `#AAB7BA` | `#151D1F` | 8.30 | 4.5 | Normal text | ✅ |
-| `on-nav` | `nav` | `#E8EEEF` | `#151D1F` | 14.59 | 4.5 | Normal text | ✅ |
-| `on-nav-muted` | `nav` | `#AAB7BA` | `#151D1F` | 8.30 | 4.5 | Normal text | ✅ |
-| `on-nav` | `nav-item-hover` | `#E8EEEF` | `#223033` | 11.64 | 4.5 | Normal text | ✅ |
-| `on-nav-item-current` | `nav-item-current` | `#86D3C9` | `#12302D` | 8.19 | 4.5 | Normal text | ✅ |
-| `focus-ring` | `header` | `#86D3C9` | `#151D1F` | 9.92 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
-| `focus-ring` | `nav` | `#86D3C9` | `#151D1F` | 9.92 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `text` | `bg` | `#E6EDF2` | `#0F1A22` | 14.91 | 4.5 | Normal text | ✅ |
+| `text-muted` | `bg` | `#B0BFCB` | `#0F1A22` | 9.37 | 4.5 | Normal text | ✅ |
+| `text-subtle` | `bg` | `#94A6B4` | `#0F1A22` | 7.03 | 4.5 | Normal text | ✅ |
+| `primary-text` | `bg` | `#9DCBEB` | `#0F1A22` | 10.22 | 4.5 | Normal text | ✅ |
+| `text` | `surface` | `#E6EDF2` | `#15232E` | 13.54 | 4.5 | Normal text | ✅ |
+| `text-muted` | `surface` | `#B0BFCB` | `#15232E` | 8.51 | 4.5 | Normal text | ✅ |
+| `text-subtle` | `surface` | `#94A6B4` | `#15232E` | 6.38 | 4.5 | Normal text | ✅ |
+| `primary-text` | `surface` | `#9DCBEB` | `#15232E` | 9.28 | 4.5 | Normal text | ✅ |
+| `text` | `surface-sunken` | `#E6EDF2` | `#0B141B` | 15.72 | 4.5 | Normal text | ✅ |
+| `text-muted` | `surface-sunken` | `#B0BFCB` | `#0B141B` | 9.88 | 4.5 | Normal text | ✅ |
+| `text-subtle` | `surface-sunken` | `#94A6B4` | `#0B141B` | 7.41 | 4.5 | Normal text | ✅ |
+| `primary-text` | `surface-sunken` | `#9DCBEB` | `#0B141B` | 10.77 | 4.5 | Normal text | ✅ |
+| `text` | `surface-hover` | `#E6EDF2` | `#1F3240` | 11.18 | 4.5 | Normal text | ✅ |
+| `text-muted` | `surface-hover` | `#B0BFCB` | `#1F3240` | 7.03 | 4.5 | Normal text | ✅ |
+| `text-subtle` | `surface-hover` | `#94A6B4` | `#1F3240` | 5.27 | 4.5 | Normal text | ✅ |
+| `primary-text` | `surface-hover` | `#9DCBEB` | `#1F3240` | 7.66 | 4.5 | Normal text | ✅ |
+| `text` | `surface-selected` | `#E6EDF2` | `#183750` | 10.44 | 4.5 | Normal text | ✅ |
+| `text-muted` | `surface-selected` | `#B0BFCB` | `#183750` | 6.56 | 4.5 | Normal text | ✅ |
+| `text-subtle` | `surface-selected` | `#94A6B4` | `#183750` | 4.92 | 4.5 | Normal text | ✅ |
+| `primary-text` | `surface-selected` | `#9DCBEB` | `#183750` | 7.16 | 4.5 | Normal text | ✅ |
+| `success` | `bg` | `#6CD09A` | `#0F1A22` | 9.34 | 4.5 | Status text on page/card | ✅ |
+| `warning` | `bg` | `#F2C163` | `#0F1A22` | 10.56 | 4.5 | Status text on page/card | ✅ |
+| `danger` | `bg` | `#FF9E97` | `#0F1A22` | 8.89 | 4.5 | Status text on page/card | ✅ |
+| `info` | `bg` | `#9DCBEB` | `#0F1A22` | 10.22 | 4.5 | Status text on page/card | ✅ |
+| `success` | `surface` | `#6CD09A` | `#15232E` | 8.48 | 4.5 | Status text on page/card | ✅ |
+| `warning` | `surface` | `#F2C163` | `#15232E` | 9.59 | 4.5 | Status text on page/card | ✅ |
+| `danger` | `surface` | `#FF9E97` | `#15232E` | 8.07 | 4.5 | Status text on page/card | ✅ |
+| `info` | `surface` | `#9DCBEB` | `#15232E` | 9.28 | 4.5 | Status text on page/card | ✅ |
+| `success` | `success-subtle` | `#6CD09A` | `#11291D` | 8.19 | 4.5 | Badge / alert text | ✅ |
+| `warning` | `warning-subtle` | `#F2C163` | `#2E2410` | 9.15 | 4.5 | Badge / alert text | ✅ |
+| `danger` | `danger-subtle` | `#FF9E97` | `#3A1719` | 8.04 | 4.5 | Badge / alert text | ✅ |
+| `info` | `info-subtle` | `#9DCBEB` | `#183750` | 7.16 | 4.5 | Badge / alert text | ✅ |
+| `primary-text` | `primary-subtle` | `#9DCBEB` | `#183750` | 7.16 | 4.5 | Badge / alert text | ✅ |
+| `text` | `warning-subtle` | `#E6EDF2` | `#2E2410` | 12.91 | 4.5 | Badge / alert text | ✅ |
+| `text` | `danger-subtle` | `#E6EDF2` | `#3A1719` | 13.49 | 4.5 | Badge / alert text | ✅ |
+| `text` | `success-subtle` | `#E6EDF2` | `#11291D` | 13.07 | 4.5 | Badge / alert text | ✅ |
+| `text` | `info-subtle` | `#E6EDF2` | `#183750` | 10.44 | 4.5 | Badge / alert text | ✅ |
+| `text` | `primary-subtle` | `#E6EDF2` | `#183750` | 10.44 | 4.5 | Badge / alert text | ✅ |
+| `on-primary` | `primary` | `#0B1A26` | `#7FB2D6` | 7.77 | 4.5 | Text on filled control | ✅ |
+| `on-primary` | `primary-hover` | `#0B1A26` | `#A5CAE4` | 10.23 | 4.5 | Text on filled control | ✅ |
+| `on-danger` | `danger` | `#2A0906` | `#FF9E97` | 9.29 | 4.5 | Text on filled control | ✅ |
+| `on-danger` | `danger-hover` | `#2A0906` | `#FFBAB4` | 11.34 | 4.5 | Text on filled control | ✅ |
+| `inverse-text` | `inverse-surface` | `#1F3340` | `#E6EDF2` | 11.06 | 4.5 | Text on filled control | ✅ |
+| `border-strong` | `bg` | `#6E8494` | `#0F1A22` | 4.53 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `border-strong` | `surface` | `#6E8494` | `#15232E` | 4.11 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `primary` | `bg` | `#7FB2D6` | `#0F1A22` | 7.76 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `primary` | `surface` | `#7FB2D6` | `#15232E` | 7.05 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `focus-ring` | `bg` | `#9DCBEB` | `#0F1A22` | 10.22 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `focus-ring` | `surface` | `#9DCBEB` | `#15232E` | 9.28 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `warning-strong` | `bg` | `#F2C163` | `#0F1A22` | 10.56 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `warning-strong` | `surface` | `#F2C163` | `#15232E` | 9.59 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `danger` | `bg` | `#FF9E97` | `#0F1A22` | 8.89 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `danger` | `surface` | `#FF9E97` | `#15232E` | 8.07 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `accent-text` | `bg` | `#9DCBEB` | `#0F1A22` | 10.22 | 4.5 | Normal text | ✅ |
+| `accent-text` | `surface` | `#9DCBEB` | `#15232E` | 9.28 | 4.5 | Normal text | ✅ |
+| `accent-text` | `accent-subtle` | `#9DCBEB` | `#183750` | 7.16 | 4.5 | Badge / alert text | ✅ |
+| `text` | `accent-subtle` | `#E6EDF2` | `#183750` | 10.44 | 4.5 | Badge / alert text | ✅ |
+| `on-accent` | `accent` | `#0B1A26` | `#7FB2D6` | 7.77 | 4.5 | Text on filled control | ✅ |
+| `on-accent` | `accent-hover` | `#0B1A26` | `#A5CAE4` | 10.23 | 4.5 | Text on filled control | ✅ |
+| `accent` | `bg` | `#7FB2D6` | `#0F1A22` | 7.76 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `accent` | `surface` | `#7FB2D6` | `#15232E` | 7.05 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `on-header` | `header` | `#E6EDF2` | `#15232E` | 13.54 | 4.5 | Normal text | ✅ |
+| `on-header-muted` | `header` | `#B0BFCB` | `#15232E` | 8.51 | 4.5 | Normal text | ✅ |
+| `focus-ring` | `header` | `#9DCBEB` | `#15232E` | 9.28 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `on-nav` | `nav` | `#E8EEF3` | `#162430` | 13.51 | 4.5 | Normal text | ✅ |
+| `on-nav-muted` | `nav` | `#BCCAD5` | `#162430` | 9.44 | 4.5 | Normal text | ✅ |
+| `nav-item-current` | `nav` | `#DCE8F2` | `#162430` | 12.69 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `nav-focus-ring` | `nav` | `#F6AE2D` | `#162430` | 8.28 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `on-nav` | `nav-end` | `#E8EEF3` | `#1E3D55` | 9.69 | 4.5 | Normal text | ✅ |
+| `on-nav-muted` | `nav-end` | `#BCCAD5` | `#1E3D55` | 6.77 | 4.5 | Normal text | ✅ |
+| `nav-item-current` | `nav-end` | `#DCE8F2` | `#1E3D55` | 9.10 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `nav-focus-ring` | `nav-end` | `#F6AE2D` | `#1E3D55` | 5.94 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `on-nav` | `nav-item-hover` | `#E8EEF3` | `#304D63` | 7.58 | 4.5 | Normal text | ✅ |
+| `on-nav-item-current` | `nav-item-current` | `#13222D` | `#DCE8F2` | 13.03 | 4.5 | Normal text | ✅ |

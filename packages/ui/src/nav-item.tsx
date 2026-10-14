@@ -8,7 +8,9 @@ import { cn } from './cn';
  * high on a desktop and at least 44 px in the phone drawer and on touch screens (SC 2.5.8; NFR-UX-02).
  */
 const entryBase =
-  'flex min-h-11 items-center gap-2.5 rounded-md px-2.5 text-sm font-medium no-underline lg:min-h-9 pointer-coarse:min-h-11';
+  'flex min-h-11 items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm leading-snug font-medium no-underline lg:min-h-9 pointer-coarse:min-h-11';
+/** Labels wrap rather than truncate: a cut-off label would hide words (and «Coming soon» takes room). */
+const labelClasses = 'min-w-0 flex-1 [overflow-wrap:anywhere]';
 
 export function navItemClasses({ current }: { readonly current: boolean }): string {
   return cn(
@@ -51,7 +53,7 @@ export function NavItem({
       {...props}
     >
       {icon}
-      <span className="min-w-0 flex-1 truncate">{children}</span>
+      <span className={labelClasses}>{children}</span>
       {count !== undefined && count !== null ? (
         <span className="text-xs tabular-nums">{count}</span>
       ) : null}
@@ -71,7 +73,7 @@ export function NavUnavailable({ label, note, icon, className, ...props }: NavUn
   return (
     <span aria-disabled="true" className={cn(navUnavailableClasses, className)} {...props}>
       {icon}
-      <span className="min-w-0 flex-1 truncate">{label}</span>
+      <span className={labelClasses}>{label}</span>
       <span className="shrink-0 text-xs font-normal">{note}</span>
     </span>
   );

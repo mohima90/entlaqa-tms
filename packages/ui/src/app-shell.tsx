@@ -151,7 +151,10 @@ export function AppShell({
           >
             <Icon name="menu" className="size-5" />
           </button>
-          <span className="min-w-0 truncate text-sm font-semibold lg:hidden">{brand}</span>
+          {/* Product name next to the menu button on tablets; on phones the drawer shows it (room for the controls). */}
+          <span className="hidden min-w-0 truncate text-sm font-semibold md:block lg:hidden">
+            {brand}
+          </span>
           {headerEnd ? (
             <div className="ms-auto flex shrink-0 items-center gap-2">{headerEnd}</div>
           ) : null}

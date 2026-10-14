@@ -1,6 +1,6 @@
 # Self-hosted (sovereign) stack — `infra/docker`
 
-> Backlog: **T-M1-D04** (walking skeleton on the self-hosted stack) · ADR 0010 §3a/§4 · CI: **gate 15** (`selfhosted` job)
+> Backlog: **T-M1-D04** (walking skeleton on the self-hosted stack) · ADR 0010 §3a/§4 · CI: **gate 15** (`selfhosted-nightly.yml`, once a day at 23:59 Riyadh time — PO, 14 Oct 2026)
 
 The whole product running on servers we (or the customer) control, with no Vercel and no Supabase cloud:
 

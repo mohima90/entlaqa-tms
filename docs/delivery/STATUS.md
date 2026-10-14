@@ -52,6 +52,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | ID | Decision |
 |---|---|---|
+| 14 Oct 2026 | — | **Self-hosted stack tested once a day at 23:59 Riyadh time** (PO): Gate 15 moves from every PR to the scheduled workflow `selfhosted-nightly.yml` (20:59 UTC, on `main`, also runnable by hand); it is no longer part of the required `CI gates`; tasks no longer run the self-hosted smoke locally unless they change `infra/docker`. A failed nightly run opens/updates a `selfhosted-nightly` issue, fixed before further merges. Trade-off accepted: a signed-in or container regression can reach `main` and is caught the same night |
 | 14 Oct 2026 | — | **T-M2-21 accepted for PR (PO "yes")**: the three font packages (Poppins, IBM Plex Sans Arabic, IBM Plex Mono) are accepted under **SIL OFL-1.1** as reviewed licence exceptions pinned to that licence; Arabic «موافقات الخصوصية» for Consent (UX-writer review list) |
 | 14 Oct 2026 | — | **Organization Admin list revised** (PO comments; BRD v2.9): **Training Manager renamed L&D Manager** (مدير التعلم والتطوير); organization profile = display data only (no legal/registration data); branding without font choice; e-mail look/texts and all notification set-up (bell + e-mail) move to the L&D Manager — the Organization Admin keeps e-mail sending (sender, own mail server); **Domain management** section (product subdomain or custom domain, instructions for both; stays R2); **invitation link for one person** (single use, 7 days); **no SMS anywhere**; sandbox and configuration export/import removed |
 | 14 Oct 2026 | — | **Organization Admin feature list approved** (PO, "approved with your recommendations"; `docs/delivery/roles/organization-admin.md`, 50 features): R1 features first, R2 as "part 2", R3 later; approval workflows (FR-WFL-01/02) configured by the Training Manager, notification rules (FR-NTF-07) by the Organization Admin; setup wizard (FR-ADM-01) ends with inviting the Training Manager. BRD v2.8 + feature list updated; build plan `EP-OA` (T-M2-21…34) in the BACKLOG |
@@ -218,6 +219,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
+| 14 Oct 2026 | PO: self-hosted stack tested once a day at 23:59 (Riyadh) — Gate 15 moved to `selfhosted-nightly.yml`, out of the per-PR `CI gates` |
 | 14 Oct 2026 | T-M2-22 Organization profile screens (EN + AR) approved by the PO; build started |
 | 14 Oct 2026 | **PR #57 (T-M2-21) merged by the PO** — approved design, role menus, English default and L&D Manager label on main; all 19 checks green; no DB deploy. Next: T-M2-22 organization profile + regional settings — screen design for the PO first |
 | 14 Oct 2026 | T-M2-21: review findings fixed (import former role names, modal phone drawer, focus on resize, touch sizes, shadow-4, phone sign-in in the self-hosted smoke, licence exceptions pinned to OFL-1.1, landmarks, modal-over-drawer keys); PO approved the screenshots, the OFL exception and «موافقات الخصوصية» → **PR opened** |

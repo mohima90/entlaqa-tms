@@ -43,7 +43,7 @@ No Supabase project or secrets are needed to build, test or run the app: without
 | `pnpm e2e` | Playwright smoke against the standalone server: Arabic + English, `dir`, no console/CSP errors, no horizontal overflow at 390 px, axe (0 serious/critical) | 7, 8 |
 | `pnpm --filter @jadarat/ui storybook` | Component library (Storybook) on http://localhost:6006 — toolbar: Arabic RTL / English LTR, light / dark | — |
 | `pnpm --filter @jadarat/ui build-storybook` then `… test:stories` | Static Storybook, then Playwright opens **every story** in Arabic/English × light/dark: `lang`/`dir`/`data-theme`, no console errors, axe WCAG 2.2 AA with **no** violations | 8 |
-| `bash infra/docker/smoke.sh` | Whole self-hosted stack in containers + real sign-in + Auth parity checks + two background-job workers (needs Docker) | 15 |
+| `bash infra/docker/smoke.sh` | Whole self-hosted stack in containers + real sign-in + Auth parity checks + two background-job workers (needs Docker). Runs **once a day at 23:59 Riyadh time** in CI, not per task or PR (PO, 14 Oct 2026); run it locally only when a change touches `infra/docker` | 15 |
 | `pnpm --filter @jadarat/worker build` then `node apps/worker/dist/main.mjs daemon\|once` | Background-job worker (runbook: [background-jobs.md](background-jobs.md)) | — |
 | `pnpm check:all` | typecheck + lint + format + coverage + migrations + deps | — |
 | `bash scripts/db-deploy.sh plan\|apply` | Hosted environments only, normally via **Actions → DB deploy** (runbook: [db-deploy.md](db-deploy.md)) | — |
@@ -155,8 +155,8 @@ Emit events with `emitEvent(tx, …)` inside the transaction that makes the chan
 | 10 | SAST | `codeql.yml` (security-extended; JS/TS + Actions) | ✅ runs on GitHub only |
 | 11 | Dependency vulnerability scan | audit (`pnpm audit --audit-level high`) | ✅ active |
 | 12 | Secret scanning | secrets (gitleaks: working tree + PR/push commit range) | ✅ runs in CI; see note below |
-| 13 | Container / IaC scanning | iac (Trivy config scan) + selfhosted (Trivy image scan of `jadarat/suite`, no fixable HIGH/CRITICAL; third-party images reported) | ✅ active |
-| 15 | Self-hosted (sovereign) parity | selfhosted (`infra/docker/smoke.sh`: Postgres 17.11 + Auth + gateway + app containers, migrations, real sign-in, Auth parity, audit/TLS checks) | ✅ active |
+| 13 | Container / IaC scanning | iac (Trivy config scan) + nightly selfhosted (Trivy image scan of `jadarat/suite`, no fixable HIGH/CRITICAL; third-party images reported) | ✅ active (image scan nightly) |
+| 15 | Self-hosted (sovereign) parity | `selfhosted-nightly.yml` (`infra/docker/smoke.sh`: Postgres 17.11 + Auth + gateway + app containers, migrations, real sign-in, Auth parity, audit/TLS checks) — **once a day at 23:59 Riyadh time (20:59 UTC) on `main`**, plus **Run workflow** by hand; not part of `CI gates` (PO, 14 Oct 2026). A failure opens or comments on the issue labelled `selfhosted-nightly`; fix it before further merges | ✅ active (nightly) |
 | 14 | OpenAPI breaking-change check | openapi | 🟡 placeholder — fails as soon as an OpenAPI file is added without a real check |
 
 Make the aggregate job **`CI gates`** and the CodeQL checks required status checks on `main` (PO, repository settings).

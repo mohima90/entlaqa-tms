@@ -76,6 +76,12 @@ begin
     'tenants_name_en_check', 'a blank English name is refused (none = null)');
   perform tests.assert_check_constraint($q$update platform.tenants set name_ar = ' '$q$,
     'tenants_name_ar_check', 'the Arabic name is required');
+  perform tests.assert_check_constraint(format('update platform.tenants set name_en = %L', 'Al ' || chr(8238) || 'Raya'),
+    'tenants_names_bidi_check', 'no bidi override in a name (U+202E)');
+  perform tests.assert_check_constraint(format('update platform.tenants set name_ar = %L', 'شركة ' || chr(8294) || 'الراية'),
+    'tenants_names_bidi_check', 'no bidi isolate in a name (U+2066)');
+  perform tests.assert_eq(tests.rows_affected(format('update platform.tenants set name_ar = %L', 'شركة' || chr(8204) || 'الراية')),
+    1::bigint, 'a zero-width non-joiner is allowed (Arabic/Persian spelling)');
   perform tests.assert_check_constraint(format('update platform.tenants set name_ar = %L', repeat('ن', 201)),
     'tenants_name_ar_length_check', 'at most 200 characters (the provisioning limit)');
   perform tests.assert_check_constraint($q$update platform.tenant_settings set work_ends_at = '07:00'$q$,
@@ -127,3 +133,4 @@ begin
   perform tests.assert_eq(tests.rows_affected($q$update platform.tenants set name_en = 'x'$q$), 0::bigint, 'no claims: no rename');
 end $$;
 rollback;
+\echo '89_tenant_settings_app_server: ok'

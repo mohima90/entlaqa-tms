@@ -29,3 +29,4 @@ begin
   perform tests.assert_eq((select count(*) from platform.tenant_settings), 0::bigint, 'no claims: nothing');
 end $$;
 rollback;
+\echo '91_tenant_settings_app_worker: ok'

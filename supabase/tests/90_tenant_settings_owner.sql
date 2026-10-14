@@ -31,6 +31,25 @@ begin
 end $$;
 rollback;
 
+-- The backfill (20261017090100, run again here): an organization's time zone is its headquarters
+-- branch's — what the app used for its calendar days before (review M2) — else Asia/Riyadh.
+begin;
+update platform.branches set timezone = 'Asia/Dubai' where id = 'a2000000-0000-4000-8000-000000000001';
+delete from platform.tenant_settings
+where tenant_id in ('a0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001');
+\ir ../migrations/20261017090100_platform__backfill_tenant_settings.sql
+do $$
+begin
+  perform tests.assert_eq((select timezone from platform.tenant_settings where tenant_id = 'a0000000-0000-4000-8000-000000000001'),
+    'Asia/Dubai', 'A: its headquarters branch''s time zone');
+  perform tests.assert_eq((select timezone from platform.tenant_settings where tenant_id = 'c0000000-0000-4000-8000-000000000001'),
+    'Asia/Riyadh', 'C (no headquarters branch): Asia/Riyadh');
+  perform tests.assert_eq((select count(*) from platform.tenants t
+                           where not exists (select 1 from platform.tenant_settings s where s.tenant_id = t.id)),
+    0::bigint, 'every organization has its settings again');
+end $$;
+rollback;
+
 -- Constraints (each with a failing case) and the trigger.
 begin;
 do $$
@@ -195,3 +214,4 @@ begin
     'no language in the file: the organization''s (English); given: kept; invited again: the person''s own');
 end $$;
 rollback;
+\echo '90_tenant_settings_owner: ok'

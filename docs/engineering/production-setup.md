@@ -15,21 +15,22 @@
 
 ## A. Before you start
 
-1. **Claude** — Make sure T-M2-36 and T-M2-38 are merged: the workflows **DB deploy** and **Provision organization** offer the environment `production` (the default; `staging` stays selectable until step 39), the **Jobs** workflow runs its schedule in the environment `production-jobs`, and **DB deploy (after merge)** deploys to `production` after every merge that changes migrations. (Until then the steps below that run a workflow cannot target the new project.) Until the secrets below exist, the scheduled **Jobs** runs and the automatic deploy end green with a notice and change nothing.
+0. **PO — before the PR of T-M2-36/T-M2-38 is merged:** **GitHub → repository → Settings → Environments → New environment** `production` → **Deployment branches and tags → Selected branches → add `main`** → no required reviewers, **no secrets yet**; then the same for **`production-jobs`**. (Once merged, the **Jobs** schedule and the automatic deploy would otherwise create both environments themselves, **without** the `main`-only rule.) Leave the repository variable `DB_DEPLOY_AUTO` **unset** until step 14.
+1. **Claude** — Make sure T-M2-36 and T-M2-38 are merged: the workflows **DB deploy** and **Provision organization** offer the environment `production` (the default; `staging` stays selectable until step 39), the **Jobs** workflow runs its schedule in the environment `production-jobs`, and **DB deploy (after merge)** deploys to `production` after every merge that changes migrations. (Until then the steps below that run a workflow cannot target the new project.) Until the secrets below exist (and while `DB_DEPLOY_AUTO` is unset), the scheduled **Jobs** runs and the automatic deploy end green with a notice and change nothing.
 2. **PO** — Open the password manager and create one entry "Jadarat TMS production" to keep everything generated below.
 
 ## B. Create the Supabase project (PO)
 
 3. **Supabase dashboard → organization switcher → the new ENTLAQA organization** (`ENTLAQA-Products`, plan **Pro**). Check that your Supabase account has MFA on (Account → Security).
 4. **New project**: name `jadarat-tms`; **Region: Central EU (Frankfurt)**; **Database password → Generate**, then save it in the password manager (it is the `postgres` password, used only in step 11). Under advanced options: **Postgres** (not OrioleDB); **Data API: off** ("Enable Data API" unticked); **automatic RLS / expose new tables: off** (our migrations enable and force RLS on every table). Do **not** connect the project to GitHub. → **Create**.
-5. **Project Settings → Data API**: confirm it is **off**.
+5. **Project Settings → Data API**: confirm it is **off**. Then **Authentication → Sign In / Providers → User Signups → Allow new users to sign up: off** (a new project allows sign-ups by default; nothing but the sign-up hook may let anyone in, so they stay off until step 26, after the hook of step 24).
 6. **Project Settings → JWT Keys**: confirm the project uses **asymmetric signing keys** (ECC P-256 / RSA; new projects do by default).
 7. Note the **project ref** (the part before `.supabase.co` in the Project URL) and tell Claude — it is not secret. **Claude** writes it into this page, `CLAUDE.md`, `STATUS.md` and [db-deploy.md](db-deploy.md).
 8. **Database → Settings → SSL Configuration → Download certificate** (keep the file; its full text is the `DATABASE_CA_CERT` value below — a public certificate, not a secret).
 
 ## C. GitHub environment `production` — database deploy (PO)
 
-9. **GitHub → repository → Settings → Environments → New environment** `production` (if `production` is already listed — a workflow run creates it automatically — open it instead) → **Deployment branches and tags → Selected branches → add `main`** (mandatory, and **before** any secret: an automatically created environment has no such rule). **No required reviewers** (the automatic deploy after merge must not wait — PO decision 15 Oct 2026).
+9. **GitHub → repository → Settings → Environments →** `production` (created in step 0; if it is missing, **New environment** `production`) → check **Deployment branches and tags → Selected branches → `main`** (mandatory, and **before** any secret: an environment created automatically by a workflow run has no such rule). **No required reviewers** (the automatic deploy after merge must not wait — PO decision 15 Oct 2026).
 10. Generate **three new role passwords** in the password manager (≥ 40 characters, letters, digits, `-` and `_` only; length 48 with symbols off): for `app_server`, `app_worker`, `app_queue`. New project → new passwords.
 11. **Environment secrets** of `production` (names only):
 
@@ -42,12 +43,12 @@
 
 12. **Environment variable** of `production`: `DATABASE_CA_CERT` = the whole text of the certificate of step 8 (including the BEGIN/END lines).
 
-From the moment `DATABASE_URL` exists, a merge that changes migrations deploys to the new project by itself (**DB deploy (after merge)**: `plan`, then `apply`). Until step 14 is done, merge no such PR — the first deploy is watched by hand below.
+From the moment `DATABASE_URL` exists, every merge to `main` deploys to the new project by itself (**DB deploy (after merge)**: `plan`, then `apply`; it waits for the deploy lock if a manual run is busy). Until step 14 is done, merge nothing — the first deploy is watched by hand below.
 
 ## D. Database deploy (PO runs, Claude reads the logs)
 
 13. **Actions → DB deploy → Run workflow** (branch `main`), environment `production`, mode **`plan`**. **Claude** reads the run log: PostgreSQL version, every migration listed, dry run rolled back, no error.
-14. Same workflow, same `main` commit, mode **`apply`**: all migrations, role passwords set, `verify-deployment.sql` passes. **Claude** checks the log (no warnings expected). From now on later migrations deploy automatically after each merge (**Actions → DB deploy (after merge)**); a failure opens an issue labelled `db-deploy-auto` ([db-deploy.md](db-deploy.md) § Automatic deploy after merge).
+14. Same workflow, same `main` commit, mode **`apply`**: all migrations, role passwords set, `verify-deployment.sql` passes. **Claude** checks the log (no warnings expected). From now on later migrations deploy automatically after each merge (**Actions → DB deploy (after merge)**); a failure opens an issue labelled `db-deploy-auto` ([db-deploy.md](db-deploy.md) § Automatic deploy after merge). Then **GitHub → Settings → Secrets and variables → Actions → Variables** (repository level) → **New repository variable** `DB_DEPLOY_AUTO` = `on`: from now on a missing `DATABASE_URL` fails the automatic deploy (and opens the issue) instead of skipping it. Never re-run an old deploy run; use **Run workflow** on `main`.
 
 ## E. Supabase Auth settings (PO)
 
@@ -79,7 +80,7 @@ From the moment `DATABASE_URL` exists, a merge that changes migrations deploys t
 
 ## H. GitHub environment `production-jobs` — background worker and e-mail (PO)
 
-29. **New environment** `production-jobs` (already listed if the scheduled **Jobs** run created it — open it instead) → deployment branches: **`main` only** (before any secret). Then **Supabase → Project Settings → API Keys → Secret keys → Add new secret key** named `worker-production` (shown once — straight into GitHub, never Vercel).
+29. **Environment** `production-jobs` (created in step 0; if it is missing, **New environment**) → check deployment branches: **`main` only** (before any secret). Then **Supabase → Project Settings → API Keys → Secret keys → Add new secret key** named `worker-production` (shown once — straight into GitHub, never Vercel).
 
 | Kind | Name | What it is |
 |---|---|---|

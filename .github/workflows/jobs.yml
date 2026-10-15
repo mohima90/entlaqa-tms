@@ -45,7 +45,11 @@
 #                                     (default 1000; at least 500, the provider's 2 requests a second)
 #   variable USER_IMPORT_DAILY_INVITATIONS        per organization and UTC day (default 5000)
 #   variable USER_IMPORT_TRIAL_DAILY_INVITATIONS  the same on trial (default 200)
-# Until both connection secrets exist each run ends with a notice and does nothing (no failure, no e-mail).
+# Repository variable JOBS_REQUIRED (repository level only — not in an environment): unset while the target
+# is being set up — until both connection secrets exist each run ends with a notice and does nothing (no
+# failure, no e-mail); `on` once production-jobs is configured (production-setup.md step 30) — missing
+# connection secrets then FAIL the run, so the worker cannot stop silently. Any other value fails.
+# Timeout: 15 minutes per run; the DB deploy waits longer than that (16 minutes) for the deploy lock.
 name: Jobs
 
 on:
@@ -85,13 +89,21 @@ jobs:
         env:
           QUEUE_URL: ${{ secrets.DATABASE_URL_APP_QUEUE }}
           WORKER_URL: ${{ secrets.DATABASE_URL_APP_WORKER }}
+          JOBS_REQUIRED: ${{ vars.JOBS_REQUIRED }}
           TARGET: ${{ format('{0}-jobs', inputs.environment || 'production') }}
         run: |
-          if [[ -z "$QUEUE_URL" || -z "$WORKER_URL" ]]; then
-            echo "::notice::$TARGET is not configured yet (docs/engineering/production-setup.md §H); nothing to do"
-            echo "ready=false" >>"$GITHUB_OUTPUT"
-          else
+          if [[ -n "$JOBS_REQUIRED" && "$JOBS_REQUIRED" != "on" ]]; then
+            echo "::error::Repository variable JOBS_REQUIRED must be 'on' or unset (docs/engineering/background-jobs.md)"
+            exit 1
+          fi
+          if [[ -n "$QUEUE_URL" && -n "$WORKER_URL" ]]; then
             echo "ready=true" >>"$GITHUB_OUTPUT"
+          elif [[ "$JOBS_REQUIRED" == "on" ]]; then
+            echo "::error::JOBS_REQUIRED is on but $TARGET lacks DATABASE_URL_APP_QUEUE or DATABASE_URL_APP_WORKER: no worker pass ran (docs/engineering/production-setup.md §H)"
+            exit 1
+          else
+            echo "::notice::$TARGET is not configured yet and JOBS_REQUIRED is unset (docs/engineering/production-setup.md §H); nothing to do"
+            echo "ready=false" >>"$GITHUB_OUTPUT"
           fi
       - if: steps.configured.outputs.ready == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -183,9 +195,9 @@ jobs:
           echo "::error::clamd did not become ready; this pass runs without scanning (uploads wait for the next pass)"
           docker logs --tail 30 clamd || true
           echo "ready=false" >>"$GITHUB_OUTPUT"
-      # The pass holds the deploy lock shared (as app_worker; scripts/run-outside-deploy.sh): it is skipped
-      # with a notice while a DB deploy or provisioning run holds or waits for the lock, and a deploy that
-      # starts during the pass waits for it.
+      # The pass holds the deploy lock shared (as app_worker; scripts/run-outside-deploy.sh): it waits up to
+      # 8 minutes for a running DB deploy or provisioning run and FAILS (does not run) if the lock is still
+      # taken then; a deploy that starts during the pass waits for it.
       - name: One worker pass (or a test e-mail)
         if: steps.configured.outputs.ready == 'true'
         env:

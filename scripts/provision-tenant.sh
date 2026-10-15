@@ -47,9 +47,10 @@ chmod 700 "$WORK"
 source "$ROOT/scripts/lib/db-connect.sh"
 db_connect "$WORK" provision
 export PGAPPNAME="jadarat-provision-tenant"
-# Never next to a deploy (lib/db-connect.sh § Deploy lock); waits up to DB_DEPLOY_LOCK_WAIT_SECONDS (300).
+# Never next to a deploy or worker pass (lib/db-connect.sh § Deploy lock); waits up to
+# DB_DEPLOY_LOCK_WAIT_SECONDS (default 960 — longer than a whole Jobs run).
 trap 'db_unlock; rm -rf "$WORK"' EXIT
-db_lock provision exclusive "${DB_DEPLOY_LOCK_WAIT_SECONDS:-300}"
+db_lock provision exclusive "${DB_DEPLOY_LOCK_WAIT_SECONDS:-960}"
 
 if [[ "$MODE" == "apply" ]]; then END=commit; else END=rollback; fi
 {

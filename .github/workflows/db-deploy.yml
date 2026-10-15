@@ -4,7 +4,7 @@
 # steps on `production` by itself. This workflow and "Provision organization" share the concurrency group
 # db-deploy-<environment>; the automatic workflow has its own group (a manual run must never cancel an
 # automatic run that waits). The database work of all of them — and the "Jobs" worker pass — is serialized
-# by the deploy lock in the scripts (scripts/lib/db-connect.sh § Deploy lock: waits up to 10 minutes).
+# by the deploy lock in the scripts (scripts/lib/db-connect.sh § Deploy lock: waits up to 16 minutes).
 # Never re-run an old run: start a new one ("Run workflow" on `main`), so the newest commit is deployed.
 # Configuration lives in the GitHub *environment* (Settings → Environments → production), whose
 # "Deployment branches" rule (main only) is the actual access control — the `if:` below is a convenience,
@@ -44,8 +44,8 @@ jobs:
     name: DB deploy (${{ inputs.mode }} → ${{ inputs.environment }})
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
-    # Up to 10 minutes waiting for the deploy lock, plus the run.
-    timeout-minutes: 25
+    # Up to 16 minutes waiting for the deploy lock, plus the run.
+    timeout-minutes: 30
     environment: ${{ inputs.environment }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

@@ -162,24 +162,39 @@ bash "$ROOT/scripts/db-deploy.sh" plan
 echo "db-test-hosted-sim: apply as non-superuser $MIGRATOR"
 bash "$ROOT/scripts/db-deploy.sh" apply
 
-# Deploy lock (T-M2-38 security review M1, N3; scripts/lib/db-connect.sh § Deploy lock): a deploy waits
-# for the lock held by another session and gives up with a clear message after its wait; a worker pass
-# (scripts/run-outside-deploy.sh) is skipped while a deploy holds it, and holds it shared while it runs.
+# Deploy lock (T-M2-38 security reviews; scripts/lib/db-connect.sh § Deploy lock): a deploy waits for the
+# lock held by another session and gives up with a clear message after its wait; a worker pass
+# (scripts/run-outside-deploy.sh) waits for a deploy, fails (never runs) when its wait runs out, and holds
+# the lock shared while it runs; the transaction pooler's port is refused; nothing is left behind.
 echo "db-test-hosted-sim: deploy lock"
-lock_out="$(mktemp)"
-lock_fail() { echo "db-test-hosted-sim: deploy lock: $1" >&2; cat "$lock_out" >&2; rm -f "$lock_out"; exit 1; }
-psql -X -q --no-psqlrc -d "$DB" -c "select pg_advisory_lock(20261015, 1)" -c "select pg_sleep(4)" >/dev/null &
+lock_out="$(mktemp)" pass_out="$(mktemp)"
+lock_fail() {
+  echo "db-test-hosted-sim: deploy lock: $1" >&2
+  cat "$lock_out" "$pass_out" >&2
+  rm -f "$lock_out" "$pass_out"
+  exit 1
+}
+psql -X -q --no-psqlrc -d "$DB" -c "select pg_advisory_lock(20261015, 1)" -c "select pg_sleep(5)" >/dev/null &
 holder=$!
 sleep 1
 if DB_DEPLOY_LOCK_WAIT_SECONDS=1 bash "$ROOT/scripts/db-deploy.sh" plan >"$lock_out" 2>&1; then
   lock_fail "plan ran while another session held the lock"
 fi
 grep -q "could not take the deploy lock" "$lock_out" || lock_fail "no clear message when the wait ran out"
-bash "$ROOT/scripts/run-outside-deploy.sh" echo pass-ran >"$lock_out" 2>&1 || lock_fail "the skipped pass must exit 0"
-grep -q "this pass is skipped" "$lock_out" && ! grep -q pass-ran "$lock_out" || lock_fail "the pass ran during a deploy"
+if DB_DEPLOY_LOCK_WAIT_SECONDS=1 bash "$ROOT/scripts/run-outside-deploy.sh" echo pass-ran >"$pass_out" 2>&1; then
+  lock_fail "a pass whose wait ran out must fail"
+fi
+if grep -q pass-ran "$pass_out" || ! grep -q "this pass did not run" "$pass_out"; then
+  lock_fail "the pass ran during a deploy, or said nothing"
+fi
+# Both wait for the holder: the pass (shared) and a plan (exclusive).
+DB_DEPLOY_LOCK_WAIT_SECONDS=30 bash "$ROOT/scripts/run-outside-deploy.sh" echo pass-ran >"$pass_out" 2>&1 &
+waiting_pass=$!
 DB_DEPLOY_LOCK_WAIT_SECONDS=30 bash "$ROOT/scripts/db-deploy.sh" plan >"$lock_out" 2>&1 ||
   lock_fail "plan did not run after the lock was released"
 grep -q "waiting up to 30s" "$lock_out" || lock_fail "plan did not wait for the lock"
+wait "$waiting_pass" || lock_fail "the waiting pass failed"
+grep -q pass-ran "$pass_out" || lock_fail "the waiting pass did not run"
 wait "$holder"
 bash "$ROOT/scripts/run-outside-deploy.sh" sleep 4 >/dev/null 2>&1 &
 holder=$!
@@ -188,9 +203,13 @@ if DB_DEPLOY_LOCK_WAIT_SECONDS=1 bash "$ROOT/scripts/db-deploy.sh" plan >"$lock_
   lock_fail "plan ran during a worker pass"
 fi
 wait "$holder" || lock_fail "the pass under the shared lock failed"
-[[ "$(psql -X -At --no-psqlrc -d "$DB" -c "select count(*) from pg_locks where locktype = 'advisory' and classid = 20261015 and objid = 1")" == "0" ]] ||
+if DATABASE_URL="postgresql://$MIGRATOR:x@$PGHOST:6543/$DB" bash "$ROOT/scripts/db-deploy.sh" plan >"$lock_out" 2>&1 ||
+  ! grep -q "transaction pooler" "$lock_out"; then
+  lock_fail "port 6543 (transaction pooler) must be refused"
+fi
+[[ "$(psql -X -At --no-psqlrc -d "$DB" -c "select count(*) from pg_locks where locktype = 'advisory' and classid = 20261015")" == "0" ]] ||
   lock_fail "the lock outlived its runs"
-rm -f "$lock_out"
+rm -f "$lock_out" "$pass_out"
 
 # Tenant provisioning (scripts/provision-tenant.sh) as the same non-superuser migration role.
 ADMIN_UID="$(node -e 'process.stdout.write(require("node:crypto").randomUUID())')"
@@ -328,7 +347,8 @@ echo "db-test-hosted-sim: worker passes (app_queue, app_worker)"
 (cd "$ROOT" && pnpm --filter @jadarat/worker build >/dev/null)
 # As in the Jobs workflow: under the deploy lock (shared), taken as app_worker (scripts/run-outside-deploy.sh).
 worker_pass() {
-  local worker_url="postgresql://app_worker:$(enc "$APP_WORKER_DB_PASSWORD")@$PGHOST:$PGPORT/$DB"
+  local worker_url
+  worker_url="postgresql://app_worker:$(enc "$APP_WORKER_DB_PASSWORD")@$PGHOST:$PGPORT/$DB"
   DATABASE_URL="$worker_url" \
     DATABASE_URL_APP_QUEUE="postgresql://app_queue:$(enc "$APP_QUEUE_DB_PASSWORD")@$PGHOST:$PGPORT/$DB" \
     DATABASE_URL_APP_WORKER="$worker_url" \

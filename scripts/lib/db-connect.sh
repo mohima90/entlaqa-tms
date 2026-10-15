@@ -1,4 +1,6 @@
-# Sourced by scripts/db-deploy.sh and scripts/provision-tenant.sh (docs/engineering/db-deploy.md).
+# shellcheck shell=bash
+# Sourced by scripts/db-deploy.sh, scripts/provision-tenant.sh and scripts/run-outside-deploy.sh
+# (docs/engineering/db-deploy.md).
 # db_connect <private work dir> <log prefix>: turns DATABASE_URL into libpq variables + a pgpass file
 # (scripts/pg-connection.mjs; nothing secret on any command line or in error output) and sets up TLS:
 # always verify-full against DATABASE_CA_CERT; only a local server (127.0.0.1/localhost) may set
@@ -29,83 +31,88 @@ db_connect() {
   export PGOPTIONS="${PGOPTIONS:-} -c client_min_messages=warning"
 }
 
-# Deploy lock (T-M2-38 security review M1; docs/engineering/db-deploy.md § Deploy lock). Every run that
+# Deploy lock (T-M2-38 security reviews; docs/engineering/db-deploy.md § Deploy lock). Every run that
 # changes the database — scripts/db-deploy.sh (plan and apply) and scripts/provision-tenant.sh — holds
-# the session-level advisory lock with the fixed two-part key (20261015, 1) for its whole run, in a
-# connection of its own (application_name jadarat-deploy-lock), so the manual and the automatic workflows
-# never overlap, whatever GitHub's concurrency groups do. The GitHub Actions worker pass
+# the session-level advisory lock with the fixed two-part key (20261015, 1) EXCLUSIVELY for its whole run,
+# in a connection of its own (application_name jadarat-deploy-lock), so the manual and the automatic
+# workflows never overlap, whatever GitHub's concurrency groups do. The GitHub Actions worker pass
 # (scripts/run-outside-deploy.sh) holds the same key SHARED: a deploy waits for a running pass, and a pass
-# is skipped while a deploy holds or waits for the lock. The lock ends with its connection (script exit,
+# waits for a running deploy. Advisory locks belong to one database: every holder must connect to the
+# same database (hosted Supabase: `/postgres`) through a SESSION connection (direct or session pooler,
+# port 5432 — never the transaction pooler, port 6543, which is refused). db_unlock releases the lock
+# explicitly before it ends the session; the lock also ends with the server session (script exit,
 # cancelled job, lost runner). Do not reuse the key for anything else.
 DB_DEPLOY_LOCK_KEY='20261015, 1'
 
-# db_lock <log prefix> exclusive <wait seconds>: waits up to <wait seconds> (≥ 1) for the lock.
-# db_lock <log prefix> shared-try: takes it shared without waiting.
-# Needs the libpq variables of db_connect. Returns 0 when held (release: db_unlock, or exit), 3 when
-# shared-try found it taken or requested, 1 on any other failure.
+# db_lock <log prefix> exclusive|shared <wait seconds ≥ 1>: waits up to <wait seconds> for the lock.
+# Needs the libpq variables of db_connect. Returns 0 when held (release: db_unlock, also on exit), 1 when
+# the wait ran out or anything failed.
 db_lock() {
-  local prefix="$1" mode="$2" wait="${3:-60}" sql line
+  local prefix="$1" mode="$2" wait="${3:-}" try take sql line out
   if [[ ! "$wait" =~ ^[0-9]+$ ]] || ((wait < 1)); then
     echo "$prefix: the deploy lock wait must be a whole number of seconds (at least 1)" >&2
     return 1
   fi
   case "$mode" in
-    exclusive)
-      sql="select pg_catalog.pg_try_advisory_lock($DB_DEPLOY_LOCK_KEY) as got \\gset
-\\if :got
-\\else
-\\echo waiting
-set lock_timeout = '${wait}s';
-select pg_catalog.pg_advisory_lock($DB_DEPLOY_LOCK_KEY);
-\\endif
-\\echo locked"
-      ;;
-    shared-try)
-      sql="select pg_catalog.pg_try_advisory_lock_shared($DB_DEPLOY_LOCK_KEY) as got \\gset
-\\if :got
-\\echo locked
-\\else
-\\echo busy
-\\endif"
-      ;;
+    exclusive) try=pg_try_advisory_lock take=pg_advisory_lock ;;
+    shared) try=pg_try_advisory_lock_shared take=pg_advisory_lock_shared ;;
     *)
       echo "$prefix: unknown deploy lock mode" >&2
       return 1
       ;;
   esac
+  if [[ "${PGPORT:-5432}" == "6543" ]]; then
+    echo "$prefix: port 6543 is Supabase's transaction pooler, which cannot hold the deploy lock — use the session pooler (port 5432)" >&2
+    return 1
+  fi
+  sql="select pg_catalog.$try($DB_DEPLOY_LOCK_KEY) as got \\gset
+\\if :got
+\\else
+\\echo waiting
+set lock_timeout = '${wait}s';
+select pg_catalog.$take($DB_DEPLOY_LOCK_KEY);
+\\endif
+\\echo locked"
   # The holder: one psql session that reads its commands from this shell and stays connected (idle)
-  # until db_unlock closes its input. Query results go nowhere; \echo lines report the state.
+  # until db_unlock. Query results go nowhere; \echo lines report the state.
   coproc DB_LOCK {
     PGAPPNAME=jadarat-deploy-lock exec psql -X -q -At --no-psqlrc -v ON_ERROR_STOP=1 -o /dev/null
   }
   # Kept apart: bash unsets DB_LOCK when the holder exits (e.g. on a lock timeout).
   DB_LOCK_HOLDER_PID="$DB_LOCK_PID"
   DB_LOCK_HOLDER_IN="${DB_LOCK[1]}"
-  local out="${DB_LOCK[0]}"
+  DB_LOCK_HOLDER_OUT="${DB_LOCK[0]}"
+  out="$DB_LOCK_HOLDER_OUT"
   printf '%s\n' "set statement_timeout = 0; set idle_session_timeout = 0;" "$sql" >&"$DB_LOCK_HOLDER_IN"
   while IFS= read -r -t "$((wait + 60))" line <&"$out" 2>/dev/null; do
     case "$line" in
-      waiting) echo "$prefix: another deploy, provisioning run or worker pass holds the deploy lock — waiting up to ${wait}s" ;;
+      waiting) echo "$prefix: the deploy lock is held by another deploy, provisioning run or worker pass — waiting up to ${wait}s" ;;
       locked) return 0 ;;
-      busy)
-        db_unlock
-        return 3
-        ;;
     esac
   done
   db_unlock
-  echo "$prefix: could not take the deploy lock (another run held it for more than ${wait}s, or the connection failed — see above)" >&2
+  echo "$prefix: could not take the deploy lock (held by another run for more than ${wait}s, or the connection failed — see above)" >&2
   return 1
 }
 
-# db_unlock: ends the holder's session (and so the lock). Safe to call more than once, or without a lock.
+# db_unlock: releases the lock explicitly (pg_advisory_unlock_all — a pooler may keep the server session
+# open after the client leaves), ends the holder's session, waits up to 5 s for it and only then kills it.
+# Safe to call more than once, or without a lock.
 db_unlock() {
-  local fd="${DB_LOCK_HOLDER_IN:-}" pid="${DB_LOCK_HOLDER_PID:-}"
-  DB_LOCK_HOLDER_IN="" DB_LOCK_HOLDER_PID=""
-  # Close our end of its input only if bash has not closed it already (a failed `exec` redirection would
-  # end this shell).
-  if [[ -n "$fd" ]] && { true >&"$fd"; } 2>/dev/null; then exec {fd}>&-; fi
+  local fd="${DB_LOCK_HOLDER_IN:-}" out="${DB_LOCK_HOLDER_OUT:-}" pid="${DB_LOCK_HOLDER_PID:-}" line=""
+  DB_LOCK_HOLDER_IN="" DB_LOCK_HOLDER_OUT="" DB_LOCK_HOLDER_PID=""
+  # Only while our end of its input is still open (a failed `exec` redirection would end this shell); the
+  # write runs in a subshell, so a holder that is already gone cannot end this shell with SIGPIPE.
+  if [[ -n "$fd" ]] && { true >&"$fd"; } 2>/dev/null; then
+    (printf '%s\n' 'select pg_catalog.pg_advisory_unlock_all();' '\echo released' '\q' >&"$fd") 2>/dev/null || true
+    exec {fd}>&-
+    if [[ -n "$out" ]]; then IFS= read -r -t 5 line <&"$out" 2>/dev/null || true; fi
+  fi
   if [[ -n "$pid" ]]; then
+    for _ in {1..50}; do
+      kill -0 "$pid" 2>/dev/null || break
+      sleep 0.1
+    done
     kill "$pid" 2>/dev/null || true
     wait "$pid" 2>/dev/null || true
   fi

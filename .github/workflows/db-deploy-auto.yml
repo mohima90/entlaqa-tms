@@ -19,7 +19,7 @@
 # automatic run replaces an older waiting one, which is harmless (each run deploys everything pending at
 # its own, newer commit). Across this workflow, "DB deploy", "Provision organization" and the "Jobs"
 # worker pass, the database work itself is serialized by the deploy lock — a session-level advisory lock
-# taken by scripts/db-deploy.sh (scripts/lib/db-connect.sh § Deploy lock; waits up to 10 minutes).
+# taken by scripts/db-deploy.sh (scripts/lib/db-connect.sh § Deploy lock; waits up to 16 minutes, longer than a whole Jobs run).
 #
 # A failure opens (or comments on) an issue labelled `db-deploy-auto` with the failing step, the commit and
 # the run link — never log text or secrets. Fix forward with a new migration; merges that change migrations
@@ -44,8 +44,8 @@ jobs:
     name: Plan (dry run, rolled back) → production
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
-    # Up to 10 minutes waiting for the deploy lock, plus the run.
-    timeout-minutes: 25
+    # Up to 16 minutes waiting for the deploy lock, plus the run.
+    timeout-minutes: 30
     environment: production
     permissions:
       contents: read
@@ -94,7 +94,8 @@ jobs:
     # needs: implies success() — apply never runs after a red plan.
     if: needs.plan.outputs.configured == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    # Up to 16 minutes waiting for the deploy lock, plus the run (which re-plans inside its lock).
+    timeout-minutes: 30
     environment: production
     permissions:
       contents: read

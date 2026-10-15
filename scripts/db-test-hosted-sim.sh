@@ -162,6 +162,36 @@ bash "$ROOT/scripts/db-deploy.sh" plan
 echo "db-test-hosted-sim: apply as non-superuser $MIGRATOR"
 bash "$ROOT/scripts/db-deploy.sh" apply
 
+# Deploy lock (T-M2-38 security review M1, N3; scripts/lib/db-connect.sh § Deploy lock): a deploy waits
+# for the lock held by another session and gives up with a clear message after its wait; a worker pass
+# (scripts/run-outside-deploy.sh) is skipped while a deploy holds it, and holds it shared while it runs.
+echo "db-test-hosted-sim: deploy lock"
+lock_out="$(mktemp)"
+lock_fail() { echo "db-test-hosted-sim: deploy lock: $1" >&2; cat "$lock_out" >&2; rm -f "$lock_out"; exit 1; }
+psql -X -q --no-psqlrc -d "$DB" -c "select pg_advisory_lock(20261015, 1)" -c "select pg_sleep(4)" >/dev/null &
+holder=$!
+sleep 1
+if DB_DEPLOY_LOCK_WAIT_SECONDS=1 bash "$ROOT/scripts/db-deploy.sh" plan >"$lock_out" 2>&1; then
+  lock_fail "plan ran while another session held the lock"
+fi
+grep -q "could not take the deploy lock" "$lock_out" || lock_fail "no clear message when the wait ran out"
+bash "$ROOT/scripts/run-outside-deploy.sh" echo pass-ran >"$lock_out" 2>&1 || lock_fail "the skipped pass must exit 0"
+grep -q "this pass is skipped" "$lock_out" && ! grep -q pass-ran "$lock_out" || lock_fail "the pass ran during a deploy"
+DB_DEPLOY_LOCK_WAIT_SECONDS=30 bash "$ROOT/scripts/db-deploy.sh" plan >"$lock_out" 2>&1 ||
+  lock_fail "plan did not run after the lock was released"
+grep -q "waiting up to 30s" "$lock_out" || lock_fail "plan did not wait for the lock"
+wait "$holder"
+bash "$ROOT/scripts/run-outside-deploy.sh" sleep 4 >/dev/null 2>&1 &
+holder=$!
+sleep 2
+if DB_DEPLOY_LOCK_WAIT_SECONDS=1 bash "$ROOT/scripts/db-deploy.sh" plan >"$lock_out" 2>&1; then
+  lock_fail "plan ran during a worker pass"
+fi
+wait "$holder" || lock_fail "the pass under the shared lock failed"
+[[ "$(psql -X -At --no-psqlrc -d "$DB" -c "select count(*) from pg_locks where locktype = 'advisory' and classid = 20261015 and objid = 1")" == "0" ]] ||
+  lock_fail "the lock outlived its runs"
+rm -f "$lock_out"
+
 # Tenant provisioning (scripts/provision-tenant.sh) as the same non-superuser migration role.
 ADMIN_UID="$(node -e 'process.stdout.write(require("node:crypto").randomUUID())')"
 "${PSQL[@]}" -d "$DB" -c "insert into auth.users (id, email) values ('$ADMIN_UID', 'sim-admin@example.test')"
@@ -296,12 +326,14 @@ echo "db-test-hosted-sim: ending sessions and removing apps in Auth OK"
 # the pending events.
 echo "db-test-hosted-sim: worker passes (app_queue, app_worker)"
 (cd "$ROOT" && pnpm --filter @jadarat/worker build >/dev/null)
+# As in the Jobs workflow: under the deploy lock (shared), taken as app_worker (scripts/run-outside-deploy.sh).
 worker_pass() {
-  env -u DATABASE_URL \
+  local worker_url="postgresql://app_worker:$(enc "$APP_WORKER_DB_PASSWORD")@$PGHOST:$PGPORT/$DB"
+  DATABASE_URL="$worker_url" \
     DATABASE_URL_APP_QUEUE="postgresql://app_queue:$(enc "$APP_QUEUE_DB_PASSWORD")@$PGHOST:$PGPORT/$DB" \
-    DATABASE_URL_APP_WORKER="postgresql://app_worker:$(enc "$APP_WORKER_DB_PASSWORD")@$PGHOST:$PGPORT/$DB" \
+    DATABASE_URL_APP_WORKER="$worker_url" \
     EMAIL_PROVIDER=none \
-    node "$ROOT/apps/worker/dist/main.mjs" once >/dev/null
+    bash "$ROOT/scripts/run-outside-deploy.sh" node "$ROOT/apps/worker/dist/main.mjs" once >/dev/null
 }
 event() { q "insert into platform.event_outbox (tenant_id, type) select id, 'com.entlaqa.platform.sim.$1' from platform.tenants where slug = 'sim-org'" >/dev/null; }
 dispatched() { q "select count(*) from platform.event_outbox where type = 'com.entlaqa.platform.sim.$1' and dispatched_at is not null"; }

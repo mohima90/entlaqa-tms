@@ -60,7 +60,12 @@ runs:
           exit 2
         fi
         if [[ -z "$DATABASE_URL" ]]; then
-          echo "::error::Secret DATABASE_URL is missing in environment '$TARGET' (docs/engineering/db-deploy.md)"
+          # The name goes into a workflow command only when it is a plain environment name.
+          if [[ "$TARGET" =~ ^[a-z-]+$ ]]; then
+            echo "::error::Secret DATABASE_URL is missing in environment '$TARGET' (docs/engineering/db-deploy.md)"
+          else
+            echo "::error::Secret DATABASE_URL is missing in the target environment (docs/engineering/db-deploy.md)"
+          fi
           exit 1
         fi
         bash scripts/db-deploy.sh "$MODE"

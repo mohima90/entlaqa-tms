@@ -40,7 +40,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
-      issues: write
+      issues: write # open, comment on and close the "production is down" issue only
     env:
       UPTIME_URL: ${{ vars.UPTIME_URL }}
       GH_TOKEN: ${{ github.token }}
@@ -91,7 +91,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
-      issues: write
+      issues: write # open, comment on and close the sign-up gate issue only
     env:
       SUPABASE_URL: ${{ vars.SUPABASE_URL }}
       SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}

@@ -1,8 +1,11 @@
 # Applies supabase/migrations to a hosted environment (T-M1-D03; runbook: docs/engineering/db-deploy.md).
 # Manual: the fallback for re-runs, recovery and the first deploy of a new project — after every merge to
 # `main` that changes the deploy path, "DB deploy (after merge)" (db-deploy-auto.yml, T-M2-38) runs the same
-# steps on `production` by itself. Both share the concurrency group db-deploy-<environment> (also used by
-# "Provision organization"), so only one of them touches a database at a time.
+# steps on `production` by itself. This workflow and "Provision organization" share the concurrency group
+# db-deploy-<environment>; the automatic workflow has its own group (a manual run must never cancel an
+# automatic run that waits). The database work of all of them — and the "Jobs" worker pass — is serialized
+# by the deploy lock in the scripts (scripts/lib/db-connect.sh § Deploy lock: waits up to 10 minutes).
+# Never re-run an old run: start a new one ("Run workflow" on `main`), so the newest commit is deployed.
 # Configuration lives in the GitHub *environment* (Settings → Environments → production), whose
 # "Deployment branches" rule (main only) is the actual access control — the `if:` below is a convenience,
 # because a run from another branch uses that branch's copy of this file.
@@ -41,7 +44,8 @@ jobs:
     name: DB deploy (${{ inputs.mode }} → ${{ inputs.environment }})
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    # Up to 10 minutes waiting for the deploy lock, plus the run.
+    timeout-minutes: 25
     environment: ${{ inputs.environment }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

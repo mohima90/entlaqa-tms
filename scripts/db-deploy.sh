@@ -15,6 +15,8 @@
 # apply: each pending migration runs in its own transaction together with its history row (same as the
 # CI gate, scripts/db-test.sh); then the role passwords are set as SCRAM verifiers; then
 # scripts/sql/verify-deployment.sql must pass.
+# Both modes hold the deploy lock for the whole run (scripts/lib/db-connect.sh; waits up to
+# DB_DEPLOY_LOCK_WAIT_SECONDS, default 600, for another deploy, provisioning run or worker pass).
 set -euo pipefail
 
 MODE="${1:-}"
@@ -36,6 +38,10 @@ chmod 700 "$WORK"
 source "$ROOT/scripts/lib/db-connect.sh"
 db_connect "$WORK" db-deploy
 export PGAPPNAME="jadarat-db-deploy"
+# One run at a time per database, plan included (lib/db-connect.sh § Deploy lock): the manual and the
+# automatic workflow, provisioning and the worker pass of GitHub Actions never overlap.
+trap 'db_unlock; rm -rf "$WORK"' EXIT
+db_lock db-deploy exclusive "${DB_DEPLOY_LOCK_WAIT_SECONDS:-600}"
 PSQL=(psql -X -q -v ON_ERROR_STOP=1 --no-psqlrc)
 
 # Validate role passwords before touching the database (both modes).

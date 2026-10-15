@@ -104,6 +104,11 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
+      - name: PostgreSQL client (for the deploy lock)
+        if: steps.configured.outputs.ready == 'true'
+        run: |
+          if ! command -v psql >/dev/null; then sudo apt-get update && sudo apt-get install -y postgresql-client; fi
+          psql --version
       - name: Install the worker's dependencies only (frozen lockfile) and bundle it
         if: steps.configured.outputs.ready == 'true'
         run: |
@@ -178,6 +183,9 @@ jobs:
           echo "::error::clamd did not become ready; this pass runs without scanning (uploads wait for the next pass)"
           docker logs --tail 30 clamd || true
           echo "ready=false" >>"$GITHUB_OUTPUT"
+      # The pass holds the deploy lock shared (as app_worker; scripts/run-outside-deploy.sh): it is skipped
+      # with a notice while a DB deploy or provisioning run holds or waits for the lock, and a deploy that
+      # starts during the pass waits for it.
       - name: One worker pass (or a test e-mail)
         if: steps.configured.outputs.ready == 'true'
         env:
@@ -200,7 +208,7 @@ jobs:
           MODE: ${{ inputs.mode == 'test-email' && 'test-email' || 'once' }}
           JADARAT_ENVIRONMENT: ${{ inputs.environment || 'production' }}
           JADARAT_RELEASE: ${{ github.sha }}
-        run: node apps/worker/dist/main.mjs "$MODE"
+        run: DATABASE_URL="$DATABASE_URL_APP_WORKER" bash scripts/run-outside-deploy.sh node apps/worker/dist/main.mjs "$MODE"
       - name: Scanner was not available
         if: steps.clamd.outcome == 'success' && steps.clamd.outputs.ready != 'true'
         run: |

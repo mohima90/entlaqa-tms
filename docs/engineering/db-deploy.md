@@ -5,18 +5,39 @@
 
 ## Environments
 
+**One environment: production (PO decisions, 15 Oct 2026).** While there are no customers there is one hosted environment, production; pull-request previews share its database (accepted risk R-62); a separate test environment is added when the first customer arrives. **Supabase starts over:** a **new, clean project** in the new ENTLAQA organization on the **Pro** plan becomes production; every migration is applied fresh through this workflow, and the connection secrets change (new project ref) — the PO enters them in the new GitHub environment `production`. The complete ordered checklist for the new project (environment secrets, Auth settings, hooks, Storage, worker, Vercel, first organization, checks) is [production-setup.md](production-setup.md). The old project is deleted only after production works.
+
 | Environment | Supabase project | Region | Plan | GitHub environment |
 |---|---|---|---|---|
-| staging | `jadarat-tms-staging` (ref `kgmhlmiwlbvdmalesexv`, org `entlaqa-TMS`) | `eu-central-1` Frankfurt | Free (pauses after ~7 days idle; Restore in the dashboard) | `staging` |
-| production | — (M7) | — | — | — |
+| production | `jadarat-tms` (ref **`<NEW REF — fill in>`**, organization **`<NEW ORG — fill in>`**) | `eu-central-1` Frankfurt | **Pro** (daily backups, no pausing) | `production` (+ `production-jobs` for the worker) |
+| old staging (until production works) | `jadarat-tms-staging` (ref `kgmhlmiwlbvdmalesexv`, org `entlaqa-TMS`) — then deleted | `eu-central-1` Frankfurt | Free (pauses after ~7 days idle) | `staging` (+ `staging-jobs`) — then deleted |
+| test | — (created with the first customer) | `eu-central-1` | — | `test` |
+
+The workflows offer the environment `production` once BACKLOG T-M2-36 is merged; the one-time set-up below is written for `staging` and applies to `production` the same way (production-setup.md §C).
+
+## Automatic deploy after merge (decided 15 Oct 2026 — status: **to build**, BACKLOG T-M2-38)
+
+Decided by the PO: after every merge to `main`, GitHub Actions runs the DB deploy automatically, so nobody has to start it by hand.
+
+| Step | Behaviour |
+|---|---|
+| Trigger | Push to `main` (= a merged PR) that changes `supabase/migrations/`, `scripts/db-deploy.sh`, `scripts/sql/verify-deployment.sql` or the role-password scripts |
+| 1. `plan` | Exactly as the manual `plan` below (dry run in one transaction, always rolled back) |
+| 2. `apply` | Only if `plan` is green, on the **same commit**; then the role passwords and `verify-deployment.sql`, as the manual `apply` |
+| Concurrency | One deploy at a time; a newer merge waits for the running deploy (never cancels it mid-run) |
+| Failure | The workflow opens, or comments on, an issue labelled `db-deploy-auto` with the failing step (no secrets in the issue or log); further merges that change migrations wait until it is fixed (fix forward with a new migration) |
+| Approval | The PO's merge is the approval: the automatic path has **no required reviewer** on its environment (T-M0-11 superseded for this path; risk R-63) |
+| Fallback | The manual **Actions → DB deploy** workflow (below) stays for re-runs, recovery and provisioning-related deploys |
+
+Writing migrations for it: the app (Vercel) and the database deploy in parallel after a merge, so a migration must be **expand-first** — the app version that is running keeps working with the new schema. When new code cannot run before its migration, the PR says so and the app's readiness check fails closed until the migration is applied (the pattern used since T-M2-11). Hosted dashboard settings that a migration needs (e.g. enabling a hook) are still done by the PO after the deploy, as listed in the sections below.
 
 Project settings applied at creation (1 Oct 2026): **Data API disabled**, *automatically expose new tables* off, *automatic RLS* off (our migrations enable and force RLS on every table; the CI catalog test enforces it), Postgres (not OrioleDB), not connected to GitHub.
 
 ## One-time setup of a GitHub environment (GitHub → Settings → Environments → New environment)
 
-1. Name: `staging`.
+1. Name: `production` (the old project used `staging`).
 2. **Deployment branches and tags → Selected branches → add `main`.** Mandatory: this rule, not the workflow's `if:`, is what stops a run from another branch from reaching the secrets.
-3. Optional: **Required reviewers** (the PO) — each run then waits for an approval click; recommended for production.
+3. Optional: **Required reviewers** (the PO) — each run then waits for an approval click. **Not** on the environment used by the automatic deploy (it would stop every automatic run; the PO's merge is the approval — decided 15 Oct 2026); advisable for the manual provisioning workflow once a second person has repository access.
 4. **Environment secrets:**
 
 | Secret | Value | Notes |
@@ -30,7 +51,7 @@ Project settings applied at creation (1 Oct 2026): **Data API disabled**, *autom
 
 Store the role passwords in the password manager too: the app and the worker need them (`DATABASE_URL_APP_SERVER` in Vercel; `DATABASE_URL_APP_QUEUE` and `DATABASE_URL_APP_WORKER` for the worker — on staging in the GitHub environment `staging-jobs`, [background-jobs.md](background-jobs.md) §4).
 
-## Running it
+## Running it (manual workflow — fallback once the automatic deploy exists)
 
 1. GitHub → **Actions → DB deploy → Run workflow** (branch `main`), environment `staging`, mode **`plan`**: validates the configuration and the role passwords, lists pending migrations and applies them all in one transaction that is **always rolled back**. Nothing changes.
 2. If `plan` is green, run again on the **same `main` commit** with mode **`apply`**: each pending migration is applied in its own transaction together with its row in `supabase_migrations.schema_migrations` (Supabase CLI's history table; the `statements` column is left empty, so `supabase migration fetch` cannot rebuild files — the repository is the source); then the role passwords are set; then `verify-deployment.sql` must pass:
@@ -120,4 +141,4 @@ The tenant provisioning recovery path (`scripts/provision-tenant.sh` with `ADD_T
 - **Organization profile (T-M2-22, migrations `…20261017090000`–`…20261017090300`):** no Supabase-owned object is touched — a new table `platform.tenant_settings` (RLS, column-level `UPDATE` for `authenticated`), a backfill, column-level `UPDATE (name_ar, name_en)` on `platform.tenants` with the update policy `tenants_update`, and a new version of `private.user_import_apply_batch`. The stamping trigger reads `pg_catalog.pg_timezone_names` (readable by every role). Three `CHECK` constraints on `platform.tenants` are **validated against the existing rows** as they are added (`tenants_name_ar_length_check`: at most 200 characters; `tenants_name_en_check`: no blank English name; `tenants_names_bidi_check`: no bidirectional override/isolate marks U+202A–U+202E, U+2066–U+2069 — provisioning stores none of these); if the staging `plan` stops at `…20261017090200`, an organization was created outside `provision-tenant.sh`: fix its name, then plan again. **After the deploy:** every existing organization has the default settings (Saudi riyal, Sunday–Thursday 08:00–16:00, English for new people (PO, 14 Oct 2026), Gregorian dates, and as time zone its headquarters branch's — else Asia/Riyadh — the zone the app already used for its calendar days: dates as before) and **no industry or country**: its Organization Admin fills them in on «بيانات المنشأة» / "Organization profile" (no authenticator code needed — PO decision, 14 Oct 2026). Nothing changes for members until then.
 - **No authenticator step-up for organization-level actions (PO decision 14 Oct 2026, migration `…20261017090400`, rollback in `supabase/rollbacks/`):** replaces `private.actor_may_change_security_policy`, `private.reset_member_mfa` and `private.reactivate_membership` (same owners and grants: `CREATE OR REPLACE`) without the AAL2 / 15-minute checks, drops the trigger `tenant_memberships_privileged_deactivation` with `private.check_privileged_deactivation()`, and revokes `membership_guard`'s EXECUTE on `private.request_aal2()` / `private.request_code_fresh()` (no other user). `scripts/sql/verify-deployment.sql` checks the function and trigger are gone. No data changes. **After the deploy:** the Organization Admin changes the security policy, privileged roles and members and resets a member's authenticator app without a code; deploy the web app from the same commit (the web app no longer asks for the code either — an older web app would still ask, which is harmless).
 - `revoke temporary on database … from public` may be a no-op when `postgres` does not own the database; the verification prints a **warning** (not a failure). Track it in STATUS risks if it appears.
-- The server version is printed on the first line of every run. Staging runs **PostgreSQL 17.11** (1 Oct 2026); CI tests on the same version (`postgres:17` pinned by digest in `ci.yml`, `supabase/config.toml` `major_version = 17`). When Supabase upgrades the project, bump CI the same way.
+- The server version is printed on the first line of every run. The old staging project ran **PostgreSQL 17.11** (1 Oct 2026); check the new production project's version on its first `plan` and keep CI on the same major; CI tests on the same version (`postgres:17` pinned by digest in `ci.yml`, `supabase/config.toml` `major_version = 17`). When Supabase upgrades the project, bump CI the same way.

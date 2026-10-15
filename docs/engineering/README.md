@@ -8,6 +8,8 @@
 
 This guide is for engineers (human or Claude sessions) working in the code. Product scope lives in the BRD, process and quality bars in the Development Plan, current state in `docs/delivery/STATUS.md`.
 
+**Environments and deployment (PO decisions, 15 Oct 2026):** there is **one hosted environment, production** — a **new, clean Supabase project** `jadarat-tms` in the new ENTLAQA organization on the Pro plan (Frankfurt; ref and organization name to be filled in; set up from scratch with [production-setup.md](production-setup.md)) and the Vercel project `jadarat-tms`; the old `jadarat-tms-staging` project is deleted once production works. Pull-request previews share the production database while there are no customers; a test environment is added with the first customer. After a merge to `main`, Vercel deploys the app and — once built (BACKLOG T-M2-38, **to build**) — GitHub Actions deploys the migrations automatically (plan, then apply if green; failures open a `db-deploy-auto` issue); the manual **DB deploy** workflow stays as fallback ([db-deploy.md](db-deploy.md)). Older runbooks say "staging" for the old project; their steps apply to production the same way. Process: Development Plan §2.4 (lighter process; business flow first for every phase).
+
 ---
 
 ## 1. Prerequisites
@@ -16,7 +18,7 @@ This guide is for engineers (human or Claude sessions) working in the code. Prod
 |---|---|---|
 | Node.js | **24 LTS** (`.nvmrc`); `>= 22.12` accepted locally | CI and production use 24 |
 | pnpm | 10.x (pinned by `packageManager` in `package.json`) | `corepack enable` picks the right version |
-| PostgreSQL client + server | **17** (as staging and CI); 16 still works locally | Only for `pnpm db:test` (plain PostgreSQL, no Docker needed) |
+| PostgreSQL client + server | **17** (as the hosted database and CI); 16 still works locally | Only for `pnpm db:test` (plain PostgreSQL, no Docker needed) |
 | Playwright Chromium | matching `@playwright/test` | `pnpm --filter @jadarat/suite exec playwright install chromium` (or set `PW_CHROMIUM_EXECUTABLE` to an existing Chromium) |
 | Docker (with compose) | current | Only for the self-hosted stack (`infra/docker`, gate 15) |
 
@@ -46,7 +48,7 @@ No Supabase project or secrets are needed to build, test or run the app: without
 | `bash infra/docker/smoke.sh` | Whole self-hosted stack in containers + real sign-in + Auth parity checks + two background-job workers (needs Docker). Runs **once a day at 23:59 Riyadh time** in CI, not per task or PR (PO, 14 Oct 2026); run it locally only when a change touches `infra/docker` | 15 |
 | `pnpm --filter @jadarat/worker build` then `node apps/worker/dist/main.mjs daemon\|once` | Background-job worker (runbook: [background-jobs.md](background-jobs.md)) | — |
 | `pnpm check:all` | typecheck + lint + format + coverage + migrations + deps | — |
-| `bash scripts/db-deploy.sh plan\|apply` | Hosted environments only, normally via **Actions → DB deploy** (runbook: [db-deploy.md](db-deploy.md)) | — |
+| `bash scripts/db-deploy.sh plan\|apply` | Hosted environments only, via **Actions → DB deploy** today; automatically after every merge to `main` once T-M2-38 is built (runbook: [db-deploy.md](db-deploy.md)) | — |
 | `bash scripts/provision-tenant.sh plan\|apply` | Hosted environments only, normally via **Actions → Provision organization** (runbook: [staging-sign-in.md](staging-sign-in.md)) | — |
 
 ### Database tests locally

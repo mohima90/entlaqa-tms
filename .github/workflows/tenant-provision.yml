@@ -4,6 +4,7 @@
 # "Deployment branches" rule (main only) is the actual access control.
 # Inputs are organization data and a user UID only — never an e-mail or a person's name (run inputs are
 # visible to everyone with read access to the repository).
+# `staging` (the old project) stays selectable only until it is deleted (production-setup.md step 39, T-M2-36).
 # Run `plan` first (dry run, always rolled back), then `apply`.
 name: Provision organization
 
@@ -13,8 +14,8 @@ on:
       environment:
         description: Target environment
         type: choice
-        options: [staging]
-        default: staging
+        options: [production, staging]
+        default: production
       mode:
         description: 'plan = dry run (rolled back) · apply = create it'
         type: choice

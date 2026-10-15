@@ -1,13 +1,15 @@
-# Background jobs for staging (ADR 0005 §3, T-M2-06a). Staging has no container host for the worker, so
-# GitHub runs one worker pass every 5 minutes (scheduled runs can start late) and on demand
-# (Actions → Jobs (staging) → Run workflow): install or upgrade the queue schema, dispatch pending events,
-# run every job that is due, exit. Production runs worker containers in daemon mode instead; this
-# workflow never targets it. Runbook: docs/engineering/background-jobs.md.
-# Configuration lives in its own GitHub *environment* (Settings → Environments → staging-jobs), whose
-# "Deployment branches" rule (main only) is the access control; it holds no migration credential:
+# Background jobs for the hosted environment (ADR 0005 §3, T-M2-06a; production naming T-M2-36). There is no
+# container host for the worker yet (a PO cost decision before the first customer, ADR 0005 §1), so GitHub
+# runs one worker pass every 5 minutes (scheduled runs can start late) and on demand
+# (Actions → Jobs → Run workflow): install or upgrade the queue schema, dispatch pending events, run every
+# job that is due, exit. Scheduled runs always target production; a run by hand may still choose the old
+# `staging` project until it is deleted (production-setup.md step 39). Runbook: docs/engineering/background-jobs.md.
+# Configuration lives in its own GitHub *environment* per target (Settings → Environments → production-jobs;
+# the old project: staging-jobs), whose "Deployment branches" rule (main only) is the access control; it
+# holds no migration credential:
 #   secret   DATABASE_URL_APP_QUEUE   login role app_queue via the Supabase session pooler
 #   secret   DATABASE_URL_APP_WORKER  login role app_worker via the Supabase session pooler
-#   variable DATABASE_CA_CERT         PEM of the server's root CA (same value as in `staging`)
+#   variable DATABASE_CA_CERT         PEM of the server's root CA (same value as in `production`)
 #   E-mail (T-M2-06b; ADR 0008), optional — without EMAIL_PROVIDER this workflow passes `none`
 #   (e-mail switched off: queued messages are recorded as suppressed):
 #   variable EMAIL_PROVIDER           resend
@@ -15,7 +17,7 @@
 #   variable EMAIL_FROM_ADDRESS       sender address on the verified sending domain
 #   secret   RESEND_API_KEY           Resend API key (sending access only)
 #   secret   EMAIL_TEST_TO            recipient of the test e-mail (mode test-email)
-#   variable APP_BASE_URL             public origin of the staging web app (https://…, no path) for
+#   variable APP_BASE_URL             public origin of the web app (https://…, no path) for
 #                                     links in e-mails (invitations, T-M2-07; password reset, T-M2-17);
 #                                     required once EMAIL_PROVIDER is set — without it (e-mail off)
 #                                     invitations are not mailed
@@ -43,8 +45,8 @@
 #                                     (default 1000; at least 500, the provider's 2 requests a second)
 #   variable USER_IMPORT_DAILY_INVITATIONS        per organization and UTC day (default 5000)
 #   variable USER_IMPORT_TRIAL_DAILY_INVITATIONS  the same on trial (default 200)
-# Until both connection secrets exist each run ends with a notice and does nothing.
-name: Jobs (staging)
+# Until both connection secrets exist each run ends with a notice and does nothing (no failure, no e-mail).
+name: Jobs
 
 on:
   schedule:
@@ -56,30 +58,37 @@ on:
         type: choice
         options: [pass, test-email]
         default: pass
+      environment:
+        description: 'Target (staging = the old project, only until it is deleted)'
+        type: choice
+        options: [production, staging]
+        default: production
 
 permissions:
   contents: read
 
+# Scheduled runs have no inputs: `inputs.environment || 'production'` is the target everywhere below.
 concurrency:
-  group: jobs-staging
+  group: jobs-${{ inputs.environment || 'production' }}
   cancel-in-progress: false
 
 jobs:
   pass:
-    name: Worker pass (staging)
+    name: Worker pass (${{ inputs.environment || 'production' }})
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    environment: staging-jobs
+    environment: ${{ format('{0}-jobs', inputs.environment || 'production') }}
     steps:
       - name: Configured?
         id: configured
         env:
           QUEUE_URL: ${{ secrets.DATABASE_URL_APP_QUEUE }}
           WORKER_URL: ${{ secrets.DATABASE_URL_APP_WORKER }}
+          TARGET: ${{ format('{0}-jobs', inputs.environment || 'production') }}
         run: |
           if [[ -z "$QUEUE_URL" || -z "$WORKER_URL" ]]; then
-            echo "::notice::staging-jobs is not configured yet (docs/engineering/background-jobs.md); nothing to do"
+            echo "::notice::$TARGET is not configured yet (docs/engineering/production-setup.md §H); nothing to do"
             echo "ready=false" >>"$GITHUB_OUTPUT"
           else
             echo "ready=true" >>"$GITHUB_OUTPUT"
@@ -189,7 +198,7 @@ jobs:
           USER_IMPORT_DAILY_INVITATIONS: ${{ vars.USER_IMPORT_DAILY_INVITATIONS }}
           USER_IMPORT_TRIAL_DAILY_INVITATIONS: ${{ vars.USER_IMPORT_TRIAL_DAILY_INVITATIONS }}
           MODE: ${{ inputs.mode == 'test-email' && 'test-email' || 'once' }}
-          JADARAT_ENVIRONMENT: staging
+          JADARAT_ENVIRONMENT: ${{ inputs.environment || 'production' }}
           JADARAT_RELEASE: ${{ github.sha }}
         run: node apps/worker/dist/main.mjs "$MODE"
       - name: Scanner was not available

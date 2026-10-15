@@ -1,14 +1,15 @@
-# Uptime check for the hosted staging environment (T-M1-D06, ADR 0009 §6). Every 15 minutes it calls the
-# public readiness endpoint (app + database). When it fails twice in a row (one retry after 30 s), an
-# issue "Uptime: staging is down" (label `uptime`) is opened — GitHub e-mails everyone watching the
+# Uptime check for the hosted production environment (T-M1-D06, ADR 0009 §6; production naming T-M2-36).
+# Every 15 minutes it calls the public readiness endpoint (app + database). When it fails twice in a row
+# (one retry after 30 s), an issue "Uptime: production is down" (label `uptime`) is opened — GitHub e-mails everyone watching the
 # repository — and it is closed automatically when the check passes again. Only issues opened by this
 # workflow (GitHub Actions app, label `uptime`) are ever commented on or closed.
 # Runs only on the default branch (GitHub schedules) and only when the repository variable UPTIME_URL
-# is set (Settings → Secrets and variables → Actions → Variables), e.g. https://<staging-domain>.
-# Production uptime (≥ 2 regions, public status page) is chosen before the first customer (ADR 0009 §5).
+# is set (Settings → Secrets and variables → Actions → Variables), e.g. https://<production-domain>
+# (docs/engineering/production-setup.md step 36). Until then the job is skipped (no issue is opened).
+# Multi-region uptime and a public status page are chosen before the first customer (ADR 0009 §5).
 #
 # Sign-up gate (T-M2-07, FR-IAM-03, security review H1; docs/engineering/db-deploy.md § Auth sign-up
-# gate): staging Auth accepts public sign-ups so that invitees create their own accounts, and ONLY the
+# gate): production Auth accepts public sign-ups so that invitees create their own accounts, and ONLY the
 # "before user created" hook (private.before_user_created_hook) stops everyone else. That hook API is
 # fail-open — a hook that is switched off, pointed at the wrong function or answers '{}' lets every
 # sign-up through — and its setting lives in the Supabase dashboard, outside the database checks. So the
@@ -17,21 +18,19 @@
 # and fails unless Auth refuses both: 403 with the hook's exact message "Sign-up is by invitation only."
 # or 422 signup_disabled / email_provider_disabled (sign-ups off). An HTTP 200 means a stranger could
 # create an account: the incident issue says so. Needs the repository variables SUPABASE_URL
-# (https://<ref>.supabase.co) and SUPABASE_PUBLISHABLE_KEY (sb_publishable_…, public by design); skipped
-# while either is unset.
-name: Uptime (staging)
+# (https://<ref>.supabase.co) and SUPABASE_PUBLISHABLE_KEY (sb_publishable_…, public by design) of the
+# production project (production-setup.md step 23); skipped while either is unset.
+name: Uptime
 
 on:
   schedule:
     - cron: '7,22,37,52 * * * *'
   workflow_dispatch:
 
-permissions:
-  contents: read
-  issues: write
+permissions: {}
 
 concurrency:
-  group: uptime-staging
+  group: uptime
   cancel-in-progress: false
 
 jobs:
@@ -40,11 +39,13 @@ jobs:
     if: vars.UPTIME_URL != ''
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    permissions:
+      issues: write
     env:
       UPTIME_URL: ${{ vars.UPTIME_URL }}
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
-      TITLE: 'Uptime: staging is down'
+      TITLE: 'Uptime: production is down'
       LABEL: uptime
     steps:
       - name: Call /api/health/ready
@@ -89,12 +90,14 @@ jobs:
     if: vars.SUPABASE_URL != '' && vars.SUPABASE_PUBLISHABLE_KEY != ''
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    permissions:
+      issues: write
     env:
       SUPABASE_URL: ${{ vars.SUPABASE_URL }}
       SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
-      TITLE: 'Uptime: staging sign-up gate is not refusing sign-ups'
+      TITLE: 'Uptime: production sign-up gate is not refusing sign-ups'
       LABEL: uptime
     steps:
       - name: Try public sign-ups without a valid invitation

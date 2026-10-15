@@ -1,6 +1,6 @@
 # Jadarat TMS — Full Feature List
 
-**Date:** 14 Oct 2026 (v2.9) · **Status:** Decisions D1, D2, D6, D7 applied; IAM-16 added (PO, 5 Oct 2026); ADM-17 extended with platform settings (PO, 6 Oct 2026); IAM-07 role CRUD per tenant (PO, 7 Oct 2026); NTF-10/11 organization e-mail texts and own mail server in R2 (PO, 7 Oct 2026); BR-IAM-4 Org Admin held alone (PO, 8 Oct 2026); ADM-04/05 maintained by the HR Manager (PO, 11 Oct 2026); ADM-01 wizard ends with inviting the L&D Manager, NTF-07 rules set by the Org Admin, WFL-01 workflows set by the L&D Manager (PO, 14 Oct 2026); v2.9: L&D Manager renamed L&D Manager, ADM-02 display data only, ADM-07 no font choice, ADM-10 Domain management, ADM-15/16 removed, IAM-03 invitation link, no SMS (IAM-12, NTF-04 removed), NTF-02/07/10 owned by the L&D Manager (PO, 14 Oct 2026) · **BRD:** `docs/brd/Jadarat_TMS_BRD_v2.md` · **Basis:** Market research in `docs/research/TMS_Market_Comparison_vs_BRD.md` + Jadarat TMS BRD v1.0
+**Date:** 15 Oct 2026 (v3.0) · **Status:** **v3.0 (PO, 15 Oct 2026): core product = organization set-up + training planning — PLN-02, 03, 05, 06, 08, 09, MGR-05 and the R1 part of WFL-01/02 move to R1; six standard roles + custom roles (set proposed by the Tech Lead, pending PO confirmation), IAM-07 custom role builder in R1; Kawadir ATS alignment — ADM-02 becomes General settings, names move to ADM-07 Branding, NTF-11 Email integration in R1; D3 revised.** Earlier: Decisions D1, D2, D6, D7 applied; IAM-16 added (PO, 5 Oct 2026); ADM-17 extended with platform settings (PO, 6 Oct 2026); IAM-07 role CRUD per tenant (PO, 7 Oct 2026); NTF-10/11 organization e-mail texts and own mail server in R2 (PO, 7 Oct 2026); BR-IAM-4 Org Admin held alone (PO, 8 Oct 2026); ADM-04/05 maintained by the HR Manager (PO, 11 Oct 2026); ADM-01 wizard ends with inviting the L&D Manager, NTF-07 rules set by the Org Admin, WFL-01 workflows set by the L&D Manager (PO, 14 Oct 2026); v2.9: L&D Manager renamed L&D Manager, ADM-02 display data only, ADM-07 no font choice, ADM-10 Domain management, ADM-15/16 removed, IAM-03 invitation link, no SMS (IAM-12, NTF-04 removed), NTF-02/07/10 owned by the L&D Manager (PO, 14 Oct 2026) · **BRD:** `docs/brd/Jadarat_TMS_BRD_v2.md` · **Basis:** Market research in `docs/research/TMS_Market_Comparison_vs_BRD.md` + Jadarat TMS BRD v1.0
 
 **Legend**
 
@@ -8,7 +8,7 @@
 - **Proposed release:** `R1` MVP (months 0–4) · `R2` Growth (5–8) · `R3` Enterprise & Sovereign (9–12) · `R4` Intelligence & Scale (13–18) · `Suite` = when the related Jadarat HR Suite module ships · `—` = removed from scope
 - **In v1 BRD?** `✅` covered · `⚠️` partial · `❌` new (not in v1 BRD)
 
-**Totals:** 29 modules · 292 features, of which 280 in scope and 12 removed (9 by decision D1 — Commerce, public registration; 3 by the PO on 14 Oct 2026 — ADM-15, ADM-16, NTF-04) · In scope: 107 new and 40 partial vs. v1 BRD · By release: R1 97 · R2 111 · R3 54 · R4 13 · Suite 5
+**Totals:** 29 modules · 292 features, of which 280 in scope and 12 removed (9 by decision D1 — Commerce, public registration; 3 by the PO on 14 Oct 2026 — ADM-15, ADM-16, NTF-04) · In scope: 107 new and 40 partial vs. v1 BRD · By release: R1 107 · R2 101 · R3 54 · R4 13 · Suite 5 (a feature split across releases, e.g. `R1/R2`, counts in its first release; v3.0 moved 10 features from R2 to R1 — PO, 15 Oct 2026)
 
 ---
 
@@ -17,15 +17,15 @@
 | ID | Feature | Tier | Release | In v1? |
 |---|---|---|---|---|
 | ADM-01 | Self-service tenant sign-up, trial and onboarding wizard (org → branding → users → invite the L&D Manager; first course at the L&D Manager's first sign-in — PO, 14 Oct 2026) | Core | R1 | ✅ |
-| ADM-02 | Organization profile: display name (AR/EN), industry, country, currency, timezone, default language, fiscal-year start — no registration data (PO, 14 Oct 2026) | Core | R1 | ✅ |
+| ADM-02 | General settings (Kawadir layout — PO, 15 Oct 2026): industry, country, timezone, default language, date display, currency, fiscal-year start, working week — no registration data (PO, 14 Oct 2026); display names moved to ADM-07 Branding | Core | R1 | ✅ |
 | ADM-03 | Legal entities (multiple companies under one tenant, own currency/VAT/branding) | Plus | R3 | ❌ |
 | ADM-04 | Branches with hierarchy, GPS, working week and hours per branch (maintained by the HR Manager — PO, 11 Oct 2026) | Core | R1 | ✅ |
 | ADM-05 | Hierarchical departments, cost centers, department heads (maintained by the HR Manager — PO, 11 Oct 2026) | Core | R1 | ✅ |
 | ADM-06 | Interactive org chart with head-count and compliance overlay | Plus | R3 | ✅ |
-| ADM-07 | Branding: logos and colors (drive the navigation gradient), WCAG contrast check; app fonts only (PO, 14 Oct 2026) | Core | R1 | ✅ |
+| ADM-07 | Branding (Kawadir layout — PO, 15 Oct 2026): names AR/EN, logo, favicon, login page image, primary + secondary colour with "use gradient" switch, preset colour sets, website; WCAG contrast check; app fonts only (PO, 14 Oct 2026) | Core | R1 | ✅ |
 | ADM-08 | Theme builder with live preview, presets, version history, dark mode | Plus | R2 | ✅ |
 | ADM-09 | Custom login page (backgrounds, seasonal themes e.g. Ramadan/National Day) | Plus | R2 | ✅ |
-| ADM-10 | Domain management: subdomain under the product domain or custom domain (DNS wizard, auto SSL), instructions for both (PO, 14 Oct 2026) | Plus | R2 | ✅ |
+| ADM-10 | Domain management: subdomain under the product domain or custom domain (DNS wizard, auto SSL), instructions for both (PO, 14 Oct 2026); Domain page under Settings (Kawadir layout, PO, 15 Oct 2026) | Plus | R2 | ✅ |
 | ADM-11 | Custom fields builder for users, courses, sessions, enrollments, vendors | Core | R1 | ✅ |
 | ADM-12 | Terminology overrides (e.g., "Course" → "Program") in AR/EN | Plus | R2 | ✅ |
 | ADM-13 | Feature toggles per tenant, driven by edition | Core | R1 | ✅ |
@@ -40,12 +40,12 @@
 |---|---|---|---|---|
 | IAM-01 | User directory with AR/EN names, 4-part Arabic name, employee ID, manager, nationality | Core | R1 | ✅ |
 | IAM-02 | Add gender, date of birth, employment category, grade (for ESG & ministry reports) | Core | R1 | ❌ |
-| IAM-03 | E-mail invitations: resend, revoke, bulk; one-person invitation link to share personally (single use, expires) (PO, 14 Oct 2026) | Core | R1 | ✅ |
+| IAM-03 | E-mail invitations: resend, revoke, bulk; one-person invitation link to share personally (single use, expires) (PO, 14 Oct 2026); Team members page with Members / Pending invites tabs, link and code to copy (Kawadir layout, PO, 15 Oct 2026) | Core | R1 | ✅ |
 | IAM-04 | Bulk import wizard (CSV/XLSX, mapping, validation, dry run, upsert modes) | Core | R1 | ✅ |
 | IAM-05 | User lifecycle: deactivate with reassignment, archive, reactivate | Core | R1 | ✅ |
 | IAM-06 | Static and dynamic (rule-based) groups / audiences | Core | R2 | ✅ |
-| IAM-07 | 15 default roles + custom role builder with permission matrix and risk flags; full role CRUD per tenant (create, edit, delete custom roles; remove/restore unused system roles; Org Admin role kept; roles in use protected); Org Admin = setup role without core training features, held alone — no other role for the same person (BR-IAM-4) | Core | R1/R2 | ✅ |
-| IAM-08 | Data scoping of roles by branch / department / legal entity | Plus | R2 | ❌ |
+| IAM-07 | Six standard roles — Organization Admin, HR Manager, L&D Manager, Training Coordinator, Department Head, Employee (PO, 15 Oct 2026; set proposed by the Tech Lead, pending PO confirmation) + custom role builder in R1 (name AR/EN, permissions grouped by module, risk flags, templates for the former default roles); custom-role CRUD in R1, remove/restore unused standard roles in R2; Org Admin role kept; roles in use protected; Org Admin = setup role without core training features, held alone — no other role for the same person (BR-IAM-4) | Core | R1/R2 | ✅ |
+| IAM-08 | Data scoping of roles by branch / department / legal entity (R1: fixed scopes for standard roles, one built scope per custom role — PO, 15 Oct 2026) | Plus | R2 | ❌ |
 | IAM-09 | Separation-of-duties rules (requester ≠ approver, creator ≠ approver) | Plus | R2 | ⚠️ |
 | IAM-10 | SSO: SAML 2.0 / OIDC, multiple identity providers, just-in-time provisioning, force SSO | Plus | R2 | ✅ |
 | IAM-11 | SCIM 2.0 provisioning (Entra ID, Okta, Google) | Plus | R3 | ❌ |
@@ -60,14 +60,14 @@
 | ID | Feature | Tier | Release | In v1? |
 |---|---|---|---|---|
 | PLN-01 | Training request intake (employee/manager requests with justification and cost, including external courses) | Core | R1 | ❌ |
-| PLN-02 | TNA campaigns (time-boxed, scoped by department, with a deadline and a budget envelope) | ★ | R2 | ❌ |
-| PLN-03 | Pre-filled manager forms (team, mandatory items, expiring certifications, skills gaps) | ★ | R2 | ❌ |
+| PLN-02 | Planning cycle / TNA campaigns (time-boxed, scoped by department, with a deadline and a budget envelope) — R1 core (PO, 15 Oct 2026) | ★ | R1 | ❌ |
+| PLN-03 | Pre-filled Department Head forms (team, needs with course, people, priority, quarter, cost; mandatory items, expiring certifications, skills gaps as those modules ship) — R1 core (PO, 15 Oct 2026) | ★ | R1 | ❌ |
 | PLN-04 | Employee self-nomination into a campaign, with manager validation | Plus | R2 | ❌ |
-| PLN-05 | Demand consolidation by course, branch and month | ★ | R2 | ❌ |
-| PLN-06 | Demand → sessions conversion (head-count ÷ capacity) with auto cost estimate | ★ | R2 | ❌ |
+| PLN-05 | Demand consolidation by course, branch and month — R1 core (PO, 15 Oct 2026) | ★ | R1 | ❌ |
+| PLN-06 | Demand → sessions conversion (head-count ÷ capacity) with auto cost estimate and budget-envelope check — R1 core (PO, 15 Oct 2026) | ★ | R1 | ❌ |
 | PLN-07 | Budget scenarios (compare, trim, defer) | Plus | R3 | ❌ |
-| PLN-08 | Plan approval workflow (Department → Finance → HR/L&D) | Core | R2 | ❌ |
-| PLN-09 | Plan → draft sessions in bulk; publish annual/quarterly training calendar | ★ | R2 | ❌ |
+| PLN-08 | Plan approval workflow (Department Head → Finance → management), locked and versioned on approval — R1 core (PO, 15 Oct 2026) | Core | R1 | ❌ |
+| PLN-09 | Plan → draft sessions in bulk; publish annual/quarterly training calendar — R1, hand-over to delivery (PO, 15 Oct 2026) | ★ | R1 | ❌ |
 | PLN-10 | Plan vs. actual (sessions, hours, head-count, cost) with year-end forecast | ★ | R2 | ❌ |
 | PLN-11 | Interest lists that trigger new sessions when a threshold is reached | Plus | R2 | ❌ |
 | PLN-12 | Regulatory plan export (Qiwa: training plan + next-year committed budget) | ★ | R2 | ❌ |
@@ -305,7 +305,7 @@
 | MGR-02 | Pending approvals inbox with bulk approve | Core | R1 | ⚠️ |
 | MGR-03 | Team training calendar | Core | R1 | ❌ |
 | MGR-04 | One-click nominate / assign with deadline | Core | R1 | ✅ |
-| MGR-05 | TNA campaign form for the team | ★ | R2 | ❌ |
+| MGR-05 | TNA campaign form for the team (Department Head's entry to PLN-03 — R1, PO, 15 Oct 2026) | ★ | R1 | ❌ |
 | MGR-06 | Level 3 follow-up tasks (confirm skill application) | ★ | R2 | ❌ |
 | MGR-07 | Team skills and gap view | Plus | R2 | ❌ |
 
@@ -323,7 +323,7 @@
 | NTF-08 | Scheduled reminders (7 days / 3 days / 1 day / 1 hour) and digests | Core | R1 | ✅ |
 | NTF-09 | Broadcast messages to audiences / session participants | Core | R2 | ❌ |
 | NTF-10 | E-mail texts edited by the L&D Manager (subject and body per e-mail, Arabic and English, variables, preview with sample data, reset to default) | Core | R2 | ❌ |
-| NTF-11 | Organization's own mail server for all its e-mails (Resend, Mailgun, SMTP, Microsoft 365 / Graph): encrypted credentials, test send, fallback to the platform sender | Plus | R2 | ❌ |
+| NTF-11 | Email integration page: platform sender by default, or the organization's own provider for all its e-mails (Resend, SMTP, SendGrid, Mailgun, Microsoft 365 / Graph); from name and address, reply-to, test send; encrypted credentials, fallback to the platform sender — R1 (Kawadir layout, PO, 15 Oct 2026) | Plus | R1 | ❌ |
 
 ## 21. Reporting & Analytics (RPT)
 
@@ -375,8 +375,8 @@
 
 | ID | Feature | Tier | Release | In v1? |
 |---|---|---|---|---|
-| WFL-01 | Visual approval-workflow builder (enrollment, plan, budget, expense, session, certificate, OJT), set by the L&D Manager (PO, 14 Oct 2026) | Core | R2 | ✅ |
-| WFL-02 | Conditions, thresholds, parallel/sequential steps, escalation, delegation | Core | R2 | ✅ |
+| WFL-01 | Visual approval-workflow builder (enrollment, plan, budget, expense, session, certificate, OJT), set by the L&D Manager (PO, 14 Oct 2026); R1 part: sequential approval chain for the training plan and requests (PO, 15 Oct 2026) | Core | R1/R2 | ✅ |
+| WFL-02 | Conditions, thresholds, parallel/sequential steps, escalation, delegation; R1 part: sequential steps with department head, role or named approver, comments, reminders (PO, 15 Oct 2026) | Core | R1/R2 | ✅ |
 | WFL-03 | Automation rules ("when X then Y", e.g., when fill rate < 50% at T-7, alert and suggest merge) | Plus | R3 | ❌ |
 | WFL-04 | SLA timers and overdue dashboards | Plus | R3 | ❌ |
 
@@ -457,12 +457,14 @@
 |---|---|---|---|
 | D1 | Include training providers / institutes (Commerce module, public registration, e-invoicing)? | Yes in R3 · Later · No | **Decided: No** (30 Sep 2026) |
 | D2 | Is the Government segment a Year-1 target? | Yes → in-country hosting in R3 · No → R4 | **Decided: Yes** (30 Sep 2026) |
-| D3 | Pull the planning cycle (PLN) into R1? | R1 · R2 | **Decided: R2** (30 Sep 2026), with only PLN-01 (requests) in R1 |
+| D3 | Pull the planning cycle (PLN) into R1? | R1 · R2 | **Decided: R2** (30 Sep 2026), with only PLN-01 (requests) in R1 — **revised 15 Oct 2026 (PO): R1** — PLN-01, 02, 03, 05, 06, 08, 09 (+ MGR-05, WFL-01/02 R1 part); PLN-04, 07, 10, 11, 12 keep their release |
 | D4 | First LMS connectors after Jadarat | Moodle · Docebo · SAP SF · Cornerstone | **Moodle** (MENA gov/edu footprint), then SAP SF |
 | D5 | Messaging vendor for WhatsApp (no SMS — PO, 14 Oct 2026) | Meta Cloud API direct · regional BSP | Meta Cloud API for WhatsApp |
 | D6 | Keep the Next.js / Supabase / Vercel stack for in-country deployments? | Keep + self-host variant · Change | **Decided: Next.js + Supabase, self-hostable**, for the whole HR Suite (30 Sep 2026) |
 | D7 | Product name | ENTLAQA TMS · Jadarat TMS · new | **Decided: Jadarat TMS** (30 Sep 2026) |
 
-## Suggested R1 (MVP) Cut — 97 features
+## Suggested R1 (MVP) Cut — 107 features
 
-ADM-01, 02, 04, 05, 07, 11, 13, 14, 17 · IAM-01…05, 07, 12, 13, 16 · PLN-01 · CAT-01…03, 05, 06, 10 · SCH-01…03, 05, 07, 08 · RES-01…03, 07 · INS-01…05 · ENR-01…03, 13 · LOG-01, 02 · ATT-01…04, 09, 11 · ASM-01, 02, 04, 05, 08 · CRT-01…08 · LRN-01, 03, 04, 07, 08 · MGR-01…04 · FIN-03 · NTF-01, 02, 07, 08 · RPT-01, 02 · REG-01 · AUD-01, 05 · SUB-01 · LMS-01…03, 05…07, 10 · DEP-01, 05 · STE-01, 02, 08
+ADM-01, 02, 04, 05, 07, 11, 13, 14, 17 · IAM-01…05, 07, 12, 13, 16 · **PLN-01, 02, 03, 05, 06, 08, 09** · CAT-01…03, 05, 06, 10 · SCH-01…03, 05, 07, 08 · RES-01…03, 07 · INS-01…05 · ENR-01…03, 13 · LOG-01, 02 · ATT-01…04, 09, 11 · ASM-01, 02, 04, 05, 08 · CRT-01…08 · LRN-01, 03, 04, 07, 08 · MGR-01…05 · FIN-03 · NTF-01, 02, 07, 08, 11 · RPT-01, 02 · REG-01 · **WFL-01, 02 (R1 part)** · AUD-01, 05 · SUB-01 · LMS-01…03, 05…07, 10 · DEP-01, 05 · STE-01, 02, 08
+
+Build order since 15 Oct 2026 (PO): organization set-up and roles → structure with department heads → course library → planning cycle → Department Head needs → consolidation and budget check → plan approval → delivery (BRD §5.4; `docs/delivery/BACKLOG.md`).

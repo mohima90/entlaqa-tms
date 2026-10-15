@@ -15,7 +15,7 @@
 
 ## A. Before you start
 
-1. **Claude** — Make sure T-M2-36 is merged: the workflows **DB deploy** and **Provision organization** offer the environment `production`, and the jobs workflow uses the environment `production-jobs`. (Until then the steps below that run a workflow cannot target the new project.)
+1. **Claude** — Make sure T-M2-36 and T-M2-38 are merged: the workflows **DB deploy** and **Provision organization** offer the environment `production` (the default; `staging` stays selectable until step 39), the **Jobs** workflow runs its schedule in the environment `production-jobs`, and **DB deploy (after merge)** deploys to `production` after every merge that changes migrations. (Until then the steps below that run a workflow cannot target the new project.) Until the secrets below exist, the scheduled **Jobs** runs and the automatic deploy end green with a notice and change nothing.
 2. **PO** — Open the password manager and create one entry "Jadarat TMS production" to keep everything generated below.
 
 ## B. Create the Supabase project (PO)
@@ -29,7 +29,7 @@
 
 ## C. GitHub environment `production` — database deploy (PO)
 
-9. **GitHub → repository → Settings → Environments → New environment** `production` → **Deployment branches and tags → Selected branches → add `main`** (mandatory). **No required reviewers** (the automatic deploy after merge must not wait — PO decision 15 Oct 2026).
+9. **GitHub → repository → Settings → Environments → New environment** `production` (if `production` is already listed — a workflow run creates it automatically — open it instead) → **Deployment branches and tags → Selected branches → add `main`** (mandatory, and **before** any secret: an automatically created environment has no such rule). **No required reviewers** (the automatic deploy after merge must not wait — PO decision 15 Oct 2026).
 10. Generate **three new role passwords** in the password manager (≥ 40 characters, letters, digits, `-` and `_` only; length 48 with symbols off): for `app_server`, `app_worker`, `app_queue`. New project → new passwords.
 11. **Environment secrets** of `production` (names only):
 
@@ -42,10 +42,12 @@
 
 12. **Environment variable** of `production`: `DATABASE_CA_CERT` = the whole text of the certificate of step 8 (including the BEGIN/END lines).
 
+From the moment `DATABASE_URL` exists, a merge that changes migrations deploys to the new project by itself (**DB deploy (after merge)**: `plan`, then `apply`). Until step 14 is done, merge no such PR — the first deploy is watched by hand below.
+
 ## D. Database deploy (PO runs, Claude reads the logs)
 
 13. **Actions → DB deploy → Run workflow** (branch `main`), environment `production`, mode **`plan`**. **Claude** reads the run log: PostgreSQL version, every migration listed, dry run rolled back, no error.
-14. Same workflow, same `main` commit, mode **`apply`**: all migrations, role passwords set, `verify-deployment.sql` passes. **Claude** checks the log (no warnings expected). Once T-M2-38 is built, later migrations deploy automatically after each merge.
+14. Same workflow, same `main` commit, mode **`apply`**: all migrations, role passwords set, `verify-deployment.sql` passes. **Claude** checks the log (no warnings expected). From now on later migrations deploy automatically after each merge (**Actions → DB deploy (after merge)**); a failure opens an issue labelled `db-deploy-auto` ([db-deploy.md](db-deploy.md) § Automatic deploy after merge).
 
 ## E. Supabase Auth settings (PO)
 
@@ -77,7 +79,7 @@
 
 ## H. GitHub environment `production-jobs` — background worker and e-mail (PO)
 
-29. **New environment** `production-jobs` → deployment branches: **`main` only**. Then **Supabase → Project Settings → API Keys → Secret keys → Add new secret key** named `worker-production` (shown once — straight into GitHub, never Vercel).
+29. **New environment** `production-jobs` (already listed if the scheduled **Jobs** run created it — open it instead) → deployment branches: **`main` only** (before any secret). Then **Supabase → Project Settings → API Keys → Secret keys → Add new secret key** named `worker-production` (shown once — straight into GitHub, never Vercel).
 
 | Kind | Name | What it is |
 |---|---|---|
@@ -94,7 +96,7 @@
 | Variable (optional) | `FILE_SCANNING` | `on` to scan uploads in each pass ([files.md](files.md) §7) |
 | Variables (optional) | `FILE_ORPHAN_SWEEP`, `USER_IMPORT_INVITATION_INTERVAL_MS`, `USER_IMPORT_DAILY_INVITATIONS`, `USER_IMPORT_TRIAL_DAILY_INVITATIONS` | Leave unset for the defaults ([user-import.md](user-import.md) §4) |
 
-30. **Actions → Jobs → Run workflow** (branch `main`), mode **`test-email`** → the test e-mail arrives at `EMAIL_TEST_TO`; then mode **`pass`** → green, log shows `worker starting (once)`, `reset links: on`, `worker stopped`. **Claude** reads both logs. (The continuously running production worker host is still a PO cost decision before the first customer — ADR 0005 §1; until then the scheduled pass runs every few minutes to hours.)
+30. **Actions → Jobs → Run workflow** (branch `main`), environment **`production`**, mode **`test-email`** → the test e-mail arrives at `EMAIL_TEST_TO`; then mode **`pass`** → green, log shows `worker starting (once)`, `reset links: on`, `worker stopped`. **Claude** reads both logs. (The continuously running production worker host is still a PO cost decision before the first customer — ADR 0005 §1; until then the scheduled pass runs every few minutes to hours.)
 
 ## I. Vercel (PO)
 
@@ -127,5 +129,5 @@ Never in Vercel: `SUPABASE_SECRET_KEY`, any worker or queue connection, `JADARAT
 
 ## L. Retire the old project (PO, only after section K is green)
 
-39. **Claude** updates `CLAUDE.md`, `STATUS.md`, this page and [db-deploy.md](db-deploy.md) with the new ref and organization name, and removes the `staging` choices from the workflows (follow-up of T-M2-36).
+39. **Claude** updates `CLAUDE.md`, `STATUS.md`, this page and [db-deploy.md](db-deploy.md) with the new ref and organization name, and removes the `staging` choices from the workflows **DB deploy**, **Provision organization** and **Jobs** (follow-up of T-M2-36).
 40. **PO**: copy anything still needed from the old project (the *Password changed* subject, step 20), then **Supabase → old project `jadarat-tms-staging` → Project Settings → General → Delete project**; delete the old Free organization `entlaqa-TMS` if empty; **GitHub → Environments → `staging` and `staging-jobs` → Delete** (removes their secrets); revoke the old project's worker secret key and the old Resend SMTP key if it was separate.

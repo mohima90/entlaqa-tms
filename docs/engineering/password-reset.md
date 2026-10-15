@@ -110,7 +110,7 @@ R2 slots in without changing this path: organization-edited texts (FR-NTF-10) at
 
 ### 3.4 The Auth admin key
 
-`SUPABASE_URL` + `SUPABASE_SECRET_KEY` are read by the **worker only** (`apps/worker/src/config.ts`, checked at start-up: both or neither; https origin): staging — GitHub environment `staging-jobs`; self-hosted — the worker container (`WORKER_AUTH_ADMIN_TOKEN`, a service_role token signed with the installation's key, 90 days, usable only on the gateway's internal admin port: `generate_link`, and Storage's object calls for the file tasks of T-M2-18 — §7); **never** Vercel or the app container. Without them the worker logs `reset links: off` at start-up and reset requests wait (and expire). Enforcement: dependency-cruiser (`admin-client-only-in-jobs-or-admin`, `no-admin-or-jobs-reachable-from-suite`, fixtures in `scripts/dependency-rules.test.mjs`), and the self-hosted smoke test fails if any container but the worker holds an admin key or service_role token. ADR 0002 §7 note T-M2-17.
+`SUPABASE_URL` + `SUPABASE_SECRET_KEY` are read by the **worker only** (`apps/worker/src/config.ts`, checked at start-up: both or neither; https origin): hosted — GitHub environment `production-jobs` (the old project: `staging-jobs`); self-hosted — the worker container (`WORKER_AUTH_ADMIN_TOKEN`, a service_role token signed with the installation's key, 90 days, usable only on the gateway's internal admin port: `generate_link`, and Storage's object calls for the file tasks of T-M2-18 — §7); **never** Vercel or the app container. Without them the worker logs `reset links: off` at start-up and reset requests wait (and expire). Enforcement: dependency-cruiser (`admin-client-only-in-jobs-or-admin`, `no-admin-or-jobs-reachable-from-suite`, fixtures in `scripts/dependency-rules.test.mjs`), and the self-hosted smoke test fails if any container but the worker holds an admin key or service_role token. ADR 0002 §7 note T-M2-17.
 
 ## 4. Account enumeration and abuse (GoTrue v2.197.0)
 
@@ -132,7 +132,7 @@ R2 slots in without changing this path: organization-edited texts (FR-NTF-10) at
 | Setting | Value | Where |
 |---|---|---|
 | Who sends the e-mails | `auth` (default) or `worker` (§1) | Web app only: Vercel environment variable `PASSWORD_RESET_DELIVERY`; self-hosted app container (`worker` in `infra/docker/compose.yaml`) |
-| Auth admin API for reset links | `SUPABASE_URL` (the project's API origin) + `SUPABASE_SECRET_KEY` (a secret key `sb_secret_…`; self-hosted: service_role token) | **Worker only**: GitHub environment `staging-jobs` (variable + secret); self-hosted worker container (`WORKER_AUTH_ADMIN_TOKEN` in `.secrets/.env`). Never Vercel |
+| Auth admin API for reset links | `SUPABASE_URL` (the project's API origin) + `SUPABASE_SECRET_KEY` (a secret key `sb_secret_…`; self-hosted: service_role token) | **Worker only**: GitHub environment `production-jobs` (variable + secret; the old project: `staging-jobs`); self-hosted worker container (`WORKER_AUTH_ADMIN_TOKEN` in `.secrets/.env`). Never Vercel |
 | Links in our e-mails | `APP_BASE_URL` (the web app's public origin) | Worker (as for invitations, `docs/engineering/email.md` §2) |
 | E-mail link lifetime (`otp_exp`) | **3600 s** (60 minutes, single use) — governs the token in both modes | Hosted: Authentication → Sign In / Providers → Email → *Email OTP Expiration*; local: `supabase/config.toml` `[auth.email] otp_expiry`; self-hosted: `GOTRUE_MAILER_OTP_EXP` |
 | One-time code length | **10** (GoTrue's maximum; the link's token hash is `sha224(e-mail + code)`) | Hosted: Authentication → Sign In / Providers → Email → *Email OTP Length*; local `[auth.email] otp_length`; self-hosted `GOTRUE_MAILER_OTP_LENGTH` |
@@ -151,9 +151,9 @@ R2 slots in without changing this path: organization-edited texts (FR-NTF-10) at
 **After T-M2-17 is merged — prepare the worker path (staging keeps `auth` meanwhile):**
 1. **Actions → DB deploy** (plan, then apply): migration `20261010120000_private__account_mail_requests.sql`.
 2. **Supabase → Project Settings → API Keys → Secret keys → Add new secret key**, name `worker-staging` → copy it (it is shown once).
-3. **GitHub → Settings → Environments → `staging-jobs` → Add secret** `SUPABASE_SECRET_KEY` = that key. (Never in Vercel.)
+3. **GitHub → Settings → Environments → `production-jobs` (the old project: `staging-jobs`) → Add secret** `SUPABASE_SECRET_KEY` = that key. (Never in Vercel.)
 4. Same environment → **Add variable** `SUPABASE_URL` = `https://kgmhlmiwlbvdmalesexv.supabase.co`.
-5. **Actions → Jobs (staging) → Run workflow** (mode `pass`): the run log shows `reset links: on`.
+5. **Actions → Jobs → Run workflow** (mode `pass`): the run log shows `reset links: on`.
 
 **Switch on — only where the worker runs continuously** (the production worker host, PO cost decision; on staging's few-hourly schedule a reset link could arrive hours late):
 6. **Vercel → `jadarat-tms` → Settings → Environment Variables**: `PASSWORD_RESET_DELIVERY` = `worker` (the environment concerned) → redeploy.

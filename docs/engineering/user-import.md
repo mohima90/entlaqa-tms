@@ -131,7 +131,7 @@ All queries as the database owner (SQL editor); never copy row values into ticke
 
 | Situation | What to do |
 |---|---|
-| An import stays «جارٍ فحص الملف» | The file waits for the scanner: `select status, status_reason from platform.files where id = (select file_id from platform.user_imports where id = '<import id>')`. Staging scans only when the **Jobs (staging)** pass runs with `FILE_SCANNING=on` (files.md §7) |
+| An import stays «جارٍ فحص الملف» | The file waits for the scanner: `select status, status_reason from platform.files where id = (select file_id from platform.user_imports where id = '<import id>')`. Staging scans only when the **Jobs** pass runs with `FILE_SCANNING=on` (files.md §7) |
 | An import does not move on | `select status, failures, next_attempt_at, lease_until, failure_code, updated_at from platform.user_imports where id = '<import id>'` — a lease in the future means a worker holds it; failures back off up to an hour (`next_attempt_at`). Check the worker logs for the import id |
 | Stop a running import | The importer's «إيقاف الاستيراد» (stops after the current batch). Never update the status by hand: the lifecycle guard refuses it, and half-written batches are what checkpoints prevent |
 | «يجري استيراد آخر الآن» | One import runs per organization; wait for it, or its importer stops it |
@@ -146,10 +146,10 @@ All queries as the database owner (SQL editor); never copy row values into ticke
 
 **Hosted Supabase (staging), after the merge — Product Owner:**
 1. **Actions → DB deploy** → `plan`, then `apply` (four migrations, `20261016090000` … `20261016090200`, after T-M2-18's).
-2. The import task runs only in a worker that has Storage: `SUPABASE_URL` and `SUPABASE_SECRET_KEY` in the GitHub environment `staging-jobs` (already needed for T-M2-17 and T-M2-18), and `FILE_SCANNING` = `on` so uploads are scanned. Without them uploads stay «جارٍ فحص الملف» and expire after 24 hours. The sending settings keep their defaults unless the PO decides other numbers: then set the `staging-jobs` variables `USER_IMPORT_INVITATION_INTERVAL_MS`, `USER_IMPORT_DAILY_INVITATIONS`, `USER_IMPORT_TRIAL_DAILY_INVITATIONS` (passed by `.github/workflows/jobs-staging.yml`; unset = the defaults).
+2. The import task runs only in a worker that has Storage: `SUPABASE_URL` and `SUPABASE_SECRET_KEY` in the GitHub environment `production-jobs` (already needed for T-M2-17 and T-M2-18), and `FILE_SCANNING` = `on` so uploads are scanned. Without them uploads stay «جارٍ فحص الملف» and expire after 24 hours. The sending settings keep their defaults unless the PO decides other numbers: then set the `staging-jobs` variables `USER_IMPORT_INVITATION_INTERVAL_MS`, `USER_IMPORT_DAILY_INVITATIONS`, `USER_IMPORT_TRIAL_DAILY_INVITATIONS` (passed by `.github/workflows/jobs.yml`; unset = the defaults).
 3. Nothing new in Vercel.
 
-**Staging limitation:** the worker runs one pass every 5 minutes, so each step (scan, read, dry run, run, invitations) waits for the next pass — an import takes several passes; run **Jobs (staging)** by hand to go faster. A continuous worker host is the PO's pending decision.
+**Staging limitation:** the worker runs one pass every 5 minutes, so each step (scan, read, dry run, run, invitations) waits for the next pass — an import takes several passes; run **Jobs** by hand to go faster. A continuous worker host is the PO's pending decision.
 
 ## 11. Integration with T-M2-09, T-M2-10, T-M2-11 and T-M2-18 (10 Oct 2026)
 

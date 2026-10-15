@@ -1,7 +1,7 @@
 # Database deployment to hosted environments (runbook)
 
 > Backlog: T-M1-D03 (walking skeleton on staging) · ADR 0002 §5–§7 · migration-conventions.md
-> Tooling: `.github/workflows/db-deploy.yml` → `scripts/db-deploy.sh` (+ `pg-connection.mjs`, `role-passwords-sql.mjs`) → `scripts/sql/verify-deployment.sql`
+> Tooling: `.github/workflows/db-deploy.yml` (manual) and `.github/workflows/db-deploy-auto.yml` (after merge, T-M2-38) → `.github/actions/db-deploy` → `scripts/db-deploy.sh` (+ `pg-connection.mjs`, `role-passwords-sql.mjs`) → `scripts/sql/verify-deployment.sql`
 
 ## Environments
 
@@ -13,21 +13,26 @@
 | old staging (until production works) | `jadarat-tms-staging` (ref `kgmhlmiwlbvdmalesexv`, org `entlaqa-TMS`) — then deleted | `eu-central-1` Frankfurt | Free (pauses after ~7 days idle) | `staging` (+ `staging-jobs`) — then deleted |
 | test | — (created with the first customer) | `eu-central-1` | — | `test` |
 
-The workflows offer the environment `production` once BACKLOG T-M2-36 is merged; the one-time set-up below is written for `staging` and applies to `production` the same way (production-setup.md §C).
+**Workflows and environments (T-M2-36):** **DB deploy** and **Provision organization** offer `production` (the default) and, until the old project is deleted, `staging`; **DB deploy (after merge)** targets `production` only; **Jobs** runs its schedule in `production-jobs` (a run by hand may still choose `staging` → `staging-jobs`); **Uptime** watches whatever its repository variables point at (production after production-setup.md steps 23 and 36). The `staging` choices are removed in production-setup.md step 39.
 
-## Automatic deploy after merge (decided 15 Oct 2026 — status: **to build**, BACKLOG T-M2-38)
+> **Environments are created automatically.** GitHub creates an environment that a workflow job names the first time such a job runs — the schedule of **Jobs** creates `production-jobs` within minutes of the merge, and the first automatic deploy creates `production` — **without** any deployment-branch rule. Before you put a secret into an environment, open it and set **Deployment branches and tags → Selected branches → `main`** (step 2 below). A created-but-empty environment is harmless: the workflows see no secret and skip with a notice.
 
-Decided by the PO: after every merge to `main`, GitHub Actions runs the DB deploy automatically, so nobody has to start it by hand.
+## Automatic deploy after merge (decided 15 Oct 2026 — status: **built**, BACKLOG T-M2-38)
+
+Decided by the PO: after every merge to `main`, GitHub Actions runs the DB deploy automatically, so nobody has to start it by hand. Workflow **DB deploy (after merge)** — `.github/workflows/db-deploy-auto.yml`; the plan/apply steps are the composite action `.github/actions/db-deploy`, shared with the manual **DB deploy**.
 
 | Step | Behaviour |
 |---|---|
-| Trigger | Push to `main` (= a merged PR) that changes `supabase/migrations/`, `scripts/db-deploy.sh`, `scripts/sql/verify-deployment.sql` or the role-password scripts |
-| 1. `plan` | Exactly as the manual `plan` below (dry run in one transaction, always rolled back) |
-| 2. `apply` | Only if `plan` is green, on the **same commit**; then the role passwords and `verify-deployment.sql`, as the manual `apply` |
-| Concurrency | One deploy at a time; a newer merge waits for the running deploy (never cancels it mid-run) |
-| Failure | The workflow opens, or comments on, an issue labelled `db-deploy-auto` with the failing step (no secrets in the issue or log); further merges that change migrations wait until it is fixed (fix forward with a new migration) |
+| Trigger | Push to `main` (= a merged PR) that changes the deploy path: `supabase/migrations/**`, `scripts/db-deploy.sh`, `scripts/lib/db-connect.sh`, `scripts/pg-connection.mjs`, `scripts/lib/pg-url.mjs`, the role-password scripts (`scripts/role-passwords-sql.mjs`, `scripts/lib/scram.mjs`), `scripts/sql/verify-deployment.sql`, `.github/actions/db-deploy/**` or the workflow itself. Also **Run workflow** by hand (branch `main`): plan + apply in one go |
+| Target | GitHub environment **`production`** (same secrets and variable as the manual workflow, § One-time setup) |
+| Not set up yet | While `production` has no secret `DATABASE_URL`, the run ends **green with a notice** ("automatic DB deploy skipped, nothing changed") — no issue, no failure |
+| 1. `plan` | Job *Plan (dry run, rolled back)*: exactly as the manual `plan` below (one transaction, always rolled back) |
+| 2. `apply` | Job *Apply + verify*: only if `plan` is green, on the **same commit** (both jobs check out the run's commit); pending migrations, then the role passwords, then `verify-deployment.sql`, as the manual `apply` |
+| Concurrency | Group `db-deploy-production`, shared with the manual **DB deploy** and **Provision organization** for `production`, `cancel-in-progress: false`: one at a time, a running deploy is never cancelled. GitHub keeps only **one waiting run** per group — a newer run replaces a waiting one (also a waiting manual run, which then shows as cancelled: start it again). Harmless for the automatic runs: each deploys everything pending at its own, newer commit |
+| Failure | Job *Report a failed automatic deploy* (the only job with `issues: write`) opens, or comments on, the issue **"Automatic DB deploy to production failed"** (label `db-deploy-auto`, created if missing) with the failing step (`plan` or `apply`), the commit and the run link — no log text, no secrets. Read the run log, **fix forward** (a new migration or a fix to the scripts) and merge it: that merge deploys again. Further merges that change migrations wait until it is fixed; close the issue once a deploy is green |
 | Approval | The PO's merge is the approval: the automatic path has **no required reviewer** on its environment (T-M0-11 superseded for this path; risk R-63) |
-| Fallback | The manual **Actions → DB deploy** workflow (below) stays for re-runs, recovery and provisioning-related deploys |
+| Permissions | `permissions: {}` for the workflow; `contents: read` for plan/apply; `issues: write` for the report job only. Secrets reach only the script step's environment (composite action inputs) |
+| Fallback | The manual **Actions → DB deploy** workflow (below) stays for re-runs, recovery, the first deploy of a new project and provisioning-related deploys |
 
 Writing migrations for it: the app (Vercel) and the database deploy in parallel after a merge, so a migration must be **expand-first** — the app version that is running keeps working with the new schema. When new code cannot run before its migration, the PR says so and the app's readiness check fails closed until the migration is applied (the pattern used since T-M2-11). Hosted dashboard settings that a migration needs (e.g. enabling a hook) are still done by the PO after the deploy, as listed in the sections below.
 
@@ -35,8 +40,8 @@ Project settings applied at creation (1 Oct 2026): **Data API disabled**, *autom
 
 ## One-time setup of a GitHub environment (GitHub → Settings → Environments → New environment)
 
-1. Name: `production` (the old project used `staging`).
-2. **Deployment branches and tags → Selected branches → add `main`.** Mandatory: this rule, not the workflow's `if:`, is what stops a run from another branch from reaching the secrets.
+1. Name: `production` (the old project used `staging`). If it is already listed (created automatically by a workflow run, see § Environments), open it instead.
+2. **Deployment branches and tags → Selected branches → add `main`.** Mandatory: this rule, not the workflow's `if:`, is what stops a run from another branch from reaching the secrets. An environment created automatically has **no** such rule — set it before adding any secret.
 3. Optional: **Required reviewers** (the PO) — each run then waits for an approval click. **Not** on the environment used by the automatic deploy (it would stop every automatic run; the PO's merge is the approval — decided 15 Oct 2026); advisable for the manual provisioning workflow once a second person has repository access.
 4. **Environment secrets:**
 
@@ -49,11 +54,11 @@ Project settings applied at creation (1 Oct 2026): **Data API disabled**, *autom
 
 5. **Environment variable** (not a secret — it is a public certificate): `DATABASE_CA_CERT` = full text of the CA file from Supabase **Database Settings → SSL Configuration → Download certificate**, including the `-----BEGIN CERTIFICATE-----` / `-----END CERTIFICATE-----` lines. TLS is always `verify-full` (certificate chain + host name); Supabase's root CA is not in any system trust store, so the run fails without it.
 
-Store the role passwords in the password manager too: the app and the worker need them (`DATABASE_URL_APP_SERVER` in Vercel; `DATABASE_URL_APP_QUEUE` and `DATABASE_URL_APP_WORKER` for the worker — on staging in the GitHub environment `staging-jobs`, [background-jobs.md](background-jobs.md) §4).
+Store the role passwords in the password manager too: the app and the worker need them (`DATABASE_URL_APP_SERVER` in Vercel; `DATABASE_URL_APP_QUEUE` and `DATABASE_URL_APP_WORKER` for the worker — in the GitHub environment `production-jobs` (the old project: `staging-jobs`), [background-jobs.md](background-jobs.md) §4, [production-setup.md](production-setup.md) §H).
 
-## Running it (manual workflow — fallback once the automatic deploy exists)
+## Running it (manual workflow — the fallback next to the automatic deploy)
 
-1. GitHub → **Actions → DB deploy → Run workflow** (branch `main`), environment `staging`, mode **`plan`**: validates the configuration and the role passwords, lists pending migrations and applies them all in one transaction that is **always rolled back**. Nothing changes.
+1. GitHub → **Actions → DB deploy → Run workflow** (branch `main`), environment `production`, mode **`plan`**: validates the configuration and the role passwords, lists pending migrations and applies them all in one transaction that is **always rolled back**. Nothing changes.
 2. If `plan` is green, run again on the **same `main` commit** with mode **`apply`**: each pending migration is applied in its own transaction together with its row in `supabase_migrations.schema_migrations` (Supabase CLI's history table; the `statements` column is left empty, so `supabase migration fetch` cannot rebuild files — the repository is the source); then the role passwords are set; then `verify-deployment.sql` must pass:
    - `app_server`/`app_worker`/`tenant_guard` attributes, and memberships exactly `{authenticated}`; `app_queue` (job runner) attributes, member of nothing, owner of schema `graphile_worker`;
    - the SECURITY DEFINER functions: exactly the reviewed list, each with its owner (`tenant_guard`, or `invitation_guard` for invitation acceptance — FR-IAM-03), empty `search_path` and exact `EXECUTE` ACL; nobody but the deploying role acts as either guard role;
@@ -93,7 +98,7 @@ The same migration also installs the **e-mail change guard** (trigger `jadarat_r
 1. **Authentication → Hooks → Add hook → "Before User Created" → Postgres** → schema **`private`**, function **`before_user_created_hook`** → **Create / Save** (enabled). From now on every new Auth user goes through the hook (sign-ups are still off).
 2. **Authentication → Sign In / Providers → Email**: **"Confirm email" OFF** → Save. (The invitation e-mail already proved the address; the sign-up must return a session. Leave the Email provider itself enabled.)
 3. **Authentication → Sign In / Providers → User Signups**: **"Allow new users to sign up" ON** → Save. Keep **"Allow anonymous sign-ins" OFF** and the Phone provider disabled.
-4. **Verify the gate refuses:** **Actions → Uptime (staging) → Run workflow**: the job **"Sign-up gate (no account without an invitation)"** must be green — Auth refused both probes (a sign-up without an invitation, and one with a well-formed but unknown invitation token, from `uptime-probe-…@lms.entlaqa.com`) with **403 and the hook's message "Sign-up is by invitation only."**. It runs every 15 minutes from then on and opens an issue ("Uptime: staging sign-up gate is not refusing sign-ups") if a probe is ever accepted (HTTP 200) or answered any other way.
+4. **Verify the gate refuses:** **Actions → Uptime → Run workflow**: the job **"Sign-up gate (no account without an invitation)"** must be green — Auth refused both probes (a sign-up without an invitation, and one with a well-formed but unknown invitation token, from `uptime-probe-…@lms.entlaqa.com`) with **403 and the hook's message "Sign-up is by invitation only."**. It runs every 15 minutes from then on and opens an issue ("Uptime: production sign-up gate is not refusing sign-ups") if a probe is ever accepted (HTTP 200) or answered any other way.
 5. **Verify the gate admits an invitee (positive test):** on staging, an Organization Admin invites a test person with an address you can read (Users → Invite), opens the e-mailed link, sets a password and lands signed in in the organization; the person then shows as an active member. If this fails, turn sign-ups off again (roll back step 1) and report it.
 
 **Turn off / roll back (always sign-ups first):**

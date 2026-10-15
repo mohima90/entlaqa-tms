@@ -9,7 +9,7 @@
 |---|---|---|
 | **Logs** | stdout/stderr as one JSON object per line (Vercel runtime logs; `docker compose logs` in containers) | `time, level, msg, service, env, deployment, version` + a **closed** set of fields: `action, permission, correlation_id, tenant_id, status, outcome, duration_ms, error_code, error_name, route, reason, state, entity_type, entity_id` and, for security events (T-M2-11), `security_event, subject_ref, client_ref, limit, retry_after_s` — the references are keyed hashes (`rk_…`), never an e-mail or address; event names and alerting queries: [sign-in-protection.md](sign-in-protection.md) §8 |
 | **Errors** | Sentry (EU data region, org `entlaqa-qv`, project `javascript-nextjs`) for the cloud; GlitchTip in-country for sovereign installations | Error class, stack locations (file, function, line), route without query string, release, environment, tags `action`, `permission`, `correlation_id`, `tenant_id`, `error_code` (e.g. PostgreSQL SQLSTATE `23505`). The message is `[redacted]`, except for allow-listed error classes whose messages contain no input. **Server and browser** errors; browser reports carry the tag `source: browser` |
-| **Uptime** | GitHub Actions every 15 min → issue "Uptime: staging is down" | HTTP status of `/api/health/ready` |
+| **Uptime** | GitHub Actions every 15 min → issue "Uptime: production is down" | HTTP status of `/api/health/ready` |
 
 **Never sent or logged by our code** (ADR 0009 §2): names, e-mails, phone numbers, national IDs (Saudi ID/Iqama, Emirates ID, Egyptian ID), IP addresses, request or response bodies, query strings, cookies, headers, tokens, passwords, local variables, source code lines, breadcrumbs. Enforcement:
 
@@ -90,10 +90,10 @@ Both are public and `no-store`, and never return versions, hosts or error detail
 ## Uptime check (staging)
 
 `.github/workflows/uptime.yml` runs at minutes 7, 22, 37 and 52 of every hour (GitHub may delay scheduled runs by several minutes):
-- If `/api/health/ready` fails twice 30 s apart, it opens the issue **"Uptime: staging is down"** (label `uptime`), or comments on it if it is already open. GitHub notifies watchers of the repository.
+- If `/api/health/ready` fails twice 30 s apart, it opens the issue **"Uptime: production is down"** (label `uptime`), or comments on it if it is already open. GitHub notifies watchers of the repository.
 - The issue is closed automatically after the next successful check.
 - Only issues opened by the workflow itself (author `github-actions`) are touched. The repository is public, so staging incidents are visible; staging has no customer data.
-- Run it by hand: **Actions → Uptime (staging) → Run workflow**.
+- Run it by hand: **Actions → Uptime → Run workflow**.
 
 This is a staging baseline. Production needs external checks from at least two regions and a public status page (ADR 0009 §5, NFR-OBS-03). That vendor is chosen before the first customer goes live.
 

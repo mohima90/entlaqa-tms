@@ -54,7 +54,7 @@ Then add it to `SUBSCRIBERS` in `apps/worker/src/subscribers.ts`. Rules:
 |---|---|---|
 | Local | `pnpm --filter @jadarat/worker build`, then `node apps/worker/dist/main.mjs daemon` (or `once`) | `DATABASE_URL_APP_QUEUE`, `DATABASE_URL_APP_WORKER` (names in `.env.example`) |
 | Self-hosted (sovereign) | Service `worker` in `infra/docker/compose.yaml`: two replicas, daemon mode, read-only container | Same variables; TLS verify-full via `DATABASE_CA_CERT_FILE` |
-| Staging (regional SaaS) | **Actions → Jobs (staging)**: one pass every 5 minutes and on demand (§4) | Secrets of the GitHub environment `staging-jobs` |
+| Hosted (regional SaaS) until a worker host exists | **Actions → Jobs**: one pass every 5 minutes on production and on demand (§4) | Secrets of the GitHub environment `production-jobs` (the old project: `staging-jobs`, by hand only, until it is deleted) |
 | Production (regional SaaS) | Worker containers (≥ 2 replicas) on a container host in Frankfurt — **host to be approved by the PO before real customers** (ADR 0005 §1) | Session-pooler or direct connections (LISTEN/NOTIFY needs a session) |
 
 Modes: `daemon` listens for new events, runs until SIGTERM/SIGINT, lets running jobs finish and exits 0 (allow it up to a minute: a job killed half-way is retried only after graphile-worker's 4-hour lock expiry); `once` installs/upgrades the queue schema, queues a dispatch, runs every job that is due and exits — with exit code 1 when the pass could not run **or** when events written more than 10 minutes earlier are still waiting for dispatch (a stuck dispatch shows as a failed run). Failed jobs stay in the queue for their retry. `WORKER_CONCURRENCY` (default 5 in daemon mode, 2 in one-pass mode) sets the jobs run in parallel; each process opens up to `concurrency + 3` queue connections and `concurrency` tenant connections. The queue connection URL may carry TLS settings only (other parameters, such as `?host=` or `?user=`, are refused).
@@ -63,7 +63,7 @@ graphile-worker installs and upgrades its own tables in `graphile_worker` (owned
 
 ## 4. Staging set-up (Product Owner, once, after the PR is merged)
 
-The guide in chat gives one step at a time; this is the full list for reference. Never paste a password or connection string in chat.
+The guide in chat gives one step at a time; this is the full list for reference. Never paste a password or connection string in chat. **The new production project is set up with [production-setup.md](production-setup.md) §C and §H** (environments `production` and `production-jobs`, T-M2-36); the steps below are the record for the old `staging` project and apply the same way.
 
 1. **Password for the job runner.** GitHub → Settings → Environments → `staging` → Add environment secret `APP_QUEUE_DB_PASSWORD` (a new random password: at least 40 characters, only letters, digits, `-` and `_`, as for the other role passwords in [db-deploy.md](db-deploy.md)). Then **Actions → DB deploy** → `plan`, then `apply` (creates the `app_queue` role, the outbox and the inbox, and sets the password).
 2. **New environment.** Settings → Environments → New environment `staging-jobs` → Deployment branches and tags → Selected branches → add `main`.
@@ -71,7 +71,7 @@ The guide in chat gives one step at a time; this is the full list for reference.
    - `DATABASE_URL_APP_QUEUE` = `postgresql://app_queue.<project-ref>:<APP_QUEUE_DB_PASSWORD>@<pooler host>:5432/postgres`
    - `DATABASE_URL_APP_WORKER` = `postgresql://app_worker.<project-ref>:<APP_WORKER_DB_PASSWORD>@<pooler host>:5432/postgres`
 4. **Variable of `staging-jobs`**: `DATABASE_CA_CERT` = the same PEM text as the variable of the same name in `staging`.
-5. **Check:** Actions → Jobs (staging) → Run workflow (branch `main`). The run must be green and its log must show `worker starting (once)` and `worker stopped`. Later runs turn red when events wait for more than 10 minutes; GitHub notifies about failed scheduled runs (by default the person who last changed the workflow's schedule).
+5. **Check:** Actions → Jobs → Run workflow (branch `main`; environment `staging` for the old project, `production` for the new one). The run must be green and its log must show `worker starting (once)` and `worker stopped`. Later runs turn red when events wait for more than 10 minutes; GitHub notifies about failed scheduled runs (by default the person who last changed the workflow's schedule).
 
 6. **Optional — files (T-M2-18):** with `SUPABASE_URL` and `SUPABASE_SECRET_KEY` set (step of [password-reset.md](password-reset.md)) the worker also runs file housekeeping; the variable `FILE_SCANNING` = `on` adds the malware scan ([files.md](files.md) §7).
 
@@ -86,7 +86,7 @@ Until steps 3–4 are done, every scheduled run ends after a notice ("not config
 
 | Situation | What to do |
 |---|---|
-| Pending events pile up (`select count(*) from platform.event_outbox where dispatched_at is null`; on staging a red **Jobs (staging)** run) | Check that a worker is running and can connect (logs: `worker configuration: …` names the variable at fault). Staging: look at the latest **Jobs (staging)** run |
+| Pending events pile up (`select count(*) from platform.event_outbox where dispatched_at is null`; on the hosted environment a red **Jobs** run) | Check that a worker is running and can connect (logs: `worker configuration: …` names the variable at fault). Hosted: look at the latest **Jobs** run |
 | A job keeps failing | As `app_queue`: `select id, task_identifier, attempts, max_attempts, last_error, run_at from graphile_worker.jobs where attempts > 0 order by run_at`. `last_error` holds the cleaned error (class and code). After the last attempt the job stays in the table with `attempts = max_attempts` — dead-letter records and alerts are a follow-up (ADR 0004 §7) |
 | Retry a failed job now | As `app_queue`: `select graphile_worker.reschedule_jobs(array[<id>]::bigint[], run_at := now(), attempts := 0)` |
 | A worker died mid-job (killed, host restart) | Its jobs stay locked for 4 hours, then run again. To release them sooner: stop **all** workers (`docker compose stop worker`), then as `app_queue` run `select graphile_worker.force_unlock_workers(array(select distinct locked_by from graphile_worker.jobs where locked_by is not null))`, then start the workers. With workers still running this would also release jobs that are running right now, and they would run twice. Dispatch itself is never blocked by a dead worker (no named queue) |

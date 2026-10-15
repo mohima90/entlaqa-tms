@@ -50,7 +50,7 @@ No Supabase project or secrets are needed to build, test or run the app: without
 | `pnpm check:all` | typecheck + lint + format + coverage + migrations + deps | — |
 | `bash scripts/db-deploy.sh plan\|apply` | Hosted environments only: automatically after every merge to `main` (**Actions → DB deploy (after merge)**), by hand via **Actions → DB deploy**; both through `.github/actions/db-deploy` (runbook: [db-deploy.md](db-deploy.md)) | — |
 | `bash scripts/provision-tenant.sh plan\|apply` | Hosted environments only, normally via **Actions → Provision organization** (runbook: [staging-sign-in.md](staging-sign-in.md)) | — |
-| `bash scripts/run-outside-deploy.sh <command>` | Runs a command under the deploy lock held shared, or skips it while a deploy holds or waits for the lock — the **Jobs** worker pass ([db-deploy.md](db-deploy.md) § Deploy lock) | — |
+| `bash scripts/run-outside-deploy.sh <command>` | Runs a command under the deploy lock held shared (waits up to 8 minutes for a running deploy, then fails without running it) — the **Jobs** worker pass ([db-deploy.md](db-deploy.md) § Deploy lock) | — |
 
 ### Database tests locally
 

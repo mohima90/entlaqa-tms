@@ -15,8 +15,8 @@
 
 ## A. Before you start
 
-0. **PO — before the PR of T-M2-36/T-M2-38 is merged:** **GitHub → repository → Settings → Environments → New environment** `production` → **Deployment branches and tags → Selected branches → add `main`** → no required reviewers, **no secrets yet**; then the same for **`production-jobs`**. (Once merged, the **Jobs** schedule and the automatic deploy would otherwise create both environments themselves, **without** the `main`-only rule.) Leave the repository variable `DB_DEPLOY_AUTO` **unset** until step 14.
-1. **Claude** — Make sure T-M2-36 and T-M2-38 are merged: the workflows **DB deploy** and **Provision organization** offer the environment `production` (the default; `staging` stays selectable until step 39), the **Jobs** workflow runs its schedule in the environment `production-jobs`, and **DB deploy (after merge)** deploys to `production` after every merge that changes migrations. (Until then the steps below that run a workflow cannot target the new project.) Until the secrets below exist (and while `DB_DEPLOY_AUTO` is unset), the scheduled **Jobs** runs and the automatic deploy end green with a notice and change nothing.
+0. **PO — before the PR of T-M2-36/T-M2-38 is merged:** **GitHub → repository → Settings → Environments → New environment** `production` → **Deployment branches and tags → Selected branches → add `main`** → no required reviewers, **no secrets yet**; then the same for **`production-jobs`**. (Once merged, the **Jobs** schedule and the automatic deploy would otherwise create both environments themselves, **without** the `main`-only rule.) Leave the repository variables `DB_DEPLOY_AUTO` and `JOBS_REQUIRED` **unset** until steps 14 and 30 (both are set at **repository level only**, never in an environment, where a variable of the same name would override them).
+1. **Claude** — Make sure T-M2-36 and T-M2-38 are merged: the workflows **DB deploy** and **Provision organization** offer the environment `production` (the default; `staging` stays selectable until step 39), the **Jobs** workflow runs its schedule in the environment `production-jobs`, and **DB deploy (after merge)** deploys to `production` after every push to `main`. (Until then the steps below that run a workflow cannot target the new project.) Until the secrets below exist (and while `DB_DEPLOY_AUTO` / `JOBS_REQUIRED` are unset), the scheduled **Jobs** runs and the automatic deploy end green with a notice and change nothing.
 2. **PO** — Open the password manager and create one entry "Jadarat TMS production" to keep everything generated below.
 
 ## B. Create the Supabase project (PO)
@@ -48,7 +48,7 @@ From the moment `DATABASE_URL` exists, every merge to `main` deploys to the new 
 ## D. Database deploy (PO runs, Claude reads the logs)
 
 13. **Actions → DB deploy → Run workflow** (branch `main`), environment `production`, mode **`plan`**. **Claude** reads the run log: PostgreSQL version, every migration listed, dry run rolled back, no error.
-14. Same workflow, same `main` commit, mode **`apply`**: all migrations, role passwords set, `verify-deployment.sql` passes. **Claude** checks the log (no warnings expected). From now on later migrations deploy automatically after each merge (**Actions → DB deploy (after merge)**); a failure opens an issue labelled `db-deploy-auto` ([db-deploy.md](db-deploy.md) § Automatic deploy after merge). Then **GitHub → Settings → Secrets and variables → Actions → Variables** (repository level) → **New repository variable** `DB_DEPLOY_AUTO` = `on`: from now on a missing `DATABASE_URL` fails the automatic deploy (and opens the issue) instead of skipping it. Never re-run an old deploy run; use **Run workflow** on `main`.
+14. Same workflow, same `main` commit, mode **`apply`**: all migrations, role passwords set, `verify-deployment.sql` passes. **Claude** checks the log (no warnings expected). From now on later migrations deploy automatically after each merge (**Actions → DB deploy (after merge)**); a failure opens an issue labelled `db-deploy-auto` ([db-deploy.md](db-deploy.md) § Automatic deploy after merge). Then **GitHub → Settings → Secrets and variables → Actions → Variables** (repository level only — not in the environment) → **New repository variable** `DB_DEPLOY_AUTO` = `on`: from now on a missing `DATABASE_URL` fails the automatic deploy (and opens the issue) instead of skipping it. Never re-run an old deploy run; use **Run workflow** on `main`. Lock check (Supabase SQL editor, read-only): `select count(*) from pg_locks where locktype = 'advisory' and classid = 20261015;` → **0** (no deploy lock left behind — [db-deploy.md](db-deploy.md) § Deploy lock).
 
 ## E. Supabase Auth settings (PO)
 
@@ -97,7 +97,7 @@ From the moment `DATABASE_URL` exists, every merge to `main` deploys to the new 
 | Variable (optional) | `FILE_SCANNING` | `on` to scan uploads in each pass ([files.md](files.md) §7) |
 | Variables (optional) | `FILE_ORPHAN_SWEEP`, `USER_IMPORT_INVITATION_INTERVAL_MS`, `USER_IMPORT_DAILY_INVITATIONS`, `USER_IMPORT_TRIAL_DAILY_INVITATIONS` | Leave unset for the defaults ([user-import.md](user-import.md) §4) |
 
-30. **Actions → Jobs → Run workflow** (branch `main`), environment **`production`**, mode **`test-email`** → the test e-mail arrives at `EMAIL_TEST_TO`; then mode **`pass`** → green, log shows `worker starting (once)`, `reset links: on`, `worker stopped`. **Claude** reads both logs. (The continuously running production worker host is still a PO cost decision before the first customer — ADR 0005 §1; until then the scheduled pass runs every few minutes to hours.)
+30. **Actions → Jobs → Run workflow** (branch `main`), environment **`production`**, mode **`test-email`** → the test e-mail arrives at `EMAIL_TEST_TO`; then mode **`pass`** → green, log shows `worker starting (once)`, `reset links: on`, `worker stopped`. **Claude** reads both logs. Then **GitHub → Settings → Secrets and variables → Actions → Variables** (repository level only) → **New repository variable** `JOBS_REQUIRED` = `on`: from now on missing connection secrets in `production-jobs` fail the **Jobs** runs instead of skipping them with a notice. (The continuously running production worker host is still a PO cost decision before the first customer — ADR 0005 §1; until then the scheduled pass runs every few minutes to hours.)
 
 ## I. Vercel (PO)
 
@@ -126,7 +126,7 @@ Never in Vercel: `SUPABASE_SECRET_KEY`, any worker or queue connection, `JADARAT
 35. Sign in at `https://<app>/en/sign-in` → the header shows the organization's name; sign out → back on sign-in; `/en/suite` redirects to sign-in.
 36. **GitHub → Settings → Variables** (repository): `UPTIME_URL` = the production web address. **Actions → Uptime → Run workflow** → both jobs green (readiness, and the sign-up gate refusing strangers with "Sign-up is by invitation only.").
 37. In the product: invite a test person with an address you can read → the invitation e-mail arrives (after the next worker pass, or run **Jobs** by hand) → accept, set a password, signed in. Then «Forgot password?» with your own account → reset e-mail → new password works, exactly one "password changed" notice.
-38. **Actions → DB deploy → `plan`** again → "nothing pending".
+38. **Actions → DB deploy → `plan`** again → "nothing pending"; then the lock check of step 14 (`select count(*) from pg_locks where locktype = 'advisory' and classid = 20261015;`) → **0**.
 
 ## L. Retire the old project (PO, only after section K is green)
 

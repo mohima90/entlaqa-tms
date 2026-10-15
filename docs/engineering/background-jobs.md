@@ -75,7 +75,7 @@ The guide in chat gives one step at a time; this is the full list for reference.
 
 6. **Optional — files (T-M2-18):** with `SUPABASE_URL` and `SUPABASE_SECRET_KEY` set (step of [password-reset.md](password-reset.md)) the worker also runs file housekeeping; the variable `FILE_SCANNING` = `on` adds the malware scan ([files.md](files.md) §7).
 
-Until steps 3–4 are done, every scheduled run ends after a notice ("not configured yet") — harmless. Good to know:
+Until steps 3–4 are done, every scheduled run ends after a notice ("not configured yet") — harmless — as long as the repository variable **`JOBS_REQUIRED`** is unset; once it is `on` (repository level only; production: [production-setup.md](production-setup.md) step 30), missing connection secrets fail the run instead. Each pass holds the deploy lock shared and waits up to 8 minutes for a running DB deploy, then fails ([db-deploy.md](db-deploy.md) § Deploy lock). Good to know:
 - Scheduled runs start late when GitHub is busy, so on staging an event can take several minutes to be handled; run the workflow by hand for an immediate pass.
 - The repository is public, so **anyone can read these run logs**: they hold task names, job ids and cleaned errors — never payloads, personal data or passwords. A connection failure may show the database host name and the user name `app_queue.<project-ref>` (nothing secret).
 - GitHub turns scheduled workflows off after 60 days without activity in a public repository; Actions shows a banner to turn it back on.

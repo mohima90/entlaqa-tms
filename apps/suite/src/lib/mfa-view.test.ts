@@ -96,8 +96,6 @@ describe('safeNextPath', () => {
     ]) {
       expect(safeNextPath(bad), String(bad)).toBeNull();
     }
-    expect(stepUpHref('ar', '/ar/suite/admin/security')).toBe(
-      '/ar/mfa?next=%2Far%2Fsuite%2Fadmin%2Fsecurity',
-    );
+    expect(stepUpHref('ar', '/ar/suite/profile')).toBe('/ar/mfa?next=%2Far%2Fsuite%2Fprofile');
   });
 });

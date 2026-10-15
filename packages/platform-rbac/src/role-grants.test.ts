@@ -56,9 +56,9 @@ describe('canAssignRole (ADR 0003 §5, PO decision 5 Oct 2026)', () => {
     }
   });
 
-  it('needs the AAL2 step-up for privileged roles, not for ordinary ones', () => {
+  it('lets the Organization Admin give privileged roles without an authenticator code (PO decision, 14 Oct 2026)', () => {
     const admin = subjectOf('aal1', { roleCode: 'tenant_admin' });
-    expect(canAssignRole(admin, 'hr_manager')).toBe(false);
+    expect(canAssignRole(admin, 'hr_manager')).toBe(true);
     expect(canAssignRole(admin, 'learner')).toBe(true);
   });
 

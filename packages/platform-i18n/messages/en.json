@@ -34,7 +34,7 @@
     "emptyTitle": "No training data yet",
     "emptyBody": "Sessions and courses will appear here once the Training module is set up for your organization.",
     "setupTitle": "Set up your organization",
-    "setupBody": "Invite your people, check their roles and set your security policy. More set-up pages are coming soon.",
+    "setupBody": "Fill in your organization profile, invite your people, check their roles and set your security policy. More set-up pages are coming soon.",
     "comingSoon": "Coming soon",
     "users": "Users",
     "roles": "Roles & permissions",
@@ -377,8 +377,6 @@
     "mfaResetHint": "The Organization Admin can reset the app of a member who lost it: the app is removed, every sign-in session of the member ends, and the member is emailed and sets up a new app at the next sign-in.",
     "mfaResetSupport": "If the member's account also belongs to another organization, or the member is the only Organization Admin, ENTLAQA support resets it after checking their identity.",
     "mfaResetAction": "Reset authenticator app",
-    "mfaResetNeedsCode": "Resetting it needs a code from your own authenticator app, entered in the last 15 minutes.",
-    "mfaResetVerifyFirst": "Verify with your app",
     "mfaResetConfirmTitle": "Reset the authenticator app?",
     "mfaResetConfirmText": "{name}'s authenticator app will be removed and all of their sign-in sessions will end. They'll be emailed and asked to set up a new app at their next sign-in. Continue only after confirming the request with them.",
     "mfaResetConfirm": "Reset the app",
@@ -451,7 +449,7 @@
     "currentNameKept": "It is kept as is if the fields are left empty.",
     "mfa": {
       "title": "Multi-factor authentication",
-      "intro": "A code from an authenticator app protects your account and is needed for sensitive actions.",
+      "intro": "A code from an authenticator app protects your account when you sign in.",
       "on": "On · authenticator app",
       "off": "Not set up",
       "setUp": "Set up the authenticator app",
@@ -550,7 +548,6 @@
     "privileged": "Privileged role",
     "ended": "Ended",
     "scheduled": "Not started yet",
-    "privilegedNeedsCode": "Changing privileged roles (Organization Admin, HR Manager, Finance Manager, Compliance Officer, Auditor) needs a code from an authenticator app; this becomes available once multi-factor authentication is set up. You can change the other roles now.",
     "privilegedAdminOnly": "Only the Organization Admin changes privileged roles (Organization Admin, HR Manager, Finance Manager, Compliance Officer, Auditor).",
     "validFrom": "Starts on",
     "validUntil": "Ends on",
@@ -650,7 +647,6 @@
       "additionalRolesHint": "The effective permissions are those of the primary role plus the additional roles.",
       "roleConflictHint": "Organization Admin is a setup-only role and can't be combined with any other role.",
       "privileged": "Privileged role",
-      "privilegedNeedsCode": "Giving privileged roles (Organization Admin, HR Manager, Finance Manager, Compliance Officer, Auditor) needs a code from an authenticator app; this becomes available once multi-factor authentication is set up. You can invite with the other roles now.",
       "privilegedAdminOnly": "Only the Organization Admin gives privileged roles (Organization Admin, HR Manager, Finance Manager, Compliance Officer, Auditor). You can invite with the other roles.",
       "language": "Invitation email language",
       "languages": {
@@ -773,8 +769,7 @@
       "own_account": "You can't deactivate your own account.",
       "no_account": "This person has no sign-in account in the organization, so there is nothing to deactivate.",
       "not_active": "This account isn't active (it is deactivated, or its invitation isn't accepted yet), so it can't be deactivated.",
-      "last_admin": "This is the last active account with the Organization Admin role and no end date. Give the role to another member before deactivating this account.",
-      "step_up_required": "Deactivating an account that holds a privileged role needs a code from an authenticator app; this becomes available once multi-factor authentication is set up."
+      "last_admin": "This is the last active account with the Organization Admin role and no end date. Give the role to another member before deactivating this account."
     },
     "backToProfile": "Back to the profile",
     "deactivated": "The account was deactivated and its sign-in sessions in the organization ended. It can be reactivated from this tab.",
@@ -786,7 +781,6 @@
       "keep": "Cancel",
       "working": "Reactivating…",
       "done": "The account was reactivated. Signing in to the organization works again, with the same roles.",
-      "stepUp": "Reactivating an account that holds a privileged role needs a code from an authenticator app; this becomes available once multi-factor authentication is set up.",
       "notDeactivated": "This account isn't deactivated. Refresh the page.",
       "placementDeleted": "This person's department or branch was deleted. Edit their details first, then reactivate the account."
     }
@@ -803,7 +797,7 @@
     "enrolTitle": "Set up an authenticator app",
     "enrolRequired": "Your organization requires an authenticator app to sign in. Set one up to continue.",
     "enrolStepUp": "This action needs a code from an authenticator app. Set one up now; it takes about a minute.",
-    "promptAdmin": "As the Organization Admin, protect your account with an authenticator app such as Google Authenticator or Microsoft Authenticator. A code from it is also needed for sensitive actions, such as changing privileged roles or the security settings.",
+    "promptAdmin": "As the Organization Admin, protect your account with an authenticator app such as Google Authenticator or Microsoft Authenticator.",
     "promptGrace": "Your organization requires an authenticator app. Until {date} you can still sign in without one.",
     "appsHint": "Any authenticator app works: Google Authenticator, Microsoft Authenticator, Apple Passwords, 1Password and others.",
     "start": "Set up the app",
@@ -889,8 +883,6 @@
     "title": "Security",
     "section": "Organization admin",
     "intro": "These settings apply to everyone in {organization}. Every change is recorded in the audit log.",
-    "stepUp": "Changing these settings needs a verification code from your authenticator app.",
-    "stepUpLink": "Verify with the authenticator app",
     "readOnly": "Only the Organization Admin changes these settings.",
     "comingSoon": "Coming soon",
     "mfa": {
@@ -971,8 +963,7 @@
       "idleAboveMax": "Inactivity can't be longer than the maximum session length.",
       "invalid": "Check this value."
     },
-    "notConfigured": "Security settings aren't available in this environment yet.",
-    "stepUpAgain": "Saving needs a code from your authenticator app entered in the last 15 minutes. Your changes weren't saved."
+    "notConfigured": "Security settings aren't available in this environment yet."
   },
   "sessions": {
     "device": "Device and browser",
@@ -1625,5 +1616,96 @@
       "ROLE_REPEATED": "Role repeated in the row"
     },
     "heldSummary": "{count, plural, one {one invitation not sent yet} other {{count, number, integer} invitations not sent yet}}"
+  },
+  "organizationProfile": {
+    "title": "Organization profile",
+    "breadcrumbLabel": "Breadcrumb",
+    "breadcrumbSection": "Organization",
+    "intro": "How your organization appears in Jadarat TMS, and the defaults everyone starts with. People can still change their own language.",
+    "notConfigured": "The organization profile isn't available in this environment yet.",
+    "readOnly": "You can view these settings. Only the Organization Admin can change them.",
+    "organization": {
+      "title": "Organization",
+      "intro": "Shown in the sidebar, on e-mails and on certificates.",
+      "nameEn": "Display name (English)",
+      "nameEnHint": "Up to 80 characters.",
+      "nameAr": "Display name (Arabic)",
+      "nameArHint": "Shown when the interface is in Arabic. Up to 80 characters.",
+      "industry": "Industry",
+      "industryChoose": "Choose an industry",
+      "country": "Country",
+      "countryChoose": "Choose a country",
+      "countryHint": "Choosing a country suggests its currency, timezone and working week."
+    },
+    "defaults": {
+      "title": "Defaults",
+      "intro": "Used for new users, dates, amounts and reports.",
+      "currency": "Currency",
+      "timeZone": "Timezone",
+      "fiscalYear": "Fiscal year starts in",
+      "fiscalYearHint": "Training plans and budgets follow this year.",
+      "language": "Default language",
+      "languageHint": "For new users and your organization's e-mails. Each person can switch in My profile."
+    },
+    "calendar": {
+      "title": "Calendar & working week",
+      "intro": "How dates are shown, and when training can be scheduled.",
+      "dateDisplay": "Date display",
+      "displays": {
+        "gregorian": "Gregorian",
+        "hijri": "Hijri (Umm al-Qura)",
+        "dual": "Both"
+      },
+      "preview": "Today, as it will be shown",
+      "workingDays": "Working days",
+      "workingDaysHint": "Sessions on other days get a warning before they are saved.",
+      "hoursStart": "Working hours start",
+      "hoursEnd": "Working hours end",
+      "hoursHint": "24-hour time, for example 08:00.",
+      "branchesNote": "Branches can have their own working week and hours (set by HR)."
+    },
+    "notes": {
+      "label": "Tips",
+      "countryTitle": "Country fills in the rest",
+      "countryBody": "When you pick a country we suggest its currency, timezone, working week and date display. Check them, then save.",
+      "notCollectedTitle": "Not collected",
+      "notCollectedBody": "We don't ask for legal or registration details such as commercial registration or VAT number."
+    },
+    "presetApplied": "Suggestions for {country} filled in. Check them, then save.",
+    "lastChanged": "Last changed by {name} · {date}",
+    "lastChangedDefault": "Not changed since your organization was set up.",
+    "cancel": "Cancel",
+    "save": "Save changes",
+    "saving": "Saving…",
+    "saved": "Organization profile saved.",
+    "noChanges": "There are no changes to save.",
+    "fieldErrors": {
+      "nameRequired": "Enter the display name.",
+      "nameTooLong": "Use at most 80 characters.",
+      "nameInvalid": "Remove the hidden text-direction characters from the name.",
+      "industryRequired": "Choose an industry.",
+      "countryRequired": "Choose a country.",
+      "daysRequired": "Choose at least one working day.",
+      "timeInvalid": "Enter the time as HH:MM, for example 08:00.",
+      "endBeforeStart": "The end must be after the start.",
+      "invalid": "Check this value."
+    },
+    "industries": {
+      "government": "Government",
+      "banking_financial": "Banking & financial services",
+      "insurance": "Insurance",
+      "healthcare": "Healthcare",
+      "education": "Education",
+      "oil_gas_energy": "Oil, gas & energy",
+      "manufacturing": "Manufacturing",
+      "retail_consumer": "Retail & consumer goods",
+      "telecom_technology": "Telecommunications & technology",
+      "construction_real_estate": "Construction & real estate",
+      "transport_logistics": "Transport & logistics",
+      "hospitality_tourism": "Hospitality & tourism",
+      "professional_services": "Professional services",
+      "non_profit": "Non-profit",
+      "other": "Other"
+    }
   }
 }

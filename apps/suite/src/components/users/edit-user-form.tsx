@@ -2,19 +2,14 @@
 import { formatHijriDate } from '@jadarat/platform-i18n/hijri';
 import { Alert, Button, TextField } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
-import {
-  type ReactNode,
-  type SelectHTMLAttributes,
-  type SyntheticEvent,
-  useState,
-  useTransition,
-} from 'react';
+import { type SyntheticEvent, useState, useTransition } from 'react';
 import { updateUserDetailsAction } from '../../actions/users';
 import { type ManagerChoice, editFieldErrorKey, managersFor } from '../../lib/edit-user-form';
 import { NAME_PARTS, type NamePart, type PersonalDetailsFormState } from '../../lib/profile-form';
 import { type ErrorTexts, errorText } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
 import { fieldErrorCodes } from '../profile/field-errors';
+import { SelectField } from '../select-field';
 
 export interface UnitChoice {
   readonly id: string;
@@ -48,57 +43,6 @@ export interface EditUserFormProps {
   readonly profileHref: string;
   /** Hijri equivalent of the stored hire date, formatted on the server (no hydration mismatch). */
   readonly hireOnHijri: string | undefined;
-}
-
-/** Labelled native select with hint and error (same contract as TextField). */
-export function SelectField({
-  id,
-  label,
-  marker,
-  hint,
-  error,
-  children,
-  ...props
-}: {
-  id: string;
-  label: string;
-  marker?: string | undefined;
-  hint?: ReactNode;
-  error?: string | undefined;
-  children: ReactNode;
-} & SelectHTMLAttributes<HTMLSelectElement>) {
-  const describedBy = [hint ? `${id}-hint` : '', error ? `${id}-error` : '']
-    .filter(Boolean)
-    .join(' ');
-  return (
-    <div className="flex flex-col gap-1">
-      <label htmlFor={id} className="font-medium">
-        {label}
-        {marker ? <span className="ms-1 font-normal text-text-muted">{marker}</span> : null}
-      </label>
-      {hint ? (
-        <p id={`${id}-hint`} className="m-0 text-sm text-text-muted">
-          {hint}
-        </p>
-      ) : null}
-      <select
-        {...props}
-        id={id}
-        aria-invalid={error ? true : undefined}
-        aria-describedby={describedBy || undefined}
-        className={`min-h-11 w-full rounded-md border bg-surface px-3 text-text ${
-          error ? 'border-danger' : 'border-border-strong'
-        }`}
-      >
-        {children}
-      </select>
-      {error ? (
-        <p id={`${id}-error`} className="m-0 text-sm font-medium text-danger">
-          {error}
-        </p>
-      ) : null}
-    </div>
-  );
 }
 
 /**

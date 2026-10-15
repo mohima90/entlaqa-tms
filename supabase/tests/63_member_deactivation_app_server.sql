@@ -4,9 +4,9 @@
 -- oneself; never the last Organization Admin without an end date), what a deactivation ends at once (the
 -- member's access to THIS organization, through the database: claims refused, organization chooser,
 -- session contexts), what it keeps (records, roles, other organizations), the checked reactivation
--- function, and the authenticator code (AAL2) both directions need for a member who holds a privileged role
--- (in force or future-dated; review M4, D-IAM-01) — since T-M2-10 a confirmed app and a code from the last
--- 15 minutes (20261012120000). Fixtures and the helpers tests.t09_as / tests.t09_deactivate
+-- function, and members who hold a privileged role (in force or future-dated): only the Organization Admin
+-- changes them, without an authenticator code since the PO decision of 14 Oct 2026 (20261017090400,
+-- reversing D-IAM-01 / review M4). Fixtures and the helpers tests.t09_as / tests.t09_deactivate
 -- / tests.t09_holds_lock: 62_member_deactivation_owner.sql. Every block is rolled back.
 \set ON_ERROR_STOP on
 
@@ -173,7 +173,8 @@ reset role;
 rollback;
 
 -- ---------------------------------------------------------------------------------------------------
--- A member who holds a privileged role is deactivated only with an authenticator code (review M4)
+-- A member who holds a privileged role: the Organization Admin deactivates them without an authenticator
+-- code (PO decision, 14 Oct 2026; review M4's code rule removed by 20261017090400); HR Manager never
 -- ---------------------------------------------------------------------------------------------------
 -- uP (Compliance Officer, in force) and uF (Auditor from in 10 days) are privileged; uE's Auditor role
 -- ended yesterday (not privileged any more). The same test as the reactivation.
@@ -182,55 +183,47 @@ set local role authenticated;
 select tests.t09_as('admin');
 do $$
 begin
-  perform tests.assert_fails($q$update platform.tenant_memberships set status = 'suspended' where person_id = '9d100000-0000-4000-8000-0000000000a4'$q$,
-    array['JM003'], 'Organization Admin at AAL1: a privileged member needs an authenticator code');
-  perform tests.assert_fails($q$update platform.tenant_memberships set status = 'suspended' where person_id = '9d100000-0000-4000-8000-0000000000aa'$q$,
-    array['JM003'], 'a future-dated privileged role counts');
-  perform tests.assert_eq(tests.t09_deactivate('9d100000-0000-4000-8000-0000000000a9'), 1::bigint,
-    'an ended privileged role does not: deactivated at AAL1');
-  perform tests.assert_eq(tests.t09_deactivate('9d100000-0000-4000-8000-0000000000a2'), 1::bigint,
-    'an ordinary member at AAL1');
-end $$;
-select tests.t09_as('admin', 'aal2');
-do $$
-begin
   perform tests.assert_eq(tests.t09_deactivate('9d100000-0000-4000-8000-0000000000a4'), 1::bigint,
-    'Organization Admin at AAL2: the privileged member is deactivated');
+    'Organization Admin at AAL1: the privileged member is deactivated');
   perform tests.assert_eq(tests.t09_deactivate('9d100000-0000-4000-8000-0000000000aa'), 1::bigint,
     'and the member with a future-dated privileged role');
+  perform tests.assert_eq(tests.t09_deactivate('9d100000-0000-4000-8000-0000000000a9'), 1::bigint,
+    'an ended privileged role');
+  perform tests.assert_eq(tests.t09_deactivate('9d100000-0000-4000-8000-0000000000a2'), 1::bigint,
+    'an ordinary member');
 end $$;
 reset role;
 rollback;
--- AAL2 as T-M2-10 defines it (20261012120000): a confirmed app (62) AND a code from the last 15 minutes
--- (review L3, D-IAM-06) — as defineAction requires for platform.role.assign_privileged.
+-- A code 16 minutes old changes nothing either way (no freshness rule any more).
 begin;
 set local role authenticated;
 select tests.t09_as('admin', 'aal2_stale');
 do $$
 begin
-  perform tests.assert_fails($q$update platform.tenant_memberships set status = 'suspended' where person_id = '9d100000-0000-4000-8000-0000000000a4'$q$,
-    array['JM003'], 'a code 16 minutes old: the privileged member stays');
+  perform tests.assert_eq(tests.rows_affected($q$update platform.tenant_memberships set status = 'revoked' where person_id = '9d100000-0000-4000-8000-0000000000a4'$q$),
+    1::bigint, 'leaving active by revocation: also allowed');
   update platform.persons set status = 'active' where id = '9d100000-0000-4000-8000-0000000000a6';
-  perform tests.assert_fails($q$select private.reactivate_membership('9d100000-0000-4000-8000-0000000000a6')$q$,
-    array['JM003'], 'nor is a privileged member reactivated with it');
+  perform tests.assert(private.reactivate_membership('9d100000-0000-4000-8000-0000000000a6') is not null,
+    'a privileged member is reactivated');
 end $$;
 reset role;
 rollback;
--- Revoking (not only suspending) an active privileged membership is the same rule; an HR Manager is
--- refused before it (only an Organization Admin changes a privileged member), also at AAL2.
+-- An HR Manager is refused (only an Organization Admin changes a privileged member), also at AAL2.
 begin;
 set local role authenticated;
-select tests.t09_as('admin');
-do $$
-begin
-  perform tests.assert_fails($q$update platform.tenant_memberships set status = 'revoked' where person_id = '9d100000-0000-4000-8000-0000000000a4'$q$,
-    array['JM003'], 'leaving active by revocation: also refused at AAL1');
-end $$;
 select tests.t09_as('hr', 'aal2');
 do $$
 begin
   perform tests.assert_fails($q$update platform.tenant_memberships set status = 'suspended' where person_id = '9d100000-0000-4000-8000-0000000000a4'$q$,
     array['42501'], 'HR Manager at AAL2: still not a privileged member');
+  perform tests.assert_fails($q$update platform.tenant_memberships set status = 'revoked' where person_id = '9d100000-0000-4000-8000-0000000000aa'$q$,
+    array['42501'], 'nor one with a future-dated privileged role');
+end $$;
+select tests.t09_as('hr');
+do $$
+begin
+  perform tests.assert_fails($q$update platform.tenant_memberships set status = 'suspended' where person_id = '9d100000-0000-4000-8000-0000000000a4'$q$,
+    array['42501'], 'HR Manager at AAL1: the same');
 end $$;
 reset role;
 rollback;
@@ -295,8 +288,8 @@ end $$;
 reset role;
 rollback;
 
--- A privileged deactivated member (Auditor): not HR; the Organization Admin only with an authenticator
--- code (AAL2, PO decision D-IAM-01: it gives privileged roles back).
+-- A privileged deactivated member (Auditor): not HR; the Organization Admin, without an authenticator code
+-- (PO decision 14 Oct 2026, reversing D-IAM-01).
 begin;
 set local role authenticated;
 select tests.t09_as('hr');
@@ -311,14 +304,8 @@ select tests.t09_as('admin');
 do $$
 begin
   update platform.persons set status = 'active' where id = '9d100000-0000-4000-8000-0000000000a6';
-  perform tests.assert_fails($q$select private.reactivate_membership('9d100000-0000-4000-8000-0000000000a6')$q$,
-    array['JM003'], 'Organization Admin at AAL1: an authenticator code is needed');
-end $$;
-select tests.t09_as('admin', 'aal2');
-do $$
-begin
   perform tests.assert(private.reactivate_membership('9d100000-0000-4000-8000-0000000000a6') is not null,
-    'Organization Admin at AAL2: reactivated');
+    'Organization Admin at AAL1: reactivated');
 end $$;
 reset role;
 rollback;

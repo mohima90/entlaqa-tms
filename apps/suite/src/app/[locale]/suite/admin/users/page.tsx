@@ -1,5 +1,5 @@
 import { type AppError, toClientError } from '@jadarat/platform-core';
-import type { AppLocale } from '@jadarat/platform-i18n';
+import type { AppLocale, DisplayDateFormatter } from '@jadarat/platform-i18n';
 import { routing } from '@jadarat/platform-i18n/routing';
 import type { InvitationRow } from '@jadarat/platform-db';
 import type { UserImportBannersView } from '@jadarat/platform-import';
@@ -24,6 +24,7 @@ import { INVITED_FLASH_PARAM, canResend } from '../../../../../lib/invite-form';
 import { filterInvitations } from '../../../../../lib/invitations-view';
 import { profileErrorTexts } from '../../../../../lib/profile-texts';
 import { getSuiteContext } from '../../../../../lib/suite-context';
+import { pageDates } from '../../../../../lib/page-dates';
 import { invitationsListQuery, usersListQuery } from '../../../../../lib/users-queries';
 import {
   type UsersListParams,
@@ -172,6 +173,7 @@ export default async function UsersPage({
             params={current}
             invitations={invitations?.ok ? invitations.value.invitations : null}
             banners={banners?.ok ? banners.value : null}
+            dates={pageDates(locale, context)}
           />
         </>
       );
@@ -222,8 +224,11 @@ async function UsersList({
   params,
   invitations,
   banners,
+  dates,
 }: {
   locale: AppLocale;
+  /** Dates as the organization shows them (T-M2-22: Gregorian / Hijri / both, its time zone). */
+  dates: DisplayDateFormatter;
   view: UsersListView;
   params: UsersListParams;
   /** Open invitations (null: the member may not invite, or they did not load). */
@@ -255,13 +260,12 @@ async function UsersList({
   const held = (invitations ?? []).filter((row) => row.state === 'held').length;
   const nothingToShow = list.rows.length === 0 && invitationRows.length === 0;
   // «إعادة التفعيل» on the deactivated tab (T-M2-09): rows the member may manage; privileged members only
-  // with role.assign_privileged (after an authenticator code).
+  // with role.assign_privileged (the Organization Admin; no authenticator code since 14 Oct 2026).
   const showActions = activeTab === 'deactivated' && view.canDeactivate;
   const reactivation = showActions
     ? {
         labels: await reactivateLabels(locale),
         errors: await profileErrorTexts(locale),
-        stepUp: (await getTranslations({ locale, namespace: 'deactivation' }))('reactivate.stepUp'),
         successHref: withFlash(usersListHref(locale, params), REACTIVATED_FLASH_PARAM),
       }
     : null;
@@ -400,7 +404,7 @@ async function UsersList({
       </form>
 
       {invitationRows.length > 0
-        ? await invitationsTable(locale, invitationRows, canReadRoles)
+        ? await invitationsTable(locale, invitationRows, canReadRoles, dates)
         : null}
 
       {nothingToShow ? (
@@ -497,21 +501,15 @@ async function UsersList({
                   <td className="px-4 py-3">
                     <Badge tone={STATUS_TONE[row.status]}>{t(`status.${row.status}`)}</Badge>
                   </td>
-                  <td className="px-4 py-3 text-sm">
-                    {row.lastSignInAt ? format.dateTime(row.lastSignInAt, 'dateTime') : t('never')}
+                  <td className="px-4 py-3 text-sm" data-testid="user-last-sign-in">
+                    {row.lastSignInAt ? dates.dateTime(row.lastSignInAt) : t('never')}
                   </td>
                   {reactivation ? (
                     <td className="px-4 py-3">
                       {row.status !== 'suspended' || !row.mayManage ? (
                         <NotSet label={t('noneLabel')} />
                       ) : row.privileged && view.privilegedReactivation !== 'allowed' ? (
-                        view.privilegedReactivation === 'step_up_required' ? (
-                          <p className="m-0 max-w-56 text-sm text-text-muted">
-                            {reactivation.stepUp}
-                          </p>
-                        ) : (
-                          <NotSet label={t('noneLabel')} />
-                        )
+                        <NotSet label={t('noneLabel')} />
                       ) : (
                         <ReactivateMemberButton
                           personId={row.personId}
@@ -588,16 +586,16 @@ async function invitationsTable(
   locale: AppLocale,
   rows: readonly InvitationRow[],
   canReadRoles: boolean,
+  dates: DisplayDateFormatter,
 ) {
   const t = await getTranslations({ locale, namespace: 'invitations' });
-  const format = await getFormatter({ locale });
   const shown = rows.slice(0, INVITATIONS_SHOWN);
   const views: InvitationRowView[] = [];
   for (const row of shown) {
     if (row.state === 'accepted' || row.state === 'revoked') continue;
-    const date = format.dateTime(row.expiresAt, 'medium');
+    const date = dates.date(row.expiresAt);
     const fromImport = row.importId
-      ? t('list.fromImport', { date: format.dateTime(row.createdAt, 'medium') })
+      ? t('list.fromImport', { date: dates.date(row.createdAt) })
       : null;
     views.push({
       id: row.id,

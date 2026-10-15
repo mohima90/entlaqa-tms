@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  type PermissionDefinition,
   PermissionDefinitionError,
   createPermissionRegistry,
   definePermissions,
@@ -20,7 +21,6 @@ describe('definePermissions', () => {
     ['bad format', { code: 'tms.Session.read' }],
     ['two segments', { code: 'tms.session' }],
     ['other namespace', { code: 'core_hr.employee.read' }],
-    ['high risk without AAL2', { code: 'tms.role.manage', risk: 'high' as const }],
     ['missing Arabic label', { code: 'tms.session.read', label: { ar: ' ', en: 'x' } }],
   ])('rejects %s', (_name, override) => {
     expect(() =>
@@ -63,5 +63,19 @@ describe('createPermissionRegistry', () => {
 
   it('fails on duplicates across modules', () => {
     expect(() => createPermissionRegistry(tms, tms)).toThrow('across modules');
+  });
+});
+
+describe('organization permissions (PO decision, 14 Oct 2026)', () => {
+  it('none asks for an authenticator code (no step-up; D-IAM-01 reversed)', async () => {
+    const { platformPermissions } = await import('./platform-permissions');
+    const { memberPermissions } = await import('./member-permissions');
+    const all: PermissionDefinition[] = [
+      ...Object.values(platformPermissions),
+      ...Object.values(memberPermissions),
+    ];
+    expect(all.filter((p) => p.requiresAal2).map((p) => p.code)).toEqual([]);
+    // High risk still confirms the session with Auth (getUser) before acting.
+    expect(platformPermissions['platform.role.assign_privileged'].risk).toBe('high');
   });
 });

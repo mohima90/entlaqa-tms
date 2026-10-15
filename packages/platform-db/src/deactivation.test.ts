@@ -235,14 +235,11 @@ describe('deactivateMembership', () => {
     expect(event?.params).toContain(JSON.stringify({ membershipId: 'm1' }));
   });
 
-  it('maps the guards: not this actor, an authenticator code, the last Organization Admin, no longer active', async () => {
+  it('maps the guards: not this actor, the last Organization Admin, no longer active', async () => {
     expect(await deactivateMembership(fakeTx(pgFailure('42501', 'denied')).tx, target)).toEqual({
       ok: false,
       refusal: 'not_allowed',
     });
-    expect(
-      await deactivateMembership(fakeTx([], pgFailure('JM003', 'needs a code')).tx, target),
-    ).toEqual({ ok: false, refusal: 'step_up_required' });
     expect(
       await deactivateMembership(
         fakeTx(
@@ -274,7 +271,6 @@ describe('reactivateMembership', () => {
   it.each([
     ['JM001', 'not_found'],
     ['JM002', 'not_deactivated'],
-    ['JM003', 'step_up_required'],
     ['JM004', 'not_allowed'],
     ['42501', 'not_allowed'],
   ] as const)('maps %s to %s', async (code, refusal) => {

@@ -53,6 +53,6 @@ The built screens (`apps/suite/src/app/[locale]/suite/admin/users/[personId]/dea
 | Confirm goes to the users list | Goes to the «معطّل» tab with a confirmation | The person is then in that tab, where reactivation is offered |
 | Reactivation (not drawn) | «إعادة تفعيل المستخدم» on the profile and «إعادة التفعيل» per row of the «معطّل» tab, each with a confirmation step | New: screen 4 only says reactivation is possible from that tab |
 | Reason list | Adds «دون ذكر سبب» as the first choice | The reason is optional |
-| — | A member who holds a privileged role: the page first says that an authenticator code is needed (as reactivation does), and only the Organization Admin with that code sees the form | PO decision D-IAM-01 (security review M4) |
+| — | A member who holds a privileged role: only the Organization Admin sees the form (an HR Manager is refused). *Until 14 Oct 2026 the page first asked for an authenticator code (D-IAM-01); the PO reversed that on 14 Oct 2026 — no organization-level action asks for a code, and the "verify with your authenticator" notices of the user, role, invitation and reactivation screens are gone* | PO decision D-IAM-01 (security review M4), reversed by the PO 14 Oct 2026 (ADR 0003 amendment) |
 
 New copy (Arabic and English) for the lines above, the blocked states and the error messages is in `packages/platform-i18n/messages` (namespace `deactivation`) and needs the UX writer's review.

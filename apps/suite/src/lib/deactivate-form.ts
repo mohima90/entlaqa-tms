@@ -117,7 +117,6 @@ export function deactivationErrorKeys(
 
 /** Message key (namespace `deactivation`) for a refused reactivation, or null for the general text. */
 export function reactivationErrorKey(error: AppError): string | null {
-  if (error.code === 'STEP_UP_REQUIRED') return 'reactivate.stepUp';
   const code = error.fieldErrors?.find((f) => f.path === 'personId')?.code;
   if (code === 'NOT_DEACTIVATED') return 'reactivate.notDeactivated';
   if (code === 'PLACEMENT_DELETED') return 'reactivate.placementDeleted';

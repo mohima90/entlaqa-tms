@@ -285,11 +285,10 @@ begin
       ('private.claim_account_mail_request()', 'account_mail_guard', array['account_mail_guard', 'authenticated'], true),
       ('private.finish_account_mail_request(uuid)', 'account_mail_guard', array['account_mail_guard', 'authenticated'], true),
       ('private.retry_account_mail_request(uuid)', 'account_mail_guard', array['account_mail_guard', 'authenticated'], true),
-      -- Deactivation / reactivation (T-M2-09): the session-ending and privileged-deactivation (AAL2) triggers,
-      -- the checked reactivation (app_server user claims, checked inside) and the sign-in refusal rule of the
+      -- Deactivation / reactivation (T-M2-09): the session-ending trigger (the privileged-deactivation
+      -- step-up trigger was dropped by 20261017090400, PO decision 14 Oct 2026), the checked reactivation (app_server user claims, checked inside) and the sign-in refusal rule of the
       -- access-token hook (Auth only).
       ('private.end_member_sessions()', 'membership_guard', array['membership_guard'], true),
-      ('private.check_privileged_deactivation()', 'membership_guard', array['membership_guard'], true),
       -- With T-M2-10 (20261012120000): the statement trigger that ends the Auth sessions of logins left
       -- without an active membership (residual N2).
       ('private.end_unserved_logins()', 'membership_guard', array['membership_guard'], true),
@@ -299,9 +298,10 @@ begin
       -- calls the others (app_server, checked inside).
       ('private.session_access(uuid, uuid, uuid, boolean, boolean)', 'tenant_guard', array['tenant_guard'], true),
       ('private.session_access_state()',            'tenant_guard', array['tenant_guard', 'authenticated'], true),
-      -- membership_guard: T-M2-09's authenticator-code rule uses them (20261012120000).
-      ('private.request_aal2()',                    'tenant_guard', array['tenant_guard', 'authenticated', 'membership_guard', 'rate_limit_guard'], true),
-      ('private.request_code_fresh()',              'tenant_guard', array['tenant_guard', 'authenticated', 'membership_guard', 'rate_limit_guard'], true),
+      -- rate_limit_guard: a remembered browser after the sign-in code (20261013090000); membership_guard no
+      -- longer (its authenticator-code rule was removed by 20261017090400).
+      ('private.request_aal2()',                    'tenant_guard', array['tenant_guard', 'authenticated', 'rate_limit_guard'], true),
+      ('private.request_code_fresh()',              'tenant_guard', array['tenant_guard', 'authenticated', 'rate_limit_guard'], true),
       ('private.request_session_facts()',           'tenant_guard', array['tenant_guard', 'authenticated'], true),
       ('private.dismiss_mfa_prompt()',              'tenant_guard', array['tenant_guard', 'authenticated'], true),
       ('private.tenant_member_mfa(uuid)',           'tenant_guard', array['tenant_guard', 'authenticated'], true),
@@ -445,7 +445,7 @@ begin
         'private.request_password_reset_mail(text)', 'private.request_password_changed_mail(uuid)',
         'private.claim_account_mail_request()', 'private.finish_account_mail_request(uuid)',
         'private.retry_account_mail_request(uuid)', 'private.end_member_sessions()',
-        'private.check_privileged_deactivation()', 'private.reactivate_membership(uuid)',
+        'private.reactivate_membership(uuid)',
         'private.end_unserved_logins()',
         'private.account_sign_in_refused(uuid)',
         'private.session_access(uuid,uuid,uuid,boolean,boolean)', 'private.session_access_state()',
@@ -603,14 +603,12 @@ begin
       failures := failures || 'private.auth_account_email must expose exactly id, email'::text;
     end if;
   end if;
-  -- Deactivation (T-M2-09): the triggers that end a member's sessions in the organization and require an
-  -- authenticator code for a privileged member exist and are enabled — and (T-M2-10 integration) the one
-  -- that ends the Auth sessions of a login left without an active membership.
+  -- Deactivation (T-M2-09): the trigger that ends a member's sessions in the organization exists and is
+  -- enabled — and (T-M2-10 integration) the one that ends the Auth sessions of a login left without an
+  -- active membership. (No authenticator-code trigger since 20261017090400, PO decision 14 Oct 2026.)
   for r in
     select t.tbl, t.name, t.fn
     from (values ('platform.tenant_memberships', 'tenant_memberships_end_sessions', 'private.end_member_sessions()'),
-                 ('platform.tenant_memberships', 'tenant_memberships_privileged_deactivation',
-                  'private.check_privileged_deactivation()'),
                  ('platform.tenant_memberships', 'tenant_memberships_end_login_sessions',
                   'private.end_unserved_logins()')) as t(tbl, name, fn)
   loop

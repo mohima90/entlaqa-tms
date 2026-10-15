@@ -1,11 +1,12 @@
 import { toClientError } from '@jadarat/platform-core';
-import { DEFAULT_CALENDAR, DEFAULT_NUMBERING_SYSTEM } from '@jadarat/platform-i18n';
+import { DEFAULT_TENANT_REGIONAL } from '@jadarat/platform-db';
+import { displayDateFormatter } from '@jadarat/platform-i18n';
 import { routing } from '@jadarat/platform-i18n/routing';
 import { getMfaPageStateForRequest } from '@jadarat/platform-identity/auth';
 import { Alert, Card } from '@jadarat/ui';
 import type { Metadata } from 'next';
 import { hasLocale } from 'next-intl';
-import { getFormatter, getTranslations } from 'next-intl/server';
+import { getTranslations } from 'next-intl/server';
 import { notFound, redirect } from 'next/navigation';
 import { connection } from 'next/server';
 import { SignOutButton } from '../../../components/auth/sign-out-button';
@@ -88,7 +89,13 @@ export default async function MfaPage({
   const t = await getTranslations({ locale, namespace: 'mfa' });
   const common = await getTranslations({ locale, namespace: 'common' });
   const auth = await getTranslations({ locale, namespace: 'auth' });
-  const format = await getFormatter({ locale });
+  // Dates as the organization shows them (T-M2-22) once the session acts in one (a step-up); before an
+  // organization is reached (the sign-in code, set-up) the platform defaults.
+  const regional =
+    session.kind === 'organization' && session.tenant
+      ? session.tenant.regional
+      : DEFAULT_TENANT_REGIONAL;
+  const dates = displayDateFormatter(locale, regional.dateDisplay, regional.timeZone);
   const texts: MfaTexts = {
     codeLabel: t('codeLabel'),
     codeHint: t('codeHint'),
@@ -126,12 +133,7 @@ export default async function MfaPage({
     title = t('elsewhere.title');
     const device = describeUserAgent(pendingElsewhere.userAgent);
     intro = t('elsewhere.intro', {
-      date: format.dateTime(pendingElsewhere.setUpAt, {
-        dateStyle: 'long',
-        timeStyle: 'short',
-        calendar: DEFAULT_CALENDAR,
-        numberingSystem: DEFAULT_NUMBERING_SYSTEM,
-      }),
+      date: dates.longDateTime(pendingElsewhere.setUpAt),
       device:
         device.browser && device.system
           ? t('elsewhere.device', { browser: device.browser, system: device.system })
@@ -142,11 +144,7 @@ export default async function MfaPage({
     if (mode === 'prompt-admin') intro = t('promptAdmin');
     else if (mode === 'prompt-grace' && deadline) {
       intro = t('promptGrace', {
-        date: format.dateTime(deadline, {
-          dateStyle: 'long',
-          calendar: DEFAULT_CALENDAR,
-          numberingSystem: DEFAULT_NUMBERING_SYSTEM,
-        }),
+        date: dates.long(deadline),
       });
     } else intro = stepUpPath ? t('enrolStepUp') : t('enrolRequired');
   }

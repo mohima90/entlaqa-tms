@@ -102,8 +102,8 @@ describe('users list query', () => {
         orgUnits,
         canInvite: true,
         canDeactivate: true,
-        // aal1: privileged members come back after an authenticator code (D-IAM-01).
-        privilegedReactivation: 'step_up_required',
+        // aal1: privileged members come back without an authenticator code (PO decision, 14 Oct 2026).
+        privilegedReactivation: 'allowed',
       }),
     );
     expect(db.listUsers).toHaveBeenCalledWith(TX, {
@@ -340,13 +340,13 @@ describe('user profile query', () => {
       });
     });
 
-    it('a privileged deactivated member: the Organization Admin after an authenticator code; not HR', async () => {
+    it('a privileged deactivated member: the Organization Admin, without an authenticator code; not HR', async () => {
       db.getMemberLifecycleTarget.mockResolvedValue(
         target({ membershipStatus: 'suspended', privileged: true }),
       );
       expect(await offer(['tenant_admin'], 'suspended')).toEqual({
         canDeactivate: false,
-        reactivate: 'step_up_required',
+        reactivate: 'allowed',
         privileged: true,
       });
       db.getMemberLifecycleTarget.mockResolvedValue(

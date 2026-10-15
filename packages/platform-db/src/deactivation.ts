@@ -262,12 +262,12 @@ export async function revokePendingInvitationsOf(
   return revoked;
 }
 
-export type DeactivationRefusal = 'not_allowed' | 'last_admin' | 'not_active' | 'step_up_required';
+export type DeactivationRefusal = 'not_allowed' | 'last_admin' | 'not_active';
 
 /**
  * The person becomes inactive and the membership `suspended`, then `user.deactivated` is emitted. A
- * refusal (the guards: not this actor, the last Organization Admin, a privileged member without an
- * authenticator code; or the membership is no longer active) leaves the transaction aborted or
+ * refusal (the guards: not this actor, the last Organization Admin; or the membership is no longer
+ * active) leaves the transaction aborted or
  * unchanged; the caller rolls back.
  */
 export async function deactivateMembership(
@@ -286,8 +286,6 @@ export async function deactivateMembership(
   } catch (error) {
     const pg = pgError(error);
     if (pg?.code === '42501') return { ok: false, refusal: 'not_allowed' };
-    // private.check_privileged_deactivation (review M4): a privileged member needs AAL2.
-    if (pg?.code === 'JM003') return { ok: false, refusal: 'step_up_required' };
     if (pg?.code === '23514' && pg.message.includes('at least one active Organization Admin')) {
       return { ok: false, refusal: 'last_admin' };
     }
@@ -305,15 +303,13 @@ export type ReactivationRefusal =
   | 'not_found'
   | 'not_deactivated'
   | 'not_allowed'
-  | 'step_up_required'
   /** The person's last placement is a since-deleted department or branch: move them first. */
   | 'placement_deleted';
 
-/** SQLSTATEs of private.reactivate_membership (migration 20261011090000). */
+/** SQLSTATEs of private.reactivate_membership (migrations 20261011090000, 20261017090400). */
 const REACTIVATION_ERRORS: Readonly<Record<string, ReactivationRefusal>> = {
   JM001: 'not_found',
   JM002: 'not_deactivated',
-  JM003: 'step_up_required',
   JM004: 'not_allowed',
   '42501': 'not_allowed',
 };

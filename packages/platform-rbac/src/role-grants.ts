@@ -63,9 +63,10 @@ export function grantsForAssignments(
 
 /**
  * May the actor give or remove `roleCode`? (ADR 0003 §5, PO decision 5 Oct 2026)
- * - privileged roles need `platform.role.assign_privileged` (high risk: AAL2), other roles
- *   `platform.role.assign` or the privileged permission — both tenant-wide and active now, checked
- *   with authorize() so validity windows and the AAL step-up apply exactly as in defineAction;
+ * - privileged roles need `platform.role.assign_privileged` (high risk; no authenticator code since the
+ *   PO decision of 14 Oct 2026), other roles `platform.role.assign` or the privileged permission — both
+ *   tenant-wide and active now, checked with authorize() so validity windows apply exactly as in
+ *   defineAction;
  * - never on the actor's own membership (checked by the caller, and again in the database).
  * The PO decision replaces ADR 0003 §5's "only roles whose permissions the assigner holds": an HR
  * Manager gives every non-privileged role; what makes a role powerful is its `privileged` flag.

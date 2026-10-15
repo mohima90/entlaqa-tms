@@ -1,11 +1,11 @@
 import { toClientError } from '@jadarat/platform-core';
-import type { AppLocale } from '@jadarat/platform-i18n';
+import type { AppLocale, DisplayDateFormatter } from '@jadarat/platform-i18n';
 import { routing } from '@jadarat/platform-i18n/routing';
 import { FIELD_DEFINITIONS, type UserImportStartView } from '@jadarat/platform-import';
 import { Alert, Badge, Card, buttonClasses } from '@jadarat/ui';
 import type { Metadata } from 'next';
 import { hasLocale } from 'next-intl';
-import { getFormatter, getTranslations } from 'next-intl/server';
+import { getTranslations } from 'next-intl/server';
 import { notFound, redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { SuiteShell } from '../../../../../../components/suite-shell';
@@ -14,6 +14,7 @@ import { Stepper } from '../../../../../../components/user-import/stepper';
 import { UploadPanel } from '../../../../../../components/user-import/upload-panel';
 import { fileActionErrorTexts } from '../../../../../../lib/profile-texts';
 import { getSuiteContext } from '../../../../../../lib/suite-context';
+import { pageDates } from '../../../../../../lib/page-dates';
 import { userImportStartQuery } from '../../../../../../lib/user-import-queries';
 import { count, isDraft } from '../../../../../../lib/user-import-view';
 import { localizedName } from '../../../../../../lib/users-view';
@@ -82,7 +83,12 @@ export default async function UserImportPage({ params }: { params: Promise<{ loc
           </Alert>
         );
     } else {
-      body = await stepOne(locale, result.value, context.organizationName ?? '');
+      body = await stepOne(
+        locale,
+        result.value,
+        context.organizationName ?? '',
+        pageDates(locale, context),
+      );
     }
   }
 
@@ -101,7 +107,12 @@ export default async function UserImportPage({ params }: { params: Promise<{ loc
   );
 }
 
-async function stepOne(locale: AppLocale, view: UserImportStartView, organization: string) {
+async function stepOne(
+  locale: AppLocale,
+  view: UserImportStartView,
+  organization: string,
+  dates: DisplayDateFormatter,
+) {
   const t = await getTranslations({ locale, namespace: 'userImport' });
   const base = `/${locale}/suite/admin/users/import`;
   const labels: Record<string, string> = Object.fromEntries(
@@ -200,7 +211,7 @@ async function stepOne(locale: AppLocale, view: UserImportStartView, organizatio
         <p className="m-0 text-sm text-text-muted">{t('upload.nextDisabled')}</p>
       </div>
 
-      {await recentImports(locale, view, organization)}
+      {await recentImports(locale, view, organization, dates)}
     </>
   );
 }
@@ -287,9 +298,13 @@ async function templateGuide(locale: AppLocale) {
   );
 }
 
-async function recentImports(locale: AppLocale, view: UserImportStartView, organization: string) {
+async function recentImports(
+  locale: AppLocale,
+  view: UserImportStartView,
+  organization: string,
+  dates: DisplayDateFormatter,
+) {
   const t = await getTranslations({ locale, namespace: 'userImport' });
-  const format = await getFormatter({ locale });
   const base = `/${locale}/suite/admin/users/import`;
   // The importer's own imports that have not run can be cancelled here (integration review M1).
   const codes = t.raw('confirm.errors') as Record<string, string>;
@@ -333,7 +348,7 @@ async function recentImports(locale: AppLocale, view: UserImportStartView, organ
                         : '—'}
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 text-sm">
-                    {format.dateTime(record.createdAt, 'dateTime')}
+                    {dates.dateTime(record.createdAt)}
                   </td>
                   <td className="min-w-48 px-4 py-3 text-sm">
                     <Badge>

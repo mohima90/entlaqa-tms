@@ -1,11 +1,6 @@
 import { toClientError } from '@jadarat/platform-core';
 import type { UserProfile } from '@jadarat/platform-db';
-import {
-  type AppLocale,
-  DEFAULT_CALENDAR,
-  DEFAULT_NUMBERING_SYSTEM,
-  formatHijriDate,
-} from '@jadarat/platform-i18n';
+import { type AppLocale, type DisplayDateFormatter, formatHijriDate } from '@jadarat/platform-i18n';
 import { routing } from '@jadarat/platform-i18n/routing';
 import { Alert, Card } from '@jadarat/ui';
 import { hasLocale } from 'next-intl';
@@ -27,6 +22,7 @@ import { formStateFrom } from '../../../../lib/profile-form';
 import { profileErrorTexts } from '../../../../lib/profile-texts';
 import { sessionLabels, sessionRows } from '../../../../lib/sessions-view';
 import { getSuiteContext } from '../../../../lib/suite-context';
+import { pageDates } from '../../../../lib/page-dates';
 import { myProfileQuery, mySecurityQuery } from '../../../../lib/users-queries';
 import { describeUserAgent } from '../../../../lib/user-agent';
 import { localizedName } from '../../../../lib/users-view';
@@ -71,6 +67,7 @@ export default async function MyProfilePage({ params }: { params: Promise<{ loca
           details={result.value.details}
           profile={result.value.profile}
           security={security.ok ? security.value : null}
+          dates={pageDates(locale, context)}
         />
       );
     }
@@ -89,8 +86,11 @@ async function MyProfile({
   details,
   profile,
   security,
+  dates,
 }: {
   locale: AppLocale;
+  /** Dates as the organization shows them (T-M2-22). */
+  dates: DisplayDateFormatter;
   details: Parameters<typeof formStateFrom>[0];
   profile: UserProfile;
   security: Extract<Awaited<ReturnType<typeof mySecurityQuery>>, { ok: true }>['value'] | null;
@@ -255,7 +255,7 @@ async function MyProfile({
           <Card title={t('mfa.title')}>
             <p className="mb-4 mt-0 text-text-muted">{t('mfa.intro')}</p>
             <AuthenticatorCard
-              app={await authenticatorApp(locale, security.apps)}
+              app={await authenticatorApp(locale, security.apps, dates)}
               setUpHref={stepUpHref(locale, `/${locale}/suite/profile`)}
               forgotPasswordHref={`/${locale}/forgot-password`}
               labels={{
@@ -288,7 +288,7 @@ async function MyProfile({
             <p className="mb-4 mt-0 text-text-muted">{t('sessions.intro')}</p>
             <SessionsTable
               target={{ kind: 'own' }}
-              sessions={await sessionRows(locale, security.sessions)}
+              sessions={await sessionRows(locale, security.sessions, dates)}
               labels={sessionLabels(locale)}
               errors={errors}
             />
@@ -306,23 +306,18 @@ async function MyProfile({
 async function authenticatorApp(
   locale: AppLocale,
   apps: Extract<Awaited<ReturnType<typeof mySecurityQuery>>, { ok: true }>['value']['apps'],
+  dates: DisplayDateFormatter,
 ): Promise<AuthenticatorCardApp> {
   const elsewhere = apps.find((app) => !app.confirmed && !app.here);
   if (elsewhere) {
     const t = await getTranslations({ locale, namespace: 'profile.mfa' });
     const mfa = await getTranslations({ locale, namespace: 'mfa.elsewhere' });
-    const format = await getFormatter({ locale });
     const device = describeUserAgent(elsewhere.userAgent);
     return {
       state: 'elsewhere',
       factorId: elsewhere.factorId,
       notice: t('elsewhereText', {
-        date: format.dateTime(elsewhere.setUpAt, {
-          dateStyle: 'long',
-          timeStyle: 'short',
-          calendar: DEFAULT_CALENDAR,
-          numberingSystem: DEFAULT_NUMBERING_SYSTEM,
-        }),
+        date: dates.longDateTime(elsewhere.setUpAt),
         device:
           device.browser && device.system
             ? mfa('device', { browser: device.browser, system: device.system })

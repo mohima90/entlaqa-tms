@@ -301,6 +301,8 @@ describe.skipIf(!configured)('withUserTx / withSystemTx against PostgreSQL', () 
       nameAr: 'أ',
       nameEn: null,
       sessionIdleMinutes: 30, // the default security policy of a new organization (T-M2-10)
+      // The default settings of a new organization (T-M2-22).
+      regional: { dateDisplay: 'gregorian', timeZone: 'Asia/Riyadh', defaultLocale: 'en' },
     });
     // A forged tenant claim (no membership in B) resolves to no organization.
     expect(await withUserTx(claimsFor(ids.tenantB), (tx) => getCurrentTenant(tx))).toBeNull();

@@ -250,24 +250,19 @@ describe('invite user action', () => {
     expect(db.createInvitation).not.toHaveBeenCalled();
   });
 
-  it('Organization Admin: privileged roles need an authenticator code and the strict check', async () => {
+  it('Organization Admin: privileged roles through the privileged action (strict check), no authenticator code', async () => {
     const withAuditor = { ...form, additionalRoles: ['auditor' as const] };
-    const ordinary = await createDefineAction(runtime(['tenant_admin']).rt)(
-      inviteUserActionDefinition(),
-    )(withAuditor);
-    expect(!ordinary.ok && ordinary.error.code).toBe('STEP_UP_REQUIRED');
-    const aal1 = await createDefineAction(runtime(['tenant_admin']).rt)(
-      invitePrivilegedUserActionDefinition(),
-    )(withAuditor);
-    expect(!aal1.ok && aal1.error.code).toBe('STEP_UP_REQUIRED');
-    // Even at AAL2 the ordinary action refuses privileged roles (they need the strict check).
-    const ordinaryAal2 = await createDefineAction(runtime(['tenant_admin'], 'aal2').rt)(
-      inviteUserActionDefinition(),
-    )(withAuditor);
-    expect(!ordinaryAal2.ok && ordinaryAal2.error.code).toBe('VALIDATION_FAILED');
+    // The ordinary action refuses privileged roles at any level (they need the strict check).
+    for (const aal of ['aal1', 'aal2'] as const) {
+      const ordinary = await createDefineAction(runtime(['tenant_admin'], aal).rt)(
+        inviteUserActionDefinition(),
+      )(withAuditor);
+      expect(!ordinary.ok && ordinary.error.code, aal).toBe('VALIDATION_FAILED');
+    }
     expect(db.createInvitation).not.toHaveBeenCalled();
 
-    const { rt, getClaims, writeAudit } = runtime(['tenant_admin'], 'aal2');
+    // AAL1 (PO decision, 14 Oct 2026: no authenticator code for organization-level actions).
+    const { rt, getClaims, writeAudit } = runtime(['tenant_admin']);
     const saved = await createDefineAction(rt)(invitePrivilegedUserActionDefinition())(withAuditor);
     expect(saved.ok).toBe(true);
     expect(getClaims).toHaveBeenCalledWith({ strict: true });
@@ -374,19 +369,15 @@ describe('resend and revoke', () => {
     expect(!byHr.ok && byHr.error.fieldErrors).toEqual([
       { path: 'invitationId', code: 'ROLE_NOT_ALLOWED' },
     ]);
-    // Organization Admin without an authenticator code: step up first.
+    expect(db.requestInvitationResend).not.toHaveBeenCalled();
+    expect(hr.writeAudit).not.toHaveBeenCalled();
+    // The Organization Admin, at AAL1 (no authenticator code): the request goes to the database (which
+    // checks the actor again).
+    db.requestInvitationResend.mockResolvedValueOnce('queued');
     const aal1 = await createDefineAction(runtime(['tenant_admin']).rt)(
       resendInvitationActionDefinition(),
     )({ invitationId: INVITATION });
-    expect(!aal1.ok && aal1.error.code).toBe('STEP_UP_REQUIRED');
-    expect(db.requestInvitationResend).not.toHaveBeenCalled();
-    expect(hr.writeAudit).not.toHaveBeenCalled();
-    // At AAL2 the request goes to the database (which checks the actor again).
-    db.requestInvitationResend.mockResolvedValueOnce('queued');
-    const aal2 = await createDefineAction(runtime(['tenant_admin'], 'aal2').rt)(
-      resendInvitationActionDefinition(),
-    )({ invitationId: INVITATION });
-    expect(aal2.ok).toBe(true);
+    expect(aal1.ok).toBe(true);
     expect(db.getInvitationRoles).toHaveBeenCalledWith(TX, INVITATION);
   });
 
@@ -484,12 +475,11 @@ describe('invitation queries', () => {
       ok: true,
       value: { managers: [{ personId: 'm1' }], orgUnits: units, privilegedAccess: 'denied' },
     });
-    expect(await query(['tenant_admin'])).toMatchObject({
-      value: { privilegedAccess: 'step_up_required' },
-    });
-    expect(await query(['tenant_admin'], 'aal2')).toMatchObject({
-      value: { privilegedAccess: 'allowed' },
-    });
+    for (const aal of ['aal1', 'aal2'] as const) {
+      expect(await query(['tenant_admin'], aal)).toMatchObject({
+        value: { privilegedAccess: 'allowed' },
+      });
+    }
     const learner = await query(['learner']);
     expect(!learner.ok && learner.error.code).toBe('FORBIDDEN');
   });

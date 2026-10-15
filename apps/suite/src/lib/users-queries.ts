@@ -11,6 +11,7 @@ import {
   myIdentityQueryDefinition,
   myProfileQueryDefinition,
   mySecurityQueryDefinition,
+  organizationProfileQueryDefinition,
   securityPageQueryDefinition,
   userProfileQueryDefinition,
   usersListQueryDefinition,
@@ -40,3 +41,6 @@ export const myIdentityQuery = defineQuery(myIdentityQueryDefinition());
 export const securityPageQuery = defineQuery(securityPageQueryDefinition());
 export const mySecurityQuery = defineQuery(mySecurityQueryDefinition());
 export const memberSecurityQuery = defineQuery(memberSecurityQueryDefinition());
+
+/** Organization profile (T-M2-22): the Organization Admin's page (platform.tenant.manage). */
+export const organizationProfileQuery = defineQuery(organizationProfileQueryDefinition());

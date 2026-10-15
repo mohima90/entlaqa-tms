@@ -1,5 +1,5 @@
 'use client';
-import { Alert, Badge, Button, buttonClasses } from '@jadarat/ui';
+import { Alert, Badge, Button } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
 import { type ReactNode, type SyntheticEvent, useState, useTransition } from 'react';
 import { updateSecurityPolicyAction } from '../../actions/security';
@@ -49,8 +49,6 @@ export interface SecurityFormProps {
   readonly texts: Readonly<Record<string, string>>;
   readonly lastChanged: string;
   readonly errors: ErrorTexts;
-  /** /mfa?next=<this page>: a save refused for want of a recent code links there (review L3). */
-  readonly stepUpHref: string;
 }
 
 /** Whole numbers in any script (the inputs are numeric). */
@@ -127,7 +125,6 @@ export function SecuritySettingsForm({
   texts,
   lastChanged,
   errors,
-  stepUpHref,
 }: SecurityFormProps) {
   const t = (key: string) => texts[key] ?? key;
   const router = useRouter();
@@ -142,9 +139,8 @@ export function SecuritySettingsForm({
   );
   const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
   const [message, setMessage] = useState<{
-    tone: 'success' | 'warning' | 'danger';
+    tone: 'success' | 'danger';
     text: string;
-    stepUp?: boolean;
   } | null>(null);
   const disabled = !editable || pending;
 
@@ -230,11 +226,6 @@ export function SecuritySettingsForm({
       }
       // The session ended meanwhile: the page sends the member on (review L1).
       if (sessionRefused(result.error)) return;
-      // The code is older than 15 minutes (review L3): a new one first; the page comes back here.
-      if (result.error.code === 'STEP_UP_REQUIRED') {
-        setMessage({ tone: 'warning', text: t('stepUpAgain'), stepUp: true });
-        return;
-      }
       if (result.error.code === 'VALIDATION_FAILED') {
         const codes = fieldErrorCodes(result.error);
         setFieldErrors(
@@ -416,18 +407,7 @@ export function SecuritySettingsForm({
 
       {message ? (
         <Alert tone={message.tone} data-testid="security-message">
-          <span className="flex flex-wrap items-center gap-3">
-            <span>{message.text}</span>
-            {message.stepUp ? (
-              <a
-                href={stepUpHref}
-                className={buttonClasses({ variant: 'secondary', size: 'sm' })}
-                data-testid="security-message-step-up"
-              >
-                {t('stepUpLink')}
-              </a>
-            ) : null}
-          </span>
+          {message.text}
         </Alert>
       ) : null}
       <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-surface px-5 py-3">

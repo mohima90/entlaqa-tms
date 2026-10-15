@@ -25,16 +25,16 @@ import { freshCode, wrongCode } from './totp';
  *  - THE ATTACK: someone who knows only the password sets up an app; the owner, signing in, sees it and
  *    removes it — the other sign-in's session ends; the e-mail's "not you? remove this app" link does the
  *    same for every session; the owner then sets up their own app with the code;
- *  - the Organization Admin changes the policy only with a code (AAL2, PO decision D-IAM-01); lockout
+ *  - the Organization Admin changes the policy without an authenticator code (PO decision, 14 Oct 2026,
+ *    reversing D-IAM-01) and sets up their own app from My profile; lockout
  *    limited to the platform default or stricter, enforced by the sign-in limiter (T-M2-11) — the section
  *    says where (the organization's own address; the platform default on the shared sign-in page);
  *  - an organization that requires MFA makes a member set an app up, then asks for its code at sign-in;
  *  - a new password shorter than the strictest rule of the member's organizations is refused;
  *  - a user manager ends a member's sign-in sessions; the member must sign in again;
- *  - a code older than 15 minutes is asked again before a high-risk action, which then goes on (L3);
- *    `next` never leaves the suite;
- *  - the Organization Admin resets a member's lost app after a confirmation (PO answer, 9 Oct 2026); a
- *    member without user management sees no reset.
+ *  - `next` never leaves the suite; a code older than 15 minutes asks for nothing at the organization level;
+ *  - the Organization Admin resets a member's lost app after a confirmation, without an authenticator code
+ *    (PO answer, 9 Oct 2026; PO decision, 14 Oct 2026); a member without user management sees no reset.
  * Skipped without credentials (default CI run).
  */
 const adminEmail = process.env.SIGNED_IN_E2E_EMAIL ?? '';
@@ -263,7 +263,7 @@ test.describe('Security policy, MFA and sign-in sessions', () => {
   );
   test.describe.configure({ mode: 'serial' });
 
-  test('the Organization Admin turns on a new app with the e-mailed code in its own window, then changes the policy with a code', async ({
+  test('the Organization Admin changes the policy without a code, and turns on a new app with the e-mailed code in its own window', async ({
     page,
     browser,
   }) => {
@@ -279,16 +279,17 @@ test.describe('Security policy, MFA and sign-in sessions', () => {
     await expect(page).toHaveURL(/\/en\/suite\/admin\/security$/);
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Security');
 
-    // Signed in with the password only (AAL1): the settings are shown, not editable, with the way on.
-    await expect(page.getByTestId('security-step-up')).toBeVisible();
-    await expect(page.getByTestId('security-passwordMinLength')).toBeDisabled();
+    // Signed in with the password only (AAL1): the Organization Admin edits the settings without an
+    // authenticator code (PO decision, 14 Oct 2026, reversing D-IAM-01).
+    await expect(page.getByTestId('security-passwordMinLength')).toBeEnabled();
     await expect(page.getByTestId('security-mode-off')).toBeChecked();
-    await expect(page.getByTestId('security-save')).toHaveCount(0);
+    await expect(page.getByTestId('security-save')).toBeVisible();
     await expectNoSeriousA11yViolations(page);
 
-    // No app yet: the code page sets one up…
-    await page.getByTestId('security-step-up-link').click();
-    const stepUpUrl = /\/en\/mfa\?next=%2Fen%2Fsuite%2Fadmin%2Fsecurity$/;
+    // No app yet: My profile sets one up on the code page…
+    await page.goto('/en/suite/profile');
+    await page.getByTestId('profile-mfa-set-up').click();
+    const stepUpUrl = /\/en\/mfa\?next=%2Fen%2Fsuite%2Fprofile$/;
     await expect(page).toHaveURL(stepUpUrl);
     await expect(page.getByTestId('mfa-enrol')).toBeVisible();
     await expectNoSeriousA11yViolations(page);
@@ -303,10 +304,12 @@ test.describe('Security policy, MFA and sign-in sessions', () => {
       'Its code works for 72 hours, only in this window.',
     );
     await expectNoSeriousA11yViolations(page);
-    // The settings are still read only: a code from an unconfirmed app does not count.
-    await page.goto('/en/suite/admin/security');
-    await expect(page.getByTestId('security-step-up')).toBeVisible();
-    await page.getByTestId('security-step-up-link').click();
+    // My profile says the app waits for that code, and leads back to the page that takes it.
+    await page.goto('/en/suite/profile');
+    await expect(page.getByTestId('profile-mfa-status')).toHaveText(
+      'Waiting for the code from the email',
+    );
+    await page.getByTestId('profile-mfa-enter-code').click();
     await expect(page.getByTestId('mfa-pending')).toBeVisible();
     const first = mailedCode(adminEmail, 1);
     expect(first).toMatch(/^[0-9]{8}$/);
@@ -360,9 +363,10 @@ test.describe('Security policy, MFA and sign-in sessions', () => {
       afterSignIn,
     );
     await enterMailedCode(page, newest);
-    // Confirmed: on to the settings, now editable.
-    await expect(page).toHaveURL(/\/en\/suite\/admin\/security$/, afterSignIn);
-    await expect(page.getByTestId('security-step-up')).toHaveCount(0);
+    // Confirmed: back on My profile, the app is on; then the settings.
+    await expect(page).toHaveURL(/\/en\/suite\/profile$/, afterSignIn);
+    await expect(page.getByTestId('profile-mfa-status')).toHaveText('On · authenticator app');
+    await page.goto('/en/suite/admin/security');
 
     // Lockout: the platform default or stricter (review L5), enforced by the sign-in limiter (T-M2-11):
     // no "next update" badge any more; the section says where it applies.
@@ -576,7 +580,7 @@ test.describe('Security policy, MFA and sign-in sessions', () => {
     }
   });
 
-  test('a code older than 15 minutes is asked again; then the Organization Admin resets a lost app', async ({
+  test('a code older than 15 minutes asks for nothing; the Organization Admin resets a lost app', async ({
     page,
     context,
   }) => {
@@ -586,33 +590,15 @@ test.describe('Security policy, MFA and sign-in sessions', () => {
     await page.goto('/en/mfa?next=https%3A%2F%2Fevil.example%2Fen%2Fsuite');
     await expect(page).toHaveURL(/\/en\/suite$/);
 
-    // The code was entered 20 minutes ago (as far as Auth's next token says).
+    // The code was entered 20 minutes ago (as far as Auth's next token says): no organization-level
+    // action asks for a new one (PO decision, 14 Oct 2026). The settings stay editable.
     expect(Number(runHelper(['age-code', adminEmail]))).toBeGreaterThanOrEqual(1);
     await expireAccessToken(context);
+    await page.goto('/en/suite/admin/security');
+    await expect(page.getByTestId('security-passwordMinLength')).toBeEnabled();
     const profile = `/en/suite/admin/users/${MONA}`;
     await page.goto(profile);
-    const reset = page.getByTestId('user-mfa-reset');
-    await expect(reset).toContainText(
-      'Resetting it needs a code from your own authenticator app, entered in the last 15 minutes.',
-    );
-    await expect(page.getByTestId('user-mfa-reset-open')).toHaveCount(0);
     await expect(page.getByTestId('user-mfa-reset-support')).toContainText('ENTLAQA support');
-    // The settings too.
-    await page.goto('/en/suite/admin/security');
-    await expect(page.getByTestId('security-step-up')).toBeVisible();
-
-    // The code step asks again and returns to the profile.
-    await page.goto(profile);
-    await page.getByTestId('user-mfa-reset-step-up').click();
-    await expect(page).toHaveURL(
-      new RegExp(`/en/mfa\\?next=%2Fen%2Fsuite%2Fadmin%2Fusers%2F${MONA}$`),
-    );
-    await expect(page.getByTestId('mfa-challenge')).toBeVisible();
-    await expect(page.getByTestId('mfa-intro')).toHaveText(
-      'For your security, sensitive actions need a code entered in the last 15 minutes. Enter the code your app shows now.',
-    );
-    await enterCode(page, adminKey);
-    await expect(page).toHaveURL(new RegExp(`${profile}$`), afterSignIn);
 
     // Reset, with a confirmation step (cancel first: nothing happens).
     await page.getByTestId('user-mfa-reset-open').click();

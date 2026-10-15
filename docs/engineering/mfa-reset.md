@@ -4,7 +4,7 @@
 |---|---|
 | **Backlog** | T-M2-10 (security policy per organization; security review M2) |
 | **Requirements** | FR-IAM-12 (MFA with any authenticator app) · TM-0003 T-IAM-10 (recovery must not downgrade MFA), abuse case AB-IAM-07 · risk register R-35, R-47 |
-| **Decision** | PO answer, 9 Oct 2026: the **Organization Admin** resets a member's lost app, after entering their own fresh code; **ENTLAQA support** resets the last Organization Admin and people who belong to more than one organization, after an identity check. No recovery codes in R1 (Tech Lead, 9 Oct 2026; TM-0003 D-IAM-10); no free-text reason on the in-app reset (Tech Lead, 9 Oct 2026; D-IAM-14) |
+| **Decision** | PO answer, 9 Oct 2026: the **Organization Admin** resets a member's lost app (since the PO decision of 14 Oct 2026 without entering a code of their own — D-IAM-01 reversed, TM-0003 RR-IAM-12); **ENTLAQA support** resets the last Organization Admin and people who belong to more than one organization, after an identity check. No recovery codes in R1 (Tech Lead, 9 Oct 2026; TM-0003 D-IAM-10); no free-text reason on the in-app reset (Tech Lead, 9 Oct 2026; D-IAM-14) |
 | **Code** | Migration `20261012110000_private__mfa_factor_mail.sql` (`private.reset_member_mfa`, `private.reset_account_mfa`) · `packages/platform-rbac/src/iam/security.ts` (`resetMemberMfaActionDefinition`, permission `platform.user.reset_mfa`) · `apps/suite/src/components/users/reset-authenticator.tsx` (user profile, screen 3) · e-mail `platform.mfa_factor_removed` (worker) |
 | **Status** | In force with T-M2-10 (10 Oct 2026) |
 
@@ -20,7 +20,7 @@ A member who lost their phone (or the app on it) cannot pass the authenticator c
 | A person with an active membership in **more than one organization** | **ENTLAQA support** (one login, one app: an organization may not change what another relies on) | §2–§4 below; the app answers the Organization Admin «ENTLAQA support resets it» |
 | Someone who still has the app | Themselves | My profile → *Remove the authenticator app* (with a code from it) |
 
-The in-app reset (first two rows) needs: the Organization Admin role in force; a code from the admin's **own confirmed** authenticator app entered in the **last 15 minutes** (the page asks for it and returns to the profile); a member the admin may manage; a confirmation dialog. The database checks the same again (`private.reset_member_mfa`) and refuses a login that is an active member of another active organization (`other_organization`). Audit: `platform.user.mfa_reset` (entity: the person; no personal data). The member gets the «Authenticator app removed» e-mail.
+The in-app reset (first two rows) needs: the Organization Admin role in force; a member the admin may manage; a confirmation dialog. (Until 14 Oct 2026 it also needed a code from the admin's own app from the last 15 minutes; the PO removed that — no organization-level action asks for one, ADR 0003 amendment.) The database checks the same again (`private.reset_member_mfa`) and refuses a login that is an active member of another active organization (`other_organization`). Audit: `platform.user.mfa_reset` (entity: the person; no personal data). The member gets the «Authenticator app removed» e-mail.
 
 ## 2. Support: before anything — the request and the identity check
 

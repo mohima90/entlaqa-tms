@@ -317,7 +317,7 @@ test.describe('users pages', () => {
   });
 
   // Runs last: it changes Sarah's roles, which the tests above read.
-  test('Organization Admin changes roles: ordinary roles now, privileged ones need a code', async ({
+  test('Organization Admin changes roles: ordinary and privileged ones, without an authenticator code', async ({
     page,
   }) => {
     await signIn(page);
@@ -328,10 +328,11 @@ test.describe('users pages', () => {
       'Edit roles of Sarah Abdullah Alqahtani',
     );
     const form = page.getByTestId('edit-roles');
-    // No authenticator code in this session: privileged roles are locked (PO decision D-IAM-01).
-    await expect(page.getByTestId('privileged-locked')).toContainText('authenticator app');
-    await expect(form.getByRole('radio', { name: /^Organization Admin/ })).toBeDisabled();
-    await expect(form.getByRole('checkbox', { name: /^Auditor/ })).toBeDisabled();
+    // No authenticator code in this session, and none needed: privileged roles are open to the
+    // Organization Admin (PO decision, 14 Oct 2026, reversing D-IAM-01).
+    await expect(page.getByTestId('privileged-locked')).toHaveCount(0);
+    await expect(form.getByRole('radio', { name: /^Organization Admin/ })).toBeEnabled();
+    await expect(form.getByRole('checkbox', { name: /^Auditor/ })).toBeEnabled();
     await expect(form.getByRole('radio', { name: /^Training Coordinator/ })).toBeChecked();
     await expect(form.getByRole('checkbox', { name: /^Learner/ })).toBeChecked();
     // Separation of duties (BR-IAM-4, T-M2-16): explained on the form.

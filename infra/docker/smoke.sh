@@ -787,9 +787,10 @@ deactivate_e2e deactivate
 [[ "$(q "select count(*) from private.revoked_sessions where user_id = '$DEACT_ID' and reason = 'admin'
         and revoked_by is not null and tenant_id = (select id from platform.tenants where slug = 'sovereign-smoke')")" -ge 2 ]] ||
   { echo "smoke: the deactivated member's ended sessions must be marked as ended by the organization" >&2; exit 1; }
-# The privileged member was not deactivated (no authenticator code in this session; the page said so).
+# The privileged member's form was opened without an authenticator code (PO decision, 14 Oct 2026) but not
+# submitted: he stays active for the later journeys.
 [[ "$(q "select status from platform.tenant_memberships where person_id = '5eed1000-0000-4000-8000-0000000000d4'")" == "active" ]] ||
-  { echo "smoke: the privileged member must stay active without an authenticator code" >&2; exit 1; }
+  { echo "smoke: the privileged member must stay active (the journey does not submit his form)" >&2; exit 1; }
 # Audited with changed facts only (ids and codes: reason, what moved to whom) and announced as events.
 [[ "$(q "select count(*) from platform.audit_events where action = 'platform.user.deactivated'
         and entity_id in ('$DEACT_PERSON', '$SECOND_PERSON') and data ? 'membershipId' and data ? 'reassigned'")" == "2" ]] ||
@@ -890,7 +891,7 @@ deactivate_e2e returns
         where m.user_id = '$DEACT_ID' and ra.role_code in ('line_manager', 'learner')")" == "2" ]] ||
   { echo "smoke: the reactivated member's roles changed" >&2; exit 1; }
 unset answer wrong unknown rows_before DEACT_REFRESH SECOND_REFRESH
-echo "smoke: security policy (T-M2-10) — apps turned on with the e-mailed code, the password-only attack, policy with a code, MFA required, sessions, step-up, lost-app reset"
+echo "smoke: security policy (T-M2-10) — apps turned on with the e-mailed code, the password-only attack, policy without a code (PO decision 14 Oct 2026), MFA required, sessions, lost-app reset"
 # The last browser journey: it makes an authenticator app required for everyone in the organization. The
 # spec reads the set-up e-mails' codes and links from Mailpit and ages codes through
 # infra/docker/e2e-helper.sh, and leaves the set-up keys it saw in a private temporary file for the leak
@@ -1022,6 +1023,41 @@ for i in $(seq 1 30); do
   sleep 1
 done
 
+echo "smoke: organization profile (T-M2-22) — the Organization Admin saves it (no code for the save); the menu name and dates follow; an HR Manager is refused"
+# After the security journey: the organization requires an authenticator code at sign-in, so the admin (new
+# password, its one confirmed app) signs in with one; the save itself needs none (PO decision, 14 Oct 2026).
+# The HR Manager belongs to the phone organization (no code needed there): the page and the action refuse
+# it all the same.
+[[ "$(q "select coalesce(s.country_code, '-') || ':' || s.date_display || ':' || s.default_locale || ':' || s.version from platform.tenant_settings s join platform.tenants t on t.id = s.tenant_id where t.slug = 'sovereign-smoke'")" == "-:gregorian:en:1" ]] ||
+  { echo "smoke: the organization must start with the default settings (backfill / new organization)" >&2; exit 1; }
+HR_EMAIL="hr-$(date +%s)@sovereign.example"
+HR_PASSWORD="Hr-$(openssl rand -hex 16)"
+HR_ID="$(create_user "$HR_EMAIL" "$HR_PASSWORD")"
+q "with t as (select id from platform.tenants where slug = 'sovereign-phone'),
+     p as (insert into platform.persons (tenant_id, display_name_ar, display_name_en, email)
+           select id, 'هند الموارد', 'Hind HR', '$HR_EMAIL' from t returning id, tenant_id),
+     m as (insert into platform.tenant_memberships (tenant_id, user_id, person_id, status)
+           select tenant_id, '$HR_ID', id, 'active' from p returning id, tenant_id)
+   insert into platform.role_assignments (tenant_id, membership_id, role_code, is_primary)
+   select tenant_id, id, 'hr_manager', true from m" >/dev/null
+ADMIN_KEY="$(q "select secret from auth.mfa_factors where user_id = '$USER_ID' and factor_type = 'totp' and status = 'verified'")"
+(cd "$ROOT/apps/suite" && E2E_BASE_URL=http://localhost:3200 ORG_PROFILE_E2E_EMAIL="$EMAIL" \
+  ORG_PROFILE_E2E_PASSWORD="$ADMIN_NEW_PASSWORD" ORG_PROFILE_E2E_TOTP_KEY="$ADMIN_KEY" \
+  ORG_PROFILE_E2E_HR_EMAIL="$HR_EMAIL" ORG_PROFILE_E2E_HR_PASSWORD="$HR_PASSWORD" \
+  pnpm exec playwright test e2e/organization-profile.spec.ts --project=desktop-chromium)
+unset ADMIN_KEY
+# Saved by the admin (stamped, version moved on), names on the organization, audited with the values
+# before and after (no other organization touched).
+[[ "$(q "select s.country_code || ':' || s.industry || ':' || s.currency_code || ':' || s.timezone || ':' || s.date_display || ':' || s.default_locale || ':' || s.fiscal_year_start_month || ':' || array_to_string(s.working_days, ',') || ':' || (s.updated_by is not null) || ':' || (s.version >= 3) from platform.tenant_settings s join platform.tenants t on t.id = s.tenant_id where t.slug = 'sovereign-smoke'")" == "SA:banking_financial:SAR:Asia/Riyadh:hijri:en:4:0,1,2,3,4,6:true:true" ]] ||
+  { echo "smoke: the organization profile was not saved as the journey set it" >&2; exit 1; }
+[[ "$(q "select name_en || '|' || name_ar from platform.tenants where slug = 'sovereign-smoke'")" == "Sovereign Smoke Holding|شركة الاختبار السيادي القابضة المحدودة" ]] ||
+  { echo "smoke: the organization's display names were not saved" >&2; exit 1; }
+[[ "$(q "select count(*) from platform.audit_events where action = 'platform.tenant.profile_changed' and actor_user_id = '$USER_ID' and data -> 'changed' ? 'countryCode' and data -> 'before' ->> 'dateDisplay' = 'gregorian' and data -> 'after' ->> 'dateDisplay' = 'dual'")" == "1" &&
+   "$(q "select count(*) from platform.audit_events where action = 'platform.tenant.profile_changed'")" == "2" ]] ||
+  { echo "smoke: expected the two profile changes in the audit log, with the values before and after" >&2; exit 1; }
+[[ "$(q "select s.version from platform.tenant_settings s join platform.tenants t on t.id = s.tenant_id where t.slug = 'sovereign-phone'")" == "1" ]] ||
+  { echo "smoke: another organization's settings changed" >&2; exit 1; }
+
 echo "smoke: Auth's own per-IP limits (T-M2-11) — keyed by the gateway, never by the caller"
 # Password grants for an address without an account (Auth answers 400 at once; burst 30, then 429).
 # token_codes <source: app|host> <visitor key or ''> <count>: the HTTP status codes, space-separated.
@@ -1089,12 +1125,12 @@ all_logs="$(compose logs --no-log-prefix 2>&1)"
 app_logs="$(compose logs --no-log-prefix app 2>&1)"
 for value in "$PASSWORD" "$PARITY_PASSWORD" "$MANAGER_PASSWORD" "$PROFILE_NEW_PASSWORD" "$INTRUDER_PASSWORD" \
   "$GUARD_PASSWORD" "$GUARD_NEW_PASSWORD" "$RESET_OLD_PASSWORD" "$RESET_NEW_PASSWORD" "$ADMIN_NEW_PASSWORD" \
-  "$DEACT_PASSWORD" "$SECOND_PASSWORD" "$UNUSED_NEW_PASSWORD"; do
+  "$DEACT_PASSWORD" "$SECOND_PASSWORD" "$UNUSED_NEW_PASSWORD" "$HR_PASSWORD"; do
   if grep -qF "$value" <<<"$all_logs"; then
     echo "smoke: a test user's password appears in the container logs" >&2; exit 1
   fi
 done
-for value in "$EMAIL" "$PARITY_EMAIL" "$MANAGER_EMAIL" "$RESET_EMAIL" "$DEACT_EMAIL" "$SECOND_EMAIL"; do
+for value in "$EMAIL" "$PARITY_EMAIL" "$MANAGER_EMAIL" "$RESET_EMAIL" "$DEACT_EMAIL" "$SECOND_EMAIL" "$HR_EMAIL"; do
   if grep -qF "$value" <<<"$app_logs"; then
     echo "smoke: a test user's e-mail address appears in the app logs" >&2; exit 1
   fi

@@ -4,9 +4,9 @@
 |---|---|
 | **Audience** | Tech Lead and the engineering, design, QA, DevOps and security team |
 | **Owner** | Product Owner, Jadarat TMS |
-| **Version** | 1.1 — 30 September 2026 (§2.3 agent-team operating model) |
-| **Status** | Issued for Tech Lead review; dates become the baseline after Milestone M1 estimation (§6) |
-| **Inputs** | `docs/delivery/STATUS.md` (current state, updated every session) · `docs/brd/Jadarat_TMS_BRD_v2.md` (BRD v2.1) · `docs/brd/TMS_Feature_List.md` · `docs/research/TMS_Market_Comparison_vs_BRD.md` |
+| **Version** | 1.2 — 15 October 2026 (PO decisions of 15 Oct 2026: §2.4 lighter delivery process and business flow first; §3.4 one production environment; §5.6 automatic database deploy; §6 milestones re-ordered around the planning core) · 1.1 — 30 September 2026 (§2.3 agent-team operating model) |
+| **Status** | In use. No time plan: the PO builds step by step (4 Oct 2026); progress is reported weekly against the feature list (§12) |
+| **Inputs** | `docs/delivery/STATUS.md` (current state, updated every session) · `docs/brd/Jadarat_TMS_BRD_v2.md` (BRD v3.0) · `docs/brd/TMS_Feature_List.md` · `docs/research/TMS_Market_Comparison_vs_BRD.md` |
 
 ---
 
@@ -85,7 +85,7 @@ The delivery team for M0 onward is **the Product Owner (human) plus Claude Code 
 | DevOps | Claude | CI/CD, environments, infrastructure-as-code; account-level actions done by PO |
 | Security Lead | Claude sub-agent (separate from the author) | Threat models, security review of each security-relevant PR; **independent human pen test before GA** |
 
-**Review rule (replaces "1–2 approving reviewers" in §3.3):** every PR is (1) authored by one agent, (2) reviewed by a *separate* review pass — code review for all PRs and a dedicated security review for security-relevant PRs — with findings fixed or explicitly accepted, (3) green on all CI gates, and (4) **merged only by the PO**. The PO may ask for a summary of any PR before merging.
+**Review rule (replaces "1–2 approving reviewers" in §3.3; tightened to one pass by the PO on 15 Oct 2026, §2.4):** every PR is (1) authored by one agent, (2) reviewed by **one independent review pass** — code review for all PRs, plus a dedicated security review only for security-relevant PRs — with findings fixed or explicitly accepted, (3) green on all CI gates, and (4) **merged only by the PO**. The PO may ask for a summary of any PR before merging.
 
 **Activities that require humans (cannot be done by agents):**
 
@@ -102,6 +102,28 @@ The delivery team for M0 onward is **the Product Owner (human) plus Claude Code 
 **Continuity:** agents have no memory between sessions. Work state lives in `docs/delivery/STATUS.md` and `docs/delivery/BACKLOG.md`, updated at the end of every session (enforced by the Stop hook described in `CLAUDE.md`).
 
 **Timeline:** milestone dates in §6 assumed a human team. They are re-baselined at Gate G1 based on actual throughput of the agent team and on the pace of human-dependent activities (usability tests, design partners).
+
+### 2.4 Lighter Delivery Process (PO decision, 15 Oct 2026)
+
+**Why.** On 15 Oct 2026 the PO raised that after more than two weeks the output was about 1% of the features. The Tech Lead's root causes, recorded as stated: (1) enterprise-grade security and infrastructure were built **before the product** (self-hosted parity per PR, step-up authentication, multi-round security reviews of platform plumbing); (2) a **heavy per-feature process** (several review and re-review rounds, separate PRs for small slices, a DB deploy after each PR, long documentation per task); (3) **not reusing Kawadir ATS**, ENTLAQA's sister product on the same stack; (4) **design churn** (several rounds of visual directions before the product existed).
+
+**New process (PO decision 15 Oct 2026) — applies from now on and overrides the heavier rules elsewhere in this guide:**
+
+| # | Rule | Replaces |
+|---|---|---|
+| P1 | **Business flow first, for every phase** (PO, 15 Oct 2026): before any technical work on a phase or epic, the Tech Lead writes its business flow in plain language (actors and roles, step-by-step flow, business rules, decisions and approvals, exceptions, inputs/outputs, screens implied, open questions — template in `docs/business-flows/README.md`), discusses it with the PO and records the agreement. Then screens, then build. Part of the Definition of Ready for an epic (§4.1) | Feature lists per role without a written flow |
+| P2 | **One independent review per PR**; a security review only for security-relevant changes; the author fixes findings; a second look only to confirm the fix of a Critical or High finding | Several review and re-review rounds |
+| P3 | **One PR per complete feature area** (e.g., "planning cycle set-up", "Department Head needs form"), not one per small slice | Many small PRs (< 400 lines target in §3.3) |
+| P4 | **Screens approved per feature area in one batch** (Kawadir ATS layout, `docs/design/kawadir-alignment.md`) | Screen-by-screen approval and repeated design rounds |
+| P5 | **Database changes batched** per feature area; deployed automatically after merge (§5.6) | One manual DB deploy after each PR |
+| P6 | **Documentation only where it matters**: business flows, decisions (STATUS), runbooks that operators need, ADRs for real architecture choices; no long per-task write-ups | Extensive notes per task |
+| P7 | **Several engineering agents in parallel** on independent work (separate branches/worktrees), integrated by the Tech Lead | Mostly sequential work |
+| P8 | **Weekly progress report against the feature list** (§12) | Session log only |
+| P9 | **Self-hosted stack tested nightly** (gate 15 at 23:59 Riyadh, PO 14 Oct 2026), not per PR | Gate 15 on every PR |
+
+**What does not change (non-negotiables, `CLAUDE.md`):** tenant isolation with RLS and an automated cross-tenant test for every new table; authorization deny-by-default with negative tests; input validation; no secrets or personal data in code or logs; WCAG 2.2 AA in Arabic and English; never skip, disable or weaken tests or CI gates; the PO merges every PR.
+
+**Related decisions recorded for context:** the PO reversed the authenticator step-up for organization-level actions on 14 Oct 2026 (D-IAM-01; accepted risk R-61) and moved gate 15 to a nightly run the same day. The risk of the lighter process itself is tracked as R-64 in the risk register.
 
 ---
 
@@ -122,6 +144,8 @@ The delivery team for M0 onward is **the Product Owner (human) plus Claude Code 
 | Milestone quality gate | End of each milestone | All roles | Gate record (pass / conditional / fail) |
 | Status report | Weekly | PO → management | RAG status, progress, risks, quality metrics |
 
+*Agent-team cadence (PO, 15 Oct 2026, §2.4): per phase — business flow agreed → screens of each feature area approved in one batch → build with parallel agents → one PR per feature area → automatic deploy; weekly progress report against the feature list (§12). The sprint rituals above apply to a human team.*
+
 ### 3.2 Backlog Structure
 
 - **Epic** = a BRD module slice for one milestone (e.g., "M3 — Scheduling core").
@@ -133,22 +157,24 @@ The delivery team for M0 onward is **the Product Owner (human) plus Claude Code 
 ### 3.3 Source Control & Code Review
 
 - Trunk-based development: short-lived branches (≤ 3 days), small pull requests (target < 400 changed lines).
-- Branch protection on `main`: all CI gates green, at least **1 approving review** (2 for security-relevant or migration changes, one of which is the Tech Lead or Security Lead), CODEOWNERS for `packages/platform-*`, `supabase/migrations`, auth and RLS code.
+- Branch protection on `main`: all CI gates green, at least **1 approving review** (2 for security-relevant or migration changes, one of which is the Tech Lead or Security Lead), CODEOWNERS for `packages/platform-*`, `supabase/migrations`, auth and RLS code. *Agent-team model: one independent review pass per PR and PO merge (§2.3, §2.4); PR size: one complete feature area (§2.4 P3).*
 - Conventional commit messages; each PR references a backlog item and BRD IDs; PR template checklist (Appendix B) completed.
 - No direct pushes to `main`; no force-push on shared branches; secrets never committed.
 
 ### 3.4 Environments
 
+**One environment while there are no customers (PO decisions, 15 Oct 2026).** Production = a **new, clean Supabase project** `jadarat-tms` in the new ENTLAQA organization on the **Pro** plan (daily backups, no pausing; Frankfurt, next to Vercel `fra1`; all migrations applied fresh; Auth settings redone — `docs/engineering/production-setup.md`) and the Vercel project `jadarat-tms`. The old staging project is deleted once production works. Pull-request previews share the production database while there are no customers (accepted risk R-62). A separate **test environment** is added when the first customer arrives.
+
 | Environment | Purpose | Data | Deployed |
 |---|---|---|---|
-| Local | Development (Supabase CLI local stack) | Seed data | Developer |
-| Preview | Per pull request | Seed data | Automatic on PR |
-| Staging | Integration, QA, demos, UAT | Anonymized / synthetic | Automatic on merge to `main` |
-| Production (regional) | Customers | Real | Manual promotion after release checklist |
+| Local | Development (local PostgreSQL / Supabase CLI, self-hosted stack) | Seed data | Developer |
+| Preview | Per pull request (Vercel) | **Production database** (test organizations only, no customers) — until the test environment exists | Automatic on PR |
+| Production (regional) | The product; demos; later customers | Test organizations now; real data from the first customer | Automatic on merge to `main`: app by Vercel, database by the automatic DB deploy (§5.6) |
+| Test (from the first customer) | Integration, QA, demos, UAT, previews | Synthetic | Automatic on merge to `main` |
 | Sovereign staging (from R2) | Rehearse in-country self-hosted deployment | Synthetic | Per release candidate |
 | Sovereign production (R3) | Government / bank tenants | Real, in-country | Per contract |
 
-Production data is **never** copied to lower environments.
+Production data is **never** copied to lower environments. Until the test environment exists, nobody enters real personal data of a customer into the product (trigger to create it: the first customer agreement or trial with real data).
 
 ### 3.5 Architecture Decision Records (ADRs)
 
@@ -160,33 +186,42 @@ Every significant decision is recorded in `docs/adr/NNNN-title.md` (template in 
 
 ### 4.1 Definition of Ready (story can enter a sprint)
 
+**Epic level (mandatory gate, PO decision 15 Oct 2026):**
+- [ ] **Business flow of the phase/epic written and agreed with the PO** (`docs/business-flows/`, §2.4 P1) — the first task of every epic in the backlog; it blocks the epic's other tasks
+- [ ] Screens of the feature area approved by the PO in one batch (§2.4 P4)
+
+**Story level:**
+
 - [ ] Linked to BRD requirement/feature IDs and to an epic/milestone
 - [ ] User story and Given/When/Then acceptance criteria written and agreed with PO
-- [ ] Designs approved (Arabic and English, desktop and mobile, empty/error/loading states)
+- [ ] Designs approved (Arabic and English, desktop and mobile, empty/error/loading states) — as part of the feature area's batch (§2.4 P4)
 - [ ] Final Arabic and English copy provided by UX writer
 - [ ] Data model and API impact understood; migrations identified
 - [ ] Security-relevant? If yes, threat model for the epic exists and mitigations are listed in the story
 - [ ] Dependencies identified and unblocked
-- [ ] Estimated by the team; fits in one sprint
+- [ ] ~~Estimated by the team; fits in one sprint~~ — no estimation while there is no time plan (PO, 4 Oct 2026); the unit of delivery is one complete feature area (§2.4 P3)
 
 ### 4.2 Definition of Done (story)
 
-- [ ] Acceptance criteria met and accepted by PO on staging
-- [ ] Code reviewed and merged; all CI gates green (§5.3)
+- [ ] Acceptance criteria met and accepted by PO on the preview or production deployment (one environment, §3.4)
+- [ ] Code reviewed (one independent pass; security review if security-relevant — §2.4 P2) and merged; all CI gates green (§5.3)
 - [ ] Unit and integration tests added; E2E test added/updated for user-visible flows (Arabic and English)
 - [ ] **RLS / tenant-isolation test added for every new table or endpoint**
 - [ ] Authorization checks on every server action / API route (deny by default) with negative tests
 - [ ] Input validation (schemas) on every boundary; output encoding; no secrets or personal data in logs
 - [ ] Accessibility: no serious/critical automated violations; keyboard path works; screen-reader labels present
 - [ ] RTL and LTR verified; Hijri/Gregorian where relevant; numerals per setting
-- [ ] Design QA passed (matches design system; spacing, typography, states)
+- [ ] Design QA passed (matches the approved screens and the Kawadir-aligned design system)
 - [ ] Performance budget respected
 - [ ] Audit events emitted for create/update/delete and sensitive reads/exports
-- [ ] Telemetry (logs, metrics, traces) added for new operations
+- [ ] Logs (without personal data) and error tracking cover new operations; metrics/traces where the operation is critical
 - [ ] Feature flag in place if the feature is incomplete or risky
-- [ ] API changes documented (OpenAPI) and backwards-compatible
-- [ ] User-facing help text / docs updated where needed
+- [ ] Public API changes documented (OpenAPI) and backwards-compatible (internal server actions: no separate document)
+- [ ] User-facing help text where needed; engineering docs only where they matter (§2.4 P6)
 - [ ] No open critical/high defects linked to the story
+- [ ] Database changes of the feature area batched and safe to apply automatically after merge (§5.6: expand-first, or the app waits for them)
+
+*DoD changes marked above: PO decision 15 Oct 2026 (§2.4). The non-negotiable items — RLS / tenant-isolation tests, authorization negative tests, input validation, no secrets or personal data in logs, accessibility, audit events — are unchanged.*
 
 ### 4.3 Definition of Done (milestone) — see Quality Gates §7.
 
@@ -230,8 +265,9 @@ Listed in Appendix F; the list grows each milestone.
 12. Secret scanning (e.g., gitleaks) — fail on any finding
 13. Container / IaC scanning (e.g., Trivy) for sovereign images
 14. OpenAPI breaking-change check
+15. Self-hosted (sovereign) parity — **nightly** at 23:59 Riyadh time on `main`, not per PR (PO, 14 Oct 2026); a failure opens an issue and is fixed before further merges
 
-Nightly: full E2E suite, DAST baseline scan (e.g., OWASP ZAP) against staging, dependency update PRs (Renovate/Dependabot).
+Nightly: gate 15, full E2E suite, DAST baseline scan (e.g., OWASP ZAP) against a preview deployment (not production once customers exist), dependency update PRs (Dependabot).
 
 ### 5.4 Defect Severity & Response
 
@@ -254,6 +290,17 @@ Nightly: full E2E suite, DAST baseline scan (e.g., OWASP ZAP) against staging, d
 - DORA metrics: deployment frequency, lead time, change failure rate, time to restore
 - UX: task success, SUS, time-on-task from latest usability round
 
+### 5.6 Continuous Deployment (PO decision, 15 Oct 2026)
+
+| Step | What happens | Status |
+|---|---|---|
+| PR | CI gates (§5.3); Vercel preview (shares the production database while there are no customers, §3.4) | ✅ in place |
+| Merge to `main` (by the PO) | Vercel deploys the app to production | ✅ in place |
+| Merge to `main` | **Automatic DB deploy**: GitHub Actions runs `plan` (dry run, always rolled back); only if `plan` is green it runs `apply` (migrations, role passwords, `verify-deployment.sql`); runs one at a time; a failure opens or updates an issue labelled `db-deploy-auto` and later merges wait until it is fixed | **To build** (BACKLOG `EP-OPS`) |
+| Fallback | The manual **Actions → DB deploy** workflow (plan, then apply) stays, for re-runs and recovery | ✅ in place |
+
+The PO's merge is the approval for the deploy (no separate required reviewer on the automatic path; T-M0-11 superseded — risk R-63). Because the app and the database deploy in parallel, migrations are written **expand-first** (the running app keeps working with the new schema); when new code cannot run before its migration, the PR says so and the app's readiness check fails closed until the migration is applied (existing pattern since T-M2-11). Runbook: `docs/engineering/db-deploy.md`.
+
 ---
 
 ## 6. Milestone Plan
@@ -261,6 +308,8 @@ Nightly: full E2E suite, DAST baseline scan (e.g., OWASP ZAP) against staging, d
 ### 6.1 Timeline Overview (targets — re-baselined at Gate G1)
 
 The BRD targets R1 in months 0–4. With the Foundation phase and the shared platform added (decisions of 30 Sep 2026), a realistic R1 GA for a 4–5 engineer team is **about month 7**. The Tech Lead confirms or adjusts this at Gate G1; the BRD release plan (§16) is then updated.
+
+> **Milestones re-ordered around the planning core (PO decision, 15 Oct 2026; BRD v3.0 §5.4).** The core product is organization set-up + training planning; delivery follows the approved plan. From M3 the milestone themes change as in the table below (the chart shows the original 30 Sep 2026 timeline and is kept for history; there is no time plan — PO, 4 Oct 2026). Epic IDs keep their original milestone prefix (e.g., `EP-M3-CAT` is now built in M4).
 
 ```mermaid
 gantt
@@ -284,11 +333,11 @@ gantt
 |---|---|---|---|
 | M0 Mobilize | 1–2 | G0 | Team, tools, access, decisions, design partners |
 | M1 Foundation | 3–8 | **G1** | Design system + prototypes tested; architecture, ADRs, threat model; CI/CD with all gates; walking skeleton |
-| M2 Platform core | 9–12 | G2 | Tenancy, identity, people directory, RBAC, audit, notifications base, suite shell |
-| M3 Catalog & scheduling | 13–16 | G3 | Courses, templates, sessions, calendar, conflicts, venues, instructors |
-| M4 Enrollment & manager | 17–19 | G4 | Enrollment, requests, manager hub, learner PWA, logistics tasks |
-| M5 Delivery & credentials | 20–23 | G5 | Attendance, assessments, surveys, certificates, compliance |
-| M6 Integration & insights | 24–26 | G6 | Jadarat LMS connector, reports, editions |
+| M2 Platform core | 9–12 | G2 | Tenancy, identity, people directory, RBAC, audit, notifications base, suite shell — **closes with** production operations and automatic DB deploy (`EP-OPS`), six standard roles + custom role builder (`EP-ROLES`), Kawadir-style shell (`EP-SHELL-K`) |
+| **M3 Planning core** (since 15 Oct 2026) | — | G3 | Structure with department heads, course library, planning cycle, Department Head needs, consolidation and budget check, plan approval (`EP-PLN`) |
+| **M4 Courses, sessions & enrollment** | — | G4 | Plan → sessions, course templates, scheduling, conflicts, venues, instructors, enrollment, requests, manager hub, learner PWA, logistics tasks; Organization Admin completion in parallel (paused `EP-OA` items, Kawadir layout) |
+| M5 Delivery & credentials | — | G5 | Attendance, assessments, surveys, certificates, compliance |
+| M6 Integration & insights | — | G6 | Jadarat LMS connector, reports, editions |
 | M7 Hardening & R1 GA | 27–30 | **G7** | Pen test, load, accessibility audit, DR drill, UAT, launch |
 | R2 Growth | ~months 8–11 | G-R2 | See §6.10 |
 | R3 Enterprise & Sovereign | ~months 12–16 | G-R3 | See §6.10 |
@@ -360,35 +409,37 @@ gantt
 
 ### 6.4 M2 — Platform Core (weeks 9–12)
 
-**Scope (features):** ADM-01, 02, 04, 05, 07, 11, 13, 14, 17 · IAM-01…05, 07, 12, 13 · STE-01, 02, 08 · AUD-01, 05 · SUB-01 · DEP-01, 05 · NTF-01, 02, 07 · SCH-07 (Hijri/Gregorian date components as shared platform capability)
+**Scope (features):** ADM-01, 02, 04, 05, 07, 11, 13, 14, 17 · IAM-01…05, 07, 12, 13, 16 · STE-01, 02, 08 · AUD-01, 05 · SUB-01 · DEP-01, 05 · NTF-01, 02, 07, 11 · SCH-07 (Hijri/Gregorian date components as shared platform capability)
 
-**Key outcomes:** self-service tenant sign-up and onboarding wizard; organization, branches, departments; branding basics; custom fields engine; people directory (shared suite record) with bulk import; invitations; 15 default roles with scopes; MFA, password policy, session controls; immutable audit log; consent capture; editions/feature flags; suite shell with navigation and notification center; e-mail notifications with bilingual templates; Arabic-only mode.
+**Key outcomes:** self-service tenant sign-up and onboarding wizard; organization, branches, departments; branding basics; custom fields engine; people directory (shared suite record) with bulk import; invitations; **six standard roles + custom role builder** (PO, 15 Oct 2026); MFA, password policy, session controls; immutable audit log; consent capture; editions/feature flags; suite shell (**Kawadir ATS layout**, PO 15 Oct 2026) with navigation and notification center; e-mail notifications with bilingual templates and the Email integration page; Arabic-only mode.
 
-**Security focus:** tenant isolation, authentication flows, session management, import file handling, audit immutability, platform-admin impersonation controls.
+**Re-sequenced on 15 Oct 2026 (PO):** M2 closes with `EP-OPS` (production naming, new Supabase Pro project set up from scratch, automatic DB deploy), `EP-ROLES` and `EP-SHELL-K`. The remaining Organization Admin items (`EP-OA` T-M2-23…34) are paused and resume in M4, after the planning core.
 
-**Gate G2:** DoD for all stories; 100% RLS test coverage; security review of auth and tenancy passed; E2E for sign-up → invite → login (MFA) → role-restricted access in AR/EN; usability check of onboarding wizard with ≥ 3 partner users.
+**Security focus:** tenant isolation, authentication flows, session management, import file handling, audit immutability, platform-admin impersonation controls, custom roles (no escalation through the role builder; high-risk permissions only by an Organization Admin).
 
-### 6.5 M3 — Catalog & Scheduling (weeks 13–16)
+**Gate G2:** DoD for all stories; 100% RLS test coverage; security review of auth and tenancy passed; E2E for sign-up → invite → login → role-restricted access in AR/EN; custom-role negative tests.
 
-**Scope:** CAT-01, 02, 03, 05, 06, 10 · SCH-01, 02, 03, 05, 08 · RES-01, 02, 03, 07 · INS-01…05 · FIN-03
+### 6.5 M3 — Planning Core (since 15 Oct 2026; replaces "Catalog & Scheduling")
 
-**Key outcomes:** courses with templates, prerequisites, objectives, materials library, Arabic search; sessions (multi-day, recurrence, lifecycle); calendar with drag-and-drop; conflict detection (instructor, room, learner, holidays, weekends); minimum-enrollment rules; venues/rooms/equipment; instructors with qualification matrix, availability and instructor portal; session cost model.
+**Scope:** ADM-04, 05 (screens, department heads) · CAT-01, 10 (course library: the minimum the plan needs) · PLN-02, 03, 05, 06, 08 · MGR-05 · WFL-01, 02 (R1 part) — BRD §5.4 steps 2–7.
 
-**Security focus:** file uploads (materials), instructor portal data exposure (external instructors see only assigned sessions), authorization on scheduling actions.
+**Key outcomes:** HR Manager maintains branches, departments and department heads; L&D Manager builds the course library (code, AR/EN title, category, delivery type, duration, capacity, estimated cost) and launches a yearly planning cycle (period, deadline, scope, budget envelope per department, reminders); each Department Head receives a needs form with their team and proposes needs (course or new topic, people, priority, quarter, cost, justification); the L&D Manager and Training Coordinator consolidate (sessions needed, estimated cost, check against envelopes); the plan goes through the approval chain (Department Head → Finance approver → management approver; a role or a named person per step), with comments and line-level rejection, and is locked and versioned on approval.
 
-**Gate G3:** journey "coordinator creates course and schedules session with room and instructor" completed by partner users in ≤ 10 min (NFR-UX-03); calendar performance with 500 sessions ≤ 1.5 s; security review passed.
+**First task:** the planning business flow agreed with the PO (§2.4 P1). **Security focus:** department-scoped access (a Department Head sees and edits only their departments' needs), approval integrity (an approver acts only on their step; no self-approval of one's own proposal where the chain says otherwise), plan lock and versions, audit of every decision.
 
-### 6.6 M4 — Enrollment, Requests & Manager (weeks 17–19)
+**Gate G3:** E2E (AR/EN): L&D Manager opens a cycle → two Department Heads submit needs → consolidation shows sessions and cost vs. envelopes → plan approved by the chain → locked v1; cross-tenant and cross-department negative tests; PO walk-through on production with test organizations.
 
-**Scope:** ENR-01, 02, 03, 13 · PLN-01 · MGR-01…04 · LOG-01, 02 · LRN-01, 03, 04, 07 · NTF-08
+### 6.6 M4 — Courses, Sessions & Enrollment (since 15 Oct 2026; merges the former M3 and M4)
 
-**Key outcomes:** self/manager/bulk enrollment with eligibility and capacity checks; default approval chain; training requests; manager hub (team dashboard, approvals inbox, team calendar, nominate); session task checklists and joining instructions; learner "My Learning" in installable PWA; calendar invites; scheduled reminders.
+**Scope:** PLN-01, 09 · CAT-02, 03, 05, 06 · SCH-01, 02, 03, 05, 08 · RES-01, 02, 03, 07 · INS-01…05 · FIN-03 · ENR-01, 02, 03, 13 · MGR-01…04 · LOG-01, 02 · LRN-01, 03, 04, 07 · NTF-08 · in parallel: the paused Organization Admin items (`EP-OA`: ADM-01, 07, 11, 13, 14, NTF-11, AUD-01 screen, AUD-05, STE-01, LMS set-up), in the Kawadir layout.
 
-**Security focus:** approval-link integrity (signed, single-use, expiring), manager data scope (direct reports only), notification content (no sensitive data in e-mail/SMS previews).
+**Key outcomes:** approved plan → draft sessions and published calendar; course templates, prerequisites, objectives, materials; sessions (multi-day, recurrence, lifecycle), calendar, conflict detection (instructor, room, learner, holidays, weekends), minimum-enrollment rules; venues, rooms, equipment; instructors with qualification matrix, availability and portal; session cost model; self / manager / bulk enrollment with the default approval chain; training requests; manager hub; task checklists and joining instructions; learner "My learning" PWA; calendar invites; reminders.
 
-**Gate G4:** approval journey ≤ 2 taps on mobile; E2E enrollment→approval→calendar invite in AR/EN; usability round 2 (manager + learner) SUS ≥ 75 (target 80 by G7).
+**Security focus:** file uploads (materials), instructor portal data exposure, authorization on scheduling actions, approval-link integrity (signed, single-use, expiring), manager data scope, notification content.
 
-### 6.7 M5 — Delivery & Credentials (weeks 20–23)
+**Gate G4:** "coordinator schedules the plan's sessions with room and instructor" in ≤ 10 min (NFR-UX-03); approval journey ≤ 2 taps on mobile; E2E enrollment → approval → calendar invite in AR/EN; calendar with 500 sessions ≤ 1.5 s.
+
+### 6.7 M5 — Delivery & Credentials
 
 **Scope:** ATT-01…04, 09, 11 · ASM-01, 02, 04, 05, 08 · CRT-01…08 · REG-01
 
@@ -398,7 +449,7 @@ gantt
 
 **Gate G5:** QR check-in ≤ 3 s p95 with 300 concurrent scans (load test); certificate verification abuse tests passed; compliance calculations verified against test fixtures by QA and PO.
 
-### 6.8 M6 — Integration & Insights (weeks 24–26)
+### 6.8 M6 — Integration & Insights
 
 **Scope:** LMS-01, 02, 03, 05, 06, 07, 10 · RPT-01, 02 · LRN-08 (full accessibility pass)
 
@@ -416,7 +467,7 @@ gantt
 - **Load and soak tests** against NFR-PERF/SCAL targets
 - **Accessibility audit** (external or expert internal) in Arabic and English
 - **Disaster-recovery drill:** restore from backup to a new environment; measure RPO/RTO
-- **UAT** with design partners on staging using their real (anonymized) configuration
+- **UAT** with design partners (trial customers) on the test environment (§3.4) using their real (anonymized) configuration
 - Documentation: admin guide, user guides (AR/EN), API reference, release notes, runbooks, on-call rota, incident response plan
 - Legal/compliance: DPA, privacy notice, sub-processor list, SDAIA transfer safeguards for KSA data (BRD §12.2)
 - Data-migration rehearsal for first customers
@@ -428,7 +479,7 @@ gantt
 
 | Release | Target | Main epics (BRD) | Special tracks | Gate highlights |
 |---|---|---|---|---|
-| **R2 Growth** | ~months 8–11 | Planning cycle (PLN), Qiwa disclosure & OJT quota (REG-02/03), SAMA pack, custom roles & scopes, SSO, audiences, workflow builder, waitlists/quotas/cancellation, VILT, resource timeline, e-signature & offline attendance, OJT & observation checklists, competencies, budgets/expenses, providers & portal, trainer contracts/payments, WhatsApp/SMS/push, report builder, unified transcript, AI assistant/recommendations/content + AI governance, public API & webhooks, HRIS connectors, Jadarat L3, xAPI | **Sovereign staging rehearsal** each release candidate; **AI safety evaluation suite** (Arabic) before enabling AI features | Qiwa disclosure validated with ≥ 2 Saudi partners; AI red-team (prompt injection, data leakage) passed |
+| **R2 Growth** | ~months 8–11 | Plan vs. actual and the rest of planning (PLN-04, 10, 11, 12), Qiwa disclosure & OJT quota (REG-02/03), SAMA pack, data scopes per assignment, SSO, audiences, visual workflow builder, waitlists/quotas/cancellation, VILT, resource timeline, e-signature & offline attendance, OJT & observation checklists, competencies, budgets/expenses, providers & portal, trainer contracts/payments, WhatsApp/push (no SMS), report builder, unified transcript, AI assistant/recommendations/content + AI governance, public API & webhooks, HRIS connectors, Jadarat L3, xAPI | **Sovereign staging rehearsal** each release candidate; **AI safety evaluation suite** (Arabic) before enabling AI features | Qiwa disclosure validated with ≥ 2 Saudi partners; AI red-team (prompt injection, data leakage) passed |
 | **R3 Enterprise & Sovereign** | ~months 12–16 | Legal entities, sandbox, SCIM, scenarios, AI optimizer, Ops Agent, MCP server, RFQ, POs, invoice matching, chargebacks, ERP export, subsidy packs, UAE/CMA packs, Open Badges 3.0, kiosk/NFC, BI connector, ESG, training agreements (STE-06), Moodle and other connectors, Jadarat L4, **in-country KSA/UAE production**, dedicated hosting | **ISO 27001** certification; NCA ECC/CCC alignment evidence | Pen test incl. sovereign deployment; Ops Agent confirmation/undo and permission tests; first government/bank tenant live |
 | **R4 Intelligence & Scale** | ~months 17–22 | ROI, predictive insights, conversational analytics, AI matching, skills inference, transcription, regulatory drafting, proctoring, health CPD, connector SDK, iPaaS, customer-hosted package | **SOC 2 Type II** | Partner connector certification program live |
 | **Suite readiness** | Parallel from R2 | FR-STE-03…09 activate as Core HR, Payroll & Time, Performance & Skills, Recruitment & Onboarding ship | Architecture review before each new module team starts | Module contract tests between TMS and each new module |
@@ -441,7 +492,8 @@ gantt
 
 | Review | When | Who | Checks | Record |
 |---|---|---|---|---|
-| Code review | Every PR | Peer (+TL/Security for sensitive) | Correctness, readability, tests, security checklist, DoD | PR approval |
+| Business-flow review | Before each phase/epic (PO decision 15 Oct 2026) | Tech Lead + PO | Actors, steps, rules, approvals, exceptions, screens implied, open questions | Agreed flow in `docs/business-flows/` + STATUS decision |
+| Code review | Every PR — **one independent pass** (§2.4) | Separate review agent (+ security review for security-relevant PRs) | Correctness, readability, tests, security checklist, DoD | PR approval |
 | Design QA | Every UI story before acceptance | Designer | Visual fidelity, RTL/LTR, states, responsive, a11y basics | Story comment |
 | Security review | Per epic before build (threat model) and before merge of security-relevant PRs | Security Lead + TL | Threat model mitigations implemented; ASVS items; tests present | Review record in `docs/security/reviews/` |
 | Sprint quality review | End of each sprint (30 min in review) | QA + TL | Defect trends, flaky tests, coverage, a11y, performance budgets | Sprint report |
@@ -466,7 +518,7 @@ A **conditional pass** requires a written remediation plan with owners and dates
 **Security**
 - [ ] Threat-model mitigations for the milestone verified by tests or review
 - [ ] SAST, dependency, secret, container scans: zero open critical/high
-- [ ] DAST baseline on staging: zero open high
+- [ ] DAST baseline on a preview or test deployment (one environment until the first customer, §3.4): zero open high
 - [ ] Security review record signed off
 
 **UX & accessibility**
@@ -553,7 +605,7 @@ Secure by design, deny by default, least privilege, defense in depth, no secrets
 | When | Activity |
 |---|---|
 | M1 | ADR 10; walking skeleton runs in local self-hosted stack (Docker Compose) |
-| Every milestone | CI job builds container images and runs smoke tests against self-hosted stack |
+| Every night | CI job builds container images and runs smoke tests against the self-hosted stack (gate 15, 23:59 Riyadh — PO, 14 Oct 2026) |
 | R2 | Sovereign staging in a KSA/UAE cloud region; infrastructure-as-code; backup/restore drill in-country |
 | R3 | Sovereign production; NCA ECC/CCC control evidence; in-country e-mail/SMS/AI alternatives verified |
 
@@ -570,6 +622,8 @@ Secure by design, deny by default, least privilege, defense in depth, no secrets
 ## 12. Reporting
 
 **Weekly status report (PO → management):** overall RAG; milestone progress (% stories done vs. plan); next gate date and confidence; top 5 risks/issues; quality metrics (§5.5); security findings; decisions needed.
+
+**Weekly progress report against the feature list (PO decision, 15 Oct 2026):** every week Claude adds a row to `docs/delivery/STATUS.md` §7 — R1 features done / partly done / not started (counted from `docs/brd/TMS_Feature_List.md`, a feature is *done* when its R1 part is merged and deployed), features finished that week, the phase in progress and what blocks it. The PO sees progress in features, not tasks.
 
 **Milestone report:** gate result and checklist evidence; demo feedback; UX metrics; re-forecast of remaining milestones.
 
@@ -593,13 +647,13 @@ Secure by design, deny by default, least privilege, defense in depth, no secrets
 
 | Milestone | Features |
 |---|---|
-| M2 Platform core | ADM-01, 02, 04, 05, 07, 11, 13, 14, 17 · IAM-01…05, 07, 12, 13 · STE-01, 02, 08 · AUD-01, 05 · SUB-01 · DEP-01, 05 · NTF-01, 02, 07 · SCH-07 |
-| M3 Catalog & scheduling | CAT-01, 02, 03, 05, 06, 10 · SCH-01, 02, 03, 05, 08 · RES-01, 02, 03, 07 · INS-01…05 · FIN-03 |
-| M4 Enrollment & manager | ENR-01, 02, 03, 13 · PLN-01 · MGR-01…04 · LOG-01, 02 · LRN-01, 03, 04, 07 · NTF-08 |
+| M2 Platform core | ADM-01, 02, 04, 05, 07, 11, 13, 14, 17 · IAM-01…05, 07, 12, 13, 16 · STE-01, 02, 08 · AUD-01, 05 · SUB-01 · DEP-01, 05 · NTF-01, 02, 07, 11 · SCH-07 (ADM-01, 07, 11, 13, 14, NTF-11 and the AUD-01 screen finish in M4 with the paused `EP-OA` items; ADM-04/05 screens in M3) |
+| M3 Planning core | CAT-01, 10 · PLN-02, 03, 05, 06, 08 · MGR-05 · WFL-01, 02 (R1 part) |
+| M4 Courses, sessions & enrollment | PLN-01, 09 · CAT-02, 03, 05, 06 · SCH-01, 02, 03, 05, 08 · RES-01, 02, 03, 07 · INS-01…05 · FIN-03 · ENR-01, 02, 03, 13 · MGR-01…04 · LOG-01, 02 · LRN-01, 03, 04, 07 · NTF-08 |
 | M5 Delivery & credentials | ATT-01…04, 09, 11 · ASM-01, 02, 04, 05, 08 · CRT-01…08 · REG-01 |
 | M6 Integration & insights | LMS-01, 02, 03, 05, 06, 07, 10 · RPT-01, 02 · LRN-08 |
 
-Total: 96 features = the R1 cut in the feature list. IAM-07 and IAM-13 deliver their R1 parts (default roles; password/lockout/session controls); their later parts follow in R2/R3.
+Total: **107 features** = the R1 cut in the feature list v3.0 (15 Oct 2026; was 96, then 97 with IAM-16). IAM-07, IAM-13 and WFL-01/02 deliver their R1 parts (standard roles and custom role builder; password/lockout/session controls; the sequential plan-approval chain); their later parts follow in R2/R3.
 
 ## Appendix B — Pull Request Template
 
@@ -676,9 +730,11 @@ Total: 96 features = the R1 cut in the feature list. IAM-07 and IAM-13 deliver t
 | J1 | Tenant sign-up → onboarding wizard → invite user | M2 |
 | J2 | Login with MFA → role-restricted navigation | M2 |
 | J3 | Bulk import users with validation errors and fix | M2 |
-| J4 | Create course from template → schedule multi-day session → resolve conflict | M3 |
-| J5 | Learner self-enrolls → manager approves on mobile → calendar invite received | M4 |
-| J6 | Manager nominates team → waitlist/capacity handling | M4 |
+| J4 | Create course from template → schedule multi-day session → resolve conflict | M4 |
+| J14 | L&D Manager opens a planning cycle → Department Heads submit needs → consolidation vs. budget envelopes → plan approved by the chain and locked | M3 |
+| J15 | Organization Admin creates a custom role from a template → assigns it → the member sees only what the role allows | M2 |
+| J5 | Employee self-enrolls → manager approves on mobile → calendar invite received | M4 |
+| J6 | Manager nominates team → capacity handling (waitlist R2) | M4 |
 | J7 | Session task checklist generated and completed | M4 |
 | J8 | QR check-in (valid, expired screenshot, out-of-range) | M5 |
 | J9 | Pre/post test → grading → certificate issued → public verification | M5 |
@@ -689,4 +745,4 @@ Total: 96 features = the R1 cut in the feature list. IAM-07 and IAM-13 deliver t
 
 ## Appendix G — Backlog Seeding (epics)
 
-`EP-M1-UX` Design system & prototypes · `EP-M1-ARCH` ADRs & data model · `EP-M1-SEC` Threat models & security baseline · `EP-M1-PLAT` CI/CD & walking skeleton · `EP-M2-TEN` Tenancy & onboarding · `EP-M2-IAM` Identity & roles · `EP-M2-PEO` People directory · `EP-M2-AUD` Audit & consent · `EP-M2-SHELL` Suite shell & notifications · `EP-M3-CAT` Catalog · `EP-M3-SCH` Scheduling & conflicts · `EP-M3-RES` Venues & resources · `EP-M3-INS` Instructors & portal · `EP-M4-ENR` Enrollment & approvals · `EP-M4-MGR` Manager hub · `EP-M4-LRN` Learner PWA · `EP-M4-LOG` Logistics tasks · `EP-M5-ATT` Attendance · `EP-M5-ASM` Assessments & surveys · `EP-M5-CRT` Certificates & compliance · `EP-M6-LMS` LMS framework & Jadarat connector · `EP-M6-RPT` Reports · `EP-M7-HARD` Hardening & launch.
+`EP-M1-UX` Design system & prototypes · `EP-M1-ARCH` ADRs & data model · `EP-M1-SEC` Threat models & security baseline · `EP-M1-PLAT` CI/CD & walking skeleton · `EP-M2-TEN` Tenancy & onboarding · `EP-M2-IAM` Identity & roles · `EP-M2-PEO` People directory · `EP-M2-AUD` Audit & consent · `EP-M2-SHELL` Suite shell & notifications · `EP-OA` Organization Admin (R1) · `EP-OPS` Production operations & automatic DB deploy · `EP-ROLES` Standard roles & custom role builder · `EP-SHELL-K` Kawadir-style shell · `EP-PLN` Planning core (M3) · `EP-M3-CAT` Catalog · `EP-M3-SCH` Scheduling & conflicts · `EP-M3-RES` Venues & resources · `EP-M3-INS` Instructors & portal · `EP-M4-ENR` Enrollment & approvals · `EP-M4-MGR` Manager hub · `EP-M4-LRN` Learner PWA · `EP-M4-LOG` Logistics tasks · `EP-M5-ATT` Attendance · `EP-M5-ASM` Assessments & surveys · `EP-M5-CRT` Certificates & compliance · `EP-M6-LMS` LMS framework & Jadarat connector · `EP-M6-RPT` Reports · `EP-M7-HARD` Hardening & launch.

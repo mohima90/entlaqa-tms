@@ -1,0 +1,71 @@
+# The database deploy steps shared by the manual "DB deploy" workflow (db-deploy.yml) and the automatic
+# "DB deploy (after merge)" workflow (db-deploy-auto.yml), T-M2-38. Runbook: docs/engineering/db-deploy.md.
+# The caller checks out the repository first and runs this in a job bound to the GitHub environment whose
+# secrets it passes in. Credentials arrive as inputs and reach ONLY the script step's environment (never
+# setup-node's, never a command line); their values are secrets, so the runner masks them in the log.
+name: DB deploy (plan or apply)
+description: Runs scripts/db-deploy.sh plan|apply (+ role passwords and verify-deployment.sql on apply) against a hosted database.
+
+inputs:
+  mode:
+    description: 'plan = dry run (always rolled back) · apply = apply pending migrations, set role passwords, verify'
+    required: true
+  environment:
+    description: Name of the GitHub environment the credentials come from (for messages only)
+    required: true
+  database-url:
+    description: secrets.DATABASE_URL of the environment (migration connection, no query parameters)
+    required: true
+  database-ca-cert:
+    description: vars.DATABASE_CA_CERT of the environment (PEM of the server's root CA)
+    required: false
+    default: ''
+  app-server-db-password:
+    description: secrets.APP_SERVER_DB_PASSWORD (optional after the first run)
+    required: false
+    default: ''
+  app-worker-db-password:
+    description: secrets.APP_WORKER_DB_PASSWORD (optional after the first run)
+    required: false
+    default: ''
+  app-queue-db-password:
+    description: secrets.APP_QUEUE_DB_PASSWORD (optional after the first run)
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version-file: .nvmrc
+    - name: PostgreSQL client
+      shell: bash
+      run: |
+        if ! command -v psql >/dev/null; then sudo apt-get update && sudo apt-get install -y postgresql-client; fi
+        psql --version
+    - name: Migrations (${{ inputs.mode }})
+      shell: bash
+      env:
+        MODE: ${{ inputs.mode }}
+        TARGET: ${{ inputs.environment }}
+        DATABASE_URL: ${{ inputs.database-url }}
+        DATABASE_CA_CERT: ${{ inputs.database-ca-cert }}
+        APP_SERVER_DB_PASSWORD: ${{ inputs.app-server-db-password }}
+        APP_WORKER_DB_PASSWORD: ${{ inputs.app-worker-db-password }}
+        APP_QUEUE_DB_PASSWORD: ${{ inputs.app-queue-db-password }}
+      run: |
+        if [[ "$MODE" != "plan" && "$MODE" != "apply" ]]; then
+          echo "::error::mode must be plan or apply"
+          exit 2
+        fi
+        if [[ -z "$DATABASE_URL" ]]; then
+          # The name goes into a workflow command only when it is a plain environment name.
+          if [[ "$TARGET" =~ ^[a-z-]+$ ]]; then
+            echo "::error::Secret DATABASE_URL is missing in environment '$TARGET' (docs/engineering/db-deploy.md)"
+          else
+            echo "::error::Secret DATABASE_URL is missing in the target environment (docs/engineering/db-deploy.md)"
+          fi
+          exit 1
+        fi
+        bash scripts/db-deploy.sh "$MODE"

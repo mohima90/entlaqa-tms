@@ -30,6 +30,7 @@ Precedence: BRD wins on **scope**; the Development Plan wins on **process and qu
 1. Read `docs/delivery/STATUS.md` (current milestone, next actions, blockers) and the current milestone in `docs/delivery/BACKLOG.md`.
 2. Read the relevant milestone section of the Development Plan and the BRD requirements it references.
 3. Confirm with the user which next action to take if it is not obvious from their request.
+4. **Business flow first (PO, 15 Oct 2026):** before any technical work on a phase or epic, its business flow (actors/roles, steps, rules, approvals, exceptions, inputs/outputs, screens implied, open questions) must be written in `docs/business-flows/`, discussed with the PO and agreed (recorded in STATUS). No agreed flow → write and discuss the flow; do not design screens or build.
 
 **At the end of every session (or after any meaningful change)**
 1. Update `docs/delivery/STATUS.md` and task statuses in `docs/delivery/BACKLOG.md`: milestone/task status, decisions made (with date), new blockers/risks, next actions, and a one-line entry in the session log.
@@ -40,7 +41,9 @@ A project **Stop hook** (`.claude/settings.json` → `.claude/hooks/require-stat
 
 ## Team model (Development Plan §2.3)
 
-The delivery team is the **user as Product Owner + Claude Code sessions and sub-agents**. Claude acts as tech lead, engineers, designer, QA, DevOps and security. Every PR gets a separate code-review pass (and a security-review pass when security-relevant) before the PO merges. Never merge to `main` yourself. Human-only work (accounts/billing, design partners, usability sessions with real users, legal validation, pen test, go/no-go) belongs to the PO — prepare materials for it, do not attempt it.
+The delivery team is the **user as Product Owner + Claude Code sessions and sub-agents**. Claude acts as tech lead, engineers, designer, QA, DevOps and security. Every PR gets **one** separate code-review pass (and a security-review pass when security-relevant) before the PO merges.
+
+**Lighter process (PO decision, 15 Oct 2026 — Development Plan §2.4):** business flow agreed first for every phase; one independent review per PR (security review only for security-relevant changes; a second look only to confirm Critical/High fixes); one PR per complete feature area; screens approved per feature area in one batch (Kawadir ATS layout); database changes batched; documentation only where it matters; several engineering agents in parallel on independent work; a weekly progress report against the feature list (STATUS §7). The non-negotiables below are unchanged. Never merge to `main` yourself. Human-only work (accounts/billing, design partners, usability sessions with real users, legal validation, pen test, go/no-go) belongs to the PO — prepare materials for it, do not attempt it.
 
 ## Non-negotiables (from Development Plan §1)
 
@@ -63,6 +66,7 @@ The delivery team is the **user as Product Owner + Claude Code sessions and sub-
 - **Modular monolith** in a monorepo: `apps/suite` · `packages/platform-*` · `packages/ui` · `modules/tms` (later `modules/core-hr`, …). One database per deployment, one schema per module. Cross-module communication via service interfaces or domain events (transactional outbox + PostgreSQL queue).
 - Middleware matches **real URL prefixes**; route groups such as `(dashboard)` never appear in URLs.
 - Architecture decisions are recorded as ADRs in `docs/adr/NNNN-title.md` (template: Development Plan Appendix E).
+- **UI/UX and Organization Admin settings follow Kawadir ATS one-to-one** (ENTLAQA's sister product, separate codebase; PO, 15 Oct 2026): `docs/design/kawadir-alignment.md`.
 
 ## Conventions
 
@@ -77,7 +81,10 @@ The delivery team is the **user as Product Owner + Claude Code sessions and sub-
 
 - The repository contains the **M1 foundation** (monorepo, migrations, CI gates — see `docs/engineering/README.md`) plus the documentation.
 - Vercel project **`jadarat-tms`** (team "Mohamed Attia's projects") builds from Root Directory **`apps/suite`** (Next.js preset, Node 24, region `fra1` in `apps/suite/vercel.json`). The root `vercel.json` (`ignoreCommand: exit 0`) must stay while the **old** Vercel project `entlaqa-tms` (team "Mohamed Ibrahim's projects") is still connected to this repo: it makes that project skip every build. Remove it only after that project is deleted (the PO's Vercel account has no access to that team, 1 Oct 2026).
-- Supabase staging: project **`jadarat-tms-staging`** (ref `kgmhlmiwlbvdmalesexv`, org `entlaqa-TMS`, Frankfurt, Free plan, Data API off). Claude's container **cannot reach `*.supabase.co`** (egress policy): migrations reach hosted databases only through the manual **Actions → DB deploy** workflow run by the user (`docs/engineering/db-deploy.md`). Never ask for keys or passwords in chat — they go into GitHub environment secrets / Vercel env vars.
+- **One environment: production (PO, 15 Oct 2026).** While there are 0 customers there is one hosted environment, production; pull-request previews share the production database (accepted, risk R-62), so production holds test organizations only. A separate test environment is added when the first customer arrives.
+- **Supabase starts over (PO, 15 Oct 2026):** a **new, clean Supabase project** `jadarat-tms` (ref **`pbmzlxljyjsvrzvkklbg`**) in the new ENTLAQA organization **`ENTLAQA-Products`** on the **Pro** plan (daily backups, no pausing), region Frankfurt `eu-central-1` next to Vercel `fra1`, Data API off, becomes production. All migrations are applied fresh; the connection secrets change and are re-entered by the PO in GitHub environments (`production`, `production-jobs`) and Vercel; Auth settings (hooks, SMTP, templates, rate limits, …) are redone from the runbooks — complete ordered checklist: `docs/engineering/production-setup.md` (BACKLOG T-M2-37). The old project `jadarat-tms-staging` (ref `kgmhlmiwlbvdmalesexv`, org `entlaqa-TMS`, Free) keeps running until production works, then the PO deletes it. Older docs still say "staging" for the old project.
+- Claude's container **cannot reach `*.supabase.co`** (egress policy). Migrations reach the hosted database only through GitHub Actions: **decided (PO, 15 Oct 2026): automatic DB deploy after every merge to `main`** (plan, then apply only if plan is green; a failure opens/updates a `db-deploy-auto` issue) — **to build** (BACKLOG T-M2-38); until it exists, and as fallback afterwards, the manual **Actions → DB deploy** workflow run by the user (`docs/engineering/db-deploy.md`). Write migrations expand-first (the app and the database deploy in parallel). Never ask for keys or passwords in chat — they go into GitHub environment secrets / Vercel env vars.
+- **Self-hosted stack tested nightly** (gate 15, `selfhosted-nightly.yml`, 23:59 Riyadh time on `main`; PO, 14 Oct 2026) — not part of the per-PR `CI gates`; run `infra/docker/smoke.sh` locally only when a change touches `infra/docker`. A failed nightly run opens/updates a `selfhosted-nightly` issue, fixed before further merges.
 - Hosted Supabase's migration role `postgres` is **not a superuser**: migrations must pass `pnpm db:test:hosted-sim` (CI) as well as `pnpm db:test`.
 - `main` is protected by the ruleset `main protection` (PR required, `CI gates` + CodeQL checks required, no force-push).
 - **Guiding the user (PO):** give **one action per message** (exact click/field), then wait for "done" before the next.

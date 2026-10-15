@@ -1,0 +1,153 @@
+# Automatic DB deploy after every merge to `main` (T-M2-38, PO decision 15 Oct 2026; runbook:
+# docs/engineering/db-deploy.md § Automatic deploy after merge). EVERY push to `main` (no path filter: an
+# empty plan is cheap, and a filter could drift from what the deploy reads) runs `plan` (dry run, always
+# rolled back) and then — only if `plan` is green, on the same commit (both jobs check out github.sha of
+# this run) — `apply` (pending migrations, role passwords, scripts/sql/verify-deployment.sql), with exactly
+# the steps of the manual "DB deploy" workflow (.github/actions/db-deploy). Also runnable by hand
+# (Actions → DB deploy (after merge) → Run workflow, branch `main`): plan + apply of the newest `main`.
+# Never re-run an OLD run of this workflow: it would deploy that run's older commit.
+#
+# Target: the GitHub environment `production` (same secrets and variable as "DB deploy"). It has NO required
+# reviewer — the PO's merge is the approval (risk R-63) — and its "Deployment branches" rule (main only) is
+# the access control. Repository variable DB_DEPLOY_AUTO: unset while production is being set up — a run
+# without the secret DATABASE_URL then ends green with a notice and touches nothing; `on` once production
+# is configured (docs/engineering/production-setup.md step 14) — a missing secret then FAILS the run, so
+# the failure issue below is opened instead of every deploy being skipped silently.
+#
+# One deploy at a time. This workflow has its own concurrency group, so a manual run can never replace
+# (cancel) an automatic run that is waiting — GitHub keeps only one waiting run per group: a newer
+# automatic run replaces an older waiting one, which is harmless (each run deploys everything pending at
+# its own, newer commit). Across this workflow, "DB deploy", "Provision organization" and the "Jobs"
+# worker pass, the database work itself is serialized by the deploy lock — a session-level advisory lock
+# taken by scripts/db-deploy.sh (scripts/lib/db-connect.sh § Deploy lock; waits up to 16 minutes, longer than a whole Jobs run).
+#
+# A failure opens (or comments on) an issue labelled `db-deploy-auto` with the failing step, the commit and
+# the run link — never log text or secrets. Fix forward with a new migration; merges that change migrations
+# wait until it is fixed.
+name: DB deploy (after merge)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  # Deliberately NOT the manual workflows' group db-deploy-production (security review M1): the deploy
+  # lock in the scripts serializes the database work instead.
+  group: db-deploy-auto-production
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: Plan (dry run, rolled back) → production
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    # Up to 16 minutes waiting for the deploy lock, plus the run.
+    timeout-minutes: 30
+    environment: production
+    permissions:
+      contents: read
+    outputs:
+      configured: ${{ steps.configured.outputs.ready }}
+    steps:
+      # Secrets cannot be used in `if:` — the check maps it to the step's environment.
+      - name: Configured?
+        id: configured
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DB_DEPLOY_AUTO: ${{ vars.DB_DEPLOY_AUTO }}
+        run: |
+          if [[ -n "$DB_DEPLOY_AUTO" && "$DB_DEPLOY_AUTO" != "on" ]]; then
+            echo "::error::Repository variable DB_DEPLOY_AUTO must be 'on' or unset (docs/engineering/db-deploy.md)"
+            exit 1
+          fi
+          if [[ -n "$DATABASE_URL" ]]; then
+            echo "ready=true" >>"$GITHUB_OUTPUT"
+          elif [[ "$DB_DEPLOY_AUTO" == "on" ]]; then
+            echo "::error::DB_DEPLOY_AUTO is on but environment 'production' has no DATABASE_URL secret: nothing was deployed (docs/engineering/db-deploy.md)"
+            exit 1
+          else
+            echo "::notice::Environment 'production' has no DATABASE_URL secret yet and DB_DEPLOY_AUTO is unset (production not set up, docs/engineering/production-setup.md §C): automatic DB deploy skipped, nothing changed"
+            echo "ready=false" >>"$GITHUB_OUTPUT"
+          fi
+      - if: steps.configured.outputs.ready == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: DB deploy (plan)
+        if: steps.configured.outputs.ready == 'true'
+        uses: ./.github/actions/db-deploy
+        with:
+          mode: plan
+          environment: production
+          database-url: ${{ secrets.DATABASE_URL }}
+          database-ca-cert: ${{ vars.DATABASE_CA_CERT }}
+          app-server-db-password: ${{ secrets.APP_SERVER_DB_PASSWORD }}
+          app-worker-db-password: ${{ secrets.APP_WORKER_DB_PASSWORD }}
+          app-queue-db-password: ${{ secrets.APP_QUEUE_DB_PASSWORD }}
+
+  apply:
+    name: Apply + verify → production
+    needs: plan
+    # needs: implies success() — apply never runs after a red plan.
+    if: needs.plan.outputs.configured == 'true'
+    runs-on: ubuntu-24.04
+    # Up to 16 minutes waiting for the deploy lock, plus the run (which re-plans inside its lock).
+    timeout-minutes: 30
+    environment: production
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: DB deploy (apply)
+        uses: ./.github/actions/db-deploy
+        with:
+          mode: apply
+          environment: production
+          database-url: ${{ secrets.DATABASE_URL }}
+          database-ca-cert: ${{ vars.DATABASE_CA_CERT }}
+          app-server-db-password: ${{ secrets.APP_SERVER_DB_PASSWORD }}
+          app-worker-db-password: ${{ secrets.APP_WORKER_DB_PASSWORD }}
+          app-queue-db-password: ${{ secrets.APP_QUEUE_DB_PASSWORD }}
+
+  report:
+    name: Report a failed automatic deploy
+    needs: [plan, apply]
+    if: failure()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      issues: write # create the label and open or comment on the failure issue; nothing else
+    steps:
+      - name: Open or update the db-deploy-auto issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SHA: ${{ github.sha }}
+          PLAN: ${{ needs.plan.result }}
+          APPLY: ${{ needs.apply.result }}
+          LABEL: db-deploy-auto
+          TITLE: Automatic DB deploy to production failed
+        run: |
+          if [[ "$PLAN" == "failure" ]]; then
+            step='plan (configuration check or dry run, rolled back — nothing was changed)'
+          elif [[ "$APPLY" == "failure" ]]; then
+            step='apply (pending migrations, role passwords or verify-deployment.sql; migrations before the failing one stay applied)'
+          else
+            step="unknown (plan: $PLAN, apply: $APPLY)"
+          fi
+          body="Automatic DB deploy to \`production\` failed in step **${step}** on commit \`${SHA}\`: ${RUN_URL}"
+          gh label create "$LABEL" --color B60205 --description 'Automatic DB deploy after merge failed' 2>/dev/null || true
+          number="$(gh issue list --state open --label "$LABEL" --app github-actions --json number,title \
+            --jq '[.[] | select(.title == $ENV.TITLE)][0].number // empty')"
+          if [[ -n "$number" ]]; then
+            gh issue comment "$number" --body "$body"
+          else
+            gh issue create --title "$TITLE" --label "$LABEL" \
+              --body "$body"$'\n\n'"Read the run log, fix forward (a new migration or a fix to the deploy scripts) and merge it — that merge deploys again. Merges that change migrations wait until this is fixed; close this issue once a deploy is green. Runbook: docs/engineering/db-deploy.md § Automatic deploy after merge."
+          fi

@@ -1,13 +1,15 @@
-# Background jobs for staging (ADR 0005 §3, T-M2-06a). Staging has no container host for the worker, so
-# GitHub runs one worker pass every 5 minutes (scheduled runs can start late) and on demand
-# (Actions → Jobs (staging) → Run workflow): install or upgrade the queue schema, dispatch pending events,
-# run every job that is due, exit. Production runs worker containers in daemon mode instead; this
-# workflow never targets it. Runbook: docs/engineering/background-jobs.md.
-# Configuration lives in its own GitHub *environment* (Settings → Environments → staging-jobs), whose
-# "Deployment branches" rule (main only) is the access control; it holds no migration credential:
+# Background jobs for the hosted environment (ADR 0005 §3, T-M2-06a; production naming T-M2-36). There is no
+# container host for the worker yet (a PO cost decision before the first customer, ADR 0005 §1), so GitHub
+# runs one worker pass every 5 minutes (scheduled runs can start late) and on demand
+# (Actions → Jobs → Run workflow): install or upgrade the queue schema, dispatch pending events, run every
+# job that is due, exit. Scheduled runs always target production; a run by hand may still choose the old
+# `staging` project until it is deleted (production-setup.md step 39). Runbook: docs/engineering/background-jobs.md.
+# Configuration lives in its own GitHub *environment* per target (Settings → Environments → production-jobs;
+# the old project: staging-jobs), whose "Deployment branches" rule (main only) is the access control; it
+# holds no migration credential:
 #   secret   DATABASE_URL_APP_QUEUE   login role app_queue via the Supabase session pooler
 #   secret   DATABASE_URL_APP_WORKER  login role app_worker via the Supabase session pooler
-#   variable DATABASE_CA_CERT         PEM of the server's root CA (same value as in `staging`)
+#   variable DATABASE_CA_CERT         PEM of the server's root CA (same value as in `production`)
 #   E-mail (T-M2-06b; ADR 0008), optional — without EMAIL_PROVIDER this workflow passes `none`
 #   (e-mail switched off: queued messages are recorded as suppressed):
 #   variable EMAIL_PROVIDER           resend
@@ -15,7 +17,7 @@
 #   variable EMAIL_FROM_ADDRESS       sender address on the verified sending domain
 #   secret   RESEND_API_KEY           Resend API key (sending access only)
 #   secret   EMAIL_TEST_TO            recipient of the test e-mail (mode test-email)
-#   variable APP_BASE_URL             public origin of the staging web app (https://…, no path) for
+#   variable APP_BASE_URL             public origin of the web app (https://…, no path) for
 #                                     links in e-mails (invitations, T-M2-07; password reset, T-M2-17);
 #                                     required once EMAIL_PROVIDER is set — without it (e-mail off)
 #                                     invitations are not mailed
@@ -43,8 +45,12 @@
 #                                     (default 1000; at least 500, the provider's 2 requests a second)
 #   variable USER_IMPORT_DAILY_INVITATIONS        per organization and UTC day (default 5000)
 #   variable USER_IMPORT_TRIAL_DAILY_INVITATIONS  the same on trial (default 200)
-# Until both connection secrets exist each run ends with a notice and does nothing.
-name: Jobs (staging)
+# Repository variable JOBS_REQUIRED (repository level only — not in an environment): unset while the target
+# is being set up — until both connection secrets exist each run ends with a notice and does nothing (no
+# failure, no e-mail); `on` once production-jobs is configured (production-setup.md step 30) — missing
+# connection secrets then FAIL the run, so the worker cannot stop silently. Any other value fails.
+# Timeout: 15 minutes per run; the DB deploy waits longer than that (16 minutes) for the deploy lock.
+name: Jobs
 
 on:
   schedule:
@@ -56,33 +62,48 @@ on:
         type: choice
         options: [pass, test-email]
         default: pass
+      environment:
+        description: 'Target (staging = the old project, only until it is deleted)'
+        type: choice
+        options: [production, staging]
+        default: production
 
 permissions:
   contents: read
 
+# Scheduled runs have no inputs: `inputs.environment || 'production'` is the target everywhere below.
 concurrency:
-  group: jobs-staging
+  group: jobs-${{ inputs.environment || 'production' }}
   cancel-in-progress: false
 
 jobs:
   pass:
-    name: Worker pass (staging)
+    name: Worker pass (${{ inputs.environment || 'production' }})
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    environment: staging-jobs
+    environment: ${{ format('{0}-jobs', inputs.environment || 'production') }}
     steps:
       - name: Configured?
         id: configured
         env:
           QUEUE_URL: ${{ secrets.DATABASE_URL_APP_QUEUE }}
           WORKER_URL: ${{ secrets.DATABASE_URL_APP_WORKER }}
+          JOBS_REQUIRED: ${{ vars.JOBS_REQUIRED }}
+          TARGET: ${{ format('{0}-jobs', inputs.environment || 'production') }}
         run: |
-          if [[ -z "$QUEUE_URL" || -z "$WORKER_URL" ]]; then
-            echo "::notice::staging-jobs is not configured yet (docs/engineering/background-jobs.md); nothing to do"
-            echo "ready=false" >>"$GITHUB_OUTPUT"
-          else
+          if [[ -n "$JOBS_REQUIRED" && "$JOBS_REQUIRED" != "on" ]]; then
+            echo "::error::Repository variable JOBS_REQUIRED must be 'on' or unset (docs/engineering/background-jobs.md)"
+            exit 1
+          fi
+          if [[ -n "$QUEUE_URL" && -n "$WORKER_URL" ]]; then
             echo "ready=true" >>"$GITHUB_OUTPUT"
+          elif [[ "$JOBS_REQUIRED" == "on" ]]; then
+            echo "::error::JOBS_REQUIRED is on but $TARGET lacks DATABASE_URL_APP_QUEUE or DATABASE_URL_APP_WORKER: no worker pass ran (docs/engineering/production-setup.md §H)"
+            exit 1
+          else
+            echo "::notice::$TARGET is not configured yet and JOBS_REQUIRED is unset (docs/engineering/production-setup.md §H); nothing to do"
+            echo "ready=false" >>"$GITHUB_OUTPUT"
           fi
       - if: steps.configured.outputs.ready == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -95,6 +116,11 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
+      - name: PostgreSQL client (for the deploy lock)
+        if: steps.configured.outputs.ready == 'true'
+        run: |
+          if ! command -v psql >/dev/null; then sudo apt-get update && sudo apt-get install -y postgresql-client; fi
+          psql --version
       - name: Install the worker's dependencies only (frozen lockfile) and bundle it
         if: steps.configured.outputs.ready == 'true'
         run: |
@@ -169,6 +195,9 @@ jobs:
           echo "::error::clamd did not become ready; this pass runs without scanning (uploads wait for the next pass)"
           docker logs --tail 30 clamd || true
           echo "ready=false" >>"$GITHUB_OUTPUT"
+      # The pass holds the deploy lock shared (as app_worker; scripts/run-outside-deploy.sh): it waits up to
+      # 8 minutes for a running DB deploy or provisioning run and FAILS (does not run) if the lock is still
+      # taken then; a deploy that starts during the pass waits for it.
       - name: One worker pass (or a test e-mail)
         if: steps.configured.outputs.ready == 'true'
         env:
@@ -189,9 +218,9 @@ jobs:
           USER_IMPORT_DAILY_INVITATIONS: ${{ vars.USER_IMPORT_DAILY_INVITATIONS }}
           USER_IMPORT_TRIAL_DAILY_INVITATIONS: ${{ vars.USER_IMPORT_TRIAL_DAILY_INVITATIONS }}
           MODE: ${{ inputs.mode == 'test-email' && 'test-email' || 'once' }}
-          JADARAT_ENVIRONMENT: staging
+          JADARAT_ENVIRONMENT: ${{ inputs.environment || 'production' }}
           JADARAT_RELEASE: ${{ github.sha }}
-        run: node apps/worker/dist/main.mjs "$MODE"
+        run: DATABASE_URL="$DATABASE_URL_APP_WORKER" bash scripts/run-outside-deploy.sh node apps/worker/dist/main.mjs "$MODE"
       - name: Scanner was not available
         if: steps.clamd.outcome == 'success' && steps.clamd.outputs.ready != 'true'
         run: |

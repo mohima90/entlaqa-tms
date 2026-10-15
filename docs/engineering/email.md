@@ -38,13 +38,13 @@ Check any deployment's settings with `node apps/worker/dist/main.mjs test-email`
 
 ## 3. Staging set-up (Product Owner, once, after the PR is merged — Claude guides one step at a time)
 
-All in GitHub → Settings → Environments → **staging-jobs** (where the worker runs; never in Vercel):
+All in GitHub → Settings → Environments → **production-jobs** (the old project: `staging-jobs`; where the worker runs; never in Vercel):
 1. **Secret** `RESEND_API_KEY` = a Resend API key with **Sending access** for the domain `lms.entlaqa.com` (Resend → API Keys → Create).
 2. **Variables** `EMAIL_PROVIDER` = `resend`, `EMAIL_FROM_NAME` = `ENTLAQA LMS`, `EMAIL_FROM_ADDRESS` = `noreply@lms.entlaqa.com`, `APP_BASE_URL` = the staging web app's address (`https://…`, no path; required with `EMAIL_PROVIDER` set, or every pass stops with a configuration error).
 3. **Secret** `EMAIL_TEST_TO` = the PO's own e-mail address.
 3a. *(T-M2-17, password-reset links)* **Secret** `SUPABASE_SECRET_KEY` = a Supabase secret key (Supabase → Project Settings → API Keys → Secret keys), **variable** `SUPABASE_URL` = `https://<project ref>.supabase.co` — order and switch-on: [password-reset.md](password-reset.md) §6.
 4. DB deploy (plan, then apply) for the delivery-log table.
-5. Actions → **Jobs (staging)** → Run workflow → mode **test-email**: the sample invitation must arrive (check spam once); the run log shows `test e-mail accepted by resend (<id>)`.
+5. Actions → **Jobs** → Run workflow → environment **production**, mode **test-email**: the sample invitation must arrive (check spam once); the run log shows `test e-mail accepted by resend (<id>)`.
 
 ## 4. Operations
 

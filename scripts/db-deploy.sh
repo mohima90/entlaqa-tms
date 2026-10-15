@@ -15,6 +15,10 @@
 # apply: each pending migration runs in its own transaction together with its history row (same as the
 # CI gate, scripts/db-test.sh); then the role passwords are set as SCRAM verifiers; then
 # scripts/sql/verify-deployment.sql must pass.
+# Both modes hold the deploy lock for the whole run (scripts/lib/db-connect.sh; waits up to
+# DB_DEPLOY_LOCK_WAIT_SECONDS, default 960 — longer than a whole Jobs run — for another deploy,
+# provisioning run or worker pass). apply first repeats the dry run inside its own lock, so what it
+# applies is exactly what was just planned against the current history.
 set -euo pipefail
 
 MODE="${1:-}"
@@ -36,6 +40,10 @@ chmod 700 "$WORK"
 source "$ROOT/scripts/lib/db-connect.sh"
 db_connect "$WORK" db-deploy
 export PGAPPNAME="jadarat-db-deploy"
+# One run at a time per database, plan included (lib/db-connect.sh § Deploy lock): the manual and the
+# automatic workflow, provisioning and the worker pass of GitHub Actions never overlap.
+trap 'db_unlock; rm -rf "$WORK"' EXIT
+db_lock db-deploy exclusive "${DB_DEPLOY_LOCK_WAIT_SECONDS:-960}"
 PSQL=(psql -X -q -v ON_ERROR_STOP=1 --no-psqlrc)
 
 # Validate role passwords before touching the database (both modes).
@@ -72,19 +80,18 @@ for migration in "${pending[@]}"; do echo "  - $(basename "$migration")"; done
 # Fail fast instead of waiting on locks held by live sessions.
 TX_SETTINGS="set local lock_timeout = '10s'; set local statement_timeout = '5min';"
 
-if [[ "$MODE" == "plan" ]]; then
-  if [[ ${#pending[@]} -gt 0 ]]; then
-    # Dry run: every pending migration in ONE transaction that is always rolled back.
-    {
-      echo "begin; $TX_SETTINGS"
-      for migration in "${pending[@]}"; do printf "\\\\i '%s'\n" "$migration"; done
-      echo 'rollback;'
-    } >"$WORK/plan.sql"
-    "${PSQL[@]}" -f "$WORK/plan.sql"
-    echo "db-deploy: dry run OK — all pending migrations apply cleanly (rolled back, nothing changed)"
-  fi
-  exit 0
+# Dry run (both modes; apply re-plans inside its own lock): every pending migration in ONE transaction
+# that is always rolled back.
+if [[ ${#pending[@]} -gt 0 ]]; then
+  {
+    echo "begin; $TX_SETTINGS"
+    for migration in "${pending[@]}"; do printf "\\\\i '%s'\n" "$migration"; done
+    echo 'rollback;'
+  } >"$WORK/plan.sql"
+  "${PSQL[@]}" -f "$WORK/plan.sql"
+  echo "db-deploy: dry run OK — all pending migrations apply cleanly (rolled back, nothing changed)"
 fi
+if [[ "$MODE" == "plan" ]]; then exit 0; fi
 
 "${PSQL[@]}" -c "
   create schema if not exists supabase_migrations;

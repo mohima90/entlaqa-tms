@@ -7,8 +7,8 @@
 | **Product** | Jadarat TMS — Training Management System (module of the Jadarat HR Suite; also sold standalone) |
 | **Company** | ENTLAQA |
 | **Document type** | Business Requirements Document |
-| **Version** | 2.9 — Draft for stakeholder review |
-| **Date** | 30 September 2026 |
+| **Version** | 3.0 — Draft for stakeholder review |
+| **Date** | 15 October 2026 (v3.0; first issued 30 September 2026) |
 | **Supersedes** | *Jadarat TMS BRD v1.0* (15 March 2026) |
 | **Companion documents** | `docs/delivery/Jadarat_TMS_Development_Plan.md` (development plan & delivery guide) · `docs/brd/TMS_Feature_List.md` (feature list, 292 features) · `docs/research/TMS_Market_Comparison_vs_BRD.md` (market & regulatory research) |
 | **Classification** | Internal — Confidential |
@@ -21,6 +21,7 @@
 |---|---|---|---|
 | 1.0 | 15 Mar 2026 | ENTLAQA Product Team | Initial Jadarat TMS BRD (offline training, Jadarat-specific) |
 | 2.0 | 27 Sep 2026 | ENTLAQA Product Team | Full rewrite: comprehensive TMS scope, training planning cycle, vendor & finance depth, assessment engine, generic LMS integration framework, corrected regulatory content, sovereign deployment, requirement IDs with priority & release |
+| 3.0 | 15 Oct 2026 | Product Owner (via Claude) | **New product direction (PO, 15 Oct 2026).** (1) **Core product = organization setup + training planning**: the R1 core journey (§5.4) is Organization Admin set-up → HR structure with department heads → L&D course library and yearly planning cycle → Department Head needs → consolidation and budget check → plan approval → delivery that follows the approved plan. Moved **R2 → R1**, per ID: **FR-PLN-02** (planning cycle = TNA campaign with deadline, scope and budget envelope per department — the cycle itself), **FR-PLN-03** (Department Head needs form; pre-filled items that depend on R2 modules, such as competency gaps, appear when those modules ship), **FR-PLN-05** (consolidation), **FR-PLN-06** (sessions needed and estimated cost = the budget check), **FR-PLN-08** (plan approval, lock and versions), **FR-PLN-09** (approved plan → draft sessions and calendar: the hand-over to delivery), **FR-MGR-05** (the Department Head's entry to the needs form), **FR-WFL-01/02** (R1 part only: the configurable sequential approval chain used by the plan; the visual builder for other entities, conditions, parallel steps and escalation stay R2). Kept in their release: FR-PLN-04 self-nomination (S, not in the journey), FR-PLN-07 scenarios (R3), FR-PLN-10 plan vs. actual (needs actual costs from FR-FIN-04, R2 — open question to the PO), FR-PLN-11 interest lists, FR-PLN-12 Qiwa export (legal validation), FR-AI-06 TNA assistant (R3), FR-FIN-01 annual budgets (R2: R1 uses the per-department envelope of FR-PLN-02 — open question). The course library needs no move (FR-CAT-01/10 already R1). Decision D3 revised. (2) **Roles: six standard roles + custom roles** (§4.2, Appendix B; set proposed by the Tech Lead, pending PO confirmation): Organization Admin, HR Manager, L&D Manager, Training Coordinator (PO: "it's crucial"), Department Head, Employee; every other former default role becomes a **custom role** composed from the permission catalog, with suggested templates; **FR-IAM-07 custom role builder moves to R1**; FR-IAM-08 note on R1 scopes; BR-IAM-4 updated; existing assignments mapped to the nearest standard role (`docs/delivery/roles/README.md`). (3) **Kawadir ATS alignment** (ENTLAQA's sister product, separate codebase; UI/UX and Organization Admin settings copied one-to-one, `docs/design/kawadir-alignment.md`): FR-ADM-02 becomes **General** settings (regional), organization names move to **Branding** (FR-ADM-07: names AR/EN, logo, favicon, login page image, primary + secondary colour with a gradient switch, preset colour sets, website); **Email integration** page brings **FR-NTF-11 to R1** (platform sender by default or the organization's own provider: Resend, SMTP, SendGrid, Mailgun, Microsoft 365 / Graph; from name and address, reply-to, test send); FR-ADM-10 Domain page stays R2; FR-IAM-03 invitation link and code on the Team members page. Organization Admin Arabic label «مدير المنظمة» proposed (pending PO; current «مدير المنشأة»). (4) One environment (production) while there are no customers; automatic database migrations after merge (Appendix H.1). Feature list v3.0 |
 | 2.9 | 14 Oct 2026 | Product Owner (via Claude) | Organization Admin list revised (PO, 14 Oct 2026): role **Training Manager renamed L&D Manager** (مدير التعلم والتطوير); FR-ADM-02 profile reduced to display data (no legal/registration data); FR-ADM-07 no font choice (app fonts); FR-ADM-10 becomes the **Domain management** section (product subdomain or custom domain, instructions for both; stays R2); FR-ADM-15/16 removed; FR-IAM-03 adds a one-person **invitation link**; **no SMS anywhere** (FR-IAM-12 SMS OTP and FR-NTF-04 removed); notifications and e-mail content (FR-NTF-02/07/10) owned by the L&D Manager, the Organization Admin keeps e-mail sending (sender, own mail server FR-NTF-11) — replaces the v2.8 notification-rules owner. Feature list ADM-02/07/10/15/16, IAM-03/12, NTF-02/04/07/10 |
 | 2.8 | 14 Oct 2026 | Product Owner (via Claude) | Organization Admin feature list approved (PO, 14 Oct 2026): FR-ADM-01 onboarding wizard ends with inviting the Training Manager — the first course and first session become the Training Manager's first-sign-in steps (the Organization Admin has no training features); FR-NTF-07 notification rules are configured by the Organization Admin; FR-WFL-01/02 approval workflows are configured by the Training Manager; Appendix B note. Feature list ADM-01, NTF-07, WFL-01 |
 | 2.7 | 11 Oct 2026 | Product Owner (via Claude) | Organization structure moved to HR (PO, 11 Oct 2026): FR-ADM-04 (branches) and FR-ADM-05 (departments) are maintained by the **HR Manager**, not the Tenant Admin; §4.2 HR Manager scope and the Appendix B note updated. Feature list ADM-04/05 |
@@ -75,7 +76,7 @@
 19. [Acceptance & Success Criteria](#19-acceptance--success-criteria)
 20. [Open Decisions](#20-open-decisions)
 - [Appendix A — Glossary](#appendix-a--glossary)
-- [Appendix B — Default Roles & Permission Matrix](#appendix-b--default-roles--permission-matrix)
+- [Appendix B — Standard Roles & Permission Matrix](#appendix-b--standard-roles--permission-matrix)
 - [Appendix C — Status Models](#appendix-c--status-models)
 - [Appendix D — Notification Event Catalog](#appendix-d--notification-event-catalog)
 - [Appendix E — Regulatory Reference](#appendix-e--regulatory-reference)
@@ -285,25 +286,19 @@ The following capabilities are built **once** as platform services and reused by
 
 ### 4.2 System Roles (summary)
 
-Fifteen default roles ship with every tenant; tenants may clone and create custom roles (FR-IAM-020). Full matrix in Appendix B.
+**Six standard roles + custom roles (PO, 15 Oct 2026; the exact set is a Tech Lead proposal pending PO confirmation).** The PO found fifteen default roles too many ("I suggest 4 or 5 now and through users permissions I can create a custom role and give it a name and privileges") and then made the **Training Coordinator** a standard role ("it's crucial"). Every tenant ships with the six standard roles below; any other role an organization needs is a **custom role** that the Organization Admin composes from the permission catalog (FR-IAM-07, R1), optionally starting from a suggested template. The step-by-step analysis of which roles a new organization needs is in `docs/delivery/roles/README.md`. Full matrix in Appendix B.
 
 | Role | Arabic label | Scope |
 |---|---|---|
-| Platform Super Admin | مشرف المنصة | ENTLAQA internal only; cross-tenant operations |
-| Tenant Admin | مدير المنشأة | Setup of one tenant (settings, branding, domains, users and roles, security, integrations, e-mail sending, audit); no core training features (PO, 7 Oct 2026) |
-| L&D Manager | مدير التعلم والتطوير | Plans, catalog, sessions, resources, enrollments, reports; approval workflows, notifications and e-mail content. Renamed from Training Manager (مدير التدريب) (PO, 14 Oct 2026) |
-| Training Coordinator | منسق التدريب | Day-to-day session operations, logistics, attendance |
-| HR Manager | مدير الموارد البشرية | Records, organization structure (branches, departments), mandatory training, compliance, reports, HRIS |
-| Finance Manager | المدير المالي | Budgets, POs, invoices, chargebacks, payments |
-| Compliance Officer | مسؤول الامتثال | Compliance dashboards, regulatory reports, audit (read) |
-| Department Head | رئيس القسم | Department plan, approvals, department reports |
-| Line Manager | المدير المباشر | Direct reports: requests, nominations, approvals, team view |
-| Internal Instructor | مدرب داخلي | Assigned sessions, attendance, materials, grading |
-| External Instructor | مدرب خارجي | Assigned sessions only; no organizational data |
-| Training Provider Admin | مسؤول جهة التدريب | Provider portal: offerings, quotes, rosters, invoices |
-| Mentor / Assessor | مرشد / مقيّم | OJT and observation checklists for assigned trainees |
-| Learner | متدرب | Own catalog, enrollments, records, certificates |
-| Auditor | مدقق | Read-only access to records and audit log |
+| Platform Super Admin | مشرف المنصة | ENTLAQA internal only; cross-tenant operations through the platform console (FR-ADM-17); not a tenant role |
+| Organization Admin (Tenant Admin) | مدير المنشأة (proposed: «مدير المنظمة», as in Kawadir ATS — pending PO) | Set-up only: settings, branding, domains, team members and roles (incl. custom roles), security, integrations, e-mail integration, subscription, audit; no core training features (PO, 7 Oct 2026); holds no other role (BR-IAM-4) |
+| HR Manager | مدير الموارد البشرية | Employee records, organization structure (branches, departments, department heads), mandatory training and compliance rules, HR reports, HR system connection |
+| L&D Manager | مدير التعلم والتطوير | Course library, planning cycles, training plan and budget envelopes, sessions, enrollments, resources, notifications and e-mail content, approval workflows, training reports. Renamed from Training Manager (PO, 14 Oct 2026) |
+| Training Coordinator | منسق التدريب | Day-to-day session operations: scheduling, logistics, enrollments, attendance; in planning, supports the L&D Manager in collecting and consolidating needs (PO, 15 Oct 2026: standard role) |
+| Department Head | رئيس القسم | Their department(s) and sub-departments: proposes training needs in the planning cycle, approves the department's plan lines and requests, team view and department reports |
+| Employee | موظف (proposed; replaces Learner «متدرب» — pending PO) | Own requests, training, enrollments, certificates and records |
+
+**Former default roles → custom-role templates (PO, 15 Oct 2026).** Finance Manager (finance approver), Compliance Officer, Line Manager, Internal Instructor, External Instructor, Training Provider Admin, Mentor / Assessor and Auditor are no longer standard roles. The Organization Admin creates them as custom roles when the organization needs them; the product offers each as a **template** (suggested permissions, editable). A custom role that contains a high-risk permission (e.g., audit log, finance approval, exports, user and role management) is **privileged**: only an Organization Admin may assign it. Templates for non-employee roles (external instructors, provider staff) become usable when those user types ship (FR-IAM-15, R2). Existing role assignments are mapped to the nearest standard role (`docs/delivery/roles/README.md`).
 
 ### 4.3 Personas
 
@@ -344,7 +339,7 @@ flowchart LR
 
 | # | Process | Trigger | Main steps | Outputs |
 |---|---|---|---|---|
-| P1 | **Training Needs Analysis & Planning** | Planning cycle opens (e.g., Q4 for next year) or ad-hoc request | L&D opens TNA campaign → managers receive pre-filled team forms (mandatory, expiring, skills gaps) → managers submit needs → L&D consolidates demand → system converts demand to sessions & cost → scenarios → approvals (Dept → Finance → HR/L&D) → plan approved | Approved training plan, budget, draft sessions |
+| P1 | **Training Needs Analysis & Planning** | Planning cycle opens (e.g., Q4 for next year) or ad-hoc request | L&D Manager opens the planning cycle (TNA campaign) → each Department Head receives a pre-filled team form (mandatory, expiring, skills gaps when available) → Department Heads submit needs → L&D Manager (with the Training Coordinator) consolidates demand → system converts demand to sessions & cost and checks it against the budget envelopes → scenarios (R3) → approvals (Department Head → Finance → management) → plan approved, locked and versioned. **R1 core journey since 15 Oct 2026 (§5.4)** | Approved training plan, budget, draft sessions |
 | P2 | **Catalog & Design** | New need or plan line without a course | Create/clone course from template → objectives, competencies, assessments, materials → optional LMS linking for online components → publish | Published course / program |
 | P3 | **Scheduling & Resourcing** | Approved plan line or ad-hoc | Create sessions (manual, bulk from plan, or AI optimizer) → assign instructor/provider, venue, room, equipment → conflict checks (people, rooms, holidays, prayer times) → confirm → publish to calendar | Scheduled sessions, bookings |
 | P4 | **Enrollment & Approvals** | Session published / rule fires / nomination | Self-enroll, manager nominate, admin assign, or rule-based auto-enroll → prerequisite & capacity checks → approval workflow → confirm or waitlist → calendar invite | Enrollments, waitlists |
@@ -374,6 +369,21 @@ sequenceDiagram
   T->>M: Push certificate & unified record (optional)
 ```
 
+### 5.4 R1 Core Journey: Organization Set-up and Training Planning (PO, 15 Oct 2026)
+
+The PO set the product's core as **organization set-up + training planning**; delivery (sessions, enrollment, attendance, certificates) follows the approved plan. R1 is built in this order; each step's business flow is agreed with the PO before its screens and build (Development Plan §4.1).
+
+| # | Step | Actor (standard role) | Requirements |
+|---|---|---|---|
+| 1 | Set up the organization: general settings, branding, team members, roles, e-mail integration, integrations | Organization Admin | FR-ADM-01, 02, 07, 11, 13 · FR-IAM-01…05, 07 · FR-NTF-11 |
+| 2 | Set the structure: branches, departments, department heads | HR Manager | FR-ADM-04, 05 |
+| 3 | Build the course library | L&D Manager (Training Coordinator assists) | FR-CAT-01, 10 (then FR-CAT-02, 03, 05, 06) |
+| 4 | Launch the yearly planning cycle: period, deadline, scope, budget envelope per department | L&D Manager | FR-PLN-02 |
+| 5 | Propose needs: each Department Head receives a form with their team and adds needs (course, people, priority, quarter, cost, justification) | Department Head | FR-PLN-03, FR-MGR-05 |
+| 6 | Consolidate: sessions needed, estimated cost, check against budget envelopes | L&D Manager, Training Coordinator | FR-PLN-05, 06 |
+| 7 | Approve the plan: Department Head → Finance → management; comments, line-level rejection; approved plan locked and versioned | Department Head, approvers chosen per step (role or named user) | FR-PLN-08 · FR-WFL-01/02 (R1 part) |
+| 8 | Deliver the approved plan: draft sessions and calendar from the plan, then scheduling, enrollment, attendance, assessment, certificates, reports | L&D Manager, Training Coordinator, Employee | FR-PLN-09 · §6.4–§6.13 R1 requirements |
+
 ---
 
 ## 6. Functional Requirements
@@ -388,16 +398,16 @@ Columns: **Pri** = MoSCoW priority · **Rel** = target release.
 
 | ID | Requirement | Pri | Rel |
 |---|---|---|---|
-| FR-ADM-01 | The system shall provide self-service sign-up that creates a tenant in *trial* status, provisions default roles, templates and workflows, and launches an onboarding wizard for the Tenant Admin (organization → branding → first users → invite the L&D Manager); the first course and first session are the L&D Manager's first-sign-in steps, because the Tenant Admin has no training features (PO, 14 Oct 2026). Trial length is configurable by ENTLAQA (default 14 days). | M | R1 |
-| FR-ADM-02 | Tenant Admin shall maintain the organization profile: name displayed on the platform (AR/EN), industry, country, default currency, default timezone, default language, fiscal-year start month. Official registration data (legal name, commercial registration, VAT number, authorized signatory) is not collected (PO, 14 Oct 2026). | M | R1 |
+| FR-ADM-01 | The system shall provide self-service sign-up that creates a tenant in *trial* status, provisions the standard roles, custom-role templates, default templates and workflows, and launches an onboarding wizard for the Tenant Admin (organization → branding → first users → invite the L&D Manager); the first course and first session are the L&D Manager's first-sign-in steps, because the Tenant Admin has no training features (PO, 14 Oct 2026). Trial length is configurable by ENTLAQA (default 14 days). | M | R1 |
+| FR-ADM-02 | Tenant Admin shall maintain the organization's **General** settings (Settings → General, as in Kawadir ATS — PO, 15 Oct 2026): industry, country (suggests the regional presets), default timezone, default language, date display (Gregorian / Hijri / both), default currency, fiscal-year start month and default working week. The name displayed on the platform (AR/EN) is edited on the **Branding** page (FR-ADM-07) (PO, 15 Oct 2026; was part of the organization profile). Official registration data (legal name, commercial registration, VAT number, authorized signatory) is not collected (PO, 14 Oct 2026). | M | R1 |
 | FR-ADM-03 | The system shall support multiple legal entities under one tenant, each with its own currency, VAT number, branding variant, certificate numbering and invoice sequence; users, budgets and reports can be scoped by entity. | S | R3 |
 | FR-ADM-04 | HR Manager shall maintain branches (AR/EN name, code, country, city, address, GPS, timezone, headquarters flag, parent branch) with branch-specific working week (including half-days) and working hours. | M | R1 |
 | FR-ADM-05 | HR Manager shall maintain a hierarchical department tree (AR/EN name, code, cost center, head, parent, branch) with drag-and-drop reordering and CSV import. | M | R1 |
 | FR-ADM-06 | The system shall display an interactive org chart (branch → department → team) showing head-count and compliance percentage per node, exportable to PDF/PNG. | C | R3 |
-| FR-ADM-07 | Tenant Admin shall configure brand identity: logo variants (full, icon, light, dark), primary/secondary/accent colors with generated shades (the organization's colours also drive the navigation gradient); the product's own fonts are always used — no font choice (PO, 14 Oct 2026); the system shall warn when color contrast fails WCAG 2.2 AA. | M | R1 |
+| FR-ADM-07 | Tenant Admin shall configure brand identity on the **Branding** page (as in Kawadir ATS — PO, 15 Oct 2026): organization names (AR/EN), logo, favicon, login page image, primary and secondary colour with a **"use gradient"** switch (the gradient marks the selected navigation item and primary accents), preset colour sets, and website; generated shades; the product's own fonts are always used — no font choice (PO, 14 Oct 2026); the system shall warn when color contrast fails WCAG 2.2 AA. | M | R1 |
 | FR-ADM-08 | The system shall provide a theme builder with live preview (dashboard, login, certificate, e-mail, mobile), ≥ 10 presets, draft/publish, version history and dark-mode enablement. | S | R2 |
-| FR-ADM-09 | Tenant Admin shall customize the login page (background, AR/EN welcome text, footer, legal links, scheduled seasonal themes). | C | R2 |
-| FR-ADM-10 | **Domain management** (its own admin section, PO, 14 Oct 2026): each tenant receives a default subdomain; the Tenant Admin chooses either (a) a subdomain under the product's domain, picking the name (availability check), or (b) a custom domain through a DNS wizard with automatic verification, SSL provisioning, health monitoring and redirect from the default subdomain. Both options come with step-by-step instructions. | S | R2 |
+| FR-ADM-09 | Tenant Admin shall customize the login page (background, AR/EN welcome text, footer, legal links, scheduled seasonal themes). The login page image itself is part of Branding (FR-ADM-07, R1 — PO, 15 Oct 2026). | C | R2 |
+| FR-ADM-10 | **Domain management** (its own admin section, PO, 14 Oct 2026; the **Domain** page under Settings, as in Kawadir ATS — PO, 15 Oct 2026; release stays R2 unless the PO decides otherwise): each tenant receives a default subdomain; the Tenant Admin chooses either (a) a subdomain under the product's domain, picking the name (availability check), or (b) a custom domain through a DNS wizard with automatic verification, SSL provisioning, health monitoring and redirect from the default subdomain. Both options come with step-by-step instructions. | S | R2 |
 | FR-ADM-11 | Tenant Admin shall define custom fields (text, number, date, list, multi-list, boolean, user, file) for users, courses, sessions, enrollments, instructors, vendors and venues, with AR/EN labels, required flag, visibility by role, and availability in filters, reports, imports and API. | M | R1 |
 | FR-ADM-12 | Tenant Admin shall override system terminology (e.g., Course → Program, Session → Workshop) in Arabic and English, with preview and reset. | S | R2 |
 | FR-ADM-13 | The system shall gate features per tenant based on edition and add-ons; Tenant Admin can further disable enabled features for their users. | M | R1 |
@@ -412,7 +422,7 @@ Columns: **Pri** = MoSCoW priority · **Rel** = target release.
 - BR-ADM-3: Weekend/working-hour settings resolve in order: branch → legal entity → tenant → country default.
 
 **Acceptance criteria (examples)**
-- *Given* a new sign-up, *when* the wizard is completed, *then* the tenant has 15 default roles, default notification templates, default approval workflow, and its L&D Manager can create a course and session within 15 minutes of first sign-in.
+- *Given* a new sign-up, *when* the wizard is completed, *then* the tenant has the six standard roles (§4.2), default notification templates, default approval workflow, and its L&D Manager can create a course and session within 15 minutes of first sign-in.
 - *Given* a branch with Friday–Saturday weekend, *when* a session is scheduled on Friday, *then* the system warns before saving.
 
 ---
@@ -425,12 +435,12 @@ Columns: **Pri** = MoSCoW priority · **Rel** = target release.
 |---|---|---|---|
 | FR-IAM-01 | The system shall maintain user profiles: e-mail, mobile with country code, first/father/grandfather/family names in AR and EN, display names, employee ID, branch, department, job title (AR/EN), grade, manager, hire date, nationality, national flag, status, locale, photo, custom fields. E-mail and employee ID are unique per tenant. | M | R1 |
 | FR-IAM-02 | Profiles shall also hold gender, date of birth and employment category (e.g., management, professional, technical, operational) to support ESG and ministry reporting; these fields are restricted to HR/Compliance roles by default. | M | R1 |
-| FR-IAM-03 | Admins shall invite users individually or in bulk; invitations expire (default 7 days), can be resent (max 3) and revoked; custom invitation text per tenant (edited by the L&D Manager with the other e-mail texts, FR-NTF-10). Besides the e-mail, an admin may create an **invitation link for one person** (e-mail and role chosen as for an e-mail invitation) and share it personally (e.g. WhatsApp): single use, expires (default 7 days), revocable, shown once; the person creates their own account and joins the organization; same role rules and audit as e-mail invitations (PO, 14 Oct 2026). | M | R1 |
+| FR-IAM-03 | Admins shall invite users individually or in bulk; invitations expire (default 7 days), can be resent (max 3) and revoked; custom invitation text per tenant (edited by the L&D Manager with the other e-mail texts, FR-NTF-10). Besides the e-mail, an admin may create an **invitation link for one person** (e-mail and role chosen as for an e-mail invitation) and share it personally (e.g. WhatsApp): single use, expires (default 7 days), revocable, shown once; the person creates their own account and joins the organization; same role rules and audit as e-mail invitations (PO, 14 Oct 2026). The **Team members** page (as in Kawadir ATS — PO, 15 Oct 2026) shows summary cards and two tabs, *Members* and *Pending invites*; a pending invitation offers its link and invitation code to copy, and resend (the code's security design is reviewed with the task — TM-0003). | M | R1 |
 | FR-IAM-04 | The system shall provide a bulk import wizard for users (CSV/XLSX, up to 10,000 rows): template download with Arabic headers, auto/manual column mapping, row-level validation, dry-run preview, create-only / upsert / update-only modes, progress and downloadable error report. | M | R1 |
 | FR-IAM-05 | Deactivating a user shall preserve all records, block login, and prompt reassignment of owned items (sessions, approvals, OJT mentees, tasks); deactivated users are archived and can be reactivated. | M | R1 |
 | FR-IAM-06 | Admins shall create static groups and dynamic audiences defined by AND/OR rules on any profile field (incl. custom fields and hire date); audiences re-evaluate automatically and can be used for enrollment, notifications, compliance rules, catalog visibility and reports. | M | R2 |
-| FR-IAM-07 | The system shall ship 15 default roles (Appendix B). Tenant Admin can clone roles and create custom roles with a permission matrix grouped by module; high-risk permissions are flagged. The definitions of system roles cannot be changed (a tenant clones one to adapt it). **Full role management for the tenant (PO, 7 Oct 2026):** create, view, edit and delete custom roles, and remove system roles the organization does not use (e.g. an SME keeping only 3–4 roles) and restore them later. Safeguards: the Organization Admin role cannot be removed; a role still held by members cannot be deleted or removed until they are given another role; every change is audited. | M | R1 (default) / R2 (builder, role CRUD) |
-| FR-IAM-08 | Role assignments shall support data scopes: own, direct reports, all reports (hierarchy), department(s), branch(es), legal entity, all. | M | R2 |
+| FR-IAM-07 | The system shall ship **six standard roles** (§4.2, Appendix B; set proposed by the Tech Lead, pending PO confirmation — PO, 15 Oct 2026). The Organization Admin can create **custom roles** in a role builder: name (AR/EN), description, permissions grouped by module, high-risk permissions flagged (a role holding one is privileged), and one data scope for the role from the R1 scopes (FR-IAM-08 note); suggested **templates** for the former default roles (Finance approver, Compliance Officer, Line Manager, Instructor, Mentor / Assessor, Auditor, Training Provider Admin). The definitions of standard roles cannot be changed (a tenant clones one to adapt it). **Role management for the tenant (PO, 7 Oct 2026):** create, view, edit and delete custom roles (R1); remove standard roles the organization does not use and restore them later (R2). Safeguards: the Organization Admin role cannot be removed; a role still held by members cannot be deleted or removed until they are given another role; every change is audited. Custom role builder moved from R2 to R1 (PO, 15 Oct 2026). | M | R1 (standard roles, builder, custom-role CRUD) / R2 (remove/restore standard roles) |
+| FR-IAM-08 | Role assignments shall support data scopes: own, direct reports, all reports (hierarchy), department(s), branch(es), legal entity, all. **R1 note (15 Oct 2026):** standard roles carry fixed scopes (Organization Admin, HR Manager, L&D Manager, Training Coordinator: organization; Department Head: the departments they head with sub-departments; Employee: own) and a custom role (FR-IAM-07) chooses one of the scopes already built (own, direct reports, reports tree, headed departments, organization) for the whole role; scopes chosen per assignment (department(s), branch(es), legal entity) stay R2. | M | R2 |
 | FR-IAM-09 | The system shall enforce configurable separation-of-duties rules (e.g., a user cannot approve their own request; budget creator cannot approve the same budget; invoice approver ≠ PO creator). | S | R2 |
 | FR-IAM-10 | The system shall support SSO via SAML 2.0 and OpenID Connect with multiple identity providers per tenant, attribute mapping, just-in-time provisioning with default role, "force SSO" (disable passwords except break-glass admins), and a test tool with request/response log. | M | R2 |
 | FR-IAM-11 | The system shall expose a SCIM 2.0 endpoint for user and group provisioning from Microsoft Entra ID, Okta and Google Workspace. | S | R3 |
@@ -444,7 +454,7 @@ Columns: **Pri** = MoSCoW priority · **Rel** = target release.
 - BR-IAM-1: A user has exactly one primary role and may hold additional roles; effective permissions are the union, limited by each role's data scope.
 - BR-IAM-2: Break-glass: at least one Tenant Admin must retain password + MFA login when SSO is forced.
 - BR-IAM-3: Any role or permission change is audited with before/after values.
-- BR-IAM-4: Separation of duties (PO, 7 Oct 2026; widened 8 Oct 2026): the Organization Admin (Tenant Admin) role is held **alone** — a person who is Organization Admin of an organization holds no other role there (not HR Manager, L&D Manager, Learner or any other), and assigning any role to an Organization Admin, or the Organization Admin role to a holder of another role, is refused (a scheduled hand-over with non-overlapping dates is allowed). The Organization Admin role has no core training permissions (Appendix B). Residual risk accepted by the PO: one human using a second account cannot be detected; the audit log records every role grant.
+- BR-IAM-4: Separation of duties (PO, 7 Oct 2026; widened 8 Oct 2026): the Organization Admin (Tenant Admin) role is held **alone** — a person who is Organization Admin of an organization holds no other role there (not HR Manager, L&D Manager, Training Coordinator, Employee or any other — standard or custom), and assigning any role to an Organization Admin, or the Organization Admin role to a holder of another role, is refused (a scheduled hand-over with non-overlapping dates is allowed). The Organization Admin role has no core training permissions (Appendix B). Residual risk accepted by the PO: one human using a second account cannot be detected; the audit log records every role grant.
 
 ---
 
@@ -452,24 +462,26 @@ Columns: **Pri** = MoSCoW priority · **Rel** = target release.
 
 **Purpose:** Turn organizational needs into an approved, budgeted training plan and track its delivery.
 
+**Release change (PO, 15 Oct 2026; BRD v3.0):** the planning cycle is the product's core and moves to R1 — FR-PLN-02, 03, 05, 06, 08 and 09 (with FR-MGR-05 and the R1 part of FR-WFL-01/02). The other PLN requirements keep their release. Journey in §5.4.
+
 | ID | Requirement | Pri | Rel |
 |---|---|---|---|
 | FR-PLN-01 | Employees and managers shall submit training requests for catalog courses or for new/external training (title, provider, justification, linked competency, estimated cost, preferred period, attachments); requests follow a configurable approval workflow and, once approved, become a plan line or a direct enrollment. | M | R1 |
-| FR-PLN-02 | L&D Managers shall create TNA campaigns with name, planning period, scope (departments/branches/audiences), deadline, reminders, optional budget envelope per department, and form template. | M | R2 |
-| FR-PLN-03 | Each manager in scope shall receive a campaign form pre-filled with their team and, per employee, mandatory training due, certifications expiring in the planning period and top competency gaps; managers add or remove needs with priority (critical/high/medium/low), justification and preferred quarter. | M | R2 |
+| FR-PLN-02 | L&D Managers shall create TNA campaigns with name, planning period, scope (departments/branches/audiences), deadline, reminders, optional budget envelope per department, and form template. In R1 this is the yearly **planning cycle** that starts the core journey (§5.4). | M | R1 |
+| FR-PLN-03 | Each manager in scope (in R1: each **Department Head** for the departments they head) shall receive a campaign form pre-filled with their team and, per employee, mandatory training due, certifications expiring in the planning period and top competency gaps; managers add or remove needs with priority (critical/high/medium/low), justification and preferred quarter. R1: the form lists the team from the organization structure and lets the Department Head add needs (catalog course or new topic, people, priority, quarter, estimated cost, justification); pre-filled items that depend on later modules (e.g., competency gaps, FR-SKL-03 R2) appear when those modules ship. | M | R1 |
 | FR-PLN-04 | Where enabled, employees may self-nominate needs within a campaign; nominations require manager validation before inclusion. | S | R2 |
-| FR-PLN-05 | The system shall consolidate submitted needs by course (or requested topic), branch, delivery type and month, showing head-count, priority mix and requesting departments. | M | R2 |
-| FR-PLN-06 | For each consolidated line the system shall calculate the number of sessions required (head-count ÷ course capacity, respecting minimum participants) and estimated cost from the course cost model (instructor, venue, materials, catering, travel). | M | R2 |
+| FR-PLN-05 | The system shall consolidate submitted needs by course (or requested topic), branch, delivery type and month, showing head-count, priority mix and requesting departments. | M | R1 |
+| FR-PLN-06 | For each consolidated line the system shall calculate the number of sessions required (head-count ÷ course capacity, respecting minimum participants) and estimated cost from the course cost model (instructor, venue, materials, catering, travel), and compare the totals per department with the cycle's budget envelopes (budget check). | M | R1 |
 | FR-PLN-07 | L&D Managers shall create and compare at least three plan scenarios (e.g., full, reduced, minimum) by including, trimming or deferring lines, with totals by department, category and quarter against budget envelopes. | S | R3 |
-| FR-PLN-08 | The plan shall follow a configurable approval workflow (e.g., Department Head → Finance → HR/L&D Director), support comments and line-level rejection, and lock on approval with versioning for later revisions. | M | R2 |
-| FR-PLN-09 | From an approved plan, L&D Managers shall bulk-generate draft sessions (per line, per quarter/month, per branch) and publish a training calendar to audiences; nominated employees are pre-enrolled or invited. | M | R2 |
+| FR-PLN-08 | The plan shall follow a configurable approval workflow (e.g., Department Head → Finance → HR/L&D Director), support comments and line-level rejection, and lock on approval with versioning for later revisions. R1 default chain: Department Head (their departments' lines) → Finance approver → management approver; each step's approver is a role (standard or custom) or a named person, chosen by the L&D Manager (FR-WFL-01/02 R1 part). | M | R1 |
+| FR-PLN-09 | From an approved plan, L&D Managers shall bulk-generate draft sessions (per line, per quarter/month, per branch) and publish a training calendar to audiences; nominated employees are pre-enrolled or invited. In R1 this is the hand-over from the approved plan to delivery. | M | R1 |
 | FR-PLN-10 | The system shall report plan vs. actual per line, department and period: planned vs. delivered sessions, head-count, training hours and cost, with variance and a year-end forecast. | M | R2 |
 | FR-PLN-11 | Learners may register interest in courses without upcoming sessions; when interest reaches a configurable threshold, the L&D Manager is alerted with a "create session" action. | S | R2 |
 | FR-PLN-12 | The system shall export the approved plan and next-year committed budget in the format required for the Saudi Qiwa annual training disclosure (see FR-REG-02). | M | R2 |
 
 **Business rules**
 - BR-PLN-1: A need linked to an expiring certification or mandatory rule cannot be deleted by the manager without a reason.
-- BR-PLN-2: Approved plan lines reserve budget as *planned*; enrollment approval converts to *committed*; invoice/expense converts to *actual* (see FIN).
+- BR-PLN-2: Approved plan lines reserve budget as *planned*; enrollment approval converts to *committed*; invoice/expense converts to *actual* (see FIN). In R1 (before FR-FIN-01/02, R2) the plan is checked against the planning cycle's per-department budget envelopes (FR-PLN-02, 06).
 - BR-PLN-3: Plan revisions create a new version; plan-vs-actual always compares to the latest approved version, with history available.
 
 **Acceptance criteria (examples)**
@@ -778,7 +790,7 @@ Columns: **Pri** = MoSCoW priority · **Rel** = target release.
 | FR-MGR-02 | An approvals inbox shall list pending approvals (enrollments, requests, expenses, OJT sign-offs) with context (cost, budget impact, team schedule) and bulk approve/reject. | M | R1 |
 | FR-MGR-03 | A team calendar shall show members' sessions and OJT days to avoid operational clashes. | M | R1 |
 | FR-MGR-04 | Managers shall nominate/assign training to one or many team members with deadline and message in one step. | M | R1 |
-| FR-MGR-05 | Managers shall complete TNA campaign forms for their team from the hub (FR-PLN-03). | M | R2 |
+| FR-MGR-05 | Managers shall complete TNA campaign forms for their team from the hub (FR-PLN-03); in R1 the Department Head's entry to the planning-cycle needs form (PO, 15 Oct 2026). | M | R1 |
 | FR-MGR-06 | Managers shall receive and complete Level 3 follow-up tasks (FR-ASM-06). | M | R2 |
 | FR-MGR-07 | Managers shall view team competency gaps and recommended actions. | S | R2 |
 
@@ -789,7 +801,7 @@ Columns: **Pri** = MoSCoW priority · **Rel** = target release.
 | ID | Requirement | Pri | Rel |
 |---|---|---|---|
 | FR-NTF-01 | A real-time in-app notification center (bell + page) with read/unread, filters, deep links and bulk mark-as-read. | M | R1 |
-| FR-NTF-02 | E-mail notifications with branded bilingual templates, variables, preview with sample data, per-tenant sender name and optional custom sending domain (SPF/DKIM). The Tenant Admin configures e-mail sending (sender name and address, sending domain, own mail server FR-NTF-11); the L&D Manager owns the e-mails' look and content (PO, 14 Oct 2026). R1: the organization's brand (logo, colours, sender name, default language) on standard texts; editing the texts is FR-NTF-10 (R2). Account e-mails (invitation, password reset, password changed) are sent by the platform's notification service in the organization's language and brand, never by the sign-in provider's own mailer (PO, 7 Oct 2026). | M | R1 |
+| FR-NTF-02 | E-mail notifications with branded bilingual templates, variables, preview with sample data, per-tenant sender name and optional custom sending domain (SPF/DKIM). The Tenant Admin configures e-mail sending on the Email integration page (sender name and address, reply-to, sending domain, own mail server FR-NTF-11 — R1 since 15 Oct 2026); the L&D Manager owns the e-mails' look and content (PO, 14 Oct 2026). R1: the organization's brand (logo, colours, sender name, default language) on standard texts; editing the texts is FR-NTF-10 (R2). Account e-mails (invitation, password reset, password changed) are sent by the platform's notification service in the organization's language and brand, never by the sign-in provider's own mailer (PO, 7 Oct 2026). | M | R1 |
 | FR-NTF-03 | WhatsApp Business (Meta Cloud API or approved BSP): template management with approval status tracking, variables, AR/EN, interactive buttons (confirm attendance, approve/reject, open check-in), opt-in capture and opt-out handling. | M | R2 |
 | FR-NTF-04 | **Removed (PO, 14 Oct 2026: no SMS anywhere in the product).** ~~SMS through configurable gateways (MENA-native provider and an international fallback), sender ID per tenant/country.~~ | W | — |
 | FR-NTF-05 | Web push notifications for PWA users. | S | R2 |
@@ -798,7 +810,7 @@ Columns: **Pri** = MoSCoW priority · **Rel** = target release.
 | FR-NTF-08 | Scheduled reminders (default T-7d, T-3d, T-1d, T-1h) and daily/weekly digests for managers and coordinators. | M | R1 |
 | FR-NTF-09 | Coordinators shall broadcast messages to session participants or audiences via chosen channels, with delivery statistics. | M | R2 |
 | FR-NTF-10 | The L&D Manager shall edit the subject and body of each e-mail in Arabic and English, with variables, preview with sample data and reset to the default text; changes audited (PO, 7 Oct 2026; owner the L&D Manager, PO, 14 Oct 2026). | S | R2 |
-| FR-NTF-11 | Each organization may connect its own mail server for all of its e-mails (account, operational, reminders): Resend, Mailgun, SMTP with TLS, or Microsoft 365 via Microsoft Graph; credentials write-only and encrypted, test send, delivery errors visible to the Organization Admin, automatic fallback to the platform sender; changes audited (PO, 7 Oct 2026). | S | R2 |
+| FR-NTF-11 | **Email integration** page (one page, as in Kawadir ATS — PO, 15 Oct 2026): by default the organization's e-mails go out through the **platform sender**; the Organization Admin may instead connect the organization's own provider for all of its e-mails (account, operational, reminders): **Resend, SMTP with TLS, SendGrid, Mailgun, or Microsoft 365 via Microsoft Graph**; from name and from address, reply-to address, **test send**; credentials write-only and encrypted, delivery errors visible to the Organization Admin, automatic fallback to the platform sender; changes audited (PO, 7 Oct 2026). Moved from R2 to R1 (PO, 15 Oct 2026). | S | R1 |
 
 **Business rules**
 - BR-NTF-1: Channel fallback order is configurable (e.g., WhatsApp → e-mail) when a channel fails or the recipient has not opted in.
@@ -872,12 +884,12 @@ Columns: **Pri** = MoSCoW priority · **Rel** = target release.
 
 | ID | Requirement | Pri | Rel |
 |---|---|---|---|
-| FR-WFL-01 | A visual workflow builder shall define approval workflows for: enrollment, training request, plan, budget, expense, PO, invoice, session creation, certificate issuance, OJT plan, external certification. Approval workflows are configured by the L&D Manager (PO, 14 Oct 2026). | M | R2 |
-| FR-WFL-02 | Steps support approver types (line manager, N-level manager, department head, role, specific user, cost-center owner, finance), conditions (amount, category, department, delivery type, external/internal, travel), sequential and parallel (all/any) logic, escalation and reminders, auto-approval, delegation, and default workflows per entity. | M | R2 |
+| FR-WFL-01 | A visual workflow builder shall define approval workflows for: enrollment, training request, plan, budget, expense, PO, invoice, session creation, certificate issuance, OJT plan, external certification. Approval workflows are configured by the L&D Manager (PO, 14 Oct 2026). **R1 part (PO, 15 Oct 2026):** a configurable sequential approval chain for the **training plan** (FR-PLN-08) and training requests, set up in a form (no visual canvas); the visual builder and the other entities stay R2. | M | R1 (plan approval chain) / R2 (visual builder, other entities) |
+| FR-WFL-02 | Steps support approver types (line manager, N-level manager, department head, role, specific user, cost-center owner, finance), conditions (amount, category, department, delivery type, external/internal, travel), sequential and parallel (all/any) logic, escalation and reminders, auto-approval, delegation, and default workflows per entity. **R1 part (PO, 15 Oct 2026):** approver types department head, role (standard or custom) and specific person; sequential steps; comments; reminders. Conditions, parallel steps, escalation, auto-approval and delegation stay R2. | M | R1 (sequential steps) / R2 (rest) |
 | FR-WFL-03 | Automation rules ("when *event* and *condition* then *action*") shall allow actions such as notify, create task, enroll, change status, call webhook (e.g., "when fill rate < 50% at T-7 notify coordinator and suggest merge"). | S | R3 |
 | FR-WFL-04 | SLA timers on approvals and tasks with overdue dashboards. | S | R3 |
 
-In R1, approvals use a fixed default chain (Line Manager → L&D Manager) configurable by toggles.
+In R1, the training plan follows the configurable sequential chain of FR-WFL-01/02 (R1 part; default Department Head → Finance approver → management approver); enrollments and training requests use a default chain (the person's direct manager or Department Head → L&D Manager) configurable by toggles. "Line manager" here is the reporting line in the person's record, not a role (PO, 15 Oct 2026: Line Manager is a custom-role template).
 
 ---
 
@@ -1383,8 +1395,8 @@ When Jadarat TMS is purchased as part of the Jadarat HR Suite, platform services
 
 | Release | Timing | Theme | Scope (modules / key requirements) | Exit criteria |
 |---|---|---|---|---|
-| **R1 — MVP** | Months 0–4 | Run training operations end-to-end | **Shared Jadarat Platform foundation (people directory, identity, roles, workflow, notifications, audit, design system & suite shell)**, suite/standalone mode, ADM core, IAM core (MFA, import, 15 roles), training requests (PLN-01), catalog & templates, sessions & calendar, conflicts, Hijri, venues/rooms/equipment, instructors + portal, enrollment (self/manager/bulk), task checklists & joining instructions, attendance (manual, rotating QR, geo, sign-in sheets, rules), assessments & L1 surveys, certificates + verification + expiry, external certifications, compliance rules & dashboard, learner PWA, manager hub, e-mail + in-app notifications, executive & operational reports, audit log, consent, editions, **LMS framework + Jadarat L2**, regional cloud | 5 design-partner tenants live; all R1 "M" requirements accepted; pen test passed |
-| **R2 — Growth** | Months 5–8 | Plan, approve, budget, integrate | TNA campaigns & training plan, plan vs. actual, Qiwa disclosure & OJT quota, SAMA pack, custom roles & scopes, SSO, dynamic audiences, approval workflow builder, waitlists, quotas, cancellation policy, VILT (Zoom/Teams/Webex), resource timeline, e-signature & offline attendance, OJT & observation checklists, competencies, budgets/expenses, providers & portal, trainer contracts/payments, logistics orders, WhatsApp/SMS/push, report builder, unified transcript, AI assistant/recommendations/content + governance, public API & webhooks, HRIS connectors, Jadarat L3, xAPI | 50 tenants; Qiwa disclosure produced for ≥ 5 Saudi tenants |
+| **R1 — MVP** | Months 0–4 | Set up the organization, plan the year's training, then run it end-to-end (PO, 15 Oct 2026) | **Shared Jadarat Platform foundation (people directory, identity, roles, workflow, notifications, audit, design system & suite shell)**, suite/standalone mode, ADM core (General, Branding, Email integration incl. own mail server NTF-11), IAM core (MFA, import, six standard roles + custom role builder), **planning cycle — the core: training requests, planning cycle with budget envelopes, Department Head needs, consolidation and budget check, plan approval chain, plan → draft sessions (PLN-01, 02, 03, 05, 06, 08, 09; MGR-05; WFL-01/02 R1 part)**, catalog & templates, sessions & calendar, conflicts, Hijri, venues/rooms/equipment, instructors + portal, enrollment (self/manager/bulk), task checklists & joining instructions, attendance (manual, rotating QR, geo, sign-in sheets, rules), assessments & L1 surveys, certificates + verification + expiry, external certifications, compliance rules & dashboard, learner PWA, manager hub, e-mail + in-app notifications, executive & operational reports, audit log, consent, editions, **LMS framework + Jadarat L2**, regional cloud | 5 design-partner tenants live; all R1 "M" requirements accepted; pen test passed |
+| **R2 — Growth** | Months 5–8 | Measure, budget, integrate | Plan vs. actual, self-nomination and interest lists, Qiwa disclosure & OJT quota, SAMA pack, data scopes per assignment and removal of unused standard roles, SSO, dynamic audiences, visual approval workflow builder (conditions, parallel steps, escalation) for the other entities, waitlists, quotas, cancellation policy, VILT (Zoom/Teams/Webex), resource timeline, e-signature & offline attendance, OJT & observation checklists, competencies, budgets/expenses, providers & portal, trainer contracts/payments, logistics orders, WhatsApp/push (no SMS — PO, 14 Oct 2026), report builder, unified transcript, AI assistant/recommendations/content + governance, public API & webhooks, HRIS connectors, Jadarat L3, xAPI | 50 tenants; Qiwa disclosure produced for ≥ 5 Saudi tenants |
 | **R3 — Enterprise & Sovereign** | Months 9–12 | Enterprise depth & sovereignty | Legal entities, sandbox, SCIM, IP/access-hour controls, scenarios, AI optimizer, Ops Agent, MCP server, RFQ & scorecards, POs, invoice matching, chargebacks, no-show fees, ERP export, subsidy packs (HRDF, Egypt), UAE & CMA packs, Open Badges 3.0, PKI signing, kiosk/NFC, anomaly detection, Teams/Slack, BI connector, ESG reports, AI narratives, retention & data tools, training agreements (bonds), Moodle & other connectors, Jadarat L4 (LTI/cmi5), **in-country KSA/UAE deployment**, dedicated hosting | ISO 27001 certified; first government / bank in-country tenant live |
 | **R4 — Intelligence & Scale** | Months 13–18 | Predictive, AI-native, ecosystem | Phillips ROI, predictive insights, conversational analytics, AI instructor matching, skills inference & graph, transcription, regulatory drafting, proctoring, health CPD pack, connector SDK & partner program, iPaaS connectors, customer-hosted package | SOC 2 Type II; ≥ 3 partner-built connectors |
 
@@ -1473,7 +1485,7 @@ Detailed per-requirement release tags are in §6–§9.
 |---|---|---|---|---|
 | D1 | Serve training providers (Commerce, public registration, e-invoicing)? | **Decided 30 Sep 2026: No.** Jadarat TMS serves employers; Commerce removed (§6.17 marked W) | CEO / Product | Closed |
 | D2 | Government a Year-1 segment (drives in-country deployment)? | **Decided 30 Sep 2026: Yes.** Government and banks are Year-1 targets; in-country KSA/UAE deployment in R3, architecture self-hostable from R1 | CEO / Sales | Closed |
-| D3 | Planning cycle timing | **Decided 30 Sep 2026: R2** (training requests PLN-01 only in R1) | Product | Closed |
+| D3 | Planning cycle timing | **Decided 30 Sep 2026: R2** (training requests PLN-01 only in R1) — **revised 15 Oct 2026 (PO): the planning cycle is the R1 core** (PLN-01, 02, 03, 05, 06, 08, 09; §5.4); plan vs. actual, scenarios, self-nomination, interest lists and the Qiwa export keep their releases | Product | Closed |
 | D4 | Next LMS connectors after Jadarat | Moodle (R3), then SAP SuccessFactors, Docebo, Cornerstone | Product / Partnerships | Before R3 |
 | D5 | Messaging vendors | Meta WhatsApp Cloud API or regional BSP (no SMS — PO, 14 Oct 2026) | Engineering | Before R2 |
 | D6 | Stack for sovereign deployments | **Decided 30 Sep 2026:** Next.js + Supabase (PostgreSQL), self-hostable; no hard dependency on Vercel-only features; same stack for the whole Jadarat HR Suite | CTO | Closed |
@@ -1522,34 +1534,53 @@ Detailed per-requirement release tags are in §6–§9.
 
 ---
 
-## Appendix B — Default Roles & Permission Matrix
+## Appendix B — Standard Roles & Permission Matrix
 
-**Legend:** **F** = full (create/edit/delete) · **E** = edit within scope · **A** = approve · **V** = view · **O** = own records only · — = none. Scope is limited by the role's data scope (FR-IAM-08).
+**Six standard roles (PO, 15 Oct 2026; set proposed by the Tech Lead, pending PO confirmation).** The matrix below replaces the fifteen-role matrix of BRD v2.9. Any other role is a **custom role** composed by the Organization Admin from the permission catalog (FR-IAM-07), starting from a template where useful (table after the matrix).
 
-| Area | Tenant Admin | L&D Mgr | Coordinator | HR Mgr | Finance Mgr | Compliance | Dept Head | Line Mgr | Int. Instructor | Ext. Instructor | Provider Admin | Mentor | Learner | Auditor |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Tenant settings, branding, domains | F | — | — | — | — | — | — | — | — | — | — | — | — | V |
-| Users & roles | F | V | V | E | V | V | V (dept) | V (team) | — | — | — | — | O | V |
-| Training requests & TNA | — | F | E | E | V | V | A / E | A / E | — | — | — | — | O | V |
-| Training plan | — | F | V | A | A | V | A | V | — | — | — | — | — | V |
-| Catalog & programs | — | F | E | V | V | V | V | V | V | V (assigned) | E (own catalog) | V | V | V |
-| Sessions & scheduling | — | F | F | V | V | V | V | V | V (assigned) | V (assigned) | V (assigned) | — | V (enrolled) | V |
-| Venues & resources | — | F | E | — | V | — | — | — | — | — | — | — | — | V |
-| Instructors & providers | — | F | E | V | V | — | — | — | O | O | O | — | — | V |
-| Enrollments & approvals | — | F | E | E | A (cost) | V | A | A | V (roster) | V (roster) | V (roster) | — | O | V |
-| Logistics tasks | — | F | F | — | V | — | — | — | E (assigned) | E (assigned) | E (assigned) | — | — | V |
-| Attendance | — | F | F | V | — | V | V | V | E | E | E | — | O | V |
-| Assessments & evaluations | — | F | E | V | — | V | V | V (L3) | E (grading) | E (grading) | E (grading) | E | O | V |
-| Certificates & external certs | — | F | E | E / A | — | V | V | V | — | — | E (upload) | — | O | V |
-| Compliance rules & reports | — | E | V | F | — | F | V | V | — | — | — | — | O | V |
-| OJT & observation | — | F | E | V | — | V | V | V | — | — | — | E | O | V |
-| Budgets, POs, invoices, payments | — | E | V | V | F / A | — | V (dept) | — | O (payables) | O (payables) | E (invoices) | — | — | V |
-| Reports & analytics | — | F | E | F | F (finance) | F (compliance) | V (dept) | V (team) | V (own sessions) | V (own sessions) | V (own) | V (mentees) | O | V |
-| Integrations & API | F | — | — | E (HRIS) | — | — | — | — | — | — | — | — | — | V |
-| AI features | F (config) | Use | Use | Use | Use | Use | Use | Use | Use | — | — | Use | Use | V (logs) |
-| Audit log | V | — | — | — | — | V | — | — | — | — | — | — | — | V |
+**Legend:** **F** = full (create/edit/delete) · **E** = edit within scope · **A** = approve · **V** = view · **O** = own records only · — = none. Scope is limited by the role's data scope (FR-IAM-08; R1 note): Department Head = the departments they head with sub-departments; Employee = own; the others = organization.
 
-**Organization Admin = setup role (PO, 7 Oct 2026):** the Tenant Admin (Organization Admin, مدير المنشأة) sets the organization up from the IT and marketing side — tenant settings, branding and domains, users and roles (full people records), security, integrations, AI configuration, audit log — and hands it over to the HR department, which maintains the organization structure — branches and departments (FR-ADM-04/05; PO, 11 Oct 2026); it has **no access to core training features** (requests, plans, catalog, sessions, enrollments, attendance, assessments, certificates, compliance, OJT, budgets, training reports). The Organization Admin holds no other role in the same organization — not even Learner (BR-IAM-4, PO 8 Oct 2026). The L&D Manager (formerly Training Manager) configures approval workflows (FR-WFL-01/02), notifications and e-mail content (FR-NTF-02/07/10); the Organization Admin configures e-mail sending — sender and own mail server (FR-NTF-02, FR-NTF-11) — and domains (FR-ADM-10) (PO, 14 Oct 2026).
+| Area | Org Admin | HR Mgr | L&D Mgr | Training Coordinator | Dept Head | Employee |
+|---|---|---|---|---|---|---|
+| Tenant settings (General), branding, domains, e-mail integration, subscription | F | — | — | — | — | — |
+| Team members, roles & custom roles | F | E (ordinary roles) | V | V | V (dept) | O |
+| Organization structure (branches, departments, department heads) | V | F | V | V | V | — |
+| Training requests & planning cycle (needs) | — | V | F | E (collect, consolidate) | E / A (dept) | O |
+| Training plan & budget envelopes | — | V | F | E (draft) | A (dept lines) | — |
+| Course library & programs | — | V | F | E | V | V |
+| Sessions & scheduling | — | V | F | F | V (dept) | V (enrolled) |
+| Venues & resources | — | — | F | E | — | — |
+| Instructors & providers | — | V | F | E | — | — |
+| Enrollments & approvals | — | E | F | E | A (dept) | O |
+| Logistics tasks | — | — | F | F | — | — |
+| Attendance | — | V | F | F | V (dept) | O |
+| Assessments & evaluations | — | V | F | E | V (dept, L3) | O |
+| Certificates & external certs | — | E / A | F | E | V (dept) | O |
+| Compliance rules & reports | — | F | E | V | V (dept) | O |
+| OJT & observation | — | V | F | E | V (dept) | O |
+| Budgets, POs, invoices, payments | — | V | E | V | V (dept) | — |
+| Reports & analytics | — | F (HR) | F | E | V (dept) | O |
+| Integrations & API | F | E (HRIS) | — | — | — | — |
+| AI features | F (config) | Use | Use | Use | Use | Use |
+| Audit log | V | — | — | — | — | — |
+
+**Organization Admin = setup role (PO, 7 Oct 2026):** the Tenant Admin (Organization Admin, مدير المنشأة; «مدير المنظمة» proposed) sets the organization up from the IT and marketing side — General settings, branding and domains, team members and roles (full people records, custom roles), security, integrations, e-mail integration, AI configuration, subscription, audit log — and hands it over to the HR department, which maintains the organization structure — branches, departments and department heads (FR-ADM-04/05; PO, 11 Oct 2026); it has **no access to core training features** (requests, planning, plans, catalog, sessions, enrollments, attendance, assessments, certificates, compliance, OJT, budgets, training reports). The Organization Admin holds no other role in the same organization — not even Employee (BR-IAM-4, PO 8 Oct 2026). The L&D Manager configures approval workflows (FR-WFL-01/02), notifications and e-mail content (FR-NTF-02/07/10); the Organization Admin configures e-mail sending on the Email integration page — sender, reply-to and own mail server (FR-NTF-02, FR-NTF-11) — and domains (FR-ADM-10) (PO, 14–15 Oct 2026).
+
+**Privileged roles:** Organization Admin, HR Manager and every custom role that contains a high-risk permission (e.g., audit log, finance approval, exports, user and role management) — only an Organization Admin assigns them (PO, 5 Oct 2026, rule kept). The HR Manager assigns the other roles; nobody assigns roles to themselves.
+
+**Custom-role templates (former default roles; Tech Lead proposal, pending PO).** Each template pre-selects permissions in the role builder; the Organization Admin can change them. Columns refer to the matrix of BRD v2.9 for the former role.
+
+| Template | Typical use | Suggested permissions (summary) | Scope | Privileged |
+|---|---|---|---|---|
+| Finance approver (former Finance Manager) | Finance step of the plan approval; budgets and costs | Training plan A; budgets, POs, invoices, payments F / A; finance reports F | Organization | Yes |
+| Management approver | Final step of the plan approval | Training plan A; reports V | Organization | No |
+| Compliance Officer | Compliance dashboards and regulatory reports | Compliance rules & reports F; certificates V; audit log V | Organization | Yes |
+| Line Manager | Direct reports who are not a whole department | Requests & nominations A / E, enrollments A, team view, team reports V | Direct reports | No |
+| Instructor (former Internal Instructor) | Delivers sessions | Assigned sessions V; attendance E; assessments E (grading); materials | Assigned sessions | No |
+| External Instructor | Delivers sessions; non-employee (FR-IAM-15, R2) | As Instructor, assigned sessions only, no organization data | Assigned sessions | No |
+| Training Provider Admin | Provider portal (FR-VND-04, R2) | Own catalog E, assigned rosters V, invoices E | Own provider | No |
+| Mentor / Assessor | OJT and observation checklists (R2) | OJT & observation E for assigned trainees | Mentees | No |
+| Auditor | Read-only review | View on every area; audit log V | Organization | Yes |
 
 The Platform Super Admin (ENTLAQA) operates outside tenant roles, through the platform console (FR-ADM-17).
 
@@ -1585,10 +1616,12 @@ The Platform Super Admin (ENTLAQA) operates outside tenant roles, through the pl
 
 ## Appendix D — Notification Event Catalog
 
+Recipients named after a former default role (coordinator, compliance officer, finance, mentor) mean the Training Coordinator or the holders of the matching custom role, where the organization has one (PO, 15 Oct 2026).
+
 | Event | Default recipients | Default channels |
 |---|---|---|
 | Invitation to join | New user | E-mail |
-| TNA campaign opened / reminder / closing | Managers in scope | E-mail, WhatsApp, in-app |
+| Planning cycle (TNA campaign) opened / reminder / closing | Department Heads in scope | E-mail, WhatsApp, in-app |
 | Training request submitted / decided | Approver / requester | In-app, e-mail, WhatsApp |
 | Session published to audience | Audience | In-app, e-mail |
 | Enrollment requested (approval needed) | Approver | In-app, WhatsApp (interactive), e-mail |
@@ -1713,7 +1746,7 @@ Summary of the market research (details and sources in `docs/research/TMS_Market
 | PDF | Server-side PDF generation with Arabic shaping (e.g., headless Chromium rendering of HTML templates) | Certificates, sign-in sheets, reports |
 | QR | Signed, rotating tokens; camera scanning in PWA | |
 | Observability | OpenTelemetry traces, structured logs, error tracking | Tenant correlation IDs |
-| CI/CD | GitHub Actions → preview → staging → production; Playwright E2E | Migrations gated |
+| CI/CD | GitHub Actions → preview → production; Playwright E2E | Migrations gated: plan (dry run) then apply, run automatically after every merge to `main` (PO, 15 Oct 2026; manual workflow kept as fallback). **One environment (production) while there are no customers**; pull-request previews share the production database (accepted risk); a separate test environment is added when the first customer arrives (PO, 15 Oct 2026) |
 
 ### H.2 Middleware Responsibilities
 
@@ -1758,4 +1791,4 @@ create policy tenant_isolation on public.sessions
 
 ---
 
-*End of document — Jadarat TMS BRD v2.1 (Draft)*
+*End of document — Jadarat TMS BRD v3.0 (Draft)*

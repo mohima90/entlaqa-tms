@@ -4,6 +4,9 @@
 # "Deployment branches" rule (main only) is the actual access control.
 # Inputs are organization data and a user UID only — never an e-mail or a person's name (run inputs are
 # visible to everyone with read access to the repository).
+# `staging` (the old project) stays selectable only until it is deleted (production-setup.md step 39, T-M2-36).
+# The script also takes the deploy lock (scripts/lib/db-connect.sh § Deploy lock; waits up to 16 minutes), so
+# it never runs next to an automatic deploy (which has its own concurrency group).
 # Run `plan` first (dry run, always rolled back), then `apply`.
 name: Provision organization
 
@@ -13,8 +16,8 @@ on:
       environment:
         description: Target environment
         type: choice
-        options: [staging]
-        default: staging
+        options: [production, staging]
+        default: production
       mode:
         description: 'plan = dry run (rolled back) · apply = create it'
         type: choice
@@ -54,7 +57,8 @@ jobs:
     name: Provision organization (${{ inputs.mode }} → ${{ inputs.environment }})
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    # Up to 16 minutes waiting for the deploy lock, plus the run.
+    timeout-minutes: 25
     environment: ${{ inputs.environment }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

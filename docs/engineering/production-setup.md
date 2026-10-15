@@ -4,7 +4,7 @@
 |---|---|
 | **Decision** | PO, 15 Oct 2026: **start Supabase over** — a new, clean Supabase project in the new ENTLAQA organization on the **Pro** plan becomes **production**; all migrations are applied fresh; the old project `jadarat-tms-staging` is deleted only after production works |
 | **Backlog** | `EP-OPS`: T-M2-36 (production naming in the workflows), T-M2-37 (this set-up), T-M2-38 (automatic DB deploy) |
-| **New project** | Name `jadarat-tms` · region **Central EU (Frankfurt) `eu-central-1`** (next to Vercel `fra1`) · organization **`<NEW ORG — fill in>`** · project ref **`<NEW REF — fill in>`** |
+| **New project** | Name `jadarat-tms` · region **Central EU (Frankfurt) `eu-central-1`** (next to Vercel `fra1`) · organization **`ENTLAQA-Products`** · project ref **`pbmzlxljyjsvrzvkklbg`** |
 | **Collected from** | [db-deploy.md](db-deploy.md), [staging-sign-in.md](staging-sign-in.md), [password-reset.md](password-reset.md), [background-jobs.md](background-jobs.md), [email.md](email.md), [files.md](files.md) §7, [observability.md](observability.md), [sign-in-protection.md](sign-in-protection.md) §9, [user-import.md](user-import.md) §4, `.github/workflows/uptime.yml` |
 
 **How to use it.** The Product Owner (PO) follows the steps in order, **one at a time**; Claude guides each step in chat and waits for "done". Steps marked **PO** need the PO's accounts: Claude's container **cannot reach `*.supabase.co`** (egress policy) and has no access to the Vercel team or to GitHub secrets. Steps marked **Claude** are done by Claude (code, reading GitHub Actions logs, documentation). **Never paste a password, key or connection string into chat** — they go only into the password manager, GitHub environment secrets and Vercel environment variables. This page lists **names only, never values**.
@@ -20,7 +20,7 @@
 
 ## B. Create the Supabase project (PO)
 
-3. **Supabase dashboard → organization switcher → the new ENTLAQA organization** (`<NEW ORG>`, plan **Pro**). Check that your Supabase account has MFA on (Account → Security).
+3. **Supabase dashboard → organization switcher → the new ENTLAQA organization** (`ENTLAQA-Products`, plan **Pro**). Check that your Supabase account has MFA on (Account → Security).
 4. **New project**: name `jadarat-tms`; **Region: Central EU (Frankfurt)**; **Database password → Generate**, then save it in the password manager (it is the `postgres` password, used only in step 11). Under advanced options: **Postgres** (not OrioleDB); **Data API: off** ("Enable Data API" unticked); **automatic RLS / expose new tables: off** (our migrations enable and force RLS on every table). Do **not** connect the project to GitHub. → **Create**.
 5. **Project Settings → Data API**: confirm it is **off**.
 6. **Project Settings → JWT Keys**: confirm the project uses **asymmetric signing keys** (ECC P-256 / RSA; new projects do by default).

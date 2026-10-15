@@ -9,7 +9,7 @@
 
 | Environment | Supabase project | Region | Plan | GitHub environment |
 |---|---|---|---|---|
-| production | `jadarat-tms` (ref **`<NEW REF — fill in>`**, organization **`<NEW ORG — fill in>`**) | `eu-central-1` Frankfurt | **Pro** (daily backups, no pausing) | `production` (+ `production-jobs` for the worker) |
+| production | `jadarat-tms` (ref **`pbmzlxljyjsvrzvkklbg`**, organization **`ENTLAQA-Products`**) | `eu-central-1` Frankfurt | **Pro** (daily backups, no pausing) | `production` (+ `production-jobs` for the worker) |
 | old staging (until production works) | `jadarat-tms-staging` (ref `kgmhlmiwlbvdmalesexv`, org `entlaqa-TMS`) — then deleted | `eu-central-1` Frankfurt | Free (pauses after ~7 days idle) | `staging` (+ `staging-jobs`) — then deleted |
 | test | — (created with the first customer) | `eu-central-1` | — | `test` |
 

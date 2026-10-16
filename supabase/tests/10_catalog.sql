@@ -241,7 +241,7 @@ declare
 begin
   foreach v_role in array array['anon', 'authenticated', 'app_server', 'app_worker', 'app_queue', 'tenant_guard',
                                 'invitation_guard', 'account_mail_guard', 'membership_guard',
-                                'rate_limit_guard', 'file_guard', 'user_import_guard'] loop
+                                'rate_limit_guard', 'file_guard', 'user_import_guard', 'platform_admin_guard'] loop
     perform tests.assert(not has_database_privilege(v_role, current_database(), 'TEMPORARY'),
       format('%s must not create temporary objects', v_role));
   end loop;
@@ -379,6 +379,7 @@ begin
     and p.proowner <> 'rate_limit_guard'::regrole     -- checked in 70_rate_limiter_owner.sql (T-M2-11)
     and p.proowner <> 'file_guard'::regrole           -- checked in its own block below (T-M2-18)
     and p.proowner <> 'user_import_guard'::regrole    -- checked in its own block below (T-M2-12)
+    and p.proowner <> 'platform_admin_guard'::regrole -- checked in 95_platform_admin_owner.sql (FR-ADM-17)
     and p.oid <> 'private.storage_request_tenant()'::regprocedure;  -- files block below (T-M2-18)
   perform tests.assert_eq(v_list,
     'private.accept_invitation_as_caller(bytea,text,text) (owner invitation_guard), '
@@ -437,8 +438,9 @@ begin
     'private.apply_invitation_acceptance(bytea,uuid,text,text), private.invitation_allows_signup(text,text), '
     'private.invitation_by_token(bytea), private.invitation_code_caller(), private.invitation_code_for_mail(uuid), '
     'private.invitation_codes(uuid[]), private.invitation_inviter_may_grant(uuid,uuid,text[]), '
+    'private.invitation_issuer_may_grant(uuid,uuid,uuid,text[]), '
     'private.invitation_link(bytea), private.invitation_password_min_length(bytea), '
-    'private.issue_invitation_code(uuid)',
+    'private.issue_invitation_code(uuid), private.write_invitation_code(uuid)',
     'invitation_guard owns the link, code, acceptance and sign-up gate functions only');
   perform tests.assert(not has_function_privilege('authenticated', 'private.invitation_code_caller()', 'execute'),
     'only the code functions resolve their caller');

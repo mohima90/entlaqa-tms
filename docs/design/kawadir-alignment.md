@@ -31,7 +31,9 @@ Contrast stays enforced by the existing token tests (WCAG 2.2 AA for every theme
 
 **Sidebar** — white, collapsible **260 px ↔ 72 px** (icons only when collapsed, tooltips on hover); the **organization logo** on top; menu groups with headings; the **selected item** filled with the brand gradient (135°) and white text; footer «Powered by Jadarat». On phones the sidebar opens as a drawer (keep the modal drawer of T-M2-21). Logical properties only: the sidebar sits at the inline start (right in Arabic).
 
-**Top bar** — sticky; page title; **⌘K / Ctrl K command palette** (search pages and actions the user may open); full-screen toggle; theme (light / dark / system); language toggle (English ⇄ العربية); notification bell; avatar menu showing the person's name and "**Organization · Role**", with My profile and sign-out.
+**Top bar** — sticky, on the page background; page title; **⌘K / Ctrl K command palette** (search pill, placeholder centred); theme (light / dark / system); language toggle (globe icon, English ⇄ العربية); notification bell; account chip (photo or initials, online dot, name and "**Organization · Role**", chevron) opening My profile and sign-out. No full-screen toggle (Kawadir's screens have none; removed in the visual polish, 16 Oct 2026).
+
+**Visual polish (PO, 16 Oct 2026)** — values copied from Kawadir's screens, colours from our tokens: the vivid brand gradient (deep sky → deep orange; an organization's colours replace it) with a coloured glow on the selected item and primary buttons; the organization's logo — or its name as a gradient wordmark — in a 96 px logo area; vivid summary cards (violet, green, orange, blue `stat-*` tokens, white text ≥ 4.5 : 1) plus white target cards with a progress bar; pill inputs; card headers with a coloured icon; gradient dashboard title. Storybook «Pages/Organization Admin» shows the screens with sample data.
 
 ## 4. Page patterns
 

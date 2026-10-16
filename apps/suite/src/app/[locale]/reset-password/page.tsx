@@ -1,14 +1,14 @@
 import { otherLocale } from '@jadarat/platform-i18n';
 import { routing } from '@jadarat/platform-i18n/routing';
 import { readPasswordResetDelivery } from '@jadarat/platform-identity';
-import { Card } from '@jadarat/ui';
 import type { Metadata } from 'next';
 import { hasLocale } from 'next-intl';
 import { getTranslations } from 'next-intl/server';
 import { notFound } from 'next/navigation';
 import { connection } from 'next/server';
-import { LanguageToggle } from '../../../components/language-toggle';
+import { AuthLanguageSwitch, AuthShell } from '../../../components/auth/auth-shell';
 import { ResetPasswordView } from '../../../components/password-reset/reset-password-view';
+import { authLanguageSwitch, authShellTexts } from '../../../lib/auth-shell-texts';
 import { passwordResetErrorTexts } from '../../../lib/auth-texts';
 import { getConfigStatus } from '../../../lib/config-status';
 
@@ -50,22 +50,29 @@ export default async function ResetPasswordPage({
   const common = await getTranslations({ locale, namespace: 'common' });
   const errorsT = await getTranslations({ locale, namespace: 'errors' });
 
+  const shell = await authShellTexts(locale);
+  const panel = {
+    icon: 'lock' as const,
+    title: t('reset.panelTitle'),
+    text: t('reset.panelText'),
+  };
+  const authT = await getTranslations({ locale, namespace: 'auth' });
+
   if (!status.auth) {
     return (
-      <div className="flex min-h-dvh flex-col">
-        <header className="flex items-center justify-between gap-4 border-b border-border bg-surface px-4 py-3">
-          <span className="text-lg font-semibold">{common('productName')}</span>
-          <LanguageToggle locale={locale} path="/reset-password" />
-        </header>
-        <main id="main" className="mx-auto flex w-full max-w-lg flex-1 flex-col gap-6 px-4 py-10">
-          <h1 className="m-0 text-2xl font-bold">{t('reset.pageTitle')}</h1>
-          <Card>
-            <p className="m-0 text-text-muted" data-testid="reset-not-configured">
-              {errorsT('notConfigured')}
-            </p>
-          </Card>
-        </main>
-      </div>
+      <AuthShell
+        variant="simple"
+        texts={shell}
+        panel={panel}
+        languageSwitch={
+          <AuthLanguageSwitch {...await authLanguageSwitch(locale, '/reset-password')} />
+        }
+        title={t('reset.pageTitle')}
+      >
+        <p className="m-0 text-text-muted" data-testid="reset-not-configured">
+          {errorsT('notConfigured')}
+        </p>
+      </AuthShell>
     );
   }
 
@@ -73,7 +80,8 @@ export default async function ResetPasswordPage({
   return (
     <ResetPasswordView
       locale={locale}
-      productName={common('productName')}
+      shell={shell}
+      panel={panel}
       toggle={{
         href: `/${target}/reset-password`,
         lang: target,
@@ -86,7 +94,8 @@ export default async function ResetPasswordPage({
         intro: t('reset.intro'),
         password: t('reset.password'),
         confirmPassword: t('reset.confirmPassword'),
-        showPassword: t('reset.showPassword'),
+        showPassword: authT('showPassword'),
+        hidePassword: authT('hidePassword'),
         rememberBrowser: t('reset.rememberBrowser'),
         rememberBrowserHint: t('reset.rememberBrowserHint'),
         required: common('required'),

@@ -39,7 +39,8 @@ if ((process.env.CI || process.env.JADARAT_REQUIRE_INTEGRATION) && !configured) 
 }
 
 // The code travels in the URL fragment (never sent to the server; review M3).
-const ACCEPT_LINK = /https:\/\/tms\.test\.example\/en\/sign-up#code=([A-HJ-NP-Z2-9]{8})(?![A-Z0-9])/;
+const ACCEPT_LINK =
+  /https:\/\/tms\.test\.example\/en\/sign-up#code=([A-HJ-NP-Z2-9]{8})(?![A-Z0-9])/;
 
 describe.skipIf(!configured)('invitation mailer against PostgreSQL', () => {
   const owner = createDatabase(ownerUrl ?? '', { max: 1 });

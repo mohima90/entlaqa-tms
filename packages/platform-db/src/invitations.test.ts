@@ -94,7 +94,15 @@ describe('invitation codes', () => {
     const legacy = `${'aB_-'.repeat(10)}xyz`;
     expect(legacy).toHaveLength(43);
     expect(normalizeInvitationCode(legacy)).toBe(legacy);
-    for (const bad of ['', 'K7M2PQ9', 'K7M2PQ9XY', 'K7M2 PQ9X', 'K7M2PQ9O', 'K7M2PQ91', 'كودكودكو']) {
+    for (const bad of [
+      '',
+      'K7M2PQ9',
+      'K7M2PQ9XY',
+      'K7M2 PQ9X',
+      'K7M2PQ9O',
+      'K7M2PQ91',
+      'كودكودكو',
+    ]) {
       expect(normalizeInvitationCode(bad)).toBeNull();
     }
   });

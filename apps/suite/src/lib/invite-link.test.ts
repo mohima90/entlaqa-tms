@@ -2,8 +2,11 @@ import ar from '@jadarat/platform-i18n/messages/ar.json';
 import en from '@jadarat/platform-i18n/messages/en.json';
 import { describe, expect, it } from 'vitest';
 import {
+  inviteCodeFromHash,
   inviteFragment,
+  inviteLink,
   inviteTokenFromHash,
+  signUpFragment,
   splitLinkMessage,
   splitTaggedMessage,
   withOrganization,
@@ -30,6 +33,28 @@ describe('inviteTokenFromHash (the token travels in the URL fragment)', () => {
     expect(inviteFragment(null)).toBe('');
     // Anything unexpected is encoded, never injected into the URL.
     expect(inviteTokenFromHash(inviteFragment('a&b=c#d'))).toBe('a&b=c#d');
+  });
+});
+
+describe('invitation codes in the sign-up link (Kawadir)', () => {
+  it('reads #code=… and the older #token=… links', () => {
+    expect(inviteCodeFromHash('#code=K7M2PQ9X')).toBe('K7M2PQ9X');
+    expect(inviteCodeFromHash('code=k7m2pq9x')).toBe('k7m2pq9x');
+    expect(inviteCodeFromHash(`#token=${token}`)).toBe(token);
+    for (const hash of ['', '#', '#code=', '#code=%20', '#other=1']) {
+      expect(inviteCodeFromHash(hash), hash).toBeNull();
+    }
+  });
+
+  it('builds the copyable link from the origin, the invitation language and the code', () => {
+    expect(inviteLink('https://tms.example.com/', 'ar', 'K7M2PQ9X')).toBe(
+      'https://tms.example.com/ar/sign-up#code=K7M2PQ9X',
+    );
+    expect(inviteLink('http://localhost:3000', 'en', 'K7M2PQ9X')).toBe(
+      'http://localhost:3000/en/sign-up#code=K7M2PQ9X',
+    );
+    expect(signUpFragment(null)).toBe('');
+    expect(inviteCodeFromHash(signUpFragment('a&b=c#d'))).toBe('a&b=c#d');
   });
 });
 

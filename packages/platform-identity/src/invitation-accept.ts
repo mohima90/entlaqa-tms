@@ -84,9 +84,9 @@ export function normalizeInvitationSecret(raw: string): string | null {
  */
 export interface InvitationCodeGuard {
   /** False: this client used up its misses (RATE_LIMITED). Throws when the limiter cannot answer. */
-  attempt(): Promise<boolean>;
+  readonly attempt: () => Promise<boolean>;
   /** The code was a real invitation's: the provisional miss is given back. */
-  found(): Promise<void>;
+  readonly found: () => Promise<void>;
 }
 
 /** The client tried too many unknown codes: answered RATE_LIMITED. */

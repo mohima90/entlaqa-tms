@@ -103,7 +103,37 @@
       "passwordRejected": "The new password was not accepted. Choose a different one.",
       "tooManyAttempts": "Sign-in is paused for now after too many unsuccessful attempts. Try again later, or reset your password with “Forgot password?”."
     },
-    "sessionEnded": "Your sign-in session has ended. Sign in again to continue."
+    "sessionEnded": "Your sign-in session has ended. Sign in again to continue.",
+    "welcomeBack": "Welcome back",
+    "enterEmailToContinue": "Enter your work email to continue.",
+    "passwordStepIntro": "Enter your password to sign in.",
+    "continue": "Continue",
+    "changeEmail": "Change",
+    "changeEmailAria": "Change the email",
+    "forgotShort": "Forgot?",
+    "forgotShortAria": "Forgot your password?",
+    "showPassword": "Show password",
+    "hidePassword": "Hide password",
+    "emailInvalid": "Enter an email address such as name@company.com.",
+    "emailPlaceholder": "name@company.com",
+    "passwordPlaceholder": "Enter your password",
+    "haveInvitation": "Have an invitation code?",
+    "joinWithCode": "Join with your code",
+    "layout": {
+      "portal": "Training management",
+      "poweredBy": "Powered by",
+      "entlaqa": "ENTLAQA",
+      "panelTitle": "Smarter training management",
+      "panelAccent": "from plan to certificate",
+      "panelText": "Plan, schedule, enroll, deliver and follow up every training in one place, in Arabic and English.",
+      "features": {
+        "plan": "Annual training plans and budgets",
+        "schedule": "Sessions, venues and trainers",
+        "enroll": "Nominations and approvals",
+        "assess": "Attendance, assessments and certificates",
+        "report": "Reports and dashboards"
+      }
+    }
   },
   "invite": {
     "pageTitle": "Accept invitation",
@@ -191,7 +221,9 @@
       "submit": "Send link",
       "submitting": "Sending…",
       "backToSignIn": "Back to sign in",
-      "emailInvalid": "Enter a valid email address, such as name@company.com."
+      "emailInvalid": "Enter a valid email address, such as name@company.com.",
+      "panelTitle": "Secure password reset",
+      "panelText": "We send a single-use link to your email. It expires shortly, for your security."
     },
     "sent": {
       "title": "Check your email",
@@ -228,7 +260,9 @@
       "codeIntro": "Your account uses an authenticator app: enter the code it shows now. The link works once, so check the code before saving.",
       "codeOptionalIntro": "Does your account use an authenticator app? Then also enter the code it shows now: without it the password can't be changed, and the link is used up.",
       "codeLabel": "Verification code",
-      "codeHint": "6 digits from your authenticator app; the code changes every 30 seconds."
+      "codeHint": "6 digits from your authenticator app; the code changes every 30 seconds.",
+      "panelTitle": "Almost there",
+      "panelText": "Choose a strong password that you don't use anywhere else."
     },
     "fieldErrors": {
       "tooShort": "At least {min} characters.",
@@ -614,7 +648,7 @@
   "invitations": {
     "inviteUser": "Invite user",
     "title": "Invite a user",
-    "intro": "We send an email to the work address with a link to set a password and sign in. No account is created until the invitation is accepted.",
+    "intro": "We create an invitation code and a link that you can copy and share with the person. If email is set up, we also send them to the work address. No account is created until the invitation is accepted.",
     "breadcrumb": "Users",
     "breadcrumbLabel": "Breadcrumb",
     "form": {
@@ -653,7 +687,7 @@
         "ar": "العربية",
         "en": "English"
       },
-      "expiryNotice": "The invitation stays valid for 7 days (until {date}). You can resend it up to 3 times or revoke it from the users list.",
+      "expiryNotice": "The invitation stays valid for 7 days (until {date}). From the users list you can copy its code or link at any time, resend it with a new code up to 3 times, or revoke it.",
       "submit": "Send invitation",
       "submitting": "Sending…",
       "back": "Go back",
@@ -673,7 +707,7 @@
       }
     },
     "list": {
-      "created": "Invitation created. We're sending it to the work email now; it stays valid for 7 days.",
+      "created": "Invitation created. Copy its code or link from the list; it stays valid for 7 days.",
       "tableCaption": "Invitations not accepted yet",
       "columns": {
         "name": "Name",
@@ -692,7 +726,7 @@
       "expiresOn": "Expires on {date}",
       "expiredOn": "Expired on {date}",
       "resend": "Resend invitation",
-      "resent": "Invitation resent. The new link stays valid for 7 days and the previous link stops working.",
+      "resent": "Invitation resent with a new code. The previous code and link stopped working; the new one stays valid for 7 days.",
       "resendLimit": "This invitation has reached the resend limit (3 times).",
       "resendLimitShort": "Resend limit reached",
       "revoke": "Revoke invitation",
@@ -712,7 +746,24 @@
       "sentHeld": "We're sending the invitation now. It stays valid for 7 days from when it's sent.",
       "nothingToSend": "This invitation is no longer waiting to be sent; it may have been sent or revoked. Refresh the page to see the latest status.",
       "sendNotAllowed": "Only the Organization Admin or an HR Manager can send invitations.",
-      "capped": "Showing the latest {shown, number, integer} of {total, number, integer} invitations. You can search by name or email to reach the others."
+      "capped": "Showing the latest {shown, number, integer} of {total, number, integer} invitations. You can search by name or email to reach the others.",
+      "noCode": "Only the Organization Admin can copy this invitation's code.",
+      "sentAt": "Sent {date}"
+    },
+    "created": {
+      "title": "Invitation created",
+      "text": "Share the invitation code or link with {name}. It stays valid for 7 days. If email is set up, we also send it to the work address.",
+      "inviteAnother": "Invite another user",
+      "toList": "Go to invited users"
+    },
+    "copy": {
+      "codeLabel": "Invitation code",
+      "linkLabel": "Invitation link",
+      "copyCode": "Copy code",
+      "copyLink": "Copy invite link",
+      "codeCopied": "Invitation code copied.",
+      "linkCopied": "Invitation link copied.",
+      "copyFailed": "Couldn't copy automatically. Select the text and copy it."
     }
   },
   "deactivation": {
@@ -1707,5 +1758,27 @@
       "non_profit": "Non-profit",
       "other": "Other"
     }
+  },
+  "signUp": {
+    "pageTitle": "Join your organization",
+    "titleWithOrg": "Join {organization}",
+    "intro": "Enter the invitation code you received to create your account.",
+    "introValid": "You're invited to join {organization}. Create your account to continue.",
+    "codeLabel": "Invitation code",
+    "codePlaceholder": "e.g. K7M2PQ9X",
+    "codeFromLink": "You opened an invitation link, so the code is filled in for you.",
+    "codeChecking": "Checking the code…",
+    "codeValid": "Valid invitation to {organization}",
+    "codeStates": {
+      "expired": "This invitation has expired. Ask your organization's administrator for a new one.",
+      "revoked": "This invitation was cancelled. Contact your organization's administrator.",
+      "used": "This invitation was already used. Sign in with your email and password.",
+      "invalid": "This code isn't valid. Check it and try again."
+    },
+    "emailPreFilled": "Filled in from your invitation. You sign in with this email; it can't be changed.",
+    "submit": "Join {organization}",
+    "submitDefault": "Create account",
+    "haveAccount": "Already have an account?",
+    "signIn": "Sign in"
   }
 }

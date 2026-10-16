@@ -1,20 +1,27 @@
 import { routing } from '@jadarat/platform-i18n/routing';
-import { Alert, Card } from '@jadarat/ui';
+import { Alert } from '@jadarat/ui';
 import { hasLocale } from 'next-intl';
 import { getTranslations } from 'next-intl/server';
 import { notFound, redirect } from 'next/navigation';
 import { connection } from 'next/server';
+import { AuthLanguageSwitch } from '../../../components/auth/auth-shell';
 import { EndedSessionSignOut } from '../../../components/auth/ended-session-sign-out';
-import { SignInForm } from '../../../components/auth/sign-in-form';
-import { LanguageToggle } from '../../../components/language-toggle';
+import { SignInView } from '../../../components/auth/sign-in-form';
+import {
+  authLanguageSwitch,
+  authShellTexts,
+  signInPanelTexts,
+} from '../../../lib/auth-shell-texts';
 import { authErrorTexts } from '../../../lib/auth-texts';
 import { getConfigStatus } from '../../../lib/config-status';
 import { noticeFrom } from '../../../lib/password-reset-link';
 import { getSessionState, redirectFor } from '../../../lib/session-state';
 
 /**
- * Sign-in (T-M1-D03): e-mail + password; MFA off by default for now (PO decision, 1 Oct 2026). Links to
- * "forgot password" (screen 10, T-M2-08) and shows the notice after a password reset.
+ * Sign-in (T-M1-D03; UI and UX of Kawadir ATS one-to-one, PO 16 Oct 2026): the split frame with the brand
+ * panel, «مرحبًا بعودتك» / "Welcome back", the work e-mail first and then the password (the e-mailed code
+ * comes later with the platform sender). Links to "forgot password" (screen 10, T-M2-08) and to joining
+ * with an invitation code (/sign-up); shows the notice after a password reset or an ended session.
  */
 export default async function SignInPage({
   params,
@@ -40,53 +47,72 @@ export default async function SignInPage({
   const notice = noticeFrom(await searchParams);
   const resetT = await getTranslations({ locale, namespace: 'passwordReset' });
   return (
-    <div className="flex min-h-dvh flex-col">
-      <header className="flex items-center justify-between gap-4 border-b border-border bg-surface px-4 py-3">
-        <span className="text-lg font-semibold">{common('productName')}</span>
-        <LanguageToggle locale={locale} path="/sign-in" />
-      </header>
-      <main id="main" className="mx-auto flex w-full max-w-md flex-1 flex-col gap-6 px-4 py-10">
-        <h1 className="m-0 text-2xl font-bold">{t('signInTitle')}</h1>
-        {notice === 'password-reset' ? (
-          <Alert tone="success" data-testid="password-reset-notice">
-            {resetT('notice')}
-          </Alert>
-        ) : null}
-        {notice === 'session-ended' || session.kind === 'session-ended' ? (
-          <Alert tone="info" data-testid="session-ended-notice">
-            {t('sessionEnded')}
-          </Alert>
-        ) : null}
-        {session.kind === 'session-ended' ? <EndedSessionSignOut /> : null}
-        <Card>
-          {status.auth ? (
-            <p className="mb-4 mt-0 text-text-muted">{t('signInIntro')}</p>
-          ) : (
-            <p className="mb-4 mt-0 text-text-muted" data-testid="auth-not-configured">
-              {t('notConfigured')}
-            </p>
-          )}
-          <SignInForm
-            locale={locale}
-            disabled={!status.auth}
-            labels={{
-              email: t('emailLabel'),
-              password: t('passwordLabel'),
-              required: common('required'),
-              rememberBrowser: t('rememberBrowser'),
-              rememberBrowserHint: t('rememberBrowserHint'),
-              submit: t('submit'),
-              submitting: t('submitting'),
-            }}
-            errors={await authErrorTexts(locale)}
-          />
-          <p className="mb-0 mt-4 text-center">
-            <a href={`/${locale}/forgot-password`} data-testid="forgot-password-link">
-              {t('forgotPassword')}
-            </a>
+    <SignInView
+      locale={locale}
+      disabled={!status.auth}
+      shell={await authShellTexts(locale)}
+      panel={await signInPanelTexts(locale)}
+      languageSwitch={<AuthLanguageSwitch {...await authLanguageSwitch(locale, '/sign-in')} />}
+      title={t('welcomeBack')}
+      subtitles={{ email: t('enterEmailToContinue'), method: t('passwordStepIntro') }}
+      notices={
+        notice === 'password-reset' ||
+        notice === 'session-ended' ||
+        session.kind === 'session-ended' ? (
+          <>
+            {notice === 'password-reset' ? (
+              <Alert tone="success" data-testid="password-reset-notice">
+                {resetT('notice')}
+              </Alert>
+            ) : null}
+            {notice === 'session-ended' || session.kind === 'session-ended' ? (
+              <Alert tone="info" data-testid="session-ended-notice">
+                {t('sessionEnded')}
+              </Alert>
+            ) : null}
+            {session.kind === 'session-ended' ? <EndedSessionSignOut /> : null}
+          </>
+        ) : undefined
+      }
+      before={
+        status.auth ? null : (
+          <p className="mb-4 mt-0 text-text-muted" data-testid="auth-not-configured">
+            {t('notConfigured')}
           </p>
-        </Card>
-      </main>
-    </div>
+        )
+      }
+      after={
+        <p className="mb-0 mt-6 text-center text-sm text-text-muted">
+          {t('haveInvitation')}{' '}
+          <a
+            href={`/${locale}/sign-up`}
+            className="font-semibold text-primary-text"
+            data-testid="join-with-code-link"
+          >
+            {t('joinWithCode')}
+          </a>
+        </p>
+      }
+      labels={{
+        email: t('emailLabel'),
+        password: t('passwordLabel'),
+        required: common('required'),
+        rememberBrowser: t('rememberBrowser'),
+        rememberBrowserHint: t('rememberBrowserHint'),
+        submit: t('submit'),
+        submitting: t('submitting'),
+        continue: t('continue'),
+        changeEmail: t('changeEmail'),
+        changeEmailAria: t('changeEmailAria'),
+        forgotShort: t('forgotShort'),
+        forgotShortAria: t('forgotShortAria'),
+        showPassword: t('showPassword'),
+        hidePassword: t('hidePassword'),
+        emailInvalid: t('emailInvalid'),
+        emailPlaceholder: t('emailPlaceholder'),
+        passwordPlaceholder: t('passwordPlaceholder'),
+      }}
+      errors={await authErrorTexts(locale)}
+    />
   );
 }

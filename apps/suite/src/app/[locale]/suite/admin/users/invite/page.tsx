@@ -10,6 +10,7 @@ import type { ReactNode } from 'react';
 import { SuiteShell } from '../../../../../../components/suite-shell';
 import { InviteUserForm } from '../../../../../../components/users/invite-user-form';
 import { INVITED_FLASH_PARAM } from '../../../../../../lib/invite-form';
+import { inviteCopyTexts } from '../../../../../../lib/invite-copy-texts';
 import { expiryFrom } from '../../../../../../lib/invitations-view';
 import { profileErrorTexts } from '../../../../../../lib/profile-texts';
 import { type SuiteContext, getSuiteContext } from '../../../../../../lib/suite-context';
@@ -131,6 +132,11 @@ async function inviteForm(
   );
   labels.required = common('required');
   labels.optional = common('optional');
+  // The success panel (Kawadir: copy the code or the link right away).
+  labels['created.title'] = t('created.title');
+  labels['created.text'] = String(t.raw('created.text'));
+  labels['created.toList'] = t('created.toList');
+  labels['created.inviteAnother'] = t('created.inviteAnother');
   labels.showAllRoles = t('form.showAllRoles', { count: SYSTEM_ROLES.length });
   labels['language.ar'] = t('form.languages.ar');
   labels['language.en'] = t('form.languages.en');
@@ -172,6 +178,7 @@ async function inviteForm(
         successHref={`${usersHref}?tab=invited&${INVITED_FLASH_PARAM}=1`}
         rolesHref={`/${locale}/suite/admin/roles`}
         soleRoles={SOLE_ROLE_CODES}
+        copyTexts={await inviteCopyTexts(locale)}
       />
     </Card>
   );

@@ -21,6 +21,7 @@ import {
 } from '../../../../../lib/deactivate-form';
 import { reactivateLabels } from '../../../../../lib/deactivation-texts';
 import { INVITED_FLASH_PARAM, canResend } from '../../../../../lib/invite-form';
+import { inviteCopyTexts } from '../../../../../lib/invite-copy-texts';
 import { filterInvitations } from '../../../../../lib/invitations-view';
 import { profileErrorTexts } from '../../../../../lib/profile-texts';
 import { getSuiteContext } from '../../../../../lib/suite-context';
@@ -69,6 +70,7 @@ const INVITATION_LIST_KEYS = [
   'resent',
   'resendLimit',
   'resendLimitShort',
+  'noCode',
   'revoke',
   'revoked',
   'revokeConfirmButton',
@@ -615,6 +617,8 @@ async function invitationsTable(
       state: row.state,
       fromImportText: fromImport,
       canResend: canResend(row),
+      inviteCode: row.inviteCode,
+      locale: row.locale,
     });
   }
   return (
@@ -627,6 +631,7 @@ async function invitationsTable(
       <InvitationsTable
         rows={views}
         showRole={canReadRoles}
+        copyTexts={await inviteCopyTexts(locale)}
         labels={await invitationLabels(locale)}
         errors={await profileErrorTexts(locale)}
       />

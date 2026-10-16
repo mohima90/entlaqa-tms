@@ -1,9 +1,11 @@
 'use client';
-import { Alert, Button, Card, TextField, buttonClasses } from '@jadarat/ui';
+import { Alert } from '@jadarat/ui';
 import { type SyntheticEvent, useEffect, useRef, useState, useTransition } from 'react';
 import { requestPasswordResetAction } from '../../auth/password-reset';
 import { splitTaggedMessage } from '../../lib/invite-link';
 import { RESEND_WAIT_SECONDS, formatCountdown } from '../../lib/password-reset-link';
+import { AuthField, authPrimaryButton, authSecondaryButton } from '../auth/auth-field';
+import { AuthIcon } from '../auth/auth-icons';
 import { type ErrorTexts, errorText } from '../auth/error-text';
 
 /**
@@ -77,73 +79,72 @@ function SentCard({
   const waiting = remaining > 0;
 
   return (
-    <Card data-testid="forgot-sent">
-      <div className="flex flex-col items-start gap-3">
-        <span
-          className="inline-flex size-12 items-center justify-center rounded-full bg-primary-subtle"
-          aria-hidden="true"
-        >
-          <svg
-            width="24"
-            height="24"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.8"
-          >
-            <rect x="3" y="5" width="18" height="14" rx="2" />
-            <path d="M3 7l9 6 9-6" />
-          </svg>
+    <section className="flex flex-col items-center gap-3 text-center" data-testid="forgot-sent">
+      <span
+        className="inline-flex size-16 items-center justify-center rounded-full bg-primary-subtle text-primary-text"
+        aria-hidden="true"
+      >
+        <AuthIcon name="check" className="size-8" />
+      </span>
+      <h2 ref={headingRef} tabIndex={-1} className="m-0 text-3xl font-bold">
+        {texts.sentTitle}
+      </h2>
+      <p className="m-0 text-text-muted">
+        {before}
+        <span dir="ltr" className="font-semibold text-text [unicode-bidi:isolate]">
+          {email}
         </span>
-        <h2 ref={headingRef} tabIndex={-1} className="m-0 text-xl font-semibold">
-          {texts.sentTitle}
-        </h2>
-        <p className="m-0">
-          {before}
-          <span dir="ltr" className="font-semibold [unicode-bidi:isolate]">
-            {email}
-          </span>
-          {after} {validity.before}
-          <b>{validity.inner}</b>
-          {validity.after}
-        </p>
-        <p className="m-0 text-sm text-text-muted">{texts.sentSpam}</p>
-        {notice ? (
-          <Alert tone={notice.tone} data-testid="forgot-resend-notice">
-            {notice.text}
-          </Alert>
-        ) : null}
-        <div className="mt-1 flex flex-wrap gap-2">
-          <Button
-            type="button"
-            variant="secondary"
-            disabled={waiting || pending}
-            data-testid="forgot-resend"
-            onClick={() => {
-              setNotice(null);
-              startTransition(async () => {
-                const result = await requestPasswordResetAction({ email, locale });
-                setWaitUntil(Date.now() + RESEND_WAIT_SECONDS * 1000);
-                setNotice(
-                  result.ok
-                    ? { tone: 'success', text: texts.resent }
-                    : { tone: 'danger', text: errorText(result.error, errors) },
-                );
-              });
-            }}
-          >
-            {pending
-              ? texts.resending
-              : waiting
-                ? texts.resendIn.replace('{time}', formatCountdown(remaining))
-                : texts.resend}
-          </Button>
-          <a href={`/${locale}/sign-in`} className={buttonClasses({ variant: 'ghost' })}>
-            {texts.backToSignIn}
-          </a>
-        </div>
+        {after} {validity.before}
+        <b>{validity.inner}</b>
+        {validity.after}
+      </p>
+      <p className="m-0 text-sm text-text-muted">{texts.sentSpam}</p>
+      {notice ? (
+        <Alert tone={notice.tone} data-testid="forgot-resend-notice" className="w-full text-start">
+          {notice.text}
+        </Alert>
+      ) : null}
+      <div className="mt-4 flex w-full flex-col gap-4">
+        <button
+          type="button"
+          className={authSecondaryButton}
+          disabled={waiting || pending}
+          data-testid="forgot-resend"
+          onClick={() => {
+            setNotice(null);
+            startTransition(async () => {
+              const result = await requestPasswordResetAction({ email, locale });
+              setWaitUntil(Date.now() + RESEND_WAIT_SECONDS * 1000);
+              setNotice(
+                result.ok
+                  ? { tone: 'success', text: texts.resent }
+                  : { tone: 'danger', text: errorText(result.error, errors) },
+              );
+            });
+          }}
+        >
+          {pending
+            ? texts.resending
+            : waiting
+              ? texts.resendIn.replace('{time}', formatCountdown(remaining))
+              : texts.resend}
+        </button>
+        <BackToSignIn locale={locale} text={texts.backToSignIn} />
       </div>
-    </Card>
+    </section>
+  );
+}
+
+/** «العودة إلى تسجيل الدخول» with the back arrow (Kawadir). */
+function BackToSignIn({ locale, text }: { readonly locale: 'ar' | 'en'; readonly text: string }) {
+  return (
+    <a
+      href={`/${locale}/sign-in`}
+      className="inline-flex min-h-11 items-center justify-center gap-2 self-center text-sm font-medium text-primary-text no-underline hover:underline"
+    >
+      <AuthIcon name="back" />
+      {text}
+    </a>
   );
 }
 
@@ -182,33 +183,31 @@ export function ForgotPasswordForm({ locale, disabled, texts, errors }: ForgotPa
   }
 
   return (
-    <Card>
-      <form className="flex flex-col gap-5" onSubmit={onSubmit} noValidate>
-        <TextField
-          id="forgot-email"
-          name="email"
-          type="email"
-          label={texts.emailLabel}
-          marker={texts.required}
-          autoComplete="username"
-          required
-          maxLength={254}
-          dir="ltr"
-          error={fieldError}
-          disabled={disabled || pending}
-        />
-        {message ? (
-          <Alert tone="danger" data-testid="forgot-error">
-            {message}
-          </Alert>
-        ) : null}
-        <Button type="submit" disabled={disabled || pending} className="w-full">
-          {pending ? texts.submitting : texts.submit}
-        </Button>
-        <a href={`/${locale}/sign-in`} className="self-center">
-          {texts.backToSignIn}
-        </a>
-      </form>
-    </Card>
+    <form className="flex flex-col gap-6" onSubmit={onSubmit} noValidate>
+      <AuthField
+        id="forgot-email"
+        name="email"
+        type="email"
+        icon="mail"
+        label={texts.emailLabel}
+        marker={texts.required}
+        autoComplete="username"
+        required
+        maxLength={254}
+        dir="ltr"
+        error={fieldError}
+        disabled={disabled || pending}
+      />
+      {message ? (
+        <Alert tone="danger" data-testid="forgot-error">
+          {message}
+        </Alert>
+      ) : null}
+      <button type="submit" disabled={disabled || pending} className={authPrimaryButton}>
+        <AuthIcon name="mail" className="size-5" />
+        {pending ? texts.submitting : texts.submit}
+      </button>
+      <BackToSignIn locale={locale} text={texts.backToSignIn} />
+    </form>
   );
 }

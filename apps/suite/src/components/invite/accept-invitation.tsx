@@ -1,12 +1,10 @@
 'use client';
 import type { AppError } from '@jadarat/platform-core';
-import type { InvitationLinkView } from '@jadarat/platform-identity';
-import { Alert, Button, Card, TextField, buttonClasses } from '@jadarat/ui';
+import { Alert } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
 import {
   type ReactNode,
   type SyntheticEvent,
-  useCallback,
   useEffect,
   useRef,
   useState,
@@ -17,24 +15,25 @@ import {
   acceptInvitationAction,
   acceptInvitationAsSignedInUser,
   acceptInvitationWithSignInAction,
-  lookupInvitationAction,
 } from '../../auth/invitations';
-import {
-  inviteFragment,
-  inviteTokenFromHash,
-  splitLinkMessage,
-  withOrganization,
-} from '../../lib/invite-link';
+import { inviteCodeFromHash, signUpFragment } from '../../lib/invite-link';
 import { minFromParams, passwordRuleState, withMin } from '../../lib/password-rules';
+import {
+  AuthField,
+  RevealButton,
+  authPrimaryButton,
+  authSecondaryButton,
+} from '../auth/auth-field';
 import { type ErrorTexts, errorText } from '../auth/error-text';
 import { PasswordRulesList } from '../auth/password-rules-list';
 import { fieldErrorCodes } from '../profile/field-errors';
 
 /**
- * Invitee side of an invitation (screens 8 and 9; FR-IAM-03, T-M2-07). The e-mailed link carries the
- * token in the URL fragment (`#token=…`, review M3): it is read here, removed from the address bar at
- * once, and travels only in the body of the server actions — never in a URL the server sees, never
- * logged or stored in the browser.
+ * Invitee side of an invitation (screens 8 and 9; FR-IAM-03, T-M2-07): the forms of the sign-up page
+ * (components/invite/sign-up-view.tsx, Kawadir's "join" screen) — create the account, sign in to accept,
+ * accept as the signed-in invitee, sign out of another account — and the forwarder of the older
+ * `/invite/accept#token=…` links. The code travels only in the body of the server actions — never in a URL
+ * the server sees, never logged or stored in the browser (review M3).
  */
 
 type Next = 'home' | 'choose-organization' | 'sign-in' | 'mfa';
@@ -85,6 +84,7 @@ export interface AcceptInvitationFormProps {
     readonly password: string;
     readonly confirmPassword: string;
     readonly showPassword: string;
+    readonly hidePassword: string;
     readonly rulesLabel: string;
     readonly ruleMinLength: string;
     readonly ruleMaxBytes: string;
@@ -92,6 +92,7 @@ export interface AcceptInvitationFormProps {
     readonly ruleMet: string;
     readonly ruleNotMet: string;
     readonly passwordTip: string;
+    /** «انضم إلى {organization}» (filled in). */
     readonly submit: string;
     readonly submitting: string;
     readonly signInTitle: string;
@@ -223,10 +224,53 @@ function CreateAccountForm({
     });
   }
 
+  const revealButton = (id: string) => (
+    <RevealButton
+      shown={reveal}
+      onToggle={() => {
+        setReveal((v) => !v);
+      }}
+      showLabel={labels.showPassword}
+      hideLabel={labels.hidePassword}
+      controls={id}
+      disabled={pending}
+    />
+  );
+
   return (
     <form className="flex flex-col gap-5" onSubmit={onSubmit} noValidate>
-      <TextField
+      <div className="grid gap-4 sm:grid-cols-2">
+        <AuthField
+          id="invite-name-ar"
+          name="displayNameAr"
+          label={labels.displayNameAr}
+          marker={labels.optional}
+          defaultValue={displayName.ar}
+          autoComplete="name"
+          maxLength={200}
+          dir="rtl"
+          lang="ar"
+          error={fieldErrors.displayNameAr}
+          disabled={pending}
+        />
+        <AuthField
+          id="invite-name-en"
+          name="displayNameEn"
+          label={labels.displayNameEn}
+          marker={labels.optional}
+          defaultValue={displayName.en}
+          autoComplete="off"
+          maxLength={200}
+          dir="ltr"
+          lang="en"
+          error={fieldErrors.displayNameEn}
+          disabled={pending}
+        />
+      </div>
+      <p className="-mt-2 mb-0 text-sm text-text-muted">{labels.displayNameHint}</p>
+      <AuthField
         id="invite-email"
+        icon="mail"
         label={labels.loginEmail}
         hint={labels.loginEmailHint}
         value={email}
@@ -236,38 +280,12 @@ function CreateAccountForm({
         autoComplete="username"
         data-testid="invite-email"
       />
-      <TextField
-        id="invite-name-ar"
-        name="displayNameAr"
-        label={labels.displayNameAr}
-        marker={labels.optional}
-        hint={labels.displayNameHint}
-        defaultValue={displayName.ar}
-        autoComplete="name"
-        maxLength={200}
-        dir="rtl"
-        lang="ar"
-        error={fieldErrors.displayNameAr}
-        disabled={pending}
-      />
-      <TextField
-        id="invite-name-en"
-        name="displayNameEn"
-        label={labels.displayNameEn}
-        marker={labels.optional}
-        defaultValue={displayName.en}
-        autoComplete="off"
-        maxLength={200}
-        dir="ltr"
-        lang="en"
-        error={fieldErrors.displayNameEn}
-        disabled={pending}
-      />
       <div className="flex flex-col gap-2">
-        <TextField
+        <AuthField
           id="invite-password"
           name="password"
           type={reveal ? 'text' : 'password'}
+          icon="lock"
           label={labels.password}
           marker={labels.required}
           autoComplete="new-password"
@@ -281,14 +299,16 @@ function CreateAccountForm({
           aria-describedby="invite-password-rules"
           error={fieldErrors.password}
           disabled={pending}
+          inputEnd={revealButton('invite-password')}
         />
         <PasswordRulesList id="invite-password-rules" rules={rules} labels={labels} />
         <p className="m-0 text-sm text-text-muted">{labels.passwordTip}</p>
       </div>
-      <TextField
+      <AuthField
         id="invite-password-confirm"
         name="confirmPassword"
         type={reveal ? 'text' : 'password'}
+        icon="lock"
         label={labels.confirmPassword}
         marker={labels.required}
         autoComplete="new-password"
@@ -300,18 +320,8 @@ function CreateAccountForm({
         }}
         error={fieldErrors.confirmPassword}
         disabled={pending}
+        inputEnd={revealButton('invite-password-confirm')}
       />
-      <label className="flex min-h-11 items-center gap-3">
-        <input
-          type="checkbox"
-          checked={reveal}
-          onChange={(event) => {
-            setReveal(event.target.checked);
-          }}
-          className="size-5 shrink-0"
-        />
-        {labels.showPassword}
-      </label>
       <div className="flex flex-col gap-1">
         <label className="flex items-start gap-3">
           <input
@@ -337,9 +347,9 @@ function CreateAccountForm({
           {message}
         </Alert>
       ) : null}
-      <Button type="submit" disabled={pending} className="w-full">
+      <button type="submit" disabled={pending} className={authPrimaryButton}>
         {pending ? labels.submitting : labels.submit}
-      </Button>
+      </button>
     </form>
   );
 }
@@ -389,8 +399,9 @@ function SignInToAcceptForm({
     >
       <h2 className="m-0 text-lg font-semibold">{labels.signInTitle}</h2>
       <Alert tone="info">{labels.signInIntro}</Alert>
-      <TextField
+      <AuthField
         id="invite-sign-in-email"
+        icon="mail"
         label={labels.loginEmail}
         value={email}
         readOnly
@@ -398,10 +409,11 @@ function SignInToAcceptForm({
         dir="ltr"
         autoComplete="username"
       />
-      <TextField
+      <AuthField
         id="invite-sign-in-password"
         name="password"
         type="password"
+        icon="lock"
         label={labels.password}
         marker={labels.required}
         autoComplete="current-password"
@@ -415,9 +427,9 @@ function SignInToAcceptForm({
           {message}
         </Alert>
       ) : null}
-      <Button type="submit" disabled={pending} className="w-full">
+      <button type="submit" disabled={pending} className={authPrimaryButton}>
         {pending ? labels.signInSubmitting : labels.signInSubmit}
-      </Button>
+      </button>
     </form>
   );
 }
@@ -446,10 +458,10 @@ export function AcceptAsSignedInUser({
           {message}
         </Alert>
       ) : null}
-      <Button
+      <button
         type="button"
         disabled={pending}
-        className="w-full"
+        className={authPrimaryButton}
         onClick={() => {
           setMessage(null);
           startTransition(async () => {
@@ -464,7 +476,7 @@ export function AcceptAsSignedInUser({
         }}
       >
         {pending ? labels.accepting : labels.accept}
-      </Button>
+      </button>
     </div>
   );
 }
@@ -481,9 +493,9 @@ export function InviteSignOutButton({
 }) {
   const [pending, startTransition] = useTransition();
   return (
-    <Button
+    <button
       type="button"
-      variant="secondary"
+      className={authSecondaryButton}
       disabled={pending}
       data-testid="invite-sign-out"
       onClick={() => {
@@ -494,285 +506,32 @@ export function InviteSignOutButton({
       }}
     >
       {pending ? pendingLabel : label}
-    </Button>
+    </button>
   );
 }
-
-type LinkState = 'expired' | 'revoked' | 'used' | 'invalid';
-
-const STATE_ICONS: Record<LinkState, { readonly className: string; readonly path: ReactNode }> = {
-  expired: {
-    className: 'bg-warning-subtle',
-    path: (
-      <>
-        <circle cx="12" cy="12" r="9" />
-        <path d="M12 7v5l3 2" />
-      </>
-    ),
-  },
-  revoked: {
-    className: 'bg-surface-sunken',
-    path: (
-      <>
-        <circle cx="12" cy="12" r="9" />
-        <path d="M6 18L18 6" />
-      </>
-    ),
-  },
-  used: { className: 'bg-success-subtle', path: <path d="M5 12l5 5 9-10" /> },
-  invalid: {
-    className: 'bg-surface-sunken',
-    path: (
-      <>
-        <circle cx="12" cy="12" r="9" />
-        <path d="M12 8v5M12 16v.5" />
-      </>
-    ),
-  },
-};
-
-/** Texts of the accept page (translated on the server; `{organization}` filled in here). */
-export interface InviteViewTexts {
-  readonly pageTitle: string;
-  readonly checking: string;
-  /** Raw: `{organization}`. */
-  readonly welcomeTitle: string;
-  readonly intro: string;
-  /** Raw: `{organization}` and `<link>…</link>`. */
-  readonly privacy: string;
-  /** Raw: `{organization}`. */
-  readonly signedInInvitee: string;
-  readonly signedInAccept: string;
-  readonly signedInAccepting: string;
-  readonly otherAccount: string;
-  readonly signOut: string;
-  readonly signingOut: string;
-  readonly states: Readonly<Record<LinkState, { readonly title: string; readonly text: string }>>;
-  readonly usedSignIn: string;
-  readonly usedForgotPassword: string;
-}
-
-export interface InviteAcceptViewProps {
-  readonly locale: string;
-  readonly productName: string;
-  /** The language switch: its target (locale-prefixed path without the fragment) and texts. */
-  readonly toggle: {
-    readonly href: string;
-    readonly lang: string;
-    readonly label: string;
-    readonly ariaLabel: string;
-  };
-  readonly texts: InviteViewTexts;
-  readonly formLabels: AcceptInvitationFormProps['labels'];
-  readonly fieldTexts: AcceptInvitationFormProps['fieldTexts'];
-  readonly errors: ErrorTexts;
-}
-
-type ViewState =
-  | { readonly kind: 'checking' }
-  | { readonly kind: 'link'; readonly link: InvitationLinkView }
-  | { readonly kind: 'error'; readonly message: string };
 
 /**
- * The accept page body (screens 8 and 9). On load: read the token from the URL fragment, remove the
- * fragment from the address bar (history.replaceState: not in the history, not in a bookmark), then
- * ask the server what the link is. The token is kept in memory only.
+ * The older invitation links (`/{locale}/invite/accept#token=…`, e-mailed before codes): forwarded at once
+ * to the sign-up page with the token in the fragment again (`/{locale}/sign-up#code=…`) — the secret never
+ * reaches a server log or the history (location.replace).
  */
-export function InviteAcceptView({
+export function InviteLinkForwarder({
   locale,
-  productName,
-  toggle,
-  texts,
-  formLabels,
-  fieldTexts,
-  errors,
-}: InviteAcceptViewProps) {
-  const [state, setState] = useState<{ readonly token: string | null; readonly view: ViewState }>({
-    token: null,
-    view: { kind: 'checking' },
-  });
+  checking,
+}: {
+  readonly locale: string;
+  readonly checking: string;
+}) {
   const started = useRef(false);
-
-  const describe = useCallback(
-    async (token: string | null): Promise<ViewState> => {
-      if (!token) return { kind: 'link', link: { state: 'invalid' } };
-      const result = await lookupInvitationAction({ token });
-      if (result.ok) return { kind: 'link', link: result.value };
-      if (result.error.code === 'VALIDATION_FAILED') {
-        return { kind: 'link', link: { state: 'invalid' } };
-      }
-      return { kind: 'error', message: errorText(result.error, errors) };
-    },
-    [errors],
-  );
-
   useEffect(() => {
     if (started.current) return;
     started.current = true;
-    const { hash, pathname, search } = window.location;
-    const token = inviteTokenFromHash(hash);
-    if (hash !== '') {
-      window.history.replaceState(window.history.state, '', `${pathname}${search}`);
-    }
-    void describe(token).then((view) => {
-      setState({ token, view });
-    });
-  }, [describe]);
-
-  const reload = useCallback(() => {
-    void describe(state.token).then((view) => {
-      setState((current) => ({ ...current, view }));
-    });
-  }, [describe, state.token]);
-
-  const { token, view } = state;
-  let title: string;
-  let body: ReactNode;
-  if (view.kind === 'checking') {
-    title = texts.pageTitle;
-    body = (
-      <Card>
-        <p className="m-0 text-text-muted" role="status" data-testid="invite-checking">
-          {texts.checking}
-        </p>
-      </Card>
-    );
-  } else if (view.kind === 'error') {
-    title = texts.pageTitle;
-    body = (
-      <Alert tone="danger" data-testid="invite-error">
-        {view.message}
-      </Alert>
-    );
-  } else if (view.link.state !== 'valid') {
-    const linkState = view.link.state;
-    const icon = STATE_ICONS[linkState];
-    title = texts.states[linkState].title;
-    body = (
-      <Card data-testid={`invite-state-${linkState}`}>
-        <div className="flex flex-col items-start gap-3">
-          <span
-            className={`inline-flex size-12 items-center justify-center rounded-full ${icon.className}`}
-            aria-hidden="true"
-          >
-            <svg
-              width="24"
-              height="24"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
-            >
-              {icon.path}
-            </svg>
-          </span>
-          <p className="m-0">{texts.states[linkState].text}</p>
-          {linkState === 'used' ? (
-            <div className="mt-2 flex flex-wrap gap-2">
-              <a href={`/${locale}/sign-in`} className={buttonClasses({ variant: 'primary' })}>
-                {texts.usedSignIn}
-              </a>
-              <a
-                href={`/${locale}/forgot-password`}
-                className={buttonClasses({ variant: 'secondary' })}
-              >
-                {texts.usedForgotPassword}
-              </a>
-            </div>
-          ) : null}
-        </div>
-      </Card>
-    );
-  } else {
-    const link = view.link;
-    const organization =
-      locale === 'en'
-        ? (link.organizationName.en ?? link.organizationName.ar)
-        : link.organizationName.ar;
-    title = withOrganization(texts.welcomeTitle, organization);
-    if (link.viewer === 'invitee' && token) {
-      body = (
-        <Card>
-          <div className="flex flex-col gap-4">
-            <p className="m-0">{withOrganization(texts.signedInInvitee, organization)}</p>
-            <AcceptAsSignedInUser
-              locale={locale}
-              token={token}
-              labels={{ accept: texts.signedInAccept, accepting: texts.signedInAccepting }}
-              errors={errors}
-              onInvalidated={reload}
-            />
-          </div>
-        </Card>
-      );
-    } else if (link.viewer === 'other-account') {
-      body = (
-        <Card>
-          <div className="flex flex-col items-start gap-4">
-            <Alert tone="warning" data-testid="invite-other-account">
-              {texts.otherAccount}
-            </Alert>
-            <InviteSignOutButton
-              label={texts.signOut}
-              pendingLabel={texts.signingOut}
-              onSignedOut={reload}
-            />
-          </div>
-        </Card>
-      );
-    } else {
-      const privacy = splitLinkMessage(withOrganization(texts.privacy, organization));
-      body = (
-        <>
-          <p className="m-0 text-text-muted">{texts.intro}</p>
-          <Card>
-            <AcceptInvitationForm
-              locale={locale}
-              token={token ?? ''}
-              email={link.email}
-              displayName={{ ar: link.displayName.ar, en: link.displayName.en ?? '' }}
-              passwordMinLength={link.passwordMinLength}
-              privacyLabel={
-                <>
-                  {privacy.before}
-                  {/* TODO(PO): no privacy notice page exists yet; /[locale]/privacy is a placeholder. */}
-                  <a href={`/${locale}/privacy`} className="underline">
-                    {privacy.link}
-                  </a>
-                  {privacy.after}
-                </>
-              }
-              labels={formLabels}
-              fieldTexts={fieldTexts}
-              errors={errors}
-              onInvalidated={reload}
-            />
-          </Card>
-        </>
-      );
-    }
-  }
-
+    const code = inviteCodeFromHash(window.location.hash);
+    window.location.replace(`/${locale}/sign-up${signUpFragment(code)}`);
+  }, [locale]);
   return (
-    <div className="flex min-h-dvh flex-col">
-      <header className="flex items-center justify-between gap-4 border-b border-border bg-surface px-4 py-3">
-        <span className="text-lg font-semibold">{productName}</span>
-        {/* The language switch keeps the link working: the token goes along in the fragment only. */}
-        <a
-          href={`${toggle.href}${inviteFragment(token)}`}
-          hrefLang={toggle.lang}
-          lang={toggle.lang}
-          aria-label={toggle.ariaLabel}
-          className={buttonClasses({ variant: 'secondary', size: 'sm' })}
-          data-testid="language-toggle"
-        >
-          {toggle.label}
-        </a>
-      </header>
-      <main id="main" className="mx-auto flex w-full max-w-lg flex-1 flex-col gap-6 px-4 py-10">
-        <h1 className="m-0 text-2xl font-bold">{title}</h1>
-        {body}
-      </main>
-    </div>
+    <p className="m-0 text-text-muted" role="status" data-testid="invite-forwarding">
+      {checking}
+    </p>
   );
 }

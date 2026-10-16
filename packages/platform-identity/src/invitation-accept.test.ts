@@ -228,7 +228,15 @@ describe('normalizeInvitationSecret', () => {
     expect(normalizeInvitationSecret(' k7m2pq9x\n')).toBe(CODE);
     expect(normalizeInvitationSecret(CODE)).toBe(CODE);
     expect(normalizeInvitationSecret(` ${TOKEN} `)).toBe(TOKEN);
-    for (const bad of ['', 'K7M2PQ9', 'K7M2PQ9XX', 'K7M2PQ9O', 'K7M2PQ91', 'K7M2 PQ9X', TOKEN.slice(1)]) {
+    for (const bad of [
+      '',
+      'K7M2PQ9',
+      'K7M2PQ9XX',
+      'K7M2PQ9O',
+      'K7M2PQ91',
+      'K7M2 PQ9X',
+      TOKEN.slice(1),
+    ]) {
       expect(normalizeInvitationSecret(bad)).toBeNull();
     }
   });
@@ -270,7 +278,9 @@ describe('invitation codes (Kawadir, migration 20261018090000)', () => {
     expect(deps.invitationByToken).not.toHaveBeenCalled();
     expect(auth.signUp).not.toHaveBeenCalled();
     expect(auth.signInWithPassword).not.toHaveBeenCalled();
-    await expect(lookupInvitationLink(deps, CODE)).rejects.toThrow('too many unknown invitation codes');
+    await expect(lookupInvitationLink(deps, CODE)).rejects.toThrow(
+      'too many unknown invitation codes',
+    );
   });
 
   it('fails closed when the guard cannot answer', async () => {
@@ -283,7 +293,10 @@ describe('invitation codes (Kawadir, migration 20261018090000)', () => {
 
   it('signs up with the normalized code in the metadata (what the hook compares)', async () => {
     const { deps, auth } = setup();
-    const result = await acceptInvitationWithNewAccount(deps, { ...newAccount, token: ' k7m2pq9x ' });
+    const result = await acceptInvitationWithNewAccount(deps, {
+      ...newAccount,
+      token: ' k7m2pq9x ',
+    });
     expect(result.ok).toBe(true);
     expect(auth.signUp).toHaveBeenCalledWith(
       expect.objectContaining({ email: EMAIL, options: { data: { invitation: CODE } } }),

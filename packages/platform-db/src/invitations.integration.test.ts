@@ -88,7 +88,9 @@ describe.skipIf(!configured)('invitations against PostgreSQL', () => {
       invitationCodeForMail(tx, invitationId),
     );
   const resend = async (m: ReturnType<typeof member>, invitationId: string) => {
-    const outcome = await withUserTx(claimsOf(m), (tx) => requestInvitationResend(tx, invitationId));
+    const outcome = await withUserTx(claimsOf(m), (tx) =>
+      requestInvitationResend(tx, invitationId),
+    );
     return outcome;
   };
 
@@ -155,7 +157,9 @@ describe.skipIf(!configured)('invitations against PostgreSQL', () => {
     const sent = { token: created.inviteCode };
     const hash = hashInvitationToken(sent.token);
     // The inviter (and the Organization Admin) see it on the list; it was not issued again.
-    const listed = await withUserTx(claimsOf(admin), (tx) => listInvitations(tx, { state: 'pending' }));
+    const listed = await withUserTx(claimsOf(admin), (tx) =>
+      listInvitations(tx, { state: 'pending' }),
+    );
     expect(listed.find((r) => r.id === created.invitationId)).toMatchObject({
       inviteCode: created.inviteCode,
       locale: 'ar',
@@ -320,8 +324,9 @@ describe.skipIf(!configured)('invitations against PostgreSQL', () => {
     expect(requested).toEqual({ events: 1 });
     // Copying: the Organization Admin sees the code, the HR Manager does not (privileged role).
     const codeSeenBy = async (m: ReturnType<typeof member>) =>
-      (await withUserTx(claimsOf(m), (tx) => listInvitations(tx))).find((r) => r.id === invitationId)
-        ?.inviteCode;
+      (await withUserTx(claimsOf(m), (tx) => listInvitations(tx))).find(
+        (r) => r.id === invitationId,
+      )?.inviteCode;
     await expect(codeSeenBy(admin)).resolves.toMatch(INVITATION_CODE_PATTERN);
     await expect(codeSeenBy(hr)).resolves.toBeNull();
 

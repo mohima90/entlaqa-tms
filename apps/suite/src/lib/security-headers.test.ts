@@ -131,6 +131,7 @@ describe('secretUrlHeaders (invitation links T-M2-07, password-reset links T-M2-
   it('sends no referrer from the pages whose URL carries a token', () => {
     expect(SECRET_URL_PAGES).toEqual([
       '/:locale/invite/:path*',
+      '/:locale/sign-up',
       '/:locale/reset-password',
       '/:locale/mfa/remove',
     ]);

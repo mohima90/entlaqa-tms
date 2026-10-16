@@ -84,8 +84,8 @@ describe('loadInvitationForMail', () => {
 
 describe('invitationCodeForMail', () => {
   it('reads the current code through the jobs-only definer function', async () => {
-    const fake = fakeTx([{ code: 'K7M2PQ9X' }], [{ code: null }], []);
-    await expect(invitationCodeForMail(fake.tx, ID)).resolves.toBe('K7M2PQ9X');
+    const fake = fakeTx([{ code: 'K7M2PQ9XHT4W' }], [{ code: null }], []);
+    await expect(invitationCodeForMail(fake.tx, ID)).resolves.toBe('K7M2PQ9XHT4W');
     expect(fake.executed[0]?.sql).toContain('private.invitation_code_for_mail($1::uuid)');
     expect(fake.executed[0]?.params).toEqual([ID]);
     await expect(invitationCodeForMail(fake.tx, ID)).resolves.toBeNull();

@@ -10,8 +10,8 @@ import { PASSWORD_MAX_BYTES, PASSWORD_MIN_LENGTH, utf8Length } from './password-
  */
 
 /**
- * The invitation code (8 characters, Kawadir; typed in any case — normalized here) or the token of a link
- * e-mailed before codes (43 base64url characters).
+ * The invitation code (12 characters, Kawadir; typed in any case, with or without its XXXX-XXXX-XXXX
+ * grouping — normalized here) or the token of a link e-mailed before codes (43 base64url characters).
  */
 const token = z
   .string()

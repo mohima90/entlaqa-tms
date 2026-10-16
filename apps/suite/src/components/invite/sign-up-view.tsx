@@ -3,7 +3,7 @@ import type { InvitationLinkView } from '@jadarat/platform-identity';
 import { Alert } from '@jadarat/ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { lookupInvitationAction } from '../../auth/invitations';
-import { isCompleteInviteCode, typedInviteCode } from '../../lib/invite-code';
+import { displayInviteCode, isCompleteInviteCode, typedInviteCode } from '../../lib/invite-code';
 import {
   inviteCodeFromHash,
   signUpFragment,
@@ -96,12 +96,14 @@ const LOOKUP_DELAY_MS = 500;
 
 /**
  * Join with an invitation code — Kawadir ATS's sign-up "join" screen one-to-one (PO, 16 Oct 2026;
- * FR-IAM-03): the code (filled in and locked when it came with the link, else typed — upper-cased, looked
- * up once complete), the organization, the invited e-mail filled in and locked, the names, the password
+ * FR-IAM-03): the code (filled in and locked when it came with the link, else typed — upper-cased, shown
+ * grouped XXXX-XXXX-XXXX, looked up once its 12 symbols are complete), the organization, the invited e-mail filled in and locked, the names, the password
  * with its live rules, the privacy acknowledgement, «انضم إلى …» → the account is created and signed in.
  * The link carries the code in the URL FRAGMENT (`#code=…`, review M3): read here, removed from the
  * address bar at once (history.replaceState), kept in memory only and sent only in server action bodies.
- * Lookups are limited per client and per code on the server (unknown codes count, fail closed).
+ * Lookups are limited per client and per code on the server (unknown codes count, fail closed). Every
+ * outcome of a lookup — checking, valid for which organization, or invalid / expired / revoked / used — is
+ * announced through the live region (review M3); a failed lookup is an alert.
  */
 export function SignUpView({
   locale,
@@ -141,7 +143,7 @@ export function SignUpView({
     const fromHash = inviteCodeFromHash(hash);
     if (hash !== '') window.history.replaceState(window.history.state, '', `${pathname}${search}`);
     if (fromHash) {
-      const value = fromHash.length === 43 ? fromHash : typedInviteCode(fromHash);
+      const value = fromHash.trim().length === 43 ? fromHash.trim() : typedInviteCode(fromHash);
       // Shown and looked up once the effect has run (the address bar is already clean).
       void Promise.resolve(value).then((settled) => {
         setCode(settled);
@@ -194,6 +196,11 @@ export function SignUpView({
       >
         <AuthIcon name="check" className="size-4 shrink-0" />
         {withOrganization(texts.codeValid, organization)}
+      </span>
+    ) : stateText ? (
+      // Shown as the field's error; announced here too — an error that appears is not read (review M3).
+      <span className="sr-only" data-testid="sign-up-code-state">
+        {stateText}
       </span>
     ) : null;
 
@@ -312,7 +319,7 @@ export function SignUpView({
             label={texts.codeLabel}
             marker={texts.required}
             placeholder={texts.codePlaceholder}
-            value={code}
+            value={code.length === 43 ? code : displayInviteCode(code)}
             readOnly={fromLink}
             onChange={(event) => {
               onType(event.target.value);
@@ -321,7 +328,8 @@ export function SignUpView({
             autoCapitalize="characters"
             spellCheck={false}
             dir="ltr"
-            maxLength={fromLink ? 43 : 8}
+            // Room for the grouping and pasted spaces; the field keeps the 12 symbols.
+            maxLength={fromLink ? 43 : 32}
             inputClassName="font-mono uppercase tracking-[0.2em]"
             hint={fromLink ? texts.codeFromLink : undefined}
             error={stateText ?? undefined}

@@ -127,3 +127,20 @@ export function blockedBySole(
   if (as === 'additional' && primary !== '') held.push(primary);
   return held.some((other) => other !== code && (sole.includes(code) || sole.includes(other)));
 }
+
+/**
+ * The invitee's name as the page shows it: in English when the page is English and the English name was
+ * given, else the Arabic name (review L4).
+ */
+export function createdName(
+  uiLocale: 'ar' | 'en',
+  names: { ar: readonly string[]; en: readonly string[] },
+): string {
+  const join = (parts: readonly string[]) =>
+    parts
+      .map((p) => p.trim())
+      .filter((p) => p !== '')
+      .join(' ');
+  const en = join(names.en);
+  return uiLocale === 'en' && en !== '' ? en : join(names.ar);
+}

@@ -8,6 +8,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./supabase-server": "./src/supabase/server.ts",
+    "./invitation-code": "./src/invitation-code.ts",
     "./jobs": "./src/jobs/index.ts",
     "./admin": "./src/admin/index.ts"
   },

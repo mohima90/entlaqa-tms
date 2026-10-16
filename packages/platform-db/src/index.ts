@@ -69,10 +69,13 @@ export {
 } from './sign-in-lock';
 export {
   INVITATION_CODE_ALPHABET,
+  INVITATION_CODE_LENGTH,
   INVITATION_CODE_PATTERN,
   INVITATION_EVENTS,
   INVITATION_MAX_SENDS,
+  INVITATION_SECRET_PATTERN,
   LEGACY_INVITATION_TOKEN_PATTERN,
+  type InvitationCode,
   type InvitationErrorCode,
   type InvitationResend,
   type InvitationRow,
@@ -85,7 +88,9 @@ export {
   createInvitationTokenApi,
   getInvitationRoles,
   hashInvitationToken,
+  formatInvitationCode,
   invitationByToken,
+  invitationCode,
   listInvitations,
   normalizeInvitationCode,
   requestInvitationResend,

@@ -38,8 +38,8 @@ describe('inviteTokenFromHash (the token travels in the URL fragment)', () => {
 
 describe('invitation codes in the sign-up link (Kawadir)', () => {
   it('reads #code=… and the older #token=… links', () => {
-    expect(inviteCodeFromHash('#code=K7M2PQ9X')).toBe('K7M2PQ9X');
-    expect(inviteCodeFromHash('code=k7m2pq9x')).toBe('k7m2pq9x');
+    expect(inviteCodeFromHash('#code=K7M2PQ9XHT4W')).toBe('K7M2PQ9XHT4W');
+    expect(inviteCodeFromHash('code=k7m2pq9xht4w')).toBe('k7m2pq9xht4w');
     expect(inviteCodeFromHash(`#token=${token}`)).toBe(token);
     for (const hash of ['', '#', '#code=', '#code=%20', '#other=1']) {
       expect(inviteCodeFromHash(hash), hash).toBeNull();
@@ -47,11 +47,11 @@ describe('invitation codes in the sign-up link (Kawadir)', () => {
   });
 
   it('builds the copyable link from the origin, the invitation language and the code', () => {
-    expect(inviteLink('https://tms.example.com/', 'ar', 'K7M2PQ9X')).toBe(
-      'https://tms.example.com/ar/sign-up#code=K7M2PQ9X',
+    expect(inviteLink('https://tms.example.com/', 'ar', 'K7M2PQ9XHT4W')).toBe(
+      'https://tms.example.com/ar/sign-up#code=K7M2PQ9XHT4W',
     );
-    expect(inviteLink('http://localhost:3000', 'en', 'K7M2PQ9X')).toBe(
-      'http://localhost:3000/en/sign-up#code=K7M2PQ9X',
+    expect(inviteLink('http://localhost:3000', 'en', 'K7M2-PQ9X-HT4W')).toBe(
+      'http://localhost:3000/en/sign-up#code=K7M2PQ9XHT4W',
     );
     expect(signUpFragment(null)).toBe('');
     expect(inviteCodeFromHash(signUpFragment('a&b=c#d'))).toBe('a&b=c#d');

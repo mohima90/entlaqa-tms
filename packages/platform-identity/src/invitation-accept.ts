@@ -10,6 +10,10 @@ import {
 } from '@jadarat/platform-core';
 import type { TokenLookup, UserTx } from '@jadarat/platform-db';
 import {
+  INVITATION_SECRET_PATTERN,
+  normalizeInvitationCode,
+} from '@jadarat/platform-db/invitation-code';
+import {
   type AuthFlowDeps,
   AuthServiceError,
   type SessionTokens,
@@ -59,31 +63,34 @@ export const InvitationErrors = defineErrorCodes({
 export const INVITATION_NOT_VALID_CODE = 'INVITATION_NOT_VALID';
 
 /**
- * What a link (or the sign-up page's code field) carries: an invitation CODE — 8 symbols of
- * ABCDEFGHJKLMNPQRSTUVWXYZ23456789, upper case (Kawadir; migration 20261018090000) — or a 43-character
- * base64url token e-mailed before codes. Compared after normalizeInvitationSecret.
+ * What a link (or the sign-up page's code field) carries once normalized: an invitation CODE — 12 symbols
+ * of ABCDEFGHJKLMNPQRSTUVWXYZ23456789, upper case, without the `XXXX-XXXX-XXXX` grouping (Kawadir;
+ * migration 20261018090000; security review H1) — or a 43-character base64url token e-mailed before codes.
+ * One definition: @jadarat/platform-db invitation-code.ts.
  */
-export const INVITATION_TOKEN_PATTERN = /^(?:[A-HJ-NP-Z2-9]{8}|[A-Za-z0-9_-]{43})$/;
+export const INVITATION_TOKEN_PATTERN = INVITATION_SECRET_PATTERN;
 
 /**
- * A code as the database compares it: trimmed and upper-cased (people type codes in any case); a legacy
- * token trimmed but otherwise unchanged (it is case-sensitive). Null when it is neither.
+ * A code as the database compares it: grouping (hyphens, spaces) removed and upper-cased (people type
+ * codes in any case); a legacy token trimmed but otherwise unchanged (it is case-sensitive). Null when it
+ * is neither.
  */
 export function normalizeInvitationSecret(raw: string): string | null {
-  const trimmed = raw.trim();
-  if (/^[A-Za-z0-9_-]{43}$/.test(trimmed)) return trimmed;
-  const code = trimmed.toUpperCase();
-  return /^[A-HJ-NP-Z2-9]{8}$/.test(code) ? code : null;
+  return normalizeInvitationCode(raw);
 }
 
 /**
- * Guessing codes (8 characters, 40 random bits): every code that reaches the database first counts as a
- * miss for the client (auth-limits.ts `allowCodeAttempt`, fail closed) and is given back when it is a real
- * invitation's — whatever its state — so a client trying codes is stopped after a few misses, whichever
+ * Guessing codes (12 characters, 60 random bits): every code that reaches the database first counts as a
+ * miss for the client (IPv6 by its /48) and for all clients together (auth-limits.ts `allowCodeAttempt`,
+ * fail closed) and is given back when it is a real invitation's — whatever its state — so a client trying
+ * codes is stopped after a few misses, and a distributed guesser by the all-clients budget, whichever
  * invitation action it uses (lookup, new account, sign in to accept, accept as signed in).
  */
 export interface InvitationCodeGuard {
-  /** False: this client used up its misses (RATE_LIMITED). Throws when the limiter cannot answer. */
+  /**
+   * False: this client — or all clients together — used up the misses (RATE_LIMITED). Throws when the
+   * limiter cannot answer.
+   */
   readonly attempt: () => Promise<boolean>;
   /** The code was a real invitation's: the provisional miss is given back. */
   readonly found: () => Promise<void>;

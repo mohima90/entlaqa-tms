@@ -8,6 +8,7 @@ import {
   inviteFieldError,
   lockedRoleCodes,
   rolesShown,
+  createdName,
 } from './invite-form';
 
 const role = (code: string, privileged = false): RoleChoice => ({
@@ -113,5 +114,15 @@ describe('canResend', () => {
     expect(canResend({ state: 'pending', sendCount: 4 })).toBe(false);
     expect(canResend({ state: 'revoked', sendCount: 1 })).toBe(false);
     expect(canResend({ state: 'accepted', sendCount: 1 })).toBe(false);
+  });
+});
+
+describe('createdName (the success panel, review L4)', () => {
+  it('names the invitee in the page language: English when given, else Arabic', () => {
+    const names = { ar: [' نورة ', 'الدوسري'], en: ['Noura', ' Aldossari '] };
+    expect(createdName('en', names)).toBe('Noura Aldossari');
+    expect(createdName('ar', names)).toBe('نورة الدوسري');
+    expect(createdName('en', { ar: ['نورة', 'الدوسري'], en: ['', ' '] })).toBe('نورة الدوسري');
+    expect(createdName('en', { ar: ['نورة', 'الدوسري'], en: ['Noura', ''] })).toBe('Noura');
   });
 });

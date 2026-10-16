@@ -30,6 +30,7 @@ import {
   accountSubject,
   authClientHeaders,
   clientSubject,
+  codeMissesClientKey,
   createCodeAttemptLimiter,
   createInvitationLimiter,
   createPasswordCheckLimiter,
@@ -1343,13 +1344,24 @@ describe('createInvitationLimiter', () => {
     await expect(limiter.allowLookup(null)).rejects.toBeInstanceOf(RateLimiterUnavailableError);
     await expect(limiter.allowSignUp(link(1))).rejects.toBeInstanceOf(RateLimiterUnavailableError);
     await expect(limiter.allowCodeAttempt()).rejects.toBeInstanceOf(RateLimiterUnavailableError);
-    // Giving a miss back decides nothing: it fails open (logged).
+    // Nothing was counted: nothing to give back.
     await expect(limiter.codeFound()).resolves.toBeUndefined();
     expect(events.map((e) => [e.event, e.reason])).toEqual([
       ['auth.limiter.unavailable', 'fail_closed'],
       ['auth.limiter.unavailable', 'fail_closed'],
       ['auth.limiter.unavailable', 'fail_closed'],
       ['auth.limiter.unavailable', 'fail_closed'],
+    ]);
+  });
+
+  it('giving misses back decides nothing: it fails open (logged)', async () => {
+    const memory = memoryStore();
+    const store = { ...memory.store, giveBack: vi.fn(() => Promise.reject(new Error('down'))) };
+    const { limiter, events } = setup(store);
+    expect(await limiter.allowCodeAttempt()).toBe(true);
+    await expect(limiter.codeFound()).resolves.toBeUndefined();
+    expect(events.map((e) => [e.event, e.reason])).toEqual([
+      ['auth.limiter.unavailable', 'fail_open'],
       ['auth.limiter.unavailable', 'fail_open'],
     ]);
   });
@@ -1370,6 +1382,81 @@ describe('createInvitationLimiter', () => {
     const shared = setup(undefined, { key: null });
     await shared.limiter.allowCodeAttempt();
     expect(shared.memory.hit.mock.calls[0]?.[2].max).toBe(500);
+  });
+
+  it('counts unknown codes of ALL clients too: 2,000 per 15 minutes, then everyone is refused (H1)', async () => {
+    const memory = memoryStore();
+    const events: SecurityEvent[] = [];
+    const limiterFor = (n: number) =>
+      createInvitationLimiter({
+        store: memory.store,
+        limits: PLATFORM_AUTH_LIMITS,
+        log: (e) => events.push(e),
+        client: { key: `198.51.${String(Math.floor(n / 256))}.${String(n % 256)}` },
+        lookupAction: 'platform.invitation.lookup',
+        signUpAction: 'platform.invitation.accept',
+      });
+    // A distributed guesser: 200 addresses, 10 misses each — every one under its own budget.
+    for (let n = 0; n < 200; n += 1) {
+      const limiter = limiterFor(n);
+      for (let i = 0; i < 10; i += 1) expect(await limiter.allowCodeAttempt()).toBe(true);
+    }
+    // The 2,001st miss — from a fresh address — is refused, and so is a real invitee's lookup now.
+    expect(await limiterFor(500).allowCodeAttempt()).toBe(false);
+    expect(await limiterFor(501).allowCodeAttempt()).toBe(false);
+    const warnings = events.filter((e) => e.event === 'auth.invitation_codes.global_limit');
+    expect(warnings).toHaveLength(2);
+    expect(warnings[0]).toEqual({
+      event: 'auth.invitation_codes.global_limit',
+      action: 'platform.invitation.lookup',
+      reason: 'invitation.code_misses_all_clients',
+      limit: 'invitation.code_misses_all_clients',
+      retryAfterS: expect.any(Number) as unknown,
+    });
+    expect(securityLogLine(warnings[0]!).level).toBe('warn');
+    expect(memory.hit.mock.calls.at(-1)?.[0]).toBe('invitation.code_misses_all_clients');
+    expect(memory.hit.mock.calls.at(-1)?.[2].max).toBe(2000);
+  });
+
+  it('real invitations give their miss back to both budgets; a refused client does not touch the all-clients one', async () => {
+    const memory = memoryStore();
+    const { limiter } = setup(memory.store);
+    for (let i = 0; i < 3000; i += 1) {
+      expect(await limiter.allowCodeAttempt()).toBe(true);
+      await limiter.codeFound();
+    }
+    const guesser = setup(memory.store, OTHER_CLIENT).limiter;
+    for (let i = 0; i < 25; i += 1) await guesser.allowCodeAttempt();
+    const allClientHits = memory.hit.mock.calls.filter(
+      ([bucket]) => bucket === 'invitation.code_misses_all_clients',
+    );
+    // 3,000 found codes + the guesser's 20 allowed misses (its 5 refused ones counted nowhere else).
+    expect(allClientHits).toHaveLength(3020);
+    expect(await limiter.allowCodeAttempt()).toBe(true);
+  });
+
+  it('keys an IPv6 client by its /48 for unknown codes (IPv4 and the shared key unchanged)', async () => {
+    expect(codeMissesClientKey({ key: '2001:db8:1:2::/64' })).toEqual({ key: '2001:db8:1::/48' });
+    expect(codeMissesClientKey({ key: 'abcd:ef01:2345:6789::/64' })).toEqual({
+      key: 'abcd:ef01:2345::/48',
+    });
+    expect(codeMissesClientKey({ key: '203.0.113.7' })).toEqual({ key: '203.0.113.7' });
+    expect(codeMissesClientKey({ key: null })).toEqual({ key: null });
+    // Two /64s of one /48 share the budget of unknown codes …
+    const memory = memoryStore();
+    const a = setup(memory.store, { key: '2001:db8:1:2::/64' }).limiter;
+    const b = setup(memory.store, { key: '2001:db8:1:3::/64' }).limiter;
+    for (let i = 0; i < 10; i += 1) expect(await a.allowCodeAttempt()).toBe(true);
+    for (let i = 0; i < 10; i += 1) expect(await b.allowCodeAttempt()).toBe(true);
+    expect(await b.allowCodeAttempt()).toBe(false);
+    expect(hex(memory.hit.mock.calls[0]?.[1] ?? new Uint8Array())).toBe(
+      hex(clientSubject({ key: '2001:db8:1::/48' })),
+    );
+    // … while their other budgets stay per /64.
+    await a.allowLookup(null);
+    expect(hex(memory.hit.mock.calls.at(-1)?.[1] ?? new Uint8Array())).toBe(
+      hex(clientSubject({ key: '2001:db8:1:2::/64' })),
+    );
   });
 });
 

@@ -19,6 +19,7 @@ import {
   createInvitation,
   createInvitationTokenApi,
   hashInvitationToken,
+  invitationCode,
   listInvitations,
   requestInvitationResend,
   revokeInvitation,
@@ -156,15 +157,19 @@ describe.skipIf(!configured)('invitations against PostgreSQL', () => {
     await expect(mail(created.invitationId)).resolves.toBe(created.inviteCode);
     const sent = { token: created.inviteCode };
     const hash = hashInvitationToken(sent.token);
-    // The inviter (and the Organization Admin) see it on the list; it was not issued again.
+    // The Organization Admin may copy it (the list says so, without the code); copying reads the same
+    // code — it was not issued again.
     const listed = await withUserTx(claimsOf(admin), (tx) =>
       listInvitations(tx, { state: 'pending' }),
     );
     expect(listed.find((r) => r.id === created.invitationId)).toMatchObject({
-      inviteCode: created.inviteCode,
+      hasCode: true,
       locale: 'ar',
       sendCount: 1,
     });
+    await expect(
+      withUserTx(claimsOf(admin), (tx) => invitationCode(tx, created.invitationId)),
+    ).resolves.toEqual({ inviteCode: created.inviteCode, locale: 'ar' });
 
     await expect(tokens.invitationByToken(hash)).resolves.toEqual({
       state: 'valid',
@@ -322,13 +327,23 @@ describe.skipIf(!configured)('invitations against PostgreSQL', () => {
       where e.type = 'com.entlaqa.platform.invitation.resend_requested' and e.subject = ${invitationId}
         and e.actor_type = 'user' and e.actor_id = ${admin.user}`;
     expect(requested).toEqual({ events: 1 });
-    // Copying: the Organization Admin sees the code, the HR Manager does not (privileged role).
-    const codeSeenBy = async (m: ReturnType<typeof member>) =>
+    // Copying: the Organization Admin may copy the code, the HR Manager may not (privileged role). The
+    // list only says whether a code may be copied; the code is read one at a time (review M2).
+    const listed = async (m: ReturnType<typeof member>) =>
       (await withUserTx(claimsOf(m), (tx) => listInvitations(tx))).find(
         (r) => r.id === invitationId,
-      )?.inviteCode;
-    await expect(codeSeenBy(admin)).resolves.toMatch(INVITATION_CODE_PATTERN);
-    await expect(codeSeenBy(hr)).resolves.toBeNull();
+      );
+    await expect(listed(admin)).resolves.toMatchObject({ hasCode: true, primaryRole: 'auditor' });
+    await expect(listed(hr)).resolves.toMatchObject({ hasCode: false });
+    expect(JSON.stringify(await listed(admin))).not.toContain(
+      renewed.status === 'queued' ? renewed.inviteCode : 'none',
+    );
+    const copied = await withUserTx(claimsOf(admin), (tx) => invitationCode(tx, invitationId));
+    expect(copied?.inviteCode).toMatch(INVITATION_CODE_PATTERN);
+    expect(copied?.inviteCode).toBe(renewed.status === 'queued' ? renewed.inviteCode : 'none');
+    await expect(
+      withUserTx(claimsOf(hr), (tx) => invitationCode(tx, invitationId)),
+    ).resolves.toBeNull();
 
     const mayManage = (userId: string) =>
       withSystemTx({ tenantId: tenant, jobId: 'test' }, (tx) =>

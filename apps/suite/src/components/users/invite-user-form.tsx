@@ -9,6 +9,7 @@ import {
   type RoleChoice,
   blockedBySole,
   choosesPrivileged,
+  createdName,
   inviteFieldError,
   lockedRoleCodes,
   rolesShown,
@@ -18,7 +19,7 @@ import { useSessionRefusal } from '../auth/session-refusal';
 import { fieldErrorCodes } from '../profile/field-errors';
 import { SelectField } from '../select-field';
 import type { UnitChoice } from './edit-user-form';
-import { InviteCodeCopy, type InviteCopyTexts } from './invite-code-copy';
+import { InviteCodeCopy, type InviteCodeValue, type InviteCopyTexts } from './invite-code-copy';
 
 export interface InviteUserFormProps {
   /** The organization's default language for new people (T-M2-22): the invitation language preselected. */
@@ -41,12 +42,13 @@ export interface InviteUserFormProps {
   readonly soleRoles: readonly string[];
   /** The code chip and copy buttons of the success panel (Kawadir). */
   readonly copyTexts: InviteCopyTexts;
+  /** The page's language: the success panel names the invitee in it (English name when given). */
+  readonly uiLocale: 'ar' | 'en';
 }
 
-/** The invitation just created: its code to copy (Kawadir), its language and the invitee's name. */
+/** The invitation just created: its code to copy (Kawadir, with its language and link) and the name. */
 interface Created {
-  readonly code: string;
-  readonly locale: 'ar' | 'en';
+  readonly value: InviteCodeValue;
   readonly name: string;
 }
 
@@ -92,12 +94,7 @@ function InvitationCreatedPanel({
         </h2>
       </div>
       <p className="m-0">{text('created.text').split('{name}').join(created.name)}</p>
-      <InviteCodeCopy
-        code={created.code}
-        locale={created.locale}
-        texts={copyTexts}
-        layout="panel"
-      />
+      <InviteCodeCopy value={created.value} texts={copyTexts} layout="panel" />
       <div className="flex flex-wrap items-center gap-3">
         <a href={successHref} className={buttonClasses({ variant: 'primary', size: 'md' })}>
           {text('created.toList')}
@@ -180,9 +177,15 @@ export function InviteUserForm(props: InviteUserFormProps) {
       if (result.ok) {
         // Kawadir: the code and the link right away (no e-mail needed); the list keeps them too.
         setCreated({
-          code: result.value.inviteCode,
-          locale: result.value.locale,
-          name: [input.firstNameAr, input.familyNameAr].map((p) => p.trim()).join(' '),
+          value: {
+            inviteCode: result.value.inviteCode,
+            locale: result.value.locale,
+            inviteLink: result.value.inviteLink,
+          },
+          name: createdName(props.uiLocale, {
+            ar: [input.firstNameAr, input.familyNameAr],
+            en: [input.firstNameEn, input.familyNameEn],
+          }),
         });
         router.refresh();
         return;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { originFromHost, parseAppBaseUrl } from './app-base-url';
+import { parseAppBaseUrl } from './app-base-url';
 
 describe('parseAppBaseUrl', () => {
   it('takes an https origin (or http for localhost)', () => {
@@ -20,20 +20,6 @@ describe('parseAppBaseUrl', () => {
       'javascript:alert(1)',
     ]) {
       expect(parseAppBaseUrl(bad)).toBeNull();
-    }
-  });
-});
-
-describe('originFromHost', () => {
-  it('builds the origin of the request host', () => {
-    expect(originFromHost('tms.example.com')).toBe('https://tms.example.com');
-    expect(originFromHost('localhost:3000')).toBe('http://localhost:3000');
-    expect(originFromHost('127.0.0.1:3200')).toBe('http://127.0.0.1:3200');
-  });
-
-  it('refuses a malformed host', () => {
-    for (const bad of [null, '', 'evil.test/path', 'a b', 'evil.test@x', 'x.test:99999999']) {
-      expect(originFromHost(bad)).toBeNull();
     }
   });
 });

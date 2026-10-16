@@ -179,6 +179,7 @@ async function inviteForm(
         rolesHref={`/${locale}/suite/admin/roles`}
         soleRoles={SOLE_ROLE_CODES}
         copyTexts={await inviteCopyTexts(locale)}
+        uiLocale={locale}
       />
     </Card>
   );

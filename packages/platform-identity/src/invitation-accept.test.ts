@@ -22,7 +22,7 @@ const TENANT = 'a0000000-0000-4000-8000-000000000001';
 const OTHER_TENANT = 'b0000000-0000-4000-8000-000000000001';
 const PERSON = '44444444-4444-4444-8444-444444444444';
 const TOKEN = 'A'.repeat(21) + '-_' + 'z9'.repeat(10); // 43 base64url characters (legacy link)
-const CODE = 'K7M2PQ9X'; // an invitation code (Kawadir alphabet)
+const CODE = 'K7M2PQ9XHT4W'; // an invitation code (Kawadir alphabet, 12 characters)
 const EMAIL = 'invitee@example.test';
 const PASSWORD = 'a long enough passphrase';
 
@@ -225,17 +225,20 @@ const notValidError = Object.assign(new Error('invitation not valid'), {
 });
 
 describe('normalizeInvitationSecret', () => {
-  it('upper-cases and trims codes, keeps legacy tokens, refuses anything else', () => {
-    expect(normalizeInvitationSecret(' k7m2pq9x\n')).toBe(CODE);
+  it('upper-cases and trims codes, drops the grouping, keeps legacy tokens, refuses anything else', () => {
+    expect(normalizeInvitationSecret(' k7m2pq9xht4w\n')).toBe(CODE);
     expect(normalizeInvitationSecret(CODE)).toBe(CODE);
+    expect(normalizeInvitationSecret('K7M2-PQ9X-HT4W')).toBe(CODE);
+    expect(normalizeInvitationSecret('k7m2 pq9x ht4w')).toBe(CODE);
     expect(normalizeInvitationSecret(` ${TOKEN} `)).toBe(TOKEN);
     for (const bad of [
       '',
-      'K7M2PQ9',
-      'K7M2PQ9XX',
-      'K7M2PQ9O',
-      'K7M2PQ91',
-      'K7M2 PQ9X',
+      'K7M2PQ9X',
+      'K7M2PQ9XHT4',
+      'K7M2PQ9XHT4WX',
+      'K7M2PQ9XHT4O',
+      'K7M2PQ9XHT41',
+      'K7M2_PQ9X_HT4W',
       TOKEN.slice(1),
     ]) {
       expect(normalizeInvitationSecret(bad)).toBeNull();
@@ -246,7 +249,7 @@ describe('normalizeInvitationSecret', () => {
 describe('invitation codes (Kawadir, migration 20261018090000)', () => {
   it('looks a typed code up upper-cased, by its SHA-256', async () => {
     const { deps } = setup();
-    await expect(lookupInvitation(deps, 'k7m2pq9x')).resolves.toEqual(valid);
+    await expect(lookupInvitation(deps, 'k7m2-pq9x-ht4w')).resolves.toEqual(valid);
     expect(deps.invitationByToken).toHaveBeenCalledWith(
       createHash('sha256').update(CODE, 'utf8').digest(),
     );
@@ -296,7 +299,7 @@ describe('invitation codes (Kawadir, migration 20261018090000)', () => {
     const { deps, auth } = setup();
     const result = await acceptInvitationWithNewAccount(deps, {
       ...newAccount,
-      token: ' k7m2pq9x ',
+      token: ' k7m2-pq9x-ht4w ',
     });
     expect(result.ok).toBe(true);
     expect(auth.signUp).toHaveBeenCalledWith(

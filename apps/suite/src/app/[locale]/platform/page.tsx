@@ -11,7 +11,6 @@ import {
   OrganizationAdminInvite,
 } from '../../../components/platform/organizations-console';
 import { PlatformShell } from '../../../components/platform/platform-shell';
-import { appBaseUrlForRequest } from '../../../lib/app-base-url-request';
 import { authErrorTexts } from '../../../lib/auth-texts';
 import { getConfigStatus } from '../../../lib/config-status';
 import { flattenTexts } from '../../../lib/flatten-texts';
@@ -26,6 +25,8 @@ const STATUS_TONE: Record<string, BadgeTone> = {
 };
 const ADMIN_TONE: Record<string, BadgeTone> = {
   active: 'success',
+  // The issuer is no longer a Super Admin: the link no longer works (review M1).
+  issuer_revoked: 'danger',
   pending: 'warning',
   expired: 'danger',
   none: 'neutral',
@@ -57,7 +58,6 @@ export default async function PlatformOrganizationsPage({
     texts,
     copyTexts: await inviteCopyTexts(locale),
     errors: { ...(await authErrorTexts(locale)), ...(await platformErrorTexts(locale)) },
-    baseUrl: await appBaseUrlForRequest(),
   };
   const rows = organizations.value;
   const dates = new Intl.DateTimeFormat(locale === 'ar' ? 'ar-SA-u-nu-latn-ca-gregory' : 'en-GB', {
@@ -70,7 +70,12 @@ export default async function PlatformOrganizationsPage({
     { key: 'active', value: rows.filter((r) => r.status === 'active').length },
     {
       key: 'pendingAdmin',
-      value: rows.filter((r) => r.adminState === 'pending' || r.adminState === 'expired').length,
+      value: rows.filter(
+        (r) =>
+          r.adminState === 'pending' ||
+          r.adminState === 'expired' ||
+          r.adminState === 'issuer_revoked',
+      ).length,
     },
   ];
 
@@ -157,11 +162,14 @@ export default async function PlatformOrganizationsPage({
                         </Badge>
                       </td>
                       <td className="px-4 py-3">
-                        {org.adminState === 'pending' || org.adminState === 'expired' ? (
+                        {org.adminState === 'pending' ||
+                        org.adminState === 'expired' ||
+                        org.adminState === 'issuer_revoked' ? (
                           <OrganizationAdminInvite
                             {...shared}
                             tenantId={org.tenantId}
                             organizationName={name}
+                            adminState={org.adminState}
                           />
                         ) : null}
                       </td>

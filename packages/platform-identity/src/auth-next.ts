@@ -109,6 +109,7 @@ import {
 import { type SupabaseAuthLike, verifyClaims } from './verify-claims';
 import { getVerifiedClaims, getVerifiedClaimsStrict } from './next';
 import {
+  type ConsoleInputParser,
   type PlatformConsoleDeps,
   createOrganizationFromConsole,
   isPlatformAdminSession,
@@ -600,7 +601,8 @@ export async function lookupInvitationLinkForRequest(
   client: RequestClient,
 ): Promise<Result<InvitationLinkView, AppError>> {
   // Per link (its token hash; a malformed link: the client only) and per client (integration review M3);
-  // unknown codes per client (codes are 8 characters). Every limit fails closed.
+  // unknown codes per client (IPv6 /48) and for all clients (codes are 12 characters). Every limit fails
+  // closed.
   const normalized = normalizeInvitationSecret(token);
   const tokenHash = normalized === null ? null : hashInvitationToken(normalized);
   if (!(await invitationLimiter(client).allowLookup(tokenHash))) {
@@ -824,14 +826,24 @@ export async function loadPlatformOrganizationsForRequest() {
   return loadPlatformOrganizations(platformConsoleDeps());
 }
 
-export async function createOrganizationFromConsoleForRequest(input: NewPlatformTenant) {
-  return createOrganizationFromConsole(platformConsoleDeps(), input);
+/** The console's actions: untrusted input, parsed only after the access check (review L6). */
+export async function createOrganizationFromConsoleForRequest(
+  raw: unknown,
+  parse: ConsoleInputParser<NewPlatformTenant>,
+) {
+  return createOrganizationFromConsole(platformConsoleDeps(), raw, parse);
 }
 
-export async function viewOrganizationAdminCodeForRequest(tenantId: string) {
-  return viewOrganizationAdminCode(platformConsoleDeps(), tenantId);
+export async function viewOrganizationAdminCodeForRequest(
+  raw: unknown,
+  parse: ConsoleInputParser<string>,
+) {
+  return viewOrganizationAdminCode(platformConsoleDeps(), raw, parse);
 }
 
-export async function reissueOrganizationAdminCodeForRequest(tenantId: string) {
-  return reissueOrganizationAdminCode(platformConsoleDeps(), tenantId);
+export async function reissueOrganizationAdminCodeForRequest(
+  raw: unknown,
+  parse: ConsoleInputParser<string>,
+) {
+  return reissueOrganizationAdminCode(platformConsoleDeps(), raw, parse);
 }

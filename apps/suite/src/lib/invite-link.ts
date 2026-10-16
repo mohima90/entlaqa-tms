@@ -1,3 +1,5 @@
+import { normalizeInvitationCode } from '@jadarat/platform-db/invitation-code';
+
 /**
  * The invitation link on the accept page (FR-IAM-03, T-M2-07; security review M3). The e-mailed link
  * carries its token in the URL FRAGMENT (`/[locale]/invite/accept#token=…`): browsers never send the
@@ -20,7 +22,7 @@ export function inviteFragment(token: string | null): string {
 }
 
 /**
- * The invitation code in the sign-up link's fragment (`#code=K7M2PQ9X`, Kawadir's link, PO 16 Oct 2026),
+ * The invitation code in the sign-up link's fragment (`#code=K7M2PQ9XHT4W`, Kawadir's link, PO 16 Oct 2026),
  * or the token of an older `/invite/accept#token=…` link; null when absent. Never sent to the server with
  * a page request (review M3): the page reads it, removes it from the address bar and sends it only in the
  * body of its server actions.
@@ -39,13 +41,14 @@ export function signUpFragment(code: string | null): string {
 }
 
 /**
- * The link an administrator copies (Kawadir's «نسخ الرابط»): the app's own origin, the invitation's
- * language, the sign-up page and the code in the fragment.
+ * The link an administrator copies (Kawadir's «نسخ الرابط»): the app's canonical origin (APP_BASE_URL,
+ * from the server; else the browser's own), the invitation's language, the sign-up page and the code in
+ * the fragment — the 12 symbols without their display grouping.
  */
 export function inviteLink(origin: string, locale: 'ar' | 'en', code: string): string {
   let base = origin;
   while (base.endsWith('/')) base = base.slice(0, -1);
-  return `${base}/${locale}/sign-up${signUpFragment(code)}`;
+  return `${base}/${locale}/sign-up${signUpFragment(normalizeInvitationCode(code) ?? code)}`;
 }
 
 /** Fills the `{organization}` placeholder of a raw message (the only argument these messages take). */

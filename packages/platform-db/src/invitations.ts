@@ -12,9 +12,11 @@ import { pgError } from './user-admin';
  * 20261009090000 and 20261018090000 — invitation codes, Kawadir). Request-path helpers: inviting, listing,
  * revoking and resending run inside the signed-in user's withUserTx (the database guard checks the actor:
  * Organization Admin or HR Manager, privileged roles by an Organization Admin only); every invitation that
- * was sent has an 8-character CODE issued by the database (private.issue_invitation_code: when inviting,
- * and a new one on resend) that the members who may manage it read (private.invitation_codes) to copy the
- * code or the link; looking a link up runs on a plain app_server
+ * was sent has a 12-character CODE (invitation-code.ts) issued by the database
+ * (private.issue_invitation_code: when inviting, and a new one on resend) that the members who may manage
+ * it read one at a time (private.invitation_codes, `invitationCode`) to copy the code or the link — an
+ * audited action (security review M2); the list only says whether a code exists. Looking a link up runs on
+ * a plain app_server
  * connection WITHOUT claims (the visitor may have no session) through the reviewed SECURITY DEFINER
  * function private.invitation_by_token; accepting runs in the invitee's own withUserTx (the account just
  * created through the hook-gated sign-up, or an existing one) through private.accept_invitation_as_caller.
@@ -31,26 +33,15 @@ export const INVITATION_EVENTS = {
 /** At most this many codes per invitation: the first one and 3 resends (new codes). */
 export const INVITATION_MAX_SENDS = 4;
 
-/**
- * The invitation code's alphabet (Kawadir ATS: no 0/O or 1/I) and shape: 8 symbols, upper case — what
- * the database issues (private.new_invitation_code) and the sign-up gate accepts.
- */
-export const INVITATION_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-export const INVITATION_CODE_PATTERN = /^[A-HJ-NP-Z2-9]{8}$/;
-/** A link token e-mailed before codes (32 random bytes, base64url): still accepted while such links live. */
-export const LEGACY_INVITATION_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
-
-/**
- * What a visitor typed or the link carried, as the database compares it: a code trimmed and upper-cased
- * (people type codes in any case, Kawadir); a legacy 43-character token unchanged (it is case-sensitive);
- * null for anything else.
- */
-export function normalizeInvitationCode(raw: string): string | null {
-  const trimmed = raw.trim();
-  if (LEGACY_INVITATION_TOKEN_PATTERN.test(trimmed)) return trimmed;
-  const code = trimmed.toUpperCase();
-  return INVITATION_CODE_PATTERN.test(code) ? code : null;
-}
+export {
+  INVITATION_CODE_ALPHABET,
+  INVITATION_CODE_LENGTH,
+  INVITATION_CODE_PATTERN,
+  INVITATION_SECRET_PATTERN,
+  LEGACY_INVITATION_TOKEN_PATTERN,
+  formatInvitationCode,
+  normalizeInvitationCode,
+} from './invitation-code';
 
 /** Codes of the DomainErrors thrown by the invitation helpers. */
 export type InvitationErrorCode =
@@ -98,12 +89,16 @@ export interface InvitationRow {
   readonly createdAt: Date;
   /** The user import that added the person (T-M2-12), or null when invited by hand. */
   readonly importId: string | null;
+  /** The additional roles it gives (with `primaryRole`: whether a privileged role is among them). */
+  readonly additionalRoles: readonly string[];
   /**
-   * The current code (copy code / copy link, Kawadir) when the caller may manage this invitation and it
-   * is pending and was sent; null otherwise (e.g. an HR Manager on an invitation with a privileged role,
-   * a held import invitation, a link e-mailed before codes).
+   * The invitation has a code the caller may copy now (Kawadir: copy code / copy link): pending,
+   * unexpired, sent, and the caller may manage it. False e.g. for an HR Manager on an invitation with a
+   * privileged role, a held import invitation, a link e-mailed before codes. The code itself is never in
+   * the list: it is read one at a time when a member copies it (`invitationCode`, audited — security
+   * review M2).
    */
-  readonly inviteCode: string | null;
+  readonly hasCode: boolean;
   /** The invitation's language: the link opens the sign-up page in it. */
   readonly locale: 'ar' | 'en';
 }
@@ -168,7 +163,7 @@ export function invitationErrorOf(error: unknown): unknown {
   }
   if (pg?.code === '42501')
     return new DomainError<InvitationErrorCode>('ROLE_NOT_ALLOWED', { cause: error });
-  // An invitation code collided with another a few times in a row (32^8 codes: practically never).
+  // An invitation code collided with another a few times in a row (32^12 codes: practically never).
   if (pg?.code === '23505' && pg.constraint === 'invitations_invite_code_uq') return error;
   // Separation of duties (BR-IAM-4, migration 20261010090000).
   if (pg?.code === 'JR001')
@@ -253,15 +248,18 @@ export async function listInvitations(
     expires_at: Date | string;
     created_at: Date | string;
     import_id: string | null;
-    invite_code: string | null;
+    has_code: boolean;
     locale: string;
+    additional_roles: string[] | null;
   }>(sql`
     select i.id, i.person_id, i.email, p.display_name_ar, p.display_name_en, i.primary_role,
-           ${STATE} as state, i.send_count, i.expires_at, i.created_at, i.import_id, c.invite_code, i.locale
+           ${STATE} as state, i.send_count, i.expires_at, i.created_at, i.import_id,
+           c.invitation_id is not null as has_code, i.locale, i.additional_roles
     from platform.invitations i
     join platform.persons p on p.tenant_id = i.tenant_id and p.id = i.person_id
-    -- The codes the caller may copy (managing rules per invitation, migration 20261018090000).
-    left join private.invitation_codes() c on c.invitation_id = i.id
+    -- Whether the caller may copy a code (managing rules per invitation, migration 20261018090000). Only
+    -- the id leaves the database here: the codes stay in it (security review M2).
+    left join (select x.invitation_id from private.invitation_codes() x) c on c.invitation_id = i.id
     where ${filter.state === undefined ? sql`true` : sql`${STATE} = ${filter.state}`}
     order by i.created_at desc, i.id`);
   return rows.map((r) => ({
@@ -276,9 +274,30 @@ export async function listInvitations(
     expiresAt: toDate(r.expires_at),
     createdAt: toDate(r.created_at),
     importId: r.import_id,
-    inviteCode: r.invite_code,
+    additionalRoles: r.additional_roles ?? [],
+    hasCode: r.has_code,
     locale: r.locale === 'en' ? 'en' : 'ar',
   }));
+}
+
+/** One invitation's code for a member who copies it, and the language its link opens in. */
+export interface InvitationCode {
+  readonly inviteCode: string;
+  readonly locale: 'ar' | 'en';
+}
+
+/**
+ * The current code of one invitation (copy code / copy link, Kawadir), when it is pending, unexpired and
+ * sent and the caller may manage it (private.invitation_codes: an Organization Admin any; an HR Manager
+ * only one without a privileged role); null otherwise. The calling action authorizes and audits the read
+ * (security review M2); the code is never logged.
+ */
+export async function invitationCode(tx: ClaimsTx, id: string): Promise<InvitationCode | null> {
+  const [row] = await tx.execute<{ invite_code: string; locale: string }>(sql`
+    select c.invite_code, i.locale
+    from private.invitation_codes(array[${id}::uuid]) c
+    join platform.invitations i on i.id = c.invitation_id`);
+  return row ? { inviteCode: row.invite_code, locale: row.locale === 'en' ? 'en' : 'ar' } : null;
 }
 
 /**

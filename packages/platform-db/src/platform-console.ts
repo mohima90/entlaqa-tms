@@ -22,7 +22,9 @@ export type PlatformConsoleErrorCode =
   /** The organization's short name is taken or reserved. */
   | 'SLUG_TAKEN'
   /** The organization has no pending Organization Admin invitation from the console. */
-  | 'NO_PENDING_ADMIN';
+  | 'NO_PENDING_ADMIN'
+  /** The Organization Admin's e-mail is the calling Super Admin's own (security review L7). */
+  | 'OWN_EMAIL';
 
 /** The fields the database validates when creating an organization. */
 export type PlatformTenantField =
@@ -63,13 +65,18 @@ export function platformConsoleErrorOf(error: unknown): unknown {
       return new PlatformConsoleError('SLUG_TAKEN', { cause: error });
     case 'JP003':
       return new PlatformConsoleError('NO_PENDING_ADMIN', { cause: error });
+    case 'JP005':
+      return new PlatformConsoleError('OWN_EMAIL', { cause: error, field: 'admin_email' });
     default:
       return error;
   }
 }
 
-/** The Organization Admin's state on the console's list. */
-export type PlatformAdminState = 'active' | 'pending' | 'expired' | 'none';
+/**
+ * The Organization Admin's state on the console's list. `issuer_revoked`: the pending invitation was issued
+ * by someone who is no longer a Super Admin — its link no longer works; a new code replaces it (review M1).
+ */
+export type PlatformAdminState = 'active' | 'issuer_revoked' | 'pending' | 'expired' | 'none';
 
 export interface PlatformTenantRow {
   readonly tenantId: string;
@@ -108,7 +115,7 @@ export interface PlatformAdminCode {
 }
 
 const STATUSES = ['trial', 'active', 'suspended', 'cancelled'] as const;
-const ADMIN_STATES = ['active', 'pending', 'expired', 'none'] as const;
+const ADMIN_STATES = ['active', 'issuer_revoked', 'pending', 'expired', 'none'] as const;
 
 function toDate(value: Date | string): Date {
   return value instanceof Date ? value : new Date(value);
@@ -131,10 +138,27 @@ async function run<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-/** Is the signed-in caller a Super Admin (valid session)? Never throws for a refusal: false. */
+/** SQLSTATE undefined_function: the database is not migrated yet (the app deployed first). */
+const UNDEFINED_FUNCTION = '42883';
+
+/**
+ * Is the signed-in caller a Super Admin (valid session)? Never throws for a refusal: false. Also false
+ * while the function does not exist yet (security review L1: the app and the database deploy in parallel —
+ * sign-in must keep working for members in that window); in a savepoint, so the caller's transaction stays
+ * usable.
+ */
 export async function isPlatformAdmin(tx: ClaimsTx): Promise<boolean> {
-  const rows = await tx.execute<{ yes: boolean }>(sql`select private.is_platform_admin() as yes`);
-  return rows[0]?.yes === true;
+  try {
+    return await tx.transaction(async (savepoint) => {
+      const rows = await savepoint.execute<{ yes: boolean }>(
+        sql`select private.is_platform_admin() as yes`,
+      );
+      return rows[0]?.yes === true;
+    });
+  } catch (error) {
+    if (pgError(error)?.code === UNDEFINED_FUNCTION) return false;
+    throw error;
+  }
 }
 
 /** Every organization, newest first (no personal data). Throws NOT_PLATFORM_ADMIN. */
@@ -173,8 +197,8 @@ export async function listPlatformTenants(tx: ClaimsTx): Promise<PlatformTenantR
 
 /**
  * Creates the organization and its Organization Admin's pending invitation; returns the first code (for
- * the Super Admin to copy). Throws NOT_PLATFORM_ADMIN, PLATFORM_INVALID_INPUT (with the field) or
- * SLUG_TAKEN.
+ * the Super Admin to copy). Throws NOT_PLATFORM_ADMIN, PLATFORM_INVALID_INPUT (with the field), SLUG_TAKEN
+ * or OWN_EMAIL (the Super Admin's own e-mail).
  */
 export async function createPlatformTenant(
   tx: ClaimsTx,
@@ -219,7 +243,10 @@ export async function platformAdminInvitationCode(
   return codeOf(rows);
 }
 
-/** A new code for it (the old one stops working; 7 more days). Throws NO_PENDING_ADMIN. */
+/**
+ * A new code for it, issued by the caller (the old one stops working; 7 more days; another issuer's
+ * invitation is replaced by a new one — review M1). Throws NO_PENDING_ADMIN.
+ */
 export async function reissuePlatformAdminCode(
   tx: ClaimsTx,
   tenantId: string,

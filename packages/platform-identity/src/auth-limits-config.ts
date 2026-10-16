@@ -72,13 +72,22 @@ export interface AuthLimits {
     readonly sharedClientLookups: RateLimit;
     readonly sharedClientSignUps: RateLimit;
     /**
-     * Unknown codes per client (invitation codes, PO 16 Oct 2026: 8 characters, 40 random bits — unlike the
-     * 256-bit tokens before them, guessable in principle). Every code that reaches the database counts
-     * as a miss until it turns out to be a real invitation's (then it is given back): a client trying codes
-     * is stopped after a few misses, an office checking its own invitations is not.
+     * Unknown codes per client (invitation codes, PO 16 Oct 2026: 12 characters, 60 random bits — unlike
+     * the 256-bit tokens before them, guessable in principle; security review H1). Every code that reaches
+     * the database counts as a miss until it turns out to be a real invitation's (then it is given back):
+     * a client trying codes is stopped after a few misses, an office checking its own invitations is not.
+     * An IPv6 client is counted by its /48 (a site's whole allocation), not its /64.
      */
     readonly codeMissesPerClient: RateLimit;
     readonly sharedClientCodeMisses: RateLimit;
+    /**
+     * Unknown codes of ALL clients together (security review H1): the ceiling a distributed guesser —
+     * many addresses, each under its own budget — runs into. Fails closed: once it is used up, every code
+     * lookup is refused (RATE_LIMITED) until the window ends, and a warning is logged
+     * (`auth.invitation_codes.global_limit`). Real invitations give their miss back, so normal use never
+     * comes near it.
+     */
+    readonly codeMissesAllClients: RateLimit;
   };
   /**
    * Authenticator-app codes (T-M2-10 security review, TM-0003 T-IAM-12): wrong codes only, as for
@@ -133,6 +142,7 @@ export const PLATFORM_AUTH_LIMITS: AuthLimits = {
     sharedClientSignUps: { max: 2000, windowSeconds: WINDOW },
     codeMissesPerClient: { max: 20, windowSeconds: WINDOW },
     sharedClientCodeMisses: { max: 500, windowSeconds: WINDOW },
+    codeMissesAllClients: { max: 2000, windowSeconds: WINDOW },
   },
   mfaCode: {
     accountFailures: { max: 5, windowSeconds: WINDOW },

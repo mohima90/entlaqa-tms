@@ -111,6 +111,7 @@ export {
   startPasswordSession,
 } from './auth-flow';
 export {
+  type ConsoleInputParser,
   type PlatformConsoleDeps,
   PlatformConsoleErrors,
   createOrganizationFromConsole,

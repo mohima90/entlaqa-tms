@@ -23,7 +23,7 @@ const ID = '6a1f3c2e-4b5d-4e6f-8a7b-9c0d1e2f3a4b';
 const PERSON = '7b2e4d3f-5c6e-4f70-9b8c-0d1e2f3a4b5c';
 const EXPIRES = new Date('2026-10-14T06:00:00.000Z');
 const tx = {} as SystemTx;
-const CODE = 'K7M2PQ9X';
+const CODE = 'K7M2PQ9XHT4W';
 
 const invitation: InvitationForMail = {
   id: ID,
@@ -138,7 +138,7 @@ describe('invitation mailer', () => {
 
   it('a resend e-mails the current (new) code; the English invitation links to the English page', async () => {
     db.loadInvitationForMail.mockResolvedValue({ ...invitation, locale: 'en', sendCount: 4 });
-    db.invitationCodeForMail.mockResolvedValueOnce(CODE).mockResolvedValueOnce('NEWCQDE2');
+    db.invitationCodeForMail.mockResolvedValueOnce(CODE).mockResolvedValueOnce('NEWCQDE2HT4W');
     const { subscriber } = mailer('http://localhost:3200/');
     await subscriber.handle({ tx, event: event(INVITATION_RESEND_REQUESTED_EVENT) });
     await subscriber.handle({ tx, event: event(INVITATION_RESEND_REQUESTED_EVENT) });
@@ -146,7 +146,7 @@ describe('invitation mailer', () => {
     expect(first.locale).toBe('en');
     expect(first.variables.acceptUrl).toBe(`http://localhost:3200/en/sign-up#code=${CODE}`);
     // The 4th code (send count 4) is still e-mailed: the database counted it, the mailer does not.
-    expect(second.variables.acceptUrl).toBe('http://localhost:3200/en/sign-up#code=NEWCQDE2');
+    expect(second.variables.acceptUrl).toBe('http://localhost:3200/en/sign-up#code=NEWCQDE2HT4W');
   });
 
   it('skips quietly: no subject, unknown, no longer pending, or without a code', async () => {

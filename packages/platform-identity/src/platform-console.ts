@@ -25,9 +25,14 @@ import {
  * `strict` — before anything that creates an organization or reveals or changes a code, ADR 0003 §2),
  * then asks the DATABASE whether the user is a Super Admin (private.is_platform_admin; every console
  * function checks it again itself). A signed-out visitor, a member of any organization and any other
- * account get NOT_FOUND — the console's pages and actions do not exist for them. A Super Admin needs no
- * organization: the session has no tenant claim.
+ * account get NOT_FOUND — the console's pages and actions do not exist for them, whatever they send:
+ * the actions pass their input unparsed with its parser, which runs only AFTER the access check (security
+ * review L6), so validation errors are for Super Admins only. A Super Admin needs no organization: the
+ * session has no tenant claim.
  */
+
+/** Validates an action's untrusted input (zod, apps/suite lib/platform-console-input.ts). */
+export type ConsoleInputParser<T> = (raw: unknown) => Result<T, AppError>;
 export interface PlatformConsoleDeps {
   readonly getClaims: (options: {
     readonly strict: boolean;
@@ -80,6 +85,8 @@ function refusal(error: unknown): Result<never, AppError> {
       return err(fieldError(error.field ? FIELD_PATHS[error.field] : 'form', 'INVALID'));
     case 'NO_PENDING_ADMIN':
       return err(appError(PlatformConsoleErrors.PLATFORM_NO_PENDING_ADMIN));
+    case 'OWN_EMAIL':
+      return err(fieldError('adminEmail', 'OWN_EMAIL'));
   }
 }
 
@@ -119,9 +126,23 @@ export async function loadPlatformOrganizations(
 export async function createOrganizationFromConsole(
   deps: PlatformConsoleDeps,
   input: NewPlatformTenant,
+): Promise<Result<{ tenantId: string; inviteCode: string; locale: 'ar' | 'en' }, AppError>>;
+/** The same with untrusted input: parsed only after the access check (review L6). */
+export async function createOrganizationFromConsole(
+  deps: PlatformConsoleDeps,
+  raw: unknown,
+  parse: ConsoleInputParser<NewPlatformTenant>,
+): Promise<Result<{ tenantId: string; inviteCode: string; locale: 'ar' | 'en' }, AppError>>;
+export async function createOrganizationFromConsole(
+  deps: PlatformConsoleDeps,
+  raw: unknown,
+  parse?: ConsoleInputParser<NewPlatformTenant>,
 ): Promise<Result<{ tenantId: string; inviteCode: string; locale: 'ar' | 'en' }, AppError>> {
   const access = await platformConsoleAccess(deps, { strict: true });
   if (!access.ok) return access;
+  const parsed = parse ? parse(raw) : ok(raw as NewPlatformTenant);
+  if (!parsed.ok) return parsed;
+  const input = parsed.value;
   try {
     const created = await deps.withUserTx(access.value, (tx) =>
       deps.createPlatformTenant(tx, input),
@@ -132,33 +153,69 @@ export async function createOrganizationFromConsole(
   }
 }
 
+/** The organization an action is about: access first, then its (untrusted) id. */
+async function organizationAccess(
+  deps: PlatformConsoleDeps,
+  raw: unknown,
+  parse: ConsoleInputParser<string> | undefined,
+): Promise<Result<{ claims: VerifiedClaims; tenantId: string }, AppError>> {
+  const access = await platformConsoleAccess(deps, { strict: true });
+  if (!access.ok) return access;
+  const tenantId = parse ? parse(raw) : ok(raw as string);
+  if (!tenantId.ok) return tenantId;
+  return ok({ claims: access.value, tenantId: tenantId.value });
+}
+
 /** Copy the Organization Admin's link or code (an audited read; nothing changes). */
 export async function viewOrganizationAdminCode(
   deps: PlatformConsoleDeps,
   tenantId: string,
+): Promise<Result<PlatformAdminCode, AppError>>;
+export async function viewOrganizationAdminCode(
+  deps: PlatformConsoleDeps,
+  raw: unknown,
+  parse: ConsoleInputParser<string>,
+): Promise<Result<PlatformAdminCode, AppError>>;
+export async function viewOrganizationAdminCode(
+  deps: PlatformConsoleDeps,
+  raw: unknown,
+  parse?: ConsoleInputParser<string>,
 ): Promise<Result<PlatformAdminCode, AppError>> {
-  const access = await platformConsoleAccess(deps, { strict: true });
-  if (!access.ok) return access;
+  const target = await organizationAccess(deps, raw, parse);
+  if (!target.ok) return target;
+  const { claims, tenantId } = target.value;
   try {
     return ok(
-      await deps.withUserTx(access.value, (tx) => deps.platformAdminInvitationCode(tx, tenantId)),
+      await deps.withUserTx(claims, (tx) => deps.platformAdminInvitationCode(tx, tenantId)),
     );
   } catch (error) {
     return refusal(error);
   }
 }
 
-/** «رمز جديد» / New code: the old link stops working, 7 more days. */
+/**
+ * «رمز جديد» / New code: issued by this Super Admin; the old link stops working, 7 more days (another
+ * issuer's invitation is replaced by a new one, review M1).
+ */
 export async function reissueOrganizationAdminCode(
   deps: PlatformConsoleDeps,
   tenantId: string,
+): Promise<Result<PlatformAdminCode, AppError>>;
+export async function reissueOrganizationAdminCode(
+  deps: PlatformConsoleDeps,
+  raw: unknown,
+  parse: ConsoleInputParser<string>,
+): Promise<Result<PlatformAdminCode, AppError>>;
+export async function reissueOrganizationAdminCode(
+  deps: PlatformConsoleDeps,
+  raw: unknown,
+  parse?: ConsoleInputParser<string>,
 ): Promise<Result<PlatformAdminCode, AppError>> {
-  const access = await platformConsoleAccess(deps, { strict: true });
-  if (!access.ok) return access;
+  const target = await organizationAccess(deps, raw, parse);
+  if (!target.ok) return target;
+  const { claims, tenantId } = target.value;
   try {
-    return ok(
-      await deps.withUserTx(access.value, (tx) => deps.reissuePlatformAdminCode(tx, tenantId)),
-    );
+    return ok(await deps.withUserTx(claims, (tx) => deps.reissuePlatformAdminCode(tx, tenantId)));
   } catch (error) {
     return refusal(error);
   }

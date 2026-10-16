@@ -130,13 +130,21 @@ describe('sign-in-to-accept and signed-in inputs', () => {
     expect(AcceptAsSignedInInput.safeParse({ token: 'nope' }).success).toBe(false);
   });
 
-  it('takes invitation codes in any case and passes them on upper-cased (Kawadir)', () => {
-    const parsed = LookupInvitationInput.safeParse({ token: ' k7m2pq9x ' });
-    expect(parsed.success && parsed.data.token).toBe('K7M2PQ9X');
-    for (const bad of ['K7M2PQ9', 'K7M2PQ9O', 'K7M2 PQ9X', 'x'.repeat(65)]) {
+  it('takes invitation codes in any case, grouped or not, and passes on the 12 symbols upper-cased', () => {
+    for (const typed of [' k7m2pq9xht4w ', 'K7M2-PQ9X-HT4W', 'k7m2 pq9x ht4w']) {
+      const parsed = LookupInvitationInput.safeParse({ token: typed });
+      expect(parsed.success && parsed.data.token, typed).toBe('K7M2PQ9XHT4W');
+    }
+    for (const bad of [
+      'K7M2PQ9X',
+      'K7M2PQ9XHT4',
+      'K7M2PQ9XHT4O',
+      'K7M2_PQ9X_HT4W',
+      'x'.repeat(65),
+    ]) {
       expect(LookupInvitationInput.safeParse({ token: bad }).success, bad).toBe(false);
     }
-    expect(issues({ ...valid, token: 'K7M2PQ9X' })).toEqual([]);
+    expect(issues({ ...valid, token: 'K7M2PQ9XHT4W' })).toEqual([]);
   });
 
   it('the link lookup takes a well-formed token only', () => {

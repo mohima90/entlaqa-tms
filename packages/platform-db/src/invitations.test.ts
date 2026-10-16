@@ -6,11 +6,14 @@ import {
   INVITATION_CODE_ALPHABET,
   INVITATION_CODE_PATTERN,
   INVITATION_EVENTS,
+  INVITATION_SECRET_PATTERN,
   acceptInvitationAsCaller,
   createInvitation,
   createInvitationTokenApi,
+  formatInvitationCode,
   getInvitationRoles,
   hashInvitationToken,
+  invitationCode,
   invitationErrorOf,
   listInvitations,
   normalizeInvitationCode,
@@ -77,44 +80,57 @@ describe('hashInvitationToken', () => {
 });
 
 describe('invitation codes', () => {
-  it('match the database alphabet: 32 symbols, no 0/O or 1/I', () => {
+  it('match the database alphabet and length: 12 of 32 symbols (60 bits), no 0/O or 1/I', () => {
     expect(INVITATION_CODE_ALPHABET).toHaveLength(32);
     expect(new Set(INVITATION_CODE_ALPHABET).size).toBe(32);
     for (const symbol of INVITATION_CODE_ALPHABET) {
-      expect(INVITATION_CODE_PATTERN.test(symbol.repeat(8))).toBe(true);
+      expect(INVITATION_CODE_PATTERN.test(symbol.repeat(12))).toBe(true);
+      expect(INVITATION_CODE_PATTERN.test(symbol.repeat(8))).toBe(false);
     }
     for (const symbol of ['0', 'O', '1', 'I', 'a', '-', '_']) {
-      expect(INVITATION_CODE_PATTERN.test(`${symbol}BCDEFGH`)).toBe(false);
+      expect(INVITATION_CODE_PATTERN.test(`${symbol}BCDEFGHJKLM`)).toBe(false);
     }
+    expect(INVITATION_SECRET_PATTERN.test('K7M2PQ9XHT4W')).toBe(true);
+    expect(INVITATION_SECRET_PATTERN.test('K7M2PQ9X')).toBe(false);
   });
 
-  it('normalizes what was typed: trimmed and upper-cased codes, legacy tokens unchanged', () => {
-    expect(normalizeInvitationCode(' k7m2pq9x ')).toBe('K7M2PQ9X');
-    expect(normalizeInvitationCode('K7M2PQ9X')).toBe('K7M2PQ9X');
+  it('normalizes what was typed: grouping removed, upper-cased; legacy tokens unchanged', () => {
+    expect(normalizeInvitationCode(' k7m2pq9xht4w ')).toBe('K7M2PQ9XHT4W');
+    expect(normalizeInvitationCode('K7M2-PQ9X-HT4W')).toBe('K7M2PQ9XHT4W');
+    expect(normalizeInvitationCode('k7m2 pq9x ht4w')).toBe('K7M2PQ9XHT4W');
+    expect(normalizeInvitationCode('K7M2–PQ9X–HT4W')).toBe('K7M2PQ9XHT4W');
     const legacy = `${'aB_-'.repeat(10)}xyz`;
     expect(legacy).toHaveLength(43);
     expect(normalizeInvitationCode(legacy)).toBe(legacy);
     for (const bad of [
       '',
-      'K7M2PQ9',
-      'K7M2PQ9XY',
-      'K7M2 PQ9X',
-      'K7M2PQ9O',
-      'K7M2PQ91',
-      'كودكودكو',
+      'K7M2PQ9X',
+      'K7M2PQ9XHT4',
+      'K7M2PQ9XHT4WZ',
+      'K7M2PQ9XHT4O',
+      'K7M2PQ9XHT41',
+      'K7M2_PQ9X_HT4W',
+      'كودكودكودكود',
     ]) {
       expect(normalizeInvitationCode(bad)).toBeNull();
     }
+  });
+
+  it('displays a code grouped XXXX-XXXX-XXXX', () => {
+    expect(formatInvitationCode('K7M2PQ9XHT4W')).toBe('K7M2-PQ9X-HT4W');
+    expect(formatInvitationCode('K7M2PQ')).toBe('K7M2-PQ');
+    const legacy = 'A'.repeat(43);
+    expect(formatInvitationCode(legacy)).toBe(legacy);
   });
 });
 
 describe('createInvitation', () => {
   it('creates the person, placement, invitation, its first code and event', async () => {
-    const fake = fakeTx([{ id: PERSON }], [], [{ id: ID }], [{ code: 'K7M2PQ9X' }], []);
+    const fake = fakeTx([{ id: PERSON }], [], [{ id: ID }], [{ code: 'K7M2PQ9XHT4W' }], []);
     await expect(createInvitation(fake.tx, input)).resolves.toEqual({
       invitationId: ID,
       personId: PERSON,
-      inviteCode: 'K7M2PQ9X',
+      inviteCode: 'K7M2PQ9XHT4W',
     });
     expect(fake.executed[0]?.params).toEqual([
       'سارة الأحمد',
@@ -146,7 +162,7 @@ describe('createInvitation', () => {
   });
 
   it('passes no additional roles as an empty array', async () => {
-    const fake = fakeTx([{ id: PERSON }], [], [{ id: ID }], [{ code: 'K7M2PQ9X' }], []);
+    const fake = fakeTx([{ id: PERSON }], [], [{ id: ID }], [{ code: 'K7M2PQ9XHT4W' }], []);
     await createInvitation(fake.tx, { ...input, additionalRoles: [], firstNameEn: null });
     expect(fake.executed[0]?.params[1]).toBeNull();
     expect(fake.executed[2]?.sql).toContain("'{}'::text[]");
@@ -198,11 +214,12 @@ describe('listInvitations', () => {
     expires_at: '2026-10-07 10:00:00+00',
     created_at: new Date('2026-09-30T10:00:00Z'),
     import_id: null,
-    invite_code: 'K7M2PQ9X',
+    has_code: true,
     locale: 'en',
+    additional_roles: ['mentor'],
   };
 
-  it('maps rows, computes the state in SQL and joins the codes the caller may copy', async () => {
+  it('maps rows, computes the state in SQL and says whether a code may be copied (never the code)', async () => {
     const fake = fakeTx([row]);
     const [r] = await listInvitations(fake.tx);
     expect(r).toEqual({
@@ -217,10 +234,14 @@ describe('listInvitations', () => {
       expiresAt: new Date('2026-10-07T10:00:00Z'),
       createdAt: new Date('2026-09-30T10:00:00Z'),
       importId: null,
-      inviteCode: 'K7M2PQ9X',
+      additionalRoles: ['mentor'],
+      hasCode: true,
       locale: 'en',
     });
-    expect(fake.executed[0]?.sql).toContain('left join private.invitation_codes() c');
+    expect(fake.executed[0]?.sql).toContain(
+      'left join (select x.invitation_id from private.invitation_codes() x) c',
+    );
+    expect(fake.executed[0]?.sql).not.toContain('c.invite_code');
     expect(fake.executed[0]?.sql).toContain("then 'expired'");
     expect(fake.executed[0]?.sql).toContain('where true');
   });
@@ -229,6 +250,30 @@ describe('listInvitations', () => {
     const fake = fakeTx([]);
     await expect(listInvitations(fake.tx, { state: 'pending' })).resolves.toEqual([]);
     expect(fake.executed[0]?.params).toEqual(['pending']);
+  });
+
+  it('defaults missing additional roles to none', async () => {
+    const [r] = await listInvitations(fakeTx([{ ...row, additional_roles: null }]).tx);
+    expect(r?.additionalRoles).toEqual([]);
+  });
+});
+
+describe('invitationCode', () => {
+  it("reads one invitation's code through the checked database function", async () => {
+    const fake = fakeTx([{ invite_code: 'K7M2PQ9XHT4W', locale: 'en' }]);
+    await expect(invitationCode(fake.tx, ID)).resolves.toEqual({
+      inviteCode: 'K7M2PQ9XHT4W',
+      locale: 'en',
+    });
+    expect(fake.executed[0]?.sql).toContain('private.invitation_codes(array[$1::uuid])');
+    expect(fake.executed[0]?.params).toEqual([ID]);
+    await expect(
+      invitationCode(fakeTx([{ invite_code: 'K7M2PQ9XHT4W', locale: 'ar' }]).tx, ID),
+    ).resolves.toEqual({ inviteCode: 'K7M2PQ9XHT4W', locale: 'ar' });
+  });
+
+  it('is null when there is none the caller may copy', async () => {
+    await expect(invitationCode(fakeTx([]).tx, ID)).resolves.toBeNull();
   });
 });
 
@@ -251,10 +296,10 @@ describe('revokeInvitation', () => {
 
 describe('requestInvitationResend', () => {
   it('issues a new code through the checked database function, then emits the event', async () => {
-    const fake = fakeTx([{ code: 'NEWCQDE2' }], []);
+    const fake = fakeTx([{ code: 'NEWCQDE2HT4W' }], []);
     await expect(requestInvitationResend(fake.tx, ID)).resolves.toEqual({
       status: 'queued',
-      inviteCode: 'NEWCQDE2',
+      inviteCode: 'NEWCQDE2HT4W',
     });
     expect(fake.executed[0]?.sql).toContain('private.issue_invitation_code($1::uuid)');
     expect(fake.executed[0]?.params).toEqual([ID]);

@@ -3,7 +3,11 @@ import type { AppLocale, DisplayDateFormatter } from '@jadarat/platform-i18n';
 import { routing } from '@jadarat/platform-i18n/routing';
 import type { InvitationRow } from '@jadarat/platform-db';
 import type { UserImportBannersView } from '@jadarat/platform-import';
-import { SYSTEM_ROLES, type UsersListView } from '@jadarat/platform-rbac';
+import {
+  SYSTEM_ROLES,
+  type UsersListView,
+  invitationGivesPrivilegedRole,
+} from '@jadarat/platform-rbac';
 import {
   Alert,
   Badge,
@@ -86,6 +90,7 @@ const INVITATION_LIST_KEYS = [
   'resendLimit',
   'resendLimitShort',
   'noCode',
+  'noCodePrivileged',
   'revoke',
   'revoked',
   'revokeConfirmButton',
@@ -191,6 +196,7 @@ export default async function UsersPage({
             view={result.value}
             params={current}
             invitations={invitations?.ok ? invitations.value.invitations : null}
+            canCopyPrivileged={invitations?.ok ? invitations.value.canCopyPrivileged : false}
             banners={banners?.ok ? banners.value : null}
             dates={pageDates(locale, context)}
           />
@@ -246,6 +252,7 @@ async function UsersList({
   view,
   params,
   invitations,
+  canCopyPrivileged,
   banners,
   dates,
 }: {
@@ -256,6 +263,8 @@ async function UsersList({
   params: UsersListParams;
   /** Open invitations (null: the member may not invite, or they did not load). */
   invitations: readonly InvitationRow[] | null;
+  /** The member may copy the codes of invitations with a privileged role (the Organization Admin). */
+  canCopyPrivileged: boolean;
   /** A running import; people added without invitations (null: not shown). */
   banners: UserImportBannersView | null;
 }) {
@@ -467,7 +476,7 @@ async function UsersList({
       </form>
 
       {invitationRows.length > 0
-        ? await invitationsTable(locale, invitationRows, canReadRoles, dates)
+        ? await invitationsTable(locale, invitationRows, canReadRoles, canCopyPrivileged, dates)
         : null}
 
       {nothingToShow ? (
@@ -643,10 +652,24 @@ async function invitationLabels(locale: AppLocale): Promise<Record<string, strin
  * Open invitations of the `invited` tab (T-M2-07, screen 1): pending, expired, and — from a bulk import
  * (T-M2-12) — held («لم تُرسل الدعوة») and scheduled. At most INVITATIONS_SHOWN rows (newest first).
  */
+/**
+ * How a row's code may be copied (security review M2): never in the page — read when copied, through the
+ * ordinary or (privileged role) the privileged action; or why there is nothing to copy.
+ */
+function codeAccess(
+  row: InvitationRow,
+  canCopyPrivileged: boolean,
+): InvitationRowView['codeAccess'] {
+  const privileged = invitationGivesPrivilegedRole(row);
+  if (row.hasCode) return privileged ? 'copyPrivileged' : 'copy';
+  return privileged && !canCopyPrivileged ? 'notAllowed' : 'none';
+}
+
 async function invitationsTable(
   locale: AppLocale,
   rows: readonly InvitationRow[],
   canReadRoles: boolean,
+  canCopyPrivileged: boolean,
   dates: DisplayDateFormatter,
 ) {
   const t = await getTranslations({ locale, namespace: 'invitations' });
@@ -676,8 +699,8 @@ async function invitationsTable(
       state: row.state,
       fromImportText: fromImport,
       canResend: canResend(row),
-      inviteCode: row.inviteCode,
-      locale: row.locale,
+      codeAccess: codeAccess(row, canCopyPrivileged),
+      sendCount: row.sendCount,
     });
   }
   return (

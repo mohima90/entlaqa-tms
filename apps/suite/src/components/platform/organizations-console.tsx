@@ -12,7 +12,11 @@ import { isOrganizationSlug } from '../../lib/organization-slug';
 import { type ErrorTexts, errorText } from '../auth/error-text';
 import { fieldErrorCodes } from '../profile/field-errors';
 import { SelectField } from '../select-field';
-import { type InviteCopyTexts, InviteCodeCopy } from '../users/invite-code-copy';
+import {
+  InviteCodeCopy,
+  type InviteCodeValue,
+  type InviteCopyTexts,
+} from '../users/invite-code-copy';
 
 /** Raw texts of the `platform` namespace by dotted key (formatted on the server, filled here). */
 export type PlatformTexts = Readonly<Record<string, string>>;
@@ -22,8 +26,6 @@ interface Shared {
   readonly texts: PlatformTexts;
   readonly copyTexts: InviteCopyTexts;
   readonly errors: ErrorTexts;
-  /** The app's public origin from the server (APP_BASE_URL): the copied link starts with it. */
-  readonly baseUrl: string | null;
 }
 
 const FIELDS = [
@@ -42,6 +44,8 @@ type Field = (typeof FIELDS)[number];
 function fieldMessage(field: Field | 'locale' | 'form', code: string, text: (k: string) => string) {
   if (field === 'slug')
     return text(code === 'SLUG_TAKEN' ? 'create.errors.slugTaken' : 'create.errors.slug');
+  // A Super Admin never invites their own account (review L7).
+  if (field === 'adminEmail' && code === 'OWN_EMAIL') return text('create.errors.adminEmailOwn');
   if (field.startsWith('admin') && field !== 'adminEmail') return text('create.errors.adminName');
   return text(`create.errors.${field}`);
 }
@@ -67,7 +71,7 @@ export function CreateOrganization(props: Shared) {
   const created = useRef<HTMLDialogElement>(null);
   const [errors, setErrors] = useState<Partial<Record<Field | 'locale' | 'form', string>>>({});
   const [failure, setFailure] = useState<string | null>(null);
-  const [result, setResult] = useState<{ code: string; locale: 'ar' | 'en' } | null>(null);
+  const [result, setResult] = useState<InviteCodeValue | null>(null);
   const [pending, startTransition] = useTransition();
 
   const submit = (event: SyntheticEvent<HTMLFormElement>) => {
@@ -106,7 +110,11 @@ export function CreateOrganization(props: Shared) {
       if (answer.ok) {
         dialog.current?.close();
         form.reset();
-        setResult({ code: answer.value.inviteCode, locale: answer.value.locale });
+        setResult({
+          inviteCode: answer.value.inviteCode,
+          locale: answer.value.locale,
+          inviteLink: answer.value.inviteLink,
+        });
         created.current?.showModal();
         return;
       }
@@ -241,15 +249,7 @@ export function CreateOrganization(props: Shared) {
           {text('created.title')}
         </h2>
         <p className="m-0 mb-4 text-text-muted">{text('created.text')}</p>
-        {result ? (
-          <InviteCodeCopy
-            code={result.code}
-            locale={result.locale}
-            texts={props.copyTexts}
-            layout="panel"
-            baseUrl={props.baseUrl}
-          />
-        ) : null}
+        {result ? <InviteCodeCopy value={result} texts={props.copyTexts} layout="panel" /> : null}
         <div className="mt-4">
           <Button
             type="button"
@@ -268,56 +268,81 @@ export function CreateOrganization(props: Shared) {
 
 /**
  * Row action while the Organization Admin has not joined: «رابط مدير المنشأة» opens the invitation (its code
- * fetched when asked — an audited read) with Copy code / Copy invite link, and «رمز جديد» / New code.
+ * fetched when asked — an audited read) with Copy code / Copy invite link, and «رمز جديد» / New code. When
+ * the invitation's issuer is no longer a Super Admin (`issuer_revoked`, review M1) its link no longer
+ * works: the dialog says it needs a new code, which a new invitation issued by this Super Admin carries.
+ * One live region stays mounted (loading, a new code issued); refusals are an alert outside it (L9).
  */
 export function OrganizationAdminInvite(
-  props: Shared & { readonly tenantId: string; readonly organizationName: string },
+  props: Shared & {
+    readonly tenantId: string;
+    readonly organizationName: string;
+    readonly adminState: 'pending' | 'expired' | 'issuer_revoked';
+  },
 ) {
   const text = (key: string) => props.texts[key] ?? key;
   const router = useRouter();
   const id = useId();
   const dialog = useRef<HTMLDialogElement>(null);
-  const [invite, setInvite] = useState<{
-    code: string;
-    locale: 'ar' | 'en';
-    expiresAt: Date | string;
-  } | null>(null);
-  const [message, setMessage] = useState<{ tone: 'success' | 'danger'; text: string } | null>(null);
+  const [invite, setInvite] = useState<(InviteCodeValue & { expiresAt: Date | string }) | null>(
+    null,
+  );
+  const [status, setStatus] = useState('');
+  const [failure, setFailure] = useState<string | null>(null);
+  const [needsNewCode, setNeedsNewCode] = useState(props.adminState === 'issuer_revoked');
   const [pending, startTransition] = useTransition();
   const changed = useRef(false);
 
+  const show = (value: {
+    inviteCode: string;
+    locale: 'ar' | 'en';
+    inviteLink: string | null;
+    expiresAt: Date | string;
+  }) => {
+    setInvite({
+      inviteCode: value.inviteCode,
+      locale: value.locale,
+      inviteLink: value.inviteLink,
+      expiresAt: value.expiresAt,
+    });
+  };
+
   const open = () => {
     setInvite(null);
-    setMessage(null);
+    setFailure(null);
+    setStatus('');
     dialog.current?.showModal();
+    // A revoked issuer's code no longer works: nothing to read — a new code is the way on.
+    if (needsNewCode) {
+      setStatus(text('invite.needsNewCode'));
+      return;
+    }
+    setStatus(text('invite.loading'));
     startTransition(async () => {
       const answer = await viewOrganizationAdminCodeAction({ tenantId: props.tenantId });
       if (answer.ok) {
-        setInvite({
-          code: answer.value.inviteCode,
-          locale: answer.value.locale,
-          expiresAt: answer.value.expiresAt,
-        });
+        show(answer.value);
+        setStatus('');
       } else {
-        setMessage({ tone: 'danger', text: errorText(answer.error, props.errors) });
+        setStatus('');
+        setFailure(errorText(answer.error, props.errors));
       }
     });
   };
 
   const reissue = () => {
-    setMessage(null);
+    setFailure(null);
+    setStatus(text('invite.issuing'));
     startTransition(async () => {
       const answer = await reissueOrganizationAdminCodeAction({ tenantId: props.tenantId });
       if (answer.ok) {
         changed.current = true;
-        setInvite({
-          code: answer.value.inviteCode,
-          locale: answer.value.locale,
-          expiresAt: answer.value.expiresAt,
-        });
-        setMessage({ tone: 'success', text: text('invite.newCodeIssued') });
+        setNeedsNewCode(false);
+        show(answer.value);
+        setStatus(text('invite.newCodeIssued'));
       } else {
-        setMessage({ tone: 'danger', text: errorText(answer.error, props.errors) });
+        setStatus('');
+        setFailure(errorText(answer.error, props.errors));
       }
     });
   };
@@ -353,13 +378,7 @@ export function OrganizationAdminInvite(
         <p className="m-0 mb-4 text-text-muted">{text('invite.text')}</p>
         {invite ? (
           <div className="flex flex-col gap-2">
-            <InviteCodeCopy
-              code={invite.code}
-              locale={invite.locale}
-              texts={props.copyTexts}
-              layout="panel"
-              baseUrl={props.baseUrl}
-            />
+            <InviteCodeCopy value={invite} texts={props.copyTexts} layout="panel" />
             <p className="m-0 text-sm text-text-muted" data-testid="org-admin-invite-expiry">
               {text('invite.expires').replace(
                 '{date}',
@@ -367,30 +386,34 @@ export function OrganizationAdminInvite(
               )}
             </p>
           </div>
-        ) : pending ? (
-          <p className="m-0" role="status">
-            {text('invite.loading')}
-          </p>
         ) : null}
-        <div role="status" aria-live="polite" className="mt-3">
-          {message ? (
-            <Alert tone={message.tone} data-testid="org-admin-invite-message">
-              {message.text}
-            </Alert>
-          ) : null}
-        </div>
+        {/* Always mounted: loading, "needs a new code" and "new code issued" are announced (L9). */}
+        <p
+          role="status"
+          aria-live="polite"
+          className="m-0 mt-3 min-h-5 text-sm"
+          data-testid="org-admin-invite-message"
+        >
+          {status}
+        </p>
+        {failure ? (
+          <Alert tone="danger" className="mt-3" data-testid="org-admin-invite-error">
+            {failure}
+          </Alert>
+        ) : null}
         <div className="mt-4 flex flex-wrap gap-3">
           <Button
             type="button"
-            variant="secondary"
-            disabled={pending || !invite}
+            variant={needsNewCode ? 'primary' : 'secondary'}
+            disabled={pending || (!invite && !needsNewCode)}
             onClick={reissue}
             data-testid="org-admin-new-code"
           >
-            {pending && invite ? text('invite.issuing') : text('invite.newCode')}
+            {pending && (invite || needsNewCode) ? text('invite.issuing') : text('invite.newCode')}
           </Button>
           <Button
             type="button"
+            variant={needsNewCode ? 'secondary' : 'primary'}
             onClick={() => {
               dialog.current?.close();
             }}

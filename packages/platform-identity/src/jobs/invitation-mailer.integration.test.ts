@@ -40,7 +40,7 @@ if ((process.env.CI || process.env.JADARAT_REQUIRE_INTEGRATION) && !configured) 
 
 // The code travels in the URL fragment (never sent to the server; review M3).
 const ACCEPT_LINK =
-  /https:\/\/tms\.test\.example\/en\/sign-up#code=([A-HJ-NP-Z2-9]{8})(?![A-Z0-9])/;
+  /https:\/\/tms\.test\.example\/en\/sign-up#code=([A-HJ-NP-Z2-9]{12})(?![A-Z0-9])/;
 
 describe.skipIf(!configured)('invitation mailer against PostgreSQL', () => {
   const owner = createDatabase(ownerUrl ?? '', { max: 1 });
@@ -173,7 +173,7 @@ describe.skipIf(!configured)('invitation mailer against PostgreSQL', () => {
 
   it('created: queues one invitation e-mail with the code the database issued', async () => {
     const code = await invite();
-    expect(code).toMatch(/^[A-HJ-NP-Z2-9]{8}$/);
+    expect(code).toMatch(/^[A-HJ-NP-Z2-9]{12}$/);
     const issued = await stored();
     expect(await pass()).toEqual({ staleEvents: 0 });
 

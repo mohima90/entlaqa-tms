@@ -13,5 +13,6 @@ export async function inviteCopyTexts(locale: AppLocale): Promise<InviteCopyText
     codeCopied: t('codeCopied'),
     linkCopied: t('linkCopied'),
     copyFailed: t('copyFailed'),
+    loading: t('loading'),
   };
 }

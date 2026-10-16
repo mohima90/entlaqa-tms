@@ -6,12 +6,32 @@ vi.mock('server-only', () => ({}));
 vi.mock('@jadarat/platform-observability', () => ({ log }));
 
 describe('server settings at start-up (T-M2-17, T-M2-11)', () => {
+  it('APP_BASE_URL: an https origin, refused otherwise; missing on Vercel production is a warning', () => {
+    expect(checkServerSettings({ APP_BASE_URL: 'https://tms.example.com/' }).appBaseUrl).toBe(
+      'https://tms.example.com',
+    );
+    for (const bad of [
+      'tms.example.com',
+      'http://tms.example.com',
+      'https://tms.example.com/app',
+    ]) {
+      expect(() => checkServerSettings({ APP_BASE_URL: bad }), bad).toThrow('APP_BASE_URL');
+    }
+    log.warn.mockClear();
+    checkServerSettings({ VERCEL: '1', VERCEL_ENV: 'production' });
+    expect(log.warn).toHaveBeenCalledWith(
+      "APP_BASE_URL is not set: copied invitation links use the browser's origin",
+      { action: 'app.start', reason: 'app_base_url_missing' },
+    );
+  });
+
   it('reads PASSWORD_RESET_DELIVERY: auth by default, worker when set', () => {
     expect(checkServerSettings({})).toEqual({
       passwordResetDelivery: 'auth',
       limitWindowSeconds: null,
       authClientHeader: null,
       clientIpHeader: null,
+      appBaseUrl: null,
     });
     expect(checkServerSettings({ PASSWORD_RESET_DELIVERY: 'worker' })).toMatchObject({
       passwordResetDelivery: 'worker',

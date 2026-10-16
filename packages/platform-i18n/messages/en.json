@@ -762,7 +762,7 @@
       "revoked": "Invitation revoked; its link no longer works.",
       "working": "Working…",
       "notPending": "This invitation is no longer waiting for acceptance; it may have been accepted or revoked. Refresh the page to see its latest status.",
-      "roleNotAllowed": "Only the Organization Admin can resend or revoke an invitation with a privileged role.",
+      "roleNotAllowed": "Only the Organization Admin can copy, resend or revoke an invitation with a privileged role.",
       "expiredBanner": "{count, plural, one {{count, number, integer} invitation expired before it was accepted. You can resend it now; it stays valid for 7 days.} other {{count, number, integer} invitations expired before they were accepted. You can resend them now; each stays valid for 7 days.}}",
       "resendExpired": "Resend expired invitations ({count, number, integer})",
       "resentExpired": "Expired invitations resent ({count}).",
@@ -773,7 +773,8 @@
       "nothingToSend": "This invitation is no longer waiting to be sent; it may have been sent or revoked. Refresh the page to see the latest status.",
       "sendNotAllowed": "Only the Organization Admin or an HR Manager can send invitations.",
       "capped": "Showing the latest {shown, number, integer} of {total, number, integer} invitations. You can search by name or email to reach the others.",
-      "noCode": "Only the Organization Admin can copy this invitation's code.",
+      "noCode": "No code to copy yet. Use Resend invitation to issue one.",
+      "noCodePrivileged": "Only the Organization Admin can copy the code of an invitation with a privileged role.",
       "sentAt": "Sent {date}"
     },
     "created": {
@@ -789,7 +790,8 @@
       "copyLink": "Copy invite link",
       "codeCopied": "Invitation code copied.",
       "linkCopied": "Invitation link copied.",
-      "copyFailed": "Couldn't copy automatically. Select the text and copy it."
+      "copyFailed": "Couldn't copy automatically. Select the text and copy it.",
+      "loading": "Getting the code…"
     }
   },
   "deactivation": {
@@ -1791,7 +1793,7 @@
     "intro": "Enter the invitation code you received to create your account.",
     "introValid": "You're invited to join {organization}. Create your account to continue.",
     "codeLabel": "Invitation code",
-    "codePlaceholder": "e.g. K7M2PQ9X",
+    "codePlaceholder": "e.g. K7M2-PQ9X-HT4W",
     "codeFromLink": "You opened an invitation link, so the code is filled in for you.",
     "codeChecking": "Checking the code…",
     "codeValid": "Valid invitation to {organization}",
@@ -1837,6 +1839,7 @@
     },
     "adminStates": {
       "active": "Joined",
+      "issuer_revoked": "Needs a new code",
       "pending": "Invited, not joined yet",
       "expired": "Invitation expired",
       "none": "Not assigned"
@@ -1870,6 +1873,7 @@
         "nameAr": "Enter the organization's name in Arabic (up to 200 characters).",
         "nameEn": "Use up to 200 characters.",
         "adminEmail": "Enter an email address such as name@company.com.",
+        "adminEmailOwn": "Use the Organization Admin's own email. You can't invite your own Super Admin account.",
         "adminName": "Use up to 100 characters.",
         "locale": "Choose Arabic or English.",
         "form": "Check the details and try again."
@@ -1889,7 +1893,8 @@
       "newCode": "New code",
       "issuing": "Issuing…",
       "newCodeIssued": "A new code was issued. The previous code no longer works.",
-      "close": "Close"
+      "close": "Close",
+      "needsNewCode": "The Super Admin who issued this invitation no longer has access, so its link no longer works. Issue a new code to send the Organization Admin a working one."
     },
     "errors": {
       "noPendingAdmin": "The Organization Admin of this organization has already joined."

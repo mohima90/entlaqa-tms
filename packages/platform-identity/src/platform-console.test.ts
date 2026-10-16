@@ -34,7 +34,11 @@ const verified = await verifyClaims({
 });
 if (!verified.ok) throw new Error('test claims did not verify');
 const CLAIMS = verified.value;
-const CODE = { inviteCode: 'K7M2PQ9X', locale: 'en' as const, expiresAt: new Date('2026-10-23') };
+const CODE = {
+  inviteCode: 'K7M2PQ9XHT4W',
+  locale: 'en' as const,
+  expiresAt: new Date('2026-10-23'),
+};
 const INPUT = {
   slug: 'entlaqa',
   nameAr: 'إنطلاقة',
@@ -68,7 +72,7 @@ function setup(
     createPlatformTenant: vi.fn(() =>
       options.refuse
         ? Promise.reject(options.refuse as Error)
-        : Promise.resolve({ tenantId: TENANT, invitationId: 'inv', inviteCode: 'K7M2PQ9X' }),
+        : Promise.resolve({ tenantId: TENANT, invitationId: 'inv', inviteCode: 'K7M2PQ9XHT4W' }),
     ),
     platformAdminInvitationCode: vi.fn(() =>
       options.refuse ? Promise.reject(options.refuse as Error) : Promise.resolve(CODE),
@@ -121,6 +125,42 @@ describe('platform console: deny by default', () => {
   });
 });
 
+describe('platform console: authorization before input validation (review L6)', () => {
+  const refuse = vi.fn(() => ({
+    ok: false as const,
+    error: { code: 'VALIDATION_FAILED', fieldErrors: [{ path: 'slug', code: 'INVALID' }] } as never,
+  }));
+  const accept = <T>(value: T) => vi.fn((_raw: unknown) => ({ ok: true as const, value }));
+
+  it('anyone but a Super Admin gets 404 whatever they send; the parser never runs', async () => {
+    const { deps } = setup({ admin: false });
+    expect(await createOrganizationFromConsole(deps, { junk: true }, refuse)).toEqual(notFound);
+    expect(await viewOrganizationAdminCode(deps, 'not-a-uuid', refuse)).toEqual(notFound);
+    expect(await reissueOrganizationAdminCode(deps, 'not-a-uuid', refuse)).toEqual(notFound);
+    expect(refuse).not.toHaveBeenCalled();
+    const signedOut = setup({ claims: 'signed-out' }).deps;
+    expect(await createOrganizationFromConsole(signedOut, {}, refuse)).toEqual(notFound);
+    expect(refuse).not.toHaveBeenCalled();
+  });
+
+  it('a Super Admin gets the validation errors, and valid input goes on', async () => {
+    const { deps } = setup();
+    const invalid = await createOrganizationFromConsole(deps, { junk: true }, refuse);
+    expect(!invalid.ok && invalid.error.code).toBe('VALIDATION_FAILED');
+    expect(deps.createPlatformTenant).not.toHaveBeenCalled();
+    const parse = accept(INPUT);
+    expect((await createOrganizationFromConsole(deps, { raw: 1 }, parse)).ok).toBe(true);
+    expect(parse).toHaveBeenCalledWith({ raw: 1 });
+    expect((await viewOrganizationAdminCode(deps, { tenantId: TENANT }, accept(TENANT))).ok).toBe(
+      true,
+    );
+    expect(
+      (await reissueOrganizationAdminCode(deps, { tenantId: TENANT }, accept(TENANT))).ok,
+    ).toBe(true);
+    expect(deps.reissuePlatformAdminCode).toHaveBeenCalledWith('tx', TENANT);
+  });
+});
+
 describe('platform console: sensitive operations re-verify the session (getUser)', () => {
   it('the list uses getClaims; create, copy and new code confirm the session with Auth', async () => {
     const { deps, strictCalls } = setup();
@@ -145,7 +185,7 @@ describe('platform console: the Super Admin', () => {
     const { deps } = setup();
     expect(await createOrganizationFromConsole(deps, { ...INPUT, locale: 'ar' })).toEqual({
       ok: true,
-      value: { tenantId: TENANT, inviteCode: 'K7M2PQ9X', locale: 'ar' },
+      value: { tenantId: TENANT, inviteCode: 'K7M2PQ9XHT4W', locale: 'ar' },
     });
   });
 
@@ -174,6 +214,14 @@ describe('platform console: the Super Admin', () => {
       TENANT,
     );
     expect(!joined.ok && joined.error.code).toBe('PLATFORM_NO_PENDING_ADMIN');
+  });
+
+  it("refuses the Super Admin's own e-mail next to the field (review L7)", async () => {
+    const own = await createOrganizationFromConsole(
+      setup({ refuse: new PlatformConsoleError('OWN_EMAIL', { field: 'admin_email' }) }).deps,
+      INPUT,
+    );
+    expect(!own.ok && own.error.fieldErrors).toEqual([{ path: 'adminEmail', code: 'OWN_EMAIL' }]);
   });
 
   it('throws unexpected errors (an internal error with a correlation id upstream)', async () => {

@@ -3,11 +3,13 @@ import { type AppDatabase, getDatabase, isDatabaseConfigured } from './client';
 export type DatabaseHealth = 'ok' | 'unavailable' | 'not-configured';
 
 /**
- * Database functions the request path cannot work without, by SIGNATURE (name and argument types, as
- * PostgreSQL's oidvectortypes prints them): sign-in fails closed until they exist (T-M2-11, migrations
- * 20261013090000 and 20261013090100). Readiness is refused while one is missing — or still has an older
- * signature — so an app deployed ahead of its database migration is not sent traffic (security review
- * T-M2-11, deploy readiness).
+ * Database functions the request path (and the worker) cannot work without, by SIGNATURE (name and
+ * argument types, as PostgreSQL's oidvectortypes prints them): sign-in fails closed until they exist
+ * (T-M2-11, migrations 20261013090000 and 20261013090100). Readiness is refused while one is missing — or
+ * still has an older signature — so an app deployed ahead of its database migration is not sent traffic
+ * (security review T-M2-11, deploy readiness). The database deploys automatically after a merge to `main`
+ * (db-deploy-auto.yml) in parallel with the app: every new private.* function the app or the worker calls
+ * belongs here (invitations contract §0, deploy order).
  */
 export const REQUIRED_DATABASE_FUNCTIONS = [
   'rate_limit_hit(text, bytea, integer, integer)',
@@ -23,6 +25,11 @@ export const REQUIRED_DATABASE_FUNCTIONS = [
   'request_account_locked_mail(text, integer)',
   'request_mfa_code_locked_mail(uuid, integer)',
   'unlock_member_sign_in(uuid, integer)',
+  // Invitation codes (FR-IAM-03, migration 20261018090000): inviting and resending issue a code, the
+  // users list and "Copy code" read them, the worker's mailer reads the code it e-mails.
+  'issue_invitation_code(uuid)',
+  'invitation_codes(uuid[])',
+  'invitation_code_for_mail(uuid)',
   // Platform Super Admin console (FR-ADM-17, migration 20261018100000): sign-in routing and the console.
   'is_platform_admin()',
   'platform_list_tenants()',

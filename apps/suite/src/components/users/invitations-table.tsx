@@ -3,7 +3,12 @@ import type { AppError, Result } from '@jadarat/platform-core';
 import { Alert, Badge, Button } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
-import { resendInvitationAction, revokeInvitationAction } from '../../actions/invitations';
+import {
+  resendInvitationAction,
+  revokeInvitationAction,
+  viewInvitationCodeAction,
+  viewPrivilegedInvitationCodeAction,
+} from '../../actions/invitations';
 import { sendHeldInvitationsAction } from '../../actions/user-import';
 import { AuthIcon } from '../auth/auth-icons';
 import { type ErrorTexts, errorText } from '../auth/error-text';
@@ -26,12 +31,16 @@ export interface InvitationRowView {
   readonly fromImportText: string | null;
   readonly canResend: boolean;
   /**
-   * The code to copy (Kawadir) when this member may manage the invitation and it was sent; null for a
-   * held import invitation, or one with a privileged role on an HR Manager's list (`noCode` then).
+   * Its code (Kawadir's copy code / copy link) — never in the list itself; read when copied, through an
+   * authorized and audited action (security review M2):
+   *   `copy`            an ordinary invitation's code (platform.user.invite)
+   *   `copyPrivileged`  a privileged invitation's code (platform.role.assign_privileged, strict session)
+   *   `notAllowed`      a privileged invitation on an HR Manager's list: «لا يمكنك نسخ رمز دعوة بدور مميز»
+   *   `none`            no code to copy yet (e.g. a link e-mailed before codes): use Resend
    */
-  readonly inviteCode: string | null;
-  /** The invitation's language: its link opens the sign-up page in it. */
-  readonly locale: 'ar' | 'en';
+  readonly codeAccess: 'copy' | 'copyPrivileged' | 'notAllowed' | 'none';
+  /** Codes issued so far: a new one (resend) resets the copied code shown. */
+  readonly sendCount: number;
 }
 
 const STATE_TONE = {
@@ -64,6 +73,7 @@ export function invitationErrorText(
   if (code === 'RESEND_LIMIT') return labels.resendLimit ?? errorText(error, errors);
   if (code === 'NOT_PENDING') return labels.notPending ?? errorText(error, errors);
   if (code === 'ROLE_NOT_ALLOWED') return labels.roleNotAllowed ?? errorText(error, errors);
+  if (code === 'NO_CODE') return labels.noCode ?? errorText(error, errors);
   if (fieldErrorCodes(error).invitations === 'NOTHING_TO_SEND') {
     return labels.nothingToSend ?? errorText(error, errors);
   }
@@ -82,7 +92,7 @@ const sendHeld: InvitationAction = ({ invitationId }) =>
 /**
  * Pending and expired invitations on the users list (T-M2-07, FR-IAM-03; screen 1 `invited` tab), laid
  * out as Kawadir ATS's pending-invite rows (PO, 16 Oct 2026): who and what, then the invitation code with
- * «نسخ الرمز» / «نسخ الرابط», «إعادة إرسال الدعوة» (a new code; up to 3 times) and «إلغاء الدعوة» after a
+ * «نسخ الرمز» / «نسخ الرابط» (read when copied, audited — security review M2), «إعادة إرسال الدعوة» (a new code; up to 3 times) and «إلغاء الدعوة» after a
  * confirmation. People a bulk import added without their e-mail show «لم تُرسل الدعوة» with «إرسال
  * الدعوة» (T-M2-12, FR-IAM-04); their code comes when it is sent.
  */
@@ -176,19 +186,26 @@ export function InvitationsTable({
                   </div>
                 </div>
                 <div className="flex flex-col items-start gap-2">
-                  {row.inviteCode && row.state === 'pending' ? (
+                  {row.state === 'pending' &&
+                  (row.codeAccess === 'copy' || row.codeAccess === 'copyPrivileged') ? (
                     <InviteCodeCopy
-                      code={row.inviteCode}
-                      locale={row.locale}
+                      // A new code (resend) starts unread again.
+                      key={`${row.id}-${String(row.sendCount)}`}
+                      load={() =>
+                        (row.codeAccess === 'copyPrivileged'
+                          ? viewPrivilegedInvitationCodeAction
+                          : viewInvitationCodeAction)({ invitationId: row.id })
+                      }
+                      loadErrorText={(error) => invitationErrorText(error, labels, errors)}
                       texts={copyTexts}
                       name={row.name}
                     />
-                  ) : row.state === 'pending' && !row.inviteCode ? (
+                  ) : row.state === 'pending' ? (
                     <p
                       className="m-0 max-w-64 text-sm text-text-muted"
                       data-testid="invite-no-code"
                     >
-                      {text('noCode')}
+                      {text(row.codeAccess === 'notAllowed' ? 'noCodePrivileged' : 'noCode')}
                     </p>
                   ) : null}
                   {confirming === row.id ? (

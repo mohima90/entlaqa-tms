@@ -24,6 +24,8 @@ function fakeTx(...answers: Answer[]) {
       const next = answers.shift() ?? [];
       return next instanceof Error ? Promise.reject(next) : Promise.resolve(next);
     },
+    // A savepoint runs on the same fake.
+    transaction: (fn: (savepoint: unknown) => unknown) => fn(tx),
   };
   return { executed, tx: tx as never };
 }
@@ -54,6 +56,10 @@ describe('platformConsoleErrorOf', () => {
     expect(platformConsoleErrorOf(other)).toBe(other);
     const plain = new Error('network');
     expect(platformConsoleErrorOf(plain)).toBe(plain);
+    expect(platformConsoleErrorOf(pgErr('JP005'))).toMatchObject({
+      code: 'OWN_EMAIL',
+      field: 'admin_email',
+    });
   });
 });
 
@@ -64,6 +70,13 @@ describe('isPlatformAdmin', () => {
     expect(yes.executed[0]?.sql).toContain('private.is_platform_admin()');
     expect(await isPlatformAdmin(fakeTx([{ yes: false }]).tx)).toBe(false);
     expect(await isPlatformAdmin(fakeTx([]).tx)).toBe(false);
+  });
+
+  it('is false while the function does not exist yet (deploy window, review L1); other errors throw', async () => {
+    expect(await isPlatformAdmin(fakeTx(pgErr('42883')).tx)).toBe(false);
+    await expect(isPlatformAdmin(fakeTx(pgErr('57014')).tx)).rejects.toMatchObject({
+      code: '57014',
+    });
   });
 });
 
@@ -116,6 +129,26 @@ describe('listPlatformTenants', () => {
     ]);
   });
 
+  it('keeps the issuer_revoked state (needs a new code, review M1)', async () => {
+    const [row] = await listPlatformTenants(
+      fakeTx([
+        {
+          tenant_id: TENANT,
+          slug: 'gone',
+          name_ar: 'منشأة',
+          name_en: null,
+          status: 'active',
+          created_at: '2026-10-16T10:00:00Z',
+          member_count: 0,
+          admin_state: 'issuer_revoked',
+          admin_invitation_locale: 'en',
+          admin_invitation_expires_at: '2026-10-23T10:00:00Z',
+        },
+      ]).tx,
+    );
+    expect(row?.adminState).toBe('issuer_revoked');
+  });
+
   it('refuses a non-admin', async () => {
     await expect(listPlatformTenants(fakeTx(pgErr('42501')).tx)).rejects.toMatchObject({
       code: 'NOT_PLATFORM_ADMIN',
@@ -125,7 +158,7 @@ describe('listPlatformTenants', () => {
 
 describe('createPlatformTenant', () => {
   it('sends trimmed values (blank names as null) and returns the code', async () => {
-    const fake = fakeTx([{ tenant_id: TENANT, invitation_id: 'inv', invite_code: 'K7M2PQ9X' }]);
+    const fake = fakeTx([{ tenant_id: TENANT, invitation_id: 'inv', invite_code: 'K7M2PQ9XHT4W' }]);
     const created = await createPlatformTenant(fake.tx, {
       slug: 'entlaqa',
       nameAr: ' إنطلاقة ',
@@ -136,7 +169,7 @@ describe('createPlatformTenant', () => {
       adminFirstNameEn: null,
       locale: 'en',
     });
-    expect(created).toEqual({ tenantId: TENANT, invitationId: 'inv', inviteCode: 'K7M2PQ9X' });
+    expect(created).toEqual({ tenantId: TENANT, invitationId: 'inv', inviteCode: 'K7M2PQ9XHT4W' });
     expect(fake.executed[0]?.sql).toContain('private.platform_create_tenant(');
     expect(fake.executed[0]?.params).toEqual([
       'entlaqa',

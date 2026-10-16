@@ -1416,6 +1416,20 @@ describe('createInvitationLimiter', () => {
     expect(securityLogLine(warnings[0]!).level).toBe('warn');
     expect(memory.hit.mock.calls.at(-1)?.[0]).toBe('invitation.code_misses_all_clients');
     expect(memory.hit.mock.calls.at(-1)?.[2].max).toBe(2000);
+    // A refusal by the all-clients budget is not the client's miss: its own hit is given back, so a
+    // real invitee retrying during the attack is not still blocked once the all-clients window ends.
+    const giveBack = vi.spyOn(memory.store, 'giveBack');
+    const invitee = limiterFor(502);
+    for (let i = 0; i < 30; i += 1) expect(await invitee.allowCodeAttempt()).toBe(false);
+    const inviteeGiveBacks = giveBack.mock.calls.filter(
+      (call) => call[0] === 'invitation.code_misses_client',
+    );
+    expect(inviteeGiveBacks.length).toBeGreaterThanOrEqual(30);
+    expect(
+      events.filter(
+        (e) => e.event === 'auth.rate_limited' && e.reason === 'invitation.code_misses_client',
+      ),
+    ).toHaveLength(0);
   });
 
   it('real invitations give their miss back to both budgets; a refused client does not touch the all-clients one', async () => {

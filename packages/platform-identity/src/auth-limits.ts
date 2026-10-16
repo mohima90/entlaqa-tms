@@ -1293,7 +1293,18 @@ export function createInvitationLimiter(
           limit: B.invitationCodeMissesAllClients,
           retryAfterS: all.retryAfterSeconds,
         });
-        counted = [B.invitationCodeMissesClient];
+        // The code was never looked up, so this is not the client's miss: give its own hit back, or a
+        // real invitee retrying during an attack would stay blocked after the all-clients window ends.
+        try {
+          await deps.store.giveBack(B.invitationCodeMissesClient, codeMissKey);
+        } catch (error) {
+          deps.log({
+            event: 'auth.limiter.unavailable',
+            action: deps.lookupAction,
+            reason: 'fail_open',
+            errorName: errorNameOf(error),
+          });
+        }
         return false;
       }
       counted = [B.invitationCodeMissesClient, B.invitationCodeMissesAllClients];

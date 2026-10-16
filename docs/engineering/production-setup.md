@@ -61,7 +61,7 @@ From the moment `DATABASE_URL` exists, every merge to `main` deploys to the new 
     - **Prevent use of leaked passwords** = **on** (Pro plan);
     - leave *Confirm email* as it is for now (step 25 turns it off).
 18. **Authentication → Multi-Factor**: TOTP (authenticator app) **enroll and verify enabled**; phone and WebAuthn **disabled**.
-19. ~~Supabase custom SMTP~~ — **skipped (PO, 16 Oct 2026, Kawadir alignment):** Supabase's own mailer sends nothing; every e-mail (invitations, password reset, password changed) goes through our notification service (`PASSWORD_RESET_DELIVERY=worker`, step 31). The platform sender (Resend key, sender name/address) lives temporarily in `production-jobs` (step 29) until the Super Admin **Platform settings → E-mail** page and the Org Admin **Email integration** page exist (sender rule: the organization's own provider when configured, else the platform sender — Kawadir `sender-rule`); then it moves into the product.
+19. ~~Supabase custom SMTP~~ — **skipped (PO, 16 Oct 2026, Kawadir alignment):** Supabase's own mailer sends nothing; every e-mail (invitations, password reset, password changed) goes through our notification service (`PASSWORD_RESET_DELIVERY=worker`, step 31). The platform sender is set by the Super Admin **inside the product** (Platform settings → Email, FR-ADM-17), never in GitHub; organizations may use their own provider (Email integration) — sender rule as Kawadir `sender-rule` ([business flow](../business-flows/EP-EMAIL-email-sending.md)).
 20. ~~Supabase e-mail templates~~ — **skipped** (same decision): in **Authentication → Emails → Security notifications** keep **Password changed: off** (our service sends that notice).
 21. **Authentication → Rate Limits**: *Rate limit for sign ups and sign ins* = **300** per 5 minutes; *token verifications* = **150** per 5 minutes; *sending emails* = **100** per hour; *token refreshes*: leave the default (reviewed with RR-IAM-01, [sign-in-protection.md](sign-in-protection.md) §9). Leave "IP address forwarding" **off**.
 22. **Authentication → Sessions** (Pro): time-box and inactivity timeout — values to be agreed with Claude first (the database already enforces each organization's own limits; this is only an outer bound, risk R-36). Skip until agreed.
@@ -80,24 +80,10 @@ From the moment `DATABASE_URL` exists, every merge to `main` deploys to the new 
 
 ## H. GitHub environment `production-jobs` — background worker and e-mail (PO)
 
-29. **Environment** `production-jobs` (created in step 0; if it is missing, **New environment**) → check deployment branches: **`main` only** (before any secret). Then **Supabase → Project Settings → API Keys → Secret keys → Add new secret key** named `worker-production` (shown once — straight into GitHub, never Vercel).
+> **Changed (PO, 16 Oct 2026): no e-mail sender settings in GitHub, Vercel or Supabase.** As in Kawadir ATS and FR-ADM-17, the platform sender (provider, key, sender name and address, test) is set by the Super Admin **inside the product** (Platform settings → Email) and stored encrypted in the database; organizations may connect their own provider on **Settings → Email integration** ([business flow](../business-flows/EP-EMAIL-email-sending.md)). Steps 29–30 therefore wait until that feature (`EP-EMAIL`) is built; they then hold **only** the worker's database connections. `RESEND_API_KEY`, `EMAIL_TEST_TO`, `EMAIL_PROVIDER`, `EMAIL_FROM_NAME` and `EMAIL_FROM_ADDRESS` are **not** set anywhere.
 
-| Kind | Name | What it is |
-|---|---|---|
-| Secret | `DATABASE_URL_APP_QUEUE` | Session pooler URI (port 5432) with user `app_queue.<ref>` and its password from step 10 |
-| Secret | `DATABASE_URL_APP_WORKER` | Same with user `app_worker.<ref>` |
-| Secret | `RESEND_API_KEY` | Resend API key with sending access |
-| Secret | `EMAIL_TEST_TO` | Address that receives the test e-mail |
-| Secret | `SUPABASE_SECRET_KEY` | The `worker-production` secret key above |
-| Variable | `DATABASE_CA_CERT` | Same certificate text as step 12 |
-| Variable | `EMAIL_PROVIDER` | `resend` |
-| Variable | `EMAIL_FROM_NAME`, `EMAIL_FROM_ADDRESS` | The sender (as step 19) |
-| Variable | `APP_BASE_URL` | The production web address (https, no path) |
-| Variable | `SUPABASE_URL` | `https://<new ref>.supabase.co` |
-| Variable (optional) | `FILE_SCANNING` | `on` to scan uploads in each pass ([files.md](files.md) §7) |
-| Variables (optional) | `FILE_ORPHAN_SWEEP`, `USER_IMPORT_INVITATION_INTERVAL_MS`, `USER_IMPORT_DAILY_INVITATIONS`, `USER_IMPORT_TRIAL_DAILY_INVITATIONS` | Leave unset for the defaults ([user-import.md](user-import.md) §4) |
-
-30. **Actions → Jobs → Run workflow** (branch `main`), environment **`production`**, mode **`test-email`** → the test e-mail arrives at `EMAIL_TEST_TO`; then mode **`pass`** → green, log shows `worker starting (once)`, `reset links: on`, `worker stopped`. **Claude** reads both logs. Then **GitHub → Settings → Secrets and variables → Actions → Variables** (repository level only) → **New repository variable** `JOBS_REQUIRED` = `on`: from now on missing connection secrets in `production-jobs` fail the **Jobs** runs instead of skipping them with a notice. (The continuously running production worker host is still a PO cost decision before the first customer — ADR 0005 §1; until then the scheduled pass runs every few minutes to hours.)
+29. *(after `EP-EMAIL`)* **Environment** `production-jobs` (`main` only) → secrets `DATABASE_URL_APP_QUEUE`, `DATABASE_URL_APP_WORKER` (session pooler, users `app_queue.<ref>` / `app_worker.<ref>`), `SUPABASE_SECRET_KEY` (new key `worker-production`, never Vercel); variables `DATABASE_CA_CERT`, `APP_BASE_URL`, `SUPABASE_URL`. Optional variables as [files.md](files.md) §7 and [user-import.md](user-import.md) §4.
+30. *(after `EP-EMAIL`)* **Claude** runs **Actions → Jobs** (`pass`) and reads the log; the test e-mail is sent from the Super Admin page. Then the PO sets the repository variable `JOBS_REQUIRED` = `on`.
 
 ## I. Vercel (PO)
 

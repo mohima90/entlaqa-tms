@@ -6,7 +6,7 @@
 
 | Flow | Epic | File | Status |
 |---|---|---|---|
-| — | — | (none written yet) | — |
+| E-mail sending (platform sender + Email integration) | EP-EMAIL | [EP-EMAIL-email-sending.md](EP-EMAIL-email-sending.md) | In discussion with the PO (16 Oct 2026) |
 
 Status values: Draft · In discussion with the PO · **Agreed (PO, date)** · Changed after agreement (date, reason).
 

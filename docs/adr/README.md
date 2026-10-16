@@ -16,6 +16,7 @@ Each significant technical decision is recorded here using the template in Devel
 | [0010](0010-sovereign-deployment.md) | Sovereign (in-country) deployment approach | Accepted | T-M1-B10 |
 | [0011](0011-api-style-and-errors.md) | API style, versioning and error model | Accepted | T-M1-B11 |
 | [0012](0012-ai-governance.md) | AI provider abstraction and governance | Draft | T-M1-B12 |
+| [0013](0013-platform-super-admin.md) | Platform Super Admin console and grant | Proposed | FR-ADM-17 |
 
 **Status values:** Proposed (awaiting PO approval via PR merge) · Accepted · Superseded by NNNN · Deprecated.
 

@@ -9,7 +9,7 @@
 
 **How to use it.** The Product Owner (PO) follows the steps in order, **one at a time**; Claude guides each step in chat and waits for "done". Steps marked **PO** need the PO's accounts: Claude's container **cannot reach `*.supabase.co`** (egress policy) and has no access to the Vercel team or to GitHub secrets. Steps marked **Claude** are done by Claude (code, reading GitHub Actions logs, documentation). **Never paste a password, key or connection string into chat** — they go only into the password manager, GitHub environment secrets and Vercel environment variables. This page lists **names only, never values**.
 
-**Nothing is copied from the old project.** Organizations and test people are created again (step 32); the old project keeps working until step 40.
+**Nothing is copied from the old project.** Organizations and test people are created again (steps 32–33b, from the platform console); the old project keeps working until step 40.
 
 ---
 
@@ -101,20 +101,26 @@ From the moment `DATABASE_URL` exists, every merge to `main` deploys to the new 
 
 Never in Vercel: `SUPABASE_SECRET_KEY`, any worker or queue connection, `JADARAT_AUTH_CLIENT_HEADER`. Then **Deployments → latest production deployment → Redeploy** (variables apply to new deployments only).
 
-## J. First organization (PO)
+## J. Super Admin and the first organization (PO; changed 16 Oct 2026 — the Kawadir way)
 
-32. **Supabase → Authentication → Users → Add user → Create new user**: your e-mail, a strong password, **Auto Confirm User** ticked (never "Invite user"). Open the user and copy the **UID** (not secret).
-33. **Actions → Provision organization → Run workflow**: environment `production`, mode **`plan`**, organization short name (e.g. `entlaqa-demo`), Arabic name, English name, the UID; then the same with mode **`apply`**. **Claude** reads both logs.
+> Instead of the **Provision organization** workflow, the PO becomes the **Platform Super Admin** «مشرف المنصة» and creates the organization from the product ([platform-console.md](platform-console.md), ADR 0013). Needs migration `20261018100000` deployed (section D).
+
+32. **Supabase → Authentication → Users → Add user → Create new user**: your e-mail, a strong password, **Auto Confirm User** ticked (never "Send invitation"). If Supabase answers "Sign-up is by invitation only.", follow [platform-console.md](platform-console.md) §1.1 step 2 exactly (**sign-ups off → hook off → add user → hook on → sign-ups on**, then check the users list and the Uptime run). Open the user and send the **UID** in chat (not secret; never the e-mail).
+33. **Claude** runs **Actions → Platform admin → Run workflow**: environment `production`, action `grant`, mode **`plan`**, the UID; then the same with mode **`apply`**, and reads both logs.
+33a. **PO**: sign in at `https://<app>/en/sign-in` → you land on **Organizations** (`/en/platform`) → **Create organization**: short name `entlaqa`, the Arabic and English names, the e-mail of the **new** person who will be its Organization Admin (not your own account), invitation language → **Copy invite link** and send it to that person.
+33b. **The new Organization Admin** opens the link in their browser, sets a password and joins → lands in `entlaqa` as Organization Admin. On the console the row shows "Joined".
+
+Also set the web app's `APP_BASE_URL` (Vercel, Production and Preview) to the public origin so copied links point at it ([platform-console.md](platform-console.md) §3).
 
 ## K. Checks (PO, Claude reads the results)
 
 34. Open `https://<app>/api/health/ready` → `ok`.
-35. Sign in at `https://<app>/en/sign-in` → the header shows the organization's name; sign out → back on sign-in; `/en/suite` redirects to sign-in.
+35. Sign in at `https://<app>/en/sign-in` as the new Organization Admin → the header shows the organization's name; sign out → back on sign-in; `/en/suite` redirects to sign-in.
 36. **GitHub → Settings → Variables** (repository): `UPTIME_URL` = the production web address. **Actions → Uptime → Run workflow** → both jobs green (readiness, and the sign-up gate refusing strangers with "Sign-up is by invitation only.").
 37. In the product: invite a test person with an address you can read → the invitation e-mail arrives (after the next worker pass, or run **Jobs** by hand) → accept, set a password, signed in. Then «Forgot password?» with your own account → reset e-mail → new password works, exactly one "password changed" notice.
 38. **Actions → DB deploy → `plan`** again → "nothing pending"; then the lock check of step 14 (`select count(*) from pg_locks where locktype = 'advisory' and classid = 20261015;`) → **0**.
 
 ## L. Retire the old project (PO, only after section K is green)
 
-39. **Claude** updates `CLAUDE.md`, `STATUS.md`, this page and [db-deploy.md](db-deploy.md) with the new ref and organization name, and removes the `staging` choices from the workflows **DB deploy**, **Provision organization** and **Jobs** (follow-up of T-M2-36).
+39. **Claude** updates `CLAUDE.md`, `STATUS.md`, this page and [db-deploy.md](db-deploy.md) with the new ref and organization name, and removes the `staging` choices from the workflows **DB deploy**, **Provision organization**, **Platform admin** and **Jobs** (follow-up of T-M2-36).
 40. **PO**: copy anything still needed from the old project (the *Password changed* subject, step 20), then **Supabase → old project `jadarat-tms-staging` → Project Settings → General → Delete project**; delete the old Free organization `entlaqa-TMS` if empty; **GitHub → Environments → `staging` and `staging-jobs` → Delete** (removes their secrets); revoke the old project's worker secret key and the old Resend SMTP key if it was separate.

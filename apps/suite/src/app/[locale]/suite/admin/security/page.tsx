@@ -2,7 +2,7 @@ import { toClientError } from '@jadarat/platform-core';
 import { type AppLocale, getMessages } from '@jadarat/platform-i18n';
 import { routing } from '@jadarat/platform-i18n/routing';
 import { SYSTEM_ROLES } from '@jadarat/platform-rbac';
-import { Alert } from '@jadarat/ui';
+import { Alert, PageHeader } from '@jadarat/ui';
 import { hasLocale } from 'next-intl';
 import { getTranslations } from 'next-intl/server';
 import { notFound, redirect } from 'next/navigation';
@@ -67,8 +67,7 @@ export default async function SecurityPage({ params }: { params: Promise<{ local
 
   return (
     <SuiteShell locale={locale} context={context} current="security" path={PATH}>
-      <p className="m-0 text-sm text-text-muted">{t('section')}</p>
-      <h1 className="mb-4 mt-0 text-2xl font-bold">{t('title')}</h1>
+      <PageHeader eyebrow={t('section')} title={t('title')} />
       {content}
     </SuiteShell>
   );

@@ -10,6 +10,10 @@ import {
 } from '@jadarat/platform-core';
 import type { TokenLookup, UserTx } from '@jadarat/platform-db';
 import {
+  INVITATION_SECRET_PATTERN,
+  normalizeInvitationCode,
+} from '@jadarat/platform-db/invitation-code';
+import {
   type AuthFlowDeps,
   AuthServiceError,
   type SessionTokens,
@@ -58,8 +62,47 @@ export const InvitationErrors = defineErrorCodes({
 /** The code track A's helpers throw when the invitation is no longer valid (contract §2). */
 export const INVITATION_NOT_VALID_CODE = 'INVITATION_NOT_VALID';
 
-/** A token as e-mailed: 32 random bytes, base64url without padding (contract §1 step 2). */
-export const INVITATION_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
+/**
+ * What a link (or the sign-up page's code field) carries once normalized: an invitation CODE — 12 symbols
+ * of ABCDEFGHJKLMNPQRSTUVWXYZ23456789, upper case, without the `XXXX-XXXX-XXXX` grouping (Kawadir;
+ * migration 20261018090000; security review H1) — or a 43-character base64url token e-mailed before codes.
+ * One definition: @jadarat/platform-db invitation-code.ts.
+ */
+export const INVITATION_TOKEN_PATTERN = INVITATION_SECRET_PATTERN;
+
+/**
+ * A code as the database compares it: grouping (hyphens, spaces) removed and upper-cased (people type
+ * codes in any case); a legacy token trimmed but otherwise unchanged (it is case-sensitive). Null when it
+ * is neither.
+ */
+export function normalizeInvitationSecret(raw: string): string | null {
+  return normalizeInvitationCode(raw);
+}
+
+/**
+ * Guessing codes (12 characters, 60 random bits): every code that reaches the database first counts as a
+ * miss for the client (IPv6 by its /48) and for all clients together (auth-limits.ts `allowCodeAttempt`,
+ * fail closed) and is given back when it is a real invitation's — whatever its state — so a client trying
+ * codes is stopped after a few misses, and a distributed guesser by the all-clients budget, whichever
+ * invitation action it uses (lookup, new account, sign in to accept, accept as signed in).
+ */
+export interface InvitationCodeGuard {
+  /**
+   * False: this client — or all clients together — used up the misses (RATE_LIMITED). Throws when the
+   * limiter cannot answer.
+   */
+  readonly attempt: () => Promise<boolean>;
+  /** The code was a real invitation's: the provisional miss is given back. */
+  readonly found: () => Promise<void>;
+}
+
+/** The client tried too many unknown codes: answered RATE_LIMITED. */
+export class InvitationCodesLimitedError extends Error {
+  override readonly name = 'InvitationCodesLimitedError';
+  constructor() {
+    super('too many unknown invitation codes from this client');
+  }
+}
 
 export interface InvitationAcceptOutcome {
   /**
@@ -94,6 +137,8 @@ export interface InvitationAcceptDeps {
   readonly signUpClient: InvitationSignUpClientLike | null;
   readonly hashToken: (token: string) => Buffer;
   readonly invitationByToken: (tokenHash: Buffer) => Promise<TokenLookup>;
+  /** Unknown codes per client (fail closed): see InvitationCodeGuard. */
+  readonly codeGuard: InvitationCodeGuard;
   /** The organization's minimum password length for a new account (T-M2-10; at least 12). */
   readonly invitationPasswordMinLength: (tokenHash: Buffer) => Promise<number>;
   readonly acceptInvitationAsCaller: (
@@ -144,22 +189,39 @@ function notValid(): Result<never, AppError> {
 }
 
 type ValidLookup = Extract<TokenLookup, { state: 'valid' }>;
-type LookupDeps = Pick<InvitationAcceptDeps, 'hashToken' | 'invitationByToken'>;
+type LookupDeps = Pick<InvitationAcceptDeps, 'hashToken' | 'invitationByToken' | 'codeGuard'>;
 
+/**
+ * Normalizes the code, refuses a malformed one without asking the database, counts the attempt
+ * (InvitationCodeGuard: throws InvitationCodesLimitedError when the client used up its misses) and looks
+ * it up by its SHA-256. `token` in the answer is the normalized code (what Auth's hook compares).
+ */
 async function lookupWithHash(
   deps: LookupDeps,
-  token: string,
-): Promise<{ readonly lookup: TokenLookup; readonly tokenHash: Buffer | null }> {
-  if (!INVITATION_TOKEN_PATTERN.test(token)) {
-    return { lookup: { state: 'invalid' }, tokenHash: null };
-  }
+  raw: string,
+): Promise<{
+  readonly lookup: TokenLookup;
+  readonly tokenHash: Buffer | null;
+  readonly token: string | null;
+}> {
+  const token = normalizeInvitationSecret(raw);
+  if (token === null) return { lookup: { state: 'invalid' }, tokenHash: null, token: null };
+  if (!(await deps.codeGuard.attempt())) throw new InvitationCodesLimitedError();
   const tokenHash = deps.hashToken(token);
-  return { lookup: await deps.invitationByToken(tokenHash), tokenHash };
+  const lookup = await deps.invitationByToken(tokenHash);
+  if (lookup.state !== 'invalid') await deps.codeGuard.found();
+  return { lookup, tokenHash, token };
 }
 
-/** The link state for the accept page. A malformed token never reaches the database. */
+/** The link state for the sign-up page. A malformed code never reaches the database. */
 export async function lookupInvitation(deps: LookupDeps, token: string): Promise<TokenLookup> {
   return (await lookupWithHash(deps, token)).lookup;
+}
+
+/** RATE_LIMITED for a client that tried too many unknown codes; anything else is rethrown. */
+export function codesLimited(error: unknown): Result<never, AppError> {
+  if (error instanceof InvitationCodesLimitedError) return err(appError('RATE_LIMITED'));
+  throw error;
 }
 
 /** Who is looking at a valid link: nobody signed in, the invited account, or another account. */
@@ -207,13 +269,19 @@ export async function lookupInvitationLink(
   };
 }
 
-/** The invitation and its token hash when (and only when) the link is valid. */
+/** The invitation, its normalized code and token hash when (and only when) the link is valid. */
 async function validInvitation(
   deps: LookupDeps,
-  token: string,
-): Promise<{ readonly invitation: ValidLookup; readonly tokenHash: Buffer } | null> {
-  const { lookup, tokenHash } = await lookupWithHash(deps, token);
-  return lookup.state === 'valid' && tokenHash ? { invitation: lookup, tokenHash } : null;
+  raw: string,
+): Promise<{
+  readonly invitation: ValidLookup;
+  readonly tokenHash: Buffer;
+  readonly token: string;
+} | null> {
+  const { lookup, tokenHash, token } = await lookupWithHash(deps, raw);
+  return lookup.state === 'valid' && tokenHash && token
+    ? { invitation: lookup, tokenHash, token }
+    : null;
 }
 
 /** The e-mail claim of a verified session, if any (Supabase access tokens carry it). */
@@ -302,9 +370,14 @@ export async function acceptInvitationWithNewAccount(
   // hook applies the same rules itself; acceptance checks them a third time. A change between the
   // sign-up and the acceptance leaves an orphan Auth user, logged below for the operations runbook
   // (invitations contract § Operations).
-  const valid = await validInvitation(deps, input.token);
+  let valid: Awaited<ReturnType<typeof validInvitation>>;
+  try {
+    valid = await validInvitation(deps, input.token);
+  } catch (error) {
+    return codesLimited(error);
+  }
   if (!valid) return notValid();
-  const { invitation, tokenHash } = valid;
+  const { invitation, tokenHash, token } = valid;
   const client = deps.signUpClient;
   if (!client || !deps.auth.supabase) return err(appError('NOT_CONFIGURED'));
   if (!(await deps.allowSignUp(tokenHash))) return err(appError('RATE_LIMITED'));
@@ -320,12 +393,12 @@ export async function acceptInvitationWithNewAccount(
     );
   }
 
-  // The e-mail comes from the invitation, never from the form; the token travels raw (the hook hashes
-  // it), so nothing Auth stores can be replayed against the database.
+  // The e-mail comes from the invitation, never from the form; the code travels raw and normalized (the
+  // hook hashes it and compares exactly), so nothing Auth stores can be replayed against the database.
   const { data, error } = await client.auth.signUp({
     email: invitation.email,
     password: input.password,
-    options: { data: { invitation: input.token } },
+    options: { data: { invitation: token } },
   });
   if (error) return signUpRefusal(deps, error);
   const tokens = sessionTokens(data);
@@ -407,7 +480,12 @@ export async function acceptInvitationWithPassword(
   deps: InvitationAcceptDeps,
   input: { readonly token: string; readonly password: string },
 ): Promise<Result<InvitationAcceptOutcome, AppError>> {
-  const valid = await validInvitation(deps, input.token);
+  let valid: Awaited<ReturnType<typeof validInvitation>>;
+  try {
+    valid = await validInvitation(deps, input.token);
+  } catch (error) {
+    return codesLimited(error);
+  }
   if (!valid) return notValid();
   // The e-mail comes from the invitation, never from the form.
   const session = await startPasswordSession(deps.auth, {
@@ -461,7 +539,12 @@ export async function acceptInvitationAsSignedInUser(
   // Strict: the Auth server confirms the session is live before it gains a membership.
   const claims = await verifyClaimsStrict(deps.auth.supabase);
   if (!claims.ok) return claims;
-  const valid = await validInvitation(deps, input.token);
+  let valid: Awaited<ReturnType<typeof validInvitation>>;
+  try {
+    valid = await validInvitation(deps, input.token);
+  } catch (error) {
+    return codesLimited(error);
+  }
   if (!valid) return notValid();
   // Early, clearer answer; the database checks the Auth e-mail itself (accept_invitation_as_caller).
   if (sessionEmail(claims.value) !== valid.invitation.email.toLowerCase()) {

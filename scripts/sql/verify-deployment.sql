@@ -24,13 +24,13 @@ begin
     select rolname, rolcanlogin, rolinherit, rolsuper, rolbypassrls, rolcreaterole, rolcreatedb, rolreplication
     from pg_roles where rolname in ('app_server', 'app_worker', 'app_queue', 'tenant_guard', 'invitation_guard',
                                     'account_mail_guard', 'membership_guard', 'rate_limit_guard', 'file_guard',
-                                    'user_import_guard')
+                                    'user_import_guard', 'platform_admin_guard')
   loop
     if r.rolname in ('app_server', 'app_worker', 'app_queue') and not r.rolcanlogin then
       failures := failures || format('%s must be LOGIN', r.rolname);
     end if;
     if r.rolname in ('tenant_guard', 'invitation_guard', 'account_mail_guard', 'membership_guard', 'rate_limit_guard',
-                     'file_guard', 'user_import_guard')
+                     'file_guard', 'user_import_guard', 'platform_admin_guard')
        and r.rolcanlogin then
       failures := failures || format('%s must be NOLOGIN', r.rolname);
     end if;
@@ -41,8 +41,8 @@ begin
   if (select count(*) from pg_roles
       where rolname in ('app_server', 'app_worker', 'app_queue', 'tenant_guard', 'invitation_guard',
                         'account_mail_guard', 'membership_guard', 'rate_limit_guard', 'file_guard',
-                        'user_import_guard')) <> 10 then
-    failures := failures || 'roles app_server, app_worker, app_queue, tenant_guard, invitation_guard, account_mail_guard, membership_guard, rate_limit_guard, file_guard and user_import_guard must all exist'::text;
+                        'user_import_guard', 'platform_admin_guard')) <> 11 then
+    failures := failures || 'roles app_server, app_worker, app_queue, tenant_guard, invitation_guard, account_mail_guard, membership_guard, rate_limit_guard, file_guard, user_import_guard and platform_admin_guard must all exist'::text;
   end if;
   -- The job runner (ADR 0005 §2): member of nothing (never authenticated), owner of graphile_worker.
   if exists (select 1 from pg_auth_members m join pg_roles u on u.oid = m.member where u.rolname = 'app_queue') then
@@ -240,8 +240,9 @@ begin
         a.privilege_type
       from pg_class c, aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a
       where c.oid = 'private.auth_user_email'::regclass and a.grantee <> c.relowner
-        -- Readers: invitation_guard (FR-IAM-03) and rate_limit_guard (Organization Admin unlock, T-M2-11).
-        and not (a.grantee <> 0 and pg_get_userbyid(a.grantee) in ('invitation_guard', 'rate_limit_guard')
+        -- Readers: invitation_guard (FR-IAM-03), rate_limit_guard (Organization Admin unlock, T-M2-11) and
+        -- platform_admin_guard (a Super Admin never invites their own e-mail, FR-ADM-17 review L7).
+        and not (a.grantee <> 0 and pg_get_userbyid(a.grantee) in ('invitation_guard', 'rate_limit_guard', 'platform_admin_guard')
                  and a.privilege_type = 'SELECT')
       union
       select distinct
@@ -254,15 +255,26 @@ begin
     end loop;
   end if;
 
+  -- Invitation codes (20261018090000, FR-IAM-03): the request path neither reads nor writes a code and
+  -- writes no token hash (the code functions apply the rules of managing each invitation).
+  if exists (select 1 from pg_attribute where attrelid = 'platform.invitations'::regclass and attname = 'invite_code'
+                                          and not attisdropped)
+     and (has_column_privilege('authenticated', 'platform.invitations', 'invite_code', 'select')
+          or has_column_privilege('authenticated', 'platform.invitations', 'invite_code', 'update')
+          or has_column_privilege('authenticated', 'platform.invitations', 'token_hash', 'select')
+          or has_column_privilege('authenticated', 'platform.invitations', 'token_hash', 'update')) then
+    failures := failures || 'authenticated must neither read nor write platform.invitations invite_code / token_hash'::text;
+  end if;
+
   -- The SECURITY DEFINER helpers: owned by tenant_guard or invitation_guard, search_path = '', and
   -- executable only by the roles that need them (exact ACL, not a deny-list). The list is complete: any
   -- other SECURITY DEFINER function in `private` fails the check.
   for r in
     select h.fn, h.owner, h.allowed, h.definer, p.oid as poid, p.proowner, p.prosecdef, p.proconfig, p.proacl
     from (values
-      ('private.user_session_is_valid(uuid, uuid)', 'tenant_guard', array['tenant_guard', 'invitation_guard'], true),
+      ('private.user_session_is_valid(uuid, uuid)', 'tenant_guard', array['tenant_guard', 'invitation_guard', 'platform_admin_guard'], true),
       ('private.has_active_membership(uuid, uuid)', 'tenant_guard', array['tenant_guard', 'rate_limit_guard'], true),
-      ('private.current_tenant_id()',               'tenant_guard', array['tenant_guard', 'authenticated', 'account_mail_guard', 'membership_guard', 'rate_limit_guard', 'file_guard'], true),
+      ('private.current_tenant_id()',               'tenant_guard', array['tenant_guard', 'authenticated', 'account_mail_guard', 'membership_guard', 'rate_limit_guard', 'file_guard', 'invitation_guard', 'platform_admin_guard'], true),
       ('private.switch_active_tenant(uuid)',        'tenant_guard', array['tenant_guard', 'authenticated'], true),
       ('private.session_tenants()',                 'tenant_guard', array['tenant_guard', 'authenticated'], true),
       ('private.discard_inactive_tenant_delivery(uuid)', 'tenant_guard', array['tenant_guard', 'authenticated'], true),
@@ -273,11 +285,45 @@ begin
       -- The acceptance effects: SECURITY INVOKER, called only by accept_invitation_as_caller.
       ('private.apply_invitation_acceptance(bytea, uuid, text, text)', 'invitation_guard',
        array['invitation_guard'], false),
+      -- Invitation codes (20261018090000, FR-IAM-03): issue and read for members who may manage the
+      -- invitation (app_server user claims, checked inside); the mailer's read (app_worker system claims).
+      ('private.issue_invitation_code(uuid)', 'invitation_guard', array['invitation_guard', 'authenticated'], true),
+      ('private.invitation_codes(uuid[])', 'invitation_guard', array['invitation_guard', 'authenticated'], true),
+      ('private.invitation_code_for_mail(uuid)', 'invitation_guard', array['invitation_guard', 'authenticated'], true),
+      -- A code no invitation of any organization holds or held (the release trigger runs as the worker's
+      -- authenticated; the issuer and the console as their guards). Reveals nothing (security review L9).
+      ('private.unused_invitation_code()', 'invitation_guard',
+       array['invitation_guard', 'authenticated', 'platform_admin_guard'], true),
+      -- Their caller check: SECURITY INVOKER, called by them only.
+      ('private.invitation_code_caller()', 'invitation_guard', array['invitation_guard'], false),
       -- A link's state (the one definition of "valid"): SECURITY INVOKER, called by the definer functions.
       ('private.invitation_link(bytea)', 'invitation_guard', array['invitation_guard'], false),
       -- Does the inviter still hold the authority (review M1): SECURITY INVOKER, same callers.
       ('private.invitation_inviter_may_grant(uuid, uuid, text[])', 'invitation_guard',
        array['invitation_guard'], false),
+      -- Platform Super Admin console (20261018100000, FR-ADM-17): the inviter rule of a link and of acceptance
+      -- (console invitations: their issuer must still be a Super Admin) and the shared code-writing step.
+      ('private.invitation_issuer_may_grant(uuid, uuid, uuid, text[])', 'invitation_guard', array['invitation_guard'], false),
+      ('private.write_invitation_code(uuid)', 'invitation_guard', array['invitation_guard', 'platform_admin_guard'], false),
+      -- The console (app_server user claims of a Super Admin, checked inside), the workflow's grant and revoke
+      -- (the migration role only), what invitation_guard asks about console invitations, and the helpers.
+      ('private.is_platform_admin()', 'platform_admin_guard', array['platform_admin_guard', 'authenticated'], true),
+      ('private.platform_list_tenants()', 'platform_admin_guard', array['platform_admin_guard', 'authenticated'], true),
+      ('private.platform_create_tenant(text, text, text, text, text, text, text, text, text)', 'platform_admin_guard',
+       array['platform_admin_guard', 'authenticated'], true),
+      ('private.platform_admin_invitation_code(uuid)', 'platform_admin_guard', array['platform_admin_guard', 'authenticated'], true),
+      ('private.platform_reissue_admin_code(uuid)', 'platform_admin_guard', array['platform_admin_guard', 'authenticated'], true),
+      ('private.grant_platform_admin(uuid, text, text)', 'platform_admin_guard', array['platform_admin_guard', current_user::text], true),
+      ('private.revoke_platform_admin(uuid, text, text)', 'platform_admin_guard', array['platform_admin_guard', current_user::text], true),
+      ('private.list_platform_admins()', 'platform_admin_guard', array['platform_admin_guard', current_user::text], true),
+      -- The workflow's allow-list and audit data (review L3, L5): SECURITY INVOKER, called by the above.
+      ('private.platform_admin_operator()', 'platform_admin_guard', array['platform_admin_guard'], false),
+      ('private.platform_admin_workflow_data(text, text)', 'platform_admin_guard', array['platform_admin_guard'], false),
+      ('private.platform_admin_is_active(uuid)', 'platform_admin_guard', array['platform_admin_guard', 'invitation_guard'], true),
+      ('private.is_platform_invitation(uuid)', 'platform_admin_guard', array['platform_admin_guard', 'invitation_guard'], true),
+      ('private.platform_admin_caller()', 'platform_admin_guard', array['platform_admin_guard'], false),
+      ('private.platform_pending_admin_invitation(uuid)', 'platform_admin_guard', array['platform_admin_guard'], false),
+      ('private.platform_reserved_slug(text)', 'platform_admin_guard', array['platform_admin_guard'], false),
       -- Account e-mails (T-M2-17): the web app queues requests (app_server, checked inside), the worker
       -- answers them (app_worker system claims, checked inside).
       ('private.request_password_reset_mail(text)', 'account_mail_guard', array['account_mail_guard', 'authenticated'], true),
@@ -442,6 +488,15 @@ begin
         'private.current_tenant_id()', 'private.switch_active_tenant(uuid)', 'private.session_tenants()',
         'private.discard_inactive_tenant_delivery(uuid)', 'private.invitation_by_token(bytea)',
         'private.accept_invitation_as_caller(bytea,text,text)', 'private.invitation_allows_signup(text,text)',
+        'private.issue_invitation_code(uuid)', 'private.invitation_codes(uuid[])',
+        'private.invitation_code_for_mail(uuid)', 'private.unused_invitation_code()',
+        -- Platform Super Admin console (FR-ADM-17)
+        'private.is_platform_admin()', 'private.platform_list_tenants()',
+        'private.platform_create_tenant(text,text,text,text,text,text,text,text,text)',
+        'private.platform_admin_invitation_code(uuid)', 'private.platform_reissue_admin_code(uuid)',
+        'private.grant_platform_admin(uuid,text,text)', 'private.revoke_platform_admin(uuid,text,text)',
+        'private.list_platform_admins()',
+        'private.platform_admin_is_active(uuid)', 'private.is_platform_invitation(uuid)',
         'private.request_password_reset_mail(text)', 'private.request_password_changed_mail(uuid)',
         'private.claim_account_mail_request()', 'private.finish_account_mail_request(uuid)',
         'private.retry_account_mail_request(uuid)', 'private.end_member_sessions()',
@@ -508,6 +563,48 @@ begin
     loop
       failures := failures || format('%s must not be a member of invitation_guard', r.rolname);
     end loop;
+  end if;
+
+  -- platform_admin_guard (FR-ADM-17): the same rules; it owns no relation, and the Super Admin tables
+  -- (private.platform_admins, platform_invitations, platform_audit_events) are reachable by it alone.
+  if exists (select 1 from pg_roles where rolname = 'platform_admin_guard') then
+    for r in select nspname from pg_namespace where nspname = any (module_schemas) loop
+      if has_schema_privilege('platform_admin_guard', r.nspname, 'create') then
+        failures := failures || format('platform_admin_guard must not have CREATE on schema %s', r.nspname);
+      end if;
+    end loop;
+    if exists (select 1 from pg_class c where c.relowner = (select oid from pg_roles where rolname = 'platform_admin_guard')) then
+      failures := failures || 'platform_admin_guard must own no relations'::text;
+    end if;
+    for r in
+      select distinct u.rolname from pg_auth_members m
+      join pg_roles g on g.oid = m.roleid join pg_roles u on u.oid = m.member
+      where g.rolname = 'platform_admin_guard' and (m.inherit_option or m.set_option)
+        and not u.rolsuper and u.rolname <> current_user
+    loop
+      failures := failures || format('%s must not be a member of platform_admin_guard', r.rolname);
+    end loop;
+    for r in
+      select distinct c.oid::regclass::text as t,
+             case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end as grantee
+      from pg_class c, aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a
+      where c.oid in (to_regclass('private.platform_admins'), to_regclass('private.platform_invitations'),
+                      to_regclass('private.platform_audit_events'))
+        and a.grantee <> c.relowner
+        and not (a.grantee <> 0 and pg_get_userbyid(a.grantee) = 'platform_admin_guard')
+      union
+      select distinct att.attrelid::regclass::text,
+             case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end
+      from pg_attribute att, aclexplode(att.attacl) a
+      where att.attrelid in (to_regclass('private.platform_admins'), to_regclass('private.platform_invitations'),
+                             to_regclass('private.platform_audit_events'))
+        and att.attacl is not null and not (a.grantee <> 0 and pg_get_userbyid(a.grantee) = 'platform_admin_guard')
+    loop
+      failures := failures || format('%s must have no privilege on %s (FR-ADM-17)', r.grantee, r.t);
+    end loop;
+    if to_regclass('private.platform_admins') is null or to_regclass('private.platform_audit_events') is null then
+      failures := failures || 'private.platform_admins and private.platform_audit_events must exist (FR-ADM-17)'::text;
+    end if;
   end if;
 
   -- account_mail_guard (T-M2-17): creates nothing, nobody acts as it; it reads Auth accounts only through

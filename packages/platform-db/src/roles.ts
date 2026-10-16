@@ -57,3 +57,21 @@ export async function loadMemberAuthorizationFacts(tx: UserTx): Promise<MemberAu
     headedDepartmentIds: departments.map((d) => d.id),
   };
 }
+
+/**
+ * The signed-in member's primary role in the current organization (the account menu's "Organization ·
+ * Role", T-M2-43), or null. Display only — authorization uses the grants. Same membership rule and RLS
+ * as `loadMemberAuthorizationFacts`.
+ */
+export async function getMyPrimaryRole(tx: UserTx): Promise<string | null> {
+  const [row] = await tx.execute<{ role_code: string }>(sql`
+    select ra.role_code
+    from platform.role_assignments ra
+    join platform.tenant_memberships m on m.tenant_id = ra.tenant_id and m.id = ra.membership_id
+    where m.user_id = (select private.request_user_id())
+      and m.tenant_id = (select private.current_tenant_id())
+      and m.status = 'active'
+    order by ra.is_primary desc, ra.role_code
+    limit 1`);
+  return row?.role_code ?? null;
+}

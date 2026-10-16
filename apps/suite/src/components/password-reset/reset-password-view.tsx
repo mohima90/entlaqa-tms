@@ -1,5 +1,5 @@
 'use client';
-import { Alert, Button, Card, TextField, buttonClasses } from '@jadarat/ui';
+import { Alert } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
 import { type SyntheticEvent, useEffect, useRef, useState, useTransition } from 'react';
 import { completePasswordResetAction } from '../../auth/password-reset';
@@ -13,6 +13,19 @@ import {
 } from '../../lib/password-reset-link';
 import { PASSWORD_MIN_LENGTH, passwordRuleState, withMin } from '../../lib/password-rules';
 import { looksLikeTotpCode } from '../../lib/totp-code-shape';
+import {
+  AuthField,
+  RevealButton,
+  authPrimaryButton,
+  authSecondaryButton,
+} from '../auth/auth-field';
+import { AuthIcon } from '../auth/auth-icons';
+import {
+  AuthLanguageSwitch,
+  type AuthPanelTexts,
+  AuthShell,
+  type AuthShellTexts,
+} from '../auth/auth-shell';
 import { type ErrorTexts, errorText } from '../auth/error-text';
 import { type PasswordRuleLabels, PasswordRulesList } from '../auth/password-rules-list';
 import { fieldErrorCodes } from '../profile/field-errors';
@@ -36,6 +49,7 @@ export interface ResetPasswordTexts extends PasswordRuleLabels {
   readonly password: string;
   readonly confirmPassword: string;
   readonly showPassword: string;
+  readonly hidePassword: string;
   /** «تذكّر هذا المتصفح» / "Remember this browser" (unticked by default) and what it does here. */
   readonly rememberBrowser: string;
   readonly rememberBrowserHint: string;
@@ -65,7 +79,9 @@ export interface ResetPasswordTexts extends PasswordRuleLabels {
 
 export interface ResetPasswordViewProps {
   readonly locale: 'ar' | 'en';
-  readonly productName: string;
+  /** The Kawadir frame (logo, portal line, brand panel). */
+  readonly shell: AuthShellTexts;
+  readonly panel: AuthPanelTexts;
   /** The language switch: its target (locale-prefixed path without the fragment) and texts. */
   readonly toggle: {
     readonly href: string;
@@ -170,118 +186,123 @@ function ResetForm({
     });
   }
 
+  const reveal_ = (id: string) => (
+    <RevealButton
+      shown={reveal}
+      onToggle={() => {
+        setReveal((v) => !v);
+      }}
+      showLabel={texts.showPassword}
+      hideLabel={texts.hidePassword}
+      controls={id}
+      disabled={pending}
+    />
+  );
+
   return (
     <>
-      <p className="m-0 text-text-muted">{texts.intro}</p>
-      <Card>
-        <form className="flex flex-col gap-5" onSubmit={onSubmit} noValidate>
-          <div className="flex flex-col gap-2">
-            <TextField
-              id="reset-password"
-              name="password"
-              type={reveal ? 'text' : 'password'}
-              label={texts.password}
-              marker={texts.required}
-              autoComplete="new-password"
-              required
-              minLength={12}
-              dir="ltr"
-              value={password}
-              onChange={(event) => {
-                setPassword(event.target.value);
-              }}
-              aria-describedby="reset-password-rules"
-              error={fieldErrors.password}
-              disabled={pending}
-            />
-            <PasswordRulesList id="reset-password-rules" rules={rules} labels={texts} />
-            <p className="m-0 text-sm text-text-muted">{texts.passwordTip}</p>
-          </div>
-          <TextField
-            id="reset-password-confirm"
-            name="confirmPassword"
+      <form className="flex flex-col gap-6" onSubmit={onSubmit} noValidate>
+        <div className="flex flex-col gap-2">
+          <AuthField
+            id="reset-password"
+            name="password"
             type={reveal ? 'text' : 'password'}
-            label={texts.confirmPassword}
+            icon="lock"
+            label={texts.password}
             marker={texts.required}
             autoComplete="new-password"
             required
+            minLength={12}
             dir="ltr"
-            value={confirmation}
+            value={password}
             onChange={(event) => {
-              setConfirmation(event.target.value);
+              setPassword(event.target.value);
             }}
-            error={fieldErrors.confirmPassword}
+            aria-describedby="reset-password-rules"
+            error={fieldErrors.password}
             disabled={pending}
+            inputEnd={reveal_('reset-password')}
           />
-          {needsCode || codeOptional ? (
-            <div className="flex flex-col gap-2" data-testid="reset-code-step">
-              <p className="m-0 text-sm text-text-muted">
-                {needsCode ? texts.codeIntro : texts.codeOptionalIntro}
-              </p>
-              <TextField
-                id="reset-code"
-                name="code"
-                label={texts.codeLabel}
-                hint={texts.codeHint}
-                marker={needsCode ? texts.required : texts.optional}
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                maxLength={12}
-                required={needsCode}
-                dir="ltr"
-                value={code}
-                onChange={(event) => {
-                  setCode(event.target.value);
-                }}
-                error={fieldErrors.code}
-                disabled={pending}
-                data-testid="reset-code"
-              />
-            </div>
-          ) : null}
+          <PasswordRulesList id="reset-password-rules" rules={rules} labels={texts} />
+          <p className="m-0 text-sm text-text-muted">{texts.passwordTip}</p>
+        </div>
+        <AuthField
+          id="reset-password-confirm"
+          name="confirmPassword"
+          type={reveal ? 'text' : 'password'}
+          icon="lock"
+          label={texts.confirmPassword}
+          marker={texts.required}
+          autoComplete="new-password"
+          required
+          dir="ltr"
+          value={confirmation}
+          onChange={(event) => {
+            setConfirmation(event.target.value);
+          }}
+          error={fieldErrors.confirmPassword}
+          disabled={pending}
+          inputEnd={reveal_('reset-password-confirm')}
+        />
+        {needsCode || codeOptional ? (
+          <div className="flex flex-col gap-2" data-testid="reset-code-step">
+            <p className="m-0 text-sm text-text-muted">
+              {needsCode ? texts.codeIntro : texts.codeOptionalIntro}
+            </p>
+            <AuthField
+              id="reset-code"
+              name="code"
+              icon="key"
+              label={texts.codeLabel}
+              hint={texts.codeHint}
+              marker={needsCode ? texts.required : texts.optional}
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={12}
+              required={needsCode}
+              dir="ltr"
+              value={code}
+              onChange={(event) => {
+                setCode(event.target.value);
+              }}
+              error={fieldErrors.code}
+              disabled={pending}
+              data-testid="reset-code"
+            />
+          </div>
+        ) : null}
+        <div className="flex flex-col gap-1">
           <label className="flex min-h-11 items-center gap-3">
             <input
               type="checkbox"
-              checked={reveal}
+              name="remember"
+              checked={remember}
               onChange={(event) => {
-                setReveal(event.target.checked);
+                setRemember(event.target.checked);
               }}
+              aria-describedby="reset-remember-browser-hint"
+              disabled={pending}
               className="size-5 shrink-0"
+              data-testid="reset-remember-browser"
             />
-            {texts.showPassword}
+            {texts.rememberBrowser}
           </label>
-          <div className="flex flex-col gap-1">
-            <label className="flex min-h-11 items-center gap-3">
-              <input
-                type="checkbox"
-                name="remember"
-                checked={remember}
-                onChange={(event) => {
-                  setRemember(event.target.checked);
-                }}
-                aria-describedby="reset-remember-browser-hint"
-                disabled={pending}
-                className="size-5 shrink-0"
-                data-testid="reset-remember-browser"
-              />
-              {texts.rememberBrowser}
-            </label>
-            <p id="reset-remember-browser-hint" className="m-0 ms-8 text-sm text-text-muted">
-              {texts.rememberBrowserHint}
-            </p>
-          </div>
-          <Alert tone="info">{texts.sessionsNotice}</Alert>
-          {message ? (
-            <Alert tone="danger" data-testid="reset-error">
-              {message}
-            </Alert>
-          ) : null}
-          <Button type="submit" disabled={pending} className="w-full">
-            {pending ? texts.submitting : texts.submit}
-          </Button>
-        </form>
-      </Card>
-      <p className="m-0 text-center text-sm text-text-muted">
+          <p id="reset-remember-browser-hint" className="m-0 ms-8 text-sm text-text-muted">
+            {texts.rememberBrowserHint}
+          </p>
+        </div>
+        <Alert tone="info">{texts.sessionsNotice}</Alert>
+        {message ? (
+          <Alert tone="danger" data-testid="reset-error">
+            {message}
+          </Alert>
+        ) : null}
+        <button type="submit" disabled={pending} className={authPrimaryButton}>
+          <AuthIcon name="lock" className="size-5" />
+          {pending ? texts.submitting : texts.submit}
+        </button>
+      </form>
+      <p className="mb-0 mt-6 text-center text-sm text-text-muted">
         {validity.before}
         <a href={`/${locale}/forgot-password`} className="underline">
           {validity.inner}
@@ -299,7 +320,8 @@ function ResetForm({
  */
 export function ResetPasswordView({
   locale,
-  productName,
+  shell,
+  panel,
   toggle,
   texts,
   errors,
@@ -324,16 +346,16 @@ export function ResetPasswordView({
   }, []);
 
   let title = texts.pageTitle;
+  let subtitle: string | null = null;
   let body;
   if (view.kind === 'opening') {
     body = (
-      <Card>
-        <p className="m-0 text-text-muted" role="status" data-testid="reset-opening">
-          {texts.opening}
-        </p>
-      </Card>
+      <p className="m-0 text-text-muted" role="status" data-testid="reset-opening">
+        {texts.opening}
+      </p>
     );
   } else if (view.kind === 'form') {
+    subtitle = texts.intro;
     body = (
       <ResetForm
         locale={locale}
@@ -350,67 +372,54 @@ export function ResetPasswordView({
   } else {
     title = texts.invalidTitle;
     body = (
-      <Card data-testid="reset-link-invalid">
-        <div className="flex flex-col items-start gap-3">
-          <span
-            className="inline-flex size-12 items-center justify-center rounded-full bg-warning-subtle"
-            aria-hidden="true"
-          >
-            <svg
-              width="24"
-              height="24"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
-            >
-              <circle cx="12" cy="12" r="9" />
-              <path d="M12 7v5l3 2" />
-            </svg>
-          </span>
-          {view.reason ? (
-            <Alert tone="danger" data-testid="reset-error">
-              {view.reason}
-            </Alert>
-          ) : (
-            <p className="m-0">{texts.invalidText}</p>
-          )}
-          <div className="mt-2 flex flex-wrap gap-2">
-            <a
-              href={`/${locale}/forgot-password`}
-              className={buttonClasses({ variant: 'primary' })}
-            >
-              {texts.requestNew}
-            </a>
-            <a href={`/${locale}/sign-in`} className={buttonClasses({ variant: 'secondary' })}>
-              {texts.signIn}
-            </a>
-          </div>
+      <section
+        className="flex flex-col items-center gap-4 text-center"
+        data-testid="reset-link-invalid"
+      >
+        <span
+          className="inline-flex size-16 items-center justify-center rounded-2xl bg-danger-subtle text-danger"
+          aria-hidden="true"
+        >
+          <AuthIcon name="lock" className="size-8" />
+        </span>
+        {view.reason ? (
+          <Alert tone="danger" data-testid="reset-error" className="w-full text-start">
+            {view.reason}
+          </Alert>
+        ) : (
+          <p className="m-0 text-text-muted">{texts.invalidText}</p>
+        )}
+        <div className="mt-2 flex w-full flex-col gap-3">
+          <a href={`/${locale}/forgot-password`} className={authPrimaryButton}>
+            {texts.requestNew}
+            <AuthIcon name="arrow" />
+          </a>
+          <a href={`/${locale}/sign-in`} className={authSecondaryButton}>
+            {texts.signIn}
+          </a>
         </div>
-      </Card>
+      </section>
     );
   }
 
   return (
-    <div className="flex min-h-dvh flex-col">
-      <header className="flex items-center justify-between gap-4 border-b border-border bg-surface px-4 py-3">
-        <span className="text-lg font-semibold">{productName}</span>
-        {/* The language switch keeps the link working: the token goes along in the fragment only. */}
-        <a
+    <AuthShell
+      variant="simple"
+      texts={shell}
+      panel={panel}
+      // The language switch keeps the link working: the token goes along in the fragment only.
+      languageSwitch={
+        <AuthLanguageSwitch
           href={`${toggle.href}${view.kind === 'form' ? resetFragment(view.token, view.needsCode) : ''}`}
-          hrefLang={toggle.lang}
           lang={toggle.lang}
-          aria-label={toggle.ariaLabel}
-          className={buttonClasses({ variant: 'secondary', size: 'sm' })}
-          data-testid="language-toggle"
-        >
-          {toggle.label}
-        </a>
-      </header>
-      <main id="main" className="mx-auto flex w-full max-w-lg flex-1 flex-col gap-6 px-4 py-10">
-        <h1 className="m-0 text-2xl font-bold">{title}</h1>
-        {body}
-      </main>
-    </div>
+          label={toggle.label}
+          ariaLabel={toggle.ariaLabel}
+        />
+      }
+      title={title}
+      subtitle={subtitle ? <p className="m-0">{subtitle}</p> : undefined}
+    >
+      {body}
+    </AuthShell>
   );
 }

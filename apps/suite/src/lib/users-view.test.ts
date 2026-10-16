@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   localizedName,
   roleName,
+  teamCounts,
   usersListHref,
   usersListParams,
   usersListPath,
@@ -68,5 +69,16 @@ describe('names', () => {
     expect(roleName('ar', 'department_head')).toBe('رئيس القسم');
     expect(roleName('en', 'line_manager')).toBe('Line Manager');
     expect(roleName('en', 'custom_x')).toBe('custom_x');
+  });
+});
+
+describe('teamCounts', () => {
+  const counts = { all: 12, active: 9, invited: 2, deactivated: 1 };
+  it('adds the open invitations to the invited memberships', () => {
+    expect(teamCounts(counts, 3)).toEqual({ all: 12, active: 9, invited: 5, deactivated: 1 });
+  });
+  it('counts no invitations when they are not shown or did not load', () => {
+    expect(teamCounts(counts, null)).toEqual(counts);
+    expect(teamCounts(counts, undefined)).toEqual(counts);
   });
 });

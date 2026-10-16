@@ -28,7 +28,8 @@ import { type SupabaseAuthLike, verifyClaims, verifyClaimsStrict } from './verif
  *   signInWithPassword → the sign-in guard (T-M2-11: per account and per client, auth-limits.ts; a
  *     limited attempt never reaches Auth) → Supabase Auth (session cookie set; with «تذكّر هذا المتصفح»
  *     ticked the browser is trusted for 30 days — opt-in) → the session's organizations
- *     · none  → sign out again, AUTH_NO_ORGANIZATION
+ *     · none  → sign out again, AUTH_NO_ORGANIZATION — unless a Platform Super Admin (FR-ADM-17): the
+ *               platform console (`next: 'platform'`); a Super Admin with organizations chooses
  *     · one   → selectOrganization() automatically
  *     · many  → the caller shows the organization chooser
  *   selectOrganization → switch_active_tenant (this session only) → refresh the session so the
@@ -83,6 +84,11 @@ export interface AuthFlowDeps {
   readonly supabase: AuthClientLike | null;
   readonly withUserTx: WithUserTx;
   readonly listSessionTenants: (tx: UserTx) => Promise<readonly SessionTenant[]>;
+  /**
+   * Is the session a Platform Super Admin's (FR-ADM-17; the database decides: private.is_platform_admin)?
+   * A Super Admin without organizations lands on the platform console instead of being signed out.
+   */
+  readonly isPlatformAdmin: (tx: UserTx) => Promise<boolean>;
   readonly switchActiveTenant: (tx: UserTx, tenantId: string) => Promise<boolean>;
   /** Where the session stands in its organization (MFA policy, session rules; T-M2-10). */
   readonly getSessionAccess: (tx: UserTx) => Promise<SessionAccess>;
@@ -117,6 +123,8 @@ export class AuthServiceError extends Error {
 export type SignInOutcome =
   | { readonly next: 'home' }
   | { readonly next: 'choose-organization' }
+  /** A Platform Super Admin without organizations: the platform console (FR-ADM-17). */
+  | { readonly next: 'platform' }
   /** The organization's MFA policy asks for a code or an app first, or invites to set one up. */
   | { readonly next: 'mfa' };
 
@@ -277,13 +285,19 @@ export async function signInWithPassword(
   if (!session.ok) return session;
   const { tokens, claims } = session.value;
 
-  const tenants = await deps.withUserTx(claims, (tx) => deps.listSessionTenants(tx));
+  const { tenants, platformAdmin } = await deps.withUserTx(claims, async (tx) => ({
+    tenants: await deps.listSessionTenants(tx),
+    platformAdmin: await deps.isPlatformAdmin(tx),
+  }));
   const [only, ...others] = tenants;
   if (!only) {
+    // A Platform Super Admin (ENTLAQA staff, no organization of their own): the platform console.
+    if (platformAdmin) return ok({ next: 'platform' });
     await supabase.auth.signOut({ scope: 'local' });
     return err(appError(IdentityErrors.AUTH_NO_ORGANIZATION));
   }
-  if (others.length > 0) return ok({ next: 'choose-organization' });
+  // A Super Admin who is also a member chooses: an organization, or the platform console.
+  if (others.length > 0 || platformAdmin) return ok({ next: 'choose-organization' });
 
   const selected = await selectOrganization(deps, only.tenantId, tokens);
   return selected.ok ? ok({ next: selected.value.next }) : selected;

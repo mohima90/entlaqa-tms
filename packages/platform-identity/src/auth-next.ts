@@ -24,7 +24,13 @@ import {
   insertAuditEvent,
   invitationByToken,
   invitationPasswordMinLength,
+  isPlatformAdmin,
   listMyMfaApps,
+  listPlatformTenants,
+  createPlatformTenant,
+  type NewPlatformTenant,
+  platformAdminInvitationCode,
+  reissuePlatformAdminCode,
   listSessionTenants,
   passwordMinLengthForCaller,
   queueOwnPasswordChangedMail,
@@ -101,15 +107,27 @@ import {
   verifyTotpCode,
 } from './mfa';
 import { type SupabaseAuthLike, verifyClaims } from './verify-claims';
+import { getVerifiedClaims, getVerifiedClaimsStrict } from './next';
 import {
-  INVITATION_TOKEN_PATTERN,
+  type ConsoleInputParser,
+  type PlatformConsoleDeps,
+  createOrganizationFromConsole,
+  isPlatformAdminSession,
+  loadPlatformOrganizations,
+  reissueOrganizationAdminCode,
+  viewOrganizationAdminCode,
+} from './platform-console';
+import {
   type InvitationAcceptDeps,
+  type InvitationCodeGuard,
   type InvitationLinkView,
   type InvitationSignUpClientLike,
   acceptInvitationAsSignedInUser,
   acceptInvitationWithNewAccount,
   acceptInvitationWithPassword,
+  codesLimited,
   lookupInvitationLink,
+  normalizeInvitationSecret,
 } from './invitation-accept';
 import {
   type RecoveryClientLike,
@@ -270,6 +288,7 @@ async function requestDeps(
     supabase: supabase as AuthClientLike | null,
     withUserTx,
     listSessionTenants,
+    isPlatformAdmin,
     switchActiveTenant,
     getSessionAccess,
     insertAuditEvent,
@@ -553,12 +572,19 @@ function invitationLimiter(client: RequestClient) {
   });
 }
 
+/** Unknown invitation codes per client (fail closed), for every invitation action. */
+function invitationCodeGuard(client: RequestClient): InvitationCodeGuard {
+  const limiter = invitationLimiter(client);
+  return { attempt: () => limiter.allowCodeAttempt(), found: () => limiter.codeFound() };
+}
+
 function invitationDeps(auth: AuthFlowDeps, client: RequestClient): InvitationAcceptDeps {
   return {
     auth,
     signUpClient: auth.supabase as unknown as InvitationSignUpClientLike | null,
     hashToken: hashInvitationToken,
     invitationByToken,
+    codeGuard: invitationCodeGuard(client),
     invitationPasswordMinLength,
     acceptInvitationAsCaller,
     allowSignUp: (tokenHash) => invitationLimiter(client).allowSignUp(tokenHash),
@@ -574,22 +600,30 @@ export async function lookupInvitationLinkForRequest(
   token: string,
   client: RequestClient,
 ): Promise<Result<InvitationLinkView, AppError>> {
-  // Per link (its token hash; a malformed link: the client only) and per client (integration review M3).
-  const tokenHash = INVITATION_TOKEN_PATTERN.test(token) ? hashInvitationToken(token) : null;
+  // Per link (its token hash; a malformed link: the client only) and per client (integration review M3);
+  // unknown codes per client (IPv6 /48) and for all clients (codes are 12 characters). Every limit fails
+  // closed.
+  const normalized = normalizeInvitationSecret(token);
+  const tokenHash = normalized === null ? null : hashInvitationToken(normalized);
   if (!(await invitationLimiter(client).allowLookup(tokenHash))) {
     return err(appError('RATE_LIMITED'));
   }
-  return ok(
-    await lookupInvitationLink(
-      {
-        hashToken: hashInvitationToken,
-        invitationByToken,
-        invitationPasswordMinLength,
-        auth: await requestDeps(undefined, client),
-      },
-      token,
-    ),
-  );
+  try {
+    return ok(
+      await lookupInvitationLink(
+        {
+          hashToken: hashInvitationToken,
+          invitationByToken,
+          invitationPasswordMinLength,
+          codeGuard: invitationCodeGuard(client),
+          auth: await requestDeps(undefined, client),
+        },
+        token,
+      ),
+    );
+  } catch (error) {
+    return codesLimited(error);
+  }
 }
 
 export async function acceptInvitationWithNewAccountForRequest(
@@ -766,4 +800,50 @@ export async function queueOwnPasswordChangedNoticeForRequest(
       errorName: error instanceof Error ? error.name : 'unknown',
     });
   }
+}
+
+// Platform Super Admin console «مشرف المنصة» (FR-ADM-17; platform-console.ts): the session's own claims
+// (getClaims; getUser before creating an organization or revealing or changing a code) and the database's
+// decision whether it is a Super Admin's. Everyone else: NOT_FOUND.
+function platformConsoleDeps(): PlatformConsoleDeps {
+  return {
+    getClaims: ({ strict }) => (strict ? getVerifiedClaimsStrict() : getVerifiedClaims()),
+    withUserTx,
+    isPlatformAdmin,
+    listPlatformTenants,
+    createPlatformTenant,
+    platformAdminInvitationCode,
+    reissuePlatformAdminCode,
+  };
+}
+
+/** Is the current session a Platform Super Admin's? (Sign-in routing, the organization chooser.) */
+export async function isPlatformAdminForRequest(): Promise<boolean> {
+  return isPlatformAdminSession(platformConsoleDeps());
+}
+
+export async function loadPlatformOrganizationsForRequest() {
+  return loadPlatformOrganizations(platformConsoleDeps());
+}
+
+/** The console's actions: untrusted input, parsed only after the access check (review L6). */
+export async function createOrganizationFromConsoleForRequest(
+  raw: unknown,
+  parse: ConsoleInputParser<NewPlatformTenant>,
+) {
+  return createOrganizationFromConsole(platformConsoleDeps(), raw, parse);
+}
+
+export async function viewOrganizationAdminCodeForRequest(
+  raw: unknown,
+  parse: ConsoleInputParser<string>,
+) {
+  return viewOrganizationAdminCode(platformConsoleDeps(), raw, parse);
+}
+
+export async function reissueOrganizationAdminCodeForRequest(
+  raw: unknown,
+  parse: ConsoleInputParser<string>,
+) {
+  return reissueOrganizationAdminCode(platformConsoleDeps(), raw, parse);
 }

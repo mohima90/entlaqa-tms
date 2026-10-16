@@ -71,6 +71,11 @@ cleanup() {
                    where g.rolname = 'user_import_guard' and u.rolname = '$MIGRATOR' and gr.rolname = '$MIGRATOR') then
           execute 'revoke user_import_guard from $MIGRATOR granted by $MIGRATOR';
         end if;
+        if exists (select 1 from pg_auth_members m join pg_roles g on g.oid = m.roleid
+                     join pg_roles u on u.oid = m.member join pg_roles gr on gr.oid = m.grantor
+                   where g.rolname = 'platform_admin_guard' and u.rolname = '$MIGRATOR' and gr.rolname = '$MIGRATOR') then
+          execute 'revoke platform_admin_guard from $MIGRATOR granted by $MIGRATOR';
+        end if;
         -- The supautils.policy_grants simulation below (T-M2-18).
         if pg_has_role('$MIGRATOR', 'supabase_storage_admin', 'MEMBER') then
           execute 'revoke supabase_storage_admin from $MIGRATOR';
@@ -143,7 +148,7 @@ declare r text;
 begin
   foreach r in array array['app_server', 'app_worker', 'app_queue', 'tenant_guard', 'invitation_guard',
                           'account_mail_guard', 'membership_guard', 'rate_limit_guard', 'file_guard',
-                          'user_import_guard'] loop
+                          'user_import_guard', 'platform_admin_guard'] loop
     if exists (select 1 from pg_roles where rolname = r) then
       execute format('grant %I to $MIGRATOR with admin option, inherit false, set false', r);
     end if;
@@ -272,6 +277,63 @@ for bad in "TENANT_SLUG=-bad" "TENANT_SLUG=Bad" "ADMIN_USER_ID=not-a-uuid" "TENA
   fi
 done
 echo "db-test-hosted-sim: provisioning OK"
+
+# Platform Super Admin (FR-ADM-17): the workflow's script as the same non-superuser migration role, then the
+# console's functions as app_server with the Super Admin's session (the guard's grants and policies as made
+# by that role).
+SUPER_UID="$(node -e 'process.stdout.write(require("node:crypto").randomUUID())')"
+SUPER_SESSION="$(node -e 'process.stdout.write(require("node:crypto").randomUUID())')"
+q "insert into auth.users (id, email) values ('$SUPER_UID', 'sim-super@example.test');
+   insert into auth.sessions (id, user_id, created_at) values ('$SUPER_SESSION', '$SUPER_UID', now())" >/dev/null
+super_admins() { q "select count(*) from private.platform_admins where user_id = '$SUPER_UID'"; }
+expect_admin_refusal() {
+  local pattern="$1" err
+  shift
+  err="$(mktemp)"
+  if env "$@" bash "$ROOT/scripts/platform-admin.sh" apply >/dev/null 2>"$err"; then
+    echo "db-test-hosted-sim: platform-admin must fail ($*)" >&2; rm -f "$err"; exit 1
+  fi
+  grep -q "$pattern" "$err" || { cat "$err" >&2; rm -f "$err"; exit 1; }
+  rm -f "$err"
+}
+echo "db-test-hosted-sim: platform admin plan + apply as $MIGRATOR"
+ADMIN_USER_ID="$SUPER_UID" bash "$ROOT/scripts/platform-admin.sh" plan
+[[ "$(super_admins)" == "0" ]] || { echo "db-test-hosted-sim: platform-admin plan changed the database" >&2; exit 1; }
+GITHUB_RUN_ID=4242 GITHUB_ACTOR=sim-operator ADMIN_USER_ID="$SUPER_UID" bash "$ROOT/scripts/platform-admin.sh" apply
+ADMIN_USER_ID="$SUPER_UID" bash "$ROOT/scripts/platform-admin.sh" apply  # again: nothing to do
+# The audit row names the workflow run and its login (review L5); `list` shows UIDs and grant times only.
+[[ "$(q "select data ->> 'runId' || ':' || (data ->> 'actor') from private.platform_audit_events where action = 'platform.admin.granted' and entity_id = '$SUPER_UID'")" == "4242:sim-operator" ]] ||
+  { echo "db-test-hosted-sim: the grant audit row does not record the run" >&2; exit 1; }
+listed="$(ADMIN_ACTION=list bash "$ROOT/scripts/platform-admin.sh" plan 2>&1)"
+grep -q "platform-admin: $SUPER_UID granted " <<<"$listed" || { echo "db-test-hosted-sim: list does not show the Super Admin" >&2; echo "$listed" >&2; exit 1; }
+if grep -q "@" <<<"$listed"; then echo "db-test-hosted-sim: list printed an e-mail" >&2; exit 1; fi
+[[ "$(super_admins)" == "1" ]] || { echo "db-test-hosted-sim: platform-admin apply did not grant" >&2; exit 1; }
+[[ "$(q "select count(*) from private.platform_audit_events where action = 'platform.admin.granted' and entity_id = '$SUPER_UID'")" == "1" ]] ||
+  { echo "db-test-hosted-sim: expected exactly one grant audit event" >&2; exit 1; }
+expect_admin_refusal 'no Auth user with this UID' ADMIN_USER_ID="$(node -e 'process.stdout.write(require("node:crypto").randomUUID())')"
+for bad in "ADMIN_USER_ID=sim-super@example.test" "ADMIN_USER_ID=" "ADMIN_ACTION=delete" "GITHUB_RUN_ID=12a" "GITHUB_ACTOR=bad;actor"; do
+  if env ADMIN_USER_ID="$SUPER_UID" "$bad" bash "$ROOT/scripts/platform-admin.sh" plan >/dev/null 2>&1; then
+    echo "db-test-hosted-sim: platform-admin accepted invalid input ($bad)" >&2; exit 1
+  fi
+done
+SUPER_CLAIMS="{\"sub\":\"$SUPER_UID\",\"role\":\"authenticated\",\"aal\":\"aal1\",\"session_id\":\"$SUPER_SESSION\"}"
+console="$(PGPASSWORD="$APP_SERVER_DB_PASSWORD" psql -X -At --no-psqlrc -v ON_ERROR_STOP=1 -U app_server -d "$DB" -c "begin; set local role authenticated;
+  select set_config('request.jwt.claims', '$SUPER_CLAIMS', true) is not null;
+  select 'admin=' || private.is_platform_admin();
+  select 'code=' || (invite_code is not null) from private.platform_create_tenant('sim-console', 'منشأة المنصة', null, 'sim-org-admin@example.test');
+  select 'listed=' || admin_state from private.platform_list_tenants() where slug = 'sim-console';
+  select 'reissued=' || (invite_code is not null) from private.platform_reissue_admin_code((select tenant_id from private.platform_list_tenants() where slug = 'sim-console'));
+  commit")"
+for want in admin=true code=true listed=pending reissued=true; do
+  grep -qx "$want" <<<"$console" || { echo "db-test-hosted-sim: platform console as deployed: missing $want" >&2; echo "$console" >&2; exit 1; }
+done
+CONSOLE_CODE="$(q "select invite_code from platform.invitations where email = 'sim-org-admin@example.test' and status = 'pending'")"
+[[ "$CONSOLE_CODE" =~ ^[A-Z0-9]+$ ]] || { echo "db-test-hosted-sim: the console's invitation has no code" >&2; exit 1; }
+[[ "$(q "set role supabase_auth_admin; select private.invitation_allows_signup('sim-org-admin@example.test', '$CONSOLE_CODE')" | tail -n 1)" == "t" ]] ||
+  { echo "db-test-hosted-sim: the console's invitation does not pass the sign-up gate" >&2; exit 1; }
+ADMIN_ACTION=revoke ADMIN_USER_ID="$SUPER_UID" bash "$ROOT/scripts/platform-admin.sh" apply
+[[ "$(super_admins)" == "0" ]] || { echo "db-test-hosted-sim: platform-admin revoke did not revoke" >&2; exit 1; }
+echo "db-test-hosted-sim: platform admin OK"
 
 # Sign-up gate (T-M2-07, review H1): with the grants made by the non-superuser migration role, Auth's
 # role can run the hook and its yes/no check (an error inside the hook would also read as a refusal, so

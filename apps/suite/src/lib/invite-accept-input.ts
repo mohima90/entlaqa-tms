@@ -1,6 +1,6 @@
 import 'server-only';
 import { hasVisibleText } from '@jadarat/platform-i18n';
-import { INVITATION_TOKEN_PATTERN } from '@jadarat/platform-identity';
+import { INVITATION_TOKEN_PATTERN, normalizeInvitationSecret } from '@jadarat/platform-identity';
 import { z } from 'zod';
 import { PASSWORD_MAX_BYTES, PASSWORD_MIN_LENGTH, utf8Length } from './password-rules';
 
@@ -9,8 +9,15 @@ import { PASSWORD_MAX_BYTES, PASSWORD_MIN_LENGTH, utf8Length } from './password-
  * unknown fields are refused. Field-error codes only (never values) reach the client.
  */
 
-/** The e-mailed token: 32 random bytes, base64url, 43 characters (contract §1 step 2). */
-const token = z.string().regex(INVITATION_TOKEN_PATTERN);
+/**
+ * The invitation code (12 characters, Kawadir; typed in any case, with or without its XXXX-XXXX-XXXX
+ * grouping — normalized here) or the token of a link e-mailed before codes (43 base64url characters).
+ */
+const token = z
+  .string()
+  .max(64)
+  .transform((value) => normalizeInvitationSecret(value) ?? value)
+  .pipe(z.string().regex(INVITATION_TOKEN_PATTERN));
 
 /**
  * Optional display name, as on My profile (≤ 200 characters in total). Left empty it keeps the name the

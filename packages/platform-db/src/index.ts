@@ -68,9 +68,16 @@ export {
   unlockMemberSignIn,
 } from './sign-in-lock';
 export {
+  INVITATION_CODE_ALPHABET,
+  INVITATION_CODE_LENGTH,
+  INVITATION_CODE_PATTERN,
   INVITATION_EVENTS,
   INVITATION_MAX_SENDS,
+  INVITATION_SECRET_PATTERN,
+  LEGACY_INVITATION_TOKEN_PATTERN,
+  type InvitationCode,
   type InvitationErrorCode,
+  type InvitationResend,
   type InvitationRow,
   type InvitationState,
   type InvitationTokenApi,
@@ -81,11 +88,29 @@ export {
   createInvitationTokenApi,
   getInvitationRoles,
   hashInvitationToken,
+  formatInvitationCode,
   invitationByToken,
+  invitationCode,
   listInvitations,
+  normalizeInvitationCode,
   requestInvitationResend,
   revokeInvitation,
 } from './invitations';
+export {
+  type NewPlatformTenant,
+  type PlatformAdminCode,
+  type PlatformAdminState,
+  PlatformConsoleError,
+  type PlatformConsoleErrorCode,
+  type PlatformTenantField,
+  type PlatformTenantRow,
+  createPlatformTenant,
+  isPlatformAdmin,
+  listPlatformTenants,
+  platformAdminInvitationCode,
+  platformConsoleErrorOf,
+  reissuePlatformAdminCode,
+} from './platform-console';
 export {
   type DeactivationRefusal,
   MEMBER_EVENTS,
@@ -260,6 +285,7 @@ export {
 export {
   type MemberAuthorizationFacts,
   type MemberRole,
+  getMyPrimaryRole,
   loadMemberAuthorizationFacts,
 } from './roles';
 export {

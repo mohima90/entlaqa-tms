@@ -3,6 +3,7 @@ import {
   type PersonalDetails,
   type UserProfile,
   type UserTx,
+  getMyPrimaryRole,
   getPersonalDetails,
   getUserProfile,
   passwordMinLengthForCaller,
@@ -137,6 +138,8 @@ export function myProfileQueryDefinition(): QueryDefinition<
 export interface MyIdentity {
   readonly displayNameAr: string;
   readonly displayNameEn: string | null;
+  /** The primary role's code, for the account menu's "Organization · Role" (display only). */
+  readonly primaryRole: string | null;
 }
 
 export function myIdentityQueryDefinition(): QueryDefinition<
@@ -152,7 +155,11 @@ export function myIdentityQueryDefinition(): QueryDefinition<
       const personId = ctx.actor.personId;
       const details = personId ? await getPersonalDetails(ctx.tx, personId) : null;
       if (!details) return err(appError('NOT_FOUND'));
-      return ok({ displayNameAr: details.displayNameAr, displayNameEn: details.displayNameEn });
+      return ok({
+        displayNameAr: details.displayNameAr,
+        displayNameEn: details.displayNameEn,
+        primaryRole: await getMyPrimaryRole(ctx.tx),
+      });
     },
   };
 }

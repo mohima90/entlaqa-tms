@@ -3,13 +3,12 @@ import { PgDialect } from 'drizzle-orm/pg-core';
 import { describe, expect, it } from 'vitest';
 import {
   invitationActorMayManage,
-  issueInvitationToken,
+  invitationCodeForMail,
   loadInvitationForMail,
 } from './invitations';
 
 const dialect = new PgDialect();
 const ID = '5b0e7c39-6d4c-4d36-9d0a-1f0d1d6c0f11';
-const HASH = Buffer.alloc(32, 7);
 
 function fakeTx(...results: unknown[][]) {
   const executed: { sql: string; params: unknown[] }[] = [];
@@ -41,6 +40,7 @@ const row = {
   invited_by: 'u1',
   send_requested_by: 'u2',
   mail_held: false,
+  expires_at: '2026-10-14 10:00:00+00',
 };
 
 describe('loadInvitationForMail', () => {
@@ -60,6 +60,7 @@ describe('loadInvitationForMail', () => {
       invitedBy: 'u1',
       sendRequestedBy: 'u2',
       mailHeld: false,
+      expiresAt: new Date('2026-10-14T10:00:00Z'),
     });
     expect(fake.executed[0]?.params).toEqual([ID]);
     // The inviter shown is the member it is sent for (integration review M2).
@@ -73,30 +74,22 @@ describe('loadInvitationForMail', () => {
     const mail = await loadInvitationForMail(fake.tx, ID);
     expect(mail?.inviterName).toEqual({ ar: 'المنشأة', en: 'Org' });
     expect(mail?.locale).toBe('ar');
+    const asDate = new Date('2026-10-14T10:00:00Z');
+    await expect(
+      loadInvitationForMail(fakeTx([{ ...row, expires_at: asDate }]).tx, ID),
+    ).resolves.toMatchObject({ expiresAt: asDate });
     await expect(loadInvitationForMail(fakeTx([]).tx, ID)).resolves.toBeNull();
   });
 });
 
-describe('issueInvitationToken', () => {
-  it('stores the hash of a pending invitation under the limit and returns the expiry', async () => {
-    const fake = fakeTx([{ expires_at: '2026-10-14 10:00:00+00' }]);
-    await expect(issueInvitationToken(fake.tx, ID, HASH)).resolves.toEqual({
-      expiresAt: new Date('2026-10-14T10:00:00Z'),
-    });
-    // Never for a held invitation of a user import (not sent yet, T-M2-12).
-    expect(fake.executed[0]?.sql).toContain(
-      "status = 'pending' and not mail_held and send_count < $3",
-    );
-    expect(fake.executed[0]?.params).toEqual([HASH, ID, 4]);
-    const asDate = new Date('2026-10-14T10:00:00Z');
-    await expect(
-      issueInvitationToken(fakeTx([{ expires_at: asDate }]).tx, ID, HASH),
-    ).resolves.toEqual({ expiresAt: asDate });
-  });
-
-  it('is null when nothing was updated; refuses a non-SHA-256 hash', async () => {
-    await expect(issueInvitationToken(fakeTx([]).tx, ID, HASH)).resolves.toBeNull();
-    await expect(issueInvitationToken(fakeTx().tx, ID, Buffer.alloc(4))).rejects.toThrow('SHA-256');
+describe('invitationCodeForMail', () => {
+  it('reads the current code through the jobs-only definer function', async () => {
+    const fake = fakeTx([{ code: 'K7M2PQ9XHT4W' }], [{ code: null }], []);
+    await expect(invitationCodeForMail(fake.tx, ID)).resolves.toBe('K7M2PQ9XHT4W');
+    expect(fake.executed[0]?.sql).toContain('private.invitation_code_for_mail($1::uuid)');
+    expect(fake.executed[0]?.params).toEqual([ID]);
+    await expect(invitationCodeForMail(fake.tx, ID)).resolves.toBeNull();
+    await expect(invitationCodeForMail(fake.tx, ID)).resolves.toBeNull();
   });
 });
 

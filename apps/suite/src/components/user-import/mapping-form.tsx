@@ -165,7 +165,7 @@ export function MappingForm(props: MappingFormProps) {
             onChange={(event) => {
               changeSheet(Number(event.target.value));
             }}
-            className="min-h-11 rounded-md border border-border-strong bg-surface px-3 text-text sm:w-96"
+            className="select-chevron min-h-11 rounded-full border border-border-strong bg-surface ps-4 pe-10 text-sm text-text shadow-1 sm:w-96"
           >
             {props.sheets.map((s) => (
               <option key={s.index} value={s.index} disabled={!s.usable}>
@@ -261,7 +261,7 @@ export function MappingForm(props: MappingFormProps) {
                           onChange={(event) => {
                             update(column.index, event.target.value);
                           }}
-                          className="min-h-11 w-full min-w-48 rounded-md border border-border-strong bg-surface px-3 text-text"
+                          className="select-chevron min-h-11 w-full min-w-48 rounded-full border border-border-strong bg-surface ps-4 pe-10 text-sm text-text shadow-1"
                           data-testid={`map-select-${String(column.index)}`}
                         >
                           <option value="">{text('ignore')}</option>

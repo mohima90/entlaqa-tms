@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { SuiteNavigationAccess } from './suite-context';
 import { ICON_NAMES } from '@jadarat/ui';
-import { suiteHome, suiteNavigation } from './suite-navigation';
+import { commandPaletteItems, suiteHome, suiteNavigation } from './suite-navigation';
 
 const NONE: SuiteNavigationAccess = {
   users: false,
@@ -21,8 +21,8 @@ const outline = (access: SuiteNavigationAccess) =>
         .join(' ')}`,
   );
 
-describe('suiteNavigation (menus per role, T-M2-21)', () => {
-  it('gives the Organization Admin its approved sections and no training entries (BRD v2.9)', () => {
+describe('suiteNavigation (menus per role, T-M2-21; Kawadir groups, T-M2-43)', () => {
+  it('gives the Organization Admin the Kawadir groups and no training entries (kawadir-alignment §5)', () => {
     expect(
       outline({
         users: true,
@@ -34,12 +34,9 @@ describe('suiteNavigation (menus per role, T-M2-21)', () => {
       }),
     ).toEqual([
       'main: home→/suite',
-      'groupOrganization: organizationProfile→/suite/admin/organization branding(soon) customFields(soon) featuresPlan(soon)',
-      'groupDomains: domains(soon)',
-      'groupPeople: users→/suite/admin/users roles→/suite/admin/roles',
-      'groupSecurity: securityPolicy→/suite/admin/security auditLog(soon) consent(soon)',
-      'groupEmail: emailSender(soon)',
-      'groupIntegrations: lmsConnection(soon) hrSystem(soon)',
+      'groupOrganization: teamMembers→/suite/admin/users branding(soon) roles→/suite/admin/roles',
+      'groupBilling: subscription(soon)',
+      'groupSettings: general→/suite/admin/settings emailIntegration(soon) integrations(soon) security→/suite/admin/security auditLog(soon)',
     ]);
   });
 
@@ -51,14 +48,14 @@ describe('suiteNavigation (menus per role, T-M2-21)', () => {
     expect(keys.filter((key) => /notif/i.test(key))).toEqual([]);
   });
 
-  it('keeps today’s menu for an HR Manager: training entries, then people', () => {
+  it('keeps an HR Manager’s pages in the same groups: training entries, then the organization', () => {
     expect(outline({ ...NONE, users: true, roles: true, training: true })).toEqual([
       'main: home→/suite calendar(soon) sessions(soon) courses(soon)',
-      'groupPeople: users→/suite/admin/users roles→/suite/admin/roles',
+      'groupOrganization: teamMembers→/suite/admin/users roles→/suite/admin/roles',
     ]);
   });
 
-  it('shows an Auditor the security policy and the organization profile (read only), no set-up sections', () => {
+  it('shows an Auditor Settings → General (read only) and Security, no set-up sections', () => {
     expect(
       outline({
         ...NONE,
@@ -70,9 +67,8 @@ describe('suiteNavigation (menus per role, T-M2-21)', () => {
       }),
     ).toEqual([
       'main: home→/suite calendar(soon) sessions(soon) courses(soon)',
-      'groupOrganization: organizationProfile→/suite/admin/organization',
-      'groupPeople: users→/suite/admin/users roles→/suite/admin/roles',
-      'groupSecurity: securityPolicy→/suite/admin/security',
+      'groupOrganization: teamMembers→/suite/admin/users roles→/suite/admin/roles',
+      'groupSettings: general→/suite/admin/settings security→/suite/admin/security',
     ]);
   });
 
@@ -92,7 +88,7 @@ describe('suiteNavigation (menus per role, T-M2-21)', () => {
       organizationSetup: true,
       training: true,
     }).flatMap((group) => group.entries);
-    expect(all.length).toBe(17);
+    expect(all.length).toBe(13);
     expect(all.filter((entry) => !ICON_NAMES.includes(entry.icon))).toEqual([]);
   });
 });
@@ -109,9 +105,9 @@ describe('suiteHome (T-M2-21)', () => {
     });
     expect(home.kind).toBe('setup');
     expect(home.kind === 'setup' ? home.links.map((l) => l.link?.href) : []).toEqual([
-      '/suite/admin/organization',
       '/suite/admin/users',
       '/suite/admin/roles',
+      '/suite/admin/settings',
       '/suite/admin/security',
     ]);
   });
@@ -119,8 +115,8 @@ describe('suiteHome (T-M2-21)', () => {
   it('links only what the grants open, and keeps the training home for every other role', () => {
     const home = suiteHome({ ...NONE, organizationSetup: true, users: true });
     expect(home.kind === 'setup' ? home.links.map((l) => l.key) : []).toEqual([
-      'organizationProfile',
-      'users',
+      'teamMembers',
+      'general',
     ]);
     expect(
       suiteHome({ ...NONE, users: true, roles: true, security: true, training: true }),
@@ -128,5 +124,40 @@ describe('suiteHome (T-M2-21)', () => {
       kind: 'training',
     });
     expect(suiteHome(NONE)).toEqual({ kind: 'training' });
+  });
+});
+
+describe('commandPaletteItems (⌘K / Ctrl K, T-M2-43)', () => {
+  const label = (key: string) => `«${key}»`;
+
+  it('offers exactly the built pages of the menu, grouped like it, plus My profile', () => {
+    const items = commandPaletteItems(
+      {
+        users: true,
+        roles: true,
+        security: true,
+        organizationProfile: true,
+        organizationSetup: true,
+        training: false,
+      },
+      'ar',
+      label,
+    );
+    expect(items.map((i) => `${i.group} ${i.label} ${i.href}`)).toEqual([
+      '«searchGroupPages» «home» /ar/suite',
+      '«groupOrganization» «teamMembers» /ar/suite/admin/users',
+      '«groupOrganization» «roles» /ar/suite/admin/roles',
+      '«groupSettings» «general» /ar/suite/admin/settings',
+      '«groupSettings» «security» /ar/suite/admin/security',
+      '«searchGroupAccount» «myProfile» /ar/suite/profile',
+    ]);
+    expect(new Set(items.map((i) => i.id)).size).toBe(items.length);
+  });
+
+  it('denies by default: without grants only Home and My profile', () => {
+    expect(commandPaletteItems(NONE, 'en', label).map((i) => i.href)).toEqual([
+      '/en/suite',
+      '/en/suite/profile',
+    ]);
   });
 });

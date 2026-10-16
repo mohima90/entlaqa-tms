@@ -17,6 +17,30 @@ export const SIGN_IN_TIMEOUT_MS = 20_000;
 /** Options for an assertion that waits for the page a sign-in (or a code) leads to. */
 export const afterSignIn = { timeout: SIGN_IN_TIMEOUT_MS } as const;
 
+const SIGN_IN_TEXTS = {
+  ar: { continue: 'متابعة', submit: 'تسجيل الدخول', remember: 'تذكّر هذا المتصفح' },
+  en: { continue: 'Continue', submit: 'Sign in', remember: 'Remember this browser' },
+} as const;
+
+/**
+ * The two-step sign-in on the current page (Kawadir ATS, PO 16 Oct 2026): the work e-mail, «متابعة» /
+ * "Continue", then the password (and «تذكّر هذا المتصفح» when asked) and «تسجيل الدخول» / "Sign in".
+ */
+export async function fillSignIn(
+  page: Page,
+  locale: 'ar' | 'en',
+  email: string,
+  password: string,
+  options: { readonly remember?: boolean } = {},
+) {
+  const t = SIGN_IN_TEXTS[locale];
+  await page.locator('#email').fill(email);
+  await page.getByRole('button', { name: t.continue }).click();
+  await page.locator('#password').fill(password);
+  if (options.remember) await page.getByRole('checkbox', { name: t.remember }).check();
+  await page.getByRole('button', { name: t.submit }).click();
+}
+
 /** Fills in and submits the English sign-in form; the caller asserts where it leads. */
 export async function submitSignIn(
   page: Page,
@@ -24,9 +48,7 @@ export async function submitSignIn(
   password: string | undefined,
 ) {
   await page.goto('/en/sign-in');
-  await page.getByLabel('Email').fill(email ?? '');
-  await page.getByLabel('Password').fill(password ?? '');
-  await page.getByRole('button', { name: 'Sign in' }).click();
+  await fillSignIn(page, 'en', email ?? '', password ?? '');
 }
 
 /** Signs in with the English form and waits for the suite home page. */
@@ -37,4 +59,19 @@ export async function signInToSuite(
 ) {
   await submitSignIn(page, email, password);
   await expect(page).toHaveURL(/\/en\/suite$/, afterSignIn);
+}
+
+/**
+ * Signs out from the account menu of the top bar (Kawadir layout, T-M2-43): open the menu, choose «Sign
+ * out». Language-neutral (test ids); the caller asserts where it leads.
+ */
+export async function signOutFromMenu(page: Page) {
+  await page.getByTestId('account-menu').click();
+  await page.getByTestId('sign-out').click();
+}
+
+/** Opens My profile from the account menu (T-M2-43). */
+export async function openMyProfile(page: Page) {
+  await page.getByTestId('account-menu').click();
+  await page.getByTestId('my-profile-link').click();
 }

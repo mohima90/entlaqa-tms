@@ -5,6 +5,7 @@ import {
   readPasswordResetDelivery,
 } from '@jadarat/platform-identity';
 import { log } from '@jadarat/platform-observability';
+import { parseAppBaseUrl } from './app-base-url';
 import { CLIENT_IP_HEADER_ENV, readClientIpHeaderSetting } from './client-ip';
 
 type Env = Readonly<Record<string, string | undefined>>;
@@ -36,6 +37,10 @@ export function readClientIpHeader(env: Env): string | null {
  * `none` says so explicitly (then, and for any other production server without one but Vercel, an ERROR is
  * logged at every start: `client_ip_header_missing`). Local and test production builds (`next start`, the
  * E2E server) set no JADARAT_ENVIRONMENT and keep starting.
+ *
+ * APP_BASE_URL (FR-IAM-03, FR-ADM-17; configuration, not a secret): the canonical origin of copied invitation
+ * links. A value that is not an https origin (http for localhost) without a path stops the start; unset,
+ * the browser's own origin is used — a WARNING on a Vercel production deployment (`app_base_url_missing`).
  */
 export function checkServerSettings(env: Env = process.env) {
   const delivery = readPasswordResetDelivery(env);
@@ -69,6 +74,19 @@ export function checkServerSettings(env: Env = process.env) {
       `${CLIENT_IP_HEADER_ENV} is required on a production server outside Vercel (JADARAT_ENVIRONMENT is set): name the header your proxy overwrites with the visitor's address (e.g. x-real-ip), or set it to none to run knowingly with one shared budget`,
     );
   }
+  const rawBaseUrl = env.APP_BASE_URL?.trim() ?? '';
+  const appBaseUrl = rawBaseUrl === '' ? null : parseAppBaseUrl(rawBaseUrl);
+  if (rawBaseUrl !== '' && appBaseUrl === null) {
+    throw new Error(
+      "APP_BASE_URL must be the app's public https origin without a path (http only for localhost), e.g. https://tms.example.com",
+    );
+  }
+  if (appBaseUrl === null && env.VERCEL_ENV === 'production') {
+    log.warn("APP_BASE_URL is not set: copied invitation links use the browser's origin", {
+      action: 'app.start',
+      reason: 'app_base_url_missing',
+    });
+  }
   const clientIpHeader = clientIp.kind === 'header' ? clientIp.name : null;
   if (env.NODE_ENV === 'production' && env.VERCEL !== '1' && clientIpHeader === null) {
     log.error(
@@ -76,5 +94,11 @@ export function checkServerSettings(env: Env = process.env) {
       { action: 'app.start', reason: 'client_ip_header_missing' },
     );
   }
-  return { passwordResetDelivery: delivery, limitWindowSeconds, authClientHeader, clientIpHeader };
+  return {
+    passwordResetDelivery: delivery,
+    limitWindowSeconds,
+    authClientHeader,
+    clientIpHeader,
+    appBaseUrl,
+  };
 }

@@ -1,7 +1,7 @@
 'use client';
 import { Alert, Badge, Button, TextField, buttonClasses } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
-import { type SyntheticEvent, useState, useTransition } from 'react';
+import { type SyntheticEvent, useEffect, useRef, useState, useTransition } from 'react';
 import { invitePrivilegedUserAction, inviteUserAction } from '../../actions/invitations';
 import { type ManagerChoice, managersFor } from '../../lib/edit-user-form';
 import {
@@ -9,6 +9,7 @@ import {
   type RoleChoice,
   blockedBySole,
   choosesPrivileged,
+  createdName,
   inviteFieldError,
   lockedRoleCodes,
   rolesShown,
@@ -18,6 +19,7 @@ import { useSessionRefusal } from '../auth/session-refusal';
 import { fieldErrorCodes } from '../profile/field-errors';
 import { SelectField } from '../select-field';
 import type { UnitChoice } from './edit-user-form';
+import { InviteCodeCopy, type InviteCodeValue, type InviteCopyTexts } from './invite-code-copy';
 
 export interface InviteUserFormProps {
   /** The organization's default language for new people (T-M2-22): the invitation language preselected. */
@@ -38,6 +40,71 @@ export interface InviteUserFormProps {
   readonly rolesHref: string;
   /** Roles held alone (BR-IAM-4: the Organization Admin holds no other role). */
   readonly soleRoles: readonly string[];
+  /** The code chip and copy buttons of the success panel (Kawadir). */
+  readonly copyTexts: InviteCopyTexts;
+  /** The page's language: the success panel names the invitee in it (English name when given). */
+  readonly uiLocale: 'ar' | 'en';
+}
+
+/** The invitation just created: its code to copy (Kawadir, with its language and link) and the name. */
+interface Created {
+  readonly value: InviteCodeValue;
+  readonly name: string;
+}
+
+/**
+ * Right after inviting (Kawadir ATS, PO 16 Oct 2026): the invitation exists — its code and link can be
+ * copied now and at any time from the users list; e-mail is optional. Focus moves to the heading so that
+ * screen readers announce the outcome.
+ */
+function InvitationCreatedPanel({
+  created,
+  text,
+  copyTexts,
+  successHref,
+  onAnother,
+}: {
+  readonly created: Created;
+  readonly text: (key: string) => string;
+  readonly copyTexts: InviteCopyTexts;
+  readonly successHref: string;
+  readonly onAnother: () => void;
+}) {
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    heading.current?.focus();
+  }, []);
+  return (
+    <section className="flex flex-col gap-4" data-testid="invitation-created-panel">
+      <div className="flex items-center gap-3">
+        <span className="inline-flex size-10 items-center justify-center rounded-full bg-success-subtle text-success">
+          <svg
+            viewBox="0 0 24 24"
+            className="size-5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            aria-hidden="true"
+          >
+            <path d="M5 12l5 5 9-10" />
+          </svg>
+        </span>
+        <h2 ref={heading} tabIndex={-1} className="m-0 text-xl font-semibold">
+          {text('created.title')}
+        </h2>
+      </div>
+      <p className="m-0">{text('created.text').split('{name}').join(created.name)}</p>
+      <InviteCodeCopy value={created.value} texts={copyTexts} layout="panel" />
+      <div className="flex flex-wrap items-center gap-3">
+        <a href={successHref} className={buttonClasses({ variant: 'primary', size: 'md' })}>
+          {text('created.toList')}
+        </a>
+        <Button variant="secondary" onClick={onAnother}>
+          {text('created.inviteAnother')}
+        </Button>
+      </div>
+    </section>
+  );
 }
 
 const EN_FIELDS = ['firstNameEn', 'familyNameEn'];
@@ -66,6 +133,8 @@ export function InviteUserForm(props: InviteUserFormProps) {
   const [primary, setPrimary] = useState('');
   const [additional, setAdditional] = useState<readonly string[]>([]);
   const [invitationLocale, setInvitationLocale] = useState<'ar' | 'en'>(props.defaultLocale);
+  const [created, setCreated] = useState<Created | null>(null);
+  const [formKey, setFormKey] = useState(0);
   const locked = lockedRoleCodes(catalogue, props.privilegedAllowed);
   const soleBlocked = (code: string, as: 'primary' | 'additional') =>
     blockedBySole(code, as, primary, additional, props.soleRoles);
@@ -106,7 +175,19 @@ export function InviteUserForm(props: InviteUserFormProps) {
     startTransition(async () => {
       const result = await action(input);
       if (result.ok) {
-        router.push(props.successHref);
+        // Kawadir: the code and the link right away (no e-mail needed); the list keeps them too.
+        setCreated({
+          value: {
+            inviteCode: result.value.inviteCode,
+            locale: result.value.locale,
+            inviteLink: result.value.inviteLink,
+          },
+          name: createdName(props.uiLocale, {
+            ar: [input.firstNameAr, input.familyNameAr],
+            en: [input.firstNameEn, input.familyNameEn],
+          }),
+        });
+        router.refresh();
         return;
       }
       if (sessionRefused(result.error)) return;
@@ -143,8 +224,35 @@ export function InviteUserForm(props: InviteUserFormProps) {
 
   const describedBy = (...ids: (string | false)[]) => ids.filter(Boolean).join(' ') || undefined;
 
+  if (created) {
+    return (
+      <InvitationCreatedPanel
+        created={created}
+        text={text}
+        copyTexts={props.copyTexts}
+        successHref={props.successHref}
+        onAnother={() => {
+          setCreated(null);
+          setPrimary('');
+          setAdditional([]);
+          setDepartmentId('');
+          setBranchId('');
+          setManagerId('');
+          setShowEnglish(false);
+          setFormKey((k) => k + 1);
+        }}
+      />
+    );
+  }
+
   return (
-    <form className="flex flex-col gap-8" onSubmit={onSubmit} noValidate data-testid="invite-user">
+    <form
+      key={formKey}
+      className="flex flex-col gap-8"
+      onSubmit={onSubmit}
+      noValidate
+      data-testid="invite-user"
+    >
       <fieldset className="m-0 grid grid-cols-1 gap-4 border-0 p-0 sm:grid-cols-2">
         <legend className="mb-2 text-lg font-semibold">{text('person')}</legend>
         <TextField

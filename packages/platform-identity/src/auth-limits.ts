@@ -36,7 +36,10 @@ export { type AuthLimits, PLATFORM_AUTH_LIMITS, type SignInLimits } from './auth
  *   password      My profile's current-password check: per user.
  *   reset         requests per client, then (allowed client only) per account; new-password submissions
  *                 per client (T-M2-08 numbers, now shared by every instance).
- *   invitations   link lookups and new-account sign-ups per client.
+ *   invitations   link lookups and new-account sign-ups per link and per client; unknown invitation codes
+ *                 per client (IPv6 by its /48) and for all clients together (codes are 12 characters: a
+ *                 client guessing them is stopped after a few misses, a distributed guesser by the
+ *                 all-clients budget).
  *
  * Keys: the typed e-mail (trimmed, NFC, lower-cased as Auth does — accountSubject), the client's address (IPv6 by its /64; apps/suite
  * lib/client-ip.ts), the user id or the browser's random token — each hashed here with SHA-256 under a
@@ -50,8 +53,9 @@ export { type AuthLimits, PLATFORM_AUTH_LIMITS, type SignInLimits } from './auth
  * password check, reset completions and new-account sign-ups FAIL CLOSED (RateLimiterUnavailableError →
  * the generic internal error with a correlation id; nothing reaches Auth); a reset request is treated as
  * limited (same answer, no e-mail); recording a success, giving a failure back after Auth's 429, the
- * lockout e-mail request, the unlock after a reset, forgetting the other browsers after a password change
- * and invitation link lookups fail open (logged) — they decide nothing about a credential.
+ * lockout e-mail request, the unlock after a reset and forgetting the other browsers after a password
+ * change fail open (logged) — they decide nothing about a credential. Invitation link lookups fail CLOSED
+ * since links carry 12-character codes (a lookup is a guess at a credential).
  */
 
 /** The visitor's rate-limit key: its address (IPv6 /64) when the platform gives a trusted one, else null. */
@@ -110,6 +114,22 @@ export function accountSubject(email: string): Buffer {
 export function clientSubject(client: RequestClient): Buffer {
   return subject('client', client.key ?? 'unknown');
 }
+
+/** An IPv6 client key as apps/suite lib/client-ip.ts writes it: the first four groups and `::/64`. */
+const IPV6_64_KEY = /^([0-9a-f]{1,4}):([0-9a-f]{1,4}):([0-9a-f]{1,4}):[0-9a-f]{1,4}::\/64$/;
+
+/**
+ * The client key for unknown invitation codes (security review H1): an IPv6 /64 key widened to its /48 —
+ * a site usually holds a whole /48, so /64 keys would give one guesser 65,536 budgets; IPv4 keys and the
+ * shared key unchanged.
+ */
+export function codeMissesClientKey(client: RequestClient): RequestClient {
+  const match = client.key === null ? null : IPV6_64_KEY.exec(client.key);
+  return match ? { key: `${match[1] ?? ''}:${match[2] ?? ''}:${match[3] ?? ''}::/48` } : client;
+}
+
+/** The one subject of the all-clients budget of unknown invitation codes. */
+const ALL_CLIENTS_SUBJECT = subject('client', '\nall-clients');
 
 export function userSubject(userId: string): Buffer {
   return subject('user', userId.trim().toLowerCase());
@@ -174,6 +194,8 @@ export const LIMIT_BUCKETS = {
   invitationLookupInvitation: 'invitation.lookup_invitation',
   invitationSignUpClient: 'invitation.sign_up_client',
   invitationSignUpInvitation: 'invitation.sign_up_invitation',
+  invitationCodeMissesClient: 'invitation.code_misses_client',
+  invitationCodeMissesAllClients: 'invitation.code_misses_all_clients',
   mfaCodeAccount: 'mfa_code.account_failures',
   mfaCodeReset: 'mfa_code.reset_failures',
   mfaCodeClient: 'mfa_code.client_failures',
@@ -433,7 +455,8 @@ export type SecurityEventName =
   | 'auth.rate_limited'
   | 'auth.limiter.unavailable'
   | 'auth.password_change.failed'
-  | 'auth.mfa_code.failed';
+  | 'auth.mfa_code.failed'
+  | 'auth.invitation_codes.global_limit';
 
 export interface SecurityEvent {
   readonly event: SecurityEventName;
@@ -461,6 +484,8 @@ const EVENT_MESSAGES: Readonly<Record<SecurityEventName, string>> = {
   'auth.limiter.unavailable': 'rate limiter unavailable',
   'auth.password_change.failed': 'password change refused: current password',
   'auth.mfa_code.failed': 'authenticator code refused',
+  'auth.invitation_codes.global_limit':
+    'unknown invitation codes: the all-clients limit is reached; code lookups are refused for a while',
 };
 
 /** The log line of a security event: its message, level and the closed logger fields. */
@@ -1175,12 +1200,24 @@ export function createPasswordResetLimiter(
  */
 export interface InvitationLimiter {
   /**
-   * Link lookups per link and client (`tokenHash` null for a malformed link: the client only). Fails OPEN
-   * when the limiter fails (logged): a lookup checks no credential.
+   * Link lookups per link and client (`tokenHash` null for a malformed link: the client only). Fails
+   * CLOSED (throws RateLimiterUnavailableError, logged) since links carry guessable 12-character codes.
    */
   allowLookup(tokenHash: Buffer | null): Promise<boolean>;
   /** New-account sign-ups per link and client (each one is an Auth call). Throws when the limiter fails. */
   allowSignUp(tokenHash: Buffer): Promise<boolean>;
+  /**
+   * Before a code reaches the database (any invitation action): counts a provisional miss for the client
+   * (IPv6 by its /48) and then — only for an allowed client — for all clients together; false when either
+   * is used up (the all-clients one logs `auth.invitation_codes.global_limit`). Throws when the limiter
+   * fails (fail closed).
+   */
+  allowCodeAttempt(): Promise<boolean>;
+  /**
+   * The code was a real invitation's (whatever its state): the provisional misses counted by this
+   * limiter's last allowed attempt are given back (fail open).
+   */
+  codeFound(): Promise<void>;
 }
 
 export function createInvitationLimiter(
@@ -1193,7 +1230,10 @@ export function createInvitationLimiter(
   const shared = deps.client.key === null;
   const limits = deps.limits.invitation;
   const clientKey = clientSubject(deps.client);
+  const codeMissKey = clientSubject(codeMissesClientKey(deps.client));
   const B = LIMIT_BUCKETS;
+  /** The buckets the last allowed code attempt counted (given back when the code is found). */
+  let counted: string[] = [];
   const verdict = (action: string, limit: string, counter: RateLimitCounter) => {
     if (counter.allowed) return true;
     deps.log({
@@ -1208,28 +1248,85 @@ export function createInvitationLimiter(
   };
   return {
     async allowLookup(tokenHash) {
-      try {
-        const client = await deps.store.hit(
+      const client = await failClosed(deps, deps.lookupAction, () =>
+        deps.store.hit(
           B.invitationLookupClient,
           clientKey,
           shared ? limits.sharedClientLookups : limits.lookupsPerClient,
-        );
-        if (!verdict(deps.lookupAction, B.invitationLookupClient, client)) return false;
-        if (tokenHash === null) return true;
-        const link = await deps.store.hit(
+        ),
+      );
+      if (!verdict(deps.lookupAction, B.invitationLookupClient, client)) return false;
+      if (tokenHash === null) return true;
+      const link = await failClosed(deps, deps.lookupAction, () =>
+        deps.store.hit(
           B.invitationLookupInvitation,
           invitationSubject(tokenHash),
           limits.lookupsPerInvitation,
-        );
-        return verdict(deps.lookupAction, B.invitationLookupInvitation, link);
-      } catch (error) {
+        ),
+      );
+      return verdict(deps.lookupAction, B.invitationLookupInvitation, link);
+    },
+    async allowCodeAttempt() {
+      counted = [];
+      const misses = await failClosed(deps, deps.lookupAction, () =>
+        deps.store.hit(
+          B.invitationCodeMissesClient,
+          codeMissKey,
+          shared ? limits.sharedClientCodeMisses : limits.codeMissesPerClient,
+        ),
+      );
+      // A refused client counts nowhere else: it cannot fill the all-clients budget on its own.
+      if (!verdict(deps.lookupAction, B.invitationCodeMissesClient, misses)) return false;
+      const all = await failClosed(deps, deps.lookupAction, () =>
+        deps.store.hit(
+          B.invitationCodeMissesAllClients,
+          ALL_CLIENTS_SUBJECT,
+          limits.codeMissesAllClients,
+        ),
+      );
+      if (!all.allowed) {
+        // No code, no e-mail, no client reference: the all-clients budget belongs to nobody.
         deps.log({
-          event: 'auth.limiter.unavailable',
+          event: 'auth.invitation_codes.global_limit',
           action: deps.lookupAction,
-          reason: 'fail_open',
-          errorName: errorNameOf(error),
+          reason: B.invitationCodeMissesAllClients,
+          limit: B.invitationCodeMissesAllClients,
+          retryAfterS: all.retryAfterSeconds,
         });
-        return true;
+        // The code was never looked up, so this is not the client's miss: give its own hit back, or a
+        // real invitee retrying during an attack would stay blocked after the all-clients window ends.
+        try {
+          await deps.store.giveBack(B.invitationCodeMissesClient, codeMissKey);
+        } catch (error) {
+          deps.log({
+            event: 'auth.limiter.unavailable',
+            action: deps.lookupAction,
+            reason: 'fail_open',
+            errorName: errorNameOf(error),
+          });
+        }
+        return false;
+      }
+      counted = [B.invitationCodeMissesClient, B.invitationCodeMissesAllClients];
+      return true;
+    },
+    async codeFound() {
+      const buckets = counted;
+      counted = [];
+      for (const bucket of buckets) {
+        try {
+          await deps.store.giveBack(
+            bucket,
+            bucket === B.invitationCodeMissesAllClients ? ALL_CLIENTS_SUBJECT : codeMissKey,
+          );
+        } catch (error) {
+          deps.log({
+            event: 'auth.limiter.unavailable',
+            action: deps.lookupAction,
+            reason: 'fail_open',
+            errorName: errorNameOf(error),
+          });
+        }
       }
     },
     async allowSignUp(tokenHash) {

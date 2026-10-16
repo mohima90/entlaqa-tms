@@ -75,3 +75,23 @@ export function localizedName(locale: AppLocale, nameAr: string, nameEn: string 
 export function roleName(locale: AppLocale, code: string): string {
   return isSystemRoleCode(code) ? getSystemRole(code).name[locale] : code;
 }
+
+/** The four summary figures of the team (Team members page and the Organization Admin home). */
+export interface TeamCounts {
+  readonly all: number;
+  readonly active: number;
+  /** Invited memberships plus the open invitations (T-M2-07), as on the «Pending invites» tab. */
+  readonly invited: number;
+  readonly deactivated: number;
+}
+
+/**
+ * The team's summary figures from the users list counts and the open invitations (null: the member may
+ * not see invitations, or they did not load — counted as none).
+ */
+export function teamCounts(
+  counts: TeamCounts,
+  openInvitations: number | null | undefined,
+): TeamCounts {
+  return { ...counts, invited: counts.invited + (openInvitations ?? 0) };
+}

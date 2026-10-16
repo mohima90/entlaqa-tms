@@ -13,11 +13,106 @@
 /* Self-hosted fonts (Poppins, IBM Plex Sans Arabic, IBM Plex Mono) — src/fonts.css. */
 @import './fonts.css';
 
-/* The side navigation's background: the gradient from `nav` to `nav-end` (a plain colour first, for
-   forced-colours mode and old browsers). */
+/* The side navigation's panel: from `nav` to `nav-end` (one colour — white — in the Kawadir layout; a
+   plain colour first, for forced-colours mode and old browsers). */
 @utility bg-nav-gradient {
   background-color: var(--color-nav);
   background-image: linear-gradient(170deg, var(--color-nav), var(--color-nav-end));
+}
+
+/* The Jadarat brand gradient (135°, slate → steel; Kawadir layout): the current navigation entry, primary
+   buttons, the avatar and brand accents. The organization's colours replace it (FR-ADM-07). Text on it:
+   `text-on-nav-item-current`. */
+@utility bg-brand-gradient {
+  background-color: var(--color-nav-item-current);
+  background-image: linear-gradient(
+    135deg,
+    var(--color-nav-item-current),
+    var(--color-nav-item-current-end)
+  );
+}
+
+/* The same gradient, 160°, on a large surface: the brand panel of the sign-in pages (Kawadir login).
+   Text on it: `text-on-nav-item-current` (checked on both ends). */
+@utility bg-brand-panel {
+  background-color: var(--color-nav-item-current);
+  background-image: linear-gradient(
+    160deg,
+    var(--color-nav-item-current),
+    var(--color-nav-item-current-end)
+  );
+}
+
+/* Gradient text in the brand colours (Kawadir «Analytics Dashboard» title). Large headings only; a plain
+   colour first, so forced-colours mode and old browsers still show readable text. */
+@utility text-brand-gradient {
+  color: var(--color-nav-item-current);
+  background-image: linear-gradient(
+    135deg,
+    var(--color-nav-item-current),
+    var(--color-nav-item-current-end)
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+
+  @media (forced-colors: active) {
+    background-image: none;
+    -webkit-text-fill-color: currentColor;
+  }
+}
+
+/* Kawadir's coloured glow under a gradient fill (the current navigation entry, primary buttons). */
+@utility shadow-brand-glow {
+  box-shadow: 0 4px 14px -3px var(--color-nav-item-current);
+}
+@utility shadow-brand-glow-lg {
+  box-shadow: 0 8px 25px -5px var(--color-nav-item-current);
+}
+
+/* The summary (KPI) cards (Kawadir layout): the brand gradient (135°) with a soft glow tinted from it —
+   one hue family, so an organization's colours recolour the cards too (FR-ADM-07). Text:
+   `text-on-nav-item-current` (checked on both ends). */
+@utility bg-stat-gradient {
+  background-color: var(--color-nav-item-current);
+  background-image: linear-gradient(
+    135deg,
+    var(--color-nav-item-current),
+    var(--color-nav-item-current-end)
+  );
+  box-shadow: 0 10px 24px -12px var(--color-nav-item-current);
+}
+
+/* A native <select> with Kawadir's small chevron at the inline end (drawn in the text colour, so it
+   follows light and dark mode), mirrored in Arabic. Room for it: `pe-10`. */
+@utility select-chevron {
+  appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-size:
+    5px 5px,
+    5px 5px;
+  background-repeat: no-repeat;
+  background-position:
+    calc(100% - 21px) 52%,
+    calc(100% - 16px) 52%;
+
+  &:where(:dir(rtl), [dir='rtl'] *) {
+    background-position:
+      16px 52%,
+      21px 52%;
+  }
+}
+
+/* Styles for the collapsed side navigation (72 px, icons only): only from the desktop width (--bp-lg)
+   up, never in the phone drawer. The shell's navigation carries data-nav-collapsed="true". */
+@custom-variant nav-collapsed {
+  @media (min-width: 900px) {
+    &:where([data-nav-collapsed='true'], [data-nav-collapsed='true'] *) {
+      @slot;
+    }
+  }
 }
 
 @layer base {
@@ -54,8 +149,8 @@
     border-radius: var(--radius-sm);
   }
 
-  /* Inside the side navigation (data-nav-scope) the ring sits on the navigation gradient: an outline in
-     `nav-focus-ring`, 2 px away from the entry (contrast checked on both gradient ends). */
+  /* Inside the side navigation (data-nav-scope) the ring is an outline in `nav-focus-ring`, 2 px away
+     from the entry, so it shows around the gradient-filled current entry too (checked on the panel). */
   [data-nav-scope] :focus-visible {
     box-shadow: none;
     outline: 2px solid var(--color-nav-focus-ring);

@@ -1,97 +1,100 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
+import { DemoShell } from '../.storybook/demo-shell';
 import { pick } from '../.storybook/l10n';
 import { AppShell } from './app-shell';
-import { Card } from './card';
-import { Icon } from './icons';
-import { NavGroup, NavItem, NavUnavailable } from './nav-item';
+import { PageHeader } from './page-header';
+import { StatCard, StatGrid } from './stat-card';
 
 /**
- * The suite shell of the approved design (T-M2-21): gradient navigation with the organization block,
- * grouped entries with icons, a white top bar. Narrow the window below 900 px for the menu button and
- * the navigation drawer (Escape closes it). Tagged `brand-matrix`: the story gate also runs it with
- * organization colours, whose gradient replaces the Jadarat one (FR-ADM-07).
+ * The suite shell in the Kawadir layout (T-M2-43; docs/design/kawadir-alignment.md §3): a white
+ * navigation (the organization's logo — or its name as a wordmark — on top, grouped entries, the current
+ * one on the Jadarat brand gradient, «Powered by Jadarat») that collapses from 260 to 72 px on a desktop,
+ * and a sticky top bar on the page background with the page title, the ⌘K / Ctrl K search pill, theme,
+ * language (globe), notifications and the account chip. Narrow the window below 900 px for the menu
+ * button and the drawer (Escape closes it). Tagged `brand-matrix`: the story gate also runs it with
+ * organization colours, whose gradient replaces the Jadarat one on the current entry (FR-ADM-07).
  */
 const meta = {
   title: 'Layout/AppShell',
   component: AppShell,
-  parameters: { layout: 'fullscreen' },
+  parameters: { layout: 'fullscreen', frame: 'bare' },
   tags: ['brand-matrix'],
 } satisfies Meta<typeof AppShell>;
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const Default: Story = {
-  args: {
-    brand: '',
-    navigation: null,
-    navigationLabel: '',
-    skipToContentLabel: '',
-    menuLabel: '',
-    closeMenuLabel: '',
-    children: null,
-  },
-  render: (_args, { globals }) => (
-    <AppShell
-      brand={pick(globals, { ar: 'جدارات · التدريب', en: 'Jadarat TMS' })}
-      organization={pick(globals, { ar: 'شركة الراية', en: 'Al Raya Company' })}
-      headerEnd={
-        <a
-          href="#language"
-          className="inline-flex min-h-11 items-center gap-2 rounded-md px-3 text-sm font-medium text-text-muted no-underline hover:bg-surface-hover"
-        >
-          <Icon name="globe" />
-          {pick(globals, { ar: 'English', en: 'العربية' })}
-        </a>
-      }
-      navigation={
-        <>
-          <NavGroup>
-            <li>
-              <NavItem href="#home" current icon={<Icon name="home" />}>
-                {pick(globals, { ar: 'الرئيسية', en: 'Home' })}
-              </NavItem>
-            </li>
-          </NavGroup>
-          <NavGroup id="story-nav-people" heading={pick(globals, { ar: 'الأشخاص', en: 'People' })}>
-            <li>
-              <NavItem href="#users" icon={<Icon name="people" />} count="12">
-                {pick(globals, { ar: 'المستخدمون', en: 'Users' })}
-              </NavItem>
-            </li>
-            <li>
-              <NavItem href="#roles" icon={<Icon name="key" />}>
-                {pick(globals, { ar: 'الأدوار والصلاحيات', en: 'Roles & permissions' })}
-              </NavItem>
-            </li>
-          </NavGroup>
-          <NavGroup
-            id="story-nav-integrations"
-            heading={pick(globals, { ar: 'التكاملات', en: 'Integrations' })}
-          >
-            <li>
-              <NavUnavailable
-                icon={<Icon name="plug" />}
-                label={pick(globals, { ar: 'ربط نظام إدارة التعلّم', en: 'LMS connection' })}
-                note={pick(globals, { ar: 'قريبًا', en: 'Coming soon' })}
-              />
-            </li>
-          </NavGroup>
-        </>
-      }
-      navigationLabel={pick(globals, { ar: 'التنقل الرئيسي', en: 'Main navigation' })}
-      skipToContentLabel={pick(globals, { ar: 'تخطَّ إلى المحتوى', en: 'Skip to content' })}
-      menuLabel={pick(globals, { ar: 'القائمة', en: 'Menu' })}
-      closeMenuLabel={pick(globals, { ar: 'إغلاق القائمة', en: 'Close menu' })}
-    >
-      <h1 className="mt-0 text-2xl font-semibold">
-        {pick(globals, { ar: 'الرئيسية', en: 'Home' })}
-      </h1>
-      <Card title={pick(globals, { ar: 'لا توجد بيانات تدريب بعد', en: 'No training data yet' })}>
-        {pick(globals, {
-          ar: 'ستظهر هنا الجلسات والدورات بعد إعداد وحدة التدريب لمنشأتكم.',
-          en: 'Sessions and courses will appear here once the Training module is set up for your organization.',
+type Globals = Record<string, unknown>;
+
+function Content({ globals }: { globals: Globals }) {
+  return (
+    <>
+      <PageHeader
+        title={pick(globals, { ar: 'أعضاء الفريق', en: 'Team members' })}
+        description={pick(globals, {
+          ar: 'أعضاء منشأتكم وأدوارهم والدعوات المعلّقة.',
+          en: 'The people of your organization, their roles and pending invitations.',
         })}
-      </Card>
-    </AppShell>
+      />
+      <StatGrid label={pick(globals, { ar: 'ملخص', en: 'Summary' })}>
+        <StatCard
+          variant="gradient"
+          label={pick(globals, { ar: 'إجمالي الأعضاء', en: 'Total members' })}
+          value="128"
+          icon="people"
+        />
+        <StatCard
+          variant="gradient"
+          label={pick(globals, { ar: 'نشط', en: 'Active' })}
+          value="119"
+          icon="success"
+        />
+        <StatCard
+          variant="gradient"
+          label={pick(globals, { ar: 'الدعوات المعلّقة', en: 'Pending invites' })}
+          value="6"
+          icon="mail"
+        />
+        <StatCard
+          variant="gradient"
+          label={pick(globals, { ar: 'معطَّل', en: 'Deactivated' })}
+          value="3"
+          icon="user"
+        />
+      </StatGrid>
+    </>
+  );
+}
+
+const shellArgs = {
+  brand: '',
+  navigation: null,
+  navigationLabel: '',
+  skipToContentLabel: '',
+  menuLabel: '',
+  closeMenuLabel: '',
+  children: null,
+} as const;
+
+export const Default: Story = {
+  args: shellArgs,
+  render: (_args, { globals }) => (
+    <DemoShell globals={globals} current="team" title={{ ar: 'أعضاء الفريق', en: 'Team members' }}>
+      <Content globals={globals} />
+    </DemoShell>
+  ),
+};
+
+/** Collapsed to icons (desktop): tooltips on hover and focus; the expand button at the bottom. */
+export const Collapsed: Story = {
+  args: shellArgs,
+  render: (_args, { globals }) => (
+    <DemoShell
+      globals={globals}
+      collapsed
+      current="team"
+      title={{ ar: 'أعضاء الفريق', en: 'Team members' }}
+    >
+      <Content globals={globals} />
+    </DemoShell>
   ),
 };

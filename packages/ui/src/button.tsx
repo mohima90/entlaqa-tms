@@ -2,23 +2,34 @@ import type { ButtonHTMLAttributes } from 'react';
 import { cn } from './cn';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'danger-outline';
-export type ButtonSize = 'sm' | 'md' | 'lg';
+export type ButtonSize = 'sm' | 'md' | 'lg' | 'icon';
 
 const variants: Record<ButtonVariant, string> = {
-  primary: 'bg-primary text-on-primary hover:bg-primary-hover',
-  secondary: 'bg-surface text-text border border-border-strong hover:bg-surface-hover',
+  /*
+   * Kawadir `btn-brand` («Save Changes»): the brand gradient (135°; the organization's colours replace it)
+   * with its text colour (checked on both ends), a soft coloured glow, lifted 2 px with a larger glow on
+   * hover (not with reduced motion). The colours never change on hover, so the text keeps its contrast.
+   */
+  primary:
+    'bg-brand-gradient text-on-nav-item-current font-semibold shadow-brand-glow transition-[box-shadow,transform] duration-300 hover:-translate-y-0.5 hover:shadow-brand-glow-lg active:translate-y-0 motion-reduce:transition-none motion-reduce:hover:translate-y-0 disabled:hover:translate-y-0 disabled:hover:shadow-brand-glow',
+  /* Kawadir "outline" (Refresh / Export / Print): white, icon + label, a visible boundary (border-strong,
+     SC 1.4.11) and a soft shadow. */
+  secondary: 'bg-surface text-text border border-border-strong shadow-1 hover:bg-surface-hover',
   ghost: 'bg-transparent text-primary-text hover:bg-surface-hover',
-  danger: 'bg-danger text-on-danger hover:bg-danger-hover',
+  danger: 'bg-danger text-on-danger shadow-1 hover:bg-danger-hover',
   /* A destructive action that only opens its confirmation (e.g. «تعطيل المستخدم», screen 3). */
   'danger-outline': 'bg-surface text-danger border border-danger hover:bg-danger-subtle',
 };
 
-/* Heights follow --size-control-*; md/lg meet the 44px touch target. */
+/*
+ * Kawadir sizes (shadcn new-york): 32 / 36 / 40 px high on a desktop, and at least 44 px on touch
+ * screens (pointer: coarse; NFR-UX-02). `icon` is a square icon-only button (give it an aria-label).
+ */
 const sizes: Record<ButtonSize, string> = {
-  /* 32 px for dense desktop layouts; 44 px on touch screens (pointer: coarse). */
   sm: 'min-h-8 px-3 text-sm pointer-coarse:min-h-11',
-  md: 'min-h-11 px-4 text-base',
-  lg: 'min-h-12 px-6 text-lg',
+  md: 'min-h-9 px-4 py-1.5 text-sm pointer-coarse:min-h-11',
+  lg: 'min-h-10 px-8 text-base pointer-coarse:min-h-12',
+  icon: 'size-9 shrink-0 rounded-xl text-text-muted hover:text-text pointer-coarse:size-11',
 };
 
 /** Class names for button-styled elements (also used for links styled as buttons). */
@@ -32,11 +43,16 @@ export function buttonClasses(
   return cn(
     'inline-flex items-center justify-center gap-2 rounded-md font-medium no-underline',
     'transition-colors disabled:cursor-not-allowed disabled:opacity-60',
-    variants[options.variant ?? 'primary'],
+    options.size === 'icon' && options.variant === undefined
+      ? 'bg-transparent hover:bg-surface-hover'
+      : variants[options.variant ?? 'primary'],
     sizes[options.size ?? 'md'],
     options.className,
   );
 }
+
+/** Icon-only buttons of the top bar (Kawadir: 36 px, rounded-xl, muted icon; 44 px on touch screens). */
+export const iconButtonClasses = buttonClasses({ size: 'icon' });
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   readonly variant?: ButtonVariant | undefined;

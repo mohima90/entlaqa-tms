@@ -223,7 +223,10 @@ test.describe('bulk user import', () => {
 
     // The new person is on the invited tab, invited by this import.
     await page.goto('/en/suite/admin/users?tab=invited');
-    const row = page.getByTestId('invitations-table').getByRole('row').filter({ hasText: added });
+    const row = page
+      .getByTestId('invitations-list')
+      .getByTestId('invitation-row')
+      .filter({ hasText: added });
     await expect(row).toContainText('From an import on');
 
     // Undo: the dialog says what happens; the person and the invitation are removed.
@@ -249,9 +252,11 @@ test.describe('bulk user import', () => {
     await form.locator('#invite-familyNameAr').fill('العتيبي');
     await form.getByRole('radio', { name: /^Learner/ }).check();
     await form.getByRole('button', { name: 'Send invitation' }).click();
-    await expect(page).toHaveURL(/\/en\/suite\/admin\/users\?tab=invited&invited=1$/);
+    // Kawadir: the code right away; then the invited tab.
+    await expect(page.getByTestId('invitation-created-panel')).toBeVisible();
+    await page.goto('/en/suite/admin/users?tab=invited');
     await expect(
-      page.getByTestId('invitations-table').getByRole('row').filter({ hasText: added }),
+      page.getByTestId('invitations-list').getByTestId('invitation-row').filter({ hasText: added }),
     ).toHaveCount(1);
   });
 
@@ -331,8 +336,8 @@ test.describe('bulk user import', () => {
     await expect(page.getByTestId('import-held-banner')).toContainText('دون إرسال');
     await expect(page.getByTestId('users-summary')).toContainText('لم تُرسل');
     const firstRow = page
-      .getByTestId('invitations-table')
-      .getByRole('row')
+      .getByTestId('invitations-list')
+      .getByTestId('invitation-row')
       .filter({ hasText: first });
     await expect(firstRow).toContainText('لم تُرسل الدعوة');
     await expect(firstRow).toContainText('من استيراد في');
@@ -346,8 +351,8 @@ test.describe('bulk user import', () => {
     await page.getByTestId('import-send-held').click();
     await expect(page.getByTestId('import-held-banner')).toHaveCount(0, { timeout: 30_000 });
     const secondRow = page
-      .getByTestId('invitations-table')
-      .getByRole('row')
+      .getByTestId('invitations-list')
+      .getByTestId('invitation-row')
       .filter({ hasText: second });
     await expect(secondRow).toContainText(/تُرسل قريبًا|مدعو/);
   });

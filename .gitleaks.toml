@@ -9,3 +9,10 @@ condition = "AND"
 paths = ['''^docs/brd/Jadarat_TMS_BRD_v2\.md$''']
 regexTarget = "line"
 regexes = ['''Idempotency-Key: tms-enr-[0-9a-f]{6}''']
+
+[[allowlists]]
+description = "Sample invitation code K7M2PQ9XHT4W (and its typed form k7m2-pq9x-ht4w) in two unit tests (FR-IAM-03; fixtures, not secrets). Commit 47cdd60 holds them as `token: '…'` literals."
+condition = "AND"
+paths = ['''^apps/suite/src/lib/invite-accept-input\.test\.ts$''', '''^packages/platform-identity/src/invitation-accept\.test\.ts$''']
+regexTarget = "line"
+regexes = ['''token: '(K7M2PQ9XHT4W| k7m2-pq9x-ht4w )'''']

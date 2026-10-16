@@ -1,7 +1,7 @@
 -- db-test: run-as=app_worker
--- Invitations under SYSTEM claims (T-M2-07, FR-IAM-03): the mailer job reads its tenant's invitations and
--- issues a token for a PENDING one only (send count + 1, valid 7 more days, at most 4 e-mails); it never
--- reads a token hash, invites, revokes, accepts or reaches another tenant. Runs CONNECTED AS app_worker.
+-- Invitations under SYSTEM claims (T-M2-07, FR-IAM-03): the mailer job reads its tenant's invitations (and,
+-- since 20261018090000, their codes through private.invitation_code_for_mail only — 93_invitation_codes_app_worker.sql);
+-- it issues no token or code, never reads a token hash, invites, revokes, accepts or reaches another tenant. Runs CONNECTED AS app_worker.
 -- Fixtures: 00_helpers_and_fixtures.sql, 35_invitations_fixtures.sql. Each block is rolled back.
 \set ON_ERROR_STOP on
 
@@ -11,47 +11,26 @@ begin;
 set local role authenticated;
 select tests.set_claims(tests.system_claims('a0000000-0000-4000-8000-000000000001', 'platform.invitations.mailer'));
 do $$
-declare
-  issue constant text := $q$update platform.invitations set token_hash = tests.token_hash(%L) where id = %L$q$;
 begin
   perform tests.assert((select count(*) from platform.invitations) >= 8, 'system: reads its tenant''s invitations');
   perform tests.assert_eq((select count(*) from platform.invitations where tenant_id <> 'a0000000-0000-4000-8000-000000000001'),
     0::bigint, 'system: no other tenant''s invitations');
   perform tests.assert_privilege_denied($q$select token_hash from platform.invitations$q$, 'system: token_hash not readable');
+  perform tests.assert_privilege_denied($q$select invite_code from platform.invitations$q$,
+    'system: codes are not readable directly (only through private.invitation_code_for_mail)');
 
-  -- The first e-mail of a4…06 (no token yet).
-  perform tests.assert_eq(tests.rows_affected(format(issue, 'job-1', 'a4000000-0000-4000-8000-000000000006')), 1::bigint,
-    'system: issues the first token of a pending invitation');
-  perform tests.assert_eq((select row(send_count, token_issued_at = now(), expires_at = now() + interval '7 days')::text
-                           from platform.invitations where id = 'a4000000-0000-4000-8000-000000000006'),
-    row(1::smallint, true, true)::text, 'first e-mail: count 1, issued now, valid 7 days');
-  perform tests.assert_eq((select state from private.invitation_by_token(tests.token_hash('job-1'))), null,
+  -- Since 20261018090000 the mailer issues no token: codes come from private.issue_invitation_code (members)
+  -- or from releasing a held import invitation (92_/93_invitation_codes_*.sql).
+  perform tests.assert_privilege_denied($q$update platform.invitations set token_hash = tests.token_hash('job-1') where id = 'a4000000-0000-4000-8000-000000000006'$q$,
+    'system: cannot issue a token');
+  perform tests.assert_privilege_denied($q$update platform.invitations set invite_code = 'ABCDEFGHJKLM' where id = 'a4000000-0000-4000-8000-000000000006'$q$,
+    'system: cannot choose a code');
+  perform tests.assert_fails_like($q$select private.issue_invitation_code('a4000000-0000-4000-8000-000000000006')$q$,
+    'invitation codes need a signed-in member%', 'system: issue_invitation_code is for members (app_server) only');
+  perform tests.assert_fails_like($q$select * from private.invitation_codes()$q$,
+    'invitation codes need a signed-in member%', 'system: invitation_codes is for members (app_server) only');
+  perform tests.assert_eq((select state from private.invitation_by_token(tests.token_hash('tok-a'))), null,
     'app_worker cannot look links up (app_server only)');
-
-  -- Resends: a new token replaces the old one, up to 4 e-mails in all.
-  perform tests.assert_eq(tests.rows_affected(format(issue, 'job-2', 'a4000000-0000-4000-8000-000000000006')), 1::bigint, '2nd');
-  perform tests.assert_eq(tests.rows_affected(format(issue, 'job-3', 'a4000000-0000-4000-8000-000000000006')), 1::bigint, '3rd');
-  perform tests.assert_eq(tests.rows_affected(format(issue, 'job-4', 'a4000000-0000-4000-8000-000000000006')), 1::bigint, '4th');
-  perform tests.assert_check_constraint(format(issue, 'job-5', 'a4000000-0000-4000-8000-000000000006'),
-    'invitations_send_count_check', 'no 5th e-mail');
-  perform tests.assert_fails(format($q$update platform.invitations set token_hash = null where id = %L$q$, 'a4000000-0000-4000-8000-000000000006'),
-    array['23514'], 'a token cannot be removed');
-  perform tests.assert_fails(format(issue, 'job-4', 'a4000000-0000-4000-8000-000000000001'), array['23505'],
-    'token hashes are unique');
-
-  -- An expired invitation gets a fresh link (resend).
-  perform tests.assert_eq(tests.rows_affected(format(issue, 'job-exp', 'a4000000-0000-4000-8000-000000000002')), 1::bigint,
-    'system: a new token for an expired pending invitation');
-  perform tests.assert((select expires_at > now() from platform.invitations where id = 'a4000000-0000-4000-8000-000000000002'),
-    'and it is valid again for 7 days');
-
-  -- Only pending invitations: revoked (a4…03) and accepted (a4…04, committed by 36) are final.
-  perform tests.assert_eq(tests.rows_affected(format(issue, 'job-rev', 'a4000000-0000-4000-8000-000000000003')), 0::bigint,
-    'system: no token for a revoked invitation');
-  perform tests.assert_eq(tests.rows_affected(format(issue, 'job-acc', 'a4000000-0000-4000-8000-000000000004')), 0::bigint,
-    'system: no token for an accepted invitation');
-  perform tests.assert_eq(tests.rows_affected(format(issue, 'job-b', 'b4000000-0000-4000-8000-000000000001')), 0::bigint,
-    'system: no token for tenant B''s invitation');
 
   -- Nothing else.
   -- (The trigger refuses first; the policies would too: jobs keep rows pending.)

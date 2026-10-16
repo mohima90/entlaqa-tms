@@ -31,34 +31,48 @@
     "tenantContext": "Organization",
     "tenantUnresolved": "Organization not resolved from the site address yet",
     "pageTitle": "Home",
+    "homeSubtitle": "Your organization at a glance.",
     "emptyTitle": "No training data yet",
     "emptyBody": "Sessions and courses will appear here once the Training module is set up for your organization.",
     "setupTitle": "Set up your organization",
-    "setupBody": "Fill in your organization profile, invite your people, check their roles and set your security policy. More set-up pages are coming soon.",
+    "setupBody": "Fill in your general settings, invite your team members, check their roles and set your security policy. More set-up pages are coming soon.",
     "comingSoon": "Coming soon",
-    "users": "Users",
     "roles": "Roles & permissions",
     "myProfile": "My profile",
     "productShort": "Jadarat TMS",
     "menu": "Menu",
     "closeMenu": "Close menu",
+    "teamMembers": "Team members",
+    "subscription": "Subscription",
+    "groupBilling": "Billing",
+    "groupSettings": "Settings",
+    "general": "General",
+    "emailIntegration": "Email integration",
+    "integrations": "Integrations",
+    "security": "Security",
+    "collapseMenu": "Collapse menu",
+    "expandMenu": "Expand menu",
+    "poweredBy": "Powered by Jadarat",
+    "searchTrigger": "Search pages…",
+    "searchTitle": "Search pages",
+    "searchPlaceholder": "Type a page name",
+    "searchEmpty": "No matching pages.",
+    "searchGroupPages": "Pages",
+    "searchGroupAccount": "Account",
+    "close": "Close",
+    "theme": "Theme",
+    "themeLight": "Light",
+    "themeDark": "Dark",
+    "themeSystem": "System",
+    "notifications": "Notifications",
+    "notificationsEmptyTitle": "No notifications yet",
+    "notificationsEmptyBody": "Notifications about your training and approvals will appear here.",
+    "statusMessages": "Status messages",
+    "accountSubtitle": "{organization} · {role}",
+    "myAccount": "My account",
     "groupOrganization": "Organization",
-    "organizationProfile": "Organization profile",
     "branding": "Branding",
-    "customFields": "Custom fields",
-    "featuresPlan": "Features & plan",
-    "groupDomains": "Domain management",
-    "domains": "Domains",
-    "groupPeople": "People",
-    "groupSecurity": "Security",
-    "securityPolicy": "Security policy",
     "auditLog": "Audit log",
-    "consent": "Consent",
-    "groupEmail": "E-mail sending",
-    "emailSender": "Sender settings",
-    "groupIntegrations": "Integrations",
-    "lmsConnection": "LMS connection",
-    "hrSystem": "HR system",
     "idleTitle": "Your sign-in session is about to end",
     "idleText": "Your sign-in session ends in two minutes because of inactivity. Continue to stay signed in.",
     "idleContinue": "Stay signed in",
@@ -103,7 +117,37 @@
       "passwordRejected": "The new password was not accepted. Choose a different one.",
       "tooManyAttempts": "Sign-in is paused for now after too many unsuccessful attempts. Try again later, or reset your password with “Forgot password?”."
     },
-    "sessionEnded": "Your sign-in session has ended. Sign in again to continue."
+    "sessionEnded": "Your sign-in session has ended. Sign in again to continue.",
+    "welcomeBack": "Welcome back",
+    "enterEmailToContinue": "Enter your work email to continue.",
+    "passwordStepIntro": "Enter your password to sign in.",
+    "continue": "Continue",
+    "changeEmail": "Change",
+    "changeEmailAria": "Change the email",
+    "forgotShort": "Forgot?",
+    "forgotShortAria": "Forgot your password?",
+    "showPassword": "Show password",
+    "hidePassword": "Hide password",
+    "emailInvalid": "Enter an email address such as name@company.com.",
+    "emailPlaceholder": "name@company.com",
+    "passwordPlaceholder": "Enter your password",
+    "haveInvitation": "Have an invitation code?",
+    "joinWithCode": "Join with your code",
+    "layout": {
+      "portal": "Training management",
+      "poweredBy": "Powered by",
+      "entlaqa": "ENTLAQA",
+      "panelTitle": "Smarter training management",
+      "panelAccent": "from plan to certificate",
+      "panelText": "Plan, schedule, enroll, deliver and follow up every training in one place, in Arabic and English.",
+      "features": {
+        "plan": "Annual training plans and budgets",
+        "schedule": "Sessions, venues and trainers",
+        "enroll": "Nominations and approvals",
+        "assess": "Attendance, assessments and certificates",
+        "report": "Reports and dashboards"
+      }
+    }
   },
   "invite": {
     "pageTitle": "Accept invitation",
@@ -191,7 +235,9 @@
       "submit": "Send link",
       "submitting": "Sending…",
       "backToSignIn": "Back to sign in",
-      "emailInvalid": "Enter a valid email address, such as name@company.com."
+      "emailInvalid": "Enter a valid email address, such as name@company.com.",
+      "panelTitle": "Secure password reset",
+      "panelText": "We send a single-use link to your email. It expires shortly, for your security."
     },
     "sent": {
       "title": "Check your email",
@@ -228,7 +274,9 @@
       "codeIntro": "Your account uses an authenticator app: enter the code it shows now. The link works once, so check the code before saving.",
       "codeOptionalIntro": "Does your account use an authenticator app? Then also enter the code it shows now: without it the password can't be changed, and the link is used up.",
       "codeLabel": "Verification code",
-      "codeHint": "6 digits from your authenticator app; the code changes every 30 seconds."
+      "codeHint": "6 digits from your authenticator app; the code changes every 30 seconds.",
+      "panelTitle": "Almost there",
+      "panelText": "Choose a strong password that you don't use anywhere else."
     },
     "fieldErrors": {
       "tooShort": "At least {min} characters.",
@@ -256,14 +304,25 @@
     }
   },
   "users": {
-    "title": "Users",
-    "summary": "{count, plural, =0 {No users} one {{count, number, integer} user} other {{count, number, integer} users}}",
+    "title": "Team members",
+    "description": "The people of your organization, their roles and the invitations not accepted yet.",
+    "summary": "{count, plural, =0 {No members} one {{count, number, integer} member} other {{count, number, integer} members}}",
     "pendingInvitations": "{count, plural, =0 {No pending invitations} one {{count, number, integer} invitation not accepted yet} other {{count, number, integer} invitations not accepted yet}}",
     "tabsLabel": "User status",
+    "viewsLabel": "Team members views",
+    "statusFilterLabel": "Filter members by status",
+    "statsLabel": "Summary",
+    "stats": {
+      "total": "Total members",
+      "active": "Active",
+      "pending": "Pending invites",
+      "deactivated": "Deactivated"
+    },
     "tabs": {
+      "members": "Members",
       "all": "All",
       "active": "Active",
-      "invited": "Invited",
+      "invited": "Pending invites",
       "deactivated": "Deactivated"
     },
     "filtersLabel": "Search and filters",
@@ -277,7 +336,7 @@
     "allBranches": "All branches",
     "apply": "Apply",
     "clearFilters": "Clear filters",
-    "tableCaption": "Users list",
+    "tableCaption": "Team members list",
     "columns": {
       "name": "Name",
       "employeeNumber": "Employee number",
@@ -309,7 +368,7 @@
     "rolesNotVisible": "Not visible to you"
   },
   "userProfile": {
-    "breadcrumb": "Users",
+    "breadcrumb": "Team members",
     "basicData": "Basic information",
     "fields": {
       "email": "Email",
@@ -476,7 +535,7 @@
   "editUser": {
     "title": "Edit user details",
     "titleFor": "Edit details of {name}",
-    "breadcrumb": "Users",
+    "breadcrumb": "Team members",
     "breadcrumbLabel": "Breadcrumb",
     "details": "Basic information",
     "intro": "Every change is recorded in the audit log with the names of the changed fields.",
@@ -537,7 +596,7 @@
   "editRoles": {
     "title": "Edit roles",
     "titleFor": "Edit roles of {name}",
-    "breadcrumb": "Users",
+    "breadcrumb": "Team members",
     "breadcrumbLabel": "Breadcrumb",
     "roles": "Roles",
     "primary": "Primary role",
@@ -614,8 +673,8 @@
   "invitations": {
     "inviteUser": "Invite user",
     "title": "Invite a user",
-    "intro": "We send an email to the work address with a link to set a password and sign in. No account is created until the invitation is accepted.",
-    "breadcrumb": "Users",
+    "intro": "We create an invitation code and a link that you can copy and share with the person. If email is set up, we also send them to the work address. No account is created until the invitation is accepted.",
+    "breadcrumb": "Team members",
     "breadcrumbLabel": "Breadcrumb",
     "form": {
       "person": "Person details",
@@ -653,7 +712,7 @@
         "ar": "العربية",
         "en": "English"
       },
-      "expiryNotice": "The invitation stays valid for 7 days (until {date}). You can resend it up to 3 times or revoke it from the users list.",
+      "expiryNotice": "The invitation stays valid for 7 days (until {date}). From the users list you can copy its code or link at any time, resend it with a new code up to 3 times, or revoke it.",
       "submit": "Send invitation",
       "submitting": "Sending…",
       "back": "Go back",
@@ -673,7 +732,7 @@
       }
     },
     "list": {
-      "created": "Invitation created. We're sending it to the work email now; it stays valid for 7 days.",
+      "created": "Invitation created. Copy its code or link from the list; it stays valid for 7 days.",
       "tableCaption": "Invitations not accepted yet",
       "columns": {
         "name": "Name",
@@ -692,7 +751,7 @@
       "expiresOn": "Expires on {date}",
       "expiredOn": "Expired on {date}",
       "resend": "Resend invitation",
-      "resent": "Invitation resent. The new link stays valid for 7 days and the previous link stops working.",
+      "resent": "Invitation resent with a new code. The previous code and link stopped working; the new one stays valid for 7 days.",
       "resendLimit": "This invitation has reached the resend limit (3 times).",
       "resendLimitShort": "Resend limit reached",
       "revoke": "Revoke invitation",
@@ -702,7 +761,7 @@
       "revoked": "Invitation revoked; its link no longer works.",
       "working": "Working…",
       "notPending": "This invitation is no longer waiting for acceptance; it may have been accepted or revoked. Refresh the page to see its latest status.",
-      "roleNotAllowed": "Only the Organization Admin can resend or revoke an invitation with a privileged role.",
+      "roleNotAllowed": "Only the Organization Admin can copy, resend or revoke an invitation with a privileged role.",
       "expiredBanner": "{count, plural, one {{count, number, integer} invitation expired before it was accepted. You can resend it now; it stays valid for 7 days.} other {{count, number, integer} invitations expired before they were accepted. You can resend them now; each stays valid for 7 days.}}",
       "resendExpired": "Resend expired invitations ({count, number, integer})",
       "resentExpired": "Expired invitations resent ({count}).",
@@ -712,12 +771,31 @@
       "sentHeld": "We're sending the invitation now. It stays valid for 7 days from when it's sent.",
       "nothingToSend": "This invitation is no longer waiting to be sent; it may have been sent or revoked. Refresh the page to see the latest status.",
       "sendNotAllowed": "Only the Organization Admin or an HR Manager can send invitations.",
-      "capped": "Showing the latest {shown, number, integer} of {total, number, integer} invitations. You can search by name or email to reach the others."
+      "capped": "Showing the latest {shown, number, integer} of {total, number, integer} invitations. You can search by name or email to reach the others.",
+      "noCode": "No code to copy yet. Use Resend invitation to issue one.",
+      "noCodePrivileged": "Only the Organization Admin can copy the code of an invitation with a privileged role.",
+      "sentAt": "Sent {date}"
+    },
+    "created": {
+      "title": "Invitation created",
+      "text": "Share the invitation code or link with {name}. It stays valid for 7 days. If email is set up, we also send it to the work address.",
+      "inviteAnother": "Invite another user",
+      "toList": "Go to invited users"
+    },
+    "copy": {
+      "codeLabel": "Invitation code",
+      "linkLabel": "Invitation link",
+      "copyCode": "Copy code",
+      "copyLink": "Copy invite link",
+      "codeCopied": "Invitation code copied.",
+      "linkCopied": "Invitation link copied.",
+      "copyFailed": "Couldn't copy automatically. Select the text and copy it.",
+      "loading": "Getting the code…"
     }
   },
   "deactivation": {
     "breadcrumbLabel": "Breadcrumb",
-    "breadcrumb": "Users",
+    "breadcrumb": "Team members",
     "title": "Deactivate account",
     "titleFor": "Deactivate {name}'s account?",
     "effects": {
@@ -881,7 +959,7 @@
   },
   "security": {
     "title": "Security",
-    "section": "Organization admin",
+    "section": "Settings",
     "intro": "These settings apply to everyone in {organization}. Every change is recorded in the audit log.",
     "readOnly": "Only the Organization Admin changes these settings.",
     "comingSoon": "Coming soon",
@@ -1001,7 +1079,7 @@
   "userImport": {
     "entry": "Import from file",
     "title": "Import users from a file",
-    "breadcrumb": "Users",
+    "breadcrumb": "Team members",
     "breadcrumbImport": "Import from file",
     "breadcrumbLabel": "Breadcrumb",
     "intro": "You can add many employees at once from an Excel or CSV file. We check every row and show you the outcome before importing; nothing is saved until you confirm.",
@@ -1618,9 +1696,9 @@
     "heldSummary": "{count, plural, one {one invitation not sent yet} other {{count, number, integer} invitations not sent yet}}"
   },
   "organizationProfile": {
-    "title": "Organization profile",
+    "title": "General settings",
     "breadcrumbLabel": "Breadcrumb",
-    "breadcrumbSection": "Organization",
+    "breadcrumbSection": "Settings",
     "intro": "How your organization appears in Jadarat TMS, and the defaults everyone starts with. People can still change their own language.",
     "notConfigured": "The organization profile isn't available in this environment yet.",
     "readOnly": "You can view these settings. Only the Organization Admin can change them.",
@@ -1677,7 +1755,7 @@
     "cancel": "Cancel",
     "save": "Save changes",
     "saving": "Saving…",
-    "saved": "Organization profile saved.",
+    "saved": "General settings saved.",
     "noChanges": "There are no changes to save.",
     "fieldErrors": {
       "nameRequired": "Enter the display name.",
@@ -1706,6 +1784,123 @@
       "professional_services": "Professional services",
       "non_profit": "Non-profit",
       "other": "Other"
+    }
+  },
+  "signUp": {
+    "pageTitle": "Join your organization",
+    "titleWithOrg": "Join {organization}",
+    "intro": "Enter the invitation code you received to create your account.",
+    "introValid": "You're invited to join {organization}. Create your account to continue.",
+    "codeLabel": "Invitation code",
+    "codePlaceholder": "e.g. K7M2-PQ9X-HT4W",
+    "codeFromLink": "You opened an invitation link, so the code is filled in for you.",
+    "codeChecking": "Checking the code…",
+    "codeValid": "Valid invitation to {organization}",
+    "codeStates": {
+      "expired": "This invitation has expired. Ask your organization's administrator for a new one.",
+      "revoked": "This invitation was cancelled. Contact your organization's administrator.",
+      "used": "This invitation was already used. Sign in with your email and password.",
+      "invalid": "This code isn't valid. Check it and try again."
+    },
+    "emailPreFilled": "Filled in from your invitation. You sign in with this email; it can't be changed.",
+    "submit": "Join {organization}",
+    "submitDefault": "Create account",
+    "haveAccount": "Already have an account?",
+    "signIn": "Sign in"
+  },
+  "platform": {
+    "roleName": "Platform Super Admin",
+    "consoleName": "Platform console",
+    "navigation": "Platform navigation",
+    "organizationsNav": "Organizations",
+    "title": "Organizations",
+    "subtitle": "Create organizations and give each one its Organization Admin with an invitation link.",
+    "stats": {
+      "total": "Organizations",
+      "active": "Active",
+      "pendingAdmin": "Organization Admin pending"
+    },
+    "table": {
+      "caption": "Organizations on the platform",
+      "name": "Name",
+      "shortName": "Short name",
+      "status": "Status",
+      "created": "Created",
+      "members": "Members",
+      "actions": "Actions",
+      "empty": "No organizations yet. Create the first one."
+    },
+    "statuses": {
+      "active": "Active",
+      "trial": "Trial",
+      "suspended": "Suspended",
+      "cancelled": "Cancelled"
+    },
+    "adminStates": {
+      "active": "Joined",
+      "issuer_revoked": "Needs a new code",
+      "pending": "Invited, not joined yet",
+      "expired": "Invitation expired",
+      "none": "Not assigned"
+    },
+    "create": {
+      "open": "Create organization",
+      "title": "Create organization",
+      "intro": "The organization is created with its Organization Admin's invitation. You get a code and a link to share; no email is sent.",
+      "required": "(required)",
+      "optional": "(optional)",
+      "slug": "Short name",
+      "slugHint": "3 to 40 lowercase letters, digits or hyphens, for example entlaqa. It can't be changed later.",
+      "nameAr": "Organization name in Arabic",
+      "nameEn": "Organization name in English",
+      "adminSection": "Organization Admin",
+      "adminEmail": "Organization Admin's work email",
+      "adminFirstNameAr": "First name in Arabic",
+      "adminFamilyNameAr": "Family name in Arabic",
+      "adminFirstNameEn": "First name in English",
+      "adminFamilyNameEn": "Family name in English",
+      "adminNamesHint": "Optional. The Organization Admin can set their name when they join.",
+      "locale": "Invitation language",
+      "localeEn": "English",
+      "localeAr": "Arabic",
+      "submit": "Create organization",
+      "submitting": "Creating…",
+      "cancel": "Cancel",
+      "errors": {
+        "slug": "Use 3 to 40 lowercase letters, digits or hyphens, not starting or ending with a hyphen.",
+        "slugTaken": "This short name is already used or reserved. Choose another.",
+        "nameAr": "Enter the organization's name in Arabic (up to 200 characters).",
+        "nameEn": "Use up to 200 characters.",
+        "adminEmail": "Enter an email address such as name@company.com.",
+        "adminEmailOwn": "Use the Organization Admin's own email. You can't invite your own Super Admin account.",
+        "adminName": "Use up to 100 characters.",
+        "locale": "Choose Arabic or English.",
+        "form": "Check the details and try again."
+      }
+    },
+    "created": {
+      "title": "Organization created",
+      "text": "Share this invitation code or link with the Organization Admin. It's valid for 7 days. They open the link, set their password and join the organization.",
+      "done": "Done"
+    },
+    "invite": {
+      "open": "Organization Admin link",
+      "title": "Organization Admin invitation",
+      "text": "Share this code or link with the Organization Admin. A new code stops the old link from working and gives 7 more days.",
+      "expires": "Valid until {date}",
+      "loading": "Loading the invitation…",
+      "newCode": "New code",
+      "issuing": "Issuing…",
+      "newCodeIssued": "A new code was issued. The previous code no longer works.",
+      "close": "Close",
+      "needsNewCode": "The Super Admin who issued this invitation no longer has access, so its link no longer works. Issue a new code to send the Organization Admin a working one."
+    },
+    "errors": {
+      "noPendingAdmin": "The Organization Admin of this organization has already joined."
+    },
+    "chooser": {
+      "title": "Platform console",
+      "text": "Manage organizations as Platform Super Admin."
     }
   }
 }

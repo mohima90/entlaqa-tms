@@ -78,7 +78,7 @@ function Radio({
 }) {
   return (
     <label
-      className={`flex min-h-11 cursor-pointer items-center gap-2 rounded-md border px-3 ${
+      className={`flex min-h-11 cursor-pointer items-center gap-2 rounded-full border px-4 ${
         checked
           ? 'border-primary bg-primary-subtle font-medium text-primary-text'
           : 'border-border-strong bg-surface'
@@ -274,13 +274,14 @@ export function OrganizationProfileForm(props: OrganizationProfileFormProps) {
     >
       <div className="flex flex-wrap items-start gap-6">
         <div className="flex min-w-0 flex-[999_1_34rem] flex-col gap-6">
-          <Card aria-labelledby="org-card-organization" className="flex flex-col gap-5">
-            <div>
-              <h2 id="org-card-organization" className="m-0 text-lg font-semibold">
-                {t('organization.title')}
-              </h2>
-              <p className="m-0 text-sm text-text-muted">{t('organization.intro')}</p>
-            </div>
+          <Card
+            aria-labelledby="org-card-organization"
+            titleId="org-card-organization"
+            title={t('organization.title')}
+            description={t('organization.intro')}
+            icon="building"
+            className="flex flex-col gap-5 *:first:mb-0"
+          >
             <div className="grid grid-cols-[repeat(auto-fit,minmax(15rem,1fr))] gap-5">
               <TextField
                 id="org-nameEn"
@@ -324,13 +325,14 @@ export function OrganizationProfileForm(props: OrganizationProfileFormProps) {
             </div>
           </Card>
 
-          <Card aria-labelledby="org-card-defaults" className="flex flex-col gap-5">
-            <div>
-              <h2 id="org-card-defaults" className="m-0 text-lg font-semibold">
-                {t('defaults.title')}
-              </h2>
-              <p className="m-0 text-sm text-text-muted">{t('defaults.intro')}</p>
-            </div>
+          <Card
+            aria-labelledby="org-card-defaults"
+            titleId="org-card-defaults"
+            title={t('defaults.title')}
+            description={t('defaults.intro')}
+            icon="globe"
+            className="flex flex-col gap-5 *:first:mb-0"
+          >
             <div className="grid grid-cols-[repeat(auto-fit,minmax(15rem,1fr))] gap-5">
               {select('currencyCode', t('defaults.currency'), choices.currencies)}
               {select('timeZone', t('defaults.timeZone'), choices.timeZones)}
@@ -367,13 +369,14 @@ export function OrganizationProfileForm(props: OrganizationProfileFormProps) {
             </fieldset>
           </Card>
 
-          <Card aria-labelledby="org-card-calendar" className="flex flex-col gap-5">
-            <div>
-              <h2 id="org-card-calendar" className="m-0 text-lg font-semibold">
-                {t('calendar.title')}
-              </h2>
-              <p className="m-0 text-sm text-text-muted">{t('calendar.intro')}</p>
-            </div>
+          <Card
+            aria-labelledby="org-card-calendar"
+            titleId="org-card-calendar"
+            title={t('calendar.title')}
+            description={t('calendar.intro')}
+            icon="calendar"
+            className="flex flex-col gap-5 *:first:mb-0"
+          >
             <fieldset
               className="m-0 flex flex-col gap-2 border-0 p-0"
               aria-describedby="org-date-preview"
@@ -398,7 +401,7 @@ export function OrganizationProfileForm(props: OrganizationProfileFormProps) {
               </div>
               <p
                 id="org-date-preview"
-                className="m-0 flex items-center gap-2 rounded-md bg-surface-sunken px-3 py-2 text-sm text-text-muted"
+                className="m-0 flex items-center gap-2 rounded-xl bg-surface-sunken px-3 py-2 text-sm text-text-muted"
                 aria-live="polite"
                 data-testid="org-date-preview"
               >
@@ -426,7 +429,7 @@ export function OrganizationProfileForm(props: OrganizationProfileFormProps) {
                       onClick={() => {
                         set('workingDays', toggleDay(values.workingDays, day.value));
                       }}
-                      className={`min-h-11 min-w-14 rounded-md border px-2 text-sm font-medium disabled:cursor-not-allowed ${
+                      className={`min-h-11 min-w-14 rounded-xl border px-2 text-sm font-medium disabled:cursor-not-allowed ${
                         on
                           ? 'border-primary bg-primary text-on-primary'
                           : 'border-border-strong bg-surface text-text'
@@ -473,14 +476,14 @@ export function OrganizationProfileForm(props: OrganizationProfileFormProps) {
           aria-label={t('notes.label')}
           className="flex min-w-0 flex-[1_1_16rem] flex-col gap-4 lg:max-w-80"
         >
-          <div className="flex gap-3 rounded-lg bg-primary-subtle p-4 text-sm">
-            <Icon name="info" className="mt-0.5 shrink-0 text-primary-text" />
+          <div className="flex gap-3 rounded-xl border border-info/30 bg-info-subtle p-4 text-sm">
+            <Icon name="info" className="mt-0.5 shrink-0 text-info" />
             <div>
               <p className="m-0 mb-1 font-semibold text-text">{t('notes.countryTitle')}</p>
               <p className="m-0 text-text-muted">{t('notes.countryBody')}</p>
             </div>
           </div>
-          <div className="flex gap-3 rounded-lg bg-surface-sunken p-4 text-sm">
+          <div className="flex gap-3 rounded-xl border border-border bg-surface p-4 text-sm shadow-1">
             <Icon name="info" className="mt-0.5 shrink-0 text-text-muted" />
             <div>
               <p className="m-0 mb-1 font-semibold text-text">{t('notes.notCollectedTitle')}</p>
@@ -510,7 +513,7 @@ export function OrganizationProfileForm(props: OrganizationProfileFormProps) {
       ) : null}
       {editable ? (
         <div
-          className="sticky bottom-0 z-10 flex flex-wrap items-center gap-3 rounded-lg border border-border bg-surface px-4 py-3 shadow-1 sm:px-5"
+          className="sticky bottom-0 z-10 flex flex-wrap items-center gap-3 rounded-xl border border-border bg-surface px-4 py-3 shadow-2 sm:px-5"
           data-testid="organization-footer"
         >
           <span

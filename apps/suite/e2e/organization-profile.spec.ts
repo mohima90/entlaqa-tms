@@ -1,10 +1,10 @@
 import AxeBuilder from '@axe-core/playwright';
 import { type Page, expect, test } from '@playwright/test';
-import { afterSignIn } from './sign-in';
+import { afterSignIn, fillSignIn } from './sign-in';
 import { freshCode } from './totp';
 
 /**
- * Organization profile and regional settings (approved screen «بيانات المنشأة» / "Organization profile",
+ * Settings → General — the organization profile and regional settings (approved screen «بيانات المنشأة»; since T-M2-43 «الإعدادات العامة» / "General settings",
  * PO 14 Oct 2026; FR-ADM-02, FR-SCH-07; T-M2-22) on the self-hosted stack (infra/docker/smoke.sh, after
  * the security journey: the smoke organization requires an authenticator code at sign-in, so the
  * Organization Admin signs in with one; saving itself needs no code — PO decision, 14 Oct 2026). In English
@@ -28,9 +28,7 @@ const AR_NAME = 'شركة الاختبار السيادي القابضة';
 
 async function signIn(page: Page, locale: 'ar' | 'en', email: string, secret: string) {
   await page.goto(`/${locale}/sign-in`);
-  await page.locator('#email').fill(email);
-  await page.locator('#password').fill(secret);
-  await page.getByRole('button', { name: locale === 'ar' ? 'تسجيل الدخول' : 'Sign in' }).click();
+  await fillSignIn(page, locale, email, secret);
 }
 
 /** Password, then the authenticator code the organization requires at sign-in (its MFA policy). */
@@ -62,13 +60,13 @@ test.describe('organization profile', () => {
   }) => {
     await signInWithCode(page, 'en');
     const nav = page.getByRole('navigation', { name: 'Main navigation' });
-    await nav.getByRole('link', { name: 'Organization profile' }).click();
-    await expect(page).toHaveURL(/\/en\/suite\/admin\/organization$/);
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Organization profile');
+    await nav.getByRole('link', { name: 'General', exact: true }).click();
+    await expect(page).toHaveURL(/\/en\/suite\/admin\/settings$/);
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('General settings');
     await expect(page.getByRole('navigation', { name: 'Breadcrumb' })).toContainText(
-      'Organization/Organization profile',
+      'Settings/General settings',
     );
-    await expect(nav.getByRole('link', { name: 'Organization profile' })).toHaveAttribute(
+    await expect(nav.getByRole('link', { name: 'General', exact: true })).toHaveAttribute(
       'aria-current',
       'page',
     );
@@ -126,9 +124,7 @@ test.describe('organization profile', () => {
     await page.getByTestId('org-fiscalYearStartMonth').selectOption('4');
 
     await page.getByTestId('organization-save').click();
-    await expect(page.getByTestId('organization-message')).toHaveText(
-      'Organization profile saved.',
-    );
+    await expect(page.getByTestId('organization-message')).toHaveText('General settings saved.');
     await expect(page.getByTestId('tenant-context')).toContainText(EN_NAME);
     await expect(page.getByTestId('organization-last-changed')).toContainText('Last changed by');
     await expect(page.getByTestId('organization-last-changed')).toContainText(' AH');
@@ -150,9 +146,9 @@ test.describe('organization profile', () => {
   test('Arabic: the Arabic name in the menu, Hijri dates in the users list', async ({ page }) => {
     await signInWithCode(page, 'ar');
     await expect(page.getByTestId('tenant-context')).toContainText(AR_NAME);
-    await page.goto('/ar/suite/admin/organization');
+    await page.goto('/ar/suite/admin/settings');
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('بيانات المنشأة');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('الإعدادات العامة');
     await expect(page.getByTestId('org-countryCode')).toHaveValue('SA');
     await expect(page.getByTestId('org-countryCode').locator('option:checked')).toHaveText(
       'المملكة العربية السعودية',
@@ -164,7 +160,7 @@ test.describe('organization profile', () => {
     await page.getByTestId('org-display-hijri').check();
     await expect(page.getByTestId('org-date-preview')).toContainText('هـ');
     await page.getByTestId('organization-save').click();
-    await expect(page.getByTestId('organization-message')).toHaveText('حُفظت بيانات المنشأة.');
+    await expect(page.getByTestId('organization-message')).toHaveText('حُفظت الإعدادات العامة.');
     await expect(page.getByTestId('tenant-context')).toContainText(`${AR_NAME} المحدودة`);
 
     await page.goto('/ar/suite/admin/users');
@@ -179,8 +175,8 @@ test.describe('organization profile', () => {
   }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await signInWithCode(page, 'en');
-    await page.goto('/en/suite/admin/organization');
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Organization profile');
+    await page.goto('/en/suite/admin/settings');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('General settings');
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
     );
@@ -196,15 +192,16 @@ test.describe('organization profile', () => {
     await expect(page).toHaveURL(/\/en\/suite$/, afterSignIn);
     await expect(
       page.getByRole('navigation', { name: 'Main navigation' }).getByRole('link', {
-        name: 'Organization profile',
+        name: 'General',
+        exact: true,
       }),
     ).toHaveCount(0);
-    await page.goto('/en/suite/admin/organization');
+    await page.goto('/en/suite/admin/settings');
     await expect(page.getByTestId('organization-forbidden')).toHaveText(
       "You don't have permission to do this.",
     );
     await expect(page.getByTestId('organization-profile-form')).toHaveCount(0);
-    await page.goto('/ar/suite/admin/organization');
+    await page.goto('/ar/suite/admin/settings');
     await expect(page.getByTestId('organization-forbidden')).toBeVisible();
   });
 });

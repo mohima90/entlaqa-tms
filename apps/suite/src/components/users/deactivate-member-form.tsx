@@ -41,7 +41,7 @@ export interface DeactivateMemberFormProps {
 }
 
 const fieldClass =
-  'min-h-11 w-full rounded-md border bg-surface px-3 text-text sm:w-auto sm:min-w-64 sm:flex-1';
+  'select-chevron min-h-11 w-full rounded-full border bg-surface ps-4 pe-10 text-sm text-text shadow-1 sm:w-auto sm:min-w-64 sm:flex-1';
 
 /**
  * Screen 4 «تعطيل المستخدم» (T-M2-09, FR-IAM-05): what the person is responsible for gets a new owner —
@@ -208,7 +208,7 @@ export function DeactivateMemberForm(props: DeactivateMemberFormProps) {
             const value = event.target.value;
             setState((s) => ({ ...s, reason: value }));
           }}
-          className="min-h-11 w-full rounded-md border border-border-strong bg-surface px-3 text-text"
+          className="select-chevron min-h-11 w-full rounded-full border border-border-strong bg-surface ps-4 pe-10 text-sm text-text shadow-1"
           data-testid="deactivation-reason"
         >
           <option value="">{text('reasonNone')}</option>

@@ -16,9 +16,8 @@ import { jadaratTheme } from './themes/jadarat';
  *   - the filled colour is darkened (light mode) or lightened (dark mode) only as much as needed for
  *     its text (white / a very dark shade) to reach 4.5:1 and for the fill to stand out (3:1);
  *   - brand-coloured text, tinted backgrounds, hover and the focus ring are derived the same way;
- *   - the side navigation becomes a gradient from a darker shade of the primary to the primary (T-M2-21;
- *     it replaces the Jadarat gradient), with light text, hover, current pill and focus ring that pass
- *     on both ends;
+ *   - the current side-navigation entry carries the organization's gradient (135°, primary → accent;
+ *     Kawadir layout, T-M2-43 — it replaces the Jadarat gradient), with text that passes on both ends;
  *   - the whole contract is then re-checked; a failure is a bug and throws.
  * Whenever the colour shown differs from the one chosen, `adjustments` says so, for the admin preview
  * ("we use a darker shade of your colour for buttons so that their text stays readable").
@@ -154,60 +153,35 @@ function deriveFamily(
   return { fill, hover, onFill, subtle, text };
 }
 
-/** How much darker the top of the navigation gradient is than its bottom (the primary). */
-const NAV_START_SHADE = 0.3;
-/** The navigation hover fill: this much white over the lighter (bottom) end of the gradient. */
-const NAV_HOVER_WHITE = 0.08;
+/** Navigation roles an organization's colours set: the current entry's gradient and its text. */
+type NavGradientRole = Extract<
+  NavRole,
+  'nav-item-current' | 'nav-item-current-end' | 'on-nav-item-current'
+>;
 
 /**
- * The side navigation from an organization's colour: `end` (bottom of the gradient) is the colour,
- * darkened until light text passes on it AND on its hover fill; `start` (top) is a darker shade of it.
- * Text, the current entry's pill and the focus ring are then checked against both ends.
+ * The current navigation entry from an organization's colours (Kawadir layout, T-M2-43): the brand
+ * gradient (135°) from the primary's button colour to the accent's — or, without a distinct accent, to
+ * the primary's hover shade — with the text of the primary's buttons (white in light mode), darkened
+ * until it passes on BOTH ends. The panel around it (white, or the dark surface) stays the theme's.
+ * Every end is a button fill, so it already stands out from the page (3 : 1, `deriveFamily`).
  */
 function deriveNav(
-  from: string,
-  mode: ColorMode,
-  base: Readonly<Record<ColorRole, string>>,
-): Readonly<Record<NavRole, Hex>> {
-  const hoverOf = (c: string) => mix(c, WHITE, NAV_HOVER_WHITE);
-  const end = solve(from, BLACK, (c) => contrastRatio(WHITE, hoverOf(c)) >= TEXT_MIN, 'navigation');
-  const start = mix(end, BLACK, NAV_START_SHADE);
-  const hover = hoverOf(end);
-  const ends = [start, end];
-  // Near-white text (a hint of the colour), whiter until it passes on both ends and on the hover.
-  const onNav = solve(
-    mix(WHITE, end, 0.06),
-    WHITE,
-    (c) => passesAll(c, [...ends, hover], TEXT_MIN),
-    'navigation text',
-  );
-  const onNavMuted = solve(
-    mix(WHITE, end, 0.14),
-    WHITE,
-    (c) => passesAll(c, ends, TEXT_MIN),
-    'navigation muted text',
-  );
-  // The current entry: a white pill (a pale one in dark mode) with text in the dark shade.
-  const current = mode === 'light' ? WHITE : mix(WHITE, end, 0.12);
+  primary: FamilyColors,
+  accent: FamilyColors | null,
+): Readonly<Record<NavGradientRole, Hex>> {
+  const start = primary.fill;
+  const end = accent ? accent.fill : primary.hover;
   const onCurrent = solve(
-    start,
+    primary.onFill,
     BLACK,
-    (c) => contrastRatio(c, current) >= TEXT_MIN,
+    (c) => passesAll(c, [start, end], TEXT_MIN),
     'current entry',
   );
-  // Focus ring: the theme's (Jadarat amber) when it shows on both ends, else white (which does).
-  const themeRing = normalizeHex(base['nav-focus-ring']);
-  const ring = themeRing && passesAll(themeRing, ends, UI_MIN) ? themeRing : WHITE;
   return {
-    nav: start,
-    'nav-end': end,
-    'on-nav': onNav,
-    'on-nav-muted': onNavMuted,
-    'nav-border': start,
-    'nav-item-hover': hover,
-    'nav-item-current': current,
+    'nav-item-current': start,
+    'nav-item-current-end': end,
     'on-nav-item-current': onCurrent,
-    'nav-focus-ring': ring,
   };
 }
 
@@ -254,17 +228,15 @@ export function deriveOrganizationBrand(
         });
       }
     }
-    // The selected row / current navigation item uses the primary tint; the focus ring the brand
-    // text colour (≥ 4.5:1 on every surface, so ≥ 3:1 as a UI component).
-    // The navigation starts from the button colour in light mode and from a deep shade of the chosen
-    // colour in dark mode (so the dark navigation stays dark).
-    const navFrom = mode === 'light' ? p.fill : mix(primary, BLACK, 0.45);
+    // The selected row uses the primary tint; the focus ring the brand text colour (≥ 4.5:1 on every
+    // surface, so ≥ 3:1 as a UI component; the navigation's ring follows it). The current navigation
+    // entry carries the organization's gradient, primary → accent (T-M2-43).
     return {
       ...familyRoles('primary', p),
       ...familyRoles('accent', a),
       'surface-selected': p.subtle,
       'focus-ring': p.text,
-      ...deriveNav(navFrom, mode, colors),
+      ...deriveNav(p, accent === primary ? null : a),
     };
   };
 

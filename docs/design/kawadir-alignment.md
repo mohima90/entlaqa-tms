@@ -21,17 +21,21 @@ The PO wants the two ENTLAQA products to look and behave alike, so that customer
 | Radius | Cards and inputs `rounded-xl`; base radius **0.75rem** | Update `docs/design/tokens/` and the Tailwind preset |
 | Shadows | Soft, low-contrast shadows on cards | Replace heavier elevation levels |
 | Page background | Muted (light grey) behind white cards | Same in dark mode with the dark muted surface |
-| Brand gradient | **135°** from primary to secondary colour | Used on the selected sidebar item and primary accents; the organization's colours replace Jadarat's (FR-ADM-07 "use gradient" switch) |
+| Brand gradient | **135°** from primary to secondary colour | **Jadarat by default: slate `#2F4858` → steel `#33658A`** (dark mode: sky `#86BBD8` → light steel `#5E95BD`, very dark text). One gradient for the selected sidebar item, primary buttons, summary (KPI) cards, avatar, dashboard title and sign-in panel; the organization's colours replace it everywhere (FR-ADM-07 "use gradient" switch) |
 | Components | shadcn/ui, style *new-york* | Our `packages/ui` wraps the same primitives; keep the axe-gated Storybook (CI gate 8) |
 | Theme | Light, dark and **system** | Add "system" to the existing light/dark switch |
 
 Contrast stays enforced by the existing token tests (WCAG 2.2 AA for every theme and organization colour).
 
+**Colours are Jadarat's, not Kawadir's (PO, 16 Oct 2026).** Kawadir's reference screenshots carry **one tenant's branding** (its blue → orange gradient and violet / green / orange / blue summary cards); they are references for layout, shape, spacing and shadow only. Jadarat TMS uses the **Jadarat palette** (Meridian, approved 14 Oct 2026) by default — one hue family, no mixed colours — and each organization's own colours replace it (FR-ADM-07, `deriveOrganizationBrand`). Amber and orange keep only their accent roles (charts, warnings, the focus ring on the navigation); green, amber and red appear only with a status meaning (success / warning / danger badges and alerts, the online dot).
+
 ## 3. Layout (app shell)
 
 **Sidebar** — white, collapsible **260 px ↔ 72 px** (icons only when collapsed, tooltips on hover); the **organization logo** on top; menu groups with headings; the **selected item** filled with the brand gradient (135°) and white text; footer «Powered by Jadarat». On phones the sidebar opens as a drawer (keep the modal drawer of T-M2-21). Logical properties only: the sidebar sits at the inline start (right in Arabic).
 
-**Top bar** — sticky; page title; **⌘K / Ctrl K command palette** (search pages and actions the user may open); full-screen toggle; theme (light / dark / system); language toggle (English ⇄ العربية); notification bell; avatar menu showing the person's name and "**Organization · Role**", with My profile and sign-out.
+**Top bar** — sticky, on the page background; page title; **⌘K / Ctrl K command palette** (search pill, placeholder centred); theme (light / dark / system); language toggle (globe icon, English ⇄ العربية); notification bell; account chip (photo or initials, online dot, name and "**Organization · Role**", chevron) opening My profile and sign-out. No full-screen toggle (Kawadir's screens have none; removed in the visual polish, 16 Oct 2026).
+
+**Visual polish (PO, 16 Oct 2026)** — values copied from Kawadir's screens, colours from our tokens: the Jadarat brand gradient (slate → steel; an organization's colours replace it) with a glow tinted from it on the selected item and primary buttons; the organization's logo — or its name as a gradient wordmark — in a 96 px logo area; summary (KPI) cards on the same brand gradient (white text ≥ 4.5 : 1 on both ends; no fixed hues — they follow the organization's colours too) plus white target cards with a progress bar; pill inputs; card headers with an icon in the brand text colour; gradient dashboard title. Storybook «Pages/Organization Admin» shows the screens with sample data.
 
 ## 4. Page patterns
 
@@ -81,6 +85,18 @@ Credentials entered on these pages (e-mail provider keys, SMTP passwords) are wr
 | Organization Admin (Arabic) | «مدير المنظمة» | «مدير المنشأة» | **Proposed, pending PO confirmation**; glossary updated after the decision |
 | Product footer | "Powered by Kawadir" | "Powered by Jadarat" | Adopted |
 
-## 8. What does not change
+## 8. Sign-in and invitations (PO, 16 Oct 2026)
+
+"Implement what is in Kawadir ATS for sign-in and invitation **exactly**; no e-mail needed — a copyable link like Kawadir." Built in FR-IAM-03 (migration `20261018090000`, design record `docs/engineering/invitations-contract.md` §0):
+
+| Kawadir | Jadarat TMS |
+|---|---|
+| Login: split page — form column (logo, portal line, «Welcome back», glass card) and a brand panel; **e-mail first, then the way in**; «Forgot?» next to the password label; floating language switch | `/[locale]/sign-in` in the same layout (`components/auth/auth-shell.tsx`, Jadarat tokens); password only for now — the e-mailed code joins with the platform sender; the last method is remembered per browser. All sign-in protection (T-M2-11), MFA (T-M2-10) and non-disclosing errors unchanged |
+| Forgot / reset password: form column + half-width brand panel | `/[locale]/forgot-password`, `/[locale]/reset-password` restyled; behaviour unchanged (T-M2-08) |
+| Team → *Pending invites*: 8-character code (`ABCDEFGHJKLMNPQRSTUVWXYZ23456789`, 7 days), **Copy code**, **Copy invite link**, regenerate (resend), cancel | Users → *Invited* tab rows in the same layout; a panel with the code and the link right after inviting; codes issued by the database, readable only by members who may manage the invitation. **Deviation (security review H1/M2, 16 Oct 2026):** our codes are **12** characters of the same alphabet (60 bits), shown `XXXX-XXXX-XXXX` (typed with or without the hyphens); a row's code is fetched when copied (audited), not printed in the list |
+| `/signup?code=…`: code locked when it came with the link, organization, e-mail pre-filled and locked, name, password | `/[locale]/sign-up#code=…` (the code in the **fragment**, never in server logs); typed codes too; display names AR/EN, password rules and privacy acknowledgement as before |
+| Existing account: sign in, then "Join with invite" | "Sign in to accept" on the same page (unchanged) |
+
+## 9. What does not change
 
 Tenant isolation, RLS and authorization rules; the AR/EN copy process (UX-writer review, glossary); English as the default language for now (PO, 14 Oct 2026) with Arabic fully supported; the self-hosted (sovereign) build; WCAG 2.2 AA in both languages.

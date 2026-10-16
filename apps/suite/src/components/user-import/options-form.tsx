@@ -73,7 +73,7 @@ export function OptionsForm(props: OptionsFormProps) {
           name="defaultRole"
           defaultValue={props.initial.defaultRole}
           aria-describedby="default-role-hint default-role-privileged"
-          className="mt-2 min-h-11 rounded-md border border-border-strong bg-surface px-3 text-text sm:w-80"
+          className="select-chevron mt-2 min-h-11 rounded-full border border-border-strong bg-surface ps-4 pe-10 text-sm text-text shadow-1 sm:w-80"
           data-testid="default-role"
         >
           {props.roles.map((role) => (

@@ -9,7 +9,7 @@
 
 **How to use it.** The Product Owner (PO) follows the steps in order, **one at a time**; Claude guides each step in chat and waits for "done". Steps marked **PO** need the PO's accounts: Claude's container **cannot reach `*.supabase.co`** (egress policy) and has no access to the Vercel team or to GitHub secrets. Steps marked **Claude** are done by Claude (code, reading GitHub Actions logs, documentation). **Never paste a password, key or connection string into chat** — they go only into the password manager, GitHub environment secrets and Vercel environment variables. This page lists **names only, never values**.
 
-**Nothing is copied from the old project.** Organizations and test people are created again (step 32); the old project keeps working until step 40.
+**Nothing is copied from the old project.** Organizations and test people are created again (steps 32–33b, from the platform console); the old project keeps working until step 40.
 
 ---
 
@@ -61,8 +61,8 @@ From the moment `DATABASE_URL` exists, every merge to `main` deploys to the new 
     - **Prevent use of leaked passwords** = **on** (Pro plan);
     - leave *Confirm email* as it is for now (step 25 turns it off).
 18. **Authentication → Multi-Factor**: TOTP (authenticator app) **enroll and verify enabled**; phone and WebAuthn **disabled**.
-19. **Authentication → SMTP Settings → Enable custom SMTP** with **Resend**: host, port **465** and username as shown in Resend's SMTP settings; password = a Resend API key with **sending access only** (from the Resend account holder — never in chat); sender address and name as on the old project (today `noreply@lms.entlaqa.com`, «ENTLAQA LMS»; a dedicated TMS sending subdomain is the planned follow-up); *Minimum interval between emails per user* = **60** seconds.
-20. **Authentication → Emails → Templates → Reset password**: subject and body from the repository file `supabase/templates/recovery.html` (subject «إعادة تعيين كلمة المرور · Reset your password»). **Security notifications → Password changed**: **on**, body from `supabase/templates/password-changed.html`, subject as on the old project (copy it from the old project's Emails page before step 40). (Both are Auth's mailer while `PASSWORD_RESET_DELIVERY` is `auth` — [password-reset.md](password-reset.md) §5–§6.)
+19. ~~Supabase custom SMTP~~ — **skipped (PO, 16 Oct 2026, Kawadir alignment):** Supabase's own mailer sends nothing; every e-mail (invitations, password reset, password changed) goes through our notification service (`PASSWORD_RESET_DELIVERY=worker`, step 31). The platform sender is set by the Super Admin **inside the product** (Platform settings → Email, FR-ADM-17), never in GitHub; organizations may use their own provider (Email integration) — sender rule as Kawadir `sender-rule` ([business flow](../business-flows/EP-EMAIL-email-sending.md)).
+20. ~~Supabase e-mail templates~~ — **skipped** (same decision): in **Authentication → Emails → Security notifications** keep **Password changed: off** (our service sends that notice).
 21. **Authentication → Rate Limits**: *Rate limit for sign ups and sign ins* = **300** per 5 minutes; *token verifications* = **150** per 5 minutes; *sending emails* = **100** per hour; *token refreshes*: leave the default (reviewed with RR-IAM-01, [sign-in-protection.md](sign-in-protection.md) §9). Leave "IP address forwarding" **off**.
 22. **Authentication → Sessions** (Pro): time-box and inactivity timeout — values to be agreed with Claude first (the database already enforces each organization's own limits; this is only an outer bound, risk R-36). Skip until agreed.
 
@@ -80,24 +80,10 @@ From the moment `DATABASE_URL` exists, every merge to `main` deploys to the new 
 
 ## H. GitHub environment `production-jobs` — background worker and e-mail (PO)
 
-29. **Environment** `production-jobs` (created in step 0; if it is missing, **New environment**) → check deployment branches: **`main` only** (before any secret). Then **Supabase → Project Settings → API Keys → Secret keys → Add new secret key** named `worker-production` (shown once — straight into GitHub, never Vercel).
+> **Changed (PO, 16 Oct 2026): no e-mail sender settings in GitHub, Vercel or Supabase.** As in Kawadir ATS and FR-ADM-17, the platform sender (provider, key, sender name and address, test) is set by the Super Admin **inside the product** (Platform settings → Email) and stored encrypted in the database; organizations may connect their own provider on **Settings → Email integration** ([business flow](../business-flows/EP-EMAIL-email-sending.md)). Steps 29–30 therefore wait until that feature (`EP-EMAIL`) is built; they then hold **only** the worker's database connections. `RESEND_API_KEY`, `EMAIL_TEST_TO`, `EMAIL_PROVIDER`, `EMAIL_FROM_NAME` and `EMAIL_FROM_ADDRESS` are **not** set anywhere.
 
-| Kind | Name | What it is |
-|---|---|---|
-| Secret | `DATABASE_URL_APP_QUEUE` | Session pooler URI (port 5432) with user `app_queue.<ref>` and its password from step 10 |
-| Secret | `DATABASE_URL_APP_WORKER` | Same with user `app_worker.<ref>` |
-| Secret | `RESEND_API_KEY` | Resend API key with sending access |
-| Secret | `EMAIL_TEST_TO` | Address that receives the test e-mail |
-| Secret | `SUPABASE_SECRET_KEY` | The `worker-production` secret key above |
-| Variable | `DATABASE_CA_CERT` | Same certificate text as step 12 |
-| Variable | `EMAIL_PROVIDER` | `resend` |
-| Variable | `EMAIL_FROM_NAME`, `EMAIL_FROM_ADDRESS` | The sender (as step 19) |
-| Variable | `APP_BASE_URL` | The production web address (https, no path) |
-| Variable | `SUPABASE_URL` | `https://<new ref>.supabase.co` |
-| Variable (optional) | `FILE_SCANNING` | `on` to scan uploads in each pass ([files.md](files.md) §7) |
-| Variables (optional) | `FILE_ORPHAN_SWEEP`, `USER_IMPORT_INVITATION_INTERVAL_MS`, `USER_IMPORT_DAILY_INVITATIONS`, `USER_IMPORT_TRIAL_DAILY_INVITATIONS` | Leave unset for the defaults ([user-import.md](user-import.md) §4) |
-
-30. **Actions → Jobs → Run workflow** (branch `main`), environment **`production`**, mode **`test-email`** → the test e-mail arrives at `EMAIL_TEST_TO`; then mode **`pass`** → green, log shows `worker starting (once)`, `reset links: on`, `worker stopped`. **Claude** reads both logs. Then **GitHub → Settings → Secrets and variables → Actions → Variables** (repository level only) → **New repository variable** `JOBS_REQUIRED` = `on`: from now on missing connection secrets in `production-jobs` fail the **Jobs** runs instead of skipping them with a notice. (The continuously running production worker host is still a PO cost decision before the first customer — ADR 0005 §1; until then the scheduled pass runs every few minutes to hours.)
+29. *(after `EP-EMAIL`)* **Environment** `production-jobs` (`main` only) → secrets `DATABASE_URL_APP_QUEUE`, `DATABASE_URL_APP_WORKER` (session pooler, users `app_queue.<ref>` / `app_worker.<ref>`), `SUPABASE_SECRET_KEY` (new key `worker-production`, never Vercel); variables `DATABASE_CA_CERT`, `APP_BASE_URL`, `SUPABASE_URL`. Optional variables as [files.md](files.md) §7 and [user-import.md](user-import.md) §4.
+30. *(after `EP-EMAIL`)* **Claude** runs **Actions → Jobs** (`pass`) and reads the log; the test e-mail is sent from the Super Admin page. Then the PO sets the repository variable `JOBS_REQUIRED` = `on`.
 
 ## I. Vercel (PO)
 
@@ -111,24 +97,31 @@ From the moment `DATABASE_URL` exists, every merge to `main` deploys to the new 
 | `DATABASE_CA_CERT` | Same certificate text as step 12 |
 | `JADARAT_ENVIRONMENT` | `production` |
 | `SENTRY_DSN` (and `SENTRY_BROWSER_DSN` if used) | Unchanged |
-| `PASSWORD_RESET_DELIVERY` | Leave **unset** (= `auth`) until a worker runs continuously ([password-reset.md](password-reset.md) §6) |
+| `PASSWORD_RESET_DELIVERY` | `worker` (PO, 16 Oct 2026: all e-mails through our notification service, Kawadir way; reset e-mails go out on the next worker pass) |
+| `APP_BASE_URL` | The app's public origin, e.g. `https://<app domain>` (https, no path). **Configuration, not a secret** (not Sensitive). The canonical origin of copied invitation links (Users → Invited, the Super Admin console); without it the browser's own origin is used and a production deployment logs `app_base_url_missing`; an invalid value stops the app at start-up. Set it for **Production and Preview** (previews share the production database, so their links should open production) — [platform-console.md](platform-console.md) §3 |
 
 Never in Vercel: `SUPABASE_SECRET_KEY`, any worker or queue connection, `JADARAT_AUTH_CLIENT_HEADER`. Then **Deployments → latest production deployment → Redeploy** (variables apply to new deployments only).
 
-## J. First organization (PO)
+## J. Super Admin and the first organization (PO; changed 16 Oct 2026 — the Kawadir way)
 
-32. **Supabase → Authentication → Users → Add user → Create new user**: your e-mail, a strong password, **Auto Confirm User** ticked (never "Invite user"). Open the user and copy the **UID** (not secret).
-33. **Actions → Provision organization → Run workflow**: environment `production`, mode **`plan`**, organization short name (e.g. `entlaqa-demo`), Arabic name, English name, the UID; then the same with mode **`apply`**. **Claude** reads both logs.
+> Instead of the **Provision organization** workflow, the PO becomes the **Platform Super Admin** «مشرف المنصة» and creates the organization from the product ([platform-console.md](platform-console.md), ADR 0013). Needs migration `20261018100000` deployed (section D).
+
+32. **Supabase → Authentication → Users → Add user → Create new user**: your e-mail, a strong password, **Auto Confirm User** ticked (never "Send invitation"). If Supabase answers "Sign-up is by invitation only.", follow [platform-console.md](platform-console.md) §1.1 step 2 exactly (**sign-ups off → hook off → add user → hook on → sign-ups on**, then check the users list and the Uptime run). Open the user and send the **UID** in chat (not secret; never the e-mail).
+33. **Claude** runs **Actions → Platform admin → Run workflow**: environment `production`, action `grant`, mode **`plan`**, the UID; then the same with mode **`apply`**, and reads both logs.
+33a. **PO**: sign in at `https://<app>/en/sign-in` → you land on **Organizations** (`/en/platform`) → **Create organization**: short name `entlaqa`, the Arabic and English names, the e-mail of the **new** person who will be its Organization Admin (not your own account), invitation language → **Copy invite link** and send it to that person.
+33b. **The new Organization Admin** opens the link in their browser, sets a password and joins → lands in `entlaqa` as Organization Admin. On the console the row shows "Joined".
+
+`APP_BASE_URL` (section I, Production and Preview) makes the copied links point at the public origin ([platform-console.md](platform-console.md) §3). To see who the Super Admins are: **Platform admin** with action `list` (UIDs and grant times only).
 
 ## K. Checks (PO, Claude reads the results)
 
 34. Open `https://<app>/api/health/ready` → `ok`.
-35. Sign in at `https://<app>/en/sign-in` → the header shows the organization's name; sign out → back on sign-in; `/en/suite` redirects to sign-in.
+35. Sign in at `https://<app>/en/sign-in` as the new Organization Admin → the header shows the organization's name; sign out → back on sign-in; `/en/suite` redirects to sign-in.
 36. **GitHub → Settings → Variables** (repository): `UPTIME_URL` = the production web address. **Actions → Uptime → Run workflow** → both jobs green (readiness, and the sign-up gate refusing strangers with "Sign-up is by invitation only.").
 37. In the product: invite a test person with an address you can read → the invitation e-mail arrives (after the next worker pass, or run **Jobs** by hand) → accept, set a password, signed in. Then «Forgot password?» with your own account → reset e-mail → new password works, exactly one "password changed" notice.
 38. **Actions → DB deploy → `plan`** again → "nothing pending"; then the lock check of step 14 (`select count(*) from pg_locks where locktype = 'advisory' and classid = 20261015;`) → **0**.
 
 ## L. Retire the old project (PO, only after section K is green)
 
-39. **Claude** updates `CLAUDE.md`, `STATUS.md`, this page and [db-deploy.md](db-deploy.md) with the new ref and organization name, and removes the `staging` choices from the workflows **DB deploy**, **Provision organization** and **Jobs** (follow-up of T-M2-36).
+39. **Claude** updates `CLAUDE.md`, `STATUS.md`, this page and [db-deploy.md](db-deploy.md) with the new ref and organization name, and removes the `staging` choices from the workflows **DB deploy**, **Provision organization**, **Platform admin** and **Jobs** (follow-up of T-M2-36).
 40. **PO**: copy anything still needed from the old project (the *Password changed* subject, step 20), then **Supabase → old project `jadarat-tms-staging` → Project Settings → General → Delete project**; delete the old Free organization `entlaqa-TMS` if empty; **GitHub → Environments → `staging` and `staging-jobs` → Delete** (removes their secrets); revoke the old project's worker secret key and the old Resend SMTP key if it was separate.

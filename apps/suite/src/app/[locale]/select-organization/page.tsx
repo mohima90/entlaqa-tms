@@ -1,6 +1,9 @@
 import { routing } from '@jadarat/platform-i18n/routing';
-import { getSessionOrganizationsForRequest } from '@jadarat/platform-identity/auth';
-import { Card } from '@jadarat/ui';
+import {
+  getSessionOrganizationsForRequest,
+  isPlatformAdminForRequest,
+} from '@jadarat/platform-identity/auth';
+import { Card, Icon, buttonClasses } from '@jadarat/ui';
 import { hasLocale } from 'next-intl';
 import { getTranslations } from 'next-intl/server';
 import { notFound, redirect } from 'next/navigation';
@@ -12,7 +15,11 @@ import { authErrorTexts } from '../../../lib/auth-texts';
 import { getConfigStatus } from '../../../lib/config-status';
 import { getSessionState, redirectFor } from '../../../lib/session-state';
 
-/** Organization chooser after sign-in when the account belongs to several organizations. */
+/**
+ * Organization chooser after sign-in when the account belongs to several organizations. A Platform Super
+ * Admin (FR-ADM-17; the database decides) is also offered the platform console — and sent straight there
+ * when they belong to no organization.
+ */
 export default async function SelectOrganizationPage({
   params,
 }: {
@@ -28,9 +35,12 @@ export default async function SelectOrganizationPage({
 
   const organizations = await getSessionOrganizationsForRequest();
   if (!organizations.ok) redirect(`/${locale}/sign-in`);
+  const platformAdmin = await isPlatformAdminForRequest();
+  if (platformAdmin && organizations.value.length === 0) redirect(`/${locale}/platform`);
 
   const t = await getTranslations({ locale, namespace: 'auth' });
   const common = await getTranslations({ locale, namespace: 'common' });
+  const platform = await getTranslations({ locale, namespace: 'platform' });
   return (
     <div className="flex min-h-dvh flex-col">
       <header className="flex items-center justify-between gap-4 border-b border-border bg-surface px-4 py-3">
@@ -60,6 +70,19 @@ export default async function SelectOrganizationPage({
             <p className="m-0 text-text-muted">{t('errors.noOrganization')}</p>
           )}
         </Card>
+        {platformAdmin ? (
+          <Card title={platform('chooser.title')} data-testid="platform-console-choice">
+            <p className="mb-4 mt-0 text-text-muted">{platform('chooser.text')}</p>
+            <a
+              href={`/${locale}/platform`}
+              className={buttonClasses({ variant: 'secondary' })}
+              data-testid="open-platform-console"
+            >
+              <Icon name="building" />
+              {platform('consoleName')}
+            </a>
+          </Card>
+        ) : null}
       </main>
     </div>
   );

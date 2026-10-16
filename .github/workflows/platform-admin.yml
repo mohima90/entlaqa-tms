@@ -1,0 +1,80 @@
+# Grants (or revokes) the Platform Super Admin role «مشرف المنصة» of an existing Auth user (FR-ADM-17;
+# runbook: docs/engineering/platform-console.md). Manual only.
+# Uses the same GitHub environment as "DB deploy" (secret DATABASE_URL, variable DATABASE_CA_CERT); its
+# "Deployment branches" rule (main only) is the actual access control.
+# The only input about the person is the user's UID — never an e-mail or a name (run inputs are visible to
+# everyone with read access to the repository).
+# `staging` (the old project) stays selectable only until it is deleted (production-setup.md, T-M2-36).
+# The audit row of a grant or revoke records this run's id and the login that ran it (GITHUB_RUN_ID,
+# GITHUB_ACTOR — set by Actions, validated by the script and the database; security review L5).
+# The script takes the deploy lock (scripts/lib/db-connect.sh § Deploy lock; waits up to 16 minutes), so it
+# never runs next to a deploy. Run `plan` first (dry run, always rolled back), then `apply`.
+name: Platform admin
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        options: [production, staging]
+        default: production
+      mode:
+        description: 'plan = dry run (rolled back) · apply = make the change'
+        type: choice
+        options: [plan, apply]
+        default: plan
+      action:
+        description: 'grant = make the user a Platform Super Admin · revoke = end it · list = the Super Admins (UIDs and grant times only)'
+        type: choice
+        options: [grant, revoke, list]
+        default: grant
+      admin_user_id:
+        description: "The user's UID (Supabase → Authentication → Users → the user → Copy UID). Never an e-mail. Empty for list."
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: db-deploy-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  platform-admin:
+    name: Platform admin (${{ inputs.action }}, ${{ inputs.mode }} → ${{ inputs.environment }})
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    # Up to 16 minutes waiting for the deploy lock, plus the run.
+    timeout-minutes: 25
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - name: PostgreSQL client
+        run: |
+          if ! command -v psql >/dev/null; then sudo apt-get update && sudo apt-get install -y postgresql-client; fi
+          psql --version
+      - name: Check required secrets are configured
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          TARGET: ${{ inputs.environment }}
+        run: |
+          if [[ -z "$DATABASE_URL" ]]; then
+            echo "::error::Secret DATABASE_URL is missing in environment '$TARGET' (docs/engineering/db-deploy.md)"
+            exit 1
+          fi
+      # Inputs reach the script as environment variables only (never interpolated into the shell script).
+      - name: Platform admin (${{ inputs.action }}, ${{ inputs.mode }})
+        run: bash scripts/platform-admin.sh "$MODE"
+        env:
+          MODE: ${{ inputs.mode }}
+          ADMIN_ACTION: ${{ inputs.action }}
+          ADMIN_USER_ID: ${{ inputs.admin_user_id }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_CA_CERT: ${{ vars.DATABASE_CA_CERT }}

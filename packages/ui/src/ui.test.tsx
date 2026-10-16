@@ -1,6 +1,16 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { Alert, AppShell, Badge, Button, Card, TextField, buttonClasses, cn } from './index';
+import {
+  Alert,
+  AppShell,
+  Badge,
+  Button,
+  Card,
+  PoweredBy,
+  TextField,
+  buttonClasses,
+  cn,
+} from './index';
 
 const PHYSICAL =
   /\b(ml|mr|pl|pr|left|right|border-l|border-r|rounded-l|rounded-r|text-left|text-right)-/;
@@ -15,7 +25,10 @@ describe('Button', () => {
   it('defaults to type="button" and the primary variant', () => {
     const html = renderToStaticMarkup(<Button>حفظ</Button>);
     expect(html).toContain('type="button"');
-    expect(html).toContain('bg-primary');
+    // Kawadir btn-brand: the brand gradient with its own text colour (checked on both ends) and a glow.
+    expect(html).toContain('bg-brand-gradient');
+    expect(html).toContain('text-on-nav-item-current');
+    expect(html).toContain('shadow-brand-glow');
     expect(html).toContain('حفظ');
   });
 
@@ -73,12 +86,35 @@ describe('AppShell', () => {
     expect(html).toMatch(/<a href="#main"[^>]*>تخطَّ إلى المحتوى<\/a>/);
   });
 
-  it('shows the product and organization names on the gradient navigation, with the Jadarat mark', () => {
+  it('shows the organization and product names on the white navigation, with the Jadarat mark', () => {
     expect(html).toContain('bg-nav-gradient');
+    expect(html).toContain('bg-brand-gradient');
     expect(html).toContain('data-nav-scope');
     expect(html).toContain('جدارات · التدريب');
     expect(html).toContain('شركة الراية');
     expect(html).toMatch(/<svg[^>]*aria-hidden="true"/);
+  });
+
+  it('sets the organization name as a gradient wordmark in the logo area, or shows its logo', () => {
+    expect(html).toMatch(/data-testid="nav-wordmark"/);
+    expect(html).toMatch(/class="[^"]*text-brand-gradient[^"]*"[^>]*data-testid="nav-wordmark"/);
+    const withLogo = renderToStaticMarkup(
+      <AppShell
+        brand="b"
+        organization="شركة الراية"
+        logo={<img src="/logo.png" alt="شعار شركة الراية" />}
+        navigation={null}
+        navigationLabel="n"
+        skipToContentLabel="s"
+        menuLabel="m"
+        closeMenuLabel="c"
+      >
+        x
+      </AppShell>,
+    );
+    expect(withLogo).toContain('alt="شعار شركة الراية"');
+    expect(withLogo).toMatch(/class="[^"]*sr-only[^"]*"[^>]*data-testid="nav-wordmark"/);
+    expect(withLogo).not.toContain('text-brand-gradient');
   });
 
   it('opens the navigation on narrow screens with a disclosure button (closed at first)', () => {
@@ -120,7 +156,44 @@ describe('AppShell', () => {
       </AppShell>,
     );
     expect(minimal).not.toContain('ms-auto flex shrink-0');
-    expect(minimal).not.toContain('text-on-nav-muted');
+    expect(minimal).not.toContain('text-sm font-semibold text-text');
+    expect(minimal).not.toContain('data-testid="top-bar-title"');
+    expect(minimal).not.toContain('data-testid="nav-collapse"');
+  });
+
+  it('collapses on a desktop from 260 to 72 px when given the labels, starting as remembered', () => {
+    const props = {
+      brand: 'جدارات · التدريب',
+      title: 'أعضاء الفريق',
+      navigation: <a href="/ar/suite">الرئيسية</a>,
+      navigationFooter: <PoweredBy title="مدعوم من جدارات" subtitle="نظام إدارة التدريب" />,
+      navigationLabel: 'التنقل الرئيسي',
+      skipToContentLabel: 'تخطَّ إلى المحتوى',
+      menuLabel: 'القائمة',
+      closeMenuLabel: 'إغلاق القائمة',
+      collapseLabels: { collapse: 'طيّ القائمة', expand: 'توسيع القائمة' },
+    } as const;
+    const expanded = renderToStaticMarkup(<AppShell {...props}>x</AppShell>);
+    expect(expanded).toContain('lg:w-65');
+    expect(expanded).not.toContain('data-nav-collapsed');
+    expect(expanded).toMatch(
+      /<button[^>]*aria-label="طيّ القائمة"[^>]*aria-controls="app-navigation"[^>]*aria-expanded="true"/,
+    );
+    expect(expanded).toContain('مدعوم من جدارات');
+    expect(expanded).toMatch(/<p[^>]*data-testid="top-bar-title"[^>]*>أعضاء الفريق<\/p>/);
+    const collapsed = renderToStaticMarkup(
+      <AppShell {...props} initialCollapsed>
+        x
+      </AppShell>,
+    );
+    expect(collapsed).toContain('lg:w-18');
+    expect(collapsed).toContain('data-nav-collapsed="true"');
+    expect(collapsed).toMatch(/<button[^>]*aria-label="توسيع القائمة"[^>]*aria-expanded="false"/);
+    // Collapsed: no footer, the names stay for screen readers.
+    expect(collapsed).not.toContain('مدعوم من جدارات');
+    expect(collapsed).toContain('sr-only');
+    const classes = [...collapsed.matchAll(/class="([^"]*)"/g)].map((m) => m[1]).join(' ');
+    expect(classes).not.toMatch(PHYSICAL);
   });
 });
 
@@ -167,6 +240,9 @@ describe('Alert', () => {
     const info = renderToStaticMarkup(<Alert title="تم الحفظ">التفاصيل</Alert>);
     expect(info).toContain('role="status"');
     expect(info).toContain('bg-info-subtle');
+    // Kawadir notes: rounded-xl with the tone's icon (decorative).
+    expect(info).toContain('rounded-xl');
+    expect(info).toMatch(/<svg[^>]*class="[^"]*text-info"[^>]*aria-hidden="true"/);
     expect(info).toContain('تم الحفظ');
     expect(renderToStaticMarkup(<Alert tone="success" title="تم" />)).not.toContain('mt-1');
   });
@@ -176,7 +252,7 @@ describe('Badge', () => {
   it('renders the label with its tone (neutral by default)', () => {
     expect(renderToStaticMarkup(<Badge>مسودة</Badge>)).toContain('bg-surface-sunken');
     expect(renderToStaticMarkup(<Badge tone="success">منشورة</Badge>)).toContain(
-      'bg-success-subtle',
+      'bg-success-subtle text-success',
     );
   });
 });

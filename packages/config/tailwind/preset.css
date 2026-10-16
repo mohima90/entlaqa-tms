@@ -23,9 +23,9 @@
   --color-current: currentColor;
 
   /* Radius: same names as the tokens, so token values win automatically. */
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: 10px;
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
   --radius-xl: 16px;
   --radius-full: 9999px;
 
@@ -90,6 +90,7 @@
   --color-nav-border: var(--color-nav-border);
   --color-nav-item-hover: var(--color-nav-item-hover);
   --color-nav-item-current: var(--color-nav-item-current);
+  --color-nav-item-current-end: var(--color-nav-item-current-end);
   --color-on-nav-item-current: var(--color-on-nav-item-current);
   --color-nav-focus-ring: var(--color-nav-focus-ring);
 }

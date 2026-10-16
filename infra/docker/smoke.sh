@@ -251,16 +251,16 @@ if [[ "$(q "select count(*) from platform.audit_events where action like 'platfo
 fi
 
 echo "smoke: accepting an invitation (T-M2-07) — link from the e-mail, set a password, signed in; link states"
-# accept_link <address>: the accept link in the newest e-mail to <address> (the same link in the text and
-# HTML parts), whole and unchanged: the token travels in the query (?token=) or the fragment (#token=).
-# The token exists only there: never echo these links (they are credentials).
+# accept_link <address>: the sign-up link in the newest e-mail to <address> (the same link in the text and
+# HTML parts), whole and unchanged: the invitation code travels in the fragment (#code=, Kawadir's link,
+# migration 20261018090000). Never echo these links (the code is a credential).
 accept_link() {
   local id
   id="$(mail_ids "$1" | sed -n 1p)"
   [[ -n "$id" ]] || return 1
   compose exec -T mailpit wget -qO- "http://127.0.0.1:8025/api/v1/message/$id" 2>/dev/null |
     node -e 'let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => {
-      const re = /http:\/\/localhost:3200\/(ar|en)\/invite\/accept[?#]token=[A-Za-z0-9_-]{43}(?![A-Za-z0-9_-])/;
+      const re = /http:\/\/localhost:3200\/(ar|en)\/sign-up#code=[A-HJ-NP-Z2-9]{12}(?![A-Za-z0-9_-])/;
       let m = {}; try { m = JSON.parse(s); } catch {}
       const text = (m.Text ?? "").match(re), html = (m.HTML ?? "").match(re);
       if (!text || !html || text[0] !== html[0]) process.exit(1);
@@ -269,8 +269,11 @@ accept_link() {
 ACCEPT_URL="$(accept_link "$INVITEE_EMAIL")" || { echo "smoke: no accept link in the invitation e-mail" >&2; exit 1; }
 EXPIRED_URL="$(accept_link "$EXPIRED_INVITEE")" || { echo "smoke: no accept link in the e-mail (expired)" >&2; exit 1; }
 REVOKED_URL="$(accept_link "$REVOKED_INVITEE")" || { echo "smoke: no accept link in the e-mail (revoked)" >&2; exit 1; }
-[[ "$ACCEPT_URL" == http://localhost:3200/ar/invite/accept[?#]token=* ]] ||
-  { echo "smoke: the accept link must use APP_BASE_URL and the invitation's language (ar)" >&2; exit 1; }
+[[ "$ACCEPT_URL" == http://localhost:3200/ar/sign-up#code=* ]] ||
+  { echo "smoke: the sign-up link must use APP_BASE_URL and the invitation's language (ar)" >&2; exit 1; }
+# The e-mailed code is the one the database issued when inviting (the mailer issues none).
+[[ "$(q "select count(*) from platform.invitations where email = '$INVITEE_EMAIL' and invite_code = '${ACCEPT_URL#*code=}'")" == "1" ]] ||
+  { echo "smoke: the e-mailed code must be the invitation's current code" >&2; exit 1; }
 # Once a link has been sent, an operator ends one (support: expires_at) and revokes the other.
 [[ "$(q "with u as (update platform.invitations set expires_at = now() - interval '1 minute' where email = '$EXPIRED_INVITEE' and status = 'pending' returning 1) select count(*) from u")" == "1" ]] ||
   { echo "smoke: could not expire the invitation" >&2; exit 1; }
@@ -299,23 +302,28 @@ refused_by_hook() {
     [[ "$(node -e 'try { const j = JSON.parse(process.argv[1]); process.stdout.write(String(j.msg ?? j.message ?? "")); } catch {}' \
       "${response%$'\n'*}")" == "Sign-up is by invitation only." ]]
 }
-ACCEPT_TOKEN="${ACCEPT_URL#*token=}"
+ACCEPT_TOKEN="${ACCEPT_URL#*code=}"
 INTRUDER_EMAIL="intruder-$STAMP@sovereign.example"
 INTRUDER_PASSWORD="Intruder-$(openssl rand -hex 16)"
 users_before="$(q "select count(*) from auth.users")"
-# The two uptime probes: no invitation; a well-formed (43 base64url characters) but unknown token.
+# The two uptime probes: no invitation; a well-formed (43 base64url characters) but unknown token. And a
+# well-formed but unknown invitation code, and a valid code in lower case (the gate compares exactly).
 refused_by_hook "{\"email\":\"uptime-probe-$(openssl rand -hex 8)@lms.entlaqa.com\",\"password\":\"$INTRUDER_PASSWORD\",\"data\":{}}" ||
   { echo "smoke: a sign-up without an invitation must be refused by the hook (403, its message)" >&2; exit 1; }
 UNKNOWN_TOKEN="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("base64url"))')"
 [[ ${#UNKNOWN_TOKEN} -eq 43 ]] || { echo "smoke: could not build a 43-character token" >&2; exit 1; }
 refused_by_hook "{\"email\":\"uptime-probe-$(openssl rand -hex 8)@lms.entlaqa.com\",\"password\":\"$INTRUDER_PASSWORD\",\"data\":{\"invitation\":\"$UNKNOWN_TOKEN\"}}" ||
   { echo "smoke: a sign-up with an unknown invitation token must be refused by the hook (403, its message)" >&2; exit 1; }
+refused_by_hook "{\"email\":\"uptime-probe-$(openssl rand -hex 8)@lms.entlaqa.com\",\"password\":\"$INTRUDER_PASSWORD\",\"data\":{\"invitation\":\"AAAAAAAA\"}}" ||
+  { echo "smoke: a sign-up with an unknown invitation code must be refused by the hook (403, its message)" >&2; exit 1; }
+refused_by_hook "{\"email\":\"$INVITEE_EMAIL\",\"password\":\"$INTRUDER_PASSWORD\",\"data\":{\"invitation\":\"$(printf '%s' "${ACCEPT_URL#*code=}" | tr 'A-Z' 'a-z')\"}}" ||
+  { echo "smoke: a sign-up with the code in lower case must be refused by the hook (403, its message)" >&2; exit 1; }
 refused_by_hook "{\"email\":\"$INTRUDER_EMAIL\",\"password\":\"$INTRUDER_PASSWORD\"}" ||
   { echo "smoke: a sign-up without an invitation must be refused by the hook (403, its message)" >&2; exit 1; }
 status="$(signup "{\"email\":\"$INTRUDER_EMAIL\",\"password\":\"$INTRUDER_PASSWORD\",\"data\":{\"invitation\":\"$ACCEPT_TOKEN\"}}")"
 [[ "$status" == "403" ]] ||
   { echo "smoke: a sign-up with another person's valid invitation must be refused with 403 (got $status)" >&2; exit 1; }
-for pair in "$EXPIRED_INVITEE ${EXPIRED_URL#*token=}" "$REVOKED_INVITEE ${REVOKED_URL#*token=}"; do
+for pair in "$EXPIRED_INVITEE ${EXPIRED_URL#*code=}" "$REVOKED_INVITEE ${REVOKED_URL#*code=}"; do
   status="$(signup "{\"email\":\"${pair%% *}\",\"password\":\"$INTRUDER_PASSWORD\",\"data\":{\"invitation\":\"${pair#* }\"}}")"
   [[ "$status" == "403" ]] ||
     { echo "smoke: a sign-up with an expired or revoked invitation must be refused with 403 (got $status)" >&2; exit 1; }
@@ -362,7 +370,7 @@ done
 [[ "$(q "select count(*) $inv join platform.message_deliveries d on d.tenant_id = i.tenant_id and d.recipient_person_id = i.person_id where $this and d.template = 'platform.invitation' and d.status = 'sent' and d.sent_at is not null and d.destination is null and d.subject is null and d.html_body is null and d.text_body is null")" == "1" ]] ||
   { echo "smoke: expected one sent invitation delivery without content" >&2; exit 1; }
 # The tokens (credentials) appear nowhere but the e-mails: not in the audit trail or any container log.
-INVITE_TOKENS=("${ACCEPT_URL#*token=}" "${EXPIRED_URL#*token=}" "${REVOKED_URL#*token=}")
+INVITE_TOKENS=("${ACCEPT_URL#*code=}" "${EXPIRED_URL#*code=}" "${REVOKED_URL#*code=}")
 for token in "${INVITE_TOKENS[@]}"; do
   [[ "$(q "select count(*) from platform.audit_events where data::text like '%$token%'")" == "0" ]] ||
     { echo "smoke: an invitation token reached the audit log" >&2; exit 1; }

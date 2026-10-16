@@ -9,7 +9,7 @@ import {
   expect,
   test,
 } from '@playwright/test';
-import { afterSignIn } from './sign-in';
+import { afterSignIn, fillSignIn } from './sign-in';
 import { freshCode, wrongCode } from './totp';
 
 /**
@@ -135,16 +135,7 @@ async function signIn(
   options: { readonly remember?: boolean } = {},
 ) {
   await page.goto(`/${locale}/sign-in`);
-  await page.locator('#email').fill(email);
-  await page.locator('#password').fill(secret);
-  if (options.remember) {
-    await page
-      .getByRole('checkbox', {
-        name: locale === 'ar' ? 'تذكّر هذا المتصفح' : 'Remember this browser',
-      })
-      .check();
-  }
-  await page.getByRole('button', { name: locale === 'ar' ? 'تسجيل الدخول' : 'Sign in' }).click();
+  await fillSignIn(page, locale, email, secret, options);
 }
 
 /** The browser's trusted-device cookie, if any (`__Host-jadarat-device`, T-M2-11). */
@@ -274,7 +265,7 @@ test.describe('Security policy, MFA and sign-in sessions', () => {
     // The navigation's entry (the Organization Admin's home also links to it, T-M2-21).
     await page
       .getByRole('navigation', { name: 'Main navigation' })
-      .getByRole('link', { name: 'Security policy', exact: true })
+      .getByRole('link', { name: 'Security', exact: true })
       .click();
     await expect(page).toHaveURL(/\/en\/suite\/admin\/security$/);
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Security');

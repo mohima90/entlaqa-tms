@@ -18,11 +18,14 @@ import {
   inviteUserActionDefinition,
   resendInvitationActionDefinition,
   revokeInvitationActionDefinition,
+  viewInvitationCodeActionDefinition,
+  viewPrivilegedInvitationCodeActionDefinition,
 } from './invitations';
 
 const db = vi.hoisted(() => ({
   createInvitation: vi.fn(),
   getInvitationRoles: vi.fn(),
+  invitationCode: vi.fn(),
   listInvitations: vi.fn(),
   revokeInvitation: vi.fn(),
   requestInvitationResend: vi.fn(),
@@ -102,12 +105,19 @@ const row = (over: Partial<InvitationRow> = {}): InvitationRow => ({
   expiresAt: new Date('2026-10-14T09:00:00Z'),
   createdAt: new Date('2026-10-07T09:00:00Z'),
   importId: null,
+  additionalRoles: [],
+  hasCode: false,
+  locale: 'ar',
   ...over,
 });
 
 beforeEach(() => {
   vi.clearAllMocks();
-  db.createInvitation.mockResolvedValue({ invitationId: INVITATION, personId: PERSON });
+  db.createInvitation.mockResolvedValue({
+    invitationId: INVITATION,
+    personId: PERSON,
+    inviteCode: 'K7M2PQ9XHT4W',
+  });
   db.getInvitationRoles.mockResolvedValue({ primaryRole: 'learner', additionalRoles: [] });
 });
 
@@ -182,6 +192,11 @@ describe('invite user action', () => {
         personId: PERSON,
         primaryRole: 'training_coordinator',
         additionalRoles: ['learner'],
+        // The first code, for the inviter to copy (Kawadir) — never audited.
+        inviteCode: 'K7M2PQ9XHT4W',
+        locale: 'ar',
+        // No public origin configured: the browser builds the link on its own origin.
+        inviteLink: null,
       }),
     );
     expect(db.createInvitation).toHaveBeenCalledWith(TX, {
@@ -207,6 +222,7 @@ describe('invite user action', () => {
     const audited = JSON.stringify(writeAudit.mock.calls);
     expect(audited).not.toContain('alraya');
     expect(audited).not.toContain('نورة');
+    expect(audited).not.toContain('K7M2PQ9XHT4W');
     expect(getClaims).toHaveBeenCalledWith({ strict: false });
   });
 
@@ -332,11 +348,21 @@ describe('invite user action', () => {
   });
 });
 
+/** Resend and revoke, as one action shape (neither returns a code). */
+const BOTH_DEFINITIONS: readonly (() => ReturnType<typeof revokeInvitationActionDefinition>)[] = [
+  resendInvitationActionDefinition,
+  revokeInvitationActionDefinition,
+];
+
 describe('resend and revoke', () => {
-  it('resend: queued and audited; limit and not pending are refused without audit', async () => {
-    db.requestInvitationResend.mockResolvedValueOnce('queued');
+  it('resend: a new code, audited without it; limit and not pending are refused without audit', async () => {
+    db.requestInvitationResend.mockResolvedValueOnce({
+      status: 'queued',
+      inviteCode: 'NEWCQDE2HT4W',
+    });
     const { rt, writeAudit } = runtime(['hr_manager']);
     const resend = createDefineAction(rt)(resendInvitationActionDefinition());
+    // The new code is not returned: it is copied like any other (authorized and audited, review M2).
     expect(await resend({ invitationId: INVITATION })).toEqual(ok({ invitationId: INVITATION }));
     expect(db.requestInvitationResend).toHaveBeenCalledWith(TX, INVITATION);
     expect(writeAudit).toHaveBeenCalledWith(TX, expect.anything(), {
@@ -349,7 +375,7 @@ describe('resend and revoke', () => {
       ['limit_reached', 'RESEND_LIMIT'],
       ['not_pending', 'NOT_PENDING'],
     ] as const) {
-      db.requestInvitationResend.mockResolvedValueOnce(outcome);
+      db.requestInvitationResend.mockResolvedValueOnce({ status: outcome });
       const result = await resend({ invitationId: INVITATION });
       expect(!result.ok && result.error.fieldErrors).toEqual([{ path: 'invitationId', code }]);
     }
@@ -373,7 +399,10 @@ describe('resend and revoke', () => {
     expect(hr.writeAudit).not.toHaveBeenCalled();
     // The Organization Admin, at AAL1 (no authenticator code): the request goes to the database (which
     // checks the actor again).
-    db.requestInvitationResend.mockResolvedValueOnce('queued');
+    db.requestInvitationResend.mockResolvedValueOnce({
+      status: 'queued',
+      inviteCode: 'NEWCQDE2HT4W',
+    });
     const aal1 = await createDefineAction(runtime(['tenant_admin']).rt)(
       resendInvitationActionDefinition(),
     )({ invitationId: INVITATION });
@@ -382,7 +411,7 @@ describe('resend and revoke', () => {
   });
 
   it('resend and revoke: a database refusal of the actor is ROLE_NOT_ALLOWED, not a 500', async () => {
-    for (const definition of [resendInvitationActionDefinition, revokeInvitationActionDefinition]) {
+    for (const definition of BOTH_DEFINITIONS) {
       db.requestInvitationResend.mockRejectedValueOnce(refusal('ROLE_NOT_ALLOWED'));
       db.revokeInvitation.mockRejectedValueOnce(refusal('ROLE_NOT_ALLOWED'));
       const { rt, writeAudit, logError } = runtime(['hr_manager']);
@@ -428,7 +457,7 @@ describe('resend and revoke', () => {
   });
 
   it('without platform.user.invite or with a malformed id: refused before the database', async () => {
-    for (const definition of [resendInvitationActionDefinition, revokeInvitationActionDefinition]) {
+    for (const definition of BOTH_DEFINITIONS) {
       const learner = await createDefineAction(runtime(['learner']).rt)(definition())({
         invitationId: INVITATION,
       });
@@ -456,6 +485,12 @@ describe('invitation queries', () => {
       invitationsListQueryDefinition(),
     )({});
     expect(list.ok && list.value.invitations.map((i) => i.id)).toEqual(['d', 'a']);
+    // HR may not copy privileged invitations' codes; the Organization Admin may.
+    expect(list.ok && list.value.canCopyPrivileged).toBe(false);
+    const admin = await createDefineQuery(runtime(['tenant_admin']).rt)(
+      invitationsListQueryDefinition(),
+    )({});
+    expect(admin.ok && admin.value.canCopyPrivileged).toBe(true);
     const learner = await createDefineQuery(runtime(['line_manager', 'learner']).rt)(
       invitationsListQueryDefinition(),
     )({});
@@ -482,5 +517,103 @@ describe('invitation queries', () => {
     }
     const learner = await query(['learner']);
     expect(!learner.ok && learner.error.code).toBe('FORBIDDEN');
+  });
+});
+
+describe('copy an invitation code (security review M2)', () => {
+  const link = (locale: 'ar' | 'en', code: string) =>
+    `https://tms.example.com/${locale}/sign-up#code=${code}`;
+
+  beforeEach(() => {
+    db.invitationCode.mockResolvedValue({ inviteCode: 'K7M2PQ9XHT4W', locale: 'en' });
+  });
+
+  it("HR Manager: an ordinary invitation's code and link, audited with ids only (never the code)", async () => {
+    const { rt, writeAudit, getClaims } = runtime(['hr_manager']);
+    const view = createDefineAction(rt)(viewInvitationCodeActionDefinition({ inviteLinkOf: link }));
+    expect(await view({ invitationId: INVITATION })).toEqual(
+      ok({
+        invitationId: INVITATION,
+        inviteCode: 'K7M2PQ9XHT4W',
+        locale: 'en',
+        inviteLink: 'https://tms.example.com/en/sign-up#code=K7M2PQ9XHT4W',
+      }),
+    );
+    expect(db.invitationCode).toHaveBeenCalledWith(TX, INVITATION);
+    expect(writeAudit).toHaveBeenCalledWith(TX, expect.anything(), {
+      action: 'platform.invitation.code_viewed',
+      entityType: 'invitation',
+      entityId: INVITATION,
+      data: { privileged: false },
+    });
+    expect(JSON.stringify(writeAudit.mock.calls)).not.toContain('K7M2PQ9XHT4W');
+    expect(getClaims).toHaveBeenCalledWith({ strict: false });
+  });
+
+  it('a privileged invitation: not through the ordinary action (ROLE_NOT_ALLOWED, no read, no audit)', async () => {
+    db.getInvitationRoles.mockResolvedValue({
+      primaryRole: 'learner',
+      additionalRoles: ['auditor'],
+    });
+    for (const roles of [['hr_manager'], ['tenant_admin']] as SystemRoleCode[][]) {
+      const { rt, writeAudit } = runtime(roles);
+      const result = await createDefineAction(rt)(viewInvitationCodeActionDefinition())({
+        invitationId: INVITATION,
+      });
+      expect(!result.ok && result.error.fieldErrors).toEqual([
+        { path: 'invitationId', code: 'ROLE_NOT_ALLOWED' },
+      ]);
+      expect(writeAudit).not.toHaveBeenCalled();
+    }
+    expect(db.invitationCode).not.toHaveBeenCalled();
+  });
+
+  it('the privileged action: role.assign_privileged with the strict session check (getUser)', async () => {
+    db.getInvitationRoles.mockResolvedValue({ primaryRole: 'auditor', additionalRoles: [] });
+    const admin = runtime(['tenant_admin']);
+    const result = await createDefineAction(admin.rt)(
+      viewPrivilegedInvitationCodeActionDefinition(),
+    )({ invitationId: INVITATION });
+    expect(result).toEqual(
+      ok({ invitationId: INVITATION, inviteCode: 'K7M2PQ9XHT4W', locale: 'en', inviteLink: null }),
+    );
+    expect(admin.getClaims).toHaveBeenCalledWith({ strict: true });
+    expect(admin.writeAudit).toHaveBeenCalledWith(TX, expect.anything(), {
+      action: 'platform.invitation.code_viewed',
+      entityType: 'invitation',
+      entityId: INVITATION,
+      data: { privileged: true },
+    });
+    // HR Manager: no role.assign_privileged → FORBIDDEN before anything is read.
+    const hr = runtime(['hr_manager']);
+    const refused = await createDefineAction(hr.rt)(viewPrivilegedInvitationCodeActionDefinition())(
+      {
+        invitationId: INVITATION,
+      },
+    );
+    expect(!refused.ok && refused.error.code).toBe('FORBIDDEN');
+    expect(hr.writeAudit).not.toHaveBeenCalled();
+  });
+
+  it('no code to copy (expired, held, other organization, unknown): refused without audit', async () => {
+    const { rt, writeAudit } = runtime(['tenant_admin']);
+    const view = createDefineAction(rt)(viewInvitationCodeActionDefinition());
+    db.invitationCode.mockResolvedValueOnce(null);
+    const none = await view({ invitationId: INVITATION });
+    expect(!none.ok && none.error.fieldErrors).toEqual([{ path: 'invitationId', code: 'NO_CODE' }]);
+    db.getInvitationRoles.mockResolvedValueOnce(null);
+    const unknown = await view({ invitationId: INVITATION });
+    expect(!unknown.ok && unknown.error.fieldErrors).toEqual([
+      { path: 'invitationId', code: 'NOT_PENDING' },
+    ]);
+    expect(writeAudit).not.toHaveBeenCalled();
+  });
+
+  it('without platform.user.invite: FORBIDDEN', async () => {
+    const result = await createDefineAction(runtime(['learner']).rt)(
+      viewInvitationCodeActionDefinition(),
+    )({ invitationId: INVITATION });
+    expect(!result.ok && result.error.code).toBe('FORBIDDEN');
+    expect(db.invitationCode).not.toHaveBeenCalled();
   });
 });

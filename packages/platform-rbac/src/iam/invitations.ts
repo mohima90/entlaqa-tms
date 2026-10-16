@@ -6,6 +6,7 @@ import {
   type UserTx,
   createInvitation,
   getInvitationRoles,
+  invitationCode,
   listInvitations,
   listManagerOptions,
   listOrgUnitOptions,
@@ -35,7 +36,21 @@ import { namePart } from './my-profile';
  */
 const p = platformPermissions;
 
-/** First e-mail + 3 resends (contract §1 step 3). */
+/**
+ * The canonical link an administrator copies for a code (`/{locale}/sign-up#code=…` on the app's public
+ * origin, APP_BASE_URL — the web app supplies it, apps/suite lib/app-base-url.ts); null when the origin is
+ * not configured (the browser then uses its own).
+ */
+export type InviteLinkOf = (locale: 'ar' | 'en', code: string) => string | null;
+
+/** What the invitation actions need from the web app. */
+export interface InvitationActionOptions {
+  readonly inviteLinkOf?: InviteLinkOf;
+}
+
+const noLink: InviteLinkOf = () => null;
+
+/** First code + 3 new ones on resend (contract §1 step 3). */
 export const MAX_INVITATION_SENDS = 4;
 /** Days an invitation (each e-mailed link) stays valid. */
 export const INVITATION_VALID_DAYS = 7;
@@ -133,11 +148,20 @@ export interface InvitationCreated {
   readonly personId: string;
   readonly primaryRole: string;
   readonly additionalRoles: readonly string[];
+  /**
+   * The invitation's first code (Kawadir: shown right away with «نسخ الرمز» / «نسخ الرابط») and the
+   * language its link opens in. Returned to the inviter only — never audited or logged.
+   */
+  readonly inviteCode: string;
+  readonly locale: 'ar' | 'en';
+  /** The link to copy on the app's public origin; null when not configured (the browser uses its own). */
+  readonly inviteLink: string | null;
 }
 
 async function invite(
   ctx: ActionContext<UserTx>,
   input: InviteUserInputValue,
+  inviteLinkOf: InviteLinkOf,
 ): Promise<InvitationCreated> {
   const created = await createInvitation(ctx.tx, {
     email: input.email,
@@ -158,12 +182,16 @@ async function invite(
     personId: created.personId,
     primaryRole: input.primaryRole,
     additionalRoles: input.additionalRoles,
+    inviteCode: created.inviteCode,
+    locale: input.locale,
+    inviteLink: inviteLinkOf(input.locale, created.inviteCode),
   };
 }
 
 function inviteAction(
   permission: PermissionDefinition,
   privileged: boolean,
+  inviteLinkOf: InviteLinkOf,
 ): ActionDefinition<typeof InviteUserInput, InvitationCreated, UserTx> {
   return {
     permission,
@@ -181,7 +209,7 @@ function inviteAction(
         return err(roleNotAllowed(input));
       }
       try {
-        return ok(await invite(ctx, input));
+        return ok(await invite(ctx, input, inviteLinkOf));
       } catch (error) {
         const code = invitationRefusalCode(error);
         if (code === null) throw error;
@@ -204,13 +232,13 @@ function inviteAction(
 }
 
 /** Invite with ordinary roles (HR Manager, Organization Admin). */
-export function inviteUserActionDefinition() {
-  return inviteAction(p['platform.user.invite'], false);
+export function inviteUserActionDefinition(options: InvitationActionOptions = {}) {
+  return inviteAction(p['platform.user.invite'], false, options.inviteLinkOf ?? noLink);
 }
 
 /** Invite with a privileged role: the Organization Admin. */
-export function invitePrivilegedUserActionDefinition() {
-  return inviteAction(p['platform.role.assign_privileged'], true);
+export function invitePrivilegedUserActionDefinition(options: InvitationActionOptions = {}) {
+  return inviteAction(p['platform.role.assign_privileged'], true, options.inviteLinkOf ?? noLink);
 }
 
 export const InvitationIdInput = z.strictObject({ invitationId: z.uuid() });
@@ -219,20 +247,27 @@ export interface InvitationChanged {
   readonly invitationId: string;
 }
 
+/**
+ * A resend: a new code was issued (the old link stops working). The code itself is not returned: the
+ * member copies it like any other code (viewInvitationCode*: authorized and audited — security review M2).
+ */
+export type InvitationResent = InvitationChanged;
+
 /** The database refused the actor (e.g. an HR Manager on an invitation with a privileged role). */
 function invitationRoleNotAllowed(): AppError {
   return fieldError('invitationId', 'ROLE_NOT_ALLOWED');
 }
 
 /**
- * Resend while pending (also after expiry), up to MAX_INVITATION_SENDS e-mails in total. An invitation
- * with a privileged role is resent only by holders of `platform.role.assign_privileged` (as inviting
- * with it: ROLE_NOT_ALLOWED); the database applies
- * the same rule to the request (security review M2).
+ * Resend while pending (also after expiry): a new code and 7 new days (Kawadir), up to
+ * MAX_INVITATION_SENDS codes in total; the old link stops working. An invitation with a privileged role is
+ * resent only by holders of `platform.role.assign_privileged` (as inviting with it: ROLE_NOT_ALLOWED); the
+ * database applies the same rule when it issues the code (security review M2). Copying a code is not a
+ * resend.
  */
 export function resendInvitationActionDefinition(): ActionDefinition<
   typeof InvitationIdInput,
-  InvitationChanged,
+  InvitationResent,
   UserTx
 > {
   return {
@@ -254,8 +289,14 @@ export function resendInvitationActionDefinition(): ActionDefinition<
         }
         throw error;
       }
-      if (outcome === 'limit_reached') return err(fieldError('invitationId', 'RESEND_LIMIT'));
-      if (outcome === 'not_pending') return err(fieldError('invitationId', 'NOT_PENDING'));
+      if (outcome.status !== 'queued') {
+        return err(
+          fieldError(
+            'invitationId',
+            outcome.status === 'limit_reached' ? 'RESEND_LIMIT' : 'NOT_PENDING',
+          ),
+        );
+      }
       return ok({ invitationId: input.invitationId });
     },
     audit: (_input, output) => ({
@@ -264,6 +305,74 @@ export function resendInvitationActionDefinition(): ActionDefinition<
       entityId: output.invitationId,
     }),
   };
+}
+
+/** One invitation's code for «نسخ الرمز» / «نسخ الرابط», with the language and the link to copy. */
+export interface InvitationCodeView {
+  readonly invitationId: string;
+  readonly inviteCode: string;
+  readonly locale: 'ar' | 'en';
+  /** On the app's public origin; null when not configured (the browser uses its own). */
+  readonly inviteLink: string | null;
+}
+
+function viewCodeAction(
+  permission: PermissionDefinition,
+  privileged: boolean,
+  inviteLinkOf: InviteLinkOf,
+): ActionDefinition<typeof InvitationIdInput, InvitationCodeView, UserTx> {
+  return {
+    permission,
+    input: InvitationIdInput,
+    handler: async ({ ctx, input }) => {
+      // The privileged path is authorized by role.assign_privileged (strict session check); copying stays
+      // a user.invite matter.
+      if (privileged && !ctx.can(p['platform.user.invite'], 'tenant')) {
+        return err(appError('FORBIDDEN'));
+      }
+      const roles = await getInvitationRoles(ctx.tx, input.invitationId);
+      if (!roles) return err(fieldError('invitationId', 'NOT_PENDING'));
+      // Ordinary path: a privileged invitation's code only through the privileged action — as inviting
+      // with that role (the database applies the same rule: an HR Manager reads no such code).
+      if (!privileged && invitationGivesPrivilegedRole(roles)) {
+        return err(invitationRoleNotAllowed());
+      }
+      const code = await invitationCode(ctx.tx, input.invitationId);
+      // Expired, held, not sent with a code (a link e-mailed before codes) or not this member's to copy.
+      if (!code) return err(fieldError('invitationId', 'NO_CODE'));
+      return ok({
+        invitationId: input.invitationId,
+        inviteCode: code.inviteCode,
+        locale: code.locale,
+        inviteLink: inviteLinkOf(code.locale, code.inviteCode),
+      });
+    },
+    // Who copied which invitation's code — ids only, never the code (security review M2).
+    audit: (_input, output) => ({
+      action: 'platform.invitation.code_viewed',
+      entityType: 'invitation',
+      entityId: output.invitationId,
+      data: { privileged },
+    }),
+  };
+}
+
+/**
+ * «نسخ الرمز» / «نسخ الرابط» of an invitation with ordinary roles (HR Manager, Organization Admin): reads its
+ * current code on demand — it is never in the list — and audits the read (security review M2).
+ */
+export function viewInvitationCodeActionDefinition(options: InvitationActionOptions = {}) {
+  return viewCodeAction(p['platform.user.invite'], false, options.inviteLinkOf ?? noLink);
+}
+
+/**
+ * The same for an invitation with a privileged role: `platform.role.assign_privileged` (the Organization
+ * Admin), with the strict session check (getUser) of a high-risk permission — as inviting with that role.
+ */
+export function viewPrivilegedInvitationCodeActionDefinition(
+  options: InvitationActionOptions = {},
+) {
+  return viewCodeAction(p['platform.role.assign_privileged'], true, options.inviteLinkOf ?? noLink);
 }
 
 /**
@@ -305,6 +414,12 @@ export interface InvitationsView {
    * accepted and revoked ones are not listed), newest first.
    */
   readonly invitations: readonly InvitationRow[];
+  /**
+   * The member may copy the codes of invitations with a privileged role (`platform.role.assign_privileged`:
+   * the Organization Admin) — through viewPrivilegedInvitationCode*. Tells "you may not copy this code"
+   * apart from "no code yet" on the list.
+   */
+  readonly canCopyPrivileged: boolean;
 }
 
 export const InvitationsListInput = z.strictObject({});
@@ -329,7 +444,10 @@ export function invitationsListQueryDefinition(): QueryDefinition<
             row.state === 'scheduled',
         )
         .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-      return ok({ invitations });
+      return ok({
+        invitations,
+        canCopyPrivileged: ctx.can(p['platform.role.assign_privileged'], 'tenant'),
+      });
     },
   };
 }

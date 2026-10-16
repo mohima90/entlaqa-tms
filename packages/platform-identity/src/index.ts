@@ -4,17 +4,20 @@ export { type SupabaseAuthLike, verifyClaims, verifyClaimsStrict } from './verif
 export {
   type InvitationAcceptDeps,
   type InvitationAcceptOutcome,
+  type InvitationCodeGuard,
   type InvitationLinkView,
   type InvitationSignUpClientLike,
   type InvitationViewer,
   INVITATION_TOKEN_PATTERN,
   InvitationAccountError,
+  InvitationCodesLimitedError,
   InvitationErrors,
   acceptInvitationAsSignedInUser,
   acceptInvitationWithNewAccount,
   acceptInvitationWithPassword,
   lookupInvitation,
   lookupInvitationLink,
+  normalizeInvitationSecret,
   passwordLength,
   sessionEmail,
 } from './invitation-accept';
@@ -107,6 +110,17 @@ export {
   signOutEndedSession,
   startPasswordSession,
 } from './auth-flow';
+export {
+  type ConsoleInputParser,
+  type PlatformConsoleDeps,
+  PlatformConsoleErrors,
+  createOrganizationFromConsole,
+  isPlatformAdminSession,
+  loadPlatformOrganizations,
+  platformConsoleAccess,
+  reissueOrganizationAdminCode,
+  viewOrganizationAdminCode,
+} from './platform-console';
 export {
   type PasswordChangeDeps,
   type PasswordClientLike,

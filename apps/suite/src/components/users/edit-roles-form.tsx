@@ -295,7 +295,7 @@ export function EditRolesForm(props: EditRolesFormProps) {
                               ? `role-${choice.code}-dates-error`
                               : undefined
                           }
-                          className="min-h-11 w-full rounded-md border border-border-strong bg-surface px-3 text-text"
+                          className="min-h-11 w-full rounded-full border border-border-strong bg-surface px-4 text-sm text-text shadow-1"
                         />
                       </div>
                     ))}

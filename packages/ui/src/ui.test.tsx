@@ -1,6 +1,16 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { Alert, AppShell, Badge, Button, Card, TextField, buttonClasses, cn } from './index';
+import {
+  Alert,
+  AppShell,
+  Badge,
+  Button,
+  Card,
+  PoweredBy,
+  TextField,
+  buttonClasses,
+  cn,
+} from './index';
 
 const PHYSICAL =
   /\b(ml|mr|pl|pr|left|right|border-l|border-r|rounded-l|rounded-r|text-left|text-right)-/;
@@ -73,8 +83,9 @@ describe('AppShell', () => {
     expect(html).toMatch(/<a href="#main"[^>]*>تخطَّ إلى المحتوى<\/a>/);
   });
 
-  it('shows the product and organization names on the gradient navigation, with the Jadarat mark', () => {
+  it('shows the organization and product names on the white navigation, with the Jadarat mark', () => {
     expect(html).toContain('bg-nav-gradient');
+    expect(html).toContain('bg-brand-gradient');
     expect(html).toContain('data-nav-scope');
     expect(html).toContain('جدارات · التدريب');
     expect(html).toContain('شركة الراية');
@@ -120,7 +131,44 @@ describe('AppShell', () => {
       </AppShell>,
     );
     expect(minimal).not.toContain('ms-auto flex shrink-0');
-    expect(minimal).not.toContain('text-on-nav-muted');
+    expect(minimal).not.toContain('text-sm font-semibold text-text');
+    expect(minimal).not.toContain('data-testid="top-bar-title"');
+    expect(minimal).not.toContain('data-testid="nav-collapse"');
+  });
+
+  it('collapses on a desktop from 260 to 72 px when given the labels, starting as remembered', () => {
+    const props = {
+      brand: 'جدارات · التدريب',
+      title: 'أعضاء الفريق',
+      navigation: <a href="/ar/suite">الرئيسية</a>,
+      navigationFooter: <PoweredBy title="مدعوم من جدارات" subtitle="نظام إدارة التدريب" />,
+      navigationLabel: 'التنقل الرئيسي',
+      skipToContentLabel: 'تخطَّ إلى المحتوى',
+      menuLabel: 'القائمة',
+      closeMenuLabel: 'إغلاق القائمة',
+      collapseLabels: { collapse: 'طيّ القائمة', expand: 'توسيع القائمة' },
+    } as const;
+    const expanded = renderToStaticMarkup(<AppShell {...props}>x</AppShell>);
+    expect(expanded).toContain('lg:w-65');
+    expect(expanded).not.toContain('data-nav-collapsed');
+    expect(expanded).toMatch(
+      /<button[^>]*aria-label="طيّ القائمة"[^>]*aria-controls="app-navigation"[^>]*aria-expanded="true"/,
+    );
+    expect(expanded).toContain('مدعوم من جدارات');
+    expect(expanded).toMatch(/<p[^>]*data-testid="top-bar-title"[^>]*>أعضاء الفريق<\/p>/);
+    const collapsed = renderToStaticMarkup(
+      <AppShell {...props} initialCollapsed>
+        x
+      </AppShell>,
+    );
+    expect(collapsed).toContain('lg:w-18');
+    expect(collapsed).toContain('data-nav-collapsed="true"');
+    expect(collapsed).toMatch(/<button[^>]*aria-label="توسيع القائمة"[^>]*aria-expanded="false"/);
+    // Collapsed: no footer, the names stay for screen readers.
+    expect(collapsed).not.toContain('مدعوم من جدارات');
+    expect(collapsed).toContain('sr-only');
+    const classes = [...collapsed.matchAll(/class="([^"]*)"/g)].map((m) => m[1]).join(' ');
+    expect(classes).not.toMatch(PHYSICAL);
   });
 });
 

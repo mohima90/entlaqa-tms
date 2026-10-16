@@ -173,6 +173,13 @@ PO decisions of 15 Oct 2026 (STATUS §2): the core product is organization set-u
 | T-M2-42 | **Business flow agreed with the PO**: navigation per role — which menu groups and items each of the six roles sees, the Organization Admin's Organization / Billing / Settings groups (`docs/design/kawadir-alignment.md` §5) and where Roles and Security sit | Claude → PO | ⚪ | Blocks T-M2-43 |
 | T-M2-43 | **Kawadir-style shell and page patterns**: tokens (radius 0.75rem, soft shadows, muted background, 135° gradient), white collapsible sidebar 260↔72 px with organization logo, gradient on the selected item and «Powered by Jadarat»; sticky top bar (title, ⌘K command palette, full-screen, light/dark/system theme, language, bell, avatar "Org · Role"); Card + Table lists, dialogs, sonner toasts, empty states; existing pages moved: Users → **Team members** (summary cards, Members / Pending invites tabs), Organization profile → **Settings → General**, roles page, security, My profile; screens approved in one batch | Claude + PO | 🔵 | FR-STE-08, FR-ADM-02, FR-IAM-01…05. Supersedes the gradient sidebar of T-M2-21; axe-gated Storybook and E2E stay. Built on branch `kawadir-shell` (16 Oct 2026, not pushed): shell, patterns, Team members, Settings → General at `/suite/admin/settings` (old URL redirects); one read added (primary role for the account menu, no migration). Waiting: PO screen batch approval; menu placement per T-M2-42 |
 
+### `EP-KAW-AUTH` Sign-in, invitations and Super Admin — Kawadir way (M2)
+
+| ID | Task | Owner | Status | Notes / PR |
+|---|---|---|---|---|
+| T-M2-44 | **Kawadir sign-in and invitation codes**: two-step sign-in (e-mail → password), join with code `/sign-up`, invitation codes issued by the database (12 characters, 7 days, single use), Copy code / Copy invite link after inviting and in Pending invites, resend = new code, forgot/reset password restyled; no e-mail required | Claude | 🔵 | FR-IAM-03, FR-IAM-12/13. Business flow agreed (PO, 16 Oct 2026). Security review done; fixes (H1 longer codes + global limit, M1–M3) in progress |
+| T-M2-45 | **Platform Super Admin console**: Super Admin by user ID (Platform admin workflow), Platform → Organizations (list, Create organization with the Organization Admin e-mail → code/link to copy, new code), platform audit | Claude | 🔵 | FR-ADM-17, ADR 0013. Security review done (no Critical/High); fixes in progress. MFA open (R-65) |
+
 ### `EP-PLN` Planning core (M3) — BRD v3.0 §5.4
 
 | ID | Task | Owner | Status | Notes / PR |

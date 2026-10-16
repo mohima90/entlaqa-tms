@@ -38,7 +38,7 @@ export default async function SuiteHomePage({ params }: { params: Promise<{ loca
   // The Organization Admin has no training features: until the admin home (FR-ADM-14) exists, a short
   // set-up card with the pages that are built today (T-M2-21). Decided on the server from the grants.
   const home = suiteHome(context.navigation);
-  // Kawadir dashboard: the team's figures as vivid KPI cards above the set-up card (live data only).
+  // Kawadir dashboard: the team's figures as KPI cards on the brand gradient above the set-up card (live data only).
   const counts = home.kind === 'setup' && context.live ? await homeTeamCounts() : null;
   const users = await getTranslations({ locale, namespace: 'users' });
   const format = await getFormatter({ locale });

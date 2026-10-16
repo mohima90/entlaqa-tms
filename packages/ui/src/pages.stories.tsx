@@ -17,10 +17,13 @@ import { toolbarFieldClasses } from './toolbar';
  * The Organization Admin's pages as the app renders them (T-M2-43 Kawadir polish), in the shell with
  * sample data — for reviewing the screens with the PO and comparing them with Kawadir ATS. The markup
  * follows apps/suite: the home (`/suite`), Team members (`/suite/admin/users`) and Settings → General
- * (`/suite/admin/settings`). Sample names and figures only.
+ * (`/suite/admin/settings`). Sample names and figures only. Colours are Jadarat's by default (PO,
+ * 16 Oct 2026); tagged `brand-matrix`, the story gate also runs the pages with organization colours,
+ * which replace the brand gradient everywhere (FR-ADM-07).
  */
 const meta = {
   title: 'Pages/Organization Admin',
+  tags: ['brand-matrix'],
   parameters: { layout: 'fullscreen', frame: 'bare' },
 } satisfies Meta;
 export default meta;
@@ -38,34 +41,10 @@ const STATS = {
 function TeamFigures({ globals }: { globals: Globals }) {
   return (
     <StatGrid label={pick(globals, { ar: 'ملخص', en: 'Summary' })} className="mb-6">
-      <StatCard
-        variant="gradient"
-        accent="violet"
-        label={pick(globals, STATS.total)}
-        value="24"
-        icon="people"
-      />
-      <StatCard
-        variant="gradient"
-        accent="green"
-        label={pick(globals, STATS.active)}
-        value="19"
-        icon="success"
-      />
-      <StatCard
-        variant="gradient"
-        accent="orange"
-        label={pick(globals, STATS.pending)}
-        value="3"
-        icon="mail"
-      />
-      <StatCard
-        variant="gradient"
-        accent="blue"
-        label={pick(globals, STATS.deactivated)}
-        value="2"
-        icon="user"
-      />
+      <StatCard variant="gradient" label={pick(globals, STATS.total)} value="24" icon="people" />
+      <StatCard variant="gradient" label={pick(globals, STATS.active)} value="19" icon="success" />
+      <StatCard variant="gradient" label={pick(globals, STATS.pending)} value="3" icon="mail" />
+      <StatCard variant="gradient" label={pick(globals, STATS.deactivated)} value="2" icon="user" />
     </StatGrid>
   );
 }

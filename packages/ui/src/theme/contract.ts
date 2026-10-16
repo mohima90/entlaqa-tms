@@ -56,7 +56,9 @@ export const COLOR_ROLES = [
   // Suite shell (header and side navigation). The navigation panel runs from `nav` (top) to `nav-end`
   // (bottom); a plain panel — the Kawadir layout's white one (T-M2-43) — sets both to the same colour.
   // The current entry is filled with the brand gradient (135°) from `nav-item-current` to
-  // `nav-item-current-end`.
+  // `nav-item-current-end` — the one brand gradient of the product: primary buttons, summary (KPI)
+  // cards, the avatar, the dashboard title and the sign-in panel use these same roles, so an
+  // organization's colours (FR-ADM-07) recolour all of them.
   'header',
   'on-header',
   'on-header-muted',
@@ -73,17 +75,6 @@ export const COLOR_ROLES = [
   'on-nav-item-current',
   /** Focus ring inside the navigation (it sits on the nav colours, not on the page). */
   'nav-focus-ring',
-  // Summary cards (Kawadir KPI cards): four vivid gradients (135°) from `stat-<hue>` to
-  // `stat-<hue>-end`, with `on-stat` text. Fixed hues: an organization's colours never replace them.
-  'stat-violet',
-  'stat-violet-end',
-  'stat-green',
-  'stat-green-end',
-  'stat-orange',
-  'stat-orange-end',
-  'stat-blue',
-  'stat-blue-end',
-  'on-stat',
 ] as const;
 export type ColorRole = (typeof COLOR_ROLES)[number];
 
@@ -95,7 +86,8 @@ export const BRAND_ROLES = {
 
 /**
  * Side-navigation roles an organization's brand may replace (T-M2-21, T-M2-43): the current entry's
- * gradient is derived from the organization's colours, so its branding replaces the Jadarat gradient.
+ * gradient — the brand gradient used everywhere — is derived from the organization's colours, so its
+ * branding replaces the Jadarat gradient (on the navigation, buttons, summary cards and sign-in panel).
  */
 export const NAV_ROLES = [
   'nav',
@@ -241,17 +233,10 @@ export const CONTRAST_PAIRS: readonly ContrastPair[] = [
   pair('on-nav-muted', 'nav-item-hover', 'text'),
   pair('on-nav-item-current', 'nav-item-current', 'text'),
   pair('on-nav-item-current', 'nav-item-current-end', 'text'),
-  // Summary cards: their text (label, figure, trend line) is checked on BOTH ends of every gradient.
-  ...(
-    [
-      'stat-violet',
-      'stat-violet-end',
-      'stat-green',
-      'stat-green-end',
-      'stat-orange',
-      'stat-orange-end',
-      'stat-blue',
-      'stat-blue-end',
-    ] as const
-  ).map((bg) => pair('on-stat', bg, 'on-fill')),
+  // The same brand gradient fills primary buttons, the summary (KPI) cards, the avatar and the sign-in
+  // panel (their text is `on-nav-item-current`, checked on both ends above), and colours the large
+  // dashboard title; on the page background both ends must stand out (3 : 1, SC 1.4.11 — and the
+  // large-text bar of SC 1.4.3 for the 30 px bold title).
+  pair('nav-item-current', 'bg', 'ui'),
+  pair('nav-item-current-end', 'bg', 'ui'),
 ];

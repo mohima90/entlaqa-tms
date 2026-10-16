@@ -168,12 +168,11 @@ describe('page patterns (Kawadir)', () => {
     expect(html).toContain('text-success');
   });
 
-  it('StatCard gradient: Kawadir KPI card in a vivid accent with icon tile, trend and sparkline', () => {
+  it('StatCard gradient: KPI card on the brand gradient with icon tile, trend and sparkline', () => {
     const html = renderToStaticMarkup(
       <StatGrid label="ملخص">
         <StatCard
           variant="gradient"
-          accent="green"
           label="نشط"
           value="19"
           icon="success"
@@ -184,9 +183,10 @@ describe('page patterns (Kawadir)', () => {
         <StatCard variant="gradient" label="brand" value="2" />
       </StatGrid>,
     );
-    expect(html).toContain('bg-stat-gradient-green text-on-stat');
-    // The default accent is the brand gradient, with the brand gradient's own text colour.
-    expect(html).toContain('bg-stat-gradient-brand text-on-nav-item-current');
+    // Every KPI card is on the brand gradient (an organization's colours recolour it, FR-ADM-07), with
+    // the brand gradient's own text colour — never a fixed hue (PO, 16 Oct 2026).
+    expect(html.match(/bg-stat-gradient text-on-nav-item-current/g)).toHaveLength(2);
+    expect(html).not.toMatch(/stat-(violet|green|orange|blue)|text-on-stat/);
     expect(html).toContain('12% vs previous');
     expect(html).toMatch(/<polyline[^>]*points="0.0,/);
     expect(html.match(/<dt/g)).toHaveLength(2);
@@ -197,15 +197,13 @@ describe('page patterns (Kawadir)', () => {
 
   it('StatCard gradient leaves out a sparkline of fewer than two values and an empty trend row', () => {
     const one = renderToStaticMarkup(
-      <StatCard variant="gradient" accent="violet" label="l" value="1" sparkline={[4]} />,
+      <StatCard variant="gradient" label="l" value="1" sparkline={[4]} />,
     );
     expect(one).not.toContain('<polyline');
-    const plain = renderToStaticMarkup(
-      <StatCard variant="gradient" accent="blue" label="l" value="1" />,
-    );
+    const plain = renderToStaticMarkup(<StatCard variant="gradient" label="l" value="1" />);
     expect(plain.match(/<dd/g)).toHaveLength(1);
     const flat = renderToStaticMarkup(
-      <StatCard variant="gradient" accent="orange" label="l" value="1" sparkline={[0, 0]} />,
+      <StatCard variant="gradient" label="l" value="1" sparkline={[0, 0]} />,
     );
     expect(flat).toContain('<polyline');
   });

@@ -4,12 +4,6 @@ import { Icon, type IconName } from './icons';
 
 export type StatTone = 'neutral' | 'primary' | 'success' | 'warning' | 'danger';
 
-/**
- * The vivid gradients of Kawadir's KPI cards. `brand` is the brand gradient (an organization's colours
- * replace it, FR-ADM-07); the four hues are fixed (`stat-*` tokens, white text ≥ 4.5 : 1 on both ends).
- */
-export type StatAccent = 'brand' | 'violet' | 'green' | 'orange' | 'blue';
-
 export type StatVariant = 'plain' | 'gradient' | 'target';
 
 /* Value colours of Kawadir's summary cards, from the roles that pass 4.5 : 1 on a card. */
@@ -26,13 +20,6 @@ const iconTone: Record<StatTone, string> = {
   success: 'bg-success-subtle text-success',
   warning: 'bg-warning-subtle text-warning',
   danger: 'bg-danger-subtle text-danger',
-};
-const accentFill: Record<StatAccent, string> = {
-  brand: 'bg-stat-gradient-brand text-on-nav-item-current',
-  violet: 'bg-stat-gradient-violet text-on-stat',
-  green: 'bg-stat-gradient-green text-on-stat',
-  orange: 'bg-stat-gradient-orange text-on-stat',
-  blue: 'bg-stat-gradient-blue text-on-stat',
 };
 const trendIcon = { up: 'trend-up', down: 'trend-down', flat: 'trend-flat' } as const;
 
@@ -71,15 +58,15 @@ export interface StatCardProps extends HTMLAttributes<HTMLDivElement> {
   /** The figure, already formatted for the locale. */
   readonly value: ReactNode;
   /**
-   * `plain` (default): Kawadir's small white summary card (Candidates, Jobs). `gradient`: the vivid KPI
-   * card (Analytics: white text, icon in a translucent tile, trend line, sparkline). `target`: the white
-   * goal card (Analytics: «Monthly Hires 2 / 10», a progress bar and "20% complete").
+   * `plain` (default): Kawadir's small white summary card (Candidates, Jobs). `gradient`: the KPI card
+   * (Analytics layout) on the brand gradient — Jadarat slate → steel, or the organization's colours
+   * (FR-ADM-07); never a fixed hue — with its text (white in light mode), an icon in a translucent tile,
+   * a trend line and a sparkline. `target`: the white goal card (Analytics: «Monthly Hires 2 / 10», a
+   * progress bar and "20% complete").
    */
   readonly variant?: StatVariant | undefined;
   /** `plain`: the colour of the figure and its icon tile. */
   readonly tone?: StatTone | undefined;
-  /** `gradient`: the card's gradient (default `brand`). */
-  readonly accent?: StatAccent | undefined;
   readonly icon?: IconName | undefined;
   /** A short line under the figure. */
   readonly hint?: ReactNode;
@@ -150,7 +137,6 @@ export function StatCard({
   value,
   variant = 'plain',
   tone = 'neutral',
-  accent = 'brand',
   icon,
   hint,
   trend,
@@ -166,7 +152,7 @@ export function StatCard({
       <div
         className={cn(
           'relative flex flex-col overflow-hidden rounded-xl p-6',
-          accentFill[accent],
+          'bg-stat-gradient text-on-nav-item-current',
           className,
         )}
         data-variant="gradient"

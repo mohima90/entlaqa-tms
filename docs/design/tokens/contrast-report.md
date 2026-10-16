@@ -10,9 +10,9 @@ WCAG 2.x relative-luminance formula (`(L1 + 0.05) / (L2 + 0.05)`); ratios shown 
 | Large text (≥ 24 px regular / ≥ 18.66 px bold) | ≥ 3 : 1 — we still hold all text to 4.5 : 1 | 1.4.3 |
 | UI components and graphical objects (input borders, icons, focus ring) | ≥ 3 : 1 | 1.4.11 Non-text Contrast; 2.4.13 is AAA and not targeted |
 
-**Result for «jadarat»: 172 of 172 pairs pass (0 failures).** Tightest pair relative to its threshold: `text-subtle` on `surface-selected` (light) = **4.61 : 1** (needs 4.5).
+**Result for «jadarat»: 160 of 160 pairs pass (0 failures).** Tightest pair relative to its threshold: `text-subtle` on `surface-selected` (light) = **4.61 : 1** (needs 4.5).
 
-The same 86 pairs per mode are also checked automatically for:
+The same 80 pairs per mode are also checked automatically for:
 
 - every theme in `packages/ui/src/theme/themes/` (including the pending «Jadarat LMS» slot);
 - organization brand colours (FR-ADM-07): `deriveOrganizationBrand` derives the brand roles so that they always pass, re-checks all pairs and refuses to return a failing brand; its tests run it on hundreds of colours (white, black, pure yellow, mid greys, a colour grid and random colours).
@@ -95,26 +95,20 @@ Notes
 | `focus-ring` | `header` | `#33658A` | `#F5F7F9` | 5.80 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
 | `on-nav` | `nav` | `#46596A` | `#FFFFFF` | 7.25 | 4.5 | Normal text | ✅ |
 | `on-nav-muted` | `nav` | `#5F6F7C` | `#FFFFFF` | 5.18 | 4.5 | Normal text | ✅ |
-| `nav-item-current` | `nav` | `#0E6BA8` | `#FFFFFF` | 5.70 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
-| `nav-item-current-end` | `nav` | `#B5440B` | `#FFFFFF` | 5.53 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `nav-item-current` | `nav` | `#2F4858` | `#FFFFFF` | 9.59 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `nav-item-current-end` | `nav` | `#33658A` | `#FFFFFF` | 6.23 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
 | `nav-focus-ring` | `nav` | `#33658A` | `#FFFFFF` | 6.23 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
 | `on-nav` | `nav-end` | `#46596A` | `#FFFFFF` | 7.25 | 4.5 | Normal text | ✅ |
 | `on-nav-muted` | `nav-end` | `#5F6F7C` | `#FFFFFF` | 5.18 | 4.5 | Normal text | ✅ |
-| `nav-item-current` | `nav-end` | `#0E6BA8` | `#FFFFFF` | 5.70 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
-| `nav-item-current-end` | `nav-end` | `#B5440B` | `#FFFFFF` | 5.53 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `nav-item-current` | `nav-end` | `#2F4858` | `#FFFFFF` | 9.59 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `nav-item-current-end` | `nav-end` | `#33658A` | `#FFFFFF` | 6.23 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
 | `nav-focus-ring` | `nav-end` | `#33658A` | `#FFFFFF` | 6.23 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
 | `on-nav` | `nav-item-hover` | `#46596A` | `#EEF3F7` | 6.49 | 4.5 | Normal text | ✅ |
 | `on-nav-muted` | `nav-item-hover` | `#5F6F7C` | `#EEF3F7` | 4.64 | 4.5 | Normal text | ✅ |
-| `on-nav-item-current` | `nav-item-current` | `#FFFFFF` | `#0E6BA8` | 5.70 | 4.5 | Normal text | ✅ |
-| `on-nav-item-current` | `nav-item-current-end` | `#FFFFFF` | `#B5440B` | 5.53 | 4.5 | Normal text | ✅ |
-| `on-stat` | `stat-violet` | `#FFFFFF` | `#5B47E0` | 6.14 | 4.5 | Text on filled control | ✅ |
-| `on-stat` | `stat-violet-end` | `#FFFFFF` | `#7C3AED` | 5.70 | 4.5 | Text on filled control | ✅ |
-| `on-stat` | `stat-green` | `#FFFFFF` | `#047857` | 5.48 | 4.5 | Text on filled control | ✅ |
-| `on-stat` | `stat-green-end` | `#FFFFFF` | `#0F766E` | 5.47 | 4.5 | Text on filled control | ✅ |
-| `on-stat` | `stat-orange` | `#FFFFFF` | `#B45309` | 5.02 | 4.5 | Text on filled control | ✅ |
-| `on-stat` | `stat-orange-end` | `#FFFFFF` | `#C2410C` | 5.18 | 4.5 | Text on filled control | ✅ |
-| `on-stat` | `stat-blue` | `#FFFFFF` | `#0369A1` | 5.93 | 4.5 | Text on filled control | ✅ |
-| `on-stat` | `stat-blue-end` | `#FFFFFF` | `#1D4ED8` | 6.70 | 4.5 | Text on filled control | ✅ |
+| `on-nav-item-current` | `nav-item-current` | `#FFFFFF` | `#2F4858` | 9.59 | 4.5 | Normal text | ✅ |
+| `on-nav-item-current` | `nav-item-current-end` | `#FFFFFF` | `#33658A` | 6.23 | 4.5 | Normal text | ✅ |
+| `nav-item-current` | `bg` | `#2F4858` | `#F5F7F9` | 8.93 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `nav-item-current-end` | `bg` | `#33658A` | `#F5F7F9` | 5.80 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
 
 ## Dark theme
 
@@ -187,22 +181,16 @@ Notes
 | `on-nav` | `nav` | `#B0BFCB` | `#15232E` | 8.51 | 4.5 | Normal text | ✅ |
 | `on-nav-muted` | `nav` | `#94A6B4` | `#15232E` | 6.38 | 4.5 | Normal text | ✅ |
 | `nav-item-current` | `nav` | `#86BBD8` | `#15232E` | 7.71 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
-| `nav-item-current-end` | `nav` | `#F79A62` | `#15232E` | 7.44 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `nav-item-current-end` | `nav` | `#5E95BD` | `#15232E` | 4.96 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
 | `nav-focus-ring` | `nav` | `#9DCBEB` | `#15232E` | 9.28 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
 | `on-nav` | `nav-end` | `#B0BFCB` | `#15232E` | 8.51 | 4.5 | Normal text | ✅ |
 | `on-nav-muted` | `nav-end` | `#94A6B4` | `#15232E` | 6.38 | 4.5 | Normal text | ✅ |
 | `nav-item-current` | `nav-end` | `#86BBD8` | `#15232E` | 7.71 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
-| `nav-item-current-end` | `nav-end` | `#F79A62` | `#15232E` | 7.44 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `nav-item-current-end` | `nav-end` | `#5E95BD` | `#15232E` | 4.96 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
 | `nav-focus-ring` | `nav-end` | `#9DCBEB` | `#15232E` | 9.28 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
 | `on-nav` | `nav-item-hover` | `#B0BFCB` | `#1F3240` | 7.03 | 4.5 | Normal text | ✅ |
 | `on-nav-muted` | `nav-item-hover` | `#94A6B4` | `#1F3240` | 5.27 | 4.5 | Normal text | ✅ |
 | `on-nav-item-current` | `nav-item-current` | `#0B1A26` | `#86BBD8` | 8.50 | 4.5 | Normal text | ✅ |
-| `on-nav-item-current` | `nav-item-current-end` | `#0B1A26` | `#F79A62` | 8.20 | 4.5 | Normal text | ✅ |
-| `on-stat` | `stat-violet` | `#FFFFFF` | `#5B47E0` | 6.14 | 4.5 | Text on filled control | ✅ |
-| `on-stat` | `stat-violet-end` | `#FFFFFF` | `#7C3AED` | 5.70 | 4.5 | Text on filled control | ✅ |
-| `on-stat` | `stat-green` | `#FFFFFF` | `#047857` | 5.48 | 4.5 | Text on filled control | ✅ |
-| `on-stat` | `stat-green-end` | `#FFFFFF` | `#0F766E` | 5.47 | 4.5 | Text on filled control | ✅ |
-| `on-stat` | `stat-orange` | `#FFFFFF` | `#B45309` | 5.02 | 4.5 | Text on filled control | ✅ |
-| `on-stat` | `stat-orange-end` | `#FFFFFF` | `#C2410C` | 5.18 | 4.5 | Text on filled control | ✅ |
-| `on-stat` | `stat-blue` | `#FFFFFF` | `#0369A1` | 5.93 | 4.5 | Text on filled control | ✅ |
-| `on-stat` | `stat-blue-end` | `#FFFFFF` | `#1D4ED8` | 6.70 | 4.5 | Text on filled control | ✅ |
+| `on-nav-item-current` | `nav-item-current-end` | `#0B1A26` | `#5E95BD` | 5.47 | 4.5 | Normal text | ✅ |
+| `nav-item-current` | `bg` | `#86BBD8` | `#0F1A22` | 8.49 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |
+| `nav-item-current-end` | `bg` | `#5E95BD` | `#0F1A22` | 5.47 | 3.0 | UI component / focus (SC 1.4.11) | ✅ |

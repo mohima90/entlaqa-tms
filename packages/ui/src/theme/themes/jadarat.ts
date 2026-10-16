@@ -5,9 +5,12 @@ import type { ThemeDefinition } from '../contract';
  * T-M2-21) in the Kawadir ATS layout (PO, 15 Oct 2026 — docs/design/kawadir-alignment.md; T-M2-43):
  * calm slate neutrals on a muted page with white cards, hairline borders, one steel-blue accent for
  * action, selection, focus and links, base radius 0.75rem (12 px) with soft, low-contrast shadows, and a
- * WHITE side navigation whose current entry carries the vivid brand gradient (135°, deep sky → deep
- * orange) with white text and a coloured glow, and vivid summary cards (violet, green, orange, blue). Values are exactly those of docs/design/tokens/tokens.json; the generated stylesheet
- * docs/design/tokens/themes/jadarat.css is what the product ships.
+ * WHITE side navigation whose current entry carries the Jadarat brand gradient (135°, slate → steel)
+ * with white text and a glow tinted from it. The same gradient fills primary buttons, the dashboard
+ * title, the sign-in brand panel and the summary (KPI) cards — one hue family, no mixed colours (PO,
+ * 16 Oct 2026: Kawadir's screenshots carry one tenant's branding). An organization's own colours replace
+ * it everywhere (FR-ADM-07). Values are exactly those of docs/design/tokens/tokens.json; the generated
+ * stylesheet docs/design/tokens/themes/jadarat.css is what the product ships.
  *
  * Design values kept as approved, except one: the approved control border #CBD5DD is only 1.5 : 1 on
  * white, so `border-strong` (input and button boundaries, SC 1.4.11) is the darker `neutral.400`, and
@@ -42,8 +45,10 @@ export const jadaratTheme: ThemeDefinition = {
       700: '#2A5574',
       950: '#0B1A26',
     },
-    // The Jadarat brand palette. Sky, amber and orange are for charts, highlights and the focus ring on
-    // the navigation only (under 4.5 : 1 on white: never body text; orange as text is `orange-text`).
+    // The Jadarat brand palette. Slate → steel is the brand gradient (white text ≥ 6 : 1 on both); in
+    // dark mode sky → `steel-light` with very dark text. Amber and orange are accents for charts,
+    // highlights and warnings only (under 4.5 : 1 on white: never body text; orange as text is
+    // `orange-text`) — never in the brand gradient.
     jadarat: {
       slate: '#2F4858',
       steel: '#33658A',
@@ -51,24 +56,8 @@ export const jadaratTheme: ThemeDefinition = {
       amber: '#F6AE2D',
       orange: '#F26419',
       'orange-text': '#B5440B',
-      // The vivid brand gradient of the Kawadir layout (T-M2-43 polish, PO 16 Oct 2026): a deep sky blue
-      // to the deep orange — both carry white text at ≥ 5.5 : 1. In dark mode: sky to a light orange,
-      // with very dark text.
-      'sky-deep': '#0E6BA8',
-      'orange-light': '#F79A62',
-    },
-    // Vivid summary-card gradients (Kawadir KPI cards: purple, green, orange, blue), deepened until white
-    // text passes 4.5 : 1 on every stop. Fixed hues (meaning, not identity): an organization's colours
-    // never replace them.
-    vivid: {
-      indigo: '#5B47E0',
-      violet: '#7C3AED',
-      emerald: '#047857',
-      teal: '#0F766E',
-      amber: '#B45309',
-      orange: '#C2410C',
-      sky: '#0369A1',
-      blue: '#1D4ED8',
+      // A lighter steel: the end of the dark-mode brand gradient (very dark text ≥ 4.5 : 1 on it).
+      'steel-light': '#5E95BD',
     },
     green: { 50: '#E9F5EE', 300: '#6CD09A', 700: '#16794A', 900: '#11291D' },
     amber: { 50: '#FEF4DF', 300: '#F2C163', 600: '#A36500', 700: '#8A5300', 900: '#2E2410' },
@@ -141,20 +130,12 @@ export const jadaratTheme: ThemeDefinition = {
       'on-nav-muted': '{semantic.text-subtle}',
       'nav-border': '{semantic.border}',
       'nav-item-hover': '{semantic.surface-hover}',
-      'nav-item-current': '{color.jadarat.sky-deep}',
-      'nav-item-current-end': '{color.jadarat.orange-text}',
+      // The Jadarat brand gradient (135°, slate → steel), also on primary buttons, the summary cards,
+      // the dashboard title and the sign-in panel.
+      'nav-item-current': '{color.jadarat.slate}',
+      'nav-item-current-end': '{color.jadarat.steel}',
       'on-nav-item-current': '{color.neutral.0}',
       'nav-focus-ring': '{semantic.focus-ring}',
-      // Summary cards (Kawadir KPI cards): four vivid gradients (135°) with white text.
-      'stat-violet': '{color.vivid.indigo}',
-      'stat-violet-end': '{color.vivid.violet}',
-      'stat-green': '{color.vivid.emerald}',
-      'stat-green-end': '{color.vivid.teal}',
-      'stat-orange': '{color.vivid.amber}',
-      'stat-orange-end': '{color.vivid.orange}',
-      'stat-blue': '{color.vivid.sky}',
-      'stat-blue-end': '{color.vivid.blue}',
-      'on-stat': '{color.neutral.0}',
     },
     dark: {
       bg: '{color.night.900}',
@@ -189,21 +170,11 @@ export const jadaratTheme: ThemeDefinition = {
       'inverse-surface': '{color.night.50}',
       'inverse-text': '{color.neutral.900}',
       overlay: 'rgba(0, 0, 0, 0.65)',
-      // The navigation panel and its text follow the dark surface (aliases); the gradient is light
-      // (sky to light orange) with very dark text, so the current entry stands out on the dark panel.
+      // The navigation panel and its text follow the dark surface (aliases); the brand gradient is the
+      // light Jadarat one (sky → light steel) with very dark text, so it stands out on the dark panel.
       'nav-item-current': '{color.jadarat.sky}',
-      'nav-item-current-end': '{color.jadarat.orange-light}',
+      'nav-item-current-end': '{color.jadarat.steel-light}',
       'on-nav-item-current': '{color.brand.950}',
-      // The summary cards keep their vivid gradients and white text in dark mode (Kawadir).
-      'stat-violet': '{color.vivid.indigo}',
-      'stat-violet-end': '{color.vivid.violet}',
-      'stat-green': '{color.vivid.emerald}',
-      'stat-green-end': '{color.vivid.teal}',
-      'stat-orange': '{color.vivid.amber}',
-      'stat-orange-end': '{color.vivid.orange}',
-      'stat-blue': '{color.vivid.sky}',
-      'stat-blue-end': '{color.vivid.blue}',
-      'on-stat': '{color.neutral.0}',
     },
   },
   font: {

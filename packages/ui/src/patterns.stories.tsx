@@ -159,11 +159,13 @@ export const TeamMembersList: Story = {
 };
 
 /**
- * Summary cards in their three Kawadir variants (Analytics): white target cards with a progress bar,
- * vivid gradient KPI cards (violet, green, orange, blue; white text checked on both ends of each
- * gradient) with a trend line and a decorative sparkline, and the small plain cards.
+ * Summary cards in their three Kawadir variants (Analytics layout): white target cards with a progress
+ * bar, KPI cards on the brand gradient (Jadarat slate → steel; text checked on both ends; never a fixed
+ * hue) with a trend line and a decorative sparkline, and the small plain cards. Tagged `brand-matrix`:
+ * the story gate also runs it with organization colours, which recolour the KPI cards (FR-ADM-07).
  */
 export const SummaryCards: Story = {
+  tags: ['brand-matrix'],
   render: (_args, { globals }) => (
     <div className="flex flex-col gap-6 bg-bg p-6">
       <StatGrid label={pick(globals, { ar: 'الأهداف', en: 'Targets' })} columns={3}>
@@ -195,7 +197,6 @@ export const SummaryCards: Story = {
       <StatGrid label={pick(globals, { ar: 'المؤشرات', en: 'Key figures' })}>
         <StatCard
           variant="gradient"
-          accent="violet"
           label={pick(globals, { ar: 'إجمالي التسجيلات', en: 'Total enrolments' })}
           value="8"
           icon="sessions"
@@ -207,7 +208,6 @@ export const SummaryCards: Story = {
         />
         <StatCard
           variant="gradient"
-          accent="green"
           label={pick(globals, { ar: 'مكتمل هذا الشهر', en: 'Completed this month' })}
           value="2"
           icon="success"
@@ -219,7 +219,6 @@ export const SummaryCards: Story = {
         />
         <StatCard
           variant="gradient"
-          accent="orange"
           label={pick(globals, { ar: 'متوسط مدة الإكمال', en: 'Avg. time to complete' })}
           value={pick(globals, { ar: '14 يومًا', en: '14 days' })}
           icon="calendar"
@@ -230,7 +229,6 @@ export const SummaryCards: Story = {
         />
         <StatCard
           variant="gradient"
-          accent="blue"
           label={pick(globals, { ar: 'نسبة الحضور', en: 'Attendance rate' })}
           value="0%"
           icon="people"

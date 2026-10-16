@@ -190,7 +190,7 @@ describe('organization brand colours: the current navigation entry (T-M2-43)', (
     }
   });
 
-  it('keeps the current entry readable and visible at BOTH gradient ends, light and dark', () => {
+  it('keeps the brand gradient (navigation, buttons, KPI cards) readable and visible at BOTH ends, light and dark', () => {
     const accents = [...seededColours(40, 3)];
     const cases = [
       ...[...EDGE_CASES, ...grid].map((primary) => ({ primary })),
@@ -203,6 +203,8 @@ describe('organization brand colours: the current navigation entry (T-M2-43)', (
         for (const end of [colors['nav-item-current'], colors['nav-item-current-end']]) {
           expect(contrastRatio(colors['on-nav-item-current'], end)).toBeGreaterThanOrEqual(4.5);
           expect(contrastRatio(end, colors.nav)).toBeGreaterThanOrEqual(3);
+          // Primary buttons and the summary (KPI) cards sit on the page background.
+          expect(contrastRatio(end, colors.bg)).toBeGreaterThanOrEqual(3);
         }
         expect(contrastRatio(colors['on-nav'], colors['nav-item-hover'])).toBeGreaterThanOrEqual(
           4.5,

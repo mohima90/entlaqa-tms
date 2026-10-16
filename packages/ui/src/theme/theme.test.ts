@@ -4,7 +4,7 @@ import { displayRatio } from './color';
 import { COLOR_ROLES, CONTRAST_PAIRS, CONTRAST_USE_LABEL, type ThemeDefinition } from './contract';
 import { themeCss } from './css';
 import { SHIPPED_THEME, THEMES } from './index';
-import { type ContrastResult, checkTheme } from './resolve';
+import { type ContrastResult, checkTheme, resolveThemeColors } from './resolve';
 
 const isAlias = (value: string | undefined) => value?.startsWith('{semantic.') ?? false;
 
@@ -43,6 +43,50 @@ describe('theme slots waiting for design material', () => {
       expect(visual(theme)).toEqual(visual(SHIPPED_THEME));
     },
   );
+});
+
+/** Hue (0–360°) of a `#RRGGBB` colour. */
+function hue(hex: string): number {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255) as [
+    number,
+    number,
+    number,
+  ];
+  const max = Math.max(r, g, b);
+  const d = max - Math.min(r, g, b);
+  if (d === 0) return 0;
+  const h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return (h * 60 + 360) % 360;
+}
+
+describe('Jadarat colours by default (PO, 16 Oct 2026): one brand gradient, no mixed hues', () => {
+  it('the brand gradient is slate → steel (light) and sky → light steel (dark)', () => {
+    const light = resolveThemeColors(SHIPPED_THEME, 'light');
+    const dark = resolveThemeColors(SHIPPED_THEME, 'dark');
+    expect([light['nav-item-current'], light['nav-item-current-end']]).toEqual([
+      '#2F4858',
+      '#33658A',
+    ]);
+    expect([dark['nav-item-current'], dark['nav-item-current-end']]).toEqual([
+      '#86BBD8',
+      '#5E95BD',
+    ]);
+  });
+
+  it('both ends of the gradient stay in the Jadarat blue hue family, light and dark', () => {
+    for (const mode of ['light', 'dark'] as const) {
+      const colors = resolveThemeColors(SHIPPED_THEME, mode);
+      for (const end of [colors['nav-item-current'], colors['nav-item-current-end']]) {
+        expect(hue(end)).toBeGreaterThanOrEqual(195);
+        expect(hue(end)).toBeLessThanOrEqual(215);
+      }
+    }
+  });
+
+  it('has no fixed summary-card hues (the cards use the brand gradient)', () => {
+    expect(COLOR_ROLES.filter((role) => role.includes('stat'))).toEqual([]);
+    expect(Object.keys(SHIPPED_THEME.palette)).not.toContain('vivid');
+  });
 });
 
 describe('Tailwind preset', () => {

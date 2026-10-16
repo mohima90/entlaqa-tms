@@ -93,16 +93,6 @@
   --color-nav-item-current-end: var(--color-nav-item-current-end);
   --color-on-nav-item-current: var(--color-on-nav-item-current);
   --color-nav-focus-ring: var(--color-nav-focus-ring);
-  /* Summary cards (Kawadir KPI cards): vivid gradients from `stat-<hue>` to `stat-<hue>-end`. */
-  --color-stat-violet: var(--color-stat-violet);
-  --color-stat-violet-end: var(--color-stat-violet-end);
-  --color-stat-green: var(--color-stat-green);
-  --color-stat-green-end: var(--color-stat-green-end);
-  --color-stat-orange: var(--color-stat-orange);
-  --color-stat-orange-end: var(--color-stat-orange-end);
-  --color-stat-blue: var(--color-stat-blue);
-  --color-stat-blue-end: var(--color-stat-blue-end);
-  --color-on-stat: var(--color-on-stat);
 }
 
 @theme inline {

@@ -70,7 +70,6 @@ export {
   type StatCardProps,
   StatGrid,
   type StatGridProps,
-  type StatAccent,
   type StatTone,
   type StatTrend,
   type StatVariant,

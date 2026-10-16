@@ -20,8 +20,9 @@
   background-image: linear-gradient(170deg, var(--color-nav), var(--color-nav-end));
 }
 
-/* The brand gradient (Kawadir, 135°): the current navigation entry, the avatar and brand accents. The
-   organization's colours replace it (FR-ADM-07). Text on it: `text-on-nav-item-current`. */
+/* The Jadarat brand gradient (135°, slate → steel; Kawadir layout): the current navigation entry, primary
+   buttons, the avatar and brand accents. The organization's colours replace it (FR-ADM-07). Text on it:
+   `text-on-nav-item-current`. */
 @utility bg-brand-gradient {
   background-color: var(--color-nav-item-current);
   background-image: linear-gradient(
@@ -69,28 +70,10 @@
   box-shadow: 0 8px 25px -5px var(--color-nav-item-current);
 }
 
-/* The vivid summary cards (Kawadir KPI cards, 135°) with their own coloured glow. Text: `text-on-stat`. */
-@utility bg-stat-gradient-violet {
-  background-color: var(--color-stat-violet);
-  background-image: linear-gradient(135deg, var(--color-stat-violet), var(--color-stat-violet-end));
-  box-shadow: 0 10px 24px -12px var(--color-stat-violet-end);
-}
-@utility bg-stat-gradient-green {
-  background-color: var(--color-stat-green);
-  background-image: linear-gradient(135deg, var(--color-stat-green), var(--color-stat-green-end));
-  box-shadow: 0 10px 24px -12px var(--color-stat-green-end);
-}
-@utility bg-stat-gradient-orange {
-  background-color: var(--color-stat-orange);
-  background-image: linear-gradient(135deg, var(--color-stat-orange), var(--color-stat-orange-end));
-  box-shadow: 0 10px 24px -12px var(--color-stat-orange-end);
-}
-@utility bg-stat-gradient-blue {
-  background-color: var(--color-stat-blue);
-  background-image: linear-gradient(135deg, var(--color-stat-blue), var(--color-stat-blue-end));
-  box-shadow: 0 10px 24px -12px var(--color-stat-blue-end);
-}
-@utility bg-stat-gradient-brand {
+/* The summary (KPI) cards (Kawadir layout): the brand gradient (135°) with a soft glow tinted from it —
+   one hue family, so an organization's colours recolour the cards too (FR-ADM-07). Text:
+   `text-on-nav-item-current` (checked on both ends). */
+@utility bg-stat-gradient {
   background-color: var(--color-nav-item-current);
   background-image: linear-gradient(
     135deg,

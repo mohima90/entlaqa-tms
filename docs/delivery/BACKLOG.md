@@ -177,8 +177,8 @@ PO decisions of 15 Oct 2026 (STATUS §2): the core product is organization set-u
 
 | ID | Task | Owner | Status | Notes / PR |
 |---|---|---|---|---|
-| T-M2-44 | **Kawadir sign-in and invitation codes**: two-step sign-in (e-mail → password), join with code `/sign-up`, invitation codes issued by the database (12 characters, 7 days, single use), Copy code / Copy invite link after inviting and in Pending invites, resend = new code, forgot/reset password restyled; no e-mail required | Claude | 🔵 | FR-IAM-03, FR-IAM-12/13. Business flow agreed (PO, 16 Oct 2026). Security review done; fixes (H1 longer codes + global limit, M1–M3) in progress |
-| T-M2-45 | **Platform Super Admin console**: Super Admin by user ID (Platform admin workflow), Platform → Organizations (list, Create organization with the Organization Admin e-mail → code/link to copy, new code), platform audit | Claude | 🔵 | FR-ADM-17, ADR 0013. Security review done (no Critical/High); fixes in progress. MFA open (R-65) |
+| T-M2-44 | **Kawadir sign-in and invitation codes**: two-step sign-in (e-mail → password), join with code `/sign-up`, invitation codes issued by the database (12 characters, 7 days, single use), Copy code / Copy invite link after inviting and in Pending invites, resend = new code, forgot/reset password restyled; no e-mail required | Claude | 🔵 | FR-IAM-03, FR-IAM-12/13. Business flow agreed (PO, 16 Oct 2026). Security review done; fixes done on the branch (H1 12-character codes shown XXXX-XXXX-XXXX + all-clients limit + IPv6 /48, M1 readiness list, M2 codes read on demand and audited, M3 announced states, Lows) — confirmation look on the High fix next |
+| T-M2-45 | **Platform Super Admin console**: Super Admin by user ID (Platform admin workflow), Platform → Organizations (list, Create organization with the Organization Admin e-mail → code/link to copy, new code), platform audit | Claude | 🔵 | FR-ADM-17, ADR 0013. Security review done (no Critical/High); fixes done on the branch (M1 reissue replaces another issuer's invitation + `issuer_revoked` state, L1–L9). MFA open (R-65) |
 
 ### `EP-PLN` Planning core (M3) — BRD v3.0 §5.4
 

@@ -98,6 +98,7 @@ From the moment `DATABASE_URL` exists, every merge to `main` deploys to the new 
 | `JADARAT_ENVIRONMENT` | `production` |
 | `SENTRY_DSN` (and `SENTRY_BROWSER_DSN` if used) | Unchanged |
 | `PASSWORD_RESET_DELIVERY` | `worker` (PO, 16 Oct 2026: all e-mails through our notification service, Kawadir way; reset e-mails go out on the next worker pass) |
+| `APP_BASE_URL` | The app's public origin, e.g. `https://<app domain>` (https, no path). **Configuration, not a secret** (not Sensitive). The canonical origin of copied invitation links (Users → Invited, the Super Admin console); without it the browser's own origin is used and a production deployment logs `app_base_url_missing`; an invalid value stops the app at start-up. Set it for **Production and Preview** (previews share the production database, so their links should open production) — [platform-console.md](platform-console.md) §3 |
 
 Never in Vercel: `SUPABASE_SECRET_KEY`, any worker or queue connection, `JADARAT_AUTH_CLIENT_HEADER`. Then **Deployments → latest production deployment → Redeploy** (variables apply to new deployments only).
 
@@ -110,7 +111,7 @@ Never in Vercel: `SUPABASE_SECRET_KEY`, any worker or queue connection, `JADARAT
 33a. **PO**: sign in at `https://<app>/en/sign-in` → you land on **Organizations** (`/en/platform`) → **Create organization**: short name `entlaqa`, the Arabic and English names, the e-mail of the **new** person who will be its Organization Admin (not your own account), invitation language → **Copy invite link** and send it to that person.
 33b. **The new Organization Admin** opens the link in their browser, sets a password and joins → lands in `entlaqa` as Organization Admin. On the console the row shows "Joined".
 
-Also set the web app's `APP_BASE_URL` (Vercel, Production and Preview) to the public origin so copied links point at it ([platform-console.md](platform-console.md) §3).
+`APP_BASE_URL` (section I, Production and Preview) makes the copied links point at the public origin ([platform-console.md](platform-console.md) §3). To see who the Super Admins are: **Platform admin** with action `list` (UIDs and grant times only).
 
 ## K. Checks (PO, Claude reads the results)
 

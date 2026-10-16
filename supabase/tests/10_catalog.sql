@@ -429,6 +429,7 @@ begin
     'private.tenant_member_mfa(uuid) (owner tenant_guard), '
     'private.tenant_member_sessions(uuid) (owner tenant_guard), '
     'private.touch_session() (owner tenant_guard), '
+    'private.unused_invitation_code() (owner invitation_guard), '
     'private.user_session_is_valid(uuid,uuid) (owner tenant_guard)',
     'SECURITY DEFINER functions and owners (security review for any change)');
   select string_agg(p.oid::regprocedure::text, ', ' order by p.oid::regprocedure::text collate "C") into v_list
@@ -440,7 +441,7 @@ begin
     'private.invitation_codes(uuid[]), private.invitation_inviter_may_grant(uuid,uuid,text[]), '
     'private.invitation_issuer_may_grant(uuid,uuid,uuid,text[]), '
     'private.invitation_link(bytea), private.invitation_password_min_length(bytea), '
-    'private.issue_invitation_code(uuid), private.write_invitation_code(uuid)',
+    'private.issue_invitation_code(uuid), private.unused_invitation_code(), private.write_invitation_code(uuid)',
     'invitation_guard owns the link, code, acceptance and sign-up gate functions only');
   perform tests.assert(not has_function_privilege('authenticated', 'private.invitation_code_caller()', 'execute'),
     'only the code functions resolve their caller');

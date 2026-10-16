@@ -33,8 +33,10 @@
 --                               invitation (above) or, as before, private.invitation_inviter_may_grant.
 --   private.write_invitation_code(id)
 --                               the code-issuing step of private.issue_invitation_code, shared with the
---                               console (same behaviour: a new code replaces the old one, retried on the
---                               improbable collision; the lifecycle trigger counts it and gives 7 days).
+--                               console (same behaviour: a new code — 12 characters, 60 bits, drawn by
+--                               private.unused_invitation_code — replaces the old one, retried on the
+--                               improbable collision without naming a code; the lifecycle trigger counts it
+--                               and gives 7 days).
 --
 -- Creating an organization does exactly what scripts/sql/provision-tenant.sql does for the organization
 -- (an ACTIVE tenant; its default settings and security policy come from the tenant triggers) and, instead
@@ -217,6 +219,7 @@ grant execute on function private.user_session_is_valid(uuid, uuid) to platform_
 grant execute on function private.lock_tenant_roles(uuid) to platform_admin_guard;
 grant execute on function private.has_visible_text(text) to platform_admin_guard;
 grant execute on function private.new_invitation_code() to platform_admin_guard;
+grant execute on function private.unused_invitation_code() to platform_admin_guard;
 grant execute on function private.roles_conflict(text, text) to platform_admin_guard;
 grant execute on function private.roles_include_conflict(text[]) to platform_admin_guard;
 
@@ -405,7 +408,8 @@ begin
   end if;
   loop
     v_try := v_try + 1;
-    v_code := private.new_invitation_code();
+    -- A code no invitation of any organization holds or held (private.unused_invitation_code).
+    v_code := private.unused_invitation_code();
     begin
       update platform.invitations i set invite_code = v_code where i.id = p_invitation_id;
       if not found then
@@ -413,10 +417,14 @@ begin
       end if;
       return v_code;
     exception when unique_violation then
-      -- Another invitation holds this code (improbable: 32^8 codes): draw again, a few times.
+      -- Another invitation took this code meanwhile (improbable: 32^12 codes): draw again, a few times.
+      -- Never re-raised as is: the error must not carry a code (security review L9).
       get stacked diagnostics v_constraint = constraint_name;
-      if v_constraint not in ('invitations_invite_code_uq', 'invitations_token_hash_uq') or v_try >= 5 then
-        raise;
+      if v_constraint not in ('invitations_invite_code_uq', 'invitations_token_hash_uq') then
+        raise exception 'the invitation code could not be stored' using errcode = 'unique_violation';
+      end if;
+      if v_try >= 5 then
+        raise exception 'no unused invitation code could be drawn' using errcode = 'JI006';
       end if;
     end;
   end loop;

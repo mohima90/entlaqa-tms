@@ -430,7 +430,7 @@ begin
     'users cannot issue a token (codes come from private.issue_invitation_code only)');
   perform tests.assert_privilege_denied(format($q$update platform.invitations set status = 'revoked', token_hash = tests.token_hash('mine') where id = %L$q$, v_id),
     'nor slip one in while revoking');
-  perform tests.assert_privilege_denied(format($q$update platform.invitations set invite_code = 'ABCDEFGH' where id = %L$q$, v_id),
+  perform tests.assert_privilege_denied(format($q$update platform.invitations set invite_code = 'ABCDEFGHJKLM' where id = %L$q$, v_id),
     'users cannot choose a code');
   perform tests.assert_privilege_denied($q$select invite_code from platform.invitations$q$,
     'users cannot read codes directly (only through private.invitation_codes)');

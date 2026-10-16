@@ -1,17 +1,21 @@
 -- Invitation codes (FR-IAM-03; PO decision 16 Oct 2026: "implement what is in Kawadir ATS for sign-in and
--- invitation exactly; no need to send e-mail — a copyable link like Kawadir"). An invitation now carries an
--- 8-character CODE (alphabet ABCDEFGHJKLMNPQRSTUVWXYZ23456789, 40 random bits) that the members who may
+-- invitation exactly; no need to send e-mail — a copyable link like Kawadir"). An invitation now carries a
+-- 12-character CODE (alphabet ABCDEFGHJKLMNPQRSTUVWXYZ23456789, 60 random bits; shown grouped XXXX-XXXX-XXXX
+-- by the web app, stored and hashed as the 12 characters — security review H1) that the members who may
 -- manage it can copy at any time, together with the link `/{locale}/sign-up#code=CODE`; e-mail is optional.
 -- The code is the invitation's link secret: token_hash = SHA-256 of the code, so the sign-up gate
 -- (private.before_user_created_hook → invitation_allows_signup), the link page (invitation_by_token) and
 -- acceptance (accept_invitation_as_caller) work unchanged. Class: T.
 --
---   invite_code           the current code (null until one is issued; held import invitations have none).
---                         Unique among all invitations. NOT readable by `authenticated` (no column grant):
---                         an HR Manager sees an invitation with a privileged role on the list but must not
---                         copy its code (with "Confirm email" off, the code alone creates the invitee's
---                         account), so codes are read only through the functions below, which apply the
---                         rules of managing that very invitation. token_hash stays unreadable as before.
+--   invite_code           the current code (null until one is issued; held import invitations have none;
+--                         cleared again when the invitation is accepted or revoked — token_hash stays, so
+--                         the link still reads "used" / "revoked", security review L3). Unique among all
+--                         invitations (and, through token_hash, against every code ever issued). NOT
+--                         readable by `authenticated` (no column grant): an HR Manager sees an invitation
+--                         with a privileged role on the list but must not copy its code (with "Confirm
+--                         email" off, the code alone creates the invitee's account), so codes are read only
+--                         through the functions below, which apply the rules of managing that very
+--                         invitation. token_hash stays unreadable as before.
 --   private.issue_invitation_code(id)
 --                         SECURITY DEFINER (owner invitation_guard), app_server with valid user claims:
 --                         generates a new code in the database, replaces the old one (the old link stops
@@ -23,29 +27,36 @@
 --                         Copying a code changes nothing.
 --   private.invitation_codes(ids)
 --                         SECURITY DEFINER, app_server with valid user claims: the codes of the caller's
---                         pending (not held) invitations that the caller may manage (same rule, per row).
+--                         pending, unexpired, sent (not held) invitations that the caller may manage (same
+--                         rule, per row). The web app reads ONE code at a time, when a member copies it
+--                         (an audited action, security review M2); the list only asks whether one exists.
 --   private.invitation_code_for_mail(id)
 --                         SECURITY DEFINER, app_worker with system claims: the code the invitation e-mail
 --                         carries (the mailer issues no token any more).
 --   private.new_invitation_code()
 --                         a fresh random code (gen_random_uuid's strong random bytes; 256 % 32 = 0, so each
 --                         byte maps evenly). SECURITY INVOKER, reads nothing.
+--   private.unused_invitation_code()
+--                         SECURITY DEFINER (owner invitation_guard): a fresh code that no invitation of ANY
+--                         organization holds or held (its code or token hash) — the lifecycle trigger runs
+--                         as the caller, whose row-level security hides the other organizations' rows.
+--                         Retries a few draws; its error never names a code (security review L9).
 --   check_invitation      (replaced) a code is issued only by issue_invitation_code (current_user
 --                         invitation_guard), or by the trigger itself when the worker RELEASES a held import
 --                         invitation (T-M2-12: «إرسال الدعوات (N)» — the release gets the first code and its 7
 --                         days). The request path (users and system jobs) never writes invite_code or
 --                         token_hash directly (column grants: UPDATE (token_hash) is revoked from
 --                         authenticated). Platform operations (support, tests) may still set a bare token
---                         hash, which clears the code.
+--                         hash, which clears the code. Accepting or revoking clears the code.
 --   invitation_allows_signup / before_user_created_hook
---                         (replaced) accept a code (8 characters of the alphabet, exact case: the web app
---                         upper-cases what the invitee typed) as well as the 43-character tokens of links
---                         e-mailed before this migration.
+--                         (replaced) accept a code (12 characters of the alphabet, exact case: the web app
+--                         removes the grouping and upper-cases what the invitee typed) as well as the
+--                         43-character tokens of links e-mailed before this migration.
 --
--- Rate limits: a code is guessable in principle (40 bits), so the web app limits link lookups per client
--- address and per code, and counts unknown codes per client separately, failing closed
--- (packages/platform-identity auth-limits.ts); Auth's sign-up endpoint is limited by Auth itself and the hook
--- admits a code only together with its invitation's e-mail.
+-- Rate limits: a code is guessable in principle (60 bits), so the web app limits link lookups per client
+-- address and per code, and counts unknown codes per client (IPv6 by its /48) and for all clients together,
+-- failing closed (packages/platform-identity auth-limits.ts); Auth's sign-up endpoint is limited by Auth
+-- itself and the hook admits a code only together with its invitation's e-mail.
 
 grant invitation_guard to current_user;
 
@@ -57,11 +68,11 @@ alter table platform.invitations add column invite_code text;
 alter table platform.invitations
   add constraint invitations_invite_code_check check (
     invite_code is null
-    or (invite_code ~ '^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8}$'
+    or (invite_code ~ '^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{12}$'
         and token_hash = pg_catalog.sha256(pg_catalog.convert_to(invite_code, 'UTF8'))));
 
 comment on column platform.invitations.invite_code is
-  'SECURITY-RELEVANT. The invitation''s current 8-character code (Kawadir alphabet); token_hash is its SHA-256. Not readable by authenticated: read through private.invitation_codes / invitation_code_for_mail (FR-IAM-03, PO 16 Oct 2026).';
+  'SECURITY-RELEVANT. The invitation''s current 12-character code (Kawadir alphabet; shown XXXX-XXXX-XXXX); token_hash is its SHA-256. Cleared on acceptance and revocation (token_hash stays). Not readable by authenticated: read through private.invitation_codes / invitation_code_for_mail (FR-IAM-03, PO 16 Oct 2026; security review H1).';
 
 create unique index invitations_invite_code_uq on platform.invitations (invite_code) where invite_code is not null;
 
@@ -79,10 +90,10 @@ grant execute on function private.current_tenant_id() to invitation_guard;
 -- ---------------------------------------------------------------------------------------------------
 -- A fresh code
 -- ---------------------------------------------------------------------------------------------------
--- 8 symbols of ABCDEFGHJKLMNPQRSTUVWXYZ23456789 (no 0/O, 1/I), one per random byte. The bytes come from
--- gen_random_uuid() (PostgreSQL's strong random source, pg_strong_random; pgcrypto is not needed): bytes 0–5
--- and 10–11 of a version-4 UUID carry no version or variant bits. Uniqueness is the unique index's job
--- (callers retry or fail on the improbable collision).
+-- 12 symbols of ABCDEFGHJKLMNPQRSTUVWXYZ23456789 (no 0/O, 1/I), one per random byte: 60 random bits
+-- (security review H1). The bytes come from gen_random_uuid() (PostgreSQL's strong random source,
+-- pg_strong_random; pgcrypto is not needed): bytes 0–5 and 10–15 of a version-4 UUID carry no version or
+-- variant bits. Uniqueness is the unique indexes' job (private.unused_invitation_code draws again).
 create or replace function private.new_invitation_code()
 returns text
 language plpgsql volatile
@@ -94,7 +105,7 @@ declare
   v_code text := '';
   v_i integer;
 begin
-  foreach v_i in array array[0, 1, 2, 3, 4, 5, 10, 11] loop
+  foreach v_i in array array[0, 1, 2, 3, 4, 5, 10, 11, 12, 13, 14, 15] loop
     v_code := v_code || substr(c_alphabet, (pg_catalog.get_byte(v_bytes, v_i) % 32) + 1, 1);
   end loop;
   return v_code;
@@ -102,11 +113,39 @@ end
 $$;
 
 comment on function private.new_invitation_code() is
-  'SECURITY-RELEVANT (FR-IAM-03). A random 8-character invitation code (Kawadir alphabet, strong random bytes). Reads nothing.';
+  'SECURITY-RELEVANT (FR-IAM-03). A random 12-character invitation code (Kawadir alphabet, 60 strong random bits). Reads nothing.';
 
 revoke all on function private.new_invitation_code() from public;
 -- authenticated: the lifecycle trigger gives a released import invitation its first code (system jobs).
 grant execute on function private.new_invitation_code() to authenticated, invitation_guard;
+
+-- A fresh code no invitation of any organization holds or held (its current code, or the token hash of a
+-- code it had — accepted and revoked invitations keep their hash). SECURITY DEFINER (owner invitation_guard,
+-- which reads every organization's invitations): the lifecycle trigger runs as its caller, whose row-level
+-- security shows one organization only. A concurrent draw of the same code is left to the unique indexes
+-- (callers that can retry do). The error never names a code (security review L9).
+create or replace function private.unused_invitation_code()
+returns text
+language plpgsql volatile security definer
+set search_path = ''
+as $$
+declare
+  v_code text;
+begin
+  for v_try in 1 .. 5 loop
+    v_code := private.new_invitation_code();
+    if not exists (select 1 from platform.invitations i
+                   where i.invite_code = v_code
+                      or i.token_hash = pg_catalog.sha256(pg_catalog.convert_to(v_code, 'UTF8'))) then
+      return v_code;
+    end if;
+  end loop;
+  raise exception 'no unused invitation code could be drawn' using errcode = 'JI006';
+end
+$$;
+
+comment on function private.unused_invitation_code() is
+  'SECURITY-RELEVANT (FR-IAM-03). A random invitation code that no invitation of any organization holds or held (code or token hash). Owner invitation_guard; reveals nothing about other invitations.';
 
 -- ---------------------------------------------------------------------------------------------------
 -- Lifecycle (as in 20261016090100, plus codes — header above)
@@ -274,6 +313,8 @@ begin
     new.send_at := null;
     new.revoked_at := now();
     new.revoked_by := v_undo_by;
+    -- The code goes; its token hash stays, so the link reads "revoked" (security review L3).
+    new.invite_code := null;
     return new;
   end if;
 
@@ -298,7 +339,8 @@ begin
     end if;
     new.send_at := null;
     new.released_at := now();
-    new.invite_code := private.new_invitation_code();
+    -- A code no other invitation holds or held (the caller sees one organization only; L9).
+    new.invite_code := private.unused_invitation_code();
     new.token_hash := pg_catalog.sha256(pg_catalog.convert_to(new.invite_code, 'UTF8'));
     new.token_issued_at := now();
     new.send_count := old.send_count + 1;
@@ -419,6 +461,9 @@ begin
      is distinct from (old.token_hash, old.token_issued_at, old.send_count, old.expires_at, old.invite_code) then
     raise exception 'the token of an invitation changes only while it is pending' using errcode = 'check_violation';
   end if;
+  -- Accepted or revoked: the code is no longer needed (nobody copies it any more); its token hash stays,
+  -- so the link still reads "used" or "revoked" (security review L3).
+  new.invite_code := null;
 
   if new.status = 'revoked' then
     if current_user = 'invitation_guard' then
@@ -448,7 +493,7 @@ end
 $$;
 
 comment on function private.check_invitation() is
-  'SECURITY-RELEVANT (FR-IAM-03, FR-IAM-04, ADR 0003 §5). Lifecycle of platform.invitations and who may invite / revoke / schedule / release / issue a code (same rules as the role guard; imports: T-M2-12; codes: 20261018090000).';
+  'SECURITY-RELEVANT (FR-IAM-03, FR-IAM-04, ADR 0003 §5). Lifecycle of platform.invitations and who may invite / revoke / schedule / release / issue a code (same rules as the role guard; imports: T-M2-12; codes: 20261018090000 — cleared on acceptance and revocation).';
 
 -- ---------------------------------------------------------------------------------------------------
 -- Issuing and reading codes (owner invitation_guard)
@@ -517,15 +562,19 @@ begin
   end if;
   loop
     v_try := v_try + 1;
-    v_code := private.new_invitation_code();
+    v_code := private.unused_invitation_code();
     begin
       update platform.invitations i set invite_code = v_code where i.id = v_inv.id;
       return v_code;
     exception when unique_violation then
-      -- Another invitation holds this code (improbable: 32^8 codes): draw again, a few times.
+      -- Another invitation took this code meanwhile (improbable: 32^12 codes): draw again, a few times.
+      -- Never re-raised as is: the error must not carry a code (security review L9).
       get stacked diagnostics v_constraint = constraint_name;
-      if v_constraint not in ('invitations_invite_code_uq', 'invitations_token_hash_uq') or v_try >= 5 then
-        raise;
+      if v_constraint not in ('invitations_invite_code_uq', 'invitations_token_hash_uq') then
+        raise exception 'the invitation code could not be stored' using errcode = 'unique_violation';
+      end if;
+      if v_try >= 5 then
+        raise exception 'no unused invitation code could be drawn' using errcode = 'JI006';
       end if;
     end;
   end loop;
@@ -535,8 +584,9 @@ $$;
 comment on function private.issue_invitation_code(uuid) is
   'SECURITY-RELEVANT (FR-IAM-03, PO 16 Oct 2026). Issues a new invitation code (old link stops working; 7 days; at most 4) for an actor who may manage the invitation. app_server user claims only; owner invitation_guard.';
 
--- The codes of the caller's organization's pending, sent invitations that the caller may manage (an
--- Organization Admin: all; an HR Manager: those without a privileged role), optionally only `p_ids`.
+-- The codes of the caller's organization's pending, unexpired, sent invitations that the caller may manage
+-- (an Organization Admin: all; an HR Manager: those without a privileged role), optionally only `p_ids`.
+-- The web app reads one code when a member copies it (audited) and otherwise only whether one exists.
 create or replace function private.invitation_codes(p_ids uuid[] default null)
 returns table (invitation_id uuid, invite_code text)
 language plpgsql stable security definer
@@ -551,6 +601,7 @@ begin
     select i.id, i.invite_code
     from platform.invitations i
     where i.tenant_id = v_tenant and i.status = 'pending' and not i.mail_held and i.invite_code is not null
+      and i.expires_at > now()
       and (p_ids is null or i.id = any (p_ids))
       and private.invitation_inviter_may_grant(v_tenant, v_user, array[i.primary_role] || i.additional_roles)
     order by i.created_at desc, i.id;
@@ -558,7 +609,7 @@ end
 $$;
 
 comment on function private.invitation_codes(uuid[]) is
-  'SECURITY-RELEVANT (FR-IAM-03). Codes of pending invitations the signed-in caller may manage (Kawadir: copy code / copy link). app_server user claims only; owner invitation_guard.';
+  'SECURITY-RELEVANT (FR-IAM-03). Codes of pending, unexpired invitations the signed-in caller may manage (Kawadir: copy code / copy link). app_server user claims only; owner invitation_guard.';
 
 -- The code the invitation e-mail carries: the worker's system claims of the invitation's organization.
 create or replace function private.invitation_code_for_mail(p_invitation_id uuid)
@@ -598,9 +649,10 @@ as $$
 declare
   v record;
 begin
-  -- A code (8 characters, exact case) or a token e-mailed before codes (43 base64url characters).
+  -- A code (12 characters, exact case, no grouping) or a token e-mailed before codes (43 base64url
+  -- characters).
   if p_email is null or p_token is null
-     or p_token !~ '^([A-Za-z0-9_-]{43}|[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8})$' then
+     or p_token !~ '^([A-Za-z0-9_-]{43}|[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{12})$' then
     return false;
   end if;
   select l.state, l.email into v
@@ -640,9 +692,10 @@ begin
     v_email := coalesce(v_user ->> 'email', '');
     v_token := case when jsonb_typeof(v_user -> 'user_metadata' -> 'invitation') = 'string'
                     then v_user -> 'user_metadata' ->> 'invitation' end;
-    -- An invitation code (8 characters, exact case) or a token e-mailed before codes (43 characters).
+    -- An invitation code (12 characters, exact case, no grouping) or a token e-mailed before codes (43
+    -- characters).
     if v_email = '' or v_token is null
-       or v_token !~ '^([A-Za-z0-9_-]{43}|[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8})$' then
+       or v_token !~ '^([A-Za-z0-9_-]{43}|[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{12})$' then
       return v_deny;
     end if;
     if private.invitation_allows_signup(v_email, v_token) is true then
@@ -668,16 +721,20 @@ alter function private.invitation_code_caller() owner to invitation_guard;
 alter function private.issue_invitation_code(uuid) owner to invitation_guard;
 alter function private.invitation_codes(uuid[]) owner to invitation_guard;
 alter function private.invitation_code_for_mail(uuid) owner to invitation_guard;
+alter function private.unused_invitation_code() owner to invitation_guard;
 revoke create on schema private from invitation_guard;
 
 revoke all on function private.invitation_code_caller() from public;
 revoke all on function private.issue_invitation_code(uuid) from public;
 revoke all on function private.invitation_codes(uuid[]) from public;
 revoke all on function private.invitation_code_for_mail(uuid) from public;
+revoke all on function private.unused_invitation_code() from public;
 -- The functions check the LOGIN role (app_server / app_worker) and the claims themselves.
 grant execute on function private.issue_invitation_code(uuid) to authenticated;
 grant execute on function private.invitation_codes(uuid[]) to authenticated;
 grant execute on function private.invitation_code_for_mail(uuid) to authenticated;
+-- The lifecycle trigger (release by the worker, as authenticated) and the issuer draw unused codes.
+grant execute on function private.unused_invitation_code() to authenticated, invitation_guard;
 -- (The replaced sign-up gate keeps its owner, invitation_guard, and its grants: supabase_auth_admin only.)
 
 do $$
@@ -685,6 +742,7 @@ begin
   if exists (select 1 from pg_catalog.pg_proc p
              where p.oid in ('private.issue_invitation_code(uuid)'::regprocedure, 'private.invitation_codes(uuid[])'::regprocedure,
                              'private.invitation_code_for_mail(uuid)'::regprocedure,
+                             'private.unused_invitation_code()'::regprocedure,
                              'private.invitation_allows_signup(text, text)'::regprocedure)
                and pg_catalog.pg_get_userbyid(p.proowner) <> 'invitation_guard') then
     raise exception 'the invitation code functions must be owned by invitation_guard';

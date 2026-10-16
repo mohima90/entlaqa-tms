@@ -23,7 +23,7 @@ begin
   -- or from releasing a held import invitation (92_/93_invitation_codes_*.sql).
   perform tests.assert_privilege_denied($q$update platform.invitations set token_hash = tests.token_hash('job-1') where id = 'a4000000-0000-4000-8000-000000000006'$q$,
     'system: cannot issue a token');
-  perform tests.assert_privilege_denied($q$update platform.invitations set invite_code = 'ABCDEFGH' where id = 'a4000000-0000-4000-8000-000000000006'$q$,
+  perform tests.assert_privilege_denied($q$update platform.invitations set invite_code = 'ABCDEFGHJKLM' where id = 'a4000000-0000-4000-8000-000000000006'$q$,
     'system: cannot choose a code');
   perform tests.assert_fails_like($q$select private.issue_invitation_code('a4000000-0000-4000-8000-000000000006')$q$,
     'invitation codes need a signed-in member%', 'system: issue_invitation_code is for members (app_server) only');

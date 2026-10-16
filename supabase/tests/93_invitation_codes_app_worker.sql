@@ -13,7 +13,7 @@ set local role authenticated;
 select tests.set_claims(tests.system_claims('a0000000-0000-4000-8000-000000000001', 'platform.invitations.mailer'));
 do $$
 begin
-  perform tests.assert(private.invitation_code_for_mail('a4000000-0000-4000-8000-000000000006') ~ '^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8}$',
+  perform tests.assert(private.invitation_code_for_mail('a4000000-0000-4000-8000-000000000006') ~ '^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{12}$',
     'mailer: the code of a pending invitation of its organization');
   perform tests.assert_eq(private.invitation_code_for_mail('a4000000-0000-4000-8000-000000000001'), null::text,
     'mailer: no code for a link e-mailed before codes');
@@ -25,7 +25,7 @@ begin
     'mailer: nothing of another organization');
   perform tests.assert_privilege_denied($q$select invite_code from platform.invitations$q$,
     'mailer: no direct read of codes');
-  perform tests.assert_privilege_denied($q$update platform.invitations set invite_code = 'ABCDEFGH' where id = 'a4000000-0000-4000-8000-000000000006'$q$,
+  perform tests.assert_privilege_denied($q$update platform.invitations set invite_code = 'ABCDEFGHJKLM' where id = 'a4000000-0000-4000-8000-000000000006'$q$,
     'mailer: cannot change a code');
   perform tests.assert_fails_like($q$select private.issue_invitation_code('a4000000-0000-4000-8000-000000000006')$q$,
     'invitation codes need a signed-in member%', 'mailer: issues no code');

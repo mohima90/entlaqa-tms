@@ -370,7 +370,7 @@ begin
                                              where import_id = 'a5000000-0000-4000-8000-0000000000d2')),
     5::bigint, 'one `invitation.released` event each for the mailer');
   -- The release gave each one its first code (20261018090000, FR-IAM-03: «إرسال الدعوات (N)» → codes).
-  perform tests.assert((select bool_and(invite_code ~ '^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8}$'
+  perform tests.assert((select bool_and(invite_code ~ '^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{12}$'
                                         and token_hash = sha256(convert_to(invite_code, 'UTF8'))
                                         and send_count = 1 and token_issued_at is not null)
                         from platform.invitations where import_id = 'a5000000-0000-4000-8000-0000000000d2'),

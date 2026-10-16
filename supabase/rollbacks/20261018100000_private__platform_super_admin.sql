@@ -167,15 +167,19 @@ begin
   end if;
   loop
     v_try := v_try + 1;
-    v_code := private.new_invitation_code();
+    v_code := private.unused_invitation_code();
     begin
       update platform.invitations i set invite_code = v_code where i.id = v_inv.id;
       return v_code;
     exception when unique_violation then
-      -- Another invitation holds this code (improbable: 32^8 codes): draw again, a few times.
+      -- Another invitation took this code meanwhile (improbable: 32^12 codes): draw again, a few times.
+      -- Never re-raised as is: the error must not carry a code (security review L9).
       get stacked diagnostics v_constraint = constraint_name;
-      if v_constraint not in ('invitations_invite_code_uq', 'invitations_token_hash_uq') or v_try >= 5 then
-        raise;
+      if v_constraint not in ('invitations_invite_code_uq', 'invitations_token_hash_uq') then
+        raise exception 'the invitation code could not be stored' using errcode = 'unique_violation';
+      end if;
+      if v_try >= 5 then
+        raise exception 'no unused invitation code could be drawn' using errcode = 'JI006';
       end if;
     end;
   end loop;
@@ -221,6 +225,7 @@ revoke all on platform.tenants, platform.tenant_settings, platform.security_poli
 revoke execute on function private.try_uuid(text), private.request_claims(), private.request_user_id(),
   private.request_person_id(), private.current_tenant_id(), private.user_session_is_valid(uuid, uuid),
   private.lock_tenant_roles(uuid), private.has_visible_text(text), private.new_invitation_code(),
+  private.unused_invitation_code(),
   private.roles_conflict(text, text), private.roles_include_conflict(text[]) from platform_admin_guard;
 
 revoke usage on schema platform, private from platform_admin_guard;

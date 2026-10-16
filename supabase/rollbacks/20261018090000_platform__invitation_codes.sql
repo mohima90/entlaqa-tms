@@ -9,6 +9,7 @@ drop function private.issue_invitation_code(uuid);
 drop function private.invitation_codes(uuid[]);
 drop function private.invitation_code_for_mail(uuid);
 drop function private.invitation_code_caller();
+drop function private.unused_invitation_code();
 
 create or replace function private.check_invitation()
 returns trigger

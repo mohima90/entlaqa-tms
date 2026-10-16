@@ -289,6 +289,10 @@ begin
       ('private.issue_invitation_code(uuid)', 'invitation_guard', array['invitation_guard', 'authenticated'], true),
       ('private.invitation_codes(uuid[])', 'invitation_guard', array['invitation_guard', 'authenticated'], true),
       ('private.invitation_code_for_mail(uuid)', 'invitation_guard', array['invitation_guard', 'authenticated'], true),
+      -- A code no invitation of any organization holds or held (the release trigger runs as the worker's
+      -- authenticated; the issuer and the console as their guards). Reveals nothing (security review L9).
+      ('private.unused_invitation_code()', 'invitation_guard',
+       array['invitation_guard', 'authenticated', 'platform_admin_guard'], true),
       -- Their caller check: SECURITY INVOKER, called by them only.
       ('private.invitation_code_caller()', 'invitation_guard', array['invitation_guard'], false),
       -- A link's state (the one definition of "valid"): SECURITY INVOKER, called by the definer functions.
@@ -480,7 +484,7 @@ begin
         'private.discard_inactive_tenant_delivery(uuid)', 'private.invitation_by_token(bytea)',
         'private.accept_invitation_as_caller(bytea,text,text)', 'private.invitation_allows_signup(text,text)',
         'private.issue_invitation_code(uuid)', 'private.invitation_codes(uuid[])',
-        'private.invitation_code_for_mail(uuid)',
+        'private.invitation_code_for_mail(uuid)', 'private.unused_invitation_code()',
         -- Platform Super Admin console (FR-ADM-17)
         'private.is_platform_admin()', 'private.platform_list_tenants()',
         'private.platform_create_tenant(text,text,text,text,text,text,text,text,text)',

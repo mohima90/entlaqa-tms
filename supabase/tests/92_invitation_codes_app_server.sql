@@ -32,7 +32,7 @@ begin
 
   -- The first code of a4…06 (never mailed).
   v_first := private.issue_invitation_code('a4000000-0000-4000-8000-000000000006');
-  perform tests.assert(v_first ~ '^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8}$', 'a code: 8 characters of the Kawadir alphabet');
+  perform tests.assert(v_first ~ '^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{12}$', 'a code: 12 characters of the Kawadir alphabet (60 bits)');
   perform tests.assert_eq((select row(send_count, token_issued_at = now(), expires_at = now() + interval '7 days')::text
                            from platform.invitations where id = 'a4000000-0000-4000-8000-000000000006'),
     row(1::smallint, true, true)::text, 'first code: counted once, issued now, valid 7 days');
@@ -238,7 +238,7 @@ begin
     values ('a1000000-0000-4000-8000-0000000000d7', 'code1@a.test', 'en', 'learner') returning id into v_id;
   perform tests.assert_eq((select send_count from platform.invitations where id = v_id), 0::smallint,
     'a new invitation starts without a code');
-  perform tests.assert_privilege_denied(format($q$insert into platform.invitations (person_id, email, locale, primary_role, invite_code) values ('a1000000-0000-4000-8000-0000000000d7', 'code1@a.test', 'en', 'learner', 'ABCDEFGH')$q$),
+  perform tests.assert_privilege_denied(format($q$insert into platform.invitations (person_id, email, locale, primary_role, invite_code) values ('a1000000-0000-4000-8000-0000000000d7', 'code1@a.test', 'en', 'learner', 'ABCDEFGHJKLM')$q$),
     'users cannot insert a code of their choice');
   v_code := private.issue_invitation_code(v_id);
   perform tests.assert_eq((select row(x.state, x.email, x.locale)::text from private.invitation_by_token(tests.token_hash(v_code)) x),
@@ -250,6 +250,8 @@ begin
     1::bigint, 'HR revokes it');
   perform tests.assert_eq((select state from private.invitation_by_token(tests.token_hash(v_code))), 'revoked',
     'the revoked code shows the revoked state');
+  perform tests.assert_eq((select count(*) from private.invitation_codes(array[v_id])), 0::bigint,
+    'a revoked invitation has no code to copy (cleared, L3)');
   perform tests.assert_fails(format($q$select private.issue_invitation_code(%L)$q$, v_id), array['JI005'],
     'a revoked invitation gets no new code');
 end $$;

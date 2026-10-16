@@ -13,13 +13,24 @@ import { afterSignIn, fillSignIn, signInToSuite } from './sign-in';
  * e-mail, copies the invite link; a NEW user opens it in a fresh browser, signs up and lands in that
  * organization as its Organization Admin — in English and in Arabic. A member of an organization
  * (SIGNED_IN_E2E_*) gets 404.
+ *
+ * The Super Admin journey CREATES organizations: it runs only against the self-hosted stack — E2E_SELF_HOSTED=1
+ * and an E2E_BASE_URL on localhost — never against production or a preview (they share the production
+ * database; security review L8). Anywhere else it is skipped, whatever PLATFORM_E2E_* say.
  */
 const superEmail = process.env.PLATFORM_E2E_EMAIL;
 const superPassword = process.env.PLATFORM_E2E_PASSWORD;
 const memberEmail = process.env.SIGNED_IN_E2E_EMAIL;
 const memberPassword = process.env.SIGNED_IN_E2E_PASSWORD;
 const run = Date.now().toString(36);
-const CODE = /^[A-HJ-NP-Z2-9]{8,}$/;
+/** A code as shown: 12 symbols grouped XXXX-XXXX-XXXX. */
+const CODE = /^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/;
+/** The link carries the 12 symbols without the grouping. */
+const linkCode = (shown: string) => shown.replaceAll('-', '');
+/** Only the self-hosted stack on this machine (never production or a preview: L8). */
+const selfHostedStack =
+  process.env.E2E_SELF_HOSTED === '1' &&
+  /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/?$/.test(process.env.E2E_BASE_URL ?? '');
 
 async function expectNoSeriousA11yViolations(page: Page) {
   await expect(page).toHaveTitle(/\S/);
@@ -60,6 +71,7 @@ const TEXTS = {
     pending: 'Invited, not joined yet',
     joined: 'Joined',
     newCode: 'New code',
+    newCodeIssued: 'A new code was issued. The previous code no longer works.',
     adminLink: 'Organization Admin link',
   },
   ar: {
@@ -71,6 +83,7 @@ const TEXTS = {
     pending: 'مدعو ولم ينضم بعد',
     joined: 'انضم',
     newCode: 'رمز جديد',
+    newCodeIssued: 'أُصدر رمز جديد. الرمز السابق لم يعد يعمل.',
     adminLink: 'رابط مدير المنشأة',
   },
 } as const;
@@ -103,6 +116,10 @@ async function joinAsOrganizationAdmin(
 }
 
 test.describe('platform console: the Super Admin (configured deployment)', () => {
+  test.skip(
+    !selfHostedStack,
+    'creates organizations: the self-hosted stack only (E2E_SELF_HOSTED=1, E2E_BASE_URL on localhost)',
+  );
   test.skip(!superEmail || !superPassword, 'PLATFORM_E2E_* not set');
   // One organization per language and project: the short name must be unique.
   test.describe.configure({ mode: 'serial' });
@@ -151,7 +168,8 @@ test.describe('platform console: the Super Admin (configured deployment)', () =>
       await created.getByRole('button', { name: t.copyLink }).click();
       await expect(created.getByRole('status')).toHaveText(t.linkCopied);
       const link = await page.evaluate(() => navigator.clipboard.readText());
-      expect(link).toBe(`${new URL(page.url()).origin}/${locale}/sign-up#code=${code}`);
+      // APP_BASE_URL on the self-hosted stack is this origin; the link carries the 12 symbols.
+      expect(link).toBe(`${new URL(page.url()).origin}/${locale}/sign-up#code=${linkCode(code)}`);
       await created.getByRole('button', { name: t.done }).click();
 
       const row = page.locator(`[data-testid="organization-row"][data-slug="${slug}"]`);
@@ -161,7 +179,7 @@ test.describe('platform console: the Super Admin (configured deployment)', () =>
       const invite = page.getByTestId('org-admin-invite-dialog');
       await expect(invite.getByTestId('invite-code')).toHaveText(code);
       await invite.getByRole('button', { name: t.newCode }).click();
-      await expect(invite.getByTestId('org-admin-invite-message')).toBeVisible();
+      await expect(invite.getByTestId('org-admin-invite-message')).toHaveText(t.newCodeIssued);
       const newCode = (await invite.getByTestId('invite-code').textContent()) ?? '';
       expect(newCode).toMatch(CODE);
       expect(newCode).not.toBe(code);
@@ -169,7 +187,7 @@ test.describe('platform console: the Super Admin (configured deployment)', () =>
 
       await joinAsOrganizationAdmin(
         browser,
-        `${new URL(page.url()).origin}/${locale}/sign-up#code=${newCode}`,
+        `${new URL(page.url()).origin}/${locale}/sign-up#code=${linkCode(newCode)}`,
         locale,
         locale === 'en' ? nameEn : nameAr,
       );

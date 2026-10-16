@@ -13,7 +13,9 @@ import { afterSignIn, signInToSuite } from './sign-in';
 const email = process.env.SIGNED_IN_E2E_EMAIL;
 const password = process.env.SIGNED_IN_E2E_PASSWORD;
 const run = Date.now().toString(36);
-const CODE = /^[A-HJ-NP-Z2-9]{8}$/;
+/** A code as shown: 12 symbols grouped XXXX-XXXX-XXXX (the link carries them without the hyphens). */
+const CODE = /^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/;
+const linkCode = (shown: string) => shown.replaceAll('-', '');
 
 /** The invited users' list rows. */
 const rowsOf = (page: Page) => page.getByTestId('invitations-list').getByTestId('invitation-row');
@@ -131,7 +133,7 @@ test.describe('invitations (admin side)', () => {
     await panel.getByRole('button', { name: 'Copy invite link' }).click();
     await expect(panel.getByRole('status')).toHaveText('Invitation link copied.');
     const link = await page.evaluate(() => navigator.clipboard.readText());
-    expect(link).toBe(`${new URL(page.url()).origin}/en/sign-up#code=${code}`);
+    expect(link).toBe(`${new URL(page.url()).origin}/en/sign-up#code=${linkCode(code)}`);
     await panel.getByRole('button', { name: 'Copy code' }).click();
     await expect(panel.getByRole('status')).toHaveText('Invitation code copied.');
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(code);
@@ -146,9 +148,17 @@ test.describe('invitations (admin side)', () => {
     await expect(row).toContainText('Training Coordinator');
     await expect(row).toContainText('Invited');
     await expect(row).toContainText('Expires on');
-    // The same code, copyable any time (Kawadir's pending-invite row).
+    // The same code, copyable any time (Kawadir's pending-invite row) — not in the page until copied
+    // (read on demand and audited, security review M2).
+    await expect(row.getByTestId('invite-code')).toHaveCount(0);
+    expect(await page.content()).not.toContain(linkCode(code));
+    await row.getByRole('button', { name: /^Copy code \(/ }).click();
+    await expect(row.getByTestId('invite-copy-status')).toHaveText('Invitation code copied.');
     await expect(row.getByTestId('invite-code')).toHaveText(code);
-    await expect(row.getByRole('button', { name: /^Copy invite link \(/ })).toBeVisible();
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(code);
+    // Copying again is announced again.
+    await row.getByRole('button', { name: /^Copy invite link \(/ }).click();
+    await expect(row.getByTestId('invite-copy-status')).toHaveText('Invitation link copied.');
     await expectNoSeriousA11yViolations(page);
 
     // Resend inline: a new code; the old one stops working.
@@ -156,6 +166,8 @@ test.describe('invitations (admin side)', () => {
     await expect(page.getByTestId('invitations-message')).toContainText(
       'Invitation resent with a new code.',
     );
+    await expect(row.getByTestId('invite-code')).toHaveCount(0);
+    await row.getByRole('button', { name: /^Copy code \(/ }).click();
     await expect(row.getByTestId('invite-code')).not.toHaveText(code);
 
     // Revoke after the confirmation; the invitation leaves the list
@@ -232,7 +244,7 @@ test.describe('invitations (admin side)', () => {
       .getByRole('button', { name: 'Copy invite link' })
       .click();
     const link = await page.evaluate(() => navigator.clipboard.readText());
-    expect(link.endsWith(`/en/sign-up#code=${code}`)).toBe(true);
+    expect(link.endsWith(`/en/sign-up#code=${linkCode(code)}`)).toBe(true);
     await signUpInFreshBrowser(browser, 'en', async (fresh) => {
       await fresh.goto(link);
       // The code came with the link: filled in, locked, gone from the address bar.
@@ -276,17 +288,20 @@ test.describe('invitations (admin side)', () => {
     const row = rowsOf(page).filter({ hasText: invitee });
     await row.getByRole('button', { name: /^Resend invitation \(/ }).click();
     await expect(page.getByTestId('invitations-message')).toContainText('new code');
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+    await row.getByRole('button', { name: /^Copy code \(/ }).click();
     await expect(row.getByTestId('invite-code')).not.toHaveText(first);
     const second = (await row.getByTestId('invite-code').textContent()) ?? '';
     expect(second).toMatch(CODE);
 
     const context = await browser.newContext();
     const fresh = await context.newPage();
+    // The old code (grouped as shown: the page accepts both forms) no longer opens anything.
     await fresh.goto(`/en/sign-up#code=${first}`);
     await expect(fresh.locator('#sign-up-code-error')).toHaveText(
       "This code isn't valid. Check it and try again.",
     );
-    await fresh.goto(`/en/sign-up#code=${second}`);
+    await fresh.goto(`/en/sign-up#code=${linkCode(second)}`);
     await expect(fresh.getByTestId('sign-up-code-valid')).toBeVisible();
     await context.close();
   });

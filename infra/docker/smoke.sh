@@ -260,7 +260,7 @@ accept_link() {
   [[ -n "$id" ]] || return 1
   compose exec -T mailpit wget -qO- "http://127.0.0.1:8025/api/v1/message/$id" 2>/dev/null |
     node -e 'let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => {
-      const re = /http:\/\/localhost:3200\/(ar|en)\/sign-up#code=[A-HJ-NP-Z2-9]{8}(?![A-Za-z0-9_-])/;
+      const re = /http:\/\/localhost:3200\/(ar|en)\/sign-up#code=[A-HJ-NP-Z2-9]{12}(?![A-Za-z0-9_-])/;
       let m = {}; try { m = JSON.parse(s); } catch {}
       const text = (m.Text ?? "").match(re), html = (m.HTML ?? "").match(re);
       if (!text || !html || text[0] !== html[0]) process.exit(1);

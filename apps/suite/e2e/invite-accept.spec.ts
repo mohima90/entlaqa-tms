@@ -74,7 +74,10 @@ test.describe('accept an invitation', () => {
     await expect(page.getByRole('heading', { level: 1 })).toContainText('انضم إلى');
     // The code is filled in from the link and locked; the fragment left the address bar.
     await expect(page.getByTestId('sign-up-code')).toHaveAttribute('readonly', '');
-    await expect(page.getByTestId('sign-up-code')).toHaveValue(/^[A-HJ-NP-Z2-9]{8}$/);
+    // Shown grouped XXXX-XXXX-XXXX (12 symbols).
+    await expect(page.getByTestId('sign-up-code')).toHaveValue(
+      /^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/,
+    );
     await expect(page.getByTestId('sign-up-code-valid')).toBeVisible();
     expect(new URL(page.url()).hash).toBe('');
     // The sign-in e-mail is shown, read-only, left-to-right.
@@ -119,12 +122,14 @@ test.describe('accept an invitation', () => {
 
   for (const locale of ['ar', 'en'] as const) {
     test(`${locale}: an unknown code shows that it is not valid`, async ({ page }) => {
-      await page.goto(`/${locale}/sign-up#code=AAAAAAAA`);
-      await expect(page.locator('#sign-up-code-error')).toHaveText(
+      await page.goto(`/${locale}/sign-up#code=AAAA-AAAA-AAAA`);
+      const invalid =
         locale === 'ar'
           ? 'هذا الرمز غير صالح. تحقّق منه وحاول مرة أخرى.'
-          : "This code isn't valid. Check it and try again.",
-      );
+          : "This code isn't valid. Check it and try again.";
+      await expect(page.locator('#sign-up-code-error')).toHaveText(invalid);
+      // Announced through the live region too (review M3).
+      await expect(page.locator('#sign-up-code-status')).toHaveText(invalid);
       await expect(page.locator('input[type="password"]')).toHaveCount(0);
       await expectNoSeriousA11yViolations(page);
     });

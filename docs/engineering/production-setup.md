@@ -61,8 +61,8 @@ From the moment `DATABASE_URL` exists, every merge to `main` deploys to the new 
     - **Prevent use of leaked passwords** = **on** (Pro plan);
     - leave *Confirm email* as it is for now (step 25 turns it off).
 18. **Authentication → Multi-Factor**: TOTP (authenticator app) **enroll and verify enabled**; phone and WebAuthn **disabled**.
-19. **Authentication → SMTP Settings → Enable custom SMTP** with **Resend**: host, port **465** and username as shown in Resend's SMTP settings; password = a Resend API key with **sending access only** (from the Resend account holder — never in chat); sender address and name as on the old project (today `noreply@lms.entlaqa.com`, «ENTLAQA LMS»; a dedicated TMS sending subdomain is the planned follow-up); *Minimum interval between emails per user* = **60** seconds.
-20. **Authentication → Emails → Templates → Reset password**: subject and body from the repository file `supabase/templates/recovery.html` (subject «إعادة تعيين كلمة المرور · Reset your password»). **Security notifications → Password changed**: **on**, body from `supabase/templates/password-changed.html`, subject as on the old project (copy it from the old project's Emails page before step 40). (Both are Auth's mailer while `PASSWORD_RESET_DELIVERY` is `auth` — [password-reset.md](password-reset.md) §5–§6.)
+19. ~~Supabase custom SMTP~~ — **skipped (PO, 16 Oct 2026, Kawadir alignment):** Supabase's own mailer sends nothing; every e-mail (invitations, password reset, password changed) goes through our notification service (`PASSWORD_RESET_DELIVERY=worker`, step 31). The platform sender (Resend key, sender name/address) lives temporarily in `production-jobs` (step 29) until the Super Admin **Platform settings → E-mail** page and the Org Admin **Email integration** page exist (sender rule: the organization's own provider when configured, else the platform sender — Kawadir `sender-rule`); then it moves into the product.
+20. ~~Supabase e-mail templates~~ — **skipped** (same decision): in **Authentication → Emails → Security notifications** keep **Password changed: off** (our service sends that notice).
 21. **Authentication → Rate Limits**: *Rate limit for sign ups and sign ins* = **300** per 5 minutes; *token verifications* = **150** per 5 minutes; *sending emails* = **100** per hour; *token refreshes*: leave the default (reviewed with RR-IAM-01, [sign-in-protection.md](sign-in-protection.md) §9). Leave "IP address forwarding" **off**.
 22. **Authentication → Sessions** (Pro): time-box and inactivity timeout — values to be agreed with Claude first (the database already enforces each organization's own limits; this is only an outer bound, risk R-36). Skip until agreed.
 
@@ -111,7 +111,7 @@ From the moment `DATABASE_URL` exists, every merge to `main` deploys to the new 
 | `DATABASE_CA_CERT` | Same certificate text as step 12 |
 | `JADARAT_ENVIRONMENT` | `production` |
 | `SENTRY_DSN` (and `SENTRY_BROWSER_DSN` if used) | Unchanged |
-| `PASSWORD_RESET_DELIVERY` | Leave **unset** (= `auth`) until a worker runs continuously ([password-reset.md](password-reset.md) §6) |
+| `PASSWORD_RESET_DELIVERY` | `worker` (PO, 16 Oct 2026: all e-mails through our notification service, Kawadir way; reset e-mails go out on the next worker pass) |
 
 Never in Vercel: `SUPABASE_SECRET_KEY`, any worker or queue connection, `JADARAT_AUTH_CLIENT_HEADER`. Then **Deployments → latest production deployment → Redeploy** (variables apply to new deployments only).
 

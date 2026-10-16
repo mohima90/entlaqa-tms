@@ -7,6 +7,7 @@
 | Flow | Epic | File | Status |
 |---|---|---|---|
 | Sign-in, invitations and Super Admin (Kawadir way) | EP-KAW-AUTH | [EP-KAW-AUTH-sign-in-invitations-super-admin.md](EP-KAW-AUTH-sign-in-invitations-super-admin.md) | **Agreed (PO, 16 Oct 2026)** |
+| Roles and custom roles | EP-ROLES | [EP-ROLES-roles-and-custom-roles.md](EP-ROLES-roles-and-custom-roles.md) | In discussion with the PO (16 Oct 2026) |
 | E-mail sending (platform sender + Email integration) | EP-EMAIL | [EP-EMAIL-email-sending.md](EP-EMAIL-email-sending.md) | In discussion with the PO (16 Oct 2026) |
 
 Status values: Draft · In discussion with the PO · **Agreed (PO, date)** · Changed after agreement (date, reason).

@@ -398,7 +398,10 @@ begin
     'private.has_active_membership(uuid,uuid) (owner tenant_guard), '
     'private.invitation_allows_signup(text,text) (owner invitation_guard), '
     'private.invitation_by_token(bytea) (owner invitation_guard), '
+    'private.invitation_code_for_mail(uuid) (owner invitation_guard), '
+    'private.invitation_codes(uuid[]) (owner invitation_guard), '
     'private.invitation_password_min_length(bytea) (owner invitation_guard), '
+    'private.issue_invitation_code(uuid) (owner invitation_guard), '
     'private.issue_mfa_factor_tokens(uuid,uuid,bytea,bytea) (owner tenant_guard), '
     'private.my_mfa_apps() (owner tenant_guard), '
     'private.my_sessions() (owner tenant_guard), '
@@ -432,9 +435,13 @@ begin
   perform tests.assert_eq(v_list,
     'private.accept_invitation_as_caller(bytea,text,text), '
     'private.apply_invitation_acceptance(bytea,uuid,text,text), private.invitation_allows_signup(text,text), '
-    'private.invitation_by_token(bytea), private.invitation_inviter_may_grant(uuid,uuid,text[]), '
-    'private.invitation_link(bytea), private.invitation_password_min_length(bytea)',
-    'invitation_guard owns the link, acceptance and sign-up gate functions only');
+    'private.invitation_by_token(bytea), private.invitation_code_caller(), private.invitation_code_for_mail(uuid), '
+    'private.invitation_codes(uuid[]), private.invitation_inviter_may_grant(uuid,uuid,text[]), '
+    'private.invitation_link(bytea), private.invitation_password_min_length(bytea), '
+    'private.issue_invitation_code(uuid)',
+    'invitation_guard owns the link, code, acceptance and sign-up gate functions only');
+  perform tests.assert(not has_function_privilege('authenticated', 'private.invitation_code_caller()', 'execute'),
+    'only the code functions resolve their caller');
   perform tests.assert(not has_function_privilege('authenticated', 'private.invitation_link(bytea)', 'execute'),
     'only the definer functions read a link''s state');
   perform tests.assert(not has_function_privilege('authenticated',
@@ -472,6 +479,19 @@ begin
   -- Request path: every invitation column but the token hash.
   perform tests.assert(not has_column_privilege('authenticated', 'platform.invitations', 'token_hash', 'select'),
     'invitations: token_hash is not readable by authenticated');
+  -- Codes (20261018090000, FR-IAM-03): read and issued only through the code functions, which apply the
+  -- rules of managing each invitation; the request path writes no token hash.
+  perform tests.assert(not has_column_privilege('authenticated', 'platform.invitations', 'invite_code', 'select')
+                       and not has_column_privilege('authenticated', 'platform.invitations', 'invite_code', 'update')
+                       and not has_column_privilege('authenticated', 'platform.invitations', 'invite_code', 'insert')
+                       and not has_column_privilege('authenticated', 'platform.invitations', 'token_hash', 'update'),
+    'invitations: authenticated neither reads nor writes codes, nor writes token hashes');
+  perform tests.assert(has_column_privilege('invitation_guard', 'platform.invitations', 'invite_code', 'update')
+                       and not has_column_privilege('invitation_guard', 'platform.invitations', 'token_hash', 'update'),
+    'invitations: invitation_guard writes codes (the trigger derives the token hash)');
+  perform tests.assert(not has_column_privilege('user_import_guard', 'platform.invitations', 'invite_code', 'select')
+                       and not has_column_privilege('membership_guard', 'platform.invitations', 'invite_code', 'select'),
+    'invitations: the other guards read no code');
   perform tests.assert(not has_table_privilege('authenticated', 'platform.invitations', 'delete')
                        and not has_table_privilege('invitation_guard', 'platform.invitations', 'delete'),
     'invitations: nobody deletes');

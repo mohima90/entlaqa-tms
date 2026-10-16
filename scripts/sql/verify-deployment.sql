@@ -254,6 +254,17 @@ begin
     end loop;
   end if;
 
+  -- Invitation codes (20261018090000, FR-IAM-03): the request path neither reads nor writes a code and
+  -- writes no token hash (the code functions apply the rules of managing each invitation).
+  if exists (select 1 from pg_attribute where attrelid = 'platform.invitations'::regclass and attname = 'invite_code'
+                                          and not attisdropped)
+     and (has_column_privilege('authenticated', 'platform.invitations', 'invite_code', 'select')
+          or has_column_privilege('authenticated', 'platform.invitations', 'invite_code', 'update')
+          or has_column_privilege('authenticated', 'platform.invitations', 'token_hash', 'select')
+          or has_column_privilege('authenticated', 'platform.invitations', 'token_hash', 'update')) then
+    failures := failures || 'authenticated must neither read nor write platform.invitations invite_code / token_hash'::text;
+  end if;
+
   -- The SECURITY DEFINER helpers: owned by tenant_guard or invitation_guard, search_path = '', and
   -- executable only by the roles that need them (exact ACL, not a deny-list). The list is complete: any
   -- other SECURITY DEFINER function in `private` fails the check.
@@ -262,7 +273,7 @@ begin
     from (values
       ('private.user_session_is_valid(uuid, uuid)', 'tenant_guard', array['tenant_guard', 'invitation_guard'], true),
       ('private.has_active_membership(uuid, uuid)', 'tenant_guard', array['tenant_guard', 'rate_limit_guard'], true),
-      ('private.current_tenant_id()',               'tenant_guard', array['tenant_guard', 'authenticated', 'account_mail_guard', 'membership_guard', 'rate_limit_guard', 'file_guard'], true),
+      ('private.current_tenant_id()',               'tenant_guard', array['tenant_guard', 'authenticated', 'account_mail_guard', 'membership_guard', 'rate_limit_guard', 'file_guard', 'invitation_guard'], true),
       ('private.switch_active_tenant(uuid)',        'tenant_guard', array['tenant_guard', 'authenticated'], true),
       ('private.session_tenants()',                 'tenant_guard', array['tenant_guard', 'authenticated'], true),
       ('private.discard_inactive_tenant_delivery(uuid)', 'tenant_guard', array['tenant_guard', 'authenticated'], true),
@@ -273,6 +284,13 @@ begin
       -- The acceptance effects: SECURITY INVOKER, called only by accept_invitation_as_caller.
       ('private.apply_invitation_acceptance(bytea, uuid, text, text)', 'invitation_guard',
        array['invitation_guard'], false),
+      -- Invitation codes (20261018090000, FR-IAM-03): issue and read for members who may manage the
+      -- invitation (app_server user claims, checked inside); the mailer's read (app_worker system claims).
+      ('private.issue_invitation_code(uuid)', 'invitation_guard', array['invitation_guard', 'authenticated'], true),
+      ('private.invitation_codes(uuid[])', 'invitation_guard', array['invitation_guard', 'authenticated'], true),
+      ('private.invitation_code_for_mail(uuid)', 'invitation_guard', array['invitation_guard', 'authenticated'], true),
+      -- Their caller check: SECURITY INVOKER, called by them only.
+      ('private.invitation_code_caller()', 'invitation_guard', array['invitation_guard'], false),
       -- A link's state (the one definition of "valid"): SECURITY INVOKER, called by the definer functions.
       ('private.invitation_link(bytea)', 'invitation_guard', array['invitation_guard'], false),
       -- Does the inviter still hold the authority (review M1): SECURITY INVOKER, same callers.
@@ -442,6 +460,8 @@ begin
         'private.current_tenant_id()', 'private.switch_active_tenant(uuid)', 'private.session_tenants()',
         'private.discard_inactive_tenant_delivery(uuid)', 'private.invitation_by_token(bytea)',
         'private.accept_invitation_as_caller(bytea,text,text)', 'private.invitation_allows_signup(text,text)',
+        'private.issue_invitation_code(uuid)', 'private.invitation_codes(uuid[])',
+        'private.invitation_code_for_mail(uuid)',
         'private.request_password_reset_mail(text)', 'private.request_password_changed_mail(uuid)',
         'private.claim_account_mail_request()', 'private.finish_account_mail_request(uuid)',
         'private.retry_account_mail_request(uuid)', 'private.end_member_sessions()',

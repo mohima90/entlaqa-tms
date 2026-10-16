@@ -306,7 +306,7 @@ rollback;
 
 -- ---------------------------------------------------------------------------------------------------
 -- Asking for a new e-mail (resend, security review M2): a user manager, same rules as revoking; the
--- request is stamped; only the mailer (system jobs) issues the token.
+-- request is stamped; a new code (and token) only from private.issue_invitation_code (20261018090000).
 -- ---------------------------------------------------------------------------------------------------
 begin;
 set local role authenticated;
@@ -330,8 +330,10 @@ begin
     'only an Organization Admin can resend an invitation with a privileged role', 'HR: cannot resend a privileged invitation');
   perform tests.assert_privilege_denied($q$update platform.invitations set resend_requested_by = '00000000-0000-4000-8000-0000000000a1'$q$,
     'users cannot choose who asked');
-  perform tests.assert_fails($q$update platform.invitations set resend_requested_at = clock_timestamp(), token_hash = tests.token_hash('mine') where id = 'a4000000-0000-4000-8000-000000000001'$q$,
-    array['23514'], 'a resend request never carries a token');
+  -- (Since 20261018090000 the request path cannot write a token hash at all: a new code is issued by
+  -- private.issue_invitation_code — 92_invitation_codes_app_server.sql.)
+  perform tests.assert_privilege_denied($q$update platform.invitations set resend_requested_at = clock_timestamp(), token_hash = tests.token_hash('mine') where id = 'a4000000-0000-4000-8000-000000000001'$q$,
+    'a resend request never carries a token');
   perform tests.assert_fails($q$update platform.invitations set resend_requested_at = clock_timestamp(), status = 'revoked' where id = 'a4000000-0000-4000-8000-000000000001'$q$,
     array['23514'], 'a resend request leaves the invitation pending');
   perform tests.assert_eq(tests.rows_affected($q$update platform.invitations set resend_requested_at = clock_timestamp() where id = 'a4000000-0000-4000-8000-000000000003'$q$),
@@ -424,10 +426,14 @@ begin
     'users cannot choose the expiry');
   perform tests.assert_privilege_denied($q$update platform.invitations set send_count = 0$q$, 'users cannot reset the send count');
   perform tests.assert_privilege_denied($q$update platform.invitations set expires_at = now() + interval '1 year'$q$, 'users cannot extend a link');
-  perform tests.assert_fails_like(format($q$update platform.invitations set token_hash = tests.token_hash('mine') where id = %L$q$, v_id),
-    'only the invitation mailer issues tokens', 'users cannot issue a token (jobs only)');
-  perform tests.assert_fails(format($q$update platform.invitations set status = 'revoked', token_hash = tests.token_hash('mine') where id = %L$q$, v_id),
-    array['23514'], 'nor slip one in while revoking');
+  perform tests.assert_privilege_denied(format($q$update platform.invitations set token_hash = tests.token_hash('mine') where id = %L$q$, v_id),
+    'users cannot issue a token (codes come from private.issue_invitation_code only)');
+  perform tests.assert_privilege_denied(format($q$update platform.invitations set status = 'revoked', token_hash = tests.token_hash('mine') where id = %L$q$, v_id),
+    'nor slip one in while revoking');
+  perform tests.assert_privilege_denied(format($q$update platform.invitations set invite_code = 'ABCDEFGH' where id = %L$q$, v_id),
+    'users cannot choose a code');
+  perform tests.assert_privilege_denied($q$select invite_code from platform.invitations$q$,
+    'users cannot read codes directly (only through private.invitation_codes)');
   perform tests.assert_privilege_denied($q$delete from platform.invitations$q$, 'nobody deletes invitations');
 end $$;
 reset role;

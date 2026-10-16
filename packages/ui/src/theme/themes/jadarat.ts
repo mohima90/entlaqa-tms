@@ -1,23 +1,24 @@
 import type { ThemeDefinition } from '../contract';
 
 /**
- * The Jadarat look — «Meridian» with the Jadarat palette (UI design approved by the PO on 14 Oct 2026,
- * T-M2-21): calm slate neutrals, hairline borders, one steel-blue accent for action, selection, focus
- * and links, and the side navigation as the Jadarat gradient (brand slate → steel). Values are exactly
- * those of docs/design/tokens/tokens.json; the generated stylesheet docs/design/tokens/themes/jadarat.css
- * is what the product ships.
+ * The Jadarat look: the Jadarat palette of «Meridian» (UI design approved by the PO on 14 Oct 2026,
+ * T-M2-21) in the Kawadir ATS layout (PO, 15 Oct 2026 — docs/design/kawadir-alignment.md; T-M2-43):
+ * calm slate neutrals on a muted page with white cards, hairline borders, one steel-blue accent for
+ * action, selection, focus and links, base radius 0.75rem (12 px) with soft, low-contrast shadows, and a
+ * WHITE side navigation whose current entry carries the brand gradient (135°, steel → slate) with white
+ * text. Values are exactly those of docs/design/tokens/tokens.json; the generated stylesheet
+ * docs/design/tokens/themes/jadarat.css is what the product ships.
  *
  * Design values kept as approved, except one: the approved control border #CBD5DD is only 1.5 : 1 on
  * white, so `border-strong` (input and button boundaries, SC 1.4.11) is the darker `neutral.400`, and
- * #CBD5DD (`neutral.300`) is used for decoration only. The navigation text is the approved white at
- * 92 % / 85 % opacity, made opaque over the lighter end of the gradient (so it passes on both ends);
- * the hover fill is likewise opaque (8 % white over steel) so its text passes too.
+ * #CBD5DD (`neutral.300`) is used for decoration only.
  */
 export const jadaratTheme: ThemeDefinition = {
   id: 'jadarat',
   name: { ar: 'جدارات', en: 'Jadarat' },
   status: 'active',
-  source: 'UI design «Meridian», Jadarat palette — approved by the PO, 14 Oct 2026 (T-M2-21)',
+  source:
+    'Jadarat palette of «Meridian» (PO, 14 Oct 2026, T-M2-21) in the Kawadir ATS layout (PO, 15 Oct 2026, T-M2-43)',
   palette: {
     neutral: {
       0: '#FFFFFF',
@@ -112,15 +113,19 @@ export const jadaratTheme: ThemeDefinition = {
       'on-header': '{semantic.text}',
       'on-header-muted': '{semantic.text-muted}',
       'header-border': '{semantic.border}',
-      nav: '{color.jadarat.slate}',
-      'nav-end': '{color.jadarat.steel}',
-      'on-nav': '#EFF3F6',
-      'on-nav-muted': '#E0E8ED',
-      'nav-border': '{semantic.nav}',
-      'nav-item-hover': '#437193',
-      'nav-item-current': '{color.neutral.0}',
-      'on-nav-item-current': '{color.jadarat.slate}',
-      'nav-focus-ring': '{color.jadarat.amber}',
+      // Side navigation (Kawadir layout, T-M2-43): a white panel like the cards; muted entries, a
+      // light hover fill, and the current entry filled with the brand gradient (135°, from
+      // `nav-item-current` to `nav-item-current-end`) with white text.
+      nav: '{semantic.surface}',
+      'nav-end': '{semantic.nav}',
+      'on-nav': '{semantic.text-muted}',
+      'on-nav-muted': '{semantic.text-subtle}',
+      'nav-border': '{semantic.border}',
+      'nav-item-hover': '{semantic.surface-hover}',
+      'nav-item-current': '{color.jadarat.steel}',
+      'nav-item-current-end': '{color.jadarat.slate}',
+      'on-nav-item-current': '{color.neutral.0}',
+      'nav-focus-ring': '{semantic.focus-ring}',
     },
     dark: {
       bg: '{color.night.900}',
@@ -155,14 +160,11 @@ export const jadaratTheme: ThemeDefinition = {
       'inverse-surface': '{color.night.50}',
       'inverse-text': '{color.neutral.900}',
       overlay: 'rgba(0, 0, 0, 0.65)',
-      nav: '#162430',
-      'nav-end': '#1E3D55',
-      'on-nav': '#E8EEF3',
-      'on-nav-muted': '#BCCAD5',
-      'nav-item-hover': '#304D63',
-      'nav-item-current': '#DCE8F2',
-      'on-nav-item-current': '#13222D',
-      'nav-focus-ring': '{color.jadarat.amber}',
+      // The navigation panel and its text follow the dark surface (aliases); the gradient is light
+      // (sky blues) with very dark text, so the current entry stands out on the dark panel.
+      'nav-item-current': '{color.brand.300}',
+      'nav-item-current-end': '#5E95BD',
+      'on-nav-item-current': '{color.brand.950}',
     },
   },
   font: {
@@ -189,19 +191,21 @@ export const jadaratTheme: ThemeDefinition = {
     ],
     mono: ['IBM Plex Mono', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Consolas', 'monospace'],
   },
-  radius: { sm: '4px', md: '6px', lg: '8px', xl: '12px' },
+  // Kawadir: base radius 0.75rem (`lg`); `md` for buttons and inputs, `xl` for cards (rounded-xl).
+  radius: { sm: '8px', md: '10px', lg: '12px', xl: '16px' },
+  // Soft, low-contrast shadows (Kawadir): 1 cards, 2 menus and popovers, 3 dialogs, 4 drawers.
   elevation: {
     light: {
-      1: '0 0 0 1px rgba(31, 51, 64, 0.06), 0 1px 2px rgba(31, 51, 64, 0.06)',
-      2: '0 0 0 1px rgba(31, 51, 64, 0.06), 0 8px 24px -6px rgba(31, 51, 64, 0.18)',
-      3: '0 0 0 1px rgba(31, 51, 64, 0.06), 0 12px 32px -8px rgba(31, 51, 64, 0.22)',
-      4: '0 0 0 1px rgba(31, 51, 64, 0.08), 0 24px 56px -12px rgba(31, 51, 64, 0.28)',
+      1: '0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04)',
+      2: '0 4px 12px rgba(15, 23, 42, 0.06)',
+      3: '0 12px 40px rgba(15, 23, 42, 0.08)',
+      4: '0 24px 60px rgba(15, 23, 42, 0.12)',
     },
     dark: {
-      1: '0 1px 2px rgba(0, 0, 0, 0.40)',
-      2: '0 2px 6px rgba(0, 0, 0, 0.45)',
-      3: '0 8px 20px rgba(0, 0, 0, 0.50)',
-      4: '0 16px 40px rgba(0, 0, 0, 0.60)',
+      1: '0 1px 2px rgba(0, 0, 0, 0.20)',
+      2: '0 4px 12px rgba(0, 0, 0, 0.30)',
+      3: '0 12px 40px rgba(0, 0, 0, 0.40)',
+      4: '0 24px 60px rgba(0, 0, 0, 0.50)',
     },
   },
 };

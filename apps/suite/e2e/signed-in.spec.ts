@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { afterSignIn, submitSignIn } from './sign-in';
+import { afterSignIn, submitSignIn, signOutFromMenu } from './sign-in';
 
 /**
  * Real sign-in against a configured deployment (T-M1-D03/D04): runs only when credentials are given,
@@ -39,10 +39,10 @@ test.describe('signed-in flow', () => {
     const setup = page.getByTestId('setup-home');
     await expect(setup.getByRole('heading', { name: 'Set up your organization' })).toBeVisible();
     await expect(setup.getByRole('link')).toHaveText([
-      'Organization profile',
-      'Users',
+      'Team members',
       'Roles & permissions',
-      'Security policy',
+      'General',
+      'Security',
     ]);
     await expect(page.getByText('No training data yet')).toHaveCount(0);
     await expect(page.getByText('Calendar')).toHaveCount(0);
@@ -51,13 +51,15 @@ test.describe('signed-in flow', () => {
       page.getByTestId('setup-home').getByRole('heading', { name: 'إعداد منشأتك' }),
     ).toBeVisible();
     await page.goto('/en/suite');
-    // Top-bar controls are 44 px touch targets on a phone (sign-out is a small button on desktop).
+    // Top-bar controls are 44 px touch targets on a phone (Kawadir top bar, T-M2-43).
     if (isMobile) {
       for (const control of [
         page.getByRole('button', { name: 'Menu' }),
+        page.getByTestId('command-palette-trigger'),
+        page.getByTestId('theme-menu'),
         page.getByTestId('language-toggle'),
-        page.getByTestId('my-profile-link'),
-        page.getByRole('button', { name: 'Sign out' }),
+        page.getByTestId('notification-bell'),
+        page.getByTestId('account-menu'),
       ]) {
         expect((await control.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
       }
@@ -67,7 +69,11 @@ test.describe('signed-in flow', () => {
     await expect(page.getByText(`Organization: ${organization ?? ''}`)).toBeVisible();
     if (isMobile) await page.keyboard.press('Escape');
 
-    await page.getByRole('button', { name: 'Sign out' }).click();
+    // The account menu shows "Organization · Role" (Kawadir) and holds sign-out.
+    await expect(page.getByTestId('account-menu')).toContainText(
+      `${organization ?? ''} · Organization Admin`,
+    );
+    await signOutFromMenu(page);
     await expect(page).toHaveURL(/\/en\/sign-in$/);
     await page.goto('/ar/suite');
     await expect(page).toHaveURL(/\/ar\/sign-in$/);

@@ -198,7 +198,10 @@ test.describe('invitations (admin side)', () => {
     const row = rowsOf(page).filter({ hasText: invitee });
     await expect(row).toContainText('أحمد منصور');
     await expect(row).toContainText('مدعو');
-    await expect(page.getByRole('link', { name: /مدعو/ })).toHaveAttribute('aria-current', 'page');
+    await expect(page.getByRole('link', { name: /الدعوات المعلّقة/ })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
     await expectNoSeriousA11yViolations(page);
 
     // The same e-mail again: refused next to the field

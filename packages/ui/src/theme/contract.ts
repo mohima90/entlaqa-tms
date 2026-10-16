@@ -53,8 +53,10 @@ export const COLOR_ROLES = [
   'inverse-surface',
   'inverse-text',
   'overlay',
-  // Suite shell (header and side navigation). The navigation is a gradient from `nav` (top) to
-  // `nav-end` (bottom); a plain navigation sets both to the same colour.
+  // Suite shell (header and side navigation). The navigation panel runs from `nav` (top) to `nav-end`
+  // (bottom); a plain panel — the Kawadir layout's white one (T-M2-43) — sets both to the same colour.
+  // The current entry is filled with the brand gradient (135°) from `nav-item-current` to
+  // `nav-item-current-end`.
   'header',
   'on-header',
   'on-header-muted',
@@ -66,6 +68,8 @@ export const COLOR_ROLES = [
   'nav-border',
   'nav-item-hover',
   'nav-item-current',
+  /** End of the current entry's brand gradient (same as `nav-item-current` for a plain fill). */
+  'nav-item-current-end',
   'on-nav-item-current',
   /** Focus ring inside the navigation (it sits on the nav colours, not on the page). */
   'nav-focus-ring',
@@ -79,8 +83,8 @@ export const BRAND_ROLES = {
 } as const satisfies Record<string, readonly ColorRole[]>;
 
 /**
- * Side-navigation roles an organization's brand also replaces (T-M2-21): the gradient is derived from
- * the organization's primary colour, so its branding replaces the Jadarat gradient.
+ * Side-navigation roles an organization's brand may replace (T-M2-21, T-M2-43): the current entry's
+ * gradient is derived from the organization's colours, so its branding replaces the Jadarat gradient.
  */
 export const NAV_ROLES = [
   'nav',
@@ -90,6 +94,7 @@ export const NAV_ROLES = [
   'nav-border',
   'nav-item-hover',
   'nav-item-current',
+  'nav-item-current-end',
   'on-nav-item-current',
   'nav-focus-ring',
 ] as const satisfies readonly ColorRole[];
@@ -207,18 +212,22 @@ export const CONTRAST_PAIRS: readonly ContrastPair[] = [
   pair('on-accent', 'accent-hover', 'on-fill'),
   pair('accent', 'bg', 'ui'),
   pair('accent', 'surface', 'ui'),
-  // Suite shell: header, and the side navigation, checked against BOTH ends of its gradient
-  // (T-M2-21: the Jadarat gradient, or one derived from an organization's colour, FR-ADM-07)
+  // Suite shell: header, and the side navigation, checked against BOTH ends of its panel; the current
+  // entry's gradient (the Jadarat one, or one derived from an organization's colours, FR-ADM-07) is
+  // checked at BOTH of its ends too (T-M2-21, T-M2-43)
   pair('on-header', 'header', 'text'),
   pair('on-header-muted', 'header', 'text'),
   pair('focus-ring', 'header', 'ui'),
   ...(['nav', 'nav-end'] as const).flatMap((bg) => [
     pair('on-nav', bg, 'text'),
     pair('on-nav-muted', bg, 'text'),
-    // The current entry's pill must stand out from the navigation around it.
+    // The current entry's fill must stand out from the navigation around it, at both gradient ends.
     pair('nav-item-current', bg, 'ui'),
+    pair('nav-item-current-end', bg, 'ui'),
     pair('nav-focus-ring', bg, 'ui'),
   ]),
   pair('on-nav', 'nav-item-hover', 'text'),
+  pair('on-nav-muted', 'nav-item-hover', 'text'),
   pair('on-nav-item-current', 'nav-item-current', 'text'),
+  pair('on-nav-item-current', 'nav-item-current-end', 'text'),
 ];

@@ -14,7 +14,7 @@ import { createDatabase } from './client';
 import { insertAuditEvent } from './audit';
 import { createWithSystemTx } from './jobs';
 import { auditEvents, persons, tenantMemberships } from './schema';
-import { loadMemberAuthorizationFacts } from './roles';
+import { getMyPrimaryRole, loadMemberAuthorizationFacts } from './roles';
 import { getCurrentTenant } from './tenants';
 import { createWithUserTx, listSessionTenants, switchActiveTenant } from './with-user-tx';
 
@@ -364,7 +364,11 @@ describe.skipIf(!configured)('withUserTx / withSystemTx against PostgreSQL', () 
     expect(await withUserTx(claimsForUserB(), (tx) => loadMemberAuthorizationFacts(tx))).toEqual({
       roles: [],
       headedDepartmentIds: [],
-    });
+    }); // The account menu's role (T-M2-43): the primary one, never another tenant's.
+    expect(await withUserTx(claimsFor(ids.tenantA), (tx) => getMyPrimaryRole(tx))).toBe(
+      'hr_manager',
+    );
+    expect(await withUserTx(claimsForUserB(), (tx) => getMyPrimaryRole(tx))).toBeNull();
   });
 
   it('switchActiveTenant only switches into tenants with an active membership, for this session', async () => {

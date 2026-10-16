@@ -265,7 +265,7 @@ test.describe('Security policy, MFA and sign-in sessions', () => {
     // The navigation's entry (the Organization Admin's home also links to it, T-M2-21).
     await page
       .getByRole('navigation', { name: 'Main navigation' })
-      .getByRole('link', { name: 'Security policy', exact: true })
+      .getByRole('link', { name: 'Security', exact: true })
       .click();
     await expect(page).toHaveURL(/\/en\/suite\/admin\/security$/);
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Security');

@@ -5,9 +5,10 @@ export {
   type ButtonSize,
   type ButtonVariant,
   buttonClasses,
+  iconButtonClasses,
 } from './button';
 export { Card, type CardProps } from './card';
-export { AppShell, type AppShellProps } from './app-shell';
+export { AppShell, type AppShellProps, PoweredBy, type PoweredByProps } from './app-shell';
 export { TextField, type TextFieldProps } from './text-field';
 export { Alert, type AlertProps, type AlertTone } from './alert';
 export { Badge, type BadgeProps, type BadgeTone } from './badge';
@@ -23,3 +24,78 @@ export {
   navItemClasses,
   navUnavailableClasses,
 } from './nav-item';
+export { type NavState, NavStateContext } from './nav-state';
+// Kawadir page patterns and shell controls (T-M2-43).
+export { Avatar, type AvatarProps, initialsOf } from './avatar';
+export {
+  CommandPalette,
+  type CommandPaletteProps,
+  type CommandPaletteTexts,
+} from './command-palette';
+export { type CommandPaletteItem, groupItems, isPaletteShortcut } from './command-palette-model';
+export { Dialog, type DialogProps } from './dialog';
+export {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuHeader,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from './dropdown-menu';
+export { EmptyState, type EmptyStateProps } from './empty-state';
+export { PageHeader, type PageHeaderProps } from './page-header';
+export {
+  FullScreenToggle,
+  type FullScreenToggleProps,
+  NotificationBell,
+  type NotificationBellProps,
+  ThemeMenu,
+  type ThemeMenuProps,
+  UserMenu,
+  type UserMenuProps,
+} from './shell-controls';
+export {
+  NAV_COOKIE,
+  THEME_COOKIE,
+  THEME_MODES,
+  type ThemeMode,
+  parseNavCollapsed,
+  parseThemeMode,
+  preferenceCookie,
+  themeAttribute,
+} from './shell-preferences';
+export {
+  StatCard,
+  type StatCardProps,
+  StatGrid,
+  type StatGridProps,
+  type StatTone,
+} from './stat-card';
+export { TabNav, type TabNavItem, type TabNavProps } from './tab-nav';
+export {
+  DataTable,
+  type DataTableProps,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  tableClasses,
+} from './table';
+export {
+  DEFAULT_TOAST_DURATION,
+  MAX_TOASTS,
+  type ToastItem,
+  type ToastOptions,
+  type ToastStore,
+  type ToastTone,
+  createToastStore,
+  toast,
+  toastStore,
+} from './toast-store';
+export { Toaster, type ToasterProps } from './toaster';
+export { Toolbar, toolbarFieldClasses } from './toolbar';
+export { Tooltip, type TooltipProps, TooltipProvider } from './tooltip';

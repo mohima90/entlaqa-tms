@@ -1,5 +1,5 @@
 import { routing } from '@jadarat/platform-i18n/routing';
-import { Card, Icon, buttonClasses } from '@jadarat/ui';
+import { Card, EmptyState, Icon, PageHeader } from '@jadarat/ui';
 import { hasLocale } from 'next-intl';
 import { getTranslations } from 'next-intl/server';
 import { notFound } from 'next/navigation';
@@ -24,27 +24,32 @@ export default async function SuiteHomePage({ params }: { params: Promise<{ loca
 
   return (
     <SuiteShell locale={locale} context={context} current="home" path="/suite">
-      <h1 className="mb-6 mt-0 text-2xl font-bold">{t('pageTitle')}</h1>
+      <PageHeader title={t('pageTitle')} />
       {home.kind === 'setup' ? (
-        <Card title={t('setupTitle')} data-testid="setup-home">
-          <p className="mb-4 mt-0 text-text-muted">{t('setupBody')}</p>
-          <ul className="m-0 flex list-none flex-wrap gap-3 p-0">
+        <Card title={t('setupTitle')} description={t('setupBody')} data-testid="setup-home">
+          <ul className="m-0 grid list-none grid-cols-1 gap-3 p-0 md:grid-cols-2 xl:grid-cols-4">
             {home.links.map((entry) => (
               <li key={entry.key}>
                 <a
                   href={`/${locale}${entry.link?.href ?? ''}`}
-                  className={buttonClasses({ variant: 'secondary', size: 'md' })}
+                  className="group flex min-h-16 items-center gap-3 rounded-xl border border-border bg-surface px-4 py-3 font-medium text-text no-underline shadow-1 transition-colors hover:border-border-strong hover:bg-surface-hover"
                 >
-                  <Icon name={entry.icon} />
-                  {t(entry.key)}
+                  <span
+                    aria-hidden="true"
+                    className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary-subtle text-primary-text"
+                  >
+                    <Icon name={entry.icon} className="size-5" />
+                  </span>
+                  <span className="min-w-0 flex-1">{t(entry.key)}</span>
+                  <Icon name="chevron-end" className="text-text-muted" />
                 </a>
               </li>
             ))}
           </ul>
         </Card>
       ) : (
-        <Card title={t('emptyTitle')}>
-          <p className="m-0 text-text-muted">{t('emptyBody')}</p>
+        <Card>
+          <EmptyState icon="calendar" title={t('emptyTitle')} description={t('emptyBody')} />
         </Card>
       )}
     </SuiteShell>

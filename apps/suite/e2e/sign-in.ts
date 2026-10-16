@@ -60,3 +60,18 @@ export async function signInToSuite(
   await submitSignIn(page, email, password);
   await expect(page).toHaveURL(/\/en\/suite$/, afterSignIn);
 }
+
+/**
+ * Signs out from the account menu of the top bar (Kawadir layout, T-M2-43): open the menu, choose «Sign
+ * out». Language-neutral (test ids); the caller asserts where it leads.
+ */
+export async function signOutFromMenu(page: Page) {
+  await page.getByTestId('account-menu').click();
+  await page.getByTestId('sign-out').click();
+}
+
+/** Opens My profile from the account menu (T-M2-43). */
+export async function openMyProfile(page: Page) {
+  await page.getByTestId('account-menu').click();
+  await page.getByTestId('my-profile-link').click();
+}

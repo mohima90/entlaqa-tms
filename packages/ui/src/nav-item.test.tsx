@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   Icon,
   NavGroup,
+  NavStateContext,
   NavItem,
   NavUnavailable,
   navHeadingClasses,
@@ -17,7 +18,8 @@ describe('navigation entries (shell roles)', () => {
       </NavItem>,
     );
     expect(current).toContain('aria-current="page"');
-    expect(current).toContain('bg-nav-item-current');
+    // Kawadir: the current entry is filled with the brand gradient (nav-item-current → -end).
+    expect(current).toContain('bg-brand-gradient');
     expect(current).toContain('text-on-nav-item-current');
     const other = renderToStaticMarkup(<NavItem href="/ar/suite">الرئيسية</NavItem>);
     expect(other).not.toContain('aria-current');
@@ -65,6 +67,34 @@ describe('navigation entries (shell roles)', () => {
     );
     expect(plain).not.toContain('<h2');
     expect(plain).not.toContain('aria-labelledby');
+  });
+
+  it('makes a group heading a disclosure button that controls its list (Kawadir sections)', () => {
+    const html = renderToStaticMarkup(
+      <NavGroup id="nav-settings" heading="الإعدادات">
+        <li>x</li>
+      </NavGroup>,
+    );
+    const controls = /<button[^>]*aria-expanded="true"[^>]*aria-controls="([^"]+)"/.exec(html)?.[1];
+    expect(controls).toBeTruthy();
+    expect(html).toContain(`<ul id="${controls ?? ''}" aria-labelledby="nav-settings"`);
+    // Collapsed to icons, the button is removed (display: none) and the heading text stays for screen readers.
+    expect(html).toContain('nav-collapsed:hidden');
+    expect(html).toContain('nav-collapsed:sr-only');
+  });
+
+  it('keeps labels for screen readers when the navigation is collapsed to icons', () => {
+    const html = renderToStaticMarkup(
+      <NavStateContext.Provider value={{ collapsed: true }}>
+        <NavItem href="#" icon={<Icon name="people" />} tooltip="أعضاء الفريق">
+          أعضاء الفريق
+        </NavItem>
+        <NavUnavailable label="الهوية" note="قريبًا" tooltip="الهوية · قريبًا" />
+      </NavStateContext.Provider>,
+    );
+    expect(html.match(/nav-collapsed:sr-only/g)?.length).toBeGreaterThanOrEqual(2);
+    expect(html).toContain('أعضاء الفريق');
+    expect(html).toContain('قريبًا');
   });
 
   it('never uses surface or text utilities that a coloured navigation would make unreadable', () => {

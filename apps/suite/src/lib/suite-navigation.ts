@@ -1,36 +1,26 @@
-import type { IconName } from '@jadarat/ui';
+import type { CommandPaletteItem, IconName } from '@jadarat/ui';
 import { tmsNavigation } from '@jadarat/tms';
 import type { SuiteNavigationAccess } from './suite-context';
 
 /** Pages of the suite that have a navigation entry (`current` of the shell). */
-export type SuitePage = 'home' | 'organization' | 'users' | 'roles' | 'security' | 'profile';
+export type SuitePage = 'home' | 'general' | 'users' | 'roles' | 'security' | 'profile';
 
-/** Message keys (namespace `shell`) of every navigation label and group heading. */
+/** Message keys (namespace `shell`) of every navigation label. */
 export type NavLabelKey =
   | 'home'
   | (typeof tmsNavigation)[number]['key']
-  | 'organizationProfile'
+  | 'teamMembers'
   | 'branding'
-  | 'customFields'
-  | 'featuresPlan'
-  | 'domains'
-  | 'users'
   | 'roles'
-  | 'securityPolicy'
-  | 'auditLog'
-  | 'consent'
-  | 'emailSender'
-  | 'lmsConnection'
-  | 'hrSystem';
+  | 'subscription'
+  | 'general'
+  | 'emailIntegration'
+  | 'integrations'
+  | 'security'
+  | 'auditLog';
 
-export type NavGroupKey =
-  | 'main'
-  | 'groupOrganization'
-  | 'groupDomains'
-  | 'groupPeople'
-  | 'groupSecurity'
-  | 'groupEmail'
-  | 'groupIntegrations';
+/** Message keys (namespace `shell`) of the group headings; `main` has none. */
+export type NavGroupKey = 'main' | 'groupOrganization' | 'groupBilling' | 'groupSettings';
 
 export interface NavEntry {
   readonly key: NavLabelKey;
@@ -45,6 +35,26 @@ export interface NavGroupModel {
   readonly entries: readonly NavEntry[];
 }
 
+/** Paths of the built pages (locale-less). Settings → General replaced «Organization profile». */
+export const SUITE_PATHS = {
+  home: '/suite',
+  users: '/suite/admin/users',
+  roles: '/suite/admin/roles',
+  general: '/suite/admin/settings',
+  security: '/suite/admin/security',
+  profile: '/suite/profile',
+} as const satisfies Record<SuitePage, string>;
+
+/** The page title in the top bar (message key, namespace `shell`) for each page of the menu. */
+export const PAGE_TITLE_KEYS = {
+  home: 'home',
+  users: 'teamMembers',
+  roles: 'roles',
+  general: 'general',
+  security: 'security',
+  profile: 'myProfile',
+} as const satisfies Record<SuitePage, string>;
+
 const TMS_ICONS: Readonly<Record<(typeof tmsNavigation)[number]['key'], IconName>> = {
   home: 'home',
   calendar: 'calendar',
@@ -53,25 +63,29 @@ const TMS_ICONS: Readonly<Record<(typeof tmsNavigation)[number]['key'], IconName
 };
 
 const soon = (key: NavLabelKey, icon: IconName): NavEntry => ({ key, icon });
+const page = (key: NavLabelKey, icon: IconName, target: SuitePage): NavEntry => ({
+  key,
+  icon,
+  link: { href: SUITE_PATHS[target], page: target },
+});
+const when = (allowed: boolean, ...entries: NavEntry[]): NavEntry[] => (allowed ? entries : []);
 
 /**
- * The side navigation for one member (T-M2-21): which groups and entries, in order. Entries without a
- * `link` are shown as «قريبًا» / "Coming soon" (not focusable). Deny by default: a group appears only
- * with at least one entry the member's grants allow.
+ * The side navigation for one member, in the Kawadir layout (T-M2-43; docs/design/kawadir-alignment.md
+ * §5): which groups and entries, in order. Entries without a `link` are shown as «قريبًا» / "Coming
+ * soon" (not links, not focusable). Deny by default: a group appears only with at least one entry the
+ * member's grants allow.
  *
- * Organization Admin (docs/delivery/roles/organization-admin.md, PO 14 Oct 2026, BRD v2.9): Home ·
- * Organization (profile, branding, custom fields, features & plan) · Domain management · People (users,
- * roles & permissions) · Security (security policy, audit log, consent) · E-mail sending (sender
- * settings) · Integrations (LMS connection, HR system) — no training entries and no notifications.
- * Other roles: Home and the training module's entries, then the pages their grants open.
+ * Organization Admin (PO, 15–16 Oct 2026): Home · Organization (Team members, Branding*, Roles &
+ * permissions) · Billing (Subscription*) · Settings (General, Email integration*, Integrations*,
+ * Security, Audit log*) — no training entries (BR-IAM-4). Other roles: Home and the training module's
+ * entries, then the built pages their grants open, in the same groups.
  */
 export function suiteNavigation(access: SuiteNavigationAccess): NavGroupModel[] {
   const main: NavEntry[] = tmsNavigation
     .filter((item) => item.key === 'home' || access.training)
     .map((item) =>
-      item.key === 'home'
-        ? { key: 'home', icon: 'home', link: { href: item.href, page: 'home' } }
-        : soon(item.key, TMS_ICONS[item.key]),
+      item.key === 'home' ? page('home', 'home', 'home') : soon(item.key, TMS_ICONS[item.key]),
     );
   const setup = access.organizationSetup;
   const groups: NavGroupModel[] = [
@@ -79,68 +93,22 @@ export function suiteNavigation(access: SuiteNavigationAccess): NavGroupModel[] 
     {
       key: 'groupOrganization',
       entries: [
-        // Organization profile (T-M2-22): the Organization Admin edits it, the Auditor reads it.
-        ...(access.organizationProfile || setup
-          ? [
-              {
-                key: 'organizationProfile',
-                icon: 'building',
-                link: { href: '/suite/admin/organization', page: 'organization' },
-              } as const,
-            ]
-          : []),
-        ...(setup
-          ? [
-              soon('branding', 'palette'),
-              soon('customFields', 'fields'),
-              soon('featuresPlan', 'plan'),
-            ]
-          : []),
+        ...when(access.users, page('teamMembers', 'people', 'users')),
+        ...when(setup, soon('branding', 'palette')),
+        ...when(access.roles, page('roles', 'key', 'roles')),
       ],
     },
-    { key: 'groupDomains', entries: setup ? [soon('domains', 'globe')] : [] },
+    { key: 'groupBilling', entries: when(setup, soon('subscription', 'billing')) },
     {
-      key: 'groupPeople',
+      key: 'groupSettings',
       entries: [
-        ...(access.users
-          ? [
-              {
-                key: 'users',
-                icon: 'people',
-                link: { href: '/suite/admin/users', page: 'users' },
-              } as const,
-            ]
-          : []),
-        ...(access.roles
-          ? [
-              {
-                key: 'roles',
-                icon: 'key',
-                link: { href: '/suite/admin/roles', page: 'roles' },
-              } as const,
-            ]
-          : []),
+        // Settings → General (T-M2-22 organization profile): the Organization Admin edits it, the
+        // Auditor reads it.
+        ...when(access.organizationProfile || setup, page('general', 'settings', 'general')),
+        ...when(setup, soon('emailIntegration', 'mail'), soon('integrations', 'plug')),
+        ...when(access.security, page('security', 'shield', 'security')),
+        ...when(setup, soon('auditLog', 'audit')),
       ],
-    },
-    {
-      key: 'groupSecurity',
-      entries: [
-        ...(access.security
-          ? [
-              {
-                key: 'securityPolicy',
-                icon: 'shield',
-                link: { href: '/suite/admin/security', page: 'security' },
-              } as const,
-            ]
-          : []),
-        ...(setup ? [soon('auditLog', 'audit'), soon('consent', 'consent')] : []),
-      ],
-    },
-    { key: 'groupEmail', entries: setup ? [soon('emailSender', 'mail')] : [] },
-    {
-      key: 'groupIntegrations',
-      entries: setup ? [soon('lmsConnection', 'plug'), soon('hrSystem', 'sync')] : [],
     },
   ];
   return groups.filter((group) => group.entries.length > 0);
@@ -159,4 +127,40 @@ export function suiteHome(
     .flatMap((group) => group.entries)
     .filter((entry) => entry.link !== undefined && entry.key !== 'home');
   return { kind: 'setup', links };
+}
+
+/**
+ * The ⌘K / Ctrl K command palette's pages (T-M2-43): exactly the menu's built pages — nothing the menu
+ * does not offer (display only: every page authorizes itself) — plus My profile, grouped like the menu.
+ * `label` and `group` translate message keys (namespace `shell`).
+ */
+export function commandPaletteItems(
+  access: SuiteNavigationAccess,
+  locale: string,
+  label: (
+    key: NavLabelKey | NavGroupKey | 'myProfile' | 'searchGroupPages' | 'searchGroupAccount',
+  ) => string,
+): CommandPaletteItem[] {
+  const items: CommandPaletteItem[] = [];
+  for (const group of suiteNavigation(access)) {
+    const heading = label(group.key === 'main' ? 'searchGroupPages' : group.key);
+    for (const entry of group.entries) {
+      if (!entry.link) continue;
+      items.push({
+        id: entry.link.page,
+        label: label(entry.key),
+        group: heading,
+        href: `/${locale}${entry.link.href}`,
+        icon: entry.icon,
+      });
+    }
+  }
+  items.push({
+    id: 'profile',
+    label: label('myProfile'),
+    group: label('searchGroupAccount'),
+    href: `/${locale}${SUITE_PATHS.profile}`,
+    icon: 'user',
+  });
+  return items;
 }

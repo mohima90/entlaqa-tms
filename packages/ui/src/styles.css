@@ -13,11 +13,32 @@
 /* Self-hosted fonts (Poppins, IBM Plex Sans Arabic, IBM Plex Mono) — src/fonts.css. */
 @import './fonts.css';
 
-/* The side navigation's background: the gradient from `nav` to `nav-end` (a plain colour first, for
-   forced-colours mode and old browsers). */
+/* The side navigation's panel: from `nav` to `nav-end` (one colour — white — in the Kawadir layout; a
+   plain colour first, for forced-colours mode and old browsers). */
 @utility bg-nav-gradient {
   background-color: var(--color-nav);
   background-image: linear-gradient(170deg, var(--color-nav), var(--color-nav-end));
+}
+
+/* The brand gradient (Kawadir, 135°): the current navigation entry, the avatar and brand accents. The
+   organization's colours replace it (FR-ADM-07). Text on it: `text-on-nav-item-current`. */
+@utility bg-brand-gradient {
+  background-color: var(--color-nav-item-current);
+  background-image: linear-gradient(
+    135deg,
+    var(--color-nav-item-current),
+    var(--color-nav-item-current-end)
+  );
+}
+
+/* Styles for the collapsed side navigation (72 px, icons only): only from the desktop width (--bp-lg)
+   up, never in the phone drawer. The shell's navigation carries data-nav-collapsed="true". */
+@custom-variant nav-collapsed {
+  @media (min-width: 900px) {
+    &:where([data-nav-collapsed='true'], [data-nav-collapsed='true'] *) {
+      @slot;
+    }
+  }
 }
 
 @layer base {
@@ -54,8 +75,8 @@
     border-radius: var(--radius-sm);
   }
 
-  /* Inside the side navigation (data-nav-scope) the ring sits on the navigation gradient: an outline in
-     `nav-focus-ring`, 2 px away from the entry (contrast checked on both gradient ends). */
+  /* Inside the side navigation (data-nav-scope) the ring is an outline in `nav-focus-ring`, 2 px away
+     from the entry, so it shows around the gradient-filled current entry too (checked on the panel). */
   [data-nav-scope] :focus-visible {
     box-shadow: none;
     outline: 2px solid var(--color-nav-focus-ring);

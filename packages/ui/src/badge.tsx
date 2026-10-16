@@ -15,12 +15,15 @@ export interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
   readonly tone?: BadgeTone | undefined;
 }
 
-/** Short status label (e.g. a session's state). The text carries the meaning; the tone only supports it. */
+/**
+ * Short status label (e.g. a session's state), Kawadir shape: rounded-md, small semibold text. The text
+ * carries the meaning; the tone only supports it (text colour on the subtle fill, ≥ 4.5 : 1).
+ */
 export function Badge({ tone = 'neutral', className, ...props }: BadgeProps) {
   return (
     <span
       className={cn(
-        'inline-flex items-center rounded-full border px-2.5 py-0.5 text-sm font-medium text-text',
+        'inline-flex items-center gap-1 rounded-md border px-2.5 py-0.5 text-xs font-semibold text-text',
         tones[tone],
         className,
       )}

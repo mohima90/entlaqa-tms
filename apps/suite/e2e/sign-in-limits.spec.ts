@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { type Browser, type Page, expect, test } from '@playwright/test';
-import { afterSignIn, fillSignIn } from './sign-in';
+import { afterSignIn, fillSignIn, signOutFromMenu } from './sign-in';
 
 /**
  * Sign-in protection (T-M2-11, FR-IAM-13; TM-0003 T-IAM-01/27; PO decisions 9 Oct 2026): runs only
@@ -158,7 +158,7 @@ test.describe('sign-in protection', () => {
       await page.waitForTimeout((windowSeconds + 2) * 1_000);
       await attempt(page, locale, email ?? '', password ?? '');
       await expect(page).toHaveURL(new RegExp(`/${locale}/suite$`), afterSignIn);
-      await page.getByRole('button', { name: t.signOut }).click();
+      await signOutFromMenu(page);
       await expect(page).toHaveURL(new RegExp(`/${locale}/sign-in$`));
     });
   }
@@ -181,7 +181,7 @@ test.describe('sign-in protection', () => {
   }
 
   async function signOut(page: Page, locale: Locale) {
-    await page.getByRole('button', { name: TEXTS[locale].signOut }).click();
+    await signOutFromMenu(page);
     await expect(page).toHaveURL(new RegExp(`/${locale}/sign-in$`));
   }
 

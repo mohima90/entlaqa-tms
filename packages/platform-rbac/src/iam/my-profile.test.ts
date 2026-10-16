@@ -17,6 +17,7 @@ import {
 } from './my-profile';
 
 const db = vi.hoisted(() => ({
+  getMyPrimaryRole: vi.fn(),
   getPersonalDetails: vi.fn(),
   getUserProfile: vi.fn(),
   updatePersonalDetails: vi.fn(),
@@ -145,10 +146,14 @@ describe('My profile query and save', () => {
     });
   });
 
-  it('reads the header name of the member', async () => {
+  it('reads the header name and primary role of the member', async () => {
     db.getPersonalDetails.mockResolvedValue({ displayNameAr: 'سارة', displayNameEn: null });
+    db.getMyPrimaryRole.mockResolvedValue('hr_manager');
     const identity = createDefineQuery(runtime().rt)(myIdentityQueryDefinition());
-    expect(await identity({})).toEqual(ok({ displayNameAr: 'سارة', displayNameEn: null }));
+    expect(await identity({})).toEqual(
+      ok({ displayNameAr: 'سارة', displayNameEn: null, primaryRole: 'hr_manager' }),
+    );
+    expect(db.getMyPrimaryRole).toHaveBeenCalledWith(TX);
     const none = await createDefineQuery(runtime(null).rt)(myIdentityQueryDefinition())({});
     expect(!none.ok && none.error.code).toBe('NOT_FOUND');
   });

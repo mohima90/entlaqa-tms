@@ -1,7 +1,14 @@
 import { execFileSync } from 'node:child_process';
 import AxeBuilder from '@axe-core/playwright';
 import { type Page, expect, test } from '@playwright/test';
-import { afterSignIn, fillSignIn, signInToSuite, submitSignIn } from './sign-in';
+import {
+  afterSignIn,
+  fillSignIn,
+  openMyProfile,
+  signInToSuite,
+  signOutFromMenu,
+  submitSignIn,
+} from './sign-in';
 
 /**
  * My profile (FR-IAM-16, T-M2-15a) with a real ordinary member (Line Manager + Learner, no user
@@ -51,7 +58,7 @@ test.describe('My profile', () => {
 
   test('changes own personal details; e-mail and job data stay read-only', async ({ page }) => {
     await signInToSuite(page, email, password);
-    await page.getByTestId('my-profile-link').click();
+    await openMyProfile(page);
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('My profile');
     await expectNoSeriousA11yViolations(page);
 
@@ -68,7 +75,7 @@ test.describe('My profile', () => {
     await expect(page).toHaveURL(/\/en\/suite\/profile$/);
     await page.reload();
     await expect(page.getByLabel('Mobile number')).toHaveValue('+966551112233');
-    await expect(page.getByTestId('my-profile-link')).toContainText('Mona Saeed Alzahrani'); // English name kept
+    await expect(page.getByTestId('account-menu')).toContainText('Mona Saeed Alzahrani'); // English name kept
 
     // Job data is shown, not editable: no input for the job title or department.
     await expect(page.getByRole('heading', { name: 'Work details' })).toBeVisible();
@@ -86,7 +93,7 @@ test.describe('My profile', () => {
     await expect(page).toHaveURL(/\/ar\/suite\/profile$/);
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('ملفي الشخصي');
-    await expect(page.getByTestId('my-profile-link')).toContainText('منيرة');
+    await expect(page.getByTestId('account-menu')).toContainText('منيرة');
     await expectNoSeriousA11yViolations(page);
   });
 
@@ -132,7 +139,7 @@ test.describe('My profile', () => {
     await page.reload();
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('My profile');
 
-    await page.getByRole('button', { name: 'Sign out' }).click();
+    await signOutFromMenu(page);
     await expect(page).toHaveURL(/\/en\/sign-in$/);
     await submitSignIn(page, email, password);
     await expect(page.getByTestId('sign-in-error')).toHaveText(

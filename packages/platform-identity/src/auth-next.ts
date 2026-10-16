@@ -24,7 +24,13 @@ import {
   insertAuditEvent,
   invitationByToken,
   invitationPasswordMinLength,
+  isPlatformAdmin,
   listMyMfaApps,
+  listPlatformTenants,
+  createPlatformTenant,
+  type NewPlatformTenant,
+  platformAdminInvitationCode,
+  reissuePlatformAdminCode,
   listSessionTenants,
   passwordMinLengthForCaller,
   queueOwnPasswordChangedMail,
@@ -101,6 +107,15 @@ import {
   verifyTotpCode,
 } from './mfa';
 import { type SupabaseAuthLike, verifyClaims } from './verify-claims';
+import { getVerifiedClaims, getVerifiedClaimsStrict } from './next';
+import {
+  type PlatformConsoleDeps,
+  createOrganizationFromConsole,
+  isPlatformAdminSession,
+  loadPlatformOrganizations,
+  reissueOrganizationAdminCode,
+  viewOrganizationAdminCode,
+} from './platform-console';
 import {
   type InvitationAcceptDeps,
   type InvitationCodeGuard,
@@ -272,6 +287,7 @@ async function requestDeps(
     supabase: supabase as AuthClientLike | null,
     withUserTx,
     listSessionTenants,
+    isPlatformAdmin,
     switchActiveTenant,
     getSessionAccess,
     insertAuditEvent,
@@ -782,4 +798,40 @@ export async function queueOwnPasswordChangedNoticeForRequest(
       errorName: error instanceof Error ? error.name : 'unknown',
     });
   }
+}
+
+// Platform Super Admin console «مشرف المنصة» (FR-ADM-17; platform-console.ts): the session's own claims
+// (getClaims; getUser before creating an organization or revealing or changing a code) and the database's
+// decision whether it is a Super Admin's. Everyone else: NOT_FOUND.
+function platformConsoleDeps(): PlatformConsoleDeps {
+  return {
+    getClaims: ({ strict }) => (strict ? getVerifiedClaimsStrict() : getVerifiedClaims()),
+    withUserTx,
+    isPlatformAdmin,
+    listPlatformTenants,
+    createPlatformTenant,
+    platformAdminInvitationCode,
+    reissuePlatformAdminCode,
+  };
+}
+
+/** Is the current session a Platform Super Admin's? (Sign-in routing, the organization chooser.) */
+export async function isPlatformAdminForRequest(): Promise<boolean> {
+  return isPlatformAdminSession(platformConsoleDeps());
+}
+
+export async function loadPlatformOrganizationsForRequest() {
+  return loadPlatformOrganizations(platformConsoleDeps());
+}
+
+export async function createOrganizationFromConsoleForRequest(input: NewPlatformTenant) {
+  return createOrganizationFromConsole(platformConsoleDeps(), input);
+}
+
+export async function viewOrganizationAdminCodeForRequest(tenantId: string) {
+  return viewOrganizationAdminCode(platformConsoleDeps(), tenantId);
+}
+
+export async function reissueOrganizationAdminCodeForRequest(tenantId: string) {
+  return reissueOrganizationAdminCode(platformConsoleDeps(), tenantId);
 }

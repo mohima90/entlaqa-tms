@@ -112,6 +112,8 @@ export function SignInForm({ locale, disabled, labels, errors, onStep }: SignInF
           home: '/suite',
           mfa: '/mfa',
           'choose-organization': '/select-organization',
+          // A Platform Super Admin without organizations (FR-ADM-17).
+          platform: '/platform',
         };
         // 'mfa': the organization asks for an authenticator code or app first (T-M2-10).
         router.replace(`/${locale}${paths[result.value.next]}`);

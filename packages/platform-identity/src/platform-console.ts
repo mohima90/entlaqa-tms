@@ -1,0 +1,165 @@
+import 'server-only';
+import {
+  type AppError,
+  type Result,
+  type VerifiedClaims,
+  appError,
+  defineErrorCodes,
+  err,
+  ok,
+} from '@jadarat/platform-core';
+import {
+  type NewPlatformTenant,
+  type PlatformAdminCode,
+  PlatformConsoleError,
+  type PlatformTenantRow,
+  type UserTx,
+  type WithUserTx,
+} from '@jadarat/platform-db';
+
+/**
+ * The Platform Super Admin console «مشرف المنصة» (FR-ADM-17; ADR 0013; Kawadir ATS's /organizations).
+ * Framework-free: the Next.js adapter (auth-next.ts) supplies the claims verification and platform-db.
+ *
+ * Deny by default: every entry point verifies the session on the server (getClaims; getUser too —
+ * `strict` — before anything that creates an organization or reveals or changes a code, ADR 0003 §2),
+ * then asks the DATABASE whether the user is a Super Admin (private.is_platform_admin; every console
+ * function checks it again itself). A signed-out visitor, a member of any organization and any other
+ * account get NOT_FOUND — the console's pages and actions do not exist for them. A Super Admin needs no
+ * organization: the session has no tenant claim.
+ */
+export interface PlatformConsoleDeps {
+  readonly getClaims: (options: {
+    readonly strict: boolean;
+  }) => Promise<Result<VerifiedClaims, AppError>>;
+  readonly withUserTx: WithUserTx;
+  readonly isPlatformAdmin: (tx: UserTx) => Promise<boolean>;
+  readonly listPlatformTenants: (tx: UserTx) => Promise<readonly PlatformTenantRow[]>;
+  readonly createPlatformTenant: (
+    tx: UserTx,
+    input: NewPlatformTenant,
+  ) => Promise<{ tenantId: string; invitationId: string; inviteCode: string }>;
+  readonly platformAdminInvitationCode: (
+    tx: UserTx,
+    tenantId: string,
+  ) => Promise<PlatformAdminCode>;
+  readonly reissuePlatformAdminCode: (tx: UserTx, tenantId: string) => Promise<PlatformAdminCode>;
+}
+
+export const PlatformConsoleErrors = defineErrorCodes({
+  /** The organization has no pending Organization Admin invitation from the console (it joined already). */
+  PLATFORM_NO_PENDING_ADMIN: { status: 409, messageKey: 'platform.errors.noPendingAdmin' },
+});
+
+/** The answer to everyone who is not a Super Admin: the console does not exist. */
+const notFound = (): Result<never, AppError> => err(appError('NOT_FOUND'));
+
+/** The field and code of a refusal the form shows next to a field. */
+function fieldError(path: string, code: string): AppError {
+  return appError('VALIDATION_FAILED', { fieldErrors: [{ path, code }] });
+}
+
+const FIELD_PATHS = {
+  slug: 'slug',
+  name_ar: 'nameAr',
+  name_en: 'nameEn',
+  admin_email: 'adminEmail',
+  admin_name: 'adminFirstNameAr',
+  locale: 'locale',
+} as const;
+
+/** A console refusal as the action's answer; anything else is thrown (an internal error). */
+function refusal(error: unknown): Result<never, AppError> {
+  if (!(error instanceof PlatformConsoleError)) throw error;
+  switch (error.code) {
+    case 'NOT_PLATFORM_ADMIN':
+      return notFound();
+    case 'SLUG_TAKEN':
+      return err(fieldError('slug', 'SLUG_TAKEN'));
+    case 'PLATFORM_INVALID_INPUT':
+      return err(fieldError(error.field ? FIELD_PATHS[error.field] : 'form', 'INVALID'));
+    case 'NO_PENDING_ADMIN':
+      return err(appError(PlatformConsoleErrors.PLATFORM_NO_PENDING_ADMIN));
+  }
+}
+
+/**
+ * The verified claims of a Super Admin's session, or NOT_FOUND. `strict`: the Auth server confirms the
+ * session first (getUser).
+ */
+export async function platformConsoleAccess(
+  deps: PlatformConsoleDeps,
+  options: { readonly strict: boolean } = { strict: false },
+): Promise<Result<VerifiedClaims, AppError>> {
+  const claims = await deps.getClaims(options);
+  if (!claims.ok) return notFound();
+  const admin = await deps.withUserTx(claims.value, (tx) => deps.isPlatformAdmin(tx));
+  return admin ? claims : notFound();
+}
+
+/** Is the current session a Super Admin's? (Sign-in routing and the organization chooser.) */
+export async function isPlatformAdminSession(deps: PlatformConsoleDeps): Promise<boolean> {
+  return (await platformConsoleAccess(deps)).ok;
+}
+
+/** The organizations page. */
+export async function loadPlatformOrganizations(
+  deps: PlatformConsoleDeps,
+): Promise<Result<readonly PlatformTenantRow[], AppError>> {
+  const access = await platformConsoleAccess(deps);
+  if (!access.ok) return access;
+  try {
+    return ok(await deps.withUserTx(access.value, (tx) => deps.listPlatformTenants(tx)));
+  } catch (error) {
+    return refusal(error);
+  }
+}
+
+/** «إنشاء منظمة» / Create organization: the organization and its Organization Admin's first code. */
+export async function createOrganizationFromConsole(
+  deps: PlatformConsoleDeps,
+  input: NewPlatformTenant,
+): Promise<Result<{ tenantId: string; inviteCode: string; locale: 'ar' | 'en' }, AppError>> {
+  const access = await platformConsoleAccess(deps, { strict: true });
+  if (!access.ok) return access;
+  try {
+    const created = await deps.withUserTx(access.value, (tx) =>
+      deps.createPlatformTenant(tx, input),
+    );
+    return ok({ tenantId: created.tenantId, inviteCode: created.inviteCode, locale: input.locale });
+  } catch (error) {
+    return refusal(error);
+  }
+}
+
+/** Copy the Organization Admin's link or code (an audited read; nothing changes). */
+export async function viewOrganizationAdminCode(
+  deps: PlatformConsoleDeps,
+  tenantId: string,
+): Promise<Result<PlatformAdminCode, AppError>> {
+  const access = await platformConsoleAccess(deps, { strict: true });
+  if (!access.ok) return access;
+  try {
+    return ok(
+      await deps.withUserTx(access.value, (tx) => deps.platformAdminInvitationCode(tx, tenantId)),
+    );
+  } catch (error) {
+    return refusal(error);
+  }
+}
+
+/** «رمز جديد» / New code: the old link stops working, 7 more days. */
+export async function reissueOrganizationAdminCode(
+  deps: PlatformConsoleDeps,
+  tenantId: string,
+): Promise<Result<PlatformAdminCode, AppError>> {
+  const access = await platformConsoleAccess(deps, { strict: true });
+  if (!access.ok) return access;
+  try {
+    return ok(
+      await deps.withUserTx(access.value, (tx) => deps.reissuePlatformAdminCode(tx, tenantId)),
+    );
+  } catch (error) {
+    return refusal(error);
+  }
+}

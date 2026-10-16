@@ -36,6 +36,7 @@ export function InviteCodeCopy({
   texts,
   name,
   layout = 'row',
+  baseUrl,
 }: {
   readonly code: string;
   readonly locale: 'ar' | 'en';
@@ -43,13 +44,15 @@ export function InviteCodeCopy({
   /** The invitee's name, for the buttons' accessible names in a list. */
   readonly name?: string;
   readonly layout?: 'row' | 'panel';
+  /** The app's public origin from the server (APP_BASE_URL); else this page's origin. */
+  readonly baseUrl?: string | null | undefined;
 }) {
   const [announcement, setAnnouncement] = useState('');
   const codeRef = useRef<HTMLElement>(null);
 
   const copy = async (what: 'code' | 'link') => {
     const ok = await copyText(
-      what === 'code' ? code : inviteLink(window.location.origin, locale, code),
+      what === 'code' ? code : inviteLink(baseUrl ?? window.location.origin, locale, code),
     );
     if (ok) {
       setAnnouncement(what === 'code' ? texts.codeCopied : texts.linkCopied);

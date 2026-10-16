@@ -1780,5 +1780,97 @@
     "submitDefault": "Create account",
     "haveAccount": "Already have an account?",
     "signIn": "Sign in"
+  },
+  "platform": {
+    "roleName": "Platform Super Admin",
+    "consoleName": "Platform console",
+    "navigation": "Platform navigation",
+    "organizationsNav": "Organizations",
+    "title": "Organizations",
+    "subtitle": "Create organizations and give each one its Organization Admin with an invitation link.",
+    "stats": {
+      "total": "Organizations",
+      "active": "Active",
+      "pendingAdmin": "Organization Admin pending"
+    },
+    "table": {
+      "caption": "Organizations on the platform",
+      "name": "Name",
+      "shortName": "Short name",
+      "status": "Status",
+      "created": "Created",
+      "members": "Members",
+      "actions": "Actions",
+      "empty": "No organizations yet. Create the first one."
+    },
+    "statuses": {
+      "active": "Active",
+      "trial": "Trial",
+      "suspended": "Suspended",
+      "cancelled": "Cancelled"
+    },
+    "adminStates": {
+      "active": "Joined",
+      "pending": "Invited, not joined yet",
+      "expired": "Invitation expired",
+      "none": "Not assigned"
+    },
+    "create": {
+      "open": "Create organization",
+      "title": "Create organization",
+      "intro": "The organization is created with its Organization Admin's invitation. You get a code and a link to share; no email is sent.",
+      "required": "(required)",
+      "optional": "(optional)",
+      "slug": "Short name",
+      "slugHint": "3 to 40 lowercase letters, digits or hyphens, for example entlaqa. It can't be changed later.",
+      "nameAr": "Organization name in Arabic",
+      "nameEn": "Organization name in English",
+      "adminSection": "Organization Admin",
+      "adminEmail": "Organization Admin's work email",
+      "adminFirstNameAr": "First name in Arabic",
+      "adminFamilyNameAr": "Family name in Arabic",
+      "adminFirstNameEn": "First name in English",
+      "adminFamilyNameEn": "Family name in English",
+      "adminNamesHint": "Optional. The Organization Admin can set their name when they join.",
+      "locale": "Invitation language",
+      "localeEn": "English",
+      "localeAr": "Arabic",
+      "submit": "Create organization",
+      "submitting": "Creating…",
+      "cancel": "Cancel",
+      "errors": {
+        "slug": "Use 3 to 40 lowercase letters, digits or hyphens, not starting or ending with a hyphen.",
+        "slugTaken": "This short name is already used or reserved. Choose another.",
+        "nameAr": "Enter the organization's name in Arabic (up to 200 characters).",
+        "nameEn": "Use up to 200 characters.",
+        "adminEmail": "Enter an email address such as name@company.com.",
+        "adminName": "Use up to 100 characters.",
+        "locale": "Choose Arabic or English.",
+        "form": "Check the details and try again."
+      }
+    },
+    "created": {
+      "title": "Organization created",
+      "text": "Share this invitation code or link with the Organization Admin. It's valid for 7 days. They open the link, set their password and join the organization.",
+      "done": "Done"
+    },
+    "invite": {
+      "open": "Organization Admin link",
+      "title": "Organization Admin invitation",
+      "text": "Share this code or link with the Organization Admin. A new code stops the old link from working and gives 7 more days.",
+      "expires": "Valid until {date}",
+      "loading": "Loading the invitation…",
+      "newCode": "New code",
+      "issuing": "Issuing…",
+      "newCodeIssued": "A new code was issued. The previous code no longer works.",
+      "close": "Close"
+    },
+    "errors": {
+      "noPendingAdmin": "The Organization Admin of this organization has already joined."
+    },
+    "chooser": {
+      "title": "Platform console",
+      "text": "Manage organizations as Platform Super Admin."
+    }
   }
 }

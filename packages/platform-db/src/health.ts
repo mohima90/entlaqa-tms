@@ -23,6 +23,12 @@ export const REQUIRED_DATABASE_FUNCTIONS = [
   'request_account_locked_mail(text, integer)',
   'request_mfa_code_locked_mail(uuid, integer)',
   'unlock_member_sign_in(uuid, integer)',
+  // Platform Super Admin console (FR-ADM-17, migration 20261018100000): sign-in routing and the console.
+  'is_platform_admin()',
+  'platform_list_tenants()',
+  'platform_create_tenant(text, text, text, text, text, text, text, text, text)',
+  'platform_admin_invitation_code(uuid)',
+  'platform_reissue_admin_code(uuid)',
 ] as const;
 
 /**

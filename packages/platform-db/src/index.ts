@@ -92,6 +92,21 @@ export {
   revokeInvitation,
 } from './invitations';
 export {
+  type NewPlatformTenant,
+  type PlatformAdminCode,
+  type PlatformAdminState,
+  PlatformConsoleError,
+  type PlatformConsoleErrorCode,
+  type PlatformTenantField,
+  type PlatformTenantRow,
+  createPlatformTenant,
+  isPlatformAdmin,
+  listPlatformTenants,
+  platformAdminInvitationCode,
+  platformConsoleErrorOf,
+  reissuePlatformAdminCode,
+} from './platform-console';
+export {
   type DeactivationRefusal,
   MEMBER_EVENTS,
   type MemberLifecycleTarget,

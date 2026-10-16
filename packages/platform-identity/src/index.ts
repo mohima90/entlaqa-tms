@@ -111,6 +111,16 @@ export {
   startPasswordSession,
 } from './auth-flow';
 export {
+  type PlatformConsoleDeps,
+  PlatformConsoleErrors,
+  createOrganizationFromConsole,
+  isPlatformAdminSession,
+  loadPlatformOrganizations,
+  platformConsoleAccess,
+  reissueOrganizationAdminCode,
+  viewOrganizationAdminCode,
+} from './platform-console';
+export {
   type PasswordChangeDeps,
   type PasswordClientLike,
   type PasswordVerdict,

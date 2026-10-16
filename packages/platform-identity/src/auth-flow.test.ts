@@ -31,6 +31,8 @@ const tokenClaims: Record<string, Record<string, unknown>> = {
 
 interface FakeOptions {
   signInError?: { status?: number | undefined };
+  /** private.is_platform_admin's answer (FR-ADM-17). */
+  platformAdmin?: boolean;
   tenants?: { tenantId: string; nameAr: string; nameEn: string | null }[];
   switched?: boolean;
   refreshError?: boolean;
@@ -125,6 +127,7 @@ function setup(options: FakeOptions = {}) {
       claimsSeen.push(claims);
       return fn('tx');
     }) as AuthFlowDeps['withUserTx'],
+    isPlatformAdmin: vi.fn(() => Promise.resolve(options.platformAdmin ?? false)),
     listSessionTenants: vi.fn(() =>
       Promise.resolve(options.tenants ?? [{ tenantId: TENANT_A, nameAr: 'أ', nameEn: 'A' }]),
     ),
@@ -362,6 +365,26 @@ describe('signInWithPassword', () => {
     expect(!result.ok && result.error.code).toBe('AUTH_NO_ORGANIZATION');
     expect(calls).toEqual(['signOut']);
     expect(audited).toEqual([]);
+  });
+
+  it('sends a Platform Super Admin without organizations to the console (signed in, FR-ADM-17)', async () => {
+    const { deps, calls, audited } = setup({ tenants: [], platformAdmin: true });
+    expect(await signInWithPassword(deps, credentials)).toEqual({
+      ok: true,
+      value: { next: 'platform' },
+    });
+    expect(calls).toEqual([]);
+    expect(audited).toEqual([]);
+  });
+
+  it('lets a Super Admin who is also a member choose (an organization or the console)', async () => {
+    const { deps, calls } = setup({ platformAdmin: true });
+    expect(await signInWithPassword(deps, credentials)).toEqual({
+      ok: true,
+      value: { next: 'choose-organization' },
+    });
+    // No organization is selected automatically.
+    expect(calls).toEqual([]);
   });
 
   it('asks the user to choose when there are several organizations (no tenant selected yet)', async () => {

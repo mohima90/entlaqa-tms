@@ -155,6 +155,7 @@ function setup(options: Options = {}) {
     supabase: { auth },
     withUserTx: ((_claims: unknown, fn: (tx: unknown) => Promise<unknown>) =>
       fn('tx')) as AuthFlowDeps['withUserTx'],
+    isPlatformAdmin: vi.fn(() => Promise.resolve(false)),
     listSessionTenants: vi.fn(() =>
       Promise.resolve(
         Array.from({ length: options.tenants ?? 1 }, (_, i) => ({

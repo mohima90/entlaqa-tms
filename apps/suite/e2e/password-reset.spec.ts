@@ -86,6 +86,9 @@ test.describe('request a reset link', () => {
     page,
   }) => {
     await page.goto('/ar/sign-in');
+    // «نسيت؟» sits next to the password label (Kawadir), after the e-mail step.
+    await page.locator('#email').fill(resetEmail ?? '');
+    await page.getByRole('button', { name: 'متابعة' }).click();
     await page.getByTestId('forgot-password-link').click();
     await expect(page).toHaveURL(/\/ar\/forgot-password$/);
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');

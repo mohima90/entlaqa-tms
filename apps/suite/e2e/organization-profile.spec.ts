@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { type Page, expect, test } from '@playwright/test';
-import { afterSignIn } from './sign-in';
+import { afterSignIn, fillSignIn } from './sign-in';
 import { freshCode } from './totp';
 
 /**
@@ -28,9 +28,7 @@ const AR_NAME = 'شركة الاختبار السيادي القابضة';
 
 async function signIn(page: Page, locale: 'ar' | 'en', email: string, secret: string) {
   await page.goto(`/${locale}/sign-in`);
-  await page.locator('#email').fill(email);
-  await page.locator('#password').fill(secret);
-  await page.getByRole('button', { name: locale === 'ar' ? 'تسجيل الدخول' : 'Sign in' }).click();
+  await fillSignIn(page, locale, email, secret);
 }
 
 /** Password, then the authenticator code the organization requires at sign-in (its MFA policy). */

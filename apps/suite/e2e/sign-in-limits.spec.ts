@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { type Browser, type Page, expect, test } from '@playwright/test';
-import { afterSignIn } from './sign-in';
+import { afterSignIn, fillSignIn } from './sign-in';
 
 /**
  * Sign-in protection (T-M2-11, FR-IAM-13; TM-0003 T-IAM-01/27; PO decisions 9 Oct 2026): runs only
@@ -27,6 +27,8 @@ const TEXTS = {
     email: 'البريد الإلكتروني',
     password: 'كلمة المرور',
     submit: 'تسجيل الدخول',
+    continue: 'متابعة',
+    showPassword: 'إظهار كلمة المرور',
     invalid: 'البريد الإلكتروني أو كلمة المرور غير صحيحة.',
     limited:
       'أُوقف تسجيل الدخول مؤقتًا بعد محاولات كثيرة لم تنجح. يمكنك المحاولة مرة أخرى لاحقًا، أو استعادة كلمة المرور من «نسيت كلمة المرور؟».',
@@ -42,6 +44,8 @@ const TEXTS = {
     email: 'Email',
     password: 'Password',
     submit: 'Sign in',
+    continue: 'Continue',
+    showPassword: 'Show password',
     invalid: 'The email or password is incorrect.',
     limited:
       'Sign-in is paused for now after too many unsuccessful attempts. Try again later, or reset your password with “Forgot password?”.',
@@ -64,12 +68,8 @@ async function attempt(
   secret: string,
   options: { readonly remember?: boolean } = {},
 ) {
-  const t = TEXTS[locale];
   await page.goto(`/${locale}/sign-in`);
-  await page.getByLabel(t.email).fill(address);
-  await page.getByLabel(t.password, { exact: false }).fill(secret);
-  if (options.remember) await page.getByRole('checkbox', { name: t.remember }).check();
-  await page.getByRole('button', { name: t.submit }).click();
+  await fillSignIn(page, locale, address, secret, options);
 }
 
 /** The browser's trusted-device cookie, if any (`__Host-jadarat-device`). */
@@ -107,14 +107,18 @@ test.describe('sign-in protection', () => {
     }) => {
       const t = TEXTS[locale];
       await page.goto(`/${locale}/sign-in`);
+      // The password step (Kawadir: the e-mail first).
+      await page.locator('#email').fill(email ?? '');
+      await page.getByRole('button', { name: t.continue }).click();
       const box = page.getByRole('checkbox', { name: t.remember, exact: true });
       await expect(box).toBeEnabled();
       await expect(box).not.toBeChecked();
       await expect(box).toHaveAccessibleDescription(t.rememberHint);
-      // In the reading order: e-mail, password, the box, the button — and Space ticks and unticks it.
-      await page.getByLabel(t.email).focus();
+      // In the reading order: password, show password, the box, the button — and Space ticks and
+      // unticks it.
+      await expect(page.locator('#password')).toBeFocused();
       await page.keyboard.press('Tab');
-      await expect(page.getByLabel(t.password, { exact: false })).toBeFocused();
+      await expect(page.getByRole('button', { name: t.showPassword })).toBeFocused();
       await page.keyboard.press('Tab');
       await expect(box).toBeFocused();
       await page.keyboard.press('Space');

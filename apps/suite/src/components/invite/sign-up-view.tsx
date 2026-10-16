@@ -23,6 +23,18 @@ import {
 
 type LinkState = 'expired' | 'revoked' | 'used' | 'invalid';
 
+/**
+ * Removes the link's fragment (`#code=…`) from the address bar where the page cannot use it (sign-up not
+ * configured): the code stays out of the history and bookmarks either way (review M3).
+ */
+export function DropFragment() {
+  useEffect(() => {
+    const { hash, pathname, search } = window.location;
+    if (hash !== '') window.history.replaceState(window.history.state, '', `${pathname}${search}`);
+  }, []);
+  return null;
+}
+
 /** Texts of the sign-up page (translated on the server; `{organization}` filled in here). */
 export interface SignUpTexts {
   readonly pageTitle: string;

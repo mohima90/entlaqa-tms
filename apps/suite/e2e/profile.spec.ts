@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import AxeBuilder from '@axe-core/playwright';
 import { type Page, expect, test } from '@playwright/test';
-import { afterSignIn, signInToSuite, submitSignIn } from './sign-in';
+import { afterSignIn, fillSignIn, signInToSuite, submitSignIn } from './sign-in';
 
 /**
  * My profile (FR-IAM-16, T-M2-15a) with a real ordinary member (Line Manager + Learner, no user
@@ -28,10 +28,7 @@ function trustedBrowsers(address: string): number {
 /** Signs in with the English form, «Remember this browser» ticked, and waits for the suite. */
 async function signInRemembered(page: Page) {
   await page.goto('/en/sign-in');
-  await page.getByLabel('Email').fill(email ?? '');
-  await page.getByLabel('Password').fill(password ?? '');
-  await page.getByRole('checkbox', { name: 'Remember this browser' }).check();
-  await page.getByRole('button', { name: 'Sign in' }).click();
+  await fillSignIn(page, 'en', email ?? '', password ?? '', { remember: true });
   await expect(page).toHaveURL(/\/en\/suite$/, afterSignIn);
 }
 

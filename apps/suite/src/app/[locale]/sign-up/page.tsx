@@ -5,7 +5,7 @@ import { getTranslations } from 'next-intl/server';
 import { notFound } from 'next/navigation';
 import { connection } from 'next/server';
 import { AuthLanguageSwitch, AuthShell } from '../../../components/auth/auth-shell';
-import { SignUpView } from '../../../components/invite/sign-up-view';
+import { DropFragment, SignUpView } from '../../../components/invite/sign-up-view';
 import { authLanguageSwitch, authShellTexts } from '../../../lib/auth-shell-texts';
 import { inviteErrorTexts } from '../../../lib/auth-texts';
 import { getConfigStatus } from '../../../lib/config-status';
@@ -60,6 +60,7 @@ export default async function SignUpPage({ params }: { params: Promise<{ locale:
         <p className="m-0 text-text-muted" data-testid="invite-not-configured">
           {errorsT('notConfigured')}
         </p>
+        <DropFragment />
       </AuthShell>
     );
   }

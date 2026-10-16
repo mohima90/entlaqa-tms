@@ -11,8 +11,12 @@ const pages = [
   { path: '/en', lang: 'en', dir: 'ltr', heading: 'Training Management System' },
   { path: '/ar/suite', lang: 'ar', dir: 'rtl', heading: 'الرئيسية' },
   { path: '/en/suite', lang: 'en', dir: 'ltr', heading: 'Home' },
-  { path: '/ar/sign-in', lang: 'ar', dir: 'rtl', heading: 'تسجيل الدخول' },
-  { path: '/en/sign-in', lang: 'en', dir: 'ltr', heading: 'Sign in' },
+  // Kawadir's sign-in (PO, 16 Oct 2026): «مرحبًا بعودتك» / "Welcome back".
+  { path: '/ar/sign-in', lang: 'ar', dir: 'rtl', heading: 'مرحبًا بعودتك' },
+  { path: '/en/sign-in', lang: 'en', dir: 'ltr', heading: 'Welcome back' },
+  // Join with an invitation code (Kawadir's sign-up): without Auth configured it says so.
+  { path: '/ar/sign-up', lang: 'ar', dir: 'rtl', heading: 'انضم إلى منشأتك' },
+  { path: '/en/sign-up', lang: 'en', dir: 'ltr', heading: 'Join your organization' },
   { path: '/ar/forgot-password', lang: 'ar', dir: 'rtl', heading: 'نسيت كلمة المرور؟' },
   { path: '/en/forgot-password', lang: 'en', dir: 'ltr', heading: 'Forgot your password?' },
   // Without Auth configured (CI) the reset page says so; the flow runs on the self-hosted stack.
@@ -88,7 +92,9 @@ for (const { path, lang, dir, heading } of pages) {
       expect(headers['x-frame-options']).toBe('DENY');
       // Pages whose link carries a token send no referrer at all (security-headers.ts SECRET_URL_PAGES).
       expect(headers['referrer-policy']).toBe(
-        path.endsWith('/reset-password') ? 'no-referrer' : 'strict-origin-when-cross-origin',
+        path.endsWith('/reset-password') || path.endsWith('/sign-up')
+          ? 'no-referrer'
+          : 'strict-origin-when-cross-origin',
       );
       expect(headers['permissions-policy']).toContain('camera=()');
       expect(headers['x-powered-by']).toBeUndefined();
@@ -152,14 +158,60 @@ test('shows the "not configured" state when Supabase is not configured', async (
   await expect(page.getByTestId('config-status')).toContainText('not configured');
 });
 
-test('the sign-in form is disabled and explains why when sign-in is not configured', async ({
+test('the sign-in form cannot be submitted and explains why when sign-in is not configured', async ({
   page,
 }) => {
   await page.goto('/en/sign-in');
   await expect(page.getByTestId('auth-not-configured')).toBeVisible();
-  await expect(page.getByLabel('Email')).toBeDisabled();
+  // The e-mail step asks nothing of the server; the password step cannot be used.
+  await page.locator('#email').fill('someone@example.com');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await expect(page.locator('#password')).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Sign in' })).toBeDisabled();
 });
+
+// Kawadir's two steps (PO, 16 Oct 2026): the e-mail first (a typo is caught before the password step),
+// then the password with «نسيت؟» next to its label; "Change" goes back with the address kept.
+for (const t of [
+  {
+    locale: 'ar',
+    continue: 'متابعة',
+    invalid: 'أدخل بريدًا إلكترونيًا مثل name@company.com.',
+    change: 'تغيير البريد الإلكتروني',
+    forgot: 'نسيت؟',
+    join: 'انضم بالرمز',
+  },
+  {
+    locale: 'en',
+    continue: 'Continue',
+    invalid: 'Enter an email address such as name@company.com.',
+    change: 'Change the email',
+    forgot: 'Forgot?',
+    join: 'Join with your code',
+  },
+] as const) {
+  test(`${t.locale}: sign-in asks for the e-mail first, then the password`, async ({ page }) => {
+    await page.goto(`/${t.locale}/sign-in`);
+    await expect(page.locator('#password')).toHaveCount(0);
+    await expect(page.getByRole('link', { name: t.join })).toHaveAttribute(
+      'href',
+      `/${t.locale}/sign-up`,
+    );
+    await page.locator('#email').fill('not-an-address');
+    await page.getByRole('button', { name: t.continue }).click();
+    await expect(page.locator('#email-error')).toHaveText(t.invalid);
+    await page.locator('#email').fill('noura@raya.example');
+    await page.getByRole('button', { name: t.continue }).click();
+    await expect(page.getByTestId('sign-in-email')).toHaveText('noura@raya.example');
+    // (Focus moves to the password where sign-in is configured: e2e/sign-in-limits.spec.ts; here the
+    // field is disabled, sign-in not being configured.)
+    await expect(page.locator('#password')).toBeVisible();
+    await expect(page.getByTestId('forgot-password-link')).toHaveText(t.forgot);
+    await page.getByRole('button', { name: t.change }).click();
+    await expect(page.locator('#email')).toHaveValue('noura@raya.example');
+    await expect(page.locator('#email')).toBeFocused();
+  });
+}
 
 // «تذكّر هذا المتصفح» (T-M2-11, PO decision 9 Oct 2026: opt-in): a labelled check box, unticked by default,
 // its explanation announced with it. Using it end to end (keyboard, trust, lock): e2e/sign-in-limits.spec.ts
@@ -180,6 +232,8 @@ for (const { locale, label, hint } of [
     page,
   }) => {
     await page.goto(`/${locale}/sign-in`);
+    await page.locator('#email').fill('someone@example.com');
+    await page.getByRole('button', { name: locale === 'ar' ? 'متابعة' : 'Continue' }).click();
     const box = page.getByRole('checkbox', { name: label, exact: true });
     await expect(box).toHaveCount(1);
     await expect(box).not.toBeChecked();

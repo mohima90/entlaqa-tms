@@ -9,7 +9,6 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuTrigger,
-  FullScreenToggle,
   NotificationBell,
   THEME_COOKIE,
   ThemeMenu,
@@ -91,86 +90,6 @@ describe('ThemeMenu (light / dark / system, Kawadir)', () => {
     });
     expect(document.documentElement.hasAttribute('data-theme')).toBe(false);
     expect(byTestId('theme-menu').getAttribute('aria-label')).toBe('Theme: System');
-  });
-});
-
-describe('FullScreenToggle (desktop, Ctrl+B / ⌘B)', () => {
-  const texts = { enter: 'Full screen', exit: 'Exit full screen' };
-
-  function stubFullScreen(initial: Element | null = null) {
-    let element: Element | null = initial;
-    Object.defineProperty(document, 'fullscreenElement', {
-      configurable: true,
-      get: () => element,
-    });
-    const request = vi.fn(() => Promise.resolve());
-    const exit = vi.fn(() => Promise.resolve());
-    Object.defineProperty(document.documentElement, 'requestFullscreen', {
-      configurable: true,
-      value: request,
-    });
-    Object.defineProperty(document, 'exitFullscreen', { configurable: true, value: exit });
-    const set = (next: Element | null) => {
-      element = next;
-      act(() => {
-        document.dispatchEvent(new Event('fullscreenchange'));
-      });
-    };
-    return { request, exit, set };
-  }
-
-  it('enters full screen from the button and follows the browser state in its label', () => {
-    const { request, exit, set } = stubFullScreen();
-    mount(<FullScreenToggle texts={texts} />);
-    const button = byTestId('full-screen-toggle');
-    expect(button.getAttribute('aria-label')).toBe('Full screen');
-    expect(button.getAttribute('aria-keyshortcuts')).toBe('Control+B Meta+B');
-    act(() => {
-      button.click();
-    });
-    expect(request).toHaveBeenCalledTimes(1);
-    set(document.documentElement);
-    expect(button.getAttribute('aria-label')).toBe('Exit full screen');
-    act(() => {
-      button.click();
-    });
-    expect(exit).toHaveBeenCalledTimes(1);
-    // The browser leaves full screen by itself (Escape).
-    set(null);
-    expect(button.getAttribute('aria-label')).toBe('Full screen');
-  });
-
-  it('toggles with Ctrl+B or ⌘B, but not while typing in a field', () => {
-    const { request, exit } = stubFullScreen(document.documentElement);
-    const container = mount(
-      <>
-        <input aria-label="Search" />
-        <FullScreenToggle texts={texts} />
-      </>,
-    );
-    press(window, 'b');
-    press(window, 'x', { ctrlKey: true });
-    expect(exit).not.toHaveBeenCalled();
-    press(container.querySelector('input')!, 'b', { ctrlKey: true });
-    expect(exit).not.toHaveBeenCalled();
-    press(document.body, 'B', { metaKey: true });
-    expect(exit).toHaveBeenCalledTimes(1);
-    expect(request).not.toHaveBeenCalled();
-  });
-
-  it('changes nothing when the browser refuses full screen', async () => {
-    stubFullScreen();
-    Object.defineProperty(document.documentElement, 'requestFullscreen', {
-      configurable: true,
-      value: vi.fn(() => Promise.reject(new Error('not allowed'))),
-    });
-    mount(<FullScreenToggle texts={texts} />);
-    const button = byTestId('full-screen-toggle');
-    await act(async () => {
-      button.click();
-      await Promise.resolve();
-    });
-    expect(button.getAttribute('aria-label')).toBe('Full screen');
   });
 });
 

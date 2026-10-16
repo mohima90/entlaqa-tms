@@ -51,8 +51,9 @@ export function TextField({
         aria-invalid={error ? true : props['aria-invalid']}
         aria-describedby={describedBy}
         className={cn(
-          // Kawadir input: 36 px on a desktop (44 px on touch screens), rounded-md, soft shadow.
-          'min-h-9 w-full rounded-md border bg-surface px-3 py-1.5 text-sm text-text shadow-1 pointer-coarse:min-h-11',
+          // Kawadir input (Branding): a pill — 36 px on a desktop (44 px on touch screens), fully rounded,
+          // 16 px inline padding, soft shadow; the boundary stays `border-strong` (SC 1.4.11).
+          'min-h-9 w-full rounded-full border bg-surface px-4 py-1.5 text-sm text-text shadow-1 transition-[border-color,box-shadow] placeholder:text-text-subtle hover:border-text-muted pointer-coarse:min-h-11',
           'disabled:cursor-not-allowed disabled:bg-surface-sunken disabled:text-text-disabled',
           error ? 'border-danger' : 'border-border-strong',
         )}

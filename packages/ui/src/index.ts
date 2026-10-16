@@ -48,8 +48,6 @@ export {
 export { EmptyState, type EmptyStateProps } from './empty-state';
 export { PageHeader, type PageHeaderProps } from './page-header';
 export {
-  FullScreenToggle,
-  type FullScreenToggleProps,
   NotificationBell,
   type NotificationBellProps,
   ThemeMenu,
@@ -72,7 +70,10 @@ export {
   type StatCardProps,
   StatGrid,
   type StatGridProps,
+  type StatAccent,
   type StatTone,
+  type StatTrend,
+  type StatVariant,
 } from './stat-card';
 export { TabNav, type TabNavItem, type TabNavProps } from './tab-nav';
 export {

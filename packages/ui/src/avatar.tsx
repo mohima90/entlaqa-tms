@@ -13,24 +13,31 @@ export function initialsOf(name: string): string {
 export interface AvatarProps {
   readonly name: string;
   readonly size?: 'sm' | 'md' | undefined;
+  /**
+   * `brand` (default): initials on the brand gradient (Kawadir account chip). `soft`: initials in the
+   * brand text colour on its tint (Kawadir list rows, e.g. «NI» in Candidates).
+   */
+  readonly tone?: 'brand' | 'soft' | undefined;
+  /** The person's photo (T-M2-15b); the initials show until it exists. Decorative like the initials. */
+  readonly src?: string | undefined;
   readonly className?: string | undefined;
 }
 
-/**
- * A person's picture: their initials on the brand gradient (Kawadir), until photos arrive (T-M2-15b).
- * Decorative: the name is written next to it.
- */
-export function Avatar({ name, size = 'sm', className }: AvatarProps) {
+/** A person's picture: their photo, or their initials (Kawadir). Decorative: the name is written next to it. */
+export function Avatar({ name, size = 'sm', tone = 'brand', src, className }: AvatarProps) {
   return (
     <span
       aria-hidden="true"
       className={cn(
-        'bg-brand-gradient grid shrink-0 place-items-center rounded-full font-semibold text-on-nav-item-current ring-2 ring-border',
+        'grid shrink-0 place-items-center overflow-hidden rounded-full font-semibold',
+        tone === 'brand'
+          ? 'bg-brand-gradient text-on-nav-item-current ring-2 ring-border'
+          : 'bg-primary-subtle text-primary-text',
         size === 'sm' ? 'size-8 text-xs' : 'size-10 text-sm',
         className,
       )}
     >
-      {initialsOf(name)}
+      {src ? <img src={src} alt="" className="size-full object-cover" /> : initialsOf(name)}
     </span>
   );
 }

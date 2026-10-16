@@ -12,7 +12,11 @@ export interface AppShellProps {
   readonly brand: ReactNode;
   /** The organization's name on top of the navigation (display only, never used for authorization). */
   readonly organization?: ReactNode;
-  /** Logo on the tile; the Jadarat mark until the organization's logo exists (FR-ADM-07). */
+  /**
+   * The organization's logo (an `<img>` with its alt text) for the logo area (Kawadir: ~200 × 60) and the
+   * collapsed tile (FR-ADM-07). Without it the organization's name is shown as a wordmark in the brand
+   * gradient, and the Jadarat mark on the collapsed tile.
+   */
   readonly logo?: ReactNode;
   /** The page's title in the top bar (Kawadir header title). Plain text: the page keeps its `<h1>`. */
   readonly title?: ReactNode;
@@ -208,22 +212,49 @@ export function AppShell({
             navState.collapsed ? 'lg:w-18' : 'lg:w-65',
           )}
         >
+          {/* The logo area (Kawadir: the organization's full logo, ~200 × 60, in a 96 px band). Until an
+              organization uploads its logo (FR-ADM-07), its name is set as a wordmark in the brand
+              gradient in the same footprint, with the product line under it; collapsed, the Jadarat mark. */}
           <div
             className={cn(
-              'flex items-center gap-3 border-b border-nav-border',
-              navState.collapsed ? 'min-h-16 justify-center px-3' : 'min-h-20 px-5',
+              'flex items-center gap-2 border-b border-nav-border',
+              navState.collapsed ? 'min-h-16 justify-center px-3' : 'min-h-24 ps-5 pe-3',
             )}
           >
-            <span className="grid size-10 shrink-0 place-items-center overflow-hidden rounded-xl bg-brand-gradient text-on-nav-item-current shadow-1">
+            <span
+              aria-hidden="true"
+              className={cn(
+                'size-10 shrink-0 place-items-center overflow-hidden rounded-xl bg-brand-gradient text-on-nav-item-current shadow-brand-glow',
+                navState.collapsed ? 'grid' : 'hidden',
+              )}
+            >
               {logo ?? <JadaratMark className="size-6" />}
             </span>
-            <span className={cn('flex min-w-0 flex-1 flex-col', navState.collapsed && 'sr-only')}>
+            <span
+              className={cn(
+                'flex min-w-0 flex-1 flex-col justify-center gap-1',
+                navState.collapsed && 'sr-only',
+              )}
+            >
+              {logo ? (
+                <span className="flex h-16 max-w-[200px] items-center [&>img]:max-h-full [&>img]:w-auto [&>img]:object-contain">
+                  {logo}
+                </span>
+              ) : null}
               {organization ? (
-                <span className="line-clamp-2 text-sm font-semibold leading-snug text-text">
+                <span
+                  className={cn(
+                    'line-clamp-2 pb-0.5 font-extrabold leading-[1.1] tracking-tight',
+                    logo ? 'sr-only' : 'text-brand-gradient text-[26px]',
+                  )}
+                  data-testid="nav-wordmark"
+                >
                   {organization}
                 </span>
               ) : null}
-              <span className="truncate text-xs text-on-nav">{brand}</span>
+              <span className="truncate text-[11px] font-semibold uppercase tracking-[0.14em] text-on-nav">
+                {brand}
+              </span>
             </span>
             {collapseLabels && !navState.collapsed ? (
               <Tooltip content={collapseLabels.collapse} side="end">

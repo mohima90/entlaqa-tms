@@ -5,8 +5,15 @@ export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'dang
 export type ButtonSize = 'sm' | 'md' | 'lg' | 'icon';
 
 const variants: Record<ButtonVariant, string> = {
-  primary: 'bg-primary text-on-primary shadow-1 hover:bg-primary-hover',
-  /* Kawadir "outline": a white button with a visible boundary (border-strong, SC 1.4.11). */
+  /*
+   * Kawadir `btn-brand` («Save Changes»): the brand gradient (135°; the organization's colours replace it)
+   * with its text colour (checked on both ends), a soft coloured glow, lifted 2 px with a larger glow on
+   * hover (not with reduced motion). The colours never change on hover, so the text keeps its contrast.
+   */
+  primary:
+    'bg-brand-gradient text-on-nav-item-current font-semibold shadow-brand-glow transition-[box-shadow,transform] duration-300 hover:-translate-y-0.5 hover:shadow-brand-glow-lg active:translate-y-0 motion-reduce:transition-none motion-reduce:hover:translate-y-0 disabled:hover:translate-y-0 disabled:hover:shadow-brand-glow',
+  /* Kawadir "outline" (Refresh / Export / Print): white, icon + label, a visible boundary (border-strong,
+     SC 1.4.11) and a soft shadow. */
   secondary: 'bg-surface text-text border border-border-strong shadow-1 hover:bg-surface-hover',
   ghost: 'bg-transparent text-primary-text hover:bg-surface-hover',
   danger: 'bg-danger text-on-danger shadow-1 hover:bg-danger-hover',

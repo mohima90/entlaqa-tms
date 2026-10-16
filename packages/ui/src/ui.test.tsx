@@ -25,7 +25,10 @@ describe('Button', () => {
   it('defaults to type="button" and the primary variant', () => {
     const html = renderToStaticMarkup(<Button>حفظ</Button>);
     expect(html).toContain('type="button"');
-    expect(html).toContain('bg-primary');
+    // Kawadir btn-brand: the brand gradient with its own text colour (checked on both ends) and a glow.
+    expect(html).toContain('bg-brand-gradient');
+    expect(html).toContain('text-on-nav-item-current');
+    expect(html).toContain('shadow-brand-glow');
     expect(html).toContain('حفظ');
   });
 
@@ -90,6 +93,28 @@ describe('AppShell', () => {
     expect(html).toContain('جدارات · التدريب');
     expect(html).toContain('شركة الراية');
     expect(html).toMatch(/<svg[^>]*aria-hidden="true"/);
+  });
+
+  it('sets the organization name as a gradient wordmark in the logo area, or shows its logo', () => {
+    expect(html).toMatch(/data-testid="nav-wordmark"/);
+    expect(html).toMatch(/class="[^"]*text-brand-gradient[^"]*"[^>]*data-testid="nav-wordmark"/);
+    const withLogo = renderToStaticMarkup(
+      <AppShell
+        brand="b"
+        organization="شركة الراية"
+        logo={<img src="/logo.png" alt="شعار شركة الراية" />}
+        navigation={null}
+        navigationLabel="n"
+        skipToContentLabel="s"
+        menuLabel="m"
+        closeMenuLabel="c"
+      >
+        x
+      </AppShell>,
+    );
+    expect(withLogo).toContain('alt="شعار شركة الراية"');
+    expect(withLogo).toMatch(/class="[^"]*sr-only[^"]*"[^>]*data-testid="nav-wordmark"/);
+    expect(withLogo).not.toContain('text-brand-gradient');
   });
 
   it('opens the navigation on narrow screens with a disclosure button (closed at first)', () => {
@@ -215,6 +240,9 @@ describe('Alert', () => {
     const info = renderToStaticMarkup(<Alert title="تم الحفظ">التفاصيل</Alert>);
     expect(info).toContain('role="status"');
     expect(info).toContain('bg-info-subtle');
+    // Kawadir notes: rounded-xl with the tone's icon (decorative).
+    expect(info).toContain('rounded-xl');
+    expect(info).toMatch(/<svg[^>]*class="[^"]*text-info"[^>]*aria-hidden="true"/);
     expect(info).toContain('تم الحفظ');
     expect(renderToStaticMarkup(<Alert tone="success" title="تم" />)).not.toContain('mt-1');
   });
@@ -224,7 +252,7 @@ describe('Badge', () => {
   it('renders the label with its tone (neutral by default)', () => {
     expect(renderToStaticMarkup(<Badge>مسودة</Badge>)).toContain('bg-surface-sunken');
     expect(renderToStaticMarkup(<Badge tone="success">منشورة</Badge>)).toContain(
-      'bg-success-subtle',
+      'bg-success-subtle text-success',
     );
   });
 });

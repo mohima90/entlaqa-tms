@@ -1,4 +1,6 @@
 import {
+  ArrowDownRight,
+  ArrowUpRight,
   Bell,
   BookOpen,
   Building2,
@@ -12,6 +14,7 @@ import {
   ClipboardList,
   CreditCard,
   FileCheck,
+  Flag,
   Globe,
   History,
   Inbox,
@@ -25,6 +28,7 @@ import {
   Maximize2,
   Menu,
   Minimize2,
+  Minus,
   Monitor,
   Moon,
   Palette,
@@ -48,7 +52,8 @@ import { cn } from './cn';
  * Line icons: the Kawadir ATS icon set, lucide (ISC; T-M2-43) — 24 × 24 grid, 2 px round stroke, drawn
  * in `currentColor`, 16 px by default. Always decorative (`aria-hidden`): the text next to an icon
  * carries the meaning; an icon-only button gets an `aria-label`. Directional icons (`chevron-start`,
- * `chevron-end`) are mirrored in RTL here (ADR 0007 §3); none of the others is directional.
+ * `chevron-end`) and the trend arrows are mirrored in RTL here (ADR 0007 §3); none of the others is
+ * directional.
  */
 const ICONS = {
   home: LayoutDashboard,
@@ -93,12 +98,23 @@ const ICONS = {
   success: CircleCheck,
   error: CircleAlert,
   warning: TriangleAlert,
+  // Summary cards (Kawadir KPI and target cards)
+  flag: Flag,
+  'trend-up': ArrowUpRight,
+  'trend-down': ArrowDownRight,
+  'trend-flat': Minus,
 } as const satisfies Record<string, LucideIcon>;
 
 export type IconName = keyof typeof ICONS;
 export const ICON_NAMES = Object.keys(ICONS) as IconName[];
 
-const MIRRORED: ReadonlySet<IconName> = new Set(['chevron-start', 'chevron-end']);
+/* Trend arrows follow the reading direction (time runs right to left in Arabic). */
+const MIRRORED: ReadonlySet<IconName> = new Set([
+  'chevron-start',
+  'chevron-end',
+  'trend-up',
+  'trend-down',
+]);
 
 export interface IconProps extends Omit<SVGProps<SVGSVGElement>, 'children' | 'ref'> {
   readonly name: IconName;

@@ -66,59 +66,6 @@ export function ThemeMenu({ initial, texts }: ThemeMenuProps) {
   );
 }
 
-export interface FullScreenToggleProps {
-  readonly texts: { readonly enter: string; readonly exit: string };
-}
-
-/**
- * Browser full screen (Kawadir; also Ctrl+B / ⌘B outside text fields). The label follows the state,
- * also when the browser leaves full screen by itself (Escape).
- */
-export function FullScreenToggle({ texts }: FullScreenToggleProps) {
-  const [full, setFull] = useState(false);
-  useEffect(() => {
-    const onChange = () => {
-      setFull(Boolean(document.fullscreenElement));
-    };
-    const onKey = (event: KeyboardEvent) => {
-      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'b') return;
-      const target = event.target as HTMLElement | null;
-      if (target?.closest('input, textarea, select, [contenteditable="true"]')) return;
-      event.preventDefault();
-      toggleFullScreen();
-    };
-    document.addEventListener('fullscreenchange', onChange);
-    window.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('fullscreenchange', onChange);
-      window.removeEventListener('keydown', onKey);
-    };
-  }, []);
-  // Desktop only (Kawadir). The wrapper hides it: `hidden` on the button would lose to its `inline-flex`.
-  return (
-    <span className="hidden lg:contents">
-      <button
-        type="button"
-        onClick={toggleFullScreen}
-        aria-label={full ? texts.exit : texts.enter}
-        aria-keyshortcuts="Control+B Meta+B"
-        className={topBarButtonClasses}
-        data-testid="full-screen-toggle"
-      >
-        <Icon name={full ? 'minimize' : 'maximize'} className="size-5" />
-      </button>
-    </span>
-  );
-}
-
-function toggleFullScreen() {
-  const request = document.fullscreenElement
-    ? document.exitFullscreen()
-    : document.documentElement.requestFullscreen();
-  // A refusal (e.g. not allowed in this frame) changes nothing; the state stays as it was.
-  void request.catch(() => undefined);
-}
-
 export interface NotificationBellProps {
   readonly texts: {
     /** «الإشعارات» / "Notifications". */
@@ -207,6 +154,8 @@ export interface UserMenuProps {
   readonly onSignOut?: (() => Promise<void>) | undefined;
   /** The current page is My profile. */
   readonly profileCurrent?: boolean | undefined;
+  /** The person's photo, when they have one (initials otherwise). */
+  readonly photo?: string | undefined;
 }
 
 /** The avatar menu (Kawadir): picture, name and "Organization · Role"; My profile; sign out. */
@@ -217,6 +166,7 @@ export function UserMenu({
   texts,
   onSignOut,
   profileCurrent = false,
+  photo,
 }: UserMenuProps) {
   const [pending, startTransition] = useTransition();
   return (
@@ -225,19 +175,28 @@ export function UserMenu({
         className="flex min-h-10 items-center gap-3 rounded-xl px-1.5 text-start text-on-header transition-colors hover:bg-surface-hover pointer-coarse:min-h-11 md:px-2"
         data-testid="account-menu"
       >
-        <Avatar name={name} />
+        {/* Kawadir account chip: the picture with a green «online» dot (this is the signed-in person). */}
+        <span className="relative shrink-0">
+          <Avatar name={name} src={photo} />
+          <span
+            aria-hidden="true"
+            className="absolute -bottom-0.5 -end-0.5 size-3 rounded-full bg-success ring-2 ring-header"
+          />
+        </span>
         <span className="sr-only flex-col xl:not-sr-only xl:flex">
-          <span className="max-w-48 truncate text-sm font-medium leading-tight">{name}</span>
+          <span className="max-w-48 truncate text-sm font-medium leading-tight text-on-header-muted">
+            {name}
+          </span>
           <span className="max-w-60 truncate text-[11px] leading-tight text-on-header-muted">
             {subtitle}
           </span>
         </span>
-        <Icon name="chevron-down" className="hidden text-text-muted xl:block" />
+        <Icon name="chevron-end" className="hidden text-text-muted xl:block" />
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-64">
         <DropdownMenuHeader>
           <div className="flex items-center gap-3">
-            <Avatar name={name} size="md" />
+            <Avatar name={name} size="md" src={photo} />
             <div className="flex min-w-0 flex-col">
               <span className="truncate text-sm font-semibold">{name}</span>
               <span className="truncate text-xs text-text-muted">{subtitle}</span>

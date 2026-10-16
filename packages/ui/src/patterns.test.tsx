@@ -114,6 +114,17 @@ describe('Avatar', () => {
     expect(initialsOf('  ')).toBe('?');
     expect(renderToStaticMarkup(<Avatar name="Mona" />)).toContain('aria-hidden="true"');
   });
+
+  it('is on the brand gradient by default, soft in list rows, and shows a photo when there is one', () => {
+    expect(renderToStaticMarkup(<Avatar name="Mona" />)).toContain('bg-brand-gradient');
+    const soft = renderToStaticMarkup(<Avatar name="Mona Saeed" tone="soft" size="md" />);
+    expect(soft).toContain('bg-primary-subtle text-primary-text');
+    expect(soft).toContain('size-10');
+    expect(soft).toContain('>MS<');
+    const photo = renderToStaticMarkup(<Avatar name="Mona" src="/p.png" />);
+    expect(photo).toMatch(/<img src="\/p.png" alt=""/);
+    expect(photo).not.toContain('>M<');
+  });
 });
 
 describe('page patterns (Kawadir)', () => {
@@ -124,6 +135,24 @@ describe('page patterns (Kawadir)', () => {
     expect(html.match(/<h1/g)).toHaveLength(1);
     expect(html).toContain('text-2xl font-bold tracking-tight');
     expect(html).toContain('دعوة');
+  });
+
+  it('PageHeader sets a dashboard title in the brand gradient, one size up', () => {
+    const html = renderToStaticMarkup(<PageHeader title="الرئيسية" description="d" gradient />);
+    expect(html).toContain('text-brand-gradient');
+    expect(html).toContain('text-3xl');
+    expect(html).not.toContain('text-2xl');
+  });
+
+  it('Card shows a coloured icon before the title and ties the title to an id', () => {
+    const html = renderToStaticMarkup(
+      <Card title="المنشأة" description="d" icon="building" titleId="card-org">
+        x
+      </Card>,
+    );
+    expect(html).toMatch(/<h2 id="card-org"[^>]*>/);
+    expect(html).toMatch(/<svg[^>]*class="[^"]*text-primary-text"[^>]*aria-hidden="true"/);
+    expect(renderToStaticMarkup(<Card title="t">x</Card>)).not.toContain('<svg');
   });
 
   it('StatGrid is a labelled description list of label → figure', () => {
@@ -137,6 +166,88 @@ describe('page patterns (Kawadir)', () => {
     expect(html.match(/<dt/g)).toHaveLength(2);
     expect(html.match(/<dd/g)).toHaveLength(3);
     expect(html).toContain('text-success');
+  });
+
+  it('StatCard gradient: Kawadir KPI card in a vivid accent with icon tile, trend and sparkline', () => {
+    const html = renderToStaticMarkup(
+      <StatGrid label="ملخص">
+        <StatCard
+          variant="gradient"
+          accent="green"
+          label="نشط"
+          value="19"
+          icon="success"
+          trend={{ direction: 'up', label: '12% vs previous' }}
+          sparkline={[1, 3, 2, 5]}
+          hint="h"
+        />
+        <StatCard variant="gradient" label="brand" value="2" />
+      </StatGrid>,
+    );
+    expect(html).toContain('bg-stat-gradient-green text-on-stat');
+    // The default accent is the brand gradient, with the brand gradient's own text colour.
+    expect(html).toContain('bg-stat-gradient-brand text-on-nav-item-current');
+    expect(html).toContain('12% vs previous');
+    expect(html).toMatch(/<polyline[^>]*points="0.0,/);
+    expect(html.match(/<dt/g)).toHaveLength(2);
+    // The icon tile and the sparkline are decorative.
+    expect(html.match(/aria-hidden="true"/g)?.length).toBeGreaterThanOrEqual(3);
+    expect(html).not.toMatch(PHYSICAL);
+  });
+
+  it('StatCard gradient leaves out a sparkline of fewer than two values and an empty trend row', () => {
+    const one = renderToStaticMarkup(
+      <StatCard variant="gradient" accent="violet" label="l" value="1" sparkline={[4]} />,
+    );
+    expect(one).not.toContain('<polyline');
+    const plain = renderToStaticMarkup(
+      <StatCard variant="gradient" accent="blue" label="l" value="1" />,
+    );
+    expect(plain.match(/<dd/g)).toHaveLength(1);
+    const flat = renderToStaticMarkup(
+      <StatCard variant="gradient" accent="orange" label="l" value="1" sparkline={[0, 0]} />,
+    );
+    expect(flat).toContain('<polyline');
+  });
+
+  it('StatCard target: goal, progress bar with its value and words, clamped to 0–100', () => {
+    const html = renderToStaticMarkup(
+      <StatCard
+        variant="target"
+        label="Monthly hires"
+        value="2"
+        target="/ 10"
+        progress={20}
+        progressLabel="20% complete"
+        hint="h"
+      />,
+    );
+    expect(html).toContain('/ 10');
+    expect(html).toMatch(
+      /role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="20" aria-valuetext="20% complete" aria-label="Monthly hires"/,
+    );
+    expect(html).toContain('width:20%');
+    expect(html).toContain('20% complete');
+    const over = renderToStaticMarkup(
+      <StatCard variant="target" label={<b>x</b>} value="9" progress={140} />,
+    );
+    expect(over).toContain('aria-valuenow="100"');
+    expect(over).not.toContain('aria-label');
+    expect(renderToStaticMarkup(<StatCard variant="target" label="x" value="0" />)).toContain(
+      'aria-valuenow="0"',
+    );
+  });
+
+  it('StatCard plain shows a trend line; StatGrid takes three columns on request', () => {
+    const html = renderToStaticMarkup(
+      <StatGrid label="s" columns={3}>
+        <StatCard label="l" value="1" trend={{ direction: 'down', label: '-2' }} />
+        <StatCard label="l" value="1" trend={{ direction: 'flat', label: '0' }} />
+      </StatGrid>,
+    );
+    expect(html).toContain('xl:grid-cols-3');
+    expect(html).not.toContain('xl:grid-cols-4');
+    expect(html).toContain('-2');
   });
 
   it('TabNav marks the current view and counts are part of the link text', () => {

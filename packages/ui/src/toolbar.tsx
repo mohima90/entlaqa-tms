@@ -14,6 +14,9 @@ export function Toolbar({ className, ...props }: HTMLAttributes<HTMLDivElement>)
   );
 }
 
-/** Class names of a compact search or filter control in a toolbar (36 px, 44 px on touch screens). */
+/**
+ * Class names of a compact search or filter control in a toolbar (Kawadir Candidates: 36 px, rounded-xl,
+ * soft shadow; 44 px on touch screens). On a `<select>` add `select-chevron pe-10` for Kawadir's chevron.
+ */
 export const toolbarFieldClasses =
-  'min-h-9 w-full rounded-md border border-border-strong bg-surface px-3 text-sm text-text shadow-1 pointer-coarse:min-h-11';
+  'min-h-9 w-full rounded-xl border border-border-strong bg-surface px-3.5 text-sm text-text shadow-1 placeholder:text-text-subtle pointer-coarse:min-h-11';

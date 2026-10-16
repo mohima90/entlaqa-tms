@@ -103,17 +103,18 @@ export function CommandPalette({ items, texts, onNavigate }: CommandPaletteProps
         aria-keyshortcuts="Control+K Meta+K"
         data-testid="command-palette-trigger"
         className={cn(
-          'flex min-h-9 items-center gap-3 rounded-xl border border-border bg-surface-sunken text-text-muted transition-colors hover:border-border-strong hover:bg-surface-hover hover:text-text pointer-coarse:min-h-11',
+          // Kawadir search pill: 40 px, rounded-xl, a soft muted fill, the placeholder centred, ⌘K badge.
+          'flex min-h-9 items-center gap-3 rounded-xl border border-border bg-surface-hover/50 text-text-muted transition-colors hover:border-border-strong hover:bg-surface-hover hover:text-text pointer-coarse:min-h-11',
           'size-9 shrink-0 justify-center pointer-coarse:size-11 xl:h-10 xl:w-80 xl:shrink xl:justify-start xl:px-4',
         )}
       >
         <Icon name="search" />
-        <span className="sr-only xl:not-sr-only xl:flex-1 xl:text-start xl:text-sm">
+        <span className="sr-only xl:not-sr-only xl:flex-1 xl:text-center xl:text-sm">
           {texts.trigger}
         </span>
         <kbd
           aria-hidden="true"
-          className="hidden h-6 items-center gap-1 rounded-md border border-border bg-surface px-2 font-mono text-xs font-medium xl:inline-flex"
+          className="hidden h-6 items-center gap-1 rounded-md border border-border bg-surface px-2 font-mono text-[11px] font-medium xl:inline-flex"
           dir="ltr"
         >
           {apple ? '⌘' : 'Ctrl'} K

@@ -1,10 +1,15 @@
 import type { HTMLAttributes, ReactNode } from 'react';
 import { cn } from './cn';
+import { Icon, type IconName } from './icons';
 
 export interface CardProps extends Omit<HTMLAttributes<HTMLElement>, 'title'> {
   readonly title?: ReactNode;
   /** Heading level for the title (keeps the document outline correct). */
   readonly headingLevel?: 2 | 3;
+  /** The title's id (for `aria-labelledby`). */
+  readonly titleId?: string | undefined;
+  /** A decorative icon before the title, in the brand text colour (Kawadir «Company Information»). */
+  readonly icon?: IconName | undefined;
   /** One line under the title (Kawadir CardDescription). */
   readonly description?: ReactNode;
   /** Controls at the inline end of the title row (e.g. a section's save or "View all"). */
@@ -18,11 +23,15 @@ export interface CardProps extends Omit<HTMLAttributes<HTMLElement>, 'title'> {
 
 /**
  * A white card on the muted page (Kawadir): rounded-xl (16 px), hairline border, soft shadow, 24 px
- * padding; optional title, description and header actions. Settings pages use one card per section.
+ * padding; optional header — a coloured icon, the bold title and a muted line under it (Kawadir
+ * Branding: «Company Information» / "Basic information about your organization") — and header actions.
+ * Settings pages use one card per section.
  */
 export function Card({
   title,
   headingLevel = 2,
+  titleId,
+  icon,
   description,
   actions,
   flush = false,
@@ -50,7 +59,11 @@ export function Card({
         >
           <div className="flex min-w-0 flex-col gap-1">
             {title ? (
-              <Heading className="m-0 text-lg font-semibold leading-tight tracking-tight">
+              <Heading
+                id={titleId}
+                className="m-0 flex items-center gap-2 text-lg font-semibold leading-tight tracking-tight"
+              >
+                {icon ? <Icon name={icon} className="size-5 text-primary-text" /> : null}
                 {title}
               </Heading>
             ) : null}

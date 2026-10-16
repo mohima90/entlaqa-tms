@@ -158,6 +158,120 @@ export const TeamMembersList: Story = {
   ),
 };
 
+/**
+ * Summary cards in their three Kawadir variants (Analytics): white target cards with a progress bar,
+ * vivid gradient KPI cards (violet, green, orange, blue; white text checked on both ends of each
+ * gradient) with a trend line and a decorative sparkline, and the small plain cards.
+ */
+export const SummaryCards: Story = {
+  render: (_args, { globals }) => (
+    <div className="flex flex-col gap-6 bg-bg p-6">
+      <StatGrid label={pick(globals, { ar: 'الأهداف', en: 'Targets' })} columns={3}>
+        <StatCard
+          variant="target"
+          label={pick(globals, { ar: 'الحضور هذا الشهر', en: 'Attendance this month' })}
+          value="2"
+          target="/ 10"
+          progress={20}
+          progressLabel={pick(globals, { ar: 'اكتمل 20٪', en: '20% complete' })}
+        />
+        <StatCard
+          variant="target"
+          label={pick(globals, { ar: 'الجلسات المكتملة', en: 'Sessions completed' })}
+          value="0"
+          target="/ 50"
+          progress={0}
+          progressLabel={pick(globals, { ar: 'اكتمل 0٪', en: '0% complete' })}
+        />
+        <StatCard
+          variant="target"
+          label={pick(globals, { ar: 'الشهادات الصادرة', en: 'Certificates issued' })}
+          value="8"
+          target="/ 100"
+          progress={8}
+          progressLabel={pick(globals, { ar: 'اكتمل 8٪', en: '8% complete' })}
+        />
+      </StatGrid>
+      <StatGrid label={pick(globals, { ar: 'المؤشرات', en: 'Key figures' })}>
+        <StatCard
+          variant="gradient"
+          accent="violet"
+          label={pick(globals, { ar: 'إجمالي التسجيلات', en: 'Total enrolments' })}
+          value="8"
+          icon="sessions"
+          trend={{
+            direction: 'up',
+            label: pick(globals, { ar: '0٪ مقارنة بالفترة السابقة', en: '0% vs previous' }),
+          }}
+          sparkline={[0, 0, 0, 2, 0, 0]}
+        />
+        <StatCard
+          variant="gradient"
+          accent="green"
+          label={pick(globals, { ar: 'مكتمل هذا الشهر', en: 'Completed this month' })}
+          value="2"
+          icon="success"
+          trend={{
+            direction: 'up',
+            label: pick(globals, { ar: '0٪ مقارنة بالفترة السابقة', en: '0% vs previous' }),
+          }}
+          sparkline={[1, 1, 1, 1]}
+        />
+        <StatCard
+          variant="gradient"
+          accent="orange"
+          label={pick(globals, { ar: 'متوسط مدة الإكمال', en: 'Avg. time to complete' })}
+          value={pick(globals, { ar: '14 يومًا', en: '14 days' })}
+          icon="calendar"
+          trend={{
+            direction: 'flat',
+            label: pick(globals, { ar: '0٪ مقارنة بالفترة السابقة', en: '0% vs previous' }),
+          }}
+        />
+        <StatCard
+          variant="gradient"
+          accent="blue"
+          label={pick(globals, { ar: 'نسبة الحضور', en: 'Attendance rate' })}
+          value="0%"
+          icon="people"
+          trend={{
+            direction: 'down',
+            label: pick(globals, { ar: '0٪ مقارنة بالفترة السابقة', en: '0% vs previous' }),
+          }}
+          sparkline={[0, 0, 1, 3]}
+        />
+      </StatGrid>
+      <StatGrid label={pick(globals, { ar: 'ملخص', en: 'Summary' })}>
+        <StatCard
+          variant="gradient"
+          label={pick(globals, { ar: 'بألوان المنشأة', en: 'In the brand colours' })}
+          value="24"
+          icon="building"
+          hint={pick(globals, {
+            ar: 'هوية المنشأة تستبدلها',
+            en: "An organization's branding replaces it",
+          })}
+        />
+        <StatCard
+          label={pick(globals, { ar: 'الإجمالي', en: 'Total' })}
+          value="8"
+          trend={{
+            direction: 'up',
+            label: pick(globals, { ar: '+2 هذا الأسبوع', en: '+2 this week' }),
+          }}
+        />
+        <StatCard label={pick(globals, { ar: 'جديد', en: 'New' })} value="0" tone="primary" />
+        <StatCard
+          label={pick(globals, { ar: 'تم التوظيف', en: 'Hired' })}
+          value="0"
+          tone="success"
+          hint={pick(globals, { ar: 'هذا الشهر', en: 'This month' })}
+        />
+      </StatGrid>
+    </div>
+  ),
+};
+
 /** Nothing to show yet: icon, title, one line, the primary action (inside a card). */
 export const Empty: Story = {
   render: (_args, { globals }) => (

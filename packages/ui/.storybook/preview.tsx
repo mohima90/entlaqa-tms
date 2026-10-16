@@ -24,12 +24,15 @@ function LocaleThemeFrame({
   theme,
   brand,
   brandCss,
+  bare = false,
   children,
 }: {
   readonly locale: Locale;
   readonly theme: Theme;
   readonly brand: BrandId;
   readonly brandCss: string;
+  /** `bare`: no padding around the story (full pages in the app shell). */
+  readonly bare?: boolean;
   readonly children: ReactNode;
 }) {
   // Layout effect: applied before paint, so neither a person nor axe ever sees the previous direction.
@@ -51,7 +54,7 @@ function LocaleThemeFrame({
     layer.textContent = brandCss;
     document.head.append(layer); // always last: wins over the shipped theme
   }, [locale, theme, brand, brandCss]);
-  return <div className="bg-bg p-6 text-text">{children}</div>;
+  return <div className={bare ? 'bg-bg text-text' : 'bg-bg p-6 text-text'}>{children}</div>;
 }
 
 const withLocaleAndTheme: Decorator = (Story, context) => {
@@ -62,6 +65,7 @@ const withLocaleAndTheme: Decorator = (Story, context) => {
       theme={context.globals.theme === 'dark' ? 'dark' : 'light'}
       brand={brand.id}
       brandCss={brand.css}
+      bare={context.parameters.frame === 'bare'}
     >
       <Story />
     </LocaleThemeFrame>

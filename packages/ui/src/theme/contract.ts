@@ -73,6 +73,17 @@ export const COLOR_ROLES = [
   'on-nav-item-current',
   /** Focus ring inside the navigation (it sits on the nav colours, not on the page). */
   'nav-focus-ring',
+  // Summary cards (Kawadir KPI cards): four vivid gradients (135°) from `stat-<hue>` to
+  // `stat-<hue>-end`, with `on-stat` text. Fixed hues: an organization's colours never replace them.
+  'stat-violet',
+  'stat-violet-end',
+  'stat-green',
+  'stat-green-end',
+  'stat-orange',
+  'stat-orange-end',
+  'stat-blue',
+  'stat-blue-end',
+  'on-stat',
 ] as const;
 export type ColorRole = (typeof COLOR_ROLES)[number];
 
@@ -230,4 +241,17 @@ export const CONTRAST_PAIRS: readonly ContrastPair[] = [
   pair('on-nav-muted', 'nav-item-hover', 'text'),
   pair('on-nav-item-current', 'nav-item-current', 'text'),
   pair('on-nav-item-current', 'nav-item-current-end', 'text'),
+  // Summary cards: their text (label, figure, trend line) is checked on BOTH ends of every gradient.
+  ...(
+    [
+      'stat-violet',
+      'stat-violet-end',
+      'stat-green',
+      'stat-green-end',
+      'stat-orange',
+      'stat-orange-end',
+      'stat-blue',
+      'stat-blue-end',
+    ] as const
+  ).map((bg) => pair('on-stat', bg, 'on-fill')),
 ];

@@ -2,6 +2,42 @@
 
 Shared contract for the parallel build of T-M2-07 (FR-IAM-03; screens 2, 7, 8, 9 in `docs/design/screens/m2-users-roles/`). Each track builds against the names and shapes below; changes go through the tech lead. Once T-M2-07 is merged this file becomes the design record (moved into ADR implementation notes).
 
+## 0. Revision 2 — invitation codes, as Kawadir ATS (PO decision 16 Oct 2026)
+
+> "Implement what is in Kawadir ATS for sign-in and invitation exactly. No need to send e-mail — a copyable link like Kawadir." Migration `20261018090000_platform__invitation_codes.sql`. Where §§1–5 below differ, this section wins.
+
+| | Before (rev. 1) | Now (rev. 2) |
+|---|---|---|
+| Link secret | 43-character token (32 random bytes) issued by the **mailer job**; only its SHA-256 stored | **8-character code** of `ABCDEFGHJKLMNPQRSTUVWXYZ23456789` (40 random bits, `gen_random_uuid()`'s strong bytes) issued by the **database** when inviting and on resend; stored as `invite_code` **and** `token_hash = sha256(code)` (the hook, link lookup and acceptance keep using the hash) |
+| Who sees it | Only the e-mail | The members who may **manage** that invitation, at any time: Organization Admin all; HR Manager only invitations without a privileged role (per-row rule of inviting) — through `private.invitation_codes()`; never readable from the table by `authenticated` (no column grant); `token_hash` unreadable as before |
+| Link | `/{locale}/invite/accept#token=…` | `/{locale}/sign-up#code=CODE` (fragment, review M3); the old route forwards `#token=` links to it in the browser |
+| E-mail | Required for the invitee to get the link | **Optional**: the mailer (when e-mail is on) e-mails the *current* code's link (`private.invitation_code_for_mail`, app_worker system claims) and changes nothing |
+| Resend | Request; the mailer issued a new token | `private.issue_invitation_code`: **new code, old one stops working, 7 more days**; at most 4 codes (first + 3 resends); copying is not a resend |
+| Import invitations | Mailer issued the first token on release | The **release** (lifecycle trigger, worker) issues the first code — «إرسال الدعوات (N)» gives codes without e-mail |
+| Lookups | Per client and per link; failed open | Per client and per code (its hash), **plus unknown codes per client** (20 per 15 min, shared clients 500; real invitations give their miss back) on every invitation action; **fail closed** |
+
+### Database (`20261018090000`)
+
+- `platform.invitations.invite_code text` — check `^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8}$` and `token_hash = sha256(convert_to(invite_code,'UTF8'))`; unique (`invitations_invite_code_uq`). `UPDATE (token_hash)` revoked from `authenticated` (the request path writes no token hash; the mailer issues none).
+- `private.issue_invitation_code(id) → text` (SECURITY DEFINER, owner `invitation_guard`): `session_user = app_server`, user claims validated by `private.current_tenant_id()`, tenant role lock, the invitation of that tenant pending and sent (not held), actor = `private.invitation_inviter_may_grant(tenant, caller, roles)` (Organization Admin; HR Manager for ordinary roles), `send_count < 4`; retries a code collision. Errors: `42501` (caller/actor) → `ROLE_NOT_ALLOWED`, `JI004` → `limit_reached`, `JI005` → `not_pending`. The lifecycle trigger lets only `invitation_guard` (or a platform operation) set `invite_code` and derives `token_hash`, `token_issued_at`, `send_count + 1`, `expires_at = now() + 7 days` from it.
+- `private.invitation_codes(ids uuid[] default null) → (invitation_id, invite_code)` — same caller check; pending, sent invitations of the caller's tenant the caller may manage (per row).
+- `private.invitation_code_for_mail(id) → text` — `session_user = app_worker`, system claims of an active tenant; pending, sent invitations only.
+- `private.new_invitation_code()` — SECURITY INVOKER generator (no table access); used by the issuer and by the trigger on release.
+- Sign-up gate: `before_user_created_hook` / `invitation_allows_signup` accept an 8-character code (exact case) or a legacy 43-character token; everything else as §4.
+- Tests: `92_invitation_codes_app_server.sql` (issue/rotate/read; HR vs privileged; learner; other tenant; forged tenant claim; expired session; no claims; revoked/accepted/unknown; limit 4; rotation invalidates the old code; legacy token replaced), `93_invitation_codes_app_worker.sql` (mailer read only), `94_invitation_codes_owner.sql` (generator alphabet and spread, constraints, uniqueness, the hook with codes, rotation at the gate), adapted `36`, `37`, `88`; catalog and `verify-deployment.sql` list the new definer functions and column privileges.
+
+### Web
+
+- Admin (`/[locale]/suite/admin/users/invite`): after inviting, a panel with the **code (Copy code)** and **Copy invite link** (`${window.location.origin}/${invitation locale}/sign-up#code=…`), "Go to invited users", "Invite another user". Invited tab: Kawadir pending-invite rows with the code chip, copy code / copy link (announced in an `aria-live` status), «إعادة إرسال الدعوة» (new code) and «إلغاء الدعوة». The actions return the code to the member only; audit records never carry it.
+- Invitee (`/[locale]/sign-up`, Kawadir's "join" screen): the code from the fragment (read, removed from the address bar, locked) or typed (upper-cased, looked up once complete, 500 ms pause); organization name; the invited e-mail filled in and locked; display names; password + confirmation with the live rules; privacy acknowledgement; «انضم إلى {organization}» → hook-gated sign-up → acceptance → signed in (as §1 step 5). "Already have an account? Sign in" and the "sign in to accept" / "accept as the signed-in invitee" paths unchanged. Sign-in page: «لديك رمز دعوة؟ انضم بالرمز» → `/sign-up`.
+- `Referrer-Policy: no-referrer` for `/:locale/sign-up` (and `/:locale/invite/*`).
+
+### Security trade-offs (for the security review)
+
+1. **The code is a bearer credential visible to managers.** With "Confirm email" off, whoever holds a valid code can create the invitee's account with a password of their choice (the hook still binds the code to the invitation's e-mail). That is Kawadir's model and the PO's decision; it is limited to the members who may manage that invitation (an HR Manager never sees the code of a privileged invitation), and the acceptance still re-checks inviter authority, person, tenant and e-mail.
+2. **40 bits instead of 256.** Brute force is bounded by the unknown-code budget per client (20 / 15 min, fail closed) on every invitation action, the per-code and per-client lookup budgets, Auth's own sign-up limits, the e-mail binding at the gate and the 7-day life of a code.
+3. **The code is stored in clear** (`invite_code`) so it can be copied at any time; `token_hash` remains the lookup key. Codes are excluded from audit data and logs; the queued e-mail carries it until sent (content removed then, as before).
+
 ## 1. Flow
 
 1. **Invite** (web, `defineAction`, permission `platform.user.invite`): in the user's transaction create the person (+ employment), the invitation (`pending`, no token yet, `expires_at = now() + 7 days`) and emit `com.entlaqa.platform.invitation.created` (subject = invitation id, no data). Audit `platform.invitation.created`.

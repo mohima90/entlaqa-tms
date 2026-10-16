@@ -81,6 +81,18 @@ Credentials entered on these pages (e-mail provider keys, SMTP passwords) are wr
 | Organization Admin (Arabic) | «مدير المنظمة» | «مدير المنشأة» | **Proposed, pending PO confirmation**; glossary updated after the decision |
 | Product footer | "Powered by Kawadir" | "Powered by Jadarat" | Adopted |
 
-## 8. What does not change
+## 8. Sign-in and invitations (PO, 16 Oct 2026)
+
+"Implement what is in Kawadir ATS for sign-in and invitation **exactly**; no e-mail needed — a copyable link like Kawadir." Built in FR-IAM-03 (migration `20261018090000`, design record `docs/engineering/invitations-contract.md` §0):
+
+| Kawadir | Jadarat TMS |
+|---|---|
+| Login: split page — form column (logo, portal line, «Welcome back», glass card) and a brand panel; **e-mail first, then the way in**; «Forgot?» next to the password label; floating language switch | `/[locale]/sign-in` in the same layout (`components/auth/auth-shell.tsx`, Jadarat tokens); password only for now — the e-mailed code joins with the platform sender; the last method is remembered per browser. All sign-in protection (T-M2-11), MFA (T-M2-10) and non-disclosing errors unchanged |
+| Forgot / reset password: form column + half-width brand panel | `/[locale]/forgot-password`, `/[locale]/reset-password` restyled; behaviour unchanged (T-M2-08) |
+| Team → *Pending invites*: 8-character code (`ABCDEFGHJKLMNPQRSTUVWXYZ23456789`, 7 days), **Copy code**, **Copy invite link**, regenerate (resend), cancel | Users → *Invited* tab rows in the same layout; a panel with the code and the link right after inviting; codes issued by the database, readable only by members who may manage the invitation |
+| `/signup?code=…`: code locked when it came with the link, organization, e-mail pre-filled and locked, name, password | `/[locale]/sign-up#code=…` (the code in the **fragment**, never in server logs); typed codes too; display names AR/EN, password rules and privacy acknowledgement as before |
+| Existing account: sign in, then "Join with invite" | "Sign in to accept" on the same page (unchanged) |
+
+## 9. What does not change
 
 Tenant isolation, RLS and authorization rules; the AR/EN copy process (UX-writer review, glossary); English as the default language for now (PO, 14 Oct 2026) with Arabic fully supported; the self-hosted (sovereign) build; WCAG 2.2 AA in both languages.

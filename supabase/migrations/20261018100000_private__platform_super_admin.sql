@@ -189,9 +189,9 @@ create policy invitations_platform_admin_guard_insert on platform.invitations fo
 -- Only the console's own invitations (security review L4): never an organization's other invitations.
 create policy invitations_platform_admin_guard_update on platform.invitations for update to platform_admin_guard
   using (status = 'pending' and primary_role = 'tenant_admin' and not mail_held
-         and exists (select 1 from private.platform_invitations pi where pi.invitation_id = id))
+         and exists (select 1 from private.platform_invitations pi where pi.invitation_id = invitations.id))
   with check (primary_role = 'tenant_admin' and not mail_held
-              and exists (select 1 from private.platform_invitations pi where pi.invitation_id = id));
+              and exists (select 1 from private.platform_invitations pi where pi.invitation_id = invitations.id));
 grant select (id, tenant_id, person_id, email, locale, primary_role, additional_roles, status, mail_held,
               invite_code, send_count, expires_at, invited_by, created_at)
   on platform.invitations to platform_admin_guard;

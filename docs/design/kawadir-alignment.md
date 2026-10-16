@@ -21,11 +21,13 @@ The PO wants the two ENTLAQA products to look and behave alike, so that customer
 | Radius | Cards and inputs `rounded-xl`; base radius **0.75rem** | Update `docs/design/tokens/` and the Tailwind preset |
 | Shadows | Soft, low-contrast shadows on cards | Replace heavier elevation levels |
 | Page background | Muted (light grey) behind white cards | Same in dark mode with the dark muted surface |
-| Brand gradient | **135°** from primary to secondary colour | Used on the selected sidebar item and primary accents; the organization's colours replace Jadarat's (FR-ADM-07 "use gradient" switch) |
+| Brand gradient | **135°** from primary to secondary colour | **Jadarat by default: slate `#2F4858` → steel `#33658A`** (dark mode: sky `#86BBD8` → light steel `#5E95BD`, very dark text). One gradient for the selected sidebar item, primary buttons, summary (KPI) cards, avatar, dashboard title and sign-in panel; the organization's colours replace it everywhere (FR-ADM-07 "use gradient" switch) |
 | Components | shadcn/ui, style *new-york* | Our `packages/ui` wraps the same primitives; keep the axe-gated Storybook (CI gate 8) |
 | Theme | Light, dark and **system** | Add "system" to the existing light/dark switch |
 
 Contrast stays enforced by the existing token tests (WCAG 2.2 AA for every theme and organization colour).
+
+**Colours are Jadarat's, not Kawadir's (PO, 16 Oct 2026).** Kawadir's reference screenshots carry **one tenant's branding** (its blue → orange gradient and violet / green / orange / blue summary cards); they are references for layout, shape, spacing and shadow only. Jadarat TMS uses the **Jadarat palette** (Meridian, approved 14 Oct 2026) by default — one hue family, no mixed colours — and each organization's own colours replace it (FR-ADM-07, `deriveOrganizationBrand`). Amber and orange keep only their accent roles (charts, warnings, the focus ring on the navigation); green, amber and red appear only with a status meaning (success / warning / danger badges and alerts, the online dot).
 
 ## 3. Layout (app shell)
 
@@ -33,7 +35,7 @@ Contrast stays enforced by the existing token tests (WCAG 2.2 AA for every theme
 
 **Top bar** — sticky, on the page background; page title; **⌘K / Ctrl K command palette** (search pill, placeholder centred); theme (light / dark / system); language toggle (globe icon, English ⇄ العربية); notification bell; account chip (photo or initials, online dot, name and "**Organization · Role**", chevron) opening My profile and sign-out. No full-screen toggle (Kawadir's screens have none; removed in the visual polish, 16 Oct 2026).
 
-**Visual polish (PO, 16 Oct 2026)** — values copied from Kawadir's screens, colours from our tokens: the vivid brand gradient (deep sky → deep orange; an organization's colours replace it) with a coloured glow on the selected item and primary buttons; the organization's logo — or its name as a gradient wordmark — in a 96 px logo area; vivid summary cards (violet, green, orange, blue `stat-*` tokens, white text ≥ 4.5 : 1) plus white target cards with a progress bar; pill inputs; card headers with a coloured icon; gradient dashboard title. Storybook «Pages/Organization Admin» shows the screens with sample data.
+**Visual polish (PO, 16 Oct 2026)** — values copied from Kawadir's screens, colours from our tokens: the Jadarat brand gradient (slate → steel; an organization's colours replace it) with a glow tinted from it on the selected item and primary buttons; the organization's logo — or its name as a gradient wordmark — in a 96 px logo area; summary (KPI) cards on the same brand gradient (white text ≥ 4.5 : 1 on both ends; no fixed hues — they follow the organization's colours too) plus white target cards with a progress bar; pill inputs; card headers with an icon in the brand text colour; gradient dashboard title. Storybook «Pages/Organization Admin» shows the screens with sample data.
 
 ## 4. Page patterns
 

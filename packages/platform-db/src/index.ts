@@ -68,9 +68,13 @@ export {
   unlockMemberSignIn,
 } from './sign-in-lock';
 export {
+  INVITATION_CODE_ALPHABET,
+  INVITATION_CODE_PATTERN,
   INVITATION_EVENTS,
   INVITATION_MAX_SENDS,
+  LEGACY_INVITATION_TOKEN_PATTERN,
   type InvitationErrorCode,
+  type InvitationResend,
   type InvitationRow,
   type InvitationState,
   type InvitationTokenApi,
@@ -83,6 +87,7 @@ export {
   hashInvitationToken,
   invitationByToken,
   listInvitations,
+  normalizeInvitationCode,
   requestInvitationResend,
   revokeInvitation,
 } from './invitations';

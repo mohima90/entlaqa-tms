@@ -36,7 +36,8 @@ export { type AuthLimits, PLATFORM_AUTH_LIMITS, type SignInLimits } from './auth
  *   password      My profile's current-password check: per user.
  *   reset         requests per client, then (allowed client only) per account; new-password submissions
  *                 per client (T-M2-08 numbers, now shared by every instance).
- *   invitations   link lookups and new-account sign-ups per client.
+ *   invitations   link lookups and new-account sign-ups per link and per client; unknown invitation codes
+ *                 per client (codes are 8 characters: a client guessing them is stopped after a few misses).
  *
  * Keys: the typed e-mail (trimmed, NFC, lower-cased as Auth does — accountSubject), the client's address (IPv6 by its /64; apps/suite
  * lib/client-ip.ts), the user id or the browser's random token — each hashed here with SHA-256 under a
@@ -50,8 +51,9 @@ export { type AuthLimits, PLATFORM_AUTH_LIMITS, type SignInLimits } from './auth
  * password check, reset completions and new-account sign-ups FAIL CLOSED (RateLimiterUnavailableError →
  * the generic internal error with a correlation id; nothing reaches Auth); a reset request is treated as
  * limited (same answer, no e-mail); recording a success, giving a failure back after Auth's 429, the
- * lockout e-mail request, the unlock after a reset, forgetting the other browsers after a password change
- * and invitation link lookups fail open (logged) — they decide nothing about a credential.
+ * lockout e-mail request, the unlock after a reset and forgetting the other browsers after a password
+ * change fail open (logged) — they decide nothing about a credential. Invitation link lookups fail CLOSED
+ * since links carry 8-character codes (a lookup is a guess at a credential).
  */
 
 /** The visitor's rate-limit key: its address (IPv6 /64) when the platform gives a trusted one, else null. */
@@ -174,6 +176,7 @@ export const LIMIT_BUCKETS = {
   invitationLookupInvitation: 'invitation.lookup_invitation',
   invitationSignUpClient: 'invitation.sign_up_client',
   invitationSignUpInvitation: 'invitation.sign_up_invitation',
+  invitationCodeMissesClient: 'invitation.code_misses_client',
   mfaCodeAccount: 'mfa_code.account_failures',
   mfaCodeReset: 'mfa_code.reset_failures',
   mfaCodeClient: 'mfa_code.client_failures',
@@ -1175,12 +1178,19 @@ export function createPasswordResetLimiter(
  */
 export interface InvitationLimiter {
   /**
-   * Link lookups per link and client (`tokenHash` null for a malformed link: the client only). Fails OPEN
-   * when the limiter fails (logged): a lookup checks no credential.
+   * Link lookups per link and client (`tokenHash` null for a malformed link: the client only). Fails
+   * CLOSED (throws RateLimiterUnavailableError, logged) since links carry guessable 8-character codes.
    */
   allowLookup(tokenHash: Buffer | null): Promise<boolean>;
   /** New-account sign-ups per link and client (each one is an Auth call). Throws when the limiter fails. */
   allowSignUp(tokenHash: Buffer): Promise<boolean>;
+  /**
+   * Before a code reaches the database (any invitation action): counts a provisional miss for the client
+   * — false when it has used up its misses. Throws when the limiter fails (fail closed).
+   */
+  allowCodeAttempt(): Promise<boolean>;
+  /** The code was a real invitation's (whatever its state): its provisional miss is given back (fail open). */
+  codeFound(): Promise<void>;
 }
 
 export function createInvitationLimiter(
@@ -1208,20 +1218,37 @@ export function createInvitationLimiter(
   };
   return {
     async allowLookup(tokenHash) {
-      try {
-        const client = await deps.store.hit(
+      const client = await failClosed(deps, deps.lookupAction, () =>
+        deps.store.hit(
           B.invitationLookupClient,
           clientKey,
           shared ? limits.sharedClientLookups : limits.lookupsPerClient,
-        );
-        if (!verdict(deps.lookupAction, B.invitationLookupClient, client)) return false;
-        if (tokenHash === null) return true;
-        const link = await deps.store.hit(
+        ),
+      );
+      if (!verdict(deps.lookupAction, B.invitationLookupClient, client)) return false;
+      if (tokenHash === null) return true;
+      const link = await failClosed(deps, deps.lookupAction, () =>
+        deps.store.hit(
           B.invitationLookupInvitation,
           invitationSubject(tokenHash),
           limits.lookupsPerInvitation,
-        );
-        return verdict(deps.lookupAction, B.invitationLookupInvitation, link);
+        ),
+      );
+      return verdict(deps.lookupAction, B.invitationLookupInvitation, link);
+    },
+    async allowCodeAttempt() {
+      const misses = await failClosed(deps, deps.lookupAction, () =>
+        deps.store.hit(
+          B.invitationCodeMissesClient,
+          clientKey,
+          shared ? limits.sharedClientCodeMisses : limits.codeMissesPerClient,
+        ),
+      );
+      return verdict(deps.lookupAction, B.invitationCodeMissesClient, misses);
+    },
+    async codeFound() {
+      try {
+        await deps.store.giveBack(B.invitationCodeMissesClient, clientKey);
       } catch (error) {
         deps.log({
           event: 'auth.limiter.unavailable',
@@ -1229,7 +1256,6 @@ export function createInvitationLimiter(
           reason: 'fail_open',
           errorName: errorNameOf(error),
         });
-        return true;
       }
     },
     async allowSignUp(tokenHash) {

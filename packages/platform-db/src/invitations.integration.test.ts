@@ -1,16 +1,19 @@
 /**
- * Invitations end to end against PostgreSQL (T-M2-07, FR-IAM-03): invite (withUserTx) → the mailer job
- * issues a token (withSystemTx) → the public page looks the link up (app_server without claims) → Auth's
- * sign-up hook admits the e-mailed token for that e-mail only → the new account accepts it with its own
- * session → used; revoke; resend limit; acceptance by a signed-in existing account.
+ * Invitations end to end against PostgreSQL (T-M2-07, FR-IAM-03; codes: migration 20261018090000) —
+ * invite (withUserTx: the database issues the first code) → the mailer job reads that code
+ * (withSystemTx) → the public page looks the link up (app_server without claims) → Auth's sign-up hook
+ * admits the code for that e-mail only → the new account accepts it with its own session → used; revoke;
+ * resend = a new code (limit 4); copying codes per the managing rules; acceptance by a signed-in existing
+ * account.
  */
-import { randomBytes, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { brandVerifiedClaims } from '@jadarat/platform-core/internal/verified-claims';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createDatabase } from './client';
 import { isDomainError } from './domain-error';
 import {
+  INVITATION_CODE_PATTERN,
   type NewInvitation,
   acceptInvitationAsCaller,
   createInvitation,
@@ -23,7 +26,7 @@ import {
 import {
   createWithSystemTx,
   invitationActorMayManage,
-  issueInvitationToken,
+  invitationCodeForMail,
   loadInvitationForMail,
 } from './jobs';
 import { createWithUserTx } from './with-user-tx';
@@ -79,13 +82,15 @@ describe.skipIf(!configured)('invitations against PostgreSQL', () => {
     ...over,
   });
 
-  /** What the mailer job does: a random token, its hash stored. */
+  /** What the mailer job reads: the invitation's current code (null: nothing to e-mail). */
   const mail = (invitationId: string) =>
-    withSystemTx({ tenantId: tenant, jobId: `platform.invitations.mailer:${tag}` }, async (tx) => {
-      const token = randomBytes(32).toString('base64url');
-      const issued = await issueInvitationToken(tx, invitationId, hashInvitationToken(token));
-      return issued ? { token, expiresAt: issued.expiresAt } : null;
-    });
+    withSystemTx({ tenantId: tenant, jobId: `platform.invitations.mailer:${tag}` }, (tx) =>
+      invitationCodeForMail(tx, invitationId),
+    );
+  const resend = async (m: ReturnType<typeof member>, invitationId: string) => {
+    const outcome = await withUserTx(claimsOf(m), (tx) => requestInvitationResend(tx, invitationId));
+    return outcome;
+  };
 
   const failureOf = (promise: Promise<unknown>) =>
     promise.then(() => null).catch((e: unknown) => e);
@@ -114,11 +119,12 @@ describe.skipIf(!configured)('invitations against PostgreSQL', () => {
     await workerDb.$client.end();
   });
 
-  it('invite → e-mail token → valid link → new account accepts → used', async () => {
+  it('invite → code → e-mail → valid link → new account accepts → used', async () => {
     const email = `sara-${tag}@example.test`;
     const created = await withUserTx(claimsOf(hr), (tx) =>
       createInvitation(tx, newInvitation(email)),
     );
+    expect(created.inviteCode).toMatch(INVITATION_CODE_PATTERN);
     const [event] = await owner<
       { n: number }[]
     >`select count(*)::int as n from platform.event_outbox
@@ -131,7 +137,7 @@ describe.skipIf(!configured)('invitations against PostgreSQL', () => {
     expect(forMail).toMatchObject({
       id: created.invitationId,
       status: 'pending',
-      sendCount: 0,
+      sendCount: 1,
       email,
       locale: 'ar',
       personId: created.personId,
@@ -140,13 +146,21 @@ describe.skipIf(!configured)('invitations against PostgreSQL', () => {
       organizationName: { ar: 'منشأة الدعوات', en: 'Invitations Org' },
       primaryRole: 'learner',
     });
-
-    const sent = await mail(created.invitationId);
-    expect(sent).not.toBeNull();
-    const days = ((sent?.expiresAt.getTime() ?? 0) - Date.now()) / 86_400_000;
+    const days = ((forMail?.expiresAt.getTime() ?? 0) - Date.now()) / 86_400_000;
     expect(days).toBeGreaterThan(6.9);
     expect(days).toBeLessThanOrEqual(7);
-    const hash = hashInvitationToken(sent?.token ?? '');
+
+    // The mailer e-mails the code the inviter can copy (one and the same).
+    await expect(mail(created.invitationId)).resolves.toBe(created.inviteCode);
+    const sent = { token: created.inviteCode };
+    const hash = hashInvitationToken(sent.token);
+    // The inviter (and the Organization Admin) see it on the list; it was not issued again.
+    const listed = await withUserTx(claimsOf(admin), (tx) => listInvitations(tx, { state: 'pending' }));
+    expect(listed.find((r) => r.id === created.invitationId)).toMatchObject({
+      inviteCode: created.inviteCode,
+      locale: 'ar',
+      sendCount: 1,
+    });
 
     await expect(tokens.invitationByToken(hash)).resolves.toEqual({
       state: 'valid',
@@ -158,6 +172,9 @@ describe.skipIf(!configured)('invitations against PostgreSQL', () => {
     await expect(tokens.invitationByToken(hashInvitationToken('guess'))).resolves.toEqual({
       state: 'invalid',
     });
+    await expect(
+      tokens.invitationByToken(hashInvitationToken(sent.token.toLowerCase())),
+    ).resolves.toEqual({ state: 'invalid' });
 
     // The invitee signs up through the public Auth API with the e-mailed (raw) token in the metadata:
     // Auth's before-user-created hook admits exactly that e-mail with exactly that token.
@@ -177,8 +194,9 @@ describe.skipIf(!configured)('invitations against PostgreSQL', () => {
         return row?.answer;
       });
     const deny = { error: { http_code: 403, message: 'Sign-up is by invitation only.' } };
-    await expect(hook(email, sent?.token ?? '')).resolves.toEqual({});
-    await expect(hook(`someone-${tag}@example.test`, sent?.token ?? '')).resolves.toEqual(deny);
+    await expect(hook(email, sent.token)).resolves.toEqual({});
+    await expect(hook(`someone-${tag}@example.test`, sent.token)).resolves.toEqual(deny);
+    await expect(hook(email, sent.token.toLowerCase())).resolves.toEqual(deny);
     await expect(hook(email, hash.toString('hex'))).resolves.toEqual(deny);
 
     // Auth created the account and its session; the web app accepts with that session.
@@ -193,7 +211,8 @@ describe.skipIf(!configured)('invitations against PostgreSQL', () => {
     const newUser = newcomer.user;
 
     await expect(tokens.invitationByToken(hash)).resolves.toEqual({ state: 'used' });
-    await expect(hook(email, sent?.token ?? '')).resolves.toEqual(deny);
+    await expect(hook(email, sent.token)).resolves.toEqual(deny);
+    await expect(mail(created.invitationId)).resolves.toBeNull();
     const again = await failureOf(
       withUserTx(claimsOf(newcomer, null), (tx) => acceptInvitationAsCaller(tx, hash)),
     );
@@ -259,19 +278,17 @@ describe.skipIf(!configured)('invitations against PostgreSQL', () => {
     const { invitationId } = await withUserTx(claimsOf(hr), (tx) =>
       createInvitation(tx, newInvitation(email)),
     );
-    const sent = await mail(invitationId);
+    const code = await mail(invitationId);
     await expect(
       withUserTx(claimsOf(hr), (tx) => revokeInvitation(tx, invitationId)),
     ).resolves.toBe(true);
     await expect(
       withUserTx(claimsOf(hr), (tx) => revokeInvitation(tx, invitationId)),
     ).resolves.toBe(false);
-    const hash = hashInvitationToken(sent?.token ?? '');
+    const hash = hashInvitationToken(code ?? '');
     await expect(tokens.invitationByToken(hash)).resolves.toEqual({ state: 'revoked' });
     await expect(mail(invitationId)).resolves.toBeNull();
-    await expect(
-      withUserTx(claimsOf(hr), (tx) => requestInvitationResend(tx, invitationId)),
-    ).resolves.toBe('not_pending');
+    await expect(resend(hr, invitationId)).resolves.toEqual({ status: 'not_pending' });
     const [revoked] = await owner<
       { n: number }[]
     >`select count(*)::int as n from platform.event_outbox
@@ -289,21 +306,24 @@ describe.skipIf(!configured)('invitations against PostgreSQL', () => {
         }),
       ),
     );
-    await mail(invitationId);
-    const refused = await failureOf(
-      withUserTx(claimsOf(hr), (tx) => requestInvitationResend(tx, invitationId)),
-    );
+    const refused = await failureOf(resend(hr, invitationId));
     expect(isDomainError(refused, 'ROLE_NOT_ALLOWED')).toBe(true);
-    await expect(
-      withUserTx(claimsOf(admin), (tx) => requestInvitationResend(tx, invitationId)),
-    ).resolves.toBe('queued');
-    const [requested] = await owner<{ by: string; events: number }[]>`
-      select i.resend_requested_by as by,
-             (select count(*)::int from platform.event_outbox e
-              where e.type = 'com.entlaqa.platform.invitation.resend_requested' and e.subject = i.id
-                and e.actor_type = 'user' and e.actor_id = ${admin.user}) as events
-      from platform.invitations i where i.id = ${invitationId}`;
-    expect(requested).toEqual({ by: admin.user, events: 1 });
+    const renewed = await resend(admin, invitationId);
+    expect(renewed).toMatchObject({ status: 'queued' });
+    await expect(mail(invitationId)).resolves.toBe(
+      renewed.status === 'queued' ? renewed.inviteCode : 'none',
+    );
+    const [requested] = await owner<{ events: number }[]>`
+      select count(*)::int as events from platform.event_outbox e
+      where e.type = 'com.entlaqa.platform.invitation.resend_requested' and e.subject = ${invitationId}
+        and e.actor_type = 'user' and e.actor_id = ${admin.user}`;
+    expect(requested).toEqual({ events: 1 });
+    // Copying: the Organization Admin sees the code, the HR Manager does not (privileged role).
+    const codeSeenBy = async (m: ReturnType<typeof member>) =>
+      (await withUserTx(claimsOf(m), (tx) => listInvitations(tx))).find((r) => r.id === invitationId)
+        ?.inviteCode;
+    await expect(codeSeenBy(admin)).resolves.toMatch(INVITATION_CODE_PATTERN);
+    await expect(codeSeenBy(hr)).resolves.toBeNull();
 
     const mayManage = (userId: string) =>
       withSystemTx({ tenantId: tenant, jobId: 'test' }, (tx) =>
@@ -314,24 +334,29 @@ describe.skipIf(!configured)('invitations against PostgreSQL', () => {
     await expect(mayManage(randomUUID())).resolves.toBe(false);
   });
 
-  it('resends up to 4 e-mails in all; a new link replaces the old one', async () => {
-    const { invitationId } = await withUserTx(claimsOf(hr), (tx) =>
+  it('resends up to 4 codes in all; a new code replaces the old one', async () => {
+    const { invitationId, inviteCode: first } = await withUserTx(claimsOf(hr), (tx) =>
       createInvitation(tx, newInvitation(`resend-${tag}@example.test`)),
     );
-    const first = await mail(invitationId);
+    const codes = new Set([first]);
+    let latest = first;
     for (let i = 0; i < 3; i += 1) {
-      await expect(
-        withUserTx(claimsOf(hr), (tx) => requestInvitationResend(tx, invitationId)),
-      ).resolves.toBe('queued');
-      await expect(mail(invitationId)).resolves.not.toBeNull();
+      const outcome = await resend(hr, invitationId);
+      if (outcome.status !== 'queued') throw new Error(`resend ${i + 1}: ${outcome.status}`);
+      codes.add(outcome.inviteCode);
+      latest = outcome.inviteCode;
+      await expect(mail(invitationId)).resolves.toBe(latest);
     }
-    await expect(
-      withUserTx(claimsOf(hr), (tx) => requestInvitationResend(tx, invitationId)),
-    ).resolves.toBe('limit_reached');
-    await expect(mail(invitationId)).resolves.toBeNull();
-    await expect(
-      tokens.invitationByToken(hashInvitationToken(first?.token ?? '')),
-    ).resolves.toEqual({ state: 'invalid' });
+    expect(codes.size).toBe(4);
+    await expect(resend(hr, invitationId)).resolves.toEqual({ status: 'limit_reached' });
+    // The refused 5th changed nothing: the latest code still works, the first one no longer does.
+    await expect(mail(invitationId)).resolves.toBe(latest);
+    await expect(tokens.invitationByToken(hashInvitationToken(first))).resolves.toEqual({
+      state: 'invalid',
+    });
+    await expect(tokens.invitationByToken(hashInvitationToken(latest))).resolves.toMatchObject({
+      state: 'valid',
+    });
     const mine = (
       await withUserTx(claimsOf(hr), (tx) => listInvitations(tx, { state: 'pending' }))
     ).find((r) => r.id === invitationId);
@@ -347,8 +372,8 @@ describe.skipIf(!configured)('invitations against PostgreSQL', () => {
     const { invitationId } = await withUserTx(claimsOf(hr), (tx) =>
       createInvitation(tx, newInvitation(email)),
     );
-    const sent = await mail(invitationId);
-    const hash = hashInvitationToken(sent?.token ?? '');
+    const code = await mail(invitationId);
+    const hash = hashInvitationToken(code ?? '');
 
     // Another signed-in account (other e-mail) is refused.
     const other = await failureOf(

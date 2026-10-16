@@ -3,6 +3,8 @@ import { PgDialect } from 'drizzle-orm/pg-core';
 import { describe, expect, it } from 'vitest';
 import { DomainError, isDomainError } from './domain-error';
 import {
+  INVITATION_CODE_ALPHABET,
+  INVITATION_CODE_PATTERN,
   INVITATION_EVENTS,
   acceptInvitationAsCaller,
   createInvitation,
@@ -11,6 +13,7 @@ import {
   hashInvitationToken,
   invitationErrorOf,
   listInvitations,
+  normalizeInvitationCode,
   requestInvitationResend,
   revokeInvitation,
 } from './invitations';
@@ -25,15 +28,18 @@ type Answer = unknown[] | Error;
 /** Answers each statement with the next answer (an Error rejects); records SQL and parameters. */
 function fakeTx(...answers: Answer[]) {
   const executed: { sql: string; params: unknown[] }[] = [];
+  const tx = {
+    execute: (query: SQL) => {
+      executed.push(dialect.sqlToQuery(query));
+      const next = answers.shift() ?? [];
+      return next instanceof Error ? Promise.reject(next) : Promise.resolve(next);
+    },
+    // A savepoint runs on the same fake.
+    transaction: (fn: (savepoint: unknown) => unknown) => fn(tx),
+  };
   return {
     executed,
-    tx: {
-      execute: (query: SQL) => {
-        executed.push(dialect.sqlToQuery(query));
-        const next = answers.shift() ?? [];
-        return next instanceof Error ? Promise.reject(next) : Promise.resolve(next);
-      },
-    } as never,
+    tx: tx as never,
   };
 }
 
@@ -70,12 +76,37 @@ describe('hashInvitationToken', () => {
   });
 });
 
+describe('invitation codes', () => {
+  it('match the database alphabet: 32 symbols, no 0/O or 1/I', () => {
+    expect(INVITATION_CODE_ALPHABET).toHaveLength(32);
+    expect(new Set(INVITATION_CODE_ALPHABET).size).toBe(32);
+    for (const symbol of INVITATION_CODE_ALPHABET) {
+      expect(INVITATION_CODE_PATTERN.test(symbol.repeat(8))).toBe(true);
+    }
+    for (const symbol of ['0', 'O', '1', 'I', 'a', '-', '_']) {
+      expect(INVITATION_CODE_PATTERN.test(`${symbol}BCDEFGH`)).toBe(false);
+    }
+  });
+
+  it('normalizes what was typed: trimmed and upper-cased codes, legacy tokens unchanged', () => {
+    expect(normalizeInvitationCode(' k7m2pq9x ')).toBe('K7M2PQ9X');
+    expect(normalizeInvitationCode('K7M2PQ9X')).toBe('K7M2PQ9X');
+    const legacy = `${'aB_-'.repeat(10)}xyz`;
+    expect(legacy).toHaveLength(43);
+    expect(normalizeInvitationCode(legacy)).toBe(legacy);
+    for (const bad of ['', 'K7M2PQ9', 'K7M2PQ9XY', 'K7M2 PQ9X', 'K7M2PQ9O', 'K7M2PQ91', 'كودكودكو']) {
+      expect(normalizeInvitationCode(bad)).toBeNull();
+    }
+  });
+});
+
 describe('createInvitation', () => {
-  it('creates the person, placement, invitation and event', async () => {
-    const fake = fakeTx([{ id: PERSON }], [], [{ id: ID }], []);
+  it('creates the person, placement, invitation, its first code and event', async () => {
+    const fake = fakeTx([{ id: PERSON }], [], [{ id: ID }], [{ code: 'K7M2PQ9X' }], []);
     await expect(createInvitation(fake.tx, input)).resolves.toEqual({
       invitationId: ID,
       personId: PERSON,
+      inviteCode: 'K7M2PQ9X',
     });
     expect(fake.executed[0]?.params).toEqual([
       'سارة الأحمد',
@@ -98,13 +129,16 @@ describe('createInvitation', () => {
       'mentor',
       'line_manager',
     ]);
-    expect(fake.executed[3]?.sql).toContain('insert into platform.event_outbox');
-    expect(fake.executed[3]?.params).toContain(INVITATION_EVENTS.created);
-    expect(fake.executed[3]?.params).toContain(ID);
+    // The code is issued by the database (actor-checked definer function), never chosen here.
+    expect(fake.executed[3]?.sql).toContain('private.issue_invitation_code($1::uuid)');
+    expect(fake.executed[3]?.params).toEqual([ID]);
+    expect(fake.executed[4]?.sql).toContain('insert into platform.event_outbox');
+    expect(fake.executed[4]?.params).toContain(INVITATION_EVENTS.created);
+    expect(fake.executed[4]?.params).toContain(ID);
   });
 
   it('passes no additional roles as an empty array', async () => {
-    const fake = fakeTx([{ id: PERSON }], [], [{ id: ID }], []);
+    const fake = fakeTx([{ id: PERSON }], [], [{ id: ID }], [{ code: 'K7M2PQ9X' }], []);
     await createInvitation(fake.tx, { ...input, additionalRoles: [], firstNameEn: null });
     expect(fake.executed[0]?.params[1]).toBeNull();
     expect(fake.executed[2]?.sql).toContain("'{}'::text[]");
@@ -133,6 +167,11 @@ describe('createInvitation', () => {
     await expect(createInvitation(fakeTx([{ id: PERSON }], [], []).tx, input)).rejects.toThrow(
       'no invitation',
     );
+    await expect(
+      createInvitation(fakeTx([{ id: PERSON }], [], [{ id: ID }], []).tx, input),
+    ).rejects.toThrow('no code');
+    const collision = pgErr('23505', { constraint_name: 'invitations_invite_code_uq' });
+    expect(invitationErrorOf(collision)).toBe(collision);
     expect(invitationErrorOf(pgErr('23505', { constraint_name: 'other' }))).toBeInstanceOf(Error);
     expect(invitationErrorOf('x')).toBe('x');
   });
@@ -150,9 +189,12 @@ describe('listInvitations', () => {
     send_count: 2,
     expires_at: '2026-10-07 10:00:00+00',
     created_at: new Date('2026-09-30T10:00:00Z'),
+    import_id: null,
+    invite_code: 'K7M2PQ9X',
+    locale: 'en',
   };
 
-  it('maps rows and computes the state in SQL', async () => {
+  it('maps rows, computes the state in SQL and joins the codes the caller may copy', async () => {
     const fake = fakeTx([row]);
     const [r] = await listInvitations(fake.tx);
     expect(r).toEqual({
@@ -166,7 +208,11 @@ describe('listInvitations', () => {
       sendCount: 2,
       expiresAt: new Date('2026-10-07T10:00:00Z'),
       createdAt: new Date('2026-09-30T10:00:00Z'),
+      importId: null,
+      inviteCode: 'K7M2PQ9X',
+      locale: 'en',
     });
+    expect(fake.executed[0]?.sql).toContain('left join private.invitation_codes() c');
     expect(fake.executed[0]?.sql).toContain("then 'expired'");
     expect(fake.executed[0]?.sql).toContain('where true');
   });
@@ -196,25 +242,29 @@ describe('revokeInvitation', () => {
 });
 
 describe('requestInvitationResend', () => {
-  it('records the request through the checked column update, then emits the event', async () => {
-    const fake = fakeTx([{ id: ID }], []);
-    await expect(requestInvitationResend(fake.tx, ID)).resolves.toBe('queued');
-    expect(fake.executed[0]?.sql).toContain(
-      'update platform.invitations set resend_requested_at = clock_timestamp()',
-    );
-    expect(fake.executed[0]?.sql).toContain("status = 'pending'");
-    expect(fake.executed[0]?.params).toEqual([ID, 4]);
+  it('issues a new code through the checked database function, then emits the event', async () => {
+    const fake = fakeTx([{ code: 'NEWCQDE2' }], []);
+    await expect(requestInvitationResend(fake.tx, ID)).resolves.toEqual({
+      status: 'queued',
+      inviteCode: 'NEWCQDE2',
+    });
+    expect(fake.executed[0]?.sql).toContain('private.issue_invitation_code($1::uuid)');
+    expect(fake.executed[0]?.params).toEqual([ID]);
     expect(fake.executed[1]?.params).toContain(INVITATION_EVENTS.resendRequested);
   });
 
   it('refuses at the limit or when not pending, without an event', async () => {
-    const atLimit = fakeTx([], [{ status: 'pending', send_count: 4 }]);
-    await expect(requestInvitationResend(atLimit.tx, ID)).resolves.toBe('limit_reached');
-    expect(atLimit.executed).toHaveLength(2);
-    await expect(
-      requestInvitationResend(fakeTx([], [{ status: 'revoked', send_count: 1 }]).tx, ID),
-    ).resolves.toBe('not_pending');
-    await expect(requestInvitationResend(fakeTx([], []).tx, ID)).resolves.toBe('not_pending');
+    const atLimit = fakeTx(pgErr('JI004'));
+    await expect(requestInvitationResend(atLimit.tx, ID)).resolves.toEqual({
+      status: 'limit_reached',
+    });
+    expect(atLimit.executed).toHaveLength(1);
+    const notPending = fakeTx(pgErr('JI005'));
+    await expect(requestInvitationResend(notPending.tx, ID)).resolves.toEqual({
+      status: 'not_pending',
+    });
+    expect(notPending.executed).toHaveLength(1);
+    await expect(requestInvitationResend(fakeTx([]).tx, ID)).rejects.toThrow('no code');
   });
 
   it('maps a refused actor (e.g. HR on a privileged invitation) to ROLE_NOT_ALLOWED', async () => {

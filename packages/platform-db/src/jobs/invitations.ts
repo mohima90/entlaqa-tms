@@ -3,9 +3,11 @@ import { z } from 'zod';
 import type { ClaimsTx } from '../claims-tx';
 
 /**
- * Invitation e-mails (FR-IAM-03, T-M2-07; migration 20261009090000): the mailer job (system claims)
- * loads what the e-mail needs and issues a new token — only its SHA-256 is stored; the database counts
- * the e-mail, stamps the issue time and gives the link 7 more days. A newer token replaces the older one.
+ * Invitation e-mails (FR-IAM-03, T-M2-07; migrations 20261009090000 and 20261018090000): the mailer job
+ * (system claims) loads what the e-mail needs, including the invitation's current CODE — issued by the
+ * database when the member invited or resent (or when a held import invitation was released) — and
+ * e-mails that code's link. The mailer issues no token: the database already counted the code and gave
+ * the link its 7 days.
  */
 export interface InvitationForMail {
   readonly id: string;
@@ -31,6 +33,8 @@ export interface InvitationForMail {
   readonly sendRequestedBy: string | null;
   /** Not sent yet (T-M2-12): held invitations are never mailed. */
   readonly mailHeld: boolean;
+  /** When the current code (link) expires. */
+  readonly expiresAt: Date;
 }
 
 /** Everything the invitation e-mail needs, or null when the invitation is unknown in this tenant. */
@@ -55,9 +59,10 @@ export async function loadInvitationForMail(
     invited_by: string | null;
     send_requested_by: string | null;
     mail_held: boolean;
+    expires_at: Date | string;
   }>(sql`
     select i.id, i.status, i.send_count, i.email, i.locale, i.person_id, i.invited_by,
-           i.send_requested_by, i.mail_held,
+           i.send_requested_by, i.mail_held, i.expires_at,
            p.display_name_ar as recipient_ar, p.display_name_en as recipient_en,
            ip.display_name_ar as inviter_ar, ip.display_name_en as inviter_en,
            t.name_ar as organization_ar, t.name_en as organization_en, i.primary_role
@@ -85,6 +90,7 @@ export async function loadInvitationForMail(
     invitedBy: row.invited_by,
     sendRequestedBy: row.send_requested_by,
     mailHeld: row.mail_held,
+    expiresAt: row.expires_at instanceof Date ? row.expires_at : new Date(row.expires_at),
   };
 }
 
@@ -115,26 +121,13 @@ export async function invitationActorMayManage(
   return row?.allowed === true;
 }
 
-/** Same limit as the request path (the database refuses a 5th e-mail). */
-const MAX_SENDS = 4;
-
 /**
- * Stores the SHA-256 of a new token for a pending invitation that has had fewer than 4 e-mails, and
- * returns the link's new expiry. Null when the invitation is not pending (accepted, revoked, unknown),
- * still held (an import's, not sent yet: T-M2-12) or the limit is reached: send nothing.
+ * The current code of a pending, sent invitation of the job's organization (private.invitation_code_for_mail:
+ * app_worker system claims only), or null — revoked, accepted, held, another organization's, or a link
+ * e-mailed before codes. The code is a credential: never log it.
  */
-export async function issueInvitationToken(
-  tx: ClaimsTx,
-  id: string,
-  tokenHash: Buffer,
-): Promise<{ expiresAt: Date } | null> {
-  if (tokenHash.length !== 32) throw new Error('issueInvitationToken: expected a SHA-256 hash');
-  const [row] = await tx.execute<{ expires_at: Date | string }>(sql`
-    update platform.invitations set token_hash = ${tokenHash}::bytea
-    where id = ${id}::uuid and status = 'pending' and not mail_held and send_count < ${MAX_SENDS}
-    returning expires_at`);
-  if (!row) return null;
-  return {
-    expiresAt: row.expires_at instanceof Date ? row.expires_at : new Date(row.expires_at),
-  };
+export async function invitationCodeForMail(tx: ClaimsTx, id: string): Promise<string | null> {
+  const [row] = await tx.execute<{ code: string | null }>(sql`
+    select private.invitation_code_for_mail(${id}::uuid) as code`);
+  return row?.code ?? null;
 }

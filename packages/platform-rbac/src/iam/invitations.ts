@@ -35,7 +35,7 @@ import { namePart } from './my-profile';
  */
 const p = platformPermissions;
 
-/** First e-mail + 3 resends (contract §1 step 3). */
+/** First code + 3 new ones on resend (contract §1 step 3). */
 export const MAX_INVITATION_SENDS = 4;
 /** Days an invitation (each e-mailed link) stays valid. */
 export const INVITATION_VALID_DAYS = 7;
@@ -133,6 +133,12 @@ export interface InvitationCreated {
   readonly personId: string;
   readonly primaryRole: string;
   readonly additionalRoles: readonly string[];
+  /**
+   * The invitation's first code (Kawadir: shown right away with «نسخ الرمز» / «نسخ الرابط») and the
+   * language its link opens in. Returned to the inviter only — never audited or logged.
+   */
+  readonly inviteCode: string;
+  readonly locale: 'ar' | 'en';
 }
 
 async function invite(
@@ -158,6 +164,8 @@ async function invite(
     personId: created.personId,
     primaryRole: input.primaryRole,
     additionalRoles: input.additionalRoles,
+    inviteCode: created.inviteCode,
+    locale: input.locale,
   };
 }
 
@@ -219,20 +227,26 @@ export interface InvitationChanged {
   readonly invitationId: string;
 }
 
+/** A resend: the new code (the old link stops working), for the member to copy. Never audited. */
+export interface InvitationResent extends InvitationChanged {
+  readonly inviteCode: string;
+}
+
 /** The database refused the actor (e.g. an HR Manager on an invitation with a privileged role). */
 function invitationRoleNotAllowed(): AppError {
   return fieldError('invitationId', 'ROLE_NOT_ALLOWED');
 }
 
 /**
- * Resend while pending (also after expiry), up to MAX_INVITATION_SENDS e-mails in total. An invitation
- * with a privileged role is resent only by holders of `platform.role.assign_privileged` (as inviting
- * with it: ROLE_NOT_ALLOWED); the database applies
- * the same rule to the request (security review M2).
+ * Resend while pending (also after expiry): a new code and 7 new days (Kawadir), up to
+ * MAX_INVITATION_SENDS codes in total; the old link stops working. An invitation with a privileged role is
+ * resent only by holders of `platform.role.assign_privileged` (as inviting with it: ROLE_NOT_ALLOWED); the
+ * database applies the same rule when it issues the code (security review M2). Copying a code is not a
+ * resend.
  */
 export function resendInvitationActionDefinition(): ActionDefinition<
   typeof InvitationIdInput,
-  InvitationChanged,
+  InvitationResent,
   UserTx
 > {
   return {
@@ -254,9 +268,15 @@ export function resendInvitationActionDefinition(): ActionDefinition<
         }
         throw error;
       }
-      if (outcome === 'limit_reached') return err(fieldError('invitationId', 'RESEND_LIMIT'));
-      if (outcome === 'not_pending') return err(fieldError('invitationId', 'NOT_PENDING'));
-      return ok({ invitationId: input.invitationId });
+      if (outcome.status !== 'queued') {
+        return err(
+          fieldError(
+            'invitationId',
+            outcome.status === 'limit_reached' ? 'RESEND_LIMIT' : 'NOT_PENDING',
+          ),
+        );
+      }
+      return ok({ invitationId: input.invitationId, inviteCode: outcome.inviteCode });
     },
     audit: (_input, output) => ({
       action: 'platform.invitation.resend_requested',

@@ -1,7 +1,7 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import {
   invitationActorMayManage,
-  issueInvitationToken,
+  invitationCodeForMail,
   loadInvitationForMail,
 } from '@jadarat/platform-db/jobs';
 import type { TransactionalSubscriber, WorkerLogLevel } from '@jadarat/platform-jobs/jobs';
@@ -17,10 +17,10 @@ export const INVITATION_RESEND_REQUESTED_EVENT = 'com.entlaqa.platform.invitatio
  * importer (integration review M2), while that member may still manage it.
  */
 export const INVITATION_RELEASED_EVENT = 'com.entlaqa.platform.invitation.released';
-/** First e-mail plus three resends (invitations contract §1 step 3). */
+/** First code plus three new ones (invitations contract §1 step 3): the database counts them. */
 export const INVITATION_MAX_SENDS = 4;
 /**
- * Database work only (load, store the token hash, queue the e-mail), so a failure is the database's:
+ * Database work only (load, read the code, queue the e-mail), so a failure is the database's:
  * about 3.5 hours of retries (graphile-worker waits e^n seconds after the n-th failure) ride out an
  * outage, as for the e-mail sender.
  */
@@ -42,19 +42,20 @@ export interface InvitationMailerOptions {
   readonly log: (level: WorkerLogLevel, message: string) => void;
 }
 
-/** SHA-256 of the token's UTF-8 bytes: the only form the database keeps (contract §1 step 2). */
+/** SHA-256 of a token's UTF-8 bytes (the account mailer's links; invitation codes are hashed alike). */
 export function hashToken(token: string): Buffer {
   return createHash('sha256').update(token, 'utf8').digest();
 }
 
 /**
- * Invitation e-mail (FR-IAM-03, T-M2-07; invitations contract §1 step 2, §3). For each invitation
- * created or resend requested, in the invitation's tenant transaction: issue a new random token (32
- * bytes, base64url) whose SHA-256 replaces the stored one — older links stop working — and queue the
- * bilingual invitation e-mail carrying the accept link (token in the URL fragment). The raw token exists
- * only in the queued e-mail. An event that does not come from a member who may still manage the
- * invitation, or an invitation no longer pending or at its send limit, is skipped without error. Logs
- * never carry names, addresses or tokens.
+ * Invitation e-mail (FR-IAM-03, T-M2-07; invitations contract §1 step 2, §3; codes: PO decision 16 Oct
+ * 2026, Kawadir). E-mail is optional: the member who invited can always copy the code or the link. For
+ * each invitation created, resent (a new code) or released (an import's), in the invitation's tenant
+ * transaction: read the invitation's CURRENT code — issued by the database, which also counted it and gave
+ * it 7 days — and queue the bilingual invitation e-mail carrying the sign-up link with that code (in the URL
+ * fragment). The mailer issues no token and changes nothing. An event that does not come from a member who
+ * may still manage the invitation, or an invitation no longer pending, held or without a code (a link
+ * e-mailed before codes), is skipped without error. Logs never carry names, addresses or codes.
  */
 export function createInvitationMailer(options: InvitationMailerOptions): TransactionalSubscriber {
   let base = options.appBaseUrl;
@@ -99,8 +100,8 @@ export function createInvitationMailer(options: InvitationMailerOptions): Transa
         return;
       }
       const invitation = releasedInvitation ?? (await loadInvitationForMail(tx, id));
-      if (invitation?.status !== 'pending' || invitation.sendCount >= INVITATION_MAX_SENDS) {
-        log('info', 'invitation not pending or send limit reached; no e-mail');
+      if (invitation?.status !== 'pending') {
+        log('info', 'invitation not pending; no e-mail');
         return;
       }
       if (invitation.mailHeld) {
@@ -108,10 +109,9 @@ export function createInvitationMailer(options: InvitationMailerOptions): Transa
         return;
       }
       const role = roleName(invitation.primaryRole);
-      const token = randomBytes(32).toString('base64url');
-      const issued = await issueInvitationToken(tx, invitation.id, hashToken(token));
-      if (!issued) {
-        log('info', 'invitation not pending or send limit reached; no e-mail');
+      const code = await invitationCodeForMail(tx, invitation.id);
+      if (!code) {
+        log('info', 'invitation has no code; no e-mail');
         return;
       }
       const { locale } = invitation;
@@ -126,10 +126,11 @@ export function createInvitationMailer(options: InvitationMailerOptions): Transa
           inviterName: invitation.inviterName,
           organizationName: invitation.organizationName,
           roleName: role,
-          // In the fragment: browsers never send it to the server, so the token stays out of access
-          // logs, proxies and Referer headers; the page reads it in the browser (review M3).
-          acceptUrl: `${base}/${locale}/invite/accept#token=${token}`,
-          expiresAt: issued.expiresAt.toISOString(),
+          // The Kawadir sign-up link with the code in the fragment: browsers never send it to the server,
+          // so the code stays out of access logs, proxies and Referer headers; the page reads it in the
+          // browser (review M3). The same link the inviter can copy.
+          acceptUrl: `${base}/${locale}/sign-up#code=${code}`,
+          expiresAt: invitation.expiresAt.toISOString(),
           timeZone: TIME_ZONE,
           loginEmail: invitation.email,
         },

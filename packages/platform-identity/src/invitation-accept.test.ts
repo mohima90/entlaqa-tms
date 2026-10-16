@@ -11,6 +11,7 @@ import {
   acceptInvitationWithPassword,
   lookupInvitation,
   lookupInvitationLink,
+  normalizeInvitationSecret,
   sessionEmail,
 } from './invitation-accept';
 
@@ -20,7 +21,8 @@ const SESSION = '33333333-3333-4333-8333-333333333333';
 const TENANT = 'a0000000-0000-4000-8000-000000000001';
 const OTHER_TENANT = 'b0000000-0000-4000-8000-000000000001';
 const PERSON = '44444444-4444-4444-8444-444444444444';
-const TOKEN = 'A'.repeat(21) + '-_' + 'z9'.repeat(10); // 43 base64url characters
+const TOKEN = 'A'.repeat(21) + '-_' + 'z9'.repeat(10); // 43 base64url characters (legacy link)
+const CODE = 'K7M2PQ9X'; // an invitation code (Kawadir alphabet)
 const EMAIL = 'invitee@example.test';
 const PASSWORD = 'a long enough passphrase';
 
@@ -68,6 +70,8 @@ interface Options {
   gate?: SignInGate | Error;
   /** The new-account sign-up limiter's answer; an Error = limiter unavailable. */
   signUpAllowed?: boolean | Error;
+  /** The unknown-codes guard's answer; an Error = limiter unavailable. */
+  codeAllowed?: boolean | Error;
 }
 
 function setup(options: Options = {}) {
@@ -197,6 +201,14 @@ function setup(options: Options = {}) {
         ? Promise.reject(options.signUpAllowed)
         : Promise.resolve(options.signUpAllowed ?? true),
     ),
+    codeGuard: {
+      attempt: vi.fn(() =>
+        options.codeAllowed instanceof Error
+          ? Promise.reject(options.codeAllowed)
+          : Promise.resolve(options.codeAllowed ?? true),
+      ),
+      found: vi.fn(() => Promise.resolve()),
+    },
   };
   return { deps, auth, calls, hashToken, guard };
 }
@@ -209,6 +221,74 @@ const newAccount = {
 };
 const notValidError = Object.assign(new Error('invitation not valid'), {
   code: 'INVITATION_NOT_VALID',
+});
+
+describe('normalizeInvitationSecret', () => {
+  it('upper-cases and trims codes, keeps legacy tokens, refuses anything else', () => {
+    expect(normalizeInvitationSecret(' k7m2pq9x\n')).toBe(CODE);
+    expect(normalizeInvitationSecret(CODE)).toBe(CODE);
+    expect(normalizeInvitationSecret(` ${TOKEN} `)).toBe(TOKEN);
+    for (const bad of ['', 'K7M2PQ9', 'K7M2PQ9XX', 'K7M2PQ9O', 'K7M2PQ91', 'K7M2 PQ9X', TOKEN.slice(1)]) {
+      expect(normalizeInvitationSecret(bad)).toBeNull();
+    }
+  });
+});
+
+describe('invitation codes (Kawadir, migration 20261018090000)', () => {
+  it('looks a typed code up upper-cased, by its SHA-256', async () => {
+    const { deps } = setup();
+    await expect(lookupInvitation(deps, 'k7m2pq9x')).resolves.toEqual(valid);
+    expect(deps.invitationByToken).toHaveBeenCalledWith(
+      createHash('sha256').update(CODE, 'utf8').digest(),
+    );
+  });
+
+  it('counts each code as a miss for the client and gives it back for a real invitation', async () => {
+    const { deps } = setup({ lookup: { state: 'invalid' } });
+    await lookupInvitation(deps, CODE);
+    expect(deps.codeGuard.attempt).toHaveBeenCalledTimes(1);
+    expect(deps.codeGuard.found).not.toHaveBeenCalled();
+    for (const state of ['valid', 'expired', 'revoked', 'used'] as const) {
+      const real = setup({ lookup: state === 'valid' ? valid : { state } });
+      await lookupInvitation(real.deps, CODE);
+      expect(real.deps.codeGuard.found).toHaveBeenCalledTimes(1);
+    }
+    // A malformed code never reaches the database nor the guard.
+    const { deps: malformed } = setup();
+    await lookupInvitation(malformed, 'nope');
+    expect(malformed.codeGuard.attempt).not.toHaveBeenCalled();
+  });
+
+  it('a client out of misses gets RATE_LIMITED on every action, before the database or Auth', async () => {
+    const { deps, auth } = setup({ codeAllowed: false });
+    for (const result of [
+      await acceptInvitationWithNewAccount(deps, { ...newAccount, token: CODE }),
+      await acceptInvitationWithPassword(deps, { token: CODE, password: PASSWORD }),
+    ]) {
+      expect(result).toMatchObject({ ok: false, error: { code: 'RATE_LIMITED' } });
+    }
+    expect(deps.invitationByToken).not.toHaveBeenCalled();
+    expect(auth.signUp).not.toHaveBeenCalled();
+    expect(auth.signInWithPassword).not.toHaveBeenCalled();
+    await expect(lookupInvitationLink(deps, CODE)).rejects.toThrow('too many unknown invitation codes');
+  });
+
+  it('fails closed when the guard cannot answer', async () => {
+    const { deps, auth } = setup({ codeAllowed: new RateLimiterUnavailableError() });
+    await expect(
+      acceptInvitationWithNewAccount(deps, { ...newAccount, token: CODE }),
+    ).rejects.toBeInstanceOf(RateLimiterUnavailableError);
+    expect(auth.signUp).not.toHaveBeenCalled();
+  });
+
+  it('signs up with the normalized code in the metadata (what the hook compares)', async () => {
+    const { deps, auth } = setup();
+    const result = await acceptInvitationWithNewAccount(deps, { ...newAccount, token: ' k7m2pq9x ' });
+    expect(result.ok).toBe(true);
+    expect(auth.signUp).toHaveBeenCalledWith(
+      expect.objectContaining({ email: EMAIL, options: { data: { invitation: CODE } } }),
+    );
+  });
 });
 
 describe('lookupInvitation', () => {

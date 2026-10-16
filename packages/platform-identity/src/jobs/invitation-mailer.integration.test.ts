@@ -1,14 +1,21 @@
 /**
- * Invitation e-mail against PostgreSQL (T-M2-07, FR-IAM-03; invitations contract §1 step 2, §3): an
- * `invitation.created` event makes one worker pass issue a token — only its SHA-256 is stored — and
- * queue one bilingual invitation e-mail whose accept link carries that token; a resend replaces the
- * hash (the old link stops working); a revoked invitation is not mailed. Only events of a member who
+ * Invitation e-mail against PostgreSQL (T-M2-07, FR-IAM-03; invitations contract §1 step 2, §3; codes:
+ * migration 20261018090000): the member's action issues the code (database) and emits
+ * `invitation.created`; one worker pass queues one bilingual invitation e-mail whose sign-up link carries
+ * that very code and changes nothing in the invitation; a resend (a new code) e-mails the new code (the
+ * old link stops working); a revoked invitation is not mailed. Only events of a member who
  * may still manage the invitation are acted on (security review M2): a system event, or a request of a
  * member demoted since, sends nothing. Logs carry no personal data.
  */
 import { randomUUID } from 'node:crypto';
 import { brandVerifiedClaims } from '@jadarat/platform-core/internal/verified-claims';
-import { createDatabase, createWithUserTx, emitEvent } from '@jadarat/platform-db';
+import {
+  createDatabase,
+  createWithUserTx,
+  emitEvent,
+  hashInvitationToken,
+  requestInvitationResend,
+} from '@jadarat/platform-db';
 import { createWithSystemTx } from '@jadarat/platform-db/jobs';
 import { type WorkerConfig, createSubscriberRegistry, runPass } from '@jadarat/platform-jobs/jobs';
 import { sql } from 'drizzle-orm';
@@ -17,7 +24,6 @@ import {
   INVITATION_CREATED_EVENT,
   INVITATION_RESEND_REQUESTED_EVENT,
   createInvitationMailer,
-  hashToken,
 } from './invitation-mailer';
 
 const ownerUrl = process.env.TEST_DATABASE_URL;
@@ -32,8 +38,8 @@ if ((process.env.CI || process.env.JADARAT_REQUIRE_INTEGRATION) && !configured) 
   );
 }
 
-// The token travels in the URL fragment (never sent to the server; review M3).
-const ACCEPT_LINK = /https:\/\/tms\.test\.example\/en\/invite\/accept#token=([A-Za-z0-9_-]{43})/;
+// The code travels in the URL fragment (never sent to the server; review M3).
+const ACCEPT_LINK = /https:\/\/tms\.test\.example\/en\/sign-up#code=([A-HJ-NP-Z2-9]{8})(?![A-Z0-9])/;
 
 describe.skipIf(!configured)('invitation mailer against PostgreSQL', () => {
   const owner = createDatabase(ownerUrl ?? '', { max: 1 });
@@ -85,6 +91,16 @@ describe.skipIf(!configured)('invitation mailer against PostgreSQL', () => {
   /** The event as the inviter's action emits it (actor = that member). */
   const emit = (type: string) =>
     withUserTx(inviterClaims(), (tx) => emitEvent(tx, { type, subject: invitation }));
+
+  /** Inviting: the database issues the first code, then the action emits `invitation.created`. */
+  const invite = () =>
+    withUserTx(inviterClaims(), async (tx) => {
+      const [row] = await tx.execute<{ code: string }>(
+        sql`select private.issue_invitation_code(${invitation}::uuid) as code`,
+      );
+      await emitEvent(tx, { type: INVITATION_CREATED_EVENT, subject: invitation });
+      return row?.code ?? '';
+    });
 
   const emitAsSystem = (type: string) =>
     withSystemTx({ tenantId: tenant, jobId: 'test.invitations:1' }, (tx) =>
@@ -154,8 +170,10 @@ describe.skipIf(!configured)('invitation mailer against PostgreSQL', () => {
     await workerDb.$client.end();
   });
 
-  it('created: issues a token, stores only its hash and queues one invitation e-mail', async () => {
-    await emit(INVITATION_CREATED_EVENT);
+  it('created: queues one invitation e-mail with the code the database issued', async () => {
+    const code = await invite();
+    expect(code).toMatch(/^[A-HJ-NP-Z2-9]{8}$/);
+    const issued = await stored();
     expect(await pass()).toEqual({ staleEvents: 0 });
 
     const rows = await deliveries();
@@ -171,33 +189,37 @@ describe.skipIf(!configured)('invitation mailer against PostgreSQL', () => {
     expect(delivery?.html_body).toContain('Noura Alqahtani');
     expect(delivery?.html_body).toContain('Mohammed Alotaibi');
     expect(delivery?.html_body).toContain('Learner');
-    const token = tokenOf(delivery?.html_body);
-    expect(token).not.toBe('');
-    expect(delivery?.text_body).toContain(token);
+    expect(tokenOf(delivery?.html_body)).toBe(code);
+    expect(delivery?.text_body).toContain(code);
 
+    // The mailer changed nothing: the code was counted once, when it was issued.
     const row = await stored();
+    expect(row).toEqual(issued);
     expect(row?.send_count).toBe(1);
     expect(row?.token_issued_at).not.toBeNull();
-    expect(row?.token_hash).toBe(hashToken(token).toString('hex'));
+    expect(row?.token_hash).toBe(hashInvitationToken(code).toString('hex'));
 
     // Exactly once: another pass queues nothing more.
     await pass();
     expect(await deliveries()).toHaveLength(1);
   });
 
-  it('resend: a new token replaces the hash (the old link stops working)', async () => {
+  it('resend: the new code is e-mailed (the old link stops working)', async () => {
     const before = await stored();
-    await emit(INVITATION_RESEND_REQUESTED_EVENT);
+    const outcome = await withUserTx(inviterClaims(), (tx) =>
+      requestInvitationResend(tx, invitation),
+    );
+    expect(outcome.status).toBe('queued');
     await pass();
 
     const rows = await deliveries();
     expect(rows).toHaveLength(2);
     const [first, second] = rows.map((r) => tokenOf(r.html_body));
-    expect(second).not.toBe('');
+    expect(second).toBe(outcome.status === 'queued' ? outcome.inviteCode : 'none');
     expect(second).not.toBe(first);
     const after = await stored();
     expect(after?.send_count).toBe(2);
-    expect(after?.token_hash).toBe(hashToken(second ?? '').toString('hex'));
+    expect(after?.token_hash).toBe(hashInvitationToken(second ?? '').toString('hex'));
     expect(after?.token_hash).not.toBe(before?.token_hash);
   });
 
@@ -232,7 +254,7 @@ describe.skipIf(!configured)('invitation mailer against PostgreSQL', () => {
     expect(await stored()).toEqual(before);
 
     const logged = logs.join('\n');
-    expect(logged).toContain('invitation not pending or send limit reached; no e-mail');
+    expect(logged).toContain('invitation not pending; no e-mail');
     for (const personal of ['noura', 'Noura', 'نورة', 'Mohammed', invitee.email]) {
       expect(logged).not.toContain(personal);
     }

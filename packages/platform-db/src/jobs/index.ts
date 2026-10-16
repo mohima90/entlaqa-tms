@@ -67,7 +67,7 @@ export {
 export {
   type InvitationForMail,
   invitationActorMayManage,
-  issueInvitationToken,
+  invitationCodeForMail,
   loadInvitationForMail,
 } from './invitations';
 export {

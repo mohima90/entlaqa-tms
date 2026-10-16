@@ -1337,16 +1337,39 @@ describe('createInvitationLimiter', () => {
     expect(hex(invitationSubject(link(1)))).not.toBe(hex(link(1)));
   });
 
-  it('lookups fail open (no credential is checked), sign-ups fail closed', async () => {
+  it('lookups, sign-ups and code attempts fail closed (links carry guessable codes)', async () => {
     const { limiter, events } = setup(failingStore());
-    expect(await limiter.allowLookup(link(1))).toBe(true);
-    expect(await limiter.allowLookup(null)).toBe(true);
+    await expect(limiter.allowLookup(link(1))).rejects.toBeInstanceOf(RateLimiterUnavailableError);
+    await expect(limiter.allowLookup(null)).rejects.toBeInstanceOf(RateLimiterUnavailableError);
     await expect(limiter.allowSignUp(link(1))).rejects.toBeInstanceOf(RateLimiterUnavailableError);
+    await expect(limiter.allowCodeAttempt()).rejects.toBeInstanceOf(RateLimiterUnavailableError);
+    // Giving a miss back decides nothing: it fails open (logged).
+    await expect(limiter.codeFound()).resolves.toBeUndefined();
     expect(events.map((e) => [e.event, e.reason])).toEqual([
-      ['auth.limiter.unavailable', 'fail_open'],
-      ['auth.limiter.unavailable', 'fail_open'],
       ['auth.limiter.unavailable', 'fail_closed'],
+      ['auth.limiter.unavailable', 'fail_closed'],
+      ['auth.limiter.unavailable', 'fail_closed'],
+      ['auth.limiter.unavailable', 'fail_closed'],
+      ['auth.limiter.unavailable', 'fail_open'],
     ]);
+  });
+
+  it('stops a client guessing codes after 20 misses; real invitations give their miss back', async () => {
+    const { limiter, events, memory } = setup();
+    for (let i = 0; i < 20; i += 1) expect(await limiter.allowCodeAttempt()).toBe(true);
+    expect(await limiter.allowCodeAttempt()).toBe(false);
+    expect(events.map((e) => e.reason)).toEqual(['invitation.code_misses_client']);
+    // An office checking its own (real) invitations is never stopped by it.
+    const office = setup();
+    for (let i = 0; i < 100; i += 1) {
+      expect(await office.limiter.allowCodeAttempt()).toBe(true);
+      await office.limiter.codeFound();
+    }
+    expect(memory.hit.mock.calls[0]?.[0]).toBe('invitation.code_misses_client');
+    // Without a trusted client address, all share one budget of 500.
+    const shared = setup(undefined, { key: null });
+    await shared.limiter.allowCodeAttempt();
+    expect(shared.memory.hit.mock.calls[0]?.[2].max).toBe(500);
   });
 });
 

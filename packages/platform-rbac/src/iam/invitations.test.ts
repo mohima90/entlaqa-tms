@@ -102,12 +102,18 @@ const row = (over: Partial<InvitationRow> = {}): InvitationRow => ({
   expiresAt: new Date('2026-10-14T09:00:00Z'),
   createdAt: new Date('2026-10-07T09:00:00Z'),
   importId: null,
+  inviteCode: null,
+  locale: 'ar',
   ...over,
 });
 
 beforeEach(() => {
   vi.clearAllMocks();
-  db.createInvitation.mockResolvedValue({ invitationId: INVITATION, personId: PERSON });
+  db.createInvitation.mockResolvedValue({
+    invitationId: INVITATION,
+    personId: PERSON,
+    inviteCode: 'K7M2PQ9X',
+  });
   db.getInvitationRoles.mockResolvedValue({ primaryRole: 'learner', additionalRoles: [] });
 });
 
@@ -182,6 +188,9 @@ describe('invite user action', () => {
         personId: PERSON,
         primaryRole: 'training_coordinator',
         additionalRoles: ['learner'],
+        // The first code, for the inviter to copy (Kawadir) — never audited.
+        inviteCode: 'K7M2PQ9X',
+        locale: 'ar',
       }),
     );
     expect(db.createInvitation).toHaveBeenCalledWith(TX, {
@@ -207,6 +216,7 @@ describe('invite user action', () => {
     const audited = JSON.stringify(writeAudit.mock.calls);
     expect(audited).not.toContain('alraya');
     expect(audited).not.toContain('نورة');
+    expect(audited).not.toContain('K7M2PQ9X');
     expect(getClaims).toHaveBeenCalledWith({ strict: false });
   });
 
@@ -332,12 +342,22 @@ describe('invite user action', () => {
   });
 });
 
+/** Resend and revoke, as one action shape (the resend's output also carries the new code). */
+const BOTH_DEFINITIONS: readonly (() => ReturnType<typeof revokeInvitationActionDefinition>)[] = [
+  resendInvitationActionDefinition as unknown as () => ReturnType<
+    typeof revokeInvitationActionDefinition
+  >,
+  revokeInvitationActionDefinition,
+];
+
 describe('resend and revoke', () => {
-  it('resend: queued and audited; limit and not pending are refused without audit', async () => {
-    db.requestInvitationResend.mockResolvedValueOnce('queued');
+  it('resend: a new code, audited without it; limit and not pending are refused without audit', async () => {
+    db.requestInvitationResend.mockResolvedValueOnce({ status: 'queued', inviteCode: 'NEWCQDE2' });
     const { rt, writeAudit } = runtime(['hr_manager']);
     const resend = createDefineAction(rt)(resendInvitationActionDefinition());
-    expect(await resend({ invitationId: INVITATION })).toEqual(ok({ invitationId: INVITATION }));
+    expect(await resend({ invitationId: INVITATION })).toEqual(
+      ok({ invitationId: INVITATION, inviteCode: 'NEWCQDE2' }),
+    );
     expect(db.requestInvitationResend).toHaveBeenCalledWith(TX, INVITATION);
     expect(writeAudit).toHaveBeenCalledWith(TX, expect.anything(), {
       action: 'platform.invitation.resend_requested',
@@ -349,7 +369,7 @@ describe('resend and revoke', () => {
       ['limit_reached', 'RESEND_LIMIT'],
       ['not_pending', 'NOT_PENDING'],
     ] as const) {
-      db.requestInvitationResend.mockResolvedValueOnce(outcome);
+      db.requestInvitationResend.mockResolvedValueOnce({ status: outcome });
       const result = await resend({ invitationId: INVITATION });
       expect(!result.ok && result.error.fieldErrors).toEqual([{ path: 'invitationId', code }]);
     }
@@ -373,7 +393,7 @@ describe('resend and revoke', () => {
     expect(hr.writeAudit).not.toHaveBeenCalled();
     // The Organization Admin, at AAL1 (no authenticator code): the request goes to the database (which
     // checks the actor again).
-    db.requestInvitationResend.mockResolvedValueOnce('queued');
+    db.requestInvitationResend.mockResolvedValueOnce({ status: 'queued', inviteCode: 'NEWCQDE2' });
     const aal1 = await createDefineAction(runtime(['tenant_admin']).rt)(
       resendInvitationActionDefinition(),
     )({ invitationId: INVITATION });
@@ -382,7 +402,7 @@ describe('resend and revoke', () => {
   });
 
   it('resend and revoke: a database refusal of the actor is ROLE_NOT_ALLOWED, not a 500', async () => {
-    for (const definition of [resendInvitationActionDefinition, revokeInvitationActionDefinition]) {
+    for (const definition of BOTH_DEFINITIONS) {
       db.requestInvitationResend.mockRejectedValueOnce(refusal('ROLE_NOT_ALLOWED'));
       db.revokeInvitation.mockRejectedValueOnce(refusal('ROLE_NOT_ALLOWED'));
       const { rt, writeAudit, logError } = runtime(['hr_manager']);
@@ -428,7 +448,7 @@ describe('resend and revoke', () => {
   });
 
   it('without platform.user.invite or with a malformed id: refused before the database', async () => {
-    for (const definition of [resendInvitationActionDefinition, revokeInvitationActionDefinition]) {
+    for (const definition of BOTH_DEFINITIONS) {
       const learner = await createDefineAction(runtime(['learner']).rt)(definition())({
         invitationId: INVITATION,
       });

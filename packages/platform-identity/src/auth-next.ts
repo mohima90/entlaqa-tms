@@ -102,14 +102,16 @@ import {
 } from './mfa';
 import { type SupabaseAuthLike, verifyClaims } from './verify-claims';
 import {
-  INVITATION_TOKEN_PATTERN,
   type InvitationAcceptDeps,
+  type InvitationCodeGuard,
   type InvitationLinkView,
   type InvitationSignUpClientLike,
   acceptInvitationAsSignedInUser,
   acceptInvitationWithNewAccount,
   acceptInvitationWithPassword,
+  codesLimited,
   lookupInvitationLink,
+  normalizeInvitationSecret,
 } from './invitation-accept';
 import {
   type RecoveryClientLike,
@@ -553,12 +555,19 @@ function invitationLimiter(client: RequestClient) {
   });
 }
 
+/** Unknown invitation codes per client (fail closed), for every invitation action. */
+function invitationCodeGuard(client: RequestClient): InvitationCodeGuard {
+  const limiter = invitationLimiter(client);
+  return { attempt: () => limiter.allowCodeAttempt(), found: () => limiter.codeFound() };
+}
+
 function invitationDeps(auth: AuthFlowDeps, client: RequestClient): InvitationAcceptDeps {
   return {
     auth,
     signUpClient: auth.supabase as unknown as InvitationSignUpClientLike | null,
     hashToken: hashInvitationToken,
     invitationByToken,
+    codeGuard: invitationCodeGuard(client),
     invitationPasswordMinLength,
     acceptInvitationAsCaller,
     allowSignUp: (tokenHash) => invitationLimiter(client).allowSignUp(tokenHash),
@@ -574,22 +583,29 @@ export async function lookupInvitationLinkForRequest(
   token: string,
   client: RequestClient,
 ): Promise<Result<InvitationLinkView, AppError>> {
-  // Per link (its token hash; a malformed link: the client only) and per client (integration review M3).
-  const tokenHash = INVITATION_TOKEN_PATTERN.test(token) ? hashInvitationToken(token) : null;
+  // Per link (its token hash; a malformed link: the client only) and per client (integration review M3);
+  // unknown codes per client (codes are 8 characters). Every limit fails closed.
+  const normalized = normalizeInvitationSecret(token);
+  const tokenHash = normalized === null ? null : hashInvitationToken(normalized);
   if (!(await invitationLimiter(client).allowLookup(tokenHash))) {
     return err(appError('RATE_LIMITED'));
   }
-  return ok(
-    await lookupInvitationLink(
-      {
-        hashToken: hashInvitationToken,
-        invitationByToken,
-        invitationPasswordMinLength,
-        auth: await requestDeps(undefined, client),
-      },
-      token,
-    ),
-  );
+  try {
+    return ok(
+      await lookupInvitationLink(
+        {
+          hashToken: hashInvitationToken,
+          invitationByToken,
+          invitationPasswordMinLength,
+          codeGuard: invitationCodeGuard(client),
+          auth: await requestDeps(undefined, client),
+        },
+        token,
+      ),
+    );
+  } catch (error) {
+    return codesLimited(error);
+  }
 }
 
 export async function acceptInvitationWithNewAccountForRequest(

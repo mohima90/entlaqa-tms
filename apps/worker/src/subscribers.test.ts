@@ -8,7 +8,7 @@ import { subscribers } from './subscribers';
 
 const db = vi.hoisted(() => ({
   loadInvitationForMail: vi.fn(),
-  issueInvitationToken: vi.fn(),
+  invitationCodeForMail: vi.fn(),
   invitationActorMayManage: vi.fn(),
 }));
 const mail = vi.hoisted(() => ({ queueEmail: vi.fn() }));
@@ -56,10 +56,11 @@ describe('worker subscribers', () => {
       inviterName: { ar: 'محمد', en: null },
       organizationName: { ar: 'شركة الراية', en: null },
       primaryRole: 'learner',
+      expiresAt: new Date('2026-10-14T06:00:00Z'),
     };
     db.invitationActorMayManage.mockResolvedValue(true);
     db.loadInvitationForMail.mockResolvedValue(invitation);
-    db.issueInvitationToken.mockResolvedValue({ expiresAt: new Date('2026-10-14T06:00:00Z') });
+    db.invitationCodeForMail.mockResolvedValue('K7M2PQ9X');
     const event = {
       id: 'e1',
       tenantId: 't1',

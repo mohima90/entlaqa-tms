@@ -8,10 +8,13 @@ import { emitEvent } from './events';
 import { pgError } from './user-admin';
 
 /**
- * Invitations (FR-IAM-03, T-M2-07; docs/engineering/invitations-contract.md §2, migration
- * 20261009090000). Request-path helpers: inviting, listing, revoking and resending run inside the
- * signed-in user's withUserTx (the database guard checks the actor: Organization Admin or HR Manager,
- * privileged roles by an Organization Admin only); looking a link up runs on a plain app_server
+ * Invitations (FR-IAM-03, T-M2-07; docs/engineering/invitations-contract.md §2, migrations
+ * 20261009090000 and 20261018090000 — invitation codes, Kawadir). Request-path helpers: inviting, listing,
+ * revoking and resending run inside the signed-in user's withUserTx (the database guard checks the actor:
+ * Organization Admin or HR Manager, privileged roles by an Organization Admin only); every invitation that
+ * was sent has an 8-character CODE issued by the database (private.issue_invitation_code: when inviting,
+ * and a new one on resend) that the members who may manage it read (private.invitation_codes) to copy the
+ * code or the link; looking a link up runs on a plain app_server
  * connection WITHOUT claims (the visitor may have no session) through the reviewed SECURITY DEFINER
  * function private.invitation_by_token; accepting runs in the invitee's own withUserTx (the account just
  * created through the hook-gated sign-up, or an existing one) through private.accept_invitation_as_caller.
@@ -25,8 +28,29 @@ export const INVITATION_EVENTS = {
   accepted: 'com.entlaqa.platform.invitation.accepted',
 } as const;
 
-/** At most this many e-mails per invitation: the first one and 3 resends. */
+/** At most this many codes per invitation: the first one and 3 resends (new codes). */
 export const INVITATION_MAX_SENDS = 4;
+
+/**
+ * The invitation code's alphabet (Kawadir ATS: no 0/O or 1/I) and shape: 8 symbols, upper case — what
+ * the database issues (private.new_invitation_code) and the sign-up gate accepts.
+ */
+export const INVITATION_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+export const INVITATION_CODE_PATTERN = /^[A-HJ-NP-Z2-9]{8}$/;
+/** A link token e-mailed before codes (32 random bytes, base64url): still accepted while such links live. */
+export const LEGACY_INVITATION_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
+
+/**
+ * What a visitor typed or the link carried, as the database compares it: a code trimmed and upper-cased
+ * (people type codes in any case, Kawadir); a legacy 43-character token unchanged (it is case-sensitive);
+ * null for anything else.
+ */
+export function normalizeInvitationCode(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (LEGACY_INVITATION_TOKEN_PATTERN.test(trimmed)) return trimmed;
+  const code = trimmed.toUpperCase();
+  return INVITATION_CODE_PATTERN.test(code) ? code : null;
+}
 
 /** Codes of the DomainErrors thrown by the invitation helpers. */
 export type InvitationErrorCode =
@@ -74,6 +98,14 @@ export interface InvitationRow {
   readonly createdAt: Date;
   /** The user import that added the person (T-M2-12), or null when invited by hand. */
   readonly importId: string | null;
+  /**
+   * The current code (copy code / copy link, Kawadir) when the caller may manage this invitation and it
+   * is pending and was sent; null otherwise (e.g. an HR Manager on an invitation with a privileged role,
+   * a held import invitation, a link e-mailed before codes).
+   */
+  readonly inviteCode: string | null;
+  /** The invitation's language: the link opens the sign-up page in it. */
+  readonly locale: 'ar' | 'en';
 }
 
 export type TokenLookup =
@@ -86,7 +118,10 @@ export type TokenLookup =
     }
   | { readonly state: 'expired' | 'revoked' | 'used' | 'invalid' };
 
-/** SHA-256 of the token's UTF-8 bytes: the only form of a token the database ever sees. */
+/**
+ * SHA-256 of the code's (or a legacy token's) UTF-8 bytes: the form the link lookups and acceptance send
+ * to the database (token_hash = sha256(invite_code), migration 20261018090000).
+ */
 export function hashInvitationToken(token: string): Buffer {
   return createHash('sha256').update(token, 'utf8').digest();
 }
@@ -133,6 +168,8 @@ export function invitationErrorOf(error: unknown): unknown {
   }
   if (pg?.code === '42501')
     return new DomainError<InvitationErrorCode>('ROLE_NOT_ALLOWED', { cause: error });
+  // An invitation code collided with another a few times in a row (32^8 codes: practically never).
+  if (pg?.code === '23505' && pg.constraint === 'invitations_invite_code_uq') return error;
   // Separation of duties (BR-IAM-4, migration 20261010090000).
   if (pg?.code === 'JR001')
     return new DomainError<InvitationErrorCode>('ROLE_CONFLICT', { cause: error });
@@ -140,16 +177,17 @@ export function invitationErrorOf(error: unknown): unknown {
 }
 
 /**
- * Creates the person (with their placement), the pending invitation (no token: the mailer job issues
- * it) and the `invitation.created` event, in the caller's transaction. A refusal leaves the transaction
- * aborted (the action rolls back). Throws DomainError EMAIL_TAKEN, EMPLOYEE_NUMBER_TAKEN,
- * ROLE_NOT_ALLOWED (the actor may not invite, or not with these roles) or ROLE_CONFLICT (the roles may
- * not go together, BR-IAM-4).
+ * Creates the person (with their placement), the pending invitation with its first code (issued by the
+ * database: private.issue_invitation_code, valid 7 days) and the `invitation.created` event (the mailer
+ * e-mails that code when e-mail is on), in the caller's transaction. Returns the code for the inviter to
+ * copy (never logged or audited). A refusal leaves the transaction aborted (the action rolls back).
+ * Throws DomainError EMAIL_TAKEN, EMPLOYEE_NUMBER_TAKEN, ROLE_NOT_ALLOWED (the actor may not invite, or not
+ * with these roles) or ROLE_CONFLICT (the roles may not go together, BR-IAM-4).
  */
 export async function createInvitation(
   tx: ClaimsTx,
   input: NewInvitation,
-): Promise<{ invitationId: string; personId: string }> {
+): Promise<{ invitationId: string; personId: string; inviteCode: string }> {
   const email = input.email.trim().toLowerCase();
   const firstNameAr = input.firstNameAr.trim();
   const familyNameAr = input.familyNameAr.trim();
@@ -176,8 +214,11 @@ export async function createInvitation(
               ${textArray(input.additionalRoles)})
       returning id`);
     if (!invitation) throw new Error('createInvitation: no invitation returned');
+    const [issued] = await tx.execute<{ code: string }>(sql`
+      select private.issue_invitation_code(${invitation.id}::uuid) as code`);
+    if (!issued?.code) throw new Error('createInvitation: no code issued');
     await emitEvent(tx, { type: INVITATION_EVENTS.created, subject: invitation.id });
-    return { invitationId: invitation.id, personId: person.id };
+    return { invitationId: invitation.id, personId: person.id, inviteCode: issued.code };
   } catch (error) {
     throw invitationErrorOf(error);
   }
@@ -212,11 +253,15 @@ export async function listInvitations(
     expires_at: Date | string;
     created_at: Date | string;
     import_id: string | null;
+    invite_code: string | null;
+    locale: string;
   }>(sql`
     select i.id, i.person_id, i.email, p.display_name_ar, p.display_name_en, i.primary_role,
-           ${STATE} as state, i.send_count, i.expires_at, i.created_at, i.import_id
+           ${STATE} as state, i.send_count, i.expires_at, i.created_at, i.import_id, c.invite_code, i.locale
     from platform.invitations i
     join platform.persons p on p.tenant_id = i.tenant_id and p.id = i.person_id
+    -- The codes the caller may copy (managing rules per invitation, migration 20261018090000).
+    left join private.invitation_codes() c on c.invitation_id = i.id
     where ${filter.state === undefined ? sql`true` : sql`${STATE} = ${filter.state}`}
     order by i.created_at desc, i.id`);
   return rows.map((r) => ({
@@ -231,6 +276,8 @@ export async function listInvitations(
     expiresAt: toDate(r.expires_at),
     createdAt: toDate(r.created_at),
     importId: r.import_id,
+    inviteCode: r.invite_code,
+    locale: r.locale === 'en' ? 'en' : 'ar',
   }));
 }
 
@@ -267,37 +314,37 @@ export async function getInvitationRoles(
   return row ? { primaryRole: row.primary_role, additionalRoles: row.additional_roles } : null;
 }
 
+/** The outcome of a resend: a new code (the old link stops working), or why there is none. */
+export type InvitationResend =
+  | { readonly status: 'queued'; readonly inviteCode: string }
+  | { readonly status: 'limit_reached' | 'not_pending' };
+
 /**
- * Asks the mailer for a new e-mail (new link; the old one stops working) while the invitation is
- * pending — expired or not — and fewer than INVITATION_MAX_SENDS e-mails went out. The request is a
- * write the database checks like a revocation (resend_requested_at, stamped with the actor: a user
- * manager; an invitation with a privileged role only an Organization Admin), then
- * `invitation.resend_requested` is emitted. Throws DomainError ROLE_NOT_ALLOWED when the database
- * refuses the actor.
+ * Resend (Kawadir: a new code + 7 new days): while the invitation is pending — expired or not — was sent
+ * (not held) and has had fewer than INVITATION_MAX_SENDS codes, the database issues a new code
+ * (private.issue_invitation_code, actor-checked like a revocation: a user manager; an invitation with a
+ * privileged role only an Organization Admin) and `invitation.resend_requested` is emitted (the mailer
+ * e-mails the new code when e-mail is on). Copying a code is not a resend. Throws DomainError
+ * ROLE_NOT_ALLOWED when the database refuses the actor.
  */
-export async function requestInvitationResend(
-  tx: ClaimsTx,
-  id: string,
-): Promise<'queued' | 'limit_reached' | 'not_pending'> {
-  let requested: unknown[];
+export async function requestInvitationResend(tx: ClaimsTx, id: string): Promise<InvitationResend> {
+  let code: string | undefined;
   try {
-    // clock_timestamp(): a second request in the same transaction is still a change the trigger checks.
-    requested = await tx.execute(sql`
-      update platform.invitations set resend_requested_at = clock_timestamp()
-      where id = ${id}::uuid and status = 'pending' and not mail_held and send_count < ${INVITATION_MAX_SENDS}
-      returning id`);
+    // In a savepoint: a refusal (limit, not pending) leaves the caller's transaction usable.
+    code = await tx.transaction(async (savepoint) => {
+      const [row] = await savepoint.execute<{ code: string }>(sql`
+        select private.issue_invitation_code(${id}::uuid) as code`);
+      return row?.code;
+    });
   } catch (error) {
+    const state = pgError(error)?.code;
+    if (state === 'JI004') return { status: 'limit_reached' };
+    if (state === 'JI005') return { status: 'not_pending' };
     throw invitationErrorOf(error);
   }
-  if (requested.length === 0) {
-    const [row] = await tx.execute<{ status: string; send_count: number; mail_held: boolean }>(sql`
-      select status, send_count, mail_held from platform.invitations where id = ${id}::uuid`);
-    return row?.status === 'pending' && !row.mail_held && row.send_count >= INVITATION_MAX_SENDS
-      ? 'limit_reached'
-      : 'not_pending';
-  }
+  if (!code) throw new Error('requestInvitationResend: no code issued');
   await emitEvent(tx, { type: INVITATION_EVENTS.resendRequested, subject: id });
-  return 'queued';
+  return { status: 'queued', inviteCode: code };
 }
 
 /** SQLSTATEs raised by the acceptance functions (migration 20261009090000). */

@@ -1,57 +1,49 @@
 import type { AppLocale } from '@jadarat/platform-i18n';
-import { AppShell, Icon, NavGroup, NavItem, NavUnavailable } from '@jadarat/ui';
+import {
+  AppShell,
+  CommandPalette,
+  FullScreenToggle,
+  Icon,
+  NAV_COOKIE,
+  NavGroup,
+  NavItem,
+  NavUnavailable,
+  NotificationBell,
+  PoweredBy,
+  THEME_COOKIE,
+  ThemeMenu,
+  Toaster,
+  parseNavCollapsed,
+  parseThemeMode,
+} from '@jadarat/ui';
 import { getTranslations } from 'next-intl/server';
-import { headers } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import type { ReactNode } from 'react';
 import { getConfigStatus } from '../lib/config-status';
 import { HOST_KIND_HEADER, HOST_REF_HEADER } from '../lib/host-tenant';
 import type { SuiteContext } from '../lib/suite-context';
-import { type SuitePage, suiteNavigation } from '../lib/suite-navigation';
-import { SignOutButton } from './auth/sign-out-button';
+import {
+  PAGE_TITLE_KEYS,
+  SUITE_PATHS,
+  type SuitePage,
+  commandPaletteItems,
+  suiteNavigation,
+} from '../lib/suite-navigation';
+import { roleName } from '../lib/users-view';
+import { AccountMenu } from './account-menu';
 import { IdleWarning } from './idle-warning';
 import { LanguageToggle } from './language-toggle';
 
 export type { SuitePage } from '../lib/suite-navigation';
 
 /**
- * The member's picture in the header (initials until photos arrive, T-M2-15b) → My profile (FR-IAM-16).
- */
-function MyProfileLink({
-  href,
-  name,
-  label,
-  current,
-}: {
-  href: string;
-  name: string;
-  label: string;
-  current: boolean;
-}) {
-  const initial = Array.from(name.trim())[0] ?? '?';
-  return (
-    <a
-      href={href}
-      aria-current={current ? 'page' : undefined}
-      className="flex min-h-11 items-center gap-2 rounded-md px-1.5 text-on-header no-underline hover:bg-surface-hover"
-      data-testid="my-profile-link"
-    >
-      <span
-        aria-hidden="true"
-        className="flex size-8 items-center justify-center rounded-full bg-primary-subtle text-xs font-semibold text-primary-text"
-      >
-        {initial}
-      </span>
-      <span className="sr-only">{label}: </span>
-      <span className="hidden max-w-40 truncate text-sm font-medium lg:inline">{name}</span>
-    </a>
-  );
-}
-
-/**
- * The suite frame (docs/design/suite-shell.md; approved design, T-M2-21): the gradient navigation with
- * the product and organization names and the member's menu (lib/suite-navigation.ts), and a white top
- * bar with the language switch, My profile and sign-out — only controls that work today (no search or
- * notifications yet). `path` is the locale-less path of the page (for the language switch).
+ * The suite frame in the Kawadir layout (T-M2-43; docs/design/kawadir-alignment.md §3): the white,
+ * collapsible navigation with the organization on top, the member's menu (lib/suite-navigation.ts) and
+ * «Powered by Jadarat»; the sticky top bar with the page title, the ⌘K / Ctrl K page search, full
+ * screen, theme (light / dark / system), the language switch, the notification bell (placeholder until
+ * FR-NTF-01) and the account menu (name, "Organization · Role", My profile, sign-out). The theme and the
+ * collapsed menu are this device's choices (cookies, display only). `path` is the locale-less path of
+ * the page (for the language switch).
  */
 export async function SuiteShell({
   locale,
@@ -70,13 +62,14 @@ export async function SuiteShell({
   const common = await getTranslations({ locale, namespace: 'common' });
   const auth = await getTranslations({ locale, namespace: 'auth' });
   const requestHeaders = await headers();
+  const preferences = await cookies();
   const hostKind = requestHeaders.get(HOST_KIND_HEADER);
   const hostRef = requestHeaders.get(HOST_REF_HEADER);
-  const tenantLabel =
-    context.organizationName ??
-    (hostRef && hostKind !== 'platform' ? hostRef : t('tenantUnresolved'));
+  const organizationName =
+    context.organizationName ?? (hostRef && hostKind !== 'platform' ? hostRef : null);
+  const tenantLabel = organizationName ?? t('tenantUnresolved');
 
-  // Menus per role (T-M2-21): groups and entries from the member's grants (lib/suite-navigation.ts).
+  // Menus per role (T-M2-21) in Kawadir groups (T-M2-43): from the member's grants.
   const navigation = suiteNavigation(context.navigation).map((group) => (
     <NavGroup
       key={group.key}
@@ -90,6 +83,7 @@ export async function SuiteShell({
               href={`/${locale}${entry.link.href}`}
               current={current === entry.link.page}
               icon={<Icon name={entry.icon} />}
+              tooltip={t(entry.key)}
             >
               {t(entry.key)}
             </NavItem>
@@ -98,12 +92,25 @@ export async function SuiteShell({
               label={t(entry.key)}
               note={t('comingSoon')}
               icon={<Icon name={entry.icon} />}
+              tooltip={`${t(entry.key)} · ${t('comingSoon')}`}
             />
           )}
         </li>
       ))}
     </NavGroup>
   ));
+
+  const name = context.me
+    ? locale === 'en'
+      ? (context.me.nameEn ?? context.me.nameAr)
+      : context.me.nameAr
+    : t('myAccount');
+  const role = context.me?.primaryRole ? roleName(locale, context.me.primaryRole) : null;
+  const subtitle =
+    organizationName && role
+      ? t('accountSubtitle', { organization: organizationName, role })
+      : (organizationName ?? role ?? '');
+  const canSignOut = getConfigStatus().auth;
 
   return (
     <AppShell
@@ -114,33 +121,66 @@ export async function SuiteShell({
           {tenantLabel}
         </span>
       }
+      title={t(PAGE_TITLE_KEYS[current])}
       navigation={navigation}
+      navigationFooter={<PoweredBy title={t('poweredBy')} subtitle={common('tmsFullName')} />}
       navigationLabel={t('mainNavigation')}
       skipToContentLabel={common('skipToContent')}
       menuLabel={t('menu')}
       closeMenuLabel={t('closeMenu')}
+      collapseLabels={{ collapse: t('collapseMenu'), expand: t('expandMenu') }}
+      initialCollapsed={parseNavCollapsed(preferences.get(NAV_COOKIE)?.value)}
+      headerStart={
+        <CommandPalette
+          items={commandPaletteItems(context.navigation, locale, (key) => t(key))}
+          texts={{
+            trigger: t('searchTrigger'),
+            title: t('searchTitle'),
+            placeholder: t('searchPlaceholder'),
+            empty: t('searchEmpty'),
+            close: t('close'),
+          }}
+        />
+      }
       headerEnd={
         <>
-          <LanguageToggle locale={locale} path={path} />
-          {context.me ? (
-            <MyProfileLink
-              href={`/${locale}/suite/profile`}
-              name={locale === 'en' ? (context.me.nameEn ?? context.me.nameAr) : context.me.nameAr}
-              label={t('myProfile')}
-              current={current === 'profile'}
-            />
-          ) : null}
-          {getConfigStatus().auth ? (
-            <SignOutButton
-              locale={locale}
-              label={auth('signOut')}
-              pendingLabel={auth('signingOut')}
-            />
-          ) : null}
+          <FullScreenToggle texts={{ enter: t('fullScreen'), exit: t('exitFullScreen') }} />
+          <ThemeMenu
+            initial={parseThemeMode(preferences.get(THEME_COOKIE)?.value)}
+            texts={{
+              label: t('theme'),
+              light: t('themeLight'),
+              dark: t('themeDark'),
+              system: t('themeSystem'),
+            }}
+          />
+          <LanguageToggle locale={locale} path={path} topBar />
+          <NotificationBell
+            texts={{
+              label: t('notifications'),
+              emptyTitle: t('notificationsEmptyTitle'),
+              emptyBody: t('notificationsEmptyBody'),
+            }}
+          />
+          <span aria-hidden="true" className="mx-1 hidden h-6 w-px bg-border md:block lg:mx-2" />
+          <AccountMenu
+            locale={locale}
+            name={name}
+            subtitle={subtitle}
+            profileHref={`/${locale}${SUITE_PATHS.profile}`}
+            profileCurrent={current === 'profile'}
+            canSignOut={canSignOut}
+            texts={{
+              profile: t('myProfile'),
+              signOut: canSignOut ? auth('signOut') : undefined,
+              signingOut: auth('signingOut'),
+            }}
+          />
         </>
       }
     >
       {children}
+      <Toaster label={t('statusMessages')} closeLabel={t('close')} />
       {context.live && context.idleMinutes !== null ? (
         <IdleWarning
           locale={locale}

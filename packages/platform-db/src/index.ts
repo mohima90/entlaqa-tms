@@ -260,6 +260,7 @@ export {
 export {
   type MemberAuthorizationFacts,
   type MemberRole,
+  getMyPrimaryRole,
   loadMemberAuthorizationFacts,
 } from './roles';
 export {

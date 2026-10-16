@@ -14,8 +14,15 @@ export interface SuiteContext {
   readonly organizationName: string | null;
   /** Navigation entries the member may open (display only — every page authorizes itself). */
   readonly navigation: SuiteNavigationAccess;
-  /** The signed-in member's names for the header picture (null in the preview or when unknown). */
-  readonly me: { readonly nameAr: string; readonly nameEn: string | null } | null;
+  /**
+   * The signed-in member's names and primary role code for the account menu ("Organization · Role";
+   * null in the preview or when unknown).
+   */
+  readonly me: {
+    readonly nameAr: string;
+    readonly nameEn: string | null;
+    readonly primaryRole: string | null;
+  } | null;
   /** The organization's inactivity limit in minutes (T-M2-10): the page warns before it ends. */
   readonly idleMinutes: number | null;
   /**
@@ -126,7 +133,11 @@ export async function getSuiteContext(locale: AppLocale): Promise<SuiteContext> 
     organizationName,
     navigation: navigationFor(grants.ok ? grants.value : []),
     me: identity.ok
-      ? { nameAr: identity.value.displayNameAr, nameEn: identity.value.displayNameEn }
+      ? {
+          nameAr: identity.value.displayNameAr,
+          nameEn: identity.value.displayNameEn,
+          primaryRole: identity.value.primaryRole,
+        }
       : null,
     idleMinutes: tenant?.sessionIdleMinutes ?? null,
     regional,

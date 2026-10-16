@@ -18,15 +18,15 @@ const pages = [
   // Without Auth configured (CI) the reset page says so; the flow runs on the self-hosted stack.
   { path: '/ar/reset-password', lang: 'ar', dir: 'rtl', heading: 'تعيين كلمة مرور جديدة' },
   { path: '/en/reset-password', lang: 'en', dir: 'ltr', heading: 'Set a new password' },
-  { path: '/ar/suite/admin/users', lang: 'ar', dir: 'rtl', heading: 'المستخدمون' },
-  { path: '/en/suite/admin/users', lang: 'en', dir: 'ltr', heading: 'Users' },
+  { path: '/ar/suite/admin/users', lang: 'ar', dir: 'rtl', heading: 'أعضاء الفريق' },
+  { path: '/en/suite/admin/users', lang: 'en', dir: 'ltr', heading: 'Team members' },
   { path: '/ar/suite/profile', lang: 'ar', dir: 'rtl', heading: 'ملفي الشخصي' },
   { path: '/en/suite/profile', lang: 'en', dir: 'ltr', heading: 'My profile' },
   {
     path: '/ar/suite/admin/users/a1000000-0000-4000-8000-0000000000a1',
     lang: 'ar',
     dir: 'rtl',
-    heading: 'المستخدمون',
+    heading: 'أعضاء الفريق',
   },
   {
     path: '/en/suite/admin/users/a1000000-0000-4000-8000-0000000000a1/edit',
@@ -41,9 +41,10 @@ const pages = [
     heading: 'تعديل الأدوار',
   },
   { path: '/ar/suite/admin/roles', lang: 'ar', dir: 'rtl', heading: 'الأدوار والصلاحيات' },
-  // Organization profile (T-M2-22): the frame and the "not available here" state without a database.
-  { path: '/ar/suite/admin/organization', lang: 'ar', dir: 'rtl', heading: 'بيانات المنشأة' },
-  { path: '/en/suite/admin/organization', lang: 'en', dir: 'ltr', heading: 'Organization profile' },
+  // Settings → General (organization profile, T-M2-22; Kawadir layout, T-M2-43): the frame and the
+  // "not available here" state without a database.
+  { path: '/ar/suite/admin/settings', lang: 'ar', dir: 'rtl', heading: 'الإعدادات العامة' },
+  { path: '/en/suite/admin/settings', lang: 'en', dir: 'ltr', heading: 'General settings' },
   {
     path: '/en/suite/admin/roles?role=auditor',
     lang: 'en',
@@ -201,13 +202,13 @@ test('the users pages explain that they need a configured environment (preview)'
 }) => {
   await page.goto('/en/suite');
   // On a phone the navigation is behind the menu button (T-M2-21).
-  // (The preview home also links to Users from its set-up card: use the navigation's entry.)
+  // (The preview home also links to Team members from its set-up card: use the navigation's entry.)
   const navigation = page.getByRole('navigation', { name: 'Main navigation' });
   if (isMobile) await page.getByRole('button', { name: 'Menu' }).click();
-  await navigation.getByRole('link', { name: 'Users' }).click();
+  await navigation.getByRole('link', { name: 'Team members' }).click();
   await expect(page).toHaveURL(/\/en\/suite\/admin\/users$/);
   if (isMobile) await page.getByRole('button', { name: 'Menu' }).click();
-  await expect(navigation.getByRole('link', { name: 'Users' })).toHaveAttribute(
+  await expect(navigation.getByRole('link', { name: 'Team members' })).toHaveAttribute(
     'aria-current',
     'page',
   );

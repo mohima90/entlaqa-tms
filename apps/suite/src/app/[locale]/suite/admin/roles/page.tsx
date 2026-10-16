@@ -7,7 +7,7 @@ import {
   SYSTEM_ROLES,
   type SystemRoleDefinition,
 } from '@jadarat/platform-rbac';
-import { Alert, Badge, type BadgeTone, Card } from '@jadarat/ui';
+import { Alert, Badge, type BadgeTone, Card, PageHeader } from '@jadarat/ui';
 import { hasLocale } from 'next-intl';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { notFound, redirect } from 'next/navigation';
@@ -92,15 +92,15 @@ export default async function RolesPage({
       // The language switch keeps the selected role.
       path={found ? `/suite/admin/roles?role=${found.code}` : '/suite/admin/roles'}
     >
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="m-0 text-2xl font-bold">{t('title')}</h1>
-          <p className="mb-0 mt-2 text-text-muted">{t('intro', { count: SYSTEM_ROLES.length })}</p>
-        </div>
-        <p className="m-0 flex items-center gap-2 text-text-muted" data-testid="custom-role">
-          {t('customRole')} <Badge tone="neutral">{t('comingSoon')}</Badge>
-        </p>
-      </div>
+      <PageHeader
+        title={t('title')}
+        description={t('intro', { count: SYSTEM_ROLES.length })}
+        actions={
+          <p className="m-0 flex items-center gap-2 text-text-muted" data-testid="custom-role">
+            {t('customRole')} <Badge tone="neutral">{t('comingSoon')}</Badge>
+          </p>
+        }
+      />
       {content}
     </SuiteShell>
   );
@@ -123,8 +123,11 @@ async function Roles({
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-[18rem_1fr]">
-      <nav aria-label={t('rolesLabel')}>
-        <ul className="m-0 flex list-none flex-col gap-1 p-0" data-testid="role-list">
+      <nav
+        aria-label={t('rolesLabel')}
+        className="self-start rounded-xl border border-border bg-surface p-2 shadow-1"
+      >
+        <ul className="m-0 flex list-none flex-col gap-0.5 p-0" data-testid="role-list">
           {SYSTEM_ROLES.map((role) => {
             const current = role.code === selected.code;
             return (
@@ -132,9 +135,9 @@ async function Roles({
                 <a
                   href={href(role.code)}
                   aria-current={current ? 'page' : undefined}
-                  className={`flex min-h-11 items-center justify-between gap-2 rounded-md px-3 py-2 no-underline ${
+                  className={`flex min-h-11 items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm font-medium no-underline transition-colors ${
                     current
-                      ? 'bg-surface-selected font-medium text-primary-text'
+                      ? 'bg-surface-selected text-primary-text'
                       : 'text-text hover:bg-surface-hover'
                   }`}
                 >

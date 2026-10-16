@@ -4,7 +4,21 @@ import { routing } from '@jadarat/platform-i18n/routing';
 import type { InvitationRow } from '@jadarat/platform-db';
 import type { UserImportBannersView } from '@jadarat/platform-import';
 import { SYSTEM_ROLES, type UsersListView } from '@jadarat/platform-rbac';
-import { Alert, Badge, type BadgeTone, buttonClasses } from '@jadarat/ui';
+import {
+  Alert,
+  Badge,
+  type BadgeTone,
+  Card,
+  EmptyState,
+  Icon,
+  PageHeader,
+  StatCard,
+  StatGrid,
+  TabNav,
+  buttonClasses,
+  tableClasses,
+  toolbarFieldClasses,
+} from '@jadarat/ui';
 import { hasLocale } from 'next-intl';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { notFound, redirect } from 'next/navigation';
@@ -46,8 +60,9 @@ const STATUS_TONE: Record<'active' | 'invited' | 'suspended', BadgeTone> = {
   invited: 'info',
   suspended: 'neutral',
 };
-const fieldClass =
-  'min-h-11 w-full rounded-md border border-border-strong bg-surface px-3 text-text';
+const fieldClass = toolbarFieldClasses;
+/** Views of the Members tab (Kawadir team page): the status filter under it. */
+const MEMBER_TABS = ['all', 'active', 'deactivated'] as const;
 
 /** Text keys of the invitations table and banner (namespace `invitations.list`). */
 const INVITATION_LIST_KEYS = [
@@ -83,7 +98,9 @@ const INVITATION_RAW_KEYS = ['revokeConfirm', 'resentExpired'] as const;
 const INVITATIONS_SHOWN = 500;
 
 /**
- * Users list (T-M2-04, screen 1 — FR-IAM-01): only the people the member may see (ADR 0003 §4.2).
+ * Team members (Kawadir team page, T-M2-43: summary cards, then the tabs «الأعضاء» / Members and
+ * «الدعوات المعلّقة» / Pending invites; the list is a table in a card under its toolbar). Users list
+ * (T-M2-04, screen 1 — FR-IAM-01): only the people the member may see (ADR 0003 §4.2).
  * Holders of `platform.user.invite` also see «دعوة مستخدم» and, on the `invited` tab, the pending and
  * expired invitations with resend and revoke (T-M2-07, FR-IAM-03). Holders of `platform.user.deactivate`
  * reactivate members from the `deactivated` tab (T-M2-09, FR-IAM-05). Bulk import (T-M2-12, FR-IAM-04;
@@ -182,27 +199,31 @@ export default async function UsersPage({
 
   return (
     <SuiteShell locale={locale} context={context} current="users" path={languagePath}>
-      <div className="mb-2 flex flex-wrap items-end justify-between gap-4">
-        <h1 className="m-0 text-2xl font-bold">{t('title')}</h1>
-        {canInvite ? (
-          <div className="flex flex-wrap gap-2">
-            <a
-              href={`/${locale}/suite/admin/users/import`}
-              className={buttonClasses({ variant: 'secondary', size: 'md' })}
-              data-testid="import-users-link"
-            >
-              {importTexts('entry')}
-            </a>
-            <a
-              href={`/${locale}/suite/admin/users/invite`}
-              className={buttonClasses({ variant: 'primary', size: 'md' })}
-              data-testid="invite-user-link"
-            >
-              {invitationTexts('inviteUser')}
-            </a>
-          </div>
-        ) : null}
-      </div>
+      <PageHeader
+        title={t('title')}
+        description={t('description')}
+        actions={
+          canInvite ? (
+            <>
+              <a
+                href={`/${locale}/suite/admin/users/import`}
+                className={buttonClasses({ variant: 'secondary', size: 'md' })}
+                data-testid="import-users-link"
+              >
+                {importTexts('entry')}
+              </a>
+              <a
+                href={`/${locale}/suite/admin/users/invite`}
+                className={buttonClasses({ variant: 'primary', size: 'md' })}
+                data-testid="invite-user-link"
+              >
+                <Icon name="user-plus" />
+                {invitationTexts('inviteUser')}
+              </a>
+            </>
+          ) : null
+        }
+      />
       <div className="flex flex-col gap-6">{body}</div>
     </SuiteShell>
   );
@@ -283,36 +304,75 @@ async function UsersList({
       {banners ? await importBanners(locale, banners) : null}
       {expired.length > 0 ? await expiredBanner(locale, expired) : null}
 
-      <nav aria-label={t('tabsLabel')}>
-        <ul className="m-0 flex list-none flex-wrap gap-2 border-b border-border p-0">
-          {TABS.map((tab) => (
-            <li key={tab}>
-              <a
-                href={usersListHref(locale, params, { tab, page: undefined })}
-                aria-current={tab === activeTab ? 'page' : undefined}
-                className={`-mb-px inline-flex min-h-11 items-center gap-2 border-b-2 px-3 no-underline ${
-                  tab === activeTab
-                    ? 'border-primary font-semibold text-primary-text'
-                    : 'border-transparent text-text-muted hover:text-text'
-                }`}
-              >
-                {t(`tabs.${tab}`)}
-                <Badge>{format.number(counts[tab], 'integer')}</Badge>
-              </a>
-            </li>
-          ))}
-        </ul>
-      </nav>
+      <StatGrid label={t('statsLabel')} data-testid="users-stats">
+        <StatCard
+          label={t('stats.total')}
+          value={format.number(counts.all, 'integer')}
+          icon="people"
+          tone="primary"
+        />
+        <StatCard
+          label={t('stats.active')}
+          value={format.number(counts.active, 'integer')}
+          icon="success"
+          tone="success"
+        />
+        <StatCard
+          label={t('stats.pending')}
+          value={format.number(counts.invited, 'integer')}
+          icon="mail"
+          tone="warning"
+        />
+        <StatCard
+          label={t('stats.deactivated')}
+          value={format.number(counts.deactivated, 'integer')}
+          icon="user"
+        />
+      </StatGrid>
+
+      <TabNav
+        label={t('viewsLabel')}
+        current={activeTab === 'invited' ? 'invited' : 'members'}
+        items={[
+          {
+            key: 'members',
+            href: usersListHref(locale, params, { tab: undefined, page: undefined }),
+            icon: 'people',
+            label: t('tabs.members'),
+            count: format.number(counts.all, 'integer'),
+          },
+          {
+            key: 'invited',
+            href: usersListHref(locale, params, { tab: 'invited', page: undefined }),
+            icon: 'mail',
+            label: t('tabs.invited'),
+            count: format.number(counts.invited, 'integer'),
+          },
+        ]}
+      />
+      {activeTab === 'invited' ? null : (
+        <TabNav
+          label={t('statusFilterLabel')}
+          variant="segmented"
+          current={activeTab}
+          items={MEMBER_TABS.map((tab) => ({
+            key: tab,
+            href: usersListHref(locale, params, { tab, page: undefined }),
+            label: t(`tabs.${tab}`),
+            count: format.number(counts[tab], 'integer'),
+          }))}
+        />
+      )}
 
       <form
         method="get"
         action={`/${locale}/suite/admin/users`}
         aria-label={t('filtersLabel')}
-        className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5 xl:items-end"
+        className="grid grid-cols-1 gap-3 rounded-xl border border-border bg-surface p-4 shadow-1 md:grid-cols-2 xl:grid-cols-5 xl:items-end"
       >
         {activeTab !== 'all' ? <input type="hidden" name="tab" value={activeTab} /> : null}
         <div className="flex flex-col gap-1 xl:col-span-2">
-          <label htmlFor="users-q" className="font-medium">
+          <label htmlFor="users-q" className="text-sm font-medium">
             {t('search')}
           </label>
           <input
@@ -324,13 +384,13 @@ async function UsersList({
             aria-describedby="users-q-hint"
             className={fieldClass}
           />
-          <p id="users-q-hint" className="m-0 text-sm text-text-muted">
+          <p id="users-q-hint" className="m-0 text-xs text-text-muted">
             {t('searchHint')}
           </p>
         </div>
         {canReadRoles ? (
           <div className="flex flex-col gap-1">
-            <label htmlFor="users-role" className="font-medium">
+            <label htmlFor="users-role" className="text-sm font-medium">
               {t('role')}
             </label>
             <select
@@ -351,7 +411,7 @@ async function UsersList({
         {orgUnits ? (
           <>
             <div className="flex flex-col gap-1">
-              <label htmlFor="users-department" className="font-medium">
+              <label htmlFor="users-department" className="text-sm font-medium">
                 {t('department')}
               </label>
               <select
@@ -369,7 +429,7 @@ async function UsersList({
               </select>
             </div>
             <div className="flex flex-col gap-1">
-              <label htmlFor="users-branch" className="font-medium">
+              <label htmlFor="users-branch" className="text-sm font-medium">
                 {t('branch')}
               </label>
               <select
@@ -389,7 +449,8 @@ async function UsersList({
           </>
         ) : null}
         <div className="flex flex-wrap gap-2 xl:col-span-5">
-          <button type="submit" className={buttonClasses({ variant: 'primary', size: 'md' })}>
+          <button type="submit" className={buttonClasses({ variant: 'secondary', size: 'md' })}>
+            <Icon name="search" />
             {t('apply')}
           </button>
           {filtered ? (
@@ -408,126 +469,124 @@ async function UsersList({
         : null}
 
       {nothingToShow ? (
-        <div
-          className="rounded-lg border border-border bg-surface p-6 text-center"
-          data-testid="users-empty"
-        >
-          <h2 className="m-0 text-lg font-semibold">
-            {filtered ? t('emptyFilteredTitle') : t('emptyTitle')}
-          </h2>
-          <p className="mb-0 mt-2 text-text-muted">
-            {filtered ? t('emptyFilteredBody') : t('emptyBody')}
-          </p>
-        </div>
+        <Card data-testid="users-empty">
+          <EmptyState
+            icon={activeTab === 'invited' ? 'mail' : 'people'}
+            title={filtered ? t('emptyFilteredTitle') : t('emptyTitle')}
+            description={filtered ? t('emptyFilteredBody') : t('emptyBody')}
+          />
+        </Card>
       ) : list.rows.length === 0 ? null : (
-        <div className="overflow-x-auto rounded-lg border border-border bg-surface">
-          <table className="w-full border-collapse text-start" data-testid="users-table">
-            <caption className="sr-only">{t('tableCaption')}</caption>
-            <thead className="bg-surface-sunken text-sm">
-              <tr>
-                <th scope="col" className="px-4 py-3 text-start font-semibold">
-                  {t('columns.name')}
-                </th>
-                <th scope="col" className="px-4 py-3 text-start font-semibold">
-                  {t('columns.employeeNumber')}
-                </th>
-                {canReadRoles ? (
-                  <th scope="col" className="px-4 py-3 text-start font-semibold">
-                    {t('columns.primaryRole')}
+        <Card flush>
+          <div className={tableClasses.wrapper}>
+            <table className={tableClasses.table} data-testid="users-table">
+              <caption className="sr-only">{t('tableCaption')}</caption>
+              <thead className={tableClasses.header}>
+                <tr>
+                  <th scope="col" className={tableClasses.head}>
+                    {t('columns.name')}
                   </th>
-                ) : null}
-                <th scope="col" className="px-4 py-3 text-start font-semibold">
-                  {t('columns.department')}
-                </th>
-                <th scope="col" className="px-4 py-3 text-start font-semibold">
-                  {t('columns.status')}
-                </th>
-                <th scope="col" className="px-4 py-3 text-start font-semibold">
-                  {t('columns.lastSignIn')}
-                </th>
-                {reactivation ? (
-                  <th scope="col" className="px-4 py-3 text-start font-semibold">
-                    {t('columns.actions')}
+                  <th scope="col" className={tableClasses.head}>
+                    {t('columns.employeeNumber')}
                   </th>
-                ) : null}
-              </tr>
-            </thead>
-            <tbody>
-              {list.rows.map((row) => (
-                <tr key={row.personId} className="border-t border-border">
-                  <td className="px-4 py-3">
-                    <a
-                      href={`/${locale}/suite/admin/users/${row.personId}`}
-                      className="font-medium"
-                    >
-                      {localizedName(locale, row.displayNameAr, row.displayNameEn)}
-                    </a>
-                    {row.email ? (
-                      <div className="text-sm text-text-muted">
-                        <bdi dir="ltr">{row.email}</bdi>
-                      </div>
-                    ) : null}
-                  </td>
-                  <td className="px-4 py-3">
-                    {row.employeeNumber ? (
-                      <bdi dir="ltr">{row.employeeNumber}</bdi>
-                    ) : (
-                      <NotSet label={t('noneLabel')} />
-                    )}
-                  </td>
                   {canReadRoles ? (
-                    <td className="px-4 py-3">
-                      {!row.rolesVisible ? (
-                        <NotSet label={t('rolesNotVisible')} />
-                      ) : row.primaryRole ? (
-                        roleName(locale, row.primaryRole)
-                      ) : (
-                        <NotSet label={t('noneLabel')} />
-                      )}
-                      {row.otherRoles.length > 0 ? (
+                    <th scope="col" className={tableClasses.head}>
+                      {t('columns.primaryRole')}
+                    </th>
+                  ) : null}
+                  <th scope="col" className={tableClasses.head}>
+                    {t('columns.department')}
+                  </th>
+                  <th scope="col" className={tableClasses.head}>
+                    {t('columns.status')}
+                  </th>
+                  <th scope="col" className={tableClasses.head}>
+                    {t('columns.lastSignIn')}
+                  </th>
+                  {reactivation ? (
+                    <th scope="col" className={tableClasses.head}>
+                      {t('columns.actions')}
+                    </th>
+                  ) : null}
+                </tr>
+              </thead>
+              <tbody>
+                {list.rows.map((row) => (
+                  <tr key={row.personId} className={tableClasses.row}>
+                    <td className={tableClasses.cell}>
+                      <a
+                        href={`/${locale}/suite/admin/users/${row.personId}`}
+                        className="font-medium"
+                      >
+                        {localizedName(locale, row.displayNameAr, row.displayNameEn)}
+                      </a>
+                      {row.email ? (
                         <div className="text-sm text-text-muted">
-                          {t('otherRoles', { count: row.otherRoles.length })}
+                          <bdi dir="ltr">{row.email}</bdi>
                         </div>
                       ) : null}
                     </td>
-                  ) : null}
-                  <td className="px-4 py-3">
-                    {row.departmentNameAr ? (
-                      localizedName(locale, row.departmentNameAr, row.departmentNameEn)
-                    ) : (
-                      <NotSet label={t('noneLabel')} />
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    <Badge tone={STATUS_TONE[row.status]}>{t(`status.${row.status}`)}</Badge>
-                  </td>
-                  <td className="px-4 py-3 text-sm" data-testid="user-last-sign-in">
-                    {row.lastSignInAt ? dates.dateTime(row.lastSignInAt) : t('never')}
-                  </td>
-                  {reactivation ? (
-                    <td className="px-4 py-3">
-                      {row.status !== 'suspended' || !row.mayManage ? (
-                        <NotSet label={t('noneLabel')} />
-                      ) : row.privileged && view.privilegedReactivation !== 'allowed' ? (
-                        <NotSet label={t('noneLabel')} />
+                    <td className={tableClasses.cell}>
+                      {row.employeeNumber ? (
+                        <bdi dir="ltr">{row.employeeNumber}</bdi>
                       ) : (
-                        <ReactivateMemberButton
-                          personId={row.personId}
-                          name={localizedName(locale, row.displayNameAr, row.displayNameEn)}
-                          privileged={row.privileged}
-                          labels={reactivation.labels}
-                          errors={reactivation.errors}
-                          successHref={reactivation.successHref}
-                          compact
-                        />
+                        <NotSet label={t('noneLabel')} />
                       )}
                     </td>
-                  ) : null}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                    {canReadRoles ? (
+                      <td className={tableClasses.cell}>
+                        {!row.rolesVisible ? (
+                          <NotSet label={t('rolesNotVisible')} />
+                        ) : row.primaryRole ? (
+                          roleName(locale, row.primaryRole)
+                        ) : (
+                          <NotSet label={t('noneLabel')} />
+                        )}
+                        {row.otherRoles.length > 0 ? (
+                          <div className="text-sm text-text-muted">
+                            {t('otherRoles', { count: row.otherRoles.length })}
+                          </div>
+                        ) : null}
+                      </td>
+                    ) : null}
+                    <td className={tableClasses.cell}>
+                      {row.departmentNameAr ? (
+                        localizedName(locale, row.departmentNameAr, row.departmentNameEn)
+                      ) : (
+                        <NotSet label={t('noneLabel')} />
+                      )}
+                    </td>
+                    <td className={tableClasses.cell}>
+                      <Badge tone={STATUS_TONE[row.status]}>{t(`status.${row.status}`)}</Badge>
+                    </td>
+                    <td className={tableClasses.cell} data-testid="user-last-sign-in">
+                      {row.lastSignInAt ? dates.dateTime(row.lastSignInAt) : t('never')}
+                    </td>
+                    {reactivation ? (
+                      <td className={tableClasses.cell}>
+                        {row.status !== 'suspended' || !row.mayManage ? (
+                          <NotSet label={t('noneLabel')} />
+                        ) : row.privileged && view.privilegedReactivation !== 'allowed' ? (
+                          <NotSet label={t('noneLabel')} />
+                        ) : (
+                          <ReactivateMemberButton
+                            personId={row.personId}
+                            name={localizedName(locale, row.displayNameAr, row.displayNameEn)}
+                            privileged={row.privileged}
+                            labels={reactivation.labels}
+                            errors={reactivation.errors}
+                            successHref={reactivation.successHref}
+                            compact
+                          />
+                        )}
+                      </td>
+                    ) : null}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
       )}
 
       {list.total > 0 ? (

@@ -2,7 +2,7 @@ import { toClientError } from '@jadarat/platform-core';
 import type { UserProfile } from '@jadarat/platform-db';
 import { type AppLocale, type DisplayDateFormatter, formatHijriDate } from '@jadarat/platform-i18n';
 import { routing } from '@jadarat/platform-i18n/routing';
-import { Alert, Card } from '@jadarat/ui';
+import { Alert, Card, PageHeader } from '@jadarat/ui';
 import { hasLocale } from 'next-intl';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { notFound, redirect } from 'next/navigation';
@@ -75,7 +75,7 @@ export default async function MyProfilePage({ params }: { params: Promise<{ loca
 
   return (
     <SuiteShell locale={locale} context={context} current="profile" path="/suite/profile">
-      <h1 className="mb-6 mt-0 text-2xl font-bold">{t('title')}</h1>
+      <PageHeader title={t('title')} />
       {content}
     </SuiteShell>
   );

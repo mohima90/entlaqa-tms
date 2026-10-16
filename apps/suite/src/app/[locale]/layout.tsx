@@ -1,9 +1,11 @@
 import '../globals.css';
 import { getDirection } from '@jadarat/platform-i18n';
 import { routing } from '@jadarat/platform-i18n/routing';
+import { THEME_COOKIE, parseThemeMode, themeAttribute } from '@jadarat/ui';
 import type { Metadata, Viewport } from 'next';
 import { hasLocale } from 'next-intl';
 import { getTranslations } from 'next-intl/server';
+import { cookies } from 'next/headers';
 import { notFound } from 'next/navigation';
 import type { ReactNode } from 'react';
 
@@ -36,9 +38,12 @@ export default async function LocaleLayout({
 }) {
   const { locale } = await params;
   if (!hasLocale(routing.locales, locale)) notFound();
+  // Light / dark / system, this device's choice (T-M2-43): rendered on the server, so no flash and no
+  // inline script (the CSP allows none). `system` sets no attribute: the tokens follow the OS.
+  const theme = themeAttribute(parseThemeMode((await cookies()).get(THEME_COOKIE)?.value));
 
   return (
-    <html lang={locale} dir={getDirection(locale)}>
+    <html lang={locale} dir={getDirection(locale)} data-theme={theme}>
       <body>{children}</body>
     </html>
   );

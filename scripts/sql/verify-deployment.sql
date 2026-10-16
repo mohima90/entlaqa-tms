@@ -240,8 +240,9 @@ begin
         a.privilege_type
       from pg_class c, aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a
       where c.oid = 'private.auth_user_email'::regclass and a.grantee <> c.relowner
-        -- Readers: invitation_guard (FR-IAM-03) and rate_limit_guard (Organization Admin unlock, T-M2-11).
-        and not (a.grantee <> 0 and pg_get_userbyid(a.grantee) in ('invitation_guard', 'rate_limit_guard')
+        -- Readers: invitation_guard (FR-IAM-03), rate_limit_guard (Organization Admin unlock, T-M2-11) and
+        -- platform_admin_guard (a Super Admin never invites their own e-mail, FR-ADM-17 review L7).
+        and not (a.grantee <> 0 and pg_get_userbyid(a.grantee) in ('invitation_guard', 'rate_limit_guard', 'platform_admin_guard')
                  and a.privilege_type = 'SELECT')
       union
       select distinct
@@ -312,8 +313,12 @@ begin
        array['platform_admin_guard', 'authenticated'], true),
       ('private.platform_admin_invitation_code(uuid)', 'platform_admin_guard', array['platform_admin_guard', 'authenticated'], true),
       ('private.platform_reissue_admin_code(uuid)', 'platform_admin_guard', array['platform_admin_guard', 'authenticated'], true),
-      ('private.grant_platform_admin(uuid)', 'platform_admin_guard', array['platform_admin_guard', current_user::text], true),
-      ('private.revoke_platform_admin(uuid)', 'platform_admin_guard', array['platform_admin_guard', current_user::text], true),
+      ('private.grant_platform_admin(uuid, text, text)', 'platform_admin_guard', array['platform_admin_guard', current_user::text], true),
+      ('private.revoke_platform_admin(uuid, text, text)', 'platform_admin_guard', array['platform_admin_guard', current_user::text], true),
+      ('private.list_platform_admins()', 'platform_admin_guard', array['platform_admin_guard', current_user::text], true),
+      -- The workflow's allow-list and audit data (review L3, L5): SECURITY INVOKER, called by the above.
+      ('private.platform_admin_operator()', 'platform_admin_guard', array['platform_admin_guard'], false),
+      ('private.platform_admin_workflow_data(text, text)', 'platform_admin_guard', array['platform_admin_guard'], false),
       ('private.platform_admin_is_active(uuid)', 'platform_admin_guard', array['platform_admin_guard', 'invitation_guard'], true),
       ('private.is_platform_invitation(uuid)', 'platform_admin_guard', array['platform_admin_guard', 'invitation_guard'], true),
       ('private.platform_admin_caller()', 'platform_admin_guard', array['platform_admin_guard'], false),
@@ -489,7 +494,8 @@ begin
         'private.is_platform_admin()', 'private.platform_list_tenants()',
         'private.platform_create_tenant(text,text,text,text,text,text,text,text,text)',
         'private.platform_admin_invitation_code(uuid)', 'private.platform_reissue_admin_code(uuid)',
-        'private.grant_platform_admin(uuid)', 'private.revoke_platform_admin(uuid)',
+        'private.grant_platform_admin(uuid,text,text)', 'private.revoke_platform_admin(uuid,text,text)',
+        'private.list_platform_admins()',
         'private.platform_admin_is_active(uuid)', 'private.is_platform_invitation(uuid)',
         'private.request_password_reset_mail(text)', 'private.request_password_changed_mail(uuid)',
         'private.claim_account_mail_request()', 'private.finish_account_mail_request(uuid)',

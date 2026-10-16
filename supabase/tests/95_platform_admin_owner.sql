@@ -4,8 +4,10 @@
 -- only); the whole Kawadir flow — a Super Admin creates an organization with its Organization Admin's pending
 -- invitation, the invitee's sign-up passes the existing hook for that e-mail only, the acceptance makes them
 -- the ACTIVE Organization Admin of that organization only; a revoked Super Admin's pending invitation stops
--- working. COMMITTED fixtures for 96_platform_admin_app_server.sql: the Super Admin uP (…f1) with a valid
--- session sP (…fa01) and an expired one (…fa09), no membership anywhere. Everything else is rolled back.
+-- working; another Super Admin's new code replaces the invitation (review M1). COMMITTED fixtures for
+-- 96_platform_admin_app_server.sql: the Super Admin uP (…f1) with a valid session sP (…fa01) and an expired
+-- one (…fa09), a second Super Admin uQ (…f3, session …fa03), no membership anywhere. Everything else is
+-- rolled back.
 \set ON_ERROR_STOP on
 
 -- ---------------------------------------------------------------------------------------------------
@@ -16,6 +18,11 @@ insert into auth.sessions (id, user_id, not_after) values
   ('10000000-0000-4000-8000-00000000fa01', '00000000-0000-4000-8000-0000000000f1', null),
   ('10000000-0000-4000-8000-00000000fa09', '00000000-0000-4000-8000-0000000000f1', now() - interval '1 minute');
 select private.grant_platform_admin('00000000-0000-4000-8000-0000000000f1');
+-- A second Super Admin uQ (…f3) with a valid session (rolled back where used; committed only as fixtures).
+insert into auth.users (id, email) values ('00000000-0000-4000-8000-0000000000f3', 'super2@entlaqa.test');
+insert into auth.sessions (id, user_id, not_after) values
+  ('10000000-0000-4000-8000-00000000fa03', '00000000-0000-4000-8000-0000000000f3', null);
+select private.grant_platform_admin('00000000-0000-4000-8000-0000000000f3');
 
 create or replace function pg_temp.become_super_admin() returns void language plpgsql as $$
 begin
@@ -23,6 +30,13 @@ begin
   set local role authenticated;
   perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000f1',
                                              '10000000-0000-4000-8000-00000000fa01', null));
+end $$;
+create or replace function pg_temp.become_second_super_admin() returns void language plpgsql as $$
+begin
+  set local session authorization app_server;
+  set local role authenticated;
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000f3',
+                                             '10000000-0000-4000-8000-00000000fa03', null));
 end $$;
 create or replace function pg_temp.become_owner() returns void language plpgsql as $$
 begin
@@ -71,13 +85,15 @@ begin
                     order by p.oid::regprocedure::text collate "C") into v_list
   from pg_proc p where p.proowner = 'platform_admin_guard'::regrole;
   perform tests.assert_eq(v_list,
-    'private.grant_platform_admin(uuid) (definer), private.is_platform_admin() (definer), '
-    'private.is_platform_invitation(uuid) (definer), private.platform_admin_caller(), '
+    'private.grant_platform_admin(uuid,text,text) (definer), private.is_platform_admin() (definer), '
+    'private.is_platform_invitation(uuid) (definer), private.list_platform_admins() (definer), '
+    'private.platform_admin_caller(), '
     'private.platform_admin_invitation_code(uuid) (definer), private.platform_admin_is_active(uuid) (definer), '
+    'private.platform_admin_operator(), private.platform_admin_workflow_data(text,text), '
     'private.platform_create_tenant(text,text,text,text,text,text,text,text,text) (definer), '
     'private.platform_list_tenants() (definer), private.platform_pending_admin_invitation(uuid), '
     'private.platform_reissue_admin_code(uuid) (definer), private.platform_reserved_slug(text), '
-    'private.revoke_platform_admin(uuid) (definer)',
+    'private.revoke_platform_admin(uuid,text,text) (definer)',
     'platform_admin_guard owns the console, the workflow''s grant and revoke and their helpers only');
   -- Who may execute what (exact, besides the owner).
   select string_agg(format('%s → %s', p.oid::regprocedure,
@@ -86,13 +102,13 @@ begin
   from pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
   where p.proowner = 'platform_admin_guard'::regrole and a.privilege_type = 'EXECUTE' and a.grantee <> p.proowner;
   perform tests.assert_eq(v_list,
-    format('private.grant_platform_admin(uuid) → %1$s, private.is_platform_admin() → authenticated, '
-           'private.is_platform_invitation(uuid) → invitation_guard, '
+    format('private.grant_platform_admin(uuid,text,text) → %1$s, private.is_platform_admin() → authenticated, '
+           'private.is_platform_invitation(uuid) → invitation_guard, private.list_platform_admins() → %1$s, '
            'private.platform_admin_invitation_code(uuid) → authenticated, '
            'private.platform_admin_is_active(uuid) → invitation_guard, '
            'private.platform_create_tenant(text,text,text,text,text,text,text,text,text) → authenticated, '
            'private.platform_list_tenants() → authenticated, private.platform_reissue_admin_code(uuid) → authenticated, '
-           'private.revoke_platform_admin(uuid) → %1$s', current_user),
+           'private.revoke_platform_admin(uuid,text,text) → %1$s', current_user),
     'EXECUTE: the console for authenticated (checked inside), the grants for the migration role, the link checks for invitation_guard');
   -- The Super Admin tables: RLS forced; no application role reaches them.
   foreach v_role in array array['anon', 'authenticated', 'service_role', 'app_server', 'app_worker', 'app_queue',
@@ -137,7 +153,35 @@ begin
                            from private.platform_audit_events where entity_id = '00000000-0000-4000-8000-0000000000e1'),
     'platform.admin.granted:00000000-0000-4000-8000-0000000000e1:-, platform.admin.revoked:00000000-0000-4000-8000-0000000000e1:-',
     'grants and revocations are audited (no actor: the workflow)');
+  -- The workflow run and its GitHub login are recorded (L5), validated.
+  perform tests.assert_eq(private.grant_platform_admin('00000000-0000-4000-8000-0000000000a1', '18512345678', 'mohima90'), true,
+    'grant with the run id and actor');
+  perform tests.assert_eq((select data from private.platform_audit_events
+                           where entity_id = '00000000-0000-4000-8000-0000000000a1' and action = 'platform.admin.granted'),
+    '{"source": "workflow", "runId": "18512345678", "actor": "mohima90"}'::jsonb, 'the audit row names the run and its actor');
+  perform tests.assert_eq(private.revoke_platform_admin('00000000-0000-4000-8000-0000000000a1', '18512345679', 'github-actions[bot]'),
+    true, 'revoke with a bot actor');
+  perform tests.assert_fails($q$select private.grant_platform_admin('00000000-0000-4000-8000-0000000000a1', '12a', 'x')$q$,
+    array['22023'], 'a run id that is not digits is refused');
+  perform tests.assert_fails($q$select private.grant_platform_admin('00000000-0000-4000-8000-0000000000a1', '1', 'bad actor;')$q$,
+    array['22023'], 'an actor that is not a GitHub login is refused');
+  -- The list: UIDs and grant times only.
+  perform tests.assert_eq((select string_agg(user_id::text, ',' order by user_id) from private.list_platform_admins()),
+    '00000000-0000-4000-8000-0000000000f1,00000000-0000-4000-8000-0000000000f3', 'list: the Super Admins'' UIDs');
+  perform tests.assert_eq((select proargnames::text from pg_proc where oid = 'private.list_platform_admins()'::regprocedure),
+    '{user_id,granted_at}', 'list: user_id and granted_at only (no e-mail)');
 end $$;
+-- The allow-list (L3): another login role is refused even with EXECUTE granted by mistake.
+grant execute on function private.grant_platform_admin(uuid, text, text), private.list_platform_admins() to authenticated;
+set local session authorization app_worker;
+set local role authenticated;
+select tests.assert_fails_like($q$select private.grant_platform_admin('00000000-0000-4000-8000-0000000000e1')$q$,
+  'Super Admins are managed by the platform admin workflow only', 'app_worker with EXECUTE: still refused (allow-list)');
+select tests.assert_fails_like($q$select * from private.list_platform_admins()$q$,
+  'Super Admins are managed by the platform admin workflow only', 'app_worker cannot list Super Admins');
+reset role;
+reset session authorization;
+revoke execute on function private.grant_platform_admin(uuid, text, text), private.list_platform_admins() from authenticated;
 -- The request path cannot grant (privilege), even for itself.
 set local session authorization app_server;
 set local role authenticated;
@@ -287,6 +331,106 @@ begin
   perform tests.assert_eq((select state from private.invitation_link(tests.token_hash(f.invite_code))), 'valid',
     'granted again: valid again');
 end $$;
+rollback;
+
+-- Security review M1: Super Admin A creates, A's role ends, Super Admin B issues a new code — it works on the
+-- first click (a new invitation issued by B replaces A's); the list shows A's invitation as needing one.
+begin;
+select pg_temp.become_super_admin();
+select set_config('tests.flow', to_jsonb(x)::text, true)
+from private.platform_create_tenant('issuer-gone', 'منشأة', null, 'y@issuer-gone.test', null, null, null, null, 'en') x;
+select pg_temp.become_owner();
+select private.revoke_platform_admin('00000000-0000-4000-8000-0000000000f1');
+select pg_temp.become_second_super_admin();
+do $$
+declare
+  f record;
+  r record;
+begin
+  select * into f from pg_temp.flow();
+  perform tests.assert_eq((select admin_state from private.platform_list_tenants() where tenant_id = f.tenant_id),
+    'issuer_revoked', 'the list: the issuer is no Super Admin any more — needs a new code');
+  select * into r from private.platform_reissue_admin_code(f.tenant_id);
+  perform tests.assert_eq((select state from private.invitation_by_token(tests.token_hash(r.invite_code))), 'valid',
+    'B''s new code is valid at once');
+  perform tests.assert_eq((select state from private.invitation_by_token(tests.token_hash(f.invite_code))), 'revoked',
+    'A''s invitation was revoked');
+  perform tests.assert_eq((select admin_state from private.platform_list_tenants() where tenant_id = f.tenant_id),
+    'pending', 'the list: pending again');
+end $$;
+select pg_temp.become_owner();
+do $$
+declare
+  f record;
+begin
+  select * into f from pg_temp.flow();
+  perform tests.assert_eq((select string_agg(i.status || ':' || i.invited_by::text, ',' order by i.status desc)
+                           from platform.invitations i where i.tenant_id = f.tenant_id),
+    'revoked:00000000-0000-4000-8000-0000000000f1,pending:00000000-0000-4000-8000-0000000000f3',
+    'one replacement invitation, issued by B, for the same person');
+  perform tests.assert_eq((select count(distinct person_id) from platform.invitations where tenant_id = f.tenant_id), 1::bigint,
+    'the same person');
+end $$;
+rollback;
+
+-- Another Super Admin's (active) invitation: a new code from B also replaces it (the issuer of record is
+-- whoever issued the code that works).
+begin;
+select pg_temp.become_super_admin();
+select set_config('tests.flow', to_jsonb(x)::text, true)
+from private.platform_create_tenant('two-admins', 'منشأة', null, 'z@two-admins.test', null, null, null, null, 'ar') x;
+select pg_temp.become_second_super_admin();
+do $$
+declare
+  f record;
+  r record;
+begin
+  select * into f from pg_temp.flow();
+  select * into r from private.platform_reissue_admin_code(f.tenant_id);
+  perform tests.assert_eq(r.locale, 'ar', 'the replacement keeps the invitation language');
+  perform tests.assert_eq((select state from private.invitation_by_token(tests.token_hash(r.invite_code))), 'valid',
+    'B''s code is valid');
+  -- B issuing again keeps B's invitation (a plain new code).
+  perform tests.assert(private.platform_reissue_admin_code(f.tenant_id) is not null, 'again');
+end $$;
+select pg_temp.become_owner();
+do $$
+declare
+  f record;
+begin
+  select * into f from pg_temp.flow();
+  perform tests.assert_eq((select string_agg(i.status || ':' || i.send_count, ',' order by i.status desc)
+                           from platform.invitations i where i.tenant_id = f.tenant_id),
+    'revoked:1,pending:2', 'replaced once; B''s second code rotates B''s invitation');
+end $$;
+rollback;
+
+-- L7: a Super Admin never invites their own account as an organization's admin.
+begin;
+select pg_temp.become_super_admin();
+select tests.assert_fails($q$select * from private.platform_create_tenant('own-email', 'منشأة', null, ' Super@Entlaqa.test ')$q$,
+  array['JP005'], 'the Super Admin''s own e-mail is refused');
+rollback;
+
+-- L4: the console updates only its own invitations — never another invitation of the organization.
+begin;
+do $$
+declare
+  v_person uuid;
+  v_invitation uuid;
+begin
+  insert into platform.persons (tenant_id, display_name_ar, email)
+  values ('b0000000-0000-4000-8000-000000000001', 'مدعو', 'ordinary@b.test') returning id into v_person;
+  insert into platform.invitations (tenant_id, person_id, email, locale, primary_role, invited_by)
+  values ('b0000000-0000-4000-8000-000000000001', v_person, 'ordinary@b.test', 'en', 'tenant_admin',
+          '00000000-0000-4000-8000-0000000000b1') returning id into v_invitation;
+  perform set_config('tests.ordinary', v_invitation::text, true);
+end $$;
+set local role platform_admin_guard;
+select tests.assert_eq(tests.rows_affected(format($q$update platform.invitations set status = 'revoked' where id = %L$q$,
+                                                  current_setting('tests.ordinary'))),
+  0::bigint, 'platform_admin_guard cannot revoke an invitation the console did not create');
+reset role;
 rollback;
 
 -- An ordinary invitation keeps the inviter rule (an Organization Admin of the organization): a Super Admin

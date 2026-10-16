@@ -5,6 +5,8 @@
 # The only input about the person is the user's UID — never an e-mail or a name (run inputs are visible to
 # everyone with read access to the repository).
 # `staging` (the old project) stays selectable only until it is deleted (production-setup.md, T-M2-36).
+# The audit row of a grant or revoke records this run's id and the login that ran it (GITHUB_RUN_ID,
+# GITHUB_ACTOR — set by Actions, validated by the script and the database; security review L5).
 # The script takes the deploy lock (scripts/lib/db-connect.sh § Deploy lock; waits up to 16 minutes), so it
 # never runs next to a deploy. Run `plan` first (dry run, always rolled back), then `apply`.
 name: Platform admin
@@ -23,14 +25,14 @@ on:
         options: [plan, apply]
         default: plan
       action:
-        description: 'grant = make the user a Platform Super Admin · revoke = end it'
+        description: 'grant = make the user a Platform Super Admin · revoke = end it · list = the Super Admins (UIDs and grant times only)'
         type: choice
-        options: [grant, revoke]
+        options: [grant, revoke, list]
         default: grant
       admin_user_id:
-        description: "The user's UID (Supabase → Authentication → Users → the user → Copy UID). Never an e-mail."
+        description: "The user's UID (Supabase → Authentication → Users → the user → Copy UID). Never an e-mail. Empty for list."
         type: string
-        required: true
+        required: false
 
 permissions:
   contents: read

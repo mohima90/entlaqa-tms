@@ -475,8 +475,9 @@ begin
                        and not has_table_privilege('tenant_guard', 'private.auth_user_email', 'select')
                        and not has_table_privilege('account_mail_guard', 'private.auth_user_email', 'select')
                        and has_table_privilege('invitation_guard', 'private.auth_user_email', 'select')
-                       and has_table_privilege('rate_limit_guard', 'private.auth_user_email', 'select'),
-    'private.auth_user_email: invitation_guard and rate_limit_guard only');
+                       and has_table_privilege('rate_limit_guard', 'private.auth_user_email', 'select')
+                       and has_table_privilege('platform_admin_guard', 'private.auth_user_email', 'select'),
+    'private.auth_user_email: invitation_guard, rate_limit_guard and platform_admin_guard only');
   perform tests.assert(not has_table_privilege('invitation_guard', 'auth.users', 'select'),
     'invitation_guard reads auth.users only through the view');
   -- Request path: every invitation column but the token hash.

@@ -299,13 +299,19 @@ expect_admin_refusal() {
 echo "db-test-hosted-sim: platform admin plan + apply as $MIGRATOR"
 ADMIN_USER_ID="$SUPER_UID" bash "$ROOT/scripts/platform-admin.sh" plan
 [[ "$(super_admins)" == "0" ]] || { echo "db-test-hosted-sim: platform-admin plan changed the database" >&2; exit 1; }
-ADMIN_USER_ID="$SUPER_UID" bash "$ROOT/scripts/platform-admin.sh" apply
+GITHUB_RUN_ID=4242 GITHUB_ACTOR=sim-operator ADMIN_USER_ID="$SUPER_UID" bash "$ROOT/scripts/platform-admin.sh" apply
 ADMIN_USER_ID="$SUPER_UID" bash "$ROOT/scripts/platform-admin.sh" apply  # again: nothing to do
+# The audit row names the workflow run and its login (review L5); `list` shows UIDs and grant times only.
+[[ "$(q "select data ->> 'runId' || ':' || (data ->> 'actor') from private.platform_audit_events where action = 'platform.admin.granted' and entity_id = '$SUPER_UID'")" == "4242:sim-operator" ]] ||
+  { echo "db-test-hosted-sim: the grant audit row does not record the run" >&2; exit 1; }
+listed="$(ADMIN_ACTION=list bash "$ROOT/scripts/platform-admin.sh" plan 2>&1)"
+grep -q "platform-admin: $SUPER_UID granted " <<<"$listed" || { echo "db-test-hosted-sim: list does not show the Super Admin" >&2; echo "$listed" >&2; exit 1; }
+if grep -q "@" <<<"$listed"; then echo "db-test-hosted-sim: list printed an e-mail" >&2; exit 1; fi
 [[ "$(super_admins)" == "1" ]] || { echo "db-test-hosted-sim: platform-admin apply did not grant" >&2; exit 1; }
 [[ "$(q "select count(*) from private.platform_audit_events where action = 'platform.admin.granted' and entity_id = '$SUPER_UID'")" == "1" ]] ||
   { echo "db-test-hosted-sim: expected exactly one grant audit event" >&2; exit 1; }
 expect_admin_refusal 'no Auth user with this UID' ADMIN_USER_ID="$(node -e 'process.stdout.write(require("node:crypto").randomUUID())')"
-for bad in "ADMIN_USER_ID=sim-super@example.test" "ADMIN_USER_ID=" "ADMIN_ACTION=delete"; do
+for bad in "ADMIN_USER_ID=sim-super@example.test" "ADMIN_USER_ID=" "ADMIN_ACTION=delete" "GITHUB_RUN_ID=12a" "GITHUB_ACTOR=bad;actor"; do
   if env ADMIN_USER_ID="$SUPER_UID" "$bad" bash "$ROOT/scripts/platform-admin.sh" plan >/dev/null 2>&1; then
     echo "db-test-hosted-sim: platform-admin accepted invalid input ($bad)" >&2; exit 1
   fi

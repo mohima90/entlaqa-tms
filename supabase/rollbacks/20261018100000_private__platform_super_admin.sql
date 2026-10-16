@@ -188,8 +188,11 @@ $$;
 
 drop function private.invitation_issuer_may_grant(uuid, uuid, uuid, text[]);
 drop function private.write_invitation_code(uuid);
-drop function private.grant_platform_admin(uuid);
-drop function private.revoke_platform_admin(uuid);
+drop function private.grant_platform_admin(uuid, text, text);
+drop function private.revoke_platform_admin(uuid, text, text);
+drop function private.list_platform_admins();
+drop function private.platform_admin_operator();
+drop function private.platform_admin_workflow_data(text, text);
 drop function private.platform_reissue_admin_code(uuid);
 drop function private.platform_admin_invitation_code(uuid);
 drop function private.platform_create_tenant(text, text, text, text, text, text, text, text, text);
@@ -201,6 +204,8 @@ drop function private.platform_admin_caller();
 drop function private.is_platform_invitation(uuid);
 drop function private.platform_admin_is_active(uuid);
 
+-- The console's update policy reads private.platform_invitations (review L4): dropped first.
+drop policy invitations_platform_admin_guard_update on platform.invitations;
 drop table private.platform_audit_events;
 drop table private.platform_invitations;
 drop table private.platform_admins;
@@ -213,7 +218,6 @@ drop policy persons_platform_admin_guard_read on platform.persons;
 drop policy persons_platform_admin_guard_insert on platform.persons;
 drop policy invitations_platform_admin_guard_read on platform.invitations;
 drop policy invitations_platform_admin_guard_insert on platform.invitations;
-drop policy invitations_platform_admin_guard_update on platform.invitations;
 drop policy tenant_memberships_platform_admin_guard_read on platform.tenant_memberships;
 drop policy role_assignments_platform_admin_guard_read on platform.role_assignments;
 drop policy ref_roles_platform_admin_guard_read on platform.ref_roles;
@@ -228,5 +232,6 @@ revoke execute on function private.try_uuid(text), private.request_claims(), pri
   private.unused_invitation_code(),
   private.roles_conflict(text, text), private.roles_include_conflict(text[]) from platform_admin_guard;
 
+revoke select on private.auth_user_email from platform_admin_guard;
 revoke usage on schema platform, private from platform_admin_guard;
 revoke platform_admin_guard from current_user;

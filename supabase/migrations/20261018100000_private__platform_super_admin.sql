@@ -23,11 +23,19 @@
 --                               20261009090000).
 --   private.is_platform_admin() / platform_list_tenants() / platform_create_tenant(…) /
 --   platform_admin_invitation_code(tenant) / platform_reissue_admin_code(tenant)
+--                               (a new code is issued by THIS Super Admin: an invitation another Super Admin
+--                               issued — e.g. one whose role has ended, list state `issuer_revoked` — is
+--                               replaced by a new one for the same person, security review M1)
 --                               SECURITY DEFINER; app_server with verified USER claims of a valid session
 --                               (private.user_session_is_valid) whose user is a Super Admin — no tenant claim
 --                               needed. Everyone else: false / 42501.
---   private.grant_platform_admin(uid) / revoke_platform_admin(uid)
---                               SECURITY DEFINER; EXECUTE for the migration role only (the workflow).
+--   private.grant_platform_admin(uid, run_id, actor) / revoke_platform_admin(uid, run_id, actor) /
+--   list_platform_admins()
+--                               SECURITY DEFINER; EXECUTE for the migration role only (the workflow), and
+--                               inside an allow-list: the session must be the migration role (the owner of
+--                               private.platform_admins) or a superuser (security review L3). The audit row
+--                               records the workflow run id and the GitHub login that ran it (L5); the list
+--                               shows user UIDs and grant times only (no e-mails).
 --   private.invitation_issuer_may_grant(…)
 --                               the inviter rule used by a link's state and by acceptance: a Super Admin's
 --                               invitation (above) or, as before, private.invitation_inviter_may_grant.
@@ -178,9 +186,12 @@ create policy invitations_platform_admin_guard_read on platform.invitations for 
 create policy invitations_platform_admin_guard_insert on platform.invitations for insert to platform_admin_guard
   with check (status = 'pending' and primary_role = 'tenant_admin' and additional_roles = '{}'::text[]
               and not mail_held and import_id is null);
+-- Only the console's own invitations (security review L4): never an organization's other invitations.
 create policy invitations_platform_admin_guard_update on platform.invitations for update to platform_admin_guard
-  using (status = 'pending' and primary_role = 'tenant_admin' and not mail_held)
-  with check (primary_role = 'tenant_admin' and not mail_held);
+  using (status = 'pending' and primary_role = 'tenant_admin' and not mail_held
+         and exists (select 1 from private.platform_invitations pi where pi.invitation_id = id))
+  with check (primary_role = 'tenant_admin' and not mail_held
+              and exists (select 1 from private.platform_invitations pi where pi.invitation_id = id));
 grant select (id, tenant_id, person_id, email, locale, primary_role, additional_roles, status, mail_held,
               invite_code, send_count, expires_at, invited_by, created_at)
   on platform.invitations to platform_admin_guard;
@@ -222,6 +233,8 @@ grant execute on function private.new_invitation_code() to platform_admin_guard;
 grant execute on function private.unused_invitation_code() to platform_admin_guard;
 grant execute on function private.roles_conflict(text, text) to platform_admin_guard;
 grant execute on function private.roles_include_conflict(text[]) to platform_admin_guard;
+-- The calling Super Admin's own Auth e-mail: never the Organization Admin of a new organization (L7).
+grant select on private.auth_user_email to platform_admin_guard;
 
 -- ---------------------------------------------------------------------------------------------------
 -- Errors (SQLSTATE → @jadarat/platform-db DomainError)
@@ -230,6 +243,7 @@ grant execute on function private.roles_include_conflict(text[]) to platform_adm
 --   JP002 the short name (slug) is taken or reserved                                → SLUG_TAKEN
 --   JP003 the organization has no pending Organization Admin invitation from the console
 --                                                                                   → NO_PENDING_ADMIN
+--   JP005 the Organization Admin's e-mail is the calling Super Admin's own           → OWN_EMAIL (L7)
 -- ---------------------------------------------------------------------------------------------------
 
 -- Is this user a Super Admin now? Runs as platform_admin_guard (definer): invitation_guard asks it for a
@@ -329,6 +343,9 @@ comment on function private.platform_pending_admin_invitation(uuid) is
 -- The organizations, newest first, with what the console's table shows: no personal data (no names or
 -- e-mails of people), counts and the Organization Admin's state:
 --   active   an ACTIVE member holds the Organization Admin role now
+--   issuer_revoked
+--            else, the console's pending invitation was issued by someone who is no longer a Super Admin:
+--            its link no longer works — it needs a new code (which replaces it, security review M1)
 --   pending  else, the console's invitation is pending and not expired
 --   expired  else, it is pending and expired (a new code gives it 7 more days)
 --   none     else (e.g. organizations provisioned by the workflow before, without an admin)
@@ -353,13 +370,15 @@ begin
         and (ra.valid_from is null or ra.valid_from <= now())
         and (ra.valid_until is null or ra.valid_until > now())),
     pending as (
-      select distinct on (i.tenant_id) i.tenant_id, i.locale, i.expires_at
+      select distinct on (i.tenant_id) i.tenant_id, i.locale, i.expires_at,
+             private.platform_admin_is_active(i.invited_by) as issuer_active
       from private.platform_invitations pi
       join platform.invitations i on i.tenant_id = pi.tenant_id and i.id = pi.invitation_id
       where i.status = 'pending'
       order by i.tenant_id, i.created_at desc, i.id)
     select t.id, t.slug, t.name_ar, t.name_en, t.status, t.created_at, coalesce(mb.n, 0),
            case when a.tenant_id is not null then 'active'
+                when p.tenant_id is not null and not p.issuer_active then 'issuer_revoked'
                 when p.tenant_id is not null and p.expires_at > now() then 'pending'
                 when p.tenant_id is not null then 'expired'
                 else 'none' end,
@@ -485,6 +504,11 @@ begin
   if p_locale is null or p_locale not in ('ar', 'en') then
     raise exception 'locale' using errcode = 'JP001';
   end if;
+  -- A Super Admin never invites their own account as an organization's admin (security review L7): it
+  -- would give a platform account a tenant role through the console's own invitation.
+  if exists (select 1 from private.auth_user_email u where u.id = v_actor and lower(u.email) = v_email) then
+    raise exception 'admin_email' using errcode = 'JP005';
+  end if;
   if private.platform_reserved_slug(v_slug) then
     raise exception 'the short name is reserved' using errcode = 'JP002';
   end if;
@@ -568,8 +592,10 @@ $$;
 comment on function private.platform_admin_invitation_code(uuid) is
   'SECURITY-RELEVANT (FR-ADM-17). The current code of an organization''s pending console invitation (audited read). Super Admins only.';
 
--- A new code for the pending console invitation (the old one stops working; 7 more days). After its 4
--- codes the invitation is revoked and a new one for the same person takes its place.
+-- A new code for the pending console invitation (the old one stops working; 7 more days), issued by THIS
+-- Super Admin. When another Super Admin issued the invitation — e.g. one whose role has ended, so its link
+-- no longer works (security review M1) — or after its 4 codes, the invitation is revoked and a new one for
+-- the same person, issued by the caller, takes its place: its code works on the first click.
 create or replace function private.platform_reissue_admin_code(p_tenant_id uuid)
 returns table (invite_code text, locale text, expires_at timestamptz)
 language plpgsql volatile security definer
@@ -594,7 +620,7 @@ begin
   if not found then
     raise exception 'no pending Organization Admin invitation' using errcode = 'JP003';
   end if;
-  if v_inv.send_count >= 4 then
+  if v_inv.send_count >= 4 or v_inv.invited_by is distinct from v_actor then
     update platform.invitations i set status = 'revoked' where i.id = v_inv.id;
     insert into platform.invitations (tenant_id, person_id, email, locale, primary_role, additional_roles, invited_by)
     values (p_tenant_id, v_inv.person_id, v_inv.email, v_inv.locale, 'tenant_admin', '{}'::text[], v_actor)
@@ -618,19 +644,65 @@ end
 $$;
 
 comment on function private.platform_reissue_admin_code(uuid) is
-  'SECURITY-RELEVANT (FR-ADM-17). A new code for an organization''s pending console invitation (after 4 codes: a new invitation). Super Admins only.';
+  'SECURITY-RELEVANT (FR-ADM-17). A new code for an organization''s pending console invitation, issued by the caller (another issuer''s invitation, or after 4 codes: a new invitation). Super Admins only.';
 
--- Granting and revoking Super Admins: the Platform admin workflow (scripts/platform-admin.sh), as the
--- migration role. EXECUTE for the migration role only; never the request path.
-create or replace function private.grant_platform_admin(p_user_id uuid)
+-- Granting, revoking and listing Super Admins: the Platform admin workflow (scripts/platform-admin.sh), as
+-- the migration role. EXECUTE for the migration role only; never the request path. Inside, an ALLOW-list
+-- (security review L3): the session must be the migration role — the owner of private.platform_admins —
+-- or a superuser; anyone else is refused even if EXECUTE were granted by mistake.
+create or replace function private.platform_admin_operator()
+returns void
+language plpgsql stable
+set search_path = ''
+as $$
+begin
+  if not (session_user = pg_catalog.pg_get_userbyid(
+                           (select c.relowner from pg_catalog.pg_class c
+                            where c.oid = 'private.platform_admins'::regclass))
+          or coalesce((select r.rolsuper from pg_catalog.pg_roles r where r.rolname = session_user), false)) then
+    raise exception 'Super Admins are managed by the platform admin workflow only' using errcode = 'insufficient_privilege';
+  end if;
+end
+$$;
+
+comment on function private.platform_admin_operator() is
+  'SECURITY-RELEVANT (FR-ADM-17, security review L3). Refuses every session but the migration role (owner of private.platform_admins) or a superuser. platform_admin_guard only.';
+
+-- The audit data of a workflow change: the run id (digits) and the GitHub login that ran it (L5), each
+-- only when well-formed.
+create or replace function private.platform_admin_workflow_data(p_run_id text, p_actor text)
+returns jsonb
+language plpgsql immutable
+set search_path = ''
+as $$
+begin
+  if p_run_id is not null and p_run_id !~ '^[0-9]{1,20}$' then
+    raise exception 'the workflow run id must be digits' using errcode = 'invalid_parameter_value';
+  end if;
+  if p_actor is not null and p_actor !~ '^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})(?:\[bot\])?$' then
+    raise exception 'the workflow actor must be a GitHub login' using errcode = 'invalid_parameter_value';
+  end if;
+  return jsonb_strip_nulls(jsonb_build_object('source', 'workflow', 'runId', p_run_id, 'actor', p_actor));
+end
+$$;
+
+comment on function private.platform_admin_workflow_data(text, text) is
+  'The audit data of a Platform admin workflow change: source, run id and GitHub login (validated; FR-ADM-17, L5). platform_admin_guard only.';
+
+create or replace function private.grant_platform_admin(p_user_id uuid, p_run_id text default null,
+                                                        p_actor text default null)
 returns boolean
 language plpgsql volatile security definer
 set search_path = ''
 as $$
+declare
+  v_data jsonb;
 begin
-  if session_user in ('app_server', 'app_worker', 'app_queue') or p_user_id is null then
-    raise exception 'Super Admins are granted by the platform admin workflow only' using errcode = 'insufficient_privilege';
+  perform private.platform_admin_operator();
+  if p_user_id is null then
+    raise exception 'a Super Admin is granted by user UID' using errcode = 'invalid_parameter_value';
   end if;
+  v_data := private.platform_admin_workflow_data(p_run_id, p_actor);
   if exists (select 1 from private.platform_admins a where a.user_id = p_user_id) then
     return false;
   end if;
@@ -641,35 +713,55 @@ begin
       using errcode = 'JP004';
   end;
   insert into private.platform_audit_events (action, entity_type, entity_id, data)
-  values ('platform.admin.granted', 'user', p_user_id::text, jsonb_build_object('source', 'workflow'));
+  values ('platform.admin.granted', 'user', p_user_id::text, v_data);
   return true;
 end
 $$;
 
-comment on function private.grant_platform_admin(uuid) is
-  'SECURITY-RELEVANT (FR-ADM-17). Makes an Auth user a Platform Super Admin (audited). The migration role only (Platform admin workflow).';
+comment on function private.grant_platform_admin(uuid, text, text) is
+  'SECURITY-RELEVANT (FR-ADM-17). Makes an Auth user a Platform Super Admin (audited with the workflow run and its GitHub login). The migration role only (Platform admin workflow; allow-list inside).';
 
-create or replace function private.revoke_platform_admin(p_user_id uuid)
+create or replace function private.revoke_platform_admin(p_user_id uuid, p_run_id text default null,
+                                                         p_actor text default null)
 returns boolean
 language plpgsql volatile security definer
 set search_path = ''
 as $$
+declare
+  v_data jsonb;
 begin
-  if session_user in ('app_server', 'app_worker', 'app_queue') or p_user_id is null then
-    raise exception 'Super Admins are revoked by the platform admin workflow only' using errcode = 'insufficient_privilege';
+  perform private.platform_admin_operator();
+  if p_user_id is null then
+    raise exception 'a Super Admin is revoked by user UID' using errcode = 'invalid_parameter_value';
   end if;
+  v_data := private.platform_admin_workflow_data(p_run_id, p_actor);
   delete from private.platform_admins a where a.user_id = p_user_id;
   if not found then
     return false;
   end if;
   insert into private.platform_audit_events (action, entity_type, entity_id, data)
-  values ('platform.admin.revoked', 'user', p_user_id::text, jsonb_build_object('source', 'workflow'));
+  values ('platform.admin.revoked', 'user', p_user_id::text, v_data);
   return true;
 end
 $$;
 
-comment on function private.revoke_platform_admin(uuid) is
-  'SECURITY-RELEVANT (FR-ADM-17). Ends an account''s Platform Super Admin role (audited); its pending console invitations stop working. The migration role only.';
+comment on function private.revoke_platform_admin(uuid, text, text) is
+  'SECURITY-RELEVANT (FR-ADM-17). Ends an account''s Platform Super Admin role (audited with the workflow run and its GitHub login); its pending console invitations stop working. The migration role only (allow-list inside).';
+
+-- The Super Admins: user UIDs and when they were granted — no e-mails or names (L5, `list` mode).
+create or replace function private.list_platform_admins()
+returns table (user_id uuid, granted_at timestamptz)
+language plpgsql stable security definer
+set search_path = ''
+as $$
+begin
+  perform private.platform_admin_operator();
+  return query select a.user_id, a.granted_at from private.platform_admins a order by a.granted_at, a.user_id;
+end
+$$;
+
+comment on function private.list_platform_admins() is
+  'SECURITY-RELEVANT (FR-ADM-17). The Platform Super Admins'' UIDs and grant times (no personal data). The migration role only (allow-list inside).';
 
 -- ---------------------------------------------------------------------------------------------------
 -- Invitation links and acceptance: a console invitation's inviter rule (as in 20261009090000 otherwise)
@@ -869,8 +961,11 @@ alter function private.platform_reserved_slug(text) owner to platform_admin_guar
 alter function private.platform_create_tenant(text, text, text, text, text, text, text, text, text) owner to platform_admin_guard;
 alter function private.platform_admin_invitation_code(uuid) owner to platform_admin_guard;
 alter function private.platform_reissue_admin_code(uuid) owner to platform_admin_guard;
-alter function private.grant_platform_admin(uuid) owner to platform_admin_guard;
-alter function private.revoke_platform_admin(uuid) owner to platform_admin_guard;
+alter function private.grant_platform_admin(uuid, text, text) owner to platform_admin_guard;
+alter function private.revoke_platform_admin(uuid, text, text) owner to platform_admin_guard;
+alter function private.list_platform_admins() owner to platform_admin_guard;
+alter function private.platform_admin_operator() owner to platform_admin_guard;
+alter function private.platform_admin_workflow_data(text, text) owner to platform_admin_guard;
 revoke create on schema private from platform_admin_guard;
 
 grant create on schema private to invitation_guard;
@@ -888,8 +983,11 @@ revoke all on function private.platform_reserved_slug(text) from public;
 revoke all on function private.platform_create_tenant(text, text, text, text, text, text, text, text, text) from public;
 revoke all on function private.platform_admin_invitation_code(uuid) from public;
 revoke all on function private.platform_reissue_admin_code(uuid) from public;
-revoke all on function private.grant_platform_admin(uuid) from public;
-revoke all on function private.revoke_platform_admin(uuid) from public;
+revoke all on function private.grant_platform_admin(uuid, text, text) from public;
+revoke all on function private.revoke_platform_admin(uuid, text, text) from public;
+revoke all on function private.list_platform_admins() from public;
+revoke all on function private.platform_admin_operator() from public;
+revoke all on function private.platform_admin_workflow_data(text, text) from public;
 revoke all on function private.write_invitation_code(uuid) from public;
 revoke all on function private.invitation_issuer_may_grant(uuid, uuid, uuid, text[]) from public;
 
@@ -901,8 +999,9 @@ grant execute on function private.platform_create_tenant(text, text, text, text,
 grant execute on function private.platform_admin_invitation_code(uuid) to authenticated;
 grant execute on function private.platform_reissue_admin_code(uuid) to authenticated;
 -- The workflow (the migration role) only.
-grant execute on function private.grant_platform_admin(uuid) to current_user;
-grant execute on function private.revoke_platform_admin(uuid) to current_user;
+grant execute on function private.grant_platform_admin(uuid, text, text) to current_user;
+grant execute on function private.revoke_platform_admin(uuid, text, text) to current_user;
+grant execute on function private.list_platform_admins() to current_user;
 -- Invitation links and acceptance (invitation_guard) ask about console invitations.
 grant execute on function private.platform_admin_is_active(uuid) to invitation_guard;
 grant execute on function private.is_platform_invitation(uuid) to invitation_guard;
@@ -916,8 +1015,9 @@ begin
                              'private.platform_create_tenant(text, text, text, text, text, text, text, text, text)'::regprocedure,
                              'private.platform_admin_invitation_code(uuid)'::regprocedure,
                              'private.platform_reissue_admin_code(uuid)'::regprocedure,
-                             'private.grant_platform_admin(uuid)'::regprocedure,
-                             'private.revoke_platform_admin(uuid)'::regprocedure)
+                             'private.grant_platform_admin(uuid, text, text)'::regprocedure,
+                             'private.revoke_platform_admin(uuid, text, text)'::regprocedure,
+                             'private.list_platform_admins()'::regprocedure)
                and pg_catalog.pg_get_userbyid(p.proowner) <> 'platform_admin_guard') then
     raise exception 'the platform console functions must be owned by platform_admin_guard';
   end if;
@@ -927,7 +1027,8 @@ begin
        where p.oid = 'private.issue_invitation_code(uuid)'::regprocedure)) <> 'invitation_guard' then
     raise exception 'the invitation functions must stay owned by invitation_guard';
   end if;
-  if has_function_privilege('authenticated', 'private.grant_platform_admin(uuid)', 'execute')
+  if has_function_privilege('authenticated', 'private.grant_platform_admin(uuid, text, text)', 'execute')
+     or has_function_privilege('authenticated', 'private.list_platform_admins()', 'execute')
      or has_table_privilege('authenticated', 'private.platform_admins', 'select') then
     raise exception 'the request path must neither grant nor read Super Admins';
   end if;

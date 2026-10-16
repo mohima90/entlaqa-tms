@@ -7,6 +7,9 @@ import {
 } from './invite-accept-input';
 import { passwordRuleState, utf8Length } from './password-rules';
 
+/** A sample invitation code (12 characters of the code alphabet); not a secret. */
+const SAMPLE_CODE = 'K7M2PQ9XHT4W';
+
 vi.mock('server-only', () => ({}));
 
 const token = 'sample-invitation-token'.padEnd(43, '0'); // shape only
@@ -133,7 +136,7 @@ describe('sign-in-to-accept and signed-in inputs', () => {
   it('takes invitation codes in any case, grouped or not, and passes on the 12 symbols upper-cased', () => {
     for (const typed of [' k7m2pq9xht4w ', 'K7M2-PQ9X-HT4W', 'k7m2 pq9x ht4w']) {
       const parsed = LookupInvitationInput.safeParse({ token: typed });
-      expect(parsed.success && parsed.data.token, typed).toBe('K7M2PQ9XHT4W');
+      expect(parsed.success && parsed.data.token, typed).toBe(SAMPLE_CODE);
     }
     for (const bad of [
       'K7M2PQ9X',
@@ -144,7 +147,7 @@ describe('sign-in-to-accept and signed-in inputs', () => {
     ]) {
       expect(LookupInvitationInput.safeParse({ token: bad }).success, bad).toBe(false);
     }
-    expect(issues({ ...valid, token: 'K7M2PQ9XHT4W' })).toEqual([]);
+    expect(issues({ ...valid, token: SAMPLE_CODE })).toEqual([]);
   });
 
   it('the link lookup takes a well-formed token only', () => {

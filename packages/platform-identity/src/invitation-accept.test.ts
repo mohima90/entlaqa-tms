@@ -23,6 +23,8 @@ const OTHER_TENANT = 'b0000000-0000-4000-8000-000000000001';
 const PERSON = '44444444-4444-4444-8444-444444444444';
 const TOKEN = 'A'.repeat(21) + '-_' + 'z9'.repeat(10); // 43 base64url characters (legacy link)
 const CODE = 'K7M2PQ9XHT4W'; // an invitation code (Kawadir alphabet, 12 characters)
+/** The same code as a person may type it: lower case, grouped. */
+const TYPED_CODE = 'k7m2-pq9x-ht4w';
 const EMAIL = 'invitee@example.test';
 const PASSWORD = 'a long enough passphrase';
 
@@ -249,7 +251,7 @@ describe('normalizeInvitationSecret', () => {
 describe('invitation codes (Kawadir, migration 20261018090000)', () => {
   it('looks a typed code up upper-cased, by its SHA-256', async () => {
     const { deps } = setup();
-    await expect(lookupInvitation(deps, 'k7m2-pq9x-ht4w')).resolves.toEqual(valid);
+    await expect(lookupInvitation(deps, TYPED_CODE)).resolves.toEqual(valid);
     expect(deps.invitationByToken).toHaveBeenCalledWith(
       createHash('sha256').update(CODE, 'utf8').digest(),
     );
@@ -299,7 +301,7 @@ describe('invitation codes (Kawadir, migration 20261018090000)', () => {
     const { deps, auth } = setup();
     const result = await acceptInvitationWithNewAccount(deps, {
       ...newAccount,
-      token: ' k7m2-pq9x-ht4w ',
+      token: ` ${TYPED_CODE} `,
     });
     expect(result.ok).toBe(true);
     expect(auth.signUp).toHaveBeenCalledWith(

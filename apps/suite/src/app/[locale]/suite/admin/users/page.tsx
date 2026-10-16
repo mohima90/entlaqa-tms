@@ -10,14 +10,13 @@ import {
 } from '@jadarat/platform-rbac';
 import {
   Alert,
+  Avatar,
   Badge,
   type BadgeTone,
   Card,
   EmptyState,
   Icon,
   PageHeader,
-  StatCard,
-  StatGrid,
   TabNav,
   buttonClasses,
   tableClasses,
@@ -27,6 +26,7 @@ import { hasLocale } from 'next-intl';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { notFound, redirect } from 'next/navigation';
 import { SuiteShell } from '../../../../../components/suite-shell';
+import { TeamStats } from '../../../../../components/users/team-stats';
 import { ReactivateMemberButton } from '../../../../../components/users/reactivate-member-button';
 import {
   ExpiredInvitationsBanner,
@@ -49,6 +49,7 @@ import {
   type UsersListParams,
   localizedName,
   roleName,
+  teamCounts,
   usersListHref,
   usersListParams,
   usersListPath,
@@ -66,6 +67,7 @@ const STATUS_TONE: Record<'active' | 'invited' | 'suspended', BadgeTone> = {
   suspended: 'neutral',
 };
 const fieldClass = toolbarFieldClasses;
+const selectClass = `${toolbarFieldClasses} select-chevron pe-10`;
 /** Views of the Members tab (Kawadir team page): the status filter under it. */
 const MEMBER_TABS = ['all', 'active', 'deactivated'] as const;
 
@@ -278,7 +280,7 @@ async function UsersList({
   const filtered = Boolean(params.q ?? params.role ?? params.department ?? params.branch);
   const { from, to } = usersPaging(view.page, view.pageSize, list.rows.length, list.total);
   // The invited tab counts invited memberships (before T-M2-07) and open invitations.
-  const counts = { ...list.counts, invited: list.counts.invited + (invitations?.length ?? 0) };
+  const counts = teamCounts(list.counts, invitations?.length);
   const invitationRows =
     activeTab === 'invited' && invitations
       ? filterInvitations(invitations, {
@@ -315,31 +317,18 @@ async function UsersList({
       {banners ? await importBanners(locale, banners) : null}
       {expired.length > 0 ? await expiredBanner(locale, expired) : null}
 
-      <StatGrid label={t('statsLabel')} data-testid="users-stats">
-        <StatCard
-          label={t('stats.total')}
-          value={format.number(counts.all, 'integer')}
-          icon="people"
-          tone="primary"
-        />
-        <StatCard
-          label={t('stats.active')}
-          value={format.number(counts.active, 'integer')}
-          icon="success"
-          tone="success"
-        />
-        <StatCard
-          label={t('stats.pending')}
-          value={format.number(counts.invited, 'integer')}
-          icon="mail"
-          tone="warning"
-        />
-        <StatCard
-          label={t('stats.deactivated')}
-          value={format.number(counts.deactivated, 'integer')}
-          icon="user"
-        />
-      </StatGrid>
+      <TeamStats
+        label={t('statsLabel')}
+        counts={counts}
+        texts={{
+          total: t('stats.total'),
+          active: t('stats.active'),
+          pending: t('stats.pending'),
+          deactivated: t('stats.deactivated'),
+        }}
+        format={(n) => format.number(n, 'integer')}
+        data-testid="users-stats"
+      />
 
       <TabNav
         label={t('viewsLabel')}
@@ -379,7 +368,7 @@ async function UsersList({
         method="get"
         action={`/${locale}/suite/admin/users`}
         aria-label={t('filtersLabel')}
-        className="grid grid-cols-1 gap-3 rounded-xl border border-border bg-surface p-4 shadow-1 md:grid-cols-2 xl:grid-cols-5 xl:items-end"
+        className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5 xl:items-end"
       >
         {activeTab !== 'all' ? <input type="hidden" name="tab" value={activeTab} /> : null}
         <div className="flex flex-col gap-1 xl:col-span-2">
@@ -408,7 +397,7 @@ async function UsersList({
               id="users-role"
               name="role"
               defaultValue={params.role ?? ''}
-              className={fieldClass}
+              className={selectClass}
             >
               <option value="">{t('allRoles')}</option>
               {SYSTEM_ROLES.map((role) => (
@@ -429,7 +418,7 @@ async function UsersList({
                 id="users-department"
                 name="department"
                 defaultValue={params.department ?? ''}
-                className={fieldClass}
+                className={selectClass}
               >
                 <option value="">{t('allDepartments')}</option>
                 {orgUnits.departments.map((d) => (
@@ -447,7 +436,7 @@ async function UsersList({
                 id="users-branch"
                 name="branch"
                 defaultValue={params.branch ?? ''}
-                className={fieldClass}
+                className={selectClass}
               >
                 <option value="">{t('allBranches')}</option>
                 {orgUnits.branches.map((b) => (
@@ -525,17 +514,27 @@ async function UsersList({
                 {list.rows.map((row) => (
                   <tr key={row.personId} className={tableClasses.row}>
                     <td className={tableClasses.cell}>
-                      <a
-                        href={`/${locale}/suite/admin/users/${row.personId}`}
-                        className="font-medium"
-                      >
-                        {localizedName(locale, row.displayNameAr, row.displayNameEn)}
-                      </a>
-                      {row.email ? (
-                        <div className="text-sm text-text-muted">
-                          <bdi dir="ltr">{row.email}</bdi>
+                      {/* Kawadir Candidates: the person's initials in a soft circle beside the name. */}
+                      <div className="flex items-center gap-3">
+                        <Avatar
+                          name={localizedName(locale, row.displayNameAr, row.displayNameEn)}
+                          tone="soft"
+                          size="md"
+                        />
+                        <div className="min-w-0">
+                          <a
+                            href={`/${locale}/suite/admin/users/${row.personId}`}
+                            className="font-medium"
+                          >
+                            {localizedName(locale, row.displayNameAr, row.displayNameEn)}
+                          </a>
+                          {row.email ? (
+                            <div className="text-sm text-text-muted">
+                              <bdi dir="ltr">{row.email}</bdi>
+                            </div>
+                          ) : null}
                         </div>
-                      ) : null}
+                      </div>
                     </td>
                     <td className={tableClasses.cell}>
                       {row.employeeNumber ? (

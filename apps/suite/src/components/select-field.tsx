@@ -22,7 +22,7 @@ export function SelectField({
     .join(' ');
   return (
     <div className="flex flex-col gap-1">
-      <label htmlFor={id} className="font-medium">
+      <label htmlFor={id} className="text-sm font-medium">
         {label}
         {marker ? <span className="ms-1 font-normal text-text-muted">{marker}</span> : null}
       </label>
@@ -36,7 +36,7 @@ export function SelectField({
         id={id}
         aria-invalid={error ? true : undefined}
         aria-describedby={describedBy || undefined}
-        className={`min-h-11 w-full rounded-md border bg-surface px-3 text-text ${
+        className={`select-chevron min-h-9 w-full rounded-full border bg-surface ps-4 pe-10 text-sm text-text shadow-1 pointer-coarse:min-h-11 ${
           error ? 'border-danger' : 'border-border-strong'
         }`}
       >

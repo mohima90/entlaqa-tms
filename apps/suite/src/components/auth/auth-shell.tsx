@@ -7,7 +7,8 @@ import { AuthIcon, type AuthIconName } from './auth-icons';
  * 2026: `(auth)/login`, `signup`, `forgot-password`, `reset-password`), in Jadarat's theme tokens:
  *
  *   split     sign-in — the form column (logo, portal line, «Welcome back», a glass card, footer) and, from
- *             `lg`, the brand panel (55 %) with the product's promise and features;
+ *             `lg`, the brand panel (55 %, the brand gradient at 160° with white text — an organization's
+ *             colours replace it) with the product's promise and features;
  *   simple    forgot / reset password — the form column with the logo row and, from `lg`, a half-width brand
  *             panel with one icon, a title and a sentence;
  *   centered  sign-up with an invitation code — one centred card on a soft gradient.
@@ -83,13 +84,18 @@ function BrandLogo({ texts, size = 'lg' }: { texts: AuthShellTexts; size?: 'lg' 
     <span className="inline-flex items-center gap-3">
       <span
         className={cn(
-          'inline-flex shrink-0 items-center justify-center rounded-xl bg-nav-gradient text-on-nav shadow-2',
-          size === 'lg' ? 'size-12' : 'size-11',
+          'inline-flex shrink-0 items-center justify-center rounded-2xl bg-brand-gradient text-on-nav-item-current shadow-brand-glow',
+          size === 'lg' ? 'size-14' : 'size-11',
         )}
       >
-        <JadaratMark className={size === 'lg' ? 'size-7' : 'size-6'} />
+        <JadaratMark className={size === 'lg' ? 'size-8' : 'size-6'} />
       </span>
-      <span className={cn('font-bold text-primary-text', size === 'lg' ? 'text-2xl' : 'text-xl')}>
+      <span
+        className={cn(
+          'text-brand-gradient font-extrabold tracking-tight',
+          size === 'lg' ? 'text-3xl' : 'text-xl',
+        )}
+      >
         {texts.productName}
       </span>
     </span>
@@ -141,17 +147,19 @@ function Mesh() {
 function SplitPanel({ panel, texts }: { panel: AuthPanelTexts; texts: AuthShellTexts }) {
   return (
     <aside
-      className="relative hidden overflow-hidden bg-nav-gradient text-on-nav lg:flex lg:w-[55%]"
+      className="relative hidden overflow-hidden bg-brand-panel text-on-nav-item-current lg:flex lg:w-[55%]"
       aria-label={panel.title}
     >
+      {/* Kawadir's brand panel: the brand gradient (160°) with faint light circles and a dot grid. */}
       <div className="pointer-events-none absolute inset-0" aria-hidden="true">
-        <div className="absolute -end-20 -top-20 size-[400px] rounded-full bg-on-nav opacity-[0.06]" />
-        <div className="absolute -start-16 top-[30%] size-[300px] rounded-full bg-on-nav opacity-[0.05]" />
-        <div className="absolute bottom-[10%] end-[20%] size-[250px] rounded-full bg-on-nav opacity-[0.04]" />
+        <div className="absolute -end-20 -top-20 size-[400px] rounded-full bg-[radial-gradient(circle,currentColor_0%,transparent_70%)] opacity-[0.08]" />
+        <div className="absolute -start-16 top-[30%] size-[300px] rounded-full bg-[radial-gradient(circle,currentColor_0%,transparent_70%)] opacity-[0.06]" />
+        <div className="absolute bottom-[10%] end-[20%] size-[250px] rounded-full bg-[radial-gradient(circle,currentColor_0%,transparent_70%)] opacity-[0.05]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle,currentColor_1px,transparent_1px)] bg-size-[32px_32px] opacity-[0.04]" />
       </div>
-      <div className="relative z-10 flex w-full flex-col justify-center px-10 xl:px-16">
+      <div className="relative z-10 flex w-full flex-col justify-center-safe px-10 py-12 xl:px-16">
         <div className="max-w-xl">
-          <span className="mb-8 inline-flex size-16 items-center justify-center rounded-2xl bg-on-nav/15">
+          <span className="mb-8 inline-flex size-16 items-center justify-center rounded-2xl bg-current/15">
             <JadaratMark className="size-9" />
           </span>
           <h2 className="mb-6 mt-0 text-4xl font-bold leading-tight xl:text-5xl">
@@ -159,32 +167,30 @@ function SplitPanel({ panel, texts }: { panel: AuthPanelTexts; texts: AuthShellT
             {panel.accent ? (
               <>
                 <br />
-                <span className="font-light text-on-nav-muted">{panel.accent}</span>
+                <span className="font-light">{panel.accent}</span>
               </>
             ) : null}
           </h2>
-          <p className="mb-10 mt-0 max-w-md text-lg leading-relaxed text-on-nav-muted xl:text-xl">
-            {panel.text}
-          </p>
+          <p className="mb-10 mt-0 max-w-md text-lg leading-relaxed xl:text-xl">{panel.text}</p>
           {panel.features ? (
             <ul className="m-0 flex list-none flex-col gap-3 p-0">
               {panel.features.map((feature) => (
                 <li
                   key={feature.text}
-                  className="flex items-center gap-4 rounded-2xl border border-on-nav/10 bg-on-nav/[0.08] p-4"
+                  className="flex items-center gap-4 rounded-2xl border border-current/15 bg-current/[0.08] p-4"
                 >
-                  <span className="inline-flex size-11 shrink-0 items-center justify-center rounded-xl bg-on-nav/15">
+                  <span className="inline-flex size-11 shrink-0 items-center justify-center rounded-xl bg-current/15">
                     <AuthIcon name={feature.icon} className="size-5" />
                   </span>
                   <span className="text-[15px] font-medium">{feature.text}</span>
-                  <AuthIcon name="check" className="ms-auto size-5 shrink-0 text-on-nav-muted" />
+                  <AuthIcon name="check" className="ms-auto size-5 shrink-0 opacity-60" />
                 </li>
               ))}
             </ul>
           ) : null}
-          <p className="mb-0 mt-12 border-t border-on-nav/10 pt-8 text-sm text-on-nav-muted">
+          <p className="mb-0 mt-12 border-t border-current/15 pt-8 text-sm">
             {texts.poweredBy}{' '}
-            <span className="font-semibold text-on-nav" lang="en">
+            <span className="font-semibold" lang="en">
               {texts.entlaqa}
             </span>
           </p>
@@ -197,19 +203,19 @@ function SplitPanel({ panel, texts }: { panel: AuthPanelTexts; texts: AuthShellT
 function SimplePanel({ panel }: { panel: AuthPanelTexts }) {
   return (
     <aside
-      className="relative hidden items-center justify-center overflow-hidden bg-nav-gradient text-on-nav lg:flex lg:flex-1"
+      className="relative hidden items-center justify-center overflow-hidden bg-brand-panel text-on-nav-item-current lg:flex lg:flex-1"
       aria-label={panel.title}
     >
       <div className="relative z-10 px-12 text-center">
-        <span className="mx-auto mb-8 flex size-20 items-center justify-center rounded-2xl bg-on-nav/20">
+        <span className="mx-auto mb-8 flex size-20 items-center justify-center rounded-2xl bg-current/20">
           <AuthIcon name={panel.icon ?? 'lock'} className="size-10" />
         </span>
         <h2 className="mb-4 mt-0 text-3xl font-bold">{panel.title}</h2>
-        <p className="m-0 mx-auto max-w-md text-lg text-on-nav-muted">{panel.text}</p>
+        <p className="m-0 mx-auto max-w-md text-lg">{panel.text}</p>
       </div>
       <div className="pointer-events-none absolute inset-0" aria-hidden="true">
-        <div className="absolute -end-1/4 -top-1/4 size-1/2 rounded-full bg-on-nav opacity-10" />
-        <div className="absolute -bottom-1/4 -start-1/4 size-1/2 rounded-full bg-on-nav opacity-10" />
+        <div className="absolute -end-1/4 -top-1/4 size-1/2 rounded-full bg-[radial-gradient(circle,currentColor_0%,transparent_70%)] opacity-10" />
+        <div className="absolute -bottom-1/4 -start-1/4 size-1/2 rounded-full bg-[radial-gradient(circle,currentColor_0%,transparent_70%)] opacity-10" />
       </div>
     </aside>
   );
@@ -229,7 +235,7 @@ export function AuthShell(props: AuthShellProps) {
           {notices}
           <section className="rounded-2xl border border-border bg-surface p-6 shadow-2 sm:p-8">
             <div className="mb-6 flex flex-col items-center gap-1 text-center">
-              <span className="mb-3 inline-flex size-12 items-center justify-center rounded-xl bg-nav-gradient text-on-nav">
+              <span className="mb-3 inline-flex size-12 items-center justify-center rounded-xl bg-brand-gradient text-on-nav-item-current shadow-brand-glow">
                 <AuthIcon name={props.icon ?? 'userPlus'} className="size-6" />
               </span>
               <h1 className="m-0 text-2xl font-bold">{title}</h1>

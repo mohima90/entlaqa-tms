@@ -187,7 +187,7 @@ export function PersonalDetailsForm({
             name="preferredLocale"
             defaultValue={initial.values.preferredLocale}
             disabled={pending}
-            className="min-h-11 w-full rounded-md border border-border-strong bg-surface px-3 text-text"
+            className="select-chevron min-h-11 w-full rounded-full border border-border-strong bg-surface ps-4 pe-10 text-sm text-text shadow-1"
           >
             <option value="ar">{labels.languages.ar}</option>
             <option value="en">{labels.languages.en}</option>

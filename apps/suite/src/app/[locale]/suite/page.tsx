@@ -1,11 +1,28 @@
 import { routing } from '@jadarat/platform-i18n/routing';
 import { Card, EmptyState, Icon, PageHeader } from '@jadarat/ui';
 import { hasLocale } from 'next-intl';
-import { getTranslations } from 'next-intl/server';
+import { getFormatter, getTranslations } from 'next-intl/server';
 import { notFound } from 'next/navigation';
 import { SuiteShell } from '../../../components/suite-shell';
+import { TeamStats } from '../../../components/users/team-stats';
 import { getSuiteContext } from '../../../lib/suite-context';
 import { suiteHome } from '../../../lib/suite-navigation';
+import { invitationsListQuery, usersListQuery } from '../../../lib/users-queries';
+import { type TeamCounts, teamCounts } from '../../../lib/users-view';
+
+/**
+ * The team's figures for the Organization Admin home: the same reads, permissions and counts as the Team
+ * members page (null when the member may not list users or the read fails — the cards are left out).
+ */
+async function homeTeamCounts(): Promise<TeamCounts | null> {
+  const result = await usersListQuery({});
+  if (!result.ok) return null;
+  const invitations = result.value.canInvite ? await invitationsListQuery({}) : null;
+  return teamCounts(
+    result.value.list.counts,
+    invitations?.ok ? invitations.value.invitations.length : null,
+  );
+}
 
 /**
  * Suite home (walking skeleton, T-M1-D03). When sign-in is configured the page requires a verified
@@ -21,12 +38,36 @@ export default async function SuiteHomePage({ params }: { params: Promise<{ loca
   // The Organization Admin has no training features: until the admin home (FR-ADM-14) exists, a short
   // set-up card with the pages that are built today (T-M2-21). Decided on the server from the grants.
   const home = suiteHome(context.navigation);
+  // Kawadir dashboard: the team's figures as vivid KPI cards above the set-up card (live data only).
+  const counts = home.kind === 'setup' && context.live ? await homeTeamCounts() : null;
+  const users = await getTranslations({ locale, namespace: 'users' });
+  const format = await getFormatter({ locale });
 
   return (
     <SuiteShell locale={locale} context={context} current="home" path="/suite">
-      <PageHeader title={t('pageTitle')} />
+      <PageHeader title={t('pageTitle')} description={t('homeSubtitle')} gradient />
+      {counts ? (
+        <TeamStats
+          label={users('statsLabel')}
+          counts={counts}
+          texts={{
+            total: users('stats.total'),
+            active: users('stats.active'),
+            pending: users('stats.pending'),
+            deactivated: users('stats.deactivated'),
+          }}
+          format={(n) => format.number(n, 'integer')}
+          className="mb-6"
+          data-testid="home-team-stats"
+        />
+      ) : null}
       {home.kind === 'setup' ? (
-        <Card title={t('setupTitle')} description={t('setupBody')} data-testid="setup-home">
+        <Card
+          title={t('setupTitle')}
+          description={t('setupBody')}
+          icon="settings"
+          data-testid="setup-home"
+        >
           <ul className="m-0 grid list-none grid-cols-1 gap-3 p-0 md:grid-cols-2 xl:grid-cols-4">
             {home.links.map((entry) => (
               <li key={entry.key}>

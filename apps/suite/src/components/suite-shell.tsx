@@ -2,7 +2,6 @@ import type { AppLocale } from '@jadarat/platform-i18n';
 import {
   AppShell,
   CommandPalette,
-  FullScreenToggle,
   Icon,
   NAV_COOKIE,
   NavGroup,
@@ -39,8 +38,8 @@ export type { SuitePage } from '../lib/suite-navigation';
 /**
  * The suite frame in the Kawadir layout (T-M2-43; docs/design/kawadir-alignment.md §3): the white,
  * collapsible navigation with the organization on top, the member's menu (lib/suite-navigation.ts) and
- * «Powered by Jadarat»; the sticky top bar with the page title, the ⌘K / Ctrl K page search, full
- * screen, theme (light / dark / system), the language switch, the notification bell (placeholder until
+ * «Powered by Jadarat»; the sticky top bar with the page title, the ⌘K / Ctrl K page search, theme
+ * (light / dark / system), the language switch (globe), the notification bell (placeholder until
  * FR-NTF-01) and the account menu (name, "Organization · Role", My profile, sign-out). The theme and the
  * collapsed menu are this device's choices (cookies, display only). `path` is the locale-less path of
  * the page (for the language switch).
@@ -144,7 +143,6 @@ export async function SuiteShell({
       }
       headerEnd={
         <>
-          <FullScreenToggle texts={{ enter: t('fullScreen'), exit: t('exitFullScreen') }} />
           <ThemeMenu
             initial={parseThemeMode(preferences.get(THEME_COOKIE)?.value)}
             texts={{

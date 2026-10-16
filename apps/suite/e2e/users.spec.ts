@@ -47,12 +47,12 @@ test.describe('users pages', () => {
     page,
   }) => {
     await signIn(page);
-    // The navigation's entry (the Organization Admin's home also links to Users, T-M2-21).
-    await mainNavigation(page).getByRole('link', { name: 'Users' }).click();
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Users');
+    // The navigation's entry (the Organization Admin's home also links to Team members, T-M2-21).
+    await mainNavigation(page).getByRole('link', { name: 'Team members' }).click();
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Team members');
     const table = page.getByTestId('users-table');
     await expect(table.getByRole('row')).toHaveCount(5); // header + admin, Sarah, Khalid, Mona
-    await expect(page.getByRole('link', { name: /Invited/ })).toContainText('1');
+    await expect(page.getByRole('link', { name: /Pending invites/ })).toContainText('1');
     await expectNoSeriousA11yViolations(page);
     // On a phone (390 px) the table scrolls in its box; no header or name is broken mid-word (T-M2-21).
     const desktop = page.viewportSize();
@@ -63,8 +63,8 @@ test.describe('users pages', () => {
     await page.goto(page.url().replace('/ar/', '/en/'));
     if (desktop) await page.setViewportSize(desktop);
 
-    // Invited tab
-    await page.getByRole('link', { name: /Invited/ }).click();
+    // Pending invites tab (Kawadir team page, T-M2-43)
+    await page.getByRole('link', { name: /Pending invites/ }).click();
     await expect(table.getByRole('row')).toHaveCount(2);
     await expect(table).toContainText('خالد إبراهيم الشهري');
     await expect(table).toContainText('Invited');
@@ -114,7 +114,7 @@ test.describe('users pages', () => {
     await signIn(page);
     await page.goto('/ar/suite/admin/users?q=' + encodeURIComponent('ساره عبدالله'));
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('المستخدمون');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('أعضاء الفريق');
     const table = page.getByTestId('users-table');
     await expect(table.getByRole('row')).toHaveCount(2);
     await expect(table).toContainText('سارة عبدالله القحطاني');
@@ -149,8 +149,8 @@ test.describe('users pages', () => {
     await expect(page.getByRole('heading', { name: 'No training data yet' })).toBeVisible();
     await expect(page.getByTestId('setup-home')).toHaveCount(0);
     await expect(page.getByText('Coming soon').first()).toBeVisible();
-    await expect(page.getByText('Organization profile')).toHaveCount(0);
-    await page.getByRole('link', { name: 'Users' }).click();
+    await expect(mainNavigation(page).getByRole('link', { name: 'General' })).toHaveCount(0);
+    await mainNavigation(page).getByRole('link', { name: 'Team members' }).click();
     const table = page.getByTestId('users-table');
     await expect(table.getByRole('row')).toHaveCount(3); // header + Mona herself, Khalid
     await expect(table).toContainText('Mona Saeed Alzahrani');

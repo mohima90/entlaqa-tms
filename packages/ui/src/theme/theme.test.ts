@@ -112,8 +112,8 @@ Notes
 
 - \`text-disabled\` is intentionally excluded (disabled controls are exempt under SC 1.4.3); disabled states must also be conveyed by the \`disabled\` attribute / \`aria-disabled\`.
 - \`border\` (decorative divider) is intentionally below 3 : 1; it must never be the only boundary of an interactive control — inputs use \`border-strong\`.
-- The focus ring is drawn as a 2 px ring separated from the component by a 2 px \`--color-bg\` gap (\`--focus-ring\`), so the ring is measured against \`bg\`/\`surface\` and the header, not against the button fill. Inside the side navigation the ring is \`nav-focus-ring\` (an outline 2 px away from the entry), measured against both ends of the navigation gradient.
-- The side navigation is a gradient from \`nav\` (top) to \`nav-end\` (bottom): its text, the current entry's pill and its focus ring are checked against **both** ends; the hover fill is an opaque colour so its text can be checked too.
+- The focus ring is drawn as a 2 px ring separated from the component by a 2 px \`--color-bg\` gap (\`--focus-ring\`), so the ring is measured against \`bg\`/\`surface\` and the header, not against the button fill. Inside the side navigation the ring is \`nav-focus-ring\` (an outline 2 px away from the entry), measured against both ends of the navigation panel.
+- The side navigation panel runs from \`nav\` (top) to \`nav-end\` (bottom; one colour in the Kawadir layout): its text and focus ring are checked against **both** ends. The current entry is filled with the brand gradient (135°) from \`nav-item-current\` to \`nav-item-current-end\`: its text is checked on **both** gradient ends, and both ends must stand out from the panel (3 : 1).
 - \`accent*\` roles are aliases of the primary roles in «jadarat»; the header roles are aliases of the surface and text roles (a white top bar).
 
 ## Light theme

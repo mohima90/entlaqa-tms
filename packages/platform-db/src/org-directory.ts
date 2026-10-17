@@ -152,7 +152,7 @@ export async function searchMemberOptions(
   query: string,
 ): Promise<readonly MemberOption[]> {
   const text = query.trim().slice(0, MEMBER_SEARCH.maxLength);
-  if ([...text].length < MEMBER_SEARCH.minLength) return [];
+  if (text.length < MEMBER_SEARCH.minLength) return [];
   const pattern = `%${likeLiteral(text)}%`;
   const rows = await tx.execute<{ person_id: string; name_ar: string; name_en: string | null }>(sql`
     select p.id as person_id, p.display_name_ar as name_ar, p.display_name_en as name_en

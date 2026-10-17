@@ -234,41 +234,45 @@ function ApproverPicker(props: {
 }) {
   const { t } = props;
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<readonly MemberChoice[] | null>(null);
+  // The last answer and the text it answers (a newer text shows no stale matches).
+  const [found, setFound] = useState<{
+    readonly text: string;
+    readonly members: readonly MemberChoice[];
+  } | null>(null);
   const [picked, setPicked] = useState<Readonly<Record<string, string>>>({});
   const text = query.trim();
+  const searching = text.length >= SEARCH_MIN_LENGTH;
 
   useEffect(() => {
-    if ([...text].length < SEARCH_MIN_LENGTH) {
-      setResults(null);
-      return;
-    }
+    if (!searching) return;
     let current = true;
     const timer = setTimeout(() => {
       void searchPlanApproversAction({ q: text }).then((result) => {
         if (!current) return;
-        setResults(
-          result.ok
+        setFound({
+          text,
+          members: result.ok
             ? result.value.members.map((m) => ({
                 personId: m.personId,
                 name: localName(props.locale, m.name),
               }))
             : [],
-        );
+        });
       });
     }, 250);
     return () => {
       current = false;
       clearTimeout(timer);
     };
-  }, [text, props.locale]);
+  }, [text, searching, props.locale]);
+  const results = !searching ? null : found?.text === text ? found.members : [];
 
   const chosenName = props.value ? (props.currentName ?? picked[props.value]) : undefined;
   const options = (results ?? []).filter((m) => m.personId !== props.value);
   const hint =
     results === null
       ? t('setup.approvals.searchHint')
-      : results.length === 0
+      : results.length === 0 && found?.text === text
         ? t('setup.approvals.noMatch')
         : undefined;
 

@@ -139,8 +139,8 @@ describe('permission catalogue and standard grants (EP-ROLES, drift checks)', ()
     const rewrites = [
       'update only platform.ref_permissions set risk = $$high$$;',
       'UPDATE "platform"."ref_permissions" SET risk = \'high\';',
-      'update platform . ref_role_permissions set scope = \'tenant\';',
-      'delete from only platform.ref_role_permissions where role_code = \'x\';',
+      "update platform . ref_role_permissions set scope = 'tenant';",
+      "delete from only platform.ref_role_permissions where role_code = 'x';",
       'merge into platform.ref_permissions p using x on true when matched then delete;',
       'truncate table other.t, only platform.ref_permissions;',
       "insert into platform.ref_permissions (code) values ('a.b.c') on conflict (code) do update set risk = 'high';",
@@ -155,7 +155,7 @@ describe('permission catalogue and standard grants (EP-ROLES, drift checks)', ()
       "insert into platform.ref_permissions (code) values ('a.b.c') on conflict do nothing;",
       'grant execute on function private.member_permissions(uuid, uuid) to authenticated;',
       'create trigger t after update on platform.ref_permissions for each row execute function f();',
-      'delete from platform.custom_role_permissions where permission_code = \'x\';',
+      "delete from platform.custom_role_permissions where permission_code = 'x';",
       'select code from platform.ref_permissions;',
     ];
     for (const sql of harmless) expect([...sql.matchAll(REWRITE_RE)], sql).toHaveLength(0);

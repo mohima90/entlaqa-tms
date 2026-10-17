@@ -31,6 +31,10 @@ describe('grantsForAssignments', () => {
       { permission: 'platform.user.read', scope: { type: 'tenant' }, validUntil: until },
       { permission: 'platform.role.read', scope: { type: 'tenant' }, validUntil: until },
       { permission: 'platform.org.read', scope: { type: 'tenant' }, validUntil: until },
+      // The course library (T-M3-03): organization data, organization-wide.
+      { permission: 'tms.course.read', scope: { type: 'tenant' }, validUntil: until },
+      { permission: 'tms.course_cost.read', scope: { type: 'tenant' }, validUntil: until },
+      { permission: 'tms.course.manage', scope: { type: 'tenant' }, validUntil: until },
     ]);
     expect(grantsForAssignments([{ roleCode: 'learner' }], none)).toEqual([
       { permission: 'platform.user.read', scope: { type: 'own' } },
@@ -48,9 +52,11 @@ describe('grantsForAssignments', () => {
       scope: { type: 'org_units', orgUnitIds: ['d1', 'd2'], includeDescendants: true },
       validFrom: from,
     });
-    // Heading no department: the scoped grant is dropped, the tenant-wide one stays.
+    // Heading no department: the scoped grants are dropped, the tenant-wide ones stay.
     expect(grantsForAssignments([{ roleCode: 'department_head' }], none)).toEqual([
       { permission: 'platform.org.read', scope: { type: 'tenant' } },
+      { permission: 'tms.course.read', scope: { type: 'tenant' } },
+      { permission: 'tms.course_cost.read', scope: { type: 'tenant' } },
     ]);
   });
 
@@ -126,10 +132,12 @@ describe('canAssignRole (ADR 0003 §5; PO decisions 5 Oct 2026 and 17 Oct 2026)'
 
   it('lets an HR Manager give the ordinary roles whose permissions they hold, no privileged one', () => {
     const hr = subjectOf('aal2', [], { roleCode: 'hr_manager' });
-    for (const code of ['learner', 'training_manager', 'training_coordinator', 'department_head']) {
+    for (const code of ['learner', 'department_head']) {
       expect(canAssignRole(hr, standard(code))).toBe(true);
     }
-    for (const code of ['tenant_admin', 'hr_manager']) {
+    // T-M3-03: the L&D Manager and the Training Coordinator change the course library, which the HR
+    // Manager does not — nobody gives a permission they do not hold (EP-ROLES; PO decision pending).
+    for (const code of ['tenant_admin', 'hr_manager', 'training_manager', 'training_coordinator']) {
       expect(canAssignRole(hr, standard(code))).toBe(false);
     }
     // A custom role with a high-risk permission is privileged.

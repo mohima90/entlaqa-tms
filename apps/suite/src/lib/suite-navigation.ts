@@ -3,7 +3,7 @@ import { tmsNavigation } from '@jadarat/tms';
 import type { SuiteNavigationAccess } from './suite-context';
 
 /** Pages of the suite that have a navigation entry (`current` of the shell). */
-export type SuitePage = 'home' | 'general' | 'users' | 'roles' | 'security' | 'profile';
+export type SuitePage = 'home' | 'courses' | 'general' | 'users' | 'roles' | 'security' | 'profile';
 
 /** Message keys (namespace `shell`) of every navigation label. */
 export type NavLabelKey =
@@ -38,6 +38,7 @@ export interface NavGroupModel {
 /** Paths of the built pages (locale-less). Settings → General replaced «Organization profile». */
 export const SUITE_PATHS = {
   home: '/suite',
+  courses: '/suite/courses',
   users: '/suite/admin/users',
   roles: '/suite/admin/roles',
   general: '/suite/admin/settings',
@@ -48,6 +49,7 @@ export const SUITE_PATHS = {
 /** The page title in the top bar (message key, namespace `shell`) for each page of the menu. */
 export const PAGE_TITLE_KEYS = {
   home: 'home',
+  courses: 'courses',
   users: 'teamMembers',
   roles: 'roles',
   general: 'general',
@@ -82,11 +84,18 @@ const when = (allowed: boolean, ...entries: NavEntry[]): NavEntry[] => (allowed 
  * entries, then the built pages their grants open, in the same groups.
  */
 export function suiteNavigation(access: SuiteNavigationAccess): NavGroupModel[] {
+  // The course library is a page since T-M3-03 (holders of tms.course.read); the other training entries are
+  // still «Coming soon».
   const main: NavEntry[] = tmsNavigation
-    .filter((item) => item.key === 'home' || access.training)
-    .map((item) =>
-      item.key === 'home' ? page('home', 'home', 'home') : soon(item.key, TMS_ICONS[item.key]),
-    );
+    .filter(
+      (item) =>
+        item.key === 'home' || access.training || (item.key === 'courses' && access.courses),
+    )
+    .map((item) => {
+      if (item.key === 'home') return page('home', 'home', 'home');
+      if (item.key === 'courses' && access.courses) return page('courses', 'courses', 'courses');
+      return soon(item.key, TMS_ICONS[item.key]);
+    });
   const setup = access.organizationSetup;
   const groups: NavGroupModel[] = [
     { key: 'main', entries: main },

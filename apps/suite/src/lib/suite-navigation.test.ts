@@ -10,6 +10,7 @@ const NONE: SuiteNavigationAccess = {
   organizationProfile: false,
   organizationSetup: false,
   training: false,
+  courses: false,
 };
 
 /** `group: entry entry…`, links marked with their path, «Coming soon» entries with `(soon)`. */
@@ -31,6 +32,7 @@ describe('suiteNavigation (menus per role, T-M2-21; Kawadir groups, T-M2-43)', (
         organizationProfile: true,
         organizationSetup: true,
         training: false,
+        courses: false,
       }),
     ).toEqual([
       'main: home→/suite',
@@ -64,11 +66,24 @@ describe('suiteNavigation (menus per role, T-M2-21; Kawadir groups, T-M2-43)', (
         security: true,
         organizationProfile: true,
         training: true,
+        courses: false,
       }),
     ).toEqual([
       'main: home→/suite calendar(soon) sessions(soon) courses(soon)',
       'groupOrganization: teamMembers→/suite/admin/users roles→/suite/admin/roles',
       'groupSettings: general→/suite/admin/settings security→/suite/admin/security',
+    ]);
+  });
+
+  it('links the course library for holders of tms.course.read (T-M3-03)', () => {
+    // L&D Manager, Training Coordinator, HR Manager, Department Head.
+    expect(outline({ ...NONE, users: true, roles: true, training: true, courses: true })).toEqual([
+      'main: home→/suite calendar(soon) sessions(soon) courses→/suite/courses',
+      'groupOrganization: teamMembers→/suite/admin/users roles→/suite/admin/roles',
+    ]);
+    // The Organization Admin never holds it (BR-IAM-4); a custom role holding it shows the page.
+    expect(outline({ ...NONE, courses: true })).toEqual([
+      'main: home→/suite courses→/suite/courses',
     ]);
   });
 
@@ -87,6 +102,7 @@ describe('suiteNavigation (menus per role, T-M2-21; Kawadir groups, T-M2-43)', (
       organizationProfile: true,
       organizationSetup: true,
       training: true,
+      courses: false,
     }).flatMap((group) => group.entries);
     expect(all.length).toBe(13);
     expect(all.filter((entry) => !ICON_NAMES.includes(entry.icon))).toEqual([]);
@@ -102,6 +118,7 @@ describe('suiteHome (T-M2-21)', () => {
       organizationProfile: true,
       organizationSetup: true,
       training: false,
+      courses: false,
     });
     expect(home.kind).toBe('setup');
     expect(home.kind === 'setup' ? home.links.map((l) => l.link?.href) : []).toEqual([
@@ -139,6 +156,7 @@ describe('commandPaletteItems (⌘K / Ctrl K, T-M2-43)', () => {
         organizationProfile: true,
         organizationSetup: true,
         training: false,
+        courses: false,
       },
       'ar',
       label,

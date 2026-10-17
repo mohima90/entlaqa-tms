@@ -23,6 +23,8 @@ export {
   requestPasswordResetMail,
 } from './account-mail';
 export { DomainError, isDomainError } from './domain-error';
+/** SQLSTATE and constraint of a database error, for module services that map expected refusals. */
+export { pgError } from './pg-error';
 export {
   type DownloadGrant,
   type DownloadGrantRequest,
@@ -234,6 +236,7 @@ export {
   type TenantDateDisplay,
   changedProfileFields,
   getOrganizationProfile,
+  getTenantCurrencyCode,
   updateOrganizationProfile,
 } from './tenant-settings';
 export { type OrgUnitOption, type OrgUnitOptions, listOrgUnitOptions } from './org';

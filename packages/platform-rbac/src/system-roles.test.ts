@@ -1,6 +1,8 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { coursePermissions } from './course-permissions';
+import { CATALOGUE_PERMISSIONS } from './custom-roles';
 import { MEMBER_GRANTS } from './member-permissions';
 import { platformPermissions } from './platform-permissions';
 import {
@@ -92,10 +94,20 @@ describe('standard roles (FR-IAM-07, BRD Appendix B; EP-ROLES, PO 17 Oct 2026)',
     expect(FORMER_ROLE_NAMES.auditor?.en).toBe('Auditor');
   });
 
-  it('gives the roles an HR Manager may give only reading permissions (allow-list)', () => {
+  it('gives the roles an HR Manager may give only reading permissions and training work (allow-list)', () => {
     // Anything new (platform or module permission) fails here until reviewed: a role that can change
     // people, structure, settings or the audit log must be privileged (PO decision 5 Oct 2026).
-    const allowed = ['platform.user.read', 'platform.role.read', 'platform.org.read'];
+    // Reviewed (T-M3-03): the course library — adding, editing and archiving courses changes no person,
+    // structure, setting or audit record, so the L&D Manager and the Training Coordinator stay ordinary.
+    const allowed = [
+      'platform.user.read',
+      'platform.role.read',
+      'platform.org.read',
+      'tms.course.read',
+      'tms.course_cost.read',
+      'tms.course.manage',
+      'tms.course.archive',
+    ];
     for (const role of SYSTEM_ROLES.filter((r) => !r.privileged)) {
       for (const grant of role.grants) {
         expect(allowed, `${role.code} grants ${grant.permission.code}`).toContain(
@@ -106,7 +118,7 @@ describe('standard roles (FR-IAM-07, BRD Appendix B; EP-ROLES, PO 17 Oct 2026)',
   });
 
   it('names every role in Arabic and English and grants only registered permissions', () => {
-    const registered = new Set(Object.keys(platformPermissions));
+    const registered = new Set(Object.keys(CATALOGUE_PERMISSIONS));
     for (const role of SYSTEM_ROLES) {
       expect(role.name.ar.trim()).not.toBe('');
       expect(role.name.en.trim()).not.toBe('');
@@ -171,6 +183,37 @@ describe('standard roles (FR-IAM-07, BRD Appendix B; EP-ROLES, PO 17 Oct 2026)',
     // The description says so, in both languages.
     expect(admin.description.en).toContain('No access to training features');
     expect(admin.description.ar).toContain('دون الوصول إلى ميزات التدريب');
+  });
+
+  it('follows BRD Appendix B «Course library & programs» (T-M3-03)', () => {
+    const courses = (code: Parameters<typeof getSystemRole>[0]) =>
+      getSystemRole(code)
+        .grants.filter((g) => g.permission.code in coursePermissions)
+        .map((g) => `${g.permission.code}:${g.scope}`)
+        .sort();
+    expect(courses('tenant_admin')).toEqual([]);
+    expect(courses('hr_manager')).toEqual([
+      'tms.course.read:tenant',
+      'tms.course_cost.read:tenant',
+    ]);
+    expect(courses('training_manager')).toEqual([
+      'tms.course.archive:tenant',
+      'tms.course.manage:tenant',
+      'tms.course.read:tenant',
+      'tms.course_cost.read:tenant',
+    ]);
+    // E: adds and edits, archiving stays with the L&D Manager.
+    expect(courses('training_coordinator')).toEqual([
+      'tms.course.manage:tenant',
+      'tms.course.read:tenant',
+      'tms.course_cost.read:tenant',
+    ]);
+    expect(courses('department_head')).toEqual([
+      'tms.course.read:tenant',
+      'tms.course_cost.read:tenant',
+    ]);
+    // «V» comes with the employees' own catalogue (M4; PO decision pending): nothing yet.
+    expect(courses('learner')).toEqual([]);
   });
 
   it('lets only the Organization Admin and the HR Manager manage users and roles', () => {

@@ -1,7 +1,9 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { coursePermissions } from './course-permissions';
 import {
+  CATALOGUE_PERMISSIONS,
   CUSTOM_ROLE_PERMISSIONS,
   CUSTOM_ROLE_SCOPE_MAP,
   PERMISSION_GROUPS,
@@ -26,27 +28,38 @@ function migration(suffix: string): string {
   return readFileSync(join(migrationsDir, file), 'utf8');
 }
 
-/** (code, risk, custom_role_use, privileged) rows of the permission catalogue seed. */
+/**
+ * The migrations that write the catalogue: its creation (EP-ROLES) and the module permissions added since
+ * (course library, T-M3-03). Any other writer fails the "writers" test below until it is added here.
+ */
+const CATALOGUE_MIGRATIONS = [
+  '_platform__create_permission_catalogue.sql',
+  '_platform__add_course_permissions.sql',
+];
+
+function catalogueSeeds(): string {
+  return CATALOGUE_MIGRATIONS.map(migration).join('\n');
+}
+
+/** (code, risk, custom_role_use, privileged) rows of the permission catalogue seeds. */
 function seededPermissions() {
   return [
-    ...migration('_platform__create_permission_catalogue.sql').matchAll(
-      /\('(platform\.[a-z_]+\.[a-z_]+)', '(low|medium|high)', '([a-z_]+)', (true|false), \d+\)/g,
+    ...catalogueSeeds().matchAll(
+      /\('([a-z]+\.[a-z_]+\.[a-z_]+)', '(low|medium|high)', '([a-z_]+)', (true|false), \d+\)/g,
     ),
   ].map((m) => ({ code: m[1], risk: m[2], use: m[3], privileged: m[4] === 'true' }));
 }
 
-/** (role, permission, scope) rows of the standard roles' grants seed. */
+/** (role, permission, scope) rows of the standard roles' grants seeds. */
 function seededGrants() {
   return [
-    ...migration('_platform__create_permission_catalogue.sql').matchAll(
-      /\('([a-z_]+)', '(platform\.[a-z_]+\.[a-z_]+)', '([a-z_]+)'\)/g,
-    ),
+    ...catalogueSeeds().matchAll(/\('([a-z_]+)', '([a-z]+\.[a-z_]+\.[a-z_]+)', '([a-z_]+)'\)/g),
   ].map((m) => `${m[1] ?? ''}:${m[2] ?? ''}:${m[3] ?? ''}`);
 }
 
 describe('permission catalogue and standard grants (EP-ROLES, drift checks)', () => {
-  it('platform.ref_permissions lists every platform permission with its risk and custom-role use', () => {
-    const expected = Object.values(platformPermissions).map((permission) => ({
+  it('platform.ref_permissions lists every catalogue permission with its risk and custom-role use', () => {
+    const expected = Object.values(CATALOGUE_PERMISSIONS).map((permission) => ({
       code: permission.code,
       risk: permission.risk,
       use: customRolePermission(permission.code)?.use ?? 'none',
@@ -64,11 +77,25 @@ describe('permission catalogue and standard grants (EP-ROLES, drift checks)', ()
     expect(seededGrants().sort()).toEqual(expected.sort());
   });
 
+  it('only the catalogue migrations write the catalogue', () => {
+    const writers = readdirSync(migrationsDir).filter((f) =>
+      /insert into\s+platform\.ref_(role_)?permissions|(update|delete from)\s+platform\.ref_(role_)?permissions/i.test(
+        readFileSync(join(migrationsDir, f), 'utf8'),
+      ),
+    );
+    expect(writers.map((f) => f.replace(/^\d+/, ''))).toEqual(CATALOGUE_MIGRATIONS);
+  });
+
   it('keeps the Organization Admin’s own permissions out of custom roles (BR-IAM-4)', () => {
     expect(customRolePermission('platform.role.assign_privileged')).toBeUndefined();
     expect(customRolePermission('platform.role.manage')).toBeUndefined();
-    // The catalogue: every other platform permission, once, in a named group.
-    expect(CUSTOM_ROLE_PERMISSIONS).toHaveLength(Object.keys(platformPermissions).length - 2);
+    // The catalogue: every other platform permission and the module permissions, once, in a named group.
+    expect(CUSTOM_ROLE_PERMISSIONS).toHaveLength(
+      Object.keys(platformPermissions).length - 2 + Object.keys(coursePermissions).length,
+    );
+    expect(new Set(CUSTOM_ROLE_PERMISSIONS.map((e) => e.permission.code)).size).toBe(
+      CUSTOM_ROLE_PERMISSIONS.length,
+    );
     for (const entry of CUSTOM_ROLE_PERMISSIONS) {
       expect(PERMISSION_GROUPS).toContain(entry.group);
       expect(PERMISSION_GROUP_NAMES[entry.group].ar.trim()).not.toBe('');
@@ -185,8 +212,23 @@ describe('role templates («start from», BRD Appendix B)', () => {
       name: null,
       description: null,
       dataScope: 'departments',
-      permissions: ['platform.user.read', 'platform.role.read', 'platform.org.read'],
+      permissions: [
+        'platform.user.read',
+        'platform.role.read',
+        'platform.org.read',
+        'tms.course.read',
+        'tms.course_cost.read',
+      ],
     });
+    // Reading the course library (organization data) does not widen a role's data scope.
+    expect(
+      standardRoleScope({
+        grants: [
+          { permission: platformPermissions['platform.user.read'], scope: 'own' },
+          { permission: coursePermissions['tms.course.read'], scope: 'tenant' },
+        ],
+      }),
+    ).toBe('own');
     // Copying the Organization Admin never copies its own permissions.
     const admin = roleStartValues({ kind: 'standard', code: 'tenant_admin' });
     expect(admin.permissions).not.toContain('platform.role.assign_privileged');

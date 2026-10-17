@@ -373,11 +373,13 @@ insert into platform.persons (id, display_name_ar, email) values
 do $$
 declare
   v_id uuid;
-  -- person suffix, e-mail, primary role, additional roles
+  -- person suffix, e-mail, primary role, additional roles. The ordinary role in the structural checks is the
+  -- Department Head, whose permissions the HR Manager holds (since T-M3-03 the Training Coordinator's course
+  -- permissions are not the HR Manager's, so the guard would refuse it before the checks run).
   ins constant text := $q$insert into platform.invitations (person_id, email, locale, primary_role, additional_roles)
     values ('a1000000-0000-4000-8000-0000000000%s', %L, 'ar', %L, %L) returning id$q$;
 begin
-  perform tests.assert_check_constraint(format(ins, 'd1', 'new1@a.test', 'learner', '{training_coordinator}'),
+  perform tests.assert_check_constraint(format(ins, 'd1', 'new1@a.test', 'learner', '{department_head}'),
     'invitations_one_role_check', 'EP-ROLES: an invitation gives one role (no additional roles)');
   execute format(ins, 'd1', 'new1@a.test', 'learner', '{}') into v_id;
   perform tests.assert_eq((select row(status, invited_by, token_issued_at, send_count,
@@ -395,7 +397,7 @@ begin
     0::bigint, 'a revoked invitation cannot be reopened');
   -- A new invitation for the same person once the first one is revoked; but only one pending.
   execute format(ins, 'd1', 'new1@a.test', 'learner', '{}') into v_id;
-  perform tests.assert_fails(format(ins, 'd1', 'new1@a.test', 'training_coordinator', '{}'), array['23505'], 'one pending invitation per person');
+  perform tests.assert_fails(format(ins, 'd1', 'new1@a.test', 'department_head', '{}'), array['23505'], 'one pending invitation per person');
 
   perform tests.assert_fails_like(format(ins, 'd2', 'new2@a.test', 'hr_manager', '{}'),
     'only an Organization Admin can invite with a privileged role', 'HR: cannot invite an HR Manager');
@@ -403,7 +405,7 @@ begin
     'only an Organization Admin can invite with a privileged role', 'HR: cannot invite an Organization Admin');
   perform tests.assert_fails_like(format(ins, 'd2', 'new2@a.test', 'learner', '{hr_manager}'),
     'only an Organization Admin can invite with a privileged role', 'HR: cannot add a privileged additional role');
-  perform tests.assert_fails(format(ins, 'd2', 'new2@a.test', 'learner', '{training_coordinator,training_coordinator}'),
+  perform tests.assert_fails(format(ins, 'd2', 'new2@a.test', 'learner', '{department_head,department_head}'),
     array['23514'], 'additional roles do not repeat');
   perform tests.assert_check_constraint(format(ins, 'd2', 'new2@a.test', 'learner', '{learner}'),
     'invitations_additional_roles_check', 'the primary role is not repeated as additional');

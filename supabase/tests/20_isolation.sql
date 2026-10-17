@@ -25,7 +25,9 @@ begin
     -- function tests in 81_files_app_server.sql, 82_files_app_worker.sql and 83_files_storage.sql.
     'platform.files', 'platform.file_download_grants',
     -- User imports (T-M2-12): insert/FK tests below; lifecycle and per-user tests in 86_*, jobs in 87_*.
-    'platform.user_imports', 'platform.user_import_columns', 'platform.user_import_rows')
+    'platform.user_imports', 'platform.user_import_columns', 'platform.user_import_rows',
+    -- Course library (T-M3-03): insert/FK tests below; rules per permission in 99_course_library_*.sql.
+    'tms.course_categories', 'tms.courses')
     and t.table_name not in (select table_name from tests.job_only_tables());
   perform tests.assert(v_missing is null, format('isolation tests missing for: %s', v_missing));
   perform tests.assert(session_user = 'app_server', 'this file must run connected as app_server');
@@ -213,6 +215,27 @@ begin
     0::bigint, 'custom_role_permissions: RLS filters tenant B rows');
   perform tests.assert_privilege_denied($q$update platform.custom_role_permissions set permission_code = 'platform.audit.read'$q$,
     'custom_role_permissions: no UPDATE grant (remove and add)');
+
+  -- tms.course_categories / tms.courses (T-M3-03). uA is the Organization Admin: the guard lets a row of
+  -- another organization through to RLS, and refuses uA's own organization's rows (no course permission).
+  perform tests.assert_rls_violation($q$insert into tms.course_categories (tenant_id, name_en, name_ar) values ('b0000000-0000-4000-8000-000000000001', 'Intruder', 'دخيل')$q$,
+    'course_categories: insert with tenant B tenant_id is rejected by RLS');
+  perform tests.assert_eq(tests.rows_affected($q$update tms.course_categories set name_en = 'x' where id = 'b7000000-0000-4000-8000-000000000001'$q$),
+    0::bigint, 'course_categories: RLS filters tenant B category by id');
+  perform tests.assert_privilege_denied($q$update tms.course_categories set tenant_id = 'b0000000-0000-4000-8000-000000000001'$q$,
+    'course_categories: tenant_id is not updatable');
+  perform tests.assert_privilege_denied($q$delete from tms.course_categories$q$, 'course_categories: no DELETE grant');
+  perform tests.assert_rls_violation($q$insert into tms.courses (tenant_id, code, title_en, title_ar, delivery_type, duration_hours, max_participants) values ('b0000000-0000-4000-8000-000000000001', 'X-1', 'Intruder', 'دخيل', 'classroom', 1, 10)$q$,
+    'courses: insert with tenant B tenant_id is rejected by RLS');
+  perform tests.assert_fails($q$insert into tms.courses (code, title_en, title_ar, category_id, delivery_type, duration_hours, max_participants) values ('X-2', 'Intruder', 'دخيل', 'b7000000-0000-4000-8000-000000000001', 'classroom', 1, 10)$q$,
+    array['42501', '23503'], 'courses: never under another tenant''s category (no permission; composite FK)');
+  perform tests.assert_eq(tests.rows_affected($q$update tms.courses set title_en = 'x' where id = 'b7100000-0000-4000-8000-000000000001'$q$),
+    0::bigint, 'courses: RLS filters tenant B course by id');
+  perform tests.assert_eq((select count(*) from tms.courses where code = 'LEAD-101'), 1::bigint,
+    'courses: tenant B''s course with the same code is invisible');
+  perform tests.assert_privilege_denied($q$update tms.courses set tenant_id = 'b0000000-0000-4000-8000-000000000001'$q$,
+    'courses: tenant_id is not updatable');
+  perform tests.assert_privilege_denied($q$delete from tms.courses$q$, 'courses: no DELETE grant (archive instead)');
 
   -- platform.role_assignments: a tenant B custom role is rejected by the composite FK
   perform tests.assert_fails($q$insert into platform.role_assignments (membership_id, role_code) select id, 'custom_b00000000001' from platform.tenant_memberships where user_id = '00000000-0000-4000-8000-0000000000a3'$q$,

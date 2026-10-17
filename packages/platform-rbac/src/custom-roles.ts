@@ -1,3 +1,4 @@
+import { coursePermissions } from './course-permissions';
 import type { LocalizedText, PermissionDefinition } from './permissions';
 import { platformPermissions } from './platform-permissions';
 import type { RoleScope, SystemRoleDefinition } from './system-roles';
@@ -45,7 +46,14 @@ export const CUSTOM_ROLE_SCOPE_MAP: Readonly<Record<CustomRoleScope, RoleScope>>
 export type CustomRoleUse = 'scoped' | 'organization' | 'organization_only';
 
 /** Module headings of the permissions accordion (Kawadir "categories"). */
-export const PERMISSION_GROUPS = ['people', 'roles', 'organization', 'settings', 'audit'] as const;
+export const PERMISSION_GROUPS = [
+  'people',
+  'roles',
+  'organization',
+  'settings',
+  'audit',
+  'courses',
+] as const;
 export type PermissionGroup = (typeof PERMISSION_GROUPS)[number];
 
 export const PERMISSION_GROUP_NAMES: Readonly<Record<PermissionGroup, LocalizedText>> = {
@@ -54,6 +62,8 @@ export const PERMISSION_GROUP_NAMES: Readonly<Record<PermissionGroup, LocalizedT
   organization: { ar: 'الهيكل التنظيمي', en: 'Organization structure' },
   settings: { ar: 'إعدادات المنظمة والأمان', en: 'Organization settings and security' },
   audit: { ar: 'سجل التدقيق', en: 'Audit log' },
+  // TMS course library (T-M3-03): glossary #32 «الدورات».
+  courses: { ar: 'الدورات', en: 'Courses' },
 };
 
 export interface CustomRolePermission {
@@ -63,10 +73,20 @@ export interface CustomRolePermission {
 }
 
 const p = platformPermissions;
+const c = coursePermissions;
 
 /**
- * The permission catalogue of the role builder, in screen order (platform permissions; module permissions
- * join as each module's features ship — none is held by a standard role yet). Mirrored in
+ * Every permission of the catalogue by code: the platform's and the module permissions held by the
+ * standard roles (course library, T-M3-03). Unknown codes are not in it (callers fail closed).
+ */
+export const CATALOGUE_PERMISSIONS: Readonly<Record<string, PermissionDefinition>> = Object.freeze({
+  ...platformPermissions,
+  ...coursePermissions,
+});
+
+/**
+ * The permission catalogue of the role builder, in screen order (platform permissions, then module
+ * permissions as each module's features ship: the course library since T-M3-03). Mirrored in
  * `platform.ref_permissions` (drift test).
  */
 export const CUSTOM_ROLE_PERMISSIONS: readonly CustomRolePermission[] = [
@@ -84,10 +104,16 @@ export const CUSTOM_ROLE_PERMISSIONS: readonly CustomRolePermission[] = [
   { permission: p['platform.tenant.manage'], group: 'settings', use: 'organization_only' },
   { permission: p['platform.security.manage'], group: 'settings', use: 'organization_only' },
   { permission: p['platform.audit.read'], group: 'audit', use: 'organization_only' },
+  // Course library (T-M3-03): organization data — reading follows no data scope; changing it is
+  // administrative (a role that sees the whole organization).
+  { permission: c['tms.course.read'], group: 'courses', use: 'organization' },
+  { permission: c['tms.course_cost.read'], group: 'courses', use: 'organization' },
+  { permission: c['tms.course.manage'], group: 'courses', use: 'organization_only' },
+  { permission: c['tms.course.archive'], group: 'courses', use: 'organization_only' },
 ];
 
 const PERMISSIONS_BY_CODE: ReadonlyMap<string, PermissionDefinition> = new Map(
-  Object.values(platformPermissions).map((permission) => [permission.code, permission]),
+  Object.values(CATALOGUE_PERMISSIONS).map((permission) => [permission.code, permission]),
 );
 
 const BY_CODE: ReadonlyMap<string, CustomRolePermission> = new Map(
@@ -178,9 +204,15 @@ export function customRolePermissionProblems(
   return problems;
 }
 
-/** The data scope of a standard role, in the four words of the role builder. */
+/**
+ * The data scope of a standard role, in the four words of the role builder — from the grants that follow a
+ * data scope (people, roles); organization-wide reference data (structure names, the course library) does
+ * not widen it: an Employee who reads the course library still sees only their own record.
+ */
 export function standardRoleScope(role: Pick<SystemRoleDefinition, 'grants'>): CustomRoleScope {
-  const scopes = role.grants.map((g) => g.scope);
+  const scopes = role.grants
+    .filter((g) => BY_CODE.get(g.permission.code)?.use !== 'organization')
+    .map((g) => g.scope);
   if (scopes.includes('headed_departments')) return 'departments';
   if (scopes.includes('direct_reports') || scopes.includes('reports_tree')) return 'team';
   if (scopes.length > 0 && scopes.every((s) => s === 'own')) return 'own';

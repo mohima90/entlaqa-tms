@@ -3,11 +3,13 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Jadarat TMS module: domain services, server actions, permissions (schema `tms`). Skeleton.",
+  "description": "Jadarat TMS module: domain services, server actions, permissions (schema `tms`). Course library (T-M3-03).",
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
-    "./actions/sessions": "./src/actions/sessions.ts"
+    "./actions/sessions": "./src/actions/sessions.ts",
+    "./courses": "./src/courses/model.ts",
+    "./courses/server": "./src/courses/server.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
@@ -16,12 +18,15 @@
   },
   "dependencies": {
     "@jadarat/platform-core": "workspace:*",
+    "@jadarat/platform-db": "workspace:*",
+    "@jadarat/platform-i18n": "workspace:*",
     "@jadarat/platform-rbac": "workspace:*",
+    "drizzle-orm": "0.45.4",
+    "server-only": "0.0.1",
     "zod": "4.6.5"
   },
   "devDependencies": {
     "@jadarat/config": "workspace:*",
-    "@jadarat/platform-db": "workspace:*",
     "@jadarat/platform-identity": "workspace:*",
     "@types/node": "24.19.1",
     "@vitest/coverage-v8": "5.0.3",

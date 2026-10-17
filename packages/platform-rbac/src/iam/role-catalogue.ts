@@ -5,6 +5,7 @@ import {
   listCustomRoles,
 } from '@jadarat/platform-db';
 import {
+  CATALOGUE_PERMISSIONS,
   type CustomRoleScope,
   customRoleIsPrivileged,
   isCustomRoleCode,
@@ -34,7 +35,8 @@ export interface RoleChoice extends AssignableRole {
 }
 
 const p = platformPermissions;
-const PERMISSIONS: Readonly<Record<string, PermissionDefinition>> = platformPermissions;
+/** Platform and module permissions a role may hold (course library since T-M3-03). */
+const PERMISSIONS: Readonly<Record<string, PermissionDefinition>> = CATALOGUE_PERMISSIONS;
 
 /**
  * May the member give `role`? The Organization Admin (`platform.role.assign_privileged`) every role;

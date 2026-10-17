@@ -38,10 +38,13 @@ describe.skipIf(!configured)('people reads through defineQuery against PostgreSQ
   const dept = { training: id(), academy: id(), finance: id() };
   const member = (role: string | null) => ({ person: id(), user: id(), session: id(), role });
   // head heads "training" (which contains "academy"); lead manages report1, who manages report2.
+  // The lead holds a custom «Line Manager» role (EP-ROLES: line managers come from the reporting line;
+  // the template's scope is their team) — read from the database on every request.
+  const lineManagerRole = { id: id(), code: `custom_${id().replaceAll('-', '').slice(0, 12)}` };
   const people = {
     admin: member('tenant_admin'),
     head: member('department_head'),
-    lead: member('line_manager'),
+    lead: member(lineManagerRole.code),
     learner: member('learner'),
     coordinator: member('training_coordinator'),
     report1: member(null),
@@ -99,6 +102,12 @@ describe.skipIf(!configured)('people reads through defineQuery against PostgreSQ
     await run(sql`insert into platform.tenants (id, slug, name_ar, status) values
       (${tenant}, ${`q-a-${tenant.slice(0, 8)}`}, 'أ', 'active'),
       (${otherTenant}, ${`q-b-${otherTenant.slice(0, 8)}`}, 'ب', 'active')`);
+    await run(sql`insert into platform.custom_roles (id, tenant_id, code, name_en, name_ar, data_scope)
+      values (${lineManagerRole.id}, ${tenant}, ${lineManagerRole.code}, 'Line Manager', 'مدير مباشر', 'team')`);
+    await run(sql`insert into platform.custom_role_permissions (tenant_id, custom_role_id, permission_code)
+      values (${tenant}, ${lineManagerRole.id}, 'platform.user.read'),
+             (${tenant}, ${lineManagerRole.id}, 'platform.role.read'),
+             (${tenant}, ${lineManagerRole.id}, 'platform.org.read')`);
     for (const [index, m] of all.entries()) {
       const tenantId = m === outsider ? otherTenant : tenant;
       await run(
@@ -142,6 +151,7 @@ describe.skipIf(!configured)('people reads through defineQuery against PostgreSQ
       await run(sql`delete from platform.session_context where active_tenant_id = ${tenantId}`);
       // Removing the whole membership (with its roles) is allowed, also for the last admin.
       await run(sql`delete from platform.tenant_memberships where tenant_id = ${tenantId}`);
+      await run(sql`delete from platform.custom_roles where tenant_id = ${tenantId}`);
       await run(sql`delete from platform.persons where tenant_id = ${tenantId}`);
     }
     for (const m of all) await run(sql`delete from auth.users where id = ${m.user}`);

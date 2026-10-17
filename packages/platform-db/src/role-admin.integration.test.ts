@@ -222,11 +222,12 @@ describe.skipIf(!configured)('changing roles against PostgreSQL', () => {
       ok: false,
       refusal: 'not_allowed',
     });
-    // Back as it was (set by the owner).
-    await owner`update platform.role_assignments ra set role_code = 'tenant_admin'
-      from platform.tenant_memberships m where m.id = ra.membership_id and m.user_id = ${admin.user}`;
-    await owner`update platform.role_assignments ra set role_code = 'learner'
-      from platform.tenant_memberships m where m.id = ra.membership_id and m.user_id = ${omar.user}`;
+    // Back as it was, by the owner: one role per person, so a role is replaced (delete, then insert).
+    await owner`delete from platform.role_assignments ra using platform.tenant_memberships m
+      where m.id = ra.membership_id and m.user_id = ${admin.user}`;
+    await owner`insert into platform.role_assignments (tenant_id, membership_id, role_code, is_primary)
+      select tenant_id, id, 'tenant_admin', true from platform.tenant_memberships where user_id = ${admin.user}`;
+    expect(await change(admin, omar.person, 'learner')).toMatchObject({ ok: true });
   });
 
   it('one role per person holds between two concurrent transactions (race-safe)', async () => {

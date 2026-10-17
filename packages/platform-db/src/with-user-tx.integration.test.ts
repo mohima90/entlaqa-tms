@@ -343,31 +343,60 @@ describe.skipIf(!configured)('withUserTx / withSystemTx against PostgreSQL', () 
     const department = randomUUID();
     await owner`insert into platform.departments (id, tenant_id, code, name_ar, head_person_id)
       values (${department}, ${ids.tenantA}, ${`D-${department.slice(0, 8)}`}, 'قسم', ${ids.personA})`;
-    await owner`insert into platform.role_assignments (tenant_id, membership_id, role_code, is_primary, valid_until)
-      select tenant_id, id, r.code, false, r.until
-      from platform.tenant_memberships,
-           (values ('department_head', null::timestamptz), ('learner', '2030-01-01T00:00:00Z'::timestamptz)) as r (code, until)
-      where user_id = ${ids.user} and tenant_id = ${ids.tenantA}`;
 
-    const facts = await withUserTx(claimsFor(ids.tenantA), (tx) =>
-      loadMemberAuthorizationFacts(tx),
-    );
-    expect(facts).toEqual({
-      roles: [
-        { roleCode: 'department_head', validFrom: null, validUntil: null },
-        { roleCode: 'hr_manager', validFrom: null, validUntil: null },
-        { roleCode: 'learner', validFrom: null, validUntil: new Date('2030-01-01T00:00:00Z') },
-      ],
+    // One role per person (EP-ROLES): the member's role is the HR Manager role…
+    const hr = await withUserTx(claimsFor(ids.tenantA), (tx) => loadMemberAuthorizationFacts(tx));
+    expect(hr).toEqual({
+      roles: [{ roleCode: 'hr_manager', validFrom: null, validUntil: null }],
       headedDepartmentIds: [department],
+      customRoles: [],
     });
-    // Another member of another tenant sees none of it.
+    expect(await withUserTx(claimsFor(ids.tenantA), (tx) => getMyPrimaryRole(tx))).toEqual({
+      code: 'hr_manager',
+      customName: null,
+    });
+
+    // …or a custom role, read with its permissions on every request (a change applies at once).
+    const custom = {
+      id: randomUUID(),
+      code: `custom_${randomUUID().replaceAll('-', '').slice(0, 12)}`,
+    };
+    await owner`insert into platform.custom_roles (id, tenant_id, code, name_en, name_ar, data_scope)
+      values (${custom.id}, ${ids.tenantA}, ${custom.code}, 'Reviewer', 'مراجع', 'departments')`;
+    await owner`insert into platform.custom_role_permissions (tenant_id, custom_role_id, permission_code)
+      values (${ids.tenantA}, ${custom.id}, 'platform.user.read')`;
+    await owner`update platform.role_assignments set role_code = ${custom.code}, valid_until = '2030-01-01T00:00:00Z'
+      where membership_id in (select id from platform.tenant_memberships
+        where user_id = ${ids.user} and tenant_id = ${ids.tenantA})`;
+    try {
+      const facts = await withUserTx(claimsFor(ids.tenantA), (tx) =>
+        loadMemberAuthorizationFacts(tx),
+      );
+      expect(facts).toEqual({
+        roles: [
+          { roleCode: custom.code, validFrom: null, validUntil: new Date('2030-01-01T00:00:00Z') },
+        ],
+        headedDepartmentIds: [department],
+        customRoles: [
+          { code: custom.code, dataScope: 'departments', permissions: ['platform.user.read'] },
+        ],
+      });
+      expect(await withUserTx(claimsFor(ids.tenantA), (tx) => getMyPrimaryRole(tx))).toEqual({
+        code: custom.code,
+        customName: { ar: 'مراجع', en: 'Reviewer' },
+      });
+    } finally {
+      await owner`update platform.role_assignments set role_code = 'hr_manager', valid_until = null
+        where membership_id in (select id from platform.tenant_memberships
+          where user_id = ${ids.user} and tenant_id = ${ids.tenantA})`;
+      await owner`delete from platform.custom_roles where id = ${custom.id}`;
+    }
+    // Another member of another tenant sees none of it; the account menu never shows another tenant's role.
     expect(await withUserTx(claimsForUserB(), (tx) => loadMemberAuthorizationFacts(tx))).toEqual({
       roles: [],
       headedDepartmentIds: [],
-    }); // The account menu's role (T-M2-43): the primary one, never another tenant's.
-    expect(await withUserTx(claimsFor(ids.tenantA), (tx) => getMyPrimaryRole(tx))).toBe(
-      'hr_manager',
-    );
+      customRoles: [],
+    });
     expect(await withUserTx(claimsForUserB(), (tx) => getMyPrimaryRole(tx))).toBeNull();
   });
 

@@ -232,9 +232,9 @@ export interface ReplacementCandidate {
 }
 
 /**
- * Who can take over: the organization's active members with a managing role in force (Department Head,
- * Line Manager) and the heads of departments — the people the direct-manager picker offers (T-M2-13) —
- * without the person being deactivated.
+ * Who can take over: the organization's active members with a managing role in force (Department Head),
+ * the heads of departments and the people with direct reports (the reporting line, EP-ROLES) — the people
+ * the direct-manager picker offers (T-M2-13) — without the person being deactivated.
  */
 export async function listReplacementCandidates(
   tx: UserTx,

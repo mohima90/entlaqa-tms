@@ -40,7 +40,7 @@ describe.skipIf(!configured)('editing a user against PostgreSQL', () => {
   });
   const admin = member('tenant_admin', 'أ-مدير');
   const hr = member('hr_manager', 'ب-موارد');
-  const lead = member('line_manager', 'ت-قائد');
+  const lead = member('department_head', 'ت-قائد');
   const sara = member('learner', 'ث-سارة');
   const noLogin = { person: id(), name: 'ج-بلا حساب' };
   const all = [admin, hr, lead, sara];

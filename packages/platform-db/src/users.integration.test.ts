@@ -35,6 +35,7 @@ describe.skipIf(!configured)('people directory reads against PostgreSQL', () => 
   const t = { a: id(), b: id() };
   const branch = { hq: id(), jeddah: id() };
   const dept = { training: id(), academy: id(), academySub: id(), finance: id(), otherOrg: id() };
+  const customRole = { id: id(), code: `custom_${id().replaceAll('-', '').slice(0, 12)}` };
   const people = {
     admin: { id: id(), user: id(), name: 'أ-مدير المنشأة', status: 'active' },
     manager: { id: id(), user: id(), name: 'ب-مديرة التدريب', status: 'active' },
@@ -121,14 +122,19 @@ describe.skipIf(!configured)('people directory reads against PostgreSQL', () => 
     await employ(people.invited.id, dept.academySub, branch.hq, null);
     await employ(people.suspended.id, dept.training, branch.hq, null);
 
+    // One role per person (EP-ROLES): a standard role, and a custom role named by the organization.
     await owner`insert into platform.role_assignments (tenant_id, membership_id, role_code, is_primary)
-      select tenant_id, id, r.code, r.primary_role from platform.tenant_memberships,
-        (values ('training_coordinator', true), ('learner', false), ('mentor', false)) as r (code, primary_role)
+      select tenant_id, id, 'training_coordinator', true from platform.tenant_memberships
       where tenant_id = ${t.a} and person_id = ${people.report.id}`;
-    // A role that ended in 2020 is not current: not in the list, still in the profile's history.
-    await owner`insert into platform.role_assignments (tenant_id, membership_id, role_code, valid_until)
-      select tenant_id, id, 'internal_instructor', '2020-01-01T00:00:00Z' from platform.tenant_memberships
-      where tenant_id = ${t.a} and person_id = ${people.report.id}`;
+    await owner`insert into platform.custom_roles (id, tenant_id, code, name_en, name_ar, data_scope)
+      values (${customRole.id}, ${t.a}, ${customRole.code}, 'Accounts reviewer', 'مراجع الحسابات', 'team')`;
+    await owner`insert into platform.role_assignments (tenant_id, membership_id, role_code, is_primary)
+      select tenant_id, id, ${customRole.code}, true from platform.tenant_memberships
+      where tenant_id = ${t.a} and person_id = ${people.deep.id}`;
+    // A role that ended in 2020 is not current: not in the list, still in the profile.
+    await owner`insert into platform.role_assignments (tenant_id, membership_id, role_code, is_primary, valid_until)
+      select tenant_id, id, 'learner', true, '2020-01-01T00:00:00Z' from platform.tenant_memberships
+      where tenant_id = ${t.a} and person_id = ${people.manager.id}`;
     await owner`insert into platform.audit_events (tenant_id, actor_user_id, actor_person_id, action, entity_type, entity_id, occurred_at) values
       (${t.a}, ${people.report.user}, ${people.report.id}, 'platform.auth.signed_in', 'auth_session', ${id()}, '2026-10-05T08:40:00Z'),
       (${t.a}, ${people.report.user}, ${people.report.id}, 'platform.auth.signed_in', 'auth_session', ${id()}, '2026-10-01T08:00:00Z'),
@@ -190,14 +196,28 @@ describe.skipIf(!configured)('people directory reads against PostgreSQL', () => 
       displayNameEn: 'Omar 50% Coordinator',
       status: 'active',
       primaryRole: 'training_coordinator',
-      otherRoles: ['learner', 'mentor'],
+      primaryRoleName: null,
       departmentNameAr: 'الأكاديمية',
       lastSignInAt: new Date('2026-10-05T08:40:00Z'),
     });
     // Without role.read the roles are not read at all.
     const [withoutRoles] = (await list({ search: 'E-report', rolesScope: EMPTY_PERSON_SCOPE }))
       .rows;
-    expect(withoutRoles).toMatchObject({ rolesVisible: false, primaryRole: null, otherRoles: [] });
+    expect(withoutRoles).toMatchObject({
+      rolesVisible: false,
+      primaryRole: null,
+      primaryRoleName: null,
+      roleVersion: '',
+    });
+    // A custom role carries its names; a role that ended is not the member's role any more.
+    const [custom] = (await list({ search: 'E-deep' })).rows;
+    expect(custom).toMatchObject({
+      primaryRole: customRole.code,
+      primaryRoleName: { ar: 'مراجع الحسابات', en: 'Accounts reviewer' },
+    });
+    expect(custom?.roleVersion).toMatch(new RegExp(`^${customRole.code}:[0-9a-f-]{36}:1$`));
+    const [ended] = (await list({ search: 'E-manager' })).rows;
+    expect(ended).toMatchObject({ primaryRole: null });
     // Roles only on rows inside the role.read scope (here: the manager's direct reports).
     const byManager = await list({
       actorPersonId: people.manager.id,
@@ -231,8 +251,8 @@ describe.skipIf(!configured)('people directory reads against PostgreSQL', () => 
     expect(await names({ search: 'مد' + String.fromCharCode(0x0651) + 'عو' })).toEqual([
       people.invited.name,
     ]);
-    expect(await names({ roleCode: 'mentor' })).toEqual([people.report.name]);
-    expect(await names({ roleCode: 'internal_instructor' })).toEqual([]);
+    expect(await names({ roleCode: customRole.code })).toEqual([people.deep.name]);
+    expect(await names({ roleCode: 'learner' })).toEqual([]);
     expect(await names({ departmentId: dept.academy })).toEqual([
       people.report.name,
       people.invited.name,
@@ -250,28 +270,22 @@ describe.skipIf(!configured)('people directory reads against PostgreSQL', () => 
   it('counts members per role exactly as the list filters them (roles page, T-M2-05)', async () => {
     const counts = await withUserTx(claims(), (tx) => countMembersByRole(tx));
     expect(Object.keys(counts).length).toBeGreaterThan(0);
-    for (const code of [
-      'tenant_admin',
-      'mentor',
-      'learner',
-      'line_manager',
-      'internal_instructor',
-    ]) {
+    for (const code of ['tenant_admin', 'training_coordinator', 'learner', customRole.code]) {
       expect(counts[code] ?? 0, code).toBe((await names({ roleCode: code })).length);
     }
     // A deactivated member counts, a revoked one and another organization's member do not. (Roles
     // cannot be given to a revoked membership: give it first, then revoke, as happens in practice.)
     await owner`update platform.tenant_memberships set status = 'active' where user_id = ${people.revoked.user}`;
-    await owner`insert into platform.role_assignments (tenant_id, membership_id, role_code)
-      select tenant_id, id, 'auditor' from platform.tenant_memberships
+    await owner`insert into platform.role_assignments (tenant_id, membership_id, role_code, is_primary)
+      select tenant_id, id, 'department_head', true from platform.tenant_memberships
       where user_id in (${people.suspended.user}, ${people.revoked.user}, ${other.user})`;
     await owner`update platform.tenant_memberships set status = 'revoked' where user_id = ${people.revoked.user}`;
     try {
-      const withAuditors = await withUserTx(claims(), (tx) => countMembersByRole(tx));
-      expect(withAuditors.auditor).toBe(1);
-      expect(await names({ roleCode: 'auditor' })).toEqual([people.suspended.name]);
+      const withHeads = await withUserTx(claims(), (tx) => countMembersByRole(tx));
+      expect(withHeads.department_head).toBe(1);
+      expect(await names({ roleCode: 'department_head' })).toEqual([people.suspended.name]);
     } finally {
-      await owner`delete from platform.role_assignments where role_code = 'auditor'
+      await owner`delete from platform.role_assignments where role_code = 'department_head'
         and membership_id in (select id from platform.tenant_memberships
           where user_id in (${people.suspended.user}, ${people.revoked.user}, ${other.user}))`;
     }
@@ -333,16 +347,7 @@ describe.skipIf(!configured)('people directory reads against PostgreSQL', () => 
       branchNameAr: 'الرياض',
       manager: { personId: people.manager.id, displayNameAr: people.manager.name },
       hireOn: '2024-03-03',
-      roles: [
-        { roleCode: 'training_coordinator', isPrimary: true },
-        {
-          roleCode: 'internal_instructor',
-          isPrimary: false,
-          validUntil: new Date('2020-01-01T00:00:00Z'),
-        },
-        { roleCode: 'learner', isPrimary: false },
-        { roleCode: 'mentor', isPrimary: false },
-      ],
+      roles: [{ roleCode: 'training_coordinator', customName: null, isPrimary: true }],
       lastSignInAt: new Date('2026-10-05T08:40:00Z'),
       // Only events about the person, their membership or login (not the course event).
       activity: [

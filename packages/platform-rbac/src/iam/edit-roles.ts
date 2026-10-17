@@ -25,9 +25,9 @@ import {
 /**
  * Changing a member's role (T-M2-14, FR-IAM-07, BR-IAM-3; EP-ROLES, PO 17 Oct 2026: ONE role per person,
  * Kawadir's «تعديل الدور» dialog on Team members). The role is a standard role or a custom role of the
- * organization. Ordinary roles: `platform.role.assign` (HR Manager, Organization Admin) — and only roles
- * whose permissions the member holds; privileged roles (standard, or custom with a high-risk permission):
- * `platform.role.assign_privileged` — the Organization Admin. Nobody changes their own role; a privileged
+ * organization. Ordinary roles: `platform.role.assign` (HR Manager, Organization Admin) — every one of
+ * them (who can give what, PO 17 Oct 2026); privileged roles (standard, or custom with a high-risk or
+ * user / role management permission): `platform.role.assign_privileged` — the Organization Admin. Nobody changes their own role; a privileged
  * member's role only an Organization Admin (database guard); the last Organization Admin stays. Audited
  * with the role before and after.
  */
@@ -152,7 +152,7 @@ function roleAction(
       const wanted = await findRole(ctx.tx, input.role);
       if (!wanted) return err(fieldError('ROLE_UNKNOWN'));
       // Ordinary path: neither the new nor the current role may be privileged (the privileged action,
-      // with its strict session check, gives those), and only roles whose permissions the member holds.
+      // with its strict session check, gives those); every ordinary role (who can give what).
       if (!privileged && (wanted.privileged || !canGive(ctx, wanted))) {
         return err(fieldError('ROLE_NOT_ALLOWED'));
       }

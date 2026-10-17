@@ -202,9 +202,8 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
     },
     privileged: false,
     // No course permission yet (T-M3-03): BRD Appendix B gives the Employee «V» on the course library, which
-    // comes with the employees' own catalogue (FR-CAT-10 views, enrolment — M4). Granting it now would stop
-    // every member who does not hold it (custom roles with platform.role.assign) from giving the Employee
-    // role: nobody gives a permission they do not hold (EP-ROLES). PO decision pending.
+    // comes with the employees' own catalogue (FR-CAT-10 views, enrolment — M4). (Granting it no longer
+    // affects who may give the Employee role: who can give what, PO 17 Oct 2026.)
     grants: [{ permission: p['platform.user.read'], scope: 'own' }],
   },
 ];

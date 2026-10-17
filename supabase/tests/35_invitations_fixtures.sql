@@ -9,7 +9,8 @@
 --             a4…06 not mailed yet (no token)
 --             a4…07 member2@a.test ('tok-member'); account uM is already a member of A (other person)
 --             a4…08 the person's e-mail changed after the e-mail ('tok-changed')
---             a4…09 learner, invited by the HR Manager uAB ('tok-by-hr'); account uByHr signed up after it
+--             a4…09 training_manager (L&D Manager, ordinary: who can give what, PO 17 Oct 2026), invited by
+--                   the HR Manager uAB ('tok-by-hr'); account uByHr signed up after it
 --             a4…0a hr_manager (privileged), invited by uAB when an Organization Admin ('tok-priv-by-hr');
 --                   account uPrivByHr signed up after it — uAB is only an HR Manager now (review M1)
 --   Sessions s<account> = 10…<account suffix> (accept_invitation_as_caller needs a valid one).
@@ -49,7 +50,7 @@ insert into platform.invitations (id, tenant_id, person_id, email, locale, prima
   ('a4000000-0000-4000-8000-000000000006', 'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000e6', 'notoken@a.test', 'ar', 'learner', '{}', '00000000-0000-4000-8000-0000000000a1'),
   ('a4000000-0000-4000-8000-000000000007', 'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000e8', 'member2@a.test', 'ar', 'learner', '{}', '00000000-0000-4000-8000-0000000000a1'),
   ('a4000000-0000-4000-8000-000000000008', 'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000e9', 'chg@a.test', 'ar', 'learner', '{}', '00000000-0000-4000-8000-0000000000a1'),
-  ('a4000000-0000-4000-8000-000000000009', 'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000ea', 'byhr@a.test', 'ar', 'learner', '{}', '00000000-0000-4000-8000-0000000000ab'),
+  ('a4000000-0000-4000-8000-000000000009', 'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000ea', 'byhr@a.test', 'ar', 'training_manager', '{}', '00000000-0000-4000-8000-0000000000ab'),
   ('a4000000-0000-4000-8000-00000000000a', 'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000eb', 'privbyhr@a.test', 'ar', 'hr_manager', '{}', '00000000-0000-4000-8000-0000000000ab'),
   ('b4000000-0000-4000-8000-000000000002', 'b0000000-0000-4000-8000-000000000001', 'b1000000-0000-4000-8000-0000000000e2', 'ua@a.test', 'ar', 'learner', '{}', '00000000-0000-4000-8000-0000000000b1'),
   ('c4000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'c1000000-0000-4000-8000-0000000000e1', 'inv@c.test', 'ar', 'learner', '{}', '00000000-0000-4000-8000-0000000000c1');

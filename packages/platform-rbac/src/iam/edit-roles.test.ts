@@ -200,14 +200,21 @@ describe('edit role query', () => {
     });
   });
 
-  it('HR Manager: only ordinary roles whose permissions they hold are assignable', async () => {
+  it('HR Manager: every ordinary role is assignable (who can give what, PO 17 Oct 2026)', async () => {
     const query = createDefineQuery(runtime(['hr_manager']).rt)(editRolesQueryDefinition());
     const result = await query({ personId: SARA });
     const assignable = result.ok ? result.value.choices.filter((c) => c.assignable) : [];
-    // Not the L&D Manager or the Training Coordinator: their course permissions (T-M3-03), planning
-    // permissions (EP-PLN, T-M3-04) and needs-form permissions (T-M3-10) are not the HR Manager's — nobody
-    // gives a permission they do not hold (EP-ROLES).
-    expect(assignable.map((c) => c.code)).toEqual(['department_head', 'learner', READER.code]);
+    // The L&D Manager and the Training Coordinator (course, planning and needs-form permissions the HR
+    // Manager does not hold) and an ordinary custom role with a permission HR does not hold (PROFILE); no
+    // privileged role (Organization Admin, HR Manager, AUDITOR).
+    expect(assignable.map((c) => c.code)).toEqual([
+      'training_manager',
+      'training_coordinator',
+      'department_head',
+      'learner',
+      READER.code,
+      PROFILE.code,
+    ]);
     expect(result.ok && result.value.privilegedAccess).toBe('denied');
   });
 
@@ -280,15 +287,17 @@ describe('changing the role', () => {
         data: { before: 'training_coordinator', after: 'learner' },
       }),
     );
-    // An ordinary custom role whose permissions HR holds.
-    expect((await save(form(READER.code))).ok).toBe(true);
+    // Every ordinary role: custom ones (also with a permission HR does not hold), the training roles.
+    for (const code of [READER.code, PROFILE.code, 'training_manager', 'training_coordinator']) {
+      expect((await save(form(code))).ok, code).toBe(true);
+    }
   });
 
-  it('ordinary path: no privileged role, no role with permissions the member does not hold', async () => {
+  it('ordinary path: no privileged role (Organization Admin, HR Manager, high-risk custom role)', async () => {
     const save = createDefineAction(runtime(['hr_manager']).rt)(
       updateMemberRolesActionDefinition(),
     );
-    for (const code of ['hr_manager', 'tenant_admin', AUDITOR.code, PROFILE.code]) {
+    for (const code of ['hr_manager', 'tenant_admin', AUDITOR.code]) {
       const result = await save(form(code));
       expect(!result.ok && result.error, code).toMatchObject({
         code: 'VALIDATION_FAILED',

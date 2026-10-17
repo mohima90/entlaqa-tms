@@ -207,7 +207,9 @@ rollback;
 -- ---------------------------------------------------------------------------------------------------
 -- The inviter's authority is checked again when the link is used (security review M1): a pending
 -- invitation stops working when its inviter is revoked, suspended or no longer may give its roles.
--- a4…09 (learner) and a4…0a (hr_manager, privileged) were sent by uAB, now an HR Manager only.
+-- a4…09 (training_manager: the L&D Manager, an ordinary role whose course, planning and needs-form
+-- permissions the HR Manager does not hold — who can give what, PO 17 Oct 2026) and a4…0a (hr_manager,
+-- privileged) were sent by uAB, now an HR Manager only.
 -- ---------------------------------------------------------------------------------------------------
 begin;
 set local role authenticated;
@@ -215,7 +217,7 @@ select tests.set_claims(null);
 do $$
 begin
   perform tests.assert_eq((select state from private.invitation_by_token(tests.token_hash('tok-by-hr'))), 'valid',
-    'an ordinary invitation of an active HR Manager is valid');
+    'an ordinary invitation of an active HR Manager is valid (L&D Manager: permissions HR does not hold)');
   perform tests.assert_eq((select row(x.*)::text from private.invitation_by_token(tests.token_hash('tok-priv-by-hr')) x),
     row('invalid', null, null, null, null, null, null)::text,
     'a privileged invitation of a member who is not an Organization Admin: invalid, no details');
@@ -263,6 +265,15 @@ select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000f9'
 do $$ begin
   perform tests.assert_eq(private.accept_invitation_as_caller(tests.token_hash('tok-by-hr')),
     'a0000000-0000-4000-8000-000000000001'::uuid, 'the ordinary invitation of the remaining HR Manager is accepted');
+end $$;
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
+  'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1'));
+do $$ begin
+  perform tests.assert_eq((select string_agg(ra.role_code, ',') from platform.role_assignments ra
+                           join platform.tenant_memberships m on m.id = ra.membership_id
+                           where m.user_id = '00000000-0000-4000-8000-0000000000f9'
+                             and m.tenant_id = 'a0000000-0000-4000-8000-000000000001'),
+    'training_manager', 'acceptance gives the HR Manager''s invitation role: L&D Manager (PO, 17 Oct 2026)');
 end $$;
 reset role;
 rollback;
@@ -373,13 +384,13 @@ insert into platform.persons (id, display_name_ar, email) values
 do $$
 declare
   v_id uuid;
-  -- person suffix, e-mail, primary role, additional roles. The ordinary role in the structural checks is the
-  -- Department Head, whose permissions the HR Manager holds (since T-M3-03 the Training Coordinator's course
-  -- permissions are not the HR Manager's, so the guard would refuse it before the checks run).
+  v_hr uuid;
+  -- person suffix, e-mail, primary role, additional roles. The HR Manager gives every ordinary role (who can
+  -- give what, PO 17 Oct 2026), the training roles included.
   ins constant text := $q$insert into platform.invitations (person_id, email, locale, primary_role, additional_roles)
     values ('a1000000-0000-4000-8000-0000000000%s', %L, 'ar', %L, %L) returning id$q$;
 begin
-  perform tests.assert_check_constraint(format(ins, 'd1', 'new1@a.test', 'learner', '{department_head}'),
+  perform tests.assert_check_constraint(format(ins, 'd1', 'new1@a.test', 'learner', '{training_coordinator}'),
     'invitations_one_role_check', 'EP-ROLES: an invitation gives one role (no additional roles)');
   execute format(ins, 'd1', 'new1@a.test', 'learner', '{}') into v_id;
   perform tests.assert_eq((select row(status, invited_by, token_issued_at, send_count,
@@ -397,18 +408,25 @@ begin
     0::bigint, 'a revoked invitation cannot be reopened');
   -- A new invitation for the same person once the first one is revoked; but only one pending.
   execute format(ins, 'd1', 'new1@a.test', 'learner', '{}') into v_id;
-  perform tests.assert_fails(format(ins, 'd1', 'new1@a.test', 'department_head', '{}'), array['23505'], 'one pending invitation per person (T-M3-10: department_head, which HR may give)');
+  perform tests.assert_fails(format(ins, 'd1', 'new1@a.test', 'training_coordinator', '{}'), array['23505'], 'one pending invitation per person');
+  -- Who can give what (PO, 17 Oct 2026): the training roles hold course, planning and needs-form permissions
+  -- the HR Manager does not hold, and the HR Manager invites with them.
+  execute format(ins, 'd2', 'new2@a.test', 'training_manager', '{}') into v_hr;
+  perform tests.assert_eq((select primary_role from platform.invitations where id = v_hr), 'training_manager',
+    'HR: invites an L&D Manager');
+  update platform.invitations set status = 'revoked' where id = v_hr;
+  execute format(ins, 'd2', 'new2@a.test', 'training_coordinator', '{}') into v_hr;
+  perform tests.assert_eq((select primary_role from platform.invitations where id = v_hr), 'training_coordinator',
+    'HR: invites a Training Coordinator');
+  update platform.invitations set status = 'revoked' where id = v_hr;
 
   perform tests.assert_fails_like(format(ins, 'd2', 'new2@a.test', 'hr_manager', '{}'),
     'only an Organization Admin can invite with a privileged role', 'HR: cannot invite an HR Manager');
-  -- EP-PLN (T-M3-04): the L&D Manager holds planning permissions the HR Manager does not hold.
-  perform tests.assert_fails_like(format(ins, 'd2', 'new2@a.test', 'training_manager', '{}'),
-    'nobody can give a role with permissions they do not hold', 'HR: cannot invite an L&D Manager');
   perform tests.assert_fails_like(format(ins, 'd2', 'new2@a.test', 'tenant_admin', '{}'),
     'only an Organization Admin can invite with a privileged role', 'HR: cannot invite an Organization Admin');
   perform tests.assert_fails_like(format(ins, 'd2', 'new2@a.test', 'learner', '{hr_manager}'),
     'only an Organization Admin can invite with a privileged role', 'HR: cannot add a privileged additional role');
-  perform tests.assert_fails(format(ins, 'd2', 'new2@a.test', 'learner', '{department_head,department_head}'),
+  perform tests.assert_fails(format(ins, 'd2', 'new2@a.test', 'learner', '{training_coordinator,training_coordinator}'),
     array['23514'], 'additional roles do not repeat');
   perform tests.assert_check_constraint(format(ins, 'd2', 'new2@a.test', 'learner', '{learner}'),
     'invitations_additional_roles_check', 'the primary role is not repeated as additional');

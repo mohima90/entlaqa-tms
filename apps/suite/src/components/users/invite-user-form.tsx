@@ -113,8 +113,8 @@ const EN_FIELDS = ['firstNameEn', 'familyNameEn'];
 /**
  * Invite a user (T-M2-07, FR-IAM-03, BR-IAM-1; approved screen 2): work e-mail, Arabic name (English
  * optional), placement, one role (EP-ROLES, PO 17 Oct 2026: standard or custom, one per person),
- * invitation language. Roles the member may not give (privileged ones unless Organization Admin; roles
- * with permissions they don't hold) are listed but disabled, with the reason.
+ * invitation language. Roles the member may not give (privileged ones unless Organization Admin) are
+ * listed but disabled, with the reason; the HR Manager gives every ordinary role (PO, 17 Oct 2026).
  */
 export function InviteUserForm(props: InviteUserFormProps) {
   const { labels, fieldTexts, roles } = props;

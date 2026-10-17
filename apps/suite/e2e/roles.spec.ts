@@ -86,6 +86,19 @@ for (const locale of ['en', 'ar'] as const) {
   });
 }
 
+test('the HR Manager’s page lists the organization structure, which no custom role holds', async ({
+  page,
+}) => {
+  // Who can give what (PO, 17 Oct 2026): platform.org.manage left the role builder's catalogue but stays
+  // on the standard role's page (read-only).
+  await page.goto('/en/suite/admin/roles/hr_manager');
+  const structure = page
+    .getByTestId('role-permissions')
+    .getByRole('checkbox', { name: 'Manage organization structure' });
+  await expect(structure).toBeChecked();
+  await expect(structure).toBeDisabled();
+});
+
 test('unknown and retired roles are not found; old links open the role page', async ({ page }) => {
   expect((await page.goto('/en/suite/admin/roles/auditor'))?.status()).toBe(404);
   expect((await page.goto('/en/suite/admin/roles/Not-A-Role'))?.status()).toBe(404);

@@ -85,10 +85,9 @@ const form = {
   branchId: '',
   managerPersonId: '',
   employeeNumber: 'EMP-١٤٥٠',
-  // An ordinary role whose permissions the HR Manager holds (since T-M3-03 the Training Coordinator's
-  // course permissions and, since T-M3-04 / T-M3-10, the training roles' planning and needs-form permissions
-  // are not the HR Manager's).
-  role: 'department_head',
+  // An ordinary role the HR Manager gives although its course, planning and needs-form permissions are
+  // not the HR Manager's (who can give what, PO 17 Oct 2026).
+  role: 'training_coordinator',
   locale: 'ar' as const,
 };
 
@@ -232,7 +231,7 @@ describe('invite user action', () => {
       ok({
         invitationId: INVITATION,
         personId: PERSON,
-        role: 'department_head',
+        role: 'training_coordinator',
         scopeUnitId: null,
         // The first code, for the inviter to copy (Kawadir) — never audited.
         inviteCode: 'K7M2PQ9XHT4W',
@@ -251,7 +250,7 @@ describe('invite user action', () => {
       branchId: null,
       managerPersonId: null,
       employeeNumber: 'EMP-1450',
-      primaryRole: 'department_head',
+      primaryRole: 'training_coordinator',
       additionalRoles: [],
       locale: 'ar',
       scopeUnitId: null,
@@ -260,7 +259,7 @@ describe('invite user action', () => {
       action: 'platform.invitation.created',
       entityType: 'invitation',
       entityId: INVITATION,
-      data: { personId: PERSON, role: 'department_head' },
+      data: { personId: PERSON, role: 'training_coordinator' },
     });
     const audited = JSON.stringify(writeAudit.mock.calls);
     expect(audited).not.toContain('alraya');
@@ -303,15 +302,22 @@ describe('invite user action', () => {
     ]);
   });
 
-  it('HR Manager cannot invite with a role whose course permissions they do not hold (T-M3-03)', async () => {
-    for (const role of ['training_coordinator', 'training_manager']) {
-      const result = await createDefineAction(runtime(['hr_manager']).rt)(
-        inviteUserActionDefinition(),
-      )({ ...form, role });
-      expect(!result.ok && result.error.code, role).toBe('VALIDATION_FAILED');
-      expect(!result.ok && result.error.fieldErrors?.[0]?.path, role).toBe('role');
+  it('HR Manager invites with every ordinary role, also ones whose permissions it does not hold (PO, 17 Oct 2026)', async () => {
+    const hr = createDefineAction(runtime(['hr_manager']).rt)(inviteUserActionDefinition());
+    for (const role of [
+      'training_manager',
+      'training_coordinator',
+      'department_head',
+      'learner',
+      PROFILE.code,
+    ]) {
+      expect((await hr({ ...form, role })).ok, role).toBe(true);
     }
-    expect(db.createInvitation).not.toHaveBeenCalled();
+    expect(db.createInvitation).toHaveBeenCalledTimes(5);
+    expect(db.createInvitation).toHaveBeenCalledWith(
+      TX,
+      expect.objectContaining({ primaryRole: 'training_manager' }),
+    );
   });
 
   it('without platform.user.invite: FORBIDDEN, nothing created', async () => {
@@ -336,15 +342,15 @@ describe('invite user action', () => {
     expect(writeAudit).not.toHaveBeenCalled();
   });
 
-  it('HR Manager giving a privileged role, or one with permissions they lack: ROLE_NOT_ALLOWED, nothing created', async () => {
+  it('HR Manager giving a privileged role: ROLE_NOT_ALLOWED, nothing created', async () => {
     const hr = createDefineAction(runtime(['hr_manager']).rt)(inviteUserActionDefinition());
-    for (const role of ['tenant_admin', 'hr_manager', AUDITOR.code, PROFILE.code]) {
+    for (const role of ['tenant_admin', 'hr_manager', AUDITOR.code]) {
       const refused = await hr({ ...form, role });
       expect(!refused.ok && refused.error.fieldErrors, role).toEqual([
         { path: 'role', code: 'ROLE_NOT_ALLOWED' },
       ]);
     }
-    // An ordinary custom role whose permissions HR holds is fine.
+    // An ordinary custom role is fine.
     expect((await hr({ ...form, role: READER.code })).ok).toBe(true);
     db.createInvitation.mockClear();
     // An unknown role (a former one, a deleted custom role): a field error.

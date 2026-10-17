@@ -1,9 +1,11 @@
 import 'server-only';
 import {
   CUSTOM_ROLE_PERMISSIONS,
+  type CustomRolePermission,
   PERMISSION_GROUPS,
   PERMISSION_GROUP_NAMES,
   ROLE_TEMPLATES,
+  STANDARD_ONLY_PERMISSIONS,
   SYSTEM_ROLES,
   permissionMakesPrivileged,
   roleStartValues,
@@ -27,7 +29,6 @@ const KEYS = [
   'permissions',
   'permissionsHint',
   'highRisk',
-  'notHeld',
   'needsOrganization',
   'countLabel',
   'privilegedNotice',
@@ -72,21 +73,40 @@ export async function roleBuilderTexts(locale: 'ar' | 'en'): Promise<Record<stri
   return texts;
 }
 
-/** The permissions accordion: the catalogue by module, with what the Organization Admin holds. */
-export function roleBuilderGroups(locale: 'ar' | 'en', held: readonly string[]): BuilderGroup[] {
-  const heldSet = new Set(held);
+/**
+ * The permissions accordion: the catalogue by module — every permission can be ticked (who can give what,
+ * PO 17 Oct 2026: also the training permissions the Organization Admin does not hold).
+ */
+export function roleBuilderGroups(locale: 'ar' | 'en'): BuilderGroup[] {
+  return groupsOf(locale, CUSTOM_ROLE_PERMISSIONS);
+}
+
+/**
+ * A role's page (read-only): the builder's catalogue plus the permissions a custom role never holds but a
+ * standard role does (the organization structure — STANDARD_ONLY_PERMISSIONS), so the HR Manager's page
+ * still lists it.
+ */
+export function roleViewGroups(locale: 'ar' | 'en'): BuilderGroup[] {
+  return groupsOf(locale, [
+    ...CUSTOM_ROLE_PERMISSIONS,
+    ...STANDARD_ONLY_PERMISSIONS.map((entry) => ({ ...entry, use: 'organization_only' as const })),
+  ]);
+}
+
+function groupsOf(locale: 'ar' | 'en', entries: readonly CustomRolePermission[]): BuilderGroup[] {
   return PERMISSION_GROUPS.map((group) => ({
     key: group,
     title: PERMISSION_GROUP_NAMES[group][locale],
-    permissions: CUSTOM_ROLE_PERMISSIONS.filter((entry) => entry.group === group).map((entry) => ({
-      code: entry.permission.code,
-      label: entry.permission.label[locale],
-      description: entry.permission.description[locale],
-      highRisk: entry.permission.risk === 'high',
-      makesPrivileged: permissionMakesPrivileged(entry.permission.code),
-      organizationOnly: entry.use === 'organization_only',
-      held: heldSet.has(entry.permission.code),
-    })),
+    permissions: entries
+      .filter((entry) => entry.group === group)
+      .map((entry) => ({
+        code: entry.permission.code,
+        label: entry.permission.label[locale],
+        description: entry.permission.description[locale],
+        highRisk: entry.permission.risk === 'high',
+        makesPrivileged: permissionMakesPrivileged(entry.permission.code),
+        organizationOnly: entry.use === 'organization_only',
+      })),
   })).filter((group) => group.permissions.length > 0);
 }
 

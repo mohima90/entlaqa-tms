@@ -134,7 +134,7 @@ describe('role detail query', () => {
     expect(db.getCustomRole).not.toHaveBeenCalled();
   });
 
-  it('a custom role: the stored row; the Organization Admin gets what the builder may tick', async () => {
+  it('a custom role: the stored row; the Organization Admin may edit it', async () => {
     const admin = await createDefineQuery(forRoles(['tenant_admin']))(roleDetailQueryDefinition())({
       code: reviewer.code,
     });
@@ -144,14 +144,10 @@ describe('role detail query', () => {
       memberCount: 2,
       canManage: true,
     });
-    // Everything in the catalogue the Organization Admin holds — never the structure (HR's).
-    const held = admin.ok ? admin.value.heldPermissions : [];
-    expect(held).toContain('platform.audit.read');
-    expect(held).not.toContain('platform.org.manage');
     const reader = await createDefineQuery(forRoles(['hr_manager']))(roleDetailQueryDefinition())({
       code: reviewer.code,
     });
-    expect(reader.ok && reader.value).toMatchObject({ canManage: false, heldPermissions: [] });
+    expect(reader.ok && reader.value).toMatchObject({ canManage: false });
   });
 
   it('an unknown role: NOT_FOUND; a malformed code: VALIDATION_FAILED', async () => {

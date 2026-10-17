@@ -36,12 +36,16 @@ begin
     '00000000-0000-4000-8000-000000000072', 'tms.needs_form.read'), 'the Training Coordinator reads them');
   perform tests.assert(not private.member_has_permission('a0000000-0000-4000-8000-000000000001',
     '00000000-0000-4000-8000-0000000000a1', 'tms.needs_form.read'), 'the Organization Admin holds no training permission');
-  -- EP-ROLES «nobody gives a permission they do not hold», unchanged here: the HR Manager (uAB) holds no
-  -- needs-form permission, so it cannot give the L&D Manager or Training Coordinator role until the tech
-  -- lead's rule change (with the PO) lands at integration — this assertion then flips.
-  perform tests.assert(not private.member_may_give_roles('a0000000-0000-4000-8000-000000000001',
+  -- Who can give what (PO, 17 Oct 2026; migration 20261020200000): the HR Manager (uAB) holds no needs-form
+  -- permission and still gives the L&D Manager and Training Coordinator roles (ordinary roles).
+  perform tests.assert(not private.member_has_permission('a0000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-0000000000ab', 'tms.needs_form.read'), 'the HR Manager holds no needs-form permission');
+  perform tests.assert(private.member_may_give_roles('a0000000-0000-4000-8000-000000000001',
     '00000000-0000-4000-8000-0000000000ab', array['training_manager']),
-    'for now the HR Manager cannot give the L&D Manager role (rule change pending)');
+    'the HR Manager gives the L&D Manager role');
+  perform tests.assert(private.member_may_give_roles('a0000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-0000000000ab', array['training_coordinator']),
+    'the HR Manager gives the Training Coordinator role');
   perform tests.assert(private.member_may_give_roles('a0000000-0000-4000-8000-000000000001',
     '00000000-0000-4000-8000-0000000000ab', array['department_head']), 'the HR Manager still gives ordinary roles');
   perform tests.assert(not private.member_may_give_roles('a0000000-0000-4000-8000-000000000001',

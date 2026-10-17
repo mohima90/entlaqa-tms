@@ -8,6 +8,7 @@ import {
   CUSTOM_ROLE_SCOPE_MAP,
   PERMISSION_GROUPS,
   PERMISSION_GROUP_NAMES,
+  STANDARD_ONLY_PERMISSIONS,
   customRoleGrantScope,
   customRoleIsPrivileged,
   customRolePermission,
@@ -30,29 +31,49 @@ function migration(suffix: string): string {
 }
 
 /**
- * The migrations that write the catalogue: its creation (EP-ROLES) and the module permissions added since
- * (course library, T-M3-03; planning cycles, EP-PLN T-M3-04; needs forms, T-M3-10), in file order. Any
- * other writer fails the "writers" test below until it is added here; the parsers read inserts only (the
- * "inserts only" test below).
+ * The migrations that write the catalogue: its creation (EP-ROLES), the module permissions added since
+ * (course library, T-M3-03; planning cycles, EP-PLN T-M3-04; needs forms, T-M3-10) and who can give what
+ * (PO, 17 Oct 2026: custom_role_use of three permissions), in file order. Any other writer fails the
+ * "writers" test below until it is added here; the parsers read inserts and custom_role_use updates only
+ * (the "rewrites" test below).
  */
 const CATALOGUE_MIGRATIONS = [
   '_platform__create_permission_catalogue.sql',
   '_platform__add_course_permissions.sql',
   '_platform__add_planning_permissions.sql',
   '_platform__add_needs_form_permissions.sql',
+  '_platform__who_can_give_what.sql',
 ];
+
+/** The one rewrite of the catalogue the parsers understand: a permission's custom_role_use. */
+const USE_UPDATE_RE =
+  /update platform\.ref_permissions set custom_role_use = '([a-z_]+)' where code = '([a-z]+\.[a-z_]+\.[a-z_]+)';/g;
+/** Any rewrite of either catalogue table (each must be one the parsers understand). */
+const REWRITE_RE = /(update|delete from)\s+platform\.ref_(role_)?permissions\b/gi;
 
 function catalogueSeeds(): string {
   return CATALOGUE_MIGRATIONS.map(migration).join('\n');
 }
 
-/** (code, risk, custom_role_use, privileged) rows of the permission catalogue seeds. */
+/**
+ * (code, risk, custom_role_use, privileged) rows of the permission catalogue: the seeds' inserts, then the
+ * custom_role_use updates in file order (each must name a seeded permission).
+ */
 function seededPermissions() {
-  return [
-    ...catalogueSeeds().matchAll(
-      /\('([a-z]+\.[a-z_]+\.[a-z_]+)', '(low|medium|high)', '([a-z_]+)', (true|false), \d+\)/g,
-    ),
-  ].map((m) => ({ code: m[1], risk: m[2], use: m[3], privileged: m[4] === 'true' }));
+  const seeds = catalogueSeeds();
+  const rows = new Map(
+    [
+      ...seeds.matchAll(
+        /\('([a-z]+\.[a-z_]+\.[a-z_]+)', '(low|medium|high)', '([a-z_]+)', (true|false), \d+\)/g,
+      ),
+    ].map((m) => [m[1], { code: m[1], risk: m[2], use: m[3], privileged: m[4] === 'true' }]),
+  );
+  for (const m of seeds.matchAll(USE_UPDATE_RE)) {
+    const row = rows.get(m[2]);
+    if (!row) throw new Error(`custom_role_use update of an unknown permission ${m[2] ?? ''}`);
+    row.use = m[1];
+  }
+  return [...rows.values()];
 }
 
 /** (role, permission, scope) rows of the standard roles' grants seeds. */
@@ -92,37 +113,58 @@ describe('permission catalogue and standard grants (EP-ROLES, drift checks)', ()
     expect(writers.map((f) => f.replace(/^\d+/, ''))).toEqual(CATALOGUE_MIGRATIONS);
   });
 
-  it('changes the catalogue by inserts only (the parsers above read inserts)', () => {
-    const rewrites = readdirSync(migrationsDir).filter((f) =>
-      /(update|delete from)\s+platform\.ref_(role_)?permissions\b/i.test(
-        readFileSync(join(migrationsDir, f), 'utf8'),
-      ),
+  it('rewrites the catalogue only by custom_role_use updates (the only rewrite the parsers read)', () => {
+    const unparsed = readdirSync(migrationsDir).filter((f) => {
+      const text = readFileSync(join(migrationsDir, f), 'utf8');
+      return [...text.matchAll(REWRITE_RE)].length !== [...text.matchAll(USE_UPDATE_RE)].length;
+    });
+    expect(unparsed).toEqual([]);
+    // Who can give what (PO, 17 Oct 2026) is the one migration that rewrites rows so far.
+    const rewriters = readdirSync(migrationsDir).filter(
+      (f) => [...readFileSync(join(migrationsDir, f), 'utf8').matchAll(REWRITE_RE)].length > 0,
     );
-    expect(rewrites).toEqual([]);
+    expect(rewriters.map((f) => f.replace(/^\d+/, ''))).toEqual([
+      '_platform__who_can_give_what.sql',
+    ]);
   });
 
-  it('lists the TMS permissions of the standard roles, outside custom roles for now (T-M3-10)', () => {
+  it('lists the needs-form permissions in custom roles since who can give what (T-M3-10; PO, 17 Oct 2026)', () => {
     expect(Object.keys(tmsRolePermissions)).toEqual([
       'tms.needs_form.read',
       'tms.needs_form.manage',
     ]);
+    // The Organization Admin builds roles with permissions it does not hold (it holds no training one).
+    expect(customRolePermission('tms.needs_form.read')).toMatchObject({
+      group: 'planning',
+      use: 'organization',
+    });
+    expect(customRolePermission('tms.needs_form.manage')).toMatchObject({
+      group: 'planning',
+      use: 'organization_only',
+    });
     for (const code of Object.keys(tmsRolePermissions)) {
-      // The Organization Admin builds custom roles from what they hold, and holds no training permission.
-      expect(customRolePermission(code), code).toBeUndefined();
       expect(permissionMakesPrivileged(code), code).toBe(false);
     }
     expect(customRoleIsPrivileged(['tms.needs_form.manage'])).toBe(false);
   });
 
-  it('keeps the Organization Admin’s own permissions out of custom roles (BR-IAM-4)', () => {
+  it('keeps the admin-only permissions out of custom roles (BR-IAM-4; PO, 17 Oct 2026)', () => {
+    // Role management, privileged role assignment and the organization structure (the HR Manager's).
     expect(customRolePermission('platform.role.assign_privileged')).toBeUndefined();
     expect(customRolePermission('platform.role.manage')).toBeUndefined();
+    expect(customRolePermission('platform.org.manage')).toBeUndefined();
+    expect(STANDARD_ONLY_PERMISSIONS.map((e) => e.permission.code)).toEqual([
+      'platform.org.manage',
+    ]);
+    // …which still makes a role privileged (a role copied from the HR Manager, a platform operation).
+    expect(permissionMakesPrivileged('platform.org.manage')).toBe(true);
     // The catalogue: every other platform permission and the module permissions, once, in a named group.
     expect(CUSTOM_ROLE_PERMISSIONS).toHaveLength(
       Object.keys(platformPermissions).length -
-        2 +
+        3 +
         Object.keys(coursePermissions).length +
-        Object.keys(tmsPlanningPermissions).length,
+        Object.keys(tmsPlanningPermissions).length +
+        Object.keys(tmsRolePermissions).length,
     );
     expect(new Set(CUSTOM_ROLE_PERMISSIONS.map((e) => e.permission.code)).size).toBe(
       CUSTOM_ROLE_PERMISSIONS.length,
@@ -183,22 +225,35 @@ describe('permission catalogue and standard grants (EP-ROLES, drift checks)', ()
     expect(standardRoleScope({ grants: [] })).toBe('organization');
   });
 
-  it('checks a role’s permissions like the database guards', () => {
-    const held = new Set(['platform.user.read', 'platform.user.invite', 'platform.audit.read']);
-    expect(customRolePermissionProblems(['platform.user.read'], 'team', held)).toEqual([]);
+  it('checks a role’s permissions like the database guards (who can give what, PO 17 Oct 2026)', () => {
+    expect(customRolePermissionProblems(['platform.user.read'], 'team')).toEqual([]);
     expect(
       customRolePermissionProblems(
-        ['platform.user.invite', 'platform.org.manage', 'platform.role.manage'],
+        ['platform.user.invite', 'tms.course.manage', 'platform.role.manage'],
         'team',
-        held,
       ),
     ).toEqual([
       { code: 'platform.user.invite', reason: 'needs_organization_scope' },
-      { code: 'platform.org.manage', reason: 'needs_organization_scope' },
+      { code: 'tms.course.manage', reason: 'needs_organization_scope' },
       { code: 'platform.role.manage', reason: 'unknown' },
     ]);
-    expect(customRolePermissionProblems(['platform.org.manage'], 'organization', held)).toEqual([
-      { code: 'platform.org.manage', reason: 'not_held' },
+    // Training permissions the Organization Admin does not hold: allowed organization-wide.
+    expect(
+      customRolePermissionProblems(
+        ['tms.course.manage', 'tms.plan_cycle.manage', 'tms.needs_form.manage'],
+        'organization',
+      ),
+    ).toEqual([]);
+    // Admin-only permissions: never (not in the catalogue).
+    expect(
+      customRolePermissionProblems(
+        ['platform.role.manage', 'platform.role.assign_privileged', 'platform.org.manage'],
+        'organization',
+      ),
+    ).toEqual([
+      { code: 'platform.role.manage', reason: 'unknown' },
+      { code: 'platform.role.assign_privileged', reason: 'unknown' },
+      { code: 'platform.org.manage', reason: 'unknown' },
     ]);
   });
 
@@ -221,11 +276,7 @@ describe('role templates («start from», BRD Appendix B)', () => {
     for (const template of ROLE_TEMPLATES) {
       expect(template.name.ar.trim()).not.toBe('');
       expect(template.name.en.trim()).not.toBe('');
-      expect(
-        customRolePermissionProblems(template.permissions, template.dataScope, new Set()).filter(
-          (p) => p.reason !== 'not_held',
-        ),
-      ).toEqual([]);
+      expect(customRolePermissionProblems(template.permissions, template.dataScope)).toEqual([]);
     }
     // The Auditor and the Compliance Officer read the audit log: privileged, as the former roles were.
     const privileged = ROLE_TEMPLATES.filter((t) => customRoleIsPrivileged(t.permissions));

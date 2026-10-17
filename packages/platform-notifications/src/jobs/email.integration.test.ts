@@ -165,7 +165,7 @@ describe.skipIf(!configured)('e-mail pipeline against PostgreSQL', () => {
     expect(sent).toHaveLength(1);
   });
 
-  it('records a refused address as failed, and switched-off e-mail as suppressed', async () => {
+  it('records a refused address as failed; without a sender the message waits (nothing lost, WP-ADM-01)', async () => {
     await request('refused@test.example');
     await pass({
       provider: 'resend',
@@ -176,16 +176,18 @@ describe.skipIf(!configured)('e-mail pipeline against PostgreSQL', () => {
       status: 'failed',
       error_code: 'VALIDATION_ERROR',
       destination: null,
+      provider: 'resend',
     });
 
     await request('off@test.example');
     await pass(null);
-    const [suppressed] = await deliveries('off@test.example');
-    expect(suppressed).toMatchObject({
-      status: 'suppressed',
-      error_code: 'EMAIL_DISABLED',
-      html_body: null,
+    const [waiting] = await deliveries('off@test.example');
+    expect(waiting).toMatchObject({
+      status: 'queued',
+      error_code: 'NO_SENDER',
+      destination: 'off@test.example',
     });
+    expect(waiting?.html_body).not.toBeNull();
     expect(logs.join('\n')).not.toMatch(/refused@|off@|noura@/);
   });
 

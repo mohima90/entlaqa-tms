@@ -241,16 +241,24 @@ export function createSmtpTransport(
   return {
     provider: 'smtp',
     async send(email) {
-      const address = await connectTo();
-      // One transporter per send (nodemailer opens one connection per message without a pool anyway).
-      const sockets = new Set<Socket>();
-      const transporter = nodemailerTransport(settings, address, caPem, sockets);
+      // The deadline covers the host lookup too (review: the resolver has no timeout of its own).
       let timer: NodeJS.Timeout | undefined;
       const deadline = new Promise<never>((_resolve, reject) => {
         timer = setTimeout(() => {
           reject(new EmailSendError('TIMEOUT', false));
         }, deadlineMs);
       });
+      deadline.catch(() => undefined);
+      let address: string;
+      try {
+        address = await Promise.race([connectTo(), deadline]);
+      } catch (error) {
+        clearTimeout(timer);
+        throw error;
+      }
+      // One transporter per send (nodemailer opens one connection per message without a pool anyway).
+      const sockets = new Set<Socket>();
+      const transporter = nodemailerTransport(settings, address, caPem, sockets);
       const domain = email.from.address.slice(email.from.address.lastIndexOf('@') + 1);
       const sending = transporter.sendMail({
         from: formatFrom(email.from),

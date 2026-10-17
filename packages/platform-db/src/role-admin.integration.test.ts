@@ -44,6 +44,8 @@ describe.skipIf(!configured)('changing roles against PostgreSQL', () => {
   const noLogin = { person: id() };
   const ordinary = `custom_${id().replace(/-/g, '').slice(0, 12)}`;
   const privileged = `custom_${id().replace(/-/g, '').slice(0, 12)}`;
+  /** An ordinary training role: course and planning permissions the HR Manager does not hold. */
+  const planner = `custom_${id().replace(/-/g, '').slice(0, 12)}`;
   const all = [admin, hr, sara, omar];
 
   const claimsOf = (m: (typeof all)[number]) => {
@@ -100,12 +102,15 @@ describe.skipIf(!configured)('changing roles against PostgreSQL', () => {
     }
     await owner`insert into platform.persons (id, tenant_id, display_name_ar)
       values (${noLogin.person}, ${tenant}, 'ج')`;
-    // Custom roles (platform operation): an ordinary one (reading) and a privileged one (audit log).
+    // Custom roles (platform operation): an ordinary one (reading), a privileged one (audit log) and an
+    // ordinary training role (course library, planning cycles).
     await owner`insert into platform.custom_roles (tenant_id, code, name_en, name_ar, data_scope) values
       (${tenant}, ${ordinary}, 'Reviewer', 'مراجع', 'organization'),
-      (${tenant}, ${privileged}, 'Auditor', 'مدقق', 'organization')`;
+      (${tenant}, ${privileged}, 'Auditor', 'مدقق', 'organization'),
+      (${tenant}, ${planner}, 'Planner', 'مخطط', 'organization')`;
     await owner`insert into platform.custom_role_permissions (tenant_id, custom_role_id, permission_code)
       select tenant_id, id, unnest(case when code = ${ordinary} then array['platform.user.read', 'platform.org.read']
+                                        when code = ${planner} then array['tms.course.manage', 'tms.plan_cycle.manage']
                                         else array['platform.audit.read'] end)
       from platform.custom_roles where tenant_id = ${tenant}`;
   });
@@ -142,6 +147,9 @@ describe.skipIf(!configured)('changing roles against PostgreSQL', () => {
       ok: true,
       before: 'learner',
       after: 'training_coordinator',
+      // No unit: neither role is a department-limited custom role (EP-ORG).
+      beforeUnit: null,
+      afterUnit: null,
       changed: true,
     });
     const [stored] = await owner<{ codes: string[] }[]>`
@@ -179,11 +187,12 @@ describe.skipIf(!configured)('changing roles against PostgreSQL', () => {
     });
   });
 
-  it('HR Manager: ordinary roles of ordinary members only (standard and custom, by permission)', async () => {
-    expect(await change(hr, sara.person, 'training_manager')).toMatchObject({
-      ok: true,
-      changed: true,
-    });
+  it('HR Manager: every ordinary role of ordinary members (standard and custom), no privileged one', async () => {
+    // Who can give what (PO, 17 Oct 2026): the L&D Manager and the Training Coordinator hold course,
+    // planning and needs-form permissions the HR Manager does not hold, and HR gives them.
+    for (const role of ['training_manager', 'training_coordinator', 'department_head', planner]) {
+      expect(await change(hr, sara.person, role), role).toMatchObject({ ok: true, changed: true });
+    }
     expect(await change(hr, sara.person, ordinary)).toMatchObject({ ok: true, changed: true });
     expect(await change(hr, sara.person, privileged)).toEqual({
       ok: false,

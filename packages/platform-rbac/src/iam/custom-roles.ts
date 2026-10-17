@@ -14,16 +14,16 @@ import {
   CUSTOM_ROLE_SCOPES,
   customRolePermissionProblems,
 } from '../custom-roles';
-import type { ActionContext, ActionDefinition } from '../define-action';
+import type { ActionDefinition } from '../define-action';
 import { platformPermissions } from '../platform-permissions';
-import { heldCataloguePermissions } from './roles-page';
 
 /**
  * Custom roles (FR-IAM-07, EP-ROLES; PO 17 Oct 2026): the Organization Admin (`platform.role.manage`,
  * high risk: the session is confirmed with Auth) creates, changes and deletes the organization's own roles.
  * The rules are checked here first (field errors for the form) and again by the database guards: names
- * unique in the organization (Arabic and English), permissions from the catalogue only and held by the
- * Organization Admin, administrative ones only with the whole organization as scope, and a role still held
+ * unique in the organization (Arabic and English), permissions from the catalogue only — any of them, also
+ * ones the Organization Admin does not hold itself (who can give what, PO 17 Oct 2026) — administrative
+ * ones only with the whole organization as scope, and a role still held
  * (members or pending invitations) is not deleted. Changes apply at the holders' next request. Audited with
  * the role before and after (codes, names and permission codes — no personal data).
  */
@@ -71,15 +71,8 @@ function validation(
 }
 
 /** The builder's rules (same as the database): field errors on `permissions`, or null. */
-function permissionErrors(
-  ctx: Pick<ActionContext<UserTx>, 'can'>,
-  input: z.output<typeof CustomRoleInput>,
-): AppError | null {
-  const problems = customRolePermissionProblems(
-    input.permissions,
-    input.dataScope,
-    new Set(heldCataloguePermissions(ctx)),
-  );
+function permissionErrors(input: z.output<typeof CustomRoleInput>): AppError | null {
+  const problems = customRolePermissionProblems(input.permissions, input.dataScope);
   if (problems.length === 0) return null;
   return validation(
     problems.map((problem) => ({
@@ -87,9 +80,7 @@ function permissionErrors(
       code:
         problem.reason === 'needs_organization_scope'
           ? 'NEEDS_ORGANIZATION_SCOPE'
-          : problem.reason === 'not_held'
-            ? 'PERMISSION_NOT_HELD'
-            : 'PERMISSION_UNKNOWN',
+          : 'PERMISSION_UNKNOWN',
     })),
   );
 }
@@ -111,6 +102,14 @@ function refusal(outcome: Extract<CustomRoleOutcome, { ok: false }>): AppError {
     case 'in_use':
       return validation(
         [{ path: 'role', code: 'ROLE_IN_USE' }],
+        outcome.holders
+          ? { members: outcome.holders.members, invitations: outcome.holders.invitations }
+          : undefined,
+      );
+    case 'scope_units_in_use':
+      // C-M1: still given for units — the scope stays «A department» until those people change.
+      return validation(
+        [{ path: 'dataScope', code: 'SCOPE_UNITS_IN_USE' }],
         outcome.holders
           ? { members: outcome.holders.members, invitations: outcome.holders.invitations }
           : undefined,
@@ -153,7 +152,7 @@ export function createCustomRoleActionDefinition(): ActionDefinition<
     permission: p['platform.role.manage'],
     input: CustomRoleInput,
     handler: async ({ ctx, input }) => {
-      const problem = permissionErrors(ctx, input);
+      const problem = permissionErrors(input);
       if (problem) return err(problem);
       const outcome = await createCustomRole(ctx.tx, input);
       return outcome.ok ? ok(saved(outcome)) : err(refusal(outcome));
@@ -176,7 +175,7 @@ export function updateCustomRoleActionDefinition(): ActionDefinition<
     permission: p['platform.role.manage'],
     input: UpdateCustomRoleInput,
     handler: async ({ ctx, input }) => {
-      const problem = permissionErrors(ctx, input);
+      const problem = permissionErrors(input);
       if (problem) return err(problem);
       const outcome = await updateCustomRole(ctx.tx, input.id, input.version, input);
       return outcome.ok ? ok(saved(outcome)) : err(refusal(outcome));

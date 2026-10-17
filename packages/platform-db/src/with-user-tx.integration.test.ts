@@ -347,7 +347,7 @@ describe.skipIf(!configured)('withUserTx / withSystemTx against PostgreSQL', () 
     // One role per person (EP-ROLES): the member's role is the HR Manager role…
     const hr = await withUserTx(claimsFor(ids.tenantA), (tx) => loadMemberAuthorizationFacts(tx));
     expect(hr).toEqual({
-      roles: [{ roleCode: 'hr_manager', validFrom: null, validUntil: null }],
+      roles: [{ roleCode: 'hr_manager', validFrom: null, validUntil: null, scopeUnitId: null }],
       headedDepartmentIds: [department],
       customRoles: [],
     });
@@ -365,7 +365,9 @@ describe.skipIf(!configured)('withUserTx / withSystemTx against PostgreSQL', () 
       values (${custom.id}, ${ids.tenantA}, ${custom.code}, 'Reviewer', 'مراجع', 'departments')`;
     await owner`insert into platform.custom_role_permissions (tenant_id, custom_role_id, permission_code)
       values (${ids.tenantA}, ${custom.id}, 'platform.user.read')`;
-    await owner`update platform.role_assignments set role_code = ${custom.code}, valid_until = '2030-01-01T00:00:00Z'
+    // «A department» (EP-ORG, T-M3-09): the role is given for one unit, stored on the assignment.
+    await owner`update platform.role_assignments set role_code = ${custom.code}, valid_until = '2030-01-01T00:00:00Z',
+        scope_unit_id = ${department}
       where membership_id in (select id from platform.tenant_memberships
         where user_id = ${ids.user} and tenant_id = ${ids.tenantA})`;
     try {
@@ -374,7 +376,12 @@ describe.skipIf(!configured)('withUserTx / withSystemTx against PostgreSQL', () 
       );
       expect(facts).toEqual({
         roles: [
-          { roleCode: custom.code, validFrom: null, validUntil: new Date('2030-01-01T00:00:00Z') },
+          {
+            roleCode: custom.code,
+            validFrom: null,
+            validUntil: new Date('2030-01-01T00:00:00Z'),
+            scopeUnitId: department,
+          },
         ],
         headedDepartmentIds: [department],
         customRoles: [
@@ -385,8 +392,15 @@ describe.skipIf(!configured)('withUserTx / withSystemTx against PostgreSQL', () 
         code: custom.code,
         customName: { ar: 'مراجع', en: 'Reviewer' },
       });
+      // A deactivated unit grants nothing until a new one is picked (EP-ORG exception).
+      await owner`update platform.departments set status = 'inactive' where id = ${department}`;
+      const inactive = await withUserTx(claimsFor(ids.tenantA), (tx) =>
+        loadMemberAuthorizationFacts(tx),
+      );
+      expect(inactive.roles[0]?.scopeUnitId).toBeNull();
     } finally {
-      await owner`update platform.role_assignments set role_code = 'hr_manager', valid_until = null
+      await owner`update platform.departments set status = 'active' where id = ${department}`;
+      await owner`update platform.role_assignments set role_code = 'hr_manager', valid_until = null, scope_unit_id = null
         where membership_id in (select id from platform.tenant_memberships
           where user_id = ${ids.user} and tenant_id = ${ids.tenantA})`;
       await owner`delete from platform.custom_roles where id = ${custom.id}`;

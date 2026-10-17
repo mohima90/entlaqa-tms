@@ -413,6 +413,18 @@ test.describe('users pages', () => {
     await expect(builder.getByTestId('role-scope-cleared')).toBeVisible();
     await expect(permissions.getByRole('checkbox', { name: 'Invite users' })).toBeDisabled();
     await builder.getByTestId('role-scope-organization').check();
+    // Who can give what (PO, 17 Oct 2026): the training permissions, which the Organization Admin does not
+    // hold, can be ticked; the organization structure (the HR Manager's) is not offered at all.
+    for (const group of ['Courses', 'Planning']) {
+      await permissions.locator('summary', { hasText: group }).click();
+    }
+    await expect(permissions.getByRole('checkbox', { name: 'Manage courses' })).toBeEnabled();
+    await expect(
+      permissions.getByRole('checkbox', { name: 'Manage planning cycles' }),
+    ).toBeEnabled();
+    await expect(
+      permissions.getByRole('checkbox', { name: 'Manage organization structure' }),
+    ).toHaveCount(0);
     await expectNoSeriousA11yViolations(page);
     await builder.getByTestId('role-save').click();
     await expect(page).toHaveURL(/\/en\/suite\/admin\/roles\?saved=1$/);
@@ -474,6 +486,86 @@ test.describe('users pages', () => {
     await expect(page).toHaveURL(/\/en\/suite\/admin\/roles\?deleted=1$/);
     await expect(page.getByTestId('roles-table')).not.toContainText(name);
   });
+  test('department-limited role: Mona, limited to the Academy, sees the Academy and everything under it only (EP-ORG, T-M3-09)', async ({
+    page,
+    browser,
+  }) => {
+    test.skip(!managerEmail || !managerPassword, 'SIGNED_IN_E2E_MANAGER_* not set');
+    const name = `Academy coordinator ${Date.now()}`;
+    await signIn(page);
+    // A custom role limited to «A department»: the unit is picked when the role is given.
+    await page.goto('/en/suite/admin/roles/new');
+    const builder = page.getByTestId('role-builder');
+    await builder.getByRole('textbox', { name: /Name in English/ }).fill(name);
+    await builder
+      .getByRole('textbox', { name: /Name in Arabic/ })
+      .fill(`منسق الأكاديمية ${Date.now()}`);
+    await builder
+      .getByTestId('role-permissions')
+      .getByRole('checkbox', { name: 'View users' })
+      .check();
+    await builder.getByTestId('role-scope-departments').check();
+    await expect(builder.locator('#role-scope-departments-hint')).toContainText(
+      'picked when the role is given',
+    );
+    await builder.getByTestId('role-save').click();
+    await expect(page).toHaveURL(/\/en\/suite\/admin\/roles\?saved=1$/);
+
+    // Team members → Mona → Edit role: the unit picker appears for this role and is required.
+    await page.goto('/en/suite/admin/users');
+    const mona = page.getByTestId('users-table').getByRole('row').filter({
+      hasText: 'Mona Saeed Alzahrani',
+    });
+    await mona.getByRole('button', { name: 'Actions for Mona Saeed Alzahrani' }).click();
+    await page.getByTestId('member-menu-edit-role').click();
+    const dialog = page.getByTestId('edit-role-dialog');
+    const unit = dialog.getByRole('combobox', { name: /^Unit this role covers/ });
+    await expect(unit).toHaveCount(0);
+    await dialog.getByRole('combobox', { name: /^Role/ }).selectOption({ label: name });
+    await expect(unit).toBeVisible();
+    await dialog.getByRole('button', { name: 'Save role' }).click();
+    await expect(dialog.getByText('Choose the unit this role covers.').first()).toBeVisible();
+    // Tree order with the level's name: the Academy sits under Training and development.
+    await expect(unit.locator('option')).toContainText([
+      'Training and development (Department)',
+      'Academy (Section)',
+    ]);
+    await unit.selectOption({ label: '\u2003Academy (Section)' });
+    await expectNoSeriousA11yViolations(page);
+    await dialog.getByRole('button', { name: 'Save role' }).click();
+    await expect(dialog).toBeHidden();
+    await expect(mona).toContainText(name);
+    await expect(mona.getByTestId('role-unit')).toHaveText('Covers Academy');
+
+    // Mona, at her next request: the people of the Academy (Sarah), not those of Training and development
+    // above it (Khalid, her own direct report until now, and herself).
+    const context = await browser.newContext();
+    const member = await context.newPage();
+    await signIn(member, { email: managerEmail, password: managerPassword });
+    await member.goto('/en/suite/admin/users');
+    const people = member.getByTestId('users-table');
+    await expect(people).toContainText('Sarah Abdullah Alqahtani');
+    await expect(people).not.toContainText('خالد إبراهيم الشهري');
+    await expect(people).not.toContainText('Mona Saeed Alzahrani');
+    expect((await member.goto(`/en/suite/admin/users/${KHALID}`))?.status()).toBe(404);
+    await context.close();
+
+    // Mona gets her «Line Manager» role back (no unit: her team again); then the custom role is deleted.
+    await page.goto('/en/suite/admin/users');
+    await mona.getByRole('button', { name: 'Actions for Mona Saeed Alzahrani' }).click();
+    await page.getByTestId('member-menu-edit-role').click();
+    await dialog.getByRole('combobox', { name: /^Role/ }).selectOption({ label: 'Line Manager' });
+    await expect(unit).toHaveCount(0);
+    await dialog.getByRole('button', { name: 'Save role' }).click();
+    await expect(dialog).toBeHidden();
+    await expect(mona.getByTestId('role-unit')).toHaveCount(0);
+    await page.goto('/en/suite/admin/roles');
+    await page.getByTestId('roles-table').getByRole('link', { name, exact: true }).click();
+    await page.getByTestId('role-delete').click();
+    await page.getByTestId('role-delete-confirm').click();
+    await expect(page).toHaveURL(/\/en\/suite\/admin\/roles\?deleted=1$/);
+  });
+
   test('Arabic: the Organization Admin builds a privileged custom role from a template and deletes it', async ({
     page,
   }) => {

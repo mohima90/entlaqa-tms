@@ -20,6 +20,7 @@ import { platformPermissions } from '../platform-permissions';
 import { type LifecycleOffer, NO_LIFECYCLE_OFFER, lifecycleOffer } from './deactivation';
 import { ROLE_CODE } from './edit-roles';
 import { type RoleChoice, loadRoleChoices } from './role-catalogue';
+import { NO_SCOPE_UNITS, type ScopeUnitChoices, loadScopeUnitChoices } from './scope-units';
 import { type AccountLockBudget, signInLockForProfile } from './sign-in-lock';
 
 /**
@@ -76,6 +77,8 @@ export interface UsersListView {
    * the member may manage each person (`mayManage`) and whether the person is privileged (`privileged`).
    */
   readonly canAssignRoles: boolean;
+  /** The unit picker of the edit-role dialog for department-limited roles (EP-ORG; with role.assign). */
+  readonly scopeUnits: ScopeUnitChoices;
   /** Privileged roles may be given here (the Organization Admin). */
   readonly canAssignPrivileged: boolean;
   /** The signed-in member's own person (nobody changes their own role: no ⋯ menu on that row). */
@@ -138,6 +141,7 @@ export function usersListQueryDefinition(): QueryDefinition<
         privilegedReactivation: canDeactivate ? privilegedAccess(ctx) : null,
         roles: canReadRoles ? await loadRoleChoices(ctx) : null,
         canAssignRoles,
+        scopeUnits: canAssignRoles ? await loadScopeUnitChoices(ctx) : NO_SCOPE_UNITS,
         canAssignPrivileged: ctx.can(p['platform.role.assign_privileged'], 'tenant'),
         selfPersonId: ctx.actor.personId ?? null,
       });

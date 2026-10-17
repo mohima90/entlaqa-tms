@@ -1,15 +1,30 @@
 import type { CommandPaletteItem, IconName } from '@jadarat/ui';
-import { tmsNavigation } from '@jadarat/tms';
+import { tmsNavigation, type tmsPlanningNavigation } from '@jadarat/tms';
 import type { SuiteNavigationAccess } from './suite-context';
 
 /** Pages of the suite that have a navigation entry (`current` of the shell). */
-export type SuitePage = 'home' | 'general' | 'users' | 'roles' | 'security' | 'profile';
+export type SuitePage =
+  | 'home'
+  | 'courses'
+  | 'general'
+  | 'users'
+  | 'structure'
+  | 'branches'
+  | 'roles'
+  | 'security'
+  | 'profile'
+  // Planning (EP-PLN, T-M3-04).
+  | 'planningCycles'
+  | 'planningSettings'
+  | 'needsForms';
 
 /** Message keys (namespace `shell`) of every navigation label. */
 export type NavLabelKey =
   | 'home'
   | (typeof tmsNavigation)[number]['key']
   | 'teamMembers'
+  | 'structure'
+  | 'branches'
   | 'branding'
   | 'roles'
   | 'subscription'
@@ -17,10 +32,13 @@ export type NavLabelKey =
   | 'emailIntegration'
   | 'integrations'
   | 'security'
-  | 'auditLog';
+  | 'auditLog'
+  | (typeof tmsPlanningNavigation)[number]['key']
+  | 'needsForms';
 
 /** Message keys (namespace `shell`) of the group headings; `main` has none. */
-export type NavGroupKey = 'main' | 'groupOrganization' | 'groupBilling' | 'groupSettings';
+export type NavGroupKey =
+  'main' | 'groupPlanning' | 'groupOrganization' | 'groupBilling' | 'groupSettings';
 
 export interface NavEntry {
   readonly key: NavLabelKey;
@@ -38,21 +56,34 @@ export interface NavGroupModel {
 /** Paths of the built pages (locale-less). Settings → General replaced «Organization profile». */
 export const SUITE_PATHS = {
   home: '/suite',
+  courses: '/suite/courses',
   users: '/suite/admin/users',
+  structure: '/suite/admin/structure',
+  branches: '/suite/admin/branches',
   roles: '/suite/admin/roles',
   general: '/suite/admin/settings',
   security: '/suite/admin/security',
   profile: '/suite/profile',
+  planningCycles: '/suite/planning/cycles',
+  planningSettings: '/suite/planning/settings',
+  // Planning → Needs forms (T-M3-10).
+  needsForms: '/suite/planning/needs-forms',
 } as const satisfies Record<SuitePage, string>;
 
 /** The page title in the top bar (message key, namespace `shell`) for each page of the menu. */
 export const PAGE_TITLE_KEYS = {
   home: 'home',
+  courses: 'courses',
   users: 'teamMembers',
+  structure: 'structure',
+  branches: 'branches',
   roles: 'roles',
   general: 'general',
   security: 'security',
   profile: 'myProfile',
+  planningCycles: 'planningCycles',
+  planningSettings: 'planningSettings',
+  needsForms: 'needsForms',
 } as const satisfies Record<SuitePage, string>;
 
 const TMS_ICONS: Readonly<Record<(typeof tmsNavigation)[number]['key'], IconName>> = {
@@ -82,18 +113,41 @@ const when = (allowed: boolean, ...entries: NavEntry[]): NavEntry[] => (allowed 
  * entries, then the built pages their grants open, in the same groups.
  */
 export function suiteNavigation(access: SuiteNavigationAccess): NavGroupModel[] {
+  // The course library is a page since T-M3-03 (holders of tms.course.read); the other training entries are
+  // still «Coming soon».
   const main: NavEntry[] = tmsNavigation
-    .filter((item) => item.key === 'home' || access.training)
-    .map((item) =>
-      item.key === 'home' ? page('home', 'home', 'home') : soon(item.key, TMS_ICONS[item.key]),
-    );
+    .filter(
+      (item) =>
+        item.key === 'home' || access.training || (item.key === 'courses' && access.courses),
+    )
+    .map((item) => {
+      if (item.key === 'home') return page('home', 'home', 'home');
+      if (item.key === 'courses' && access.courses) return page('courses', 'courses', 'courses');
+      return soon(item.key, TMS_ICONS[item.key]);
+    });
   const setup = access.organizationSetup;
   const groups: NavGroupModel[] = [
     { key: 'main', entries: main },
+    // Planning (EP-PLN): cycles and planning settings (T-M3-04, tms.plan_cycle.read) and the needs forms
+    // library (T-M3-10, tms.needs_form.read) for the L&D Manager and the Training Coordinator.
+    {
+      key: 'groupPlanning',
+      entries: [
+        ...when(access.planning, page('planningCycles', 'plan', 'planningCycles')),
+        ...when(access.needsForms, page('needsForms', 'form', 'needsForms')),
+        ...when(access.planning, page('planningSettings', 'settings', 'planningSettings')),
+      ],
+    },
     {
       key: 'groupOrganization',
       entries: [
         ...when(access.users, page('teamMembers', 'people', 'users')),
+        // Organization → Structure and Branches (T-M3-02, EP-ORG): the HR Manager's pages.
+        ...when(
+          access.structure,
+          page('structure', 'structure', 'structure'),
+          page('branches', 'building', 'branches'),
+        ),
         ...when(setup, soon('branding', 'palette')),
         ...when(access.roles, page('roles', 'key', 'roles')),
       ],

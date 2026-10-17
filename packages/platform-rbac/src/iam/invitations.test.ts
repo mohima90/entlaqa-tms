@@ -33,6 +33,9 @@ const db = vi.hoisted(() => ({
   // Custom roles of the organization (EP-ROLES).
   listCustomRoles: vi.fn(),
   getCustomRole: vi.fn(),
+  // The unit picker of department-limited roles (EP-ORG, T-M3-09).
+  listStructureUnitOptions: vi.fn(),
+  listStructureLevelLabels: vi.fn(),
 }));
 vi.mock('@jadarat/platform-db', () => db);
 
@@ -82,6 +85,8 @@ const form = {
   branchId: '',
   managerPersonId: '',
   employeeNumber: 'EMP-١٤٥٠',
+  // An ordinary role the HR Manager gives although its course, planning and needs-form permissions are
+  // not the HR Manager's (who can give what, PO 17 Oct 2026).
   role: 'training_coordinator',
   locale: 'ar' as const,
 };
@@ -103,6 +108,24 @@ const READER = customRow('custom_a00000000001', ['platform.user.read', 'platform
 const AUDITOR = customRow('custom_a00000000002', ['platform.user.read', 'platform.audit.read']);
 const PROFILE = customRow('custom_a00000000003', ['platform.tenant.read']);
 const CUSTOM = [READER, AUDITOR, PROFILE];
+/** «A department» (EP-ORG, T-M3-09): given for one unit (found by code, not in the list above). */
+const BRANCH_READER = {
+  ...customRow('custom_a00000000004', ['platform.user.read', 'platform.org.read']),
+  dataScope: 'departments',
+};
+const SALES = '99999999-9999-4999-8999-999999999999';
+const UNITS = [
+  {
+    id: SALES,
+    code: 'SAL',
+    nameAr: 'المبيعات',
+    nameEn: 'Sales',
+    parentId: null,
+    levelOrdinal: 1,
+    active: true,
+  },
+];
+const LEVELS = [{ ordinal: 1, nameEn: 'Department', nameAr: 'إدارة' }];
 
 const refusal = (code: string) => Object.assign(new Error(code), { code });
 
@@ -140,8 +163,10 @@ beforeEach(() => {
   });
   db.listCustomRoles.mockResolvedValue(CUSTOM);
   db.getCustomRole.mockImplementation((_tx: unknown, key: { code: string }) =>
-    Promise.resolve(CUSTOM.find((r) => r.code === key.code) ?? null),
+    Promise.resolve([...CUSTOM, BRANCH_READER].find((r) => r.code === key.code) ?? null),
   );
+  db.listStructureUnitOptions.mockResolvedValue(UNITS);
+  db.listStructureLevelLabels.mockResolvedValue(LEVELS);
 });
 
 describe('invite input', () => {
@@ -207,6 +232,7 @@ describe('invite user action', () => {
         invitationId: INVITATION,
         personId: PERSON,
         role: 'training_coordinator',
+        scopeUnitId: null,
         // The first code, for the inviter to copy (Kawadir) — never audited.
         inviteCode: 'K7M2PQ9XHT4W',
         locale: 'ar',
@@ -227,6 +253,7 @@ describe('invite user action', () => {
       primaryRole: 'training_coordinator',
       additionalRoles: [],
       locale: 'ar',
+      scopeUnitId: null,
     });
     expect(writeAudit).toHaveBeenCalledWith(TX, expect.anything(), {
       action: 'platform.invitation.created',
@@ -239,6 +266,58 @@ describe('invite user action', () => {
     expect(audited).not.toContain('نورة');
     expect(audited).not.toContain('K7M2PQ9XHT4W');
     expect(getClaims).toHaveBeenCalledWith({ strict: false });
+  });
+
+  it('a department-limited role is invited with one active unit; any other role with none (EP-ORG, T-M3-09)', async () => {
+    const { rt, writeAudit } = runtime(['hr_manager']);
+    const invite = createDefineAction(rt)(inviteUserActionDefinition());
+    const refusals: [Record<string, unknown>, string][] = [
+      [{ ...form, role: BRANCH_READER.code }, 'UNIT_REQUIRED'],
+      [{ ...form, role: BRANCH_READER.code, scopeUnitId: DEPARTMENT }, 'UNIT_NOT_ALLOWED'],
+      [{ ...form, scopeUnitId: SALES }, 'UNIT_NOT_ALLOWED'],
+    ];
+    for (const [input, code] of refusals) {
+      const result = await invite(input as never);
+      expect(!result.ok && result.error.fieldErrors, code).toEqual([{ path: 'scopeUnitId', code }]);
+    }
+    expect(db.createInvitation).not.toHaveBeenCalled();
+
+    const result = await invite({ ...form, role: BRANCH_READER.code, scopeUnitId: SALES });
+    expect(result.ok && result.value.scopeUnitId).toBe(SALES);
+    expect(db.createInvitation).toHaveBeenCalledWith(
+      TX,
+      expect.objectContaining({ primaryRole: BRANCH_READER.code, scopeUnitId: SALES }),
+    );
+    expect(writeAudit).toHaveBeenLastCalledWith(TX, expect.anything(), {
+      action: 'platform.invitation.created',
+      entityType: 'invitation',
+      entityId: INVITATION,
+      data: { personId: PERSON, role: BRANCH_READER.code, scopeUnitId: SALES },
+    });
+    // The unit deactivated meanwhile: the database refuses it, the form says so on the unit field.
+    db.createInvitation.mockRejectedValueOnce(refusal('UNIT_NOT_ALLOWED'));
+    const refused = await invite({ ...form, role: BRANCH_READER.code, scopeUnitId: SALES });
+    expect(!refused.ok && refused.error.fieldErrors).toEqual([
+      { path: 'scopeUnitId', code: 'UNIT_NOT_ALLOWED' },
+    ]);
+  });
+
+  it('HR Manager invites with every ordinary role, also ones whose permissions it does not hold (PO, 17 Oct 2026)', async () => {
+    const hr = createDefineAction(runtime(['hr_manager']).rt)(inviteUserActionDefinition());
+    for (const role of [
+      'training_manager',
+      'training_coordinator',
+      'department_head',
+      'learner',
+      PROFILE.code,
+    ]) {
+      expect((await hr({ ...form, role })).ok, role).toBe(true);
+    }
+    expect(db.createInvitation).toHaveBeenCalledTimes(5);
+    expect(db.createInvitation).toHaveBeenCalledWith(
+      TX,
+      expect.objectContaining({ primaryRole: 'training_manager' }),
+    );
   });
 
   it('without platform.user.invite: FORBIDDEN, nothing created', async () => {
@@ -263,15 +342,15 @@ describe('invite user action', () => {
     expect(writeAudit).not.toHaveBeenCalled();
   });
 
-  it('HR Manager giving a privileged role, or one with permissions they lack: ROLE_NOT_ALLOWED, nothing created', async () => {
+  it('HR Manager giving a privileged role: ROLE_NOT_ALLOWED, nothing created', async () => {
     const hr = createDefineAction(runtime(['hr_manager']).rt)(inviteUserActionDefinition());
-    for (const role of ['tenant_admin', 'hr_manager', AUDITOR.code, PROFILE.code]) {
+    for (const role of ['tenant_admin', 'hr_manager', AUDITOR.code]) {
       const refused = await hr({ ...form, role });
       expect(!refused.ok && refused.error.fieldErrors, role).toEqual([
         { path: 'role', code: 'ROLE_NOT_ALLOWED' },
       ]);
     }
-    // An ordinary custom role whose permissions HR holds is fine.
+    // An ordinary custom role is fine.
     expect((await hr({ ...form, role: READER.code })).ok).toBe(true);
     db.createInvitation.mockClear();
     // An unknown role (a former one, a deleted custom role): a field error.
@@ -492,7 +571,12 @@ describe('invitation queries', () => {
       createDefineQuery(runtime(roles, aal).rt)(inviteFormQueryDefinition())({});
     expect(await query(['hr_manager'])).toMatchObject({
       ok: true,
-      value: { managers: [{ personId: 'm1' }], orgUnits: units, privilegedAccess: 'denied' },
+      value: {
+        managers: [{ personId: 'm1' }],
+        orgUnits: units,
+        privilegedAccess: 'denied',
+        scopeUnits: { units: UNITS, levels: LEVELS, structureVisible: true },
+      },
     });
     for (const aal of ['aal1', 'aal2'] as const) {
       expect(await query(['tenant_admin'], aal)).toMatchObject({

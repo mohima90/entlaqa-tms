@@ -1,11 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import type { CustomRoleDefinition } from './custom-roles';
+import { type CustomRoleDefinition, scopeNeedsUnit } from './custom-roles';
 import {
   type RoleAssignment,
   canAssignRole,
   customAssignableRole,
   grantsForAssignments,
-  holdsTenantWide,
   standardAssignableRole,
 } from './role-grants';
 import { getSystemRole } from './system-roles';
@@ -31,6 +30,14 @@ describe('grantsForAssignments', () => {
       { permission: 'platform.user.read', scope: { type: 'tenant' }, validUntil: until },
       { permission: 'platform.role.read', scope: { type: 'tenant' }, validUntil: until },
       { permission: 'platform.org.read', scope: { type: 'tenant' }, validUntil: until },
+      // The course library (T-M3-03): organization data, organization-wide.
+      { permission: 'tms.course.read', scope: { type: 'tenant' }, validUntil: until },
+      { permission: 'tms.course_cost.read', scope: { type: 'tenant' }, validUntil: until },
+      { permission: 'tms.course.manage', scope: { type: 'tenant' }, validUntil: until },
+      // Planning cycles (EP-PLN, T-M3-04): read organization-wide.
+      { permission: 'tms.plan_cycle.read', scope: { type: 'tenant' }, validUntil: until },
+      // Needs forms (T-M3-10): read organization-wide.
+      { permission: 'tms.needs_form.read', scope: { type: 'tenant' }, validUntil: until },
     ]);
     expect(grantsForAssignments([{ roleCode: 'learner' }], none)).toEqual([
       { permission: 'platform.user.read', scope: { type: 'own' } },
@@ -48,9 +55,11 @@ describe('grantsForAssignments', () => {
       scope: { type: 'org_units', orgUnitIds: ['d1', 'd2'], includeDescendants: true },
       validFrom: from,
     });
-    // Heading no department: the scoped grant is dropped, the tenant-wide one stays.
+    // Heading no department: the scoped grants are dropped, the tenant-wide ones stay.
     expect(grantsForAssignments([{ roleCode: 'department_head' }], none)).toEqual([
       { permission: 'platform.org.read', scope: { type: 'tenant' } },
+      { permission: 'tms.course.read', scope: { type: 'tenant' } },
+      { permission: 'tms.course_cost.read', scope: { type: 'tenant' } },
     ]);
   });
 
@@ -73,16 +82,50 @@ describe('grantsForAssignments', () => {
     expect(
       grantsForAssignments([{ roleCode: own.code }], { ...none, customRoles: [own] })[0],
     ).toEqual({ permission: 'platform.user.read', scope: { type: 'own' } });
+  });
+
+  it('limits a custom role scoped to «A department» to the unit picked for the assignment and everything under it (EP-ORG, T-M3-09)', () => {
     const departments: CustomRoleDefinition = { ...reviewer, dataScope: 'departments' };
+    const context = { headedDepartmentIds: ['headed'], customRoles: [departments] };
+    // The picked unit with its descendants — never the departments the member happens to head.
     expect(
-      grantsForAssignments([{ roleCode: departments.code }], {
-        headedDepartmentIds: ['d1'],
-        customRoles: [departments],
+      grantsForAssignments([{ roleCode: departments.code, scopeUnitId: 'sales' }], context),
+    ).toEqual([
+      {
+        permission: 'platform.user.read',
+        scope: { type: 'org_units', orgUnitIds: ['sales'], includeDescendants: true },
+      },
+      { permission: 'platform.org.read', scope: { type: 'tenant' } },
+    ]);
+    // No unit (not picked yet, or deactivated / deleted since): nothing scoped, the structure's names only.
+    for (const assignment of [
+      { roleCode: departments.code, scopeUnitId: null },
+      { roleCode: departments.code },
+    ]) {
+      expect(grantsForAssignments([assignment], context)).toEqual([
+        { permission: 'platform.org.read', scope: { type: 'tenant' } },
+      ]);
+    }
+    // A unit stored on a role that is not limited to a department is ignored.
+    const team: CustomRoleDefinition = { ...reviewer, dataScope: 'team' };
+    expect(
+      grantsForAssignments([{ roleCode: team.code, scopeUnitId: 'sales' }], {
+        ...none,
+        customRoles: [team],
       })[0],
+    ).toEqual({ permission: 'platform.user.read', scope: { type: 'direct_reports' } });
+    // The Department Head keeps the units they head (with sub-units), whatever unit is stored.
+    expect(
+      grantsForAssignments([{ roleCode: 'department_head', scopeUnitId: 'sales' }], context).find(
+        (g) => g.permission === 'platform.user.read',
+      ),
     ).toEqual({
       permission: 'platform.user.read',
-      scope: { type: 'org_units', orgUnitIds: ['d1'], includeDescendants: true },
+      scope: { type: 'org_units', orgUnitIds: ['headed'], includeDescendants: true },
     });
+    expect(scopeNeedsUnit('departments')).toBe(true);
+    expect(scopeNeedsUnit('team')).toBe(false);
+    expect(scopeNeedsUnit('organization')).toBe(false);
   });
 
   it('ignores unknown roles: former system roles, deleted custom roles (deny by default)', () => {
@@ -124,13 +167,15 @@ describe('canAssignRole (ADR 0003 §5; PO decisions 5 Oct 2026 and 17 Oct 2026)'
     expect(canAssignRole(admin, customAssignableRole(auditor))).toBe(true);
   });
 
-  it('lets an HR Manager give the ordinary roles whose permissions they hold, no privileged one', () => {
+  it('lets an HR Manager give every ordinary role, no privileged one (who can give what, PO 17 Oct 2026)', () => {
     const hr = subjectOf('aal2', [], { roleCode: 'hr_manager' });
-    for (const code of ['learner', 'training_manager', 'training_coordinator', 'department_head']) {
-      expect(canAssignRole(hr, standard(code))).toBe(true);
+    // The L&D Manager and the Training Coordinator hold course, planning and needs-form permissions the
+    // HR Manager does not hold: no longer a reason to refuse.
+    for (const code of ['learner', 'department_head', 'training_manager', 'training_coordinator']) {
+      expect(canAssignRole(hr, standard(code)), code).toBe(true);
     }
     for (const code of ['tenant_admin', 'hr_manager']) {
-      expect(canAssignRole(hr, standard(code))).toBe(false);
+      expect(canAssignRole(hr, standard(code)), code).toBe(false);
     }
     // A custom role with a high-risk permission is privileged.
     expect(customAssignableRole(auditor).privileged).toBe(true);
@@ -147,24 +192,41 @@ describe('canAssignRole (ADR 0003 §5; PO decisions 5 Oct 2026 and 17 Oct 2026)'
     expect(canAssignRole(hr, customAssignableRole(hrCopy))).toBe(false);
     const admin = subjectOf('aal1', [], { roleCode: 'tenant_admin' });
     expect(canAssignRole(admin, customAssignableRole(hrCopy))).toBe(true);
-    // An ordinary custom role whose permissions HR holds…
+    // Every ordinary custom role: one whose permissions HR holds…
     const viewer: CustomRoleDefinition = {
       code: 'custom_a00000000006',
       dataScope: 'team',
       permissions: ['platform.user.read', 'platform.org.read'],
     };
     expect(canAssignRole(hr, customAssignableRole(viewer))).toBe(true);
-    // …but not one with a permission HR does not hold (nobody gives what they do not hold).
+    // …one with a permission HR does not hold…
     const profile: CustomRoleDefinition = {
       code: 'custom_a00000000003',
       dataScope: 'organization',
       permissions: ['platform.tenant.read'],
     };
     expect(customAssignableRole(profile).privileged).toBe(false);
-    expect(canAssignRole(hr, customAssignableRole(profile))).toBe(false);
+    expect(canAssignRole(hr, customAssignableRole(profile))).toBe(true);
+    // …and a training role the Organization Admin built (course library, planning cycles).
+    const planner: CustomRoleDefinition = {
+      code: 'custom_a00000000007',
+      dataScope: 'organization',
+      permissions: ['tms.course.manage', 'tms.plan_cycle.manage', 'tms.needs_form.manage'],
+    };
+    expect(customAssignableRole(planner).privileged).toBe(false);
+    expect(canAssignRole(hr, customAssignableRole(planner))).toBe(true);
+    // A training role with a high-risk permission is privileged: the Organization Admin only.
+    const courseAuditor: CustomRoleDefinition = {
+      ...planner,
+      code: 'custom_a00000000008',
+      permissions: ['tms.course.manage', 'platform.audit.read'],
+    };
+    expect(customAssignableRole(courseAuditor).privileged).toBe(true);
+    expect(canAssignRole(hr, customAssignableRole(courseAuditor))).toBe(false);
+    expect(canAssignRole(admin, customAssignableRole(courseAuditor))).toBe(true);
   });
 
-  it('lets a custom role with role.assign give only roles within its own organization-wide permissions', () => {
+  it('lets a custom role with role.assign give every ordinary role, like the HR Manager', () => {
     const clerk: CustomRoleDefinition = {
       code: 'custom_a00000000004',
       dataScope: 'organization',
@@ -172,9 +234,17 @@ describe('canAssignRole (ADR 0003 §5; PO decisions 5 Oct 2026 and 17 Oct 2026)'
     };
     const subject = subjectOf('aal1', [clerk], { roleCode: clerk.code });
     expect(canAssignRole(subject, standard('learner'))).toBe(true);
-    expect(canAssignRole(subject, standard('training_coordinator'))).toBe(false);
-    expect(holdsTenantWide(subject, 'platform.user.read')).toBe(true);
-    expect(holdsTenantWide(subject, 'platform.role.read')).toBe(false);
+    expect(canAssignRole(subject, standard('training_coordinator'))).toBe(true);
+    expect(canAssignRole(subject, standard('hr_manager'))).toBe(false);
+    // role.assign in a role limited to a team does not count organization-wide (an administrative
+    // permission needs the whole organization).
+    const teamClerk: CustomRoleDefinition = { ...clerk, dataScope: 'team' };
+    expect(
+      canAssignRole(
+        subjectOf('aal1', [teamClerk], { roleCode: teamClerk.code }),
+        standard('learner'),
+      ),
+    ).toBe(false);
   });
 
   it('ignores expired or not-yet-valid roles of the actor', () => {
@@ -189,7 +259,6 @@ describe('canAssignRole (ADR 0003 §5; PO decisions 5 Oct 2026 and 17 Oct 2026)'
       validFrom: new Date('2026-11-01T00:00:00Z'),
     });
     expect(canAssignRole(future, standard('learner'), now)).toBe(false);
-    expect(holdsTenantWide(future, 'platform.user.read', now)).toBe(false);
   });
 
   it('refuses members without a role-management permission and unknown roles', () => {

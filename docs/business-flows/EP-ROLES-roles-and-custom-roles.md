@@ -4,7 +4,7 @@
 |---|---|
 | **Epic** | EP-ROLES (BACKLOG T-M2-39 … T-M2-41) |
 | **Requirements** | FR-IAM-07 (roles, custom role builder — R1), FR-IAM-08 (data scope, R1 note), BR-IAM-4 (Organization Admin held alone) |
-| **Status** | **Agreed (PO, 17 Oct 2026)** — all five open questions approved as proposed; PO chose **option B**: Kawadir's fixed standard roles **plus** our own custom role builder now |
+| **Status** | **Agreed (PO, 17 Oct 2026)** — all five open questions approved as proposed; PO chose **option B**: Kawadir's fixed standard roles **plus** our own custom role builder now. **Changed after agreement (PO, 17 Oct 2026):** the custom-role scope «their departments» becomes **«A department»** — the unit is picked when the role is given and covers everything under it ([`EP-ORG`](EP-ORG-organization-structure.md)). **Changed after agreement (PO, 17 Oct 2026):** **who can give what (PO, 17 Oct 2026, replacing "nobody gives a permission they do not hold"):** (1) the Organization Admin builds custom roles with any permission except the admin-only ones that are never allowed in custom roles, and gives any role; (2) the HR Manager gives every ordinary (non-privileged) role — L&D Manager, Training Coordinator, Department Head, Employee and ordinary custom roles; (3) privileged roles (a high-risk permission, or one that manages users or roles) are given only by the Organization Admin |
 | **Copied from Kawadir** | One role per person; roles chosen when inviting and changed on Team members (edit-role dialog); Department Manager tied to departments; every role change logged automatically. Kawadir's unfinished "Roles & Permissions" screen (role name EN/AR, description, permissions grouped by module with checkboxes, System/Custom badge, permission count) is the layout for our custom role builder |
 | **Background** | Mandatory-roles analysis: [`docs/delivery/roles/README.md`](../delivery/roles/README.md) |
 
@@ -30,9 +30,9 @@ Every organization starts with six ready standard roles that cover the whole tra
 
 ## 4. Step-by-step flow
 1. **Organization Admin → Organization → Roles & permissions**: sees all roles as a list — name, *Standard* or *Custom* badge, number of permissions, number of people holding it.
-2. **Create role** → name (English, Arabic), description, **start from** a standard role or blank → permissions grouped by module (Organization, People, Courses, Planning, Sessions, Enrollment, Attendance, Certificates, Reports, …) as checkboxes; sensitive permissions carry a **"High risk"** flag → **what data it sees**: own only · their team · their departments · whole organization → **Save**.
+2. **Create role** → name (English, Arabic), description, **start from** a standard role or blank → permissions grouped by module (Organization, People, Courses, Planning, Sessions, Enrollment, Attendance, Certificates, Reports, …) as checkboxes; sensitive permissions carry a **"High risk"** flag → **what data it sees**: own only · their team · a department (picked when the role is given, everything under it included) · whole organization → **Save**.
 3. A role with any high-risk permission is **privileged**: only the Organization Admin can give it.
-4. **Give a role**: when inviting (Team members → Invite) or later (Team members → ⋯ → **Edit role**), pick one role from a list containing the standard and custom roles; for Department Head (or a custom role limited to "their departments") pick the department(s).
+4. **Give a role**: when inviting (Team members → Invite) or later (Team members → ⋯ → **Edit role**), pick one role from a list containing the standard and custom roles; for a custom role limited to «A department», pick **one unit** from the structure tree (any level; it covers everything under it). A Department Head's units come from the structure (the units they head).
 5. **Edit a custom role**: change name, permissions or data scope → everyone holding it gets the change at their next page load.
 6. **Delete a custom role**: only when nobody holds it (otherwise the screen says how many people must be moved first).
 7. Every create / edit / delete / assignment is written to the audit log (who, when, before → after).
@@ -40,7 +40,7 @@ Every organization starts with six ready standard roles that cover the whole tra
 ## 5. Business rules
 - **One role per person** in an organization (Kawadir). The Organization Admin role is always held alone.
 - Standard roles cannot be edited or deleted (their permissions can be viewed).
-- Nobody can give a permission they do not have themselves; only the Organization Admin creates or gives privileged roles.
+- Who can give what (PO, 17 Oct 2026): the Organization Admin builds custom roles with any permission except the admin-only ones, and gives any role; the HR Manager gives every ordinary role (L&D Manager, Training Coordinator, Department Head, Employee, ordinary custom roles); only the Organization Admin gives privileged roles. (Replaces "nobody can give a permission they do not have", which blocked training permissions because the Organization Admin holds none.)
 - The last Organization Admin cannot be removed or downgraded.
 - A custom role's name must be unique in the organization (English and Arabic).
 - Permission changes apply at once; access is always checked on the server and in the database (never only in the menu).

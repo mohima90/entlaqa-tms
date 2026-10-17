@@ -8,7 +8,12 @@ import { notFound, redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { SuiteShell } from '../../../../../../../components/suite-shell';
 import { EditRoleForm } from '../../../../../../../components/users/edit-role-form';
-import { editRoleLabels, roleSelectTexts } from '../../../../../../../lib/role-texts';
+import {
+  editRoleLabels,
+  roleSelectTexts,
+  scopeUnitTexts,
+} from '../../../../../../../lib/role-texts';
+import { scopeUnitChoices } from '../../../../../../../lib/structure-view';
 import { roleOptions } from '../../../../../../../lib/role-choice';
 import { profileErrorTexts } from '../../../../../../../lib/profile-texts';
 import { getSuiteContext } from '../../../../../../../lib/suite-context';
@@ -17,7 +22,7 @@ import { localizedName } from '../../../../../../../lib/users-view';
 
 /**
  * Change a member's role (T-M2-14, FR-IAM-07/08; EP-ROLES — one role per person, standard or custom):
- * HR Manager (ordinary roles whose permissions they hold) or Organization Admin; privileged roles need an
+ * HR Manager (every ordinary role — who can give what, PO 17 Oct 2026) or Organization Admin; privileged roles need an
  * authenticator code (PO decision D-IAM-01). The same form opens from the ⋯ menu on Team members. Out of
  * scope or another organization → 404.
  */
@@ -114,8 +119,11 @@ async function rolesForm(
         personId={view.role.personId}
         version={view.role.version}
         currentRole={view.role.roleCode}
+        currentUnit={view.role.scopeUnitId}
         options={roleOptions(view.choices, locale)}
         selectTexts={await roleSelectTexts(locale)}
+        scopeUnits={scopeUnitChoices(view.scopeUnits.units, view.scopeUnits.levels, locale)}
+        unitTexts={await scopeUnitTexts(locale, view.scopeUnits.structureVisible)}
         labels={await editRoleLabels(locale)}
         errors={await profileErrorTexts(locale)}
         backHref={profileHref}

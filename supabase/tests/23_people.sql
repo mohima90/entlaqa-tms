@@ -96,13 +96,15 @@ begin
   perform tests.assert_eq(tests.rows_affected($q$update platform.person_employment set manager_person_id = 'a1000000-0000-4000-8000-0000000000a1' where person_id = 'a1000000-0000-4000-8000-0000000000c1'$q$),
     1::bigint, 'employment: a non-looping manager change is accepted');
 
-  -- Deleted org units cannot receive people.
+  -- Deleted org units cannot receive people. (Units and branches: the HR Manager, S-M1.)
+  perform tests.set_claims(tests.uab_claims());
   insert into platform.departments (id, code, name_ar) values ('a3000000-0000-4000-8000-0000000000d1', 'GONE', 'قسم محذوف');
   update platform.departments set deleted_at = now() where code = 'GONE';
-  perform tests.assert_fails($q$update platform.person_employment set department_id = 'a3000000-0000-4000-8000-0000000000d1' where person_id = 'a1000000-0000-4000-8000-0000000000c1'$q$,
-    array['23514'], 'employment: cannot be placed in a deleted department');
   insert into platform.branches (id, code, name_ar) values ('a2000000-0000-4000-8000-0000000000d1', 'GONE', 'فرع محذوف');
   update platform.branches set deleted_at = now() where code = 'GONE';
+  perform tests.set_claims(tests.ua_claims());
+  perform tests.assert_fails($q$update platform.person_employment set department_id = 'a3000000-0000-4000-8000-0000000000d1' where person_id = 'a1000000-0000-4000-8000-0000000000c1'$q$,
+    array['23514'], 'employment: cannot be placed in a deleted department');
   perform tests.assert_fails($q$update platform.person_employment set branch_id = 'a2000000-0000-4000-8000-0000000000d1' where person_id = 'a1000000-0000-4000-8000-0000000000c1'$q$,
     array['23514'], 'employment: cannot be placed in a deleted branch');
 end $$;
@@ -115,10 +117,13 @@ select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1'
   'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1'));
 do $$
 begin
-  -- TD-PRG has uAB (active).
+  -- TD-PRG has uAB (active). (Units and branches: the HR Manager uAB, S-M1; persons: the Organization Admin.)
+  perform tests.set_claims(tests.uab_claims());
   perform tests.assert_fails($q$update platform.departments set deleted_at = now() where code = 'TD-PRG'$q$,
     array['23514'], 'departments: cannot soft-delete while active people are placed in it');
+  perform tests.set_claims(tests.ua_claims());
   update platform.persons set status = 'inactive' where id = 'a1000000-0000-4000-8000-0000000000ab';
+  perform tests.set_claims(tests.uab_claims());
   perform tests.assert_eq(tests.rows_affected($q$update platform.departments set deleted_at = now() where code = 'TD-PRG'$q$),
     1::bigint, 'departments: a deactivated person''s placement does not block the delete');
   perform tests.assert((select department_id = 'a3000000-0000-4000-8000-000000000002' from platform.person_employment
@@ -128,7 +133,9 @@ begin
   -- RUH still has uA (active) placed in it (TD's departments are in RUH too, so test the people rule
   -- on a fresh branch).
   insert into platform.branches (id, code, name_ar) values ('a2000000-0000-4000-8000-0000000000e1', 'PPL', 'فرع فيه موظفون');
+  perform tests.set_claims(tests.ua_claims());
   update platform.person_employment set branch_id = 'a2000000-0000-4000-8000-0000000000e1' where person_id = 'a1000000-0000-4000-8000-0000000000a1';
+  perform tests.set_claims(tests.uab_claims());
   perform tests.assert_fails($q$update platform.branches set deleted_at = now() where code = 'PPL'$q$,
     array['23514'], 'branches: cannot soft-delete while active people are placed in it');
 end $$;
@@ -180,7 +187,10 @@ select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1'
 do $$
 begin
   update platform.persons set status = 'inactive' where id = 'a1000000-0000-4000-8000-0000000000ab';
+  -- (Units: the HR Manager's — uAB's own record is inactive now, their membership still active.)
+  perform tests.set_claims(tests.uab_claims());
   update platform.departments set deleted_at = now() where code = 'TD-PRG';
+  perform tests.set_claims(tests.ua_claims());
   perform tests.assert_fails($q$update platform.persons set status = 'active' where id = 'a1000000-0000-4000-8000-0000000000ab'$q$,
     array['23514'], 'persons: cannot reactivate someone placed in a deleted department');
   update platform.person_employment set department_id = 'a3000000-0000-4000-8000-000000000003' where person_id = 'a1000000-0000-4000-8000-0000000000ab';

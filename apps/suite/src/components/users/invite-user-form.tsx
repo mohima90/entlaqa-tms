@@ -5,7 +5,13 @@ import { type SyntheticEvent, useEffect, useRef, useState, useTransition } from 
 import { invitePrivilegedUserAction, inviteUserAction } from '../../actions/invitations';
 import { type ManagerChoice, managersFor } from '../../lib/edit-user-form';
 import { createdName, inviteFieldError } from '../../lib/invite-form';
-import { type RoleOption, readsHeadedDepartments, roleActionPath } from '../../lib/role-choice';
+import {
+  type RoleOption,
+  needsScopeUnit,
+  readsHeadedDepartments,
+  roleActionPath,
+} from '../../lib/role-choice';
+import type { ScopeUnitChoice } from '../../lib/structure-view';
 import { type ErrorTexts, errorText } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
 import { fieldErrorCodes } from '../profile/field-errors';
@@ -13,6 +19,7 @@ import { SelectField } from '../select-field';
 import type { UnitChoice } from './edit-user-form';
 import { InviteCodeCopy, type InviteCodeValue, type InviteCopyTexts } from './invite-code-copy';
 import { RoleSelect, type RoleSelectTexts } from './role-select';
+import { ScopeUnitSelect, type ScopeUnitTexts } from './scope-unit-select';
 
 export interface InviteUserFormProps {
   /** The organization's default language for new people (T-M2-22): the invitation language preselected. */
@@ -23,6 +30,9 @@ export interface InviteUserFormProps {
   /** The roles (standard, then custom), each with whether this member may give it (EP-ROLES). */
   readonly roles: readonly RoleOption[];
   readonly roleTexts: RoleSelectTexts;
+  /** The unit picker (tree order) for a custom role limited to «A department» (EP-ORG, T-M3-09). */
+  readonly scopeUnits: readonly ScopeUnitChoice[];
+  readonly unitTexts: ScopeUnitTexts;
   /** Texts by key (translated on the server). */
   readonly labels: Readonly<Record<string, string>>;
   readonly fieldTexts: Readonly<Record<string, string>>;
@@ -103,8 +113,8 @@ const EN_FIELDS = ['firstNameEn', 'familyNameEn'];
 /**
  * Invite a user (T-M2-07, FR-IAM-03, BR-IAM-1; approved screen 2): work e-mail, Arabic name (English
  * optional), placement, one role (EP-ROLES, PO 17 Oct 2026: standard or custom, one per person),
- * invitation language. Roles the member may not give (privileged ones unless Organization Admin; roles
- * with permissions they don't hold) are listed but disabled, with the reason.
+ * invitation language. Roles the member may not give (privileged ones unless Organization Admin) are
+ * listed but disabled, with the reason; the HR Manager gives every ordinary role (PO, 17 Oct 2026).
  */
 export function InviteUserForm(props: InviteUserFormProps) {
   const { labels, fieldTexts, roles } = props;
@@ -120,6 +130,8 @@ export function InviteUserForm(props: InviteUserFormProps) {
   const [managerId, setManagerId] = useState('');
   const [allManagers, setAllManagers] = useState(false);
   const [role, setRole] = useState('');
+  const [scopeUnitId, setScopeUnitId] = useState('');
+  const withUnit = needsScopeUnit(roles, role);
   const [invitationLocale, setInvitationLocale] = useState<'ar' | 'en'>(props.defaultLocale);
   const [created, setCreated] = useState<Created | null>(null);
   const [formKey, setFormKey] = useState(0);
@@ -145,6 +157,8 @@ export function InviteUserForm(props: InviteUserFormProps) {
       employeeNumber: field('employeeNumber'),
       // Validated on the server (an empty choice comes back as a field error).
       role,
+      // A unit goes only with a department-limited custom role (EP-ORG); the server checks it.
+      scopeUnitId: withUnit ? scopeUnitId : '',
       locale: invitationLocale,
     };
     const action =
@@ -195,6 +209,7 @@ export function InviteUserForm(props: InviteUserFormProps) {
         onAnother={() => {
           setCreated(null);
           setRole('');
+          setScopeUnitId('');
           setDepartmentId('');
           setBranchId('');
           setManagerId('');
@@ -391,7 +406,8 @@ export function InviteUserForm(props: InviteUserFormProps) {
           value={role}
           onChange={(code) => {
             setRole(code);
-            setFieldErrors(({ role: _cleared, ...rest }) => rest);
+            if (!needsScopeUnit(roles, code)) setScopeUnitId('');
+            setFieldErrors(({ role: _cleared, scopeUnitId: _unit, ...rest }) => rest);
           }}
           options={roles}
           texts={props.roleTexts}
@@ -400,6 +416,21 @@ export function InviteUserForm(props: InviteUserFormProps) {
           error={fieldErrors.role}
           disabled={pending}
         />
+        {withUnit ? (
+          <ScopeUnitSelect
+            id="invite-unit"
+            value={scopeUnitId}
+            onChange={(id) => {
+              setScopeUnitId(id);
+              setFieldErrors(({ scopeUnitId: _cleared, ...rest }) => rest);
+            }}
+            choices={props.scopeUnits}
+            texts={props.unitTexts}
+            marker={text('required')}
+            error={fieldErrors.scopeUnitId}
+            disabled={pending}
+          />
+        ) : null}
         {readsHeadedDepartments(roles, role) ? (
           <Alert tone="info" data-testid="role-departments-hint">
             {text('departmentsHint')}

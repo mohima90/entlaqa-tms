@@ -69,7 +69,7 @@ export default async function NewRolePage({
         );
       }
     } else {
-      const groups = roleBuilderGroups(locale, result.value.heldPermissions);
+      const groups = roleBuilderGroups(locale);
       const starts = await roleBuilderStarts(locale);
       // «Create a role from it» on a standard role's page: that start chosen already.
       const start = starts.find((s) => s.value === from);

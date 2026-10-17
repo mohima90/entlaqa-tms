@@ -1,7 +1,14 @@
 import 'server-only';
 import { DEFAULT_TENANT_REGIONAL, type TenantRegional } from '@jadarat/platform-db';
 import type { AppLocale } from '@jadarat/platform-i18n';
-import { type Grant, loadMemberGrants, platformPermissions } from '@jadarat/platform-rbac';
+import {
+  type Grant,
+  coursePermissions,
+  loadMemberGrants,
+  platformPermissions,
+  tmsPlanningPermissions,
+  tmsRolePermissions as tmsPermissions,
+} from '@jadarat/platform-rbac';
 import { redirect } from 'next/navigation';
 import { getConfigStatus } from './config-status';
 import { myIdentityQuery } from './users-queries';
@@ -50,6 +57,12 @@ export interface SuiteNavigationAccess {
    */
   readonly organizationProfile: boolean;
   /**
+   * Organization → Structure and Branches (T-M3-02, EP-ORG): the member who maintains them
+   * (`platform.org.manage` organization-wide — the HR Manager). Others who read the structure open the pages
+   * by their address (view only); the menu entry follows the business flow's owner.
+   */
+  readonly structure: boolean;
+  /**
    * The Organization Admin's own sections still to come (organization profile, branding, custom
    * fields, features & plan, domains, audit log, consent, e-mail sender, integrations), shown as
    * «قريبًا» / "Coming soon" (docs/delivery/roles/organization-admin.md, BRD v2.9).
@@ -57,6 +70,12 @@ export interface SuiteNavigationAccess {
   readonly organizationSetup: boolean;
   /** The training module's entries (Calendar, Sessions, Courses). Never for the Organization Admin. */
   readonly training: boolean;
+  /** The course library (T-M3-03): members who read it organization-wide (tms.course.read). */
+  readonly courses: boolean;
+  /** Planning cycles and planning settings (EP-PLN, T-M3-04): organization-wide tms.plan_cycle.read. */
+  readonly planning: boolean;
+  /** Planning → Needs forms (T-M3-10): members who read the needs forms organization-wide. */
+  readonly needsForms: boolean;
 }
 
 /**
@@ -75,8 +94,12 @@ export function navigationFor(grants: readonly Grant[] | null): SuiteNavigationA
       roles: true,
       security: true,
       organizationProfile: true,
+      structure: true,
       organizationSetup: true,
       training: true,
+      courses: true,
+      planning: true,
+      needsForms: true,
     };
   }
   const tenantWide = (code: string) =>
@@ -90,8 +113,12 @@ export function navigationFor(grants: readonly Grant[] | null): SuiteNavigationA
     // Security settings (T-M2-10): members who read the organization's settings.
     security: tenantWide(platformPermissions['platform.tenant.read'].code),
     organizationProfile: tenantWide(platformPermissions['platform.tenant.read'].code),
+    structure: tenantWide(platformPermissions['platform.org.manage'].code),
     organizationSetup,
     training: !organizationSetup,
+    courses: tenantWide(coursePermissions['tms.course.read'].code),
+    planning: tenantWide(tmsPlanningPermissions['tms.plan_cycle.read'].code),
+    needsForms: !organizationSetup && tenantWide(tmsPermissions['tms.needs_form.read'].code),
   };
 }
 

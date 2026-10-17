@@ -53,6 +53,9 @@ const pages = [
   { path: '/en/suite/admin/roles/hr_manager', lang: 'en', dir: 'ltr', heading: 'HR Manager' },
   { path: '/ar/suite/admin/roles/learner', lang: 'ar', dir: 'rtl', heading: 'موظف' },
   { path: '/en/suite/admin/roles/new', lang: 'en', dir: 'ltr', heading: 'Create role' },
+  // Planning → Needs forms (T-M3-10), the library on the preview copy.
+  { path: '/ar/suite/planning/needs-forms', lang: 'ar', dir: 'rtl', heading: 'نماذج الاحتياجات' },
+  { path: '/en/suite/planning/needs-forms', lang: 'en', dir: 'ltr', heading: 'Needs forms' },
 ] as const;
 
 function collectConsoleErrors(page: Page): string[] {

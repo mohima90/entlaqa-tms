@@ -15,6 +15,12 @@ export interface RoleAssignment {
   readonly roleCode: string;
   readonly validFrom?: Date;
   readonly validUntil?: Date;
+  /**
+   * The unit picked for a custom role limited to «A department» (platform.role_assignments.scope_unit_id),
+   * only while that unit is live and active (EP-ORG exception: a deactivated unit grants nothing until a new
+   * one is picked). Ignored for every other role.
+   */
+  readonly scopeUnitId?: string | null;
 }
 
 /** Facts about the member needed to turn role scopes into data scopes. */
@@ -28,7 +34,11 @@ export interface GrantContext {
   readonly customRoles?: readonly CustomRoleDefinition[];
 }
 
-function toDataScope(scope: RoleScope, context: GrantContext): DataScope | null {
+function toDataScope(
+  scope: RoleScope,
+  context: GrantContext,
+  assignment: RoleAssignment,
+): DataScope | null {
   switch (scope) {
     case 'tenant':
       return { type: 'tenant' };
@@ -42,6 +52,12 @@ function toDataScope(scope: RoleScope, context: GrantContext): DataScope | null 
       // A department head who heads no department (yet) gets nothing from this grant.
       return context.headedDepartmentIds.length > 0
         ? { type: 'org_units', orgUnitIds: context.headedDepartmentIds, includeDescendants: true }
+        : null;
+    case 'assigned_unit':
+      // A department-limited custom role (EP-ORG, T-M3-09): the picked unit and everything under it; no
+      // unit (not picked yet, or deactivated / deleted since) → nothing.
+      return assignment.scopeUnitId
+        ? { type: 'org_units', orgUnitIds: [assignment.scopeUnitId], includeDescendants: true }
         : null;
   }
 }
@@ -78,7 +94,7 @@ export function grantsForAssignments(
   const grants: Grant[] = [];
   for (const assignment of assignments) {
     for (const roleGrant of roleGrants(assignment.roleCode, context)) {
-      const scope = toDataScope(roleGrant.scope, context);
+      const scope = toDataScope(roleGrant.scope, context, assignment);
       if (!scope) continue;
       grants.push({
         permission: roleGrant.permission,
@@ -91,7 +107,7 @@ export function grantsForAssignments(
   return grants;
 }
 
-/** What deciding about giving a role needs: whether it is privileged and the permissions it grants. */
+/** What deciding about giving a role needs (whether it is privileged) and the permissions it grants. */
 export interface AssignableRole {
   readonly code: string;
   readonly privileged: boolean;
@@ -119,13 +135,14 @@ export function customAssignableRole(role: CustomRoleDefinition): AssignableRole
 }
 
 /**
- * May the actor give or remove `role`? (ADR 0003 §5; PO decisions 5 Oct 2026 and 17 Oct 2026, EP-ROLES)
+ * May the actor give or remove `role`? (ADR 0003 §5; PO decisions 5 Oct 2026 and 17 Oct 2026, EP-ROLES —
+ * who can give what)
  * - `platform.role.assign_privileged` (the Organization Admin) gives every role;
- * - otherwise the role must not be privileged, the actor needs `platform.role.assign`, and — nobody gives
- *   a permission they do not hold — every permission of the role must be the actor's organization-wide;
+ * - `platform.role.assign` (the HR Manager) gives every role that is not privileged — whether the actor
+ *   holds the role's permissions does not matter (it replaced "nobody gives a permission they do not hold");
  * - all checks tenant-wide and active now, with authorize() so validity windows apply as in defineAction;
  * - never on the actor's own membership (checked by the caller, and again in the database), which runs
- *   the same rule (private.member_may_give_roles).
+ *   the same rule (private.member_may_give_roles, migration 20261020200000).
  */
 export function canAssignRole(
   subject: AuthorizationSubject,
@@ -136,21 +153,5 @@ export function canAssignRole(
   const allowed = (permission: PermissionDefinition) =>
     authorize(subject, permission, undefined, { now }).allowed;
   if (allowed(platformPermissions['platform.role.assign_privileged'])) return true;
-  if (role.privileged || !allowed(platformPermissions['platform.role.assign'])) return false;
-  return role.permissions.every((code) => holdsTenantWide(subject, code, now));
-}
-
-/** Does the subject hold `code` organization-wide now (a `tenant`-scope grant in force)? */
-export function holdsTenantWide(
-  subject: Pick<AuthorizationSubject, 'grants'>,
-  code: string,
-  now: Date = new Date(),
-): boolean {
-  return subject.grants.some(
-    (g) =>
-      g.permission === code &&
-      g.scope.type === 'tenant' &&
-      (!g.validFrom || g.validFrom <= now) &&
-      (!g.validUntil || now < g.validUntil),
-  );
+  return !role.privileged && allowed(platformPermissions['platform.role.assign']);
 }

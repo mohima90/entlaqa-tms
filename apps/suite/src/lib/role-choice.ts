@@ -44,9 +44,27 @@ export function roleActionPath(
   return privileged(next) || (current !== null && privileged(current)) ? 'privileged' : 'ordinary';
 }
 
-/** Does the chosen role read the departments the person heads (the department hint)? */
+/**
+ * Does the chosen role read the departments the person heads (the Department Head standard role: the
+ * department hint)? A custom role limited to «A department» asks for a unit instead (needsScopeUnit).
+ */
 export function readsHeadedDepartments(options: readonly RoleOption[], code: string): boolean {
-  return options.find((o) => o.code === code)?.scope === 'departments';
+  const option = options.find((o) => o.code === code);
+  return option?.kind === 'standard' && option.scope === 'departments';
+}
+
+/**
+ * Is the chosen role a custom role limited to «A department» — given for ONE unit picked now, which covers
+ * everything under it (EP-ORG, T-M3-09)?
+ */
+export function needsScopeUnit(options: readonly RoleOption[], code: string): boolean {
+  const option = options.find((o) => o.code === code);
+  return option?.kind === 'custom' && option.scope === 'departments';
+}
+
+/** Text key of a unit field error from the server (codes only). */
+export function scopeUnitErrorKey(code: string): 'unitRequired' | 'unitNotAllowed' {
+  return code === 'UNIT_REQUIRED' ? 'unitRequired' : 'unitNotAllowed';
 }
 
 /** Text key of a role field error from the server (codes only, never values). */

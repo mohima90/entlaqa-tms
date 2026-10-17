@@ -1,5 +1,6 @@
 import { getTranslations } from 'next-intl/server';
 import type { RoleSelectTexts } from '../components/users/role-select';
+import type { ScopeUnitTexts } from '../components/users/scope-unit-select';
 
 /** Text keys of the edit-role form and its dialog (namespace `editRoles`). */
 const EDIT_ROLE_KEYS = [
@@ -17,6 +18,9 @@ const EDIT_ROLE_KEYS = [
   'roleNotAllowed',
   'roleUnknown',
   'lastAdmin',
+  'unit.unitRequired',
+  'unit.unitNotAllowed',
+  'unit.currentInactive',
   'editRole',
   'dialogTitle',
   'close',
@@ -43,5 +47,27 @@ export async function roleSelectTexts(locale: 'ar' | 'en'): Promise<RoleSelectTe
     customGroup: t('customGroup'),
     privileged: t('privileged'),
     notAllowed: t('notAllowed'),
+  };
+}
+
+/**
+ * The unit picker's texts (department-limited custom roles, EP-ORG / T-M3-09; shared by the invite form and
+ * the edit-role form).
+ */
+/**
+ * Texts of the unit picker. `structureVisible` false (the giver lacks platform.org.read): the empty list is
+ * explained as "you can't see the structure", not "no units yet" (C-12).
+ */
+export async function scopeUnitTexts(
+  locale: 'ar' | 'en',
+  structureVisible = true,
+): Promise<ScopeUnitTexts> {
+  const t = await getTranslations({ locale, namespace: 'editRoles.unit' });
+  return {
+    label: t('label'),
+    hint: t('hint'),
+    placeholder: t('placeholder'),
+    inactive: t('inactive'),
+    none: structureVisible ? t('none') : t('structureHidden'),
   };
 }

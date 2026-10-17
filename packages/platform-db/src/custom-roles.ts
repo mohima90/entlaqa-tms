@@ -7,8 +7,9 @@ import type { UserTx } from './with-user-tx';
  * Custom roles of the organization (FR-IAM-07, EP-ROLES; migration 20261019090100). The calling actions
  * authorize (`platform.role.read` to read, `platform.role.manage` to change) and audit; the database
  * guards (private.check_custom_role, private.check_custom_role_permission) have the final word: only the
- * Organization Admin builds roles, from the permission catalogue, with permissions they hold,
- * administrative ones organization-wide only, and a role still held is not deleted. Row-level security
+ * Organization Admin builds roles, from the permission catalogue (any permission not marked 'none', also
+ * ones it does not hold — who can give what, PO 17 Oct 2026, migration 20261020200000), administrative
+ * ones organization-wide only, and a role still held is not deleted. Row-level security
  * keeps every read and write in the caller's organization.
  */
 export type CustomRoleScopeValue = 'own' | 'team' | 'departments' | 'organization';
@@ -99,7 +100,8 @@ export type CustomRoleRefusal =
   | 'name_en_taken'
   | 'name_ar_taken'
   | 'needs_organization_scope'
-  | 'in_use';
+  | 'in_use'
+  | 'scope_units_in_use';
 
 export type CustomRoleOutcome =
   | {
@@ -110,7 +112,7 @@ export type CustomRoleOutcome =
   | {
       readonly ok: false;
       readonly refusal: CustomRoleRefusal;
-      /** With `in_use`: who still holds the role. */
+      /** With `in_use`: who still holds the role; with `scope_units_in_use`: who holds it with a unit. */
       readonly holders?: { readonly members: number; readonly invitations: number };
     };
 
@@ -120,6 +122,7 @@ export function customRoleRefusalOf(error: unknown): CustomRoleRefusal {
   if (pg?.code === '42501') return 'not_allowed';
   if (pg?.code === 'JR002') return 'in_use';
   if (pg?.code === 'JR003') return 'needs_organization_scope';
+  if (pg?.code === 'JR004') return 'scope_units_in_use';
   if (pg?.code === '23505' && pg.constraint === 'custom_roles_tenant_name_en_uq')
     return 'name_en_taken';
   if (pg?.code === '23505' && pg.constraint === 'custom_roles_tenant_name_ar_uq')
@@ -171,6 +174,23 @@ export async function updateCustomRole(
   const before = await getCustomRole(tx, { id });
   if (!before) return { ok: false, refusal: 'not_found' };
   if (before.version !== expectedVersion) return { ok: false, refusal: 'version_conflict' };
+  // C-M1: a role given for units (members, pending invitations) keeps «A department» (the database: JR004).
+  if (before.dataScope === 'departments' && input.dataScope !== 'departments') {
+    const [held] = await tx.execute<{ members: number | string; invitations: number | string }>(sql`
+      select
+        (select count(*) from platform.role_assignments ra
+         join platform.tenant_memberships m on m.tenant_id = ra.tenant_id and m.id = ra.membership_id
+         where ra.role_code = ${before.code} and ra.scope_unit_id is not null and m.status <> 'revoked') as members,
+        (select count(*) from platform.invitations i
+         where i.primary_role = ${before.code} and i.scope_unit_id is not null and i.status = 'pending') as invitations`);
+    const holders = {
+      members: Number(held?.members ?? 0),
+      invitations: Number(held?.invitations ?? 0),
+    };
+    if (holders.members > 0 || holders.invitations > 0) {
+      return { ok: false, refusal: 'scope_units_in_use', holders };
+    }
+  }
   const removed = before.permissions.filter((p) => !input.permissions.includes(p));
   const added = input.permissions.filter((p) => !before.permissions.includes(p));
   try {

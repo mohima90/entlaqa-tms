@@ -8,8 +8,12 @@ const NONE: SuiteNavigationAccess = {
   roles: false,
   security: false,
   organizationProfile: false,
+  structure: false,
   organizationSetup: false,
   training: false,
+  courses: false,
+  planning: false,
+  needsForms: false,
 };
 
 /** `group: entry entry…`, links marked with their path, «Coming soon» entries with `(soon)`. */
@@ -29,8 +33,12 @@ describe('suiteNavigation (menus per role, T-M2-21; Kawadir groups, T-M2-43)', (
         roles: true,
         security: true,
         organizationProfile: true,
+        structure: false,
         organizationSetup: true,
         training: false,
+        courses: false,
+        planning: false,
+        needsForms: false,
       }),
     ).toEqual([
       'main: home→/suite',
@@ -53,6 +61,13 @@ describe('suiteNavigation (menus per role, T-M2-21; Kawadir groups, T-M2-43)', (
       'main: home→/suite calendar(soon) sessions(soon) courses(soon)',
       'groupOrganization: teamMembers→/suite/admin/users roles→/suite/admin/roles',
     ]);
+    // Organization → Structure and Branches (T-M3-02, EP-ORG): the HR Manager maintains them.
+    expect(outline({ ...NONE, users: true, roles: true, structure: true, training: true })).toEqual(
+      [
+        'main: home→/suite calendar(soon) sessions(soon) courses(soon)',
+        'groupOrganization: teamMembers→/suite/admin/users structure→/suite/admin/structure branches→/suite/admin/branches roles→/suite/admin/roles',
+      ],
+    );
   });
 
   it('shows an Auditor Settings → General (read only) and Security, no set-up sections', () => {
@@ -63,12 +78,28 @@ describe('suiteNavigation (menus per role, T-M2-21; Kawadir groups, T-M2-43)', (
         roles: true,
         security: true,
         organizationProfile: true,
+        structure: false,
         training: true,
+        courses: false,
+        planning: false,
+        needsForms: false,
       }),
     ).toEqual([
       'main: home→/suite calendar(soon) sessions(soon) courses(soon)',
       'groupOrganization: teamMembers→/suite/admin/users roles→/suite/admin/roles',
       'groupSettings: general→/suite/admin/settings security→/suite/admin/security',
+    ]);
+  });
+
+  it('links the course library for holders of tms.course.read (T-M3-03)', () => {
+    // L&D Manager, Training Coordinator, HR Manager, Department Head.
+    expect(outline({ ...NONE, users: true, roles: true, training: true, courses: true })).toEqual([
+      'main: home→/suite calendar(soon) sessions(soon) courses→/suite/courses',
+      'groupOrganization: teamMembers→/suite/admin/users roles→/suite/admin/roles',
+    ]);
+    // The Organization Admin never holds it (BR-IAM-4); a custom role holding it shows the page.
+    expect(outline({ ...NONE, courses: true })).toEqual([
+      'main: home→/suite courses→/suite/courses',
     ]);
   });
 
@@ -79,17 +110,43 @@ describe('suiteNavigation (menus per role, T-M2-21; Kawadir groups, T-M2-43)', (
     ]);
   });
 
+  it('gives the L&D Manager and the Training Coordinator Planning → Needs forms (T-M3-10)', () => {
+    expect(
+      outline({ ...NONE, users: true, roles: true, training: true, needsForms: true }),
+    ).toEqual([
+      'main: home→/suite calendar(soon) sessions(soon) courses(soon)',
+      'groupPlanning: needsForms→/suite/planning/needs-forms',
+      'groupOrganization: teamMembers→/suite/admin/users roles→/suite/admin/roles',
+    ]);
+  });
+
   it('gives every entry one of the shell icons', () => {
     const all = suiteNavigation({
       users: true,
       roles: true,
       security: true,
       organizationProfile: true,
+      structure: true,
       organizationSetup: true,
       training: true,
+      courses: false,
+      planning: false,
+      needsForms: false,
     }).flatMap((group) => group.entries);
-    expect(all.length).toBe(13);
+    expect(all.length).toBe(15);
     expect(all.filter((entry) => !ICON_NAMES.includes(entry.icon))).toEqual([]);
+  });
+});
+
+describe('planning entries (EP-PLN, T-M3-04)', () => {
+  it('gives planning readers the Planning group with the cycles and the settings', () => {
+    expect(outline({ ...NONE, training: true, planning: true })).toEqual([
+      'main: home→/suite calendar(soon) sessions(soon) courses(soon)',
+      'groupPlanning: planningCycles→/suite/planning/cycles planningSettings→/suite/planning/settings',
+    ]);
+    expect(outline({ ...NONE, training: true }).some((g) => g.startsWith('groupPlanning'))).toBe(
+      false,
+    );
   });
 });
 
@@ -100,8 +157,12 @@ describe('suiteHome (T-M2-21)', () => {
       roles: true,
       security: true,
       organizationProfile: true,
+      structure: false,
       organizationSetup: true,
       training: false,
+      courses: false,
+      planning: false,
+      needsForms: false,
     });
     expect(home.kind).toBe('setup');
     expect(home.kind === 'setup' ? home.links.map((l) => l.link?.href) : []).toEqual([
@@ -137,8 +198,12 @@ describe('commandPaletteItems (⌘K / Ctrl K, T-M2-43)', () => {
         roles: true,
         security: true,
         organizationProfile: true,
+        structure: false,
         organizationSetup: true,
         training: false,
+        courses: false,
+        planning: false,
+        needsForms: false,
       },
       'ar',
       label,

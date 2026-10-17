@@ -2,10 +2,12 @@ import type { RoleChoice } from '@jadarat/platform-rbac';
 import { describe, expect, it } from 'vitest';
 import {
   type RoleOption,
+  needsScopeUnit,
   readsHeadedDepartments,
   roleActionPath,
   roleErrorKey,
   roleOptions,
+  scopeUnitErrorKey,
 } from './role-choice';
 
 const option = (code: string, privileged: boolean, scope: RoleOption['scope']): RoleOption => ({
@@ -92,6 +94,24 @@ describe('readsHeadedDepartments', () => {
     expect(readsHeadedDepartments(options, 'department_head')).toBe(true);
     expect(readsHeadedDepartments(options, 'learner')).toBe(false);
     expect(readsHeadedDepartments(options, '')).toBe(false);
+  });
+});
+
+describe('needsScopeUnit (EP-ORG, T-M3-09)', () => {
+  const branchRole = option('custom_a00000000009', false, 'departments');
+  const all = [...options, branchRole];
+  it('asks for a unit only for a custom role limited to «A department»', () => {
+    expect(needsScopeUnit(all, branchRole.code)).toBe(true);
+    // The Department Head keeps the units they head: no unit to pick, the hint instead.
+    expect(needsScopeUnit(all, 'department_head')).toBe(false);
+    expect(readsHeadedDepartments(all, branchRole.code)).toBe(false);
+    expect(needsScopeUnit(all, 'learner')).toBe(false);
+    expect(needsScopeUnit(all, '')).toBe(false);
+  });
+
+  it('maps unit field errors', () => {
+    expect(scopeUnitErrorKey('UNIT_REQUIRED')).toBe('unitRequired');
+    expect(scopeUnitErrorKey('UNIT_NOT_ALLOWED')).toBe('unitNotAllowed');
   });
 });
 

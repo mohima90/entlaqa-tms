@@ -26,7 +26,8 @@ import { TeamStats } from '../../../../../components/users/team-stats';
 import { MemberRoleMenu } from '../../../../../components/users/member-role-menu';
 import { ReactivateMemberButton } from '../../../../../components/users/reactivate-member-button';
 import { roleOptions } from '../../../../../lib/role-choice';
-import { editRoleLabels, roleSelectTexts } from '../../../../../lib/role-texts';
+import { editRoleLabels, roleSelectTexts, scopeUnitTexts } from '../../../../../lib/role-texts';
+import { scopeUnitChoices } from '../../../../../lib/structure-view';
 import {
   ExpiredInvitationsBanner,
   type InvitationRowView,
@@ -304,6 +305,9 @@ async function UsersList({
           selectTexts: await roleSelectTexts(locale),
           labels: await editRoleLabels(locale),
           errors: await profileErrorTexts(locale),
+          // The unit picker of department-limited custom roles (EP-ORG, T-M3-09).
+          scopeUnits: scopeUnitChoices(view.scopeUnits.units, view.scopeUnits.levels, locale),
+          unitTexts: await scopeUnitTexts(locale, view.scopeUnits.structureVisible),
         }
       : null;
   const mayEditRole = (row: UsersListView['list']['rows'][number]) =>
@@ -315,6 +319,33 @@ async function UsersList({
     (!row.privileged || view.canAssignPrivileged);
   const roleText = (code: string, names: { ar: string; en: string } | null) =>
     roleName(locale, code, names);
+  // The unit of a department-limited custom role (EP-ORG, T-M3-09) under the role; the giver is told when
+  // it was deactivated (or never picked): the role then gives no access through it.
+  const limitedToUnit = (code: string) =>
+    view.roles?.some(
+      (r) => r.code === code && r.kind === 'custom' && r.dataScope === 'departments',
+    ) ?? false;
+  const roleUnit = (row: UsersListView['list']['rows'][number]) => {
+    if (!row.primaryRole || !limitedToUnit(row.primaryRole)) return null;
+    const unit = row.roleScopeUnit;
+    if (!unit) {
+      return (
+        <Badge tone="warning" data-testid="role-unit-missing">
+          {t('unitMissing')}
+        </Badge>
+      );
+    }
+    const name = localizedName(locale, unit.nameAr, unit.nameEn);
+    return unit.active ? (
+      <span className="text-xs text-text-muted" data-testid="role-unit">
+        {t('roleUnit', { unit: name })}
+      </span>
+    ) : (
+      <Badge tone="warning" data-testid="role-unit-inactive">
+        {`${name} · ${t('unitInactive')}`}
+      </Badge>
+    );
+  };
   const reactivation = showActions
     ? {
         labels: await reactivateLabels(locale),
@@ -571,7 +602,10 @@ async function UsersList({
                         {!row.rolesVisible ? (
                           <NotSet label={t('rolesNotVisible')} />
                         ) : row.primaryRole ? (
-                          roleText(row.primaryRole, row.primaryRoleName)
+                          <div className="flex flex-col items-start gap-1">
+                            <span>{roleText(row.primaryRole, row.primaryRoleName)}</span>
+                            {roleUnit(row)}
+                          </div>
                         ) : (
                           <NotSet label={t('noneLabel')} />
                         )}
@@ -616,8 +650,11 @@ async function UsersList({
                             name={localizedName(locale, row.displayNameAr, row.displayNameEn)}
                             version={row.roleVersion}
                             currentRole={row.primaryRole}
+                            currentUnit={row.roleScopeUnit?.id ?? null}
                             options={roleMenu.options}
                             selectTexts={roleMenu.selectTexts}
+                            scopeUnits={roleMenu.scopeUnits}
+                            unitTexts={roleMenu.unitTexts}
                             labels={roleMenu.labels}
                             errors={roleMenu.errors}
                           />

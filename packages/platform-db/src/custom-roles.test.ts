@@ -127,6 +127,25 @@ describe('custom roles (FR-IAM-07, EP-ROLES)', () => {
     ).toEqual({ ok: false, refusal: 'needs_organization_scope' });
   });
 
+  it('keeps «A department» while the role is given for units, with the numbers (C-M1)', async () => {
+    const departmental = { ...raw, data_scope: 'departments' };
+    const held = fakeTx([], [departmental], [{ members: '1', invitations: 2 }]);
+    expect(await updateCustomRole(held.tx, 'r1', 3, input)).toEqual({
+      ok: false,
+      refusal: 'scope_units_in_use',
+      holders: { members: 1, invitations: 2 },
+    });
+    expect(writes(held.executed)).toEqual([]);
+    expect(held.executed[2]?.sql).toContain('scope_unit_id is not null');
+    // Nobody holds it with a unit: the scope changes; a concurrent change meets the database's JR004.
+    const free = fakeTx([], [departmental], [{ members: 0, invitations: 0 }], [], [], [], [raw]);
+    expect(await updateCustomRole(free.tx, 'r1', 3, input)).toMatchObject({ ok: true });
+    const raced = fakeTx([], [departmental], [{ members: 0, invitations: 0 }], pgError('JR004'));
+    expect(
+      await updateCustomRole(raced.tx, 'r1', 3, { ...input, permissions: raw.permissions }),
+    ).toEqual({ ok: false, refusal: 'scope_units_in_use' });
+  });
+
   it('deletes only a role nobody holds, with the numbers otherwise', async () => {
     const fake = fakeTx([], [raw], []);
     expect(await deleteCustomRole(fake.tx, 'r1', 3)).toEqual({

@@ -140,14 +140,33 @@ describe('create custom role (FR-IAM-07)', () => {
     expect(db.createCustomRole).not.toHaveBeenCalled();
   });
 
-  it('the builder rules: held permissions only, administrative ones organization-wide only', async () => {
+  it('the builder rules: catalogue only (never admin-only), administrative ones organization-wide only', async () => {
     const create = createDefineAction(runtime(['tenant_admin']).rt)(
       createCustomRoleActionDefinition(),
     );
-    const notHeld = await create({ ...input, permissions: ['platform.org.manage'] });
-    expect(!notHeld.ok && notHeld.error.fieldErrors).toEqual([
-      { path: 'permissions', code: 'PERMISSION_NOT_HELD' },
-    ]);
+    // Who can give what (PO, 17 Oct 2026): training permissions the Organization Admin does not hold.
+    const training = await create({
+      ...input,
+      permissions: ['tms.course.manage', 'tms.plan_cycle.manage', 'tms.needs_form.manage'],
+    });
+    expect(training.ok).toBe(true);
+    expect(db.createCustomRole).toHaveBeenCalledWith(
+      TX,
+      expect.objectContaining({
+        permissions: ['tms.course.manage', 'tms.plan_cycle.manage', 'tms.needs_form.manage'],
+      }),
+    );
+    db.createCustomRole.mockClear();
+    // Never the admin-only permissions: role management, privileged role assignment, the structure.
+    for (const code of [
+      'platform.role.manage',
+      'platform.role.assign_privileged',
+      'platform.org.manage',
+    ]) {
+      const refused = await create({ ...input, permissions: [code] });
+      expect(!refused.ok && refused.error.code, code).toBe('VALIDATION_FAILED');
+      expect(!refused.ok && refused.error.fieldErrors?.[0]?.path, code).toBe('permissions.0');
+    }
     const scoped = await create({
       ...input,
       dataScope: 'team',
@@ -211,6 +230,18 @@ describe('update and delete', () => {
     db.updateCustomRole.mockResolvedValueOnce({ ok: false, refusal: 'not_found' });
     const missing = await update({ ...input, id: ROLE_ID, version: 1 });
     expect(!missing.ok && missing.error.code).toBe('NOT_FOUND');
+    // C-M1: still given for units — the scope cannot leave «A department», with the numbers.
+    db.updateCustomRole.mockResolvedValueOnce({
+      ok: false,
+      refusal: 'scope_units_in_use',
+      holders: { members: 2, invitations: 1 },
+    });
+    const units = await update({ ...input, id: ROLE_ID, version: 1 });
+    expect(!units.ok && units.error).toMatchObject({
+      code: 'VALIDATION_FAILED',
+      fieldErrors: [{ path: 'dataScope', code: 'SCOPE_UNITS_IN_USE' }],
+      params: { members: 2, invitations: 1 },
+    });
     const hr = await createDefineAction(runtime(['hr_manager']).rt)(
       updateCustomRoleActionDefinition(),
     )({ ...input, id: ROLE_ID, version: 1 });

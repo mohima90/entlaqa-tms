@@ -46,6 +46,8 @@ export const defaultActionRuntime: ActionRuntime<UserTx> = {
         roleCode: role.roleCode,
         ...(role.validFrom ? { validFrom: role.validFrom } : {}),
         ...(role.validUntil ? { validUntil: role.validUntil } : {}),
+        // The unit of a department-limited custom role (EP-ORG), only while it is live and active.
+        scopeUnitId: role.scopeUnitId,
       })),
       // Custom roles as stored now (EP-ROLES): a change applies at the holder's next request.
       { headedDepartmentIds: facts.headedDepartmentIds, customRoles: facts.customRoles },

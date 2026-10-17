@@ -303,6 +303,145 @@ test.describe('invitations (admin side)', () => {
 });
 
 /**
+ * Organization → Structure built by an HR Manager (FR-ADM-05, T-M3-02; business flow EP-ORG; Kawadir's
+ * Departments page): the Organization Admin invites an HR Manager, who signs up through the copied link and
+ * maintains the structure — a level added, renamed and removed; a unit at the top, one under it through the
+ * row menu («Add <next level>»), expand / collapse, deactivate, a delete refused while a unit sits under it,
+ * then both deleted. Everything it creates is removed again (the seeded structure stays as it was).
+ */
+test.describe('organization structure (HR Manager)', () => {
+  test.skip(!email || !password, 'SIGNED_IN_E2E_* not set');
+
+  test('an HR Manager signs up and builds the levels and the tree', async ({ page, browser }) => {
+    const hr = `hr-structure-${run}@sovereign.example`;
+    await signIn(page);
+    await page.goto('/en/suite/admin/users/invite');
+    const form = page.getByTestId('invite-user');
+    await form.locator('#invite-email').fill(hr);
+    await form.locator('#invite-firstNameAr').fill('هالة');
+    await form.locator('#invite-familyNameAr').fill('الموارد');
+    await form.getByRole('combobox', { name: /^Role/ }).selectOption({ label: 'HR Manager' });
+    await form.getByRole('radio', { name: 'English' }).check();
+    await form.getByRole('button', { name: 'Send invitation' }).click();
+    const panel = page.getByTestId('invitation-created-panel');
+    await expect(panel).toBeVisible();
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+    await panel.getByRole('button', { name: 'Copy invite link' }).click();
+    const link = await page.evaluate(() => navigator.clipboard.readText());
+
+    const context = await browser.newContext();
+    const hrPage = await context.newPage();
+    await hrPage.goto(link);
+    await expect(hrPage.getByTestId('sign-up-code-valid')).toBeVisible();
+    const secret = `Structure-${randomUUID()}`;
+    await hrPage.locator('#invite-password').fill(secret);
+    await hrPage.locator('#invite-password-confirm').fill(secret);
+    await hrPage.getByTestId('invite-privacy').check();
+    await hrPage.getByRole('button', { name: /^Join / }).click();
+    await expect(hrPage).toHaveURL(/\/en\/(suite|select-organization|mfa)$/, afterSignIn);
+
+    // The menu's Organization group offers Structure and Branches to the HR Manager.
+    await hrPage.goto('/en/suite');
+    await expect(
+      hrPage
+        .getByRole('navigation', { name: 'Main navigation' })
+        .getByRole('link', { name: 'Structure' }),
+    ).toBeVisible();
+
+    // Levels: the seeded Department and Section, then a third level added, renamed and (later) removed.
+    await hrPage.goto('/en/suite/admin/structure?view=levels');
+    await expect(hrPage.getByTestId('level-row-1')).toContainText('Department');
+    await expect(hrPage.getByTestId('level-row-2')).toContainText('Section');
+    await hrPage.getByTestId('level-add').click();
+    const levelDialog = hrPage.getByTestId('level-dialog');
+    await levelDialog.locator('#level-nameEn').fill(`Team ${run}`);
+    await levelDialog.locator('#level-nameAr').fill(`فريق ${run}`);
+    await levelDialog.getByTestId('level-dialog-submit').click();
+    await expect(levelDialog).toBeHidden();
+    await expect(hrPage.getByTestId('level-row-3')).toContainText(`Team ${run}`);
+    await hrPage.getByTestId('level-row-3').getByTestId('level-rename').click();
+    await levelDialog.locator('#level-nameEn').fill(`Squad ${run}`);
+    await levelDialog.getByTestId('level-dialog-submit').click();
+    await expect(levelDialog).toBeHidden();
+    await expect(hrPage.getByTestId('level-row-3')).toContainText(`Squad ${run}`);
+    // Only the last level can be removed.
+    await expect(hrPage.getByTestId('level-row-2').getByTestId('level-remove')).toHaveCount(0);
+    await expectNoSeriousA11yViolations(hrPage);
+
+    // Tree: the seeded Academy sits under Training and development.
+    await hrPage.goto('/en/suite/admin/structure');
+    const training = hrPage.getByTestId('unit-TRN');
+    await expect(training.getByTestId('unit-ACD')).toContainText('Section');
+    // «Add Department» at the top.
+    const top = `TOP${run}`;
+    await hrPage.getByTestId('unit-add-top').click();
+    const unitDialog = hrPage.getByTestId('unit-dialog');
+    await expect(unitDialog.getByRole('heading', { level: 2 })).toHaveText('Add Department');
+    await unitDialog.locator('#unit-nameEn').fill(`Sales ${run}`);
+    await unitDialog.locator('#unit-nameAr').fill(`المبيعات ${run}`);
+    await unitDialog.locator('#unit-code').fill(top);
+    await unitDialog.locator('#unit-head').selectOption({ index: 1 });
+    await unitDialog.getByTestId('unit-dialog-submit').click();
+    await expect(unitDialog).toBeHidden();
+    const sales = hrPage.getByTestId(`unit-${top}`);
+    await expect(sales.getByTestId('unit-level').first()).toHaveText('Department');
+    await expect(sales).toContainText('Head:');
+    // The row menu adds the next level under it.
+    const child = `SUB${run}`;
+    await sales.getByTestId('unit-menu').first().click();
+    await hrPage.getByTestId('unit-menu-add').click();
+    await expect(unitDialog.getByRole('heading', { level: 2 })).toHaveText('Add Section');
+    await unitDialog.locator('#unit-nameEn').fill(`Sales team ${run}`);
+    await unitDialog.locator('#unit-nameAr').fill(`فريق المبيعات ${run}`);
+    await unitDialog.locator('#unit-code').fill(child);
+    await unitDialog.getByTestId('unit-dialog-submit').click();
+    await expect(unitDialog).toBeHidden();
+    const team = sales.getByTestId(`unit-${child}`);
+    await expect(team.getByTestId('unit-level')).toHaveText('Section');
+    // Collapse and expand the units under Sales.
+    const toggle = sales.getByTestId('unit-toggle').first();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await toggle.click();
+    await expect(team).toHaveCount(0);
+    await toggle.click();
+    await expect(team).toBeVisible();
+    await expectNoSeriousA11yViolations(hrPage);
+
+    // A unit with a unit under it is not deleted: the dialog says what is left.
+    await sales.getByTestId('unit-menu').first().click();
+    await hrPage.getByTestId('unit-menu-delete').click();
+    const deleteDialog = hrPage.getByTestId('unit-delete-dialog');
+    await expect(deleteDialog.getByTestId('unit-in-use')).toContainText('Units under it: 1');
+    await expect(deleteDialog.getByTestId('confirm-dialog-confirm')).toHaveCount(0);
+    await deleteDialog.getByRole('button', { name: 'Keep the unit' }).click();
+    await expect(deleteDialog).toBeHidden();
+    // Deactivate the team, then delete it and its parent.
+    await team.getByTestId('unit-menu').click();
+    await hrPage.getByTestId('unit-menu-status').click();
+    await hrPage.getByTestId('unit-status-dialog').getByTestId('confirm-dialog-confirm').click();
+    await expect(team.getByTestId('unit-inactive')).toHaveText('Inactive');
+    await team.getByTestId('unit-menu').click();
+    await hrPage.getByTestId('unit-menu-delete').click();
+    await deleteDialog.getByTestId('confirm-dialog-confirm').click();
+    await expect(team).toHaveCount(0);
+    await sales.getByTestId('unit-menu').first().click();
+    await hrPage.getByTestId('unit-menu-delete').click();
+    await deleteDialog.getByTestId('confirm-dialog-confirm').click();
+    await expect(sales).toHaveCount(0);
+
+    // The third level is unused again: removed. Arabic, right to left.
+    await hrPage.goto('/ar/suite/admin/structure?view=levels');
+    await expect(hrPage.locator('html')).toHaveAttribute('dir', 'rtl');
+    await expect(hrPage.getByTestId('level-row-1')).toContainText('المستوى 1');
+    await hrPage.getByTestId('level-row-3').getByTestId('level-remove').click();
+    await hrPage.getByTestId('level-remove-dialog').getByTestId('confirm-dialog-confirm').click();
+    await expect(hrPage.getByTestId('level-row-3')).toHaveCount(0);
+    await expectNoSeriousA11yViolations(hrPage);
+    await context.close();
+  });
+});
+
+/**
  * Invitations left pending for the acceptance E2E (invite-accept.spec.ts): smoke.sh passes fresh
  * addresses, then reads each e-mailed link from Mailpit (the token exists only in the e-mail). Arabic
  * invitation with the Employee role (one role per person, EP-ROLES).

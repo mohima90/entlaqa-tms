@@ -72,6 +72,23 @@ begin
   raise exception 'ASSERTION FAILED: % (statement succeeded)', p_message;
 end $$;
 
+-- Asserts the statement fails with the SQLSTATE p_state AND a message matching p_pattern (ILIKE), e.g. a
+-- guard's custom code with the numbers it reports.
+create or replace function tests.assert_fails_state_like(p_sql text, p_state text, p_pattern text, p_message text)
+returns void
+language plpgsql as $$
+begin
+  begin
+    execute p_sql;
+  exception when others then
+    if sqlstate = p_state and sqlerrm ilike p_pattern then
+      return;
+    end if;
+    raise exception 'ASSERTION FAILED: % (expected % "%", got % %)', p_message, p_state, p_pattern, sqlstate, sqlerrm;
+  end;
+  raise exception 'ASSERTION FAILED: % (statement succeeded)', p_message;
+end $$;
+
 -- Missing GRANT (table/column privilege): "permission denied for table …".
 create or replace function tests.assert_privilege_denied(p_sql text, p_message text) returns void
 language sql as $$
@@ -122,6 +139,19 @@ language sql immutable as $$
   select jsonb_strip_nulls(jsonb_build_object(
     'sub', p_user, 'role', 'authenticated', 'aal', 'aal1', 'session_id', p_session, 'tenant_id', p_tenant,
     'person_id', p_person));
+$$;
+
+-- Tenant A's Organization Admin uA and HR Manager uAB (with their person claims), for tests that switch
+-- between them: since S-M1 only structure managers (platform.org.manage: uAB) write units and branches.
+create or replace function tests.ua_claims() returns jsonb
+language sql immutable as $$
+  select tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
+                           'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1');
+$$;
+create or replace function tests.uab_claims() returns jsonb
+language sql immutable as $$
+  select tests.user_claims('00000000-0000-4000-8000-0000000000ab', '10000000-0000-4000-8000-0000000000ab',
+                           'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000ab');
 $$;
 
 -- What withUserTx() adds after an authenticator code: aal2 and when the code was passed (code_at, seconds
@@ -313,6 +343,11 @@ insert into platform.branches (id, tenant_id, code, name_ar, name_en, is_headqua
   ('a2000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'JED', 'فرع جدة', 'Jeddah', false),
   ('b2000000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000001', 'HQ', 'المقر الرئيسي', 'HQ', true);
 
+-- Structure levels (EP-ORG, FR-ADM-05): every tenant starts with level 1 «إدارة» / Department (tenant
+-- trigger); tenant A adds level 2 «قسم» / Section for TD-PRG. More levels: 21_org_structure.sql, 99_structure_*.
+insert into platform.structure_levels (tenant_id, ordinal, name_en, name_ar) values
+  ('a0000000-0000-4000-8000-000000000001', 2, 'Section', 'قسم');
+
 insert into platform.departments (id, tenant_id, code, name_ar, name_en, parent_id, branch_id, head_person_id) values
   ('a3000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'TD', 'التدريب والتطوير', 'Training & Development', null, 'a2000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1'),
   ('a3000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'TD-PRG', 'برامج التدريب', 'Training programs', 'a3000000-0000-4000-8000-000000000001', 'a2000000-0000-4000-8000-000000000001', null),
@@ -348,6 +383,51 @@ insert into platform.custom_role_permissions (tenant_id, custom_role_id, permiss
   ('a0000000-0000-4000-8000-000000000001', 'a6000000-0000-4000-8000-000000000001', 'platform.user.read'),
   ('a0000000-0000-4000-8000-000000000001', 'a6000000-0000-4000-8000-000000000001', 'platform.org.read'),
   ('b0000000-0000-4000-8000-000000000001', 'b6000000-0000-4000-8000-000000000001', 'platform.user.read');
+
+-- Course library (T-M3-03; platform operation): one category and two courses (one archived) in tenant A,
+-- one category and one course in tenant B — the same code «LEAD-101» in both (codes are unique per
+-- organization only). Rules in 99_course_library_*.sql.
+insert into tms.course_categories (id, tenant_id, name_en, name_ar) values
+  ('a7000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'Leadership', 'القيادة'),
+  ('b7000000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000001', 'Safety', 'السلامة');
+insert into tms.courses (id, tenant_id, code, title_en, title_ar, category_id, delivery_type, duration_hours,
+    duration_days, min_participants, max_participants, est_cost_per_session, est_cost_per_participant) values
+  ('a7100000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'LEAD-101', 'Strategic management',
+   'الإدارة الاستراتيجية', 'a7000000-0000-4000-8000-000000000001', 'classroom', 12, 2, 8, 20, 15000, 250),
+  ('a7100000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'OLD-001', 'Retired course',
+   'دورة قديمة', null, 'virtual', 3, null, 1, 30, null, null),
+  ('b7100000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000001', 'LEAD-101', 'Fire safety',
+   'السلامة من الحرائق', 'b7000000-0000-4000-8000-000000000001', 'on_the_job', 4, null, 5, 10, 900, null);
+update tms.courses set status = 'archived' where id = 'a7100000-0000-4000-8000-000000000002';
+
+-- Planning (EP-PLN, T-M3-04; platform operation): settings, a default chain and one DRAFT cycle per tenant A
+-- and B, with scope, departments (budget envelopes) and approval steps. More states: 99_planning_*.sql.
+--   A cycle ae…01: scope TD (→ departments TD, TD-PRG), steps Department Heads → Finance (person uAB)
+--   B cycle be…01: scope branch HQ (→ department TD of B), steps Department Heads → Finance (person uB)
+insert into tms.planning_settings (tenant_id, reminder_days) values
+  ('a0000000-0000-4000-8000-000000000001', '{7,2}'),
+  ('b0000000-0000-4000-8000-000000000001', '{10}');
+insert into tms.planning_default_steps (tenant_id, position, kind, name_ar, name_en, approver_person_id) values
+  ('a0000000-0000-4000-8000-000000000001', 1, 'department_heads', 'رؤساء الأقسام', 'Department Heads', null),
+  ('a0000000-0000-4000-8000-000000000001', 2, 'person', 'اعتماد المالية', 'Finance approval', null),
+  ('b0000000-0000-4000-8000-000000000001', 1, 'department_heads', 'رؤساء الأقسام', 'Department Heads', null);
+insert into tms.plan_cycles (id, tenant_id, name_ar, name_en, period_start_on, period_end_on, deadline_on) values
+  ('ae000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'خطة ٢٠٢٧', 'Plan 2027',
+   current_date + 60, current_date + 424, current_date + 30),
+  ('be000000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000001', 'خطة ب', 'Plan B',
+   current_date + 60, current_date + 424, current_date + 30);
+insert into tms.plan_cycle_scope (tenant_id, cycle_id, department_id, branch_id) values
+  ('a0000000-0000-4000-8000-000000000001', 'ae000000-0000-4000-8000-000000000001', 'a3000000-0000-4000-8000-000000000001', null),
+  ('b0000000-0000-4000-8000-000000000001', 'be000000-0000-4000-8000-000000000001', null, 'b2000000-0000-4000-8000-000000000001');
+insert into tms.plan_cycle_departments (tenant_id, cycle_id, department_id, budget_amount) values
+  ('a0000000-0000-4000-8000-000000000001', 'ae000000-0000-4000-8000-000000000001', 'a3000000-0000-4000-8000-000000000001', 50000),
+  ('a0000000-0000-4000-8000-000000000001', 'ae000000-0000-4000-8000-000000000001', 'a3000000-0000-4000-8000-000000000002', null),
+  ('b0000000-0000-4000-8000-000000000001', 'be000000-0000-4000-8000-000000000001', 'b3000000-0000-4000-8000-000000000001', 1000);
+insert into tms.plan_cycle_steps (tenant_id, cycle_id, position, kind, name_ar, name_en, approver_person_id) values
+  ('a0000000-0000-4000-8000-000000000001', 'ae000000-0000-4000-8000-000000000001', 1, 'department_heads', 'رؤساء الأقسام', 'Department Heads', null),
+  ('a0000000-0000-4000-8000-000000000001', 'ae000000-0000-4000-8000-000000000001', 2, 'person', 'اعتماد المالية', 'Finance approval', 'a1000000-0000-4000-8000-0000000000ab'),
+  ('b0000000-0000-4000-8000-000000000001', 'be000000-0000-4000-8000-000000000001', 1, 'department_heads', 'رؤساء الأقسام', 'Department Heads', null),
+  ('b0000000-0000-4000-8000-000000000001', 'be000000-0000-4000-8000-000000000001', 2, 'person', 'اعتماد المالية', 'Finance approval', 'b1000000-0000-4000-8000-0000000000b1');
 
 -- A pending event of tenant B (platform operation), for 33_event_tables_app_queue.sql.
 insert into platform.event_outbox (tenant_id, type)
@@ -442,3 +522,23 @@ insert into platform.user_import_rows (tenant_id, import_id, row_number, cells, 
    '{"email": "new.a@a.test"}', 'new'),
   ('b0000000-0000-4000-8000-000000000001', 'b5000000-0000-4000-8000-000000000001', 2, '{"email": "new.b@b.test"}',
    '{"email": "new.b@b.test"}', 'new');
+
+-- Needs forms (T-M3-10): every tenant got its default form from the tenants trigger above (random ids). One
+-- more form per tenant A and B with fixed ids (platform operation): «Fixture form» a7…01 / b7…01, section
+-- a71…01 / b71…01 with the two system fields (topic a72…01 / b72…01, people a72…02 / b72…02) and, in A, a
+-- dropdown «Level» a72…03 (values basic, advanced) for condition tests. More in 99_needs_forms_*.sql.
+begin;
+insert into tms.needs_forms (id, tenant_id, name_en, name_ar) values
+  ('a7000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'Fixture form', 'نموذج الاختبار'),
+  ('b7000000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000001', 'Fixture form', 'نموذج الاختبار');
+insert into tms.needs_form_sections (id, tenant_id, form_id, name_en, name_ar, is_repeatable, min_entries, max_entries, sort_order) values
+  ('a7100000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'a7000000-0000-4000-8000-000000000001', 'Needs', 'الاحتياجات', true, 1, 10, 1),
+  ('b7100000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000001', 'b7000000-0000-4000-8000-000000000001', 'Needs', 'الاحتياجات', true, 1, 10, 1);
+insert into tms.needs_form_fields (id, tenant_id, form_id, section_id, system_key, field_type, label_en, label_ar, is_required, sort_order, options, people_mode) values
+  ('a7200000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'a7000000-0000-4000-8000-000000000001', 'a7100000-0000-4000-8000-000000000001', 'training_topic', 'text', 'Topic', 'الموضوع', true, 1, null, null),
+  ('a7200000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'a7000000-0000-4000-8000-000000000001', 'a7100000-0000-4000-8000-000000000001', 'people', 'people', 'People', 'المشاركون', true, 2, null, 'count'),
+  ('a7200000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000001', 'a7000000-0000-4000-8000-000000000001', 'a7100000-0000-4000-8000-000000000001', null, 'select', 'Level', 'المستوى', false, 3,
+   '[{"value": "basic", "label_en": "Basic", "label_ar": "أساسي"}, {"value": "advanced", "label_en": "Advanced", "label_ar": "متقدم"}]', null),
+  ('b7200000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000001', 'b7000000-0000-4000-8000-000000000001', 'b7100000-0000-4000-8000-000000000001', 'training_topic', 'text', 'Topic', 'الموضوع', true, 1, null, null),
+  ('b7200000-0000-4000-8000-000000000002', 'b0000000-0000-4000-8000-000000000001', 'b7000000-0000-4000-8000-000000000001', 'b7100000-0000-4000-8000-000000000001', 'people', 'people', 'People', 'المشاركون', true, 2, null, 'count');
+commit;

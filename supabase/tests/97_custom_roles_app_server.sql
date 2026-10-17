@@ -1,7 +1,8 @@
 -- db-test: run-as=app_server
 -- Custom roles (FR-IAM-07, EP-ROLES; PO 17 Oct 2026; migrations 20261019090000…090400). Runs CONNECTED AS
 -- app_server. Who builds roles (only the Organization Admin, platform.role.manage), which permissions a role
--- may carry (catalogue only, held by the builder, administrative ones organization-wide only), unique names,
+-- may carry (catalogue only — any permission not marked 'none', also one the builder does not hold: who can
+-- give what, PO 17 Oct 2026, migration 20261020200000 — administrative ones organization-wide only), unique names,
 -- delete only when nobody holds it, privileged = any high-risk or user/role management permission (review H1),
 -- and the database guards deciding
 -- by PERMISSION for holders of custom roles (invite, give roles, organization profile, security policy).
@@ -49,7 +50,7 @@ begin
   perform tests.assert_eq(tests.rows_affected($q$insert into platform.custom_roles (name_en, name_ar, data_scope) values ('Course reviewer B', 'مراجع', 'own')$q$),
     1::bigint, 'the same name in another organization does not collide («مراجع» is tenant B''s)');
 
-  -- Permissions: from the catalogue, held by the builder.
+  -- Permissions: from the catalogue (who can give what, PO 17 Oct 2026: also ones the builder does not hold).
   perform tests.assert_eq(tests.rows_affected(format($q$insert into platform.custom_role_permissions (custom_role_id, permission_code) values (%L, 'platform.user.read'), (%L, 'platform.role.read')$q$, v_id, v_id)),
     2::bigint, 'permissions the Organization Admin holds');
   perform tests.assert(not private.role_is_privileged('a0000000-0000-4000-8000-000000000001', v_role.code),
@@ -63,7 +64,13 @@ begin
   perform tests.assert_fails_like(format($q$insert into platform.custom_role_permissions (custom_role_id, permission_code) values (%L, 'platform.role.manage')$q$, v_id),
     'permission platform.role.manage cannot be part of a custom role', 'building roles never');
   perform tests.assert_fails_like(format($q$insert into platform.custom_role_permissions (custom_role_id, permission_code) values (%L, 'platform.org.manage')$q$, v_id),
-    'nobody can give a permission they do not hold (platform.org.manage)', 'a permission the builder does not hold (the structure is HR''s)');
+    'permission platform.org.manage cannot be part of a custom role', 'the organization structure never (admin-only, PO 17 Oct 2026)');
+  -- Training permissions the Organization Admin does not hold (BR-IAM-4): allowed (PO, 17 Oct 2026).
+  perform tests.assert(not private.member_has_permission('a0000000-0000-4000-8000-000000000001',
+                         '00000000-0000-4000-8000-0000000000a1', 'tms.course.manage'),
+    'the Organization Admin holds no training permission');
+  perform tests.assert_eq(tests.rows_affected(format($q$insert into platform.custom_role_permissions (custom_role_id, permission_code) values (%L, 'tms.course.manage'), (%L, 'tms.plan_cycle.manage'), (%L, 'tms.needs_form.read'), (%L, 'tms.needs_form.manage')$q$, v_id, v_id, v_id, v_id)),
+    4::bigint, 'the Organization Admin builds a role with course, planning and needs-form permissions it does not hold');
   perform tests.assert_fails(format($q$insert into platform.custom_role_permissions (custom_role_id, permission_code) values (%L, 'tms.session.read')$q$, v_id),
     array['42501'], 'a permission outside the catalogue');
   perform tests.assert_privilege_denied($q$update platform.custom_role_permissions set permission_code = 'platform.org.read'$q$,
@@ -75,6 +82,10 @@ begin
     2::bigint, 'reading people (their team) and the structure');
   perform tests.assert_fails(format($q$insert into platform.custom_role_permissions (custom_role_id, permission_code) values (%L, 'platform.user.invite')$q$, v_team),
     array['JR003'], 'an administrative permission needs the whole organization as scope');
+  perform tests.assert_fails(format($q$insert into platform.custom_role_permissions (custom_role_id, permission_code) values (%L, 'tms.needs_form.manage')$q$, v_team),
+    array['JR003'], 'designing needs forms needs the whole organization as scope (organization_only)');
+  perform tests.assert_eq(tests.rows_affected(format($q$insert into platform.custom_role_permissions (custom_role_id, permission_code) values (%L, 'tms.needs_form.read')$q$, v_team)),
+    1::bigint, 'reading the needs forms library: any scope (organization data)');
   perform tests.assert_eq(tests.rows_affected(format($q$update platform.custom_roles set data_scope = 'own' where id = %L$q$, v_team)),
     1::bigint, 'a role without administrative permissions changes its scope');
   perform tests.assert_fails(format($q$update platform.custom_roles set data_scope = 'team' where id = %L$q$, v_id),
@@ -155,7 +166,7 @@ begin;
 set local role authenticated;
 select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
   'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1'));
--- «People clerk»: invites people and gives the roles whose permissions it holds, organization-wide.
+-- «People clerk»: invites people and gives every ordinary role, organization-wide (who can give what).
 insert into platform.custom_roles (id, name_en, name_ar, data_scope) values
   ('a6000000-0000-4000-8000-0000000000e3', 'People clerk', 'موظف شؤون', 'organization');
 insert into platform.custom_role_permissions (custom_role_id, permission_code)
@@ -194,9 +205,9 @@ begin
   perform tests.assert_eq((select count(*) from private.tenant_member_mfa('a1000000-0000-4000-8000-0000000000ab')), 0::bigint,
     'no user.deactivate: no member''s authenticator app');
   perform tests.assert_eq(tests.rows_affected($q$insert into platform.invitations (person_id, email, locale, primary_role) values ('a1000000-0000-4000-8000-0000000000da', 'clerk1@a.test', 'ar', 'learner')$q$),
-    1::bigint, 'custom role with user.invite + role.assign: invites with a role whose permissions it holds');
-  perform tests.assert_fails_like($q$insert into platform.invitations (person_id, email, locale, primary_role) values ('a1000000-0000-4000-8000-0000000000db', 'clerk2@a.test', 'ar', 'training_coordinator')$q$,
-    'nobody can give a role with permissions they do not hold', 'not a role with permissions it does not hold (role.read)');
+    1::bigint, 'custom role with user.invite + role.assign: invites with an ordinary role');
+  perform tests.assert_eq(tests.rows_affected($q$insert into platform.invitations (person_id, email, locale, primary_role) values ('a1000000-0000-4000-8000-0000000000db', 'clerk2@a.test', 'ar', 'training_coordinator')$q$),
+    1::bigint, 'also an ordinary role with permissions it does not hold (Training Coordinator; PO, 17 Oct 2026)');
   perform tests.assert_fails_like($q$insert into platform.invitations (person_id, email, locale, primary_role) values ('a1000000-0000-4000-8000-0000000000db', 'clerk2@a.test', 'ar', 'hr_manager')$q$,
     'only an Organization Admin can invite with a privileged role', 'never a privileged role');
   perform tests.assert(not private.actor_may_manage_tenant('a0000000-0000-4000-8000-000000000001'),
@@ -252,6 +263,8 @@ insert into platform.custom_roles (id, name_en, name_ar, data_scope) values
   ('a6000000-0000-4000-8000-0000000000e5', 'HR copy', 'نسخة الموارد', 'organization'),
   ('a6000000-0000-4000-8000-0000000000e6', 'Leaver desk', 'مكتب المغادرين', 'organization');
 insert into platform.custom_role_permissions (custom_role_id, permission_code)
+-- (Every permission of the HR Manager but the organization structure, never part of a custom role — the
+-- course library's included since who can give what, PO 17 Oct 2026.)
 select 'a6000000-0000-4000-8000-0000000000e5', rp.permission_code from platform.ref_role_permissions rp
 where rp.role_code = 'hr_manager' and rp.permission_code <> 'platform.org.manage';
 insert into platform.custom_role_permissions (custom_role_id, permission_code) values
@@ -386,8 +399,72 @@ begin
     'another organization''s custom role is unknown here (fail closed)');
   perform tests.assert(not private.role_is_assignable('a0000000-0000-4000-8000-000000000001', 'custom_b00000000001'),
     'another organization''s custom role is not assignable');
-  perform tests.assert_eq(private.role_permission_codes('a0000000-0000-4000-8000-000000000001', 'department_head'),
-    array['platform.org.read', 'platform.role.read', 'platform.user.read'], 'a standard role''s permissions (any scope)');
+  -- (Compared in byte order: the course permissions of T-M3-03 sort differently under other collations.)
+  perform tests.assert_eq((select array_agg(c order by c collate "C")
+                           from unnest(private.role_permission_codes('a0000000-0000-4000-8000-000000000001', 'department_head')) c),
+    array['platform.org.read', 'platform.role.read', 'platform.user.read', 'tms.course.read', 'tms.course_cost.read'],
+    'a standard role''s permissions (any scope)');
+end $$;
+reset role;
+rollback;
+
+-- Who can give what (PO, 17 Oct 2026; migration 20261020200000): a privileged custom role (a high-risk
+-- permission) is given only by the Organization Admin; inviting without platform.role.assign gives no role.
+begin;
+set local role authenticated;
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
+  'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1'));
+insert into platform.custom_roles (id, name_en, name_ar, data_scope) values
+  ('a6000000-0000-4000-8000-0000000000e9', 'Course auditor', 'مدقق الدورات', 'organization'),
+  ('a6000000-0000-4000-8000-0000000000ea', 'Invite desk', 'مكتب الدعوات', 'organization');
+insert into platform.custom_role_permissions (custom_role_id, permission_code) values
+  ('a6000000-0000-4000-8000-0000000000e9', 'tms.course.manage'),
+  ('a6000000-0000-4000-8000-0000000000e9', 'platform.audit.read'),
+  ('a6000000-0000-4000-8000-0000000000ea', 'platform.user.read'),
+  ('a6000000-0000-4000-8000-0000000000ea', 'platform.user.invite');
+insert into platform.role_assignments (membership_id, role_code)
+select m.id, cr.code from platform.tenant_memberships m, platform.custom_roles cr
+where m.user_id = '00000000-0000-4000-8000-0000000000f7' and m.tenant_id = 'a0000000-0000-4000-8000-000000000001'
+  and cr.id = 'a6000000-0000-4000-8000-0000000000ea';
+insert into platform.persons (id, display_name_ar, email) values
+  ('a1000000-0000-4000-8000-0000000000dd', 'مدعو ٤', 'desk1@a.test'),
+  ('a1000000-0000-4000-8000-0000000000de', 'مدعو ٥', 'desk2@a.test');
+do $$
+declare
+  v_auditor text := (select code from platform.custom_roles where id = 'a6000000-0000-4000-8000-0000000000e9');
+begin
+  -- Never in a custom role: role management, privileged role assignment, the organization structure.
+  perform tests.assert_eq((select string_agg(code, ',' order by code collate "C") from platform.ref_permissions
+                           where custom_role_use = 'none'),
+    'platform.org.manage,platform.role.assign_privileged,platform.role.manage', 'admin-only permissions (custom_role_use none)');
+  -- The permissions that make a role privileged (only the Organization Admin gives such a role): exactly these.
+  perform tests.assert_eq((select string_agg(code, ',' order by code collate "C") from platform.ref_permissions
+                           where privileged),
+    'platform.audit.read,platform.org.manage,platform.role.assign,platform.role.assign_privileged,platform.role.manage,'
+    'platform.security.manage,platform.tenant.manage,platform.user.deactivate,platform.user.invite,'
+    'platform.user.reset_mfa,platform.user.update', 'privileged permissions of the catalogue');
+  perform tests.assert_eq((select string_agg(code || ':' || custom_role_use, ',' order by code collate "C") from platform.ref_permissions
+                           where code like 'tms.needs\_form.%'),
+    'tms.needs_form.manage:organization_only,tms.needs_form.read:organization', 'needs-form permissions usable in custom roles');
+  perform tests.assert(private.role_is_privileged('a0000000-0000-4000-8000-000000000001', v_auditor),
+    'a custom role with a high-risk permission is privileged');
+  -- The HR Manager may not give it…
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000ab', '10000000-0000-4000-8000-0000000000ab',
+    'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000ab'));
+  perform tests.assert(not private.member_may_give_roles('a0000000-0000-4000-8000-000000000001',
+                         '00000000-0000-4000-8000-0000000000ab', array[v_auditor]), 'HR: may not give a privileged custom role');
+  perform tests.assert_fails_like(format($q$insert into platform.invitations (person_id, email, locale, primary_role) values ('a1000000-0000-4000-8000-0000000000dd', 'desk1@a.test', 'ar', %L)$q$, v_auditor),
+    'only an Organization Admin can invite with a privileged role', 'HR: cannot invite with a privileged custom role');
+  -- …the Organization Admin may.
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
+    'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1'));
+  perform tests.assert_eq(tests.rows_affected(format($q$insert into platform.invitations (person_id, email, locale, primary_role) values ('a1000000-0000-4000-8000-0000000000dd', 'desk1@a.test', 'ar', %L)$q$, v_auditor)),
+    1::bigint, 'the Organization Admin invites with a privileged custom role');
+  -- «Invite desk» (user.invite without role.assign): invites nobody, whatever the role.
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000f7', '10000000-0000-4000-8000-0000000000f7',
+    'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000e7'));
+  perform tests.assert_fails_like($q$insert into platform.invitations (person_id, email, locale, primary_role) values ('a1000000-0000-4000-8000-0000000000de', 'desk2@a.test', 'ar', 'learner')$q$,
+    'only an Organization Admin or an HR Manager can give roles', 'user.invite without role.assign: no role to give');
 end $$;
 reset role;
 rollback;

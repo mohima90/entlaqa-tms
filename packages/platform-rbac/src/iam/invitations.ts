@@ -10,6 +10,7 @@ import {
   listInvitations,
   listManagerOptions,
   listOrgUnitOptions,
+  listStructureUnitOptions,
   requestInvitationResend,
   revokeInvitation,
 } from '@jadarat/platform-db';
@@ -22,6 +23,12 @@ import { platformPermissions } from '../platform-permissions';
 import { ROLE_CODE } from './edit-roles';
 import { namePart } from './my-profile';
 import { type RoleChoice, canGive, findRole, loadRoleChoices } from './role-catalogue';
+import {
+  type ScopeUnitChoices,
+  ScopeUnitField,
+  loadScopeUnitChoices,
+  scopeUnitProblem,
+} from './scope-units';
 
 /**
  * Invitations, admin side (T-M2-07, FR-IAM-03, BR-IAM-1; approved screens 1 and 2;
@@ -30,8 +37,8 @@ import { type RoleChoice, canGive, findRole, loadRoleChoices } from './role-cata
  * standard role or a custom role of the organization. Privileged roles (standard, or custom with a
  * high-risk permission) may be given only by holders of `platform.role.assign_privileged` (the Organization
  * Admin) — the same split as changing a role (edit-roles.ts): an ordinary action that refuses privileged
- * roles (and roles with permissions the member does not hold) and a privileged action with the strict
- * session check. The database guard applies the same rules. Audit records carry ids and role codes only
+ * roles (every ordinary role is allowed — who can give what, PO 17 Oct 2026) and a privileged action with
+ * the strict session check. The database guard applies the same rules. Audit records carry ids and role codes only
  * (no names, no e-mail).
  */
 const p = platformPermissions;
@@ -83,6 +90,8 @@ export const InviteUserInput = z.strictObject({
     .transform((value) => (value === '' ? null : value)),
   // One role per person (EP-ROLES): a standard role code or a custom role code of the organization.
   role: z.string().max(40).regex(ROLE_CODE),
+  // The unit of a custom role limited to «A department» (EP-ORG, T-M3-09); empty for every other role.
+  scopeUnitId: ScopeUnitField.default(null),
   locale: z.enum(['ar', 'en']),
 });
 
@@ -101,6 +110,8 @@ const REFUSAL_FIELDS = {
   ROLE_NOT_ALLOWED: 'role',
   // BR-IAM-4: unreachable with one role per invitation (kept for the database's JR001).
   ROLE_CONFLICT: 'role',
+  // The unit given with the role (EP-ORG): deactivated or deleted while the form was open.
+  UNIT_NOT_ALLOWED: 'scopeUnitId',
 } as const;
 type InvitationRefusalCode = keyof typeof REFUSAL_FIELDS;
 
@@ -129,6 +140,8 @@ export interface InvitationCreated {
   readonly invitationId: string;
   readonly personId: string;
   readonly role: string;
+  /** The unit given with a department-limited role (EP-ORG), or null. */
+  readonly scopeUnitId: string | null;
   /**
    * The invitation's first code (Kawadir: shown right away with «نسخ الرمز» / «نسخ الرابط») and the
    * language its link opens in. Returned to the inviter only — never audited or logged.
@@ -157,11 +170,13 @@ async function invite(
     primaryRole: input.role,
     additionalRoles: [],
     locale: input.locale,
+    scopeUnitId: input.scopeUnitId,
   });
   return {
     invitationId: created.invitationId,
     personId: created.personId,
     role: input.role,
+    scopeUnitId: input.scopeUnitId,
     inviteCode: created.inviteCode,
     locale: input.locale,
     inviteLink: inviteLinkOf(input.locale, created.inviteCode),
@@ -183,10 +198,18 @@ function inviteAction(
         // The privileged path is authorized by role.assign_privileged; inviting stays user.invite.
         if (!ctx.can(p['platform.user.invite'], 'tenant')) return err(appError('FORBIDDEN'));
       } else if (role.privileged || !canGive(ctx, role)) {
-        // Ordinary path: privileged roles go through the privileged action (strict session check); and
-        // nobody gives a role with permissions they do not hold.
+        // Ordinary path: privileged roles go through the privileged action (strict session check); every
+        // ordinary role with platform.role.assign (who can give what, PO 17 Oct 2026).
         return err(roleNotAllowed());
       }
+      // One unit for a department-limited custom role, none for any other (EP-ORG BR-ORG-d).
+      const unitProblem = scopeUnitProblem(
+        role.dataScope,
+        role.kind,
+        input.scopeUnitId,
+        input.scopeUnitId === null ? [] : await listStructureUnitOptions(ctx.tx),
+      );
+      if (unitProblem) return err(fieldError('scopeUnitId', unitProblem));
       try {
         return ok(await invite(ctx, input, inviteLinkOf));
       } catch (error) {
@@ -200,8 +223,12 @@ function inviteAction(
       action: 'platform.invitation.created',
       entityType: 'invitation',
       entityId: output.invitationId,
-      // Ids and the role code only (no names, no e-mail).
-      data: { personId: output.personId, role: output.role },
+      // Ids and the role code only (no names, no e-mail); the unit of a department-limited role (EP-ORG).
+      data: {
+        personId: output.personId,
+        role: output.role,
+        ...(output.scopeUnitId !== null ? { scopeUnitId: output.scopeUnitId } : {}),
+      },
     }),
   };
 }
@@ -434,6 +461,8 @@ export interface InviteFormView {
   readonly privilegedAccess: 'allowed' | 'denied';
   /** The roles to choose from (standard and custom), with whether this member may give each. */
   readonly roles: readonly RoleChoice[];
+  /** The unit picker of department-limited custom roles (EP-ORG, T-M3-09). */
+  readonly scopeUnits: ScopeUnitChoices;
 }
 
 export const InviteFormInput = z.strictObject({});
@@ -461,6 +490,7 @@ export function inviteFormQueryDefinition(): QueryDefinition<
           ? 'allowed'
           : 'denied',
         roles: await loadRoleChoices(ctx),
+        scopeUnits: await loadScopeUnitChoices(ctx),
       });
     },
   };

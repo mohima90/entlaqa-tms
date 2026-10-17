@@ -51,6 +51,11 @@ export type InvitationErrorCode =
   | 'ROLE_NOT_ALLOWED'
   /** BR-IAM-4: the invitation would give the Organization Admin role together with another role. */
   | 'ROLE_CONFLICT'
+  /**
+   * The unit given with the role (EP-ORG, T-M3-09): the role is not limited to a department, or the unit is
+   * not a live, active unit of the organization.
+   */
+  | 'UNIT_NOT_ALLOWED'
   | 'INVITATION_NOT_VALID'
   | 'INVITATION_ACCOUNT_MISMATCH'
   | 'ALREADY_MEMBER';
@@ -77,6 +82,8 @@ export interface NewInvitation {
   /** Always empty since EP-ROLES (one role per person; the database refuses others). */
   readonly additionalRoles: readonly string[];
   readonly locale: 'ar' | 'en';
+  /** The unit of a custom role limited to «A department» (EP-ORG, T-M3-09); null for every other role. */
+  readonly scopeUnitId?: string | null;
 }
 
 export interface InvitationRow {
@@ -170,6 +177,13 @@ export function invitationErrorOf(error: unknown): unknown {
   }
   if (pg?.code === '42501')
     return new DomainError<InvitationErrorCode>('ROLE_NOT_ALLOWED', { cause: error });
+  // The unit given with the role (20261020090400).
+  if (
+    (pg?.code === '23514' &&
+      (pg.message.includes('takes a unit') || pg.message.includes('active unit'))) ||
+    (pg?.code === '23503' && pg.constraint === 'invitations_scope_unit_fkey')
+  )
+    return new DomainError<InvitationErrorCode>('UNIT_NOT_ALLOWED', { cause: error });
   // A role that does not exist (any more): e.g. a custom role deleted while the form was open (EP-ROLES).
   if (pg?.code === '23503' && pg.message.startsWith('unknown role'))
     return new DomainError<InvitationErrorCode>('ROLE_NOT_ALLOWED', { cause: error });
@@ -213,11 +227,21 @@ export async function createInvitation(
       insert into platform.person_employment (person_id, department_id, branch_id, manager_person_id)
       values (${person.id}::uuid, ${input.departmentId ?? null}::uuid, ${input.branchId ?? null}::uuid,
               ${input.managerPersonId ?? null}::uuid)`);
-    const [invitation] = await tx.execute<{ id: string }>(sql`
+    const scopeUnitId = input.scopeUnitId ?? null;
+    // The unit column only when there is a unit (an older database has none: expand-first, EP-ORG).
+    const [invitation] = await tx.execute<{ id: string }>(
+      scopeUnitId === null
+        ? sql`
       insert into platform.invitations (person_id, email, locale, primary_role, additional_roles)
       values (${person.id}::uuid, ${email}, ${input.locale}, ${input.primaryRole},
               ${textArray(input.additionalRoles)})
-      returning id`);
+      returning id`
+        : sql`
+      insert into platform.invitations (person_id, email, locale, primary_role, additional_roles, scope_unit_id)
+      values (${person.id}::uuid, ${email}, ${input.locale}, ${input.primaryRole},
+              ${textArray(input.additionalRoles)}, ${scopeUnitId}::uuid)
+      returning id`,
+    );
     if (!invitation) throw new Error('createInvitation: no invitation returned');
     const [issued] = await tx.execute<{ code: string }>(sql`
       select private.issue_invitation_code(${invitation.id}::uuid) as code`);

@@ -52,7 +52,9 @@ begin
           '[{"name": "", "rows": 30, "columns": 12}]', 0,
           '{"0": "email", "1": "first_name_ar", "2": "family_name_ar"}', now() + interval '1 day');
 end $$;
--- The file of the scenarios below (rows 2–20).
+-- The file of the scenarios below (rows 2–20). Rows 2 and 6 ask for the Training Coordinator role, which both
+-- the Organization Admin and the HR Manager may give (an ordinary role — who can give what, PO 17 Oct 2026 —
+-- although its course, planning and needs-form permissions are not the HR Manager's).
 create or replace function pg_temp.stage_file(p_import uuid) returns void language plpgsql as $$
 begin
   perform pg_temp.stage(p_import, 2, '{"email": "new1@imp.test", "first_name_ar": "نورة", "father_name_ar": "فهد",
@@ -604,6 +606,8 @@ begin
     'the privileged member''s record is unchanged');
   perform tests.assert_eq((select string_agg(distinct invited_by::text, ',') from platform.invitations where import_id = i),
     '00000000-0000-4000-8000-0000000000ab', 'the HR Manager is the inviter');
+  perform tests.assert_eq((select primary_role from platform.invitations where import_id = i and email = 'new1@imp.test'),
+    'training_coordinator', 'the HR Manager''s import gives the Training Coordinator role (who can give what, PO 17 Oct 2026)');
 end $$;
 -- Held invitations (invitations: hold) stay held; the worker schedules nothing unless the import sends.
 do $$

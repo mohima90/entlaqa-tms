@@ -27,7 +27,11 @@ import { RoleBuilderForm } from '../../../../../../components/roles/role-builder
 import { SuiteShell } from '../../../../../../components/suite-shell';
 import { profileErrorTexts } from '../../../../../../lib/profile-texts';
 import type { BuilderScope } from '../../../../../../lib/role-builder';
-import { roleBuilderGroups, roleBuilderTexts } from '../../../../../../lib/role-builder-texts';
+import {
+  roleBuilderGroups,
+  roleBuilderTexts,
+  roleViewGroups,
+} from '../../../../../../lib/role-builder-texts';
 import { getSuiteContext } from '../../../../../../lib/suite-context';
 import { roleDetailQuery } from '../../../../../../lib/users-queries';
 
@@ -144,14 +148,18 @@ function standardOnly(code: string): RoleDetailView {
     custom: null,
     memberCount: null,
     canManage: false,
-    heldPermissions: [],
   };
 }
 
-function scopeOf(view: RoleDetailView): BuilderScope {
+/**
+ * The data scope as the page names it: a custom role's own choice («A department» = one unit picked when
+ * the role is given, EP-ORG); the Department Head's «Their departments» (the units they head).
+ */
+function scopeOf(view: RoleDetailView): BuilderScope | 'headed' {
   if (view.custom) return view.custom.dataScope;
   const role = SYSTEM_ROLES.find((r) => r.code === view.role.code);
-  return role ? standardRoleScope(role) : 'organization';
+  const scope = role ? standardRoleScope(role) : 'organization';
+  return scope === 'departments' ? 'headed' : scope;
 }
 
 async function RoleView({ locale, view }: { locale: AppLocale; view: RoleDetailView }) {
@@ -159,8 +167,9 @@ async function RoleView({ locale, view }: { locale: AppLocale; view: RoleDetailV
   const builder = await getTranslations({ locale, namespace: 'roleBuilder' });
   const { role } = view;
   const chosen = new Set(role.permissions);
-  // Every catalogue permission is shown (read-only); the Organization Admin's own permissions too.
-  const groups = roleBuilderGroups(locale, []).map((group) => ({
+  // Every catalogue permission is shown (read-only), the structure too; the Organization Admin's own
+  // permissions as a note below.
+  const groups = roleViewGroups(locale).map((group) => ({
     key: group.key,
     title: group.title,
     items: group.permissions.map((permission) => ({
@@ -358,7 +367,7 @@ async function RoleEdit({
           dataScope: custom.dataScope,
           permissions: custom.permissions,
         }}
-        groups={roleBuilderGroups(locale, view.heldPermissions)}
+        groups={roleBuilderGroups(locale)}
         starts={[]}
         texts={texts}
         errors={errors}

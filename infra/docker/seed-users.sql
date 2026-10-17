@@ -10,6 +10,10 @@ create temporary table seed_ctx on commit drop as
 
 insert into platform.branches (tenant_id, code, name_ar, name_en, is_headquarters)
   select tenant_id, 'RUH', 'فرع الرياض', 'Riyadh branch', true from seed_ctx;
+-- A second structure level for the Academy (EP-ORG: a new organization starts with one, Department).
+insert into platform.structure_levels (tenant_id, ordinal, name_en, name_ar)
+  select s.tenant_id, 2, 'Section', 'قسم' from seed_ctx s
+  where not exists (select 1 from platform.structure_levels l where l.tenant_id = s.tenant_id and l.ordinal = 2);
 insert into platform.departments (tenant_id, code, name_ar, name_en, head_person_id)
   select tenant_id, 'TRN', 'التدريب والتطوير', 'Training and development', admin_person from seed_ctx;
 insert into platform.departments (tenant_id, code, name_ar, name_en, parent_id)

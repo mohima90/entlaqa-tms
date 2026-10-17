@@ -1,14 +1,16 @@
 -- db-test: run-as=app_server
 -- Branches and departments (T-M2-01, ADM-04/05): constraints, tree rules, references to live rows and
--- [std]/[sd] stamping. Runs CONNECTED AS app_server with tenant-A claims (uA, person a1).
+-- [std]/[sd] stamping. Runs CONNECTED AS app_server with tenant-A claims of the HR Manager (uAB, person ab:
+-- platform.org.manage — since S-M1 the database lets structure managers only write units and branches; who
+-- may write is tested in 99_structure_2_app_server.sql).
 -- Each block is rolled back.
 \set ON_ERROR_STOP on
 
 -- Constraints and soft-delete uniqueness.
 begin;
 set local role authenticated;
-select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
-  'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1'));
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000ab', '10000000-0000-4000-8000-0000000000ab',
+  'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000ab'));
 do $$
 begin
   perform tests.assert_check_constraint($q$insert into platform.branches (code, name_ar) values ('bad code', 'فرع')$q$,
@@ -64,8 +66,8 @@ rollback;
 -- row that still has live children. Hierarchy changes are serialised per tenant (advisory lock).
 begin;
 set local role authenticated;
-select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
-  'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1'));
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000ab', '10000000-0000-4000-8000-0000000000ab',
+  'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000ab'));
 do $$
 declare
   v_parent uuid := 'a3000000-0000-4000-8000-000000000003';  -- OPS (root)
@@ -79,7 +81,13 @@ begin
   perform tests.assert_fails($q$update platform.branches set parent_branch_id = 'a2000000-0000-4000-8000-000000000001' where code = 'JED'$q$,
     array['23514'], 'branches: cycles are rejected too');
 
-  -- OPS is level 1; add levels 2..10 under it → allowed.
+  -- OPS is level 1; add levels 2..10 under it → allowed (the organization defines ten levels, EP-ORG).
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000ab', '10000000-0000-4000-8000-0000000000ab',
+    'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000ab'));
+  insert into platform.structure_levels (ordinal, name_en, name_ar)
+  select n, 'Level ' || n, 'المستوى ' || n from generate_series(3, 10) n order by n;
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000ab', '10000000-0000-4000-8000-0000000000ab',
+    'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000ab'));
   for i in 2..10 loop
     insert into platform.departments (code, name_ar, parent_id) values ('L' || i, 'مستوى ' || i, v_parent)
       returning id into v_parent;
@@ -96,8 +104,13 @@ begin
 
   -- Live children block a soft delete; a deleted parent cannot receive (or restore) children.
   -- (People placed in TD / TD-PRG move to OPS first: active people also block a delete — 23_people.sql.)
+  -- (By the Organization Admin uA: uA's own placement is a privileged member's record.)
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
+    'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1'));
   update platform.person_employment set department_id = 'a3000000-0000-4000-8000-000000000003'
    where tenant_id = 'a0000000-0000-4000-8000-000000000001';
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000ab', '10000000-0000-4000-8000-0000000000ab',
+    'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000ab'));
   perform tests.assert_fails($q$update platform.departments set deleted_at = now() where code = 'TD'$q$,
     array['23514'], 'departments: cannot soft-delete a department with live sub-departments');
   perform tests.assert_eq(tests.rows_affected($q$update platform.departments set deleted_at = now() where code = 'TD-PRG'$q$),
@@ -134,8 +147,8 @@ rollback;
 -- References must point at live rows.
 begin;
 set local role authenticated;
-select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
-  'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1'));
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000ab', '10000000-0000-4000-8000-0000000000ab',
+  'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000ab'));
 do $$
 begin
   perform tests.assert_fails($q$update platform.branches set deleted_at = now() where code = 'JED'$q$,
@@ -158,35 +171,35 @@ rollback;
 -- [std] and [sd] stamping: actor ids and times come from the claims and the clock, never from the row.
 begin;
 set local role authenticated;
-select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
-  'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1'));
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000ab', '10000000-0000-4000-8000-0000000000ab',
+  'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000ab'));
 do $$
 declare
   r record;
   v_created timestamptz;
 begin
   insert into platform.departments (code, name_ar, created_by, updated_by, version, created_at, deleted_at, deleted_by)
-  values ('NEW', 'قسم جديد', 'a1000000-0000-4000-8000-0000000000ab', 'a1000000-0000-4000-8000-0000000000ab', 42, '2000-01-01',
+  values ('NEW', 'قسم جديد', 'a1000000-0000-4000-8000-0000000000a1', 'a1000000-0000-4000-8000-0000000000a1', 42, '2000-01-01',
           '2000-01-01', 'b1000000-0000-4000-8000-0000000000b1');
   select * into r from platform.departments where code = 'NEW';
-  perform tests.assert_eq(r.created_by, 'a1000000-0000-4000-8000-0000000000a1'::uuid, 'stamp: created_by is the claims person, not the sent value');
-  perform tests.assert_eq(r.updated_by, 'a1000000-0000-4000-8000-0000000000a1'::uuid, 'stamp: updated_by on insert is the claims person');
+  perform tests.assert_eq(r.created_by, 'a1000000-0000-4000-8000-0000000000ab'::uuid, 'stamp: created_by is the claims person, not the sent value');
+  perform tests.assert_eq(r.updated_by, 'a1000000-0000-4000-8000-0000000000ab'::uuid, 'stamp: updated_by on insert is the claims person');
   perform tests.assert_eq(r.version, 1, 'stamp: version starts at 1');
   perform tests.assert(r.created_at > now() - interval '1 minute', 'stamp: created_at cannot be backdated');
   perform tests.assert(r.deleted_at is null and r.deleted_by is null, 'stamp: a row cannot be inserted as deleted');
   v_created := r.created_at;
 
-  -- Another person (uAB, person ab) updates; forged values are ignored.
+  -- Other claims (uAB without a person claim) update; forged values are ignored.
   perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000ab', '10000000-0000-4000-8000-0000000000ab',
-    'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000ab'));
+    'a0000000-0000-4000-8000-000000000001'));
   update platform.departments
      set name_ar = 'قسم معدل', created_by = null, updated_by = 'b1000000-0000-4000-8000-0000000000b1', version = 99,
          created_at = '2000-01-01', updated_at = '2000-01-01'
    where code = 'NEW';
   select * into r from platform.departments where code = 'NEW';
-  perform tests.assert_eq(r.created_by, 'a1000000-0000-4000-8000-0000000000a1'::uuid, 'stamp: created_by is immutable');
+  perform tests.assert_eq(r.created_by, 'a1000000-0000-4000-8000-0000000000ab'::uuid, 'stamp: created_by is immutable');
   perform tests.assert_eq(r.created_at, v_created, 'stamp: created_at is immutable');
-  perform tests.assert_eq(r.updated_by, 'a1000000-0000-4000-8000-0000000000ab'::uuid, 'stamp: updated_by is the updating person');
+  perform tests.assert(r.updated_by is null, 'stamp: updated_by is the updating claims'' person (none), not the sent value');
   perform tests.assert(r.updated_at > now() - interval '1 minute', 'stamp: updated_at is the clock, not the sent value');
   perform tests.assert_eq(r.version, 2, 'stamp: version increments by one per update');
   perform tests.assert_fails_like($q$update platform.departments set id = 'a3000000-0000-4000-8000-0000000000ff' where code = 'NEW'$q$,
@@ -196,9 +209,11 @@ begin
   update platform.departments set deleted_at = '1999-01-01', deleted_by = 'b1000000-0000-4000-8000-0000000000b1' where code = 'NEW';
   select * into r from platform.departments where id = r.id;
   perform tests.assert(r.deleted_at > now() - interval '1 minute', 'soft delete: deleted_at is the clock');
-  perform tests.assert_eq(r.deleted_by, 'a1000000-0000-4000-8000-0000000000ab'::uuid, 'soft delete: deleted_by is the claims person');
-  update platform.departments set deleted_at = '1999-01-01', deleted_by = null where id = r.id;
-  perform tests.assert((select deleted_at > now() - interval '1 minute' and deleted_by = 'a1000000-0000-4000-8000-0000000000ab'
+  perform tests.assert(r.deleted_by is null, 'soft delete: deleted_by is the claims person (none), not the sent value');
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000ab', '10000000-0000-4000-8000-0000000000ab',
+    'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000ab'));
+  update platform.departments set deleted_at = '1999-01-01', deleted_by = 'a1000000-0000-4000-8000-0000000000ab' where id = r.id;
+  perform tests.assert((select deleted_at > now() - interval '1 minute' and deleted_by is null
                         from platform.departments where id = r.id), 'soft delete: time and actor cannot be rewritten later');
   update platform.departments set deleted_at = null, deleted_by = 'b1000000-0000-4000-8000-0000000000b1' where id = r.id;
   perform tests.assert((select deleted_at is null and deleted_by is null from platform.departments where id = r.id),
@@ -209,7 +224,7 @@ rollback;
 -- User claims without a person stamp NULL actors.
 begin;
 set local role authenticated;
-select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000ab', '10000000-0000-4000-8000-0000000000ab',
   'a0000000-0000-4000-8000-000000000001'));
 do $$
 begin
@@ -228,7 +243,11 @@ begin
   perform tests.assert_eq(
     (select array_agg(tgname::text order by tgname::text) from pg_trigger
      where tgrelid = 'platform.departments'::regclass and not tgisinternal),
-    array['departments_soft_delete', 'departments_stamp_row', 'departments_tree', 'departments_until_people_moved', 'departments_validate_refs'],
+    -- EP-ORG: the level (after the cycle and depth checks) and its cascade; the role-scope delete guard.
+    -- S-M1: the writer guard first (it compares the row as the statement sent it).
+    array['departments_guard_writer', 'departments_soft_delete', 'departments_stamp_row', 'departments_tree', 'departments_tree_levels',
+          'departments_tree_levels_cascade', 'departments_until_people_moved', 'departments_until_role_scopes_moved',
+          'departments_validate_refs'],
     'departments: trigger order');
   perform tests.assert_eq(
     (select array_agg(tgname::text order by tgname::text) from pg_trigger

@@ -4,6 +4,7 @@ import {
   type RoleRefusal,
   type UserTx,
   getEditableRole,
+  listStructureUnitOptions,
   lockTenantRoles,
   replaceMemberRole,
 } from '@jadarat/platform-db';
@@ -14,13 +15,19 @@ import type { PermissionDefinition } from '../permissions';
 import { platformPermissions } from '../platform-permissions';
 import { SYSTEM_ROLES } from '../system-roles';
 import { type RoleChoice, canGive, findRole, loadRoleChoices } from './role-catalogue';
+import {
+  type ScopeUnitChoices,
+  ScopeUnitField,
+  loadScopeUnitChoices,
+  scopeUnitProblem,
+} from './scope-units';
 
 /**
  * Changing a member's role (T-M2-14, FR-IAM-07, BR-IAM-3; EP-ROLES, PO 17 Oct 2026: ONE role per person,
  * Kawadir's «تعديل الدور» dialog on Team members). The role is a standard role or a custom role of the
- * organization. Ordinary roles: `platform.role.assign` (HR Manager, Organization Admin) — and only roles
- * whose permissions the member holds; privileged roles (standard, or custom with a high-risk permission):
- * `platform.role.assign_privileged` — the Organization Admin. Nobody changes their own role; a privileged
+ * organization. Ordinary roles: `platform.role.assign` (HR Manager, Organization Admin) — every one of
+ * them (who can give what, PO 17 Oct 2026); privileged roles (standard, or custom with a high-risk or
+ * user / role management permission): `platform.role.assign_privileged` — the Organization Admin. Nobody changes their own role; a privileged
  * member's role only an Organization Admin (database guard); the last Organization Admin stays. Audited
  * with the role before and after.
  */
@@ -41,6 +48,8 @@ export interface EditRolesView {
   readonly privilegedAccess: 'allowed' | 'denied';
   /** The roles to choose from, with whether this member may give each. */
   readonly choices: readonly RoleChoice[];
+  /** The unit picker of department-limited custom roles (EP-ORG, T-M3-09). */
+  readonly scopeUnits: ScopeUnitChoices;
 }
 
 export const EditRolesQueryInput = z.strictObject({ personId: z.uuid() });
@@ -73,6 +82,7 @@ export function editRolesQueryDefinition(): QueryDefinition<
           ? 'allowed'
           : 'denied',
         choices: await loadRoleChoices(ctx),
+        scopeUnits: await loadScopeUnitChoices(ctx),
       });
     },
   };
@@ -88,10 +98,12 @@ export const EditRolesInput = z.strictObject({
   personId: z.uuid(),
   version: z.string().max(200).regex(VERSION_TOKEN),
   role: z.string().max(40).regex(ROLE_CODE),
+  // The unit of a custom role limited to «A department» (EP-ORG, T-M3-09); empty for every other role.
+  scopeUnitId: ScopeUnitField.default(null),
 });
 
-function fieldError(code: string): AppError {
-  return appError('VALIDATION_FAILED', { fieldErrors: [{ path: 'role', code }] });
+function fieldError(code: string, path = 'role'): AppError {
+  return appError('VALIDATION_FAILED', { fieldErrors: [{ path, code }] });
 }
 
 function refusalError(refusal: RoleRefusal): AppError {
@@ -110,6 +122,8 @@ function refusalError(refusal: RoleRefusal): AppError {
       return fieldError('LAST_ADMIN');
     case 'unknown_role':
       return fieldError('ROLE_UNKNOWN');
+    case 'unit_not_allowed':
+      return fieldError('UNIT_NOT_ALLOWED', 'scopeUnitId');
   }
 }
 
@@ -118,6 +132,9 @@ export interface RolesSaved {
   readonly changed: boolean;
   readonly before: string | null;
   readonly after: string;
+  /** The unit of a department-limited role before and after (EP-ORG), or null. */
+  readonly beforeUnit: string | null;
+  readonly afterUnit: string | null;
 }
 
 function roleAction(
@@ -135,10 +152,18 @@ function roleAction(
       const wanted = await findRole(ctx.tx, input.role);
       if (!wanted) return err(fieldError('ROLE_UNKNOWN'));
       // Ordinary path: neither the new nor the current role may be privileged (the privileged action,
-      // with its strict session check, gives those), and only roles whose permissions the member holds.
+      // with its strict session check, gives those); every ordinary role (who can give what).
       if (!privileged && (wanted.privileged || !canGive(ctx, wanted))) {
         return err(fieldError('ROLE_NOT_ALLOWED'));
       }
+      // One unit for a department-limited custom role, none for any other (EP-ORG BR-ORG-d).
+      const unitProblem = scopeUnitProblem(
+        wanted.dataScope,
+        wanted.kind,
+        input.scopeUnitId,
+        input.scopeUnitId === null ? [] : await listStructureUnitOptions(ctx.tx),
+      );
+      if (unitProblem) return err(fieldError(unitProblem, 'scopeUnitId'));
       const current = await getEditableRole(ctx.tx, input.personId);
       const currentRole = current?.roleCode ? await findRole(ctx.tx, current.roleCode) : null;
       const outcome = await replaceMemberRole(
@@ -153,6 +178,7 @@ function roleAction(
               isLocked: (code) =>
                 code === wanted.code ? wanted.privileged : (currentRole?.privileged ?? true),
             },
+        input.scopeUnitId,
       );
       if (!outcome.ok) return err(refusalError(outcome.refusal));
       return ok({
@@ -160,6 +186,8 @@ function roleAction(
         changed: outcome.changed,
         before: outcome.before,
         after: outcome.after,
+        beforeUnit: outcome.beforeUnit,
+        afterUnit: outcome.afterUnit,
       });
     },
     audit: (_input, output) =>
@@ -168,8 +196,15 @@ function roleAction(
             action: 'platform.user.roles_changed',
             entityType: 'person',
             entityId: output.personId,
-            // Role codes (BR-IAM-3: before and after; no personal data).
-            data: { before: output.before, after: output.after },
+            // Role codes (BR-IAM-3: before and after; no personal data), and the unit of a department-limited
+            // role (EP-ORG BR-ORG-f) when there is one.
+            data: {
+              before: output.before,
+              after: output.after,
+              ...(output.beforeUnit !== null || output.afterUnit !== null
+                ? { beforeUnit: output.beforeUnit, afterUnit: output.afterUnit }
+                : {}),
+            },
           }
         : null,
   };

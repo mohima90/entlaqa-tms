@@ -1,7 +1,7 @@
 import 'server-only';
 import { EMPTY_PERSON_SCOPE, type PersonScope, isEmptyPersonScope } from '@jadarat/platform-core';
 import { type SQL, sql } from 'drizzle-orm';
-import { customRolesExist } from './custom-roles-present';
+import { customRolesExist, roleScopeUnitsExist } from './custom-roles-present';
 import { ORG_TIME_ZONE } from './org-time-zone';
 import type { UserTx } from './with-user-tx';
 
@@ -52,6 +52,15 @@ export interface RoleNames {
 
 export type MembershipStatus = 'active' | 'invited' | 'suspended';
 
+/** The unit a department-limited custom role was given for (EP-ORG, T-M3-09). */
+export interface RoleScopeUnit {
+  readonly id: string;
+  readonly nameAr: string;
+  readonly nameEn: string | null;
+  /** Live and active: the role grants its scope. */
+  readonly active: boolean;
+}
+
 export interface UserListRow {
   readonly personId: string;
   readonly membershipId: string;
@@ -71,6 +80,12 @@ export interface UserListRow {
    * getEditableRole), '' without a role or when the roles are not visible.
    */
   readonly roleVersion: string;
+  /**
+   * The unit of a department-limited custom role (EP-ORG, T-M3-09) with its names and whether it is still
+   * live and active (a deactivated unit grants nothing until a new one is picked); null without one or when
+   * the roles are not visible.
+   */
+  readonly roleScopeUnit: RoleScopeUnit | null;
   readonly departmentNameAr: string | null;
   readonly departmentNameEn: string | null;
   readonly lastSignInAt: Date | null;
@@ -147,6 +162,13 @@ export function personScopePredicate(scope: PersonScope, actorPersonId: string |
   }
   if (scope.branchIds.length > 0) parts.push(sql`e.branch_id in (${uuidList(scope.branchIds)})`);
   return parts.length > 0 ? sql`(${sql.join(parts, sql` or `)})` : sql`false`;
+}
+
+/** The unit of a department-limited role as read (jsonb: an object, or its text from some drivers). */
+function scopeUnitOf(value: RoleScopeUnit | string | null): RoleScopeUnit | null {
+  if (value === null) return null;
+  const unit = typeof value === 'string' ? (JSON.parse(value) as RoleScopeUnit) : value;
+  return { id: unit.id, nameAr: unit.nameAr, nameEn: unit.nameEn ?? null, active: unit.active };
 }
 
 /** `like` pattern for user text: % _ and \ are matched literally (\ is PostgreSQL's default escape). */
@@ -243,16 +265,25 @@ export async function listUsers(tx: UserTx, filter: UserListFilter): Promise<Use
              join platform.custom_roles cr on cr.tenant_id = ra.tenant_id and cr.code = ra.role_code
              where ra.membership_id = m.id and ${ROLE_IN_FORCE} limit 1)`
       : sql`null::text`;
+  // The unit of a department-limited role once its column exists (deploy window, EP-ORG).
+  const scopeUnit = (await roleScopeUnitsExist(tx))
+    ? sql`(select jsonb_build_object('id', su.id, 'nameAr', su.name_ar, 'nameEn', su.name_en,
+                                     'active', su.status = 'active' and su.deleted_at is null)
+           from platform.role_assignments ra
+           join platform.departments su on su.tenant_id = ra.tenant_id and su.id = ra.scope_unit_id
+           where ra.membership_id = m.id limit 1)`
+    : sql`null::jsonb`;
   const roles = isEmptyPersonScope(filter.rolesScope)
     ? sql`false as roles_visible, null as primary_role, null as role_name_ar, null as role_name_en,
-           null as role_version`
+           null as role_version, null::jsonb as role_scope_unit`
     : sql`(${rolesVisible}) as roles_visible,
            case when ${rolesVisible} then (select ra.role_code from platform.role_assignments ra
              where ra.membership_id = m.id and ${ROLE_IN_FORCE} order by ra.is_primary desc limit 1) end as primary_role,
            case when ${rolesVisible} then ${roleName('name_ar')} end as role_name_ar,
            case when ${rolesVisible} then ${roleName('name_en')} end as role_name_en,
            case when ${rolesVisible} then (select ra.role_code || ':' || ra.id || ':' || ra.version
-             from platform.role_assignments ra where ra.membership_id = m.id limit 1) end as role_version`;
+             from platform.role_assignments ra where ra.membership_id = m.id limit 1) end as role_version,
+           case when ${rolesVisible} then ${scopeUnit} end as role_scope_unit`;
   const tabWhere =
     filter.tab === 'all' ? where : sql`${where} and m.status = ${TAB_STATUS[filter.tab]}`;
   const rows = await tx.execute<{
@@ -268,6 +299,7 @@ export async function listUsers(tx: UserTx, filter: UserListFilter): Promise<Use
     role_name_ar: string | null;
     role_name_en: string | null;
     role_version: string | null;
+    role_scope_unit: RoleScopeUnit | string | null;
     department_name_ar: string | null;
     department_name_en: string | null;
     last_sign_in_at: Date | string | null;
@@ -303,6 +335,7 @@ export async function listUsers(tx: UserTx, filter: UserListFilter): Promise<Use
           ? { ar: r.role_name_ar, en: r.role_name_en }
           : null,
       roleVersion: r.role_version ?? '',
+      roleScopeUnit: scopeUnitOf(r.role_scope_unit ?? null),
       departmentNameAr: r.department_name_ar,
       departmentNameEn: r.department_name_en,
       lastSignInAt: toDate(r.last_sign_in_at),

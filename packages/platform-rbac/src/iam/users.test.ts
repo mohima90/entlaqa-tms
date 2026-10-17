@@ -20,6 +20,9 @@ const db = vi.hoisted(() => ({
   getSecurityPolicy: vi.fn(() => Promise.resolve(null)),
   // The organization's custom roles (EP-ROLES): the role filter and «تعديل الدور».
   listCustomRoles: vi.fn(() => Promise.resolve([])),
+  // The unit picker of the edit-role dialog (EP-ORG, T-M3-09): none in these tests.
+  listStructureUnitOptions: vi.fn(() => Promise.resolve([])),
+  listStructureLevelLabels: vi.fn(() => Promise.resolve([])),
 }));
 vi.mock('@jadarat/platform-db', () => db);
 
@@ -103,6 +106,8 @@ describe('users list query', () => {
           expect.objectContaining({ code: 'hr_manager', kind: 'standard', assignable: true }),
         ]) as never,
         canAssignRoles: true,
+        // The edit-role dialog's unit picker (EP-ORG, T-M3-09): the organization has no units here.
+        scopeUnits: { units: [], levels: [], structureVisible: true },
         canAssignPrivileged: true,
         selfPersonId: '33333333-3333-4333-8333-333333333333',
       }),

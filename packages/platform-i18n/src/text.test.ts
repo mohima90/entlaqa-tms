@@ -1,6 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import { formatHijriDate } from './hijri';
-import { hasVisibleText, normalizeDigits } from './text';
+import { hasVisibleText, normalizeDigits, searchKey } from './text';
+
+describe('searchKey (twin of private.search_key, FR-CAT-10)', () => {
+  it('folds Arabic letter variants, diacritics, tatweel and case', () => {
+    expect(searchKey('الإدارة الاستراتيجية')).toBe('الاداره الاستراتيجيه');
+    expect(searchKey('إدارة')).toBe(searchKey('اداره'));
+    expect(searchKey('آمِنٌ')).toBe('امن');
+    expect(searchKey('مستشفى')).toBe('مستشفي');
+    expect(searchKey('ٱلقيـــادة')).toBe('القياده');
+    expect(searchKey('LEAD-101')).toBe('lead-101');
+  });
+
+  it('accepts digits in any script', () => {
+    expect(searchKey('LEAD-١٠١')).toBe('lead-101');
+  });
+});
 
 const shift = (digits: string, zero: number) =>
   digits.replace(/[0-9]/g, (d) => String.fromCharCode(zero + Number(d)));

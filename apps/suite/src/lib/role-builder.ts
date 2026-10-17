@@ -22,8 +22,6 @@ export interface BuilderPermission {
   readonly makesPrivileged: boolean;
   /** Administrative: only for a role that sees the whole organization. */
   readonly organizationOnly: boolean;
-  /** The Organization Admin holds it organization-wide (only those can be given). */
-  readonly held: boolean;
 }
 
 export interface BuilderGroup {
@@ -57,14 +55,17 @@ export interface BuilderStart {
 
 const all = (groups: readonly BuilderGroup[]) => groups.flatMap((g) => g.permissions);
 
-/** Why a permission cannot be ticked now (null: it can). A ticked one can always be cleared. */
+/**
+ * Why a permission cannot be ticked now (null: it can). A ticked one can always be cleared. Every
+ * permission of the catalogue can be given — also ones the Organization Admin does not hold (who can give
+ * what, PO 17 Oct 2026); administrative ones only with the whole organization as scope.
+ */
 export function permissionBlock(
   permission: BuilderPermission,
   scope: BuilderScope,
   checked: boolean,
-): 'notHeld' | 'needsOrganization' | null {
+): 'needsOrganization' | null {
   if (checked) return null;
-  if (!permission.held) return 'notHeld';
   if (permission.organizationOnly && scope !== 'organization') return 'needsOrganization';
   return null;
 }
@@ -104,8 +105,8 @@ export function changeScope(
 }
 
 /**
- * Apply a «start from» choice: its scope and permissions (only those the Organization Admin may give; an
- * administrative one only with the whole organization), and a template's names and description.
+ * Apply a «start from» choice: its scope and permissions (only those of the catalogue; an administrative
+ * one only with the whole organization), and a template's names and description.
  */
 export function applyStart(
   groups: readonly BuilderGroup[],
@@ -117,7 +118,6 @@ export function applyStart(
     const permission = byCode.get(code);
     return (
       permission !== undefined &&
-      permission.held &&
       (!permission.organizationOnly || start.dataScope === 'organization')
     );
   });
@@ -157,7 +157,10 @@ export function builderFieldError(
     case 'description':
       return { field: 'description', key: 'description' };
     case 'dataScope':
-      return { field: 'dataScope', key: 'dataScope' };
+      return {
+        field: 'dataScope',
+        key: code === 'SCOPE_UNITS_IN_USE' ? 'scopeUnitsInUse' : 'dataScope',
+      };
     default:
       return path === 'permissions' || path.startsWith('permissions.')
         ? { field: 'permissions', key: 'permissions' }

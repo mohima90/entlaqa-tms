@@ -21,11 +21,21 @@ begin
     'platform.invitations', 'platform.security_policies', 'platform.tenant_settings',
     -- Custom roles (EP-ROLES): insert/FK tests below; rules in 97_custom_roles_app_server.sql.
     'platform.custom_roles', 'platform.custom_role_permissions',
+    -- Structure levels (EP-ORG): insert/FK tests below; rules in 99_structure_app_server.sql.
+    'platform.structure_levels',
     -- Files (T-M2-18): no direct writes at all (file_guard's functions only); cross-tenant, FK and
     -- function tests in 81_files_app_server.sql, 82_files_app_worker.sql and 83_files_storage.sql.
     'platform.files', 'platform.file_download_grants',
     -- User imports (T-M2-12): insert/FK tests below; lifecycle and per-user tests in 86_*, jobs in 87_*.
-    'platform.user_imports', 'platform.user_import_columns', 'platform.user_import_rows')
+    'platform.user_imports', 'platform.user_import_columns', 'platform.user_import_rows',
+    -- Course library (T-M3-03): insert/FK tests below; rules per permission in 99_course_library_*.sql.
+    'tms.course_categories', 'tms.courses',
+    -- Planning (EP-PLN, T-M3-04): insert/update tests below; writes need tms.plan_cycle.manage, so the
+    -- cross-tenant insert and composite-FK cases as an L&D Manager are in 99_planning_b_app_server.sql.
+    'tms.planning_settings', 'tms.planning_default_steps', 'tms.plan_cycles', 'tms.plan_cycle_scope',
+    'tms.plan_cycle_departments', 'tms.plan_cycle_steps',
+    -- Needs forms (T-M3-10): insert/FK tests below; rules in 99_needs_forms_1_app_server.sql.
+    'tms.needs_forms', 'tms.needs_form_sections', 'tms.needs_form_fields')
     and t.table_name not in (select table_name from tests.job_only_tables());
   perform tests.assert(v_missing is null, format('isolation tests missing for: %s', v_missing));
   perform tests.assert(session_user = 'app_server', 'this file must run connected as app_server');
@@ -59,7 +69,14 @@ begin
            where table_name not in (select table_name from tests.job_only_tables()) loop
     execute format('select count(*), count(*) filter (where %I <> %L) from %s', r.tenant_column, v_a, r.table_name)
       into v_total, v_foreign;
-    perform tests.assert(v_total > 0, format('%s: tenant A must see its own rows', r.table_name));
+    if r.table_name::text in ('tms.planning_settings', 'tms.planning_default_steps', 'tms.plan_cycles',
+                              'tms.plan_cycle_scope', 'tms.plan_cycle_departments', 'tms.plan_cycle_steps') then
+      -- Read only with tms.plan_cycle.read / .manage (S-L3), which the Organization Admin does not hold: the
+      -- same generic check as an L&D Manager of tenant A is in 99_planning_b_app_server.sql.
+      perform tests.assert_eq(v_total, 0::bigint, format('%s: read with the planning permissions only', r.table_name));
+    else
+      perform tests.assert(v_total > 0, format('%s: tenant A must see its own rows', r.table_name));
+    end if;
     perform tests.assert_eq(v_foreign, 0::bigint, format('%s: tenant A must not see other tenants'' rows', r.table_name));
 
     v_update := format('update %s set %I = %I where %I = %L', r.table_name, r.tenant_column, r.tenant_column, r.tenant_column, v_b);
@@ -140,6 +157,16 @@ begin
   perform tests.assert_privilege_denied($q$update platform.session_context set active_tenant_id = 'b0000000-0000-4000-8000-000000000001'$q$,
     'session_context: no direct UPDATE');
 
+  -- platform.branches and platform.departments are written by structure managers only (platform.org.manage,
+  -- S-M1; rules in 99_structure_2_app_server.sql): the Organization Admin is refused, the cross-tenant cases
+  -- below run as the HR Manager uAB.
+  perform tests.assert_rls_violation($q$insert into platform.branches (code, name_ar) values ('DMM', 'فرع الدمام')$q$,
+    'branches: the Organization Admin does not add branches');
+  perform tests.assert_rls_violation($q$insert into platform.departments (code, name_ar) values ('X0', 'قسم')$q$,
+    'departments: the Organization Admin does not add units');
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000ab', '10000000-0000-4000-8000-0000000000ab',
+    'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000ab'));
+
   -- platform.branches ([sd]: no DELETE grant)
   perform tests.assert_rls_violation($q$insert into platform.branches (tenant_id, code, name_ar) values ('b0000000-0000-4000-8000-000000000001', 'X1', 'دخيل')$q$,
     'branches: insert with tenant B tenant_id is rejected by RLS');
@@ -169,6 +196,8 @@ begin
     array['23503', '23514'], 'departments: a tenant B person cannot be head (refs trigger, then composite FK)');
   perform tests.assert_privilege_denied($q$delete from platform.departments where id = 'a3000000-0000-4000-8000-000000000003'$q$,
     'departments: no DELETE grant (soft delete only)');
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
+    'a0000000-0000-4000-8000-000000000001'));
 
   -- platform.person_employment (composite FKs to persons, branches, departments; no DELETE grant)
   perform tests.assert_rls_violation($q$insert into platform.person_employment (tenant_id, person_id) values ('b0000000-0000-4000-8000-000000000001', 'b1000000-0000-4000-8000-0000000000b9')$q$,
@@ -213,6 +242,45 @@ begin
     0::bigint, 'custom_role_permissions: RLS filters tenant B rows');
   perform tests.assert_privilege_denied($q$update platform.custom_role_permissions set permission_code = 'platform.audit.read'$q$,
     'custom_role_permissions: no UPDATE grant (remove and add)');
+
+  -- platform.structure_levels (EP-ORG; uA lacks platform.org.manage: the write policies refuse too)
+  perform tests.assert_rls_violation($q$insert into platform.structure_levels (tenant_id, ordinal, name_en, name_ar) values ('b0000000-0000-4000-8000-000000000001', 2, 'Intruder', 'دخيل')$q$,
+    'structure_levels: insert with tenant B tenant_id is rejected by RLS');
+  perform tests.assert_eq(tests.rows_affected($q$update platform.structure_levels set name_en = 'x' where tenant_id = 'b0000000-0000-4000-8000-000000000001'$q$),
+    0::bigint, 'structure_levels: RLS filters tenant B levels on update');
+  perform tests.assert_eq(tests.rows_affected($q$delete from platform.structure_levels where tenant_id = 'b0000000-0000-4000-8000-000000000001'$q$),
+    0::bigint, 'structure_levels: RLS filters tenant B levels on delete');
+  perform tests.assert_privilege_denied($q$update platform.structure_levels set tenant_id = 'b0000000-0000-4000-8000-000000000001'$q$,
+    'structure_levels: tenant_id is not updatable');
+  perform tests.assert_privilege_denied($q$update platform.structure_levels set ordinal = 9$q$,
+    'structure_levels: the place of a level is not updatable');
+
+  -- Role scope units (EP-ORG, T-M3-09): a tenant B unit is rejected by the composite FKs.
+  perform tests.assert_fails($q$insert into platform.invitations (person_id, email, locale, primary_role, scope_unit_id) values ('a1000000-0000-4000-8000-0000000000a2', 'uinv@a.test', 'ar', 'learner', 'b3000000-0000-4000-8000-000000000001')$q$,
+    array['23503', '23514', '42501'], 'invitations: a tenant B unit is never the scope of an invitation');
+  perform tests.assert_fails($q$insert into platform.role_assignments (membership_id, role_code, scope_unit_id) select id, 'learner', 'b3000000-0000-4000-8000-000000000001' from platform.tenant_memberships where user_id = '00000000-0000-4000-8000-0000000000a3'$q$,
+    array['23503', '23514'], 'role_assignments: a tenant B unit is never the scope of a role');
+
+  -- tms.course_categories / tms.courses (T-M3-03). uA is the Organization Admin: the guard lets a row of
+  -- another organization through to RLS, and refuses uA's own organization's rows (no course permission).
+  perform tests.assert_rls_violation($q$insert into tms.course_categories (tenant_id, name_en, name_ar) values ('b0000000-0000-4000-8000-000000000001', 'Intruder', 'دخيل')$q$,
+    'course_categories: insert with tenant B tenant_id is rejected by RLS');
+  perform tests.assert_eq(tests.rows_affected($q$update tms.course_categories set name_en = 'x' where id = 'b7000000-0000-4000-8000-000000000001'$q$),
+    0::bigint, 'course_categories: RLS filters tenant B category by id');
+  perform tests.assert_privilege_denied($q$update tms.course_categories set tenant_id = 'b0000000-0000-4000-8000-000000000001'$q$,
+    'course_categories: tenant_id is not updatable');
+  perform tests.assert_privilege_denied($q$delete from tms.course_categories$q$, 'course_categories: no DELETE grant');
+  perform tests.assert_rls_violation($q$insert into tms.courses (tenant_id, code, title_en, title_ar, delivery_type, duration_hours, max_participants) values ('b0000000-0000-4000-8000-000000000001', 'X-1', 'Intruder', 'دخيل', 'classroom', 1, 10)$q$,
+    'courses: insert with tenant B tenant_id is rejected by RLS');
+  perform tests.assert_fails($q$insert into tms.courses (code, title_en, title_ar, category_id, delivery_type, duration_hours, max_participants) values ('X-2', 'Intruder', 'دخيل', 'b7000000-0000-4000-8000-000000000001', 'classroom', 1, 10)$q$,
+    array['42501', '23503'], 'courses: never under another tenant''s category (no permission; composite FK)');
+  perform tests.assert_eq(tests.rows_affected($q$update tms.courses set title_en = 'x' where id = 'b7100000-0000-4000-8000-000000000001'$q$),
+    0::bigint, 'courses: RLS filters tenant B course by id');
+  perform tests.assert_eq((select count(*) from tms.courses where code = 'LEAD-101'), 1::bigint,
+    'courses: tenant B''s course with the same code is invisible');
+  perform tests.assert_privilege_denied($q$update tms.courses set tenant_id = 'b0000000-0000-4000-8000-000000000001'$q$,
+    'courses: tenant_id is not updatable');
+  perform tests.assert_privilege_denied($q$delete from tms.courses$q$, 'courses: no DELETE grant (archive instead)');
 
   -- platform.role_assignments: a tenant B custom role is rejected by the composite FK
   perform tests.assert_fails($q$insert into platform.role_assignments (membership_id, role_code) select id, 'custom_b00000000001' from platform.tenant_memberships where user_id = '00000000-0000-4000-8000-0000000000a3'$q$,
@@ -374,6 +442,109 @@ begin
     'user_import_rows: users delete nothing');
   perform tests.assert_eq((select count(*) from platform.user_import_rows where tenant_id = 'b0000000-0000-4000-8000-000000000001'),
     0::bigint, 'user_import_rows: tenant B rows invisible');
+end $$;
+rollback;
+
+-- Planning (EP-PLN, T-M3-04) as tenant-A user uA (the Organization Admin: no planning permission): tenant B's
+-- rows cannot be created, changed, moved or deleted; the not-granted columns stay closed. As an L&D Manager:
+-- 99_planning_b_app_server.sql.
+begin;
+set local role authenticated;
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
+  'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1'));
+do $$
+begin
+  perform tests.assert_rls_violation($q$insert into tms.plan_cycles (tenant_id, name_ar, name_en, period_start_on, period_end_on, deadline_on) values ('b0000000-0000-4000-8000-000000000001', 'دخيل', 'Intruder', current_date, current_date + 300, current_date + 10)$q$,
+    'plan_cycles: insert with tenant B tenant_id is rejected by RLS');
+  perform tests.assert_eq(tests.rows_affected($q$update tms.plan_cycles set name_en = 'x' where id = 'be000000-0000-4000-8000-000000000001'$q$),
+    0::bigint, 'plan_cycles: RLS filters tenant B cycle by id');
+  perform tests.assert_eq(tests.rows_affected($q$delete from tms.plan_cycles where tenant_id = 'b0000000-0000-4000-8000-000000000001'$q$),
+    0::bigint, 'plan_cycles: RLS filters tenant B rows on delete');
+  perform tests.assert_privilege_denied($q$update tms.plan_cycles set tenant_id = 'b0000000-0000-4000-8000-000000000001'$q$,
+    'plan_cycles: tenant_id is not updatable');
+  perform tests.assert_privilege_denied($q$update tms.plan_cycles set currency = 'USD'$q$,
+    'plan_cycles: the currency is not updatable');
+  perform tests.assert_privilege_denied($q$update tms.plan_cycles set launched_by = 'a1000000-0000-4000-8000-0000000000a1'$q$,
+    'plan_cycles: who launched is not updatable');
+  perform tests.assert_rls_violation($q$insert into tms.plan_cycle_scope (tenant_id, cycle_id, department_id) values ('b0000000-0000-4000-8000-000000000001', 'be000000-0000-4000-8000-000000000001', 'b3000000-0000-4000-8000-000000000001')$q$,
+    'plan_cycle_scope: insert with tenant B tenant_id is rejected by RLS');
+  perform tests.assert_eq(tests.rows_affected($q$delete from tms.plan_cycle_scope where tenant_id = 'b0000000-0000-4000-8000-000000000001'$q$),
+    0::bigint, 'plan_cycle_scope: RLS filters tenant B rows on delete');
+  perform tests.assert_privilege_denied($q$update tms.plan_cycle_scope set department_id = null$q$,
+    'plan_cycle_scope: no UPDATE grant');
+  perform tests.assert_rls_violation($q$insert into tms.plan_cycle_departments (tenant_id, cycle_id, department_id) values ('b0000000-0000-4000-8000-000000000001', 'be000000-0000-4000-8000-000000000001', 'b3000000-0000-4000-8000-000000000001')$q$,
+    'plan_cycle_departments: insert with tenant B tenant_id is rejected by RLS');
+  perform tests.assert_eq(tests.rows_affected($q$update tms.plan_cycle_departments set budget_amount = 1 where tenant_id = 'b0000000-0000-4000-8000-000000000001'$q$),
+    0::bigint, 'plan_cycle_departments: RLS filters tenant B rows');
+  perform tests.assert_privilege_denied($q$update tms.plan_cycle_departments set status = 'submitted'$q$,
+    'plan_cycle_departments: the form status is not updatable (T-M3-05)');
+  perform tests.assert_privilege_denied($q$update tms.plan_cycle_departments set cycle_id = 'be000000-0000-4000-8000-000000000001'$q$,
+    'plan_cycle_departments: cycle_id is not updatable');
+  perform tests.assert_rls_violation($q$insert into tms.plan_cycle_steps (tenant_id, cycle_id, position, kind, name_ar, name_en) values ('b0000000-0000-4000-8000-000000000001', 'be000000-0000-4000-8000-000000000001', 3, 'person', 'س', 'S')$q$,
+    'plan_cycle_steps: insert with tenant B tenant_id is rejected by RLS');
+  perform tests.assert_eq(tests.rows_affected($q$delete from tms.plan_cycle_steps where tenant_id = 'b0000000-0000-4000-8000-000000000001'$q$),
+    0::bigint, 'plan_cycle_steps: RLS filters tenant B rows on delete');
+  perform tests.assert_privilege_denied($q$update tms.plan_cycle_steps set position = 9$q$,
+    'plan_cycle_steps: no UPDATE grant (the chain is saved as a whole)');
+  perform tests.assert_rls_violation($q$insert into tms.planning_settings (tenant_id, reminder_days) values ('b0000000-0000-4000-8000-000000000001', '{1}')$q$,
+    'planning_settings: insert with tenant B tenant_id is rejected by RLS');
+  perform tests.assert_eq(tests.rows_affected($q$update tms.planning_settings set reminder_days = '{1}' where tenant_id = 'b0000000-0000-4000-8000-000000000001'$q$),
+    0::bigint, 'planning_settings: RLS filters tenant B rows');
+  perform tests.assert_privilege_denied($q$delete from tms.planning_settings$q$, 'planning_settings: no DELETE grant');
+  perform tests.assert_rls_violation($q$insert into tms.planning_default_steps (tenant_id, position, kind, name_ar, name_en) values ('b0000000-0000-4000-8000-000000000001', 5, 'person', 'س', 'S')$q$,
+    'planning_default_steps: insert with tenant B tenant_id is rejected by RLS');
+  perform tests.assert_eq(tests.rows_affected($q$delete from tms.planning_default_steps where tenant_id = 'b0000000-0000-4000-8000-000000000001'$q$),
+    0::bigint, 'planning_default_steps: RLS filters tenant B rows on delete');
+  -- Within its own organization the Organization Admin (no tms.plan_cycle.manage) changes nothing either.
+  perform tests.assert_eq(tests.rows_affected($q$update tms.plan_cycles set name_en = 'x'$q$), 0::bigint,
+    'plan_cycles: no update without tms.plan_cycle.manage');
+  perform tests.assert_eq(tests.rows_affected($q$delete from tms.plan_cycle_steps$q$), 0::bigint,
+    'plan_cycle_steps: no delete without tms.plan_cycle.manage');
+end $$;
+rollback;
+
+-- Needs forms (T-M3-10): cross-tenant inserts, moves and foreign keys. The tenant-A actor is uA (Organization
+-- Admin, no needs-form permission): RLS and foreign keys answer before or regardless of the designer rule.
+begin;
+set local role authenticated;
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
+  'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1'));
+do $$
+begin
+  perform tests.assert_eq((select count(*) from tms.needs_forms where id = 'b7000000-0000-4000-8000-000000000001'),
+    0::bigint, 'needs_forms: tenant B form invisible by id');
+  perform tests.assert_rls_violation($q$insert into tms.needs_forms (tenant_id, name_en, name_ar) values ('b0000000-0000-4000-8000-000000000001', 'Evil', 'دخيل')$q$,
+    'needs_forms: insert with tenant B tenant_id is rejected by RLS');
+  perform tests.assert_privilege_denied($q$update tms.needs_forms set tenant_id = 'b0000000-0000-4000-8000-000000000001'$q$,
+    'needs_forms: tenant_id is not updatable');
+  perform tests.assert_eq(tests.rows_affected($q$update tms.needs_forms set name_en = 'x' where id = 'b7000000-0000-4000-8000-000000000001'$q$),
+    0::bigint, 'needs_forms: RLS filters tenant B rows');
+  perform tests.assert_eq(tests.rows_affected($q$delete from tms.needs_forms where id = 'b7000000-0000-4000-8000-000000000001'$q$),
+    0::bigint, 'needs_forms: tenant B form cannot be deleted');
+
+  perform tests.assert_rls_violation($q$insert into tms.needs_form_sections (tenant_id, form_id, name_en, name_ar) values ('b0000000-0000-4000-8000-000000000001', 'b7000000-0000-4000-8000-000000000001', 'x', 'س')$q$,
+    'needs_form_sections: insert with tenant B tenant_id is rejected by RLS');
+  perform tests.assert_fails($q$insert into tms.needs_form_sections (form_id, name_en, name_ar) values ('b7000000-0000-4000-8000-000000000001', 'x', 'س')$q$,
+    array['23503', '42501'], 'needs_form_sections: composite FK (or the designer rule) rejects a tenant B form');
+  perform tests.assert_privilege_denied($q$update tms.needs_form_sections set form_id = 'b7000000-0000-4000-8000-000000000001'$q$,
+    'needs_form_sections: the form is not updatable');
+  perform tests.assert_eq(tests.rows_affected($q$update tms.needs_form_sections set name_en = 'x' where tenant_id = 'b0000000-0000-4000-8000-000000000001'$q$),
+    0::bigint, 'needs_form_sections: RLS filters tenant B rows');
+
+  perform tests.assert_rls_violation($q$insert into tms.needs_form_fields (tenant_id, form_id, section_id, field_type, label_en, label_ar) values ('b0000000-0000-4000-8000-000000000001', 'b7000000-0000-4000-8000-000000000001', 'b7100000-0000-4000-8000-000000000001', 'text', 'x', 'س')$q$,
+    'needs_form_fields: insert with tenant B tenant_id is rejected by RLS');
+  perform tests.assert_fails($q$insert into tms.needs_form_fields (form_id, section_id, field_type, label_en, label_ar) values ('b7000000-0000-4000-8000-000000000001', 'b7100000-0000-4000-8000-000000000001', 'text', 'x', 'س')$q$,
+    array['23503', '42501'], 'needs_form_fields: composite FK (or the designer rule) rejects a tenant B section');
+  perform tests.assert_fails($q$insert into tms.needs_form_fields (form_id, section_id, field_type, label_en, label_ar) values ('a7000000-0000-4000-8000-000000000001', 'b7100000-0000-4000-8000-000000000001', 'text', 'x', 'س')$q$,
+    array['23503', '42501'], 'needs_form_fields: a tenant A form with a tenant B section is rejected');
+  perform tests.assert_privilege_denied($q$update tms.needs_form_fields set section_id = 'b7100000-0000-4000-8000-000000000001'$q$,
+    'needs_form_fields: the section is not updatable');
+  perform tests.assert_eq(tests.rows_affected($q$delete from tms.needs_form_fields where tenant_id = 'b0000000-0000-4000-8000-000000000001'$q$),
+    0::bigint, 'needs_form_fields: RLS filters tenant B rows');
+  perform tests.assert(not private.lock_needs_form('b7000000-0000-4000-8000-000000000001'),
+    'lock_needs_form: a tenant B form is unknown to tenant A');
+  perform tests.assert(private.duplicate_needs_form('b7000000-0000-4000-8000-000000000001', 'Copy', 'نسخة') is null,
+    'duplicate_needs_form: a tenant B form is unknown to tenant A');
 end $$;
 rollback;
 

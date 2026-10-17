@@ -23,6 +23,8 @@ export {
   requestPasswordResetMail,
 } from './account-mail';
 export { DomainError, isDomainError } from './domain-error';
+/** SQLSTATE and constraint of a database error, for module services that map expected refusals. */
+export { pgError } from './pg-error';
 export {
   type DownloadGrant,
   type DownloadGrantRequest,
@@ -234,9 +236,61 @@ export {
   type TenantDateDisplay,
   changedProfileFields,
   getOrganizationProfile,
+  getTenantCurrencyCode,
   updateOrganizationProfile,
 } from './tenant-settings';
 export { type OrgUnitOption, type OrgUnitOptions, listOrgUnitOptions } from './org';
+export {
+  type LevelNames,
+  MAX_STRUCTURE_LEVELS,
+  type PersonOption,
+  type StructureLevelLabel,
+  type StructureLevelRow,
+  type StructureOutcome,
+  type StructureRefusal,
+  type StructureUnitOption,
+  type StructureUnitRow,
+  type UnitInput,
+  type UnitStatus,
+  type UnitUsage,
+  addStructureLevel,
+  createStructureUnit,
+  deleteStructureUnit,
+  listActivePersonOptions,
+  listStructureLevelLabels,
+  listStructureLevels,
+  listStructureUnitOptions,
+  listStructureUnits,
+  removeStructureLevel,
+  renameStructureLevel,
+  setStructureUnitStatus,
+  structureRefusalOf,
+  updateStructureUnit,
+} from './structure';
+export {
+  type BranchInput,
+  type BranchOutcome,
+  type BranchRefusal,
+  type BranchRow,
+  type BranchStatus,
+  type BranchUsage,
+  branchRefusalOf,
+  createBranch,
+  deleteBranch,
+  listBranches,
+  setBranchStatus,
+  updateBranch,
+} from './branches';
+export {
+  type MemberOption,
+  type OrgBranch,
+  type OrgDepartment,
+  type OrgStructure,
+  MEMBER_SEARCH,
+  getMemberOptionsByIds,
+  listOrgStructure,
+  searchMemberOptions,
+} from './org-directory';
 export { EVENT_TYPE_PATTERN, type EmittedEvent, emitEvent } from './events';
 export { type PersonalDetails, getPersonalDetails, updatePersonalDetails } from './my-profile';
 export {
@@ -289,6 +343,7 @@ export {
   MAX_PAGE_SIZE,
   type UserRole,
   type RoleNames,
+  type RoleScopeUnit,
   countMembersByRole,
   getUserProfile,
   listUsers,

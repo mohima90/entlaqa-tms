@@ -1,6 +1,6 @@
 import 'server-only';
 import { sql } from 'drizzle-orm';
-import { customRolesExist } from './custom-roles-present';
+import { customRolesExist, roleScopeUnitsExist } from './custom-roles-present';
 import type { UserTx } from './with-user-tx';
 
 export { customRolesExist };
@@ -10,6 +10,11 @@ export interface MemberRole {
   readonly roleCode: string;
   readonly validFrom: Date | null;
   readonly validUntil: Date | null;
+  /**
+   * The unit picked for a custom role limited to «A department» (EP-ORG, T-M3-09) — only while that unit is
+   * live and ACTIVE (a deactivated or deleted unit grants nothing until a new one is picked); else null.
+   */
+  readonly scopeUnitId: string | null;
 }
 
 /** A custom role the member holds, as stored now (EP-ROLES): its data scope and permission codes. */
@@ -39,12 +44,20 @@ function toDate(value: Date | string | null): Date | null {
  * request). Only an ACTIVE membership counts; RLS restricts every read to the current tenant.
  */
 export async function loadMemberAuthorizationFacts(tx: UserTx): Promise<MemberAuthorizationFacts> {
+  // The unit of a department-limited custom role once that column exists (deploy window, EP-ORG): only a
+  // live, active unit counts.
+  const scopeUnit = (await roleScopeUnitsExist(tx))
+    ? sql`(select d.id from platform.departments d
+           where d.tenant_id = ra.tenant_id and d.id = ra.scope_unit_id
+             and d.deleted_at is null and d.status = 'active')`
+    : sql`null::uuid`;
   const roles = await tx.execute<{
     role_code: string;
     valid_from: Date | string | null;
     valid_until: Date | string | null;
+    scope_unit_id: string | null;
   }>(sql`
-    select ra.role_code, ra.valid_from, ra.valid_until
+    select ra.role_code, ra.valid_from, ra.valid_until, ${scopeUnit} as scope_unit_id
     from platform.role_assignments ra
     join platform.tenant_memberships m on m.tenant_id = ra.tenant_id and m.id = ra.membership_id
     where m.user_id = (select private.request_user_id())
@@ -86,6 +99,7 @@ export async function loadMemberAuthorizationFacts(tx: UserTx): Promise<MemberAu
       roleCode: r.role_code,
       validFrom: toDate(r.valid_from),
       validUntil: toDate(r.valid_until),
+      scopeUnitId: r.scope_unit_id ?? null,
     })),
     headedDepartmentIds: departments.map((d) => d.id),
     customRoles: custom.map((c) => ({

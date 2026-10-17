@@ -224,6 +224,10 @@ begin
   perform tests.assert((select count(*) = 1 from platform.tenant_settings s where s.tenant_id = f.tenant_id)
                        and (select count(*) = 1 from platform.security_policies p where p.tenant_id = f.tenant_id),
     'its default settings and security policy');
+  -- EP-ORG (FR-ADM-05): one structure level, Department / «إدارة», added by the tenant trigger as the console.
+  perform tests.assert_eq((select string_agg(l.ordinal || ':' || l.name_en || ':' || l.name_ar, ',' order by l.ordinal)
+                           from platform.structure_levels l where l.tenant_id = f.tenant_id),
+    '1:Department:إدارة', 'its default structure level');
   perform tests.assert_eq((select row(i.primary_role, i.additional_roles, i.status, i.send_count, i.invited_by, i.mail_held)::text
                            from platform.invitations i where i.id = f.invitation_id),
     row('tenant_admin', '{}'::text[], 'pending', 1::smallint, '00000000-0000-4000-8000-0000000000f1'::uuid, false)::text,

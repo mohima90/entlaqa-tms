@@ -1,10 +1,19 @@
-import { definePermissions } from '@jadarat/platform-rbac';
+import {
+  coursePermissions,
+  definePermissions,
+  tmsPlanningPermissions,
+  tmsRolePermissions,
+} from '@jadarat/platform-rbac';
 
 /**
  * TMS permission registry (ADR 0003 §3). Labels follow docs/design/content/glossary-ar-en.md.
- * The full set is derived from BRD Appendix B in M2.
+ * The permissions standard roles grant — course library (T-M3-03), planning cycles (EP-PLN) and needs forms
+ * (T-M3-10) — are declared in platform-rbac (course-permissions.ts, tms-planning-permissions.ts,
+ * tmsRolePermissions in platform-permissions.ts: the platform's roles and role builder name them, and a
+ * platform package never imports a module) and re-exported here, so the module has one registry. The session
+ * permissions are not held by any role yet.
  */
-export const tmsPermissions = definePermissions('tms', [
+const sessionPermissions = definePermissions('tms', [
   {
     code: 'tms.session.read',
     label: { ar: 'عرض الجلسات', en: 'View sessions' },
@@ -33,3 +42,11 @@ export const tmsPermissions = definePermissions('tms', [
     requiresAal2: false,
   },
 ]);
+
+/** Every TMS permission: courses, sessions (skeleton), planning cycles and needs forms. */
+export const tmsPermissions = Object.freeze({
+  ...coursePermissions,
+  ...sessionPermissions,
+  ...tmsPlanningPermissions,
+  ...tmsRolePermissions,
+});

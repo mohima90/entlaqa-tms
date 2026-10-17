@@ -52,19 +52,25 @@ begin
 end $$;
 rollback;
 
--- HR Manager (uAB): ordinary roles only, and only roles whose permissions the HR Manager holds.
+-- HR Manager (uAB): every ordinary role (who can give what, PO 17 Oct 2026 — migration 20261020200000),
+-- never a privileged one.
 begin;
 set local role authenticated;
--- A privileged custom role (audit.read is high-risk) and an ordinary one with a permission the HR Manager
--- does not hold (tenant.read), made by the Organization Admin.
+-- A privileged custom role (audit.read is high-risk), an ordinary one with a permission the HR Manager does
+-- not hold (tenant.read) and an ordinary training role the Organization Admin builds with permissions it
+-- does not hold itself (course library, planning cycles, needs forms).
 select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
   'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1'));
 insert into platform.custom_roles (id, name_en, name_ar, data_scope) values
   ('a6000000-0000-4000-8000-000000000002', 'Auditor', 'مدقق', 'organization'),
-  ('a6000000-0000-4000-8000-000000000003', 'Profile reader', 'قارئ الملف', 'organization');
+  ('a6000000-0000-4000-8000-000000000003', 'Profile reader', 'قارئ الملف', 'organization'),
+  ('a6000000-0000-4000-8000-000000000005', 'Training planner', 'مخطط التدريب', 'organization');
 insert into platform.custom_role_permissions (custom_role_id, permission_code) values
   ('a6000000-0000-4000-8000-000000000002', 'platform.audit.read'),
-  ('a6000000-0000-4000-8000-000000000003', 'platform.tenant.read');
+  ('a6000000-0000-4000-8000-000000000003', 'platform.tenant.read'),
+  ('a6000000-0000-4000-8000-000000000005', 'tms.course.manage'),
+  ('a6000000-0000-4000-8000-000000000005', 'tms.plan_cycle.manage'),
+  ('a6000000-0000-4000-8000-000000000005', 'tms.needs_form.manage');
 select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000ab', '10000000-0000-4000-8000-0000000000ab',
   'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000ab'));
 do $$
@@ -73,21 +79,40 @@ declare
   v_admin uuid := (select id from platform.tenant_memberships where user_id = '00000000-0000-4000-8000-0000000000a1' and tenant_id = 'a0000000-0000-4000-8000-000000000001');
   v_privileged text := (select code from platform.custom_roles where id = 'a6000000-0000-4000-8000-000000000002');
   v_not_held text := (select code from platform.custom_roles where id = 'a6000000-0000-4000-8000-000000000003');
+  v_training text := (select code from platform.custom_roles where id = 'a6000000-0000-4000-8000-000000000005');
 begin
   perform tests.assert_eq(tests.rows_affected(format($q$delete from platform.role_assignments where membership_id = %L$q$, v_inv)),
     1::bigint, 'HR: can remove an ordinary role');
+  -- Every ordinary standard role: the L&D Manager and the Training Coordinator hold course, planning and
+  -- needs-form permissions the HR Manager does not hold — no longer a reason to refuse (PO, 17 Oct 2026).
   perform tests.assert_eq(tests.rows_affected(format($q$insert into platform.role_assignments (membership_id, role_code) values (%L, 'training_coordinator')$q$, v_inv)),
-    1::bigint, 'HR: can give an ordinary standard role');
+    1::bigint, 'HR: can give the Training Coordinator role');
   perform tests.assert_eq(tests.rows_affected(format($q$delete from platform.role_assignments where membership_id = %L$q$, v_inv)),
     1::bigint, 'HR: can remove it again');
-  perform tests.assert_eq(tests.rows_affected(format($q$insert into platform.role_assignments (membership_id, role_code) values (%L, 'custom_a00000000001')$q$, v_inv)),
-    1::bigint, 'HR: can give an ordinary custom role whose permissions they hold');
+  perform tests.assert_eq(tests.rows_affected(format($q$insert into platform.role_assignments (membership_id, role_code) values (%L, 'training_manager')$q$, v_inv)),
+    1::bigint, 'HR: can give the L&D Manager role');
   delete from platform.role_assignments where membership_id = v_inv;
+  perform tests.assert_eq(tests.rows_affected(format($q$insert into platform.role_assignments (membership_id, role_code) values (%L, 'department_head')$q$, v_inv)),
+    1::bigint, 'HR: can give the Department Head role');
+  delete from platform.role_assignments where membership_id = v_inv;
+  perform tests.assert_eq(tests.rows_affected(format($q$insert into platform.role_assignments (membership_id, role_code) values (%L, 'learner')$q$, v_inv)),
+    1::bigint, 'HR: can give the Employee role');
+  delete from platform.role_assignments where membership_id = v_inv;
+  -- Every ordinary custom role, also with permissions the HR Manager does not hold.
+  perform tests.assert_eq(tests.rows_affected(format($q$insert into platform.role_assignments (membership_id, role_code) values (%L, 'custom_a00000000001')$q$, v_inv)),
+    1::bigint, 'HR: can give an ordinary custom role');
+  delete from platform.role_assignments where membership_id = v_inv;
+  perform tests.assert_eq(tests.rows_affected(format($q$insert into platform.role_assignments (membership_id, role_code) values (%L, %L)$q$, v_inv, v_not_held)),
+    1::bigint, 'HR: can give an ordinary custom role with a permission they do not hold (tenant.read)');
+  delete from platform.role_assignments where membership_id = v_inv;
+  perform tests.assert(not private.role_is_privileged('a0000000-0000-4000-8000-000000000001', v_training),
+    'a training role (course, planning, needs-form management) is ordinary');
+  perform tests.assert_eq(tests.rows_affected(format($q$insert into platform.role_assignments (membership_id, role_code) values (%L, %L)$q$, v_inv, v_training)),
+    1::bigint, 'HR: can give an ordinary custom training role');
+  delete from platform.role_assignments where membership_id = v_inv;
+  -- Never a privileged role.
   perform tests.assert_fails_like(format($q$insert into platform.role_assignments (membership_id, role_code) values (%L, %L)$q$, v_inv, v_privileged),
     'only an Organization Admin can give or remove the role custom_%', 'HR: cannot give a privileged custom role (high-risk permission)');
-  perform tests.assert_fails_like(format($q$insert into platform.role_assignments (membership_id, role_code) values (%L, %L)$q$, v_inv, v_not_held),
-    'only an Organization Admin or an HR Manager can give or remove roles',
-    'HR: cannot give a role with a permission they do not hold (EP-ROLES)');
   perform tests.assert_fails_like(format($q$insert into platform.role_assignments (membership_id, role_code) values (%L, 'tenant_admin')$q$, v_inv),
     'only an Organization Admin can give or remove the role tenant_admin', 'HR: cannot create an Organization Admin');
   perform tests.assert_fails_like(format($q$insert into platform.role_assignments (membership_id, role_code) values (%L, 'hr_manager')$q$, v_inv),
@@ -102,8 +127,8 @@ begin
 end $$;
 rollback;
 
--- A member whose custom role gives role.assign (with people reading, organization-wide) gives ordinary roles
--- whose permissions they hold — by permission, not by role code (EP-ROLES).
+-- A member whose custom role gives role.assign (with people reading, organization-wide) gives every ordinary
+-- role, like the HR Manager — by permission, not by role code (EP-ROLES; who can give what, PO 17 Oct 2026).
 begin;
 set local role authenticated;
 select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
@@ -128,13 +153,15 @@ begin
   perform tests.assert_eq(private.member_permissions('a0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-0000000000ab'),
     array['platform.role.assign', 'platform.user.read'], 'custom role: its permissions count organization-wide (scope: organization)');
   perform tests.assert_eq(tests.rows_affected(format($q$delete from platform.role_assignments where membership_id = %L$q$, v_inv)),
-    1::bigint, 'custom role.assign: can remove an Employee role (permissions held)');
+    1::bigint, 'custom role.assign: can remove an Employee role');
   perform tests.assert_eq(tests.rows_affected(format($q$insert into platform.role_assignments (membership_id, role_code) values (%L, 'learner')$q$, v_inv)),
     1::bigint, 'custom role.assign: can give the Employee role back');
   delete from platform.role_assignments where membership_id = v_inv;
-  perform tests.assert_fails_like(format($q$insert into platform.role_assignments (membership_id, role_code) values (%L, 'training_coordinator')$q$, v_inv),
-    'only an Organization Admin or an HR Manager can give or remove roles',
-    'custom role.assign: cannot give a role with permissions they do not hold (role.read, org.read)');
+  perform tests.assert_eq(tests.rows_affected(format($q$insert into platform.role_assignments (membership_id, role_code) values (%L, 'training_coordinator')$q$, v_inv)),
+    1::bigint, 'custom role.assign: gives an ordinary role with permissions it does not hold (Training Coordinator)');
+  delete from platform.role_assignments where membership_id = v_inv;
+  perform tests.assert_fails_like(format($q$insert into platform.role_assignments (membership_id, role_code) values (%L, 'hr_manager')$q$, v_inv),
+    'only an Organization Admin can give or remove the role hr_manager', 'custom role.assign: never a privileged role');
 end $$;
 rollback;
 
@@ -239,8 +266,9 @@ do $$
 begin
   perform tests.assert_eq(
     (select array_agg(tgname::text order by tgname::text) from pg_trigger where tgrelid = 'platform.role_assignments'::regclass and not tgisinternal),
-    array['role_assignments_guard', 'role_assignments_keep_admin', 'role_assignments_separation_of_duties',
-          'role_assignments_stamp_row'], 'role_assignments: triggers');
+    -- role_assignments_scope_unit: the unit of a department-limited custom role (EP-ORG, 20261020090400).
+    array['role_assignments_guard', 'role_assignments_keep_admin', 'role_assignments_scope_unit',
+          'role_assignments_separation_of_duties', 'role_assignments_stamp_row'], 'role_assignments: triggers');
   perform tests.assert((select prosrc ilike '%pg_advisory_xact_lock%' from pg_proc where oid = 'private.lock_tenant_roles(uuid)'::regprocedure),
     'role changes are serialised per tenant');
 end $$;

@@ -18,6 +18,8 @@ export interface BuilderPermission {
   readonly label: string;
   readonly description: string;
   readonly highRisk: boolean;
+  /** Holding it makes the role privileged: high-risk, or managing users or roles (security review H1). */
+  readonly makesPrivileged: boolean;
   /** Administrative: only for a role that sees the whole organization. */
   readonly organizationOnly: boolean;
   /** The Organization Admin holds it organization-wide (only those can be given). */
@@ -128,13 +130,16 @@ export function applyStart(
   };
 }
 
-/** A role with a high-risk permission is privileged: only the Organization Admin gives it. */
+/**
+ * A role with a high-risk permission or one that manages users or roles is privileged: only the
+ * Organization Admin gives it (platform-rbac customRoleIsPrivileged, database private.role_is_privileged).
+ */
 export function builderIsPrivileged(
   groups: readonly BuilderGroup[],
   permissions: readonly string[],
 ): boolean {
   const chosen = new Set(permissions);
-  return all(groups).some((p) => p.highRisk && chosen.has(p.code));
+  return all(groups).some((p) => p.makesPrivileged && chosen.has(p.code));
 }
 
 /** Text key (namespace `roleBuilder.fieldErrors`) of a field error from the server (codes only). */

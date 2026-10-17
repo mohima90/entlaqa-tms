@@ -1952,7 +1952,8 @@
     "notHeld": "You don't hold this permission, so you can't give it.",
     "needsOrganization": "Only for a role that sees the whole organization.",
     "countLabel": "{checked} of {total} selected",
-    "privilegedNotice": "This role has a high-risk permission: it is privileged, so only the Organization Admin can give it.",
+    "privilegedNotice": "This role is privileged — it has a high-risk permission or manages users or roles — so only the Organization Admin can give it.",
+    "holders": "{count, plural, =0 {Nobody holds this role yet.} one {{count, number, integer} person holds this role; a change applies at their next page.} other {{count, number, integer} people hold this role; a change applies at their next page.}}",
     "dataScope": "Data this role sees",
     "scopes": {
       "own": {

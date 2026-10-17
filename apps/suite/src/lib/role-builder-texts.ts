@@ -5,6 +5,7 @@ import {
   PERMISSION_GROUP_NAMES,
   ROLE_TEMPLATES,
   SYSTEM_ROLES,
+  permissionMakesPrivileged,
   roleStartValues,
 } from '@jadarat/platform-rbac';
 import { getTranslations } from 'next-intl/server';
@@ -82,6 +83,7 @@ export function roleBuilderGroups(locale: 'ar' | 'en', held: readonly string[]):
       label: entry.permission.label[locale],
       description: entry.permission.description[locale],
       highRisk: entry.permission.risk === 'high',
+      makesPrivileged: permissionMakesPrivileged(entry.permission.code),
       organizationOnly: entry.use === 'organization_only',
       held: heldSet.has(entry.permission.code),
     })),

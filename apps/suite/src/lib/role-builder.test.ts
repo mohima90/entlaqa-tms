@@ -19,6 +19,7 @@ const permission = (
   label: code,
   description: '',
   highRisk: false,
+  makesPrivileged: false,
   organizationOnly: false,
   held: true,
   ...extra,
@@ -30,7 +31,7 @@ const groups: BuilderGroup[] = [
     title: 'People',
     permissions: [
       permission('platform.user.read'),
-      permission('platform.user.invite', { organizationOnly: true }),
+      permission('platform.user.invite', { organizationOnly: true, makesPrivileged: true }),
     ],
   },
   {
@@ -44,7 +45,13 @@ const groups: BuilderGroup[] = [
   {
     key: 'audit',
     title: 'Audit',
-    permissions: [permission('platform.audit.read', { organizationOnly: true, highRisk: true })],
+    permissions: [
+      permission('platform.audit.read', {
+        organizationOnly: true,
+        highRisk: true,
+        makesPrivileged: true,
+      }),
+    ],
   },
 ];
 
@@ -155,8 +162,9 @@ describe('applyStart', () => {
 });
 
 describe('builderIsPrivileged', () => {
-  it('is true with any high-risk permission', () => {
+  it('is true with any high-risk or user-management permission', () => {
     expect(builderIsPrivileged(groups, ['platform.user.read'])).toBe(false);
+    expect(builderIsPrivileged(groups, ['platform.user.read', 'platform.user.invite'])).toBe(true);
     expect(builderIsPrivileged(groups, ['platform.user.read', 'platform.audit.read'])).toBe(true);
   });
 });

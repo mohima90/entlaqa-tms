@@ -101,7 +101,7 @@ export function ChecklistAccordion({
                   name="chevron-down"
                   className="text-text-muted transition-transform group-open:rotate-180"
                 />
-                {group.title}
+                <span id={`${idPrefix}-group-${group.key}-title`}>{group.title}</span>
               </span>
               <Badge tone={checked > 0 ? 'info' : 'neutral'}>
                 <span aria-hidden="true">
@@ -110,7 +110,11 @@ export function ChecklistAccordion({
                 <span className="sr-only">{countText(countLabel, checked, total)}</span>
               </Badge>
             </summary>
-            <ul className="m-0 flex list-none flex-col gap-1 px-2 pb-3 pt-1">
+            <ul
+              role="group"
+              aria-labelledby={`${idPrefix}-group-${group.key}-title`}
+              className="m-0 flex list-none flex-col gap-1 px-2 pb-3 pt-1"
+            >
               {group.items.map((item) => {
                 const id = `${idPrefix}-${item.value.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
                 const describedBy = [

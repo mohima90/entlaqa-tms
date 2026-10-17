@@ -46,6 +46,8 @@ export interface RoleBuilderFormProps {
   readonly savedHref: string;
   /** The page's language (numbers in the count badges). */
   readonly locale: 'ar' | 'en';
+  /** Editing: «N people hold this role» (formatted on the server), shown with the privileged notice. */
+  readonly holdersText?: string;
 }
 
 type FieldErrors = Partial<Record<keyof BuilderValues, string>>;
@@ -55,7 +57,9 @@ type FieldErrors = Partial<Record<keyof BuilderValues, string>>;
  * permissions accordion): names in English and Arabic, description, «start from» (blank, a standard role
  * or a template), the permissions grouped by module with a «ticked / total» badge and «High risk» badges,
  * and the data the role sees. Only permissions the Organization Admin holds can be ticked; administrative
- * permissions need the whole organization. A role with a high-risk permission is privileged.
+ * permissions need the whole organization. A role with a high-risk permission, or one that manages users or
+ * roles, is privileged. Notices that appear while editing are announced through one live region that stays
+ * mounted (WCAG 4.1.3).
  */
 export function RoleBuilderForm(props: RoleBuilderFormProps) {
   const { groups, texts } = props;
@@ -328,14 +332,30 @@ export function RoleBuilderForm(props: RoleBuilderFormProps) {
       <Card title={text('permissions')}>
         <div className="flex flex-col gap-3">
           <p className="m-0 text-sm text-text-muted">{text('permissionsHint')}</p>
+          {/* One polite live region, always mounted: what changed is announced once (WCAG 4.1.3). */}
+          <p
+            className="sr-only"
+            role="status"
+            aria-live="polite"
+            data-testid="role-builder-announcer"
+          >
+            {[cleared ? text('scopeCleared') : '', privileged ? text('privilegedNotice') : '']
+              .filter(Boolean)
+              .join(' ')}
+          </p>
           {cleared ? (
-            <Alert tone="info" data-testid="role-scope-cleared">
+            <Alert tone="info" role="note" data-testid="role-scope-cleared">
               {text('scopeCleared')}
             </Alert>
           ) : null}
           {privileged ? (
-            <Alert tone="warning" data-testid="role-privileged-notice">
+            <Alert tone="warning" role="note" data-testid="role-privileged-notice">
               {text('privilegedNotice')}
+              {props.holdersText ? (
+                <span className="mt-1 block font-medium" data-testid="role-holders">
+                  {props.holdersText}
+                </span>
+              ) : null}
             </Alert>
           ) : null}
           <ChecklistAccordion

@@ -365,6 +365,7 @@ async function RoleEdit({
         rolesHref={rolesHref}
         savedHref={`${rolesHref}?saved=1`}
         locale={locale}
+        holdersText={builder('holders', { count: custom.memberCount })}
       />
       <Card title={builder('delete')} data-testid="role-delete-card">
         <div className="flex flex-col gap-3">

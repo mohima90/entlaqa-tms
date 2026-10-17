@@ -474,4 +474,91 @@ test.describe('users pages', () => {
     await expect(page).toHaveURL(/\/en\/suite\/admin\/roles\?deleted=1$/);
     await expect(page.getByTestId('roles-table')).not.toContainText(name);
   });
+  test('Arabic: the Organization Admin builds a privileged custom role from a template and deletes it', async ({
+    page,
+  }) => {
+    const name = `مدقق الجودة ${Date.now()}`;
+    await signIn(page);
+    await page.goto('/ar/suite/admin/roles/new');
+    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('إنشاء دور');
+    const builder = page.getByTestId('role-builder');
+    await builder.getByRole('combobox', { name: 'البدء من' }).selectOption({ label: 'مدقق' });
+    await expect(builder.getByRole('textbox', { name: /الاسم بالعربية/ })).toHaveValue('مدقق');
+    await builder.getByRole('textbox', { name: /الاسم بالعربية/ }).fill(name);
+    await builder
+      .getByRole('textbox', { name: /الاسم بالإنجليزية/ })
+      .fill(`Quality auditor ${Date.now()}`);
+    await expect(builder.getByTestId('role-privileged-notice')).toContainText('هذا الدور مميز');
+    await expect(builder.getByTestId('role-builder-announcer')).toContainText('هذا الدور مميز');
+    await expectNoSeriousA11yViolations(page);
+    await builder.getByTestId('role-save').click();
+    await expect(page).toHaveURL(/\/ar\/suite\/admin\/roles\?saved=1$/);
+    await expect(page.getByTestId('role-saved')).toHaveText('حُفظ الدور.');
+    const row = page.getByTestId('roles-table').getByRole('row').filter({ hasText: name });
+    await expect(row).toContainText('مخصص');
+    await expect(row).toContainText('مميز');
+    await row.getByRole('link', { name, exact: true }).click();
+    // Editing: who holds the role is said with the privileged notice (review L10).
+    await expect(page.getByTestId('role-holders')).toHaveText('لا يحمل أحد هذا الدور بعد.');
+    await page.getByTestId('role-delete').click();
+    await page.getByTestId('role-delete-confirm').click();
+    await expect(page).toHaveURL(/\/ar\/suite\/admin\/roles\?deleted=1$/);
+    await expect(page.getByTestId('role-deleted')).toHaveText('حُذف الدور.');
+    await expect(page.getByTestId('roles-table')).not.toContainText(name);
+  });
+
+  test('an HR Manager is refused a privileged custom role (offered disabled; the server refuses too)', async ({
+    page,
+    browser,
+  }) => {
+    test.skip(!managerEmail || !managerPassword, 'SIGNED_IN_E2E_MANAGER_* not set');
+    const name = `People desk ${Date.now()}`;
+    await signIn(page);
+    // A privileged custom role (it invites people: user management) …
+    await page.goto('/en/suite/admin/roles/new');
+    const builder = page.getByTestId('role-builder');
+    await builder.getByRole('textbox', { name: /Name in English/ }).fill(name);
+    await builder
+      .getByRole('textbox', { name: /Name in Arabic/ })
+      .fill(`مكتب الأشخاص ${Date.now()}`);
+    await builder.getByRole('checkbox', { name: 'View users' }).check();
+    await builder.getByRole('checkbox', { name: 'Invite users' }).check();
+    await expect(builder.getByTestId('role-privileged-notice')).toBeVisible();
+    await builder.getByTestId('role-save').click();
+    await expect(page.getByTestId('role-saved')).toBeVisible();
+    // … and Mona made an HR Manager for this test.
+    const setMonaRole = async (label: string) => {
+      await page.goto('/en/suite/admin/users');
+      const mona = page.getByTestId('users-table').getByRole('row').filter({
+        hasText: 'Mona Saeed Alzahrani',
+      });
+      await mona.getByRole('button', { name: 'Actions for Mona Saeed Alzahrani' }).click();
+      await page.getByTestId('member-menu-edit-role').click();
+      const dialog = page.getByTestId('edit-role-dialog');
+      await dialog.getByRole('combobox', { name: /^Role/ }).selectOption({ label });
+      await dialog.getByRole('button', { name: 'Save role' }).click();
+      await expect(dialog).toBeHidden();
+    };
+    await setMonaRole('HR Manager (privileged)');
+    try {
+      const context = await browser.newContext();
+      const hr = await context.newPage();
+      await signIn(hr, { email: managerEmail, password: managerPassword });
+      await hr.goto(`/en/suite/admin/users/${SARA}/roles`);
+      const option = hr.getByTestId('edit-role-form').locator('option', { hasText: name });
+      await expect(option).toBeDisabled();
+      await expect(option).toContainText('privileged');
+      await expect(hr.getByTestId('role-locked-hint')).toBeVisible();
+      await expectNoSeriousA11yViolations(hr);
+      await context.close();
+    } finally {
+      await setMonaRole('Line Manager');
+      await page.goto('/en/suite/admin/roles');
+      await page.getByTestId('roles-table').getByRole('link', { name, exact: true }).click();
+      await page.getByTestId('role-delete').click();
+      await page.getByTestId('role-delete-confirm').click();
+      await expect(page).toHaveURL(/\/en\/suite\/admin\/roles\?deleted=1$/);
+    }
+  });
 });

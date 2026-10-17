@@ -349,6 +349,35 @@ insert into platform.custom_role_permissions (tenant_id, custom_role_id, permiss
   ('a0000000-0000-4000-8000-000000000001', 'a6000000-0000-4000-8000-000000000001', 'platform.org.read'),
   ('b0000000-0000-4000-8000-000000000001', 'b6000000-0000-4000-8000-000000000001', 'platform.user.read');
 
+-- Planning (EP-PLN, T-M3-04; platform operation): settings, a default chain and one DRAFT cycle per tenant A
+-- and B, with scope, departments (budget envelopes) and approval steps. More states: 99_planning_*.sql.
+--   A cycle ae…01: scope TD (→ departments TD, TD-PRG), steps Department Heads → Finance (person uAB)
+--   B cycle be…01: scope branch HQ (→ department TD of B), steps Department Heads → Finance (person uB)
+insert into tms.planning_settings (tenant_id, reminder_days) values
+  ('a0000000-0000-4000-8000-000000000001', '{7,2}'),
+  ('b0000000-0000-4000-8000-000000000001', '{10}');
+insert into tms.planning_default_steps (tenant_id, position, kind, name_ar, name_en, approver_person_id) values
+  ('a0000000-0000-4000-8000-000000000001', 1, 'department_heads', 'رؤساء الأقسام', 'Department Heads', null),
+  ('a0000000-0000-4000-8000-000000000001', 2, 'person', 'اعتماد المالية', 'Finance approval', null),
+  ('b0000000-0000-4000-8000-000000000001', 1, 'department_heads', 'رؤساء الأقسام', 'Department Heads', null);
+insert into tms.plan_cycles (id, tenant_id, name_ar, name_en, period_start_on, period_end_on, deadline_on) values
+  ('ae000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'خطة ٢٠٢٧', 'Plan 2027',
+   current_date + 60, current_date + 424, current_date + 30),
+  ('be000000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000001', 'خطة ب', 'Plan B',
+   current_date + 60, current_date + 424, current_date + 30);
+insert into tms.plan_cycle_scope (tenant_id, cycle_id, department_id, branch_id) values
+  ('a0000000-0000-4000-8000-000000000001', 'ae000000-0000-4000-8000-000000000001', 'a3000000-0000-4000-8000-000000000001', null),
+  ('b0000000-0000-4000-8000-000000000001', 'be000000-0000-4000-8000-000000000001', null, 'b2000000-0000-4000-8000-000000000001');
+insert into tms.plan_cycle_departments (tenant_id, cycle_id, department_id, budget_amount) values
+  ('a0000000-0000-4000-8000-000000000001', 'ae000000-0000-4000-8000-000000000001', 'a3000000-0000-4000-8000-000000000001', 50000),
+  ('a0000000-0000-4000-8000-000000000001', 'ae000000-0000-4000-8000-000000000001', 'a3000000-0000-4000-8000-000000000002', null),
+  ('b0000000-0000-4000-8000-000000000001', 'be000000-0000-4000-8000-000000000001', 'b3000000-0000-4000-8000-000000000001', 1000);
+insert into tms.plan_cycle_steps (tenant_id, cycle_id, position, kind, name_ar, name_en, approver_person_id) values
+  ('a0000000-0000-4000-8000-000000000001', 'ae000000-0000-4000-8000-000000000001', 1, 'department_heads', 'رؤساء الأقسام', 'Department Heads', null),
+  ('a0000000-0000-4000-8000-000000000001', 'ae000000-0000-4000-8000-000000000001', 2, 'person', 'اعتماد المالية', 'Finance approval', 'a1000000-0000-4000-8000-0000000000ab'),
+  ('b0000000-0000-4000-8000-000000000001', 'be000000-0000-4000-8000-000000000001', 1, 'department_heads', 'رؤساء الأقسام', 'Department Heads', null),
+  ('b0000000-0000-4000-8000-000000000001', 'be000000-0000-4000-8000-000000000001', 2, 'person', 'اعتماد المالية', 'Finance approval', 'b1000000-0000-4000-8000-0000000000b1');
+
 -- A pending event of tenant B (platform operation), for 33_event_tables_app_queue.sql.
 insert into platform.event_outbox (tenant_id, type)
   values ('b0000000-0000-4000-8000-000000000001', 'com.entlaqa.platform.test.fixture');

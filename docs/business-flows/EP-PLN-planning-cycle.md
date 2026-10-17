@@ -4,7 +4,7 @@
 |---|---|
 | **Epic** | EP-PLN (BACKLOG T-M3-01; blocks T-M3-02 … T-M3-08) |
 | **Requirements** | FR-ADM-04, 05 (structure, prerequisite) · FR-CAT-01, 10 (course library; FR-CAT-02 cost model follows in M4) · FR-PLN-02 (cycle) · FR-PLN-03 + FR-MGR-05 (Department Head needs) · FR-PLN-05, 06 (consolidation, budget check) · FR-PLN-08 + FR-WFL-01/02 R1 part (plan approval) · FR-PLN-09 (hand-over) · BR-PLN-1…3 · BRD v3.1 §5.4 steps 2–8 |
-| **Status** | **Agreed (PO, 17 Oct 2026)** — all 18 open questions approved as proposed ("approve all"), including the two scope questions (11: built-in parallel department-head step; 14: plan vs. actual stays R2). **Changed after agreement (PO, 17 Oct 2026): needs first, courses after the plan** — department heads describe needs as training topics (no course library needed first); L&D turns the topics into plan lines with estimated sessions and cost; **courses are created from the approved plan**, then sessions (steps A2, C7, D11–12, F21, BR-PLN-e, Q5, Q10) |
+| **Status** | **Agreed (PO, 17 Oct 2026)** — all 18 open questions approved as proposed ("approve all"), including the two scope questions (11: built-in parallel department-head step; 14: plan vs. actual stays R2). **Changed after agreement (PO, 17 Oct 2026): needs first, courses after the plan** — department heads describe needs as training topics (no course library needed first); L&D turns the topics into plan lines with estimated sessions and cost; **courses are created from the approved plan**, then sessions (steps A2, C7, D11–12, F21, BR-PLN-e, Q5, Q10). **Changed after agreement (PO, 17 Oct 2026): the needs form is customizable per organization** (§12) |
 | **Copied from Kawadir** | Kawadir has no planning module. The **approval screens** follow Kawadir's Requisitions page: summary cards (total / pending / approved / rejected), a «Review pending requests» banner for the approver, status tabs with counts, a details dialog listing the approvers in order with their status, **Approve / Reject** with a comment. Lists = table inside a card; short forms = dialogs; long forms (cycle set-up, needs form) = full pages (`docs/design/kawadir-alignment.md`) |
 | **Background** | Roles: [`EP-ROLES`](EP-ROLES-roles-and-custom-roles.md) and [`docs/delivery/roles/README.md`](../delivery/roles/README.md) §3 steps 3–9 · Market practice: Training Orchestra, Cornerstone, SAP run a time-boxed manager needs campaign → consolidation → plan approval → draft sessions (`docs/research/TMS_Market_Comparison_vs_BRD.md` §4.1) |
 
@@ -35,12 +35,13 @@ Once a year the L&D Manager asks every Department Head what training their team 
    - *Scope*: departments and/or branches in scope → the screen lists the forms that will be sent (one per department in scope) and warns about **departments without a head**.
    - *Budget*: optional **budget envelope per department**, in the organization's currency.
    - *Approval chain*: copied from the default; the L&D Manager names the Finance and management approvers and may add, remove or reorder steps.
+   - *Needs form*: the form department heads fill in (the default form preselected; §12).
    - *Reminders*: days before the deadline.
 5. **Launch** → cycle **Open**; every Department Head in scope gets a notification and a **needs form** for each department they head. Before launch the cycle is a **Draft** and can be edited or deleted freely.
 
 **C. Department needs (FR-PLN-03, FR-MGR-05)**
 6. **Department Head → My department → Training needs** opens the form: their team (from the structure), the envelope (if any), the deadline, and the needs added so far.
-7. **Add need** (dialog): a **training topic** (title, description, category, preferred delivery type; estimated cost optional) **or**, if one already fits, an existing course (search, Arabic-aware); number of people **and/or** named employees from their team; priority (critical / high / medium / low); reason (free text + type: role requirement, compliance / mandatory, performance, development, new project); preferred quarter of the planning period. The form shows the running estimated cost against the envelope.
+7. **Add need** — the fields come from the cycle's **needs form**, designed by the organization (§12); the default form has: a **training topic** (title, description, category, preferred delivery type; estimated cost optional) **or**, if one already fits, an existing course (search, Arabic-aware); number of people **and/or** named employees from their team; priority (critical / high / medium / low); reason (free text + type: role requirement, compliance / mandatory, performance, development, new project); preferred quarter of the planning period. The form shows the running estimated cost against the envelope.
 8. **Save draft** any time; **Submit** before the deadline → status *Submitted*; the L&D Manager sees it. Until the deadline the head can **recall** the submission to change it. Reminders go to heads who have not submitted.
 9. **L&D Manager / Training Coordinator → Cycle progress**: one row per department — *Not started · Draft · Submitted · Returned · Late* — with **Send reminder**.
 
@@ -158,3 +159,12 @@ Once a year the L&D Manager asks every Department Head what training their team 
 | 16 | Currency | **The organization's default currency** (General settings); one currency in R1 (multi-currency FIN-12, R2) | Approved (17 Oct 2026) |
 | 17 | Hijri / Gregorian period | Period chosen with the organization's date display (Gregorian, Hijri or both); quarters follow the chosen period | Approved (17 Oct 2026) |
 | 18 | Hand-over timing (T-M3-08) | Build "generate draft sessions" **with scheduling at the start of M4**; M3 ends with the approved, locked plan | Approved (17 Oct 2026) |
+
+## 12. Customizable needs form (PO, 17 Oct 2026 — approved as proposed)
+- (1) **Kawadir's form builder copied** (application forms): a forms library (create, duplicate, set default, switch off; every organization starts with a ready default form) → **sections** (optionally repeatable, e.g. «add another need», with min/max entries) → **fields** of 12 types (short text, long text, number, date, email, phone, link, dropdown, multiple choice, single choice, yes/no, file) with English and Arabic labels, required/optional, shown/hidden, options in both languages, and one condition (show only when another field has a given answer).
+- (2) **Designed by the L&D Manager.**
+- (3) **Two fields always stay** (system fields): the training topic and the number of people or named employees (needed to merge needs and count sessions); the other default fields (priority, reason, preferred quarter, delivery type, estimated cost, description) can be renamed, hidden or made optional.
+- (4) **One form per cycle**, chosen at cycle set-up (default preselected), **locked at launch** (duplicate to change).
+- (5) Better than Kawadir: answers validated on the server against the form, Arabic options shown in Arabic, fields can be moved up and down; answers stored by field ID.
+
+Screens: **Planning → Needs forms** (library: cards with default / locked / off badges) and the **form builder** (collapsible sections, field dialog, condition picker, move up/down) — L&D Manager. The department head's needs page renders the cycle's form.

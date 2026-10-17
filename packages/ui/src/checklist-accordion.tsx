@@ -110,55 +110,53 @@ export function ChecklistAccordion({
                 <span className="sr-only">{countText(countLabel, checked, total)}</span>
               </Badge>
             </summary>
-            <ul
-              role="group"
-              aria-labelledby={`${idPrefix}-group-${group.key}-title`}
-              className="m-0 flex list-none flex-col gap-1 px-2 pb-3 pt-1"
-            >
-              {group.items.map((item) => {
-                const id = `${idPrefix}-${item.value.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
-                const describedBy = [
-                  item.description ? `${id}-description` : null,
-                  item.note ? `${id}-note` : null,
-                ]
-                  .filter(Boolean)
-                  .join(' ');
-                return (
-                  <li key={item.value}>
-                    <div className="flex items-start gap-3 rounded-lg p-2 hover:bg-surface-hover">
-                      <input
-                        id={id}
-                        type="checkbox"
-                        className="mt-0.5 size-5 shrink-0 accent-primary"
-                        checked={item.checked}
-                        disabled={readOnly || item.disabled}
-                        aria-describedby={describedBy || undefined}
-                        onChange={(event) => onToggle?.(item.value, event.target.checked)}
-                      />
-                      <div className="flex min-w-0 flex-col gap-0.5">
-                        <label
-                          htmlFor={id}
-                          className="flex flex-wrap items-center gap-2 text-sm font-medium"
-                        >
-                          {item.label}
-                          {item.badge}
-                        </label>
-                        {item.description ? (
-                          <p id={`${id}-description`} className="m-0 text-sm text-text-muted">
-                            {item.description}
-                          </p>
-                        ) : null}
-                        {item.note ? (
-                          <p id={`${id}-note`} className="m-0 text-sm text-text-muted">
-                            {item.note}
-                          </p>
-                        ) : null}
+            <div role="group" aria-labelledby={`${idPrefix}-group-${group.key}-title`}>
+              <ul className="m-0 flex list-none flex-col gap-1 px-2 pb-3 pt-1">
+                {group.items.map((item) => {
+                  const id = `${idPrefix}-${item.value.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+                  const describedBy = [
+                    item.description ? `${id}-description` : null,
+                    item.note ? `${id}-note` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' ');
+                  return (
+                    <li key={item.value}>
+                      <div className="flex items-start gap-3 rounded-lg p-2 hover:bg-surface-hover">
+                        <input
+                          id={id}
+                          type="checkbox"
+                          className="mt-0.5 size-5 shrink-0 accent-primary"
+                          checked={item.checked}
+                          disabled={readOnly || item.disabled}
+                          aria-describedby={describedBy || undefined}
+                          onChange={(event) => onToggle?.(item.value, event.target.checked)}
+                        />
+                        <div className="flex min-w-0 flex-col gap-0.5">
+                          <label
+                            htmlFor={id}
+                            className="flex flex-wrap items-center gap-2 text-sm font-medium"
+                          >
+                            {item.label}
+                            {item.badge}
+                          </label>
+                          {item.description ? (
+                            <p id={`${id}-description`} className="m-0 text-sm text-text-muted">
+                              {item.description}
+                            </p>
+                          ) : null}
+                          {item.note ? (
+                            <p id={`${id}-note`} className="m-0 text-sm text-text-muted">
+                              {item.note}
+                            </p>
+                          ) : null}
+                        </div>
                       </div>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
           </details>
         );
       })}

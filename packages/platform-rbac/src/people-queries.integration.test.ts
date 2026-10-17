@@ -125,6 +125,9 @@ describe.skipIf(!configured)('people reads through defineQuery against PostgreSQ
           select tenant_id, id, ${m.role}, true from platform.tenant_memberships where user_id = ${m.user}`);
       }
     }
+    // Two levels of structure (EP-ORG: a new organization starts with one).
+    await run(sql`insert into platform.structure_levels (tenant_id, ordinal, name_en, name_ar)
+      values (${tenant}, 2, 'Section', 'قسم')`);
     await run(sql`insert into platform.departments (id, tenant_id, code, name_ar, head_person_id) values
       (${dept.training}, ${tenant}, 'TRN', 'التدريب', ${people.head.person}),
       (${dept.finance}, ${tenant}, 'FIN', 'المالية', null)`);

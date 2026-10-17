@@ -79,7 +79,14 @@ begin
   perform tests.assert_fails($q$update platform.branches set parent_branch_id = 'a2000000-0000-4000-8000-000000000001' where code = 'JED'$q$,
     array['23514'], 'branches: cycles are rejected too');
 
-  -- OPS is level 1; add levels 2..10 under it → allowed.
+  -- OPS is level 1; add levels 2..10 under it → allowed (the organization defines ten levels, EP-ORG).
+  -- (Levels are the HR Manager's: uAB adds them, then uA carries on.)
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000ab', '10000000-0000-4000-8000-0000000000ab',
+    'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000ab'));
+  insert into platform.structure_levels (ordinal, name_en, name_ar)
+  select n, 'Level ' || n, 'المستوى ' || n from generate_series(3, 10) n order by n;
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
+    'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1'));
   for i in 2..10 loop
     insert into platform.departments (code, name_ar, parent_id) values ('L' || i, 'مستوى ' || i, v_parent)
       returning id into v_parent;
@@ -228,7 +235,10 @@ begin
   perform tests.assert_eq(
     (select array_agg(tgname::text order by tgname::text) from pg_trigger
      where tgrelid = 'platform.departments'::regclass and not tgisinternal),
-    array['departments_soft_delete', 'departments_stamp_row', 'departments_tree', 'departments_until_people_moved', 'departments_validate_refs'],
+    -- EP-ORG: the level (after the cycle and depth checks) and its cascade; the role-scope delete guard.
+    array['departments_soft_delete', 'departments_stamp_row', 'departments_tree', 'departments_tree_levels',
+          'departments_tree_levels_cascade', 'departments_until_people_moved', 'departments_until_role_scopes_moved',
+          'departments_validate_refs'],
     'departments: trigger order');
   perform tests.assert_eq(
     (select array_agg(tgname::text order by tgname::text) from pg_trigger

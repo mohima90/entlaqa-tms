@@ -84,7 +84,7 @@ const SAVE = {
   provider: {
     provider: 'sendgrid' as const,
     options: {},
-    secrets: { apiKey: 'SG.abcdefghij.klmnopqrstuv' },
+    secrets: { apiKey: 'SG.xxxxxxxx.xxxxxxxx' },
   },
   fromName: 'Al Raya Training',
   fromAddress: 'training@raya.example',
@@ -160,7 +160,7 @@ describe('saving the organization provider', () => {
         credentialsContext({ kind: 'tenant', tenantId: TENANT }, 'sendgrid'),
       ),
     ).toEqual({
-      apiKey: 'SG.abcdefghij.klmnopqrstuv',
+      apiKey: 'SG.xxxxxxxx.xxxxxxxx',
     });
     expect(sent.replyTo).toBe('hr@raya.example');
     expect(writeAudit).toHaveBeenCalledWith(TX, expect.anything(), {

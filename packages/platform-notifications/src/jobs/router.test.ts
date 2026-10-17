@@ -19,7 +19,7 @@ const tenantSealed = sealCredentials(
   keys.publicKey,
   credentialsContext({ kind: 'tenant', tenantId: TENANT }, 'sendgrid'),
   {
-    apiKey: 'SG.abcdefghij.klmnopqrstuv',
+    apiKey: 'SG.xxxxxxxx.xxxxxxxx',
   },
 );
 const platformSealed = sealCredentials(
@@ -78,7 +78,7 @@ describe('the sender rule (WP-ADM-01, Kawadir)', () => {
     expect(transportFor).toHaveBeenCalledWith(
       'sendgrid',
       {},
-      { apiKey: 'SG.abcdefghij.klmnopqrstuv' },
+      { apiKey: 'SG.xxxxxxxx.xxxxxxxx' },
       expect.objectContaining({ organization: true }),
     );
   });
@@ -274,7 +274,7 @@ describe('provider settings and SSRF protection', () => {
       createProviderTransport(
         'mailgun',
         { domain: 'mg.x.example', region: 'eu' },
-        { apiKey: 'key-12345678' },
+        { apiKey: 'key-xxxxxxxx' },
         { organization: true },
       ).provider,
     ).toBe('mailgun');

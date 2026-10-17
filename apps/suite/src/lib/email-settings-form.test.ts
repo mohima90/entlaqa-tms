@@ -37,12 +37,12 @@ describe('e-mail settings form (WP-ADM-01)', () => {
   it('builds a valid action input for every provider; empty secrets keep the saved ones', () => {
     const base = providerFormValues(null);
     const cases = [
-      { ...base, provider: 'resend' as const, apiKey: ' re_abcdefgh123 ' },
-      { ...base, provider: 'sendgrid' as const, apiKey: 'SG.abcdefghij.klmnopqrstuv' },
+      { ...base, provider: 'resend' as const, apiKey: ' re_xxxxxxxxxx ' },
+      { ...base, provider: 'sendgrid' as const, apiKey: 'SG.xxxxxxxx.xxxxxxxx' },
       {
         ...base,
         provider: 'mailgun' as const,
-        apiKey: 'key-12345678',
+        apiKey: 'key-xxxxxxxx',
         mailgunDomain: 'mg.raya.example',
         mailgunRegion: 'eu' as const,
       },
@@ -71,7 +71,7 @@ describe('e-mail settings form (WP-ADM-01)', () => {
     expect(providerInput(cases[0]!, false)).toEqual({
       provider: 'resend',
       options: {},
-      secrets: { apiKey: 're_abcdefgh123' },
+      secrets: { apiKey: 're_xxxxxxxxxx' },
     });
     const keep = { ...cases[3]!, smtpPassword: '' };
     expect(secretsLeftEmpty(keep)).toBe(true);

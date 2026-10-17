@@ -16,3 +16,10 @@ condition = "AND"
 paths = ['''^apps/suite/src/lib/invite-accept-input\.test\.ts$''', '''^packages/platform-identity/src/invitation-accept\.test\.ts$''']
 regexTarget = "line"
 regexes = ['''token: '(K7M2PQ9XHT4W| k7m2-pq9x-ht4w )'''']
+
+[[allowlists]]
+description = "Fake provider keys and a fixed delivery id in e-mail unit tests (WP-ADM-01; fixtures, not secrets). Earlier commits of the e-mail work (e.g. aeba5d4, fe2cbbd, 04aa472) hold them as literals; the current files use low-entropy placeholders."
+condition = "AND"
+paths = ['''^apps/suite/src/lib/email-settings-form\.test\.ts$''', '''^packages/platform-notifications/src/jobs/(router|http-providers)\.test\.ts$''', '''^packages/platform-rbac/src/iam/email-integration\.test\.ts$''']
+regexTarget = "line"
+regexes = ['''(apiKey: '( re_abcdefgh123 |re_abcdefgh123|SG\.abcdefghij\.klmnopqrstuv|key-12345678)'|idempotencyKey: '5b0e7c39-6d4c-4d36-9d0a-1f0d1d6c0f11')''']

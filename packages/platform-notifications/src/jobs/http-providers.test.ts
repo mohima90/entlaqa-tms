@@ -4,6 +4,8 @@ import { createMicrosoftGraphTransport } from './microsoft-graph';
 import { SENDGRID_API_URL, createSendGridTransport } from './sendgrid';
 import type { EmailSendError, OutgoingEmail } from './transport';
 
+const DELIVERY_ID = '5b0e7c39-6d4c-4d36-9d0a-1f0d1d6c0f11';
+
 const email: OutgoingEmail = {
   from: { name: 'Al Raya Training', address: 'training@raya.example' },
   to: 'sara@example.com',
@@ -11,7 +13,7 @@ const email: OutgoingEmail = {
   subject: 'دعوة',
   html: '<p>x</p>',
   text: 'x',
-  idempotencyKey: '5b0e7c39-6d4c-4d36-9d0a-1f0d1d6c0f11',
+  idempotencyKey: DELIVERY_ID,
 };
 const noWait = () => Promise.resolve();
 const href = (url: Parameters<typeof fetch>[0]): string =>

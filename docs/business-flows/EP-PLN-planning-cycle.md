@@ -4,7 +4,7 @@
 |---|---|
 | **Epic** | EP-PLN (BACKLOG T-M3-01; blocks T-M3-02 … T-M3-08) |
 | **Requirements** | FR-ADM-04, 05 (structure, prerequisite) · FR-CAT-01, 10 (course library; FR-CAT-02 cost model follows in M4) · FR-PLN-02 (cycle) · FR-PLN-03 + FR-MGR-05 (Department Head needs) · FR-PLN-05, 06 (consolidation, budget check) · FR-PLN-08 + FR-WFL-01/02 R1 part (plan approval) · FR-PLN-09 (hand-over) · BR-PLN-1…3 · BRD v3.1 §5.4 steps 2–8 |
-| **Status** | Draft — for discussion with the PO |
+| **Status** | **Agreed (PO, 17 Oct 2026)** — all 18 open questions approved as proposed ("approve all"), including the two scope questions (11: built-in parallel department-head step; 14: plan vs. actual stays R2) |
 | **Copied from Kawadir** | Kawadir has no planning module. The **approval screens** follow Kawadir's Requisitions page: summary cards (total / pending / approved / rejected), a «Review pending requests» banner for the approver, status tabs with counts, a details dialog listing the approvers in order with their status, **Approve / Reject** with a comment. Lists = table inside a card; short forms = dialogs; long forms (cycle set-up, needs form) = full pages (`docs/design/kawadir-alignment.md`) |
 | **Background** | Roles: [`EP-ROLES`](EP-ROLES-roles-and-custom-roles.md) and [`docs/delivery/roles/README.md`](../delivery/roles/README.md) §3 steps 3–9 · Market practice: Training Orchestra, Cornerstone, SAP run a time-boxed manager needs campaign → consolidation → plan approval → draft sessions (`docs/research/TMS_Market_Comparison_vs_BRD.md` §4.1) |
 
@@ -140,21 +140,21 @@ Once a year the L&D Manager asks every Department Head what training their team 
 ## 11. Open questions
 | # | Question | Proposed answer | PO answer |
 |---|---|---|---|
-| 1 | One cycle per year, or several? | **One open cycle at a time**, period = the fiscal year by default (any dates allowed); mid-year needs through plan revisions | |
-| 2 | Budget envelope required or optional? | **Optional per department** (FR-PLN-02); without one, the budget check shows totals only | |
-| 3 | Over the envelope: warn or block? | **Warn + written justification** in R1; block / extra approval with budgets (FR-FIN-01, BR-FIN-2, R2) | |
-| 4 | Can employees self-nominate in R1? (FR-PLN-04 is S, R2) | **No**; employees use training requests (FR-PLN-01, R1), which the L&D Manager can add to a revision | |
-| 5 | Free-text needs that are not in the library? | **Allowed** (FR-PLN-03 "new topic"); L&D maps each to a library course (or creates one) before the plan is submitted | |
-| 6 | Who can edit after submit? | **Department Head can recall until the deadline**; after it, only the L&D Manager (return for changes or edit on behalf, audited) | |
-| 7 | Training Coordinator's power in consolidation | **Prepares** (merge, map, adjust); only the **L&D Manager** accepts / rejects lines and submits the plan | |
-| 8 | Should Department Heads see their envelope and costs while filling the form? | **Yes, their own only** — helps them prioritise | |
-| 9 | Sharing a session's cost between departments | **In proportion to the number of people** each department sends | |
-| 10 | Course cost for planning before the full cost model (FR-CAT-02, M4) | **Estimated cost per session + optional cost per participant** on the course; breakdown (instructor, venue, …) when FR-CAT-02 ships | |
-| 11 | Department step in the chain is "all heads in parallel" — FR-WFL-02 R1 has sequential steps only | **Accept** this one built-in parallel step (each head confirms their own lines); no general parallel steps until R2 — **scope question** | |
-| 12 | Approver absent with no delegation in R1 | **L&D Manager replaces** the current step's approver (audited); delegation stays R2 | |
-| 13 | Changes after lock (mid-year) | **New plan version** through the same chain, step 1 only for changed departments (BR-PLN-3) | |
-| 14 | Plan vs. actual (FR-PLN-10, R2) timing | **Keep R2** (needs actual costs, FR-FIN-04); R1 approved-plan page shows only "sessions generated / delivered" counts per line — **scope question** | |
-| 15 | Annual budgets (FR-FIN-01, R2) vs. envelopes | **R1 uses envelopes only**; when FIN-01 ships, envelopes are filled from department budgets | |
-| 16 | Currency | **The organization's default currency** (General settings); one currency in R1 (multi-currency FIN-12, R2) | |
-| 17 | Hijri / Gregorian period | Period chosen with the organization's date display (Gregorian, Hijri or both); quarters follow the chosen period | |
-| 18 | Hand-over timing (T-M3-08) | Build "generate draft sessions" **with scheduling at the start of M4**; M3 ends with the approved, locked plan | |
+| 1 | One cycle per year, or several? | **One open cycle at a time**, period = the fiscal year by default (any dates allowed); mid-year needs through plan revisions | Approved (17 Oct 2026) |
+| 2 | Budget envelope required or optional? | **Optional per department** (FR-PLN-02); without one, the budget check shows totals only | Approved (17 Oct 2026) |
+| 3 | Over the envelope: warn or block? | **Warn + written justification** in R1; block / extra approval with budgets (FR-FIN-01, BR-FIN-2, R2) | Approved (17 Oct 2026) |
+| 4 | Can employees self-nominate in R1? (FR-PLN-04 is S, R2) | **No**; employees use training requests (FR-PLN-01, R1), which the L&D Manager can add to a revision | Approved (17 Oct 2026) |
+| 5 | Free-text needs that are not in the library? | **Allowed** (FR-PLN-03 "new topic"); L&D maps each to a library course (or creates one) before the plan is submitted | Approved (17 Oct 2026) |
+| 6 | Who can edit after submit? | **Department Head can recall until the deadline**; after it, only the L&D Manager (return for changes or edit on behalf, audited) | Approved (17 Oct 2026) |
+| 7 | Training Coordinator's power in consolidation | **Prepares** (merge, map, adjust); only the **L&D Manager** accepts / rejects lines and submits the plan | Approved (17 Oct 2026) |
+| 8 | Should Department Heads see their envelope and costs while filling the form? | **Yes, their own only** — helps them prioritise | Approved (17 Oct 2026) |
+| 9 | Sharing a session's cost between departments | **In proportion to the number of people** each department sends | Approved (17 Oct 2026) |
+| 10 | Course cost for planning before the full cost model (FR-CAT-02, M4) | **Estimated cost per session + optional cost per participant** on the course; breakdown (instructor, venue, …) when FR-CAT-02 ships | Approved (17 Oct 2026) |
+| 11 | Department step in the chain is "all heads in parallel" — FR-WFL-02 R1 has sequential steps only | **Accept** this one built-in parallel step (each head confirms their own lines); no general parallel steps until R2 — **scope question** | Approved (17 Oct 2026) |
+| 12 | Approver absent with no delegation in R1 | **L&D Manager replaces** the current step's approver (audited); delegation stays R2 | Approved (17 Oct 2026) |
+| 13 | Changes after lock (mid-year) | **New plan version** through the same chain, step 1 only for changed departments (BR-PLN-3) | Approved (17 Oct 2026) |
+| 14 | Plan vs. actual (FR-PLN-10, R2) timing | **Keep R2** (needs actual costs, FR-FIN-04); R1 approved-plan page shows only "sessions generated / delivered" counts per line — **scope question** | Approved (17 Oct 2026) |
+| 15 | Annual budgets (FR-FIN-01, R2) vs. envelopes | **R1 uses envelopes only**; when FIN-01 ships, envelopes are filled from department budgets | Approved (17 Oct 2026) |
+| 16 | Currency | **The organization's default currency** (General settings); one currency in R1 (multi-currency FIN-12, R2) | Approved (17 Oct 2026) |
+| 17 | Hijri / Gregorian period | Period chosen with the organization's date display (Gregorian, Hijri or both); quarters follow the chosen period | Approved (17 Oct 2026) |
+| 18 | Hand-over timing (T-M3-08) | Build "generate draft sessions" **with scheduling at the start of M4**; M3 ends with the approved, locked plan | Approved (17 Oct 2026) |

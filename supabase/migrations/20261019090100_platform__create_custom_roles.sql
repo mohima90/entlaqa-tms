@@ -378,8 +378,9 @@ declare
   v_scope text;
 begin
   -- The catalogue rule holds for every writer, platform operations included (security review L3): the
-  -- Organization Admin's own permissions are never part of a custom role.
-  if tg_op = 'INSERT' then
+  -- Organization Admin's own permissions are never part of a custom role — on a rewrite too (confirmation
+  -- pass Low 2: the web app may not update rows at all; a platform operation's update is checked like an insert).
+  if tg_op in ('INSERT', 'UPDATE') then
     select p.custom_role_use into v_use from platform.ref_permissions p where p.code = new.permission_code;
     if v_use is null or v_use = 'none' then
       raise exception 'permission % cannot be part of a custom role', new.permission_code
@@ -418,7 +419,7 @@ create trigger custom_roles_guard before insert or update or delete on platform.
   for each row execute function private.check_custom_role();
 create trigger custom_roles_stamp_row before insert or update on platform.custom_roles
   for each row execute function private.stamp_row();
-create trigger custom_role_permissions_guard before insert or delete on platform.custom_role_permissions
+create trigger custom_role_permissions_guard before insert or update or delete on platform.custom_role_permissions
   for each row execute function private.check_custom_role_permission();
 
 -- ---------------------------------------------------------------------------------------------------

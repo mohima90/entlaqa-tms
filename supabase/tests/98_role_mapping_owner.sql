@@ -158,7 +158,7 @@ end $$;
 rollback;
 
 -- The catalogue rule holds for platform operations too (review L3): never the Organization Admin's own
--- permissions in a custom role, and nothing outside the catalogue.
+-- permissions in a custom role, and nothing outside the catalogue — added or rewritten.
 begin;
 do $$
 begin
@@ -168,6 +168,11 @@ begin
     'permission platform.role.assign_privileged cannot be part of a custom role', 'nor role.assign_privileged');
   perform tests.assert_eq(tests.rows_affected($q$insert into platform.custom_role_permissions (tenant_id, custom_role_id, permission_code) values ('a0000000-0000-4000-8000-000000000001', 'a6000000-0000-4000-8000-000000000001', 'platform.role.read')$q$),
     1::bigint, 'a catalogue permission: allowed (platform operations have no actor rules)');
+  -- …on a rewrite too (confirmation pass Low 2).
+  perform tests.assert_fails_like($q$update platform.custom_role_permissions set permission_code = 'platform.role.manage' where custom_role_id = 'a6000000-0000-4000-8000-000000000001' and permission_code = 'platform.user.read'$q$,
+    'permission platform.role.manage cannot be part of a custom role', 'a platform operation cannot rewrite a permission into role.manage');
+  perform tests.assert_fails_like($q$update platform.custom_role_permissions set permission_code = 'tms.unknown.read' where custom_role_id = 'a6000000-0000-4000-8000-000000000001' and permission_code = 'platform.user.read'$q$,
+    'permission tms.unknown.read cannot be part of a custom role', 'nor into a permission outside the catalogue');
 end $$;
 rollback;
 

@@ -19,9 +19,9 @@ Every organization draws its own structure — its own number of levels with its
 | Holder of a department-limited custom role | Custom | Sees the unit picked for them and everything under it |
 
 ## 3. Step-by-step flow
-1. **HR Manager → Organization → Structure → Levels**: the levels in order, each with an English and an Arabic name, up to 10. A new organization starts with **one level: Department («إدارة»)**. Examples: Sector → General Department → Department → Section (قطاع → إدارة عامة → إدارة → قسم); Department → Team.
+1. **HR Manager → Organization → Structure → Organization tree** (the tab was «Levels»; guided-test feedback #1, PO 17 Oct 2026): the levels in order, shown top to bottom as a chain, each with an English and an Arabic name, up to 10. A new organization starts with **one level: Department («إدارة»)**. Examples: Sector → General Department → Department → Section (قطاع → إدارة عامة → إدارة → قسم); Department → Team.
 2. **HR Manager → Organization → Structure** (tree, Kawadir layout): «Add <first level>» at the top; each row's menu offers «Add <next level>» (e.g. «Add Section» under a Department); the last level has no children. Per unit: names (AR/EN), code, branch, **head** (any level).
-3. **Give a department-limited role**: a custom role whose data scope is **«A department»** (role builder, `EP-ROLES`); when it is given (invite or Team members → Edit role), the giver picks **one unit** from the tree, at any level.
+3. **Give a department-limited role**: a custom role whose data scope is **«A unit of the structure»** (was «A department») (role builder, `EP-ROLES`); when it is given (invite or Team members → Edit role), the giver picks **one unit** from the tree, at any level.
 4. The person sees that unit **and everything under it**. A Department Head sees the units they head and everything under them.
 
 ## 4. Business rules
@@ -31,6 +31,7 @@ Every organization draws its own structure — its own number of levels with its
 - BR-ORG-d: One unit per role assignment (Kawadir); choosing a higher unit covers everything under it.
 - BR-ORG-e: Moving a unit to another parent moves everything under it; access follows at once.
 - BR-ORG-f: Every change to levels, units, heads and role units is written to the audit log.
+- BR-ORG-g (guided-test feedback #3, PO 17 Oct 2026): the product says the organization's own level names, never a fixed «Department». A column or field that can hold units of any level is named after the first level while every unit in it is at that level, else «Unit» / «الوحدة» — and each row then shows its level («Retail Sales · Unit»); a field holding one unit is named after that unit's level; heads are «Head» / «الرئيس» and «Unit heads» / «رؤساء الوحدات». The standard role keeps its BRD name «Department Head» / «رئيس القسم».
 
 ## 5. Exceptions
 - The picked unit is deactivated → the person keeps access to nothing under it until a new unit is picked; the giver is told.
@@ -39,6 +40,6 @@ Every organization draws its own structure — its own number of levels with its
 ## 6. Screens
 | # | Screen | Role |
 |---|---|---|
-| 1 | Structure → Levels (ordered list, names AR/EN) | HR Manager |
+| 1 | Structure → Organization tree (the levels as a top-to-bottom chain, names AR/EN) | HR Manager |
 | 2 | Structure tree with «Add <next level>», head picker | HR Manager |
-| 3 | Invite / Edit role: unit picker (tree) when the role's scope is «A department» | Organization Admin, HR Manager |
+| 3 | Invite / Edit role: unit picker (tree) when the role's scope is «A unit of the structure» | Organization Admin, HR Manager |

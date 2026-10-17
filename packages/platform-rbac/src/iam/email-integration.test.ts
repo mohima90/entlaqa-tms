@@ -259,6 +259,27 @@ describe('saving the organization provider', () => {
       new FakeEmailSettingsError('EMAIL_SETTINGS_FORBIDDEN'),
     );
     expect(await save(SAVE)).toMatchObject({ ok: false, error: { code: 'FORBIDDEN' } });
+    // The worker's public key cannot be read (42501 in the database): FORBIDDEN, never an internal error.
+    db.getEmailCredentialsPublicKey.mockRejectedValueOnce(
+      new FakeEmailSettingsError('EMAIL_SETTINGS_FORBIDDEN'),
+    );
+    expect(await save(SAVE)).toMatchObject({ ok: false, error: { code: 'FORBIDDEN' } });
+  });
+
+  it('a test e-mail too soon after the last one is RATE_LIMITED (one a minute, 20 a day)', async () => {
+    const { rt, writeAudit } = runtime(forRoles('tenant_admin'));
+    db.requestTenantEmailTest.mockRejectedValueOnce(
+      new FakeEmailSettingsError('EMAIL_SETTINGS_TOO_SOON'),
+    );
+    expect(
+      await createDefineAction(rt)(requestTenantEmailTestActionDefinition())({
+        recipient: 'it@raya.example',
+      }),
+    ).toMatchObject({
+      ok: false,
+      error: { code: 'RATE_LIMITED', fieldErrors: [{ path: 'form', code: 'TOO_SOON' }] },
+    });
+    expect(writeAudit).not.toHaveBeenCalled();
   });
 
   it.each([['hr_manager'], ['auditor'], ['learner']] as const)(

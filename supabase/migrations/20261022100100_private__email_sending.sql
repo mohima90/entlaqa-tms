@@ -201,6 +201,9 @@ create table private.tenant_email_settings (
   test_claimed_at timestamptz,
   test_finished_at timestamptz,
   test_attempts smallint not null default 0 check (test_attempts between 0 and 100),
+  -- Test e-mails requested in the current 24-hour window (at most 20 a day, one a minute; security review).
+  test_window_started_at timestamptz,
+  test_window_count smallint not null default 0 check (test_window_count between 0 and 1000),
   constraint tenant_email_settings_verified_check check ((status = 'verified') = (verified_at is not null)),
   constraint tenant_email_settings_enabled_check check (not enabled or status = 'verified'),
   constraint tenant_email_settings_test_check check (
@@ -470,7 +473,7 @@ returns table (configured boolean, provider text, options jsonb, credentials_key
                from_name text, from_address text, status text, verified_at timestamptz, version integer,
                updated_at timestamptz, test_status text, test_recipient_masked text, test_error_code text,
                test_requested_at timestamptz, test_finished_at timestamptz, waiting_count bigint,
-               oldest_waiting_at timestamptz)
+               oldest_waiting_at timestamptz, platform_failed_24h bigint)
 language plpgsql stable security definer
 set search_path = ''
 as $$
@@ -480,19 +483,41 @@ begin
     with waiting as (
       select count(*) as n, min(d.created_at) as oldest
       from platform.message_deliveries d
-      where d.status = 'queued' and d.error_code = any (private.email_waiting_codes()))
+      where d.status = 'queued' and d.error_code = any (private.email_waiting_codes())),
+    failed as (
+      select count(*) as n from platform.message_deliveries d
+      where d.status = 'failed' and d.sender = 'platform' and d.updated_at > now() - interval '24 hours')
     select s.id is not null, s.provider, s.options, split_part(s.credentials_sealed, '.', 2), k.key_id,
            s.from_name, s.from_address, coalesce(s.status, 'unverified'), s.verified_at, s.version, s.updated_at,
            s.test_status, s.test_recipient_masked, s.test_error_code, s.test_requested_at, s.test_finished_at,
-           w.n, w.oldest
+           w.n, w.oldest, f.n
     from waiting w
+    cross join failed f
     left join private.platform_email_settings s on s.id = 1
     left join private.email_credentials_key k on k.id = 1;
 end
 $$;
 
 comment on function private.platform_email_settings_view() is
-  'SECURITY-RELEVANT (FR-ADM-17, WP-ADM-01). The platform sender for the Super Admin''s page (never the secrets) and the messages waiting for a sender. Super Admins only.';
+  'SECURITY-RELEVANT (FR-ADM-17, WP-ADM-01). The platform sender for the Super Admin''s page (never the secrets), the messages waiting for a sender and the platform sender''s failed deliveries of the last 24 hours. Super Admins only.';
+
+-- True when the SMTP server of saved options differs from the new ones (host — case-insensitive —, port or
+-- encryption): the saved password must not be kept then (WP-ADM-01 security review). False for other providers.
+create or replace function private.email_smtp_server_changed(p_provider text, p_old jsonb, p_new jsonb)
+returns boolean
+language sql immutable
+set search_path = ''
+as $$
+  select p_provider = 'smtp'
+     and (lower(btrim(p_old ->> 'host')) is distinct from lower(btrim(p_new ->> 'host'))
+          or (p_old ->> 'port') is distinct from (p_new ->> 'port')
+          or coalesce(p_old ->> 'security', 'starttls') is distinct from coalesce(p_new ->> 'security', 'starttls'));
+$$;
+
+comment on function private.email_smtp_server_changed(text, jsonb, jsonb) is
+  'WP-ADM-01. Whether an SMTP sender''s server (host, port, encryption) changed: its saved password is then not kept.';
+revoke all on function private.email_smtp_server_changed(text, jsonb, jsonb) from public;
+grant execute on function private.email_smtp_server_changed(text, jsonb, jsonb) to email_guard;
 
 -- «حفظ وإرسال رسالة تجريبية» / Save and send test (Kawadir): saves the platform sender (secrets kept when
 -- p_credentials_sealed is null and the provider is unchanged), marks it unverified until the worker has sent
@@ -542,11 +567,17 @@ begin
       raise exception 'the secrets were sealed with another key' using errcode = 'JE003';
     end if;
     v_sealed := p_credentials_sealed;
-  elsif v_old.id is not null and v_old.provider = p_provider then
+  elsif v_old.id is not null and v_old.provider = p_provider
+        and not private.email_smtp_server_changed(p_provider, v_old.options, p_options) then
     v_sealed := v_old.credentials_sealed;
   else
-    -- A new provider brings its own secrets.
+    -- A new provider brings its own secrets; so does another SMTP server (its password is never reused for
+    -- another host, port or encryption — the sealed value is bound to host:port as well).
     raise exception 'credentials' using errcode = 'JE001';
+  end if;
+  -- One test e-mail a minute (every save sends one).
+  if v_old.test_requested_at > now() - interval '1 minute' then
+    raise exception 'test_too_soon' using errcode = 'JE006';
   end if;
 
   if v_old.id is null then
@@ -691,7 +722,8 @@ begin
       raise exception 'the secrets were sealed with another key' using errcode = 'JE003';
     end if;
     v_sealed := p_credentials_sealed;
-  elsif v_old.tenant_id is not null and v_old.provider = p_provider then
+  elsif v_old.tenant_id is not null and v_old.provider = p_provider
+        and not private.email_smtp_server_changed(p_provider, v_old.options, p_options) then
     v_sealed := v_old.credentials_sealed;
   else
     raise exception 'credentials' using errcode = 'JE001';
@@ -744,26 +776,37 @@ set search_path = ''
 as $$
 declare
   v_tenant uuid := private.email_member_tenant(true);
-  v_provider text;
+  v_old private.tenant_email_settings%rowtype;
+  v_new_window boolean;
 begin
   if not private.email_address_is_valid(p_recipient) then
     raise exception 'test_to' using errcode = 'JE001';
   end if;
+  select * into v_old from private.tenant_email_settings s where s.tenant_id = v_tenant for update;
+  if not found then
+    raise exception 'the organization has no e-mail provider to test' using errcode = 'JE005';
+  end if;
+  -- At most one test e-mail a minute and 20 a day per organization (security review: no mail cannon).
+  if v_old.test_requested_at > now() - interval '1 minute' then
+    raise exception 'test_too_soon' using errcode = 'JE006';
+  end if;
+  v_new_window := v_old.test_window_started_at is null or v_old.test_window_started_at <= now() - interval '1 day';
+  if not v_new_window and v_old.test_window_count >= 20 then
+    raise exception 'test_daily_limit' using errcode = 'JE006';
+  end if;
   update private.tenant_email_settings s
   set test_status = 'queued', test_recipient = p_recipient,
       test_recipient_masked = private.email_address_masked(p_recipient), test_error_code = null,
-      test_requested_at = now(), test_claimed_at = null, test_finished_at = null, test_attempts = 0
-  where s.tenant_id = v_tenant
-  returning s.provider into v_provider;
-  if v_provider is null then
-    raise exception 'the organization has no e-mail provider to test' using errcode = 'JE005';
-  end if;
-  return v_provider;
+      test_requested_at = now(), test_claimed_at = null, test_finished_at = null, test_attempts = 0,
+      test_window_started_at = case when v_new_window then now() else s.test_window_started_at end,
+      test_window_count = case when v_new_window then 1 else s.test_window_count + 1 end
+  where s.tenant_id = v_tenant;
+  return v_old.provider;
 end
 $$;
 
 comment on function private.request_tenant_email_test(text) is
-  'SECURITY-RELEVANT (FR-NTF-11, WP-ADM-01). Queues a test e-mail through the caller''s organization''s provider. Members with platform.tenant.manage.';
+  'SECURITY-RELEVANT (FR-NTF-11, WP-ADM-01). Queues a test e-mail through the caller''s organization''s provider (one a minute, 20 a day). Members with platform.tenant.manage.';
 
 -- Switches the organization's provider on (only once verified) or off (back to the platform sender, any
 -- time). Returns the new version (unchanged when nothing changed).
@@ -839,9 +882,10 @@ $$;
 comment on function private.email_route() is
   'SECURITY-RELEVANT (FR-NTF-11, WP-ADM-01). The sender rule''s inputs (sealed secrets included) for the e-mail sender of the job''s organization. Worker jobs only.';
 
--- Claims up to p_limit (1–20) waiting test e-mails, platform and organizations together (a claim older than
--- 5 minutes is taken again: its worker died). Returns what each test is sent with and the settings'
--- version it proves.
+-- Claims up to p_limit (1–20) waiting test e-mails in all, platform and organizations together (a claim older
+-- than 5 minutes is taken again: its worker died). A test claimed 3 times without an outcome is recorded as
+-- failed (TIMEOUT) instead of being claimed again — a server that never answers cannot block the others.
+-- Returns what each test is sent with and the settings' version it proves.
 create or replace function private.claim_email_tests(p_limit integer)
 returns table (tenant_id uuid, recipient text, version integer, provider text, options jsonb,
                credentials_sealed text, from_name text, from_address text, reply_to text)
@@ -850,33 +894,51 @@ set search_path = ''
 as $$
 declare
   v_limit integer := greatest(1, least(coalesce(p_limit, 5), 20));
+  v_platform integer;
 begin
   perform private.email_job_tenant(false);
+  update private.platform_email_settings s
+  set test_status = 'failed', test_error_code = 'TIMEOUT', test_recipient = null, test_finished_at = now()
+  where s.id = 1 and s.test_attempts >= 3
+    and (s.test_status = 'queued'
+         or (s.test_status = 'sending' and s.test_claimed_at < now() - interval '5 minutes'));
+  update private.tenant_email_settings s
+  set test_status = 'failed', test_error_code = 'TIMEOUT', test_recipient = null, test_finished_at = now()
+  where s.test_attempts >= 3
+    and (s.test_status = 'queued'
+         or (s.test_status = 'sending' and s.test_claimed_at < now() - interval '5 minutes'));
+
   return query
-    with platform_test as (
+    with claimed as (
       update private.platform_email_settings s
-      set test_status = 'sending', test_claimed_at = now(), test_attempts = s.test_attempts + 1
-      where s.id = 1
+      set test_status = 'sending', test_claimed_at = now(), test_attempts = least(s.test_attempts + 1, 100)
+      where s.id = 1 and s.test_attempts < 3
         and (s.test_status = 'queued'
              or (s.test_status = 'sending' and s.test_claimed_at < now() - interval '5 minutes'))
-      returning null::uuid as tenant_id, s.test_recipient, s.version, s.provider, s.options, s.credentials_sealed,
-                s.from_name, s.from_address, null::text as reply_to),
-    tenant_tests as (
+      returning null::uuid, s.test_recipient, s.version, s.provider, s.options, s.credentials_sealed,
+                s.from_name, s.from_address, null::text)
+    select * from claimed;
+  get diagnostics v_platform = row_count;
+  if v_limit - v_platform < 1 then
+    return;
+  end if;
+
+  return query
+    with claimed as (
       update private.tenant_email_settings s
-      set test_status = 'sending', test_claimed_at = now(), test_attempts = s.test_attempts + 1
+      set test_status = 'sending', test_claimed_at = now(), test_attempts = least(s.test_attempts + 1, 100)
       where s.tenant_id in (
           select x.tenant_id from private.tenant_email_settings x
           join platform.tenants t on t.id = x.tenant_id and t.status in ('active', 'trial')
-          where x.test_status = 'queued'
-             or (x.test_status = 'sending' and x.test_claimed_at < now() - interval '5 minutes')
+          where x.test_attempts < 3
+            and (x.test_status = 'queued'
+                 or (x.test_status = 'sending' and x.test_claimed_at < now() - interval '5 minutes'))
           order by x.test_requested_at
-          limit v_limit
+          limit v_limit - v_platform
           for update of x skip locked)
       returning s.tenant_id, s.test_recipient, s.version, s.provider, s.options, s.credentials_sealed,
                 s.from_name, s.from_address, s.reply_to)
-    select * from platform_test
-    union all
-    select * from tenant_tests;
+    select * from claimed;
 end
 $$;
 
@@ -964,9 +1026,11 @@ comment on function private.email_tenants_waiting() is
 --   stale     waiting (queued / sending) for more than a day without waiting for a sender → failed, STALE
 --   expired   waiting for a sender for more than 7 days → failed, SENDER_WAIT_EXPIRED
 --   purged    final rows older than 12 months → removed (BR-NTF-2)
+--   tests_expired  test e-mails requested more than 7 days ago and still not sent (e.g. of a suspended
+--             organization) → failed, TEST_EXPIRED, their plain recipient removed
 -- The content and the plain address go with the final status (the table's own rule).
 create or replace function private.sweep_email_deliveries(p_batch integer)
-returns table (stale bigint, expired bigint, purged bigint)
+returns table (stale bigint, expired bigint, purged bigint, tests_expired bigint)
 language plpgsql volatile security definer
 set search_path = ''
 as $$
@@ -975,6 +1039,8 @@ declare
   v_stale bigint;
   v_expired bigint;
   v_purged bigint;
+  v_tests bigint;
+  v_tenant_tests bigint;
 begin
   perform private.email_job_tenant(false);
   with x as (
@@ -1007,12 +1073,25 @@ begin
   delete from platform.message_deliveries d using x where d.id = x.id;
   get diagnostics v_purged = row_count;
 
-  return query select v_stale, v_expired, v_purged;
+  update private.platform_email_settings s
+  set test_status = 'failed', test_error_code = 'TEST_EXPIRED', test_recipient = null, test_finished_at = now()
+  where s.id = 1 and s.test_status in ('queued', 'sending') and s.test_requested_at < now() - interval '7 days';
+  get diagnostics v_tests = row_count;
+  update private.tenant_email_settings s
+  set test_status = 'failed', test_error_code = 'TEST_EXPIRED', test_recipient = null, test_finished_at = now()
+  where s.tenant_id in (
+      select x.tenant_id from private.tenant_email_settings x
+      where x.test_status in ('queued', 'sending') and x.test_requested_at < now() - interval '7 days'
+      order by x.test_requested_at limit v_batch
+      for update of x skip locked);
+  get diagnostics v_tenant_tests = row_count;
+
+  return query select v_stale, v_expired, v_purged, v_tests + v_tenant_tests;
 end
 $$;
 
 comment on function private.sweep_email_deliveries(integer) is
-  'SECURITY-RELEVANT (ADR 0008 §7, BR-NTF-2; T-M2-48). Stale and long-waiting deliveries become failed with their content removed; final rows older than 12 months are removed. Worker platform tasks only.';
+  'SECURITY-RELEVANT (ADR 0008 §7, BR-NTF-2; T-M2-48). Stale and long-waiting deliveries become failed with their content removed; final rows older than 12 months are removed; test e-mails left unsent for 7 days fail. Worker platform tasks only.';
 
 -- The invitation mailer did not queue the e-mail of an invitation (T-M2-20): remembered for its current code.
 create or replace function private.note_invitation_mail_skipped(p_invitation_id uuid)

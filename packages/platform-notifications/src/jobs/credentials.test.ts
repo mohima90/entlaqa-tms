@@ -64,6 +64,27 @@ describe('provider secrets: sealed by the web app, opened by the worker only', (
     ).toBe('CREDENTIALS_INVALID');
   });
 
+  it('an SMTP password is bound to its server: another host or port cannot open it (security review)', () => {
+    const scope = { kind: 'tenant', tenantId: TENANT_A } as const;
+    const relay = { host: 'smtp.raya.example', port: 587, security: 'starttls', username: 'u' };
+    const sealed = sealCredentials(keys.publicKey, credentialsContext(scope, 'smtp', relay), {
+      password: 'p w',
+    });
+    expect(
+      keys.open(sealed, credentialsContext(scope, 'smtp', { ...relay, host: 'SMTP.raya.example' })),
+    ).toEqual({
+      password: 'p w',
+    });
+    expect(
+      codeOf(() =>
+        keys.open(sealed, credentialsContext(scope, 'smtp', { ...relay, host: 'evil.example' })),
+      ),
+    ).toBe('CREDENTIALS_INVALID');
+    expect(
+      codeOf(() => keys.open(sealed, credentialsContext(scope, 'smtp', { ...relay, port: 2525 }))),
+    ).toBe('CREDENTIALS_INVALID');
+  });
+
   it('tampered or foreign values are refused without saying more', () => {
     const sealed = sealCredentials(keys.publicKey, contextA, { apiKey: 're_secret_value_123' });
     const flipped = `${sealed.slice(0, -2)}${sealed.endsWith('A') ? 'B' : 'A'}${sealed.slice(-1)}`;

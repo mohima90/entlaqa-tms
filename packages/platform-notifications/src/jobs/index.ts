@@ -38,7 +38,8 @@ export {
 export { SENDGRID_API_URL, createSendGridTransport } from './sendgrid';
 export {
   type HostLookup,
-  ORGANIZATION_SMTP_PORTS,
+  SMTP_SEND_DEADLINE_MS,
+  SUBMISSION_SMTP_PORTS,
   type SmtpSettings,
   classifySmtpError,
   createSmtpTransport,

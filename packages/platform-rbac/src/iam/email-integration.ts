@@ -90,6 +90,9 @@ export function emailSettingsRefusal(error: unknown): { ok: false; error: AppErr
       return err(
         appError('VALIDATION_FAILED', { fieldErrors: [{ path: 'form', code: 'NOT_CONFIGURED' }] }),
       );
+    case 'EMAIL_SETTINGS_TOO_SOON':
+      // One test e-mail a minute (an organization: 20 a day) — checked by the database.
+      return err(appError('RATE_LIMITED', { fieldErrors: [{ path: 'form', code: 'TOO_SOON' }] }));
   }
 }
 
@@ -114,7 +117,13 @@ export async function sealProviderSecrets(
   provider: EmailProviderInput,
 ): Promise<{ ok: true; sealed: string | null } | { ok: false; error: AppError }> {
   if (provider.secrets === null) return { ok: true, sealed: null };
-  const key = await getEmailCredentialsPublicKey(tx);
+  let key: Awaited<ReturnType<typeof getEmailCredentialsPublicKey>>;
+  try {
+    key = await getEmailCredentialsPublicKey(tx);
+  } catch (error) {
+    // e.g. 42501 from the database (no right to read the key): FORBIDDEN, never an internal error.
+    return emailSettingsRefusal(error);
+  }
   if (!key) {
     return err(
       appError('VALIDATION_FAILED', { fieldErrors: [{ path: 'form', code: 'NOT_SET_UP' }] }),

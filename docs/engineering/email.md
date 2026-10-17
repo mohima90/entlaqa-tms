@@ -25,7 +25,10 @@ Only jobs (system claims) can read or write deliveries, and the sender acts only
 - When a Super Admin or an Organization Admin saves a provider, the web app's server seals the secret fields (API key, SMTP password, Microsoft client secret) with that public key: a **sealed box** — a fresh ephemeral X25519 key, ECDH, HKDF-SHA256, AES-256-GCM with a random nonce, the scope (`platform` or the organization's id) and the provider bound as additional data — and stores `v1.<key id>.<payload>`. Vercel (the web app) holds **no** key at all and can never open a saved secret; nothing returns it to any page, log or audit record. Non-secret options (SMTP host/port/user, Mailgun domain/region, Microsoft tenant and client ids) are stored in clear and shown back.
 - Only the worker opens them, for the scope they were sealed for (another organization's value does not open). The settings tables are in schema `private`, reachable only through `email_guard`'s reviewed functions (pgTAP `99_email_*`).
 - **Without `EMAIL_CREDENTIALS_KEY`** nothing else breaks: no key is published, the pages say e-mail sending is not set up and refuse to save secrets; messages wait. **A new value** = a new key: saved secrets can no longer be opened (`CREDENTIALS_KEY_CHANGED`) — the pages ask for them again and messages wait until then. Keep the value in a password manager; never in chat.
-- An organization's SMTP relay must be on the public internet and use port 25, 465, 587 or 2525 (resolved before every send; private, loopback and link-local addresses are refused — `SMTP_HOST_NOT_ALLOWED`); TLS is always required. The platform's relay may be internal.
+- An SMTP relay set in the product must be on the public internet and use a submission port — 465, 587 or 2525, not 25 (resolved before every send; private, loopback, link-local and IPv4-embedding IPv6 addresses such as NAT64 and 6to4 are refused — `SMTP_HOST_NOT_ALLOWED`); TLS is always required. This holds for every organization's relay and for the platform sender's, unless the operator of a self-hosted installation sets `EMAIL_PLATFORM_SMTP_ALLOW_PRIVATE=true` (internal relay, any port).
+- An SMTP password is bound to its server: it is sealed with `host:port` as additional data, and the database keeps a saved password only while host, port and encryption stay the same — another server means typing the password again.
+- Every SMTP send has a hard **60-second deadline**; past it the connection is closed and the send fails with `TIMEOUT` (temporary). A server that answers slowly forever cannot hold the worker.
+- **Test e-mails** (security review): at most one a minute per sender (every platform save sends one) and 20 a day per organization (`RATE_LIMITED`); the worker claims them one at a time within a 90-second budget per pass; a test claimed 3 times without an outcome fails with `TIMEOUT`; a test still unsent after 7 days (e.g. of a suspended organization) fails with `TEST_EXPIRED` and its recipient is removed.
 - Click and open tracking are switched off for SendGrid and Mailgun (invitation links carry codes). Microsoft 365 sends the HTML version only (Graph's JSON sendMail has one body).
 
 ## 2. Settings (worker only — the web app never holds provider credentials)
@@ -33,6 +36,7 @@ Only jobs (system claims) can read or write deliveries, and the sender acts only
 | Variable | Meaning |
 |---|---|
 | `EMAIL_CREDENTIALS_KEY` | **Secret.** At least 32 random characters (e.g. a generated 64-character password). Opens the provider secrets saved in the product (§1a). Hosted: GitHub environment `production-jobs`; self-hosted: the worker's environment |
+| `EMAIL_PLATFORM_SMTP_ALLOW_PRIVATE` | **Config**, self-hosted operators only: `true` lets the platform sender's SMTP relay (set in the product) be internal, on any port. Default `false` (public addresses, ports 465/587/2525) |
 | `EMAIL_PROVIDER` | Optional *installation sender* for self-hosted relays: `resend`, `smtp` or `none` (default). Used only while no platform sender was saved in the product; the hosted SaaS sets `none` |
 | `EMAIL_FROM_NAME` / `EMAIL_FROM_ADDRESS` | Sender shown to recipients; the address must be on a domain verified with the provider |
 | `RESEND_API_KEY` | Resend API key (`re_…`); give it **sending access only** |
@@ -46,9 +50,11 @@ Check any deployment's settings with `node apps/worker/dist/main.mjs test-email`
 
 **Self-hosted with a real relay:** set `SMTP_URL` (and `SMTP_CA_CERT_FILE`, or set it empty for a publicly trusted certificate), remove the `mailpit` service, the worker's `depends_on: mailpit` entry and its `mail-ca.crt` mount, and give the worker a network that reaches the relay (the stack's `mail` network is internal) — see the comment in `infra/docker/compose.yaml`.
 
-## 3. Set-up (Product Owner, once, after WP-ADM-01 is merged — Claude guides one step at a time)
+## 3. Set-up (Product Owner, once — Claude guides one step at a time)
 
-1. **SECRET** `EMAIL_CREDENTIALS_KEY` in GitHub → Settings → Environments → **production-jobs** (a generated 64-character password; never in chat, never in Vercel). [production-setup.md](production-setup.md) step 29.
+**Deploy order:** step 1 is done **before the WP-ADM-01 pull request is merged**, so that the first worker run after the merge already publishes its key. Steps 2–4 follow the merge (and the automatic DB deploy).
+
+1. **Before the merge — SECRET** `EMAIL_CREDENTIALS_KEY` in GitHub → Settings → Environments → **production-jobs** (a generated 64-character password; never in chat, never in Vercel). [production-setup.md](production-setup.md) step 29.
 2. Claude runs **Actions → Jobs** (`pass`): the worker publishes its key.
 3. The Super Admin opens **Platform settings → Email** in the product: provider (e.g. Resend), its key, sender address on the verified domain, sender name, the address for the test → **Save and send test**. After the next worker pass (≤ 5 minutes; or Claude runs Jobs) the page shows «Working» — the sender is verified and waiting e-mails go out.
 4. Optional, per organization: its Organization Admin opens **Settings → Email integration**, saves its provider, **Send test e-mail**, then switches on «Use my provider».
@@ -59,6 +65,7 @@ The old variables `EMAIL_PROVIDER`, `EMAIL_FROM_NAME`, `EMAIL_FROM_ADDRESS`, `RE
 
 | Situation | What to do |
 |---|---|
+| Platform sender failures (Super Admin page: failed deliveries of the last 24 hours) | Check the provider's account (key, domain, sending limits) and the sender settings; save and send a test again |
 | E-mails wait (Super Admin warning) | No verified sender: set and test the platform sender (or the organization enables its own provider). With `CREDENTIALS_UNAVAILABLE`: enter the saved secret again (a new worker key) |
 | A message did not arrive | As the database owner (SQL editor): `select status, error_code, attempts, provider_message_id, created_at from platform.message_deliveries where destination_masked like 'x***@%' order by created_at desc` — then look up `provider_message_id` in the Resend dashboard (bounces, spam complaints) |
 | Many `PROVIDER_AUTH` codes | The API key is wrong, revoked or lacks sending access, or the sending domain is not verified / `EMAIL_FROM_ADDRESS` is not on it (Resend → Domains): fix it; waiting messages go out on their next attempt (within about 3.5 hours) |
@@ -69,4 +76,4 @@ The old variables `EMAIL_PROVIDER`, `EMAIL_FROM_NAME`, `EMAIL_FROM_ADDRESS`, `RE
 | Deliverability | SPF, DKIM and DMARC records of the sending domain are set in Resend → Domains; a dedicated TMS sending subdomain is planned before real customers (PO follow-up) |
 | A bulk import with thousands of people (T-M2-12) | Import invitations leave at **one per second for the whole installation** — every organization's imports share one send clock, overdue ones are spaced out again — and at most 5,000 a day per organization, 200 on trial ([user-import.md](user-import.md) §4; worker settings `USER_IMPORT_*`): 10,000 take about 3 hours when one organization sends alone. Resend's default API limit is 2 requests per second per team (import invitations take at most half of it, whatever the number of organizations; a 429 is still waited out) and the plan sets daily and monthly quotas (free plan: 100 a day, 3,000 a month) — check Resend → Usage and the plan **before** a large customer import (design decision 13), or add the people with «الإضافة دون إرسال الدعوات الآن» and send in parts from the users list. Messages over the quota are refused by the provider (retried as temporary failures for about 3.5 hours, §1, then recorded `failed`); their invitations stay pending and can be resent from the users list |
 
-Not built yet (ADR 0008): in-app inbox, notification rules and preferences, quiet hours, tenant-edited templates (LiquidJS), provider status webhooks (delivered/bounced), keyed hashes of addresses, alerts on failure rates, an alert e-mail to the Super Admin when the platform sender fails.
+Not built yet (ADR 0008): in-app inbox, notification rules and preferences, quiet hours, tenant-edited templates (LiquidJS), provider status webhooks (delivered/bounced), keyed hashes of addresses, alerts on failure rates, an alert e-mail to the Super Admin when the platform sender fails (backlog; the Super Admin page shows the count of the last 24 hours meanwhile).

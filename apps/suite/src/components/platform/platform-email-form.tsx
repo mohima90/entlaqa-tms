@@ -9,6 +9,7 @@ import {
   fieldOfPath,
   providerFormValues,
   providerInput,
+  secretStateFor,
 } from '../../lib/email-settings-form';
 import { type ErrorTexts, errorText } from '../auth/error-text';
 import { ProviderFields } from '../email/provider-fields';
@@ -51,8 +52,7 @@ export function PlatformEmailForm({ saved, keyReady, texts, errors }: PlatformEm
   const [fieldErrors, setFieldErrors] = useState<Record<string, string | undefined>>({});
   const [message, setMessage] = useState<Message | null>(null);
   const [version, setVersion] = useState<number | null>(saved?.version ?? null);
-  const sameProvider = saved !== null && saved.provider === provider.provider;
-  const secretState = !sameProvider ? 'none' : saved.credentialsCurrent ? 'saved' : 'keyChanged';
+  const secretState = secretStateFor(saved, provider);
   const disabled = pending || !keyReady;
 
   function refusal(error: AppError) {
@@ -66,11 +66,13 @@ export function PlatformEmailForm({ saved, keyReady, texts, errors }: PlatformEm
     const text =
       error.code === 'CONFLICT_VERSION'
         ? t('conflict')
-        : formCode === 'KEY_CHANGED'
-          ? t('keyChanged')
-          : formCode === 'NOT_SET_UP'
-            ? t('platform.keyMissing')
-            : errorText(error, errors);
+        : formCode === 'TOO_SOON'
+          ? t('testTooSoon')
+          : formCode === 'KEY_CHANGED'
+            ? t('keyChanged')
+            : formCode === 'NOT_SET_UP'
+              ? t('platform.keyMissing')
+              : errorText(error, errors);
     setMessage({ tone: 'danger', text });
   }
 

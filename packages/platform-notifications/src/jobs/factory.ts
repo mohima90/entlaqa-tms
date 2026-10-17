@@ -16,8 +16,9 @@ import { EmailSendError, type EmailTransport } from './transport';
  * The transport of a provider configured in the product (WP-ADM-01): the platform sender or an organization's
  * own provider. `options` (stored in clear) and `secrets` (just opened from their sealed form) are validated
  * again here — a value the worker cannot use is PROVIDER_SETTINGS_INVALID, never a crash or a log line with
- * the value. `organization`: an organization's own provider — its SMTP relay must be on the public internet
- * and use a submission port (SSRF; the platform's relay is set by ENTLAQA's operators and may be internal).
+ * the value. An SMTP relay configured in the product must be on the public internet and use a submission port
+ * (465, 587, 2525; SSRF) — an organization's own always; the platform sender's too, unless the operator allows
+ * internal relays for it (`allowPrivatePlatformSmtp`: EMAIL_PLATFORM_SMTP_ALLOW_PRIVATE=true, self-hosted).
  */
 export function createProviderTransport(
   provider: string,
@@ -25,6 +26,8 @@ export function createProviderTransport(
   secrets: unknown,
   context: {
     readonly organization: boolean;
+    /** The platform sender's SMTP relay may be internal, on any port (operator setting). */
+    readonly allowPrivatePlatformSmtp?: boolean;
     readonly http?: HttpProviderOptions;
     readonly lookup?: HostLookup;
     /** PEM of an extra certificate authority for the platform's own SMTP relay (SMTP_CA_CERT). */
@@ -85,7 +88,7 @@ function build(
         },
         context.organization ? undefined : context.smtpCaPem,
         {
-          publicOnly: context.organization,
+          publicOnly: context.organization || context.allowPrivatePlatformSmtp !== true,
           ...(context.lookup ? { lookup: context.lookup } : {}),
         },
       );

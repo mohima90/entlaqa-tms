@@ -1,5 +1,5 @@
 import { lookup as dnsLookup } from 'node:dns/promises';
-import { BlockList, isIP } from 'node:net';
+import { BlockList, type Socket, connect as netConnect, isIP } from 'node:net';
 import nodemailer from 'nodemailer';
 import { formatFrom } from './resend';
 import { EmailSendError, type EmailTransport } from './transport';
@@ -79,10 +79,17 @@ export function classifySmtpError(error: unknown): EmailSendError {
 }
 
 /**
- * Ports an ORGANIZATION's relay may use (WP-ADM-01): the SMTP submission ports. The platform's and the
- * installation's relays (set by ENTLAQA's operators) may use any port.
+ * Ports a relay configured in the product may use (WP-ADM-01, security review): the SMTP submission ports
+ * only (no 25: that is server-to-server relaying). An organization's relay always; the platform sender's
+ * too, unless the operator allows internal relays (EMAIL_PLATFORM_SMTP_ALLOW_PRIVATE=true, self-hosted). The
+ * installation's relay (environment) may use any port.
  */
-export const ORGANIZATION_SMTP_PORTS: ReadonlySet<number> = new Set([25, 465, 587, 2525]);
+export const SUBMISSION_SMTP_PORTS: ReadonlySet<number> = new Set([465, 587, 2525]);
+
+/** One send's hard limit: a server answering slowly (a tarpit) cannot hold the worker longer. */
+export const SMTP_SEND_DEADLINE_MS = 60_000;
+/** Opening the TCP connection (as nodemailer's connectionTimeout). */
+const CONNECT_TIMEOUT_MS = 10_000;
 
 /** Addresses no organization's relay may point the worker at: its own and private networks (SSRF). */
 const BLOCKED = new BlockList();
@@ -105,7 +112,12 @@ const BLOCKED_V4: readonly (readonly [string, number])[] = [
 const BLOCKED_V6: readonly (readonly [string, number])[] = [
   ['::', 128],
   ['::1', 128],
+  // IPv4-compatible (deprecated) addresses: ::a.b.c.d would reach an IPv4 address.
+  ['::', 96],
+  // NAT64 (well-known and local-use prefixes) and 6to4: they embed an IPv4 address.
   ['64:ff9b::', 96],
+  ['64:ff9b:1::', 48],
+  ['2002::', 16],
   ['100::', 64],
   ['2001:db8::', 32],
   ['fc00::', 7],
@@ -128,8 +140,42 @@ export function isPublicAddress(address: string): boolean {
 export type HostLookup = (host: string) => Promise<readonly { readonly address: string }[]>;
 const systemLookup: HostLookup = (host) => dnsLookup(host, { all: true, verbatim: true });
 
-function nodemailerTransport(settings: SmtpSettings, connectTo: string, caPem: string | undefined) {
+function nodemailerTransport(
+  settings: SmtpSettings,
+  connectTo: string,
+  caPem: string | undefined,
+  sockets: Set<Socket>,
+) {
   return nodemailer.createTransport({
+    // We open the TCP connection ourselves and hand it to nodemailer (its `connection` option), keeping a
+    // handle: on the send's deadline it is destroyed — closing a non-pooled transporter does not end a
+    // connection in progress. nodemailer then upgrades it to TLS as usual (implicit TLS or STARTTLS), checking
+    // the certificate against the configured host name.
+    getSocket: (_options, callback) => {
+      let settled = false;
+      const finish = (error: Error | null, socket?: Socket) => {
+        if (settled) return;
+        settled = true;
+        callback(error, socket ? { connection: socket } : false);
+      };
+      const socket = netConnect({ host: connectTo, port: settings.port });
+      sockets.add(socket);
+      socket.once('close', () => sockets.delete(socket));
+      socket.setTimeout(CONNECT_TIMEOUT_MS);
+      socket.once('connect', () => {
+        socket.setTimeout(0);
+        finish(null, socket);
+      });
+      socket.once('timeout', () => {
+        socket.destroy();
+        finish(Object.assign(new Error('SMTP connection timed out'), { code: 'ETIMEDOUT' }));
+      });
+      socket.once('error', (cause) => {
+        finish(
+          Object.assign(new Error('SMTP connection failed', { cause }), { code: 'ECONNECTION' }),
+        );
+      });
+    },
     host: connectTo,
     port: settings.port,
     secure: settings.secure,
@@ -156,21 +202,28 @@ function nodemailerTransport(settings: SmtpSettings, connectTo: string, caPem: s
  * name) against the system roots or `caPem`. SMTP has no idempotency key: a crash between the server's
  * acceptance and our status update can send a message twice.
  *
- * `publicOnly` (an organization's relay, WP-ADM-01): the host name is resolved before every send and the
- * worker connects to that address only when every address of the name is on the public internet and the
- * port is a submission port — an Organization Admin cannot point the worker at its own network (SSRF); the
- * refusal is SMTP_HOST_NOT_ALLOWED.
+ * Every send has a hard deadline (`deadlineMs`, 60 seconds): past it the connection is destroyed and the
+ * send fails with TIMEOUT (temporary) — a server that answers slowly forever cannot hold the worker.
+ *
+ * `publicOnly` (a relay configured in the product, WP-ADM-01): the host name is resolved before every send
+ * and the worker connects to that address only when every address of the name is on the public internet and
+ * the port is a submission port — an admin cannot point the worker at its own network (SSRF); the refusal is
+ * SMTP_HOST_NOT_ALLOWED.
  */
 export function createSmtpTransport(
   settings: SmtpSettings,
   caPem?: string,
-  options: { readonly publicOnly?: boolean; readonly lookup?: HostLookup } = {},
+  options: {
+    readonly publicOnly?: boolean;
+    readonly lookup?: HostLookup;
+    readonly deadlineMs?: number;
+  } = {},
 ): EmailTransport {
-  const shared = options.publicOnly ? null : nodemailerTransport(settings, settings.host, caPem);
   const lookup = options.lookup ?? systemLookup;
-  const connect = async () => {
-    if (shared) return { transporter: shared, once: false };
-    if (!ORGANIZATION_SMTP_PORTS.has(settings.port)) {
+  const deadlineMs = options.deadlineMs ?? SMTP_SEND_DEADLINE_MS;
+  const connectTo = async (): Promise<string> => {
+    if (!options.publicOnly) return settings.host;
+    if (!SUBMISSION_SMTP_PORTS.has(settings.port)) {
       throw new EmailSendError('SMTP_HOST_NOT_ALLOWED', false);
     }
     let addresses: readonly { readonly address: string }[];
@@ -183,32 +236,45 @@ export function createSmtpTransport(
     if (!first || addresses.some((a) => !isPublicAddress(a.address))) {
       throw new EmailSendError('SMTP_HOST_NOT_ALLOWED', false);
     }
-    return { transporter: nodemailerTransport(settings, first.address, caPem), once: true };
+    return first.address;
   };
   return {
     provider: 'smtp',
     async send(email) {
-      const { transporter, once } = await connect();
+      const address = await connectTo();
+      // One transporter per send (nodemailer opens one connection per message without a pool anyway).
+      const sockets = new Set<Socket>();
+      const transporter = nodemailerTransport(settings, address, caPem, sockets);
+      let timer: NodeJS.Timeout | undefined;
+      const deadline = new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          reject(new EmailSendError('TIMEOUT', false));
+        }, deadlineMs);
+      });
+      const domain = email.from.address.slice(email.from.address.lastIndexOf('@') + 1);
+      const sending = transporter.sendMail({
+        from: formatFrom(email.from),
+        to: email.to,
+        ...(email.replyTo ? { replyTo: email.replyTo } : {}),
+        subject: email.subject,
+        html: email.html,
+        text: email.text,
+        messageId: `<${email.idempotencyKey}@${domain}>`,
+      });
+      // After the deadline the abandoned send still settles (with the destroyed socket's error): ignored.
+      sending.catch(() => undefined);
       try {
-        const domain = email.from.address.slice(email.from.address.lastIndexOf('@') + 1);
-        const info = await transporter.sendMail({
-          from: formatFrom(email.from),
-          to: email.to,
-          ...(email.replyTo ? { replyTo: email.replyTo } : {}),
-          subject: email.subject,
-          html: email.html,
-          text: email.text,
-          messageId: `<${email.idempotencyKey}@${domain}>`,
-        });
+        const info = await Promise.race([sending, deadline]);
         return { providerMessageId: info.messageId.slice(0, 300) };
       } catch (error) {
-        throw classifySmtpError(error);
+        throw error instanceof EmailSendError ? error : classifySmtpError(error);
       } finally {
-        if (once) transporter.close();
+        clearTimeout(timer);
+        for (const socket of sockets) socket.destroy();
+        transporter.close();
       }
     },
     close() {
-      shared?.close();
       return Promise.resolve();
     },
   };

@@ -21,7 +21,8 @@ const PATH = '/platform/settings/email';
 /**
  * Platform settings → Email «مرسِل البريد» / Email sender (WP-ADM-01; FR-ADM-17, FR-NTF-11; Kawadir's
  * (admin)/settings/email, Jadarat palette): the current status first — working (a test went out), saved but
- * unproven, or not set up — with the messages waiting for a sender (warning), then the configure card.
+ * unproven, or not set up — with the messages waiting for a sender (warning) and the platform sender's
+ * failed deliveries of the last 24 hours (all organizations, a count only), then the configure card.
  * Deny by default, on the server, before anything renders: a Super Admin's verified session — everyone else
  * gets 404 (platform-identity platform-email-console.ts). The secrets are never shown: not even to the
  * Super Admin.
@@ -74,6 +75,12 @@ export default async function PlatformEmailPage({
               count: view.waitingCount,
               date: view.oldestWaitingAt ? dates.format(view.oldestWaitingAt) : '',
             })}
+          </Alert>
+        ) : null}
+
+        {view.platformFailed24h > 0 ? (
+          <Alert tone="danger" data-testid="platform-email-failed">
+            {t('platform.failed24h', { count: view.platformFailed24h })}
           </Alert>
         ) : null}
 

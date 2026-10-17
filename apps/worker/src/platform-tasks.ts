@@ -65,6 +65,8 @@ export interface PlatformTaskDependencies {
   readonly email?: {
     readonly keys: CredentialsKeyPair | null;
     readonly router: EmailRouter;
+    /** EMAIL_PLATFORM_SMTP_ALLOW_PRIVATE=true: the platform sender's SMTP relay may be internal. */
+    readonly allowPrivatePlatformSmtp?: boolean;
   };
 }
 
@@ -120,9 +122,14 @@ export function platformTasks(deps: PlatformTaskDependencies): readonly Platform
     purger,
   ];
   if (deps.email) {
-    const { keys, router } = deps.email;
+    const { keys, router, allowPrivatePlatformSmtp } = deps.email;
     tasks.push(
-      createEmailTestTask({ keys, withPlatformTx: deps.withPlatformTx, log: deps.log }),
+      createEmailTestTask({
+        keys,
+        withPlatformTx: deps.withPlatformTx,
+        log: deps.log,
+        allowPrivatePlatformSmtp: allowPrivatePlatformSmtp === true,
+      }),
       createEmailResumeTask({
         router,
         withPlatformTx: deps.withPlatformTx,

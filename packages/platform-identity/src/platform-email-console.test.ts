@@ -31,6 +31,7 @@ const VIEW: PlatformEmailView = {
   sender: null,
   waitingCount: 3,
   oldestWaitingAt: null,
+  platformFailed24h: 0,
 };
 const INPUT: PlatformEmailInput = {
   version: null,

@@ -193,20 +193,32 @@ export async function takeWaitingDeliveries(tx: ClaimsTx, limit: number): Promis
   return rows.map((r) => r.id);
 }
 
-/** The delivery log's housekeeping (T-M2-48): stale, long-waiting and expired rows. */
+/**
+ * The delivery log's housekeeping (T-M2-48): stale, long-waiting and expired rows; test e-mails left unsent
+ * for 7 days (`testsExpired`).
+ */
 export async function sweepEmailDeliveries(
   tx: ClaimsTx,
   batch: number,
-): Promise<{ readonly stale: number; readonly expired: number; readonly purged: number }> {
+): Promise<{
+  readonly stale: number;
+  readonly expired: number;
+  readonly purged: number;
+  readonly testsExpired: number;
+}> {
   const [row] = await tx.execute<{
     stale: number | string;
     expired: number | string;
     purged: number | string;
-  }>(sql`select stale, expired, purged from private.sweep_email_deliveries(${batch})`);
+    tests_expired: number | string;
+  }>(
+    sql`select stale, expired, purged, tests_expired from private.sweep_email_deliveries(${batch})`,
+  );
   return {
     stale: Number(row?.stale ?? 0),
     expired: Number(row?.expired ?? 0),
     purged: Number(row?.purged ?? 0),
+    testsExpired: Number(row?.tests_expired ?? 0),
   };
 }
 

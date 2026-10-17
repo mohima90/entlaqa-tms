@@ -184,6 +184,40 @@ describe('the sender rule (WP-ADM-01, Kawadir)', () => {
     await router.close();
   });
 
+  it('expired transports are closed and removed (settings that changed leave nothing behind)', async () => {
+    let now = 0;
+    const closes: string[] = [];
+    let n = 0;
+    const transportFor = vi.fn(() => {
+      const id = `t${String((n += 1))}`;
+      return {
+        provider: 'resend' as const,
+        send: vi.fn(),
+        close: () => {
+          closes.push(id);
+          return Promise.resolve();
+        },
+      };
+    }) as unknown as typeof createProviderTransport;
+    const router = createEmailRouter({
+      keys,
+      installation: null,
+      log: vi.fn(),
+      transportFor,
+      now: () => now,
+    });
+    db.loadEmailRoute.mockResolvedValue(row());
+    await router.resolve(tx, TENANT); // t1 (version 1)
+    db.loadEmailRoute.mockResolvedValue(row({ platform: { ...row().platform!, version: 2 } }));
+    await router.resolve(tx, TENANT); // t2 (version 2); t1 still within its minute
+    expect(closes).toEqual([]);
+    now = 61_000;
+    await router.resolve(tx, TENANT); // both expired: closed, t3 built
+    expect(closes).toEqual(['t1', 't2']);
+    await router.close();
+    expect(closes).toEqual(['t1', 't2', 't3']);
+  });
+
   it('before the migration (expand-first): the installation sender as before, else wait', async () => {
     db.loadEmailRoute.mockRejectedValue(
       Object.assign(new Error('function does not exist'), { code: '42883' }),
@@ -294,6 +328,12 @@ describe('provider settings and SSRF protection', () => {
     ).rejects.toMatchObject({
       code: 'SMTP_HOST_NOT_ALLOWED',
     });
+    // Port 25 is server-to-server relaying, not submission: refused too.
+    await expect(
+      relay('smtp.x.example', 25, () => Promise.resolve([{ address: '93.184.216.34' }])),
+    ).rejects.toMatchObject({
+      code: 'SMTP_HOST_NOT_ALLOWED',
+    });
     await expect(
       relay('nowhere.example', 587, () => Promise.reject(new Error('ENOTFOUND'))),
     ).rejects.toMatchObject({
@@ -310,6 +350,12 @@ describe('provider settings and SSRF protection', () => {
       'fd00::1',
       'fe80::1',
       '::ffff:10.0.0.1',
+      // IPv4-compatible, NAT64 (well-known and local-use) and 6to4 addresses embed an IPv4 address.
+      '::10.0.0.1',
+      '::a00:1',
+      '64:ff9b::a00:1',
+      '64:ff9b:1::a00:1',
+      '2002:a00:1::1',
       '0.0.0.0',
       'not-an-ip',
     ]) {
@@ -322,5 +368,38 @@ describe('provider settings and SSRF protection', () => {
     ]) {
       expect(isPublicAddress(address), address).toBe(true);
     }
+  });
+
+  it("the platform sender's relay: the same rule, unless the operator allows internal relays", async () => {
+    const email = {
+      from: { name: 'A', address: 'a@x.example' },
+      to: 'b@y.example',
+      subject: 's',
+      html: 'h',
+      text: 't',
+      idempotencyKey: 'k',
+    };
+    const lookup = vi.fn(() => Promise.resolve([{ address: '127.0.0.1' }]));
+    const platformRelay = (allowPrivatePlatformSmtp: boolean, port: number) =>
+      createProviderTransport(
+        'smtp',
+        { host: 'relay.internal', port, security: 'starttls', username: '' },
+        { password: '' },
+        { organization: false, allowPrivatePlatformSmtp, lookup },
+      ).send(email);
+    await expect(platformRelay(false, 587)).rejects.toMatchObject({
+      code: 'SMTP_HOST_NOT_ALLOWED',
+    });
+    await expect(platformRelay(false, 25)).rejects.toMatchObject({ code: 'SMTP_HOST_NOT_ALLOWED' });
+    // Allowed by the operator: no check (the connection itself fails here: nothing listens on 127.0.0.1:1).
+    lookup.mockClear();
+    const allowed = createProviderTransport(
+      'smtp',
+      { host: '127.0.0.1', port: 1, security: 'starttls', username: '' },
+      { password: '' },
+      { organization: false, allowPrivatePlatformSmtp: true, lookup },
+    );
+    await expect(allowed.send(email)).rejects.toMatchObject({ code: 'NETWORK_ERROR' });
+    expect(lookup).not.toHaveBeenCalled();
   });
 });

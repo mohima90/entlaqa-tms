@@ -14,6 +14,7 @@ import {
   providerFormValues,
   providerInput,
   providerLabel,
+  secretStateFor,
 } from '../../lib/email-settings-form';
 import { type ErrorTexts, errorText } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
@@ -68,8 +69,7 @@ export function EmailIntegrationForm(props: EmailIntegrationFormProps) {
   const [testOpen, setTestOpen] = useState(false);
   const [recipient, setRecipient] = useState('');
   const [recipientError, setRecipientError] = useState<string | undefined>();
-  const sameProvider = saved !== null && saved.provider === provider.provider;
-  const secretState = !sameProvider ? 'none' : saved.credentialsCurrent ? 'saved' : 'keyChanged';
+  const secretState = secretStateFor(saved, provider);
   const disabled = pending || !props.editable || !props.keyReady;
   const own = saved?.enabled === true ? saved : null;
   const ownActive = own !== null;
@@ -87,15 +87,17 @@ export function EmailIntegrationForm(props: EmailIntegrationFormProps) {
     const text =
       error.code === 'CONFLICT_VERSION'
         ? t('conflict')
-        : formCode === 'KEY_CHANGED'
-          ? t('keyChanged')
-          : formCode === 'NOT_SET_UP'
-            ? t('integration.keyMissing')
-            : formCode === 'NOT_VERIFIED'
-              ? t('integration.switchNeedsTest')
-              : formCode === 'NOT_CONFIGURED'
-                ? t('integration.saveFirst')
-                : errorText(error, errors);
+        : formCode === 'TOO_SOON'
+          ? t('testTooSoon')
+          : formCode === 'KEY_CHANGED'
+            ? t('keyChanged')
+            : formCode === 'NOT_SET_UP'
+              ? t('integration.keyMissing')
+              : formCode === 'NOT_VERIFIED'
+                ? t('integration.switchNeedsTest')
+                : formCode === 'NOT_CONFIGURED'
+                  ? t('integration.saveFirst')
+                  : errorText(error, errors);
     setMessage({ tone: 'danger', text });
   }
 

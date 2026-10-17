@@ -36,9 +36,27 @@ const KEY_ID = /^[A-Za-z0-9_-]{12}$/;
 export type CredentialsScope =
   { readonly kind: 'platform' } | { readonly kind: 'tenant'; readonly tenantId: string };
 
-export function credentialsContext(scope: CredentialsScope, provider: EmailProviderId): string {
+/**
+ * The additional data a sealed value is bound to: its owner and provider and, for SMTP, the server it was
+ * typed for (`host:port`) — a saved SMTP password never opens for another server, so changing the host or the
+ * port of the settings without typing the password again makes the worker refuse it (the database also
+ * refuses to keep it, WP-ADM-01 security review).
+ */
+export function credentialsContext(
+  scope: CredentialsScope,
+  provider: EmailProviderId,
+  options: unknown = {},
+): string {
   const owner = scope.kind === 'platform' ? 'platform' : `tenant:${scope.tenantId.toLowerCase()}`;
-  return `${SEALED_INFO}|${owner}|${provider}`;
+  if (provider !== 'smtp') return `${SEALED_INFO}|${owner}|${provider}`;
+  const record = (typeof options === 'object' && options !== null ? options : {}) as Record<
+    string,
+    unknown
+  >;
+  const host = typeof record.host === 'string' ? record.host.trim().toLowerCase() : '';
+  const port =
+    typeof record.port === 'number' || typeof record.port === 'string' ? String(record.port) : '';
+  return `${SEALED_INFO}|${owner}|smtp|${host}:${port}`;
 }
 
 /** The key id of a raw 32-byte X25519 public key. */
@@ -128,5 +146,9 @@ export function sealProviderInput(
   if (provider.secrets === null) return null;
   const secrets: Record<string, string> = {};
   for (const [name, value] of Object.entries(provider.secrets)) secrets[name] = value;
-  return sealCredentials(key, credentialsContext(scope, provider.provider), secrets);
+  return sealCredentials(
+    key,
+    credentialsContext(scope, provider.provider, provider.options),
+    secrets,
+  );
 }

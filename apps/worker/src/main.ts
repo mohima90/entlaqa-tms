@@ -92,6 +92,7 @@ async function runWorker(settings: RunnerSettings): Promise<void> {
   const emailTransport = settings.email.createTransport();
   const emailRouter = createEmailRouter({
     keys: settings.emailCredentials,
+    allowPrivatePlatformSmtp: settings.allowPrivatePlatformSmtp,
     installation: emailTransport
       ? {
           transport: emailTransport,
@@ -138,7 +139,11 @@ async function runWorker(settings: RunnerSettings): Promise<void> {
         withSystemTx,
         log,
         adminKeyCheck,
-        email: { keys: settings.emailCredentials, router: emailRouter },
+        email: {
+          keys: settings.emailCredentials,
+          router: emailRouter,
+          allowPrivatePlatformSmtp: settings.allowPrivatePlatformSmtp,
+        },
       }),
       concurrency: settings.concurrency,
       log,
@@ -155,6 +160,18 @@ async function runWorker(settings: RunnerSettings): Promise<void> {
       },
     );
     adminKeyCheck?.();
+    if (settings.allowPrivatePlatformSmtp) {
+      logger.warn(
+        'the platform sender may use an internal SMTP relay on any port (EMAIL_PLATFORM_SMTP_ALLOW_PRIVATE=true)',
+        { action: 'worker.start', reason: 'platform_smtp_private_allowed' },
+      );
+    }
+    if (settings.emailCredentialsProblem) {
+      logger.warn(
+        `e-mail settings saved in the product are off: ${settings.emailCredentialsProblem}`,
+        { action: 'worker.start', reason: 'email_credentials_key_unusable' },
+      );
+    }
     if (settings.authAdmin && !settings.orphanSweep.enabled) {
       logger.warn('file orphan sweep paused (FILE_ORPHAN_SWEEP=off): orphan objects are kept', {
         action: 'worker.start',

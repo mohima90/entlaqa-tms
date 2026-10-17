@@ -105,10 +105,26 @@ const providerInput = <P extends EmailProviderId>(provider: P) =>
     secrets: EMAIL_PROVIDER_SECRETS[provider].nullable(),
   });
 
+/**
+ * SMTP: a relay with sign-in (a username) needs its password whenever secrets are sent (a new provider or
+ * server, or a new password) — an empty one would only fail at the test.
+ */
+const smtpInput = z
+  .strictObject({
+    provider: z.literal('smtp'),
+    options: EMAIL_PROVIDER_OPTIONS.smtp,
+    secrets: EMAIL_PROVIDER_SECRETS.smtp.nullable(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.secrets !== null && value.options.username !== '' && value.secrets.password === '') {
+      ctx.addIssue({ code: 'custom', path: ['secrets', 'password'], message: 'required' });
+    }
+  });
+
 /** The provider part of the settings forms (Super Admin and Organization Admin alike). */
 export const EmailProviderInput = z.discriminatedUnion('provider', [
   providerInput('resend'),
-  providerInput('smtp'),
+  smtpInput,
   providerInput('sendgrid'),
   providerInput('mailgun'),
   providerInput('microsoft_graph'),
@@ -139,6 +155,8 @@ export const EMAIL_ERROR_CODES = [
   'NETWORK_ERROR',
   'TLS_FAILED',
   'SMTP_HOST_NOT_ALLOWED',
+  'TIMEOUT',
+  'TEST_EXPIRED',
   'CREDENTIALS_KEY_MISSING',
   'CREDENTIALS_KEY_CHANGED',
   'CREDENTIALS_INVALID',

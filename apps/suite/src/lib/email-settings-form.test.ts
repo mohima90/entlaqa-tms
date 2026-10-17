@@ -6,6 +6,7 @@ import {
   providerFormValues,
   providerInput,
   providerLabel,
+  secretStateFor,
   secretsLeftEmpty,
   templateKey,
 } from './email-settings-form';
@@ -85,6 +86,31 @@ describe('e-mail settings form (WP-ADM-01)', () => {
     expect(providerInput({ ...cases[3]!, smtpPort: 'abc' }, false)).toMatchObject({
       options: { port: -1 },
     });
+  });
+
+  it('an SMTP password is kept only for the same server; a relay with sign-in needs its password', () => {
+    const saved = {
+      provider: 'smtp',
+      options: { host: 'smtp.raya.example', port: 587, security: 'starttls', username: 'mailer' },
+      credentialsCurrent: true,
+    };
+    const values = providerFormValues(saved);
+    expect(secretStateFor(saved, values)).toBe('saved');
+    expect(secretStateFor(saved, { ...values, smtpHost: ' SMTP.raya.example ' })).toBe('saved');
+    expect(secretStateFor(saved, { ...values, smtpHost: 'evil.example' })).toBe('serverChanged');
+    expect(secretStateFor(saved, { ...values, smtpPort: '2525' })).toBe('serverChanged');
+    expect(secretStateFor(saved, { ...values, smtpSecurity: 'tls' })).toBe('serverChanged');
+    expect(secretStateFor({ ...saved, credentialsCurrent: false }, values)).toBe('keyChanged');
+    expect(secretStateFor(saved, { ...values, provider: 'resend' })).toBe('none');
+    expect(secretStateFor(null, values)).toBe('none');
+    // Another server: the empty password is sent (not kept) and refused for a relay with a username.
+    const moved = { ...values, smtpHost: 'smtp2.raya.example' };
+    const input = providerInput(moved, secretStateFor(saved, moved) === 'saved');
+    expect(input).toMatchObject({ secrets: { password: '' } });
+    expect(EmailProviderInput.safeParse(input).success).toBe(false);
+    expect(
+      EmailProviderInput.safeParse(providerInput({ ...moved, smtpUsername: '' }, false)).success,
+    ).toBe(true);
   });
 
   it('maps server field paths to the form fields', () => {

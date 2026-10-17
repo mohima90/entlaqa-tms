@@ -6,6 +6,7 @@ import {
   PROVIDER_FIELDS,
   type ProviderField,
   type ProviderFormValues,
+  type SecretState,
 } from '../../lib/email-settings-form';
 import { SelectField } from '../select-field';
 
@@ -28,8 +29,11 @@ export function ProviderFields({
   readonly values: ProviderFormValues;
   readonly onChange: (values: ProviderFormValues) => void;
   readonly disabled: boolean;
-  /** For the CHOSEN provider: none saved, saved and usable (keep when empty), or saved with an old key. */
-  readonly secretState: 'none' | 'saved' | 'keyChanged';
+  /**
+   * For the CHOSEN provider: none saved, saved and usable (keep when empty), saved with an old key, or an
+   * SMTP password saved for another server (enter it again).
+   */
+  readonly secretState: SecretState;
   readonly errors: Readonly<Record<string, string | undefined>>;
   /** emailSettings texts, flattened. */
   readonly texts: Readonly<Record<string, string>>;
@@ -44,8 +48,12 @@ export function ProviderFields({
       ? `${t('provider.secretSaved')} ${t('provider.secretHint')}`
       : secretState === 'keyChanged'
         ? t('provider.secretKeyChanged')
-        : t('provider.secretHint');
+        : secretState === 'serverChanged'
+          ? t('provider.secretServerChanged')
+          : t('provider.secretHint');
   const required = secretState === 'saved' ? t('provider.optional') : t('provider.required');
+  // A relay without sign-in (no username) has no password.
+  const passwordRequired = secretState !== 'saved' && values.smtpUsername.trim() !== '';
 
   function field(name: ProviderField, secret: boolean) {
     const common = {
@@ -85,7 +93,14 @@ export function ProviderFields({
             autoComplete="off"
             spellCheck={false}
             label={t(`provider.${name}`)}
-            marker={name === 'smtpPassword' ? t('provider.optional') : required}
+            marker={
+              name === 'smtpPassword'
+                ? passwordRequired
+                  ? t('provider.required')
+                  : t('provider.optional')
+                : required
+            }
+            aria-required={name === 'smtpPassword' ? passwordRequired : secretState !== 'saved'}
             hint={secretHint()}
             value={values[name]}
             onChange={(event) => {

@@ -80,6 +80,9 @@ function refusal(error: unknown): Result<never, AppError> {
           fieldErrors: [{ path: FIELD_PATHS[error.field ?? ''] ?? 'form', code: 'INVALID' }],
         }),
       );
+    case 'EMAIL_SETTINGS_TOO_SOON':
+      // One test e-mail a minute (every save sends one) — checked by the database.
+      return err(appError('RATE_LIMITED', { fieldErrors: [{ path: 'form', code: 'TOO_SOON' }] }));
     default:
       return err(
         appError('VALIDATION_FAILED', { fieldErrors: [{ path: 'form', code: 'INVALID' }] }),

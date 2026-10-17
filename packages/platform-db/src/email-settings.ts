@@ -26,7 +26,9 @@ export type EmailSettingsErrorCode =
   /** Enabling an organization's provider before its test e-mail went out. */
   | 'EMAIL_SETTINGS_NOT_VERIFIED'
   /** No organization provider to test or switch. */
-  | 'EMAIL_SETTINGS_NOT_CONFIGURED';
+  | 'EMAIL_SETTINGS_NOT_CONFIGURED'
+  /** A test e-mail too soon after the last one (one a minute; an organization: 20 a day). */
+  | 'EMAIL_SETTINGS_TOO_SOON';
 
 export type EmailSettingsField =
   | 'provider'
@@ -79,6 +81,8 @@ export function emailSettingsErrorOf(error: unknown): unknown {
       return new EmailSettingsError('EMAIL_SETTINGS_NOT_VERIFIED', { cause: error });
     case 'JE005':
       return new EmailSettingsError('EMAIL_SETTINGS_NOT_CONFIGURED', { cause: error });
+    case 'JE006':
+      return new EmailSettingsError('EMAIL_SETTINGS_TOO_SOON', { cause: error });
     default:
       return error;
   }
@@ -200,13 +204,19 @@ export interface PlatformEmailView {
   readonly sender: EmailSenderSettings | null;
   readonly waitingCount: number;
   readonly oldestWaitingAt: Date | null;
+  /** Deliveries sent with the platform sender that failed in the last 24 hours (all organizations). */
+  readonly platformFailed24h: number;
 }
 
 /** Throws EMAIL_SETTINGS_FORBIDDEN for anyone but a Super Admin. */
 export async function getPlatformEmailSettings(tx: ClaimsTx): Promise<PlatformEmailView> {
   const rows = await readOrNull(tx, (t) =>
     t.execute<
-      SenderRow & { waiting_count: number | string; oldest_waiting_at: Date | string | null }
+      SenderRow & {
+        waiting_count: number | string;
+        oldest_waiting_at: Date | string | null;
+        platform_failed_24h?: number | string | null;
+      }
     >(sql`select * from private.platform_email_settings_view()`),
   );
   const row = rows?.[0];
@@ -217,6 +227,7 @@ export async function getPlatformEmailSettings(tx: ClaimsTx): Promise<PlatformEm
       sender: null,
       waitingCount: 0,
       oldestWaitingAt: null,
+      platformFailed24h: 0,
     };
   return {
     available: true,
@@ -224,6 +235,7 @@ export async function getPlatformEmailSettings(tx: ClaimsTx): Promise<PlatformEm
     sender: sender(row),
     waitingCount: Number(row.waiting_count),
     oldestWaitingAt: toDate(row.oldest_waiting_at),
+    platformFailed24h: Number(row.platform_failed_24h ?? 0),
   };
 }
 

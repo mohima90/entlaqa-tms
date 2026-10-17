@@ -93,6 +93,36 @@ export function providerFormValues(
   };
 }
 
+/**
+ * The saved secret of the CHOSEN provider: none saved (another provider), saved and usable (empty = keep),
+ * saved with an old worker key (enter again), or an SMTP password saved for another server — host, port or
+ * encryption changed: the password is never reused for another server (enter it again; the database and
+ * the worker refuse it too).
+ */
+export type SecretState = 'none' | 'saved' | 'keyChanged' | 'serverChanged';
+
+export function secretStateFor(
+  saved: {
+    readonly provider: string;
+    readonly options: Record<string, unknown>;
+    readonly credentialsCurrent: boolean;
+  } | null,
+  values: ProviderFormValues,
+): SecretState {
+  if (saved?.provider !== values.provider) return 'none';
+  if (values.provider === 'smtp') {
+    const before = providerFormValues(saved);
+    if (
+      before.smtpHost.trim().toLowerCase() !== values.smtpHost.trim().toLowerCase() ||
+      before.smtpPort.trim() !== values.smtpPort.trim() ||
+      before.smtpSecurity !== values.smtpSecurity
+    ) {
+      return 'serverChanged';
+    }
+  }
+  return saved.credentialsCurrent ? 'saved' : 'keyChanged';
+}
+
 /** The secret fields of the chosen provider are all empty (keep the saved secrets). */
 export function secretsLeftEmpty(values: ProviderFormValues): boolean {
   return PROVIDER_FIELDS[values.provider]

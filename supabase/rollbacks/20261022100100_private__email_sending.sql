@@ -26,6 +26,7 @@ drop table if exists private.tenant_email_settings;
 drop table if exists private.platform_email_settings;
 drop table if exists private.email_credentials_key;
 
+drop function if exists private.email_smtp_server_changed(text, jsonb, jsonb);
 drop function if exists private.email_sender_name_is_valid(text);
 drop function if exists private.email_address_masked(text);
 drop function if exists private.email_address_is_valid(text);

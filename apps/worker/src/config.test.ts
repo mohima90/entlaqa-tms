@@ -194,13 +194,19 @@ describe('readSettings', () => {
       { ...env, EMAIL_CREDENTIALS_KEY: secret },
       /APP_BASE_URL must be set when e-mail can be sent/,
     );
-    let message = '';
-    try {
-      readSettings([], { ...env, EMAIL_CREDENTIALS_KEY: 'short-secret-value' }, noCa);
-    } catch (error) {
-      message = (error as Error).message;
-    }
-    expect(message).toBe('EMAIL_CREDENTIALS_KEY must be at least 32 characters');
+    // Too short: only the e-mail settings saved in the product are off (logged), the worker still starts.
+    const short = runner([], { ...env, EMAIL_CREDENTIALS_KEY: 'short-secret-value' });
+    expect(short.emailCredentials).toBeNull();
+    expect(short.emailCredentialsProblem).toBe(
+      'EMAIL_CREDENTIALS_KEY must be at least 32 characters',
+    );
+    expect(JSON.stringify(short)).not.toContain('short-secret-value');
+    // The platform sender's relay: public and submission ports only, unless the operator allows internal ones.
+    expect(runner([], env).allowPrivatePlatformSmtp).toBe(false);
+    expect(
+      runner([], { ...env, EMAIL_PLATFORM_SMTP_ALLOW_PRIVATE: 'true' }).allowPrivatePlatformSmtp,
+    ).toBe(true);
+    fails([], { ...env, EMAIL_PLATFORM_SMTP_ALLOW_PRIVATE: 'yes' }, /must be true or false/);
     expect(runner([], { ...env, EMAIL_CREDENTIALS_KEY: '  ' }).emailCredentials).toBeNull();
   });
 

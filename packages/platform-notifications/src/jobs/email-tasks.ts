@@ -30,6 +30,11 @@ export const EMAIL_RESUME_TASK = 'platform.email_resume';
 export const EMAIL_HOUSEKEEPING_TASK = 'platform.email_housekeeping';
 /** Test e-mails per pass. */
 const TESTS_PER_PASS = 5;
+/**
+ * A pass stops claiming tests after this long (each send has its own 60-second deadline): slow providers
+ * cannot hold the worker; the rest wait for the next pass.
+ */
+const TESTS_PASS_BUDGET_MS = 90_000;
 /** Waiting messages queued again per organization and pass. */
 const RESUME_PER_TENANT = 200;
 /** Rows of each kind per housekeeping pass. */
@@ -56,11 +61,15 @@ export function createEmailTestTask(options: {
   readonly withPlatformTx: WithPlatformTx;
   readonly log: Log;
   readonly smtpCaPem?: string | undefined;
+  /** EMAIL_PLATFORM_SMTP_ALLOW_PRIVATE=true: the platform sender's SMTP relay may be internal. */
+  readonly allowPrivatePlatformSmtp?: boolean;
   readonly lookup?: HostLookup;
   readonly transportFor?: typeof createProviderTransport;
+  readonly now?: () => number;
 }): PlatformTask {
   const { keys, withPlatformTx, log } = options;
   const transportFor = options.transportFor ?? createProviderTransport;
+  const now = options.now ?? Date.now;
   let published = false;
 
   async function sendTest(test: EmailTestClaim): Promise<void> {
@@ -71,9 +80,13 @@ export function createEmailTestTask(options: {
       test.tenantId === null
         ? ({ kind: 'platform' } as const)
         : ({ kind: 'tenant', tenantId: test.tenantId } as const);
-    const secrets = keys.open(test.credentialsSealed, credentialsContext(scope, test.provider));
+    const secrets = keys.open(
+      test.credentialsSealed,
+      credentialsContext(scope, test.provider, test.options),
+    );
     const transport = transportFor(test.provider, test.options, secrets, {
       organization: test.tenantId !== null,
+      allowPrivatePlatformSmtp: options.allowPrivatePlatformSmtp === true,
       smtpCaPem: options.smtpCaPem,
       ...(options.lookup ? { lookup: options.lookup } : {}),
     });
@@ -98,6 +111,24 @@ export function createEmailTestTask(options: {
     }
   }
 
+  async function runTest(jobId: string, test: EmailTestClaim): Promise<void> {
+    let outcome: { readonly sent: true } | { readonly sent: false; readonly errorCode: string };
+    try {
+      await sendTest(test);
+      outcome = { sent: true };
+    } catch (error) {
+      outcome = { sent: false, errorCode: codeOf(error) };
+    }
+    const verified = await withPlatformTx({ jobId }, (tx) => finishEmailTest(tx, test, outcome));
+    const whose = test.tenantId === null ? 'platform sender' : "organization's provider";
+    log(
+      outcome.sent ? 'info' : 'warning',
+      outcome.sent
+        ? `test e-mail of the ${whose} sent${verified ? ' (verified)' : ''}`
+        : `test e-mail of the ${whose} not sent (${outcome.errorCode})`,
+    );
+  }
+
   return {
     name: EMAIL_TESTS_TASK,
     async run({ jobId }) {
@@ -112,28 +143,19 @@ export function createEmailTestTask(options: {
           }
           published = true;
         }
-        const tests = await withPlatformTx({ jobId }, (tx) => claimEmailTests(tx, TESTS_PER_PASS));
-        for (const test of tests) {
-          let outcome:
-            { readonly sent: true } | { readonly sent: false; readonly errorCode: string };
-          try {
-            await sendTest(test);
-            outcome = { sent: true };
-          } catch (error) {
-            outcome = { sent: false, errorCode: codeOf(error) };
+        // One test claimed at a time, within the pass's time budget: a test is never left claimed while the
+        // worker is busy with another (the database fails a test after 3 claims — TIMEOUT).
+        const started = now();
+        let handled = 0;
+        while (handled < TESTS_PER_PASS && now() - started < TESTS_PASS_BUDGET_MS) {
+          const tests = await withPlatformTx({ jobId }, (tx) => claimEmailTests(tx, 1));
+          if (tests.length === 0) return false;
+          for (const test of tests) {
+            handled += 1;
+            await runTest(jobId, test);
           }
-          const verified = await withPlatformTx({ jobId }, (tx) =>
-            finishEmailTest(tx, test, outcome),
-          );
-          const whose = test.tenantId === null ? 'platform sender' : "organization's provider";
-          log(
-            outcome.sent ? 'info' : 'warning',
-            outcome.sent
-              ? `test e-mail of the ${whose} sent${verified ? ' (verified)' : ''}`
-              : `test e-mail of the ${whose} not sent (${outcome.errorCode})`,
-          );
         }
-        return tests.length === TESTS_PER_PASS;
+        return true; // more may be waiting: the next pass continues
       } catch (error) {
         if (isEmailSettingsMissing(error)) return false; // the database is not migrated yet
         throw error;
@@ -214,6 +236,11 @@ export function createEmailHousekeepingTask(options: {
         }
         if (swept.purged > 0)
           log('info', `${String(swept.purged)} delivery log rows older than 12 months removed`);
+        if (swept.testsExpired > 0)
+          log(
+            'warning',
+            `${String(swept.testsExpired)} test e-mails left unsent for 7 days recorded as failed`,
+          );
         const more =
           swept.stale === SWEEP_BATCH ||
           swept.expired === SWEEP_BATCH ||

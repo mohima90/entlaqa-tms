@@ -73,6 +73,8 @@ export function createEmailRouter(options: {
   readonly installation: InstallationSender | null;
   readonly log: Log;
   readonly smtpCaPem?: string | undefined;
+  /** EMAIL_PLATFORM_SMTP_ALLOW_PRIVATE=true: the platform sender's SMTP relay may be internal. */
+  readonly allowPrivatePlatformSmtp?: boolean;
   readonly lookup?: HostLookup;
   readonly transportFor?: typeof createProviderTransport;
   readonly now?: () => number;
@@ -81,6 +83,17 @@ export function createEmailRouter(options: {
   const transportFor = options.transportFor ?? createProviderTransport;
   const now = options.now ?? Date.now;
   const cache = new Map<string, { readonly transport: EmailTransport; readonly at: number }>();
+
+  /** Expired entries go (closed): settings changed or organizations no longer sending leave nothing behind. */
+  function evictExpired(): void {
+    const t = now();
+    for (const [key, entry] of cache) {
+      if (t - entry.at >= TRANSPORT_TTL_MS) {
+        cache.delete(key);
+        void entry.transport.close?.().catch(() => undefined);
+      }
+    }
+  }
 
   function transport(
     scope: CredentialsScope,
@@ -94,21 +107,19 @@ export function createEmailRouter(options: {
     const owner = scope.kind === 'platform' ? 'platform' : scope.tenantId;
     const fingerprint = createHash('sha256').update(settings.credentialsSealed).digest('base64url');
     const key = `${owner}|${settings.provider}|${String(settings.version)}|${fingerprint}`;
+    evictExpired();
     const hit = cache.get(key);
-    if (hit && now() - hit.at < TRANSPORT_TTL_MS) return hit.transport;
-    if (hit) {
-      cache.delete(key);
-      void hit.transport.close?.().catch(() => undefined);
-    }
+    if (hit) return hit.transport;
     if (!keys) throw new CredentialsError('CREDENTIALS_KEY_MISSING');
     if (!isEmailProvider(settings.provider))
       throw new EmailSendError('PROVIDER_SETTINGS_INVALID', false);
     const secrets = keys.open(
       settings.credentialsSealed,
-      credentialsContext(scope, settings.provider),
+      credentialsContext(scope, settings.provider, settings.options),
     );
     const created = transportFor(settings.provider, settings.options, secrets, {
       organization: scope.kind === 'tenant',
+      allowPrivatePlatformSmtp: options.allowPrivatePlatformSmtp === true,
       smtpCaPem: options.smtpCaPem,
       ...(options.lookup ? { lookup: options.lookup } : {}),
     });

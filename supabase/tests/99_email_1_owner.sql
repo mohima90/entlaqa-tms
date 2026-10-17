@@ -199,8 +199,11 @@ begin
   select * into r from private.platform_email_settings_view();
   perform tests.assert(r.configured and r.provider = 'resend' and r.from_name = 'ENTLAQA' and r.status = 'unverified'
                        and r.test_status = 'queued' and r.test_recipient_masked = 'o***@entlaqa.example'
-                       and r.credentials_key_id = 'k3yId0000001',
+                       and r.credentials_key_id = 'k3yId0000001' and r.platform_failed_24h = 0,
     'saved unverified, its test queued (masked recipient), never the secrets');
+  -- One test e-mail a minute (every save sends one).
+  perform tests.assert_fails_state_like(format($q$select private.platform_save_email_settings('resend', '{}', %L, 'ENTLAQA', 'no-reply@jadarat.example', 'ops@entlaqa.example', 1)$q$, pg_temp.sealed()),
+    'JE006', 'test_too_soon', 'a second test within a minute is refused');
 
   -- The worker claims and sends the test; the sender becomes verified (audited, no address or secret).
   perform pg_temp.as_worker();
@@ -223,6 +226,7 @@ begin
     'the audit names no address and no secret');
 
   -- Saving again (same provider, secrets kept) makes it unverified until the new test went out.
+  update private.platform_email_settings set test_requested_at = now() - interval '2 minutes';
   perform pg_temp.as_super_admin();
   v_version := private.platform_save_email_settings('resend', '{}', null, 'ENTLAQA', 'alerts@jadarat.example',
                                                     'ops@entlaqa.example', 1);
@@ -236,6 +240,9 @@ begin
   perform tests.assert(r.status = 'unverified' and r.test_status = 'failed' and r.test_error_code = 'PROVIDER_AUTH',
     'the failure and its code are shown');
   -- A test of an older version never verifies the current one.
+  perform pg_temp.become_owner();
+  update private.platform_email_settings set test_requested_at = now() - interval '2 minutes';
+  perform pg_temp.as_super_admin();
   v_version := private.platform_save_email_settings('resend', '{}', null, 'ENTLAQA', 'alerts@jadarat.example',
                                                     'ops@entlaqa.example', 2);
   perform pg_temp.as_worker();
@@ -244,6 +251,103 @@ begin
   update private.platform_email_settings set version = version + 1;
   perform pg_temp.as_worker();
   perform tests.assert(not private.finish_email_test(null, 3, true, null), 'the settings changed since: not verified');
+
+  -- An SMTP sender keeps its saved password only for the same server (host, port, encryption).
+  perform pg_temp.become_owner();
+  update private.platform_email_settings set test_requested_at = now() - interval '2 minutes';
+  perform pg_temp.as_super_admin();
+  v_version := private.platform_save_email_settings('smtp', '{"host": "relay.entlaqa.example", "port": 587, "security": "starttls"}',
+                                                    pg_temp.sealed(), 'ENTLAQA', 'alerts@jadarat.example', 'ops@entlaqa.example', 4);
+  perform pg_temp.become_owner();
+  update private.platform_email_settings set test_requested_at = now() - interval '2 minutes';
+  perform pg_temp.as_super_admin();
+  perform tests.assert_fails_state_like(format($q$select private.platform_save_email_settings('smtp', '{"host": "evil.example", "port": 587, "security": "starttls"}', null, 'ENTLAQA', 'alerts@jadarat.example', 'ops@entlaqa.example', %s)$q$, v_version),
+    'JE001', 'credentials', 'another SMTP host needs the password again');
+  perform tests.assert_fails_state_like(format($q$select private.platform_save_email_settings('smtp', '{"host": "relay.entlaqa.example", "port": 2525, "security": "starttls"}', null, 'ENTLAQA', 'alerts@jadarat.example', 'ops@entlaqa.example', %s)$q$, v_version),
+    'JE001', 'credentials', 'another SMTP port needs the password again');
+  perform tests.assert_fails_state_like(format($q$select private.platform_save_email_settings('smtp', '{"host": "relay.entlaqa.example", "port": 587, "security": "tls"}', null, 'ENTLAQA', 'alerts@jadarat.example', 'ops@entlaqa.example', %s)$q$, v_version),
+    'JE001', 'credentials', 'another encryption needs the password again');
+  perform tests.assert_eq(private.platform_save_email_settings('smtp', '{"host": "RELAY.entlaqa.example", "port": 587, "security": "starttls"}',
+                                                               null, 'ENTLAQA', 'alerts@jadarat.example', 'ops@entlaqa.example', v_version),
+    v_version + 1, 'the same server keeps the password');
+end $$;
+rollback;
+
+-- ---------------------------------------------------------------------------------------------------
+-- Test e-mails that never finish (security review): failed after 3 claims (TIMEOUT); the limit counts the
+-- platform's and organizations' tests together; tests left unsent for 7 days fail (TEST_EXPIRED); the Super
+-- Admin sees the platform sender's failures of the last 24 hours
+-- ---------------------------------------------------------------------------------------------------
+begin;
+do $$
+declare
+  i integer;
+  r record;
+begin
+  insert into private.platform_email_settings (provider, credentials_sealed, from_name, from_address, updated_by,
+                                               test_status, test_recipient, test_requested_at)
+  values ('resend', pg_temp.sealed(), 'ENTLAQA', 'no-reply@jadarat.example', '00000000-0000-4000-8000-0000000000f1',
+          'queued', 'ops@entlaqa.example', now());
+  for i in 1..3 loop
+    perform pg_temp.as_worker();
+    perform tests.assert_eq((select count(*) from private.claim_email_tests(5)), 1::bigint, format('claim %s', i));
+    perform pg_temp.become_owner();
+    -- Its worker never finished it (a server that never answers): claimed again after 5 minutes.
+    update private.platform_email_settings set test_claimed_at = now() - interval '6 minutes';
+  end loop;
+  perform pg_temp.as_worker();
+  perform tests.assert_eq((select count(*) from private.claim_email_tests(5)), 0::bigint, 'never claimed a 4th time');
+  perform pg_temp.become_owner();
+  perform tests.assert((select test_status = 'failed' and test_error_code = 'TIMEOUT' and test_recipient is null
+                               and test_attempts = 3 from private.platform_email_settings),
+    'failed with TIMEOUT, the plain recipient removed');
+
+  -- The limit counts both kinds together: nothing is left claimed beyond what was asked for.
+  update private.platform_email_settings
+  set test_status = 'queued', test_recipient = 'ops@entlaqa.example', test_error_code = null, test_finished_at = null,
+      test_attempts = 0;
+  insert into private.tenant_email_settings (tenant_id, provider, credentials_sealed, from_name, from_address,
+                                             test_status, test_recipient, test_requested_at)
+  values ('a0000000-0000-4000-8000-000000000001', 'sendgrid', pg_temp.sealed(), 'A', 'mail@a.example',
+          'queued', 'it@a.example', now()),
+         ('c0000000-0000-4000-8000-000000000001', 'sendgrid', pg_temp.sealed(), 'C', 'mail@c.example',
+          'queued', 'it@c.example', now() - interval '8 days');
+  perform pg_temp.as_worker();
+  select * into r from private.claim_email_tests(1);
+  perform tests.assert(r.tenant_id is null, 'one asked for: the platform test');
+  perform pg_temp.become_owner();
+  perform tests.assert_eq((select test_status from private.tenant_email_settings
+                           where tenant_id = 'a0000000-0000-4000-8000-000000000001'), 'queued', 'A''s test still waits');
+  perform pg_temp.as_worker();
+  select * into r from private.claim_email_tests(1);
+  perform tests.assert(r.tenant_id = 'a0000000-0000-4000-8000-000000000001', 'then A''s (C is suspended)');
+
+  -- Unsent for 7 days (C is suspended: never claimed; A's claim backdated) → failed, TEST_EXPIRED.
+  perform pg_temp.become_owner();
+  update private.tenant_email_settings set test_requested_at = now() - interval '8 days'
+  where tenant_id = 'a0000000-0000-4000-8000-000000000001';
+  perform pg_temp.as_worker();
+  select * into r from private.sweep_email_deliveries(100);
+  perform tests.assert_eq(r.tests_expired, 2::bigint, 'A''s and C''s tests expired');
+  perform pg_temp.become_owner();
+  perform tests.assert((select bool_and(test_status = 'failed' and test_error_code = 'TEST_EXPIRED' and test_recipient is null)
+                        from private.tenant_email_settings),
+    'expired tests: failed, the plain recipient removed');
+
+  -- The platform sender's failures of the last 24 hours (all organizations), for the Super Admin.
+  alter table platform.message_deliveries disable trigger message_deliveries_check;
+  insert into platform.message_deliveries (tenant_id, template, template_version, locale, destination_masked, status,
+                                           error_code, sender, created_at, updated_at)
+  values ('b0000000-0000-4000-8000-000000000001', 'platform.invitation', 1, 'en', 'y***@b.example', 'failed',
+          'PROVIDER_REJECTED', 'platform', now(), now()),
+         ('b0000000-0000-4000-8000-000000000001', 'platform.invitation', 1, 'en', 'z***@b.example', 'failed',
+          'PROVIDER_REJECTED', 'organization', now(), now()),
+         ('a0000000-0000-4000-8000-000000000001', 'platform.invitation', 1, 'en', 'q***@a.example', 'failed',
+          'PROVIDER_REJECTED', 'platform', now() - interval '2 days', now() - interval '2 days');
+  alter table platform.message_deliveries enable trigger message_deliveries_check;
+  perform pg_temp.as_super_admin();
+  perform tests.assert_eq((select platform_failed_24h from private.platform_email_settings_view()), 1::bigint,
+    'one failure of the platform sender in the last 24 hours');
 end $$;
 rollback;
 
@@ -330,6 +434,30 @@ begin
   select * into r from private.save_tenant_email_settings('smtp', '{"host": "smtp.a.example", "port": 587}', null,
                                                          'Tenant A HR', 'training@a.example', null, 4);
   perform tests.assert(r.version = 4 and cardinality(r.changed) = 0, 'nothing changed: no new version');
+  -- Another SMTP server needs the password again.
+  perform tests.assert_fails_state_like($q$select * from private.save_tenant_email_settings('smtp', '{"host": "smtp.evil.example", "port": 587}', null, 'Tenant A HR', 'training@a.example', null, 4)$q$,
+    'JE001', 'credentials', 'another SMTP host needs the password again');
+  perform tests.assert_fails_state_like($q$select * from private.save_tenant_email_settings('smtp', '{"host": "smtp.a.example", "port": 465}', null, 'Tenant A HR', 'training@a.example', null, 4)$q$,
+    'JE001', 'credentials', 'another SMTP port needs the password again');
+
+  -- Test e-mails: one a minute, 20 a day per organization.
+  perform tests.assert_fails_state_like($q$select private.request_tenant_email_test('it@a.example')$q$, 'JE006', 'test_too_soon',
+    'a second test within a minute is refused');
+  perform pg_temp.become_owner();
+  update private.tenant_email_settings
+  set test_requested_at = now() - interval '2 minutes', test_window_started_at = now() - interval '1 hour', test_window_count = 20
+  where tenant_id = 'a0000000-0000-4000-8000-000000000001';
+  perform pg_temp.as_member(tests.ua_claims());
+  perform tests.assert_fails_state_like($q$select private.request_tenant_email_test('it@a.example')$q$, 'JE006', 'test_daily_limit',
+    'the 21st test of the day is refused');
+  perform pg_temp.become_owner();
+  update private.tenant_email_settings set test_window_started_at = now() - interval '25 hours'
+  where tenant_id = 'a0000000-0000-4000-8000-000000000001';
+  perform pg_temp.as_member(tests.ua_claims());
+  perform tests.assert_eq(private.request_tenant_email_test('it@a.example'), 'smtp', 'a new day: allowed again');
+  perform pg_temp.become_owner();
+  perform tests.assert_eq((select test_window_count from private.tenant_email_settings
+                           where tenant_id = 'a0000000-0000-4000-8000-000000000001'), 1::smallint, 'a new window');
 end $$;
 rollback;
 
@@ -407,7 +535,8 @@ begin
   alter table platform.message_deliveries enable trigger message_deliveries_check;
   perform pg_temp.as_worker();
   select * into r from private.sweep_email_deliveries(100);
-  perform tests.assert(r.stale = 1 and r.expired = 0 and r.purged = 1, 'one stale, none expired (3 days < 7), one purged');
+  perform tests.assert(r.stale = 1 and r.expired = 0 and r.purged = 1 and r.tests_expired = 0,
+    'one stale, none expired (3 days < 7), one purged');
   perform pg_temp.become_owner();
   perform tests.assert((select status = 'failed' and error_code = 'STALE' and destination is null and html_body is null
                         from platform.message_deliveries where destination_masked = 'x***@b.example'),

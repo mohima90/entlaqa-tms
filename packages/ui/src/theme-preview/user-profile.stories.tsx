@@ -43,19 +43,16 @@ const COPY = {
       ['لغة الواجهة', 'العربية', null],
       ['الاسم بالإنجليزية', 'Sarah Abdullah Alqahtani', 'ltr'],
     ],
-    roles: 'الأدوار',
-    roleList: [
-      ['منسق التدريب', 'الدور الأساسي', true, null],
-      ['مدرب داخلي', 'دور إضافي', false, 'حتى'],
-    ],
-    rolesAudited: 'كل تغيير في الأدوار يُسجَّل في سجل التدقيق بالقيمة قبل التغيير وبعده.',
-    editRoles: 'تعديل الأدوار',
+    roles: 'الدور',
+    roleName: 'منسق التدريب',
+    rolesAudited: 'يُسجَّل كل تغيير للدور في سجل التدقيق مع الدور قبل التغيير وبعده.',
+    editRoles: 'تغيير الدور',
     account: 'الدخول والأمان',
     accountStatus: 'حالة الحساب',
     lastSignIn: 'آخر دخول',
     activity: 'آخر النشاط',
     events: [
-      ['تغيّرت الأدوار', 'بواسطة محمد سعد العتيبي', '2026-10-07T09:20:00Z'],
+      ['تغيّر الدور', 'بواسطة محمد سعد العتيبي', '2026-10-07T09:20:00Z'],
       ['عُدِّلت البيانات', 'بواسطة محمد سعد العتيبي', '2026-10-02T12:45:00Z'],
       ['إجراء مسجّل (platform.user.invited)', 'بواسطة النظام', '2026-09-15T07:00:00Z'],
     ],
@@ -80,20 +77,17 @@ const COPY = {
       ['Interface language', 'Arabic', null],
       ['Name in Arabic', 'سارة عبدالله القحطاني', 'rtl'],
     ],
-    roles: 'Roles',
-    roleList: [
-      ['Training Coordinator', 'Primary role', true, null],
-      ['Internal Instructor', 'Additional role', false, 'Until'],
-    ],
+    roles: 'Role',
+    roleName: 'Training Coordinator',
     rolesAudited:
-      'Every role change is recorded in the audit log with the values before and after the change.',
-    editRoles: 'Edit roles',
+      'Every role change is recorded in the audit log with the role before and after the change.',
+    editRoles: 'Change role',
     account: 'Sign-in and security',
     accountStatus: 'Account status',
     lastSignIn: 'Last sign-in',
     activity: 'Recent activity',
     events: [
-      ['Roles changed', 'By Mohammed Saad Alotaibi', '2026-10-07T09:20:00Z'],
+      ['Role changed', 'By Mohammed Saad Alotaibi', '2026-10-07T09:20:00Z'],
       ['Details updated', 'By Mohammed Saad Alotaibi', '2026-10-02T12:45:00Z'],
       ['Recorded action (platform.user.invited)', 'By the system', '2026-09-15T07:00:00Z'],
     ],
@@ -114,13 +108,6 @@ function value(locale: 'ar' | 'en', kind: string | null, text: string): ReactNod
   }
   return text;
 }
-
-/** Last day of a role, as on the profile: «حتى {date}» / "Until {date}" (medium date). */
-const roleDay = (locale: 'ar' | 'en') =>
-  new Intl.DateTimeFormat(`${locale}-u-nu-latn-ca-gregory`, {
-    dateStyle: 'medium',
-    timeZone: 'Asia/Riyadh',
-  }).format(new Date('2026-12-31T12:00:00Z'));
 
 function UserProfilePage({ locale }: { locale: 'ar' | 'en' }) {
   const t = COPY[locale];
@@ -151,17 +138,7 @@ function UserProfilePage({ locale }: { locale: 'ar' | 'en' }) {
         </Card>
 
         <Card title={t.roles}>
-          <ul className="m-0 flex list-none flex-col gap-3 p-0">
-            {t.roleList.map(([name, kind, primary, until]) => (
-              <li key={name} className="flex flex-wrap items-center gap-2">
-                <span className="font-medium">{name}</span>
-                <Badge tone={primary ? 'info' : 'neutral'}>{kind}</Badge>
-                {until ? (
-                  <span className="text-sm text-text-muted">{`${until} ${roleDay(locale)}`}</span>
-                ) : null}
-              </li>
-            ))}
-          </ul>
+          <p className="m-0 font-medium">{t.roleName}</p>
           <p className="mb-0 mt-4 text-sm text-text-muted">{t.rolesAudited}</p>
           <a href="#roles" className={buttonClasses({ variant: 'secondary', className: 'mt-4' })}>
             {t.editRoles}

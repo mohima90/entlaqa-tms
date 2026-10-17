@@ -2,14 +2,13 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useState } from 'react';
 import { PreviewShell, fieldClass, localeOf } from '../../.storybook/theme-preview-kit';
 import { Alert } from '../alert';
-import { Badge } from '../badge';
 import { Button, buttonClasses } from '../button';
 import { TextField } from '../text-field';
 
 /**
  * Theme preview (T-M2-04c): the invite form (screen 2) as built — form patterns of
- * apps/suite/src/components/users/invite-user-form.tsx (text fields, selects, role cards, role
- * chips, radio buttons, an error and an info message).
+ * apps/suite/src/components/users/invite-user-form.tsx (text fields, selects, the single Role select
+ * of EP-ROLES with its department hint, radio buttons, an error and an info message).
  */
 const meta = {
   title: 'Theme preview/Invite form',
@@ -41,37 +40,26 @@ const COPY = {
       'القائمة تعرض أصحاب الأدوار الإدارية في القسم المختار، ويتغير محتواها بتغيير القسم.',
     required: '(مطلوب)',
     optional: '(اختياري)',
-    primaryRole: 'الدور الأساسي',
-    primaryRoleHint:
-      'يحدد الدور الأساسي الصفحة الرئيسية وما يراه الشخص أولًا. للمستخدم دور أساسي واحد.',
-    privileged: 'دور مميز',
-    additionalRoles: 'أدوار إضافية',
-    additionalRolesHint: 'الصلاحيات الفعلية هي مجموع صلاحيات الدور الأساسي والأدوار الإضافية.',
+    role: 'الدور',
+    roleHint: 'لكل شخص دور واحد، يحدد قائمته وصفحاته والبيانات التي يراها.',
+    departmentsHint:
+      'يرى هذا الدور الأقسام التي يرأسها الشخص مع أقسامها الفرعية. يحدد رؤساء الأقسام مدير الموارد البشرية من المنظمة ← الهيكل التنظيمي.',
+    standardGroup: 'الأدوار القياسية',
+    customGroup: 'الأدوار المخصصة',
+    privileged: 'مميز',
+    rolesHelp: 'ما يفعله كل دور',
     language: 'لغة رسالة الدعوة',
     expiryNotice:
       'تبقى الدعوة صالحة 7 أيام (حتى 16 أكتوبر 2026). يمكنك إعادة إرسالها حتى 3 مرات أو إلغاؤها من قائمة المستخدمين.',
     submit: 'إرسال الدعوة',
     back: 'رجوع',
     roles: [
-      [
-        'training_coordinator',
-        'منسق التدريب',
-        'تشغيل الجلسات يوميًا: الجدولة والتجهيزات والحضور.',
-        false,
-      ],
-      [
-        'training_manager',
-        'مدير التعلم والتطوير',
-        'الخطط ودليل الدورات والجلسات والموارد والتسجيلات والتقارير.',
-        false,
-      ],
-      ['line_manager', 'المدير المباشر', 'طلبات الفريق المباشر وترشيحاته والموافقة عليها.', false],
-      [
-        'hr_manager',
-        'مدير الموارد البشرية',
-        'سجلات الموظفين والتدريب الإلزامي والامتثال، ودعوة المستخدمين وإسناد الأدوار غير المميزة.',
-        true,
-      ],
+      ['training_coordinator', 'منسق التدريب', false, 'standard'],
+      ['training_manager', 'مدير التعلم والتطوير', false, 'standard'],
+      ['department_head', 'رئيس القسم', false, 'standard'],
+      ['learner', 'موظف', false, 'standard'],
+      ['hr_manager', 'مدير الموارد البشرية', true, 'standard'],
+      ['custom_5eed00000001', 'مدير مباشر', false, 'custom'],
     ],
   },
   en: {
@@ -96,72 +84,33 @@ const COPY = {
       'The list shows people with managing roles in the chosen department and changes with the department.',
     required: '(required)',
     optional: '(optional)',
-    primaryRole: 'Primary role',
-    primaryRoleHint:
-      'The primary role sets the home page and what the person sees first. A user has one primary role.',
-    privileged: 'Privileged role',
-    additionalRoles: 'Additional roles',
-    additionalRolesHint:
-      'The effective permissions are those of the primary role plus the additional roles.',
+    role: 'Role',
+    roleHint: 'Each person has one role. It decides their menu, pages and the data they see.',
+    departmentsHint:
+      'This role sees the departments the person heads, with their sub-departments. HR sets department heads in Organization → Structure.',
+    standardGroup: 'Standard roles',
+    customGroup: 'Custom roles',
+    privileged: 'privileged',
+    rolesHelp: 'What each role does',
     language: 'Invitation email language',
     expiryNotice:
       'The invitation stays valid for 7 days (until 16 Oct 2026). You can resend it up to 3 times or revoke it from the users list.',
     submit: 'Send invitation',
     back: 'Go back',
     roles: [
-      [
-        'training_coordinator',
-        'Training Coordinator',
-        'Day-to-day session operations: scheduling, logistics and attendance.',
-        false,
-      ],
-      [
-        'training_manager',
-        'L&D Manager',
-        'Plans, catalog, sessions, resources, enrollments and reports.',
-        false,
-      ],
-      [
-        'line_manager',
-        'Line Manager',
-        'Direct reports’ requests, nominations and approvals.',
-        false,
-      ],
-      [
-        'hr_manager',
-        'HR Manager',
-        'Employee records, mandatory training and compliance; invites users and gives non-privileged roles.',
-        true,
-      ],
+      ['training_coordinator', 'Training Coordinator', false, 'standard'],
+      ['training_manager', 'L&D Manager', false, 'standard'],
+      ['department_head', 'Department Head', false, 'standard'],
+      ['learner', 'Employee', false, 'standard'],
+      ['hr_manager', 'HR Manager', true, 'standard'],
+      ['custom_5eed00000001', 'Line Manager', false, 'custom'],
     ],
   },
 } as const;
 
-/** A role card's text (invite-user-form.tsx `roleText`). */
-function RoleText({
-  name,
-  description,
-  privileged,
-}: {
-  readonly name: string;
-  readonly description: string;
-  readonly privileged: string | null;
-}) {
-  return (
-    <span className="flex flex-col gap-1">
-      <span className="flex flex-wrap items-center gap-2 font-medium">
-        <span>{name}</span>
-        {privileged ? <Badge tone="warning">{privileged}</Badge> : null}
-      </span>
-      <span className="text-sm text-text-muted">{description}</span>
-    </span>
-  );
-}
-
 function InviteFormPage({ locale }: { locale: 'ar' | 'en' }) {
   const t = COPY[locale];
-  const [primary, setPrimary] = useState('training_coordinator');
-  const [additional, setAdditional] = useState<string[]>(['line_manager']);
+  const [role, setRole] = useState('department_head');
   const [language, setLanguage] = useState<'ar' | 'en'>('ar');
   return (
     <PreviewShell locale={locale}>
@@ -236,97 +185,45 @@ function InviteFormPage({ locale }: { locale: 'ar' | 'en' }) {
           ))}
         </fieldset>
 
-        <fieldset
-          className="m-0 flex flex-col gap-3 border-0 p-0"
-          aria-describedby="preview-invite-primary-hint"
-        >
-          <legend className="mb-1 text-lg font-semibold">
-            {t.primaryRole}{' '}
-            <span className="text-base font-normal text-text-muted">{t.required}</span>
-          </legend>
-          <p id="preview-invite-primary-hint" className="m-0 text-sm text-text-muted">
-            {t.primaryRoleHint}
-          </p>
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            {t.roles.map(([code, name, description, privileged]) => (
-              <label
-                key={code}
-                className={`flex min-h-11 items-start gap-3 rounded-md border p-3 ${
-                  primary === code ? 'border-primary bg-primary-subtle' : 'border-border'
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="preview-primary-role"
-                  value={code}
-                  checked={primary === code}
-                  onChange={() => {
-                    setPrimary(code);
-                  }}
-                  className="mt-1 size-5 shrink-0"
-                />
-                <RoleText
-                  name={name}
-                  description={description}
-                  privileged={privileged ? t.privileged : null}
-                />
-              </label>
-            ))}
+        <section className="flex flex-col gap-3" aria-labelledby="preview-invite-role-heading">
+          <h2 id="preview-invite-role-heading" className="m-0 text-lg font-semibold">
+            {t.role}
+          </h2>
+          <div className="flex flex-col gap-1">
+            <label htmlFor="preview-invite-role" className="text-sm font-medium">
+              {t.role}
+              <span className="ms-1 font-normal text-text-muted">{t.required}</span>
+            </label>
+            <p id="preview-invite-role-hint" className="m-0 text-sm text-text-muted">
+              {t.roleHint}
+            </p>
+            <select
+              id="preview-invite-role"
+              value={role}
+              onChange={(e) => {
+                setRole(e.target.value);
+              }}
+              aria-describedby="preview-invite-role-hint"
+              className="select-chevron min-h-9 w-full rounded-full border border-border-strong bg-surface ps-4 pe-10 text-sm text-text shadow-1"
+            >
+              {(['standard', 'custom'] as const).map((kind) => (
+                <optgroup key={kind} label={kind === 'standard' ? t.standardGroup : t.customGroup}>
+                  {t.roles
+                    .filter(([, , , group]) => group === kind)
+                    .map(([code, name, privileged]) => (
+                      <option key={code} value={code}>
+                        {privileged ? `${name} (${t.privileged})` : name}
+                      </option>
+                    ))}
+                </optgroup>
+              ))}
+            </select>
           </div>
-        </fieldset>
-
-        <fieldset
-          className="m-0 flex flex-col gap-3 border-0 p-0"
-          aria-describedby="preview-invite-additional-hint"
-        >
-          <legend className="mb-1 text-lg font-semibold">
-            {t.additionalRoles}{' '}
-            <span className="text-base font-normal text-text-muted">{t.optional}</span>
-          </legend>
-          <p id="preview-invite-additional-hint" className="m-0 text-sm text-text-muted">
-            {t.additionalRolesHint}
-          </p>
-          <ul className="m-0 flex list-none flex-wrap gap-2 p-0">
-            {t.roles
-              .filter(([code]) => code !== primary)
-              .map(([code, name]) => {
-                const on = additional.includes(code);
-                return (
-                  <li key={code}>
-                    <button
-                      type="button"
-                      aria-pressed={on}
-                      onClick={() => {
-                        setAdditional((list) =>
-                          on ? list.filter((c) => c !== code) : [...list, code],
-                        );
-                      }}
-                      className={`inline-flex min-h-11 items-center gap-2 rounded-full border px-4 ${
-                        on
-                          ? 'border-primary bg-primary text-on-primary'
-                          : 'border-border-strong bg-surface text-text hover:bg-surface-hover'
-                      }`}
-                    >
-                      {on ? (
-                        <svg
-                          width="16"
-                          height="16"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2.2"
-                          aria-hidden="true"
-                        >
-                          <path d="M5 12l5 5 9-10" />
-                        </svg>
-                      ) : null}
-                      {name}
-                    </button>
-                  </li>
-                );
-              })}
-          </ul>
-        </fieldset>
+          {role === 'department_head' ? <Alert tone="info">{t.departmentsHint}</Alert> : null}
+          <a href="#roles" className="text-sm">
+            {t.rolesHelp}
+          </a>
+        </section>
 
         <fieldset className="m-0 flex flex-col gap-2 border-0 p-0">
           <legend className="mb-1 text-lg font-semibold">{t.language}</legend>

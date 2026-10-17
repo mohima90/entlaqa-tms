@@ -278,7 +278,6 @@ export interface SamplePerson {
   readonly email: string;
   readonly employeeNumber: string | null;
   readonly role: { readonly ar: string; readonly en: string };
-  readonly otherRoles: number;
   readonly department: { readonly ar: string; readonly en: string } | null;
   readonly status: Status;
   readonly lastSignIn: string | null;
@@ -302,7 +301,6 @@ export const PEOPLE: readonly SamplePerson[] = [
     email: 'm.alotaibi@alraya.example',
     employeeNumber: 'EMP-1001',
     role: { ar: 'مدير المنظمة', en: 'Organization Admin' },
-    otherRoles: 0,
     department: D.hr,
     status: 'active',
     lastSignIn: '2026-10-08T06:12:00Z',
@@ -313,7 +311,6 @@ export const PEOPLE: readonly SamplePerson[] = [
     email: 's.alqahtani@alraya.example',
     employeeNumber: 'EMP-1187',
     role: { ar: 'منسق التدريب', en: 'Training Coordinator' },
-    otherRoles: 1,
     department: D.td,
     status: 'active',
     lastSignIn: '2026-10-08T05:40:00Z',
@@ -324,7 +321,6 @@ export const PEOPLE: readonly SamplePerson[] = [
     email: 'k.alshehri@alraya.example',
     employeeNumber: 'EMP-1042',
     role: { ar: 'مدير التعلم والتطوير', en: 'L&D Manager' },
-    otherRoles: 0,
     department: D.td,
     status: 'active',
     lastSignIn: '2026-10-07T11:05:00Z',
@@ -335,7 +331,6 @@ export const PEOPLE: readonly SamplePerson[] = [
     email: 'n.aldossari@alraya.example',
     employeeNumber: null,
     role: { ar: 'منسق التدريب', en: 'Training Coordinator' },
-    otherRoles: 0,
     department: D.td,
     status: 'invited',
     lastSignIn: null,
@@ -345,8 +340,7 @@ export const PEOPLE: readonly SamplePerson[] = [
     name: { ar: 'عبدالرحمن علي الزهراني', en: 'Abdulrahman Ali Alzahrani' },
     email: 'a.alzahrani@alraya.example',
     employeeNumber: 'EMP-1310',
-    role: { ar: 'المدير المباشر', en: 'Line Manager' },
-    otherRoles: 0,
+    role: { ar: 'مدير مباشر', en: 'Line Manager' },
     department: D.ops,
     status: 'active',
     lastSignIn: '2026-10-06T08:30:00Z',
@@ -356,8 +350,7 @@ export const PEOPLE: readonly SamplePerson[] = [
     name: { ar: 'ريم ناصر الحربي', en: 'Reem Nasser Alharbi' },
     email: 'r.alharbi@alraya.example',
     employeeNumber: 'EMP-1422',
-    role: { ar: 'متدرب', en: 'Learner' },
-    otherRoles: 0,
+    role: { ar: 'موظف', en: 'Employee' },
     department: D.cs,
     status: 'active',
     lastSignIn: '2026-10-05T14:20:00Z',
@@ -368,7 +361,6 @@ export const PEOPLE: readonly SamplePerson[] = [
     email: 'f.almalki@alraya.example',
     employeeNumber: 'EMP-1105',
     role: { ar: 'المدير المالي', en: 'Finance Manager' },
-    otherRoles: 0,
     department: D.fin,
     status: 'suspended',
     lastSignIn: '2026-09-21T09:00:00Z',
@@ -379,7 +371,6 @@ export const PEOPLE: readonly SamplePerson[] = [
     email: 'y.alghamdi@alraya.example',
     employeeNumber: 'EMP-0988',
     role: { ar: 'رئيس القسم', en: 'Department Head' },
-    otherRoles: 0,
     department: D.sales,
     status: 'active',
     lastSignIn: '2026-10-08T07:55:00Z',
@@ -390,7 +381,6 @@ export const PEOPLE: readonly SamplePerson[] = [
     email: 'h.alanazi@alraya.example',
     employeeNumber: 'EMP-1250',
     role: { ar: 'مدرب داخلي', en: 'Internal Instructor' },
-    otherRoles: 0,
     department: D.qa,
     status: 'active',
     lastSignIn: null,
@@ -401,7 +391,6 @@ export const PEOPLE: readonly SamplePerson[] = [
     email: 'ahmed.mansour@trainpro.example',
     employeeNumber: null,
     role: { ar: 'مدرب خارجي', en: 'External Instructor' },
-    otherRoles: 0,
     department: null,
     status: 'invited',
     lastSignIn: null,

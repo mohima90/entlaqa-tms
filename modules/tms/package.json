@@ -3,18 +3,22 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Jadarat TMS module: domain services, server actions, permissions (schema `tms`). Course library (T-M3-03).",
+  "description": "Jadarat TMS module: domain services, server actions, permissions (schema `tms`). Course library (T-M3-03), planning cycles (EP-PLN).",
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
     "./actions/sessions": "./src/actions/sessions.ts",
+    "./actions/planning": "./src/actions/planning.ts",
     "./courses": "./src/courses/shared.ts",
-    "./courses/server": "./src/courses/server.ts"
+    "./courses/server": "./src/courses/server.ts",
+    "./planning-model": "./src/planning/model.ts",
+    "./planning-rules": "./src/planning/rules.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "test:integration": "vitest run --config vitest.integration.config.ts"
   },
   "dependencies": {
     "@jadarat/platform-core": "workspace:*",

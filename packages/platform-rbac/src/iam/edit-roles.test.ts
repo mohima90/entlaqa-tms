@@ -204,8 +204,9 @@ describe('edit role query', () => {
     const query = createDefineQuery(runtime(['hr_manager']).rt)(editRolesQueryDefinition());
     const result = await query({ personId: SARA });
     const assignable = result.ok ? result.value.choices.filter((c) => c.assignable) : [];
-    // Not the L&D Manager or the Training Coordinator: their course permissions (T-M3-03) are not the HR
-    // Manager's — nobody gives a permission they do not hold (EP-ROLES).
+    // Not the L&D Manager or the Training Coordinator: their course permissions (T-M3-03) and planning
+    // permissions (EP-PLN, T-M3-04) are not the HR Manager's — nobody gives a permission they do not hold
+    // (EP-ROLES).
     expect(assignable.map((c) => c.code)).toEqual(['department_head', 'learner', READER.code]);
     expect(result.ok && result.value.privilegedAccess).toBe('denied');
   });

@@ -401,6 +401,9 @@ begin
 
   perform tests.assert_fails_like(format(ins, 'd2', 'new2@a.test', 'hr_manager', '{}'),
     'only an Organization Admin can invite with a privileged role', 'HR: cannot invite an HR Manager');
+  -- EP-PLN (T-M3-04): the L&D Manager holds planning permissions the HR Manager does not hold.
+  perform tests.assert_fails_like(format(ins, 'd2', 'new2@a.test', 'training_manager', '{}'),
+    'nobody can give a role with permissions they do not hold', 'HR: cannot invite an L&D Manager');
   perform tests.assert_fails_like(format(ins, 'd2', 'new2@a.test', 'tenant_admin', '{}'),
     'only an Organization Admin can invite with a privileged role', 'HR: cannot invite an Organization Admin');
   perform tests.assert_fails_like(format(ins, 'd2', 'new2@a.test', 'learner', '{hr_manager}'),

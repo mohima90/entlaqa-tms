@@ -5,6 +5,7 @@ import { coursePermissions } from './course-permissions';
 import { CATALOGUE_PERMISSIONS } from './custom-roles';
 import { MEMBER_GRANTS } from './member-permissions';
 import { platformPermissions } from './platform-permissions';
+import { tmsPlanningPermissions } from './tms-planning-permissions';
 import {
   FORMER_ROLE_NAMES,
   SYSTEM_ROLES,
@@ -99,6 +100,8 @@ describe('standard roles (FR-IAM-07, BRD Appendix B; EP-ROLES, PO 17 Oct 2026)',
     // people, structure, settings or the audit log must be privileged (PO decision 5 Oct 2026).
     // Reviewed (T-M3-03): the course library — adding, editing and archiving courses changes no person,
     // structure, setting or audit record, so the L&D Manager and the Training Coordinator stay ordinary.
+    // Reviewed module permissions (EP-PLN, T-M3-04): planning cycles change no people, structure, settings
+    // or audit log — reading them and managing them stay on roles that are not privileged.
     const allowed = [
       'platform.user.read',
       'platform.role.read',
@@ -107,6 +110,8 @@ describe('standard roles (FR-IAM-07, BRD Appendix B; EP-ROLES, PO 17 Oct 2026)',
       'tms.course_cost.read',
       'tms.course.manage',
       'tms.course.archive',
+      'tms.plan_cycle.read',
+      'tms.plan_cycle.manage',
     ];
     for (const role of SYSTEM_ROLES.filter((r) => !r.privileged)) {
       for (const grant of role.grants) {
@@ -224,6 +229,19 @@ describe('standard roles (FR-IAM-07, BRD Appendix B; EP-ROLES, PO 17 Oct 2026)',
     const hr = getSystemRole('hr_manager').grants.map((g) => g.permission.code);
     expect(hr).toContain('platform.role.assign');
     expect(hr).not.toContain('platform.role.assign_privileged');
+  });
+
+  it('gives planning cycles to the L&D Manager (manage) and the Training Coordinator (read) only (EP-PLN)', () => {
+    const holders = (code: string) =>
+      SYSTEM_ROLES.filter((r) => r.grants.some((g) => g.permission.code === code)).map((r) => [
+        r.code,
+        r.grants.find((g) => g.permission.code === code)?.scope,
+      ]);
+    expect(holders('tms.plan_cycle.manage')).toEqual([['training_manager', 'tenant']]);
+    expect(holders('tms.plan_cycle.read')).toEqual([
+      ['training_manager', 'tenant'],
+      ['training_coordinator', 'tenant'],
+    ]);
   });
 
   it('throws on an unknown code', () => {

@@ -281,6 +281,14 @@ export {
   setBranchStatus,
   updateBranch,
 } from './branches';
+export {
+  type MemberOption,
+  type OrgBranch,
+  type OrgDepartment,
+  type OrgStructure,
+  listMemberOptions,
+  listOrgStructure,
+} from './org-directory';
 export { EVENT_TYPE_PATTERN, type EmittedEvent, emitEvent } from './events';
 export { type PersonalDetails, getPersonalDetails, updatePersonalDetails } from './my-profile';
 export {

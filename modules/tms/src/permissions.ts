@@ -1,10 +1,11 @@
-import { coursePermissions, definePermissions } from '@jadarat/platform-rbac';
+import { coursePermissions, definePermissions, tmsPlanningPermissions } from '@jadarat/platform-rbac';
 
 /**
  * TMS permission registry (ADR 0003 §3). Labels follow docs/design/content/glossary-ar-en.md.
- * The course library's permissions (T-M3-03) are declared with the standard roles in platform-rbac
- * (course-permissions.ts: the platform's roles and role builder name them, and a platform package never
- * imports a module); they are part of this registry. The others are not held by any role yet.
+ * The course library's permissions (T-M3-03) and the planning permissions (EP-PLN) are declared with the
+ * standard roles in platform-rbac (course-permissions.ts, tms-planning-permissions.ts: the platform's roles
+ * and role builder name them, and a platform package never imports a module); they are part of this
+ * registry. The session permissions are not held by any role yet.
  */
 const sessionPermissions = definePermissions('tms', [
   {
@@ -36,4 +37,10 @@ const sessionPermissions = definePermissions('tms', [
   },
 ]);
 
-export const tmsPermissions = { ...coursePermissions, ...sessionPermissions } as const;
+/** Every TMS permission: courses (T-M3-03), sessions (skeleton) and planning cycles (EP-PLN); the course
+ * and planning permissions are declared in platform-rbac. */
+export const tmsPermissions = {
+  ...coursePermissions,
+  ...sessionPermissions,
+  ...tmsPlanningPermissions,
+} as const;

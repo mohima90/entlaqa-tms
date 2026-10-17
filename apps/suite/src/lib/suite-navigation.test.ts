@@ -12,6 +12,7 @@ const NONE: SuiteNavigationAccess = {
   organizationSetup: false,
   training: false,
   courses: false,
+  planning: false,
 };
 
 /** `group: entry entry…`, links marked with their path, «Coming soon» entries with `(soon)`. */
@@ -35,6 +36,7 @@ describe('suiteNavigation (menus per role, T-M2-21; Kawadir groups, T-M2-43)', (
         organizationSetup: true,
         training: false,
         courses: false,
+        planning: false,
       }),
     ).toEqual([
       'main: home→/suite',
@@ -77,6 +79,7 @@ describe('suiteNavigation (menus per role, T-M2-21; Kawadir groups, T-M2-43)', (
         structure: false,
         training: true,
         courses: false,
+        planning: false,
       }),
     ).toEqual([
       'main: home→/suite calendar(soon) sessions(soon) courses(soon)',
@@ -114,9 +117,22 @@ describe('suiteNavigation (menus per role, T-M2-21; Kawadir groups, T-M2-43)', (
       organizationSetup: true,
       training: true,
       courses: false,
+      planning: false,
     }).flatMap((group) => group.entries);
     expect(all.length).toBe(15);
     expect(all.filter((entry) => !ICON_NAMES.includes(entry.icon))).toEqual([]);
+  });
+});
+
+describe('planning entries (EP-PLN, T-M3-04)', () => {
+  it('gives planning readers the Planning group with the cycles and the settings', () => {
+    expect(outline({ ...NONE, training: true, planning: true })).toEqual([
+      'main: home→/suite calendar(soon) sessions(soon) courses(soon)',
+      'groupPlanning: planningCycles→/suite/planning/cycles planningSettings→/suite/planning/settings',
+    ]);
+    expect(outline({ ...NONE, training: true }).some((g) => g.startsWith('groupPlanning'))).toBe(
+      false,
+    );
   });
 });
 
@@ -131,6 +147,7 @@ describe('suiteHome (T-M2-21)', () => {
       organizationSetup: true,
       training: false,
       courses: false,
+      planning: false,
     });
     expect(home.kind).toBe('setup');
     expect(home.kind === 'setup' ? home.links.map((l) => l.link?.href) : []).toEqual([
@@ -170,6 +187,7 @@ describe('commandPaletteItems (⌘K / Ctrl K, T-M2-43)', () => {
         organizationSetup: true,
         training: false,
         courses: false,
+        planning: false,
       },
       'ar',
       label,

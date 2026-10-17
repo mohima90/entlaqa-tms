@@ -29,7 +29,11 @@ begin
     -- User imports (T-M2-12): insert/FK tests below; lifecycle and per-user tests in 86_*, jobs in 87_*.
     'platform.user_imports', 'platform.user_import_columns', 'platform.user_import_rows',
     -- Course library (T-M3-03): insert/FK tests below; rules per permission in 99_course_library_*.sql.
-    'tms.course_categories', 'tms.courses')
+    'tms.course_categories', 'tms.courses',
+    -- Planning (EP-PLN, T-M3-04): insert/update tests below; writes need tms.plan_cycle.manage, so the
+    -- cross-tenant insert and composite-FK cases as an L&D Manager are in 99_planning_b_app_server.sql.
+    'tms.planning_settings', 'tms.planning_default_steps', 'tms.plan_cycles', 'tms.plan_cycle_scope',
+    'tms.plan_cycle_departments', 'tms.plan_cycle_steps')
     and t.table_name not in (select table_name from tests.job_only_tables());
   perform tests.assert(v_missing is null, format('isolation tests missing for: %s', v_missing));
   perform tests.assert(session_user = 'app_server', 'this file must run connected as app_server');
@@ -417,6 +421,64 @@ begin
     'user_import_rows: users delete nothing');
   perform tests.assert_eq((select count(*) from platform.user_import_rows where tenant_id = 'b0000000-0000-4000-8000-000000000001'),
     0::bigint, 'user_import_rows: tenant B rows invisible');
+end $$;
+rollback;
+
+-- Planning (EP-PLN, T-M3-04) as tenant-A user uA (the Organization Admin: no planning permission): tenant B's
+-- rows cannot be created, changed, moved or deleted; the not-granted columns stay closed. As an L&D Manager:
+-- 99_planning_b_app_server.sql.
+begin;
+set local role authenticated;
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
+  'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1'));
+do $$
+begin
+  perform tests.assert_rls_violation($q$insert into tms.plan_cycles (tenant_id, name_ar, name_en, period_start_on, period_end_on, deadline_on) values ('b0000000-0000-4000-8000-000000000001', 'دخيل', 'Intruder', current_date, current_date + 300, current_date + 10)$q$,
+    'plan_cycles: insert with tenant B tenant_id is rejected by RLS');
+  perform tests.assert_eq(tests.rows_affected($q$update tms.plan_cycles set name_en = 'x' where id = 'be000000-0000-4000-8000-000000000001'$q$),
+    0::bigint, 'plan_cycles: RLS filters tenant B cycle by id');
+  perform tests.assert_eq(tests.rows_affected($q$delete from tms.plan_cycles where tenant_id = 'b0000000-0000-4000-8000-000000000001'$q$),
+    0::bigint, 'plan_cycles: RLS filters tenant B rows on delete');
+  perform tests.assert_privilege_denied($q$update tms.plan_cycles set tenant_id = 'b0000000-0000-4000-8000-000000000001'$q$,
+    'plan_cycles: tenant_id is not updatable');
+  perform tests.assert_privilege_denied($q$update tms.plan_cycles set currency = 'USD'$q$,
+    'plan_cycles: the currency is not updatable');
+  perform tests.assert_privilege_denied($q$update tms.plan_cycles set launched_by = 'a1000000-0000-4000-8000-0000000000a1'$q$,
+    'plan_cycles: who launched is not updatable');
+  perform tests.assert_rls_violation($q$insert into tms.plan_cycle_scope (tenant_id, cycle_id, department_id) values ('b0000000-0000-4000-8000-000000000001', 'be000000-0000-4000-8000-000000000001', 'b3000000-0000-4000-8000-000000000001')$q$,
+    'plan_cycle_scope: insert with tenant B tenant_id is rejected by RLS');
+  perform tests.assert_eq(tests.rows_affected($q$delete from tms.plan_cycle_scope where tenant_id = 'b0000000-0000-4000-8000-000000000001'$q$),
+    0::bigint, 'plan_cycle_scope: RLS filters tenant B rows on delete');
+  perform tests.assert_privilege_denied($q$update tms.plan_cycle_scope set department_id = null$q$,
+    'plan_cycle_scope: no UPDATE grant');
+  perform tests.assert_rls_violation($q$insert into tms.plan_cycle_departments (tenant_id, cycle_id, department_id) values ('b0000000-0000-4000-8000-000000000001', 'be000000-0000-4000-8000-000000000001', 'b3000000-0000-4000-8000-000000000001')$q$,
+    'plan_cycle_departments: insert with tenant B tenant_id is rejected by RLS');
+  perform tests.assert_eq(tests.rows_affected($q$update tms.plan_cycle_departments set budget_amount = 1 where tenant_id = 'b0000000-0000-4000-8000-000000000001'$q$),
+    0::bigint, 'plan_cycle_departments: RLS filters tenant B rows');
+  perform tests.assert_privilege_denied($q$update tms.plan_cycle_departments set status = 'submitted'$q$,
+    'plan_cycle_departments: the form status is not updatable (T-M3-05)');
+  perform tests.assert_privilege_denied($q$update tms.plan_cycle_departments set cycle_id = 'be000000-0000-4000-8000-000000000001'$q$,
+    'plan_cycle_departments: cycle_id is not updatable');
+  perform tests.assert_rls_violation($q$insert into tms.plan_cycle_steps (tenant_id, cycle_id, position, kind, name_ar, name_en) values ('b0000000-0000-4000-8000-000000000001', 'be000000-0000-4000-8000-000000000001', 3, 'person', 'س', 'S')$q$,
+    'plan_cycle_steps: insert with tenant B tenant_id is rejected by RLS');
+  perform tests.assert_eq(tests.rows_affected($q$delete from tms.plan_cycle_steps where tenant_id = 'b0000000-0000-4000-8000-000000000001'$q$),
+    0::bigint, 'plan_cycle_steps: RLS filters tenant B rows on delete');
+  perform tests.assert_privilege_denied($q$update tms.plan_cycle_steps set position = 9$q$,
+    'plan_cycle_steps: no UPDATE grant (the chain is saved as a whole)');
+  perform tests.assert_rls_violation($q$insert into tms.planning_settings (tenant_id, reminder_days) values ('b0000000-0000-4000-8000-000000000001', '{1}')$q$,
+    'planning_settings: insert with tenant B tenant_id is rejected by RLS');
+  perform tests.assert_eq(tests.rows_affected($q$update tms.planning_settings set reminder_days = '{1}' where tenant_id = 'b0000000-0000-4000-8000-000000000001'$q$),
+    0::bigint, 'planning_settings: RLS filters tenant B rows');
+  perform tests.assert_privilege_denied($q$delete from tms.planning_settings$q$, 'planning_settings: no DELETE grant');
+  perform tests.assert_rls_violation($q$insert into tms.planning_default_steps (tenant_id, position, kind, name_ar, name_en) values ('b0000000-0000-4000-8000-000000000001', 5, 'person', 'س', 'S')$q$,
+    'planning_default_steps: insert with tenant B tenant_id is rejected by RLS');
+  perform tests.assert_eq(tests.rows_affected($q$delete from tms.planning_default_steps where tenant_id = 'b0000000-0000-4000-8000-000000000001'$q$),
+    0::bigint, 'planning_default_steps: RLS filters tenant B rows on delete');
+  -- Within its own organization the Organization Admin (no tms.plan_cycle.manage) changes nothing either.
+  perform tests.assert_eq(tests.rows_affected($q$update tms.plan_cycles set name_en = 'x'$q$), 0::bigint,
+    'plan_cycles: no update without tms.plan_cycle.manage');
+  perform tests.assert_eq(tests.rows_affected($q$delete from tms.plan_cycle_steps$q$), 0::bigint,
+    'plan_cycle_steps: no delete without tms.plan_cycle.manage');
 end $$;
 rollback;
 

@@ -187,8 +187,9 @@ describe.skipIf(!configured)('changing roles against PostgreSQL', () => {
       ok: true,
       changed: true,
     });
-    // T-M3-03: the L&D Manager changes the course library (tms.course.manage / archive), which the HR
-    // Manager does not hold — nobody gives a permission they do not hold (EP-ROLES).
+    // T-M3-03 / T-M3-04: the L&D Manager changes the course library (tms.course.manage / archive) and
+    // manages planning cycles (tms.plan_cycle.*), which the HR Manager does not hold — nobody gives a
+    // permission they do not hold (EP-ROLES).
     expect(await change(hr, sara.person, 'training_manager')).toEqual({
       ok: false,
       refusal: 'not_allowed',

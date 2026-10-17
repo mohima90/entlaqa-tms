@@ -17,6 +17,7 @@ import {
   standardRoleScope,
 } from './custom-roles';
 import { platformPermissions } from './platform-permissions';
+import { tmsPlanningPermissions } from './tms-planning-permissions';
 import { ROLE_TEMPLATES, roleStartValues } from './role-templates';
 import { SYSTEM_ROLES, getSystemRole } from './system-roles';
 
@@ -30,11 +31,13 @@ function migration(suffix: string): string {
 
 /**
  * The migrations that write the catalogue: its creation (EP-ROLES) and the module permissions added since
- * (course library, T-M3-03). Any other writer fails the "writers" test below until it is added here.
+ * (course library, T-M3-03; planning cycles, EP-PLN T-M3-04), in file order. Any other writer fails the
+ * "writers" test below until it is added here.
  */
 const CATALOGUE_MIGRATIONS = [
   '_platform__create_permission_catalogue.sql',
   '_platform__add_course_permissions.sql',
+  '_platform__add_planning_permissions.sql',
 ];
 
 function catalogueSeeds(): string {
@@ -91,7 +94,10 @@ describe('permission catalogue and standard grants (EP-ROLES, drift checks)', ()
     expect(customRolePermission('platform.role.manage')).toBeUndefined();
     // The catalogue: every other platform permission and the module permissions, once, in a named group.
     expect(CUSTOM_ROLE_PERMISSIONS).toHaveLength(
-      Object.keys(platformPermissions).length - 2 + Object.keys(coursePermissions).length,
+      Object.keys(platformPermissions).length -
+        2 +
+        Object.keys(coursePermissions).length +
+        Object.keys(tmsPlanningPermissions).length,
     );
     expect(new Set(CUSTOM_ROLE_PERMISSIONS.map((e) => e.permission.code)).size).toBe(
       CUSTOM_ROLE_PERMISSIONS.length,

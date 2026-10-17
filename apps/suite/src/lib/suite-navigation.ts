@@ -1,5 +1,5 @@
 import type { CommandPaletteItem, IconName } from '@jadarat/ui';
-import { tmsNavigation } from '@jadarat/tms';
+import { tmsNavigation, type tmsPlanningNavigation } from '@jadarat/tms';
 import type { SuiteNavigationAccess } from './suite-context';
 
 /** Pages of the suite that have a navigation entry (`current` of the shell). */
@@ -12,7 +12,10 @@ export type SuitePage =
   | 'branches'
   | 'roles'
   | 'security'
-  | 'profile';
+  | 'profile'
+  // Planning (EP-PLN, T-M3-04).
+  | 'planningCycles'
+  | 'planningSettings';
 
 /** Message keys (namespace `shell`) of every navigation label. */
 export type NavLabelKey =
@@ -28,10 +31,12 @@ export type NavLabelKey =
   | 'emailIntegration'
   | 'integrations'
   | 'security'
-  | 'auditLog';
+  | 'auditLog'
+  | (typeof tmsPlanningNavigation)[number]['key'];
 
 /** Message keys (namespace `shell`) of the group headings; `main` has none. */
-export type NavGroupKey = 'main' | 'groupOrganization' | 'groupBilling' | 'groupSettings';
+export type NavGroupKey =
+  'main' | 'groupPlanning' | 'groupOrganization' | 'groupBilling' | 'groupSettings';
 
 export interface NavEntry {
   readonly key: NavLabelKey;
@@ -57,6 +62,8 @@ export const SUITE_PATHS = {
   general: '/suite/admin/settings',
   security: '/suite/admin/security',
   profile: '/suite/profile',
+  planningCycles: '/suite/planning/cycles',
+  planningSettings: '/suite/planning/settings',
 } as const satisfies Record<SuitePage, string>;
 
 /** The page title in the top bar (message key, namespace `shell`) for each page of the menu. */
@@ -70,6 +77,8 @@ export const PAGE_TITLE_KEYS = {
   general: 'general',
   security: 'security',
   profile: 'myProfile',
+  planningCycles: 'planningCycles',
+  planningSettings: 'planningSettings',
 } as const satisfies Record<SuitePage, string>;
 
 const TMS_ICONS: Readonly<Record<(typeof tmsNavigation)[number]['key'], IconName>> = {
@@ -114,6 +123,15 @@ export function suiteNavigation(access: SuiteNavigationAccess): NavGroupModel[] 
   const setup = access.organizationSetup;
   const groups: NavGroupModel[] = [
     { key: 'main', entries: main },
+    // Planning (EP-PLN, T-M3-04): the L&D Manager and the Training Coordinator (tms.plan_cycle.read).
+    {
+      key: 'groupPlanning',
+      entries: when(
+        access.planning,
+        page('planningCycles', 'plan', 'planningCycles'),
+        page('planningSettings', 'settings', 'planningSettings'),
+      ),
+    },
     {
       key: 'groupOrganization',
       entries: [

@@ -11,6 +11,7 @@ export * from './scopes';
 export * from './authorize';
 export * from './platform-permissions';
 export * from './course-permissions';
+export * from './tms-planning-permissions';
 export * from './system-roles';
 export * from './custom-roles';
 export * from './role-templates';

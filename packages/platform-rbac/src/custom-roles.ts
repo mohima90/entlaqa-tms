@@ -1,6 +1,7 @@
 import { coursePermissions } from './course-permissions';
 import type { LocalizedText, PermissionDefinition } from './permissions';
 import { platformPermissions } from './platform-permissions';
+import { tmsPlanningPermissions } from './tms-planning-permissions';
 import type { RoleScope, SystemRoleDefinition } from './system-roles';
 
 /**
@@ -62,6 +63,8 @@ export const PERMISSION_GROUPS = [
   'settings',
   'audit',
   'courses',
+  // TMS module (EP-PLN, T-M3-04).
+  'planning',
 ] as const;
 export type PermissionGroup = (typeof PERMISSION_GROUPS)[number];
 
@@ -73,6 +76,7 @@ export const PERMISSION_GROUP_NAMES: Readonly<Record<PermissionGroup, LocalizedT
   audit: { ar: 'سجل التدقيق', en: 'Audit log' },
   // TMS course library (T-M3-03): glossary #32 «الدورات».
   courses: { ar: 'الدورات', en: 'Courses' },
+  planning: { ar: 'التخطيط', en: 'Planning' },
 };
 
 export interface CustomRolePermission {
@@ -86,17 +90,19 @@ const c = coursePermissions;
 
 /**
  * Every permission of the catalogue by code: the platform's and the module permissions held by the
- * standard roles (course library, T-M3-03). Unknown codes are not in it (callers fail closed).
+ * standard roles (course library, T-M3-03; planning cycles, EP-PLN T-M3-04). Unknown codes are not in it
+ * (callers fail closed).
  */
 export const CATALOGUE_PERMISSIONS: Readonly<Record<string, PermissionDefinition>> = Object.freeze({
   ...platformPermissions,
   ...coursePermissions,
+  ...tmsPlanningPermissions,
 });
 
 /**
  * The permission catalogue of the role builder, in screen order (platform permissions, then module
- * permissions as each module's features ship: the course library since T-M3-03). Mirrored in
- * `platform.ref_permissions` (drift test).
+ * permissions as each module's features ship: the course library since T-M3-03, planning cycles since
+ * T-M3-04). Mirrored in `platform.ref_permissions` (drift test).
  */
 export const CUSTOM_ROLE_PERMISSIONS: readonly CustomRolePermission[] = [
   { permission: p['platform.user.read'], group: 'people', use: 'scoped' },
@@ -119,6 +125,17 @@ export const CUSTOM_ROLE_PERMISSIONS: readonly CustomRolePermission[] = [
   { permission: c['tms.course_cost.read'], group: 'courses', use: 'organization' },
   { permission: c['tms.course.manage'], group: 'courses', use: 'organization_only' },
   { permission: c['tms.course.archive'], group: 'courses', use: 'organization_only' },
+  // Planning cycles span departments: organization-wide only (migration 20261020150000).
+  {
+    permission: tmsPlanningPermissions['tms.plan_cycle.read'],
+    group: 'planning',
+    use: 'organization_only',
+  },
+  {
+    permission: tmsPlanningPermissions['tms.plan_cycle.manage'],
+    group: 'planning',
+    use: 'organization_only',
+  },
 ];
 
 const PERMISSIONS_BY_CODE: ReadonlyMap<string, PermissionDefinition> = new Map(

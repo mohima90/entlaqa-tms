@@ -22,7 +22,7 @@ import { localizedName } from '../../../../../../../lib/users-view';
 
 /**
  * Change a member's role (T-M2-14, FR-IAM-07/08; EP-ROLES — one role per person, standard or custom):
- * HR Manager (ordinary roles whose permissions they hold) or Organization Admin; privileged roles need an
+ * HR Manager (every ordinary role — who can give what, PO 17 Oct 2026) or Organization Admin; privileged roles need an
  * authenticator code (PO decision D-IAM-01). The same form opens from the ⋯ menu on Team members. Out of
  * scope or another organization → 404.
  */

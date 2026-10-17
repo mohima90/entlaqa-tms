@@ -56,8 +56,9 @@ type FieldErrors = Partial<Record<keyof BuilderValues, string>>;
  * Create or edit a custom role (FR-IAM-07; EP-ROLES, PO 17 Oct 2026 — Kawadir's roles screen with its
  * permissions accordion): names in English and Arabic, description, «start from» (blank, a standard role
  * or a template), the permissions grouped by module with a «ticked / total» badge and «High risk» badges,
- * and the data the role sees. Only permissions the Organization Admin holds can be ticked; administrative
- * permissions need the whole organization. A role with a high-risk permission, or one that manages users or
+ * and the data the role sees. Every permission of the catalogue can be ticked (who can give what, PO 17 Oct
+ * 2026 — also the training ones the Organization Admin does not hold); administrative permissions need the
+ * whole organization. A role with a high-risk permission, or one that manages users or
  * roles, is privileged. Notices that appear while editing are announced through one live region that stays
  * mounted (WCAG 4.1.3).
  */

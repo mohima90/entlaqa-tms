@@ -52,14 +52,14 @@ begin
           '[{"name": "", "rows": 30, "columns": 12}]', 0,
           '{"0": "email", "1": "first_name_ar", "2": "family_name_ar"}', now() + interval '1 day');
 end $$;
--- The file of the scenarios below (rows 2–20). Rows 2 and 6 ask for the Department Head role, which both the
--- Organization Admin and the HR Manager may give (since EP-PLN / T-M3-10 the training roles hold planning and
--- needs-form permissions the HR Manager does not hold).
+-- The file of the scenarios below (rows 2–20). Rows 2 and 6 ask for the Training Coordinator role, which both
+-- the Organization Admin and the HR Manager may give (an ordinary role — who can give what, PO 17 Oct 2026 —
+-- although its course, planning and needs-form permissions are not the HR Manager's).
 create or replace function pg_temp.stage_file(p_import uuid) returns void language plpgsql as $$
 begin
   perform pg_temp.stage(p_import, 2, '{"email": "new1@imp.test", "first_name_ar": "نورة", "father_name_ar": "فهد",
     "family_name_ar": "الدوسري", "first_name_en": "Noura", "family_name_en": "Aldossari", "department": "sal",
-    "branch": "فرع الرياض", "manager_email": "mgr@imp.test", "primary_role": "department_head",
+    "branch": "فرع الرياض", "manager_email": "mgr@imp.test", "primary_role": "training_coordinator",
     "additional_roles": ["learner"], "language": "en", "employee_number": "NEW-1", "mobile": "+966551234567",
     "hire_date": "2024-03-03", "job_title_ar": "أخصائية تدريب", "roles_given": true}');
   perform pg_temp.stage(p_import, 3, '{"email": "new2@imp.test", "first_name_ar": "خالد", "family_name_ar": "الشهري",
@@ -67,7 +67,7 @@ begin
   perform pg_temp.stage(p_import, 4, '{"email": "dup@imp.test", "first_name_ar": "مكرر", "family_name_ar": "أول"}');
   perform pg_temp.stage(p_import, 5, '{"email": "dup@imp.test", "first_name_ar": "مكرر", "family_name_ar": "ثان"}');
   perform pg_temp.stage(p_import, 6, '{"email": "exist@imp.test", "first_name_ar": "موجود", "family_name_ar": "قديم",
-    "job_title_ar": "مدير", "department": "TD", "primary_role": "department_head", "roles_given": true}');
+    "job_title_ar": "مدير", "department": "TD", "primary_role": "training_coordinator", "roles_given": true}');
   perform pg_temp.stage(p_import, 7, '{"email": "priv@imp.test", "first_name_ar": "مميز", "family_name_ar": "جدا",
     "job_title_ar": "المدير المالي"}');
   perform pg_temp.stage(p_import, 8, '{"email": "deact@imp.test", "first_name_ar": "معطل", "family_name_ar": "سابق"}');
@@ -205,7 +205,7 @@ begin
     'errors per code (rows)');
   perform tests.assert_eq(v_counts -> 'skipCodes', '{"OWN_ROW": 1, "INVITATION_PENDING": 1, "MEMBER_DEACTIVATED": 1}'::jsonb,
     'skipped per code');
-  perform tests.assert_eq(v_counts -> 'roles', '{"department_head": 1}'::jsonb, 'primary roles given by the file');
+  perform tests.assert_eq(v_counts -> 'roles', '{"training_coordinator": 1}'::jsonb, 'primary roles given by the file');
   perform tests.assert_eq(v_counts -> 'additionalRoles', '{"learner": 1}'::jsonb, 'additional roles');
 end $$;
 select pg_temp.become_owner();
@@ -279,7 +279,7 @@ begin
                                and job_title_ar = 'أخصائية تدريب' and source = 'import'
                         from platform.person_employment where person_id = v_row.person_id), 'row 2: placement from the file');
   perform tests.assert((select mail_held and send_count = 0 and token_issued_at is null and import_id = i
-                               and invited_by = '00000000-0000-4000-8000-0000000000a1' and primary_role = 'department_head'
+                               and invited_by = '00000000-0000-4000-8000-0000000000a1' and primary_role = 'training_coordinator'
                                and additional_roles = '{}' and locale = 'en' and status = 'pending'
                         from platform.invitations where id = v_row.invitation_id),
     'row 2: a held invitation of the importer with the file''s role (one role per person: its additional role is not given) and language');
@@ -606,6 +606,8 @@ begin
     'the privileged member''s record is unchanged');
   perform tests.assert_eq((select string_agg(distinct invited_by::text, ',') from platform.invitations where import_id = i),
     '00000000-0000-4000-8000-0000000000ab', 'the HR Manager is the inviter');
+  perform tests.assert_eq((select primary_role from platform.invitations where import_id = i and email = 'new1@imp.test'),
+    'training_coordinator', 'the HR Manager''s import gives the Training Coordinator role (who can give what, PO 17 Oct 2026)');
 end $$;
 -- Held invitations (invitations: hold) stay held; the worker schedules nothing unless the import sends.
 do $$

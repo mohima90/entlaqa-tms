@@ -7,8 +7,9 @@ import type { UserTx } from './with-user-tx';
  * Custom roles of the organization (FR-IAM-07, EP-ROLES; migration 20261019090100). The calling actions
  * authorize (`platform.role.read` to read, `platform.role.manage` to change) and audit; the database
  * guards (private.check_custom_role, private.check_custom_role_permission) have the final word: only the
- * Organization Admin builds roles, from the permission catalogue, with permissions they hold,
- * administrative ones organization-wide only, and a role still held is not deleted. Row-level security
+ * Organization Admin builds roles, from the permission catalogue (any permission not marked 'none', also
+ * ones it does not hold — who can give what, PO 17 Oct 2026, migration 20261020200000), administrative
+ * ones organization-wide only, and a role still held is not deleted. Row-level security
  * keeps every read and write in the caller's organization.
  */
 export type CustomRoleScopeValue = 'own' | 'team' | 'departments' | 'organization';

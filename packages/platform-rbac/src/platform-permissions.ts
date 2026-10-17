@@ -179,8 +179,8 @@ export type PlatformPermissionCode = keyof typeof platformPermissions;
  * Module permissions that STANDARD roles grant (system-roles.ts) and the permission catalogue lists
  * (`platform.ref_permissions`, drift test in custom-roles.test.ts). platform-rbac never imports a module
  * (ADR 0001), so they are declared here; the TMS module re-exports them (modules/tms permissions.ts).
- * None is part of a custom role yet: the role builder offers only what the Organization Admin holds, and
- * the Organization Admin holds no training permission (BR-IAM-4).
+ * Both are part of the custom-role catalogue since who can give what (PO, 17 Oct 2026): the Organization
+ * Admin builds roles with permissions it does not hold itself (custom-roles.ts).
  */
 export const tmsRolePermissions = definePermissions('tms', [
   {

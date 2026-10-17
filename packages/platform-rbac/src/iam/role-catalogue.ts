@@ -5,14 +5,13 @@ import {
   listCustomRoles,
 } from '@jadarat/platform-db';
 import {
-  CATALOGUE_PERMISSIONS,
   type CustomRoleScope,
   customRoleIsPrivileged,
   isCustomRoleCode,
   standardRoleScope,
 } from '../custom-roles';
 import type { ActionContext } from '../define-action';
-import type { LocalizedText, PermissionDefinition } from '../permissions';
+import type { LocalizedText } from '../permissions';
 import { platformPermissions } from '../platform-permissions';
 import { type AssignableRole, standardAssignableRole } from '../role-grants';
 import { SYSTEM_ROLES, type SystemRoleDefinition } from '../system-roles';
@@ -35,22 +34,16 @@ export interface RoleChoice extends AssignableRole {
 }
 
 const p = platformPermissions;
-/** Platform and module permissions a role may hold (course library since T-M3-03). */
-const PERMISSIONS: Readonly<Record<string, PermissionDefinition>> = CATALOGUE_PERMISSIONS;
-
 /**
- * May the member give `role`? The Organization Admin (`platform.role.assign_privileged`) every role;
- * otherwise `platform.role.assign`, a role that is not privileged, and every permission of the role held
- * organization-wide (nobody gives a permission they do not hold) — the database's
- * private.member_may_give_roles.
+ * May the member give `role`? Who can give what (PO, 17 Oct 2026): the Organization Admin
+ * (`platform.role.assign_privileged`) every role; the HR Manager (`platform.role.assign`) every role that
+ * is not privileged — L&D Manager, Training Coordinator, Department Head, Employee, ordinary custom roles —
+ * whether or not it holds the role's permissions. The database's private.member_may_give_roles
+ * (migration 20261020200000).
  */
 export function canGive(ctx: Pick<ActionContext<UserTx>, 'can'>, role: AssignableRole): boolean {
   if (ctx.can(p['platform.role.assign_privileged'], 'tenant')) return true;
-  if (role.privileged || !ctx.can(p['platform.role.assign'], 'tenant')) return false;
-  return role.permissions.every((code) => {
-    const permission = PERMISSIONS[code];
-    return permission !== undefined && ctx.can(permission, 'tenant');
-  });
+  return !role.privileged && ctx.can(p['platform.role.assign'], 'tenant');
 }
 
 function customChoice(row: CustomRoleRow): Omit<RoleChoice, 'assignable'> {

@@ -7,8 +7,7 @@ import {
   listCustomRoles,
 } from '@jadarat/platform-db';
 import { z } from 'zod';
-import { CUSTOM_ROLE_PERMISSIONS, customRoleIsPrivileged, isCustomRoleCode } from '../custom-roles';
-import type { ActionContext } from '../define-action';
+import { customRoleIsPrivileged, isCustomRoleCode } from '../custom-roles';
 import type { QueryDefinition } from '../define-query';
 import type { LocalizedText } from '../permissions';
 import { platformPermissions } from '../platform-permissions';
@@ -89,24 +88,12 @@ export function rolesPageQueryDefinition(): QueryDefinition<
   };
 }
 
-/**
- * The permissions of the catalogue the member holds organization-wide — the role builder offers only these
- * (nobody gives a permission they do not hold, EP-ROLES).
- */
-export function heldCataloguePermissions(ctx: Pick<ActionContext<UserTx>, 'can'>): string[] {
-  return CUSTOM_ROLE_PERMISSIONS.filter((entry) => ctx.can(entry.permission, 'tenant')).map(
-    (entry) => entry.permission.code,
-  );
-}
-
 export interface RoleDetailView {
   readonly role: RolesPageRole;
   /** Custom roles: the stored row (names, description, scope, holders) for the edit form. */
   readonly custom: CustomRoleRow | null;
   readonly memberCount: number | null;
   readonly canManage: boolean;
-  /** What the builder may tick (only with `canManage`). */
-  readonly heldPermissions: readonly string[];
 }
 
 export const RoleDetailInput = z.strictObject({
@@ -142,7 +129,6 @@ export function roleDetailQueryDefinition(): QueryDefinition<
         custom,
         memberCount: counts ? (counts[role.code] ?? 0) : null,
         canManage,
-        heldPermissions: canManage ? heldCataloguePermissions(ctx) : [],
       });
     },
   };
@@ -150,12 +136,14 @@ export function roleDetailQueryDefinition(): QueryDefinition<
 
 export interface RoleEditorView {
   readonly canManage: true;
-  readonly heldPermissions: readonly string[];
 }
 
 export const RoleEditorInput = z.strictObject({});
 
-/** The create form: the permissions the Organization Admin may tick. */
+/**
+ * The create form, for the Organization Admin only: every permission of the catalogue may be ticked (who
+ * can give what, PO 17 Oct 2026 — also ones the Organization Admin does not hold).
+ */
 export function roleEditorQueryDefinition(): QueryDefinition<
   typeof RoleEditorInput,
   RoleEditorView,
@@ -164,7 +152,6 @@ export function roleEditorQueryDefinition(): QueryDefinition<
   return {
     permission: p['platform.role.manage'],
     input: RoleEditorInput,
-    handler: ({ ctx }) =>
-      Promise.resolve(ok({ canManage: true, heldPermissions: heldCataloguePermissions(ctx) })),
+    handler: () => Promise.resolve(ok({ canManage: true as const })),
   };
 }

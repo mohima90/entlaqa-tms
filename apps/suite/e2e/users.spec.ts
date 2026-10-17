@@ -413,6 +413,18 @@ test.describe('users pages', () => {
     await expect(builder.getByTestId('role-scope-cleared')).toBeVisible();
     await expect(permissions.getByRole('checkbox', { name: 'Invite users' })).toBeDisabled();
     await builder.getByTestId('role-scope-organization').check();
+    // Who can give what (PO, 17 Oct 2026): the training permissions, which the Organization Admin does not
+    // hold, can be ticked; the organization structure (the HR Manager's) is not offered at all.
+    for (const group of ['Courses', 'Planning']) {
+      await permissions.locator('summary', { hasText: group }).click();
+    }
+    await expect(permissions.getByRole('checkbox', { name: 'Manage courses' })).toBeEnabled();
+    await expect(
+      permissions.getByRole('checkbox', { name: 'Manage planning cycles' }),
+    ).toBeEnabled();
+    await expect(
+      permissions.getByRole('checkbox', { name: 'Manage organization structure' }),
+    ).toHaveCount(0);
     await expectNoSeriousA11yViolations(page);
     await builder.getByTestId('role-save').click();
     await expect(page).toHaveURL(/\/en\/suite\/admin\/roles\?saved=1$/);

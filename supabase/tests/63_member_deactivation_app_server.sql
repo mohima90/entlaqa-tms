@@ -176,7 +176,7 @@ rollback;
 -- A member who holds a privileged role: the Organization Admin deactivates them without an authenticator
 -- code (PO decision, 14 Oct 2026; review M4's code rule removed by 20261017090400); HR Manager never
 -- ---------------------------------------------------------------------------------------------------
--- uP (Compliance Officer, in force) and uF (Auditor from in 10 days) are privileged; uE's Auditor role
+-- uP (HR Manager, in force) and uF (HR Manager from in 10 days) are privileged; uE's HR Manager role
 -- ended yesterday (not privileged any more). The same test as the reactivation.
 begin;
 set local role authenticated;

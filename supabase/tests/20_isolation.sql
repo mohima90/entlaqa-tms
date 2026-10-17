@@ -19,6 +19,8 @@ begin
     'platform.tenant_memberships', 'platform.session_context', 'platform.audit_events',
     'platform.branches', 'platform.departments', 'platform.person_employment', 'platform.role_assignments',
     'platform.invitations', 'platform.security_policies', 'platform.tenant_settings',
+    -- Custom roles (EP-ROLES): insert/FK tests below; rules in 97_custom_roles_app_server.sql.
+    'platform.custom_roles', 'platform.custom_role_permissions',
     -- Files (T-M2-18): no direct writes at all (file_guard's functions only); cross-tenant, FK and
     -- function tests in 81_files_app_server.sql, 82_files_app_worker.sql and 83_files_storage.sql.
     'platform.files', 'platform.file_download_grants',
@@ -189,6 +191,32 @@ begin
     0::bigint, 'person_employment: RLS filters tenant B rows');
   perform tests.assert_privilege_denied($q$delete from platform.person_employment where person_id = 'a1000000-0000-4000-8000-0000000000ab'$q$,
     'person_employment: no DELETE grant');
+
+  -- platform.custom_roles (uA is the Organization Admin: the guard lets the row through to RLS)
+  perform tests.assert_rls_violation($q$insert into platform.custom_roles (tenant_id, name_en, name_ar, data_scope) values ('b0000000-0000-4000-8000-000000000001', 'Intruder', 'دخيل', 'own')$q$,
+    'custom_roles: insert with tenant B tenant_id is rejected by RLS');
+  perform tests.assert_eq(tests.rows_affected($q$update platform.custom_roles set name_en = 'x' where id = 'b6000000-0000-4000-8000-000000000001'$q$),
+    0::bigint, 'custom_roles: RLS filters tenant B role by id');
+  perform tests.assert_privilege_denied($q$update platform.custom_roles set tenant_id = 'b0000000-0000-4000-8000-000000000001'$q$,
+    'custom_roles: tenant_id is not updatable');
+  perform tests.assert_privilege_denied($q$update platform.custom_roles set code = 'custom_b00000000001'$q$,
+    'custom_roles: code is not updatable');
+  perform tests.assert_eq(tests.rows_affected($q$delete from platform.custom_roles where id = 'b6000000-0000-4000-8000-000000000001'$q$),
+    0::bigint, 'custom_roles: RLS filters tenant B rows on delete');
+
+  -- platform.custom_role_permissions (composite FK to custom_roles)
+  perform tests.assert_rls_violation($q$insert into platform.custom_role_permissions (tenant_id, custom_role_id, permission_code) values ('b0000000-0000-4000-8000-000000000001', 'b6000000-0000-4000-8000-000000000001', 'platform.org.read')$q$,
+    'custom_role_permissions: insert with tenant B tenant_id is rejected by RLS');
+  perform tests.assert_fails($q$insert into platform.custom_role_permissions (custom_role_id, permission_code) values ('b6000000-0000-4000-8000-000000000001', 'platform.org.read')$q$,
+    array['23503'], 'custom_role_permissions: the composite FK rejects a tenant B role');
+  perform tests.assert_eq(tests.rows_affected($q$delete from platform.custom_role_permissions where tenant_id = 'b0000000-0000-4000-8000-000000000001'$q$),
+    0::bigint, 'custom_role_permissions: RLS filters tenant B rows');
+  perform tests.assert_privilege_denied($q$update platform.custom_role_permissions set permission_code = 'platform.audit.read'$q$,
+    'custom_role_permissions: no UPDATE grant (remove and add)');
+
+  -- platform.role_assignments: a tenant B custom role is rejected by the composite FK
+  perform tests.assert_fails($q$insert into platform.role_assignments (membership_id, role_code) select id, 'custom_b00000000001' from platform.tenant_memberships where user_id = '00000000-0000-4000-8000-0000000000a3'$q$,
+    array['23503'], 'role_assignments: a tenant B custom role is rejected by the composite FK');
 
   -- platform.role_assignments (composite FK to memberships; member and role immutable)
   perform tests.assert_rls_violation($q$insert into platform.role_assignments (tenant_id, membership_id, role_code) select 'b0000000-0000-4000-8000-000000000001', id, 'learner' from platform.tenant_memberships where user_id = '00000000-0000-4000-8000-0000000000a2'$q$,

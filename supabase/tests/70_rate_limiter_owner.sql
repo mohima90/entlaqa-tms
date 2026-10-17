@@ -55,7 +55,9 @@ begin
                        and not has_schema_privilege('rate_limit_guard', 'platform', 'CREATE'),
     'rate_limit_guard creates nothing');
   -- What the Organization Admin functions read: their own organization's memberships and role assignments
-  -- (a few columns, policies limited to the session's organization) and Auth addresses through the view.
+  -- (a few columns, policies limited to the session's organization) and Auth addresses through the view —
+  -- and, to decide by permission (EP-ROLES: platform.user.unlock_sign_in, standard or custom role), the
+  -- permission catalogue, the standard roles' grants and the custom roles.
   perform tests.assert_eq(
     (select string_agg(format('%s.%s', a.attrelid::regclass, a.attname), ', '
                        order by a.attrelid::regclass::text, a.attname::text)
@@ -64,6 +66,11 @@ begin
                           where n.nspname = 'platform' and c.relkind in ('r', 'p', 'v'))
        and a.attnum > 0 and not a.attisdropped
        and has_column_privilege('rate_limit_guard', a.attrelid, a.attnum, 'select, insert, update, references')),
+    'platform.custom_role_permissions.custom_role_id, platform.custom_role_permissions.permission_code, '
+    'platform.custom_role_permissions.tenant_id, platform.custom_roles.code, platform.custom_roles.data_scope, '
+    'platform.custom_roles.id, platform.custom_roles.tenant_id, platform.ref_permissions.code, '
+    'platform.ref_permissions.custom_role_use, platform.ref_permissions.risk, platform.ref_role_permissions.permission_code, '
+    'platform.ref_role_permissions.role_code, platform.ref_role_permissions.scope, '
     'platform.role_assignments.membership_id, platform.role_assignments.role_code, platform.role_assignments.tenant_id, '
     'platform.role_assignments.valid_from, platform.role_assignments.valid_until, platform.tenant_memberships.id, '
     'platform.tenant_memberships.person_id, platform.tenant_memberships.status, platform.tenant_memberships.tenant_id, '
@@ -72,9 +79,12 @@ begin
   perform tests.assert_eq(
     (select string_agg(format('%s %s %s', p.tablename, p.cmd, p.qual), '; ' order by p.tablename)
      from pg_policies p where 'rate_limit_guard' = any (p.roles) and p.schemaname = 'platform'),
+    'custom_role_permissions SELECT (tenant_id = ( SELECT private.current_tenant_id() AS current_tenant_id)); '
+    'custom_roles SELECT (tenant_id = ( SELECT private.current_tenant_id() AS current_tenant_id)); '
+    'ref_permissions SELECT true; ref_role_permissions SELECT true; '
     'role_assignments SELECT (tenant_id = ( SELECT private.current_tenant_id() AS current_tenant_id)); '
     'tenant_memberships SELECT (tenant_id = ( SELECT private.current_tenant_id() AS current_tenant_id))',
-    'rate_limit_guard sees its caller''s organization only');
+    'rate_limit_guard sees its caller''s organization only (and the global permission catalogue)');
   perform tests.assert(not has_table_privilege('rate_limit_guard', 'auth.users', 'select')
                        and has_table_privilege('rate_limit_guard', 'private.auth_user_email', 'select'),
     'rate_limit_guard reads Auth addresses only through private.auth_user_email');
@@ -115,6 +125,7 @@ begin
      where p.proowner <> 'rate_limit_guard'::regrole
        and exists (select 1 from aclexplode(p.proacl) a where pg_get_userbyid(a.grantee) = 'rate_limit_guard')),
     'private.actor_role_codes(uuid,uuid), private.current_tenant_id(), private.has_active_membership(uuid,uuid), '
+    'private.member_has_permission(uuid,uuid,text), private.member_permissions(uuid,uuid), '
     'private.request_aal2(), private.request_claims(), private.request_code_fresh(), '
     'private.request_sign_in_unlocked_mail(uuid), private.request_user_id(), private.try_uuid(text)',
     'rate_limit_guard may call exactly these other functions');

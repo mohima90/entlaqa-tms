@@ -40,7 +40,7 @@ begin
     'only signed-in members ask for a new invitation e-mail', 'system: cannot ask for a resend (only members do)');
   -- The mailer checks who asked for a resend against their CURRENT roles (review M2): it can read them.
   perform tests.assert_eq(private.actor_role_codes('a0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-0000000000ab'),
-    array['hr_manager', 'learner'], 'system: reads a member''s current roles in its tenant');
+    array['hr_manager'], 'system: reads a member''s current role in its tenant');
   perform tests.assert_eq(private.actor_role_codes('b0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-0000000000b1'),
     '{}'::text[], 'system: no roles of another tenant');
   perform tests.assert_fails_like($q$update platform.invitations set status = 'accepted' where id = 'a4000000-0000-4000-8000-000000000001'$q$,

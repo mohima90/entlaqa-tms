@@ -2,28 +2,10 @@
 -- Separation of duties (BR-IAM-4, T-M2-16: the Organization Admin holds no other role), as the owner: the
 -- guards also bind platform operations and
 -- invitation acceptance (invitation_guard); the existing-data check of migration 20261010090000 and
--- verify-deployment.sql. Also commits the fixture used by 43_separation_of_duties_app_server.sql:
---   tenant A  a4…0b  a PENDING invitation giving tenant_admin + hr_manager, learner for both@a.test ('tok-both'),
---                    written with the guard trigger disabled (as if it predated the rule); account uBoth
---                    (…fb, session sBoth) signed up after the e-mail.
--- Users in tenant A: uA = Organization Admin, uAB = HR Manager + learner, uInv = invited learner.
+-- verify-deployment.sql. Since EP-ROLES (one role per person, 20261019090400) a second role is refused by the
+-- unique index as well; the separation trigger still answers first (JR001) for the Organization Admin.
+-- Users in tenant A: uA = Organization Admin, uAB = HR Manager, uInv = invited Employee (learner).
 \set ON_ERROR_STOP on
-
--- ---- fixture (committed) ------------------------------------------------------------------------
-begin;
-insert into platform.persons (id, tenant_id, display_name_ar, email) values
-  ('a1000000-0000-4000-8000-0000000000ec', 'a0000000-0000-4000-8000-000000000001', 'كلا الدورين', 'both@a.test');
-alter table platform.invitations disable trigger invitations_separation_of_duties;
-insert into platform.invitations (id, tenant_id, person_id, email, locale, primary_role, additional_roles, invited_by) values
-  ('a4000000-0000-4000-8000-00000000000b', 'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000ec',
-   'both@a.test', 'ar', 'tenant_admin', '{hr_manager,learner}', '00000000-0000-4000-8000-0000000000a1');
-alter table platform.invitations enable trigger invitations_separation_of_duties;
-update platform.invitations set token_hash = tests.token_hash('tok-both') where id = 'a4000000-0000-4000-8000-00000000000b';
-insert into auth.users (id, email, created_at) values
-  ('00000000-0000-4000-8000-0000000000fb', 'both@a.test', clock_timestamp() + interval '1 second');  -- uBoth
-insert into auth.sessions (id, user_id, not_after) values
-  ('10000000-0000-4000-8000-0000000000fb', '00000000-0000-4000-8000-0000000000fb', null);           -- sBoth
-commit;
 
 -- ---- catalog -----------------------------------------------------------------------------------
 begin;
@@ -46,7 +28,7 @@ begin
     (select string_agg(r.code, ',' order by r.sort_order) from platform.ref_roles r
      where private.roles_conflict('tenant_admin', r.code)),
     (select string_agg(r.code, ',' order by r.sort_order) from platform.ref_roles r where r.code <> 'tenant_admin'),
-    'tenant_admin conflicts with every other system role');
+    'tenant_admin conflicts with every other standard role');
   perform tests.assert(not exists (select 1 from platform.ref_roles a, platform.ref_roles b
                                    where a.code <> 'tenant_admin' and b.code <> 'tenant_admin'
                                      and private.roles_conflict(a.code, b.code)),
@@ -56,7 +38,7 @@ begin
   perform tests.assert(private.roles_include_conflict(array['tenant_admin', 'learner']), 'admin + learner');
   perform tests.assert(private.roles_include_conflict(array['hr_manager', 'learner', 'tenant_admin']), 'admin among others');
   perform tests.assert(not private.roles_include_conflict(array['tenant_admin']), 'admin alone');
-  perform tests.assert(not private.roles_include_conflict(array['hr_manager', 'learner', 'finance_manager', 'auditor']), 'others together');
+  perform tests.assert(not private.roles_include_conflict(array['hr_manager', 'learner', 'training_manager', 'custom_a00000000001']), 'others together');
   perform tests.assert(not private.roles_include_conflict('{}'), 'no roles');
   -- Windows: overlapping from now on only.
   perform tests.assert(private.role_windows_overlap(null, null, null, null), 'open windows overlap');
@@ -108,22 +90,36 @@ do $$
 declare
   v record;
 begin
-  -- The committed fixture: one pending invitation giving both roles, nobody holding both.
+  select * into v from private.separation_of_duties_violations();
+  perform tests.assert_eq(row(v.members, v.pending_invitations)::text, row(0::bigint, 0::bigint)::text,
+    'violations: none');
+end $$;
+-- Data that predates the rules (guards, one-role index and constraint removed for this transaction only):
+-- uAB also an Organization Admin; uInv with both roles but one of them ended (history: no violation); a
+-- pending invitation giving both roles, then revoked (history too).
+drop index platform.role_assignments_tenant_membership_one_role_uq;
+alter table platform.invitations drop constraint invitations_one_role_check;
+insert into platform.persons (id, tenant_id, display_name_ar, email) values
+  ('a1000000-0000-4000-8000-0000000000ec', 'a0000000-0000-4000-8000-000000000001', 'كلا الدورين', 'both@a.test');
+alter table platform.invitations disable trigger invitations_separation_of_duties;
+insert into platform.invitations (id, tenant_id, person_id, email, locale, primary_role, additional_roles, invited_by) values
+  ('a4000000-0000-4000-8000-00000000000b', 'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000ec',
+   'both@a.test', 'ar', 'tenant_admin', '{hr_manager,learner}', '00000000-0000-4000-8000-0000000000a1');
+alter table platform.invitations enable trigger invitations_separation_of_duties;
+do $$
+declare
+  v record;
+begin
   select * into v from private.separation_of_duties_violations();
   perform tests.assert_eq(row(v.members, v.pending_invitations)::text, row(0::bigint, 1::bigint)::text,
-    'violations: the pending invitation of the fixture');
+    'violations: a pending invitation giving both roles');
 end $$;
--- Data that predates the rule (guard disabled): uAB also an Organization Admin; uInv with both roles but
--- one of them ended (history: no violation); an accepted / revoked invitation is history too.
 alter table platform.role_assignments disable trigger role_assignments_separation_of_duties;
 insert into platform.role_assignments (tenant_id, membership_id, role_code)
 select tenant_id, id, 'tenant_admin' from platform.tenant_memberships
 where user_id = '00000000-0000-4000-8000-0000000000ab' and tenant_id = 'a0000000-0000-4000-8000-000000000001';
 insert into platform.role_assignments (tenant_id, membership_id, role_code, valid_from, valid_until)
 select tenant_id, id, 'tenant_admin', now() - interval '2 days', now() - interval '1 day' from platform.tenant_memberships
-where user_id = '00000000-0000-4000-8000-0000000000a2' and tenant_id = 'a0000000-0000-4000-8000-000000000001';
-insert into platform.role_assignments (tenant_id, membership_id, role_code)
-select tenant_id, id, 'hr_manager' from platform.tenant_memberships
 where user_id = '00000000-0000-4000-8000-0000000000a2' and tenant_id = 'a0000000-0000-4000-8000-000000000001';
 alter table platform.role_assignments enable trigger role_assignments_separation_of_duties;
 update platform.invitations set status = 'revoked' where id = 'a4000000-0000-4000-8000-00000000000b';

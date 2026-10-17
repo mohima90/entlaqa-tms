@@ -1,4 +1,4 @@
-import { normalizeDigits } from '@jadarat/platform-i18n';
+import { normalizeDigits } from '@jadarat/platform-i18n/text';
 import {
   COURSE_CODE_RE,
   COURSE_LIMITS,

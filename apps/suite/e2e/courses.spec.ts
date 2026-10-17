@@ -63,10 +63,12 @@ for (const locale of ['en', 'ar'] as const) {
     const table = page.getByTestId('courses-table');
     await expect(table.getByRole('row')).toHaveCount(5); // header + four example courses
     await expect(page.getByTestId('course-row-LEAD-101')).toContainText(t.perSession);
-    // The navigation links the page.
-    await expect(
-      page.getByRole('navigation').getByRole('link', { name: t.title }).first(),
-    ).toHaveAttribute('href', `/${locale}/suite/courses`);
+    // The navigation links the page (on phones the menu is a drawer, opened from the top bar).
+    if ((page.viewportSize()?.width ?? 0) >= 1024) {
+      await expect(
+        page.getByRole('navigation').getByRole('link', { name: t.title }).first(),
+      ).toHaveAttribute('href', `/${locale}/suite/courses`);
+    }
     await expectNoSeriousA11yViolations(page);
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,

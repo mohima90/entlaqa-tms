@@ -55,15 +55,18 @@ export function CourseDialog(props: CourseDialogProps) {
     return value;
   };
   const [open, setOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  const show = () => {
+    setMounted(true);
+    setOpen(true);
+  };
   const editing = props.mode === 'edit' && props.course;
   return (
     <>
       {editing ? (
         <button
           type="button"
-          onClick={() => {
-            setOpen(true);
-          }}
+          onClick={show}
           className="grid size-9 place-items-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text pointer-coarse:size-11"
           aria-label={text('editCourse', { code: editing.code })}
           data-testid={`course-edit-${editing.code}`}
@@ -71,37 +74,37 @@ export function CourseDialog(props: CourseDialogProps) {
           <Icon name="pencil" />
         </button>
       ) : (
-        <Button
-          onClick={() => {
-            setOpen(true);
-          }}
-          data-testid="course-add"
-        >
+        <Button onClick={show} data-testid="course-add">
           <Icon name="plus" />
           {text('addCourse')}
         </Button>
       )}
-      <Dialog
-        open={open}
-        onClose={() => {
-          setOpen(false);
-        }}
-        title={editing ? text('form.editTitle') : text('form.addTitle')}
-        description={text('form.intro')}
-        closeLabel={text('form.close')}
-        size="lg"
-        data-testid="course-dialog"
-      >
-        {open ? (
-          <CourseForm
-            {...props}
-            text={text}
-            onDone={() => {
-              setOpen(false);
-            }}
-          />
-        ) : null}
-      </Dialog>
+      {/* Mounted only from opening until the native close (focus back on the opener): one dialog per
+          row would otherwise sit in the page. */}
+      {mounted ? (
+        <Dialog
+          open={open}
+          onClose={() => {
+            setOpen(false);
+            setMounted(false);
+          }}
+          title={editing ? text('form.editTitle') : text('form.addTitle')}
+          description={text('form.intro')}
+          closeLabel={text('form.close')}
+          size="lg"
+          data-testid="course-dialog"
+        >
+          {open ? (
+            <CourseForm
+              {...props}
+              text={text}
+              onDone={() => {
+                setOpen(false);
+              }}
+            />
+          ) : null}
+        </Dialog>
+      ) : null}
     </>
   );
 }

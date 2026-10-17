@@ -8,7 +8,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./actions/sessions": "./src/actions/sessions.ts",
-    "./courses": "./src/courses/model.ts",
+    "./courses": "./src/courses/shared.ts",
     "./courses/server": "./src/courses/server.ts"
   },
   "scripts": {

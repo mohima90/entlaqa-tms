@@ -31,6 +31,8 @@ export function CourseStatusButton(props: CourseStatusButtonProps) {
   const router = useRouter();
   const sessionRefused = useSessionRefusal();
   const [open, setOpen] = useState(false);
+  // Mounted only from opening until the native close (one dialog per row would otherwise sit in the page).
+  const [mounted, setMounted] = useState(false);
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState<{ tone: 'info' | 'danger'; text: string } | null>(null);
   const archive = props.action === 'archive';
@@ -70,6 +72,7 @@ export function CourseStatusButton(props: CourseStatusButtonProps) {
         type="button"
         onClick={() => {
           setMessage(null);
+          setMounted(true);
           setOpen(true);
         }}
         className="grid size-9 place-items-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text pointer-coarse:size-11"
@@ -78,39 +81,42 @@ export function CourseStatusButton(props: CourseStatusButtonProps) {
       >
         <Icon name={archive ? 'archive' : 'archive-restore'} />
       </button>
-      <Dialog
-        open={open}
-        onClose={() => {
-          setOpen(false);
-        }}
-        title={archive ? text('archiveTitle') : text('restoreTitle')}
-        description={archive ? text('archiveBody') : text('restoreBody')}
-        closeLabel={text('form.close')}
-        size="sm"
-        data-testid="course-status-dialog"
-        footer={
-          <>
-            <Button
-              variant="secondary"
-              onClick={() => {
-                setOpen(false);
-              }}
-              disabled={pending}
-            >
-              {text('keep')}
-            </Button>
-            <Button onClick={confirm} disabled={pending} data-testid="course-status-confirm">
-              {pending ? text('working') : archive ? text('archive') : text('restore')}
-            </Button>
-          </>
-        }
-      >
-        {message ? (
-          <Alert tone={message.tone} data-testid="course-status-message">
-            {message.text}
-          </Alert>
-        ) : null}
-      </Dialog>
+      {mounted ? (
+        <Dialog
+          open={open}
+          onClose={() => {
+            setOpen(false);
+            setMounted(false);
+          }}
+          title={archive ? text('archiveTitle') : text('restoreTitle')}
+          description={archive ? text('archiveBody') : text('restoreBody')}
+          closeLabel={text('form.close')}
+          size="sm"
+          data-testid="course-status-dialog"
+          footer={
+            <>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setOpen(false);
+                }}
+                disabled={pending}
+              >
+                {text('keep')}
+              </Button>
+              <Button onClick={confirm} disabled={pending} data-testid="course-status-confirm">
+                {pending ? text('working') : archive ? text('archive') : text('restore')}
+              </Button>
+            </>
+          }
+        >
+          {message ? (
+            <Alert tone={message.tone} data-testid="course-status-message">
+              {message.text}
+            </Alert>
+          ) : null}
+        </Dialog>
+      ) : null}
     </>
   );
 }

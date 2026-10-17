@@ -16,7 +16,7 @@ It integrates with **Jadarat LMS** (reference connector) and any other LMS throu
 | # | Document | Use it for |
 |---|---|---|
 | 1 | `docs/delivery/STATUS.md` | **Current state**: phase, milestone progress, decisions, blockers, next actions, session log |
-| 1b | `docs/delivery/BACKLOG.md` | **Task list**: pick the next unblocked task of the current milestone; update its status |
+| 1b | `docs/delivery/ROADMAP-by-role.md` + `docs/delivery/BACKLOG.md` | **Work by role** (Org Admin → HR Manager → L&D Manager → …): claim the next unblocked work package (`docs/delivery/HOW-TO-START.md`); update its tasks' status |
 | 2 | `docs/delivery/Jadarat_TMS_Development_Plan.md` | **How** we deliver: quality bars, Definition of Ready/Done, CI gates, milestones M0–M7, quality gates, security program, templates |
 | 3 | `docs/brd/Jadarat_TMS_BRD_v2.md` | **What** to build: requirements `FR-*`, `NFR-*`, priorities, releases, architecture guidance (Appendix H) |
 | 4 | `docs/brd/TMS_Feature_List.md` | Feature IDs, release cut (R1 = 107 features, v3.2), open decisions |

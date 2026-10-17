@@ -1,7 +1,12 @@
 import 'server-only';
 import { DEFAULT_TENANT_REGIONAL, type TenantRegional } from '@jadarat/platform-db';
 import type { AppLocale } from '@jadarat/platform-i18n';
-import { type Grant, loadMemberGrants, platformPermissions } from '@jadarat/platform-rbac';
+import {
+  type Grant,
+  loadMemberGrants,
+  platformPermissions,
+  tmsPlanningPermissions,
+} from '@jadarat/platform-rbac';
 import { redirect } from 'next/navigation';
 import { getConfigStatus } from './config-status';
 import { myIdentityQuery } from './users-queries';
@@ -57,6 +62,8 @@ export interface SuiteNavigationAccess {
   readonly organizationSetup: boolean;
   /** The training module's entries (Calendar, Sessions, Courses). Never for the Organization Admin. */
   readonly training: boolean;
+  /** Planning cycles and planning settings (EP-PLN, T-M3-04): organization-wide tms.plan_cycle.read. */
+  readonly planning: boolean;
 }
 
 /**
@@ -77,6 +84,7 @@ export function navigationFor(grants: readonly Grant[] | null): SuiteNavigationA
       organizationProfile: true,
       organizationSetup: true,
       training: true,
+      planning: true,
     };
   }
   const tenantWide = (code: string) =>
@@ -92,6 +100,7 @@ export function navigationFor(grants: readonly Grant[] | null): SuiteNavigationA
     organizationProfile: tenantWide(platformPermissions['platform.tenant.read'].code),
     organizationSetup,
     training: !organizationSetup,
+    planning: tenantWide(tmsPlanningPermissions['tms.plan_cycle.read'].code),
   };
 }
 

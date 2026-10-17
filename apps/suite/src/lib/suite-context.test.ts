@@ -13,6 +13,7 @@ vi.mock('@jadarat/platform-rbac', () => ({
     'platform.tenant.read': { code: 'platform.tenant.read' },
     'platform.tenant.manage': { code: 'platform.tenant.manage' },
   },
+  tmsPlanningPermissions: { 'tms.plan_cycle.read': { code: 'tms.plan_cycle.read' } },
 }));
 vi.mock('./session-state', () => ({ getSessionState: vi.fn(), redirectFor: vi.fn(() => null) }));
 vi.mock('./config-status', () => ({ getConfigStatus: vi.fn() }));
@@ -29,6 +30,7 @@ describe('navigationFor', () => {
       organizationProfile: false,
       organizationSetup: false,
       training: true,
+      planning: false,
     });
     expect(
       navigationFor([{ permission: 'platform.user.read', scope: { type: 'tenant' } }]),
@@ -39,6 +41,7 @@ describe('navigationFor', () => {
       organizationProfile: false,
       organizationSetup: false,
       training: true,
+      planning: false,
     });
   });
 
@@ -50,6 +53,7 @@ describe('navigationFor', () => {
       organizationProfile: false,
       organizationSetup: false,
       training: true,
+      planning: false,
     });
     expect(navigationFor([{ permission: 'platform.org.read', scope: { type: 'tenant' } }])).toEqual(
       {
@@ -59,6 +63,7 @@ describe('navigationFor', () => {
         organizationProfile: false,
         organizationSetup: false,
         training: true,
+        planning: false,
       },
     );
     expect(navigationFor([])).toEqual({
@@ -68,6 +73,7 @@ describe('navigationFor', () => {
       organizationProfile: false,
       organizationSetup: false,
       training: true,
+      planning: false,
     });
   });
 
@@ -84,6 +90,7 @@ describe('navigationFor', () => {
       organizationProfile: false,
       organizationSetup: false,
       training: true,
+      planning: false,
     });
     expect(
       navigationFor([{ permission: 'platform.role.read', scope: { type: 'direct_reports' } }]),
@@ -94,6 +101,7 @@ describe('navigationFor', () => {
       organizationProfile: false,
       organizationSetup: false,
       training: true,
+      planning: false,
     });
   });
 
@@ -107,6 +115,7 @@ describe('navigationFor', () => {
       organizationProfile: true,
       organizationSetup: false,
       training: true,
+      planning: false,
     });
     expect(navigationFor([{ permission: 'platform.tenant.read', scope: { type: 'own' } }])).toEqual(
       {
@@ -116,8 +125,23 @@ describe('navigationFor', () => {
         organizationProfile: false,
         organizationSetup: false,
         training: true,
+        planning: false,
       },
     );
+  });
+
+  it('shows Planning to members who read planning cycles organization-wide (EP-PLN)', () => {
+    expect(
+      navigationFor([{ permission: 'tms.plan_cycle.read', scope: { type: 'tenant' } }]),
+    ).toMatchObject({ planning: true, training: true });
+    expect(
+      navigationFor([
+        {
+          permission: 'tms.plan_cycle.read',
+          scope: { type: 'org_units', orgUnitIds: ['u1'], includeDescendants: true },
+        },
+      ]),
+    ).toMatchObject({ planning: false });
   });
 
   it('shows every entry in the data-less preview', () => {
@@ -128,6 +152,7 @@ describe('navigationFor', () => {
       organizationProfile: true,
       organizationSetup: true,
       training: true,
+      planning: true,
     });
   });
 
@@ -141,6 +166,7 @@ describe('navigationFor', () => {
       organizationProfile: false,
       organizationSetup: true,
       training: false,
+      planning: false,
     });
     // Any narrower scope is not enough (deny by default).
     const narrower: Grant['scope'][] = [

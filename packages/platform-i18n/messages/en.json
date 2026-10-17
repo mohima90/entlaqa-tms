@@ -38,6 +38,9 @@
     "setupBody": "Fill in your general settings, invite your team members, check their roles and set your security policy. More set-up pages are coming soon.",
     "comingSoon": "Coming soon",
     "roles": "Roles & permissions",
+    "planningSettings": "Planning settings",
+    "planningCycles": "Planning cycles",
+    "groupPlanning": "Planning",
     "myProfile": "My profile",
     "productShort": "Jadarat TMS",
     "menu": "Menu",
@@ -89,7 +92,11 @@
     "validationFailed": "Some fields need correcting. Check the highlighted fields.",
     "rateLimited": "Too many requests in a short time. Wait a moment, then try again.",
     "internalError": "We couldn't complete this because of a problem on our side. Try again. Reference: {correlationId}",
-    "notConfigured": "This service isn't set up in this environment yet."
+    "notConfigured": "This service isn't set up in this environment yet.",
+    "planCycleNotDraft": "This planning cycle has been launched; its set-up can no longer change.",
+    "planCycleOpenExists": "Another planning cycle is open. Only one cycle can be open at a time.",
+    "planCycleNotReady": "This planning cycle isn't ready to launch yet. Check the list under Launch.",
+    "planCycleDeadlineRefused": "The deadline can only move later while the cycle is open and before the current deadline passes."
   },
   "auth": {
     "signInTitle": "Sign in",
@@ -700,6 +707,265 @@
     "sensitive": "Sensitive",
     "matrixNote": "Each module's permissions apply as it is released; users & roles and the audit log apply now.",
     "notConfigured": "Custom roles and the number of people per role appear once this environment is connected to the database."
+  },
+  "planning": {
+    "list": {
+      "title": "Planning cycles",
+      "intro": "Each year ask every department head what training their team needs, then turn the answers into one training plan.",
+      "newCycle": "New cycle",
+      "notConfigured": "Planning cycles appear here once this environment is connected to its database.",
+      "statsLabel": "Planning cycles in numbers",
+      "stats": {
+        "total": "All cycles",
+        "draft": "Drafts",
+        "open": "Open",
+        "closed": "Closed"
+      },
+      "tabsLabel": "Cycles by status",
+      "tabs": {
+        "all": "All",
+        "draft": "Drafts",
+        "open": "Open",
+        "closed": "Closed"
+      },
+      "tableCaption": "Planning cycles",
+      "cardTitle": "Cycles",
+      "cardDescription": "One cycle can be open at a time. Drafts can be changed or deleted until they are launched.",
+      "columns": {
+        "name": "Cycle",
+        "period": "Planning period",
+        "deadline": "Deadline",
+        "status": "Status",
+        "departments": "Departments",
+        "actions": "Actions"
+      },
+      "submitted": "{submitted} of {count} submitted",
+      "departmentCount": "{count, plural, =0 {No departments} one {# department} other {# departments}}",
+      "openCycle": "Open {name}",
+      "continueSetup": "Continue set-up of {name}",
+      "emptyTitle": "No planning cycles yet",
+      "emptyBody": "Start a cycle to collect the training needs of your departments.",
+      "emptyReadBody": "The L&D Manager starts planning cycles. They will appear here.",
+      "emptyTabTitle": "No cycles with this status",
+      "deleted": "The draft cycle was deleted.",
+      "loadFailed": "We couldn't load the planning cycles. Try again. Reference: {correlationId}"
+    },
+    "status": {
+      "draft": "Draft",
+      "open": "Open",
+      "closed": "Closed",
+      "consolidated": "Consolidated",
+      "archived": "Archived"
+    },
+    "breadcrumb": {
+      "label": "Breadcrumb",
+      "planning": "Planning",
+      "cycles": "Planning cycles"
+    },
+    "new": {
+      "title": "New planning cycle",
+      "intro": "Start with the basics. You can change everything until you launch the cycle."
+    },
+    "setup": {
+      "stepsLabel": "Set-up steps",
+      "stepDone": "(completed)",
+      "stepShort": "Step {current} of {total} · {name}",
+      "steps": {
+        "basics": "Basics",
+        "scope": "Scope",
+        "budget": "Budget",
+        "approvals": "Approval chain",
+        "reminders": "Reminders"
+      },
+      "back": "Back",
+      "saveAndContinue": "Save and continue",
+      "save": "Save",
+      "create": "Create draft",
+      "saved": "Saved.",
+      "cancel": "Cancel",
+      "required": "(required)",
+      "optional": "(optional)",
+      "draftNote": "This cycle is a draft: department heads see nothing until you launch it.",
+      "basics": {
+        "title": "Basics",
+        "nameAr": "Name in Arabic",
+        "nameEn": "Name in English",
+        "nameHint": "Up to 120 characters, for example «Training plan 2027».",
+        "periodStart": "Planning period starts",
+        "periodEnd": "Planning period ends",
+        "periodHint": "Suggested: your next fiscal year (General settings). At most two years.",
+        "deadline": "Deadline for department forms",
+        "deadlineHint": "Department heads submit their needs until the end of this day.",
+        "shownAs": "Shown as {date}",
+        "instructionsAr": "Instructions to department heads in Arabic",
+        "instructionsEn": "Instructions to department heads in English",
+        "instructionsHint": "Shown at the top of every needs form. Up to 4,000 characters.",
+        "needsForm": "Needs form",
+        "needsFormNone": "No form chosen",
+        "needsFormHint": "The form department heads fill in. Forms are built in the forms library, coming soon.",
+        "currency": "Amounts are in {currency}, your organization's currency (General settings)."
+      },
+      "scope": {
+        "title": "Scope",
+        "intro": "Pick the departments and branches that plan their training in this cycle. A department includes everything under it.",
+        "departments": "Departments",
+        "branches": "Branches",
+        "branchesHint": "A branch includes all its departments.",
+        "inactive": "Inactive",
+        "noHead": "No head",
+        "noStructure": "Your organization has no departments yet. The HR Manager adds them under Organization → Structure.",
+        "formsTitle": "Needs forms to send: {count}",
+        "formsHint": "One form per department in scope; it goes to the department's head, or to the nearest head above.",
+        "noHeadWarning": "Departments without a head: {count}. Ask the HR Manager to pick one, or their forms reach nobody."
+      },
+      "budget": {
+        "title": "Budget",
+        "intro": "Optionally set a budget envelope per department. Department heads see their own envelope while they plan.",
+        "noDepartments": "Choose the scope first: the departments appear here.",
+        "columns": {
+          "department": "Department",
+          "head": "Department head",
+          "envelope": "Budget envelope ({currency})"
+        },
+        "amountLabel": "Budget envelope for {name}",
+        "amountHint": "Leave empty for no envelope.",
+        "total": "Total of the envelopes: {amount}"
+      },
+      "approvals": {
+        "title": "Approval chain",
+        "intro": "The plan goes through these steps in order. Name the person who approves each step; one person approves only one step.",
+        "stepLabel": "Step {number}",
+        "kind": "Type of step",
+        "kinds": {
+          "department_heads": "Department heads",
+          "person": "Named person"
+        },
+        "headsHint": "Every department head confirms their own department's lines at the same time.",
+        "nameAr": "Step name in Arabic",
+        "nameEn": "Step name in English",
+        "approver": "Approver",
+        "approverPlaceholder": "Choose a person",
+        "approverInactive": "{name} is no longer an active member. Choose someone else.",
+        "addStep": "Add a step",
+        "removeStep": "Remove step {number}",
+        "moveUp": "Move step {number} up",
+        "moveDown": "Move step {number} down",
+        "noMembers": "No active members to choose from yet."
+      },
+      "reminders": {
+        "title": "Reminders",
+        "intro": "Department heads who have not submitted get a reminder this many days before the deadline.",
+        "dayLabel": "Days before the deadline",
+        "add": "Add a reminder",
+        "remove": "Remove the reminder {days} days before",
+        "none": "No reminders.",
+        "notificationsNote": "Reminders are sent once in-app notifications are available (coming soon)."
+      },
+      "launch": {
+        "title": "Launch",
+        "ready": "Ready to launch.",
+        "notReady": "Before you can launch:",
+        "problems": {
+          "deadline_past": "The deadline has passed. Choose a later date in Basics.",
+          "no_departments": "No department is in scope. Choose the scope.",
+          "no_approver_step": "The approval chain needs at least one named person.",
+          "approver_missing": "Name the approver of every person step.",
+          "approver_inactive": "An approver is no longer an active member. Choose someone else.",
+          "another_open": "Another cycle is open. Only one cycle can be open at a time."
+        },
+        "action": "Launch cycle",
+        "confirmTitle": "Launch {name}?",
+        "confirmBody": "{count, plural, one {# department} other {# departments}} will get a needs form with the deadline {deadline}. After launch you can only extend the deadline.",
+        "confirm": "Launch",
+        "launched": "The cycle is open. Department heads can now fill in their needs."
+      },
+      "delete": {
+        "action": "Delete draft",
+        "confirmTitle": "Delete {name}?",
+        "confirmBody": "The draft and its scope, envelopes and approval chain are deleted. This can't be undone.",
+        "confirm": "Delete",
+        "keep": "Keep"
+      },
+      "fieldErrors": {
+        "required": "Fill in this field.",
+        "invalid": "Check this value.",
+        "invalidDate": "Enter a valid date.",
+        "beforeStart": "The period must end after it starts.",
+        "tooLong": "A planning period is at most two years.",
+        "afterPeriod": "The deadline must be within the planning period.",
+        "invalidAmount": "Enter an amount in numbers, with up to 3 decimals.",
+        "duplicateApprover": "This person already approves another step.",
+        "secondHeadsStep": "The chain has only one department heads step.",
+        "headsStepNamed": "The department heads step names nobody.",
+        "notAMember": "Choose an active member.",
+        "notLater": "Choose a date after the current deadline.",
+        "duplicateDay": "Each reminder day only once.",
+        "dayRange": "Between 1 and 90 days.",
+        "unknown": "This item no longer exists. Reload the page."
+      },
+      "conflict": "Someone else changed this cycle after you opened it. Reload the page to see the latest version.",
+      "notFound": "This cycle no longer exists.",
+      "notDraft": "This cycle has been launched; its set-up can no longer change.",
+      "close": "Close",
+      "working": "Saving…"
+    },
+    "cycle": {
+      "launchedOn": "Launched on {date}",
+      "period": "Planning period",
+      "deadline": "Deadline",
+      "currency": "Currency",
+      "chainTitle": "Approval chain",
+      "instructions": "Instructions to department heads",
+      "progressTitle": "Progress",
+      "progressIntro": "One needs form per department. Department heads fill them in until the deadline.",
+      "progressStatsLabel": "Progress in numbers",
+      "progressStats": {
+        "departments": "Departments",
+        "notStarted": "Not started",
+        "submitted": "Submitted",
+        "late": "Late"
+      },
+      "columns": {
+        "department": "Department",
+        "head": "Department head",
+        "envelope": "Budget envelope",
+        "status": "Status",
+        "actions": "Actions"
+      },
+      "tableCaption": "Progress per department",
+      "formStatus": {
+        "not_started": "Not started",
+        "draft": "Draft",
+        "submitted": "Submitted",
+        "returned": "Returned",
+        "late": "Late"
+      },
+      "headVia": "{name} (from {unit})",
+      "noHead": "No head",
+      "noEnvelope": "—",
+      "remind": "Send reminder",
+      "remindSoon": "Reminders come with in-app notifications (coming soon).",
+      "extend": "Extend deadline",
+      "extendTitle": "Extend the deadline",
+      "extendLabel": "New deadline",
+      "extendHint": "A later date within the planning period ({end}).",
+      "extendConfirm": "Extend",
+      "extended": "The deadline was extended.",
+      "closedNote": "The deadline has passed: department heads can no longer change their needs. Consolidation comes next.",
+      "stepPerson": "{step}: {name}",
+      "stepHeads": "{step}: every department head for their own lines",
+      "stepUnnamed": "{step}: not named yet"
+    },
+    "settings": {
+      "title": "Planning settings",
+      "intro": "Defaults every new planning cycle starts from. A cycle can change them before it is launched.",
+      "remindersTitle": "Default reminders",
+      "chainTitle": "Default approval chain",
+      "save": "Save settings",
+      "saved": "Planning settings saved.",
+      "readOnly": "Only the L&D Manager changes the planning settings.",
+      "notConfigured": "Planning settings appear here once this environment is connected to its database."
+    }
   },
   "invitations": {
     "inviteUser": "Invite user",

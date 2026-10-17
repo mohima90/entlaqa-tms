@@ -126,6 +126,8 @@ export interface StepView extends ApprovalStep {
 /** One unit of the structure for the scope step (depth for indentation; tree order). */
 export interface ScopeUnitOption {
   readonly id: string;
+  readonly parentId: string | null;
+  readonly branchId: string | null;
   readonly name: LocalizedName;
   readonly depth: number;
   readonly active: boolean;
@@ -203,6 +205,8 @@ function scopeUnitOptions(structure: OrgStructure): ScopeUnitOption[] {
       ? [
           {
             id,
+            parentId: d.parentId,
+            branchId: d.branchId,
             name: { ar: d.nameAr, en: d.nameEn },
             depth,
             active: d.active,

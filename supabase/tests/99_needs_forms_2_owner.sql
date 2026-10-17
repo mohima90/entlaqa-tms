@@ -64,6 +64,11 @@ begin
     'console: needs-form fields are not deleted');
   perform tests.assert_rls_violation(format($q$insert into tms.needs_forms (tenant_id, name_en, name_ar, is_default) values (%L, 'Second', 'ثان', false)$q$, v_tenant),
     'console: only a default form is seeded');
+  -- 20261020210200: sections and fields only into the form it has just created, never another organization's.
+  perform tests.assert_rls_violation($q$insert into tms.needs_form_sections (tenant_id, form_id, name_en, name_ar) select f.tenant_id, f.id, 'Extra', 'إضافي' from tms.needs_forms f where f.tenant_id = 'a0000000-0000-4000-8000-000000000001' and f.is_default$q$,
+    'console: no section is added to an existing organization''s form');
+  perform tests.assert_rls_violation($q$insert into tms.needs_form_fields (tenant_id, form_id, section_id, field_type, label_en, label_ar) select s.tenant_id, s.form_id, s.id, 'text', 'Extra', 'إضافي' from tms.needs_form_sections s join tms.needs_forms f on f.tenant_id = s.tenant_id and f.id = s.form_id where f.tenant_id = 'a0000000-0000-4000-8000-000000000001' and f.is_default limit 1$q$,
+    'console: nor a field');
 end $$;
 rollback;
 

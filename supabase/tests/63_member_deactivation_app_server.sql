@@ -314,11 +314,12 @@ rollback;
 -- (only uS, inactive, placed there) can be deleted; then uS cannot be made active.
 begin;
 set local role authenticated;
-select tests.t09_as('admin');
+select tests.t09_as('hr');  -- units: the HR Manager (platform.org.manage, S-M1)
 do $$
 begin
   perform tests.assert_eq(tests.rows_affected($q$update platform.departments set deleted_at = now() where id = '9d300000-0000-4000-8000-000000000002'$q$),
     1::bigint, 'a department with only inactive people can be deleted');
+  perform tests.t09_as('admin');
   perform tests.assert_fails($q$update platform.persons set status = 'active' where id = '9d100000-0000-4000-8000-0000000000a5'$q$,
     array['23514'], 'a person placed in a deleted department is not made active');
 end $$;
@@ -369,6 +370,42 @@ begin
 end $$;
 reset role;
 rollback;
+-- The head hand-over is the only change of a unit a member who does not manage the structure may make
+-- (S-M1, 20261020210000): the Organization Admin (platform.user.deactivate, no platform.org.manage) moves
+-- the head of a leaver's unit and nothing else; an Employee changes nothing.
+begin;
+set local role authenticated;
+select tests.t09_as('admin');
+do $$
+begin
+  perform tests.assert_fails($q$update platform.departments set head_person_id = '9d100000-0000-4000-8000-0000000000a2', name_en = 'Taken over' where id = '9d300000-0000-4000-8000-000000000001'$q$,
+    array['42501'], 'hand-over: the head only, nothing else in the same change');
+  perform tests.assert_fails($q$update platform.departments set name_en = 'Renamed' where id = '9d300000-0000-4000-8000-000000000001'$q$,
+    array['42501'], 'the Organization Admin does not rename units');
+  perform tests.assert_fails($q$update platform.departments set head_person_id = null where id = '9d300000-0000-4000-8000-000000000001'$q$,
+    array['42501'], 'hand-over: a unit is handed to someone, never left without its head');
+  perform tests.assert_fails($q$update platform.departments set head_person_id = '9d100000-0000-4000-8000-0000000000a2' where id = '9d300000-0000-4000-8000-000000000002'$q$,
+    array['42501'], 'hand-over: a unit without a head gets one from the structure managers only');
+  perform tests.assert_fails($q$update platform.departments set head_person_id = '9d100000-0000-4000-8000-0000000000a2' where id = 'a3000000-0000-4000-8000-000000000001'$q$,
+    array['42501'], 'hand-over: never of a unit the actor heads');
+  perform tests.assert_rls_violation($q$insert into platform.departments (code, name_ar) values ('NEW', 'جديد')$q$,
+    'the Organization Admin does not add units');
+  perform tests.assert_eq(tests.rows_affected($q$update platform.departments set head_person_id = '9d100000-0000-4000-8000-0000000000a2' where id = '9d300000-0000-4000-8000-000000000001'$q$),
+    1::bigint, 'hand-over: the head of the leaver''s unit moves to another active person');
+  perform tests.assert((select head_person_id = '9d100000-0000-4000-8000-0000000000a2' and version = 2
+                        and updated_by = 'a1000000-0000-4000-8000-0000000000a1'
+                        from platform.departments where id = '9d300000-0000-4000-8000-000000000001'),
+    'hand-over: stamped with the Organization Admin');
+
+  perform tests.t09_as('learner');
+  perform tests.assert_eq(tests.rows_affected($q$update platform.departments set head_person_id = '9d100000-0000-4000-8000-0000000000a3' where id = '9d300000-0000-4000-8000-000000000001'$q$),
+    0::bigint, 'an Employee hands nothing over');
+  perform tests.assert_rls_violation($q$insert into platform.departments (code, name_ar) values ('NEW', 'جديد')$q$,
+    'an Employee does not add units');
+end $$;
+reset role;
+rollback;
+
 -- HR Manager: moving a privileged member (pP, Compliance Officer) to another manager is refused, so an HR
 -- Manager cannot deactivate uX while pP reports to uX (the application says so before trying).
 begin;

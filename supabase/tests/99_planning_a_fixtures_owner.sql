@@ -4,7 +4,7 @@
 -- below change nothing for them.
 --   uL  (…e0a1) L&D Manager of tenant A, session sL in A
 --   uT  (…e0a2) Training Coordinator of tenant A, session sT in A
---   uE  (…e0a3) Employee of tenant A (an active member: a valid approver)
+--   uE  (…e0a3) Employee of tenant A (an active member: a valid approver), session sE in A
 --   uAB          also the L&D Manager of tenant B (HR Manager in A), session sAB-B (…e0b1) acting in B
 --   tenant A's currency is AED (General settings): new cycles copy it
 --   tenant A: cycle ae…02, OPEN with a deadline that has passed (written with the guard off, as a platform
@@ -18,6 +18,7 @@ insert into auth.users (id, email) values
 insert into auth.sessions (id, user_id, not_after) values
   ('10000000-0000-4000-8000-00000000e0a1', '00000000-0000-4000-8000-00000000e0a1', null),
   ('10000000-0000-4000-8000-00000000e0a2', '00000000-0000-4000-8000-00000000e0a2', null),
+  ('10000000-0000-4000-8000-00000000e0a3', '00000000-0000-4000-8000-00000000e0a3', null),
   ('10000000-0000-4000-8000-00000000e0b1', '00000000-0000-4000-8000-0000000000ab', null);
 insert into platform.persons (id, tenant_id, display_name_ar, display_name_en, email) values
   ('a1000000-0000-4000-8000-00000000e0a1', 'a0000000-0000-4000-8000-000000000001', 'مدير التعلم', 'L&D Manager', 'ul@a.test'),
@@ -30,6 +31,7 @@ insert into platform.tenant_memberships (tenant_id, user_id, person_id, status) 
 insert into platform.session_context (session_id, user_id, active_tenant_id) values
   ('10000000-0000-4000-8000-00000000e0a1', '00000000-0000-4000-8000-00000000e0a1', 'a0000000-0000-4000-8000-000000000001'),
   ('10000000-0000-4000-8000-00000000e0a2', '00000000-0000-4000-8000-00000000e0a2', 'a0000000-0000-4000-8000-000000000001'),
+  ('10000000-0000-4000-8000-00000000e0a3', '00000000-0000-4000-8000-00000000e0a3', 'a0000000-0000-4000-8000-000000000001'),
   ('10000000-0000-4000-8000-00000000e0b1', '00000000-0000-4000-8000-0000000000ab', 'b0000000-0000-4000-8000-000000000001');
 insert into platform.role_assignments (tenant_id, membership_id, role_code, is_primary)
 select m.tenant_id, m.id, r.role_code, true

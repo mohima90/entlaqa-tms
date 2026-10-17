@@ -69,7 +69,14 @@ begin
            where table_name not in (select table_name from tests.job_only_tables()) loop
     execute format('select count(*), count(*) filter (where %I <> %L) from %s', r.tenant_column, v_a, r.table_name)
       into v_total, v_foreign;
-    perform tests.assert(v_total > 0, format('%s: tenant A must see its own rows', r.table_name));
+    if r.table_name::text in ('tms.planning_settings', 'tms.planning_default_steps', 'tms.plan_cycles',
+                              'tms.plan_cycle_scope', 'tms.plan_cycle_departments', 'tms.plan_cycle_steps') then
+      -- Read only with tms.plan_cycle.read / .manage (S-L3), which the Organization Admin does not hold: the
+      -- same generic check as an L&D Manager of tenant A is in 99_planning_b_app_server.sql.
+      perform tests.assert_eq(v_total, 0::bigint, format('%s: read with the planning permissions only', r.table_name));
+    else
+      perform tests.assert(v_total > 0, format('%s: tenant A must see its own rows', r.table_name));
+    end if;
     perform tests.assert_eq(v_foreign, 0::bigint, format('%s: tenant A must not see other tenants'' rows', r.table_name));
 
     v_update := format('update %s set %I = %I where %I = %L', r.table_name, r.tenant_column, r.tenant_column, r.tenant_column, v_b);
@@ -150,6 +157,16 @@ begin
   perform tests.assert_privilege_denied($q$update platform.session_context set active_tenant_id = 'b0000000-0000-4000-8000-000000000001'$q$,
     'session_context: no direct UPDATE');
 
+  -- platform.branches and platform.departments are written by structure managers only (platform.org.manage,
+  -- S-M1; rules in 99_structure_2_app_server.sql): the Organization Admin is refused, the cross-tenant cases
+  -- below run as the HR Manager uAB.
+  perform tests.assert_rls_violation($q$insert into platform.branches (code, name_ar) values ('DMM', 'فرع الدمام')$q$,
+    'branches: the Organization Admin does not add branches');
+  perform tests.assert_rls_violation($q$insert into platform.departments (code, name_ar) values ('X0', 'قسم')$q$,
+    'departments: the Organization Admin does not add units');
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000ab', '10000000-0000-4000-8000-0000000000ab',
+    'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000ab'));
+
   -- platform.branches ([sd]: no DELETE grant)
   perform tests.assert_rls_violation($q$insert into platform.branches (tenant_id, code, name_ar) values ('b0000000-0000-4000-8000-000000000001', 'X1', 'دخيل')$q$,
     'branches: insert with tenant B tenant_id is rejected by RLS');
@@ -179,6 +196,8 @@ begin
     array['23503', '23514'], 'departments: a tenant B person cannot be head (refs trigger, then composite FK)');
   perform tests.assert_privilege_denied($q$delete from platform.departments where id = 'a3000000-0000-4000-8000-000000000003'$q$,
     'departments: no DELETE grant (soft delete only)');
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
+    'a0000000-0000-4000-8000-000000000001'));
 
   -- platform.person_employment (composite FKs to persons, branches, departments; no DELETE grant)
   perform tests.assert_rls_violation($q$insert into platform.person_employment (tenant_id, person_id) values ('b0000000-0000-4000-8000-000000000001', 'b1000000-0000-4000-8000-0000000000b9')$q$,

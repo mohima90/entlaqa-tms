@@ -261,27 +261,33 @@ end $$;
 rollback;
 
 -- ---------------------------------------------------------------------------------------------------
--- The lock: frozen structure, one-way, any signed-in member may lock; duplicate to change.
+-- The lock: frozen structure, one-way, only a planning-cycle manager locks (the launch, S-L1); duplicate to
+-- change.
 -- ---------------------------------------------------------------------------------------------------
 begin;
 set local role authenticated;
--- The Training Coordinator (no design permission) locks, as a cycle launch would.
+-- The Training Coordinator (tms.plan_cycle.read, not .manage) cannot lock a form (S-L1, 20261020210100).
 select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000072', '10000000-0000-4000-8000-000000000072',
   'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-000000000072'));
 do $$
 begin
-  perform tests.assert(private.lock_needs_form('a7000000-0000-4000-8000-000000000001'), 'locking needs no design permission');
-  perform tests.assert(private.lock_needs_form('a7000000-0000-4000-8000-000000000001'), 'locking twice is harmless');
-  perform tests.assert(not private.lock_needs_form(gen_random_uuid()), 'an unknown form is not locked');
-  perform tests.assert_fails_like($q$update tms.needs_forms set locked_at = now(), name_en = 'Sneaky' where id = 'a7000000-0000-4000-8000-000000000001'$q$,
-    'only an L&D Manager can design needs forms', 'locking does not carry other changes past the designer rule');
+  perform tests.assert_fails_like($q$select private.lock_needs_form('a7000000-0000-4000-8000-000000000001')$q$,
+    'a needs form is locked only by launching a planning cycle', 'the Training Coordinator does not lock forms');
+  perform tests.assert_fails($q$update tms.needs_forms set locked_at = now() where id = 'a7000000-0000-4000-8000-000000000001'$q$,
+    array['42501'], 'nor by writing the column');
+  perform tests.assert_fails($q$update tms.needs_forms set locked_at = now(), name_en = 'Sneaky' where id = 'a7000000-0000-4000-8000-000000000001'$q$,
+    array['42501'], 'locking does not carry other changes past the rules');
 end $$;
+-- The L&D Manager (tms.plan_cycle.manage) locks, as a cycle launch does.
 select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-000000000071', '10000000-0000-4000-8000-000000000071',
   'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-000000000071'));
 do $$
 declare
   v_copy uuid;
 begin
+  perform tests.assert(private.lock_needs_form('a7000000-0000-4000-8000-000000000001'), 'a planning-cycle manager locks');
+  perform tests.assert(private.lock_needs_form('a7000000-0000-4000-8000-000000000001'), 'locking twice is harmless');
+  perform tests.assert(not private.lock_needs_form(gen_random_uuid()), 'an unknown form is not locked');
   perform tests.assert((select locked_at is not null from tms.needs_forms where id = 'a7000000-0000-4000-8000-000000000001'),
     'the form is locked');
   perform tests.assert_fails($q$insert into tms.needs_form_sections (form_id, name_en, name_ar) values ('a7000000-0000-4000-8000-000000000001', 'More', 'المزيد')$q$,

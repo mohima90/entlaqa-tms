@@ -3,7 +3,7 @@
 -- T-M3-09; migrations 20261020090000…090400). Runs CONNECTED AS app_server with user claims of tenant A:
 -- uAB (HR Manager: platform.org.manage) and uA (Organization Admin: no platform.org.manage since T-M2-19, gives
 -- every role). Cross-tenant inserts and foreign keys: 20_isolation.sql. Each block is rolled back except the
--- acceptance at the end (the last file).
+-- acceptance (committed: the blocks after it and 99_structure_3_owner.sql use uScope's role and unit).
 \set ON_ERROR_STOP on
 
 -- ---------------------------------------------------------------------------------------------------
@@ -138,7 +138,10 @@ declare
 begin
   -- uM (an active member with no role yet, 35_invitations_fixtures.sql).
   select id into v_membership from platform.tenant_memberships where user_id = '00000000-0000-4000-8000-0000000000f7';
+  -- Units: the HR Manager uAB (platform.org.manage, S-M1); roles and invitations: the Organization Admin uA.
+  perform tests.set_claims(tests.uab_claims());
   insert into platform.departments (code, name_ar, name_en) values ('SALES', 'المبيعات', 'Sales') returning id into v_sales;
+  perform tests.set_claims(tests.ua_claims());
 
   perform tests.assert_fails(format($q$insert into platform.role_assignments (membership_id, role_code, scope_unit_id) values (%L, 'learner', %L)$q$, v_membership, v_sales),
     array['23514'], 'a standard role takes no unit');
@@ -146,10 +149,14 @@ begin
     array['23514'], 'a custom role for the whole organization takes no unit');
   perform tests.assert_fails(format($q$insert into platform.role_assignments (membership_id, role_code, scope_unit_id) values (%L, %L, 'b3000000-0000-4000-8000-000000000001')$q$, v_membership, v_role),
     array['23503', '23514'], 'another organization''s unit is never a role''s scope');
+  perform tests.set_claims(tests.uab_claims());
   update platform.departments set status = 'inactive' where id = v_sales;
+  perform tests.set_claims(tests.ua_claims());
   perform tests.assert_fails(format($q$insert into platform.role_assignments (membership_id, role_code, scope_unit_id) values (%L, %L, %L)$q$, v_membership, v_role, v_sales),
     array['23514'], 'an inactive unit is not given');
+  perform tests.set_claims(tests.uab_claims());
   update platform.departments set status = 'active' where id = v_sales;
+  perform tests.set_claims(tests.ua_claims());
 
   insert into platform.role_assignments (membership_id, role_code, scope_unit_id) values (v_membership, v_role, v_sales);
   perform tests.assert_eq((select scope_unit_id from platform.role_assignments where membership_id = v_membership), v_sales,
@@ -161,14 +168,18 @@ begin
   perform tests.assert(not private.member_has_permission('a0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-0000000000f7', 'platform.user.read'),
     'people read stays limited to the unit (evaluated by the application)');
 
+  perform tests.set_claims(tests.uab_claims());
   perform tests.assert_fails(format($q$update platform.departments set deleted_at = now() where id = %L$q$, v_sales),
     array['23514'], 'a unit that is a role''s scope is not deleted');
   perform tests.assert_eq(tests.rows_affected(format($q$update platform.departments set status = 'inactive' where id = %L$q$, v_sales)),
     1::bigint, 'it can be deactivated (the role then grants nothing until a new unit is picked)');
+  perform tests.set_claims(tests.ua_claims());
   perform tests.assert_privilege_denied(format($q$update platform.role_assignments set scope_unit_id = null where membership_id = %L$q$, v_membership),
     'the unit is never changed in place (a role change replaces the row)');
   delete from platform.role_assignments where membership_id = v_membership;
+  perform tests.set_claims(tests.uab_claims());
   update platform.departments set status = 'active' where id = v_sales;
+  perform tests.set_claims(tests.ua_claims());
 
   -- A department-limited role without a unit is accepted (it grants nothing scoped until one is picked).
   insert into platform.role_assignments (membership_id, role_code) values (v_membership, v_role);
@@ -182,9 +193,12 @@ begin
   values (v_person, 'sales@a.test', 'en', v_role, v_sales);
   perform tests.assert_privilege_denied(format($q$update platform.invitations set scope_unit_id = null where person_id = %L$q$, v_person),
     'an invitation''s unit never changes');
+  perform tests.set_claims(tests.uab_claims());
   perform tests.assert_fails(format($q$update platform.departments set deleted_at = now() where id = %L$q$, v_sales),
     array['23514'], 'a unit a pending invitation gives is not deleted');
+  perform tests.set_claims(tests.ua_claims());
   update platform.invitations set status = 'revoked' where person_id = v_person;
+  perform tests.set_claims(tests.uab_claims());
   perform tests.assert_eq(tests.rows_affected(format($q$update platform.departments set deleted_at = now() where id = %L$q$, v_sales)),
     1::bigint, 'once nothing points at it, the unit is deleted');
 end $$;
@@ -200,6 +214,8 @@ do $$
 begin
   perform tests.assert_eq(private.accept_invitation_as_caller(tests.token_hash('tok-scope'), null, null),
     'a0000000-0000-4000-8000-000000000001'::uuid, 'accepted');
+  -- uScope's session works in A from now on (the blocks below act as uScope).
+  perform tests.assert(private.switch_active_tenant('a0000000-0000-4000-8000-000000000001'), 'uScope''s session picks A');
   perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
     'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1'));
   perform tests.assert_eq(
@@ -209,5 +225,90 @@ begin
     'custom_a000000c9001:a3000000-0000-4000-8000-000000000003', 'the role comes with its unit (OPS)');
 end $$;
 commit;
+
+-- ---------------------------------------------------------------------------------------------------
+-- Who writes units and branches (S-M1, 20261020210000): structure managers only (platform.org.manage — the
+-- HR Manager). An Employee, the L&D Manager and the holder of a department-limited custom role (uScope, given
+-- OPS above) add and change none, whatever the application does.
+-- ---------------------------------------------------------------------------------------------------
+begin;
+set local role authenticated;
+do $$
+declare
+  v_who record;
+begin
+  for v_who in
+    select * from (values
+      ('the Employee uE', tests.user_claims('00000000-0000-4000-8000-00000000e0a3', '10000000-0000-4000-8000-00000000e0a3',
+        'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-00000000e0a3')),
+      ('the L&D Manager uL', tests.user_claims('00000000-0000-4000-8000-00000000e0a1', '10000000-0000-4000-8000-00000000e0a1',
+        'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-00000000e0a1')),
+      ('the department-limited role holder uScope', tests.user_claims('00000000-0000-4000-8000-0000000000c9',
+        '10000000-0000-4000-8000-0000000000c9', 'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000c9'))
+    ) as w (label, claims)
+  loop
+    perform tests.set_claims(v_who.claims);
+    perform tests.assert_eq(private.current_tenant_id(), 'a0000000-0000-4000-8000-000000000001'::uuid,
+      format('%s: valid claims of tenant A', v_who.label));
+    perform tests.assert((select count(*) from platform.departments) > 0, format('%s: reads the units', v_who.label));
+    perform tests.assert_rls_violation($q$insert into platform.departments (code, name_ar) values ('MINE', 'وحدتي')$q$,
+      format('%s: adds no unit', v_who.label));
+    perform tests.assert_eq(tests.rows_affected($q$update platform.departments set name_en = 'Mine', head_person_id = null where code = 'OPS'$q$),
+      0::bigint, format('%s: changes no unit', v_who.label));
+    perform tests.assert_eq(tests.rows_affected($q$update platform.departments set parent_id = 'a3000000-0000-4000-8000-000000000003' where code = 'TD-PRG'$q$),
+      0::bigint, format('%s: moves no unit (a wider scope)', v_who.label));
+    perform tests.assert_rls_violation($q$insert into platform.branches (code, name_ar) values ('MINE', 'فرعي')$q$,
+      format('%s: adds no branch', v_who.label));
+    perform tests.assert_eq(tests.rows_affected($q$update platform.branches set name_en = 'Mine' where code = 'RUH'$q$),
+      0::bigint, format('%s: changes no branch', v_who.label));
+  end loop;
+
+  -- The HR Manager does.
+  perform tests.set_claims(tests.uab_claims());
+  perform tests.assert_eq(tests.rows_affected($q$insert into platform.departments (code, name_ar) values ('MINE', 'وحدتي')$q$),
+    1::bigint, 'the HR Manager adds a unit');
+  perform tests.assert_eq(tests.rows_affected($q$update platform.departments set name_en = 'Operations 2' where code = 'OPS'$q$),
+    1::bigint, 'and changes one');
+  perform tests.assert_eq(tests.rows_affected($q$insert into platform.branches (code, name_ar) values ('MINE', 'فرعي')$q$),
+    1::bigint, 'adds a branch');
+  perform tests.assert_eq(tests.rows_affected($q$update platform.branches set name_en = 'Riyadh HQ' where code = 'RUH'$q$),
+    1::bigint, 'and changes one');
+end $$;
+rollback;
+
+-- ---------------------------------------------------------------------------------------------------
+-- A role given for units keeps «A department» (C-M1, 20261020210500): uScope holds custom_a000000c9001 with
+-- OPS; the Organization Admin cannot move its scope until nobody holds it with a unit (members, pending
+-- invitations) — JR004 with both numbers.
+-- ---------------------------------------------------------------------------------------------------
+begin;
+set local role authenticated;
+select tests.set_claims(tests.ua_claims());
+do $$
+declare
+  v_person uuid;
+begin
+  perform tests.assert_fails_state_like($q$update platform.custom_roles set data_scope = 'organization' where code = 'custom_a000000c9001'$q$,
+    'JR004', 'the role is still given for units: 1 member(s), 0 pending invitation(s)', 'a member holds it with a unit');
+  perform tests.assert_fails($q$update platform.custom_roles set data_scope = 'team' where code = 'custom_a000000c9001'$q$,
+    array['JR004'], 'to any other scope');
+  perform tests.assert_eq(tests.rows_affected($q$update platform.custom_roles set name_en = 'Branch L&D (renamed)' where code = 'custom_a000000c9001'$q$),
+    1::bigint, 'the rest of the role changes as before');
+
+  -- The member's role without the unit; a pending invitation with a unit still blocks.
+  delete from platform.role_assignments ra using platform.tenant_memberships m
+  where m.tenant_id = ra.tenant_id and m.id = ra.membership_id and m.user_id = '00000000-0000-4000-8000-0000000000c9';
+  insert into platform.role_assignments (membership_id, role_code)
+  select m.id, 'custom_a000000c9001' from platform.tenant_memberships m where m.user_id = '00000000-0000-4000-8000-0000000000c9';
+  insert into platform.persons (display_name_ar, email) values ('مدعو الوحدة', 'unit@a.test') returning id into v_person;
+  insert into platform.invitations (person_id, email, locale, primary_role, scope_unit_id)
+  values (v_person, 'unit@a.test', 'en', 'custom_a000000c9001', 'a3000000-0000-4000-8000-000000000003');
+  perform tests.assert_fails_state_like($q$update platform.custom_roles set data_scope = 'organization' where code = 'custom_a000000c9001'$q$,
+    'JR004', 'the role is still given for units: 0 member(s), 1 pending invitation(s)', 'a pending invitation with a unit blocks too');
+  update platform.invitations set status = 'revoked' where person_id = v_person;
+  perform tests.assert_eq(tests.rows_affected($q$update platform.custom_roles set data_scope = 'organization' where code = 'custom_a000000c9001'$q$),
+    1::bigint, 'once nobody holds it with a unit, the scope changes (a holder without a unit keeps the role)');
+end $$;
+rollback;
 
 \echo '99_structure_2_app_server: ok'

@@ -72,6 +72,23 @@ begin
   raise exception 'ASSERTION FAILED: % (statement succeeded)', p_message;
 end $$;
 
+-- Asserts the statement fails with the SQLSTATE p_state AND a message matching p_pattern (ILIKE), e.g. a
+-- guard's custom code with the numbers it reports.
+create or replace function tests.assert_fails_state_like(p_sql text, p_state text, p_pattern text, p_message text)
+returns void
+language plpgsql as $$
+begin
+  begin
+    execute p_sql;
+  exception when others then
+    if sqlstate = p_state and sqlerrm ilike p_pattern then
+      return;
+    end if;
+    raise exception 'ASSERTION FAILED: % (expected % "%", got % %)', p_message, p_state, p_pattern, sqlstate, sqlerrm;
+  end;
+  raise exception 'ASSERTION FAILED: % (statement succeeded)', p_message;
+end $$;
+
 -- Missing GRANT (table/column privilege): "permission denied for table …".
 create or replace function tests.assert_privilege_denied(p_sql text, p_message text) returns void
 language sql as $$
@@ -122,6 +139,19 @@ language sql immutable as $$
   select jsonb_strip_nulls(jsonb_build_object(
     'sub', p_user, 'role', 'authenticated', 'aal', 'aal1', 'session_id', p_session, 'tenant_id', p_tenant,
     'person_id', p_person));
+$$;
+
+-- Tenant A's Organization Admin uA and HR Manager uAB (with their person claims), for tests that switch
+-- between them: since S-M1 only structure managers (platform.org.manage: uAB) write units and branches.
+create or replace function tests.ua_claims() returns jsonb
+language sql immutable as $$
+  select tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
+                           'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1');
+$$;
+create or replace function tests.uab_claims() returns jsonb
+language sql immutable as $$
+  select tests.user_claims('00000000-0000-4000-8000-0000000000ab', '10000000-0000-4000-8000-0000000000ab',
+                           'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000ab');
 $$;
 
 -- What withUserTx() adds after an authenticator code: aal2 and when the code was passed (code_at, seconds

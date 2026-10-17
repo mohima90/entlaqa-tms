@@ -299,4 +299,77 @@ begin
 end $$;
 rollback;
 
+-- ---- who may read (S-L3, 20261020210300) ---------------------------------------------------------
+-- Planning cycles and settings are read with tms.plan_cycle.read / .manage only. The generic isolation check
+-- of 20_isolation.sql (run there as the Organization Admin, who holds neither) as tenant A's L&D Manager.
+begin;
+set local role authenticated;
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-00000000e0a1', '10000000-0000-4000-8000-00000000e0a1',
+  'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-00000000e0a1'));
+do $$
+declare
+  r record;
+  v_total bigint;
+  v_foreign bigint;
+begin
+  for r in select unnest(array['tms.planning_settings', 'tms.planning_default_steps', 'tms.plan_cycles',
+                               'tms.plan_cycle_scope', 'tms.plan_cycle_departments', 'tms.plan_cycle_steps']) as t loop
+    execute format('select count(*), count(*) filter (where tenant_id <> %L) from %s',
+                   'a0000000-0000-4000-8000-000000000001', r.t) into v_total, v_foreign;
+    perform tests.assert(v_total > 0, format('%s: the L&D Manager of A sees A''s rows', r.t));
+    perform tests.assert_eq(v_foreign, 0::bigint, format('%s: and no other organization''s', r.t));
+  end loop;
+  perform tests.assert(private.may_read_plan_cycles('a0000000-0000-4000-8000-000000000001'), 'the L&D Manager reads cycles');
+  perform tests.assert(not private.may_read_plan_cycles('b0000000-0000-4000-8000-000000000001'), 'never in another organization');
+end $$;
+rollback;
+
+-- An Employee (uE) and the HR Manager (uAB) read no planning row; an Employee locks no needs form (S-L1).
+begin;
+set local role authenticated;
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-00000000e0a3', '10000000-0000-4000-8000-00000000e0a3',
+  'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-00000000e0a3'));
+do $$
+declare
+  v_table text;
+  v_count bigint;
+begin
+  foreach v_table in array array['tms.planning_settings', 'tms.planning_default_steps', 'tms.plan_cycles',
+                                 'tms.plan_cycle_scope', 'tms.plan_cycle_departments', 'tms.plan_cycle_steps'] loop
+    execute format('select count(*) from %s', v_table) into v_count;
+    perform tests.assert_eq(v_count, 0::bigint, format('%s: an Employee reads nothing', v_table));
+  end loop;
+  perform tests.assert_fails($q$select private.lock_needs_form((select id from tms.needs_forms where is_default))$q$,
+    array['42501'], 'an Employee does not lock a needs form');
+  perform tests.set_claims(tests.uab_claims());
+  foreach v_table in array array['tms.planning_settings', 'tms.planning_default_steps', 'tms.plan_cycles',
+                                 'tms.plan_cycle_scope', 'tms.plan_cycle_departments', 'tms.plan_cycle_steps'] loop
+    execute format('select count(*) from %s', v_table) into v_count;
+    perform tests.assert_eq(v_count, 0::bigint, format('%s: the HR Manager reads nothing', v_table));
+  end loop;
+end $$;
+rollback;
+
+-- ---- an open cycle past its deadline is extended (C-7, 20261020210600; business flow §6 (a)) ----------
+begin;
+set local role authenticated;
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-00000000e0a1', '10000000-0000-4000-8000-00000000e0a1',
+  'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-00000000e0a1'));
+do $$
+begin
+  -- ae…02 is open in the database with a deadline three days ago (shown as Closed by date).
+  perform tests.assert_fails($q$update tms.plan_cycles set deadline_on = current_date - 4 where id = 'ae000000-0000-4000-8000-000000000002'$q$,
+    array['JK004'], 'never earlier');
+  perform tests.assert_fails($q$update tms.plan_cycles set deadline_on = current_date - 1 where id = 'ae000000-0000-4000-8000-000000000002'$q$,
+    array['JK004'], 'the new deadline is today or later');
+  perform tests.assert_eq(tests.rows_affected($q$update tms.plan_cycles set deadline_on = current_date + 10 where id = 'ae000000-0000-4000-8000-000000000002'$q$),
+    1::bigint, 'an open cycle whose deadline has passed is extended');
+  perform tests.assert((select status = 'open' and deadline_on = current_date + 10 and closed_at is null
+                        from tms.plan_cycles where id = 'ae000000-0000-4000-8000-000000000002'),
+    'it is open again until the new date');
+  perform tests.assert_fails($q$update tms.plan_cycles set status = 'closed' where id = 'ae000000-0000-4000-8000-000000000002'$q$,
+    array['JK001'], 'and no longer closes before it');
+end $$;
+rollback;
+
 \echo '99_planning_b_app_server: ok'

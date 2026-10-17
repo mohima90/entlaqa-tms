@@ -21,6 +21,7 @@ const claims = brandVerifiedClaims({
   session_id: '10000000-0000-4000-8000-00000000fa01',
 });
 if (!claims.ok) throw new Error('fixture');
+const CLAIMS = claims.value;
 const KEYS = deriveCredentialsKeyPair(
   'a-generated-64-character-secret-for-the-console-tests-012345678',
 );
@@ -46,9 +47,7 @@ function setup(
   const deps: PlatformEmailConsoleDeps = {
     getClaims: vi.fn(({ strict: s }: { readonly strict: boolean }) => {
       strict.push(s);
-      return Promise.resolve(
-        options.signedOut ? err(appError('UNAUTHENTICATED')) : ok(claims.value),
-      );
+      return Promise.resolve(options.signedOut ? err(appError('UNAUTHENTICATED')) : ok(CLAIMS));
     }),
     withUserTx: ((_c: unknown, fn: (tx: unknown) => Promise<unknown>) =>
       fn('tx')) as PlatformEmailConsoleDeps['withUserTx'],

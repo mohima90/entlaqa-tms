@@ -228,7 +228,8 @@ describe('saving the organization provider', () => {
       { ...SAVE, replyTo: 'nope' },
       { ...SAVE, extra: true },
     ]) {
-      expect((await save(bad)).ok).toBe(false);
+      // Deliberately invalid entries, as a tampered request would send them.
+      expect((await save(bad as unknown as typeof SAVE)).ok).toBe(false);
     }
     expect(db.saveTenantEmailSettings).not.toHaveBeenCalled();
   });

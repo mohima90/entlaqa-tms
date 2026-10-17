@@ -96,14 +96,6 @@ export interface AssignableRole {
   readonly code: string;
   readonly privileged: boolean;
   readonly permissions: readonly string[];
-  /**
-   * A standard role (fixed by ENTLAQA, system-roles.ts). «Nobody gives a permission they do not hold»
-   * covers its PLATFORM permissions only: its module (training) permissions are part of the role's
-   * design, and the people who give roles (HR Manager) hold none of them — T-M3-10: the HR Manager gives
-   * the L&D Manager role, which designs needs forms (PO rule of 5 Oct 2026: non-privileged roles are the
-   * HR Manager's to give). Every permission of a custom role is checked.
-   */
-  readonly standard?: boolean;
 }
 
 /** A standard role as an AssignableRole (null for unknown codes). */
@@ -114,7 +106,6 @@ export function standardAssignableRole(code: string): AssignableRole | null {
     code,
     privileged: role.privileged,
     permissions: [...new Set(role.grants.map((g) => g.permission.code))],
-    standard: true,
   };
 }
 
@@ -131,8 +122,7 @@ export function customAssignableRole(role: CustomRoleDefinition): AssignableRole
  * May the actor give or remove `role`? (ADR 0003 §5; PO decisions 5 Oct 2026 and 17 Oct 2026, EP-ROLES)
  * - `platform.role.assign_privileged` (the Organization Admin) gives every role;
  * - otherwise the role must not be privileged, the actor needs `platform.role.assign`, and — nobody gives
- *   a permission they do not hold — every permission of the role must be the actor's organization-wide
- *   (of a standard role: its platform permissions — givenPermissions, T-M3-10);
+ *   a permission they do not hold — every permission of the role must be the actor's organization-wide;
  * - all checks tenant-wide and active now, with authorize() so validity windows apply as in defineAction;
  * - never on the actor's own membership (checked by the caller, and again in the database), which runs
  *   the same rule (private.member_may_give_roles).
@@ -147,18 +137,7 @@ export function canAssignRole(
     authorize(subject, permission, undefined, { now }).allowed;
   if (allowed(platformPermissions['platform.role.assign_privileged'])) return true;
   if (role.privileged || !allowed(platformPermissions['platform.role.assign'])) return false;
-  return givenPermissions(role).every((code) => holdsTenantWide(subject, code, now));
-}
-
-/**
- * The permissions of `role` its giver must hold organization-wide: all of a custom role's; a standard
- * role's platform permissions (its module permissions are fixed by ENTLAQA; AssignableRole.standard).
- * The database repeats it (private.member_may_give_roles, migration 20261020180100).
- */
-export function givenPermissions(role: AssignableRole): readonly string[] {
-  return role.standard === true
-    ? role.permissions.filter((code) => code.startsWith('platform.'))
-    : role.permissions;
+  return role.permissions.every((code) => holdsTenantWide(subject, code, now));
 }
 
 /** Does the subject hold `code` organization-wide now (a `tenant`-scope grant in force)? */

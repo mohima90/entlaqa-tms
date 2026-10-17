@@ -13,7 +13,7 @@ import {
 import type { ActionContext } from '../define-action';
 import type { LocalizedText, PermissionDefinition } from '../permissions';
 import { platformPermissions } from '../platform-permissions';
-import { type AssignableRole, givenPermissions, standardAssignableRole } from '../role-grants';
+import { type AssignableRole, standardAssignableRole } from '../role-grants';
 import { SYSTEM_ROLES, type SystemRoleDefinition } from '../system-roles';
 
 /**
@@ -39,13 +39,13 @@ const PERMISSIONS: Readonly<Record<string, PermissionDefinition>> = platformPerm
 /**
  * May the member give `role`? The Organization Admin (`platform.role.assign_privileged`) every role;
  * otherwise `platform.role.assign`, a role that is not privileged, and every permission of the role held
- * organization-wide (nobody gives a permission they do not hold; of a standard role, its platform
- * permissions — givenPermissions, T-M3-10) — the database's private.member_may_give_roles.
+ * organization-wide (nobody gives a permission they do not hold) — the database's
+ * private.member_may_give_roles.
  */
 export function canGive(ctx: Pick<ActionContext<UserTx>, 'can'>, role: AssignableRole): boolean {
   if (ctx.can(p['platform.role.assign_privileged'], 'tenant')) return true;
   if (role.privileged || !ctx.can(p['platform.role.assign'], 'tenant')) return false;
-  return givenPermissions(role).every((code) => {
+  return role.permissions.every((code) => {
     const permission = PERMISSIONS[code];
     return permission !== undefined && ctx.can(permission, 'tenant');
   });
@@ -72,7 +72,6 @@ function standardChoice(role: SystemRoleDefinition): Omit<RoleChoice, 'assignabl
     description: role.description,
     privileged: role.privileged,
     permissions: assignable?.permissions ?? [],
-    standard: true,
     dataScope: standardRoleScope(role),
   };
 }

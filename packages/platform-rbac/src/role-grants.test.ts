@@ -127,10 +127,13 @@ describe('canAssignRole (ADR 0003 §5; PO decisions 5 Oct 2026 and 17 Oct 2026)'
 
   it('lets an HR Manager give the ordinary roles whose permissions they hold, no privileged one', () => {
     const hr = subjectOf('aal2', [], { roleCode: 'hr_manager' });
-    for (const code of ['learner', 'training_manager', 'training_coordinator', 'department_head']) {
+    for (const code of ['learner', 'department_head']) {
       expect(canAssignRole(hr, standard(code))).toBe(true);
     }
-    for (const code of ['tenant_admin', 'hr_manager']) {
+    // T-M3-10 (expectation changed, not the rule): the L&D Manager and Training Coordinator now grant
+    // tms.needs_form.*, which the HR Manager does not hold — «nobody gives a permission they do not hold»
+    // refuses them until the tech lead's rule change (with the PO) lands at integration.
+    for (const code of ['tenant_admin', 'hr_manager', 'training_manager', 'training_coordinator']) {
       expect(canAssignRole(hr, standard(code))).toBe(false);
     }
     // A custom role with a high-risk permission is privileged.
@@ -163,26 +166,6 @@ describe('canAssignRole (ADR 0003 §5; PO decisions 5 Oct 2026 and 17 Oct 2026)'
     };
     expect(customAssignableRole(profile).privileged).toBe(false);
     expect(canAssignRole(hr, customAssignableRole(profile))).toBe(false);
-  });
-
-  it('lets an HR Manager give the L&D Manager role although it designs needs forms (T-M3-10)', () => {
-    const hr = subjectOf('aal2', [], { roleCode: 'hr_manager' });
-    const lnd = standard('training_manager');
-    expect(lnd?.permissions).toContain('tms.needs_form.manage');
-    expect(holdsTenantWide(hr, 'tms.needs_form.manage')).toBe(false);
-    expect(canAssignRole(hr, lnd)).toBe(true);
-    // The same permission in a custom role: nobody gives what they do not hold.
-    const designer: CustomRoleDefinition = {
-      code: 'custom_a00000000007',
-      dataScope: 'organization',
-      permissions: ['platform.user.read', 'tms.needs_form.manage'],
-    };
-    expect(canAssignRole(hr, customAssignableRole(designer))).toBe(false);
-    // A standard role flag on a privileged role changes nothing.
-    expect(canAssignRole(hr, standard('hr_manager'))).toBe(false);
-    // Without platform.role.assign, no role at all.
-    const lndMember = subjectOf('aal2', [], { roleCode: 'training_manager' });
-    expect(canAssignRole(lndMember, standard('learner'))).toBe(false);
   });
 
   it('lets a custom role with role.assign give only roles within its own organization-wide permissions', () => {

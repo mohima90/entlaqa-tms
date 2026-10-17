@@ -180,7 +180,9 @@ describe.skipIf(!configured)('changing roles against PostgreSQL', () => {
   });
 
   it('HR Manager: ordinary roles of ordinary members only (standard and custom, by permission)', async () => {
-    expect(await change(hr, sara.person, 'training_manager')).toMatchObject({
+    // T-M3-10 (expectation changed, not the rule): department_head — the L&D Manager now grants
+    // tms.needs_form.*, which the HR Manager does not hold, until the role-giving rule change.
+    expect(await change(hr, sara.person, 'department_head')).toMatchObject({
       ok: true,
       changed: true,
     });

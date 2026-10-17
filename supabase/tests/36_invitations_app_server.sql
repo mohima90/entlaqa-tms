@@ -377,7 +377,7 @@ declare
   ins constant text := $q$insert into platform.invitations (person_id, email, locale, primary_role, additional_roles)
     values ('a1000000-0000-4000-8000-0000000000%s', %L, 'ar', %L, %L) returning id$q$;
 begin
-  perform tests.assert_check_constraint(format(ins, 'd1', 'new1@a.test', 'learner', '{training_coordinator}'),
+  perform tests.assert_check_constraint(format(ins, 'd1', 'new1@a.test', 'learner', '{department_head}'),
     'invitations_one_role_check', 'EP-ROLES: an invitation gives one role (no additional roles)');
   execute format(ins, 'd1', 'new1@a.test', 'learner', '{}') into v_id;
   perform tests.assert_eq((select row(status, invited_by, token_issued_at, send_count,
@@ -395,7 +395,7 @@ begin
     0::bigint, 'a revoked invitation cannot be reopened');
   -- A new invitation for the same person once the first one is revoked; but only one pending.
   execute format(ins, 'd1', 'new1@a.test', 'learner', '{}') into v_id;
-  perform tests.assert_fails(format(ins, 'd1', 'new1@a.test', 'training_coordinator', '{}'), array['23505'], 'one pending invitation per person');
+  perform tests.assert_fails(format(ins, 'd1', 'new1@a.test', 'department_head', '{}'), array['23505'], 'one pending invitation per person (T-M3-10: department_head, which HR may give)');
 
   perform tests.assert_fails_like(format(ins, 'd2', 'new2@a.test', 'hr_manager', '{}'),
     'only an Organization Admin can invite with a privileged role', 'HR: cannot invite an HR Manager');

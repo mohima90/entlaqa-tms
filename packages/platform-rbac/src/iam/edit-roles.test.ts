@@ -156,9 +156,9 @@ describe('edit role query', () => {
     const query = createDefineQuery(runtime(['hr_manager']).rt)(editRolesQueryDefinition());
     const result = await query({ personId: SARA });
     const assignable = result.ok ? result.value.choices.filter((c) => c.assignable) : [];
+    // T-M3-10 (expectation changed, not the rule): the L&D Manager and Training Coordinator grant
+    // tms.needs_form.*, which the HR Manager does not hold — off the list until the role-giving rule change.
     expect(assignable.map((c) => c.code)).toEqual([
-      'training_manager',
-      'training_coordinator',
       'department_head',
       'learner',
       READER.code,

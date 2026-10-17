@@ -54,10 +54,12 @@ begin
 end $$;
 -- The file of the scenarios below (rows 2–20).
 create or replace function pg_temp.stage_file(p_import uuid) returns void language plpgsql as $$
+-- T-M3-10: row 2 gives department_head (was training_coordinator, which the HR Manager cannot give until the
+-- role-giving rule change: the Training Coordinator now grants tms.needs_form.read).
 begin
   perform pg_temp.stage(p_import, 2, '{"email": "new1@imp.test", "first_name_ar": "نورة", "father_name_ar": "فهد",
     "family_name_ar": "الدوسري", "first_name_en": "Noura", "family_name_en": "Aldossari", "department": "sal",
-    "branch": "فرع الرياض", "manager_email": "mgr@imp.test", "primary_role": "training_coordinator",
+    "branch": "فرع الرياض", "manager_email": "mgr@imp.test", "primary_role": "department_head",
     "additional_roles": ["learner"], "language": "en", "employee_number": "NEW-1", "mobile": "+966551234567",
     "hire_date": "2024-03-03", "job_title_ar": "أخصائية تدريب", "roles_given": true}');
   perform pg_temp.stage(p_import, 3, '{"email": "new2@imp.test", "first_name_ar": "خالد", "family_name_ar": "الشهري",
@@ -203,7 +205,7 @@ begin
     'errors per code (rows)');
   perform tests.assert_eq(v_counts -> 'skipCodes', '{"OWN_ROW": 1, "INVITATION_PENDING": 1, "MEMBER_DEACTIVATED": 1}'::jsonb,
     'skipped per code');
-  perform tests.assert_eq(v_counts -> 'roles', '{"training_coordinator": 1}'::jsonb, 'primary roles given by the file');
+  perform tests.assert_eq(v_counts -> 'roles', '{"department_head": 1}'::jsonb, 'primary roles given by the file');
   perform tests.assert_eq(v_counts -> 'additionalRoles', '{"learner": 1}'::jsonb, 'additional roles');
 end $$;
 select pg_temp.become_owner();
@@ -277,7 +279,7 @@ begin
                                and job_title_ar = 'أخصائية تدريب' and source = 'import'
                         from platform.person_employment where person_id = v_row.person_id), 'row 2: placement from the file');
   perform tests.assert((select mail_held and send_count = 0 and token_issued_at is null and import_id = i
-                               and invited_by = '00000000-0000-4000-8000-0000000000a1' and primary_role = 'training_coordinator'
+                               and invited_by = '00000000-0000-4000-8000-0000000000a1' and primary_role = 'department_head'
                                and additional_roles = '{}' and locale = 'en' and status = 'pending'
                         from platform.invitations where id = v_row.invitation_id),
     'row 2: a held invitation of the importer with the file''s role (one role per person: its additional role is not given) and language');

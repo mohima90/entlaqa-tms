@@ -76,8 +76,8 @@ declare
 begin
   perform tests.assert_eq(tests.rows_affected(format($q$delete from platform.role_assignments where membership_id = %L$q$, v_inv)),
     1::bigint, 'HR: can remove an ordinary role');
-  perform tests.assert_eq(tests.rows_affected(format($q$insert into platform.role_assignments (membership_id, role_code) values (%L, 'training_coordinator')$q$, v_inv)),
-    1::bigint, 'HR: can give an ordinary standard role');
+  perform tests.assert_eq(tests.rows_affected(format($q$insert into platform.role_assignments (membership_id, role_code) values (%L, 'department_head')$q$, v_inv)),
+    1::bigint, 'HR: can give an ordinary standard role (T-M3-10: department_head — the Training Coordinator now grants tms.needs_form.read, which HR does not hold)');
   perform tests.assert_eq(tests.rows_affected(format($q$delete from platform.role_assignments where membership_id = %L$q$, v_inv)),
     1::bigint, 'HR: can remove it again');
   perform tests.assert_eq(tests.rows_affected(format($q$insert into platform.role_assignments (membership_id, role_code) values (%L, 'custom_a00000000001')$q$, v_inv)),

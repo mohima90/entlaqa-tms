@@ -107,7 +107,31 @@ export function unitsLabel(
   return locale === 'ar' ? top.nameAr : top.nameEn;
 }
 
-/** The label of a field holding one unit: that unit's level name, else `neutral` (no unit, unknown level). */
+/**
+ * For a list shown page by page (the users list): do its units show their level? Decided for the whole
+ * organization — it has a unit below the first level (`unitsBelowFirstLevel`) — so the column does not change
+ * from one page to the next.
+ */
+export function orgShowsUnitLevels(
+  levels: readonly LevelLabel[],
+  unitsBelowFirstLevel: boolean,
+): boolean {
+  return firstLevel(levels) === null || unitsBelowFirstLevel;
+}
+
+/** The label of such a column: the first level's name, or `neutral` («Unit») when units are deeper. */
+export function orgUnitsLabel(
+  levels: readonly LevelLabel[],
+  unitsBelowFirstLevel: boolean,
+  locale: 'ar' | 'en',
+  neutral: string,
+): string {
+  const top = firstLevel(levels);
+  if (top === null || unitsBelowFirstLevel) return neutral;
+  return locale === 'ar' ? top.nameAr : top.nameEn;
+}
+
+/** The label of a field holding one unit:that unit's level name, else `neutral` (no unit, unknown level). */
 export function unitFieldLabel(
   levels: readonly LevelLabel[],
   ordinal: number | null,

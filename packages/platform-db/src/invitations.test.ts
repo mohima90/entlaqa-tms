@@ -1,6 +1,7 @@
 import { type SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { describe, expect, it } from 'vitest';
+import { forgetSchemaPresenceForTests } from './custom-roles-present';
 import { DomainError, isDomainError } from './domain-error';
 import {
   INVITATION_CODE_ALPHABET,
@@ -178,6 +179,33 @@ describe('createInvitation', () => {
     await createInvitation(fake.tx, { ...input, additionalRoles: [], firstNameEn: null });
     expect(fake.executed[0]?.params[1]).toBeNull();
     expect(fake.executed[2]?.sql).toContain("'{}'::text[]");
+  });
+
+  it('English names only: no Arabic display name — the English one before migration 20261021090000', async () => {
+    forgetSchemaPresenceForTests();
+    const english = { ...input, firstNameAr: null, familyNameAr: ' ', familyNameEn: 'Alahmad' };
+    const answers = (): Answer[] => [
+      [{ id: PERSON }],
+      [],
+      [{ id: ID }],
+      [{ code: 'K7M2PQ9XHT4W' }],
+      [],
+    ];
+    // The database still refuses a person without an Arabic display name: the English one fills it.
+    const early = fakeTx([{ present: false }], ...answers());
+    await createInvitation(early.tx, english);
+    expect(early.executed[0]?.params.slice(0, 6)).toEqual([
+      'Sara Alahmad',
+      'Sara Alahmad',
+      null,
+      null,
+      'Sara',
+      'Alahmad',
+    ]);
+    // Once the migration ran: no Arabic display name (and the catalog is not asked again).
+    const later = fakeTx([{ present: true }], ...answers());
+    await createInvitation(later.tx, english);
+    expect(later.executed[0]?.params.slice(0, 2)).toEqual([null, 'Sara Alahmad']);
   });
 
   it.each([

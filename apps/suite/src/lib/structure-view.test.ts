@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   levelName,
   nextLevel,
+  orgShowsUnitLevels,
+  orgUnitsLabel,
   parentIds,
   scopeUnitChoices,
   showsUnitLevels,
@@ -102,5 +104,18 @@ describe('the organization’s own level names (guided-test feedback #3)', () =>
     expect(unitNameWithLevel('مبيعات التجزئة', 3, levels, 'ar', true)).toBe('مبيعات التجزئة · قسم');
     expect(unitNameWithLevel('Retail Sales', 2, levels, 'en', false)).toBe('Retail Sales');
     expect(unitNameWithLevel('Retail Sales', 9, levels, 'en', true)).toBe('Retail Sales');
+  });
+
+  it('a paged list decides for the organization, not for the rows of one page', () => {
+    // Only first-level units in the organization: the first level's name, no level per row.
+    expect(orgUnitsLabel(levels, false, 'en', 'Unit')).toBe('Sector');
+    expect(orgUnitsLabel(levels, false, 'ar', 'الوحدة')).toBe('قطاع');
+    expect(orgShowsUnitLevels(levels, false)).toBe(false);
+    // A deeper unit anywhere: «Unit» on every page, and each row says its level.
+    expect(orgUnitsLabel(levels, true, 'en', 'Unit')).toBe('Unit');
+    expect(orgShowsUnitLevels(levels, true)).toBe(true);
+    // No levels (before the migration): the neutral word.
+    expect(orgUnitsLabel([], false, 'en', 'Unit')).toBe('Unit');
+    expect(orgShowsUnitLevels([], false)).toBe(true);
   });
 });

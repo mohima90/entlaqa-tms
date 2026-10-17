@@ -14,7 +14,7 @@ import {
   createUserImport,
   getHeldInvitationsSummary,
   getRunningUserImport,
-  getTenantDefaultLocale,
+  getImportNameLanguage,
   getUndoPreview,
   getUserImport,
   isDomainError,
@@ -280,7 +280,7 @@ export function chooseUserImportMappingActionDefinition(): ActionDefinition<
       const problems = mappingProblems(
         input.mapping,
         columns,
-        requiredFields(await getTenantDefaultLocale(ctx.tx)),
+        requiredFields(await getImportNameLanguage(ctx.tx)),
       );
       if (problems.length > 0) {
         return err(
@@ -622,7 +622,7 @@ export function userImportStartQueryDefinition(): QueryDefinition<
       ok({
         running: await getRunningUserImport(ctx.tx),
         recent: await listUserImports(ctx.tx, 10),
-        nameLanguage: await getTenantDefaultLocale(ctx.tx),
+        nameLanguage: await getImportNameLanguage(ctx.tx),
       }),
   };
 }
@@ -709,7 +709,7 @@ export function userImportQueryDefinition(): QueryDefinition<
     handler: async ({ ctx, input }) => {
       const record = await getUserImport(ctx.tx, input.importId);
       if (!record) return err(appError('NOT_FOUND'));
-      const nameLanguage = await getTenantDefaultLocale(ctx.tx);
+      const nameLanguage = await getImportNameLanguage(ctx.tx);
       let columns: MappingColumnView[] = [];
       if (record.mine && record.dataPurgedAt === null) {
         const all = await listUserImportColumns(ctx.tx, record.id);
@@ -827,7 +827,7 @@ export function userImportTemplateQueryDefinition(): QueryDefinition<
         ...(ctx.can(p['platform.org.read'], 'tenant')
           ? await listTemplateUnits(ctx.tx)
           : { departments: [], branches: [] }),
-        nameLanguage: await getTenantDefaultLocale(ctx.tx),
+        nameLanguage: await getImportNameLanguage(ctx.tx),
       }),
   };
 }

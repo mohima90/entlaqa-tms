@@ -31,8 +31,6 @@ const LABEL_KEYS = [
   'person',
   'email',
   'emailHint',
-  'firstName',
-  'familyName',
   'firstNameAr',
   'familyNameAr',
   'addArabicName',

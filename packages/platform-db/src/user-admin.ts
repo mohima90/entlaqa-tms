@@ -1,5 +1,6 @@
 import 'server-only';
 import { type SQL, sql } from 'drizzle-orm';
+import { storableArabicDisplayName } from './custom-roles-present';
 import { keepUnsplitDisplayNames } from './names';
 import { pgError } from './pg-error';
 import type { UserTx } from './with-user-tx';
@@ -286,17 +287,22 @@ export async function updateUserDetails(
   // Same rule as the page and the database guard (also on one's own record: My profile is the
   // self-service path, with its own audit event).
   if (!before.mayManage) return { ok: false, refusal: 'not_allowed' };
-  const next: UserDetailsChange = keepUnsplitDisplayNames(
+  const kept: UserDetailsChange = keepUnsplitDisplayNames(
     before,
     before.hasLogin ? { ...change, email: before.email } : change,
   );
   // Every person keeps a name (persons_name_present_check): an Arabic name — given, or a long one stored
   // without parts and kept as is — or a complete English name. Which language is required follows the
   // organization's default language, checked by the action (PO 17 Oct 2026).
-  const hasArabicName = next.displayNameAr !== null && next.displayNameAr !== '';
+  const hasArabicName = kept.displayNameAr !== null && kept.displayNameAr !== '';
   const hasEnglishName =
-    next.firstNameEn !== null && next.familyNameEn !== null && next.displayNameEn !== null;
+    kept.firstNameEn !== null && kept.familyNameEn !== null && kept.displayNameEn !== null;
   if (!hasArabicName && !hasEnglishName) return { ok: false, refusal: 'name_required' };
+  // No Arabic display name without Arabic names — before migration 20261021090000 the English one.
+  const next: UserDetailsChange = {
+    ...kept,
+    displayNameAr: await storableArabicDisplayName(tx, kept.displayNameAr, kept.displayNameEn),
+  };
 
   const personChanges = PERSON_FIELDS.filter(([field]) => before[field] !== next[field]);
   const employmentChanges = EMPLOYMENT_FIELDS.filter(([field]) => before[field] !== next[field]);

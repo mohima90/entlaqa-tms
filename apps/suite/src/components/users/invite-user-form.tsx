@@ -206,7 +206,10 @@ export function InviteUserForm(props: InviteUserFormProps) {
     });
   }
 
-  /** First and family name of one language: the default language's are required and labelled plainly. */
+  /**
+   * First and family name of one language, each labelled with its language («First name in English» /
+   * «الاسم الأول بالعربية»: the two sets look alike, WCAG 2.4.6); the default language's are required.
+   */
   const nameFields = (language: 'ar' | 'en', required: boolean) => {
     const suffix = language === 'ar' ? 'Ar' : 'En';
     return (['firstName', 'familyName'] as const).map((part) => (
@@ -214,7 +217,7 @@ export function InviteUserForm(props: InviteUserFormProps) {
         key={`${part}${suffix}`}
         id={`invite-${part}${suffix}`}
         name={`${part}${suffix}`}
-        label={required ? text(part) : text(`${part}${suffix}`)}
+        label={text(`${part}${suffix}`)}
         marker={required ? text('required') : text('optional')}
         required={required}
         maxLength={60}

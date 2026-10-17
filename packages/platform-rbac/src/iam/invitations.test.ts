@@ -82,7 +82,7 @@ const form = {
   firstNameAr: 'نورة',
   familyNameAr: 'الدوسري',
   firstNameEn: 'Noura',
-  familyNameEn: '',
+  familyNameEn: 'Aldossari',
   departmentId: DEPARTMENT,
   branchId: '',
   managerPersonId: '',
@@ -178,7 +178,7 @@ describe('invite input', () => {
     expect(value).toMatchObject({
       email: 'noura.aldossari@alraya.example',
       firstNameEn: 'Noura',
-      familyNameEn: null,
+      familyNameEn: 'Aldossari',
       branchId: null,
       managerPersonId: null,
       employeeNumber: 'EMP-1450',
@@ -265,6 +265,17 @@ describe('invite user action', () => {
     if (!arabicMissing.ok) {
       expect(arabicMissing.error.fieldErrors).toEqual([{ path: 'firstNameAr', code: 'REQUIRED' }]);
     }
+    // The optional language's names all or nothing (WP-FIX-01 review): half an English name is refused…
+    const halfEnglish = await invite({ ...form, familyNameEn: ' ' });
+    expect(!halfEnglish.ok && halfEnglish.error.fieldErrors).toEqual([
+      { path: 'familyNameEn', code: 'REQUIRED' },
+    ]);
+    // …and so is half an Arabic name with English as the default.
+    db.getTenantDefaultLocale.mockResolvedValue('en');
+    const halfArabic = await invite({ ...form, firstNameAr: '' });
+    expect(!halfArabic.ok && halfArabic.error.fieldErrors).toEqual([
+      { path: 'firstNameAr', code: 'REQUIRED' },
+    ]);
   });
 
   it('HR Manager invites with ordinary roles; audited with ids and role codes only', async () => {
@@ -288,7 +299,7 @@ describe('invite user action', () => {
       firstNameAr: 'نورة',
       familyNameAr: 'الدوسري',
       firstNameEn: 'Noura',
-      familyNameEn: null,
+      familyNameEn: 'Aldossari',
       departmentId: DEPARTMENT,
       branchId: null,
       managerPersonId: null,

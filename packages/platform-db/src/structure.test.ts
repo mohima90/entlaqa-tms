@@ -1,10 +1,12 @@
 import { type SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { describe, expect, it } from 'vitest';
+import { forgetSchemaPresenceForTests } from './custom-roles-present';
 import {
   addStructureLevel,
   createStructureUnit,
   deleteStructureUnit,
+  hasUnitsBelowFirstLevel,
   listActivePersonOptions,
   listStructureLevelLabels,
   listStructureLevels,
@@ -81,9 +83,28 @@ describe('reads', () => {
     ]);
     expect(fake.executed[0]?.sql).toContain('d.level_ordinal = l.ordinal');
     expect(await listStructureLevels(fakeTx([], true).tx)).toEqual([]);
-    expect(await listStructureLevelLabels(fakeTx([[levelRow(1)]]).tx)).toEqual([
+  });
+
+  it('reads the level labels in one query without unit counts; none before the migration', async () => {
+    forgetSchemaPresenceForTests();
+    expect(await listStructureLevelLabels(fakeTx([], true).tx)).toEqual([]);
+    const fake = fakeTx([[levelRow(1), levelRow(2)]]);
+    expect(await listStructureLevelLabels(fake.tx)).toEqual([
       { ordinal: 1, nameEn: 'Level 1', nameAr: 'المستوى 1' },
+      { ordinal: 2, nameEn: 'Level 2', nameAr: 'المستوى 2' },
     ]);
+    expect(fake.executed).toHaveLength(1);
+    expect(fake.executed[0]?.sql).not.toContain('platform.departments');
+    expect(fake.executed[0]?.sql).toContain('order by l.ordinal');
+  });
+
+  it('tells whether the organization has a live unit below the first level', async () => {
+    const deeper = fakeTx([[{ deeper: true }]]);
+    expect(await hasUnitsBelowFirstLevel(deeper.tx)).toBe(true);
+    expect(deeper.executed[0]?.sql).toContain('d.parent_id is not null');
+    expect(deeper.executed[0]?.sql).toContain('d.deleted_at is null');
+    expect(await hasUnitsBelowFirstLevel(fakeTx([[{ deeper: false }]]).tx)).toBe(false);
+    expect(await hasUnitsBelowFirstLevel(fakeTx([[]]).tx)).toBe(false);
   });
 
   it('lists the live units with their head and what keeps them from being deleted', async () => {

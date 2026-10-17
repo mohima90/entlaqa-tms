@@ -30,6 +30,7 @@ const valid = {
   nameEn: 'ENTLAQA',
   adminEmail: ' Admin@Entlaqa.COM ',
   adminFirstNameAr: 'سارة',
+  adminFamilyNameAr: 'العتيبي',
   locale: 'ar' as const,
 };
 const notFound = {
@@ -80,6 +81,7 @@ describe('createOrganizationAction', () => {
         nameEn: 'ENTLAQA',
         adminEmail: 'admin@entlaqa.com',
         adminFirstNameAr: 'سارة',
+        adminFamilyNameAr: 'العتيبي',
         locale: 'ar',
       },
     });
@@ -116,6 +118,22 @@ describe('createOrganizationAction', () => {
     ['an e-mail over 254', { adminEmail: `${'a'.repeat(250)}@x.test` }, 'adminEmail'],
     ['a name over 100', { adminFamilyNameAr: 'م'.repeat(101) }, 'adminFamilyNameAr'],
     ['another language', { locale: 'fr' }, 'locale'],
+    // A language's names all or nothing (WP-FIX-01 review): the empty one of the pair gets the error.
+    [
+      'an Arabic first name without the family name',
+      { adminFamilyNameAr: ' ' },
+      'adminFamilyNameAr',
+    ],
+    [
+      'an English first name without the family name',
+      { adminFirstNameEn: 'Sara' },
+      'adminFamilyNameEn',
+    ],
+    [
+      'an English family name without the first name',
+      { adminFamilyNameEn: 'Ali' },
+      'adminFirstNameEn',
+    ],
     ['an unknown field (e.g. a tenant id)', { tenantId: TENANT }, ''],
   ];
   for (const [what, change, path] of invalid) {

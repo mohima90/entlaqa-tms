@@ -435,6 +435,34 @@ describe('normalizeRow', () => {
     );
   });
 
+  it('the optional language’s names are all or nothing (first AND family, or neither)', () => {
+    const mapping = {
+      '0': 'email',
+      '1': 'first_name_en',
+      '2': 'family_name_en',
+      '3': 'first_name_ar',
+      '4': 'father_name_ar',
+      '5': 'family_name_ar',
+    } as const;
+    const codes = (cells: string[], language: 'ar' | 'en') =>
+      normalizeRow(2, cells, mapping, language).issues.map((i) => `${i.c}:${i.f ?? ''}`);
+    // English default: an Arabic first name without the family name (or a middle name alone) is half a name.
+    expect(codes(['s@b.example', 'Sara', 'Ali', 'سارة', '', ''], 'en')).toEqual([
+      'NAME_AR_REQUIRED:family_name_ar',
+    ]);
+    expect(codes(['s@b.example', 'Sara', 'Ali', '', 'محمد', ''], 'en')).toEqual([
+      'NAME_AR_REQUIRED:first_name_ar',
+      'NAME_AR_REQUIRED:family_name_ar',
+    ]);
+    expect(codes(['s@b.example', 'Sara', 'Ali', 'سارة', '', 'علي'], 'en')).toEqual([]);
+    // Invisible characters only are no name part.
+    expect(codes(['s@b.example', 'Sara', 'Ali', '‏', '', ''], 'en')).toEqual([]);
+    // Arabic default: the English names likewise.
+    expect(codes(['s@b.example', '', 'Ali', 'سارة', '', 'علي'], 'ar')).toEqual([
+      'NAME_EN_REQUIRED:first_name_en',
+    ]);
+  });
+
   it('helpers', () => {
     expect(isEmail('a@b.co')).toBe(true);
     expect(isEmail('a@b')).toBe(false);

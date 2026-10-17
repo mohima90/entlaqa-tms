@@ -7,6 +7,7 @@ import {
   type UserProfile,
   type UserTx,
   getUserProfile,
+  hasUnitsBelowFirstLevel,
   listOrgUnitOptions,
   listStructureLevelLabels,
   listUsers,
@@ -61,6 +62,11 @@ export interface UsersListView {
    * «Department» (guided-test feedback #3, PO 17 Oct 2026). One read per page.
    */
   readonly levels: readonly StructureLevelLabel[];
+  /**
+   * The organization has a live unit below the first level: unit columns then say «Unit» and each unit's
+   * level — decided for the organization, so the header is the same on every page of the list.
+   */
+  readonly unitsBelowFirstLevel: boolean;
   /** «دعوة مستخدم» and the invitations on the `invited` tab (T-M2-07): `platform.user.invite`. */
   readonly canInvite: boolean;
   /**
@@ -144,6 +150,7 @@ export function usersListQueryDefinition(): QueryDefinition<
         canReadRoles,
         orgUnits,
         levels: await listStructureLevelLabels(ctx.tx),
+        unitsBelowFirstLevel: await hasUnitsBelowFirstLevel(ctx.tx),
         canInvite: ctx.can(p['platform.user.invite'], 'tenant'),
         canDeactivate,
         privilegedReactivation: canDeactivate ? privilegedAccess(ctx) : null,

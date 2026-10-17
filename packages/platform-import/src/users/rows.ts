@@ -120,17 +120,20 @@ export function normalizeRow(
   else if (!isEmail(email)) issues.push(issue('EMAIL_INVALID', 'email'));
   else data.email = email;
 
-  // Names: the first and family name of the organization's default language required; each part at most
-  // 60, all parts at most 200.
+  // Names: the first and family name of the organization's default language required; the other
+  // language's all or nothing (any part given → its first and family name required too, WP-FIX-01 review);
+  // each part at most 60, all parts at most 200.
   const requiredNames = new Set(requiredFields(nameLanguage));
   for (const fields of [NAME_FIELDS.ar, NAME_FIELDS.en] as readonly (readonly ImportField[])[]) {
     let total = 0;
     let parts = 0;
     let valid = true;
+    const started = fields.some((field) => values[field] !== undefined);
+    const firstAndFamily = new Set([fields[0], fields[3]]);
     for (const field of fields) {
       const value = values[field];
       if (value === undefined) {
-        if (requiredNames.has(field)) {
+        if (requiredNames.has(field) || (started && firstAndFamily.has(field))) {
           issues.push(
             issue(field.endsWith('_ar') ? 'NAME_AR_REQUIRED' : 'NAME_EN_REQUIRED', field),
           );

@@ -68,7 +68,7 @@ const form = {
   firstNameEn: 'Sarah',
   fatherNameEn: '',
   grandfatherNameEn: '',
-  familyNameEn: '',
+  familyNameEn: 'Alqahtani',
   email: 'Sara@Example.test',
   mobile: '',
   employeeNumber: ' EMP-' + String.fromCharCode(0x0661, 0x0661, 0x0668, 0x0667),
@@ -157,7 +157,7 @@ describe('update user details', () => {
       '3:1',
       expect.objectContaining({
         displayNameAr: 'سارة القحطاني',
-        displayNameEn: 'Sarah',
+        displayNameEn: 'Sarah Alqahtani',
         employeeNumber: 'EMP-1187',
       }),
     );
@@ -180,7 +180,7 @@ describe('update user details', () => {
       updateUserDetailsActionDefinition(),
     );
     db.getTenantDefaultLocale.mockResolvedValue('en');
-    const noFamily = await save(form);
+    const noFamily = await save({ ...form, familyNameEn: '' });
     expect(!noFamily.ok && noFamily.error.fieldErrors).toEqual([
       { path: 'familyNameEn', code: 'REQUIRED' },
     ]);
@@ -202,6 +202,12 @@ describe('update user details', () => {
     db.updateUserDetails.mockResolvedValue({ ok: false, refusal: 'name_required' });
     const refused = await save({ ...form, familyNameEn: 'Alqahtani' });
     expect(!refused.ok && refused.error.fieldErrors?.[0]?.path).toBe('firstNameEn');
+    // The optional language's names all or nothing (WP-FIX-01 review): half an English name is refused.
+    db.getTenantDefaultLocale.mockResolvedValue('ar');
+    const half = await save({ ...form, familyNameEn: '' });
+    expect(!half.ok && half.error.fieldErrors).toEqual([
+      { path: 'familyNameEn', code: 'REQUIRED' },
+    ]);
   });
 
   it('maps refusals to field errors or clear errors; no change → no audit', async () => {

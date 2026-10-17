@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import type { ClaimsTx } from '../claims-tx';
+import { ENGLISH_ONLY_NAMES_SQL } from '../custom-roles-present';
 import { DomainError } from '../domain-error';
 import { pgError } from '../user-admin';
 import type { UserImportOptions, UserImportStatus } from '../user-imports';
@@ -78,7 +79,8 @@ export interface UserImportJobView {
   readonly importerLocale: 'ar' | 'en';
   /**
    * The language whose first and family names each row must give: the organization's default language
-   * (guided-test feedback #2, PO 17 Oct 2026; English when it has no settings).
+   * (guided-test feedback #2, PO 17 Oct 2026; English when it has no settings) — Arabic while the database
+   * still requires an Arabic name (englishOnlyNamesExist).
    */
   readonly nameLanguage: 'ar' | 'en';
   /**
@@ -109,6 +111,7 @@ export async function loadUserImportForJob(
            f.status as file_status, f.status_reason as file_status_reason, f.detected_mime as file_type,
            coalesce(p.preferred_locale, 'ar') as importer_locale,
            (select s.default_locale from platform.tenant_settings s where s.tenant_id = i.tenant_id) as name_language,
+           ${ENGLISH_ONLY_NAMES_SQL} as english_only_names,
            private.user_import_actor_may_import(i.tenant_id, i.created_by) as importer_may_import,
            private.user_import_step(i.tenant_id, i.id, i.status, i.review_expires_at, i.finished_at,
                                     i.undone_at, i.confirmed_at, i.data_purged_at, f.status,
@@ -150,7 +153,9 @@ export async function loadUserImportForJob(
     confirmedAt: dateOrNull(row.confirmed_at),
     failures: Number(row.failures),
     importerLocale: row.importer_locale === 'en' ? 'en' : 'ar',
-    nameLanguage: row.name_language === 'ar' ? 'ar' : 'en',
+    // Arabic while the database still requires an Arabic name (before 20261021090000: its row writer needs
+    // the Arabic names; the worker deploys in parallel with the database).
+    nameLanguage: row.name_language === 'ar' || row.english_only_names === false ? 'ar' : 'en',
     importerMayImport: row.importer_may_import === true,
     uploadAbandoned: row.upload_abandoned === true,
   };

@@ -28,6 +28,8 @@ import { ReactivateMemberButton } from '../../../../../components/users/reactiva
 import { roleOptions } from '../../../../../lib/role-choice';
 import { editRoleLabels, roleSelectTexts, scopeUnitTexts } from '../../../../../lib/role-texts';
 import {
+  orgShowsUnitLevels,
+  orgUnitsLabel,
   scopeUnitChoices,
   showsUnitLevels,
   unitNameWithLevel,
@@ -331,16 +333,10 @@ async function UsersList({
       (r) => r.code === code && r.kind === 'custom' && r.dataScope === 'departments',
     ) ?? false;
   // The organization's own level names (guided-test feedback #3): unit columns and fields are named after
-  // the first level, or «Unit» with each unit's level when levels mix.
+  // the first level, or «Unit» with each unit's level when the organization has deeper units — decided for
+  // the organization, not for the rows of this page, so the column stays the same from page to page.
   const levels = view.levels;
-  const placed = view.list.rows.flatMap((r) =>
-    r.departmentNameAr ? [r.departmentLevelOrdinal] : [],
-  );
-  const placedWithLevels = showsUnitLevels(levels, placed);
-  const scoped = view.list.rows.flatMap((r) =>
-    r.roleScopeUnit ? [r.roleScopeUnit.levelOrdinal ?? null] : [],
-  );
-  const scopedWithLevels = showsUnitLevels(levels, scoped);
+  const withLevels = orgShowsUnitLevels(levels, view.unitsBelowFirstLevel);
   const filterOrdinals = (orgUnits?.departments ?? []).map((d) => d.levelOrdinal);
   const filterWithLevels = showsUnitLevels(levels, filterOrdinals);
   const roleUnit = (row: UsersListView['list']['rows'][number]) => {
@@ -358,7 +354,7 @@ async function UsersList({
       unit.levelOrdinal ?? null,
       levels,
       locale,
-      scopedWithLevels,
+      withLevels,
     );
     return unit.active ? (
       <span className="text-xs text-text-muted" data-testid="role-unit">
@@ -575,7 +571,12 @@ async function UsersList({
                     </th>
                   ) : null}
                   <th scope="col" className={tableClasses.head} data-testid="users-unit-column">
-                    {unitsLabel(levels, placed, locale, t('columns.department'))}
+                    {orgUnitsLabel(
+                      levels,
+                      view.unitsBelowFirstLevel,
+                      locale,
+                      t('columns.department'),
+                    )}
                   </th>
                   <th scope="col" className={tableClasses.head}>
                     {t('columns.status')}
@@ -648,7 +649,7 @@ async function UsersList({
                           row.departmentLevelOrdinal,
                           levels,
                           locale,
-                          placedWithLevels,
+                          withLevels,
                         )
                       ) : (
                         <NotSet label={t('noneLabel')} />

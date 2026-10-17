@@ -10,6 +10,7 @@ import { type ErrorTexts, errorText } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
 import { fieldErrorCodes } from '../profile/field-errors';
 import { SelectField } from '../select-field';
+import { OtherNameToggle } from './other-name-toggle';
 
 export interface UnitChoice {
   readonly id: string;
@@ -22,6 +23,11 @@ export interface EditUserFormProps {
   /** Optimistic concurrency token; refreshed by the page after each save. */
   readonly version: string;
   readonly names: PersonalDetailsFormState;
+  /**
+   * The organization's default language: its first and family names are required and shown first; the other
+   * language's are optional, behind «Add the name in …» unless already given (PO 17 Oct 2026).
+   */
+  readonly nameLanguage: 'ar' | 'en';
   readonly values: {
     readonly email: string;
     readonly hasLogin: boolean;
@@ -45,8 +51,18 @@ export interface EditUserFormProps {
   readonly hireOnHijri: string | undefined;
 }
 
+/** The person already has a name (or a stored one to split) in that language. */
+function hasNames(names: PersonalDetailsFormState, script: 'Ar' | 'En'): boolean {
+  const key = script === 'Ar' ? 'ar' : 'en';
+  return (
+    names.unsplit[key] !== null ||
+    NAME_PARTS.some((part) => (names.values[`${part}${script}`] ?? '').trim() !== '')
+  );
+}
+
 /**
- * Edit a user's details (T-M2-13, FR-IAM-01; fields of the approved screen 2): names, contact,
+ * Edit a user's details (T-M2-13, FR-IAM-01; fields of the approved screen 2): names (the organization's
+ * default language first and required, PO 17 Oct 2026), contact,
  * employee number, language and placement. The login e-mail of a member with an account is shown
  * read-only. The direct manager is picked among the chosen department's managers, or all on request.
  */
@@ -62,6 +78,9 @@ export function EditUserForm(props: EditUserFormProps) {
   const [hireOn, setHireOn] = useState(values.hireOn);
   const [managerId, setManagerId] = useState(values.managerPersonId);
   const [showAll, setShowAll] = useState(false);
+  const nameLanguage = props.nameLanguage;
+  const otherScript = nameLanguage === 'ar' ? 'En' : 'Ar';
+  const [showOther, setShowOther] = useState(() => hasNames(names, otherScript));
   const managers = managersFor(props.managers, departmentId, showAll, managerId);
   const text = (key: string) => labels[key] ?? key;
   const hijri = (date: string): string | undefined => {
@@ -116,11 +135,17 @@ export function EditUserForm(props: EditUserFormProps) {
             Object.fromEntries(
               Object.entries(codes).map(([path, code]) => {
                 const key = editFieldErrorKey(path, code);
-                const required = path === 'firstNameAr' && input.firstNameAr.trim() === '';
+                const required = code === 'REQUIRED';
                 return [path, fieldTexts[required ? 'required' : key] ?? fieldTexts.name ?? ''];
               }),
             ),
           );
+        }
+        if (
+          result.error.code === 'VALIDATION_FAILED' &&
+          Object.keys(fieldErrorCodes(result.error)).some((path) => path.endsWith(otherScript))
+        ) {
+          setShowOther(true);
         }
         setMessage({ tone: 'danger', text: errorText(result.error, props.errors) });
         return;
@@ -135,8 +160,13 @@ export function EditUserForm(props: EditUserFormProps) {
 
   const nameField = (part: NamePart, script: 'Ar' | 'En') => {
     const name = `${part}${script}`;
-    // A long Arabic name stored without parts is kept when no parts are entered.
-    const required = name === 'firstNameAr' && !names.unsplit.ar;
+    // The default language's first and family names — unless a long name stored without parts is kept
+    // when no parts are entered.
+    const key = script === 'Ar' ? 'ar' : 'en';
+    const required =
+      key === nameLanguage &&
+      (part === 'firstName' || part === 'familyName') &&
+      !names.unsplit[key];
     return (
       <TextField
         key={name}
@@ -178,8 +208,19 @@ export function EditUserForm(props: EditUserFormProps) {
 
   return (
     <form className="flex flex-col gap-6" onSubmit={onSubmit} noValidate data-testid="edit-user">
-      {nameSet('Ar')}
-      {nameSet('En')}
+      {nameSet(nameLanguage === 'ar' ? 'Ar' : 'En')}
+      {showOther ? (
+        nameSet(otherScript)
+      ) : (
+        <OtherNameToggle
+          label={text(otherScript === 'Ar' ? 'addArabicName' : 'addEnglishName')}
+          focusId={`edit-firstName${otherScript}`}
+          disabled={pending}
+          onOpen={() => {
+            setShowOther(true);
+          }}
+        />
+      )}
 
       <fieldset className="m-0 grid grid-cols-1 gap-4 border-0 p-0 sm:grid-cols-2">
         <legend className="mb-2 font-semibold">{text('contact')}</legend>

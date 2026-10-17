@@ -243,7 +243,8 @@ async function Profile({
       ? {
           key: 'nameAr',
           label: t('fields.nameAr'),
-          value: <bdi dir="rtl">{profile.displayNameAr}</bdi>,
+          // A person may have an English name only (PO 17 Oct 2026).
+          value: profile.displayNameAr ? <bdi dir="rtl">{profile.displayNameAr}</bdi> : none,
         }
       : {
           key: 'nameEn',

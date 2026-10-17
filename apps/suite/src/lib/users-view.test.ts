@@ -63,6 +63,8 @@ describe('names', () => {
     expect(localizedName('ar', 'سارة', 'Sarah')).toBe('سارة');
     expect(localizedName('en', 'سارة', 'Sarah')).toBe('Sarah');
     expect(localizedName('en', 'سارة', null)).toBe('سارة');
+    // A person with an English name only (PO 17 Oct 2026).
+    expect(localizedName('ar', null, 'Sarah')).toBe('Sarah');
   });
 
   it('shows system role names and leaves unknown codes visible', () => {

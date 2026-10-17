@@ -21,7 +21,10 @@ export function inviteFieldError(
       return { field, key: code === 'EMAIL_TAKEN' ? 'emailTaken' : 'email' };
     case 'firstNameAr':
     case 'familyNameAr':
-      return { field, key: code === 'TOO_SMALL' ? 'required' : 'name' };
+    case 'firstNameEn':
+    case 'familyNameEn':
+      // REQUIRED: the organization's default language's names (PO 17 Oct 2026).
+      return { field, key: code === 'TOO_SMALL' || code === 'REQUIRED' ? 'required' : 'name' };
     case 'employeeNumber':
       return {
         field,
@@ -54,7 +57,7 @@ export interface InvitationListItem {
   readonly id: string;
   readonly personId: string;
   readonly email: string;
-  readonly displayNameAr: string;
+  readonly displayNameAr: string | null;
   readonly displayNameEn: string | null;
   readonly primaryRole: string;
   /**
@@ -74,8 +77,8 @@ export function canResend(row: Pick<InvitationListItem, 'state' | 'sendCount'>):
 }
 
 /**
- * The invitee's name as the page shows it: in English when the page is English and the English name was
- * given, else the Arabic name (review L4).
+ * The invitee's name as the page shows it: in the page's language when given, else in the other language
+ * (review L4; either may be missing since PO 17 Oct 2026).
  */
 export function createdName(
   uiLocale: 'ar' | 'en',
@@ -87,5 +90,6 @@ export function createdName(
       .filter((p) => p !== '')
       .join(' ');
   const en = join(names.en);
-  return uiLocale === 'en' && en !== '' ? en : join(names.ar);
+  const ar = join(names.ar);
+  return uiLocale === 'en' ? en || ar : ar || en;
 }

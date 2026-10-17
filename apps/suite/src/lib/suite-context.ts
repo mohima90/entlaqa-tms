@@ -26,7 +26,8 @@ export interface SuiteContext {
    * null in the preview or when unknown).
    */
   readonly me: {
-    readonly nameAr: string;
+    /** Null for a member with an English name only (PO 17 Oct 2026). */
+    readonly nameAr: string | null;
     readonly nameEn: string | null;
     /** The member's role (one per person, EP-ROLES), with a custom role's names; display only. */
     readonly primaryRole: {

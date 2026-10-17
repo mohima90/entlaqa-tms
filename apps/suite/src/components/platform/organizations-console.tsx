@@ -197,10 +197,11 @@ export function CreateOrganization(props: Shared) {
             {field('adminEmail', { required: true, type: 'email', dir: 'ltr' })}
             <p className="m-0 text-sm text-text-muted">{text('create.adminNamesHint')}</p>
             <div className="grid gap-4 md:grid-cols-2">
-              {field('adminFirstNameAr', { dir: 'rtl' })}
-              {field('adminFamilyNameAr', { dir: 'rtl' })}
+              {/* English first: a new organization's default language (PO 14 and 17 Oct 2026). */}
               {field('adminFirstNameEn', { dir: 'ltr' })}
               {field('adminFamilyNameEn', { dir: 'ltr' })}
+              {field('adminFirstNameAr', { dir: 'rtl' })}
+              {field('adminFamilyNameAr', { dir: 'rtl' })}
             </div>
             <SelectField
               id={`${formId}-locale`}

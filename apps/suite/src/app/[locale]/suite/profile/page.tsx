@@ -68,6 +68,7 @@ export default async function MyProfilePage({ params }: { params: Promise<{ loca
           profile={result.value.profile}
           security={security.ok ? security.value : null}
           dates={pageDates(locale, context)}
+          nameLanguage={context.regional.defaultLocale}
         />
       );
     }
@@ -87,8 +88,11 @@ async function MyProfile({
   profile,
   security,
   dates,
+  nameLanguage,
 }: {
   locale: AppLocale;
+  /** The organization's default language: its names are required and shown first (PO 17 Oct 2026). */
+  nameLanguage: 'ar' | 'en';
   /** Dates as the organization shows them (T-M2-22). */
   dates: DisplayDateFormatter;
   details: Parameters<typeof formStateFrom>[0];
@@ -173,9 +177,12 @@ async function MyProfile({
         <PersonalDetailsForm
           locale={locale}
           initial={formStateFrom(details)}
+          nameLanguage={nameLanguage}
           labels={{
             arabicName: t('arabicName'),
             englishName: t('englishName'),
+            addArabicName: t('addArabicName'),
+            addEnglishName: t('addEnglishName'),
             parts: {
               firstName: t('fields.firstName'),
               fatherName: t('fields.fatherName'),

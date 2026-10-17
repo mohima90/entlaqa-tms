@@ -87,6 +87,12 @@ export interface LocalizedName {
   readonly en: string | null;
 }
 
+/** A person's name: the Arabic or the English one may be missing (never both; PO 17 Oct 2026). */
+export interface PersonName {
+  readonly ar: string | null;
+  readonly en: string | null;
+}
+
 export interface CycleListItem {
   readonly id: string;
   readonly name: { readonly ar: string; readonly en: string };
@@ -115,14 +121,14 @@ export interface CycleDepartmentView {
   readonly status: FormStatus;
   /** Who receives the form (own head or nearest above); null: nobody — warned. */
   readonly head: {
-    readonly name: LocalizedName;
+    readonly name: PersonName;
     /** The head comes from a unit above (its name), or null when it is the unit's own head. */
     readonly via: LocalizedName | null;
   } | null;
 }
 
 export interface StepView extends ApprovalStep {
-  readonly approverName: LocalizedName | null;
+  readonly approverName: PersonName | null;
   readonly approverActive: boolean;
 }
 
@@ -924,7 +930,7 @@ export const ApproverSearchInput = z.strictObject({
 });
 
 export interface ApproverSearchResult {
-  readonly members: readonly { readonly personId: string; readonly name: LocalizedName }[];
+  readonly members: readonly { readonly personId: string; readonly name: PersonName }[];
 }
 
 /**

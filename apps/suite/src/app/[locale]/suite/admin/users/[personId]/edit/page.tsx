@@ -20,6 +20,8 @@ import { localizedName } from '../../../../../../../lib/users-view';
 const LABEL_KEYS = [
   'arabicName',
   'englishName',
+  'addArabicName',
+  'addEnglishName',
   'prefilledName',
   'currentName',
   'currentNameKept',
@@ -118,7 +120,7 @@ export default async function EditUserPage({
         result.value.user.displayNameAr,
         result.value.user.displayNameEn,
       );
-      content = await editForm(locale, result.value, profileHref);
+      content = await editForm(locale, result.value, profileHref, context.regional.defaultLocale);
     }
   }
 
@@ -150,6 +152,7 @@ async function editForm(
   locale: 'ar' | 'en',
   view: EditUserView,
   profileHref: string,
+  nameLanguage: 'ar' | 'en',
 ): Promise<ReactNode> {
   const t = await getTranslations({ locale, namespace: 'editUser' });
   const profile = await getTranslations({ locale, namespace: 'profile' });
@@ -191,6 +194,7 @@ async function editForm(
         personId={user.personId}
         version={user.version}
         names={formStateFrom(user)}
+        nameLanguage={nameLanguage}
         values={{
           email: user.email ?? '',
           hasLogin: user.hasLogin,

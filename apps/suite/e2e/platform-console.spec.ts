@@ -158,6 +158,8 @@ test.describe('platform console: the Super Admin (configured deployment)', () =>
       await dialog.getByTestId('create-org-adminEmail').fill(adminEmail);
       await dialog.getByTestId('create-org-adminFirstNameAr').fill('سارة');
       await dialog.getByTestId('create-org-adminFamilyNameAr').fill('العتيبي');
+      await dialog.getByTestId('create-org-adminFirstNameEn').fill('Sara');
+      await dialog.getByTestId('create-org-adminFamilyNameEn').fill('Alotaibi');
       await dialog.getByTestId('create-org-locale').selectOption(locale);
       await dialog.getByRole('button', { name: t.submit }).click();
 

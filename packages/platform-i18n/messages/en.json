@@ -540,7 +540,9 @@
     "sessions": {
       "title": "Sign-in sessions",
       "intro": "Devices and browsers signed in to your account, in every organization."
-    }
+    },
+    "addArabicName": "Add the name in Arabic (optional)",
+    "addEnglishName": "Add the name in English (optional)"
   },
   "editUser": {
     "title": "Edit user details",
@@ -601,7 +603,9 @@
       "jobTitle": "Must contain visible letters and be at most 150 characters.",
       "hireOn": "Enter a valid date between 1900 and 2100.",
       "hireOnAfterEnd": "The hire date must be on or before the recorded end-of-service date."
-    }
+    },
+    "addArabicName": "Add the name in Arabic (optional)",
+    "addEnglishName": "Add the name in English (optional)"
   },
   "editRoles": {
     "title": "Change role",
@@ -999,8 +1003,8 @@
       "person": "Person details",
       "email": "Work email",
       "emailHint": "This email becomes the sign-in name. It must be unique within the organization.",
-      "firstNameAr": "First name",
-      "familyNameAr": "Family name",
+      "firstNameAr": "First name in Arabic",
+      "familyNameAr": "Family name in Arabic",
       "addEnglishName": "Add the name in English (optional)",
       "firstNameEn": "First name in English",
       "familyNameEn": "Family name in English",
@@ -1043,7 +1047,10 @@
         "unit": "Choose a department or branch from the list.",
         "manager": "Choose the direct manager from the list.",
         "roleUnknown": "This role no longer exists. Choose another role."
-      }
+      },
+      "firstName": "First name",
+      "familyName": "Family name",
+      "addArabicName": "Add the name in Arabic (optional)"
     },
     "list": {
       "created": "Invitation created. Copy its code or link from the list; it stays valid for 7 days.",

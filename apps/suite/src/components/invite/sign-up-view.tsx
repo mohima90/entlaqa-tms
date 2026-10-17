@@ -256,7 +256,7 @@ export function SignUpView({
           locale={locale}
           token={code}
           email={valid.email}
-          displayName={{ ar: valid.displayName.ar, en: valid.displayName.en ?? '' }}
+          displayName={{ ar: valid.displayName.ar ?? '', en: valid.displayName.en ?? '' }}
           passwordMinLength={valid.passwordMinLength}
           privacyLabel={
             <>

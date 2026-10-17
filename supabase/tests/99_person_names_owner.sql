@@ -146,4 +146,36 @@ begin
 end $$;
 rollback;
 
+
+-- The Super Admin console (20261021090300): English first and family names alone give an English-only
+-- person (no English text in the Arabic slot); an English first name alone still fills the Arabic slot.
+-- Uses the Super Admin uP (…f1, session …fa01) of 95_platform_admin_owner.sql.
+create or replace function pg_temp.become_super_admin() returns void language plpgsql as $$
+begin
+  set local session authorization app_server;
+  set local role authenticated;
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000f1',
+                                             '10000000-0000-4000-8000-00000000fa01', null));
+end $$;
+
+begin;
+select pg_temp.become_super_admin();
+select count(*) from private.platform_create_tenant('names-english', 'منشأة الأسماء', 'Names Co', 'sara@names-english.test',
+                                                    null, null, 'Sara', 'Ali', 'en');
+select count(*) from private.platform_create_tenant('names-partial', 'منشأة', null, 'omar@names-partial.test',
+                                                    null, null, 'Omar', null, 'en');
+reset role;
+reset session authorization;
+do $$
+begin
+  perform tests.assert((select display_name_ar is null and display_name_en = 'Sara Ali' and first_name_en = 'Sara'
+                               and family_name_en = 'Ali'
+                        from platform.persons where email = 'sara@names-english.test'),
+    'console: an English first and family name alone give no Arabic display name');
+  perform tests.assert((select display_name_ar = 'Omar' and display_name_en = 'Omar'
+                        from platform.persons where email = 'omar@names-partial.test'),
+    'console: an English first name alone still fills the Arabic slot (as before)');
+end $$;
+rollback;
+
 \echo '99_person_names_owner: ok'

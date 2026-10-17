@@ -33,7 +33,7 @@ export interface PersonalDetailsFormState {
  */
 export function formStateFrom(
   details: PersonalDetailsValues & {
-    readonly displayNameAr: string;
+    readonly displayNameAr: string | null;
     readonly displayNameEn: string | null;
   },
 ): PersonalDetailsFormState {

@@ -11,16 +11,22 @@ import {
   type PersonalDetailsFormState,
   composedLength,
 } from '../../lib/profile-form';
+import { OtherNameToggle } from '../users/other-name-toggle';
 import { fieldErrorCodes } from './field-errors';
-
-const REQUIRED_AR: ReadonlySet<string> = new Set(['firstNameAr']);
 
 export interface PersonalDetailsFormProps {
   readonly locale: 'ar' | 'en';
   readonly initial: PersonalDetailsFormState;
+  /**
+   * The organization's default language: its first and family names are required and shown first; the other
+   * language's are optional, behind «Add the name in …» unless already given (PO 17 Oct 2026).
+   */
+  readonly nameLanguage: 'ar' | 'en';
   readonly labels: {
     readonly arabicName: string;
     readonly englishName: string;
+    readonly addArabicName: string;
+    readonly addEnglishName: string;
     readonly parts: Readonly<Record<NamePart, string>>;
     readonly mobile: string;
     readonly mobileHint: string;
@@ -45,18 +51,40 @@ export interface PersonalDetailsFormProps {
   readonly errors: ErrorTexts;
 }
 
-/** My profile → personal details (FR-IAM-16): names AR/EN, mobile, interface language. */
+/** The member already has a name (or a stored one to split) in that language. */
+function hasNames(initial: PersonalDetailsFormState, script: 'Ar' | 'En'): boolean {
+  const key = script === 'Ar' ? 'ar' : 'en';
+  return (
+    initial.unsplit[key] !== null ||
+    NAME_PARTS.some((part) => (initial.values[`${part}${script}`] ?? '').trim() !== '')
+  );
+}
+
+/**
+ * My profile → personal details (FR-IAM-16): names (the organization's default language first and required,
+ * the other optional; PO 17 Oct 2026), mobile, interface language.
+ */
 export function PersonalDetailsForm({
   locale,
   initial,
+  nameLanguage,
   labels,
   fieldTexts,
   errors,
 }: PersonalDetailsFormProps) {
   const router = useRouter();
+  const requiredScript = nameLanguage === 'ar' ? 'Ar' : 'En';
+  const otherScript = nameLanguage === 'ar' ? 'En' : 'Ar';
+  // The default language's first and family names — unless a long name stored without parts is kept.
+  const required = new Set(
+    initial.unsplit[nameLanguage] === null
+      ? [`firstName${requiredScript}`, `familyName${requiredScript}`]
+      : [],
+  );
+  const [showOther, setShowOther] = useState(() => hasNames(initial, otherScript));
   const fieldText = (path: string, values: Record<string, string>): string => {
     if (path === 'mobile') return fieldTexts.mobile;
-    if (REQUIRED_AR.has(path) && (values[path] ?? '').trim() === '') return fieldTexts.required;
+    if (required.has(path) && (values[path] ?? '').trim() === '') return fieldTexts.required;
     const script = path.endsWith('Ar') ? 'Ar' : 'En';
     const parts = NAME_PARTS.map((part) => values[`${part}${script}`] ?? '');
     return composedLength(parts) > 200 ? fieldTexts.nameTooLong : fieldTexts.name;
@@ -96,6 +124,7 @@ export function PersonalDetailsForm({
           setFieldErrors(
             Object.fromEntries(Object.keys(codes).map((path) => [path, fieldText(path, values)])),
           );
+          if (Object.keys(codes).some((path) => path.endsWith(otherScript))) setShowOther(true);
         }
         setMessage({ tone: 'danger', text: errorText(result.error, errors) });
         return;
@@ -120,8 +149,8 @@ export function PersonalDetailsForm({
         id={`profile-${name}`}
         name={name}
         label={labels.parts[part]}
-        marker={REQUIRED_AR.has(name) ? labels.required : labels.optional}
-        required={REQUIRED_AR.has(name)}
+        marker={required.has(name) ? labels.required : labels.optional}
+        required={required.has(name)}
         maxLength={60}
         defaultValue={value ?? ''}
         dir={script === 'Ar' ? 'rtl' : 'ltr'}
@@ -133,32 +162,41 @@ export function PersonalDetailsForm({
     );
   };
 
+  const nameSet = (script: 'Ar' | 'En') => {
+    const key = script === 'Ar' ? 'ar' : 'en';
+    return (
+      <fieldset className="m-0 grid grid-cols-1 gap-4 border-0 p-0 sm:grid-cols-2">
+        <legend className="mb-2 font-semibold">
+          {script === 'Ar' ? labels.arabicName : labels.englishName}
+        </legend>
+        {initial.prefilled[key] ? (
+          <p className="m-0 text-sm text-text-muted sm:col-span-2">{labels.prefilledName}</p>
+        ) : null}
+        {initial.unsplit[key] ? (
+          <p className="m-0 text-sm text-text-muted sm:col-span-2">
+            {labels.currentName} <bdi>{initial.unsplit[key]}</bdi> {labels.currentNameKept}
+          </p>
+        ) : null}
+        {NAME_PARTS.map((part) => nameField(part, script))}
+      </fieldset>
+    );
+  };
+
   return (
     <form className="flex flex-col gap-6" onSubmit={onSubmit} noValidate>
-      <fieldset className="m-0 grid grid-cols-1 gap-4 border-0 p-0 sm:grid-cols-2">
-        <legend className="mb-2 font-semibold">{labels.arabicName}</legend>
-        {initial.prefilled.ar ? (
-          <p className="m-0 text-sm text-text-muted sm:col-span-2">{labels.prefilledName}</p>
-        ) : null}
-        {initial.unsplit.ar ? (
-          <p className="m-0 text-sm text-text-muted sm:col-span-2">
-            {labels.currentName} <bdi>{initial.unsplit.ar}</bdi>
-          </p>
-        ) : null}
-        {NAME_PARTS.map((part) => nameField(part, 'Ar'))}
-      </fieldset>
-      <fieldset className="m-0 grid grid-cols-1 gap-4 border-0 p-0 sm:grid-cols-2">
-        <legend className="mb-2 font-semibold">{labels.englishName}</legend>
-        {initial.prefilled.en ? (
-          <p className="m-0 text-sm text-text-muted sm:col-span-2">{labels.prefilledName}</p>
-        ) : null}
-        {initial.unsplit.en ? (
-          <p className="m-0 text-sm text-text-muted sm:col-span-2">
-            {labels.currentName} <bdi>{initial.unsplit.en}</bdi> {labels.currentNameKept}
-          </p>
-        ) : null}
-        {NAME_PARTS.map((part) => nameField(part, 'En'))}
-      </fieldset>
+      {nameSet(requiredScript)}
+      {showOther ? (
+        nameSet(otherScript)
+      ) : (
+        <OtherNameToggle
+          label={otherScript === 'Ar' ? labels.addArabicName : labels.addEnglishName}
+          focusId={`profile-firstName${otherScript}`}
+          disabled={pending}
+          onOpen={() => {
+            setShowOther(true);
+          }}
+        />
+      )}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <TextField
           id="profile-mobile"

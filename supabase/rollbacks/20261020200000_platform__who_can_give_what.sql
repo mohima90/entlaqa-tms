@@ -1,8 +1,8 @@
 -- Rollback of 20261020200000_platform__who_can_give_what.sql.
 -- The catalogue and the four functions go back to their versions of 20261019090000 / 20261019090100 /
--- 20261019090200 ("nobody gives a permission they do not hold"). A custom role's platform.org.manage rows
--- removed by the migration (none expected) are not restored; custom roles holding the needs-form
--- permissions keep them (no guard re-checks existing rows, as for any rule change).
+-- 20261019090200 ("nobody gives a permission they do not hold"). The migration removed no rows (it stops
+-- when a custom role holds platform.org.manage); custom roles holding the needs-form permissions keep them
+-- (no guard re-checks existing rows, as for any rule change).
 update platform.ref_permissions set custom_role_use = 'organization_only' where code = 'platform.org.manage';
 update platform.ref_permissions set custom_role_use = 'none' where code = 'tms.needs_form.read';
 update platform.ref_permissions set custom_role_use = 'none' where code = 'tms.needs_form.manage';

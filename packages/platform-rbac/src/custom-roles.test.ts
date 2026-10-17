@@ -48,8 +48,32 @@ const CATALOGUE_MIGRATIONS = [
 /** The one rewrite of the catalogue the parsers understand: a permission's custom_role_use. */
 const USE_UPDATE_RE =
   /update platform\.ref_permissions set custom_role_use = '([a-z_]+)' where code = '([a-z]+\.[a-z_]+\.[a-z_]+)';/g;
-/** Any rewrite of either catalogue table (each must be one the parsers understand). */
-const REWRITE_RE = /(update|delete from)\s+platform\.ref_(role_)?permissions\b/gi;
+/**
+ * Either catalogue table, schema-qualified, plain or quoted (`platform.ref_permissions`,
+ * `"platform"."ref_role_permissions"`, spaces around the dot).
+ */
+const CATALOGUE_TABLE = String.raw`(?:"platform"|platform)\s*\.\s*(?:"ref_(?:role_)?permissions"|ref_(?:role_)?permissions\b)`;
+/**
+ * Any rewrite of either catalogue table (each must be one the parsers understand; security pass of who can
+ * give what): `update [only]`, `delete from [only]`, `merge into`, `truncate [table] [only] …` (also in a
+ * list), `insert … on conflict … do update`, and dynamic SQL (`execute …`) that names a catalogue table.
+ */
+const REWRITE_RE = new RegExp(
+  [
+    String.raw`\bupdate\s+(?:only\s+)?${CATALOGUE_TABLE}`,
+    String.raw`\bdelete\s+from\s+(?:only\s+)?${CATALOGUE_TABLE}`,
+    String.raw`\bmerge\s+into\s+(?:only\s+)?${CATALOGUE_TABLE}`,
+    String.raw`\btruncate\b[^;]*?${CATALOGUE_TABLE}`,
+    String.raw`\binsert\s+into\s+${CATALOGUE_TABLE}[^;]*?\bon\s+conflict\b[^;]*?\bdo\s+update\b`,
+    String.raw`\bexecute\b(?!\s+(?:on|function|procedure)\b)[^;]*?ref_(?:role_)?permissions`,
+  ].join('|'),
+  'gi',
+);
+/** Any writer of either catalogue table: an insert, or one of the rewrites above. */
+const WRITER_RE = new RegExp(
+  `${String.raw`\binsert\s+into\s+${CATALOGUE_TABLE}`}|${REWRITE_RE.source}`,
+  'i',
+);
 
 function catalogueSeeds(): string {
   return CATALOGUE_MIGRATIONS.map(migration).join('\n');
@@ -106,11 +130,36 @@ describe('permission catalogue and standard grants (EP-ROLES, drift checks)', ()
 
   it('only the catalogue migrations write the catalogue', () => {
     const writers = readdirSync(migrationsDir).filter((f) =>
-      /insert into\s+platform\.ref_(role_)?permissions|(update|delete from)\s+platform\.ref_(role_)?permissions/i.test(
-        readFileSync(join(migrationsDir, f), 'utf8'),
-      ),
+      WRITER_RE.test(readFileSync(join(migrationsDir, f), 'utf8')),
     );
     expect(writers.map((f) => f.replace(/^\d+/, ''))).toEqual(CATALOGUE_MIGRATIONS);
+  });
+
+  it('recognises every way of writing the catalogue (the drift checks cannot be bypassed)', () => {
+    const rewrites = [
+      'update only platform.ref_permissions set risk = $$high$$;',
+      'UPDATE "platform"."ref_permissions" SET risk = \'high\';',
+      'update platform . ref_role_permissions set scope = \'tenant\';',
+      'delete from only platform.ref_role_permissions where role_code = \'x\';',
+      'merge into platform.ref_permissions p using x on true when matched then delete;',
+      'truncate table other.t, only platform.ref_permissions;',
+      "insert into platform.ref_permissions (code) values ('a.b.c') on conflict (code) do update set risk = 'high';",
+      "execute format('update %I.%I set risk = %L', 'platform', 'ref_permissions', 'high');",
+      "execute 'delete from platform.ref_role_permissions';",
+    ];
+    for (const sql of rewrites) {
+      expect([...sql.matchAll(REWRITE_RE)], sql).toHaveLength(1);
+      expect(WRITER_RE.test(sql), sql).toBe(true);
+    }
+    const harmless = [
+      "insert into platform.ref_permissions (code) values ('a.b.c') on conflict do nothing;",
+      'grant execute on function private.member_permissions(uuid, uuid) to authenticated;',
+      'create trigger t after update on platform.ref_permissions for each row execute function f();',
+      'delete from platform.custom_role_permissions where permission_code = \'x\';',
+      'select code from platform.ref_permissions;',
+    ];
+    for (const sql of harmless) expect([...sql.matchAll(REWRITE_RE)], sql).toHaveLength(0);
+    expect(WRITER_RE.test(harmless[0] ?? '')).toBe(true);
   });
 
   it('rewrites the catalogue only by custom_role_use updates (the only rewrite the parsers read)', () => {

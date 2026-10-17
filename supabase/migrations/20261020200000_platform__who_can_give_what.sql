@@ -56,8 +56,19 @@ update platform.ref_permissions set custom_role_use = 'organization' where code 
 update platform.ref_permissions set custom_role_use = 'organization_only' where code = 'tms.needs_form.manage';
 
 -- No custom role can have held the structure permission (the Organization Admin, the only builder, never
--- held it); a row a platform operation may have written goes, so the catalogue rule holds for every row.
-delete from platform.custom_role_permissions where permission_code = 'platform.org.manage';
+-- held it). A row a platform operation may have written is NOT removed silently (security pass of the rule):
+-- the deploy stops here and an operator decides what the role should hold instead (none expected).
+do $$
+declare
+  v_rows bigint;
+begin
+  select count(*) into v_rows from platform.custom_role_permissions where permission_code = 'platform.org.manage';
+  if v_rows > 0 then
+    raise exception 'custom roles hold platform.org.manage (% row(s)): decide what those roles hold instead, then deploy again (FR-IAM-07)', v_rows
+      using errcode = 'check_violation';
+  end if;
+end
+$$;
 
 -- ---------------------------------------------------------------------------------------------------
 -- Who may give which roles

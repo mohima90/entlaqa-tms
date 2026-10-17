@@ -8,6 +8,7 @@ const NONE: SuiteNavigationAccess = {
   roles: false,
   security: false,
   organizationProfile: false,
+  structure: false,
   organizationSetup: false,
   training: false,
 };
@@ -29,6 +30,7 @@ describe('suiteNavigation (menus per role, T-M2-21; Kawadir groups, T-M2-43)', (
         roles: true,
         security: true,
         organizationProfile: true,
+        structure: false,
         organizationSetup: true,
         training: false,
       }),
@@ -53,6 +55,13 @@ describe('suiteNavigation (menus per role, T-M2-21; Kawadir groups, T-M2-43)', (
       'main: home→/suite calendar(soon) sessions(soon) courses(soon)',
       'groupOrganization: teamMembers→/suite/admin/users roles→/suite/admin/roles',
     ]);
+    // Organization → Structure and Branches (T-M3-02, EP-ORG): the HR Manager maintains them.
+    expect(outline({ ...NONE, users: true, roles: true, structure: true, training: true })).toEqual(
+      [
+        'main: home→/suite calendar(soon) sessions(soon) courses(soon)',
+        'groupOrganization: teamMembers→/suite/admin/users structure→/suite/admin/structure branches→/suite/admin/branches roles→/suite/admin/roles',
+      ],
+    );
   });
 
   it('shows an Auditor Settings → General (read only) and Security, no set-up sections', () => {
@@ -63,6 +72,7 @@ describe('suiteNavigation (menus per role, T-M2-21; Kawadir groups, T-M2-43)', (
         roles: true,
         security: true,
         organizationProfile: true,
+        structure: false,
         training: true,
       }),
     ).toEqual([
@@ -85,10 +95,11 @@ describe('suiteNavigation (menus per role, T-M2-21; Kawadir groups, T-M2-43)', (
       roles: true,
       security: true,
       organizationProfile: true,
+      structure: true,
       organizationSetup: true,
       training: true,
     }).flatMap((group) => group.entries);
-    expect(all.length).toBe(13);
+    expect(all.length).toBe(15);
     expect(all.filter((entry) => !ICON_NAMES.includes(entry.icon))).toEqual([]);
   });
 });
@@ -100,6 +111,7 @@ describe('suiteHome (T-M2-21)', () => {
       roles: true,
       security: true,
       organizationProfile: true,
+      structure: false,
       organizationSetup: true,
       training: false,
     });
@@ -137,6 +149,7 @@ describe('commandPaletteItems (⌘K / Ctrl K, T-M2-43)', () => {
         roles: true,
         security: true,
         organizationProfile: true,
+        structure: false,
         organizationSetup: true,
         training: false,
       },

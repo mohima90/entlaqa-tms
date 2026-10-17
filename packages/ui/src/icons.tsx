@@ -16,6 +16,7 @@ import {
   CreditCard,
   FileCheck,
   Flag,
+  FolderTree,
   Globe,
   History,
   Inbox,
@@ -116,6 +117,8 @@ const ICONS = {
   trash: Trash2,
   lock: Lock,
   'shield-outline': Shield,
+  // Organization → Structure (T-M3-02, EP-ORG; Kawadir's Departments page).
+  structure: FolderTree,
 } as const satisfies Record<string, LucideIcon>;
 
 export type IconName = keyof typeof ICONS;

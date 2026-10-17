@@ -22,6 +22,8 @@ const db = vi.hoisted(() => ({
   replaceMemberRole: vi.fn(),
   getCustomRole: vi.fn(),
   listCustomRoles: vi.fn(),
+  listStructureUnitOptions: vi.fn(),
+  listStructureLevelLabels: vi.fn(),
 }));
 vi.mock('@jadarat/platform-db', () => db);
 
@@ -87,7 +89,37 @@ const customRow = (code: string, permissions: string[]) => ({
 const READER = customRow('custom_a00000000001', ['platform.user.read', 'platform.org.read']);
 const AUDITOR = customRow('custom_a00000000002', ['platform.user.read', 'platform.audit.read']);
 const PROFILE = customRow('custom_a00000000003', ['platform.tenant.read']);
+/** «A department» (EP-ORG, T-M3-09): given for one unit. */
+const BRANCH_READER = {
+  ...customRow('custom_a00000000004', ['platform.user.read', 'platform.org.read']),
+  dataScope: 'departments',
+};
 const CUSTOM = [READER, AUDITOR, PROFILE];
+/** Found by code (getCustomRole) but not in the lists above. */
+const FINDABLE = [...CUSTOM, BRANCH_READER];
+const SALES = '55555555-5555-4555-8555-555555555555';
+const CLOSED = '66666666-6666-4666-8666-666666666666';
+const UNITS = [
+  {
+    id: SALES,
+    code: 'SAL',
+    nameAr: 'المبيعات',
+    nameEn: 'Sales',
+    parentId: null,
+    levelOrdinal: 1,
+    active: true,
+  },
+  {
+    id: CLOSED,
+    code: 'OLD',
+    nameAr: 'قديم',
+    nameEn: 'Old',
+    parentId: null,
+    levelOrdinal: 1,
+    active: false,
+  },
+];
+const LEVELS = [{ ordinal: 1, nameEn: 'Department', nameAr: 'إدارة' }];
 const form = (role: string) => ({ personId: SARA, version: TOKEN, role });
 
 beforeEach(() => {
@@ -95,11 +127,27 @@ beforeEach(() => {
   db.getEditableRole.mockResolvedValue(editable());
   db.listCustomRoles.mockResolvedValue(CUSTOM);
   db.getCustomRole.mockImplementation((_tx: unknown, key: { code: string }) =>
-    Promise.resolve(CUSTOM.find((r) => r.code === key.code) ?? null),
+    Promise.resolve(FINDABLE.find((r) => r.code === key.code) ?? null),
   );
+  db.listStructureUnitOptions.mockResolvedValue(UNITS);
+  db.listStructureLevelLabels.mockResolvedValue(LEVELS);
   db.replaceMemberRole.mockImplementation(
-    (_tx: unknown, _person: string, _version: string, code: string) =>
-      Promise.resolve({ ok: true, before: 'training_coordinator', after: code, changed: true }),
+    (
+      _tx: unknown,
+      _person: string,
+      _version: string,
+      code: string,
+      _options: unknown,
+      unit: string | null = null,
+    ) =>
+      Promise.resolve({
+        ok: true,
+        before: 'training_coordinator',
+        after: code,
+        beforeUnit: null,
+        afterUnit: unit,
+        changed: true,
+      }),
   );
 });
 
@@ -198,16 +246,28 @@ describe('changing the role', () => {
     const { rt, writeAudit } = runtime(['hr_manager']);
     const save = createDefineAction(rt)(updateMemberRolesActionDefinition());
     expect(await save(form('learner'))).toEqual(
-      ok({ personId: SARA, changed: true, before: 'training_coordinator', after: 'learner' }),
+      ok({
+        personId: SARA,
+        changed: true,
+        before: 'training_coordinator',
+        after: 'learner',
+        beforeUnit: null,
+        afterUnit: null,
+      }),
     );
     // The organization's role lock comes first: the roles are read after it (security review L5).
     expect(db.lockTenantRoles).toHaveBeenCalledWith(TX);
     expect(db.lockTenantRoles.mock.invocationCallOrder[0] ?? 0).toBeLessThan(
       db.getEditableRole.mock.invocationCallOrder.at(-1) ?? 0,
     );
-    expect(db.replaceMemberRole).toHaveBeenCalledWith(TX, SARA, TOKEN, 'learner', {
-      isLocked: expect.any(Function),
-    });
+    expect(db.replaceMemberRole).toHaveBeenCalledWith(
+      TX,
+      SARA,
+      TOKEN,
+      'learner',
+      { isLocked: expect.any(Function) },
+      null,
+    );
     const isLocked = (
       db.replaceMemberRole.mock.lastCall?.[4] as { isLocked: (c: string) => boolean }
     ).isLocked;
@@ -257,13 +317,69 @@ describe('changing the role', () => {
     const { rt, getClaims } = runtime(['tenant_admin']);
     const save = createDefineAction(rt)(updateMemberPrivilegedRolesActionDefinition());
     expect((await save(form(AUDITOR.code))).ok).toBe(true);
-    expect(db.replaceMemberRole).toHaveBeenCalledWith(TX, SARA, TOKEN, AUDITOR.code, {});
+    expect(db.replaceMemberRole).toHaveBeenCalledWith(TX, SARA, TOKEN, AUDITOR.code, {}, null);
     expect(getClaims).toHaveBeenCalledWith({ strict: true });
     const hr = createDefineAction(runtime(['hr_manager']).rt)(
       updateMemberPrivilegedRolesActionDefinition(),
     );
     const refused = await hr(form('hr_manager'));
     expect(!refused.ok && refused.error.code).toBe('FORBIDDEN');
+  });
+
+  it('a department-limited role is given for one active unit; any other role for none (EP-ORG, T-M3-09)', async () => {
+    const { rt, writeAudit } = runtime(['hr_manager']);
+    const save = createDefineAction(rt)(updateMemberRolesActionDefinition());
+    const refusals: [Record<string, unknown>, string][] = [
+      [form(BRANCH_READER.code), 'UNIT_REQUIRED'],
+      [{ ...form(BRANCH_READER.code), scopeUnitId: CLOSED }, 'UNIT_NOT_ALLOWED'],
+      [
+        { ...form(BRANCH_READER.code), scopeUnitId: '77777777-7777-4777-8777-777777777777' },
+        'UNIT_NOT_ALLOWED',
+      ],
+      // The Department Head keeps the units they head; a unit goes with no standard role.
+      [{ ...form('department_head'), scopeUnitId: SALES }, 'UNIT_NOT_ALLOWED'],
+      [{ ...form(READER.code), scopeUnitId: SALES }, 'UNIT_NOT_ALLOWED'],
+    ];
+    for (const [input, code] of refusals) {
+      const result = await save(input as never);
+      expect(!result.ok && result.error.fieldErrors, code).toEqual([{ path: 'scopeUnitId', code }]);
+    }
+    expect(db.replaceMemberRole).not.toHaveBeenCalled();
+
+    expect((await save({ ...form(BRANCH_READER.code), scopeUnitId: SALES })).ok).toBe(true);
+    expect(db.replaceMemberRole).toHaveBeenLastCalledWith(
+      TX,
+      SARA,
+      TOKEN,
+      BRANCH_READER.code,
+      { isLocked: expect.any(Function) },
+      SALES,
+    );
+    expect(writeAudit).toHaveBeenLastCalledWith(
+      TX,
+      expect.anything(),
+      expect.objectContaining({
+        action: 'platform.user.roles_changed',
+        data: {
+          before: 'training_coordinator',
+          after: BRANCH_READER.code,
+          beforeUnit: null,
+          afterUnit: SALES,
+        },
+      }),
+    );
+    // A unit the database refuses meanwhile (deactivated or deleted since the form was opened).
+    db.replaceMemberRole.mockResolvedValueOnce({ ok: false, refusal: 'unit_not_allowed' });
+    const refused = await save({ ...form(BRANCH_READER.code), scopeUnitId: SALES });
+    expect(!refused.ok && refused.error.fieldErrors).toEqual([
+      { path: 'scopeUnitId', code: 'UNIT_NOT_ALLOWED' },
+    ]);
+  });
+
+  it('the edit-role page offers the units and levels to members who read the structure', async () => {
+    const query = createDefineQuery(runtime(['hr_manager']).rt)(editRolesQueryDefinition());
+    const result = await query({ personId: SARA });
+    expect(result.ok && result.value.scopeUnits).toEqual({ units: UNITS, levels: LEVELS });
   });
 
   it('an unknown role is a field error before any write', async () => {

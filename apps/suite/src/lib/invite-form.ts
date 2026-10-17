@@ -40,6 +40,9 @@ export function inviteFieldError(
     case 'departmentId':
     case 'branchId':
       return { field, key: 'unit' };
+    case 'scopeUnitId':
+      // The unit of a department-limited custom role (EP-ORG, T-M3-09).
+      return { field, key: code === 'UNIT_REQUIRED' ? 'unitRequired' : 'unitNotAllowed' };
     case 'managerPersonId':
       return { field, key: 'manager' };
     default:

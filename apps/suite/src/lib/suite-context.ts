@@ -50,6 +50,12 @@ export interface SuiteNavigationAccess {
    */
   readonly organizationProfile: boolean;
   /**
+   * Organization → Structure and Branches (T-M3-02, EP-ORG): the member who maintains them
+   * (`platform.org.manage` organization-wide — the HR Manager). Others who read the structure open the pages
+   * by their address (view only); the menu entry follows the business flow's owner.
+   */
+  readonly structure: boolean;
+  /**
    * The Organization Admin's own sections still to come (organization profile, branding, custom
    * fields, features & plan, domains, audit log, consent, e-mail sender, integrations), shown as
    * «قريبًا» / "Coming soon" (docs/delivery/roles/organization-admin.md, BRD v2.9).
@@ -75,6 +81,7 @@ export function navigationFor(grants: readonly Grant[] | null): SuiteNavigationA
       roles: true,
       security: true,
       organizationProfile: true,
+      structure: true,
       organizationSetup: true,
       training: true,
     };
@@ -90,6 +97,7 @@ export function navigationFor(grants: readonly Grant[] | null): SuiteNavigationA
     // Security settings (T-M2-10): members who read the organization's settings.
     security: tenantWide(platformPermissions['platform.tenant.read'].code),
     organizationProfile: tenantWide(platformPermissions['platform.tenant.read'].code),
+    structure: tenantWide(platformPermissions['platform.org.manage'].code),
     organizationSetup,
     training: !organizationSetup,
   };

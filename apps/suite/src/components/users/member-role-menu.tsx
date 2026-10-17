@@ -9,17 +9,23 @@ import {
 } from '@jadarat/ui';
 import { useState } from 'react';
 import type { RoleOption } from '../../lib/role-choice';
+import type { ScopeUnitChoice } from '../../lib/structure-view';
 import type { ErrorTexts } from '../auth/error-text';
 import { EditRoleForm } from './edit-role-form';
 import type { RoleSelectTexts } from './role-select';
+import type { ScopeUnitTexts } from './scope-unit-select';
 
 export interface MemberRoleMenuProps {
   readonly personId: string;
   readonly name: string;
   readonly version: string;
   readonly currentRole: string | null;
+  /** The unit of the current department-limited role (EP-ORG), or null. */
+  readonly currentUnit: string | null;
   readonly options: readonly RoleOption[];
   readonly selectTexts: RoleSelectTexts;
+  readonly scopeUnits: readonly ScopeUnitChoice[];
+  readonly unitTexts: ScopeUnitTexts;
   /** Texts by key: `actionsFor` (with {name}), `editRole`, `dialogTitle`, `dialogDescription` (with
    * {name}), `close` and the edit-role form's keys. */
   readonly labels: Readonly<Record<string, string>>;
@@ -70,8 +76,11 @@ export function MemberRoleMenu(props: MemberRoleMenuProps) {
             personId={props.personId}
             version={props.version}
             currentRole={props.currentRole}
+            currentUnit={props.currentUnit}
             options={props.options}
             selectTexts={props.selectTexts}
+            scopeUnits={props.scopeUnits}
+            unitTexts={props.unitTexts}
             labels={props.labels}
             errors={props.errors}
             idPrefix={`edit-role-${props.personId}`}

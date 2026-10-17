@@ -22,15 +22,24 @@ export type CustomRoleScope = (typeof CUSTOM_ROLE_SCOPES)[number];
 
 /**
  * The existing scope type each choice maps to (scopes.ts / role-grants.ts): «their team» = the member's
- * direct reports (least privilege; the reports tree stays with standard roles), «their departments» = the
- * departments the member heads in the structure, with their sub-departments (like the Department Head).
+ * direct reports (least privilege; the reports tree stays with standard roles); «A department» (stored
+ * code `departments`, kept for expand-first compatibility — migration 20261020090400) = the ONE unit of
+ * the structure picked when the role is given, at any level, with everything under it (EP-ORG, PO 17 Oct
+ * 2026; it replaced «their departments», the departments the member heads, which stays the Department
+ * Head's own scope). Without a picked unit (or with a unit deactivated since) the role grants nothing
+ * scoped (deny by default).
  */
 export const CUSTOM_ROLE_SCOPE_MAP: Readonly<Record<CustomRoleScope, RoleScope>> = {
   own: 'own',
   team: 'direct_reports',
-  departments: 'headed_departments',
+  departments: 'assigned_unit',
   organization: 'tenant',
 };
+
+/** Does a role with this data scope need ONE unit picked when it is given (EP-ORG, T-M3-09)? */
+export function scopeNeedsUnit(dataScope: CustomRoleScope): boolean {
+  return dataScope === 'departments';
+}
 
 /**
  * How a permission behaves in a custom role:

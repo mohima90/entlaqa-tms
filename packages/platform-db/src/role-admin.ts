@@ -1,5 +1,6 @@
 import 'server-only';
 import { sql } from 'drizzle-orm';
+import { roleScopeUnitsExist } from './custom-roles-present';
 import { pgError } from './user-admin';
 import type { UserTx } from './with-user-tx';
 
@@ -21,11 +22,15 @@ export interface EditableRole {
   readonly mayManage: boolean;
   /** The role held (in force or not), or null. */
   readonly roleCode: string | null;
+  /** The unit of a department-limited custom role (EP-ORG, T-M3-09), as stored, or null. */
+  readonly scopeUnitId: string | null;
   /** Optimistic concurrency: `role_code:row id:row version`, or '' without a role. */
   readonly version: string;
 }
 
 export async function getEditableRole(tx: UserTx, personId: string): Promise<EditableRole | null> {
+  // The unit once its column exists (deploy window, EP-ORG).
+  const scopeUnit = (await roleScopeUnitsExist(tx)) ? sql`ra.scope_unit_id` : sql`null::uuid`;
   const [person] = await tx.execute<{
     id: string;
     membership_id: string | null;
@@ -33,13 +38,14 @@ export async function getEditableRole(tx: UserTx, personId: string): Promise<Edi
     is_self: boolean;
     may_manage: boolean;
     role_code: string | null;
+    scope_unit_id: string | null;
     row_id: string | null;
     row_version: number | null;
   }>(sql`
     select p.id, m.id as membership_id, m.status,
            coalesce(m.user_id = private.request_user_id(), false) as is_self,
            private.actor_may_manage_person(p.tenant_id, p.id) as may_manage,
-           ra.role_code, ra.id as row_id, ra.version as row_version
+           ra.role_code, ${scopeUnit} as scope_unit_id, ra.id as row_id, ra.version as row_version
     from platform.persons p
     left join platform.tenant_memberships m on m.tenant_id = p.tenant_id and m.person_id = p.id
     left join platform.role_assignments ra on ra.tenant_id = m.tenant_id and ra.membership_id = m.id
@@ -52,6 +58,7 @@ export async function getEditableRole(tx: UserTx, personId: string): Promise<Edi
     isSelf: person.is_self,
     mayManage: person.may_manage,
     roleCode: person.role_code,
+    scopeUnitId: person.scope_unit_id ?? null,
     version:
       person.role_code === null
         ? ''
@@ -69,13 +76,17 @@ export type RoleRefusal =
   | 'last_admin'
   | 'membership_revoked'
   | 'privileged_change'
-  | 'unknown_role';
+  | 'unknown_role'
+  | 'unit_not_allowed';
 
 export type RoleOutcome =
   | {
       readonly ok: true;
       readonly before: string | null;
       readonly after: string;
+      /** The unit of a department-limited role before and after (EP-ORG, T-M3-09), or null. */
+      readonly beforeUnit: string | null;
+      readonly afterUnit: string | null;
       readonly changed: boolean;
     }
   | { readonly ok: false; readonly refusal: RoleRefusal };
@@ -89,6 +100,15 @@ export function roleRefusalOf(error: unknown): RoleRefusal {
   }
   if (pg?.code === '23514' && pg.message.includes('revoked membership'))
     return 'membership_revoked';
+  // The unit of a department-limited role (20261020090400): not such a role, or not a live, active unit of
+  // the organization (deactivated or deleted meanwhile).
+  if (
+    pg?.code === '23514' &&
+    (pg.message.includes('takes a unit') || pg.message.includes('active unit'))
+  )
+    return 'unit_not_allowed';
+  if (pg?.code === '23503' && pg.constraint === 'role_assignments_scope_unit_fkey')
+    return 'unit_not_allowed';
   // An unknown standard role or a custom role deleted meanwhile (generated foreign keys).
   if (pg?.code === '23503') return 'unknown_role';
   // A concurrent change gave the member a role first (one role per person), or JR001 for the Organization
@@ -125,6 +145,7 @@ export async function replaceMemberRole(
   expectedVersion: string,
   roleCode: string,
   options: ReplaceRoleOptions = {},
+  scopeUnitId: string | null = null,
 ): Promise<RoleOutcome> {
   // Serialise with every other role change of the organization before reading (READ COMMITTED).
   await lockTenantRoles(tx);
@@ -135,8 +156,14 @@ export async function replaceMemberRole(
   if (!before.mayManage) return { ok: false, refusal: 'not_allowed' };
   if (before.membershipStatus === 'revoked') return { ok: false, refusal: 'membership_revoked' };
   if (before.version !== expectedVersion) return { ok: false, refusal: 'version_conflict' };
-  if (before.roleCode === roleCode) {
-    return { ok: true, before: before.roleCode, after: roleCode, changed: false };
+  const unchanged = {
+    before: before.roleCode,
+    after: roleCode,
+    beforeUnit: before.scopeUnitId,
+    afterUnit: scopeUnitId,
+  };
+  if (before.roleCode === roleCode && before.scopeUnitId === scopeUnitId) {
+    return { ok: true, ...unchanged, changed: false };
   }
   const locked = options.isLocked;
   if (locked && (locked(roleCode) || (before.roleCode !== null && locked(before.roleCode)))) {
@@ -145,10 +172,16 @@ export async function replaceMemberRole(
   try {
     await tx.execute(sql`delete from platform.role_assignments
       where membership_id = ${before.membershipId}::uuid`);
-    await tx.execute(sql`insert into platform.role_assignments (membership_id, role_code, is_primary)
-      values (${before.membershipId}::uuid, ${roleCode}, true)`);
+    // The unit column only when there is a unit (an older database has no such column: expand-first).
+    await tx.execute(
+      scopeUnitId === null
+        ? sql`insert into platform.role_assignments (membership_id, role_code, is_primary)
+            values (${before.membershipId}::uuid, ${roleCode}, true)`
+        : sql`insert into platform.role_assignments (membership_id, role_code, is_primary, scope_unit_id)
+            values (${before.membershipId}::uuid, ${roleCode}, true, ${scopeUnitId}::uuid)`,
+    );
   } catch (error) {
     return { ok: false, refusal: roleRefusalOf(error) };
   }
-  return { ok: true, before: before.roleCode, after: roleCode, changed: true };
+  return { ok: true, ...unchanged, changed: true };
 }

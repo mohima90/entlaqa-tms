@@ -18,6 +18,9 @@ describe('inviteFieldError', () => {
       ['departmentId', 'INVALID_UNION', 'departmentId', 'unit'],
       ['branchId', 'INVALID_UNION', 'branchId', 'unit'],
       ['managerPersonId', 'INVALID_UNION', 'managerPersonId', 'manager'],
+      // The unit of a department-limited custom role (EP-ORG, T-M3-09).
+      ['scopeUnitId', 'UNIT_REQUIRED', 'scopeUnitId', 'unitRequired'],
+      ['scopeUnitId', 'UNIT_NOT_ALLOWED', 'scopeUnitId', 'unitNotAllowed'],
       ['locale', 'INVALID_VALUE', 'locale', 'name'],
     ];
     for (const [path, code, field, key] of cases) {

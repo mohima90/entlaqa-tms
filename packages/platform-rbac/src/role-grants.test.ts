@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { CustomRoleDefinition } from './custom-roles';
+import { type CustomRoleDefinition, scopeNeedsUnit } from './custom-roles';
 import {
   type RoleAssignment,
   canAssignRole,
@@ -73,16 +73,50 @@ describe('grantsForAssignments', () => {
     expect(
       grantsForAssignments([{ roleCode: own.code }], { ...none, customRoles: [own] })[0],
     ).toEqual({ permission: 'platform.user.read', scope: { type: 'own' } });
+  });
+
+  it('limits a custom role scoped to «A department» to the unit picked for the assignment and everything under it (EP-ORG, T-M3-09)', () => {
     const departments: CustomRoleDefinition = { ...reviewer, dataScope: 'departments' };
+    const context = { headedDepartmentIds: ['headed'], customRoles: [departments] };
+    // The picked unit with its descendants — never the departments the member happens to head.
     expect(
-      grantsForAssignments([{ roleCode: departments.code }], {
-        headedDepartmentIds: ['d1'],
-        customRoles: [departments],
+      grantsForAssignments([{ roleCode: departments.code, scopeUnitId: 'sales' }], context),
+    ).toEqual([
+      {
+        permission: 'platform.user.read',
+        scope: { type: 'org_units', orgUnitIds: ['sales'], includeDescendants: true },
+      },
+      { permission: 'platform.org.read', scope: { type: 'tenant' } },
+    ]);
+    // No unit (not picked yet, or deactivated / deleted since): nothing scoped, the structure's names only.
+    for (const assignment of [
+      { roleCode: departments.code, scopeUnitId: null },
+      { roleCode: departments.code },
+    ]) {
+      expect(grantsForAssignments([assignment], context)).toEqual([
+        { permission: 'platform.org.read', scope: { type: 'tenant' } },
+      ]);
+    }
+    // A unit stored on a role that is not limited to a department is ignored.
+    const team: CustomRoleDefinition = { ...reviewer, dataScope: 'team' };
+    expect(
+      grantsForAssignments([{ roleCode: team.code, scopeUnitId: 'sales' }], {
+        ...none,
+        customRoles: [team],
       })[0],
+    ).toEqual({ permission: 'platform.user.read', scope: { type: 'direct_reports' } });
+    // The Department Head keeps the units they head (with sub-units), whatever unit is stored.
+    expect(
+      grantsForAssignments([{ roleCode: 'department_head', scopeUnitId: 'sales' }], context).find(
+        (g) => g.permission === 'platform.user.read',
+      ),
     ).toEqual({
       permission: 'platform.user.read',
-      scope: { type: 'org_units', orgUnitIds: ['d1'], includeDescendants: true },
+      scope: { type: 'org_units', orgUnitIds: ['headed'], includeDescendants: true },
     });
+    expect(scopeNeedsUnit('departments')).toBe(true);
+    expect(scopeNeedsUnit('team')).toBe(false);
+    expect(scopeNeedsUnit('organization')).toBe(false);
   });
 
   it('ignores unknown roles: former system roles, deleted custom roles (deny by default)', () => {

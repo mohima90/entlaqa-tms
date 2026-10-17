@@ -148,10 +148,15 @@ function standardOnly(code: string): RoleDetailView {
   };
 }
 
-function scopeOf(view: RoleDetailView): BuilderScope {
+/**
+ * The data scope as the page names it: a custom role's own choice («A department» = one unit picked when
+ * the role is given, EP-ORG); the Department Head's «Their departments» (the units they head).
+ */
+function scopeOf(view: RoleDetailView): BuilderScope | 'headed' {
   if (view.custom) return view.custom.dataScope;
   const role = SYSTEM_ROLES.find((r) => r.code === view.role.code);
-  return role ? standardRoleScope(role) : 'organization';
+  const scope = role ? standardRoleScope(role) : 'organization';
+  return scope === 'departments' ? 'headed' : scope;
 }
 
 async function RoleView({ locale, view }: { locale: AppLocale; view: RoleDetailView }) {

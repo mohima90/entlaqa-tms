@@ -63,6 +63,9 @@ export * from './iam/invitations';
 export * from './iam/deactivation';
 export * from './iam/security';
 export * from './iam/organization-profile';
+export * from './iam/structure';
+export * from './iam/branches';
+export * from './iam/scope-units';
 
 /** Authorized reads for server components and routes (same checks as defineAction, no audit). */
 export const defineQuery = createDefineQuery(defaultActionRuntime);

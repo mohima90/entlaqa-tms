@@ -1,6 +1,9 @@
 import 'server-only';
 import { sql } from 'drizzle-orm';
+import { customRolesExist } from './custom-roles-present';
 import type { UserTx } from './with-user-tx';
+
+export { customRolesExist };
 
 /** One role held by the signed-in member (platform.role_assignments, T-M2-03). */
 export interface MemberRole {
@@ -35,14 +38,6 @@ function toDate(value: Date | string | null): Date | null {
  * tenant the claims act in. Validity windows are returned as stored (authorize() applies them per
  * request). Only an ACTIVE membership counts; RLS restricts every read to the current tenant.
  */
-/** Does platform.custom_roles exist yet (EP-ROLES expand-first deploy window)? */
-export async function customRolesExist(tx: UserTx): Promise<boolean> {
-  const [row] = await tx.execute<{ present: boolean }>(
-    sql`select to_regclass('platform.custom_roles') is not null as present`,
-  );
-  return row?.present === true;
-}
-
 export async function loadMemberAuthorizationFacts(tx: UserTx): Promise<MemberAuthorizationFacts> {
   const roles = await tx.execute<{
     role_code: string;

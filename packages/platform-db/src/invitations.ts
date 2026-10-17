@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { type SQL, sql } from 'drizzle-orm';
 import { type ClaimsTx, runWithClaims } from './claims-tx';
 import { type AppDatabase, getDatabase } from './client';
+import { customRolesExist } from './custom-roles-present';
 import { DomainError } from './domain-error';
 import { emitEvent } from './events';
 import { pgError } from './user-admin';
@@ -245,6 +246,8 @@ export async function listInvitations(
   tx: ClaimsTx,
   filter: { state?: InvitationState } = {},
 ): Promise<InvitationRow[]> {
+  // Custom-role names once their table exists (deploy window, EP-ROLES).
+  const customNames = await customRolesExist(tx);
   const rows = await tx.execute<{
     id: string;
     person_id: string;
@@ -267,11 +270,12 @@ export async function listInvitations(
     select i.id, i.person_id, i.email, p.display_name_ar, p.display_name_en, i.primary_role,
            ${STATE} as state, i.send_count, i.expires_at, i.created_at, i.import_id,
            c.invitation_id is not null as has_code, i.locale, i.additional_roles,
-           cr.name_ar as role_name_ar, cr.name_en as role_name_en,
+           ${customNames ? sql`cr.name_ar` : sql`null::text`} as role_name_ar,
+           ${customNames ? sql`cr.name_en` : sql`null::text`} as role_name_en,
            private.roles_include_privileged(i.tenant_id, array[i.primary_role] || i.additional_roles) as privileged
     from platform.invitations i
     join platform.persons p on p.tenant_id = i.tenant_id and p.id = i.person_id
-    left join platform.custom_roles cr on cr.tenant_id = i.tenant_id and cr.code = i.primary_role
+    ${customNames ? sql`left join platform.custom_roles cr on cr.tenant_id = i.tenant_id and cr.code = i.primary_role` : sql``}
     -- Whether the caller may copy a code (managing rules per invitation, migration 20261018090000). Only
     -- the id leaves the database here: the codes stay in it (security review M2).
     left join (select x.invitation_id from private.invitation_codes() x) c on c.invitation_id = i.id

@@ -1,6 +1,7 @@
 import 'server-only';
 import { EMPTY_PERSON_SCOPE, type PersonScope, isEmptyPersonScope } from '@jadarat/platform-core';
 import { type SQL, sql } from 'drizzle-orm';
+import { customRolesExist } from './custom-roles-present';
 import { ORG_TIME_ZONE } from './org-time-zone';
 import type { UserTx } from './with-user-tx';
 
@@ -234,18 +235,22 @@ export async function listUsers(tx: UserTx, filter: UserListFilter): Promise<Use
     : MAX_PAGE_SIZE;
   const offset = Number.isFinite(filter.offset) ? Math.max(Math.trunc(filter.offset), 0) : 0;
   const rolesVisible = personScopePredicate(filter.rolesScope, filter.actorPersonId);
+  // Custom-role names only once their table exists (deploy window, review M3 / confirmation L3).
+  const customNames = await customRolesExist(tx);
+  const roleName = (column: 'name_ar' | 'name_en') =>
+    customNames
+      ? sql`(select cr.${sql.raw(column)} from platform.role_assignments ra
+             join platform.custom_roles cr on cr.tenant_id = ra.tenant_id and cr.code = ra.role_code
+             where ra.membership_id = m.id and ${ROLE_IN_FORCE} limit 1)`
+      : sql`null::text`;
   const roles = isEmptyPersonScope(filter.rolesScope)
     ? sql`false as roles_visible, null as primary_role, null as role_name_ar, null as role_name_en,
            null as role_version`
     : sql`(${rolesVisible}) as roles_visible,
            case when ${rolesVisible} then (select ra.role_code from platform.role_assignments ra
              where ra.membership_id = m.id and ${ROLE_IN_FORCE} order by ra.is_primary desc limit 1) end as primary_role,
-           case when ${rolesVisible} then (select cr.name_ar from platform.role_assignments ra
-             join platform.custom_roles cr on cr.tenant_id = ra.tenant_id and cr.code = ra.role_code
-             where ra.membership_id = m.id and ${ROLE_IN_FORCE} limit 1) end as role_name_ar,
-           case when ${rolesVisible} then (select cr.name_en from platform.role_assignments ra
-             join platform.custom_roles cr on cr.tenant_id = ra.tenant_id and cr.code = ra.role_code
-             where ra.membership_id = m.id and ${ROLE_IN_FORCE} limit 1) end as role_name_en,
+           case when ${rolesVisible} then ${roleName('name_ar')} end as role_name_ar,
+           case when ${rolesVisible} then ${roleName('name_en')} end as role_name_en,
            case when ${rolesVisible} then (select ra.role_code || ':' || ra.id || ':' || ra.version
              from platform.role_assignments ra where ra.membership_id = m.id limit 1) end as role_version`;
   const tabWhere =
@@ -425,9 +430,14 @@ export async function getUserProfile(
           valid_from: Date | string | null;
           valid_until: Date | string | null;
         }>(sql`
-        select ra.role_code, cr.name_ar, cr.name_en, ra.is_primary, ra.valid_from, ra.valid_until
+        select ra.role_code, ${
+          (await customRolesExist(tx))
+            ? sql`cr.name_ar, cr.name_en, ra.is_primary, ra.valid_from, ra.valid_until
         from platform.role_assignments ra
-        left join platform.custom_roles cr on cr.tenant_id = ra.tenant_id and cr.code = ra.role_code
+        left join platform.custom_roles cr on cr.tenant_id = ra.tenant_id and cr.code = ra.role_code`
+            : sql`null::text as name_ar, null::text as name_en, ra.is_primary, ra.valid_from, ra.valid_until
+        from platform.role_assignments ra`
+        }
         where ra.membership_id = ${row.membership_id}::uuid
         order by ra.is_primary desc, ra.role_code`)
       : [];

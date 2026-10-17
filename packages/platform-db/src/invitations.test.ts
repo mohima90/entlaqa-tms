@@ -33,7 +33,19 @@ function fakeTx(...answers: Answer[]) {
   const executed: { sql: string; params: unknown[] }[] = [];
   const tx = {
     execute: (query: SQL) => {
-      executed.push(dialect.sqlToQuery(query));
+      const q = dialect.sqlToQuery(query);
+      // The custom-roles catalog check (deploy window): answered here, not recorded — unless the
+      // test queued its own answer ({ present }).
+      if (q.sql.includes('to_regclass(')) {
+        const queued = answers[0];
+        const first = Array.isArray(queued)
+          ? (queued[0] as Record<string, unknown> | undefined)
+          : undefined;
+        return Promise.resolve(
+          first && 'present' in first ? (answers.shift() ?? []) : [{ present: true }],
+        );
+      }
+      executed.push(q);
       const next = answers.shift() ?? [];
       return next instanceof Error ? Promise.reject(next) : Promise.resolve(next);
     },
@@ -258,6 +270,13 @@ describe('listInvitations', () => {
     expect(fake.executed[0]?.sql).not.toContain('c.invite_code');
     expect(fake.executed[0]?.sql).toContain("then 'expired'");
     expect(fake.executed[0]?.sql).toContain('where true');
+  });
+
+  it('reads no custom role names before their table exists (deploy window, review Low 3)', async () => {
+    const fake = fakeTx([{ present: false }], [row]);
+    const [r] = await listInvitations(fake.tx);
+    expect(r?.primaryRoleName).toBeNull();
+    expect(fake.executed[0]?.sql).not.toContain('custom_roles');
   });
 
   it('filters by state', async () => {

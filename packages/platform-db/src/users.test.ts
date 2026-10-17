@@ -23,6 +23,14 @@ function fakeTx(...results: unknown[][]) {
     tx: {
       execute: (query: SQL) => {
         const q = dialect.sqlToQuery(query);
+        // The custom-roles catalog check (deploy window): answered here, not recorded — unless the test
+        // queued its own answer ({ present }).
+        if (q.sql.includes('to_regclass(')) {
+          const queued = results[0]?.[0] as Record<string, unknown> | undefined;
+          return Promise.resolve(
+            queued && 'present' in queued ? (results.shift() ?? []) : [{ present: true }],
+          );
+        }
         executed.push({ sql: q.sql, params: q.params });
         return Promise.resolve(results.shift() ?? []);
       },
@@ -240,6 +248,35 @@ describe('listUsers', () => {
   });
 });
 
+describe('custom role names during the deploy window (review Low 3)', () => {
+  it('lists users and reads a profile without touching custom_roles before it exists', async () => {
+    const list = fakeTx(
+      [{ all: 0, active: 0, invited: 0, deactivated: 0 }],
+      [{ present: false }],
+      [],
+    );
+    await listUsers(list.tx, { ...baseFilter, tab: 'all' });
+    expect(list.executed).toHaveLength(2);
+    expect(list.executed[1]?.sql).not.toContain('custom_roles');
+    expect(list.executed[1]?.sql).toContain('null::text');
+
+    const profile = fakeTx(
+      [
+        {
+          person_id: 'p1',
+          membership_id: 'm1',
+          membership_status: 'active',
+          person_status: 'active',
+        },
+      ],
+      [{ present: false }],
+      [{ role_code: 'learner', is_primary: true, valid_from: null, valid_until: null }],
+    );
+    await getUserProfile(profile.tx, 'p1', { includeRoles: true, includeActivity: false });
+    expect(profile.executed[1]?.sql).not.toContain('custom_roles');
+  });
+});
+
 describe('getUserProfile', () => {
   const all = { includeRoles: true, includeActivity: true };
   const person = {
@@ -437,8 +474,8 @@ describe('loadMemberAuthorizationFacts', () => {
       headedDepartmentIds: [],
       customRoles: [],
     });
-    expect(fake.executed).toHaveLength(3);
-    expect(fake.executed[2]?.sql).toContain("to_regclass('platform.custom_roles')");
+    // Two reads: the custom-role read is skipped (the catalog check is answered by the fake).
+    expect(fake.executed).toHaveLength(2);
   });
 });
 
@@ -452,13 +489,13 @@ describe('getMyPrimaryRole', () => {
       code: 'custom_a00000000001',
       customName: { ar: 'مراجع', en: 'Reviewer' },
     });
-    expect(withRoles.executed[1]?.sql).toContain('left join platform.custom_roles');
+    expect(withRoles.executed[0]?.sql).toContain('left join platform.custom_roles');
     const before = fakeTx(
       [{ present: false }],
       [{ role_code: 'learner', name_ar: null, name_en: null }],
     );
     expect(await getMyPrimaryRole(before.tx)).toEqual({ code: 'learner', customName: null });
-    expect(before.executed[1]?.sql).not.toContain('custom_roles');
+    expect(before.executed[0]?.sql).not.toContain('custom_roles');
   });
 });
 

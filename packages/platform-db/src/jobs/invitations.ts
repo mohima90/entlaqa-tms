@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { ClaimsTx } from '../claims-tx';
+import { customRolesExist } from '../custom-roles-present';
 
 /**
  * Invitation e-mails (FR-IAM-03, T-M2-07; migrations 20261009090000 and 20261018090000): the mailer job
@@ -44,6 +45,8 @@ export async function loadInvitationForMail(
   tx: ClaimsTx,
   id: string,
 ): Promise<InvitationForMail | null> {
+  // The worker deploys with the app, ahead of the database: a custom role's names once its table exists.
+  const customNames = await customRolesExist(tx);
   const [row] = await tx.execute<{
     id: string;
     status: InvitationForMail['status'];
@@ -70,14 +73,15 @@ export async function loadInvitationForMail(
            p.display_name_ar as recipient_ar, p.display_name_en as recipient_en,
            ip.display_name_ar as inviter_ar, ip.display_name_en as inviter_en,
            t.name_ar as organization_ar, t.name_en as organization_en, i.primary_role,
-           cr.name_ar as role_name_ar, cr.name_en as role_name_en
+           ${customNames ? sql`cr.name_ar` : sql`null::text`} as role_name_ar,
+           ${customNames ? sql`cr.name_en` : sql`null::text`} as role_name_en
     from platform.invitations i
     join platform.persons p on p.tenant_id = i.tenant_id and p.id = i.person_id
     join platform.tenants t on t.id = i.tenant_id
     left join platform.tenant_memberships m
            on m.tenant_id = i.tenant_id and m.user_id = coalesce(i.send_requested_by, i.invited_by)
     left join platform.persons ip on ip.tenant_id = m.tenant_id and ip.id = m.person_id
-    left join platform.custom_roles cr on cr.tenant_id = i.tenant_id and cr.code = i.primary_role
+    ${customNames ? sql`left join platform.custom_roles cr on cr.tenant_id = i.tenant_id and cr.code = i.primary_role` : sql``}
     where i.id = ${id}::uuid`);
   if (!row) return null;
   const organizationName = { ar: row.organization_ar, en: row.organization_en };

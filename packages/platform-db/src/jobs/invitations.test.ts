@@ -16,7 +16,16 @@ function fakeTx(...results: unknown[][]) {
     executed,
     tx: {
       execute: (query: SQL) => {
-        executed.push(dialect.sqlToQuery(query));
+        const q = dialect.sqlToQuery(query);
+        // The custom-roles catalog check (deploy window): answered here, not recorded — unless the test
+        // queued its own answer ({ present }).
+        if (q.sql.includes('to_regclass(')) {
+          const queued = results[0]?.[0] as Record<string, unknown> | undefined;
+          return Promise.resolve(
+            queued && 'present' in queued ? (results.shift() ?? []) : [{ present: true }],
+          );
+        }
+        executed.push(q);
         return Promise.resolve(results.shift() ?? []);
       },
     } as never,
@@ -84,6 +93,14 @@ describe('loadInvitationForMail', () => {
     const mail = await loadInvitationForMail(fake.tx, ID);
     expect(mail?.primaryRoleName).toEqual({ ar: 'مراجع', en: 'Reviewer' });
     expect(fake.executed[0]?.sql).toContain('left join platform.custom_roles cr');
+  });
+
+  it('reads no custom role names before their table exists (deploy window, review Low 3)', async () => {
+    const fake = fakeTx([{ present: false }], [row]);
+    await expect(loadInvitationForMail(fake.tx, ID)).resolves.toMatchObject({
+      primaryRoleName: null,
+    });
+    expect(fake.executed[0]?.sql).not.toContain('custom_roles');
   });
 
   it('falls back to the organization as inviter, Arabic as language; null when unknown', async () => {

@@ -1,7 +1,7 @@
 import { toClientError } from '@jadarat/platform-core';
 import type { AppLocale } from '@jadarat/platform-i18n';
 import { routing } from '@jadarat/platform-i18n/routing';
-import { SOLE_ROLE_CODES, type InviteFormView, SYSTEM_ROLES } from '@jadarat/platform-rbac';
+import type { InviteFormView } from '@jadarat/platform-rbac';
 import { Alert, Card } from '@jadarat/ui';
 import { hasLocale } from 'next-intl';
 import { getTranslations } from 'next-intl/server';
@@ -15,6 +15,8 @@ import { expiryFrom } from '../../../../../../lib/invitations-view';
 import { profileErrorTexts } from '../../../../../../lib/profile-texts';
 import { type SuiteContext, getSuiteContext } from '../../../../../../lib/suite-context';
 import { pageDates } from '../../../../../../lib/page-dates';
+import { roleOptions } from '../../../../../../lib/role-choice';
+import { roleSelectTexts } from '../../../../../../lib/role-texts';
 import { inviteFormQuery } from '../../../../../../lib/users-queries';
 import { localizedName } from '../../../../../../lib/users-view';
 
@@ -40,14 +42,10 @@ const LABEL_KEYS = [
   'departmentManagersOnly',
   'employeeNumber',
   'employeeNumberHint',
-  'primaryRole',
-  'primaryRoleHint',
-  'showCommonRoles',
+  'role',
+  'roleHint',
+  'departmentsHint',
   'rolesHelp',
-  'additionalRoles',
-  'additionalRolesHint',
-  'roleConflictHint',
-  'privileged',
   'language',
   'submit',
   'submitting',
@@ -62,15 +60,15 @@ const FIELD_ERROR_KEYS = [
   'employeeNumberTaken',
   'roleRequired',
   'roleNotAllowed',
-  'roleConflict',
-  'roles',
+  'roleUnknown',
   'unit',
   'manager',
 ] as const;
 
 /**
  * Invite a user (T-M2-07, FR-IAM-03, BR-IAM-1; approved screen 2): HR Manager or Organization Admin
- * (`platform.user.invite`); privileged roles only by the Organization Admin with an authenticator code.
+ * (`platform.user.invite`); one role per person (EP-ROLES), privileged roles only by the Organization
+ * Admin, and nobody gives a role with permissions they don't hold.
  */
 export default async function InviteUserPage({ params }: { params: Promise<{ locale: string }> }) {
   const { locale } = await params;
@@ -137,13 +135,12 @@ async function inviteForm(
   labels['created.text'] = String(t.raw('created.text'));
   labels['created.toList'] = t('created.toList');
   labels['created.inviteAnother'] = t('created.inviteAnother');
-  labels.showAllRoles = t('form.showAllRoles', { count: SYSTEM_ROLES.length });
   labels['language.ar'] = t('form.languages.ar');
   labels['language.en'] = t('form.languages.en');
   labels.expiryNotice = t('form.expiryNotice', {
     date: pageDates(locale, context).long(expiryFrom(new Date())),
   });
-  if (view.privilegedAccess !== 'allowed') labels.privilegedLocked = t('form.privilegedAdminOnly');
+  labels.privilegedLocked = t('form.privilegedAdminOnly');
   const fieldTexts: Record<string, string> = Object.fromEntries(
     FIELD_ERROR_KEYS.map((k) => [k, t(`form.fieldErrors.${k}`)]),
   );
@@ -164,20 +161,14 @@ async function inviteForm(
           active: m.active,
           departmentIds: m.departmentIds,
         }))}
-        catalogue={SYSTEM_ROLES.map((r) => ({
-          code: r.code,
-          name: r.name[locale],
-          description: r.description[locale],
-          privileged: r.privileged,
-        }))}
-        privilegedAllowed={view.privilegedAccess === 'allowed'}
+        roles={roleOptions(view.roles, locale)}
+        roleTexts={await roleSelectTexts(locale)}
         labels={labels}
         fieldTexts={fieldTexts}
         errors={await profileErrorTexts(locale)}
         usersHref={usersHref}
         successHref={`${usersHref}?tab=invited&${INVITED_FLASH_PARAM}=1`}
         rolesHref={`/${locale}/suite/admin/roles`}
-        soleRoles={SOLE_ROLE_CODES}
         copyTexts={await inviteCopyTexts(locale)}
         uiLocale={locale}
       />

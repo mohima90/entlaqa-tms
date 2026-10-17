@@ -42,7 +42,7 @@ function body(v: InvitationVariables, locale: AppLocale, primary: boolean): Safe
       ${paragraph(markup`لديك دعوة من <b>${inviter}</b> للانضمام إلى نظام التدريب في <b>${org}</b> بدور <b>${role}</b>.`)}
       ${paragraph(markup`لبدء الاستخدام، يمكنك قبول الدعوة واختيار كلمة مرور لحسابك.`)}
       ${primary ? actionButton('قبول الدعوة', v.acceptUrl) : paragraph(link('قبول الدعوة', v.acceptUrl))}
-      ${paragraph(markup`ينتهي هذا الرابط يوم <b>${expires}</b>. إذا انتهى، يمكن طلب دعوة جديدة من مدير المنشأة.`, true, true)}
+      ${paragraph(markup`ينتهي هذا الرابط يوم <b>${expires}</b>. إذا انتهى، يمكن طلب دعوة جديدة من مدير المنظمة.`, true, true)}
       ${paragraph(markup`اسم الدخول: ${ltr(v.loginEmail)}`, true, true)}
       ${paragraph(markup`إن كانت هذه الرسالة غير متوقعة، يمكنك تجاهلها؛ لن يُنشأ أي حساب دون قبولها.`, true, true)}`;
   }
@@ -72,7 +72,7 @@ function plain(v: InvitationVariables, locale: AppLocale): string {
       'لبدء الاستخدام، يمكنك قبول الدعوة واختيار كلمة مرور لحسابك:',
       v.acceptUrl,
       '',
-      `ينتهي هذا الرابط يوم ${expires}. إذا انتهى، يمكن طلب دعوة جديدة من مدير المنشأة.`,
+      `ينتهي هذا الرابط يوم ${expires}. إذا انتهى، يمكن طلب دعوة جديدة من مدير المنظمة.`,
       `اسم الدخول: ${v.loginEmail}`,
       'إن كانت هذه الرسالة غير متوقعة، يمكنك تجاهلها؛ لن يُنشأ أي حساب دون قبولها.',
     ].join('\n');

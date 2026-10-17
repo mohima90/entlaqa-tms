@@ -17,7 +17,7 @@ const Link = z.string().max(2000).refine(isSafeLink, 'https link');
  * sign in for a day even under a new pause — 30 days if «تذكّر هذا المتصفح» is ticked there — while the
  * others must sign in again (security review M2, re-review N1), to tell the Organization Admin when
  * the attempts were not the person's, and that we send this at most once a day (security review M3).
- * Arabic copy to be confirmed by the UX writer (docs/design/content/glossary-ar-en.md: «مدير المنشأة»,
+ * Arabic copy to be confirmed by the UX writer (docs/design/content/glossary-ar-en.md: «مدير المنظمة»,
  * «كلمة المرور», «نسيت كلمة المرور»).
  */
 export const AccountLockedVariables = z.strictObject({
@@ -56,7 +56,7 @@ function body(v: AccountLockedVariables, locale: AppLocale, primary: boolean): S
       ${paragraph(markup`يُرفع الإيقاف تلقائيًا بعد <b>${arabicMinutes(v.lockMinutes)}</b>. ويبقى بإمكانك الدخول من المتصفحات التي اخترت فيها «تذكّر هذا المتصفح».`)}
       ${primary ? actionButton('تعيين كلمة مرور جديدة', url) : paragraph(link('تعيين كلمة مرور جديدة', url))}
       ${paragraph(markup`تعيين كلمة مرور جديدة يُنهي الإيقاف فورًا، ويبقى بإمكان المتصفح الذي تستخدمه لذلك الدخول يومًا واحدًا إن أُوقف تسجيل الدخول من جديد، أو 30 يومًا إن اخترت فيه «تذكّر هذا المتصفح»، أما المتصفحات الأخرى فيلزمها تسجيل الدخول من جديد.`)}
-      ${paragraph(markup`إن لم تكن هذه المحاولات منك، فعيّن كلمة مرور جديدة وأبلغ مدير المنشأة.`, true, true)}
+      ${paragraph(markup`إن لم تكن هذه المحاولات منك، فعيّن كلمة مرور جديدة وأبلغ مدير المنظمة.`, true, true)}
       ${paragraph(markup`نرسل هذا التنبيه مرة واحدة في اليوم على الأكثر.`, true, true)}`;
   }
   return markup`<h1
@@ -84,7 +84,7 @@ function plain(v: AccountLockedVariables, locale: AppLocale): string {
       url,
       'تعيين كلمة مرور جديدة يُنهي الإيقاف فورًا، ويبقى بإمكان المتصفح الذي تستخدمه لذلك الدخول يومًا واحدًا إن أُوقف تسجيل الدخول من جديد، أو 30 يومًا إن اخترت فيه «تذكّر هذا المتصفح»، أما المتصفحات الأخرى فيلزمها تسجيل الدخول من جديد.',
       '',
-      'إن لم تكن هذه المحاولات منك، فعيّن كلمة مرور جديدة وأبلغ مدير المنشأة.',
+      'إن لم تكن هذه المحاولات منك، فعيّن كلمة مرور جديدة وأبلغ مدير المنظمة.',
       'نرسل هذا التنبيه مرة واحدة في اليوم على الأكثر.',
     ].join('\n');
   }

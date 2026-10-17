@@ -183,7 +183,7 @@ export function DemoShell({
           <UserMenu
             name={pick(globals, { ar: 'منيرة القحطاني', en: 'Munira Alqahtani' })}
             subtitle={pick(globals, {
-              ar: 'شركة الراية · مدير المنشأة',
+              ar: 'شركة الراية · مدير المنظمة',
               en: 'Al Raya Company · Organization Admin',
             })}
             profileHref="#profile"

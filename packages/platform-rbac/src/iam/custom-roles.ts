@@ -63,7 +63,10 @@ export const DeleteCustomRoleInput = z.strictObject({
   version: z.number().int().min(1),
 });
 
-function validation(fieldErrors: { path: string; code: string }[], params?: Record<string, number>) {
+function validation(
+  fieldErrors: { path: string; code: string }[],
+  params?: Record<string, number>,
+) {
   return appError('VALIDATION_FAILED', { fieldErrors, ...(params ? { params } : {}) });
 }
 

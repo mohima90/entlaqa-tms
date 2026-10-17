@@ -5,7 +5,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Grant } from '../authorize';
 import type { ActionRuntime } from '../define-action';
 import { createDefineQuery } from '../define-query';
-import { grantsForAssignments } from '../role-grants';
 import { type TestRoleCode, testRoleGrants } from '../testing/former-roles';
 import { USERS_PAGE_SIZE, userProfileQueryDefinition, usersListQueryDefinition } from './users';
 
@@ -32,9 +31,7 @@ const DEPT = '55555555-5555-4555-8555-555555555555';
 const TX = 'tx' as unknown as UserTx;
 
 function runtime(roles: TestRoleCode[]): ActionRuntime<UserTx> {
-  const grants: Grant[] = [
-    ...testRoleGrants(roles, [DEPT]),
-  ];
+  const grants: Grant[] = [...testRoleGrants(roles, [DEPT])];
   return {
     getClaims: () => {
       const r = brandVerifiedClaims({
@@ -107,6 +104,7 @@ describe('users list query', () => {
         ]) as never,
         canAssignRoles: true,
         canAssignPrivileged: true,
+        selfPersonId: '33333333-3333-4333-8333-333333333333',
       }),
     );
     expect(result.ok && result.value.roles).toHaveLength(6);

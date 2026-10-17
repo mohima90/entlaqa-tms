@@ -141,7 +141,7 @@ for (const [state, url, texts] of [
     'expired',
     expiredUrl,
     {
-      ar: 'انتهت صلاحية هذه الدعوة. اطلب دعوة جديدة من مدير المنشأة.',
+      ar: 'انتهت صلاحية هذه الدعوة. اطلب دعوة جديدة من مدير المنظمة.',
       en: "This invitation has expired. Ask your organization's administrator for a new one.",
     },
   ],
@@ -149,7 +149,7 @@ for (const [state, url, texts] of [
     'revoked',
     revokedUrl,
     {
-      ar: 'أُلغيت هذه الدعوة. تواصل مع مدير المنشأة.',
+      ar: 'أُلغيت هذه الدعوة. تواصل مع مدير المنظمة.',
       en: "This invitation was cancelled. Contact your organization's administrator.",
     },
   ],

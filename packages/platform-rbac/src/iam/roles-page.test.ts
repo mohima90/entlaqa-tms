@@ -107,7 +107,9 @@ describe('roles page query (EP-ROLES)', () => {
 
   it('without user.read tenant-wide: no counts; scoped or no role.read: FORBIDDEN', async () => {
     const roleReadOnly: Grant[] = [{ permission: 'platform.role.read', scope: { type: 'tenant' } }];
-    const result = await createDefineQuery(runtime(roleReadOnly).rt)(rolesPageQueryDefinition())({});
+    const result = await createDefineQuery(runtime(roleReadOnly).rt)(rolesPageQueryDefinition())(
+      {},
+    );
     expect(result.ok && result.value.memberCounts).toBeNull();
     for (const roles of [['line_manager'], ['department_head'], ['learner']] as TestRoleCode[][]) {
       const refused = await createDefineQuery(forRoles(roles))(rolesPageQueryDefinition())({});
@@ -118,9 +120,11 @@ describe('roles page query (EP-ROLES)', () => {
 
 describe('role detail query', () => {
   it('a standard role: view only, its permissions and holders', async () => {
-    const result = await createDefineQuery(forRoles(['tenant_admin']))(roleDetailQueryDefinition())({
-      code: 'learner',
-    });
+    const result = await createDefineQuery(forRoles(['tenant_admin']))(roleDetailQueryDefinition())(
+      {
+        code: 'learner',
+      },
+    );
     expect(result.ok && result.value).toMatchObject({
       role: { code: 'learner', kind: 'standard', permissions: ['platform.user.read'] },
       custom: null,
@@ -135,7 +139,11 @@ describe('role detail query', () => {
       code: reviewer.code,
     });
     expect(db.getCustomRole).toHaveBeenCalledWith(TX, { code: reviewer.code });
-    expect(admin.ok && admin.value).toMatchObject({ custom: reviewer, memberCount: 2, canManage: true });
+    expect(admin.ok && admin.value).toMatchObject({
+      custom: reviewer,
+      memberCount: 2,
+      canManage: true,
+    });
     // Everything in the catalogue the Organization Admin holds — never the structure (HR's).
     const held = admin.ok ? admin.value.heldPermissions : [];
     expect(held).toContain('platform.audit.read');
@@ -153,7 +161,7 @@ describe('role detail query', () => {
     expect(!missing.ok && missing.error.code).toBe('NOT_FOUND');
     const former = await query({ code: 'auditor' });
     expect(!former.ok && former.error.code).toBe('NOT_FOUND');
-    const bad = await query({ code: 'Bad Code' } as never);
+    const bad = await query({ code: 'Bad Code' });
     expect(!bad.ok && bad.error.code).toBe('VALIDATION_FAILED');
   });
 });

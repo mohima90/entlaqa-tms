@@ -349,7 +349,11 @@ export async function getInvitationRoles(
   tx: ClaimsTx,
   id: string,
 ): Promise<{ primaryRole: string; additionalRoles: string[]; privileged: boolean } | null> {
-  const [row] = await tx.execute<{ primary_role: string; additional_roles: string[]; privileged: boolean }>(sql`
+  const [row] = await tx.execute<{
+    primary_role: string;
+    additional_roles: string[];
+    privileged: boolean;
+  }>(sql`
     select primary_role, additional_roles,
            private.roles_include_privileged(tenant_id, array[primary_role] || additional_roles) as privileged
     from platform.invitations where id = ${id}::uuid`);

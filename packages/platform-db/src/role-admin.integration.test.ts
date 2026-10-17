@@ -161,7 +161,10 @@ describe.skipIf(!configured)('changing roles against PostgreSQL', () => {
     expect(
       await change(admin, sara.person, 'training_manager', { version: 'learner:x:0' }),
     ).toEqual({ ok: false, refusal: 'version_conflict' });
-    expect(await change(admin, admin.person, 'learner')).toEqual({ ok: false, refusal: 'own_role' });
+    expect(await change(admin, admin.person, 'learner')).toEqual({
+      ok: false,
+      refusal: 'own_role',
+    });
     expect(await change(admin, noLogin.person, 'learner')).toEqual({
       ok: false,
       refusal: 'no_account',
@@ -177,11 +180,23 @@ describe.skipIf(!configured)('changing roles against PostgreSQL', () => {
   });
 
   it('HR Manager: ordinary roles of ordinary members only (standard and custom, by permission)', async () => {
-    expect(await change(hr, sara.person, 'training_manager')).toMatchObject({ ok: true, changed: true });
+    expect(await change(hr, sara.person, 'training_manager')).toMatchObject({
+      ok: true,
+      changed: true,
+    });
     expect(await change(hr, sara.person, ordinary)).toMatchObject({ ok: true, changed: true });
-    expect(await change(hr, sara.person, privileged)).toEqual({ ok: false, refusal: 'not_allowed' });
-    expect(await change(hr, sara.person, 'hr_manager')).toEqual({ ok: false, refusal: 'not_allowed' });
-    expect(await change(hr, admin.person, 'learner')).toEqual({ ok: false, refusal: 'not_allowed' });
+    expect(await change(hr, sara.person, privileged)).toEqual({
+      ok: false,
+      refusal: 'not_allowed',
+    });
+    expect(await change(hr, sara.person, 'hr_manager')).toEqual({
+      ok: false,
+      refusal: 'not_allowed',
+    });
+    expect(await change(hr, admin.person, 'learner')).toEqual({
+      ok: false,
+      refusal: 'not_allowed',
+    });
     // The application's ordinary path refuses a privileged role before writing.
     expect(
       await change(hr, sara.person, privileged, { isLocked: (code) => code === privileged }),
@@ -203,7 +218,10 @@ describe.skipIf(!configured)('changing roles against PostgreSQL', () => {
     // change roles any more.
     expect(await change(admin, omar.person, 'tenant_admin')).toMatchObject({ ok: true });
     expect(await change(omar, admin.person, 'learner')).toMatchObject({ ok: true });
-    expect(await change(admin, omar.person, 'learner')).toEqual({ ok: false, refusal: 'not_allowed' });
+    expect(await change(admin, omar.person, 'learner')).toEqual({
+      ok: false,
+      refusal: 'not_allowed',
+    });
     // Back as it was (set by the owner).
     await owner`update platform.role_assignments ra set role_code = 'tenant_admin'
       from platform.tenant_memberships m where m.id = ra.membership_id and m.user_id = ${admin.user}`;

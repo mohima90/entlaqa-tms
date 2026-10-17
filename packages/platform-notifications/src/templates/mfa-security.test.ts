@@ -94,7 +94,7 @@ describe('authenticator app removed notice (T-M2-10)', () => {
     const cases = [
       ['removed', 'أُزيل تطبيق المصادقة من الحساب', 'The authenticator app was removed from'],
       ['not_me', 'بناءً على طلبك', 'As you asked'],
-      ['admin_reset', 'أعاد مدير المنشأة ضبط', 'administrator reset the authenticator app'],
+      ['admin_reset', 'أعاد مدير المنظمة ضبط', 'administrator reset the authenticator app'],
       ['support_reset', 'أعاد دعم ENTLAQA ضبط', 'ENTLAQA support reset'],
       ['expired', 'لم يُدخَل رمز تأكيده خلال 72 ساعة', 'was not entered within 72 hours'],
       ['too_many_codes', 'بعد إدخال رموز تأكيد خاطئة كثيرة', 'After many wrong confirmation codes'],

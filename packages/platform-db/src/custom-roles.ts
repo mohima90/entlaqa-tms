@@ -27,7 +27,7 @@ export interface CustomRoleRow {
   readonly version: number;
 }
 
-type RawCustomRole = {
+interface RawCustomRole extends Record<string, unknown> {
   id: string;
   code: string;
   name_ar: string;
@@ -38,7 +38,7 @@ type RawCustomRole = {
   member_count: number | string;
   invitation_count: number | string;
   version: number;
-};
+}
 
 function toRow(r: RawCustomRole): CustomRoleRow {
   return {
@@ -102,7 +102,11 @@ export type CustomRoleRefusal =
   | 'in_use';
 
 export type CustomRoleOutcome =
-  | { readonly ok: true; readonly before: CustomRoleRow | null; readonly after: CustomRoleRow | null }
+  | {
+      readonly ok: true;
+      readonly before: CustomRoleRow | null;
+      readonly after: CustomRoleRow | null;
+    }
   | {
       readonly ok: false;
       readonly refusal: CustomRoleRefusal;
@@ -116,8 +120,10 @@ export function customRoleRefusalOf(error: unknown): CustomRoleRefusal {
   if (pg?.code === '42501') return 'not_allowed';
   if (pg?.code === 'JR002') return 'in_use';
   if (pg?.code === 'JR003') return 'needs_organization_scope';
-  if (pg?.code === '23505' && pg.constraint === 'custom_roles_tenant_name_en_uq') return 'name_en_taken';
-  if (pg?.code === '23505' && pg.constraint === 'custom_roles_tenant_name_ar_uq') return 'name_ar_taken';
+  if (pg?.code === '23505' && pg.constraint === 'custom_roles_tenant_name_en_uq')
+    return 'name_en_taken';
+  if (pg?.code === '23505' && pg.constraint === 'custom_roles_tenant_name_ar_uq')
+    return 'name_ar_taken';
   throw error;
 }
 

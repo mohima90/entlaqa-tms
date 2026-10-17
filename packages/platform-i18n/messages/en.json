@@ -346,7 +346,6 @@
       "lastSignIn": "Last sign-in",
       "actions": "Actions"
     },
-    "otherRoles": "{count, plural, one {and {count, number, integer} additional role} other {and {count, number, integer} additional roles}}",
     "status": {
       "active": "Active",
       "invited": "Invited",
@@ -388,14 +387,12 @@
       "ar": "Arabic",
       "en": "English"
     },
-    "roles": "Roles",
-    "primaryRole": "Primary role",
-    "additionalRole": "Additional role",
+    "roles": "Role",
     "validUntil": "Until {date}",
     "validFrom": "Starts on {date}",
     "ended": "Ended on {date}",
-    "noRoles": "No roles assigned.",
-    "rolesAudited": "Every role change is recorded in the audit log with the values before and after the change.",
+    "noRoles": "No role assigned.",
+    "rolesAudited": "Every role change is recorded in the audit log with the role before and after the change.",
     "account": "Sign-in and security",
     "accountStatus": "Account status",
     "accountStatuses": {
@@ -415,7 +412,7 @@
       "platform_tenant_admin_provisioned": "Account created with the Organization Admin role",
       "platform_tenant_admin_role_restored": "Organization Admin role restored",
       "platform_user_updated": "Details updated",
-      "platform_user_roles_changed": "Roles changed",
+      "platform_user_roles_changed": "Role changed",
       "platform_user_deactivated": "Account deactivated",
       "platform_user_reactivated": "Account reactivated",
       "other": "Recorded action ({action})",
@@ -425,7 +422,7 @@
     },
     "breadcrumbLabel": "Breadcrumb",
     "editDetails": "Edit details",
-    "editRoles": "Edit roles",
+    "editRoles": "Change role",
     "deactivate": "Deactivate user",
     "mfa": "Multi-factor authentication",
     "mfaOn": "On · authenticator app since {date}",
@@ -594,50 +591,84 @@
     }
   },
   "editRoles": {
-    "title": "Edit roles",
-    "titleFor": "Edit roles of {name}",
+    "title": "Change role",
+    "titleFor": "Change the role of {name}",
     "breadcrumb": "Team members",
     "breadcrumbLabel": "Breadcrumb",
-    "roles": "Roles",
-    "primary": "Primary role",
-    "primaryHint": "The primary role sets the home page and what the person sees first. A user has one primary role.",
-    "primaryDaysKept": "The chosen primary role keeps its recorded start and end dates; they are not changed here. To change them, make it an additional role.",
-    "additional": "Additional roles",
-    "additionalHint": "The effective permissions are those of the primary role plus the additional roles.",
-    "privileged": "Privileged role",
-    "ended": "Ended",
-    "scheduled": "Not started yet",
-    "privilegedAdminOnly": "Only the Organization Admin changes privileged roles (Organization Admin, HR Manager, Finance Manager, Compliance Officer, Auditor).",
-    "validFrom": "Starts on",
-    "validUntil": "Ends on",
-    "daysHint": "A role starts at the beginning of its first day and ends at the end of its last day, in the organization's time zone. Leave a date empty for a role that starts now or does not end.",
-    "audited": "Every role change is recorded in the audit log with the values before and after the change.",
-    "save": "Save roles",
+    "roles": "Role",
+    "roleHint": "Each person has one role. It decides their menu, pages and the data they see.",
+    "departmentsHint": "This role sees the departments the person heads, with their sub-departments. HR sets department heads in Organization → Structure.",
+    "privilegedAdminOnly": "Unavailable roles are greyed out: only the Organization Admin gives privileged roles (Organization Admin, HR Manager and custom roles with a high-risk permission), and nobody gives a role with permissions they don't hold.",
+    "audited": "Every role change is recorded in the audit log with the role before and after.",
+    "save": "Save role",
     "saving": "Saving…",
-    "saved": "Roles saved.",
-    "noChanges": "There are no changes to save.",
+    "saved": "Role saved.",
+    "noChanges": "This is already the person's role.",
+    "cancel": "Cancel",
     "backToProfile": "Back to the profile",
+    "roleRequired": "Choose a role.",
+    "roleNotAllowed": "You can't give this role. Only the Organization Admin gives privileged roles, and nobody gives a role with permissions they don't hold.",
+    "roleUnknown": "This role no longer exists. Reload the page and choose another role.",
     "lastAdmin": "The organization must keep at least one active Organization Admin without an end date.",
-    "datesInvalid": "The end date must not be before the start date, and dates must be between 2000 and 2100.",
-    "roleConflict": "Organization Admin is a setup-only role and can't be combined with any other role. Remove the other roles, or end one before the other starts.",
-    "roleConflictHint": "Organization Admin is a setup-only role and can't be combined with any other role. To give it to someone or take it away, make it their only role, or end one role before the other starts.",
+    "actionsFor": "Actions for {name}",
+    "editRole": "Edit role",
+    "dialogTitle": "Edit role",
+    "dialogDescription": "Choose the role of {name}. Each person has one role.",
+    "close": "Close",
+    "select": {
+      "label": "Role",
+      "placeholder": "Choose a role",
+      "standardGroup": "Standard roles",
+      "customGroup": "Custom roles",
+      "privileged": "privileged",
+      "notAllowed": "not available to you"
+    },
     "blocked": {
-      "own_roles": "You can't change your own roles. The Organization Admin or HR changes them.",
-      "no_account": "This person has no sign-in account in the organization; roles are chosen when they are invited.",
-      "revoked": "This person's membership was revoked, so their roles can't be changed."
+      "own_roles": "You can't change your own role. The Organization Admin or HR changes it.",
+      "no_account": "This person has no sign-in account in the organization; the role is chosen when they are invited.",
+      "revoked": "This person's membership was revoked, so their role can't be changed."
     }
   },
   "rolesPage": {
     "title": "Roles & permissions",
-    "intro": "{count, number, integer} ready-made roles come with Jadarat. System roles can't be edited; later they can be copied to create the organization's own roles.",
-    "customRole": "Create a custom role",
-    "comingSoon": "Coming soon",
-    "rolesLabel": "Roles",
-    "membersLabel": "Users:",
-    "systemRole": "System role · view only",
-    "privileged": "Privileged role",
+    "intro": "Six standard roles come with Jadarat and can't be changed. The Organization Admin creates the organization's own roles by naming them and ticking permissions.",
+    "createRole": "Create role",
+    "rolesCardTitle": "Roles of the organization",
+    "rolesCardDescription": "Give each person one role when you invite them or from Team members.",
+    "tableCaption": "Roles of the organization",
+    "columns": {
+      "role": "Role",
+      "description": "Description",
+      "type": "Type",
+      "permissions": "Permissions",
+      "people": "People",
+      "actions": "Actions"
+    },
+    "types": {
+      "standard": "Standard",
+      "custom": "Custom"
+    },
+    "privileged": "Privileged",
+    "privilegedHint": "Only the Organization Admin gives it.",
+    "permissionCount": "{count, plural, =0 {No permissions} one {{count, number, integer} permission} other {{count, number, integer} permissions}}",
     "members": "{count, plural, =0 {No users} one {{count, number, integer} user} other {{count, number, integer} users}}",
+    "noDescription": "No description",
+    "view": "View",
+    "viewRole": "View {name}",
+    "editRole": "Edit {name}",
+    "deleteRole": "Delete {name}",
+    "deleteTitle": "Delete {name}?",
     "viewUsers": "View users",
+    "saved": "Role saved.",
+    "deleted": "Role deleted.",
+    "backToRoles": "Roles & permissions",
+    "breadcrumbLabel": "Breadcrumb",
+    "standardNote": "Standard role · view only. To change its permissions, create a custom role from it.",
+    "customFrom": "Create a role from it",
+    "permissionsTitle": "Permissions",
+    "dataScopeTitle": "Data this role sees",
+    "adminOnlyGroup": "Organization Admin only",
+    "acrossProduct": "What this role does across the product",
     "legendTitle": "Access levels",
     "levels": {
       "F": "Full",
@@ -660,15 +691,15 @@
       "U": "use the feature",
       "N": "no access"
     },
-    "tableCaption": "Permissions of the {role} role by area",
-    "columns": {
+    "matrixCaption": "Permissions of the {role} role by area",
+    "matrixColumns": {
       "area": "Area",
       "access": "Access",
       "scope": "Scope or limit"
     },
     "sensitive": "Sensitive",
     "matrixNote": "Each module's permissions apply as it is released; users & roles and the audit log apply now.",
-    "notConfigured": "The number of users per role appears once this environment is connected to the database."
+    "notConfigured": "Custom roles and the number of people per role appear once this environment is connected to the database."
   },
   "invitations": {
     "inviteUser": "Invite user",
@@ -697,16 +728,12 @@
       "departmentManagersOnly": "Back to this department's managers only",
       "employeeNumber": "Employee number",
       "employeeNumberHint": "Must be unique within the organization, for example EMP-1450.",
-      "primaryRole": "Primary role",
-      "primaryRoleHint": "The primary role sets the home page and what the person sees first. A user has one primary role.",
-      "showAllRoles": "Show all roles ({count, number, integer})",
-      "showCommonRoles": "Show common roles only",
+      "role": "Role",
+      "roleHint": "Each person has one role. It decides their menu, pages and the data they see.",
+      "departmentsHint": "This role sees the departments the person heads, with their sub-departments. HR sets department heads in Organization → Structure.",
       "rolesHelp": "What can each role do?",
-      "additionalRoles": "Additional roles",
-      "additionalRolesHint": "The effective permissions are those of the primary role plus the additional roles.",
-      "roleConflictHint": "Organization Admin is a setup-only role and can't be combined with any other role.",
       "privileged": "Privileged role",
-      "privilegedAdminOnly": "Only the Organization Admin gives privileged roles (Organization Admin, HR Manager, Finance Manager, Compliance Officer, Auditor). You can invite with the other roles.",
+      "privilegedAdminOnly": "Only the Organization Admin gives privileged roles (Organization Admin, HR Manager and custom roles with a high-risk permission). You can invite with the other roles whose permissions you hold.",
       "language": "Invitation email language",
       "languages": {
         "ar": "العربية",
@@ -723,12 +750,11 @@
         "emailTaken": "This email belongs to someone else in the organization, or has an invitation not accepted yet.",
         "employeeNumber": "The employee number must contain visible letters or digits and be at most 40 characters.",
         "employeeNumberTaken": "This employee number belongs to someone else in the organization.",
-        "roleRequired": "Choose a primary role.",
-        "roleNotAllowed": "You can't give this role. Only the Organization Admin gives privileged roles.",
-        "roles": "A role can be chosen once, and the primary role can't also be an additional role.",
-        "roleConflict": "Organization Admin is a setup-only role and can't be combined with any other role. Choose it alone, or choose other roles.",
+        "roleRequired": "Choose a role.",
+        "roleNotAllowed": "You can't give this role. Only the Organization Admin gives privileged roles, and nobody gives a role with permissions they don't hold.",
         "unit": "Choose a department or branch from the list.",
-        "manager": "Choose the direct manager from the list."
+        "manager": "Choose the direct manager from the list.",
+        "roleUnknown": "This role no longer exists. Choose another role."
       }
     },
     "list": {
@@ -1585,7 +1611,7 @@
       "viewInvited": "See the invited people on the users list",
       "importAnother": "Import another file",
       "importAnotherHint": "Such as the report after fixing it.",
-      "privilegedHint": "To give a privileged role, such as HR Manager, to someone added, open their profile and choose \"Change roles\".",
+      "privilegedHint": "To give a privileged role, such as HR Manager, to someone added, open their profile and choose \"Change role\".",
       "undoAvailable": "Undoing this import is available until {date}, for people who haven't accepted their invitation yet.",
       "undoAction": "Undo this import",
       "refusedTitle": "The file wasn't accepted",
@@ -1691,7 +1717,8 @@
       "PRIVILEGED_MEMBER": "Holders of privileged roles",
       "NEW_SKIPPED_UPDATE_ONLY": "Not users (update only)",
       "NO_CHANGES": "Nothing differs from their data",
-      "ROLE_REPEATED": "Role repeated in the row"
+      "ROLE_REPEATED": "Role repeated in the row",
+      "ROLES_ONE_PER_PERSON": "Additional roles not given (one role per person)"
     },
     "heldSummary": "{count, plural, one {one invitation not sent yet} other {{count, number, integer} invitations not sent yet}}"
   },
@@ -1902,5 +1929,70 @@
       "title": "Platform console",
       "text": "Manage organizations as Platform Super Admin."
     }
+  },
+  "roleBuilder": {
+    "titleNew": "Create role",
+    "titleEdit": "Edit role",
+    "intro": "Name the role, tick its permissions and choose the data it sees. Everyone who holds it gets a change at their next page.",
+    "details": "Role details",
+    "startFrom": "Start from",
+    "startHint": "Fills in the permissions (and, for a template, the name and description); you can change everything before saving.",
+    "startPlaceholder": "Choose a starting point",
+    "startBlank": "A blank role",
+    "startStandard": "Copy a standard role",
+    "startTemplate": "Templates",
+    "nameEn": "Name in English",
+    "nameAr": "Name in Arabic",
+    "nameHint": "Unique in the organization, up to 80 characters.",
+    "description": "Description",
+    "descriptionHint": "What people with this role do (optional, up to 500 characters).",
+    "permissions": "Permissions",
+    "permissionsHint": "Grouped by module. You can only give permissions you hold yourself.",
+    "highRisk": "High risk",
+    "notHeld": "You don't hold this permission, so you can't give it.",
+    "needsOrganization": "Only for a role that sees the whole organization.",
+    "countLabel": "{checked} of {total} selected",
+    "privilegedNotice": "This role has a high-risk permission: it is privileged, so only the Organization Admin can give it.",
+    "dataScope": "Data this role sees",
+    "scopes": {
+      "own": {
+        "label": "Own records only",
+        "hint": "The person's own requests, training and record."
+      },
+      "team": {
+        "label": "Their team",
+        "hint": "The people who report directly to them."
+      },
+      "departments": {
+        "label": "Their departments",
+        "hint": "The departments they head, with sub-departments (set by HR in the structure)."
+      },
+      "organization": {
+        "label": "Whole organization",
+        "hint": "Everyone in the organization. Needed for administrative permissions."
+      }
+    },
+    "scopeCleared": "Administrative permissions were cleared: they need the whole organization.",
+    "audited": "Every change is recorded in the audit log with the values before and after.",
+    "save": "Save role",
+    "saving": "Saving…",
+    "cancel": "Cancel",
+    "delete": "Delete role",
+    "deleteText": "The role is deleted for good. This works only when nobody holds it.",
+    "deleteConfirm": "Delete",
+    "keep": "Keep the role",
+    "deleting": "Deleting…",
+    "inUse": "{members, plural, one {{members, number, integer} person} other {{members, number, integer} people}} and {invitations, plural, one {{invitations, number, integer} pending invitation} other {{invitations, number, integer} pending invitations}} still have this role. Give them another role first.",
+    "inUseShort": "People still have this role. Give them another role first.",
+    "fieldErrors": {
+      "required": "This field is required.",
+      "name": "The name must contain visible letters and be at most 80 characters.",
+      "nameTaken": "Another role in the organization has this name.",
+      "description": "The description can be at most 500 characters.",
+      "permissions": "Some ticked permissions can't be given: you don't hold them, or they need the whole organization.",
+      "dataScope": "Administrative permissions need the whole organization as the data this role sees."
+    },
+    "notFound": "This role doesn't exist (any more).",
+    "conflict": "Someone changed this role meanwhile. Reload the page to see the latest version."
   }
 }

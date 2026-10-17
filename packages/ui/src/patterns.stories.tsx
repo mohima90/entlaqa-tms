@@ -33,7 +33,7 @@ const MEMBERS = [
     ar: 'منيرة القحطاني',
     en: 'Munira Alqahtani',
     email: 'munira@example.com',
-    role: { ar: 'مدير المنشأة', en: 'Organization Admin' },
+    role: { ar: 'مدير المنظمة', en: 'Organization Admin' },
     active: true,
   },
   {

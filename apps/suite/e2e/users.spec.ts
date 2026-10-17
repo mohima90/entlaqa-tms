@@ -376,7 +376,7 @@ test.describe('users pages', () => {
       'تعديل أدوار سارة عبدالله القحطاني',
     );
     await expect(page.getByTestId('role-conflict-hint')).toContainText(
-      'مدير المنشأة دور إعداد فقط ولا يُجمع مع أي دور آخر',
+      'مدير المنظمة دور إعداد فقط ولا يُجمع مع أي دور آخر',
     );
     await expectNoSeriousA11yViolations(page);
   });

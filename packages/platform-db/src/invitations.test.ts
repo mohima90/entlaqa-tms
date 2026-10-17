@@ -247,7 +247,10 @@ describe('listInvitations', () => {
     const [custom] = await listInvitations(
       fakeTx([{ ...row, role_name_ar: 'مدقق', role_name_en: 'Auditor', privileged: true }]).tx,
     );
-    expect(custom).toMatchObject({ primaryRoleName: { ar: 'مدقق', en: 'Auditor' }, privileged: true });
+    expect(custom).toMatchObject({
+      primaryRoleName: { ar: 'مدقق', en: 'Auditor' },
+      privileged: true,
+    });
     expect(fake.executed[0]?.sql).toContain('private.roles_include_privileged(i.tenant_id');
     expect(fake.executed[0]?.sql).toContain(
       'left join (select x.invitation_id from private.invitation_codes() x) c',

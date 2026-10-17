@@ -116,7 +116,7 @@ const PEOPLE: readonly {
     en: 'Munira Alqahtani',
     email: 'munira@raya.example',
     number: 'E-1001',
-    role: { ar: 'مدير المنشأة', en: 'Organization Admin' },
+    role: { ar: 'مدير المنظمة', en: 'Organization Admin' },
     department: { ar: 'الموارد البشرية', en: 'Human Resources' },
     status: 'active',
     last: { ar: '16 أكتوبر 2026، 09:12', en: '16 Oct 2026, 09:12' },

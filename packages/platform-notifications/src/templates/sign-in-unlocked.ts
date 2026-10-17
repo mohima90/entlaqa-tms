@@ -14,7 +14,7 @@ const Link = z.string().max(2000).refine(isSafeLink, 'https link');
  * إيقاف تسجيل الدخول» on the profile), so an unlock the person did not ask for — a mistaken or abused admin
  * session — does not go unnoticed. It names the organization, never the administrator; its only link is
  * the "forgot password" page in each language — nothing that signs anyone in. Arabic copy to be confirmed
- * by the UX writer (docs/design/content/glossary-ar-en.md: «مدير المنشأة», «نسيت كلمة المرور»).
+ * by the UX writer (docs/design/content/glossary-ar-en.md: «مدير المنظمة», «نسيت كلمة المرور»).
  */
 export const SignInUnlockedVariables = z.strictObject({
   organizationName: Localized(150),
@@ -34,8 +34,8 @@ function body(v: SignInUnlockedVariables, locale: AppLocale, primary: boolean): 
       >
         أُلغي إيقاف تسجيل الدخول إلى حسابك
       </h1>
-      ${paragraph(markup`كان تسجيل الدخول إلى الحساب ${ltr(v.loginEmail)} موقوفًا مؤقتًا بعد عدة محاولات لم تنجح، وقد ألغى مدير المنشأة في ${organization} هذا الإيقاف. يمكنك تسجيل الدخول الآن.`)}
-      ${paragraph(markup`إن لم تكن المحاولات منك أو لم تطلب إلغاء الإيقاف، فعيّن كلمة مرور جديدة الآن من صفحة ${link('نسيت كلمة المرور', url)} وأبلغ مدير المنشأة.`)}
+      ${paragraph(markup`كان تسجيل الدخول إلى الحساب ${ltr(v.loginEmail)} موقوفًا مؤقتًا بعد عدة محاولات لم تنجح، وقد ألغى مدير المنظمة في ${organization} هذا الإيقاف. يمكنك تسجيل الدخول الآن.`)}
+      ${paragraph(markup`إن لم تكن المحاولات منك أو لم تطلب إلغاء الإيقاف، فعيّن كلمة مرور جديدة الآن من صفحة ${link('نسيت كلمة المرور', url)} وأبلغ مدير المنظمة.`)}
       ${paragraph(markup`إن كنت تعرف سبب الإيقاف، فلا حاجة إلى أي إجراء.`, true, true)}`;
   }
   return markup`<h1
@@ -55,8 +55,8 @@ function plain(v: SignInUnlockedVariables, locale: AppLocale): string {
     return [
       'أُلغي إيقاف تسجيل الدخول إلى حسابك',
       '',
-      `كان تسجيل الدخول إلى الحساب ${v.loginEmail} موقوفًا مؤقتًا بعد عدة محاولات لم تنجح، وقد ألغى مدير المنشأة في ${organization} هذا الإيقاف. يمكنك تسجيل الدخول الآن.`,
-      'إن لم تكن المحاولات منك أو لم تطلب إلغاء الإيقاف، فعيّن كلمة مرور جديدة الآن من صفحة «نسيت كلمة المرور» وأبلغ مدير المنشأة:',
+      `كان تسجيل الدخول إلى الحساب ${v.loginEmail} موقوفًا مؤقتًا بعد عدة محاولات لم تنجح، وقد ألغى مدير المنظمة في ${organization} هذا الإيقاف. يمكنك تسجيل الدخول الآن.`,
+      'إن لم تكن المحاولات منك أو لم تطلب إلغاء الإيقاف، فعيّن كلمة مرور جديدة الآن من صفحة «نسيت كلمة المرور» وأبلغ مدير المنظمة:',
       url,
       '',
       'إن كنت تعرف سبب الإيقاف، فلا حاجة إلى أي إجراء.',

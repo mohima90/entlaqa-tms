@@ -84,7 +84,10 @@ describe('standard roles (FR-IAM-07, BRD Appendix B; EP-ROLES, PO 17 Oct 2026)',
   });
 
   it('names the Organization Admin and the Employee as the PO approved (17 Oct 2026)', () => {
-    expect(getSystemRole('tenant_admin').name).toEqual({ ar: 'مدير المنظمة', en: 'Organization Admin' });
+    expect(getSystemRole('tenant_admin').name).toEqual({
+      ar: 'مدير المنظمة',
+      en: 'Organization Admin',
+    });
     expect(getSystemRole('learner').name).toEqual({ ar: 'موظف', en: 'Employee' });
     expect(FORMER_ROLE_NAMES.auditor?.en).toBe('Auditor');
   });

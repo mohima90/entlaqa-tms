@@ -1,4 +1,9 @@
-import { type CustomRoleRow, type UserTx, getCustomRole, listCustomRoles } from '@jadarat/platform-db';
+import {
+  type CustomRoleRow,
+  type UserTx,
+  getCustomRole,
+  listCustomRoles,
+} from '@jadarat/platform-db';
 import {
   type CustomRoleScope,
   customRoleIsPrivileged,

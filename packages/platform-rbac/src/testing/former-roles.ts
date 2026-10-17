@@ -33,7 +33,12 @@ const FORMER = {
   compliance_officer: {
     code: 'custom_000000000004',
     dataScope: 'organization',
-    permissions: ['platform.user.read', 'platform.role.read', 'platform.org.read', 'platform.audit.read'],
+    permissions: [
+      'platform.user.read',
+      'platform.role.read',
+      'platform.org.read',
+      'platform.audit.read',
+    ],
   },
 } as const satisfies Record<string, CustomRoleDefinition>;
 

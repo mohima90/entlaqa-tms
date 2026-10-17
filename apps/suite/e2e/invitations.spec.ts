@@ -187,7 +187,7 @@ test.describe('invitations (admin side)', () => {
     const form = page.getByTestId('invite-user');
     await expect(form.getByTestId('invite-notice')).toContainText('تبقى الدعوة صالحة 7 أيام');
     await expect(form.getByTestId('role-conflict-hint')).toContainText(
-      'مدير المنشأة دور إعداد فقط ولا يُجمع مع أي دور آخر',
+      'مدير المنظمة دور إعداد فقط ولا يُجمع مع أي دور آخر',
     );
     await expectNoSeriousA11yViolations(page);
 

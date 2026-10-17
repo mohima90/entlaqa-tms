@@ -80,17 +80,28 @@ describe('custom roles (FR-IAM-07, EP-ROLES)', () => {
     expect(await createCustomRole(fake.tx, input)).toEqual({ ok: true, before: null, after: row });
     expect(fake.executed[0]?.sql).toContain('private.lock_tenant_roles');
     expect(writes(fake.executed)).toHaveLength(3);
-    expect(fake.executed[1]?.params).toEqual(['Course reviewer', 'مراجع الدورات', null, 'organization']);
+    expect(fake.executed[1]?.params).toEqual([
+      'Course reviewer',
+      'مراجع الدورات',
+      null,
+      'organization',
+    ]);
     const taken = fakeTx(
       [],
       pgError('23505', { constraint_name: 'custom_roles_tenant_name_ar_uq' }),
     );
-    expect(await createCustomRole(taken.tx, input)).toEqual({ ok: false, refusal: 'name_ar_taken' });
+    expect(await createCustomRole(taken.tx, input)).toEqual({
+      ok: false,
+      refusal: 'name_ar_taken',
+    });
   });
 
   it('updates: removed permissions first, then the role, then added permissions', async () => {
     const fake = fakeTx([], [raw], [], [], [], [raw]);
-    expect(await updateCustomRole(fake.tx, 'r1', 3, input)).toMatchObject({ ok: true, before: row });
+    expect(await updateCustomRole(fake.tx, 'r1', 3, input)).toMatchObject({
+      ok: true,
+      before: row,
+    });
     const w = writes(fake.executed);
     expect(w[0]).toMatch(/^delete from platform\.custom_role_permissions/);
     expect(w[1]).toMatch(/^update platform\.custom_roles/);
@@ -118,8 +129,14 @@ describe('custom roles (FR-IAM-07, EP-ROLES)', () => {
 
   it('deletes only a role nobody holds, with the numbers otherwise', async () => {
     const fake = fakeTx([], [raw], []);
-    expect(await deleteCustomRole(fake.tx, 'r1', 3)).toEqual({ ok: true, before: row, after: null });
-    expect(writes(fake.executed)).toEqual([expect.stringMatching(/^delete from platform\.custom_roles/)]);
+    expect(await deleteCustomRole(fake.tx, 'r1', 3)).toEqual({
+      ok: true,
+      before: row,
+      after: null,
+    });
+    expect(writes(fake.executed)).toEqual([
+      expect.stringMatching(/^delete from platform\.custom_roles/),
+    ]);
     const held = fakeTx([], [{ ...raw, member_count: 2, invitation_count: '1' }]);
     expect(await deleteCustomRole(held.tx, 'r1', 3)).toEqual({
       ok: false,
@@ -127,7 +144,9 @@ describe('custom roles (FR-IAM-07, EP-ROLES)', () => {
       holders: { members: 2, invitations: 1 },
     });
     expect(writes(held.executed)).toEqual([]);
-    expect(await deleteCustomRole(fakeTx([], []).tx, 'r1', 3)).toMatchObject({ refusal: 'not_found' });
+    expect(await deleteCustomRole(fakeTx([], []).tx, 'r1', 3)).toMatchObject({
+      refusal: 'not_found',
+    });
     expect(await deleteCustomRole(fakeTx([], [raw]).tx, 'r1', 1)).toMatchObject({
       refusal: 'version_conflict',
     });

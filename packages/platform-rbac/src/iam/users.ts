@@ -78,6 +78,8 @@ export interface UsersListView {
   readonly canAssignRoles: boolean;
   /** Privileged roles may be given here (the Organization Admin). */
   readonly canAssignPrivileged: boolean;
+  /** The signed-in member's own person (nobody changes their own role: no ⋯ menu on that row). */
+  readonly selfPersonId: string | null;
 }
 
 function privilegedAccess(ctx: ActionContext<UserTx>): 'allowed' | null {
@@ -137,6 +139,7 @@ export function usersListQueryDefinition(): QueryDefinition<
         roles: canReadRoles ? await loadRoleChoices(ctx) : null,
         canAssignRoles,
         canAssignPrivileged: ctx.can(p['platform.role.assign_privileged'], 'tenant'),
+        selfPersonId: ctx.actor.personId ?? null,
       });
     },
   };

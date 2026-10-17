@@ -29,7 +29,7 @@ describe('account locked e-mail (T-M2-11, PO decision 9 Oct 2026)', () => {
     );
     expect(email.html).toContain('<b>15 دقيقة</b>');
     expect(email.html).toContain('<b>15 minutes</b>');
-    expect(email.html).toContain('مدير المنشأة');
+    expect(email.html).toContain('مدير المنظمة');
     expect(email.html).toContain('administrator');
     expect(email.text).toContain('يُرفع الإيقاف تلقائيًا بعد 15 دقيقة');
     expect(email.text).toContain('The pause ends by itself after 15 minutes');

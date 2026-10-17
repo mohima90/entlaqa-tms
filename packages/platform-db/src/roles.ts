@@ -101,7 +101,11 @@ export interface MyRole {
  * Same membership rule and RLS as `loadMemberAuthorizationFacts`.
  */
 export async function getMyPrimaryRole(tx: UserTx): Promise<MyRole | null> {
-  const [row] = await tx.execute<{ role_code: string; name_ar: string | null; name_en: string | null }>(sql`
+  const [row] = await tx.execute<{
+    role_code: string;
+    name_ar: string | null;
+    name_en: string | null;
+  }>(sql`
     select ra.role_code, cr.name_ar, cr.name_en
     from platform.role_assignments ra
     join platform.tenant_memberships m on m.tenant_id = ra.tenant_id and m.id = ra.membership_id

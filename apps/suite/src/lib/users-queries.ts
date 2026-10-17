@@ -6,6 +6,8 @@ import {
   editUserQueryDefinition,
   invitationsListQueryDefinition,
   inviteFormQueryDefinition,
+  roleDetailQueryDefinition,
+  roleEditorQueryDefinition,
   rolesPageQueryDefinition,
   memberSecurityQueryDefinition,
   myIdentityQueryDefinition,
@@ -27,8 +29,12 @@ export const editUserQuery = defineQuery(editUserQueryDefinition());
 export const editRolesQuery = defineQuery(editRolesQueryDefinition());
 /** Deactivate a member (T-M2-09, screen 4): what they are responsible for and who can take it over. */
 export const deactivationQuery = defineQuery(deactivationQueryDefinition(RESPONSIBILITY_KINDS));
-/** Roles & permissions page (T-M2-05): member counts per role. */
+/** Roles & permissions (T-M2-05; EP-ROLES): standard and custom roles, people per role. */
 export const rolesPageQuery = defineQuery(rolesPageQueryDefinition());
+/** One role: standard (view only) or custom (edit for the Organization Admin). */
+export const roleDetailQuery = defineQuery(roleDetailQueryDefinition());
+/** Create a role: the permissions the Organization Admin may give. */
+export const roleEditorQuery = defineQuery(roleEditorQueryDefinition());
 /** Invitations (T-M2-07): the invited tab of the users list and the invite form's choices. */
 export const invitationsListQuery = defineQuery(invitationsListQueryDefinition());
 export const inviteFormQuery = defineQuery(inviteFormQueryDefinition());

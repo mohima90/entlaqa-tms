@@ -104,7 +104,9 @@ export async function SuiteShell({
       ? (context.me.nameEn ?? context.me.nameAr)
       : context.me.nameAr
     : t('myAccount');
-  const role = context.me?.primaryRole ? roleName(locale, context.me.primaryRole) : null;
+  const role = context.me?.primaryRole
+    ? roleName(locale, context.me.primaryRole.code, context.me.primaryRole.customName)
+    : null;
   const subtitle =
     organizationName && role
       ? t('accountSubtitle', { organization: organizationName, role })

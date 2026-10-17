@@ -65,12 +65,7 @@ const ROWS: readonly [string, LocalizedText, boolean, string][] = [
     true,
     'F N N N N N',
   ],
-  [
-    'users',
-    { ar: 'المستخدمون والأدوار', en: 'Users & roles' },
-    true,
-    'F E V V V:dept O',
-  ],
+  ['users', { ar: 'المستخدمون والأدوار', en: 'Users & roles' }, true, 'F E V V V:dept O'],
   [
     'requests',
     { ar: 'طلبات التدريب وحصر الاحتياجات', en: 'Training requests & needs analysis' },
@@ -78,24 +73,14 @@ const ROWS: readonly [string, LocalizedText, boolean, string][] = [
     'N E F E AE O',
   ],
   ['plan', { ar: 'الخطة التدريبية', en: 'Training plan' }, false, 'N A F V A N'],
-  [
-    'catalog',
-    { ar: 'دليل الدورات والبرامج', en: 'Catalog & programs' },
-    false,
-    'N V F E V V',
-  ],
+  ['catalog', { ar: 'دليل الدورات والبرامج', en: 'Catalog & programs' }, false, 'N V F E V V'],
   [
     'sessions',
     { ar: 'الجلسات والجدولة', en: 'Sessions & scheduling' },
     false,
     'N V F F V V:enrolled',
   ],
-  [
-    'venues',
-    { ar: 'المقرات والموارد', en: 'Venues & resources' },
-    false,
-    'N N F E N N',
-  ],
+  ['venues', { ar: 'المقرات والموارد', en: 'Venues & resources' }, false, 'N N F E N N'],
   [
     'instructors',
     { ar: 'المدربون وجهات التدريب', en: 'Instructors & providers' },
@@ -108,12 +93,7 @@ const ROWS: readonly [string, LocalizedText, boolean, string][] = [
     false,
     'N E F E A O',
   ],
-  [
-    'logistics',
-    { ar: 'مهام التجهيز', en: 'Logistics tasks' },
-    false,
-    'N N F F N N',
-  ],
+  ['logistics', { ar: 'مهام التجهيز', en: 'Logistics tasks' }, false, 'N N F F N N'],
   ['attendance', { ar: 'الحضور', en: 'Attendance' }, false, 'N V F F V O'],
   [
     'assessments',
@@ -148,24 +128,14 @@ const ROWS: readonly [string, LocalizedText, boolean, string][] = [
     true,
     'N V E V V:dept N',
   ],
-  [
-    'reports',
-    { ar: 'التقارير والتحليلات', en: 'Reports & analytics' },
-    false,
-    'N F F E V:dept O',
-  ],
+  ['reports', { ar: 'التقارير والتحليلات', en: 'Reports & analytics' }, false, 'N F F E V:dept O'],
   [
     'integrations',
     { ar: 'التكاملات وواجهة البرمجة', en: 'Integrations & API' },
     true,
     'F E:hris N N N N',
   ],
-  [
-    'ai',
-    { ar: 'ميزات الذكاء الاصطناعي', en: 'AI features' },
-    false,
-    'F:config U U U U U',
-  ],
+  ['ai', { ar: 'ميزات الذكاء الاصطناعي', en: 'AI features' }, false, 'F:config U U U U U'],
   ['audit', { ar: 'سجل التدقيق', en: 'Audit log' }, true, 'V N N N N N'],
 ];
 

@@ -21,7 +21,11 @@ export interface SuiteContext {
   readonly me: {
     readonly nameAr: string;
     readonly nameEn: string | null;
-    readonly primaryRole: string | null;
+    /** The member's role (one per person, EP-ROLES), with a custom role's names; display only. */
+    readonly primaryRole: {
+      readonly code: string;
+      readonly customName: { readonly ar: string; readonly en: string } | null;
+    } | null;
   } | null;
   /** The organization's inactivity limit in minutes (T-M2-10): the page warns before it ends. */
   readonly idleMinutes: number | null;

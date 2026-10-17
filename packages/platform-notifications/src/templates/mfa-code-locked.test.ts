@@ -34,7 +34,7 @@ describe('"wrong codes after your password" e-mail (integration review T-M2-11 M
     // The plain advice: someone else knows the password — set a new one now, tell the administrator; the
     // reset page's own code check is not paused.
     expect(email.text).toContain(
-      'فكلمة مرورك معروفة لغيرك: عيّن كلمة مرور جديدة الآن وأبلغ مدير المنشأة',
+      'فكلمة مرورك معروفة لغيرك: عيّن كلمة مرور جديدة الآن وأبلغ مدير المنظمة',
     );
     expect(email.text).toContain(
       "someone else knows your password: set a new password now and tell your organization's administrator",

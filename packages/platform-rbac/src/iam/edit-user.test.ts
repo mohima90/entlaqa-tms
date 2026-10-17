@@ -5,7 +5,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ActionRuntime } from '../define-action';
 import { createDefineAction } from '../define-action';
 import { createDefineQuery } from '../define-query';
-import { grantsForAssignments } from '../role-grants';
 import { type TestRoleCode, testRoleGrants } from '../testing/former-roles';
 import {
   EditUserInput,
@@ -43,10 +42,7 @@ function runtime(roles: TestRoleCode[]) {
     },
     withUserTx: (_c, fn) => fn(TX),
     loadSessionFacts: () => Promise.resolve({ active: true, aal2: true }),
-    loadGrants: () =>
-      Promise.resolve(
-        testRoleGrants(roles, []),
-      ),
+    loadGrants: () => Promise.resolve(testRoleGrants(roles, [])),
     resolveResource: (_tx, ref) =>
       Promise.resolve(
         ref.id === SARA

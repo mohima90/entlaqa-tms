@@ -25,10 +25,7 @@ export interface EditableRole {
   readonly version: string;
 }
 
-export async function getEditableRole(
-  tx: UserTx,
-  personId: string,
-): Promise<EditableRole | null> {
+export async function getEditableRole(tx: UserTx, personId: string): Promise<EditableRole | null> {
   const [person] = await tx.execute<{
     id: string;
     membership_id: string | null;

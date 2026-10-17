@@ -66,31 +66,32 @@ const requiredNamePart = z
   .max(60)
   .refine((value) => hasVisibleText(value), { message: 'invisible' });
 
-export const InviteUserInput = z
-  .strictObject({
-    email: z.string().trim().max(254).toLowerCase().pipe(z.email()),
-    firstNameAr: requiredNamePart,
-    familyNameAr: requiredNamePart,
-    firstNameEn: namePart,
-    familyNameEn: namePart,
-    departmentId: optionalId,
-    branchId: optionalId,
-    managerPersonId: optionalId,
-    employeeNumber: z
-      .string()
-      .max(40)
-      .transform((value) => normalizeDigits(value).trim())
-      .refine((value) => value === '' || hasVisibleText(value), { message: 'invisible' })
-      .transform((value) => (value === '' ? null : value)),
-    // One role per person (EP-ROLES): a standard role code or a custom role code of the organization.
-    role: z.string().max(40).regex(ROLE_CODE),
-    locale: z.enum(['ar', 'en']),
-  });
+export const InviteUserInput = z.strictObject({
+  email: z.string().trim().max(254).toLowerCase().pipe(z.email()),
+  firstNameAr: requiredNamePart,
+  familyNameAr: requiredNamePart,
+  firstNameEn: namePart,
+  familyNameEn: namePart,
+  departmentId: optionalId,
+  branchId: optionalId,
+  managerPersonId: optionalId,
+  employeeNumber: z
+    .string()
+    .max(40)
+    .transform((value) => normalizeDigits(value).trim())
+    .refine((value) => value === '' || hasVisibleText(value), { message: 'invisible' })
+    .transform((value) => (value === '' ? null : value)),
+  // One role per person (EP-ROLES): a standard role code or a custom role code of the organization.
+  role: z.string().max(40).regex(ROLE_CODE),
+  locale: z.enum(['ar', 'en']),
+});
 
 export type InviteUserInputValue = z.output<typeof InviteUserInput>;
 
 /** Does the invitation give a privileged role? (Computed by the database for custom roles.) */
-export function invitationGivesPrivilegedRole(invitation: { readonly privileged: boolean }): boolean {
+export function invitationGivesPrivilegedRole(invitation: {
+  readonly privileged: boolean;
+}): boolean {
   return invitation.privileged;
 }
 

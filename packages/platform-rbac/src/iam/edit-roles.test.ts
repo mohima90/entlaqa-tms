@@ -115,7 +115,8 @@ describe('input', () => {
       expect(EditRolesInput.safeParse(form(bad)).success, bad).toBe(false);
     }
     expect(
-      EditRolesInput.safeParse({ ...form('learner'), additional: [{ roleCode: 'learner' }] }).success,
+      EditRolesInput.safeParse({ ...form('learner'), additional: [{ roleCode: 'learner' }] })
+        .success,
     ).toBe(false);
     expect(VERSION_TOKEN.test(`${TOKEN},${TOKEN}`)).toBe(false);
     expect(ROLE_CODE.test('custom_0123456789ab')).toBe(true);
@@ -201,8 +202,9 @@ describe('changing the role', () => {
     expect(db.replaceMemberRole).toHaveBeenCalledWith(TX, SARA, TOKEN, 'learner', {
       isLocked: expect.any(Function),
     });
-    const isLocked = (db.replaceMemberRole.mock.lastCall?.[4] as { isLocked: (c: string) => boolean })
-      .isLocked;
+    const isLocked = (
+      db.replaceMemberRole.mock.lastCall?.[4] as { isLocked: (c: string) => boolean }
+    ).isLocked;
     expect(isLocked('learner')).toBe(false);
     expect(isLocked('training_coordinator')).toBe(false);
     expect(writeAudit).toHaveBeenCalledWith(
@@ -220,7 +222,9 @@ describe('changing the role', () => {
   });
 
   it('ordinary path: no privileged role, no role with permissions the member does not hold', async () => {
-    const save = createDefineAction(runtime(['hr_manager']).rt)(updateMemberRolesActionDefinition());
+    const save = createDefineAction(runtime(['hr_manager']).rt)(
+      updateMemberRolesActionDefinition(),
+    );
     for (const code of ['hr_manager', 'tenant_admin', AUDITOR.code, PROFILE.code]) {
       const result = await save(form(code));
       expect(!result.ok && result.error, code).toMatchObject({
@@ -231,13 +235,15 @@ describe('changing the role', () => {
     // The member's CURRENT role is checked too (after the lock): a privileged one is locked.
     db.getEditableRole.mockResolvedValue(editable({ roleCode: AUDITOR.code }));
     await save(form('learner'));
-    const isLocked = (db.replaceMemberRole.mock.lastCall?.[4] as { isLocked: (c: string) => boolean })
-      .isLocked;
+    const isLocked = (
+      db.replaceMemberRole.mock.lastCall?.[4] as { isLocked: (c: string) => boolean }
+    ).isLocked;
     expect(isLocked(AUDITOR.code)).toBe(true);
     db.getEditableRole.mockResolvedValue(editable({ roleCode: 'line_manager' }));
     await save(form('learner'));
-    const unknown = (db.replaceMemberRole.mock.lastCall?.[4] as { isLocked: (c: string) => boolean })
-      .isLocked;
+    const unknown = (
+      db.replaceMemberRole.mock.lastCall?.[4] as { isLocked: (c: string) => boolean }
+    ).isLocked;
     expect(unknown('line_manager')).toBe(true);
   });
 
@@ -260,7 +266,9 @@ describe('changing the role', () => {
     );
     for (const code of ['auditor', 'custom_ffffffffffff']) {
       const result = await save(form(code));
-      expect(!result.ok && result.error.fieldErrors).toEqual([{ path: 'role', code: 'ROLE_UNKNOWN' }]);
+      expect(!result.ok && result.error.fieldErrors).toEqual([
+        { path: 'role', code: 'ROLE_UNKNOWN' },
+      ]);
     }
     expect(db.replaceMemberRole).not.toHaveBeenCalled();
   });
@@ -276,8 +284,14 @@ describe('changing the role', () => {
       ['membership_revoked', { code: 'FORBIDDEN' }],
       ['privileged_change', { code: 'FORBIDDEN' }],
       ['version_conflict', { code: 'CONFLICT_VERSION' }],
-      ['last_admin', { code: 'VALIDATION_FAILED', fieldErrors: [{ path: 'role', code: 'LAST_ADMIN' }] }],
-      ['unknown_role', { code: 'VALIDATION_FAILED', fieldErrors: [{ path: 'role', code: 'ROLE_UNKNOWN' }] }],
+      [
+        'last_admin',
+        { code: 'VALIDATION_FAILED', fieldErrors: [{ path: 'role', code: 'LAST_ADMIN' }] },
+      ],
+      [
+        'unknown_role',
+        { code: 'VALIDATION_FAILED', fieldErrors: [{ path: 'role', code: 'ROLE_UNKNOWN' }] },
+      ],
     ];
     for (const [refusal, error] of cases) {
       db.replaceMemberRole.mockResolvedValueOnce({ ok: false, refusal });

@@ -7,7 +7,6 @@ import type { ActionRuntime } from '../define-action';
 import { createDefineAction } from '../define-action';
 import { createDefineQuery } from '../define-query';
 import { MEMBER_GRANTS } from '../member-permissions';
-import { grantsForAssignments } from '../role-grants';
 import type { ResourceAttributes } from '../scopes';
 import { SYSTEM_ROLES, type SystemRoleCode } from '../system-roles';
 import { type TestRoleCode, testRoleGrants } from '../testing/former-roles';
@@ -104,8 +103,7 @@ function runtime(
   return { rt, writeAudit, getClaims };
 }
 
-const forRoles = (...roles: TestRoleCode[]) =>
-  testRoleGrants(roles, []);
+const forRoles = (...roles: TestRoleCode[]) => testRoleGrants(roles, []);
 
 const settings = {
   mfaMode: 'off' as const,

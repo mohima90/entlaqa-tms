@@ -7,7 +7,6 @@ import type { ActionRuntime } from '../define-action';
 import { createDefineAction } from '../define-action';
 import { createDefineQuery } from '../define-query';
 import { platformPermissions } from '../platform-permissions';
-import { grantsForAssignments } from '../role-grants';
 import { type TestRoleCode, testRoleGrants } from '../testing/former-roles';
 import {
   DeactivateMemberInput,
@@ -63,10 +62,7 @@ function runtime(roles: TestRoleCode[], aal: 'aal1' | 'aal2' = 'aal1') {
     getClaims,
     withUserTx: (_c, fn) => fn(TX),
     loadSessionFacts: () => Promise.resolve({ active: true, aal2: aal === 'aal2' }),
-    loadGrants: () =>
-      Promise.resolve(
-        testRoleGrants(roles, []),
-      ),
+    loadGrants: () => Promise.resolve(testRoleGrants(roles, [])),
     // SARA exists in the organization; any other id is unknown (or out of scope): 404.
     resolveResource: (_tx, ref) =>
       Promise.resolve(

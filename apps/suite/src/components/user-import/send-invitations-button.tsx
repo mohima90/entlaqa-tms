@@ -14,7 +14,7 @@ export interface SendInvitationsButtonProps {
   readonly workingLabel: string;
   readonly doneText: string;
   readonly nothingText: string;
-  /** The member may not invite (integration review M2): «يرسل الدعوات مدير المنشأة …». */
+  /** The member may not invite (integration review M2): «يرسل الدعوات مدير المنظمة …». */
   readonly notAllowedText?: string;
   readonly errors: ErrorTexts;
   readonly variant?: 'primary' | 'secondary';

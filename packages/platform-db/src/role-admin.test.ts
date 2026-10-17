@@ -138,7 +138,9 @@ describe('roleRefusalOf', () => {
     expect(roleRefusalOf(pgError('42501'))).toBe('not_allowed');
     expect(
       roleRefusalOf(
-        pgError('23514', { message: 'the organization must keep at least one active Organization Admin' }),
+        pgError('23514', {
+          message: 'the organization must keep at least one active Organization Admin',
+        }),
       ),
     ).toBe('last_admin');
     expect(

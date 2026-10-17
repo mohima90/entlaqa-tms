@@ -26,9 +26,9 @@ import { type RoleChoice, canGive, findRole, loadRoleChoices } from './role-cata
 const p = platformPermissions;
 
 /** Codes of the privileged standard roles (custom roles: computed from their permissions). */
-export const PRIVILEGED_ROLE_CODES: readonly string[] = SYSTEM_ROLES.filter((r) => r.privileged).map(
-  (r) => r.code,
-);
+export const PRIVILEGED_ROLE_CODES: readonly string[] = SYSTEM_ROLES.filter(
+  (r) => r.privileged,
+).map((r) => r.code);
 
 export type RolesBlock = 'own_roles' | 'no_account' | 'revoked';
 

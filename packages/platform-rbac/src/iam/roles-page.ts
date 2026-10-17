@@ -110,7 +110,10 @@ export interface RoleDetailView {
 }
 
 export const RoleDetailInput = z.strictObject({
-  code: z.string().max(40).regex(/^[a-z][a-z_]{1,39}$|^custom_[0-9a-f]{12}$/),
+  code: z
+    .string()
+    .max(40)
+    .regex(/^[a-z][a-z_]{1,39}$|^custom_[0-9a-f]{12}$/),
 });
 
 /** One role: a standard role (view only) or a custom role (view, or edit for the Organization Admin). */

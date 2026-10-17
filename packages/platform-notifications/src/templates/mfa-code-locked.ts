@@ -18,7 +18,7 @@ const Link = z.string().max(2000).refine(isSafeLink, 'https link');
  * paused) and tell the Organization Admin if it was not them, and that a legitimate try works again
  * after the pause. A security notice: at most one per pause; over the account's daily ceiling it is merged
  * into the security digest. Same tone as the "sign-in paused" notice (account-locked.ts).
- * Arabic copy to be confirmed by the UX writer (docs/design/content/glossary-ar-en.md: «مدير المنشأة»,
+ * Arabic copy to be confirmed by the UX writer (docs/design/content/glossary-ar-en.md: «مدير المنظمة»,
  * «كلمة المرور», «تطبيق المصادقة», «رمز التحقق»).
  */
 export const MfaCodeLockedVariables = z.strictObject({
@@ -42,7 +42,7 @@ const TEXT = {
     paused: (minutes: string) => `لذلك أوقفنا التحقق من الرموز لهذا الحساب مؤقتًا لمدة ${minutes}.`,
     action: 'تعيين كلمة مرور جديدة',
     advice:
-      'إن لم تكن هذه المحاولات منك، فكلمة مرورك معروفة لغيرك: عيّن كلمة مرور جديدة الآن وأبلغ مدير المنشأة. تعيين كلمة مرور جديدة يُنهي جلسات الدخول على جميع الأجهزة، ويطلب رمزًا من تطبيق المصادقة، وهذا متاح لك الآن.',
+      'إن لم تكن هذه المحاولات منك، فكلمة مرورك معروفة لغيرك: عيّن كلمة مرور جديدة الآن وأبلغ مدير المنظمة. تعيين كلمة مرور جديدة يُنهي جلسات الدخول على جميع الأجهزة، ويطلب رمزًا من تطبيق المصادقة، وهذا متاح لك الآن.',
     yours: (minutes: string) =>
       `إن كانت المحاولات منك، فيمكنك المحاولة من جديد بعد ${minutes} بالرمز الظاهر في التطبيق حينها.`,
     once: 'نرسل هذا التنبيه مرة واحدة على الأكثر في كل إيقاف.',

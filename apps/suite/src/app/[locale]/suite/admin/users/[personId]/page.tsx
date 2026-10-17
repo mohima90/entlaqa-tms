@@ -314,11 +314,8 @@ async function Profile({
                 return (
                   <li key={role.roleCode} className="flex flex-wrap items-center gap-2">
                     <span className={ended ? 'text-text-muted line-through' : 'font-medium'}>
-                      {roleName(locale, role.roleCode)}
+                      {roleName(locale, role.roleCode, role.customName)}
                     </span>
-                    <Badge tone={role.isPrimary ? 'info' : 'neutral'}>
-                      {role.isPrimary ? t('primaryRole') : t('additionalRole')}
-                    </Badge>
                     {role.validFrom && role.validFrom > now ? (
                       <span className="text-sm text-text-muted">
                         {t('validFrom', { date: roleDay(role.validFrom) })}

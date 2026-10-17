@@ -132,9 +132,9 @@ describe('create custom role (FR-IAM-07)', () => {
 
   it('nobody else builds roles: HR Manager, L&D Manager, Employee → FORBIDDEN', async () => {
     for (const roles of [['hr_manager'], ['training_manager'], ['learner']] as TestRoleCode[][]) {
-      const result = await createDefineAction(runtime(roles).rt)(createCustomRoleActionDefinition())(
-        input,
-      );
+      const result = await createDefineAction(runtime(roles).rt)(
+        createCustomRoleActionDefinition(),
+      )(input);
       expect(!result.ok && result.error.code, roles[0]).toBe('FORBIDDEN');
     }
     expect(db.createCustomRole).not.toHaveBeenCalled();
@@ -186,9 +186,14 @@ describe('update and delete', () => {
     const update = createDefineAction(rt)(updateCustomRoleActionDefinition());
     const result = await update({ ...input, id: ROLE_ID, version: 1 });
     expect(result.ok).toBe(true);
-    expect(db.updateCustomRole).toHaveBeenCalledWith(TX, ROLE_ID, 1, expect.objectContaining({
-      nameEn: 'Finance approver',
-    }));
+    expect(db.updateCustomRole).toHaveBeenCalledWith(
+      TX,
+      ROLE_ID,
+      1,
+      expect.objectContaining({
+        nameEn: 'Finance approver',
+      }),
+    );
     expect(writeAudit).toHaveBeenCalledWith(
       TX,
       expect.anything(),
@@ -219,7 +224,10 @@ describe('update and delete', () => {
     expect(writeAudit).toHaveBeenCalledWith(
       TX,
       expect.anything(),
-      expect.objectContaining({ action: 'platform.role.deleted', data: expect.objectContaining({ after: null }) }),
+      expect.objectContaining({
+        action: 'platform.role.deleted',
+        data: expect.objectContaining({ after: null }),
+      }),
     );
     db.deleteCustomRole.mockResolvedValueOnce({
       ok: false,

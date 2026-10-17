@@ -25,7 +25,7 @@ describe('sign-in unlocked e-mail (T-M2-11, security review M1)', () => {
     expect(email.html.indexOf('أُلغي إيقاف تسجيل الدخول')).toBeLessThan(
       email.html.indexOf('Sign-in to your account was unlocked'),
     );
-    expect(email.text).toContain('ألغى مدير المنشأة في شركة الراية هذا الإيقاف');
+    expect(email.text).toContain('ألغى مدير المنظمة في شركة الراية هذا الإيقاف');
     expect(email.text).toContain('an administrator of Al Raya Company has ended the pause');
     expect(email.text).toContain("If the attempts weren't yours, or you didn't ask for this");
     expect(email.html).toContain('Security notice sent to sara@raya.example.');

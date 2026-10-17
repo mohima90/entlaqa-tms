@@ -1,5 +1,5 @@
 import 'server-only';
-import { ok } from '@jadarat/platform-core';
+import { type AppError, type Result, ok } from '@jadarat/platform-core';
 import { type UserTx, getTenantCurrencyCode } from '@jadarat/platform-db';
 import {
   type ActionDefinition,
@@ -112,6 +112,41 @@ export function courseAuditShape(row: CourseRow | null) {
     : null;
 }
 
+/**
+ * What a course action's handler returns: the full rows (kept whole for the audit log) and whether the actor
+ * may see the estimated costs (tms.course_cost.read). The caller gets `courseResponse` of it (code review
+ * C-M2): without the permission the cost fields are blanked, as in the list.
+ */
+export interface CourseActionOutput extends CourseSaved {
+  readonly costsVisible: boolean;
+}
+
+function withoutCosts(row: CourseRow): CourseRow {
+  return { ...row, estCostPerSession: null, estCostPerParticipant: null, costCurrency: null };
+}
+
+/** The action's answer to the caller: costs only for holders of tms.course_cost.read. */
+export function courseResponse(output: CourseActionOutput): CourseSaved {
+  const { costsVisible, ...saved } = output;
+  if (costsVisible) return saved;
+  return {
+    ...saved,
+    before: saved.before ? withoutCosts(saved.before) : null,
+    after: withoutCosts(saved.after),
+  };
+}
+
+const respond = ({ result }: { readonly result: CourseActionOutput }) =>
+  Promise.resolve(ok(courseResponse(result)));
+
+async function withCostVisibility(
+  costsVisible: boolean,
+  saved: Promise<Result<CourseSaved, AppError>>,
+): Promise<Result<CourseActionOutput, AppError>> {
+  const result = await saved;
+  return result.ok ? ok({ ...result.value, costsVisible }) : result;
+}
+
 function auditData(output: CourseSaved) {
   return {
     before: courseAuditShape(output.before),
@@ -122,14 +157,21 @@ function auditData(output: CourseSaved) {
 
 export function createCourseActionDefinition(): ActionDefinition<
   typeof CourseValuesInput,
-  CourseSaved,
-  UserTx
+  CourseActionOutput,
+  UserTx,
+  CourseSaved
 > {
   return {
     permission: c['tms.course.manage'],
     input: CourseValuesInput,
-    handler: ({ ctx, input }) =>
-      createCourse(ctx.tx, input, { withoutCosts: !ctx.can(c['tms.course_cost.read'], 'tenant') }),
+    handler: ({ ctx, input }) => {
+      const costsVisible = ctx.can(c['tms.course_cost.read'], 'tenant');
+      return withCostVisibility(
+        costsVisible,
+        createCourse(ctx.tx, input, { withoutCosts: !costsVisible }),
+      );
+    },
+    afterCommit: respond,
     audit: (_input, output) => ({
       action: 'tms.course.created',
       entityType: 'course',
@@ -141,18 +183,22 @@ export function createCourseActionDefinition(): ActionDefinition<
 
 export function updateCourseActionDefinition(): ActionDefinition<
   typeof UpdateCourseInput,
-  CourseSaved,
-  UserTx
+  CourseActionOutput,
+  UserTx,
+  CourseSaved
 > {
   return {
     permission: c['tms.course.manage'],
     input: UpdateCourseInput,
     handler: ({ ctx, input }) => {
       const { id, version, ...values } = input;
-      return updateCourse(ctx.tx, id, version, values, {
-        keepCosts: !ctx.can(c['tms.course_cost.read'], 'tenant'),
-      });
+      const costsVisible = ctx.can(c['tms.course_cost.read'], 'tenant');
+      return withCostVisibility(
+        costsVisible,
+        updateCourse(ctx.tx, id, version, values, { keepCosts: !costsVisible }),
+      );
     },
+    afterCommit: respond,
     audit: (_input, output) => ({
       action: 'tms.course.updated',
       entityType: 'course',
@@ -164,13 +210,19 @@ export function updateCourseActionDefinition(): ActionDefinition<
 
 export function setCourseStatusActionDefinition(): ActionDefinition<
   typeof CourseStatusInput,
-  CourseSaved,
-  UserTx
+  CourseActionOutput,
+  UserTx,
+  CourseSaved
 > {
   return {
     permission: c['tms.course.archive'],
     input: CourseStatusInput,
-    handler: ({ ctx, input }) => setCourseStatus(ctx.tx, input.id, input.version, input.status),
+    handler: ({ ctx, input }) =>
+      withCostVisibility(
+        ctx.can(c['tms.course_cost.read'], 'tenant'),
+        setCourseStatus(ctx.tx, input.id, input.version, input.status),
+      ),
+    afterCommit: respond,
     audit: (input, output) => ({
       action: input.status === 'archived' ? 'tms.course.archived' : 'tms.course.restored',
       entityType: 'course',

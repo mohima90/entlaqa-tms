@@ -336,6 +336,57 @@ describe('an editor who does not see the costs (custom role: tms.course.read + m
   });
 });
 
+describe('costs in the answers of the actions (C-M2: only with tms.course_cost.read)', () => {
+  const editor: Grant[] = [
+    { permission: 'tms.course.read', scope: { type: 'tenant' } },
+    { permission: 'tms.course.manage', scope: { type: 'tenant' } },
+    { permission: 'tms.course.archive', scope: { type: 'tenant' } },
+  ];
+  const noCosts = { estCostPerSession: null, estCostPerParticipant: null, costCurrency: null };
+
+  it('an editor without the cost permission gets the course without its costs; the audit keeps them', async () => {
+    const { rt, writeAudit } = runtime('learner', [], editor);
+    const define = createDefineAction(rt);
+    db.getCourse.mockResolvedValueOnce(row()).mockResolvedValueOnce(row({ version: 2 }));
+    const updated = await define(updateCourseActionDefinition())({ ...values, id: ID, version: 1 });
+    expect(updated.ok).toBe(true);
+    if (!updated.ok) return;
+    expect(updated.value.before).toMatchObject(noCosts);
+    expect(updated.value.after).toMatchObject({ ...noCosts, code: 'LEAD-101', version: 2 });
+    expect(updated.value).not.toHaveProperty('costsVisible');
+    expect(writeAudit).toHaveBeenCalledWith(
+      TX,
+      expect.anything(),
+      expect.objectContaining({
+        data: expect.objectContaining({
+          after: expect.objectContaining({ estCostPerSession: 15000, costCurrency: 'SAR' }),
+        }),
+      }),
+    );
+
+    const created = await define(createCourseActionDefinition())(values);
+    expect(created.ok && created.value.after).toMatchObject(noCosts);
+    db.getCourse.mockResolvedValueOnce(row()).mockResolvedValueOnce(row({ status: 'archived' }));
+    const archived = await define(setCourseStatusActionDefinition())({
+      id: ID,
+      version: 1,
+      status: 'archived',
+    });
+    expect(archived.ok && archived.value.after).toMatchObject({ ...noCosts, status: 'archived' });
+  });
+
+  it('the L&D Manager gets the costs', async () => {
+    const define = createDefineAction(runtime('training_manager').rt);
+    db.getCourse.mockResolvedValueOnce(row()).mockResolvedValueOnce(row({ version: 2 }));
+    const updated = await define(updateCourseActionDefinition())({ ...values, id: ID, version: 1 });
+    expect(updated.ok && updated.value.after).toMatchObject({
+      estCostPerSession: 15000,
+      estCostPerParticipant: 250,
+      costCurrency: 'SAR',
+    });
+  });
+});
+
 describe('updateCourseActionDefinition', () => {
   it('changes a course at its version and audits before/after', async () => {
     const { rt, writeAudit } = runtime('training_coordinator');

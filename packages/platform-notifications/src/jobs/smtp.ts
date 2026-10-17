@@ -1,3 +1,5 @@
+import { lookup as dnsLookup } from 'node:dns/promises';
+import { BlockList, isIP } from 'node:net';
 import nodemailer from 'nodemailer';
 import { formatFrom } from './resend';
 import { EmailSendError, type EmailTransport } from './transport';
@@ -77,13 +79,58 @@ export function classifySmtpError(error: unknown): EmailSendError {
 }
 
 /**
- * SMTP to the installation's relay (sovereign deployments, ADR 0008 §2) or Mailpit (development, CI).
- * TLS is verified (chain and host name) against the system roots or `caPem`. SMTP has no idempotency
- * key: a crash between the server's acceptance and our status update can send a message twice.
+ * Ports an ORGANIZATION's relay may use (WP-ADM-01): the SMTP submission ports. The platform's and the
+ * installation's relays (set by ENTLAQA's operators) may use any port.
  */
-export function createSmtpTransport(settings: SmtpSettings, caPem?: string): EmailTransport {
-  const transporter = nodemailer.createTransport({
-    host: settings.host,
+export const ORGANIZATION_SMTP_PORTS: ReadonlySet<number> = new Set([25, 465, 587, 2525]);
+
+/** Addresses no organization's relay may point the worker at: its own and private networks (SSRF). */
+const BLOCKED = new BlockList();
+const BLOCKED_V4: readonly (readonly [string, number])[] = [
+  ['0.0.0.0', 8],
+  ['10.0.0.0', 8],
+  ['100.64.0.0', 10],
+  ['127.0.0.0', 8],
+  ['169.254.0.0', 16],
+  ['172.16.0.0', 12],
+  ['192.0.0.0', 24],
+  ['192.0.2.0', 24],
+  ['192.168.0.0', 16],
+  ['198.18.0.0', 15],
+  ['198.51.100.0', 24],
+  ['203.0.113.0', 24],
+  ['224.0.0.0', 4],
+  ['240.0.0.0', 4],
+];
+const BLOCKED_V6: readonly (readonly [string, number])[] = [
+  ['::', 128],
+  ['::1', 128],
+  ['64:ff9b::', 96],
+  ['100::', 64],
+  ['2001:db8::', 32],
+  ['fc00::', 7],
+  ['fe80::', 10],
+  ['ff00::', 8],
+];
+for (const [network, prefix] of BLOCKED_V4) BLOCKED.addSubnet(network, prefix, 'ipv4');
+for (const [network, prefix] of BLOCKED_V6) BLOCKED.addSubnet(network, prefix, 'ipv6');
+
+/** True for an address on the public internet (IPv4-mapped IPv6 addresses are checked as IPv4). */
+export function isPublicAddress(address: string): boolean {
+  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(address);
+  if (mapped?.[1]) return isIP(mapped[1]) === 4 && !BLOCKED.check(mapped[1], 'ipv4');
+  const family = isIP(address);
+  if (family === 4) return !BLOCKED.check(address, 'ipv4');
+  if (family === 6) return !BLOCKED.check(address, 'ipv6');
+  return false;
+}
+
+export type HostLookup = (host: string) => Promise<readonly { readonly address: string }[]>;
+const systemLookup: HostLookup = (host) => dnsLookup(host, { all: true, verbatim: true });
+
+function nodemailerTransport(settings: SmtpSettings, connectTo: string, caPem: string | undefined) {
+  return nodemailer.createTransport({
+    host: connectTo,
     port: settings.port,
     secure: settings.secure,
     requireTLS: settings.requireTls,
@@ -91,6 +138,7 @@ export function createSmtpTransport(settings: SmtpSettings, caPem?: string): Ema
     tls: {
       rejectUnauthorized: true,
       minVersion: 'TLSv1.2',
+      // The certificate is checked against the configured host name, also when connecting by address.
       servername: settings.host,
       ...(caPem ? { ca: caPem } : {}),
     },
@@ -100,14 +148,53 @@ export function createSmtpTransport(settings: SmtpSettings, caPem?: string): Ema
     disableFileAccess: true,
     disableUrlAccess: true,
   });
+}
+
+/**
+ * SMTP to a relay: the installation's (sovereign deployments, ADR 0008 §2), the platform sender's, an
+ * organization's own (Email integration) or Mailpit (development, CI). TLS is verified (chain and host
+ * name) against the system roots or `caPem`. SMTP has no idempotency key: a crash between the server's
+ * acceptance and our status update can send a message twice.
+ *
+ * `publicOnly` (an organization's relay, WP-ADM-01): the host name is resolved before every send and the
+ * worker connects to that address only when every address of the name is on the public internet and the
+ * port is a submission port — an Organization Admin cannot point the worker at its own network (SSRF); the
+ * refusal is SMTP_HOST_NOT_ALLOWED.
+ */
+export function createSmtpTransport(
+  settings: SmtpSettings,
+  caPem?: string,
+  options: { readonly publicOnly?: boolean; readonly lookup?: HostLookup } = {},
+): EmailTransport {
+  const shared = options.publicOnly ? null : nodemailerTransport(settings, settings.host, caPem);
+  const lookup = options.lookup ?? systemLookup;
+  const connect = async () => {
+    if (shared) return { transporter: shared, once: false };
+    if (!ORGANIZATION_SMTP_PORTS.has(settings.port)) {
+      throw new EmailSendError('SMTP_HOST_NOT_ALLOWED', false);
+    }
+    let addresses: readonly { readonly address: string }[];
+    try {
+      addresses = isIP(settings.host) ? [{ address: settings.host }] : await lookup(settings.host);
+    } catch {
+      throw new EmailSendError('NETWORK_ERROR', false);
+    }
+    const first = addresses[0];
+    if (!first || addresses.some((a) => !isPublicAddress(a.address))) {
+      throw new EmailSendError('SMTP_HOST_NOT_ALLOWED', false);
+    }
+    return { transporter: nodemailerTransport(settings, first.address, caPem), once: true };
+  };
   return {
     provider: 'smtp',
     async send(email) {
+      const { transporter, once } = await connect();
       try {
         const domain = email.from.address.slice(email.from.address.lastIndexOf('@') + 1);
         const info = await transporter.sendMail({
           from: formatFrom(email.from),
           to: email.to,
+          ...(email.replyTo ? { replyTo: email.replyTo } : {}),
           subject: email.subject,
           html: email.html,
           text: email.text,
@@ -116,10 +203,12 @@ export function createSmtpTransport(settings: SmtpSettings, caPem?: string): Ema
         return { providerMessageId: info.messageId.slice(0, 300) };
       } catch (error) {
         throw classifySmtpError(error);
+      } finally {
+        if (once) transporter.close();
       }
     },
     close() {
-      transporter.close();
+      shared?.close();
       return Promise.resolve();
     },
   };

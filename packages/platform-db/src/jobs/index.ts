@@ -21,6 +21,20 @@ export {
   insertEmailDelivery,
 } from './deliveries';
 export {
+  EMAIL_WAITING_CODES,
+  type EmailRouteRow,
+  type EmailTestClaim,
+  claimEmailTests,
+  finishEmailTest,
+  isEmailSettingsMissing,
+  listTenantsWaitingForSender,
+  loadEmailRoute,
+  noteInvitationMailSkipped,
+  publishEmailCredentialsKey,
+  sweepEmailDeliveries,
+  takeWaitingDeliveries,
+} from './email';
+export {
   ACCOUNT_MAIL_KINDS,
   ACCOUNT_MAIL_MAX_ATTEMPTS,
   type AccountMailContext,

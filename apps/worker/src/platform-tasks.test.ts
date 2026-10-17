@@ -34,6 +34,21 @@ describe('worker platform tasks (T-M2-17, T-M2-10)', () => {
     expect(db.purgeUnconfirmedMfaApps).toHaveBeenCalledTimes(2);
   });
 
+  it('registers the e-mail tasks (WP-ADM-01: tests, waiting messages, housekeeping) when given', () => {
+    const router = {
+      resolve: () => Promise.resolve({ kind: 'wait' as const, code: 'NO_SENDER' as const }),
+      close: () => Promise.resolve(),
+    };
+    const tasks = platformTasks({ ...deps, authAdmin: undefined, email: { keys: null, router } });
+    expect(tasks.map((t) => t.name)).toEqual([
+      'platform.account_mail',
+      'platform.session_purge',
+      'platform.email_tests',
+      'platform.email_resume',
+      'platform.email_housekeeping',
+    ]);
+  });
+
   it('registers the account mailer; the Auth admin API only when it is configured', () => {
     const issue = vi.fn(() => Promise.resolve({ status: 'unknown_account' as const }));
     const recoveryLinksFor = vi.fn(() => ({ issue }));

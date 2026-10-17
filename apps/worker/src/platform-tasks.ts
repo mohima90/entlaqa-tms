@@ -16,6 +16,13 @@ import {
 } from '@jadarat/platform-identity/jobs';
 import { createUserImportTask } from '@jadarat/platform-import/jobs';
 import type { PlatformTask, WorkerLogLevel } from '@jadarat/platform-jobs/jobs';
+import {
+  type CredentialsKeyPair,
+  type EmailRouter,
+  createEmailHousekeepingTask,
+  createEmailResumeTask,
+  createEmailTestTask,
+} from '@jadarat/platform-notifications/jobs';
 
 export interface PlatformTaskDependencies {
   /** Public origin of the web app (APP_BASE_URL); absent while e-mail is switched off. */
@@ -50,6 +57,15 @@ export interface PlatformTaskDependencies {
    * warns at most once a day per process, so a long-running daemon keeps reminding until renewal.
    */
   readonly adminKeyCheck?: (() => void) | undefined;
+  /**
+   * E-mail set up in the product (WP-ADM-01): the worker's key pair (EMAIL_CREDENTIALS_KEY; null without it)
+   * and the sender rule — for the test e-mails, the messages waiting for a sender and the delivery log's
+   * housekeeping (T-M2-48).
+   */
+  readonly email?: {
+    readonly keys: CredentialsKeyPair | null;
+    readonly router: EmailRouter;
+  };
 }
 
 /**
@@ -74,7 +90,9 @@ function workerStore(settings: { url: string; secretKey: string }): FileObjectSt
 
 /**
  * Work without a tenant (ADR 0005 §4), run on every wake-up and every minute: account e-mails (reset
- * links, lock notices), ended sessions removed from Auth (T-M2-10, at most once a minute), and — with
+ * links, lock notices), ended sessions removed from Auth (T-M2-10, at most once a minute), the e-mail tasks
+ * (WP-ADM-01: test e-mails of the sender settings, messages waiting for a sender, the delivery log's
+ * housekeeping), and — with
  * Storage configured — file housekeeping, bulk user imports (T-M2-12: they read scanned files and write
  * their reports) and, with a scanner, the malware scan (T-M2-18).
  */
@@ -101,6 +119,19 @@ export function platformTasks(deps: PlatformTaskDependencies): readonly Platform
       : mailer,
     purger,
   ];
+  if (deps.email) {
+    const { keys, router } = deps.email;
+    tasks.push(
+      createEmailTestTask({ keys, withPlatformTx: deps.withPlatformTx, log: deps.log }),
+      createEmailResumeTask({
+        router,
+        withPlatformTx: deps.withPlatformTx,
+        withSystemTx: deps.withSystemTx,
+        log: deps.log,
+      }),
+      createEmailHousekeepingTask({ withPlatformTx: deps.withPlatformTx, log: deps.log }),
+    );
+  }
   if (deps.authAdmin) {
     const store = (deps.storeFor ?? workerStore)(deps.authAdmin);
     tasks.push(

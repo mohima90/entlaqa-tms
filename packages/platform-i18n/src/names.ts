@@ -18,6 +18,11 @@ export interface NamePairs {
   readonly familyNameAr?: string | null | undefined;
   readonly firstNameEn?: string | null | undefined;
   readonly familyNameEn?: string | null | undefined;
+  /** The middle parts (always optional; a given one makes its language's name «started»). */
+  readonly fatherNameAr?: string | null | undefined;
+  readonly grandfatherNameAr?: string | null | undefined;
+  readonly fatherNameEn?: string | null | undefined;
+  readonly grandfatherNameEn?: string | null | undefined;
 }
 
 /** The other language of the pair. */
@@ -30,12 +35,24 @@ export function requiredNameFields(language: NameLanguage): readonly RequiredNam
   return language === 'ar' ? ['firstNameAr', 'familyNameAr'] : ['firstNameEn', 'familyNameEn'];
 }
 
+const blank = (value: string | null | undefined) => (value ?? '').trim() === '';
+
 /**
  * The required name fields left empty (blank or only spaces), in form order; [] when the names satisfy the
- * rule of the organization's default language.
+ * rule of the organization's default language: its first and family names, and — the other language being
+ * optional — that language's names all or nothing (WP-FIX-01 review): once any of its parts is given, its
+ * first and family names are required too.
  */
 export function missingNameFields(language: NameLanguage, names: NamePairs): RequiredNameField[] {
-  return requiredNameFields(language).filter((field) => (names[field] ?? '').trim() === '');
+  const other = otherNameLanguage(language);
+  const script = other === 'ar' ? 'Ar' : 'En';
+  const otherStarted = (['firstName', 'fatherName', 'grandfatherName', 'familyName'] as const).some(
+    (part) => !blank(names[`${part}${script}`]),
+  );
+  const required = otherStarted
+    ? [...requiredNameFields(language), ...requiredNameFields(other)]
+    : requiredNameFields(language);
+  return required.filter((field) => blank(names[field]));
 }
 
 /**

@@ -9,7 +9,7 @@ const db = vi.hoisted(() => ({
   createUserImport: vi.fn(),
   getHeldInvitationsSummary: vi.fn(),
   getRunningUserImport: vi.fn(),
-  getTenantDefaultLocale: vi.fn(() => Promise.resolve('ar')),
+  getImportNameLanguage: vi.fn(() => Promise.resolve('ar')),
   getUndoPreview: vi.fn(),
   getUserImport: vi.fn(),
   listTemplateUnits: vi.fn(),
@@ -339,7 +339,7 @@ describe('mapping (step 2)', () => {
       { path: 'mapping.family_name_ar', code: 'MISSING' },
     ]);
     // English default (PO 17 Oct 2026): the English names are the required ones.
-    db.getTenantDefaultLocale.mockResolvedValueOnce('en');
+    db.getImportNameLanguage.mockResolvedValueOnce('en');
     const englishDefault = await run(definition, {
       importId: ID,
       sheetIndex: 0,
@@ -679,7 +679,7 @@ describe('queries', () => {
       branches: [],
     });
     const template = actions.userImportTemplateQueryDefinition();
-    db.getTenantDefaultLocale.mockResolvedValueOnce('en');
+    db.getImportNameLanguage.mockResolvedValueOnce('en');
     expect((await run(template, {})).value).toEqual({
       departments: [{ code: 'A', nameAr: 'أ', nameEn: null }],
       branches: [],

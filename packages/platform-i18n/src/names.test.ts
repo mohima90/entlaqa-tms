@@ -37,6 +37,32 @@ describe('names (guided-test feedback #2: the required name follows the default 
     ]);
   });
 
+  it('the optional language’s names are all or nothing (first AND family, or neither)', () => {
+    const english = { firstNameEn: 'Sara', familyNameEn: 'Ali' };
+    expect(missingNameFields('en', { ...english, firstNameAr: ' ', familyNameAr: null })).toEqual(
+      [],
+    );
+    expect(missingNameFields('en', { ...english, firstNameAr: 'سارة' })).toEqual(['familyNameAr']);
+    expect(missingNameFields('en', { ...english, familyNameAr: 'علي' })).toEqual(['firstNameAr']);
+    // A middle part alone starts the name too.
+    expect(missingNameFields('en', { ...english, fatherNameAr: 'محمد' })).toEqual([
+      'firstNameAr',
+      'familyNameAr',
+    ]);
+    expect(
+      missingNameFields('en', { ...english, firstNameAr: 'سارة', familyNameAr: 'علي' }),
+    ).toEqual([]);
+    // Arabic default: the English names likewise; the default language's fields come first.
+    expect(missingNameFields('ar', { firstNameEn: 'Sara' })).toEqual([
+      'firstNameAr',
+      'familyNameAr',
+      'familyNameEn',
+    ]);
+    expect(
+      missingNameFields('ar', { firstNameAr: 'سارة', familyNameAr: 'علي', grandfatherNameEn: 'X' }),
+    ).toEqual(['firstNameEn', 'familyNameEn']);
+  });
+
   it('shows the page language’s name, else the other one', () => {
     expect(personDisplayName('en', 'سارة علي', 'Sara Ali')).toBe('Sara Ali');
     expect(personDisplayName('ar', 'سارة علي', 'Sara Ali')).toBe('سارة علي');

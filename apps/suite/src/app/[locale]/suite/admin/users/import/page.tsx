@@ -352,7 +352,7 @@ async function recentImports(
                   <td className="min-w-32 px-4 py-3">
                     {record.mine
                       ? t('recent.you')
-                      : record.importerName.ar
+                      : (record.importerName.ar ?? record.importerName.en)
                         ? localizedName(locale, record.importerName.ar, record.importerName.en)
                         : '—'}
                   </td>

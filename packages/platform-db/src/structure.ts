@@ -4,6 +4,7 @@ import {
   departmentLevelsExist,
   roleScopeUnitsExist,
   structureLevelsExist,
+  structureLevelsExistCached,
 } from './custom-roles-present';
 import { pgError } from './user-admin';
 import type { UserTx } from './with-user-tx';
@@ -121,15 +122,30 @@ export async function listStructureLevels(tx: UserTx): Promise<readonly Structur
   }));
 }
 
-/** The levels' names only (labels of unit pickers). */
+/**
+ * The levels' names only (labels of unit columns, fields and pickers, read on many pages): one query, no
+ * unit counts — the table's presence is asked once per process (structureLevelsExistCached).
+ */
 export async function listStructureLevelLabels(
   tx: UserTx,
 ): Promise<readonly StructureLevelLabel[]> {
-  return (await listStructureLevels(tx)).map(({ ordinal, nameEn, nameAr }) => ({
-    ordinal,
-    nameEn,
-    nameAr,
-  }));
+  if (!(await structureLevelsExistCached(tx))) return [];
+  const rows = await tx.execute<{ ordinal: number; name_en: string; name_ar: string }>(sql`
+    select l.ordinal, l.name_en, l.name_ar from platform.structure_levels l order by l.ordinal`);
+  return rows.map((r) => ({ ordinal: r.ordinal, nameEn: r.name_en, nameAr: r.name_ar }));
+}
+
+/**
+ * Has the organization any live unit below the first level? Then a column holding units of any level is
+ * labelled «Unit» with each unit's level, else with the first level's name — the same on every page of a
+ * list (guided-test feedback #3; WP-FIX-01 review). A unit below the first level is one with a parent (its
+ * level is its depth), so this needs no level column (deploy window).
+ */
+export async function hasUnitsBelowFirstLevel(tx: UserTx): Promise<boolean> {
+  const [row] = await tx.execute<{ deeper: boolean }>(sql`
+    select exists (select 1 from platform.departments d
+                   where d.deleted_at is null and d.parent_id is not null) as deeper`);
+  return row?.deeper === true;
 }
 
 /**

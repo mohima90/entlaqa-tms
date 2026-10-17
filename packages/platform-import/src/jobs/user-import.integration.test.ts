@@ -605,4 +605,61 @@ describe.skipIf(!configured)('user import against PostgreSQL', () => {
     const undone = await until(importId, 'undone', hookedTask);
     expect(undone.resultCounts).toMatchObject({ undo: {} });
   });
+
+  it('English default: an Arabic-only member is updated without English names; a new person needs them (PO 17 Oct 2026)', async () => {
+    const member = { user: randomUUID(), person: randomUUID() };
+    await db.execute(
+      sql`insert into auth.users (id, email) values (${member.user}, ${`munira.${tag}@import.example`})`,
+    );
+    await db.execute(sql`insert into platform.persons (id, tenant_id, display_name_ar, first_name_ar, family_name_ar, email)
+      values (${member.person}, ${tenant}, 'منيرة الزهراني', 'منيرة', 'الزهراني', ${`munira.${tag}@import.example`})`);
+    await db.execute(sql`insert into platform.tenant_memberships (tenant_id, user_id, person_id, status)
+      values (${tenant}, ${member.user}, ${member.person}, 'active')`);
+    await db.execute(
+      sql`update platform.tenant_settings set default_locale = 'en' where tenant_id = ${tenant}::uuid`,
+    );
+    try {
+      const csv = new TextEncoder().encode(
+        CSV_BOM +
+          csvLine(['Email', 'الاسم الأول', 'اسم العائلة', 'الجوال', 'First name', 'Family name']) +
+          csvLine([`munira.${tag}@import.example`, 'منيرة', 'الزهراني', '+966551234567', '', '']) +
+          csvLine([`newbie.${tag}@import.example`, 'نوف', 'الشمري', '', '', '']),
+      );
+      const importId = await upload(csv, 'arabic-names.csv', 'text/csv');
+      await until(importId, 'mapping');
+      await withUserTx(claims, (tx) =>
+        chooseUserImportMapping(tx, importId, {
+          sheetIndex: 0,
+          // The file has the English name columns (the mapping requires the default language's), empty.
+          mapping: {
+            '0': 'email',
+            '1': 'first_name_ar',
+            '2': 'family_name_ar',
+            '3': 'mobile',
+            '4': 'first_name_en',
+            '5': 'family_name_en',
+          },
+        }),
+      );
+      await until(importId, 'review');
+      const rows = await db.execute<{
+        row_number: number;
+        review_kind: string;
+        codes: string[];
+      }>(sql`
+        select r.row_number, r.review_kind,
+               array(select i ->> 'c' from jsonb_array_elements(r.issues) i where i ->> 's' = 'e') as codes
+        from platform.user_import_rows r where r.import_id = ${importId}::uuid order by r.row_number`);
+      expect(rows.map((r) => [r.row_number, r.review_kind, r.codes])).toEqual([
+        [2, 'existing', []],
+        [3, 'error', ['NAME_EN_REQUIRED', 'NAME_EN_REQUIRED']],
+      ]);
+      await withUserTx(claims, (tx) => cancelUserImport(tx, importId));
+      for (let i = 0; i < 5; i += 1) await task.run({ jobId: randomUUID() });
+    } finally {
+      await db.execute(
+        sql`update platform.tenant_settings set default_locale = 'ar' where tenant_id = ${tenant}::uuid`,
+      );
+    }
+  });
 });

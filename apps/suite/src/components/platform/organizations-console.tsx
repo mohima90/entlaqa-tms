@@ -46,7 +46,9 @@ function fieldMessage(field: Field | 'locale' | 'form', code: string, text: (k: 
     return text(code === 'SLUG_TAKEN' ? 'create.errors.slugTaken' : 'create.errors.slug');
   // A Super Admin never invites their own account (review L7).
   if (field === 'adminEmail' && code === 'OWN_EMAIL') return text('create.errors.adminEmailOwn');
-  if (field.startsWith('admin') && field !== 'adminEmail') return text('create.errors.adminName');
+  // A language's names all or nothing (the form's other name field of that language is filled).
+  if (field.startsWith('admin') && field !== 'adminEmail')
+    return text(code === 'CUSTOM' ? 'create.errors.adminNamePair' : 'create.errors.adminName');
   return text(`create.errors.${field}`);
 }
 

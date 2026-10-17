@@ -22,6 +22,7 @@ const db = vi.hoisted(() => ({
   saveUserImportColumns: vi.fn(),
   deleteUserImportStaged: vi.fn(),
   stageUserImportRows: vi.fn(),
+  loadMemberNamesByEmail: vi.fn(),
   classifyUserImport: vi.fn(),
   recheckUserImport: vi.fn(),
   applyUserImportBatch: vi.fn(),
@@ -266,17 +267,27 @@ describe('user import task', () => {
       mapping: { '0': 'email', '1': 'first_name_ar', '2': 'family_name_ar', '9': 'nonsense' },
     };
     db.classifyUserImport.mockResolvedValue({ total: 2 });
+    // English default, a file with Arabic names only: a@x.test is an existing member whose names the row
+    // leaves as they are (accepted, PO 17 Oct 2026); b@x.test is new (the English names are required).
+    db.loadMemberNamesByEmail.mockResolvedValue(
+      new Map([['a@x.test', { first_name_ar: 'نورة', family_name_ar: 'الدوسري' }]]),
+    );
     claimOnce('validate');
     await task().run({ jobId: 'j' });
     expect(db.deleteUserImportStaged).toHaveBeenCalledWith({}, ID, 'rows');
+    expect(db.loadMemberNamesByEmail).toHaveBeenCalledWith({}, ['a@x.test', 'b@x.test']);
     const [, , staged] = db.stageUserImportRows.mock.calls[0] as [
       unknown,
       string,
-      { rowNumber: number; data: Record<string, unknown> }[],
+      { rowNumber: number; data: Record<string, unknown>; formatIssues: { c: string }[] }[],
     ];
     expect(staged.map((r) => [r.rowNumber, r.data.email])).toEqual([
       [2, 'a@x.test'],
       [3, 'b@x.test'],
+    ]);
+    expect(staged.map((r) => r.formatIssues.map((i) => i.c))).toEqual([
+      [],
+      ['NAME_EN_REQUIRED', 'NAME_EN_REQUIRED'],
     ]);
     expect(files.storeGeneratedFile).toHaveBeenCalledWith(
       {},

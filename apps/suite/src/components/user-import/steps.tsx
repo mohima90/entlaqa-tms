@@ -61,7 +61,8 @@ async function importer(locale: AppLocale, view: UserImportView): Promise<string
   const t = await getTranslations({ locale, namespace: 'userImport' });
   const { record } = view;
   if (record.mine) return t('recent.you');
-  return record.importerName.ar
+  // A person may have an English name only (PO 17 Oct 2026).
+  return (record.importerName.ar ?? record.importerName.en)
     ? localizedName(locale, record.importerName.ar, record.importerName.en)
     : '—';
 }

@@ -87,6 +87,38 @@ begin
 end $$;
 rollback;
 
+-- The review's «what changes» (20261021100000): a direct manager with an English name only is named by it —
+-- as the new manager (was: the change was not listed at all) and as the current one (was: no «from»).
+begin;
+do $$
+declare
+  v_tenant constant uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_english constant uuid := 'a1000000-0000-4000-8000-00000000c001';
+  v_arabic constant uuid := 'a1000000-0000-4000-8000-00000000c002';
+  v_staff constant uuid := 'a1000000-0000-4000-8000-00000000c003';
+begin
+  insert into platform.persons (id, tenant_id, display_name_ar, display_name_en, first_name_en, family_name_en, email, status)
+  values (v_english, v_tenant, null, 'Mona Saleh', 'Mona', 'Saleh', 'mona.manager@names.test', 'active'),
+         (v_arabic, v_tenant, 'خالد العتيبي', 'Khalid Alotaibi', 'Khalid', 'Alotaibi', 'khalid.manager@names.test', 'active'),
+         (v_staff, v_tenant, 'سارة', null, null, null, 'sara.staff@names.test', 'active');
+  insert into platform.person_employment (tenant_id, person_id, manager_person_id) values (v_tenant, v_staff, v_arabic);
+
+  perform tests.assert_eq(
+    private.user_import_changes(v_tenant, v_staff, '{}'::jsonb, null, null, v_english, 'mona.manager@names.test'),
+    '[{"f": "manager", "from": "خالد العتيبي", "to": "Mona Saleh"}]'::jsonb,
+    'import changes: a new manager with an English name only is listed by that name');
+
+  update platform.person_employment set manager_person_id = v_english where tenant_id = v_tenant and person_id = v_staff;
+  perform tests.assert_eq(
+    private.user_import_changes(v_tenant, v_staff, '{}'::jsonb, null, null, v_arabic, 'khalid.manager@names.test'),
+    '[{"f": "manager", "from": "Mona Saleh", "to": "خالد العتيبي"}]'::jsonb,
+    'import changes: the current manager with an English name only is named by it');
+  perform tests.assert_eq(
+    private.user_import_changes(v_tenant, v_staff, '{}'::jsonb, null, null, v_english, 'mona.manager@names.test'),
+    '[]'::jsonb, 'import changes: the same English-only manager is no change');
+end $$;
+rollback;
+
 -- An import whose file has English names only (English default): the person is added without an Arabic
 -- name (was: an empty one, refused by the persons checks). The run as the steps do it (88_user_imports_flow_owner.sql).
 create or replace function pg_temp.become_worker() returns void language plpgsql as $$
@@ -110,15 +142,15 @@ insert into platform.user_imports (id, tenant_id, created_by, created_by_person,
                                    sheets, sheet_index, mapping, review_expires_at)
 values ('a5000000-0000-4000-8000-0000000000f1', 'a0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-0000000000ab',
         'a1000000-0000-4000-8000-0000000000ab', 'f0a00000-0000-4000-8000-0000000000f1', 'staff.csv', 100, 'validating',
-        '[{"name": "", "rows": 3, "columns": 4}]', 0,
-        '{"0": "email", "1": "first_name_en", "2": "family_name_en", "3": "first_name_ar"}', now() + interval '1 day');
+        '[{"name": "", "rows": 3, "columns": 5}]', 0,
+        '{"0": "email", "1": "first_name_en", "2": "family_name_en", "3": "first_name_ar", "4": "family_name_ar"}', now() + interval '1 day');
 insert into platform.user_import_rows (tenant_id, import_id, row_number, cells, data, format_issues, issues)
 values ('a0000000-0000-4000-8000-000000000001', 'a5000000-0000-4000-8000-0000000000f1', 2,
         '{"email": "english.only@imp.test", "first_name_en": "Sara", "family_name_en": "Ali"}',
         '{"email": "english.only@imp.test", "first_name_en": "Sara", "family_name_en": "Ali"}', '[]', '[]'),
        ('a0000000-0000-4000-8000-000000000001', 'a5000000-0000-4000-8000-0000000000f1', 3,
-        '{"email": "both.names@imp.test", "first_name_en": "Omar", "family_name_en": "Saleh", "first_name_ar": "عمر"}',
-        '{"email": "both.names@imp.test", "first_name_en": "Omar", "family_name_en": "Saleh", "first_name_ar": "عمر"}', '[]', '[]');
+        '{"email": "both.names@imp.test", "first_name_en": "Omar", "family_name_en": "Saleh", "first_name_ar": "عمر", "family_name_ar": "صالح"}',
+        '{"email": "both.names@imp.test", "first_name_en": "Omar", "family_name_en": "Saleh", "first_name_ar": "عمر", "family_name_ar": "صالح"}', '[]', '[]');
 select pg_temp.become_worker();
 select private.user_import_classify('a5000000-0000-4000-8000-0000000000f1');
 update platform.user_imports set status = 'review' where id = 'a5000000-0000-4000-8000-0000000000f1';
@@ -140,15 +172,16 @@ begin
   perform tests.assert((select display_name_ar is null and display_name_en = 'Sara Ali' and first_name_en = 'Sara'
                         from platform.persons where email = 'english.only@imp.test'),
     'import: an English-only row adds a person without an Arabic name');
-  perform tests.assert((select display_name_ar = 'عمر' and display_name_en = 'Omar Saleh'
+  perform tests.assert((select display_name_ar = 'عمر صالح' and display_name_en = 'Omar Saleh'
                         from platform.persons where email = 'both.names@imp.test'),
-    'import: an Arabic part given still makes the Arabic display name');
+    'import: the optional Arabic names given make the Arabic display name');
 end $$;
 rollback;
 
 
--- The Super Admin console (20261021090300): English first and family names alone give an English-only
--- person (no English text in the Arabic slot); an English first name alone still fills the Arabic slot.
+-- The Super Admin console (20261021090300, 20261021100100): English first and family names alone give an
+-- English-only person; English text never goes into the Arabic slot — an English first name alone gets the
+-- neutral Arabic name until the invitee sets their own (the console form refuses half a name anyway).
 -- Uses the Super Admin uP (…f1, session …fa01) of 95_platform_admin_owner.sql.
 create or replace function pg_temp.become_super_admin() returns void language plpgsql as $$
 begin
@@ -172,9 +205,9 @@ begin
                                and family_name_en = 'Ali'
                         from platform.persons where email = 'sara@names-english.test'),
     'console: an English first and family name alone give no Arabic display name');
-  perform tests.assert((select display_name_ar = 'Omar' and display_name_en = 'Omar'
+  perform tests.assert((select display_name_ar = 'مدير المنشأة' and display_name_en = 'Omar' and first_name_en = 'Omar'
                         from platform.persons where email = 'omar@names-partial.test'),
-    'console: an English first name alone still fills the Arabic slot (as before)');
+    'console: an English first name alone does not fill the Arabic slot (the neutral Arabic name)');
 end $$;
 rollback;
 

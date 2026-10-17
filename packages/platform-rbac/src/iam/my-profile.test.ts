@@ -235,6 +235,59 @@ describe('My profile query and save', () => {
     );
   });
 
+  it('a person with Arabic names only can still save without English names when the names stay as they are (PO 17 Oct 2026)', async () => {
+    // English default; the member was entered before the rule, with Arabic names only.
+    const arabicOnly = {
+      firstNameAr: 'منيرة',
+      fatherNameAr: null,
+      grandfatherNameAr: null,
+      familyNameAr: 'الزهراني',
+      firstNameEn: null,
+      fatherNameEn: null,
+      grandfatherNameEn: null,
+      familyNameEn: null,
+      displayNameAr: 'منيرة الزهراني',
+      displayNameEn: null,
+      mobileE164: null,
+      preferredLocale: 'ar',
+    };
+    db.getPersonalDetails.mockResolvedValue(arabicOnly);
+    db.updatePersonalDetails.mockResolvedValue(['mobileE164']);
+    const save = createDefineAction(runtime().rt)(updateMyProfileActionDefinition());
+    const same = {
+      firstNameAr: 'منيرة',
+      fatherNameAr: '',
+      grandfatherNameAr: '',
+      familyNameAr: 'الزهراني',
+      firstNameEn: '',
+      fatherNameEn: '',
+      grandfatherNameEn: '',
+      familyNameEn: '',
+      mobile: '+966551234567',
+      preferredLocale: 'ar' as const,
+    };
+    // Only the mobile changes: accepted.
+    expect((await save(same)).ok).toBe(true);
+    expect(db.updatePersonalDetails).toHaveBeenCalledTimes(1);
+    // A name stored without parts, pre-filled by the form into the first name: still unchanged.
+    db.getPersonalDetails.mockResolvedValue({
+      ...arabicOnly,
+      firstNameAr: null,
+      familyNameAr: null,
+    });
+    expect((await save({ ...same, firstNameAr: 'منيرة الزهراني', familyNameAr: '' })).ok).toBe(
+      true,
+    );
+    // Changing the Arabic name without English names: the English ones are required.
+    db.getPersonalDetails.mockResolvedValue(arabicOnly);
+    const renamed = await save({ ...same, familyNameAr: 'القحطاني' });
+    expect(!renamed.ok && renamed.error.fieldErrors).toEqual([
+      { path: 'firstNameEn', code: 'REQUIRED' },
+      { path: 'familyNameEn', code: 'REQUIRED' },
+    ]);
+    expect(db.updatePersonalDetails).toHaveBeenCalledTimes(2);
+  });
+
   it('no change → no audit event; vanished person → NOT_FOUND; no member grant → 403', async () => {
     db.updatePersonalDetails.mockResolvedValue([]);
     const { rt, writeAudit } = runtime();

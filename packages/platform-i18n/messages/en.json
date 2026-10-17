@@ -1048,8 +1048,6 @@
         "manager": "Choose the direct manager from the list.",
         "roleUnknown": "This role no longer exists. Choose another role."
       },
-      "firstName": "First name",
-      "familyName": "Family name",
       "addArabicName": "Add the name in Arabic (optional)"
     },
     "list": {
@@ -2197,6 +2195,7 @@
         "adminEmail": "Enter an email address such as name@company.com.",
         "adminEmailOwn": "Use the Organization Admin's own email. You can't invite your own Super Admin account.",
         "adminName": "Use up to 100 characters.",
+        "adminNamePair": "Enter the first name and the family name in this language, or leave both empty.",
         "locale": "Choose Arabic or English.",
         "form": "Check the details and try again."
       }

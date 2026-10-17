@@ -136,6 +136,14 @@ Staging is expected to pass: its only real member, the PO, holds the Organizatio
 
 The tenant provisioning recovery path (`scripts/provision-tenant.sh` with `ADD_TO_EXISTING=true` for an existing member) refuses a member who holds other roles (`… holds other roles in this organization …`): remove them in the app first, or choose another person.
 
+## English-only person names (FR-IAM-01, WP-FIX-01)
+
+Migration `20261021090000` lets a person have **no Arabic display name** (the required name follows the organization's default language, PO 17 Oct 2026); `20261021090100`–`20261021090200` validate the new check and open the import to English-only files. **Deploy order: none needed** — the app and the worker tolerate the database before it (they read once per process whether `platform.persons.display_name_ar` still refuses NULL; once it does not, they stop asking). In the minutes between the app deploy and `apply`:
+- invite, edit details and My profile save a person entered with English names only with the **English display name also in the Arabic slot** (as the previous release did with what it was given); after `apply` such a person gets no Arabic display name. A person saved in that window keeps the English text as the Arabic display name until someone edits the name.
+- the bulk import keeps **requiring the Arabic first and family names** (the database's mapping rule of that time); after `apply` it requires the names of the organization's default language.
+
+If `apply` fails on these migrations nothing else changes: the app keeps the behaviour above until it is run again.
+
 ## Troubleshooting
 
 - **`SSL error: certificate verify failed`** or **`server certificate … does not match host name`**: the CA in `DATABASE_CA_CERT` is not the one that signed the server/pooler certificate, or the file was pasted incompletely. Re-download it from Database Settings → SSL Configuration and paste the whole file. **Never** work around it by lowering `sslmode` — the script does not allow it for remote hosts.

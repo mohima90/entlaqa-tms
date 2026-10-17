@@ -163,6 +163,11 @@ async function SetUp({
   const withLevels = showsUnitLevels(view.levels, ordinals);
   const unitName = (d: CycleView['departments'][number]) =>
     unitNameWithLevel(localName(locale, d.name), d.levelOrdinal, view.levels, locale, withLevels);
+  // The unit picker's units: decided once for the list, not again for every unit.
+  const setupUnitsWithLevels = showsUnitLevels(
+    view.levels,
+    (setup?.units ?? []).map((u) => u.levelOrdinal),
+  );
   const headName = (head: CycleView['departments'][number]['head']) =>
     head
       ? head.via
@@ -233,10 +238,7 @@ async function SetUp({
               u.levelOrdinal,
               view.levels,
               locale,
-              showsUnitLevels(
-                view.levels,
-                (setup?.units ?? []).map((x) => x.levelOrdinal),
-              ),
+              setupUnitsWithLevels,
             ),
             depth: u.depth,
             active: u.active,

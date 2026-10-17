@@ -86,7 +86,9 @@ export function LevelsCard(props: LevelsCardProps) {
         }
         data-testid="structure-levels"
       >
+        {/* eslint-disable-next-line jsx-a11y/no-redundant-roles -- not redundant: Safari/VoiceOver drops the list semantics of a `list-none` list (WCAG 1.3.1). */}
         <ol
+          role="list"
           className="m-0 flex list-none flex-col p-4 sm:p-6"
           aria-label={text('levels.caption')}
           data-testid="levels-chain"
@@ -122,11 +124,12 @@ export function LevelsCard(props: LevelsCardProps) {
                     <span className="text-xs font-medium text-text-muted">
                       {fill('levels.levelNumber', { ordinal: level.ordinal })}
                     </span>
-                    <span className="truncate font-semibold" data-testid="level-name">
+                    {/* Long names wrap (never cut off: the name is the level, WCAG 1.4.10). */}
+                    <span className="font-semibold break-words" data-testid="level-name">
                       {level.name}
                     </span>
                     <span
-                      className="truncate text-sm text-text-muted"
+                      className="text-sm text-text-muted break-words"
                       dir={otherLang === 'ar' ? 'rtl' : 'ltr'}
                       lang={otherLang}
                     >

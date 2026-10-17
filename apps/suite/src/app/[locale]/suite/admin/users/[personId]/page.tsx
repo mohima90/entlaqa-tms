@@ -454,9 +454,11 @@ async function Profile({
           ) : (
             <ol className="m-0 flex list-none flex-col gap-3 p-0" data-testid="user-activity">
               {profile.activity.map((event, index) => {
-                const actor = event.actorNameAr
-                  ? t('by', { name: localizedName(locale, event.actorNameAr, event.actorNameEn) })
-                  : t('bySystem');
+                // A person may have an English name only (PO 17 Oct 2026).
+                const actor =
+                  (event.actorNameAr ?? event.actorNameEn)
+                    ? t('by', { name: localizedName(locale, event.actorNameAr, event.actorNameEn) })
+                    : t('bySystem');
                 return (
                   <li
                     key={`${event.occurredAt.toISOString()}-${index}`}

@@ -45,18 +45,40 @@ export type KeptNameFields = Parameters<typeof keepsUnsplitDisplayName>[0];
 /** The name parts a save sends. */
 export type KeptNameParts = Parameters<typeof keepsUnsplitDisplayName>[1];
 
+const NAME_PARTS = ['firstName', 'fatherName', 'grandfatherName', 'familyName'] as const;
+
+/**
+ * Does a save leave the person's names as they are (PO decision 17 Oct 2026, WP-FIX-01 item 3)? Per language:
+ * the same parts as stored — or, for a name stored without parts, the parts give the same text (the forms
+ * pre-fill such a name into the first name; a long one is sent as no parts and kept, keepUnsplitDisplayNames).
+ */
+export function namesUnchanged(before: KeptNameFields, next: KeptNameParts): boolean {
+  return (['Ar', 'En'] as const).every((script) => {
+    const parts = NAME_PARTS.map((part) => next[`${part}${script}`] ?? null);
+    const stored = NAME_PARTS.map((part) => before[`${part}${script}`] ?? null);
+    if (parts.every((value, i) => value === stored[i])) return true;
+    if (stored.some((value) => value !== null)) return false;
+    const display = (script === 'Ar' ? before.displayNameAr : before.displayNameEn) ?? null;
+    return display !== null && parts.filter((value) => value !== null).join(' ') === display;
+  });
+}
+
 /**
  * The names rule of the organization's default language (guided-test feedback #2, PO 17 Oct 2026): its first
- * and family names are required, the other language's are optional. A VALIDATION_FAILED error with a
- * REQUIRED field error per missing field (the forms show it next to the field), or null when satisfied.
- * Shared by invite, edit details and My profile. With the record as stored (`kept`), a long name stored
- * without parts that the save keeps as it is (keepUnsplitDisplayNames) counts as given.
+ * and family names are required, the other language's are optional (all or nothing). A VALIDATION_FAILED
+ * error with a REQUIRED field error per missing field (the forms show it next to the field), or null when
+ * satisfied. Shared by invite, edit details and My profile. With the record as stored (`kept`, an existing
+ * person): a save that leaves the names as they are passes whatever they are — people entered before the
+ * rule (e.g. with Arabic names only in an English-default organization) can still be saved (PO decision
+ * 17 Oct 2026); and a long name stored without parts that the save keeps as it is (keepUnsplitDisplayNames)
+ * counts as given. Creating a person (invite: no `kept`) always applies the rule.
  */
 export async function nameRuleError(
   tx: UserTx,
   names: NamePairs,
   kept?: { readonly before: KeptNameFields; readonly next: KeptNameParts },
 ): Promise<AppError | null> {
+  if (kept && namesUnchanged(kept.before, kept.next)) return null;
   const missing = missingNameFields(await getTenantDefaultLocale(tx), names).filter(
     (field) =>
       !kept || !keepsUnsplitDisplayName(kept.before, kept.next, field.endsWith('Ar') ? 'ar' : 'en'),

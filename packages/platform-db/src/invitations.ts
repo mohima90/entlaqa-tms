@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { type SQL, sql } from 'drizzle-orm';
 import { type ClaimsTx, runWithClaims } from './claims-tx';
 import { type AppDatabase, getDatabase } from './client';
-import { customRolesExist } from './custom-roles-present';
+import { customRolesExist, storableArabicDisplayName } from './custom-roles-present';
 import { DomainError } from './domain-error';
 import { emitEvent } from './events';
 import { pgError } from './user-admin';
@@ -217,12 +217,20 @@ export async function createInvitation(
   const firstNameEn = blankToNull(input.firstNameEn);
   const familyNameEn = blankToNull(input.familyNameEn);
   const employeeNumber = blankToNull(input.employeeNumber);
+  const displayNameEn = joinNames(firstNameEn, familyNameEn);
   try {
+    // No Arabic display name without Arabic names — before migration 20261021090000 the English one
+    // (storableArabicDisplayName: the app may run minutes before the database changes).
+    const displayNameAr = await storableArabicDisplayName(
+      tx,
+      joinNames(firstNameAr, familyNameAr),
+      displayNameEn,
+    );
     const [person] = await tx.execute<{ id: string }>(sql`
       insert into platform.persons
         (display_name_ar, display_name_en, first_name_ar, family_name_ar, first_name_en, family_name_en,
          email, employee_number, preferred_locale)
-      values (${joinNames(firstNameAr, familyNameAr)}, ${joinNames(firstNameEn, familyNameEn)},
+      values (${displayNameAr}, ${displayNameEn},
               ${firstNameAr}, ${familyNameAr}, ${firstNameEn}, ${familyNameEn},
               ${email}, ${employeeNumber}, ${input.locale})
       returning id`);

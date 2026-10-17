@@ -48,6 +48,13 @@ describe('filterInvitations', () => {
     expect(ids({ department: 'd1' })).toEqual([]);
     expect(ids({ branch: 'b1' })).toEqual([]);
   });
+
+  it('a person with an English name only: found by it, never by the word «null»', () => {
+    const english = [row({ id: 'c', displayNameAr: null, displayNameEn: 'Sara Ali' })];
+    const ids = (q: string) => filterInvitations(english, { q }).map((r) => r.id);
+    expect(ids('sara')).toEqual(['c']);
+    expect(ids('null')).toEqual([]);
+  });
 });
 
 describe('expiryFrom', () => {

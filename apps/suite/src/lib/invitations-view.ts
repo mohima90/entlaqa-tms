@@ -34,7 +34,9 @@ export function filterInvitations<T extends InvitationListItem>(
   return rows.filter((row) => {
     if (filter.role && row.primaryRole !== filter.role) return false;
     if (!q) return true;
-    const haystack = foldSearchText(`${row.displayNameAr} ${row.displayNameEn ?? ''} ${row.email}`);
+    const haystack = foldSearchText(
+      `${row.displayNameAr ?? ''} ${row.displayNameEn ?? ''} ${row.email}`,
+    );
     return haystack.includes(q);
   });
 }

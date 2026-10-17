@@ -24,6 +24,8 @@ export interface InvitationForMail {
   readonly inviterName: { ar: string; en: string | null };
   readonly organizationName: { ar: string; en: string | null };
   readonly primaryRole: string;
+  /** The names of a custom role (EP-ROLES); null for a standard role (named by the caller). */
+  readonly primaryRoleName: { readonly ar: string; readonly en: string } | null;
   /** The member who invited (an import's importer). */
   readonly invitedBy: string | null;
   /**
@@ -56,6 +58,8 @@ export async function loadInvitationForMail(
     organization_ar: string;
     organization_en: string | null;
     primary_role: string;
+    role_name_ar: string | null;
+    role_name_en: string | null;
     invited_by: string | null;
     send_requested_by: string | null;
     mail_held: boolean;
@@ -65,13 +69,15 @@ export async function loadInvitationForMail(
            i.send_requested_by, i.mail_held, i.expires_at,
            p.display_name_ar as recipient_ar, p.display_name_en as recipient_en,
            ip.display_name_ar as inviter_ar, ip.display_name_en as inviter_en,
-           t.name_ar as organization_ar, t.name_en as organization_en, i.primary_role
+           t.name_ar as organization_ar, t.name_en as organization_en, i.primary_role,
+           cr.name_ar as role_name_ar, cr.name_en as role_name_en
     from platform.invitations i
     join platform.persons p on p.tenant_id = i.tenant_id and p.id = i.person_id
     join platform.tenants t on t.id = i.tenant_id
     left join platform.tenant_memberships m
            on m.tenant_id = i.tenant_id and m.user_id = coalesce(i.send_requested_by, i.invited_by)
     left join platform.persons ip on ip.tenant_id = m.tenant_id and ip.id = m.person_id
+    left join platform.custom_roles cr on cr.tenant_id = i.tenant_id and cr.code = i.primary_role
     where i.id = ${id}::uuid`);
   if (!row) return null;
   const organizationName = { ar: row.organization_ar, en: row.organization_en };
@@ -87,6 +93,10 @@ export async function loadInvitationForMail(
       row.inviter_ar === null ? organizationName : { ar: row.inviter_ar, en: row.inviter_en },
     organizationName,
     primaryRole: row.primary_role,
+    primaryRoleName:
+      row.role_name_ar !== null && row.role_name_en !== null
+        ? { ar: row.role_name_ar, en: row.role_name_en }
+        : null,
     invitedBy: row.invited_by,
     sendRequestedBy: row.send_requested_by,
     mailHeld: row.mail_held,

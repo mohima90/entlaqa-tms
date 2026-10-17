@@ -36,6 +36,7 @@ const invitation: InvitationForMail = {
   inviterName: { ar: 'محمد العتيبي', en: null },
   organizationName: { ar: 'شركة الراية', en: 'Al Raya' },
   primaryRole: 'learner',
+  primaryRoleName: null,
   invitedBy: 'u1',
   sendRequestedBy: null,
   mailHeld: false,
@@ -134,6 +135,22 @@ describe('invitation mailer', () => {
     // What the template accepts (rendering validates the same schema).
     expect(InvitationVariables.safeParse(request.variables).success).toBe(true);
     expect(log).toHaveBeenCalledWith('info', 'invitation e-mail queued');
+  });
+
+  it('names a custom role as the organization wrote it (EP-ROLES)', async () => {
+    db.loadInvitationForMail.mockResolvedValue({
+      ...invitation,
+      primaryRole: 'custom_0123456789ab',
+      primaryRoleName: { ar: 'مراجع الدورات', en: 'Course reviewer' },
+    });
+    db.invitationCodeForMail.mockResolvedValue(CODE);
+    roleName.mockClear();
+    const { subscriber } = mailer();
+    await subscriber.handle({ tx, event: event() });
+    expect(queued().variables).toMatchObject({
+      roleName: { ar: 'مراجع الدورات', en: 'Course reviewer' },
+    });
+    expect(roleName).not.toHaveBeenCalled();
   });
 
   it('a resend e-mails the current (new) code; the English invitation links to the English page', async () => {

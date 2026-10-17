@@ -25,7 +25,9 @@ begin
     -- function tests in 81_files_app_server.sql, 82_files_app_worker.sql and 83_files_storage.sql.
     'platform.files', 'platform.file_download_grants',
     -- User imports (T-M2-12): insert/FK tests below; lifecycle and per-user tests in 86_*, jobs in 87_*.
-    'platform.user_imports', 'platform.user_import_columns', 'platform.user_import_rows')
+    'platform.user_imports', 'platform.user_import_columns', 'platform.user_import_rows',
+    -- Needs forms (T-M3-10): insert/FK tests below; rules in 99_needs_forms_1_app_server.sql.
+    'tms.needs_forms', 'tms.needs_form_sections', 'tms.needs_form_fields')
     and t.table_name not in (select table_name from tests.job_only_tables());
   perform tests.assert(v_missing is null, format('isolation tests missing for: %s', v_missing));
   perform tests.assert(session_user = 'app_server', 'this file must run connected as app_server');
@@ -374,6 +376,51 @@ begin
     'user_import_rows: users delete nothing');
   perform tests.assert_eq((select count(*) from platform.user_import_rows where tenant_id = 'b0000000-0000-4000-8000-000000000001'),
     0::bigint, 'user_import_rows: tenant B rows invisible');
+end $$;
+rollback;
+
+-- Needs forms (T-M3-10): cross-tenant inserts, moves and foreign keys. The tenant-A actor is uA (Organization
+-- Admin, no needs-form permission): RLS and foreign keys answer before or regardless of the designer rule.
+begin;
+set local role authenticated;
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
+  'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1'));
+do $$
+begin
+  perform tests.assert_eq((select count(*) from tms.needs_forms where id = 'b7000000-0000-4000-8000-000000000001'),
+    0::bigint, 'needs_forms: tenant B form invisible by id');
+  perform tests.assert_rls_violation($q$insert into tms.needs_forms (tenant_id, name_en, name_ar) values ('b0000000-0000-4000-8000-000000000001', 'Evil', 'دخيل')$q$,
+    'needs_forms: insert with tenant B tenant_id is rejected by RLS');
+  perform tests.assert_privilege_denied($q$update tms.needs_forms set tenant_id = 'b0000000-0000-4000-8000-000000000001'$q$,
+    'needs_forms: tenant_id is not updatable');
+  perform tests.assert_eq(tests.rows_affected($q$update tms.needs_forms set name_en = 'x' where id = 'b7000000-0000-4000-8000-000000000001'$q$),
+    0::bigint, 'needs_forms: RLS filters tenant B rows');
+  perform tests.assert_eq(tests.rows_affected($q$delete from tms.needs_forms where id = 'b7000000-0000-4000-8000-000000000001'$q$),
+    0::bigint, 'needs_forms: tenant B form cannot be deleted');
+
+  perform tests.assert_rls_violation($q$insert into tms.needs_form_sections (tenant_id, form_id, name_en, name_ar) values ('b0000000-0000-4000-8000-000000000001', 'b7000000-0000-4000-8000-000000000001', 'x', 'س')$q$,
+    'needs_form_sections: insert with tenant B tenant_id is rejected by RLS');
+  perform tests.assert_fails($q$insert into tms.needs_form_sections (form_id, name_en, name_ar) values ('b7000000-0000-4000-8000-000000000001', 'x', 'س')$q$,
+    array['23503', '42501'], 'needs_form_sections: composite FK (or the designer rule) rejects a tenant B form');
+  perform tests.assert_privilege_denied($q$update tms.needs_form_sections set form_id = 'b7000000-0000-4000-8000-000000000001'$q$,
+    'needs_form_sections: the form is not updatable');
+  perform tests.assert_eq(tests.rows_affected($q$update tms.needs_form_sections set name_en = 'x' where tenant_id = 'b0000000-0000-4000-8000-000000000001'$q$),
+    0::bigint, 'needs_form_sections: RLS filters tenant B rows');
+
+  perform tests.assert_rls_violation($q$insert into tms.needs_form_fields (tenant_id, form_id, section_id, field_type, label_en, label_ar) values ('b0000000-0000-4000-8000-000000000001', 'b7000000-0000-4000-8000-000000000001', 'b7100000-0000-4000-8000-000000000001', 'text', 'x', 'س')$q$,
+    'needs_form_fields: insert with tenant B tenant_id is rejected by RLS');
+  perform tests.assert_fails($q$insert into tms.needs_form_fields (form_id, section_id, field_type, label_en, label_ar) values ('b7000000-0000-4000-8000-000000000001', 'b7100000-0000-4000-8000-000000000001', 'text', 'x', 'س')$q$,
+    array['23503', '42501'], 'needs_form_fields: composite FK (or the designer rule) rejects a tenant B section');
+  perform tests.assert_fails($q$insert into tms.needs_form_fields (form_id, section_id, field_type, label_en, label_ar) values ('a7000000-0000-4000-8000-000000000001', 'b7100000-0000-4000-8000-000000000001', 'text', 'x', 'س')$q$,
+    array['23503', '42501'], 'needs_form_fields: a tenant A form with a tenant B section is rejected');
+  perform tests.assert_privilege_denied($q$update tms.needs_form_fields set section_id = 'b7100000-0000-4000-8000-000000000001'$q$,
+    'needs_form_fields: the section is not updatable');
+  perform tests.assert_eq(tests.rows_affected($q$delete from tms.needs_form_fields where tenant_id = 'b0000000-0000-4000-8000-000000000001'$q$),
+    0::bigint, 'needs_form_fields: RLS filters tenant B rows');
+  perform tests.assert(not private.lock_needs_form('b7000000-0000-4000-8000-000000000001'),
+    'lock_needs_form: a tenant B form is unknown to tenant A');
+  perform tests.assert(private.duplicate_needs_form('b7000000-0000-4000-8000-000000000001', 'Copy', 'نسخة') is null,
+    'duplicate_needs_form: a tenant B form is unknown to tenant A');
 end $$;
 rollback;
 

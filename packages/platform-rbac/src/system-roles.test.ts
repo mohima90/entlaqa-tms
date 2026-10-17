@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { coursePermissions } from './course-permissions';
 import { CATALOGUE_PERMISSIONS } from './custom-roles';
 import { MEMBER_GRANTS } from './member-permissions';
-import { platformPermissions, tmsRolePermissions } from './platform-permissions';
+import { platformPermissions } from './platform-permissions';
 import {
   FORMER_ROLE_NAMES,
   SYSTEM_ROLES,

@@ -23,6 +23,12 @@ import { SYSTEM_ROLES, getSystemRole } from './system-roles';
 
 const migrationsDir = new URL('../../../supabase/migrations/', import.meta.url).pathname;
 
+function migration(suffix: string): string {
+  const file = readdirSync(migrationsDir).find((f) => f.endsWith(suffix));
+  if (!file) throw new Error(`${suffix} not found`);
+  return readFileSync(join(migrationsDir, file), 'utf8');
+}
+
 /**
  * The migrations that write the catalogue: its creation (EP-ROLES) and the module permissions added since
  * (course library, T-M3-03; planning cycles, EP-PLN T-M3-04; needs forms, T-M3-10), in file order. Any

@@ -1,38 +1,44 @@
 import { toClientError } from '@jadarat/platform-core';
-import { type AppLocale } from '@jadarat/platform-i18n';
+import type { AppLocale } from '@jadarat/platform-i18n';
 import { routing } from '@jadarat/platform-i18n/routing';
 import {
-  type AccessLevel,
-  ROLE_MATRIX,
+  type RolesPageRole,
+  type RolesPageView,
   SYSTEM_ROLES,
-  type SystemRoleDefinition,
+  standardAssignableRole,
 } from '@jadarat/platform-rbac';
-import { Alert, Badge, type BadgeTone, Card, PageHeader } from '@jadarat/ui';
+import { Alert, Badge, Card, Icon, PageHeader, buttonClasses, tableClasses } from '@jadarat/ui';
 import { hasLocale } from 'next-intl';
-import { getFormatter, getTranslations } from 'next-intl/server';
+import { getTranslations } from 'next-intl/server';
 import { notFound, redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
+import { DeleteRoleButton } from '../../../../../components/roles/delete-role-button';
 import { SuiteShell } from '../../../../../components/suite-shell';
+import { profileErrorTexts } from '../../../../../lib/profile-texts';
+import { roleBuilderTexts } from '../../../../../lib/role-builder-texts';
 import { getSuiteContext } from '../../../../../lib/suite-context';
 import { rolesPageQuery } from '../../../../../lib/users-queries';
 
-const LEVEL_TONE: Record<AccessLevel, BadgeTone> = {
-  F: 'success',
-  FA: 'success',
-  E: 'info',
-  A: 'info',
-  AE: 'info',
-  EA: 'info',
-  V: 'neutral',
-  O: 'neutral',
-  U: 'neutral',
-  N: 'neutral',
+/** The standard roles without the database (an environment not connected yet). */
+const STANDARD_ONLY: RolesPageView = {
+  roles: SYSTEM_ROLES.map((role) => ({
+    code: role.code,
+    kind: 'standard',
+    name: role.name,
+    description: role.description,
+    privileged: role.privileged,
+    permissions: standardAssignableRole(role.code)?.permissions ?? [],
+    id: null,
+    version: null,
+  })),
+  memberCounts: null,
+  canManage: false,
 };
-const LEGEND: readonly AccessLevel[] = ['F', 'E', 'A', 'V', 'O', 'U', 'N'];
 
 /**
- * Roles & permissions (T-M2-05, FR-IAM-07; approved screen 5): the 14 system roles, read-only, with
- * the permission matrix of BRD Appendix B and how many members hold each role. Custom roles are R2.
+ * Roles & permissions (T-M2-05, FR-IAM-07; EP-ROLES, PO 17 Oct 2026 — Kawadir's roles table): the six
+ * standard roles (view only) and the organization's custom roles, each with its type, number of
+ * permissions and of people; «إنشاء دور», edit and delete for the Organization Admin.
  */
 export default async function RolesPage({
   params,
@@ -44,24 +50,26 @@ export default async function RolesPage({
   const { locale } = await params;
   if (!hasLocale(routing.locales, locale)) notFound();
   const query = await searchParams;
-  const requested = typeof query.role === 'string' ? query.role : null;
-  const found = SYSTEM_ROLES.find((r) => r.code === requested);
-  // An unknown role in the address: back to the plain page rather than a silent default.
-  if (requested !== null && !found) redirect(`/${locale}/suite/admin/roles`);
-  const selected = found ?? SYSTEM_ROLES[0];
-  if (!selected) notFound();
+  // Links from before EP-ROLES (`?role=code`) open the role's own page.
+  if (typeof query.role === 'string') {
+    if (/^[a-z][a-z_]{1,39}$|^custom_[0-9a-f]{12}$/.test(query.role)) {
+      redirect(`/${locale}/suite/admin/roles/${query.role}`);
+    }
+    redirect(`/${locale}/suite/admin/roles`);
+  }
   const context = await getSuiteContext(locale);
   const t = await getTranslations({ locale, namespace: 'rolesPage' });
   const users = await getTranslations({ locale, namespace: 'users' });
 
   let content: ReactNode;
+  let canManage = false;
   if (!context.live) {
     content = (
       <>
         <Alert tone="info" data-testid="roles-not-configured">
           {t('notConfigured')}
         </Alert>
-        <Roles locale={locale} selected={selected} counts={null} />
+        <RolesTable locale={locale} view={STANDARD_ONLY} />
       </>
     );
   } else {
@@ -80,171 +88,176 @@ export default async function RolesPage({
         );
       }
     } else {
-      content = <Roles locale={locale} selected={selected} counts={result.value.memberCounts} />;
+      canManage = result.value.canManage;
+      content = (
+        <>
+          {query.saved === '1' ? (
+            <Alert tone="success" data-testid="role-saved">
+              {t('saved')}
+            </Alert>
+          ) : null}
+          {query.deleted === '1' ? (
+            <Alert tone="success" data-testid="role-deleted">
+              {t('deleted')}
+            </Alert>
+          ) : null}
+          <RolesTable locale={locale} view={result.value} />
+        </>
+      );
     }
   }
 
   return (
-    <SuiteShell
-      locale={locale}
-      context={context}
-      current="roles"
-      // The language switch keeps the selected role.
-      path={found ? `/suite/admin/roles?role=${found.code}` : '/suite/admin/roles'}
-    >
+    <SuiteShell locale={locale} context={context} current="roles" path="/suite/admin/roles">
       <PageHeader
         title={t('title')}
-        description={t('intro', { count: SYSTEM_ROLES.length })}
+        description={t('intro')}
         actions={
-          <p className="m-0 flex items-center gap-2 text-text-muted" data-testid="custom-role">
-            {t('customRole')} <Badge tone="neutral">{t('comingSoon')}</Badge>
-          </p>
+          canManage ? (
+            <a
+              href={`/${locale}/suite/admin/roles/new`}
+              className={buttonClasses({ variant: 'primary', size: 'md' })}
+              data-testid="create-role-link"
+            >
+              <Icon name="plus" />
+              {t('createRole')}
+            </a>
+          ) : null
         }
       />
-      {content}
+      <div className="flex flex-col gap-6">{content}</div>
     </SuiteShell>
   );
 }
 
-async function Roles({
-  locale,
-  selected,
-  counts,
-}: {
-  locale: AppLocale;
-  selected: SystemRoleDefinition;
-  counts: Readonly<Record<string, number>> | null;
-}) {
+async function RolesTable({ locale, view }: { locale: AppLocale; view: RolesPageView }) {
   const t = await getTranslations({ locale, namespace: 'rolesPage' });
-  // The anchor brings the details into view where the list stacks above them (phones, tablets).
-  const href = (code: string) => `/${locale}/suite/admin/roles?role=${code}#role-detail`;
-  const format = await getFormatter({ locale });
-  const members = counts ? (counts[selected.code] ?? 0) : null;
+  const counts = view.memberCounts;
+  const builderTexts = view.canManage ? await roleBuilderTexts(locale) : null;
+  const errors = view.canManage ? await profileErrorTexts(locale) : null;
+  const roleHref = (role: RolesPageRole) => `/${locale}/suite/admin/roles/${role.code}`;
 
   return (
-    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[18rem_1fr]">
-      <nav
-        aria-label={t('rolesLabel')}
-        className="self-start rounded-xl border border-border bg-surface p-2 shadow-1"
-      >
-        <ul className="m-0 flex list-none flex-col gap-0.5 p-0" data-testid="role-list">
-          {SYSTEM_ROLES.map((role) => {
-            const current = role.code === selected.code;
-            return (
-              <li key={role.code}>
-                <a
-                  href={href(role.code)}
-                  aria-current={current ? 'page' : undefined}
-                  className={`flex min-h-11 items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm font-medium no-underline transition-colors ${
-                    current
-                      ? 'bg-surface-selected text-primary-text'
-                      : 'text-text hover:bg-surface-hover'
-                  }`}
-                >
-                  <span>{role.name[locale]}</span>
-                  {counts ? (
-                    <span className="text-sm text-text-muted">
-                      <span className="sr-only">{t('membersLabel')} </span>
-                      {format.number(counts[role.code] ?? 0, 'integer')}
-                    </span>
-                  ) : null}
-                </a>
-              </li>
-            );
-          })}
-        </ul>
-      </nav>
-
-      <Card
-        id="role-detail"
-        title={selected.name[locale]}
-        data-testid="role-detail"
-        className="scroll-mt-20"
-      >
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge tone="neutral">{t('systemRole')}</Badge>
-            {selected.privileged ? <Badge tone="warning">{t('privileged')}</Badge> : null}
-          </div>
-          <p className="m-0">{selected.description[locale]}</p>
-          {members !== null ? (
-            <p className="m-0 flex flex-wrap items-center gap-2">
-              <span data-testid="role-members">{t('members', { count: members })}</span>
-              {members > 0 ? (
-                <>
-                  <span aria-hidden="true">·</span>
-                  <a href={`/${locale}/suite/admin/users?role=${selected.code}`}>
-                    {t('viewUsers')}
-                  </a>
-                </>
+    <Card
+      flush
+      title={t('rolesCardTitle')}
+      description={t('rolesCardDescription')}
+      data-testid="roles-card"
+    >
+      <div className={tableClasses.wrapper}>
+        <table className={tableClasses.table} data-testid="roles-table">
+          <caption className="sr-only">{t('tableCaption')}</caption>
+          <thead className={tableClasses.header}>
+            <tr>
+              <th scope="col" className={tableClasses.head}>
+                {t('columns.role')}
+              </th>
+              <th scope="col" className={tableClasses.head}>
+                {t('columns.description')}
+              </th>
+              <th scope="col" className={tableClasses.head}>
+                {t('columns.type')}
+              </th>
+              <th scope="col" className={tableClasses.head}>
+                {t('columns.permissions')}
+              </th>
+              {counts ? (
+                <th scope="col" className={tableClasses.head}>
+                  {t('columns.people')}
+                </th>
               ) : null}
-            </p>
-          ) : null}
-
-          <div>
-            <h3 className="mb-2 mt-0 text-base font-semibold">{t('legendTitle')}</h3>
-            <ul className="m-0 flex list-none flex-wrap gap-x-4 gap-y-2 p-0 text-sm">
-              {LEGEND.map((level) => (
-                <li key={level} className="flex items-center gap-2">
-                  {level === 'N' ? (
-                    <span className="text-text-muted">{t('levels.N')}</span>
-                  ) : (
-                    <Badge tone={LEVEL_TONE[level]}>{t(`levels.${level}`)}</Badge>
-                  )}
-                  <span className="text-text-muted">{t(`levelHints.${level}`)}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-start" data-testid="role-matrix">
-              <caption className="sr-only">
-                {t('tableCaption', { role: selected.name[locale] })}
-              </caption>
-              <thead>
-                <tr className="border-b border-border">
-                  <th scope="col" className="px-2 py-2 text-start font-semibold">
-                    {t('columns.area')}
-                  </th>
-                  <th scope="col" className="px-2 py-2 text-start font-semibold">
-                    {t('columns.access')}
-                  </th>
-                  <th scope="col" className="px-2 py-2 text-start font-semibold">
-                    {t('columns.scope')}
-                  </th>
+              <th scope="col" className={`${tableClasses.head} text-end`}>
+                {t('columns.actions')}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {view.roles.map((role) => {
+              const name = role.name[locale];
+              const people = counts ? (counts[role.code] ?? 0) : null;
+              const editable = view.canManage && role.kind === 'custom';
+              return (
+                <tr
+                  key={role.code}
+                  className={tableClasses.row}
+                  data-testid={`role-row-${role.code}`}
+                >
+                  <td className={tableClasses.cell}>
+                    <div className="flex items-center gap-2">
+                      <Icon
+                        name={role.kind === 'standard' ? 'shield' : 'shield-outline'}
+                        className={role.kind === 'standard' ? 'text-primary' : 'text-text-muted'}
+                      />
+                      <a href={roleHref(role)} className="font-medium">
+                        {name}
+                      </a>
+                      {role.privileged ? <Badge tone="warning">{t('privileged')}</Badge> : null}
+                    </div>
+                  </td>
+                  <td className={`${tableClasses.cell} max-w-xs`}>
+                    {role.description ? (
+                      <span className="line-clamp-2 text-text-muted">
+                        {role.description[locale]}
+                      </span>
+                    ) : (
+                      <span className="text-text-muted">{t('noDescription')}</span>
+                    )}
+                  </td>
+                  <td className={tableClasses.cell}>
+                    <Badge tone={role.kind === 'standard' ? 'info' : 'neutral'}>
+                      {t(`types.${role.kind}`)}
+                    </Badge>
+                  </td>
+                  <td className={tableClasses.cell}>
+                    <Badge tone="neutral">
+                      {t('permissionCount', { count: role.permissions.length })}
+                    </Badge>
+                  </td>
+                  {people !== null ? (
+                    <td className={tableClasses.cell} data-testid="role-people">
+                      {people > 0 ? (
+                        <a href={`/${locale}/suite/admin/users?role=${role.code}`}>
+                          {t('members', { count: people })}
+                        </a>
+                      ) : (
+                        <span className="text-text-muted">{t('members', { count: 0 })}</span>
+                      )}
+                    </td>
+                  ) : null}
+                  <td className={`${tableClasses.cell} text-end`}>
+                    <div className="flex items-center justify-end gap-1">
+                      <a
+                        href={roleHref(role)}
+                        className="grid size-9 place-items-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text pointer-coarse:size-11"
+                        aria-label={editable ? t('editRole', { name }) : t('viewRole', { name })}
+                        data-testid={editable ? 'role-edit' : 'role-view'}
+                      >
+                        <Icon name={editable ? 'pencil' : 'lock'} />
+                      </a>
+                      {editable &&
+                      builderTexts &&
+                      errors &&
+                      role.id &&
+                      role.version !== null &&
+                      people === 0 ? (
+                        <DeleteRoleButton
+                          id={role.id}
+                          version={role.version}
+                          texts={{ ...builderTexts, deleteTitle: t('deleteTitle', { name }) }}
+                          errors={errors}
+                          deletedHref={`/${locale}/suite/admin/roles?deleted=1`}
+                          label={t('deleteRole', { name })}
+                          compact
+                        />
+                      ) : null}
+                    </div>
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {ROLE_MATRIX.map((area) => {
-                  const cell = area.access[selected.code];
-                  return (
-                    <tr key={area.key} className="border-b border-border">
-                      <th scope="row" className="px-2 py-2 text-start font-normal">
-                        <span className="flex flex-wrap items-center gap-2">
-                          {area.name[locale]}
-                          {area.sensitive ? <Badge tone="warning">{t('sensitive')}</Badge> : null}
-                        </span>
-                      </th>
-                      <td className="px-2 py-2">
-                        {cell.level === 'N' ? (
-                          <span className="text-text-muted">{t('levels.N')}</span>
-                        ) : (
-                          <Badge tone={LEVEL_TONE[cell.level]}>{t(`levels.${cell.level}`)}</Badge>
-                        )}
-                      </td>
-                      <td className="px-2 py-2 text-text-muted">
-                        {cell.qualifier ? cell.qualifier[locale] : null}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-          <p className="m-0 text-sm text-text-muted">{t('matrixNote')}</p>
-        </div>
-      </Card>
-    </div>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Card>
   );
 }

@@ -27,7 +27,7 @@ type Story = StoryObj<typeof meta>;
 
 const COPY = {
   ar: {
-    title: 'المستخدمون',
+    title: 'أعضاء الفريق',
     inviteUser: 'دعوة مستخدم',
     summary: '128 مستخدمًا · 3 دعوات لم تُقبل بعد',
     expiredBanner:
@@ -50,12 +50,11 @@ const COPY = {
     columns: {
       name: 'الاسم',
       employeeNumber: 'الرقم الوظيفي',
-      primaryRole: 'الدور الأساسي',
+      primaryRole: 'الدور',
       department: 'القسم',
       status: 'الحالة',
       lastSignIn: 'آخر دخول',
     },
-    otherRoles: 'ودور إضافي',
     status: { active: 'نشط', invited: 'مدعو', suspended: 'معطّل' },
     never: 'لم يسجّل الدخول بعد',
     noneLabel: 'غير محدد',
@@ -66,7 +65,7 @@ const COPY = {
     emptyFilteredBody: 'جرّب كلمة أقصر أو ابحث بالرقم الوظيفي.',
   },
   en: {
-    title: 'Users',
+    title: 'Team members',
     inviteUser: 'Invite user',
     summary: '128 users · 3 invitations not accepted yet',
     expiredBanner:
@@ -89,12 +88,11 @@ const COPY = {
     columns: {
       name: 'Name',
       employeeNumber: 'Employee number',
-      primaryRole: 'Primary role',
+      primaryRole: 'Role',
       department: 'Department',
       status: 'Status',
       lastSignIn: 'Last sign-in',
     },
-    otherRoles: 'and 1 additional role',
     status: { active: 'Active', invited: 'Invited', suspended: 'Deactivated' },
     never: 'Never signed in',
     noneLabel: 'Not set',
@@ -258,12 +256,7 @@ function UsersListPage({ locale, empty = false }: { locale: 'ar' | 'en'; empty?:
                           <NotSet label={t.noneLabel} />
                         )}
                       </td>
-                      <td className="px-4 py-3">
-                        {p.role[locale]}
-                        {p.otherRoles > 0 ? (
-                          <div className="text-sm text-text-muted">{t.otherRoles}</div>
-                        ) : null}
-                      </td>
+                      <td className="px-4 py-3">{p.role[locale]}</td>
                       <td className="px-4 py-3">
                         {p.department ? p.department[locale] : <NotSet label={t.noneLabel} />}
                       </td>

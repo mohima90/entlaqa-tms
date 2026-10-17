@@ -371,11 +371,12 @@ export const FIELD_DEFINITIONS: readonly FieldDefinition[] = [
     group: 'roles',
     header: { ar: 'أدوار إضافية', en: 'Additional roles' },
     synonyms: ['الأدوار الإضافية', 'other roles'],
+    // One role per person since EP-ROLES (PO, 17 Oct 2026): still read from older files, never given.
     description: {
-      ar: 'دور أو أكثر، تفصل بينها فاصلة.',
-      en: 'One or more role names, separated by commas.',
+      ar: 'لا تُسند: لكل شخص دور واحد. يبقى العمود لقراءة الملفات القديمة، وتُتجاهل قيمه.',
+      en: 'Not given: each person has one role. The column stays for older files; its values are ignored.',
     },
-    example: 'متدرب',
+    example: '',
     width: 20,
     format: 'text',
   },

@@ -36,6 +36,11 @@ export const REQUIRED_DATABASE_FUNCTIONS = [
   'platform_create_tenant(text, text, text, text, text, text, text, text, text)',
   'platform_admin_invitation_code(uuid)',
   'platform_reissue_admin_code(uuid)',
+  // Roles (EP-ROLES, migrations 20261019090100 and 20261019090200): permissions from standard and custom
+  // roles, privileged roles of an invitation, and the permission-specific manage rule (review M3).
+  'member_permissions(uuid, uuid)',
+  'roles_include_privileged(uuid, text[])',
+  'actor_may_manage_person_with(uuid, uuid, text[])',
 ] as const;
 
 /**

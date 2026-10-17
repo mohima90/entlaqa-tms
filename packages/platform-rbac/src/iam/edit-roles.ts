@@ -1,50 +1,46 @@
 import { type AppError, appError, err, ok } from '@jadarat/platform-core';
 import {
-  type AssignedRole,
-  type EditableRoles,
-  type RolesRefusal,
+  type EditableRole,
+  type RoleRefusal,
   type UserTx,
-  getEditableRoles,
-  replaceMemberRoles,
+  getEditableRole,
+  lockTenantRoles,
+  replaceMemberRole,
 } from '@jadarat/platform-db';
 import { z } from 'zod';
 import type { ActionDefinition } from '../define-action';
 import type { QueryDefinition } from '../define-query';
 import type { PermissionDefinition } from '../permissions';
 import { platformPermissions } from '../platform-permissions';
-import { SOLE_ROLE_CODES, rolesHeldTogether } from '../separation-of-duties';
-import { SYSTEM_ROLES, SYSTEM_ROLE_CODES, type SystemRoleCode } from '../system-roles';
+import { SYSTEM_ROLES } from '../system-roles';
+import { type RoleChoice, canGive, findRole, loadRoleChoices } from './role-catalogue';
 
 /**
- * Changing a member's roles from their profile (T-M2-14, FR-IAM-07, BR-IAM-1, BR-IAM-3; screen 3
- * «تعديل الأدوار», role choice of screen 2). One primary role plus optional additional roles with
- * optional first/last days. Ordinary roles: `platform.role.assign` (HR Manager, Organization Admin);
- * privileged roles: `platform.role.assign_privileged` — the Organization Admin (no authenticator code
- * since the PO decision of 14 Oct 2026, which reverses D-IAM-01). Nobody changes their own roles; a privileged member's roles
- * only an Organization Admin (database guard); the Organization Admin holds no other role (BR-IAM-4,
- * T-M2-16: ROLE_CONFLICT). Audited with the roles before and after.
+ * Changing a member's role (T-M2-14, FR-IAM-07, BR-IAM-3; EP-ROLES, PO 17 Oct 2026: ONE role per person,
+ * Kawadir's «تعديل الدور» dialog on Team members). The role is a standard role or a custom role of the
+ * organization. Ordinary roles: `platform.role.assign` (HR Manager, Organization Admin) — and only roles
+ * whose permissions the member holds; privileged roles (standard, or custom with a high-risk permission):
+ * `platform.role.assign_privileged` — the Organization Admin. Nobody changes their own role; a privileged
+ * member's role only an Organization Admin (database guard); the last Organization Admin stays. Audited
+ * with the role before and after.
  */
 const p = platformPermissions;
 
-/** Roles held alone (BR-IAM-4): written so that no intermediate state of a save holds them with others. */
-const SOLE: ReadonlySet<string> = new Set(SOLE_ROLE_CODES);
-
-const PRIVILEGED: ReadonlySet<string> = new Set(
-  SYSTEM_ROLES.filter((r) => r.privileged).map((r) => r.code),
-);
-
-export const PRIVILEGED_ROLE_CODES: readonly SystemRoleCode[] = SYSTEM_ROLES.filter(
+/** Codes of the privileged standard roles (custom roles: computed from their permissions). */
+export const PRIVILEGED_ROLE_CODES: readonly string[] = SYSTEM_ROLES.filter(
   (r) => r.privileged,
 ).map((r) => r.code);
 
 export type RolesBlock = 'own_roles' | 'no_account' | 'revoked';
 
 export interface EditRolesView {
-  readonly roles: EditableRoles;
-  /** Why the roles cannot be changed here at all, if so. */
+  readonly role: EditableRole;
+  /** Why the role cannot be changed here at all, if so. */
   readonly blocked: RolesBlock | null;
   /** Privileged roles of this member: allowed (the Organization Admin) or not for this member. */
   readonly privilegedAccess: 'allowed' | 'denied';
+  /** The roles to choose from, with whether this member may give each. */
+  readonly choices: readonly RoleChoice[];
 }
 
 export const EditRolesQueryInput = z.strictObject({ personId: z.uuid() });
@@ -59,115 +55,72 @@ export function editRolesQueryDefinition(): QueryDefinition<
     input: EditRolesQueryInput,
     resource: (input) => ({ type: 'person', id: input.personId }),
     handler: async ({ ctx, input }) => {
-      const roles = await getEditableRoles(ctx.tx, input.personId);
-      if (!roles) return err(appError('NOT_FOUND'));
-      const blocked: RolesBlock | null = roles.isSelf
+      const role = await getEditableRole(ctx.tx, input.personId);
+      if (!role) return err(appError('NOT_FOUND'));
+      const blocked: RolesBlock | null = role.isSelf
         ? 'own_roles'
-        : roles.membershipId === null
+        : role.membershipId === null
           ? 'no_account'
-          : roles.membershipStatus === 'revoked'
+          : role.membershipStatus === 'revoked'
             ? 'revoked'
             : null;
-      // A privileged member's record and roles: Organization Admin only (same rule as the guards).
-      if (blocked === null && !roles.mayManage) return err(appError('FORBIDDEN'));
+      // A privileged member's record and role: Organization Admin only (same rule as the guards).
+      if (blocked === null && !role.mayManage) return err(appError('FORBIDDEN'));
       return ok({
-        roles,
+        role,
         blocked,
         privilegedAccess: ctx.can(p['platform.role.assign_privileged'], ctx.resource ?? 'tenant')
           ? 'allowed'
           : 'denied',
+        choices: await loadRoleChoices(ctx),
       });
     },
   };
 }
 
-const day = z
-  .union([
-    z.iso.date().refine((value) => value >= '2000-01-01' && value <= '2100-12-31', {
-      message: 'range',
-    }),
-    z.literal(''),
-  ])
-  .transform((value) => (value === '' ? null : value));
+/** `role_code:row id:row version` (getEditableRole), or empty for no role. */
+export const VERSION_TOKEN = /^[a-z0-9_]+:[0-9a-f-]{36}:[0-9]+$|^$/;
 
-/** `role_code:row id:row version`, comma-separated (getEditableRoles), or empty for no roles. */
-export const VERSION_TOKEN = /^[a-z_]+:[0-9a-f-]{36}:[0-9]+(,[a-z_]+:[0-9a-f-]{36}:[0-9]+)*$|^$/;
+/** A standard role code or a custom role code (`custom_` + 12 hex). */
+export const ROLE_CODE = /^[a-z][a-z_]{1,39}$|^custom_[0-9a-f]{12}$/;
 
-export const EditRolesInput = z
-  .strictObject({
-    personId: z.uuid(),
-    version: z.string().max(2000).regex(VERSION_TOKEN),
-    primary: z.enum(SYSTEM_ROLE_CODES),
-    additional: z
-      .array(
-        z.strictObject({
-          roleCode: z.enum(SYSTEM_ROLE_CODES),
-          validFrom: day,
-          validUntil: day,
-        }),
-      )
-      .max(SYSTEM_ROLE_CODES.length - 1),
-  })
-  .superRefine((value, ctx) => {
-    const seen = new Set<string>([value.primary]);
-    value.additional.forEach((role, index) => {
-      if (seen.has(role.roleCode)) {
-        ctx.addIssue({ code: 'custom', path: ['additional', index, 'roleCode'], message: 'twice' });
-      }
-      seen.add(role.roleCode);
-      if (role.validFrom !== null && role.validUntil !== null && role.validUntil < role.validFrom) {
-        ctx.addIssue({
-          code: 'custom',
-          path: ['additional', index, 'validUntil'],
-          message: 'before_start',
-        });
-      }
-    });
-  });
+export const EditRolesInput = z.strictObject({
+  personId: z.uuid(),
+  version: z.string().max(200).regex(VERSION_TOKEN),
+  role: z.string().max(40).regex(ROLE_CODE),
+});
 
-function desiredRoles(input: z.output<typeof EditRolesInput>): AssignedRole[] {
-  return [
-    { roleCode: input.primary, isPrimary: true, validFrom: null, validUntil: null },
-    ...input.additional.map((r) => ({ ...r, isPrimary: false })),
-  ];
+function fieldError(code: string): AppError {
+  return appError('VALIDATION_FAILED', { fieldErrors: [{ path: 'role', code }] });
 }
 
-function refusalError(refusal: RolesRefusal): AppError {
+function refusalError(refusal: RoleRefusal): AppError {
   switch (refusal) {
     case 'not_found':
     case 'no_account':
       return appError('NOT_FOUND');
-    case 'own_roles':
+    case 'own_role':
     case 'not_allowed':
     case 'membership_revoked':
+    case 'privileged_change':
       return appError('FORBIDDEN');
     case 'version_conflict':
       return appError('CONFLICT_VERSION');
     case 'last_admin':
-      return appError('VALIDATION_FAILED', {
-        fieldErrors: [{ path: 'primary', code: 'LAST_ADMIN' }],
-      });
-    case 'privileged_change':
-      return appError('FORBIDDEN');
-    case 'dates_invalid':
-      return appError('VALIDATION_FAILED', {
-        fieldErrors: [{ path: 'additional', code: 'DATES' }],
-      });
-    case 'role_conflict':
-      return appError('VALIDATION_FAILED', {
-        fieldErrors: [{ path: 'additional', code: 'ROLE_CONFLICT' }],
-      });
+      return fieldError('LAST_ADMIN');
+    case 'unknown_role':
+      return fieldError('ROLE_UNKNOWN');
   }
 }
 
 export interface RolesSaved {
   readonly personId: string;
   readonly changed: boolean;
-  readonly before: readonly AssignedRole[];
-  readonly after: readonly AssignedRole[];
+  readonly before: string | null;
+  readonly after: string;
 }
 
-function rolesAction(
+function roleAction(
   permission: PermissionDefinition,
   privileged: boolean,
 ): ActionDefinition<typeof EditRolesInput, RolesSaved, UserTx> {
@@ -176,21 +129,31 @@ function rolesAction(
     input: EditRolesInput,
     resource: (input) => ({ type: 'person', id: input.personId }),
     handler: async ({ ctx, input }) => {
-      // Ordinary path: a change that touches a privileged role must go through the privileged action
-      // (the Organization Admin; strict session check). Checked after the role lock against the stored roles, like the
-      // separation of duties (BR-IAM-4), which needs the stored days of the primary role.
-      const outcome = await replaceMemberRoles(
+      // Everything below is decided under the organization's role lock (security review L5): a custom role
+      // changed or deleted at the same time is read as it is after that change.
+      await lockTenantRoles(ctx.tx);
+      const wanted = await findRole(ctx.tx, input.role);
+      if (!wanted) return err(fieldError('ROLE_UNKNOWN'));
+      // Ordinary path: neither the new nor the current role may be privileged (the privileged action,
+      // with its strict session check, gives those), and only roles whose permissions the member holds.
+      if (!privileged && (wanted.privileged || !canGive(ctx, wanted))) {
+        return err(fieldError('ROLE_NOT_ALLOWED'));
+      }
+      const current = await getEditableRole(ctx.tx, input.personId);
+      const currentRole = current?.roleCode ? await findRole(ctx.tx, current.roleCode) : null;
+      const outcome = await replaceMemberRole(
         ctx.tx,
         input.personId,
         input.version,
-        desiredRoles(input),
+        input.role,
         privileged
-          ? { conflicts: rolesHeldTogether, soleRoles: SOLE }
-          : { lockedCodes: PRIVILEGED, conflicts: rolesHeldTogether, soleRoles: SOLE },
+          ? {}
+          : {
+              // Read under the role lock, against the stored role (unknown roles count as privileged).
+              isLocked: (code) =>
+                code === wanted.code ? wanted.privileged : (currentRole?.privileged ?? true),
+            },
       );
-      if (!outcome.ok && outcome.refusal === 'privileged_change') {
-        return err(appError('FORBIDDEN'));
-      }
       if (!outcome.ok) return err(refusalError(outcome.refusal));
       return ok({
         personId: input.personId,
@@ -205,7 +168,7 @@ function rolesAction(
             action: 'platform.user.roles_changed',
             entityType: 'person',
             entityId: output.personId,
-            // Role codes and validity days (BR-IAM-3: before and after; no personal data).
+            // Role codes (BR-IAM-3: before and after; no personal data).
             data: { before: output.before, after: output.after },
           }
         : null,
@@ -214,10 +177,10 @@ function rolesAction(
 
 /** Ordinary roles only (HR Manager, Organization Admin). */
 export function updateMemberRolesActionDefinition() {
-  return rolesAction(p['platform.role.assign'], false);
+  return roleAction(p['platform.role.assign'], false);
 }
 
 /** Any role, privileged ones included: the Organization Admin. */
 export function updateMemberPrivilegedRolesActionDefinition() {
-  return rolesAction(p['platform.role.assign_privileged'], true);
+  return roleAction(p['platform.role.assign_privileged'], true);
 }

@@ -19,20 +19,20 @@ import type { ActionContext, ActionDefinition } from '../define-action';
 import type { QueryDefinition } from '../define-query';
 import type { PermissionDefinition } from '../permissions';
 import { platformPermissions } from '../platform-permissions';
-import { includesConflictingRoles } from '../separation-of-duties';
-import { SYSTEM_ROLES, SYSTEM_ROLE_CODES } from '../system-roles';
+import { ROLE_CODE } from './edit-roles';
 import { namePart } from './my-profile';
+import { type RoleChoice, canGive, findRole, loadRoleChoices } from './role-catalogue';
 
 /**
  * Invitations, admin side (T-M2-07, FR-IAM-03, BR-IAM-1; approved screens 1 and 2;
  * docs/engineering/invitations-contract.md §1 steps 1 and 3). Permission `platform.user.invite`
- * (HR Manager, Organization Admin). Privileged roles may be given only by holders of
- * `platform.role.assign_privileged` (the Organization Admin; no authenticator code since the PO
- * decision of 14 Oct 2026) — the same split as changing roles (edit-roles.ts): an ordinary action that refuses
- * privileged roles and a privileged action with the strict session check. The database guard applies
- * the same rule. An invitation never gives the Organization Admin role together with another role (BR-IAM-4,
- * T-M2-16: ROLE_CONFLICT on the additional roles). Audit records carry ids and role codes only (no names,
- * no e-mail).
+ * (HR Manager, Organization Admin). An invitation gives ONE role (EP-ROLES, PO 17 Oct 2026, Kawadir): a
+ * standard role or a custom role of the organization. Privileged roles (standard, or custom with a
+ * high-risk permission) may be given only by holders of `platform.role.assign_privileged` (the Organization
+ * Admin) — the same split as changing a role (edit-roles.ts): an ordinary action that refuses privileged
+ * roles (and roles with permissions the member does not hold) and a privileged action with the strict
+ * session check. The database guard applies the same rules. Audit records carry ids and role codes only
+ * (no names, no e-mail).
  */
 const p = platformPermissions;
 
@@ -55,10 +55,6 @@ export const MAX_INVITATION_SENDS = 4;
 /** Days an invitation (each e-mailed link) stays valid. */
 export const INVITATION_VALID_DAYS = 7;
 
-const PRIVILEGED: ReadonlySet<string> = new Set(
-  SYSTEM_ROLES.filter((r) => r.privileged).map((r) => r.code),
-);
-
 const optionalId = z
   .union([z.uuid(), z.literal('')])
   .transform((value) => (value === '' ? null : value));
@@ -70,52 +66,41 @@ const requiredNamePart = z
   .max(60)
   .refine((value) => hasVisibleText(value), { message: 'invisible' });
 
-export const InviteUserInput = z
-  .strictObject({
-    email: z.string().trim().max(254).toLowerCase().pipe(z.email()),
-    firstNameAr: requiredNamePart,
-    familyNameAr: requiredNamePart,
-    firstNameEn: namePart,
-    familyNameEn: namePart,
-    departmentId: optionalId,
-    branchId: optionalId,
-    managerPersonId: optionalId,
-    employeeNumber: z
-      .string()
-      .max(40)
-      .transform((value) => normalizeDigits(value).trim())
-      .refine((value) => value === '' || hasVisibleText(value), { message: 'invisible' })
-      .transform((value) => (value === '' ? null : value)),
-    primaryRole: z.enum(SYSTEM_ROLE_CODES),
-    additionalRoles: z.array(z.enum(SYSTEM_ROLE_CODES)).max(SYSTEM_ROLE_CODES.length - 1),
-    locale: z.enum(['ar', 'en']),
-  })
-  .superRefine((value, ctx) => {
-    const seen = new Set<string>([value.primaryRole]);
-    value.additionalRoles.forEach((code, index) => {
-      if (seen.has(code)) {
-        ctx.addIssue({ code: 'custom', path: ['additionalRoles', index], message: 'twice' });
-      }
-      seen.add(code);
-    });
-  });
+export const InviteUserInput = z.strictObject({
+  email: z.string().trim().max(254).toLowerCase().pipe(z.email()),
+  firstNameAr: requiredNamePart,
+  familyNameAr: requiredNamePart,
+  firstNameEn: namePart,
+  familyNameEn: namePart,
+  departmentId: optionalId,
+  branchId: optionalId,
+  managerPersonId: optionalId,
+  employeeNumber: z
+    .string()
+    .max(40)
+    .transform((value) => normalizeDigits(value).trim())
+    .refine((value) => value === '' || hasVisibleText(value), { message: 'invisible' })
+    .transform((value) => (value === '' ? null : value)),
+  // One role per person (EP-ROLES): a standard role code or a custom role code of the organization.
+  role: z.string().max(40).regex(ROLE_CODE),
+  locale: z.enum(['ar', 'en']),
+});
 
 export type InviteUserInputValue = z.output<typeof InviteUserInput>;
 
-/** Does the invitation give a privileged role (primary or additional)? */
-export function invitationGivesPrivilegedRole(input: {
-  readonly primaryRole: string;
-  readonly additionalRoles: readonly string[];
+/** Does the invitation give a privileged role? (Computed by the database for custom roles.) */
+export function invitationGivesPrivilegedRole(invitation: {
+  readonly privileged: boolean;
 }): boolean {
-  return PRIVILEGED.has(input.primaryRole) || input.additionalRoles.some((c) => PRIVILEGED.has(c));
+  return invitation.privileged;
 }
 
 const REFUSAL_FIELDS = {
   EMAIL_TAKEN: 'email',
   EMPLOYEE_NUMBER_TAKEN: 'employeeNumber',
-  ROLE_NOT_ALLOWED: 'primaryRole',
-  // The Organization Admin role with another role: one of them is always an additional role (BR-IAM-4).
-  ROLE_CONFLICT: 'additionalRoles',
+  ROLE_NOT_ALLOWED: 'role',
+  // BR-IAM-4: unreachable with one role per invitation (kept for the database's JR001).
+  ROLE_CONFLICT: 'role',
 } as const;
 type InvitationRefusalCode = keyof typeof REFUSAL_FIELDS;
 
@@ -136,18 +121,14 @@ function fieldError(path: string, code: string): AppError {
   return appError('VALIDATION_FAILED', { fieldErrors: [{ path, code }] });
 }
 
-/** The field a refused role points at: an additional role when only those are privileged. */
-function roleNotAllowed(input: InviteUserInputValue): AppError {
-  const additionalOnly =
-    !PRIVILEGED.has(input.primaryRole) && input.additionalRoles.some((c) => PRIVILEGED.has(c));
-  return fieldError(additionalOnly ? 'additionalRoles' : 'primaryRole', 'ROLE_NOT_ALLOWED');
+function roleNotAllowed(): AppError {
+  return fieldError('role', 'ROLE_NOT_ALLOWED');
 }
 
 export interface InvitationCreated {
   readonly invitationId: string;
   readonly personId: string;
-  readonly primaryRole: string;
-  readonly additionalRoles: readonly string[];
+  readonly role: string;
   /**
    * The invitation's first code (Kawadir: shown right away with «نسخ الرمز» / «نسخ الرابط») and the
    * language its link opens in. Returned to the inviter only — never audited or logged.
@@ -173,15 +154,14 @@ async function invite(
     branchId: input.branchId,
     managerPersonId: input.managerPersonId,
     employeeNumber: input.employeeNumber,
-    primaryRole: input.primaryRole,
-    additionalRoles: input.additionalRoles,
+    primaryRole: input.role,
+    additionalRoles: [],
     locale: input.locale,
   });
   return {
     invitationId: created.invitationId,
     personId: created.personId,
-    primaryRole: input.primaryRole,
-    additionalRoles: input.additionalRoles,
+    role: input.role,
     inviteCode: created.inviteCode,
     locale: input.locale,
     inviteLink: inviteLinkOf(input.locale, created.inviteCode),
@@ -197,23 +177,22 @@ function inviteAction(
     permission,
     input: InviteUserInput,
     handler: async ({ ctx, input }) => {
-      // Separation of duties (BR-IAM-4): refused whoever invites — a rule about the roles, not the actor.
-      if (includesConflictingRoles([input.primaryRole, ...input.additionalRoles])) {
-        return err(fieldError(REFUSAL_FIELDS.ROLE_CONFLICT, 'ROLE_CONFLICT'));
-      }
+      const role = await findRole(ctx.tx, input.role);
+      if (!role) return err(fieldError('role', 'ROLE_UNKNOWN'));
       if (privileged) {
         // The privileged path is authorized by role.assign_privileged; inviting stays user.invite.
         if (!ctx.can(p['platform.user.invite'], 'tenant')) return err(appError('FORBIDDEN'));
-      } else if (invitationGivesPrivilegedRole(input)) {
-        // Ordinary path: privileged roles go through the privileged action (strict session check).
-        return err(roleNotAllowed(input));
+      } else if (role.privileged || !canGive(ctx, role)) {
+        // Ordinary path: privileged roles go through the privileged action (strict session check); and
+        // nobody gives a role with permissions they do not hold.
+        return err(roleNotAllowed());
       }
       try {
         return ok(await invite(ctx, input, inviteLinkOf));
       } catch (error) {
         const code = invitationRefusalCode(error);
         if (code === null) throw error;
-        if (code === 'ROLE_NOT_ALLOWED') return err(roleNotAllowed(input));
+        if (code === 'ROLE_NOT_ALLOWED') return err(roleNotAllowed());
         return err(fieldError(REFUSAL_FIELDS[code], code));
       }
     },
@@ -221,12 +200,8 @@ function inviteAction(
       action: 'platform.invitation.created',
       entityType: 'invitation',
       entityId: output.invitationId,
-      // Ids and role codes only (no names, no e-mail).
-      data: {
-        personId: output.personId,
-        primaryRole: output.primaryRole,
-        additionalRoles: output.additionalRoles,
-      },
+      // Ids and the role code only (no names, no e-mail).
+      data: { personId: output.personId, role: output.role },
     }),
   };
 }
@@ -275,7 +250,7 @@ export function resendInvitationActionDefinition(): ActionDefinition<
     input: InvitationIdInput,
     handler: async ({ ctx, input }) => {
       const roles = await getInvitationRoles(ctx.tx, input.invitationId);
-      if (roles && invitationGivesPrivilegedRole(roles)) {
+      if (roles?.privileged) {
         if (!ctx.can(p['platform.role.assign_privileged'], 'tenant')) {
           return err(invitationRoleNotAllowed());
         }
@@ -334,7 +309,7 @@ function viewCodeAction(
       if (!roles) return err(fieldError('invitationId', 'NOT_PENDING'));
       // Ordinary path: a privileged invitation's code only through the privileged action — as inviting
       // with that role (the database applies the same rule: an HR Manager reads no such code).
-      if (!privileged && invitationGivesPrivilegedRole(roles)) {
+      if (!privileged && roles.privileged) {
         return err(invitationRoleNotAllowed());
       }
       const code = await invitationCode(ctx.tx, input.invitationId);
@@ -457,6 +432,8 @@ export interface InviteFormView {
   readonly orgUnits: OrgUnitOptions;
   /** Privileged roles: allowed (the Organization Admin) or not for this member. */
   readonly privilegedAccess: 'allowed' | 'denied';
+  /** The roles to choose from (standard and custom), with whether this member may give each. */
+  readonly roles: readonly RoleChoice[];
 }
 
 export const InviteFormInput = z.strictObject({});
@@ -483,6 +460,7 @@ export function inviteFormQueryDefinition(): QueryDefinition<
         privilegedAccess: ctx.can(p['platform.role.assign_privileged'], 'tenant')
           ? 'allowed'
           : 'denied',
+        roles: await loadRoleChoices(ctx),
       });
     },
   };

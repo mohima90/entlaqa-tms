@@ -1,25 +1,18 @@
 'use client';
-import { Alert, Badge, Button, TextField, buttonClasses } from '@jadarat/ui';
+import { Alert, Button, TextField, buttonClasses } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
 import { type SyntheticEvent, useEffect, useRef, useState, useTransition } from 'react';
 import { invitePrivilegedUserAction, inviteUserAction } from '../../actions/invitations';
 import { type ManagerChoice, managersFor } from '../../lib/edit-user-form';
-import {
-  COMMON_ROLE_CODES,
-  type RoleChoice,
-  blockedBySole,
-  choosesPrivileged,
-  createdName,
-  inviteFieldError,
-  lockedRoleCodes,
-  rolesShown,
-} from '../../lib/invite-form';
+import { createdName, inviteFieldError } from '../../lib/invite-form';
+import { type RoleOption, readsHeadedDepartments, roleActionPath } from '../../lib/role-choice';
 import { type ErrorTexts, errorText } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
 import { fieldErrorCodes } from '../profile/field-errors';
 import { SelectField } from '../select-field';
 import type { UnitChoice } from './edit-user-form';
 import { InviteCodeCopy, type InviteCodeValue, type InviteCopyTexts } from './invite-code-copy';
+import { RoleSelect, type RoleSelectTexts } from './role-select';
 
 export interface InviteUserFormProps {
   /** The organization's default language for new people (T-M2-22): the invitation language preselected. */
@@ -27,9 +20,9 @@ export interface InviteUserFormProps {
   readonly departments: readonly UnitChoice[];
   readonly branches: readonly UnitChoice[];
   readonly managers: readonly ManagerChoice[];
-  readonly catalogue: readonly RoleChoice[];
-  /** Privileged roles may be given in this session (Organization Admin with an authenticator code). */
-  readonly privilegedAllowed: boolean;
+  /** The roles (standard, then custom), each with whether this member may give it (EP-ROLES). */
+  readonly roles: readonly RoleOption[];
+  readonly roleTexts: RoleSelectTexts;
   /** Texts by key (translated on the server). */
   readonly labels: Readonly<Record<string, string>>;
   readonly fieldTexts: Readonly<Record<string, string>>;
@@ -38,8 +31,6 @@ export interface InviteUserFormProps {
   readonly usersHref: string;
   readonly successHref: string;
   readonly rolesHref: string;
-  /** Roles held alone (BR-IAM-4: the Organization Admin holds no other role). */
-  readonly soleRoles: readonly string[];
   /** The code chip and copy buttons of the success panel (Kawadir). */
   readonly copyTexts: InviteCopyTexts;
   /** The page's language: the success panel names the invitee in it (English name when given). */
@@ -111,13 +102,12 @@ const EN_FIELDS = ['firstNameEn', 'familyNameEn'];
 
 /**
  * Invite a user (T-M2-07, FR-IAM-03, BR-IAM-1; approved screen 2): work e-mail, Arabic name (English
- * optional), placement, one primary role and optional additional roles, invitation language. Privileged
- * roles stay locked unless the session may give them (PO decision D-IAM-01). The Organization Admin
- * holds no other role (BR-IAM-4): choosing it disables every other role and choosing another role
- * disables it, with the explanation.
+ * optional), placement, one role (EP-ROLES, PO 17 Oct 2026: standard or custom, one per person),
+ * invitation language. Roles the member may not give (privileged ones unless Organization Admin; roles
+ * with permissions they don't hold) are listed but disabled, with the reason.
  */
 export function InviteUserForm(props: InviteUserFormProps) {
-  const { labels, fieldTexts, catalogue } = props;
+  const { labels, fieldTexts, roles } = props;
   const text = (key: string) => labels[key] ?? key;
   const router = useRouter();
   const sessionRefused = useSessionRefusal();
@@ -129,21 +119,12 @@ export function InviteUserForm(props: InviteUserFormProps) {
   const [branchId, setBranchId] = useState('');
   const [managerId, setManagerId] = useState('');
   const [allManagers, setAllManagers] = useState(false);
-  const [allRoles, setAllRoles] = useState(false);
-  const [primary, setPrimary] = useState('');
-  const [additional, setAdditional] = useState<readonly string[]>([]);
+  const [role, setRole] = useState('');
   const [invitationLocale, setInvitationLocale] = useState<'ar' | 'en'>(props.defaultLocale);
   const [created, setCreated] = useState<Created | null>(null);
   const [formKey, setFormKey] = useState(0);
-  const locked = lockedRoleCodes(catalogue, props.privilegedAllowed);
-  const soleBlocked = (code: string, as: 'primary' | 'additional') =>
-    blockedBySole(code, as, primary, additional, props.soleRoles);
+  const lockedSome = roles.some((r) => !r.assignable);
   const managers = managersFor(props.managers, departmentId, allManagers, managerId);
-  // A chosen role stays visible when the list goes back to the common roles.
-  const shown = rolesShown(
-    catalogue,
-    allRoles || (primary !== '' && !COMMON_ROLE_CODES.includes(primary)),
-  );
 
   function onSubmit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -163,13 +144,13 @@ export function InviteUserForm(props: InviteUserFormProps) {
       managerPersonId: managerId,
       employeeNumber: field('employeeNumber'),
       // Validated on the server (an empty choice comes back as a field error).
-      primaryRole: primary as never,
-      additionalRoles: additional as never[],
+      role,
       locale: invitationLocale,
     };
-    const action = choosesPrivileged(catalogue, primary, additional)
-      ? invitePrivilegedUserAction
-      : inviteUserAction;
+    const action =
+      role !== '' && roleActionPath(roles, role) === 'privileged'
+        ? invitePrivilegedUserAction
+        : inviteUserAction;
     setMessage(null);
     setFieldErrors({});
     startTransition(async () => {
@@ -200,29 +181,9 @@ export function InviteUserForm(props: InviteUserFormProps) {
         if (EN_FIELDS.some((name) => errors[name])) setShowEnglish(true);
         setFieldErrors(errors);
       }
-      // Separation of duties (BR-IAM-4): the reason itself is the message.
-      const conflict =
-        result.error.code === 'VALIDATION_FAILED' &&
-        Object.values(fieldErrorCodes(result.error)).includes('ROLE_CONFLICT');
-      setMessage(
-        conflict
-          ? (fieldTexts.roleConflict ?? errorText(result.error, props.errors))
-          : errorText(result.error, props.errors),
-      );
+      setMessage(errorText(result.error, props.errors));
     });
   }
-
-  const roleText = (choice: RoleChoice, nameId: string) => (
-    <span className="flex flex-col gap-1">
-      <span className="flex flex-wrap items-center gap-2 font-medium">
-        <span id={nameId}>{choice.name}</span>
-        {choice.privileged ? <Badge tone="warning">{text('privileged')}</Badge> : null}
-      </span>
-      <span className="text-sm text-text-muted">{choice.description}</span>
-    </span>
-  );
-
-  const describedBy = (...ids: (string | false)[]) => ids.filter(Boolean).join(' ') || undefined;
 
   if (created) {
     return (
@@ -233,8 +194,7 @@ export function InviteUserForm(props: InviteUserFormProps) {
         successHref={props.successHref}
         onAnother={() => {
           setCreated(null);
-          setPrimary('');
-          setAdditional([]);
+          setRole('');
           setDepartmentId('');
           setBranchId('');
           setManagerId('');
@@ -422,149 +382,38 @@ export function InviteUserForm(props: InviteUserFormProps) {
         />
       </fieldset>
 
-      {locked.size > 0 && props.labels.privilegedLocked ? (
-        <Alert tone="info" data-testid="privileged-locked">
-          {text('privilegedLocked')}
-        </Alert>
-      ) : null}
-
-      <fieldset
-        className="m-0 flex flex-col gap-3 border-0 p-0"
-        aria-describedby={describedBy(
-          'invite-primary-hint',
-          Boolean(fieldErrors.primaryRole) && 'invite-primary-error',
-        )}
-      >
-        <legend className="mb-1 text-lg font-semibold">
-          {text('primaryRole')}{' '}
-          <span className="text-base font-normal text-text-muted">{text('required')}</span>
-        </legend>
-        <p id="invite-primary-hint" className="m-0 text-sm text-text-muted">
-          {text('primaryRoleHint')}
-        </p>
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          {shown.map((choice) => {
-            const blocked = soleBlocked(choice.code, 'primary');
-            return (
-              <label
-                key={choice.code}
-                className={`flex min-h-11 items-start gap-3 rounded-md border p-3 ${
-                  primary === choice.code ? 'border-primary bg-primary-subtle' : 'border-border'
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="primaryRole"
-                  value={choice.code}
-                  checked={primary === choice.code}
-                  disabled={pending || blocked || locked.has(choice.code)}
-                  onChange={() => {
-                    setPrimary(choice.code);
-                    setAdditional((list) => list.filter((code) => code !== choice.code));
-                  }}
-                  aria-describedby={blocked ? 'invite-role-conflict-hint' : undefined}
-                  className="mt-1 size-5 shrink-0"
-                />
-                {roleText(choice, `invite-primary-${choice.code}-name`)}
-              </label>
-            );
-          })}
-        </div>
-        {fieldErrors.primaryRole ? (
-          <p id="invite-primary-error" className="m-0 text-sm font-medium text-danger">
-            {fieldErrors.primaryRole}
+      <section className="flex flex-col gap-3" aria-labelledby="invite-role-heading">
+        <h2 id="invite-role-heading" className="m-0 text-lg font-semibold">
+          {text('role')}
+        </h2>
+        <RoleSelect
+          id="invite-role"
+          value={role}
+          onChange={(code) => {
+            setRole(code);
+            setFieldErrors(({ role: _cleared, ...rest }) => rest);
+          }}
+          options={roles}
+          texts={props.roleTexts}
+          marker={text('required')}
+          hint={text('roleHint')}
+          error={fieldErrors.role}
+          disabled={pending}
+        />
+        {readsHeadedDepartments(roles, role) ? (
+          <Alert tone="info" data-testid="role-departments-hint">
+            {text('departmentsHint')}
+          </Alert>
+        ) : null}
+        {lockedSome && props.labels.privilegedLocked ? (
+          <p className="m-0 text-sm text-text-muted" data-testid="privileged-locked">
+            {text('privilegedLocked')}
           </p>
         ) : null}
-        <div className="flex flex-wrap items-center gap-4">
-          <Button
-            variant="ghost"
-            aria-pressed={allRoles}
-            onClick={() => {
-              setAllRoles((all) => !all);
-            }}
-            disabled={pending}
-          >
-            {allRoles ? text('showCommonRoles') : text('showAllRoles')}
-          </Button>
-          <a href={props.rolesHref} className="text-sm">
-            {text('rolesHelp')}
-          </a>
-        </div>
-      </fieldset>
-
-      <fieldset
-        className="m-0 flex flex-col gap-3 border-0 p-0"
-        aria-describedby={describedBy(
-          'invite-additional-hint',
-          Boolean(fieldErrors.additionalRoles) && 'invite-additional-error',
-        )}
-      >
-        <legend className="mb-1 text-lg font-semibold">
-          {text('additionalRoles')}{' '}
-          <span className="text-base font-normal text-text-muted">{text('optional')}</span>
-        </legend>
-        <p id="invite-additional-hint" className="m-0 text-sm text-text-muted">
-          {text('additionalRolesHint')}
-        </p>
-        <ul className="m-0 flex list-none flex-wrap gap-2 p-0">
-          {catalogue
-            .filter((choice) => choice.code !== primary)
-            .map((choice) => {
-              const on = additional.includes(choice.code);
-              const blocked = soleBlocked(choice.code, 'additional');
-              return (
-                <li key={choice.code}>
-                  <button
-                    type="button"
-                    aria-pressed={on}
-                    disabled={pending || blocked || locked.has(choice.code)}
-                    aria-describedby={blocked ? 'invite-role-conflict-hint' : undefined}
-                    onClick={() => {
-                      setAdditional((list) =>
-                        on ? list.filter((code) => code !== choice.code) : [...list, choice.code],
-                      );
-                    }}
-                    className={`inline-flex min-h-11 items-center gap-2 rounded-full border px-4 disabled:cursor-not-allowed disabled:opacity-60 ${
-                      on
-                        ? 'border-primary bg-primary text-on-primary'
-                        : 'border-border-strong bg-surface text-text hover:bg-surface-hover'
-                    }`}
-                  >
-                    {on ? (
-                      <svg
-                        width="16"
-                        height="16"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2.2"
-                        aria-hidden="true"
-                      >
-                        <path d="M5 12l5 5 9-10" />
-                      </svg>
-                    ) : null}
-                    {choice.name}
-                    {choice.privileged ? (
-                      <span className="sr-only">{` (${text('privileged')})`}</span>
-                    ) : null}
-                  </button>
-                </li>
-              );
-            })}
-        </ul>
-        <p
-          id="invite-role-conflict-hint"
-          className="m-0 text-sm text-text-muted"
-          data-testid="role-conflict-hint"
-        >
-          {text('roleConflictHint')}
-        </p>
-        {fieldErrors.additionalRoles ? (
-          <p id="invite-additional-error" className="m-0 text-sm font-medium text-danger">
-            {fieldErrors.additionalRoles}
-          </p>
-        ) : null}
-      </fieldset>
+        <a href={props.rolesHref} className="text-sm">
+          {text('rolesHelp')}
+        </a>
+      </section>
 
       <fieldset className="m-0 flex flex-col gap-2 border-0 p-0">
         <legend className="mb-1 text-lg font-semibold">{text('language')}</legend>

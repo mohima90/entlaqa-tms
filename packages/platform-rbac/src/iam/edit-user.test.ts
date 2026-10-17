@@ -5,8 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ActionRuntime } from '../define-action';
 import { createDefineAction } from '../define-action';
 import { createDefineQuery } from '../define-query';
-import { grantsForAssignments } from '../role-grants';
-import type { SystemRoleCode } from '../system-roles';
+import { type TestRoleCode, testRoleGrants } from '../testing/former-roles';
 import {
   EditUserInput,
   editUserQueryDefinition,
@@ -27,7 +26,7 @@ const ME = '33333333-3333-4333-8333-333333333333';
 const SARA = '44444444-4444-4444-8444-444444444444';
 const DEPT = '55555555-5555-4555-8555-555555555555';
 
-function runtime(roles: SystemRoleCode[]) {
+function runtime(roles: TestRoleCode[]) {
   const writeAudit = vi.fn(() => Promise.resolve());
   const rt: ActionRuntime<UserTx> = {
     getClaims: () => {
@@ -43,15 +42,7 @@ function runtime(roles: SystemRoleCode[]) {
     },
     withUserTx: (_c, fn) => fn(TX),
     loadSessionFacts: () => Promise.resolve({ active: true, aal2: true }),
-    loadGrants: () =>
-      Promise.resolve(
-        grantsForAssignments(
-          roles.map((roleCode) => ({ roleCode })),
-          {
-            headedDepartmentIds: [],
-          },
-        ),
-      ),
+    loadGrants: () => Promise.resolve(testRoleGrants(roles, [])),
     resolveResource: (_tx, ref) =>
       Promise.resolve(
         ref.id === SARA

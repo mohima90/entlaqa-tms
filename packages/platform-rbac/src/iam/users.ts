@@ -17,8 +17,9 @@ import type { ActionContext } from '../define-action';
 import type { QueryDefinition } from '../define-query';
 import { personResourceAttributes, personScopeFromGrants } from '../person-scope';
 import { platformPermissions } from '../platform-permissions';
-import { SYSTEM_ROLE_CODES } from '../system-roles';
 import { type LifecycleOffer, NO_LIFECYCLE_OFFER, lifecycleOffer } from './deactivation';
+import { ROLE_CODE } from './edit-roles';
+import { type RoleChoice, loadRoleChoices } from './role-catalogue';
 import { type AccountLockBudget, signInLockForProfile } from './sign-in-lock';
 
 /**
@@ -37,7 +38,8 @@ export const UsersListInput = z.object({
     .max(100)
     .transform((value) => normalizeDigits(value).trim())
     .optional(),
-  role: z.enum(SYSTEM_ROLE_CODES).optional(),
+  // A standard or custom role code (EP-ROLES); an unknown one simply matches nobody.
+  role: z.string().max(40).regex(ROLE_CODE).optional(),
   department: z.uuid().optional(),
   branch: z.uuid().optional(),
   page: z.coerce.number().int().min(1).max(10_000).default(1),
@@ -64,6 +66,20 @@ export interface UsersListView {
    * or not at all (null; also without `canDeactivate`).
    */
   readonly privilegedReactivation: 'allowed' | null;
+  /**
+   * The roles (standard and custom) for the role filter and names — with `platform.role.read` — each with
+   * whether the member may give it; null otherwise.
+   */
+  readonly roles: readonly RoleChoice[] | null;
+  /**
+   * «تعديل الدور» on the team list (EP-ROLES, Kawadir): `platform.role.assign`. The rows then say whether
+   * the member may manage each person (`mayManage`) and whether the person is privileged (`privileged`).
+   */
+  readonly canAssignRoles: boolean;
+  /** Privileged roles may be given here (the Organization Admin). */
+  readonly canAssignPrivileged: boolean;
+  /** The signed-in member's own person (nobody changes their own role: no ⋯ menu on that row). */
+  readonly selfPersonId: string | null;
 }
 
 function privilegedAccess(ctx: ActionContext<UserTx>): 'allowed' | null {
@@ -95,6 +111,7 @@ export function usersListQueryDefinition(): QueryDefinition<
         ? await listOrgUnitOptions(ctx.tx)
         : null;
       const canDeactivate = ctx.can(p['platform.user.deactivate'], 'tenant');
+      const canAssignRoles = canReadRoles && ctx.can(p['platform.role.assign'], 'tenant');
       const list = await listUsers(ctx.tx, {
         scope: personScopeFromGrants(ctx.grants, p['platform.user.read']),
         actorPersonId: ctx.actor.personId,
@@ -106,7 +123,9 @@ export function usersListQueryDefinition(): QueryDefinition<
         ...(input.branch && orgUnits ? { branchId: input.branch } : {}),
         limit: USERS_PAGE_SIZE,
         offset: (input.page - 1) * USERS_PAGE_SIZE,
-        ...(canDeactivate && input.tab === 'deactivated' ? { includeManageable: true } : {}),
+        ...((canDeactivate && input.tab === 'deactivated') || canAssignRoles
+          ? { includeManageable: true }
+          : {}),
       });
       return ok({
         list,
@@ -117,6 +136,10 @@ export function usersListQueryDefinition(): QueryDefinition<
         canInvite: ctx.can(p['platform.user.invite'], 'tenant'),
         canDeactivate,
         privilegedReactivation: canDeactivate ? privilegedAccess(ctx) : null,
+        roles: canReadRoles ? await loadRoleChoices(ctx) : null,
+        canAssignRoles,
+        canAssignPrivileged: ctx.can(p['platform.role.assign_privileged'], 'tenant'),
+        selfPersonId: ctx.actor.personId ?? null,
       });
     },
   };
@@ -191,7 +214,9 @@ export function userProfileQueryDefinition(
         ctx.tx,
         person.id,
         {
-          canUnlock: ctx.can(p['platform.user.unlock_sign_in'], person),
+          canUnlock:
+            ctx.can(p['platform.user.unlock_sign_in'], person) &&
+            (await mayManagePerson(ctx.tx, person.id, 'platform.user.unlock_sign_in')),
           tenantId: ctx.actor.tenantId,
           // Active members only (security review T-M2-11 M1): revoked, suspended or invited is not ours.
           hasAccount: profile.membershipStatus === 'active',

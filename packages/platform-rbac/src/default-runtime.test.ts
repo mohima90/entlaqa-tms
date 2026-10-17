@@ -27,11 +27,22 @@ const db = vi.hoisted(() => ({
   ),
   loadMemberAuthorizationFacts: vi.fn(() =>
     Promise.resolve({
+      // One role per person (EP-ROLES): a custom «Line Manager» role (their team), ending in 2027.
       roles: [
-        { roleCode: 'line_manager', validFrom: null, validUntil: new Date('2027-01-01T00:00:00Z') },
-        { roleCode: 'department_head', validFrom: null, validUntil: null },
+        {
+          roleCode: 'custom_000000000001',
+          validFrom: null,
+          validUntil: new Date('2027-01-01T00:00:00Z'),
+        },
       ],
       headedDepartmentIds: ['d1'],
+      customRoles: [
+        {
+          code: 'custom_000000000001',
+          dataScope: 'team',
+          permissions: ['platform.org.read', 'platform.role.read', 'platform.user.read'],
+        },
+      ],
     }),
   ),
 }));
@@ -86,34 +97,26 @@ describe('default defineAction runtime', () => {
     expect(db.loadSessionFacts).toHaveBeenCalledWith('tx');
   });
 
-  it("loads grants from the member's roles (T-M2-03) and resolves no resources yet", async () => {
+  it("loads grants from the member's role, custom roles included (EP-ROLES), and resolves no resources yet", async () => {
     const tx = 'tx' as never;
     const claims = { sub: 'u', tenant_id: 't' } as never;
     expect(await defaultActionRuntime.loadGrants(tx, claims)).toEqual([
-      {
-        permission: 'platform.user.read',
-        scope: { type: 'direct_reports' },
-        validUntil: new Date('2027-01-01T00:00:00Z'),
-      },
-      {
-        permission: 'platform.role.read',
-        scope: { type: 'direct_reports' },
-        validUntil: new Date('2027-01-01T00:00:00Z'),
-      },
+      // The custom role's permissions with its scope (the structure is organization-wide by nature).
       {
         permission: 'platform.org.read',
         scope: { type: 'tenant' },
         validUntil: new Date('2027-01-01T00:00:00Z'),
       },
       {
-        permission: 'platform.user.read',
-        scope: { type: 'org_units', orgUnitIds: ['d1'], includeDescendants: true },
+        permission: 'platform.role.read',
+        scope: { type: 'direct_reports' },
+        validUntil: new Date('2027-01-01T00:00:00Z'),
       },
       {
-        permission: 'platform.role.read',
-        scope: { type: 'org_units', orgUnitIds: ['d1'], includeDescendants: true },
+        permission: 'platform.user.read',
+        scope: { type: 'direct_reports' },
+        validUntil: new Date('2027-01-01T00:00:00Z'),
       },
-      { permission: 'platform.org.read', scope: { type: 'tenant' } },
       // Every member: their own profile (FR-IAM-16).
       { permission: 'platform.profile.manage_own', scope: { type: 'own' } },
     ]);

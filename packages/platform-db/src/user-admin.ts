@@ -118,8 +118,9 @@ export interface ManagerOption {
 }
 
 /**
- * Active members with a managing role in force (Department Head, Line Manager) and the heads of
- * departments, with the departments they belong to or head. `current` (the person's present
+ * Active members with a managing role in force (Department Head), the heads of departments and the
+ * people who already have direct reports (the reporting line; EP-ROLES), with the departments they belong
+ * to or head. `current` (the person's present
  * manager) is always included, even without a managing role or when no longer active, so an edit
  * never drops it silently.
  */
@@ -137,12 +138,15 @@ export async function listManagerOptions(
     with managers as (
       select m.person_id from platform.tenant_memberships m
       join platform.role_assignments ra on ra.tenant_id = m.tenant_id and ra.membership_id = m.id
-      where m.status = 'active' and ra.role_code in ('department_head', 'line_manager')
+      where m.status = 'active' and ra.role_code = 'department_head'
         and (ra.valid_from is null or ra.valid_from <= now())
         and (ra.valid_until is null or ra.valid_until > now())
       union
       select d.head_person_id from platform.departments d
       where d.head_person_id is not null and d.deleted_at is null
+      union
+      -- Line managers come from the reporting line (EP-ROLES Q3, PO 17 Oct 2026): anyone with direct reports.
+      select e.manager_person_id from platform.person_employment e where e.manager_person_id is not null
       union
       select ${current}::uuid where ${current}::uuid is not null
     )
@@ -341,10 +345,25 @@ export async function updateUserDetails(
   };
 }
 
-/** May the signed-in member change this person's record? (private.actor_may_manage_person) */
-export async function mayManagePerson(tx: UserTx, personId: string): Promise<boolean> {
-  const [row] = await tx.execute<{ may: boolean }>(sql`
+/**
+ * May the signed-in member act on this person? Without `permission`: any user management
+ * (private.actor_may_manage_person — the pages' hints). With it: that permission organization-wide, as the
+ * database checks the action itself (private.actor_may_manage_person_with; security review M1). Either way a
+ * member holding a privileged role only for the Organization Admin.
+ */
+export async function mayManagePerson(
+  tx: UserTx,
+  personId: string,
+  permission?: string,
+): Promise<boolean> {
+  const [row] = await tx.execute<{ may: boolean }>(
+    permission === undefined
+      ? sql`
     select private.actor_may_manage_person(p.tenant_id, p.id) as may
-    from platform.persons p where p.id = ${personId}::uuid`);
+    from platform.persons p where p.id = ${personId}::uuid`
+      : sql`
+    select private.actor_may_manage_person_with(p.tenant_id, p.id, array[${permission}]::text[]) as may
+    from platform.persons p where p.id = ${personId}::uuid`,
+  );
   return row?.may === true;
 }

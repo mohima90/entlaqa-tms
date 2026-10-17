@@ -6,11 +6,12 @@
 -- responsibilities. 64 removes these fixtures again.
 --   tenant A:  uX   learner (also an active learner in tenant B), heads department DX, manages pR, pR2
 --                   (no login) and pP; sessions sX1, sX2 (A), sXB (B), sX0 (no organization selected)
---              uR   learner, reports to pX                    uP   Compliance Officer (privileged), reports to pX
---              uS   learner, deactivated (person inactive)    uSP  Auditor (privileged), deactivated
+--              uR   learner, reports to pX                    uP   HR Manager (privileged), reports to pX
+--              uS   learner, deactivated (person inactive)    uSP  HR Manager (privileged), deactivated
 --              uA2  Organization Admin whose role ENDS in 30 days (the fixture admin uA has no end date)
 --              uN   an account without membership; a pending invitation of A for its e-mail
---              uE   learner whose Auditor role ENDED yesterday     uF  learner with an Auditor role from in 10 days
+--              uE   an HR Manager role that ENDED yesterday    uF  an HR Manager role from in 10 days
+--                   (one role per person since EP-ROLES: the privileged role is their only role)
 --   uA2 (like uA and uAB in 00) has a CONFIRMED authenticator app whose code its session passed (AAL2,
 --   T-M2-10); since 20261017090400 no organization-level action needs it.
 --   With T-M2-10 (20261012120000, residual N2 closed): a login left without any active membership in an
@@ -80,17 +81,15 @@ from (values
   ('a0000000-0000-4000-8000-000000000001'::uuid, '9d000000-0000-4000-8000-000000000001'::uuid, 'learner', null::timestamptz),
   ('b0000000-0000-4000-8000-000000000001', '9d000000-0000-4000-8000-000000000001', 'learner', null),
   ('a0000000-0000-4000-8000-000000000001', '9d000000-0000-4000-8000-000000000002', 'learner', null),
-  ('a0000000-0000-4000-8000-000000000001', '9d000000-0000-4000-8000-000000000003', 'compliance_officer', null),
+  ('a0000000-0000-4000-8000-000000000001', '9d000000-0000-4000-8000-000000000003', 'hr_manager', null),
   ('a0000000-0000-4000-8000-000000000001', '9d000000-0000-4000-8000-000000000004', 'learner', null),
-  ('a0000000-0000-4000-8000-000000000001', '9d000000-0000-4000-8000-000000000005', 'auditor', null),
-  ('a0000000-0000-4000-8000-000000000001', '9d000000-0000-4000-8000-000000000006', 'tenant_admin', now() + interval '30 days'),
-  ('a0000000-0000-4000-8000-000000000001', '9d000000-0000-4000-8000-000000000008', 'learner', null),
-  ('a0000000-0000-4000-8000-000000000001', '9d000000-0000-4000-8000-000000000009', 'learner', null)
+  ('a0000000-0000-4000-8000-000000000001', '9d000000-0000-4000-8000-000000000005', 'hr_manager', null),
+  ('a0000000-0000-4000-8000-000000000001', '9d000000-0000-4000-8000-000000000006', 'tenant_admin', now() + interval '30 days')
 ) as r (tenant_id, user_id, role_code, valid_until)
 join platform.tenant_memberships m on m.tenant_id = r.tenant_id and m.user_id = r.user_id;
--- uE's Auditor role ended yesterday; uF's starts in 10 days (additional roles).
+-- uE's HR Manager role ended yesterday; uF's starts in 10 days (their only role: one role per person).
 insert into platform.role_assignments (tenant_id, membership_id, role_code, is_primary, valid_from, valid_until)
-select m.tenant_id, m.id, 'auditor', false, r.valid_from, r.valid_until
+select m.tenant_id, m.id, 'hr_manager', true, r.valid_from, r.valid_until
 from (values
   ('9d000000-0000-4000-8000-000000000008'::uuid, now() - interval '30 days', now() - interval '1 day'),
   ('9d000000-0000-4000-8000-000000000009', now() + interval '10 days', null::timestamptz)

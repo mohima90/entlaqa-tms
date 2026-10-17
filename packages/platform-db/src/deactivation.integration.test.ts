@@ -58,11 +58,12 @@ describe.skipIf(!configured)('deactivate / reactivate against PostgreSQL', () =>
   });
   const admin = member('tenant_admin', 'أ-مدير');
   const hr = member('hr_manager', 'ب-موارد');
-  const boss = member('line_manager', 'ت-مدير أعلى');
-  const x = member('line_manager', 'ث-سيُعطَّل');
+  const boss = member('department_head', 'ت-مدير أعلى');
+  const x = member('department_head', 'ث-سيُعطَّل');
   const r1 = member('learner', 'ج-تابع أول');
   const r2 = member('learner', 'ح-تابع ثان');
-  const auditor = member('auditor', 'خ-مدقق');
+  // A privileged member (a second HR Manager; EP-ROLES retired the Auditor role).
+  const auditor = member('hr_manager', 'خ-مدقق');
   const xElsewhere = { ...member('learner', 'د-في منشأة أخرى', other), user: x.user };
   const all = [admin, hr, boss, x, r1, r2, auditor];
   const dept = id();
@@ -285,7 +286,7 @@ describe.skipIf(!configured)('deactivate / reactivate against PostgreSQL', () =>
              array(select ra.role_code from platform.role_assignments ra where ra.membership_id = m.id) as roles
       from platform.persons p join platform.tenant_memberships m on m.person_id = p.id
       where p.id = ${x.person}`;
-    expect(state).toEqual({ person: 'active', membership: 'active', roles: ['line_manager'] });
+    expect(state).toEqual({ person: 'active', membership: 'active', roles: ['department_head'] });
     // Not twice; and nobody reactivates an active member.
     const again = await withUserTx(claimsOf(admin), async (tx) => {
       const outcome = await reactivateMembership(tx, x.person);

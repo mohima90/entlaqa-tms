@@ -224,7 +224,9 @@ export function normalizeRow(
       }
       codes.push(code);
     }
-    if (codes.length > 0) data.additional_roles = codes;
+    // One role per person (EP-ROLES, PO 17 Oct 2026): additional roles are checked (never a privileged
+    // one) but not given; the review says so.
+    if (codes.length > 0) issues.push(issue('ROLES_ONE_PER_PERSON', 'additional_roles'));
   }
 
   if (values.language !== undefined) {

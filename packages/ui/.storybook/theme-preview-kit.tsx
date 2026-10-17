@@ -1,8 +1,6 @@
 import type { ReactNode } from 'react';
-import { AppShell } from '../src/app-shell';
-import { buttonClasses } from '../src/button';
-import { Icon, type IconName } from '../src/icons';
-import { NavGroup, NavItem, NavUnavailable } from '../src/nav-item';
+import { DemoShell } from './demo-shell';
+import type { Copy } from './l10n';
 
 /**
  * Theme preview kit (T-M2-04c): the users pages as built in apps/suite, redrawn with @jadarat/ui so a
@@ -15,8 +13,7 @@ import { NavGroup, NavItem, NavUnavailable } from '../src/nav-item';
  *   apps/suite/src/app/[locale]/suite/admin/users/[personId]/page.tsx
  *   apps/suite/src/components/users/{invitations-table,invite-user-form}.tsx
  * When those pages change, update this kit (until the round moves their patterns into @jadarat/ui —
- * docs/design/visual-round-checklist.md). Differences on purpose: navigation entries use NavItem and
- * header text the header roles, which the app adopts in the round.
+ * docs/design/visual-round-checklist.md). The shell is the page stories' DemoShell (Kawadir layout).
  */
 export type Locale = 'ar' | 'en';
 
@@ -49,208 +46,41 @@ export function formatDateOnly(locale: Locale, ymd: string): { gregorian: string
   };
 }
 
-const SHELL = {
-  ar: {
-    productName: 'جدارات · التدريب',
-    skipToContent: 'تخطَّ إلى المحتوى',
-    mainNavigation: 'التنقل الرئيسي',
-    menu: 'القائمة',
-    closeMenu: 'إغلاق القائمة',
-    home: 'الرئيسية',
-    comingSoon: 'قريبًا',
-    groupOrganization: 'المنشأة',
-    organizationProfile: 'بيانات المنشأة',
-    branding: 'الهوية البصرية',
-    customFields: 'الحقول المخصصة',
-    featuresPlan: 'الميزات والاشتراك',
-    groupDomains: 'إدارة النطاقات',
-    domains: 'النطاقات',
-    groupPeople: 'الأشخاص',
-    users: 'المستخدمون',
-    roles: 'الأدوار والصلاحيات',
-    groupSecurity: 'الأمان',
-    securityPolicy: 'سياسة الأمان',
-    auditLog: 'سجل التدقيق',
-    consent: 'موافقات الخصوصية',
-    groupEmail: 'إرسال البريد الإلكتروني',
-    emailSender: 'بيانات المُرسِل',
-    groupIntegrations: 'التكاملات',
-    lmsConnection: 'ربط نظام إدارة التعلّم',
-    hrSystem: 'نظام الموارد البشرية',
-    tenantContext: 'المنشأة',
-    tenantName: 'شركة الراية',
-    switchLanguage: 'English',
-    switchLanguageAria: 'التبديل إلى اللغة الإنجليزية',
-    myProfile: 'ملفي الشخصي',
-    me: 'محمد سعد العتيبي',
-    signOut: 'تسجيل الخروج',
-  },
-  en: {
-    productName: 'Jadarat TMS',
-    skipToContent: 'Skip to content',
-    mainNavigation: 'Main navigation',
-    menu: 'Menu',
-    closeMenu: 'Close menu',
-    home: 'Home',
-    comingSoon: 'Coming soon',
-    groupOrganization: 'Organization',
-    organizationProfile: 'Organization profile',
-    branding: 'Branding',
-    customFields: 'Custom fields',
-    featuresPlan: 'Features & plan',
-    groupDomains: 'Domain management',
-    domains: 'Domains',
-    groupPeople: 'People',
-    users: 'Users',
-    roles: 'Roles & permissions',
-    groupSecurity: 'Security',
-    securityPolicy: 'Security policy',
-    auditLog: 'Audit log',
-    consent: 'Consent',
-    groupEmail: 'E-mail sending',
-    emailSender: 'Sender settings',
-    groupIntegrations: 'Integrations',
-    lmsConnection: 'LMS connection',
-    hrSystem: 'HR system',
-    tenantContext: 'Organization',
-    tenantName: 'Al Raya Company',
-    switchLanguage: 'العربية',
-    switchLanguageAria: 'Switch to Arabic',
-    myProfile: 'My profile',
-    me: 'Mohammed Saad Alotaibi',
-    signOut: 'Sign out',
-  },
-} as const;
+type PreviewPage = 'home' | 'users' | 'roles' | 'general' | 'security';
 
-type ShellKey = keyof (typeof SHELL)['en'];
-type PreviewPage = 'home' | 'users' | 'roles' | 'security';
+const TITLES: Readonly<Record<PreviewPage, Copy>> = {
+  home: { ar: 'الرئيسية', en: 'Home' },
+  users: { ar: 'أعضاء الفريق', en: 'Team members' },
+  roles: { ar: 'الأدوار والصلاحيات', en: 'Roles & permissions' },
+  general: { ar: 'الإعدادات العامة', en: 'General' },
+  security: { ar: 'الأمان', en: 'Security' },
+};
 
-/** The Organization Admin's menu (apps/suite/src/lib/suite-navigation.ts; BRD v2.9). */
-const ADMIN_MENU: readonly {
-  readonly heading?: ShellKey;
-  readonly entries: readonly { key: ShellKey; icon: IconName; page?: PreviewPage }[];
-}[] = [
-  { entries: [{ key: 'home', icon: 'home', page: 'home' }] },
-  {
-    heading: 'groupOrganization',
-    entries: [
-      { key: 'organizationProfile', icon: 'building' },
-      { key: 'branding', icon: 'palette' },
-      { key: 'customFields', icon: 'fields' },
-      { key: 'featuresPlan', icon: 'plan' },
-    ],
-  },
-  { heading: 'groupDomains', entries: [{ key: 'domains', icon: 'globe' }] },
-  {
-    heading: 'groupPeople',
-    entries: [
-      { key: 'users', icon: 'people', page: 'users' },
-      { key: 'roles', icon: 'key', page: 'roles' },
-    ],
-  },
-  {
-    heading: 'groupSecurity',
-    entries: [
-      { key: 'securityPolicy', icon: 'shield', page: 'security' },
-      { key: 'auditLog', icon: 'audit' },
-      { key: 'consent', icon: 'consent' },
-    ],
-  },
-  { heading: 'groupEmail', entries: [{ key: 'emailSender', icon: 'mail' }] },
-  {
-    heading: 'groupIntegrations',
-    entries: [
-      { key: 'lmsConnection', icon: 'plug' },
-      { key: 'hrSystem', icon: 'sync' },
-    ],
-  },
-];
-
-/** The suite shell as the app draws it for an Organization Admin (approved design, T-M2-21). */
+/**
+ * The suite shell as the app draws it for an Organization Admin: the current Kawadir shell and menu of
+ * the page stories (demo-shell.tsx — apps/suite/src/components/suite-shell.tsx with suiteNavigation),
+ * so theme previews and page stories never drift apart.
+ */
 export function PreviewShell({
   locale,
   current = 'users',
+  title,
   children,
 }: {
   readonly locale: Locale;
   readonly current?: PreviewPage;
+  /** The page title in the top bar (default: the menu entry's name). */
+  readonly title?: Copy;
   readonly children: ReactNode;
 }) {
-  const t = SHELL[locale];
-  const other: Locale = locale === 'ar' ? 'en' : 'ar';
   return (
-    <AppShell
-      brand={t.productName}
-      organization={
-        <>
-          <span className="sr-only">{t.tenantContext}: </span>
-          {t.tenantName}
-        </>
-      }
-      navigationLabel={t.mainNavigation}
-      skipToContentLabel={t.skipToContent}
-      menuLabel={t.menu}
-      closeMenuLabel={t.closeMenu}
-      navigation={ADMIN_MENU.map((group) => (
-        <NavGroup
-          key={group.heading ?? 'main'}
-          id={group.heading ? `preview-nav-${group.heading}` : undefined}
-          heading={group.heading ? t[group.heading] : undefined}
-        >
-          {group.entries.map((entry) => (
-            <li key={entry.key}>
-              {entry.page ? (
-                <NavItem
-                  href={`#${entry.page}`}
-                  current={current === entry.page}
-                  icon={<Icon name={entry.icon} />}
-                >
-                  {t[entry.key]}
-                </NavItem>
-              ) : (
-                <NavUnavailable
-                  label={t[entry.key]}
-                  note={t.comingSoon}
-                  icon={<Icon name={entry.icon} />}
-                />
-              )}
-            </li>
-          ))}
-        </NavGroup>
-      ))}
-      headerEnd={
-        <>
-          <a
-            href="#language"
-            hrefLang={other}
-            lang={other}
-            aria-label={t.switchLanguageAria}
-            className="inline-flex min-h-11 items-center gap-2 rounded-md px-3 text-sm font-medium text-text-muted no-underline hover:bg-surface-hover hover:text-text"
-          >
-            <Icon name="globe" />
-            {t.switchLanguage}
-          </a>
-          <a
-            href="#profile"
-            className="flex min-h-11 items-center gap-2 rounded-md px-1.5 text-on-header no-underline hover:bg-surface-hover"
-          >
-            <span
-              aria-hidden="true"
-              className="flex size-8 items-center justify-center rounded-full bg-primary-subtle text-xs font-semibold text-primary-text"
-            >
-              {Array.from(t.me)[0]}
-            </span>
-            <span className="sr-only">{t.myProfile}: </span>
-            <span className="hidden max-w-40 truncate text-sm font-medium lg:inline">{t.me}</span>
-          </a>
-          <button type="button" className={buttonClasses({ variant: 'secondary', size: 'sm' })}>
-            {t.signOut}
-          </button>
-        </>
-      }
+    <DemoShell
+      globals={{ locale }}
+      current={current === 'users' ? 'team' : current}
+      title={title ?? TITLES[current]}
     >
       {children}
-    </AppShell>
+    </DemoShell>
   );
 }
 
@@ -278,7 +108,6 @@ export interface SamplePerson {
   readonly email: string;
   readonly employeeNumber: string | null;
   readonly role: { readonly ar: string; readonly en: string };
-  readonly otherRoles: number;
   readonly department: { readonly ar: string; readonly en: string } | null;
   readonly status: Status;
   readonly lastSignIn: string | null;
@@ -301,8 +130,7 @@ export const PEOPLE: readonly SamplePerson[] = [
     name: { ar: 'محمد سعد العتيبي', en: 'Mohammed Saad Alotaibi' },
     email: 'm.alotaibi@alraya.example',
     employeeNumber: 'EMP-1001',
-    role: { ar: 'مدير المنشأة', en: 'Organization Admin' },
-    otherRoles: 0,
+    role: { ar: 'مدير المنظمة', en: 'Organization Admin' },
     department: D.hr,
     status: 'active',
     lastSignIn: '2026-10-08T06:12:00Z',
@@ -313,7 +141,6 @@ export const PEOPLE: readonly SamplePerson[] = [
     email: 's.alqahtani@alraya.example',
     employeeNumber: 'EMP-1187',
     role: { ar: 'منسق التدريب', en: 'Training Coordinator' },
-    otherRoles: 1,
     department: D.td,
     status: 'active',
     lastSignIn: '2026-10-08T05:40:00Z',
@@ -324,7 +151,6 @@ export const PEOPLE: readonly SamplePerson[] = [
     email: 'k.alshehri@alraya.example',
     employeeNumber: 'EMP-1042',
     role: { ar: 'مدير التعلم والتطوير', en: 'L&D Manager' },
-    otherRoles: 0,
     department: D.td,
     status: 'active',
     lastSignIn: '2026-10-07T11:05:00Z',
@@ -335,7 +161,6 @@ export const PEOPLE: readonly SamplePerson[] = [
     email: 'n.aldossari@alraya.example',
     employeeNumber: null,
     role: { ar: 'منسق التدريب', en: 'Training Coordinator' },
-    otherRoles: 0,
     department: D.td,
     status: 'invited',
     lastSignIn: null,
@@ -345,8 +170,7 @@ export const PEOPLE: readonly SamplePerson[] = [
     name: { ar: 'عبدالرحمن علي الزهراني', en: 'Abdulrahman Ali Alzahrani' },
     email: 'a.alzahrani@alraya.example',
     employeeNumber: 'EMP-1310',
-    role: { ar: 'المدير المباشر', en: 'Line Manager' },
-    otherRoles: 0,
+    role: { ar: 'مدير مباشر', en: 'Line Manager' },
     department: D.ops,
     status: 'active',
     lastSignIn: '2026-10-06T08:30:00Z',
@@ -356,8 +180,7 @@ export const PEOPLE: readonly SamplePerson[] = [
     name: { ar: 'ريم ناصر الحربي', en: 'Reem Nasser Alharbi' },
     email: 'r.alharbi@alraya.example',
     employeeNumber: 'EMP-1422',
-    role: { ar: 'متدرب', en: 'Learner' },
-    otherRoles: 0,
+    role: { ar: 'موظف', en: 'Employee' },
     department: D.cs,
     status: 'active',
     lastSignIn: '2026-10-05T14:20:00Z',
@@ -368,7 +191,6 @@ export const PEOPLE: readonly SamplePerson[] = [
     email: 'f.almalki@alraya.example',
     employeeNumber: 'EMP-1105',
     role: { ar: 'المدير المالي', en: 'Finance Manager' },
-    otherRoles: 0,
     department: D.fin,
     status: 'suspended',
     lastSignIn: '2026-09-21T09:00:00Z',
@@ -379,7 +201,6 @@ export const PEOPLE: readonly SamplePerson[] = [
     email: 'y.alghamdi@alraya.example',
     employeeNumber: 'EMP-0988',
     role: { ar: 'رئيس القسم', en: 'Department Head' },
-    otherRoles: 0,
     department: D.sales,
     status: 'active',
     lastSignIn: '2026-10-08T07:55:00Z',
@@ -390,7 +211,6 @@ export const PEOPLE: readonly SamplePerson[] = [
     email: 'h.alanazi@alraya.example',
     employeeNumber: 'EMP-1250',
     role: { ar: 'مدرب داخلي', en: 'Internal Instructor' },
-    otherRoles: 0,
     department: D.qa,
     status: 'active',
     lastSignIn: null,
@@ -401,7 +221,6 @@ export const PEOPLE: readonly SamplePerson[] = [
     email: 'ahmed.mansour@trainpro.example',
     employeeNumber: null,
     role: { ar: 'مدرب خارجي', en: 'External Instructor' },
-    otherRoles: 0,
     department: null,
     status: 'invited',
     lastSignIn: null,

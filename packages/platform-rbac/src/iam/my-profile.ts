@@ -3,6 +3,7 @@ import {
   type PersonalDetails,
   type UserProfile,
   type UserTx,
+  type MyRole,
   getMyPrimaryRole,
   getPersonalDetails,
   getUserProfile,
@@ -139,7 +140,8 @@ export interface MyIdentity {
   readonly displayNameAr: string;
   readonly displayNameEn: string | null;
   /** The primary role's code, for the account menu's "Organization · Role" (display only). */
-  readonly primaryRole: string | null;
+  /** The member's role (one per person since EP-ROLES), with a custom role's names; null without one. */
+  readonly primaryRole: MyRole | null;
 }
 
 export function myIdentityQueryDefinition(): QueryDefinition<

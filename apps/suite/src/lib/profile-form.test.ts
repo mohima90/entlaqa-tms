@@ -18,11 +18,11 @@ describe('formStateFrom', () => {
   it('puts a display name without parts into the first-name field and says so', () => {
     const state = formStateFrom({
       ...empty,
-      displayNameAr: 'مدير المنشأة',
+      displayNameAr: 'مدير المنظمة',
       displayNameEn: 'Tenant Admin',
     });
     expect(state.values).toMatchObject({
-      firstNameAr: 'مدير المنشأة',
+      firstNameAr: 'مدير المنظمة',
       firstNameEn: 'Tenant Admin',
     });
     expect(state.prefilled).toEqual({ ar: true, en: true });

@@ -84,7 +84,7 @@ const TEXTS = {
     joined: 'انضم',
     newCode: 'رمز جديد',
     newCodeIssued: 'أُصدر رمز جديد. الرمز السابق لم يعد يعمل.',
-    adminLink: 'رابط مدير المنشأة',
+    adminLink: 'رابط مدير المنظمة',
   },
 } as const;
 

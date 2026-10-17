@@ -1,8 +1,9 @@
 -- Sample members for the deactivate / reactivate E2E (infra/docker/smoke.sh, T-M2-09): run as postgres after
--- seed-users.sql. :deact_user (Reem) is a Line Manager with a direct report (Yasser, no account) who heads
--- the Quality department — her deactivation hands both over; :second_user (Huda) is a Learner with nothing
--- to hand over. Both are real logins (create-user.mjs). Faisal is an Auditor (a privileged role) with a
--- bare login row (he never signs in): deactivating him needs an authenticator code. Sample data only.
+-- seed-users.sql. :deact_user (Reem) is a Department Head with a direct report (Yasser, no account) who
+-- heads the Quality department — her deactivation hands both over; :second_user (Huda) is an Employee with
+-- nothing to hand over. Both are real logins (create-user.mjs). Faisal is an HR Manager (a privileged
+-- role) with a bare login row (he never signs in): only the Organization Admin deactivates him. One role
+-- per person (EP-ROLES). Sample data only.
 \set ON_ERROR_STOP on
 begin;
 create temporary table seed_ctx on commit drop as
@@ -50,11 +51,10 @@ insert into platform.departments (tenant_id, code, name_ar, name_en, parent_id, 
   from seed_ctx s join platform.departments d on d.tenant_id = s.tenant_id and d.code = 'TRN';
 
 insert into platform.role_assignments (tenant_id, membership_id, role_code, is_primary)
-  select m.tenant_id, m.id, r.code, r.is_primary
+  select m.tenant_id, m.id, r.code, true
   from platform.tenant_memberships m
-  join (values (:'deact_user'::uuid, 'line_manager', true),
-               (:'deact_user'::uuid, 'learner', false),
-               (:'second_user'::uuid, 'learner', true),
-               ('5eed0000-0000-4000-8000-0000000000d4'::uuid, 'auditor', true)) as r (user_id, code, is_primary)
+  join (values (:'deact_user'::uuid, 'department_head'),
+               (:'second_user'::uuid, 'learner'),
+               ('5eed0000-0000-4000-8000-0000000000d4'::uuid, 'hr_manager')) as r (user_id, code)
     on r.user_id = m.user_id;
 commit;

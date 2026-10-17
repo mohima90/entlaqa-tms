@@ -16,7 +16,16 @@ function fakeTx(...results: unknown[][]) {
     executed,
     tx: {
       execute: (query: SQL) => {
-        executed.push(dialect.sqlToQuery(query));
+        const q = dialect.sqlToQuery(query);
+        // The custom-roles catalog check (deploy window): answered here, not recorded — unless the test
+        // queued its own answer ({ present }).
+        if (q.sql.includes('to_regclass(')) {
+          const queued = results[0]?.[0] as Record<string, unknown> | undefined;
+          return Promise.resolve(
+            queued && 'present' in queued ? (results.shift() ?? []) : [{ present: true }],
+          );
+        }
+        executed.push(q);
         return Promise.resolve(results.shift() ?? []);
       },
     } as never,
@@ -37,6 +46,8 @@ const row = {
   organization_ar: 'المنشأة',
   organization_en: 'Org',
   primary_role: 'learner',
+  role_name_ar: null,
+  role_name_en: null,
   invited_by: 'u1',
   send_requested_by: 'u2',
   mail_held: false,
@@ -57,6 +68,7 @@ describe('loadInvitationForMail', () => {
       inviterName: { ar: 'أحمد', en: null },
       organizationName: { ar: 'المنشأة', en: 'Org' },
       primaryRole: 'learner',
+      primaryRoleName: null,
       invitedBy: 'u1',
       sendRequestedBy: 'u2',
       mailHeld: false,
@@ -67,6 +79,28 @@ describe('loadInvitationForMail', () => {
     expect(fake.executed[0]?.sql).toContain(
       'm.user_id = coalesce(i.send_requested_by, i.invited_by)',
     );
+  });
+
+  it('names a custom role as the organization wrote it (EP-ROLES)', async () => {
+    const fake = fakeTx([
+      {
+        ...row,
+        primary_role: 'custom_0123456789ab',
+        role_name_ar: 'مراجع',
+        role_name_en: 'Reviewer',
+      },
+    ]);
+    const mail = await loadInvitationForMail(fake.tx, ID);
+    expect(mail?.primaryRoleName).toEqual({ ar: 'مراجع', en: 'Reviewer' });
+    expect(fake.executed[0]?.sql).toContain('left join platform.custom_roles cr');
+  });
+
+  it('reads no custom role names before their table exists (deploy window, review Low 3)', async () => {
+    const fake = fakeTx([{ present: false }], [row]);
+    await expect(loadInvitationForMail(fake.tx, ID)).resolves.toMatchObject({
+      primaryRoleName: null,
+    });
+    expect(fake.executed[0]?.sql).not.toContain('custom_roles');
   });
 
   it('falls back to the organization as inviter, Arabic as language; null when unknown', async () => {

@@ -1,7 +1,7 @@
 import { type SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { describe, expect, it, vi } from 'vitest';
-import { memberSignInLock, unlockMemberSignIn } from './sign-in-lock';
+import { memberSignInLock, memberSignInLockForProfile, unlockMemberSignIn } from './sign-in-lock';
 import type { UserTx } from './with-user-tx';
 
 vi.mock('server-only', () => ({}));
@@ -29,6 +29,38 @@ describe('member sign-in lock (T-M2-11, in the Organization Admin transaction)',
     expect(await memberSignInLock(fakeTx([]).tx, PERSON, 5)).toEqual({
       locked: false,
       retryAfterSeconds: 0,
+    });
+  });
+
+  it('for the profile page: a refused read (42501) is no lock panel, in a savepoint; other errors fail', async () => {
+    const refusing = (error: Error) => {
+      const savepoints: number[] = [];
+      const tx = {
+        execute: () => Promise.reject(error),
+        transaction: (fn: (savepoint: unknown) => unknown) => {
+          savepoints.push(1);
+          return fn(tx);
+        },
+      } as unknown as UserTx;
+      return { tx, savepoints };
+    };
+    const refused = refusing(
+      Object.assign(new Error('only an Organization Admin'), { code: '42501' }),
+    );
+    await expect(memberSignInLockForProfile(refused.tx, PERSON, 5)).resolves.toBeNull();
+    expect(refused.savepoints).toHaveLength(1);
+    const broken = refusing(Object.assign(new Error('connection lost'), { code: '08006' }));
+    await expect(memberSignInLockForProfile(broken.tx, PERSON, 5)).rejects.toThrow(
+      'connection lost',
+    );
+    const answering = {
+      execute: () => Promise.resolve([{ locked: true, retry_after_seconds: 60 }]),
+      transaction: (fn: (savepoint: unknown) => unknown) => fn(answering),
+    };
+    const withSavepoint = answering as unknown as UserTx;
+    await expect(memberSignInLockForProfile(withSavepoint, PERSON, 5)).resolves.toEqual({
+      locked: true,
+      retryAfterSeconds: 60,
     });
   });
 

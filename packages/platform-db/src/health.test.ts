@@ -62,6 +62,16 @@ describe('REQUIRED_DATABASE_FUNCTIONS', () => {
       ]),
     );
   });
+
+  it('includes what roles and custom roles call (EP-ROLES, review M3)', () => {
+    expect(REQUIRED_DATABASE_FUNCTIONS).toEqual(
+      expect.arrayContaining([
+        'member_permissions(uuid, uuid)',
+        'roles_include_privileged(uuid, text[])',
+        'actor_may_manage_person_with(uuid, uuid, text[])',
+      ]),
+    );
+  });
 });
 
 describe('checkDatabase', () => {

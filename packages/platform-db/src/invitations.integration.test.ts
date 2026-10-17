@@ -78,7 +78,7 @@ describe.skipIf(!configured)('invitations against PostgreSQL', () => {
     firstNameEn: 'Sara',
     familyNameEn: 'Ahmed',
     primaryRole: 'learner',
-    additionalRoles: ['mentor'],
+    additionalRoles: [],
     locale: 'ar',
     ...over,
   });
@@ -237,7 +237,7 @@ describe.skipIf(!configured)('invitations against PostgreSQL', () => {
       group by m.status, p.display_name_ar`;
     expect(membership).toEqual({
       status: 'active',
-      roles: 'learner:true,mentor:false',
+      roles: 'learner:true',
       name: 'سارة',
     });
 
@@ -310,7 +310,7 @@ describe.skipIf(!configured)('invitations against PostgreSQL', () => {
       createInvitation(
         tx,
         newInvitation(`auditor-${tag}@example.test`, {
-          primaryRole: 'auditor',
+          primaryRole: 'hr_manager',
           additionalRoles: [],
         }),
       ),
@@ -333,7 +333,10 @@ describe.skipIf(!configured)('invitations against PostgreSQL', () => {
       (await withUserTx(claimsOf(m), (tx) => listInvitations(tx))).find(
         (r) => r.id === invitationId,
       );
-    await expect(listed(admin)).resolves.toMatchObject({ hasCode: true, primaryRole: 'auditor' });
+    await expect(listed(admin)).resolves.toMatchObject({
+      hasCode: true,
+      primaryRole: 'hr_manager',
+    });
     await expect(listed(hr)).resolves.toMatchObject({ hasCode: false });
     expect(JSON.stringify(await listed(admin))).not.toContain(
       renewed.status === 'queued' ? renewed.inviteCode : 'none',

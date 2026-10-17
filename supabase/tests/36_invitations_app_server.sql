@@ -118,7 +118,7 @@ begin
   perform tests.assert_eq(
     (select string_agg(role_code || ':' || is_primary || ':' || coalesce(created_by::text, '-'), ',' order by role_code)
      from platform.role_assignments where membership_id = v_membership),
-    'hr_manager:true:-,learner:false:-,mentor:false:-', 'the invitation''s roles (privileged too), stamped as a platform operation');
+    'hr_manager:true:-', 'the invitation''s role (privileged too; one role per person), stamped as a platform operation');
   perform tests.assert_eq((select row(display_name_ar, display_name_en, updated_by)::text from platform.persons where id = 'a1000000-0000-4000-8000-0000000000e4'), row('سارة الجديدة', 'Sara New', null::uuid)::text, 'display names chosen on the page (trimmed)');
   perform tests.assert_eq((select row(status, accepted_user_id, accepted_at is not null)::text
                            from platform.invitations where id = 'a4000000-0000-4000-8000-000000000004'),
@@ -207,7 +207,7 @@ rollback;
 -- ---------------------------------------------------------------------------------------------------
 -- The inviter's authority is checked again when the link is used (security review M1): a pending
 -- invitation stops working when its inviter is revoked, suspended or no longer may give its roles.
--- a4…09 (learner) and a4…0a (auditor, privileged) were sent by uAB, now an HR Manager only.
+-- a4…09 (learner) and a4…0a (hr_manager, privileged) were sent by uAB, now an HR Manager only.
 -- ---------------------------------------------------------------------------------------------------
 begin;
 set local role authenticated;
@@ -225,8 +225,8 @@ do $$ begin
   perform tests.assert_fails($q$select private.accept_invitation_as_caller(tests.token_hash('tok-priv-by-hr'))$q$,
     array['JI001'], 'inviter not (or no longer) an Organization Admin: the privileged invitation is refused');
 end $$;
--- uA makes uAB an Organization Admin (instead of HR Manager + learner: an Organization Admin holds no
--- other role, BR-IAM-4): the privileged invitation is usable…
+-- uA makes uAB an Organization Admin (instead of HR Manager: one role per person, BR-IAM-4): the
+-- privileged invitation is usable…
 select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
   'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1'));
 delete from platform.role_assignments
@@ -246,7 +246,7 @@ delete from platform.role_assignments
  where role_code = 'tenant_admin'
    and membership_id = (select id from platform.tenant_memberships where user_id = '00000000-0000-4000-8000-0000000000ab' and tenant_id = 'a0000000-0000-4000-8000-000000000001');
 insert into platform.role_assignments (membership_id, role_code, is_primary)
-select id, r.code, r.code = 'hr_manager' from platform.tenant_memberships, (values ('hr_manager'), ('learner')) as r (code)
+select id, 'hr_manager', true from platform.tenant_memberships
 where user_id = '00000000-0000-4000-8000-0000000000ab' and tenant_id = 'a0000000-0000-4000-8000-000000000001';
 select tests.set_claims(null);
 do $$
@@ -313,9 +313,9 @@ set local role authenticated;
 select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
   'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1'));
 insert into platform.persons (id, display_name_ar, email) values
-  ('a1000000-0000-4000-8000-0000000000d5', 'مدير مالي', 'fin@a.test');
+  ('a1000000-0000-4000-8000-0000000000d5', 'مدير موارد', 'fin@a.test');
 insert into platform.invitations (person_id, email, locale, primary_role)
-  values ('a1000000-0000-4000-8000-0000000000d5', 'fin@a.test', 'ar', 'finance_manager');
+  values ('a1000000-0000-4000-8000-0000000000d5', 'fin@a.test', 'ar', 'hr_manager');
 select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000ab', '10000000-0000-4000-8000-0000000000ab',
   'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000ab'));
 do $$
@@ -377,7 +377,9 @@ declare
   ins constant text := $q$insert into platform.invitations (person_id, email, locale, primary_role, additional_roles)
     values ('a1000000-0000-4000-8000-0000000000%s', %L, 'ar', %L, %L) returning id$q$;
 begin
-  execute format(ins, 'd1', 'new1@a.test', 'learner', '{mentor}') into v_id;
+  perform tests.assert_check_constraint(format(ins, 'd1', 'new1@a.test', 'learner', '{training_coordinator}'),
+    'invitations_one_role_check', 'EP-ROLES: an invitation gives one role (no additional roles)');
+  execute format(ins, 'd1', 'new1@a.test', 'learner', '{}') into v_id;
   perform tests.assert_eq((select row(status, invited_by, token_issued_at, send_count,
                                       expires_at = now() + interval '7 days')::text
                            from platform.invitations where id = v_id),
@@ -393,22 +395,22 @@ begin
     0::bigint, 'a revoked invitation cannot be reopened');
   -- A new invitation for the same person once the first one is revoked; but only one pending.
   execute format(ins, 'd1', 'new1@a.test', 'learner', '{}') into v_id;
-  perform tests.assert_fails(format(ins, 'd1', 'new1@a.test', 'mentor', '{}'), array['23505'], 'one pending invitation per person');
+  perform tests.assert_fails(format(ins, 'd1', 'new1@a.test', 'training_coordinator', '{}'), array['23505'], 'one pending invitation per person');
 
   perform tests.assert_fails_like(format(ins, 'd2', 'new2@a.test', 'hr_manager', '{}'),
     'only an Organization Admin can invite with a privileged role', 'HR: cannot invite an HR Manager');
   perform tests.assert_fails_like(format(ins, 'd2', 'new2@a.test', 'tenant_admin', '{}'),
     'only an Organization Admin can invite with a privileged role', 'HR: cannot invite an Organization Admin');
-  perform tests.assert_fails_like(format(ins, 'd2', 'new2@a.test', 'learner', '{mentor,auditor}'),
+  perform tests.assert_fails_like(format(ins, 'd2', 'new2@a.test', 'learner', '{hr_manager}'),
     'only an Organization Admin can invite with a privileged role', 'HR: cannot add a privileged additional role');
-  perform tests.assert_fails(format(ins, 'd2', 'new2@a.test', 'learner', '{mentor,mentor}'),
+  perform tests.assert_fails(format(ins, 'd2', 'new2@a.test', 'learner', '{training_coordinator,training_coordinator}'),
     array['23514'], 'additional roles do not repeat');
   perform tests.assert_check_constraint(format(ins, 'd2', 'new2@a.test', 'learner', '{learner}'),
     'invitations_additional_roles_check', 'the primary role is not repeated as additional');
   perform tests.assert_fails(format(ins, 'd2', 'new2@a.test', 'learner', '{platform_super_admin}'),
-    array['23503'], 'additional roles exist in ref_roles');
+    array['23503'], 'additional roles exist (ref_roles or the organization''s custom roles)');
   perform tests.assert_fails(format(ins, 'd2', 'new2@a.test', 'platform_super_admin', '{}'),
-    array['23503'], 'the primary role exists in ref_roles');
+    array['23503'], 'the primary role exists (ref_roles or the organization''s custom roles)');
   perform tests.assert_fails(format(ins, 'd2', 'other@a.test', 'learner', '{}'),
     array['23514'], 'the invitation e-mail must be the person''s e-mail');
   perform tests.assert_fails(format(ins, 'd2', 'New2@a.test', 'learner', '{}'),

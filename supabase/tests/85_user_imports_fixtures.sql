@@ -3,7 +3,7 @@
 -- and 88_user_imports_flow_owner.sql, committed as platform operations. People of tenant A the dry run
 -- meets (e-mails @imp.test):
 --   exist@imp.test   uExist, active member (learner), employee number IMP-100, OPS, «محاسب»
---   priv@imp.test    uPriv, active member holding a privileged role (finance_manager), number IMP-200
+--   priv@imp.test    uPriv, active member holding a privileged role (hr_manager), number IMP-200
 --   deact@imp.test   uDeact, deactivated member (membership suspended, person inactive)
 --   pend@imp.test    no membership, pending invitation (by uA)
 --   noacc@imp.test   no membership, no invitation, inactive (e.g. removed by an earlier undo)
@@ -41,7 +41,7 @@ insert into platform.tenant_memberships (tenant_id, user_id, person_id, status) 
 insert into platform.role_assignments (tenant_id, membership_id, role_code, is_primary)
 select m.tenant_id, m.id, r.role_code, true
 from (values ('00000000-0000-4000-8000-000000000e01'::uuid, 'learner'),
-             ('00000000-0000-4000-8000-000000000e02', 'finance_manager'),
+             ('00000000-0000-4000-8000-000000000e02', 'hr_manager'),
              ('00000000-0000-4000-8000-000000000e03', 'learner'),
              ('00000000-0000-4000-8000-000000000e06', 'learner')) r (user_id, role_code)
 join platform.tenant_memberships m on m.tenant_id = 'a0000000-0000-4000-8000-000000000001' and m.user_id = r.user_id;

@@ -1,6 +1,7 @@
 import 'server-only';
 import { EMPTY_PERSON_SCOPE, type PersonScope, isEmptyPersonScope } from '@jadarat/platform-core';
 import { type SQL, sql } from 'drizzle-orm';
+import { customRolesExist } from './custom-roles-present';
 import { ORG_TIME_ZONE } from './org-time-zone';
 import type { UserTx } from './with-user-tx';
 
@@ -43,6 +44,12 @@ export interface UserListFilter {
 
 export const MAX_PAGE_SIZE = 100;
 
+/** The Arabic and English names of a custom role. */
+export interface RoleNames {
+  readonly ar: string;
+  readonly en: string;
+}
+
 export type MembershipStatus = 'active' | 'invited' | 'suspended';
 
 export interface UserListRow {
@@ -55,8 +62,15 @@ export interface UserListRow {
   readonly status: MembershipStatus;
   /** The caller may read this member's roles (inside `rolesScope`); else the roles are null/empty. */
   readonly rolesVisible: boolean;
+  /** The member's role (one per person since EP-ROLES), in force, or null. */
   readonly primaryRole: string | null;
-  readonly otherRoles: readonly string[];
+  /** The names of that role when it is a custom role (EP-ROLES); null for a standard role. */
+  readonly primaryRoleName: RoleNames | null;
+  /**
+   * The role's version token for the edit-role dialog (`role_code:row id:row version`, as
+   * getEditableRole), '' without a role or when the roles are not visible.
+   */
+  readonly roleVersion: string;
   readonly departmentNameAr: string | null;
   readonly departmentNameEn: string | null;
   readonly lastSignInAt: Date | null;
@@ -221,14 +235,24 @@ export async function listUsers(tx: UserTx, filter: UserListFilter): Promise<Use
     : MAX_PAGE_SIZE;
   const offset = Number.isFinite(filter.offset) ? Math.max(Math.trunc(filter.offset), 0) : 0;
   const rolesVisible = personScopePredicate(filter.rolesScope, filter.actorPersonId);
+  // Custom-role names only once their table exists (deploy window, review M3 / confirmation L3).
+  const customNames = await customRolesExist(tx);
+  const roleName = (column: 'name_ar' | 'name_en') =>
+    customNames
+      ? sql`(select cr.${sql.raw(column)} from platform.role_assignments ra
+             join platform.custom_roles cr on cr.tenant_id = ra.tenant_id and cr.code = ra.role_code
+             where ra.membership_id = m.id and ${ROLE_IN_FORCE} limit 1)`
+      : sql`null::text`;
   const roles = isEmptyPersonScope(filter.rolesScope)
-    ? sql`false as roles_visible, null as primary_role, null as other_roles`
+    ? sql`false as roles_visible, null as primary_role, null as role_name_ar, null as role_name_en,
+           null as role_version`
     : sql`(${rolesVisible}) as roles_visible,
            case when ${rolesVisible} then (select ra.role_code from platform.role_assignments ra
-             where ra.membership_id = m.id and ra.is_primary and ${ROLE_IN_FORCE}) end as primary_role,
-           case when ${rolesVisible} then (select array_agg(ra.role_code order by ra.role_code)
-             from platform.role_assignments ra
-             where ra.membership_id = m.id and not ra.is_primary and ${ROLE_IN_FORCE}) end as other_roles`;
+             where ra.membership_id = m.id and ${ROLE_IN_FORCE} order by ra.is_primary desc limit 1) end as primary_role,
+           case when ${rolesVisible} then ${roleName('name_ar')} end as role_name_ar,
+           case when ${rolesVisible} then ${roleName('name_en')} end as role_name_en,
+           case when ${rolesVisible} then (select ra.role_code || ':' || ra.id || ':' || ra.version
+             from platform.role_assignments ra where ra.membership_id = m.id limit 1) end as role_version`;
   const tabWhere =
     filter.tab === 'all' ? where : sql`${where} and m.status = ${TAB_STATUS[filter.tab]}`;
   const rows = await tx.execute<{
@@ -241,7 +265,9 @@ export async function listUsers(tx: UserTx, filter: UserListFilter): Promise<Use
     status: MembershipStatus;
     roles_visible: boolean | null;
     primary_role: string | null;
-    other_roles: string[] | null;
+    role_name_ar: string | null;
+    role_name_en: string | null;
+    role_version: string | null;
     department_name_ar: string | null;
     department_name_en: string | null;
     last_sign_in_at: Date | string | null;
@@ -272,7 +298,11 @@ export async function listUsers(tx: UserTx, filter: UserListFilter): Promise<Use
       status: r.status,
       rolesVisible: r.roles_visible === true,
       primaryRole: r.primary_role,
-      otherRoles: r.other_roles ?? [],
+      primaryRoleName:
+        r.role_name_ar !== null && r.role_name_en !== null
+          ? { ar: r.role_name_ar, en: r.role_name_en }
+          : null,
+      roleVersion: r.role_version ?? '',
       departmentNameAr: r.department_name_ar,
       departmentNameEn: r.department_name_en,
       lastSignInAt: toDate(r.last_sign_in_at),
@@ -286,6 +316,8 @@ export async function listUsers(tx: UserTx, filter: UserListFilter): Promise<Use
 
 export interface UserRole {
   readonly roleCode: string;
+  /** The names of a custom role (EP-ROLES); null for a standard role. */
+  readonly customName: RoleNames | null;
   readonly isPrimary: boolean;
   readonly validFrom: Date | null;
   readonly validUntil: Date | null;
@@ -392,13 +424,22 @@ export async function getUserProfile(
     : row.membership_id
       ? await tx.execute<{
           role_code: string;
+          name_ar: string | null;
+          name_en: string | null;
           is_primary: boolean;
           valid_from: Date | string | null;
           valid_until: Date | string | null;
         }>(sql`
-        select role_code, is_primary, valid_from, valid_until from platform.role_assignments
-        where membership_id = ${row.membership_id}::uuid
-        order by is_primary desc, role_code`)
+        select ra.role_code, ${
+          (await customRolesExist(tx))
+            ? sql`cr.name_ar, cr.name_en, ra.is_primary, ra.valid_from, ra.valid_until
+        from platform.role_assignments ra
+        left join platform.custom_roles cr on cr.tenant_id = ra.tenant_id and cr.code = ra.role_code`
+            : sql`null::text as name_ar, null::text as name_en, ra.is_primary, ra.valid_from, ra.valid_until
+        from platform.role_assignments ra`
+        }
+        where ra.membership_id = ${row.membership_id}::uuid
+        order by ra.is_primary desc, ra.role_code`)
       : [];
 
   const ids = [row.person_id, row.membership_id, row.user_id].filter(
@@ -461,6 +502,8 @@ export async function getUserProfile(
     roles:
       roles?.map((r) => ({
         roleCode: r.role_code,
+        customName:
+          r.name_ar !== null && r.name_en !== null ? { ar: r.name_ar, en: r.name_en } : null,
         isPrimary: r.is_primary,
         validFrom: toDate(r.valid_from),
         validUntil: toDate(r.valid_until),

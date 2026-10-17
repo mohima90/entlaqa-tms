@@ -1,6 +1,7 @@
 -- Sample people for the users-pages E2E (infra/docker/smoke.sh, T-M2-04): run as postgres after the
 -- smoke organization is provisioned. :admin_user is the provisioned Organization Admin; :manager_user is
--- a second real login (Line Manager + Learner) for the limited-member checks. Sample data only.
+-- a second real login (Mona, with the organization's custom «Line Manager» role — EP-ROLES: one role per
+-- person, line managers from the reporting line) for the limited-member checks. Sample data only.
 \set ON_ERROR_STOP on
 begin;
 create temporary table seed_ctx on commit drop as
@@ -53,13 +54,19 @@ insert into platform.person_employment (tenant_id, person_id, department_id, man
   join platform.persons p on p.tenant_id = s.tenant_id
    and p.id in ('5eed1000-0000-4000-8000-000000000003', '5eed1000-0000-4000-8000-000000000002');
 
+-- The custom «Line Manager» role (from the template: their team; people, roles and the structure).
+insert into platform.custom_roles (id, tenant_id, code, name_en, name_ar, description, data_scope)
+  select '5eed2000-0000-4000-8000-000000000001'::uuid, tenant_id, 'custom_5eed00000001', 'Line Manager',
+         'مدير مباشر', 'Direct reports’ requests, nominations and approvals.', 'team' from seed_ctx;
+insert into platform.custom_role_permissions (tenant_id, custom_role_id, permission_code)
+  select tenant_id, '5eed2000-0000-4000-8000-000000000001'::uuid, p.code
+  from seed_ctx, (values ('platform.user.read'), ('platform.role.read'), ('platform.org.read')) as p (code);
+
 insert into platform.role_assignments (tenant_id, membership_id, role_code, is_primary)
-  select m.tenant_id, m.id, r.code, r.is_primary
+  select m.tenant_id, m.id, r.code, true
   from platform.tenant_memberships m
-  join (values ('5eed0000-0000-4000-8000-000000000001'::uuid, 'training_coordinator', true),
-               ('5eed0000-0000-4000-8000-000000000001'::uuid, 'learner', false),
-               ('5eed0000-0000-4000-8000-000000000002'::uuid, 'learner', true),
-               (:'manager_user'::uuid, 'line_manager', true),
-               (:'manager_user'::uuid, 'learner', false)) as r (user_id, code, is_primary)
+  join (values ('5eed0000-0000-4000-8000-000000000001'::uuid, 'training_coordinator'),
+               ('5eed0000-0000-4000-8000-000000000002'::uuid, 'learner'),
+               (:'manager_user'::uuid, 'custom_5eed00000001')) as r (user_id, code)
     on r.user_id = m.user_id;
 commit;

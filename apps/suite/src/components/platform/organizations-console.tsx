@@ -267,7 +267,7 @@ export function CreateOrganization(props: Shared) {
 }
 
 /**
- * Row action while the Organization Admin has not joined: «رابط مدير المنشأة» opens the invitation (its code
+ * Row action while the Organization Admin has not joined: «رابط مدير المنظمة» opens the invitation (its code
  * fetched when asked — an audited read) with Copy code / Copy invite link, and «رمز جديد» / New code. When
  * the invitation's issuer is no longer a Super Admin (`issuer_revoked`, review M1) its link no longer
  * works: the dialog says it needs a new code, which a new invitation issued by this Super Admin carries.

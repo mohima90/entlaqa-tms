@@ -33,6 +33,12 @@ export {
   type CommandPaletteTexts,
 } from './command-palette';
 export { type CommandPaletteItem, groupItems, isPaletteShortcut } from './command-palette-model';
+export {
+  ChecklistAccordion,
+  type ChecklistAccordionProps,
+  type ChecklistGroup,
+  type ChecklistItem,
+} from './checklist-accordion';
 export { Dialog, type DialogProps } from './dialog';
 export {
   DropdownMenu,

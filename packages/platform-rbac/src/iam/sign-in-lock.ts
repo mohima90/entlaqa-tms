@@ -3,7 +3,8 @@ import {
   type MemberSignInLock,
   type UserTx,
   getSecurityPolicy,
-  memberSignInLock,
+  mayManagePerson,
+  memberSignInLockForProfile,
   unlockMemberSignIn,
 } from '@jadarat/platform-db';
 import {
@@ -99,7 +100,8 @@ export async function signInLockForProfile(
   budget: AccountLockBudget = defaultBudget,
 ): Promise<MemberSignInLock | null> {
   if (!options.hasAccount || !options.canUnlock) return null;
-  return memberSignInLock(tx, personId, await budget(tx, options.tenantId));
+  // A refused read (42501) shows no lock panel rather than failing the whole profile page.
+  return memberSignInLockForProfile(tx, personId, await budget(tx, options.tenantId));
 }
 
 export const UnlockSignInInput = z.object({ personId: z.uuid() });
@@ -126,6 +128,11 @@ export function unlockSignInActionDefinition(
     resource: (input) => ({ type: 'person', id: input.personId }),
     handler: async ({ ctx, input }) => {
       if (!ctx.resource) return err(appError('NOT_FOUND'));
+      // As the database (private.rate_limit_member_account): privileged members only for the Organization
+      // Admin (security review L1).
+      if (!(await mayManagePerson(ctx.tx, input.personId, 'platform.user.unlock_sign_in'))) {
+        return err(appError('FORBIDDEN'));
+      }
       const outcome = await unlockMemberSignIn(
         ctx.tx,
         input.personId,

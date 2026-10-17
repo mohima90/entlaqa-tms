@@ -56,6 +56,7 @@ describe('worker subscribers', () => {
       inviterName: { ar: 'محمد', en: null },
       organizationName: { ar: 'شركة الراية', en: null },
       primaryRole: 'learner',
+      primaryRoleName: null,
       expiresAt: new Date('2026-10-14T06:00:00Z'),
     };
     db.invitationActorMayManage.mockResolvedValue(true);
@@ -79,7 +80,7 @@ describe('worker subscribers', () => {
     expect(mail.queueEmail).toHaveBeenCalledWith(
       tx,
       expect.objectContaining({
-        variables: expect.objectContaining({ roleName: { ar: 'متدرب', en: 'Learner' } }) as unknown,
+        variables: expect.objectContaining({ roleName: { ar: 'موظف', en: 'Employee' } }) as unknown,
       }),
     );
 

@@ -1,5 +1,5 @@
 import type { AppLocale } from '@jadarat/platform-i18n';
-import { getSystemRole, isSystemRoleCode } from '@jadarat/platform-rbac';
+import { FORMER_ROLE_NAMES, getSystemRole, isSystemRoleCode } from '@jadarat/platform-rbac';
 
 /** Query-string keys of the users list (T-M2-04, screen 1). */
 export const USERS_LIST_KEYS = ['tab', 'q', 'role', 'department', 'branch', 'page'] as const;
@@ -71,9 +71,18 @@ export function localizedName(locale: AppLocale, nameAr: string, nameEn: string 
   return locale === 'en' ? (nameEn ?? nameAr) : nameAr;
 }
 
-/** Display name of a system role; unknown codes are shown as they are (never hidden). */
-export function roleName(locale: AppLocale, code: string): string {
-  return isSystemRoleCode(code) ? getSystemRole(code).name[locale] : code;
+/**
+ * Display name of a role: a custom role's own name (EP-ROLES), a standard role's, a former system role's
+ * (history), else the code as it is (never hidden).
+ */
+export function roleName(
+  locale: AppLocale,
+  code: string,
+  customName?: { readonly ar: string; readonly en: string } | null,
+): string {
+  if (customName) return customName[locale];
+  if (isSystemRoleCode(code)) return getSystemRole(code).name[locale];
+  return FORMER_ROLE_NAMES[code]?.[locale] ?? code;
 }
 
 /** The four summary figures of the team (Team members page and the Organization Admin home). */

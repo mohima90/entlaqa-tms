@@ -7,8 +7,7 @@ import type { ActionRuntime } from '../define-action';
 import { createDefineAction } from '../define-action';
 import { createDefineQuery } from '../define-query';
 import { MEMBER_GRANTS } from '../member-permissions';
-import { grantsForAssignments } from '../role-grants';
-import type { SystemRoleCode } from '../system-roles';
+import { type TestRoleCode, testRoleGrants } from '../testing/former-roles';
 import {
   OrganizationProfileInput,
   organizationProfileQueryDefinition,
@@ -59,11 +58,7 @@ function runtime(grants: readonly Grant[], aal: 'aal1' | 'aal2' = 'aal1', codeAg
   return { rt, writeAudit, getClaims };
 }
 
-const forRoles = (...roles: SystemRoleCode[]) =>
-  grantsForAssignments(
-    roles.map((roleCode) => ({ roleCode })),
-    { headedDepartmentIds: [] },
-  );
+const forRoles = (...roles: TestRoleCode[]) => testRoleGrants(roles, []);
 
 const profile = {
   nameAr: 'شركة الراية',

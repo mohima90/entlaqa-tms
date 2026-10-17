@@ -65,7 +65,7 @@ begin
   perform pg_temp.stage(p_import, 4, '{"email": "dup@imp.test", "first_name_ar": "مكرر", "family_name_ar": "أول"}');
   perform pg_temp.stage(p_import, 5, '{"email": "dup@imp.test", "first_name_ar": "مكرر", "family_name_ar": "ثان"}');
   perform pg_temp.stage(p_import, 6, '{"email": "exist@imp.test", "first_name_ar": "موجود", "family_name_ar": "قديم",
-    "job_title_ar": "مدير", "department": "TD", "primary_role": "mentor", "roles_given": true}');
+    "job_title_ar": "مدير", "department": "TD", "primary_role": "training_coordinator", "roles_given": true}');
   perform pg_temp.stage(p_import, 7, '{"email": "priv@imp.test", "first_name_ar": "مميز", "family_name_ar": "جدا",
     "job_title_ar": "المدير المالي"}');
   perform pg_temp.stage(p_import, 8, '{"email": "deact@imp.test", "first_name_ar": "معطل", "family_name_ar": "سابق"}');
@@ -278,9 +278,9 @@ begin
                         from platform.person_employment where person_id = v_row.person_id), 'row 2: placement from the file');
   perform tests.assert((select mail_held and send_count = 0 and token_issued_at is null and import_id = i
                                and invited_by = '00000000-0000-4000-8000-0000000000a1' and primary_role = 'training_coordinator'
-                               and additional_roles = '{learner}' and locale = 'en' and status = 'pending'
+                               and additional_roles = '{}' and locale = 'en' and status = 'pending'
                         from platform.invitations where id = v_row.invitation_id),
-    'row 2: a held invitation of the importer with the file''s roles and language');
+    'row 2: a held invitation of the importer with the file''s role (one role per person: its additional role is not given) and language');
   perform tests.assert_eq((select count(*) from platform.audit_events where action = 'platform.invitation.created'
                              and entity_id = v_row.invitation_id::text and actor_user_id is null
                              and data ->> 'importId' = i::text and data ->> 'job' = 'tests.user_imports'),
@@ -900,8 +900,10 @@ begin
     '2:added,3:added,6:updated,11:added,17:added,19:added,20:added', 'the HR Manager''s import added and updated people');
 end $$;
 -- After the import: row 6's member is given a privileged role; row 11's record (invited again) is edited.
+delete from platform.role_assignments
+  where membership_id = (select id from platform.tenant_memberships where person_id = 'a1000000-0000-4000-8000-000000000e01');
 insert into platform.role_assignments (tenant_id, membership_id, role_code, is_primary)
-  select tenant_id, id, 'finance_manager', false from platform.tenant_memberships
+  select tenant_id, id, 'hr_manager', true from platform.tenant_memberships
   where person_id = 'a1000000-0000-4000-8000-000000000e01';
 update platform.persons set mobile_e164 = '+966500000011' where id = 'a1000000-0000-4000-8000-000000000e05';
 select pg_temp.become_user('00000000-0000-4000-8000-0000000000ab', '10000000-0000-4000-8000-0000000000ab',
@@ -939,8 +941,10 @@ select pg_temp.run_import('a5000000-0000-4000-8000-0000000000d8', '00000000-0000
                           'f0a00000-0000-4000-8000-0000000000d8',
                           '{"existing": "upsert", "defaultRole": "learner", "invitations": "hold"}');
 -- Row 6's member now holds a privileged role; the HR Manager loses theirs.
+delete from platform.role_assignments
+  where membership_id = (select id from platform.tenant_memberships where person_id = 'a1000000-0000-4000-8000-000000000e01');
 insert into platform.role_assignments (tenant_id, membership_id, role_code, is_primary)
-  select tenant_id, id, 'finance_manager', false from platform.tenant_memberships
+  select tenant_id, id, 'hr_manager', true from platform.tenant_memberships
   where person_id = 'a1000000-0000-4000-8000-000000000e01';
 delete from platform.role_assignments where role_code = 'hr_manager'
   and membership_id = (select id from platform.tenant_memberships where user_id = '00000000-0000-4000-8000-0000000000ab'
@@ -1011,9 +1015,9 @@ rollback;
 -- ---------------------------------------------------------------------------------------------------
 -- An import never gives a privileged role, which is why starting one needs no authenticator code
 -- (TM-0003 D-IAM-01: the single-user flows ask for one only to give a privileged role; integration
--- T-M2-10 × T-M2-12). Even rows a defective or tampered worker stages with a privileged role — primary or
--- additional — fail at the invitation guard, for an Organization Admin's import too; only the ordinary
--- row is added, and no invitation of the import carries a privileged role.
+-- T-M2-10 × T-M2-12). Even rows a defective or tampered worker stages with a privileged primary role fail at
+-- the invitation guard, for an Organization Admin's import too (additional roles are never given since
+-- EP-ROLES); the ordinary rows are added, and no invitation of the import carries a privileged role.
 -- ---------------------------------------------------------------------------------------------------
 begin;
 select pg_temp.new_import('a5000000-0000-4000-8000-0000000000da', '00000000-0000-4000-8000-0000000000a1',
@@ -1021,7 +1025,7 @@ select pg_temp.new_import('a5000000-0000-4000-8000-0000000000da', '00000000-0000
 select pg_temp.stage('a5000000-0000-4000-8000-0000000000da', 2, '{"email": "priv.primary@imp.test", "first_name_ar": "مميز",
   "family_name_ar": "أساسي", "primary_role": "hr_manager", "roles_given": true}');
 select pg_temp.stage('a5000000-0000-4000-8000-0000000000da', 3, '{"email": "priv.extra@imp.test", "first_name_ar": "مميز",
-  "family_name_ar": "إضافي", "primary_role": "learner", "additional_roles": ["auditor"], "roles_given": true}');
+  "family_name_ar": "إضافي", "primary_role": "learner", "additional_roles": ["hr_manager"], "roles_given": true}');
 select pg_temp.stage('a5000000-0000-4000-8000-0000000000da', 4, '{"email": "priv.admin@imp.test", "first_name_ar": "مدير",
   "family_name_ar": "منشأة", "primary_role": "tenant_admin", "roles_given": true}');
 select pg_temp.stage('a5000000-0000-4000-8000-0000000000da', 5, '{"email": "plain.new@imp.test", "first_name_ar": "عادي",
@@ -1046,13 +1050,14 @@ begin
   end loop;
   perform tests.assert_eq((select string_agg(row_number || ':' || result, ',' order by row_number)
                            from platform.user_import_rows where import_id = i),
-    '2:failed,3:failed,4:failed,5:added', 'only the row without a privileged role is added');
+    '2:failed,3:added,4:failed,5:added',
+    'the rows without a privileged role are added (row 3 without its additional role: one role per person, EP-ROLES)');
   perform tests.assert_eq((select string_agg(r.row_number || ':' || (x ->> 'c') || ':' || (x ->> 's'), ','
                                              order by r.row_number)
                            from platform.user_import_rows r, jsonb_array_elements(r.result_issues) x
                            where r.import_id = i and r.result = 'failed'),
-    '2:NOT_ALLOWED:e,3:NOT_ALLOWED:e,4:NOT_ALLOWED:e',
-    'a privileged primary or additional role, the Organization Admin role: refused by the invitation guard');
+    '2:NOT_ALLOWED:e,4:NOT_ALLOWED:e',
+    'a privileged primary role, the Organization Admin role: refused by the invitation guard');
   perform tests.assert_eq((select count(*) from platform.invitations v
                            where v.import_id = i
                              and exists (select 1 from platform.ref_roles r
@@ -1060,7 +1065,7 @@ begin
                                            and r.is_privileged)), 0::bigint,
     'no invitation of the import carries a privileged role');
   perform tests.assert_eq((select count(*) from platform.persons
-                           where email in ('priv.primary@imp.test', 'priv.extra@imp.test', 'priv.admin@imp.test')),
+                           where email in ('priv.primary@imp.test', 'priv.admin@imp.test')),
     0::bigint, 'nobody was added for the refused rows');
 end $$;
 select pg_temp.become_owner();

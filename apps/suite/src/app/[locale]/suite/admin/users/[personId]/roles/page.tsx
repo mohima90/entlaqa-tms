@@ -1,47 +1,25 @@
 import { toClientError } from '@jadarat/platform-core';
 import { routing } from '@jadarat/platform-i18n/routing';
-import { SOLE_ROLE_CODES, type EditRolesView, SYSTEM_ROLES } from '@jadarat/platform-rbac';
+import type { EditRolesView } from '@jadarat/platform-rbac';
 import { Alert, Card } from '@jadarat/ui';
 import { hasLocale } from 'next-intl';
 import { getTranslations } from 'next-intl/server';
 import { notFound, redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { SuiteShell } from '../../../../../../../components/suite-shell';
-import { EditRolesForm } from '../../../../../../../components/users/edit-roles-form';
+import { EditRoleForm } from '../../../../../../../components/users/edit-role-form';
+import { editRoleLabels, roleSelectTexts } from '../../../../../../../lib/role-texts';
+import { roleOptions } from '../../../../../../../lib/role-choice';
 import { profileErrorTexts } from '../../../../../../../lib/profile-texts';
 import { getSuiteContext } from '../../../../../../../lib/suite-context';
 import { editRolesQuery, userProfileQuery } from '../../../../../../../lib/users-queries';
 import { localizedName } from '../../../../../../../lib/users-view';
 
-/** Text keys of the form (namespace `editRoles`). */
-const LABEL_KEYS = [
-  'primary',
-  'primaryHint',
-  'additional',
-  'additionalHint',
-  'privileged',
-  'validFrom',
-  'validUntil',
-  'daysHint',
-  'audited',
-  'save',
-  'saving',
-  'saved',
-  'noChanges',
-  'backToProfile',
-  'lastAdmin',
-  'datesInvalid',
-  'roleConflict',
-  'roleConflictHint',
-  'ended',
-  'scheduled',
-  'primaryDaysKept',
-] as const;
-
 /**
- * Change a member's roles (T-M2-14, FR-IAM-07, BR-IAM-1/3): HR Manager (ordinary roles) or
- * Organization Admin; privileged roles need an authenticator code (PO decision D-IAM-01). Out of scope
- * or another organization → 404.
+ * Change a member's role (T-M2-14, FR-IAM-07/08; EP-ROLES — one role per person, standard or custom):
+ * HR Manager (ordinary roles whose permissions they hold) or Organization Admin; privileged roles need an
+ * authenticator code (PO decision D-IAM-01). The same form opens from the ⋯ menu on Team members. Out of
+ * scope or another organization → 404.
  */
 export default async function EditRolesPage({
   params,
@@ -123,7 +101,6 @@ async function rolesForm(
   profileHref: string,
 ): Promise<ReactNode> {
   const t = await getTranslations({ locale, namespace: 'editRoles' });
-  const common = await getTranslations({ locale, namespace: 'common' });
   if (view.blocked) {
     return (
       <Alert tone="info" data-testid="roles-blocked">
@@ -131,28 +108,18 @@ async function rolesForm(
       </Alert>
     );
   }
-  const labels: Record<string, string> = Object.fromEntries(LABEL_KEYS.map((k) => [k, t(k)]));
-  labels.required = common('required');
-  labels.optional = common('optional');
-  labels.privilegedLocked = t('privilegedAdminOnly');
   return (
     <Card title={t('roles')}>
-      <EditRolesForm
-        personId={view.roles.personId}
-        version={view.roles.version}
-        roles={view.roles.roles}
-        catalogue={SYSTEM_ROLES.map((r) => ({
-          code: r.code,
-          name: r.name[locale],
-          description: r.description[locale],
-          privileged: r.privileged,
-        }))}
-        privilegedAllowed={view.privilegedAccess === 'allowed'}
-        labels={labels}
+      <EditRoleForm
+        personId={view.role.personId}
+        version={view.role.version}
+        currentRole={view.role.roleCode}
+        options={roleOptions(view.choices, locale)}
+        selectTexts={await roleSelectTexts(locale)}
+        labels={await editRoleLabels(locale)}
         errors={await profileErrorTexts(locale)}
-        profileHref={profileHref}
-        today={view.roles.today}
-        soleRoles={SOLE_ROLE_CODES}
+        backHref={profileHref}
+        idPrefix="edit-role"
       />
     </Card>
   );

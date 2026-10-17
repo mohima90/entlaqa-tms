@@ -1,0 +1,3 @@
+-- Rollback of 20261019090400_platform__one_role_per_member.sql.
+alter table platform.invitations drop constraint invitations_one_role_check;
+drop index platform.role_assignments_tenant_membership_one_role_uq;

@@ -3,11 +3,7 @@ import type { AppLocale, DisplayDateFormatter } from '@jadarat/platform-i18n';
 import { routing } from '@jadarat/platform-i18n/routing';
 import type { InvitationRow } from '@jadarat/platform-db';
 import type { UserImportBannersView } from '@jadarat/platform-import';
-import {
-  SYSTEM_ROLES,
-  type UsersListView,
-  invitationGivesPrivilegedRole,
-} from '@jadarat/platform-rbac';
+import { type UsersListView, invitationGivesPrivilegedRole } from '@jadarat/platform-rbac';
 import {
   Alert,
   Avatar,
@@ -27,7 +23,10 @@ import { getFormatter, getTranslations } from 'next-intl/server';
 import { notFound, redirect } from 'next/navigation';
 import { SuiteShell } from '../../../../../components/suite-shell';
 import { TeamStats } from '../../../../../components/users/team-stats';
+import { MemberRoleMenu } from '../../../../../components/users/member-role-menu';
 import { ReactivateMemberButton } from '../../../../../components/users/reactivate-member-button';
+import { roleOptions } from '../../../../../lib/role-choice';
+import { editRoleLabels, roleSelectTexts } from '../../../../../lib/role-texts';
 import {
   ExpiredInvitationsBanner,
   type InvitationRowView,
@@ -296,6 +295,26 @@ async function UsersList({
   // «إعادة التفعيل» on the deactivated tab (T-M2-09): rows the member may manage; privileged members only
   // with role.assign_privileged (the Organization Admin; no authenticator code since 14 Oct 2026).
   const showActions = activeTab === 'deactivated' && view.canDeactivate;
+  // «تعديل الدور» in the ⋯ menu (EP-ROLES, Kawadir team page): with role.assign, on rows of people the
+  // member may manage (not themself; a privileged person only for the Organization Admin).
+  const roleMenu =
+    view.canAssignRoles && view.roles && activeTab !== 'deactivated'
+      ? {
+          options: roleOptions(view.roles, locale),
+          selectTexts: await roleSelectTexts(locale),
+          labels: await editRoleLabels(locale),
+          errors: await profileErrorTexts(locale),
+        }
+      : null;
+  const mayEditRole = (row: UsersListView['list']['rows'][number]) =>
+    roleMenu !== null &&
+    row.rolesVisible &&
+    row.mayManage &&
+    row.status !== 'suspended' &&
+    row.personId !== view.selfPersonId &&
+    (!row.privileged || view.canAssignPrivileged);
+  const roleText = (code: string, names: { ar: string; en: string } | null) =>
+    roleName(locale, code, names);
   const reactivation = showActions
     ? {
         labels: await reactivateLabels(locale),
@@ -400,7 +419,7 @@ async function UsersList({
               className={selectClass}
             >
               <option value="">{t('allRoles')}</option>
-              {SYSTEM_ROLES.map((role) => (
+              {(view.roles ?? []).map((role) => (
                 <option key={role.code} value={role.code}>
                   {role.name[locale]}
                 </option>
@@ -503,9 +522,13 @@ async function UsersList({
                   <th scope="col" className={tableClasses.head}>
                     {t('columns.lastSignIn')}
                   </th>
-                  {reactivation ? (
+                  {reactivation || roleMenu ? (
                     <th scope="col" className={tableClasses.head}>
-                      {t('columns.actions')}
+                      {reactivation ? (
+                        t('columns.actions')
+                      ) : (
+                        <span className="sr-only">{t('columns.actions')}</span>
+                      )}
                     </th>
                   ) : null}
                 </tr>
@@ -548,15 +571,10 @@ async function UsersList({
                         {!row.rolesVisible ? (
                           <NotSet label={t('rolesNotVisible')} />
                         ) : row.primaryRole ? (
-                          roleName(locale, row.primaryRole)
+                          roleText(row.primaryRole, row.primaryRoleName)
                         ) : (
                           <NotSet label={t('noneLabel')} />
                         )}
-                        {row.otherRoles.length > 0 ? (
-                          <div className="text-sm text-text-muted">
-                            {t('otherRoles', { count: row.otherRoles.length })}
-                          </div>
-                        ) : null}
                       </td>
                     ) : null}
                     <td className={tableClasses.cell}>
@@ -589,6 +607,21 @@ async function UsersList({
                             compact
                           />
                         )}
+                      </td>
+                    ) : roleMenu ? (
+                      <td className={`${tableClasses.cell} text-end`}>
+                        {mayEditRole(row) ? (
+                          <MemberRoleMenu
+                            personId={row.personId}
+                            name={localizedName(locale, row.displayNameAr, row.displayNameEn)}
+                            version={row.roleVersion}
+                            currentRole={row.primaryRole}
+                            options={roleMenu.options}
+                            selectTexts={roleMenu.selectTexts}
+                            labels={roleMenu.labels}
+                            errors={roleMenu.errors}
+                          />
+                        ) : null}
                       </td>
                     ) : null}
                   </tr>
@@ -685,7 +718,7 @@ async function invitationsTable(
       name: localizedName(locale, row.displayNameAr, row.displayNameEn),
       email: row.email,
       profileHref: `/${locale}/suite/admin/users/${row.personId}`,
-      roleName: canReadRoles ? roleName(locale, row.primaryRole) : null,
+      roleName: canReadRoles ? roleName(locale, row.primaryRole, row.primaryRoleName) : null,
       sentText: t('list.sentCount', { count: row.sendCount }),
       expiryText:
         row.state === 'held'

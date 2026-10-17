@@ -160,7 +160,9 @@ language sql stable as $$
   select c.oid::regclass
   from pg_class c join pg_namespace n on n.oid = c.relnamespace
   where (n.nspname, c.relname) in (
-    ('platform', 'ref_roles'),  -- system role codes (T-M2-03): no tenant data
+    ('platform', 'ref_roles'),  -- standard role codes (T-M2-03, EP-ROLES): no tenant data
+    ('platform', 'ref_permissions'),  -- permission catalogue (EP-ROLES): no tenant data
+    ('platform', 'ref_role_permissions'),  -- standard roles' grants (EP-ROLES): no tenant data
     ('platform', 'file_purposes')  -- file purposes (T-M2-18): limits per purpose, no tenant data
   )
 $$;
@@ -323,18 +325,29 @@ insert into platform.person_employment (tenant_id, person_id, branch_id, departm
   ('a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000ab', 'a2000000-0000-4000-8000-000000000001', 'a3000000-0000-4000-8000-000000000002', 'منسق التدريب', 'a1000000-0000-4000-8000-0000000000a1'),
   ('b0000000-0000-4000-8000-000000000001', 'b1000000-0000-4000-8000-0000000000b1', 'b2000000-0000-4000-8000-000000000001', 'b3000000-0000-4000-8000-000000000001', 'مدير', null);
 
--- Roles (T-M2-03): uA is the Organization Admin of A, uAB an HR Manager (+ learner) in A, uInv a learner;
--- uB the Organization Admin of B.
+-- Roles (T-M2-03; one role per person since EP-ROLES): uA is the Organization Admin of A, uAB an HR Manager
+-- in A, uInv an Employee (learner); uB the Organization Admin of B.
 insert into platform.role_assignments (tenant_id, membership_id, role_code, is_primary)
 select m.tenant_id, m.id, r.role_code, r.is_primary
 from (values
   ('a0000000-0000-4000-8000-000000000001'::uuid, '00000000-0000-4000-8000-0000000000a1'::uuid, 'tenant_admin', true),
   ('a0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-0000000000ab', 'hr_manager', true),
-  ('a0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-0000000000ab', 'learner', false),
   ('a0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-0000000000a2', 'learner', true),
   ('b0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-0000000000b1', 'tenant_admin', true)
 ) as r (tenant_id, user_id, role_code, is_primary)
 join platform.tenant_memberships m on m.tenant_id = r.tenant_id and m.user_id = r.user_id;
+
+-- Custom roles (EP-ROLES, FR-IAM-07; platform operation): one per tenant A and B, with permissions, held by
+-- nobody yet (24_roles.sql and 97_custom_roles_*.sql give and change them).
+insert into platform.custom_roles (id, tenant_id, code, name_en, name_ar, description, data_scope) values
+  ('a6000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'custom_a00000000001',
+   'Course reviewer', 'مراجع الدورات', 'Reviews the course library.', 'organization'),
+  ('b6000000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000001', 'custom_b00000000001',
+   'Reviewer', 'مراجع', null, 'team');
+insert into platform.custom_role_permissions (tenant_id, custom_role_id, permission_code) values
+  ('a0000000-0000-4000-8000-000000000001', 'a6000000-0000-4000-8000-000000000001', 'platform.user.read'),
+  ('a0000000-0000-4000-8000-000000000001', 'a6000000-0000-4000-8000-000000000001', 'platform.org.read'),
+  ('b0000000-0000-4000-8000-000000000001', 'b6000000-0000-4000-8000-000000000001', 'platform.user.read');
 
 -- A pending event of tenant B (platform operation), for 33_event_tables_app_queue.sql.
 insert into platform.event_outbox (tenant_id, type)
@@ -360,7 +373,7 @@ insert into platform.persons (id, tenant_id, display_name_ar, display_name_en, e
   ('b1000000-0000-4000-8000-0000000000e1', 'b0000000-0000-4000-8000-000000000001', 'مدعوة ب', null, 'invitee@b.test');
 insert into platform.invitations (id, tenant_id, person_id, email, locale, primary_role, additional_roles, invited_by) values
   ('a4000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000e1',
-   'invitee@a.test', 'ar', 'learner', '{mentor}', '00000000-0000-4000-8000-0000000000a1'),
+   'invitee@a.test', 'ar', 'learner', '{}', '00000000-0000-4000-8000-0000000000a1'),
   ('b4000000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000001', 'b1000000-0000-4000-8000-0000000000e1',
    'invitee@b.test', 'en', 'learner', '{}', '00000000-0000-4000-8000-0000000000b1');
 update platform.invitations set token_hash = tests.token_hash('tok-a') where id = 'a4000000-0000-4000-8000-000000000001';

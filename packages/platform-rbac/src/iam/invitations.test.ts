@@ -5,8 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ActionRuntime } from '../define-action';
 import { createDefineAction } from '../define-action';
 import { createDefineQuery } from '../define-query';
-import { grantsForAssignments } from '../role-grants';
-import type { SystemRoleCode } from '../system-roles';
+import { type TestRoleCode, testRoleGrants } from '../testing/former-roles';
 import {
   InviteUserInput,
   MAX_INVITATION_SENDS,
@@ -31,6 +30,9 @@ const db = vi.hoisted(() => ({
   requestInvitationResend: vi.fn(),
   listManagerOptions: vi.fn(),
   listOrgUnitOptions: vi.fn(),
+  // Custom roles of the organization (EP-ROLES).
+  listCustomRoles: vi.fn(),
+  getCustomRole: vi.fn(),
 }));
 vi.mock('@jadarat/platform-db', () => db);
 
@@ -41,7 +43,7 @@ const INVITATION = '66666666-6666-4666-8666-666666666666';
 const PERSON = '77777777-7777-4777-8777-777777777777';
 const DEPARTMENT = '88888888-8888-4888-8888-888888888888';
 
-function runtime(roles: SystemRoleCode[], aal: 'aal1' | 'aal2' = 'aal1') {
+function runtime(roles: TestRoleCode[], aal: 'aal1' | 'aal2' = 'aal1') {
   const writeAudit = vi.fn(() => Promise.resolve());
   const logError = vi.fn();
   const getClaims = vi.fn((_options: { strict: boolean }) => {
@@ -62,13 +64,7 @@ function runtime(roles: SystemRoleCode[], aal: 'aal1' | 'aal2' = 'aal1') {
     getClaims,
     withUserTx: (_c, fn) => fn(TX),
     loadSessionFacts: () => Promise.resolve({ active: true, aal2: aal === 'aal2' }),
-    loadGrants: () =>
-      Promise.resolve(
-        grantsForAssignments(
-          roles.map((roleCode) => ({ roleCode })),
-          { headedDepartmentIds: [] },
-        ),
-      ),
+    loadGrants: () => Promise.resolve(testRoleGrants(roles)),
     resolveResource: () => Promise.resolve(null),
     writeAudit,
     logError,
@@ -86,10 +82,27 @@ const form = {
   branchId: '',
   managerPersonId: '',
   employeeNumber: 'EMP-١٤٥٠',
-  primaryRole: 'training_coordinator' as const,
-  additionalRoles: ['learner' as const],
+  role: 'training_coordinator',
   locale: 'ar' as const,
 };
+
+/** Custom roles of the organization: a reader (ordinary) and an auditor (privileged: audit log). */
+const customRow = (code: string, permissions: string[]) => ({
+  id: `id-${code}`,
+  code,
+  nameAr: 'دور',
+  nameEn: 'Role',
+  description: null,
+  dataScope: 'organization',
+  permissions,
+  memberCount: 0,
+  pendingInvitationCount: 0,
+  version: 1,
+});
+const READER = customRow('custom_a00000000001', ['platform.user.read', 'platform.org.read']);
+const AUDITOR = customRow('custom_a00000000002', ['platform.user.read', 'platform.audit.read']);
+const PROFILE = customRow('custom_a00000000003', ['platform.tenant.read']);
+const CUSTOM = [READER, AUDITOR, PROFILE];
 
 const refusal = (code: string) => Object.assign(new Error(code), { code });
 
@@ -100,6 +113,8 @@ const row = (over: Partial<InvitationRow> = {}): InvitationRow => ({
   displayNameAr: 'نورة الدوسري',
   displayNameEn: null,
   primaryRole: 'learner',
+  primaryRoleName: null,
+  privileged: false,
   state: 'pending',
   sendCount: 1,
   expiresAt: new Date('2026-10-14T09:00:00Z'),
@@ -118,7 +133,15 @@ beforeEach(() => {
     personId: PERSON,
     inviteCode: 'K7M2PQ9XHT4W',
   });
-  db.getInvitationRoles.mockResolvedValue({ primaryRole: 'learner', additionalRoles: [] });
+  db.getInvitationRoles.mockResolvedValue({
+    primaryRole: 'learner',
+    additionalRoles: [],
+    privileged: false,
+  });
+  db.listCustomRoles.mockResolvedValue(CUSTOM);
+  db.getCustomRole.mockImplementation((_tx: unknown, key: { code: string }) =>
+    Promise.resolve(CUSTOM.find((r) => r.code === key.code) ?? null),
+  );
 });
 
 describe('invite input', () => {
@@ -132,9 +155,8 @@ describe('invite input', () => {
       managerPersonId: null,
       employeeNumber: 'EMP-1450',
     });
-    expect(
-      InviteUserInput.parse({ ...form, employeeNumber: ' ', additionalRoles: [] }).employeeNumber,
-    ).toBeNull();
+    expect(InviteUserInput.parse({ ...form, employeeNumber: ' ' }).employeeNumber).toBeNull();
+    expect(InviteUserInput.parse({ ...form, role: READER.code }).role).toBe(READER.code);
   });
 
   it('refuses a bad e-mail, missing Arabic names, unknown or repeated roles, extra keys', () => {
@@ -147,10 +169,11 @@ describe('invite input', () => {
       { ...form, firstNameEn: 'x'.repeat(61) },
       { ...form, departmentId: 'not-a-uuid' },
       { ...form, managerPersonId: "1'; drop" },
-      { ...form, primaryRole: 'platform_super_admin' },
-      { ...form, additionalRoles: ['training_coordinator'] }, // primary repeated
-      { ...form, additionalRoles: ['learner', 'learner'] },
-      { ...form, additionalRoles: ['nobody'] },
+      { ...form, role: 'Platform Super Admin' },
+      { ...form, role: 'custom_XYZ' },
+      { ...form, role: '' },
+      // One role per person (EP-ROLES): no additional roles any more.
+      { ...form, additionalRoles: ['learner'] },
       { ...form, locale: 'fr' },
       { ...form, tenantId: TENANT },
     ]) {
@@ -158,16 +181,9 @@ describe('invite input', () => {
     }
   });
 
-  it('tells privileged roles apart (primary or additional)', () => {
-    expect(invitationGivesPrivilegedRole({ primaryRole: 'learner', additionalRoles: [] })).toBe(
-      false,
-    );
-    expect(
-      invitationGivesPrivilegedRole({ primaryRole: 'learner', additionalRoles: ['auditor'] }),
-    ).toBe(true);
-    expect(
-      invitationGivesPrivilegedRole({ primaryRole: 'tenant_admin', additionalRoles: [] }),
-    ).toBe(true);
+  it('tells privileged invitations apart (computed by the database, custom roles included)', () => {
+    expect(invitationGivesPrivilegedRole(row())).toBe(false);
+    expect(invitationGivesPrivilegedRole(row({ privileged: true }))).toBe(true);
   });
 
   it('reads the refusal code of createInvitation errors only', () => {
@@ -190,8 +206,7 @@ describe('invite user action', () => {
       ok({
         invitationId: INVITATION,
         personId: PERSON,
-        primaryRole: 'training_coordinator',
-        additionalRoles: ['learner'],
+        role: 'training_coordinator',
         // The first code, for the inviter to copy (Kawadir) — never audited.
         inviteCode: 'K7M2PQ9XHT4W',
         locale: 'ar',
@@ -210,14 +225,14 @@ describe('invite user action', () => {
       managerPersonId: null,
       employeeNumber: 'EMP-1450',
       primaryRole: 'training_coordinator',
-      additionalRoles: ['learner'],
+      additionalRoles: [],
       locale: 'ar',
     });
     expect(writeAudit).toHaveBeenCalledWith(TX, expect.anything(), {
       action: 'platform.invitation.created',
       entityType: 'invitation',
       entityId: INVITATION,
-      data: { personId: PERSON, primaryRole: 'training_coordinator', additionalRoles: ['learner'] },
+      data: { personId: PERSON, role: 'training_coordinator' },
     });
     const audited = JSON.stringify(writeAudit.mock.calls);
     expect(audited).not.toContain('alraya');
@@ -227,7 +242,7 @@ describe('invite user action', () => {
   });
 
   it('without platform.user.invite: FORBIDDEN, nothing created', async () => {
-    for (const roles of [['learner'], ['training_manager'], ['auditor']] as SystemRoleCode[][]) {
+    for (const roles of [['learner'], ['training_manager'], ['auditor']] as TestRoleCode[][]) {
       const result = await createDefineAction(runtime(roles).rt)(inviteUserActionDefinition())(
         form,
       );
@@ -248,26 +263,34 @@ describe('invite user action', () => {
     expect(writeAudit).not.toHaveBeenCalled();
   });
 
-  it('HR Manager giving a privileged role: ROLE_NOT_ALLOWED on that field, nothing created', async () => {
+  it('HR Manager giving a privileged role, or one with permissions they lack: ROLE_NOT_ALLOWED, nothing created', async () => {
     const hr = createDefineAction(runtime(['hr_manager']).rt)(inviteUserActionDefinition());
-    const primary = await hr({ ...form, primaryRole: 'tenant_admin', additionalRoles: [] });
-    expect(!primary.ok && primary.error.fieldErrors).toEqual([
-      { path: 'primaryRole', code: 'ROLE_NOT_ALLOWED' },
-    ]);
-    const additional = await hr({ ...form, additionalRoles: ['learner', 'finance_manager'] });
-    expect(!additional.ok && additional.error.fieldErrors).toEqual([
-      { path: 'additionalRoles', code: 'ROLE_NOT_ALLOWED' },
-    ]);
+    for (const role of ['tenant_admin', 'hr_manager', AUDITOR.code, PROFILE.code]) {
+      const refused = await hr({ ...form, role });
+      expect(!refused.ok && refused.error.fieldErrors, role).toEqual([
+        { path: 'role', code: 'ROLE_NOT_ALLOWED' },
+      ]);
+    }
+    // An ordinary custom role whose permissions HR holds is fine.
+    expect((await hr({ ...form, role: READER.code })).ok).toBe(true);
+    db.createInvitation.mockClear();
+    // An unknown role (a former one, a deleted custom role): a field error.
+    for (const role of ['auditor', 'custom_ffffffffffff']) {
+      const unknown = await hr({ ...form, role });
+      expect(!unknown.ok && unknown.error.fieldErrors, role).toEqual([
+        { path: 'role', code: 'ROLE_UNKNOWN' },
+      ]);
+    }
     // The privileged action itself: HR does not hold role.assign_privileged.
     const privileged = await createDefineAction(runtime(['hr_manager'], 'aal2').rt)(
       invitePrivilegedUserActionDefinition(),
-    )({ ...form, primaryRole: 'tenant_admin', additionalRoles: [] });
+    )({ ...form, role: 'tenant_admin' });
     expect(!privileged.ok && privileged.error.code).toBe('FORBIDDEN');
     expect(db.createInvitation).not.toHaveBeenCalled();
   });
 
   it('Organization Admin: privileged roles through the privileged action (strict check), no authenticator code', async () => {
-    const withAuditor = { ...form, additionalRoles: ['auditor' as const] };
+    const withAuditor = { ...form, role: AUDITOR.code };
     // The ordinary action refuses privileged roles at any level (they need the strict check).
     for (const aal of ['aal1', 'aal2'] as const) {
       const ordinary = await createDefineAction(runtime(['tenant_admin'], aal).rt)(
@@ -285,52 +308,12 @@ describe('invite user action', () => {
     expect(writeAudit).toHaveBeenCalledTimes(1);
   });
 
-  it('separation of duties (BR-IAM-4): the Organization Admin role is given alone', async () => {
-    const conflict = [{ path: 'additionalRoles', code: 'ROLE_CONFLICT' }];
-    for (const roles of [
-      { primaryRole: 'tenant_admin' as const, additionalRoles: ['hr_manager' as const] },
-      { primaryRole: 'tenant_admin' as const, additionalRoles: ['learner' as const] },
-      { primaryRole: 'learner' as const, additionalRoles: ['tenant_admin' as const] },
-      {
-        primaryRole: 'hr_manager' as const,
-        additionalRoles: ['learner' as const, 'tenant_admin' as const],
-      },
-    ]) {
-      // Refused for whoever invites, at AAL2 too, before anything is written or audited.
-      for (const [roleCodes, definition] of [
-        [['tenant_admin'], invitePrivilegedUserActionDefinition()],
-        [['tenant_admin'], inviteUserActionDefinition()],
-        [['hr_manager'], inviteUserActionDefinition()],
-      ] as const) {
-        const { rt, writeAudit } = runtime([...roleCodes], 'aal2');
-        const result = await createDefineAction(rt)(definition)({ ...form, ...roles });
-        expect(!result.ok && result.error.code).toBe('VALIDATION_FAILED');
-        expect(!result.ok && result.error.fieldErrors).toEqual(conflict);
-        expect(writeAudit).not.toHaveBeenCalled();
-      }
-    }
-    expect(db.createInvitation).not.toHaveBeenCalled();
-    // The Organization Admin role alone is fine; so are other roles together, privileged ones included.
-    for (const roles of [
-      { primaryRole: 'tenant_admin' as const, additionalRoles: [] },
-      {
-        primaryRole: 'hr_manager' as const,
-        additionalRoles: ['learner' as const, 'finance_manager' as const, 'auditor' as const],
-      },
-    ]) {
-      const saved = await createDefineAction(runtime(['tenant_admin'], 'aal2').rt)(
-        invitePrivilegedUserActionDefinition(),
-      )({ ...form, ...roles });
-      expect(saved.ok).toBe(true);
-    }
-  });
-
   it('maps createInvitation refusals to field errors; other errors stay internal', async () => {
     const cases = [
       ['EMAIL_TAKEN', 'email'],
       ['EMPLOYEE_NUMBER_TAKEN', 'employeeNumber'],
-      ['ROLE_NOT_ALLOWED', 'primaryRole'],
-      ['ROLE_CONFLICT', 'additionalRoles'],
+      ['ROLE_NOT_ALLOWED', 'role'],
+      ['ROLE_CONFLICT', 'role'],
     ] as const;
     for (const [code, path] of cases) {
       db.createInvitation.mockRejectedValueOnce(refusal(code));
@@ -384,8 +367,9 @@ describe('resend and revoke', () => {
 
   it('resend of a privileged invitation: role.assign_privileged only (as inviting with it)', async () => {
     db.getInvitationRoles.mockResolvedValue({
-      primaryRole: 'learner',
-      additionalRoles: ['auditor'],
+      primaryRole: 'custom_a00000000002',
+      additionalRoles: [],
+      privileged: true,
     });
     // HR Manager: not allowed, nothing requested.
     const hr = runtime(['hr_manager']);
@@ -504,7 +488,7 @@ describe('invitation queries', () => {
     ]);
     const units = { departments: [{ id: DEPARTMENT, nameAr: 'ت', nameEn: null }], branches: [] };
     db.listOrgUnitOptions.mockResolvedValue(units);
-    const query = (roles: SystemRoleCode[], aal: 'aal1' | 'aal2' = 'aal1') =>
+    const query = (roles: TestRoleCode[], aal: 'aal1' | 'aal2' = 'aal1') =>
       createDefineQuery(runtime(roles, aal).rt)(inviteFormQueryDefinition())({});
     expect(await query(['hr_manager'])).toMatchObject({
       ok: true,
@@ -552,10 +536,11 @@ describe('copy an invitation code (security review M2)', () => {
 
   it('a privileged invitation: not through the ordinary action (ROLE_NOT_ALLOWED, no read, no audit)', async () => {
     db.getInvitationRoles.mockResolvedValue({
-      primaryRole: 'learner',
-      additionalRoles: ['auditor'],
+      primaryRole: 'custom_a00000000002',
+      additionalRoles: [],
+      privileged: true,
     });
-    for (const roles of [['hr_manager'], ['tenant_admin']] as SystemRoleCode[][]) {
+    for (const roles of [['hr_manager'], ['tenant_admin']] as TestRoleCode[][]) {
       const { rt, writeAudit } = runtime(roles);
       const result = await createDefineAction(rt)(viewInvitationCodeActionDefinition())({
         invitationId: INVITATION,
@@ -569,7 +554,11 @@ describe('copy an invitation code (security review M2)', () => {
   });
 
   it('the privileged action: role.assign_privileged with the strict session check (getUser)', async () => {
-    db.getInvitationRoles.mockResolvedValue({ primaryRole: 'auditor', additionalRoles: [] });
+    db.getInvitationRoles.mockResolvedValue({
+      primaryRole: 'hr_manager',
+      additionalRoles: [],
+      privileged: true,
+    });
     const admin = runtime(['tenant_admin']);
     const result = await createDefineAction(admin.rt)(
       viewPrivilegedInvitationCodeActionDefinition(),

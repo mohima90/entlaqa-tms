@@ -108,7 +108,8 @@ export function createInvitationMailer(options: InvitationMailerOptions): Transa
         log('info', 'invitation not sent yet (held); no e-mail');
         return;
       }
-      const role = roleName(invitation.primaryRole);
+      // A custom role is named by the organization (EP-ROLES); a standard role by the catalogue.
+      const role = invitation.primaryRoleName ?? roleName(invitation.primaryRole);
       const code = await invitationCodeForMail(tx, invitation.id);
       if (!code) {
         log('info', 'invitation has no code; no e-mail');

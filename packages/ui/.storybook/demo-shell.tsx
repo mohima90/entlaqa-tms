@@ -8,7 +8,8 @@ import { type Copy, pick } from './l10n';
 
 /**
  * The suite shell with the Organization Admin's menu and sample data (kawadir-alignment.md §5), for the
- * shell and page stories: the same parts, order and texts as apps/suite/src/components/suite-shell.tsx.
+ * shell and page stories: the same parts, order and texts as apps/suite/src/components/suite-shell.tsx and
+ * suiteNavigation (apps/suite/src/lib/suite-navigation.ts). Theme previews use it too (PreviewShell).
  */
 type Globals = Record<string, unknown>;
 
@@ -58,7 +59,14 @@ const GROUPS: readonly { key: string; heading?: Copy; entries: readonly DemoEntr
         label: { ar: 'تكامل البريد الإلكتروني', en: 'Email integration' },
         soon: true,
       },
+      {
+        key: 'integrations',
+        icon: 'plug',
+        label: { ar: 'التكاملات', en: 'Integrations' },
+        soon: true,
+      },
       { key: 'security', icon: 'shield', label: { ar: 'الأمان', en: 'Security' } },
+      { key: 'audit', icon: 'audit', label: { ar: 'سجل التدقيق', en: 'Audit log' }, soon: true },
     ],
   },
 ];
@@ -183,7 +191,7 @@ export function DemoShell({
           <UserMenu
             name={pick(globals, { ar: 'منيرة القحطاني', en: 'Munira Alqahtani' })}
             subtitle={pick(globals, {
-              ar: 'شركة الراية · مدير المنشأة',
+              ar: 'شركة الراية · مدير المنظمة',
               en: 'Al Raya Company · Organization Admin',
             })}
             profileHref="#profile"

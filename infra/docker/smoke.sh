@@ -355,8 +355,8 @@ this="i.id = '$INVITATION_ID'"
   { echo "smoke: the accepted account must come from an e-mail sign-up" >&2; exit 1; }
 [[ "$(q "select count(*) $inv join platform.tenant_memberships m on m.tenant_id = i.tenant_id and m.person_id = i.person_id and m.user_id = i.accepted_user_id where $this and m.status = 'active'")" == "1" ]] ||
   { echo "smoke: the accepted invitation did not create an active membership" >&2; exit 1; }
-[[ "$(q "select string_agg(r.role_code || ':' || r.is_primary, ',' order by r.role_code) $inv join platform.tenant_memberships m on m.tenant_id = i.tenant_id and m.user_id = i.accepted_user_id join platform.role_assignments r on r.tenant_id = m.tenant_id and r.membership_id = m.id where $this")" == "learner:true,line_manager:false" ]] ||
-  { echo "smoke: the accepted invitation did not assign the invited roles" >&2; exit 1; }
+[[ "$(q "select string_agg(r.role_code || ':' || r.is_primary, ',' order by r.role_code) $inv join platform.tenant_memberships m on m.tenant_id = i.tenant_id and m.user_id = i.accepted_user_id join platform.role_assignments r on r.tenant_id = m.tenant_id and r.membership_id = m.id where $this")" == "learner:true" ]] ||
+  { echo "smoke: the accepted invitation did not assign the invited role" >&2; exit 1; }
 [[ "$(q "select count(*) $inv join platform.audit_events a on a.tenant_id = i.tenant_id and a.entity_id = i.id::text where $this and a.action in ('platform.invitation.created', 'platform.invitation.accepted') and (a.action <> 'platform.invitation.accepted' or a.actor_user_id = i.accepted_user_id)")" == "2" ]] ||
   { echo "smoke: expected the created and accepted audit events of the invitation" >&2; exit 1; }
 [[ "$(q "select count(*) $inv join platform.event_outbox e on e.tenant_id = i.tenant_id and e.subject = i.id where $this and e.type = 'com.entlaqa.platform.invitation.accepted'")" == "1" ]] ||
@@ -779,7 +779,7 @@ deactivate_e2e deactivate
         where m.user_id in ('$DEACT_ID', '$SECOND_ID') and m.status = 'suspended' and p.status = 'inactive'")" == "2" ]] ||
   { echo "smoke: expected both members deactivated (membership suspended, person inactive)" >&2; exit 1; }
 [[ "$(q "select count(*) from platform.role_assignments ra join platform.tenant_memberships m on m.id = ra.membership_id
-        where m.user_id = '$DEACT_ID' and ra.role_code in ('line_manager', 'learner')")" == "2" ]] ||
+        where m.user_id = '$DEACT_ID' and ra.role_code = 'department_head'")" == "1" ]] ||
   { echo "smoke: a deactivated member's roles must be kept" >&2; exit 1; }
 [[ "$(q "select count(*) from platform.person_employment e join platform.departments d on d.tenant_id = e.tenant_id
         where e.person_id = '5eed1000-0000-4000-8000-0000000000d3' and e.manager_person_id = '5eed1000-0000-4000-8000-000000000003'
@@ -896,7 +896,7 @@ answer="$(refresh "$DEACT_REFRESH")"
   { echo "smoke: a refresh token from before the deactivation works again after the reactivation (got $answer)" >&2; exit 1; }
 deactivate_e2e returns
 [[ "$(q "select count(*) from platform.role_assignments ra join platform.tenant_memberships m on m.id = ra.membership_id
-        where m.user_id = '$DEACT_ID' and ra.role_code in ('line_manager', 'learner')")" == "2" ]] ||
+        where m.user_id = '$DEACT_ID' and ra.role_code = 'department_head'")" == "1" ]] ||
   { echo "smoke: the reactivated member's roles changed" >&2; exit 1; }
 unset answer wrong unknown rows_before DEACT_REFRESH SECOND_REFRESH
 echo "smoke: security policy (T-M2-10) — apps turned on with the e-mailed code, the password-only attack, policy without a code (PO decision 14 Oct 2026), MFA required, sessions, lost-app reset"

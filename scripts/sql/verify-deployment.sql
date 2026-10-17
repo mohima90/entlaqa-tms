@@ -12,7 +12,8 @@ declare
   outsiders constant text[] := array['anon', 'service_role'];
   -- Global (non-tenant) reference tables: RLS enabled + forced, read-only for authenticated, no
   -- tenant_isolation policy. Same allow-list as tests.global_tables() (security review required).
-  global_tables constant text[] := array['platform.ref_roles', 'platform.file_purposes'];
+  global_tables constant text[] := array['platform.ref_roles', 'platform.file_purposes', 'platform.ref_permissions',
+                                         'platform.ref_role_permissions'];
   hook constant text := 'private.custom_access_token_hook(jsonb)';
   signup_hook constant text := 'private.before_user_created_hook(jsonb)';
   r record;
@@ -743,6 +744,12 @@ begin
            when 'platform.role_assignments'
              then 'SELECT(membership_id),SELECT(role_code),SELECT(tenant_id),SELECT(valid_from),SELECT(valid_until)'
            when 'platform.ref_roles' then 'SELECT(code),SELECT(is_privileged)'
+           -- EP-ROLES (20261019090000/090100): the guards decide by permission, standard or custom roles.
+           when 'platform.ref_permissions' then 'SELECT(code),SELECT(custom_role_use),SELECT(privileged),SELECT(risk)'
+           when 'platform.ref_role_permissions' then 'SELECT(permission_code),SELECT(role_code),SELECT(scope)'
+           when 'platform.custom_roles' then 'SELECT(code),SELECT(data_scope),SELECT(id),SELECT(tenant_id)'
+           when 'platform.custom_role_permissions'
+             then 'SELECT(custom_role_id),SELECT(permission_code),SELECT(tenant_id)'
            when 'platform.persons' then 'SELECT(id),SELECT(status),SELECT(tenant_id)'
            when 'platform.tenants' then 'SELECT(id),SELECT(status)'
            -- mail_held: a held invitation (T-M2-12, not sent yet) does not let a login sign in.

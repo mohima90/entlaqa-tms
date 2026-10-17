@@ -19,7 +19,8 @@ import {
 } from './sign-in-lock';
 
 const db = vi.hoisted(() => ({
-  memberSignInLock: vi.fn(),
+  mayManagePerson: vi.fn(() => Promise.resolve(true)),
+  memberSignInLockForProfile: vi.fn(),
   unlockMemberSignIn: vi.fn(),
   getSecurityPolicy: vi.fn(),
 }));
@@ -103,6 +104,18 @@ describe('unlock sign-in (T-M2-11, PO decision 9 Oct 2026)', () => {
     }
   });
 
+  it('a member the admin may not act on (a privileged member, for a custom role): FORBIDDEN, nothing unlocked (review L1)', async () => {
+    db.mayManagePerson.mockResolvedValueOnce(false);
+    const { rt, writeAudit } = runtime(['tenant_admin']);
+    const result = await createDefineAction(rt)(unlockSignInActionDefinition())({
+      personId: MEMBER,
+    });
+    expect(!result.ok && result.error.code).toBe('FORBIDDEN');
+    expect(db.mayManagePerson).toHaveBeenCalledWith(TX, MEMBER, 'platform.user.unlock_sign_in');
+    expect(db.unlockMemberSignIn).not.toHaveBeenCalled();
+    expect(writeAudit).not.toHaveBeenCalled();
+  });
+
   it('a person without an active membership with an account here (revoked, suspended…): NOT_FOUND', async () => {
     db.unlockMemberSignIn.mockResolvedValue('no_account');
     const { rt, writeAudit } = runtime(['tenant_admin']);
@@ -159,9 +172,9 @@ describe('unlock sign-in (T-M2-11, PO decision 9 Oct 2026)', () => {
     expect(db.getSecurityPolicy).not.toHaveBeenCalled();
 
     // The profile shows a lock only at sign-in's 5 failures — never at the policy's 3.
-    db.memberSignInLock.mockResolvedValue({ locked: false, retryAfterSeconds: 0 });
+    db.memberSignInLockForProfile.mockResolvedValue({ locked: false, retryAfterSeconds: 0 });
     await signInLockForProfile(TX, MEMBER, { canUnlock: true, hasAccount: true, tenantId: TENANT });
-    expect(db.memberSignInLock).toHaveBeenLastCalledWith(TX, MEMBER, 5);
+    expect(db.memberSignInLockForProfile).toHaveBeenLastCalledWith(TX, MEMBER, 5);
 
     // The unlock measures against 5 too: an account with 3 or 4 failures — a pause sign-in never
     // applied — is 'not_locked' in the database, which then counts no unlock (of the 3 a day) and

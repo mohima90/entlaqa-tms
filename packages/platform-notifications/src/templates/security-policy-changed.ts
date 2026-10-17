@@ -29,7 +29,7 @@ const LABELS: Readonly<Record<AppLocale, Readonly<Record<SettingName, string>>>>
     mfaMode: 'التحقق متعدد العوامل',
     mfaRequiredRoles: 'الأدوار الملزمة بالتحقق',
     mfaGraceDays: 'مهلة إعداد التطبيق',
-    mfaPromptAdmins: 'دعوة مدير المنشأة إلى إعداد التطبيق',
+    mfaPromptAdmins: 'دعوة مدير المنظمة إلى إعداد التطبيق',
     passwordMinLength: 'أقل طول لكلمة المرور',
     lockoutThreshold: 'المحاولات الفاشلة قبل القفل',
     lockoutMinutes: 'مدة القفل',
@@ -89,7 +89,7 @@ function body(v: SecurityPolicyChangedVariables, locale: AppLocale, primary: boo
       ${paragraph(markup`تغيّرت إعدادات الأمان في ${organization}${by} يوم ${date}:`)}
       ${list(v, 'ar')}
       ${primary ? actionButton('مراجعة إعدادات الأمان', url) : paragraph(link('مراجعة إعدادات الأمان', url))}
-      ${paragraph(markup`إن لم يكن هذا التغيير متوقعًا، يمكنك مراجعة الإعدادات الآن وإبلاغ مدير المنشأة الآخر.`, true, true)}`;
+      ${paragraph(markup`إن لم يكن هذا التغيير متوقعًا، يمكنك مراجعة الإعدادات الآن وإبلاغ مدير المنظمة الآخر.`, true, true)}`;
   }
   const by = v.changedBy ? markup` by <b>${localizedName(v.changedBy, 'en')}</b>` : markup``;
   return markup`<h1
@@ -117,7 +117,7 @@ function plain(v: SecurityPolicyChangedVariables, locale: AppLocale): string {
       '',
       'مراجعة إعدادات الأمان:',
       v.settingsUrl.ar,
-      'إن لم يكن هذا التغيير متوقعًا، يمكنك مراجعة الإعدادات الآن وإبلاغ مدير المنشأة الآخر.',
+      'إن لم يكن هذا التغيير متوقعًا، يمكنك مراجعة الإعدادات الآن وإبلاغ مدير المنظمة الآخر.',
     ].join('\n');
   }
   const by = v.changedBy ? ` by ${localizedName(v.changedBy, 'en')}` : '';

@@ -1,5 +1,5 @@
 import type { LocalizedText, PermissionDefinition } from './permissions';
-import { platformPermissions } from './platform-permissions';
+import { platformPermissions, tmsRolePermissions } from './platform-permissions';
 import type { RoleScope, SystemRoleDefinition } from './system-roles';
 
 /**
@@ -86,8 +86,17 @@ export const CUSTOM_ROLE_PERMISSIONS: readonly CustomRolePermission[] = [
   { permission: p['platform.audit.read'], group: 'audit', use: 'organization_only' },
 ];
 
+/**
+ * Every permission of the catalogue (`platform.ref_permissions`): the platform's and the module permissions
+ * standard roles grant (tmsRolePermissions; not part of a custom role yet).
+ */
+export const CATALOGUE_PERMISSIONS: readonly PermissionDefinition[] = [
+  ...Object.values(platformPermissions),
+  ...Object.values(tmsRolePermissions),
+];
+
 const PERMISSIONS_BY_CODE: ReadonlyMap<string, PermissionDefinition> = new Map(
-  Object.values(platformPermissions).map((permission) => [permission.code, permission]),
+  CATALOGUE_PERMISSIONS.map((permission) => [permission.code, permission]),
 );
 
 const BY_CODE: ReadonlyMap<string, CustomRolePermission> = new Map(

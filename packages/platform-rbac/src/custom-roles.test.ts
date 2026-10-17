@@ -2,6 +2,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  CATALOGUE_PERMISSIONS,
   CUSTOM_ROLE_PERMISSIONS,
   CUSTOM_ROLE_SCOPE_MAP,
   PERMISSION_GROUPS,
@@ -14,39 +15,49 @@ import {
   isCustomRoleCode,
   standardRoleScope,
 } from './custom-roles';
-import { platformPermissions } from './platform-permissions';
+import { platformPermissions, tmsRolePermissions } from './platform-permissions';
 import { ROLE_TEMPLATES, roleStartValues } from './role-templates';
 import { SYSTEM_ROLES, getSystemRole } from './system-roles';
 
 const migrationsDir = new URL('../../../supabase/migrations/', import.meta.url).pathname;
 
-function migration(suffix: string): string {
-  const file = readdirSync(migrationsDir).find((f) => f.endsWith(suffix));
-  if (!file) throw new Error(`${suffix} not found`);
-  return readFileSync(join(migrationsDir, file), 'utf8');
+/**
+ * Every migration that writes the permission catalogue or the standard roles' grants: the EP-ROLES seed and
+ * the later migrations that add module permissions (insert-only; a migration that updates or deletes
+ * catalogue rows must extend these parsers — the writers check below fails until it does).
+ */
+function catalogueMigrations(table: 'ref_permissions' | 'ref_role_permissions'): string[] {
+  const writes = new RegExp(`insert into platform\\.${table}\\b`, 'i');
+  return readdirSync(migrationsDir)
+    .sort()
+    .map((f) => readFileSync(join(migrationsDir, f), 'utf8'))
+    .filter((text) => writes.test(text));
 }
 
-/** (code, risk, custom_role_use, privileged) rows of the permission catalogue seed. */
+/** (code, risk, custom_role_use, privileged) rows of the permission catalogue seeds. */
 function seededPermissions() {
-  return [
-    ...migration('_platform__create_permission_catalogue.sql').matchAll(
-      /\('(platform\.[a-z_]+\.[a-z_]+)', '(low|medium|high)', '([a-z_]+)', (true|false), \d+\)/g,
-    ),
-  ].map((m) => ({ code: m[1], risk: m[2], use: m[3], privileged: m[4] === 'true' }));
+  return catalogueMigrations('ref_permissions').flatMap((text) =>
+    [
+      ...text.matchAll(
+        /\('((?:platform|tms)\.[a-z_]+\.[a-z_]+)', '(low|medium|high)', '([a-z_]+)', (true|false), \d+\)/g,
+      ),
+    ].map((m) => ({ code: m[1], risk: m[2], use: m[3], privileged: m[4] === 'true' })),
+  );
 }
 
-/** (role, permission, scope) rows of the standard roles' grants seed. */
+/** (role, permission, scope) rows of the standard roles' grants seeds. */
 function seededGrants() {
-  return [
-    ...migration('_platform__create_permission_catalogue.sql').matchAll(
-      /\('([a-z_]+)', '(platform\.[a-z_]+\.[a-z_]+)', '([a-z_]+)'\)/g,
+  return catalogueMigrations('ref_role_permissions').flatMap((text) =>
+    [...text.matchAll(/\('([a-z_]+)', '((?:platform|tms)\.[a-z_]+\.[a-z_]+)', '([a-z_]+)'\)/g)].map(
+      (m) => `${m[1] ?? ''}:${m[2] ?? ''}:${m[3] ?? ''}`,
     ),
-  ].map((m) => `${m[1] ?? ''}:${m[2] ?? ''}:${m[3] ?? ''}`);
+  );
 }
 
 describe('permission catalogue and standard grants (EP-ROLES, drift checks)', () => {
-  it('platform.ref_permissions lists every platform permission with its risk and custom-role use', () => {
-    const expected = Object.values(platformPermissions).map((permission) => ({
+  it('platform.ref_permissions lists every catalogue permission with its risk and custom-role use', () => {
+    // Platform permissions and the module permissions standard roles grant (T-M3-10: tms.needs_form.*).
+    const expected = CATALOGUE_PERMISSIONS.map((permission) => ({
       code: permission.code,
       risk: permission.risk,
       use: customRolePermission(permission.code)?.use ?? 'none',
@@ -62,6 +73,25 @@ describe('permission catalogue and standard grants (EP-ROLES, drift checks)', ()
       role.grants.map((g) => `${role.code}:${g.permission.code}:${g.scope}`),
     );
     expect(seededGrants().sort()).toEqual(expected.sort());
+  });
+
+  it('changes the catalogue by inserts only (the parsers above read inserts)', () => {
+    const rewrites = readdirSync(migrationsDir).filter((f) =>
+      /(update|delete from)\s+platform\.ref_(role_)?permissions\b/i.test(
+        readFileSync(join(migrationsDir, f), 'utf8'),
+      ),
+    );
+    expect(rewrites).toEqual([]);
+  });
+
+  it('lists the TMS permissions of the standard roles, outside custom roles for now (T-M3-10)', () => {
+    expect(Object.keys(tmsRolePermissions)).toEqual(['tms.needs_form.read', 'tms.needs_form.manage']);
+    for (const code of Object.keys(tmsRolePermissions)) {
+      // The Organization Admin builds custom roles from what they hold, and holds no training permission.
+      expect(customRolePermission(code), code).toBeUndefined();
+      expect(permissionMakesPrivileged(code), code).toBe(false);
+    }
+    expect(customRoleIsPrivileged(['tms.needs_form.manage'])).toBe(false);
   });
 
   it('keeps the Organization Admin’s own permissions out of custom roles (BR-IAM-4)', () => {

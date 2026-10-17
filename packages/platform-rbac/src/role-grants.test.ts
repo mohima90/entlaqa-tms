@@ -31,6 +31,7 @@ describe('grantsForAssignments', () => {
       { permission: 'platform.user.read', scope: { type: 'tenant' }, validUntil: until },
       { permission: 'platform.role.read', scope: { type: 'tenant' }, validUntil: until },
       { permission: 'platform.org.read', scope: { type: 'tenant' }, validUntil: until },
+      { permission: 'tms.needs_form.read', scope: { type: 'tenant' }, validUntil: until },
     ]);
     expect(grantsForAssignments([{ roleCode: 'learner' }], none)).toEqual([
       { permission: 'platform.user.read', scope: { type: 'own' } },
@@ -162,6 +163,26 @@ describe('canAssignRole (ADR 0003 §5; PO decisions 5 Oct 2026 and 17 Oct 2026)'
     };
     expect(customAssignableRole(profile).privileged).toBe(false);
     expect(canAssignRole(hr, customAssignableRole(profile))).toBe(false);
+  });
+
+  it('lets an HR Manager give the L&D Manager role although it designs needs forms (T-M3-10)', () => {
+    const hr = subjectOf('aal2', [], { roleCode: 'hr_manager' });
+    const lnd = standard('training_manager');
+    expect(lnd?.permissions).toContain('tms.needs_form.manage');
+    expect(holdsTenantWide(hr, 'tms.needs_form.manage')).toBe(false);
+    expect(canAssignRole(hr, lnd)).toBe(true);
+    // The same permission in a custom role: nobody gives what they do not hold.
+    const designer: CustomRoleDefinition = {
+      code: 'custom_a00000000007',
+      dataScope: 'organization',
+      permissions: ['platform.user.read', 'tms.needs_form.manage'],
+    };
+    expect(canAssignRole(hr, customAssignableRole(designer))).toBe(false);
+    // A standard role flag on a privileged role changes nothing.
+    expect(canAssignRole(hr, standard('hr_manager'))).toBe(false);
+    // Without platform.role.assign, no role at all.
+    const lndMember = subjectOf('aal2', [], { roleCode: 'training_manager' });
+    expect(canAssignRole(lndMember, standard('learner'))).toBe(false);
   });
 
   it('lets a custom role with role.assign give only roles within its own organization-wide permissions', () => {

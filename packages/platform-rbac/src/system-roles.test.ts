@@ -2,7 +2,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { MEMBER_GRANTS } from './member-permissions';
-import { platformPermissions } from './platform-permissions';
+import { platformPermissions, tmsRolePermissions } from './platform-permissions';
 import {
   FORMER_ROLE_NAMES,
   SYSTEM_ROLES,
@@ -95,7 +95,16 @@ describe('standard roles (FR-IAM-07, BRD Appendix B; EP-ROLES, PO 17 Oct 2026)',
   it('gives the roles an HR Manager may give only reading permissions (allow-list)', () => {
     // Anything new (platform or module permission) fails here until reviewed: a role that can change
     // people, structure, settings or the audit log must be privileged (PO decision 5 Oct 2026).
-    const allowed = ['platform.user.read', 'platform.role.read', 'platform.org.read'];
+    const allowed = [
+      'platform.user.read',
+      'platform.role.read',
+      'platform.org.read',
+      // T-M3-10 (reviewed): designing the training needs form is training configuration — it changes no
+      // person, structure, organization setting or audit record, so the L&D Manager stays a role the HR
+      // Manager gives (PO, 17 Oct 2026: designed by the L&D Manager).
+      'tms.needs_form.read',
+      'tms.needs_form.manage',
+    ];
     for (const role of SYSTEM_ROLES.filter((r) => !r.privileged)) {
       for (const grant of role.grants) {
         expect(allowed, `${role.code} grants ${grant.permission.code}`).toContain(
@@ -106,7 +115,10 @@ describe('standard roles (FR-IAM-07, BRD Appendix B; EP-ROLES, PO 17 Oct 2026)',
   });
 
   it('names every role in Arabic and English and grants only registered permissions', () => {
-    const registered = new Set(Object.keys(platformPermissions));
+    const registered = new Set([
+      ...Object.keys(platformPermissions),
+      ...Object.keys(tmsRolePermissions),
+    ]);
     for (const role of SYSTEM_ROLES) {
       expect(role.name.ar.trim()).not.toBe('');
       expect(role.name.en.trim()).not.toBe('');
@@ -181,6 +193,19 @@ describe('standard roles (FR-IAM-07, BRD Appendix B; EP-ROLES, PO 17 Oct 2026)',
     const hr = getSystemRole('hr_manager').grants.map((g) => g.permission.code);
     expect(hr).toContain('platform.role.assign');
     expect(hr).not.toContain('platform.role.assign_privileged');
+  });
+
+  it('lets the L&D Manager design needs forms and the Training Coordinator read them (T-M3-10)', () => {
+    const holders = (code: string) =>
+      SYSTEM_ROLES.filter((r) => r.grants.some((g) => g.permission.code === code)).map((r) => [
+        r.code,
+        r.grants.find((g) => g.permission.code === code)?.scope,
+      ]);
+    expect(holders('tms.needs_form.manage')).toEqual([['training_manager', 'tenant']]);
+    expect(holders('tms.needs_form.read')).toEqual([
+      ['training_manager', 'tenant'],
+      ['training_coordinator', 'tenant'],
+    ]);
   });
 
   it('throws on an unknown code', () => {

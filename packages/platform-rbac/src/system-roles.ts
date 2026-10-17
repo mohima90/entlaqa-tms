@@ -1,5 +1,5 @@
 import type { LocalizedText, PermissionDefinition } from './permissions';
-import { platformPermissions } from './platform-permissions';
+import { platformPermissions, tmsRolePermissions } from './platform-permissions';
 
 /**
  * The six standard roles of every organization (EP-ROLES, PO 17 Oct 2026; BRD v3.1 §4.2, Appendix B;
@@ -69,6 +69,7 @@ export interface SystemRoleDefinition {
 }
 
 const p = platformPermissions;
+const tms = tmsRolePermissions;
 const tenantWide = (...permissions: PermissionDefinition[]): RoleGrantDefinition[] =>
   permissions.map((permission) => ({ permission, scope: 'tenant' }));
 
@@ -125,7 +126,14 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
       en: 'Course library, planning cycles, plan and budget, approvals, sessions, notifications and training reports.',
     },
     privileged: false,
-    grants: tenantWide(p['platform.user.read'], p['platform.role.read'], p['platform.org.read']),
+    grants: tenantWide(
+      p['platform.user.read'],
+      p['platform.role.read'],
+      p['platform.org.read'],
+      // Designs the needs forms (T-M3-10; PO, 17 Oct 2026, business flow EP-PLN §12).
+      tms['tms.needs_form.read'],
+      tms['tms.needs_form.manage'],
+    ),
   },
   {
     code: 'training_coordinator',
@@ -135,7 +143,13 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
       en: 'Scheduling, logistics, enrollments and attendance; helps collect and consolidate needs.',
     },
     privileged: false,
-    grants: tenantWide(p['platform.user.read'], p['platform.role.read'], p['platform.org.read']),
+    grants: tenantWide(
+      p['platform.user.read'],
+      p['platform.role.read'],
+      p['platform.org.read'],
+      // Reads the needs forms (T-M3-10; PO, 17 Oct 2026).
+      tms['tms.needs_form.read'],
+    ),
   },
   {
     code: 'department_head',

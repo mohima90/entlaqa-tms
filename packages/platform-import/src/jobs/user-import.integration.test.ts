@@ -220,6 +220,12 @@ describe.skipIf(!configured)('user import against PostgreSQL', () => {
   beforeAll(async () => {
     await db.execute(sql`insert into platform.tenants (id, slug, name_ar, name_en, status)
       values (${tenant}, ${`import-${tag}`}, 'شركة الاستيراد', 'Import Company', 'active')`);
+    // An organization whose default language is Arabic: its files give the Arabic first and family names
+    // (the required names follow the default language, guided-test feedback #2 — the English default is
+    // covered by the unit tests and supabase/tests/99_person_names_owner.sql).
+    await db.execute(
+      sql`update platform.tenant_settings set default_locale = 'ar' where tenant_id = ${tenant}::uuid`,
+    );
     await db.execute(sql`insert into auth.users (id, email) values
       (${admin.user}, ${`admin.${tag}@import.example`}), (${existing.user}, ${`old.${tag}@import.example`}),
       (${hr.user}, ${`hr.${tag}@import.example`})`);

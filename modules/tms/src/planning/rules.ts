@@ -48,12 +48,16 @@ export interface ApprovalStep {
   readonly approverPersonId: string | null;
 }
 
-/** The built-in default chain (business flow A3): Department Heads → Finance → Management. */
+/**
+ * The built-in default chain (business flow A3): Unit heads → Finance → Management. The heads step is named
+ * after no fixed level (guided-test feedback #3, PO 17 Oct 2026: organizations name their own levels); chains
+ * saved before keep the names they were saved with, and every name can be edited.
+ */
 export const DEFAULT_CHAIN: readonly ApprovalStep[] = [
   {
     kind: 'department_heads',
-    nameAr: 'رؤساء الأقسام',
-    nameEn: 'Department Heads',
+    nameAr: 'رؤساء الوحدات',
+    nameEn: 'Unit heads',
     approverPersonId: null,
   },
   { kind: 'person', nameAr: 'اعتماد المالية', nameEn: 'Finance approval', approverPersonId: null },

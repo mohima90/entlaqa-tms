@@ -12,7 +12,7 @@ export interface NameFields {
   readonly fatherNameEn: string | null;
   readonly grandfatherNameEn: string | null;
   readonly familyNameEn: string | null;
-  readonly displayNameAr: string;
+  readonly displayNameAr: string | null;
   readonly displayNameEn: string | null;
 }
 
@@ -22,19 +22,34 @@ export interface NameFields {
  * touch the name never erases it. (A shorter one is pre-filled, so empty parts there mean "remove".)
  */
 export function keepUnsplitDisplayNames<T extends NameFields>(before: NameFields, next: T): T {
-  const noParts = (n: NameFields, script: 'Ar' | 'En') =>
-    PARTS.every((part) => n[`${part}${script}`] === null);
-  const unsplit = (script: 'Ar' | 'En', name: string | null) =>
-    noParts(next, script) &&
-    noParts(before, script) &&
-    name !== null &&
-    name.length > NAME_PART_MAX;
   let result = next;
-  if (unsplit('Ar', before.displayNameAr)) {
+  if (keepsUnsplitDisplayName(before, next, 'ar')) {
     result = { ...result, displayNameAr: before.displayNameAr };
   }
-  if (unsplit('En', before.displayNameEn)) {
+  if (keepsUnsplitDisplayName(before, next, 'en')) {
     result = { ...result, displayNameEn: before.displayNameEn };
   }
   return result;
+}
+
+type PartFields = Pick<
+  NameFields,
+  `${(typeof PARTS)[number]}${'Ar' | 'En'}` | 'displayNameAr' | 'displayNameEn'
+>;
+
+/**
+ * Whether a save keeps the stored display name of that language as it is (see keepUnsplitDisplayNames):
+ * then that language has a name although the form sent no parts — the required-name rule
+ * (PO 17 Oct 2026) counts it as given.
+ */
+export function keepsUnsplitDisplayName(
+  before: PartFields,
+  next: Omit<PartFields, 'displayNameAr' | 'displayNameEn'>,
+  language: 'ar' | 'en',
+): boolean {
+  const script = language === 'ar' ? 'Ar' : 'En';
+  const noParts = (n: Omit<PartFields, 'displayNameAr' | 'displayNameEn'>) =>
+    PARTS.every((part) => n[`${part}${script}`] === null);
+  const name = language === 'ar' ? before.displayNameAr : before.displayNameEn;
+  return noParts(next) && noParts(before) && name !== null && name.length > NAME_PART_MAX;
 }

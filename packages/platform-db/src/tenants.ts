@@ -62,3 +62,17 @@ export async function getCurrentTenant(tx: UserTx): Promise<CurrentTenant | null
       }
     : null;
 }
+
+/**
+ * The organization's default language (FR-ADM-02, platform.tenant_settings.default_locale; English unless
+ * the admin chose Arabic): the language of new people AND the language whose first and family names are
+ * required when a person's name is entered (guided-test feedback #2, PO 17 Oct 2026). The claims'
+ * organization (RLS); 'en' (the database's default) when it has no settings row.
+ */
+export async function getTenantDefaultLocale(tx: UserTx): Promise<'ar' | 'en'> {
+  const [row] = await tx.execute<{ default_locale: string | null }>(
+    sql`select s.default_locale from platform.tenant_settings s
+        where s.tenant_id = (select private.current_tenant_id())`,
+  );
+  return row?.default_locale === 'ar' ? 'ar' : DEFAULT_TENANT_REGIONAL.defaultLocale;
+}

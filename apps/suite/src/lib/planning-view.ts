@@ -1,4 +1,5 @@
 import type { AppLocale } from '@jadarat/platform-i18n';
+import { personDisplayName } from '@jadarat/platform-i18n/names';
 import type { CycleListItem, CycleStatus, FormStatus } from '@jadarat/tms';
 import type { BadgeTone } from '@jadarat/ui';
 
@@ -31,13 +32,12 @@ export function cycleHref(locale: AppLocale, id: string, step?: SetupStep): stri
   return `/${locale}${PLANNING_PATHS.cycles}/${id}${step ? `?step=${step}` : ''}`;
 }
 
-/** A name in the page's language, else the other one. */
+/** A name in the page's language, else the other one (a person may have an English name only). */
 export function localName(
   locale: AppLocale,
-  name: { readonly ar: string; readonly en: string | null },
+  name: { readonly ar: string | null; readonly en: string | null },
 ): string {
-  if (locale === 'en') return name.en !== null && name.en !== '' ? name.en : name.ar;
-  return name.ar !== '' ? name.ar : (name.en ?? '');
+  return personDisplayName(locale, name.ar, name.en);
 }
 
 export const CYCLE_TONE: Readonly<Record<CycleStatus, BadgeTone>> = {

@@ -1,6 +1,6 @@
 import { hasVisibleText } from '@jadarat/platform-i18n';
 import { z } from 'zod';
-import { type ImportField, isImportField } from './fields';
+import { type ImportField, type NameLanguage, isImportField, requiredFields } from './fields';
 import { type ImportIssue, issue } from './issues';
 import { isPrivilegedRole, roleForName, splitRoles } from './roles';
 import { asciiDigits, cleanText, excerpt, matchKey } from './text';
@@ -87,11 +87,15 @@ const NAME_FIELDS = {
   en: ['first_name_en', 'father_name_en', 'grandfather_name_en', 'family_name_en'],
 } as const;
 
-/** Checks one data row under the confirmed mapping ({column index: field}). */
+/**
+ * Checks one data row under the confirmed mapping ({column index: field}); the first and family names of
+ * `nameLanguage` (the organization's default language, PO 17 Oct 2026) are required.
+ */
 export function normalizeRow(
   rowNumber: number,
   rowCells: readonly string[],
   mapping: ImportMapping,
+  nameLanguage: NameLanguage,
 ): NormalizedRow {
   const cells: Partial<Record<ImportField, string>> = {};
   const values: Partial<Record<ImportField, string>> = {};
@@ -116,7 +120,9 @@ export function normalizeRow(
   else if (!isEmail(email)) issues.push(issue('EMAIL_INVALID', 'email'));
   else data.email = email;
 
-  // Names: Arabic first and family name required; each part at most 60, all parts at most 200.
+  // Names: the first and family name of the organization's default language required; each part at most
+  // 60, all parts at most 200.
+  const requiredNames = new Set(requiredFields(nameLanguage));
   for (const fields of [NAME_FIELDS.ar, NAME_FIELDS.en] as readonly (readonly ImportField[])[]) {
     let total = 0;
     let parts = 0;
@@ -124,8 +130,10 @@ export function normalizeRow(
     for (const field of fields) {
       const value = values[field];
       if (value === undefined) {
-        if (field === 'first_name_ar' || field === 'family_name_ar') {
-          issues.push(issue('NAME_AR_REQUIRED', field));
+        if (requiredNames.has(field)) {
+          issues.push(
+            issue(field.endsWith('_ar') ? 'NAME_AR_REQUIRED' : 'NAME_EN_REQUIRED', field),
+          );
           valid = false;
         }
         continue;

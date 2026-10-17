@@ -16,7 +16,7 @@ export interface PersonalDetails {
   readonly fatherNameEn: string | null;
   readonly grandfatherNameEn: string | null;
   readonly familyNameEn: string | null;
-  readonly displayNameAr: string;
+  readonly displayNameAr: string | null;
   readonly displayNameEn: string | null;
   readonly mobileE164: string | null;
   readonly preferredLocale: 'ar' | 'en';

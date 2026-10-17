@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { levelName, nextLevel, parentIds, scopeUnitChoices, treeOrder } from './structure-view';
+import {
+  levelName,
+  nextLevel,
+  parentIds,
+  scopeUnitChoices,
+  showsUnitLevels,
+  treeOrder,
+  unitNameWithLevel,
+  unitsLabel,
+} from './structure-view';
 
 const levels = [
   { ordinal: 1, nameEn: 'Sector', nameAr: 'قطاع' },
@@ -69,5 +78,29 @@ describe('scopeUnitChoices (T-M3-09)', () => {
       { id: 'a2', label: ' U-a2 (Department)', active: true },
     ]);
     expect(scopeUnitChoices([unit('a', null, 1)], levels, 'ar')[0]?.label).toBe('و-a (قطاع)');
+  });
+});
+
+describe('the organization’s own level names (guided-test feedback #3)', () => {
+  it('labels a column with the first level’s name while every unit is at the first level', () => {
+    expect(unitsLabel(levels, [1, 1], 'en', 'Unit')).toBe('Sector');
+    expect(unitsLabel(levels, [1], 'ar', 'الوحدة')).toBe('قطاع');
+    // No unit yet: the name the organization starts with.
+    expect(unitsLabel(levels, [], 'en', 'Unit')).toBe('Sector');
+    expect(showsUnitLevels(levels, [1, 1])).toBe(false);
+  });
+
+  it('uses the neutral word when levels mix, and each row then shows its level', () => {
+    expect(unitsLabel(levels, [1, 2], 'en', 'Unit')).toBe('Unit');
+    expect(unitsLabel(levels, [2, 2], 'ar', 'الوحدة')).toBe('الوحدة');
+    expect(unitsLabel(levels, [1, null], 'en', 'Unit')).toBe('Unit');
+    expect(unitsLabel([], [1], 'en', 'Unit')).toBe('Unit');
+    expect(showsUnitLevels(levels, [1, 2])).toBe(true);
+    expect(unitNameWithLevel('Retail Sales', 2, levels, 'en', true)).toBe(
+      'Retail Sales · Department',
+    );
+    expect(unitNameWithLevel('مبيعات التجزئة', 3, levels, 'ar', true)).toBe('مبيعات التجزئة · قسم');
+    expect(unitNameWithLevel('Retail Sales', 2, levels, 'en', false)).toBe('Retail Sales');
+    expect(unitNameWithLevel('Retail Sales', 9, levels, 'en', true)).toBe('Retail Sales');
   });
 });

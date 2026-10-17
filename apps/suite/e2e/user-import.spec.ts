@@ -132,7 +132,8 @@ test.describe('bulk user import', () => {
     const template = await templateDownload;
     expect(template.suggestedFilename()).toBe('user-import-template.csv');
     const templateText = await downloadedText(template);
-    expect(templateText.startsWith('\uFEFFWork email,First name (Arabic),')).toBe(true);
+    // English is the organization's default language: its name columns come first (PO 17 Oct 2026).
+    expect(templateText.startsWith('\uFEFFWork email,First name (English),')).toBe(true);
 
     // The file: one new person, one existing member, and rows the review refuses — an incomplete
     // e-mail (with a cell a spreadsheet would run as a formula), a privileged role, an e-mail twice.
@@ -151,7 +152,7 @@ test.describe('bulk user import', () => {
       ],
       [added, 'سلمان', 'العتيبي', 'Salman', 'Alotaibi', 'ACD', 'Learner', 'English'],
       ['not-an-email', '=1+2', 'الحربي', '', '', '', 'Learner', ''],
-      ['sample.sara@sovereign.example', 'سارة', 'القحطاني', '', '', '', '', ''],
+      ['sample.sara@sovereign.example', 'سارة', 'القحطاني', 'Sara', 'Alqahtani', '', '', ''],
       [
         `import-en-admin-${run}@sovereign.example`,
         'فهد',
@@ -248,8 +249,8 @@ test.describe('bulk user import', () => {
     await page.goto('/en/suite/admin/users/invite');
     const form = page.getByTestId('invite-user');
     await form.locator('#invite-email').fill(added);
-    await form.locator('#invite-firstNameAr').fill('سلمان');
-    await form.locator('#invite-familyNameAr').fill('العتيبي');
+    await form.locator('#invite-firstNameEn').fill('Salman');
+    await form.locator('#invite-familyNameEn').fill('Alotaibi');
     await form.getByRole('combobox', { name: /^Role/ }).selectOption({ label: 'Employee' });
     await form.getByRole('button', { name: 'Send invitation' }).click();
     // Kawadir: the code right away; then the invited tab.
@@ -275,14 +276,16 @@ test.describe('bulk user import', () => {
     const file = csv([
       [
         'البريد الإلكتروني للعمل',
+        'الاسم الأول بالإنجليزية',
+        'اسم العائلة بالإنجليزية',
         'الاسم الأول',
         'اسم الأب',
         'اسم العائلة',
         'الدور الأساسي',
         'اللغة المفضلة',
       ],
-      [first, 'لمى', 'سعد', 'المطيري', 'متدرب', 'العربية'],
-      [second, 'نواف', 'علي', 'الدوسري', '', ''],
+      [first, 'Lama', 'Almutairi', 'لمى', 'سعد', 'المطيري', 'متدرب', 'العربية'],
+      [second, 'Nawaf', 'Aldossari', 'نواف', 'علي', 'الدوسري', '', ''],
     ]);
 
     // A cut upload (integration review M1): Storage never gets the file. The import is cancelled at once,

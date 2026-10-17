@@ -76,7 +76,7 @@ export async function getSecurityPolicy(tx: UserTx): Promise<SecurityPolicy | nu
     select p.mfa_mode, p.mfa_required_roles, p.mfa_grace_days, p.mfa_prompt_admins, p.mfa_required_since,
            p.password_min_length, p.lockout_threshold, p.lockout_minutes, p.session_idle_minutes,
            p.session_max_hours, p.session_max_devices, p.updated_at, p.version,
-           e.display_name_ar as editor_name_ar, e.display_name_en as editor_name_en
+           coalesce(e.display_name_ar, e.display_name_en) as editor_name_ar, e.display_name_en as editor_name_en
     from platform.security_policies p
     left join platform.persons e on e.tenant_id = p.tenant_id and e.id = p.updated_by
     where p.tenant_id = (select private.current_tenant_id())`);

@@ -3,7 +3,7 @@ import { type Page, expect, test } from '@playwright/test';
 
 /**
  * Organization → Structure and Branches without a database (FR-ADM-04/05, T-M3-02; business flow EP-ORG;
- * the default CI run): the page frame, the summary cards, the two views (tree, levels) with the default level
+ * the default CI run): the page frame, the summary cards, the two views (tree, organization tree — the levels as a top-to-bottom chain) with the default level
  * every organization starts with — Department / «إدارة» — and the branches list, in English and Arabic,
  * accessible (axe). Building the tree, the levels, and the department picker of department-limited roles need
  * data: invitations.spec.ts (an HR Manager signs up and builds the structure) and users.spec.ts (a role
@@ -23,18 +23,25 @@ const TEXTS = {
   en: {
     title: 'Organization structure',
     tree: 'Structure',
-    levels: 'Levels',
+    levels: 'Organization tree',
+    chain: 'Levels from the top down',
+    explanation:
+      'Name the levels of your organization in order. The structure follows these names.',
     empty: 'No units yet',
     level: 'Level 1',
+    units: 'No units',
     branches: 'Branches',
     noBranches: 'No branches yet',
   },
   ar: {
     title: 'الهيكل التنظيمي',
     tree: 'الهيكل',
-    levels: 'المستويات',
+    levels: 'الشجرة التنظيمية',
+    chain: 'المستويات من الأعلى إلى الأسفل',
+    explanation: 'سمِّ مستويات منظمتك بالترتيب، ويتبع الهيكل هذه الأسماء.',
     empty: 'لا توجد وحدات بعد',
     level: 'المستوى 1',
+    units: 'لا وحدات',
     branches: 'الفروع',
     noBranches: 'لا توجد فروع بعد',
   },
@@ -63,11 +70,22 @@ for (const locale of ['en', 'ar'] as const) {
       'aria-current',
       'page',
     );
+    // The organization tree: the levels as a top-to-bottom chain — an ordered list with its own name
+    // (guided-test feedback #1), the explanation above it.
+    const card = page.getByTestId('structure-levels');
+    await expect(card.getByRole('heading', { name: t.levels })).toBeVisible();
+    await expect(card).toContainText(t.explanation);
+    const chain = page.getByRole('list', { name: t.chain });
+    await expect(chain).toHaveAttribute('data-testid', 'levels-chain');
+    await expect(chain.getByRole('listitem')).toHaveCount(1);
     const row = page.getByTestId('level-row-1');
     await expect(row).toContainText(t.level);
-    await expect(row).toContainText('Department');
-    await expect(row).toContainText('إدارة');
-    await expect(page.getByTestId('levels-table').getByRole('row')).toHaveCount(2);
+    await expect(row.getByTestId('level-name')).toHaveText(
+      locale === 'ar' ? 'إدارة' : 'Department',
+    );
+    await expect(row).toContainText(locale === 'ar' ? 'Department' : 'إدارة');
+    await expect(row.getByTestId('level-units')).toHaveText(t.units);
+    await expect(page.getByTestId('level-connector')).toHaveCount(0);
     await expect(page.getByTestId('level-add')).toHaveCount(0);
     await expect(page.getByTestId('level-rename')).toHaveCount(0);
     await expectNoSeriousA11yViolations(page);

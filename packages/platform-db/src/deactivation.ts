@@ -27,7 +27,7 @@ export type MembershipState = 'invited' | 'active' | 'suspended' | 'revoked';
 /** What the deactivate / reactivate screens and actions need to know about the person. */
 export interface MemberLifecycleTarget {
   readonly personId: string;
-  readonly displayNameAr: string;
+  readonly displayNameAr: string | null;
   readonly displayNameEn: string | null;
   readonly personStatus: 'active' | 'inactive';
   /** Null when the person has no sign-in account in this organization. */
@@ -52,7 +52,7 @@ export async function getMemberLifecycleTarget(
 ): Promise<MemberLifecycleTarget | null> {
   const [row] = await tx.execute<{
     person_id: string;
-    display_name_ar: string;
+    display_name_ar: string | null;
     display_name_en: string | null;
     person_status: 'active' | 'inactive';
     membership_id: string | null;
@@ -107,7 +107,8 @@ export async function lockMemberLifecycle(tx: UserTx): Promise<void> {
 /** Something the person is responsible for (a direct report, a department they head). */
 export interface ResponsibilityItem {
   readonly id: string;
-  readonly nameAr: string;
+  /** Null for a person with an English name only (PO 17 Oct 2026). */
+  readonly nameAr: string | null;
   readonly nameEn: string | null;
   /** The signed-in member may move this item (e.g. a privileged report: Organization Admin only). */
   readonly movable: boolean;
@@ -142,7 +143,7 @@ export async function listDirectReports(
 ): Promise<readonly ResponsibilityItem[]> {
   const rows = await tx.execute<{
     id: string;
-    name_ar: string;
+    name_ar: string | null;
     name_en: string | null;
     movable: boolean;
   }>(sql`
@@ -151,7 +152,7 @@ export async function listDirectReports(
     from platform.person_employment e
     join platform.persons p on p.tenant_id = e.tenant_id and p.id = e.person_id
     where e.manager_person_id = ${personId}::uuid and p.status = 'active'
-    order by p.display_name_ar, p.id`);
+    order by coalesce(p.display_name_ar, p.display_name_en), p.id`);
   return rows.map((r) => ({ id: r.id, nameAr: r.name_ar, nameEn: r.name_en, movable: r.movable }));
 }
 
@@ -227,7 +228,7 @@ export async function reassignHeadedDepartments(
 /** Someone who can take over the person's responsibilities. */
 export interface ReplacementCandidate {
   readonly personId: string;
-  readonly nameAr: string;
+  readonly nameAr: string | null;
   readonly nameEn: string | null;
 }
 

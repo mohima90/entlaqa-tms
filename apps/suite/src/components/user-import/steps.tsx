@@ -408,7 +408,9 @@ export async function reviewStep(
               {row.email ? <bdi dir="ltr">{row.email}</bdi> : '—'}
             </td>
             <td className="min-w-40 px-4 py-3">
-              {row.nameAr ? localizedName(locale, row.nameAr, row.nameEn) : t('review.noName')}
+              {(row.nameAr ?? row.nameEn)
+                ? localizedName(locale, row.nameAr, row.nameEn)
+                : t('review.noName')}
             </td>
             <td className="min-w-72 px-4 py-3">{detail}</td>
           </tr>

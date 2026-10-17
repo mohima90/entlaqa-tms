@@ -14,6 +14,7 @@ const db = vi.hoisted(() => ({
   searchMemberOptions: vi.fn(),
   MEMBER_SEARCH: { minLength: 2, maxLength: 100, limit: 50 },
   getOrganizationProfile: vi.fn(),
+  listStructureLevelLabels: vi.fn(),
   // Read when @jadarat/platform-rbac loads (its security settings schema, T-M2-10).
   MFA_MODES: ['off', 'optional', 'required_all', 'required_roles'],
   SECURITY_LIMITS: {
@@ -111,6 +112,7 @@ const structure = {
       nameEn: 'Sales',
       active: true,
       sortOrder: 0,
+      levelOrdinal: 1,
       head: { personId: HEAD, nameAr: 'رئيس', nameEn: 'Head' },
     },
     {
@@ -122,11 +124,18 @@ const structure = {
       nameEn: null,
       active: true,
       sortOrder: 0,
+      levelOrdinal: 2,
       head: null,
     },
   ],
   branches: [{ id: JED, nameAr: 'جدة', nameEn: 'Jeddah', active: true }],
 };
+
+/** The organization's own level names (guided-test feedback #3). */
+const LEVELS = [
+  { ordinal: 1, nameEn: 'Sector', nameAr: 'قطاع' },
+  { ordinal: 2, nameEn: 'Division', nameAr: 'شعبة' },
+];
 
 const chain = [
   { kind: 'department_heads', nameAr: 'رؤساء', nameEn: 'Heads', approverPersonId: null },
@@ -172,6 +181,7 @@ beforeEach(() => {
   repo.touchCycle.mockResolvedValue({ outcome: 'ok', version: 4 });
   repo.closeDueCycles.mockResolvedValue([]);
   db.listOrgStructure.mockResolvedValue(structure);
+  db.listStructureLevelLabels.mockResolvedValue(LEVELS);
   db.getMemberOptionsByIds.mockResolvedValue(members);
   db.getOrganizationProfile.mockResolvedValue({ fiscalYearStartMonth: 7, currencyCode: 'AED' });
   forms.listNeedsFormOptions.mockResolvedValue([]);
@@ -305,10 +315,13 @@ describe('L&D Manager: list, new cycle, cycle view', () => {
     ]);
     expect(view.withoutHead).toBe(0);
     expect(view.steps.map((s) => s.approverName?.en ?? null)).toEqual([null, 'CFO', 'GM']);
-    expect(view.setup?.units.map((u) => [u.id, u.depth])).toEqual([
-      [SALES, 0],
-      [EAST, 1],
+    expect(view.setup?.units.map((u) => [u.id, u.depth, u.levelOrdinal])).toEqual([
+      [SALES, 0, 1],
+      [EAST, 1, 2],
     ]);
+    // The level of each row and the organization's level names, for the tables' labels.
+    expect(view.departments.map((d) => d.levelOrdinal)).toEqual([1, 2]);
+    expect(view.levels).toEqual(LEVELS);
     expect(db.getMemberOptionsByIds).toHaveBeenCalledWith(expect.anything(), expect.any(Array));
     expect(view.setup?.needsForms).toEqual([]);
   });

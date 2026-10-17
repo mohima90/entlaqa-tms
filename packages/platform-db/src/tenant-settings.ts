@@ -80,7 +80,7 @@ export async function getOrganizationProfile(
 ): Promise<OrganizationProfileRecord | null> {
   const [row] = await tx.execute(sql`
     select ${COLUMNS}, s.updated_at, s.version,
-           e.display_name_ar as editor_name_ar, e.display_name_en as editor_name_en
+           coalesce(e.display_name_ar, e.display_name_en) as editor_name_ar, e.display_name_en as editor_name_en
     from platform.tenant_settings s
     join platform.tenants t on t.id = s.tenant_id
     left join platform.persons e on e.tenant_id = s.tenant_id and e.id = s.updated_by

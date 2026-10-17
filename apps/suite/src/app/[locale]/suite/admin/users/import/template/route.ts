@@ -25,7 +25,10 @@ export async function GET(request: Request): Promise<Response> {
     const status = error.code === 'UNAUTHENTICATED' ? 401 : error.code === 'FORBIDDEN' ? 403 : 500;
     return new Response(null, { status, headers: { 'Cache-Control': 'no-store' } });
   }
-  const bytes = format === 'csv' ? csvTemplate(lang) : xlsxTemplate(lang, result.value);
+  const bytes =
+    format === 'csv'
+      ? csvTemplate(lang, result.value.nameLanguage)
+      : xlsxTemplate(lang, result.value);
   return new Response(bytes, {
     headers: {
       'Content-Type': TYPES[format],

@@ -9,6 +9,7 @@ const db = vi.hoisted(() => ({
   createUserImport: vi.fn(),
   getHeldInvitationsSummary: vi.fn(),
   getRunningUserImport: vi.fn(),
+  getTenantDefaultLocale: vi.fn(() => Promise.resolve('ar')),
   getUndoPreview: vi.fn(),
   getUserImport: vi.fn(),
   listTemplateUnits: vi.fn(),
@@ -337,6 +338,17 @@ describe('mapping (step 2)', () => {
       { path: 'mapping.first_name_ar', code: 'MISSING' },
       { path: 'mapping.family_name_ar', code: 'MISSING' },
     ]);
+    // English default (PO 17 Oct 2026): the English names are the required ones.
+    db.getTenantDefaultLocale.mockResolvedValueOnce('en');
+    const englishDefault = await run(definition, {
+      importId: ID,
+      sheetIndex: 0,
+      mapping: { '0': 'email' },
+    });
+    expect(englishDefault.error?.fieldErrors).toEqual([
+      { path: 'mapping.first_name_en', code: 'MISSING' },
+      { path: 'mapping.family_name_en', code: 'MISSING' },
+    ]);
     db.chooseUserImportMapping.mockRejectedValueOnce(new DomainError('REVIEW_EXPIRED'));
     expect(fieldCode(await run(definition, { importId: ID, sheetIndex: 0, mapping }))).toBe(
       'REVIEW_EXPIRED',
@@ -595,7 +607,7 @@ describe('queries', () => {
   it('step 1: the running and recent imports', async () => {
     db.listUserImports.mockResolvedValue([record()]);
     const result = await run(actions.userImportStartQueryDefinition(), {});
-    expect(result.value).toEqual({ running: null, recent: [record()] });
+    expect(result.value).toEqual({ running: null, recent: [record()], nameLanguage: 'ar' });
   });
 
   it('an import: the importer’s columns with their recognition, options and undo preview', async () => {
@@ -667,9 +679,11 @@ describe('queries', () => {
       branches: [],
     });
     const template = actions.userImportTemplateQueryDefinition();
+    db.getTenantDefaultLocale.mockResolvedValueOnce('en');
     expect((await run(template, {})).value).toEqual({
       departments: [{ code: 'A', nameAr: 'أ', nameEn: null }],
       branches: [],
+      nameLanguage: 'en',
     });
     expect(
       (
@@ -682,6 +696,7 @@ describe('queries', () => {
     ).toEqual({
       departments: [],
       branches: [],
+      nameLanguage: 'ar',
     });
   });
 

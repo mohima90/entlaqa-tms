@@ -147,7 +147,7 @@ describe('updateUserDetails', () => {
     expect(fake.executed).toHaveLength(1);
   });
 
-  it('keeps a long name stored without parts; an empty Arabic name is refused otherwise', async () => {
+  it('keeps a long name stored without parts; a person without any name is refused', async () => {
     const unsplit = {
       ...row,
       first_name_ar: null,
@@ -160,7 +160,7 @@ describe('updateUserDetails', () => {
         kept.tx,
         'p1',
         '3:0',
-        change({ firstNameAr: null, displayNameAr: '', displayNameEn: null, departmentId: 'd1' }),
+        change({ firstNameAr: null, displayNameAr: null, displayNameEn: null, departmentId: 'd1' }),
       ),
     ).toEqual({ ok: true, changed: ['departmentId'] });
     expect(
@@ -168,25 +168,42 @@ describe('updateUserDetails', () => {
         fakeTx([row]).tx,
         'p1',
         '3:0',
-        change({ firstNameAr: null, displayNameAr: '' }),
+        change({ firstNameAr: null, displayNameAr: null }),
       ),
     ).toEqual({ ok: false, refusal: 'name_required' });
-    // Father and family name without a first name: refused, also over a kept long name.
-    for (const before of [row, unsplit]) {
-      expect(
-        await updateUserDetails(
-          fakeTx([before]).tx,
-          'p1',
-          '3:0',
-          change({
-            firstNameAr: null,
-            fatherNameAr: 'محمد',
-            familyNameAr: 'الشهري',
-            displayNameAr: 'محمد الشهري',
-          }),
-        ),
-      ).toEqual({ ok: false, refusal: 'name_required' });
-    }
+    // An English first name without the family name is no name either (persons_name_present_check).
+    expect(
+      await updateUserDetails(
+        fakeTx([row]).tx,
+        'p1',
+        '3:0',
+        change({
+          firstNameAr: null,
+          displayNameAr: null,
+          firstNameEn: 'Sara',
+          displayNameEn: 'Sara',
+        }),
+      ),
+    ).toEqual({ ok: false, refusal: 'name_required' });
+    // A complete English name alone is a name (PO 17 Oct 2026: English default, Arabic optional).
+    const english = fakeTx([row], [{ id: 'p1' }]);
+    expect(
+      await updateUserDetails(
+        english.tx,
+        'p1',
+        '3:0',
+        change({
+          firstNameAr: null,
+          displayNameAr: null,
+          firstNameEn: 'Sara',
+          familyNameEn: 'Ali',
+          displayNameEn: 'Sara Ali',
+        }),
+      ),
+    ).toEqual({
+      ok: true,
+      changed: ['firstNameAr', 'firstNameEn', 'familyNameEn', 'displayNameAr', 'displayNameEn'],
+    });
   });
 
   it('updates an existing placement; a concurrent edit is a version conflict', async () => {

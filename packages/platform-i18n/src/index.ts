@@ -6,3 +6,4 @@ export * from './hijri';
 export * from './regional';
 export * from './regional-presets';
 export * from './dates';
+export * from './names';

@@ -28,7 +28,7 @@ import {
   commandPaletteItems,
   suiteNavigation,
 } from '../lib/suite-navigation';
-import { roleName } from '../lib/users-view';
+import { localizedName, roleName } from '../lib/users-view';
 import { AccountMenu } from './account-menu';
 import { IdleWarning } from './idle-warning';
 import { LanguageToggle } from './language-toggle';
@@ -100,9 +100,7 @@ export async function SuiteShell({
   ));
 
   const name = context.me
-    ? locale === 'en'
-      ? (context.me.nameEn ?? context.me.nameAr)
-      : context.me.nameAr
+    ? localizedName(locale, context.me.nameAr, context.me.nameEn) || t('myAccount')
     : t('myAccount');
   const role = context.me?.primaryRole
     ? roleName(locale, context.me.primaryRole.code, context.me.primaryRole.customName)

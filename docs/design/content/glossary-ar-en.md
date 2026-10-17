@@ -4,7 +4,7 @@
 |---|---|
 | **Backlog** | T-M1-A06 (AR/EN glossary & content style guide) |
 | **Requirements** | NFR-L10N-13 (in-product glossary, no machine-only translation), Development Plan §9 (glossary enforced), ADM-12 (terminology overrides, R2) |
-| **Status** | Draft v1 — 30 Sep 2026; role labels and roles terms updated 17 Oct 2026 (BRD v3.1). Terms marked 🔎 are to be validated in usability round 1 |
+| **Status** | Draft v1 — 30 Sep 2026; role labels and roles terms updated 17 Oct 2026 (BRD v3.1); structure terms #154–#157 added 17 Oct 2026 (guided-test feedback). Terms marked 🔎 are to be validated in usability round 1 |
 | **Companion** | `content-style-guide.md` |
 
 **Scope.** Modern Standard Arabic (MSA) suitable for enterprise users in Saudi Arabia, the other Gulf states and Egypt. Where Gulf and Egyptian usage differ, the Gulf/Saudi institutional term is chosen (largest early market) and the Egyptian variant is noted; tenants can override display terms from R2 (ADM-12) without changing the glossary IDs.
@@ -27,7 +27,7 @@ Legend — **Form**: n = noun, v = verb/action (button form given as a verbal no
 | 4 | Training (module name) | التدريب | «إدارة التدريب» — long in header | Header: «جدارات · التدريب» |
 | 5 | Tenant (customer organization) | المنشأة | «المستأجر» — literal, meaningless to users; «العميل» — ambiguous with provider clients | "tenant" never appears in UI. The Organization Admin role is «مدير المنظمة» (PO, 17 Oct 2026, as in Kawadir ATS); new interface texts say «المنظمة» for the organization |
 | 6 | Branch | فرع | «موقع» — collides with location/website | «فرع الرياض» |
-| 7 | Department | القسم | «الإدارة» — also means "management"; used in many Gulf orgs for larger units — allowed as tenant override | Matches BRD «رئيس القسم» |
+| 7 | Department | القسم | «الإدارة» — also means "management"; used in many Gulf orgs for larger units — allowed as tenant override | Matches BRD «رئيس القسم». In the product the organization's own level names replace this fixed word (PO, 17 Oct 2026; #155–#157) |
 | 8 | Cost center | مركز التكلفة | «مركز التكاليف» — acceptable but less common in Gulf finance | Plural: مراكز التكلفة |
 | 9 | Legal entity | الكيان القانوني | «الشركة» — not every entity is a company | R3 |
 | 10 | User | مستخدم | — | |
@@ -214,8 +214,12 @@ Legend — **Form**: n = noun, v = verb/action (button form given as a verbal no
 | 151 | High-risk permission | صلاحية عالية الخطورة | «صلاحية خطرة» — alarming | Badge «عالي الخطورة» in the role builder |
 | 152 | Data scope (of a role) | البيانات التي يراها الدور | «نطاق البيانات» — technical | Choices: سجلاته فقط · فريقه · أقسامه · المنظمة كلها |
 | 153 | Role template | قالب | «نموذج» — also means "form" | «البدء من» → القوالب (FR-IAM-07) |
+| 154 | Organization tree (the levels tab of Structure) | الشجرة التنظيمية | «الهيكل التنظيمي» — already the Structure page's title; «المستويات» — says less | Added 17 Oct 2026 (guided-test feedback #1): the levels shown top to bottom |
+| 155 | Structure level | مستوى | «درجة» — suggests a grade | Each organization names its own levels (FR-ADM-05), e.g. Department → Unit → Division |
+| 156 | Unit (of the structure) | الوحدة (plural: الوحدات) | «القسم» / «الإدارة» — fixed level names | The neutral word where units of several levels appear together (columns, fields, sentences); a column of first-level units carries that level's own name. Not the suite module (#3): the context tells them apart |
+| 157 | Head (of a unit) / unit heads | الرئيس / رؤساء الوحدات | «رئيس القسم» — kept only as the standard role's name (#22) | Column «الرئيس»; the planning chain's built-in step «رؤساء الوحدات» |
 
-**Count:** 153 entries (more than the 80 required), several of which group closely related values (statuses, priorities).
+**Count:** 157 entries (more than the 80 required), several of which group closely related values (statuses, priorities).
 
 ## 10. Words we do not use in the UI
 

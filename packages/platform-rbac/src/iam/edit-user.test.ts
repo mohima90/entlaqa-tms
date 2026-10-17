@@ -17,6 +17,9 @@ const db = vi.hoisted(() => ({
   listManagerOptions: vi.fn(),
   listOrgUnitOptions: vi.fn(),
   updateUserDetails: vi.fn(),
+  getTenantDefaultLocale: vi.fn(),
+  keepsUnsplitDisplayName: vi.fn(),
+  listStructureLevelLabels: vi.fn(() => Promise.resolve([])),
 }));
 vi.mock('@jadarat/platform-db', () => db);
 
@@ -85,6 +88,8 @@ beforeEach(() => {
     { personId: ME, nameAr: 'م', nameEn: null, departmentIds: [DEPT] },
   ]);
   db.listOrgUnitOptions.mockResolvedValue({ departments: [], branches: [] });
+  db.getTenantDefaultLocale.mockResolvedValue('ar');
+  db.keepsUnsplitDisplayName.mockReturnValue(false);
 });
 
 describe('edit user input', () => {
@@ -162,6 +167,41 @@ describe('update user details', () => {
       entityId: SARA,
       data: { changed: ['familyNameAr', 'departmentId'] },
     });
+  });
+
+  it('the required names follow the organization’s default language (guided-test feedback #2)', async () => {
+    db.getEditableUser.mockResolvedValue({
+      personId: SARA,
+      mayManage: true,
+      displayNameAr: 'سارة',
+    });
+    db.updateUserDetails.mockResolvedValue({ ok: true, changed: ['firstNameEn'] });
+    const save = createDefineAction(runtime(['tenant_admin']).rt)(
+      updateUserDetailsActionDefinition(),
+    );
+    db.getTenantDefaultLocale.mockResolvedValue('en');
+    const noFamily = await save(form);
+    expect(!noFamily.ok && noFamily.error.fieldErrors).toEqual([
+      { path: 'familyNameEn', code: 'REQUIRED' },
+    ]);
+    expect(db.updateUserDetails).not.toHaveBeenCalled();
+    const englishOnly = await save({
+      ...form,
+      firstNameAr: '',
+      familyNameAr: '',
+      familyNameEn: 'Alqahtani',
+    });
+    expect(englishOnly.ok).toBe(true);
+    expect(db.updateUserDetails).toHaveBeenCalledWith(
+      TX,
+      SARA,
+      '3:1',
+      expect.objectContaining({ displayNameAr: null, displayNameEn: 'Sarah Alqahtani' }),
+    );
+    // The database's last word (no name at all) points at the required language's first name.
+    db.updateUserDetails.mockResolvedValue({ ok: false, refusal: 'name_required' });
+    const refused = await save({ ...form, familyNameEn: 'Alqahtani' });
+    expect(!refused.ok && refused.error.fieldErrors?.[0]?.path).toBe('firstNameEn');
   });
 
   it('maps refusals to field errors or clear errors; no change → no audit', async () => {

@@ -18,11 +18,15 @@ import { fieldErrorCodes } from '../profile/field-errors';
 import { SelectField } from '../select-field';
 import type { UnitChoice } from './edit-user-form';
 import { InviteCodeCopy, type InviteCodeValue, type InviteCopyTexts } from './invite-code-copy';
+import { OtherNameToggle } from './other-name-toggle';
 import { RoleSelect, type RoleSelectTexts } from './role-select';
 import { ScopeUnitSelect, type ScopeUnitTexts } from './scope-unit-select';
 
 export interface InviteUserFormProps {
-  /** The organization's default language for new people (T-M2-22): the invitation language preselected. */
+  /**
+   * The organization's default language for new people (T-M2-22): the invitation language preselected, and
+   * the language whose first and family names are required and shown first (PO 17 Oct 2026).
+   */
   readonly defaultLocale: 'ar' | 'en';
   readonly departments: readonly UnitChoice[];
   readonly branches: readonly UnitChoice[];
@@ -108,11 +112,10 @@ function InvitationCreatedPanel({
   );
 }
 
-const EN_FIELDS = ['firstNameEn', 'familyNameEn'];
-
 /**
- * Invite a user (T-M2-07, FR-IAM-03, BR-IAM-1; approved screen 2): work e-mail, Arabic name (English
- * optional), placement, one role (EP-ROLES, PO 17 Oct 2026: standard or custom, one per person),
+ * Invite a user (T-M2-07, FR-IAM-03, BR-IAM-1; approved screen 2): work e-mail, the name in the
+ * organization's default language (required, shown first) and in the other language (optional, «Add the name
+ * in Arabic»; guided-test feedback #2, PO 17 Oct 2026), placement, one role (EP-ROLES, PO 17 Oct 2026: standard or custom, one per person),
  * invitation language. Roles the member may not give (privileged ones unless Organization Admin) are
  * listed but disabled, with the reason; the HR Manager gives every ordinary role (PO, 17 Oct 2026).
  */
@@ -124,7 +127,9 @@ export function InviteUserForm(props: InviteUserFormProps) {
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
-  const [showEnglish, setShowEnglish] = useState(false);
+  const nameLanguage = props.defaultLocale;
+  const otherLanguage = nameLanguage === 'ar' ? 'en' : 'ar';
+  const [showOther, setShowOther] = useState(false);
   const [departmentId, setDepartmentId] = useState('');
   const [branchId, setBranchId] = useState('');
   const [managerId, setManagerId] = useState('');
@@ -147,10 +152,11 @@ export function InviteUserForm(props: InviteUserFormProps) {
     };
     const input = {
       email: field('email'),
-      firstNameAr: field('firstNameAr'),
-      familyNameAr: field('familyNameAr'),
-      firstNameEn: showEnglish ? field('firstNameEn') : '',
-      familyNameEn: showEnglish ? field('familyNameEn') : '',
+      // The other language's names only when its fields were opened.
+      firstNameAr: nameLanguage === 'ar' || showOther ? field('firstNameAr') : '',
+      familyNameAr: nameLanguage === 'ar' || showOther ? field('familyNameAr') : '',
+      firstNameEn: nameLanguage === 'en' || showOther ? field('firstNameEn') : '',
+      familyNameEn: nameLanguage === 'en' || showOther ? field('familyNameEn') : '',
       departmentId,
       branchId,
       managerPersonId: managerId,
@@ -192,12 +198,34 @@ export function InviteUserForm(props: InviteUserFormProps) {
           const { field: name, key } = inviteFieldError(path, code);
           errors[name] ??= fieldTexts[key] ?? fieldTexts.name ?? '';
         }
-        if (EN_FIELDS.some((name) => errors[name])) setShowEnglish(true);
+        const suffix = otherLanguage === 'ar' ? 'Ar' : 'En';
+        if (errors[`firstName${suffix}`] ?? errors[`familyName${suffix}`]) setShowOther(true);
         setFieldErrors(errors);
       }
       setMessage(errorText(result.error, props.errors));
     });
   }
+
+  /** First and family name of one language: the default language's are required and labelled plainly. */
+  const nameFields = (language: 'ar' | 'en', required: boolean) => {
+    const suffix = language === 'ar' ? 'Ar' : 'En';
+    return (['firstName', 'familyName'] as const).map((part) => (
+      <TextField
+        key={`${part}${suffix}`}
+        id={`invite-${part}${suffix}`}
+        name={`${part}${suffix}`}
+        label={required ? text(part) : text(`${part}${suffix}`)}
+        marker={required ? text('required') : text('optional')}
+        required={required}
+        maxLength={60}
+        dir={language === 'ar' ? 'rtl' : 'ltr'}
+        lang={language}
+        autoComplete="off"
+        error={fieldErrors[`${part}${suffix}`]}
+        disabled={pending}
+      />
+    ));
+  };
 
   if (created) {
     return (
@@ -213,7 +241,7 @@ export function InviteUserForm(props: InviteUserFormProps) {
           setDepartmentId('');
           setBranchId('');
           setManagerId('');
-          setShowEnglish(false);
+          setShowOther(false);
           setFormKey((k) => k + 1);
         }}
       />
@@ -245,71 +273,18 @@ export function InviteUserForm(props: InviteUserFormProps) {
           disabled={pending}
           className="sm:col-span-2"
         />
-        <TextField
-          id="invite-firstNameAr"
-          name="firstNameAr"
-          label={text('firstNameAr')}
-          marker={text('required')}
-          required
-          maxLength={60}
-          dir="rtl"
-          lang="ar"
-          autoComplete="off"
-          error={fieldErrors.firstNameAr}
-          disabled={pending}
-        />
-        <TextField
-          id="invite-familyNameAr"
-          name="familyNameAr"
-          label={text('familyNameAr')}
-          marker={text('required')}
-          required
-          maxLength={60}
-          dir="rtl"
-          lang="ar"
-          autoComplete="off"
-          error={fieldErrors.familyNameAr}
-          disabled={pending}
-        />
-        {showEnglish ? (
-          <>
-            <TextField
-              id="invite-firstNameEn"
-              name="firstNameEn"
-              label={text('firstNameEn')}
-              marker={text('optional')}
-              maxLength={60}
-              dir="ltr"
-              lang="en"
-              autoComplete="off"
-              error={fieldErrors.firstNameEn}
-              disabled={pending}
-            />
-            <TextField
-              id="invite-familyNameEn"
-              name="familyNameEn"
-              label={text('familyNameEn')}
-              marker={text('optional')}
-              maxLength={60}
-              dir="ltr"
-              lang="en"
-              autoComplete="off"
-              error={fieldErrors.familyNameEn}
-              disabled={pending}
-            />
-          </>
+        {nameFields(nameLanguage, true)}
+        {showOther ? (
+          nameFields(otherLanguage, false)
         ) : (
-          <div className="sm:col-span-2">
-            <Button
-              variant="ghost"
-              onClick={() => {
-                setShowEnglish(true);
-              }}
-              disabled={pending}
-            >
-              {text('addEnglishName')}
-            </Button>
-          </div>
+          <OtherNameToggle
+            label={text(otherLanguage === 'ar' ? 'addArabicName' : 'addEnglishName')}
+            focusId={`invite-firstName${otherLanguage === 'ar' ? 'Ar' : 'En'}`}
+            disabled={pending}
+            onOpen={() => {
+              setShowOther(true);
+            }}
+          />
         )}
         <SelectField
           id="invite-department"

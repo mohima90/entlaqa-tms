@@ -117,6 +117,7 @@ describe('listUsers', () => {
           role_version: 'learner:r1:1',
           role_scope_unit: '{"id":"u1","nameAr":"المبيعات","nameEn":"Sales","active":false}',
           department_name_ar: 'التدريب',
+          department_level_ordinal: 1,
           department_name_en: null,
           last_sign_in_at: '2026-10-05T08:00:00.000Z',
           may_manage: false,
@@ -151,6 +152,7 @@ describe('listUsers', () => {
         roleScopeUnit: { id: 'u1', nameAr: 'المبيعات', nameEn: 'Sales', active: false },
         departmentNameAr: 'التدريب',
         departmentNameEn: null,
+        departmentLevelOrdinal: 1,
         lastSignInAt: new Date('2026-10-05T08:00:00.000Z'),
         mayManage: false,
         privileged: false,
@@ -513,12 +515,12 @@ describe('getMyPrimaryRole', () => {
 describe('listOrgUnitOptions', () => {
   it('lists departments and branches that are not deleted', async () => {
     const fake = fakeTx(
-      [{ id: 'd1', name_ar: 'التدريب', name_en: 'Training' }],
+      [{ id: 'd1', name_ar: 'التدريب', name_en: 'Training', level_ordinal: 2 }],
       [{ id: 'b1', name_ar: 'الرياض', name_en: null }],
     );
     expect(await listOrgUnitOptions(fake.tx)).toEqual({
-      departments: [{ id: 'd1', nameAr: 'التدريب', nameEn: 'Training' }],
-      branches: [{ id: 'b1', nameAr: 'الرياض', nameEn: null }],
+      departments: [{ id: 'd1', nameAr: 'التدريب', nameEn: 'Training', levelOrdinal: 2 }],
+      branches: [{ id: 'b1', nameAr: 'الرياض', nameEn: null, levelOrdinal: null }],
     });
     expect(fake.executed.every((q) => q.sql.includes('deleted_at is null'))).toBe(true);
   });

@@ -39,6 +39,31 @@ async function expectNoSeriousA11yViolations(page: Page) {
   expect(blocking.map((v) => `${v.id}: ${v.help} (${v.nodes.length})`)).toEqual([]);
 }
 
+/**
+ * The organization's own level names (guided-test feedback #3, PO 17 Oct 2026): the unit column of a table is
+ * named after the first level while every row is at that level, else «Unit» — and then each row shows its
+ * level («Retail Sales · Unit»). Never the fixed word «Department» unless the organization named a level so.
+ */
+async function expectUnitColumn(
+  page: Page,
+  column: string,
+  rows: string,
+  neutral: string,
+  heading: string,
+) {
+  const label = ((await page.getByTestId(column).textContent()) ?? '').trim();
+  expect(label).not.toBe('');
+  const names = await page.getByTestId(rows).locator('th[scope="row"]').allTextContents();
+  expect(names.length).toBeGreaterThan(0);
+  if (label === neutral) {
+    for (const name of names) expect(name).toContain(' · ');
+  } else {
+    for (const name of names) expect(name).not.toContain(' · ');
+  }
+  // The heads column says «Head», not «Department head».
+  await expect(page.getByRole('columnheader', { name: heading, exact: true })).toBeVisible();
+}
+
 async function createDraft(page: Page, locale: 'ar' | 'en', nameEn: string, nameAr: string) {
   await page.goto(`/${locale}/suite/planning/cycles`);
   await page.getByTestId('new-cycle-link').click();
@@ -67,7 +92,9 @@ test.describe('planning cycle journey', () => {
     await page.getByTestId('cycle-scope-save').click();
     await expect(page).toHaveURL(/\?step=budget$/);
 
-    // Budget: an envelope for the first department; a wrong amount is caught first.
+    // Budget: the organization's level names label the units; an envelope for the first unit; a wrong
+    // amount is caught first.
+    await expectUnitColumn(page, 'budget-unit-column', 'budget-row', 'Unit', 'Head');
     await page.getByTestId('budget-amount').first().fill('12,5x');
     await page.getByTestId('cycle-budgets-save').click();
     await expect(page.getByText('Enter an amount in numbers')).toBeVisible();
@@ -103,6 +130,7 @@ test.describe('planning cycle journey', () => {
     const statuses = page.getByTestId('progress-status');
     expect(await statuses.count()).toBeGreaterThan(0);
     for (const status of await statuses.all()) await expect(status).toHaveText('Not started');
+    await expectUnitColumn(page, 'progress-column-department', 'progress-row', 'Unit', 'Head');
     await expectNoSeriousA11yViolations(page);
 
     // Extend the deadline while open.

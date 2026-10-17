@@ -25,7 +25,7 @@ export interface MatrixArea {
 }
 
 const QUALIFIERS = {
-  dept: { ar: 'القسم', en: 'department' },
+  dept: { ar: 'وحداته', en: 'their units' },
   team: { ar: 'الفريق', en: 'team' },
   assigned: { ar: 'المسندة فقط', en: 'assigned only' },
   ownCatalog: { ar: 'دليل الجهة فقط', en: 'own catalog only' },

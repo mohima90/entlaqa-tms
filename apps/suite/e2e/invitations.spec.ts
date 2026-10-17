@@ -25,8 +25,9 @@ async function inviteLearner(page: Page, invitee: string, locale: 'ar' | 'en') {
   await page.goto(`/${locale}/suite/admin/users/invite`);
   const form = page.getByTestId('invite-user');
   await form.locator('#invite-email').fill(invitee);
-  await form.locator('#invite-firstNameAr').fill('سلمى');
-  await form.locator('#invite-familyNameAr').fill('الحربي');
+  // English is the organization's default language: the English names are the required ones.
+  await form.locator('#invite-firstNameEn').fill('Salma');
+  await form.locator('#invite-familyNameEn').fill('Alharbi');
   await form
     .getByRole('combobox', { name: locale === 'ar' ? /^الدور/ : /^Role/ })
     .selectOption({ label: locale === 'ar' ? 'موظف' : 'Employee' });
@@ -104,15 +105,20 @@ test.describe('invitations (admin side)', () => {
     await form.getByRole('button', { name: 'Send invitation' }).click();
     await expect(page.getByTestId('invite-message')).toBeVisible();
     await expect(form.locator('#invite-email-error')).toBeVisible();
-    await expect(form.locator('#invite-firstNameAr-error')).toHaveText('This field is required.');
+    // The names follow the organization's default language (English; guided-test feedback #2): the
+    // English first and family names are required, the Arabic ones optional behind a button.
+    await expect(form.locator('#invite-firstNameEn-error')).toHaveText('This field is required.');
+    await expect(form.locator('#invite-familyNameEn-error')).toHaveText('This field is required.');
+    await expect(form.locator('#invite-firstNameAr')).toHaveCount(0);
     await expect(form.locator('#invite-role-error')).toHaveText('Choose a role.');
 
+    // English names only: the invitation is created without an Arabic name.
     await form.locator('#invite-email').fill(invitee.toUpperCase());
-    await form.locator('#invite-firstNameAr').fill('نورة');
-    await form.locator('#invite-familyNameAr').fill('الدوسري');
-    await form.getByRole('button', { name: 'Add the name in English (optional)' }).click();
     await form.locator('#invite-firstNameEn').fill('Noura');
     await form.locator('#invite-familyNameEn').fill('Aldossari');
+    await expect(
+      form.getByRole('button', { name: 'Add the name in Arabic (optional)' }),
+    ).toBeVisible();
     await form.locator('#invite-employeeNumber').fill(`EMP-${run}`);
     await form
       .getByRole('combobox', { name: /^Role/ })
@@ -142,6 +148,7 @@ test.describe('invitations (admin side)', () => {
     await expect(page.getByTestId('invitation-created')).toContainText('Invitation created');
     const row = rowsOf(page).filter({ hasText: invitee });
     await expect(row).toHaveCount(1);
+    await expect(row).toContainText('Noura Aldossari');
     await expect(row).toContainText('Training Coordinator');
     await expect(row).toContainText('Invited');
     await expect(row).toContainText('Expires on');
@@ -188,6 +195,12 @@ test.describe('invitations (admin side)', () => {
 
     const invite = async () => {
       await form.locator('#invite-email').fill(invitee);
+      // The English names are required (the organization's default language); the Arabic ones are
+      // added with «إضافة الاسم بالعربية (اختياري)» and shown on the Arabic pages.
+      await form.locator('#invite-firstNameEn').fill('Ahmed');
+      await form.locator('#invite-familyNameEn').fill('Mansour');
+      await form.getByRole('button', { name: 'إضافة الاسم بالعربية (اختياري)' }).click();
+      await expect(form.locator('#invite-firstNameAr')).toBeFocused();
       await form.locator('#invite-firstNameAr').fill('أحمد');
       await form.locator('#invite-familyNameAr').fill('منصور');
       await form.getByRole('combobox', { name: /^الدور/ }).selectOption({ label: 'موظف' });
@@ -318,8 +331,8 @@ test.describe('organization structure (HR Manager)', () => {
     await page.goto('/en/suite/admin/users/invite');
     const form = page.getByTestId('invite-user');
     await form.locator('#invite-email').fill(hr);
-    await form.locator('#invite-firstNameAr').fill('هالة');
-    await form.locator('#invite-familyNameAr').fill('الموارد');
+    await form.locator('#invite-firstNameEn').fill('Hala');
+    await form.locator('#invite-familyNameEn').fill('Resources');
     await form.getByRole('combobox', { name: /^Role/ }).selectOption({ label: 'HR Manager' });
     await form.getByRole('radio', { name: 'English' }).check();
     await form.getByRole('button', { name: 'Send invitation' }).click();
@@ -460,8 +473,8 @@ test.describe('invitations left pending (for the acceptance E2E)', () => {
       await page.goto('/en/suite/admin/users/invite');
       const form = page.getByTestId('invite-user');
       await form.locator('#invite-email').fill(invitee);
-      await form.locator('#invite-firstNameAr').fill('ريم');
-      await form.locator('#invite-familyNameAr').fill('العتيبي');
+      await form.locator('#invite-firstNameEn').fill('Reem');
+      await form.locator('#invite-familyNameEn').fill('Alotaibi');
       await form.getByRole('combobox', { name: /^Role/ }).selectOption({ label: 'Employee' });
       await form.getByRole('radio', { name: 'العربية' }).check();
       await form.getByRole('button', { name: 'Send invitation' }).click();

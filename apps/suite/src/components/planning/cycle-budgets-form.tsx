@@ -20,6 +20,11 @@ export interface CycleBudgetsFormProps {
   readonly locale: 'ar' | 'en';
   readonly cycle: { readonly id: string; readonly version: number };
   readonly currency: string;
+  /**
+   * The unit column's label: the first level's name, or «Unit» when levels mix (then each row's name ends
+   * with its level; guided-test feedback #3).
+   */
+  readonly unitColumn: string;
   readonly rows: readonly BudgetRow[];
   readonly texts: Readonly<Record<string, string>>;
   readonly errors: ErrorTexts;
@@ -27,7 +32,7 @@ export interface CycleBudgetsFormProps {
 }
 
 /**
- * Step 3 — Budget (EP-PLN B4; Q2: optional): a budget envelope per department in scope, in the
+ * Step 3 — Budget (EP-PLN B4; Q2: optional): a budget envelope per unit in scope, in the
  * organization's currency (BR-PLN-i). Empty = no envelope.
  */
 export function CycleBudgetsForm(props: CycleBudgetsFormProps) {
@@ -117,8 +122,8 @@ export function CycleBudgetsForm(props: CycleBudgetsFormProps) {
             <caption className="sr-only">{t('setup.budget.title')}</caption>
             <thead className={tableClasses.header}>
               <tr>
-                <th scope="col" className={tableClasses.head}>
-                  {t('setup.budget.columns.department')}
+                <th scope="col" className={tableClasses.head} data-testid="budget-unit-column">
+                  {props.unitColumn}
                 </th>
                 <th scope="col" className={tableClasses.head}>
                   {t('setup.budget.columns.head')}
@@ -133,7 +138,7 @@ export function CycleBudgetsForm(props: CycleBudgetsFormProps) {
                 const id = `budget-${row.departmentId}`;
                 const error = errors[row.departmentId];
                 return (
-                  <tr key={row.departmentId} className={tableClasses.row}>
+                  <tr key={row.departmentId} className={tableClasses.row} data-testid="budget-row">
                     <th scope="row" className={`${tableClasses.cell} text-start font-medium`}>
                       {row.name}
                     </th>

@@ -94,9 +94,25 @@ begin
                                    where role_code = 'tenant_admin' and permission_code like 'tms.%'),
     'the Organization Admin holds no training permission (BR-IAM-4)');
   -- The course permissions do not make the standard roles privileged: the L&D Manager and the Training
-  -- Coordinator stay roles an HR Manager could give if they held the permissions.
+  -- Coordinator are ordinary roles, which the HR Manager gives although it does not hold the course
+  -- permissions (who can give what, PO 17 Oct 2026 — migration 20261020200000).
   perform tests.assert(not private.role_is_privileged('a0000000-0000-4000-8000-000000000001', 'custom_a000000d0005'),
     'a custom role with course permissions is not privileged');
+  perform tests.assert(not private.role_is_privileged('a0000000-0000-4000-8000-000000000001', 'training_manager')
+                       and not private.role_is_privileged('a0000000-0000-4000-8000-000000000001', 'training_coordinator'),
+    'the L&D Manager and the Training Coordinator are ordinary roles');
+  perform tests.assert(not private.member_has_permission('a0000000-0000-4000-8000-000000000001',
+                         '00000000-0000-4000-8000-0000000000ab', 'tms.course.manage'),
+    'the HR Manager does not change the course library');
+  perform tests.assert(private.member_may_give_roles('a0000000-0000-4000-8000-000000000001',
+                         '00000000-0000-4000-8000-0000000000ab', array['training_manager']),
+    'the HR Manager gives the L&D Manager role (course permissions it does not hold)');
+  perform tests.assert(private.member_may_give_roles('a0000000-0000-4000-8000-000000000001',
+                         '00000000-0000-4000-8000-0000000000ab', array['training_coordinator']),
+    'the HR Manager gives the Training Coordinator role');
+  perform tests.assert(private.member_may_give_roles('a0000000-0000-4000-8000-000000000001',
+                         '00000000-0000-4000-8000-0000000000ab', array['custom_a000000d0005']),
+    'the HR Manager gives an ordinary custom role with course permissions');
 
   -- Fixture stamps written by the guard as a platform operation: the costs' currency and the archive.
   perform tests.assert_eq((select cost_currency from tms.courses where id = 'a7100000-0000-4000-8000-000000000001'),

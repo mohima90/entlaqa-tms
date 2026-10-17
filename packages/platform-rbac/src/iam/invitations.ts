@@ -37,8 +37,8 @@ import {
  * standard role or a custom role of the organization. Privileged roles (standard, or custom with a
  * high-risk permission) may be given only by holders of `platform.role.assign_privileged` (the Organization
  * Admin) — the same split as changing a role (edit-roles.ts): an ordinary action that refuses privileged
- * roles (and roles with permissions the member does not hold) and a privileged action with the strict
- * session check. The database guard applies the same rules. Audit records carry ids and role codes only
+ * roles (every ordinary role is allowed — who can give what, PO 17 Oct 2026) and a privileged action with
+ * the strict session check. The database guard applies the same rules. Audit records carry ids and role codes only
  * (no names, no e-mail).
  */
 const p = platformPermissions;
@@ -198,8 +198,8 @@ function inviteAction(
         // The privileged path is authorized by role.assign_privileged; inviting stays user.invite.
         if (!ctx.can(p['platform.user.invite'], 'tenant')) return err(appError('FORBIDDEN'));
       } else if (role.privileged || !canGive(ctx, role)) {
-        // Ordinary path: privileged roles go through the privileged action (strict session check); and
-        // nobody gives a role with permissions they do not hold.
+        // Ordinary path: privileged roles go through the privileged action (strict session check); every
+        // ordinary role with platform.role.assign (who can give what, PO 17 Oct 2026).
         return err(roleNotAllowed());
       }
       // One unit for a department-limited custom role, none for any other (EP-ORG BR-ORG-d).

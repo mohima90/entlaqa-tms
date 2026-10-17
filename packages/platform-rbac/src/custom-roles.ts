@@ -11,11 +11,14 @@ import type { RoleScope, SystemRoleDefinition } from './system-roles';
  * database repeats every rule of this file (migrations 20261019090000…090200, drift tests in
  * custom-roles.test.ts).
  *
- * Rules (business flow docs/business-flows/EP-ROLES-roles-and-custom-roles.md §5):
- * - only the Organization Admin creates, changes or deletes custom roles (`platform.role.manage`);
- * - nobody gives a permission they do not hold themselves (the builder offers only what the actor holds
- *   organization-wide, the database refuses the rest);
- * - a custom role with any high-risk permission is PRIVILEGED: only the Organization Admin gives it.
+ * Rules (business flow docs/business-flows/EP-ROLES-roles-and-custom-roles.md §5; who can give what, PO
+ * 17 Oct 2026 — migration 20261020200000):
+ * - only the Organization Admin creates, changes or deletes custom roles (`platform.role.manage`), and may
+ *   put in them ANY permission of the catalogue below — also training permissions it does not hold itself
+ *   (it holds none, BR-IAM-4); never the admin-only ones (role management, privileged role assignment,
+ *   the organization structure), which are not in the catalogue;
+ * - a custom role with any high-risk or user / role / structure management permission is PRIVILEGED: only
+ *   the Organization Admin gives it; every other (ordinary) role the HR Manager gives too.
  */
 
 /** The data a custom role reaches (one per role; per-assignment scopes are FR-IAM-08, R2). */
@@ -50,8 +53,9 @@ export function scopeNeedsUnit(dataScope: CustomRoleScope): boolean {
  *   organization's profile — no personal data), like for the standard roles;
  * - `organization_only`: an administrative permission, available only to a role whose scope is the whole
  *   organization (the database guards check these organization-wide).
- * Permissions not listed here (`platform.role.assign_privileged`, `platform.role.manage`) define the
- * Organization Admin and are never part of a custom role (BR-IAM-4).
+ * Permissions not listed here are never part of a custom role (`custom_role_use = 'none'`): the
+ * Organization Admin's own (`platform.role.assign_privileged`, `platform.role.manage`, BR-IAM-4) and the
+ * organization structure (`platform.org.manage`, the HR Manager's — PO, 11 and 17 Oct 2026).
  */
 export type CustomRoleUse = 'scoped' | 'organization' | 'organization_only';
 
@@ -90,9 +94,8 @@ const c = coursePermissions;
 
 /**
  * Every permission of the catalogue by code: the platform's and the module permissions held by the
- * standard roles (course library, T-M3-03; planning cycles, EP-PLN T-M3-04; needs forms, T-M3-10 — the
- * needs-form permissions are not part of a custom role yet). Unknown codes are not in it (callers fail
- * closed).
+ * standard roles (course library, T-M3-03; planning cycles, EP-PLN T-M3-04; needs forms, T-M3-10). Unknown
+ * codes are not in it (callers fail closed).
  */
 export const CATALOGUE_PERMISSIONS: Readonly<Record<string, PermissionDefinition>> = Object.freeze({
   ...platformPermissions,
@@ -104,7 +107,8 @@ export const CATALOGUE_PERMISSIONS: Readonly<Record<string, PermissionDefinition
 /**
  * The permission catalogue of the role builder, in screen order (platform permissions, then module
  * permissions as each module's features ship: the course library since T-M3-03, planning cycles since
- * T-M3-04). Mirrored in `platform.ref_permissions` (drift test).
+ * T-M3-04, needs forms since who can give what — PO, 17 Oct 2026). Mirrored in `platform.ref_permissions`
+ * (drift test).
  */
 export const CUSTOM_ROLE_PERMISSIONS: readonly CustomRolePermission[] = [
   { permission: p['platform.user.read'], group: 'people', use: 'scoped' },
@@ -116,7 +120,6 @@ export const CUSTOM_ROLE_PERMISSIONS: readonly CustomRolePermission[] = [
   { permission: p['platform.role.read'], group: 'roles', use: 'scoped' },
   { permission: p['platform.role.assign'], group: 'roles', use: 'organization_only' },
   { permission: p['platform.org.read'], group: 'organization', use: 'organization' },
-  { permission: p['platform.org.manage'], group: 'organization', use: 'organization_only' },
   { permission: p['platform.tenant.read'], group: 'settings', use: 'organization' },
   { permission: p['platform.tenant.manage'], group: 'settings', use: 'organization_only' },
   { permission: p['platform.security.manage'], group: 'settings', use: 'organization_only' },
@@ -138,6 +141,25 @@ export const CUSTOM_ROLE_PERMISSIONS: readonly CustomRolePermission[] = [
     group: 'planning',
     use: 'organization_only',
   },
+  // Needs forms (T-M3-10; usable in custom roles since PO, 17 Oct 2026 — migration 20261020200000): the
+  // forms library is organization data without personal data (like the course library); designing forms
+  // is administrative (a role that sees the whole organization).
+  { permission: tmsRolePermissions['tms.needs_form.read'], group: 'planning', use: 'organization' },
+  {
+    permission: tmsRolePermissions['tms.needs_form.manage'],
+    group: 'planning',
+    use: 'organization_only',
+  },
+];
+
+/**
+ * Permissions of standard roles that are never part of a custom role (`custom_role_use = 'none'`) but are
+ * shown, read-only, in their module group on a role's page: the organization structure, the HR Manager's
+ * (PO, 11 and 17 Oct 2026). The Organization Admin's own permissions are shown as «Organization Admin
+ * only» instead.
+ */
+export const STANDARD_ONLY_PERMISSIONS: readonly Omit<CustomRolePermission, 'use'>[] = [
+  { permission: p['platform.org.manage'], group: 'organization' },
 ];
 
 const PERMISSIONS_BY_CODE: ReadonlyMap<string, PermissionDefinition> = new Map(
@@ -169,7 +191,8 @@ export interface CustomRoleDefinition {
 /**
  * Permissions that make a role privileged although they are not high-risk: managing users or roles
  * (PO rule of 5 Oct 2026, kept for custom roles — security review H1). Mirrored by
- * `platform.ref_permissions.privileged` (drift test).
+ * `platform.ref_permissions.privileged` (drift test). `platform.org.manage` is no longer part of a custom
+ * role (PO, 17 Oct 2026) but still makes a role privileged (the HR Manager's).
  */
 export const USER_MANAGEMENT_PERMISSIONS: readonly string[] = [
   'platform.user.invite',
@@ -209,17 +232,16 @@ export function customRoleGrantScope(code: string, dataScope: CustomRoleScope): 
 /** Why a set of permissions cannot make a custom role (same rules as the database guards). */
 export type CustomRolePermissionProblem =
   | { readonly code: string; readonly reason: 'unknown' }
-  | { readonly code: string; readonly reason: 'needs_organization_scope' }
-  | { readonly code: string; readonly reason: 'not_held' };
+  | { readonly code: string; readonly reason: 'needs_organization_scope' };
 
 /**
- * Checks the permissions of a custom role: from the catalogue, administrative ones only with the whole
- * organization as scope, and each held organization-wide by the actor (`held`).
+ * Checks the permissions of a custom role: from the catalogue (never an admin-only one), administrative
+ * ones only with the whole organization as scope. Whether the builder holds a permission does not matter
+ * (who can give what, PO 17 Oct 2026 — replacing "nobody gives a permission they do not hold").
  */
 export function customRolePermissionProblems(
   permissions: readonly string[],
   dataScope: CustomRoleScope,
-  held: ReadonlySet<string>,
 ): CustomRolePermissionProblem[] {
   const problems: CustomRolePermissionProblem[] = [];
   for (const code of permissions) {
@@ -227,7 +249,7 @@ export function customRolePermissionProblems(
     if (!entry) problems.push({ code, reason: 'unknown' });
     else if (entry.use === 'organization_only' && dataScope !== 'organization') {
       problems.push({ code, reason: 'needs_organization_scope' });
-    } else if (!held.has(code)) problems.push({ code, reason: 'not_held' });
+    }
   }
   return problems;
 }

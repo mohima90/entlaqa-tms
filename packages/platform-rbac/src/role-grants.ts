@@ -107,7 +107,7 @@ export function grantsForAssignments(
   return grants;
 }
 
-/** What deciding about giving a role needs: whether it is privileged and the permissions it grants. */
+/** What deciding about giving a role needs (whether it is privileged) and the permissions it grants. */
 export interface AssignableRole {
   readonly code: string;
   readonly privileged: boolean;
@@ -135,13 +135,14 @@ export function customAssignableRole(role: CustomRoleDefinition): AssignableRole
 }
 
 /**
- * May the actor give or remove `role`? (ADR 0003 §5; PO decisions 5 Oct 2026 and 17 Oct 2026, EP-ROLES)
+ * May the actor give or remove `role`? (ADR 0003 §5; PO decisions 5 Oct 2026 and 17 Oct 2026, EP-ROLES —
+ * who can give what)
  * - `platform.role.assign_privileged` (the Organization Admin) gives every role;
- * - otherwise the role must not be privileged, the actor needs `platform.role.assign`, and — nobody gives
- *   a permission they do not hold — every permission of the role must be the actor's organization-wide;
+ * - `platform.role.assign` (the HR Manager) gives every role that is not privileged — whether the actor
+ *   holds the role's permissions does not matter (it replaced "nobody gives a permission they do not hold");
  * - all checks tenant-wide and active now, with authorize() so validity windows apply as in defineAction;
  * - never on the actor's own membership (checked by the caller, and again in the database), which runs
- *   the same rule (private.member_may_give_roles).
+ *   the same rule (private.member_may_give_roles, migration 20261020200000).
  */
 export function canAssignRole(
   subject: AuthorizationSubject,
@@ -152,21 +153,5 @@ export function canAssignRole(
   const allowed = (permission: PermissionDefinition) =>
     authorize(subject, permission, undefined, { now }).allowed;
   if (allowed(platformPermissions['platform.role.assign_privileged'])) return true;
-  if (role.privileged || !allowed(platformPermissions['platform.role.assign'])) return false;
-  return role.permissions.every((code) => holdsTenantWide(subject, code, now));
-}
-
-/** Does the subject hold `code` organization-wide now (a `tenant`-scope grant in force)? */
-export function holdsTenantWide(
-  subject: Pick<AuthorizationSubject, 'grants'>,
-  code: string,
-  now: Date = new Date(),
-): boolean {
-  return subject.grants.some(
-    (g) =>
-      g.permission === code &&
-      g.scope.type === 'tenant' &&
-      (!g.validFrom || g.validFrom <= now) &&
-      (!g.validUntil || now < g.validUntil),
-  );
+  return !role.privileged && allowed(platformPermissions['platform.role.assign']);
 }

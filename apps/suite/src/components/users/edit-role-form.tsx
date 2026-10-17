@@ -43,8 +43,8 @@ export interface EditRoleFormProps {
 
 /**
  * Change a member's role (T-M2-14; EP-ROLES, PO 17 Oct 2026 — Kawadir's «تعديل الدور»: one role per person,
- * standard or custom). Privileged roles (and roles with permissions the member does not hold) are listed
- * but disabled for anyone but the Organization Admin; a change touching a privileged role goes through
+ * standard or custom). Privileged roles are listed but disabled for anyone but the Organization Admin
+ * (every ordinary role can be given — who can give what, PO 17 Oct 2026); a change touching a privileged role goes through
  * the privileged action. Department Head (or a custom role limited to «their departments») sees the
  * departments the person heads in the structure (set by HR).
  */

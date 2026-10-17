@@ -69,7 +69,7 @@ const FIELD_ERROR_KEYS = [
 /**
  * Invite a user (T-M2-07, FR-IAM-03, BR-IAM-1; approved screen 2): HR Manager or Organization Admin
  * (`platform.user.invite`); one role per person (EP-ROLES), privileged roles only by the Organization
- * Admin, and nobody gives a role with permissions they don't hold.
+ * Admin, every ordinary role also by the HR Manager (who can give what, PO 17 Oct 2026).
  */
 export default async function InviteUserPage({ params }: { params: Promise<{ locale: string }> }) {
   const { locale } = await params;

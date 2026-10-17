@@ -21,7 +21,6 @@ const permission = (
   highRisk: false,
   makesPrivileged: false,
   organizationOnly: false,
-  held: true,
   ...extra,
 });
 
@@ -39,7 +38,8 @@ const groups: BuilderGroup[] = [
     title: 'Organization',
     permissions: [
       permission('platform.org.read'),
-      permission('platform.org.manage', { held: false }),
+      // A training permission the Organization Admin does not hold: tickable (PO, 17 Oct 2026).
+      permission('tms.course.manage', { organizationOnly: true }),
     ],
   },
   {
@@ -64,14 +64,16 @@ const empty = {
 };
 
 describe('permissionBlock', () => {
-  it('not held permissions and administrative ones outside the whole organization cannot be ticked', () => {
+  it('administrative permissions outside the whole organization cannot be ticked; all others can', () => {
     const [read, invite] = groups[0]?.permissions ?? [];
     const manage = groups[1]?.permissions[1];
     if (!read || !invite || !manage) throw new Error('fixture');
     expect(permissionBlock(read, 'own', false)).toBeNull();
     expect(permissionBlock(invite, 'team', false)).toBe('needsOrganization');
     expect(permissionBlock(invite, 'organization', false)).toBeNull();
-    expect(permissionBlock(manage, 'organization', false)).toBe('notHeld');
+    // Who can give what (PO, 17 Oct 2026): no "not held" block any more.
+    expect(permissionBlock(manage, 'organization', false)).toBeNull();
+    expect(permissionBlock(manage, 'team', false)).toBe('needsOrganization');
   });
 
   it('a ticked permission can always be cleared', () => {
@@ -151,6 +153,7 @@ describe('applyStart', () => {
         permissions: ['platform.user.read', 'platform.user.invite', 'platform.org.manage', 'x.y.z'],
       }),
     );
+    // Not in the catalogue (the structure, unknown codes) or administrative outside the organization.
     expect(values).toEqual({
       nameEn: 'Reviewer',
       nameAr: 'مراجع',
@@ -158,6 +161,20 @@ describe('applyStart', () => {
       dataScope: 'departments',
       permissions: ['platform.user.read'],
     });
+  });
+
+  it('copying the L&D Manager keeps its training permissions (the Organization Admin holds none)', () => {
+    const values = applyStart(
+      groups,
+      empty,
+      start({
+        value: 'standard:training_manager',
+        group: 'standard',
+        dataScope: 'organization',
+        permissions: ['platform.user.read', 'tms.course.manage'],
+      }),
+    );
+    expect(values.permissions).toEqual(['platform.user.read', 'tms.course.manage']);
   });
 });
 
@@ -185,7 +202,7 @@ describe('builderFieldError', () => {
       field: 'dataScope',
       key: 'dataScope',
     });
-    expect(builderFieldError('permissions', 'PERMISSION_NOT_HELD')).toEqual({
+    expect(builderFieldError('permissions', 'NEEDS_ORGANIZATION_SCOPE')).toEqual({
       field: 'permissions',
       key: 'permissions',
     });

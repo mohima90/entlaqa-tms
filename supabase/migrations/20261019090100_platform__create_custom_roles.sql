@@ -14,8 +14,8 @@
 --   * nobody gives a permission they do not hold organization-wide; platform.role.assign_privileged and
 --     platform.role.manage are never part of a custom role; administrative permissions
 --     (custom_role_use = organization_only) only in a role whose scope is the whole organization;
---   * a role still held by a member, or named by a pending invitation, is not deleted (JR002, with the
---     numbers in the message).
+--   * a role still held by a member (not revoked), or named by a pending invitation, is not deleted (JR002,
+--     with the numbers in the message); rows of revoked memberships go with the role.
 -- A custom role with any high-risk permission is privileged (private.role_is_privileged): only the
 -- Organization Admin gives it (migration 20261019090200).
 --
@@ -341,7 +341,8 @@ begin
   end if;
   if tg_op = 'DELETE' then
     select count(*) into v_members from platform.role_assignments ra
-    where ra.tenant_id = old.tenant_id and ra.role_code = old.code;
+    join platform.tenant_memberships m on m.tenant_id = ra.tenant_id and m.id = ra.membership_id
+    where ra.tenant_id = old.tenant_id and ra.role_code = old.code and m.status <> 'revoked';
     select count(*) into v_invitations from platform.invitations i
     where i.tenant_id = old.tenant_id and i.status = 'pending'
       and (i.primary_role = old.code or old.code = any (i.additional_roles));
@@ -349,6 +350,11 @@ begin
       raise exception 'the role is still held: % member(s), % pending invitation(s)', v_members, v_invitations
         using errcode = 'JR002';
     end if;
+    -- A revoked membership holds nothing any more: its leftover row goes with the role (history: audit log).
+    delete from platform.role_assignments ra
+    using platform.tenant_memberships m
+    where m.tenant_id = ra.tenant_id and m.id = ra.membership_id
+      and ra.tenant_id = old.tenant_id and ra.role_code = old.code and m.status = 'revoked';
     return old;
   end if;
   return new;

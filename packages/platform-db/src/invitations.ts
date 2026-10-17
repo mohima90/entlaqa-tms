@@ -71,7 +71,9 @@ export interface NewInvitation {
   readonly branchId?: string | null;
   readonly managerPersonId?: string | null;
   readonly employeeNumber?: string | null;
+  /** The role it gives: a standard role or a custom role of the organization (EP-ROLES). */
   readonly primaryRole: string;
+  /** Always empty since EP-ROLES (one role per person; the database refuses others). */
   readonly additionalRoles: readonly string[];
   readonly locale: 'ar' | 'en';
 }
@@ -83,6 +85,10 @@ export interface InvitationRow {
   readonly displayNameAr: string;
   readonly displayNameEn: string | null;
   readonly primaryRole: string;
+  /** The names of a custom role (EP-ROLES); null for a standard role. */
+  readonly primaryRoleName: { readonly ar: string; readonly en: string } | null;
+  /** It gives a privileged role (standard, or custom with a high-risk permission: computed now). */
+  readonly privileged: boolean;
   readonly state: InvitationState;
   readonly sendCount: number;
   readonly expiresAt: Date;
@@ -162,6 +168,9 @@ export function invitationErrorOf(error: unknown): unknown {
     }
   }
   if (pg?.code === '42501')
+    return new DomainError<InvitationErrorCode>('ROLE_NOT_ALLOWED', { cause: error });
+  // A role that does not exist (any more): e.g. a custom role deleted while the form was open (EP-ROLES).
+  if (pg?.code === '23503' && pg.message.startsWith('unknown role'))
     return new DomainError<InvitationErrorCode>('ROLE_NOT_ALLOWED', { cause: error });
   // An invitation code collided with another a few times in a row (32^12 codes: practically never).
   if (pg?.code === '23505' && pg.constraint === 'invitations_invite_code_uq') return error;
@@ -251,12 +260,18 @@ export async function listInvitations(
     has_code: boolean;
     locale: string;
     additional_roles: string[] | null;
+    role_name_ar: string | null;
+    role_name_en: string | null;
+    privileged: boolean;
   }>(sql`
     select i.id, i.person_id, i.email, p.display_name_ar, p.display_name_en, i.primary_role,
            ${STATE} as state, i.send_count, i.expires_at, i.created_at, i.import_id,
-           c.invitation_id is not null as has_code, i.locale, i.additional_roles
+           c.invitation_id is not null as has_code, i.locale, i.additional_roles,
+           cr.name_ar as role_name_ar, cr.name_en as role_name_en,
+           private.roles_include_privileged(i.tenant_id, array[i.primary_role] || i.additional_roles) as privileged
     from platform.invitations i
     join platform.persons p on p.tenant_id = i.tenant_id and p.id = i.person_id
+    left join platform.custom_roles cr on cr.tenant_id = i.tenant_id and cr.code = i.primary_role
     -- Whether the caller may copy a code (managing rules per invitation, migration 20261018090000). Only
     -- the id leaves the database here: the codes stay in it (security review M2).
     left join (select x.invitation_id from private.invitation_codes() x) c on c.invitation_id = i.id
@@ -269,6 +284,11 @@ export async function listInvitations(
     displayNameAr: r.display_name_ar,
     displayNameEn: r.display_name_en,
     primaryRole: r.primary_role,
+    primaryRoleName:
+      r.role_name_ar !== null && r.role_name_en !== null
+        ? { ar: r.role_name_ar, en: r.role_name_en }
+        : null,
+    privileged: r.privileged,
     state: r.state,
     sendCount: r.send_count,
     expiresAt: toDate(r.expires_at),
@@ -321,16 +341,25 @@ export async function revokeInvitation(tx: ClaimsTx, id: string): Promise<boolea
 }
 
 /**
- * The roles an invitation gives (primary and additional), or null when it is unknown or not visible to
+ * The roles an invitation gives (primary and additional) and whether one is privileged (standard, or a
+ * custom role with a high-risk permission — computed now), or null when it is unknown or not visible to
  * the caller. Lets an action apply the privileged-role rule before changing the invitation.
  */
 export async function getInvitationRoles(
   tx: ClaimsTx,
   id: string,
-): Promise<{ primaryRole: string; additionalRoles: string[] } | null> {
-  const [row] = await tx.execute<{ primary_role: string; additional_roles: string[] }>(sql`
-    select primary_role, additional_roles from platform.invitations where id = ${id}::uuid`);
-  return row ? { primaryRole: row.primary_role, additionalRoles: row.additional_roles } : null;
+): Promise<{ primaryRole: string; additionalRoles: string[]; privileged: boolean } | null> {
+  const [row] = await tx.execute<{ primary_role: string; additional_roles: string[]; privileged: boolean }>(sql`
+    select primary_role, additional_roles,
+           private.roles_include_privileged(tenant_id, array[primary_role] || additional_roles) as privileged
+    from platform.invitations where id = ${id}::uuid`);
+  return row
+    ? {
+        primaryRole: row.primary_role,
+        additionalRoles: row.additional_roles,
+        privileged: row.privileged,
+      }
+    : null;
 }
 
 /** The outcome of a resend: a new code (the old link stops working), or why there is none. */

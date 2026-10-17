@@ -155,15 +155,23 @@ describe('roles', () => {
   it('reads Arabic and English names and codes; only non-privileged roles are importable', () => {
     expect(roleForName('منسق التدريب')).toBe('training_coordinator');
     expect(roleForName('training coordinator')).toBe('training_coordinator');
-    expect(roleForName('Mentor / Assessor')).toBe('mentor');
-    expect(roleForName('مرشد/مقيم')).toBe('mentor');
+    expect(roleForName('Department Head')).toBe('department_head');
+    expect(roleForName('رئيس القسم')).toBe('department_head');
     expect(roleForName('learner')).toBe('learner');
+    expect(roleForName('موظف')).toBe('learner');
+    // Former names of the six roles (EP-ROLES) are still read; the former system roles are not.
+    expect(roleForName('متدرب')).toBe('learner');
+    expect(roleForName('Learner')).toBe('learner');
+    expect(roleForName('مدير المنشأة')).toBe('tenant_admin');
+    expect(roleForName('Mentor / Assessor')).toBeNull();
+    expect(roleForName('Auditor')).toBeNull();
     expect(roleForName('منسق')).toBeNull();
     expect(isPrivilegedRole('hr_manager')).toBe(true);
     expect(isPrivilegedRole('learner')).toBe(false);
     expect(IMPORTABLE_ROLES.map((r) => r.code)).not.toContain('tenant_admin');
     expect(IMPORTABLE_ROLES.every((r) => !r.privileged)).toBe(true);
-    expect(roleName('learner', 'ar')).toBe('متدرب');
+    expect(roleName('learner', 'ar')).toBe('موظف');
+    expect(roleName('learner', 'en')).toBe('Employee');
     expect(roleName('nope', 'en')).toBe('nope');
   });
 
@@ -240,7 +248,7 @@ describe('normalizeRow', () => {
         'K.Alshehri@alraya.example',
         '٢٠٢٤/٣/٣',
         'منسق التدريب',
-        'متدرب، مدرب داخلي',
+        '',
         'English',
       ],
       FULL,
@@ -263,7 +271,6 @@ describe('normalizeRow', () => {
       hire_date: '2024-03-03',
       roles_given: true,
       primary_role: 'training_coordinator',
-      additional_roles: ['learner', 'internal_instructor'],
       language: 'en',
     });
     expect(row.cells.email).toBe(' N.Aldossari@Alraya.Example ');
@@ -290,12 +297,13 @@ describe('normalizeRow', () => {
         'not-an-email',
         '03/03/2024',
         'مدير الموارد البشرية',
-        'منسق، مدير المنشأة، متدرب، متدرب',
+        'منسق، مدير المنظمة، متدرب، متدرب',
         'فرنسي',
       ],
       FULL,
     );
-    expect(row.data).toEqual({ roles_given: true, additional_roles: ['learner'] });
+    // One role per person (EP-ROLES): the additional roles are checked, never staged.
+    expect(row.data).toEqual({ roles_given: true });
     expect(row.issues.map((i) => `${i.c}:${i.s}:${i.f ?? ''}`)).toEqual([
       'EMAIL_INVALID:e:email',
       'NAME_AR_REQUIRED:e:first_name_ar',
@@ -310,6 +318,7 @@ describe('normalizeRow', () => {
       'ROLE_UNKNOWN:e:additional_roles',
       'ROLE_ORG_ADMIN:e:additional_roles',
       'ROLE_REPEATED:i:additional_roles',
+      'ROLES_ONE_PER_PERSON:w:additional_roles',
       'LANGUAGE_UNKNOWN:w:language',
     ]);
     expect(row.issues.find((i) => i.c === 'ROLE_PRIVILEGED')?.p).toEqual({ role: 'hr_manager' });
@@ -339,7 +348,9 @@ describe('normalizeRow', () => {
           'additional_roles',
         ]);
         expect(row.data.primary_role).toBeUndefined();
-        expect(row.data.additional_roles).toEqual(['learner']);
+        // Never staged (one role per person); the review says the additional roles are ignored.
+        expect(row.data.additional_roles).toBeUndefined();
+        expect(row.issues.some((i) => i.c === 'ROLES_ONE_PER_PERSON')).toBe(true);
       }
     }
   });

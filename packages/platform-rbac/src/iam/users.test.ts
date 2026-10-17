@@ -6,7 +6,7 @@ import type { Grant } from '../authorize';
 import type { ActionRuntime } from '../define-action';
 import { createDefineQuery } from '../define-query';
 import { grantsForAssignments } from '../role-grants';
-import type { SystemRoleCode } from '../system-roles';
+import { type TestRoleCode, testRoleGrants } from '../testing/former-roles';
 import { USERS_PAGE_SIZE, userProfileQueryDefinition, usersListQueryDefinition } from './users';
 
 const db = vi.hoisted(() => ({
@@ -19,6 +19,8 @@ const db = vi.hoisted(() => ({
   memberSignInLock: vi.fn(),
   // The organization's security policy (T-M2-10): none — the sign-in lock is measured against 5.
   getSecurityPolicy: vi.fn(() => Promise.resolve(null)),
+  // The organization's custom roles (EP-ROLES): the role filter and «تعديل الدور».
+  listCustomRoles: vi.fn(() => Promise.resolve([])),
 }));
 vi.mock('@jadarat/platform-db', () => db);
 
@@ -29,14 +31,9 @@ const DEPT = '55555555-5555-4555-8555-555555555555';
 
 const TX = 'tx' as unknown as UserTx;
 
-function runtime(roles: SystemRoleCode[]): ActionRuntime<UserTx> {
+function runtime(roles: TestRoleCode[]): ActionRuntime<UserTx> {
   const grants: Grant[] = [
-    ...grantsForAssignments(
-      roles.map((roleCode) => ({ roleCode })),
-      {
-        headedDepartmentIds: [DEPT],
-      },
-    ),
+    ...testRoleGrants(roles, [DEPT]),
   ];
   return {
     getClaims: () => {
@@ -104,8 +101,15 @@ describe('users list query', () => {
         canDeactivate: true,
         // aal1: privileged members come back without an authenticator code (PO decision, 14 Oct 2026).
         privilegedReactivation: 'allowed',
+        // EP-ROLES: the six standard roles (no custom role here), all of which the admin may give.
+        roles: expect.arrayContaining([
+          expect.objectContaining({ code: 'hr_manager', kind: 'standard', assignable: true }),
+        ]) as never,
+        canAssignRoles: true,
+        canAssignPrivileged: true,
       }),
     );
+    expect(result.ok && result.value.roles).toHaveLength(6);
     expect(db.listUsers).toHaveBeenCalledWith(TX, {
       scope: expect.objectContaining({ all: true }),
       actorPersonId: ME,
@@ -117,6 +121,8 @@ describe('users list query', () => {
       branchId: DEPT,
       limit: USERS_PAGE_SIZE,
       offset: 2 * USERS_PAGE_SIZE,
+      // «تعديل الدور» per row needs whether the admin may manage each person.
+      includeManageable: true,
     });
   });
 
@@ -159,19 +165,19 @@ describe('users list query', () => {
     expect(db.listOrgUnitOptions).toHaveBeenCalled();
   });
 
-  it('Line Manager + Learner: roles only for the direct reports, not for their own row', async () => {
-    const list = createDefineQuery(runtime(['line_manager', 'learner']))(
-      usersListQueryDefinition(),
-    );
-    const result = await list({});
-    expect(result.ok && result.value.canReadRoles).toBe(true);
+  it('Line Manager (custom role, their team): people and roles of the direct reports only', async () => {
+    const list = createDefineQuery(runtime(['line_manager']))(usersListQueryDefinition());
+    const result = await list({ role: 'custom_000000000001' });
+    expect(result.ok && result.value).toMatchObject({ canReadRoles: true, canAssignRoles: false });
     expect(db.listUsers).toHaveBeenCalledWith(
       TX,
       expect.objectContaining({
-        scope: expect.objectContaining({ self: true, directReports: true }),
+        scope: expect.objectContaining({ self: false, directReports: true }),
         rolesScope: expect.objectContaining({ self: false, directReports: true }),
+        roleCode: 'custom_000000000001',
       }),
     );
+    expect(db.listUsers.mock.lastCall?.[1]).not.toHaveProperty('includeManageable');
   });
 
   it('deactivated tab: rows say whether the member may manage each person (T-M2-09)', async () => {
@@ -184,9 +190,10 @@ describe('users list query', () => {
       TX,
       expect.objectContaining({ tab: 'deactivated', includeManageable: true }),
     );
-    // Other tabs, or members who do not deactivate: not asked.
+    // Other tabs: asked too when the member gives roles («تعديل الدور», EP-ROLES); not for members who
+    // neither deactivate nor give roles.
     await createDefineQuery(runtime(['hr_manager']))(usersListQueryDefinition())({ tab: 'active' });
-    expect(db.listUsers.mock.lastCall?.[1]).not.toHaveProperty('includeManageable');
+    expect(db.listUsers.mock.lastCall?.[1]).toHaveProperty('includeManageable', true);
     await createDefineQuery(runtime(['training_manager']))(usersListQueryDefinition())({
       tab: 'deactivated',
     });
@@ -197,7 +204,8 @@ describe('users list query', () => {
     const list = createDefineQuery(runtime(['tenant_admin']))(usersListQueryDefinition());
     for (const input of [
       { department: 'x' },
-      { role: 'platform_super_admin' },
+      { role: 'Platform Super Admin' },
+      { role: 'custom_XYZ' },
       { page: '0' },
       { tab: 'revoked' },
       { q: 'x'.repeat(101) },
@@ -315,7 +323,7 @@ describe('user profile query', () => {
       lastAdmin: false,
       ...over,
     });
-    const offer = async (roles: SystemRoleCode[], membershipStatus: string) => {
+    const offer = async (roles: TestRoleCode[], membershipStatus: string) => {
       db.getUserProfile.mockResolvedValue({ personId: REPORT, roles: [], membershipStatus });
       const view = await createDefineQuery(runtime(roles))(userProfileQueryDefinition())({
         personId: REPORT,

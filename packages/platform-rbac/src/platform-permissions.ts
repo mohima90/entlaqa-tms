@@ -97,8 +97,20 @@ export const platformPermissions = definePermissions('platform', [
     code: 'platform.role.assign_privileged',
     label: { ar: 'إسناد الأدوار المميزة', en: 'Assign privileged roles' },
     description: {
-      ar: 'إسناد دور مدير المنشأة والأدوار المميزة الأخرى وسحبها',
+      ar: 'إسناد دور مدير المنظمة والأدوار المميزة الأخرى وسحبها',
       en: 'Give and remove the Organization Admin role and other privileged roles',
+    },
+    risk: 'high',
+    requiresAal2: false,
+  },
+  {
+    // EP-ROLES (FR-IAM-07, PO 17 Oct 2026): create, change and delete the organization's custom roles. The
+    // Organization Admin only — never part of a custom role (custom-roles.ts), so nobody else builds roles.
+    code: 'platform.role.manage',
+    label: { ar: 'إدارة الأدوار المخصصة', en: 'Manage custom roles' },
+    description: {
+      ar: 'إنشاء الأدوار المخصصة وتعديل صلاحياتها وحذفها',
+      en: 'Create custom roles, change their permissions and delete them',
     },
     risk: 'high',
     requiresAal2: false,
@@ -154,7 +166,9 @@ export const platformPermissions = definePermissions('platform', [
     code: 'platform.audit.read',
     label: { ar: 'عرض سجل التدقيق', en: 'View the audit log' },
     description: { ar: 'عرض سجل التدقيق للمنشأة', en: 'View the organization’s audit log' },
-    risk: 'medium',
+    // High since EP-ROLES (PO, 17 Oct 2026): a custom role is privileged when it holds a high-risk
+    // permission, and reading the audit log has always made a role privileged (Auditor, Compliance Officer).
+    risk: 'high',
     requiresAal2: false,
   },
 ]);

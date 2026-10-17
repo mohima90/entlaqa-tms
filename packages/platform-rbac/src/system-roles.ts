@@ -2,29 +2,43 @@ import type { LocalizedText, PermissionDefinition } from './permissions';
 import { platformPermissions } from './platform-permissions';
 
 /**
- * The 14 system roles of every organization (BRD §4.2, Appendix B; FR-IAM-07). Platform Super Admin is
- * ENTLAQA-only (platform console, ADR 0003 §6) and is NOT a tenant role (PO, 4 Oct 2026).
+ * The six standard roles of every organization (EP-ROLES, PO 17 Oct 2026; BRD v3.1 §4.2, Appendix B;
+ * FR-IAM-07). Platform Super Admin is ENTLAQA-only (platform console, ADR 0003 §6) and is NOT a tenant
+ * role (PO, 4 Oct 2026).
  *
- * System roles live in code, versioned with the permissions they grant: organizations cannot edit them
- * (FR-IAM-07), and the database keeps only their codes (`platform.ref_roles`, checked against this list
- * by a drift test) so role assignments can reference them. Custom roles (R2) will be stored per tenant.
+ * Standard roles live in code, versioned with the permissions they grant: organizations cannot edit them
+ * (FR-IAM-07), and the database keeps their codes (`platform.ref_roles`) and grants
+ * (`platform.ref_role_permissions`), checked against this list by drift tests, so assignments can reference
+ * them and the database guards can decide by permission. Custom roles are stored per organization
+ * (custom-roles.ts, `platform.custom_roles`). A person holds ONE role per organization (Kawadir; PO,
+ * 17 Oct 2026).
  */
 export const SYSTEM_ROLE_CODES = [
   'tenant_admin',
+  'hr_manager',
   'training_manager',
   'training_coordinator',
-  'hr_manager',
-  'finance_manager',
-  'compliance_officer',
   'department_head',
-  'line_manager',
-  'internal_instructor',
-  'external_instructor',
-  'provider_admin',
-  'mentor',
   'learner',
-  'auditor',
 ] as const;
+
+/**
+ * The eight former system roles (T-M2-03) that are no longer standard (EP-ROLES, PO 17 Oct 2026). Their
+ * assignments were mapped by migration 20261019090300 (docs/delivery/roles/README.md §4) and their codes
+ * removed from `platform.ref_roles`: nobody can be given them. Their names stay for history only (audit
+ * events and old invitations name them); the former Instructor, Line Manager, Finance, Compliance and
+ * Auditor roles are custom-role templates now (role-templates.ts).
+ */
+export const FORMER_ROLE_NAMES: Readonly<Record<string, LocalizedText>> = {
+  finance_manager: { ar: 'المدير المالي', en: 'Finance Manager' },
+  compliance_officer: { ar: 'مسؤول الامتثال', en: 'Compliance Officer' },
+  line_manager: { ar: 'المدير المباشر', en: 'Line Manager' },
+  internal_instructor: { ar: 'مدرب داخلي', en: 'Internal Instructor' },
+  external_instructor: { ar: 'مدرب خارجي', en: 'External Instructor' },
+  provider_admin: { ar: 'مسؤول جهة التدريب', en: 'Training Provider Admin' },
+  mentor: { ar: 'مرشد / مقيّم', en: 'Mentor / Assessor' },
+  auditor: { ar: 'مدقق', en: 'Auditor' },
+};
 
 export type SystemRoleCode = (typeof SYSTEM_ROLE_CODES)[number];
 
@@ -66,12 +80,13 @@ const tenantWide = (...permissions: PermissionDefinition[]): RoleGrantDefinition
 export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
   {
     code: 'tenant_admin',
-    name: { ar: 'مدير المنشأة', en: 'Organization Admin' },
+    // «مدير المنظمة» (Kawadir; PO, 17 Oct 2026 — replaces «مدير المنشأة»).
+    name: { ar: 'مدير المنظمة', en: 'Organization Admin' },
     // A setup role (PO, 7 Oct 2026; BRD Appendix B): sets the organization up and hands it over to HR;
     // never core training features (module permissions, M3+) — enforced by system-roles.test.ts — and
-    // never held together with any other role (BR-IAM-4, PO 8 Oct 2026, separation-of-duties.ts).
+    // always held alone (BR-IAM-4; one role per person since EP-ROLES).
     description: {
-      ar: 'يُعدّ المنشأة: الإعدادات والهوية والمستخدمون والأدوار والأمان والتكاملات وسجل التدقيق، دون الوصول إلى ميزات التدريب.',
+      ar: 'يُعدّ المنظمة: الإعدادات والهوية والمستخدمون والأدوار والأمان والتكاملات وسجل التدقيق، دون الوصول إلى ميزات التدريب.',
       en: 'Sets up the organization: settings, branding, users and roles, security, integrations and audit. No access to training features.',
     },
     privileged: true,
@@ -82,32 +97,11 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
     ),
   },
   {
-    code: 'training_manager',
-    // Display name «مدير التعلم والتطوير» / "L&D Manager" (PO, 14 Oct 2026; BRD v2.9); the code stays.
-    name: { ar: 'مدير التعلم والتطوير', en: 'L&D Manager' },
-    description: {
-      ar: 'الخطط ودليل الدورات والجلسات والموارد والتسجيلات والتقارير.',
-      en: 'Plans, catalog, sessions, resources, enrollments and reports.',
-    },
-    privileged: false,
-    grants: tenantWide(p['platform.user.read'], p['platform.role.read'], p['platform.org.read']),
-  },
-  {
-    code: 'training_coordinator',
-    name: { ar: 'منسق التدريب', en: 'Training Coordinator' },
-    description: {
-      ar: 'تشغيل الجلسات يوميًا: الجدولة والتجهيزات والحضور.',
-      en: 'Day-to-day session operations: scheduling, logistics and attendance.',
-    },
-    privileged: false,
-    grants: tenantWide(p['platform.user.read'], p['platform.role.read'], p['platform.org.read']),
-  },
-  {
     code: 'hr_manager',
     name: { ar: 'مدير الموارد البشرية', en: 'HR Manager' },
     description: {
-      ar: 'سجلات الموظفين والهيكل التنظيمي والتدريب الإلزامي والامتثال، ودعوة المستخدمين وإسناد الأدوار غير المميزة.',
-      en: 'Employee records, organization structure, mandatory training and compliance; invites users and gives non-privileged roles.',
+      ar: 'سجلات الموظفين والفروع والأقسام ورؤساؤها وقواعد الامتثال، ودعوة المستخدمين وإسناد الأدوار غير المميزة.',
+      en: 'Employee records, branches, departments and department heads, compliance rules; invites people and gives roles that are not privileged.',
     },
     privileged: true,
     grants: tenantWide(
@@ -123,37 +117,32 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
     ),
   },
   {
-    code: 'finance_manager',
-    name: { ar: 'المدير المالي', en: 'Finance Manager' },
+    code: 'training_manager',
+    // Display name «مدير التعلم والتطوير» / "L&D Manager" (PO, 14 Oct 2026; BRD v2.9); the code stays.
+    name: { ar: 'مدير التعلم والتطوير', en: 'L&D Manager' },
     description: {
-      ar: 'الميزانيات وأوامر الشراء والفواتير والمدفوعات.',
-      en: 'Budgets, purchase orders, invoices and payments.',
+      ar: 'دليل الدورات ودورات التخطيط والخطة والميزانية والموافقات والجلسات والإشعارات وتقارير التدريب.',
+      en: 'Course library, planning cycles, plan and budget, approvals, sessions, notifications and training reports.',
     },
-    privileged: true,
+    privileged: false,
     grants: tenantWide(p['platform.user.read'], p['platform.role.read'], p['platform.org.read']),
   },
   {
-    code: 'compliance_officer',
-    name: { ar: 'مسؤول الامتثال', en: 'Compliance Officer' },
+    code: 'training_coordinator',
+    name: { ar: 'منسق التدريب', en: 'Training Coordinator' },
     description: {
-      ar: 'لوحات الامتثال والتقارير التنظيمية، وعرض سجل التدقيق.',
-      en: 'Compliance dashboards and regulatory reports; reads the audit log.',
+      ar: 'الجدولة والتجهيزات والتسجيلات والحضور، والمساعدة في جمع الاحتياجات وتوحيدها.',
+      en: 'Scheduling, logistics, enrollments and attendance; helps collect and consolidate needs.',
     },
-    // Reads the audit log (like the Auditor): privileged.
-    privileged: true,
-    grants: tenantWide(
-      p['platform.user.read'],
-      p['platform.role.read'],
-      p['platform.org.read'],
-      p['platform.audit.read'],
-    ),
+    privileged: false,
+    grants: tenantWide(p['platform.user.read'], p['platform.role.read'], p['platform.org.read']),
   },
   {
     code: 'department_head',
     name: { ar: 'رئيس القسم', en: 'Department Head' },
     description: {
-      ar: 'خطة القسم وموافقاته وتقاريره.',
-      en: 'The department’s plan, approvals and reports.',
+      ar: 'أقسامه فقط: يقترح الاحتياجات ويعتمد بنود الخطة والطلبات ويرى فريقه.',
+      en: 'Their departments only: proposes needs, approves plan lines and requests, sees the team.',
     },
     privileged: false,
     grants: [
@@ -163,84 +152,15 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
     ],
   },
   {
-    code: 'line_manager',
-    name: { ar: 'المدير المباشر', en: 'Line Manager' },
-    description: {
-      ar: 'طلبات الفريق المباشر وترشيحاته والموافقة عليها.',
-      en: 'Direct reports’ requests, nominations and approvals.',
-    },
-    privileged: false,
-    grants: [
-      { permission: p['platform.user.read'], scope: 'direct_reports' },
-      { permission: p['platform.role.read'], scope: 'direct_reports' },
-      { permission: p['platform.org.read'], scope: 'tenant' },
-    ],
-  },
-  {
-    code: 'internal_instructor',
-    name: { ar: 'مدرب داخلي', en: 'Internal Instructor' },
-    description: {
-      ar: 'الجلسات المسندة والحضور والمواد والتصحيح.',
-      en: 'Assigned sessions, attendance, materials and grading.',
-    },
-    privileged: false,
-    grants: [],
-  },
-  {
-    code: 'external_instructor',
-    name: { ar: 'مدرب خارجي', en: 'External Instructor' },
-    description: {
-      ar: 'الجلسات المسندة فقط، دون الاطلاع على بيانات المنشأة.',
-      en: 'Assigned sessions only; no organization data.',
-    },
-    privileged: false,
-    grants: [],
-  },
-  {
-    code: 'provider_admin',
-    name: { ar: 'مسؤول جهة التدريب', en: 'Training Provider Admin' },
-    description: {
-      ar: 'بوابة جهة التدريب: العروض وقوائم المتدربين والفواتير.',
-      en: 'Provider portal: offerings, rosters and invoices.',
-    },
-    privileged: false,
-    grants: [],
-  },
-  {
-    code: 'mentor',
-    name: { ar: 'مرشد / مقيّم', en: 'Mentor / Assessor' },
-    description: {
-      ar: 'قوائم الملاحظة والتدريب على رأس العمل للمتدربين المسندين.',
-      en: 'On-the-job and observation checklists for assigned trainees.',
-    },
-    privileged: false,
-    grants: [],
-  },
-  {
     code: 'learner',
-    name: { ar: 'متدرب', en: 'Learner' },
+    // «موظف» / "Employee" (PO, 17 Oct 2026 — replaces «متدرب» / Learner); the code stays.
+    name: { ar: 'موظف', en: 'Employee' },
     description: {
-      ar: 'دليل الدورات والتسجيل والسجل التدريبي والشهادات الخاصة به.',
-      en: 'Catalog, enrollments, own training record and certificates.',
+      ar: 'طلباته وتدريبه وشهاداته.',
+      en: 'Own requests, training and certificates.',
     },
     privileged: false,
     grants: [{ permission: p['platform.user.read'], scope: 'own' }],
-  },
-  {
-    code: 'auditor',
-    name: { ar: 'مدقق', en: 'Auditor' },
-    description: {
-      ar: 'عرض السجلات وسجل التدقيق دون أي تعديل.',
-      en: 'Read-only access to records and the audit log.',
-    },
-    privileged: true,
-    grants: tenantWide(
-      p['platform.user.read'],
-      p['platform.role.read'],
-      p['platform.org.read'],
-      p['platform.tenant.read'],
-      p['platform.audit.read'],
-    ),
   },
 ];
 

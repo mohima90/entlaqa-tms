@@ -401,9 +401,8 @@ describe('confirm, cancel, stop, undo', () => {
     const accepted = confirm.input.shape.defaultRole.options;
     expect(accepted.length).toBeGreaterThan(0);
     for (const role of accepted) {
-      expect(rbac.invitationGivesPrivilegedRole({ primaryRole: role, additionalRoles: [] })).toBe(
-        false,
-      );
+      expect(rbac.PRIVILEGED_ROLE_CODES).not.toContain(role);
+      expect(rbac.standardAssignableRole(role)?.privileged).toBe(false);
     }
     // …and every role the single-user flows treat as privileged is refused as the default role.
     expect(rbac.PRIVILEGED_ROLE_CODES.length).toBeGreaterThan(0);

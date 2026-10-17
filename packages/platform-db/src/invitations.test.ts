@@ -217,6 +217,9 @@ describe('listInvitations', () => {
     has_code: true,
     locale: 'en',
     additional_roles: ['mentor'],
+    role_name_ar: null,
+    role_name_en: null,
+    privileged: false,
   };
 
   it('maps rows, computes the state in SQL and says whether a code may be copied (never the code)', async () => {
@@ -229,6 +232,8 @@ describe('listInvitations', () => {
       displayNameAr: 'سارة',
       displayNameEn: null,
       primaryRole: 'learner',
+      primaryRoleName: null,
+      privileged: false,
       state: 'expired',
       sendCount: 2,
       expiresAt: new Date('2026-10-07T10:00:00Z'),
@@ -238,6 +243,12 @@ describe('listInvitations', () => {
       hasCode: true,
       locale: 'en',
     });
+    // Custom roles (EP-ROLES): their names, and whether the role is privileged, computed in SQL.
+    const [custom] = await listInvitations(
+      fakeTx([{ ...row, role_name_ar: 'مدقق', role_name_en: 'Auditor', privileged: true }]).tx,
+    );
+    expect(custom).toMatchObject({ primaryRoleName: { ar: 'مدقق', en: 'Auditor' }, privileged: true });
+    expect(fake.executed[0]?.sql).toContain('private.roles_include_privileged(i.tenant_id');
     expect(fake.executed[0]?.sql).toContain(
       'left join (select x.invitation_id from private.invitation_codes() x) c',
     );

@@ -47,7 +47,8 @@ export const defaultActionRuntime: ActionRuntime<UserTx> = {
         ...(role.validFrom ? { validFrom: role.validFrom } : {}),
         ...(role.validUntil ? { validUntil: role.validUntil } : {}),
       })),
-      { headedDepartmentIds: facts.headedDepartmentIds },
+      // Custom roles as stored now (EP-ROLES): a change applies at the holder's next request.
+      { headedDepartmentIds: facts.headedDepartmentIds, customRoles: facts.customRoles },
     );
     // Every member manages their own profile (FR-IAM-16), whatever their roles.
     return [...roleGrants, ...MEMBER_GRANTS];

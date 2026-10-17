@@ -180,7 +180,7 @@ export const ISSUES: Catalogue = {
   ROLE_ORG_ADMIN: {
     severity: 'e',
     review: both(
-      'لا يُسند دور «مدير المنشأة» بالاستيراد. يُسند من ملف المستخدم، ويكون الدور الوحيد لصاحبه.',
+      'لا يُسند دور «مدير المنظمة» بالاستيراد. يُسند من ملف المستخدم، ويكون الدور الوحيد لصاحبه.',
       'The Organization Admin role can’t be given by import. It’s given from the user’s profile and is the person’s only role.',
     ),
   },
@@ -380,7 +380,7 @@ export const ISSUES: Catalogue = {
   PRIVILEGED_MEMBER: {
     severity: 'k',
     review: both(
-      'لهذا الشخص دور مميز، فيغيّر بياناته مدير المنشأة من ملفه.',
+      'لهذا الشخص دور مميز، فيغيّر بياناته مدير المنظمة من ملفه.',
       'This person holds a privileged role; the Organization Admin changes their data from the profile.',
     ),
   },
@@ -396,6 +396,15 @@ export const ISSUES: Catalogue = {
     review: both(
       'لا يختلف شيء في الملف عن بيانات هذا المستخدم.',
       'Nothing in the file differs from this user’s data.',
+    ),
+  },
+
+  // One role per person (EP-ROLES, PO 17 Oct 2026): the file's additional roles are not given.
+  ROLES_ONE_PER_PERSON: {
+    severity: 'w',
+    review: both(
+      'لكل شخص دور واحد، فتُتجاهل الأدوار الإضافية ويُسند الدور الأساسي فقط.',
+      'Each person has one role: the additional roles are ignored and only the primary role is given.',
     ),
   },
 

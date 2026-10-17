@@ -1,16 +1,15 @@
 import { ok } from '@jadarat/platform-core';
 import { brandVerifiedClaims } from '@jadarat/platform-core/internal/verified-claims';
-import type { AssignedRole, UserTx } from '@jadarat/platform-db';
+import type { UserTx } from '@jadarat/platform-db';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ActionRuntime } from '../define-action';
 import { createDefineAction } from '../define-action';
 import { createDefineQuery } from '../define-query';
-import { grantsForAssignments } from '../role-grants';
-import { SOLE_ROLE_CODES, rolesHeldTogether } from '../separation-of-duties';
-import type { SystemRoleCode } from '../system-roles';
+import { type TestRoleCode, testRoleGrants } from '../testing/former-roles';
 import {
   EditRolesInput,
   PRIVILEGED_ROLE_CODES,
+  ROLE_CODE,
   VERSION_TOKEN,
   editRolesQueryDefinition,
   updateMemberPrivilegedRolesActionDefinition,
@@ -18,8 +17,10 @@ import {
 } from './edit-roles';
 
 const db = vi.hoisted(() => ({
-  getEditableRoles: vi.fn(),
-  replaceMemberRoles: vi.fn(),
+  getEditableRole: vi.fn(),
+  replaceMemberRole: vi.fn(),
+  getCustomRole: vi.fn(),
+  listCustomRoles: vi.fn(),
 }));
 vi.mock('@jadarat/platform-db', () => db);
 
@@ -28,16 +29,13 @@ const TENANT = '22222222-2222-4222-8222-222222222222';
 const ME = '33333333-3333-4333-8333-333333333333';
 const SARA = '44444444-4444-4444-8444-444444444444';
 
-function runtime(roles: SystemRoleCode[], aal: 'aal1' | 'aal2' = 'aal1') {
+function runtime(roles: TestRoleCode[], aal: 'aal1' | 'aal2' = 'aal1') {
   const writeAudit = vi.fn(() => Promise.resolve());
   const getClaims = vi.fn((_options: { strict: boolean }) => {
     const r = brandVerifiedClaims({
       sub: '11111111-1111-4111-8111-111111111111',
       role: 'authenticated',
       aal,
-      ...(aal === 'aal2'
-        ? { amr: [{ method: 'totp', timestamp: Math.floor(Date.now() / 1000) }] }
-        : {}),
       tenant_id: TENANT,
       person_id: ME,
     });
@@ -48,13 +46,7 @@ function runtime(roles: SystemRoleCode[], aal: 'aal1' | 'aal2' = 'aal1') {
     getClaims,
     withUserTx: (_c, fn) => fn(TX),
     loadSessionFacts: () => Promise.resolve({ active: true, aal2: aal === 'aal2' }),
-    loadGrants: () =>
-      Promise.resolve(
-        grantsForAssignments(
-          roles.map((roleCode) => ({ roleCode })),
-          { headedDepartmentIds: [] },
-        ),
-      ),
+    loadGrants: () => Promise.resolve(testRoleGrants(roles)),
     resolveResource: (_tx, ref) =>
       Promise.resolve(
         ref.id === SARA
@@ -67,249 +59,240 @@ function runtime(roles: SystemRoleCode[], aal: 'aal1' | 'aal2' = 'aal1') {
   return { rt, writeAudit, getClaims };
 }
 
-const role = (roleCode: string, over: Partial<AssignedRole> = {}): AssignedRole => ({
-  roleCode,
-  isPrimary: false,
-  validFrom: null,
-  validUntil: null,
-  ...over,
-});
-const TOKEN =
-  'learner:4b0c1a2e-8f3d-4c1e-9a7b-2d5e6f7a8b9c:1,training_coordinator:5c1d2b3f-9a4e-4d2f-8b8c-3e6f7a8b9c0d:1';
-const current = [role('training_coordinator', { isPrimary: true }), role('learner')];
+const TOKEN = 'training_coordinator:5c1d2b3f-9a4e-4d2f-8b8c-3e6f7a8b9c0d:1';
 const editable = (over: Record<string, unknown> = {}) => ({
   personId: SARA,
   membershipId: 'm1',
   membershipStatus: 'active',
   isSelf: false,
   mayManage: true,
-  roles: current,
+  roleCode: 'training_coordinator',
   version: TOKEN,
-  timeZone: 'Asia/Riyadh',
   ...over,
 });
-const form = {
-  personId: SARA,
-  version: TOKEN,
-  primary: 'training_manager' as const,
-  additional: [{ roleCode: 'learner' as const, validFrom: '', validUntil: '2026-12-31' }],
-};
+/** Custom roles of the organization: an ordinary reader and a privileged auditor. */
+const customRow = (code: string, permissions: string[]) => ({
+  id: `id-${code}`,
+  code,
+  nameAr: 'دور',
+  nameEn: 'Role',
+  description: null,
+  dataScope: 'organization',
+  permissions,
+  memberCount: 0,
+  pendingInvitationCount: 0,
+  version: 1,
+});
+const READER = customRow('custom_a00000000001', ['platform.user.read', 'platform.org.read']);
+const AUDITOR = customRow('custom_a00000000002', ['platform.user.read', 'platform.audit.read']);
+const PROFILE = customRow('custom_a00000000003', ['platform.tenant.read']);
+const CUSTOM = [READER, AUDITOR, PROFILE];
+const form = (role: string) => ({ personId: SARA, version: TOKEN, role });
 
 beforeEach(() => {
   vi.clearAllMocks();
-  db.getEditableRoles.mockResolvedValue(editable());
+  db.getEditableRole.mockResolvedValue(editable());
+  db.listCustomRoles.mockResolvedValue(CUSTOM);
+  db.getCustomRole.mockImplementation((_tx: unknown, key: { code: string }) =>
+    Promise.resolve(CUSTOM.find((r) => r.code === key.code) ?? null),
+  );
+  db.replaceMemberRole.mockImplementation(
+    (_tx: unknown, _person: string, _version: string, code: string) =>
+      Promise.resolve({ ok: true, before: 'training_coordinator', after: code, changed: true }),
+  );
 });
 
-describe('privileged roles', () => {
-  it('lists the privileged roles', () => {
-    expect(PRIVILEGED_ROLE_CODES).toEqual([
+describe('input', () => {
+  it('lists the privileged standard roles', () => {
+    expect(PRIVILEGED_ROLE_CODES).toEqual(['tenant_admin', 'hr_manager']);
+  });
+
+  it('accepts one standard or custom role and a single version token', () => {
+    expect(EditRolesInput.safeParse(form('learner')).success).toBe(true);
+    expect(EditRolesInput.safeParse(form('custom_a00000000001')).success).toBe(true);
+    expect(EditRolesInput.safeParse({ ...form('learner'), version: '' }).success).toBe(true);
+    for (const bad of ['', 'Learner', 'custom_XYZ', 'learner;drop']) {
+      expect(EditRolesInput.safeParse(form(bad)).success, bad).toBe(false);
+    }
+    expect(
+      EditRolesInput.safeParse({ ...form('learner'), additional: [{ roleCode: 'learner' }] }).success,
+    ).toBe(false);
+    expect(VERSION_TOKEN.test(`${TOKEN},${TOKEN}`)).toBe(false);
+    expect(ROLE_CODE.test('custom_0123456789ab')).toBe(true);
+  });
+});
+
+describe('edit role query', () => {
+  it('returns the role, what blocks it, privileged access and the choices', async () => {
+    const query = createDefineQuery(runtime(['tenant_admin']).rt)(editRolesQueryDefinition());
+    const result = await query({ personId: SARA });
+    expect(result.ok && result.value).toMatchObject({
+      role: editable(),
+      blocked: null,
+      privilegedAccess: 'allowed',
+    });
+    const choices = result.ok ? result.value.choices : [];
+    expect(choices.map((c) => c.code)).toEqual([
       'tenant_admin',
       'hr_manager',
-      'finance_manager',
-      'compliance_officer',
-      'auditor',
+      'training_manager',
+      'training_coordinator',
+      'department_head',
+      'learner',
+      READER.code,
+      AUDITOR.code,
+      PROFILE.code,
     ]);
+    expect(choices.every((c) => c.assignable)).toBe(true);
+    expect(choices.find((c) => c.code === AUDITOR.code)).toMatchObject({
+      kind: 'custom',
+      privileged: true,
+    });
+  });
+
+  it('HR Manager: only ordinary roles whose permissions they hold are assignable', async () => {
+    const query = createDefineQuery(runtime(['hr_manager']).rt)(editRolesQueryDefinition());
+    const result = await query({ personId: SARA });
+    const assignable = result.ok ? result.value.choices.filter((c) => c.assignable) : [];
+    expect(assignable.map((c) => c.code)).toEqual([
+      'training_manager',
+      'training_coordinator',
+      'department_head',
+      'learner',
+      READER.code,
+    ]);
+    expect(result.ok && result.value.privilegedAccess).toBe('denied');
+  });
+
+  it('says why the role cannot be changed; a privileged member is refused for HR', async () => {
+    const query = createDefineQuery(runtime(['tenant_admin']).rt)(editRolesQueryDefinition());
+    db.getEditableRole.mockResolvedValueOnce(editable({ isSelf: true }));
+    expect((await query({ personId: SARA })).ok).toBe(true);
+    db.getEditableRole.mockResolvedValueOnce(editable({ membershipId: null }));
+    const noAccount = await query({ personId: SARA });
+    expect(noAccount.ok && noAccount.value.blocked).toBe('no_account');
+    db.getEditableRole.mockResolvedValueOnce(editable({ membershipStatus: 'revoked' }));
+    const revoked = await query({ personId: SARA });
+    expect(revoked.ok && revoked.value.blocked).toBe('revoked');
+    db.getEditableRole.mockResolvedValueOnce(null);
+    const missing = await query({ personId: SARA });
+    expect(!missing.ok && missing.error.code).toBe('NOT_FOUND');
+    const hr = createDefineQuery(runtime(['hr_manager']).rt)(editRolesQueryDefinition());
+    db.getEditableRole.mockResolvedValueOnce(editable({ mayManage: false }));
+    const denied = await hr({ personId: SARA });
+    expect(!denied.ok && denied.error.code).toBe('FORBIDDEN');
+  });
+
+  it('is refused without role.assign', async () => {
+    const query = createDefineQuery(runtime(['learner']).rt)(editRolesQueryDefinition());
+    const result = await query({ personId: SARA });
+    expect(!result.ok && result.error.code).toBe('FORBIDDEN');
+    expect(db.getEditableRole).not.toHaveBeenCalled();
   });
 });
 
-describe('edit roles input', () => {
-  it('one primary, no role twice, last day not before the first day, known roles only', () => {
-    // The token getEditableRoles builds (role:row id:version) is accepted as is; so is "no roles".
-    expect(VERSION_TOKEN.test(TOKEN)).toBe(true);
-    expect(EditRolesInput.safeParse({ ...form, version: '' }).success).toBe(true);
-    expect(EditRolesInput.parse(form).additional).toEqual([
-      { roleCode: 'learner', validFrom: null, validUntil: '2026-12-31' },
-    ]);
-    for (const bad of [
-      { ...form, additional: [{ roleCode: 'training_manager', validFrom: '', validUntil: '' }] },
-      {
-        ...form,
-        additional: [
-          { roleCode: 'learner', validFrom: '', validUntil: '' },
-          { roleCode: 'learner', validFrom: '', validUntil: '' },
-        ],
-      },
-      {
-        ...form,
-        additional: [{ roleCode: 'learner', validFrom: '2026-05-02', validUntil: '2026-05-01' }],
-      },
-      { ...form, primary: 'platform_super_admin' },
-      { ...form, additional: [{ roleCode: 'learner', validFrom: '1999-12-31', validUntil: '' }] },
-      { ...form, version: "x'; drop" },
-      { ...form, version: 'learner:1' }, // the old token format
-
-      { ...form, extra: true },
-    ]) {
-      expect(EditRolesInput.safeParse(bad).success, JSON.stringify(bad)).toBe(false);
-    }
+describe('changing the role', () => {
+  it('HR Manager: an ordinary role, audited with the role before and after', async () => {
+    const { rt, writeAudit } = runtime(['hr_manager']);
+    const save = createDefineAction(rt)(updateMemberRolesActionDefinition());
+    expect(await save(form('learner'))).toEqual(
+      ok({ personId: SARA, changed: true, before: 'training_coordinator', after: 'learner' }),
+    );
+    expect(db.replaceMemberRole).toHaveBeenCalledWith(TX, SARA, TOKEN, 'learner', {
+      isLocked: expect.any(Function),
+    });
+    const isLocked = (db.replaceMemberRole.mock.lastCall?.[4] as { isLocked: (c: string) => boolean })
+      .isLocked;
+    expect(isLocked('learner')).toBe(false);
+    expect(isLocked('training_coordinator')).toBe(false);
+    expect(writeAudit).toHaveBeenCalledWith(
+      TX,
+      expect.anything(),
+      expect.objectContaining({
+        action: 'platform.user.roles_changed',
+        entityType: 'person',
+        entityId: SARA,
+        data: { before: 'training_coordinator', after: 'learner' },
+      }),
+    );
+    // An ordinary custom role whose permissions HR holds.
+    expect((await save(form(READER.code))).ok).toBe(true);
   });
-});
 
-describe('edit roles query', () => {
-  const query = (roles: SystemRoleCode[], aal: 'aal1' | 'aal2' = 'aal1') =>
-    createDefineQuery(runtime(roles, aal).rt)(editRolesQueryDefinition())({ personId: SARA });
-
-  it('Organization Admin: privileged roles without an authenticator code (PO decision, 14 Oct 2026)', async () => {
-    for (const aal of ['aal1', 'aal2'] as const) {
-      expect(await query(['tenant_admin'], aal)).toMatchObject({
-        ok: true,
-        value: { blocked: null, privilegedAccess: 'allowed' },
+  it('ordinary path: no privileged role, no role with permissions the member does not hold', async () => {
+    const save = createDefineAction(runtime(['hr_manager']).rt)(updateMemberRolesActionDefinition());
+    for (const code of ['hr_manager', 'tenant_admin', AUDITOR.code, PROFILE.code]) {
+      const result = await save(form(code));
+      expect(!result.ok && result.error, code).toMatchObject({
+        code: 'VALIDATION_FAILED',
+        fieldErrors: [{ path: 'role', code: 'ROLE_NOT_ALLOWED' }],
       });
     }
-    expect(await query(['hr_manager'])).toMatchObject({ value: { privilegedAccess: 'denied' } });
+    // The member's CURRENT role is checked too (after the lock): a privileged one is locked.
+    db.getEditableRole.mockResolvedValue(editable({ roleCode: AUDITOR.code }));
+    await save(form('learner'));
+    const isLocked = (db.replaceMemberRole.mock.lastCall?.[4] as { isLocked: (c: string) => boolean })
+      .isLocked;
+    expect(isLocked(AUDITOR.code)).toBe(true);
+    db.getEditableRole.mockResolvedValue(editable({ roleCode: 'line_manager' }));
+    await save(form('learner'));
+    const unknown = (db.replaceMemberRole.mock.lastCall?.[4] as { isLocked: (c: string) => boolean })
+      .isLocked;
+    expect(unknown('line_manager')).toBe(true);
   });
 
-  it('own roles, no account, revoked: shown as blocked; a privileged member for HR: FORBIDDEN', async () => {
-    for (const [over, blocked] of [
-      [{ isSelf: true }, 'own_roles'],
-      [{ membershipId: null, membershipStatus: null, roles: [] }, 'no_account'],
-      [{ membershipStatus: 'revoked' }, 'revoked'],
-    ] as const) {
-      db.getEditableRoles.mockResolvedValue(editable(over));
-      expect(await query(['tenant_admin'])).toMatchObject({ value: { blocked } });
-    }
-    db.getEditableRoles.mockResolvedValue(editable({ mayManage: false }));
-    const hr = await query(['hr_manager']);
-    expect(!hr.ok && hr.error.code).toBe('FORBIDDEN');
-    db.getEditableRoles.mockResolvedValue(null);
-    const gone = await query(['tenant_admin']);
-    expect(!gone.ok && gone.error.code).toBe('NOT_FOUND');
-    const learner = await query(['learner']);
-    expect(!learner.ok && learner.error.code).toBe('FORBIDDEN');
-  });
-});
-
-describe('update roles actions', () => {
-  it('ordinary roles: saved and audited with the roles before and after', async () => {
-    const after = [
-      role('training_manager', { isPrimary: true }),
-      role('learner', { validUntil: '2026-12-31' }),
-    ];
-    db.replaceMemberRoles.mockResolvedValue({ ok: true, changed: true, before: current, after });
-    const { rt, writeAudit, getClaims } = runtime(['hr_manager']);
-    const result = await createDefineAction(rt)(updateMemberRolesActionDefinition())(form);
-    expect(result).toEqual(ok({ personId: SARA, changed: true, before: current, after }));
-    expect(db.replaceMemberRoles).toHaveBeenCalledWith(TX, SARA, form.version, after, {
-      lockedCodes: new Set(PRIVILEGED_ROLE_CODES),
-      conflicts: rolesHeldTogether,
-      soleRoles: new Set(SOLE_ROLE_CODES),
-    });
-    expect(writeAudit).toHaveBeenCalledWith(TX, expect.anything(), {
-      action: 'platform.user.roles_changed',
-      entityType: 'person',
-      entityId: SARA,
-      data: { before: current, after },
-    });
-    expect(getClaims).toHaveBeenCalledWith({ strict: false });
-  });
-
-  it('the ordinary action refuses a change that touches a privileged role', async () => {
-    const withAuditor = {
-      ...form,
-      additional: [{ roleCode: 'auditor' as const, validFrom: '', validUntil: '' }],
-    };
-    db.replaceMemberRoles.mockResolvedValue({ ok: false, refusal: 'privileged_change' });
-    const admin = await createDefineAction(runtime(['tenant_admin']).rt)(
-      updateMemberRolesActionDefinition(),
-    )(withAuditor);
-    // The Organization Admin uses the privileged action for that (the form does).
-    expect(!admin.ok && admin.error.code).toBe('FORBIDDEN');
-    const hr = await createDefineAction(runtime(['hr_manager']).rt)(
-      updateMemberRolesActionDefinition(),
-    )(withAuditor);
-    expect(!hr.ok && hr.error.code).toBe('FORBIDDEN');
-    // The check runs in the locked save, against the stored roles: privileged roles are locked there.
-    expect(db.replaceMemberRoles).toHaveBeenCalledWith(TX, SARA, form.version, expect.anything(), {
-      lockedCodes: new Set(PRIVILEGED_ROLE_CODES),
-      conflicts: rolesHeldTogether,
-      soleRoles: new Set(SOLE_ROLE_CODES),
-    });
-  });
-
-  it('privileged action: the Organization Admin at AAL1 (strict session check) saves; HR never', async () => {
-    const withAuditor = {
-      ...form,
-      additional: [{ roleCode: 'auditor' as const, validFrom: '', validUntil: '' }],
-    };
-    for (const aal of ['aal1', 'aal2'] as const) {
-      const hr = await createDefineAction(runtime(['hr_manager'], aal).rt)(
-        updateMemberPrivilegedRolesActionDefinition(),
-      )(withAuditor);
-      expect(!hr.ok && hr.error.code, aal).toBe('FORBIDDEN');
-    }
-    expect(db.replaceMemberRoles).not.toHaveBeenCalled();
-    db.replaceMemberRoles.mockResolvedValue({
-      ok: true,
-      changed: true,
-      before: current,
-      after: [],
-    });
+  it('privileged path: the Organization Admin gives privileged roles (strict session check)', async () => {
     const { rt, getClaims } = runtime(['tenant_admin']);
-    const saved = await createDefineAction(rt)(updateMemberPrivilegedRolesActionDefinition())(
-      withAuditor,
-    );
-    expect(saved.ok).toBe(true);
+    const save = createDefineAction(rt)(updateMemberPrivilegedRolesActionDefinition());
+    expect((await save(form(AUDITOR.code))).ok).toBe(true);
+    expect(db.replaceMemberRole).toHaveBeenCalledWith(TX, SARA, TOKEN, AUDITOR.code, {});
     expect(getClaims).toHaveBeenCalledWith({ strict: true });
-  });
-
-  it('separation of duties (BR-IAM-4): the save checks it; a refusal is ROLE_CONFLICT', async () => {
-    const withHr = {
-      ...form,
-      primary: 'tenant_admin' as const,
-      additional: [{ roleCode: 'hr_manager' as const, validFrom: '', validUntil: '' }],
-    };
-    db.replaceMemberRoles.mockResolvedValue({ ok: false, refusal: 'role_conflict' });
-    const result = await createDefineAction(runtime(['tenant_admin'], 'aal2').rt)(
+    const hr = createDefineAction(runtime(['hr_manager']).rt)(
       updateMemberPrivilegedRolesActionDefinition(),
-    )(withHr);
-    expect(result).toMatchObject({
-      ok: false,
-      error: {
-        code: 'VALIDATION_FAILED',
-        fieldErrors: [{ path: 'additional', code: 'ROLE_CONFLICT' }],
-      },
-    });
-    expect(db.replaceMemberRoles).toHaveBeenCalledWith(TX, SARA, form.version, expect.anything(), {
-      conflicts: rolesHeldTogether,
-      soleRoles: new Set(SOLE_ROLE_CODES),
-    });
+    );
+    const refused = await hr(form('hr_manager'));
+    expect(!refused.ok && refused.error.code).toBe('FORBIDDEN');
   });
 
-  it('maps refusals; no change → no audit; out of scope → NOT_FOUND', async () => {
-    const cases: [string, string, string | undefined][] = [
-      ['not_found', 'NOT_FOUND', undefined],
-      ['no_account', 'NOT_FOUND', undefined],
-      ['own_roles', 'FORBIDDEN', undefined],
-      ['not_allowed', 'FORBIDDEN', undefined],
-      ['membership_revoked', 'FORBIDDEN', undefined],
-      ['version_conflict', 'CONFLICT_VERSION', undefined],
-      ['last_admin', 'VALIDATION_FAILED', 'primary'],
-      ['dates_invalid', 'VALIDATION_FAILED', 'additional'],
-      ['role_conflict', 'VALIDATION_FAILED', 'additional'],
-      ['privileged_change', 'FORBIDDEN', undefined], // the ordinary action (the privileged one is for that)
-    ];
-    for (const [refusal, code, path] of cases) {
-      db.replaceMemberRoles.mockResolvedValue({ ok: false, refusal });
-      const result = await createDefineAction(runtime(['tenant_admin']).rt)(
-        updateMemberRolesActionDefinition(),
-      )(form);
-      expect(!result.ok && result.error.code, refusal).toBe(code);
-      if (path) expect(!result.ok && result.error.fieldErrors?.[0]?.path).toBe(path);
+  it('an unknown role is a field error before any write', async () => {
+    const save = createDefineAction(runtime(['tenant_admin']).rt)(
+      updateMemberPrivilegedRolesActionDefinition(),
+    );
+    for (const code of ['auditor', 'custom_ffffffffffff']) {
+      const result = await save(form(code));
+      expect(!result.ok && result.error.fieldErrors).toEqual([{ path: 'role', code: 'ROLE_UNKNOWN' }]);
     }
-    db.replaceMemberRoles.mockResolvedValue({
-      ok: true,
-      changed: false,
-      before: current,
-      after: current,
-    });
+    expect(db.replaceMemberRole).not.toHaveBeenCalled();
+  });
+
+  it('maps refusals; no change → no audit', async () => {
     const { rt, writeAudit } = runtime(['tenant_admin']);
-    await createDefineAction(rt)(updateMemberRolesActionDefinition())(form);
+    const save = createDefineAction(rt)(updateMemberPrivilegedRolesActionDefinition());
+    const cases: [string, Record<string, unknown>][] = [
+      ['not_found', { code: 'NOT_FOUND' }],
+      ['no_account', { code: 'NOT_FOUND' }],
+      ['own_role', { code: 'FORBIDDEN' }],
+      ['not_allowed', { code: 'FORBIDDEN' }],
+      ['membership_revoked', { code: 'FORBIDDEN' }],
+      ['privileged_change', { code: 'FORBIDDEN' }],
+      ['version_conflict', { code: 'CONFLICT_VERSION' }],
+      ['last_admin', { code: 'VALIDATION_FAILED', fieldErrors: [{ path: 'role', code: 'LAST_ADMIN' }] }],
+      ['unknown_role', { code: 'VALIDATION_FAILED', fieldErrors: [{ path: 'role', code: 'ROLE_UNKNOWN' }] }],
+    ];
+    for (const [refusal, error] of cases) {
+      db.replaceMemberRole.mockResolvedValueOnce({ ok: false, refusal });
+      const result = await save(form('learner'));
+      expect(!result.ok && result.error, refusal).toMatchObject(error);
+    }
+    db.replaceMemberRole.mockResolvedValueOnce({
+      ok: true,
+      before: 'learner',
+      after: 'learner',
+      changed: false,
+    });
+    expect(await save(form('learner'))).toEqual(
+      ok({ personId: SARA, changed: false, before: 'learner', after: 'learner' }),
+    );
     expect(writeAudit).not.toHaveBeenCalled();
-    db.replaceMemberRoles.mockClear();
-    const other = await createDefineAction(runtime(['tenant_admin']).rt)(
-      updateMemberRolesActionDefinition(),
-    )({ ...form, personId: ME });
-    expect(!other.ok && other.error.code).toBe('NOT_FOUND');
-    expect(db.replaceMemberRoles).not.toHaveBeenCalled();
   });
 });

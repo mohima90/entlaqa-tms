@@ -3,11 +3,17 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { MEMBER_GRANTS } from './member-permissions';
 import { platformPermissions } from './platform-permissions';
-import { SYSTEM_ROLES, SYSTEM_ROLE_CODES, getSystemRole, isSystemRoleCode } from './system-roles';
+import {
+  FORMER_ROLE_NAMES,
+  SYSTEM_ROLES,
+  SYSTEM_ROLE_CODES,
+  getSystemRole,
+  isSystemRoleCode,
+} from './system-roles';
 
 const migrationsDir = new URL('../../../supabase/migrations/', import.meta.url).pathname;
 
-/** (code, is_privileged) rows of the ref_roles seed migration. */
+/** (code, is_privileged) rows of the ref_roles seed migration (before EP-ROLES removed the former roles). */
 function seededRoles(): { code: string; privileged: boolean }[] {
   const file = readdirSync(migrationsDir).find((f) =>
     f.endsWith('_platform__create_ref_roles.sql'),
@@ -20,34 +26,67 @@ function seededRoles(): { code: string; privileged: boolean }[] {
   }));
 }
 
-describe('system roles (FR-IAM-07, BRD Appendix B)', () => {
-  it('has the 14 tenant roles, without the ENTLAQA-only Platform Super Admin', () => {
+/** The former roles the EP-ROLES backfill removes from ref_roles (migration 20261019090300). */
+function removedRoles(): string[] {
+  const file = readdirSync(migrationsDir).find((f) =>
+    f.endsWith('_platform__backfill_standard_roles.sql'),
+  );
+  if (!file) throw new Error('EP-ROLES backfill migration not found');
+  const text = readFileSync(join(migrationsDir, file), 'utf8');
+  const list = /c_former constant text\[\] := array\[([^\]]+)\]/.exec(text)?.[1] ?? '';
+  return [...list.matchAll(/'([a-z_]+)'/g)].map((m) => m[1] ?? '');
+}
+
+describe('standard roles (FR-IAM-07, BRD Appendix B; EP-ROLES, PO 17 Oct 2026)', () => {
+  it('has the six standard roles, without the ENTLAQA-only Platform Super Admin', () => {
     expect(SYSTEM_ROLES.map((r) => r.code)).toEqual([...SYSTEM_ROLE_CODES]);
-    expect(SYSTEM_ROLES).toHaveLength(14);
+    expect([...SYSTEM_ROLE_CODES]).toEqual([
+      'tenant_admin',
+      'hr_manager',
+      'training_manager',
+      'training_coordinator',
+      'department_head',
+      'learner',
+    ]);
     expect(isSystemRoleCode('platform_super_admin')).toBe(false);
+    expect(isSystemRoleCode('line_manager')).toBe(false);
   });
 
   it('matches the database catalogue platform.ref_roles (drift check)', () => {
-    expect(seededRoles()).toEqual(
-      SYSTEM_ROLES.map((r) => ({ code: r.code, privileged: r.privileged })),
+    const removed = removedRoles();
+    expect(removed.sort()).toEqual(Object.keys(FORMER_ROLE_NAMES).sort());
+    expect(
+      seededRoles()
+        .filter((r) => !removed.includes(r.code))
+        .sort((a, b) => a.code.localeCompare(b.code)),
+    ).toEqual(
+      SYSTEM_ROLES.map((r) => ({ code: r.code, privileged: r.privileged })).sort((a, b) =>
+        a.code.localeCompare(b.code),
+      ),
     );
-    // Only the seed migration may write ref_roles; a later change must extend this test.
+    // Only the seed migration and the EP-ROLES backfill write ref_roles; a later change must extend this.
     const writers = readdirSync(migrationsDir).filter((f) =>
       /(insert into|update|delete from)\s+platform\.ref_roles/i.test(
         readFileSync(join(migrationsDir, f), 'utf8'),
       ),
     );
-    expect(writers).toEqual(['20261005100000_platform__create_ref_roles.sql']);
+    expect(writers).toEqual([
+      '20261005100000_platform__create_ref_roles.sql',
+      '20261019090300_platform__backfill_standard_roles.sql',
+    ]);
   });
 
   it('marks exactly the roles only an Organization Admin may give as privileged (PO, 5 Oct 2026)', () => {
     expect(SYSTEM_ROLES.filter((r) => r.privileged).map((r) => r.code)).toEqual([
       'tenant_admin',
       'hr_manager',
-      'finance_manager',
-      'compliance_officer',
-      'auditor',
     ]);
+  });
+
+  it('names the Organization Admin and the Employee as the PO approved (17 Oct 2026)', () => {
+    expect(getSystemRole('tenant_admin').name).toEqual({ ar: 'مدير المنظمة', en: 'Organization Admin' });
+    expect(getSystemRole('learner').name).toEqual({ ar: 'موظف', en: 'Employee' });
+    expect(FORMER_ROLE_NAMES.auditor?.en).toBe('Auditor');
   });
 
   it('gives the roles an HR Manager may give only reading permissions (allow-list)', () => {
@@ -111,6 +150,8 @@ describe('system roles (FR-IAM-07, BRD Appendix B)', () => {
       'platform.role.read',
       'platform.role.assign',
       'platform.role.assign_privileged',
+      // EP-ROLES (PO, 17 Oct 2026): building the organization's custom roles — a setup task.
+      'platform.role.manage',
       'platform.org.read',
       'platform.tenant.read',
       'platform.tenant.manage',
@@ -137,11 +178,6 @@ describe('system roles (FR-IAM-07, BRD Appendix B)', () => {
     const hr = getSystemRole('hr_manager').grants.map((g) => g.permission.code);
     expect(hr).toContain('platform.role.assign');
     expect(hr).not.toContain('platform.role.assign_privileged');
-  });
-
-  it('gives external instructors and provider staff no organization data (Appendix B)', () => {
-    expect(getSystemRole('external_instructor').grants).toEqual([]);
-    expect(getSystemRole('provider_admin').grants).toEqual([]);
   });
 
   it('throws on an unknown code', () => {

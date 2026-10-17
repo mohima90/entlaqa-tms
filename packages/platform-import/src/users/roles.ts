@@ -15,10 +15,14 @@ for (const role of SYSTEM_ROLES) {
 /**
  * Former display names still accepted in files (read only: the template lists show today's names).
  * «مدير التدريب» / "Training Manager" became «مدير التعلم والتطوير» / "L&D Manager" (PO, 14 Oct 2026;
- * BRD v2.9), and files made from an older template or an HR export still carry the old name.
+ * BRD v2.9), «متدرب» / "Learner" became «موظف» / "Employee" (PO, 17 Oct 2026), and files made from an
+ * older template or an HR export still carry the old names.
  */
 export const FORMER_ROLE_NAMES: Readonly<Partial<Record<SystemRoleCode, readonly string[]>>> = {
   training_manager: ['مدير التدريب', 'Training Manager'],
+  // EP-ROLES (PO, 17 Oct 2026): «موظف» / Employee was «متدرب» / Learner; «مدير المنظمة» was «مدير المنشأة».
+  learner: ['متدرب', 'Learner'],
+  tenant_admin: ['مدير المنشأة'],
 };
 for (const [code, names] of Object.entries(FORMER_ROLE_NAMES) as [SystemRoleCode, string[]][]) {
   for (const name of names) {

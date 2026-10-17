@@ -10,6 +10,7 @@ import { MEMBER_GRANTS } from '../member-permissions';
 import { grantsForAssignments } from '../role-grants';
 import type { ResourceAttributes } from '../scopes';
 import { SYSTEM_ROLES, type SystemRoleCode } from '../system-roles';
+import { type TestRoleCode, testRoleGrants } from '../testing/former-roles';
 import {
   SecuritySettingsInput,
   endMemberSessionsActionDefinition,
@@ -103,11 +104,8 @@ function runtime(
   return { rt, writeAudit, getClaims };
 }
 
-const forRoles = (...roles: SystemRoleCode[]) =>
-  grantsForAssignments(
-    roles.map((roleCode) => ({ roleCode })),
-    { headedDepartmentIds: [] },
-  );
+const forRoles = (...roles: TestRoleCode[]) =>
+  testRoleGrants(roles, []);
 
 const settings = {
   mfaMode: 'off' as const,

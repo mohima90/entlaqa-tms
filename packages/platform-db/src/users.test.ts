@@ -104,7 +104,9 @@ describe('listUsers', () => {
           status: 'active',
           roles_visible: true,
           primary_role: 'learner',
-          other_roles: null,
+          role_name_ar: null,
+          role_name_en: null,
+          role_version: 'learner:r1:1',
           department_name_ar: 'التدريب',
           department_name_en: null,
           last_sign_in_at: '2026-10-05T08:00:00.000Z',
@@ -134,7 +136,8 @@ describe('listUsers', () => {
         status: 'active',
         rolesVisible: true,
         primaryRole: 'learner',
-        otherRoles: [],
+        primaryRoleName: null,
+        roleVersion: 'learner:r1:1',
         departmentNameAr: 'التدريب',
         departmentNameEn: null,
         lastSignInAt: new Date('2026-10-05T08:00:00.000Z'),
@@ -208,7 +211,7 @@ describe('listUsers', () => {
       offset: -5,
     });
     expect(fake.executed[1]?.sql).toContain(
-      'false as roles_visible, null as primary_role, null as other_roles',
+      'false as roles_visible, null as primary_role, null as role_name_ar, null as role_name_en',
     );
     expect(fake.executed[1]?.params.slice(-2)).toEqual([100, 0]);
     const nan = fakeTx([], []);
@@ -386,24 +389,38 @@ describe('loadPersonResourceFacts', () => {
 });
 
 describe('loadMemberAuthorizationFacts', () => {
-  it('maps the member’s roles and headed departments', async () => {
+  it('maps the member’s role, headed departments and custom roles (EP-ROLES)', async () => {
     const fake = fakeTx(
       [
-        { role_code: 'learner', valid_from: null, valid_until: '2027-01-01T00:00:00Z' },
         {
-          role_code: 'line_manager',
+          role_code: 'custom_a00000000001',
           valid_from: new Date('2026-01-01T00:00:00Z'),
-          valid_until: null,
+          valid_until: '2027-01-01T00:00:00Z',
         },
       ],
       [{ id: 'd1' }],
+      [
+        {
+          code: 'custom_a00000000001',
+          data_scope: 'team',
+          permissions: ['platform.user.read'],
+        },
+        { code: 'custom_a00000000002', data_scope: 'own', permissions: null },
+      ],
     );
     expect(await loadMemberAuthorizationFacts(fake.tx)).toEqual({
       roles: [
-        { roleCode: 'learner', validFrom: null, validUntil: new Date('2027-01-01T00:00:00Z') },
-        { roleCode: 'line_manager', validFrom: new Date('2026-01-01T00:00:00Z'), validUntil: null },
+        {
+          roleCode: 'custom_a00000000001',
+          validFrom: new Date('2026-01-01T00:00:00Z'),
+          validUntil: new Date('2027-01-01T00:00:00Z'),
+        },
       ],
       headedDepartmentIds: ['d1'],
+      customRoles: [
+        { code: 'custom_a00000000001', dataScope: 'team', permissions: ['platform.user.read'] },
+        { code: 'custom_a00000000002', dataScope: 'own', permissions: [] },
+      ],
     });
     expect(fake.executed[0]?.sql).toContain("m.status = 'active'");
   });

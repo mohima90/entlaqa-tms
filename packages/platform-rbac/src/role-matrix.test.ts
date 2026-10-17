@@ -11,7 +11,7 @@ const area = (key: string) => {
 };
 
 describe('role matrix (BRD Appendix B, screen 5)', () => {
-  it('has the 20 areas of the BRD, each with a cell for every system role', () => {
+  it('has the 20 areas of the BRD, each with a cell for every standard role (EP-ROLES: six)', () => {
     expect(ROLE_MATRIX).toHaveLength(20);
     for (const row of ROLE_MATRIX) {
       expect(Object.keys(row.access).sort()).toEqual([...SYSTEM_ROLE_CODES].sort());
@@ -24,9 +24,9 @@ describe('role matrix (BRD Appendix B, screen 5)', () => {
       'integrations',
       'audit',
     ]);
-    expect(area('reports').access.finance_manager).toEqual({
-      level: 'F',
-      qualifier: { ar: 'المالية', en: 'finance' },
+    expect(area('reports').access.department_head).toEqual({
+      level: 'V',
+      qualifier: { ar: 'القسم', en: 'department' },
     });
   });
 

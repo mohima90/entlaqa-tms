@@ -239,17 +239,27 @@ export { type OrgUnitOption, type OrgUnitOptions, listOrgUnitOptions } from './o
 export { EVENT_TYPE_PATTERN, type EmittedEvent, emitEvent } from './events';
 export { type PersonalDetails, getPersonalDetails, updatePersonalDetails } from './my-profile';
 export {
-  type AssignedRole,
-  type EditableRoles,
-  type RolesOutcome,
-  type RolesRefusal,
-  type ReplaceRolesOptions,
-  getEditableRoles,
-  keepPrimaryDays,
-  replaceMemberRoles,
-  rolesRefusalOf,
-  touchesRoles,
+  type EditableRole,
+  type RoleOutcome,
+  type RoleRefusal,
+  type ReplaceRoleOptions,
+  getEditableRole,
+  replaceMemberRole,
+  roleRefusalOf,
 } from './role-admin';
+export {
+  type CustomRoleInput,
+  type CustomRoleOutcome,
+  type CustomRoleRefusal,
+  type CustomRoleRow,
+  type CustomRoleScopeValue,
+  createCustomRole,
+  customRoleRefusalOf,
+  deleteCustomRole,
+  getCustomRole,
+  listCustomRoles,
+  updateCustomRole,
+} from './custom-roles';
 export {
   type CurrentUnit,
   type EditableUser,
@@ -276,6 +286,7 @@ export {
   type UserProfileOptions,
   MAX_PAGE_SIZE,
   type UserRole,
+  type RoleNames,
   countMembersByRole,
   getUserProfile,
   listUsers,
@@ -284,7 +295,9 @@ export {
 } from './users';
 export {
   type MemberAuthorizationFacts,
+  type MemberCustomRole,
   type MemberRole,
+  type MyRole,
   getMyPrimaryRole,
   loadMemberAuthorizationFacts,
 } from './roles';

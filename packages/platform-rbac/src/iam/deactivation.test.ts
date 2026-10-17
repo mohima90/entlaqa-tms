@@ -8,7 +8,7 @@ import { createDefineAction } from '../define-action';
 import { createDefineQuery } from '../define-query';
 import { platformPermissions } from '../platform-permissions';
 import { grantsForAssignments } from '../role-grants';
-import type { SystemRoleCode } from '../system-roles';
+import { type TestRoleCode, testRoleGrants } from '../testing/former-roles';
 import {
   DeactivateMemberInput,
   PLATFORM_RESPONSIBILITIES,
@@ -41,7 +41,7 @@ const ME = '33333333-3333-4333-8333-333333333333';
 const SARA = '44444444-4444-4444-8444-444444444444';
 const NEW_MANAGER = '55555555-5555-4555-8555-555555555555';
 
-function runtime(roles: SystemRoleCode[], aal: 'aal1' | 'aal2' = 'aal1') {
+function runtime(roles: TestRoleCode[], aal: 'aal1' | 'aal2' = 'aal1') {
   const writeAudit = vi.fn((_tx: unknown, _actor: unknown, _record: unknown) => Promise.resolve());
   const getClaims = vi.fn((_options: { strict: boolean }) => {
     const r = brandVerifiedClaims({
@@ -65,10 +65,7 @@ function runtime(roles: SystemRoleCode[], aal: 'aal1' | 'aal2' = 'aal1') {
     loadSessionFacts: () => Promise.resolve({ active: true, aal2: aal === 'aal2' }),
     loadGrants: () =>
       Promise.resolve(
-        grantsForAssignments(
-          roles.map((roleCode) => ({ roleCode })),
-          { headedDepartmentIds: [] },
-        ),
+        testRoleGrants(roles, []),
       ),
     // SARA exists in the organization; any other id is unknown (or out of scope): 404.
     resolveResource: (_tx, ref) =>
@@ -157,7 +154,7 @@ describe('responsibility kinds (the reassignment hook)', () => {
 
 describe('deactivation screen query', () => {
   const query = (
-    roles: SystemRoleCode[],
+    roles: TestRoleCode[],
     kinds?: readonly ResponsibilityKind[],
     aal: 'aal1' | 'aal2' = 'aal1',
   ) => createDefineQuery(runtime(roles, aal).rt)(deactivationQueryDefinition(kinds));
@@ -266,7 +263,7 @@ describe('deactivate input', () => {
 });
 
 describe('deactivate action', () => {
-  const action = (roles: SystemRoleCode[], kinds?: readonly ResponsibilityKind[]) => {
+  const action = (roles: TestRoleCode[], kinds?: readonly ResponsibilityKind[]) => {
     const r = runtime(roles);
     return { ...r, run: createDefineAction(r.rt)(deactivateMemberActionDefinition(kinds)) };
   };
@@ -450,11 +447,11 @@ describe('deactivate action', () => {
 });
 
 describe('deactivating a member who holds a privileged role (review M4; no authenticator code since 14 Oct 2026)', () => {
-  const ordinary = (roles: SystemRoleCode[], aal: 'aal1' | 'aal2' = 'aal1') => {
+  const ordinary = (roles: TestRoleCode[], aal: 'aal1' | 'aal2' = 'aal1') => {
     const r = runtime(roles, aal);
     return { ...r, run: createDefineAction(r.rt)(deactivateMemberActionDefinition()) };
   };
-  const privileged = (roles: SystemRoleCode[], aal: 'aal1' | 'aal2' = 'aal1') => {
+  const privileged = (roles: TestRoleCode[], aal: 'aal1' | 'aal2' = 'aal1') => {
     const r = runtime(roles, aal);
     return { ...r, run: createDefineAction(r.rt)(deactivatePrivilegedMemberActionDefinition()) };
   };
@@ -511,11 +508,11 @@ describe('deactivating a member who holds a privileged role (review M4; no authe
 });
 
 describe('reactivate actions', () => {
-  const ordinary = (roles: SystemRoleCode[], aal: 'aal1' | 'aal2' = 'aal1') => {
+  const ordinary = (roles: TestRoleCode[], aal: 'aal1' | 'aal2' = 'aal1') => {
     const r = runtime(roles, aal);
     return { ...r, run: createDefineAction(r.rt)(reactivateMemberActionDefinition()) };
   };
-  const privileged = (roles: SystemRoleCode[], aal: 'aal1' | 'aal2' = 'aal1') => {
+  const privileged = (roles: TestRoleCode[], aal: 'aal1' | 'aal2' = 'aal1') => {
     const r = runtime(roles, aal);
     return { ...r, run: createDefineAction(r.rt)(reactivatePrivilegedMemberActionDefinition()) };
   };

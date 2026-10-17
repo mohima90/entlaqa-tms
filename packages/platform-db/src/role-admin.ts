@@ -1,280 +1,149 @@
 import 'server-only';
-import { type SQL, sql } from 'drizzle-orm';
-import { ORG_TIME_ZONE } from './org-time-zone';
+import { sql } from 'drizzle-orm';
 import { pgError } from './user-admin';
 import type { UserTx } from './with-user-tx';
 
 /**
- * Changing a member's roles from their profile (T-M2-14, FR-IAM-07, BR-IAM-1, BR-IAM-3). The caller
- * holds `platform.role.assign` (ordinary roles) or `platform.role.assign_privileged` (AAL2) for the
- * person; the database guard (private.check_role_assignment_actor, last-admin triggers) has the final
- * word. Validity dates are calendar days in the organization's time zone (its profile's — T-M2-22 —, else
- * its headquarters branch's, else Asia/Riyadh: ORG_TIME_ZONE): a role starts at the beginning of its first
- * day and ends after its last day.
+ * Changing a member's role (T-M2-14, FR-IAM-07, BR-IAM-3; EP-ROLES: ONE role per person, Kawadir's
+ * «تعديل الدور» dialog). The caller holds `platform.role.assign` (ordinary roles) or
+ * `platform.role.assign_privileged` for the person; the database guard (private.check_role_assignment_actor,
+ * last-admin triggers, one-role index) has the final word. The role is a standard role or a custom role of
+ * the organization; a change replaces the row (remove, then give) in the caller's transaction.
  */
-export interface AssignedRole {
-  readonly roleCode: string;
-  readonly isPrimary: boolean;
-  /** First day (YYYY-MM-DD) or null = already in force. */
-  readonly validFrom: string | null;
-  /** Last day, inclusive (YYYY-MM-DD) or null = no end. */
-  readonly validUntil: string | null;
-}
-
-export interface EditableRoles {
+export interface EditableRole {
   readonly personId: string;
-  /** Null when the person has no sign-in account here (roles come with the invitation). */
+  /** Null when the person has no sign-in account here (the role comes with the invitation). */
   readonly membershipId: string | null;
   readonly membershipStatus: 'invited' | 'active' | 'suspended' | 'revoked' | null;
-  /** The signed-in member's own membership: nobody changes their own roles. */
+  /** The signed-in member's own membership: nobody changes their own role. */
   readonly isSelf: boolean;
   /** Same rule as the database guard (private.actor_may_manage_person). */
   readonly mayManage: boolean;
-  readonly roles: readonly AssignedRole[];
-  /** Optimistic concurrency: every assignment with its row version. */
+  /** The role held (in force or not), or null. */
+  readonly roleCode: string | null;
+  /** Optimistic concurrency: `role_code:row id:row version`, or '' without a role. */
   readonly version: string;
-  readonly timeZone: string;
-  /** Today in that time zone (YYYY-MM-DD): roles that ended or have not started yet. */
-  readonly today: string;
 }
 
-export async function getEditableRoles(
+export async function getEditableRole(
   tx: UserTx,
   personId: string,
-): Promise<EditableRoles | null> {
+): Promise<EditableRole | null> {
   const [person] = await tx.execute<{
     id: string;
     membership_id: string | null;
-    status: EditableRoles['membershipStatus'];
+    status: EditableRole['membershipStatus'];
     is_self: boolean;
     may_manage: boolean;
-    time_zone: string;
-    today: string;
+    role_code: string | null;
+    row_id: string | null;
+    row_version: number | null;
   }>(sql`
     select p.id, m.id as membership_id, m.status,
            coalesce(m.user_id = private.request_user_id(), false) as is_self,
            private.actor_may_manage_person(p.tenant_id, p.id) as may_manage,
-           ${ORG_TIME_ZONE} as time_zone,
-           (now() at time zone ${ORG_TIME_ZONE})::date::text as today
+           ra.role_code, ra.id as row_id, ra.version as row_version
     from platform.persons p
     left join platform.tenant_memberships m on m.tenant_id = p.tenant_id and m.person_id = p.id
+    left join platform.role_assignments ra on ra.tenant_id = m.tenant_id and ra.membership_id = m.id
     where p.id = ${personId}::uuid`);
   if (!person) return null;
-  const rows =
-    person.membership_id === null
-      ? []
-      : await tx.execute<{
-          role_code: string;
-          is_primary: boolean;
-          valid_from: string | null;
-          valid_until: string | null;
-          id: string;
-          version: number;
-        }>(sql`
-          select ra.id, ra.role_code, ra.is_primary, ra.version,
-                 (ra.valid_from at time zone ${person.time_zone})::date::text as valid_from,
-                 ((ra.valid_until - interval '1 microsecond') at time zone ${person.time_zone})::date::text
-                   as valid_until
-          from platform.role_assignments ra
-          where ra.membership_id = ${person.membership_id}::uuid
-          order by ra.is_primary desc, ra.role_code`);
   return {
     personId: person.id,
     membershipId: person.membership_id,
     membershipStatus: person.status,
     isSelf: person.is_self,
     mayManage: person.may_manage,
-    roles: rows.map((r) => ({
-      roleCode: r.role_code,
-      isPrimary: r.is_primary,
-      validFrom: r.valid_from,
-      validUntil: r.valid_until,
-    })),
-    version: [...rows]
-      .sort((a, b) => a.role_code.localeCompare(b.role_code))
-      // The row id too: a role removed and given again starts at version 1 again.
-      .map((r) => `${r.role_code}:${r.id}:${String(r.version)}`)
-      .join(','),
-    timeZone: person.time_zone,
-    today: person.today,
+    roleCode: person.role_code,
+    version:
+      person.role_code === null
+        ? ''
+        : `${person.role_code}:${person.row_id ?? ''}:${String(person.row_version ?? 0)}`,
   };
 }
 
 /** Why a change was refused. */
-export type RolesRefusal =
+export type RoleRefusal =
   | 'not_found'
   | 'no_account'
-  | 'own_roles'
+  | 'own_role'
   | 'not_allowed'
   | 'version_conflict'
   | 'last_admin'
   | 'membership_revoked'
-  | 'dates_invalid'
   | 'privileged_change'
-  /** BR-IAM-4: the Organization Admin role would be held together with another role (T-M2-16). */
-  | 'role_conflict';
+  | 'unknown_role';
 
-export type RolesOutcome =
+export type RoleOutcome =
   | {
       readonly ok: true;
-      readonly before: readonly AssignedRole[];
-      readonly after: readonly AssignedRole[];
+      readonly before: string | null;
+      readonly after: string;
       readonly changed: boolean;
     }
-  | { readonly ok: false; readonly refusal: RolesRefusal };
+  | { readonly ok: false; readonly refusal: RoleRefusal };
 
 /** Maps database refusals of a role change to reasons; rethrows anything else. */
-export function rolesRefusalOf(error: unknown): RolesRefusal {
+export function roleRefusalOf(error: unknown): RoleRefusal {
   const pg = pgError(error);
   if (pg?.code === '42501') return 'not_allowed';
-  // Separation of duties (BR-IAM-4, migration 20261010090000).
-  if (pg?.code === 'JR001') return 'role_conflict';
   if (pg?.code === '23514' && pg.message.includes('at least one active Organization Admin')) {
     return 'last_admin';
   }
   if (pg?.code === '23514' && pg.message.includes('revoked membership'))
     return 'membership_revoked';
-  if (pg?.code === '23514' && pg.constraint === 'role_assignments_validity_check') {
-    return 'dates_invalid';
-  }
-  // A concurrent change took the primary slot or the same role first.
-  if (pg?.code === '23505') return 'version_conflict';
+  // An unknown standard role or a custom role deleted meanwhile (generated foreign keys).
+  if (pg?.code === '23503') return 'unknown_role';
+  // A concurrent change gave the member a role first (one role per person), or JR001 for the Organization
+  // Admin (unreachable: the row is replaced).
+  if (pg?.code === '23505' || pg?.code === 'JR001') return 'version_conflict';
   throw error;
 }
 
-const same = (a: AssignedRole, b: AssignedRole) =>
-  a.isPrimary === b.isPrimary && a.validFrom === b.validFrom && a.validUntil === b.validUntil;
-
-/** Does going from `before` to `after` give, remove or change one of `codes` (primary flag or days)? */
-export function touchesRoles(
-  before: readonly AssignedRole[],
-  after: readonly AssignedRole[],
-  codes: ReadonlySet<string>,
-): boolean {
-  const was = new Map(before.map((r) => [r.roleCode, r]));
-  const will = new Map(after.map((r) => [r.roleCode, r]));
-  return [...new Set([...was.keys(), ...will.keys()])].some((code) => {
-    if (!codes.has(code)) return false;
-    const a = was.get(code);
-    const b = will.get(code);
-    return a === undefined || b === undefined || !same(a, b);
-  });
+export interface ReplaceRoleOptions {
+  /**
+   * Is this role privileged (ordinary path: neither the old nor the new role may be)? Checked after the
+   * lock, against the stored role: refused as `privileged_change`.
+   */
+  readonly isLocked?: (roleCode: string) => boolean;
 }
 
 /**
- * The primary role has no day fields in the form: the role chosen as primary keeps the days it already
- * has (as primary or as an additional role), so an ended role is never revived by a save.
+ * Gives the member `roleCode` in place of their current role, when the stored role is still
+ * `expectedVersion`. Returns the role before and after for the audit event (role codes are not personal
+ * data), or why the database refused — the transaction is then aborted and must be ended by the caller
+ * (defineAction rolls back on an error result).
  */
-export function keepPrimaryDays(
-  before: readonly AssignedRole[],
-  desired: readonly AssignedRole[],
-): AssignedRole[] {
-  return desired.map((r) => {
-    const stored = before.find((b) => b.roleCode === r.roleCode);
-    return r.isPrimary && stored && r.validFrom === null && r.validUntil === null
-      ? { ...r, validFrom: stored.validFrom, validUntil: stored.validUntil }
-      : r;
-  });
-}
-
-export interface ReplaceRolesOptions {
-  /**
-   * Roles this call may not give, remove or change (privileged roles on the ordinary path). Checked
-   * after the lock, against the stored roles: refused as `privileged_change`.
-   */
-  readonly lockedCodes?: ReadonlySet<string>;
-  /**
-   * Would the member hold roles that may not go together (BR-IAM-4)? Called after the lock with the
-   * roles as they would be saved and today in the organization's time zone: refused as `role_conflict`
-   * before anything is written (the database refuses it anyway).
-   */
-  readonly conflicts?: (roles: readonly AssignedRole[], today: string) => boolean;
-  /**
-   * Roles held alone (BR-IAM-4: the Organization Admin). When such a role's row changes in the same save
-   * as other rows, those other rows are written as remove + add (after the sole role's update), so no
-   * intermediate state holds both: the database checks every row write, and e.g. a scheduled hand-over
-   * moved later or earlier would otherwise be refused half-way (security review L3). The sole role's own
-   * row is never removed for this (last-admin rule).
-   */
-  readonly soleRoles?: ReadonlySet<string>;
-}
-
-/**
- * Replaces the member's roles with `desired` in the caller's transaction (only the differences are
- * written). Returns the roles before and after for the audit event (role codes and dates are not
- * personal data), or why the database refused — the transaction is then aborted and must be ended by
- * the caller (defineAction rolls back on an error result).
- */
-export async function replaceMemberRoles(
+export async function replaceMemberRole(
   tx: UserTx,
   personId: string,
   expectedVersion: string,
-  requested: readonly AssignedRole[],
-  options: ReplaceRolesOptions = {},
-): Promise<RolesOutcome> {
+  roleCode: string,
+  options: ReplaceRoleOptions = {},
+): Promise<RoleOutcome> {
   // Serialise with every other role change of the organization before reading (READ COMMITTED).
   await tx.execute(sql`select private.lock_tenant_roles(private.current_tenant_id())`);
-  const before = await getEditableRoles(tx, personId);
+  const before = await getEditableRole(tx, personId);
   if (!before) return { ok: false, refusal: 'not_found' };
   if (before.membershipId === null) return { ok: false, refusal: 'no_account' };
-  if (before.isSelf) return { ok: false, refusal: 'own_roles' };
+  if (before.isSelf) return { ok: false, refusal: 'own_role' };
   if (!before.mayManage) return { ok: false, refusal: 'not_allowed' };
   if (before.membershipStatus === 'revoked') return { ok: false, refusal: 'membership_revoked' };
   if (before.version !== expectedVersion) return { ok: false, refusal: 'version_conflict' };
-  const desired = keepPrimaryDays(before.roles, requested);
-  if (options.lockedCodes && touchesRoles(before.roles, desired, options.lockedCodes)) {
+  if (before.roleCode === roleCode) {
+    return { ok: true, before: before.roleCode, after: roleCode, changed: false };
+  }
+  const locked = options.isLocked;
+  if (locked && (locked(roleCode) || (before.roleCode !== null && locked(before.roleCode)))) {
     return { ok: false, refusal: 'privileged_change' };
   }
-  if (options.conflicts?.(desired, before.today)) return { ok: false, refusal: 'role_conflict' };
-
-  const current = new Map(before.roles.map((r) => [r.roleCode, r]));
-  const wanted = new Map(desired.map((r) => [r.roleCode, r]));
-  const removed = before.roles.filter((r) => !wanted.has(r.roleCode));
-  const added = desired.filter((r) => !current.has(r.roleCode));
-  const changed = desired.filter((r) => {
-    const old = current.get(r.roleCode);
-    return old !== undefined && !same(old, r);
-  });
-  const sole = options.soleRoles;
-  const rewritten =
-    sole && changed.some((r) => sole.has(r.roleCode))
-      ? changed.filter((r) => !sole.has(r.roleCode))
-      : [];
-  const updated = changed.filter((r) => !rewritten.includes(r));
-  const deletedCodes = [...removed, ...rewritten].map((r) => r.roleCode);
-  const inserted = [...added, ...rewritten];
-  if (removed.length + added.length + changed.length === 0) {
-    return { ok: true, before: before.roles, after: before.roles, changed: false };
-  }
-
-  const tz = before.timeZone;
-  const from = (day: string | null): SQL =>
-    day === null ? sql`null` : sql`(${day}::date::timestamp at time zone ${tz})`;
-  const until = (day: string | null): SQL =>
-    day === null ? sql`null` : sql`((${day}::date + 1)::timestamp at time zone ${tz})`;
-  const membership = before.membershipId;
-  // The primary slot is unique: rows giving it up are written before the row taking it.
-  const order = (r: AssignedRole) => (r.isPrimary ? 1 : 0);
   try {
-    for (const code of deletedCodes) {
-      await tx.execute(sql`delete from platform.role_assignments
-        where membership_id = ${membership}::uuid and role_code = ${code}`);
-    }
-    for (const r of [...updated].sort((a, b) => order(a) - order(b))) {
-      await tx.execute(sql`update platform.role_assignments
-        set is_primary = ${r.isPrimary}, valid_from = ${from(r.validFrom)},
-            valid_until = ${until(r.validUntil)}
-        where membership_id = ${membership}::uuid and role_code = ${r.roleCode}`);
-    }
-    for (const r of [...inserted].sort((a, b) => order(a) - order(b))) {
-      await tx.execute(sql`insert into platform.role_assignments
-          (membership_id, role_code, is_primary, valid_from, valid_until)
-        values (${membership}::uuid, ${r.roleCode}, ${r.isPrimary}, ${from(r.validFrom)},
-                ${until(r.validUntil)})`);
-    }
+    await tx.execute(sql`delete from platform.role_assignments
+      where membership_id = ${before.membershipId}::uuid`);
+    await tx.execute(sql`insert into platform.role_assignments (membership_id, role_code, is_primary)
+      values (${before.membershipId}::uuid, ${roleCode}, true)`);
   } catch (error) {
-    return { ok: false, refusal: rolesRefusalOf(error) };
+    return { ok: false, refusal: roleRefusalOf(error) };
   }
-  const after = await getEditableRoles(tx, personId);
-  return { ok: true, before: before.roles, after: after?.roles ?? desired, changed: true };
+  return { ok: true, before: before.roleCode, after: roleCode, changed: true };
 }

@@ -102,7 +102,8 @@ begin
     perform tests.assert_eq(sqlerrm, 'the role is still held: 1 member(s), 0 pending invitation(s)',
       'a role held by a member is not deleted (JR002, with the numbers)');
   end;
-  delete from platform.role_assignments where membership_id = v_m;
+  -- A revoked membership holds nothing any more: it does not keep the role alive.
+  update platform.tenant_memberships set status = 'revoked' where id = v_m;
   insert into platform.invitations (person_id, email, locale, primary_role) values
     ('a1000000-0000-4000-8000-0000000000d9', 'cr@a.test', 'ar', 'custom_a00000000001');
   perform tests.assert_fails($q$delete from platform.custom_roles where code = 'custom_a00000000001'$q$,
@@ -112,6 +113,8 @@ begin
     1::bigint, 'nobody holds it: deleted');
   perform tests.assert_eq((select count(*) from platform.custom_role_permissions where custom_role_id = 'a6000000-0000-4000-8000-000000000001'),
     0::bigint, 'its permissions go with it');
+  perform tests.assert_eq((select count(*) from platform.role_assignments where membership_id = v_m),
+    0::bigint, 'and the leftover row of the revoked membership');
   perform tests.assert_fails($q$insert into platform.invitations (person_id, email, locale, primary_role) values ('a1000000-0000-4000-8000-0000000000d9', 'cr@a.test', 'ar', 'custom_a00000000001')$q$,
     array['23503'], 'a deleted custom role cannot be given');
   perform tests.assert_fails($q$insert into platform.invitations (person_id, email, locale, primary_role) values ('a1000000-0000-4000-8000-0000000000d9', 'cr@a.test', 'ar', 'custom_b00000000001')$q$,

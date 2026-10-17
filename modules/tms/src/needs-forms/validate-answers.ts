@@ -30,11 +30,54 @@ export type CleanAnswers = Record<string, Record<string, unknown>[]>;
 
 export interface ValidationContext {
   /**
-   * People the answering Department Head may name (their team, from the platform people service). When
-   * given, a named employee outside it is refused; the needs page always passes it.
+   * People the answering Department Head may name (their team, from the platform people service; lower-case
+   * ids). Deny by default (security review S-L2): WITHOUT it nobody can be named — a people field that allows
+   * names refuses every named employee (PERSON_NOT_ALLOWED). The needs page always passes it.
    */
   readonly allowedPersonIds?: ReadonlySet<string>;
 }
+
+/**
+ * Every error code the validator returns (field errors `fieldErrors[].code`). Each has a message under
+ * `needsForms.fieldErrors.<code>` in English and Arabic (unit test), so the renderer never shows a raw code.
+ */
+export const ANSWER_ERROR_CODES = [
+  'REQUIRED',
+  'INVALID_TYPE',
+  'TOO_LONG',
+  'INVALID_DATE',
+  'INVALID_URL',
+  'INVALID_NUMBER',
+  'INVALID_EMAIL',
+  'INVALID_PHONE',
+  'NOT_AN_OPTION',
+  'OPTION_TWICE',
+  'INVALID_FILE',
+  'NAMES_NOT_ALLOWED',
+  'NAMES_REQUIRED',
+  'INVALID_PERSON',
+  'PERSON_TWICE',
+  'PERSON_NOT_ALLOWED',
+  'TOO_MANY_PEOPLE',
+  'INVALID_COUNT',
+  'COUNT_BELOW_NAMES',
+  'INVALID_ENTRY',
+  'UNKNOWN_FIELD',
+  'INVALID_ANSWERS',
+  'UNKNOWN_SECTION',
+  'INVALID_ENTRIES',
+  'TOO_FEW_ENTRIES',
+  'TOO_MANY_ENTRIES',
+  'TOO_MANY_ERRORS',
+] as const;
+export type AnswerErrorCode = (typeof ANSWER_ERROR_CODES)[number];
+
+/**
+ * Bounds on what a refusal sends back (S-L2): at most MAX_FIELD_ERRORS field errors (the last one then says
+ * TOO_MANY_ERRORS), at most MAX_UNKNOWN_KEYS unknown keys reported per object, each key cut to
+ * MAX_ECHOED_KEY characters — a client cannot make the server echo arbitrary amounts of its own input.
+ */
+export const ERROR_LIMITS = { maxFieldErrors: 50, maxUnknownKeys: 10, maxEchoedKey: 64 } as const;
 
 export const ANSWER_LIMITS = {
   text: 500,
@@ -55,11 +98,14 @@ const NUMERIC_RE = /^-?\d+(\.\d+)?$/;
 type Check = { readonly ok: true; readonly value: unknown } | FieldProblem;
 interface FieldProblem {
   readonly ok: false;
-  readonly code: string;
+  readonly code: AnswerErrorCode;
   readonly params?: Readonly<Record<string, string | number>>;
 }
 
-const problem = (code: string, params?: Readonly<Record<string, string | number>>): FieldProblem =>
+const problem = (
+  code: AnswerErrorCode,
+  params?: Readonly<Record<string, string | number>>,
+): FieldProblem =>
   params ? { ok: false, code, params } : { ok: false, code };
 const valid = (value: unknown): Check => ({ ok: true, value });
 
@@ -126,7 +172,9 @@ function checkPeople(field: NeedsFormField, value: unknown, context: ValidationC
     if (ids.length > ANSWER_LIMITS.maxNamedPeople) {
       return problem('TOO_MANY_PEOPLE', { max: ANSWER_LIMITS.maxNamedPeople });
     }
-    if (context.allowedPersonIds && ids.some((id) => !context.allowedPersonIds?.has(id))) {
+    // Deny by default: without the answering head's team, nobody can be named (S-L2).
+    const allowed = context.allowedPersonIds;
+    if (ids.length > 0 && (!allowed || ids.some((id) => !allowed.has(id)))) {
       return problem('PERSON_NOT_ALLOWED');
     }
     if (ids.length === 0) ids = undefined;
@@ -199,6 +247,29 @@ function checkAnswer(field: NeedsFormField, value: unknown, context: ValidationC
   }
 }
 
+/** Unknown keys of a client object, reported bounded: a few, each cut short (never the whole input back). */
+function unknownKeyErrors(
+  keys: readonly string[],
+  known: readonly { readonly id: string }[],
+  path: string,
+  code: 'UNKNOWN_FIELD' | 'UNKNOWN_SECTION',
+): FieldError[] {
+  const ids = new Set(known.map((k) => k.id));
+  return keys
+    .filter((key) => !ids.has(key))
+    .slice(0, ERROR_LIMITS.maxUnknownKeys)
+    .map((key) => ({ path: `${path}.${key.slice(0, ERROR_LIMITS.maxEchoedKey)}`, code }));
+}
+
+/** At most ERROR_LIMITS.maxFieldErrors field errors; the last one says there were more. */
+function capErrors(errors: readonly FieldError[]): FieldError[] {
+  if (errors.length <= ERROR_LIMITS.maxFieldErrors) return [...errors];
+  return [
+    ...errors.slice(0, ERROR_LIMITS.maxFieldErrors - 1),
+    { path: 'sections', code: 'TOO_MANY_ERRORS' },
+  ];
+}
+
 /**
  * Checks one entry of a section; `path` prefixes the field errors (e.g. `sections.<id>.0`). Returns the
  * entry with only the shown fields' normalized answers.
@@ -214,10 +285,7 @@ export function validateEntry(
   if (!isPlainObject(entry)) {
     return { value, errors: [{ path, code: 'INVALID_ENTRY' }] };
   }
-  for (const key of Object.keys(entry)) {
-    if (!section.fields.some((f) => f.id === key))
-      errors.push({ path: `${path}.${key}`, code: 'UNKNOWN_FIELD' });
-  }
+  errors.push(...unknownKeyErrors(Object.keys(entry), section.fields, path, 'UNKNOWN_FIELD'));
   const answers: Entry = entry;
   for (const field of section.fields) {
     if (!isFieldShown(field, section.fields, answers)) continue;
@@ -257,10 +325,7 @@ export function validateNeedsAnswers(
       }),
     );
   }
-  for (const key of Object.keys(answers)) {
-    if (!form.sections.some((s) => s.id === key))
-      errors.push({ path: `sections.${key}`, code: 'UNKNOWN_SECTION' });
-  }
+  errors.push(...unknownKeyErrors(Object.keys(answers), form.sections, 'sections', 'UNKNOWN_SECTION'));
   for (const section of form.sections) {
     if (!section.visible) continue;
     const path = `sections.${section.id}`;
@@ -286,6 +351,6 @@ export function validateNeedsAnswers(
     });
   }
   return errors.length > 0
-    ? err(appError('VALIDATION_FAILED', { fieldErrors: errors }))
+    ? err(appError('VALIDATION_FAILED', { fieldErrors: capErrors(errors) }))
     : ok(clean);
 }

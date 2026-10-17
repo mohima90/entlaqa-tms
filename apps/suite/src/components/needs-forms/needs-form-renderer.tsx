@@ -39,6 +39,9 @@ export function NeedsFormRenderer(props: NeedsFormRendererProps) {
   const { form, locale, answers, texts } = props;
   const text = (key: string, values: Record<string, string | number> = {}) =>
     fillText(texts[key] ?? key, values, locale);
+  // A field error's message; an unknown code falls back to the generic one, never the raw key (S-L2).
+  const errorMessage = (code: string) =>
+    fillText(texts[`fieldErrors.${code}`] ?? texts['fieldErrors.INVALID'] ?? '', {}, locale);
   const prefix = props.idPrefix ?? `nf-${form.id.slice(0, 8)}`;
 
   const entriesOf = (section: NeedsFormSection): readonly Entry[] => {
@@ -128,6 +131,7 @@ export function NeedsFormRenderer(props: NeedsFormRendererProps) {
                           props.errors?.[`sections.${section.id}.${String(index)}.${field.id}`]
                         }
                         text={text}
+                        errorMessage={errorMessage}
                         onChange={(value) => {
                           setAnswer(section, index, field.id, value);
                         }}
@@ -165,6 +169,7 @@ function FieldControl({
   value,
   error,
   text,
+  errorMessage,
   onChange,
 }: {
   field: NeedsFormField;
@@ -173,12 +178,13 @@ function FieldControl({
   value: unknown;
   error: string | undefined;
   text: (key: string, values?: Record<string, string | number>) => string;
+  errorMessage: (code: string) => string;
   onChange: (value: unknown) => void;
 }) {
   const label = localized(field.label, locale);
   const placeholder = localized(field.placeholder, locale) || undefined;
   const marker = field.required ? text('markerRequired') : text('markerOptional');
-  const errorText = error ? text(`fieldErrors.${error}`) || error : undefined;
+  const errorText = error ? errorMessage(error) || undefined : undefined;
   const options = field.options.map((o) => ({ value: o.value, label: localized(o.label, locale) }));
   const str = typeof value === 'string' ? value : '';
   const testId = `render-field-${field.id}`;

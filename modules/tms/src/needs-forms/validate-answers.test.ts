@@ -1,10 +1,21 @@
+import ar from '@jadarat/platform-i18n/messages/ar.json';
+import en from '@jadarat/platform-i18n/messages/en.json';
 import { describe, expect, it } from 'vitest';
 import { testForm } from './test-form';
-import { ANSWER_LIMITS, validateEntry, validateNeedsAnswers } from './validate-answers';
+import {
+  ANSWER_ERROR_CODES,
+  ANSWER_LIMITS,
+  ERROR_LIMITS,
+  validateEntry,
+  validateNeedsAnswers,
+} from './validate-answers';
 
 const PERSON_A = '0a000000-0000-4000-8000-000000000001';
 const PERSON_B = '0a000000-0000-4000-8000-000000000002';
 const FILE = '0f000000-0000-4000-8000-0000000000AA';
+/** The answering head's team (the needs page always passes it). */
+const TEAM = { allowedPersonIds: new Set([PERSON_A, PERSON_B]) };
+type Context = Parameters<typeof validateNeedsAnswers>[2];
 
 const extra = { agree: true };
 const need = (over: Record<string, unknown> = {}) => ({
@@ -13,7 +24,7 @@ const need = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
-function errorsOf(answers: unknown, context = {}) {
+function errorsOf(answers: unknown, context: Context = TEAM) {
   const result = validateNeedsAnswers(testForm(), answers, context);
   if (result.ok) return [];
   expect(result.error.code).toBe('VALIDATION_FAILED');
@@ -46,7 +57,7 @@ describe('validateNeedsAnswers (server-side, keyed by field id)', () => {
           attachment: FILE,
         },
       ],
-    });
+    }, TEAM);
     expect(result).toEqual({
       ok: true,
       value: {
@@ -151,7 +162,7 @@ describe('validateNeedsAnswers (server-side, keyed by field id)', () => {
   });
 
   it('checks the people field against its mode and the head’s team', () => {
-    const people = (value: unknown, context = {}) =>
+    const people = (value: unknown, context: Context = TEAM) =>
       errorsOf({ needs: [need({ people: value })], extra: [extra] }, context);
     expect(people({ count: 0 })).toEqual(['sections.needs.0.people:INVALID_COUNT']);
     expect(people({ count: 2.5 })).toEqual(['sections.needs.0.people:INVALID_COUNT']);
@@ -174,6 +185,11 @@ describe('validateNeedsAnswers (server-side, keyed by field id)', () => {
     expect(
       people({ count: 5, personIds: [PERSON_A] }, { allowedPersonIds: new Set([PERSON_A]) }),
     ).toEqual([]);
+    // Deny by default (S-L2): without the head's team, nobody can be named; a count still works.
+    expect(people({ personIds: [PERSON_A] }, {})).toEqual([
+      'sections.needs.0.people:PERSON_NOT_ALLOWED',
+    ]);
+    expect(people({ count: 3 }, {})).toEqual([]);
     expect(
       people({
         personIds: Array.from(
@@ -193,7 +209,7 @@ describe('validateNeedsAnswers (server-side, keyed by field id)', () => {
         ...section,
         fields: section.fields.map((f) => (f.id === 'people' ? { ...f, peopleMode: mode } : f)),
       };
-      return validateEntry(sec, { topic: 'x', people: value }, 'e').errors.map((e) => e.code);
+      return validateEntry(sec, { topic: 'x', people: value }, 'e', TEAM).errors.map((e) => e.code);
     };
     expect(byMode('count', { personIds: [PERSON_A] })).toEqual(['NAMES_NOT_ALLOWED']);
     expect(byMode('employees', { count: 3 })).toEqual(['NAMES_REQUIRED']);
@@ -216,6 +232,43 @@ describe('validateNeedsAnswers (server-side, keyed by field id)', () => {
     ]);
     expect(errorsOf(null)).toEqual(['sections:INVALID_ANSWERS']);
     expect(errorsOf([])).toEqual(['sections:INVALID_ANSWERS']);
+  });
+
+  it('bounds what a refusal sends back: few unknown keys, cut short, at most 50 errors', () => {
+    const many = Object.fromEntries(
+      Array.from({ length: 30 }, (_, i) => [`x${String(i)}${'k'.repeat(200)}`, 1]),
+    );
+    const unknown = errorsOf({ needs: [need()], extra: [extra], ...many });
+    expect(unknown).toHaveLength(ERROR_LIMITS.maxUnknownKeys);
+    for (const error of unknown) {
+      expect(error).toMatch(/:UNKNOWN_SECTION$/);
+      expect(error.length).toBeLessThanOrEqual(
+        'sections.'.length + ERROR_LIMITS.maxEchoedKey + ':UNKNOWN_SECTION'.length,
+      );
+    }
+    // Three bad entries with many unknown fields each, and more: still at most 50 errors, the last says so.
+    const bad = Object.fromEntries(Array.from({ length: 40 }, (_, i) => [`f${String(i)}`, 1]));
+    const result = validateNeedsAnswers(
+      testForm(),
+      { needs: [bad, bad, bad], extra: [{ ...bad, agree: 'no' }], ...many },
+      TEAM,
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    const errors = result.error.fieldErrors ?? [];
+    expect(errors).toHaveLength(ERROR_LIMITS.maxFieldErrors);
+    expect(errors.at(-1)).toEqual({ path: 'sections', code: 'TOO_MANY_ERRORS' });
+  });
+
+  it('has an English and an Arabic message for every code it returns', () => {
+    const messages = (catalog: unknown) =>
+      (catalog as { needsForms: { fieldErrors: Record<string, string | undefined> } }).needsForms
+        .fieldErrors;
+    for (const catalog of [en, ar]) {
+      const texts = messages(catalog);
+      const missing = ANSWER_ERROR_CODES.filter((code) => !texts[code]?.trim());
+      expect(missing).toEqual([]);
+    }
   });
 
   it('skips hidden sections and hidden fields with their answers', () => {

@@ -114,7 +114,7 @@ The delivery team for M0 onward is **the Product Owner (human) plus Claude Code 
 | P1 | **Business flow first, for every phase** (PO, 15 Oct 2026): before any technical work on a phase or epic, the Tech Lead writes its business flow in plain language (actors and roles, step-by-step flow, business rules, decisions and approvals, exceptions, inputs/outputs, screens implied, open questions — template in `docs/business-flows/README.md`), discusses it with the PO and records the agreement. Then screens, then build. Part of the Definition of Ready for an epic (§4.1) | Feature lists per role without a written flow |
 | P2 | **One independent review per PR**; a security review only for security-relevant changes; the author fixes findings; a second look only to confirm the fix of a Critical or High finding | Several review and re-review rounds |
 | P3 | **One PR per complete feature area** (e.g., "planning cycle set-up", "Department Head needs form"), not one per small slice | Many small PRs (< 400 lines target in §3.3) |
-| P4 | **Screens approved per feature area in one batch** (Kawadir ATS layout, `docs/design/kawadir-alignment.md`) | Screen-by-screen approval and repeated design rounds |
+| P4 | ~~Screens approved per feature area in one batch~~ — **no separate screen approval (PO, 17 Oct 2026: "no need for screenshots anymore")**: screens are built directly in the Kawadir ATS layout with the Jadarat palette (`docs/design/kawadir-alignment.md`) once the business flow is agreed; the PO sees them in the product | Screen-by-screen approval and repeated design rounds |
 | P5 | **Database changes batched** per feature area; deployed automatically after merge (§5.6) | One manual DB deploy after each PR |
 | P6 | **Documentation only where it matters**: business flows, decisions (STATUS), runbooks that operators need, ADRs for real architecture choices; no long per-task write-ups | Extensive notes per task |
 | P7 | **Several engineering agents in parallel** on independent work (separate branches/worktrees), integrated by the Tech Lead | Mostly sequential work |
@@ -188,7 +188,7 @@ Every significant decision is recorded in `docs/adr/NNNN-title.md` (template in 
 
 **Epic level (mandatory gate, PO decision 15 Oct 2026):**
 - [ ] **Business flow of the phase/epic written and agreed with the PO** (`docs/business-flows/`, §2.4 P1) — the first task of every epic in the backlog; it blocks the epic's other tasks
-- [ ] Screens of the feature area approved by the PO in one batch (§2.4 P4)
+- [ ] ~~Screens of the feature area approved by the PO in one batch~~ — not needed since 17 Oct 2026 (§2.4 P4): built in the Kawadir layout
 
 **Story level:**
 

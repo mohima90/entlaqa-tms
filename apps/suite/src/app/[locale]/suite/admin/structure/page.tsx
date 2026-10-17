@@ -151,7 +151,8 @@ async function Structure({
     })(),
     branchId: unit.branchId,
     headPersonId: unit.headPersonId,
-    headName: unit.headNameAr ? localizedName(locale, unit.headNameAr, unit.headNameEn) : null,
+    // A head may have an English name only (PO 17 Oct 2026).
+    headName: unit.headPersonId ? localizedName(locale, unit.headNameAr, unit.headNameEn) : null,
     active: unit.status === 'active',
     version: unit.version,
     childCount: unit.childCount,

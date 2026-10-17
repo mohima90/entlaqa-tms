@@ -4,7 +4,7 @@
 |---|---|
 | **Epic** | EP-ROLES (BACKLOG T-M2-39 … T-M2-41) |
 | **Requirements** | FR-IAM-07 (roles, custom role builder — R1), FR-IAM-08 (data scope, R1 note), BR-IAM-4 (Organization Admin held alone) |
-| **Status** | In discussion with the PO (16 Oct 2026) — PO chose **option B**: Kawadir's fixed standard roles **plus** our own custom role builder now |
+| **Status** | **Agreed (PO, 17 Oct 2026)** — all five open questions approved as proposed; PO chose **option B**: Kawadir's fixed standard roles **plus** our own custom role builder now |
 | **Copied from Kawadir** | One role per person; roles chosen when inviting and changed on Team members (edit-role dialog); Department Manager tied to departments; every role change logged automatically. Kawadir's unfinished "Roles & Permissions" screen (role name EN/AR, description, permissions grouped by module with checkboxes, System/Custom badge, permission count) is the layout for our custom role builder |
 | **Background** | Mandatory-roles analysis: [`docs/delivery/roles/README.md`](../delivery/roles/README.md) |
 
@@ -67,8 +67,8 @@ Every organization starts with six ready standard roles that cover the whole tra
 ## 9. Open questions
 | # | Question | Proposed answer | PO answer |
 |---|---|---|---|
-| 1 | One role per person (Kawadir) — today our system allows a main role plus extra roles | **One role per person**, like Kawadir; a person needing more gets a custom role combining the permissions | |
-| 2 | Instructor: a 7th standard role, or a custom role? | **Custom role template "Instructor"** (sessions assigned to them only) — keeps six standard roles | |
-| 3 | Line managers who are not department heads: how do they approve their team's requests? | **From the reporting line** in the person's record (anyone with direct reports sees and approves for them) — no extra role | |
-| 4 | Finance and management plan approvers | **A named person per approval step** (chosen in the planning cycle) — no role needed | |
-| 5 | Arabic labels | «مدير المنظمة» for Organization Admin, «موظف» for Employee | |
+| 1 | One role per person (Kawadir) — today our system allows a main role plus extra roles | **One role per person**, like Kawadir; a person needing more gets a custom role combining the permissions | Approved (17 Oct 2026) |
+| 2 | Instructor: a 7th standard role, or a custom role? | **Custom role template "Instructor"** (sessions assigned to them only) — keeps six standard roles | Approved (17 Oct 2026) |
+| 3 | Line managers who are not department heads: how do they approve their team's requests? | **From the reporting line** in the person's record (anyone with direct reports sees and approves for them) — no extra role | Approved (17 Oct 2026) |
+| 4 | Finance and management plan approvers | **A named person per approval step** (chosen in the planning cycle) — no role needed | Approved (17 Oct 2026) |
+| 5 | Arabic labels | «مدير المنظمة» for Organization Admin, «موظف» for Employee | Approved (17 Oct 2026) |

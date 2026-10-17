@@ -1231,8 +1231,10 @@ begin
     v_target := new.person_id;
   end if;
   -- What this change needs, as the application (security review M1): adding a person — inviting or editing
-  -- people; a change of the deactivation fields only (persons.status / deactivated_at, a report handed over:
-  -- person_employment.manager_person_id) — deactivating or editing people; anything else — editing people.
+  -- people; a change of the deactivation fields of a person record only (persons.status / deactivated_at) —
+  -- deactivating or editing people; anything else, a new direct manager included (handing a leaver's
+  -- reports over is a placement change: platform.user.update, as directReportsResponsibility; confirmation
+  -- pass Low 1) — editing people.
   v_generated := array(select a.attname::text from pg_catalog.pg_attribute a
                        where a.attrelid = tg_relid and a.attgenerated <> '' and not a.attisdropped);
   if tg_op = 'INSERT' then
@@ -1242,8 +1244,7 @@ begin
     from jsonb_each(to_jsonb(new)) n
     where not (n.key = any (v_generated || array['updated_at', 'updated_by', 'version']))
       and n.value is distinct from to_jsonb(old) -> n.key;
-    if v_changed <@ (case when tg_table_name = 'persons' then array['status', 'deactivated_at']
-                          else array['manager_person_id'] end) then
+    if tg_table_name = 'persons' and v_changed <@ array['status', 'deactivated_at'] then
       v_needs := array['platform.user.deactivate', 'platform.user.update'];
     else
       v_needs := array['platform.user.update'];

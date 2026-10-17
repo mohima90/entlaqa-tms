@@ -257,6 +257,9 @@ where rp.role_code = 'hr_manager' and rp.permission_code <> 'platform.org.manage
 insert into platform.custom_role_permissions (custom_role_id, permission_code) values
   ('a6000000-0000-4000-8000-0000000000e6', 'platform.user.read'),
   ('a6000000-0000-4000-8000-0000000000e6', 'platform.user.deactivate');
+-- uInv reports to uA (for the hand-over check below).
+insert into platform.person_employment (person_id, manager_person_id)
+values ('a1000000-0000-4000-8000-0000000000a2', 'a1000000-0000-4000-8000-0000000000a1');
 do $$
 declare
   v_copy text := (select code from platform.custom_roles where id = 'a6000000-0000-4000-8000-0000000000e5');
@@ -282,6 +285,10 @@ begin
     1::bigint, 'deactivation only: changes the deactivation fields of an ordinary member''s record');
   perform tests.assert_fails_like($q$update platform.persons set status = 'inactive' where id = 'a1000000-0000-4000-8000-0000000000ab'$q$,
     'only an Organization Admin may change the record of a member with a privileged role', 'deactivation only: never a privileged member''s record');
+  -- A new direct manager is a placement change (platform.user.update, as the application; confirmation
+  -- pass Low 1): deactivating alone never moves a report.
+  perform tests.assert_fails_like($q$update platform.person_employment set manager_person_id = null where person_id = 'a1000000-0000-4000-8000-0000000000a2'$q$,
+    'only user managers may change this person record', 'deactivation only: cannot change a direct manager');
 end $$;
 reset role;
 rollback;

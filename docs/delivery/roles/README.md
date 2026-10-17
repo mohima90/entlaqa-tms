@@ -2,9 +2,9 @@
 
 | | |
 |---|---|
-| **Status** | **Tech Lead proposal, pending PO confirmation** (15 Oct 2026) — the six-role set, the Arabic labels, the templates and the mapping below |
+| **Status** | **Approved (PO, 17 Oct 2026)** — the six-role set, the Arabic labels, the templates and the mapping below; business flow agreed in [`EP-ROLES-roles-and-custom-roles.md`](../../business-flows/EP-ROLES-roles-and-custom-roles.md) (one role per person, Instructor as a template, line managers from the reporting line, named plan approvers). Tech Lead proposal of 15 Oct 2026 |
 | **Decisions behind it** | PO, 14 Oct 2026: build role by role with full feature lists · PO, 15 Oct 2026: "too many users roles; I suggest 4 or 5 now and through users permissions I can create a custom role and give it a name and privileges" · PO, 15 Oct 2026: Training Coordinator is a standard role ("it's crucial") · PO, 15 Oct 2026: "search for any mandatory role to set it up from scratch" |
-| **Requirements** | BRD v3.0 §4.2, §5.4, Appendix B; FR-IAM-07 (custom role builder, R1), FR-IAM-08 (R1 note), BR-IAM-4 |
+| **Requirements** | BRD v3.1 §4.2, §5.4, Appendix B; FR-IAM-07 (custom role builder, R1), FR-IAM-08 (R1 note), BR-IAM-1 (one role per person), BR-IAM-4 |
 | **Build plan** | `BACKLOG.md` → `EP-ROLES` |
 
 ## 1. How we work role by role
@@ -24,16 +24,16 @@ Since 15 Oct 2026 the order follows the R1 core journey (BRD §5.4) rather than 
 | Department Head | — | With `EP-PLN` (needs form, plan-line approval) |
 | Employee | — | With the delivery epics (requests, My learning, certificates) |
 
-## 2. Proposed standard roles (six)
+## 2. Standard roles (six; approved 17 Oct 2026)
 
 | Role | Code (today) | Arabic label | Scope | Privileged | Main job |
 |---|---|---|---|---|---|
-| Organization Admin | `tenant_admin` | مدير المنشأة — **proposed «مدير المنظمة»** (Kawadir ATS), pending PO | Organization | Yes | Set-up only (settings, branding, team members, roles, security, integrations, e-mail integration, subscription, audit); holds no other role (BR-IAM-4) |
+| Organization Admin | `tenant_admin` | **«مدير المنظمة»** (Kawadir ATS; approved 17 Oct 2026 — formerly «مدير المنشأة») | Organization | Yes | Set-up only (settings, branding, team members, roles, security, integrations, e-mail integration, subscription, audit); holds no other role (BR-IAM-4) |
 | HR Manager | `hr_manager` | مدير الموارد البشرية | Organization | Yes | Employee records, structure (branches, departments, department heads), compliance rules, HR system |
 | L&D Manager | `training_manager` | مدير التعلم والتطوير | Organization | No | Course library, planning cycles, plan and budget envelopes, approval chain, sessions, notifications, training reports |
 | Training Coordinator | `training_coordinator` | منسق التدريب | Organization | No | Scheduling, logistics, enrollments, attendance; in planning, helps collect and consolidate needs |
 | Department Head | `department_head` | رئيس القسم | Headed departments + sub-departments | No | Proposes the department's needs, approves its plan lines and requests, team view |
-| Employee | `learner` | **proposed «موظف»** (replaces «متدرب»), pending PO | Own | No | Own requests, training, certificates |
+| Employee | `learner` | **«موظف»** (replaces «متدرب»; approved 17 Oct 2026) | Own | No | Own requests, training, certificates |
 
 The Platform Super Admin (ENTLAQA staff) stays outside tenant roles (platform console, FR-ADM-17). Permissions per area: BRD Appendix B. Privileged = Organization Admin, HR Manager, and every custom role with a high-risk permission; only an Organization Admin assigns those (PO, 5 Oct 2026, rule kept).
 
@@ -68,7 +68,7 @@ The Platform Super Admin (ENTLAQA staff) stays outside tenant roles (platform co
 | 15 | Reports | Executive and operational reports | **L&D Manager**, **HR Manager**, **Department Head** (department) | An Auditor is optional (template) | FR-RPT-01, 02 |
 | 16 | LMS connection (blended) | Connect Jadarat LMS, mapping, sync | **Organization Admin** | — | FR-LMS-01…03, 10 |
 
-### 3.2 Conclusions (Tech Lead proposal, pending PO confirmation)
+### 3.2 Conclusions (approved by the PO, 17 Oct 2026)
 
 **(a) Mandatory standard roles** — the journey cannot run without them:
 
@@ -95,7 +95,7 @@ The Platform Super Admin (ENTLAQA staff) stays outside tenant roles (platform co
 | External Instructor | Instructor portal for non-employees (FR-IAM-15, R2) | Not needed in R1 (non-employee logins are R2) |
 | Mentor / Assessor | OJT sign-off (FR-OJT, R2) | Not needed in R1 |
 
-**(c) Roles the analysis shows may be missing from the six — open questions for the PO:**
+**(c) Roles the analysis shows may be missing from the six — PO answers (17 Oct 2026):** Q1 **Instructor = a template** of the role builder (keeps six standard roles); Q2 **line managers from the reporting line** (anyone with direct reports sees and approves for them; no role); Q3 **a named person per approval step** (no role); Q4 **«مدير المنظمة»** and **«موظف»**. Also agreed: **one role per person** (Kawadir). The options as proposed:
 
 | # | Gap | Why it matters | Options (Tech Lead recommendation first) |
 |---|---|---|---|
@@ -104,7 +104,7 @@ The Platform Super Admin (ENTLAQA staff) stays outside tenant roles (platform co
 | Q3 | **Plan and budget approvers** (Finance, management) | Plan approval (FR-PLN-08) names Finance and management steps | (1) **Named person per step, no role** (recommended, already in FR-PLN-08 R1 text); (2) Finance approver / Management approver templates |
 | Q4 | **Arabic labels** | «مدير المنظمة» (Kawadir) vs current «مدير المنشأة»; «موظف» for Employee vs «متدرب» | PO choice; then the UX writer updates the glossary |
 
-## 4. Mapping existing role assignments (proposal)
+## 4. Mapping existing role assignments (applied by migration `20261019090300`)
 
 The database today holds 14 system roles (T-M2-03). When the six standard roles ship (`EP-ROLES`), each existing assignment is mapped as below. The current database holds test organizations only (no customers), so the mapping is low risk; it still runs as a checked migration with a dry-run count per role (DB deploy `plan`).
 
@@ -116,12 +116,14 @@ The database today holds 14 system roles (T-M2-03). When the six standard roles 
 | Training Coordinator (`training_coordinator`) | Training Coordinator | Unchanged (standard role, PO 15 Oct 2026) |
 | Department Head (`department_head`) | Department Head | Unchanged |
 | Learner (`learner`) | Employee | Renamed |
-| Line Manager (`line_manager`) | Employee | Plus team access per Q2 once decided, or the Line Manager template |
-| Internal Instructor (`internal_instructor`) | Employee | Plus Instructor per Q1 |
+| Line Manager (`line_manager`) | Employee | Team access from the reporting line (Q2); the Line Manager template when an explicit role is wanted |
+| Internal Instructor (`internal_instructor`) | Employee | The Instructor template when needed (Q1) |
 | Finance Manager (`finance_manager`) | Employee | The Organization Admin may create the Finance approver template (privileged) and give it back |
 | Compliance Officer (`compliance_officer`) | Employee | Compliance Officer template (privileged) on request |
 | Auditor (`auditor`) | Employee | Auditor template (privileged) on request |
 | Mentor / Assessor (`mentor`) | Employee | OJT is R2 |
 | External Instructor (`external_instructor`), Training Provider Admin (`provider_admin`) | Assignment ended | Non-employee user types are R2 (FR-IAM-15); none exist outside tests |
 
-Rule for the migration: nobody gains permissions they did not have (a person whose former role had more than the mapped standard role is listed in the deploy output so the Organization Admin can re-create the access with a custom role), the Organization Admin rule (BR-IAM-4) and the last-admin guard stay, and every change is audited.
+Rule for the migration: nobody gains permissions they did not have — every former role maps to Employee or ends, and the counts per former role are written to the deploy log (DB deploy) so the Organization Admin can re-create the access with a custom role; the Organization Admin rule (BR-IAM-4) and the last-admin guard stay.
+
+**One role per person (PO, 17 Oct 2026):** each member keeps one role — the one in force (or the Organization Admin role, else the primary one); the extra roles are removed (counted in the deploy log). Pending invitations keep their primary role (former roles → Employee; non-employee roles revoked) and lose their additional roles. The database then holds one role per membership (unique index) and no pending invitation with additional roles. Migrations `20261019090300` (mapping) and `20261019090400` (constraints).

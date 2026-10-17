@@ -10,17 +10,19 @@
 #   secret   DATABASE_URL_APP_QUEUE   login role app_queue via the Supabase session pooler
 #   secret   DATABASE_URL_APP_WORKER  login role app_worker via the Supabase session pooler
 #   variable DATABASE_CA_CERT         PEM of the server's root CA (same value as in `production`)
-#   E-mail (T-M2-06b; ADR 0008), optional — without EMAIL_PROVIDER this workflow passes `none`
-#   (e-mail switched off: queued messages are recorded as suppressed):
-#   variable EMAIL_PROVIDER           resend
-#   variable EMAIL_FROM_NAME          display name of the sender (e.g. ENTLAQA LMS)
-#   variable EMAIL_FROM_ADDRESS       sender address on the verified sending domain
-#   secret   RESEND_API_KEY           Resend API key (sending access only)
-#   secret   EMAIL_TEST_TO            recipient of the test e-mail (mode test-email)
+#   E-mail (WP-ADM-01; ADR 0008): the sender is set IN THE PRODUCT — the Super Admin's Platform settings →
+#   Email and each organization's Email integration — never here (PO, 16–17 Oct 2026). This environment holds
+#   only the key that lets the worker open the provider secrets saved there:
+#   secret   EMAIL_CREDENTIALS_KEY    a random value of at least 32 characters (e.g. a generated 64-character
+#                                     password); the worker derives its key pair from it and publishes the
+#                                     public key, the web app seals with that. Without it e-mail settings saved
+#                                     in the product cannot be used: messages wait, the pages say e-mail
+#                                     sending is not set up. Changing it means the senders' secrets must be
+#                                     entered again (docs/engineering/email.md).
 #   variable APP_BASE_URL             public origin of the web app (https://…, no path) for
 #                                     links in e-mails (invitations, T-M2-07; password reset, T-M2-17);
-#                                     required once EMAIL_PROVIDER is set — without it (e-mail off)
-#                                     invitations are not mailed
+#                                     required once EMAIL_CREDENTIALS_KEY is set — without it invitations are
+#                                     not mailed
 #   Password-reset links (T-M2-17), optional — needed once the web app runs with
 #   PASSWORD_RESET_DELIVERY=worker; the Auth admin key exists HERE ONLY, never in Vercel (ADR 0002 §7):
 #   variable SUPABASE_URL             the project's API origin (https://<ref>.supabase.co)
@@ -58,9 +60,9 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'pass = run due jobs · test-email = send one sample e-mail to EMAIL_TEST_TO'
+        description: 'pass = run due jobs (test e-mails of the senders are sent from the product, WP-ADM-01)'
         type: choice
-        options: [pass, test-email]
+        options: [pass]
         default: pass
       environment:
         description: 'Target (staging = the old project, only until it is deleted)'
@@ -132,7 +134,7 @@ jobs:
       # signatures (the worker refuses to scan once they are older than 7 days, and says so).
       - name: Malware signatures (cache)
         id: signatures
-        if: steps.configured.outputs.ready == 'true' && vars.FILE_SCANNING == 'on' && inputs.mode != 'test-email'
+        if: steps.configured.outputs.ready == 'true' && vars.FILE_SCANNING == 'on'
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ${{ runner.temp }}/clamav-db
@@ -140,7 +142,7 @@ jobs:
           restore-keys: clamav-db-
       - name: Malware signatures (refresh, once a day)
         id: freshclam
-        if: steps.configured.outputs.ready == 'true' && vars.FILE_SCANNING == 'on' && inputs.mode != 'test-email'
+        if: steps.configured.outputs.ready == 'true' && vars.FILE_SCANNING == 'on'
         continue-on-error: true
         env:
           DB: ${{ runner.temp }}/clamav-db
@@ -173,7 +175,7 @@ jobs:
       # uploads wait for the next pass, never clean; the run is marked failed at its end.
       - name: Malware scanner (clamd) for this pass
         id: clamd
-        if: steps.configured.outputs.ready == 'true' && vars.FILE_SCANNING == 'on' && inputs.mode != 'test-email'
+        if: steps.configured.outputs.ready == 'true' && vars.FILE_SCANNING == 'on'
         env:
           DB: ${{ runner.temp }}/clamav-db
         run: |
@@ -198,17 +200,15 @@ jobs:
       # The pass holds the deploy lock shared (as app_worker; scripts/run-outside-deploy.sh): it waits up to
       # 8 minutes for a running DB deploy or provisioning run and FAILS (does not run) if the lock is still
       # taken then; a deploy that starts during the pass waits for it.
-      - name: One worker pass (or a test e-mail)
+      - name: One worker pass
         if: steps.configured.outputs.ready == 'true'
         env:
           DATABASE_URL_APP_QUEUE: ${{ secrets.DATABASE_URL_APP_QUEUE }}
           DATABASE_URL_APP_WORKER: ${{ secrets.DATABASE_URL_APP_WORKER }}
           DATABASE_CA_CERT: ${{ vars.DATABASE_CA_CERT }}
-          EMAIL_PROVIDER: ${{ vars.EMAIL_PROVIDER || 'none' }}
-          EMAIL_FROM_NAME: ${{ vars.EMAIL_FROM_NAME }}
-          EMAIL_FROM_ADDRESS: ${{ vars.EMAIL_FROM_ADDRESS }}
-          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
-          EMAIL_TEST_TO: ${{ secrets.EMAIL_TEST_TO }}
+          # No installation sender on the hosted SaaS: the sender is set in the product (WP-ADM-01).
+          EMAIL_PROVIDER: none
+          EMAIL_CREDENTIALS_KEY: ${{ secrets.EMAIL_CREDENTIALS_KEY }}
           APP_BASE_URL: ${{ vars.APP_BASE_URL }}
           SUPABASE_URL: ${{ vars.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
@@ -217,7 +217,7 @@ jobs:
           USER_IMPORT_INVITATION_INTERVAL_MS: ${{ vars.USER_IMPORT_INVITATION_INTERVAL_MS }}
           USER_IMPORT_DAILY_INVITATIONS: ${{ vars.USER_IMPORT_DAILY_INVITATIONS }}
           USER_IMPORT_TRIAL_DAILY_INVITATIONS: ${{ vars.USER_IMPORT_TRIAL_DAILY_INVITATIONS }}
-          MODE: ${{ inputs.mode == 'test-email' && 'test-email' || 'once' }}
+          MODE: once
           JADARAT_ENVIRONMENT: ${{ inputs.environment || 'production' }}
           JADARAT_RELEASE: ${{ github.sha }}
         run: DATABASE_URL="$DATABASE_URL_APP_WORKER" bash scripts/run-outside-deploy.sh node apps/worker/dist/main.mjs "$MODE"

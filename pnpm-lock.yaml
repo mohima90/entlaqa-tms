@@ -53,6 +53,9 @@ importers:
       '@jadarat/platform-import':
         specifier: workspace:*
         version: link:../../packages/platform-import
+      '@jadarat/platform-notifications':
+        specifier: workspace:*
+        version: link:../../packages/platform-notifications
       '@jadarat/platform-observability':
         specifier: workspace:*
         version: link:../../packages/platform-observability
@@ -624,6 +627,9 @@ importers:
       '@jadarat/platform-identity':
         specifier: workspace:*
         version: link:../platform-identity
+      '@jadarat/platform-notifications':
+        specifier: workspace:*
+        version: link:../platform-notifications
       '@jadarat/platform-observability':
         specifier: workspace:*
         version: link:../platform-observability

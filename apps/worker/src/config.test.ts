@@ -178,6 +178,38 @@ describe('readSettings', () => {
     fails(['test-email'], { ...RESEND, EMAIL_TEST_TO: 'not-an-address' }, /EMAIL_TEST_TO/);
   });
 
+  it('EMAIL_CREDENTIALS_KEY (secret): the key pair for settings saved in the product; checked, never echoed', () => {
+    const secret = 'a-generated-64-character-secret-for-the-config-tests-0123456789';
+    expect(runner([], env).emailCredentials).toBeNull();
+    const settings = runner([], {
+      ...env,
+      EMAIL_CREDENTIALS_KEY: secret,
+      APP_BASE_URL: 'https://tms.example.com',
+    });
+    expect(settings.emailCredentials?.publicKey.keyId).toMatch(/^[A-Za-z0-9_-]{12}$/);
+    expect(JSON.stringify(settings)).not.toContain(secret);
+    // E-mail can be sent: links need the web app's origin.
+    fails(
+      [],
+      { ...env, EMAIL_CREDENTIALS_KEY: secret },
+      /APP_BASE_URL must be set when e-mail can be sent/,
+    );
+    // Too short: only the e-mail settings saved in the product are off (logged), the worker still starts.
+    const short = runner([], { ...env, EMAIL_CREDENTIALS_KEY: 'short-secret-value' });
+    expect(short.emailCredentials).toBeNull();
+    expect(short.emailCredentialsProblem).toBe(
+      'EMAIL_CREDENTIALS_KEY must be at least 32 characters',
+    );
+    expect(JSON.stringify(short)).not.toContain('short-secret-value');
+    // The platform sender's relay: public and submission ports only, unless the operator allows internal ones.
+    expect(runner([], env).allowPrivatePlatformSmtp).toBe(false);
+    expect(
+      runner([], { ...env, EMAIL_PLATFORM_SMTP_ALLOW_PRIVATE: 'true' }).allowPrivatePlatformSmtp,
+    ).toBe(true);
+    fails([], { ...env, EMAIL_PLATFORM_SMTP_ALLOW_PRIVATE: 'yes' }, /must be true or false/);
+    expect(runner([], { ...env, EMAIL_CREDENTIALS_KEY: '  ' }).emailCredentials).toBeNull();
+  });
+
   it('refuses an unknown mode, missing or wrong connections, bad e-mail settings and a bad concurrency', () => {
     fails(['tick'], env, /unknown mode/);
     fails([], { ...env, DATABASE_URL_APP_QUEUE: undefined }, /DATABASE_URL_APP_QUEUE/);
@@ -186,7 +218,8 @@ describe('readSettings', () => {
     fails([], { ...env, DATABASE_URL_APP_QUEUE: WORKER }, /app_queue/);
     fails([], { ...env, DATABASE_URL_APP_WORKER: QUEUE }, /app_worker/);
     fails([], { ...env, EMAIL_PROVIDER: 'resend' }, /EMAIL_FROM_ADDRESS/);
-    fails([], { ...env, EMAIL_PROVIDER: undefined }, /EMAIL_PROVIDER must be set/);
+    // Unset: no installation sender (the sender is set in the product, WP-ADM-01).
+    expect(runner([], { ...env, EMAIL_PROVIDER: undefined }).email.provider).toBe('none');
     for (const bad of ['0', '51', '2.5', 'many']) {
       fails([], { ...env, WORKER_CONCURRENCY: bad }, /WORKER_CONCURRENCY/);
     }

@@ -148,6 +148,7 @@ const row = (over: Partial<InvitationRow> = {}): InvitationRow => ({
   additionalRoles: [],
   hasCode: false,
   locale: 'ar',
+  mailNotSent: false,
   ...over,
 });
 

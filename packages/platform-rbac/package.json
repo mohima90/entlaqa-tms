@@ -20,6 +20,7 @@
     "@jadarat/platform-db": "workspace:*",
     "@jadarat/platform-i18n": "workspace:*",
     "@jadarat/platform-identity": "workspace:*",
+    "@jadarat/platform-notifications": "workspace:*",
     "@jadarat/platform-observability": "workspace:*",
     "drizzle-orm": "0.45.4",
     "server-only": "0.0.1",

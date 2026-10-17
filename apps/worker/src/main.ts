@@ -12,7 +12,7 @@ import {
   createClamdScanner,
   signatureAge,
 } from '@jadarat/platform-files/jobs';
-import { sendTestEmail } from '@jadarat/platform-notifications/jobs';
+import { createEmailRouter, sendTestEmail } from '@jadarat/platform-notifications/jobs';
 import { createLogger, errorName, installConsoleScrubbing } from '@jadarat/platform-observability';
 import { adminKeyExpiryCheck } from './admin-key-expiry';
 import {
@@ -30,8 +30,10 @@ import { subscribers } from './subscribers';
  * Worker process (ADR 0005, ADR 0008): `node dist/main.mjs [daemon|once|test-email]`. Connections:
  * DATABASE_URL_APP_QUEUE (queue, login role app_queue) and DATABASE_URL_APP_WORKER (tenant work,
  * app_worker); TLS verify-full against DATABASE_CA_CERT / DATABASE_CA_CERT_FILE for remote hosts.
- * E-mail: EMAIL_PROVIDER (resend | smtp | none) and its settings; APP_BASE_URL (the web app's public
- * origin, for links in e-mails). Password-reset links: SUPABASE_URL + SUPABASE_SECRET_KEY (the Auth
+ * E-mail (WP-ADM-01): the sender is set in the product (Super Admin → Platform settings → Email; an
+ * organization's Email integration); EMAIL_CREDENTIALS_KEY (SECRET) opens the provider secrets saved there.
+ * Self-hosted installations may add an installation sender (EMAIL_PROVIDER resend | smtp and its settings),
+ * used while no platform sender was saved. APP_BASE_URL (the web app's public origin, for links in e-mails). Password-reset links: SUPABASE_URL + SUPABASE_SECRET_KEY (the Auth
  * admin API — in the worker's environment only, T-M2-17). Daemon mode stops gracefully on
  * SIGTERM/SIGINT (running jobs finish first) and exits 0.
  */
@@ -88,6 +90,18 @@ async function runWorker(settings: RunnerSettings): Promise<void> {
     max: settings.concurrency,
   });
   const emailTransport = settings.email.createTransport();
+  const emailRouter = createEmailRouter({
+    keys: settings.emailCredentials,
+    allowPrivatePlatformSmtp: settings.allowPrivatePlatformSmtp,
+    installation: emailTransport
+      ? {
+          transport: emailTransport,
+          address: settings.email.from.address,
+          name: settings.email.from.name,
+        }
+      : null,
+    log,
+  });
   const withSystemTx = createWithSystemTx(() => workerDb);
   // A self-hosted Auth admin token lives 90 days (gen-secrets.sh): warn a month ahead — at start-up and
   // then daily from the account-mail task — so that it is renewed before password-reset links stop
@@ -112,12 +126,7 @@ async function runWorker(settings: RunnerSettings): Promise<void> {
       queueUrl: settings.queueUrl,
       caPem: settings.caPem,
       registry: createSubscriberRegistry(
-        subscribers({
-          emailTransport,
-          emailFrom: settings.email.from,
-          appBaseUrl: settings.appBaseUrl,
-          log,
-        }),
+        subscribers({ emailRouter, appBaseUrl: settings.appBaseUrl, log }),
       ),
       withSystemTx,
       platformTasks: platformTasks({
@@ -130,6 +139,11 @@ async function runWorker(settings: RunnerSettings): Promise<void> {
         withSystemTx,
         log,
         adminKeyCheck,
+        email: {
+          keys: settings.emailCredentials,
+          router: emailRouter,
+          allowPrivatePlatformSmtp: settings.allowPrivatePlatformSmtp,
+        },
       }),
       concurrency: settings.concurrency,
       log,
@@ -137,13 +151,27 @@ async function runWorker(settings: RunnerSettings): Promise<void> {
     const resetLinks = settings.authAdmin ? 'on' : 'off';
     // File scanning needs Storage (the secret key) and the scanner; without them uploads wait unscanned.
     const fileScanning = settings.authAdmin && settings.scanner ? 'on' : 'off';
+    // E-mail: the key for the settings saved in the product, and the installation's own sender (if any).
+    const emailKey = settings.emailCredentials ? 'on' : 'off';
     logger.info(
-      `worker starting (${settings.mode}; e-mail: ${settings.email.provider}; reset links: ${resetLinks}; file scanning: ${fileScanning})`,
+      `worker starting (${settings.mode}; e-mail settings key: ${emailKey}; installation sender: ${settings.email.provider}; reset links: ${resetLinks}; file scanning: ${fileScanning})`,
       {
         action: 'worker.start',
       },
     );
     adminKeyCheck?.();
+    if (settings.allowPrivatePlatformSmtp) {
+      logger.warn(
+        'the platform sender may use an internal SMTP relay on any port (EMAIL_PLATFORM_SMTP_ALLOW_PRIVATE=true)',
+        { action: 'worker.start', reason: 'platform_smtp_private_allowed' },
+      );
+    }
+    if (settings.emailCredentialsProblem) {
+      logger.warn(
+        `e-mail settings saved in the product are off: ${settings.emailCredentialsProblem}`,
+        { action: 'worker.start', reason: 'email_credentials_key_unusable' },
+      );
+    }
     if (settings.authAdmin && !settings.orphanSweep.enabled) {
       logger.warn('file orphan sweep paused (FILE_ORPHAN_SWEEP=off): orphan objects are kept', {
         action: 'worker.start',
@@ -178,6 +206,7 @@ async function runWorker(settings: RunnerSettings): Promise<void> {
     }
     logger.info('worker stopped', { action: 'worker.stop', outcome: 'success' });
   } finally {
+    await emailRouter.close();
     await emailTransport?.close?.();
     await workerDb.$client.end({ timeout: 5 });
   }

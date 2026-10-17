@@ -27,3 +27,28 @@ export {
   renderEmail,
 } from './templates/index';
 export type { EmailTemplate, RenderedEmail } from './templates/types';
+export {
+  EMAIL_ERROR_CODES,
+  EMAIL_PROVIDERS,
+  EMAIL_PROVIDER_OPTIONS,
+  EMAIL_PROVIDER_SECRETS,
+  EmailAddress,
+  type EmailErrorCode,
+  EmailProviderInput,
+  type EmailProviderId,
+  type EmailProviderOptions,
+  type EmailProviderSecrets,
+  SenderName,
+  isEmailProvider,
+  isKnownEmailErrorCode,
+} from './providers';
+export {
+  type CredentialsPublicKey,
+  type CredentialsScope,
+  credentialsContext,
+  credentialsKeyId,
+  sealCredentials,
+  sealProviderInput,
+  sealedKeyId,
+} from './credentials-seal';
+export { EmailTestVariables, emailTestTemplate } from './templates/email-test';

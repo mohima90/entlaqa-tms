@@ -98,13 +98,18 @@ begin
   -- Who may execute what (exact, besides the owner).
   select string_agg(format('%s → %s', p.oid::regprocedure,
                            case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end), ', '
-                    order by p.oid::regprocedure::text collate "C", 2) into v_list
+                    order by p.oid::regprocedure::text collate "C",
+                             (case when a.grantee = 0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end) collate "C")
+    into v_list
   from pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
   where p.proowner = 'platform_admin_guard'::regrole and a.privilege_type = 'EXECUTE' and a.grantee <> p.proowner;
   perform tests.assert_eq(v_list,
     format('private.grant_platform_admin(uuid,text,text) → %1$s, private.is_platform_admin() → authenticated, '
            'private.is_platform_invitation(uuid) → invitation_guard, private.list_platform_admins() → %1$s, '
+           -- The Super Admin's e-mail settings functions (WP-ADM-01) use the console's caller check.
+           'private.platform_admin_caller() → email_guard, '
            'private.platform_admin_invitation_code(uuid) → authenticated, '
+           'private.platform_admin_is_active(uuid) → email_guard, '
            'private.platform_admin_is_active(uuid) → invitation_guard, '
            'private.platform_create_tenant(text,text,text,text,text,text,text,text,text) → authenticated, '
            'private.platform_list_tenants() → authenticated, private.platform_reissue_admin_code(uuid) → authenticated, '

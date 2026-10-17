@@ -5,12 +5,13 @@ const CA = '-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n';
 const from = { EMAIL_FROM_ADDRESS: 'noreply@lms.entlaqa.com', EMAIL_FROM_NAME: 'ENTLAQA LMS' };
 
 describe('readEmailSettings', () => {
-  it('is off only when chosen: the provider must always be set', () => {
+  it('no installation sender when none or unset (the sender is set in the product)', () => {
     const settings = readEmailSettings({ EMAIL_PROVIDER: 'none' });
     expect(settings.provider).toBe('none');
     expect(settings.createTransport()).toBeNull();
-    expect(() => readEmailSettings({})).toThrow(/EMAIL_PROVIDER must be set/);
-    expect(() => readEmailSettings({ EMAIL_PROVIDER: ' ' })).toThrow(/EMAIL_PROVIDER must be set/);
+    // Unset: no installation sender (the sender is set in the product; messages wait until then).
+    expect(readEmailSettings({}).provider).toBe('none');
+    expect(readEmailSettings({ EMAIL_PROVIDER: ' ' }).createTransport()).toBeNull();
   });
 
   it('Resend: the sender and an API key', () => {

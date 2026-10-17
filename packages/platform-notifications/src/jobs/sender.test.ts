@@ -1,6 +1,7 @@
 import type { SystemTx } from '@jadarat/platform-db/jobs';
 import type { DeliveredEvent, InTenant } from '@jadarat/platform-jobs/jobs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { EmailRouter } from './router';
 import { EMAIL_MAX_ATTEMPTS, EMAIL_QUEUED_EVENT, createEmailSender } from './sender';
 import { EmailSendError, type EmailTransport } from './transport';
 
@@ -60,9 +61,10 @@ describe('e-mail sender', () => {
       Promise.resolve({ providerMessageId: 'msg_1' }),
     );
     await run(transport(send));
-    expect(db.claimEmailDelivery).toHaveBeenCalledWith(tx, ID);
+    expect(db.claimEmailDelivery).toHaveBeenCalledWith(tx, ID, 'installation');
     expect(send).toHaveBeenCalledWith({
       from,
+      replyTo: undefined,
       to: 'sara@example.com',
       subject: 's',
       html: 'h',
@@ -76,17 +78,23 @@ describe('e-mail sender', () => {
     });
   });
 
-  it("asks the router for the organization's transport and sender (FR-NTF-11 seam, R2)", async () => {
+  it("asks the sender rule for the organization's transport, sender and reply-to (FR-NTF-11)", async () => {
     db.claimEmailDelivery.mockResolvedValue(claimed);
     const own = vi.fn<EmailTransport['send']>(() =>
       Promise.resolve({ providerMessageId: 'own_1' }),
     );
     const platform = vi.fn<EmailTransport['send']>();
     const ownFrom = { name: 'Al Raya', address: 'training@raya.example' };
-    const router = vi.fn(() => ({
-      transport: { provider: 'smtp' as const, send: own },
-      from: ownFrom,
-    }));
+    const resolve = vi.fn<EmailRouter['resolve']>(() =>
+      Promise.resolve({
+        kind: 'send' as const,
+        transport: { provider: 'smtp' as const, send: own },
+        from: ownFrom,
+        replyTo: 'hr@raya.example',
+        sender: 'organization' as const,
+      }),
+    );
+    const router: EmailRouter = { resolve, close: () => Promise.resolve() };
     await createEmailSender({ transport: transport(platform), from, log: vi.fn(), router }).perform(
       {
         event,
@@ -95,10 +103,11 @@ describe('e-mail sender', () => {
         maxAttempts: EMAIL_MAX_ATTEMPTS,
       },
     );
-    expect(router).toHaveBeenCalledWith('t1');
+    expect(resolve).toHaveBeenCalledWith(tx, 't1');
+    expect(db.claimEmailDelivery).toHaveBeenCalledWith(tx, ID, 'organization');
     expect(platform).not.toHaveBeenCalled();
     expect(own).toHaveBeenCalledWith(
-      expect.objectContaining({ from: ownFrom, idempotencyKey: ID }),
+      expect.objectContaining({ from: ownFrom, replyTo: 'hr@raya.example', idempotencyKey: ID }),
     );
     expect(db.finishEmailDelivery).toHaveBeenCalledWith(tx, ID, {
       status: 'sent',
@@ -121,15 +130,30 @@ describe('e-mail sender', () => {
     expect(db.finishEmailDelivery).not.toHaveBeenCalled();
   });
 
-  it('records the delivery as suppressed when e-mail is switched off', async () => {
+  it('without a sender ready the delivery waits in the queue (nothing lost) and the job ends', async () => {
     db.claimEmailDelivery.mockResolvedValue(claimed);
     const log = vi.fn();
     await run(null, 1, log);
+    expect(db.claimEmailDelivery).toHaveBeenCalledWith(tx, ID, undefined);
     expect(db.finishEmailDelivery).toHaveBeenCalledWith(tx, ID, {
-      status: 'suppressed',
-      errorCode: 'EMAIL_DISABLED',
+      status: 'retry',
+      errorCode: 'NO_SENDER',
     });
-    expect(log).toHaveBeenCalledWith('warning', expect.stringContaining('suppressed'));
+    expect(log).toHaveBeenCalledWith('warning', expect.stringContaining('waits'));
+    // Settings that cannot be used (e.g. a new worker key): the same, with their reason.
+    const resolve = vi.fn<EmailRouter['resolve']>(() =>
+      Promise.resolve({ kind: 'wait' as const, code: 'CREDENTIALS_UNAVAILABLE' as const }),
+    );
+    await createEmailSender({ log, router: { resolve, close: () => Promise.resolve() } }).perform({
+      event,
+      inTenant,
+      attempt: EMAIL_MAX_ATTEMPTS,
+      maxAttempts: EMAIL_MAX_ATTEMPTS,
+    });
+    expect(db.finishEmailDelivery).toHaveBeenLastCalledWith(tx, ID, {
+      status: 'retry',
+      errorCode: 'CREDENTIALS_UNAVAILABLE',
+    });
   });
 
   it('a temporary failure returns the delivery to the queue and fails the job (retry)', async () => {
@@ -153,6 +177,7 @@ describe('e-mail sender', () => {
     expect(db.finishEmailDelivery).toHaveBeenLastCalledWith(tx, ID, {
       status: 'failed',
       errorCode: 'ADDRESS_REJECTED',
+      provider: 'resend',
     });
     expect(log).toHaveBeenCalledWith(
       'error',
@@ -167,6 +192,7 @@ describe('e-mail sender', () => {
     expect(db.finishEmailDelivery).toHaveBeenLastCalledWith(tx, ID, {
       status: 'failed',
       errorCode: 'SEND_FAILED',
+      provider: 'resend',
     });
   });
 

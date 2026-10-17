@@ -44,7 +44,7 @@ describe('suiteNavigation (menus per role, T-M2-21; Kawadir groups, T-M2-43)', (
       'main: home→/suite',
       'groupOrganization: teamMembers→/suite/admin/users branding(soon) roles→/suite/admin/roles',
       'groupBilling: subscription(soon)',
-      'groupSettings: general→/suite/admin/settings emailIntegration(soon) integrations(soon) security→/suite/admin/security auditLog(soon)',
+      'groupSettings: general→/suite/admin/settings emailIntegration→/suite/admin/settings/email integrations(soon) security→/suite/admin/security auditLog(soon)',
     ]);
   });
 
@@ -87,7 +87,8 @@ describe('suiteNavigation (menus per role, T-M2-21; Kawadir groups, T-M2-43)', (
     ).toEqual([
       'main: home→/suite calendar(soon) sessions(soon) courses(soon)',
       'groupOrganization: teamMembers→/suite/admin/users roles→/suite/admin/roles',
-      'groupSettings: general→/suite/admin/settings security→/suite/admin/security',
+      // Email integration (WP-ADM-01): read by tenant.read holders.
+      'groupSettings: general→/suite/admin/settings emailIntegration→/suite/admin/settings/email security→/suite/admin/security',
     ]);
   });
 
@@ -169,6 +170,7 @@ describe('suiteHome (T-M2-21)', () => {
       '/suite/admin/users',
       '/suite/admin/roles',
       '/suite/admin/settings',
+      '/suite/admin/settings/email',
       '/suite/admin/security',
     ]);
   });
@@ -178,6 +180,7 @@ describe('suiteHome (T-M2-21)', () => {
     expect(home.kind === 'setup' ? home.links.map((l) => l.key) : []).toEqual([
       'teamMembers',
       'general',
+      'emailIntegration',
     ]);
     expect(
       suiteHome({ ...NONE, users: true, roles: true, security: true, training: true }),
@@ -213,6 +216,7 @@ describe('commandPaletteItems (⌘K / Ctrl K, T-M2-43)', () => {
       '«groupOrganization» «teamMembers» /ar/suite/admin/users',
       '«groupOrganization» «roles» /ar/suite/admin/roles',
       '«groupSettings» «general» /ar/suite/admin/settings',
+      '«groupSettings» «emailIntegration» /ar/suite/admin/settings/email',
       '«groupSettings» «security» /ar/suite/admin/security',
       '«searchGroupAccount» «myProfile» /ar/suite/profile',
     ]);

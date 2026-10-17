@@ -1,15 +1,17 @@
 import { createInvitationMailer } from '@jadarat/platform-identity/jobs';
 import type { Subscriber, WorkerLogLevel } from '@jadarat/platform-jobs/jobs';
-import { type EmailTransport, createEmailSender } from '@jadarat/platform-notifications/jobs';
+import { type EmailRouter, createEmailSender } from '@jadarat/platform-notifications/jobs';
 import { getSystemRole, isSystemRoleCode } from '@jadarat/platform-rbac/system-roles';
 
 export interface SubscriberDependencies {
-  /** null: e-mail switched off (queued messages are recorded as suppressed). */
-  readonly emailTransport: EmailTransport | null;
-  readonly emailFrom: { readonly name: string; readonly address: string };
   /**
-   * Public origin of the web app for links in e-mails (APP_BASE_URL). Absent only while e-mail is
-   * switched off: invitations are then not mailed (an administrator resends them once it is on).
+   * The sender rule over the settings in the database (WP-ADM-01): the organization's own provider, else the
+   * platform sender, else the installation's; nothing ready — messages wait in the queue.
+   */
+  readonly emailRouter: EmailRouter;
+  /**
+   * Public origin of the web app for links in e-mails (APP_BASE_URL). Absent: invitations are not mailed
+   * (an administrator copies the code or link, or resends once it is set).
    */
   readonly appBaseUrl: string | undefined;
   readonly log: (level: WorkerLogLevel, message: string) => void;
@@ -27,7 +29,7 @@ function roleName(code: string): { ar: string; en: string } {
  */
 export function subscribers(deps: SubscriberDependencies): readonly Subscriber[] {
   return [
-    createEmailSender({ transport: deps.emailTransport, from: deps.emailFrom, log: deps.log }),
+    createEmailSender({ router: deps.emailRouter, log: deps.log }),
     ...(deps.appBaseUrl === undefined
       ? []
       : [createInvitationMailer({ appBaseUrl: deps.appBaseUrl, roleName, log: deps.log })]),

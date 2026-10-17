@@ -2625,7 +2625,7 @@
     "tabsLabel": "Structure views",
     "tabs": {
       "tree": "Structure",
-      "levels": "Levels"
+      "levels": "Organization tree"
     },
     "stats": {
       "label": "Summary",
@@ -2720,17 +2720,10 @@
       "levelRemoved": "Level removed."
     },
     "levels": {
-      "title": "Levels",
-      "description": "Your structure's levels from the top down, each with an English and an Arabic name. Up to 10.",
+      "title": "Organization tree",
+      "description": "Name the levels of your organization in order. The structure follows these names.",
       "example": "For example: Sector → General Department → Department → Section.",
-      "caption": "Structure levels",
-      "columns": {
-        "level": "Level",
-        "nameEn": "English name",
-        "nameAr": "Arabic name",
-        "units": "Units",
-        "actions": "Actions"
-      },
+      "caption": "Levels from the top down",
       "levelNumber": "Level {ordinal}",
       "add": "Add level",
       "addTitle": "Add a level",
@@ -2750,7 +2743,8 @@
       "inUse": "{units, plural, one {{units, number, integer} unit uses} other {{units, number, integer} units use}} this level. Move or delete them first.",
       "full": "Your structure has the most levels allowed (10).",
       "nameTaken": "Another level has this name.",
-      "name": "The name needs visible letters, up to 60 characters."
+      "name": "The name needs visible letters, up to 60 characters.",
+      "unitCount": "{count, plural, =0 {No units} one {# unit} other {# units}}"
     }
   },
   "branches": {

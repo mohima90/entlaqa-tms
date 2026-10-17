@@ -1,5 +1,5 @@
 'use client';
-import { Alert, Button, Card, Dialog, Icon, TextField, tableClasses, toast } from '@jadarat/ui';
+import { Alert, Button, Card, Dialog, Icon, TextField, toast } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
 import { type SyntheticEvent, useState, useTransition } from 'react';
 import {
@@ -24,6 +24,8 @@ export interface LevelView {
   readonly name: string;
   readonly version: number;
   readonly unitCount: number;
+  /** «3 units» (plural formatted on the server). */
+  readonly unitCountLabel: string;
   /** «3 units use this level…» (formatted on the server), shown when removal is refused. */
   readonly inUseLabel: string;
 }
@@ -44,9 +46,11 @@ type DialogState =
   | { readonly kind: 'remove'; readonly level: LevelView };
 
 /**
- * Structure → Levels (FR-ADM-05, EP-ORG BR-ORG-b; PO 17 Oct 2026: each organization names its own levels):
- * the ordered levels with their English and Arabic names and the number of units at each; the HR Manager
- * adds a level at the bottom (up to ten), renames any level and removes the last one while no unit uses it.
+ * Structure → Organization tree (FR-ADM-05, EP-ORG BR-ORG-b; PO 17 Oct 2026: each organization names its own
+ * levels; guided-test feedback #1: the levels shown as the organization's own tree template, top to bottom):
+ * the ordered levels as a chain (an ordered list — Level 1 → Level 2 → …) with their names in both languages
+ * and the number of units at each; the HR Manager adds a level at the bottom (up to ten), renames any level
+ * and removes the last one while no unit uses it. The Structure tab follows these names («Add <next level>»).
  */
 export function LevelsCard(props: LevelsCardProps) {
   const { levels, canManage, texts, locale } = props;
@@ -82,94 +86,92 @@ export function LevelsCard(props: LevelsCardProps) {
         }
         data-testid="structure-levels"
       >
-        <div
-          className={`${tableClasses.wrapper} focus-visible:outline-2 focus-visible:outline-offset-2`}
-          // Scrolls on phones: focusable so the keyboard can scroll it too (WCAG 2.1.1; axe
-          // scrollable-region-focusable — a view-only table has nothing focusable).
-          // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- a scrollable region takes focus
-          tabIndex={0}
-          role="region"
+        <ol
+          className="m-0 flex list-none flex-col p-4 sm:p-6"
           aria-label={text('levels.caption')}
+          data-testid="levels-chain"
         >
-          <table className={tableClasses.table} data-testid="levels-table">
-            <caption className="sr-only">{text('levels.caption')}</caption>
-            <thead className={tableClasses.header}>
-              <tr>
-                <th scope="col" className={tableClasses.head}>
-                  {text('levels.columns.level')}
-                </th>
-                <th scope="col" className={tableClasses.head}>
-                  {text('levels.columns.nameEn')}
-                </th>
-                <th scope="col" className={tableClasses.head}>
-                  {text('levels.columns.nameAr')}
-                </th>
-                <th scope="col" className={tableClasses.head}>
-                  {text('levels.columns.units')}
-                </th>
-                {canManage ? (
-                  <th scope="col" className={`${tableClasses.head} text-end`}>
-                    {text('levels.columns.actions')}
-                  </th>
+          {levels.map((level, index) => {
+            const other = locale === 'ar' ? level.nameEn : level.nameAr;
+            const otherLang = locale === 'ar' ? 'en' : 'ar';
+            return (
+              <li
+                key={level.id}
+                className="flex flex-col items-stretch"
+                data-testid={`level-row-${String(level.ordinal)}`}
+              >
+                {index > 0 ? (
+                  // The chain reads top to bottom: a connector between two levels (decorative — the list
+                  // order and «Level n» carry the meaning).
+                  <span
+                    aria-hidden="true"
+                    className="flex h-7 items-center ps-7 text-text-muted"
+                    data-testid="level-connector"
+                  >
+                    <Icon name="arrow-down" />
+                  </span>
                 ) : null}
-              </tr>
-            </thead>
-            <tbody>
-              {levels.map((level) => (
-                <tr
-                  key={level.id}
-                  className={tableClasses.row}
-                  data-testid={`level-row-${String(level.ordinal)}`}
-                >
-                  <td className={tableClasses.cell}>
-                    {fill('levels.levelNumber', { ordinal: level.ordinal })}
-                  </td>
-                  <td className={tableClasses.cell}>
-                    <span dir="ltr" lang="en">
-                      {level.nameEn}
+                <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-border bg-surface p-3 sm:flex-nowrap sm:p-4">
+                  <span
+                    aria-hidden="true"
+                    className="grid size-8 shrink-0 place-items-center rounded-full bg-primary-subtle text-sm font-semibold text-primary-text"
+                  >
+                    {level.ordinal}
+                  </span>
+                  <div className="flex min-w-0 flex-1 flex-col">
+                    <span className="text-xs font-medium text-text-muted">
+                      {fill('levels.levelNumber', { ordinal: level.ordinal })}
                     </span>
-                  </td>
-                  <td className={tableClasses.cell}>
-                    <span dir="rtl" lang="ar">
-                      {level.nameAr}
+                    <span className="truncate font-semibold" data-testid="level-name">
+                      {level.name}
                     </span>
-                  </td>
-                  <td className={`${tableClasses.cell} tabular-nums`}>{level.unitCount}</td>
+                    <span
+                      className="truncate text-sm text-text-muted"
+                      dir={otherLang === 'ar' ? 'rtl' : 'ltr'}
+                      lang={otherLang}
+                    >
+                      {other}
+                    </span>
+                  </div>
+                  <span
+                    className="shrink-0 text-sm text-text-muted tabular-nums"
+                    data-testid="level-units"
+                  >
+                    {level.unitCountLabel}
+                  </span>
                   {canManage ? (
-                    <td className={`${tableClasses.cell} text-end`}>
-                      <div className="flex items-center justify-end gap-1">
+                    <div className="flex shrink-0 items-center gap-1">
+                      <button
+                        type="button"
+                        className="grid size-9 place-items-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text pointer-coarse:size-11"
+                        aria-label={fill('levels.renameFor', { name: level.name })}
+                        onClick={() => {
+                          setDialog({ kind: 'rename', level });
+                        }}
+                        data-testid="level-rename"
+                      >
+                        <Icon name="pencil" />
+                      </button>
+                      {level === last && level.ordinal > 1 ? (
                         <button
                           type="button"
-                          className="grid size-9 place-items-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text pointer-coarse:size-11"
-                          aria-label={fill('levels.renameFor', { name: level.name })}
+                          className="grid size-9 place-items-center rounded-md text-text-muted hover:bg-surface-hover hover:text-danger pointer-coarse:size-11"
+                          aria-label={fill('levels.removeFor', { name: level.name })}
                           onClick={() => {
-                            setDialog({ kind: 'rename', level });
+                            setDialog({ kind: 'remove', level });
                           }}
-                          data-testid="level-rename"
+                          data-testid="level-remove"
                         >
-                          <Icon name="pencil" />
+                          <Icon name="trash" />
                         </button>
-                        {level === last && level.ordinal > 1 ? (
-                          <button
-                            type="button"
-                            className="grid size-9 place-items-center rounded-md text-text-muted hover:bg-surface-hover hover:text-danger pointer-coarse:size-11"
-                            aria-label={fill('levels.removeFor', { name: level.name })}
-                            onClick={() => {
-                              setDialog({ kind: 'remove', level });
-                            }}
-                            data-testid="level-remove"
-                          >
-                            <Icon name="trash" />
-                          </button>
-                        ) : null}
-                      </div>
-                    </td>
+                      ) : null}
+                    </div>
                   ) : null}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                </div>
+              </li>
+            );
+          })}
+        </ol>
         <p className="m-0 border-t border-border px-6 py-3 text-sm text-text-muted">
           {full ? text('levels.full') : text('levels.example')}
         </p>

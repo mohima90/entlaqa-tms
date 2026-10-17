@@ -34,6 +34,7 @@ export {
   EMAIL_PROVIDER_SECRETS,
   EmailAddress,
   type EmailErrorCode,
+  EmailProviderInput,
   type EmailProviderId,
   type EmailProviderOptions,
   type EmailProviderSecrets,
@@ -47,6 +48,7 @@ export {
   credentialsContext,
   credentialsKeyId,
   sealCredentials,
+  sealProviderInput,
   sealedKeyId,
 } from './credentials-seal';
 export { EmailTestVariables, emailTestTemplate } from './templates/email-test';

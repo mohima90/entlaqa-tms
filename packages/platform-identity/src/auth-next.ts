@@ -25,6 +25,9 @@ import {
   invitationByToken,
   invitationPasswordMinLength,
   isPlatformAdmin,
+  getEmailCredentialsPublicKey,
+  getPlatformEmailSettings,
+  savePlatformEmailSettings,
   listMyMfaApps,
   listPlatformTenants,
   createPlatformTenant,
@@ -117,6 +120,11 @@ import {
   reissueOrganizationAdminCode,
   viewOrganizationAdminCode,
 } from './platform-console';
+import {
+  type PlatformEmailInput,
+  loadPlatformEmailSettings,
+  savePlatformEmailSettingsFromConsole,
+} from './platform-email-console';
 import {
   type InvitationAcceptDeps,
   type InvitationCodeGuard,
@@ -846,4 +854,29 @@ export async function reissueOrganizationAdminCodeForRequest(
   parse: ConsoleInputParser<string>,
 ) {
   return reissueOrganizationAdminCode(platformConsoleDeps(), raw, parse);
+}
+
+// Platform settings → Email of the console (WP-ADM-01; platform-email-console.ts): the same access rule.
+function platformEmailConsoleDeps() {
+  return {
+    getClaims: ({ strict }: { readonly strict: boolean }) =>
+      strict ? getVerifiedClaimsStrict() : getVerifiedClaims(),
+    withUserTx,
+    isPlatformAdmin,
+    getPlatformEmailSettings,
+    savePlatformEmailSettings,
+    getEmailCredentialsPublicKey,
+  };
+}
+
+export async function loadPlatformEmailSettingsForRequest() {
+  return loadPlatformEmailSettings(platformEmailConsoleDeps());
+}
+
+/** «حفظ وإرسال رسالة تجريبية»: untrusted input, parsed only after the access check (review L6). */
+export async function savePlatformEmailSettingsForRequest(
+  raw: unknown,
+  parse: ConsoleInputParser<PlatformEmailInput>,
+) {
+  return savePlatformEmailSettingsFromConsole(platformEmailConsoleDeps(), raw, parse);
 }

@@ -97,6 +97,24 @@ export type EmailProviderSecrets<P extends EmailProviderId> = z.output<
   (typeof EMAIL_PROVIDER_SECRETS)[P]
 >;
 
+/** A provider's options and secrets (secrets optional: leave empty to keep the saved ones). */
+const providerInput = <P extends EmailProviderId>(provider: P) =>
+  z.strictObject({
+    provider: z.literal(provider),
+    options: EMAIL_PROVIDER_OPTIONS[provider],
+    secrets: EMAIL_PROVIDER_SECRETS[provider].nullable(),
+  });
+
+/** The provider part of the settings forms (Super Admin and Organization Admin alike). */
+export const EmailProviderInput = z.discriminatedUnion('provider', [
+  providerInput('resend'),
+  providerInput('smtp'),
+  providerInput('sendgrid'),
+  providerInput('mailgun'),
+  providerInput('microsoft_graph'),
+]);
+export type EmailProviderInput = z.output<typeof EmailProviderInput>;
+
 /** A sender's display name: one line of 1–100 characters (the database checks it too). */
 export const SenderName = z
   .string()

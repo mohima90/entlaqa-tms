@@ -115,6 +115,11 @@ export interface InvitationRow {
   readonly hasCode: boolean;
   /** The invitation's language: the link opens the sign-up page in it. */
   readonly locale: 'ar' | 'en';
+  /**
+   * Its current code was NOT e-mailed: the mailer skipped it because the member it was sent for may no
+   * longer invite (T-M2-20). The list says «لم تُرسل الدعوة» / "Not sent" instead of "Sent once".
+   */
+  readonly mailNotSent: boolean;
 }
 
 export type TokenLookup =
@@ -253,6 +258,14 @@ export async function createInvitation(
   }
 }
 
+/** Does private.invitation_mail_skipped_ids() exist yet (migration 20261022100100; expand-first)? */
+async function mailSkipsExist(tx: ClaimsTx): Promise<boolean> {
+  const [row] = await tx.execute<{ present: boolean }>(
+    sql`select to_regprocedure('private.invitation_mail_skipped_ids()') is not null as present`,
+  );
+  return row?.present === true;
+}
+
 /**
  * The SQL expression of an invitation's state: held (not sent: no link, no expiry yet) and scheduled
  * first, then pending past its expiry reads as expired.
@@ -270,8 +283,10 @@ export async function listInvitations(
   tx: ClaimsTx,
   filter: { state?: InvitationState } = {},
 ): Promise<InvitationRow[]> {
-  // Custom-role names once their table exists (deploy window, EP-ROLES).
+  // Custom-role names once their table exists (deploy window, EP-ROLES); skipped e-mails once their
+  // function exists (WP-ADM-01, T-M2-20).
   const customNames = await customRolesExist(tx);
+  const skips = await mailSkipsExist(tx);
   const rows = await tx.execute<{
     id: string;
     person_id: string;
@@ -290,19 +305,22 @@ export async function listInvitations(
     role_name_ar: string | null;
     role_name_en: string | null;
     privileged: boolean;
+    mail_not_sent: boolean;
   }>(sql`
     select i.id, i.person_id, i.email, p.display_name_ar, p.display_name_en, i.primary_role,
            ${STATE} as state, i.send_count, i.expires_at, i.created_at, i.import_id,
            c.invitation_id is not null as has_code, i.locale, i.additional_roles,
            ${customNames ? sql`cr.name_ar` : sql`null::text`} as role_name_ar,
            ${customNames ? sql`cr.name_en` : sql`null::text`} as role_name_en,
-           private.roles_include_privileged(i.tenant_id, array[i.primary_role] || i.additional_roles) as privileged
+           private.roles_include_privileged(i.tenant_id, array[i.primary_role] || i.additional_roles) as privileged,
+           ${skips ? sql`k.id is not null` : sql`false`} as mail_not_sent
     from platform.invitations i
     join platform.persons p on p.tenant_id = i.tenant_id and p.id = i.person_id
     ${customNames ? sql`left join platform.custom_roles cr on cr.tenant_id = i.tenant_id and cr.code = i.primary_role` : sql``}
     -- Whether the caller may copy a code (managing rules per invitation, migration 20261018090000). Only
     -- the id leaves the database here: the codes stay in it (security review M2).
     left join (select x.invitation_id from private.invitation_codes() x) c on c.invitation_id = i.id
+    ${skips ? sql`left join (select x as id from private.invitation_mail_skipped_ids() x) k on k.id = i.id` : sql``}
     where ${filter.state === undefined ? sql`true` : sql`${STATE} = ${filter.state}`}
     order by i.created_at desc, i.id`);
   return rows.map((r) => ({
@@ -325,6 +343,7 @@ export async function listInvitations(
     additionalRoles: r.additional_roles ?? [],
     hasCode: r.has_code,
     locale: r.locale === 'en' ? 'en' : 'ar',
+    mailNotSent: r.mail_not_sent,
   }));
 }
 

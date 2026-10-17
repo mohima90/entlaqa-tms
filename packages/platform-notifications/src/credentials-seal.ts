@@ -8,7 +8,7 @@ import {
   hkdfSync,
   randomBytes,
 } from 'node:crypto';
-import type { EmailProviderId } from './providers';
+import type { EmailProviderId, EmailProviderInput } from './providers';
 
 /**
  * Sealing e-mail provider secrets for the worker (WP-ADM-01; docs/engineering/email.md «Provider secrets»).
@@ -114,4 +114,19 @@ export function sealCredentials(
   ]);
   const payload = Buffer.concat([ephemeralRaw, nonce, body, cipher.getAuthTag()]);
   return `${SEALED_VERSION}.${key.keyId}.${payload.toString('base64url')}`;
+}
+
+/**
+ * The secrets typed on a settings page, sealed for the worker and bound to their scope and provider; null
+ * when the field was left empty (keep the saved secrets — the database allows it for the same provider only).
+ */
+export function sealProviderInput(
+  key: CredentialsPublicKey,
+  scope: CredentialsScope,
+  provider: EmailProviderInput,
+): string | null {
+  if (provider.secrets === null) return null;
+  const secrets: Record<string, string> = {};
+  for (const [name, value] of Object.entries(provider.secrets)) secrets[name] = value;
+  return sealCredentials(key, credentialsContext(scope, provider.provider), secrets);
 }

@@ -25,7 +25,7 @@ type Story = StoryObj<typeof meta>;
 const COPY = {
   ar: {
     breadcrumbLabel: 'مسار التنقل',
-    breadcrumb: 'المستخدمون',
+    breadcrumb: 'أعضاء الفريق',
     name: 'سارة عبدالله القحطاني',
     subtitle: 'أخصائية تدريب · التدريب والتطوير · الرياض',
     status: 'نشط',
@@ -59,7 +59,7 @@ const COPY = {
   },
   en: {
     breadcrumbLabel: 'Breadcrumb',
-    breadcrumb: 'Users',
+    breadcrumb: 'Team members',
     name: 'Sarah Abdullah Alqahtani',
     subtitle: 'Training Specialist · Training & Development · Riyadh',
     status: 'Active',

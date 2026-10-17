@@ -21,7 +21,7 @@ type Story = StoryObj<typeof meta>;
 const COPY = {
   ar: {
     breadcrumbLabel: 'مسار التنقل',
-    breadcrumb: 'المستخدمون',
+    breadcrumb: 'أعضاء الفريق',
     title: 'دعوة مستخدم',
     intro:
       'نرسل رسالة إلى البريد الإلكتروني للعمل فيها رابط لتعيين كلمة المرور والدخول. لا يُنشأ الحساب قبل قبول الدعوة.',
@@ -64,7 +64,7 @@ const COPY = {
   },
   en: {
     breadcrumbLabel: 'Breadcrumb',
-    breadcrumb: 'Users',
+    breadcrumb: 'Team members',
     title: 'Invite a user',
     intro:
       'We send an email to the work address with a link to set a password and sign in. No account is created until the invitation is accepted.',

@@ -27,7 +27,7 @@ type Story = StoryObj<typeof meta>;
 
 const COPY = {
   ar: {
-    title: 'المستخدمون',
+    title: 'أعضاء الفريق',
     inviteUser: 'دعوة مستخدم',
     summary: '128 مستخدمًا · 3 دعوات لم تُقبل بعد',
     expiredBanner:
@@ -65,7 +65,7 @@ const COPY = {
     emptyFilteredBody: 'جرّب كلمة أقصر أو ابحث بالرقم الوظيفي.',
   },
   en: {
-    title: 'Users',
+    title: 'Team members',
     inviteUser: 'Invite user',
     summary: '128 users · 3 invitations not accepted yet',
     expiredBanner:

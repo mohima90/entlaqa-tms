@@ -32,7 +32,7 @@
 3. In parallel (second account or agent): **WP-LD-01** Department Head needs page — flow agreed, nothing blocking; in between, write the short flows for WP-ADM-02 Branding and WP-ADM-03 Audit log.
 
 **Waiting on the PO**
-1. Discuss and agree **EP-EMAIL** (`docs/business-flows/EP-EMAIL-email-sending.md`).
+1. ~~Discuss and agree EP-EMAIL~~ — agreed 17 Oct 2026; WP-ADM-01 in progress.
 2. «yes» for the WP-FIX-01 PR when it is ready.
 3. Delete the old Supabase project `jadarat-tms-staging` (production-setup step 40) and the backup branches `backup/youthful-davinci-*`; set `APP_BASE_URL` in Vercel if not done yet (§5, 16 Oct).
 4. Scope: confirm IAM-08 «R1 part» in the feature list (its release column says R2); decide whether self-service sign-up (ADM-01) stays in R1 now that organizations are created by the Super Admin.
@@ -82,6 +82,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | ID | Decision |
 |---|---|---|
+| 17 Oct 2026 | PO | **E-mail sending flow agreed** (`docs/business-flows/EP-EMAIL-email-sending.md`): the Super Admin sets the platform sender in the product (provider, write-only key, sender, test); an organization may connect its own provider on Email integration; **no automatic fallback** when an own provider fails (shown to the Org Admin); providers Resend, SMTP, SendGrid, Mailgun, Microsoft 365. BRD v3.2 FR-NTF-11. WP-ADM-01 started |
 | 17 Oct 2026 | Tech Lead | **Work packages and claiming** (implements the PO's «Work organized by role»): open R1 work in 41 work packages by role (`ROADMAP-by-role.md`), one WP = one PR; a WP is claimed by pushing its own branch `claude/<wp-id>-<short>` whose first commit fills «Claimed by» in the roadmap and the BACKLOG; each WP has a reserved migration-timestamp range (renamed before the PR if `main` already holds a later one); shared files (i18n messages, permission catalogue, navigation, test fixtures) take small additive edits only (`HOW-TO-START.md`). BACKLOG re-organized by role, done tasks archived with their rows intact |
 | 17 Oct 2026 | PO | **Guided-test feedback 1–3 approved** (`docs/delivery/test-feedback-2026-10-17.md`): Levels tab becomes «Organization tree» with the level chain; name fields follow the default language (English required, Arabic optional); the organization's own level names everywhere instead of a fixed «Department». One small PR |
 | 17 Oct 2026 | PO | **Department-limited L&D Manager** (guided test, feedback #4, "approved"): a role limited to a department does the L&D work for its own units (needs, plan lines, budgets, courses created from those lines); the organization-wide L&D Manager keeps cycle set-up/launch, needs forms and planning settings. Built with consolidation (T-M3-06) as unit-scoped permissions |

@@ -9,6 +9,7 @@ import {
   customRoleGrantScope,
   customRoleIsPrivileged,
   customRolePermission,
+  permissionMakesPrivileged,
   customRolePermissionProblems,
   isCustomRoleCode,
   standardRoleScope,
@@ -25,13 +26,13 @@ function migration(suffix: string): string {
   return readFileSync(join(migrationsDir, file), 'utf8');
 }
 
-/** (code, risk, custom_role_use) rows of the permission catalogue seed. */
+/** (code, risk, custom_role_use, privileged) rows of the permission catalogue seed. */
 function seededPermissions() {
   return [
     ...migration('_platform__create_permission_catalogue.sql').matchAll(
-      /\('(platform\.[a-z_]+\.[a-z_]+)', '(low|medium|high)', '([a-z_]+)', \d+\)/g,
+      /\('(platform\.[a-z_]+\.[a-z_]+)', '(low|medium|high)', '([a-z_]+)', (true|false), \d+\)/g,
     ),
-  ].map((m) => ({ code: m[1], risk: m[2], use: m[3] }));
+  ].map((m) => ({ code: m[1], risk: m[2], use: m[3], privileged: m[4] === 'true' }));
 }
 
 /** (role, permission, scope) rows of the standard roles' grants seed. */
@@ -49,6 +50,7 @@ describe('permission catalogue and standard grants (EP-ROLES, drift checks)', ()
       code: permission.code,
       risk: permission.risk,
       use: customRolePermission(permission.code)?.use ?? 'none',
+      privileged: permissionMakesPrivileged(permission.code),
     }));
     const byCode = (a: { code: string | undefined }, b: { code: string | undefined }) =>
       (a.code ?? '').localeCompare(b.code ?? '');
@@ -79,8 +81,23 @@ describe('permission catalogue and standard grants (EP-ROLES, drift checks)', ()
     }
   });
 
-  it('makes a role privileged by any high-risk permission (PO, 17 Oct 2026)', () => {
+  it('makes a role privileged by any high-risk or user/role management permission (PO, 5 and 17 Oct 2026)', () => {
     expect(customRoleIsPrivileged(['platform.user.read', 'platform.org.read'])).toBe(false);
+    expect(customRoleIsPrivileged(['platform.user.read', 'platform.user.unlock_sign_in'])).toBe(
+      false,
+    );
+    // A role copied from the HR Manager manages users and roles: privileged (security review H1).
+    for (const code of [
+      'platform.user.invite',
+      'platform.user.update',
+      'platform.user.deactivate',
+      'platform.role.assign',
+      'platform.org.manage',
+    ]) {
+      expect(customRoleIsPrivileged(['platform.user.read', code]), code).toBe(true);
+    }
+    const hr = roleStartValues({ kind: 'standard', code: 'hr_manager' }).permissions;
+    expect(customRoleIsPrivileged(hr)).toBe(true);
     expect(customRoleIsPrivileged(['platform.user.read', 'platform.audit.read'])).toBe(true);
     expect(customRoleIsPrivileged(['platform.security.manage'])).toBe(true);
     expect(customRoleIsPrivileged(['tms.unknown.permission'])).toBe(true);

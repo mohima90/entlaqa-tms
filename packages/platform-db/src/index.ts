@@ -244,6 +244,7 @@ export {
   type RoleRefusal,
   type ReplaceRoleOptions,
   getEditableRole,
+  lockTenantRoles,
   replaceMemberRole,
   roleRefusalOf,
 } from './role-admin';

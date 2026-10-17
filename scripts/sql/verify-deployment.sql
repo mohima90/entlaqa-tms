@@ -745,7 +745,7 @@ begin
              then 'SELECT(membership_id),SELECT(role_code),SELECT(tenant_id),SELECT(valid_from),SELECT(valid_until)'
            when 'platform.ref_roles' then 'SELECT(code),SELECT(is_privileged)'
            -- EP-ROLES (20261019090000/090100): the guards decide by permission, standard or custom roles.
-           when 'platform.ref_permissions' then 'SELECT(code),SELECT(custom_role_use),SELECT(risk)'
+           when 'platform.ref_permissions' then 'SELECT(code),SELECT(custom_role_use),SELECT(privileged),SELECT(risk)'
            when 'platform.ref_role_permissions' then 'SELECT(permission_code),SELECT(role_code),SELECT(scope)'
            when 'platform.custom_roles' then 'SELECT(code),SELECT(data_scope),SELECT(id),SELECT(tenant_id)'
            when 'platform.custom_role_permissions'

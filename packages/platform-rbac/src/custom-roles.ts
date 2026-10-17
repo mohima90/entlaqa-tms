@@ -86,6 +86,10 @@ export const CUSTOM_ROLE_PERMISSIONS: readonly CustomRolePermission[] = [
   { permission: p['platform.audit.read'], group: 'audit', use: 'organization_only' },
 ];
 
+const PERMISSIONS_BY_CODE: ReadonlyMap<string, PermissionDefinition> = new Map(
+  Object.values(platformPermissions).map((permission) => [permission.code, permission]),
+);
+
 const BY_CODE: ReadonlyMap<string, CustomRolePermission> = new Map(
   CUSTOM_ROLE_PERMISSIONS.map((entry) => [entry.permission.code, entry]),
 );
@@ -108,9 +112,35 @@ export interface CustomRoleDefinition {
   readonly permissions: readonly string[];
 }
 
-/** Privileged = any high-risk permission (PO, 17 Oct 2026). Unknown permissions count as high risk. */
+/**
+ * Permissions that make a role privileged although they are not high-risk: managing users or roles
+ * (PO rule of 5 Oct 2026, kept for custom roles — security review H1). Mirrored by
+ * `platform.ref_permissions.privileged` (drift test).
+ */
+export const USER_MANAGEMENT_PERMISSIONS: readonly string[] = [
+  'platform.user.invite',
+  'platform.user.update',
+  'platform.user.deactivate',
+  'platform.role.assign',
+  'platform.org.manage',
+];
+
+/** Does holding this permission make a custom role privileged? Unknown permissions do (fail closed). */
+export function permissionMakesPrivileged(code: string): boolean {
+  const permission: PermissionDefinition | undefined = PERMISSIONS_BY_CODE.get(code);
+  return (
+    permission === undefined ||
+    permission.risk === 'high' ||
+    USER_MANAGEMENT_PERMISSIONS.includes(code)
+  );
+}
+
+/**
+ * Privileged = any high-risk permission or any permission that manages users or roles (PO, 5 and 17 Oct
+ * 2026) — the database's private.role_is_privileged. Unknown permissions count as privileged.
+ */
 export function customRoleIsPrivileged(permissions: readonly string[]): boolean {
-  return permissions.some((code) => (BY_CODE.get(code)?.permission.risk ?? 'high') === 'high');
+  return permissions.some(permissionMakesPrivileged);
 }
 
 /** The scope a permission of the role is granted with (null: not part of a custom role). */

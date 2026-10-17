@@ -19,6 +19,7 @@ import {
 } from './sign-in-lock';
 
 const db = vi.hoisted(() => ({
+  mayManagePerson: vi.fn(() => Promise.resolve(true)),
   memberSignInLock: vi.fn(),
   unlockMemberSignIn: vi.fn(),
   getSecurityPolicy: vi.fn(),
@@ -101,6 +102,18 @@ describe('unlock sign-in (T-M2-11, PO decision 9 Oct 2026)', () => {
       expect(db.unlockMemberSignIn).toHaveBeenLastCalledWith(TX, MEMBER, 3);
       expect(writeAudit).not.toHaveBeenCalled();
     }
+  });
+
+  it('a member the admin may not act on (a privileged member, for a custom role): FORBIDDEN, nothing unlocked (review L1)', async () => {
+    db.mayManagePerson.mockResolvedValueOnce(false);
+    const { rt, writeAudit } = runtime(['tenant_admin']);
+    const result = await createDefineAction(rt)(unlockSignInActionDefinition())({
+      personId: MEMBER,
+    });
+    expect(!result.ok && result.error.code).toBe('FORBIDDEN');
+    expect(db.mayManagePerson).toHaveBeenCalledWith(TX, MEMBER, 'platform.user.unlock_sign_in');
+    expect(db.unlockMemberSignIn).not.toHaveBeenCalled();
+    expect(writeAudit).not.toHaveBeenCalled();
   });
 
   it('a person without an active membership with an account here (revoked, suspended…): NOT_FOUND', async () => {

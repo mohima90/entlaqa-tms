@@ -8,6 +8,7 @@ import {
   holdsTenantWide,
   standardAssignableRole,
 } from './role-grants';
+import { getSystemRole } from './system-roles';
 
 const none = { headedDepartmentIds: [] };
 const reviewer: CustomRoleDefinition = {
@@ -134,8 +135,25 @@ describe('canAssignRole (ADR 0003 §5; PO decisions 5 Oct 2026 and 17 Oct 2026)'
     // A custom role with a high-risk permission is privileged.
     expect(customAssignableRole(auditor).privileged).toBe(true);
     expect(canAssignRole(hr, customAssignableRole(auditor))).toBe(false);
+    // A custom role that manages users or roles is privileged too (PO rule of 5 Oct 2026, review H1):
+    // a role copied from the HR Manager, or one that invites people.
+    expect(customAssignableRole(reviewer).privileged).toBe(true);
+    expect(canAssignRole(hr, customAssignableRole(reviewer))).toBe(false);
+    const hrCopy: CustomRoleDefinition = {
+      code: 'custom_a00000000005',
+      dataScope: 'organization',
+      permissions: getSystemRole('hr_manager').grants.map((g) => g.permission.code),
+    };
+    expect(canAssignRole(hr, customAssignableRole(hrCopy))).toBe(false);
+    const admin = subjectOf('aal1', [], { roleCode: 'tenant_admin' });
+    expect(canAssignRole(admin, customAssignableRole(hrCopy))).toBe(true);
     // An ordinary custom role whose permissions HR holds…
-    expect(canAssignRole(hr, customAssignableRole(reviewer))).toBe(true);
+    const viewer: CustomRoleDefinition = {
+      code: 'custom_a00000000006',
+      dataScope: 'team',
+      permissions: ['platform.user.read', 'platform.org.read'],
+    };
+    expect(canAssignRole(hr, customAssignableRole(viewer))).toBe(true);
     // …but not one with a permission HR does not hold (nobody gives what they do not hold).
     const profile: CustomRoleDefinition = {
       code: 'custom_a00000000003',

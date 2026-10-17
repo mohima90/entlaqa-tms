@@ -345,10 +345,25 @@ export async function updateUserDetails(
   };
 }
 
-/** May the signed-in member change this person's record? (private.actor_may_manage_person) */
-export async function mayManagePerson(tx: UserTx, personId: string): Promise<boolean> {
-  const [row] = await tx.execute<{ may: boolean }>(sql`
+/**
+ * May the signed-in member act on this person? Without `permission`: any user management
+ * (private.actor_may_manage_person — the pages' hints). With it: that permission organization-wide, as the
+ * database checks the action itself (private.actor_may_manage_person_with; security review M1). Either way a
+ * member holding a privileged role only for the Organization Admin.
+ */
+export async function mayManagePerson(
+  tx: UserTx,
+  personId: string,
+  permission?: string,
+): Promise<boolean> {
+  const [row] = await tx.execute<{ may: boolean }>(
+    permission === undefined
+      ? sql`
     select private.actor_may_manage_person(p.tenant_id, p.id) as may
-    from platform.persons p where p.id = ${personId}::uuid`);
+    from platform.persons p where p.id = ${personId}::uuid`
+      : sql`
+    select private.actor_may_manage_person_with(p.tenant_id, p.id, array[${permission}]::text[]) as may
+    from platform.persons p where p.id = ${personId}::uuid`,
+  );
   return row?.may === true;
 }

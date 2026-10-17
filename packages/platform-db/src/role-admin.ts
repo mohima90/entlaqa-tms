@@ -111,6 +111,14 @@ export interface ReplaceRoleOptions {
  * data), or why the database refused — the transaction is then aborted and must be ended by the caller
  * (defineAction rolls back on an error result).
  */
+/**
+ * Takes the organization's role lock (re-entrant, until the transaction ends): role decisions read after it
+ * see every committed role change and no concurrent one (security review L5).
+ */
+export async function lockTenantRoles(tx: UserTx): Promise<void> {
+  await tx.execute(sql`select private.lock_tenant_roles(private.current_tenant_id())`);
+}
+
 export async function replaceMemberRole(
   tx: UserTx,
   personId: string,
@@ -119,7 +127,7 @@ export async function replaceMemberRole(
   options: ReplaceRoleOptions = {},
 ): Promise<RoleOutcome> {
   // Serialise with every other role change of the organization before reading (READ COMMITTED).
-  await tx.execute(sql`select private.lock_tenant_roles(private.current_tenant_id())`);
+  await lockTenantRoles(tx);
   const before = await getEditableRole(tx, personId);
   if (!before) return { ok: false, refusal: 'not_found' };
   if (before.membershipId === null) return { ok: false, refusal: 'no_account' };

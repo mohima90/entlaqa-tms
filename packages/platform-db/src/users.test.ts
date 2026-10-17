@@ -3,7 +3,7 @@ import { type SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { describe, expect, it } from 'vitest';
 import { listOrgUnitOptions } from './org';
-import { loadMemberAuthorizationFacts } from './roles';
+import { getMyPrimaryRole, loadMemberAuthorizationFacts } from './roles';
 import {
   type UserListFilter,
   countMembersByRole,
@@ -399,6 +399,7 @@ describe('loadMemberAuthorizationFacts', () => {
         },
       ],
       [{ id: 'd1' }],
+      [{ present: true }],
       [
         {
           code: 'custom_a00000000001',
@@ -423,6 +424,41 @@ describe('loadMemberAuthorizationFacts', () => {
       ],
     });
     expect(fake.executed[0]?.sql).toContain("m.status = 'active'");
+  });
+
+  it('reads no custom roles while their table does not exist yet (deploy window, review M3)', async () => {
+    const fake = fakeTx(
+      [{ role_code: 'hr_manager', valid_from: null, valid_until: null }],
+      [],
+      [{ present: false }],
+    );
+    expect(await loadMemberAuthorizationFacts(fake.tx)).toEqual({
+      roles: [{ roleCode: 'hr_manager', validFrom: null, validUntil: null }],
+      headedDepartmentIds: [],
+      customRoles: [],
+    });
+    expect(fake.executed).toHaveLength(3);
+    expect(fake.executed[2]?.sql).toContain("to_regclass('platform.custom_roles')");
+  });
+});
+
+describe('getMyPrimaryRole', () => {
+  it('names a custom role, and reads no names before the custom roles exist (review M3)', async () => {
+    const withRoles = fakeTx(
+      [{ present: true }],
+      [{ role_code: 'custom_a00000000001', name_ar: 'مراجع', name_en: 'Reviewer' }],
+    );
+    expect(await getMyPrimaryRole(withRoles.tx)).toEqual({
+      code: 'custom_a00000000001',
+      customName: { ar: 'مراجع', en: 'Reviewer' },
+    });
+    expect(withRoles.executed[1]?.sql).toContain('left join platform.custom_roles');
+    const before = fakeTx(
+      [{ present: false }],
+      [{ role_code: 'learner', name_ar: null, name_en: null }],
+    );
+    expect(await getMyPrimaryRole(before.tx)).toEqual({ code: 'learner', customName: null });
+    expect(before.executed[1]?.sql).not.toContain('custom_roles');
   });
 });
 

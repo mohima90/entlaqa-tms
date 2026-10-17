@@ -91,6 +91,43 @@ begin
   perform tests.set_claims(v_admin_aal2);
   perform tests.assert_eq(tests.rows_affected('update platform.security_policies set mfa_required_roles = ''{training_manager}'''),
     1::bigint, 'back to Training Managers only');
+  -- A privileged custom role (EP-ROLES; security review M2): its holder is covered by "required for roles"
+  -- as soon as a privileged standard role is listed, and — holding a high-risk permission — gets no grace.
+  perform tests.set_claims(v_admin_aal2);
+  insert into platform.custom_roles (id, name_en, name_ar, data_scope)
+  values ('a6000000-0000-4000-8000-0000000000c1', 'Auditor', 'مدقق', 'organization');
+  insert into platform.custom_role_permissions (custom_role_id, permission_code)
+  values ('a6000000-0000-4000-8000-0000000000c1', 'platform.user.read'),
+         ('a6000000-0000-4000-8000-0000000000c1', 'platform.audit.read');
+  delete from platform.role_assignments ra using platform.tenant_memberships m
+  where m.id = ra.membership_id and m.user_id = '00000000-0000-4000-8000-000000000c01' and m.tenant_id = v_a;
+  insert into platform.role_assignments (membership_id, role_code)
+  select m.id, cr.code from platform.tenant_memberships m, platform.custom_roles cr
+  where m.user_id = '00000000-0000-4000-8000-000000000c01' and m.tenant_id = v_a
+    and cr.id = 'a6000000-0000-4000-8000-0000000000c1';
+  perform tests.set_claims(v_s1);
+  perform tests.assert_eq((select state from private.session_access_state()), 'prompt_admin',
+    'Training Managers only: a privileged custom role is not required — only invited, like the Organization Admin (high-risk permission)');
+  perform tests.set_claims(v_admin_aal2);
+  perform tests.assert_eq(tests.rows_affected('update platform.security_policies set mfa_required_roles = ''{training_manager,hr_manager}'''),
+    1::bigint, 'required for Training Managers and HR Managers (a privileged standard role)');
+  perform tests.set_claims(v_s1);
+  perform tests.assert(private.current_tenant_id() is null,
+    'a privileged custom role with a high-risk permission: covered, and no grace (refused at once)');
+  select * into r from private.session_access_state();
+  perform tests.assert(r.state = 'mfa_enrol' and r.mfa_deadline <= now(), 'privileged custom role: set an app up first');
+  perform tests.set_claims(v_m3);
+  perform tests.assert_eq((select state from private.session_access_state()), 'prompt_grace', 'the Training Manager keeps the grace period');
+  perform tests.set_claims(v_admin_aal2);
+  perform tests.assert_eq(tests.rows_affected('update platform.security_policies set mfa_mode = ''off'', mfa_required_roles = ''{}'''),
+    1::bigint, 'MFA off again');
+  perform tests.assert(private.dismiss_mfa_prompt() or true, 'the admin''s own prompt dismissed');
+  perform tests.set_claims(v_s1);
+  perform tests.assert_eq((select state from private.session_access_state()), 'prompt_admin',
+    'off: a member with a high-risk permission (custom role) is invited to set an app up, like the Organization Admin');
+  perform tests.set_claims(v_admin_aal2);
+  perform tests.assert_eq(tests.rows_affected('update platform.security_policies set mfa_mode = ''required_roles'', mfa_required_roles = ''{training_manager}'''),
+    1::bigint, 'back to Training Managers only');
 
   -- Grace over (0 days): the covered member must set an app up first; others are untouched.
   perform tests.set_claims(v_admin_aal2);

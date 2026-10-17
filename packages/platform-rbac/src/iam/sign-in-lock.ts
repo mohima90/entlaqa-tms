@@ -3,6 +3,7 @@ import {
   type MemberSignInLock,
   type UserTx,
   getSecurityPolicy,
+  mayManagePerson,
   memberSignInLock,
   unlockMemberSignIn,
 } from '@jadarat/platform-db';
@@ -126,6 +127,11 @@ export function unlockSignInActionDefinition(
     resource: (input) => ({ type: 'person', id: input.personId }),
     handler: async ({ ctx, input }) => {
       if (!ctx.resource) return err(appError('NOT_FOUND'));
+      // As the database (private.rate_limit_member_account): privileged members only for the Organization
+      // Admin (security review L1).
+      if (!(await mayManagePerson(ctx.tx, input.personId, 'platform.user.unlock_sign_in'))) {
+        return err(appError('FORBIDDEN'));
+      }
       const outcome = await unlockMemberSignIn(
         ctx.tx,
         input.personId,

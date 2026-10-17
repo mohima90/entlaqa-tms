@@ -16,8 +16,9 @@
 --     (custom_role_use = organization_only) only in a role whose scope is the whole organization;
 --   * a role still held by a member (not revoked), or named by a pending invitation, is not deleted (JR002,
 --     with the numbers in the message); rows of revoked memberships go with the role.
--- A custom role with any high-risk permission is privileged (private.role_is_privileged): only the
--- Organization Admin gives it (migration 20261019090200).
+-- A custom role with any permission marked `privileged` in platform.ref_permissions (every high-risk one, and
+-- user.invite / user.update / user.deactivate / role.assign / org.manage — security review H1) is privileged
+-- (private.role_is_privileged): only the Organization Admin gives it (migration 20261019090200).
 --
 -- Role codes everywhere (role_assignments.role_code, invitations.primary_role) now name a standard role OR
 -- a custom role of the same organization:
@@ -34,8 +35,8 @@
 --                                                    whose role covers the organization (or that are
 --                                                    organization-wide by nature)
 --   private.member_has_permission(tenant, user, p)   one of them
---   private.role_is_privileged(tenant, code)         standard: ref_roles.is_privileged; custom: any high-risk
---                                                    permission; unknown: true (fail closed)
+--   private.role_is_privileged(tenant, code)         standard: ref_roles.is_privileged; custom: any permission
+--                                                    marked privileged; unknown: true (fail closed)
 --   private.roles_include_privileged(tenant, codes)
 --   private.role_is_assignable(tenant, code)         a standard role, or a custom role of the organization
 --   private.role_permission_codes(tenant, code)      the permissions a role grants (any scope)
@@ -169,7 +170,7 @@ begin
   if p_role_code like 'custom\_%' then
     select true, exists (select 1 from platform.custom_role_permissions crp
                          join platform.ref_permissions p on p.code = crp.permission_code
-                         where crp.tenant_id = cr.tenant_id and crp.custom_role_id = cr.id and p.risk = 'high')
+                         where crp.tenant_id = cr.tenant_id and crp.custom_role_id = cr.id and p.privileged)
       into v_found, v_privileged
     from platform.custom_roles cr where cr.tenant_id = p_tenant_id and cr.code = p_role_code;
     return coalesce(v_privileged, true) or not coalesce(v_found, false);
@@ -376,17 +377,21 @@ declare
   v_use text;
   v_scope text;
 begin
+  -- The catalogue rule holds for every writer, platform operations included (security review L3): the
+  -- Organization Admin's own permissions are never part of a custom role.
+  if tg_op = 'INSERT' then
+    select p.custom_role_use into v_use from platform.ref_permissions p where p.code = new.permission_code;
+    if v_use is null or v_use = 'none' then
+      raise exception 'permission % cannot be part of a custom role', new.permission_code
+        using errcode = 'insufficient_privilege';
+    end if;
+  end if;
   -- Removing a permission never gives anything; a deleted role takes its permissions with it (cascade).
   if not private.check_custom_role_actor(v_row.tenant_id) then
     return v_row;
   end if;
   if tg_op = 'DELETE' then
     return old;
-  end if;
-  select p.custom_role_use into v_use from platform.ref_permissions p where p.code = new.permission_code;
-  if v_use is null or v_use = 'none' then
-    raise exception 'permission % cannot be part of a custom role', new.permission_code
-      using errcode = 'insufficient_privilege';
   end if;
   if not private.member_has_permission(new.tenant_id, private.request_user_id(), new.permission_code) then
     raise exception 'nobody can give a permission they do not hold (%)', new.permission_code

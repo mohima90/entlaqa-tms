@@ -69,7 +69,7 @@ begin
     'platform.custom_role_permissions.custom_role_id, platform.custom_role_permissions.permission_code, '
     'platform.custom_role_permissions.tenant_id, platform.custom_roles.code, platform.custom_roles.data_scope, '
     'platform.custom_roles.id, platform.custom_roles.tenant_id, platform.ref_permissions.code, '
-    'platform.ref_permissions.custom_role_use, platform.ref_permissions.risk, platform.ref_role_permissions.permission_code, '
+    'platform.ref_permissions.custom_role_use, platform.ref_permissions.privileged, platform.ref_permissions.risk, platform.ref_role_permissions.permission_code, '
     'platform.ref_role_permissions.role_code, platform.ref_role_permissions.scope, '
     'platform.role_assignments.membership_id, platform.role_assignments.role_code, platform.role_assignments.tenant_id, '
     'platform.role_assignments.valid_from, platform.role_assignments.valid_until, platform.tenant_memberships.id, '
@@ -124,10 +124,13 @@ begin
      from pg_proc p
      where p.proowner <> 'rate_limit_guard'::regrole
        and exists (select 1 from aclexplode(p.proacl) a where pg_get_userbyid(a.grantee) = 'rate_limit_guard')),
+    'private.actor_may_manage_person_with(uuid,uuid,text[]), '
     'private.actor_role_codes(uuid,uuid), private.current_tenant_id(), private.has_active_membership(uuid,uuid), '
     'private.member_has_permission(uuid,uuid,text), private.member_permissions(uuid,uuid), '
+    'private.membership_is_privileged(uuid,uuid), '
     'private.request_aal2(), private.request_claims(), private.request_code_fresh(), '
-    'private.request_sign_in_unlocked_mail(uuid), private.request_user_id(), private.try_uuid(text)',
+    'private.request_sign_in_unlocked_mail(uuid), private.request_user_id(), private.role_is_privileged(uuid,text), '
+    'private.try_uuid(text)',
     'rate_limit_guard may call exactly these other functions');
 
   -- The keys, the counters and the trusted browsers: RLS forced, reachable by rate_limit_guard alone (no

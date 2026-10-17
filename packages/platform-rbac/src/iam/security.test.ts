@@ -372,6 +372,8 @@ describe("a member's sessions (screen 3: user managers)", () => {
     });
     expect(!end.ok && end.error.code).toBe('FORBIDDEN');
     expect(db.endMemberSessions).not.toHaveBeenCalled();
+    // The rule asks for the action's own permission, as the database (security review M1).
+    expect(db.mayManagePerson).toHaveBeenLastCalledWith(TX, SARA, 'platform.user.deactivate');
   });
 
   it('a database refusal (insufficient_privilege) is FORBIDDEN; a session not found 404', async () => {
@@ -428,6 +430,7 @@ describe("a member's lost authenticator app (screen 3; PO answer 9 Oct 2026)", (
     db.mayManagePerson.mockResolvedValueOnce(false);
     const unmanaged = await reset(runtime(forRoles('tenant_admin'), 'aal2').rt)({ personId: SARA });
     expect(!unmanaged.ok && unmanaged.error.code).toBe('FORBIDDEN');
+    expect(db.mayManagePerson).toHaveBeenLastCalledWith(TX, SARA, 'platform.user.reset_mfa');
     db.resetMemberMfa.mockRejectedValueOnce(Object.assign(new Error('refused'), { code: '42501' }));
     const refused = await reset(runtime(forRoles('tenant_admin'), 'aal2').rt)({ personId: SARA });
     expect(!refused.ok && refused.error.code).toBe('FORBIDDEN');

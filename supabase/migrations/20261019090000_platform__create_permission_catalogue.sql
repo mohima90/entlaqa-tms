@@ -4,8 +4,11 @@
 --
 --   platform.ref_permissions       every platform permission (packages/platform-rbac platform-permissions.ts)
 --                                  with its risk and how a custom role may use it (custom-roles.ts:
---                                  scoped / organization / organization_only / none). A custom role is
---                                  privileged when it holds a high-risk permission.
+--                                  scoped / organization / organization_only / none) and whether holding
+--                                  it makes a custom role PRIVILEGED (`privileged`): every high-risk
+--                                  permission, and every permission that manages users or roles — user.invite,
+--                                  user.update, user.deactivate, role.assign, org.manage (PO rule of 5 Oct
+--                                  2026: a role that manages users or roles is privileged; security review H1).
 --   platform.ref_role_permissions  the grants of the six standard roles (system-roles.ts) with their scope,
 --                                  so the database guards decide by PERMISSION (private.member_permissions,
 --                                  migration 20261019090200) and custom roles work in the database exactly
@@ -22,28 +25,30 @@ create table platform.ref_permissions (
   custom_role_use text not null
     constraint ref_permissions_custom_role_use_check
     check (custom_role_use in ('scoped', 'organization', 'organization_only', 'none')),
-  sort_order smallint not null unique
+  privileged boolean not null,
+  sort_order smallint not null unique,
+  constraint ref_permissions_high_risk_privileged_check check (risk <> 'high' or privileged)
 );
 comment on table platform.ref_permissions is
   'Permission catalogue (FR-IAM-07, EP-ROLES). Class: G. Synced from platform-rbac platform-permissions.ts / custom-roles.ts (drift test).';
 
-insert into platform.ref_permissions (code, risk, custom_role_use, sort_order) values
-  ('platform.user.read', 'low', 'scoped', 1),
-  ('platform.user.invite', 'medium', 'organization_only', 2),
-  ('platform.user.update', 'medium', 'organization_only', 3),
-  ('platform.user.deactivate', 'medium', 'organization_only', 4),
-  ('platform.user.reset_mfa', 'high', 'organization_only', 5),
-  ('platform.user.unlock_sign_in', 'medium', 'organization_only', 6),
-  ('platform.role.read', 'low', 'scoped', 7),
-  ('platform.role.assign', 'medium', 'organization_only', 8),
-  ('platform.role.assign_privileged', 'high', 'none', 9),
-  ('platform.role.manage', 'high', 'none', 10),
-  ('platform.org.read', 'low', 'organization', 11),
-  ('platform.org.manage', 'medium', 'organization_only', 12),
-  ('platform.tenant.read', 'low', 'organization', 13),
-  ('platform.tenant.manage', 'high', 'organization_only', 14),
-  ('platform.security.manage', 'high', 'organization_only', 15),
-  ('platform.audit.read', 'high', 'organization_only', 16);
+insert into platform.ref_permissions (code, risk, custom_role_use, privileged, sort_order) values
+  ('platform.user.read', 'low', 'scoped', false, 1),
+  ('platform.user.invite', 'medium', 'organization_only', true, 2),
+  ('platform.user.update', 'medium', 'organization_only', true, 3),
+  ('platform.user.deactivate', 'medium', 'organization_only', true, 4),
+  ('platform.user.reset_mfa', 'high', 'organization_only', true, 5),
+  ('platform.user.unlock_sign_in', 'medium', 'organization_only', false, 6),
+  ('platform.role.read', 'low', 'scoped', false, 7),
+  ('platform.role.assign', 'medium', 'organization_only', true, 8),
+  ('platform.role.assign_privileged', 'high', 'none', true, 9),
+  ('platform.role.manage', 'high', 'none', true, 10),
+  ('platform.org.read', 'low', 'organization', false, 11),
+  ('platform.org.manage', 'medium', 'organization_only', true, 12),
+  ('platform.tenant.read', 'low', 'organization', false, 13),
+  ('platform.tenant.manage', 'high', 'organization_only', true, 14),
+  ('platform.security.manage', 'high', 'organization_only', true, 15),
+  ('platform.audit.read', 'high', 'organization_only', true, 16);
 
 create table platform.ref_role_permissions (
   role_code text not null references platform.ref_roles (code) on delete cascade,
@@ -103,7 +108,7 @@ create policy ref_permissions_guard_read on platform.ref_permissions for select
   to invitation_guard, membership_guard, tenant_guard, rate_limit_guard using (true);
 revoke all on platform.ref_permissions from public, anon;
 grant select on platform.ref_permissions to authenticated;
-grant select (code, risk, custom_role_use) on platform.ref_permissions
+grant select (code, risk, custom_role_use, privileged) on platform.ref_permissions
   to invitation_guard, membership_guard, tenant_guard, rate_limit_guard;
 
 alter table platform.ref_role_permissions enable row level security;

@@ -35,6 +35,14 @@ function toDate(value: Date | string | null): Date | null {
  * tenant the claims act in. Validity windows are returned as stored (authorize() applies them per
  * request). Only an ACTIVE membership counts; RLS restricts every read to the current tenant.
  */
+/** Does platform.custom_roles exist yet (EP-ROLES expand-first deploy window)? */
+export async function customRolesExist(tx: UserTx): Promise<boolean> {
+  const [row] = await tx.execute<{ present: boolean }>(
+    sql`select to_regclass('platform.custom_roles') is not null as present`,
+  );
+  return row?.present === true;
+}
+
 export async function loadMemberAuthorizationFacts(tx: UserTx): Promise<MemberAuthorizationFacts> {
   const roles = await tx.execute<{
     role_code: string;
@@ -57,11 +65,16 @@ export async function loadMemberAuthorizationFacts(tx: UserTx): Promise<MemberAu
       and m.status = 'active'
       and d.deleted_at is null
     order by d.id`);
-  const custom = await tx.execute<{
-    code: string;
-    data_scope: MemberCustomRole['dataScope'];
-    permissions: string[] | null;
-  }>(sql`
+  // While the app is deployed ahead of its database (custom roles not migrated yet — the deploys run in
+  // parallel), there are no custom roles: read nothing rather than fail every request (review M3). A
+  // catalog lookup, not a failing query: an error would abort the transaction.
+  const custom = !(await customRolesExist(tx))
+    ? []
+    : await tx.execute<{
+        code: string;
+        data_scope: MemberCustomRole['dataScope'];
+        permissions: string[] | null;
+      }>(sql`
     select cr.code, cr.data_scope,
            array(select crp.permission_code from platform.custom_role_permissions crp
                  where crp.tenant_id = cr.tenant_id and crp.custom_role_id = cr.id
@@ -101,15 +114,21 @@ export interface MyRole {
  * Same membership rule and RLS as `loadMemberAuthorizationFacts`.
  */
 export async function getMyPrimaryRole(tx: UserTx): Promise<MyRole | null> {
+  // The account menu on every page: no custom-role names before that migration (review M3).
+  const names = (await customRolesExist(tx))
+    ? sql`cr.name_ar, cr.name_en
+    from platform.role_assignments ra
+    join platform.tenant_memberships m on m.tenant_id = ra.tenant_id and m.id = ra.membership_id
+    left join platform.custom_roles cr on cr.tenant_id = ra.tenant_id and cr.code = ra.role_code`
+    : sql`null::text as name_ar, null::text as name_en
+    from platform.role_assignments ra
+    join platform.tenant_memberships m on m.tenant_id = ra.tenant_id and m.id = ra.membership_id`;
   const [row] = await tx.execute<{
     role_code: string;
     name_ar: string | null;
     name_en: string | null;
   }>(sql`
-    select ra.role_code, cr.name_ar, cr.name_en
-    from platform.role_assignments ra
-    join platform.tenant_memberships m on m.tenant_id = ra.tenant_id and m.id = ra.membership_id
-    left join platform.custom_roles cr on cr.tenant_id = ra.tenant_id and cr.code = ra.role_code
+    select ra.role_code, ${names}
     where m.user_id = (select private.request_user_id())
       and m.tenant_id = (select private.current_tenant_id())
       and m.status = 'active'

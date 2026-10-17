@@ -12,14 +12,18 @@
 --   change a member holding a privileged role   tenant_admin              platform.role.assign_privileged
 --   invite (+ resend, revoke, send held ones)   tenant_admin, hr_manager  platform.user.invite + may give the roles
 --   suspend / revoke / reactivate a member      tenant_admin, hr_manager  platform.user.deactivate
---   user manager (people records, imports' and
---   invitations' visibility)                    tenant_admin, hr_manager  platform.user.invite / update / deactivate
+--   people records: add / edit / deactivation
+--   fields (check_person_writer)                tenant_admin, hr_manager  user.invite or update / update /
+--                                                                         deactivate or update (review M1)
+--   invitations' and imports' rows (policies)   tenant_admin, hr_manager  platform.user.invite
+--   a member's sessions and app (security page) tenant_admin, hr_manager  platform.user.deactivate
+--   import: change records of people already here tenant_admin, hr_manager platform.user.update
 --   organization profile, security policy       tenant_admin              platform.tenant.manage / security.manage
 --   reset an authenticator app, unlock sign-in  tenant_admin              platform.user.reset_mfa / unlock_sign_in
 --   import people                               tenant_admin, hr_manager  platform.user.invite + role.assign
 --   (an import touching privileged members)     tenant_admin              platform.role.assign_privileged
--- A member holds a privileged role when a standard privileged role or a custom role with a high-risk
--- permission is in force (private.membership_is_privileged). Invitations name a standard or custom role
+-- A member holds a privileged role when a standard privileged role or a privileged custom role (a
+-- high-risk or user/role management permission) is in force (private.membership_is_privileged). Invitations name a standard or custom role
 -- (private.role_is_assignable); an import never gives additional roles any more (one role per person).
 -- Rules about the Organization Admin ROLE itself stay on its code: held alone (BR-IAM-4), the last one kept,
 -- its MFA rules, the platform console.
@@ -287,6 +291,11 @@ begin
       raise exception 'additional roles must not repeat' using errcode = 'check_violation';
     end if;
     -- A standard role or a custom role of the organization (EP-ROLES; no foreign key since 20261019090100).
+    -- Read under the organization's role lock (security review L4): a custom role deleted at the same time
+    -- is either gone here or still held by this invitation when its delete checks the holders.
+    if current_user = 'authenticated' then
+      perform private.lock_tenant_roles(new.tenant_id);
+    end if;
     if not private.role_is_assignable(new.tenant_id, new.primary_role) then
       raise exception 'unknown role' using errcode = 'foreign_key_violation';
     end if;
@@ -679,7 +688,10 @@ begin
     raise exception 'only an Organization Admin resets authenticator apps'
       using errcode = 'insufficient_privilege';
   end if;
-  if p_person_id is null or not private.actor_may_manage_person(v_tenant, p_person_id) then
+  -- The reset permission itself is the right to act on the person (security review L2; privileged members:
+  -- the Organization Admin only), as the application.
+  if p_person_id is null
+     or not private.actor_may_manage_person_with(v_tenant, p_person_id, array['platform.user.reset_mfa']) then
     raise exception 'not a member this administrator may manage' using errcode = 'insufficient_privilege';
   end if;
   select m.user_id into v_member from platform.tenant_memberships m
@@ -725,6 +737,12 @@ begin
      or not private.member_has_permission(v_tenant, v_actor, 'platform.user.unlock_sign_in') then
     raise exception 'only an Organization Admin' using errcode = 'insufficient_privilege';
   end if;
+  -- …and only for a member the actor may act on (privileged members: the Organization Admin; review L1):
+  -- otherwise no account at all — nothing to read or unlock, the same answer as a person without one.
+  if p_person_id is null
+     or not private.actor_may_manage_person_with(v_tenant, p_person_id, array['platform.user.unlock_sign_in']) then
+    return;
+  end if;
   select e.email, m.user_id into v_email, v_user
   from platform.tenant_memberships m
   join private.auth_user_email e on e.id = m.user_id
@@ -747,6 +765,7 @@ declare
   v_mode text;
   v_default_role text;
   v_admin boolean;
+  v_may_update boolean;
   v_importer_person uuid;
   v_row platform.user_import_rows;
   d jsonb;
@@ -783,6 +802,9 @@ begin
   v_mode := v_import.options ->> 'existing';
   v_default_role := v_import.options ->> 'defaultRole';
   v_admin := private.member_has_permission(v_tenant, v_import.created_by, 'platform.role.assign_privileged');
+  -- Changing records of people already here is editing people (security review M1): read again for every
+  -- batch, as the importer's permissions are.
+  v_may_update := private.member_has_permission(v_tenant, v_import.created_by, 'platform.user.update');
   select m.person_id into v_importer_person
   from platform.tenant_memberships m where m.tenant_id = v_tenant and m.user_id = v_import.created_by;
   -- The language of new people without one in the file (T-M2-22).
@@ -883,6 +905,9 @@ begin
                               where p.tenant_id = v_tenant and p.id = v_row.target_person_id and p.email = d ->> 'email') then
               raise exception 'changed since the review' using errcode = 'JU002', detail = 'CHANGED_SINCE_REVIEW';
             end if;
+            if not v_may_update then
+              raise exception 'the importer may not edit people' using errcode = 'insufficient_privilege';
+            end if;
             v_person := v_row.target_person_id;
             v_values := private.user_import_person_before(v_tenant, v_person, d, v_department, v_branch, v_manager);
             v_before := v_values || jsonb_build_object('status', (select p.status from platform.persons p
@@ -923,6 +948,9 @@ begin
           end if;
           if v_person = v_importer_person then
             raise exception 'own record' using errcode = 'JU002', detail = 'OWN_ROW';
+          end if;
+          if not v_may_update then
+            raise exception 'the importer may not edit people' using errcode = 'insufficient_privilege';
           end if;
           -- An HR Manager never changes the record of a member holding a privileged role (TM-0003
           -- T-IAM-18; as «تعديل البيانات»): skipped.
@@ -1092,3 +1120,389 @@ begin
   return v_count;
 end
 $function$;
+
+-- ---------------------------------------------------------------------------------------------------
+-- Security review fixes (17 Oct 2026): every database check asks for the permission the application asks
+-- for (M1, L1, L2), and members holding a privileged or high-risk custom role are covered by the MFA policy
+-- (M2).
+--   actor_may_manage_person_with(tenant, person, perms)  holds one of `perms` organization-wide, and the
+--                                                         person holds no privileged role unless the actor
+--                                                         gives privileged roles (the Organization Admin)
+--   membership_holds_high_risk(tenant, membership)       a role in force grants a high-risk permission
+--   membership_holds_privileged_custom_role(...)         a custom role in force is privileged
+-- Callers: person records (check_person_writer: invite / update / deactivate as the change needs), a
+-- member's sessions and app (user.deactivate, as the member security page), resetting an app
+-- (user.reset_mfa), unlocking a sign-in (user.unlock_sign_in), invitation and import rows (user.invite).
+-- private.actor_manages_users / actor_may_manage_person stay for the application's "may manage" hints only.
+-- ---------------------------------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION private.actor_may_manage_person_with(p_tenant_id uuid, p_person_id uuid, p_permissions text[])
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE
+ SET search_path TO ''
+AS $function$
+  select private.member_permissions(p_tenant_id, private.request_user_id()) && p_permissions
+     and (private.member_has_permission(p_tenant_id, private.request_user_id(), 'platform.role.assign_privileged')
+          or not exists (select 1 from platform.tenant_memberships m
+                         where m.tenant_id = p_tenant_id and m.person_id = p_person_id
+                           and private.membership_is_privileged(m.tenant_id, m.id)));
+$function$;
+
+comment on function private.actor_may_manage_person_with(uuid, uuid, text[]) is
+  'SECURITY-RELEVANT (ADR 0003 §5, EP-ROLES review M1). The signed-in member holds one of the permissions organization-wide and may act on this person (privileged members: the Organization Admin only).';
+
+CREATE OR REPLACE FUNCTION private.membership_holds_high_risk(p_tenant_id uuid, p_membership_id uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE
+ SET search_path TO ''
+AS $function$
+  select exists (
+    select 1 from platform.role_assignments ra
+    join platform.ref_role_permissions rp on rp.role_code = ra.role_code
+    join platform.ref_permissions p on p.code = rp.permission_code
+    where ra.tenant_id = p_tenant_id and ra.membership_id = p_membership_id and p.risk = 'high'
+      and (ra.valid_from is null or ra.valid_from <= now()) and (ra.valid_until is null or ra.valid_until > now())
+    union all
+    select 1 from platform.role_assignments ra
+    join platform.custom_roles cr on cr.tenant_id = ra.tenant_id and cr.code = ra.role_code
+    join platform.custom_role_permissions crp on crp.tenant_id = cr.tenant_id and crp.custom_role_id = cr.id
+    join platform.ref_permissions p on p.code = crp.permission_code
+    where ra.tenant_id = p_tenant_id and ra.membership_id = p_membership_id and p.risk = 'high'
+      and (ra.valid_from is null or ra.valid_from <= now()) and (ra.valid_until is null or ra.valid_until > now()));
+$function$;
+
+CREATE OR REPLACE FUNCTION private.membership_holds_privileged_custom_role(p_tenant_id uuid, p_membership_id uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE
+ SET search_path TO ''
+AS $function$
+  select exists (
+    select 1 from platform.role_assignments ra
+    where ra.tenant_id = p_tenant_id and ra.membership_id = p_membership_id and ra.role_code like 'custom\_%'
+      and (ra.valid_from is null or ra.valid_from <= now()) and (ra.valid_until is null or ra.valid_until > now())
+      and private.role_is_privileged(ra.tenant_id, ra.role_code));
+$function$;
+
+revoke all on function private.actor_may_manage_person_with(uuid, uuid, text[]) from public;
+revoke all on function private.membership_holds_high_risk(uuid, uuid) from public;
+revoke all on function private.membership_holds_privileged_custom_role(uuid, uuid) from public;
+grant execute on function private.actor_may_manage_person_with(uuid, uuid, text[])
+  to authenticated, tenant_guard, rate_limit_guard;
+grant execute on function private.membership_is_privileged(uuid, uuid), private.role_is_privileged(uuid, text)
+  to rate_limit_guard;
+grant execute on function private.membership_holds_high_risk(uuid, uuid),
+                          private.membership_holds_privileged_custom_role(uuid, uuid)
+  to tenant_guard;
+
+CREATE OR REPLACE FUNCTION private.check_person_writer()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SET search_path TO ''
+AS $function$
+declare
+  v_kind text := private.request_claims() ->> 'role';
+  v_target uuid;
+  v_ignore text[];
+  v_generated text[];
+  v_changed text[];
+  v_needs text[];
+begin
+  if current_user <> 'authenticated' then
+    return new;  -- platform operation
+  end if;
+  if new.tenant_id is distinct from private.current_tenant_id() then
+    return new;  -- rejected by the restrictive tenant_isolation policy
+  end if;
+  if v_kind = 'system' then
+    return new;  -- system jobs (HR sync) maintain the directory
+  end if;
+  if v_kind is distinct from 'authenticated' or private.request_user_id() is null then
+    raise exception 'unexpected claims for a person change' using errcode = 'insufficient_privilege';
+  end if;
+  if tg_table_name = 'persons' then
+    v_target := new.id;
+  else
+    v_target := new.person_id;
+  end if;
+  -- What this change needs, as the application (security review M1): adding a person — inviting or editing
+  -- people; a change of the deactivation fields only (persons.status / deactivated_at, a report handed over:
+  -- person_employment.manager_person_id) — deactivating or editing people; anything else — editing people.
+  v_generated := array(select a.attname::text from pg_catalog.pg_attribute a
+                       where a.attrelid = tg_relid and a.attgenerated <> '' and not a.attisdropped);
+  if tg_op = 'INSERT' then
+    v_needs := array['platform.user.invite', 'platform.user.update'];
+  else
+    select coalesce(array_agg(n.key), '{}') into v_changed
+    from jsonb_each(to_jsonb(new)) n
+    where not (n.key = any (v_generated || array['updated_at', 'updated_by', 'version']))
+      and n.value is distinct from to_jsonb(old) -> n.key;
+    if v_changed <@ (case when tg_table_name = 'persons' then array['status', 'deactivated_at']
+                          else array['manager_person_id'] end) then
+      v_needs := array['platform.user.deactivate', 'platform.user.update'];
+    else
+      v_needs := array['platform.user.update'];
+    end if;
+  end if;
+  if private.member_permissions(new.tenant_id, private.request_user_id()) && v_needs then
+    if private.actor_may_manage_person_with(new.tenant_id, v_target, v_needs) then
+      return new;
+    end if;
+    -- An HR Manager on a privileged member's record (also their own): only the self-service path below.
+    if not (tg_table_name = 'persons' and tg_op = 'UPDATE' and old.id = private.request_person_id()) then
+      raise exception 'only an Organization Admin may change the record of a member with a privileged role'
+        using errcode = 'insufficient_privilege';
+    end if;
+  end if;
+  if tg_table_name = 'persons' and tg_op = 'UPDATE' then
+    -- Generated columns are NULL in NEW in a BEFORE trigger: never compare them.
+    v_ignore := private.person_self_service_columns() || v_generated;
+    if old.id = private.request_person_id()
+       and (to_jsonb(new) - v_ignore) = (to_jsonb(old) - v_ignore) then
+      return new;  -- My profile: own personal details only
+    end if;
+  end if;
+  raise exception 'only user managers may change this person record'
+    using errcode = 'insufficient_privilege';
+end
+$function$;
+
+CREATE OR REPLACE FUNCTION private.tenant_member_sessions(p_person_id uuid)
+ RETURNS TABLE(session_id uuid, started_at timestamp with time zone, last_active_at timestamp with time zone, user_agent text, with_code boolean, is_current boolean)
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+declare
+  v_tenant uuid := private.current_tenant_id();
+  v_session uuid := private.try_uuid(private.request_claims() ->> 'session_id');
+begin
+  if v_tenant is null or p_person_id is null or not private.actor_may_manage_person_with(v_tenant, p_person_id, array['platform.user.deactivate']) then
+    return;
+  end if;
+  return query
+    select s.id, s.created_at, greatest(s.created_at, s.updated_at, c.last_seen_at), s.user_agent,
+           coalesce(s.aal = 'aal2', false), s.id = v_session
+    from platform.tenant_memberships m
+    join platform.session_context c on c.user_id = m.user_id and c.active_tenant_id = v_tenant
+    join private.auth_session_validity s on s.id = c.session_id and s.user_id = c.user_id
+    where m.tenant_id = v_tenant and m.person_id = p_person_id
+      and (private.session_access(m.user_id, s.id, v_tenant, null, false)).state = 'ok'
+    order by 3 desc;
+end
+$function$;
+
+CREATE OR REPLACE FUNCTION private.end_member_sessions(p_person_id uuid, p_session_id uuid)
+ RETURNS integer
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+declare
+  v_tenant uuid := private.current_tenant_id();
+  v_actor uuid := private.request_user_id();
+  v_session uuid := private.try_uuid(private.request_claims() ->> 'session_id');
+  v_member uuid;
+  v_ids uuid[];
+begin
+  if v_tenant is null or p_person_id is null then
+    return 0;
+  end if;
+  if not private.actor_may_manage_person_with(v_tenant, p_person_id, array['platform.user.deactivate']) then
+    raise exception 'only user managers may end this member''s sign-in sessions' using errcode = 'insufficient_privilege';
+  end if;
+  select m.user_id into v_member from platform.tenant_memberships m
+  where m.tenant_id = v_tenant and m.person_id = p_person_id and m.user_id is not null;
+  if v_member is null then
+    return 0;
+  end if;
+  -- Only sessions acting in this organization (T-IAM-40); never the caller's own current session.
+  select array_agg(c.session_id) into v_ids
+  from platform.session_context c
+  where c.user_id = v_member and c.active_tenant_id = v_tenant
+    and (p_session_id is null or c.session_id = p_session_id)
+    and c.session_id is distinct from v_session
+    and (private.session_access(v_member, c.session_id, v_tenant, null, false)).state = 'ok';
+  delete from private.revoked_sessions r where r.revoked_at < now() - interval '25 hours';
+  return private.end_sessions(v_member, v_ids, v_tenant, 'admin', v_actor);
+end
+$function$;
+
+CREATE OR REPLACE FUNCTION private.tenant_member_mfa(p_person_id uuid)
+ RETURNS TABLE(uses_app boolean, since timestamp with time zone, pending boolean)
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+declare
+  v_tenant uuid := private.current_tenant_id();
+begin
+  if v_tenant is null
+     or not (p_person_id = private.request_person_id()
+              or private.actor_may_manage_person_with(v_tenant, p_person_id, array['platform.user.deactivate'])) then
+    return;
+  end if;
+  return query
+    select coalesce(bool_or(k.confirmed_at is not null), false),
+           min(f.updated_at) filter (where k.confirmed_at is not null),
+           coalesce(bool_or(f.id is not null and k.confirmed_at is null), false)
+    from platform.tenant_memberships m
+    left join private.auth_mfa_factor f on f.user_id = m.user_id and f.factor_type = 'totp' and f.status = 'verified'
+    left join private.mfa_factor_confirmations k on k.factor_id = f.id and k.user_id = f.user_id
+    where m.tenant_id = v_tenant and m.person_id = p_person_id
+    group by m.user_id;
+end
+$function$;
+
+CREATE OR REPLACE FUNCTION private.session_access(p_user_id uuid, p_session_id uuid, p_tenant_id uuid, p_aal2 boolean, p_detail boolean, OUT state text, OUT mfa_deadline timestamp with time zone, OUT uses_app boolean, OUT mfa_pending boolean, OUT aal2 boolean)
+ RETURNS record
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+declare
+  v record;
+  v_required boolean;
+  v_no_grace boolean;
+begin
+  state := 'invalid';
+  aal2 := false;
+  if p_user_id is null or p_session_id is null or p_tenant_id is null then
+    return;
+  end if;
+  -- Ended (marker): told so even after Auth deleted the session (review M1).
+  if exists (select 1 from private.revoked_sessions r where r.session_id = p_session_id and r.user_id = p_user_id) then
+    state := 'ended';
+    return;
+  end if;
+  -- One statement for the session, its context, the membership, the organization, its policy and whether the
+  -- factor the session passed is a confirmed app.
+  select s.created_at as started_at, s.aal as session_aal, k.factor_id is not null as factor_confirmed,
+         c.active_tenant_id, c.last_seen_at,
+         m.id as membership_id, m.created_at as member_since, m.status as member_status, t.status as tenant_status,
+         p.mfa_mode, p.mfa_required_roles, p.mfa_grace_days, p.mfa_required_since, p.mfa_prompt_admins,
+         p.session_idle_minutes, p.session_max_hours
+    into v
+  from private.auth_session_validity s
+  left join private.mfa_factor_confirmations k
+    on k.factor_id = s.factor_id and k.user_id = s.user_id and k.confirmed_at is not null
+  left join platform.session_context c on c.session_id = s.id and c.user_id = s.user_id
+  left join platform.tenant_memberships m on m.tenant_id = p_tenant_id and m.user_id = s.user_id
+  left join platform.tenants t on t.id = p_tenant_id
+  left join platform.security_policies p on p.tenant_id = p_tenant_id
+  where s.id = p_session_id and s.user_id = p_user_id and (s.not_after is null or s.not_after > now());
+  if not found then
+    return;  -- no live Auth session of this user
+  end if;
+  if coalesce(v.started_at <= now() - interval '24 hours', true) then
+    state := 'ended';
+    return;
+  end if;
+  -- The session acts in this organization (ADR 0002 §3), as an active member of an active/trial one.
+  if v.active_tenant_id is distinct from p_tenant_id or v.member_status is distinct from 'active'
+     or not coalesce(v.tenant_status in ('active', 'trial'), false) or v.mfa_mode is null then
+    return;
+  end if;
+  if v.started_at <= now() - make_interval(hours => v.session_max_hours)
+     or v.last_seen_at <= now() - make_interval(mins => v.session_idle_minutes) then
+    state := 'ended';
+    return;
+  end if;
+  state := 'ok';
+  if p_aal2 is null then
+    return;  -- lifecycle only (lists, sign-out, device limit): the MFA rules are not asked
+  end if;
+  -- The lower of the token's claim and the Auth session's own level, with a confirmed app (review H1).
+  aal2 := p_aal2 and v.session_aal = 'aal2' and v.factor_confirmed;
+  if (aal2 or v.mfa_mode = 'off') and not p_detail then
+    return;
+  end if;
+
+  -- "Required for roles" covers the roles listed and — when a privileged standard role is listed — every
+  -- privileged custom role too (security review M2: custom roles are not listed one by one).
+  v_required := v.mfa_mode = 'required_all'
+    or (v.mfa_mode = 'required_roles' and (exists (
+          select 1 from platform.role_assignments ra
+          where ra.tenant_id = p_tenant_id and ra.membership_id = v.membership_id
+            and ra.role_code = any (v.mfa_required_roles)
+            and (ra.valid_from is null or ra.valid_from <= now())
+            and (ra.valid_until is null or ra.valid_until > now()))
+        or (v.mfa_required_roles && array['tenant_admin', 'hr_manager']::text[]
+            and private.membership_holds_privileged_custom_role(p_tenant_id, v.membership_id))));
+  uses_app := exists (select 1 from private.auth_mfa_factor f
+                      join private.mfa_factor_confirmations k on k.factor_id = f.id and k.user_id = f.user_id
+                      where f.user_id = p_user_id and f.factor_type = 'totp' and f.status = 'verified'
+                        and k.confirmed_at is not null);
+  mfa_pending := not uses_app and exists (
+    select 1 from private.auth_mfa_factor f
+    where f.user_id = p_user_id and f.factor_type = 'totp' and f.status = 'verified');
+  if v_required then
+    -- No grace for members holding a high-risk permission, by any role, custom roles included (TM-0003
+    -- T-IAM-11; security review M2).
+    v_no_grace := exists (select 1 from platform.role_assignments ra
+                          where ra.tenant_id = p_tenant_id and ra.membership_id = v.membership_id
+                            and ra.role_code = any (private.mfa_no_grace_roles())
+                            and (ra.valid_from is null or ra.valid_from <= now())
+                            and (ra.valid_until is null or ra.valid_until > now()))
+                  or private.membership_holds_high_risk(p_tenant_id, v.membership_id);
+    mfa_deadline := greatest(v.mfa_required_since, v.member_since)
+                    + make_interval(days => case when v_no_grace then 0 else v.mfa_grace_days end);
+  end if;
+  if aal2 then
+    return;
+  end if;
+
+  if uses_app and v.mfa_mode <> 'off' then
+    state := 'mfa_challenge';
+  elsif v_required and now() >= mfa_deadline then
+    state := 'mfa_enrol';
+  elsif p_detail and v_required then
+    state := 'prompt_grace';
+  elsif p_detail and v.mfa_prompt_admins and not uses_app
+        -- The administrators' prompt: everyone holding a high-risk permission (the Organization Admin, and
+        -- custom roles with one — security review M2).
+        and private.membership_holds_high_risk(p_tenant_id, v.membership_id)
+        and not exists (select 1 from private.mfa_prompt_dismissals d
+                        where d.tenant_id = p_tenant_id and d.user_id = p_user_id
+                          and d.dismissed_at > now() - private.mfa_prompt_reask_after()) then
+    state := 'prompt_admin';
+  end if;
+end
+$function$;
+
+-- Invitations and imports are the inviters' (platform.user.invite), not any user manager's (review M1).
+alter policy invitations_read on platform.invitations
+  using (((select private.request_claims() ->> 'role') = 'system')
+         or (select private.member_has_permission((select private.current_tenant_id()), (select private.request_user_id()), 'platform.user.invite')));
+alter policy invitations_insert on platform.invitations
+  with check (((select private.request_claims() ->> 'role') = 'authenticated')
+              and (select private.member_has_permission((select private.current_tenant_id()), (select private.request_user_id()), 'platform.user.invite'))
+              and status = 'pending' and token_hash is null);
+alter policy invitations_revoke on platform.invitations
+  using (((select private.request_claims() ->> 'role') = 'authenticated')
+         and (select private.member_has_permission((select private.current_tenant_id()), (select private.request_user_id()), 'platform.user.invite'))
+         and status = 'pending');
+alter policy invitations_resend on platform.invitations
+  using (((select private.request_claims() ->> 'role') = 'authenticated')
+         and (select private.member_has_permission((select private.current_tenant_id()), (select private.request_user_id()), 'platform.user.invite'))
+         and status = 'pending');
+alter policy user_imports_read on platform.user_imports
+  using (((select private.request_claims() ->> 'role') = 'system')
+         or (select private.member_has_permission((select private.current_tenant_id()), (select private.request_user_id()), 'platform.user.invite')));
+alter policy user_imports_insert on platform.user_imports
+  with check (((select private.request_claims() ->> 'role') = 'authenticated')
+              and (select private.member_has_permission((select private.current_tenant_id()), (select private.request_user_id()), 'platform.user.invite'))
+              and status = 'uploaded');
+alter policy user_import_columns_read on platform.user_import_columns
+  using (((select private.request_claims() ->> 'role') = 'system')
+         or ((select private.member_has_permission((select private.current_tenant_id()), (select private.request_user_id()), 'platform.user.invite'))
+             and exists (select 1 from platform.user_imports i
+                         where i.tenant_id = user_import_columns.tenant_id and i.id = user_import_columns.import_id
+                           and i.created_by = (select private.request_user_id()))));
+alter policy user_import_rows_read on platform.user_import_rows
+  using (((select private.request_claims() ->> 'role') = 'system')
+         or ((select private.member_has_permission((select private.current_tenant_id()), (select private.request_user_id()), 'platform.user.invite'))
+             and exists (select 1 from platform.user_imports i
+                         where i.tenant_id = user_import_rows.tenant_id and i.id = user_import_rows.import_id
+                           and i.created_by = (select private.request_user_id()))));

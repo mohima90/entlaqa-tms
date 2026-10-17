@@ -4,6 +4,7 @@ import {
   type RoleRefusal,
   type UserTx,
   getEditableRole,
+  lockTenantRoles,
   replaceMemberRole,
 } from '@jadarat/platform-db';
 import { z } from 'zod';
@@ -128,6 +129,9 @@ function roleAction(
     input: EditRolesInput,
     resource: (input) => ({ type: 'person', id: input.personId }),
     handler: async ({ ctx, input }) => {
+      // Everything below is decided under the organization's role lock (security review L5): a custom role
+      // changed or deleted at the same time is read as it is after that change.
+      await lockTenantRoles(ctx.tx);
       const wanted = await findRole(ctx.tx, input.role);
       if (!wanted) return err(fieldError('ROLE_UNKNOWN'));
       // Ordinary path: neither the new nor the current role may be privileged (the privileged action,
@@ -145,7 +149,7 @@ function roleAction(
         privileged
           ? {}
           : {
-              // Checked after the role lock against the stored role (unknown roles count as privileged).
+              // Read under the role lock, against the stored role (unknown roles count as privileged).
               isLocked: (code) =>
                 code === wanted.code ? wanted.privileged : (currentRole?.privileged ?? true),
             },

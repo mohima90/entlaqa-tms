@@ -2,7 +2,8 @@
 -- Custom roles (FR-IAM-07, EP-ROLES; PO 17 Oct 2026; migrations 20261019090000…090400). Runs CONNECTED AS
 -- app_server. Who builds roles (only the Organization Admin, platform.role.manage), which permissions a role
 -- may carry (catalogue only, held by the builder, administrative ones organization-wide only), unique names,
--- delete only when nobody holds it, privileged = any high-risk permission, and the database guards deciding
+-- delete only when nobody holds it, privileged = any high-risk or user/role management permission (review H1),
+-- and the database guards deciding
 -- by PERMISSION for holders of custom roles (invite, give roles, organization profile, security policy).
 -- Tenant A: uA = Organization Admin, uAB = HR Manager, uM (…f7, 35) = active member without a role.
 -- Custom roles of the fixtures: A «Course reviewer» (custom_a00000000001: user.read, org.read; organization),
@@ -174,8 +175,24 @@ begin
   perform tests.assert_eq(private.member_permissions('a0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-0000000000f7'),
     array['platform.org.read', 'platform.role.assign', 'platform.user.invite', 'platform.user.read'],
     'the custom role''s permissions, organization-wide');
-  perform tests.assert(private.actor_manages_users('a0000000-0000-4000-8000-000000000001'),
-    'platform.user.invite makes a user manager (people records, invitations)');
+  -- Each check asks for its own permission (security review M1): inviting is not editing people, nor
+  -- seeing a member's sessions or app.
+  perform tests.assert(private.actor_may_manage_person_with('a0000000-0000-4000-8000-000000000001',
+                         'a1000000-0000-4000-8000-0000000000da', array['platform.user.invite']),
+    'user.invite: may add this person');
+  perform tests.assert(not private.actor_may_manage_person_with('a0000000-0000-4000-8000-000000000001',
+                         'a1000000-0000-4000-8000-0000000000da', array['platform.user.update']),
+    'no user.update: may not edit people');
+  perform tests.assert_fails_like($q$update platform.persons set display_name_ar = 'مُعدَّل' where id = 'a1000000-0000-4000-8000-0000000000da'$q$,
+    'only user managers may change this person record', 'invite only: cannot edit a person''s record (check_person_writer)');
+  perform tests.assert_fails_like($q$update platform.persons set status = 'inactive' where id = 'a1000000-0000-4000-8000-0000000000da'$q$,
+    'only user managers may change this person record', 'invite only: cannot deactivate a person either');
+  perform tests.assert_eq(tests.rows_affected($q$insert into platform.persons (id, display_name_ar, email) values ('a1000000-0000-4000-8000-0000000000dc', 'مدعو ٣', 'clerk3@a.test')$q$),
+    1::bigint, 'invite only: adds a person (to invite them)');
+  perform tests.assert_eq((select count(*) from private.tenant_member_sessions('a1000000-0000-4000-8000-0000000000a1')), 0::bigint,
+    'no user.deactivate: no member''s sessions');
+  perform tests.assert_eq((select count(*) from private.tenant_member_mfa('a1000000-0000-4000-8000-0000000000ab')), 0::bigint,
+    'no user.deactivate: no member''s authenticator app');
   perform tests.assert_eq(tests.rows_affected($q$insert into platform.invitations (person_id, email, locale, primary_role) values ('a1000000-0000-4000-8000-0000000000da', 'clerk1@a.test', 'ar', 'learner')$q$),
     1::bigint, 'custom role with user.invite + role.assign: invites with a role whose permissions it holds');
   perform tests.assert_fails_like($q$insert into platform.invitations (person_id, email, locale, primary_role) values ('a1000000-0000-4000-8000-0000000000db', 'clerk2@a.test', 'ar', 'training_coordinator')$q$,
@@ -220,6 +237,51 @@ begin
     'only an Organization Admin can change the roles of a member who holds a privileged role', 'HR: cannot take the role away');
   perform tests.assert(not private.actor_may_manage_person('a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000e7'),
     'HR: may not manage the privileged member''s record');
+end $$;
+reset role;
+rollback;
+
+-- A role copied from the HR Manager manages users and roles: privileged (PO rule of 5 Oct 2026, review H1).
+-- The HR Manager may not give it; the Organization Admin may. A deactivation-only role changes the
+-- deactivation fields of a record, nothing else (review M1).
+begin;
+set local role authenticated;
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
+  'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1'));
+insert into platform.custom_roles (id, name_en, name_ar, data_scope) values
+  ('a6000000-0000-4000-8000-0000000000e5', 'HR copy', 'نسخة الموارد', 'organization'),
+  ('a6000000-0000-4000-8000-0000000000e6', 'Leaver desk', 'مكتب المغادرين', 'organization');
+insert into platform.custom_role_permissions (custom_role_id, permission_code)
+select 'a6000000-0000-4000-8000-0000000000e5', rp.permission_code from platform.ref_role_permissions rp
+where rp.role_code = 'hr_manager' and rp.permission_code <> 'platform.org.manage';
+insert into platform.custom_role_permissions (custom_role_id, permission_code) values
+  ('a6000000-0000-4000-8000-0000000000e6', 'platform.user.read'),
+  ('a6000000-0000-4000-8000-0000000000e6', 'platform.user.deactivate');
+do $$
+declare
+  v_copy text := (select code from platform.custom_roles where id = 'a6000000-0000-4000-8000-0000000000e5');
+  v_desk text := (select code from platform.custom_roles where id = 'a6000000-0000-4000-8000-0000000000e6');
+begin
+  perform tests.assert(private.role_is_privileged('a0000000-0000-4000-8000-000000000001', v_copy),
+    'a role copied from the HR Manager is privileged (user and role management)');
+  perform tests.assert(private.role_is_privileged('a0000000-0000-4000-8000-000000000001', v_desk),
+    'user.deactivate alone makes a role privileged');
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000ab', '10000000-0000-4000-8000-0000000000ab',
+    'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000ab'));
+  perform tests.assert_fails_like(format($q$insert into platform.role_assignments (membership_id, role_code) select id, %L from platform.tenant_memberships where user_id = '00000000-0000-4000-8000-0000000000f7' and tenant_id = 'a0000000-0000-4000-8000-000000000001'$q$, v_copy),
+    'only an Organization Admin can give or remove the role custom_%', 'HR: cannot give a role copied from the HR Manager');
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
+    'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1'));
+  perform tests.assert_eq(tests.rows_affected(format($q$insert into platform.role_assignments (membership_id, role_code) select id, %L from platform.tenant_memberships where user_id = '00000000-0000-4000-8000-0000000000f7' and tenant_id = 'a0000000-0000-4000-8000-000000000001'$q$, v_desk)),
+    1::bigint, 'the Organization Admin gives a privileged custom role');
+  perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000f7', '10000000-0000-4000-8000-0000000000f7',
+    'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000e7'));
+  perform tests.assert_fails_like($q$update platform.persons set display_name_ar = 'مُعدَّل' where id = 'a1000000-0000-4000-8000-0000000000a2'$q$,
+    'only user managers may change this person record', 'deactivation only: cannot edit names');
+  perform tests.assert_eq(tests.rows_affected($q$update platform.persons set status = 'inactive' where id = 'a1000000-0000-4000-8000-0000000000a2'$q$),
+    1::bigint, 'deactivation only: changes the deactivation fields of an ordinary member''s record');
+  perform tests.assert_fails_like($q$update platform.persons set status = 'inactive' where id = 'a1000000-0000-4000-8000-0000000000ab'$q$,
+    'only an Organization Admin may change the record of a member with a privileged role', 'deactivation only: never a privileged member''s record');
 end $$;
 reset role;
 rollback;

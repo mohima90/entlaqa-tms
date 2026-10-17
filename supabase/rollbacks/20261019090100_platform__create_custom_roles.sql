@@ -1,7 +1,20 @@
 -- Rollback of 20261019090100_platform__create_custom_roles.sql.
--- Custom-role assignments and invitations naming a custom role are removed first (their roles go away).
+-- Custom-role assignments are removed first (their roles go away). Invitations naming a custom role are
+-- kept as history (review L7): a pending one is revoked; every one keeps its row with the role it gave
+-- replaced by Employee (learner) — the foreign key to ref_roles comes back below — and the change is
+-- recorded in the audit log. (The invitation lifecycle trigger is disabled for this update only.)
 delete from platform.role_assignments where role_code like 'custom\_%';
-delete from platform.invitations where primary_role like 'custom\_%';
+insert into platform.audit_events (tenant_id, action, entity_type, entity_id, data)
+select i.tenant_id, 'platform.invitation.role_rewritten', 'invitation', i.id::text,
+       jsonb_build_object('before', i.primary_role, 'after', 'learner',
+                          'reason', 'rollback of 20261019090100 (custom roles removed)')
+from platform.invitations i where i.primary_role like 'custom\_%';
+alter table platform.invitations disable trigger invitations_check;
+update platform.invitations
+set status = 'revoked', revoked_at = now(), invite_code = null, send_at = null
+where primary_role like 'custom\_%' and status = 'pending';
+update platform.invitations set primary_role = 'learner' where primary_role like 'custom\_%';
+alter table platform.invitations enable trigger invitations_check;
 
 drop index platform.invitations_tenant_pending_role_idx;
 alter table platform.invitations

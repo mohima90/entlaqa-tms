@@ -214,7 +214,9 @@ export function userProfileQueryDefinition(
         ctx.tx,
         person.id,
         {
-          canUnlock: ctx.can(p['platform.user.unlock_sign_in'], person),
+          canUnlock:
+            ctx.can(p['platform.user.unlock_sign_in'], person) &&
+            (await mayManagePerson(ctx.tx, person.id, 'platform.user.unlock_sign_in')),
           tenantId: ctx.actor.tenantId,
           // Active members only (security review T-M2-11 M1): revoked, suspended or invited is not ours.
           hasAccount: profile.membershipStatus === 'active',

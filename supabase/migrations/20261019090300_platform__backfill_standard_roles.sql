@@ -4,8 +4,10 @@
 -- rolled-back dry run) shows them before anything is applied.
 --
 -- 1. Role assignments — one per membership, mapped:
---      keep ONE row per membership: the Organization Admin row if any (never leaves an organization without
---      its admin), else the primary role, else the role in force, else the oldest; delete the others;
+--      keep ONE row per membership: a role that continues before one that ends, then the role in force (an
+--      expired or scheduled Organization Admin row never wins over a role the person holds now — review L6;
+--      an Organization Admin in force always stays, so no organization loses its admin), then the
+--      Organization Admin row, the primary role, the oldest; delete the others;
 --      former roles of the kept row map to Employee (learner) — Line Manager, Internal Instructor, Finance
 --      Manager, Compliance Officer, Auditor, Mentor — or end (External Instructor, Training Provider Admin:
 --      non-employee users are R2, FR-IAM-15). Nobody gains a permission: a kept standard role is one the
@@ -15,7 +17,11 @@
 -- 2. Pending invitations — the same mapping for the role they give; additional roles dropped; an invitation
 --    whose role ends is revoked. (The lifecycle trigger forbids changing what an invitation gives; it is
 --    disabled for these updates only, inside this transaction.)
--- 3. Security policies — former roles leave the "roles that must use an authenticator app" lists.
+-- 3. Security policies — former roles leave the "roles that must use an authenticator app" lists. User
+--    imports not finished — a former default role becomes Employee, and so do former roles in the rows
+--    still to be added (review L6).
+-- Every member whose roles change gets an audit event (platform.user.roles_changed, actor: none — this
+-- migration; before/after role codes), review L6.
 -- 4. The eight former roles leave platform.ref_roles: nobody can be given them any more (their codes stay
 --    in history: audit events, accepted and revoked invitations).
 
@@ -30,9 +36,9 @@ as $$
   from platform.role_assignments ra
   order by ra.tenant_id, ra.membership_id,
            (ra.role_code in ('external_instructor', 'provider_admin')),  -- a role that continues before one that ends
+           ((ra.valid_from is null or ra.valid_from <= now()) and (ra.valid_until is null or ra.valid_until > now())) desc,
            (ra.role_code = 'tenant_admin') desc,
            ra.is_primary desc,
-           ((ra.valid_from is null or ra.valid_from <= now()) and (ra.valid_until is null or ra.valid_until > now())) desc,
            ra.created_at, ra.id;
 $$;
 
@@ -49,8 +55,31 @@ declare
   v_inv_extra bigint;
   v_inv_revoked bigint;
   v_policies bigint;
+  v_audited bigint;
+  v_imports bigint;
+  v_import_rows bigint;
   r record;
 begin
+  -- Audit first (review L6): one event per member whose roles change — before: every role code held;
+  -- after: the role kept, mapped (or none when it ends).
+  insert into platform.audit_events (tenant_id, action, entity_type, entity_id, data)
+  select x.tenant_id, 'platform.user.roles_changed', 'person', m.person_id::text,
+         jsonb_build_object('before', to_jsonb(x.before_codes), 'after', x.after_code,
+                            'reason', 'EP-ROLES role mapping (migration 20261019090300)')
+  from (
+    select ra.tenant_id, ra.membership_id, array_agg(ra.role_code order by ra.role_code) as before_codes,
+           (select case when k.role_code = any (c_ended) then null
+                        when k.role_code = any (c_former) then 'learner'
+                        else k.role_code end
+            from platform.role_assignments k
+            where k.membership_id = ra.membership_id and k.id in (select e.id from private.ep_roles_kept_assignments() e)) as after_code
+    from platform.role_assignments ra
+    group by ra.tenant_id, ra.membership_id
+  ) x
+  join platform.tenant_memberships m on m.tenant_id = x.tenant_id and m.id = x.membership_id
+  where x.before_codes is distinct from array[x.after_code];
+  get diagnostics v_audited = row_count;
+
   -- Who loses permissions (counted before anything changes): members with more than one role, or with a
   -- former role that granted more than Employee does.
   select count(distinct ra.membership_id) into v_losing
@@ -113,11 +142,27 @@ begin
   get diagnostics v_policies = row_count;
   alter table platform.security_policies enable trigger security_policies_changed_mail;
 
+  -- 3b. User imports not finished: the default role and the rows still to be added (review L6). The
+  -- import's lifecycle trigger does not watch options changes by a platform operation; disabled anyway for
+  -- these updates only, inside this transaction.
+  alter table platform.user_imports disable trigger user_imports_check;
+  update platform.user_imports i
+  set options = jsonb_set(i.options, '{defaultRole}', '"learner"')
+  where i.options ->> 'defaultRole' = any (c_former)
+    and i.status not in ('finished', 'rejected', 'stopped', 'undone', 'failed', 'expired', 'cancelled');
+  get diagnostics v_imports = row_count;
+  alter table platform.user_imports enable trigger user_imports_check;
+  update platform.user_import_rows x
+  set data = jsonb_set(x.data, '{primary_role}', '"learner"')
+  where x.result is null and x.data ->> 'primary_role' = any (c_former);
+  get diagnostics v_import_rows = row_count;
+
   -- 4. The former roles.
   delete from platform.ref_roles where code = any (c_former);
 
-  raise warning 'EP-ROLES role mapping: % extra role(s) removed, % former role(s) mapped to Employee, % ended; % member(s) lose permissions (rebuild with a custom role); invitations: % mapped, % with additional roles cleared, % revoked; % security polic(ies) updated',
-    v_extra, v_mapped, v_ended, v_losing, v_inv_mapped, v_inv_extra, v_inv_revoked, v_policies;
+  raise warning 'EP-ROLES role mapping: % extra role(s) removed, % former role(s) mapped to Employee, % ended; % member(s) lose permissions (rebuild with a custom role); invitations: % mapped, % with additional roles cleared, % revoked; % security polic(ies) updated; imports: % default role(s) and % row(s) mapped; % audit event(s)',
+    v_extra, v_mapped, v_ended, v_losing, v_inv_mapped, v_inv_extra, v_inv_revoked, v_policies, v_imports,
+    v_import_rows, v_audited;
 end
 $$;
 

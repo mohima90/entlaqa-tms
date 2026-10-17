@@ -18,6 +18,7 @@ import {
 
 const db = vi.hoisted(() => ({
   getEditableRole: vi.fn(),
+  lockTenantRoles: vi.fn(() => Promise.resolve()),
   replaceMemberRole: vi.fn(),
   getCustomRole: vi.fn(),
   listCustomRoles: vi.fn(),
@@ -198,6 +199,11 @@ describe('changing the role', () => {
     const save = createDefineAction(rt)(updateMemberRolesActionDefinition());
     expect(await save(form('learner'))).toEqual(
       ok({ personId: SARA, changed: true, before: 'training_coordinator', after: 'learner' }),
+    );
+    // The organization's role lock comes first: the roles are read after it (security review L5).
+    expect(db.lockTenantRoles).toHaveBeenCalledWith(TX);
+    expect(db.lockTenantRoles.mock.invocationCallOrder[0] ?? 0).toBeLessThan(
+      db.getEditableRole.mock.invocationCallOrder.at(-1) ?? 0,
     );
     expect(db.replaceMemberRole).toHaveBeenCalledWith(TX, SARA, TOKEN, 'learner', {
       isLocked: expect.any(Function),

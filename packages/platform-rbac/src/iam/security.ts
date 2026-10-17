@@ -268,7 +268,8 @@ export function memberSecurityQueryDefinition(): QueryDefinition<
     resource: (input) => ({ type: 'person', id: input.personId }),
     handler: async ({ ctx, input }) => {
       // The manage rule (only an Organization Admin for a member with a privileged role), as the database.
-      if (!(await mayManagePerson(ctx.tx, input.personId))) return err(appError('FORBIDDEN'));
+      if (!(await mayManagePerson(ctx.tx, input.personId, 'platform.user.deactivate')))
+        return err(appError('FORBIDDEN'));
       const [sessions, mfa, policy] = [
         await listMemberSessions(ctx.tx, input.personId),
         await getMemberMfa(ctx.tx, input.personId),
@@ -316,7 +317,8 @@ export function endMemberSessionsActionDefinition(): ActionDefinition<
     input: EndMemberSessionsInput,
     resource: (input) => ({ type: 'person', id: input.personId }),
     handler: async ({ ctx, input }) => {
-      if (!(await mayManagePerson(ctx.tx, input.personId))) return err(appError('FORBIDDEN'));
+      if (!(await mayManagePerson(ctx.tx, input.personId, 'platform.user.deactivate')))
+        return err(appError('FORBIDDEN'));
       let ended: number;
       try {
         ended = await endMemberSessions(ctx.tx, input.personId, input.sessionId);
@@ -378,7 +380,8 @@ export function resetMemberMfaActionDefinition(): ActionDefinition<
     input: ResetMemberMfaInput,
     resource: (input) => ({ type: 'person', id: input.personId }),
     handler: async ({ ctx, input }) => {
-      if (!(await mayManagePerson(ctx.tx, input.personId))) return err(appError('FORBIDDEN'));
+      if (!(await mayManagePerson(ctx.tx, input.personId, 'platform.user.reset_mfa')))
+        return err(appError('FORBIDDEN'));
       let outcome: Awaited<ReturnType<typeof resetMemberMfa>>;
       try {
         outcome = await resetMemberMfa(ctx.tx, input.personId);

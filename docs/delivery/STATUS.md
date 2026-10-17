@@ -52,6 +52,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | ID | Decision |
 |---|---|---|
+| 17 Oct 2026 | PO | **Work organized by role** ("approved"): after the four running agents finish, the R1 work is re-organized in role order — **Organization Admin first (finish what is open), then HR Manager, then L&D Manager** (≈80% of the features), then the other roles; a per-role inventory (Done / Partly / Not started, checked in the product); BACKLOG rewritten as work packages per role (one feature area = one PR, with flow status, dependencies and the code areas touched) so a **second Claude account** can claim packages and work in parallel; a short "how to start" note; a one-page status per role at the top of STATUS. The inventory (step 1) starts now (read-only) |
 | 17 Oct 2026 | PO | **Customizable needs form** ("approved"): Kawadir's application-form builder copied for the Department Head needs form — forms library, sections (repeatable), 12 field types, AR/EN, required, show/hide, one condition; designed by the L&D Manager; training topic and people always present; one form per cycle, locked at launch; fixes over Kawadir: server-side validation, Arabic options, reorder (EP-PLN flow §12, BRD v3.2 FR-PLN-03, T-M3-10) |
 | 17 Oct 2026 | PO | **Needs first, courses after the plan** (correction to the EP-PLN flow): L&D starts the cycle with the department heads, who describe their team's needs as **training topics**; L&D consolidates them into plan lines with participants per session and estimated cost; after approval **courses are created from the approved lines**, then sessions. The course library is not a planning prerequisite (BRD v3.2 FR-PLN-03/06/09; flow marked changed after agreement; T-M3-03, T-M3-08) |
 | 17 Oct 2026 | PO | **No separate screen approval any more** ("no need for screenshots anymore, you became on the right path"): once a business flow is agreed, screens are built directly in the Kawadir layout with the Jadarat palette; the PO sees them in the product (Development Plan §2.4 P4, CLAUDE.md) |
@@ -256,6 +257,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
+| 17 Oct 2026 | PO: re-organize the work by role (Org Admin → HR Manager → L&D Manager) after the running agents finish, ready for a second Claude account; per-role inventory started |
 | 17 Oct 2026 | Kawadir's application-form builder researched in code; PO approved a customizable needs form (T-M3-10); EP-PLN flow §12, BRD / feature list v3.2, BACKLOG updated; form-builder agent started |
 | 17 Oct 2026 | PO correction: needs first (topics), courses created from the approved plan — EP-PLN flow, BRD / feature list v3.2, BACKLOG T-M3-03/08 updated. Planning cycle set-up agent started in parallel (T-M3-04) |
 | 17 Oct 2026 | PO: no screen approval step any more (Development Plan §2.4 P4, CLAUDE.md). Build started: organization structure (T-M3-02 + T-M3-09) and course library (T-M3-03) with two agents in parallel |

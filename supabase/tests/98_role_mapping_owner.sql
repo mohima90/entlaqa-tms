@@ -130,9 +130,11 @@ begin
     (select string_agg(b.n::text, ',' order by b.n) from pg_temp.before b
      where not (pg_temp.before_permissions(b.n) <@ (b.permissions || array['platform.user.read']))),
     null::text, 'nobody gains a permission (beyond viewing their own record)');
-  perform tests.assert_eq(pg_temp.before_permissions(4),
+  -- (In byte order: the HR Manager also reads the course library since T-M3-03.)
+  perform tests.assert_eq((select array_agg(c order by c collate "C") from unnest(pg_temp.before_permissions(4)) c),
     array['platform.org.manage', 'platform.org.read', 'platform.role.assign', 'platform.role.read', 'platform.user.deactivate',
-          'platform.user.invite', 'platform.user.read', 'platform.user.update'], 'HR Manager kept');
+          'platform.user.invite', 'platform.user.read', 'platform.user.update', 'tms.course.read', 'tms.course_cost.read'],
+    'HR Manager kept');
   perform tests.assert(private.tenant_has_admin('a0000000-0000-4000-8000-000000000001'), 'the Organization Admin stays');
   perform tests.assert_eq(
     (select string_agg(right(i.id::text, 1) || ':' || i.status || ':' || i.primary_role || ':' || cardinality(i.additional_roles), ','

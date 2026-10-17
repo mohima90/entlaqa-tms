@@ -897,7 +897,12 @@ do $$
 begin
   perform tests.assert_eq((select string_agg(row_number || ':' || result, ',' order by row_number) from platform.user_import_rows
                            where import_id = 'a5000000-0000-4000-8000-0000000000d7' and result in ('added', 'updated')),
-    '2:added,3:added,6:updated,11:added,17:added,19:added,20:added', 'the HR Manager''s import added and updated people');
+    '3:added,6:updated,11:added,17:added,19:added,20:added', 'the HR Manager''s import added and updated people');
+  -- Row 2 gives the Training Coordinator role, whose course permissions (T-M3-03) the HR Manager does not
+  -- hold: nobody gives a permission they do not hold (EP-ROLES), so the row is refused.
+  perform tests.assert_eq((select result || ':' || (result_issues -> 0 ->> 'c') from platform.user_import_rows
+                           where import_id = 'a5000000-0000-4000-8000-0000000000d7' and row_number = 2),
+    'failed:NOT_ALLOWED', 'the HR Manager cannot give the Training Coordinator role by import');
 end $$;
 -- After the import: row 6's member is given a privileged role; row 11's record (invited again) is edited.
 delete from platform.role_assignments
@@ -914,9 +919,9 @@ do $$
 declare
   i constant uuid := 'a5000000-0000-4000-8000-0000000000d7';
 begin
-  perform tests.assert_eq(private.user_import_undo_batch(i, 50), 7, 'one batch');
+  perform tests.assert_eq(private.user_import_undo_batch(i, 50), 6, 'one batch');
   perform tests.assert_eq(private.user_import_undo_batch(i, 50), 0, 'done');
-  perform tests.assert_eq(pg_temp.undo_results(i), '2:removed,3:removed,6:kept_privileged,11:kept_changed,17:removed,19:removed,20:removed',
+  perform tests.assert_eq(pg_temp.undo_results(i), '3:removed,6:kept_privileged,11:kept_changed,17:removed,19:removed,20:removed',
     'an HR Manager''s undo keeps the data of a member who now holds a privileged role, and a record invited again that changed since');
   perform tests.assert((select job_title_ar = 'مدير' from platform.person_employment
                         where person_id = 'a1000000-0000-4000-8000-000000000e01'),
@@ -969,8 +974,9 @@ do $$
 declare
   i constant uuid := 'a5000000-0000-4000-8000-0000000000d8';
 begin
-  perform tests.assert_eq(private.user_import_undo_batch(i, 50), 7, 'the undo runs although the importer is gone');
-  perform tests.assert_eq(pg_temp.undo_results(i), '2:removed,3:removed,6:restored,11:removed,17:removed,19:removed,20:removed',
+  -- (Row 2 was refused at import: the HR Manager cannot give the Training Coordinator role since T-M3-03.)
+  perform tests.assert_eq(private.user_import_undo_batch(i, 50), 6, 'the undo runs although the importer is gone');
+  perform tests.assert_eq(pg_temp.undo_results(i), '3:removed,6:restored,11:removed,17:removed,19:removed,20:removed',
     'an Organization Admin''s undo restores privileged members too');
   perform tests.assert((select revoked_by = '00000000-0000-4000-8000-0000000000a1' from platform.invitations
                         where id = (select invitation_id from platform.user_import_rows where import_id = i and row_number = 17)),

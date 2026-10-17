@@ -1,10 +1,12 @@
-import { definePermissions } from '@jadarat/platform-rbac';
+import { coursePermissions, definePermissions } from '@jadarat/platform-rbac';
 
 /**
  * TMS permission registry (ADR 0003 §3). Labels follow docs/design/content/glossary-ar-en.md.
- * The full set is derived from BRD Appendix B in M2.
+ * The course library's permissions (T-M3-03) are declared with the standard roles in platform-rbac
+ * (course-permissions.ts: the platform's roles and role builder name them, and a platform package never
+ * imports a module); they are part of this registry. The others are not held by any role yet.
  */
-export const tmsPermissions = definePermissions('tms', [
+const sessionPermissions = definePermissions('tms', [
   {
     code: 'tms.session.read',
     label: { ar: 'عرض الجلسات', en: 'View sessions' },
@@ -33,3 +35,5 @@ export const tmsPermissions = definePermissions('tms', [
     requiresAal2: false,
   },
 ]);
+
+export const tmsPermissions = { ...coursePermissions, ...sessionPermissions } as const;

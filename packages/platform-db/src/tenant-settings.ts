@@ -97,6 +97,18 @@ export async function getOrganizationProfile(
   };
 }
 
+/**
+ * The organization's default currency (ISO 4217; FR-ADM-02 General settings) — for modules that show or
+ * enter amounts (course costs, T-M3-03). Every member reads it (RLS: the claims' organization only); 'SAR'
+ * (the database default) when no row is visible.
+ */
+export async function getTenantCurrencyCode(tx: UserTx): Promise<string> {
+  const [row] = await tx.execute<{ currency_code: string }>(sql`
+    select s.currency_code from platform.tenant_settings s
+    where s.tenant_id = (select private.current_tenant_id())`);
+  return row ? row.currency_code : 'SAR';
+}
+
 /** Values the caller only accepts when they are on offer (or already stored): codes and time zone. */
 export type OfferedProfileField = 'countryCode' | 'currencyCode' | 'timeZone';
 

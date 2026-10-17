@@ -85,7 +85,9 @@ const form = {
   branchId: '',
   managerPersonId: '',
   employeeNumber: 'EMP-١٤٥٠',
-  role: 'training_coordinator',
+  // An ordinary role whose permissions the HR Manager holds (since T-M3-03 the Training Coordinator's
+  // course permissions are not the HR Manager's).
+  role: 'department_head',
   locale: 'ar' as const,
 };
 
@@ -229,7 +231,7 @@ describe('invite user action', () => {
       ok({
         invitationId: INVITATION,
         personId: PERSON,
-        role: 'training_coordinator',
+        role: 'department_head',
         scopeUnitId: null,
         // The first code, for the inviter to copy (Kawadir) — never audited.
         inviteCode: 'K7M2PQ9XHT4W',
@@ -248,7 +250,7 @@ describe('invite user action', () => {
       branchId: null,
       managerPersonId: null,
       employeeNumber: 'EMP-1450',
-      primaryRole: 'training_coordinator',
+      primaryRole: 'department_head',
       additionalRoles: [],
       locale: 'ar',
       scopeUnitId: null,
@@ -257,7 +259,7 @@ describe('invite user action', () => {
       action: 'platform.invitation.created',
       entityType: 'invitation',
       entityId: INVITATION,
-      data: { personId: PERSON, role: 'training_coordinator' },
+      data: { personId: PERSON, role: 'department_head' },
     });
     const audited = JSON.stringify(writeAudit.mock.calls);
     expect(audited).not.toContain('alraya');
@@ -298,6 +300,17 @@ describe('invite user action', () => {
     expect(!refused.ok && refused.error.fieldErrors).toEqual([
       { path: 'scopeUnitId', code: 'UNIT_NOT_ALLOWED' },
     ]);
+  });
+
+  it('HR Manager cannot invite with a role whose course permissions they do not hold (T-M3-03)', async () => {
+    for (const role of ['training_coordinator', 'training_manager']) {
+      const result = await createDefineAction(runtime(['hr_manager']).rt)(
+        inviteUserActionDefinition(),
+      )({ ...form, role });
+      expect(!result.ok && result.error.code, role).toBe('VALIDATION_FAILED');
+      expect(!result.ok && result.error.fieldErrors?.[0]?.path, role).toBe('role');
+    }
+    expect(db.createInvitation).not.toHaveBeenCalled();
   });
 
   it('without platform.user.invite: FORBIDDEN, nothing created', async () => {

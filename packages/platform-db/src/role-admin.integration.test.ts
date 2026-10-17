@@ -183,9 +183,15 @@ describe.skipIf(!configured)('changing roles against PostgreSQL', () => {
   });
 
   it('HR Manager: ordinary roles of ordinary members only (standard and custom, by permission)', async () => {
-    expect(await change(hr, sara.person, 'training_manager')).toMatchObject({
+    expect(await change(hr, sara.person, 'department_head')).toMatchObject({
       ok: true,
       changed: true,
+    });
+    // T-M3-03: the L&D Manager changes the course library (tms.course.manage / archive), which the HR
+    // Manager does not hold — nobody gives a permission they do not hold (EP-ROLES).
+    expect(await change(hr, sara.person, 'training_manager')).toEqual({
+      ok: false,
+      refusal: 'not_allowed',
     });
     expect(await change(hr, sara.person, ordinary)).toMatchObject({ ok: true, changed: true });
     expect(await change(hr, sara.person, privileged)).toEqual({

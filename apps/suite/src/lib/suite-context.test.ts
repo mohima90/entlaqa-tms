@@ -7,6 +7,7 @@ import { myIdentityQuery } from './users-queries';
 
 vi.mock('@jadarat/platform-rbac', () => ({
   loadMemberGrants: vi.fn(),
+  coursePermissions: { 'tms.course.read': { code: 'tms.course.read' } },
   platformPermissions: {
     'platform.user.read': { code: 'platform.user.read' },
     'platform.role.read': { code: 'platform.role.read' },
@@ -31,6 +32,7 @@ describe('navigationFor', () => {
       structure: false,
       organizationSetup: false,
       training: true,
+      courses: false,
     });
     expect(
       navigationFor([{ permission: 'platform.user.read', scope: { type: 'tenant' } }]),
@@ -42,6 +44,7 @@ describe('navigationFor', () => {
       structure: false,
       organizationSetup: false,
       training: true,
+      courses: false,
     });
   });
 
@@ -54,6 +57,7 @@ describe('navigationFor', () => {
       structure: false,
       organizationSetup: false,
       training: true,
+      courses: false,
     });
     expect(navigationFor([{ permission: 'platform.org.read', scope: { type: 'tenant' } }])).toEqual(
       {
@@ -64,6 +68,7 @@ describe('navigationFor', () => {
         structure: false,
         organizationSetup: false,
         training: true,
+        courses: false,
       },
     );
     expect(navigationFor([])).toEqual({
@@ -74,6 +79,7 @@ describe('navigationFor', () => {
       structure: false,
       organizationSetup: false,
       training: true,
+      courses: false,
     });
   });
 
@@ -91,6 +97,7 @@ describe('navigationFor', () => {
       structure: false,
       organizationSetup: false,
       training: true,
+      courses: false,
     });
     expect(
       navigationFor([{ permission: 'platform.role.read', scope: { type: 'direct_reports' } }]),
@@ -102,6 +109,7 @@ describe('navigationFor', () => {
       structure: false,
       organizationSetup: false,
       training: true,
+      courses: false,
     });
   });
 
@@ -116,6 +124,7 @@ describe('navigationFor', () => {
       structure: false,
       organizationSetup: false,
       training: true,
+      courses: false,
     });
     expect(navigationFor([{ permission: 'platform.tenant.read', scope: { type: 'own' } }])).toEqual(
       {
@@ -126,6 +135,7 @@ describe('navigationFor', () => {
         structure: false,
         organizationSetup: false,
         training: true,
+        courses: false,
       },
     );
   });
@@ -143,6 +153,15 @@ describe('navigationFor', () => {
     ).toBe(false);
   });
 
+  it('shows the course library to members who read it organization-wide (T-M3-03)', () => {
+    expect(
+      navigationFor([{ permission: 'tms.course.read', scope: { type: 'tenant' } }]).courses,
+    ).toBe(true);
+    expect(navigationFor([{ permission: 'tms.course.read', scope: { type: 'own' } }]).courses).toBe(
+      false,
+    );
+  });
+
   it('shows every entry in the data-less preview', () => {
     expect(navigationFor(null)).toEqual({
       users: true,
@@ -152,6 +171,7 @@ describe('navigationFor', () => {
       structure: true,
       organizationSetup: true,
       training: true,
+      courses: true,
     });
   });
 
@@ -166,6 +186,7 @@ describe('navigationFor', () => {
       structure: false,
       organizationSetup: true,
       training: false,
+      courses: false,
     });
     // Any narrower scope is not enough (deny by default).
     const narrower: Grant['scope'][] = [
@@ -177,6 +198,7 @@ describe('navigationFor', () => {
       expect(navigationFor([{ permission: 'platform.tenant.manage', scope }])).toMatchObject({
         organizationSetup: false,
         training: true,
+        courses: false,
       });
     }
   });

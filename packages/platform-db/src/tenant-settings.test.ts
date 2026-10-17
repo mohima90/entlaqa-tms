@@ -5,6 +5,7 @@ import {
   type OrganizationProfile,
   changedProfileFields,
   getOrganizationProfile,
+  getTenantCurrencyCode,
   updateOrganizationProfile,
 } from './tenant-settings';
 import type { UserTx } from './with-user-tx';
@@ -250,5 +251,18 @@ describe('organization profile (T-M2-22)', () => {
     expect(
       changedProfileFields(profile, { ...profile, workingDays: [0, 1, 2, 3], currencyCode: 'AED' }),
     ).toEqual(['currencyCode', 'workingDays']);
+  });
+});
+
+describe('getTenantCurrencyCode (T-M3-03)', () => {
+  it('reads the claims organization’s default currency', async () => {
+    const { tx, executed } = fakeTx([{ currency_code: 'AED' }]);
+    expect(await getTenantCurrencyCode(tx)).toBe('AED');
+    expect(executed[0]?.sql).toContain('private.current_tenant_id()');
+  });
+
+  it('falls back to the database default without a visible row', async () => {
+    const { tx } = fakeTx([]);
+    expect(await getTenantCurrencyCode(tx)).toBe('SAR');
   });
 });

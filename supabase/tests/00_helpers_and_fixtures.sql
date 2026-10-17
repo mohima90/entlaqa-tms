@@ -354,6 +354,22 @@ insert into platform.custom_role_permissions (tenant_id, custom_role_id, permiss
   ('a0000000-0000-4000-8000-000000000001', 'a6000000-0000-4000-8000-000000000001', 'platform.org.read'),
   ('b0000000-0000-4000-8000-000000000001', 'b6000000-0000-4000-8000-000000000001', 'platform.user.read');
 
+-- Course library (T-M3-03; platform operation): one category and two courses (one archived) in tenant A,
+-- one category and one course in tenant B — the same code «LEAD-101» in both (codes are unique per
+-- organization only). Rules in 99_course_library_*.sql.
+insert into tms.course_categories (id, tenant_id, name_en, name_ar) values
+  ('a7000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'Leadership', 'القيادة'),
+  ('b7000000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000001', 'Safety', 'السلامة');
+insert into tms.courses (id, tenant_id, code, title_en, title_ar, category_id, delivery_type, duration_hours,
+    duration_days, min_participants, max_participants, est_cost_per_session, est_cost_per_participant) values
+  ('a7100000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'LEAD-101', 'Strategic management',
+   'الإدارة الاستراتيجية', 'a7000000-0000-4000-8000-000000000001', 'classroom', 12, 2, 8, 20, 15000, 250),
+  ('a7100000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'OLD-001', 'Retired course',
+   'دورة قديمة', null, 'virtual', 3, null, 1, 30, null, null),
+  ('b7100000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000001', 'LEAD-101', 'Fire safety',
+   'السلامة من الحرائق', 'b7000000-0000-4000-8000-000000000001', 'on_the_job', 4, null, 5, 10, 900, null);
+update tms.courses set status = 'archived' where id = 'a7100000-0000-4000-8000-000000000002';
+
 -- A pending event of tenant B (platform operation), for 33_event_tables_app_queue.sql.
 insert into platform.event_outbox (tenant_id, type)
   values ('b0000000-0000-4000-8000-000000000001', 'com.entlaqa.platform.test.fixture');

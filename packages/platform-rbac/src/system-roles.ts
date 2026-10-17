@@ -1,3 +1,4 @@
+import { coursePermissions } from './course-permissions';
 import type { LocalizedText, PermissionDefinition } from './permissions';
 import { platformPermissions } from './platform-permissions';
 
@@ -72,13 +73,17 @@ export interface SystemRoleDefinition {
 }
 
 const p = platformPermissions;
+const c = coursePermissions;
 const tenantWide = (...permissions: PermissionDefinition[]): RoleGrantDefinition[] =>
   permissions.map((permission) => ({ permission, scope: 'tenant' }));
 
 /**
  * Platform grants per role, from BRD Appendix B rows "Tenant settings", "Users & roles", "Audit log".
  * `platform.org.read` (branch and department names) is not a row of the matrix; every role that sees
- * people also sees where they sit.
+ * people also sees where they sit. Course library (T-M3-03, row «Course library & programs»): HR Manager
+ * V, L&D Manager F, Training Coordinator E (no archive), Department Head V, Employee V (without the
+ * planning costs, deferred: see the Employee below); the Organization Admin none (BR-IAM-4). The library is organization data: read
+ * organization-wide by every role that sees it.
  */
 export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
   {
@@ -117,6 +122,8 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
       p['platform.org.read'],
       // Branches and departments (PO decision 11 Oct 2026, BRD v2.7 FR-ADM-04/05; T-M2-19).
       p['platform.org.manage'],
+      c['tms.course.read'],
+      c['tms.course_cost.read'],
     ),
   },
   {
@@ -128,7 +135,15 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
       en: 'Course library, planning cycles, plan and budget, approvals, sessions, notifications and training reports.',
     },
     privileged: false,
-    grants: tenantWide(p['platform.user.read'], p['platform.role.read'], p['platform.org.read']),
+    grants: tenantWide(
+      p['platform.user.read'],
+      p['platform.role.read'],
+      p['platform.org.read'],
+      c['tms.course.read'],
+      c['tms.course_cost.read'],
+      c['tms.course.manage'],
+      c['tms.course.archive'],
+    ),
   },
   {
     code: 'training_coordinator',
@@ -138,7 +153,14 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
       en: 'Scheduling, logistics, enrollments and attendance; helps collect and consolidate needs.',
     },
     privileged: false,
-    grants: tenantWide(p['platform.user.read'], p['platform.role.read'], p['platform.org.read']),
+    grants: tenantWide(
+      p['platform.user.read'],
+      p['platform.role.read'],
+      p['platform.org.read'],
+      c['tms.course.read'],
+      c['tms.course_cost.read'],
+      c['tms.course.manage'],
+    ),
   },
   {
     code: 'department_head',
@@ -152,6 +174,9 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
       { permission: p['platform.user.read'], scope: 'headed_departments' },
       { permission: p['platform.role.read'], scope: 'headed_departments' },
       { permission: p['platform.org.read'], scope: 'tenant' },
+      // The library and its estimated costs (they choose courses and see their needs' cost, EP-PLN).
+      { permission: c['tms.course.read'], scope: 'tenant' },
+      { permission: c['tms.course_cost.read'], scope: 'tenant' },
     ],
   },
   {
@@ -163,6 +188,10 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
       en: 'Own requests, training and certificates.',
     },
     privileged: false,
+    // No course permission yet (T-M3-03): BRD Appendix B gives the Employee «V» on the course library, which
+    // comes with the employees' own catalogue (FR-CAT-10 views, enrolment — M4). Granting it now would stop
+    // every member who does not hold it (custom roles with platform.role.assign) from giving the Employee
+    // role: nobody gives a permission they do not hold (EP-ROLES). PO decision pending.
     grants: [{ permission: p['platform.user.read'], scope: 'own' }],
   },
 ];

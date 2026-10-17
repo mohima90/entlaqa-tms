@@ -1,4 +1,6 @@
 import {
+  Archive,
+  ArchiveRestore,
   ArrowDownRight,
   ArrowUpRight,
   Bell,
@@ -119,6 +121,9 @@ const ICONS = {
   'shield-outline': Shield,
   // Organization → Structure (T-M3-02, EP-ORG; Kawadir's Departments page).
   structure: FolderTree,
+  // Course library (T-M3-03): archive and restore a course.
+  archive: Archive,
+  'archive-restore': ArchiveRestore,
 } as const satisfies Record<string, LucideIcon>;
 
 export type IconName = keyof typeof ICONS;

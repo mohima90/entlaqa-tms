@@ -252,8 +252,11 @@ insert into platform.custom_roles (id, name_en, name_ar, data_scope) values
   ('a6000000-0000-4000-8000-0000000000e5', 'HR copy', 'نسخة الموارد', 'organization'),
   ('a6000000-0000-4000-8000-0000000000e6', 'Leaver desk', 'مكتب المغادرين', 'organization');
 insert into platform.custom_role_permissions (custom_role_id, permission_code)
+-- (Its platform permissions: the course library's, which the HR Manager reads since T-M3-03, are not the
+-- Organization Admin's to give.)
 select 'a6000000-0000-4000-8000-0000000000e5', rp.permission_code from platform.ref_role_permissions rp
-where rp.role_code = 'hr_manager' and rp.permission_code <> 'platform.org.manage';
+where rp.role_code = 'hr_manager' and rp.permission_code <> 'platform.org.manage'
+  and rp.permission_code like 'platform.%';
 insert into platform.custom_role_permissions (custom_role_id, permission_code) values
   ('a6000000-0000-4000-8000-0000000000e6', 'platform.user.read'),
   ('a6000000-0000-4000-8000-0000000000e6', 'platform.user.deactivate');
@@ -386,8 +389,11 @@ begin
     'another organization''s custom role is unknown here (fail closed)');
   perform tests.assert(not private.role_is_assignable('a0000000-0000-4000-8000-000000000001', 'custom_b00000000001'),
     'another organization''s custom role is not assignable');
-  perform tests.assert_eq(private.role_permission_codes('a0000000-0000-4000-8000-000000000001', 'department_head'),
-    array['platform.org.read', 'platform.role.read', 'platform.user.read'], 'a standard role''s permissions (any scope)');
+  -- (Compared in byte order: the course permissions of T-M3-03 sort differently under other collations.)
+  perform tests.assert_eq((select array_agg(c order by c collate "C")
+                           from unnest(private.role_permission_codes('a0000000-0000-4000-8000-000000000001', 'department_head')) c),
+    array['platform.org.read', 'platform.role.read', 'platform.user.read', 'tms.course.read', 'tms.course_cost.read'],
+    'a standard role''s permissions (any scope)');
 end $$;
 reset role;
 rollback;

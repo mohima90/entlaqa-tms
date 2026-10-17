@@ -51,3 +51,20 @@ export function hasVisibleText(value: string): boolean {
   }
   return false;
 }
+
+/** Arabic diacritics (U+064B–U+0652), tatweel (U+0640) and the dagger alef (U+0670). */
+const SEARCH_MARKS = /[\u064B-\u0652\u0670\u0640]/g;
+
+/**
+ * Normalized text for search (FR-CAT-10, FR-IAM-01) — the app-side twin of the database's
+ * private.search_key: lower case, Arabic diacritics and tatweel removed, alef variants (أ إ آ ٱ) → ا,
+ * alef maqsura ى → ي, teh marbuta ة → ه; digits in any script become ASCII. "اداره" finds «الإدارة».
+ */
+export function searchKey(value: string): string {
+  return normalizeDigits(value)
+    .toLowerCase()
+    .replace(SEARCH_MARKS, '')
+    .replace(/[\u0623\u0625\u0622\u0671]/g, '\u0627')
+    .replace(/\u0649/g, '\u064A')
+    .replace(/\u0629/g, '\u0647');
+}

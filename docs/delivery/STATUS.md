@@ -260,6 +260,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
+| 17 Oct 2026 | Guided test with the PO started (production, `entlaqa`): steps 1–3 passed (sign-in, invitations for HR Manager and L&D Manager, department-limited custom role). Feedback recorded in `docs/delivery/test-feedback-2026-10-17.md`, handled after the test |
 | 17 Oct 2026 | **PR #64 merged by the PO** (structure + department-limited roles, course library, planning cycle set-up, needs form builder, who-can-give-what); automatic DB deploy green (plan → apply, migrations 20261020090000–210600 live in production). Next: guided test with the PO, then T-M3-05 needs page and the role reorganization. Backup branches `backup/youthful-davinci-*` to be deleted by the PO (the proxy refuses branch deletion) |
 | 17 Oct 2026 | Review fixes merged (code review 3M/9L, security reviews 1M/4L + rule pass 2L — all fixed or recorded as R-68/R-69); full gates green (check:all, licences, db:test incl. integration, hosted-sim, build, e2e 348 passed). Branch ready for one PR: structure + department-limited roles, course library, planning cycle set-up, needs form builder, who-can-give-what (T-M3-02/03/04/09/10). Waiting for the PO's "yes" |
 | 17 Oct 2026 | Who-can-give-what rule built and merged (migration 20261020200000; org structure permission now never in custom roles; HR gives L&D Manager / Training Coordinator again; BRD FR-IAM-07 wording aligned); its security pass and the review-fix agent running |

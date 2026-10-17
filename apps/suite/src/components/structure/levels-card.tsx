@@ -82,7 +82,15 @@ export function LevelsCard(props: LevelsCardProps) {
         }
         data-testid="structure-levels"
       >
-        <div className={tableClasses.wrapper}>
+        <div
+          className={`${tableClasses.wrapper} focus-visible:outline-2 focus-visible:outline-offset-2`}
+          // Scrolls on phones: focusable so the keyboard can scroll it too (WCAG 2.1.1; axe
+          // scrollable-region-focusable — a view-only table has nothing focusable).
+          // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- a scrollable region takes focus
+          tabIndex={0}
+          role="region"
+          aria-label={text('levels.caption')}
+        >
           <table className={tableClasses.table} data-testid="levels-table">
             <caption className="sr-only">{text('levels.caption')}</caption>
             <thead className={tableClasses.header}>

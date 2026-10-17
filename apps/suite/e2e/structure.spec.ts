@@ -86,8 +86,9 @@ for (const locale of ['en', 'ar'] as const) {
   });
 }
 
-test('the menu links Structure and Branches (Organization group)', async ({ page }) => {
+test('the menu links Structure and Branches (Organization group)', async ({ page, isMobile }) => {
   await page.goto('/en/suite');
+  if (isMobile) await page.getByRole('button', { name: 'Menu', exact: true }).click();
   const nav = page.getByRole('navigation', { name: 'Main navigation' });
   await expect(nav.getByRole('link', { name: 'Structure' })).toHaveAttribute(
     'href',

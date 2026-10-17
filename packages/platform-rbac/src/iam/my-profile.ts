@@ -1,6 +1,7 @@
 import { type AppError, type Result, appError, err, ok } from '@jadarat/platform-core';
 import {
   type PersonalDetails,
+  type StructureLevelLabel,
   type UserProfile,
   type UserTx,
   type MyRole,
@@ -8,6 +9,7 @@ import {
   getPersonalDetails,
   getTenantDefaultLocale,
   keepsUnsplitDisplayName,
+  listStructureLevelLabels,
   getUserProfile,
   passwordMinLengthForCaller,
   updatePersonalDetails,
@@ -148,6 +150,8 @@ export interface MyProfileView {
   readonly details: PersonalDetails;
   /** Job data and e-mail, read-only on My profile. */
   readonly profile: UserProfile;
+  /** The organization's own level names: the unit field says its level (guided-test feedback #3). */
+  readonly levels: readonly StructureLevelLabel[];
 }
 
 export function myProfileQueryDefinition(): QueryDefinition<
@@ -168,7 +172,7 @@ export function myProfileQueryDefinition(): QueryDefinition<
         includeActivity: false,
       });
       if (!details || !profile) return err(appError('NOT_FOUND'));
-      return ok({ details, profile });
+      return ok({ details, profile, levels: await listStructureLevelLabels(ctx.tx) });
     },
   };
 }

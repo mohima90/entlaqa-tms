@@ -3,6 +3,7 @@ import {
   type InvitationRow,
   type ManagerOption,
   type OrgUnitOptions,
+  type StructureLevelLabel,
   type UserTx,
   createInvitation,
   getInvitationRoles,
@@ -10,6 +11,7 @@ import {
   listInvitations,
   listManagerOptions,
   listOrgUnitOptions,
+  listStructureLevelLabels,
   listStructureUnitOptions,
   requestInvitationResend,
   revokeInvitation,
@@ -454,6 +456,11 @@ export function invitationsListQueryDefinition(): QueryDefinition<
 export interface InviteFormView {
   readonly managers: readonly ManagerOption[];
   readonly orgUnits: OrgUnitOptions;
+  /**
+   * The organization's own level names (FR-ADM-05): unit fields and columns say them instead of a fixed
+   * «Department» (guided-test feedback #3, PO 17 Oct 2026). One read per page.
+   */
+  readonly levels: readonly StructureLevelLabel[];
   /** Privileged roles: allowed (the Organization Admin) or not for this member. */
   readonly privilegedAccess: 'allowed' | 'denied';
   /** The roles to choose from (standard and custom), with whether this member may give each. */
@@ -483,6 +490,7 @@ export function inviteFormQueryDefinition(): QueryDefinition<
       return ok({
         managers: managers.filter((m) => m.active),
         orgUnits,
+        levels: await listStructureLevelLabels(ctx.tx),
         privilegedAccess: ctx.can(p['platform.role.assign_privileged'], 'tenant')
           ? 'allowed'
           : 'denied',

@@ -118,7 +118,10 @@ export const platformPermissions = definePermissions('platform', [
   {
     code: 'platform.org.read',
     label: { ar: 'عرض الهيكل التنظيمي', en: 'View organization structure' },
-    description: { ar: 'عرض الفروع والأقسام', en: 'View branches and departments' },
+    description: {
+      ar: 'عرض الفروع ووحدات الهيكل',
+      en: 'View branches and the units of the structure',
+    },
     risk: 'low',
     requiresAal2: false,
   },
@@ -126,8 +129,8 @@ export const platformPermissions = definePermissions('platform', [
     code: 'platform.org.manage',
     label: { ar: 'إدارة الهيكل التنظيمي', en: 'Manage organization structure' },
     description: {
-      ar: 'إنشاء الفروع والأقسام وتعديلها وحذفها',
-      en: 'Create, edit and delete branches and departments',
+      ar: 'إنشاء الفروع ووحدات الهيكل ومستوياته وتعديلها وحذفها',
+      en: 'Create, edit and delete branches, the units of the structure and its levels',
     },
     risk: 'medium',
     requiresAal2: false,

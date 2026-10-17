@@ -67,6 +67,10 @@ describe('fields and headers (screens 3 and 5)', () => {
     expect(fieldForHeader('الإيميل')).toBe('email');
     expect(fieldForHeader('E-mail')).toBe('email');
     expect(fieldForHeader('الإدارة')).toBe('department');
+    // The earlier template's header still maps to the unit column (guided-test feedback #3).
+    expect(fieldForHeader('Department')).toBe('department');
+    expect(fieldForHeader('القسم')).toBe('department');
+    expect(fieldForHeader('Unit')).toBe('department');
     expect(fieldForHeader('رقم الموظف')).toBe('employee_number');
     expect(fieldForHeader('Employee ID')).toBe('employee_number');
     expect(fieldForHeader('First Name')).toBe('first_name_en');
@@ -545,7 +549,7 @@ describe('issues', () => {
         'ar',
         'result',
       ),
-    ).toBe('القسم «التسويق الرقمي» غير موجود، فأُضيف الشخص دون قسم.');
+    ).toBe('الوحدة «التسويق الرقمي» غير موجودة، فأُضيف الشخص دون وحدة.');
     expect(issueMessage(issue('TEXT_TOO_LONG', 'branch'), 'en')).toContain('Branch');
     expect(issueMessage(issue('TEXT_TOO_LONG', 'nothing' as never), 'ar')).toContain('القيمة');
   });
@@ -606,7 +610,7 @@ describe('template (screen 3)', () => {
     expect(header?.cells.map((h) => fieldForHeader(h))).toEqual([...IMPORT_FIELDS]);
     expect(await rowsOf(book, 0)).toHaveLength(1);
     const lists = (await rowsOf(book, 2)).map((r) => r.cells);
-    expect(lists[0]).toEqual(['القسم', 'رمز القسم', 'الفرع', 'رمز الفرع', 'الدور', 'اللغة']);
+    expect(lists[0]).toEqual(['الوحدة', 'رمز الوحدة', 'الفرع', 'رمز الفرع', 'الدور', 'اللغة']);
     expect(lists[1]?.slice(0, 5)).toEqual([
       'التدريب والتطوير',
       'TRN',

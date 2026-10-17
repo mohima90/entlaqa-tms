@@ -65,6 +65,72 @@ export function levelName(
   return locale === 'ar' ? level.nameAr : level.nameEn;
 }
 
+// ---------------------------------------------------------------------------------------------------
+// The organization's own level names instead of a fixed «Department» (guided-test feedback #3, PO 17 Oct
+// 2026): a column or field that can hold units of any level is labelled with the first level's name when
+// every unit in it is at the first level, else with a neutral word («Unit» / «الوحدة») — and then each row
+// shows its own level («Retail Sales · Unit»).
+// ---------------------------------------------------------------------------------------------------
+
+/** The top level (lowest ordinal), or null without levels. */
+function firstLevel(levels: readonly LevelLabel[]): LevelLabel | null {
+  return levels.reduce<LevelLabel | null>(
+    (top, level) => (top === null || level.ordinal < top.ordinal ? level : top),
+    null,
+  );
+}
+
+/**
+ * Do these units need their level shown next to their names? Yes when one of them is not at the first
+ * level (unknown levels count as not first), so a neutral column label still tells which level each is.
+ */
+export function showsUnitLevels(
+  levels: readonly LevelLabel[],
+  ordinals: readonly (number | null)[],
+): boolean {
+  const top = firstLevel(levels);
+  return top === null || ordinals.some((ordinal) => ordinal !== top.ordinal);
+}
+
+/**
+ * The label of a column or field holding these units: the first level's name when all are at the first
+ * level (also with no unit at all: what the organization starts with), else `neutral` («Unit»).
+ */
+export function unitsLabel(
+  levels: readonly LevelLabel[],
+  ordinals: readonly (number | null)[],
+  locale: 'ar' | 'en',
+  neutral: string,
+): string {
+  const top = firstLevel(levels);
+  if (top === null || showsUnitLevels(levels, ordinals)) return neutral;
+  return locale === 'ar' ? top.nameAr : top.nameEn;
+}
+
+/** The label of a field holding one unit: that unit's level name, else `neutral` (no unit, unknown level). */
+export function unitFieldLabel(
+  levels: readonly LevelLabel[],
+  ordinal: number | null,
+  locale: 'ar' | 'en',
+  neutral: string,
+): string {
+  const level = levels.find((l) => l.ordinal === ordinal);
+  return level ? (locale === 'ar' ? level.nameAr : level.nameEn) : neutral;
+}
+
+/** A unit's name, followed by its level when `show` («Retail Sales · Unit»). */
+export function unitNameWithLevel(
+  name: string,
+  ordinal: number | null,
+  levels: readonly LevelLabel[],
+  locale: 'ar' | 'en',
+  show: boolean,
+): string {
+  if (!show) return name;
+  const level = levels.find((l) => l.ordinal === ordinal);
+  return level ? `${name} · ${locale === 'ar' ? level.nameAr : level.nameEn}` : name;
+}
+
 /** The level below `ordinal` (what «Add <next level>» adds), or null under the last level. */
 export function nextLevel(
   levels: readonly LevelLabel[],

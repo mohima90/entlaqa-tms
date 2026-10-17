@@ -13,6 +13,11 @@ import { EditUserForm } from '../../../../../../../components/users/edit-user-fo
 import { formStateFrom } from '../../../../../../../lib/profile-form';
 import { profileErrorTexts } from '../../../../../../../lib/profile-texts';
 import { getSuiteContext } from '../../../../../../../lib/suite-context';
+import {
+  showsUnitLevels,
+  unitNameWithLevel,
+  unitsLabel,
+} from '../../../../../../../lib/structure-view';
 import { editUserQuery } from '../../../../../../../lib/users-queries';
 import { localizedName } from '../../../../../../../lib/users-view';
 
@@ -170,13 +175,34 @@ async function editForm(
   const fieldTexts: Record<string, string> = Object.fromEntries(
     FIELD_ERROR_KEYS.map((k) => [k, t(`fieldErrors.${k}`)]),
   );
-  const unit = (u: { id: string; nameAr: string; nameEn: string | null }) => ({
+  // The organization's own level names (guided-test feedback #3): the field is named after the first
+  // level, or «Unit» with each choice's level when levels mix.
+  const ordinals = view.orgUnits.departments.map((d) => d.levelOrdinal);
+  const withLevels = showsUnitLevels(view.levels, ordinals);
+  labels.department = unitsLabel(view.levels, ordinals, locale, t('department'));
+  const unit = (u: {
+    id: string;
+    nameAr: string;
+    nameEn: string | null;
+    levelOrdinal: number | null;
+  }) => ({
     id: u.id,
-    name: localizedName(locale, u.nameAr, u.nameEn),
+    name: unitNameWithLevel(
+      localizedName(locale, u.nameAr, u.nameEn),
+      u.levelOrdinal,
+      view.levels,
+      locale,
+      withLevels,
+    ),
   });
   // The current unit stays selectable even when deleted since (a save keeps it, never clears it).
   const withCurrent = (
-    options: readonly { id: string; nameAr: string; nameEn: string | null }[],
+    options: readonly {
+      id: string;
+      nameAr: string;
+      nameEn: string | null;
+      levelOrdinal: number | null;
+    }[],
     id: string | null,
     current: CurrentUnit | null,
   ) => {

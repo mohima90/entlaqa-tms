@@ -97,6 +97,7 @@ describe('users list query', () => {
         pageSize: USERS_PAGE_SIZE,
         canReadRoles: true,
         orgUnits,
+        levels: [],
         canInvite: true,
         canDeactivate: true,
         // aal1: privileged members come back without an authenticator code (PO decision, 14 Oct 2026).
@@ -228,6 +229,7 @@ describe('user profile query', () => {
     expect(await profile({ personId: REPORT })).toEqual(
       ok({
         profile: { personId: REPORT },
+        levels: [],
         canOpenManager: false,
         canEdit: false,
         canEditRoles: false,

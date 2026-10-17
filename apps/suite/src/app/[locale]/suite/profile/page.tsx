@@ -25,6 +25,7 @@ import { getSuiteContext } from '../../../../lib/suite-context';
 import { pageDates } from '../../../../lib/page-dates';
 import { myProfileQuery, mySecurityQuery } from '../../../../lib/users-queries';
 import { describeUserAgent } from '../../../../lib/user-agent';
+import { type LevelLabel, unitFieldLabel } from '../../../../lib/structure-view';
 import { localizedName } from '../../../../lib/users-view';
 
 /**
@@ -66,6 +67,7 @@ export default async function MyProfilePage({ params }: { params: Promise<{ loca
           locale={locale}
           details={result.value.details}
           profile={result.value.profile}
+          levels={result.value.levels}
           security={security.ok ? security.value : null}
           dates={pageDates(locale, context)}
           nameLanguage={context.regional.defaultLocale}
@@ -89,7 +91,10 @@ async function MyProfile({
   security,
   dates,
   nameLanguage,
+  levels,
 }: {
+  /** The organization's own level names: the unit field says its level (guided-test feedback #3). */
+  levels: readonly LevelLabel[];
   locale: AppLocale;
   /** The organization's default language: its names are required and shown first (PO 17 Oct 2026). */
   nameLanguage: 'ar' | 'en';
@@ -134,7 +139,12 @@ async function MyProfile({
     { key: 'jobTitle', label: fields('fields.jobTitle'), value: jobTitle ?? none },
     {
       key: 'department',
-      label: fields('fields.department'),
+      label: unitFieldLabel(
+        levels,
+        profile.departmentLevelOrdinal,
+        locale,
+        fields('fields.department'),
+      ),
       value: named(profile.departmentNameAr, profile.departmentNameEn) ?? none,
     },
     {

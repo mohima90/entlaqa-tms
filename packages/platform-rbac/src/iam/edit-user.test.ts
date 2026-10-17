@@ -19,6 +19,7 @@ const db = vi.hoisted(() => ({
   updateUserDetails: vi.fn(),
   getTenantDefaultLocale: vi.fn(),
   keepsUnsplitDisplayName: vi.fn(),
+  listStructureLevelLabels: vi.fn(() => Promise.resolve([])),
 }));
 vi.mock('@jadarat/platform-db', () => db);
 

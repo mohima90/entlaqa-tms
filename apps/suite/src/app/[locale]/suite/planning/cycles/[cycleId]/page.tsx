@@ -43,6 +43,11 @@ import {
   progressCounts,
   setupStep,
 } from '../../../../../../lib/planning-view';
+import {
+  showsUnitLevels,
+  unitNameWithLevel,
+  unitsLabel,
+} from '../../../../../../lib/structure-view';
 import { type SuiteContext, getSuiteContext } from '../../../../../../lib/suite-context';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -152,6 +157,12 @@ async function SetUp({
   const setup = view.setup;
   const back = previousStep(step);
   const backHref = back ? cycleHref(locale, cycle.id, back) : `/${locale}${PLANNING_PATHS.cycles}`;
+  // The organization's own level names (guided-test feedback #3): the column is named after the first
+  // level, or «Unit» with each row's level when levels mix.
+  const ordinals = view.departments.map((d) => d.levelOrdinal);
+  const withLevels = showsUnitLevels(view.levels, ordinals);
+  const unitName = (d: CycleView['departments'][number]) =>
+    unitNameWithLevel(localName(locale, d.name), d.levelOrdinal, view.levels, locale, withLevels);
   const headName = (head: CycleView['departments'][number]['head']) =>
     head
       ? head.via
@@ -217,7 +228,16 @@ async function SetUp({
             id: u.id,
             parentId: u.parentId,
             branchId: u.branchId,
-            name: localName(locale, u.name),
+            name: unitNameWithLevel(
+              localName(locale, u.name),
+              u.levelOrdinal,
+              view.levels,
+              locale,
+              showsUnitLevels(
+                view.levels,
+                (setup?.units ?? []).map((x) => x.levelOrdinal),
+              ),
+            ),
             depth: u.depth,
             active: u.active,
             hasHead: u.hasHead,
@@ -240,9 +260,15 @@ async function SetUp({
           locale={locale}
           cycle={cycle}
           currency={view.cycle.currency}
+          unitColumn={unitsLabel(
+            view.levels,
+            ordinals,
+            locale,
+            t('setup.budget.columns.department'),
+          )}
           rows={view.departments.map((d) => ({
             departmentId: d.departmentId,
-            name: localName(locale, d.name),
+            name: unitName(d),
             head: headName(d.head),
             amount: d.budgetAmount,
           }))}
@@ -348,6 +374,13 @@ async function Overview({
   const number = (n: number) => format.number(n, 'integer');
   const day = dayFormatter(locale, context.regional.dateDisplay);
   const counts = progressCounts(view.departments.map((d) => d.status));
+  // The organization's own level names (guided-test feedback #3).
+  const ordinals = view.departments.map((d) => d.levelOrdinal);
+  const withLevels = showsUnitLevels(view.levels, ordinals);
+  const columnLabel = (key: 'department' | 'head' | 'envelope' | 'status') =>
+    key === 'department'
+      ? unitsLabel(view.levels, ordinals, locale, t('cycle.columns.department'))
+      : t(`cycle.columns.${key}`);
   const texts = view.canExtend ? planningTexts(locale) : null;
   const errors = view.canExtend ? await planningErrorTexts(locale) : null;
   const instructions =
@@ -453,8 +486,13 @@ async function Overview({
             <thead className={tableClasses.header}>
               <tr>
                 {(['department', 'head', 'envelope', 'status'] as const).map((key) => (
-                  <th key={key} scope="col" className={tableClasses.head}>
-                    {t(`cycle.columns.${key}`)}
+                  <th
+                    key={key}
+                    scope="col"
+                    className={tableClasses.head}
+                    data-testid={`progress-column-${key}`}
+                  >
+                    {columnLabel(key)}
                   </th>
                 ))}
               </tr>
@@ -463,7 +501,13 @@ async function Overview({
               {view.departments.map((row) => (
                 <tr key={row.departmentId} className={tableClasses.row} data-testid="progress-row">
                   <th scope="row" className={`${tableClasses.cell} text-start font-medium`}>
-                    {localName(locale, row.name)}
+                    {unitNameWithLevel(
+                      localName(locale, row.name),
+                      row.levelOrdinal,
+                      view.levels,
+                      locale,
+                      withLevels,
+                    )}
                   </th>
                   <td className={tableClasses.cell}>
                     {row.head ? (

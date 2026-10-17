@@ -255,19 +255,19 @@ export const ISSUES: Catalogue = {
     severity: 'w',
     review: (issue, locale) =>
       locale === 'ar'
-        ? `القسم «${text(issue.p?.name)}» غير موجود في بيانات المنشأة. يُضاف الشخص دون قسم، ويمكن تحديده لاحقًا.`
-        : `Department “${text(issue.p?.name)}” isn’t in Organization data. The person is added without a department.`,
+        ? `الوحدة «${text(issue.p?.name)}» غير موجودة في هيكل المنظمة. يُضاف الشخص دون وحدة، ويمكن تحديدها لاحقًا.`
+        : `Unit “${text(issue.p?.name)}” isn’t in the organization’s structure. The person is added without a unit.`,
     result: (issue, locale) =>
       locale === 'ar'
-        ? `القسم «${text(issue.p?.name)}» غير موجود، فأُضيف الشخص دون قسم.`
-        : `Department “${text(issue.p?.name)}” was not found; added without a department.`,
+        ? `الوحدة «${text(issue.p?.name)}» غير موجودة، فأُضيف الشخص دون وحدة.`
+        : `Unit “${text(issue.p?.name)}” was not found; added without a unit.`,
   },
   DEPARTMENT_AMBIGUOUS: {
     severity: 'w',
     review: (issue, locale) =>
       locale === 'ar'
-        ? `يوجد أكثر من قسم باسم «${text(issue.p?.name)}». يُضاف الشخص دون قسم؛ يمكنك كتابة رمز القسم بدلًا من اسمه.`
-        : `More than one department is called “${text(issue.p?.name)}”. The person is added without a department; use the department code instead.`,
+        ? `يوجد أكثر من وحدة باسم «${text(issue.p?.name)}». يُضاف الشخص دون وحدة؛ يمكنك كتابة رمز الوحدة بدلًا من اسمها.`
+        : `More than one unit is called “${text(issue.p?.name)}”. The person is added without a unit; use the unit code instead.`,
   },
   BRANCH_NOT_FOUND: {
     severity: 'w',

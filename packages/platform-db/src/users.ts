@@ -4,6 +4,7 @@ import { type SQL, sql } from 'drizzle-orm';
 import { customRolesExist, roleScopeUnitsExist } from './custom-roles-present';
 import { ORG_TIME_ZONE } from './org-time-zone';
 import type { UserTx } from './with-user-tx';
+import { levelOrdinalOf } from './level-ordinal';
 
 /**
  * People directory reads for the users screens (T-M2-04, FR-IAM-01; screens 1 and 3 of
@@ -57,6 +58,8 @@ export interface RoleScopeUnit {
   readonly id: string;
   readonly nameAr: string;
   readonly nameEn: string | null;
+  /** Its level (ordinal; the list names it when levels mix, guided-test feedback #3). */
+  readonly levelOrdinal?: number | null;
   /** Live and active: the role grants its scope. */
   readonly active: boolean;
 }
@@ -88,6 +91,8 @@ export interface UserListRow {
   readonly roleScopeUnit: RoleScopeUnit | null;
   readonly departmentNameAr: string | null;
   readonly departmentNameEn: string | null;
+  /** The unit's level (ordinal): its name labels the field (guided-test feedback #3). */
+  readonly departmentLevelOrdinal: number | null;
   readonly lastSignInAt: Date | null;
   /** The caller may manage this person (only with `includeManageable`; else false). */
   readonly mayManage: boolean;
@@ -268,6 +273,7 @@ export async function listUsers(tx: UserTx, filter: UserListFilter): Promise<Use
   // The unit of a department-limited role once its column exists (deploy window, EP-ORG).
   const scopeUnit = (await roleScopeUnitsExist(tx))
     ? sql`(select jsonb_build_object('id', su.id, 'nameAr', su.name_ar, 'nameEn', su.name_en,
+                                     'levelOrdinal', su.level_ordinal,
                                      'active', su.status = 'active' and su.deleted_at is null)
            from platform.role_assignments ra
            join platform.departments su on su.tenant_id = ra.tenant_id and su.id = ra.scope_unit_id
@@ -302,6 +308,7 @@ export async function listUsers(tx: UserTx, filter: UserListFilter): Promise<Use
     role_scope_unit: RoleScopeUnit | string | null;
     department_name_ar: string | null;
     department_name_en: string | null;
+    department_level_ordinal: number | null;
     last_sign_in_at: Date | string | null;
     may_manage: boolean;
     privileged: boolean;
@@ -311,6 +318,7 @@ export async function listUsers(tx: UserTx, filter: UserListFilter): Promise<Use
            ${filter.includeManageable ? sql`private.actor_may_manage_person(p.tenant_id, p.id)` : sql`false`} as may_manage,
            ${filter.includeManageable ? sql`private.membership_is_privileged(m.tenant_id, m.id)` : sql`false`} as privileged,
            d.name_ar as department_name_ar, d.name_en as department_name_en,
+           d.level_ordinal as department_level_ordinal,
            (select max(a.occurred_at) from platform.audit_events a
              where a.actor_user_id = m.user_id and a.action = 'platform.auth.signed_in') as last_sign_in_at
     ${FROM_MEMBERS}
@@ -338,6 +346,7 @@ export async function listUsers(tx: UserTx, filter: UserListFilter): Promise<Use
       roleScopeUnit: scopeUnitOf(r.role_scope_unit ?? null),
       departmentNameAr: r.department_name_ar,
       departmentNameEn: r.department_name_en,
+      departmentLevelOrdinal: levelOrdinalOf(r.department_level_ordinal),
       lastSignInAt: toDate(r.last_sign_in_at),
       mayManage: r.may_manage,
       privileged: r.privileged,
@@ -377,6 +386,8 @@ export interface UserProfile {
   readonly jobTitleEn: string | null;
   readonly departmentNameAr: string | null;
   readonly departmentNameEn: string | null;
+  /** The unit's level (ordinal): its name labels the field (guided-test feedback #3). */
+  readonly departmentLevelOrdinal: number | null;
   readonly branchNameAr: string | null;
   readonly branchNameEn: string | null;
   readonly manager: {
@@ -426,6 +437,7 @@ export async function getUserProfile(
     job_title_en: string | null;
     department_name_ar: string | null;
     department_name_en: string | null;
+    department_level_ordinal: number | null;
     branch_name_ar: string | null;
     branch_name_en: string | null;
     manager_person_id: string | null;
@@ -439,6 +451,7 @@ export async function getUserProfile(
            m.id as membership_id, m.status as membership_status, m.user_id,
            e.job_title_ar, e.job_title_en,
            d.name_ar as department_name_ar, d.name_en as department_name_en,
+           d.level_ordinal as department_level_ordinal,
            b.name_ar as branch_name_ar, b.name_en as branch_name_en,
            mgr.id as manager_person_id, mgr.display_name_ar as manager_name_ar,
            mgr.display_name_en as manager_name_en, e.hire_on::text as hire_on,
@@ -522,6 +535,7 @@ export async function getUserProfile(
     jobTitleEn: row.job_title_en,
     departmentNameAr: row.department_name_ar,
     departmentNameEn: row.department_name_en,
+    departmentLevelOrdinal: levelOrdinalOf(row.department_level_ordinal),
     branchNameAr: row.branch_name_ar,
     branchNameEn: row.branch_name_en,
     manager: row.manager_person_id

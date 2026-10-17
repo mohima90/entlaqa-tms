@@ -27,7 +27,12 @@ import { MemberRoleMenu } from '../../../../../components/users/member-role-menu
 import { ReactivateMemberButton } from '../../../../../components/users/reactivate-member-button';
 import { roleOptions } from '../../../../../lib/role-choice';
 import { editRoleLabels, roleSelectTexts, scopeUnitTexts } from '../../../../../lib/role-texts';
-import { scopeUnitChoices } from '../../../../../lib/structure-view';
+import {
+  scopeUnitChoices,
+  showsUnitLevels,
+  unitNameWithLevel,
+  unitsLabel,
+} from '../../../../../lib/structure-view';
 import {
   ExpiredInvitationsBanner,
   type InvitationRowView,
@@ -325,6 +330,19 @@ async function UsersList({
     view.roles?.some(
       (r) => r.code === code && r.kind === 'custom' && r.dataScope === 'departments',
     ) ?? false;
+  // The organization's own level names (guided-test feedback #3): unit columns and fields are named after
+  // the first level, or «Unit» with each unit's level when levels mix.
+  const levels = view.levels;
+  const placed = view.list.rows.flatMap((r) =>
+    r.departmentNameAr ? [r.departmentLevelOrdinal] : [],
+  );
+  const placedWithLevels = showsUnitLevels(levels, placed);
+  const scoped = view.list.rows.flatMap((r) =>
+    r.roleScopeUnit ? [r.roleScopeUnit.levelOrdinal ?? null] : [],
+  );
+  const scopedWithLevels = showsUnitLevels(levels, scoped);
+  const filterOrdinals = (orgUnits?.departments ?? []).map((d) => d.levelOrdinal);
+  const filterWithLevels = showsUnitLevels(levels, filterOrdinals);
   const roleUnit = (row: UsersListView['list']['rows'][number]) => {
     if (!row.primaryRole || !limitedToUnit(row.primaryRole)) return null;
     const unit = row.roleScopeUnit;
@@ -335,7 +353,13 @@ async function UsersList({
         </Badge>
       );
     }
-    const name = localizedName(locale, unit.nameAr, unit.nameEn);
+    const name = unitNameWithLevel(
+      localizedName(locale, unit.nameAr, unit.nameEn),
+      unit.levelOrdinal ?? null,
+      levels,
+      locale,
+      scopedWithLevels,
+    );
     return unit.active ? (
       <span className="text-xs text-text-muted" data-testid="role-unit">
         {t('roleUnit', { unit: name })}
@@ -462,7 +486,7 @@ async function UsersList({
           <>
             <div className="flex flex-col gap-1">
               <label htmlFor="users-department" className="text-sm font-medium">
-                {t('department')}
+                {unitsLabel(levels, filterOrdinals, locale, t('department'))}
               </label>
               <select
                 id="users-department"
@@ -473,7 +497,13 @@ async function UsersList({
                 <option value="">{t('allDepartments')}</option>
                 {orgUnits.departments.map((d) => (
                   <option key={d.id} value={d.id}>
-                    {localizedName(locale, d.nameAr, d.nameEn)}
+                    {unitNameWithLevel(
+                      localizedName(locale, d.nameAr, d.nameEn),
+                      d.levelOrdinal,
+                      levels,
+                      locale,
+                      filterWithLevels,
+                    )}
                   </option>
                 ))}
               </select>
@@ -544,8 +574,8 @@ async function UsersList({
                       {t('columns.primaryRole')}
                     </th>
                   ) : null}
-                  <th scope="col" className={tableClasses.head}>
-                    {t('columns.department')}
+                  <th scope="col" className={tableClasses.head} data-testid="users-unit-column">
+                    {unitsLabel(levels, placed, locale, t('columns.department'))}
                   </th>
                   <th scope="col" className={tableClasses.head}>
                     {t('columns.status')}
@@ -613,7 +643,13 @@ async function UsersList({
                     ) : null}
                     <td className={tableClasses.cell}>
                       {row.departmentNameAr ? (
-                        localizedName(locale, row.departmentNameAr, row.departmentNameEn)
+                        unitNameWithLevel(
+                          localizedName(locale, row.departmentNameAr, row.departmentNameEn),
+                          row.departmentLevelOrdinal,
+                          levels,
+                          locale,
+                          placedWithLevels,
+                        )
                       ) : (
                         <NotSet label={t('noneLabel')} />
                       )}

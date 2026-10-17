@@ -3,12 +3,14 @@ import {
   type EditableUser,
   type ManagerOption,
   type OrgUnitOptions,
+  type StructureLevelLabel,
   type UserDetailsRefusal,
   type UserTx,
   getEditableUser,
   getTenantDefaultLocale,
   listManagerOptions,
   listOrgUnitOptions,
+  listStructureLevelLabels,
   updateUserDetails,
 } from '@jadarat/platform-db';
 import { hasVisibleText, normalizeDigits } from '@jadarat/platform-i18n';
@@ -100,6 +102,11 @@ export interface EditUserView {
   readonly user: EditableUser;
   readonly managers: readonly ManagerOption[];
   readonly orgUnits: OrgUnitOptions;
+  /**
+   * The organization's own level names (FR-ADM-05): unit fields and columns say them instead of a fixed
+   * «Department» (guided-test feedback #3, PO 17 Oct 2026). One read per page.
+   */
+  readonly levels: readonly StructureLevelLabel[];
 }
 
 export const EditUserQueryInput = z.strictObject({ personId: z.uuid() });
@@ -120,7 +127,12 @@ export function editUserQueryDefinition(): QueryDefinition<
       if (!user.mayManage) return err(appError('FORBIDDEN'));
       const managers = await listManagerOptions(ctx.tx, user.managerPersonId);
       const orgUnits = await listOrgUnitOptions(ctx.tx);
-      return ok({ user, managers: managers.filter((m) => m.personId !== user.personId), orgUnits });
+      return ok({
+        user,
+        managers: managers.filter((m) => m.personId !== user.personId),
+        orgUnits,
+        levels: await listStructureLevelLabels(ctx.tx),
+      });
     },
   };
 }

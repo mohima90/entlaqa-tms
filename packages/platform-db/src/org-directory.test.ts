@@ -32,6 +32,7 @@ describe('listOrgStructure (EP-PLN platform service)', () => {
           branch_id: 'b1',
           code: 'TD',
           name_ar: 'التدريب',
+          level_ordinal: 1,
           name_en: 'Training',
           status: 'active',
           sort_order: '2',
@@ -66,6 +67,7 @@ describe('listOrgStructure (EP-PLN platform service)', () => {
         nameEn: 'Training',
         active: true,
         sortOrder: 2,
+        levelOrdinal: 1,
         head: { personId: 'p1', nameAr: 'سارة', nameEn: null },
       },
       {
@@ -77,6 +79,7 @@ describe('listOrgStructure (EP-PLN platform service)', () => {
         nameEn: null,
         active: false,
         sortOrder: 0,
+        levelOrdinal: null,
         head: null,
       },
     ]);

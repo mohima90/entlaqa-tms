@@ -9,11 +9,13 @@ import {
 import {
   type MemberOption,
   type OrgStructure,
+  type StructureLevelLabel,
   type UserTx,
   MEMBER_SEARCH,
   getMemberOptionsByIds,
   getOrganizationProfile,
   listOrgStructure,
+  listStructureLevelLabels,
   searchMemberOptions,
 } from '@jadarat/platform-db';
 import {
@@ -115,6 +117,11 @@ export interface CyclesListView {
 export interface CycleDepartmentView {
   readonly departmentId: string;
   readonly name: LocalizedName;
+  /**
+   * The unit's level (ordinal of `CycleView.levels`): the tables name the column after the first level, or
+   * «Unit» with each row's level when levels mix (guided-test feedback #3, PO 17 Oct 2026). Null: unknown.
+   */
+  readonly levelOrdinal: number | null;
   /** The department is still in the structure and active. */
   readonly active: boolean;
   readonly budgetAmount: string | null;
@@ -138,6 +145,8 @@ export interface ScopeUnitOption {
   readonly parentId: string | null;
   readonly branchId: string | null;
   readonly name: LocalizedName;
+  /** The unit's level (ordinal of `CycleView.levels`). */
+  readonly levelOrdinal: number | null;
   readonly depth: number;
   readonly active: boolean;
   readonly hasHead: boolean;
@@ -152,6 +161,8 @@ export interface CycleView {
   readonly editable: boolean;
   readonly canExtend: boolean;
   readonly departments: readonly CycleDepartmentView[];
+  /** The organization's own level names (FR-ADM-05): the pages say them instead of «Department». */
+  readonly levels: readonly StructureLevelLabel[];
   readonly steps: readonly StepView[];
   readonly problems: readonly LaunchProblem[];
   /** Departments in scope whose form reaches nobody (no head up the tree) — a warning, not a block. */
@@ -215,6 +226,7 @@ function scopeUnitOptions(structure: OrgStructure): ScopeUnitOption[] {
             parentId: d.parentId,
             branchId: d.branchId,
             name: { ar: d.nameAr, en: d.nameEn },
+            levelOrdinal: d.levelOrdinal,
             depth,
             active: d.active,
             hasHead: effectiveHead(all, id) !== null,
@@ -397,6 +409,7 @@ export function planCycleQueryDefinition(): QueryDefinition<typeof CycleRef, Cyc
           name: department
             ? { ar: department.nameAr, en: department.nameEn }
             : { ar: '—', en: '—' },
+          levelOrdinal: department?.levelOrdinal ?? null,
           active: department?.active ?? false,
           budgetAmount: row.budgetAmount,
           status:
@@ -438,6 +451,7 @@ export function planCycleQueryDefinition(): QueryDefinition<typeof CycleRef, Cyc
         editable,
         canExtend: canManage && canExtendDeadline(record.status),
         departments,
+        levels: await listStructureLevelLabels(ctx.tx),
         steps: stepViews(record.steps, people),
         problems,
         withoutHead: departments.filter((d) => d.head === null).length,

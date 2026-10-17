@@ -1,6 +1,7 @@
 import 'server-only';
 import { sql } from 'drizzle-orm';
 import type { UserTx } from './with-user-tx';
+import { levelOrdinalOf } from './level-ordinal';
 
 /**
  * The organization structure and its members as modules need them (platform service, ADR 0001: modules
@@ -19,6 +20,8 @@ export interface OrgDepartment {
   readonly nameEn: string | null;
   readonly active: boolean;
   readonly sortOrder: number;
+  /** Its level (ordinal; tables name it when levels mix, guided-test feedback #3). */
+  readonly levelOrdinal: number | null;
   /** The unit's own head (null: none — it then belongs to the nearest head above, EP-ORG). */
   readonly head: {
     readonly personId: string;
@@ -50,12 +53,13 @@ export async function listOrgStructure(tx: UserTx): Promise<OrgStructure> {
     name_en: string | null;
     status: string;
     sort_order: number | string;
+    level_ordinal: number | null;
     head_person_id: string | null;
     head_name_ar: string | null;
     head_name_en: string | null;
   }>(sql`
     select d.id, d.parent_id, d.branch_id, d.code, d.name_ar, d.name_en, d.status, d.sort_order,
-           d.head_person_id, p.display_name_ar as head_name_ar, p.display_name_en as head_name_en
+           d.level_ordinal, d.head_person_id, p.display_name_ar as head_name_ar, p.display_name_en as head_name_en
     from platform.departments d
     left join platform.persons p on p.tenant_id = d.tenant_id and p.id = d.head_person_id
     where d.deleted_at is null
@@ -78,6 +82,7 @@ export async function listOrgStructure(tx: UserTx): Promise<OrgStructure> {
       nameEn: d.name_en,
       active: d.status === 'active',
       sortOrder: Number(d.sort_order),
+      levelOrdinal: levelOrdinalOf(d.level_ordinal),
       head: d.head_person_id
         ? { personId: d.head_person_id, nameAr: d.head_name_ar, nameEn: d.head_name_en }
         : null,

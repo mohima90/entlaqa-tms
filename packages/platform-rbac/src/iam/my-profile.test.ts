@@ -24,6 +24,7 @@ const db = vi.hoisted(() => ({
   passwordMinLengthForCaller: vi.fn(),
   getTenantDefaultLocale: vi.fn(),
   keepsUnsplitDisplayName: vi.fn(),
+  listStructureLevelLabels: vi.fn(),
 }));
 vi.mock('@jadarat/platform-db', () => db);
 
@@ -139,9 +140,16 @@ describe('My profile query and save', () => {
   it('reads only the member’s own person', async () => {
     db.getPersonalDetails.mockResolvedValue({ displayNameAr: 'س' });
     db.getUserProfile.mockResolvedValue({ personId: ME });
+    db.listStructureLevelLabels.mockResolvedValue([
+      { ordinal: 1, nameEn: 'Sector', nameAr: 'قطاع' },
+    ]);
     const query = createDefineQuery(runtime().rt)(myProfileQueryDefinition());
     expect(await query({})).toEqual(
-      ok({ details: { displayNameAr: 'س' }, profile: { personId: ME } }),
+      ok({
+        details: { displayNameAr: 'س' },
+        profile: { personId: ME },
+        levels: [{ ordinal: 1, nameEn: 'Sector', nameAr: 'قطاع' }],
+      }),
     );
     expect(db.getPersonalDetails).toHaveBeenCalledWith(TX, ME);
     expect(db.getUserProfile).toHaveBeenCalledWith(TX, ME, {

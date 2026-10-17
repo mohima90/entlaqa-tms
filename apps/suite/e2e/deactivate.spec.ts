@@ -86,7 +86,7 @@ test.describe('deactivate and reactivate members', () => {
     const departments = page.getByTestId('kind-platform.headed_departments');
     await expect(reports).toContainText('1 person reports directly to this user');
     await expect(reports).toContainText('Yasser Mohammed Alghamdi');
-    await expect(departments).toContainText('1 department headed by this user');
+    await expect(departments).toContainText('1 unit headed by this user');
     await expect(departments).toContainText('Quality');
     await expectNoSeriousA11yViolations(page);
 
@@ -101,9 +101,7 @@ test.describe('deactivate and reactivate members', () => {
     await page.getByRole('combobox', { name: 'Move all to' }).selectOption({
       label: 'Mona Saeed Alzahrani',
     });
-    await expect(page.getByRole('combobox', { name: 'New department head' })).toHaveValue(
-      /^[0-9a-f-]{36}$/,
-    );
+    await expect(page.getByRole('combobox', { name: 'New head' })).toHaveValue(/^[0-9a-f-]{36}$/);
     await page
       .getByRole('combobox', { name: /Reason for deactivation/ })
       .selectOption({ label: 'Long leave' });

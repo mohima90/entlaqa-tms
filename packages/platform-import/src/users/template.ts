@@ -70,7 +70,7 @@ const GUIDE_TEXT = {
       'الأدوار المميزة (مدير المنظمة، مدير الموارد البشرية، المدير المالي، مسؤول الامتثال، المدقق): تُسند من ملف كل مستخدم.',
       'البيانات الخاصة مثل الجنس وتاريخ الميلاد ورقم الهوية.',
     ],
-    lists: ['القسم', 'رمز القسم', 'الفرع', 'رمز الفرع', 'الدور', 'اللغة'],
+    lists: ['الوحدة', 'رمز الوحدة', 'الفرع', 'رمز الفرع', 'الدور', 'اللغة'],
   },
   en: {
     header: ['Column', 'العمود', 'Required', 'Description', 'الوصف', 'Example'],
@@ -84,7 +84,7 @@ const GUIDE_TEXT = {
       'Privileged roles (Organization Admin, HR Manager, Finance Manager, Compliance Officer, Auditor): given from each user’s profile.',
       'Restricted personal data such as gender, date of birth and national ID.',
     ],
-    lists: ['Department', 'Department code', 'Branch', 'Branch code', 'Role', 'Language'],
+    lists: ['Unit', 'Unit code', 'Branch', 'Branch code', 'Role', 'Language'],
   },
 } as const;
 

@@ -42,6 +42,8 @@ async function createDraft(page: Page, locale: 'ar' | 'en', nameEn: string, name
   await page.getByTestId('new-cycle-link').click();
   await page.locator('#cycle-name-en').fill(nameEn);
   await page.locator('#cycle-name-ar').fill(nameAr);
+  // The organization's default needs form is preselected (T-M3-10); the launch locks it.
+  await expect(page.getByTestId('cycle-needs-form')).not.toHaveValue('');
   await page.getByTestId('cycle-basics-save').click();
   await expect(page).toHaveURL(/\?step=scope$/);
 }

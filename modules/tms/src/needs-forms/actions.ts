@@ -71,6 +71,8 @@ export function refusalError(refusal: db.NeedsFormRefusal): AppError {
       return appError('CONFLICT_VERSION');
     case 'locked':
       return validation('form', 'NEEDS_FORM_LOCKED');
+    case 'in_use':
+      return validation('form', 'NEEDS_FORM_IN_USE');
     case 'system':
       return validation('field', 'SYSTEM_FIELD');
     case 'default':

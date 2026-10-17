@@ -131,8 +131,16 @@ describe('planning server actions (deny by default)', () => {
   });
 });
 
-describe('needs forms adapter (stub until the forms library merges)', () => {
-  it('offers no form yet', async () => {
-    expect(await listNeedsFormOptions({} as never)).toEqual([]);
+describe('needs forms of a cycle (T-M3-10 forms library)', () => {
+  it('lists the organization\u2019s active forms as the database orders them (default first)', async () => {
+    const execute = vi.fn().mockResolvedValue([
+      { id: 'f1', name_ar: 'النموذج الافتراضي', name_en: 'Default form', is_default: true },
+      { id: 'f2', name_ar: 'نموذج', name_en: 'Other form', is_default: false },
+    ]);
+    expect(await listNeedsFormOptions({ execute } as never)).toEqual([
+      { id: 'f1', name: { ar: 'النموذج الافتراضي', en: 'Default form' }, isDefault: true },
+      { id: 'f2', name: { ar: 'نموذج', en: 'Other form' }, isDefault: false },
+    ]);
+    expect(execute).toHaveBeenCalledTimes(1);
   });
 });

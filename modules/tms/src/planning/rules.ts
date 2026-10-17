@@ -266,6 +266,7 @@ export function effectiveHead(
 
 export const LAUNCH_PROBLEMS = [
   'deadline_past',
+  'no_needs_form',
   'no_departments',
   'no_approver_step',
   'approver_missing',
@@ -278,6 +279,8 @@ export interface LaunchFacts {
   readonly status: CycleStatus;
   readonly deadline: string;
   readonly today: string;
+  /** The cycle's needs form (T-M3-10): required to launch, locked by the launch. */
+  readonly needsFormId: string | null;
   readonly departmentCount: number;
   readonly steps: readonly ApprovalStep[];
   /** Persons who are active members now. */
@@ -290,6 +293,7 @@ export interface LaunchFacts {
 export function launchProblems(facts: LaunchFacts): LaunchProblem[] {
   const problems: LaunchProblem[] = [];
   if (facts.deadline < facts.today) problems.push('deadline_past');
+  if (facts.needsFormId === null) problems.push('no_needs_form');
   if (facts.departmentCount === 0) problems.push('no_departments');
   const people = facts.steps.filter((s) => s.kind === 'person');
   if (people.length === 0) problems.push('no_approver_step');

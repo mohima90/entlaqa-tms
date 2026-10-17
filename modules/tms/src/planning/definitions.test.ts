@@ -141,7 +141,7 @@ const record = (over: Record<string, unknown> = {}) => ({
   deadline: '2026-11-30',
   instructionsAr: null,
   instructionsEn: 'Old words',
-  needsFormId: null,
+  needsFormId: FORM,
   reminderDays: [7, 2],
   currency: 'SAR',
   status: 'draft',
@@ -321,12 +321,13 @@ describe('L&D Manager: list, new cycle, cycle view', () => {
     expect(open.ok && open.value.setup).toBeNull();
 
     repo.getCycle.mockResolvedValue(
-      record({ departments: [], steps: [chain[0]], deadline: '2026-10-01' }),
+      record({ departments: [], steps: [chain[0]], deadline: '2026-10-01', needsFormId: null }),
     );
     repo.openCycle.mockResolvedValue({ id: 'other', deadline: '2026-12-01' });
     const draft = await query(defs.planCycleQueryDefinition())({ id: CYCLE });
     expect(draft.ok && draft.value.problems).toEqual([
       'deadline_past',
+      'no_needs_form',
       'no_departments',
       'no_approver_step',
       'another_open',
@@ -381,6 +382,7 @@ describe('L&D Manager: set-up steps', () => {
   });
 
   it('saves the basics: version checked, audit without the instruction words', async () => {
+    repo.getCycle.mockResolvedValue(record({ needsFormId: null }));
     repo.updateBasics.mockResolvedValue(5);
     const { action, audits } = runtime('training_manager');
     const result = await action(defs.updatePlanCycleBasicsActionDefinition())({

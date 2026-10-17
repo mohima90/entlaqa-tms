@@ -248,6 +248,21 @@ describe.skipIf(!configured)('needs forms against PostgreSQL', () => {
     expect(defaultDelete).toBe('default');
 
     const other = await as((tx) => db.createNeedsForm(tx, { nameEn: 'Scratch', nameAr: 'مسودة' }));
+    // A planning cycle (even a draft) that uses the form keeps it from being deleted (migration 20261020190000).
+    const [cycle] = await as((tx) =>
+      tx.execute<{ id: string }>(sql`
+        insert into tms.plan_cycles (name_ar, name_en, period_start_on, period_end_on, deadline_on, needs_form_id)
+        values ('خطة', 'Plan', current_date, current_date + 300, current_date + 10, ${other}::uuid)
+        returning id`),
+    );
+    const inUse = await as((tx) => db.deleteNeedsForm(tx, other)).then(
+      () => 'deleted',
+      (e: unknown) => db.needsFormRefusalOf(e),
+    );
+    expect(inUse).toBe('in_use');
+    await as((tx) =>
+      tx.execute(sql`delete from tms.plan_cycles where id = ${cycle?.id ?? ''}::uuid`),
+    );
     await as((tx) => db.deleteNeedsForm(tx, other));
     expect(await as((tx) => db.getNeedsForm(tx, other))).toBeNull();
     await expect(as((tx) => db.deleteNeedsForm(tx, other))).rejects.toMatchObject({

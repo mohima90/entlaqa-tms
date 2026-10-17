@@ -167,6 +167,7 @@ describe('launch readiness (B5)', () => {
     status: 'draft' as const,
     deadline: '2026-11-01',
     today: '2026-10-17',
+    needsFormId: 'f1' as string | null,
     departmentCount: 3,
     steps: [
       DEFAULT_CHAIN[0] ?? DEFAULT_CHAIN[1]!,
@@ -185,6 +186,7 @@ describe('launch readiness (B5)', () => {
       launchProblems({
         ...ready,
         deadline: '2026-10-16',
+        needsFormId: null,
         departmentCount: 0,
         steps: [
           { kind: 'person', nameAr: 'م', nameEn: 'F', approverPersonId: null },
@@ -194,6 +196,7 @@ describe('launch readiness (B5)', () => {
       }),
     ).toEqual([
       'deadline_past',
+      'no_needs_form',
       'no_departments',
       'approver_missing',
       'approver_inactive',

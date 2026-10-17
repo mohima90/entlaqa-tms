@@ -39,7 +39,11 @@ export default async function NewPlanCyclePage({
   const form = (
     defaults: { periodStart: string; periodEnd: string; deadline: string },
     currency: string,
-    needsForms: readonly { id: string; name: { ar: string; en: string | null } }[],
+    needsForms: readonly {
+      id: string;
+      name: { ar: string; en: string | null };
+      isDefault: boolean;
+    }[],
   ) => (
     <CycleBasicsForm
       locale={locale}
@@ -50,7 +54,8 @@ export default async function NewPlanCyclePage({
         ...defaults,
         instructionsAr: '',
         instructionsEn: '',
-        needsFormId: '',
+        // The organization's default form is preselected (T-M3-10); the launch locks the chosen form.
+        needsFormId: needsForms.find((f) => f.isDefault)?.id ?? '',
       }}
       needsForms={needsForms.map((f) => ({ id: f.id, name: localName(locale, f.name) }))}
       currency={currency}

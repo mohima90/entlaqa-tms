@@ -818,7 +818,7 @@
         "instructionsHint": "Shown at the top of every needs form. Up to 4,000 characters.",
         "needsForm": "Needs form",
         "needsFormNone": "No form chosen",
-        "needsFormHint": "The form department heads fill in. Forms are built in the forms library, coming soon.",
+        "needsFormHint": "The form department heads fill in, from Planning → Needs forms. A cycle needs one to launch; the launch locks it.",
         "currency": "Amounts are in {currency}, your organization's currency (General settings)."
       },
       "scope": {
@@ -883,6 +883,7 @@
         "notReady": "Before you can launch:",
         "problems": {
           "deadline_past": "The deadline has passed. Choose a later date in Basics.",
+          "no_needs_form": "Choose the needs form in Basics.",
           "no_departments": "No department is in scope. Choose the scope.",
           "no_approver_step": "The approval chain needs at least one named person.",
           "approver_missing": "Name the approver of every person step.",
@@ -2442,6 +2443,7 @@
       "REQUIRED": "Fill this in.",
       "NAME_TAKEN": "Another form already has this name.",
       "NEEDS_FORM_LOCKED": "This form is used by a launched planning cycle. Duplicate it to make changes.",
+      "NEEDS_FORM_IN_USE": "A planning cycle uses this form, so it can’t be deleted.",
       "SYSTEM_FIELD": "The training topic and people fields stay required and shown, keep their type and can’t be deleted.",
       "SYSTEM_SECTION": "The section with the training topic and people fields can’t be hidden or deleted.",
       "SYSTEM_TYPE": "The people type belongs to the fixed people field.",

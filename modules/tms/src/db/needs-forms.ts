@@ -23,6 +23,7 @@ import type {
 export type NeedsFormRefusal =
   | 'not_allowed'
   | 'locked'
+  | 'in_use'
   | 'system'
   | 'default'
   | 'condition'
@@ -71,6 +72,10 @@ export function needsFormRefusalOf(error: unknown): NeedsFormRefusal {
       return 'condition';
     case 'JN005':
       return 'limit';
+    case '23503':
+      // A planning cycle uses the form (T-M3-04 × T-M3-10, migration 20261020190000).
+      if (pg.constraint === 'plan_cycles_needs_form_fkey') return 'in_use';
+      break;
     case '23505':
       if (pg.constraint === 'needs_forms_tenant_name_en_uq') return 'name_en_taken';
       if (pg.constraint === 'needs_forms_tenant_name_ar_uq') return 'name_ar_taken';

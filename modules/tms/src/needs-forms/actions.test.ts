@@ -250,6 +250,7 @@ describe('the library', () => {
       ['not_allowed', { code: 'FORBIDDEN' }],
       ['not_found', { code: 'NOT_FOUND' }],
       ['locked', { fieldErrors: [{ path: 'form', code: 'NEEDS_FORM_LOCKED' }] }],
+      ['in_use', { fieldErrors: [{ path: 'form', code: 'NEEDS_FORM_IN_USE' }] }],
       ['system', { fieldErrors: [{ path: 'field', code: 'SYSTEM_FIELD' }] }],
       ['default', { fieldErrors: [{ path: 'form', code: 'DEFAULT_FORM' }] }],
       ['condition', { fieldErrors: [{ path: 'condition', code: 'CONDITION_FIELD' }] }],

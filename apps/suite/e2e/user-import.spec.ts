@@ -250,7 +250,7 @@ test.describe('bulk user import', () => {
     await form.locator('#invite-email').fill(added);
     await form.locator('#invite-firstNameAr').fill('سلمان');
     await form.locator('#invite-familyNameAr').fill('العتيبي');
-    await form.getByRole('radio', { name: /^Learner/ }).check();
+    await form.getByRole('combobox', { name: /^Role/ }).selectOption({ label: 'Employee' });
     await form.getByRole('button', { name: 'Send invitation' }).click();
     // Kawadir: the code right away; then the invited tab.
     await expect(page.getByTestId('invitation-created-panel')).toBeVisible();

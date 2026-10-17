@@ -42,19 +42,17 @@ const pages = [
     path: '/ar/suite/admin/users/a1000000-0000-4000-8000-0000000000a1/roles',
     lang: 'ar',
     dir: 'rtl',
-    heading: 'تعديل الأدوار',
+    heading: 'تغيير الدور',
   },
   { path: '/ar/suite/admin/roles', lang: 'ar', dir: 'rtl', heading: 'الأدوار والصلاحيات' },
   // Settings → General (organization profile, T-M2-22; Kawadir layout, T-M2-43): the frame and the
   // "not available here" state without a database.
   { path: '/ar/suite/admin/settings', lang: 'ar', dir: 'rtl', heading: 'الإعدادات العامة' },
   { path: '/en/suite/admin/settings', lang: 'en', dir: 'ltr', heading: 'General settings' },
-  {
-    path: '/en/suite/admin/roles?role=auditor',
-    lang: 'en',
-    dir: 'ltr',
-    heading: 'Roles & permissions',
-  },
+  // A standard role's page (EP-ROLES): view only, without a database too.
+  { path: '/en/suite/admin/roles/hr_manager', lang: 'en', dir: 'ltr', heading: 'HR Manager' },
+  { path: '/ar/suite/admin/roles/learner', lang: 'ar', dir: 'rtl', heading: 'موظف' },
+  { path: '/en/suite/admin/roles/new', lang: 'en', dir: 'ltr', heading: 'Create role' },
 ] as const;
 
 function collectConsoleErrors(page: Page): string[] {
@@ -384,7 +382,7 @@ for (const locale of ['en', 'ar'] as const) {
   test(`${locale}: table cells never break inside a word, and wide tables scroll in their box`, async ({
     page,
   }) => {
-    await page.goto(`/${locale}/suite/admin/roles?role=hr_manager`);
+    await page.goto(`/${locale}/suite/admin/roles/hr_manager`);
     await expectReadableTables(page);
   });
 }

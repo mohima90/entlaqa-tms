@@ -27,7 +27,9 @@ async function inviteLearner(page: Page, invitee: string, locale: 'ar' | 'en') {
   await form.locator('#invite-email').fill(invitee);
   await form.locator('#invite-firstNameAr').fill('سلمى');
   await form.locator('#invite-familyNameAr').fill('الحربي');
-  await form.getByRole('radio', { name: locale === 'ar' ? /^متدرب/ : /^Learner/ }).check();
+  await form
+    .getByRole('combobox', { name: locale === 'ar' ? /^الدور/ : /^Role/ })
+    .selectOption({ label: locale === 'ar' ? 'موظف' : 'Employee' });
   await form.getByRole('radio', { name: locale === 'ar' ? 'العربية' : 'English' }).check();
   await form
     .getByRole('button', { name: locale === 'ar' ? 'إرسال الدعوة' : 'Send invitation' })
@@ -92,12 +94,10 @@ test.describe('invitations (admin side)', () => {
     const form = page.getByTestId('invite-user');
     // AAL1 Organization Admin: privileged roles are open, no authenticator code (PO decision, 14 Oct 2026).
     await expect(form.getByTestId('privileged-locked')).toHaveCount(0);
-    await expect(form.getByRole('radio', { name: /^Organization Admin/ })).toBeEnabled();
+    await expect(form.locator('#invite-role option[value="tenant_admin"]')).toBeEnabled();
     await expect(form.getByTestId('invite-notice')).toContainText('7 days');
-    // Separation of duties (BR-IAM-4, T-M2-16): explained next to the roles.
-    await expect(form.getByTestId('role-conflict-hint')).toContainText(
-      "Organization Admin is a setup-only role and can't be combined with any other role",
-    );
+    // One role per person (EP-ROLES): explained next to the role.
+    await expect(form.locator('#invite-role-hint')).toContainText('Each person has one role');
     await expectNoSeriousA11yViolations(page);
 
     // Required fields are reported inline
@@ -105,7 +105,7 @@ test.describe('invitations (admin side)', () => {
     await expect(page.getByTestId('invite-message')).toBeVisible();
     await expect(form.locator('#invite-email-error')).toBeVisible();
     await expect(form.locator('#invite-firstNameAr-error')).toHaveText('This field is required.');
-    await expect(form.locator('#invite-primary-error')).toHaveText('Choose a primary role.');
+    await expect(form.locator('#invite-role-error')).toHaveText('Choose a role.');
 
     await form.locator('#invite-email').fill(invitee.toUpperCase());
     await form.locator('#invite-firstNameAr').fill('نورة');
@@ -114,12 +114,9 @@ test.describe('invitations (admin side)', () => {
     await form.locator('#invite-firstNameEn').fill('Noura');
     await form.locator('#invite-familyNameEn').fill('Aldossari');
     await form.locator('#invite-employeeNumber').fill(`EMP-${run}`);
-    await form.getByRole('radio', { name: /^Training Coordinator/ }).check();
-    await form.getByRole('button', { name: 'Learner', exact: true }).click();
-    await expect(form.getByRole('button', { name: 'Learner', exact: true })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
+    await form
+      .getByRole('combobox', { name: /^Role/ })
+      .selectOption({ label: 'Training Coordinator' });
     await form.getByRole('radio', { name: 'English' }).check();
     await form.getByRole('button', { name: 'Send invitation' }).click();
 
@@ -186,16 +183,14 @@ test.describe('invitations (admin side)', () => {
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('دعوة مستخدم');
     const form = page.getByTestId('invite-user');
     await expect(form.getByTestId('invite-notice')).toContainText('تبقى الدعوة صالحة 7 أيام');
-    await expect(form.getByTestId('role-conflict-hint')).toContainText(
-      'مدير المنظمة دور إعداد فقط ولا يُجمع مع أي دور آخر',
-    );
+    await expect(form.locator('#invite-role-hint')).toContainText('لكل شخص دور واحد');
     await expectNoSeriousA11yViolations(page);
 
     const invite = async () => {
       await form.locator('#invite-email').fill(invitee);
       await form.locator('#invite-firstNameAr').fill('أحمد');
       await form.locator('#invite-familyNameAr').fill('منصور');
-      await form.getByRole('radio', { name: /^متدرب/ }).check();
+      await form.getByRole('combobox', { name: /^الدور/ }).selectOption({ label: 'موظف' });
       await form.getByRole('button', { name: 'إرسال الدعوة' }).click();
     };
     await invite();
@@ -310,7 +305,7 @@ test.describe('invitations (admin side)', () => {
 /**
  * Invitations left pending for the acceptance E2E (invite-accept.spec.ts): smoke.sh passes fresh
  * addresses, then reads each e-mailed link from Mailpit (the token exists only in the e-mail). Arabic
- * invitation, Learner with Line Manager as an additional role.
+ * invitation with the Employee role (one role per person, EP-ROLES).
  */
 const pendingInvitees = (process.env.INVITE_E2E_PENDING_EMAILS ?? '').split(',').filter(Boolean);
 
@@ -328,12 +323,7 @@ test.describe('invitations left pending (for the acceptance E2E)', () => {
       await form.locator('#invite-email').fill(invitee);
       await form.locator('#invite-firstNameAr').fill('ريم');
       await form.locator('#invite-familyNameAr').fill('العتيبي');
-      await form.getByRole('radio', { name: /^Learner/ }).check();
-      await form.getByRole('button', { name: 'Line Manager', exact: true }).click();
-      await expect(form.getByRole('button', { name: 'Line Manager', exact: true })).toHaveAttribute(
-        'aria-pressed',
-        'true',
-      );
+      await form.getByRole('combobox', { name: /^Role/ }).selectOption({ label: 'Employee' });
       await form.getByRole('radio', { name: 'العربية' }).check();
       await form.getByRole('button', { name: 'Send invitation' }).click();
       await expect(page.getByTestId('invitation-created-panel')).toBeVisible();

@@ -273,7 +273,15 @@ async function RoleMatrix({
             ))}
           </ul>
         </div>
-        <div className="overflow-x-auto">
+        {/* Scrolls on phones: focusable so the keyboard can scroll it too (WCAG 2.1.1; axe
+            scrollable-region-focusable — the table itself has nothing focusable). */}
+        <div
+          className="overflow-x-auto rounded-md focus-visible:outline-2 focus-visible:outline-offset-2"
+          // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- a scrollable region takes focus
+          tabIndex={0}
+          role="region"
+          aria-label={t('matrixCaption', { role: name })}
+        >
           <table className="w-full border-collapse text-start" data-testid="role-matrix">
             <caption className="sr-only">{t('matrixCaption', { role: name })}</caption>
             <thead>

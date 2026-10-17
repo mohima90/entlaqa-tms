@@ -11,7 +11,7 @@ import {
 } from './sign-in';
 
 /**
- * My profile (FR-IAM-16, T-M2-15a) with a real ordinary member (Line Manager + Learner, no user
+ * My profile (FR-IAM-16, T-M2-15a) with a real ordinary member (custom «Line Manager» role, no user
  * management rights) on the self-hosted stack (infra/docker/smoke.sh, after users.spec): own personal
  * details incl. Arabic digits and the interface language, then the password change. Skipped without
  * credentials (default CI run).

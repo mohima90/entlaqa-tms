@@ -235,9 +235,7 @@ describe('levels', () => {
       before: { id: 'l2' },
       after: null,
     });
-    expect(fine.executed.filter(isWrite)[0]?.sql).toContain(
-      'delete from platform.structure_levels',
-    );
+    expect(fine.executed.find(isWrite)?.sql).toContain('delete from platform.structure_levels');
     const raced = fakeTx([[], two, pgError('JO002')]);
     expect(await removeStructureLevel(raced.tx, 'l2', 1)).toEqual({
       ok: false,

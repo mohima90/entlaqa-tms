@@ -125,6 +125,8 @@ describe('reads', () => {
     expect(query).toContain("p.status = 'active'");
     expect(query).toContain("m.status <> 'revoked'");
     expect(query).toContain("i.status = 'pending'");
+    // C-M1: only roles still limited to a department count.
+    expect(query).toContain("cr.data_scope = 'departments'");
     // Before the unit columns exist (deploy window): no level, no role scopes read.
     const early = fakeTx([[unitRow('a', { level_ordinal: null })]], true);
     expect((await listStructureUnits(early.tx))[0]?.levelOrdinal).toBeNull();

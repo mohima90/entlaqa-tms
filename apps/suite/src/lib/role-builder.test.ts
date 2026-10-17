@@ -191,5 +191,9 @@ describe('builderFieldError', () => {
     });
     expect(builderFieldError('permissions.2', 'CUSTOM')?.field).toBe('permissions');
     expect(builderFieldError('role', 'ROLE_IN_USE')).toBeNull();
+    expect(builderFieldError('dataScope', 'SCOPE_UNITS_IN_USE')).toEqual({
+      field: 'dataScope',
+      key: 'scopeUnitsInUse',
+    });
   });
 });

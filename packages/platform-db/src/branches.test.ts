@@ -102,9 +102,19 @@ describe('writes', () => {
     expect(plain.executed[0]?.sql).toContain("'platform.departments:'");
     expect(plain.executed[1]?.sql).toContain("'platform.branches:'");
     expect(writes(plain).map((q) => q.sql.trim().split(/\s+/)[0])).toEqual(['insert']);
-    const hq = fakeTx([...LOCKS, [], [{ id: 'jed' }], [row('jed', { is_headquarters: true })]]);
-    await createBranch(hq.tx, { ...input, isHeadquarters: true });
+    const hq = fakeTx([
+      ...LOCKS,
+      [{ id: 'ruh' }],
+      [{ id: 'jed' }],
+      [row('jed', { is_headquarters: true })],
+    ]);
+    // C-9: the previous headquarters is reported, for the audit.
+    expect(await createBranch(hq.tx, { ...input, isHeadquarters: true })).toMatchObject({
+      ok: true,
+      headquartersMovedFrom: 'ruh',
+    });
     expect(writes(hq)[0]?.sql).toContain('set is_headquarters = false');
+    expect(writes(hq)[0]?.sql).toContain('returning id');
     const taken = fakeTx([
       ...LOCKS,
       pgError('23505', { constraint_name: 'branches_tenant_code_uq' }),
@@ -116,7 +126,7 @@ describe('writes', () => {
     const updated = fakeTx([
       ...LOCKS,
       [row('jed')],
-      [],
+      [{ id: 'ruh' }],
       [{ id: 'jed' }],
       [row('jed', { version: 2 })],
     ]);
@@ -125,6 +135,7 @@ describe('writes', () => {
     ).toMatchObject({
       ok: true,
       after: { version: 2 },
+      headquartersMovedFrom: 'ruh',
     });
     // The flag leaves every other branch first.
     expect(writes(updated)[0]?.params).toContain('jed');

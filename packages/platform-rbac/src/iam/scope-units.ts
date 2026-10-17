@@ -27,9 +27,14 @@ export const ScopeUnitField = z
 export interface ScopeUnitChoices {
   readonly units: readonly StructureUnitOption[];
   readonly levels: readonly StructureLevelLabel[];
+  /**
+   * The giver may see the structure (`platform.org.read` organization-wide). When false the list is empty
+   * because of that, not because the organization has no units — the picker says so (code review C-12).
+   */
+  readonly structureVisible: boolean;
 }
 
-export const NO_SCOPE_UNITS: ScopeUnitChoices = { units: [], levels: [] };
+export const NO_SCOPE_UNITS: ScopeUnitChoices = { units: [], levels: [], structureVisible: false };
 
 /** The picker's choices; nothing without `platform.org.read` organization-wide (the structure's names). */
 export async function loadScopeUnitChoices(
@@ -39,6 +44,7 @@ export async function loadScopeUnitChoices(
   return {
     units: await listStructureUnitOptions(ctx.tx),
     levels: await listStructureLevelLabels(ctx.tx),
+    structureVisible: true,
   };
 }
 

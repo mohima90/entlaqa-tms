@@ -8,7 +8,7 @@ export interface ScopeUnitTexts {
   readonly placeholder: string;
   /** Appended to units that cannot be picked («غير نشطة»). */
   readonly inactive: string;
-  /** The organization has no units yet. */
+  /** Why the list is empty: the organization has no units yet, or the giver cannot see the structure. */
   readonly none: string;
 }
 

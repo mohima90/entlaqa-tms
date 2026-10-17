@@ -157,7 +157,10 @@ export function builderFieldError(
     case 'description':
       return { field: 'description', key: 'description' };
     case 'dataScope':
-      return { field: 'dataScope', key: 'dataScope' };
+      return {
+        field: 'dataScope',
+        key: code === 'SCOPE_UNITS_IN_USE' ? 'scopeUnitsInUse' : 'dataScope',
+      };
     default:
       return path === 'permissions' || path.startsWith('permissions.')
         ? { field: 'permissions', key: 'permissions' }

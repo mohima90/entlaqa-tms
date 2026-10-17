@@ -61,7 +61,13 @@ export interface BranchUsage {
 }
 
 export type BranchOutcome =
-  | { readonly ok: true; readonly before: BranchRow | null; readonly after: BranchRow | null }
+  | {
+      readonly ok: true;
+      readonly before: BranchRow | null;
+      readonly after: BranchRow | null;
+      /** The branch that stopped being the headquarters because this one became it (C-9: audited). */
+      readonly headquartersMovedFrom?: string | null;
+    }
   | { readonly ok: false; readonly refusal: BranchRefusal; readonly usage?: BranchUsage };
 
 /** The live branches, headquarters first, then by Arabic name. */
@@ -142,16 +148,21 @@ async function branchById(tx: UserTx, id: string): Promise<BranchRow | null> {
 }
 
 /** The headquarters flag moves: an organization has one headquarters (branches_tenant_headquarters_uq). */
-async function clearHeadquarters(tx: UserTx, except: string | null): Promise<void> {
-  await tx.execute(sql`update platform.branches set is_headquarters = false
-    where is_headquarters and deleted_at is null and (${except}::uuid is null or id <> ${except}::uuid)`);
+async function clearHeadquarters(tx: UserTx, except: string | null): Promise<string | null> {
+  const rows = await tx.execute<{
+    id: string;
+  }>(sql`update platform.branches set is_headquarters = false
+    where is_headquarters and deleted_at is null and (${except}::uuid is null or id <> ${except}::uuid)
+    returning id`);
+  return rows[0]?.id ?? null;
 }
 
 export async function createBranch(tx: UserTx, input: BranchInput): Promise<BranchOutcome> {
   await lockBranches(tx);
   let id: string;
+  let movedFrom: string | null = null;
   try {
-    if (input.isHeadquarters) await clearHeadquarters(tx, null);
+    if (input.isHeadquarters) movedFrom = await clearHeadquarters(tx, null);
     const [row] = await tx.execute<{ id: string }>(sql`
       insert into platform.branches (code, name_ar, name_en, parent_branch_id, country_code, city_ar, city_en,
                                      timezone, is_headquarters)
@@ -163,7 +174,12 @@ export async function createBranch(tx: UserTx, input: BranchInput): Promise<Bran
   } catch (error) {
     return { ok: false, refusal: branchRefusalOf(error) };
   }
-  return { ok: true, before: null, after: await branchById(tx, id) };
+  return {
+    ok: true,
+    before: null,
+    after: await branchById(tx, id),
+    headquartersMovedFrom: movedFrom,
+  };
 }
 
 async function writeBranch(
@@ -190,8 +206,9 @@ export function updateBranch(
   version: number,
   input: BranchInput,
 ): Promise<BranchOutcome> {
-  return writeBranch(tx, id, version, async () => {
-    if (input.isHeadquarters) await clearHeadquarters(tx, id);
+  let movedFrom: string | null = null;
+  const written = writeBranch(tx, id, version, async () => {
+    if (input.isHeadquarters) movedFrom = await clearHeadquarters(tx, id);
     return tx.execute(sql`update platform.branches
       set code = ${input.code}, name_ar = ${input.nameAr}, name_en = ${input.nameEn},
           parent_branch_id = ${input.parentBranchId}::uuid, country_code = ${input.countryCode},
@@ -200,6 +217,9 @@ export function updateBranch(
       where id = ${id}::uuid and version = ${version} and deleted_at is null
       returning id`);
   });
+  return written.then((outcome) =>
+    outcome.ok && movedFrom !== null ? { ...outcome, headquartersMovedFrom: movedFrom } : outcome,
+  );
 }
 
 export function setBranchStatus(

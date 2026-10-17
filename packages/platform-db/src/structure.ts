@@ -136,12 +136,17 @@ export async function listStructureLevelLabels(
  * deleted. Ordered by parent, then sort order and Arabic name (the page builds the tree).
  */
 export async function listStructureUnits(tx: UserTx): Promise<readonly StructureUnitRow[]> {
+  // Only roles still limited to a department count (C-M1, as the database's delete guard does).
   const scopes = (await roleScopeUnitsExist(tx))
     ? sql`(select count(*) from platform.role_assignments ra
            join platform.tenant_memberships m on m.tenant_id = ra.tenant_id and m.id = ra.membership_id
-           where ra.tenant_id = d.tenant_id and ra.scope_unit_id = d.id and m.status <> 'revoked')
+           join platform.custom_roles cr on cr.tenant_id = ra.tenant_id and cr.code = ra.role_code
+           where ra.tenant_id = d.tenant_id and ra.scope_unit_id = d.id and m.status <> 'revoked'
+             and cr.data_scope = 'departments')
           + (select count(*) from platform.invitations i
-             where i.tenant_id = d.tenant_id and i.scope_unit_id = d.id and i.status = 'pending')`
+             join platform.custom_roles cr on cr.tenant_id = i.tenant_id and cr.code = i.primary_role
+             where i.tenant_id = d.tenant_id and i.scope_unit_id = d.id and i.status = 'pending'
+               and cr.data_scope = 'departments')`
     : sql`0`;
   const level = await levelColumn(tx);
   const rows = await tx.execute<{

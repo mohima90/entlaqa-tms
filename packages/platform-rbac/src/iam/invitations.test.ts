@@ -569,7 +569,7 @@ describe('invitation queries', () => {
         managers: [{ personId: 'm1' }],
         orgUnits: units,
         privilegedAccess: 'denied',
-        scopeUnits: { units: UNITS, levels: LEVELS },
+        scopeUnits: { units: UNITS, levels: LEVELS, structureVisible: true },
       },
     });
     for (const aal of ['aal1', 'aal2'] as const) {

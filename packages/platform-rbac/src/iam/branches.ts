@@ -154,13 +154,33 @@ export interface BranchSaved {
   readonly id: string;
   readonly before: BranchRow | null;
   readonly after: BranchRow | null;
+  /** The previous headquarters, whose flag this change cleared (C-9), or null. */
+  readonly headquartersMovedFrom: string | null;
 }
 
 function result(outcome: BranchOutcome) {
   if (!outcome.ok) return err(refusalError(outcome));
   const row = outcome.after ?? outcome.before;
   if (!row) throw new Error('branch outcome without a row');
-  return ok({ id: row.id, before: outcome.before, after: outcome.after });
+  return ok({
+    id: row.id,
+    before: outcome.before,
+    after: outcome.after,
+    headquartersMovedFrom: outcome.headquartersMovedFrom ?? null,
+  });
+}
+
+/** The previous headquarters' flag change, recorded with the change that moved it (C-9). */
+function headquartersMove(output: BranchSaved) {
+  return output.headquartersMovedFrom
+    ? {
+        headquartersMovedFrom: {
+          branchId: output.headquartersMovedFrom,
+          before: { isHeadquarters: true },
+          after: { isHeadquarters: false },
+        },
+      }
+    : {};
 }
 
 export function createBranchActionDefinition(): ActionDefinition<
@@ -176,7 +196,7 @@ export function createBranchActionDefinition(): ActionDefinition<
       action: 'platform.org.branch_created',
       entityType: 'branch',
       entityId: output.id,
-      data: { before: null, after: branchAudit(output.after) },
+      data: { before: null, after: branchAudit(output.after), ...headquartersMove(output) },
     }),
   };
 }
@@ -198,7 +218,11 @@ export function updateBranchActionDefinition(): ActionDefinition<
       action: 'platform.org.branch_updated',
       entityType: 'branch',
       entityId: output.id,
-      data: { before: branchAudit(output.before), after: branchAudit(output.after) },
+      data: {
+        before: branchAudit(output.before),
+        after: branchAudit(output.after),
+        ...headquartersMove(output),
+      },
     }),
   };
 }

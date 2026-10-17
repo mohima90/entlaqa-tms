@@ -123,7 +123,7 @@ async function rolesForm(
         options={roleOptions(view.choices, locale)}
         selectTexts={await roleSelectTexts(locale)}
         scopeUnits={scopeUnitChoices(view.scopeUnits.units, view.scopeUnits.levels, locale)}
-        unitTexts={await scopeUnitTexts(locale)}
+        unitTexts={await scopeUnitTexts(locale, view.scopeUnits.structureVisible)}
         labels={await editRoleLabels(locale)}
         errors={await profileErrorTexts(locale)}
         backHref={profileHref}

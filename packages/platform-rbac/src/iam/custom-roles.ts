@@ -115,6 +115,14 @@ function refusal(outcome: Extract<CustomRoleOutcome, { ok: false }>): AppError {
           ? { members: outcome.holders.members, invitations: outcome.holders.invitations }
           : undefined,
       );
+    case 'scope_units_in_use':
+      // C-M1: still given for units — the scope stays «A department» until those people change.
+      return validation(
+        [{ path: 'dataScope', code: 'SCOPE_UNITS_IN_USE' }],
+        outcome.holders
+          ? { members: outcome.holders.members, invitations: outcome.holders.invitations }
+          : undefined,
+      );
   }
 }
 

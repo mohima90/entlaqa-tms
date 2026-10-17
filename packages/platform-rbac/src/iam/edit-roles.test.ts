@@ -376,7 +376,11 @@ describe('changing the role', () => {
   it('the edit-role page offers the units and levels to members who read the structure', async () => {
     const query = createDefineQuery(runtime(['hr_manager']).rt)(editRolesQueryDefinition());
     const result = await query({ personId: SARA });
-    expect(result.ok && result.value.scopeUnits).toEqual({ units: UNITS, levels: LEVELS });
+    expect(result.ok && result.value.scopeUnits).toEqual({
+      units: UNITS,
+      levels: LEVELS,
+      structureVisible: true,
+    });
   });
 
   it('an unknown role is a field error before any write', async () => {

@@ -140,7 +140,19 @@ export function RoleBuilderForm(props: RoleBuilderFormProps) {
         const next: FieldErrors = {};
         for (const fieldError of result.error.fieldErrors ?? []) {
           const mapped = builderFieldError(fieldError.path, fieldError.code);
-          if (mapped) next[mapped.field] ??= text(`fieldErrors.${mapped.key}`);
+          // Counts (e.g. who still holds the role with a unit, C-M1) fill the message's placeholders.
+          if (mapped) {
+            next[mapped.field] ??= fillText(
+              text(`fieldErrors.${mapped.key}`),
+              Object.fromEntries(
+                Object.entries(result.error.params ?? {}).map(([k, v]) => [
+                  k,
+                  typeof v === 'boolean' ? String(v) : v,
+                ]),
+              ),
+              props.locale,
+            );
+          }
         }
         setFieldErrors(next);
       }

@@ -211,6 +211,18 @@ describe('update and delete', () => {
     db.updateCustomRole.mockResolvedValueOnce({ ok: false, refusal: 'not_found' });
     const missing = await update({ ...input, id: ROLE_ID, version: 1 });
     expect(!missing.ok && missing.error.code).toBe('NOT_FOUND');
+    // C-M1: still given for units — the scope cannot leave «A department», with the numbers.
+    db.updateCustomRole.mockResolvedValueOnce({
+      ok: false,
+      refusal: 'scope_units_in_use',
+      holders: { members: 2, invitations: 1 },
+    });
+    const units = await update({ ...input, id: ROLE_ID, version: 1 });
+    expect(!units.ok && units.error).toMatchObject({
+      code: 'VALIDATION_FAILED',
+      fieldErrors: [{ path: 'dataScope', code: 'SCOPE_UNITS_IN_USE' }],
+      params: { members: 2, invitations: 1 },
+    });
     const hr = await createDefineAction(runtime(['hr_manager']).rt)(
       updateCustomRoleActionDefinition(),
     )({ ...input, id: ROLE_ID, version: 1 });

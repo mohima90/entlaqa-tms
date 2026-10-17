@@ -169,7 +169,7 @@ async function inviteForm(
         roles={roleOptions(view.roles, locale)}
         roleTexts={await roleSelectTexts(locale)}
         scopeUnits={scopeUnitChoices(view.scopeUnits.units, view.scopeUnits.levels, locale)}
-        unitTexts={await scopeUnitTexts(locale)}
+        unitTexts={await scopeUnitTexts(locale, view.scopeUnits.structureVisible)}
         labels={labels}
         fieldTexts={fieldTexts}
         errors={await profileErrorTexts(locale)}

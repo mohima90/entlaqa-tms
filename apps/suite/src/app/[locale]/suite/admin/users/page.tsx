@@ -307,7 +307,7 @@ async function UsersList({
           errors: await profileErrorTexts(locale),
           // The unit picker of department-limited custom roles (EP-ORG, T-M3-09).
           scopeUnits: scopeUnitChoices(view.scopeUnits.units, view.scopeUnits.levels, locale),
-          unitTexts: await scopeUnitTexts(locale),
+          unitTexts: await scopeUnitTexts(locale, view.scopeUnits.structureVisible),
         }
       : null;
   const mayEditRole = (row: UsersListView['list']['rows'][number]) =>

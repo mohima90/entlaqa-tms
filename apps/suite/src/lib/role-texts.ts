@@ -54,13 +54,20 @@ export async function roleSelectTexts(locale: 'ar' | 'en'): Promise<RoleSelectTe
  * The unit picker's texts (department-limited custom roles, EP-ORG / T-M3-09; shared by the invite form and
  * the edit-role form).
  */
-export async function scopeUnitTexts(locale: 'ar' | 'en'): Promise<ScopeUnitTexts> {
+/**
+ * Texts of the unit picker. `structureVisible` false (the giver lacks platform.org.read): the empty list is
+ * explained as "you can't see the structure", not "no units yet" (C-12).
+ */
+export async function scopeUnitTexts(
+  locale: 'ar' | 'en',
+  structureVisible = true,
+): Promise<ScopeUnitTexts> {
   const t = await getTranslations({ locale, namespace: 'editRoles.unit' });
   return {
     label: t('label'),
     hint: t('hint'),
     placeholder: t('placeholder'),
     inactive: t('inactive'),
-    none: t('none'),
+    none: structureVisible ? t('none') : t('structureHidden'),
   };
 }

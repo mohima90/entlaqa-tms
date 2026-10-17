@@ -62,6 +62,8 @@ export async function roleBuilderTexts(locale: 'ar' | 'en'): Promise<Record<stri
     KEYS.filter((k) => k !== 'countLabel').map((k) => [k, t(k)]),
   );
   texts.countLabel = String(t.raw('countLabel'));
+  // Raw: the form fills `{members}` / `{invitations}` from the refusal (C-M1).
+  texts['fieldErrors.scopeUnitsInUse'] = String(t.raw('fieldErrors.scopeUnitsInUse'));
   for (const scope of SCOPES) {
     texts[`scopes.${scope}.label`] = t(`scopes.${scope}.label`);
     texts[`scopes.${scope}.hint`] = t(`scopes.${scope}.hint`);

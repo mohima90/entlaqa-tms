@@ -447,6 +447,32 @@ describe('branches (FR-ADM-04)', () => {
       expect.anything(),
       expect.objectContaining({ action: 'platform.org.branch_created', entityId: BRANCH }),
     );
+    // C-9: a new headquarters records the previous one's flag change.
+    const OLD_HQ = '99999999-9999-4999-8999-999999999999';
+    db.createBranch.mockResolvedValueOnce({
+      ok: true,
+      before: null,
+      after: branch(),
+      headquartersMovedFrom: OLD_HQ,
+    });
+    await createDefineAction(rt)(createBranchActionDefinition())({
+      ...branchForm,
+      isHeadquarters: true,
+    });
+    expect(writeAudit).toHaveBeenLastCalledWith(
+      TX,
+      expect.anything(),
+      expect.objectContaining({
+        action: 'platform.org.branch_created',
+        data: expect.objectContaining({
+          headquartersMovedFrom: {
+            branchId: OLD_HQ,
+            before: { isHeadquarters: true },
+            after: { isHeadquarters: false },
+          },
+        }),
+      }),
+    );
     const update = createDefineAction(rt)(updateBranchActionDefinition());
     const self = await update({ ...branchForm, parentBranchId: BRANCH, id: BRANCH, version: 1 });
     expect(!self.ok && self.error.fieldErrors).toEqual([

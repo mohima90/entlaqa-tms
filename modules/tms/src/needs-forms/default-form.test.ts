@@ -13,7 +13,9 @@ import { validateNeedsAnswers } from './validate-answers';
 
 const migrationsDir = new URL('../../../../supabase/migrations/', import.meta.url).pathname;
 const seed = () => {
-  const file = readdirSync(migrationsDir).find((f) => f.endsWith('_tms__seed_needs_forms_for_new_organizations.sql'));
+  const file = readdirSync(migrationsDir).find((f) =>
+    f.endsWith('_tms__seed_needs_forms_for_new_organizations.sql'),
+  );
   if (!file) throw new Error('seed migration not found');
   return readFileSync(join(migrationsDir, file), 'utf8');
 };
@@ -69,14 +71,26 @@ describe('the default needs form (business flow EP-PLN §12)', () => {
     let n = 0;
     const newId = () => `id-${String((n += 1))}`;
     const full = templateForm({ newId, name: DEFAULT_FORM_NAME, isDefault: true, full: true });
-    const blank = templateForm({ newId, name: { en: 'Blank', ar: 'فارغ' }, isDefault: false, full: false });
+    const blank = templateForm({
+      newId,
+      name: { en: 'Blank', ar: 'فارغ' },
+      isDefault: false,
+      full: false,
+    });
     expect(full.fieldCount).toBe(10);
-    expect(blank.sections[0]?.fields.map((f) => f.label.en)).toEqual([TOPIC_FIELD.label.en, PEOPLE_FIELD.label.en]);
+    expect(blank.sections[0]?.fields.map((f) => f.label.en)).toEqual([
+      TOPIC_FIELD.label.en,
+      PEOPLE_FIELD.label.en,
+    ]);
     const section = full.sections[0];
     const topic = section?.fields[0];
     const people = section?.fields[4];
     if (!section || !topic || !people) throw new Error('fixture');
-    expect(validateNeedsAnswers(full, { [section.id]: [{ [topic.id]: 'Excel', [people.id]: { count: 3 } }] }).ok).toBe(true);
+    expect(
+      validateNeedsAnswers(full, {
+        [section.id]: [{ [topic.id]: 'Excel', [people.id]: { count: 3 } }],
+      }).ok,
+    ).toBe(true);
     expect(validateNeedsAnswers(full, { [section.id]: [] }).ok).toBe(false);
   });
 });

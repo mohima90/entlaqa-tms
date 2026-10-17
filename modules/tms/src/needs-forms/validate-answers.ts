@@ -1,4 +1,11 @@
-import { type AppError, type FieldError, type Result, appError, err, ok } from '@jadarat/platform-core';
+import {
+  type AppError,
+  type FieldError,
+  type Result,
+  appError,
+  err,
+  ok,
+} from '@jadarat/platform-core';
 import { type Entry, isFieldShown } from './conditions';
 import type { NeedsFormDefinition, NeedsFormField, NeedsFormSection } from './model';
 
@@ -81,7 +88,9 @@ function checkDate(value: unknown): Check {
   if (!m) return problem('INVALID_DATE');
   const [year, month, day] = [Number(m[1]), Number(m[2]), Number(m[3])];
   const date = new Date(Date.UTC(year, month - 1, day));
-  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
+  return date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
     ? valid(value.trim())
     : problem('INVALID_DATE');
 }
@@ -106,7 +115,10 @@ function checkPeople(field: NeedsFormField, value: unknown, context: ValidationC
   let ids: string[] | undefined;
   if (personIds !== undefined) {
     if (mode === 'count') return problem('NAMES_NOT_ALLOWED');
-    if (!Array.isArray(personIds) || personIds.some((id) => typeof id !== 'string' || !UUID_RE.test(id))) {
+    if (
+      !Array.isArray(personIds) ||
+      personIds.some((id) => typeof id !== 'string' || !UUID_RE.test(id))
+    ) {
       return problem('INVALID_PERSON');
     }
     ids = (personIds as string[]).map((id) => id.toLowerCase());
@@ -121,8 +133,10 @@ function checkPeople(field: NeedsFormField, value: unknown, context: ValidationC
   }
   if (count !== undefined && count !== null) {
     if (mode === 'employees') return problem('NAMES_REQUIRED');
-    if (typeof count !== 'number' || !Number.isInteger(count) || count < 1) return problem('INVALID_COUNT');
-    if (count > ANSWER_LIMITS.maxPeople) return problem('TOO_MANY_PEOPLE', { max: ANSWER_LIMITS.maxPeople });
+    if (typeof count !== 'number' || !Number.isInteger(count) || count < 1)
+      return problem('INVALID_COUNT');
+    if (count > ANSWER_LIMITS.maxPeople)
+      return problem('TOO_MANY_PEOPLE', { max: ANSWER_LIMITS.maxPeople });
     if (ids && count < ids.length) return problem('COUNT_BELOW_NAMES', { names: ids.length });
     return valid(ids ? { count, personIds: ids } : { count });
   }
@@ -138,7 +152,8 @@ function checkAnswer(field: NeedsFormField, value: unknown, context: ValidationC
     case 'textarea':
       return checkText(value, ANSWER_LIMITS.textarea);
     case 'number': {
-      const n = typeof value === 'string' && NUMERIC_RE.test(value.trim()) ? Number(value.trim()) : value;
+      const n =
+        typeof value === 'string' && NUMERIC_RE.test(value.trim()) ? Number(value.trim()) : value;
       if (typeof n !== 'number' || !Number.isFinite(n)) return problem('INVALID_NUMBER');
       return Math.abs(n) > ANSWER_LIMITS.maxAbsNumber ? problem('INVALID_NUMBER') : valid(n);
     }
@@ -164,7 +179,8 @@ function checkAnswer(field: NeedsFormField, value: unknown, context: ValidationC
         ? valid(value)
         : problem('NOT_AN_OPTION');
     case 'multiselect': {
-      if (!Array.isArray(value) || value.some((v) => typeof v !== 'string')) return problem('INVALID_TYPE');
+      if (!Array.isArray(value) || value.some((v) => typeof v !== 'string'))
+        return problem('INVALID_TYPE');
       const values = value as string[];
       if (new Set(values).size !== values.length) return problem('OPTION_TWICE');
       return values.every((v) => field.options.some((o) => o.value === v))
@@ -175,7 +191,9 @@ function checkAnswer(field: NeedsFormField, value: unknown, context: ValidationC
       if (typeof value !== 'boolean') return problem('INVALID_TYPE');
       return field.required && !value ? problem('REQUIRED') : valid(value);
     case 'file':
-      return typeof value === 'string' && UUID_RE.test(value) ? valid(value.toLowerCase()) : problem('INVALID_FILE');
+      return typeof value === 'string' && UUID_RE.test(value)
+        ? valid(value.toLowerCase())
+        : problem('INVALID_FILE');
     case 'people':
       return checkPeople(field, value, context);
   }
@@ -197,7 +215,8 @@ export function validateEntry(
     return { value, errors: [{ path, code: 'INVALID_ENTRY' }] };
   }
   for (const key of Object.keys(entry)) {
-    if (!section.fields.some((f) => f.id === key)) errors.push({ path: `${path}.${key}`, code: 'UNKNOWN_FIELD' });
+    if (!section.fields.some((f) => f.id === key))
+      errors.push({ path: `${path}.${key}`, code: 'UNKNOWN_FIELD' });
   }
   const answers: Entry = entry;
   for (const field of section.fields) {
@@ -232,10 +251,15 @@ export function validateNeedsAnswers(
   const errors: FieldError[] = [];
   const clean: CleanAnswers = {};
   if (!isPlainObject(answers)) {
-    return err(appError('VALIDATION_FAILED', { fieldErrors: [{ path: 'sections', code: 'INVALID_ANSWERS' }] }));
+    return err(
+      appError('VALIDATION_FAILED', {
+        fieldErrors: [{ path: 'sections', code: 'INVALID_ANSWERS' }],
+      }),
+    );
   }
   for (const key of Object.keys(answers)) {
-    if (!form.sections.some((s) => s.id === key)) errors.push({ path: `sections.${key}`, code: 'UNKNOWN_SECTION' });
+    if (!form.sections.some((s) => s.id === key))
+      errors.push({ path: `sections.${key}`, code: 'UNKNOWN_SECTION' });
   }
   for (const section of form.sections) {
     if (!section.visible) continue;
@@ -261,5 +285,7 @@ export function validateNeedsAnswers(
       return checked.value;
     });
   }
-  return errors.length > 0 ? err(appError('VALIDATION_FAILED', { fieldErrors: errors })) : ok(clean);
+  return errors.length > 0
+    ? err(appError('VALIDATION_FAILED', { fieldErrors: errors }))
+    : ok(clean);
 }

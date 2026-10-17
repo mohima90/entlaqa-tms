@@ -55,7 +55,17 @@ function uuidForm(over = {}) {
   return {
     ...base,
     sections: [
-      { ...needs, id: SECTION, fields: needs.fields.map((f) => (f.id === 'level' ? { ...f, id: FIELD } : f)).map((f) => (f.condition?.fieldId === 'level' ? { ...f, condition: { ...f.condition, fieldId: FIELD } } : f)) },
+      {
+        ...needs,
+        id: SECTION,
+        fields: needs.fields
+          .map((f) => (f.id === 'level' ? { ...f, id: FIELD } : f))
+          .map((f) =>
+            f.condition?.fieldId === 'level'
+              ? { ...f, condition: { ...f.condition, fieldId: FIELD } }
+              : f,
+          ),
+      },
       extra,
     ],
   };
@@ -78,7 +88,9 @@ function runtime(role: string | null) {
     withUserTx: (_c, fn) => fn(TX),
     loadSessionFacts: () => Promise.resolve({ active: true, aal2: false }),
     loadGrants: () =>
-      Promise.resolve(role ? grantsForAssignments([{ roleCode: role }], { headedDepartmentIds: ['d1'] }) : []),
+      Promise.resolve(
+        role ? grantsForAssignments([{ roleCode: role }], { headedDepartmentIds: ['d1'] }) : [],
+      ),
     resolveResource: () => Promise.resolve(null),
     writeAudit,
     logError: vi.fn(),
@@ -86,7 +98,18 @@ function runtime(role: string | null) {
   return { rt, writeAudit };
 }
 
-const summaries = [{ id: FORM, name: { en: 'Form', ar: 'نموذج' }, isDefault: false, isActive: true, lockedAt: null, version: 1, sectionCount: 2, fieldCount: 13 }];
+const summaries = [
+  {
+    id: FORM,
+    name: { en: 'Form', ar: 'نموذج' },
+    isDefault: false,
+    isActive: true,
+    lockedAt: null,
+    version: 1,
+    sectionCount: 2,
+    fieldCount: 13,
+  },
+];
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -105,10 +128,12 @@ describe('who reads and designs needs forms (T-M3-10)', () => {
       ok({ forms: summaries, canManage: true }),
     );
     const tc = runtime('training_coordinator');
-    expect(await createDefineQuery(tc.rt)(actions.needsFormQueryDefinition())({ formId: FORM })).toEqual(
-      ok({ form: uuidForm(), canManage: false }),
+    expect(
+      await createDefineQuery(tc.rt)(actions.needsFormQueryDefinition())({ formId: FORM }),
+    ).toEqual(ok({ form: uuidForm(), canManage: false }));
+    const refused = await createDefineAction(tc.rt)(actions.createNeedsFormActionDefinition())(
+      names,
     );
-    const refused = await createDefineAction(tc.rt)(actions.createNeedsFormActionDefinition())(names);
     expect(!refused.ok && refused.error.code).toBe('FORBIDDEN');
     expect(db.createNeedsForm).not.toHaveBeenCalled();
   });
@@ -118,7 +143,9 @@ describe('who reads and designs needs forms (T-M3-10)', () => {
       const { rt } = runtime(role);
       const read = await createDefineQuery(rt)(actions.needsFormsLibraryQueryDefinition())({});
       expect(!read.ok && read.error.code, String(role)).toBe('FORBIDDEN');
-      const write = await createDefineAction(rt)(actions.deleteNeedsFormActionDefinition())({ formId: FORM });
+      const write = await createDefineAction(rt)(actions.deleteNeedsFormActionDefinition())({
+        formId: FORM,
+      });
       expect(!write.ok && write.error.code, String(role)).toBe('FORBIDDEN');
     }
     expect(db.listNeedsForms).not.toHaveBeenCalled();
@@ -127,9 +154,14 @@ describe('who reads and designs needs forms (T-M3-10)', () => {
 
   it('validates input before anything else', async () => {
     const { rt } = runtime('training_manager');
-    const bad = await createDefineAction(rt)(actions.createNeedsFormActionDefinition())({ nameEn: ' ', nameAr: 'x'.repeat(121) });
+    const bad = await createDefineAction(rt)(actions.createNeedsFormActionDefinition())({
+      nameEn: ' ',
+      nameAr: 'x'.repeat(121),
+    });
     expect(!bad.ok && bad.error.code).toBe('VALIDATION_FAILED');
-    const notUuid = await createDefineQuery(rt)(actions.needsFormQueryDefinition())({ formId: "1' or '1'='1" });
+    const notUuid = await createDefineQuery(rt)(actions.needsFormQueryDefinition())({
+      formId: "1' or '1'='1",
+    });
     expect(!notUuid.ok && notUuid.error.code).toBe('VALIDATION_FAILED');
     expect(db.getNeedsForm).not.toHaveBeenCalled();
   });
@@ -139,7 +171,9 @@ describe('the library', () => {
   it('creates, duplicates, renames, sets the default and switches forms off — audited', async () => {
     const { rt, writeAudit } = runtime('training_manager');
     const run = createDefineAction(rt);
-    expect(await run(actions.createNeedsFormActionDefinition())(names)).toEqual(ok({ formId: FORM, forms: summaries }));
+    expect(await run(actions.createNeedsFormActionDefinition())(names)).toEqual(
+      ok({ formId: FORM, forms: summaries }),
+    );
     expect(db.createNeedsForm).toHaveBeenCalledWith(TX, names);
     expect(writeAudit).toHaveBeenLastCalledWith(TX, expect.anything(), {
       action: 'tms.needs_form.created',
@@ -148,34 +182,60 @@ describe('the library', () => {
       data: {},
     });
     await run(actions.duplicateNeedsFormActionDefinition())({ formId: FORM, ...names });
-    expect(writeAudit).toHaveBeenLastCalledWith(TX, expect.anything(), expect.objectContaining({ action: 'tms.needs_form.duplicated', data: { sourceFormId: FORM } }));
+    expect(writeAudit).toHaveBeenLastCalledWith(
+      TX,
+      expect.anything(),
+      expect.objectContaining({
+        action: 'tms.needs_form.duplicated',
+        data: { sourceFormId: FORM },
+      }),
+    );
     await run(actions.renameNeedsFormActionDefinition())({ formId: FORM, version: 1, ...names });
-    expect(db.renameNeedsForm).toHaveBeenCalledWith(TX, FORM, 1, { formId: FORM, version: 1, ...names });
+    expect(db.renameNeedsForm).toHaveBeenCalledWith(TX, FORM, 1, {
+      formId: FORM,
+      version: 1,
+      ...names,
+    });
     await run(actions.setDefaultNeedsFormActionDefinition())({ formId: FORM });
     expect(db.setDefaultNeedsForm).toHaveBeenCalledWith(TX, FORM);
     await run(actions.setNeedsFormActiveActionDefinition())({ formId: FORM, active: false });
     expect(db.setNeedsFormActive).toHaveBeenCalledWith(TX, FORM, false);
-    expect(await run(actions.deleteNeedsFormActionDefinition())({ formId: FORM })).toEqual(ok({ formId: FORM, forms: summaries }));
+    expect(await run(actions.deleteNeedsFormActionDefinition())({ formId: FORM })).toEqual(
+      ok({ formId: FORM, forms: summaries }),
+    );
   });
 
   it('refuses switching off or deleting the default form, deleting a locked one, unknown forms', async () => {
     const { rt } = runtime('training_manager');
     const run = createDefineAction(rt);
     db.listNeedsForms.mockResolvedValue([{ ...summaries[0], isDefault: true }]);
-    const off = await run(actions.setNeedsFormActiveActionDefinition())({ formId: FORM, active: false });
+    const off = await run(actions.setNeedsFormActiveActionDefinition())({
+      formId: FORM,
+      active: false,
+    });
     expect(!off.ok && off.error.fieldErrors).toEqual([{ path: 'form', code: 'DEFAULT_FORM' }]);
     const del = await run(actions.deleteNeedsFormActionDefinition())({ formId: FORM });
     expect(!del.ok && del.error.fieldErrors).toEqual([{ path: 'form', code: 'DEFAULT_FORM' }]);
-    db.listNeedsForms.mockResolvedValue([{ ...summaries[0], lockedAt: '2026-11-01T00:00:00.000Z' }]);
+    db.listNeedsForms.mockResolvedValue([
+      { ...summaries[0], lockedAt: '2026-11-01T00:00:00.000Z' },
+    ]);
     const locked = await run(actions.deleteNeedsFormActionDefinition())({ formId: FORM });
-    expect(!locked.ok && locked.error.fieldErrors).toEqual([{ path: 'form', code: 'NEEDS_FORM_LOCKED' }]);
+    expect(!locked.ok && locked.error.fieldErrors).toEqual([
+      { path: 'form', code: 'NEEDS_FORM_LOCKED' },
+    ]);
     db.listNeedsForms.mockResolvedValue([]);
     const gone = await run(actions.deleteNeedsFormActionDefinition())({ formId: FORM });
     expect(!gone.ok && gone.error.code).toBe('NOT_FOUND');
-    const goneActive = await run(actions.setNeedsFormActiveActionDefinition())({ formId: FORM, active: true });
+    const goneActive = await run(actions.setNeedsFormActiveActionDefinition())({
+      formId: FORM,
+      active: true,
+    });
     expect(!goneActive.ok && goneActive.error.code).toBe('NOT_FOUND');
     db.duplicateNeedsForm.mockResolvedValue(null);
-    const copy = await run(actions.duplicateNeedsFormActionDefinition())({ formId: FORM, ...names });
+    const copy = await run(actions.duplicateNeedsFormActionDefinition())({
+      formId: FORM,
+      ...names,
+    });
     expect(!copy.ok && copy.error.code).toBe('NOT_FOUND');
     expect(db.deleteNeedsForm).not.toHaveBeenCalled();
   });
@@ -197,34 +257,85 @@ describe('the library', () => {
     ];
     for (const [refusal, expected] of cases) {
       db.renameNeedsForm.mockRejectedValueOnce(new db.NeedsFormRefused(refusal));
-      const result = await run(actions.renameNeedsFormActionDefinition())({ formId: FORM, version: 1, ...names });
+      const result = await run(actions.renameNeedsFormActionDefinition())({
+        formId: FORM,
+        version: 1,
+        ...names,
+      });
       expect(!result.ok && result.error, refusal).toMatchObject(expected as object);
     }
     // Anything else stays internal (logged with a correlation id).
     db.renameNeedsForm.mockRejectedValueOnce(new Error('boom'));
-    const internal = await run(actions.renameNeedsFormActionDefinition())({ formId: FORM, version: 1, ...names });
+    const internal = await run(actions.renameNeedsFormActionDefinition())({
+      formId: FORM,
+      version: 1,
+      ...names,
+    });
     expect(!internal.ok && internal.error.code).toBe('INTERNAL_ERROR');
   });
 });
 
 describe('the builder', () => {
-  const sectionInput = { formId: FORM, nameEn: 'Context', nameAr: 'السياق', descriptionEn: '', descriptionAr: '', repeatable: false, minEntries: 1, maxEntries: 1 };
-  const fieldInput = { formId: FORM, sectionId: SECTION, type: 'select' as const, labelEn: 'Venue', labelAr: 'المكان', placeholderEn: '', placeholderAr: '', required: true, options: [{ labelEn: 'Riyadh', labelAr: 'الرياض' }], peopleMode: null, condition: { fieldId: FIELD, value: 'advanced' } };
+  const sectionInput = {
+    formId: FORM,
+    nameEn: 'Context',
+    nameAr: 'السياق',
+    descriptionEn: '',
+    descriptionAr: '',
+    repeatable: false,
+    minEntries: 1,
+    maxEntries: 1,
+  };
+  const fieldInput = {
+    formId: FORM,
+    sectionId: SECTION,
+    type: 'select' as const,
+    labelEn: 'Venue',
+    labelAr: 'المكان',
+    placeholderEn: '',
+    placeholderAr: '',
+    required: true,
+    options: [{ labelEn: 'Riyadh', labelAr: 'الرياض' }],
+    peopleMode: null,
+    condition: { fieldId: FIELD, value: 'advanced' },
+  };
 
   it('applies each change with the rules, writes it and returns the form read back', async () => {
     const { rt, writeAudit } = runtime('training_manager');
     const run = createDefineAction(rt);
-    expect(await run(actions.saveSectionActionDefinition())(sectionInput)).toEqual(ok({ form: uuidForm() }));
+    expect(await run(actions.saveSectionActionDefinition())(sectionInput)).toEqual(
+      ok({ form: uuidForm() }),
+    );
     expect(db.getNeedsForm).toHaveBeenNthCalledWith(1, TX, FORM, { forUpdate: true });
-    expect(db.writeSection).toHaveBeenCalledWith(TX, FORM, expect.objectContaining({ name: { en: 'Context', ar: 'السياق' } }), true);
-    await run(actions.saveSectionActionDefinition())({ ...sectionInput, sectionId: SECTION, repeatable: true, minEntries: 1, maxEntries: 5 });
-    expect(db.writeSection).toHaveBeenLastCalledWith(TX, FORM, expect.objectContaining({ id: SECTION, maxEntries: 5 }), false);
+    expect(db.writeSection).toHaveBeenCalledWith(
+      TX,
+      FORM,
+      expect.objectContaining({ name: { en: 'Context', ar: 'السياق' } }),
+      true,
+    );
+    await run(actions.saveSectionActionDefinition())({
+      ...sectionInput,
+      sectionId: SECTION,
+      repeatable: true,
+      minEntries: 1,
+      maxEntries: 5,
+    });
+    expect(db.writeSection).toHaveBeenLastCalledWith(
+      TX,
+      FORM,
+      expect.objectContaining({ id: SECTION, maxEntries: 5 }),
+      false,
+    );
     await run(actions.saveFieldActionDefinition())(fieldInput);
     expect(db.writeField).toHaveBeenCalledWith(
       TX,
       FORM,
       SECTION,
-      expect.objectContaining({ type: 'select', options: [{ value: 'riyadh', label: { en: 'Riyadh', ar: 'الرياض' } }], condition: { fieldId: FIELD, value: 'advanced' } }),
+      expect.objectContaining({
+        type: 'select',
+        options: [{ value: 'riyadh', label: { en: 'Riyadh', ar: 'الرياض' } }],
+        condition: { fieldId: FIELD, value: 'advanced' },
+      }),
       true,
     );
     expect(writeAudit).toHaveBeenLastCalledWith(TX, expect.anything(), {
@@ -233,16 +344,63 @@ describe('the builder', () => {
       entityId: FORM,
       data: { sectionId: SECTION, fieldId: null, type: 'select' },
     });
-    await run(actions.saveFieldActionDefinition())({ ...fieldInput, fieldId: FIELD, type: 'select' as const, condition: null, options: [{ value: 'basic', labelEn: 'Basic', labelAr: 'أساسي' }, { value: 'advanced', labelEn: 'Advanced', labelAr: 'متقدم' }] });
-    expect(db.writeField).toHaveBeenLastCalledWith(TX, FORM, SECTION, expect.objectContaining({ id: FIELD }), false);
-    await run(actions.setSectionVisibleActionDefinition())({ formId: FORM, sectionId: SECTION, visible: true });
-    await run(actions.moveSectionActionDefinition())({ formId: FORM, sectionId: SECTION, direction: 'down' });
+    await run(actions.saveFieldActionDefinition())({
+      ...fieldInput,
+      fieldId: FIELD,
+      type: 'select' as const,
+      condition: null,
+      options: [
+        { value: 'basic', labelEn: 'Basic', labelAr: 'أساسي' },
+        { value: 'advanced', labelEn: 'Advanced', labelAr: 'متقدم' },
+      ],
+    });
+    expect(db.writeField).toHaveBeenLastCalledWith(
+      TX,
+      FORM,
+      SECTION,
+      expect.objectContaining({ id: FIELD }),
+      false,
+    );
+    await run(actions.setSectionVisibleActionDefinition())({
+      formId: FORM,
+      sectionId: SECTION,
+      visible: true,
+    });
+    await run(actions.moveSectionActionDefinition())({
+      formId: FORM,
+      sectionId: SECTION,
+      direction: 'down',
+    });
     expect(db.orderSections).toHaveBeenCalledWith(TX, FORM, ['extra', SECTION]);
-    await run(actions.moveFieldActionDefinition())({ formId: FORM, fieldId: FIELD, direction: 'up' });
-    expect(db.orderFields).toHaveBeenCalledWith(TX, SECTION, ['topic', FIELD, 'people', 'details', 'track']);
-    await run(actions.setFieldVisibleActionDefinition())({ formId: FORM, fieldId: FIELD, visible: false });
-    await run(actions.setFieldRequiredActionDefinition())({ formId: FORM, fieldId: FIELD, required: true });
-    expect(db.writeField).toHaveBeenLastCalledWith(TX, FORM, SECTION, expect.objectContaining({ id: FIELD, required: true }), false);
+    await run(actions.moveFieldActionDefinition())({
+      formId: FORM,
+      fieldId: FIELD,
+      direction: 'up',
+    });
+    expect(db.orderFields).toHaveBeenCalledWith(TX, SECTION, [
+      'topic',
+      FIELD,
+      'people',
+      'details',
+      'track',
+    ]);
+    await run(actions.setFieldVisibleActionDefinition())({
+      formId: FORM,
+      fieldId: FIELD,
+      visible: false,
+    });
+    await run(actions.setFieldRequiredActionDefinition())({
+      formId: FORM,
+      fieldId: FIELD,
+      required: true,
+    });
+    expect(db.writeField).toHaveBeenLastCalledWith(
+      TX,
+      FORM,
+      SECTION,
+      expect.objectContaining({ id: FIELD, required: true }),
+      false,
+    );
     await run(actions.deleteFieldActionDefinition())({ formId: FORM, fieldId: FIELD });
     expect(db.deleteField).toHaveBeenCalledWith(TX, FORM, FIELD);
   });
@@ -250,15 +408,36 @@ describe('the builder', () => {
   it('answers with the rules’ field errors and writes nothing; unknown forms are not found', async () => {
     const { rt } = runtime('training_manager');
     const run = createDefineAction(rt);
-    const removed = await run(actions.saveFieldActionDefinition())({ ...fieldInput, fieldId: FIELD, condition: null, options: [{ value: 'basic', labelEn: 'Basic', labelAr: 'أساسي' }] });
-    expect(!removed.ok && removed.error.fieldErrors).toEqual([{ path: 'options', code: 'CONDITION_IN_USE' }]);
-    const system = await run(actions.deleteSectionActionDefinition())({ formId: FORM, sectionId: SECTION });
-    expect(!system.ok && system.error.fieldErrors).toEqual([{ path: 'section', code: 'SYSTEM_SECTION' }]);
+    const removed = await run(actions.saveFieldActionDefinition())({
+      ...fieldInput,
+      fieldId: FIELD,
+      condition: null,
+      options: [{ value: 'basic', labelEn: 'Basic', labelAr: 'أساسي' }],
+    });
+    expect(!removed.ok && removed.error.fieldErrors).toEqual([
+      { path: 'options', code: 'CONDITION_IN_USE' },
+    ]);
+    const system = await run(actions.deleteSectionActionDefinition())({
+      formId: FORM,
+      sectionId: SECTION,
+    });
+    expect(!system.ok && system.error.fieldErrors).toEqual([
+      { path: 'section', code: 'SYSTEM_SECTION' },
+    ]);
     db.getNeedsForm.mockResolvedValueOnce(uuidForm({ lockedAt: '2026-11-01T00:00:00.000Z' }));
-    const locked = await run(actions.moveFieldActionDefinition())({ formId: FORM, fieldId: FIELD, direction: 'up' });
-    expect(!locked.ok && locked.error.fieldErrors).toEqual([{ path: 'form', code: 'NEEDS_FORM_LOCKED' }]);
+    const locked = await run(actions.moveFieldActionDefinition())({
+      formId: FORM,
+      fieldId: FIELD,
+      direction: 'up',
+    });
+    expect(!locked.ok && locked.error.fieldErrors).toEqual([
+      { path: 'form', code: 'NEEDS_FORM_LOCKED' },
+    ]);
     db.getNeedsForm.mockResolvedValueOnce(null);
-    const unknown = await run(actions.deleteFieldActionDefinition())({ formId: FORM, fieldId: FIELD });
+    const unknown = await run(actions.deleteFieldActionDefinition())({
+      formId: FORM,
+      fieldId: FIELD,
+    });
     expect(!unknown.ok && unknown.error.code).toBe('NOT_FOUND');
     db.getNeedsForm.mockResolvedValueOnce(null);
     const query = await createDefineQuery(rt)(actions.needsFormQueryDefinition())({ formId: FORM });
@@ -271,7 +450,12 @@ describe('the builder', () => {
   it('turns a database refusal of the write into the screen’s error', async () => {
     const { rt } = runtime('training_manager');
     db.deleteField.mockRejectedValueOnce(new db.NeedsFormRefused('locked'));
-    const result = await createDefineAction(rt)(actions.deleteFieldActionDefinition())({ formId: FORM, fieldId: FIELD });
-    expect(!result.ok && result.error.fieldErrors).toEqual([{ path: 'form', code: 'NEEDS_FORM_LOCKED' }]);
+    const result = await createDefineAction(rt)(actions.deleteFieldActionDefinition())({
+      formId: FORM,
+      fieldId: FIELD,
+    });
+    expect(!result.ok && result.error.fieldErrors).toEqual([
+      { path: 'form', code: 'NEEDS_FORM_LOCKED' },
+    ]);
   });
 });

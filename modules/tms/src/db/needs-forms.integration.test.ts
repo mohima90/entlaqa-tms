@@ -44,8 +44,12 @@ describe.skipIf(!configured)('needs forms against PostgreSQL', () => {
   beforeAll(async () => {
     await owner.execute(sql`insert into platform.tenants (id, slug, name_ar, status)
       values (${tenant}::uuid, ${`nf-${tenant.slice(0, 8)}`}, 'منشأة', 'active')`);
-    await owner.execute(sql`insert into auth.users (id, email) values (${lnd.user}::uuid, ${`${lnd.user}@example.test`})`);
-    await owner.execute(sql`insert into auth.sessions (id, user_id) values (${lnd.session}::uuid, ${lnd.user}::uuid)`);
+    await owner.execute(
+      sql`insert into auth.users (id, email) values (${lnd.user}::uuid, ${`${lnd.user}@example.test`})`,
+    );
+    await owner.execute(
+      sql`insert into auth.sessions (id, user_id) values (${lnd.session}::uuid, ${lnd.user}::uuid)`,
+    );
     await owner.execute(sql`insert into platform.persons (id, tenant_id, display_name_ar)
       values (${lnd.person}::uuid, ${tenant}::uuid, 'مدير التعلم')`);
     await owner.execute(sql`insert into platform.tenant_memberships (tenant_id, user_id, person_id, status)
@@ -64,82 +68,200 @@ describe.skipIf(!configured)('needs forms against PostgreSQL', () => {
   it('lists the seeded default form and reads it whole', async () => {
     const forms = await as((tx) => db.listNeedsForms(tx));
     expect(forms).toHaveLength(1);
-    expect(forms[0]).toMatchObject({ isDefault: true, isActive: true, lockedAt: null, sectionCount: 1, fieldCount: 10 });
+    expect(forms[0]).toMatchObject({
+      isDefault: true,
+      isActive: true,
+      lockedAt: null,
+      sectionCount: 1,
+      fieldCount: 10,
+    });
     const form = await as((tx) => db.getNeedsForm(tx, forms[0]?.id ?? ''));
     expect(form?.sections[0]?.fields.map((f) => f.systemKey ?? f.type)).toEqual([
-      'training_topic', 'textarea', 'select', 'select', 'people', 'select', 'select', 'textarea', 'select', 'number',
+      'training_topic',
+      'textarea',
+      'select',
+      'select',
+      'people',
+      'select',
+      'select',
+      'textarea',
+      'select',
+      'number',
     ]);
-    expect(form?.sections[0]?.fields[2]?.options[0]).toEqual({ value: 'technical', label: { en: 'Technical', ar: 'تقني' } });
+    expect(form?.sections[0]?.fields[2]?.options[0]).toEqual({
+      value: 'technical',
+      label: { en: 'Technical', ar: 'تقني' },
+    });
     expect(await as((tx) => db.getNeedsForm(tx, randomUUID()))).toBeNull();
   });
 
   it('creates, builds, orders, duplicates, renames, locks and deletes a form', async () => {
-    const formId = await as((tx) => db.createNeedsForm(tx, { nameEn: 'Engineering', nameAr: 'الهندسة' }));
+    const formId = await as((tx) =>
+      db.createNeedsForm(tx, { nameEn: 'Engineering', nameAr: 'الهندسة' }),
+    );
     // A dropdown and a field shown on one of its answers, through the builder's rules.
     const built = await as(async (tx) => {
       const before = await db.getNeedsForm(tx, formId, { forUpdate: true });
       if (!before) throw new Error('missing');
       const sectionId = before.sections[0]?.id ?? '';
-      const withLevel = applyFormChange(before, { kind: 'saveField', input: {
-        formId, sectionId, type: 'select', labelEn: 'Level', labelAr: 'المستوى', placeholderEn: null, placeholderAr: null,
-        required: false, options: [{ labelEn: 'Basic', labelAr: 'أساسي' }, { labelEn: 'Advanced', labelAr: 'متقدم' }],
-        peopleMode: null, condition: null } }, newId);
+      const withLevel = applyFormChange(
+        before,
+        {
+          kind: 'saveField',
+          input: {
+            formId,
+            sectionId,
+            type: 'select',
+            labelEn: 'Level',
+            labelAr: 'المستوى',
+            placeholderEn: null,
+            placeholderAr: null,
+            required: false,
+            options: [
+              { labelEn: 'Basic', labelAr: 'أساسي' },
+              { labelEn: 'Advanced', labelAr: 'متقدم' },
+            ],
+            peopleMode: null,
+            condition: null,
+          },
+        },
+        newId,
+      );
       if (!withLevel.ok) throw new Error('rules');
       const level = withLevel.value.sections[0]?.fields.at(-1);
       if (!level) throw new Error('level');
       await db.writeField(tx, formId, sectionId, level, true);
-      const withDetails = applyFormChange(withLevel.value, { kind: 'saveField', input: {
-        formId, sectionId, type: 'textarea', labelEn: 'Details', labelAr: 'التفاصيل', placeholderEn: 'More', placeholderAr: null,
-        required: true, options: [], peopleMode: null, condition: { fieldId: level.id, value: 'advanced' } } }, newId);
+      const withDetails = applyFormChange(
+        withLevel.value,
+        {
+          kind: 'saveField',
+          input: {
+            formId,
+            sectionId,
+            type: 'textarea',
+            labelEn: 'Details',
+            labelAr: 'التفاصيل',
+            placeholderEn: 'More',
+            placeholderAr: null,
+            required: true,
+            options: [],
+            peopleMode: null,
+            condition: { fieldId: level.id, value: 'advanced' },
+          },
+        },
+        newId,
+      );
       if (!withDetails.ok) throw new Error('rules');
       const details = withDetails.value.sections[0]?.fields.at(-1);
       if (!details) throw new Error('details');
       await db.writeField(tx, formId, sectionId, details, true);
-      await db.orderFields(tx, sectionId, [level.id, ...(before.sections[0]?.fields.map((f) => f.id) ?? []), details.id]);
-      const extra = { id: randomUUID(), name: { en: 'Context', ar: 'السياق' }, description: { en: 'Why' }, repeatable: true,
-        minEntries: 0, maxEntries: 5, visible: true, fields: [] };
+      await db.orderFields(tx, sectionId, [
+        level.id,
+        ...(before.sections[0]?.fields.map((f) => f.id) ?? []),
+        details.id,
+      ]);
+      const extra = {
+        id: randomUUID(),
+        name: { en: 'Context', ar: 'السياق' },
+        description: { en: 'Why' },
+        repeatable: true,
+        minEntries: 0,
+        maxEntries: 5,
+        visible: true,
+        fields: [],
+      };
       await db.writeSection(tx, formId, extra, true);
       await db.writeSection(tx, formId, { ...extra, visible: false }, false);
       await db.orderSections(tx, formId, [extra.id, sectionId]);
       return db.getNeedsForm(tx, formId);
     });
-    expect(built?.sections.map((s) => [s.name.en, s.visible, s.maxEntries])).toEqual([['Context', false, 5], ['Training needs', true, 50]]);
-    expect(built?.sections[1]?.fields.map((f) => f.label.en)).toEqual(['Level', 'Training topic', 'People', 'Details']);
-    expect(built?.sections[1]?.fields[3]).toMatchObject({ condition: { value: 'advanced' }, placeholder: { en: 'More' }, required: true });
+    expect(built?.sections.map((s) => [s.name.en, s.visible, s.maxEntries])).toEqual([
+      ['Context', false, 5],
+      ['Training needs', true, 50],
+    ]);
+    expect(built?.sections[1]?.fields.map((f) => f.label.en)).toEqual([
+      'Level',
+      'Training topic',
+      'People',
+      'Details',
+    ]);
+    expect(built?.sections[1]?.fields[3]).toMatchObject({
+      condition: { value: 'advanced' },
+      placeholder: { en: 'More' },
+      required: true,
+    });
 
-    const copyId = await as((tx) => db.duplicateNeedsForm(tx, formId, { nameEn: 'Engineering copy', nameAr: 'نسخة الهندسة' }));
+    const copyId = await as((tx) =>
+      db.duplicateNeedsForm(tx, formId, { nameEn: 'Engineering copy', nameAr: 'نسخة الهندسة' }),
+    );
     const copy = await as((tx) => db.getNeedsForm(tx, copyId ?? ''));
     const copyLevel = copy?.sections[1]?.fields[0];
-    expect(copy?.sections[1]?.fields[3]?.condition).toEqual({ fieldId: copyLevel?.id, value: 'advanced' });
+    expect(copy?.sections[1]?.fields[3]?.condition).toEqual({
+      fieldId: copyLevel?.id,
+      value: 'advanced',
+    });
 
-    await as((tx) => db.renameNeedsForm(tx, formId, built?.version ?? 0, { nameEn: 'Engineering 2027', nameAr: 'الهندسة 2027' }));
-    await expect(as((tx) => db.renameNeedsForm(tx, formId, 1, { nameEn: 'Old', nameAr: 'قديم' }))).rejects.toMatchObject({ refusal: 'version_conflict' });
-    const taken = await as((tx) => db.renameNeedsForm(tx, copyId ?? '', copy?.version ?? 0, { nameEn: 'ENGINEERING 2027', nameAr: 'فريد' }))
-      .then(() => 'saved', (e: unknown) => db.needsFormRefusalOf(e));
+    await as((tx) =>
+      db.renameNeedsForm(tx, formId, built?.version ?? 0, {
+        nameEn: 'Engineering 2027',
+        nameAr: 'الهندسة 2027',
+      }),
+    );
+    await expect(
+      as((tx) => db.renameNeedsForm(tx, formId, 1, { nameEn: 'Old', nameAr: 'قديم' })),
+    ).rejects.toMatchObject({ refusal: 'version_conflict' });
+    const taken = await as((tx) =>
+      db.renameNeedsForm(tx, copyId ?? '', copy?.version ?? 0, {
+        nameEn: 'ENGINEERING 2027',
+        nameAr: 'فريد',
+      }),
+    ).then(
+      () => 'saved',
+      (e: unknown) => db.needsFormRefusalOf(e),
+    );
     expect(taken).toBe('name_en_taken');
 
     await as((tx) => db.setDefaultNeedsForm(tx, formId));
     const forms = await as((tx) => db.listNeedsForms(tx));
     expect(forms.filter((f) => f.isDefault).map((f) => f.id)).toEqual([formId]);
     await as((tx) => db.setNeedsFormActive(tx, copyId ?? '', false));
-    expect((await as((tx) => db.listNeedsForms(tx))).find((f) => f.id === copyId)?.isActive).toBe(false);
+    expect((await as((tx) => db.listNeedsForms(tx))).find((f) => f.id === copyId)?.isActive).toBe(
+      false,
+    );
 
     // The cycle launch locks it: the structure is frozen (a database refusal, mapped).
     await as((tx) => tx.execute(sql`select private.lock_needs_form(${copyId}::uuid)`));
-    const locked = await as((tx) => db.deleteField(tx, copyId ?? '', copyLevel?.id ?? '')).then(() => 'deleted', (e: unknown) => db.needsFormRefusalOf(e));
+    const locked = await as((tx) => db.deleteField(tx, copyId ?? '', copyLevel?.id ?? '')).then(
+      () => 'deleted',
+      (e: unknown) => db.needsFormRefusalOf(e),
+    );
     expect(locked).toBe('locked');
-    const lockedDelete = await as((tx) => db.deleteNeedsForm(tx, copyId ?? '')).then(() => 'deleted', (e: unknown) => db.needsFormRefusalOf(e));
+    const lockedDelete = await as((tx) => db.deleteNeedsForm(tx, copyId ?? '')).then(
+      () => 'deleted',
+      (e: unknown) => db.needsFormRefusalOf(e),
+    );
     expect(lockedDelete).toBe('locked');
-    const defaultDelete = await as((tx) => db.deleteNeedsForm(tx, formId)).then(() => 'deleted', (e: unknown) => db.needsFormRefusalOf(e));
+    const defaultDelete = await as((tx) => db.deleteNeedsForm(tx, formId)).then(
+      () => 'deleted',
+      (e: unknown) => db.needsFormRefusalOf(e),
+    );
     expect(defaultDelete).toBe('default');
 
     const other = await as((tx) => db.createNeedsForm(tx, { nameEn: 'Scratch', nameAr: 'مسودة' }));
     await as((tx) => db.deleteNeedsForm(tx, other));
     expect(await as((tx) => db.getNeedsForm(tx, other))).toBeNull();
-    await expect(as((tx) => db.deleteNeedsForm(tx, other))).rejects.toMatchObject({ refusal: 'not_found' });
-    await expect(as((tx) => db.setDefaultNeedsForm(tx, other))).rejects.toMatchObject({ refusal: 'not_found' });
-    await expect(as((tx) => db.setNeedsFormActive(tx, other, true))).rejects.toMatchObject({ refusal: 'not_found' });
-    await expect(as((tx) => db.renameNeedsForm(tx, other, 1, { nameEn: 'x', nameAr: 'س' }))).rejects.toMatchObject({ refusal: 'not_found' });
+    await expect(as((tx) => db.deleteNeedsForm(tx, other))).rejects.toMatchObject({
+      refusal: 'not_found',
+    });
+    await expect(as((tx) => db.setDefaultNeedsForm(tx, other))).rejects.toMatchObject({
+      refusal: 'not_found',
+    });
+    await expect(as((tx) => db.setNeedsFormActive(tx, other, true))).rejects.toMatchObject({
+      refusal: 'not_found',
+    });
+    await expect(
+      as((tx) => db.renameNeedsForm(tx, other, 1, { nameEn: 'x', nameAr: 'س' })),
+    ).rejects.toMatchObject({ refusal: 'not_found' });
     expect(() => db.needsFormRefusalOf(new Error('other'))).toThrow('other');
   });
 });

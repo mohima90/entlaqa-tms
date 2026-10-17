@@ -20,7 +20,11 @@ export function testField(id: string, over: Partial<NeedsFormField> = {}): Needs
 export const opts = (...values: string[]) =>
   values.map((value) => ({ value, label: { en: value.toUpperCase(), ar: `ع-${value}` } }));
 
-export function testSection(id: string, fields: NeedsFormField[], over: Partial<NeedsFormSection> = {}) {
+export function testSection(
+  id: string,
+  fields: NeedsFormField[],
+  over: Partial<NeedsFormSection> = {},
+) {
   return {
     id,
     name: { en: id, ar: id },

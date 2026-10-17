@@ -3,7 +3,8 @@ import { tmsNavigation } from '@jadarat/tms';
 import type { SuiteNavigationAccess } from './suite-context';
 
 /** Pages of the suite that have a navigation entry (`current` of the shell). */
-export type SuitePage = 'home' | 'general' | 'users' | 'roles' | 'security' | 'profile';
+export type SuitePage =
+  'home' | 'general' | 'users' | 'roles' | 'security' | 'profile' | 'needsForms';
 
 /** Message keys (namespace `shell`) of every navigation label. */
 export type NavLabelKey =
@@ -17,10 +18,12 @@ export type NavLabelKey =
   | 'emailIntegration'
   | 'integrations'
   | 'security'
-  | 'auditLog';
+  | 'auditLog'
+  | 'needsForms';
 
 /** Message keys (namespace `shell`) of the group headings; `main` has none. */
-export type NavGroupKey = 'main' | 'groupOrganization' | 'groupBilling' | 'groupSettings';
+export type NavGroupKey =
+  'main' | 'groupPlanning' | 'groupOrganization' | 'groupBilling' | 'groupSettings';
 
 export interface NavEntry {
   readonly key: NavLabelKey;
@@ -43,6 +46,8 @@ export const SUITE_PATHS = {
   general: '/suite/admin/settings',
   security: '/suite/admin/security',
   profile: '/suite/profile',
+  // Planning → Needs forms (T-M3-10).
+  needsForms: '/suite/planning/needs-forms',
 } as const satisfies Record<SuitePage, string>;
 
 /** The page title in the top bar (message key, namespace `shell`) for each page of the menu. */
@@ -53,6 +58,7 @@ export const PAGE_TITLE_KEYS = {
   general: 'general',
   security: 'security',
   profile: 'myProfile',
+  needsForms: 'needsForms',
 } as const satisfies Record<SuitePage, string>;
 
 const TMS_ICONS: Readonly<Record<(typeof tmsNavigation)[number]['key'], IconName>> = {
@@ -90,6 +96,12 @@ export function suiteNavigation(access: SuiteNavigationAccess): NavGroupModel[] 
   const setup = access.organizationSetup;
   const groups: NavGroupModel[] = [
     { key: 'main', entries: main },
+    // Planning (EP-PLN): the needs forms library (T-M3-10) for the L&D Manager and the Training
+    // Coordinator; the planning cycle joins it (T-M3-04).
+    {
+      key: 'groupPlanning',
+      entries: when(access.needsForms, page('needsForms', 'form', 'needsForms')),
+    },
     {
       key: 'groupOrganization',
       entries: [

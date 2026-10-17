@@ -158,11 +158,7 @@ describe('edit role query', () => {
     const assignable = result.ok ? result.value.choices.filter((c) => c.assignable) : [];
     // T-M3-10 (expectation changed, not the rule): the L&D Manager and Training Coordinator grant
     // tms.needs_form.*, which the HR Manager does not hold — off the list until the role-giving rule change.
-    expect(assignable.map((c) => c.code)).toEqual([
-      'department_head',
-      'learner',
-      READER.code,
-    ]);
+    expect(assignable.map((c) => c.code)).toEqual(['department_head', 'learner', READER.code]);
     expect(result.ok && result.value.privilegedAccess).toBe('denied');
   });
 

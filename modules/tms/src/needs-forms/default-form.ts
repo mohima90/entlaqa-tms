@@ -111,7 +111,10 @@ export const DEFAULT_FIELDS: readonly TemplateField[] = [
     ],
   }),
   field('textarea', 'Reason', 'السبب', {
-    placeholder: { en: 'Why does your team need this training?', ar: 'لماذا يحتاج فريقك إلى هذا التدريب؟' },
+    placeholder: {
+      en: 'Why does your team need this training?',
+      ar: 'لماذا يحتاج فريقك إلى هذا التدريب؟',
+    },
   }),
   field('select', 'Preferred quarter', 'الربع المفضّل', {
     options: [
@@ -134,9 +137,9 @@ export function templateForm(options: {
   readonly isDefault: boolean;
   readonly full: boolean;
 }): NeedsFormDefinition {
-  const fields: NeedsFormField[] = (options.full ? DEFAULT_FIELDS : [TOPIC_FIELD, PEOPLE_FIELD]).map(
-    (f) => ({ ...f, id: options.newId(), visible: true, condition: null }),
-  );
+  const fields: NeedsFormField[] = (
+    options.full ? DEFAULT_FIELDS : [TOPIC_FIELD, PEOPLE_FIELD]
+  ).map((f) => ({ ...f, id: options.newId(), visible: true, condition: null }));
   return {
     id: options.newId(),
     name: options.name,

@@ -85,7 +85,10 @@ describe('permission catalogue and standard grants (EP-ROLES, drift checks)', ()
   });
 
   it('lists the TMS permissions of the standard roles, outside custom roles for now (T-M3-10)', () => {
-    expect(Object.keys(tmsRolePermissions)).toEqual(['tms.needs_form.read', 'tms.needs_form.manage']);
+    expect(Object.keys(tmsRolePermissions)).toEqual([
+      'tms.needs_form.read',
+      'tms.needs_form.manage',
+    ]);
     for (const code of Object.keys(tmsRolePermissions)) {
       // The Organization Admin builds custom roles from what they hold, and holds no training permission.
       expect(customRolePermission(code), code).toBeUndefined();

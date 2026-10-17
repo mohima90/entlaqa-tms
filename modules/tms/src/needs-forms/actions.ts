@@ -318,15 +318,23 @@ export function setSectionVisibleActionDefinition(): ActionDefinition<
     permission: manage,
     input: SetSectionVisibleInput,
     handler: ({ ctx, input }) =>
-      changeForm(ctx.tx, input.formId, { kind: 'setSectionVisible', ...input }, async (_b, after) => {
-        const section = sectionOf(after, input.sectionId);
-        if (!section) throw new db.NeedsFormRefused('not_found');
-        await db.writeSection(ctx.tx, input.formId, section, false);
+      changeForm(
+        ctx.tx,
+        input.formId,
+        { kind: 'setSectionVisible', ...input },
+        async (_b, after) => {
+          const section = sectionOf(after, input.sectionId);
+          if (!section) throw new db.NeedsFormRefused('not_found');
+          await db.writeSection(ctx.tx, input.formId, section, false);
+        },
+      ),
+    audit: audit(
+      'section_visibility_changed',
+      (input: z.output<typeof SetSectionVisibleInput>) => ({
+        sectionId: input.sectionId,
+        visible: input.visible,
       }),
-    audit: audit('section_visibility_changed', (input: z.output<typeof SetSectionVisibleInput>) => ({
-      sectionId: input.sectionId,
-      visible: input.visible,
-    })),
+    ),
   };
 }
 
@@ -395,7 +403,13 @@ export function saveFieldActionDefinition(): ActionDefinition<
           ? section?.fields.find((f) => f.id === input.fieldId)
           : section?.fields.find((f) => !old?.fields.some((o) => o.id === f.id));
         if (!field) throw new db.NeedsFormRefused('not_found');
-        await db.writeField(ctx.tx, input.formId, input.sectionId, field, input.fieldId === undefined);
+        await db.writeField(
+          ctx.tx,
+          input.formId,
+          input.sectionId,
+          field,
+          input.fieldId === undefined,
+        );
       }),
     audit: audit('field_saved', (input: z.output<typeof SaveFieldInput>) => ({
       sectionId: input.sectionId,
@@ -434,10 +448,15 @@ export function setFieldRequiredActionDefinition(): ActionDefinition<
     permission: manage,
     input: SetFieldRequiredInput,
     handler: ({ ctx, input }) =>
-      changeForm(ctx.tx, input.formId, { kind: 'setFieldRequired', ...input }, async (_b, after) => {
-        const { section, field } = fieldOf(after, input.fieldId);
-        await db.writeField(ctx.tx, input.formId, section.id, field, false);
-      }),
+      changeForm(
+        ctx.tx,
+        input.formId,
+        { kind: 'setFieldRequired', ...input },
+        async (_b, after) => {
+          const { section, field } = fieldOf(after, input.fieldId);
+          await db.writeField(ctx.tx, input.formId, section.id, field, false);
+        },
+      ),
     audit: audit('field_requirement_changed', (input: z.output<typeof SetFieldRequiredInput>) => ({
       fieldId: input.fieldId,
       required: input.required,

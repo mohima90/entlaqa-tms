@@ -151,7 +151,10 @@ function toField(r: RawField): NeedsFormField {
     },
     required: r.is_required,
     visible: r.is_visible,
-    options: (r.options ?? []).map((o) => ({ value: o.value, label: { en: o.label_en, ar: o.label_ar } })),
+    options: (r.options ?? []).map((o) => ({
+      value: o.value,
+      label: { en: o.label_en, ar: o.label_ar },
+    })),
     peopleMode: r.people_mode,
     // A condition whose field was deleted keeps its value only (the database clears the field id).
     condition:
@@ -252,20 +255,28 @@ export async function renameNeedsForm(
 
 /** Makes the form the default (and active); the previous default stops being one in the same transaction. */
 export async function setDefaultNeedsForm(tx: UserTx, formId: string): Promise<void> {
-  await tx.execute(sql`update tms.needs_forms set is_default = false where is_default and id <> ${formId}::uuid`);
+  await tx.execute(
+    sql`update tms.needs_forms set is_default = false where is_default and id <> ${formId}::uuid`,
+  );
   const rows = await tx.execute(sql`update tms.needs_forms set is_default = true, is_active = true
     where id = ${formId}::uuid returning id`);
   if (rows.length === 0) throw new NeedsFormRefused('not_found');
 }
 
-export async function setNeedsFormActive(tx: UserTx, formId: string, active: boolean): Promise<void> {
+export async function setNeedsFormActive(
+  tx: UserTx,
+  formId: string,
+  active: boolean,
+): Promise<void> {
   const rows = await tx.execute(sql`update tms.needs_forms set is_active = ${active}
     where id = ${formId}::uuid returning id`);
   if (rows.length === 0) throw new NeedsFormRefused('not_found');
 }
 
 export async function deleteNeedsForm(tx: UserTx, formId: string): Promise<void> {
-  const rows = await tx.execute(sql`delete from tms.needs_forms where id = ${formId}::uuid returning id`);
+  const rows = await tx.execute(
+    sql`delete from tms.needs_forms where id = ${formId}::uuid returning id`,
+  );
   if (rows.length === 0) throw new NeedsFormRefused('not_found');
 }
 
@@ -295,11 +306,17 @@ export async function writeSection(
 }
 
 export async function deleteSection(tx: UserTx, formId: string, sectionId: string): Promise<void> {
-  await tx.execute(sql`delete from tms.needs_form_sections where id = ${sectionId}::uuid and form_id = ${formId}::uuid`);
+  await tx.execute(
+    sql`delete from tms.needs_form_sections where id = ${sectionId}::uuid and form_id = ${formId}::uuid`,
+  );
 }
 
 /** Saves the order of the form's sections (1, 2, …) as given. */
-export async function orderSections(tx: UserTx, formId: string, ids: readonly string[]): Promise<void> {
+export async function orderSections(
+  tx: UserTx,
+  formId: string,
+  ids: readonly string[],
+): Promise<void> {
   for (const [index, id] of ids.entries()) {
     await tx.execute(sql`update tms.needs_form_sections set sort_order = ${index + 1}
       where id = ${id}::uuid and form_id = ${formId}::uuid and sort_order <> ${index + 1}`);
@@ -307,7 +324,11 @@ export async function orderSections(tx: UserTx, formId: string, ids: readonly st
 }
 
 /** Saves the order of a section's fields (1, 2, …) as given. */
-export async function orderFields(tx: UserTx, sectionId: string, ids: readonly string[]): Promise<void> {
+export async function orderFields(
+  tx: UserTx,
+  sectionId: string,
+  ids: readonly string[],
+): Promise<void> {
   for (const [index, id] of ids.entries()) {
     await tx.execute(sql`update tms.needs_form_fields set sort_order = ${index + 1}
       where id = ${id}::uuid and section_id = ${sectionId}::uuid and sort_order <> ${index + 1}`);
@@ -317,7 +338,9 @@ export async function orderFields(tx: UserTx, sectionId: string, ids: readonly s
 const optionsJson = (options: readonly FieldOption[]): string | null =>
   options.length === 0
     ? null
-    : JSON.stringify(options.map((o) => ({ value: o.value, label_en: o.label.en, label_ar: o.label.ar })));
+    : JSON.stringify(
+        options.map((o) => ({ value: o.value, label_en: o.label.en, label_ar: o.label.ar })),
+      );
 
 /** Writes a field as the builder's rules produced it (new: appended last in its section). */
 export async function writeField(
@@ -351,5 +374,7 @@ export async function writeField(
 }
 
 export async function deleteField(tx: UserTx, formId: string, fieldId: string): Promise<void> {
-  await tx.execute(sql`delete from tms.needs_form_fields where id = ${fieldId}::uuid and form_id = ${formId}::uuid`);
+  await tx.execute(
+    sql`delete from tms.needs_form_fields where id = ${fieldId}::uuid and form_id = ${formId}::uuid`,
+  );
 }

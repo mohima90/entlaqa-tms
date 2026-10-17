@@ -1,4 +1,11 @@
-import { type AppError, type FieldError, type Result, appError, err, ok } from '@jadarat/platform-core';
+import {
+  type AppError,
+  type FieldError,
+  type Result,
+  appError,
+  err,
+  ok,
+} from '@jadarat/platform-core';
 import { conditionMakesLoop, dependantsOf } from './conditions';
 import type { SaveFieldValues, SaveSectionValues } from './inputs';
 import {
@@ -34,7 +41,8 @@ export type FormChange =
   | { readonly kind: 'moveField'; readonly fieldId: string; readonly direction: 'up' | 'down' }
   | { readonly kind: 'deleteField'; readonly fieldId: string };
 
-const invalid = (fieldErrors: FieldError[]): AppError => appError('VALIDATION_FAILED', { fieldErrors });
+const invalid = (fieldErrors: FieldError[]): AppError =>
+  appError('VALIDATION_FAILED', { fieldErrors });
 const refuse = (path: string, code: string, params?: FieldError['params']) =>
   err(invalid([{ path, code, ...(params ? { params } : {}) }]));
 
@@ -55,7 +63,8 @@ function locate(form: NeedsFormDefinition, fieldId: string) {
   return null;
 }
 
-const hasSystemField = (section: NeedsFormSection) => section.fields.some((f) => f.systemKey !== null);
+const hasSystemField = (section: NeedsFormSection) =>
+  section.fields.some((f) => f.systemKey !== null);
 
 function withSection(form: NeedsFormDefinition, section: NeedsFormSection): NeedsFormDefinition {
   return { ...form, sections: form.sections.map((s) => (s.id === section.id ? section : s)) };
@@ -151,7 +160,10 @@ function saveField(
     peopleMode: type === 'people' ? (input.peopleMode ?? 'count_or_employees') : null,
     condition: input.condition,
   };
-  const errors = checkField(section, existing, { ...field, type: existing?.systemKey ? input.type : type });
+  const errors = checkField(section, existing, {
+    ...field,
+    type: existing?.systemKey ? input.type : type,
+  });
   if (errors.length > 0) return err(invalid(errors));
   const fields = existing
     ? section.fields.map((f) => (f.id === field.id ? field : f))
@@ -164,7 +176,9 @@ function saveSection(
   input: SaveSectionValues,
   newId: () => string,
 ): Result<NeedsFormDefinition, AppError> {
-  const existing = input.sectionId ? form.sections.find((s) => s.id === input.sectionId) : undefined;
+  const existing = input.sectionId
+    ? form.sections.find((s) => s.id === input.sectionId)
+    : undefined;
   if (input.sectionId && !existing) return err(appError('NOT_FOUND'));
   if (!existing && form.sections.length >= NEEDS_FORM_LIMITS.sections) {
     return refuse('form', 'TOO_MANY_SECTIONS', { max: NEEDS_FORM_LIMITS.sections });
@@ -234,7 +248,9 @@ function applyUnlocked(
       const { section, field } = found;
       if (change.kind === 'moveField') {
         const index = section.fields.findIndex((f) => f.id === field.id);
-        return ok(withSection(form, { ...section, fields: move(section.fields, index, change.direction) }));
+        return ok(
+          withSection(form, { ...section, fields: move(section.fields, index, change.direction) }),
+        );
       }
       if (field.systemKey !== null) {
         const harmless =
@@ -264,7 +280,9 @@ function applyUnlocked(
 }
 
 /** Can the form be deleted? Not the default one, not a locked one (the database says the same). */
-export function deleteRefusal(form: Pick<NeedsFormDefinition, 'isDefault' | 'lockedAt'>): string | null {
+export function deleteRefusal(
+  form: Pick<NeedsFormDefinition, 'isDefault' | 'lockedAt'>,
+): string | null {
   if (form.isDefault) return 'DEFAULT_FORM';
   if (form.lockedAt !== null) return 'NEEDS_FORM_LOCKED';
   return null;

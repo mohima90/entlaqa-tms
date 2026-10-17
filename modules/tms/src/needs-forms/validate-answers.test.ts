@@ -7,7 +7,11 @@ const PERSON_B = '0a000000-0000-4000-8000-000000000002';
 const FILE = '0f000000-0000-4000-8000-0000000000AA';
 
 const extra = { agree: true };
-const need = (over: Record<string, unknown> = {}) => ({ topic: ' Excel ', people: { count: 4 }, ...over });
+const need = (over: Record<string, unknown> = {}) => ({
+  topic: ' Excel ',
+  people: { count: 4 },
+  ...over,
+});
 
 function errorsOf(answers: unknown, context = {}) {
   const result = validateNeedsAnswers(testForm(), answers, context);
@@ -23,7 +27,12 @@ describe('validateNeedsAnswers (server-side, keyed by field id)', () => {
     const result = validateNeedsAnswers(testForm(), {
       needs: [
         need({ level: 'basic', track: 'b', details: 'stale' }),
-        need({ topic: 'SQL', people: { personIds: [PERSON_A.toUpperCase()] }, level: 'advanced', details: ' Joins ' }),
+        need({
+          topic: 'SQL',
+          people: { personIds: [PERSON_A.toUpperCase()] },
+          level: 'advanced',
+          details: ' Joins ',
+        }),
       ],
       extra: [
         {
@@ -43,7 +52,12 @@ describe('validateNeedsAnswers (server-side, keyed by field id)', () => {
       value: {
         needs: [
           { topic: 'Excel', people: { count: 4 }, level: 'basic', track: 'b' },
-          { topic: 'SQL', people: { count: 1, personIds: [PERSON_A] }, level: 'advanced', details: 'Joins' },
+          {
+            topic: 'SQL',
+            people: { count: 1, personIds: [PERSON_A] },
+            level: 'advanced',
+            details: 'Joins',
+          },
         ],
         extra: [
           {
@@ -108,7 +122,15 @@ describe('validateNeedsAnswers (server-side, keyed by field id)', () => {
     expect(
       errorsOf({
         needs: [need()],
-        extra: [{ ...extra, tags: ['z'], cost: Number.POSITIVE_INFINITY, start: 20270101, site: 'not a url' }],
+        extra: [
+          {
+            ...extra,
+            tags: ['z'],
+            cost: Number.POSITIVE_INFINITY,
+            start: 20270101,
+            site: 'not a url',
+          },
+        ],
       }),
     ).toEqual([
       'sections.extra.0.start:INVALID_TYPE',
@@ -116,7 +138,12 @@ describe('validateNeedsAnswers (server-side, keyed by field id)', () => {
       'sections.extra.0.tags:NOT_AN_OPTION',
       'sections.extra.0.site:INVALID_URL',
     ]);
-    expect(errorsOf({ needs: [need()], extra: [{ ...extra, tags: 'x', cost: 2e12, start: '2027-1-1' }] })).toEqual([
+    expect(
+      errorsOf({
+        needs: [need()],
+        extra: [{ ...extra, tags: 'x', cost: 2e12, start: '2027-1-1' }],
+      }),
+    ).toEqual([
       'sections.extra.0.start:INVALID_DATE',
       'sections.extra.0.cost:INVALID_NUMBER',
       'sections.extra.0.tags:INVALID_TYPE',
@@ -134,7 +161,9 @@ describe('validateNeedsAnswers (server-side, keyed by field id)', () => {
     expect(people(4)).toEqual(['sections.needs.0.people:INVALID_TYPE']);
     expect(people({ count: 1, extra: true })).toEqual(['sections.needs.0.people:INVALID_TYPE']);
     expect(people({ personIds: ['nope'] })).toEqual(['sections.needs.0.people:INVALID_PERSON']);
-    expect(people({ personIds: [PERSON_A, PERSON_A] })).toEqual(['sections.needs.0.people:PERSON_TWICE']);
+    expect(people({ personIds: [PERSON_A, PERSON_A] })).toEqual([
+      'sections.needs.0.people:PERSON_TWICE',
+    ]);
     expect(people({ count: 1, personIds: [PERSON_A, PERSON_B] })).toEqual([
       'sections.needs.0.people:COUNT_BELOW_NAMES:{"names":2}',
     ]);
@@ -142,8 +171,17 @@ describe('validateNeedsAnswers (server-side, keyed by field id)', () => {
     expect(people({ personIds: [PERSON_B] }, { allowedPersonIds: new Set([PERSON_A]) })).toEqual([
       'sections.needs.0.people:PERSON_NOT_ALLOWED',
     ]);
-    expect(people({ count: 5, personIds: [PERSON_A] }, { allowedPersonIds: new Set([PERSON_A]) })).toEqual([]);
-    expect(people({ personIds: Array.from({ length: 501 }, (_, i) => `0a000000-0000-4000-8000-${String(i).padStart(12, '0')}`) })).toEqual([
+    expect(
+      people({ count: 5, personIds: [PERSON_A] }, { allowedPersonIds: new Set([PERSON_A]) }),
+    ).toEqual([]);
+    expect(
+      people({
+        personIds: Array.from(
+          { length: 501 },
+          (_, i) => `0a000000-0000-4000-8000-${String(i).padStart(12, '0')}`,
+        ),
+      }),
+    ).toEqual([
       `sections.needs.0.people:TOO_MANY_PEOPLE:{"max":${String(ANSWER_LIMITS.maxNamedPeople)}}`,
     ]);
 
@@ -163,7 +201,9 @@ describe('validateNeedsAnswers (server-side, keyed by field id)', () => {
   });
 
   it('checks entries, sections and unknown keys', () => {
-    expect(errorsOf({ needs: [], extra: [extra] })).toEqual(['sections.needs:TOO_FEW_ENTRIES:{"min":1}']);
+    expect(errorsOf({ needs: [], extra: [extra] })).toEqual([
+      'sections.needs:TOO_FEW_ENTRIES:{"min":1}',
+    ]);
     expect(errorsOf({ extra: [extra] })).toEqual(['sections.needs:TOO_FEW_ENTRIES:{"min":1}']);
     expect(errorsOf({ needs: [need(), need(), need(), need()], extra: [extra] })).toEqual([
       'sections.needs:TOO_MANY_ENTRIES:{"max":3}',
@@ -185,12 +225,18 @@ describe('validateNeedsAnswers (server-side, keyed by field id)', () => {
     const hidden = {
       ...form,
       sections: [
-        { ...needs, fields: needs.fields.map((f) => (f.id === 'level' ? { ...f, visible: false } : f)) },
+        {
+          ...needs,
+          fields: needs.fields.map((f) => (f.id === 'level' ? { ...f, visible: false } : f)),
+        },
         { ...extraSection, visible: false },
       ],
     };
     expect(
-      validateNeedsAnswers(hidden, { needs: [need({ level: 'advanced', details: 'x' })], extra: [{}] }),
+      validateNeedsAnswers(hidden, {
+        needs: [need({ level: 'advanced', details: 'x' })],
+        extra: [{}],
+      }),
     ).toEqual({ ok: true, value: { needs: [{ topic: 'Excel', people: { count: 4 } }] } });
   });
 });

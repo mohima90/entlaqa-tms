@@ -1,3 +1,4 @@
+import { hasVisibleText } from '@jadarat/platform-i18n/text';
 import { z } from 'zod';
 import { FIELD_TYPES, NEEDS_FORM_LIMITS, OPTION_VALUE_RE, PEOPLE_MODES } from './model';
 
@@ -6,7 +7,6 @@ import { FIELD_TYPES, NEEDS_FORM_LIMITS, OPTION_VALUE_RE, PEOPLE_MODES } from '.
  * else (defineAction → 422 VALIDATION_FAILED with field errors). Bilingual texts are required in both
  * languages (the glossary's rule for organization-defined names), trimmed, without invisible-only text.
  */
-const INVISIBLE_ONLY = /^[\s​-‏‪-‮⁠-⁤﻿]*$/;
 
 const text = (max: number) =>
   z
@@ -14,7 +14,7 @@ const text = (max: number) =>
     .trim()
     .min(1)
     .max(max)
-    .refine((value) => !INVISIBLE_ONLY.test(value), { message: 'invisible' });
+    .refine((value) => hasVisibleText(value), { message: 'invisible' });
 
 /** Optional text: empty becomes null. */
 const optionalText = (max: number) =>
@@ -22,7 +22,7 @@ const optionalText = (max: number) =>
     .string()
     .trim()
     .max(max)
-    .transform((value) => (value === '' || INVISIBLE_ONLY.test(value) ? null : value));
+    .transform((value) => (value === '' || !hasVisibleText(value) ? null : value));
 
 const id = z.uuid();
 const formRef = { formId: id };
@@ -57,9 +57,7 @@ export const SaveSectionInput = z
     minEntries: z.number().int().min(0).max(NEEDS_FORM_LIMITS.maxEntries),
     maxEntries: z.number().int().min(1).max(NEEDS_FORM_LIMITS.maxEntries),
   })
-  .transform((input) =>
-    input.repeatable ? input : { ...input, minEntries: 1, maxEntries: 1 },
-  )
+  .transform((input) => (input.repeatable ? input : { ...input, minEntries: 1, maxEntries: 1 }))
   .refine((input) => input.minEntries <= input.maxEntries, {
     path: ['minEntries'],
     message: 'above_max',
@@ -96,9 +94,7 @@ export const SaveFieldInput = z.strictObject({
   required: z.boolean(),
   options: z.array(OptionInput).max(NEEDS_FORM_LIMITS.options),
   peopleMode: z.enum(PEOPLE_MODES).nullable(),
-  condition: z
-    .strictObject({ fieldId: id, value: z.string().regex(OPTION_VALUE_RE) })
-    .nullable(),
+  condition: z.strictObject({ fieldId: id, value: z.string().regex(OPTION_VALUE_RE) }).nullable(),
 });
 
 export type SaveSectionValues = z.output<typeof SaveSectionInput>;

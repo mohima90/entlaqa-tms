@@ -316,7 +316,6 @@ const PERMISSION_GROUPS: readonly {
           ar: 'تعطيل حسابات المستخدمين وإعادة تفعيلها',
           en: 'Deactivate and reactivate user accounts',
         },
-        high: true,
         adminOnly: true,
       },
     ],
@@ -451,9 +450,10 @@ const B = {
     en: 'Grouped by module. You can only give permissions you hold yourself.',
   },
   privilegedNotice: {
-    ar: 'في هذا الدور صلاحية عالية الخطورة: فهو دور مميز لا يسنده إلا مدير المنظمة.',
-    en: 'This role has a high-risk permission: it is privileged, so only the Organization Admin can give it.',
+    ar: 'هذا الدور مميز — فيه صلاحية عالية الخطورة أو صلاحية لإدارة المستخدمين أو الأدوار — فلا يسنده إلا مدير المنظمة.',
+    en: 'This role is privileged — it has a high-risk permission or manages users or roles — so only the Organization Admin can give it.',
   },
+
   audited: {
     ar: 'يُسجَّل كل تغيير في سجل التدقيق مع القيم قبله وبعده.',
     en: 'Every change is recorded in the audit log with the values before and after.',

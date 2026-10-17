@@ -17,6 +17,9 @@ const db = vi.hoisted(() => ({
   listManagerOptions: vi.fn(),
   listOrgUnitOptions: vi.fn(),
   updateUserDetails: vi.fn(),
+  getTenantDefaultLocale: vi.fn(),
+  keepsUnsplitDisplayName: vi.fn(),
+  listStructureLevelLabels: vi.fn(() => Promise.resolve([])),
 }));
 vi.mock('@jadarat/platform-db', () => db);
 
@@ -65,7 +68,7 @@ const form = {
   firstNameEn: 'Sarah',
   fatherNameEn: '',
   grandfatherNameEn: '',
-  familyNameEn: '',
+  familyNameEn: 'Alqahtani',
   email: 'Sara@Example.test',
   mobile: '',
   employeeNumber: ' EMP-' + String.fromCharCode(0x0661, 0x0661, 0x0668, 0x0667),
@@ -85,6 +88,8 @@ beforeEach(() => {
     { personId: ME, nameAr: 'م', nameEn: null, departmentIds: [DEPT] },
   ]);
   db.listOrgUnitOptions.mockResolvedValue({ departments: [], branches: [] });
+  db.getTenantDefaultLocale.mockResolvedValue('ar');
+  db.keepsUnsplitDisplayName.mockReturnValue(false);
 });
 
 describe('edit user input', () => {
@@ -152,7 +157,7 @@ describe('update user details', () => {
       '3:1',
       expect.objectContaining({
         displayNameAr: 'سارة القحطاني',
-        displayNameEn: 'Sarah',
+        displayNameEn: 'Sarah Alqahtani',
         employeeNumber: 'EMP-1187',
       }),
     );
@@ -162,6 +167,79 @@ describe('update user details', () => {
       entityId: SARA,
       data: { changed: ['familyNameAr', 'departmentId'] },
     });
+  });
+
+  it('the required names follow the organization’s default language (guided-test feedback #2)', async () => {
+    db.getEditableUser.mockResolvedValue({
+      personId: SARA,
+      mayManage: true,
+      displayNameAr: 'سارة',
+    });
+    db.updateUserDetails.mockResolvedValue({ ok: true, changed: ['firstNameEn'] });
+    const save = createDefineAction(runtime(['tenant_admin']).rt)(
+      updateUserDetailsActionDefinition(),
+    );
+    db.getTenantDefaultLocale.mockResolvedValue('en');
+    const noFamily = await save({ ...form, familyNameEn: '' });
+    expect(!noFamily.ok && noFamily.error.fieldErrors).toEqual([
+      { path: 'familyNameEn', code: 'REQUIRED' },
+    ]);
+    expect(db.updateUserDetails).not.toHaveBeenCalled();
+    const englishOnly = await save({
+      ...form,
+      firstNameAr: '',
+      familyNameAr: '',
+      familyNameEn: 'Alqahtani',
+    });
+    expect(englishOnly.ok).toBe(true);
+    expect(db.updateUserDetails).toHaveBeenCalledWith(
+      TX,
+      SARA,
+      '3:1',
+      expect.objectContaining({ displayNameAr: null, displayNameEn: 'Sarah Alqahtani' }),
+    );
+    // The database's last word (no name at all) points at the required language's first name.
+    db.updateUserDetails.mockResolvedValue({ ok: false, refusal: 'name_required' });
+    const refused = await save({ ...form, familyNameEn: 'Alqahtani' });
+    expect(!refused.ok && refused.error.fieldErrors?.[0]?.path).toBe('firstNameEn');
+    // The optional language's names all or nothing (WP-FIX-01 review): half an English name is refused.
+    db.getTenantDefaultLocale.mockResolvedValue('ar');
+    const half = await save({ ...form, familyNameEn: '' });
+    expect(!half.ok && half.error.fieldErrors).toEqual([
+      { path: 'familyNameEn', code: 'REQUIRED' },
+    ]);
+  });
+
+  it('an Arabic-only person can still be saved without English names when the names stay as they are (PO 17 Oct 2026)', async () => {
+    db.getTenantDefaultLocale.mockResolvedValue('en');
+    db.getEditableUser.mockResolvedValue({
+      personId: SARA,
+      mayManage: true,
+      firstNameAr: 'سارة',
+      fatherNameAr: null,
+      grandfatherNameAr: null,
+      familyNameAr: 'القحطاني',
+      firstNameEn: null,
+      fatherNameEn: null,
+      grandfatherNameEn: null,
+      familyNameEn: null,
+      displayNameAr: 'سارة القحطاني',
+      displayNameEn: null,
+    });
+    db.updateUserDetails.mockResolvedValue({ ok: true, changed: ['departmentId'] });
+    const save = createDefineAction(runtime(['hr_manager']).rt)(
+      updateUserDetailsActionDefinition(),
+    );
+    const noEnglish = { ...form, firstNameEn: '', familyNameEn: '' };
+    // HR changes the unit only: accepted.
+    expect(await save(noEnglish)).toEqual(ok({ personId: SARA, changed: ['departmentId'] }));
+    // HR changes the Arabic name without English names: the English ones are required.
+    const renamed = await save({ ...noEnglish, familyNameAr: 'العتيبي' });
+    expect(!renamed.ok && renamed.error.fieldErrors).toEqual([
+      { path: 'firstNameEn', code: 'REQUIRED' },
+      { path: 'familyNameEn', code: 'REQUIRED' },
+    ]);
+    expect(db.updateUserDetails).toHaveBeenCalledTimes(1);
   });
 
   it('maps refusals to field errors or clear errors; no change → no audit', async () => {

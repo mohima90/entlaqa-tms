@@ -2,11 +2,14 @@ import { EMPTY_PERSON_SCOPE, appError, err, isEmptyPersonScope, ok } from '@jada
 import {
   type MemberSignInLock,
   type OrgUnitOptions,
+  type StructureLevelLabel,
   type UserList,
   type UserProfile,
   type UserTx,
   getUserProfile,
+  hasUnitsBelowFirstLevel,
   listOrgUnitOptions,
+  listStructureLevelLabels,
   listUsers,
   loadPersonResourceFacts,
   mayManagePerson,
@@ -54,6 +57,16 @@ export interface UsersListView {
   readonly canReadRoles: boolean;
   /** Department and branch filters, only with a tenant-wide `platform.org.read`. */
   readonly orgUnits: OrgUnitOptions | null;
+  /**
+   * The organization's own level names (FR-ADM-05): unit fields and columns say them instead of a fixed
+   * «Department» (guided-test feedback #3, PO 17 Oct 2026). One read per page.
+   */
+  readonly levels: readonly StructureLevelLabel[];
+  /**
+   * The organization has a live unit below the first level: unit columns then say «Unit» and each unit's
+   * level — decided for the organization, so the header is the same on every page of the list.
+   */
+  readonly unitsBelowFirstLevel: boolean;
   /** «دعوة مستخدم» and the invitations on the `invited` tab (T-M2-07): `platform.user.invite`. */
   readonly canInvite: boolean;
   /**
@@ -136,6 +149,8 @@ export function usersListQueryDefinition(): QueryDefinition<
         pageSize: USERS_PAGE_SIZE,
         canReadRoles,
         orgUnits,
+        levels: await listStructureLevelLabels(ctx.tx),
+        unitsBelowFirstLevel: await hasUnitsBelowFirstLevel(ctx.tx),
         canInvite: ctx.can(p['platform.user.invite'], 'tenant'),
         canDeactivate,
         privilegedReactivation: canDeactivate ? privilegedAccess(ctx) : null,
@@ -153,6 +168,11 @@ export const UserProfileInput = z.object({ personId: z.uuid() });
 
 export interface UserProfileView {
   readonly profile: UserProfile;
+  /**
+   * The organization's own level names (FR-ADM-05): unit fields and columns say them instead of a fixed
+   * «Department» (guided-test feedback #3, PO 17 Oct 2026). One read per page.
+   */
+  readonly levels: readonly StructureLevelLabel[];
   /** The direct manager's profile may be opened by the member (else the name is plain text). */
   readonly canOpenManager: boolean;
   /** The member may edit this person's details (T-M2-13): user.update + the manage rule. */
@@ -227,7 +247,15 @@ export function userProfileQueryDefinition(
         },
         accountLockBudget,
       );
-      return ok({ profile, canOpenManager, canEdit, canEditRoles, lifecycle, signInLock });
+      return ok({
+        profile,
+        levels: await listStructureLevelLabels(ctx.tx),
+        canOpenManager,
+        canEdit,
+        canEditRoles,
+        lifecycle,
+        signInLock,
+      });
     },
   };
 }

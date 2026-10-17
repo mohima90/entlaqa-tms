@@ -617,7 +617,9 @@ export async function listUserImportRows(
     select r.row_number, coalesce(r.data ->> 'email', r.cells ->> 'email') as email,
            nullif(concat_ws(' ', coalesce(r.data ->> 'first_name_ar', r.cells ->> 'first_name_ar'),
                             coalesce(r.data ->> 'family_name_ar', r.cells ->> 'family_name_ar')), '') as name_ar,
-           nullif(concat_ws(' ', r.data ->> 'first_name_en', r.data ->> 'family_name_en'), '') as name_en,
+           -- Both languages as given (a row may have English names only, PO 17 Oct 2026).
+           nullif(concat_ws(' ', coalesce(r.data ->> 'first_name_en', r.cells ->> 'first_name_en'),
+                            coalesce(r.data ->> 'family_name_en', r.cells ->> 'family_name_en')), '') as name_en,
            r.review_kind, r.issues, r.changes, r.result, r.result_issues
     from platform.user_import_rows r
     where ${where}

@@ -340,8 +340,8 @@
     "searchHint": "By name, email or employee number",
     "role": "Role",
     "allRoles": "All roles",
-    "department": "Department",
-    "allDepartments": "All departments",
+    "department": "Unit",
+    "allDepartments": "All units",
     "branch": "Branch",
     "allBranches": "All branches",
     "apply": "Apply",
@@ -351,7 +351,7 @@
       "name": "Name",
       "employeeNumber": "Employee number",
       "primaryRole": "Primary role",
-      "department": "Department",
+      "department": "Unit",
       "status": "Status",
       "lastSignIn": "Last sign-in",
       "actions": "Actions"
@@ -387,7 +387,7 @@
       "mobile": "Mobile",
       "employeeNumber": "Employee number",
       "jobTitle": "Job title",
-      "department": "Department",
+      "department": "Unit",
       "branch": "Branch",
       "manager": "Direct manager",
       "hireDate": "Hire date",
@@ -540,7 +540,9 @@
     "sessions": {
       "title": "Sign-in sessions",
       "intro": "Devices and browsers signed in to your account, in every organization."
-    }
+    },
+    "addArabicName": "Add the name in Arabic (optional)",
+    "addEnglishName": "Add the name in English (optional)"
   },
   "editUser": {
     "title": "Edit user details",
@@ -568,18 +570,18 @@
     "hireDateHijri": "Corresponds to {date}",
     "jobTitleAr": "Job title in Arabic",
     "jobTitleEn": "Job title in English",
-    "department": "Department",
-    "noDepartment": "No department",
+    "department": "Unit",
+    "noDepartment": "Not set",
     "branch": "Branch",
     "noBranch": "No branch",
     "deleted": "(deleted)",
     "manager": "Direct manager",
-    "managerHint": "The list shows people with managing roles in the chosen department and changes with the department.",
-    "managerHintAll": "The list shows people with managing roles in all departments.",
+    "managerHint": "The list shows people with managing roles in the chosen unit and changes with the unit.",
+    "managerHintAll": "The list shows people with managing roles in all units.",
     "noManager": "No direct manager",
     "inactive": "(inactive)",
-    "allDepartmentsManagers": "Manager in another department? Show managers of all departments",
-    "departmentManagersOnly": "Back to this department's managers only",
+    "allDepartmentsManagers": "Manager in another unit? Show managers of all units",
+    "departmentManagersOnly": "Back to this unit's managers only",
     "save": "Save changes",
     "saving": "Saving…",
     "saved": "Changes saved.",
@@ -596,12 +598,14 @@
       "managerLoop": "Can't be chosen: it would make a loop in the reporting line (this person directly or indirectly manages the chosen manager) or a line deeper than 50 levels.",
       "managerInactive": "The chosen manager is inactive. Choose another manager.",
       "managerSelf": "A person can't be their own manager.",
-      "unit": "Choose a department or branch from the list.",
-      "unitDeleted": "The chosen department or branch was deleted. Refresh the page and choose another.",
+      "unit": "Choose a unit or branch from the list.",
+      "unitDeleted": "The chosen unit or branch was deleted. Refresh the page and choose another.",
       "jobTitle": "Must contain visible letters and be at most 150 characters.",
       "hireOn": "Enter a valid date between 1900 and 2100.",
       "hireOnAfterEnd": "The hire date must be on or before the recorded end-of-service date."
-    }
+    },
+    "addArabicName": "Add the name in Arabic (optional)",
+    "addEnglishName": "Add the name in English (optional)"
   },
   "editRoles": {
     "title": "Change role",
@@ -610,7 +614,7 @@
     "breadcrumbLabel": "Breadcrumb",
     "roles": "Role",
     "roleHint": "Each person has one role. It decides their menu, pages and the data they see.",
-    "departmentsHint": "This role sees the departments the person heads, with their sub-departments. HR sets department heads in Organization → Structure.",
+    "departmentsHint": "This role sees the units the person heads, with everything under them. HR sets unit heads in Organization → Structure.",
     "privilegedAdminOnly": "Unavailable roles are greyed out: only the Organization Admin gives privileged roles (Organization Admin, HR Manager and custom roles with a high-risk permission).",
     "audited": "Every role change is recorded in the audit log with the role before and after.",
     "save": "Save role",
@@ -728,7 +732,7 @@
   "planning": {
     "list": {
       "title": "Planning cycles",
-      "intro": "Each year ask every department head what training their team needs, then turn the answers into one training plan.",
+      "intro": "Each year ask every unit head what training their team needs, then turn the answers into one training plan.",
       "newCycle": "New cycle",
       "notConfigured": "Planning cycles appear here once this environment is connected to its database.",
       "statsLabel": "Planning cycles in numbers",
@@ -753,15 +757,15 @@
         "period": "Planning period",
         "deadline": "Deadline",
         "status": "Status",
-        "departments": "Departments",
+        "departments": "Units",
         "actions": "Actions"
       },
       "submitted": "{submitted} of {count} submitted",
-      "departmentCount": "{count, plural, =0 {No departments} one {# department} other {# departments}}",
+      "departmentCount": "{count, plural, =0 {No units} one {# unit} other {# units}}",
       "openCycle": "Open {name}",
       "continueSetup": "Continue set-up of {name}",
       "emptyTitle": "No planning cycles yet",
-      "emptyBody": "Start a cycle to collect the training needs of your departments.",
+      "emptyBody": "Start a cycle to collect the training needs of your units.",
       "emptyReadBody": "The L&D Manager starts planning cycles. They will appear here.",
       "emptyTabTitle": "No cycles with this status",
       "deleted": "The draft cycle was deleted.",
@@ -802,7 +806,7 @@
       "cancel": "Cancel",
       "required": "(required)",
       "optional": "(optional)",
-      "draftNote": "This cycle is a draft: department heads see nothing until you launch it.",
+      "draftNote": "This cycle is a draft: unit heads see nothing until you launch it.",
       "basics": {
         "title": "Basics",
         "nameAr": "Name in Arabic",
@@ -811,38 +815,38 @@
         "periodStart": "Planning period starts",
         "periodEnd": "Planning period ends",
         "periodHint": "Suggested: your next fiscal year (General settings). At most two years.",
-        "deadline": "Deadline for department forms",
-        "deadlineHint": "Department heads submit their needs until the end of this day.",
+        "deadline": "Deadline for the needs forms",
+        "deadlineHint": "Unit heads submit their needs until the end of this day.",
         "shownAs": "Shown as {date}",
-        "instructionsAr": "Instructions to department heads in Arabic",
-        "instructionsEn": "Instructions to department heads in English",
+        "instructionsAr": "Instructions to unit heads in Arabic",
+        "instructionsEn": "Instructions to unit heads in English",
         "instructionsHint": "Shown at the top of every needs form. Up to 4,000 characters.",
         "needsForm": "Needs form",
         "needsFormNone": "No form chosen",
-        "needsFormHint": "The form department heads fill in, from Planning → Needs forms. A cycle needs one to launch; the launch locks it.",
+        "needsFormHint": "The form unit heads fill in, from Planning → Needs forms. A cycle needs one to launch; the launch locks it.",
         "currency": "Amounts are in {currency}, your organization's currency (General settings).",
         "needsFormOff": "{name} (switched off)"
       },
       "scope": {
         "title": "Scope",
-        "intro": "Pick the departments and branches that plan their training in this cycle. A department includes everything under it.",
-        "departments": "Departments",
+        "intro": "Pick the units and branches that plan their training in this cycle. A unit includes everything under it.",
+        "departments": "Units of the structure",
         "branches": "Branches",
-        "branchesHint": "A branch includes all its departments.",
+        "branchesHint": "A branch includes all its units.",
         "inactive": "Inactive",
         "noHead": "No head",
-        "noStructure": "Your organization has no departments yet. The HR Manager adds them under Organization → Structure.",
+        "noStructure": "Your organization's structure has no units yet. The HR Manager adds them under Organization → Structure.",
         "formsTitle": "Needs forms to send: {count}",
-        "formsHint": "One form per department in scope; it goes to the department's head, or to the nearest head above.",
-        "noHeadWarning": "Departments without a head: {count}. Ask the HR Manager to pick one, or their forms reach nobody."
+        "formsHint": "One form per unit in scope; it goes to the unit's head, or to the nearest head above.",
+        "noHeadWarning": "Units without a head: {count}. Ask the HR Manager to pick one, or their forms reach nobody."
       },
       "budget": {
         "title": "Budget",
-        "intro": "Optionally set a budget envelope per department. Department heads see their own envelope while they plan.",
-        "noDepartments": "Choose the scope first: the departments appear here.",
+        "intro": "Optionally set a budget envelope per unit. Unit heads see their own envelope while they plan.",
+        "noDepartments": "Choose the scope first: the units appear here.",
         "columns": {
-          "department": "Department",
-          "head": "Department head",
+          "department": "Unit",
+          "head": "Head",
           "envelope": "Budget envelope ({currency})"
         },
         "amountLabel": "Budget envelope for {name}",
@@ -855,10 +859,10 @@
         "stepLabel": "Step {number}",
         "kind": "Type of step",
         "kinds": {
-          "department_heads": "Department heads",
+          "department_heads": "Unit heads",
           "person": "Named person"
         },
-        "headsHint": "Every department head confirms their own department's lines at the same time.",
+        "headsHint": "Every unit head confirms their own unit's lines at the same time.",
         "nameAr": "Step name in Arabic",
         "nameEn": "Step name in English",
         "approver": "Approver",
@@ -874,7 +878,7 @@
       },
       "reminders": {
         "title": "Reminders",
-        "intro": "Department heads who have not submitted get a reminder this many days before the deadline.",
+        "intro": "Unit heads who have not submitted get a reminder this many days before the deadline.",
         "dayLabel": "Days before the deadline",
         "add": "Add a reminder",
         "remove": "Remove the reminder {days} days before",
@@ -888,7 +892,7 @@
         "problems": {
           "deadline_past": "The deadline has passed. Choose a later date in Basics.",
           "no_needs_form": "Choose the needs form in Basics.",
-          "no_departments": "No department is in scope. Choose the scope.",
+          "no_departments": "No unit is in scope. Choose the scope.",
           "no_approver_step": "The approval chain needs at least one named person.",
           "approver_missing": "Name the approver of every person step.",
           "approver_inactive": "An approver is no longer an active member. Choose someone else.",
@@ -896,9 +900,9 @@
         },
         "action": "Launch cycle",
         "confirmTitle": "Launch {name}?",
-        "confirmBody": "{count, plural, one {# department} other {# departments}} will get a needs form with the deadline {deadline}. After launch you can only extend the deadline.",
+        "confirmBody": "{count, plural, one {# unit} other {# units}} will get a needs form with the deadline {deadline}. After launch you can only extend the deadline.",
         "confirm": "Launch",
-        "launched": "The cycle is open. Department heads can now fill in their needs."
+        "launched": "The cycle is open. Unit heads can now fill in their needs."
       },
       "delete": {
         "action": "Delete draft",
@@ -916,8 +920,8 @@
         "afterPeriod": "The deadline must be within the planning period.",
         "invalidAmount": "Enter an amount in numbers, with up to 3 decimals.",
         "duplicateApprover": "This person already approves another step.",
-        "secondHeadsStep": "The chain has only one department heads step.",
-        "headsStepNamed": "The department heads step names nobody.",
+        "secondHeadsStep": "The chain has only one unit heads step.",
+        "headsStepNamed": "The unit heads step names nobody.",
         "notAMember": "Choose an active member.",
         "notLater": "Choose a date after the current deadline.",
         "duplicateDay": "Each reminder day only once.",
@@ -937,24 +941,24 @@
       "deadline": "Deadline",
       "currency": "Currency",
       "chainTitle": "Approval chain",
-      "instructions": "Instructions to department heads",
+      "instructions": "Instructions to unit heads",
       "progressTitle": "Progress",
-      "progressIntro": "One needs form per department. Department heads fill them in until the deadline.",
+      "progressIntro": "One needs form per unit. Unit heads fill them in until the deadline.",
       "progressStatsLabel": "Progress in numbers",
       "progressStats": {
-        "departments": "Departments",
+        "departments": "Units",
         "notStarted": "Not started",
         "submitted": "Submitted",
         "late": "Late"
       },
       "columns": {
-        "department": "Department",
-        "head": "Department head",
+        "department": "Unit",
+        "head": "Head",
         "envelope": "Budget envelope",
         "status": "Status",
         "actions": "Actions"
       },
-      "tableCaption": "Progress per department",
+      "tableCaption": "Progress per unit",
       "formStatus": {
         "not_started": "Not started",
         "draft": "Draft",
@@ -973,9 +977,9 @@
       "extendHint": "A later date within the planning period ({end}).",
       "extendConfirm": "Extend",
       "extended": "The deadline was extended.",
-      "closedNote": "The deadline has passed: department heads can no longer change their needs. Consolidation comes next.",
+      "closedNote": "The deadline has passed: unit heads can no longer change their needs. Consolidation comes next.",
       "stepPerson": "{step}: {name}",
-      "stepHeads": "{step}: every department head for their own lines",
+      "stepHeads": "{step}: every unit head for their own lines",
       "stepUnnamed": "{step}: not named yet"
     },
     "settings": {
@@ -999,26 +1003,26 @@
       "person": "Person details",
       "email": "Work email",
       "emailHint": "This email becomes the sign-in name. It must be unique within the organization.",
-      "firstNameAr": "First name",
-      "familyNameAr": "Family name",
+      "firstNameAr": "First name in Arabic",
+      "familyNameAr": "Family name in Arabic",
       "addEnglishName": "Add the name in English (optional)",
       "firstNameEn": "First name in English",
       "familyNameEn": "Family name in English",
-      "department": "Department",
-      "noDepartment": "No department",
+      "department": "Unit",
+      "noDepartment": "Not set",
       "branch": "Branch",
       "noBranch": "No branch",
       "manager": "Direct manager",
       "noManager": "No direct manager",
-      "managerHint": "The list shows people with managing roles in the chosen department and changes with the department.",
-      "managerHintAll": "The list shows people with managing roles in all departments.",
-      "allDepartmentsManagers": "Manager in another department? Show managers of all departments",
-      "departmentManagersOnly": "Back to this department's managers only",
+      "managerHint": "The list shows people with managing roles in the chosen unit and changes with the unit.",
+      "managerHintAll": "The list shows people with managing roles in all units.",
+      "allDepartmentsManagers": "Manager in another unit? Show managers of all units",
+      "departmentManagersOnly": "Back to this unit's managers only",
       "employeeNumber": "Employee number",
       "employeeNumberHint": "Must be unique within the organization, for example EMP-1450.",
       "role": "Role",
       "roleHint": "Each person has one role. It decides their menu, pages and the data they see.",
-      "departmentsHint": "This role sees the departments the person heads, with their sub-departments. HR sets department heads in Organization → Structure.",
+      "departmentsHint": "This role sees the units the person heads, with everything under them. HR sets unit heads in Organization → Structure.",
       "rolesHelp": "What can each role do?",
       "privileged": "Privileged role",
       "privilegedAdminOnly": "Only the Organization Admin gives privileged roles (Organization Admin, HR Manager and custom roles with a high-risk permission). You can invite with every other role.",
@@ -1040,10 +1044,11 @@
         "employeeNumberTaken": "This employee number belongs to someone else in the organization.",
         "roleRequired": "Choose a role.",
         "roleNotAllowed": "You can't give this role. Only the Organization Admin gives privileged roles.",
-        "unit": "Choose a department or branch from the list.",
+        "unit": "Choose a unit or branch from the list.",
         "manager": "Choose the direct manager from the list.",
         "roleUnknown": "This role no longer exists. Choose another role."
-      }
+      },
+      "addArabicName": "Add the name in Arabic (optional)"
     },
     "list": {
       "created": "Invitation created. Copy its code or link from the list; it stays valid for 7 days.",
@@ -1129,8 +1134,8 @@
         "picker": "New direct manager"
       },
       "platform_headed_departments": {
-        "title": "{count, plural, one {{count, number, integer} department headed by this user} other {{count, number, integer} departments headed by this user}}",
-        "picker": "New department head"
+        "title": "{count, plural, one {{count, number, integer} unit headed by this user} other {{count, number, integer} units headed by this user}}",
+        "picker": "New head"
       }
     },
     "itemsBlocked": {
@@ -1174,7 +1179,7 @@
       "working": "Reactivating…",
       "done": "The account was reactivated. Signing in to the organization works again, with the same roles.",
       "notDeactivated": "This account isn't deactivated. Refresh the page.",
-      "placementDeleted": "This person's department or branch was deleted. Edit their details first, then reactivate the account."
+      "placementDeleted": "This person's unit or branch was deleted. Edit their details first, then reactivate the account."
     }
   },
   "mfa": {
@@ -1432,7 +1437,7 @@
       "employee_number": "Employee number",
       "job_title_ar": "Job title (Arabic)",
       "job_title_en": "Job title (English)",
-      "department": "Department",
+      "department": "Unit",
       "branch": "Branch",
       "manager_email": "Direct manager's email",
       "hire_date": "Hire date",
@@ -1442,7 +1447,7 @@
     },
     "upload": {
       "templateHeading": "Download the template (optional)",
-      "templateIntro": "A ready template with Jadarat's columns, and lists of {organization}'s departments, branches and roles to pick values from.",
+      "templateIntro": "A ready template with Jadarat's columns, and lists of {organization}'s units, branches and roles to pick values from.",
       "templateLanguage": "Column headers language",
       "templateXlsx": "Download template (XLSX)",
       "templateCsv": "Download template (CSV)",
@@ -1914,7 +1919,7 @@
       "keeps": "{count, plural, one {{count, number, integer} person who accepted their invitation and started using Jadarat stays. You can deactivate their account from their profile if needed.} other {{count, number, integer} people who accepted their invitation and started using Jadarat stay. You can deactivate any of them from their profile if needed.}}",
       "restores": "{count, plural, one {We restore the previous data of {count, number, integer} user this import updated, unless it changed since.} other {We restore the previous data of {count, number, integer} users this import updated, unless it changed since.}}",
       "noUpdates": "This import updated no existing user's data, so there are no values to restore.",
-      "referenced": "Anyone others depend on (someone's direct manager, or a department head) stays until their responsibilities are moved.",
+      "referenced": "Anyone others depend on (someone's direct manager, or a unit head) stays until their responsibilities are moved.",
       "audit": "The undo is recorded in the audit log, and it can't be reversed once done.",
       "reason": "Reason for undoing (optional, shown in the audit log)",
       "reasons": {
@@ -1957,7 +1962,7 @@
         "roles": "Roles and language"
       },
       "inTemplateHeading": "What's in the template",
-      "inTemplateXlsx": "XLSX file: a \"Users\" sheet to fill in, with drop-down lists for department, branch, roles and language; an \"Instructions\" sheet with this table; and a \"Lists\" sheet with the departments, branches and roles available to you.",
+      "inTemplateXlsx": "XLSX file: a \"Users\" sheet to fill in, with drop-down lists for unit, branch, roles and language; an \"Instructions\" sheet with this table; and a \"Lists\" sheet with the units, branches and roles available to you.",
       "inTemplateCsv": "CSV file: the header row only, as UTF-8 so Arabic letters show correctly in Excel.",
       "noExamples": "The template has no example rows, so none can be imported by mistake.",
       "neverHeading": "Never imported from a file",
@@ -1985,8 +1990,8 @@
       "NOT_PROCESSED": "Not reached by the import",
       "NOT_ALLOWED": "You may no longer add people",
       "WRITE_FAILED": "Fault on our side while saving",
-      "DEPARTMENT_NOT_FOUND": "Department not in Organization data",
-      "DEPARTMENT_AMBIGUOUS": "Department name matches several departments",
+      "DEPARTMENT_NOT_FOUND": "Unit not in the organization's structure",
+      "DEPARTMENT_AMBIGUOUS": "Unit name matches several units",
       "BRANCH_NOT_FOUND": "Branch not in Organization data",
       "BRANCH_AMBIGUOUS": "Branch name matches several branches",
       "MANAGER_NOT_FOUND": "Direct manager not found",
@@ -2006,7 +2011,8 @@
       "NEW_SKIPPED_UPDATE_ONLY": "Not users (update only)",
       "NO_CHANGES": "Nothing differs from their data",
       "ROLE_REPEATED": "Role repeated in the row",
-      "ROLES_ONE_PER_PERSON": "Additional roles not given (one role per person)"
+      "ROLES_ONE_PER_PERSON": "Additional roles not given (one role per person)",
+      "NAME_EN_REQUIRED": "English first or family name empty"
     },
     "heldSummary": "{count, plural, one {one invitation not sent yet} other {{count, number, integer} invitations not sent yet}}"
   },
@@ -2189,6 +2195,7 @@
         "adminEmail": "Enter an email address such as name@company.com.",
         "adminEmailOwn": "Use the Organization Admin's own email. You can't invite your own Super Admin account.",
         "adminName": "Use up to 100 characters.",
+        "adminNamePair": "Enter the first name and the family name in this language, or leave both empty.",
         "locale": "Choose Arabic or English.",
         "form": "Check the details and try again."
       }
@@ -2252,7 +2259,7 @@
         "hint": "The people who report directly to them."
       },
       "departments": {
-        "label": "A department",
+        "label": "A unit of the structure",
         "hint": "One unit of the structure, at any level, picked when the role is given. The person sees it and everything under it."
       },
       "organization": {
@@ -2260,8 +2267,8 @@
         "hint": "Everyone in the organization. Needed for administrative permissions."
       },
       "headed": {
-        "label": "Their departments",
-        "hint": "The departments they head, with sub-departments (set by HR in the structure)."
+        "label": "The units they head",
+        "hint": "The units they head, with everything under them (set by HR in the structure)."
       }
     },
     "scopeCleared": "Administrative permissions were cleared: they need the whole organization.",
@@ -2290,7 +2297,7 @@
   },
   "needsForms": {
     "title": "Needs forms",
-    "intro": "Design the form department heads fill in to propose their team’s training needs. Each planning cycle uses one form, chosen when it is set up.",
+    "intro": "Design the form unit heads fill in to propose their team’s training needs. Each planning cycle uses one form, chosen when it is set up.",
     "notConfigured": "Preview: this environment is not connected to a database. Your changes stay in this browser tab only.",
     "loadFailed": "We couldn’t load the needs forms. Try again. Reference: {correlationId}",
     "create": "Create form",
@@ -2334,7 +2341,7 @@
     "deactivated": "Form switched off.",
     "deleted": "Form deleted.",
     "back": "Back to needs forms",
-    "builderIntro": "Sections hold the fields department heads fill in. The training topic and people fields are fixed: every form keeps them.",
+    "builderIntro": "Sections hold the fields unit heads fill in. The training topic and people fields are fixed: every form keeps them.",
     "lockedBanner": "This form is used by a launched planning cycle, so its sections and fields can’t change. Duplicate it to make changes.",
     "readOnlyBanner": "You can view this form. Only the L&D Manager changes it.",
     "notFound": "This form doesn’t exist any more, or you don’t have access to it.",
@@ -2344,7 +2351,7 @@
     "addField": "Add field",
     "preview": "Preview",
     "previewTitle": "Preview of «{name}»",
-    "previewHint": "This is how department heads see the form. Try the answers: fields with conditions appear and disappear. Nothing is saved.",
+    "previewHint": "This is how unit heads see the form. Try the answers: fields with conditions appear and disappear. Nothing is saved.",
     "systemBadge": "Fixed fields",
     "repeatableBadge": "Repeatable · {min}–{max}",
     "fieldsCount": "{count} fields",
@@ -2379,12 +2386,12 @@
     "descriptionEn": "Description in English",
     "descriptionAr": "Description in Arabic",
     "repeatable": "Repeatable section",
-    "repeatableHint": "Department heads can fill the section in more than once, for example one entry for each need.",
+    "repeatableHint": "Unit heads can fill the section in more than once, for example one entry for each need.",
     "minEntries": "Minimum entries",
     "maxEntries": "Maximum entries",
     "addFieldTitle": "Add field",
     "editFieldTitle": "Edit field",
-    "fieldDialogDesc": "Labels and options in both languages: department heads see them in their language.",
+    "fieldDialogDesc": "Labels and options in both languages: unit heads see them in their language.",
     "labelEn": "Label in English",
     "labelAr": "Label in Arabic",
     "type": "Field type",
@@ -2402,7 +2409,7 @@
     "alwaysShown": "Always shown",
     "conditionValue": "has the answer",
     "chooseValue": "Choose an answer",
-    "peopleMode": "How department heads answer",
+    "peopleMode": "How unit heads answer",
     "systemNote": "A fixed field: you can change its labels, placeholder and order. It stays required and shown, and it can’t be deleted.",
     "deleteSectionTitle": "Delete section?",
     "deleteSectionDesc": "The section «{name}» and its fields are deleted.",
@@ -2440,8 +2447,8 @@
       "yes": "Yes",
       "peopleCount": "Number of people",
       "peopleNamed": "Named employees",
-      "peopleNamedHint": "Department heads pick employees from their team on the needs page.",
-      "fileHint": "Department heads attach the file on the needs page.",
+      "peopleNamedHint": "Unit heads pick employees from their team on the needs page.",
+      "fileHint": "Unit heads attach the file on the needs page.",
       "nothingShown": "No fields are shown in this section."
     },
     "fieldErrors": {
@@ -2618,14 +2625,14 @@
   },
   "structure": {
     "title": "Organization structure",
-    "intro": "Your organization's levels and units, with a head for each unit. A role limited to a department covers the unit picked and everything under it.",
+    "intro": "Your organization's levels and units, with a head for each unit. A role limited to a unit covers the unit picked and everything under it.",
     "notConfigured": "The structure appears once this environment is connected to the database and the sign-in service.",
     "viewOnly": "You can view the structure. The HR Manager changes it.",
     "loadFailed": "The structure could not be loaded because of a problem on our side. You can try again. Reference: {correlationId}",
     "tabsLabel": "Structure views",
     "tabs": {
       "tree": "Structure",
-      "levels": "Levels"
+      "levels": "Organization tree"
     },
     "stats": {
       "label": "Summary",
@@ -2720,17 +2727,10 @@
       "levelRemoved": "Level removed."
     },
     "levels": {
-      "title": "Levels",
-      "description": "Your structure's levels from the top down, each with an English and an Arabic name. Up to 10.",
+      "title": "Organization tree",
+      "description": "Name the levels of your organization in order. The structure follows these names.",
       "example": "For example: Sector → General Department → Department → Section.",
-      "caption": "Structure levels",
-      "columns": {
-        "level": "Level",
-        "nameEn": "English name",
-        "nameAr": "Arabic name",
-        "units": "Units",
-        "actions": "Actions"
-      },
+      "caption": "Levels from the top down",
       "levelNumber": "Level {ordinal}",
       "add": "Add level",
       "addTitle": "Add a level",
@@ -2750,7 +2750,8 @@
       "inUse": "{units, plural, one {{units, number, integer} unit uses} other {{units, number, integer} units use}} this level. Move or delete them first.",
       "full": "Your structure has the most levels allowed (10).",
       "nameTaken": "Another level has this name.",
-      "name": "The name needs visible letters, up to 60 characters."
+      "name": "The name needs visible letters, up to 60 characters.",
+      "unitCount": "{count, plural, =0 {No units} one {# unit} other {# units}}"
     }
   },
   "branches": {

@@ -4,7 +4,7 @@
 |---|---|
 | **Epic** | EP-EMAIL (Super Admin platform sender + Organization Admin Email integration) |
 | **Requirements** | FR-ADM-17 (platform settings → e-mail), FR-NTF-02, FR-NTF-11 |
-| **Status** | In discussion with the PO (16 Oct 2026) |
+| **Status** | **Agreed (PO, 17 Oct 2026)** — open questions approved as proposed (no automatic fallback; the five Kawadir providers; the PO is the Super Admin) |
 | **Copied from** | Kawadir ATS one-to-one: Super Admin **Platform settings → Email**, Org Admin **Settings → Email integration**, sender rule (`sender-rule.ts`, `platform_email_settings`) |
 
 ## 1. Goal
@@ -26,7 +26,7 @@ Every e-mail of the product (invitations, password reset, password changed, and 
 
 ## 4. Business rules
 - **Sender rule (Kawadir):** the organization's own provider when it is configured and enabled → else the platform sender. Platform e-mails (ENTLAQA's own alerts) always use the platform sender.
-- **No silent switch:** if an organization's own provider fails, the failure is shown to the Org Admin as theirs to fix (Kawadir rule; replaces "automatic fallback" in FR-NTF-11 — **PO to confirm**, question 1).
+- **No silent switch:** if an organization's own provider fails, the failure is shown to the Org Admin as theirs to fix (Kawadir rule; replaces "automatic fallback" in FR-NTF-11 — PO, 17 Oct 2026).
 - Keys are write-only and encrypted; nobody can read them back, including the Super Admin.
 - The platform sender is never used under an organization's name without the organization's brand name as sender name.
 - Every change is audited (who, when, what — never the key).
@@ -58,6 +58,6 @@ Every e-mail of the product (invitations, password reset, password changed, and 
 ## 9. Open questions
 | # | Question | Proposed answer | PO answer |
 |---|---|---|---|
-| 1 | If the organization's own provider fails, fall back to the platform sender automatically? | **No** (Kawadir rule): show the error to the Org Admin | |
-| 2 | Who is the first Super Admin? | You (the PO), created once by a workflow Claude runs | |
-| 3 | Providers in R1 | Resend, SMTP, SendGrid, Mailgun, Microsoft 365 (as Kawadir) | |
+| 1 | If the organization's own provider fails, fall back to the platform sender automatically? | **No** (Kawadir rule): show the error to the Org Admin || Approved (17 Oct 2026) |
+| 2 | Who is the first Super Admin? | You (the PO), created once by a workflow Claude runs || Approved (17 Oct 2026) |
+| 3 | Providers in R1 | Resend, SMTP, SendGrid, Mailgun, Microsoft 365 (as Kawadir) || Approved (17 Oct 2026) |

@@ -1,5 +1,6 @@
 import 'server-only';
 import { type SQL, sql } from 'drizzle-orm';
+import { storableArabicDisplayName } from './custom-roles-present';
 import { keepUnsplitDisplayNames } from './names';
 import { pgError } from './pg-error';
 import type { UserTx } from './with-user-tx';
@@ -25,7 +26,7 @@ export interface EditableUser {
   readonly fatherNameEn: string | null;
   readonly grandfatherNameEn: string | null;
   readonly familyNameEn: string | null;
-  readonly displayNameAr: string;
+  readonly displayNameAr: string | null;
   readonly displayNameEn: string | null;
   readonly email: string | null;
   readonly mobileE164: string | null;
@@ -86,7 +87,7 @@ export async function getEditableUser(tx: UserTx, personId: string): Promise<Edi
     fatherNameEn: text('father_name_en'),
     grandfatherNameEn: text('grandfather_name_en'),
     familyNameEn: text('family_name_en'),
-    displayNameAr: row.display_name_ar as string,
+    displayNameAr: text('display_name_ar'),
     displayNameEn: text('display_name_en'),
     email: text('email'),
     mobileE164: text('mobile_e164'),
@@ -109,7 +110,7 @@ export async function getEditableUser(tx: UserTx, personId: string): Promise<Edi
 /** A person who can be chosen as direct manager (screen 2: managers of the chosen department). */
 export interface ManagerOption {
   readonly personId: string;
-  readonly nameAr: string;
+  readonly nameAr: string | null;
   readonly nameEn: string | null;
   /** False only for the present manager who is no longer active (shown so it is not lost). */
   readonly active: boolean;
@@ -130,7 +131,7 @@ export async function listManagerOptions(
 ): Promise<readonly ManagerOption[]> {
   const rows = await tx.execute<{
     person_id: string;
-    name_ar: string;
+    name_ar: string | null;
     name_en: string | null;
     active: boolean;
     department_ids: string[] | null;
@@ -160,7 +161,7 @@ export async function listManagerOptions(
     join platform.persons p on p.id = x.person_id
       and (p.status = 'active' or p.id = ${current}::uuid)
     left join platform.person_employment e on e.tenant_id = p.tenant_id and e.person_id = p.id
-    order by p.display_name_ar, p.id`);
+    order by coalesce(p.display_name_ar, p.display_name_en), p.id`);
   return rows.map((r) => ({
     personId: r.person_id,
     nameAr: r.name_ar,
@@ -179,7 +180,7 @@ export interface UserDetailsChange {
   readonly fatherNameEn: string | null;
   readonly grandfatherNameEn: string | null;
   readonly familyNameEn: string | null;
-  readonly displayNameAr: string;
+  readonly displayNameAr: string | null;
   readonly displayNameEn: string | null;
   /** Ignored for people with a login (the login e-mail changes only through Auth). */
   readonly email: string | null;
@@ -286,13 +287,22 @@ export async function updateUserDetails(
   // Same rule as the page and the database guard (also on one's own record: My profile is the
   // self-service path, with its own audit event).
   if (!before.mayManage) return { ok: false, refusal: 'not_allowed' };
-  const next: UserDetailsChange = keepUnsplitDisplayNames(
+  const kept: UserDetailsChange = keepUnsplitDisplayNames(
     before,
     before.hasLogin ? { ...change, email: before.email } : change,
   );
-  // A first name is required, unless a long Arabic name stored without parts was kept as is.
-  const arabicNameKept = next.displayNameAr !== change.displayNameAr;
-  if (next.firstNameAr === null && !arabicNameKept) return { ok: false, refusal: 'name_required' };
+  // Every person keeps a name (persons_name_present_check): an Arabic name — given, or a long one stored
+  // without parts and kept as is — or a complete English name. Which language is required follows the
+  // organization's default language, checked by the action (PO 17 Oct 2026).
+  const hasArabicName = kept.displayNameAr !== null && kept.displayNameAr !== '';
+  const hasEnglishName =
+    kept.firstNameEn !== null && kept.familyNameEn !== null && kept.displayNameEn !== null;
+  if (!hasArabicName && !hasEnglishName) return { ok: false, refusal: 'name_required' };
+  // No Arabic display name without Arabic names — before migration 20261021090000 the English one.
+  const next: UserDetailsChange = {
+    ...kept,
+    displayNameAr: await storableArabicDisplayName(tx, kept.displayNameAr, kept.displayNameEn),
+  };
 
   const personChanges = PERSON_FIELDS.filter(([field]) => before[field] !== next[field]);
   const employmentChanges = EMPLOYMENT_FIELDS.filter(([field]) => before[field] !== next[field]);

@@ -26,7 +26,7 @@ describe('role matrix (BRD Appendix B, screen 5)', () => {
     ]);
     expect(area('reports').access.department_head).toEqual({
       level: 'V',
-      qualifier: { ar: 'القسم', en: 'department' },
+      qualifier: { ar: 'وحداته', en: 'their units' },
     });
   });
 

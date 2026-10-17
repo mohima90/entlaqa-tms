@@ -70,8 +70,9 @@ export async function loadInvitationForMail(
   }>(sql`
     select i.id, i.status, i.send_count, i.email, i.locale, i.person_id, i.invited_by,
            i.send_requested_by, i.mail_held, i.expires_at,
-           p.display_name_ar as recipient_ar, p.display_name_en as recipient_en,
-           ip.display_name_ar as inviter_ar, ip.display_name_en as inviter_en,
+           -- A person may have an English name only (PO 17 Oct 2026): the Arabic e-mail then names them in English.
+           coalesce(p.display_name_ar, p.display_name_en) as recipient_ar, p.display_name_en as recipient_en,
+           coalesce(ip.display_name_ar, ip.display_name_en) as inviter_ar, ip.display_name_en as inviter_en,
            t.name_ar as organization_ar, t.name_en as organization_en, i.primary_role,
            ${customNames ? sql`cr.name_ar` : sql`null::text`} as role_name_ar,
            ${customNames ? sql`cr.name_en` : sql`null::text`} as role_name_en

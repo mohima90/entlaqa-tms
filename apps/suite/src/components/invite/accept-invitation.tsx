@@ -240,32 +240,41 @@ function CreateAccountForm({
   return (
     <form className="flex flex-col gap-5" onSubmit={onSubmit} noValidate>
       <div className="grid gap-4 sm:grid-cols-2">
-        <AuthField
-          id="invite-name-ar"
-          name="displayNameAr"
-          label={labels.displayNameAr}
-          marker={labels.optional}
-          defaultValue={displayName.ar}
-          autoComplete="name"
-          maxLength={200}
-          dir="rtl"
-          lang="ar"
-          error={fieldErrors.displayNameAr}
-          disabled={pending}
-        />
-        <AuthField
-          id="invite-name-en"
-          name="displayNameEn"
-          label={labels.displayNameEn}
-          marker={labels.optional}
-          defaultValue={displayName.en}
-          autoComplete="off"
-          maxLength={200}
-          dir="ltr"
-          lang="en"
-          error={fieldErrors.displayNameEn}
-          disabled={pending}
-        />
+        {/* The page's language first (English by default, PO 14 Oct 2026); both optional: an empty field
+            keeps the name the organization entered (either may be missing, PO 17 Oct 2026). */}
+        {(locale === 'ar' ? (['ar', 'en'] as const) : (['en', 'ar'] as const)).map((language, i) =>
+          language === 'ar' ? (
+            <AuthField
+              key="ar"
+              id="invite-name-ar"
+              name="displayNameAr"
+              label={labels.displayNameAr}
+              marker={labels.optional}
+              defaultValue={displayName.ar}
+              autoComplete={i === 0 ? 'name' : 'off'}
+              maxLength={200}
+              dir="rtl"
+              lang="ar"
+              error={fieldErrors.displayNameAr}
+              disabled={pending}
+            />
+          ) : (
+            <AuthField
+              key="en"
+              id="invite-name-en"
+              name="displayNameEn"
+              label={labels.displayNameEn}
+              marker={labels.optional}
+              defaultValue={displayName.en}
+              autoComplete={i === 0 ? 'name' : 'off'}
+              maxLength={200}
+              dir="ltr"
+              lang="en"
+              error={fieldErrors.displayNameEn}
+              disabled={pending}
+            />
+          ),
+        )}
       </div>
       <p className="-mt-2 mb-0 text-sm text-text-muted">{labels.displayNameHint}</p>
       <AuthField

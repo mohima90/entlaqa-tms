@@ -61,7 +61,8 @@ async function importer(locale: AppLocale, view: UserImportView): Promise<string
   const t = await getTranslations({ locale, namespace: 'userImport' });
   const { record } = view;
   if (record.mine) return t('recent.you');
-  return record.importerName.ar
+  // A person may have an English name only (PO 17 Oct 2026).
+  return (record.importerName.ar ?? record.importerName.en)
     ? localizedName(locale, record.importerName.ar, record.importerName.en)
     : '—';
 }
@@ -408,7 +409,9 @@ export async function reviewStep(
               {row.email ? <bdi dir="ltr">{row.email}</bdi> : '—'}
             </td>
             <td className="min-w-40 px-4 py-3">
-              {row.nameAr ? localizedName(locale, row.nameAr, row.nameEn) : t('review.noName')}
+              {(row.nameAr ?? row.nameEn)
+                ? localizedName(locale, row.nameAr, row.nameEn)
+                : t('review.noName')}
             </td>
             <td className="min-w-72 px-4 py-3">{detail}</td>
           </tr>

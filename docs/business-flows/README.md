@@ -10,7 +10,7 @@
 | Roles and custom roles | EP-ROLES | [EP-ROLES-roles-and-custom-roles.md](EP-ROLES-roles-and-custom-roles.md) | **Agreed (PO, 17 Oct 2026)** |
 | Organization structure (own levels) and department-limited roles | EP-PLN prerequisite | [EP-ORG-organization-structure.md](EP-ORG-organization-structure.md) | **Agreed (PO, 17 Oct 2026)** |
 | Planning cycle (needs → consolidation → approval → hand-over) | EP-PLN | [EP-PLN-planning-cycle.md](EP-PLN-planning-cycle.md) | **Agreed (PO, 17 Oct 2026)** |
-| E-mail sending (platform sender + Email integration) | EP-EMAIL | [EP-EMAIL-email-sending.md](EP-EMAIL-email-sending.md) | In discussion with the PO (16 Oct 2026) |
+| E-mail sending (platform sender + Email integration) | EP-EMAIL | [EP-EMAIL-email-sending.md](EP-EMAIL-email-sending.md) | **Agreed (PO, 17 Oct 2026)** |
 
 Status values: Draft · In discussion with the PO · **Agreed (PO, date)** · Changed after agreement (date, reason).
 

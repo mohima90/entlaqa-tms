@@ -21,18 +21,34 @@ const organizationName = (max: number) =>
 
 const personName = organizationName(100).optional();
 
-export const CreateOrganizationInput = z.strictObject({
-  slug: z.string().refine(isOrganizationSlug, { message: 'slug' }),
-  nameAr: organizationName(200).pipe(z.string().min(1)),
-  nameEn: organizationName(200).optional(),
-  adminEmail: z.string().trim().toLowerCase().max(254).pipe(z.email()),
-  adminFirstNameAr: personName,
-  adminFamilyNameAr: personName,
-  adminFirstNameEn: personName,
-  adminFamilyNameEn: personName,
-  // English is the default language for now (PO, 14 Oct 2026).
-  locale: z.enum(['ar', 'en']).default('en'),
-});
+export const CreateOrganizationInput = z
+  .strictObject({
+    slug: z.string().refine(isOrganizationSlug, { message: 'slug' }),
+    nameAr: organizationName(200).pipe(z.string().min(1)),
+    nameEn: organizationName(200).optional(),
+    adminEmail: z.string().trim().toLowerCase().max(254).pipe(z.email()),
+    adminFirstNameAr: personName,
+    adminFamilyNameAr: personName,
+    adminFirstNameEn: personName,
+    adminFamilyNameEn: personName,
+    // English is the default language for now (PO, 14 Oct 2026).
+    locale: z.enum(['ar', 'en']).default('en'),
+  })
+  .superRefine((value, ctx) => {
+    // The admin's names are optional (they set their own on the sign-up page), but each language's are all
+    // or nothing: a first name without the family name is half a name (WP-FIX-01 review; the database never
+    // puts English text in the Arabic name, 20261021100100). The empty field gets the error.
+    for (const [first, family] of [
+      ['adminFirstNameAr', 'adminFamilyNameAr'],
+      ['adminFirstNameEn', 'adminFamilyNameEn'],
+    ] as const) {
+      const hasFirst = (value[first] ?? '') !== '';
+      const hasFamily = (value[family] ?? '') !== '';
+      if (hasFirst !== hasFamily) {
+        ctx.addIssue({ code: 'custom', path: [hasFirst ? family : first], message: 'pair' });
+      }
+    }
+  });
 
 export type CreateOrganizationInputValue = z.output<typeof CreateOrganizationInput>;
 

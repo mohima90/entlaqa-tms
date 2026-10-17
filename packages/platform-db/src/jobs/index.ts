@@ -89,6 +89,7 @@ export {
   finishUserImportRows,
   jobFileStatus,
   loadUserImportForJob,
+  loadMemberNamesByEmail,
   loadUserImportHeaders,
   loadUserImportReportRows,
   markUserImportPurged,

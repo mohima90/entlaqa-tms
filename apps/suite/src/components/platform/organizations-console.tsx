@@ -46,7 +46,9 @@ function fieldMessage(field: Field | 'locale' | 'form', code: string, text: (k: 
     return text(code === 'SLUG_TAKEN' ? 'create.errors.slugTaken' : 'create.errors.slug');
   // A Super Admin never invites their own account (review L7).
   if (field === 'adminEmail' && code === 'OWN_EMAIL') return text('create.errors.adminEmailOwn');
-  if (field.startsWith('admin') && field !== 'adminEmail') return text('create.errors.adminName');
+  // A language's names all or nothing (the form's other name field of that language is filled).
+  if (field.startsWith('admin') && field !== 'adminEmail')
+    return text(code === 'CUSTOM' ? 'create.errors.adminNamePair' : 'create.errors.adminName');
   return text(`create.errors.${field}`);
 }
 
@@ -197,10 +199,11 @@ export function CreateOrganization(props: Shared) {
             {field('adminEmail', { required: true, type: 'email', dir: 'ltr' })}
             <p className="m-0 text-sm text-text-muted">{text('create.adminNamesHint')}</p>
             <div className="grid gap-4 md:grid-cols-2">
-              {field('adminFirstNameAr', { dir: 'rtl' })}
-              {field('adminFamilyNameAr', { dir: 'rtl' })}
+              {/* English first: a new organization's default language (PO 14 and 17 Oct 2026). */}
               {field('adminFirstNameEn', { dir: 'ltr' })}
               {field('adminFamilyNameEn', { dir: 'ltr' })}
+              {field('adminFirstNameAr', { dir: 'rtl' })}
+              {field('adminFamilyNameAr', { dir: 'rtl' })}
             </div>
             <SelectField
               id={`${formId}-locale`}

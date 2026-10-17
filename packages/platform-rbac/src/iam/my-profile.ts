@@ -1,16 +1,25 @@
 import { type AppError, type Result, appError, err, ok } from '@jadarat/platform-core';
 import {
   type PersonalDetails,
+  type StructureLevelLabel,
   type UserProfile,
   type UserTx,
   type MyRole,
   getMyPrimaryRole,
   getPersonalDetails,
+  getTenantDefaultLocale,
+  keepsUnsplitDisplayName,
+  listStructureLevelLabels,
   getUserProfile,
   passwordMinLengthForCaller,
   updatePersonalDetails,
 } from '@jadarat/platform-db';
-import { hasVisibleText, normalizeDigits } from '@jadarat/platform-i18n';
+import {
+  type NamePairs,
+  hasVisibleText,
+  missingNameFields,
+  normalizeDigits,
+} from '@jadarat/platform-i18n';
 import { z } from 'zod';
 import type { ActionDefinition } from '../define-action';
 import type { QueryDefinition } from '../define-query';
@@ -31,6 +40,56 @@ export const namePart = z
   .refine((value) => value === '' || hasVisibleText(value), { message: 'invisible' })
   .transform((value) => (value === '' ? null : value));
 
+/** The stored names `nameRuleError` compares with (a person's record). */
+export type KeptNameFields = Parameters<typeof keepsUnsplitDisplayName>[0];
+/** The name parts a save sends. */
+export type KeptNameParts = Parameters<typeof keepsUnsplitDisplayName>[1];
+
+const NAME_PARTS = ['firstName', 'fatherName', 'grandfatherName', 'familyName'] as const;
+
+/**
+ * Does a save leave the person's names as they are (PO decision 17 Oct 2026, WP-FIX-01 item 3)? Per language:
+ * the same parts as stored — or, for a name stored without parts, the parts give the same text (the forms
+ * pre-fill such a name into the first name; a long one is sent as no parts and kept, keepUnsplitDisplayNames).
+ */
+export function namesUnchanged(before: KeptNameFields, next: KeptNameParts): boolean {
+  return (['Ar', 'En'] as const).every((script) => {
+    const parts = NAME_PARTS.map((part) => next[`${part}${script}`] ?? null);
+    const stored = NAME_PARTS.map((part) => before[`${part}${script}`] ?? null);
+    if (parts.every((value, i) => value === stored[i])) return true;
+    if (stored.some((value) => value !== null)) return false;
+    const display = (script === 'Ar' ? before.displayNameAr : before.displayNameEn) ?? null;
+    return display !== null && parts.filter((value) => value !== null).join(' ') === display;
+  });
+}
+
+/**
+ * The names rule of the organization's default language (guided-test feedback #2, PO 17 Oct 2026): its first
+ * and family names are required, the other language's are optional (all or nothing). A VALIDATION_FAILED
+ * error with a REQUIRED field error per missing field (the forms show it next to the field), or null when
+ * satisfied. Shared by invite, edit details and My profile. With the record as stored (`kept`, an existing
+ * person): a save that leaves the names as they are passes whatever they are — people entered before the
+ * rule (e.g. with Arabic names only in an English-default organization) can still be saved (PO decision
+ * 17 Oct 2026); and a long name stored without parts that the save keeps as it is (keepUnsplitDisplayNames)
+ * counts as given. Creating a person (invite: no `kept`) always applies the rule.
+ */
+export async function nameRuleError(
+  tx: UserTx,
+  names: NamePairs,
+  kept?: { readonly before: KeptNameFields; readonly next: KeptNameParts },
+): Promise<AppError | null> {
+  if (kept && namesUnchanged(kept.before, kept.next)) return null;
+  const missing = missingNameFields(await getTenantDefaultLocale(tx), names).filter(
+    (field) =>
+      !kept || !keepsUnsplitDisplayName(kept.before, kept.next, field.endsWith('Ar') ? 'ar' : 'en'),
+  );
+  return missing.length === 0
+    ? null
+    : appError('VALIDATION_FAILED', {
+        fieldErrors: missing.map((path) => ({ path, code: 'REQUIRED' })),
+      });
+}
+
 /** Mobile with country code: digits in any script, spaces/dashes/brackets ignored, 00 → +. */
 export const mobile = z
   .string()
@@ -46,7 +105,9 @@ export const mobile = z
 
 export const MyProfileInput = z
   .strictObject({
-    firstNameAr: namePart.refine((v) => v !== null, { message: 'required' }),
+    // Which first and family names are required follows the organization's default language: checked by
+    // the action (nameRuleError), where the organization is known.
+    firstNameAr: namePart,
     fatherNameAr: namePart,
     grandfatherNameAr: namePart,
     familyNameAr: namePart,
@@ -75,7 +136,7 @@ export const MyProfileInput = z
     }
   });
 
-/** Display names composed from the parts (design principles §4); English only when given. */
+/** Display names composed from the parts (design principles §4); each only when given. */
 export function personalDetailsFrom(input: z.output<typeof MyProfileInput>): PersonalDetails {
   const join = (...parts: (string | null)[]) =>
     parts.filter((p): p is string => p !== null).join(' ');
@@ -84,6 +145,12 @@ export function personalDetailsFrom(input: z.output<typeof MyProfileInput>): Per
     input.fatherNameEn,
     input.grandfatherNameEn,
     input.familyNameEn,
+  );
+  const displayNameAr = join(
+    input.firstNameAr,
+    input.fatherNameAr,
+    input.grandfatherNameAr,
+    input.familyNameAr,
   );
   return {
     firstNameAr: input.firstNameAr,
@@ -94,12 +161,7 @@ export function personalDetailsFrom(input: z.output<typeof MyProfileInput>): Per
     fatherNameEn: input.fatherNameEn,
     grandfatherNameEn: input.grandfatherNameEn,
     familyNameEn: input.familyNameEn,
-    displayNameAr: join(
-      input.firstNameAr,
-      input.fatherNameAr,
-      input.grandfatherNameAr,
-      input.familyNameAr,
-    ),
+    displayNameAr: displayNameAr === '' ? null : displayNameAr,
     displayNameEn: displayNameEn === '' ? null : displayNameEn,
     mobileE164: input.mobile,
     preferredLocale: input.preferredLocale,
@@ -110,6 +172,8 @@ export interface MyProfileView {
   readonly details: PersonalDetails;
   /** Job data and e-mail, read-only on My profile. */
   readonly profile: UserProfile;
+  /** The organization's own level names: the unit field says its level (guided-test feedback #3). */
+  readonly levels: readonly StructureLevelLabel[];
 }
 
 export function myProfileQueryDefinition(): QueryDefinition<
@@ -130,14 +194,14 @@ export function myProfileQueryDefinition(): QueryDefinition<
         includeActivity: false,
       });
       if (!details || !profile) return err(appError('NOT_FOUND'));
-      return ok({ details, profile });
+      return ok({ details, profile, levels: await listStructureLevelLabels(ctx.tx) });
     },
   };
 }
 
 /** Name for the header picture/initials (every page, so one small read). */
 export interface MyIdentity {
-  readonly displayNameAr: string;
+  readonly displayNameAr: string | null;
   readonly displayNameEn: string | null;
   /** The primary role's code, for the account menu's "Organization · Role" (display only). */
   /** The member's role (one per person since EP-ROLES), with a custom role's names; null without one. */
@@ -185,6 +249,10 @@ export function updateMyProfileActionDefinition(): ActionDefinition<
     handler: async ({ ctx, input }) => {
       const personId = ctx.actor.personId;
       if (!personId) return err(appError('NOT_FOUND'));
+      const before = await getPersonalDetails(ctx.tx, personId);
+      if (!before) return err(appError('NOT_FOUND'));
+      const nameProblem = await nameRuleError(ctx.tx, input, { before, next: input });
+      if (nameProblem) return err(nameProblem);
       const details = personalDetailsFrom(input);
       const changed = await updatePersonalDetails(ctx.tx, personId, details);
       if (changed === null) return err(appError('NOT_FOUND'));

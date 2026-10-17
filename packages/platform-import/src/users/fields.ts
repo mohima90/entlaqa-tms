@@ -28,7 +28,46 @@ export const IMPORT_FIELDS = [
 
 export type ImportField = (typeof IMPORT_FIELDS)[number];
 
-export const REQUIRED_FIELDS: readonly ImportField[] = ['email', 'first_name_ar', 'family_name_ar'];
+/**
+ * The language whose first and family names a file must give: the organization's default language
+ * (guided-test feedback #2, PO 17 Oct 2026; English unless the admin chose Arabic). The other language's
+ * names are optional.
+ */
+export type NameLanguage = 'ar' | 'en';
+
+const NAME_FIELDS_OF: Readonly<Record<NameLanguage, readonly ImportField[]>> = {
+  ar: ['first_name_ar', 'father_name_ar', 'grandfather_name_ar', 'family_name_ar'],
+  en: ['first_name_en', 'father_name_en', 'grandfather_name_en', 'family_name_en'],
+};
+
+/** The fields a file must have: the e-mail and the first and family names in `nameLanguage`. */
+export function requiredFields(nameLanguage: NameLanguage): readonly ImportField[] {
+  return nameLanguage === 'ar'
+    ? ['email', 'first_name_ar', 'family_name_ar']
+    : ['email', 'first_name_en', 'family_name_en'];
+}
+
+/**
+ * The field definitions as a template, the guide and the mapping show them for an organization whose names
+ * are required in `nameLanguage`: that language's name columns first (right after the e-mail) and marked
+ * required, the other language's optional.
+ */
+export function fieldDefinitionsFor(nameLanguage: NameLanguage): readonly FieldDefinition[] {
+  const required = new Set(requiredFields(nameLanguage));
+  const other = nameLanguage === 'ar' ? 'en' : 'ar';
+  const order = [
+    'email',
+    ...NAME_FIELDS_OF[nameLanguage],
+    ...NAME_FIELDS_OF[other],
+  ] as readonly ImportField[];
+  const rank = (field: ImportField) => {
+    const index = order.indexOf(field);
+    return index === -1 ? order.length + IMPORT_FIELDS.indexOf(field) : index;
+  };
+  return [...FIELD_DEFINITIONS]
+    .sort((a, b) => rank(a.field) - rank(b.field))
+    .map((d) => ({ ...d, required: required.has(d.field) }));
+}
 
 export function isImportField(value: string): value is ImportField {
   return (IMPORT_FIELDS as readonly string[]).includes(value);
@@ -38,6 +77,10 @@ export type FieldGroup = 'identity' | 'work' | 'roles';
 
 export interface FieldDefinition {
   readonly field: ImportField;
+  /**
+   * In FIELD_DEFINITIONS: always required (the e-mail). Which names are required depends on the
+   * organization's default language: fieldDefinitionsFor() sets it.
+   */
   readonly required: boolean;
   readonly group: FieldGroup;
   /** The template's header in each language (screen 3). */
@@ -83,7 +126,7 @@ export const FIELD_DEFINITIONS: readonly FieldDefinition[] = [
   },
   {
     field: 'first_name_ar',
-    required: true,
+    required: false,
     group: 'identity',
     header: { ar: 'الاسم الأول', en: 'First name (Arabic)' },
     synonyms: [
@@ -122,7 +165,7 @@ export const FIELD_DEFINITIONS: readonly FieldDefinition[] = [
   },
   {
     field: 'family_name_ar',
-    required: true,
+    required: false,
     group: 'identity',
     header: { ar: 'اسم العائلة', en: 'Family name (Arabic)' },
     synonyms: [
@@ -278,19 +321,27 @@ export const FIELD_DEFINITIONS: readonly FieldDefinition[] = [
     field: 'department',
     required: false,
     group: 'work',
-    header: { ar: 'القسم', en: 'Department' },
+    // A unit of the structure at any level: the organization names its own levels (guided-test feedback #3,
+    // PO 17 Oct 2026). Files made with the earlier template («القسم» / “Department”) are still recognized.
+    header: { ar: 'الوحدة', en: 'Unit' },
     synonyms: [
+      'القسم',
+      'department',
       'الإدارة',
       'اسم القسم',
       'رمز القسم',
+      'اسم الوحدة',
+      'رمز الوحدة',
       'dept',
       'department name',
       'department code',
+      'unit name',
+      'unit code',
       'division',
     ],
     description: {
-      ar: 'اسم القسم أو رمزه كما في «بيانات المنشأة». لا يُنشئ الاستيراد أقسامًا جديدة.',
-      en: "Department name or code, as in Organization data. The import doesn't create departments.",
+      ar: 'اسم وحدة من الهيكل التنظيمي (في أي مستوى) أو رمزها كما في المنظمة ← الهيكل. لا يُنشئ الاستيراد وحدات جديدة.',
+      en: "Name or code of a unit of the structure (any level), as in Organization → Structure. The import doesn't create units.",
     },
     example: 'التدريب والتطوير',
     width: 22,

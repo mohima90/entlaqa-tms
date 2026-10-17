@@ -16,10 +16,10 @@ It integrates with **Jadarat LMS** (reference connector) and any other LMS throu
 | # | Document | Use it for |
 |---|---|---|
 | 1 | `docs/delivery/STATUS.md` | **Current state**: phase, milestone progress, decisions, blockers, next actions, session log |
-| 1b | `docs/delivery/BACKLOG.md` | **Task list**: pick the next unblocked task of the current milestone; update its status |
+| 1b | `docs/delivery/ROADMAP-by-role.md` + `docs/delivery/BACKLOG.md` | **Work by role** (Org Admin → HR Manager → L&D Manager → …): claim the next unblocked work package (`docs/delivery/HOW-TO-START.md`); update its tasks' status |
 | 2 | `docs/delivery/Jadarat_TMS_Development_Plan.md` | **How** we deliver: quality bars, Definition of Ready/Done, CI gates, milestones M0–M7, quality gates, security program, templates |
 | 3 | `docs/brd/Jadarat_TMS_BRD_v2.md` | **What** to build: requirements `FR-*`, `NFR-*`, priorities, releases, architecture guidance (Appendix H) |
-| 4 | `docs/brd/TMS_Feature_List.md` | Feature IDs, release cut (R1 = 96 features), open decisions |
+| 4 | `docs/brd/TMS_Feature_List.md` | Feature IDs, release cut (R1 = 107 features, v3.2), open decisions |
 | 5 | `docs/research/TMS_Market_Comparison_vs_BRD.md` | Background: competitors, regulatory fact-check, sources |
 
 Precedence: BRD wins on **scope**; the Development Plan wins on **process and quality**; `STATUS.md` records **what has actually happened**. Raise conflicts to the user (Product Owner) instead of guessing.
@@ -27,13 +27,13 @@ Precedence: BRD wins on **scope**; the Development Plan wins on **process and qu
 ## Session routine
 
 **At the start of every session**
-1. Read `docs/delivery/STATUS.md` (current milestone, next actions, blockers) and the current milestone in `docs/delivery/BACKLOG.md`.
-2. Read the relevant milestone section of the Development Plan and the BRD requirements it references.
+1. Read `docs/delivery/STATUS.md` — first its **«Current state by role»** section (next actions, waiting on the PO), then blockers and the latest decisions — and `docs/delivery/ROADMAP-by-role.md` (R1 features by role, **work packages** and their order), then your work package's section in `docs/delivery/BACKLOG.md`. **A new or second Claude account starts with `docs/delivery/HOW-TO-START.md`** (what to read, how to claim a work package on its own branch `claude/<wp-id>-<short>`, migration ranges, shared files, hand-back).
+2. Read the work package's business flow, the relevant section of the Development Plan and the BRD requirements it references.
 3. Confirm with the user which next action to take if it is not obvious from their request.
 4. **Business flow first (PO, 15 Oct 2026):** before any technical work on a phase or epic, its business flow (actors/roles, steps, rules, approvals, exceptions, inputs/outputs, screens implied, open questions) must be written in `docs/business-flows/`, discussed with the PO and agreed (recorded in STATUS). No agreed flow → write and discuss the flow; do not design screens or build.
 
 **At the end of every session (or after any meaningful change)**
-1. Update `docs/delivery/STATUS.md` and task statuses in `docs/delivery/BACKLOG.md`: milestone/task status, decisions made (with date), new blockers/risks, next actions, and a one-line entry in the session log.
+1. Update `docs/delivery/STATUS.md` (your role's line in «Current state by role»), task statuses in `docs/delivery/BACKLOG.md` and feature statuses / «Claimed by» in `docs/delivery/ROADMAP-by-role.md`: milestone/task status, decisions made (with date), new blockers/risks, next actions, and a one-line entry in the session log.
 2. If scope changed, update the BRD (increment version, add a revision-history row) **and** the feature list together.
 3. Commit with a clear message referencing requirement IDs; push to the designated branch.
 
@@ -43,7 +43,7 @@ A project **Stop hook** (`.claude/settings.json` → `.claude/hooks/require-stat
 
 The delivery team is the **user as Product Owner + Claude Code sessions and sub-agents**. Claude acts as tech lead, engineers, designer, QA, DevOps and security. Every PR gets **one** separate code-review pass (and a security-review pass when security-relevant) before the PO merges.
 
-**Lighter process (PO decision, 15 Oct 2026 — Development Plan §2.4):** business flow agreed first for every phase; one independent review per PR (security review only for security-relevant changes; a second look only to confirm Critical/High fixes); one PR per complete feature area; **no separate screen approval (PO, 17 Oct 2026)** — screens are built directly in the Kawadir ATS layout with the Jadarat palette once the flow is agreed, no screenshots needed; database changes batched; documentation only where it matters; several engineering agents in parallel on independent work; a weekly progress report against the feature list (STATUS §7). The non-negotiables below are unchanged. Never merge to `main` yourself. Human-only work (accounts/billing, design partners, usability sessions with real users, legal validation, pen test, go/no-go) belongs to the PO — prepare materials for it, do not attempt it.
+**Lighter process (PO decision, 15 Oct 2026 — Development Plan §2.4):** business flow agreed first for every phase; one independent review per PR (security review only for security-relevant changes; a second look only to confirm Critical/High fixes); one PR per complete feature area; **no separate screen approval (PO, 17 Oct 2026)** — screens are built directly in the Kawadir ATS layout with the Jadarat palette once the flow is agreed, no screenshots needed; database changes batched; documentation only where it matters; several engineering agents in parallel on independent work — **since 17 Oct 2026 organized by role and work package** (Organization Admin → HR Manager → L&D Manager → other roles; one work package = one PR; a second Claude account claims work packages per `docs/delivery/HOW-TO-START.md`); a weekly progress report against the feature list (STATUS §7). **Local checks vs CI (PO, 17 Oct 2026):** agents run the fast checks (`pnpm check:all`) plus only the database, integration and E2E tests for what they changed; the **full suite runs once in GitHub CI** on the PR, and every CI gate must be green before merge — nothing is skipped, only duplicate local full runs are. The non-negotiables below are unchanged. Never merge to `main` yourself. Human-only work (accounts/billing, design partners, usability sessions with real users, legal validation, pen test, go/no-go) belongs to the PO — prepare materials for it, do not attempt it.
 
 ## Non-negotiables (from Development Plan §1)
 

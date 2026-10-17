@@ -77,9 +77,12 @@ test.describe('users pages', () => {
     await expect(table).toContainText('Sarah Abdullah Alqahtani');
     await expect(table).toContainText('Training Coordinator');
 
-    // Department filter includes no one else; clearing brings everyone back
+    // Unit filter includes no one else; clearing brings everyone back. The seeded structure mixes two
+    // levels (Department, Section): the filter is «Unit» and each unit shows its level (feedback #3).
     await page.getByRole('link', { name: 'Clear filters' }).click();
-    await page.getByRole('combobox', { name: 'Department' }).selectOption({ label: 'Academy' });
+    await page
+      .getByRole('combobox', { name: 'Unit', exact: true })
+      .selectOption({ label: 'Academy · Section' });
     await page.getByRole('button', { name: 'Apply' }).click();
     await expect(table.getByRole('row')).toHaveCount(2);
     await page.getByRole('searchbox', { name: 'Search' }).fill('nobody-matches-this');
@@ -211,27 +214,31 @@ test.describe('users pages', () => {
     // "all departments" shows everyone with a managing role.
     const manager = form.getByRole('combobox', { name: /Direct manager/ });
     await expect(manager).toHaveValue('5eed1000-0000-4000-8000-000000000003'); // Mona
-    await form.getByRole('combobox', { name: /Department/ }).selectOption({ label: 'Academy' });
+    await form
+      .getByRole('combobox', { name: /^Unit/ })
+      .selectOption({ label: 'Academy · Section' });
     await expect(manager.getByRole('option')).toHaveText([
       'No direct manager',
       'Mona Saeed Alzahrani',
     ]);
-    await form.getByRole('button', { name: /Show managers of all departments/ }).click();
+    await form.getByRole('button', { name: /Show managers of all units/ }).click();
     await expect(manager.getByRole('option')).toHaveCount(3); // + the Organization Admin (heads TRN)
-    await form.getByRole('button', { name: /department's managers only/ }).click();
-    await form.getByRole('combobox', { name: /Department/ }).selectOption({
-      label: 'Training and development',
+    await form.getByRole('button', { name: /unit's managers only/ }).click();
+    await form.getByRole('combobox', { name: /^Unit/ }).selectOption({
+      label: 'Training and development · Department',
     });
 
     // Sarah's employee number is taken: the field says so and nothing is saved
     await form.getByRole('textbox', { name: /Employee number/ }).fill('EMP-1187');
+    // English is the organization's default language: the English names come first and are required
+    // (guided-test feedback #2); Khalid's Arabic name follows.
     await form
       .getByRole('textbox', { name: /First name/ })
-      .nth(1)
+      .nth(0)
       .fill('Khalid');
     await form
       .getByRole('textbox', { name: /Family name/ })
-      .nth(1)
+      .nth(0)
       .fill('Alshehri');
     await form.getByRole('button', { name: 'Save changes' }).click();
     await expect(form.getByText('This employee number belongs to someone else')).toBeVisible();
@@ -258,7 +265,7 @@ test.describe('users pages', () => {
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(
       'تعديل بيانات سارة عبدالله القحطاني',
     );
-    await expect(page.getByRole('combobox', { name: /القسم/ })).toHaveValue(/.+/);
+    await expect(page.getByRole('combobox', { name: /الوحدة/ })).toHaveValue(/.+/);
     // Hire date: Gregorian field, Hijri equivalent shown under it
     await expect(page.getByText('يوافق 22 شعبان 1445 هـ')).toBeVisible();
     await expectNoSeriousA11yViolations(page);
@@ -535,7 +542,8 @@ test.describe('users pages', () => {
     await dialog.getByRole('button', { name: 'Save role' }).click();
     await expect(dialog).toBeHidden();
     await expect(mona).toContainText(name);
-    await expect(mona.getByTestId('role-unit')).toHaveText('Covers Academy');
+    // The unit is not at the first level: its level is named (guided-test feedback #3).
+    await expect(mona.getByTestId('role-unit')).toHaveText('Covers Academy · Section');
 
     // Mona, at her next request: the people of the Academy (Sarah), not those of Training and development
     // above it (Khalid, her own direct report until now, and herself).

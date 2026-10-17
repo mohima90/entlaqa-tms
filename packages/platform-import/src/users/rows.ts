@@ -1,6 +1,6 @@
 import { hasVisibleText } from '@jadarat/platform-i18n';
 import { z } from 'zod';
-import { type ImportField, isImportField } from './fields';
+import { type ImportField, type NameLanguage, isImportField, requiredFields } from './fields';
 import { type ImportIssue, issue } from './issues';
 import { isPrivilegedRole, roleForName, splitRoles } from './roles';
 import { asciiDigits, cleanText, excerpt, matchKey } from './text';
@@ -82,16 +82,28 @@ export function languageFor(value: string): 'ar' | 'en' | null {
   return LANGUAGES.get(matchKey(value)) ?? null;
 }
 
+/**
+ * The names an existing active member has now, by import field (null: not given) — for the update of such a
+ * member's row (normalizeRow `stored`).
+ */
+export type StoredNames = Readonly<Partial<Record<ImportField, string | null>>>;
+
 const NAME_FIELDS = {
   ar: ['first_name_ar', 'father_name_ar', 'grandfather_name_ar', 'family_name_ar'],
   en: ['first_name_en', 'father_name_en', 'grandfather_name_en', 'family_name_en'],
 } as const;
 
-/** Checks one data row under the confirmed mapping ({column index: field}). */
+/**
+ * Checks one data row under the confirmed mapping ({column index: field}); the first and family names of
+ * `nameLanguage` (the organization's default language, PO 17 Oct 2026) are required — for an existing
+ * member (`stored`) only when the row changes a name.
+ */
 export function normalizeRow(
   rowNumber: number,
   rowCells: readonly string[],
   mapping: ImportMapping,
+  nameLanguage: NameLanguage,
+  stored?: StoredNames,
 ): NormalizedRow {
   const cells: Partial<Record<ImportField, string>> = {};
   const values: Partial<Record<ImportField, string>> = {};
@@ -116,16 +128,38 @@ export function normalizeRow(
   else if (!isEmail(email)) issues.push(issue('EMAIL_INVALID', 'email'));
   else data.email = email;
 
-  // Names: Arabic first and family name required; each part at most 60, all parts at most 200.
+  // Names: the first and family name of the organization's default language required; the other
+  // language's all or nothing (any part given → its first and family name required too, WP-FIX-01 review);
+  // each part at most 60, all parts at most 200. An update of an existing member (`stored`: their names
+  // now) is checked only when the file changes a name, and then on the record as it will be — an empty
+  // cell never clears a value — so people entered before the rule (e.g. Arabic names only in an
+  // English-default organization) can still be updated (PO decision 17 Oct 2026).
+  const requiredNames = new Set(requiredFields(nameLanguage));
+  const allNameFields = [...NAME_FIELDS.ar, ...NAME_FIELDS.en] as readonly ImportField[];
+  const storedName = (field: ImportField) => stored?.[field] ?? undefined;
+  const changesNames =
+    stored === undefined ||
+    allNameFields.some(
+      (field) => values[field] !== undefined && values[field] !== storedName(field),
+    );
+  const nameAfter = (field: ImportField) => values[field] ?? storedName(field);
   for (const fields of [NAME_FIELDS.ar, NAME_FIELDS.en] as readonly (readonly ImportField[])[]) {
     let total = 0;
     let parts = 0;
     let valid = true;
+    const started = fields.some((field) => nameAfter(field) !== undefined);
+    const firstAndFamily = new Set([fields[0], fields[3]]);
     for (const field of fields) {
       const value = values[field];
       if (value === undefined) {
-        if (field === 'first_name_ar' || field === 'family_name_ar') {
-          issues.push(issue('NAME_AR_REQUIRED', field));
+        if (
+          changesNames &&
+          nameAfter(field) === undefined &&
+          (requiredNames.has(field) || (started && firstAndFamily.has(field)))
+        ) {
+          issues.push(
+            issue(field.endsWith('_ar') ? 'NAME_AR_REQUIRED' : 'NAME_EN_REQUIRED', field),
+          );
           valid = false;
         }
         continue;

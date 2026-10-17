@@ -226,7 +226,11 @@ export {
   DEFAULT_TENANT_REGIONAL,
   type TenantRegional,
   getCurrentTenant,
+  getImportNameLanguage,
+  getTenantDefaultLocale,
 } from './tenants';
+export { NAME_PART_MAX, keepsUnsplitDisplayName } from './names';
+export { englishOnlyNamesExist, forgetSchemaPresenceForTests } from './custom-roles-present';
 export {
   type OrganizationProfile,
   type OrganizationProfileRecord,
@@ -256,6 +260,7 @@ export {
   addStructureLevel,
   createStructureUnit,
   deleteStructureUnit,
+  hasUnitsBelowFirstLevel,
   listActivePersonOptions,
   listStructureLevelLabels,
   listStructureLevels,

@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import type { ClaimsTx } from '../claims-tx';
+import { ENGLISH_ONLY_NAMES_SQL } from '../custom-roles-present';
 import { DomainError } from '../domain-error';
 import { pgError } from '../user-admin';
 import type { UserImportOptions, UserImportStatus } from '../user-imports';
@@ -77,6 +78,12 @@ export interface UserImportJobView {
   /** The importer's preferred language (their reports' headers). */
   readonly importerLocale: 'ar' | 'en';
   /**
+   * The language whose first and family names each row must give: the organization's default language
+   * (guided-test feedback #2, PO 17 Oct 2026; English when it has no settings) — Arabic while the database
+   * still requires an Arabic name (englishOnlyNamesExist).
+   */
+  readonly nameLanguage: 'ar' | 'en';
+  /**
    * The importer may still import now (active Organization Admin or HR Manager): the reports are theirs
    * alone, so none is made otherwise (security review M1).
    */
@@ -103,6 +110,8 @@ export async function loadUserImportForJob(
            i.review_file_id, i.report_file_id, i.confirmed_at, i.failures,
            f.status as file_status, f.status_reason as file_status_reason, f.detected_mime as file_type,
            coalesce(p.preferred_locale, 'ar') as importer_locale,
+           (select s.default_locale from platform.tenant_settings s where s.tenant_id = i.tenant_id) as name_language,
+           ${ENGLISH_ONLY_NAMES_SQL} as english_only_names,
            private.user_import_actor_may_import(i.tenant_id, i.created_by) as importer_may_import,
            private.user_import_step(i.tenant_id, i.id, i.status, i.review_expires_at, i.finished_at,
                                     i.undone_at, i.confirmed_at, i.data_purged_at, f.status,
@@ -144,6 +153,9 @@ export async function loadUserImportForJob(
     confirmedAt: dateOrNull(row.confirmed_at),
     failures: Number(row.failures),
     importerLocale: row.importer_locale === 'en' ? 'en' : 'ar',
+    // Arabic while the database still requires an Arabic name (before 20261021090000: its row writer needs
+    // the Arabic names; the worker deploys in parallel with the database).
+    nameLanguage: row.name_language === 'ar' || row.english_only_names === false ? 'ar' : 'en',
     importerMayImport: row.importer_may_import === true,
     uploadAbandoned: row.upload_abandoned === true,
   };
@@ -306,6 +318,52 @@ export async function stageUserImportRows(
     insert into platform.user_import_rows (import_id, row_number, cells, data, format_issues, issues)
     select ${id}::uuid, x.n, x.c, x.d, x.f, x.f
     from jsonb_to_recordset(${JSON.stringify(payload)}::jsonb) as x(n integer, c jsonb, d jsonb, f jsonb)`);
+}
+
+/** The name columns of a person, as the import's fields. */
+const PERSON_NAME_FIELDS = [
+  'first_name_ar',
+  'father_name_ar',
+  'grandfather_name_ar',
+  'family_name_ar',
+  'first_name_en',
+  'father_name_en',
+  'grandfather_name_en',
+  'family_name_en',
+] as const;
+
+/**
+ * The names of the import tenant's ACTIVE members with these e-mails (lower case; the dry run's key: never a
+ * removed person), by e-mail — a file row that updates such a member needs the required names only when it
+ * changes one (PO decision 17 Oct 2026). Personal data for the worker's check only; never logged.
+ */
+export async function loadMemberNamesByEmail(
+  tx: ClaimsTx,
+  emails: readonly string[],
+): Promise<Map<string, Readonly<Record<(typeof PERSON_NAME_FIELDS)[number], string | null>>>> {
+  const out = new Map<
+    string,
+    Readonly<Record<(typeof PERSON_NAME_FIELDS)[number], string | null>>
+  >();
+  if (emails.length === 0) return out;
+  const rows = await tx.execute<Record<string, string | null>>(sql`
+    select p.email, p.first_name_ar, p.father_name_ar, p.grandfather_name_ar, p.family_name_ar,
+           p.first_name_en, p.father_name_en, p.grandfather_name_en, p.family_name_en
+    from platform.persons p
+    join platform.tenant_memberships m on m.tenant_id = p.tenant_id and m.person_id = p.id and m.status = 'active'
+    where p.removed_at is null
+      and p.email = any (select jsonb_array_elements_text(${JSON.stringify([...new Set(emails)])}::jsonb))`);
+  for (const row of rows) {
+    if (typeof row.email !== 'string') continue;
+    out.set(
+      row.email,
+      Object.fromEntries(PERSON_NAME_FIELDS.map((f) => [f, row[f] ?? null])) as Record<
+        (typeof PERSON_NAME_FIELDS)[number],
+        string | null
+      >,
+    );
+  }
+  return out;
 }
 
 /** Removes the staged rows (a new dry run), or the rows and the columns (the data is purged). */

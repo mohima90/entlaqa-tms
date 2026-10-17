@@ -25,6 +25,7 @@ import {
   saveUserImportColumns,
   scheduleUserImportInvitations,
   setUserImportStatus,
+  loadMemberNamesByEmail,
   stageUserImportRows,
   undoUserImportBatch,
   userImportUndoCounts,
@@ -409,11 +410,14 @@ export function createUserImportTask(options: UserImportTaskOptions): PlatformTa
         for await (const batch of stagedBatches(
           file.rows(view.sheetIndex),
           toImportMapping(view.mapping),
+          view.nameLanguage,
           undefined,
           // In this transaction: it holds the import's row, so the renewal is the lease's own.
           readGuard(VALIDATE_BUDGET_MS, () =>
             renewUserImportLease(tx, claim.importId, claim.leaseToken),
           ),
+          // Rows of existing members: their names are required only when the row changes one.
+          (emails) => loadMemberNamesByEmail(tx, emails),
         )) {
           await stageUserImportRows(tx, view.id, batch);
           total += batch.length;

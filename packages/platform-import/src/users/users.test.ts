@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { readCsvRows } from '../spreadsheet/csv';
 import type { SheetRow } from '../spreadsheet/errors';
 import { XlsxWorkbook } from '../spreadsheet/xlsx';
-import { FIELD_DEFINITIONS, IMPORT_FIELDS, NEVER_IMPORTED } from './fields';
+import { FIELD_DEFINITIONS, IMPORT_FIELDS, NEVER_IMPORTED, requiredFields } from './fields';
 import {
   fieldForHeader,
   mappingProblems,
@@ -67,6 +67,10 @@ describe('fields and headers (screens 3 and 5)', () => {
     expect(fieldForHeader('الإيميل')).toBe('email');
     expect(fieldForHeader('E-mail')).toBe('email');
     expect(fieldForHeader('الإدارة')).toBe('department');
+    // The earlier template's header still maps to the unit column (guided-test feedback #3).
+    expect(fieldForHeader('Department')).toBe('department');
+    expect(fieldForHeader('القسم')).toBe('department');
+    expect(fieldForHeader('Unit')).toBe('department');
     expect(fieldForHeader('رقم الموظف')).toBe('employee_number');
     expect(fieldForHeader('Employee ID')).toBe('employee_number');
     expect(fieldForHeader('First Name')).toBe('first_name_en');
@@ -133,12 +137,28 @@ describe('fields and headers (screens 3 and 5)', () => {
       { index: 3, header: 'العائلة', samples: [] },
     ];
     expect(
-      mappingProblems({ '0': 'email', '1': 'first_name_ar', '3': 'family_name_ar' }, columns),
+      mappingProblems(
+        { '0': 'email', '1': 'first_name_ar', '3': 'family_name_ar' },
+        columns,
+        requiredFields('ar'),
+      ),
     ).toEqual([]);
+    // English default (PO 17 Oct 2026): the English names are required, the Arabic ones optional.
+    expect(
+      mappingProblems(
+        { '0': 'email', '1': 'first_name_ar', '3': 'family_name_ar' },
+        columns,
+        requiredFields('en'),
+      ),
+    ).toEqual([
+      { kind: 'missing', field: 'first_name_en' },
+      { kind: 'missing', field: 'family_name_en' },
+    ]);
     expect(
       mappingProblems(
         { '0': 'email', '1': 'email', '2': 'mobile', '9': 'branch', '3': 'status' },
         columns,
+        requiredFields('ar'),
       ),
     ).toEqual([
       { kind: 'twice', field: 'email' },
@@ -252,6 +272,7 @@ describe('normalizeRow', () => {
         'English',
       ],
       FULL,
+      'ar',
     );
     expect(row.issues).toEqual([]);
     expect(row.data).toEqual({
@@ -301,6 +322,7 @@ describe('normalizeRow', () => {
         'فرنسي',
       ],
       FULL,
+      'ar',
     );
     // One role per person (EP-ROLES): the additional roles are checked, never staged.
     expect(row.data).toEqual({ roles_given: true });
@@ -341,6 +363,7 @@ describe('normalizeRow', () => {
           2,
           ['a@b.example', 'نورة', 'الدوسري', name, `متدرب، ${name}`],
           mapping,
+          'ar',
         );
         const expected = role.code === 'tenant_admin' ? 'ROLE_ORG_ADMIN' : 'ROLE_PRIVILEGED';
         expect(row.issues.filter((i) => i.c === expected && i.s === 'e').map((i) => i.f)).toEqual([
@@ -358,13 +381,121 @@ describe('normalizeRow', () => {
   it('requires the e-mail, checks the parts together and the mobile otherwise wrong', () => {
     const row = normalizeRow(
       2,
-      ['', 'ا'.repeat(60), 'ب'.repeat(60), 'ج'.repeat(60), 'د'.repeat(60), '', '', '+12'],
+      [
+        '',
+        'ا'.repeat(60),
+        'ب'.repeat(60),
+        'ج'.repeat(60),
+        'د'.repeat(60),
+        'Noura',
+        'Aldossari',
+        '+12',
+      ],
       FULL,
+      'en',
     );
     expect(row.issues.map((i) => i.c)).toEqual([
       'EMAIL_REQUIRED',
       'FULL_NAME_TOO_LONG',
       'MOBILE_INVALID',
+    ]);
+  });
+
+  it('English default: the English first and family names are required, the Arabic ones optional', () => {
+    const mapping = {
+      '0': 'email',
+      '1': 'first_name_en',
+      '2': 'family_name_en',
+      '3': 'first_name_ar',
+      '4': 'family_name_ar',
+    } as const;
+    const englishOnly = normalizeRow(2, ['s.ali@b.example', 'Sara', 'Ali', '', ''], mapping, 'en');
+    expect(englishOnly.issues).toEqual([]);
+    expect(englishOnly.data).toEqual({
+      email: 's.ali@b.example',
+      first_name_en: 'Sara',
+      family_name_en: 'Ali',
+    });
+    const arabicOnly = normalizeRow(3, ['s.ali@b.example', '', '', 'سارة', 'علي'], mapping, 'en');
+    expect(arabicOnly.issues.map((i) => `${i.c}:${i.f ?? ''}`)).toEqual([
+      'NAME_EN_REQUIRED:first_name_en',
+      'NAME_EN_REQUIRED:family_name_en',
+    ]);
+    // Arabic default: the other way round.
+    expect(
+      normalizeRow(4, ['s.ali@b.example', 'Sara', 'Ali', '', ''], mapping, 'ar').issues.map(
+        (i) => i.c,
+      ),
+    ).toEqual(['NAME_AR_REQUIRED', 'NAME_AR_REQUIRED']);
+    expect(issueMessage(issue('NAME_EN_REQUIRED', 'family_name_en'), 'en')).toBe(
+      'The English family name is empty; it’s required.',
+    );
+    expect(issueMessage(issue('NAME_EN_REQUIRED', 'first_name_en'), 'ar')).toBe(
+      'الاسم الأول بالإنجليزية فارغ، وهو مطلوب.',
+    );
+  });
+
+  it('the optional language’s names are all or nothing (first AND family, or neither)', () => {
+    const mapping = {
+      '0': 'email',
+      '1': 'first_name_en',
+      '2': 'family_name_en',
+      '3': 'first_name_ar',
+      '4': 'father_name_ar',
+      '5': 'family_name_ar',
+    } as const;
+    const codes = (cells: string[], language: 'ar' | 'en') =>
+      normalizeRow(2, cells, mapping, language).issues.map((i) => `${i.c}:${i.f ?? ''}`);
+    // English default: an Arabic first name without the family name (or a middle name alone) is half a name.
+    expect(codes(['s@b.example', 'Sara', 'Ali', 'سارة', '', ''], 'en')).toEqual([
+      'NAME_AR_REQUIRED:family_name_ar',
+    ]);
+    expect(codes(['s@b.example', 'Sara', 'Ali', '', 'محمد', ''], 'en')).toEqual([
+      'NAME_AR_REQUIRED:first_name_ar',
+      'NAME_AR_REQUIRED:family_name_ar',
+    ]);
+    expect(codes(['s@b.example', 'Sara', 'Ali', 'سارة', '', 'علي'], 'en')).toEqual([]);
+    // Invisible characters only are no name part.
+    expect(codes(['s@b.example', 'Sara', 'Ali', '‏', '', ''], 'en')).toEqual([]);
+    // Arabic default: the English names likewise.
+    expect(codes(['s@b.example', '', 'Ali', 'سارة', '', 'علي'], 'ar')).toEqual([
+      'NAME_EN_REQUIRED:first_name_en',
+    ]);
+  });
+
+  it('an existing member’s row: names required only when it changes a name (PO 17 Oct 2026)', () => {
+    const mapping = {
+      '0': 'email',
+      '1': 'first_name_en',
+      '2': 'family_name_en',
+      '3': 'first_name_ar',
+      '4': 'family_name_ar',
+      '5': 'mobile',
+    } as const;
+    // Entered before the rule: Arabic names only, in an English-default organization.
+    const arabicOnly = { first_name_ar: 'منيرة', family_name_ar: 'الزهراني' };
+    const codes = (cells: string[], stored?: Record<string, string | null>) =>
+      normalizeRow(2, cells, mapping, 'en', stored).issues.map((i) => `${i.c}:${i.f ?? ''}`);
+    // An update without names, or with the names as they are: accepted.
+    expect(codes(['m@b.example', '', '', '', '', '+966551234567'], arabicOnly)).toEqual([]);
+    expect(codes(['m@b.example', '', '', 'منيرة', 'الزهراني', ''], arabicOnly)).toEqual([]);
+    // An update that changes the Arabic name without English names: the English ones are required.
+    expect(codes(['m@b.example', '', '', 'منيرة', 'القحطاني', ''], arabicOnly)).toEqual([
+      'NAME_EN_REQUIRED:first_name_en',
+      'NAME_EN_REQUIRED:family_name_en',
+    ]);
+    // …unless the stored record has them (an empty cell never clears a value).
+    expect(
+      codes(['m@b.example', '', '', 'منيرة', 'القحطاني', ''], {
+        ...arabicOnly,
+        first_name_en: 'Munira',
+        family_name_en: 'Alzahrani',
+      }),
+    ).toEqual([]);
+    // A new person (nobody stored) without English names: refused.
+    expect(codes(['n@b.example', '', '', 'منيرة', 'الزهراني', ''])).toEqual([
+      'NAME_EN_REQUIRED:first_name_en',
+      'NAME_EN_REQUIRED:family_name_en',
     ]);
   });
 
@@ -482,7 +613,7 @@ describe('issues', () => {
         'ar',
         'result',
       ),
-    ).toBe('القسم «التسويق الرقمي» غير موجود، فأُضيف الشخص دون قسم.');
+    ).toBe('الوحدة «التسويق الرقمي» غير موجودة، فأُضيف الشخص دون وحدة.');
     expect(issueMessage(issue('TEXT_TOO_LONG', 'branch'), 'en')).toContain('Branch');
     expect(issueMessage(issue('TEXT_TOO_LONG', 'nothing' as never), 'ar')).toContain('القيمة');
   });
@@ -509,12 +640,20 @@ describe('issues', () => {
 
 describe('template (screen 3)', () => {
   it('CSV: header row only, UTF-8 with BOM', async () => {
-    const bytes = csvTemplate('ar');
+    const bytes = csvTemplate('ar', 'ar');
     expect([...bytes.subarray(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
     const rows = [];
     for await (const row of readCsvRows([bytes])) rows.push(row);
-    expect(rows).toEqual([{ number: 1, cells: templateHeaders('ar') }]);
-    expect(templateHeaders('en')[0]).toBe('Work email');
+    expect(rows).toEqual([{ number: 1, cells: templateHeaders('ar', 'ar') }]);
+    expect(templateHeaders('en', 'en')[0]).toBe('Work email');
+    // English default (PO 17 Oct 2026): the English name columns come right after the e-mail.
+    expect(templateHeaders('en', 'en').slice(1, 5)).toEqual([
+      'First name (English)',
+      "Father's name (English)",
+      "Grandfather's name (English)",
+      'Family name (English)',
+    ]);
+    expect(templateHeaders('en', 'ar')[1]).toBe('First name (Arabic)');
     expect(templateFileName('ar', 'xlsx')).toBe('قالب-استيراد-المستخدمين.xlsx');
     expect(templateFileName('en', 'csv')).toBe('user-import-template.csv');
   });
@@ -526,15 +665,16 @@ describe('template (screen 3)', () => {
         { code: null, nameAr: '=خطر', nameEn: null },
       ],
       branches: [{ code: 'RUH', nameAr: 'فرع الرياض', nameEn: 'Riyadh' }],
+      nameLanguage: 'ar',
     });
     const book = XlsxWorkbook.open(bytes);
     expect(book.sheets.map((s) => s.name)).toEqual(['المستخدمون', 'تعليمات', 'القوائم']);
     const [header] = await rowsOf(book, 0);
-    expect(header?.cells).toEqual(templateHeaders('ar'));
+    expect(header?.cells).toEqual(templateHeaders('ar', 'ar'));
     expect(header?.cells.map((h) => fieldForHeader(h))).toEqual([...IMPORT_FIELDS]);
     expect(await rowsOf(book, 0)).toHaveLength(1);
     const lists = (await rowsOf(book, 2)).map((r) => r.cells);
-    expect(lists[0]).toEqual(['القسم', 'رمز القسم', 'الفرع', 'رمز الفرع', 'الدور', 'اللغة']);
+    expect(lists[0]).toEqual(['الوحدة', 'رمز الوحدة', 'الفرع', 'رمز الفرع', 'الدور', 'اللغة']);
     expect(lists[1]?.slice(0, 5)).toEqual([
       'التدريب والتطوير',
       'TRN',
@@ -553,9 +693,19 @@ describe('template (screen 3)', () => {
     const guide = (await rowsOf(book, 1)).map((r) => r.cells);
     expect(guide[1]?.[0]).toBe('البريد الإلكتروني للعمل');
     expect(guide[1]?.[2]).toBe('مطلوب');
-    const english = XlsxWorkbook.open(xlsxTemplate('en', { departments: [], branches: [] }));
+    const english = XlsxWorkbook.open(
+      xlsxTemplate('en', { departments: [], branches: [], nameLanguage: 'en' }),
+    );
     expect(english.sheets.map((s) => s.name)).toEqual(['Users', 'Instructions', 'Lists']);
     expect((await rowsOf(english, 0))[0]?.cells[0]).toBe('Work email');
+    const englishGuide = (await rowsOf(english, 1)).map((r) => r.cells);
+    // The English names are required, the Arabic ones optional.
+    expect(englishGuide[2]?.slice(0, 3)).toEqual([
+      'First name (English)',
+      'الاسم الأول بالإنجليزية',
+      'Required',
+    ]);
+    expect(englishGuide.find((r) => r[0] === 'First name (Arabic)')?.[2]).toBe('Optional');
   });
 });
 

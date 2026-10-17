@@ -19,6 +19,7 @@ import { sessionLabels, sessionRows } from '../../../../../../lib/sessions-view'
 import { type SuiteContext, getSuiteContext } from '../../../../../../lib/suite-context';
 import { pageDates } from '../../../../../../lib/page-dates';
 import { memberSecurityQuery, userProfileQuery } from '../../../../../../lib/users-queries';
+import { type LevelLabel, unitFieldLabel } from '../../../../../../lib/structure-view';
 import { localizedName, roleName } from '../../../../../../lib/users-view';
 import { NotSet } from '../../../../../../components/not-set';
 import { UnlockSignIn } from '../../../../../../components/users/unlock-sign-in';
@@ -96,7 +97,7 @@ export default async function UserProfilePage({
         );
       }
     } else {
-      const { profile, canOpenManager, canEdit, canEditRoles, lifecycle, signInLock } =
+      const { profile, levels, canOpenManager, canEdit, canEditRoles, lifecycle, signInLock } =
         result.value;
       title = localizedName(locale, profile.displayNameAr, profile.displayNameEn);
       // Sign-in and security (screen 3, T-M2-10): user managers only (else the card is left out).
@@ -111,6 +112,7 @@ export default async function UserProfilePage({
           <Profile
             locale={locale}
             profile={profile}
+            levels={levels}
             canOpenManager={canOpenManager}
             canEdit={canEdit}
             canEditRoles={canEditRoles}
@@ -138,6 +140,7 @@ export default async function UserProfilePage({
 async function Profile({
   locale,
   profile,
+  levels,
   canOpenManager,
   canEdit,
   canEditRoles,
@@ -147,6 +150,8 @@ async function Profile({
   regional,
 }: {
   locale: AppLocale;
+  /** The organization's own level names: the unit field says its level (guided-test feedback #3). */
+  levels: readonly LevelLabel[];
   /** The organization's date display and time zone (T-M2-22). */
   regional: SuiteContext['regional'];
   profile: UserProfile;
@@ -198,7 +203,11 @@ async function Profile({
       value: profile.employeeNumber ? <bdi dir="ltr">{profile.employeeNumber}</bdi> : none,
     },
     { key: 'jobTitle', label: t('fields.jobTitle'), value: jobTitle ?? none },
-    { key: 'department', label: t('fields.department'), value: department ?? none },
+    {
+      key: 'department',
+      label: unitFieldLabel(levels, profile.departmentLevelOrdinal, locale, t('fields.department')),
+      value: department ?? none,
+    },
     { key: 'branch', label: t('fields.branch'), value: branch ?? none },
     {
       key: 'manager',
@@ -243,7 +252,8 @@ async function Profile({
       ? {
           key: 'nameAr',
           label: t('fields.nameAr'),
-          value: <bdi dir="rtl">{profile.displayNameAr}</bdi>,
+          // A person may have an English name only (PO 17 Oct 2026).
+          value: profile.displayNameAr ? <bdi dir="rtl">{profile.displayNameAr}</bdi> : none,
         }
       : {
           key: 'nameEn',
@@ -444,9 +454,11 @@ async function Profile({
           ) : (
             <ol className="m-0 flex list-none flex-col gap-3 p-0" data-testid="user-activity">
               {profile.activity.map((event, index) => {
-                const actor = event.actorNameAr
-                  ? t('by', { name: localizedName(locale, event.actorNameAr, event.actorNameEn) })
-                  : t('bySystem');
+                // A person may have an English name only (PO 17 Oct 2026).
+                const actor =
+                  (event.actorNameAr ?? event.actorNameEn)
+                    ? t('by', { name: localizedName(locale, event.actorNameAr, event.actorNameEn) })
+                    : t('bySystem');
                 return (
                   <li
                     key={`${event.occurredAt.toISOString()}-${index}`}

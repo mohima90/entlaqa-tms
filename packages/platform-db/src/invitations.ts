@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { type SQL, sql } from 'drizzle-orm';
 import { type ClaimsTx, runWithClaims } from './claims-tx';
 import { type AppDatabase, getDatabase } from './client';
-import { customRolesExist } from './custom-roles-present';
+import { customRolesExist, storableArabicDisplayName } from './custom-roles-present';
 import { DomainError } from './domain-error';
 import { emitEvent } from './events';
 import { pgError } from './user-admin';
@@ -69,8 +69,12 @@ export type InvitationState = 'pending' | 'expired' | 'held' | 'scheduled' | 'ac
 export interface NewInvitation {
   /** Lowercase work e-mail (trimmed and lower-cased again here). */
   readonly email: string;
-  readonly firstNameAr: string;
-  readonly familyNameAr: string;
+  /**
+   * The names: the organization's default language's first and family names are required (checked by the
+   * action, PO 17 Oct 2026); the database keeps every person named (persons_name_present_check).
+   */
+  readonly firstNameAr?: string | null;
+  readonly familyNameAr?: string | null;
   readonly firstNameEn?: string | null;
   readonly familyNameEn?: string | null;
   readonly departmentId?: string | null;
@@ -90,7 +94,7 @@ export interface InvitationRow {
   readonly id: string;
   readonly personId: string;
   readonly email: string;
-  readonly displayNameAr: string;
+  readonly displayNameAr: string | null;
   readonly displayNameEn: string | null;
   readonly primaryRole: string;
   /** The names of a custom role (EP-ROLES); null for a standard role. */
@@ -123,7 +127,7 @@ export type TokenLookup =
       readonly email: string;
       readonly locale: 'ar' | 'en';
       readonly organizationName: { ar: string; en: string | null };
-      readonly displayName: { ar: string; en: string | null };
+      readonly displayName: { ar: string | null; en: string | null };
     }
   | { readonly state: 'expired' | 'revoked' | 'used' | 'invalid' };
 
@@ -208,18 +212,26 @@ export async function createInvitation(
   input: NewInvitation,
 ): Promise<{ invitationId: string; personId: string; inviteCode: string }> {
   const email = input.email.trim().toLowerCase();
-  const firstNameAr = input.firstNameAr.trim();
-  const familyNameAr = input.familyNameAr.trim();
+  const firstNameAr = blankToNull(input.firstNameAr);
+  const familyNameAr = blankToNull(input.familyNameAr);
   const firstNameEn = blankToNull(input.firstNameEn);
   const familyNameEn = blankToNull(input.familyNameEn);
   const employeeNumber = blankToNull(input.employeeNumber);
+  const displayNameEn = joinNames(firstNameEn, familyNameEn);
   try {
+    // No Arabic display name without Arabic names — before migration 20261021090000 the English one
+    // (storableArabicDisplayName: the app may run minutes before the database changes).
+    const displayNameAr = await storableArabicDisplayName(
+      tx,
+      joinNames(firstNameAr, familyNameAr),
+      displayNameEn,
+    );
     const [person] = await tx.execute<{ id: string }>(sql`
       insert into platform.persons
         (display_name_ar, display_name_en, first_name_ar, family_name_ar, first_name_en, family_name_en,
          email, employee_number, preferred_locale)
-      values (${joinNames(firstNameAr, familyNameAr) ?? ''}, ${joinNames(firstNameEn, familyNameEn)},
-              ${blankToNull(firstNameAr)}, ${blankToNull(familyNameAr)}, ${firstNameEn}, ${familyNameEn},
+      values (${displayNameAr}, ${displayNameEn},
+              ${firstNameAr}, ${familyNameAr}, ${firstNameEn}, ${familyNameEn},
               ${email}, ${employeeNumber}, ${input.locale})
       returning id`);
     if (!person) throw new Error('createInvitation: no person returned');
@@ -276,7 +288,7 @@ export async function listInvitations(
     id: string;
     person_id: string;
     email: string;
-    display_name_ar: string;
+    display_name_ar: string | null;
     display_name_en: string | null;
     primary_role: string;
     state: InvitationState;
@@ -473,7 +485,12 @@ export function createInvitationTokenApi(getDb: () => AppDatabase): InvitationTo
           locale: string | null;
         }>(sql`select * from private.invitation_by_token(${tokenHash}::bytea)`),
       );
-      if (row?.state === 'valid' && row.tenant_name_ar && row.email && row.display_name_ar) {
+      if (
+        row?.state === 'valid' &&
+        row.tenant_name_ar &&
+        row.email &&
+        (row.display_name_ar ?? row.display_name_en)
+      ) {
         return {
           state: 'valid',
           email: row.email,

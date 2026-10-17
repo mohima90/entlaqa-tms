@@ -1,4 +1,5 @@
 import type { AppLocale } from '@jadarat/platform-i18n';
+import { personDisplayName } from '@jadarat/platform-i18n/names';
 import { FORMER_ROLE_NAMES, getSystemRole, isSystemRoleCode } from '@jadarat/platform-rbac';
 
 /** Query-string keys of the users list (T-M2-04, screen 1). */
@@ -66,9 +67,17 @@ export function usersListHref(
   return `/${locale}/suite/admin/users${search ? `?${search}` : ''}`;
 }
 
-/** Arabic name in Arabic; the English name in English when there is one. */
-export function localizedName(locale: AppLocale, nameAr: string, nameEn: string | null): string {
-  return locale === 'en' ? (nameEn ?? nameAr) : nameAr;
+/**
+ * A name in the page's language: the Arabic name in Arabic, the English name in English — each falling back
+ * to the other when missing (a person may have an English name only, PO 17 Oct 2026; units have an Arabic
+ * name always).
+ */
+export function localizedName(
+  locale: AppLocale,
+  nameAr: string | null,
+  nameEn: string | null,
+): string {
+  return personDisplayName(locale, nameAr, nameEn);
 }
 
 /**

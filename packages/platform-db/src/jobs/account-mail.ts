@@ -263,7 +263,8 @@ export async function loadAccountMailContext(
     tenant_recent: number | string;
   }>(sql`
     select t.name_ar as organization_ar, t.name_en as organization_en,
-           p.display_name_ar as recipient_ar, p.display_name_en as recipient_en,
+           -- A person may have an English name only (PO 17 Oct 2026): the Arabic e-mail then names them in English.
+           coalesce(p.display_name_ar, p.display_name_en) as recipient_ar, p.display_name_en as recipient_en,
            (select count(*) from platform.message_deliveries d
             where d.tenant_id = p.tenant_id and d.recipient_person_id = p.id and d.template = ${template}
               and d.created_at > now() - interval '1 hour') as recent,
@@ -362,7 +363,7 @@ export async function loadPersonName(
   personId: string,
 ): Promise<{ readonly ar: string; readonly en: string | null } | null> {
   const [row] = await tx.execute<{ name_ar: string; name_en: string | null }>(
-    sql`select display_name_ar as name_ar, display_name_en as name_en
+    sql`select coalesce(display_name_ar, display_name_en) as name_ar, display_name_en as name_en
         from platform.persons where id = ${personId}::uuid`,
   );
   return row ? { ar: row.name_ar, en: row.name_en } : null;

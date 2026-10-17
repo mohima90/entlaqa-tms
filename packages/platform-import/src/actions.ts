@@ -14,6 +14,7 @@ import {
   createUserImport,
   getHeldInvitationsSummary,
   getRunningUserImport,
+  getImportNameLanguage,
   getUndoPreview,
   getUserImport,
   isDomainError,
@@ -44,7 +45,7 @@ import {
 } from '@jadarat/platform-rbac';
 import { z } from 'zod';
 import { MAX_IMPORT_FILE_BYTES, MAX_IMPORT_ROWS } from './users/limits';
-import { IMPORT_FIELDS, REQUIRED_FIELDS } from './users/fields';
+import { IMPORT_FIELDS, type NameLanguage, requiredFields } from './users/fields';
 import { type ColumnRecognition, mappingProblems, recognizeColumns } from './users/headers';
 import { IMPORTABLE_ROLES } from './users/roles';
 import type { TemplateLists } from './users/template';
@@ -276,7 +277,11 @@ export function chooseUserImportMappingActionDefinition(): ActionDefinition<
       const columns = (await listUserImportColumns(ctx.tx, record.id)).filter(
         (c) => c.sheetIndex === input.sheetIndex,
       );
-      const problems = mappingProblems(input.mapping, columns);
+      const problems = mappingProblems(
+        input.mapping,
+        columns,
+        requiredFields(await getImportNameLanguage(ctx.tx)),
+      );
       if (problems.length > 0) {
         return err(
           appError('VALIDATION_FAILED', {
@@ -600,6 +605,8 @@ export interface UserImportStartView {
   /** The import running now (others cannot start one: «يجري استيراد آخر الآن»). */
   readonly running: UserImportRecord | null;
   readonly recent: readonly UserImportRecord[];
+  /** The language whose first and family names are required (the organization's default, PO 17 Oct 2026). */
+  readonly nameLanguage: NameLanguage;
 }
 
 /** Step 1: the organization's running and latest imports. */
@@ -615,6 +622,7 @@ export function userImportStartQueryDefinition(): QueryDefinition<
       ok({
         running: await getRunningUserImport(ctx.tx),
         recent: await listUserImports(ctx.tx, 10),
+        nameLanguage: await getImportNameLanguage(ctx.tx),
       }),
   };
 }
@@ -633,6 +641,8 @@ export interface UserImportView {
   /** The roles an import may give (the default role's list). */
   readonly roles: readonly string[];
   readonly required: readonly string[];
+  /** The language whose first and family names are required (the organization's default, PO 17 Oct 2026). */
+  readonly nameLanguage: NameLanguage;
   readonly maxRows: number;
   readonly undo: UndoPreview | null;
   readonly privilegedAccess: PermissionAccess;
@@ -699,6 +709,7 @@ export function userImportQueryDefinition(): QueryDefinition<
     handler: async ({ ctx, input }) => {
       const record = await getUserImport(ctx.tx, input.importId);
       if (!record) return err(appError('NOT_FOUND'));
+      const nameLanguage = await getImportNameLanguage(ctx.tx);
       let columns: MappingColumnView[] = [];
       if (record.mine && record.dataPurgedAt === null) {
         const all = await listUserImportColumns(ctx.tx, record.id);
@@ -725,7 +736,8 @@ export function userImportQueryDefinition(): QueryDefinition<
         running: await getRunningUserImport(ctx.tx),
         canUpdate: ctx.can(p['platform.user.update'], 'tenant'),
         roles: IMPORTABLE_ROLE_CODES,
-        required: REQUIRED_FIELDS,
+        required: requiredFields(nameLanguage),
+        nameLanguage,
         maxRows: MAX_IMPORT_ROWS,
         undo,
         privilegedAccess: ctx.access(p['platform.role.assign_privileged'], 'tenant'),
@@ -798,7 +810,10 @@ export function userImportBannersQueryDefinition(): QueryDefinition<
   };
 }
 
-/** The template's lists: this organization's departments and branches (with codes). */
+/**
+ * The template's lists: this organization's departments and branches (with codes), and the language whose
+ * names are required (its columns come first, marked required).
+ */
 export function userImportTemplateQueryDefinition(): QueryDefinition<
   z.ZodObject<Record<string, never>>,
   TemplateLists,
@@ -808,10 +823,11 @@ export function userImportTemplateQueryDefinition(): QueryDefinition<
     permission: PERMISSION,
     input: z.strictObject({}),
     handler: async ({ ctx }) =>
-      ok(
-        ctx.can(p['platform.org.read'], 'tenant')
+      ok({
+        ...(ctx.can(p['platform.org.read'], 'tenant')
           ? await listTemplateUnits(ctx.tx)
-          : { departments: [], branches: [] },
-      ),
+          : { departments: [], branches: [] }),
+        nameLanguage: await getImportNameLanguage(ctx.tx),
+      }),
   };
 }

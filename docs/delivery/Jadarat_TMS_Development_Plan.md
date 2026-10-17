@@ -119,6 +119,7 @@ The delivery team for M0 onward is **the Product Owner (human) plus Claude Code 
 | P6 | **Documentation only where it matters**: business flows, decisions (STATUS), runbooks that operators need, ADRs for real architecture choices; no long per-task write-ups | Extensive notes per task |
 | P7 | **Several engineering agents in parallel** on independent work (separate branches/worktrees), integrated by the Tech Lead | Mostly sequential work |
 | P8 | **Weekly progress report against the feature list** (§12) | Session log only |
+| P10 | **Local checks vs CI (PO, 17 Oct 2026):** agents run `pnpm check:all` plus only the DB, integration and E2E tests for what they changed; the full suite runs once in GitHub CI on the PR (all gates required before merge) | Repeated full local runs per agent |
 | P9 | **Self-hosted stack tested nightly** (gate 15 at 23:59 Riyadh, PO 14 Oct 2026), not per PR | Gate 15 on every PR |
 
 **What does not change (non-negotiables, `CLAUDE.md`):** tenant isolation with RLS and an automated cross-tenant test for every new table; authorization deny-by-default with negative tests; input validation; no secrets or personal data in code or logs; WCAG 2.2 AA in Arabic and English; never skip, disable or weaken tests or CI gates; the PO merges every PR.

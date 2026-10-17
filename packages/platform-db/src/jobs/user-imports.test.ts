@@ -11,6 +11,7 @@ import {
   finishUserImportRows,
   jobFileStatus,
   loadUserImportForJob,
+  loadMemberNamesByEmail,
   loadUserImportHeaders,
   loadUserImportReportRows,
   markUserImportPurged,
@@ -204,6 +205,33 @@ describe('user imports, worker side', () => {
     const plain = fakeTx([]);
     expect(await setUserImportStatus(plain.tx, ID, ['queued', 'checking'], 'stopped')).toBe(false);
     expect(plain.executed[0]?.sql).not.toContain('failure_code');
+  });
+
+  it('reads the names of active members by e-mail (rows that update them, PO 17 Oct 2026)', async () => {
+    expect((await loadMemberNamesByEmail(fakeTx().tx, [])).size).toBe(0);
+    const fake = fakeTx([
+      {
+        email: 'm@x.test',
+        first_name_ar: 'منيرة',
+        family_name_ar: 'الزهراني',
+        first_name_en: null,
+      },
+    ]);
+    const found = await loadMemberNamesByEmail(fake.tx, ['m@x.test', 'm@x.test', 'n@x.test']);
+    expect(found.get('m@x.test')).toEqual({
+      first_name_ar: 'منيرة',
+      father_name_ar: null,
+      grandfather_name_ar: null,
+      family_name_ar: 'الزهراني',
+      first_name_en: null,
+      father_name_en: null,
+      grandfather_name_en: null,
+      family_name_en: null,
+    });
+    expect(found.has('n@x.test')).toBe(false);
+    expect(fake.executed[0]?.sql).toContain("m.status = 'active'");
+    expect(fake.executed[0]?.sql).toContain('p.removed_at is null');
+    expect(fake.executed[0]?.params).toEqual([JSON.stringify(['m@x.test', 'n@x.test'])]);
   });
 
   it('stages columns and rows in batches through JSON records', async () => {

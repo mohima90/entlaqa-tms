@@ -7,7 +7,8 @@ import {
 } from '../spreadsheet/index';
 import { neverImportedReason } from '../users/headers';
 import { MAX_IMPORT_ROWS } from '../users/limits';
-import { type ImportMapping, normalizeRow } from '../users/rows';
+import type { NameLanguage } from '../users/fields';
+import { type ImportMapping, type StoredNames, normalizeRow } from '../users/rows';
 
 /**
  * Reading an import file in the worker (T-M2-12): the sheets with their columns for the mapping step
@@ -105,18 +106,61 @@ export async function readSheets(
 export const STAGE_BATCH = 500;
 
 /**
+ * The names of the organization's active members with these e-mails (lower case), for the rows that update
+ * them: their names are required only when the row changes one (normalizeRow `stored`).
+ */
+export type StoredNamesLookup = (
+  emails: readonly string[],
+) => Promise<ReadonlyMap<string, StoredNames>>;
+
+const NAME_REQUIRED = new Set(['NAME_AR_REQUIRED', 'NAME_EN_REQUIRED']);
+
+/**
  * The chosen sheet's data rows (the first row with text is the header), checked under the mapping, in
- * batches. Throws SpreadsheetError FILE_TOO_MANY_ROWS past `maxRows` and FILE_EMPTY without data rows.
+ * batches, the names of `nameLanguage` (the organization's default language) required — for a row of an
+ * existing member (`storedNames`, asked once per batch for the rows missing a required name) only when it
+ * changes a name. Throws SpreadsheetError FILE_TOO_MANY_ROWS past `maxRows` and FILE_EMPTY without data rows.
  */
 export async function* stagedBatches(
   rows: AsyncIterable<SheetRow>,
   mapping: ImportMapping,
+  nameLanguage: NameLanguage,
   maxRows: number = MAX_IMPORT_ROWS,
   guard: ReadGuard = {},
+  storedNames?: StoredNamesLookup,
 ): AsyncGenerator<StagedRow[]> {
   let header = true;
   let count = 0;
-  let batch: StagedRow[] = [];
+  let batch: { readonly cells: readonly string[]; normalized: ReturnType<typeof normalizeRow> }[] =
+    [];
+  const finish = async (): Promise<StagedRow[]> => {
+    const missing = batch.filter(
+      (r) =>
+        typeof r.normalized.data.email === 'string' &&
+        r.normalized.issues.some((i) => NAME_REQUIRED.has(i.c)),
+    );
+    if (storedNames && missing.length > 0) {
+      const found = await storedNames(missing.map((r) => r.normalized.data.email as string));
+      for (const r of missing) {
+        const stored = found.get(r.normalized.data.email as string);
+        if (stored) {
+          r.normalized = normalizeRow(
+            r.normalized.rowNumber,
+            r.cells,
+            mapping,
+            nameLanguage,
+            stored,
+          );
+        }
+      }
+    }
+    return batch.map(({ normalized }) => ({
+      rowNumber: normalized.rowNumber,
+      cells: normalized.cells,
+      data: normalized.data,
+      formatIssues: normalized.issues,
+    }));
+  };
   for await (const row of guarded(rows, guard)) {
     if (header) {
       header = false;
@@ -124,18 +168,15 @@ export async function* stagedBatches(
     }
     count += 1;
     if (count > maxRows) throw new SpreadsheetError('FILE_TOO_MANY_ROWS');
-    const normalized = normalizeRow(row.number, row.cells, mapping);
     batch.push({
-      rowNumber: normalized.rowNumber,
-      cells: normalized.cells,
-      data: normalized.data,
-      formatIssues: normalized.issues,
+      cells: row.cells,
+      normalized: normalizeRow(row.number, row.cells, mapping, nameLanguage),
     });
     if (batch.length === STAGE_BATCH) {
-      yield batch;
+      yield await finish();
       batch = [];
     }
   }
   if (count === 0) throw new SpreadsheetError('FILE_EMPTY');
-  if (batch.length > 0) yield batch;
+  if (batch.length > 0) yield await finish();
 }

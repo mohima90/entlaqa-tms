@@ -121,6 +121,7 @@ async function Structure({
   // Plural forms are formatted here (no i18n runtime in the browser).
   delete texts.childCount;
   delete texts['levels.inUse'];
+  delete texts['levels.unitCount'];
   const errors = await profileErrorTexts(locale);
   const labels = data.levels.map(({ ordinal, nameEn, nameAr }) => ({ ordinal, nameEn, nameAr }));
   const number = (value: number) => format.number(value, 'integer');
@@ -133,6 +134,7 @@ async function Structure({
     name: locale === 'ar' ? level.nameAr : level.nameEn,
     version: level.version,
     unitCount: level.unitCount,
+    unitCountLabel: t('levels.unitCount', { count: level.unitCount }),
     inUseLabel: t('levels.inUse', { units: level.unitCount }),
   }));
   const units: UnitView[] = data.units.map((unit) => ({
@@ -149,7 +151,8 @@ async function Structure({
     })(),
     branchId: unit.branchId,
     headPersonId: unit.headPersonId,
-    headName: unit.headNameAr ? localizedName(locale, unit.headNameAr, unit.headNameEn) : null,
+    // A head may have an English name only (PO 17 Oct 2026).
+    headName: unit.headPersonId ? localizedName(locale, unit.headNameAr, unit.headNameEn) : null,
     active: unit.status === 'active',
     version: unit.version,
     childCount: unit.childCount,

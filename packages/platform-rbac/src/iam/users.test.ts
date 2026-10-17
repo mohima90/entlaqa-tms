@@ -23,6 +23,7 @@ const db = vi.hoisted(() => ({
   // The unit picker of the edit-role dialog (EP-ORG, T-M3-09): none in these tests.
   listStructureUnitOptions: vi.fn(() => Promise.resolve([])),
   listStructureLevelLabels: vi.fn(() => Promise.resolve([])),
+  hasUnitsBelowFirstLevel: vi.fn(() => Promise.resolve(false)),
 }));
 vi.mock('@jadarat/platform-db', () => db);
 
@@ -97,6 +98,8 @@ describe('users list query', () => {
         pageSize: USERS_PAGE_SIZE,
         canReadRoles: true,
         orgUnits,
+        levels: [],
+        unitsBelowFirstLevel: false,
         canInvite: true,
         canDeactivate: true,
         // aal1: privileged members come back without an authenticator code (PO decision, 14 Oct 2026).
@@ -228,6 +231,7 @@ describe('user profile query', () => {
     expect(await profile({ personId: REPORT })).toEqual(
       ok({
         profile: { personId: REPORT },
+        levels: [],
         canOpenManager: false,
         canEdit: false,
         canEditRoles: false,

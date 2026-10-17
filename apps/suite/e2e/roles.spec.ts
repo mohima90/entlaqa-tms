@@ -23,14 +23,14 @@ const TEXTS = {
     privileged: 'Privileged',
     employee: 'Employee',
     viewOnly: 'view only',
-    team: 'Their departments',
+    team: 'The units they head',
   },
   ar: {
     standard: 'قياسي',
     privileged: 'مميز',
     employee: 'موظف',
     viewOnly: 'للعرض فقط',
-    team: 'أقسامه',
+    team: 'الوحدات التي يرأسها',
   },
 } as const;
 

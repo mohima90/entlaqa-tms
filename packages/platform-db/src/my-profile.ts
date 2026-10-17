@@ -1,5 +1,6 @@
 import 'server-only';
 import { sql } from 'drizzle-orm';
+import { storableArabicDisplayName } from './custom-roles-present';
 import { keepUnsplitDisplayNames } from './names';
 import type { UserTx } from './with-user-tx';
 
@@ -16,7 +17,7 @@ export interface PersonalDetails {
   readonly fatherNameEn: string | null;
   readonly grandfatherNameEn: string | null;
   readonly familyNameEn: string | null;
-  readonly displayNameAr: string;
+  readonly displayNameAr: string | null;
   readonly displayNameEn: string | null;
   readonly mobileE164: string | null;
   readonly preferredLocale: 'ar' | 'en';
@@ -67,7 +68,12 @@ export async function updatePersonalDetails(
 ): Promise<readonly Field[] | null> {
   const before = await getPersonalDetails(tx, personId);
   if (!before) return null;
-  const details = keepUnsplitDisplayNames(before, submitted);
+  const kept = keepUnsplitDisplayNames(before, submitted);
+  // No Arabic display name without Arabic names — before migration 20261021090000 the English one.
+  const details: PersonalDetails = {
+    ...kept,
+    displayNameAr: await storableArabicDisplayName(tx, kept.displayNameAr, kept.displayNameEn),
+  };
   const changed = FIELDS.filter((f) => before[f] !== details[f]);
   if (changed.length === 0) return [];
   await tx.execute(sql`

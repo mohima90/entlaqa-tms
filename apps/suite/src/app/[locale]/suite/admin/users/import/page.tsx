@@ -1,7 +1,11 @@
 import { toClientError } from '@jadarat/platform-core';
 import type { AppLocale, DisplayDateFormatter } from '@jadarat/platform-i18n';
 import { routing } from '@jadarat/platform-i18n/routing';
-import { FIELD_DEFINITIONS, type UserImportStartView } from '@jadarat/platform-import';
+import {
+  type NameLanguage,
+  type UserImportStartView,
+  fieldDefinitionsFor,
+} from '@jadarat/platform-import';
 import { Alert, Badge, Card, buttonClasses } from '@jadarat/ui';
 import type { Metadata } from 'next';
 import { hasLocale } from 'next-intl';
@@ -180,7 +184,7 @@ async function stepOne(
           </div>
         </form>
         <p className="mb-0 mt-3 text-sm text-text-muted">{t('upload.hrSystemHint')}</p>
-        {await templateGuide(locale)}
+        {await templateGuide(locale, view.nameLanguage)}
       </Card>
 
       <Card title={t('upload.uploadHeading')}>
@@ -216,8 +220,11 @@ async function stepOne(
   );
 }
 
-/** Screen 3 «أعمدة قالب الاستيراد», built as a disclosure on step 1 (not a dialog). */
-async function templateGuide(locale: AppLocale) {
+/**
+ * Screen 3 «أعمدة قالب الاستيراد», built as a disclosure on step 1 (not a dialog). The names of the
+ * organization's default language come first and are the required ones (PO 17 Oct 2026).
+ */
+async function templateGuide(locale: AppLocale, nameLanguage: NameLanguage) {
   const t = await getTranslations({ locale, namespace: 'userImport' });
   const other = locale === 'ar' ? 'en' : 'ar';
   const groups = ['identity', 'work', 'roles'] as const;
@@ -252,32 +259,34 @@ async function templateGuide(locale: AppLocale) {
                   {t(`guide.groups.${group}`)}
                 </th>
               </tr>
-              {FIELD_DEFINITIONS.filter((d) => d.group === group).map((d) => (
-                <tr key={d.field} className="border-t border-border align-top">
-                  <th scope="row" className="px-3 py-2 text-start font-medium">
-                    {d.header[locale]}
-                    <div className="font-normal text-text-muted">
-                      <bdi>{d.header[other]}</bdi>
-                    </div>
-                  </th>
-                  <td className="px-3 py-2">
-                    {d.required ? (
-                      <Badge tone="warning">{t('guide.required')}</Badge>
-                    ) : (
-                      t('guide.optional')
-                    )}
-                  </td>
-                  <td className="px-3 py-2">
-                    {d.description[locale]}
-                    <div className="text-text-muted">
-                      <bdi>{d.description[other]}</bdi>
-                    </div>
-                  </td>
-                  <td className="px-3 py-2">
-                    <bdi>{d.example}</bdi>
-                  </td>
-                </tr>
-              ))}
+              {fieldDefinitionsFor(nameLanguage)
+                .filter((d) => d.group === group)
+                .map((d) => (
+                  <tr key={d.field} className="border-t border-border align-top">
+                    <th scope="row" className="px-3 py-2 text-start font-medium">
+                      {d.header[locale]}
+                      <div className="font-normal text-text-muted">
+                        <bdi>{d.header[other]}</bdi>
+                      </div>
+                    </th>
+                    <td className="px-3 py-2">
+                      {d.required ? (
+                        <Badge tone="warning">{t('guide.required')}</Badge>
+                      ) : (
+                        t('guide.optional')
+                      )}
+                    </td>
+                    <td className="px-3 py-2">
+                      {d.description[locale]}
+                      <div className="text-text-muted">
+                        <bdi>{d.description[other]}</bdi>
+                      </div>
+                    </td>
+                    <td className="px-3 py-2">
+                      <bdi>{d.example}</bdi>
+                    </td>
+                  </tr>
+                ))}
             </tbody>
           ))}
         </table>
@@ -343,7 +352,7 @@ async function recentImports(
                   <td className="min-w-32 px-4 py-3">
                     {record.mine
                       ? t('recent.you')
-                      : record.importerName.ar
+                      : (record.importerName.ar ?? record.importerName.en)
                         ? localizedName(locale, record.importerName.ar, record.importerName.en)
                         : '—'}
                   </td>

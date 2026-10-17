@@ -1,5 +1,6 @@
 import 'server-only';
 import { sql } from 'drizzle-orm';
+import { englishOnlyNamesExist } from './custom-roles-present';
 import { TENANT_DATE_DISPLAYS, type TenantDateDisplay } from './tenant-settings';
 import type { UserTx } from './with-user-tx';
 
@@ -61,4 +62,28 @@ export async function getCurrentTenant(tx: UserTx): Promise<CurrentTenant | null
         },
       }
     : null;
+}
+
+/**
+ * The organization's default language (FR-ADM-02, platform.tenant_settings.default_locale; English unless
+ * the admin chose Arabic): the language of new people AND the language whose first and family names are
+ * required when a person's name is entered (guided-test feedback #2, PO 17 Oct 2026). The claims'
+ * organization (RLS); 'en' (the database's default) when it has no settings row.
+ */
+export async function getTenantDefaultLocale(tx: UserTx): Promise<'ar' | 'en'> {
+  const [row] = await tx.execute<{ default_locale: string | null }>(
+    sql`select s.default_locale from platform.tenant_settings s
+        where s.tenant_id = (select private.current_tenant_id())`,
+  );
+  return row?.default_locale === 'ar' ? 'ar' : DEFAULT_TENANT_REGIONAL.defaultLocale;
+}
+
+/**
+ * The language whose first and family names a bulk import requires (FR-IAM-04): the organization's default
+ * language — or Arabic while the database still requires an Arabic name (before migration 20261021090000:
+ * its mapping rule and row writer need the Arabic names; the app deploys in parallel with the database,
+ * englishOnlyNamesExist).
+ */
+export async function getImportNameLanguage(tx: UserTx): Promise<'ar' | 'en'> {
+  return (await englishOnlyNamesExist(tx)) ? getTenantDefaultLocale(tx) : 'ar';
 }

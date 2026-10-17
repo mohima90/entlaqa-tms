@@ -229,7 +229,7 @@ describe.skipIf(!configured)('people directory reads against PostgreSQL', () => 
       rolesScope: { ...EMPTY_PERSON_SCOPE, directReports: true },
     });
     const primaryRoles = Object.fromEntries(
-      byManager.rows.map((r) => [r.displayNameAr, r.primaryRole]),
+      byManager.rows.map((r) => [r.displayNameAr ?? '', r.primaryRole]),
     );
     expect(primaryRoles[people.report.name]).toBe('training_coordinator');
     expect(Object.values(primaryRoles).filter((r) => r !== null)).toHaveLength(1);

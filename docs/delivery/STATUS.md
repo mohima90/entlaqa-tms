@@ -4,10 +4,40 @@
 
 | | |
 |---|---|
-| **Last updated** | 15 October 2026 |
-| **Current phase** | **New direction (PO, 15 Oct 2026): the core product is organization set-up + training planning.** M2 Platform core closes with `EP-OPS` (one production environment on a new Supabase Pro project, automatic DB deploy), `EP-ROLES` (six standard roles + custom role builder — set pending PO confirmation) and `EP-SHELL-K` (Kawadir ATS layout); then **M3 Planning core** (`EP-PLN`). Every epic starts with its **business flow agreed with the PO**. Remaining Organization Admin items paused · M2 Platform core in progress since 4 Oct 2026 · **M1 done** (staging live: sign-in, self-hosted stack, observability; estimation postponed and mock-up test cancelled by the PO) · **M0 done** (Gate G0 passed 3 Oct 2026) |
+| **Last updated** | 17 October 2026 |
+| **Current phase** | **Work organized by role (PO, 17 Oct 2026)** — see «Current state by role» below and `ROADMAP-by-role.md`; M3 Planning core in progress (PR #64 merged: structure, course library, planning cycle set-up, needs form builder). Earlier: **New direction (PO, 15 Oct 2026): the core product is organization set-up + training planning.** M2 Platform core closes with `EP-OPS` (one production environment on a new Supabase Pro project, automatic DB deploy), `EP-ROLES` (six standard roles + custom role builder — set pending PO confirmation) and `EP-SHELL-K` (Kawadir ATS layout); then **M3 Planning core** (`EP-PLN`). Every epic starts with its **business flow agreed with the PO**. Remaining Organization Admin items paused · M2 Platform core in progress since 4 Oct 2026 · **M1 done** (staging live: sign-in, self-hosted stack, observability; estimation postponed and mock-up test cancelled by the PO) · **M0 done** (Gate G0 passed 3 Oct 2026) |
 | **Next gate** | G2 (Platform core) |
 | **Overall status** | 🟡 Re-planning (PO concern 15 Oct 2026: about 1% of the features after 2+ weeks — lighter process, planning-first order and Kawadir reuse decided; progress now reported weekly against the feature list, §7). No time plan (PO, 4 Oct 2026) |
+
+---
+
+## Current state by role (17 Oct 2026)
+
+> One page, kept current by every session. Details: [`ROADMAP-by-role.md`](ROADMAP-by-role.md) (features, work packages, order), [`BACKLOG.md`](BACKLOG.md) (tasks), [`HOW-TO-START.md`](HOW-TO-START.md) (a second Claude account). R1 = 107 features + IAM-08 R1 part = 108 rows: **8 done · 17 partly · 83 not started**.
+
+| Role | Done / Partly / Not started | Working in the product | In progress | Next work package |
+|---|---|---|---|---|
+| Organization Admin | 7 / 4 / 11 | General settings; Team members with invitation codes and links; bulk import; deactivate / reactivate; six roles, custom role builder, department-limited roles, who can give what; security settings | WP-FIX-01 (name fields follow the default language) | **WP-ADM-01 E-mail sending** (flow in discussion) → WP-ADM-02 Branding → WP-ADM-03 Audit log |
+| HR Manager | 0 / 2 / 4 | Structure with own levels, tree, heads and branches; manages people with ordinary roles | WP-FIX-01 («Organization tree» tab, level names) | WP-ADM-04 (HR-only fields) · WP-HR-01 structure completion |
+| L&D Manager | 0 / 5 / 42 | Course library (minimal); needs form builder; planning cycle set-up, launch and progress | WP-FIX-01 (level names in planning) | **WP-LD-01 Department Head needs page** (flow agreed, ready) → WP-LD-02 consolidation with the department-limited L&D Manager → WP-LD-03 approval → WP-LD-04 plan → courses |
+| Training Coordinator | 0 / 0 / 7 | Adds and edits courses; views cycles and needs forms | — | WP-TC-01 after scheduling (WP-LD-08) |
+| Department Head | 0 / 0 / 6 | Reads courses | — | Needs page (WP-LD-01) |
+| Employee | 0 / 1 / 7 | My profile (no photo yet) | — | Photo in WP-ADM-04; WP-EMP-01 … 04 from M4 |
+| Platform Super Admin | 0 / 1 / 1 | Console: organizations, create one with an Org Admin code / link | — | Platform sender in WP-ADM-01; WP-SA-01 |
+| Platform / cross-cutting | 1 / 4 / 5 | Shared people directory; Kawadir shell; organization date display; production with automatic DB deploy | — | WP-PLT-01 in-app notifications (planning reminders) · WP-PLT-02 Hijri date picker |
+
+**Next 3 actions**
+1. Finish **WP-FIX-01** (test feedback 1–3) → PO «yes» → PR.
+2. Agree the **E-mail sending** flow (EP-EMAIL) with the PO → build **WP-ADM-01** (production sends no e-mail today).
+3. In parallel (second account or agent): **WP-LD-01** Department Head needs page — flow agreed, nothing blocking; in between, write the short flows for WP-ADM-02 Branding and WP-ADM-03 Audit log.
+
+**Waiting on the PO**
+1. ~~Discuss and agree EP-EMAIL~~ — agreed 17 Oct 2026; WP-ADM-01 in progress.
+2. «yes» for the WP-FIX-01 PR when it is ready.
+3. Delete the old Supabase project `jadarat-tms-staging` (production-setup step 40) and the backup branches `backup/youthful-davinci-*`; set `APP_BASE_URL` in Vercel if not done yet (§5, 16 Oct).
+4. Scope: confirm IAM-08 «R1 part» in the feature list (its release column says R2); decide whether self-service sign-up (ADM-01) stays in R1 now that organizations are created by the Super Admin.
+5. Whether to start a second Claude account now (it begins with `HOW-TO-START.md`).
+6. Before the first customer: production worker host (cost), legal items (SDAIA SCCs / transfer assessment, security decisions 6–14).
 
 ---
 
@@ -20,8 +50,8 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 | Planning (research, BRD, feature list, delivery plan) | — | 🟢 Done | — | See §4 documents |
 | M0 Mobilize | 1–2 | 🟢 Done | G0 | **Gate G0 passed 3 Oct 2026.** T-M0-01…07, 09, 10 done (MFA on GitHub, Supabase, Vercel confirmed); T-M0-08 (→ 2-week customer trials ≈ end of M5) and T-M0-11 deferred by PO; T-M0-12/13 needed later |
 | M1 Foundation | 3–8 | 🟢 Done | G1 | Foundation merged (#9); walking skeleton live on staging (#10–#14); component library + Storybook done (T-M1-A02); M2 threat models done (TM-0002…0006); self-hosted stack verified (T-M1-D04, gate 15); observability baseline done (T-M1-D06). Estimation (T-M1-B14) postponed and mock-up usability round (T-M1-A05) cancelled by the PO (4 Oct 2026) |
-| M2 Platform core | 9–12 | 🔵 In progress | G2 | **15 Oct 2026 (PO): closes with `EP-OPS`, `EP-ROLES`, `EP-SHELL-K`; remaining `EP-OA` items paused until after M3.** T-M2-21, T-M2-22 merged (#57, #58). Started 4 Oct 2026 with users & roles (`EP-M2-IAM`): 11 Arabic screens **approved by the PO** (4 Oct 2026); build broken into T-M2-01…12 (BACKLOG); T-M2-01…04, T-M2-13, T-M2-14, T-M2-15a merged (#28, #30–#37); T-M2-05 merged (#37); T-M2-06a background jobs merged (#38) and running on staging (every 5 min); T-M2-06b e-mail merged (#39, #40) and working on staging; T-M2-07 invitations merged (#41, #42) and accepted end to end on staging (7 Oct 2026); T-M2-08 forgot/reset password merged (#43) and set up on staging; T-M2-16 separation of duties merged (#44) and deployed to staging (8 Oct 2026); T-M2-17 account e-mails through our notification service merged (#45) and deployed (9 Oct 2026; staging stays on Auth's mailer until the worker runs continuously) |
-| **M3 Planning core** (re-ordered 15 Oct 2026) | — | ⚪ Not started | G3 | `EP-PLN`: structure with department heads → course library → planning cycle → Department Head needs → consolidation and budget check → plan approval (BRD v3.0 §5.4). Was «Catalog & scheduling» |
+| M2 Platform core | 9–12 | 🔵 In progress | G2 | **17 Oct 2026:** `EP-OPS` (#59), `EP-SHELL-K` + `EP-KAW-AUTH` (#61) and `EP-ROLES` (#63) merged; the remaining Organization Admin items resumed as work packages WP-ADM-01 … 12 (PO, «Work organized by role»). **15 Oct 2026 (PO): closes with `EP-OPS`, `EP-ROLES`, `EP-SHELL-K`; remaining `EP-OA` items paused until after M3.** T-M2-21, T-M2-22 merged (#57, #58). Started 4 Oct 2026 with users & roles (`EP-M2-IAM`): 11 Arabic screens **approved by the PO** (4 Oct 2026); build broken into T-M2-01…12 (BACKLOG); T-M2-01…04, T-M2-13, T-M2-14, T-M2-15a merged (#28, #30–#37); T-M2-05 merged (#37); T-M2-06a background jobs merged (#38) and running on staging (every 5 min); T-M2-06b e-mail merged (#39, #40) and working on staging; T-M2-07 invitations merged (#41, #42) and accepted end to end on staging (7 Oct 2026); T-M2-08 forgot/reset password merged (#43) and set up on staging; T-M2-16 separation of duties merged (#44) and deployed to staging (8 Oct 2026); T-M2-17 account e-mails through our notification service merged (#45) and deployed (9 Oct 2026; staging stays on Auth's mailer until the worker runs continuously) |
+| **M3 Planning core** (re-ordered 15 Oct 2026) | — | 🔵 In progress | G3 | **17 Oct 2026:** PR #64 merged (T-M3-02/03/04/09/10) and guided test passed; next WP-LD-01 … 04 (T-M3-05 … 08). `EP-PLN`: structure with department heads → course library → planning cycle → Department Head needs → consolidation and budget check → plan approval (BRD v3.0 §5.4). Was «Catalog & scheduling» |
 | **M4 Courses, sessions & enrollment** | — | ⚪ Not started | G4 | Plan → sessions, catalog completion, scheduling, venues, instructors, enrollment, manager hub, learner PWA; paused Organization Admin items in parallel (Kawadir layout) |
 | M5 Delivery & credentials | — | ⚪ Not started | G5 | |
 | M6 Integration & insights | — | ⚪ Not started | G6 | |
@@ -52,6 +82,12 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | ID | Decision |
 |---|---|---|
+| 17 Oct 2026 | PO | **Faster agent loop** ("yes"): agents run the fast checks plus the tests for what they changed; the full suite runs once in GitHub CI on the PR, all gates still required before merge (Development Plan §2.4 P10, CLAUDE.md) |
+| 17 Oct 2026 | PO | **Existing Arabic-only people stay saveable** (WP-FIX-01 review item 3, "no" to forcing English names): the default-language names are required for new people and whenever a save adds or changes names; other saves (phone, language, unit) of an Arabic-only person are accepted |
+| 17 Oct 2026 | PO | **E-mail sending flow agreed** (`docs/business-flows/EP-EMAIL-email-sending.md`): the Super Admin sets the platform sender in the product (provider, write-only key, sender, test); an organization may connect its own provider on Email integration; **no automatic fallback** when an own provider fails (shown to the Org Admin); providers Resend, SMTP, SendGrid, Mailgun, Microsoft 365. BRD v3.2 FR-NTF-11. WP-ADM-01 started |
+| 17 Oct 2026 | Tech Lead | **Work packages and claiming** (implements the PO's «Work organized by role»): open R1 work in 41 work packages by role (`ROADMAP-by-role.md`), one WP = one PR; a WP is claimed by pushing its own branch `claude/<wp-id>-<short>` whose first commit fills «Claimed by» in the roadmap and the BACKLOG; each WP has a reserved migration-timestamp range (renamed before the PR if `main` already holds a later one); shared files (i18n messages, permission catalogue, navigation, test fixtures) take small additive edits only (`HOW-TO-START.md`). BACKLOG re-organized by role, done tasks archived with their rows intact |
+| 17 Oct 2026 | PO | **Guided-test feedback 1–3 approved** (`docs/delivery/test-feedback-2026-10-17.md`): Levels tab becomes «Organization tree» with the level chain; name fields follow the default language (English required, Arabic optional); the organization's own level names everywhere instead of a fixed «Department». One small PR |
+| 17 Oct 2026 | PO | **Department-limited L&D Manager** (guided test, feedback #4, "approved"): a role limited to a department does the L&D work for its own units (needs, plan lines, budgets, courses created from those lines); the organization-wide L&D Manager keeps cycle set-up/launch, needs forms and planning settings. Built with consolidation (T-M3-06) as unit-scoped permissions |
 | 17 Oct 2026 | PO | **Who can give what** ("approved"; BRD v3.2 FR-IAM-07, EP-ROLES changed after agreement): the rule "nobody gives a permission they do not hold" is replaced — the Organization Admin builds custom roles with any permission except the admin-only ones and gives any role; the HR Manager gives every ordinary role (L&D Manager, Training Coordinator, Department Head, Employee, ordinary custom roles); privileged roles only by the Organization Admin. Security review required |
 | 17 Oct 2026 | PO | **Work organized by role** ("approved"): after the four running agents finish, the R1 work is re-organized in role order — **Organization Admin first (finish what is open), then HR Manager, then L&D Manager** (≈80% of the features), then the other roles; a per-role inventory (Done / Partly / Not started, checked in the product); BACKLOG rewritten as work packages per role (one feature area = one PR, with flow status, dependencies and the code areas touched) so a **second Claude account** can claim packages and work in parallel; a short "how to start" note; a one-page status per role at the top of STATUS. The inventory (step 1) starts now (read-only) |
 | 17 Oct 2026 | PO | **Customizable needs form** ("approved"): Kawadir's application-form builder copied for the Department Head needs form — forms library, sections (repeatable), 12 field types, AR/EN, required, show/hide, one condition; designed by the L&D Manager; training topic and people always present; one form per cycle, locked at launch; fixes over Kawadir: server-side validation, Arabic options, reorder (EP-PLN flow §12, BRD v3.2 FR-PLN-03, T-M3-10) |
@@ -158,6 +194,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 | Risk | **Pull-request previews share the production database** (one environment, PO 15 Oct 2026): unmerged code, incl. Dependabot updates, runs against production — acceptable only while production holds test organizations (risk R-62) | PO (accepted) / Claude | **Accepted** until the first customer; then a separate test environment |
 | Risk | **Automatic migrations on merge** (to build, T-M2-38): a faulty migration reaches production without a human reading the plan; app and database deploy in parallel (risk R-63) | Claude | Open — plan-before-apply, expand-first migrations, failure issue, Pro backups |
 | Risk | **Lighter process** may let defects through (risk R-64) | Claude / PO | Treating — CI gates and non-negotiables unchanged |
+| Risk | **Two Claude accounts in parallel** (17 Oct 2026): merge conflicts in shared files (i18n messages, permission catalogue, navigation, fixtures), migration timestamps out of order, two sessions asking the PO the same question | Claude | Treating — branch-as-lock claiming, reserved migration ranges, additive edits and frequent merges of `main` (`HOW-TO-START.md`) |
 | Dependency | **New production Supabase project** set up by the PO from scratch (`docs/engineering/production-setup.md`, 40 steps); Claude cannot reach `*.supabase.co`, Vercel settings or GitHub secrets | PO (guided) | Open |
 | Note | Dependabot npm run of 30 Sep 2026 failed: it tried `@types/node` 24 → 26 (wrong for the Node 24 runtime) and pnpm's 3-day release-age rule refused the then-new `next-intl` 4.14.8 in the lockfile. Fixed: `@types/node` major updates ignored; the release-age refusal clears by itself before the next weekly run | DevOps | Done 1 Oct 2026 |
 | Note | First `DB deploy plan` on staging (1 Oct 2026): connection + TLS `verify-full` OK, PostgreSQL 17.11; dry run stopped at migration `…120000` (`ALTER ROLE … NOSUPERUSER` is refused to a non-superuser) — nothing changed. Fixed (attributes asserted instead of set; CREATE on `private` granted to `tenant_guard` only during ownership hand-over; `auth` grants asserted) and a CI gate now runs the deploy as a non-superuser (`scripts/db-test-hosted-sim.sh`) | DevOps | Fix in PR |
@@ -178,15 +215,17 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Document | Version | Status |
 |---|---|---|
-| `docs/brd/Jadarat_TMS_BRD_v2.md` | **3.0** | Draft for stakeholder review — new direction of 15 Oct 2026 (planning core in R1, six standard roles proposed, Kawadir alignment, NTF-11 in R1) |
-| `docs/brd/TMS_Feature_List.md` | **v3.0, 15 Oct 2026** | Current (292 features; 280 in scope; R1 107 · R2 101 · R3 54 · R4 13 · Suite 5) |
+| `docs/brd/Jadarat_TMS_BRD_v2.md` | **3.2** | v3.1 roles agreed, v3.2 structure per organization, planning flow, needs first, customizable needs form, who can give what (17 Oct 2026). Draft for stakeholder review — new direction of 15 Oct 2026 (planning core in R1, six standard roles proposed, Kawadir alignment, NTF-11 in R1) |
+| `docs/brd/TMS_Feature_List.md` | **v3.2, 17 Oct 2026** | Current, no release change since v3.0 (292 features; 280 in scope; R1 107 · R2 101 · R3 54 · R4 13 · Suite 5) |
 | `docs/delivery/Jadarat_TMS_Development_Plan.md` | **1.2** | §2.4 lighter process + business flow first; §3.4 one production environment; §5.6 automatic DB deploy; §6 milestones re-ordered (M3 Planning core) |
 | `docs/delivery/roles/README.md` | 15 Oct 2026 | Role approach, six-role proposal, mandatory-roles analysis, mapping — pending PO |
 | `docs/design/kawadir-alignment.md` | 15 Oct 2026 | Kawadir ATS conventions adopted (PO, option B) |
-| `docs/business-flows/README.md` | 15 Oct 2026 | Business-flow template (no flows yet) |
+| `docs/business-flows/README.md` | 15 Oct 2026 | Business-flow template; flows: EP-KAW-AUTH, EP-ROLES, EP-ORG, EP-PLN (agreed), EP-EMAIL (in discussion) |
+| `docs/delivery/ROADMAP-by-role.md` | 17 Oct 2026 | R1 features by role with verified status, 41 work packages with flow, dependencies, code areas, migration ranges and «Claimed by» |
+| `docs/delivery/HOW-TO-START.md` | 17 Oct 2026 | How a (second) Claude account reads in, claims a work package, works beside the other account and hands back |
 | `docs/engineering/production-setup.md` | 15 Oct 2026 | Runbook: new Supabase project → working product (40 steps) |
 | `docs/research/TMS_Market_Comparison_vs_BRD.md` | 27 Sep 2026 | Reference |
-| `docs/delivery/BACKLOG.md` | 15 Oct 2026 | Current task list; new order `EP-OPS` → `EP-ROLES` → `EP-SHELL-K` → `EP-PLN` → delivery epics; `EP-OA` remainder paused |
+| `docs/delivery/BACKLOG.md` | 17 Oct 2026 | Re-organized by role and work package (open work), done tasks archived with their rows; before: current task list; new order `EP-OPS` → `EP-ROLES` → `EP-SHELL-K` → `EP-PLN` → delivery epics; `EP-OA` remainder paused |
 | `docs/adr/` | — | 0001–0011 Accepted (#9); 0012 Draft |
 | `docs/engineering/db-deploy.md` | 15 Oct 2026 | Runbook for migrations on hosted environments; automatic deploy after merge (decided, to build) |
 | `docs/engineering/staging-sign-in.md` | 1 Oct 2026 | Runbook: sign-in configuration (Vercel env vars, Supabase Auth), provisioning organizations, checks |
@@ -195,6 +234,8 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 ---
 
 ## 5. Next Actions
+
+**Update (17 Oct 2026, work organized by role):** the current next actions and what waits on the PO are in **«Current state by role»** at the top of this file; the order of the work packages is in `ROADMAP-by-role.md` §5. The older updates below are kept for history.
 
 **Resume point (17 Oct 2026, in case of a session limit — PO request):** four engineering agents run in separate worktrees (`.claude/worktrees/`, local branches `worktree-agent-*`, not pushed): organization structure (T-M3-02 + T-M3-09), course library (T-M3-03), planning cycle set-up (T-M3-04; the needs form T-M3-05 is on hold), needs form builder (T-M3-10); plus a read-only R1 inventory by role. After a limit resets, the tech lead resumes each unfinished agent from its worktree (check its commits, continue its brief, run checks, report), then integrates the four branches into `claude/youthful-davinci-00yhgl` (wire the needs form to the cycle and its lock at launch) and starts the role reorganization (Org Admin → HR Manager → L&D Manager). Backups (PO "yes", 17 Oct 2026): each agent's committed work is pushed every 15 minutes to `backup/youthful-davinci-{org-structure,course-library,planning-cycle,needs-form}` — never merged, deleted after integration; if the container was reclaimed, resume from those branches.
 
@@ -260,6 +301,11 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
+| 17 Oct 2026 | WP-FIX-01 built, reviewed (no Critical/High) and review fixes merged (old-schema tolerance, names in either language, level labels, a11y; name rule for existing people per PO); all gates green. Ready for PR on the PO's «yes». WP-ADM-01 (e-mail) in final checks |
+| 17 Oct 2026 | **Work re-organized by role** (PO decision): `ROADMAP-by-role.md` (108 rows verified in the code after PR #64: 8 done · 17 partly · 83 not started; 41 work packages + WP-FIX-01 with flow, dependencies, code areas, migration ranges, «Claimed by»), BACKLOG rewritten by role and work package (done tasks archived intact; fixed: T-M2-36/38/43/44/45 → 🟢, T-M2-37 → 🔵 with what is left, T-M2-19 → 🟢 via T-M3-02, T-M2-35/42 superseded, T-M2-15 → 15b open, paused Org Admin tasks resumed, ✅ → 🟢, `EP-M2-IAM` row), `HOW-TO-START.md` for a second Claude account, «Current state by role» at the top of STATUS, CLAUDE.md R1 = 107 and session routine pointer |
+| 17 Oct 2026 | **Guided test passed** (PO, production `entlaqa`): invitations by Org Admin and HR (HR gives ordinary roles incl. a custom role, not Org Admin/HR Manager), department-limited role with unit, structure levels/tree/branch/heads, needs form edit + preview, cycle set-up and launch with progress; Org Admin has no training menus; department-limited L&D Manager view-only (feedback #4, agreed). Feedback items 1–3 to decide |
+| 17 Oct 2026 | Guided test with the PO started (production, `entlaqa`): steps 1–3 passed (sign-in, invitations for HR Manager and L&D Manager, department-limited custom role). Feedback recorded in `docs/delivery/test-feedback-2026-10-17.md`, handled after the test |
+| 17 Oct 2026 | **PR #64 merged by the PO** (structure + department-limited roles, course library, planning cycle set-up, needs form builder, who-can-give-what); automatic DB deploy green (plan → apply, migrations 20261020090000–210600 live in production). Next: guided test with the PO, then T-M3-05 needs page and the role reorganization. Backup branches `backup/youthful-davinci-*` to be deleted by the PO (the proxy refuses branch deletion) |
 | 17 Oct 2026 | Review fixes merged (code review 3M/9L, security reviews 1M/4L + rule pass 2L — all fixed or recorded as R-68/R-69); full gates green (check:all, licences, db:test incl. integration, hosted-sim, build, e2e 348 passed). Branch ready for one PR: structure + department-limited roles, course library, planning cycle set-up, needs form builder, who-can-give-what (T-M3-02/03/04/09/10). Waiting for the PO's "yes" |
 | 17 Oct 2026 | Who-can-give-what rule built and merged (migration 20261020200000; org structure permission now never in custom roles; HR gives L&D Manager / Training Coordinator again; BRD FR-IAM-07 wording aligned); its security pass and the review-fix agent running |
 | 17 Oct 2026 | Four feature branches built and integrated (T-M3-02/03/04/09/10; needs form wired to cycle launch; all gates green); code + security review running (paused by a session limit, resumed). PO approved the "who can give what" rule; rule change being built |
@@ -422,9 +468,9 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 ## 7. Weekly Progress (feature list)
 
-Weekly report against `docs/brd/TMS_Feature_List.md` (PO decision 15 Oct 2026; Development Plan §12). A feature counts as **done** when its R1 part is merged and deployed, **partly** when some of it is. R1 total: **107** (v3.0).
+Weekly report against `docs/brd/TMS_Feature_List.md` (PO decision 15 Oct 2026; Development Plan §12). A feature counts as **done** when its R1 part is merged and deployed, **partly** when some of it is. R1 total: **107** (v3.0; unchanged in v3.2).
 
 | Week of | R1 done | R1 partly | Finished this week | In progress | Blocked by |
 |---|---|---|---|---|---|
 | 15 Oct 2026 (baseline, Tech Lead count) | 4 — ADM-02, IAM-04, IAM-05, IAM-13 (R1 part) | 12 — ADM-04, ADM-05 (tables, no screens), IAM-01, IAM-03, IAM-07 (14 former roles), IAM-12 (no e-mail codes), IAM-16 (no photo), NTF-02 (platform sender), SCH-07, AUD-01 (no screen), STE-08 (shell), DEP-01 | — | Documentation of the new direction | PO: new production project; role confirmation |
-
+| 17 Oct 2026 (interim recount for the role roadmap) | 7 — ADM-02, IAM-03, IAM-04, IAM-05, IAM-07, IAM-13, STE-02 (+ IAM-08 R1 part, outside the 107) | 17 — ADM-04, ADM-05, ADM-07, ADM-17, AUD-01, CAT-01, CAT-10, DEP-01, IAM-01, IAM-12, IAM-16, LRN-08, NTF-02, PLN-02, PLN-03, SCH-07, STE-08 | IAM-03, IAM-07 (#61, #63); IAM-08 R1 part; ADM-04/05 screens, CAT-01/10, PLN-02, PLN-03 builder (#64) | WP-FIX-01 (test feedback 1–3) | PO: EP-EMAIL flow |

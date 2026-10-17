@@ -133,7 +133,7 @@ export interface ResponsibilityView {
 export interface DeactivationView {
   readonly target: {
     readonly personId: string;
-    readonly displayNameAr: string;
+    readonly displayNameAr: string | null;
     readonly displayNameEn: string | null;
   };
   readonly blocked: DeactivationBlock | null;

@@ -17,7 +17,12 @@ import { type SuiteContext, getSuiteContext } from '../../../../../../lib/suite-
 import { pageDates } from '../../../../../../lib/page-dates';
 import { roleOptions } from '../../../../../../lib/role-choice';
 import { roleSelectTexts, scopeUnitTexts } from '../../../../../../lib/role-texts';
-import { scopeUnitChoices } from '../../../../../../lib/structure-view';
+import {
+  scopeUnitChoices,
+  showsUnitLevels,
+  unitNameWithLevel,
+  unitsLabel,
+} from '../../../../../../lib/structure-view';
 import { inviteFormQuery } from '../../../../../../lib/users-queries';
 import { localizedName } from '../../../../../../lib/users-view';
 
@@ -28,6 +33,7 @@ const LABEL_KEYS = [
   'emailHint',
   'firstNameAr',
   'familyNameAr',
+  'addArabicName',
   'addEnglishName',
   'firstNameEn',
   'familyNameEn',
@@ -153,12 +159,27 @@ async function inviteForm(
     id: u.id,
     name: localizedName(locale, u.nameAr, u.nameEn),
   });
+  // The organization's own level names (guided-test feedback #3): the field is named after the first
+  // level, or «Unit» with each choice's level when levels mix.
+  const ordinals = view.orgUnits.departments.map((d) => d.levelOrdinal);
+  const withLevels = showsUnitLevels(view.levels, ordinals);
+  labels.department = unitsLabel(view.levels, ordinals, locale, t('form.department'));
+  const department = (u: (typeof view.orgUnits.departments)[number]) => ({
+    id: u.id,
+    name: unitNameWithLevel(
+      localizedName(locale, u.nameAr, u.nameEn),
+      u.levelOrdinal,
+      view.levels,
+      locale,
+      withLevels,
+    ),
+  });
 
   return (
     <Card>
       <InviteUserForm
         defaultLocale={context.regional.defaultLocale}
-        departments={view.orgUnits.departments.map(unit)}
+        departments={view.orgUnits.departments.map(department)}
         branches={view.orgUnits.branches.map(unit)}
         managers={view.managers.map((m) => ({
           personId: m.personId,

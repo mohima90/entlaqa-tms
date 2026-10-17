@@ -260,6 +260,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
+| 17 Oct 2026 | Who-can-give-what rule built and merged (migration 20261020200000; org structure permission now never in custom roles; HR gives L&D Manager / Training Coordinator again; BRD FR-IAM-07 wording aligned); its security pass and the review-fix agent running |
 | 17 Oct 2026 | Four feature branches built and integrated (T-M3-02/03/04/09/10; needs form wired to cycle launch; all gates green); code + security review running (paused by a session limit, resumed). PO approved the "who can give what" rule; rule change being built |
 | 17 Oct 2026 | PO: re-organize the work by role (Org Admin → HR Manager → L&D Manager) after the running agents finish, ready for a second Claude account; per-role inventory started |
 | 17 Oct 2026 | Kawadir's application-form builder researched in code; PO approved a customizable needs form (T-M3-10); EP-PLN flow §12, BRD / feature list v3.2, BACKLOG updated; form-builder agent started |

@@ -2,6 +2,7 @@ import { toClientError } from '@jadarat/platform-core';
 import type { AppLocale } from '@jadarat/platform-i18n';
 import { routing } from '@jadarat/platform-i18n/routing';
 import type { CycleView } from '@jadarat/tms';
+import { earliestExtension } from '@jadarat/tms/planning-rules';
 import { Alert, Badge, Card, StatCard, StatGrid, tableClasses } from '@jadarat/ui';
 import { hasLocale } from 'next-intl';
 import { getFormatter, getTranslations } from 'next-intl/server';
@@ -160,10 +161,15 @@ async function SetUp({
           })
         : localName(locale, head.name)
       : t('cycle.noHead');
-  const members = (setup?.members ?? []).map((m) => ({
-    personId: m.personId,
-    name: localName(locale, m.name),
-  }));
+  // Names of the active approvers already in the chain; the picker searches the others (C-M3).
+  const names = Object.fromEntries(
+    view.steps
+      .filter((s) => s.approverPersonId && s.approverActive && s.approverName)
+      .map((s) => [
+        s.approverPersonId ?? '',
+        localName(locale, s.approverName ?? { ar: '', en: null }),
+      ]),
+  );
   const inactive = Object.fromEntries(
     view.steps
       .filter((s) => s.approverPersonId && !s.approverActive && s.approverName)
@@ -193,6 +199,7 @@ async function SetUp({
           needsForms={(setup?.needsForms ?? []).map((f) => ({
             id: f.id,
             name: localName(locale, f.name),
+            active: f.active,
           }))}
           currency={view.cycle.currency}
           texts={texts}
@@ -251,7 +258,7 @@ async function SetUp({
           locale={locale}
           cycle={cycle}
           initial={toDrafts(view.steps)}
-          members={members}
+          names={names}
           inactive={inactive}
           texts={texts}
           errors={errors}
@@ -398,6 +405,7 @@ async function Overview({
               texts={texts}
               errors={errors}
               deadline={view.cycle.deadline}
+              earliest={earliestExtension(view.cycle.deadline, view.today)}
               periodEnd={view.cycle.periodEnd}
               hint={t('cycle.extendHint', { end: day(view.cycle.periodEnd) })}
             />

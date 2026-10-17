@@ -649,7 +649,8 @@
       "none": "The organization has no units yet. HR adds them in Organization → Structure.",
       "currentInactive": "The unit picked for this role is inactive, so this person has no access through it. Pick another unit.",
       "unitRequired": "Choose the unit this role covers.",
-      "unitNotAllowed": "This unit can't be picked: it's inactive or no longer exists. Choose another unit."
+      "unitNotAllowed": "This unit can't be picked: it's inactive or no longer exists. Choose another unit.",
+      "structureHidden": "You can't see the organization structure, so you can't pick a unit. Ask HR to give this role."
     }
   },
   "rolesPage": {
@@ -819,7 +820,8 @@
         "needsForm": "Needs form",
         "needsFormNone": "No form chosen",
         "needsFormHint": "The form department heads fill in, from Planning → Needs forms. A cycle needs one to launch; the launch locks it.",
-        "currency": "Amounts are in {currency}, your organization's currency (General settings)."
+        "currency": "Amounts are in {currency}, your organization's currency (General settings).",
+        "needsFormOff": "{name} (switched off)"
       },
       "scope": {
         "title": "Scope",
@@ -866,7 +868,9 @@
         "removeStep": "Remove step {number}",
         "moveUp": "Move step {number} up",
         "moveDown": "Move step {number} down",
-        "noMembers": "No active members to choose from yet."
+        "search": "Find a person",
+        "searchHint": "Type at least 2 letters of their name.",
+        "noMatch": "No active member matches this name."
       },
       "reminders": {
         "title": "Reminders",
@@ -918,7 +922,8 @@
         "notLater": "Choose a date after the current deadline.",
         "duplicateDay": "Each reminder day only once.",
         "dayRange": "Between 1 and 90 days.",
-        "unknown": "This item no longer exists. Reload the page."
+        "unknown": "This item no longer exists. Reload the page.",
+        "inPast": "Choose today or a later date."
       },
       "conflict": "Someone else changed this cycle after you opened it. Reload the page to see the latest version.",
       "notFound": "This cycle no longer exists.",
@@ -2278,7 +2283,8 @@
       "nameTaken": "Another role in the organization has this name.",
       "description": "The description can be at most 500 characters.",
       "permissions": "Some ticked permissions can't be given: you don't hold them, or they need the whole organization.",
-      "dataScope": "Administrative permissions need the whole organization as the data this role sees."
+      "dataScope": "Administrative permissions need the whole organization as the data this role sees.",
+      "scopeUnitsInUse": "This role is still given for a unit to {members} people and {invitations} pending invitations. Give them the role without a unit or another role, or revoke the invitations, before changing the data it sees."
     },
     "notFound": "This role doesn't exist (any more).",
     "conflict": "Someone changed this role meanwhile. Reload the page to see the latest version."

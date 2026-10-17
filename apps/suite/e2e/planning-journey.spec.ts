@@ -9,12 +9,14 @@ import { afterSignIn, fillSignIn } from './sign-in';
  * only one cycle can be open at a time and is deleted. A Training Coordinator sees the list read-only.
  *
  * Needs an organization with departments (at least one with a head) and at least two other active members
- * (the approvers): PLANNING_E2E_EMAIL / PLANNING_E2E_PASSWORD (L&D Manager) and, optionally,
- * PLANNING_E2E_COORDINATOR_EMAIL / _PASSWORD. Skipped without them (default CI run); to be wired into the
- * self-hosted stack's journeys (infra/docker/smoke.sh) by the tech lead.
+ * (the approvers): PLANNING_E2E_EMAIL / PLANNING_E2E_PASSWORD (L&D Manager), PLANNING_E2E_APPROVER_SEARCH
+ * (two or more letters found in the names of at least two of those members — approvers are searched by name,
+ * C-M3) and, optionally, PLANNING_E2E_COORDINATOR_EMAIL / _PASSWORD. Skipped without them (default CI run);
+ * to be wired into the self-hosted stack's journeys (infra/docker/smoke.sh) by the tech lead.
  */
 const email = process.env.PLANNING_E2E_EMAIL ?? '';
 const password = process.env.PLANNING_E2E_PASSWORD ?? '';
+const approverSearch = process.env.PLANNING_E2E_APPROVER_SEARCH ?? '';
 const coordinatorEmail = process.env.PLANNING_E2E_COORDINATOR_EMAIL ?? '';
 const coordinatorPassword = process.env.PLANNING_E2E_COORDINATOR_PASSWORD ?? '';
 
@@ -49,7 +51,7 @@ async function createDraft(page: Page, locale: 'ar' | 'en', nameEn: string, name
 }
 
 test.describe('planning cycle journey', () => {
-  test.skip(!email || !password, 'PLANNING_E2E_* not set');
+  test.skip(!email || !password || !approverSearch, 'PLANNING_E2E_* not set');
   test.describe.configure({ mode: 'serial' });
 
   test('English: set up, launch, follow and extend a cycle', async ({ page }) => {
@@ -75,6 +77,11 @@ test.describe('planning cycle journey', () => {
 
     // Approval chain: name two different approvers; the same person twice is refused (BR-PLN-g).
     const approvers = page.getByTestId('chain-step-approver');
+    const searches = page.getByTestId('chain-step-approver-search');
+    for (const n of [0, 1]) {
+      await searches.nth(n).fill(approverSearch);
+      await expect(approvers.nth(n).locator('option')).not.toHaveCount(1);
+    }
     await approvers.nth(0).selectOption({ index: 1 });
     await approvers.nth(1).selectOption({ index: 1 });
     await page.getByTestId('cycle-steps-save').click();

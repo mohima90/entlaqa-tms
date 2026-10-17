@@ -48,7 +48,7 @@ export default async function PlanningSettingsPage({
           errors={errors}
           initialDays={DEFAULT_REMINDER_DAYS}
           initialSteps={toDrafts(DEFAULT_CHAIN)}
-          members={[]}
+          names={{}}
           inactive={{}}
         />
       </>
@@ -86,10 +86,14 @@ export default async function PlanningSettingsPage({
           errors={errors}
           initialDays={view.settings.reminderDays}
           initialSteps={toDrafts(view.settings.steps)}
-          members={view.members.map((m) => ({
-            personId: m.personId,
-            name: localName(locale, m.name),
-          }))}
+          names={Object.fromEntries(
+            view.steps
+              .filter((s) => s.approverPersonId && s.approverActive && s.approverName)
+              .map((s) => [
+                s.approverPersonId ?? '',
+                localName(locale, s.approverName ?? { ar: '', en: null }),
+              ]),
+          )}
           inactive={inactive}
         />
       ) : (

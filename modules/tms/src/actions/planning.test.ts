@@ -30,7 +30,9 @@ const db = vi.hoisted(() => ({
     }),
   ),
   listOrgStructure: vi.fn(),
-  listMemberOptions: vi.fn(),
+  getMemberOptionsByIds: vi.fn(),
+  searchMemberOptions: vi.fn(),
+  MEMBER_SEARCH: { minLength: 2, maxLength: 100, limit: 50 },
   getOrganizationProfile: vi.fn(),
   schema: {},
   MFA_MODES: ['off', 'optional', 'required_all', 'required_roles'],
@@ -110,7 +112,7 @@ describe('planning server actions (deny by default)', () => {
       expect(!result.ok && result.error).toMatchObject({ code: 'FORBIDDEN', status: 403 });
     }
     expect(db.listOrgStructure).not.toHaveBeenCalled();
-    expect(db.listMemberOptions).not.toHaveBeenCalled();
+    expect(db.getMemberOptionsByIds).not.toHaveBeenCalled();
     // Medium-risk permission: local JWT verification, no getUser round-trip.
     expect(identity.getVerifiedClaimsStrict).not.toHaveBeenCalled();
   });

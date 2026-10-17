@@ -10,9 +10,11 @@ import {
   type MemberOption,
   type OrgStructure,
   type UserTx,
+  MEMBER_SEARCH,
+  getMemberOptionsByIds,
   getOrganizationProfile,
-  listMemberOptions,
   listOrgStructure,
+  searchMemberOptions,
 } from '@jadarat/platform-db';
 import {
   type ActionDefinition,
@@ -20,6 +22,7 @@ import {
   type QueryDefinition,
   tmsPlanningPermissions,
 } from '@jadarat/platform-rbac';
+import { z } from 'zod';
 import {
   type ApprovalStep,
   CreateCycleInput,
@@ -155,7 +158,6 @@ export interface CycleView {
       readonly name: LocalizedName;
       readonly active: boolean;
     }[];
-    readonly members: readonly { readonly personId: string; readonly name: LocalizedName }[];
     /** Needs forms of the forms library (stub: none until it merges — needs-forms.ts). */
     readonly needsForms: readonly NeedsFormOption[];
   } | null;
@@ -164,7 +166,6 @@ export interface CycleView {
 export interface SettingsView {
   readonly settings: repo.PlanningSettingsRecord;
   readonly steps: readonly StepView[];
-  readonly members: readonly { readonly personId: string; readonly name: LocalizedName }[];
   readonly canManage: boolean;
 }
 
@@ -235,11 +236,6 @@ function stepViews(
   });
 }
 
-const activeMemberOptions = (members: readonly (MemberOption & { readonly active: boolean })[]) =>
-  members
-    .filter((m) => m.active)
-    .map((m) => ({ personId: m.personId, name: { ar: m.nameAr, en: m.nameEn } }));
-
 /** Maps a failed "touch" of the cycle to the action's error. */
 function touchError(outcome: Exclude<repo.TouchOutcome['outcome'], 'ok'>): AppError {
   switch (outcome) {
@@ -269,7 +265,7 @@ async function approverProblems(
 ): Promise<{ path: string; code: string }[]> {
   const named = steps.flatMap((s) => (s.approverPersonId ? [s.approverPersonId] : []));
   if (named.length === 0) return [];
-  const members = memberMap(await listMemberOptions(tx, named));
+  const members = memberMap(await getMemberOptionsByIds(tx, named));
   return steps.flatMap((step, index) =>
     step.approverPersonId && !members.get(step.approverPersonId)?.active
       ? [{ path: `steps.${String(index)}.approverPersonId`, code: 'NOT_A_MEMBER' }]
@@ -281,9 +277,11 @@ async function approverProblems(
 async function needsFormProblems(
   tx: UserTx,
   needsFormId: string | null,
+  current: string | null = null,
 ): Promise<{ path: string; code: string }[]> {
   if (needsFormId === null) return [];
-  const forms = await listNeedsFormOptions(tx);
+  // An active form, or the cycle's own form even if it was switched off since (C-6: it stays).
+  const forms = await listNeedsFormOptions(tx, current);
   return forms.some((f) => f.id === needsFormId) ? [] : [{ path: 'needsFormId', code: 'UNKNOWN' }];
 }
 
@@ -374,7 +372,7 @@ export function planCycleQueryDefinition(): QueryDefinition<typeof CycleRef, Cyc
       const tree = units(structure);
       const byId = new Map(structure.departments.map((d) => [d.id, d]));
       const named = record.steps.flatMap((s) => (s.approverPersonId ? [s.approverPersonId] : []));
-      const members = await listMemberOptions(ctx.tx, named);
+      const members = await getMemberOptionsByIds(ctx.tx, named);
       const people = memberMap(members);
       // Tree order (rows are written in one statement; their own order says nothing).
       const position = new Map(treeOrder(tree).map((entry, index) => [entry.id, index]));
@@ -432,7 +430,7 @@ export function planCycleQueryDefinition(): QueryDefinition<typeof CycleRef, Cyc
         status: effectiveCycleStatus(record.status, record.deadline, today),
         canManage,
         editable,
-        canExtend: canManage && canExtendDeadline(record.status, record.deadline, today),
+        canExtend: canManage && canExtendDeadline(record.status),
         departments,
         steps: stepViews(record.steps, people),
         problems,
@@ -445,8 +443,7 @@ export function planCycleQueryDefinition(): QueryDefinition<typeof CycleRef, Cyc
                 name: { ar: b.nameAr, en: b.nameEn },
                 active: b.active,
               })),
-              members: activeMemberOptions(members),
-              needsForms: await listNeedsFormOptions(ctx.tx),
+              needsForms: await listNeedsFormOptions(ctx.tx, record.needsFormId),
             }
           : null,
       });
@@ -465,11 +462,10 @@ export function planningSettingsQueryDefinition(): QueryDefinition<
     handler: async ({ ctx }) => {
       const settings = await repo.getSettings(ctx.tx);
       const named = settings.steps.flatMap((s) => (s.approverPersonId ? [s.approverPersonId] : []));
-      const members = await listMemberOptions(ctx.tx, named);
+      const members = await getMemberOptionsByIds(ctx.tx, named);
       return ok({
         settings,
         steps: stepViews(settings.steps, memberMap(members)),
-        members: activeMemberOptions(members),
         canManage: ctx.can(MANAGE, 'tenant'),
       });
     },
@@ -492,9 +488,14 @@ export interface Saved {
   readonly version: number;
 }
 
+/** A new draft: the needs form it stores (the organization's default when none was chosen). */
+export interface CycleCreated extends Saved {
+  readonly needsFormId: string | null;
+}
+
 export function createPlanCycleActionDefinition(): ActionDefinition<
   typeof CreateCycleInput,
-  Saved,
+  CycleCreated,
   UserTx
 > {
   return {
@@ -516,7 +517,8 @@ export function createPlanCycleActionDefinition(): ActionDefinition<
           periodStart: input.periodStart,
           periodEnd: input.periodEnd,
           deadline: input.deadline,
-          needsFormId: input.needsFormId,
+          // C-10: what the cycle stores (read back), not what was sent.
+          needsFormId: output.needsFormId,
         },
       }),
   };
@@ -548,13 +550,13 @@ export function updatePlanCycleBasicsActionDefinition(): ActionDefinition<
     permission: MANAGE,
     input: UpdateCycleBasicsInput,
     handler: async ({ ctx, input }) => {
-      const issues = [
-        ...toFieldErrors(basicsIssues(input)),
-        ...(await needsFormProblems(ctx.tx, input.needsFormId)),
-      ];
-      if (issues.length > 0) return validation(issues);
       const before = await repo.getCycle(ctx.tx, input.id);
       if (!before) return err(appError('NOT_FOUND'));
+      const issues = [
+        ...toFieldErrors(basicsIssues(input)),
+        ...(await needsFormProblems(ctx.tx, input.needsFormId, before.needsFormId)),
+      ];
+      if (issues.length > 0) return validation(issues);
       const touched = await touch(ctx.tx, input.id, input.version);
       if (!touched.ok) return touched;
       const { id, version: _v, ...basics } = input;
@@ -758,7 +760,7 @@ export function launchPlanCycleActionDefinition(): ActionDefinition<
       const closedCycleIds = await repo.closeDueCycles(ctx.tx);
       const today = await repo.organizationToday(ctx.tx);
       const named = record.steps.flatMap((s) => (s.approverPersonId ? [s.approverPersonId] : []));
-      const members = await listMemberOptions(ctx.tx, named);
+      const members = await getMemberOptionsByIds(ctx.tx, named);
       const problems = launchProblems({
         status: record.status,
         deadline: record.deadline,
@@ -822,11 +824,13 @@ export function extendPlanCycleDeadlineActionDefinition(): ActionDefinition<
       const record = await repo.getCycle(ctx.tx, input.id);
       if (!record) return err(appError('NOT_FOUND'));
       const today = await repo.organizationToday(ctx.tx);
-      if (!canExtendDeadline(record.status, record.deadline, today)) {
+      if (!canExtendDeadline(record.status)) {
         return err(appError(PlanningErrors.PLAN_CYCLE_DEADLINE_REFUSED));
       }
       if (input.deadline <= record.deadline)
         return validation([{ path: 'deadline', code: 'NOT_LATER' }]);
+      // Also after the deadline has passed (C-7): the new one is today or later, so the cycle is open again.
+      if (input.deadline < today) return validation([{ path: 'deadline', code: 'IN_PAST' }]);
       if (input.deadline > record.periodEnd)
         return validation([{ path: 'deadline', code: 'AFTER_PERIOD' }]);
       const touched = await touch(ctx.tx, input.id, input.version, false);
@@ -908,5 +912,41 @@ export function savePlanningSettingsActionDefinition(): ActionDefinition<
         after: { reminderDays: input.reminderDays, steps: stepsForAudit(input.steps) },
       },
     }),
+  };
+}
+
+// ---------------------------------------------------------------------------------------------------
+// Approver search (C-M3)
+// ---------------------------------------------------------------------------------------------------
+
+export const ApproverSearchInput = z.strictObject({
+  q: z.string().trim().min(MEMBER_SEARCH.minLength).max(MEMBER_SEARCH.maxLength),
+});
+
+export interface ApproverSearchResult {
+  readonly members: readonly { readonly personId: string; readonly name: LocalizedName }[];
+}
+
+/**
+ * The person picker of the approval chain (cycle step 4, planning settings): active members whose name
+ * contains the text, at most MEMBER_SEARCH.limit (code review C-M3: a capped list of every member left
+ * people of a large organization out). A read for those who set chains up (tms.plan_cycle.manage); names
+ * only. Not audited (nothing changes).
+ */
+export function searchPlanApproversActionDefinition(): ActionDefinition<
+  typeof ApproverSearchInput,
+  ApproverSearchResult,
+  UserTx
+> {
+  return {
+    permission: MANAGE,
+    input: ApproverSearchInput,
+    handler: async ({ ctx, input }) =>
+      ok({
+        members: (await searchMemberOptions(ctx.tx, input.q)).map((m) => ({
+          personId: m.personId,
+          name: { ar: m.nameAr, en: m.nameEn },
+        })),
+      }),
   };
 }

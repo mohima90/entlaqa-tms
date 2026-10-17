@@ -26,7 +26,12 @@ export interface CycleBasicsFormProps {
   /** Edit a draft (its id and version), or create one. */
   readonly editing: { readonly id: string; readonly version: number } | null;
   readonly initial: CycleBasicsValues;
-  readonly needsForms: readonly { readonly id: string; readonly name: string }[];
+  /** Active forms, plus the cycle's own form if it was switched off since (`active: false`, C-6). */
+  readonly needsForms: readonly {
+    readonly id: string;
+    readonly name: string;
+    readonly active: boolean;
+  }[];
   readonly currency: string;
   readonly texts: Readonly<Record<string, string>>;
   readonly errors: ErrorTexts;
@@ -226,10 +231,15 @@ export function CycleBasicsForm(props: CycleBasicsFormProps) {
             disabled={pending}
             data-testid="cycle-needs-form"
           >
-            <option value="">{t('setup.basics.needsFormNone')}</option>
+            {/* No «none» choice (C-6): a cycle always uses a form (the default preselected). */}
+            {values.needsFormId === '' ? (
+              <option value="" disabled>
+                {t('setup.basics.needsFormNone')}
+              </option>
+            ) : null}
             {props.needsForms.map((form) => (
               <option key={form.id} value={form.id}>
-                {form.name}
+                {form.active ? form.name : t('setup.basics.needsFormOff', { name: form.name })}
               </option>
             ))}
           </SelectField>

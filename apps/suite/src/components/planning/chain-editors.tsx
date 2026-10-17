@@ -1,12 +1,20 @@
 'use client';
+import { searchPlanApproversAction } from '@jadarat/tms/actions/planning';
 import { Badge, Button, Icon, TextField } from '@jadarat/ui';
+import { useEffect, useState } from 'react';
 import { type MemberChoice, type StepDraft, stepKey } from '../../lib/planning-chain';
+import { localName } from '../../lib/planning-view';
 import { SelectField } from '../select-field';
 
+/** At least this many characters before the server is asked (platform-db MEMBER_SEARCH.minLength). */
+const SEARCH_MIN_LENGTH = 2;
+
 export interface ApprovalChainEditorProps {
+  readonly locale: 'ar' | 'en';
   readonly steps: readonly StepDraft[];
   readonly onChange: (steps: StepDraft[]) => void;
-  readonly members: readonly MemberChoice[];
+  /** Names of the active members already named in the chain, by person id (the rest is searched). */
+  readonly names: Readonly<Record<string, string>>;
   /** Named approvers who are no longer active members (their names, by person id). */
   readonly inactive: Readonly<Record<string, string>>;
   /** Field errors by path (`steps.N.field`). */
@@ -20,7 +28,8 @@ export interface ApprovalChainEditorProps {
  * The approval chain (business flow A3/B4; FR-WFL-01/02 R1 part): ordered steps — the built-in Department
  * Heads step (every head confirms their own lines at the same time; at most one) and named person steps
  * (BR-PLN-g: a person approves one step only). Reorder with the arrow buttons; keyboard and screen-reader
- * friendly (no drag and drop).
+ * friendly (no drag and drop). Approvers are found by name on the server (C-M3: no capped list of every
+ * member).
  */
 export function ApprovalChainEditor(props: ApprovalChainEditorProps) {
   const { steps, t } = props;
@@ -130,33 +139,27 @@ export function ApprovalChainEditor(props: ApprovalChainEditorProps) {
                   </option>
                 </SelectField>
                 {step.kind === 'person' ? (
-                  <SelectField
+                  <ApproverPicker
                     id={`${base}-approver`}
-                    label={t('setup.approvals.approver')}
+                    locale={props.locale}
                     value={step.approverPersonId}
-                    onChange={(event) => {
-                      set(index, { approverPersonId: event.target.value });
-                    }}
+                    currentName={
+                      step.approverPersonId
+                        ? (inactiveName ?? props.names[step.approverPersonId])
+                        : undefined
+                    }
                     error={
                       error('approverPersonId') ??
                       (inactiveName
                         ? t('setup.approvals.approverInactive', { name: inactiveName })
                         : undefined)
                     }
-                    hint={props.members.length === 0 ? t('setup.approvals.noMembers') : undefined}
                     disabled={props.disabled}
-                    data-testid="chain-step-approver"
-                  >
-                    <option value="">{t('setup.approvals.approverPlaceholder')}</option>
-                    {inactiveName && step.approverPersonId ? (
-                      <option value={step.approverPersonId}>{inactiveName}</option>
-                    ) : null}
-                    {props.members.map((member) => (
-                      <option key={member.personId} value={member.personId}>
-                        {member.name}
-                      </option>
-                    ))}
-                  </SelectField>
+                    t={t}
+                    onPick={(personId) => {
+                      set(index, { approverPersonId: personId });
+                    }}
+                  />
                 ) : (
                   <p className="m-0 self-end text-sm text-text-muted">
                     {t('setup.approvals.headsHint')}
@@ -211,6 +214,102 @@ export function ApprovalChainEditor(props: ApprovalChainEditorProps) {
           {t('setup.approvals.addStep')}
         </Button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Finds a person by name (server search, at least two letters, up to 50 active members) and picks one from
+ * the matches; the chosen person stays in the list while searching again.
+ */
+function ApproverPicker(props: {
+  readonly id: string;
+  readonly locale: 'ar' | 'en';
+  readonly value: string;
+  readonly currentName: string | undefined;
+  readonly error: string | undefined;
+  readonly disabled: boolean;
+  readonly t: (key: string, values?: Readonly<Record<string, string | number>>) => string;
+  readonly onPick: (personId: string) => void;
+}) {
+  const { t } = props;
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<readonly MemberChoice[] | null>(null);
+  const [picked, setPicked] = useState<Readonly<Record<string, string>>>({});
+  const text = query.trim();
+
+  useEffect(() => {
+    if ([...text].length < SEARCH_MIN_LENGTH) {
+      setResults(null);
+      return;
+    }
+    let current = true;
+    const timer = setTimeout(() => {
+      void searchPlanApproversAction({ q: text }).then((result) => {
+        if (!current) return;
+        setResults(
+          result.ok
+            ? result.value.members.map((m) => ({
+                personId: m.personId,
+                name: localName(props.locale, m.name),
+              }))
+            : [],
+        );
+      });
+    }, 250);
+    return () => {
+      current = false;
+      clearTimeout(timer);
+    };
+  }, [text, props.locale]);
+
+  const chosenName = props.value ? (props.currentName ?? picked[props.value]) : undefined;
+  const options = (results ?? []).filter((m) => m.personId !== props.value);
+  const hint =
+    results === null
+      ? t('setup.approvals.searchHint')
+      : results.length === 0
+        ? t('setup.approvals.noMatch')
+        : undefined;
+
+  return (
+    <div className="flex flex-col gap-2">
+      <TextField
+        id={`${props.id}-search`}
+        type="search"
+        label={t('setup.approvals.search')}
+        value={query}
+        onChange={(event) => {
+          setQuery(event.target.value);
+        }}
+        hint={hint}
+        autoComplete="off"
+        maxLength={100}
+        disabled={props.disabled}
+        data-testid="chain-step-approver-search"
+      />
+      <SelectField
+        id={props.id}
+        label={t('setup.approvals.approver')}
+        value={props.value}
+        onChange={(event) => {
+          const personId = event.target.value;
+          const found = options.find((m) => m.personId === personId);
+          if (found) setPicked((names) => ({ ...names, [found.personId]: found.name }));
+          props.onPick(personId);
+        }}
+        error={props.error}
+        disabled={props.disabled}
+        data-testid="chain-step-approver"
+      >
+        <option value="">{t('setup.approvals.approverPlaceholder')}</option>
+        {props.value ? <option value={props.value}>{chosenName ?? props.value}</option> : null}
+        {options.map((member) => (
+          <option key={member.personId} value={member.personId}>
+            {member.name}
+          </option>
+        ))}
+      </SelectField>
     </div>
   );
 }

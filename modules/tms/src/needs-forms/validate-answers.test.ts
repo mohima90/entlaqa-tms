@@ -35,29 +35,33 @@ function errorsOf(answers: unknown, context: Context = TEAM) {
 
 describe('validateNeedsAnswers (server-side, keyed by field id)', () => {
   it('accepts valid answers, normalized, keeping only what is shown', () => {
-    const result = validateNeedsAnswers(testForm(), {
-      needs: [
-        need({ level: 'basic', track: 'b', details: 'stale' }),
-        need({
-          topic: 'SQL',
-          people: { personIds: [PERSON_A.toUpperCase()] },
-          level: 'advanced',
-          details: ' Joins ',
-        }),
-      ],
-      extra: [
-        {
-          agree: true,
-          email: ' a@b.test ',
-          start: '2027-02-28',
-          cost: '1500.50',
-          tags: ['y', 'x'],
-          site: 'https://example.test/x',
-          phone: '+966 50 000 0001',
-          attachment: FILE,
-        },
-      ],
-    }, TEAM);
+    const result = validateNeedsAnswers(
+      testForm(),
+      {
+        needs: [
+          need({ level: 'basic', track: 'b', details: 'stale' }),
+          need({
+            topic: 'SQL',
+            people: { personIds: [PERSON_A.toUpperCase()] },
+            level: 'advanced',
+            details: ' Joins ',
+          }),
+        ],
+        extra: [
+          {
+            agree: true,
+            email: ' a@b.test ',
+            start: '2027-02-28',
+            cost: '1500.50',
+            tags: ['y', 'x'],
+            site: 'https://example.test/x',
+            phone: '+966 50 000 0001',
+            attachment: FILE,
+          },
+        ],
+      },
+      TEAM,
+    );
     expect(result).toEqual({
       ok: true,
       value: {

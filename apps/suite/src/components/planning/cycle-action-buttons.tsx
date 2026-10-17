@@ -181,19 +181,26 @@ export function DeleteCycleButton(props: DeleteCycleButtonProps) {
 
 export interface ExtendDeadlineButtonProps extends Common {
   readonly deadline: string;
+  /** The earliest new deadline: the day after the current one, never before today (C-7, C-11). */
+  readonly earliest: string;
   readonly periodEnd: string;
   /** Formatted on the server: the hint with the period's end. */
   readonly hint: string;
 }
 
-/** «Extend deadline» while the cycle is open (Appendix C; business flow §6): a later date in the period. */
+/**
+ * «Extend deadline» while the cycle is open (Appendix C; business flow §6 (a)) — also once the deadline has
+ * passed (C-7): a later date in the period, today or later.
+ */
 export function ExtendDeadlineButton(props: ExtendDeadlineButtonProps) {
   const { t, message, fieldErrors } = usePlanningTexts(props.texts, props.errors, props.locale);
   const router = useRouter();
   const sessionRefused = useSessionRefusal();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
-  const [deadline, setDeadline] = useState(props.deadline);
+  const [deadline, setDeadline] = useState(
+    props.earliest <= props.periodEnd ? props.earliest : props.deadline,
+  );
   const [error, setError] = useState<string | undefined>(undefined);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -201,6 +208,10 @@ export function ExtendDeadlineButton(props: ExtendDeadlineButtonProps) {
     setNotice(null);
     if (deadline <= props.deadline) {
       setError(t('setup.fieldErrors.notLater'));
+      return;
+    }
+    if (deadline < props.earliest) {
+      setError(t('setup.fieldErrors.inPast'));
       return;
     }
     if (deadline > props.periodEnd) {
@@ -266,7 +277,7 @@ export function ExtendDeadlineButton(props: ExtendDeadlineButtonProps) {
             label={t('cycle.extendLabel')}
             hint={props.hint}
             value={deadline}
-            min={props.deadline}
+            min={props.earliest}
             max={props.periodEnd}
             onChange={(event) => {
               setDeadline(event.target.value);

@@ -17,6 +17,7 @@ import {
   defaultDeadline,
   defaultPeriod,
   departmentsInScope,
+  earliestExtension,
   effectiveCycleStatus,
   effectiveHead,
   formStatus,
@@ -111,9 +112,13 @@ describe('statuses', () => {
   });
 
   it('extends only an open cycle whose deadline has not passed', () => {
-    expect(canExtendDeadline('open', '2026-10-17', '2026-10-17')).toBe(true);
-    expect(canExtendDeadline('open', '2026-10-16', '2026-10-17')).toBe(false);
-    expect(canExtendDeadline('draft', '2026-11-01', '2026-10-17')).toBe(false);
+    expect(canExtendDeadline('open')).toBe(true);
+    // C-7: shown as Closed by date but still open in the database — extendable.
+    expect(canExtendDeadline('draft')).toBe(false);
+    expect(canExtendDeadline('closed')).toBe(false);
+    expect(earliestExtension('2026-10-17', '2026-10-10')).toBe('2026-10-18');
+    expect(earliestExtension('2026-10-10', '2026-10-17')).toBe('2026-10-17');
+    expect(earliestExtension('2026-10-16', '2026-10-17')).toBe('2026-10-17');
   });
 });
 

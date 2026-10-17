@@ -263,7 +263,7 @@ async function insertSteps(
 export async function insertCycle(
   tx: UserTx,
   basics: CycleBasics,
-): Promise<{ id: string; version: number }> {
+): Promise<{ id: string; version: number; needsFormId: string | null }> {
   const settings = await getSettings(tx);
   const [row] = await tx.execute(sql`
     insert into tms.plan_cycles (name_ar, name_en, period_start_on, period_end_on, deadline_on, instructions_ar,
@@ -275,8 +275,16 @@ export async function insertCycle(
   const id = String(row?.id);
   // A default approver who is no longer an active member is left for the L&D Manager to name again.
   await insertSteps(tx, 'cycle', id, settings.steps);
-  const [touched] = await tx.execute(sql`select version from tms.plan_cycles where id = ${id}`);
-  return { id, version: Number(touched?.version) };
+  // Read back: the database sets the default needs form when none was chosen (C-10: the audit says which).
+  const [touched] = await tx.execute(
+    sql`select version, needs_form_id from tms.plan_cycles where id = ${id}`,
+  );
+  const needsFormId = touched?.needs_form_id;
+  return {
+    id,
+    version: Number(touched?.version),
+    needsFormId: typeof needsFormId === 'string' ? needsFormId : null,
+  };
 }
 
 export type TouchOutcome =

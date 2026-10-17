@@ -12,7 +12,6 @@ import { cycleHref, fieldErrorKey } from '../../lib/planning-view';
 import type { ErrorTexts } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
 import {
-  type MemberChoice,
   type StepDraft,
   fromDrafts,
   parseReminderDays,
@@ -42,7 +41,8 @@ function chainErrors(
 export interface CycleStepsFormProps extends Common {
   readonly cycle: { readonly id: string; readonly version: number };
   readonly initial: readonly StepDraft[];
-  readonly members: readonly MemberChoice[];
+  /** Names of the active members already named in the chain (C-M3: others are searched). */
+  readonly names: Readonly<Record<string, string>>;
   readonly inactive: Readonly<Record<string, string>>;
   readonly backHref: string;
 }
@@ -87,12 +87,13 @@ export function CycleStepsForm(props: CycleStepsFormProps) {
       {notice ? <Alert tone="danger">{notice}</Alert> : null}
       <Card title={t('setup.approvals.title')} description={t('setup.approvals.intro')}>
         <ApprovalChainEditor
+          locale={props.locale}
           steps={steps}
           onChange={(next) => {
             setSteps(next);
             setErrors({});
           }}
-          members={props.members}
+          names={props.names}
           inactive={props.inactive}
           errors={errors}
           disabled={pending}
@@ -194,7 +195,8 @@ export function CycleRemindersForm(props: CycleRemindersFormProps) {
 export interface PlanningSettingsFormProps extends Common {
   readonly initialDays: readonly number[];
   readonly initialSteps: readonly StepDraft[];
-  readonly members: readonly MemberChoice[];
+  /** Names of the active members already named in the chain (C-M3: others are searched). */
+  readonly names: Readonly<Record<string, string>>;
   readonly inactive: Readonly<Record<string, string>>;
 }
 
@@ -257,12 +259,13 @@ export function PlanningSettingsForm(props: PlanningSettingsFormProps) {
       </Card>
       <Card title={t('settings.chainTitle')} description={t('setup.approvals.intro')}>
         <ApprovalChainEditor
+          locale={props.locale}
           steps={steps}
           onChange={(next) => {
             setSteps(next);
             setErrors({});
           }}
-          members={props.members}
+          names={props.names}
           inactive={props.inactive}
           errors={errors}
           disabled={pending}

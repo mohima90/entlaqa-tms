@@ -43,6 +43,7 @@ export default async function NewPlanCyclePage({
       id: string;
       name: { ar: string; en: string | null };
       isDefault: boolean;
+      active: boolean;
     }[],
   ) => (
     <CycleBasicsForm
@@ -57,7 +58,11 @@ export default async function NewPlanCyclePage({
         // The organization's default form is preselected (T-M3-10); the launch locks the chosen form.
         needsFormId: needsForms.find((f) => f.isDefault)?.id ?? '',
       }}
-      needsForms={needsForms.map((f) => ({ id: f.id, name: localName(locale, f.name) }))}
+      needsForms={needsForms.map((f) => ({
+        id: f.id,
+        name: localName(locale, f.name),
+        active: f.active,
+      }))}
       currency={currency}
       texts={texts}
       errors={errors}

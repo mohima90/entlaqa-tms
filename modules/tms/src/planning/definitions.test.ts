@@ -10,7 +10,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const db = vi.hoisted(() => ({
   listOrgStructure: vi.fn(),
-  listMemberOptions: vi.fn(),
+  getMemberOptionsByIds: vi.fn(),
+  searchMemberOptions: vi.fn(),
+  MEMBER_SEARCH: { minLength: 2, maxLength: 100, limit: 50 },
   getOrganizationProfile: vi.fn(),
   // Read when @jadarat/platform-rbac loads (its security settings schema, T-M2-10).
   MFA_MODES: ['off', 'optional', 'required_all', 'required_roles'],
@@ -170,7 +172,7 @@ beforeEach(() => {
   repo.touchCycle.mockResolvedValue({ outcome: 'ok', version: 4 });
   repo.closeDueCycles.mockResolvedValue([]);
   db.listOrgStructure.mockResolvedValue(structure);
-  db.listMemberOptions.mockResolvedValue(members);
+  db.getMemberOptionsByIds.mockResolvedValue(members);
   db.getOrganizationProfile.mockResolvedValue({ fiscalYearStartMonth: 7, currencyCode: 'AED' });
   forms.listNeedsFormOptions.mockResolvedValue([]);
 });
@@ -307,7 +309,7 @@ describe('L&D Manager: list, new cycle, cycle view', () => {
       [SALES, 0],
       [EAST, 1],
     ]);
-    expect(view.setup?.members).toHaveLength(2);
+    expect(db.getMemberOptionsByIds).toHaveBeenCalledWith(expect.anything(), expect.any(Array));
     expect(view.setup?.needsForms).toEqual([]);
   });
 
@@ -317,7 +319,8 @@ describe('L&D Manager: list, new cycle, cycle view', () => {
     const open = await query(defs.planCycleQueryDefinition())({ id: CYCLE });
     expect(open.ok && open.value.status).toBe('closed');
     expect(open.ok && open.value.departments.map((d) => d.status)).toEqual(['late', 'late']);
-    expect(open.ok && open.value.canExtend).toBe(false);
+    // C-7: shown as Closed by date, still open in the database — the L&D Manager can extend it.
+    expect(open.ok && open.value.canExtend).toBe(true);
     expect(open.ok && open.value.setup).toBeNull();
 
     repo.getCycle.mockResolvedValue(
@@ -344,16 +347,20 @@ describe('L&D Manager: list, new cycle, cycle view', () => {
 
 describe('L&D Manager: set-up steps', () => {
   it('creates a draft and audits it', async () => {
-    repo.insertCycle.mockResolvedValue({ id: CYCLE, version: 1 });
+    // No form chosen: the database stores the default one, and the audit records it (C-10).
+    repo.insertCycle.mockResolvedValue({ id: CYCLE, version: 1, needsFormId: FORM });
     const { action, audits } = runtime('training_manager');
-    const result = await action(defs.createPlanCycleActionDefinition())(basics);
-    expect(result.ok && result.value).toEqual({ id: CYCLE, version: 1 });
+    const result = await action(defs.createPlanCycleActionDefinition())({
+      ...basics,
+      needsFormId: null,
+    });
+    expect(result.ok && result.value).toEqual({ id: CYCLE, version: 1, needsFormId: FORM });
     expect(audits).toEqual([
       {
         action: 'tms.plan_cycle.created',
         entityType: 'plan_cycle',
         entityId: CYCLE,
-        data: { after: { ...basics, needsFormId: null } },
+        data: { after: { ...basics, needsFormId: FORM } },
       },
     ]);
   });
@@ -379,6 +386,23 @@ describe('L&D Manager: set-up steps', () => {
       needsFormId: FORM,
     });
     expect(chosen.ok).toBe(true);
+  });
+
+  it("keeps the cycle's own needs form even when it was switched off since (C-6)", async () => {
+    repo.getCycle.mockResolvedValue(record({ needsFormId: FORM }));
+    repo.updateBasics.mockResolvedValue(5);
+    forms.listNeedsFormOptions.mockResolvedValue([
+      { id: FORM, name: { ar: 'نموذج', en: null }, isDefault: false, active: false },
+    ]);
+    const { action } = runtime('training_manager');
+    const result = await action(defs.updatePlanCycleBasicsActionDefinition())({
+      ...basics,
+      needsFormId: FORM,
+      id: CYCLE,
+      version: 3,
+    });
+    expect(result.ok).toBe(true);
+    expect(forms.listNeedsFormOptions).toHaveBeenCalledWith(expect.anything(), FORM);
   });
 
   it('saves the basics: version checked, audit without the instruction words', async () => {
@@ -488,7 +512,7 @@ describe('L&D Manager: set-up steps', () => {
     expect(!twice.ok && twice.error.fieldErrors).toEqual([
       { path: 'steps.1.approverPersonId', code: 'DUPLICATE_APPROVER' },
     ]);
-    db.listMemberOptions.mockResolvedValue([{ ...members[0], active: false }, members[1]]);
+    db.getMemberOptionsByIds.mockResolvedValue([{ ...members[0], active: false }, members[1]]);
     const gone = await action(defs.savePlanCycleStepsActionDefinition())({
       id: CYCLE,
       version: 3,
@@ -497,7 +521,7 @@ describe('L&D Manager: set-up steps', () => {
     expect(!gone.ok && gone.error.fieldErrors).toEqual([
       { path: 'steps.1.approverPersonId', code: 'NOT_A_MEMBER' },
     ]);
-    db.listMemberOptions.mockResolvedValue(members);
+    db.getMemberOptionsByIds.mockResolvedValue(members);
     const saved = await action(defs.savePlanCycleStepsActionDefinition())({
       id: CYCLE,
       version: 3,
@@ -629,13 +653,46 @@ describe('L&D Manager: launch, extend, delete, settings', () => {
         data: { before: '2026-10-20', after: '2026-11-15' },
       }),
     ]);
+    // C-7: an open cycle whose deadline has passed (shown as Closed) is extended, to today or later.
     repo.getCycle.mockResolvedValue(record({ status: 'open', deadline: '2026-10-10' }));
-    const passed = await action(defs.extendPlanCycleDeadlineActionDefinition())({
+    const past = await action(defs.extendPlanCycleDeadlineActionDefinition())({
+      id: CYCLE,
+      version: 3,
+      deadline: '2026-10-12',
+    });
+    expect(!past.ok && past.error.fieldErrors).toEqual([{ path: 'deadline', code: 'IN_PAST' }]);
+    const reopened = await action(defs.extendPlanCycleDeadlineActionDefinition())({
       id: CYCLE,
       version: 3,
       deadline: '2026-11-15',
     });
-    expect(!passed.ok && passed.error.code).toBe('PLAN_CYCLE_DEADLINE_REFUSED');
+    expect(reopened.ok).toBe(true);
+    repo.getCycle.mockResolvedValue(record({ status: 'closed', deadline: '2026-10-10' }));
+    const closed = await action(defs.extendPlanCycleDeadlineActionDefinition())({
+      id: CYCLE,
+      version: 3,
+      deadline: '2026-11-15',
+    });
+    expect(!closed.ok && closed.error.code).toBe('PLAN_CYCLE_DEADLINE_REFUSED');
+  });
+
+  it('searches approvers by name for those who set chains up (C-M3)', async () => {
+    db.searchMemberOptions.mockResolvedValue([{ personId: CFO, nameAr: 'المالية', nameEn: 'CFO' }]);
+    const found = await runtime('training_manager').action(
+      defs.searchPlanApproversActionDefinition(),
+    )({ q: ' cf ' });
+    expect(found.ok && found.value).toEqual({
+      members: [{ personId: CFO, name: { ar: 'المالية', en: 'CFO' } }],
+    });
+    expect(db.searchMemberOptions).toHaveBeenLastCalledWith(expect.anything(), 'cf');
+    const short = await runtime('training_manager').action(
+      defs.searchPlanApproversActionDefinition(),
+    )({ q: 'c' });
+    expect(!short.ok && short.error.code).toBe('VALIDATION_FAILED');
+    const coordinator = await runtime('training_coordinator').action(
+      defs.searchPlanApproversActionDefinition(),
+    )({ q: 'cf' });
+    expect(!coordinator.ok && coordinator.error.code).toBe('FORBIDDEN');
   });
 
   it('deletes a draft (audited with its names); a launched one is refused', async () => {

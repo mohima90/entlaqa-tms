@@ -105,8 +105,7 @@ interface FieldProblem {
 const problem = (
   code: AnswerErrorCode,
   params?: Readonly<Record<string, string | number>>,
-): FieldProblem =>
-  params ? { ok: false, code, params } : { ok: false, code };
+): FieldProblem => (params ? { ok: false, code, params } : { ok: false, code });
 const valid = (value: unknown): Check => ({ ok: true, value });
 
 function isEmpty(value: unknown): boolean {
@@ -325,7 +324,9 @@ export function validateNeedsAnswers(
       }),
     );
   }
-  errors.push(...unknownKeyErrors(Object.keys(answers), form.sections, 'sections', 'UNKNOWN_SECTION'));
+  errors.push(
+    ...unknownKeyErrors(Object.keys(answers), form.sections, 'sections', 'UNKNOWN_SECTION'),
+  );
   for (const section of form.sections) {
     if (!section.visible) continue;
     const path = `sections.${section.id}`;

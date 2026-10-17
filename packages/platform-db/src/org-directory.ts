@@ -99,16 +99,23 @@ export interface MemberOption {
   readonly nameEn: string | null;
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Shortest and longest name search; at most MEMBER_SEARCH_LIMIT people per answer. */
+export const MEMBER_SEARCH = { minLength: 2, maxLength: 100, limit: 50 } as const;
+
 /**
- * Active members of the organization (active membership and active person record), by Arabic name, plus
- * the persons in `include` whatever their state (e.g. an approver chosen earlier who has left since), so
- * a saved choice can still be shown. Names only: no e-mail or other contact data.
+ * The persons with these ids (malformed ids are ignored), whatever their state, with whether each is an
+ * active member now (active membership and active person record). No cap: for checking and naming the
+ * people a task already names (e.g. a cycle's approvers — code review C-M3: a capped list of every member
+ * made a valid approver "unknown" in a large organization). Names only: no e-mail or other contact data.
  */
-export async function listMemberOptions(
+export async function getMemberOptionsByIds(
   tx: UserTx,
-  include: readonly string[] = [],
+  ids: readonly string[],
 ): Promise<readonly (MemberOption & { readonly active: boolean })[]> {
-  const ids = include.filter((id) => /^[0-9a-f-]{36}$/i.test(id));
+  const valid = [...new Set(ids.filter((id) => UUID_RE.test(id)).map((id) => id.toLowerCase()))];
+  if (valid.length === 0) return [];
   const rows = await tx.execute<{
     person_id: string;
     name_ar: string;
@@ -120,16 +127,41 @@ export async function listMemberOptions(
                                             where m.tenant_id = p.tenant_id and m.person_id = p.id
                                               and m.status = 'active')) as active
     from platform.persons p
-    where (p.status = 'active' and exists (select 1 from platform.tenant_memberships m
-                                           where m.tenant_id = p.tenant_id and m.person_id = p.id
-                                             and m.status = 'active'))
-       or p.id = any (${`{${ids.join(',')}}`}::uuid[])
-    order by p.display_name_ar, p.id
-    limit 2000`);
+    where p.id = any (${`{${valid.join(',')}}`}::uuid[])
+    order by p.display_name_ar, p.id`);
   return rows.map((r) => ({
     personId: r.person_id,
     nameAr: r.name_ar,
     nameEn: r.name_en,
     active: r.active,
   }));
+}
+
+/** `%`, `_` and `\` taken literally in an ILIKE pattern (escape character `\`). */
+function likeLiteral(text: string): string {
+  return text.replace(/[\\%_]/g, (c) => `\\${c}`);
+}
+
+/**
+ * Active members whose Arabic or English name contains `query` (case-insensitive), by Arabic name, at most
+ * MEMBER_SEARCH.limit — the server search behind a person picker (C-M3). Fewer than
+ * MEMBER_SEARCH.minLength characters (after trimming) → nobody. Names only.
+ */
+export async function searchMemberOptions(
+  tx: UserTx,
+  query: string,
+): Promise<readonly MemberOption[]> {
+  const text = query.trim().slice(0, MEMBER_SEARCH.maxLength);
+  if ([...text].length < MEMBER_SEARCH.minLength) return [];
+  const pattern = `%${likeLiteral(text)}%`;
+  const rows = await tx.execute<{ person_id: string; name_ar: string; name_en: string | null }>(sql`
+    select p.id as person_id, p.display_name_ar as name_ar, p.display_name_en as name_en
+    from platform.persons p
+    where p.status = 'active'
+      and exists (select 1 from platform.tenant_memberships m
+                  where m.tenant_id = p.tenant_id and m.person_id = p.id and m.status = 'active')
+      and (p.display_name_ar ilike ${pattern} escape '\\' or p.display_name_en ilike ${pattern} escape '\\')
+    order by p.display_name_ar, p.id
+    limit ${MEMBER_SEARCH.limit}`);
+  return rows.map((r) => ({ personId: r.person_id, nameAr: r.name_ar, nameEn: r.name_en }));
 }

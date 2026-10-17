@@ -11,6 +11,7 @@ import {
   savePlanCycleScopeActionDefinition,
   savePlanCycleStepsActionDefinition,
   savePlanningSettingsActionDefinition,
+  searchPlanApproversActionDefinition,
   updatePlanCycleBasicsActionDefinition,
 } from '../planning/definitions';
 
@@ -30,3 +31,4 @@ export const extendPlanCycleDeadlineAction = defineAction(
 );
 export const deletePlanCycleAction = defineAction(deletePlanCycleActionDefinition());
 export const savePlanningSettingsAction = defineAction(savePlanningSettingsActionDefinition());
+export const searchPlanApproversAction = defineAction(searchPlanApproversActionDefinition());

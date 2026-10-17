@@ -146,9 +146,19 @@ export function formStatus(stored: StoredFormStatus, deadline: string, today: st
   return stored !== 'submitted' && deadline < today ? 'late' : stored;
 }
 
-/** May the deadline still be extended (open, deadline not passed)? */
-export function canExtendDeadline(status: CycleStatus, deadline: string, today: string): boolean {
-  return status === 'open' && deadline >= today;
+/**
+ * May the deadline still be extended? While the cycle is open in the database — also once its deadline has
+ * passed and it is shown as Closed by date (business flow §6 (a), code review C-7); it is then Open again.
+ * A cycle closed in the database reopens with consolidation (T-M3-06), not here.
+ */
+export function canExtendDeadline(status: CycleStatus): boolean {
+  return status === 'open';
+}
+
+/** The earliest new deadline: the day after the current one, and never before today. */
+export function earliestExtension(deadline: string, today: string): string {
+  const next = addDays(deadline, 1);
+  return next > today ? next : today;
 }
 
 // ---------------------------------------------------------------------------------------------------

@@ -93,6 +93,7 @@ const FIELD_ERROR_KEYS: Readonly<Record<string, string>> = {
   HEADS_STEP_NAMED: 'headsStepNamed',
   NOT_A_MEMBER: 'notAMember',
   NOT_LATER: 'notLater',
+  IN_PAST: 'inPast',
   UNKNOWN: 'unknown',
   NOT_IN_SCOPE: 'unknown',
 };

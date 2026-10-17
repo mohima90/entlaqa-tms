@@ -155,8 +155,18 @@ describe('writes', () => {
   };
 
   it('creates a draft with the default reminders and chain', async () => {
-    const { tx, executed } = fakeTx([], [], [{ id: ID }], [], [], [], [{ version: 1 }]);
-    expect(await repo.insertCycle(tx, basics)).toEqual({ id: ID, version: 1 });
+    const FORM = '99999999-9999-4999-8999-999999999991';
+    const { tx, executed } = fakeTx(
+      [],
+      [],
+      [{ id: ID }],
+      [],
+      [],
+      [],
+      [{ version: 1, needs_form_id: FORM }],
+    );
+    // C-10: the stored needs form is read back (the database set the default one).
+    expect(await repo.insertCycle(tx, basics)).toEqual({ id: ID, version: 1, needsFormId: FORM });
     expect(executed[2]?.params).toContain('{7,2}');
     expect(executed.filter((q) => q.sql.includes('plan_cycle_steps'))).toHaveLength(3);
   });

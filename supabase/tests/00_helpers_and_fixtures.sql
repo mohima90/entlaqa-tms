@@ -313,6 +313,11 @@ insert into platform.branches (id, tenant_id, code, name_ar, name_en, is_headqua
   ('a2000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'JED', 'فرع جدة', 'Jeddah', false),
   ('b2000000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000001', 'HQ', 'المقر الرئيسي', 'HQ', true);
 
+-- Structure levels (EP-ORG, FR-ADM-05): every tenant starts with level 1 «إدارة» / Department (tenant
+-- trigger); tenant A adds level 2 «قسم» / Section for TD-PRG. More levels: 21_org_structure.sql, 99_structure_*.
+insert into platform.structure_levels (tenant_id, ordinal, name_en, name_ar) values
+  ('a0000000-0000-4000-8000-000000000001', 2, 'Section', 'قسم');
+
 insert into platform.departments (id, tenant_id, code, name_ar, name_en, parent_id, branch_id, head_person_id) values
   ('a3000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'TD', 'التدريب والتطوير', 'Training & Development', null, 'a2000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1'),
   ('a3000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'TD-PRG', 'برامج التدريب', 'Training programs', 'a3000000-0000-4000-8000-000000000001', 'a2000000-0000-4000-8000-000000000001', null),

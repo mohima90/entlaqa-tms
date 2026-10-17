@@ -89,6 +89,11 @@ describe.skipIf(!configured)('people directory reads against PostgreSQL', () => 
       (${t.a}, ${`u-a-${t.a.slice(0, 8)}`}, 'أ', 'active'), (${t.b}, ${`u-b-${t.b.slice(0, 8)}`}, 'ب', 'active')`;
     await owner`insert into platform.branches (id, tenant_id, code, name_ar, is_headquarters) values
       (${branch.hq}, ${t.a}, 'HQ', 'الرياض', true), (${branch.jeddah}, ${t.a}, 'JED', 'جدة', false)`;
+    // Three levels of structure in tenant A (EP-ORG: a new organization starts with one).
+    await owner`insert into platform.structure_levels (tenant_id, ordinal, name_en, name_ar) values
+      (${t.a}, 2, 'Section', 'قسم')`;
+    await owner`insert into platform.structure_levels (tenant_id, ordinal, name_en, name_ar) values
+      (${t.a}, 3, 'Team', 'فريق')`;
     await owner`insert into platform.departments (id, tenant_id, code, name_ar, parent_id) values
       (${dept.training}, ${t.a}, 'TRN', 'التدريب', null), (${dept.finance}, ${t.a}, 'FIN', 'المالية', null)`;
     await owner`insert into platform.departments (id, tenant_id, code, name_ar, parent_id)

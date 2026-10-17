@@ -45,7 +45,10 @@ insert into platform.person_employment (tenant_id, person_id, department_id, man
    and p.id in ('5eed1000-0000-4000-8000-0000000000d1', '5eed1000-0000-4000-8000-0000000000d2',
                 '5eed1000-0000-4000-8000-0000000000d3');
 
--- Reem heads Quality.
+-- Reem heads Quality (a second-level unit: the level exists after seed-users.sql; added here otherwise).
+insert into platform.structure_levels (tenant_id, ordinal, name_en, name_ar)
+  select s.tenant_id, 2, 'Section', 'قسم' from seed_ctx s
+  where not exists (select 1 from platform.structure_levels l where l.tenant_id = s.tenant_id and l.ordinal = 2);
 insert into platform.departments (tenant_id, code, name_ar, name_en, parent_id, head_person_id)
   select s.tenant_id, 'QLT', 'الجودة', 'Quality', d.id, '5eed1000-0000-4000-8000-0000000000d1'::uuid
   from seed_ctx s join platform.departments d on d.tenant_id = s.tenant_id and d.code = 'TRN';

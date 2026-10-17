@@ -106,12 +106,14 @@ describe('permission catalogue and standard grants (EP-ROLES, drift checks)', ()
   });
 
   it('maps the four data scopes onto the existing scope types', () => {
+    // «A department» (stored `departments`): the unit picked when the role is given (EP-ORG, T-M3-09).
     expect(CUSTOM_ROLE_SCOPE_MAP).toEqual({
       own: 'own',
       team: 'direct_reports',
-      departments: 'headed_departments',
+      departments: 'assigned_unit',
       organization: 'tenant',
     });
+    expect(customRoleGrantScope('platform.user.read', 'departments')).toBe('assigned_unit');
     expect(customRoleGrantScope('platform.user.read', 'team')).toBe('direct_reports');
     expect(customRoleGrantScope('platform.org.read', 'own')).toBe('tenant');
     expect(customRoleGrantScope('platform.user.invite', 'departments')).toBeNull();

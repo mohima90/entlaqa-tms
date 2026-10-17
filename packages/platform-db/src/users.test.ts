@@ -115,6 +115,7 @@ describe('listUsers', () => {
           role_name_ar: null,
           role_name_en: null,
           role_version: 'learner:r1:1',
+          role_scope_unit: '{"id":"u1","nameAr":"المبيعات","nameEn":"Sales","active":false}',
           department_name_ar: 'التدريب',
           department_name_en: null,
           last_sign_in_at: '2026-10-05T08:00:00.000Z',
@@ -146,6 +147,8 @@ describe('listUsers', () => {
         primaryRole: 'learner',
         primaryRoleName: null,
         roleVersion: 'learner:r1:1',
+        // The unit of a department-limited role, deactivated since (EP-ORG): shown so the giver is told.
+        roleScopeUnit: { id: 'u1', nameAr: 'المبيعات', nameEn: 'Sales', active: false },
         departmentNameAr: 'التدريب',
         departmentNameEn: null,
         lastSignInAt: new Date('2026-10-05T08:00:00.000Z'),
@@ -428,11 +431,13 @@ describe('loadPersonResourceFacts', () => {
 describe('loadMemberAuthorizationFacts', () => {
   it('maps the member’s role, headed departments and custom roles (EP-ROLES)', async () => {
     const fake = fakeTx(
+      [{ present: true }],
       [
         {
           role_code: 'custom_a00000000001',
           valid_from: new Date('2026-01-01T00:00:00Z'),
           valid_until: '2027-01-01T00:00:00Z',
+          scope_unit_id: 'u1',
         },
       ],
       [{ id: 'd1' }],
@@ -452,6 +457,7 @@ describe('loadMemberAuthorizationFacts', () => {
           roleCode: 'custom_a00000000001',
           validFrom: new Date('2026-01-01T00:00:00Z'),
           validUntil: new Date('2027-01-01T00:00:00Z'),
+          scopeUnitId: 'u1',
         },
       ],
       headedDepartmentIds: ['d1'],
@@ -461,21 +467,26 @@ describe('loadMemberAuthorizationFacts', () => {
       ],
     });
     expect(fake.executed[0]?.sql).toContain("m.status = 'active'");
+    // The unit counts only while it is live and active (EP-ORG exception: a deactivated unit grants nothing).
+    expect(fake.executed[0]?.sql).toContain("d.deleted_at is null and d.status = 'active'");
   });
 
   it('reads no custom roles while their table does not exist yet (deploy window, review M3)', async () => {
     const fake = fakeTx(
-      [{ role_code: 'hr_manager', valid_from: null, valid_until: null }],
+      [{ present: false }],
+      [{ role_code: 'hr_manager', valid_from: null, valid_until: null, scope_unit_id: null }],
       [],
       [{ present: false }],
     );
     expect(await loadMemberAuthorizationFacts(fake.tx)).toEqual({
-      roles: [{ roleCode: 'hr_manager', validFrom: null, validUntil: null }],
+      roles: [{ roleCode: 'hr_manager', validFrom: null, validUntil: null, scopeUnitId: null }],
       headedDepartmentIds: [],
       customRoles: [],
     });
-    // Two reads: the custom-role read is skipped (the catalog check is answered by the fake).
+    // Two reads: the custom-role read is skipped (the catalog checks are answered by the fake), and no unit
+    // is read before its column exists (EP-ORG deploy window).
     expect(fake.executed).toHaveLength(2);
+    expect(fake.executed[0]?.sql).toContain('null::uuid as scope_unit_id');
   });
 });
 

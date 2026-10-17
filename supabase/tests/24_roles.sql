@@ -239,8 +239,9 @@ do $$
 begin
   perform tests.assert_eq(
     (select array_agg(tgname::text order by tgname::text) from pg_trigger where tgrelid = 'platform.role_assignments'::regclass and not tgisinternal),
-    array['role_assignments_guard', 'role_assignments_keep_admin', 'role_assignments_separation_of_duties',
-          'role_assignments_stamp_row'], 'role_assignments: triggers');
+    -- role_assignments_scope_unit: the unit of a department-limited custom role (EP-ORG, 20261020090400).
+    array['role_assignments_guard', 'role_assignments_keep_admin', 'role_assignments_scope_unit',
+          'role_assignments_separation_of_duties', 'role_assignments_stamp_row'], 'role_assignments: triggers');
   perform tests.assert((select prosrc ilike '%pg_advisory_xact_lock%' from pg_proc where oid = 'private.lock_tenant_roles(uuid)'::regprocedure),
     'role changes are serialised per tenant');
 end $$;

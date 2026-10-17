@@ -5,22 +5,31 @@ import { type SyntheticEvent, useState, useTransition } from 'react';
 import { updateMemberPrivilegedRolesAction, updateMemberRolesAction } from '../../actions/users';
 import {
   type RoleOption,
+  needsScopeUnit,
   readsHeadedDepartments,
   roleActionPath,
   roleErrorKey,
+  scopeUnitErrorKey,
 } from '../../lib/role-choice';
+import type { ScopeUnitChoice } from '../../lib/structure-view';
 import { type ErrorTexts, errorText } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
 import { fieldErrorCodes } from '../profile/field-errors';
 import { RoleSelect, type RoleSelectTexts } from './role-select';
+import { ScopeUnitSelect, type ScopeUnitTexts } from './scope-unit-select';
 
 export interface EditRoleFormProps {
   readonly personId: string;
   /** Optimistic concurrency token of the stored role ('' without one). */
   readonly version: string;
   readonly currentRole: string | null;
+  /** The unit of the current department-limited role (EP-ORG, T-M3-09), or null. */
+  readonly currentUnit: string | null;
   readonly options: readonly RoleOption[];
   readonly selectTexts: RoleSelectTexts;
+  /** The unit picker (tree order) for a custom role limited to «A department». */
+  readonly scopeUnits: readonly ScopeUnitChoice[];
+  readonly unitTexts: ScopeUnitTexts;
   /** Texts by key (namespace `editRoles`, translated on the server). */
   readonly labels: Readonly<Record<string, string>>;
   readonly errors: ErrorTexts;
@@ -46,19 +55,34 @@ export function EditRoleForm(props: EditRoleFormProps) {
   const sessionRefused = useSessionRefusal();
   const [pending, startTransition] = useTransition();
   const [role, setRole] = useState(props.currentRole ?? '');
+  const [unit, setUnit] = useState(props.currentUnit ?? '');
   const [message, setMessage] = useState<{ tone: 'success' | 'danger'; text: string } | null>(null);
   const [fieldError, setFieldError] = useState<string | undefined>(undefined);
+  const [unitError, setUnitError] = useState<string | undefined>(undefined);
   const lockedSome = options.some((o) => !o.assignable);
+  const withUnit = needsScopeUnit(options, role);
+  // The giver is told (EP-ORG exception): the unit picked earlier was deactivated since.
+  const currentUnitInactive =
+    props.currentUnit !== null &&
+    role === props.currentRole &&
+    unit === props.currentUnit &&
+    props.scopeUnits.some((u) => u.id === props.currentUnit && !u.active);
 
   function onSubmit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
     setMessage(null);
     setFieldError(undefined);
+    setUnitError(undefined);
     if (role === '') {
       setFieldError(text('roleRequired'));
       return;
     }
-    if (role === props.currentRole) {
+    if (withUnit && unit === '') {
+      setUnitError(text('unit.unitRequired'));
+      return;
+    }
+    const scopeUnitId = withUnit ? unit : '';
+    if (role === props.currentRole && scopeUnitId === (props.currentUnit ?? '')) {
       setMessage({ tone: 'success', text: text('noChanges') });
       return;
     }
@@ -67,7 +91,12 @@ export function EditRoleForm(props: EditRoleFormProps) {
         ? updateMemberPrivilegedRolesAction
         : updateMemberRolesAction;
     startTransition(async () => {
-      const result = await action({ personId: props.personId, version: props.version, role });
+      const result = await action({
+        personId: props.personId,
+        version: props.version,
+        role,
+        scopeUnitId,
+      });
       if (result.ok) {
         setMessage({ tone: 'success', text: text('saved') });
         router.refresh();
@@ -75,6 +104,13 @@ export function EditRoleForm(props: EditRoleFormProps) {
         return;
       }
       if (sessionRefused(result.error)) return;
+      const unitCode = fieldErrorCodes(result.error).scopeUnitId;
+      if (unitCode !== undefined) {
+        const unitText = text(`unit.${scopeUnitErrorKey(unitCode)}`);
+        setUnitError(unitText);
+        setMessage({ tone: 'danger', text: unitText });
+        return;
+      }
       const codes = Object.values(fieldErrorCodes(result.error));
       const first = codes[0];
       if (first !== undefined) {
@@ -100,6 +136,9 @@ export function EditRoleForm(props: EditRoleFormProps) {
         onChange={(code) => {
           setRole(code);
           setFieldError(undefined);
+          setUnitError(undefined);
+          // A unit goes only with a department-limited role (the server refuses it otherwise).
+          if (!needsScopeUnit(options, code)) setUnit('');
         }}
         options={options}
         texts={props.selectTexts}
@@ -107,6 +146,25 @@ export function EditRoleForm(props: EditRoleFormProps) {
         error={fieldError}
         disabled={pending}
       />
+      {withUnit ? (
+        <ScopeUnitSelect
+          id={`${props.idPrefix}-unit`}
+          value={unit}
+          onChange={(id) => {
+            setUnit(id);
+            setUnitError(undefined);
+          }}
+          choices={props.scopeUnits}
+          texts={props.unitTexts}
+          error={unitError}
+          disabled={pending}
+        />
+      ) : null}
+      {currentUnitInactive ? (
+        <Alert tone="warning" data-testid="role-unit-inactive">
+          {text('unit.currentInactive')}
+        </Alert>
+      ) : null}
       {readsHeadedDepartments(options, role) ? (
         <Alert tone="info" data-testid="role-departments-hint">
           {text('departmentsHint')}

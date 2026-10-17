@@ -21,6 +21,8 @@ begin
     'platform.invitations', 'platform.security_policies', 'platform.tenant_settings',
     -- Custom roles (EP-ROLES): insert/FK tests below; rules in 97_custom_roles_app_server.sql.
     'platform.custom_roles', 'platform.custom_role_permissions',
+    -- Structure levels (EP-ORG): insert/FK tests below; rules in 99_structure_app_server.sql.
+    'platform.structure_levels',
     -- Files (T-M2-18): no direct writes at all (file_guard's functions only); cross-tenant, FK and
     -- function tests in 81_files_app_server.sql, 82_files_app_worker.sql and 83_files_storage.sql.
     'platform.files', 'platform.file_download_grants',
@@ -213,6 +215,24 @@ begin
     0::bigint, 'custom_role_permissions: RLS filters tenant B rows');
   perform tests.assert_privilege_denied($q$update platform.custom_role_permissions set permission_code = 'platform.audit.read'$q$,
     'custom_role_permissions: no UPDATE grant (remove and add)');
+
+  -- platform.structure_levels (EP-ORG; uA lacks platform.org.manage: the write policies refuse too)
+  perform tests.assert_rls_violation($q$insert into platform.structure_levels (tenant_id, ordinal, name_en, name_ar) values ('b0000000-0000-4000-8000-000000000001', 2, 'Intruder', 'دخيل')$q$,
+    'structure_levels: insert with tenant B tenant_id is rejected by RLS');
+  perform tests.assert_eq(tests.rows_affected($q$update platform.structure_levels set name_en = 'x' where tenant_id = 'b0000000-0000-4000-8000-000000000001'$q$),
+    0::bigint, 'structure_levels: RLS filters tenant B levels on update');
+  perform tests.assert_eq(tests.rows_affected($q$delete from platform.structure_levels where tenant_id = 'b0000000-0000-4000-8000-000000000001'$q$),
+    0::bigint, 'structure_levels: RLS filters tenant B levels on delete');
+  perform tests.assert_privilege_denied($q$update platform.structure_levels set tenant_id = 'b0000000-0000-4000-8000-000000000001'$q$,
+    'structure_levels: tenant_id is not updatable');
+  perform tests.assert_privilege_denied($q$update platform.structure_levels set ordinal = 9$q$,
+    'structure_levels: the place of a level is not updatable');
+
+  -- Role scope units (EP-ORG, T-M3-09): a tenant B unit is rejected by the composite FKs.
+  perform tests.assert_fails($q$insert into platform.invitations (person_id, email, locale, primary_role, scope_unit_id) values ('a1000000-0000-4000-8000-0000000000a2', 'uinv@a.test', 'ar', 'learner', 'b3000000-0000-4000-8000-000000000001')$q$,
+    array['23503', '23514', '42501'], 'invitations: a tenant B unit is never the scope of an invitation');
+  perform tests.assert_fails($q$insert into platform.role_assignments (membership_id, role_code, scope_unit_id) select id, 'learner', 'b3000000-0000-4000-8000-000000000001' from platform.tenant_memberships where user_id = '00000000-0000-4000-8000-0000000000a3'$q$,
+    array['23503', '23514'], 'role_assignments: a tenant B unit is never the scope of a role');
 
   -- platform.role_assignments: a tenant B custom role is rejected by the composite FK
   perform tests.assert_fails($q$insert into platform.role_assignments (membership_id, role_code) select id, 'custom_b00000000001' from platform.tenant_memberships where user_id = '00000000-0000-4000-8000-0000000000a3'$q$,

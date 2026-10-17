@@ -12,6 +12,7 @@ vi.mock('@jadarat/platform-rbac', () => ({
     'platform.role.read': { code: 'platform.role.read' },
     'platform.tenant.read': { code: 'platform.tenant.read' },
     'platform.tenant.manage': { code: 'platform.tenant.manage' },
+    'platform.org.manage': { code: 'platform.org.manage' },
   },
 }));
 vi.mock('./session-state', () => ({ getSessionState: vi.fn(), redirectFor: vi.fn(() => null) }));
@@ -27,6 +28,7 @@ describe('navigationFor', () => {
       roles: false,
       security: false,
       organizationProfile: false,
+      structure: false,
       organizationSetup: false,
       training: true,
     });
@@ -37,6 +39,7 @@ describe('navigationFor', () => {
       roles: false,
       security: false,
       organizationProfile: false,
+      structure: false,
       organizationSetup: false,
       training: true,
     });
@@ -48,6 +51,7 @@ describe('navigationFor', () => {
       roles: false,
       security: false,
       organizationProfile: false,
+      structure: false,
       organizationSetup: false,
       training: true,
     });
@@ -57,6 +61,7 @@ describe('navigationFor', () => {
         roles: false,
         security: false,
         organizationProfile: false,
+        structure: false,
         organizationSetup: false,
         training: true,
       },
@@ -66,6 +71,7 @@ describe('navigationFor', () => {
       roles: false,
       security: false,
       organizationProfile: false,
+      structure: false,
       organizationSetup: false,
       training: true,
     });
@@ -82,6 +88,7 @@ describe('navigationFor', () => {
       roles: true,
       security: false,
       organizationProfile: false,
+      structure: false,
       organizationSetup: false,
       training: true,
     });
@@ -92,6 +99,7 @@ describe('navigationFor', () => {
       roles: false,
       security: false,
       organizationProfile: false,
+      structure: false,
       organizationSetup: false,
       training: true,
     });
@@ -105,6 +113,7 @@ describe('navigationFor', () => {
       roles: false,
       security: true,
       organizationProfile: true,
+      structure: false,
       organizationSetup: false,
       training: true,
     });
@@ -114,10 +123,24 @@ describe('navigationFor', () => {
         roles: false,
         security: false,
         organizationProfile: false,
+        structure: false,
         organizationSetup: false,
         training: true,
       },
     );
+  });
+
+  it('shows Structure and Branches to the member who maintains them (platform.org.manage; T-M3-02)', () => {
+    expect(
+      navigationFor([
+        { permission: 'platform.org.read', scope: { type: 'tenant' } },
+        { permission: 'platform.org.manage', scope: { type: 'tenant' } },
+      ]).structure,
+    ).toBe(true);
+    // Reading the structure opens the pages by their address, not the menu entry.
+    expect(
+      navigationFor([{ permission: 'platform.org.read', scope: { type: 'tenant' } }]).structure,
+    ).toBe(false);
   });
 
   it('shows every entry in the data-less preview', () => {
@@ -126,6 +149,7 @@ describe('navigationFor', () => {
       roles: true,
       security: true,
       organizationProfile: true,
+      structure: true,
       organizationSetup: true,
       training: true,
     });
@@ -139,6 +163,7 @@ describe('navigationFor', () => {
       roles: false,
       security: false,
       organizationProfile: false,
+      structure: false,
       organizationSetup: true,
       training: false,
     });

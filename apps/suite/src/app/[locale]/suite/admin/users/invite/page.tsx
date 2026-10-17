@@ -16,7 +16,8 @@ import { profileErrorTexts } from '../../../../../../lib/profile-texts';
 import { type SuiteContext, getSuiteContext } from '../../../../../../lib/suite-context';
 import { pageDates } from '../../../../../../lib/page-dates';
 import { roleOptions } from '../../../../../../lib/role-choice';
-import { roleSelectTexts } from '../../../../../../lib/role-texts';
+import { roleSelectTexts, scopeUnitTexts } from '../../../../../../lib/role-texts';
+import { scopeUnitChoices } from '../../../../../../lib/structure-view';
 import { inviteFormQuery } from '../../../../../../lib/users-queries';
 import { localizedName } from '../../../../../../lib/users-view';
 
@@ -144,6 +145,10 @@ async function inviteForm(
   const fieldTexts: Record<string, string> = Object.fromEntries(
     FIELD_ERROR_KEYS.map((k) => [k, t(`form.fieldErrors.${k}`)]),
   );
+  // The unit of a department-limited custom role (EP-ORG, T-M3-09): the edit-role dialog's texts.
+  const unitTexts = await getTranslations({ locale, namespace: 'editRoles.unit' });
+  fieldTexts.unitRequired = unitTexts('unitRequired');
+  fieldTexts.unitNotAllowed = unitTexts('unitNotAllowed');
   const unit = (u: { id: string; nameAr: string; nameEn: string | null }) => ({
     id: u.id,
     name: localizedName(locale, u.nameAr, u.nameEn),
@@ -163,6 +168,8 @@ async function inviteForm(
         }))}
         roles={roleOptions(view.roles, locale)}
         roleTexts={await roleSelectTexts(locale)}
+        scopeUnits={scopeUnitChoices(view.scopeUnits.units, view.scopeUnits.levels, locale)}
+        unitTexts={await scopeUnitTexts(locale)}
         labels={labels}
         fieldTexts={fieldTexts}
         errors={await profileErrorTexts(locale)}

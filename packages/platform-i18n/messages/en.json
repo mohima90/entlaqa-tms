@@ -76,7 +76,9 @@
     "idleTitle": "Your sign-in session is about to end",
     "idleText": "Your sign-in session ends in two minutes because of inactivity. Continue to stay signed in.",
     "idleContinue": "Stay signed in",
-    "idleSignOut": "Sign out"
+    "idleSignOut": "Sign out",
+    "structure": "Structure",
+    "branches": "Branches"
   },
   "errors": {
     "malformedRequest": "We couldn't process this request. Refresh the page and try again.",
@@ -364,7 +366,10 @@
     "invalidFilters": "The filters in the link could not be read, so the list is shown without filters.",
     "notConfigured": "The users list appears once this environment is connected to the database and the sign-in service.",
     "loadFailed": "The data could not be loaded because of a problem on our side. You can try again. Reference: {correlationId}",
-    "rolesNotVisible": "Not visible to you"
+    "rolesNotVisible": "Not visible to you",
+    "roleUnit": "Covers {unit}",
+    "unitInactive": "Unit inactive · no access",
+    "unitMissing": "No unit picked · no access"
   },
   "userProfile": {
     "breadcrumb": "Team members",
@@ -627,6 +632,16 @@
       "own_roles": "You can't change your own role. The Organization Admin or HR changes it.",
       "no_account": "This person has no sign-in account in the organization; the role is chosen when they are invited.",
       "revoked": "This person's membership was revoked, so their role can't be changed."
+    },
+    "unit": {
+      "label": "Unit this role covers",
+      "hint": "Pick one unit, at any level. The person sees it and everything under it.",
+      "placeholder": "Choose a unit",
+      "inactive": "inactive",
+      "none": "The organization has no units yet. HR adds them in Organization → Structure.",
+      "currentInactive": "The unit picked for this role is inactive, so this person has no access through it. Pick another unit.",
+      "unitRequired": "Choose the unit this role covers.",
+      "unitNotAllowed": "This unit can't be picked: it's inactive or no longer exists. Choose another unit."
     }
   },
   "rolesPage": {
@@ -1965,12 +1980,16 @@
         "hint": "The people who report directly to them."
       },
       "departments": {
-        "label": "Their departments",
-        "hint": "The departments they head, with sub-departments (set by HR in the structure)."
+        "label": "A department",
+        "hint": "One unit of the structure, at any level, picked when the role is given. The person sees it and everything under it."
       },
       "organization": {
         "label": "Whole organization",
         "hint": "Everyone in the organization. Needed for administrative permissions."
+      },
+      "headed": {
+        "label": "Their departments",
+        "hint": "The departments they head, with sub-departments (set by HR in the structure)."
       }
     },
     "scopeCleared": "Administrative permissions were cleared: they need the whole organization.",
@@ -1995,5 +2014,235 @@
     },
     "notFound": "This role doesn't exist (any more).",
     "conflict": "Someone changed this role meanwhile. Reload the page to see the latest version."
+  },
+  "structure": {
+    "title": "Organization structure",
+    "intro": "Your organization's levels and units, with a head for each unit. A role limited to a department covers the unit picked and everything under it.",
+    "notConfigured": "The structure appears once this environment is connected to the database and the sign-in service.",
+    "viewOnly": "You can view the structure. The HR Manager changes it.",
+    "loadFailed": "The structure could not be loaded because of a problem on our side. You can try again. Reference: {correlationId}",
+    "tabsLabel": "Structure views",
+    "tabs": {
+      "tree": "Structure",
+      "levels": "Levels"
+    },
+    "stats": {
+      "label": "Summary",
+      "levels": "Levels",
+      "units": "Units",
+      "withHead": "Units with a head",
+      "inactive": "Inactive units"
+    },
+    "tree": {
+      "title": "Structure tree",
+      "description": "Open a unit's menu to add a unit under it, edit it, deactivate it or delete it.",
+      "empty": "No units yet",
+      "emptyBody": "Start with the top level of your structure.",
+      "emptyViewOnly": "The HR Manager adds the units of the structure."
+    },
+    "add": "Add {level}",
+    "expand": "Show the units under {name}",
+    "collapse": "Hide the units under {name}",
+    "actionsFor": "Actions for {name}",
+    "edit": "Edit",
+    "deactivate": "Deactivate",
+    "activate": "Activate",
+    "delete": "Delete",
+    "inactive": "Inactive",
+    "head": "Head: {name}",
+    "noHead": "No head",
+    "childCount": "{count, plural, one {{count, number, integer} unit} other {{count, number, integer} units}} under it",
+    "lastLevelNote": "Last level: no units under it",
+    "form": {
+      "addTitle": "Add {level}",
+      "editTitle": "Edit {name}",
+      "topDescription": "A unit at the top level of the structure.",
+      "underDescription": "A {level} under {parent}.",
+      "editDescription": "Names, code, branch and head of this unit.",
+      "nameEn": "Name in English",
+      "nameAr": "Name in Arabic",
+      "code": "Code",
+      "codeHint": "Letters, digits, dots, hyphens or underscores; up to 32, unique in the organization.",
+      "branch": "Branch",
+      "noBranch": "No branch",
+      "head": "Head",
+      "noHead": "No head yet",
+      "headHint": "Any active person. A Department Head sees the units they head and everything under them.",
+      "create": "Add",
+      "save": "Save changes",
+      "saving": "Saving…",
+      "cancel": "Cancel",
+      "close": "Close",
+      "audited": "Every change is recorded in the audit log."
+    },
+    "fieldErrors": {
+      "required": "This field is required.",
+      "name": "The name needs visible letters, up to 200 characters.",
+      "code": "Use up to 32 letters, digits, dots, hyphens or underscores, starting with a letter or a digit.",
+      "codeTaken": "Another unit has this code.",
+      "headNotActive": "Choose an active person.",
+      "branchNotFound": "This branch no longer exists. Choose another one.",
+      "parentNotFound": "The unit above no longer exists. Reload the page.",
+      "belowLastLevel": "There's no level below this one. Add a level first."
+    },
+    "status": {
+      "deactivateTitle": "Deactivate {name}?",
+      "deactivateText": "The unit stays in the structure with its people. Roles limited to this unit give no access while it is inactive.",
+      "deactivateRoles": "Roles limited to this unit: {count}. Their holders lose that access until another unit is picked.",
+      "confirmDeactivate": "Deactivate",
+      "keep": "Keep it active",
+      "working": "Saving…",
+      "activateTitle": "Activate {name}?",
+      "activateText": "The unit is active again: roles limited to it give access again."
+    },
+    "remove": {
+      "title": "Delete {name}?",
+      "text": "The unit is removed from the structure. This works only when nothing is left under it.",
+      "inUseTitle": "This unit can't be deleted yet. Move these first, or deactivate the unit:",
+      "inUseUnits": "Units under it: {count}",
+      "inUsePeople": "Active people in it: {count}",
+      "inUseRoles": "Roles limited to it: {count}",
+      "confirm": "Delete",
+      "deleting": "Deleting…",
+      "keep": "Keep the unit"
+    },
+    "conflict": "Someone changed this meanwhile. Reload the page to see the latest version.",
+    "notFound": "This no longer exists. Reload the page.",
+    "toasts": {
+      "created": "{name} added.",
+      "saved": "Changes saved.",
+      "deactivated": "{name} deactivated.",
+      "activated": "{name} activated.",
+      "deleted": "{name} deleted.",
+      "levelAdded": "Level added.",
+      "levelRenamed": "Level renamed.",
+      "levelRemoved": "Level removed."
+    },
+    "levels": {
+      "title": "Levels",
+      "description": "Your structure's levels from the top down, each with an English and an Arabic name. Up to 10.",
+      "example": "For example: Sector → General Department → Department → Section.",
+      "caption": "Structure levels",
+      "columns": {
+        "level": "Level",
+        "nameEn": "English name",
+        "nameAr": "Arabic name",
+        "units": "Units",
+        "actions": "Actions"
+      },
+      "levelNumber": "Level {ordinal}",
+      "add": "Add level",
+      "addTitle": "Add a level",
+      "addDescription": "The new level goes below {level}.",
+      "rename": "Rename",
+      "renameFor": "Rename {name}",
+      "renameTitle": "Rename {name}",
+      "renameDescription": "The level keeps its place; every unit at it shows the new name.",
+      "remove": "Remove",
+      "removeFor": "Remove {name}",
+      "removeTitle": "Remove {name}?",
+      "removeText": "The last level can be removed while no unit uses it.",
+      "confirmRemove": "Remove",
+      "keep": "Keep the level",
+      "lastOnly": "Only the last level can be removed.",
+      "onlyLevel": "Your structure keeps at least one level.",
+      "inUse": "{units, plural, one {{units, number, integer} unit uses} other {{units, number, integer} units use}} this level. Move or delete them first.",
+      "full": "Your structure has the most levels allowed (10).",
+      "nameTaken": "Another level has this name.",
+      "name": "The name needs visible letters, up to 60 characters."
+    }
+  },
+  "branches": {
+    "title": "Branches",
+    "intro": "Your organization's branches. Units of the structure and people belong to a branch.",
+    "notConfigured": "The branches appear once this environment is connected to the database and the sign-in service.",
+    "viewOnly": "You can view the branches. The HR Manager changes them.",
+    "loadFailed": "The branches could not be loaded because of a problem on our side. You can try again. Reference: {correlationId}",
+    "add": "Add branch",
+    "cardTitle": "All branches",
+    "cardDescription": "The headquarters first, then by name.",
+    "caption": "Branches list",
+    "columns": {
+      "name": "Branch",
+      "code": "Code",
+      "location": "Location",
+      "timezone": "Time zone",
+      "units": "Units",
+      "people": "People",
+      "status": "Status",
+      "actions": "Actions"
+    },
+    "headquarters": "Headquarters",
+    "active": "Active",
+    "inactive": "Inactive",
+    "empty": "No branches yet",
+    "emptyBody": "Add your headquarters first.",
+    "actionsFor": "Actions for {name}",
+    "edit": "Edit",
+    "deactivate": "Deactivate",
+    "activate": "Activate",
+    "delete": "Delete",
+    "form": {
+      "addTitle": "Add a branch",
+      "editTitle": "Edit {name}",
+      "description": "Code, names, location and time zone of the branch.",
+      "nameEn": "Name in English",
+      "nameAr": "Name in Arabic",
+      "code": "Code",
+      "codeHint": "Letters, digits, dots, hyphens or underscores; up to 32, unique in the organization.",
+      "parent": "Parent branch",
+      "noParent": "None",
+      "country": "Country",
+      "noCountry": "Not set",
+      "cityEn": "City in English",
+      "cityAr": "City in Arabic",
+      "timezone": "Time zone",
+      "headquarters": "This is the headquarters",
+      "headquartersHint": "An organization has one headquarters: choosing this branch moves it here.",
+      "create": "Add branch",
+      "save": "Save changes",
+      "saving": "Saving…",
+      "cancel": "Cancel",
+      "close": "Close",
+      "audited": "Every change is recorded in the audit log."
+    },
+    "fieldErrors": {
+      "required": "This field is required.",
+      "name": "The name needs visible letters, up to 200 characters.",
+      "code": "Use up to 32 letters, digits, dots, hyphens or underscores, starting with a letter or a digit.",
+      "codeTaken": "Another branch has this code.",
+      "city": "Up to 120 characters, with visible letters.",
+      "timezone": "Choose a time zone from the list.",
+      "parent": "Choose another parent branch: a branch can't sit under itself or under its own sub-branches."
+    },
+    "status": {
+      "deactivateTitle": "Deactivate {name}?",
+      "deactivateText": "The branch stays with its units and people, shown as inactive.",
+      "confirmDeactivate": "Deactivate",
+      "keep": "Keep it active",
+      "working": "Saving…",
+      "activateTitle": "Activate {name}?",
+      "activateText": "The branch is shown as active again."
+    },
+    "remove": {
+      "title": "Delete {name}?",
+      "text": "The branch is removed. This works only when nothing belongs to it any more.",
+      "inUseTitle": "This branch can't be deleted yet. Move these first, or deactivate it:",
+      "inUseBranches": "Sub-branches: {count}",
+      "inUseUnits": "Units of the structure: {count}",
+      "inUsePeople": "Active people: {count}",
+      "confirm": "Delete",
+      "deleting": "Deleting…",
+      "keep": "Keep the branch"
+    },
+    "conflict": "Someone changed this branch meanwhile. Reload the page to see the latest version.",
+    "notFound": "This branch no longer exists. Reload the page.",
+    "toasts": {
+      "created": "{name} added.",
+      "saved": "Changes saved.",
+      "deactivated": "{name} deactivated.",
+      "activated": "{name} activated.",
+      "deleted": "{name} deleted."
+    }
   }
 }

@@ -15,6 +15,12 @@ export interface RoleAssignment {
   readonly roleCode: string;
   readonly validFrom?: Date;
   readonly validUntil?: Date;
+  /**
+   * The unit picked for a custom role limited to «A department» (platform.role_assignments.scope_unit_id),
+   * only while that unit is live and active (EP-ORG exception: a deactivated unit grants nothing until a new
+   * one is picked). Ignored for every other role.
+   */
+  readonly scopeUnitId?: string | null;
 }
 
 /** Facts about the member needed to turn role scopes into data scopes. */
@@ -28,7 +34,11 @@ export interface GrantContext {
   readonly customRoles?: readonly CustomRoleDefinition[];
 }
 
-function toDataScope(scope: RoleScope, context: GrantContext): DataScope | null {
+function toDataScope(
+  scope: RoleScope,
+  context: GrantContext,
+  assignment: RoleAssignment,
+): DataScope | null {
   switch (scope) {
     case 'tenant':
       return { type: 'tenant' };
@@ -42,6 +52,12 @@ function toDataScope(scope: RoleScope, context: GrantContext): DataScope | null 
       // A department head who heads no department (yet) gets nothing from this grant.
       return context.headedDepartmentIds.length > 0
         ? { type: 'org_units', orgUnitIds: context.headedDepartmentIds, includeDescendants: true }
+        : null;
+    case 'assigned_unit':
+      // A department-limited custom role (EP-ORG, T-M3-09): the picked unit and everything under it; no
+      // unit (not picked yet, or deactivated / deleted since) → nothing.
+      return assignment.scopeUnitId
+        ? { type: 'org_units', orgUnitIds: [assignment.scopeUnitId], includeDescendants: true }
         : null;
   }
 }
@@ -78,7 +94,7 @@ export function grantsForAssignments(
   const grants: Grant[] = [];
   for (const assignment of assignments) {
     for (const roleGrant of roleGrants(assignment.roleCode, context)) {
-      const scope = toDataScope(roleGrant.scope, context);
+      const scope = toDataScope(roleGrant.scope, context, assignment);
       if (!scope) continue;
       grants.push({
         permission: roleGrant.permission,

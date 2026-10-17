@@ -3,13 +3,16 @@ import { tmsNavigation } from '@jadarat/tms';
 import type { SuiteNavigationAccess } from './suite-context';
 
 /** Pages of the suite that have a navigation entry (`current` of the shell). */
-export type SuitePage = 'home' | 'general' | 'users' | 'roles' | 'security' | 'profile';
+export type SuitePage =
+  'home' | 'general' | 'users' | 'structure' | 'branches' | 'roles' | 'security' | 'profile';
 
 /** Message keys (namespace `shell`) of every navigation label. */
 export type NavLabelKey =
   | 'home'
   | (typeof tmsNavigation)[number]['key']
   | 'teamMembers'
+  | 'structure'
+  | 'branches'
   | 'branding'
   | 'roles'
   | 'subscription'
@@ -39,6 +42,8 @@ export interface NavGroupModel {
 export const SUITE_PATHS = {
   home: '/suite',
   users: '/suite/admin/users',
+  structure: '/suite/admin/structure',
+  branches: '/suite/admin/branches',
   roles: '/suite/admin/roles',
   general: '/suite/admin/settings',
   security: '/suite/admin/security',
@@ -49,6 +54,8 @@ export const SUITE_PATHS = {
 export const PAGE_TITLE_KEYS = {
   home: 'home',
   users: 'teamMembers',
+  structure: 'structure',
+  branches: 'branches',
   roles: 'roles',
   general: 'general',
   security: 'security',
@@ -94,6 +101,12 @@ export function suiteNavigation(access: SuiteNavigationAccess): NavGroupModel[] 
       key: 'groupOrganization',
       entries: [
         ...when(access.users, page('teamMembers', 'people', 'users')),
+        // Organization → Structure and Branches (T-M3-02, EP-ORG): the HR Manager's pages.
+        ...when(
+          access.structure,
+          page('structure', 'structure', 'structure'),
+          page('branches', 'building', 'branches'),
+        ),
         ...when(setup, soon('branding', 'palette')),
         ...when(access.roles, page('roles', 'key', 'roles')),
       ],

@@ -8,7 +8,12 @@ import { notFound, redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { SuiteShell } from '../../../../../../../components/suite-shell';
 import { EditRoleForm } from '../../../../../../../components/users/edit-role-form';
-import { editRoleLabels, roleSelectTexts } from '../../../../../../../lib/role-texts';
+import {
+  editRoleLabels,
+  roleSelectTexts,
+  scopeUnitTexts,
+} from '../../../../../../../lib/role-texts';
+import { scopeUnitChoices } from '../../../../../../../lib/structure-view';
 import { roleOptions } from '../../../../../../../lib/role-choice';
 import { profileErrorTexts } from '../../../../../../../lib/profile-texts';
 import { getSuiteContext } from '../../../../../../../lib/suite-context';
@@ -114,8 +119,11 @@ async function rolesForm(
         personId={view.role.personId}
         version={view.role.version}
         currentRole={view.role.roleCode}
+        currentUnit={view.role.scopeUnitId}
         options={roleOptions(view.choices, locale)}
         selectTexts={await roleSelectTexts(locale)}
+        scopeUnits={scopeUnitChoices(view.scopeUnits.units, view.scopeUnits.levels, locale)}
+        unitTexts={await scopeUnitTexts(locale)}
         labels={await editRoleLabels(locale)}
         errors={await profileErrorTexts(locale)}
         backHref={profileHref}

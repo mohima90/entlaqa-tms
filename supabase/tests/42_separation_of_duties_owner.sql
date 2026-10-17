@@ -14,7 +14,8 @@ begin
   perform tests.assert_eq(
     (select array_agg(tgname::text order by tgname::text) from pg_trigger
      where tgrelid = 'platform.invitations'::regclass and not tgisinternal and tgenabled = 'O'),
-    array['invitations_check', 'invitations_separation_of_duties'], 'invitations: triggers enabled');
+    -- invitations_scope_unit: the unit of a department-limited custom role (EP-ORG, 20261020090400).
+    array['invitations_check', 'invitations_scope_unit', 'invitations_separation_of_duties'], 'invitations: triggers enabled');
   perform tests.assert(exists (select 1 from pg_trigger where tgrelid = 'platform.role_assignments'::regclass
                                and tgname = 'role_assignments_separation_of_duties' and tgenabled = 'O'
                                and tgfoid = 'private.check_role_separation()'::regprocedure),

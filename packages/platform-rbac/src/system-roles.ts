@@ -45,9 +45,12 @@ export type SystemRoleCode = (typeof SYSTEM_ROLE_CODES)[number];
 /**
  * How far a role's permission reaches. Resolved per request into a DataScope (scopes.ts):
  * `headed_departments` = the departments the member heads (platform.departments.head_person_id),
- * including their sub-departments.
+ * including their sub-departments; `assigned_unit` (custom roles limited to «A department» only, EP-ORG,
+ * T-M3-09) = the ONE unit picked when the role was given (platform.role_assignments.scope_unit_id),
+ * including every unit below it.
  */
-export type RoleScope = 'tenant' | 'own' | 'direct_reports' | 'reports_tree' | 'headed_departments';
+export type RoleScope =
+  'tenant' | 'own' | 'direct_reports' | 'reports_tree' | 'headed_departments' | 'assigned_unit';
 
 export interface RoleGrantDefinition {
   readonly permission: PermissionDefinition;

@@ -64,7 +64,7 @@ export interface RoleScopeUnit {
 export interface UserListRow {
   readonly personId: string;
   readonly membershipId: string;
-  readonly displayNameAr: string;
+  readonly displayNameAr: string | null;
   readonly displayNameEn: string | null;
   readonly email: string | null;
   readonly employeeNumber: string | null;
@@ -289,7 +289,7 @@ export async function listUsers(tx: UserTx, filter: UserListFilter): Promise<Use
   const rows = await tx.execute<{
     person_id: string;
     membership_id: string;
-    display_name_ar: string;
+    display_name_ar: string | null;
     display_name_en: string | null;
     email: string | null;
     employee_number: string | null;
@@ -316,7 +316,7 @@ export async function listUsers(tx: UserTx, filter: UserListFilter): Promise<Use
     ${FROM_MEMBERS}
     left join platform.departments d on d.tenant_id = e.tenant_id and d.id = e.department_id
     where ${tabWhere}
-    order by p.display_name_ar, p.id
+    order by coalesce(p.display_name_ar, p.display_name_en), p.id
     limit ${limit} offset ${offset}`);
   const c = counts ?? { all: 0, active: 0, invited: 0, deactivated: 0 };
   return {
@@ -365,7 +365,7 @@ export interface UserActivity {
 
 export interface UserProfile {
   readonly personId: string;
-  readonly displayNameAr: string;
+  readonly displayNameAr: string | null;
   readonly displayNameEn: string | null;
   readonly email: string | null;
   readonly mobileE164: string | null;
@@ -381,7 +381,7 @@ export interface UserProfile {
   readonly branchNameEn: string | null;
   readonly manager: {
     readonly personId: string;
-    readonly displayNameAr: string;
+    readonly displayNameAr: string | null;
     readonly displayNameEn: string | null;
   } | null;
   readonly hireOn: string | null;
@@ -412,7 +412,7 @@ export async function getUserProfile(
 ): Promise<UserProfile | null> {
   const [row] = await tx.execute<{
     person_id: string;
-    display_name_ar: string;
+    display_name_ar: string | null;
     display_name_en: string | null;
     email: string | null;
     mobile_e164: string | null;
@@ -527,7 +527,7 @@ export async function getUserProfile(
     manager: row.manager_person_id
       ? {
           personId: row.manager_person_id,
-          displayNameAr: row.manager_name_ar ?? '',
+          displayNameAr: row.manager_name_ar,
           displayNameEn: row.manager_name_en,
         }
       : null,

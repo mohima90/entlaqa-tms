@@ -4,7 +4,6 @@ import {
   type ImportField,
   NEVER_IMPORTED,
   type NeverImportedReason,
-  REQUIRED_FIELDS,
   isImportField,
 } from './fields';
 import { asciiDigits, cleanText, matchKey } from './text';
@@ -133,11 +132,13 @@ export type MappingProblem =
 
 /**
  * Checks a chosen mapping ({column index: field}) against the sheet's columns: every field known, at
- * most once, the required ones present, never a column that is not imported. Empty: valid.
+ * most once, the required ones present (`required`: requiredFields() of the organization's default
+ * language), never a column that is not imported. Empty: valid.
  */
 export function mappingProblems(
   mapping: Readonly<Record<string, string>>,
   columns: readonly ColumnInput[],
+  required: readonly ImportField[],
 ): MappingProblem[] {
   const problems: MappingProblem[] = [];
   const seen = new Set<string>();
@@ -155,7 +156,7 @@ export function mappingProblems(
     if (seen.has(field)) problems.push({ kind: 'twice', field });
     seen.add(field);
   }
-  for (const field of REQUIRED_FIELDS) {
+  for (const field of required) {
     if (!seen.has(field)) problems.push({ kind: 'missing', field });
   }
   return problems;

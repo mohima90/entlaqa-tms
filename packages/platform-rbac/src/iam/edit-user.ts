@@ -6,6 +6,7 @@ import {
   type UserDetailsRefusal,
   type UserTx,
   getEditableUser,
+  getTenantDefaultLocale,
   listManagerOptions,
   listOrgUnitOptions,
   updateUserDetails,
@@ -15,7 +16,7 @@ import { z } from 'zod';
 import type { ActionDefinition } from '../define-action';
 import type { QueryDefinition } from '../define-query';
 import { platformPermissions } from '../platform-permissions';
-import { mobile, namePart } from './my-profile';
+import { mobile, namePart, nameRuleError } from './my-profile';
 
 /**
  * HR / Organization Admin edits of a person's details and placement (T-M2-13, FR-IAM-01, BR-IAM-3;
@@ -40,7 +41,8 @@ export const EditUserInput = z
   .strictObject({
     personId: z.uuid(),
     version: z.string().regex(/^[0-9]{1,9}:[0-9]{1,9}$/),
-    // Required unless the stored Arabic name has no parts and is kept as is (checked when saving).
+    // The organization's default language's first and family names are required (guided-test feedback #2,
+    // PO 17 Oct 2026), unless that name is stored without parts and kept as is (checked when saving).
     firstNameAr: namePart,
     fatherNameAr: namePart,
     grandfatherNameAr: namePart,
@@ -124,7 +126,7 @@ export function editUserQueryDefinition(): QueryDefinition<
 }
 
 /** Database refusals → errors the form can show next to the right field. */
-function refusalError(refusal: UserDetailsRefusal): AppError {
+function refusalError(refusal: UserDetailsRefusal, nameLanguage: 'ar' | 'en'): AppError {
   const field = (path: string, code: string) =>
     appError('VALIDATION_FAILED', { fieldErrors: [{ path, code }] });
   switch (refusal) {
@@ -149,7 +151,7 @@ function refusalError(refusal: UserDetailsRefusal): AppError {
     case 'hire_date_invalid':
       return field('hireOn', 'AFTER_END');
     case 'name_required':
-      return field('firstNameAr', 'REQUIRED');
+      return field(nameLanguage === 'ar' ? 'firstNameAr' : 'firstNameEn', 'REQUIRED');
   }
 }
 
@@ -169,6 +171,11 @@ export function updateUserDetailsActionDefinition(): ActionDefinition<
     input: EditUserInput,
     resource: (input) => ({ type: 'person', id: input.personId }),
     handler: async ({ ctx, input }) => {
+      const before = await getEditableUser(ctx.tx, input.personId);
+      if (before?.mayManage) {
+        const nameProblem = await nameRuleError(ctx.tx, input, { before, next: input });
+        if (nameProblem) return err(nameProblem);
+      }
       const join = (...parts: (string | null)[]) =>
         parts.filter((part): part is string => part !== null).join(' ');
       const displayNameEn = join(
@@ -186,12 +193,13 @@ export function updateUserDetailsActionDefinition(): ActionDefinition<
         fatherNameEn: input.fatherNameEn,
         grandfatherNameEn: input.grandfatherNameEn,
         familyNameEn: input.familyNameEn,
-        displayNameAr: join(
-          input.firstNameAr,
-          input.fatherNameAr,
-          input.grandfatherNameAr,
-          input.familyNameAr,
-        ),
+        displayNameAr:
+          join(
+            input.firstNameAr,
+            input.fatherNameAr,
+            input.grandfatherNameAr,
+            input.familyNameAr,
+          ) || null,
         displayNameEn: displayNameEn === '' ? null : displayNameEn,
         email: input.email,
         mobileE164: input.mobile,
@@ -204,7 +212,9 @@ export function updateUserDetailsActionDefinition(): ActionDefinition<
         jobTitleEn: input.jobTitleEn,
         hireOn: input.hireOn,
       });
-      if (!outcome.ok) return err(refusalError(outcome.refusal));
+      if (!outcome.ok) {
+        return err(refusalError(outcome.refusal, await getTenantDefaultLocale(ctx.tx)));
+      }
       return ok({ personId: input.personId, changed: outcome.changed });
     },
     audit: (_input, output) =>

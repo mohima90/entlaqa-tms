@@ -96,6 +96,17 @@ export const ISSUES: Catalogue = {
           ? 'الاسم الأول بالعربية فارغ، وهو مطلوب.'
           : 'The Arabic first name is empty; it’s required.',
   },
+  NAME_EN_REQUIRED: {
+    severity: 'e',
+    review: (issue, locale) =>
+      issue.f === 'family_name_en'
+        ? locale === 'ar'
+          ? 'اسم العائلة بالإنجليزية فارغ، وهو مطلوب.'
+          : 'The English family name is empty; it’s required.'
+        : locale === 'ar'
+          ? 'الاسم الأول بالإنجليزية فارغ، وهو مطلوب.'
+          : 'The English first name is empty; it’s required.',
+  },
   NAME_TOO_LONG: {
     severity: 'e',
     review: (issue, locale) =>

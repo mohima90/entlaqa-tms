@@ -22,6 +22,8 @@ const db = vi.hoisted(() => ({
   getUserProfile: vi.fn(),
   updatePersonalDetails: vi.fn(),
   passwordMinLengthForCaller: vi.fn(),
+  getTenantDefaultLocale: vi.fn(),
+  keepsUnsplitDisplayName: vi.fn(),
 }));
 vi.mock('@jadarat/platform-db', () => db);
 
@@ -73,6 +75,9 @@ const form = {
 beforeEach(() => {
   vi.clearAllMocks();
   db.passwordMinLengthForCaller.mockResolvedValue(12);
+  db.getTenantDefaultLocale.mockResolvedValue('en');
+  db.keepsUnsplitDisplayName.mockReturnValue(false);
+  db.getPersonalDetails.mockResolvedValue({ displayNameAr: 'سارة', displayNameEn: 'Sarah' });
 });
 
 describe('My profile input (FR-IAM-16)', () => {
@@ -106,10 +111,9 @@ describe('My profile input (FR-IAM-16)', () => {
     });
   });
 
-  it('rejects missing Arabic names, invisible-only names, local mobiles and any job or e-mail field', () => {
+  it('rejects invisible-only or too long names, local mobiles and any job or e-mail field', () => {
     for (const bad of [
-      { ...form, firstNameAr: '' },
-      { ...form, firstNameAr: '   ' },
+      { ...form, firstNameEn: 'x'.repeat(61) },
       // Four parts of 60 make a display name over 200 characters (database limit).
       {
         ...form,
@@ -189,6 +193,40 @@ describe('My profile query and save', () => {
     expect(JSON.stringify(writeAudit.mock.calls)).not.toContain('سارة');
   });
 
+  it('the required names follow the organization’s default language (guided-test feedback #2)', async () => {
+    db.updatePersonalDetails.mockResolvedValue(['firstNameAr']);
+    const save = createDefineAction(runtime().rt)(updateMyProfileActionDefinition());
+    // English default: the English first and family names are required, the Arabic ones optional.
+    const noEnglish = await save({ ...form, firstNameEn: ' ', familyNameEn: '' });
+    expect(!noEnglish.ok && noEnglish.error.fieldErrors).toEqual([
+      { path: 'firstNameEn', code: 'REQUIRED' },
+      { path: 'familyNameEn', code: 'REQUIRED' },
+    ]);
+    expect(db.updatePersonalDetails).not.toHaveBeenCalled();
+    const englishOnly = await save({
+      ...form,
+      firstNameAr: '',
+      fatherNameAr: '',
+      familyNameAr: '',
+    });
+    expect(englishOnly.ok).toBe(true);
+    expect(db.updatePersonalDetails).toHaveBeenCalledWith(
+      TX,
+      ME,
+      expect.objectContaining({ displayNameAr: null, displayNameEn: 'Sarah Alqahtani' }),
+    );
+    // Arabic default: the Arabic names are required — unless a long name stored without parts is kept.
+    db.getTenantDefaultLocale.mockResolvedValue('ar');
+    const noArabic = await save({ ...form, familyNameAr: '' });
+    expect(!noArabic.ok && noArabic.error.fieldErrors).toEqual([
+      { path: 'familyNameAr', code: 'REQUIRED' },
+    ]);
+    db.keepsUnsplitDisplayName.mockReturnValue(true);
+    expect((await save({ ...form, firstNameAr: '', fatherNameAr: '', familyNameAr: '' })).ok).toBe(
+      true,
+    );
+  });
+
   it('no change → no audit event; vanished person → NOT_FOUND; no member grant → 403', async () => {
     db.updatePersonalDetails.mockResolvedValue([]);
     const { rt, writeAudit } = runtime();
@@ -197,6 +235,11 @@ describe('My profile query and save', () => {
     db.updatePersonalDetails.mockResolvedValue(null);
     const gone = await createDefineAction(runtime().rt)(updateMyProfileActionDefinition())(form);
     expect(!gone.ok && gone.error.code).toBe('NOT_FOUND');
+    db.getPersonalDetails.mockResolvedValueOnce(null);
+    const vanished = await createDefineAction(runtime().rt)(updateMyProfileActionDefinition())(
+      form,
+    );
+    expect(!vanished.ok && vanished.error.code).toBe('NOT_FOUND');
     const denied = await createDefineAction(runtime(ME, []).rt)(updateMyProfileActionDefinition())(
       form,
     );

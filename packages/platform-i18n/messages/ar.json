@@ -2006,7 +2006,8 @@
       "NEW_SKIPPED_UPDATE_ONLY": "ليسوا مستخدمين (تحديث فقط)",
       "NO_CHANGES": "لا يختلف شيء عن بياناتهم",
       "ROLE_REPEATED": "دور مكرر في الصف",
-      "ROLES_ONE_PER_PERSON": "الأدوار الإضافية لا تُسند (دور واحد لكل شخص)"
+      "ROLES_ONE_PER_PERSON": "الأدوار الإضافية لا تُسند (دور واحد لكل شخص)",
+      "NAME_EN_REQUIRED": "الاسم الأول أو اسم العائلة بالإنجليزية فارغ"
     },
     "heldSummary": "{count, plural, one {لم تُرسل دعوة واحدة بعد} two {لم تُرسل دعوتان بعد} few {{count, number, integer} لم تُرسل دعواتهم بعد} many {{count, number, integer} لم تُرسل دعواتهم بعد} other {{count, number, integer} لم تُرسل دعواتهم بعد}}"
   },

@@ -77,7 +77,8 @@ export interface StructureLevelLabel {
 /** An active person as a head choice (names and employee number only). */
 export interface PersonOption {
   readonly id: string;
-  readonly nameAr: string;
+  /** Null for a person with an English name only (PO 17 Oct 2026). */
+  readonly nameAr: string | null;
   readonly nameEn: string | null;
   readonly employeeNumber: string | null;
 }
@@ -232,14 +233,14 @@ export async function listStructureUnitOptions(
 export async function listActivePersonOptions(tx: UserTx): Promise<readonly PersonOption[]> {
   const rows = await tx.execute<{
     id: string;
-    display_name_ar: string;
+    display_name_ar: string | null;
     display_name_en: string | null;
     employee_number: string | null;
   }>(sql`
     select p.id, p.display_name_ar, p.display_name_en, p.employee_number
     from platform.persons p
     where p.status = 'active'
-    order by p.display_name_ar, p.id`);
+    order by coalesce(p.display_name_ar, p.display_name_en), p.id`);
   return rows.map((r) => ({
     id: r.id,
     nameAr: r.display_name_ar,

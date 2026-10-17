@@ -21,7 +21,7 @@ import type { QueryDefinition } from '../define-query';
 import type { PermissionDefinition } from '../permissions';
 import { platformPermissions } from '../platform-permissions';
 import { ROLE_CODE } from './edit-roles';
-import { namePart } from './my-profile';
+import { namePart, nameRuleError } from './my-profile';
 import { type RoleChoice, canGive, findRole, loadRoleChoices } from './role-catalogue';
 import {
   type ScopeUnitChoices,
@@ -66,17 +66,12 @@ const optionalId = z
   .union([z.uuid(), z.literal('')])
   .transform((value) => (value === '' ? null : value));
 
-const requiredNamePart = z
-  .string()
-  .trim()
-  .min(1)
-  .max(60)
-  .refine((value) => hasVisibleText(value), { message: 'invisible' });
-
 export const InviteUserInput = z.strictObject({
   email: z.string().trim().max(254).toLowerCase().pipe(z.email()),
-  firstNameAr: requiredNamePart,
-  familyNameAr: requiredNamePart,
+  // The organization's default language's first and family names are required, the other language's are
+  // optional (guided-test feedback #2, PO 17 Oct 2026): checked by the action (nameRuleError).
+  firstNameAr: namePart,
+  familyNameAr: namePart,
   firstNameEn: namePart,
   familyNameEn: namePart,
   departmentId: optionalId,
@@ -192,6 +187,8 @@ function inviteAction(
     permission,
     input: InviteUserInput,
     handler: async ({ ctx, input }) => {
+      const nameProblem = await nameRuleError(ctx.tx, input);
+      if (nameProblem) return err(nameProblem);
       const role = await findRole(ctx.tx, input.role);
       if (!role) return err(fieldError('role', 'ROLE_UNKNOWN'));
       if (privileged) {

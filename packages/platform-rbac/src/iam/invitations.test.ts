@@ -36,6 +36,8 @@ const db = vi.hoisted(() => ({
   // The unit picker of department-limited roles (EP-ORG, T-M3-09).
   listStructureUnitOptions: vi.fn(),
   listStructureLevelLabels: vi.fn(),
+  // The organization's default language: the names it requires (PO 17 Oct 2026).
+  getTenantDefaultLocale: vi.fn(),
 }));
 vi.mock('@jadarat/platform-db', () => db);
 
@@ -167,6 +169,7 @@ beforeEach(() => {
   );
   db.listStructureUnitOptions.mockResolvedValue(UNITS);
   db.listStructureLevelLabels.mockResolvedValue(LEVELS);
+  db.getTenantDefaultLocale.mockResolvedValue('ar');
 });
 
 describe('invite input', () => {
@@ -184,13 +187,12 @@ describe('invite input', () => {
     expect(InviteUserInput.parse({ ...form, role: READER.code }).role).toBe(READER.code);
   });
 
-  it('refuses a bad e-mail, missing Arabic names, unknown or repeated roles, extra keys', () => {
+  it('refuses a bad e-mail, invisible or too long names, unknown or repeated roles, extra keys', () => {
     for (const bad of [
       { ...form, email: 'not-an-email' },
       { ...form, email: `${'a'.repeat(250)}@x.example` },
-      { ...form, firstNameAr: ' ' },
-      { ...form, familyNameAr: '' },
       { ...form, firstNameAr: '‏‏' },
+      { ...form, familyNameEn: 'x'.repeat(61) },
       { ...form, firstNameEn: 'x'.repeat(61) },
       { ...form, departmentId: 'not-a-uuid' },
       { ...form, managerPersonId: "1'; drop" },
@@ -224,6 +226,47 @@ describe('invite input', () => {
 });
 
 describe('invite user action', () => {
+  it('the required names follow the organization’s default language (guided-test feedback #2)', async () => {
+    const { rt } = runtime(['hr_manager']);
+    const invite = createDefineAction(rt)(inviteUserActionDefinition());
+    // English default: English first and family names required; the Arabic ones optional.
+    db.getTenantDefaultLocale.mockResolvedValue('en');
+    const missing = await invite({ ...form, firstNameEn: '', familyNameEn: '' });
+    expect(missing.ok).toBe(false);
+    if (!missing.ok) {
+      expect(missing.error.code).toBe('VALIDATION_FAILED');
+      expect(missing.error.fieldErrors).toEqual([
+        { path: 'firstNameEn', code: 'REQUIRED' },
+        { path: 'familyNameEn', code: 'REQUIRED' },
+      ]);
+    }
+    expect(db.createInvitation).not.toHaveBeenCalled();
+    const englishOnly = await invite({
+      ...form,
+      firstNameAr: '',
+      familyNameAr: '',
+      firstNameEn: 'Noura',
+      familyNameEn: 'Aldossari',
+    });
+    expect(englishOnly.ok).toBe(true);
+    expect(db.createInvitation).toHaveBeenCalledWith(
+      TX,
+      expect.objectContaining({
+        firstNameAr: null,
+        familyNameAr: null,
+        firstNameEn: 'Noura',
+        familyNameEn: 'Aldossari',
+      }),
+    );
+    // Arabic default: the Arabic names are the required ones.
+    db.getTenantDefaultLocale.mockResolvedValue('ar');
+    const arabicMissing = await invite({ ...form, firstNameAr: '', familyNameEn: 'Aldossari' });
+    expect(arabicMissing.ok).toBe(false);
+    if (!arabicMissing.ok) {
+      expect(arabicMissing.error.fieldErrors).toEqual([{ path: 'firstNameAr', code: 'REQUIRED' }]);
+    }
+  });
+
   it('HR Manager invites with ordinary roles; audited with ids and role codes only', async () => {
     const { rt, writeAudit, getClaims } = runtime(['hr_manager']);
     const result = await createDefineAction(rt)(inviteUserActionDefinition())(form);

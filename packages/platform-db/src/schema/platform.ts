@@ -89,7 +89,7 @@ export const persons = platform.table('persons', {
   id: uuid('id').primaryKey().defaultRandom(),
   tenantId: uuid('tenant_id').notNull(),
   personType: text('person_type', { enum: personTypes }).notNull().default('employee'),
-  displayNameAr: text('display_name_ar').notNull(),
+  displayNameAr: text('display_name_ar'),
   displayNameEn: text('display_name_en'),
   firstNameAr: text('first_name_ar'),
   fatherNameAr: text('father_name_ar'),

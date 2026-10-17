@@ -21,10 +21,12 @@ export {
   IMPORT_FIELDS,
   type ImportField,
   NEVER_IMPORTED,
+  type NameLanguage,
   type NeverImportedReason,
-  REQUIRED_FIELDS,
   fieldDefinition,
+  fieldDefinitionsFor,
   isImportField,
+  requiredFields,
 } from './users/fields';
 export {
   type ColumnInput,

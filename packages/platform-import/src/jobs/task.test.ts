@@ -86,6 +86,7 @@ const base: UserImportJobView = {
   confirmedAt: null,
   failures: 0,
   importerLocale: 'ar',
+  nameLanguage: 'en',
   importerMayImport: true,
   uploadAbandoned: false,
 };

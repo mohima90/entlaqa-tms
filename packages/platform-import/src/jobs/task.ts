@@ -409,6 +409,7 @@ export function createUserImportTask(options: UserImportTaskOptions): PlatformTa
         for await (const batch of stagedBatches(
           file.rows(view.sheetIndex),
           toImportMapping(view.mapping),
+          view.nameLanguage,
           undefined,
           // In this transaction: it holds the import's row, so the renewal is the lease's own.
           readGuard(VALIDATE_BUDGET_MS, () =>

@@ -226,7 +226,9 @@ export {
   DEFAULT_TENANT_REGIONAL,
   type TenantRegional,
   getCurrentTenant,
+  getTenantDefaultLocale,
 } from './tenants';
+export { NAME_PART_MAX, keepsUnsplitDisplayName } from './names';
 export {
   type OrganizationProfile,
   type OrganizationProfileRecord,

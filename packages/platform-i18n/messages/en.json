@@ -2006,7 +2006,8 @@
       "NEW_SKIPPED_UPDATE_ONLY": "Not users (update only)",
       "NO_CHANGES": "Nothing differs from their data",
       "ROLE_REPEATED": "Role repeated in the row",
-      "ROLES_ONE_PER_PERSON": "Additional roles not given (one role per person)"
+      "ROLES_ONE_PER_PERSON": "Additional roles not given (one role per person)",
+      "NAME_EN_REQUIRED": "English first or family name empty"
     },
     "heldSummary": "{count, plural, one {one invitation not sent yet} other {{count, number, integer} invitations not sent yet}}"
   },

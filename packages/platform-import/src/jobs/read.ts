@@ -7,6 +7,7 @@ import {
 } from '../spreadsheet/index';
 import { neverImportedReason } from '../users/headers';
 import { MAX_IMPORT_ROWS } from '../users/limits';
+import type { NameLanguage } from '../users/fields';
 import { type ImportMapping, normalizeRow } from '../users/rows';
 
 /**
@@ -106,11 +107,12 @@ export const STAGE_BATCH = 500;
 
 /**
  * The chosen sheet's data rows (the first row with text is the header), checked under the mapping, in
- * batches. Throws SpreadsheetError FILE_TOO_MANY_ROWS past `maxRows` and FILE_EMPTY without data rows.
+ * batches, the names of `nameLanguage` (the organization's default language) required. Throws SpreadsheetError FILE_TOO_MANY_ROWS past `maxRows` and FILE_EMPTY without data rows.
  */
 export async function* stagedBatches(
   rows: AsyncIterable<SheetRow>,
   mapping: ImportMapping,
+  nameLanguage: NameLanguage,
   maxRows: number = MAX_IMPORT_ROWS,
   guard: ReadGuard = {},
 ): AsyncGenerator<StagedRow[]> {
@@ -124,7 +126,7 @@ export async function* stagedBatches(
     }
     count += 1;
     if (count > maxRows) throw new SpreadsheetError('FILE_TOO_MANY_ROWS');
-    const normalized = normalizeRow(row.number, row.cells, mapping);
+    const normalized = normalizeRow(row.number, row.cells, mapping, nameLanguage);
     batch.push({
       rowNumber: normalized.rowNumber,
       cells: normalized.cells,

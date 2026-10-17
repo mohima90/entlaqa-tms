@@ -6,7 +6,7 @@ import {
   sheetReference,
   writeXlsx,
 } from '../spreadsheet/xlsx-writer';
-import { FIELD_DEFINITIONS } from './fields';
+import { type FieldDefinition, type NameLanguage, fieldDefinitionsFor } from './fields';
 import { IMPORTABLE_ROLES } from './roles';
 
 /**
@@ -27,6 +27,11 @@ export interface TemplateUnit {
 export interface TemplateLists {
   readonly departments: readonly TemplateUnit[];
   readonly branches: readonly TemplateUnit[];
+  /**
+   * The language whose first and family names are required: the organization's default (guided-test
+   * feedback #2, PO 17 Oct 2026). Its name columns come first and are marked required.
+   */
+  readonly nameLanguage: NameLanguage;
 }
 
 /** Rows the drop-down lists cover (the row limit plus the header). */
@@ -41,12 +46,15 @@ export function templateFileName(locale: TemplateLocale, kind: 'csv' | 'xlsx'): 
   return `${locale === 'ar' ? 'قالب-استيراد-المستخدمين' : 'user-import-template'}.${kind}`;
 }
 
-export function templateHeaders(locale: TemplateLocale): string[] {
-  return FIELD_DEFINITIONS.map((d) => d.header[locale]);
+export function templateHeaders(locale: TemplateLocale, nameLanguage: NameLanguage): string[] {
+  return fieldDefinitionsFor(nameLanguage).map((d) => d.header[locale]);
 }
 
-export function csvTemplate(locale: TemplateLocale): Uint8Array<ArrayBuffer> {
-  return new TextEncoder().encode(`${CSV_BOM}${csvLine(templateHeaders(locale))}`);
+export function csvTemplate(
+  locale: TemplateLocale,
+  nameLanguage: NameLanguage,
+): Uint8Array<ArrayBuffer> {
+  return new TextEncoder().encode(`${CSV_BOM}${csvLine(templateHeaders(locale, nameLanguage))}`);
 }
 
 const GUIDE_TEXT = {
@@ -92,6 +100,7 @@ export function xlsxTemplate(
   const rtl = locale === 'ar';
   const languages = ['العربية', 'English'];
   const roles = IMPORTABLE_ROLES.map((role) => role.name[locale]);
+  const definitions: readonly FieldDefinition[] = fieldDefinitionsFor(lists.nameLanguage);
 
   // «القوائم»: one column per list.
   const columns: (readonly string[])[] = [
@@ -108,7 +117,7 @@ export function xlsxTemplate(
 
   const range = (column: number, length: number) =>
     `${sheetReference(names.lists)}!$${columnLetters(column)}$2:$${columnLetters(column)}$${String(length + 1)}`;
-  const fieldIndex = (field: string) => FIELD_DEFINITIONS.findIndex((d) => d.field === field);
+  const fieldIndex = (field: string) => definitions.findIndex((d) => d.field === field);
   const validations: WriterValidation[] = [];
   const addList = (field: string, column: number, length: number) => {
     if (length > 0) {
@@ -129,12 +138,12 @@ export function xlsxTemplate(
     name: names.users,
     rightToLeft: rtl,
     freezeHeader: true,
-    columns: FIELD_DEFINITIONS.map((d) => ({ width: d.width, format: d.format })),
-    rows: [templateHeaders(locale)],
+    columns: definitions.map((d) => ({ width: d.width, format: d.format })),
+    rows: [templateHeaders(locale, lists.nameLanguage)],
     validations,
   };
   const guideRows: string[][] = [[...text.header]];
-  for (const d of FIELD_DEFINITIONS) {
+  for (const d of definitions) {
     const first = locale === 'ar' ? d.header.ar : d.header.en;
     const second = locale === 'ar' ? d.header.en : d.header.ar;
     const descriptions =

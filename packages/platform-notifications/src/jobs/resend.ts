@@ -76,6 +76,7 @@ export function createResendTransport(options: {
         body: JSON.stringify({
           from: formatFrom(email.from),
           to: [email.to],
+          ...(email.replyTo ? { reply_to: email.replyTo } : {}),
           subject: email.subject,
           html: email.html,
           text: email.text,

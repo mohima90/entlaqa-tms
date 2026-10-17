@@ -115,6 +115,26 @@ export {
   reissuePlatformAdminCode,
 } from './platform-console';
 export {
+  type EmailSenderSettings,
+  EmailSettingsError,
+  type EmailSettingsErrorCode,
+  type EmailSettingsField,
+  type EmailTestState,
+  type PlatformEmailView,
+  type SaveSenderInput,
+  type TenantEmailFailure,
+  type TenantEmailView,
+  emailSettingsErrorOf,
+  getEmailCredentialsPublicKey,
+  getPlatformEmailSettings,
+  getTenantEmailSettings,
+  listTenantEmailFailures,
+  requestTenantEmailTest,
+  savePlatformEmailSettings,
+  saveTenantEmailSettings,
+  setTenantEmailEnabled,
+} from './email-settings';
+export {
   type DeactivationRefusal,
   MEMBER_EVENTS,
   type MemberLifecycleTarget,

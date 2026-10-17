@@ -8,7 +8,13 @@ import type { InvitationSending } from '@jadarat/platform-db/jobs';
 import { DEFAULT_INVITATION_SENDING } from '@jadarat/platform-import/jobs';
 import { DATABASE_URL_APP_QUEUE_ENV, assertQueueRole } from '@jadarat/platform-jobs/jobs';
 import { isEmailAddress } from '@jadarat/platform-notifications';
-import { type EmailSettings, readEmailSettings } from '@jadarat/platform-notifications/jobs';
+import {
+  type CredentialsKeyPair,
+  EMAIL_CREDENTIALS_KEY_ENV,
+  type EmailSettings,
+  deriveCredentialsKeyPair,
+  readEmailSettings,
+} from '@jadarat/platform-notifications/jobs';
 
 export type WorkerMode = 'daemon' | 'once' | 'test-email' | 'scanner-check';
 
@@ -32,10 +38,30 @@ export interface RunnerSettings {
   readonly workerUrl: string;
   readonly caPem: string | undefined;
   readonly concurrency: number;
+  /** The installation's sender (self-hosted relays; used only while no platform sender was saved). */
   readonly email: EmailSettings;
   /**
+   * The key pair for provider secrets set in the product (WP-ADM-01), derived from the SECRET
+   * EMAIL_CREDENTIALS_KEY (worker only, never the web app): the worker publishes the public key and opens
+   * what the web app sealed with it. Undefined: e-mail settings saved in the product cannot be used (the
+   * pages say e-mail sending is not set up; messages wait) — nothing else stops working.
+   */
+  readonly emailCredentials: CredentialsKeyPair | null;
+  /**
+   * Why EMAIL_CREDENTIALS_KEY is set but not used (e.g. too short): only e-mail settings saved in the product
+   * are off then (logged at start-up) — the worker still runs. Names the variable, never the value.
+   */
+  readonly emailCredentialsProblem?: string | undefined;
+  /**
+   * EMAIL_PLATFORM_SMTP_ALLOW_PRIVATE=true (self-hosted operators only): the platform sender's SMTP relay set
+   * in the product may be on an internal network and use any port. Default false: like an organization's,
+   * public addresses and the submission ports 465, 587, 2525 only (SSRF; security review).
+   */
+  readonly allowPrivatePlatformSmtp: boolean;
+  /**
    * Public origin of the web app for links in e-mails (invitation accept links), without trailing
-   * slash. Required when e-mail is on; without it (e-mail off) invitations are not mailed.
+   * slash. Required when e-mail can be sent (EMAIL_CREDENTIALS_KEY or an installation sender); without it
+   * invitations are not mailed.
    */
   readonly appBaseUrl: string | undefined;
   /**
@@ -129,7 +155,9 @@ function readAppBaseUrl(env: NodeJS.ProcessEnv, required: boolean): string | und
   const raw = read(env, APP_BASE_URL_ENV);
   if (raw === undefined) {
     if (required) {
-      throw new ConfigurationError(`${APP_BASE_URL_ENV} must be set when e-mail is switched on`);
+      throw new ConfigurationError(
+        `${APP_BASE_URL_ENV} must be set when e-mail can be sent (${EMAIL_CREDENTIALS_KEY_ENV} or EMAIL_PROVIDER)`,
+      );
     }
     return undefined;
   }
@@ -316,6 +344,24 @@ function readImportSending(env: NodeJS.ProcessEnv): InvitationSending {
   return { intervalMs, dailyCap, trialDailyCap };
 }
 
+/**
+ * EMAIL_CREDENTIALS_KEY (SECRET, optional; WP-ADM-01): at least 32 characters. The key pair is derived from
+ * it. A value that cannot be used (too short) switches off only the e-mail settings saved in the product —
+ * the problem is returned for the start-up log (naming the variable, never the value); the worker still runs.
+ */
+function readEmailCredentials(env: NodeJS.ProcessEnv): {
+  readonly keys: CredentialsKeyPair | null;
+  readonly problem?: string;
+} {
+  const secret = env[EMAIL_CREDENTIALS_KEY_ENV];
+  if (secret === undefined || secret.trim() === '') return { keys: null };
+  try {
+    return { keys: deriveCredentialsKeyPair(secret) };
+  } catch (error) {
+    return { keys: null, problem: error instanceof Error ? error.message : 'unusable value' };
+  }
+}
+
 /** The worker warns (at start-up, then daily) once the Auth admin token has fewer days than this left. */
 export const ADMIN_KEY_WARN_DAYS = 30;
 
@@ -394,7 +440,12 @@ export function readSettings(
   if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 50) {
     throw new ConfigurationError('WORKER_CONCURRENCY must be a whole number from 1 to 50');
   }
-  const appBaseUrl = readAppBaseUrl(env, email.provider !== 'none');
+  const { keys: emailCredentials, problem: emailCredentialsProblem } = readEmailCredentials(env);
+  const privateSmtp = read(env, 'EMAIL_PLATFORM_SMTP_ALLOW_PRIVATE') ?? 'false';
+  if (privateSmtp !== 'true' && privateSmtp !== 'false') {
+    throw new ConfigurationError('EMAIL_PLATFORM_SMTP_ALLOW_PRIVATE must be true or false');
+  }
+  const appBaseUrl = readAppBaseUrl(env, email.provider !== 'none' || emailCredentials !== null);
   const authAdmin = readAuthAdmin(env);
   const orphanSweep = readOrphanSweep(env);
   const importSending = readImportSending(env);
@@ -405,6 +456,9 @@ export function readSettings(
     caPem,
     concurrency,
     email,
+    emailCredentials,
+    ...(emailCredentialsProblem ? { emailCredentialsProblem } : {}),
+    allowPrivatePlatformSmtp: privateSmtp === 'true',
     appBaseUrl,
     authAdmin,
     scanner,

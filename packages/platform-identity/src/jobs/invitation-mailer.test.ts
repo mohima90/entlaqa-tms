@@ -14,6 +14,7 @@ const db = vi.hoisted(() => ({
   loadInvitationForMail: vi.fn(),
   invitationCodeForMail: vi.fn(),
   invitationActorMayManage: vi.fn(),
+  noteInvitationMailSkipped: vi.fn(),
 }));
 const mail = vi.hoisted(() => ({ queueEmail: vi.fn() }));
 vi.mock('@jadarat/platform-db/jobs', () => db);
@@ -216,6 +217,8 @@ describe('invitation mailer', () => {
       'warning',
       'invitation event from a member who may no longer manage it; no e-mail',
     );
+    // T-M2-20: the users list shows the code as not e-mailed.
+    expect(db.noteInvitationMailSkipped).toHaveBeenCalledWith(tx, ID);
     expect(db.loadInvitationForMail).not.toHaveBeenCalled();
     expect(db.invitationCodeForMail).not.toHaveBeenCalled();
     expect(mail.queueEmail).not.toHaveBeenCalled();

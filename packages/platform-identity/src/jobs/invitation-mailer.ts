@@ -3,6 +3,7 @@ import {
   invitationActorMayManage,
   invitationCodeForMail,
   loadInvitationForMail,
+  noteInvitationMailSkipped,
 } from '@jadarat/platform-db/jobs';
 import type { TransactionalSubscriber, WorkerLogLevel } from '@jadarat/platform-jobs/jobs';
 import { isSafeLink } from '@jadarat/platform-notifications';
@@ -96,6 +97,9 @@ export function createInvitationMailer(options: InvitationMailerOptions): Transa
         ? (releasedInvitation?.sendRequestedBy ?? releasedInvitation?.invitedBy)
         : event.actorId;
       if (!actor || !(await invitationActorMayManage(tx, id, actor))) {
+        // T-M2-20: the users list must not show this code as e-mailed — it says «لم تُرسل الدعوة» / "Not
+        // sent" until a member who may manage it sends a new code.
+        await noteInvitationMailSkipped(tx, id);
         log('warning', 'invitation event from a member who may no longer manage it; no e-mail');
         return;
       }

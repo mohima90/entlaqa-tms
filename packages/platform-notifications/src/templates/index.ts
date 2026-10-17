@@ -1,6 +1,7 @@
 import type { AppLocale } from '@jadarat/platform-i18n';
 import type { z } from 'zod';
 import { accountLockedTemplate } from './account-locked';
+import { emailTestTemplate } from './email-test';
 import { invitationTemplate } from './invitation';
 import { mfaCodeLockedTemplate } from './mfa-code-locked';
 import { mfaFactorAddedTemplate } from './mfa-factor-added';
@@ -28,6 +29,7 @@ export const EMAIL_TEMPLATES = {
   'platform.account_locked': accountLockedTemplate,
   'platform.sign_in_unlocked': signInUnlockedTemplate,
   'platform.mfa_code_locked': mfaCodeLockedTemplate,
+  'platform.email_test': emailTestTemplate,
 } as const;
 
 export type EmailTemplateKey = keyof typeof EMAIL_TEMPLATES;

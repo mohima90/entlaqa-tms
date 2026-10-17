@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import type { ClaimsTx } from '../claims-tx';
+import { pgError } from '../pg-error';
 
 /**
  * Message delivery log (ADR 0008 §7; migration 20261008090000): jobs queue an e-mail with its rendered
@@ -55,6 +56,8 @@ export const CLAIM_LEASE_SECONDS = 300;
 export async function claimEmailDelivery(
   tx: ClaimsTx,
   id: string,
+  /** Whose sender it goes out with (message_deliveries.sender, WP-ADM-01), recorded with the claim. */
+  sender?: 'organization' | 'platform' | 'installation',
 ): Promise<ClaimedEmail | 'busy' | null> {
   const [current] = await tx.execute<{ status: string; leased: boolean }>(sql`
     select status, updated_at > now() - make_interval(secs => ${CLAIM_LEASE_SECONDS}) as leased
@@ -75,6 +78,7 @@ export async function claimEmailDelivery(
     where id = ${id}::uuid
     returning id, destination, subject, html_body, text_body, attempts`);
   if (!row) throw new Error('claimEmailDelivery: the delivery could not be claimed');
+  if (sender) await recordSender(tx, id, sender);
   return {
     id: row.id,
     destination: row.destination,
@@ -85,13 +89,34 @@ export async function claimEmailDelivery(
   };
 }
 
+/**
+ * The sender column arrives with migration 20261022100000 (expand-first: the worker may run before it): in a
+ * savepoint, and skipped while the column does not exist.
+ */
+async function recordSender(tx: ClaimsTx, id: string, sender: string): Promise<void> {
+  try {
+    await tx.transaction(async (savepoint) => {
+      await savepoint.execute(sql`
+        update platform.message_deliveries set sender = ${sender}
+        where id = ${id}::uuid and status = 'sending'`);
+    });
+  } catch (error) {
+    if (pgError(error)?.code !== '42703') throw error;
+  }
+}
+
 export type DeliveryOutcome =
   | {
       readonly status: 'sent';
       readonly provider: string;
       readonly providerMessageId: string | null;
     }
-  | { readonly status: 'failed' | 'suppressed'; readonly errorCode: string }
+  | {
+      readonly status: 'failed' | 'suppressed';
+      readonly errorCode: string;
+      /** The provider that refused it (an organization's own provider's errors are shown to its admins). */
+      readonly provider?: string | null;
+    }
   /** A temporary failure: waits for the next attempt, content kept. */
   | { readonly status: 'retry'; readonly errorCode: string };
 
@@ -121,7 +146,7 @@ function finish(tx: ClaimsTx, id: string, outcome: Exclude<DeliveryOutcome, { st
   return tx.execute(sql`
     update platform.message_deliveries
     set status = ${outcome.status},
-        provider = ${sent ? outcome.provider : null},
+        provider = ${outcome.provider ?? null},
         provider_message_id = ${sent ? outcome.providerMessageId : null},
         error_code = ${sent ? null : outcome.errorCode},
         sent_at = ${sent ? sql`now()` : sql`null`},

@@ -10,6 +10,7 @@ const db = vi.hoisted(() => ({
   loadInvitationForMail: vi.fn(),
   invitationCodeForMail: vi.fn(),
   invitationActorMayManage: vi.fn(),
+  noteInvitationMailSkipped: vi.fn(),
 }));
 const mail = vi.hoisted(() => ({ queueEmail: vi.fn() }));
 vi.mock('@jadarat/platform-db/jobs', () => db);
@@ -19,8 +20,10 @@ vi.mock('@jadarat/platform-notifications/jobs', async (original) => ({
 }));
 
 const deps = {
-  emailTransport: null,
-  emailFrom: { name: 'Jadarat', address: 'noreply@jadarat.example' },
+  emailRouter: {
+    resolve: () => Promise.resolve({ kind: 'wait' as const, code: 'NO_SENDER' as const }),
+    close: () => Promise.resolve(),
+  },
   log: vi.fn(),
 };
 
@@ -37,7 +40,7 @@ describe('worker subscribers', () => {
     expect(registry.forType('com.entlaqa.platform.invitation.resend_requested')).toHaveLength(1);
   });
 
-  it('without an origin (e-mail switched off) invitations are not mailed', () => {
+  it('without an origin invitations are not mailed', () => {
     const registry = createSubscriberRegistry(subscribers({ ...deps, appBaseUrl: undefined }));
     expect(registry.names).toEqual(['notifications.email']);
   });

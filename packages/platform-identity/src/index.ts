@@ -122,6 +122,12 @@ export {
   viewOrganizationAdminCode,
 } from './platform-console';
 export {
+  type PlatformEmailConsoleDeps,
+  type PlatformEmailInput,
+  loadPlatformEmailSettings,
+  savePlatformEmailSettingsFromConsole,
+} from './platform-email-console';
+export {
   type PasswordChangeDeps,
   type PasswordClientLike,
   type PasswordVerdict,

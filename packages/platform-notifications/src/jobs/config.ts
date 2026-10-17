@@ -5,7 +5,10 @@ import { createSmtpTransport, parseSmtpUrl } from './smtp';
 import type { EmailTransport, OutgoingEmail } from './transport';
 
 export interface EmailSettings {
-  /** `none`: e-mail is switched off and queued messages are recorded as suppressed. */
+  /**
+   * The installation's sender (self-hosted relays): `none` (or unset) — no installation sender; the sender is
+   * set in the product (Super Admin → Platform settings → Email; WP-ADM-01) and messages wait until then.
+   */
   readonly provider: 'resend' | 'smtp' | 'none';
   readonly from: OutgoingEmail['from'];
   createTransport(): EmailTransport | null;
@@ -17,18 +20,20 @@ const read = (env: NodeJS.ProcessEnv, name: string) => {
 };
 
 /**
- * E-mail settings of the worker (ADR 0008 §2; names in .env.example). Provider credentials exist only
- * in the worker's environment, never in the web app's (ADR 0005 §1). Error messages name variables,
- * never values.
+ * The installation's sender from the worker's environment (ADR 0008 §2; names in .env.example): for
+ * self-hosted installations whose operator runs the mail relay (SMTP) — used only while the Super Admin has
+ * not saved a platform sender in the product (WP-ADM-01, which wins once saved). The hosted SaaS sets none
+ * (PO, 16–17 Oct 2026: no e-mail settings in GitHub, Vercel or Supabase). Its credentials exist only in the
+ * worker's environment, never in the web app's (ADR 0005 §1). Error messages name variables, never values.
  */
 export function readEmailSettings(
   env: NodeJS.ProcessEnv,
   readFile: (path: string) => string = (path) => readFileSync(path, 'utf8'),
 ): EmailSettings {
-  // Explicit, never a default: a worker deployed without it must not silently drop every message.
-  const provider = read(env, 'EMAIL_PROVIDER');
+  // Unset = none: no installation sender (messages wait for the sender set in the product, never dropped).
+  const provider = read(env, 'EMAIL_PROVIDER') ?? 'none';
   if (provider !== 'resend' && provider !== 'smtp' && provider !== 'none') {
-    throw new Error('EMAIL_PROVIDER must be set to resend, smtp or none (e-mail switched off)');
+    throw new Error('EMAIL_PROVIDER must be resend, smtp or none (no installation sender)');
   }
   const address = read(env, 'EMAIL_FROM_ADDRESS') ?? '';
   const name = read(env, 'EMAIL_FROM_NAME') ?? 'Jadarat';

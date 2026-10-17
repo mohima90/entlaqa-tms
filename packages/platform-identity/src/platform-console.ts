@@ -95,7 +95,7 @@ function refusal(error: unknown): Result<never, AppError> {
  * session first (getUser).
  */
 export async function platformConsoleAccess(
-  deps: PlatformConsoleDeps,
+  deps: Pick<PlatformConsoleDeps, 'getClaims' | 'withUserTx' | 'isPlatformAdmin'>,
   options: { readonly strict: boolean } = { strict: false },
 ): Promise<Result<VerifiedClaims, AppError>> {
   const claims = await deps.getClaims(options);

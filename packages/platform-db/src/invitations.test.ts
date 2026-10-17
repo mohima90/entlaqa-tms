@@ -37,6 +37,10 @@ function fakeTx(...answers: Answer[]) {
       const q = dialect.sqlToQuery(query);
       // The custom-roles catalog check (deploy window): answered here, not recorded — unless the
       // test queued its own answer ({ present }).
+      // The skipped e-mails' function (WP-ADM-01, T-M2-20): present.
+      if (q.sql.includes("to_regprocedure('private.invitation_mail_skipped_ids()')")) {
+        return Promise.resolve([{ present: true }]);
+      }
       if (q.sql.includes('to_regclass(')) {
         const queued = answers[0];
         const first = Array.isArray(queued)
@@ -260,6 +264,7 @@ describe('listInvitations', () => {
     role_name_ar: null,
     role_name_en: null,
     privileged: false,
+    mail_not_sent: false,
   };
 
   it('maps rows, computes the state in SQL and says whether a code may be copied (never the code)', async () => {
@@ -282,7 +287,14 @@ describe('listInvitations', () => {
       additionalRoles: ['mentor'],
       hasCode: true,
       locale: 'en',
+      mailNotSent: false,
     });
+    // T-M2-20: the code was not e-mailed (the mailer skipped it) — the list says so.
+    const [skipped] = await listInvitations(fakeTx([{ ...row, mail_not_sent: true }]).tx);
+    expect(skipped?.mailNotSent).toBe(true);
+    expect(fake.executed[0]?.sql).toContain(
+      'from private.invitation_mail_skipped_ids() x) k on k.id = i.id',
+    );
     // Custom roles (EP-ROLES): their names, and whether the role is privileged, computed in SQL.
     const [custom] = await listInvitations(
       fakeTx([{ ...row, role_name_ar: 'مدقق', role_name_en: 'Auditor', privileged: true }]).tx,

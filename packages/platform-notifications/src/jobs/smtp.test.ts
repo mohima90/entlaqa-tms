@@ -1,6 +1,6 @@
-import { type AddressInfo } from 'node:net';
+import { type AddressInfo, type Socket, createServer } from 'node:net';
 import { SMTPServer } from 'smtp-server';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { classifySmtpError, createSmtpTransport, parseSmtpUrl } from './smtp';
 
 const DELIVERY_ID = '5b0e7c39-6d4c-4d36-9d0a-1f0d1d6c0f11';
@@ -225,5 +225,68 @@ describe('SMTP transport, STARTTLS with an untrusted certificate', () => {
     ).rejects.toMatchObject({ permanent: false });
     expect({ logins, received }).toEqual({ logins: [], received: 0 });
     await transport.close?.();
+  });
+});
+
+describe('SMTP transport, a server that answers slowly forever (tarpit; security review)', () => {
+  const connections: Socket[] = [];
+  let closed = 0;
+  // Greets, then sends one continuation line of its EHLO answer every 50 ms and never finishes it: every
+  // socket timeout is reset, only the send's own deadline ends it.
+  const server = createServer((socket) => {
+    connections.push(socket);
+    socket.on('close', () => {
+      closed += 1;
+    });
+    socket.on('error', () => undefined);
+    socket.write('220 tarpit.example ESMTP\r\n');
+    socket.once('data', () => {
+      const timer = setInterval(() => {
+        if (!socket.destroyed) socket.write('250-tarpit.example still thinking\r\n');
+      }, 50);
+      socket.on('close', () => {
+        clearInterval(timer);
+      });
+    });
+  });
+  let port = 0;
+
+  beforeAll(async () => {
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    port = (server.address() as AddressInfo).port;
+  });
+  afterAll(async () => {
+    for (const socket of connections) socket.destroy();
+    await new Promise<void>((resolve) => {
+      server.close(() => {
+        resolve();
+      });
+    });
+  });
+
+  it('gives up at its deadline with TIMEOUT (temporary) and closes the connection', async () => {
+    const transport = createSmtpTransport(
+      parseSmtpUrl(`smtp://127.0.0.1:${String(port)}`),
+      undefined,
+      {
+        deadlineMs: 400,
+      },
+    );
+    const started = Date.now();
+    await expect(
+      transport.send({
+        from: { name: 'Jadarat', address: 'no-reply@jadarat.example' },
+        to: 'ops@entlaqa.example',
+        subject: 's',
+        html: '<p>h</p>',
+        text: 't',
+        idempotencyKey: DELIVERY_ID,
+      }),
+    ).rejects.toMatchObject({ code: 'TIMEOUT', permanent: false });
+    expect(Date.now() - started).toBeLessThan(5_000);
+    // The worker's side of the connection is destroyed: the server sees it close.
+    await vi.waitFor(() => {
+      expect(closed).toBe(1);
+    });
   });
 });

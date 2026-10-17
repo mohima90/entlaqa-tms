@@ -12,12 +12,17 @@ import { type AppError, type Result, ok, parseInput } from '@jadarat/platform-co
 import {
   createOrganizationFromConsoleForRequest,
   reissueOrganizationAdminCodeForRequest,
+  savePlatformEmailSettingsForRequest,
   viewOrganizationAdminCodeForRequest,
 } from '@jadarat/platform-identity/auth';
 import { definePublicAction } from '@jadarat/platform-rbac';
 import { z } from 'zod';
 import { canonicalInviteLink } from '../lib/app-base-url-request';
-import { CreateOrganizationInput, OrganizationRefInput } from '../lib/platform-console-input';
+import {
+  CreateOrganizationInput,
+  OrganizationRefInput,
+  PlatformEmailSettingsInput,
+} from '../lib/platform-console-input';
 
 /** Untrusted: validated by the handler after the access check (review L6). */
 const Unvalidated = z.unknown();
@@ -64,4 +69,18 @@ export const reissueOrganizationAdminCodeAction = definePublicAction({
   input: Unvalidated,
   handler: async ({ input }) =>
     withLink(await reissueOrganizationAdminCodeForRequest(input, organizationRef)),
+});
+
+/**
+ * Platform settings → Email «حفظ وإرسال رسالة تجريبية» / Save and send test (WP-ADM-01): saves the platform
+ * sender (its secrets sealed on the server for the worker, never returned) and queues its test e-mail. The
+ * sender is verified only once the worker has sent it.
+ */
+export const savePlatformEmailSettingsAction = definePublicAction({
+  name: 'platform.console.save_email_settings',
+  input: Unvalidated,
+  handler: async ({ input }) =>
+    savePlatformEmailSettingsForRequest(input, (raw) =>
+      parseInput(PlatformEmailSettingsInput, raw),
+    ),
 });

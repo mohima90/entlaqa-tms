@@ -49,6 +49,14 @@ const pages = [
   // "not available here" state without a database.
   { path: '/ar/suite/admin/settings', lang: 'ar', dir: 'rtl', heading: 'الإعدادات العامة' },
   { path: '/en/suite/admin/settings', lang: 'en', dir: 'ltr', heading: 'General settings' },
+  // Settings → Email integration (WP-ADM-01): the frame and the "not available here" state without a database.
+  { path: '/en/suite/admin/settings/email', lang: 'en', dir: 'ltr', heading: 'Email integration' },
+  {
+    path: '/ar/suite/admin/settings/email',
+    lang: 'ar',
+    dir: 'rtl',
+    heading: 'تكامل البريد الإلكتروني',
+  },
   // A standard role's page (EP-ROLES): view only, without a database too.
   { path: '/en/suite/admin/roles/hr_manager', lang: 'en', dir: 'ltr', heading: 'HR Manager' },
   { path: '/ar/suite/admin/roles/learner', lang: 'ar', dir: 'rtl', heading: 'موظف' },

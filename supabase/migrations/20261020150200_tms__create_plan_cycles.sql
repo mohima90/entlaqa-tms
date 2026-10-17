@@ -4,8 +4,9 @@
 -- instructions are written by the L&D Manager for department heads (no personal data expected).
 --
 --   tms.plan_cycles             the cycle: names (AR/EN), planning period, deadline for department forms,
---                               instructions (AR/EN), reminder days, the organization's currency (copied from
---                               General settings when the cycle is created — BR-PLN-i, one currency in R1),
+--                               instructions (AR/EN), reminder days, the needs form (needs_form_id, no foreign
+--                               key yet), the organization's currency (copied from General settings when the
+--                               cycle is created — BR-PLN-i, one currency in R1),
 --                               status and when / by whom it was launched and closed.
 --   tms.plan_cycle_scope        what the L&D Manager picked: departments (any level; a unit includes everything
 --                               under it) and/or branches (their departments).
@@ -80,6 +81,9 @@ create table tms.plan_cycles (
       instructions_en is null or (char_length(instructions_en) between 1 and 4000 and private.has_visible_text(instructions_en))),
   reminder_days smallint[] not null default '{7,2}'
     constraint plan_cycles_reminder_days_check check (private.plan_reminder_days_valid(reminder_days)),
+  -- The needs form department heads fill in (customizable per organization, PO 17 Oct 2026; form builder
+  -- built separately). No foreign key yet: added, with the form lock at launch, when the forms library merges.
+  needs_form_id uuid,
   -- Set from General settings on insert (private.plan_cycles_guard); never changed afterwards.
   currency char(3) not null default 'SAR'
     constraint plan_cycles_currency_check check (currency ~ '^[A-Z]{3}$'),
@@ -287,10 +291,10 @@ begin
 
   if old.status = 'open' then
     if (new.name_ar, new.name_en, new.period_start_on, new.period_end_on, new.instructions_ar, new.instructions_en,
-        new.reminder_days)
+        new.reminder_days, new.needs_form_id)
        is distinct from
        (old.name_ar, old.name_en, old.period_start_on, old.period_end_on, old.instructions_ar, old.instructions_en,
-        old.reminder_days) then
+        old.reminder_days, old.needs_form_id) then
       raise exception 'only the deadline of an open planning cycle can change' using errcode = 'JK001';
     end if;
     if new.status = 'open' then
@@ -391,9 +395,9 @@ create policy plan_cycles_delete on tms.plan_cycles for delete to authenticated
 revoke all on tms.plan_cycles from public, anon;
 grant select, delete on tms.plan_cycles to authenticated;
 grant insert (tenant_id, name_ar, name_en, period_start_on, period_end_on, deadline_on, instructions_ar, instructions_en,
-              reminder_days) on tms.plan_cycles to authenticated;
+              reminder_days, needs_form_id) on tms.plan_cycles to authenticated;
 grant update (name_ar, name_en, period_start_on, period_end_on, deadline_on, instructions_ar, instructions_en,
-              reminder_days, status) on tms.plan_cycles to authenticated;
+              reminder_days, needs_form_id, status) on tms.plan_cycles to authenticated;
 
 alter table tms.plan_cycle_scope enable row level security;
 alter table tms.plan_cycle_scope force row level security;

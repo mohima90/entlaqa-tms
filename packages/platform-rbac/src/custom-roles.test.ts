@@ -15,6 +15,7 @@ import {
   standardRoleScope,
 } from './custom-roles';
 import { platformPermissions } from './platform-permissions';
+import { tmsPlanningPermissions } from './tms-planning-permissions';
 import { ROLE_TEMPLATES, roleStartValues } from './role-templates';
 import { SYSTEM_ROLES, getSystemRole } from './system-roles';
 
@@ -26,11 +27,19 @@ function migration(suffix: string): string {
   return readFileSync(join(migrationsDir, file), 'utf8');
 }
 
+/** The catalogue seed and the migrations that add module permissions to it (EP-PLN: planning). */
+function catalogueMigrations(): string {
+  return [
+    migration('_platform__create_permission_catalogue.sql'),
+    migration('_platform__add_planning_permissions.sql'),
+  ].join('\n');
+}
+
 /** (code, risk, custom_role_use, privileged) rows of the permission catalogue seed. */
 function seededPermissions() {
   return [
-    ...migration('_platform__create_permission_catalogue.sql').matchAll(
-      /\('(platform\.[a-z_]+\.[a-z_]+)', '(low|medium|high)', '([a-z_]+)', (true|false), \d+\)/g,
+    ...catalogueMigrations().matchAll(
+      /\('((?:platform|tms)\.[a-z_]+\.[a-z_]+)', '(low|medium|high)', '([a-z_]+)', (true|false), \d+\)/g,
     ),
   ].map((m) => ({ code: m[1], risk: m[2], use: m[3], privileged: m[4] === 'true' }));
 }
@@ -38,15 +47,18 @@ function seededPermissions() {
 /** (role, permission, scope) rows of the standard roles' grants seed. */
 function seededGrants() {
   return [
-    ...migration('_platform__create_permission_catalogue.sql').matchAll(
-      /\('([a-z_]+)', '(platform\.[a-z_]+\.[a-z_]+)', '([a-z_]+)'\)/g,
+    ...catalogueMigrations().matchAll(
+      /\('([a-z_]+)', '((?:platform|tms)\.[a-z_]+\.[a-z_]+)', '([a-z_]+)'\)/g,
     ),
   ].map((m) => `${m[1] ?? ''}:${m[2] ?? ''}:${m[3] ?? ''}`);
 }
 
 describe('permission catalogue and standard grants (EP-ROLES, drift checks)', () => {
   it('platform.ref_permissions lists every platform permission with its risk and custom-role use', () => {
-    const expected = Object.values(platformPermissions).map((permission) => ({
+    const expected = [
+      ...Object.values(platformPermissions),
+      ...Object.values(tmsPlanningPermissions),
+    ].map((permission) => ({
       code: permission.code,
       risk: permission.risk,
       use: customRolePermission(permission.code)?.use ?? 'none',
@@ -68,7 +80,9 @@ describe('permission catalogue and standard grants (EP-ROLES, drift checks)', ()
     expect(customRolePermission('platform.role.assign_privileged')).toBeUndefined();
     expect(customRolePermission('platform.role.manage')).toBeUndefined();
     // The catalogue: every other platform permission, once, in a named group.
-    expect(CUSTOM_ROLE_PERMISSIONS).toHaveLength(Object.keys(platformPermissions).length - 2);
+    expect(CUSTOM_ROLE_PERMISSIONS).toHaveLength(
+      Object.keys(platformPermissions).length - 2 + Object.keys(tmsPlanningPermissions).length,
+    );
     for (const entry of CUSTOM_ROLE_PERMISSIONS) {
       expect(PERMISSION_GROUPS).toContain(entry.group);
       expect(PERMISSION_GROUP_NAMES[entry.group].ar.trim()).not.toBe('');

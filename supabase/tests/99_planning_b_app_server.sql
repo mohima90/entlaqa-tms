@@ -94,6 +94,8 @@ begin
   perform tests.assert_eq((select currency from tms.plan_cycles where id = v_id), 'AED'::char(3),
     'BR-PLN-i: the currency comes from General settings');
   perform tests.assert_eq((select status from tms.plan_cycles where id = v_id), 'draft', 'a new cycle is a draft');
+  perform tests.assert_eq(tests.rows_affected(format($q$update tms.plan_cycles set needs_form_id = gen_random_uuid() where id = %L$q$, v_id)),
+    1::bigint, 'a draft takes a needs form (no foreign key until the forms library merges)');
   perform tests.assert_eq((select created_by from tms.plan_cycles where id = v_id), 'a1000000-0000-4000-8000-00000000e0a1'::uuid,
     'who created it comes from the claims');
 
@@ -253,6 +255,8 @@ begin
     array['JK001'], 'an open cycle keeps its names');
   perform tests.assert_fails(format($q$update tms.plan_cycles set reminder_days = '{1}' where id = %L$q$, v_id),
     array['JK001'], 'an open cycle keeps its reminders');
+  perform tests.assert_fails(format($q$update tms.plan_cycles set needs_form_id = gen_random_uuid() where id = %L$q$, v_id),
+    array['JK001'], 'an open cycle keeps its needs form');
   perform tests.assert_fails(format($q$update tms.plan_cycles set deadline_on = current_date - 1 where id = %L$q$, v_id),
     array['JK004'], 'the deadline never moves earlier');
   perform tests.assert_check_constraint(format($q$update tms.plan_cycles set deadline_on = period_end_on + 1 where id = %L$q$, v_id),

@@ -31,6 +31,7 @@ describe('grantsForAssignments', () => {
       { permission: 'platform.user.read', scope: { type: 'tenant' }, validUntil: until },
       { permission: 'platform.role.read', scope: { type: 'tenant' }, validUntil: until },
       { permission: 'platform.org.read', scope: { type: 'tenant' }, validUntil: until },
+      { permission: 'tms.plan_cycle.read', scope: { type: 'tenant' }, validUntil: until },
     ]);
     expect(grantsForAssignments([{ roleCode: 'learner' }], none)).toEqual([
       { permission: 'platform.user.read', scope: { type: 'own' } },
@@ -126,8 +127,12 @@ describe('canAssignRole (ADR 0003 §5; PO decisions 5 Oct 2026 and 17 Oct 2026)'
 
   it('lets an HR Manager give the ordinary roles whose permissions they hold, no privileged one', () => {
     const hr = subjectOf('aal2', [], { roleCode: 'hr_manager' });
-    for (const code of ['learner', 'training_manager', 'training_coordinator', 'department_head']) {
+    for (const code of ['learner', 'department_head']) {
       expect(canAssignRole(hr, standard(code))).toBe(true);
+    }
+    // Since EP-PLN (T-M3-04) the training roles hold planning permissions the HR Manager does not hold.
+    for (const code of ['training_manager', 'training_coordinator']) {
+      expect(canAssignRole(hr, standard(code))).toBe(false);
     }
     for (const code of ['tenant_admin', 'hr_manager']) {
       expect(canAssignRole(hr, standard(code))).toBe(false);

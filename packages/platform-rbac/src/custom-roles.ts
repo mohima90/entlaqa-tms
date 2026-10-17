@@ -1,5 +1,6 @@
 import type { LocalizedText, PermissionDefinition } from './permissions';
 import { platformPermissions } from './platform-permissions';
+import { tmsPlanningPermissions } from './tms-planning-permissions';
 import type { RoleScope, SystemRoleDefinition } from './system-roles';
 
 /**
@@ -45,7 +46,15 @@ export const CUSTOM_ROLE_SCOPE_MAP: Readonly<Record<CustomRoleScope, RoleScope>>
 export type CustomRoleUse = 'scoped' | 'organization' | 'organization_only';
 
 /** Module headings of the permissions accordion (Kawadir "categories"). */
-export const PERMISSION_GROUPS = ['people', 'roles', 'organization', 'settings', 'audit'] as const;
+export const PERMISSION_GROUPS = [
+  'people',
+  'roles',
+  'organization',
+  'settings',
+  'audit',
+  // TMS module (EP-PLN, T-M3-04).
+  'planning',
+] as const;
 export type PermissionGroup = (typeof PERMISSION_GROUPS)[number];
 
 export const PERMISSION_GROUP_NAMES: Readonly<Record<PermissionGroup, LocalizedText>> = {
@@ -54,6 +63,7 @@ export const PERMISSION_GROUP_NAMES: Readonly<Record<PermissionGroup, LocalizedT
   organization: { ar: 'الهيكل التنظيمي', en: 'Organization structure' },
   settings: { ar: 'إعدادات المنظمة والأمان', en: 'Organization settings and security' },
   audit: { ar: 'سجل التدقيق', en: 'Audit log' },
+  planning: { ar: 'التخطيط', en: 'Planning' },
 };
 
 export interface CustomRolePermission {
@@ -84,10 +94,23 @@ export const CUSTOM_ROLE_PERMISSIONS: readonly CustomRolePermission[] = [
   { permission: p['platform.tenant.manage'], group: 'settings', use: 'organization_only' },
   { permission: p['platform.security.manage'], group: 'settings', use: 'organization_only' },
   { permission: p['platform.audit.read'], group: 'audit', use: 'organization_only' },
+  // Planning cycles span departments: organization-wide only (migration 20261020150000).
+  {
+    permission: tmsPlanningPermissions['tms.plan_cycle.read'],
+    group: 'planning',
+    use: 'organization_only',
+  },
+  {
+    permission: tmsPlanningPermissions['tms.plan_cycle.manage'],
+    group: 'planning',
+    use: 'organization_only',
+  },
 ];
 
 const PERMISSIONS_BY_CODE: ReadonlyMap<string, PermissionDefinition> = new Map(
-  Object.values(platformPermissions).map((permission) => [permission.code, permission]),
+  [...Object.values(platformPermissions), ...Object.values(tmsPlanningPermissions)].map(
+    (permission) => [permission.code, permission],
+  ),
 );
 
 const BY_CODE: ReadonlyMap<string, CustomRolePermission> = new Map(

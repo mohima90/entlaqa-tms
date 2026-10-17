@@ -1,10 +1,10 @@
-import { definePermissions } from '@jadarat/platform-rbac';
+import { definePermissions, tmsPlanningPermissions } from '@jadarat/platform-rbac';
 
 /**
  * TMS permission registry (ADR 0003 §3). Labels follow docs/design/content/glossary-ar-en.md.
  * The full set is derived from BRD Appendix B in M2.
  */
-export const tmsPermissions = definePermissions('tms', [
+const tmsSessionPermissions = definePermissions('tms', [
   {
     code: 'tms.session.read',
     label: { ar: 'عرض الجلسات', en: 'View sessions' },
@@ -33,3 +33,6 @@ export const tmsPermissions = definePermissions('tms', [
     requiresAal2: false,
   },
 ]);
+
+/** Every TMS permission: sessions (skeleton) and planning cycles (declared in platform-rbac, EP-PLN). */
+export const tmsPermissions = { ...tmsSessionPermissions, ...tmsPlanningPermissions };

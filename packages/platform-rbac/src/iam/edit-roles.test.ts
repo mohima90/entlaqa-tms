@@ -156,13 +156,8 @@ describe('edit role query', () => {
     const query = createDefineQuery(runtime(['hr_manager']).rt)(editRolesQueryDefinition());
     const result = await query({ personId: SARA });
     const assignable = result.ok ? result.value.choices.filter((c) => c.assignable) : [];
-    expect(assignable.map((c) => c.code)).toEqual([
-      'training_manager',
-      'training_coordinator',
-      'department_head',
-      'learner',
-      READER.code,
-    ]);
+    // Not the training roles (EP-PLN, T-M3-04): they hold planning permissions the HR Manager does not hold.
+    expect(assignable.map((c) => c.code)).toEqual(['department_head', 'learner', READER.code]);
     expect(result.ok && result.value.privilegedAccess).toBe('denied');
   });
 

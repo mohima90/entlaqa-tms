@@ -237,6 +237,14 @@ export {
   updateOrganizationProfile,
 } from './tenant-settings';
 export { type OrgUnitOption, type OrgUnitOptions, listOrgUnitOptions } from './org';
+export {
+  type MemberOption,
+  type OrgBranch,
+  type OrgDepartment,
+  type OrgStructure,
+  listMemberOptions,
+  listOrgStructure,
+} from './org-directory';
 export { EVENT_TYPE_PATTERN, type EmittedEvent, emitEvent } from './events';
 export { type PersonalDetails, getPersonalDetails, updatePersonalDetails } from './my-profile';
 export {

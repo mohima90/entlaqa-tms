@@ -180,7 +180,13 @@ describe.skipIf(!configured)('changing roles against PostgreSQL', () => {
   });
 
   it('HR Manager: ordinary roles of ordinary members only (standard and custom, by permission)', async () => {
-    expect(await change(hr, sara.person, 'training_manager')).toMatchObject({
+    // Since EP-PLN (T-M3-04) the L&D Manager holds planning permissions the HR Manager does not hold
+    // (nobody gives a permission they do not hold): refused; the Department Head is an ordinary role HR gives.
+    expect(await change(hr, sara.person, 'training_manager')).toEqual({
+      ok: false,
+      refusal: 'not_allowed',
+    });
+    expect(await change(hr, sara.person, 'department_head')).toMatchObject({
       ok: true,
       changed: true,
     });

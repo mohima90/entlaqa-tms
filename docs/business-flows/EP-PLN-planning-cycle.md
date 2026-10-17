@@ -25,7 +25,7 @@ Once a year the L&D Manager asks every Department Head what training their team 
 
 ## 3. Step-by-step flow
 **A. Prerequisites (before the first cycle)**
-1. **HR Manager → Organization → Departments**: builds the department tree (and branches) and picks a **department head** for each department (FR-ADM-04, 05). Sub-departments without their own head belong to the nearest parent head.
+1. **HR Manager → Organization → Structure**: defines the organization's own levels (default one level, Department), builds the tree (and branches) and picks a **head** per unit (FR-ADM-04, 05; [`EP-ORG`](EP-ORG-organization-structure.md), agreed 17 Oct 2026). Units without their own head belong to the nearest head above. "Department" below means a unit of the structure at any level.
 2. **L&D Manager → Courses**: creates the course library — code, title (AR/EN), description, category, delivery type, duration, minimum/maximum participants, **estimated cost for planning** (FR-CAT-01, 10). The Training Coordinator can add and edit courses.
 3. **L&D Manager → Planning → Settings** (once): default approval chain (Department Head → Finance approver → management approver) and default reminder days (7 and 2 days before the deadline).
 

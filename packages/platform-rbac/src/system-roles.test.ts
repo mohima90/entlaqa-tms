@@ -5,7 +5,6 @@ import { coursePermissions } from './course-permissions';
 import { CATALOGUE_PERMISSIONS } from './custom-roles';
 import { MEMBER_GRANTS } from './member-permissions';
 import { platformPermissions } from './platform-permissions';
-import { tmsPlanningPermissions } from './tms-planning-permissions';
 import {
   FORMER_ROLE_NAMES,
   SYSTEM_ROLES,

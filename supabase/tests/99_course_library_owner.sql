@@ -78,13 +78,13 @@ do $$
 begin
   perform tests.assert_eq(
     (select string_agg(format('%s:%s:%s:%s', code, risk, custom_role_use, privileged), ' ' order by code collate "C")
-     from platform.ref_permissions where code like 'tms.%'),
+     from platform.ref_permissions where code like 'tms.course%'),
     'tms.course.archive:medium:organization_only:f tms.course.manage:medium:organization_only:f '
     'tms.course.read:low:organization:f tms.course_cost.read:low:organization:f',
     'the four course permissions are in the catalogue, none privileged');
   perform tests.assert_eq(
     (select string_agg(format('%s:%s', role_code, permission_code), ' ' order by role_code collate "C", permission_code collate "C")
-     from platform.ref_role_permissions where permission_code like 'tms.%' and scope = 'tenant'),
+     from platform.ref_role_permissions where permission_code like 'tms.course%' and scope = 'tenant'),
     'department_head:tms.course.read department_head:tms.course_cost.read '
     'hr_manager:tms.course.read hr_manager:tms.course_cost.read '
     'training_coordinator:tms.course.manage training_coordinator:tms.course.read training_coordinator:tms.course_cost.read '

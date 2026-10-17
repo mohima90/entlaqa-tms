@@ -65,7 +65,7 @@ begin
     'planning permissions in the catalogue');
   perform tests.assert_eq(
     (select string_agg(role_code || ':' || permission_code || ':' || scope, ',' order by role_code, permission_code)
-     from platform.ref_role_permissions where permission_code like 'tms.%'),
+     from platform.ref_role_permissions where permission_code like 'tms.plan\_cycle.%'),
     'training_coordinator:tms.plan_cycle.read:tenant,training_manager:tms.plan_cycle.manage:tenant,training_manager:tms.plan_cycle.read:tenant',
     'planning permissions: L&D Manager manages, Training Coordinator reads, nobody else (Organization Admin none)');
   perform tests.assert(not private.role_is_privileged('a0000000-0000-4000-8000-000000000001', 'training_manager'),

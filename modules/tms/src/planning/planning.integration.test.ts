@@ -117,6 +117,9 @@ describe.skipIf(!configured)('planning cycles against PostgreSQL', () => {
           select tenant_id, id, ${m.role}, true from platform.tenant_memberships where user_id = ${m.user}`);
       }
     }
+    // Two levels of structure (EP-ORG: a new organization starts with one; no unit below the last level).
+    await run(sql`insert into platform.structure_levels (tenant_id, ordinal, name_en, name_ar)
+      values (${tenant}, 2, 'Section', 'قسم')`);
     await run(sql`insert into platform.departments (id, tenant_id, code, name_ar, name_en, head_person_id) values
       (${dept.sales}, ${tenant}, 'SAL', 'المبيعات', 'Sales', ${people.head.person}),
       (${dept.ops}, ${tenant}, 'OPS', 'العمليات', 'Operations', null),

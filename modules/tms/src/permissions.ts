@@ -1,4 +1,8 @@
-import { coursePermissions, definePermissions, tmsPlanningPermissions } from '@jadarat/platform-rbac';
+import {
+  coursePermissions,
+  definePermissions,
+  tmsPlanningPermissions,
+} from '@jadarat/platform-rbac';
 
 /**
  * TMS permission registry (ADR 0003 §3). Labels follow docs/design/content/glossary-ar-en.md.

@@ -41,6 +41,10 @@ describe.skipIf(!configured)('people reads through defineQuery against PostgreSQ
   // The lead holds a custom «Line Manager» role (EP-ROLES: line managers come from the reporting line;
   // the template's scope is their team) — read from the database on every request.
   const lineManagerRole = { id: id(), code: `custom_${id().replaceAll('-', '').slice(0, 12)}` };
+  // A custom role limited to «A department» (EP-ORG, T-M3-09): each holder sees the ONE unit picked for
+  // them and everything under it — trainingLead the Training unit (with the Academy), academyLead the
+  // Academy only. Given after the units exist (the unit is stored on the assignment).
+  const unitRole = { id: id(), code: `custom_${id().replaceAll('-', '').slice(0, 12)}` };
   const people = {
     admin: member('tenant_admin'),
     head: member('department_head'),
@@ -50,6 +54,8 @@ describe.skipIf(!configured)('people reads through defineQuery against PostgreSQ
     report1: member(null),
     report2: member(null),
     unplaced: member(null),
+    trainingLead: member(null),
+    academyLead: member(null),
   };
   const outsider = member('tenant_admin');
   const all = [...Object.values(people), outsider];
@@ -108,6 +114,10 @@ describe.skipIf(!configured)('people reads through defineQuery against PostgreSQ
       values (${tenant}, ${lineManagerRole.id}, 'platform.user.read'),
              (${tenant}, ${lineManagerRole.id}, 'platform.role.read'),
              (${tenant}, ${lineManagerRole.id}, 'platform.org.read')`);
+    await run(sql`insert into platform.custom_roles (id, tenant_id, code, name_en, name_ar, data_scope)
+      values (${unitRole.id}, ${tenant}, ${unitRole.code}, 'Unit reader', 'قارئ الوحدة', 'departments')`);
+    await run(sql`insert into platform.custom_role_permissions (tenant_id, custom_role_id, permission_code)
+      values (${tenant}, ${unitRole.id}, 'platform.user.read')`);
     for (const [index, m] of all.entries()) {
       const tenantId = m === outsider ? otherTenant : tenant;
       await run(
@@ -141,12 +151,24 @@ describe.skipIf(!configured)('people reads through defineQuery against PostgreSQ
     await employ(people.report1, dept.academy, people.lead.person);
     await employ(people.report2, dept.finance, people.report1.person);
     await employ(people.learner, dept.training, people.lead.person);
+    for (const [holder, unit] of [
+      [people.trainingLead, dept.training],
+      [people.academyLead, dept.academy],
+    ] as const) {
+      await run(sql`insert into platform.role_assignments (tenant_id, membership_id, role_code, is_primary, scope_unit_id)
+        select tenant_id, id, ${unitRole.code}, true, ${unit}::uuid
+        from platform.tenant_memberships where user_id = ${holder.user}`);
+    }
   });
 
   afterAll(async () => {
     const run = (query: ReturnType<typeof sql>) => ownerDb.execute(query);
     for (const tenantId of [tenant, otherTenant]) {
       await run(sql`delete from platform.person_employment where tenant_id = ${tenantId}`);
+      // Roles limited to a unit point at it: they go first.
+      await run(
+        sql`delete from platform.role_assignments where tenant_id = ${tenantId} and scope_unit_id is not null`,
+      );
       await run(
         sql`delete from platform.departments where tenant_id = ${tenantId} and parent_id is not null`,
       );
@@ -172,6 +194,9 @@ describe.skipIf(!configured)('people reads through defineQuery against PostgreSQ
     report1: [],
     report2: [],
     unplaced: [],
+    // The picked unit and everything under it — never the units above, never the reporting line.
+    trainingLead: [people.head, people.learner, people.report1],
+    academyLead: [people.report1],
   };
 
   it.each(Object.keys(expected) as (keyof typeof people)[])(

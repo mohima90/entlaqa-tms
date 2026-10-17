@@ -142,6 +142,9 @@ describe.skipIf(!configured)('changing roles against PostgreSQL', () => {
       ok: true,
       before: 'learner',
       after: 'training_coordinator',
+      // No unit: neither role is a department-limited custom role (EP-ORG).
+      beforeUnit: null,
+      afterUnit: null,
       changed: true,
     });
     const [stored] = await owner<{ codes: string[] }[]>`

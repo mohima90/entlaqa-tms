@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Jadarat TMS module: domain services, server actions, permissions (schema `tms`). Course library (T-M3-03), planning cycles (EP-PLN).",
+  "description": "Jadarat TMS module: domain services, server actions, permissions (schema `tms`). Course library (T-M3-03), planning cycles (EP-PLN), needs forms (T-M3-10).",
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
@@ -11,6 +11,8 @@
     "./actions/planning": "./src/actions/planning.ts",
     "./courses": "./src/courses/shared.ts",
     "./courses/server": "./src/courses/server.ts",
+    "./needs-forms": "./src/needs-forms/index.ts",
+    "./needs-forms/server": "./src/needs-forms/server.ts",
     "./planning-model": "./src/planning/model.ts",
     "./planning-rules": "./src/planning/rules.ts"
   },

@@ -37,6 +37,8 @@ describe('grantsForAssignments', () => {
       { permission: 'tms.course.manage', scope: { type: 'tenant' }, validUntil: until },
       // Planning cycles (EP-PLN, T-M3-04): read organization-wide.
       { permission: 'tms.plan_cycle.read', scope: { type: 'tenant' }, validUntil: until },
+      // Needs forms (T-M3-10): read organization-wide.
+      { permission: 'tms.needs_form.read', scope: { type: 'tenant' }, validUntil: until },
     ]);
     expect(grantsForAssignments([{ roleCode: 'learner' }], none)).toEqual([
       { permission: 'platform.user.read', scope: { type: 'own' } },
@@ -171,9 +173,9 @@ describe('canAssignRole (ADR 0003 §5; PO decisions 5 Oct 2026 and 17 Oct 2026)'
     for (const code of ['learner', 'department_head']) {
       expect(canAssignRole(hr, standard(code))).toBe(true);
     }
-    // T-M3-03 / T-M3-04: the L&D Manager and the Training Coordinator change the course library and hold
-    // planning permissions, which the HR Manager does not — nobody gives a permission they do not hold
-    // (EP-ROLES; PO decision pending).
+    // T-M3-03 / T-M3-04 / T-M3-10: the L&D Manager and the Training Coordinator change the course library
+    // and hold planning and needs-form permissions, which the HR Manager does not — nobody gives a
+    // permission they do not hold (EP-ROLES; PO decision pending).
     for (const code of ['tenant_admin', 'hr_manager', 'training_manager', 'training_coordinator']) {
       expect(canAssignRole(hr, standard(code))).toBe(false);
     }

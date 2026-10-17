@@ -86,7 +86,8 @@ const form = {
   managerPersonId: '',
   employeeNumber: 'EMP-١٤٥٠',
   // An ordinary role whose permissions the HR Manager holds (since T-M3-03 the Training Coordinator's
-  // course permissions and, since T-M3-04, the training roles' planning permissions are not the HR Manager's).
+  // course permissions and, since T-M3-04 / T-M3-10, the training roles' planning and needs-form permissions
+  // are not the HR Manager's).
   role: 'department_head',
   locale: 'ar' as const,
 };

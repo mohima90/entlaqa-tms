@@ -80,9 +80,9 @@ begin
     1::bigint, 'HR: can give an ordinary standard role whose permissions they hold');
   perform tests.assert_eq(tests.rows_affected(format($q$delete from platform.role_assignments where membership_id = %L$q$, v_inv)),
     1::bigint, 'HR: can remove it again');
-  -- T-M3-03 / T-M3-04: the Training Coordinator and the L&D Manager change the course library
-  -- (tms.course.manage, tms.course.archive) and hold planning permissions (tms.plan_cycle.*), which the HR
-  -- Manager does not hold — nobody gives a permission they do not hold.
+  -- T-M3-03 / T-M3-04 / T-M3-10: the Training Coordinator and the L&D Manager change the course library
+  -- (tms.course.manage, tms.course.archive) and hold planning and needs-form permissions (tms.plan_cycle.*,
+  -- tms.needs_form.*), which the HR Manager does not hold — nobody gives a permission they do not hold.
   perform tests.assert_fails_like(format($q$insert into platform.role_assignments (membership_id, role_code) values (%L, 'training_coordinator')$q$, v_inv),
     'only an Organization Admin or an HR Manager can give or remove roles',
     'HR: cannot give the Training Coordinator role (course permissions they do not hold)');

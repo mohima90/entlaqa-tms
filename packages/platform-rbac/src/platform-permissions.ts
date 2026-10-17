@@ -174,3 +174,36 @@ export const platformPermissions = definePermissions('platform', [
 ]);
 
 export type PlatformPermissionCode = keyof typeof platformPermissions;
+
+/**
+ * Module permissions that STANDARD roles grant (system-roles.ts) and the permission catalogue lists
+ * (`platform.ref_permissions`, drift test in custom-roles.test.ts). platform-rbac never imports a module
+ * (ADR 0001), so they are declared here; the TMS module re-exports them (modules/tms permissions.ts).
+ * None is part of a custom role yet: the role builder offers only what the Organization Admin holds, and
+ * the Organization Admin holds no training permission (BR-IAM-4).
+ */
+export const tmsRolePermissions = definePermissions('tms', [
+  {
+    // T-M3-10 (FR-PLN-02/03; PO, 17 Oct 2026): the needs forms library and builder.
+    code: 'tms.needs_form.read',
+    label: { ar: 'عرض نماذج الاحتياجات', en: 'View needs forms' },
+    description: {
+      ar: 'عرض نماذج الاحتياجات التدريبية وأقسامها وحقولها',
+      en: 'View the training needs forms, their sections and fields',
+    },
+    risk: 'low',
+    requiresAal2: false,
+  },
+  {
+    code: 'tms.needs_form.manage',
+    label: { ar: 'تصميم نماذج الاحتياجات', en: 'Design needs forms' },
+    description: {
+      ar: 'إنشاء نماذج الاحتياجات التدريبية وتعديلها ونسخها وحذفها وتعيين النموذج الافتراضي',
+      en: 'Create, change, duplicate and delete training needs forms and choose the default form',
+    },
+    risk: 'medium',
+    requiresAal2: false,
+  },
+]);
+
+export type TmsRolePermissionCode = keyof typeof tmsRolePermissions;

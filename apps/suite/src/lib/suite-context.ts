@@ -7,6 +7,7 @@ import {
   loadMemberGrants,
   platformPermissions,
   tmsPlanningPermissions,
+  tmsRolePermissions as tmsPermissions,
 } from '@jadarat/platform-rbac';
 import { redirect } from 'next/navigation';
 import { getConfigStatus } from './config-status';
@@ -73,6 +74,8 @@ export interface SuiteNavigationAccess {
   readonly courses: boolean;
   /** Planning cycles and planning settings (EP-PLN, T-M3-04): organization-wide tms.plan_cycle.read. */
   readonly planning: boolean;
+  /** Planning → Needs forms (T-M3-10): members who read the needs forms organization-wide. */
+  readonly needsForms: boolean;
 }
 
 /**
@@ -96,6 +99,7 @@ export function navigationFor(grants: readonly Grant[] | null): SuiteNavigationA
       training: true,
       courses: true,
       planning: true,
+      needsForms: true,
     };
   }
   const tenantWide = (code: string) =>
@@ -114,6 +118,7 @@ export function navigationFor(grants: readonly Grant[] | null): SuiteNavigationA
     training: !organizationSetup,
     courses: tenantWide(coursePermissions['tms.course.read'].code),
     planning: tenantWide(tmsPlanningPermissions['tms.plan_cycle.read'].code),
+    needsForms: !organizationSetup && tenantWide(tmsPermissions['tms.needs_form.read'].code),
   };
 }
 

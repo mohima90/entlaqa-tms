@@ -397,7 +397,7 @@ begin
     0::bigint, 'a revoked invitation cannot be reopened');
   -- A new invitation for the same person once the first one is revoked; but only one pending.
   execute format(ins, 'd1', 'new1@a.test', 'learner', '{}') into v_id;
-  perform tests.assert_fails(format(ins, 'd1', 'new1@a.test', 'department_head', '{}'), array['23505'], 'one pending invitation per person');
+  perform tests.assert_fails(format(ins, 'd1', 'new1@a.test', 'department_head', '{}'), array['23505'], 'one pending invitation per person (T-M3-10: department_head, which HR may give)');
 
   perform tests.assert_fails_like(format(ins, 'd2', 'new2@a.test', 'hr_manager', '{}'),
     'only an Organization Admin can invite with a privileged role', 'HR: cannot invite an HR Manager');

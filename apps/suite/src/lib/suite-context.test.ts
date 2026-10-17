@@ -16,6 +16,7 @@ vi.mock('@jadarat/platform-rbac', () => ({
     'platform.org.manage': { code: 'platform.org.manage' },
   },
   tmsPlanningPermissions: { 'tms.plan_cycle.read': { code: 'tms.plan_cycle.read' } },
+  tmsRolePermissions: { 'tms.needs_form.read': { code: 'tms.needs_form.read' } },
 }));
 vi.mock('./session-state', () => ({ getSessionState: vi.fn(), redirectFor: vi.fn(() => null) }));
 vi.mock('./config-status', () => ({ getConfigStatus: vi.fn() }));
@@ -35,6 +36,7 @@ describe('navigationFor', () => {
       training: true,
       courses: false,
       planning: false,
+      needsForms: false,
     });
     expect(
       navigationFor([{ permission: 'platform.user.read', scope: { type: 'tenant' } }]),
@@ -48,6 +50,7 @@ describe('navigationFor', () => {
       training: true,
       courses: false,
       planning: false,
+      needsForms: false,
     });
   });
 
@@ -62,6 +65,7 @@ describe('navigationFor', () => {
       training: true,
       courses: false,
       planning: false,
+      needsForms: false,
     });
     expect(navigationFor([{ permission: 'platform.org.read', scope: { type: 'tenant' } }])).toEqual(
       {
@@ -74,6 +78,7 @@ describe('navigationFor', () => {
         training: true,
         courses: false,
         planning: false,
+        needsForms: false,
       },
     );
     expect(navigationFor([])).toEqual({
@@ -86,6 +91,7 @@ describe('navigationFor', () => {
       training: true,
       courses: false,
       planning: false,
+      needsForms: false,
     });
   });
 
@@ -105,6 +111,7 @@ describe('navigationFor', () => {
       training: true,
       courses: false,
       planning: false,
+      needsForms: false,
     });
     expect(
       navigationFor([{ permission: 'platform.role.read', scope: { type: 'direct_reports' } }]),
@@ -118,6 +125,7 @@ describe('navigationFor', () => {
       training: true,
       courses: false,
       planning: false,
+      needsForms: false,
     });
   });
 
@@ -134,6 +142,7 @@ describe('navigationFor', () => {
       training: true,
       courses: false,
       planning: false,
+      needsForms: false,
     });
     expect(navigationFor([{ permission: 'platform.tenant.read', scope: { type: 'own' } }])).toEqual(
       {
@@ -146,6 +155,7 @@ describe('navigationFor', () => {
         training: true,
         courses: false,
         planning: false,
+        needsForms: false,
       },
     );
   });
@@ -197,7 +207,29 @@ describe('navigationFor', () => {
       training: true,
       courses: true,
       planning: true,
+      needsForms: true,
     });
+  });
+
+  it('shows Planning → Needs forms to members who read the needs forms organization-wide (T-M3-10)', () => {
+    expect(
+      navigationFor([{ permission: 'tms.needs_form.read', scope: { type: 'tenant' } }]),
+    ).toMatchObject({ needsForms: true, training: true });
+    expect(
+      navigationFor([
+        {
+          permission: 'tms.needs_form.read',
+          scope: { type: 'org_units', orgUnitIds: ['u1'], includeDescendants: true },
+        },
+      ]),
+    ).toMatchObject({ needsForms: false });
+    // Never for the Organization Admin, a set-up role (BR-IAM-4), even with the permission.
+    expect(
+      navigationFor([
+        { permission: 'platform.tenant.manage', scope: { type: 'tenant' } },
+        { permission: 'tms.needs_form.read', scope: { type: 'tenant' } },
+      ]),
+    ).toMatchObject({ needsForms: false, training: false });
   });
 
   it('gives organization-wide `platform.tenant.manage` (the Organization Admin) the set-up sections and no training entries', () => {
@@ -213,6 +245,7 @@ describe('navigationFor', () => {
       training: false,
       courses: false,
       planning: false,
+      needsForms: false,
     });
     // Any narrower scope is not enough (deny by default).
     const narrower: Grant['scope'][] = [
@@ -225,6 +258,7 @@ describe('navigationFor', () => {
         organizationSetup: false,
         training: true,
         courses: false,
+        needsForms: false,
       });
     }
   });

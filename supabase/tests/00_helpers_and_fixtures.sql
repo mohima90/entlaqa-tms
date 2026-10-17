@@ -492,3 +492,23 @@ insert into platform.user_import_rows (tenant_id, import_id, row_number, cells, 
    '{"email": "new.a@a.test"}', 'new'),
   ('b0000000-0000-4000-8000-000000000001', 'b5000000-0000-4000-8000-000000000001', 2, '{"email": "new.b@b.test"}',
    '{"email": "new.b@b.test"}', 'new');
+
+-- Needs forms (T-M3-10): every tenant got its default form from the tenants trigger above (random ids). One
+-- more form per tenant A and B with fixed ids (platform operation): «Fixture form» a7…01 / b7…01, section
+-- a71…01 / b71…01 with the two system fields (topic a72…01 / b72…01, people a72…02 / b72…02) and, in A, a
+-- dropdown «Level» a72…03 (values basic, advanced) for condition tests. More in 99_needs_forms_*.sql.
+begin;
+insert into tms.needs_forms (id, tenant_id, name_en, name_ar) values
+  ('a7000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'Fixture form', 'نموذج الاختبار'),
+  ('b7000000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000001', 'Fixture form', 'نموذج الاختبار');
+insert into tms.needs_form_sections (id, tenant_id, form_id, name_en, name_ar, is_repeatable, min_entries, max_entries, sort_order) values
+  ('a7100000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'a7000000-0000-4000-8000-000000000001', 'Needs', 'الاحتياجات', true, 1, 10, 1),
+  ('b7100000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000001', 'b7000000-0000-4000-8000-000000000001', 'Needs', 'الاحتياجات', true, 1, 10, 1);
+insert into tms.needs_form_fields (id, tenant_id, form_id, section_id, system_key, field_type, label_en, label_ar, is_required, sort_order, options, people_mode) values
+  ('a7200000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'a7000000-0000-4000-8000-000000000001', 'a7100000-0000-4000-8000-000000000001', 'training_topic', 'text', 'Topic', 'الموضوع', true, 1, null, null),
+  ('a7200000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'a7000000-0000-4000-8000-000000000001', 'a7100000-0000-4000-8000-000000000001', 'people', 'people', 'People', 'المشاركون', true, 2, null, 'count'),
+  ('a7200000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000001', 'a7000000-0000-4000-8000-000000000001', 'a7100000-0000-4000-8000-000000000001', null, 'select', 'Level', 'المستوى', false, 3,
+   '[{"value": "basic", "label_en": "Basic", "label_ar": "أساسي"}, {"value": "advanced", "label_en": "Advanced", "label_ar": "متقدم"}]', null),
+  ('b7200000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000001', 'b7000000-0000-4000-8000-000000000001', 'b7100000-0000-4000-8000-000000000001', 'training_topic', 'text', 'Topic', 'الموضوع', true, 1, null, null),
+  ('b7200000-0000-4000-8000-000000000002', 'b0000000-0000-4000-8000-000000000001', 'b7000000-0000-4000-8000-000000000001', 'b7100000-0000-4000-8000-000000000001', 'people', 'people', 'People', 'المشاركون', true, 2, null, 'count');
+commit;

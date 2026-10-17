@@ -16,28 +16,24 @@ import {
   isCustomRoleCode,
   standardRoleScope,
 } from './custom-roles';
-import { platformPermissions } from './platform-permissions';
+import { platformPermissions, tmsRolePermissions } from './platform-permissions';
 import { tmsPlanningPermissions } from './tms-planning-permissions';
 import { ROLE_TEMPLATES, roleStartValues } from './role-templates';
 import { SYSTEM_ROLES, getSystemRole } from './system-roles';
 
 const migrationsDir = new URL('../../../supabase/migrations/', import.meta.url).pathname;
 
-function migration(suffix: string): string {
-  const file = readdirSync(migrationsDir).find((f) => f.endsWith(suffix));
-  if (!file) throw new Error(`${suffix} not found`);
-  return readFileSync(join(migrationsDir, file), 'utf8');
-}
-
 /**
  * The migrations that write the catalogue: its creation (EP-ROLES) and the module permissions added since
- * (course library, T-M3-03; planning cycles, EP-PLN T-M3-04), in file order. Any other writer fails the
- * "writers" test below until it is added here.
+ * (course library, T-M3-03; planning cycles, EP-PLN T-M3-04; needs forms, T-M3-10), in file order. Any
+ * other writer fails the "writers" test below until it is added here; the parsers read inserts only (the
+ * "inserts only" test below).
  */
 const CATALOGUE_MIGRATIONS = [
   '_platform__create_permission_catalogue.sql',
   '_platform__add_course_permissions.sql',
   '_platform__add_planning_permissions.sql',
+  '_platform__add_needs_form_permissions.sql',
 ];
 
 function catalogueSeeds(): string {
@@ -62,6 +58,7 @@ function seededGrants() {
 
 describe('permission catalogue and standard grants (EP-ROLES, drift checks)', () => {
   it('platform.ref_permissions lists every catalogue permission with its risk and custom-role use', () => {
+    // Platform permissions and the module permissions standard roles grant (courses, planning, needs forms).
     const expected = Object.values(CATALOGUE_PERMISSIONS).map((permission) => ({
       code: permission.code,
       risk: permission.risk,
@@ -87,6 +84,28 @@ describe('permission catalogue and standard grants (EP-ROLES, drift checks)', ()
       ),
     );
     expect(writers.map((f) => f.replace(/^\d+/, ''))).toEqual(CATALOGUE_MIGRATIONS);
+  });
+
+  it('changes the catalogue by inserts only (the parsers above read inserts)', () => {
+    const rewrites = readdirSync(migrationsDir).filter((f) =>
+      /(update|delete from)\s+platform\.ref_(role_)?permissions\b/i.test(
+        readFileSync(join(migrationsDir, f), 'utf8'),
+      ),
+    );
+    expect(rewrites).toEqual([]);
+  });
+
+  it('lists the TMS permissions of the standard roles, outside custom roles for now (T-M3-10)', () => {
+    expect(Object.keys(tmsRolePermissions)).toEqual([
+      'tms.needs_form.read',
+      'tms.needs_form.manage',
+    ]);
+    for (const code of Object.keys(tmsRolePermissions)) {
+      // The Organization Admin builds custom roles from what they hold, and holds no training permission.
+      expect(customRolePermission(code), code).toBeUndefined();
+      expect(permissionMakesPrivileged(code), code).toBe(false);
+    }
+    expect(customRoleIsPrivileged(['tms.needs_form.manage'])).toBe(false);
   });
 
   it('keeps the Organization Admin’s own permissions out of custom roles (BR-IAM-4)', () => {

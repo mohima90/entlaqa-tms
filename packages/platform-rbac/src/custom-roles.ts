@@ -1,6 +1,6 @@
 import { coursePermissions } from './course-permissions';
 import type { LocalizedText, PermissionDefinition } from './permissions';
-import { platformPermissions } from './platform-permissions';
+import { platformPermissions, tmsRolePermissions } from './platform-permissions';
 import { tmsPlanningPermissions } from './tms-planning-permissions';
 import type { RoleScope, SystemRoleDefinition } from './system-roles';
 
@@ -90,13 +90,15 @@ const c = coursePermissions;
 
 /**
  * Every permission of the catalogue by code: the platform's and the module permissions held by the
- * standard roles (course library, T-M3-03; planning cycles, EP-PLN T-M3-04). Unknown codes are not in it
- * (callers fail closed).
+ * standard roles (course library, T-M3-03; planning cycles, EP-PLN T-M3-04; needs forms, T-M3-10 — the
+ * needs-form permissions are not part of a custom role yet). Unknown codes are not in it (callers fail
+ * closed).
  */
 export const CATALOGUE_PERMISSIONS: Readonly<Record<string, PermissionDefinition>> = Object.freeze({
   ...platformPermissions,
   ...coursePermissions,
   ...tmsPlanningPermissions,
+  ...tmsRolePermissions,
 });
 
 /**

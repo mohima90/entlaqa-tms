@@ -53,8 +53,8 @@ begin
           '{"0": "email", "1": "first_name_ar", "2": "family_name_ar"}', now() + interval '1 day');
 end $$;
 -- The file of the scenarios below (rows 2–20). Rows 2 and 6 ask for the Department Head role, which both the
--- Organization Admin and the HR Manager may give (since EP-PLN the training roles hold planning permissions
--- the HR Manager does not hold).
+-- Organization Admin and the HR Manager may give (since EP-PLN / T-M3-10 the training roles hold planning and
+-- needs-form permissions the HR Manager does not hold).
 create or replace function pg_temp.stage_file(p_import uuid) returns void language plpgsql as $$
 begin
   perform pg_temp.stage(p_import, 2, '{"email": "new1@imp.test", "first_name_ar": "نورة", "father_name_ar": "فهد",

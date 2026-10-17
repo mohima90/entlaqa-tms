@@ -64,6 +64,7 @@ export {
   type UnlockSignInOutcome,
   createSignInMembershipLookup,
   memberSignInLock,
+  memberSignInLockForProfile,
   signInAccountInTenant,
   unlockMemberSignIn,
 } from './sign-in-lock';

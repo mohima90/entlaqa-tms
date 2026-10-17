@@ -290,6 +290,8 @@ drop function private.membership_holds_privileged_custom_role(uuid, uuid);
 drop function private.membership_holds_high_risk(uuid, uuid);
 drop function private.actor_may_manage_person_with(uuid, uuid, text[]);
 revoke execute on function private.membership_is_privileged(uuid, uuid), private.role_is_privileged(uuid, text) from rate_limit_guard;
+drop policy if exists ref_roles_rate_limit_guard_read on platform.ref_roles;
+revoke select (code, is_privileged) on platform.ref_roles from rate_limit_guard;
 
 CREATE OR REPLACE FUNCTION private.membership_is_privileged(p_tenant_id uuid, p_membership_id uuid)
  RETURNS boolean

@@ -20,7 +20,7 @@ import {
 
 const db = vi.hoisted(() => ({
   mayManagePerson: vi.fn(() => Promise.resolve(true)),
-  memberSignInLock: vi.fn(),
+  memberSignInLockForProfile: vi.fn(),
   unlockMemberSignIn: vi.fn(),
   getSecurityPolicy: vi.fn(),
 }));
@@ -172,9 +172,9 @@ describe('unlock sign-in (T-M2-11, PO decision 9 Oct 2026)', () => {
     expect(db.getSecurityPolicy).not.toHaveBeenCalled();
 
     // The profile shows a lock only at sign-in's 5 failures — never at the policy's 3.
-    db.memberSignInLock.mockResolvedValue({ locked: false, retryAfterSeconds: 0 });
+    db.memberSignInLockForProfile.mockResolvedValue({ locked: false, retryAfterSeconds: 0 });
     await signInLockForProfile(TX, MEMBER, { canUnlock: true, hasAccount: true, tenantId: TENANT });
-    expect(db.memberSignInLock).toHaveBeenLastCalledWith(TX, MEMBER, 5);
+    expect(db.memberSignInLockForProfile).toHaveBeenLastCalledWith(TX, MEMBER, 5);
 
     // The unlock measures against 5 too: an account with 3 or 4 failures — a pause sign-in never
     // applied — is 'not_locked' in the database, which then counts no unlock (of the 3 a day) and

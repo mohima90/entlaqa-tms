@@ -15,7 +15,7 @@ const db = vi.hoisted(() => ({
   loadPersonResourceFacts: vi.fn(),
   mayManagePerson: vi.fn(),
   getMemberLifecycleTarget: vi.fn(),
-  memberSignInLock: vi.fn(),
+  memberSignInLockForProfile: vi.fn(),
   // The organization's security policy (T-M2-10): none — the sign-in lock is measured against 5.
   getSecurityPolicy: vi.fn(() => Promise.resolve(null)),
   // The organization's custom roles (EP-ROLES): the role filter and «تعديل الدور».
@@ -73,7 +73,7 @@ beforeEach(() => {
   db.listOrgUnitOptions.mockResolvedValue(orgUnits);
   db.getUserProfile.mockResolvedValue({ personId: REPORT });
   db.mayManagePerson.mockResolvedValue(true);
-  db.memberSignInLock.mockResolvedValue({ locked: false, retryAfterSeconds: 0 });
+  db.memberSignInLockForProfile.mockResolvedValue({ locked: false, retryAfterSeconds: 0 });
 });
 
 describe('users list query', () => {
@@ -231,7 +231,7 @@ describe('user profile query', () => {
       }),
     );
     expect(db.getMemberLifecycleTarget).not.toHaveBeenCalled();
-    expect(db.memberSignInLock).not.toHaveBeenCalled();
+    expect(db.memberSignInLockForProfile).not.toHaveBeenCalled();
     expect(db.getUserProfile).toHaveBeenCalledWith(TX, REPORT, {
       includeRoles: true,
       includeActivity: false,
@@ -390,7 +390,7 @@ describe('user profile query', () => {
       roles: [],
       membershipStatus: 'active',
     });
-    db.memberSignInLock.mockResolvedValue({ locked: true, retryAfterSeconds: 600 });
+    db.memberSignInLockForProfile.mockResolvedValue({ locked: true, retryAfterSeconds: 600 });
     const budget = vi.fn(() => Promise.resolve(4));
     const asAdmin = await createDefineQuery(runtime(['tenant_admin']))(
       userProfileQueryDefinition(budget),
@@ -402,14 +402,21 @@ describe('user profile query', () => {
     // Measured against the account budget sign-in applies, read in the admin's own transaction for
     // their organization (re-review N7).
     expect(budget).toHaveBeenCalledWith(TX, TENANT);
-    expect(db.memberSignInLock).toHaveBeenCalledWith(TX, REPORT, 4);
+    expect(db.memberSignInLockForProfile).toHaveBeenCalledWith(TX, REPORT, 4);
     // The default budget: the platform's (5 failures).
     await createDefineQuery(runtime(['tenant_admin']))(userProfileQueryDefinition())({
       personId: REPORT,
     });
-    expect(db.memberSignInLock).toHaveBeenLastCalledWith(TX, REPORT, 5);
+    expect(db.memberSignInLockForProfile).toHaveBeenLastCalledWith(TX, REPORT, 5);
+    // A lock read the database refuses (null) leaves the rest of the profile page working.
+    db.memberSignInLockForProfile.mockResolvedValueOnce(null);
+    const refused = await createDefineQuery(runtime(['tenant_admin']))(
+      userProfileQueryDefinition(),
+    )({ personId: REPORT });
+    expect(refused.ok && refused.value.signInLock).toBeNull();
+    expect(refused.ok && refused.value.profile.personId).toBe(REPORT);
 
-    db.memberSignInLock.mockClear();
+    db.memberSignInLockForProfile.mockClear();
     // An HR Manager manages users but may not unlock sign-in; a person without an account has no lock;
     // nor has a revoked, suspended or invited member (security review M1).
     for (const [role, profile] of [
@@ -428,7 +435,7 @@ describe('user profile query', () => {
         `${role} ${String(profile.membershipStatus)}`,
       ).toBeNull();
     }
-    expect(db.memberSignInLock).not.toHaveBeenCalled();
+    expect(db.memberSignInLockForProfile).not.toHaveBeenCalled();
   });
 
   it('a person that disappeared after authorization → NOT_FOUND', async () => {

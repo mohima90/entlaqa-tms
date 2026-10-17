@@ -286,6 +286,71 @@ end $$;
 reset role;
 rollback;
 
+-- Unlocking sign-in by a custom role (confirmation pass): an «Unlock desk» role (user.read +
+-- user.unlock_sign_in, not privileged) held by uAB instead of the HR Manager role. The lock functions run as
+-- rate_limit_guard and decide whether the target is privileged: an ordinary member (uM, member2@a.test) is
+-- read and unlocked; a privileged one (the Organization Admin uA) is refused cleanly (no account, no error).
+begin;
+set local role authenticated;
+select tests.set_claims(null);
+do $$
+declare
+  v_um constant bytea := sha256(convert_to(E'jadarat.rate-limit.v1\naccount\nmember2@a.test', 'UTF8'));
+  v_ua constant bytea := sha256(convert_to(E'jadarat.rate-limit.v1\naccount\nua@a.test', 'UTF8'));
+begin
+  for i in 1..4 loop
+    perform private.rate_limit_sign_in_check(sha256(convert_to('client-desk', 'UTF8')), v_um, null,
+                                             100, 900, 100, 900, 3, 900, 10, 900);
+    perform private.rate_limit_sign_in_check(sha256(convert_to('client-desk', 'UTF8')), v_ua, null,
+                                             100, 900, 100, 900, 3, 900, 10, 900);
+  end loop;
+end $$;
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1',
+  'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1'));
+insert into platform.custom_roles (id, name_en, name_ar, data_scope) values
+  ('a6000000-0000-4000-8000-0000000000e8', 'Unlock desk', 'مكتب فك القفل', 'organization');
+insert into platform.custom_role_permissions (custom_role_id, permission_code) values
+  ('a6000000-0000-4000-8000-0000000000e8', 'platform.user.read'),
+  ('a6000000-0000-4000-8000-0000000000e8', 'platform.user.unlock_sign_in');
+delete from platform.role_assignments ra using platform.tenant_memberships m
+where ra.membership_id = m.id and m.user_id = '00000000-0000-4000-8000-0000000000ab'
+  and m.tenant_id = 'a0000000-0000-4000-8000-000000000001';
+insert into platform.role_assignments (membership_id, role_code, is_primary)
+select m.id, cr.code, true from platform.tenant_memberships m, platform.custom_roles cr
+where m.user_id = '00000000-0000-4000-8000-0000000000ab' and m.tenant_id = 'a0000000-0000-4000-8000-000000000001'
+  and cr.id = 'a6000000-0000-4000-8000-0000000000e8';
+select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000ab', '10000000-0000-4000-8000-0000000000ab',
+  'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000ab'));
+do $$
+declare
+  r record;
+begin
+  perform tests.assert(not private.role_is_privileged('a0000000-0000-4000-8000-000000000001',
+                         (select code from platform.custom_roles where id = 'a6000000-0000-4000-8000-0000000000e8')),
+    'unlocking sign-in alone: an ordinary role');
+  select * into r from private.member_sign_in_lock('a1000000-0000-4000-8000-0000000000e7', 3);
+  perform tests.assert(r.locked, 'Unlock desk: sees the lock of an ordinary member');
+  perform tests.assert_eq(private.unlock_member_sign_in('a1000000-0000-4000-8000-0000000000e7', 3), 'unlocked',
+    'Unlock desk: unlocks an ordinary member');
+  select * into r from private.member_sign_in_lock('a1000000-0000-4000-8000-0000000000a1', 3);
+  perform tests.assert(not r.locked, 'Unlock desk: a privileged member''s lock is not visible (no error)');
+  perform tests.assert_eq(private.unlock_member_sign_in('a1000000-0000-4000-8000-0000000000a1', 3), 'no_account',
+    'Unlock desk: a privileged member is refused cleanly');
+end $$;
+-- …and the privileged member's lock is still there (the Organization Admin of A sees it on their own record
+-- path: checked through the limiter, not the member functions).
+select tests.set_claims(null);
+do $$
+declare
+  r record;
+begin
+  select * into r from private.rate_limit_sign_in_check(sha256(convert_to('client-desk', 'UTF8')),
+    sha256(convert_to(E'jadarat.rate-limit.v1\naccount\nua@a.test', 'UTF8')), null, 100, 900, 100, 900, 3, 900, 10, 900);
+  perform tests.assert(not r.allowed and r.refused_by = 'sign_in.account_failures', 'uA stays locked');
+end $$;
+reset role;
+rollback;
+
 -- Data scope: a team-scoped role reads people of the team only — its people permission is NOT
 -- organization-wide; the structure is (custom_role_use = organization).
 begin;

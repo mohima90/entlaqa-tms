@@ -71,6 +71,7 @@ begin
     'platform.custom_roles.id, platform.custom_roles.tenant_id, platform.ref_permissions.code, '
     'platform.ref_permissions.custom_role_use, platform.ref_permissions.privileged, platform.ref_permissions.risk, platform.ref_role_permissions.permission_code, '
     'platform.ref_role_permissions.role_code, platform.ref_role_permissions.scope, '
+    'platform.ref_roles.code, platform.ref_roles.is_privileged, '
     'platform.role_assignments.membership_id, platform.role_assignments.role_code, platform.role_assignments.tenant_id, '
     'platform.role_assignments.valid_from, platform.role_assignments.valid_until, platform.tenant_memberships.id, '
     'platform.tenant_memberships.person_id, platform.tenant_memberships.status, platform.tenant_memberships.tenant_id, '
@@ -81,7 +82,7 @@ begin
      from pg_policies p where 'rate_limit_guard' = any (p.roles) and p.schemaname = 'platform'),
     'custom_role_permissions SELECT (tenant_id = ( SELECT private.current_tenant_id() AS current_tenant_id)); '
     'custom_roles SELECT (tenant_id = ( SELECT private.current_tenant_id() AS current_tenant_id)); '
-    'ref_permissions SELECT true; ref_role_permissions SELECT true; '
+    'ref_permissions SELECT true; ref_role_permissions SELECT true; ref_roles SELECT true; '
     'role_assignments SELECT (tenant_id = ( SELECT private.current_tenant_id() AS current_tenant_id)); '
     'tenant_memberships SELECT (tenant_id = ( SELECT private.current_tenant_id() AS current_tenant_id))',
     'rate_limit_guard sees its caller''s organization only (and the global permission catalogue)');

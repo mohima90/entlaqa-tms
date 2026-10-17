@@ -4,7 +4,7 @@ import {
   type UserTx,
   getSecurityPolicy,
   mayManagePerson,
-  memberSignInLock,
+  memberSignInLockForProfile,
   unlockMemberSignIn,
 } from '@jadarat/platform-db';
 import {
@@ -100,7 +100,8 @@ export async function signInLockForProfile(
   budget: AccountLockBudget = defaultBudget,
 ): Promise<MemberSignInLock | null> {
   if (!options.hasAccount || !options.canUnlock) return null;
-  return memberSignInLock(tx, personId, await budget(tx, options.tenantId));
+  // A refused read (42501) shows no lock panel rather than failing the whole profile page.
+  return memberSignInLockForProfile(tx, personId, await budget(tx, options.tenantId));
 }
 
 export const UnlockSignInInput = z.object({ personId: z.uuid() });

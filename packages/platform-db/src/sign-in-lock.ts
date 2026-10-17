@@ -3,6 +3,7 @@ import { sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { runWithClaims } from './claims-tx';
 import { type AppDatabase, getDatabase } from './client';
+import { pgError } from './pg-error';
 import type { UserTx } from './with-user-tx';
 
 /**
@@ -37,6 +38,25 @@ export async function memberSignInLock(
         from private.member_sign_in_lock(${personId}::uuid, ${maxFailures}::integer)`,
   );
   return { locked: row?.locked === true, retryAfterSeconds: row?.retry_after_seconds ?? 0 };
+}
+
+/**
+ * The lock state for the user's profile page: as memberSignInLock, in a savepoint, and `null` when the
+ * database refuses the read (42501 — e.g. the actor lost the permission meanwhile, or a guard cannot decide
+ * yet during a deploy): the page shows no lock panel instead of failing (EP-ROLES confirmation pass). Any
+ * other error is rethrown.
+ */
+export async function memberSignInLockForProfile(
+  tx: UserTx,
+  personId: string,
+  maxFailures: number,
+): Promise<MemberSignInLock | null> {
+  try {
+    return await tx.transaction((savepoint) => memberSignInLock(savepoint, personId, maxFailures));
+  } catch (error) {
+    if (pgError(error)?.code === '42501') return null;
+    throw error;
+  }
 }
 
 /**

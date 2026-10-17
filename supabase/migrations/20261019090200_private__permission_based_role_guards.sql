@@ -1192,6 +1192,10 @@ grant execute on function private.actor_may_manage_person_with(uuid, uuid, text[
   to authenticated, tenant_guard, rate_limit_guard;
 grant execute on function private.membership_is_privileged(uuid, uuid), private.role_is_privileged(uuid, text)
   to rate_limit_guard;
+-- …which read whether a standard role is privileged (confirmation pass: an unlock by a custom-role holder
+-- otherwise failed on platform.ref_roles): two columns of the global role catalogue, like the other guards.
+create policy ref_roles_rate_limit_guard_read on platform.ref_roles for select to rate_limit_guard using (true);
+grant select (code, is_privileged) on platform.ref_roles to rate_limit_guard;
 grant execute on function private.membership_holds_high_risk(uuid, uuid),
                           private.membership_holds_privileged_custom_role(uuid, uuid)
   to tenant_guard;

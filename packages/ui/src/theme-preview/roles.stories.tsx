@@ -46,8 +46,8 @@ const ROLES: readonly SampleRole[] = [
     kind: 'standard',
     name: { ar: 'مدير المنظمة', en: 'Organization Admin' },
     description: {
-      ar: 'يُعدّ المنظمة: الإعدادات والهوية والمستخدمون والأدوار والأمان، دون الوصول إلى ميزات التدريب.',
-      en: 'Sets up the organization: settings, branding, users and roles, security. No access to training features.',
+      ar: 'يُعدّ المنظمة: الإعدادات والهوية والمستخدمون والأدوار والأمان والتكاملات وسجل التدقيق، دون الوصول إلى ميزات التدريب.',
+      en: 'Sets up the organization: settings, branding, users and roles, security, integrations and audit. No access to training features.',
     },
     privileged: true,
     permissions: 15,
@@ -58,11 +58,11 @@ const ROLES: readonly SampleRole[] = [
     kind: 'standard',
     name: { ar: 'مدير الموارد البشرية', en: 'HR Manager' },
     description: {
-      ar: 'سجلات الموظفين والهيكل والتدريب الإلزامي، ودعوة المستخدمين وإسناد الأدوار غير المميزة.',
-      en: 'Employee records, structure and mandatory training; invites users and gives non-privileged roles.',
+      ar: 'سجلات الموظفين والفروع والأقسام ورؤساؤها وقواعد الامتثال، ودعوة المستخدمين وإسناد الأدوار غير المميزة.',
+      en: 'Employee records, branches, departments and department heads, compliance rules; invites people and gives roles that are not privileged.',
     },
     privileged: true,
-    permissions: 11,
+    permissions: 8,
     people: 2,
   },
   {
@@ -70,20 +70,44 @@ const ROLES: readonly SampleRole[] = [
     kind: 'standard',
     name: { ar: 'مدير التعلم والتطوير', en: 'L&D Manager' },
     description: {
-      ar: 'الخطط ودليل الدورات والجلسات والموارد والتقارير.',
-      en: 'Plans, catalog, sessions, resources and reports.',
+      ar: 'دليل الدورات ودورات التخطيط والخطة والميزانية والموافقات والجلسات والإشعارات وتقارير التدريب.',
+      en: 'Course library, planning cycles, plan and budget, approvals, sessions, notifications and training reports.',
     },
     privileged: false,
-    permissions: 4,
+    permissions: 3,
     people: 3,
+  },
+  {
+    code: 'training_coordinator',
+    kind: 'standard',
+    name: { ar: 'منسق التدريب', en: 'Training Coordinator' },
+    description: {
+      ar: 'الجدولة والتجهيزات والتسجيلات والحضور، والمساعدة في جمع الاحتياجات وتوحيدها.',
+      en: 'Scheduling, logistics, enrollments and attendance; helps collect and consolidate needs.',
+    },
+    privileged: false,
+    permissions: 3,
+    people: 5,
+  },
+  {
+    code: 'department_head',
+    kind: 'standard',
+    name: { ar: 'رئيس القسم', en: 'Department Head' },
+    description: {
+      ar: 'أقسامه فقط: يقترح الاحتياجات ويعتمد بنود الخطة والطلبات ويرى فريقه.',
+      en: 'Their departments only: proposes needs, approves plan lines and requests, sees the team.',
+    },
+    privileged: false,
+    permissions: 3,
+    people: 9,
   },
   {
     code: 'learner',
     kind: 'standard',
     name: { ar: 'موظف', en: 'Employee' },
     description: {
-      ar: 'تدريبه وطلباته وشهاداته.',
-      en: 'Their own training, requests and certificates.',
+      ar: 'طلباته وتدريبه وشهاداته.',
+      en: 'Own requests, training and certificates.',
     },
     privileged: false,
     permissions: 1,
@@ -735,20 +759,7 @@ function RoleSelectPreview({
       </option>
     );
   };
-  const standard = [
-    ...ROLES.filter((r) => r.kind === 'standard').slice(0, 3),
-    {
-      code: 'training_coordinator',
-      name: { ar: 'منسق التدريب', en: 'Training Coordinator' },
-      privileged: false,
-    },
-    {
-      code: 'department_head',
-      name: { ar: 'رئيس القسم', en: 'Department Head' },
-      privileged: false,
-    },
-    { code: 'learner', name: { ar: 'موظف', en: 'Employee' }, privileged: false },
-  ];
+  const standard = ROLES.filter((r) => r.kind === 'standard');
   return (
     <div className="flex flex-col gap-1">
       <label htmlFor={id} className="text-sm font-medium">

@@ -320,6 +320,52 @@ export async function stageUserImportRows(
     from jsonb_to_recordset(${JSON.stringify(payload)}::jsonb) as x(n integer, c jsonb, d jsonb, f jsonb)`);
 }
 
+/** The name columns of a person, as the import's fields. */
+const PERSON_NAME_FIELDS = [
+  'first_name_ar',
+  'father_name_ar',
+  'grandfather_name_ar',
+  'family_name_ar',
+  'first_name_en',
+  'father_name_en',
+  'grandfather_name_en',
+  'family_name_en',
+] as const;
+
+/**
+ * The names of the import tenant's ACTIVE members with these e-mails (lower case; the dry run's key: never a
+ * removed person), by e-mail — a file row that updates such a member needs the required names only when it
+ * changes one (PO decision 17 Oct 2026). Personal data for the worker's check only; never logged.
+ */
+export async function loadMemberNamesByEmail(
+  tx: ClaimsTx,
+  emails: readonly string[],
+): Promise<Map<string, Readonly<Record<(typeof PERSON_NAME_FIELDS)[number], string | null>>>> {
+  const out = new Map<
+    string,
+    Readonly<Record<(typeof PERSON_NAME_FIELDS)[number], string | null>>
+  >();
+  if (emails.length === 0) return out;
+  const rows = await tx.execute<Record<string, string | null>>(sql`
+    select p.email, p.first_name_ar, p.father_name_ar, p.grandfather_name_ar, p.family_name_ar,
+           p.first_name_en, p.father_name_en, p.grandfather_name_en, p.family_name_en
+    from platform.persons p
+    join platform.tenant_memberships m on m.tenant_id = p.tenant_id and m.person_id = p.id and m.status = 'active'
+    where p.removed_at is null
+      and p.email = any (select jsonb_array_elements_text(${JSON.stringify([...new Set(emails)])}::jsonb))`);
+  for (const row of rows) {
+    if (typeof row.email !== 'string') continue;
+    out.set(
+      row.email,
+      Object.fromEntries(PERSON_NAME_FIELDS.map((f) => [f, row[f] ?? null])) as Record<
+        (typeof PERSON_NAME_FIELDS)[number],
+        string | null
+      >,
+    );
+  }
+  return out;
+}
+
 /** Removes the staged rows (a new dry run), or the rows and the columns (the data is purged). */
 export async function deleteUserImportStaged(
   tx: ClaimsTx,

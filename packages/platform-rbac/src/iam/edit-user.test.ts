@@ -210,6 +210,38 @@ describe('update user details', () => {
     ]);
   });
 
+  it('an Arabic-only person can still be saved without English names when the names stay as they are (PO 17 Oct 2026)', async () => {
+    db.getTenantDefaultLocale.mockResolvedValue('en');
+    db.getEditableUser.mockResolvedValue({
+      personId: SARA,
+      mayManage: true,
+      firstNameAr: 'سارة',
+      fatherNameAr: null,
+      grandfatherNameAr: null,
+      familyNameAr: 'القحطاني',
+      firstNameEn: null,
+      fatherNameEn: null,
+      grandfatherNameEn: null,
+      familyNameEn: null,
+      displayNameAr: 'سارة القحطاني',
+      displayNameEn: null,
+    });
+    db.updateUserDetails.mockResolvedValue({ ok: true, changed: ['departmentId'] });
+    const save = createDefineAction(runtime(['hr_manager']).rt)(
+      updateUserDetailsActionDefinition(),
+    );
+    const noEnglish = { ...form, firstNameEn: '', familyNameEn: '' };
+    // HR changes the unit only: accepted.
+    expect(await save(noEnglish)).toEqual(ok({ personId: SARA, changed: ['departmentId'] }));
+    // HR changes the Arabic name without English names: the English ones are required.
+    const renamed = await save({ ...noEnglish, familyNameAr: 'العتيبي' });
+    expect(!renamed.ok && renamed.error.fieldErrors).toEqual([
+      { path: 'firstNameEn', code: 'REQUIRED' },
+      { path: 'familyNameEn', code: 'REQUIRED' },
+    ]);
+    expect(db.updateUserDetails).toHaveBeenCalledTimes(1);
+  });
+
   it('maps refusals to field errors or clear errors; no change → no audit', async () => {
     const cases: [string, string, string | undefined][] = [
       ['email_taken', 'VALIDATION_FAILED', 'email'],

@@ -463,6 +463,42 @@ describe('normalizeRow', () => {
     ]);
   });
 
+  it('an existing member’s row: names required only when it changes a name (PO 17 Oct 2026)', () => {
+    const mapping = {
+      '0': 'email',
+      '1': 'first_name_en',
+      '2': 'family_name_en',
+      '3': 'first_name_ar',
+      '4': 'family_name_ar',
+      '5': 'mobile',
+    } as const;
+    // Entered before the rule: Arabic names only, in an English-default organization.
+    const arabicOnly = { first_name_ar: 'منيرة', family_name_ar: 'الزهراني' };
+    const codes = (cells: string[], stored?: Record<string, string | null>) =>
+      normalizeRow(2, cells, mapping, 'en', stored).issues.map((i) => `${i.c}:${i.f ?? ''}`);
+    // An update without names, or with the names as they are: accepted.
+    expect(codes(['m@b.example', '', '', '', '', '+966551234567'], arabicOnly)).toEqual([]);
+    expect(codes(['m@b.example', '', '', 'منيرة', 'الزهراني', ''], arabicOnly)).toEqual([]);
+    // An update that changes the Arabic name without English names: the English ones are required.
+    expect(codes(['m@b.example', '', '', 'منيرة', 'القحطاني', ''], arabicOnly)).toEqual([
+      'NAME_EN_REQUIRED:first_name_en',
+      'NAME_EN_REQUIRED:family_name_en',
+    ]);
+    // …unless the stored record has them (an empty cell never clears a value).
+    expect(
+      codes(['m@b.example', '', '', 'منيرة', 'القحطاني', ''], {
+        ...arabicOnly,
+        first_name_en: 'Munira',
+        family_name_en: 'Alzahrani',
+      }),
+    ).toEqual([]);
+    // A new person (nobody stored) without English names: refused.
+    expect(codes(['n@b.example', '', '', 'منيرة', 'الزهراني', ''])).toEqual([
+      'NAME_EN_REQUIRED:first_name_en',
+      'NAME_EN_REQUIRED:family_name_en',
+    ]);
+  });
+
   it('helpers', () => {
     expect(isEmail('a@b.co')).toBe(true);
     expect(isEmail('a@b')).toBe(false);

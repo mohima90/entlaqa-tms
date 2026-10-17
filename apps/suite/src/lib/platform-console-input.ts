@@ -1,4 +1,5 @@
 import { hasVisibleText } from '@jadarat/platform-i18n';
+import { EmailAddress, EmailProviderInput, SenderName } from '@jadarat/platform-notifications';
 import { z } from 'zod';
 import { isOrganizationSlug } from './organization-slug';
 
@@ -37,3 +38,16 @@ export const CreateOrganizationInput = z.strictObject({
 export type CreateOrganizationInputValue = z.output<typeof CreateOrganizationInput>;
 
 export const OrganizationRefInput = z.strictObject({ tenantId: z.uuid() });
+
+/**
+ * Platform settings → Email «حفظ وإرسال رسالة تجريبية» (WP-ADM-01): provider (options; secrets optional —
+ * empty keeps the saved ones), sender name and address, where the test e-mail goes, and the version the page
+ * showed. The database validates everything again (private.platform_save_email_settings).
+ */
+export const PlatformEmailSettingsInput = z.strictObject({
+  version: z.int().min(1).nullable(),
+  provider: EmailProviderInput,
+  fromName: SenderName,
+  fromAddress: EmailAddress,
+  testTo: EmailAddress,
+});

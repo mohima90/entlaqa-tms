@@ -756,7 +756,10 @@ async function invitationsTable(
       email: row.email,
       profileHref: `/${locale}/suite/admin/users/${row.personId}`,
       roleName: canReadRoles ? roleName(locale, row.primaryRole, row.primaryRoleName) : null,
-      sentText: t('list.sentCount', { count: row.sendCount }),
+      // T-M2-20: a code the mailer did not e-mail is «لم تُرسل الدعوة» / "Not sent", never "Sent once".
+      sentText: row.mailNotSent
+        ? t('list.mailNotSent')
+        : t('list.sentCount', { count: row.sendCount }),
       expiryText:
         row.state === 'held'
           ? ''

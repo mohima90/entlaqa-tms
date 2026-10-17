@@ -7,6 +7,8 @@ export type SuitePage =
   | 'home'
   | 'courses'
   | 'general'
+  // Settings → Email integration (WP-ADM-01).
+  | 'emailIntegration'
   | 'users'
   | 'structure'
   | 'branches'
@@ -62,6 +64,7 @@ export const SUITE_PATHS = {
   branches: '/suite/admin/branches',
   roles: '/suite/admin/roles',
   general: '/suite/admin/settings',
+  emailIntegration: '/suite/admin/settings/email',
   security: '/suite/admin/security',
   profile: '/suite/profile',
   planningCycles: '/suite/planning/cycles',
@@ -79,6 +82,7 @@ export const PAGE_TITLE_KEYS = {
   branches: 'branches',
   roles: 'roles',
   general: 'general',
+  emailIntegration: 'emailIntegration',
   security: 'security',
   profile: 'myProfile',
   planningCycles: 'planningCycles',
@@ -108,7 +112,7 @@ const when = (allowed: boolean, ...entries: NavEntry[]): NavEntry[] => (allowed 
  * member's grants allow.
  *
  * Organization Admin (PO, 15–16 Oct 2026): Home · Organization (Team members, Branding*, Roles &
- * permissions) · Billing (Subscription*) · Settings (General, Email integration*, Integrations*,
+ * permissions) · Billing (Subscription*) · Settings (General, Email integration, Integrations*,
  * Security, Audit log*) — no training entries (BR-IAM-4). Other roles: Home and the training module's
  * entries, then the built pages their grants open, in the same groups.
  */
@@ -159,7 +163,13 @@ export function suiteNavigation(access: SuiteNavigationAccess): NavGroupModel[] 
         // Settings → General (T-M2-22 organization profile): the Organization Admin edits it, the
         // Auditor reads it.
         ...when(access.organizationProfile || setup, page('general', 'settings', 'general')),
-        ...when(setup, soon('emailIntegration', 'mail'), soon('integrations', 'plug')),
+        // Settings → Email integration (WP-ADM-01): the Organization Admin edits it, a tenant.read holder
+        // (e.g. the Auditor) reads it.
+        ...when(
+          access.organizationProfile || setup,
+          page('emailIntegration', 'mail', 'emailIntegration'),
+        ),
+        ...when(setup, soon('integrations', 'plug')),
         ...when(access.security, page('security', 'shield', 'security')),
         ...when(setup, soon('auditLog', 'audit')),
       ],

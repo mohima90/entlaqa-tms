@@ -26,27 +26,27 @@
     "@jadarat/platform-rbac": "workspace:*",
     "@jadarat/tms": "workspace:*",
     "@jadarat/ui": "workspace:*",
-    "@sentry/browser": "11.6.0",
-    "@sentry/nextjs": "11.6.0",
-    "next": "16.4.0",
+    "@sentry/browser": "11.8.0",
+    "@sentry/nextjs": "11.8.0",
+    "next": "16.4.2",
     "next-intl": "4.14.9",
-    "react": "19.3.0",
-    "react-dom": "19.3.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
     "server-only": "0.0.1",
-    "zod": "4.6.5"
+    "zod": "4.6.7"
   },
   "devDependencies": {
-    "@axe-core/playwright": "4.13.0",
+    "@axe-core/playwright": "4.14.0",
     "@jadarat/config": "workspace:*",
-    "@playwright/test": "1.64.0",
+    "@playwright/test": "1.64.1",
     "@tailwindcss/postcss": "4.3.3",
-    "@types/node": "24.19.1",
+    "@types/node": "24.19.2",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
-    "@vitest/coverage-v8": "5.0.3",
-    "postcss": "8.5.29",
+    "@vitest/coverage-v8": "5.0.5",
+    "postcss": "8.5.30",
     "tailwindcss": "4.3.3",
     "typescript": "6.0.3",
-    "vitest": "5.0.3"
+    "vitest": "5.0.5"
   }
 }

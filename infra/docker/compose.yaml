@@ -192,7 +192,7 @@ services:
   # Logs only its own errors (LOG_LEVEL error): its request lines (also refused requests, at warn) carry
   # the URL, and a download URL carries the original file name (Storage redacts only the token).
   storage:
-    image: supabase/storage-api:v1.80.2@sha256:95b217a9c59e0ac06c6dcb539df3189a1668a2445fb43dbf29660d6968ffd7d2
+    image: supabase/storage-api:v1.83.3@sha256:2cea04f1ec8f174521f79382334ea3a97959b1a6770be30c6d6bc4a9e2779428
     <<: *hardening
     read_only: true
     cap_drop: [ALL]
@@ -239,7 +239,7 @@ services:
   # from the image the first time the `clamav-db` volume is created, then from freshclam. Loading them
   # takes about a minute and some 1.5 GB of memory.
   clamd:
-    image: clamav/clamav:1.5.4-debian@sha256:9bb8712a50f0e75166e936c452cd82dd5e5be0b85586598930b5bbb84a99a578
+    image: clamav/clamav:1.5.4-debian@sha256:9a96980b265cb2b51a20bdcca921dc80aa55ed0e56cdfb076198ee27a9171927
     <<: *hardening
     read_only: true
     cap_drop: [ALL]
@@ -265,7 +265,7 @@ services:
   # The public mirror by default — a private in-country mirror for sovereign/air-gapped installations
   # (clamav/freshclam.conf). Not started by the smoke test (its signatures are those of the pinned image).
   freshclam:
-    image: clamav/clamav:1.5.4-debian@sha256:9bb8712a50f0e75166e936c452cd82dd5e5be0b85586598930b5bbb84a99a578
+    image: clamav/clamav:1.5.4-debian@sha256:9a96980b265cb2b51a20bdcca921dc80aa55ed0e56cdfb076198ee27a9171927
     <<: *hardening
     read_only: true
     cap_drop: [ALL]
@@ -459,7 +459,7 @@ services:
   #   NEW_USER_PASSWORD='…' docker compose --env-file .secrets/.env run --rm --user "$(id -u):$(id -g)" \
   #     -e NEW_USER_PASSWORD admin-cli admin@example.org
   admin-cli:
-    image: gcr.io/distroless/nodejs24-debian13:nonroot@sha256:9eeb7f5887d0e239e78264b06f7f11d2e14be534050481803a9e4728fcdd278e
+    image: gcr.io/distroless/nodejs24-debian13:nonroot@sha256:59c479c9b8c123e66047315c968aa2d35e31ae5149c856e4110a79c8b3563f0b
     profiles: [tools]
     security_opt: ['no-new-privileges:true']
     read_only: true
@@ -479,7 +479,7 @@ services:
   # (invitations, password reset and "password changed", T-M2-17). Remove it when SMTP_URL points at a
   # real relay.
   mailpit:
-    image: axllent/mailpit:v1.31.4@sha256:b68349e3a014b90c5610bfb26b2ae36f3892d7b8cf25ee140c6c71c98d2fcf48
+    image: axllent/mailpit:v1.31.6@sha256:23fe39e81bde596a918000b3135c0f85dc8bb4c9ea6be274b051143f3e300387
     <<: *hardening
     read_only: true
     cap_drop: [ALL]

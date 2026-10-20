@@ -27,6 +27,7 @@ const db = vi.hoisted(() => ({
   schema: {},
   // Read when @jadarat/platform-rbac loads (its security settings schema, T-M2-10).
   MFA_MODES: ['off', 'optional', 'required_all', 'required_roles'],
+  BRAND_IMAGE_KINDS: ['logo', 'favicon', 'sign_in_image'],
   SECURITY_LIMITS: {
     mfaGraceDays: { min: 0, max: 30 },
     passwordMinLength: { min: 12, max: 36 },

@@ -2035,7 +2035,9 @@
       "industryChoose": "Choose an industry",
       "country": "Country",
       "countryChoose": "Choose a country",
-      "countryHint": "Choosing a country suggests its currency, timezone and working week."
+      "countryHint": "Choosing a country suggests its currency, timezone and working week.",
+      "namesMoved": "The organization's names in English and Arabic are set on the Branding page.",
+      "namesMovedLink": "Go to Branding"
     },
     "defaults": {
       "title": "Defaults",
@@ -3017,6 +3019,116 @@
       "notConfigured": "Email integration needs a configured organization.",
       "keyMissing": "E-mail sending is not set up on the platform yet, so a provider cannot be saved. Contact ENTLAQA support.",
       "notAvailable": "Email integration is not available yet. Try again later."
+    }
+  },
+  "branding": {
+    "title": "Branding",
+    "breadcrumbLabel": "Breadcrumb",
+    "breadcrumbSection": "Organization",
+    "intro": "Make Jadarat TMS look like your organization: its names, logo, browser icon, sign-in picture and colours. Until you change them, the Jadarat look is used.",
+    "notConfigured": "Branding isn't available in this environment yet. You can try the colours below; they can't be saved here.",
+    "readOnly": "You can view the branding. Only the Organization Admin can change it.",
+    "names": {
+      "title": "Organization names",
+      "intro": "Shown in the menu, on the sign-in page and in e-mails.",
+      "nameEn": "Name (English)",
+      "nameAr": "Name (Arabic)",
+      "hint": "Up to 80 characters."
+    },
+    "images": {
+      "title": "Logo and browser icon",
+      "intro": "PNG, JPG or WebP. SVG files aren't accepted.",
+      "logo": "Logo",
+      "logoHint": "Up to 2 MB and 4096 × 4096 pixels. Recommended: about 200 × 60 pixels, transparent background.",
+      "favicon": "Browser icon (favicon)",
+      "faviconHint": "Up to 500 KB and 512 × 512 pixels. Square, at least 32 × 32 pixels.",
+      "signInImage": "Sign-in page picture",
+      "signInImageHint": "Up to 5 MB and 4096 × 4096 pixels. Recommended: 1920 × 1080 pixels. Shown behind your colours, next to the sign-in form.",
+      "upload": "Upload",
+      "replace": "Replace",
+      "remove": "Remove",
+      "chosen": "Selected: {name}",
+      "uploading": "Uploading…",
+      "checking": "Checking the file for viruses. You can save now; it shows everywhere once the check is done.",
+      "ready": "Checked and ready.",
+      "published": "In use.",
+      "pendingPublish": "Saved. It shows everywhere within a few minutes.",
+      "previewOnly": "Shown in the preview only: saving images needs a configured environment.",
+      "errorType": "Choose a PNG, JPG or WebP image. SVG and other files aren't accepted.",
+      "errorSize": "This image is larger than {size}.",
+      "errorEmpty": "This file is empty.",
+      "errorUpload": "The image couldn't be uploaded. Try again.",
+      "errorInfected": "This file didn't pass the virus check and can't be used.",
+      "errorRejected": "This file isn't a PNG, JPG or WebP image, or it is too large.",
+      "errorScan": "The file couldn't be checked. Try another file.",
+      "errorNotUsable": "This image can't be used any more. Upload it again.",
+      "errorDimensions": "This image is too big: at most {size} × {size} pixels.",
+      "errorNotPublished": "This image couldn't be prepared for use (it may be damaged or too big). Upload another one."
+    },
+    "colors": {
+      "title": "Brand colours",
+      "intro": "Used for the selected menu item, main buttons and accents in the product, the sign-in page and e-mails.",
+      "useGradient": "Use gradient",
+      "gradientOnHint": "The selected menu item and main buttons fade from the primary to the secondary colour.",
+      "gradientOffHint": "The primary colour is used on its own.",
+      "primary": "Primary colour",
+      "brandColor": "Brand colour",
+      "secondary": "Secondary colour",
+      "hexLabel": "{name} (hex code)",
+      "pickerLabel": "Pick the {name}",
+      "hexInvalid": "Enter a colour as # and 6 letters or digits, for example #2F4858.",
+      "presets": "Suggested colours",
+      "presetChoose": "Use the {name} colours",
+      "reset": "Reset to the Jadarat look",
+      "resetDone": "The Jadarat colours are back. Save to apply them.",
+      "contrastTitle": "Some text may be hard to read",
+      "contrastIntro": "WCAG 2.2 AA asks for at least 4.5 : 1. You can still save: where text sits on this colour, the product uses a darker shade so it stays readable.",
+      "contrastTextOnPrimary": "White text on the primary colour: {ratio} : 1",
+      "contrastTextOnSecondary": "White text on the secondary colour: {ratio} : 1",
+      "contrastPrimaryOnWhite": "The primary colour as text on white: {ratio} : 1",
+      "contrastOk": "All text on these colours meets WCAG 2.2 AA (at least 4.5 : 1)."
+    },
+    "presetNames": {
+      "jadarat": "Jadarat",
+      "teal": "Teal",
+      "navy": "Navy",
+      "burgundy": "Burgundy",
+      "plum": "Plum",
+      "forest": "Forest",
+      "charcoal": "Charcoal"
+    },
+    "website": {
+      "title": "Website",
+      "intro": "Your organization's website.",
+      "label": "Website address",
+      "hint": "Starts with https://",
+      "invalid": "Enter a website address that starts with https://, for example https://www.example.com."
+    },
+    "preview": {
+      "title": "Preview",
+      "intro": "How your choices look, before you save.",
+      "menu": "Menu",
+      "menuHome": "Home",
+      "menuTeam": "Team members",
+      "menuSettings": "Settings",
+      "button": "Main button",
+      "signIn": "Sign-in page",
+      "signInWelcome": "Welcome back",
+      "signInButton": "Continue",
+      "logoAlt": "{name} logo"
+    },
+    "save": "Save changes",
+    "saving": "Saving…",
+    "saved": "Branding saved. The new look is applied for everyone.",
+    "noChanges": "Nothing has changed.",
+    "cancel": "Discard changes",
+    "lastChanged": "Last changed by {name} · {date}",
+    "lastChangedDefault": "Not changed yet: the Jadarat look.",
+    "fieldErrors": {
+      "nameRequired": "Enter the name.",
+      "nameTooLong": "Use 80 characters or fewer.",
+      "nameInvalid": "Remove special formatting characters from the name.",
+      "invalid": "Check this value."
     }
   }
 }

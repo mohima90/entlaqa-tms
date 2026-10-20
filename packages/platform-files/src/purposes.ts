@@ -56,6 +56,38 @@ export const FILE_PURPOSES = {
     auditDownloads: false,
     downloadTtlSeconds: 300,
   },
+  /**
+   * Branding images (WP-ADM-02, FR-ADM-07, BR-BRD-b; migration 20261023100000): PNG, JPEG or WebP — never SVG
+   * (it can carry scripts) or GIF — with Kawadir's limits: logo 2 MB, favicon 500 KB, sign-in image 5 MB.
+   * The organization's pages, the sign-in page and e-mails show a copy the worker publishes once clean.
+   */
+  'platform.brand_logo': {
+    bucket: 'images',
+    maxBytes: 2 * MB,
+    types: ['image/png', 'image/jpeg', 'image/webp'],
+    retention: 'owner_lifetime',
+    uploadBy: 'user',
+    auditDownloads: false,
+    downloadTtlSeconds: 300,
+  },
+  'platform.brand_favicon': {
+    bucket: 'images',
+    maxBytes: 500 * 1024,
+    types: ['image/png', 'image/jpeg', 'image/webp'],
+    retention: 'owner_lifetime',
+    uploadBy: 'user',
+    auditDownloads: false,
+    downloadTtlSeconds: 300,
+  },
+  'platform.brand_sign_in_image': {
+    bucket: 'images',
+    maxBytes: 5 * MB,
+    types: ['image/png', 'image/jpeg', 'image/webp'],
+    retention: 'owner_lifetime',
+    uploadBy: 'user',
+    auditDownloads: false,
+    downloadTtlSeconds: 300,
+  },
 } as const satisfies Record<string, PurposeDefinition>;
 
 export type FilePurpose = keyof typeof FILE_PURPOSES;

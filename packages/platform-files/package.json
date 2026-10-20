@@ -8,6 +8,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./next": "./src/next.ts",
+    "./images": "./src/image-info.ts",
     "./jobs": "./src/jobs/index.ts"
   },
   "scripts": {

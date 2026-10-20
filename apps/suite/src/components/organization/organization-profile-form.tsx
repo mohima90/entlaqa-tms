@@ -282,38 +282,17 @@ export function OrganizationProfileForm(props: OrganizationProfileFormProps) {
             icon="building"
             className="flex flex-col gap-5 *:first:mb-0"
           >
+            {/* The display names moved to Branding (WP-ADM-02, FR-ADM-02; Kawadir). */}
+            <p className="m-0 text-sm text-text-muted" data-testid="org-names-moved">
+              {t('organization.namesMoved')}{' '}
+              <a
+                href={`/${props.locale}/suite/admin/branding`}
+                className="font-semibold text-primary-text underline"
+              >
+                {t('organization.namesMovedLink')}
+              </a>
+            </p>
             <div className="grid grid-cols-[repeat(auto-fit,minmax(15rem,1fr))] gap-5">
-              <TextField
-                id="org-nameEn"
-                name="nameEn"
-                dir="ltr"
-                lang="en"
-                autoComplete="organization"
-                label={t('organization.nameEn')}
-                hint={t('organization.nameEnHint')}
-                error={errorOf('nameEn')}
-                value={values.nameEn}
-                onChange={(event) => {
-                  set('nameEn', event.target.value);
-                }}
-                disabled={disabled}
-                data-testid="org-nameEn"
-              />
-              <TextField
-                id="org-nameAr"
-                name="nameAr"
-                dir="rtl"
-                lang="ar"
-                label={t('organization.nameAr')}
-                hint={t('organization.nameArHint')}
-                error={errorOf('nameAr')}
-                value={values.nameAr}
-                onChange={(event) => {
-                  set('nameAr', event.target.value);
-                }}
-                disabled={disabled}
-                data-testid="org-nameAr"
-              />
               {select('industry', t('organization.industry'), props.industries, {
                 choose: t('organization.industryChoose'),
               })}

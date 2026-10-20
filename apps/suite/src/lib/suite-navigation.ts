@@ -9,6 +9,8 @@ export type SuitePage =
   | 'general'
   // Settings → Email integration (WP-ADM-01).
   | 'emailIntegration'
+  // Organization → Branding (WP-ADM-02).
+  | 'branding'
   | 'users'
   | 'structure'
   | 'branches'
@@ -65,6 +67,7 @@ export const SUITE_PATHS = {
   roles: '/suite/admin/roles',
   general: '/suite/admin/settings',
   emailIntegration: '/suite/admin/settings/email',
+  branding: '/suite/admin/branding',
   security: '/suite/admin/security',
   profile: '/suite/profile',
   planningCycles: '/suite/planning/cycles',
@@ -83,6 +86,7 @@ export const PAGE_TITLE_KEYS = {
   roles: 'roles',
   general: 'general',
   emailIntegration: 'emailIntegration',
+  branding: 'branding',
   security: 'security',
   profile: 'myProfile',
   planningCycles: 'planningCycles',
@@ -152,7 +156,9 @@ export function suiteNavigation(access: SuiteNavigationAccess): NavGroupModel[] 
           page('structure', 'structure', 'structure'),
           page('branches', 'building', 'branches'),
         ),
-        ...when(setup, soon('branding', 'palette')),
+        // Organization → Branding (WP-ADM-02): the Organization Admin edits it, a tenant.read holder (e.g.
+        // the Auditor) reads it.
+        ...when(access.organizationProfile || setup, page('branding', 'palette', 'branding')),
         ...when(access.roles, page('roles', 'key', 'roles')),
       ],
     },

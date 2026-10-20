@@ -303,6 +303,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
+| 20 Oct 2026 | `main` DB gate red after #72 (and on Dependabot #74/#75): `email.integration.test.ts` counted e-mails other suites leave waiting (NO_SENDER since WP-ADM-01) — order-dependent; fixed to count only its own messages. Branding (WP-ADM-02) build started |
 | 20 Oct 2026 | PR #72 merged (Dependabot monthly). Kawadir's Branding page researched in code; WP-ADM-02 business flow drafted (`docs/business-flows/EP-BRAND-branding.md`), with the PO. Dependabot opened this month's 3 PRs (#73–#75), to be checked |
 | 20 Oct 2026 | E-mail live in production: platform sender set by the PO (Resend) and the test e-mail arrived; `JOBS_REQUIRED` = on. WP-ADM-01 done. Dependabot moved to monthly; the five open Dependabot PRs (#67–#71) being checked |
 | 20 Oct 2026 | **PR #66 merged** (WP-ADM-01 e-mail), DB deploy green. Production worker configured for the first time with the PO (production-jobs: DATABASE_URL_APP_WORKER, DATABASE_URL_APP_QUEUE, SUPABASE_SECRET_KEY `workerproduction`, variables DATABASE_CA_CERT, APP_BASE_URL); Jobs pass green: `e-mail settings key: on`, worker key published, queued e-mails wait (NO_SENDER) until the Super Admin sets the platform sender. Next: PO sets Platform settings → Email; then repository variable JOBS_REQUIRED = on |

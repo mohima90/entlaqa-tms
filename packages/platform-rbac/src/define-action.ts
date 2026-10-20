@@ -133,6 +133,18 @@ export interface ActionRuntime<Tx> {
    * review L-b): the permission and the error code only, never input or personal data.
    */
   logAfterCommitRefusal?(meta: { readonly permission: string; readonly code: string }): void;
+  /**
+   * Did the action's transaction queue work for the background worker on its own (it emitted a domain
+   * event — platform-db emitEvent)? Asked at the end of the transaction; an action may also declare it
+   * (`queuesWork`). Absent → only the declaration counts.
+   */
+  queuedWork?(tx: Tx): Promise<boolean>;
+  /**
+   * After the commit of an action that queued background work: ask for a worker pass now (ADR 0005 §1
+   * amendment, 20 Oct 2026 — the web app starts the GitHub Jobs workflow after the response). Must not
+   * throw or delay the answer; a throw is ignored.
+   */
+  requestWorkerPass?(meta: { readonly permission: string }): void | Promise<void>;
 }
 
 /**
@@ -162,6 +174,13 @@ export type ActionDefinition<S extends z.ZodType, O, Tx, R = O> = ActionTarget<S
    * which is safe only while everything it did was in that transaction.
    */
   readonly externalEffects?: boolean;
+  /**
+   * true when the action queues work for the background worker WITHOUT emitting a domain event (e.g. a
+   * test e-mail request in a settings table): after the commit, the runtime asks for a worker pass
+   * (`requestWorkerPass`). Actions that emit an event through platform-db `emitEvent` are detected on their
+   * own and need not declare it. Never for a passive read.
+   */
+  readonly queuesWork?: boolean;
   /**
    * The name of an allow-listed read that does NOT count as the session's activity (platform-db
    * `PASSIVE_READS`, which refuses any other name; T-M2-12 integration review L1): its transaction is READ
@@ -259,6 +278,7 @@ export function requiresStrictVerification(permission: PermissionDefinition): bo
  *   (deny by default; AAL2 permissions need the database's AAL2 AND a code from the last
  *   STEP_UP_MAX_AGE_SECONDS, else STEP_UP_REQUIRED) → handler → audit } — the whole transaction run once
  * more after a deadlock or serialization failure, unless the action declares `externalEffects` →
+ * [a worker pass requested when the committed attempt queued work: `queuesWork` or an emitted event] →
  * [afterCommit, once, after the commit, no connection held].
  */
 export function createDefineAction<Tx>(runtime: ActionRuntime<Tx>) {
@@ -271,7 +291,8 @@ export function createDefineAction<Tx>(runtime: ActionRuntime<Tx>) {
         definition.auditFailure !== undefined ||
         definition.beforeTransaction !== undefined ||
         definition.afterCommit !== undefined ||
-        definition.externalEffects === true)
+        definition.externalEffects === true ||
+        definition.queuesWork === true)
     ) {
       throw new Error(
         `defineAction: the passive read ${definition.passiveRead} must only read (no audit, no work before or after its transaction)`,
@@ -308,6 +329,8 @@ export function createDefineAction<Tx>(runtime: ActionRuntime<Tx>) {
 
       // A refusal the handler returned (not an authorization denial), for `auditFailure`.
       let refused = null as AppError | null;
+      // Did the committed attempt queue background work (declared, or an event emitted)?
+      let queued = false as boolean;
       try {
         if (definition.beforeTransaction) {
           // The session check first (integration review T-M2-11 L3), in its own short transaction that
@@ -328,6 +351,7 @@ export function createDefineAction<Tx>(runtime: ActionRuntime<Tx>) {
           tenantClaims,
           async (tx) => {
             refused = null; // a retried transaction starts again
+            queued = false;
             const actor = actorFromClaims(tenantClaims);
             // Tenant-scoped work only while the database lets the session act there (review L1).
             const facts = await runtime.loadSessionFacts(tx);
@@ -387,6 +411,7 @@ export function createDefineAction<Tx>(runtime: ActionRuntime<Tx>) {
 
             const record = definition.audit?.(input.value, output.value);
             if (record) await runtime.writeAudit(tx, actor, record);
+            queued = definition.queuesWork === true || (await runtime.queuedWork?.(tx)) === true;
             return output.value;
           },
           {
@@ -399,7 +424,15 @@ export function createDefineAction<Tx>(runtime: ActionRuntime<Tx>) {
               : { passiveRead: definition.passiveRead }),
           },
         );
-        // Committed. Without afterCommit the handler's result is the answer (R defaults to O).
+        // Committed: queued work gets a worker pass (after the response; never changes the answer).
+        if (queued && runtime.requestWorkerPass) {
+          try {
+            await runtime.requestWorkerPass({ permission: definition.permission.code });
+          } catch {
+            // Best effort by design: the work is committed and the scheduled pass picks it up.
+          }
+        }
+        // Without afterCommit the handler's result is the answer (R defaults to O).
         if (!definition.afterCommit) return ok(committed as unknown as R);
         const after = await definition.afterCommit({
           actor: actorFromClaims(tenantClaims),

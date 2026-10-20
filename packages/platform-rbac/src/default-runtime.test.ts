@@ -7,6 +7,7 @@ const identity = vi.hoisted(() => ({
 }));
 const db = vi.hoisted(() => ({
   withUserTx: vi.fn((_claims: unknown, fn: (tx: unknown) => Promise<unknown>) => fn('tx')),
+  emittedEventsIn: vi.fn((tx: unknown) => tx === 'tx-with-event'),
   isPassiveRead: vi.fn((name: string) => name === 'platform.user_import.status'),
   insertAuditEvent: vi.fn(() => Promise.resolve()),
   loadSessionFacts: vi.fn(() => Promise.resolve({ active: true, aal2: false })),
@@ -48,7 +49,10 @@ const db = vi.hoisted(() => ({
 }));
 
 vi.mock('@jadarat/platform-identity/next', () => identity);
+const kick = vi.hoisted(() => ({ kickWorkerAfterResponse: vi.fn() }));
+
 vi.mock('@jadarat/platform-db', () => db);
+vi.mock('@jadarat/platform-jobs/kick/next', () => kick);
 
 const { defaultActionRuntime } = await import('./default-runtime');
 
@@ -228,5 +232,11 @@ describe('default defineAction runtime', () => {
       error_code: 'FILE_STORAGE_UNAVAILABLE',
     });
     spy.mockRestore();
+  });
+  it('detects emitted events and asks for a worker pass after the response (ADR 0005 §1 amendment)', async () => {
+    expect(await defaultActionRuntime.queuedWork?.('tx-with-event' as never)).toBe(true);
+    expect(await defaultActionRuntime.queuedWork?.('tx' as never)).toBe(false);
+    await defaultActionRuntime.requestWorkerPass?.({ permission: 'platform.user.invite' });
+    expect(kick.kickWorkerAfterResponse).toHaveBeenCalledWith('action:platform.user.invite');
   });
 });

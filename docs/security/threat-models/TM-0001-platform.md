@@ -153,6 +153,7 @@ Aggregates inherit the **highest** class of their content (a full tenant export 
 | EP-18 | Calendar invitations/feeds (.ics, FR-LRN-03) and notification links | TB-1 | Link token | R1 |
 | EP-19 | AI assistant, Ops Agent tools (R2–R3) | TB-2, TB-7 | Session; tool calls via `defineAction` | R2+ |
 | EP-20 | DNS / custom domains / TLS issuance (R2) | TB-1 | Tenant Admin + DNS proof | R2 |
+| EP-21 | Worker-pass kick (20 Oct 2026, ADR 0005 §1 amendment): `GET /api/cron/jobs` (Vercel Cron, every minute) and the web app's outbound `workflow_dispatch` call to `https://api.github.com` after queued work | TB-1 (cron route), TB-8 (GitHub API) | Cron: `Bearer CRON_SECRET` (≥ 16 characters, constant-time compare; none set → always 401). Outbound: `JOBS_DISPATCH_TOKEN`, fine-grained, Actions read/write on this repository only — no worker, database or Storage credential in the web runtime (TB-9 unchanged). Fixed origin, pattern-checked settings (no SSRF), 5 s timeout, one dispatch a minute per instance, token never logged. Abuse with the token: start/cancel this repository's workflows only (`concurrency` keeps one pass running, one waiting) | R1 |
 
 ---
 

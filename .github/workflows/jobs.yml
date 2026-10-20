@@ -1,8 +1,16 @@
 # Background jobs for the hosted environment (ADR 0005 §3, T-M2-06a; production naming T-M2-36). There is no
 # container host for the worker yet (a PO cost decision before the first customer, ADR 0005 §1), so GitHub
-# runs one worker pass every 5 minutes (scheduled runs can start late) and on demand
-# (Actions → Jobs → Run workflow): install or upgrade the queue schema, dispatch pending events, run every
-# job that is due, exit. Scheduled runs always target production; a run by hand may still choose the old
+# runs one worker pass per run: install or upgrade the queue schema, dispatch pending events, run every job
+# that is due, exit. Runs start (ADR 0005 §1 amendment, PO 20 Oct 2026; background-jobs.md §1a):
+#   - from the WEB APP right after an action queued work (invitation, test e-mail, upload scan, import,
+#     account e-mail) and from its Vercel Cron every minute (/api/cron/jobs): `workflow_dispatch` through
+#     the GitHub API with the narrow token JOBS_DISPATCH_TOKEN (Actions read/write on this repository only)
+#     — the worker's keys below never leave GitHub; at most one dispatch a minute per web instance;
+#   - every 5 minutes on GitHub's schedule — the safety net (GitHub starts scheduled runs late, or skips
+#     them, under load);
+#   - by hand (Actions → Jobs → Run workflow).
+# The `concurrency` group below keeps at most one pass running and one waiting (a newer waiting run
+# replaces the older one, never the running one), so extra dispatches cost nothing but a queued run. Scheduled runs always target production; a run by hand may still choose the old
 # `staging` project until it is deleted (production-setup.md step 39). Runbook: docs/engineering/background-jobs.md.
 # Configuration lives in its own GitHub *environment* per target (Settings → Environments → production-jobs;
 # the old project: staging-jobs), whose "Deployment branches" rule (main only) is the access control; it
@@ -73,7 +81,8 @@ on:
 permissions:
   contents: read
 
-# Scheduled runs have no inputs: `inputs.environment || 'production'` is the target everywhere below.
+# Scheduled runs have no inputs, and the web app's dispatches send none (its default applies):
+# `inputs.environment || 'production'` is the target everywhere below — one group for all of them.
 concurrency:
   group: jobs-${{ inputs.environment || 'production' }}
   cancel-in-progress: false

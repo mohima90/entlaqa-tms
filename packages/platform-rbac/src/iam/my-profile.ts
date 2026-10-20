@@ -341,6 +341,8 @@ export function changeMyPasswordActionDefinition(
     scoped: true,
     // The password changes at Auth inside the transaction: never run twice after a deadlock.
     externalEffects: true,
+    // The "password changed" notice waits in the account e-mail queue: a worker pass after the commit.
+    queuesWork: afterChange !== undefined,
     beforeTransaction: async ({ actor }) =>
       (await allowPasswordCheck(actor.userId)) ? ok(undefined) : err(appError('RATE_LIMITED')),
     handler: async ({ ctx, input }) => {

@@ -27,7 +27,7 @@ import {
   isPlatformAdmin,
   getEmailCredentialsPublicKey,
   getPlatformEmailSettings,
-  savePlatformEmailSettings,
+  savePlatformEmailSettings as savePlatformEmailSettingsInDatabase,
   listMyMfaApps,
   listPlatformTenants,
   createPlatformTenant,
@@ -40,11 +40,11 @@ import {
   rateLimitStore,
   rejectMfaFactor,
   removeMfaApp as removeMfaAppInDatabase,
-  requestAccountLockedMail,
-  requestMfaCodeLockedMail,
-  requestMfaFactorMail,
-  requestPasswordChangedMail,
-  requestPasswordResetMail,
+  requestAccountLockedMail as requestAccountLockedMailInDatabase,
+  requestMfaCodeLockedMail as requestMfaCodeLockedMailInDatabase,
+  requestMfaFactorMail as requestMfaFactorMailInDatabase,
+  requestPasswordChangedMail as requestPasswordChangedMailInDatabase,
+  requestPasswordResetMail as requestPasswordResetMailInDatabase,
   type SessionAccess,
   trustDeviceAfterCode,
   signInAccountInTenant,
@@ -56,6 +56,7 @@ import {
   createSupabaseStatelessClient,
   createSupabaseVerifierClient,
 } from '@jadarat/platform-db/supabase-server';
+import { kicksWorker } from '@jadarat/platform-jobs/kick/next';
 import { log } from '@jadarat/platform-observability';
 import { cookies, headers } from 'next/headers';
 import { after } from 'next/server';
@@ -155,6 +156,22 @@ const sleep = (ms: number) =>
   new Promise<void>((resolve) => {
     setTimeout(resolve, ms);
   });
+
+// What these flows queue for the worker (account e-mails, the platform sender's test e-mail) asks for a
+// worker pass after the response (ADR 0005 §1 amendment, PO 20 Oct 2026; platform-jobs ./kick/next) — a
+// no-op without JOBS_DISPATCH_TOKEN, throttled per server instance.
+const requestAccountLockedMail = kicksWorker('account_mail', requestAccountLockedMailInDatabase);
+const requestMfaCodeLockedMail = kicksWorker('account_mail', requestMfaCodeLockedMailInDatabase);
+const requestMfaFactorMail = kicksWorker('account_mail', requestMfaFactorMailInDatabase);
+const requestPasswordChangedMail = kicksWorker(
+  'account_mail',
+  requestPasswordChangedMailInDatabase,
+);
+const requestPasswordResetMail = kicksWorker('account_mail', requestPasswordResetMailInDatabase);
+const savePlatformEmailSettings = kicksWorker(
+  'platform_email_test',
+  savePlatformEmailSettingsInDatabase,
+);
 
 /** Security events (TM-0003 T-IAM-25) as structured log lines: codes and keyed references only. */
 const securityLog: SecurityLog = (event) => {

@@ -25,6 +25,41 @@ describe('server settings at start-up (T-M2-17, T-M2-11)', () => {
     );
   });
 
+  it('worker kick (ADR 0005 §1 amendment): off by default; invalid → an error, never a stop; no CRON_SECRET on Vercel → a warning', () => {
+    const token = 'github_pat_0123456789abcdefghijklmnopqrstuvwxyz';
+    log.error.mockClear();
+    log.warn.mockClear();
+    expect(
+      checkServerSettings({
+        JOBS_DISPATCH_TOKEN: token,
+        JOBS_DISPATCH_REPO: 'mohima90/entlaqa-tms',
+      }).workerKick,
+    ).toBe('on');
+    expect(checkServerSettings({ JOBS_DISPATCH_TOKEN: token }).workerKick).toBe('invalid');
+    expect(log.error).toHaveBeenCalledWith(
+      'JOBS_DISPATCH_REPO is invalid: the web app does not start worker passes',
+      { action: 'app.start', reason: 'jobs_dispatch_config_invalid' },
+    );
+    expect(JSON.stringify(log.error.mock.calls)).not.toContain(token);
+    const on = {
+      JOBS_DISPATCH_TOKEN: token,
+      JOBS_DISPATCH_REPO: 'mohima90/entlaqa-tms',
+      VERCEL: '1',
+      VERCEL_ENV: 'production',
+    };
+    checkServerSettings(on);
+    expect(log.warn).toHaveBeenCalledWith(
+      'CRON_SECRET is not set: the per-minute worker-pass cron is refused (401)',
+      { action: 'app.start', reason: 'cron_secret_missing' },
+    );
+    log.warn.mockClear();
+    checkServerSettings({ ...on, CRON_SECRET: '0123456789abcdef0123' });
+    expect(log.warn).not.toHaveBeenCalledWith(expect.anything(), {
+      action: 'app.start',
+      reason: 'cron_secret_missing',
+    });
+  });
+
   it('reads PASSWORD_RESET_DELIVERY: auth by default, worker when set', () => {
     expect(checkServerSettings({})).toEqual({
       passwordResetDelivery: 'auth',
@@ -32,6 +67,7 @@ describe('server settings at start-up (T-M2-17, T-M2-11)', () => {
       authClientHeader: null,
       clientIpHeader: null,
       appBaseUrl: null,
+      workerKick: 'off',
     });
     expect(checkServerSettings({ PASSWORD_RESET_DELIVERY: 'worker' })).toMatchObject({
       passwordResetDelivery: 'worker',

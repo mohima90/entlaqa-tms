@@ -23,6 +23,18 @@ export interface EmittedEvent {
 }
 
 /**
+ * Transactions that emitted an event (in memory, by object identity; never shared between requests): every
+ * event needs a worker pass to be delivered, so defineAction asks for one after such a transaction committed
+ * (ADR 0005 §1 amendment, 20 Oct 2026 — platform-jobs ./kick).
+ */
+const transactionsWithEvents = new WeakSet<object>();
+
+/** Did `tx` emit an event (emitEvent)? True even if it later rolled back — callers check after commit. */
+export function emittedEventsIn(tx: ClaimsTx): boolean {
+  return transactionsWithEvents.has(tx);
+}
+
+/**
  * Inserts the event into platform.event_outbox and returns its id (the consumers' idempotency key).
  * The id is chosen here: request and job roles may append to the outbox but never read it, so the
  * insert cannot use RETURNING.
@@ -36,5 +48,6 @@ export async function emitEvent(tx: ClaimsTx, event: EmittedEvent): Promise<stri
     insert into platform.event_outbox (id, type, schema_version, subject, data, correlation_id)
     values (${id}::uuid, ${event.type}, ${event.version ?? 1}, ${event.subject ?? null}::uuid,
             ${JSON.stringify(event.data ?? {})}::jsonb, ${event.correlationId ?? null})`);
+  transactionsWithEvents.add(tx);
   return id;
 }

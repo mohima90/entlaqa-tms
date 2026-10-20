@@ -341,7 +341,7 @@ export {
   listOrgStructure,
   searchMemberOptions,
 } from './org-directory';
-export { EVENT_TYPE_PATTERN, type EmittedEvent, emitEvent } from './events';
+export { EVENT_TYPE_PATTERN, type EmittedEvent, emitEvent, emittedEventsIn } from './events';
 export { type PersonalDetails, getPersonalDetails, updatePersonalDetails } from './my-profile';
 export {
   type EditableRole,

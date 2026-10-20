@@ -80,16 +80,20 @@ describe('proxy', () => {
     expect(csp).toContain(`'nonce-${forwarded(response, 'x-nonce') ?? ''}'`);
   }
 
-  it.each(['/api/health', '/api/hooks/lms/abc', '/icon.svg', '/favicon.ico', '/_next/image'])(
-    'scrubs internal headers and sets the CSP on %s (no locale routing)',
-    (path) => {
-      const response = run(`http://localhost:3000${path}`, hostile);
-      expect(response.status).toBe(200);
-      expect(response.headers.get('location')).toBeNull();
-      expect(response.headers.get('x-middleware-rewrite')).toBeNull();
-      expectScrubbed(response);
-    },
-  );
+  it.each([
+    '/api/health',
+    '/api/cron/jobs',
+    '/api/hooks/lms/abc',
+    '/icon.svg',
+    '/favicon.ico',
+    '/_next/image',
+  ])('scrubs internal headers and sets the CSP on %s (no locale routing)', (path) => {
+    const response = run(`http://localhost:3000${path}`, hostile);
+    expect(response.status).toBe(200);
+    expect(response.headers.get('location')).toBeNull();
+    expect(response.headers.get('x-middleware-rewrite')).toBeNull();
+    expectScrubbed(response);
+  });
 
   it('scrubs internal headers when next-intl cannot decode the path (its bare next() branch)', () => {
     // decodeURI throws on a truncated escape: next-intl returns NextResponse.next() without headers.
@@ -173,6 +177,8 @@ describe('proxy', () => {
     expect(isLocaleRouted('/apiary')).toBe(true);
     expect(isLocaleRouted('/api')).toBe(false);
     expect(isLocaleRouted('/api/health')).toBe(false);
+    // Vercel Cron (no session cookies, no session refresh): its own Bearer CRON_SECRET check.
+    expect(isLocaleRouted('/api/cron/jobs')).toBe(false);
     expect(isLocaleRouted('/_next/image')).toBe(false);
     expect(isLocaleRouted('/icon.svg')).toBe(false);
   });

@@ -192,7 +192,7 @@ services:
   # Logs only its own errors (LOG_LEVEL error): its request lines (also refused requests, at warn) carry
   # the URL, and a download URL carries the original file name (Storage redacts only the token).
   storage:
-    image: supabase/storage-api:v1.80.2@sha256:95b217a9c59e0ac06c6dcb539df3189a1668a2445fb43dbf29660d6968ffd7d2
+    image: supabase/storage-api:v1.83.5@sha256:11473750c5a07d82b010f51746c94c902405ce7576cdc74a070983cf19501742
     <<: *hardening
     read_only: true
     cap_drop: [ALL]
@@ -459,7 +459,7 @@ services:
   #   NEW_USER_PASSWORD='…' docker compose --env-file .secrets/.env run --rm --user "$(id -u):$(id -g)" \
   #     -e NEW_USER_PASSWORD admin-cli admin@example.org
   admin-cli:
-    image: gcr.io/distroless/nodejs24-debian13:nonroot@sha256:9eeb7f5887d0e239e78264b06f7f11d2e14be534050481803a9e4728fcdd278e
+    image: gcr.io/distroless/nodejs24-debian13:nonroot@sha256:c1326ce1aad4b976dce3a3da8b7eb5c8328e635e312309a7a0e5319d1470be0d
     profiles: [tools]
     security_opt: ['no-new-privileges:true']
     read_only: true
@@ -479,7 +479,7 @@ services:
   # (invitations, password reset and "password changed", T-M2-17). Remove it when SMTP_URL points at a
   # real relay.
   mailpit:
-    image: axllent/mailpit:v1.31.4@sha256:b68349e3a014b90c5610bfb26b2ae36f3892d7b8cf25ee140c6c71c98d2fcf48
+    image: axllent/mailpit:v1.31.6@sha256:23fe39e81bde596a918000b3135c0f85dc8bb4c9ea6be274b051143f3e300387
     <<: *hardening
     read_only: true
     cap_drop: [ALL]

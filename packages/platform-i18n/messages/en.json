@@ -3039,11 +3039,11 @@
       "title": "Logo and browser icon",
       "intro": "PNG, JPG or WebP. SVG files aren't accepted.",
       "logo": "Logo",
-      "logoHint": "Up to 2 MB. Recommended: about 200 × 60 pixels, transparent background.",
+      "logoHint": "Up to 2 MB and 4096 × 4096 pixels. Recommended: about 200 × 60 pixels, transparent background.",
       "favicon": "Browser icon (favicon)",
-      "faviconHint": "Up to 500 KB. Square, at least 32 × 32 pixels.",
+      "faviconHint": "Up to 500 KB and 512 × 512 pixels. Square, at least 32 × 32 pixels.",
       "signInImage": "Sign-in page picture",
-      "signInImageHint": "Up to 5 MB. Recommended: 1920 × 1080 pixels. Shown behind your colours, next to the sign-in form.",
+      "signInImageHint": "Up to 5 MB and 4096 × 4096 pixels. Recommended: 1920 × 1080 pixels. Shown behind your colours, next to the sign-in form.",
       "upload": "Upload",
       "replace": "Replace",
       "remove": "Remove",
@@ -3061,7 +3061,9 @@
       "errorInfected": "This file didn't pass the virus check and can't be used.",
       "errorRejected": "This file isn't a PNG, JPG or WebP image, or it is too large.",
       "errorScan": "The file couldn't be checked. Try another file.",
-      "errorNotUsable": "This image can't be used any more. Upload it again."
+      "errorNotUsable": "This image can't be used any more. Upload it again.",
+      "errorDimensions": "This image is too big: at most {size} × {size} pixels.",
+      "errorNotPublished": "This image couldn't be prepared for use (it may be damaged or too big). Upload another one."
     },
     "colors": {
       "title": "Brand colours",

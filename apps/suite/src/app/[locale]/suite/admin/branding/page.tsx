@@ -1,6 +1,6 @@
 import { toClientError } from '@jadarat/platform-core';
 import type { BrandingRecord } from '@jadarat/platform-db';
-import { brandImageMaxBytes } from '@jadarat/platform-files';
+import { BRAND_IMAGE_MAX_SIDE, brandImageMaxBytes } from '@jadarat/platform-files';
 import { type AppLocale, getMessages } from '@jadarat/platform-i18n';
 import { routing } from '@jadarat/platform-i18n/routing';
 import { Alert, PageHeader } from '@jadarat/ui';
@@ -131,6 +131,7 @@ function imageOf(
     src: brandAssetPath(image.assetId),
     status: image.status,
     name: image.name,
+    failed: image.failed,
   };
 }
 
@@ -176,6 +177,7 @@ async function Form({
         sign_in_image: record ? imageOf(record, 'sign_in_image') : null,
       }}
       limits={LIMITS}
+      maxSides={BRAND_IMAGE_MAX_SIDE}
       texts={flattenTexts(getMessages(locale).branding)}
       errors={await fileActionErrorTexts(locale)}
       lastChanged={lastChanged}

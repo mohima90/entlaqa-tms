@@ -1,4 +1,5 @@
 'use client';
+import { imageSize } from '@jadarat/platform-files/images';
 import { Alert, Button, Card, Icon, TextField, cn } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
 import {
@@ -17,6 +18,18 @@ import {
   saveBrandingAction,
   startBrandImageUploadAction,
 } from '../../actions/organization';
+import {
+  SCAN_FINAL,
+  type SlotState,
+  afterSave,
+  beginPick,
+  initialSlot,
+  removed,
+  scanFinished,
+  scanPollDelays,
+  uploadConfirmed,
+  uploadFailed,
+} from '../../lib/brand-image-slot';
 import {
   BRAND_PRESETS,
   type BrandColors,
@@ -38,9 +51,11 @@ import { useSessionRefusal } from '../auth/session-refusal';
  * organization's names, logo, browser icon, sign-in picture, primary and secondary colour with «Use
  * gradient», preset colours (Jadarat first), website — and a live preview of the menu, a main button and
  * the sign-in page with the UNSAVED choices. A real WCAG 2.2 AA contrast check warns about hard-to-read
- * colours (saving stays possible). Images: PNG, JPG or WebP only (checked by name, size and first bytes here,
- * by content and for viruses on the server); uploaded at once, used once saved. «Reset to the Jadarat look»
- * puts the Jadarat colours back (images stay unless removed).
+ * colours (saving stays possible). Images: PNG, JPG or WebP only (checked by name, size, first bytes and size
+ * in pixels here; by content, for viruses and in pixels again on the server); uploaded at once, used once
+ * saved. A failed replacement puts the image the slot had back (lib/brand-image-slot.ts). Progress and
+ * results are announced politely (aria-live). «Reset to the Jadarat look» puts the Jadarat colours back
+ * (images stay unless removed).
  *
  * The CSP allows no style attributes: colours reach the preview and the swatches through CSS custom
  * properties set with the CSSOM after hydration (preset swatches are static classes).
@@ -56,6 +71,8 @@ export interface BrandImageInitial {
   /** The file's status (for its uploader), or null. */
   readonly status: string | null;
   readonly name: string | null;
+  /** The worker gave up publishing it: the page asks for another image. */
+  readonly failed: boolean;
 }
 
 export interface BrandingFormValues {
@@ -78,21 +95,12 @@ export interface BrandingFormProps {
   readonly images: Readonly<Record<BrandSlot, BrandImageInitial | null>>;
   /** Largest file per slot, in bytes (platform-files purposes). */
   readonly limits: Readonly<Record<BrandSlot, number>>;
+  /** Largest side per slot, in pixels (platform-files BRAND_IMAGE_MAX_SIDE). */
+  readonly maxSides: Readonly<Record<BrandSlot, number>>;
   /** Translated texts by key (branding namespace, flattened). */
   readonly texts: Readonly<Record<string, string>>;
   readonly errors: ErrorTexts;
   readonly lastChanged: string;
-}
-
-type Phase = 'none' | 'saved' | 'uploading' | 'checking' | 'ready' | 'previewOnly';
-
-interface SlotState {
-  readonly fileId: string | null;
-  /** What the previews show: the published copy, or the picked file (blob:). */
-  readonly src: string | null;
-  readonly name: string | null;
-  readonly phase: Phase;
-  readonly error: string | null;
 }
 
 interface Message {
@@ -101,10 +109,6 @@ interface Message {
 }
 
 type Field = 'nameEn' | 'nameAr' | 'primaryColor' | 'secondaryColor' | 'websiteUrl';
-
-const FINAL = new Set(['clean', 'infected', 'rejected', 'error', 'deleted']);
-const POLL_MS = 3000;
-const POLL_TIMES = 40;
 
 /** Static classes of the preset swatches (the CSP allows no style attribute; Tailwind sees these). */
 const PRESET_CLASSES: Readonly<Record<string, string>> = {
@@ -123,11 +127,6 @@ function withoutColorErrors(
 ): Partial<Record<Field, string>> {
   const { primaryColor: _primary, secondaryColor: _secondary, ...rest } = current;
   return rest;
-}
-
-function initialSlot(image: BrandImageInitial | null): SlotState {
-  if (!image) return { fileId: null, src: null, name: null, phase: 'none', error: null };
-  return { fileId: image.fileId, src: image.src, name: image.name, phase: 'saved', error: null };
 }
 
 /** The colours the previews use: the last valid ones as typed (the Jadarat ones until then). */
@@ -287,32 +286,44 @@ export function BrandingForm(props: BrandingFormProps) {
   const set = <K extends keyof BrandingFormValues>(field: K, value: BrandingFormValues[K]) => {
     setValues((current) => ({ ...current, [field]: value }));
   };
-  const setSlot = (slot: BrandSlot, patch: Partial<SlotState>) => {
-    setSlots((current) => ({ ...current, [slot]: { ...current[slot], ...patch } }));
+  const updateSlot = (slot: BrandSlot, change: (state: SlotState) => SlotState) => {
+    setSlots((current) => ({ ...current, [slot]: change(current[slot]) }));
+  };
+  /** A refusal before anything is uploaded: the slot keeps what it shows, with the reason. */
+  const refuse = (slot: BrandSlot, error: string) => {
+    updateSlot(slot, (state) => ({ ...state, error }));
   };
 
   const unmounted = () => !alive.current;
 
+  const scanError = (status: string) =>
+    status === 'infected'
+      ? t('images.errorInfected')
+      : status === 'rejected'
+        ? t('images.errorRejected')
+        : t('images.errorScan');
+
+  /** The scan's progress: quick checks first, then slower, ≈ 10 minutes (security review L12). */
   async function pollStatus(slot: BrandSlot, fileId: string) {
-    for (let attempt = 0; attempt < POLL_TIMES; attempt += 1) {
-      await new Promise((resolve) => setTimeout(resolve, POLL_MS));
+    for (const delay of scanPollDelays()) {
+      await new Promise((resolve) => setTimeout(resolve, delay));
       if (unmounted()) return;
       const result = await brandImageStatusAction({ slot, fileId });
       if (!result.ok) return;
       const status = result.value.status;
-      if (!FINAL.has(status)) continue;
-      if (status === 'clean') setSlot(slot, { phase: 'ready' });
-      else {
-        const error =
-          status === 'infected'
-            ? t('images.errorInfected')
-            : status === 'rejected'
-              ? t('images.errorRejected')
-              : t('images.errorScan');
-        setSlot(slot, { fileId: null, src: null, name: null, phase: 'none', error });
-      }
+      if (!SCAN_FINAL.has(status)) continue;
+      updateSlot(slot, (state) => scanFinished(state, fileId, status, scanError));
       return;
     }
+  }
+
+  /** Header only (no decoding): the size in pixels within the slot's cap? Else the refusal's text. */
+  async function pixelProblem(slot: BrandSlot, file: File): Promise<string | null> {
+    const size = imageSize(new Uint8Array(await file.arrayBuffer()));
+    if (size === null) return t('images.errorType');
+    const max = props.maxSides[slot];
+    if (size.width <= max && size.height <= max) return null;
+    return fillText(t('images.errorDimensions'), { size: String(max) }, locale);
   }
 
   async function pick(slot: BrandSlot, file: File) {
@@ -320,39 +331,46 @@ export function BrandingForm(props: BrandingFormProps) {
     const limit = props.limits[slot];
     const typeError = t('images.errorType');
     if (!/\.(png|jpe?g|webp)$/i.test(file.name)) {
-      setSlot(slot, { error: typeError });
+      refuse(slot, typeError);
       return;
     }
     if (file.size === 0) {
-      setSlot(slot, { error: t('images.errorEmpty') });
+      refuse(slot, t('images.errorEmpty'));
       return;
     }
     if (file.size > limit) {
-      setSlot(slot, {
-        error: fillText(t('images.errorSize'), { size: formatBytes(limit, locale) }, locale),
-      });
+      refuse(slot, fillText(t('images.errorSize'), { size: formatBytes(limit, locale) }, locale));
       return;
     }
     const head = new Uint8Array(await file.slice(0, 16).arrayBuffer());
     if (sniffImageType(head) === null) {
-      setSlot(slot, { error: typeError });
+      refuse(slot, typeError);
+      return;
+    }
+    const pixels = await pixelProblem(slot, file);
+    if (pixels !== null) {
+      refuse(slot, pixels);
       return;
     }
     const src = URL.createObjectURL(file);
     blobs.current.add(src);
     if (!live || !editable) {
-      setSlot(slot, { src, name: file.name, phase: 'previewOnly', error: null });
+      updateSlot(slot, (state) => beginPick(state, { src, name: file.name }, 'previewOnly'));
       return;
     }
-    setSlot(slot, { src, name: file.name, phase: 'uploading', error: null });
+    updateSlot(slot, (state) => beginPick(state, { src, name: file.name }, 'uploading'));
+    // Any failure from here on puts the image the slot had back (security review M3).
+    const fail = (error: string) => {
+      updateSlot(slot, (state) => uploadFailed(state, src, error));
+    };
     const started = await startBrandImageUploadAction({
       slot,
       fileName: file.name,
       size: file.size,
     });
     if (!started.ok) {
-      if (sessionRefused(started.error)) return;
-      setSlot(slot, { phase: 'none', src: null, error: errorText(started.error, props.errors) });
+      fail(errorText(started.error, props.errors));
+      sessionRefused(started.error);
       return;
     }
     const target = started.value;
@@ -367,29 +385,27 @@ export function BrandingForm(props: BrandingFormProps) {
       put = new Response(null, { status: 599 });
     }
     if (!put.ok) {
-      setSlot(slot, { phase: 'none', src: null, error: t('images.errorUpload') });
+      fail(t('images.errorUpload'));
       return;
     }
     const confirmed = await confirmBrandImageUploadAction({ slot, fileId: target.fileId });
     if (!confirmed.ok) {
-      setSlot(slot, { phase: 'none', src: null, error: errorText(confirmed.error, props.errors) });
+      fail(errorText(confirmed.error, props.errors));
+      sessionRefused(confirmed.error);
       return;
     }
     const status = confirmed.value.status;
-    if (status === 'rejected') {
-      setSlot(slot, { phase: 'none', src: null, error: t('images.errorRejected') });
+    if (status !== 'clean' && SCAN_FINAL.has(status)) {
+      fail(scanError(status));
       return;
     }
-    setSlot(slot, {
-      fileId: target.fileId,
-      phase: status === 'clean' ? 'ready' : 'checking',
-    });
+    updateSlot(slot, (state) => uploadConfirmed(state, src, target.fileId, status));
     if (status !== 'clean') void pollStatus(slot, target.fileId);
   }
 
   function remove(slot: BrandSlot) {
     setMessage(null);
-    setSlot(slot, { fileId: null, src: null, name: null, phase: 'none', error: null });
+    updateSlot(slot, removed);
   }
 
   function reset() {
@@ -452,6 +468,11 @@ export function BrandingForm(props: BrandingFormProps) {
       });
       if (result.ok) {
         setSavedVersion(result.value.version);
+        setSlots((current) => ({
+          logo: afterSave(current.logo),
+          favicon: afterSave(current.favicon),
+          sign_in_image: afterSave(current.sign_in_image),
+        }));
         setMessage({
           tone: 'success',
           text: result.value.changed.length === 0 ? t('noChanges') : t('saved'),
@@ -475,7 +496,7 @@ export function BrandingForm(props: BrandingFormProps) {
                 } as const
               )[s],
           );
-          if (slot) setSlot(slot, { error: t('images.errorNotUsable') });
+          if (slot) refuse(slot, t('images.errorNotUsable'));
           else if (path === 'websiteUrl') fromServer.websiteUrl = t('website.invalid');
           else if (path === 'nameEn' || path === 'nameAr')
             fromServer[path] = t('fieldErrors.nameInvalid');
@@ -533,6 +554,10 @@ export function BrandingForm(props: BrandingFormProps) {
                 : null;
     return text ? <span className="text-xs text-text-muted">{text}</span> : null;
   }
+
+  /** The slot's problem: the last refusal, or a saved image the worker could not prepare. */
+  const slotError = (state: SlotState) =>
+    state.error ?? (state.failed ? t('images.errorNotPublished') : null);
 
   const imageSlot = (slot: BrandSlot) => {
     const state = slots[slot];
@@ -598,7 +623,10 @@ export function BrandingForm(props: BrandingFormProps) {
                 {fillText(t('images.chosen'), { name: state.name }, locale)}
               </span>
             ) : null}
-            {imageNote(state)}
+            {/* Progress is announced politely as it changes (security review L12). */}
+            <div aria-live="polite" aria-atomic="true" data-testid={`${id}-status`}>
+              {imageNote(state)}
+            </div>
           </div>
           <div className="flex gap-2">
             <Button
@@ -630,11 +658,13 @@ export function BrandingForm(props: BrandingFormProps) {
             ) : null}
           </div>
         </div>
-        {state.error ? (
-          <p className="m-0 text-sm text-danger-text" role="alert" data-testid={`${id}-error`}>
-            {state.error}
-          </p>
-        ) : null}
+        <div aria-live="polite" aria-atomic="true">
+          {slotError(state) ? (
+            <p className="m-0 text-sm text-danger-text" data-testid={`${id}-error`}>
+              {slotError(state)}
+            </p>
+          ) : null}
+        </div>
       </div>
     );
   };
@@ -649,11 +679,14 @@ export function BrandingForm(props: BrandingFormProps) {
       noValidate
       data-testid="branding-form"
     >
-      {message ? (
-        <Alert tone={message.tone} data-testid="branding-message">
-          {message.text}
-        </Alert>
-      ) : null}
+      {/* Results are announced politely as they appear (security review L12). */}
+      <div aria-live="polite" aria-atomic="true">
+        {message ? (
+          <Alert tone={message.tone} data-testid="branding-message">
+            {message.text}
+          </Alert>
+        ) : null}
+      </div>
       <div className="grid gap-6 lg:grid-cols-2">
         <Card
           title={t('names.title')}

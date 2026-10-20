@@ -1,3 +1,4 @@
+import { crc32 } from 'node:zlib';
 import AxeBuilder from '@axe-core/playwright';
 import { type Page, expect, test } from '@playwright/test';
 import { afterSignIn, fillSignIn } from './sign-in';
@@ -10,7 +11,8 @@ import { afterSignIn, fillSignIn } from './sign-in';
  *    an unreadable colour raises the WCAG 2.2 AA warning with its ratio, a preset clears it;
  *  - «Use gradient» off: one colour (no secondary field, the gradient's end is its start);
  *  - «Reset to the Jadarat look» puts the Jadarat colours back;
- *  - a small PNG shows in the previews at once; an SVG is refused with the reason;
+ *  - a small PNG shows in the previews at once; an SVG and a browser icon over 512 × 512 pixels are refused
+ *    with the reason;
  *  - no serious accessibility violation.
  * With credentials (BRANDING_E2E_*, the self-hosted stack): the Organization Admin saves a colour and the
  * shell applies it at once; an HR Manager is refused.
@@ -29,6 +31,7 @@ const TEXTS = {
     gradient: 'Use gradient',
     navy: 'Use the Navy colours',
     svgError: 'Choose a PNG, JPG or WebP image',
+    tooBig: 'at most 512 × 512 pixels',
     previewOnly: 'Shown in the preview only',
   },
   ar: {
@@ -44,15 +47,27 @@ const TEXTS = {
     gradient: 'استخدام التدرّج',
     navy: 'استخدام ألوان الكحلي',
     svgError: 'اختر صورة PNG أو JPG أو WebP',
+    tooBig: 'الحد الأقصى 512 × 512 بكسل',
     previewOnly: 'تظهر في المعاينة فقط',
   },
 } as const;
 
-/** A 1 × 1 PNG (signature, IHDR, IDAT, IEND), built in memory: no binary sample in the repository. */
+/**
+ * A well-formed 1 × 1 PNG (signature, IHDR, IDAT, IEND, correct lengths and CRCs), built in memory: no
+ * binary sample in the repository. The page reads its size from the header, so it must parse.
+ */
 const PNG_1X1 = Buffer.from(
-  '89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d49444154789c6360000000000500010d0a2db40000000049454e44ae426082',
+  '89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000b49444154789c6360000200000500017a5eab3f0000000049454e44ae426082',
   'hex',
 );
+/** The same PNG declaring another size in pixels (its IHDR rewritten, CRC included). */
+function pngOfSize(width: number, height: number): Buffer {
+  const png = Buffer.from(PNG_1X1);
+  png.writeUInt32BE(width, 16);
+  png.writeUInt32BE(height, 20);
+  png.writeUInt32BE(crc32(png.subarray(12, 29)) >>> 0, 29);
+  return png;
+}
 const SVG = Buffer.from(
   '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>',
   'utf8',
@@ -158,6 +173,13 @@ for (const locale of ['en', 'ar'] as const) {
       buffer: SVG,
     });
     await expect(page.getByTestId('brand-image-favicon-error')).toContainText(t.svgError);
+    // A browser icon over 512 × 512 pixels is refused by its header (security review L8).
+    await page.getByTestId('brand-image-favicon-input').setInputFiles({
+      name: 'icon.png',
+      mimeType: 'image/png',
+      buffer: pngOfSize(1024, 1024),
+    });
+    await expect(page.getByTestId('brand-image-favicon-error')).toContainText(t.tooBig);
     await expect(page.getByTestId('brand-image-favicon-preview')).toHaveCount(0);
     await page.getByTestId('brand-image-logo-remove').click();
     await expect(page.getByTestId('brand-image-logo-preview')).toHaveCount(0);
@@ -169,7 +191,9 @@ for (const locale of ['en', 'ar'] as const) {
  * The real response headers of the public image path (security review L4): whatever the answer (here a 404:
  * no such copy, or no database), the image policy — not the page CSP set by the proxy — and nosniff.
  */
-test('public branding images answer with the sandboxing policy and nosniff', async ({ request }) => {
+test('public branding images answer with the sandboxing policy and nosniff', async ({
+  request,
+}) => {
   for (const path of ['/api/brand/3c4d5e6f-7081-4a9b-8c1d-2e3f4a5b6c7d', '/api/brand/not-an-id']) {
     const response = await request.get(path);
     expect(response.status(), path).toBe(404);

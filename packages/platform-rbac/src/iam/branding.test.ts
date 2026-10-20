@@ -116,7 +116,13 @@ beforeEach(() => {
   db.getBranding.mockResolvedValue(record);
   db.saveBranding.mockImplementation((_tx: unknown, after: Record<string, unknown>) => {
     const { emailActionColor: _a, emailLinkColor: _l, ...rest } = after;
-    return Promise.resolve({ outcome: 'updated', before: settings, after: rest, version: 1 });
+    return Promise.resolve({
+      outcome: 'updated',
+      before: settings,
+      after: rest,
+      version: 1,
+      imageNames: { [LOGO]: 'raya-logo.png' },
+    });
   });
 });
 
@@ -196,8 +202,32 @@ describe('saving the branding (WP-ADM-02, BR-BRD-a)', () => {
             primaryColor: '#0F5E4E',
             secondaryColor: '#13806A',
             websiteUrl: 'https://raya.example',
-            logoFileId: LOGO,
+            // BR-BRD-a: an image by its file id and sanitized name.
+            logoFileId: { fileId: LOGO, name: 'raya-logo.png' },
           },
+        },
+      }),
+    );
+  });
+
+  it('an image whose name is not readable any more is audited by its id', async () => {
+    db.saveBranding.mockResolvedValueOnce({
+      outcome: 'updated',
+      before: { ...settings, faviconFileId: LOGO },
+      after: settings,
+      version: 2,
+      imageNames: {},
+    });
+    const { rt, writeAudit } = runtime(forRoles('tenant_admin'));
+    await createDefineAction(rt)(saveBrandingActionDefinition(derive))(input);
+    expect(writeAudit).toHaveBeenCalledWith(
+      TX,
+      expect.anything(),
+      expect.objectContaining({
+        data: {
+          changed: ['faviconFileId'],
+          before: { faviconFileId: { fileId: LOGO, name: null } },
+          after: { faviconFileId: null },
         },
       }),
     );
@@ -424,6 +454,30 @@ describe('branding images (platform-files bound by the app)', () => {
     const result = await status({ slot: 'logo', fileId: LOGO });
     expect(!result.ok && result.error.code).toBe('NOT_FOUND');
   });
+
+  it('the scan progress is a read (platform.tenant.read): no session confirmation on every poll', async () => {
+    const service = files();
+    const { rt, getClaims } = runtime(forRoles('tenant_admin'));
+    const status = createDefineAction(rt)(brandImageStatusActionDefinition(service));
+    expect(await status({ slot: 'logo', fileId: LOGO })).toEqual({
+      ok: true,
+      value: { fileId: LOGO, status: 'uploaded', reason: null },
+    });
+    expect(getClaims).not.toHaveBeenCalledWith({ strict: true });
+  });
+
+  it.each([['hr_manager'], ['training_manager'], ['learner']] as const)(
+    'refuses the scan progress to the %s',
+    async (role) => {
+      const service = files();
+      const status = createDefineAction(runtime(forRoles(role)).rt)(
+        brandImageStatusActionDefinition(service),
+      );
+      const result = await status({ slot: 'logo', fileId: LOGO });
+      expect(!result.ok && result.error.code).toBe('FORBIDDEN');
+      expect(service.status).not.toHaveBeenCalled();
+    },
+  );
 
   it('refuses size above the largest image and unknown slots before anything runs', async () => {
     const service = files();

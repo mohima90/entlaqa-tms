@@ -18,7 +18,7 @@ import { authErrorTexts } from '../../../lib/auth-texts';
 import { getConfigStatus } from '../../../lib/config-status';
 import { noticeFrom } from '../../../lib/password-reset-link';
 import { getSessionState, redirectFor } from '../../../lib/session-state';
-import { signInBrand } from '../../../lib/sign-in-brand';
+import { authBrandOf, brandIcons, signInBrand } from '../../../lib/sign-in-brand';
 
 /** The organization's browser-tab icon on its sign-in page (WP-ADM-02); Jadarat's otherwise. */
 export async function generateMetadata({
@@ -28,10 +28,7 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { locale } = await params;
   if (!hasLocale(routing.locales, locale)) return {};
-  const brand = await signInBrand(locale);
-  return brand?.faviconSrc
-    ? { icons: { icon: [{ url: brand.faviconSrc }], shortcut: [{ url: brand.faviconSrc }] } }
-    : {};
+  return brandIcons(await signInBrand(locale));
 }
 
 /**
@@ -70,9 +67,7 @@ export default async function SignInPage({
       <BrandStyle colors={brand?.colors ?? null} />
       <SignInView
         locale={locale}
-        brand={
-          brand ? { logoSrc: brand.logoSrc, name: brand.name, imageSrc: brand.imageSrc } : null
-        }
+        brand={authBrandOf(brand)}
         disabled={!status.auth}
         shell={await authShellTexts(locale)}
         panel={await signInPanelTexts(locale)}

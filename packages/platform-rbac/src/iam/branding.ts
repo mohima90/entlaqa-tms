@@ -28,7 +28,9 @@ import { OrganizationNameInput } from './organization-profile';
  *     the Organization Admin edits, an Auditor reads; HR Manager, L&D Manager, Learner… are refused.
  *   - Saving, uploading an image: `platform.tenant.manage` — the Organization Admin only (organization-wide,
  *     high risk: the session is confirmed with Auth; never in custom roles — catalogue rule
- *     `organization_only`). Audited before → after (images by file id, never their content; BR-BRD-a).
+ *     `organization_only`). Audited before → after (images by file id and sanitized name, never their
+ *     content; BR-BRD-a). The upload's scan progress, polled by the page, needs `platform.tenant.read`
+ *     only (the file is visible to its uploader alone; security review L12).
  *   - Images go through platform-files (purposes platform.brand_*: PNG/JPEG/WebP, 2 MB / 500 KB / 5 MB,
  *     scanned); the app binds the file service (BrandingFileService) — this package does not depend on it.
  *   - Colours: the app derives what is stored and the e-mail colours with the theme code
@@ -120,19 +122,43 @@ export function brandingQueryDefinition(): QueryDefinition<
   };
 }
 
+/** An image as the audit records it: its file id and sanitized name (null: not readable any more). */
+export interface AuditedBrandImage {
+  readonly fileId: string;
+  readonly name: string | null;
+}
+
+/** A changed value as audited: the setting, an image by id and name, or null (none). */
+export type AuditedBrandingValue = string | boolean | AuditedBrandImage | null;
+
 export interface BrandingSaved {
   readonly tenantId: string;
   readonly version: number;
   readonly changed: readonly BrandingField[];
-  readonly before: Partial<BrandingSettings>;
-  readonly after: Partial<BrandingSettings>;
+  readonly before: Readonly<Partial<Record<BrandingField, AuditedBrandingValue>>>;
+  readonly after: Readonly<Partial<Record<BrandingField, AuditedBrandingValue>>>;
 }
+
+const IMAGE_FIELDS: ReadonlySet<BrandingField> = new Set([
+  'logoFileId',
+  'faviconFileId',
+  'signInImageFileId',
+]);
 
 function pick(
   settings: BrandingSettings,
   keys: readonly BrandingField[],
-): Partial<BrandingSettings> {
-  return Object.fromEntries(keys.map((key) => [key, settings[key]]));
+  names: Readonly<Record<string, string>>,
+): Partial<Record<BrandingField, AuditedBrandingValue>> {
+  const audited: Partial<Record<BrandingField, AuditedBrandingValue>> = {};
+  for (const key of keys) {
+    const value = settings[key];
+    audited[key] =
+      IMAGE_FIELDS.has(key) && typeof value === 'string'
+        ? { fileId: value, name: names[value] ?? null }
+        : value;
+  }
+  return audited;
 }
 
 const invalid = (path: string, code = 'INVALID'): AppError =>
@@ -196,13 +222,13 @@ export function saveBrandingActionDefinition(
             tenantId: ctx.claims.tenant_id,
             version: saved.version,
             changed,
-            before: pick(saved.before, changed),
-            after: pick(saved.after, changed),
+            before: pick(saved.before, changed, saved.imageNames),
+            after: pick(saved.after, changed, saved.imageNames),
           });
         }
       }
     },
-    // BR-BRD-a: who, when, before → after; images by file id (names and contents stay out).
+    // BR-BRD-a: who, when, before → after; images by file id and sanitized name (contents stay out).
     audit: (_input, output) =>
       output.changed.length === 0
         ? null
@@ -307,13 +333,14 @@ export function confirmBrandImageUploadActionDefinition<R, I>(
 
 /**
  * The scan's progress for the page, polled from the browser (the uploader only — files are visible to their
- * uploader). A read: nothing is written or audited.
+ * uploader). A read: nothing is written or audited; so it needs the page's read permission only, not the
+ * high-risk manage permission (whose session confirmation with Auth every poll would repeat; review L12).
  */
 export function brandImageStatusActionDefinition<R, I>(
   files: BrandingFileService<R, I>,
 ): ActionDefinition<typeof BrandImageFileInput, BrandImageStatus, UserTx> {
   return {
-    permission: PERMISSION_MANAGE,
+    permission: PERMISSION_READ,
     input: BrandImageFileInput,
     handler: async ({ ctx, input }) =>
       ownSlotFile(await files.status(ctx.tx, input.fileId), files.purposeOf(input.slot)),

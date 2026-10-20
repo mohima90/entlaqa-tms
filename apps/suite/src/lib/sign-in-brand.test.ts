@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { toSignInBrand } from './sign-in-brand';
+import { authBrandOf, brandIcons, toSignInBrand } from './sign-in-brand';
 
 vi.mock('next/headers', () => ({ headers: vi.fn(), cookies: vi.fn() }));
 vi.mock('@jadarat/platform-db', () => ({
@@ -31,5 +31,20 @@ describe('the sign-in page look (WP-ADM-02)', () => {
     });
     expect(toSignInBrand(brand, 'ar').name).toBe('شركة الراية');
     expect(toSignInBrand({ ...brand, nameEn: null }, 'en').name).toBe('شركة الراية');
+  });
+
+  it('the auth frame and the tab icon of a look; nothing for the Jadarat look', () => {
+    const look = toSignInBrand({ ...brand, faviconAssetId: LOGO }, 'ar');
+    expect(authBrandOf(look)).toEqual({
+      logoSrc: `/api/brand/${LOGO}`,
+      name: 'شركة الراية',
+      imageSrc: null,
+    });
+    expect(brandIcons(look)).toEqual({
+      icons: { icon: [{ url: `/api/brand/${LOGO}` }], shortcut: [{ url: `/api/brand/${LOGO}` }] },
+    });
+    expect(authBrandOf(null)).toBeNull();
+    expect(brandIcons(null)).toEqual({});
+    expect(brandIcons(toSignInBrand(brand, 'en'))).toEqual({});
   });
 });

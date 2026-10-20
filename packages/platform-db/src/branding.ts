@@ -55,6 +55,8 @@ export interface BrandImageState {
   readonly status: string | null;
   /** Its sanitized name (uploader only). */
   readonly name: string | null;
+  /** The worker gave up publishing it (5 failures: not a usable image) — the page asks for another. */
+  readonly failed: boolean;
 }
 
 export interface BrandingRecord extends BrandingSettings {
@@ -184,10 +186,13 @@ export async function getBranding(tx: UserTx): Promise<BrandingRecord | null> {
       asset_id: string | null;
       status: string | null;
       original_name: string | null;
+      given_up: boolean | null;
     }>(sql`
-      select v.id, a.id as asset_id, f.status, f.original_name
+      select v.id, a.id as asset_id, f.status, f.original_name,
+             x.next_try_at = 'infinity'::timestamptz as given_up
       from (select unnest(array[${list}]) as id) v
       left join platform.brand_assets a on a.file_id = v.id
+      left join platform.brand_asset_attempts x on x.file_id = v.id
       left join platform.files f on f.id = v.id`);
     for (const r of rows) {
       states.set(r.id, {
@@ -195,6 +200,7 @@ export async function getBranding(tx: UserTx): Promise<BrandingRecord | null> {
         assetId: r.asset_id,
         status: r.status,
         name: r.original_name,
+        failed: r.given_up === true && r.asset_id === null,
       });
     }
   }
@@ -202,7 +208,7 @@ export async function getBranding(tx: UserTx): Promise<BrandingRecord | null> {
     const id = settings[FILE_COLUMN[kind]];
     return id === null
       ? null
-      : (states.get(id) ?? { fileId: id, assetId: null, status: null, name: null });
+      : (states.get(id) ?? { fileId: id, assetId: null, status: null, name: null, failed: false });
   };
   const editor = text(row.editor_name_ar);
   return {
@@ -232,6 +238,8 @@ export type BrandingUpdate =
       readonly before: BrandingSettings;
       readonly after: BrandingSettings;
       readonly version: number;
+      /** Sanitized names of the images before and after, by file id (the audit record; BR-BRD-a). */
+      readonly imageNames: Readonly<Record<string, string>>;
     }
   | { readonly outcome: 'unchanged'; readonly version: number }
   /** An image that is not the saver's usable upload, or a value the database refuses. */
@@ -255,6 +263,29 @@ const CONSTRAINT_FIELDS: Readonly<Record<string, BrandingField>> = {
   tenants_name_ar_length_check: 'nameAr',
   tenants_names_bidi_check: 'nameAr',
 };
+
+const IMAGE_FIELDS = ['logoFileId', 'faviconFileId', 'signInImageFileId'] as const;
+
+/**
+ * The sanitized names of the organization's branding images among `ids` (private.branding_image_names: any
+ * admin's upload of this organization's Branding, never another organization's file).
+ */
+async function brandingImageNames(
+  tx: UserTx,
+  ids: readonly string[],
+): Promise<Record<string, string>> {
+  if (ids.length === 0) return {};
+  const list = sql.join(
+    ids.map((id) => sql`${id}::uuid`),
+    sql`, `,
+  );
+  const rows = await tx.execute<{ id: string; name: string | null }>(
+    sql`select id, name from private.branding_image_names(array[${list}])`,
+  );
+  return Object.fromEntries(
+    rows.flatMap((r) => (typeof r.name === 'string' ? [[r.id, r.name] as const] : [])),
+  );
+}
 
 /** Which image the JB001 refusal names ("branding image logo is not usable"). */
 function refusedImage(message: string): BrandingField {
@@ -289,7 +320,15 @@ export async function saveBranding(
   if (stored !== version) return { outcome: 'conflict' };
   const before = settingsOf(current);
   const { emailActionColor, emailLinkColor, ...after } = input;
-  if (changedBrandingFields(before, after).length === 0) return { outcome: 'unchanged', version };
+  const changed = changedBrandingFields(before, after);
+  if (changed.length === 0) return { outcome: 'unchanged', version };
+  // Read before the update: a replaced or removed image is released by the save.
+  const imageIds = new Set<string>();
+  for (const field of IMAGE_FIELDS) {
+    if (!changed.includes(field)) continue;
+    for (const id of [before[field], after[field]]) if (id !== null) imageIds.add(id);
+  }
+  const imageNames = await brandingImageNames(tx, [...imageIds]);
   try {
     const values = sql`${after.primaryColor}, ${after.secondaryColor}, ${after.useGradient},
       ${after.websiteUrl}, ${after.logoFileId}::uuid, ${after.faviconFileId}::uuid,
@@ -315,7 +354,7 @@ export async function saveBranding(
         returning id`);
       if (!names) return { outcome: 'refused' };
     }
-    return { outcome: 'updated', before, after, version: saved.version };
+    return { outcome: 'updated', before, after, version: saved.version, imageNames };
   } catch (error) {
     const pg = pgError(error);
     if (pg?.code === 'JB001') return { outcome: 'invalid', field: refusedImage(pg.message) };

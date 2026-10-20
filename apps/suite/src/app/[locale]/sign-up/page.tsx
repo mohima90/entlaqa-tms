@@ -9,6 +9,7 @@ import { DropFragment, SignUpView } from '../../../components/invite/sign-up-vie
 import { authLanguageSwitch, authShellTexts } from '../../../lib/auth-shell-texts';
 import { inviteErrorTexts } from '../../../lib/auth-texts';
 import { getConfigStatus } from '../../../lib/config-status';
+import { authBrandOf, signInBrand } from '../../../lib/sign-in-brand';
 
 /**
  * Join with an invitation code (FR-IAM-03; Kawadir ATS's sign-up "join" screen, PO 16 Oct 2026). Public.
@@ -48,11 +49,13 @@ export default async function SignUpPage({ params }: { params: Promise<{ locale:
   const errorsT = await getTranslations({ locale, namespace: 'errors' });
   const shell = await authShellTexts(locale);
   const toggle = await authLanguageSwitch(locale, '/sign-up');
+  const brand = authBrandOf(await signInBrand(locale));
 
   if (!(status.auth && status.database)) {
     return (
       <AuthShell
         variant="centered"
+        brand={brand}
         texts={shell}
         languageSwitch={<AuthLanguageSwitch {...toggle} />}
         title={t('pageTitle')}
@@ -68,6 +71,7 @@ export default async function SignUpPage({ params }: { params: Promise<{ locale:
   return (
     <SignUpView
       locale={locale}
+      brand={brand}
       shell={shell}
       toggle={toggle}
       texts={{

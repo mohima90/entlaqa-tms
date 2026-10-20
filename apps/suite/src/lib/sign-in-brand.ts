@@ -5,6 +5,7 @@ import {
   publicTenantBrand,
 } from '@jadarat/platform-db';
 import type { AppLocale } from '@jadarat/platform-i18n';
+import type { Metadata } from 'next';
 import { cookies, headers } from 'next/headers';
 import { cache } from 'react';
 import { brandAssetPath } from './branding-view';
@@ -61,3 +62,27 @@ export const signInBrand = cache(async (locale: AppLocale): Promise<SignInBrand 
     return null;
   }
 });
+
+/** The auth frame's part of the look (logo, name, picture), or null for Jadarat's. */
+export function authBrandOf(brand: SignInBrand | null): {
+  readonly logoSrc: string | null;
+  readonly name: string;
+  readonly imageSrc: string | null;
+} | null {
+  return brand ? { logoSrc: brand.logoSrc, name: brand.name, imageSrc: brand.imageSrc } : null;
+}
+
+/** The browser-tab icon of a look as page metadata; nothing (the Jadarat icon) without one. */
+export function brandIcons(brand: SignInBrand | null): Metadata {
+  return brand?.faviconSrc
+    ? { icons: { icon: [{ url: brand.faviconSrc }], shortcut: [{ url: brand.faviconSrc }] } }
+    : {};
+}
+
+/**
+ * The organization's browser-tab icon on every page before the suite (sign-in, sign-up, forgot / reset
+ * password, invitations, the sign-in code; security review L11) — found as the sign-in page finds its look.
+ */
+export async function signInBrandIcons(locale: AppLocale): Promise<Metadata> {
+  return brandIcons(await signInBrand(locale));
+}

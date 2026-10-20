@@ -136,7 +136,7 @@ describe('getBranding (the page)', () => {
           editor_name_en: 'Sara',
         },
       ],
-      [{ id: LOGO, asset_id: ASSET, status: 'clean', original_name: 'logo.png' }],
+      [{ id: LOGO, asset_id: ASSET, status: 'clean', original_name: 'logo.png', given_up: null }],
     );
     const record = await getBranding(tx);
     expect(record).toMatchObject({
@@ -144,7 +144,7 @@ describe('getBranding (the page)', () => {
       version: 2,
       updatedBy: { nameAr: 'سارة', nameEn: 'Sara' },
       images: {
-        logo: { fileId: LOGO, assetId: ASSET, status: 'clean', name: 'logo.png' },
+        logo: { fileId: LOGO, assetId: ASSET, status: 'clean', name: 'logo.png', failed: false },
         favicon: null,
         sign_in_image: null,
       },
@@ -186,7 +186,18 @@ describe('getBranding (the page)', () => {
       assetId: null,
       status: null,
       name: null,
+      failed: false,
     });
+  });
+
+  it('an image the worker gave up on (5 failures) is marked failed', async () => {
+    const { tx, executed } = fakeTx(
+      present,
+      [{ ...stored, updated_at: null, editor_name_ar: null }],
+      [{ id: LOGO, asset_id: null, status: 'clean', original_name: 'big.png', given_up: true }],
+    );
+    expect((await getBranding(tx))?.images.logo).toMatchObject({ failed: true });
+    expect(executed[2]?.sql).toContain('platform.brand_asset_attempts');
   });
 
   it('null without an organization', async () => {
@@ -211,14 +222,40 @@ describe('saveBranding', () => {
           name_en: 'Old',
         },
       ],
+      [{ id: LOGO, name: 'logo.png' }],
       [{ version: 1 }],
       [{ id: 't' }],
     );
     const result = await saveBranding(tx, save, 0);
-    expect(result).toMatchObject({ outcome: 'updated', version: 1 });
+    expect(result).toMatchObject({
+      outcome: 'updated',
+      version: 1,
+      imageNames: { [LOGO]: 'logo.png' },
+    });
     expect(executed[1]?.sql).toContain('for no key update of t');
-    expect(executed[2]?.sql).toContain('insert into platform.tenant_branding');
-    expect(executed[3]?.sql).toContain('update platform.tenants set name_ar');
+    // The names are read before the save releases a replaced image.
+    expect(executed[2]?.sql).toContain('private.branding_image_names');
+    expect(executed[2]?.params).toEqual([LOGO]);
+    expect(executed[3]?.sql).toContain('insert into platform.tenant_branding');
+    expect(executed[4]?.sql).toContain('update platform.tenants set name_ar');
+  });
+
+  it('names the images before and after a replacement', async () => {
+    const OLD = '88888888-8888-4888-8888-888888888888';
+    const { tx, executed } = fakeTx(
+      present,
+      [{ ...stored, logo_file_id: OLD }],
+      [
+        { id: OLD, name: 'old.png' },
+        { id: LOGO, name: null },
+      ],
+      [{ version: 3 }],
+    );
+    expect(await saveBranding(tx, save, 2)).toMatchObject({
+      outcome: 'updated',
+      imageNames: { [OLD]: 'old.png' },
+    });
+    expect(executed[2]?.params).toEqual([OLD, LOGO]);
   });
 
   it('updates at the loaded version only', async () => {

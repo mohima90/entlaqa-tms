@@ -34,6 +34,7 @@ export {
   type BrandingUpdate,
   type PublicBrandApi,
   type PublicBrandAsset,
+  type PublicBrandAssetMeta,
   type PublicTenantBrand,
   type TenantBrand,
   brandingExists,
@@ -43,6 +44,7 @@ export {
   getBranding,
   getTenantBrand,
   publicBrandAsset,
+  publicBrandAssetMeta,
   publicTenantBrand,
   saveBranding,
 } from './branding';

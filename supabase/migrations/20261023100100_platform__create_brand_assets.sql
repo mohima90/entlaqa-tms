@@ -58,3 +58,40 @@ revoke all on platform.brand_assets from public, anon;
 grant select (id, tenant_id, file_id, kind, content_type, byte_size, sha256, created_at)
   on platform.brand_assets to authenticated;
 grant select, insert, delete on platform.brand_assets to file_guard;
+
+-- Publishing attempts that failed (security review L5): an image the worker cannot publish (not a PNG/JPEG/
+-- WebP by content, too many pixels, its bytes differ from the scan, …) is tried again later — after 1, 2,
+-- 4 … minutes, at most a day — and given up after 5 attempts (next_try_at = infinity): it never holds up
+-- the others. The page tells the admin to upload another image. Written by file_guard's functions only.
+create table platform.brand_asset_attempts (
+  tenant_id uuid not null references platform.tenants (id),
+  file_id uuid not null,
+  attempts smallint not null default 0,
+  next_try_at timestamptz not null default now(),
+  last_code text,
+  updated_at timestamptz not null default now(),
+  primary key (tenant_id, file_id),
+  constraint brand_asset_attempts_attempts_check check (attempts between 0 and 100),
+  constraint brand_asset_attempts_code_check check (last_code is null or last_code ~ '^[A-Z][A-Z0-9_]{1,40}$'),
+  constraint brand_asset_attempts_file_fkey foreign key (tenant_id, file_id)
+    -- Bookkeeping only (no business row): it goes with its file when housekeeping purges it.
+    references platform.files (tenant_id, id) on delete cascade
+);
+comment on table platform.brand_asset_attempts is
+  'Failed publishing attempts of branding images (WP-ADM-02): back-off and give-up after 5. Written by file_guard''s functions only. Owner: platform. Class: T.';
+
+alter table platform.brand_asset_attempts enable row level security;
+alter table platform.brand_asset_attempts force row level security;
+
+create policy tenant_isolation on platform.brand_asset_attempts
+  as restrictive for all to authenticated
+  using (tenant_id = (select private.current_tenant_id()))
+  with check (tenant_id = (select private.current_tenant_id()));
+-- Members read whether an image could not be prepared (the Branding page says so).
+create policy brand_asset_attempts_read on platform.brand_asset_attempts for select to authenticated using (true);
+create policy brand_asset_attempts_guard on platform.brand_asset_attempts for all to file_guard
+  using (true) with check (true);
+
+revoke all on platform.brand_asset_attempts from public, anon;
+grant select on platform.brand_asset_attempts to authenticated;
+grant select, insert, update, delete on platform.brand_asset_attempts to file_guard;

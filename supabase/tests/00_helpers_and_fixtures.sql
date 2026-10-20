@@ -554,4 +554,14 @@ insert into platform.tenant_branding (tenant_id, primary_color, secondary_color,
   ('a0000000-0000-4000-8000-000000000001', '#0F6E5A', '#138A72', true, 'https://a.example', '#0F6E5A', '#0F6E5A');
 alter table platform.tenant_branding enable trigger tenant_branding_stamp;
 alter table platform.tenant_branding enable trigger tenant_branding_files;
+-- One published copy and one failed publishing attempt per tenant A and B, for the generic isolation checks
+-- (20_isolation.sql). They point at the import files above (no Branding uses them: never served).
+insert into platform.brand_assets (id, tenant_id, file_id, kind, content_type, content, byte_size, sha256) values
+  ('e0a00000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'f0a00000-0000-4000-8000-000000000001',
+   'logo', 'image/png', '\x89504e47'::bytea, 4, repeat('c', 64)),
+  ('e0b00000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000001', 'f0b00000-0000-4000-8000-000000000001',
+   'logo', 'image/png', '\x89504e47'::bytea, 4, repeat('d', 64));
+insert into platform.brand_asset_attempts (tenant_id, file_id, attempts, next_try_at, last_code) values
+  ('a0000000-0000-4000-8000-000000000001', 'f0a00000-0000-4000-8000-000000000001', 1, now(), 'TYPE_NOT_ALLOWED'),
+  ('b0000000-0000-4000-8000-000000000001', 'f0b00000-0000-4000-8000-000000000001', 1, now(), 'TYPE_NOT_ALLOWED');
 commit;

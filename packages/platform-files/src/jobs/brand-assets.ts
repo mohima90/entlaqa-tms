@@ -1,13 +1,15 @@
+import { createHash } from 'node:crypto';
 import {
   type BrandAssetWork,
   type SystemTx,
   type WithPlatformTx,
   type WithSystemTx,
   claimBrandAssetWork,
+  noteBrandAssetFailure,
   publishBrandAsset,
 } from '@jadarat/platform-db/jobs';
 import type { PlatformTask, WorkerLogLevel } from '@jadarat/platform-jobs/jobs';
-import { brandImageMaxBytes, checkBrandImageContent } from '../brand-images';
+import { brandImageMaxBytes, prepareBrandImage } from '../brand-images';
 import { codeOf, isTemporary } from './store';
 import type { WorkerFiles } from './worker-files';
 
@@ -15,11 +17,15 @@ import type { WorkerFiles } from './worker-files';
  * Publishing branding images (WP-ADM-02, FR-ADM-07; docs/engineering/branding.md): a platform task that,
  * each pass, finds the images an organization's Branding uses which the malware scan found clean and which
  * have no public copy yet (private.claim_brand_asset_work), reads each scanned file — its stream checks the
- * size and SHA-256 the scan recorded —, checks its type by content once more (PNG, JPEG or WebP only), and
- * stores the copy in the image's tenant transaction (private.publish_brand_asset, which checks the bytes
- * against the scan again and that the Branding still uses the image). The sign-in page, the browser tab and
- * e-mails then show it from /api/brand/<id>. A failure leaves the image unpublished (the Jadarat image is
- * shown) and is tried again on the next pass; logs carry ids and codes only.
+ * size and SHA-256 the scan recorded —, checks its type by content once more (PNG, JPEG or WebP only) and its
+ * size in pixels (4096 px, the browser icon 512 px), removes its metadata (EXIF with GPS, XMP, IPTC,
+ * comments; image-info.ts) and stores that copy in the image's tenant transaction
+ * (private.publish_brand_asset, which checks the source hash against the scan again and that the Branding
+ * still uses the image). The sign-in page, the browser tab and e-mails then show it from /api/brand/<id>.
+ * A failure leaves the image unpublished (the Jadarat image is shown): Storage being unavailable ends the
+ * pass (tried again next pass); any other failure is recorded (private.note_brand_asset_failure) and tried
+ * again after 2, 4, 8, … minutes, up to 5 times — then the image is given up and the Branding page says it
+ * cannot be used. Logs carry ids and codes only.
  */
 export const BRAND_ASSET_TASK = 'platform.brand_assets';
 /** Images per pass. */
@@ -64,14 +70,34 @@ export function createBrandAssetTask(options: BrandAssetTaskOptions): PlatformTa
     return withSystemTx({ tenantId: work.tenantId, jobId }, async (tx: SystemTx) => {
       const stream = await files.openScannedFile(tx, work.fileId);
       const bytes = await readAll(stream, brandImageMaxBytes(work.kind));
-      const checked = await checkBrandImageContent(work.kind, bytes);
-      if ('refused' in checked) {
-        log('warning', `branding image ${work.fileId} not published: ${checked.refused}`);
+      const prepared = await prepareBrandImage(work.kind, bytes);
+      if ('refused' in prepared) {
+        const attempts = await noteBrandAssetFailure(tx, work.fileId, prepared.refused);
+        log(
+          'warning',
+          `branding image ${work.fileId} not published: ${prepared.refused} (attempt ${attempts})`,
+        );
         return 'skipped';
       }
-      const id = await publishBrandAsset(tx, work, bytes);
+      const sourceSha256 = createHash('sha256').update(bytes).digest('hex');
+      const id = await publishBrandAsset(tx, work, sourceSha256, prepared.content);
       return id === null ? 'skipped' : 'published';
     });
+  }
+
+  /** Records a failure in its own transaction (the publishing one was rolled back). */
+  async function noteFailure(jobId: string, work: BrandAssetWork, code: string): Promise<void> {
+    try {
+      const attempts = await withSystemTx({ tenantId: work.tenantId, jobId }, (tx) =>
+        noteBrandAssetFailure(tx, work.fileId, code),
+      );
+      log('error', `branding image ${work.fileId} not published: ${code} (attempt ${attempts})`);
+    } catch (error) {
+      log(
+        'error',
+        `branding image ${work.fileId} not published: ${code}; not recorded (${codeOf(error)})`,
+      );
+    }
   }
 
   return {
@@ -90,7 +116,7 @@ export function createBrandAssetTask(options: BrandAssetTaskOptions): PlatformTa
             log('warning', `branding images: storage unavailable (${codeOf(error)}); later`);
             return false;
           }
-          log('error', `branding image ${work.fileId} not published: ${codeOf(error)}`);
+          await noteFailure(jobId, work, codeOf(error));
         }
       }
       if (published > 0) log('info', `branding images published: ${published}`);

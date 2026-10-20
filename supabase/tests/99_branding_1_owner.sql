@@ -22,7 +22,9 @@ begin
 
   -- SECURITY DEFINER functions owned by file_guard (no BYPASSRLS); helpers run inside them only.
   for r in select * from (values ('private.tenant_branding_files()'), ('private.claim_brand_asset_work(integer)'),
-                                 ('private.publish_brand_asset(uuid,text,bytea)'), ('private.public_brand_asset(uuid)'),
+                                 ('private.publish_brand_asset(uuid,text,text,bytea)'), ('private.public_brand_asset(uuid)'),
+                                 ('private.note_brand_asset_failure(uuid,text)'), ('private.public_brand_asset_meta(uuid)'),
+                                 ('private.branding_image_names(uuid[])'),
                                  ('private.public_tenant_brand(text)')) v (fn) loop
     perform tests.assert(
       (select p.prosecdef and pg_get_userbyid(p.proowner) = 'file_guard' from pg_proc p where p.oid = r.fn::regprocedure),

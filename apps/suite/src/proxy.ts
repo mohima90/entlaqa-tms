@@ -16,7 +16,13 @@ import { getSupabasePublicConfig } from '@jadarat/platform-db/supabase-server';
 import createMiddleware from 'next-intl/middleware';
 import { NextRequest, NextResponse } from 'next/server';
 import { INTERNAL_HEADER_PREFIX, applyHostHeaders, classifyHost } from './lib/host-tenant';
-import { NONCE_HEADER, buildContentSecurityPolicy, createNonce } from './lib/security-headers';
+import {
+  BRAND_IMAGE_CSP,
+  NONCE_HEADER,
+  buildContentSecurityPolicy,
+  createNonce,
+  isBrandImagePath,
+} from './lib/security-headers';
 import { applySessionCookies, refreshSessionCookies } from './lib/session-refresh';
 
 const handleI18nRouting = createMiddleware(routing);
@@ -107,7 +113,13 @@ export function routeRequest(request: NextRequest): NextResponse {
   } else {
     response = NextResponse.next({ request: { headers } });
   }
-  response.headers.set('content-security-policy', csp);
+  if (isBrandImagePath(request.nextUrl.pathname)) {
+    // Public branding images (WP-ADM-02): the image policy, not the page's (security review L4).
+    response.headers.set('content-security-policy', BRAND_IMAGE_CSP);
+    response.headers.set('x-content-type-options', 'nosniff');
+  } else {
+    response.headers.set('content-security-policy', csp);
+  }
   return response;
 }
 

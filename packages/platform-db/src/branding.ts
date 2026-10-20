@@ -344,6 +344,13 @@ export interface PublicTenantBrand {
   readonly signInImageAssetId: string | null;
 }
 
+/** A published copy without its bytes: enough to answer a revalidation (If-None-Match) with 304. */
+export interface PublicBrandAssetMeta {
+  readonly contentType: string;
+  readonly sha256: string;
+  readonly byteSize: number;
+}
+
 export interface PublicBrandAsset {
   readonly contentType: string;
   readonly content: Uint8Array;
@@ -353,6 +360,8 @@ export interface PublicBrandAsset {
 export interface PublicBrandApi {
   tenantBrandBySlug(slug: string): Promise<PublicTenantBrand | null>;
   brandAsset(id: string): Promise<PublicBrandAsset | null>;
+  /** The same answer as brandAsset without loading the bytes (security review M1). */
+  brandAssetMeta(id: string): Promise<PublicBrandAssetMeta | null>;
 }
 
 const SLUG = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
@@ -410,6 +419,25 @@ export function createPublicBrandApi(getDb: () => AppDatabase): PublicBrandApi {
         throw error;
       }
     },
+    async brandAssetMeta(id) {
+      if (!UUID.test(id)) return null;
+      try {
+        const [row] = await withoutClaims((tx) =>
+          tx.execute<{ content_type: string; sha256: string; byte_size: number | string }>(
+            sql`select * from private.public_brand_asset_meta(${id}::uuid)`,
+          ),
+        );
+        if (!row) return null;
+        return {
+          contentType: row.content_type,
+          sha256: row.sha256,
+          byteSize: Number(row.byte_size),
+        };
+      } catch (error) {
+        if (notDeployed(error)) return null;
+        throw error;
+      }
+    },
   };
 }
 
@@ -423,4 +451,9 @@ export function publicTenantBrand(slug: string): Promise<PublicTenantBrand | nul
 /** A published branding image by its public id (public; /api/brand/<id>). */
 export function publicBrandAsset(id: string): Promise<PublicBrandAsset | null> {
   return defaultPublicApi.brandAsset(id);
+}
+
+/** A published branding image's type, hash and size, without its bytes (public; revalidation). */
+export function publicBrandAssetMeta(id: string): Promise<PublicBrandAssetMeta | null> {
+  return defaultPublicApi.brandAssetMeta(id);
 }

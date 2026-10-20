@@ -6,6 +6,7 @@ import {
   claimBrandAssetWork,
   forgetBrandingDeployedForTests,
   getEmailBrand,
+  noteBrandAssetFailure,
   publishBrandAsset,
 } from './branding';
 
@@ -48,27 +49,45 @@ describe('branding, worker side (WP-ADM-02)', () => {
     expect(executed[1]?.params).toContain(20);
   });
 
-  it('publishes the bytes; a mismatch is a DomainError', async () => {
+  it('publishes the stripped bytes with the source hash; a mismatch is a DomainError', async () => {
+    const SHA = 'a'.repeat(64);
     const { tx, executed } = fakeTx([{ id: ASSET }]);
     expect(
-      await publishBrandAsset(tx, { fileId: FILE, kind: 'favicon' }, new Uint8Array([1, 2])),
+      await publishBrandAsset(tx, { fileId: FILE, kind: 'favicon' }, SHA, new Uint8Array([1, 2])),
     ).toBe(ASSET);
     expect(executed[0]?.sql).toContain('private.publish_brand_asset');
+    expect(executed[0]?.params.slice(0, 3)).toEqual([FILE, 'favicon', SHA]);
     expect(
       await publishBrandAsset(
         fakeTx([{ id: null }]).tx,
         { fileId: FILE, kind: 'logo' },
+        SHA,
         new Uint8Array([1]),
       ),
     ).toBeNull();
     const mismatch = Object.assign(new Error('differs'), { code: 'JB002' });
     await expect(
-      publishBrandAsset(fakeTx(mismatch).tx, { fileId: FILE, kind: 'logo' }, new Uint8Array([1])),
+      publishBrandAsset(
+        fakeTx(mismatch).tx,
+        { fileId: FILE, kind: 'logo' },
+        SHA,
+        new Uint8Array([1]),
+      ),
     ).rejects.toMatchObject({ code: 'BRAND_IMAGE_MISMATCH' });
     const other = Object.assign(new Error('other'), { code: 'XX000' });
     await expect(
-      publishBrandAsset(fakeTx(other).tx, { fileId: FILE, kind: 'logo' }, new Uint8Array([1])),
+      publishBrandAsset(fakeTx(other).tx, { fileId: FILE, kind: 'logo' }, SHA, new Uint8Array([1])),
     ).rejects.toThrow('other');
+  });
+
+  it('records a failure with a code (odd codes as FAILED)', async () => {
+    const { tx, executed } = fakeTx([{ attempts: 2 }], [{ attempts: '1' }], []);
+    expect(await noteBrandAssetFailure(tx, FILE, 'DIMENSIONS_TOO_LARGE')).toBe(2);
+    expect(executed[0]?.sql).toContain('private.note_brand_asset_failure');
+    expect(executed[0]?.params).toEqual([FILE, 'DIMENSIONS_TOO_LARGE']);
+    expect(await noteBrandAssetFailure(tx, FILE, 'not a code; drop table')).toBe(1);
+    expect(executed[1]?.params).toEqual([FILE, 'FAILED']);
+    expect(await noteBrandAssetFailure(tx, FILE, 'MALFORMED')).toBe(0);
   });
 
   it("reads the organization's e-mail look; checked colours only", async () => {

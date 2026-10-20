@@ -16,6 +16,7 @@ export {
   claimBrandAssetWork,
   forgetBrandingDeployedForTests,
   getEmailBrand,
+  noteBrandAssetFailure,
   publishBrandAsset,
 } from './branding';
 export {

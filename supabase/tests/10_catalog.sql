@@ -726,7 +726,7 @@ begin
   -- Plus the branding images' functions (WP-ADM-02: publishing clean images, the public delivery path, the
   -- image trigger of platform.tenant_branding and its two helpers).
   perform tests.assert_eq(v_list,
-    'private.branding_file_usable(uuid,uuid,text) (INVOKER), '
+    'private.branding_file_usable(uuid,uuid,text) (INVOKER), private.branding_image_names(uuid[]), '
     'private.can_read_object(text,text), private.can_upload_object(text,text), '
     'private.claim_brand_asset_work(integer), '
     'private.claim_file_housekeeping(integer), private.claim_file_scan(), private.claim_orphan_objects(integer), '
@@ -739,8 +739,9 @@ begin
     'private.finish_file_scan(uuid,text,text,bigint,text,text,text,text,text), '
     'private.finish_generated_file(uuid,bigint,text), private.grant_file_download(uuid,text,text,text,uuid), '
     'private.lock_file_housekeeping(uuid,text), private.mark_file_used(uuid), '
-    'private.public_brand_asset(uuid), private.public_tenant_brand(text), '
-    'private.publish_brand_asset(uuid,text,bytea), private.release_branding_file(uuid,uuid) (INVOKER), '
+    'private.note_brand_asset_failure(uuid,text), '
+    'private.public_brand_asset(uuid), private.public_brand_asset_meta(uuid), private.public_tenant_brand(text), '
+    'private.publish_brand_asset(uuid,text,text,bytea), private.release_branding_file(uuid,uuid) (INVOKER), '
     'private.retry_file_scan(uuid,text), private.tenant_branding_files()',
     'file_guard owns the file functions only');
   perform tests.assert((select prosecdef and pg_get_userbyid(proowner) = 'tenant_guard' from pg_proc

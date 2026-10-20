@@ -485,9 +485,12 @@ begin
       ('private.branding_file_usable(uuid, uuid, text)', 'file_guard', array['file_guard'], false),
       ('private.release_branding_file(uuid, uuid)', 'file_guard', array['file_guard'], false),
       ('private.claim_brand_asset_work(integer)', 'file_guard', array['file_guard', 'authenticated'], true),
-      ('private.publish_brand_asset(uuid, text, bytea)', 'file_guard', array['file_guard', 'authenticated'], true),
+      ('private.publish_brand_asset(uuid, text, text, bytea)', 'file_guard', array['file_guard', 'authenticated'], true),
+      ('private.note_brand_asset_failure(uuid, text)', 'file_guard', array['file_guard', 'authenticated'], true),
       ('private.public_brand_asset(uuid)', 'file_guard', array['file_guard', 'authenticated'], true),
-      ('private.public_tenant_brand(text)', 'file_guard', array['file_guard', 'authenticated'], true)
+      ('private.public_brand_asset_meta(uuid)', 'file_guard', array['file_guard', 'authenticated'], true),
+      ('private.public_tenant_brand(text)', 'file_guard', array['file_guard', 'authenticated'], true),
+      ('private.branding_image_names(uuid[])', 'file_guard', array['file_guard', 'authenticated'], true)
     ) as h(fn, owner, allowed, definer)
     left join pg_proc p on p.oid = to_regprocedure(h.fn)
   loop
@@ -590,8 +593,9 @@ begin
         'private.invitation_mail_skipped_ids()',
         -- Branding (WP-ADM-02)
         'private.tenant_branding_files()', 'private.claim_brand_asset_work(integer)',
-        'private.publish_brand_asset(uuid,text,bytea)', 'private.public_brand_asset(uuid)',
-        'private.public_tenant_brand(text)')
+        'private.publish_brand_asset(uuid,text,text,bytea)', 'private.note_brand_asset_failure(uuid,text)',
+        'private.public_brand_asset(uuid)', 'private.public_brand_asset_meta(uuid)',
+        'private.public_tenant_brand(text)', 'private.branding_image_names(uuid[])')
   loop
     failures := failures || format('%s: unexpected SECURITY DEFINER function (security review)', r.fn);
   end loop;

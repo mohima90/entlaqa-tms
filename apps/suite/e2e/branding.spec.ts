@@ -165,6 +165,22 @@ for (const locale of ['en', 'ar'] as const) {
   });
 }
 
+/**
+ * The real response headers of the public image path (security review L4): whatever the answer (here a 404:
+ * no such copy, or no database), the image policy — not the page CSP set by the proxy — and nosniff.
+ */
+test('public branding images answer with the sandboxing policy and nosniff', async ({ request }) => {
+  for (const path of ['/api/brand/3c4d5e6f-7081-4a9b-8c1d-2e3f4a5b6c7d', '/api/brand/not-an-id']) {
+    const response = await request.get(path);
+    expect(response.status(), path).toBe(404);
+    const headers = response.headers();
+    expect(headers['content-security-policy'], path).toBe("default-src 'none'; sandbox");
+    expect(headers['x-content-type-options'], path).toBe('nosniff');
+    expect(headers['cross-origin-resource-policy'], path).toBe('cross-origin');
+    expect(headers['cache-control'], path).toBe('no-store');
+  }
+});
+
 /** With a database and accounts (the self-hosted stack): save, and the shell applies the colour. */
 const adminEmail = process.env.BRANDING_E2E_EMAIL ?? '';
 const adminPassword = process.env.BRANDING_E2E_PASSWORD ?? '';

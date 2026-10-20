@@ -37,7 +37,7 @@ begin
     -- Needs forms (T-M3-10): insert/FK tests below; rules in 99_needs_forms_1_app_server.sql.
     'tms.needs_forms', 'tms.needs_form_sections', 'tms.needs_form_fields',
     -- Branding (WP-ADM-02): insert/FK tests below; images, publishing and the public path in 99_branding_*.sql.
-    'platform.tenant_branding', 'platform.brand_assets')
+    'platform.tenant_branding', 'platform.brand_assets', 'platform.brand_asset_attempts')
     and t.table_name not in (select table_name from tests.job_only_tables());
   perform tests.assert(v_missing is null, format('isolation tests missing for: %s', v_missing));
   perform tests.assert(session_user = 'app_server', 'this file must run connected as app_server');
@@ -76,10 +76,6 @@ begin
       -- Read only with tms.plan_cycle.read / .manage (S-L3), which the Organization Admin does not hold: the
       -- same generic check as an L&D Manager of tenant A is in 99_planning_b_app_server.sql.
       perform tests.assert_eq(v_total, 0::bigint, format('%s: read with the planning permissions only', r.table_name));
-    elsif r.table_name::text = 'platform.brand_assets' then
-      -- Published copies exist only once the worker published a clean image: the same checks with copies in
-      -- both organizations are in 99_branding_2_app_server.sql.
-      perform tests.assert_eq(v_total, 0::bigint, format('%s: no copy published in the fixtures', r.table_name));
     else
       perform tests.assert(v_total > 0, format('%s: tenant A must see its own rows', r.table_name));
     end if;
@@ -281,6 +277,13 @@ begin
   perform tests.assert_privilege_denied($q$select content from platform.brand_assets$q$,
     'brand_assets: the bytes are not readable through SQL');
   perform tests.assert_privilege_denied($q$delete from platform.brand_assets$q$, 'brand_assets: no DELETE grant');
+  perform tests.assert_eq((select count(*) from platform.brand_assets where id = 'e0b00000-0000-4000-8000-000000000001'),
+    0::bigint, 'brand_assets: tenant B''s copy is invisible to A');
+  -- platform.brand_asset_attempts: users never write it.
+  perform tests.assert_privilege_denied($q$insert into platform.brand_asset_attempts (tenant_id, file_id) values ('a0000000-0000-4000-8000-000000000001', 'f0a00000-0000-4000-8000-000000000001')$q$,
+    'brand_asset_attempts: users cannot insert');
+  perform tests.assert_privilege_denied($q$update platform.brand_asset_attempts set attempts = 0$q$,
+    'brand_asset_attempts: users cannot reset attempts');
 
   -- Role scope units (EP-ORG, T-M3-09): a tenant B unit is rejected by the composite FKs.
   perform tests.assert_fails($q$insert into platform.invitations (person_id, email, locale, primary_role, scope_unit_id) values ('a1000000-0000-4000-8000-0000000000a2', 'uinv@a.test', 'ar', 'learner', 'b3000000-0000-4000-8000-000000000001')$q$,

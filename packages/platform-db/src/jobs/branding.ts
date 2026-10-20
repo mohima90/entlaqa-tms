@@ -51,16 +51,19 @@ export async function claimBrandAssetWork(tx: ClaimsTx, limit: number): Promise<
 
 /**
  * Stores the public copy (tenant transaction of the image): its id, or null when the image is no longer in
- * use or not clean any more. Throws DomainError BRAND_IMAGE_MISMATCH when the bytes differ from the scan's.
+ * use or not clean any more. `sourceSha256` is the SHA-256 of the bytes read from storage (it must be the
+ * scanned file's); `content` is the copy without metadata (no larger than the file; its own hash is stored).
+ * Throws DomainError BRAND_IMAGE_MISMATCH when the source is not the scanned file.
  */
 export async function publishBrandAsset(
   tx: ClaimsTx,
   work: { readonly fileId: string; readonly kind: BrandImageKind },
+  sourceSha256: string,
   content: Uint8Array,
 ): Promise<string | null> {
   try {
     const [row] = await tx.execute<{ id: string | null }>(
-      sql`select private.publish_brand_asset(${work.fileId}::uuid, ${work.kind}, ${Buffer.from(content)}::bytea) as id`,
+      sql`select private.publish_brand_asset(${work.fileId}::uuid, ${work.kind}, ${sourceSha256}, ${Buffer.from(content)}::bytea) as id`,
     );
     return row?.id ?? null;
   } catch (error) {
@@ -69,6 +72,26 @@ export async function publishBrandAsset(
     }
     throw error;
   }
+}
+
+/** Failure codes as recorded (upper-case words; anything else is recorded as FAILED). */
+const FAILURE_CODE = /^[A-Z][A-Z0-9_]{1,39}$/;
+
+/**
+ * Records that an image could not be published (tenant transaction of the image; security review L5): the
+ * next try waits 2, 4, 8, … minutes (at most a day); after 5 failures the image is given up — the Branding
+ * page then says it cannot be used. Returns the number of failures (0: not a Branding image of this tenant).
+ */
+export async function noteBrandAssetFailure(
+  tx: ClaimsTx,
+  fileId: string,
+  code: string,
+): Promise<number> {
+  const recorded = FAILURE_CODE.test(code) ? code : 'FAILED';
+  const [row] = await tx.execute<{ attempts: number | string }>(
+    sql`select private.note_brand_asset_failure(${fileId}::uuid, ${recorded}) as attempts`,
+  );
+  return Number(row?.attempts ?? 0);
 }
 
 /** The e-mail look of the job's organization (FR-NTF-02); null: the Jadarat look (or before the migration). */

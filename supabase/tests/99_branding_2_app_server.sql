@@ -31,7 +31,8 @@ begin
                                              'a1000000-0000-4000-8000-000000000c01'));
   perform tests.assert_eq((select primary_color from platform.tenant_branding), '#0F6E5A', 'a learner reads the colours');
   perform tests.assert_eq(tests.rows_affected(v_set), 0::bigint, 'a learner cannot change the branding');
-  perform tests.assert_eq((select count(*) from platform.brand_assets), 1::bigint, 'members see which images are published');
+  perform tests.assert_eq((select count(*) from platform.brand_assets), 2::bigint,
+    'members see which images are published (00 and 99_branding_0 fixtures)');
 
   -- The Organization Admin uA: changed, stamped, version 2.
   perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-0000000000a1', v_a,
@@ -65,6 +66,8 @@ begin
   -- Never another organization's branding.
   perform tests.assert_eq((select count(*) from platform.tenant_branding where tenant_id <> v_a), 0::bigint,
     'the admin of A sees no other organization''s branding');
+  perform tests.assert_eq((select count(*) from platform.brand_assets where id = 'e0b00000-0000-4000-8000-000000000001'),
+    0::bigint, 'B''s published copy is invisible to A');
   perform tests.assert_eq((select count(*) from platform.brand_assets where tenant_id <> v_a), 0::bigint,
     'nor its published images');
 end $$;
@@ -91,7 +94,8 @@ begin
   -- published). The old logo's copy goes at once and its file is deleted.
   perform tests.assert_eq(tests.rows_affected($q$update platform.tenant_branding set logo_file_id = 'f0a20000-0000-4000-8000-000000000002', sign_in_image_file_id = 'f0a20000-0000-4000-8000-000000000005'$q$),
     1::bigint, 'the logo is replaced; an upload waiting for the scan is accepted');
-  perform tests.assert_eq((select count(*) from platform.brand_assets), 0::bigint, 'the old logo''s copy is removed');
+  perform tests.assert_eq((select count(*) from platform.brand_assets where id = 'e0a20000-0000-4000-8000-000000000001'),
+    0::bigint, 'the old logo''s copy is removed');
   perform tests.assert_eq((select status from platform.files where id = 'f0a20000-0000-4000-8000-000000000001'), 'deleted',
     'the old logo''s file is deleted');
   -- The saver's unused uploads went with that save (the rejected one); the images in use stay.
@@ -101,6 +105,11 @@ begin
     'the image in use stays');
   perform tests.assert_eq((select status from platform.files where id = 'f0a20000-0000-4000-8000-000000000002'), 'clean',
     'the new logo stays');
+  -- The audit names the images (sanitized names), also another admin's upload; never another tenant's.
+  perform tests.assert_eq((select string_agg(name, ',' order by name) from private.branding_image_names(
+      array['f0a20000-0000-4000-8000-000000000002', 'f0a20000-0000-4000-8000-000000000004',
+            'f0b20000-0000-4000-8000-000000000001', 'f0a00000-0000-4000-8000-000000000001']::uuid[])),
+    'logo-2.png,other.png', 'branding image names: this organization''s branding images only');
   -- Remove the favicon: its file is deleted (the Jadarat icon is shown again).
   perform tests.assert_eq(tests.rows_affected($q$update platform.tenant_branding set favicon_file_id = null$q$),
     1::bigint, 'the favicon is removed');
@@ -126,6 +135,9 @@ begin
   perform tests.set_claims(tests.user_claims('00000000-0000-4000-8000-0000000000b1', '10000000-0000-4000-8000-0000000000b1', v_b,
                                              'b1000000-0000-4000-8000-0000000000b1'));
   perform tests.assert_eq((select count(*) from platform.tenant_branding), 0::bigint, 'B starts with the Jadarat look');
+  perform tests.assert_eq((select string_agg(id::text, ',') from platform.brand_assets), 'e0b00000-0000-4000-8000-000000000001',
+    'B sees its own copy only');
+  perform tests.assert_eq((select count(*) from platform.brand_asset_attempts), 1::bigint, 'B sees its own attempts only');
   perform tests.assert_fails($q$insert into platform.tenant_branding (logo_file_id) values ('f0a20000-0000-4000-8000-000000000002')$q$,
     array['23503', 'JB001'], 'an image of A is never B''s');
   perform tests.assert_eq(tests.rows_affected($q$insert into platform.tenant_branding (primary_color, secondary_color, use_gradient, email_action_color, email_link_color, logo_file_id) values ('#7A1F2B', '#7A1F2B', false, '#7A1F2B', '#7A1F2B', 'f0b20000-0000-4000-8000-000000000001')$q$),
@@ -225,12 +237,14 @@ begin
                                              'a0000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-0000000000a1'));
   perform tests.assert_fails($q$select * from private.claim_brand_asset_work(10)$q$, array['42501'],
     'the web app cannot claim publishing work');
-  perform tests.assert_fails(format('select private.publish_brand_asset(%L, %L, %L::bytea)',
-                                    'f0a20000-0000-4000-8000-000000000003', 'favicon', tests.brand_png()),
+  perform tests.assert_fails(format('select private.publish_brand_asset(%L, %L, %L, %L::bytea)',
+                                    'f0a20000-0000-4000-8000-000000000003', 'favicon',
+                                    encode(sha256(tests.brand_png()), 'hex'), tests.brand_png()),
     array['42501'], 'the web app cannot publish an image');
   perform tests.set_claims(tests.system_claims('a0000000-0000-4000-8000-000000000001'));
-  perform tests.assert_fails(format('select private.publish_brand_asset(%L, %L, %L::bytea)',
-                                    'f0a20000-0000-4000-8000-000000000003', 'favicon', tests.brand_png()),
+  perform tests.assert_fails(format('select private.publish_brand_asset(%L, %L, %L, %L::bytea)',
+                                    'f0a20000-0000-4000-8000-000000000003', 'favicon',
+                                    encode(sha256(tests.brand_png()), 'hex'), tests.brand_png()),
     array['42501'], 'forged system claims under app_server cannot publish');
 end $$;
 rollback;

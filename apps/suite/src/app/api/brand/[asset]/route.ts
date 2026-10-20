@@ -7,12 +7,13 @@ export const dynamic = 'force-dynamic';
  * organization's logo, favicon or sign-in picture for its sign-in page, browser tab and e-mails — read
  * WITHOUT a session (the sign-in page and mail clients have none), by the copy's random id only, through the
  * claim-less private.public_brand_asset (organizations in service, images their Branding still uses).
- * A read: nothing changes, no tenant data but the image.
+ * A read: nothing changes, no tenant data but the image. Cached for a day by browsers and CDNs; a browser's
+ * revalidation is answered with 304 without reading the bytes; full answers are rate-limited per client.
  */
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ asset: string }> },
 ): Promise<Response> {
   const { asset } = await params;
-  return brandImageResponse(asset);
+  return brandImageResponse(request, asset);
 }

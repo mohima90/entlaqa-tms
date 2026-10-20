@@ -309,6 +309,7 @@ describe('public delivery path (claim-less)', () => {
     const { api, queries } = database([]);
     expect(await api.tenantBrandBySlug("raya' or '1'='1")).toBeNull();
     expect(await api.brandAsset('../../x')).toBeNull();
+    expect(await api.brandAssetMeta('ABC')).toBeNull();
     expect(queries).toHaveLength(0);
   });
 
@@ -336,14 +337,25 @@ describe('public delivery path (claim-less)', () => {
     expect(await copy.api.brandAsset(ASSET)).toMatchObject({ contentType: 'image/png' });
     expect(await database([]).api.brandAsset(ASSET)).toBeNull();
     expect(await database([]).api.tenantBrandBySlug('raya')).toBeNull();
+    // Revalidation: type, hash and size only — the bytes are not read.
+    const meta = database([{ content_type: 'image/png', sha256: 'a'.repeat(64), byte_size: '12' }]);
+    expect(await meta.api.brandAssetMeta(ASSET)).toEqual({
+      contentType: 'image/png',
+      sha256: 'a'.repeat(64),
+      byteSize: 12,
+    });
+    expect(meta.queries.some((q) => q.includes('private.public_brand_asset_meta'))).toBe(true);
+    expect(await database([]).api.brandAssetMeta(ASSET)).toBeNull();
   });
 
   it('a database before the migration answers nothing; other errors are thrown', async () => {
     const missing = Object.assign(new Error('function does not exist'), { code: '42883' });
     expect(await database(missing).api.tenantBrandBySlug('raya')).toBeNull();
     expect(await database(missing).api.brandAsset(ASSET)).toBeNull();
+    expect(await database(missing).api.brandAssetMeta(ASSET)).toBeNull();
     const broken = Object.assign(new Error('boom'), { code: 'XX000' });
     await expect(database(broken).api.brandAsset(ASSET)).rejects.toThrow('boom');
+    await expect(database(broken).api.brandAssetMeta(ASSET)).rejects.toThrow('boom');
     await expect(database(broken).api.tenantBrandBySlug('raya')).rejects.toThrow('boom');
   });
 });

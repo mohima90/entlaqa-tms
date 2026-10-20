@@ -3,6 +3,8 @@
 -- Manager (cross-tenant inserts and composite foreign keys), constraints, BR-PLN-g, the state model (launch
 -- checks, one open cycle — Q1, extend, close, draft-only children) and draft deletion. Fixtures:
 -- 00_helpers_and_fixtures.sql and 99_planning_a_fixtures_owner.sql. Each block is rolled back.
+-- Dates are the organization's calendar day (private.plan_cycle_today, Asia/Riyadh here), as the guards use —
+-- never current_date (UTC): between 21:00 and 24:00 UTC they differ by a day.
 \set ON_ERROR_STOP on
 
 -- ---- who may manage -------------------------------------------------------------------------------
@@ -27,7 +29,7 @@ do $$
 begin
   perform tests.assert(not private.may_manage_plan_cycles('a0000000-0000-4000-8000-000000000001'),
     'an HR Manager does not manage cycles');
-  perform tests.assert_rls_violation($q$insert into tms.plan_cycles (name_ar, name_en, period_start_on, period_end_on, deadline_on) values ('خطة', 'Plan', current_date, current_date + 300, current_date + 10)$q$,
+  perform tests.assert_rls_violation($q$insert into tms.plan_cycles (name_ar, name_en, period_start_on, period_end_on, deadline_on) values ('خطة', 'Plan', private.plan_cycle_today('a0000000-0000-4000-8000-000000000001'), private.plan_cycle_today('a0000000-0000-4000-8000-000000000001') + 300, private.plan_cycle_today('a0000000-0000-4000-8000-000000000001') + 10)$q$,
     'HR Manager: no new cycle');
 end $$;
 rollback;
@@ -59,7 +61,7 @@ begin
     'the Training Coordinator does not manage cycles');
   perform tests.assert_eq((select count(*) from tms.plan_cycles), 2::bigint, 'the coordinator reads A''s cycles');
   perform tests.assert_eq((select count(*) from tms.plan_cycle_departments), 2::bigint, 'and their departments');
-  perform tests.assert_rls_violation($q$insert into tms.plan_cycles (name_ar, name_en, period_start_on, period_end_on, deadline_on) values ('خطة', 'Plan', current_date, current_date + 300, current_date + 10)$q$,
+  perform tests.assert_rls_violation($q$insert into tms.plan_cycles (name_ar, name_en, period_start_on, period_end_on, deadline_on) values ('خطة', 'Plan', private.plan_cycle_today('a0000000-0000-4000-8000-000000000001'), private.plan_cycle_today('a0000000-0000-4000-8000-000000000001') + 300, private.plan_cycle_today('a0000000-0000-4000-8000-000000000001') + 10)$q$,
     'coordinator: no new cycle');
   perform tests.assert_eq(tests.rows_affected($q$update tms.plan_cycles set name_en = 'x'$q$), 0::bigint, 'coordinator: no edit');
   perform tests.assert_eq(tests.rows_affected($q$delete from tms.plan_cycles$q$), 0::bigint, 'coordinator: no delete');
@@ -85,10 +87,10 @@ declare
 begin
   perform tests.assert_eq((select count(*) from tms.plan_cycles where tenant_id <> 'a0000000-0000-4000-8000-000000000001'),
     0::bigint, 'A''s L&D Manager sees no other organization''s cycle');
-  perform tests.assert_rls_violation($q$insert into tms.plan_cycles (tenant_id, name_ar, name_en, period_start_on, period_end_on, deadline_on) values ('b0000000-0000-4000-8000-000000000001', 'دخيل', 'Intruder', current_date, current_date + 300, current_date + 10)$q$,
+  perform tests.assert_rls_violation($q$insert into tms.plan_cycles (tenant_id, name_ar, name_en, period_start_on, period_end_on, deadline_on) values ('b0000000-0000-4000-8000-000000000001', 'دخيل', 'Intruder', private.plan_cycle_today('a0000000-0000-4000-8000-000000000001'), private.plan_cycle_today('a0000000-0000-4000-8000-000000000001') + 300, private.plan_cycle_today('a0000000-0000-4000-8000-000000000001') + 10)$q$,
     'plan_cycles: never for tenant B');
   insert into tms.plan_cycles (name_ar, name_en, period_start_on, period_end_on, deadline_on)
-    values ('خطة جديدة', 'New plan', current_date + 30, current_date + 395, current_date + 20) returning id into v_id;
+    values ('خطة جديدة', 'New plan', private.plan_cycle_today('a0000000-0000-4000-8000-000000000001') + 30, private.plan_cycle_today('a0000000-0000-4000-8000-000000000001') + 395, private.plan_cycle_today('a0000000-0000-4000-8000-000000000001') + 20) returning id into v_id;
   perform tests.assert_eq((select tenant_id from tms.plan_cycles where id = v_id), 'a0000000-0000-4000-8000-000000000001'::uuid,
     'the organization comes from the claims');
   perform tests.assert_eq((select currency from tms.plan_cycles where id = v_id), 'AED'::char(3),
@@ -218,15 +220,15 @@ begin
     'closing records when');
   perform tests.assert_fails($q$update tms.plan_cycles set status = 'open' where id = 'ae000000-0000-4000-8000-000000000002'$q$,
     array['JK001'], 'a closed cycle does not reopen in this release');
-  perform tests.assert_fails($q$update tms.plan_cycles set deadline_on = current_date + 5 where id = 'ae000000-0000-4000-8000-000000000002'$q$,
+  perform tests.assert_fails($q$update tms.plan_cycles set deadline_on = private.plan_cycle_today('a0000000-0000-4000-8000-000000000001') + 5 where id = 'ae000000-0000-4000-8000-000000000002'$q$,
     array['JK001'], 'a closed cycle no longer changes');
 
   -- A new draft, made ready step by step.
   insert into tms.plan_cycles (name_ar, name_en, period_start_on, period_end_on, deadline_on)
-    values ('خطة', 'Plan', current_date - 10, current_date + 355, current_date - 1) returning id into v_id;
+    values ('خطة', 'Plan', private.plan_cycle_today('a0000000-0000-4000-8000-000000000001') - 10, private.plan_cycle_today('a0000000-0000-4000-8000-000000000001') + 355, private.plan_cycle_today('a0000000-0000-4000-8000-000000000001') - 1) returning id into v_id;
   v_launch := format($q$update tms.plan_cycles set status = 'open' where id = %L$q$, v_id);
   perform tests.assert_fails(v_launch, array['JK003'], 'not ready: the deadline has passed');
-  update tms.plan_cycles set deadline_on = current_date where id = v_id;
+  update tms.plan_cycles set deadline_on = private.plan_cycle_today('a0000000-0000-4000-8000-000000000001') where id = v_id;
   perform tests.assert_fails(v_launch, array['JK003'], 'not ready: no department in scope');
   insert into tms.plan_cycle_scope (cycle_id, department_id) values (v_id, 'a3000000-0000-4000-8000-000000000003');
   insert into tms.plan_cycle_departments (cycle_id, department_id, budget_amount) values (v_id, 'a3000000-0000-4000-8000-000000000003', 1200.50);
@@ -257,11 +259,11 @@ begin
     array['JK001'], 'an open cycle keeps its reminders');
   perform tests.assert_fails(format($q$update tms.plan_cycles set needs_form_id = gen_random_uuid() where id = %L$q$, v_id),
     array['JK001'], 'an open cycle keeps its needs form');
-  perform tests.assert_fails(format($q$update tms.plan_cycles set deadline_on = current_date - 1 where id = %L$q$, v_id),
+  perform tests.assert_fails(format($q$update tms.plan_cycles set deadline_on = private.plan_cycle_today('a0000000-0000-4000-8000-000000000001') - 1 where id = %L$q$, v_id),
     array['JK004'], 'the deadline never moves earlier');
   perform tests.assert_check_constraint(format($q$update tms.plan_cycles set deadline_on = period_end_on + 1 where id = %L$q$, v_id),
     'plan_cycles_deadline_check', 'the deadline stays within the period');
-  perform tests.assert_eq(tests.rows_affected(format($q$update tms.plan_cycles set deadline_on = current_date + 14 where id = %L$q$, v_id)),
+  perform tests.assert_eq(tests.rows_affected(format($q$update tms.plan_cycles set deadline_on = private.plan_cycle_today('a0000000-0000-4000-8000-000000000001') + 14 where id = %L$q$, v_id)),
     1::bigint, 'extend the deadline while open');
   perform tests.assert_fails(format($q$update tms.plan_cycles set status = 'closed' where id = %L$q$, v_id),
     array['JK001'], 'an open cycle does not close before its deadline');
@@ -358,13 +360,13 @@ select tests.set_claims(tests.user_claims('00000000-0000-4000-8000-00000000e0a1'
 do $$
 begin
   -- ae…02 is open in the database with a deadline three days ago (shown as Closed by date).
-  perform tests.assert_fails($q$update tms.plan_cycles set deadline_on = current_date - 4 where id = 'ae000000-0000-4000-8000-000000000002'$q$,
+  perform tests.assert_fails($q$update tms.plan_cycles set deadline_on = private.plan_cycle_today('a0000000-0000-4000-8000-000000000001') - 4 where id = 'ae000000-0000-4000-8000-000000000002'$q$,
     array['JK004'], 'never earlier');
-  perform tests.assert_fails($q$update tms.plan_cycles set deadline_on = current_date - 1 where id = 'ae000000-0000-4000-8000-000000000002'$q$,
+  perform tests.assert_fails($q$update tms.plan_cycles set deadline_on = private.plan_cycle_today('a0000000-0000-4000-8000-000000000001') - 1 where id = 'ae000000-0000-4000-8000-000000000002'$q$,
     array['JK004'], 'the new deadline is today or later');
-  perform tests.assert_eq(tests.rows_affected($q$update tms.plan_cycles set deadline_on = current_date + 10 where id = 'ae000000-0000-4000-8000-000000000002'$q$),
+  perform tests.assert_eq(tests.rows_affected($q$update tms.plan_cycles set deadline_on = private.plan_cycle_today('a0000000-0000-4000-8000-000000000001') + 10 where id = 'ae000000-0000-4000-8000-000000000002'$q$),
     1::bigint, 'an open cycle whose deadline has passed is extended');
-  perform tests.assert((select status = 'open' and deadline_on = current_date + 10 and closed_at is null
+  perform tests.assert((select status = 'open' and deadline_on = private.plan_cycle_today('a0000000-0000-4000-8000-000000000001') + 10 and closed_at is null
                         from tms.plan_cycles where id = 'ae000000-0000-4000-8000-000000000002'),
     'it is open again until the new date');
   perform tests.assert_fails($q$update tms.plan_cycles set status = 'closed' where id = 'ae000000-0000-4000-8000-000000000002'$q$,

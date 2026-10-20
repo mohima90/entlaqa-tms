@@ -53,7 +53,10 @@ alter table tms.plan_cycles disable trigger plan_cycles_guard;
 insert into tms.plan_cycles (id, tenant_id, name_ar, name_en, period_start_on, period_end_on, deadline_on, status,
     launched_at, currency) values
   ('ae000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'خطة سابقة', 'Earlier plan',
-   current_date - 300, current_date + 60, current_date - 3, 'open', now() - interval '20 days', 'SAR');
+   private.plan_cycle_today('a0000000-0000-4000-8000-000000000001') - 300,
+   private.plan_cycle_today('a0000000-0000-4000-8000-000000000001') + 60,
+   -- The organization's calendar day, as the guards use (never current_date, UTC: a day apart after 21:00 UTC).
+   private.plan_cycle_today('a0000000-0000-4000-8000-000000000001') - 3, 'open', now() - interval '20 days', 'SAR');
 alter table tms.plan_cycles enable trigger plan_cycles_guard;
 commit;
 

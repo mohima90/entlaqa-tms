@@ -9,6 +9,7 @@ import { ForgotPasswordForm } from '../../../components/password-reset/forgot-pa
 import { authLanguageSwitch, authShellTexts } from '../../../lib/auth-shell-texts';
 import { passwordResetErrorTexts } from '../../../lib/auth-texts';
 import { getConfigStatus } from '../../../lib/config-status';
+import { authBrandOf, signInBrand } from '../../../lib/sign-in-brand';
 
 /**
  * Forgot password (screen 10; FR-IAM-13, NFR-SEC-01, T-M2-08; Kawadir ATS's layout, PO 16 Oct 2026).
@@ -42,6 +43,7 @@ export default async function ForgotPasswordPage({
   return (
     <AuthShell
       variant="simple"
+      brand={authBrandOf(await signInBrand(locale))}
       texts={await authShellTexts(locale)}
       languageSwitch={
         <AuthLanguageSwitch {...await authLanguageSwitch(locale, '/forgot-password')} />

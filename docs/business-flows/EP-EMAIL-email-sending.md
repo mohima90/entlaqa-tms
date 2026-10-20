@@ -58,6 +58,6 @@ Every e-mail of the product (invitations, password reset, password changed, and 
 ## 9. Open questions
 | # | Question | Proposed answer | PO answer |
 |---|---|---|---|
-| 1 | If the organization's own provider fails, fall back to the platform sender automatically? | **No** (Kawadir rule): show the error to the Org Admin || Approved (17 Oct 2026) |
-| 2 | Who is the first Super Admin? | You (the PO), created once by a workflow Claude runs || Approved (17 Oct 2026) |
-| 3 | Providers in R1 | Resend, SMTP, SendGrid, Mailgun, Microsoft 365 (as Kawadir) || Approved (17 Oct 2026) |
+| 1 | If the organization's own provider fails, fall back to the platform sender automatically? | **No** (Kawadir rule): show the error to the Org Admin | Approved (17 Oct 2026) |
+| 2 | Who is the first Super Admin? | You (the PO), created once by a workflow Claude runs | Approved (17 Oct 2026) |
+| 3 | Providers in R1 | Resend, SMTP, SendGrid, Mailgun, Microsoft 365 (as Kawadir) | Approved (17 Oct 2026) |

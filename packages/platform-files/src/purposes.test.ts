@@ -31,6 +31,29 @@ describe('file purposes', () => {
     expect(FILE_PURPOSES['platform.profile_photo'].types).not.toContain('image/gif');
   });
 
+  it('branding images: PNG/JPEG/WebP only, Kawadir limits (WP-ADM-02, BR-BRD-b)', () => {
+    const limits = {
+      'platform.brand_logo': 2 * 1024 * 1024,
+      'platform.brand_favicon': 500 * 1024,
+      'platform.brand_sign_in_image': 5 * 1024 * 1024,
+    } as const;
+    for (const [purpose, maxBytes] of Object.entries(limits)) {
+      expect(isFilePurpose(purpose)).toBe(true);
+      expect(FILE_PURPOSES[purpose as keyof typeof limits]).toMatchObject({
+        bucket: 'images',
+        maxBytes,
+        types: ['image/png', 'image/jpeg', 'image/webp'],
+        uploadBy: 'user',
+      });
+      expect(declaredTypeFor(purpose as keyof typeof limits, 'logo.svg')).toBeNull();
+      expect(declaredTypeFor(purpose as keyof typeof limits, 'logo.gif')).toBeNull();
+      expect(declaredTypeFor(purpose as keyof typeof limits, 'logo.ico')).toBeNull();
+      expect(declaredTypeFor(purpose as keyof typeof limits, 'logo.html')).toBeNull();
+      expect(declaredTypeFor(purpose as keyof typeof limits, 'logo.WEBP')).toBe('image/webp');
+      expect(declaredTypeFor(purpose as keyof typeof limits, 'شعار.png')).toBe('image/png');
+    }
+  });
+
   it('download links live at most 5 minutes (ADR 0006 §4)', () => {
     for (const purpose of Object.values(FILE_PURPOSES)) {
       expect(purpose.downloadTtlSeconds).toBeLessThanOrEqual(300);

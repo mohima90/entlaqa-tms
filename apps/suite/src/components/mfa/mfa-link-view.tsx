@@ -1,6 +1,6 @@
 'use client';
 import { Alert, Button, Card, buttonClasses } from '@jadarat/ui';
-import { useEffect, useRef, useState, useTransition } from 'react';
+import { type ReactNode, useEffect, useRef, useState, useTransition } from 'react';
 import { openMfaRemoveLinkAction } from '../../auth/mfa';
 import { type MfaLinkOutcome, mfaLinkFragment, mfaLinkTokenFromHash } from '../../lib/mfa-link';
 import { type ErrorTexts, errorText } from '../auth/error-text';
@@ -45,7 +45,8 @@ export function MfaLinkView({
   errors,
 }: {
   readonly locale: 'ar' | 'en';
-  readonly productName: string;
+  /** The header's name line: the organization's logo or the product's name (AuthHeaderBrand). */
+  readonly productName: ReactNode;
   /** The language switch: its target (locale-prefixed path without the fragment) and texts. */
   readonly toggle: {
     readonly href: string;
@@ -162,7 +163,7 @@ export function MfaLinkView({
   return (
     <div className="flex min-h-dvh flex-col">
       <header className="flex items-center justify-between gap-4 border-b border-border bg-surface px-4 py-3">
-        <span className="text-lg font-semibold">{productName}</span>
+        {productName}
         {/* The language switch keeps an unused link working: the token goes along in the fragment only. */}
         <a
           href={`${toggle.href}${mfaLinkFragment(view.kind === 'ready' ? view.token : null)}`}

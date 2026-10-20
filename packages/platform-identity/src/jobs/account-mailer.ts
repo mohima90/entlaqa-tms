@@ -261,7 +261,8 @@ export function createAccountMailer(options: AccountMailerOptions): PlatformTask
       // Checked again: anything may have changed since the lease (or the check before the token).
       const checked = await admissible(tx, request);
       if ('reason' in checked) return checked.reason;
-      await queueEmail(tx, await email(checked.organizationName, tx));
+      // The organization's logo is linked from the app's origin (WP-ADM-02, FR-NTF-02).
+      await queueEmail(tx, { ...(await email(checked.organizationName, tx)), appBaseUrl: base });
       await finishAccountMailRequest(tx, request.id);
       return 'queued';
     });
@@ -307,6 +308,7 @@ export function createAccountMailer(options: AccountMailerOptions): PlatformTask
         locale: request.locale,
         to: request.email,
         recipientPersonId: request.personId,
+        appBaseUrl: base,
         variables: {
           organizationName: checked.organizationName,
           code,

@@ -11,6 +11,15 @@ import { z } from 'zod';
 import { type ClaimsTx, runWithClaims } from '../claims-tx';
 
 export {
+  type BrandAssetWork,
+  type EmailBrand,
+  claimBrandAssetWork,
+  forgetBrandingDeployedForTests,
+  getEmailBrand,
+  noteBrandAssetFailure,
+  publishBrandAsset,
+} from './branding';
+export {
   type ClaimedEmail,
   type DeliveryOutcome,
   type QueuedEmail,

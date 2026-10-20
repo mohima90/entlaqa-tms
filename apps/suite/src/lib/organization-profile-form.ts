@@ -7,9 +7,11 @@ import { normalizeDigits } from '@jadarat/platform-i18n/text';
  */
 export const ORGANIZATION_NAME_MAX = 80;
 
+/**
+ * The profile and regional settings as the General page edits them. The organization's display names moved
+ * to Branding (WP-ADM-02, FR-ADM-02): they are validated there with validateOrganizationName.
+ */
 export interface ProfileFormValues {
-  readonly nameEn: string;
-  readonly nameAr: string;
   /** '' until chosen. */
   readonly industry: string;
   /** '' until chosen. */
@@ -65,8 +67,6 @@ export function cleanName(value: string): string {
 
 /** The fields in the order of the page (the first one with an error gets the focus). */
 export const PROFILE_FIELD_ORDER: readonly ProfileField[] = [
-  'nameEn',
-  'nameAr',
   'industry',
   'countryCode',
   'currencyCode',
@@ -86,17 +86,25 @@ export function firstInvalidField(
   return PROFILE_FIELD_ORDER.find((field) => errors[field] !== undefined) ?? null;
 }
 
+/**
+ * An organization display name as typed (Branding page, WP-ADM-02): required, at most 80 characters, no
+ * control characters or bidirectional overrides — the server's rules. Null: fine.
+ */
+export function validateOrganizationName(
+  value: string,
+): Extract<ProfileFieldError, 'nameRequired' | 'nameTooLong' | 'nameInvalid'> | null {
+  const name = cleanName(value);
+  if (name === '') return 'nameRequired';
+  if (Array.from(name).length > ORGANIZATION_NAME_MAX) return 'nameTooLong';
+  if (NAME_FORBIDDEN.test(name)) return 'nameInvalid';
+  return null;
+}
+
 /** Field errors of the values as the admin typed them (empty: ready to send). */
 export function validateProfile(
   values: ProfileFormValues,
 ): Partial<Record<ProfileField, ProfileFieldError>> {
   const errors: Partial<Record<ProfileField, ProfileFieldError>> = {};
-  for (const field of ['nameEn', 'nameAr'] as const) {
-    const name = cleanName(values[field]);
-    if (name === '') errors[field] = 'nameRequired';
-    else if (Array.from(name).length > ORGANIZATION_NAME_MAX) errors[field] = 'nameTooLong';
-    else if (NAME_FORBIDDEN.test(name)) errors[field] = 'nameInvalid';
-  }
   if (values.industry === '') errors.industry = 'industryRequired';
   if (values.countryCode === '') errors.countryCode = 'countryRequired';
   if (values.workingDays.length === 0) errors.workingDays = 'daysRequired';
@@ -114,7 +122,6 @@ export function serverFieldError(path: string, values: ProfileFormValues): Profi
   const local = validateProfile(values)[field];
   if (local) return local;
   if (field === 'workEndsAt') return 'endBeforeStart';
-  if (field === 'nameEn' || field === 'nameAr') return 'nameInvalid';
   return 'invalid';
 }
 
@@ -123,12 +130,10 @@ export function toggleDay(days: readonly number[], day: number): number[] {
   return days.includes(day) ? days.filter((d) => d !== day) : [...days, day].sort((a, b) => a - b);
 }
 
-/** The values as the action takes them (names trimmed, times normalized). */
+/** The values as the action takes them (times normalized; the names stay as stored — Branding). */
 export function profileInput(values: ProfileFormValues) {
   return {
     ...values,
-    nameEn: cleanName(values.nameEn),
-    nameAr: cleanName(values.nameAr),
     workingDays: [...values.workingDays],
     workStartsAt: normalizeClock(values.workStartsAt),
     workEndsAt: normalizeClock(values.workEndsAt),

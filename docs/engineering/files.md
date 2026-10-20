@@ -39,6 +39,7 @@ A module never picks a bucket or a type list itself: it names a **purpose**. The
 | `platform.user_import` | `imports` | 20 MB | CSV (strict UTF-8), XLSX (not XLSM) | `import` | user (scanned) | audited, 60 s |
 | `platform.user_import_report` | `generated` | 50 MB | XLSX (T-M2-12: inline strings only, no formula ever runs) | `import` | worker (clean) | audited, 60 s |
 | `platform.profile_photo` | `images` | 10 MB | PNG, JPEG, WebP (never SVG/GIF) | `owner_lifetime` | user (scanned) | 300 s |
+| `platform.brand_logo` / `platform.brand_favicon` / `platform.brand_sign_in_image` (WP-ADM-02) | `images` | 2 MB / 500 KB / 5 MB | PNG, JPEG, WebP (never SVG/GIF) | `owner_lifetime` | user (scanned) | 300 s; public copies of clean images in use: `docs/engineering/branding.md` |
 
 Buckets (ADR 0006 §1, all private): `materials` 200 MB, `images` 10 MB, `evidence` 25 MB, `imports` 20 MB, `generated`, `quarantine`. Object keys: `<tenant_id>/<module>/<entity_type>/<entity_id>/<file_id>` — the original name is **never** in the key; it is kept sanitized (NFC, no controls or bidirectional overrides, no path characters) for display and the download's `Content-Disposition` (Arabic names work).
 

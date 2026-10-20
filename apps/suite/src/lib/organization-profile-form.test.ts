@@ -3,6 +3,7 @@ import {
   type ProfileFormValues,
   cleanName,
   firstInvalidField,
+  validateOrganizationName,
   normalizeClock,
   profileInput,
   serverFieldError,
@@ -11,8 +12,6 @@ import {
 } from './organization-profile-form';
 
 const values: ProfileFormValues = {
-  nameEn: 'Al Raya Company',
-  nameAr: 'شركة الراية',
   industry: 'banking_financial',
   countryCode: 'SA',
   currencyCode: 'SAR',
@@ -30,15 +29,14 @@ describe('organization profile form (T-M2-22)', () => {
     expect(validateProfile(values)).toEqual({});
   });
 
-  it('requires both display names (trimmed), at most 80 characters', () => {
-    expect(validateProfile({ ...values, nameEn: '  ', nameAr: '' })).toEqual({
-      nameEn: 'nameRequired',
-      nameAr: 'nameRequired',
-    });
-    expect(validateProfile({ ...values, nameAr: 'ن'.repeat(81) })).toEqual({
-      nameAr: 'nameTooLong',
-    });
-    expect(validateProfile({ ...values, nameEn: ` ${'x'.repeat(80)} ` })).toEqual({});
+  it('display names (now on Branding, WP-ADM-02): required (trimmed), at most 80 characters', () => {
+    expect(validateOrganizationName('  ')).toBe('nameRequired');
+    expect(validateOrganizationName('')).toBe('nameRequired');
+    expect(validateOrganizationName('ن'.repeat(81))).toBe('nameTooLong');
+    expect(validateOrganizationName(` ${'x'.repeat(80)} `)).toBeNull();
+    expect(validateOrganizationName('Al \u202ERaya')).toBe('nameInvalid');
+    expect(validateOrganizationName('شركة \u2067الراية')).toBe('nameInvalid');
+    expect(validateOrganizationName('شركة\u200Cالراية')).toBeNull();
   });
 
   it('requires an industry, a country and a working day', () => {
@@ -70,8 +68,6 @@ describe('organization profile form (T-M2-22)', () => {
   });
 
   it('maps a server field error to the form message', () => {
-    expect(serverFieldError('nameEn', { ...values, nameEn: '' })).toBe('nameRequired');
-    expect(serverFieldError('nameEn', values)).toBe('nameInvalid');
     expect(serverFieldError('workEndsAt', values)).toBe('endBeforeStart');
     expect(serverFieldError('workingDays.0', values)).toBe('invalid');
     expect(serverFieldError('countryCode', values)).toBe('invalid');
@@ -83,27 +79,20 @@ describe('organization profile form (T-M2-22)', () => {
     expect(toggleDay([], 6)).toEqual([6]);
   });
 
-  it('sends trimmed names and normalized times', () => {
-    expect(
-      profileInput({ ...values, nameEn: ' Al Raya ', workStartsAt: '٠٨:٠٠', workEndsAt: '4:00' }),
-    ).toMatchObject({ nameEn: 'Al Raya', workStartsAt: '08:00', workEndsAt: '04:00' });
+  it('sends normalized times and no names (they are saved on Branding)', () => {
+    const sent = profileInput({ ...values, workStartsAt: '٠٨:٠٠', workEndsAt: '4:00' });
+    expect(sent).toMatchObject({ workStartsAt: '08:00', workEndsAt: '04:00' });
+    expect(sent).not.toHaveProperty('nameEn');
+    expect(sent).not.toHaveProperty('nameAr');
   });
 
-  it('refuses bidi controls, keeps joiners, saves names in NFC (review L3)', () => {
-    expect(validateProfile({ ...values, nameEn: 'Al \u202ERaya' })).toEqual({
-      nameEn: 'nameInvalid',
-    });
-    expect(validateProfile({ ...values, nameAr: 'شركة \u2067الراية' })).toEqual({
-      nameAr: 'nameInvalid',
-    });
-    expect(validateProfile({ ...values, nameAr: 'شركة\u200Cالراية' })).toEqual({});
+  it('saves names in NFC (review L3)', () => {
     expect(cleanName(' Cafe\u0301 ')).toBe('Caf\u00e9');
-    expect(serverFieldError('nameAr', values)).toBe('nameInvalid');
   });
 
   it('focuses the first field with an error, in page order (review L4)', () => {
-    expect(firstInvalidField({ workEndsAt: 'endBeforeStart', nameAr: 'nameRequired' })).toBe(
-      'nameAr',
+    expect(firstInvalidField({ workEndsAt: 'endBeforeStart', industry: 'industryRequired' })).toBe(
+      'industry',
     );
     expect(firstInvalidField({ workingDays: 'daysRequired', timeZone: 'invalid' })).toBe(
       'timeZone',

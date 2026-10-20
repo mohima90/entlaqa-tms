@@ -42,7 +42,7 @@ describe('suiteNavigation (menus per role, T-M2-21; Kawadir groups, T-M2-43)', (
       }),
     ).toEqual([
       'main: home→/suite',
-      'groupOrganization: teamMembers→/suite/admin/users branding(soon) roles→/suite/admin/roles',
+      'groupOrganization: teamMembers→/suite/admin/users branding→/suite/admin/branding roles→/suite/admin/roles',
       'groupBilling: subscription(soon)',
       'groupSettings: general→/suite/admin/settings emailIntegration→/suite/admin/settings/email integrations(soon) security→/suite/admin/security auditLog(soon)',
     ]);
@@ -86,7 +86,8 @@ describe('suiteNavigation (menus per role, T-M2-21; Kawadir groups, T-M2-43)', (
       }),
     ).toEqual([
       'main: home→/suite calendar(soon) sessions(soon) courses(soon)',
-      'groupOrganization: teamMembers→/suite/admin/users roles→/suite/admin/roles',
+      // Branding (WP-ADM-02): read by tenant.read holders.
+      'groupOrganization: teamMembers→/suite/admin/users branding→/suite/admin/branding roles→/suite/admin/roles',
       // Email integration (WP-ADM-01): read by tenant.read holders.
       'groupSettings: general→/suite/admin/settings emailIntegration→/suite/admin/settings/email security→/suite/admin/security',
     ]);
@@ -168,6 +169,7 @@ describe('suiteHome (T-M2-21)', () => {
     expect(home.kind).toBe('setup');
     expect(home.kind === 'setup' ? home.links.map((l) => l.link?.href) : []).toEqual([
       '/suite/admin/users',
+      '/suite/admin/branding',
       '/suite/admin/roles',
       '/suite/admin/settings',
       '/suite/admin/settings/email',
@@ -179,6 +181,7 @@ describe('suiteHome (T-M2-21)', () => {
     const home = suiteHome({ ...NONE, organizationSetup: true, users: true });
     expect(home.kind === 'setup' ? home.links.map((l) => l.key) : []).toEqual([
       'teamMembers',
+      'branding',
       'general',
       'emailIntegration',
     ]);
@@ -214,6 +217,7 @@ describe('commandPaletteItems (⌘K / Ctrl K, T-M2-43)', () => {
     expect(items.map((i) => `${i.group} ${i.label} ${i.href}`)).toEqual([
       '«searchGroupPages» «home» /ar/suite',
       '«groupOrganization» «teamMembers» /ar/suite/admin/users',
+      '«groupOrganization» «branding» /ar/suite/admin/branding',
       '«groupOrganization» «roles» /ar/suite/admin/roles',
       '«groupSettings» «general» /ar/suite/admin/settings',
       '«groupSettings» «emailIntegration» /ar/suite/admin/settings/email',

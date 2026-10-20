@@ -29,7 +29,10 @@ import {
   suiteNavigation,
 } from '../lib/suite-navigation';
 import { localizedName, roleName } from '../lib/users-view';
+import { brandAssetPath } from '../lib/branding-view';
 import { AccountMenu } from './account-menu';
+import { BrandStyle } from './branding/brand-style';
+import { RememberBrand } from './branding/remember-brand';
 import { IdleWarning } from './idle-warning';
 import { LanguageToggle } from './language-toggle';
 
@@ -110,10 +113,25 @@ export async function SuiteShell({
       ? t('accountSubtitle', { organization: organizationName, role })
       : (organizationName ?? role ?? '');
   const canSignOut = getConfigStatus().auth;
+  // The organization's look (WP-ADM-02, FR-ADM-07): its colours replace the Jadarat ones (the selected
+  // menu item's gradient, buttons, accents) and its logo the name wordmark; the Jadarat look without one.
+  const brand = context.brand;
+  const logoSrc = brandAssetPath(brand?.logoAssetId);
 
   return (
     <AppShell
       brand={t('productShort')}
+      logo={
+        logoSrc ? (
+          // eslint-disable-next-line @next/next/no-img-element -- a same-origin published copy
+          <img
+            src={logoSrc}
+            alt={organizationName ?? t('tenantUnresolved')}
+            className="max-h-full w-auto max-w-full object-contain"
+            data-testid="shell-brand-logo"
+          />
+        ) : undefined
+      }
       organization={
         <span data-testid="tenant-context" data-host-kind={hostKind ?? ''}>
           <span className="sr-only">{t('tenantContext')}: </span>
@@ -177,6 +195,8 @@ export async function SuiteShell({
         </>
       }
     >
+      <BrandStyle colors={brand} />
+      {brand?.slug ? <RememberBrand slug={brand.slug} /> : null}
       {children}
       <Toaster label={t('statusMessages')} closeLabel={t('close')} />
       {context.live && context.idleMinutes !== null ? (

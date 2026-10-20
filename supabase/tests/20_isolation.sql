@@ -35,7 +35,9 @@ begin
     'tms.planning_settings', 'tms.planning_default_steps', 'tms.plan_cycles', 'tms.plan_cycle_scope',
     'tms.plan_cycle_departments', 'tms.plan_cycle_steps',
     -- Needs forms (T-M3-10): insert/FK tests below; rules in 99_needs_forms_1_app_server.sql.
-    'tms.needs_forms', 'tms.needs_form_sections', 'tms.needs_form_fields')
+    'tms.needs_forms', 'tms.needs_form_sections', 'tms.needs_form_fields',
+    -- Branding (WP-ADM-02): insert/FK tests below; images, publishing and the public path in 99_branding_*.sql.
+    'platform.tenant_branding', 'platform.brand_assets', 'platform.brand_asset_attempts')
     and t.table_name not in (select table_name from tests.job_only_tables());
   perform tests.assert(v_missing is null, format('isolation tests missing for: %s', v_missing));
   perform tests.assert(session_user = 'app_server', 'this file must run connected as app_server');
@@ -254,6 +256,34 @@ begin
     'structure_levels: tenant_id is not updatable');
   perform tests.assert_privilege_denied($q$update platform.structure_levels set ordinal = 9$q$,
     'structure_levels: the place of a level is not updatable');
+
+  -- platform.tenant_branding (WP-ADM-02; uA is A's Organization Admin): an insert never names an
+  -- organization (tenant_id is not insertable — the claims' organization is the default), B's row is never
+  -- reached, an image of B is refused by the composite FK, and there is no DELETE.
+  perform tests.assert_privilege_denied($q$insert into platform.tenant_branding (tenant_id, use_gradient) values ('b0000000-0000-4000-8000-000000000001', true)$q$,
+    'tenant_branding: tenant_id is not insertable');
+  perform tests.assert_eq(tests.rows_affected($q$update platform.tenant_branding set use_gradient = false where tenant_id = 'b0000000-0000-4000-8000-000000000001'$q$),
+    0::bigint, 'tenant_branding: RLS filters tenant B''s branding on update');
+  perform tests.assert_fails($q$update platform.tenant_branding set logo_file_id = 'f0b00000-0000-4000-8000-000000000001'$q$,
+    array['23503', 'JB001'], 'tenant_branding: a tenant B file is never an image of A');
+  perform tests.assert_privilege_denied($q$update platform.tenant_branding set tenant_id = 'b0000000-0000-4000-8000-000000000001'$q$,
+    'tenant_branding: tenant_id is not updatable');
+  perform tests.assert_privilege_denied($q$update platform.tenant_branding set version = 1$q$,
+    'tenant_branding: the version is not updatable');
+  perform tests.assert_privilege_denied($q$delete from platform.tenant_branding$q$, 'tenant_branding: no DELETE grant');
+  -- platform.brand_assets: users never write it, and its bytes are not readable through SQL.
+  perform tests.assert_privilege_denied($q$insert into platform.brand_assets (tenant_id, file_id, kind, content_type, content, byte_size, sha256) values ('a0000000-0000-4000-8000-000000000001', 'f0a00000-0000-4000-8000-000000000001', 'logo', 'image/png', '\x89', 1, repeat('a', 64))$q$,
+    'brand_assets: users cannot insert');
+  perform tests.assert_privilege_denied($q$select content from platform.brand_assets$q$,
+    'brand_assets: the bytes are not readable through SQL');
+  perform tests.assert_privilege_denied($q$delete from platform.brand_assets$q$, 'brand_assets: no DELETE grant');
+  perform tests.assert_eq((select count(*) from platform.brand_assets where id = 'e0b00000-0000-4000-8000-000000000001'),
+    0::bigint, 'brand_assets: tenant B''s copy is invisible to A');
+  -- platform.brand_asset_attempts: users never write it.
+  perform tests.assert_privilege_denied($q$insert into platform.brand_asset_attempts (tenant_id, file_id) values ('a0000000-0000-4000-8000-000000000001', 'f0a00000-0000-4000-8000-000000000001')$q$,
+    'brand_asset_attempts: users cannot insert');
+  perform tests.assert_privilege_denied($q$update platform.brand_asset_attempts set attempts = 0$q$,
+    'brand_asset_attempts: users cannot reset attempts');
 
   -- Role scope units (EP-ORG, T-M3-09): a tenant B unit is rejected by the composite FKs.
   perform tests.assert_fails($q$insert into platform.invitations (person_id, email, locale, primary_role, scope_unit_id) values ('a1000000-0000-4000-8000-0000000000a2', 'uinv@a.test', 'ar', 'learner', 'b3000000-0000-4000-8000-000000000001')$q$,

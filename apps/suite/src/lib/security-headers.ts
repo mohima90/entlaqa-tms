@@ -47,6 +47,27 @@ export const SECRET_URL_PAGES: readonly string[] = [
 export const secretUrlHeaders = [{ key: 'Referrer-Policy', value: 'no-referrer' }] as const;
 
 /**
+ * The policy of every /api/brand/ answer (WP-ADM-02, security review L4): nothing may load, run or be framed,
+ * even when an image is opened directly. The proxy sets it in place of the page CSP; the route sets it too.
+ */
+export const BRAND_IMAGE_CSP = "default-src 'none'; sandbox";
+
+/** The public branding image paths (/api/brand/<id>). */
+export function isBrandImagePath(pathname: string): boolean {
+  return /^\/api\/brand(\/|$)/.test(pathname);
+}
+
+/**
+ * Published branding images (/api/brand/<id>, WP-ADM-02): e-mail clients and the organization's pages embed
+ * them, so they may be loaded from another origin (overrides the same-origin entry above for these paths
+ * only), never sniffed; the proxy sets the sandboxing CSP, the route the detected type.
+ */
+export const brandImageHeaders = [
+  { key: 'Cross-Origin-Resource-Policy', value: 'cross-origin' },
+  { key: 'X-Content-Type-Options', value: 'nosniff' },
+] as const;
+
+/**
  * Strict CSP for responses that never pass the proxy (immutable build assets under /_next/static):
  * nothing may execute or be framed if such a file is opened directly (e.g. an SVG).
  */

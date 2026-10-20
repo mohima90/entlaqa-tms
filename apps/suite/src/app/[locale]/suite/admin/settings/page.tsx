@@ -119,8 +119,6 @@ async function Profile({
       <OrganizationProfileForm
         locale={locale}
         initial={{
-          nameEn: profile.nameEn ?? '',
-          nameAr: profile.nameAr,
           industry: profile.industry ?? '',
           countryCode: profile.countryCode ?? '',
           currencyCode: profile.currencyCode,

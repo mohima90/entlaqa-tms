@@ -12,7 +12,12 @@ import {
 } from '../../lib/invite-link';
 import { AuthField, authPrimaryButton, authSecondaryButton } from '../auth/auth-field';
 import { AuthIcon } from '../auth/auth-icons';
-import { AuthLanguageSwitch, AuthShell, type AuthShellTexts } from '../auth/auth-shell';
+import {
+  type AuthBrand,
+  AuthLanguageSwitch,
+  AuthShell,
+  type AuthShellTexts,
+} from '../auth/auth-shell';
 import { type ErrorTexts, errorText } from '../auth/error-text';
 import {
   AcceptAsSignedInUser,
@@ -72,6 +77,8 @@ export interface SignUpTexts {
 
 export interface SignUpViewProps {
   readonly locale: 'ar' | 'en';
+  /** The organization's look (logo, picture; WP-ADM-02), or null for Jadarat's. */
+  readonly brand?: AuthBrand | null;
   readonly shell: AuthShellTexts;
   /** The language switch: its target (locale-prefixed path without the fragment) and texts. */
   readonly toggle: {
@@ -107,6 +114,7 @@ const LOOKUP_DELAY_MS = 500;
  */
 export function SignUpView({
   locale,
+  brand,
   shell,
   toggle,
   texts,
@@ -284,6 +292,7 @@ export function SignUpView({
   return (
     <AuthShell
       variant="centered"
+      brand={brand}
       texts={shell}
       icon="userPlus"
       // The language switch keeps the code: it goes along in the fragment only.

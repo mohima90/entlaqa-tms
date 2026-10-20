@@ -44,6 +44,12 @@ export {
   performHousekeeping,
 } from './housekeeping';
 export {
+  BRAND_ASSET_BATCH,
+  BRAND_ASSET_TASK,
+  type BrandAssetTaskOptions,
+  createBrandAssetTask,
+} from './brand-assets';
+export {
   FileIntegrityError,
   type GeneratedFile,
   type WorkerFiles,

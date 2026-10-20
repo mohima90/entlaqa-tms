@@ -51,8 +51,8 @@ export function MfaLinkView({
   readonly toggle: {
     readonly href: string;
     readonly lang: string;
+    /** Visible, and so also its accessible name (WCAG 2.5.3). */
     readonly label: string;
-    readonly ariaLabel: string;
   };
   readonly texts: MfaLinkTexts;
   readonly errors: ErrorTexts;
@@ -169,7 +169,6 @@ export function MfaLinkView({
           href={`${toggle.href}${mfaLinkFragment(view.kind === 'ready' ? view.token : null)}`}
           hrefLang={toggle.lang}
           lang={toggle.lang}
-          aria-label={toggle.ariaLabel}
           className={buttonClasses({ variant: 'secondary', size: 'sm' })}
           data-testid="language-toggle"
         >

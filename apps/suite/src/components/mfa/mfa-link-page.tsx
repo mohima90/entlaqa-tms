@@ -69,7 +69,6 @@ export async function MfaLinkPage({ params }: { readonly params: Promise<{ local
         href: mfaLinkPath(target),
         lang: target,
         label: common('switchLanguage'),
-        ariaLabel: common('switchLanguageAria'),
       }}
       texts={{
         pageTitle: t('pageTitle'),

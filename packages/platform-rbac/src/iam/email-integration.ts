@@ -218,6 +218,8 @@ export function requestTenantEmailTestActionDefinition(): ActionDefinition<
   return {
     permission: p['platform.tenant.manage'],
     input: TenantEmailTestInput,
+    // The test e-mail waits in the organization's settings row (no event): a worker pass after the commit.
+    queuesWork: true,
     handler: async ({ ctx, input }) => {
       try {
         const provider = await requestTenantEmailTest(ctx.tx, input.recipient);

@@ -82,6 +82,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | ID | Decision |
 |---|---|---|
+| 20 Oct 2026 | PO | **Dependabot monthly instead of weekly** (option 1): routine dependency updates once a month, grouped; Claude checks each update PR and tells the PO which to merge; security covered by gate 11 on every PR and GitHub security alerts |
 | 17 Oct 2026 | PO | **Faster agent loop** ("yes"): agents run the fast checks plus the tests for what they changed; the full suite runs once in GitHub CI on the PR, all gates still required before merge (Development Plan §2.4 P10, CLAUDE.md) |
 | 17 Oct 2026 | PO | **Existing Arabic-only people stay saveable** (WP-FIX-01 review item 3, "no" to forcing English names): the default-language names are required for new people and whenever a save adds or changes names; other saves (phone, language, unit) of an Arabic-only person are accepted |
 | 17 Oct 2026 | PO | **E-mail sending flow agreed** (`docs/business-flows/EP-EMAIL-email-sending.md`): the Super Admin sets the platform sender in the product (provider, write-only key, sender, test); an organization may connect its own provider on Email integration; **no automatic fallback** when an own provider fails (shown to the Org Admin); providers Resend, SMTP, SendGrid, Mailgun, Microsoft 365. BRD v3.2 FR-NTF-11. WP-ADM-01 started |
@@ -301,6 +302,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
+| 20 Oct 2026 | E-mail live in production: platform sender set by the PO (Resend) and the test e-mail arrived; `JOBS_REQUIRED` = on. WP-ADM-01 done. Dependabot moved to monthly; the five open Dependabot PRs (#67–#71) being checked |
 | 20 Oct 2026 | **PR #66 merged** (WP-ADM-01 e-mail), DB deploy green. Production worker configured for the first time with the PO (production-jobs: DATABASE_URL_APP_WORKER, DATABASE_URL_APP_QUEUE, SUPABASE_SECRET_KEY `workerproduction`, variables DATABASE_CA_CERT, APP_BASE_URL); Jobs pass green: `e-mail settings key: on`, worker key published, queued e-mails wait (NO_SENDER) until the Super Admin sets the platform sender. Next: PO sets Platform settings → Email; then repository variable JOBS_REQUIRED = on |
 | 17 Oct 2026 | WP-ADM-01 e-mail merged into the working branch: security review findings fixed (SMTP hard deadline incl. DNS lookup, password re-entry on server change, ports, rate limits, sweeper) and confirmed by a second look; `pnpm check:all` green. Waiting for the PO to add SECRET `EMAIL_CREDENTIALS_KEY` (GitHub env `production-jobs`), then the PR |
 | 17 Oct 2026 | **PR #65 merged by the PO** (WP-FIX-01 + work organized by role); automatic DB deploy green (migrations 20261021090000–100100 live). WP-ADM-01 e-mail: built, security review approve-with-fixes (1 High, 1 Medium) being fixed; the PO adds SECRET `EMAIL_CREDENTIALS_KEY` (GitHub env `production-jobs`) before its PR merges |

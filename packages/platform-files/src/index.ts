@@ -44,7 +44,9 @@ import {
  * become error results with the codes of FileErrors instead of internal errors (integration review L-b).
  *
  * Upload: the browser PUTs the bytes to the intent's `url` (with `contentType`) → confirmUpload → the
- * worker scans → getFileStatus shows `clean` (or infected / rejected). Download: a signed URL valid for
+ * worker scans → getFileStatus shows `clean` (or infected / rejected). Purposes without a malware scan (the
+ * branding images, PO 20 Oct 2026: brand-uploads.ts) are read back and published by their module instead;
+ * they become `accepted`, never `clean`. Download: a signed URL valid for
  * the purpose's TTL (60 s documents, 300 s media), saved under the original name with the extension of
  * the type found by content. Nothing is readable before `clean`.
  */
@@ -80,6 +82,13 @@ export {
   isBrandImageSlot,
   prepareBrandImage,
 } from './brand-images';
+export {
+  type PreparedBrandUpload,
+  type PreparedBrandUploadResult,
+  brandUploadObject,
+  prepareBrandUpload,
+  readBrandUpload,
+} from './brand-uploads';
 export { DETECTION_HEAD_BYTES, detectType, sniffText } from './detect';
 export { FileErrors, fileAppError, fileResult } from './errors';
 export type { FileErrorCode, FileOwner, FileStatus, FileStatusView } from '@jadarat/platform-db';
@@ -337,6 +346,7 @@ export function markFileUsed(tx: UserTx, fileId: string): Promise<boolean> {
 /** Statuses after which nothing changes any more for the user (the UI stops polling). */
 export const FINAL_STATUSES: readonly FileStatus[] = [
   'clean',
+  'accepted',
   'infected',
   'rejected',
   'error',

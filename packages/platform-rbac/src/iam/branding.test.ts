@@ -11,7 +11,7 @@ import { type TestRoleCode, testRoleGrants } from '../testing/former-roles';
 import {
   BrandingInput,
   type BrandingFileService,
-  brandImageStatusActionDefinition,
+  type BrandingImageReader,
   brandingOwner,
   brandingQueryDefinition,
   confirmBrandImageUploadActionDefinition,
@@ -24,8 +24,11 @@ const db = vi.hoisted(() => ({
   BRAND_IMAGE_KINDS: ['logo', 'favicon', 'sign_in_image'] as const,
   changedBrandingFields: (before: Record<string, unknown>, after: Record<string, unknown>) =>
     Object.keys(after).filter((k) => before[k] !== after[k]),
+  isDomainError: (error: unknown) =>
+    typeof error === 'object' && error !== null && 'code' in error && 'domain' in error,
   getBranding: vi.fn(),
   saveBranding: vi.fn(),
+  publishBrandImage: vi.fn(),
   getOrganizationProfile: vi.fn(),
   updateOrganizationProfile: vi.fn(),
 }));
@@ -111,8 +114,14 @@ const derive = vi.fn(
         },
 );
 
+/** The app's image reader (platform-files readBrandUpload): nothing to read unless a test says so. */
+const readImage = vi.fn<BrandingImageReader>(() => Promise.resolve(ok({ missing: true as const })));
+const saveDefinition = () => saveBrandingActionDefinition(derive, readImage);
+
 beforeEach(() => {
   vi.clearAllMocks();
+  readImage.mockImplementation(() => Promise.resolve(ok({ missing: true as const })));
+  db.publishBrandImage.mockResolvedValue('77777777-7777-4777-8777-777777777777');
   db.getBranding.mockResolvedValue(record);
   db.saveBranding.mockImplementation((_tx: unknown, after: Record<string, unknown>) => {
     const { emailActionColor: _a, emailLinkColor: _l, ...rest } = after;
@@ -170,7 +179,7 @@ describe('Branding page (WP-ADM-02)', () => {
 describe('saving the branding (WP-ADM-02, BR-BRD-a)', () => {
   it('the Organization Admin saves; colours upper-cased, e-mail colours derived; audited before → after', async () => {
     const { rt, writeAudit, getClaims } = runtime(forRoles('tenant_admin'));
-    const save = createDefineAction(rt)(saveBrandingActionDefinition(derive));
+    const save = createDefineAction(rt)(saveDefinition());
     const result = await save(input);
     expect(result.ok).toBe(true);
     expect(db.saveBranding).toHaveBeenCalledWith(
@@ -219,7 +228,7 @@ describe('saving the branding (WP-ADM-02, BR-BRD-a)', () => {
       imageNames: {},
     });
     const { rt, writeAudit } = runtime(forRoles('tenant_admin'));
-    await createDefineAction(rt)(saveBrandingActionDefinition(derive))(input);
+    await createDefineAction(rt)(saveDefinition())(input);
     expect(writeAudit).toHaveBeenCalledWith(
       TX,
       expect.anything(),
@@ -234,9 +243,7 @@ describe('saving the branding (WP-ADM-02, BR-BRD-a)', () => {
   });
 
   it('the Jadarat look stores no colours and keeps the gradient', async () => {
-    const save = createDefineAction(runtime(forRoles('tenant_admin')).rt)(
-      saveBrandingActionDefinition(derive),
-    );
+    const save = createDefineAction(runtime(forRoles('tenant_admin')).rt)(saveDefinition());
     await save({ ...input, primaryColor: null, secondaryColor: null, useGradient: false });
     expect(db.saveBranding).toHaveBeenCalledWith(
       TX,
@@ -254,7 +261,7 @@ describe('saving the branding (WP-ADM-02, BR-BRD-a)', () => {
   it('nothing changed: no audit record', async () => {
     db.saveBranding.mockResolvedValue({ outcome: 'unchanged', version: 3 });
     const { rt, writeAudit } = runtime(forRoles('tenant_admin'));
-    const result = await createDefineAction(rt)(saveBrandingActionDefinition(derive))(input);
+    const result = await createDefineAction(rt)(saveDefinition())(input);
     expect(result).toEqual({
       ok: true,
       value: { tenantId: TENANT, version: 3, changed: [], before: {}, after: {} },
@@ -266,9 +273,7 @@ describe('saving the branding (WP-ADM-02, BR-BRD-a)', () => {
     'refuses the %s (only the Organization Admin changes the look), also at AAL2',
     async (role) => {
       for (const aal of ['aal1', 'aal2'] as const) {
-        const save = createDefineAction(runtime(forRoles(role), aal).rt)(
-          saveBrandingActionDefinition(derive),
-        );
+        const save = createDefineAction(runtime(forRoles(role), aal).rt)(saveDefinition());
         const result = await save(input);
         expect(!result.ok && result.error.code).toBe('FORBIDDEN');
       }
@@ -277,9 +282,7 @@ describe('saving the branding (WP-ADM-02, BR-BRD-a)', () => {
   );
 
   it('maps the database answers', async () => {
-    const save = createDefineAction(runtime(forRoles('tenant_admin')).rt)(
-      saveBrandingActionDefinition(derive),
-    );
+    const save = createDefineAction(runtime(forRoles('tenant_admin')).rt)(saveDefinition());
     db.saveBranding.mockResolvedValueOnce({ outcome: 'invalid', field: 'logoFileId' });
     const image = await save(input);
     expect(!image.ok && image.error.fieldErrors).toEqual([
@@ -300,14 +303,118 @@ describe('saving the branding (WP-ADM-02, BR-BRD-a)', () => {
   });
 
   it('one colour without the other is refused', async () => {
-    const save = createDefineAction(runtime(forRoles('tenant_admin')).rt)(
-      saveBrandingActionDefinition(derive),
-    );
+    const save = createDefineAction(runtime(forRoles('tenant_admin')).rt)(saveDefinition());
     const result = await save({ ...input, secondaryColor: null });
     expect(!result.ok && result.error.fieldErrors).toEqual([
       { path: 'secondaryColor', code: 'INVALID' },
     ]);
     expect(db.saveBranding).not.toHaveBeenCalled();
+  });
+});
+
+describe('images published at save time, without a malware scan (PO, 20 Oct 2026)', () => {
+  const FAVICON = '88888888-8888-4888-8888-888888888888';
+  const publication = (fileId: string, kind: 'logo' | 'favicon') => ({
+    fileId,
+    kind,
+    sourceSha256: 'a'.repeat(64),
+    sourceSize: 120,
+    contentType: 'image/png',
+    content: new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
+  });
+
+  it('reads each chosen image before the transaction and publishes the new one in it', async () => {
+    const order: string[] = [];
+    readImage.mockImplementation(({ fileId, kind }) => {
+      order.push(`read ${kind}`);
+      return Promise.resolve(
+        ok(
+          fileId === LOGO ? { publication: publication(LOGO, 'logo') } : { missing: true as const },
+        ),
+      );
+    });
+    db.saveBranding.mockImplementationOnce(() => {
+      order.push('save');
+      return Promise.resolve({ outcome: 'unchanged', version: 1 });
+    });
+    db.publishBrandImage.mockImplementationOnce(() => {
+      order.push('publish');
+      return Promise.resolve('77777777-7777-4777-8777-777777777777');
+    });
+    const result = await createDefineAction(runtime(forRoles('tenant_admin')).rt)(saveDefinition())(
+      {
+        ...input,
+        faviconFileId: FAVICON,
+      },
+    );
+    expect(result.ok).toBe(true);
+    expect(readImage).toHaveBeenCalledWith({ tenantId: TENANT, kind: 'logo', fileId: LOGO });
+    expect(readImage).toHaveBeenCalledWith({ tenantId: TENANT, kind: 'favicon', fileId: FAVICON });
+    // Read first (no transaction), then the save and the copy in the same transaction.
+    expect(order).toEqual(['read logo', 'read favicon', 'save', 'publish']);
+    expect(db.publishBrandImage).toHaveBeenCalledTimes(1);
+    expect(db.publishBrandImage).toHaveBeenCalledWith(TX, publication(LOGO, 'logo'));
+  });
+
+  it.each([
+    ['TYPE_NOT_ALLOWED', 'IMAGE_TYPE_NOT_ALLOWED'],
+    ['TOO_LARGE', 'IMAGE_TOO_LARGE'],
+    ['DIMENSIONS_TOO_LARGE', 'IMAGE_DIMENSIONS_TOO_LARGE'],
+    ['MALFORMED', 'IMAGE_MALFORMED'],
+    ['EMPTY', 'IMAGE_EMPTY'],
+  ] as const)(
+    'an image refused (%s) is the answer with its reason; nothing is saved',
+    async (refused, code) => {
+      readImage.mockResolvedValueOnce(ok({ refused }));
+      const result = await createDefineAction(runtime(forRoles('tenant_admin')).rt)(
+        saveDefinition(),
+      )(input);
+      expect(!result.ok && result.error.fieldErrors).toEqual([{ path: 'logoFileId', code }]);
+      expect(db.saveBranding).not.toHaveBeenCalled();
+      expect(db.publishBrandImage).not.toHaveBeenCalled();
+    },
+  );
+
+  it('Storage unavailable: the answer is to try again; nothing is saved', async () => {
+    readImage.mockResolvedValueOnce(
+      err({ code: 'FILE_STORAGE_UNAVAILABLE', status: 503, messageKey: 'x', expose: true }),
+    );
+    const result = await createDefineAction(runtime(forRoles('tenant_admin')).rt)(saveDefinition())(
+      input,
+    );
+    expect(!result.ok && result.error.code).toBe('FILE_STORAGE_UNAVAILABLE');
+    expect(db.saveBranding).not.toHaveBeenCalled();
+  });
+
+  it('bytes that are not the stored file: the save is refused (rolled back)', async () => {
+    readImage.mockResolvedValueOnce(ok({ publication: publication(LOGO, 'logo') }));
+    db.publishBrandImage.mockRejectedValueOnce(
+      Object.assign(new Error('mismatch'), { code: 'BRAND_IMAGE_MISMATCH', domain: true }),
+    );
+    const { rt, writeAudit } = runtime(forRoles('tenant_admin'));
+    const result = await createDefineAction(rt)(saveDefinition())(input);
+    expect(!result.ok && result.error.fieldErrors).toEqual([
+      { path: 'logoFileId', code: 'IMAGE_NOT_USABLE' },
+    ]);
+    expect(writeAudit).not.toHaveBeenCalled();
+  });
+
+  it('a copy read for another kind is never published for this one; a refused save publishes nothing', async () => {
+    readImage.mockResolvedValueOnce(ok({ publication: publication(LOGO, 'favicon') }));
+    await createDefineAction(runtime(forRoles('tenant_admin')).rt)(saveDefinition())(input);
+    expect(db.publishBrandImage).not.toHaveBeenCalled();
+    readImage.mockResolvedValueOnce(ok({ publication: publication(LOGO, 'logo') }));
+    db.saveBranding.mockResolvedValueOnce({ outcome: 'conflict' });
+    await createDefineAction(runtime(forRoles('tenant_admin')).rt)(saveDefinition())(input);
+    expect(db.publishBrandImage).not.toHaveBeenCalled();
+  });
+
+  it('no image chosen: nothing is read', async () => {
+    await createDefineAction(runtime(forRoles('tenant_admin')).rt)(saveDefinition())({
+      ...input,
+      logoFileId: null,
+    });
+    expect(readImage).not.toHaveBeenCalled();
   });
 });
 
@@ -448,36 +555,7 @@ describe('branding images (platform-files bound by the app)', () => {
       confirmBrandImageUploadActionDefinition(other),
     )({ slot: 'logo', fileId: LOGO });
     expect(!refused.ok && refused.error.code).toBe('NOT_FOUND');
-    const status = createDefineAction(runtime(forRoles('tenant_admin')).rt)(
-      brandImageStatusActionDefinition(other),
-    );
-    const result = await status({ slot: 'logo', fileId: LOGO });
-    expect(!result.ok && result.error.code).toBe('NOT_FOUND');
   });
-
-  it('the scan progress is a read (platform.tenant.read): no session confirmation on every poll', async () => {
-    const service = files();
-    const { rt, getClaims } = runtime(forRoles('tenant_admin'));
-    const status = createDefineAction(rt)(brandImageStatusActionDefinition(service));
-    expect(await status({ slot: 'logo', fileId: LOGO })).toEqual({
-      ok: true,
-      value: { fileId: LOGO, status: 'uploaded', reason: null },
-    });
-    expect(getClaims).not.toHaveBeenCalledWith({ strict: true });
-  });
-
-  it.each([['hr_manager'], ['training_manager'], ['learner']] as const)(
-    'refuses the scan progress to the %s',
-    async (role) => {
-      const service = files();
-      const status = createDefineAction(runtime(forRoles(role)).rt)(
-        brandImageStatusActionDefinition(service),
-      );
-      const result = await status({ slot: 'logo', fileId: LOGO });
-      expect(!result.ok && result.error.code).toBe('FORBIDDEN');
-      expect(service.status).not.toHaveBeenCalled();
-    },
-  );
 
   it('refuses size above the largest image and unknown slots before anything runs', async () => {
     const service = files();

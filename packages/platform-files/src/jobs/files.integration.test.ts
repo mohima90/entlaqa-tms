@@ -76,6 +76,7 @@ describe.skipIf(!configured)('files against PostgreSQL', () => {
         `https://storage.test/${bucket}/${key}?ttl=${String(ttl)}&download=${name}`,
       );
     },
+    readObject: (_bucket, key) => Promise.resolve(objects.get(key) ?? null),
   };
   const removed: string[] = [];
   const store: FileObjectStore = {
@@ -197,6 +198,7 @@ describe.skipIf(!configured)('files against PostgreSQL', () => {
       upload_by: string;
       audit_downloads: boolean;
       download_ttl_seconds: number;
+      scan_required: boolean;
     }>(sql`select * from platform.file_purposes order by purpose`);
     const database = Object.fromEntries(
       rows.map((row) => [
@@ -209,6 +211,7 @@ describe.skipIf(!configured)('files against PostgreSQL', () => {
           uploadBy: row.upload_by,
           auditDownloads: row.audit_downloads,
           downloadTtlSeconds: row.download_ttl_seconds,
+          scanRequired: row.scan_required,
         },
       ]),
     );

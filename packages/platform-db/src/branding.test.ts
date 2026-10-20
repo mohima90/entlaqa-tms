@@ -6,9 +6,11 @@ import {
   brandingExists,
   changedBrandingFields,
   createPublicBrandApi,
+  forgetBrandPublishingPresenceForTests,
   forgetBrandingPresenceForTests,
   getBranding,
   getTenantBrand,
+  publishBrandImage,
   saveBranding,
 } from './branding';
 import type { AppDatabase } from './client';
@@ -59,6 +61,7 @@ const settings: BrandingSettings = {
 
 beforeEach(() => {
   forgetBrandingPresenceForTests();
+  forgetBrandPublishingPresenceForTests();
 });
 
 describe('expand-first presence (WP-ADM-02)', () => {
@@ -398,3 +401,52 @@ describe('public delivery path (claim-less)', () => {
 });
 
 vi.mock('./client', () => ({ getDatabase: vi.fn() }));
+
+describe('publishing at save time, without a malware scan (PO, 20 Oct 2026)', () => {
+  const image = {
+    fileId: LOGO,
+    kind: 'logo' as const,
+    sourceSha256: 'b'.repeat(64),
+    sourceSize: 120,
+    contentType: 'image/png',
+    content: new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
+  };
+
+  it('stores the copy through private.publish_brand_image with what was read', async () => {
+    const { tx, executed } = fakeTx(present, [{ id: ASSET }]);
+    expect(await publishBrandImage(tx, image)).toBe(ASSET);
+    expect(executed[0]?.sql).toContain(
+      "to_regprocedure('private.publish_brand_image(uuid,text,text,bigint,text,bytea)')",
+    );
+    expect(executed[1]?.sql).toContain('private.publish_brand_image(');
+    expect(executed[1]?.params.slice(0, 5)).toEqual([
+      LOGO,
+      'logo',
+      'b'.repeat(64),
+      120,
+      'image/png',
+    ]);
+    // Remembered: no catalog lookup the second time; not published (not used any more) → null.
+    const again = fakeTx([{ id: null }]);
+    expect(await publishBrandImage(again.tx, image)).toBeNull();
+    expect(again.executed).toHaveLength(1);
+  });
+
+  it('before the migration: nothing published (the worker or a later save does it)', async () => {
+    const { tx, executed } = fakeTx([{ present: false }]);
+    expect(await publishBrandImage(tx, image)).toBeNull();
+    expect(executed).toHaveLength(1);
+  });
+
+  it('bytes that are not the stored file (JB002) or not an allowed type (JB003): BRAND_IMAGE_MISMATCH', async () => {
+    for (const code of ['JB002', 'JB003']) {
+      forgetBrandPublishingPresenceForTests();
+      const refused = Object.assign(new Error('refused'), { code });
+      await expect(publishBrandImage(fakeTx(present, refused).tx, image)).rejects.toMatchObject({
+        code: 'BRAND_IMAGE_MISMATCH',
+      });
+    }
+    const other = Object.assign(new Error('other'), { code: '42501' });
+    await expect(publishBrandImage(fakeTx(other).tx, image)).rejects.toThrow('other');
+  });
+});

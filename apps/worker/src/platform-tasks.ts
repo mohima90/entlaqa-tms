@@ -158,11 +158,13 @@ export function platformTasks(deps: PlatformTaskDependencies): readonly Platform
         log: deps.log,
         ...(deps.importSending ? { sending: deps.importSending } : {}),
       }),
-      // Branding images (WP-ADM-02): copies of clean images in use, for the sign-in page and e-mails.
+      // Branding images (WP-ADM-02): copies of the images in use, for the sign-in page and e-mails — clean
+      // ones, and (fallback of the web app's publishing at save time) those of purposes without a scan.
       createBrandAssetTask({
         withPlatformTx: deps.withPlatformTx,
         withSystemTx: deps.withSystemTx,
         files: createWorkerFiles({ store }),
+        store,
         log: deps.log,
       }),
     );

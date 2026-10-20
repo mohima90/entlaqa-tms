@@ -13,20 +13,17 @@ import {
   useTransition,
 } from 'react';
 import {
-  brandImageStatusAction,
   confirmBrandImageUploadAction,
   saveBrandingAction,
   startBrandImageUploadAction,
 } from '../../actions/organization';
 import {
-  SCAN_FINAL,
   type SlotState,
   afterSave,
   beginPick,
   initialSlot,
   removed,
-  scanFinished,
-  scanPollDelays,
+  saveRefused,
   uploadConfirmed,
   uploadFailed,
 } from '../../lib/brand-image-slot';
@@ -52,10 +49,11 @@ import { useSessionRefusal } from '../auth/session-refusal';
  * gradient», preset colours (Jadarat first), website — and a live preview of the menu, a main button and
  * the sign-in page with the UNSAVED choices. A real WCAG 2.2 AA contrast check warns about hard-to-read
  * colours (saving stays possible). Images: PNG, JPG or WebP only (checked by name, size, first bytes and size
- * in pixels here; by content, for viruses and in pixels again on the server); uploaded at once, used once
- * saved. A failed replacement puts the image the slot had back (lib/brand-image-slot.ts). Progress and
- * results are announced politely (aria-live). «Reset to the Jadarat look» puts the Jadarat colours back
- * (images stay unless removed).
+ * in pixels here; by content and in pixels again on the server when saving, which removes their metadata
+ * and publishes them — not virus-scanned, PO 20 Oct 2026, like Kawadir: they show as soon as the save is
+ * done); uploaded at once, used once saved. A failed replacement puts the image the slot had back
+ * (lib/brand-image-slot.ts). Progress and results are announced politely (aria-live). «Reset to the
+ * Jadarat look» puts the Jadarat colours back (images stay unless removed).
  *
  * The CSP allows no style attributes: colours reach the preview and the swatches through CSS custom
  * properties set with the CSSOM after hydration (preset swatches are static classes).
@@ -66,7 +64,7 @@ const SLOTS: readonly BrandSlot[] = ['logo', 'favicon', 'sign_in_image'];
 
 export interface BrandImageInitial {
   readonly fileId: string;
-  /** The published copy (/api/brand/<id>), or null until the worker published it. */
+  /** The published copy (/api/brand/<id>), or null when it is not published (yet). */
   readonly src: string | null;
   /** The file's status (for its uploader), or null. */
   readonly status: string | null;
@@ -264,17 +262,25 @@ export function BrandingForm(props: BrandingFormProps) {
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<Field, string>>>({});
   const [message, setMessage] = useState<Message | null>(null);
   const [savedVersion, setSavedVersion] = useState(props.version);
+  // After a save the page's data is refreshed: the slots then show what was published (or that an image
+  // is not shown yet) instead of the picked files.
+  const [shownVersion, setShownVersion] = useState(props.version);
+  if (props.version !== shownVersion) {
+    setShownVersion(props.version);
+    setSlots({
+      logo: initialSlot(props.images.logo),
+      favicon: initialSlot(props.images.favicon),
+      sign_in_image: initialSlot(props.images.sign_in_image),
+    });
+  }
   const version = Math.max(props.version, savedVersion);
   const disabled = !editable || pending;
   const inputs = useRef<Partial<Record<BrandSlot, HTMLInputElement | null>>>({});
   const blobs = useRef(new Set<string>());
-  const alive = useRef(true);
 
   useEffect(() => {
-    alive.current = true;
     const owned = blobs.current;
     return () => {
-      alive.current = false;
       for (const url of owned) URL.revokeObjectURL(url);
     };
   }, []);
@@ -294,29 +300,6 @@ export function BrandingForm(props: BrandingFormProps) {
     updateSlot(slot, (state) => ({ ...state, error }));
   };
 
-  const unmounted = () => !alive.current;
-
-  const scanError = (status: string) =>
-    status === 'infected'
-      ? t('images.errorInfected')
-      : status === 'rejected'
-        ? t('images.errorRejected')
-        : t('images.errorScan');
-
-  /** The scan's progress: quick checks first, then slower, ≈ 10 minutes (security review L12). */
-  async function pollStatus(slot: BrandSlot, fileId: string) {
-    for (const delay of scanPollDelays()) {
-      await new Promise((resolve) => setTimeout(resolve, delay));
-      if (unmounted()) return;
-      const result = await brandImageStatusAction({ slot, fileId });
-      if (!result.ok) return;
-      const status = result.value.status;
-      if (!SCAN_FINAL.has(status)) continue;
-      updateSlot(slot, (state) => scanFinished(state, fileId, status, scanError));
-      return;
-    }
-  }
-
   /** Header only (no decoding): the size in pixels within the slot's cap? Else the refusal's text. */
   async function pixelProblem(slot: BrandSlot, file: File): Promise<string | null> {
     const size = imageSize(new Uint8Array(await file.arrayBuffer()));
@@ -324,6 +307,32 @@ export function BrandingForm(props: BrandingFormProps) {
     const max = props.maxSides[slot];
     if (size.width <= max && size.height <= max) return null;
     return fillText(t('images.errorDimensions'), { size: String(max) }, locale);
+  }
+
+  /** Why the save refused a slot's image (field error code), in the page's words. */
+  function imageRefusal(slot: BrandSlot, code: string): string {
+    switch (code) {
+      case 'IMAGE_TYPE_NOT_ALLOWED':
+        return t('images.errorType');
+      case 'IMAGE_TOO_LARGE':
+        return fillText(
+          t('images.errorSize'),
+          { size: formatBytes(props.limits[slot], locale) },
+          locale,
+        );
+      case 'IMAGE_EMPTY':
+        return t('images.errorEmpty');
+      case 'IMAGE_DIMENSIONS_TOO_LARGE':
+        return fillText(
+          t('images.errorDimensions'),
+          { size: String(props.maxSides[slot]) },
+          locale,
+        );
+      case 'IMAGE_MALFORMED':
+        return t('images.errorDamaged');
+      default:
+        return t('images.errorNotUsable');
+    }
   }
 
   async function pick(slot: BrandSlot, file: File) {
@@ -394,13 +403,12 @@ export function BrandingForm(props: BrandingFormProps) {
       sessionRefused(confirmed.error);
       return;
     }
-    const status = confirmed.value.status;
-    if (status !== 'clean' && SCAN_FINAL.has(status)) {
-      fail(scanError(status));
+    // Empty, too large or stored with another type (Storage's facts): refused at once.
+    if (!['uploaded', 'accepted', 'clean'].includes(confirmed.value.status)) {
+      fail(t('images.errorRejected'));
       return;
     }
-    updateSlot(slot, (state) => uploadConfirmed(state, src, target.fileId, status));
-    if (status !== 'clean') void pollStatus(slot, target.fileId);
+    updateSlot(slot, (state) => uploadConfirmed(state, src, target.fileId));
   }
 
   function remove(slot: BrandSlot) {
@@ -496,8 +504,10 @@ export function BrandingForm(props: BrandingFormProps) {
                 } as const
               )[s],
           );
-          if (slot) refuse(slot, t('images.errorNotUsable'));
-          else if (path === 'websiteUrl') fromServer.websiteUrl = t('website.invalid');
+          if (slot) {
+            const reason = imageRefusal(slot, fieldError.code);
+            updateSlot(slot, (state) => saveRefused(state, reason));
+          } else if (path === 'websiteUrl') fromServer.websiteUrl = t('website.invalid');
           else if (path === 'nameEn' || path === 'nameAr')
             fromServer[path] = t('fieldErrors.nameInvalid');
           else if (path === 'primaryColor' || path === 'secondaryColor') {
@@ -541,17 +551,15 @@ export function BrandingForm(props: BrandingFormProps) {
     const text =
       state.phase === 'uploading'
         ? t('images.uploading')
-        : state.phase === 'checking'
-          ? t('images.checking')
-          : state.phase === 'ready'
-            ? t('images.ready')
-            : state.phase === 'previewOnly'
-              ? t('images.previewOnly')
-              : state.phase === 'saved'
-                ? state.src
-                  ? t('images.published')
-                  : t('images.pendingPublish')
-                : null;
+        : state.phase === 'ready'
+          ? t('images.ready')
+          : state.phase === 'previewOnly'
+            ? t('images.previewOnly')
+            : state.phase === 'saved'
+              ? state.src
+                ? t('images.published')
+                : t('images.pendingPublish')
+              : null;
     return text ? <span className="text-xs text-text-muted">{text}</span> : null;
   }
 

@@ -168,6 +168,12 @@ function fakeClient(answer: Answer) {
           calls.push({ bucket, method: 'download', args });
           return respond();
         },
+        download: (...args: unknown[]) => ({
+          asStream: () => {
+            calls.push({ bucket, method: 'read', args });
+            return respond();
+          },
+        }),
       }),
     },
   };
@@ -255,5 +261,61 @@ describe('createUserFileStorage', () => {
       code: 'STORAGE_UNAVAILABLE',
       temporary: true,
     });
+  });
+
+  it('reads an object the policies let the user read, stopping past the limit (WP-ADM-02)', async () => {
+    const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4]);
+    const streamOf = () =>
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(bytes.subarray(0, 4));
+          controller.enqueue(bytes.subarray(4));
+          controller.close();
+        },
+      });
+    const fake = fakeClient({ data: streamOf(), error: null });
+    expect(await createUserFileStorage(fake.client, null).readObject('images', 'k', 8)).toEqual(
+      bytes,
+    );
+    expect(fake.calls).toEqual([{ bucket: 'images', method: 'read', args: ['k'] }]);
+    const capped = fakeClient({ data: streamOf(), error: null });
+    expect(await createUserFileStorage(capped.client, null).readObject('images', 'k', 7)).toBe(
+      'too_large',
+    );
+    // Refused by the policies or missing: nothing (Storage answers both the same).
+    const hidden = fakeClient({ data: null, error: { status: 400, statusCode: '404' } });
+    expect(
+      await createUserFileStorage(hidden.client, null).readObject('images', 'k', 8),
+    ).toBeNull();
+    const forbidden = fakeClient({ data: null, error: { status: 400, statusCode: '403' } });
+    expect(
+      await createUserFileStorage(forbidden.client, null).readObject('images', 'k', 8),
+    ).toBeNull();
+    // Unavailable: worth another try.
+    const down = createUserFileStorage(fakeClient(new Error('fetch failed')).client, null);
+    await expect(down.readObject('images', 'k', 8)).rejects.toMatchObject({
+      code: 'STORAGE_UNAVAILABLE',
+      temporary: true,
+    });
+    const failing = createUserFileStorage(
+      fakeClient({ data: null, error: { status: 503 } }).client,
+      null,
+    );
+    await expect(failing.readObject('images', 'k', 8)).rejects.toMatchObject({
+      code: 'STORAGE_UNAVAILABLE',
+    });
+  });
+
+  it('never reads inside a database transaction of the request', async () => {
+    const fake = fakeClient({ data: null, error: null });
+    const storage = createUserFileStorage(fake.client, null);
+    const db = {
+      transaction: (cb: (tx: unknown) => Promise<unknown>) =>
+        cb({ execute: () => Promise.resolve([]) }),
+    } as unknown as AppDatabase;
+    await expect(
+      runWithClaims(db, '{}', () => storage.readObject('images', 'k', 8)),
+    ).rejects.toThrow(/Reading a Storage object must run after the transaction commits/);
+    expect(fake.calls).toEqual([]);
   });
 });

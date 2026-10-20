@@ -2,6 +2,7 @@ import 'server-only';
 import { sql } from 'drizzle-orm';
 import { type ClaimsTx, runWithClaims } from './claims-tx';
 import { type AppDatabase, getDatabase } from './client';
+import { DomainError } from './domain-error';
 import { pgError } from './pg-error';
 import type { UserTx } from './with-user-tx';
 
@@ -49,7 +50,7 @@ export interface BrandingSettings {
 /** An image slot as the Branding page shows it. */
 export interface BrandImageState {
   readonly fileId: string;
-  /** The published copy, once the scan found it clean and the worker copied it. */
+  /** The published copy (published when saved; older, scanned images once the worker copied them). */
   readonly assetId: string | null;
   /** The file's status — only for the admin who uploaded it (files are visible to their uploader). */
   readonly status: string | null;
@@ -363,6 +364,71 @@ export async function saveBranding(
     if (field) return { outcome: 'invalid', field };
     // RLS (42501): not an Organization Admin any more.
     if (pg?.code === '42501') return { outcome: 'refused' };
+    throw error;
+  }
+}
+
+// ---------------------------------------------------------------------------------------------------
+// Publishing an image at save time (PO, 20 Oct 2026: branding images are not virus-scanned)
+// ---------------------------------------------------------------------------------------------------
+
+/**
+ * A branding image as the web app read it from Storage with the uploader's session, checked by content
+ * and without its metadata (platform-files prepareBrandUpload).
+ */
+export interface BrandImagePublication {
+  readonly fileId: string;
+  readonly kind: BrandImageKind;
+  /** SHA-256 (hex) and size of the bytes read from Storage (the stored upload). */
+  readonly sourceSha256: string;
+  readonly sourceSize: number;
+  /** The type detected by content: image/png, image/jpeg or image/webp. */
+  readonly contentType: string;
+  /** The copy without metadata (what /api/brand/<id> serves). */
+  readonly content: Uint8Array;
+}
+
+let publishingSeen = false;
+
+/** Does the database publish at save time yet (migration 20261023100600)? Cached once true. */
+async function publishingDeployed(tx: ClaimsTx): Promise<boolean> {
+  if (publishingSeen) return true;
+  const [row] = await tx.execute<{ present: boolean }>(
+    sql`select to_regprocedure('private.publish_brand_image(uuid,text,text,bigint,text,bytea)') is not null as present`,
+  );
+  publishingSeen = row?.present === true;
+  return publishingSeen;
+}
+
+/** Tests only: forget what was seen. */
+export function forgetBrandPublishingPresenceForTests(): void {
+  publishingSeen = false;
+}
+
+/**
+ * Stores the public copy of a branding image of a purpose without a malware scan (private.publish_brand_image;
+ * the file becomes `accepted`): in the Branding save's transaction (user claims: an Organization Admin's OWN
+ * upload), or in a job of the image's tenant (the worker's fallback). Only an image the Branding still uses
+ * for that kind, with the bytes of the stored file. The copy's public id, or null when
+ * the database does not publish it (not this kind's image any more, someone else's upload, a scanned image —
+ * the worker publishes those —, or the database before the migration). Throws DomainError
+ * BRAND_IMAGE_MISMATCH when the bytes are not the stored file's or not an allowed image.
+ */
+export async function publishBrandImage(
+  tx: ClaimsTx,
+  image: BrandImagePublication,
+): Promise<string | null> {
+  if (!(await publishingDeployed(tx))) return null;
+  try {
+    const [row] = await tx.execute<{ id: string | null }>(sql`
+      select private.publish_brand_image(${image.fileId}::uuid, ${image.kind}, ${image.sourceSha256},
+        ${image.sourceSize}::bigint, ${image.contentType}, ${Buffer.from(image.content)}::bytea) as id`);
+    return row?.id ?? null;
+  } catch (error) {
+    const code = pgError(error)?.code;
+    if (code === 'JB002' || code === 'JB003') {
+      throw new DomainError('BRAND_IMAGE_MISMATCH', { cause: error });
+    }
     throw error;
   }
 }

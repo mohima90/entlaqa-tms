@@ -5,7 +5,6 @@
  * the database enforces the rules.
  */
 import {
-  brandImageStatusActionDefinition,
   confirmBrandImageUploadActionDefinition,
   defineAction,
   saveBrandingActionDefinition,
@@ -13,7 +12,7 @@ import {
   updateOrganizationProfileActionDefinition,
 } from '@jadarat/platform-rbac';
 import { revalidatePath } from 'next/cache';
-import { brandingFiles } from '../lib/branding-files';
+import { brandingFiles, readBrandingImage } from '../lib/branding-files';
 import { deriveBrandingColors } from '../lib/branding-view';
 
 /** Organization Admin at AAL2 only (platform.tenant.manage: high risk, getUser + a recent code). */
@@ -21,11 +20,15 @@ export const updateOrganizationProfileAction = defineAction(
   updateOrganizationProfileActionDefinition(),
 );
 
-const saveBrandingDefinition = saveBrandingActionDefinition(deriveBrandingColors);
+const saveBrandingDefinition = saveBrandingActionDefinition(
+  deriveBrandingColors,
+  readBrandingImage,
+);
 
 /**
- * Branding → Save: the Organization Admin only (platform.tenant.manage). Afterwards every page of the
- * organization renders with the new look at once (the layout's cache is dropped).
+ * Branding → Save: the Organization Admin only (platform.tenant.manage). New images are checked and
+ * published with the save (not virus-scanned: PO, 20 Oct 2026). Afterwards every page of the organization
+ * renders with the new look at once (the layout's cache is dropped).
  */
 export const saveBrandingAction = defineAction({
   ...saveBrandingDefinition,
@@ -40,10 +43,7 @@ export const startBrandImageUploadAction = defineAction(
   startBrandImageUploadActionDefinition(brandingFiles),
 );
 
-/** Branding → an image, after the PUT: queued for the malware scan. */
+/** Branding → an image, after the PUT: confirmed (checked and published when the Branding is saved). */
 export const confirmBrandImageUploadAction = defineAction(
   confirmBrandImageUploadActionDefinition(brandingFiles),
 );
-
-/** Branding → an image's scan, polled by the page (the uploader only). */
-export const brandImageStatusAction = defineAction(brandImageStatusActionDefinition(brandingFiles));

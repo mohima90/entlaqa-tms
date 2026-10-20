@@ -74,6 +74,50 @@ export async function publishBrandAsset(
   }
 }
 
+/** Where a branding image's bytes are, and what the database knows of them (the job's tenant). */
+export interface BrandImageSource {
+  readonly bucket: string;
+  readonly objectKey: string;
+  readonly status: string;
+  /** false: a purpose without a malware scan (PO, 20 Oct 2026) — published from `uploaded` or `accepted`. */
+  readonly scanRequired: boolean;
+  /** Recorded size and SHA-256 (the scan's or the acceptance's; the size may be Storage's at confirmation). */
+  readonly size: number | null;
+  readonly sha256: string | null;
+}
+
+/**
+ * A branding image of the job's tenant (system claims; RLS), or null when it is gone. Before migration
+ * 20261023100400 every purpose counts as scanned (expand-first: the column is read through the row's JSON).
+ */
+export async function loadBrandImageSource(
+  tx: ClaimsTx,
+  fileId: string,
+): Promise<BrandImageSource | null> {
+  const [row] = await tx.execute<{
+    bucket: string;
+    object_key: string;
+    status: string;
+    size_bytes: string | number | null;
+    sha256: string | null;
+    scan_required: boolean | null;
+  }>(sql`
+    select f.bucket, f.object_key, f.status, f.size_bytes, f.sha256,
+           coalesce((to_jsonb(p) ->> 'scan_required')::boolean, true) as scan_required
+    from platform.files f join platform.file_purposes p on p.purpose = f.purpose
+    where f.id = ${fileId}::uuid and f.owner_module = 'platform' and f.owner_entity_type = 'tenant_branding'
+      and f.deleted_at is null and f.purged_at is null`);
+  if (!row) return null;
+  return {
+    bucket: row.bucket,
+    objectKey: row.object_key,
+    status: row.status,
+    scanRequired: row.scan_required !== false,
+    size: row.size_bytes === null ? null : Number(row.size_bytes),
+    sha256: row.sha256,
+  };
+}
+
 /** Failure codes as recorded (upper-case words; anything else is recorded as FAILED). */
 const FAILURE_CODE = /^[A-Z][A-Z0-9_]{1,39}$/;
 

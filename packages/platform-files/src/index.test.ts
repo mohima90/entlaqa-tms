@@ -55,6 +55,7 @@ function storage() {
     createSignedDownloadUrl: vi.fn(() =>
       Promise.resolve('https://tms.example/storage/v1/object/sign/k?token=t&download=a.csv'),
     ),
+    readObject: vi.fn(() => Promise.resolve(null)),
   };
 }
 
@@ -195,6 +196,7 @@ describe('confirmUpload, getFileStatus, deleteFile, markFileUsed', () => {
     expect(await deleteFile(TX, FILE)).toBe(true);
     expect(await markFileUsed(TX, FILE)).toBe(false);
     expect(FINAL_STATUSES).toContain('clean');
+    expect(FINAL_STATUSES).toContain('accepted');
     expect(FINAL_STATUSES).not.toContain('scanning');
   });
 });

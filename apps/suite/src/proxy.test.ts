@@ -133,6 +133,26 @@ describe('proxy', () => {
     expect(response.headers.get('content-security-policy')).toContain("frame-ancestors 'none'");
   });
 
+  it('gives public branding images the sandboxing policy instead of the page CSP (WP-ADM-02)', () => {
+    for (const path of [
+      '/api/brand/3c4d5e6f-7081-4a9b-8c1d-2e3f4a5b6c7d',
+      '/api/brand/x',
+      '/api/brand',
+    ]) {
+      const response = run(`http://localhost:3000${path}`);
+      expect(response.headers.get('content-security-policy'), path).toBe(
+        "default-src 'none'; sandbox",
+      );
+      expect(response.headers.get('x-content-type-options'), path).toBe('nosniff');
+    }
+    expect(
+      run('http://localhost:3000/api/branding').headers.get('content-security-policy'),
+    ).toContain("frame-ancestors 'none'");
+    expect(
+      run('http://localhost:3000/api/health').headers.get('content-security-policy'),
+    ).toContain('nonce-');
+  });
+
   it('matches every path except immutable build assets', () => {
     const matcher = new RegExp(`^${config.matcher[0] ?? ''}$`);
     for (const path of [

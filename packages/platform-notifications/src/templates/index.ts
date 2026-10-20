@@ -1,5 +1,6 @@
 import type { AppLocale } from '@jadarat/platform-i18n';
 import type { z } from 'zod';
+import { type EmailBrandStyle, withEmailBrand } from '../layout';
 import { accountLockedTemplate } from './account-locked';
 import { emailTestTemplate } from './email-test';
 import { invitationTemplate } from './invitation';
@@ -37,14 +38,21 @@ export type EmailVariables<K extends EmailTemplateKey> = z.input<
   (typeof EMAIL_TEMPLATES)[K]['variables']
 >;
 
-/** Validates the variables (throws a ZodError naming the fields) and renders both languages. */
+/**
+ * Validates the variables (throws a ZodError naming the fields) and renders both languages — with the
+ * organization's look when given (WP-ADM-02, FR-NTF-02: logo, button and link colour), else Jadarat's.
+ */
 export function renderEmail<K extends EmailTemplateKey>(
   key: K,
   primary: AppLocale,
   variables: EmailVariables<K>,
+  brand?: EmailBrandStyle | null,
 ): RenderedEmail & { readonly version: number } {
   // Each template validates its own variables: the parsed value is that template's output type.
   const template: EmailTemplate<z.ZodType> = EMAIL_TEMPLATES[key];
   const parsed = template.variables.parse(variables);
-  return { ...template.render(parsed, primary), version: template.version };
+  return withEmailBrand(brand, () => ({
+    ...template.render(parsed, primary),
+    version: template.version,
+  }));
 }

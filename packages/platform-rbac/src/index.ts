@@ -65,6 +65,7 @@ export * from './iam/invitations';
 export * from './iam/deactivation';
 export * from './iam/security';
 export * from './iam/organization-profile';
+export * from './iam/branding';
 export * from './iam/email-integration';
 export * from './iam/structure';
 export * from './iam/branches';

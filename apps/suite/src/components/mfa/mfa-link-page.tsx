@@ -10,6 +10,7 @@ import { connection } from 'next/server';
 import { mfaErrorTexts } from '../../lib/auth-texts';
 import { getConfigStatus } from '../../lib/config-status';
 import { mfaLinkPath } from '../../lib/mfa-link';
+import { AuthHeaderBrand } from '../auth/auth-brand-layout';
 import { LanguageToggle } from '../language-toggle';
 import { MfaLinkView } from './mfa-link-view';
 
@@ -44,7 +45,7 @@ export async function MfaLinkPage({ params }: { readonly params: Promise<{ local
     return (
       <div className="flex min-h-dvh flex-col">
         <header className="flex items-center justify-between gap-4 border-b border-border bg-surface px-4 py-3">
-          <span className="text-lg font-semibold">{common('productName')}</span>
+          <AuthHeaderBrand locale={locale} productName={common('productName')} />
           <LanguageToggle locale={locale} path="/mfa/remove" />
         </header>
         <main id="main" className="mx-auto flex w-full max-w-lg flex-1 flex-col gap-6 px-4 py-10">
@@ -63,7 +64,7 @@ export async function MfaLinkPage({ params }: { readonly params: Promise<{ local
   return (
     <MfaLinkView
       locale={locale}
-      productName={common('productName')}
+      productName={<AuthHeaderBrand locale={locale} productName={common('productName')} />}
       toggle={{
         href: mfaLinkPath(target),
         lang: target,

@@ -67,6 +67,20 @@ describe('getSessionState (no redirect loops between the auth pages)', () => {
     });
   });
 
+  it("reads the organization's look in the same transaction (WP-ADM-02), only for a tenant", async () => {
+    const brand = { slug: 'raya', primaryColor: '#7A1F2B' };
+    const getTenantBrand = vi.fn(() => Promise.resolve(brand));
+    const d = { ...deps({ ...base, tenant_id: TENANT }, true), getTenantBrand };
+    const state = await getSessionState(configured, d as unknown as SessionStateDeps);
+    expect(state.kind === 'organization' && state.brand).toEqual(brand);
+    expect(getTenantBrand).toHaveBeenCalledWith('tx');
+    expect(d.withUserTx).toHaveBeenCalledTimes(1);
+    const refused = { ...deps({ ...base, tenant_id: TENANT }, false), getTenantBrand };
+    getTenantBrand.mockClear();
+    await getSessionState(configured, refused as unknown as SessionStateDeps);
+    expect(getTenantBrand).not.toHaveBeenCalled();
+  });
+
   it('trusts the verified tenant claim when no database is configured (preview deployments)', async () => {
     const d = deps({ ...base, tenant_id: TENANT }, false);
     const state = await getSessionState({ auth: true, database: false }, d);

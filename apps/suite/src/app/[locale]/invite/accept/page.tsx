@@ -6,6 +6,7 @@ import { notFound } from 'next/navigation';
 import { AuthLanguageSwitch, AuthShell } from '../../../../components/auth/auth-shell';
 import { InviteLinkForwarder } from '../../../../components/invite/accept-invitation';
 import { authLanguageSwitch, authShellTexts } from '../../../../lib/auth-shell-texts';
+import { authBrandOf, signInBrand } from '../../../../lib/sign-in-brand';
 
 /**
  * Invitation links e-mailed before codes (`/[locale]/invite/accept#token=…`, T-M2-07): forwarded in the
@@ -39,6 +40,7 @@ export default async function InviteAcceptPage({
   return (
     <AuthShell
       variant="centered"
+      brand={authBrandOf(await signInBrand(locale))}
       texts={await authShellTexts(locale)}
       languageSwitch={<AuthLanguageSwitch {...await authLanguageSwitch(locale, '/sign-up')} />}
       title={t('pageTitle')}

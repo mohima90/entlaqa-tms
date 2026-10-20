@@ -11,6 +11,7 @@ import { ResetPasswordView } from '../../../components/password-reset/reset-pass
 import { authLanguageSwitch, authShellTexts } from '../../../lib/auth-shell-texts';
 import { passwordResetErrorTexts } from '../../../lib/auth-texts';
 import { getConfigStatus } from '../../../lib/config-status';
+import { authBrandOf, signInBrand } from '../../../lib/sign-in-brand';
 
 /**
  * Set a new password (screen 11; FR-IAM-13, NFR-SEC-01, T-M2-08). Public. Auth's e-mail links here with
@@ -57,11 +58,13 @@ export default async function ResetPasswordPage({
     text: t('reset.panelText'),
   };
   const authT = await getTranslations({ locale, namespace: 'auth' });
+  const brand = authBrandOf(await signInBrand(locale));
 
   if (!status.auth) {
     return (
       <AuthShell
         variant="simple"
+        brand={brand}
         texts={shell}
         panel={panel}
         languageSwitch={
@@ -80,6 +83,7 @@ export default async function ResetPasswordPage({
   return (
     <ResetPasswordView
       locale={locale}
+      brand={brand}
       shell={shell}
       panel={panel}
       toggle={{

@@ -9,6 +9,7 @@ import { hasLocale } from 'next-intl';
 import { getTranslations } from 'next-intl/server';
 import { notFound, redirect } from 'next/navigation';
 import { connection } from 'next/server';
+import { AuthHeaderBrand } from '../../../components/auth/auth-brand-layout';
 import { SignOutButton } from '../../../components/auth/sign-out-button';
 import { LanguageToggle } from '../../../components/language-toggle';
 import {
@@ -152,7 +153,7 @@ export default async function MfaPage({
   return (
     <div className="flex min-h-dvh flex-col">
       <header className="flex items-center justify-between gap-4 border-b border-border bg-surface px-4 py-3">
-        <span className="text-lg font-semibold">{common('productName')}</span>
+        <AuthHeaderBrand locale={locale} productName={common('productName')} />
         <div className="flex items-center gap-2">
           <LanguageToggle locale={locale} path="/mfa" />
           <SignOutButton

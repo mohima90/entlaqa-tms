@@ -82,6 +82,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | ID | Decision |
 |---|---|---|
+| 20 Oct 2026 | PO | **Branding flow agreed** (`docs/business-flows/EP-BRAND-branding.md`, WP-ADM-02): Kawadir's Branding page copied (names EN/AR, logo, favicon, sign-in image, primary/secondary + gradient switch, presets, website, live preview) without tagline/careers URL; improvements: WCAG contrast warning, colour picker, PNG/JPG/WebP only (no SVG) with size limits and scanning, old images deleted, preview of unsaved choices, favicon everywhere, «Reset to the Jadarat look»; Organization Admin only |
 | 20 Oct 2026 | PO | **Dependabot monthly instead of weekly** (option 1): routine dependency updates once a month, grouped; Claude checks each update PR and tells the PO which to merge; security covered by gate 11 on every PR and GitHub security alerts |
 | 17 Oct 2026 | PO | **Faster agent loop** ("yes"): agents run the fast checks plus the tests for what they changed; the full suite runs once in GitHub CI on the PR, all gates still required before merge (Development Plan §2.4 P10, CLAUDE.md) |
 | 17 Oct 2026 | PO | **Existing Arabic-only people stay saveable** (WP-FIX-01 review item 3, "no" to forcing English names): the default-language names are required for new people and whenever a save adds or changes names; other saves (phone, language, unit) of an Arabic-only person are accepted |

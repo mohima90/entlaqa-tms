@@ -4,7 +4,7 @@
 |---|---|
 | **Work package** | WP-ADM-02 (ROADMAP-by-role) |
 | **Requirements** | FR-ADM-07 (Branding page), FR-ADM-02 (names move here from General), FR-NTF-02 (brand part of e-mails) |
-| **Status** | In discussion with the PO (20 Oct 2026) |
+| **Status** | **Agreed (PO, 20 Oct 2026)** — the three open questions approved as proposed |
 | **Copied from Kawadir** | Kawadir ATS `/org/branding`: company names EN/AR, logo, favicon, login page image, primary + secondary colour with a «use gradient» switch, preset swatches, company website, live preview; Org Admin only; the look applies to the app shell, the sign-in page and e-mails. **Not copied:** tagline and careers-page URL (recruitment-only, and unfinished in Kawadir) |
 
 ## 1. Goal
@@ -44,6 +44,6 @@ Each organization makes the product look like its own — its names, logo, brows
 ## 7. Open questions
 | # | Question | Proposed answer | PO answer |
 |---|---|---|---|
-| 1 | Copy Kawadir's Branding page as above (without tagline and careers URL)? | **Yes** | |
-| 2 | Improvements over Kawadir: real contrast warning (BRD), colour picker, image type/size checks without SVG, old images deleted, preview with unsaved choices, favicon used everywhere, «Reset to the Jadarat look» | **Yes** | |
-| 3 | Who edits branding? | **Organization Admin only** (Kawadir) | |
+| 1 | Copy Kawadir's Branding page as above (without tagline and careers URL)? | **Yes** || Approved (20 Oct 2026) |
+| 2 | Improvements over Kawadir: real contrast warning (BRD), colour picker, image type/size checks without SVG, old images deleted, preview with unsaved choices, favicon used everywhere, «Reset to the Jadarat look» | **Yes** || Approved (20 Oct 2026) |
+| 3 | Who edits branding? | **Organization Admin only** (Kawadir) || Approved (20 Oct 2026) |

@@ -542,3 +542,16 @@ insert into tms.needs_form_fields (id, tenant_id, form_id, section_id, system_ke
   ('b7200000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000001', 'b7000000-0000-4000-8000-000000000001', 'b7100000-0000-4000-8000-000000000001', 'training_topic', 'text', 'Topic', 'الموضوع', true, 1, null, null),
   ('b7200000-0000-4000-8000-000000000002', 'b0000000-0000-4000-8000-000000000001', 'b7000000-0000-4000-8000-000000000001', 'b7100000-0000-4000-8000-000000000001', 'people', 'people', 'People', 'المشاركون', true, 2, null, 'count');
 commit;
+
+-- Branding (WP-ADM-02): tenant A has its own colours, no images; B none yet — the Jadarat look (images, their
+-- checks, B's first save and the published copies: 99_branding_*.sql). The stamp and image triggers need
+-- claims: off for this insert only.
+begin;
+alter table platform.tenant_branding disable trigger tenant_branding_stamp;
+alter table platform.tenant_branding disable trigger tenant_branding_files;
+insert into platform.tenant_branding (tenant_id, primary_color, secondary_color, use_gradient, website_url,
+                                      email_action_color, email_link_color) values
+  ('a0000000-0000-4000-8000-000000000001', '#0F6E5A', '#138A72', true, 'https://a.example', '#0F6E5A', '#0F6E5A');
+alter table platform.tenant_branding enable trigger tenant_branding_stamp;
+alter table platform.tenant_branding enable trigger tenant_branding_files;
+commit;

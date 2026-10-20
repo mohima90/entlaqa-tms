@@ -477,7 +477,17 @@ begin
       ('private.note_invitation_mail_skipped(uuid)', 'email_guard', array['email_guard', 'authenticated'], true),
       ('private.invitation_mail_skipped_ids()', 'email_guard', array['email_guard', 'authenticated'], true),
       ('private.email_member_tenant(boolean)', current_user::text, array['email_guard', current_user::text], false),
-      ('private.email_job_tenant(boolean)', current_user::text, array['email_guard', current_user::text], false)
+      ('private.email_job_tenant(boolean)', current_user::text, array['email_guard', current_user::text], false),
+      -- Branding (WP-ADM-02, 20261023100200–100300): the image trigger of platform.tenant_branding, the
+      -- worker's publishing (app_worker system claims, checked inside) and the claim-less public delivery
+      -- path (app_server, checked inside); two helpers run inside them only.
+      ('private.tenant_branding_files()', 'file_guard', array['file_guard'], true),
+      ('private.branding_file_usable(uuid, uuid, text)', 'file_guard', array['file_guard'], false),
+      ('private.release_branding_file(uuid, uuid)', 'file_guard', array['file_guard'], false),
+      ('private.claim_brand_asset_work(integer)', 'file_guard', array['file_guard', 'authenticated'], true),
+      ('private.publish_brand_asset(uuid, text, bytea)', 'file_guard', array['file_guard', 'authenticated'], true),
+      ('private.public_brand_asset(uuid)', 'file_guard', array['file_guard', 'authenticated'], true),
+      ('private.public_tenant_brand(text)', 'file_guard', array['file_guard', 'authenticated'], true)
     ) as h(fn, owner, allowed, definer)
     left join pg_proc p on p.oid = to_regprocedure(h.fn)
   loop
@@ -577,7 +587,11 @@ begin
         'private.email_route()', 'private.claim_email_tests(integer)',
         'private.finish_email_test(uuid,integer,boolean,text)', 'private.email_tenants_waiting()',
         'private.sweep_email_deliveries(integer)', 'private.note_invitation_mail_skipped(uuid)',
-        'private.invitation_mail_skipped_ids()')
+        'private.invitation_mail_skipped_ids()',
+        -- Branding (WP-ADM-02)
+        'private.tenant_branding_files()', 'private.claim_brand_asset_work(integer)',
+        'private.publish_brand_asset(uuid,text,bytea)', 'private.public_brand_asset(uuid)',
+        'private.public_tenant_brand(text)')
   loop
     failures := failures || format('%s: unexpected SECURITY DEFINER function (security review)', r.fn);
   end loop;

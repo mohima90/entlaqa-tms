@@ -126,6 +126,8 @@ export function createInvitationMailer(options: InvitationMailerOptions): Transa
         to: invitation.email,
         recipientPersonId: invitation.personId,
         sourceEventId: event.id,
+        // The organization's logo is linked from the app's origin (WP-ADM-02, FR-NTF-02).
+        appBaseUrl: base,
         variables: {
           recipientName: invitation.recipientName,
           inviterName: invitation.inviterName,

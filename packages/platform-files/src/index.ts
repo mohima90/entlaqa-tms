@@ -66,6 +66,17 @@ export {
   typeOfExtension,
 } from './purposes';
 export { MAX_NAME_LENGTH, downloadName, sanitizeFileName } from './names';
+export {
+  BRAND_IMAGE_PURPOSES,
+  BRAND_IMAGE_SLOTS,
+  type BrandImagePurpose,
+  type BrandImageRefusal,
+  type BrandImageSlot,
+  brandImageMaxBytes,
+  checkBrandImageContent,
+  checkBrandImageUpload,
+  isBrandImageSlot,
+} from './brand-images';
 export { DETECTION_HEAD_BYTES, detectType, sniffText } from './detect';
 export { FileErrors, fileAppError, fileResult } from './errors';
 export type { FileErrorCode, FileOwner, FileStatus, FileStatusView } from '@jadarat/platform-db';

@@ -1,5 +1,5 @@
 import { type AppLocale, getDirection } from '@jadarat/platform-i18n';
-import { type SafeHtml, markup } from './html';
+import { type SafeHtml, isSafeLink, markup } from './html';
 
 /**
  * Bilingual e-mail layout of the approved invitation e-mail (docs/design/screens/m2-users-roles/
@@ -18,6 +18,73 @@ export const EMAIL_COLORS = {
   action: '#0F665F',
   link: '#0C534D',
 } as const;
+
+/**
+ * The organization's e-mail look (WP-ADM-02, FR-NTF-02): its logo in the header and its colour on the
+ * action button, the links and a thin accent line — set for the duration of one render (renderEmail), so
+ * every template gets it without taking it as a variable. The colours were derived from the organization's
+ * primary colour when the Branding was saved (white button text ≥ 4.5 : 1, links ≥ 4.5 : 1 on white —
+ * packages/ui emailBrandColors); the logo is the published copy's https address. Anything else is ignored
+ * (the Jadarat look), so a stored value can never break the markup.
+ */
+export interface EmailBrandStyle {
+  /** `#RRGGBB` button colour; anything else is ignored. */
+  readonly actionColor?: string | null | undefined;
+  /** `#RRGGBB` link colour; anything else is ignored. */
+  readonly linkColor?: string | null | undefined;
+  /** Absolute https address of the organization's logo (the public copy, /api/brand/<id>). */
+  readonly logoUrl?: string | null | undefined;
+}
+
+interface ResolvedBrand {
+  readonly action: string;
+  readonly link: string;
+  readonly accent: string | null;
+  readonly logoUrl: string | null;
+}
+
+const HEX_COLOR = /^#[0-9A-F]{6}$/;
+const JADARAT_BRAND: ResolvedBrand = {
+  action: EMAIL_COLORS.action,
+  link: EMAIL_COLORS.link,
+  accent: null,
+  logoUrl: null,
+};
+let currentBrand: ResolvedBrand = JADARAT_BRAND;
+
+function resolveBrand(style: EmailBrandStyle | null | undefined): ResolvedBrand {
+  if (!style) return JADARAT_BRAND;
+  const action =
+    typeof style.actionColor === 'string' && HEX_COLOR.test(style.actionColor)
+      ? style.actionColor
+      : null;
+  const link =
+    typeof style.linkColor === 'string' && HEX_COLOR.test(style.linkColor) ? style.linkColor : null;
+  const logoUrl =
+    typeof style.logoUrl === 'string' && style.logoUrl.length <= 500 && isSafeLink(style.logoUrl)
+      ? style.logoUrl
+      : null;
+  return {
+    action: action && link ? action : EMAIL_COLORS.action,
+    link: action && link ? link : EMAIL_COLORS.link,
+    accent: action && link ? action : null,
+    logoUrl,
+  };
+}
+
+/**
+ * Renders with the organization's look (null: the Jadarat look). Rendering is synchronous, so the look
+ * applies to exactly this render; the previous one is restored even when it throws.
+ */
+export function withEmailBrand<T>(style: EmailBrandStyle | null | undefined, render: () => T): T {
+  const previous = currentBrand;
+  currentBrand = resolveBrand(style);
+  try {
+    return render();
+  } finally {
+    currentBrand = previous;
+  }
+}
 
 const FONTS: Readonly<Record<AppLocale, string>> = {
   ar: "'IBM Plex Sans Arabic', 'Noto Sans Arabic', Tahoma, Arial, sans-serif",
@@ -59,9 +126,21 @@ function block(b: LayoutBlock, secondary: boolean): SafeHtml {
   </tr>`;
 }
 
+/** The header's organization: its logo (alt: its name) when it has one, else its name. */
+function organizationHeader(name: string): SafeHtml {
+  if (!currentBrand.logoUrl) return markup`${name}`;
+  return markup`<img
+    src="${currentBrand.logoUrl}"
+    alt="${name}"
+    height="40"
+    style="display: block; height: 40px; max-height: 40px; width: auto; max-width: 200px; border: 0"
+  />`;
+}
+
 export function renderLayout(layout: EmailLayout): string {
   const dir = getDirection(layout.primary.locale);
   const font = FONTS[layout.primary.locale];
+  const accent = currentBrand.accent ? `; border-top: 4px solid ${currentBrand.accent}` : '';
   const doc = markup`<!doctype html>
     <html lang="${layout.primary.locale}" dir="${dir}">
       <head>
@@ -85,7 +164,7 @@ export function renderLayout(layout: EmailLayout): string {
                 width="100%"
                 cellpadding="0"
                 cellspacing="0"
-                style="max-width: 600px; background: ${EMAIL_COLORS.surface}; border-radius: 10px; border-collapse: separate"
+                style="max-width: 600px; background: ${EMAIL_COLORS.surface}; border-radius: 10px; border-collapse: separate${accent}"
               >
                 <tr>
                   <td
@@ -95,7 +174,7 @@ export function renderLayout(layout: EmailLayout): string {
                     <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
                       <tr>
                         <td style="font-weight: 700; font-size: 19px; color: ${EMAIL_COLORS.text}">
-                          ${layout.organizationName}
+                          ${organizationHeader(layout.organizationName)}
                         </td>
                         <td
                           align="${dir === 'rtl' ? 'left' : 'right'}"
@@ -138,7 +217,7 @@ export function renderLayout(layout: EmailLayout): string {
 export function actionButton(label: string, href: string): SafeHtml {
   return markup`<table role="presentation" cellpadding="0" cellspacing="0" style="margin: 6px 0">
     <tr>
-      <td style="border-radius: 6px; background: ${EMAIL_COLORS.action}">
+      <td style="border-radius: 6px; background: ${currentBrand.action}">
         <a
           href="${href}"
           style="display: inline-block; padding: 12px 28px; color: #FFFFFF; font-weight: 700; text-decoration: none; border-radius: 6px"
@@ -160,5 +239,5 @@ export function ltr(value: string): SafeHtml {
 }
 
 export function link(label: string, href: string): SafeHtml {
-  return markup`<a href="${href}" style="color: ${EMAIL_COLORS.link}; font-weight: 600">${label}</a>`;
+  return markup`<a href="${href}" style="color: ${currentBrand.link}; font-weight: 600">${label}</a>`;
 }

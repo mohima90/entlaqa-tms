@@ -23,6 +23,29 @@ export {
   requestPasswordResetMail,
 } from './account-mail';
 export { DomainError, isDomainError } from './domain-error';
+export {
+  BRAND_IMAGE_KINDS,
+  type BrandImageKind,
+  type BrandImageState,
+  type BrandingField,
+  type BrandingRecord,
+  type BrandingSave,
+  type BrandingSettings,
+  type BrandingUpdate,
+  type PublicBrandApi,
+  type PublicBrandAsset,
+  type PublicTenantBrand,
+  type TenantBrand,
+  brandingExists,
+  changedBrandingFields,
+  createPublicBrandApi,
+  forgetBrandingPresenceForTests,
+  getBranding,
+  getTenantBrand,
+  publicBrandAsset,
+  publicTenantBrand,
+  saveBranding,
+} from './branding';
 /** SQLSTATE and constraint of a database error, for module services that map expected refusals. */
 export { pgError } from './pg-error';
 export {

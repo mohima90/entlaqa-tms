@@ -49,7 +49,8 @@ export const ORGANIZATION_NAME_MAX = 80;
  */
 export const BIDI_CONTROLS = /[\u202A-\u202E\u2066-\u2069]/u;
 
-const name = z
+/** An organization display name (also the Branding page's, WP-ADM-02). */
+export const OrganizationNameInput = z
   .string()
   .normalize('NFC')
   .trim()
@@ -57,6 +58,8 @@ const name = z
   .max(ORGANIZATION_NAME_MAX)
   // No control characters (as provisioning) and no bidi controls.
   .refine((value) => !/\p{Cc}/u.test(value) && !BIDI_CONTROLS.test(value));
+
+const name = OrganizationNameInput;
 
 const clock = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 
@@ -68,8 +71,10 @@ const clock = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 export const OrganizationProfileInput = z
   .strictObject({
     version: z.int().min(1),
-    nameEn: name,
-    nameAr: name,
+    // The display names moved to Branding (WP-ADM-02, FR-ADM-02): the General page no longer sends them;
+    // absent, the stored names stay. (A page loaded before that change still may: accepted as before.)
+    nameEn: name.optional(),
+    nameAr: name.optional(),
     industry: z.enum(INDUSTRIES),
     countryCode: z.string().regex(/^[A-Z]{2}$/),
     currencyCode: z.string().regex(/^[A-Z]{3}$/),
@@ -160,10 +165,17 @@ export function updateOrganizationProfileActionDefinition(): ActionDefinition<
     permission: p['platform.tenant.manage'],
     input: OrganizationProfileInput,
     handler: async ({ ctx, input }) => {
-      const { version, ...profile } = input;
+      const { version, nameEn, nameAr, ...profile } = input;
+      let names: { nameAr: string; nameEn: string | null } = { nameAr: nameAr ?? '', nameEn: nameEn ?? null };
+      if (nameAr === undefined || nameEn === undefined) {
+        const stored = await getOrganizationProfile(ctx.tx);
+        if (!stored) return err(appError('NOT_FOUND'));
+        names = { nameAr: nameAr ?? stored.nameAr, nameEn: nameEn ?? stored.nameEn };
+      }
       const saved = await updateOrganizationProfile(
         ctx.tx,
         {
+          ...names,
           ...profile,
           timeZone: canonicalTimeZone(profile.timeZone),
           // Stored sorted (the database sorts too).

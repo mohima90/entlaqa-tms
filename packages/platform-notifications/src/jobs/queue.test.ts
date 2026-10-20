@@ -1,10 +1,17 @@
 import type { SystemTx } from '@jadarat/platform-db/jobs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { queueEmail } from './queue';
+import { brandAssetUrl, queueEmail } from './queue';
 import { EMAIL_QUEUED_EVENT } from './sender';
 
-const db = vi.hoisted(() => ({ insertEmailDelivery: vi.fn(), emitEvent: vi.fn() }));
-vi.mock('@jadarat/platform-db/jobs', () => ({ insertEmailDelivery: db.insertEmailDelivery }));
+const db = vi.hoisted(() => ({
+  insertEmailDelivery: vi.fn(),
+  emitEvent: vi.fn(),
+  getEmailBrand: vi.fn(() => Promise.resolve(null as unknown)),
+}));
+vi.mock('@jadarat/platform-db/jobs', () => ({
+  insertEmailDelivery: db.insertEmailDelivery,
+  getEmailBrand: db.getEmailBrand,
+}));
 vi.mock('@jadarat/platform-db', () => ({ emitEvent: db.emitEvent }));
 
 const tx = {} as SystemTx;
@@ -53,6 +60,39 @@ describe('queueEmail', () => {
       subject: 'd1',
       data: { template: 'platform.invitation' },
     });
+  });
+
+  it("renders with the organization's look (WP-ADM-02): logo from the app's origin, its colours", async () => {
+    db.insertEmailDelivery.mockResolvedValue('d2');
+    db.getEmailBrand.mockResolvedValueOnce({
+      actionColor: '#7A1F2B',
+      linkColor: '#6E1C27',
+      logoAssetId: '3c4d5e6f-7081-4a9b-8c1d-2e3f4a5b6c7d',
+    });
+    await queueEmail(tx, {
+      template: 'platform.invitation',
+      locale: 'en',
+      to: 'sara@example.com',
+      variables,
+      appBaseUrl: 'https://tms.example.com',
+    });
+    const html = String((db.insertEmailDelivery.mock.calls[0]?.[1] as { html: string }).html);
+    expect(html).toContain(
+      'src="https://tms.example.com/api/brand/3c4d5e6f-7081-4a9b-8c1d-2e3f4a5b6c7d"',
+    );
+    expect(html).toContain('alt="Al Raya"');
+    expect(html).toContain('background: #7A1F2B');
+    expect(html).toContain('color: #6E1C27');
+    expect(db.getEmailBrand).toHaveBeenCalledWith(tx);
+  });
+
+  it('builds logo addresses only from an origin and a public id', () => {
+    expect(brandAssetUrl('https://tms.example.com/', '3c4d5e6f-7081-4a9b-8c1d-2e3f4a5b6c7d')).toBe(
+      'https://tms.example.com/api/brand/3c4d5e6f-7081-4a9b-8c1d-2e3f4a5b6c7d',
+    );
+    expect(brandAssetUrl(undefined, '3c4d5e6f-7081-4a9b-8c1d-2e3f4a5b6c7d')).toBeNull();
+    expect(brandAssetUrl('https://tms.example.com', null)).toBeNull();
+    expect(brandAssetUrl('https://tms.example.com', '../../etc/passwd')).toBeNull();
   });
 
   it('refuses a bad address or bad variables before writing anything', async () => {

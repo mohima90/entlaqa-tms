@@ -27,6 +27,22 @@ export {
 } from './contract';
 export { brandLayerCss, fontStack, themeCss } from './css';
 export {
+  BRAND_PRESETS,
+  type BrandColorSettings,
+  type BrandContrastCheck,
+  type BrandPreset,
+  type ContrastCheckId,
+  type EmailBrandColors,
+  JADARAT_BRAND,
+  TEXT_CONTRAST_MIN,
+  brandFromSettings,
+  checkBrandContrast,
+  emailBrandColors,
+  isJadaratLook,
+  parseBrandColor,
+  storedBrandColors,
+} from './branding';
+export {
   type BrandAdjustment,
   InvalidBrandColorError,
   type OrganizationBrand,

@@ -303,7 +303,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
-| 20 Oct 2026 | PR #77 CodeQL (high): polynomial regular expression trimming trailing slashes from APP_BASE_URL in `brandAssetUrl` — replaced by a plain loop, test for several slashes added |
+| 20 Oct 2026 | PR #77 CodeQL (high): polynomial regular expression trimming trailing slashes from APP_BASE_URL in `brandAssetUrl` — replaced by a plain loop, test for several slashes added. Unit gate: three TMS test mocks of platform-db lacked `BRAND_IMAGE_KINDS` (now read by platform-rbac at load) — added |
 | 20 Oct 2026 | **WP-ADM-02 Branding built** and merged into the working branch (PR #77, PO chose one PR): Branding page (names, logo, favicon, sign-in image, colours with gradient and presets, website, live preview, reset), applied to shell, sign-in/auth pages and e-mails; public brand images served from scanned, metadata-stripped copies. Security + code review: approve with fixes (3 Medium, 9 Low) — all fixed; check:all green |
 | 20 Oct 2026 | `main` DB gate red after #72 (and on Dependabot #74/#75): `email.integration.test.ts` counted e-mails other suites leave waiting (NO_SENDER since WP-ADM-01) — order-dependent; fixed to count only its own messages. Branding (WP-ADM-02) build started |
 | 20 Oct 2026 | PR #72 merged (Dependabot monthly). Kawadir's Branding page researched in code; WP-ADM-02 business flow drafted (`docs/business-flows/EP-BRAND-branding.md`), with the PO. Dependabot opened this month's 3 PRs (#73–#75), to be checked |

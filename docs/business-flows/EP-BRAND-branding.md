@@ -44,6 +44,6 @@ Each organization makes the product look like its own — its names, logo, brows
 ## 7. Open questions
 | # | Question | Proposed answer | PO answer |
 |---|---|---|---|
-| 1 | Copy Kawadir's Branding page as above (without tagline and careers URL)? | **Yes** || Approved (20 Oct 2026) |
-| 2 | Improvements over Kawadir: real contrast warning (BRD), colour picker, image type/size checks without SVG, old images deleted, preview with unsaved choices, favicon used everywhere, «Reset to the Jadarat look» | **Yes** || Approved (20 Oct 2026) |
-| 3 | Who edits branding? | **Organization Admin only** (Kawadir) || Approved (20 Oct 2026) |
+| 1 | Copy Kawadir's Branding page as above (without tagline and careers URL)? | **Yes** | Approved (20 Oct 2026) |
+| 2 | Improvements over Kawadir: real contrast warning (BRD), colour picker, image type/size checks without SVG, old images deleted, preview with unsaved choices, favicon used everywhere, «Reset to the Jadarat look» | **Yes** | Approved (20 Oct 2026) |
+| 3 | Who edits branding? | **Organization Admin only** (Kawadir) | Approved (20 Oct 2026) |

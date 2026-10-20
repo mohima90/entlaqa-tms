@@ -90,6 +90,9 @@ describe('queueEmail', () => {
     expect(brandAssetUrl('https://tms.example.com/', '3c4d5e6f-7081-4a9b-8c1d-2e3f4a5b6c7d')).toBe(
       'https://tms.example.com/api/brand/3c4d5e6f-7081-4a9b-8c1d-2e3f4a5b6c7d',
     );
+    expect(
+      brandAssetUrl('https://tms.example.com///', '3c4d5e6f-7081-4a9b-8c1d-2e3f4a5b6c7d'),
+    ).toBe('https://tms.example.com/api/brand/3c4d5e6f-7081-4a9b-8c1d-2e3f4a5b6c7d');
     expect(brandAssetUrl(undefined, '3c4d5e6f-7081-4a9b-8c1d-2e3f4a5b6c7d')).toBeNull();
     expect(brandAssetUrl('https://tms.example.com', null)).toBeNull();
     expect(brandAssetUrl('https://tms.example.com', '../../etc/passwd')).toBeNull();

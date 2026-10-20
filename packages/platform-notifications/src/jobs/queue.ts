@@ -29,7 +29,10 @@ export function brandAssetUrl(
   assetId: string | null,
 ): string | null {
   if (!appBaseUrl || !assetId || !ASSET_ID.test(assetId)) return null;
-  return `${appBaseUrl.replace(/\/+$/, '')}/api/brand/${assetId}`;
+  // Trailing slashes trimmed without a regular expression (CodeQL: polynomial regex on input).
+  let end = appBaseUrl.length;
+  while (end > 0 && appBaseUrl[end - 1] === '/') end -= 1;
+  return `${appBaseUrl.slice(0, end)}/api/brand/${assetId}`;
 }
 
 /**

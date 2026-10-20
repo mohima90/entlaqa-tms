@@ -23,7 +23,8 @@ export async function LanguageToggle({
       href={`/${target}${path === '/' ? '' : path}`}
       hrefLang={target}
       lang={target}
-      aria-label={t('switchLanguageAria')}
+      // Icon only: the name says what it does. With its visible text, that text is the name (WCAG 2.5.3).
+      aria-label={topBar ? t('switchLanguageAria') : undefined}
       title={topBar ? t('switchLanguage') : undefined}
       className={cn(
         'inline-flex items-center gap-2 text-sm font-medium text-text-muted no-underline hover:bg-surface-hover hover:text-text',

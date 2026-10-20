@@ -1,12 +1,12 @@
-# Nightly/weekly dependency updates (Development Plan §5.3, §8.3 supply chain). Every update is a PR
-# that must pass all CI gates; the PO merges.
+# Monthly dependency updates (PO, 20 Oct 2026: monthly instead of weekly; Development Plan §5.3, §8.3
+# supply chain). Security is not left to these PRs: gate 11 scans every PR and GitHub raises security
+# alerts. Every update is a PR that must pass all CI gates; Claude checks it, the PO merges.
 version: 2
 updates:
   - package-ecosystem: npm
     directory: /
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
       time: '05:00'
       timezone: Asia/Riyadh
     open-pull-requests-limit: 10
@@ -15,7 +15,7 @@ updates:
       # major. Major Node upgrades are a deliberate change (runtime + CI + Vercel), not a Dependabot PR.
       - dependency-name: '@types/node'
         update-types: ['version-update:semver-major']
-    # One combined pull request per week for every minor/patch update (PO request, 4 Oct 2026: fewer,
+    # One combined pull request per month for every minor/patch update (PO request, 4 Oct 2026: fewer,
     # bigger updates). Major versions still come one by one — they need a deliberate look.
     groups:
       npm-minor-patch:
@@ -25,8 +25,7 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
       time: '05:00'
       timezone: Asia/Riyadh
     groups:
@@ -38,8 +37,7 @@ updates:
   - package-ecosystem: docker
     directory: /infra/docker
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
       time: '05:00'
       timezone: Asia/Riyadh
     groups:
@@ -49,8 +47,7 @@ updates:
   - package-ecosystem: docker-compose
     directory: /infra/docker
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
       time: '05:00'
       timezone: Asia/Riyadh
     # Database major versions are a deliberate migration (pg_upgrade of customer data; must match the

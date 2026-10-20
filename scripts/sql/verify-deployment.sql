@@ -486,6 +486,9 @@ begin
       ('private.release_branding_file(uuid, uuid)', 'file_guard', array['file_guard'], false),
       ('private.claim_brand_asset_work(integer)', 'file_guard', array['file_guard', 'authenticated'], true),
       ('private.publish_brand_asset(uuid, text, text, bytea)', 'file_guard', array['file_guard', 'authenticated'], true),
+      -- Branding images without a malware scan (PO, 20 Oct 2026; 20261023100600): the web app (app_server, an
+      -- Organization Admin's own upload, checked inside) and the worker (app_worker system claims).
+      ('private.publish_brand_image(uuid, text, text, bigint, text, bytea)', 'file_guard', array['file_guard', 'authenticated'], true),
       ('private.note_brand_asset_failure(uuid, text)', 'file_guard', array['file_guard', 'authenticated'], true),
       ('private.public_brand_asset(uuid)', 'file_guard', array['file_guard', 'authenticated'], true),
       ('private.public_brand_asset_meta(uuid)', 'file_guard', array['file_guard', 'authenticated'], true),
@@ -594,6 +597,7 @@ begin
         -- Branding (WP-ADM-02)
         'private.tenant_branding_files()', 'private.claim_brand_asset_work(integer)',
         'private.publish_brand_asset(uuid,text,text,bytea)', 'private.note_brand_asset_failure(uuid,text)',
+        'private.publish_brand_image(uuid,text,text,bigint,text,bytea)',
         'private.public_brand_asset(uuid)', 'private.public_brand_asset_meta(uuid)',
         'private.public_tenant_brand(text)', 'private.branding_image_names(uuid[])')
   loop

@@ -21,6 +21,7 @@ import {
 } from '../auth/auth-field';
 import { AuthIcon } from '../auth/auth-icons';
 import {
+  type AuthBrand,
   AuthLanguageSwitch,
   type AuthPanelTexts,
   AuthShell,
@@ -79,6 +80,8 @@ export interface ResetPasswordTexts extends PasswordRuleLabels {
 
 export interface ResetPasswordViewProps {
   readonly locale: 'ar' | 'en';
+  /** The organization's look (logo, picture; WP-ADM-02), or null for Jadarat's. */
+  readonly brand?: AuthBrand | null;
   /** The Kawadir frame (logo, portal line, brand panel). */
   readonly shell: AuthShellTexts;
   readonly panel: AuthPanelTexts;
@@ -320,6 +323,7 @@ function ResetForm({
  */
 export function ResetPasswordView({
   locale,
+  brand,
   shell,
   panel,
   toggle,
@@ -405,6 +409,7 @@ export function ResetPasswordView({
   return (
     <AuthShell
       variant="simple"
+      brand={brand}
       texts={shell}
       panel={panel}
       // The language switch keeps the link working: the token goes along in the fragment only.

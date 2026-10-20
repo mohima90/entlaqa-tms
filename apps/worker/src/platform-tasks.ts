@@ -4,6 +4,7 @@ import {
   type FileObjectStore,
   type OrphanSweepSettings,
   type Scanner,
+  createBrandAssetTask,
   createClamdScanner,
   createFileHousekeepingTask,
   createFileScanTask,
@@ -96,7 +97,8 @@ function workerStore(settings: { url: string; secretKey: string }): FileObjectSt
  * (WP-ADM-01: test e-mails of the sender settings, messages waiting for a sender, the delivery log's
  * housekeeping), and — with
  * Storage configured — file housekeeping, bulk user imports (T-M2-12: they read scanned files and write
- * their reports) and, with a scanner, the malware scan (T-M2-18).
+ * their reports), the branding images' public copies (WP-ADM-02) and, with a scanner, the malware scan
+ * (T-M2-18).
  */
 export function platformTasks(deps: PlatformTaskDependencies): readonly PlatformTask[] {
   const recoveryLinksFor = deps.recoveryLinksFor ?? authAdminRecoveryLinks;
@@ -155,6 +157,13 @@ export function platformTasks(deps: PlatformTaskDependencies): readonly Platform
         files: createWorkerFiles({ store }),
         log: deps.log,
         ...(deps.importSending ? { sending: deps.importSending } : {}),
+      }),
+      // Branding images (WP-ADM-02): copies of clean images in use, for the sign-in page and e-mails.
+      createBrandAssetTask({
+        withPlatformTx: deps.withPlatformTx,
+        withSystemTx: deps.withSystemTx,
+        files: createWorkerFiles({ store }),
+        log: deps.log,
       }),
     );
     if (deps.scanner) {

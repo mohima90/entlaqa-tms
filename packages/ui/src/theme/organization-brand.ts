@@ -30,6 +30,11 @@ export interface OrganizationBrandInput {
   readonly primary: string;
   /** Second brand colour; defaults to the primary. */
   readonly accent?: string | undefined;
+  /**
+   * «Use gradient» (Kawadir Branding page; default on): off, the current navigation entry, primary buttons
+   * and brand accents carry the primary colour alone — the gradient's end is its start.
+   */
+  readonly gradient?: boolean | undefined;
 }
 
 export interface BrandAdjustment {
@@ -169,9 +174,10 @@ type NavGradientRole = Extract<
 function deriveNav(
   primary: FamilyColors,
   accent: FamilyColors | null,
+  gradient: boolean,
 ): Readonly<Record<NavGradientRole, Hex>> {
   const start = primary.fill;
-  const end = accent ? accent.fill : primary.hover;
+  const end = !gradient ? start : accent ? accent.fill : primary.hover;
   const onCurrent = solve(
     primary.onFill,
     BLACK,
@@ -236,7 +242,7 @@ export function deriveOrganizationBrand(
       ...familyRoles('accent', a),
       'surface-selected': p.subtle,
       'focus-ring': p.text,
-      ...deriveNav(p, accent === primary ? null : a),
+      ...deriveNav(p, accent === primary ? null : a, input.gradient !== false),
     };
   };
 

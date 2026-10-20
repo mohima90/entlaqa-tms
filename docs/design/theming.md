@@ -69,7 +69,7 @@ Components use roles, never palette steps or raw colours. Navigation entries use
 - The result is re-checked against **all** pairs; a failure throws (by construction it cannot happen; the tests run ~530 colours: white, black, pure yellow, greys, a 216-colour grid and seeded random colours, with and without an accent).
 - `adjustments` tells the admin preview when the colour shown differs from the one chosen (e.g. yellow `#FFD500` → `#8A7300` for buttons in light mode). The Storybook story «Theme preview / Colours and contrast» shows these notes.
 - Only `#RRGGBB` values for known roles can be written (`normalizeHex`, `brandLayerCss`): tenant input can never inject CSS.
-- **Not built yet** (EP-M2-TEN): the admin screen, storage, and loading the layer in the app. Planned delivery: the server derives the layer from the stored colour and renders it as `<style nonce={nonce}>` in the locale layout after the stylesheet (the CSP allows only nonce'd styles; no `style=""` attributes). Derive at save time too, so the admin sees the adjustments before publishing.
+- **Built (WP-ADM-02, 23 Oct 2026; `docs/engineering/branding.md`):** the Branding page (primary + secondary colour, «Use gradient» — `gradient: false` makes the current entry one colour —, presets, a WCAG 2.2 AA warning on the colours as chosen, live preview with unsaved values through CSS custom properties set by the CSSOM), storage (`platform.tenant_branding`) and the layer in the app: the shell and the sign-in page render `brandLayerCss` in a `<style>` with the request's nonce. The e-mail colours are derived at save time and stored with the branding (§6 point 1).
 
 ## 4. Replacing the look (the visual round)
 

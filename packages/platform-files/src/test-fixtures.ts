@@ -69,6 +69,33 @@ const hex = (value: string) => new Uint8Array(Buffer.from(value.replaceAll(' ', 
 /** PNG signature and the start of its IHDR chunk (1 x 1 pixel). */
 export const PNG = hex('89504e47 0d0a1a0a 0000000d 49484452 00000001 00000001 08020000 00');
 
+const be32 = (n: number) =>
+  Buffer.from([(n >>> 24) & 0xff, (n >>> 16) & 0xff, (n >>> 8) & 0xff, n & 0xff]);
+
+/** One PNG chunk (length, type, data, CRC). */
+export function pngChunk(type: string, data: Uint8Array | readonly number[]): Uint8Array {
+  const body = Buffer.concat([Buffer.from(type, 'latin1'), Buffer.from(data)]);
+  return new Uint8Array(Buffer.concat([be32(body.length - 4), body, be32(crc32(body) >>> 0)]));
+}
+
+/** A complete PNG of that size (RGBA, sRGB; the pixel data is not decoded by our code), `extra` before IDAT. */
+export function pngImage(
+  width: number,
+  height: number,
+  extra: readonly Uint8Array[] = [],
+): Uint8Array {
+  return new Uint8Array(
+    Buffer.concat([
+      hex('89504e47 0d0a1a0a'),
+      pngChunk('IHDR', Buffer.concat([be32(width), be32(height), Buffer.from([8, 6, 0, 0, 0])])),
+      pngChunk('sRGB', [0]),
+      ...extra,
+      pngChunk('IDAT', [0x78, 0x9c, 0x63, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01]),
+      pngChunk('IEND', []),
+    ]),
+  );
+}
+
 /** OLE compound file (legacy .xls, password-protected Office files): its signature, then zeros. */
 export const CFB = new Uint8Array(Buffer.concat([hex('d0cf11e0 a1b11ae1'), Buffer.alloc(504)]));
 

@@ -152,8 +152,11 @@ describe.skipIf(!configured)('e-mail pipeline against PostgreSQL', () => {
       error_code: null,
     });
     expect(row?.sent_at).toEqual(expect.any(String));
-    expect(sent).toHaveLength(1);
-    expect(sent[0]).toMatchObject({
+    // Other suites in the same database may leave messages waiting for a sender (NO_SENDER, WP-ADM-01);
+    // this pass may deliver them too, so only this test's invitation is counted.
+    const mine = () => sent.filter((email) => email.to === 'noura@test.example');
+    expect(mine()).toHaveLength(1);
+    expect(mine()[0]).toMatchObject({
       to: 'noura@test.example',
       idempotencyKey: row?.id,
       subject: 'دعوة للانضمام إلى نظام التدريب في شركة الاختبار',
@@ -162,7 +165,7 @@ describe.skipIf(!configured)('e-mail pipeline against PostgreSQL', () => {
 
     // Another pass sends nothing again.
     await pass(transport);
-    expect(sent).toHaveLength(1);
+    expect(mine()).toHaveLength(1);
   });
 
   it('records a refused address as failed; without a sender the message waits (nothing lost, WP-ADM-01)', async () => {
@@ -211,7 +214,7 @@ describe.skipIf(!configured)('e-mail pipeline against PostgreSQL', () => {
     await pass({
       provider: 'resend',
       send: (email) => {
-        keys.push(email.idempotencyKey);
+        if (email.to === 'later@test.example') keys.push(email.idempotencyKey);
         return Promise.resolve({ providerMessageId: 'msg_retry' });
       },
     });

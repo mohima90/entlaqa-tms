@@ -216,6 +216,9 @@ begin
     'Storage''s login role reads no file metadata itself');
   perform tests.assert_eq((select string_agg(purpose || '=' || bucket || '/' || retention_class || '/' || upload_by, ',' order by purpose)
                            from platform.file_purposes),
+    -- (Branding images: WP-ADM-02, 20261023100000; limits in 99_branding_1_owner.sql.)
+    'platform.brand_favicon=images/owner_lifetime/user,platform.brand_logo=images/owner_lifetime/user,'
+    'platform.brand_sign_in_image=images/owner_lifetime/user,'
     'platform.profile_photo=images/owner_lifetime/user,platform.user_import=imports/import/user,platform.user_import_report=generated/import/worker',
     'the R1 purposes');
   -- Download links live at most 5 minutes (ADR 0006 §4), in the purposes and in every grant.

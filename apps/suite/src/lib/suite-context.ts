@@ -1,5 +1,9 @@
 import 'server-only';
-import { DEFAULT_TENANT_REGIONAL, type TenantRegional } from '@jadarat/platform-db';
+import {
+  DEFAULT_TENANT_REGIONAL,
+  type TenantBrand,
+  type TenantRegional,
+} from '@jadarat/platform-db';
 import type { AppLocale } from '@jadarat/platform-i18n';
 import {
   type Grant,
@@ -12,7 +16,8 @@ import {
 import { redirect } from 'next/navigation';
 import { getConfigStatus } from './config-status';
 import { myIdentityQuery } from './users-queries';
-import { getSessionState, redirectFor } from './session-state';
+import { requestSessionState } from './request-session';
+import { redirectFor } from './session-state';
 
 /** What every suite page needs before rendering (T-M1-D03 gating + T-M2-04 navigation). */
 export interface SuiteContext {
@@ -42,6 +47,11 @@ export interface SuiteContext {
    * of new people (T-M2-22, organization profile). The defaults in the preview without data.
    */
   readonly regional: TenantRegional;
+  /**
+   * The organization's look (WP-ADM-02, FR-ADM-07): colours, gradient and published images for the shell;
+   * null: the Jadarat look (also in the preview without data).
+   */
+  readonly brand: TenantBrand | null;
 }
 
 /** Which navigation entries the member's grants open (deny by default: everything starts false). */
@@ -134,9 +144,10 @@ export async function getSuiteContext(locale: AppLocale): Promise<SuiteContext> 
       me: null,
       idleMinutes: null,
       regional: DEFAULT_TENANT_REGIONAL,
+      brand: null,
     };
   }
-  const session = await getSessionState(status);
+  const session = await requestSessionState();
   const elsewhere = redirectFor(locale, session, 'suite');
   if (elsewhere !== null || session.kind !== 'organization')
     redirect(elsewhere ?? `/${locale}/sign-in`);
@@ -156,6 +167,7 @@ export async function getSuiteContext(locale: AppLocale): Promise<SuiteContext> 
       me: null,
       idleMinutes: null,
       regional,
+      brand: session.brand ?? null,
     };
   }
   const grants = await loadMemberGrants();
@@ -173,5 +185,6 @@ export async function getSuiteContext(locale: AppLocale): Promise<SuiteContext> 
       : null,
     idleMinutes: tenant?.sessionIdleMinutes ?? null,
     regional,
+    brand: session.brand ?? null,
   };
 }

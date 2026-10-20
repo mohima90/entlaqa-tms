@@ -2,8 +2,10 @@ import 'server-only';
 import { type TenantClaims, hasTenant } from '@jadarat/platform-core';
 import {
   type CurrentTenant,
+  type TenantBrand,
   getCurrentTenant,
   getSessionAccess,
+  getTenantBrand,
   withUserTx,
 } from '@jadarat/platform-db';
 import { getVerifiedClaims } from '@jadarat/platform-identity/next';
@@ -31,6 +33,11 @@ export type SessionState =
       readonly kind: 'organization';
       readonly claims: TenantClaims;
       readonly tenant: CurrentTenant | null;
+      /**
+       * The organization's look (WP-ADM-02), read in the same transaction as the tenant; absent without a
+       * database (the Jadarat look).
+       */
+      readonly brand?: TenantBrand;
     };
 
 export interface SessionStateDeps {
@@ -38,6 +45,8 @@ export interface SessionStateDeps {
   readonly withUserTx: typeof withUserTx;
   readonly getCurrentTenant: typeof getCurrentTenant;
   readonly getSessionAccess: typeof getSessionAccess;
+  /** The organization's look (WP-ADM-02); without it, none is read. */
+  readonly getTenantBrand?: typeof getTenantBrand;
 }
 
 const defaultDeps: SessionStateDeps = {
@@ -45,6 +54,7 @@ const defaultDeps: SessionStateDeps = {
   withUserTx,
   getCurrentTenant,
   getSessionAccess,
+  getTenantBrand,
 };
 
 export async function getSessionState(
@@ -57,8 +67,14 @@ export async function getSessionState(
   const verified = claims.value;
   if (!hasTenant(verified)) return { kind: 'no-organization' };
   if (!status.database) return { kind: 'organization', claims: verified, tenant: null };
-  const tenant = await deps.withUserTx(verified, (tx) => deps.getCurrentTenant(tx));
-  if (tenant) return { kind: 'organization', claims: verified, tenant };
+  const readBrand = deps.getTenantBrand;
+  const { tenant, brand } = await deps.withUserTx(verified, async (tx) => {
+    const current = await deps.getCurrentTenant(tx);
+    return { tenant: current, brand: current && readBrand ? await readBrand(tx) : null };
+  });
+  if (tenant) {
+    return { kind: 'organization', claims: verified, tenant, ...(brand ? { brand } : {}) };
+  }
   // Refused: ask the database why (only on this path, so every other request stays one read).
   const access = await deps.withUserTx(verified, (tx) => deps.getSessionAccess(tx));
   switch (access.state) {

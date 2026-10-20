@@ -76,7 +76,7 @@ describe('queueEmail', () => {
       variables,
       appBaseUrl: 'https://tms.example.com',
     });
-    const html = String((db.insertEmailDelivery.mock.calls[0]?.[1] as { html: string }).html);
+    const html = (db.insertEmailDelivery.mock.calls[0]?.[1] as { html: string }).html;
     expect(html).toContain(
       'src="https://tms.example.com/api/brand/3c4d5e6f-7081-4a9b-8c1d-2e3f4a5b6c7d"',
     );

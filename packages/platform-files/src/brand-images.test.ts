@@ -56,7 +56,14 @@ describe('checkBrandImageUpload (by name and size, before the upload)', () => {
   });
 
   it('refuses SVG, GIF, ICO, HTML and names without an extension', () => {
-    for (const name of ['logo.svg', 'logo.gif', 'favicon.ico', 'logo.html', 'logo', 'logo.png.exe']) {
+    for (const name of [
+      'logo.svg',
+      'logo.gif',
+      'favicon.ico',
+      'logo.html',
+      'logo',
+      'logo.png.exe',
+    ]) {
       expect(checkBrandImageUpload('favicon', name, 100), name).toBe('TYPE_NOT_ALLOWED');
     }
   });

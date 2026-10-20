@@ -18,7 +18,7 @@ import {
 } from '../../lib/sign-in-steps';
 import { AuthField, RevealButton, authPrimaryButton } from './auth-field';
 import { AuthIcon } from './auth-icons';
-import { AuthShell, type AuthPanelTexts, type AuthShellTexts } from './auth-shell';
+import { type AuthBrand, AuthShell, type AuthPanelTexts, type AuthShellTexts } from './auth-shell';
 import { type ErrorTexts, errorText } from './error-text';
 
 export interface SignInFormLabels {
@@ -280,6 +280,8 @@ export interface SignInViewProps extends Omit<SignInFormProps, 'onStep'> {
   readonly after?: ReactNode;
   /** Inside the card, above the form (e.g. "not configured"). */
   readonly before?: ReactNode;
+  /** The organization's look on its sign-in page (WP-ADM-02); null: Jadarat's. */
+  readonly brand?: AuthBrand | null;
 }
 
 /** The sign-in page body: the Kawadir split frame around the two-step form. */
@@ -292,12 +294,14 @@ export function SignInView({
   notices,
   after,
   before,
+  brand,
   ...form
 }: SignInViewProps) {
   const [step, setStep] = useState<'email' | 'method'>('email');
   return (
     <AuthShell
       variant="split"
+      brand={brand}
       texts={shell}
       panel={panel}
       languageSwitch={languageSwitch}

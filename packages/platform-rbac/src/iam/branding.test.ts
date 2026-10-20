@@ -11,7 +11,7 @@ import { type TestRoleCode, testRoleGrants } from '../testing/former-roles';
 import {
   BrandingInput,
   type BrandingFileService,
-  brandImageStatusQueryDefinition,
+  brandImageStatusActionDefinition,
   brandingOwner,
   brandingQueryDefinition,
   confirmBrandImageUploadActionDefinition,
@@ -98,13 +98,17 @@ const input = {
   faviconFileId: null,
   signInImageFileId: null,
 };
-const derive = vi.fn((s: { primary: string | null; secondary: string | null; gradient: boolean }) =>
-  s.primary === null
-    ? { stored: null, email: null }
-    : {
-        stored: { primary: s.primary, secondary: s.gradient ? (s.secondary ?? s.primary) : s.primary },
-        email: { action: '#0F5E4E', link: '#0C4B3E' },
-      },
+const derive = vi.fn(
+  (s: { primary: string | null; secondary: string | null; gradient: boolean }) =>
+    s.primary === null
+      ? { stored: null, email: null }
+      : {
+          stored: {
+            primary: s.primary,
+            secondary: s.gradient ? (s.secondary ?? s.primary) : s.primary,
+          },
+          email: { action: '#0F5E4E', link: '#0C4B3E' },
+        },
 );
 
 beforeEach(() => {
@@ -118,13 +122,21 @@ beforeEach(() => {
 
 describe('Branding page (WP-ADM-02)', () => {
   it('the Organization Admin opens and edits it', async () => {
-    const query = createDefineQuery(runtime(forRoles('tenant_admin')).rt)(brandingQueryDefinition());
-    expect(await query({})).toEqual({ ok: true, value: { branding: record, editAccess: 'allowed' } });
+    const query = createDefineQuery(runtime(forRoles('tenant_admin')).rt)(
+      brandingQueryDefinition(),
+    );
+    expect(await query({})).toEqual({
+      ok: true,
+      value: { branding: record, editAccess: 'allowed' },
+    });
   });
 
   it('an Auditor reads it, read only', async () => {
     const query = createDefineQuery(runtime(forRoles('auditor')).rt)(brandingQueryDefinition());
-    expect(await query({})).toEqual({ ok: true, value: { branding: record, editAccess: 'denied' } });
+    expect(await query({})).toEqual({
+      ok: true,
+      value: { branding: record, editAccess: 'denied' },
+    });
   });
 
   it.each([['hr_manager'], ['training_manager'], ['learner'], ['line_manager']] as const)(
@@ -141,7 +153,9 @@ describe('Branding page (WP-ADM-02)', () => {
 
   it('NOT_CONFIGURED before the database has the branding tables', async () => {
     db.getBranding.mockResolvedValue(null);
-    const query = createDefineQuery(runtime(forRoles('tenant_admin')).rt)(brandingQueryDefinition());
+    const query = createDefineQuery(runtime(forRoles('tenant_admin')).rt)(
+      brandingQueryDefinition(),
+    );
     const result = await query({});
     expect(!result.ok && result.error.code).toBe('NOT_CONFIGURED');
   });
@@ -323,17 +337,20 @@ describe('branding images (platform-files bound by the app)', () => {
     size: 10,
     sha256: null,
   });
-  function files(purposeFound = 'platform.brand_logo'): BrandingFileService<
-    { fileId: string },
-    { url: string }
-  > & { reserve: ReturnType<typeof vi.fn>; sign: ReturnType<typeof vi.fn> } {
-    return {
-      reserve: vi.fn(() => Promise.resolve(ok({ fileId: LOGO }))),
-      sign: vi.fn(() => Promise.resolve(ok({ url: 'https://storage.example/upload' }))),
+  /** The file service's mocks as plain properties (not methods: no unbound `this`). */
+  function files(purposeFound = 'platform.brand_logo') {
+    const service = {
+      reserve: vi.fn<BrandingFileService<{ fileId: string }, { url: string }>['reserve']>(() =>
+        Promise.resolve(ok({ fileId: LOGO })),
+      ),
+      sign: vi.fn<BrandingFileService<{ fileId: string }, { url: string }>['sign']>(() =>
+        Promise.resolve(ok({ url: 'https://storage.example/upload' })),
+      ),
       confirm: vi.fn(() => Promise.resolve(ok(view(purposeFound) as never))),
       status: vi.fn(() => Promise.resolve(view(purposeFound) as never)),
-      purposeOf: (slot) => `platform.brand_${slot}`,
+      purposeOf: (slot: string) => `platform.brand_${slot}`,
     };
+    return service;
   }
 
   it("reserves an upload for the organization's branding, signed after the commit", async () => {
@@ -359,7 +376,12 @@ describe('branding images (platform-files bound by the app)', () => {
   it('a refused reservation is the answer; nothing is signed', async () => {
     const service = files();
     service.reserve.mockResolvedValueOnce(
-      err({ code: 'FILE_TYPE_NOT_ALLOWED', status: 422, messageKey: 'files.errors.typeNotAllowed', expose: true }),
+      err({
+        code: 'FILE_TYPE_NOT_ALLOWED',
+        status: 422,
+        messageKey: 'files.errors.typeNotAllowed',
+        expose: true,
+      }),
     );
     const start = createDefineAction(runtime(forRoles('tenant_admin')).rt)(
       startBrandImageUploadActionDefinition(service),
@@ -396,8 +418,8 @@ describe('branding images (platform-files bound by the app)', () => {
       confirmBrandImageUploadActionDefinition(other),
     )({ slot: 'logo', fileId: LOGO });
     expect(!refused.ok && refused.error.code).toBe('NOT_FOUND');
-    const status = createDefineQuery(runtime(forRoles('tenant_admin')).rt)(
-      brandImageStatusQueryDefinition(other),
+    const status = createDefineAction(runtime(forRoles('tenant_admin')).rt)(
+      brandImageStatusActionDefinition(other),
     );
     const result = await status({ slot: 'logo', fileId: LOGO });
     expect(!result.ok && result.error.code).toBe('NOT_FOUND');

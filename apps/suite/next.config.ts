@@ -4,6 +4,7 @@ import createNextIntlPlugin from 'next-intl/plugin';
 import {
   SECRET_URL_PAGES,
   STATIC_FALLBACK_CSP,
+  brandImageHeaders,
   secretUrlHeaders,
   staticSecurityHeaders,
 } from './src/lib/security-headers';
@@ -38,6 +39,8 @@ const nextConfig: NextConfig = {
       { source: '/:path*', headers: [...staticSecurityHeaders] },
       // Invitation and password-reset links carry a token: no referrer (overrides the entry above).
       ...SECRET_URL_PAGES.map((source) => ({ source, headers: [...secretUrlHeaders] })),
+      // Branding images (WP-ADM-02): mail clients embed the organization's logo from another origin.
+      { source: '/api/brand/:path*', headers: [...brandImageHeaders] },
       {
         source: '/_next/static/:path*',
         headers: [{ key: 'Content-Security-Policy', value: STATIC_FALLBACK_CSP }],

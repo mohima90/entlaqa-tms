@@ -43,11 +43,15 @@ describe('the Jadarat look', () => {
 
 describe('stored colours', () => {
   it('upper-cases, and keeps one colour without the gradient', () => {
-    expect(storedBrandColors({ primary: '#0f5e4e', secondary: '#13806a', gradient: true })).toEqual({
-      primary: '#0F5E4E',
-      secondary: '#13806A',
-    });
-    expect(storedBrandColors({ primary: '#0F5E4E', secondary: '#13806A', gradient: false })).toEqual({
+    expect(storedBrandColors({ primary: '#0f5e4e', secondary: '#13806a', gradient: true })).toEqual(
+      {
+        primary: '#0F5E4E',
+        secondary: '#13806A',
+      },
+    );
+    expect(
+      storedBrandColors({ primary: '#0F5E4E', secondary: '#13806A', gradient: false }),
+    ).toEqual({
       primary: '#0F5E4E',
       secondary: '#0F5E4E',
     });
@@ -65,8 +69,15 @@ describe('contrast check (WCAG 2.2 AA, BR-BRD-c)', () => {
   it('passes for every preset: white text on both ends, the colour as text on white', () => {
     for (const preset of BRAND_PRESETS) {
       const checks = checkBrandContrast({ ...preset, gradient: true });
-      expect(checks.map((c) => c.id)).toEqual(['textOnPrimary', 'textOnSecondary', 'primaryOnWhite']);
-      expect(checks.every((c) => c.pass), preset.id).toBe(true);
+      expect(checks.map((c) => c.id)).toEqual([
+        'textOnPrimary',
+        'textOnSecondary',
+        'primaryOnWhite',
+      ]);
+      expect(
+        checks.every((c) => c.pass),
+        preset.id,
+      ).toBe(true);
     }
   });
 
@@ -88,12 +99,12 @@ describe('contrast check (WCAG 2.2 AA, BR-BRD-c)', () => {
 
   it('decides on the exact ratio at 4.5 : 1', () => {
     // #767676 on white is 4.54 : 1 (passes); #777777 is 4.48 : 1 (fails).
-    expect(checkBrandContrast({ primary: '#767676', secondary: null, gradient: false })[0]?.pass).toBe(
-      true,
-    );
-    expect(checkBrandContrast({ primary: '#777777', secondary: null, gradient: false })[0]?.pass).toBe(
-      false,
-    );
+    expect(
+      checkBrandContrast({ primary: '#767676', secondary: null, gradient: false })[0]?.pass,
+    ).toBe(true);
+    expect(
+      checkBrandContrast({ primary: '#777777', secondary: null, gradient: false })[0]?.pass,
+    ).toBe(false);
   });
 });
 
@@ -102,7 +113,9 @@ describe('the product stays readable whatever was chosen', () => {
     const brand = brandFromSettings({ primary: '#FFD500', secondary: '#FFE866', gradient: true });
     expect(brand).not.toBeNull();
     const light = brand?.layer.light ?? {};
-    expect(contrastRatio(light['on-primary'] ?? '', light.primary ?? '')).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(light['on-primary'] ?? '', light.primary ?? '')).toBeGreaterThanOrEqual(
+      4.5,
+    );
     expect(brand?.adjustments.length).toBeGreaterThan(0);
   });
 

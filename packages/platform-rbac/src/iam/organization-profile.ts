@@ -166,7 +166,10 @@ export function updateOrganizationProfileActionDefinition(): ActionDefinition<
     input: OrganizationProfileInput,
     handler: async ({ ctx, input }) => {
       const { version, nameEn, nameAr, ...profile } = input;
-      let names: { nameAr: string; nameEn: string | null } = { nameAr: nameAr ?? '', nameEn: nameEn ?? null };
+      let names: { nameAr: string; nameEn: string | null } = {
+        nameAr: nameAr ?? '',
+        nameEn: nameEn ?? null,
+      };
       if (nameAr === undefined || nameEn === undefined) {
         const stored = await getOrganizationProfile(ctx.tx);
         if (!stored) return err(appError('NOT_FOUND'));

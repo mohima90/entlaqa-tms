@@ -38,7 +38,9 @@ describe('branding image publishing task (WP-ADM-02)', () => {
   it('reads each due image in its tenant and publishes the checked bytes', async () => {
     db.claimBrandAssetWork.mockResolvedValue([{ tenantId: TENANT, fileId: FILE, kind: 'logo' }]);
     db.publishBrandAsset.mockResolvedValue('3c4d5e6f-7081-4a9b-8c1d-2e3f4a5b6c7d');
-    const { task, files, log } = setup(() => Promise.resolve(streamOf(PNG.subarray(0, 8), PNG.subarray(8))));
+    const { task, files, log } = setup(() =>
+      Promise.resolve(streamOf(PNG.subarray(0, 8), PNG.subarray(8))),
+    );
     expect(task.name).toBe(BRAND_ASSET_TASK);
     await expect(task.run({ jobId: 'job-1' })).resolves.toBe(false);
     expect(db.claimBrandAssetWork).toHaveBeenCalledWith({}, BRAND_ASSET_BATCH);
@@ -56,7 +58,10 @@ describe('branding image publishing task (WP-ADM-02)', () => {
     const { task, log } = setup(() => Promise.resolve(streamOf(svg)));
     await task.run({ jobId: 'job-2' });
     expect(db.publishBrandAsset).not.toHaveBeenCalled();
-    expect(log).toHaveBeenCalledWith('warning', `branding image ${FILE} not published: TYPE_NOT_ALLOWED`);
+    expect(log).toHaveBeenCalledWith(
+      'warning',
+      `branding image ${FILE} not published: TYPE_NOT_ALLOWED`,
+    );
   });
 
   it('stops reading past the purpose limit', async () => {
@@ -77,12 +82,18 @@ describe('branding image publishing task (WP-ADM-02)', () => {
     const { task, files, log } = setup(() => Promise.reject(unavailable));
     await expect(task.run({ jobId: 'job-4' })).resolves.toBe(false);
     expect(files.openScannedFile).toHaveBeenCalledTimes(1);
-    expect(log).toHaveBeenCalledWith('warning', 'branding images: storage unavailable (DOWN); later');
+    expect(log).toHaveBeenCalledWith(
+      'warning',
+      'branding images: storage unavailable (DOWN); later',
+    );
 
     const broken = Object.assign(new Error('secret detail'), { code: 'FILE_NOT_CLEAN' });
     const second = setup(() => Promise.reject(broken));
     await second.task.run({ jobId: 'job-5' });
-    expect(second.log).toHaveBeenCalledWith('error', `branding image ${FILE} not published: FILE_NOT_CLEAN`);
+    expect(second.log).toHaveBeenCalledWith(
+      'error',
+      `branding image ${FILE} not published: FILE_NOT_CLEAN`,
+    );
     expect(JSON.stringify(second.log.mock.calls)).not.toContain('secret detail');
   });
 

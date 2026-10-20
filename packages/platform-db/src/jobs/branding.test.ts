@@ -41,18 +41,26 @@ describe('branding, worker side (WP-ADM-02)', () => {
       { tenant_id: TENANT, file_id: FILE, kind: 'logo' },
       { tenant_id: TENANT, file_id: FILE, kind: 'banner' },
     ]);
-    expect(await claimBrandAssetWork(tx, 20)).toEqual([{ tenantId: TENANT, fileId: FILE, kind: 'logo' }]);
+    expect(await claimBrandAssetWork(tx, 20)).toEqual([
+      { tenantId: TENANT, fileId: FILE, kind: 'logo' },
+    ]);
     expect(executed[1]?.sql).toContain('private.claim_brand_asset_work');
     expect(executed[1]?.params).toContain(20);
   });
 
   it('publishes the bytes; a mismatch is a DomainError', async () => {
     const { tx, executed } = fakeTx([{ id: ASSET }]);
-    expect(await publishBrandAsset(tx, { fileId: FILE, kind: 'favicon' }, new Uint8Array([1, 2]))).toBe(
-      ASSET,
-    );
+    expect(
+      await publishBrandAsset(tx, { fileId: FILE, kind: 'favicon' }, new Uint8Array([1, 2])),
+    ).toBe(ASSET);
     expect(executed[0]?.sql).toContain('private.publish_brand_asset');
-    expect(await publishBrandAsset(fakeTx([{ id: null }]).tx, { fileId: FILE, kind: 'logo' }, new Uint8Array([1]))).toBeNull();
+    expect(
+      await publishBrandAsset(
+        fakeTx([{ id: null }]).tx,
+        { fileId: FILE, kind: 'logo' },
+        new Uint8Array([1]),
+      ),
+    ).toBeNull();
     const mismatch = Object.assign(new Error('differs'), { code: 'JB002' });
     await expect(
       publishBrandAsset(fakeTx(mismatch).tx, { fileId: FILE, kind: 'logo' }, new Uint8Array([1])),
@@ -70,19 +78,25 @@ describe('branding, worker side (WP-ADM-02)', () => {
     forgetBrandingDeployedForTests();
     expect(
       await getEmailBrand(
-        fakeTx(deployed, [{ email_action_color: '#0F5E4E', email_link_color: '#0C4B3E', logo_asset_id: ASSET }]).tx,
+        fakeTx(deployed, [
+          { email_action_color: '#0F5E4E', email_link_color: '#0C4B3E', logo_asset_id: ASSET },
+        ]).tx,
       ),
     ).toEqual({ actionColor: '#0F5E4E', linkColor: '#0C4B3E', logoAssetId: ASSET });
     forgetBrandingDeployedForTests();
     expect(
       await getEmailBrand(
-        fakeTx(deployed, [{ email_action_color: 'red', email_link_color: '#0C4B3E', logo_asset_id: ASSET }]).tx,
+        fakeTx(deployed, [
+          { email_action_color: 'red', email_link_color: '#0C4B3E', logo_asset_id: ASSET },
+        ]).tx,
       ),
     ).toEqual({ actionColor: null, linkColor: null, logoAssetId: ASSET });
     forgetBrandingDeployedForTests();
     expect(
       await getEmailBrand(
-        fakeTx(deployed, [{ email_action_color: null, email_link_color: null, logo_asset_id: null }]).tx,
+        fakeTx(deployed, [
+          { email_action_color: null, email_link_color: null, logo_asset_id: null },
+        ]).tx,
       ),
     ).toBeNull();
   });

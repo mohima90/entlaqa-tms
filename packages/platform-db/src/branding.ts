@@ -124,7 +124,7 @@ function jadaratLook(slug: string): TenantBrand {
 
 function brandOf(row: Row): TenantBrand {
   return {
-    slug: String(row.slug ?? ''),
+    slug: typeof row.slug === 'string' ? row.slug : '',
     primaryColor: text(row.primary_color),
     secondaryColor: text(row.secondary_color),
     useGradient: row.use_gradient !== false,
@@ -153,8 +153,9 @@ function settingsOf(row: Row): BrandingSettings {
   };
 }
 
-const FILE_COLUMN: Readonly<Record<BrandImageKind, 'logoFileId' | 'faviconFileId' | 'signInImageFileId'>> =
-  { logo: 'logoFileId', favicon: 'faviconFileId', sign_in_image: 'signInImageFileId' };
+const FILE_COLUMN: Readonly<
+  Record<BrandImageKind, 'logoFileId' | 'faviconFileId' | 'signInImageFileId'>
+> = { logo: 'logoFileId', favicon: 'faviconFileId', sign_in_image: 'signInImageFileId' };
 
 /** The Branding page's record (RLS: the claims' organization), or null without the tables or a tenant. */
 export async function getBranding(tx: UserTx): Promise<BrandingRecord | null> {
@@ -199,12 +200,18 @@ export async function getBranding(tx: UserTx): Promise<BrandingRecord | null> {
   }
   const image = (kind: BrandImageKind): BrandImageState | null => {
     const id = settings[FILE_COLUMN[kind]];
-    return id === null ? null : (states.get(id) ?? { fileId: id, assetId: null, status: null, name: null });
+    return id === null
+      ? null
+      : (states.get(id) ?? { fileId: id, assetId: null, status: null, name: null });
   };
   const editor = text(row.editor_name_ar);
   return {
     ...settings,
-    images: { logo: image('logo'), favicon: image('favicon'), sign_in_image: image('sign_in_image') },
+    images: {
+      logo: image('logo'),
+      favicon: image('favicon'),
+      sign_in_image: image('sign_in_image'),
+    },
     updatedAt: row.updated_at ? new Date(row.updated_at as string | Date) : null,
     updatedBy: editor ? { nameAr: editor, nameEn: text(row.editor_name_en) } : null,
     version: row.version === null || row.version === undefined ? 0 : Number(row.version),
@@ -277,7 +284,8 @@ export async function saveBranding(
     where t.id = (select private.current_tenant_id())
     for no key update of t`);
   if (!current) return { outcome: 'refused' };
-  const stored = current.version === null || current.version === undefined ? 0 : Number(current.version);
+  const stored =
+    current.version === null || current.version === undefined ? 0 : Number(current.version);
   if (stored !== version) return { outcome: 'conflict' };
   const before = settingsOf(current);
   const { emailActionColor, emailLinkColor, ...after } = input;
@@ -307,13 +315,13 @@ export async function saveBranding(
         returning id`);
       if (!names) return { outcome: 'refused' };
     }
-    return { outcome: 'updated', before, after, version: Number(saved.version) };
+    return { outcome: 'updated', before, after, version: saved.version };
   } catch (error) {
     const pg = pgError(error);
-    if (pg?.code === 'JB001') return { outcome: 'invalid', field: refusedImage(pg.message ?? '') };
-    if (pg?.code === '23514' && pg.constraint && CONSTRAINT_FIELDS[pg.constraint]) {
-      return { outcome: 'invalid', field: CONSTRAINT_FIELDS[pg.constraint] ?? 'primaryColor' };
-    }
+    if (pg?.code === 'JB001') return { outcome: 'invalid', field: refusedImage(pg.message) };
+    const field =
+      pg?.code === '23514' && pg.constraint ? CONSTRAINT_FIELDS[pg.constraint] : undefined;
+    if (field) return { outcome: 'invalid', field };
     // RLS (42501): not an Organization Admin any more.
     if (pg?.code === '42501') return { outcome: 'refused' };
     throw error;

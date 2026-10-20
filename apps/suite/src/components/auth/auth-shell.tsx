@@ -34,8 +34,24 @@ export interface AuthPanelTexts {
   readonly icon?: AuthIconName;
 }
 
+/**
+ * The organization's look on its sign-in page (WP-ADM-02, FR-ADM-07; Kawadir login): its logo instead of the
+ * Jadarat tile (the «Powered by ENTLAQA» line stays — what this portal is and who runs it), and its sign-in
+ * picture under the brand panel's gradient. Images are the published copies (/api/brand/<id>, same origin).
+ */
+export interface AuthBrand {
+  /** The organization's logo, or null (the Jadarat tile and name). */
+  readonly logoSrc: string | null;
+  /** The logo's text alternative: the organization's name. */
+  readonly name: string;
+  /** The sign-in picture behind the panel, or null (the gradient alone). */
+  readonly imageSrc: string | null;
+}
+
 export interface AuthShellProps {
   readonly variant: 'split' | 'simple' | 'centered';
+  /** The organization's look (null: Jadarat's). */
+  readonly brand?: AuthBrand | null | undefined;
   readonly texts: AuthShellTexts;
   /** The floating language switch (AuthLanguageSwitch). */
   readonly languageSwitch: ReactNode;
@@ -78,8 +94,27 @@ export function AuthLanguageSwitch({
   );
 }
 
-/** The Jadarat logo tile and product name (the organization's own logo replaces it later, FR-ADM-07). */
-function BrandLogo({ texts, size = 'lg' }: { texts: AuthShellTexts; size?: 'lg' | 'md' }) {
+/** The Jadarat logo tile and product name — or the organization's own logo (FR-ADM-07). */
+function BrandLogo({
+  texts,
+  size = 'lg',
+  brand,
+}: {
+  texts: AuthShellTexts;
+  size?: 'lg' | 'md';
+  brand?: AuthBrand | null | undefined;
+}) {
+  if (brand?.logoSrc) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element -- a same-origin published copy; no optimizer
+      <img
+        src={brand.logoSrc}
+        alt={brand.name}
+        className={cn('w-auto max-w-[240px] object-contain', size === 'lg' ? 'h-14' : 'h-11')}
+        data-testid="auth-brand-logo"
+      />
+    );
+  }
   return (
     <span className="inline-flex items-center gap-3">
       <span
@@ -144,12 +179,34 @@ function Mesh() {
   );
 }
 
-function SplitPanel({ panel, texts }: { panel: AuthPanelTexts; texts: AuthShellTexts }) {
+function SplitPanel({
+  panel,
+  texts,
+  imageSrc,
+}: {
+  panel: AuthPanelTexts;
+  texts: AuthShellTexts;
+  imageSrc?: string | null | undefined;
+}) {
   return (
     <aside
       className="relative hidden overflow-hidden bg-brand-panel text-on-nav-item-current lg:flex lg:w-[55%]"
       aria-label={panel.title}
     >
+      {imageSrc ? (
+        // The organization's sign-in picture (decorative) under its gradient, which keeps the text
+        // readable (WP-ADM-02; Kawadir's login image with the brand overlay).
+        <div className="pointer-events-none absolute inset-0" aria-hidden="true">
+          {/* eslint-disable-next-line @next/next/no-img-element -- a same-origin published copy */}
+          <img
+            src={imageSrc}
+            alt=""
+            className="size-full object-cover"
+            data-testid="auth-brand-image"
+          />
+          <div className="absolute inset-0 bg-brand-panel opacity-90" />
+        </div>
+      ) : null}
       {/* Kawadir's brand panel: the brand gradient (160°) with faint light circles and a dot grid. */}
       <div className="pointer-events-none absolute inset-0" aria-hidden="true">
         <div className="absolute -end-20 -top-20 size-[400px] rounded-full bg-[radial-gradient(circle,currentColor_0%,transparent_70%)] opacity-[0.08]" />
@@ -222,7 +279,8 @@ function SimplePanel({ panel }: { panel: AuthPanelTexts }) {
 }
 
 export function AuthShell(props: AuthShellProps) {
-  const { variant, texts, languageSwitch, title, subtitle, notices, children, after } = props;
+  const { variant, texts, languageSwitch, title, subtitle, notices, children, after, brand } =
+    props;
 
   if (variant === 'centered') {
     return (
@@ -230,7 +288,7 @@ export function AuthShell(props: AuthShellProps) {
         <div className="fixed end-4 top-4 z-50">{languageSwitch}</div>
         <main id="main" className="flex w-full max-w-md flex-col gap-4">
           <div className="flex justify-center">
-            <BrandLogo texts={texts} size="md" />
+            <BrandLogo texts={texts} size="md" brand={brand} />
           </div>
           {notices}
           <section className="rounded-2xl border border-border bg-surface p-6 shadow-2 sm:p-8">
@@ -267,12 +325,12 @@ export function AuthShell(props: AuthShellProps) {
         >
           {split ? (
             <div className="mb-10 flex flex-col items-center gap-4">
-              <BrandLogo texts={texts} />
+              <BrandLogo texts={texts} brand={brand} />
               <PortalLine texts={texts} className="justify-center" />
             </div>
           ) : (
             <div className="mb-8 flex flex-col gap-2">
-              <BrandLogo texts={texts} size="md" />
+              <BrandLogo texts={texts} size="md" brand={brand} />
               <PortalLine texts={texts} />
             </div>
           )}
@@ -301,7 +359,7 @@ export function AuthShell(props: AuthShellProps) {
       </div>
       {props.panel ? (
         split ? (
-          <SplitPanel panel={props.panel} texts={texts} />
+          <SplitPanel panel={props.panel} texts={texts} imageSrc={brand?.imageSrc} />
         ) : (
           <SimplePanel panel={props.panel} />
         )

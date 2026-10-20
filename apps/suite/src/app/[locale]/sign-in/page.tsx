@@ -2,11 +2,13 @@ import { routing } from '@jadarat/platform-i18n/routing';
 import { Alert } from '@jadarat/ui';
 import { hasLocale } from 'next-intl';
 import { getTranslations } from 'next-intl/server';
+import type { Metadata } from 'next';
 import { notFound, redirect } from 'next/navigation';
 import { connection } from 'next/server';
 import { AuthLanguageSwitch } from '../../../components/auth/auth-shell';
 import { EndedSessionSignOut } from '../../../components/auth/ended-session-sign-out';
 import { SignInView } from '../../../components/auth/sign-in-form';
+import { BrandStyle } from '../../../components/branding/brand-style';
 import {
   authLanguageSwitch,
   authShellTexts,
@@ -16,6 +18,21 @@ import { authErrorTexts } from '../../../lib/auth-texts';
 import { getConfigStatus } from '../../../lib/config-status';
 import { noticeFrom } from '../../../lib/password-reset-link';
 import { getSessionState, redirectFor } from '../../../lib/session-state';
+import { signInBrand } from '../../../lib/sign-in-brand';
+
+/** The organization's browser-tab icon on its sign-in page (WP-ADM-02); Jadarat's otherwise. */
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}): Promise<Metadata> {
+  const { locale } = await params;
+  if (!hasLocale(routing.locales, locale)) return {};
+  const brand = await signInBrand(locale);
+  return brand?.faviconSrc
+    ? { icons: { icon: [{ url: brand.faviconSrc }], shortcut: [{ url: brand.faviconSrc }] } }
+    : {};
+}
 
 /**
  * Sign-in (T-M1-D03; UI and UX of Kawadir ATS one-to-one, PO 16 Oct 2026): the split frame with the brand
@@ -46,73 +63,81 @@ export default async function SignInPage({
   const common = await getTranslations({ locale, namespace: 'common' });
   const notice = noticeFrom(await searchParams);
   const resetT = await getTranslations({ locale, namespace: 'passwordReset' });
+  // The organization's look (WP-ADM-02): its colours, logo and sign-in picture (Kawadir login).
+  const brand = await signInBrand(locale);
   return (
-    <SignInView
-      locale={locale}
-      disabled={!status.auth}
-      shell={await authShellTexts(locale)}
-      panel={await signInPanelTexts(locale)}
-      languageSwitch={<AuthLanguageSwitch {...await authLanguageSwitch(locale, '/sign-in')} />}
-      title={t('welcomeBack')}
-      subtitles={{ email: t('enterEmailToContinue'), method: t('passwordStepIntro') }}
-      notices={
-        notice === 'password-reset' ||
-        notice === 'session-ended' ||
-        session.kind === 'session-ended' ? (
-          <>
-            {notice === 'password-reset' ? (
-              <Alert tone="success" data-testid="password-reset-notice">
-                {resetT('notice')}
-              </Alert>
-            ) : null}
-            {notice === 'session-ended' || session.kind === 'session-ended' ? (
-              <Alert tone="info" data-testid="session-ended-notice">
-                {t('sessionEnded')}
-              </Alert>
-            ) : null}
-            {session.kind === 'session-ended' ? <EndedSessionSignOut /> : null}
-          </>
-        ) : undefined
-      }
-      before={
-        status.auth ? null : (
-          <p className="mb-4 mt-0 text-text-muted" data-testid="auth-not-configured">
-            {t('notConfigured')}
+    <>
+      <BrandStyle colors={brand?.colors ?? null} />
+      <SignInView
+        locale={locale}
+        brand={
+          brand ? { logoSrc: brand.logoSrc, name: brand.name, imageSrc: brand.imageSrc } : null
+        }
+        disabled={!status.auth}
+        shell={await authShellTexts(locale)}
+        panel={await signInPanelTexts(locale)}
+        languageSwitch={<AuthLanguageSwitch {...await authLanguageSwitch(locale, '/sign-in')} />}
+        title={t('welcomeBack')}
+        subtitles={{ email: t('enterEmailToContinue'), method: t('passwordStepIntro') }}
+        notices={
+          notice === 'password-reset' ||
+          notice === 'session-ended' ||
+          session.kind === 'session-ended' ? (
+            <>
+              {notice === 'password-reset' ? (
+                <Alert tone="success" data-testid="password-reset-notice">
+                  {resetT('notice')}
+                </Alert>
+              ) : null}
+              {notice === 'session-ended' || session.kind === 'session-ended' ? (
+                <Alert tone="info" data-testid="session-ended-notice">
+                  {t('sessionEnded')}
+                </Alert>
+              ) : null}
+              {session.kind === 'session-ended' ? <EndedSessionSignOut /> : null}
+            </>
+          ) : undefined
+        }
+        before={
+          status.auth ? null : (
+            <p className="mb-4 mt-0 text-text-muted" data-testid="auth-not-configured">
+              {t('notConfigured')}
+            </p>
+          )
+        }
+        after={
+          <p className="mb-0 mt-6 text-center text-sm text-text-muted">
+            {t('haveInvitation')}{' '}
+            <a
+              href={`/${locale}/sign-up`}
+              className="font-semibold text-primary-text"
+              data-testid="join-with-code-link"
+            >
+              {t('joinWithCode')}
+            </a>
           </p>
-        )
-      }
-      after={
-        <p className="mb-0 mt-6 text-center text-sm text-text-muted">
-          {t('haveInvitation')}{' '}
-          <a
-            href={`/${locale}/sign-up`}
-            className="font-semibold text-primary-text"
-            data-testid="join-with-code-link"
-          >
-            {t('joinWithCode')}
-          </a>
-        </p>
-      }
-      labels={{
-        email: t('emailLabel'),
-        password: t('passwordLabel'),
-        required: common('required'),
-        rememberBrowser: t('rememberBrowser'),
-        rememberBrowserHint: t('rememberBrowserHint'),
-        submit: t('submit'),
-        submitting: t('submitting'),
-        continue: t('continue'),
-        changeEmail: t('changeEmail'),
-        changeEmailAria: t('changeEmailAria'),
-        forgotShort: t('forgotShort'),
-        forgotShortAria: t('forgotShortAria'),
-        showPassword: t('showPassword'),
-        hidePassword: t('hidePassword'),
-        emailInvalid: t('emailInvalid'),
-        emailPlaceholder: t('emailPlaceholder'),
-        passwordPlaceholder: t('passwordPlaceholder'),
-      }}
-      errors={await authErrorTexts(locale)}
-    />
+        }
+        labels={{
+          email: t('emailLabel'),
+          password: t('passwordLabel'),
+          required: common('required'),
+          rememberBrowser: t('rememberBrowser'),
+          rememberBrowserHint: t('rememberBrowserHint'),
+          submit: t('submit'),
+          submitting: t('submitting'),
+          continue: t('continue'),
+          changeEmail: t('changeEmail'),
+          changeEmailAria: t('changeEmailAria'),
+          forgotShort: t('forgotShort'),
+          forgotShortAria: t('forgotShortAria'),
+          showPassword: t('showPassword'),
+          hidePassword: t('hidePassword'),
+          emailInvalid: t('emailInvalid'),
+          emailPlaceholder: t('emailPlaceholder'),
+          passwordPlaceholder: t('passwordPlaceholder'),
+        }}
+        errors={await authErrorTexts(locale)}
+      />
+    </>
   );
 }

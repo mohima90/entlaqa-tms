@@ -71,7 +71,12 @@ describe('expand-first presence (WP-ADM-02)', () => {
   });
 
   it('before the migration the shell shows the Jadarat look, the page and saving wait', async () => {
-    const { tx } = fakeTx([{ present: false }], [{ slug: 'raya' }], [{ present: false }], [{ present: false }]);
+    const { tx } = fakeTx(
+      [{ present: false }],
+      [{ slug: 'raya' }],
+      [{ present: false }],
+      [{ present: false }],
+    );
     expect(await getTenantBrand(tx)).toEqual({
       slug: 'raya',
       primaryColor: null,
@@ -83,9 +88,9 @@ describe('expand-first presence (WP-ADM-02)', () => {
       signInImageAssetId: null,
     });
     expect(await getBranding(tx)).toBeNull();
-    expect(await saveBranding(tx, { ...settings, emailActionColor: null, emailLinkColor: null }, 0)).toEqual(
-      { outcome: 'unavailable' },
-    );
+    expect(
+      await saveBranding(tx, { ...settings, emailActionColor: null, emailLinkColor: null }, 0),
+    ).toEqual({ outcome: 'unavailable' });
   });
 });
 
@@ -123,7 +128,14 @@ describe('getBranding (the page)', () => {
   it('the saved look, its images (copy and, for the uploader, status and name) and its editor', async () => {
     const { tx } = fakeTx(
       present,
-      [{ ...stored, updated_at: '2026-10-20T10:00:00Z', editor_name_ar: 'سارة', editor_name_en: 'Sara' }],
+      [
+        {
+          ...stored,
+          updated_at: '2026-10-20T10:00:00Z',
+          editor_name_ar: 'سارة',
+          editor_name_en: 'Sara',
+        },
+      ],
       [{ id: LOGO, asset_id: ASSET, status: 'clean', original_name: 'logo.png' }],
     );
     const record = await getBranding(tx);
@@ -158,7 +170,12 @@ describe('getBranding (the page)', () => {
         editor_name_en: null,
       },
     ]);
-    expect(await getBranding(tx)).toMatchObject({ version: 0, primaryColor: null, updatedBy: null, updatedAt: null });
+    expect(await getBranding(tx)).toMatchObject({
+      version: 0,
+      primaryColor: null,
+      updatedBy: null,
+      updatedAt: null,
+    });
     expect(executed).toHaveLength(2);
   });
 
@@ -184,7 +201,16 @@ describe('saveBranding', () => {
   it('inserts on the first save (version 0) and renames when the names changed', async () => {
     const { tx, executed } = fakeTx(
       present,
-      [{ ...stored, primary_color: null, secondary_color: null, logo_file_id: null, version: null, name_en: 'Old' }],
+      [
+        {
+          ...stored,
+          primary_color: null,
+          secondary_color: null,
+          logo_file_id: null,
+          version: null,
+          name_en: 'Old',
+        },
+      ],
       [{ version: 1 }],
       [{ id: 't' }],
     );
@@ -215,10 +241,22 @@ describe('saveBranding', () => {
     const refusal = (code: string, extra: Record<string, unknown> = {}) =>
       Object.assign(new Error('refused'), { code, ...extra });
     const cases: [Error, unknown][] = [
-      [refusal('JB001', { message: 'branding image favicon is not usable' }), { outcome: 'invalid', field: 'faviconFileId' }],
-      [refusal('JB001', { message: 'branding image sign_in_image is not usable' }), { outcome: 'invalid', field: 'signInImageFileId' }],
-      [refusal('JB001', { message: 'branding image logo is not usable' }), { outcome: 'invalid', field: 'logoFileId' }],
-      [refusal('23514', { constraint_name: 'tenant_branding_website_check' }), { outcome: 'invalid', field: 'websiteUrl' }],
+      [
+        refusal('JB001', { message: 'branding image favicon is not usable' }),
+        { outcome: 'invalid', field: 'faviconFileId' },
+      ],
+      [
+        refusal('JB001', { message: 'branding image sign_in_image is not usable' }),
+        { outcome: 'invalid', field: 'signInImageFileId' },
+      ],
+      [
+        refusal('JB001', { message: 'branding image logo is not usable' }),
+        { outcome: 'invalid', field: 'logoFileId' },
+      ],
+      [
+        refusal('23514', { constraint_name: 'tenant_branding_website_check' }),
+        { outcome: 'invalid', field: 'websiteUrl' },
+      ],
       [refusal('42501'), { outcome: 'refused' }],
     ];
     for (const [error, expected] of cases) {
@@ -234,16 +272,17 @@ describe('saveBranding', () => {
   it('refused without an organization or a row returned', async () => {
     expect(await saveBranding(fakeTx(present, []).tx, save, 0)).toEqual({ outcome: 'refused' });
     forgetBrandingPresenceForTests();
-    expect(await saveBranding(fakeTx(present, [{ ...stored, website_url: null }], []).tx, save, 2)).toEqual({
+    expect(
+      await saveBranding(fakeTx(present, [{ ...stored, website_url: null }], []).tx, save, 2),
+    ).toEqual({
       outcome: 'refused',
     });
   });
 
   it('lists the changed fields', () => {
-    expect(changedBrandingFields(settings, { ...settings, useGradient: false, nameEn: null })).toEqual([
-      'nameEn',
-      'useGradient',
-    ]);
+    expect(
+      changedBrandingFields(settings, { ...settings, useGradient: false, nameEn: null }),
+    ).toEqual(['nameEn', 'useGradient']);
   });
 });
 
@@ -253,8 +292,11 @@ describe('public delivery path (claim-less)', () => {
     const tx = {
       execute: (query: SQL) => {
         queries.push(dialect.sqlToQuery(query).sql);
-        if (rows instanceof Error && queries.at(-1)?.includes('private.public')) return Promise.reject(rows);
-        return Promise.resolve(rows instanceof Error ? [] : queries.at(-1)?.includes('private.public') ? rows : []);
+        if (rows instanceof Error && queries.at(-1)?.includes('private.public'))
+          return Promise.reject(rows);
+        return Promise.resolve(
+          rows instanceof Error ? [] : queries.at(-1)?.includes('private.public') ? rows : [],
+        );
       },
     };
     const db = {
@@ -283,9 +325,14 @@ describe('public delivery path (claim-less)', () => {
         sign_in_image_asset_id: null,
       },
     ]);
-    expect(await look.api.tenantBrandBySlug('raya')).toMatchObject({ nameEn: 'Al Raya', logoAssetId: ASSET });
+    expect(await look.api.tenantBrandBySlug('raya')).toMatchObject({
+      nameEn: 'Al Raya',
+      logoAssetId: ASSET,
+    });
     expect(look.queries.some((q) => q.includes('set transaction read only'))).toBe(true);
-    const copy = database([{ content_type: 'image/png', content: new Uint8Array([1]), sha256: 'a'.repeat(64) }]);
+    const copy = database([
+      { content_type: 'image/png', content: new Uint8Array([1]), sha256: 'a'.repeat(64) },
+    ]);
     expect(await copy.api.brandAsset(ASSET)).toMatchObject({ contentType: 'image/png' });
     expect(await database([]).api.brandAsset(ASSET)).toBeNull();
     expect(await database([]).api.tenantBrandBySlug('raya')).toBeNull();

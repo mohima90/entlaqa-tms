@@ -51,8 +51,9 @@ describe("the organization's e-mail look (WP-ADM-02, FR-NTF-02)", () => {
   });
 
   it('applies to one render only, and is restored after an error', () => {
-    const branded = withEmailBrand({ actionColor: '#7A1F2B', linkColor: '#6E1C27' }, () =>
-      actionButton('Go', 'https://x.example').value,
+    const branded = withEmailBrand(
+      { actionColor: '#7A1F2B', linkColor: '#6E1C27' },
+      () => actionButton('Go', 'https://x.example').value,
     );
     expect(branded).toContain('#7A1F2B');
     expect(actionButton('Go', 'https://x.example').value).toContain(EMAIL_COLORS.action);

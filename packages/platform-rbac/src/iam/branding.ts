@@ -55,7 +55,9 @@ export function isWebsiteUrl(value: string): boolean {
   if (!/^https:\/\/[A-Za-z0-9.-]+(:[0-9]{1,5})?(\/[^\s\p{Cc}<>"'\\]*)?$/u.test(value)) return false;
   try {
     const url = new URL(value);
-    return url.protocol === 'https:' && url.hostname.includes('.') && !url.username && !url.password;
+    return (
+      url.protocol === 'https:' && url.hostname.includes('.') && !url.username && !url.password
+    );
   } catch {
     return false;
   }
@@ -179,7 +181,9 @@ export function saveBrandingActionDefinition(
             after: {},
           });
         case 'invalid':
-          return err(invalid(saved.field, saved.field.endsWith('FileId') ? 'IMAGE_NOT_USABLE' : 'INVALID'));
+          return err(
+            invalid(saved.field, saved.field.endsWith('FileId') ? 'IMAGE_NOT_USABLE' : 'INVALID'),
+          );
         case 'conflict':
           return err(appError('CONFLICT_VERSION'));
         case 'unavailable':
@@ -238,7 +242,10 @@ export interface BrandingFileService<Reservation, Intent> {
 export const BrandImageUploadInput = z.strictObject({
   slot: z.enum(BRAND_IMAGE_KINDS),
   fileName: z.string().min(1).max(255),
-  size: z.int().min(1).max(5 * 1024 * 1024),
+  size: z
+    .int()
+    .min(1)
+    .max(5 * 1024 * 1024),
 });
 
 export const BrandImageFileInput = z.strictObject({
@@ -274,7 +281,7 @@ function ownSlotFile(
   view: FileStatusView | null,
   purpose: string,
 ): Result<BrandImageStatus, AppError> {
-  if (!view || view.purpose !== purpose) return err(appError('NOT_FOUND'));
+  if (view?.purpose !== purpose) return err(appError('NOT_FOUND'));
   return ok({ fileId: view.fileId, status: view.status, reason: view.reason });
 }
 
@@ -286,7 +293,10 @@ export function confirmBrandImageUploadActionDefinition<R, I>(
     permission: PERMISSION_MANAGE,
     input: BrandImageFileInput,
     handler: async ({ ctx, input }) => {
-      const before = ownSlotFile(await files.status(ctx.tx, input.fileId), files.purposeOf(input.slot));
+      const before = ownSlotFile(
+        await files.status(ctx.tx, input.fileId),
+        files.purposeOf(input.slot),
+      );
       if (!before.ok) return before;
       const confirmed = await files.confirm(ctx.tx, input.fileId);
       if (!confirmed.ok) return confirmed;
@@ -295,10 +305,13 @@ export function confirmBrandImageUploadActionDefinition<R, I>(
   };
 }
 
-/** The scan's progress for the page (the uploader only — files are visible to their uploader). */
-export function brandImageStatusQueryDefinition<R, I>(
+/**
+ * The scan's progress for the page, polled from the browser (the uploader only — files are visible to their
+ * uploader). A read: nothing is written or audited.
+ */
+export function brandImageStatusActionDefinition<R, I>(
   files: BrandingFileService<R, I>,
-): QueryDefinition<typeof BrandImageFileInput, BrandImageStatus, UserTx> {
+): ActionDefinition<typeof BrandImageFileInput, BrandImageStatus, UserTx> {
   return {
     permission: PERMISSION_MANAGE,
     input: BrandImageFileInput,

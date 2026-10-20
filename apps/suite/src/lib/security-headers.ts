@@ -47,6 +47,15 @@ export const SECRET_URL_PAGES: readonly string[] = [
 export const secretUrlHeaders = [{ key: 'Referrer-Policy', value: 'no-referrer' }] as const;
 
 /**
+ * Published branding images (/api/brand/<id>, WP-ADM-02): e-mail clients and the organization's pages embed
+ * them, so they may be loaded from another origin (overrides the same-origin entry above for these paths
+ * only; the route adds nosniff, a sandboxing CSP and the detected type).
+ */
+export const brandImageHeaders = [
+  { key: 'Cross-Origin-Resource-Policy', value: 'cross-origin' },
+] as const;
+
+/**
  * Strict CSP for responses that never pass the proxy (immutable build assets under /_next/static):
  * nothing may execute or be framed if such a file is opened directly (e.g. an SVG).
  */

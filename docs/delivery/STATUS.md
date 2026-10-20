@@ -302,6 +302,7 @@ Status values: ⚪ Not started · 🔵 In progress · 🟢 Done (gate passed) ·
 
 | Date | Summary |
 |---|---|
+| 20 Oct 2026 | PR #72 merged (Dependabot monthly). Kawadir's Branding page researched in code; WP-ADM-02 business flow drafted (`docs/business-flows/EP-BRAND-branding.md`), with the PO. Dependabot opened this month's 3 PRs (#73–#75), to be checked |
 | 20 Oct 2026 | E-mail live in production: platform sender set by the PO (Resend) and the test e-mail arrived; `JOBS_REQUIRED` = on. WP-ADM-01 done. Dependabot moved to monthly; the five open Dependabot PRs (#67–#71) being checked |
 | 20 Oct 2026 | **PR #66 merged** (WP-ADM-01 e-mail), DB deploy green. Production worker configured for the first time with the PO (production-jobs: DATABASE_URL_APP_WORKER, DATABASE_URL_APP_QUEUE, SUPABASE_SECRET_KEY `workerproduction`, variables DATABASE_CA_CERT, APP_BASE_URL); Jobs pass green: `e-mail settings key: on`, worker key published, queued e-mails wait (NO_SENDER) until the Super Admin sets the platform sender. Next: PO sets Platform settings → Email; then repository variable JOBS_REQUIRED = on |
 | 17 Oct 2026 | WP-ADM-01 e-mail merged into the working branch: security review findings fixed (SMTP hard deadline incl. DNS lookup, password re-entry on server change, ports, rate limits, sweeper) and confirmed by a second look; `pnpm check:all` green. Waiting for the PO to add SECRET `EMAIL_CREDENTIALS_KEY` (GitHub env `production-jobs`), then the PR |

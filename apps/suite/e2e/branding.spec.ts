@@ -80,7 +80,11 @@ async function expectNoSeriousViolations(page: Page) {
   expect(
     results.violations
       .filter((v) => v.impact === 'serious' || v.impact === 'critical')
-      .map((v) => `${v.id}: ${v.help} (${v.nodes.length})`),
+      // The elements' selectors too, so a failure in CI says which control it is.
+      .map(
+        (v) =>
+          `${v.id}: ${v.help} (${v.nodes.length}) ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`,
+      ),
   ).toEqual([]);
 }
 

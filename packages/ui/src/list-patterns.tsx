@@ -126,7 +126,7 @@ export interface PaginationProps extends HTMLAttributes<HTMLElement> {
 
 /**
  * The bottom of a list: the range in words and Previous / Next as pill links (a missing page is shown
- * as an unavailable link, `aria-disabled`, never as nothing — people keep their bearings).
+ * as unavailable text, `aria-disabled`, never as nothing — people keep their bearings).
  */
 export function Pagination({ label, range, previous, next, className, ...props }: PaginationProps) {
   const link = (
@@ -150,9 +150,13 @@ export function Pagination({ label, range, previous, next, className, ...props }
         {content}
       </a>
     ) : (
-      <a aria-disabled="true" className={buttonClasses({ variant: 'secondary', size: 'sm' })}>
+      <span
+        role="link"
+        aria-disabled="true"
+        className={buttonClasses({ variant: 'secondary', size: 'sm' })}
+      >
         {content}
-      </a>
+      </span>
     );
   };
   return (

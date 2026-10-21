@@ -76,11 +76,12 @@
   box-shadow: 0 14px 28px -14px var(--color-brand);
 }
 
-/* Faint concentric rings in the sign-in brand panel (decorative), drawn in the panel's text colour. */
-@utility brand-panel-rings {
-  background-image:
-    radial-gradient(circle at 100% 0%, transparent 309px, currentColor 310px, transparent 311px),
-    radial-gradient(circle at 100% 0%, transparent 209px, currentColor 210px, transparent 211px);
+/* The sign-in pages' brand panel (direction C): the navigation's colours at 150° — the brand gradient
+   in light mode (the organization's colours replace it), the dark surfaces in dark mode. Text on it:
+   `text-on-nav` (checked on both ends). */
+@utility bg-nav-panel {
+  background-color: var(--color-nav);
+  background-image: linear-gradient(150deg, var(--color-nav), var(--color-nav-end));
 }
 
 /* A loading placeholder (direction C): a soft shimmer, still under reduced motion. */

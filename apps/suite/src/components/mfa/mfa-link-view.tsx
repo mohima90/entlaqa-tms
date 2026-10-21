@@ -1,8 +1,19 @@
 'use client';
-import { Alert, Button, Card, buttonClasses } from '@jadarat/ui';
-import { type ReactNode, useEffect, useRef, useState, useTransition } from 'react';
+import { Alert, Button, Icon, buttonClasses } from '@jadarat/ui';
+import { useEffect, useRef, useState, useTransition } from 'react';
 import { openMfaRemoveLinkAction } from '../../auth/mfa';
 import { type MfaLinkOutcome, mfaLinkFragment, mfaLinkTokenFromHash } from '../../lib/mfa-link';
+import { AuthSpinner } from '../auth/auth-field';
+import type { AuthIconName } from '../auth/auth-icons';
+import {
+  AuthCard,
+  type AuthBrand,
+  AuthHead,
+  AuthLanguageSwitch,
+  AuthShell,
+  type AuthShellTexts,
+  type AuthTileTone,
+} from '../auth/auth-shell';
 import { type ErrorTexts, errorText } from '../auth/error-text';
 
 /**
@@ -39,20 +50,24 @@ type View =
 
 export function MfaLinkView({
   locale,
-  productName,
+  brand,
+  shell,
   toggle,
   texts,
   errors,
 }: {
   readonly locale: 'ar' | 'en';
-  /** The header's name line: the organization's logo or the product's name (AuthHeaderBrand). */
-  readonly productName: ReactNode;
+  /** The organization's look (logo; WP-ADM-02), or null for Jadarat's. */
+  readonly brand: AuthBrand | null;
+  /** The frame's texts (product name, portal line, footer). */
+  readonly shell: AuthShellTexts;
   /** The language switch: its target (locale-prefixed path without the fragment) and texts. */
   readonly toggle: {
     readonly href: string;
     readonly lang: string;
-    /** Visible, and so also its accessible name (WCAG 2.5.3). */
+    /** Visible, and so part of its accessible name (WCAG 2.5.3). */
     readonly label: string;
+    readonly ariaLabel: string;
   };
   readonly texts: MfaLinkTexts;
   readonly errors: ErrorTexts;
@@ -89,41 +104,49 @@ export function MfaLinkView({
   }
 
   let title = texts.pageTitle;
+  let icon: AuthIconName = 'shield';
+  let tone: AuthTileTone = 'warning';
   let body;
   if (view.kind === 'opening') {
     body = (
-      <Card>
-        <p className="m-0 text-text-muted" role="status" data-testid="mfa-link-opening">
+      <AuthCard>
+        <p
+          className="m-0 flex items-center gap-3 text-text-muted"
+          role="status"
+          data-testid="mfa-link-opening"
+        >
+          <AuthSpinner />
           {texts.opening}
         </p>
-      </Card>
+      </AuthCard>
     );
   } else if (view.kind === 'ready') {
     body = (
-      <Card>
-        <div className="flex flex-col gap-4">
-          <p className="m-0">{texts.intro}</p>
-          <Alert tone="warning">{texts.warning}</Alert>
-          {message ? (
-            <Alert tone="danger" data-testid="mfa-link-error">
-              {message}
-            </Alert>
-          ) : null}
-          <div>
-            <Button
-              type="button"
-              variant="danger"
-              disabled={pending}
-              onClick={() => {
-                submit(view.token);
-              }}
-              data-testid="mfa-link-submit"
-            >
-              {pending ? texts.submitting : texts.submit}
-            </Button>
-          </div>
+      <AuthCard>
+        <p className="m-0">{texts.intro}</p>
+        <Alert tone="warning">{texts.warning}</Alert>
+        {message ? (
+          <Alert tone="danger" data-testid="mfa-link-error">
+            {message}
+          </Alert>
+        ) : null}
+        <div>
+          <Button
+            type="button"
+            variant="danger"
+            size="lg"
+            disabled={pending}
+            busy={pending}
+            onClick={() => {
+              submit(view.token);
+            }}
+            data-testid="mfa-link-submit"
+          >
+            {pending ? null : <Icon name="trash" />}
+            {pending ? texts.submitting : texts.submit}
+          </Button>
         </div>
-      </Card>
+      </AuthCard>
     );
   } else {
     const { outcome } = view;
@@ -133,6 +156,8 @@ export function MfaLinkView({
       : outcome === 'expired'
         ? texts.expiredTitle
         : texts.invalidTitle;
+    icon = done ? 'shield' : 'alert';
+    tone = done ? 'success' : 'danger';
     const text = done
       ? texts.doneText
       : outcome === 'expired'
@@ -140,47 +165,46 @@ export function MfaLinkView({
         : texts.invalidText;
     // "Not you?": whatever the answer, a new password comes first (someone may know the current one).
     body = (
-      <Card data-testid={`mfa-link-${outcome}`}>
-        <div className="flex flex-col items-start gap-4">
-          <Alert tone="warning">{text}</Alert>
-          <div className="flex flex-wrap gap-2">
-            <a
-              href={`/${locale}/forgot-password`}
-              className={buttonClasses({ variant: 'primary' })}
-              data-testid="mfa-link-new-password"
-            >
-              {texts.newPassword}
-            </a>
-            <a href={`/${locale}/sign-in`} className={buttonClasses({ variant: 'secondary' })}>
-              {texts.signIn}
-            </a>
-          </div>
+      <AuthCard data-testid={`mfa-link-${outcome}`}>
+        <Alert tone="warning">{text}</Alert>
+        <div className="flex flex-wrap gap-2.5">
+          <a
+            href={`/${locale}/forgot-password`}
+            className={buttonClasses({ variant: 'primary', size: 'lg' })}
+            data-testid="mfa-link-new-password"
+          >
+            {texts.newPassword}
+            <Icon name="arrow-end" />
+          </a>
+          <a
+            href={`/${locale}/sign-in`}
+            className={buttonClasses({ variant: 'secondary', size: 'lg' })}
+          >
+            {texts.signIn}
+          </a>
         </div>
-      </Card>
+      </AuthCard>
     );
   }
 
+  // Direction C: the focused frame, no Sign out (no session on this page).
   return (
-    <div className="flex min-h-dvh flex-col">
-      <header className="flex items-center justify-between gap-4 border-b border-border bg-surface px-4 py-3">
-        {productName}
-        {/* The language switch keeps an unused link working: the token goes along in the fragment only. */}
-        <a
+    <AuthShell
+      variant="focus"
+      brand={brand}
+      texts={shell}
+      // The language switch keeps an unused link working: the token goes along in the fragment only.
+      languageSwitch={
+        <AuthLanguageSwitch
           href={`${toggle.href}${mfaLinkFragment(view.kind === 'ready' ? view.token : null)}`}
-          hrefLang={toggle.lang}
           lang={toggle.lang}
-          className={buttonClasses({ variant: 'secondary', size: 'sm' })}
-          data-testid="language-toggle"
-        >
-          {toggle.label}
-        </a>
-      </header>
-      <main id="main" className="mx-auto flex w-full max-w-lg flex-1 flex-col gap-6 px-4 py-10">
-        <h1 ref={heading} tabIndex={-1} className="m-0 text-2xl font-bold outline-none">
-          {title}
-        </h1>
-        {body}
-      </main>
-    </div>
+          label={toggle.label}
+          ariaLabel={toggle.ariaLabel}
+        />
+      }
+    >
+      <AuthHead headingRef={heading} icon={icon} iconTone={tone} size="md" title={title} />
+      {body}
+    </AuthShell>
   );
 }

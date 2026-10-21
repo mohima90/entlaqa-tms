@@ -5,7 +5,11 @@ import { getTranslations } from 'next-intl/server';
 import { notFound } from 'next/navigation';
 import { AuthLanguageSwitch, AuthShell } from '../../../../components/auth/auth-shell';
 import { InviteLinkForwarder } from '../../../../components/invite/accept-invitation';
-import { authLanguageSwitch, authShellTexts } from '../../../../lib/auth-shell-texts';
+import {
+  authLanguageSwitch,
+  authShellTexts,
+  signInPanelTexts,
+} from '../../../../lib/auth-shell-texts';
 import { authBrandOf, signInBrand } from '../../../../lib/sign-in-brand';
 
 /**
@@ -39,7 +43,10 @@ export default async function InviteAcceptPage({
   const t = await getTranslations({ locale, namespace: 'invite' });
   return (
     <AuthShell
-      variant="centered"
+      variant="split"
+      icon="userPlus"
+      size="md"
+      panel={await signInPanelTexts(locale)}
       brand={authBrandOf(await signInBrand(locale))}
       texts={await authShellTexts(locale)}
       languageSwitch={<AuthLanguageSwitch {...await authLanguageSwitch(locale, '/sign-up')} />}

@@ -2,13 +2,14 @@ import AxeBuilder from '@axe-core/playwright';
 import { type Page, expect, test } from '@playwright/test';
 
 /**
- * The suite shell in the Kawadir layout (T-M2-43, FR-STE-08; docs/design/kawadir-alignment.md §3, §5),
- * in English and Arabic, on the data-less preview (every menu entry renders): the Organization Admin's
- * menu groups with «Coming soon» entries that are not links; the desktop collapse button (keyboard,
- * focus kept, tooltips, remembered on this device); the ⌘K / Ctrl K command palette (open, search,
- * Escape, focus return, navigation); the theme menu (light / dark / system, remembered); the
- * notification bell and the account menu (keyboard, focus return); the old Organization profile
- * address redirecting to Settings → General.
+ * The suite shell in direction C «Bold product» (redesign package 1, PO 21 Oct 2026; previously the
+ * Kawadir layout, T-M2-43, FR-STE-08), in English and Arabic, on the data-less preview (every menu entry
+ * renders): the Organization Admin's menu groups with «Coming soon» entries that are not links; the
+ * top-bar menu toggle (264 → 84 px rail; keyboard, focus kept, tooltips, remembered on this device); the
+ * ⌘K / Ctrl K command palette (open, search, key hints, Escape, focus return, navigation); the theme menu
+ * (light / dark / system, remembered); the notification bell and the account menu (keyboard, focus
+ * return) with the keyboard shortcuts list; the old Organization profile address redirecting to
+ * Settings → General.
  */
 const TEXTS = {
   en: {
@@ -39,6 +40,11 @@ const TEXTS = {
     profile: 'My profile',
     poweredBy: 'Powered by Jadarat',
     general: 'General settings',
+    generalEntry: 'General',
+    shortcuts: 'Keyboard shortcuts',
+    shortcutSearch: 'Search pages',
+    shortcutClose: 'Close a panel, menu or dialog',
+    hintOpen: 'to open',
   },
   ar: {
     nav: 'التنقل الرئيسي',
@@ -68,6 +74,11 @@ const TEXTS = {
     profile: 'ملفي الشخصي',
     poweredBy: 'مدعوم من جدارات',
     general: 'الإعدادات العامة',
+    generalEntry: 'الإعدادات العامة',
+    shortcuts: 'اختصارات لوحة المفاتيح',
+    shortcutSearch: 'البحث في الصفحات',
+    shortcutClose: 'إغلاق اللوحة أو القائمة أو النافذة',
+    hintOpen: 'للفتح',
   },
 } as const;
 
@@ -121,15 +132,16 @@ for (const locale of ['en', 'ar'] as const) {
     test.skip(isMobile, 'desktop only: phones keep the drawer');
     await page.goto(`/${locale}/suite/admin/users`);
     const drawer = page.locator('#app-navigation');
-    expect(Math.round((await drawer.boundingBox())?.width ?? 0)).toBe(260);
-    const collapse = page.getByRole('button', { name: t.collapse });
+    expect(Math.round((await drawer.boundingBox())?.width ?? 0)).toBe(264);
+    // Direction C: one toggle at the start of the top bar; it keeps focus and its name follows the state.
+    const collapse = page.getByRole('banner').getByRole('button', { name: t.collapse });
     await expect(collapse).toHaveAttribute('aria-expanded', 'true');
     await collapse.focus();
     await page.keyboard.press('Enter');
     const expand = page.getByRole('button', { name: t.expand });
     await expect(expand).toBeFocused();
     await expect(expand).toHaveAttribute('aria-expanded', 'false');
-    await expect.poll(async () => Math.round((await drawer.boundingBox())?.width ?? 0)).toBe(72);
+    await expect.poll(async () => Math.round((await drawer.boundingBox())?.width ?? 0)).toBe(84);
     // Icons only: the labels stay for screen readers, and show as tooltips on keyboard focus.
     const team = page.getByRole('navigation', { name: t.nav }).getByRole('link', { name: t.team });
     await expect(team).toHaveAttribute('aria-current', 'page');
@@ -141,10 +153,10 @@ for (const locale of ['en', 'ar'] as const) {
     await expectNoSeriousViolations(page);
     // Remembered on this device.
     await page.reload();
-    await expect.poll(async () => Math.round((await drawer.boundingBox())?.width ?? 0)).toBe(72);
+    await expect.poll(async () => Math.round((await drawer.boundingBox())?.width ?? 0)).toBe(84);
     await page.getByRole('button', { name: t.expand }).click();
     await expect(page.getByRole('button', { name: t.collapse })).toBeFocused();
-    await expect.poll(async () => Math.round((await drawer.boundingBox())?.width ?? 0)).toBe(260);
+    await expect.poll(async () => Math.round((await drawer.boundingBox())?.width ?? 0)).toBe(264);
     await page.reload();
     await expect(page.getByRole('button', { name: t.collapse })).toBeVisible();
   });
@@ -160,6 +172,8 @@ for (const locale of ['en', 'ar'] as const) {
     await expect(dialog).toBeVisible();
     const input = dialog.getByRole('combobox', { name: t.search });
     await expect(input).toBeFocused();
+    // Key hints in the footer (direction C).
+    await expect(dialog.getByText(t.hintOpen)).toBeVisible();
     await expectNoSeriousViolations(page);
     await page.keyboard.press('Escape');
     await expect(dialog).toBeHidden();
@@ -224,14 +238,35 @@ for (const locale of ['en', 'ar'] as const) {
     await expect(page).toHaveURL(new RegExp(`/${locale}/suite/profile$`));
   });
 
+  test(`${locale}: the account menu opens the keyboard shortcuts list; Escape gives focus back`, async ({
+    page,
+  }) => {
+    await page.goto(`/${locale}/suite`);
+    const account = page.getByTestId('account-menu');
+    await account.click();
+    await page.getByRole('menuitem', { name: t.shortcuts }).click();
+    const dialog = page.getByRole('dialog', { name: t.shortcuts });
+    await expect(dialog).toBeVisible();
+    // Only the shortcuts the product has (design only): Ctrl K page search, Escape, …
+    await expect(dialog.getByText(t.shortcutSearch)).toBeVisible();
+    await expect(dialog.getByText(t.shortcutClose)).toBeVisible();
+    await expect(dialog.locator('kbd', { hasText: 'Esc' })).toBeVisible();
+    await expectNoSeriousViolations(page);
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+    await expect(account).toBeFocused();
+  });
+
   test(`${locale}: the former Organization profile address opens Settings → General`, async ({
     page,
   }) => {
     await page.goto(`/${locale}/suite/admin/organization`);
     await expect(page).toHaveURL(new RegExp(`/${locale}/suite/admin/settings$`));
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(t.general);
-    await expect(page.getByTestId('top-bar-title')).toHaveText(
-      locale === 'en' ? 'General' : 'الإعدادات العامة',
+    // The menu marks Settings → General as the current page (the top bar has no title since direction C).
+    // (On a phone the menu is in the closed drawer: found in the page, not by its role.)
+    await expect(page.locator('#app-navigation nav a[aria-current="page"]')).toHaveText(
+      t.generalEntry,
     );
   });
 }

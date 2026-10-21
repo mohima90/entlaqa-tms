@@ -53,6 +53,10 @@ test.describe('users pages', () => {
     const table = page.getByTestId('users-table');
     await expect(table.getByRole('row')).toHaveCount(5); // header + admin, Sarah, Khalid, Mona
     await expect(page.getByRole('link', { name: /Pending invites/ })).toContainText('1');
+    // Direction C: the status views are cards with big numbers; the current one is marked.
+    const views = page.getByRole('navigation', { name: 'Team members views' });
+    await expect(views.getByRole('link')).toHaveCount(4);
+    await expect(page.getByTestId('users-view-all')).toHaveAttribute('aria-current', 'page');
     await expectNoSeriousA11yViolations(page);
     // On a phone (390 px) the table scrolls in its box; no header or name is broken mid-word (T-M2-21).
     const desktop = page.viewportSize();
@@ -65,6 +69,7 @@ test.describe('users pages', () => {
 
     // Pending invites tab (Kawadir team page, T-M2-43)
     await page.getByRole('link', { name: /Pending invites/ }).click();
+    await expect(page.getByTestId('users-view-invited')).toHaveAttribute('aria-current', 'page');
     await expect(table.getByRole('row')).toHaveCount(2);
     await expect(table).toContainText('خالد إبراهيم الشهري');
     await expect(table).toContainText('Invited');

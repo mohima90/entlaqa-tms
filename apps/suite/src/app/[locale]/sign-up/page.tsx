@@ -1,4 +1,5 @@
 import { routing } from '@jadarat/platform-i18n/routing';
+import { Alert } from '@jadarat/ui';
 import type { Metadata } from 'next';
 import { hasLocale } from 'next-intl';
 import { getTranslations } from 'next-intl/server';
@@ -6,7 +7,11 @@ import { notFound } from 'next/navigation';
 import { connection } from 'next/server';
 import { AuthLanguageSwitch, AuthShell } from '../../../components/auth/auth-shell';
 import { DropFragment, SignUpView } from '../../../components/invite/sign-up-view';
-import { authLanguageSwitch, authShellTexts } from '../../../lib/auth-shell-texts';
+import {
+  authLanguageSwitch,
+  authShellTexts,
+  signInPanelTexts,
+} from '../../../lib/auth-shell-texts';
 import { inviteErrorTexts } from '../../../lib/auth-texts';
 import { getConfigStatus } from '../../../lib/config-status';
 import { authBrandOf, signInBrand } from '../../../lib/sign-in-brand';
@@ -54,15 +59,17 @@ export default async function SignUpPage({ params }: { params: Promise<{ locale:
   if (!(status.auth && status.database)) {
     return (
       <AuthShell
-        variant="centered"
+        variant="split"
+        icon="userPlus"
         brand={brand}
         texts={shell}
+        panel={await signInPanelTexts(locale)}
         languageSwitch={<AuthLanguageSwitch {...toggle} />}
         title={t('pageTitle')}
       >
-        <p className="m-0 text-text-muted" data-testid="invite-not-configured">
+        <Alert tone="info" data-testid="invite-not-configured">
           {errorsT('notConfigured')}
-        </p>
+        </Alert>
         <DropFragment />
       </AuthShell>
     );
@@ -73,6 +80,7 @@ export default async function SignUpPage({ params }: { params: Promise<{ locale:
       locale={locale}
       brand={brand}
       shell={shell}
+      panel={await signInPanelTexts(locale)}
       toggle={toggle}
       texts={{
         pageTitle: t('pageTitle'),

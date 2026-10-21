@@ -1,6 +1,7 @@
 import { otherLocale } from '@jadarat/platform-i18n';
 import { routing } from '@jadarat/platform-i18n/routing';
 import { readPasswordResetDelivery } from '@jadarat/platform-identity';
+import { Alert } from '@jadarat/ui';
 import type { Metadata } from 'next';
 import { hasLocale } from 'next-intl';
 import { getTranslations } from 'next-intl/server';
@@ -63,7 +64,8 @@ export default async function ResetPasswordPage({
   if (!status.auth) {
     return (
       <AuthShell
-        variant="simple"
+        variant="split"
+        icon="lock"
         brand={brand}
         texts={shell}
         panel={panel}
@@ -72,9 +74,9 @@ export default async function ResetPasswordPage({
         }
         title={t('reset.pageTitle')}
       >
-        <p className="m-0 text-text-muted" data-testid="reset-not-configured">
+        <Alert tone="info" data-testid="reset-not-configured">
           {errorsT('notConfigured')}
-        </p>
+        </Alert>
       </AuthShell>
     );
   }

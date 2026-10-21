@@ -11,6 +11,7 @@ import {
   Spinner,
   TextField,
   cn,
+  fieldInputClasses,
   toast,
 } from '@jadarat/ui';
 import { useRouter } from 'next/navigation';
@@ -194,21 +195,12 @@ function useCssVariables(variables: Readonly<Record<string, string>>) {
   return ref;
 }
 
-/** A square showing one colour (the chosen primary or secondary). */
-function ColorSwatch({ color }: { readonly color: string }) {
-  const ref = useCssVariables({ '--swatch': color });
-  return (
-    <span
-      ref={ref}
-      aria-hidden="true"
-      className="size-11 shrink-0 rounded-xl border-2 border-border bg-(--swatch) shadow-1"
-    />
-  );
-}
-
+/**
+ * A colour as a hex code (direction C, redesign package 2): the label «Primary colour (hex code)», the
+ * native colour picker drawn as the swatch of the colour, and the hex field — the error under them.
+ */
 function ColorField({
   id,
-  label,
   value,
   error,
   disabled,
@@ -216,7 +208,6 @@ function ColorField({
   onChange,
 }: {
   readonly id: string;
-  readonly label: string;
   readonly value: string;
   readonly error: string | undefined;
   readonly disabled: boolean;
@@ -224,13 +215,13 @@ function ColorField({
   readonly onChange: (value: string) => void;
 }) {
   const valid = parseBrandColor(value);
+  const errorId = `${id}-error`;
   return (
-    <div className="flex flex-col gap-2">
-      <span className="text-sm font-medium text-text" id={`${id}-label`}>
-        {label}
-      </span>
-      <div className="flex flex-wrap items-end gap-3">
-        <ColorSwatch color={valid ?? '#FFFFFF'} />
+    <div className="flex min-w-0 flex-col gap-1.5">
+      <label htmlFor={id} className="text-sm font-semibold">
+        {texts.hex}
+      </label>
+      <div className="flex items-center gap-2.5">
         <input
           type="color"
           aria-label={texts.picker}
@@ -239,29 +230,28 @@ function ColorField({
             onChange(event.target.value.toUpperCase());
           }}
           disabled={disabled}
-          className="h-11 w-14 cursor-pointer rounded-xl border border-border-strong bg-surface p-1"
+          className="h-12 w-14 shrink-0 cursor-pointer rounded-md border-[1.5px] border-border-strong bg-surface p-1 disabled:cursor-not-allowed"
           data-testid={`${id}-picker`}
         />
-        <div className="w-40">
-          <TextField
-            id={id}
-            label={texts.hex}
-            dir="ltr"
-            lang="en"
-            spellCheck={false}
-            autoComplete="off"
-            maxLength={7}
-            value={value}
-            error={error}
-            onChange={(event) => {
-              onChange(event.target.value);
-            }}
-            disabled={disabled}
-            className="font-mono"
-            data-testid={id}
-          />
-        </div>
+        <input
+          id={id}
+          dir="ltr"
+          lang="en"
+          spellCheck={false}
+          autoComplete="off"
+          maxLength={7}
+          value={value}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? errorId : undefined}
+          onChange={(event) => {
+            onChange(event.target.value);
+          }}
+          disabled={disabled}
+          className={cn(fieldInputClasses, 'min-w-0 font-mono', Boolean(error) && 'border-danger')}
+          data-testid={id}
+        />
       </div>
+      {error ? <FieldError id={errorId}>{error}</FieldError> : null}
     </div>
   );
 }
@@ -1054,7 +1044,6 @@ export function BrandingForm(props: BrandingFormProps) {
             <div className="grid grid-cols-[repeat(auto-fit,minmax(15rem,1fr))] gap-5">
               <ColorField
                 id="brand-primaryColor"
-                label={values.useGradient ? t('colors.primary') : t('colors.brandColor')}
                 value={values.primaryColor}
                 error={fieldErrors.primaryColor}
                 disabled={disabled}
@@ -1073,7 +1062,6 @@ export function BrandingForm(props: BrandingFormProps) {
               {values.useGradient ? (
                 <ColorField
                   id="brand-secondaryColor"
-                  label={t('colors.secondary')}
                   value={values.secondaryColor}
                   error={fieldErrors.secondaryColor}
                   disabled={disabled}

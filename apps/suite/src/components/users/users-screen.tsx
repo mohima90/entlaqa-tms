@@ -443,7 +443,12 @@ async function UsersList({
       statusText: t(`status.${row.status}`),
       lastSignIn: row.lastSignInAt ? dates.dateTime(row.lastSignInAt) : t('never'),
       profileHref: `${base}/${row.personId}`,
-      editHref: view.canEditDetails && row.mayManage ? `${base}/${row.personId}/edit` : null,
+      // «تعديل البيانات» (T-M2-13): a privileged person's record by the Organization Admin only (the server
+      // refuses it too).
+      editHref:
+        view.canEditDetails && row.mayManage && (!row.privileged || view.canAssignPrivileged)
+          ? `${base}/${row.personId}/edit`
+          : null,
       // «تعطيل المستخدم» (T-M2-09): an active member the member may manage, not themself; privileged
       // people by the Organization Admin only (the dialog checks again).
       deactivateHref:
@@ -879,6 +884,14 @@ async function invitePanel(
     date: pageDates(locale, context).long(expiryFrom(new Date())),
   });
   labels.privilegedLocked = t('form.privilegedAdminOnly');
+  // «Discard your changes?» before the panel closes with something typed (as Edit details).
+  const users = await getTranslations({ locale, namespace: 'users' });
+  const discardTexts = {
+    title: users('discardTitle'),
+    body: users('discardBody'),
+    keepEditing: users('keepEditing'),
+    discard: users('discard'),
+  };
   const fieldTexts: Record<string, string> = Object.fromEntries(
     INVITE_FIELD_ERROR_KEYS.map((k) => [k, t(`form.fieldErrors.${k}`)]),
   );
@@ -923,6 +936,7 @@ async function invitePanel(
       invitedHref={usersListHref(locale, {}, { tab: 'invited' })}
       rolesHref={`/${locale}/suite/admin/roles`}
       copyTexts={await inviteCopyTexts(locale)}
+      discardTexts={discardTexts}
       uiLocale={locale}
     />
   );

@@ -71,7 +71,11 @@ export async function FocusedShell({
           {children}
         </div>
       </main>
-      <Toaster label={t('statusMessages')} closeLabel={t('close')} />
+      <Toaster
+        label={t('statusMessages')}
+        closeLabel={t('close')}
+        actionHint={t('toastActionHint', { action: '{action}' })}
+      />
       {context.live && context.idleMinutes !== null ? (
         <IdleWarning
           locale={locale}

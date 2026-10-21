@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_TOAST_DURATION,
+  MIN_ACTION_TOAST_DURATION,
   type ToastStore,
   Toaster,
   createToastStore,
@@ -167,22 +168,39 @@ describe('Toaster', () => {
   });
 
   it('offers one action (Undo) that runs once and closes the toast (redesign package 3)', () => {
-    const container = mount(<Toaster label="Notifications" closeLabel="Close" store={store} />);
+    const container = mount(
+      <Toaster
+        label="Notifications"
+        closeLabel="Close"
+        store={store}
+        actionHint="You can use “{action}” from this message until you close it."
+      />,
+    );
     const undo = vi.fn();
     act(() => {
-      store.add('success', 'Role saved.', {
-        duration: 10_000,
-        action: { label: 'Undo', onClick: undo },
-      });
+      store.add('success', 'Role saved.', { action: { label: 'Undo', onClick: undo } });
     });
     const button = container.querySelector<HTMLButtonElement>('[data-testid="toast-action"]');
     expect(button?.textContent).toBe('Undo');
     expect(store.items()[0]?.action?.label).toBe('Undo');
+    // Stays until closed, and the announcement says the action is there (WCAG 2.2.1, 2.1.1).
+    expect(store.items()[0]?.duration).toBeNull();
+    expect(container.querySelector('[data-testid="toast-action-hint"]')?.textContent).toBe(
+      'You can use “Undo” from this message until you close it.',
+    );
     act(() => {
       button!.click();
     });
     expect(undo).toHaveBeenCalledTimes(1);
     expect(items(container)).toHaveLength(0);
+  });
+
+  it('never hides a toast with an action in less than MIN_ACTION_TOAST_DURATION', () => {
+    const onClick = vi.fn();
+    store.add('success', 'Short', { duration: 5000, action: { label: 'Undo', onClick } });
+    store.add('success', 'Long', { duration: 60_000, action: { label: 'Undo', onClick } });
+    store.add('success', 'Plain', { duration: 5000 });
+    expect(store.items().map((t) => t.duration)).toEqual([MIN_ACTION_TOAST_DURATION, 60_000, 5000]);
   });
 
   it('uses the page queue by default', () => {

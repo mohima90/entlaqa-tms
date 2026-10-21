@@ -111,7 +111,10 @@ export default async function UserImportStatusPage({
         );
     } else {
       const view = result.value;
-      subtitle = <bdi>{view.record.fileName}</bdi>;
+      // The file's name only to whoever may see the import (another member's draft is «not yours»).
+      if (view.record.mine || !isDraft(view.record.status)) {
+        subtitle = <bdi>{view.record.fileName}</bdi>;
+      }
       if (isDraft(view.record.status) && view.record.mine) {
         steps = (
           <Stepper

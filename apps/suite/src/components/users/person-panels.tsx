@@ -233,6 +233,7 @@ export function DeactivateDialog(props: DeactivateDialogProps) {
   const close = useClose(props.back);
   const [open, setOpen] = useState(true);
   const [pending, setPending] = useState(false);
+  const canClose = useCallback(() => !pending, [pending]);
   const formId = 'deactivate-form';
   const form = props.form;
   // Nothing can be sent while a kind cannot be moved by this member or nobody can take it over.
@@ -258,9 +259,9 @@ export function DeactivateDialog(props: DeactivateDialogProps) {
   return (
     <Dialog
       open={open}
-      onClose={() => {
-        if (!pending) close();
-      }}
+      onClose={close}
+      // Escape, ✕ and the backdrop wait while the deactivation is working.
+      canClose={canClose}
       title={props.title}
       closeLabel={text('close')}
       size="lg"
@@ -339,8 +340,8 @@ export function DeactivateDialog(props: DeactivateDialogProps) {
             formId={formId}
             onPending={setPending}
             onDone={() => {
+              // Stays until closed (an action: WCAG 2.2.1, the toast's own rule).
               toast.success(text('doneToast').replace('{name}', props.person.name), {
-                duration: 10_000,
                 action: {
                   label: text('reactivate.rowButton'),
                   onClick: () => {

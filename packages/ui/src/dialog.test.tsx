@@ -124,6 +124,30 @@ describe('Dialog (native <dialog>, Kawadir)', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it('stays open while canClose says no (Escape, the close button, the backdrop)', async () => {
+    const working = vi.fn(() => false);
+    const onClose = vi.fn();
+    const container = mount(
+      <Dialog open onClose={onClose} title="Deactivate" closeLabel="Close" canClose={working}>
+        body
+      </Dialog>,
+    );
+    const dialog = container.querySelector('dialog')!;
+    const cancel = new Event('cancel', { cancelable: true });
+    act(() => {
+      dialog.dispatchEvent(cancel);
+    });
+    expect(cancel.defaultPrevented).toBe(true);
+    act(() => {
+      dialog.querySelector<HTMLButtonElement>('button[aria-label="Close"]')!.click();
+      dialog.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushClose();
+    expect(working).toHaveBeenCalledTimes(3);
+    expect(dialog.open).toBe(true);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it('closes when the parent sets open to false', () => {
     const container = mount(<Harness onClose={vi.fn()} />);
     const { dialog } = openDialog(container);

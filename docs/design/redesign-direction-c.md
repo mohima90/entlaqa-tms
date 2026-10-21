@@ -64,12 +64,12 @@ Every pair is checked in light and dark for the shipped theme and for hundreds o
 
 | Block | Use |
 |---|---|
-| Toast `action` | One button in a toast: «Undo» after a role change (~10 s), «Reactivate» after a deactivation, «Open full profile». |
+| Toast `action` | One button in a toast: «Undo» after a role change, «Reactivate» after a deactivation, «Open full profile». A toast with an action stays until closed (never under 20 s when timed) and tells screen readers the action is there (WCAG 2.2.1 / 2.1.1; review, 21 Oct 2026 — the PO's «about 10 s» for Undo became «until closed»). |
 | `ChoiceCard` | A radio question as cards with what each choice means (roles in the change-role panel, the builder's data scope, the import's options); unavailable choices stay listed with the reason. |
 | `FilterMenu` | A filter pill that applies at once (no Apply), with a search for long lists; the list's address keeps the filter. |
 | `AttentionStrip` / `AttentionItem` | One «Needs your attention» card above a list instead of a stack of banners, each line with its action. |
 | `CopyButton` | Copy a value (e-mail, employee number) with a toast. |
-| `SidePanel` `size="lg"`, `canClose` | Wide form panels; «Discard your changes?» before a panel with unsaved changes closes. |
+| `SidePanel` `size="lg"`, `canClose` (also on `Dialog`) | Wide form panels; «Discard your changes?» before a panel with unsaved changes closes; no closing while saving. Panels close through the dialog so focus returns to the opener. |
 | `FocusedShell` (apps/suite) | A full-screen frame for a task with steps (the user import): ✕, title, step bar, language; actions in a bottom bar. |
 
 Panels and dialogs of one person keep their own addresses (`/users/[id]/edit`, `/roles`, `/deactivate`,

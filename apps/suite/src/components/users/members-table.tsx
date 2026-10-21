@@ -19,6 +19,7 @@ import {
 import Link from 'next/link';
 import { type ReactNode, useState } from 'react';
 import { fillText } from '../../lib/fill-text';
+import { returnFocusTo, useReturnedFocus } from '../../lib/focus-return';
 import type { RoleOption } from '../../lib/role-choice';
 import type { ScopeUnitChoice } from '../../lib/structure-view';
 import type { ErrorTexts } from '../auth/error-text';
@@ -75,6 +76,15 @@ export interface MembersTableProps {
   readonly locale: 'ar' | 'en';
 }
 
+/** A panel opened from a row, and the id of the row's control that gets focus back when it closes. */
+interface Opened {
+  readonly row: MemberRowView;
+  readonly returnId: string;
+}
+
+/** The table and the phone cards both render each row: their controls carry different ids. */
+type Place = 'table' | 'card';
+
 const STATUS_TONE: Record<MemberRowView['status'], BadgeTone> = {
   active: 'success',
   invited: 'warning',
@@ -93,8 +103,11 @@ export function MembersTable(props: MembersTableProps) {
   const { rows, texts } = props;
   const text = (key: string, values: Record<string, string> = {}) =>
     fillText(texts[key] ?? key, values, props.locale);
-  const [peek, setPeek] = useState<MemberRowView | null>(null);
-  const [roleFor, setRoleFor] = useState<MemberRowView | null>(null);
+  const [peek, setPeek] = useState<Opened | null>(null);
+  const [roleFor, setRoleFor] = useState<Opened | null>(null);
+  // Focus back on the row's ⋯ or name once a panel has closed (WCAG 2.4.3; the opener inside a closed menu
+  // or the quick look no longer exists).
+  useReturnedFocus();
 
   const status = (row: MemberRowView) => (
     <Badge tone={STATUS_TONE[row.status]} dot>
@@ -122,7 +135,8 @@ export function MembersTable(props: MembersTableProps) {
       <span className="italic text-text-muted">{row.roleNote}</span>
     );
 
-  const menu = (row: MemberRowView) => {
+  const menu = (row: MemberRowView, place: Place) => {
+    const triggerId = `member-menu-${place}-${row.personId}`;
     const canRole = props.roleMenu !== null && row.role !== null;
     if (!row.editHref && !canRole && !row.deactivateHref) return null;
     return (
@@ -130,6 +144,7 @@ export function MembersTable(props: MembersTableProps) {
         <DropdownMenuTrigger
           className="grid size-9 place-items-center rounded-full text-text-muted hover:bg-surface-hover hover:text-text pointer-coarse:size-11"
           aria-label={text('moreActions', { name: row.name })}
+          id={triggerId}
           data-testid={`member-menu-${row.personId}`}
         >
           <Icon name="more" />
@@ -152,7 +167,7 @@ export function MembersTable(props: MembersTableProps) {
           {canRole ? (
             <DropdownMenuItem
               onSelect={() => {
-                setRoleFor(row);
+                setRoleFor({ row, returnId: triggerId });
               }}
               data-testid="member-menu-edit-role"
             >
@@ -189,11 +204,12 @@ export function MembersTable(props: MembersTableProps) {
       />
     ) : null;
 
-  const nameButton = (row: MemberRowView) => (
+  const nameButton = (row: MemberRowView, place: Place) => (
     <button
       type="button"
+      id={`member-name-${place}-${row.personId}`}
       onClick={() => {
-        setPeek(row);
+        setPeek({ row, returnId: `member-name-${place}-${row.personId}` });
       }}
       aria-haspopup="dialog"
       className="text-start font-semibold text-text hover:underline"
@@ -204,8 +220,8 @@ export function MembersTable(props: MembersTableProps) {
   );
 
   const withActions = rows.some((r) => r.reactivate !== null);
-  const roleTarget: RoleTarget | null = roleFor?.role
-    ? { personId: roleFor.personId, name: roleFor.name, ...roleFor.role }
+  const roleTarget: RoleTarget | null = roleFor?.row.role
+    ? { personId: roleFor.row.personId, name: roleFor.row.name, ...roleFor.row.role }
     : null;
 
   return (
@@ -249,13 +265,13 @@ export function MembersTable(props: MembersTableProps) {
               {rows.map((row) => (
                 <tr
                   key={row.personId}
-                  className={`${tableClasses.row} ${peek?.personId === row.personId || roleFor?.personId === row.personId ? 'bg-surface-selected' : ''}`}
+                  className={`${tableClasses.row} ${peek?.row.personId === row.personId || roleFor?.row.personId === row.personId ? 'bg-surface-selected' : ''}`}
                 >
                   <td className={tableClasses.cell}>
                     <div className="flex items-center gap-3">
                       <Avatar name={row.name} tone="soft" size="md" />
                       <div className="min-w-0">
-                        {nameButton(row)}
+                        {nameButton(row, 'table')}
                         {row.email ? (
                           <div className="text-sm text-text-muted">
                             <bdi dir="ltr">{row.email}</bdi>
@@ -282,7 +298,7 @@ export function MembersTable(props: MembersTableProps) {
                     {row.lastSignIn}
                   </td>
                   <td className={`${tableClasses.cell} text-end`}>
-                    {reactivate(row) ?? menu(row)}
+                    {reactivate(row) ?? menu(row, 'table')}
                   </td>
                 </tr>
               ))}
@@ -296,7 +312,7 @@ export function MembersTable(props: MembersTableProps) {
           <ListCard
             key={row.personId}
             leading={<Avatar name={row.name} tone="soft" size="md" />}
-            title={nameButton(row)}
+            title={nameButton(row, 'card')}
             detail={[row.roleName, row.unitName].filter(Boolean).join(' · ') || null}
             status={
               <span className="flex flex-wrap items-center gap-2.5 text-[13px] text-text-muted">
@@ -305,30 +321,32 @@ export function MembersTable(props: MembersTableProps) {
                 <span data-testid="user-last-sign-in">{row.lastSignIn}</span>
               </span>
             }
-            action={reactivate(row) ?? menu(row)}
+            action={reactivate(row) ?? menu(row, 'card')}
           />
         ))}
       </ListCards>
 
       {peek ? (
         <PeekPanel
-          row={peek}
+          row={peek.row}
           showRole={props.showRole}
           unitHeader={props.unitHeader}
           text={text}
           onClose={() => {
+            returnFocusTo(peek.returnId);
             setPeek(null);
           }}
           onChangeRole={
-            props.roleMenu && peek.role
+            props.roleMenu && peek.row.role
               ? () => {
+                  // The role panel replaces the quick look; closing it returns to the person's name.
                   setRoleFor(peek);
                   setPeek(null);
                 }
               : null
           }
-          status={status(peek)}
-          role={role(peek)}
+          status={status(peek.row)}
+          role={role(peek.row)}
         />
       ) : null}
 
@@ -338,6 +356,7 @@ export function MembersTable(props: MembersTableProps) {
           key={roleTarget.personId}
           open
           onClose={() => {
+            if (roleFor) returnFocusTo(roleFor.returnId);
             setRoleFor(null);
           }}
           target={roleTarget}

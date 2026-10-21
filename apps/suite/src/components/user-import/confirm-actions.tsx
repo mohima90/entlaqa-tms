@@ -6,6 +6,7 @@ import { cancelUserImportAction, confirmUserImportAction } from '../../actions/u
 import { type ErrorTexts, errorText } from '../auth/error-text';
 import { fieldErrorCodes } from '../profile/field-errors';
 import { FocusedActions } from '../focused-actions';
+import { useOptionsChanging } from './options-form';
 
 export interface ConfirmActionsProps {
   readonly importId: string;
@@ -31,6 +32,8 @@ export function ConfirmActions(props: ConfirmActionsProps) {
   const text = (key: string) => props.labels[key] ?? key;
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  // A changed option is still loading: Start would send the previous choice, so it waits (busy).
+  const changing = useOptionsChanging();
   const [confirmingCancel, setConfirmingCancel] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
 
@@ -40,6 +43,7 @@ export function ConfirmActions(props: ConfirmActionsProps) {
   };
 
   const start = () => {
+    if (changing) return;
     setFailure(null);
     startTransition(async () => {
       const result = await confirmUserImportAction({ importId: props.importId, ...props.options });
@@ -91,8 +95,8 @@ export function ConfirmActions(props: ConfirmActionsProps) {
         </a>
         <Button
           variant="primary"
-          busy={pending}
-          disabled={pending}
+          busy={pending || changing}
+          disabled={pending || changing}
           onClick={start}
           data-testid="start-import"
         >

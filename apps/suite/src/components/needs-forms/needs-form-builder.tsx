@@ -6,15 +6,29 @@ import {
   type NeedsFormSection,
   localized,
 } from '@jadarat/tms/needs-forms';
-import { Alert, Badge, Button, Dialog, Icon, toast } from '@jadarat/ui';
+import {
+  Alert,
+  Badge,
+  Button,
+  Dialog,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+  Icon,
+  Spinner,
+  cn,
+  toast,
+} from '@jadarat/ui';
 import { type ReactNode, useMemo, useState, useTransition } from 'react';
 import type { FormResult } from '../../lib/needs-forms-api';
 import { previewForm } from '../../lib/needs-forms-preview';
 import type { ErrorTexts } from '../auth/error-text';
 import { useSessionRefusal } from '../auth/session-refusal';
-import { FieldDialog, type FieldDialogValues } from './field-dialog';
+import { FIELD_TYPE_ICON, FieldInspector, type FieldDialogValues } from './field-inspector';
 import { type NeedsFormAnswers, NeedsFormRenderer } from './needs-form-renderer';
-import { SectionDialog, type SectionDialogValues } from './section-dialog';
+import { SectionInspector, type SectionDialogValues } from './section-inspector';
 import {
   type NeedsFormsMode,
   fieldErrorTexts,
@@ -37,11 +51,11 @@ export interface NeedsFormBuilderProps {
 }
 
 type Editing =
-  | { readonly kind: 'section'; readonly section: NeedsFormSection | null; readonly key: number }
+  | { readonly kind: 'section'; readonly sectionId: string | null; readonly key: number }
   | {
       readonly kind: 'field';
-      readonly section: NeedsFormSection;
-      readonly field: NeedsFormField | null;
+      readonly sectionId: string;
+      readonly fieldId: string | null;
       readonly key: number;
     }
   | null;
@@ -49,41 +63,42 @@ type Deleting =
   | { readonly kind: 'section'; readonly section: NeedsFormSection }
   | { readonly kind: 'field'; readonly field: NeedsFormField }
   | null;
+type Dragging =
+  | { readonly kind: 'section'; readonly index: number }
+  | {
+      readonly kind: 'field';
+      readonly sectionId: string;
+      readonly fieldId: string;
+      readonly index: number;
+    }
+  | null;
 
-const iconButton =
-  'grid size-9 shrink-0 place-items-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text disabled:cursor-not-allowed disabled:opacity-40 pointer-coarse:size-11';
+const MENU_TRIGGER =
+  'grid size-9 shrink-0 place-items-center rounded-full text-text-muted hover:bg-surface-hover hover:text-text pointer-coarse:size-11';
 
-function IconButton(props: {
-  label: string;
-  icon: Parameters<typeof Icon>[0]['name'];
-  onClick: () => void;
-  disabled?: boolean;
-  pressed?: boolean;
-  testId?: string;
-  danger?: boolean;
-}) {
+function Tag({ children, tone = 'neutral' }: { children: ReactNode; tone?: 'neutral' | 'brand' }) {
   return (
-    <button
-      type="button"
-      className={`${iconButton} ${props.danger ? 'hover:text-danger' : ''}`}
-      aria-label={props.label}
-      aria-pressed={props.pressed}
-      disabled={props.disabled}
-      onClick={props.onClick}
-      data-testid={props.testId}
+    <span
+      className={cn(
+        'inline-flex items-center gap-1 rounded-md border px-1.5 py-px text-[12.5px] font-medium',
+        tone === 'brand'
+          ? 'border-primary/30 bg-primary-subtle text-primary-text'
+          : 'border-border bg-surface text-text-muted',
+      )}
     >
-      <Icon name={props.icon} />
-    </button>
+      {children}
+    </span>
   );
 }
 
 /**
- * The needs-form builder (T-M3-10; Kawadir's application-form builder with the agreed fixes): collapsible
- * section cards (badges: fixed fields, repeatable with min–max, number of fields, hidden), each with show /
- * hide, move up / down, edit and delete; field rows with required / optional, show / hide, move up / down,
- * edit and delete; the section and field dialogs; and a live preview (the reusable renderer). The training
- * topic and people fields are fixed. A locked form, or a reader without the design permission, sees the same
- * page without the controls.
+ * The needs-form builder (T-M3-10; redesign package 4 — Maze's three panes): an outline of the sections and
+ * fields (type icons, tags: fixed, repeatable 1–50, hidden, the condition; a ⋯ menu per row with Move up /
+ * Move down, Show / Hide, Required / Optional and Delete; pointer-only drag handles that do the same moves),
+ * an inspector pane with the section or field settings (instead of the dialogs; «Save field») and an
+ * always-visible preview — the real renderer — in English or Arabic, with the field being edited outlined.
+ * «All changes saved» / «Saving…» replaces a toast per click. Phones: Outline / Preview tabs. A locked form,
+ * or a reader without the design permission, sees the same page without the controls.
  */
 export function NeedsFormBuilder(props: NeedsFormBuilderProps) {
   const { locale } = props;
@@ -102,12 +117,14 @@ export function NeedsFormBuilder(props: NeedsFormBuilderProps) {
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   const [editing, setEditing] = useState<Editing>(null);
   const [deleting, setDeleting] = useState<Deleting>(null);
-  const [previewing, setPreviewing] = useState(false);
   const [answers, setAnswers] = useState<NeedsFormAnswers>({});
+  const [previewLocale, setPreviewLocale] = useState<'ar' | 'en'>(locale);
+  const [tab, setTab] = useState<'outline' | 'preview'>('outline');
+  const [dragging, setDragging] = useState<Dragging>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [pending, startTransition] = useTransition();
-  const [dialogKey, setDialogKey] = useState(0);
+  const [inspectorKey, setInspectorKey] = useState(0);
 
   if (!loaded) return null;
   if (!form) {
@@ -117,83 +134,121 @@ export function NeedsFormBuilder(props: NeedsFormBuilderProps) {
       </Alert>
     );
   }
+  const current: NeedsFormDefinition = form;
 
-  const locked = form.lockedAt !== null;
+  const locked = current.lockedAt !== null;
   const editable = props.canManage && !locked;
-  const name = localized(form.name, locale);
+  const name = localized(current.name, locale);
+  const fieldCount = current.sections.reduce((n, s) => n + s.fields.length, 0);
 
-  function failed(error: AppError, inDialog: boolean) {
+  function failed(error: AppError, inPane: boolean) {
     if (sessionRefused(error)) return;
     const words = needsFormsErrorText(error, text, props.errors);
-    if (inDialog) {
+    if (inPane) {
       setFieldErrors(fieldErrorTexts(error, text));
       setMessage(words);
     } else toast.error(words);
   }
 
+  /** One save; «All changes saved» says it worked (no toast per click). */
   function run(
     work: () => Promise<FormResult>,
-    options: { inDialog?: boolean; done?: () => void } = {},
+    options: { inPane?: boolean; done?: (form: NeedsFormDefinition) => void } = {},
   ) {
     startTransition(async () => {
       const result = await work();
       if (!result.ok) {
-        failed(result.error, options.inDialog ?? false);
+        failed(result.error, options.inPane ?? false);
         return;
       }
       setForm(result.value.form);
-      options.done?.();
-      if (options.inDialog) toast.success(text('saved'));
+      setMessage(null);
+      setFieldErrors({});
+      options.done?.(result.value.form);
     });
   }
 
-  function openEditing(next: Exclude<Editing, null>) {
-    setMessage(null);
-    setFieldErrors({});
-    setDialogKey((k) => k + 1);
-    setEditing(next);
+  /** A drop: the same Move up / Move down, once per place moved. */
+  function moveBy(move: (direction: 'up' | 'down') => Promise<FormResult>, by: number) {
+    if (by === 0) return;
+    startTransition(async () => {
+      let last: FormResult | null = null;
+      for (let i = 0; i < Math.abs(by); i++) {
+        last = await move(by < 0 ? 'up' : 'down');
+        if (!last.ok) {
+          failed(last.error, false);
+          return;
+        }
+      }
+      if (last?.ok) setForm(last.value.form);
+    });
   }
 
-  const closeEditing = () => {
-    if (!pending) setEditing(null);
-  };
+  function open(next: Exclude<Editing, null>) {
+    setMessage(null);
+    setFieldErrors({});
+    setInspectorKey((k) => k + 1);
+    setEditing({ ...next, key: inspectorKey + 1 });
+  }
+
+  const editingSection =
+    editing?.kind === 'section' && editing.sectionId
+      ? (current.sections.find((s) => s.id === editing.sectionId) ?? null)
+      : null;
+  const fieldSection =
+    editing?.kind === 'field'
+      ? (current.sections.find((s) => s.id === editing.sectionId) ?? null)
+      : null;
+  const editingField =
+    editing?.kind === 'field' && editing.fieldId
+      ? (fieldSection?.fields.find((f) => f.id === editing.fieldId) ?? null)
+      : null;
 
   function saveSection(values: SectionDialogValues) {
-    if (editing?.kind !== 'section' || !form) return;
-    const sectionId = editing.section?.id;
+    if (editing?.kind !== 'section') return;
+    const before = new Set(current.sections.map((s) => s.id));
+    const sectionId = editing.sectionId;
     run(
-      () =>
-        api.saveSection({
-          formId: form.id,
-          ...(sectionId ? { sectionId } : {}),
-          ...values,
-        }),
+      () => api.saveSection({ formId: current.id, ...(sectionId ? { sectionId } : {}), ...values }),
       {
-        inDialog: true,
-        done: () => {
-          setEditing(null);
+        inPane: true,
+        done: (saved) => {
+          const added = saved.sections.find((s) => !before.has(s.id));
+          if (!sectionId && added) {
+            setEditing({ kind: 'section', sectionId: added.id, key: inspectorKey + 1 });
+            setInspectorKey((k) => k + 1);
+          }
         },
       },
     );
   }
 
   function saveField(values: FieldDialogValues) {
-    if (editing?.kind !== 'field' || !form) return;
-    const { section, field } = editing;
+    if (editing?.kind !== 'field' || !fieldSection) return;
+    const sectionId = fieldSection.id;
+    const fieldId = editing.fieldId;
+    const before = new Set(fieldSection.fields.map((f) => f.id));
     run(
       () =>
         api.saveField({
-          formId: form.id,
-          sectionId: section.id,
-          ...(field ? { fieldId: field.id } : {}),
+          formId: current.id,
+          sectionId,
+          ...(fieldId ? { fieldId } : {}),
           ...values,
           options: [...values.options],
         }),
       {
-        inDialog: true,
-        done: () => {
-          setEditing(null);
-          setCollapsed((c) => new Set([...c].filter((id) => id !== section.id)));
+        inPane: true,
+        done: (saved) => {
+          setCollapsed((c) => new Set([...c].filter((id) => id !== sectionId)));
+          // A new field stays open in the inspector (and outlined in the preview) once saved.
+          const added = saved.sections
+            .find((s) => s.id === sectionId)
+            ?.fields.find((f) => !before.has(f.id));
+          if (!fieldId && added) {
+            setEditing({ kind: 'field', sectionId, fieldId: added.id, key: inspectorKey + 1 });
+            setInspectorKey((k) => k + 1);
+          }
         },
       },
     );
@@ -209,7 +264,6 @@ export function NeedsFormBuilder(props: NeedsFormBuilderProps) {
       : null;
   };
 
-  const allIds = form.sections.map((s) => s.id);
   let banner: ReactNode = null;
   if (locked) {
     banner = (
@@ -225,69 +279,605 @@ export function NeedsFormBuilder(props: NeedsFormBuilderProps) {
     );
   }
 
-  return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-        <div className="flex min-w-0 flex-col gap-1">
-          <a href={props.libraryHref} className="text-sm">
-            {text('back')}
-          </a>
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="m-0 text-2xl font-bold tracking-tight" data-testid="needs-form-title">
-              {name}
-            </h1>
-            {form.isDefault ? <Badge tone="info">{text('defaultBadge')}</Badge> : null}
-            {locked ? <Badge tone="warning">{text('lockedBadge')}</Badge> : null}
-            {!form.isActive ? <Badge tone="neutral">{text('inactiveBadge')}</Badge> : null}
-          </div>
-          <p className="m-0 max-w-3xl text-text-muted">{text('builderIntro')}</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1 rounded-lg border border-border p-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setCollapsed(new Set());
-              }}
-            >
-              <Icon name="chevron-down" />
-              {text('expandAll')}
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setCollapsed(new Set(allIds));
-              }}
-            >
-              <Icon name="chevron-up" />
-              {text('collapseAll')}
-            </Button>
-          </div>
+  const outline = (
+    <section
+      aria-labelledby="builder-outline-title"
+      className="flex flex-col gap-3 rounded-[22px] border border-border bg-surface p-3.5 shadow-2 md:p-4"
+      data-testid="builder-outline"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+        <h2 id="builder-outline-title" className="m-0 text-lg font-bold">
+          {text('outline')}
+        </h2>
+        {editable ? (
           <Button
             variant="secondary"
+            size="sm"
             onClick={() => {
-              setAnswers({});
-              setPreviewing(true);
+              open({ kind: 'section', sectionId: null, key: 0 });
             }}
-            data-testid="needs-form-preview-open"
+            data-testid="section-add"
           >
-            <Icon name="eye" />
-            {text('preview')}
+            <Icon name="plus" />
+            {text('addSection')}
           </Button>
-          {editable ? (
-            <Button
+        ) : null}
+      </div>
+      <ol className="m-0 flex list-none flex-col gap-3 p-0" data-testid="needs-form-sections">
+        {current.sections.map((section, sectionIndex) => {
+          const isOpen = !collapsed.has(section.id);
+          const sectionName = localized(section.name, locale);
+          const system = section.fields.some((f) => f.systemKey !== null);
+          const bodyId = `section-body-${section.id}`;
+          const selected = editing?.kind === 'section' && editing.sectionId === section.id;
+          return (
+            <li key={section.id}>
+              {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- only a drop target of the pointer-only drag handle; the row menu's Move up / Move down are the keyboard way (WCAG 2.5.7) */}
+              <section
+                aria-labelledby={`section-title-${section.id}`}
+                className={cn(
+                  'flex flex-col gap-2 rounded-[18px] border bg-surface-sunken p-2',
+                  selected ? 'border-primary' : 'border-border',
+                  section.visible ? '' : 'opacity-75',
+                )}
+                data-testid="builder-section"
+                data-section-id={section.id}
+                onDragOver={(event) => {
+                  if (dragging?.kind === 'section') event.preventDefault();
+                }}
+                onDrop={(event) => {
+                  if (dragging?.kind !== 'section') return;
+                  event.preventDefault();
+                  const from = dragging.index;
+                  const moving = current.sections[from];
+                  setDragging(null);
+                  if (moving) {
+                    moveBy(
+                      (direction) => api.moveSection(current.id, moving.id, direction),
+                      sectionIndex - from,
+                    );
+                  }
+                }}
+              >
+                <div className="flex items-center gap-1.5">
+                  {editable ? (
+                    <span
+                      aria-hidden="true"
+                      draggable
+                      onDragStart={() => {
+                        setDragging({ kind: 'section', index: sectionIndex });
+                      }}
+                      onDragEnd={() => {
+                        setDragging(null);
+                      }}
+                      className="hidden h-9 w-6 cursor-grab place-items-center text-text-subtle pointer-fine:grid"
+                    >
+                      <Icon name="menu" className="size-4" />
+                    </span>
+                  ) : null}
+                  <button
+                    type="button"
+                    className={MENU_TRIGGER}
+                    aria-expanded={isOpen}
+                    aria-controls={bodyId}
+                    aria-label={
+                      isOpen
+                        ? text('collapseSection', { name: sectionName })
+                        : text('expandSection', { name: sectionName })
+                    }
+                    onClick={() => {
+                      setCollapsed((c) => {
+                        const next = new Set(c);
+                        if (isOpen) next.add(section.id);
+                        else next.delete(section.id);
+                        return next;
+                      });
+                    }}
+                    data-testid="section-expand"
+                  >
+                    <Icon name={isOpen ? 'chevron-down' : 'chevron-end'} />
+                  </button>
+                  <div className="flex min-w-0 flex-1 flex-col gap-1 py-1">
+                    <h3 id={`section-title-${section.id}`} className="m-0 text-[15px] font-bold">
+                      {editable ? (
+                        <button
+                          type="button"
+                          className="text-start hover:underline"
+                          onClick={() => {
+                            open({ kind: 'section', sectionId: section.id, key: 0 });
+                          }}
+                          data-testid="section-edit"
+                        >
+                          {sectionName}
+                        </button>
+                      ) : (
+                        sectionName
+                      )}
+                    </h3>
+                    <div className="flex flex-wrap items-center gap-1">
+                      {system ? (
+                        <Tag>
+                          <Icon name="lock" className="size-3" />
+                          {text('systemBadge')}
+                        </Tag>
+                      ) : null}
+                      {section.repeatable ? (
+                        <Tag tone="brand">
+                          <Icon name="repeat" className="size-3" />
+                          {text('repeatableBadge', {
+                            min: section.minEntries,
+                            max: section.maxEntries,
+                          })}
+                        </Tag>
+                      ) : null}
+                      <Tag>{text('fieldsCount', { count: section.fields.length })}</Tag>
+                      {!section.visible ? <Tag>{text('hiddenBadge')}</Tag> : null}
+                    </div>
+                  </div>
+                  {editable ? (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        className={MENU_TRIGGER}
+                        aria-label={text('rowActions', { name: sectionName })}
+                        disabled={pending}
+                        data-testid="section-menu"
+                      >
+                        <Icon name="more" />
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent>
+                        <DropdownMenuItem
+                          onSelect={() => {
+                            open({ kind: 'section', sectionId: section.id, key: 0 });
+                          }}
+                        >
+                          <Icon name="pencil" />
+                          {text('editSection', { name: sectionName })}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          disabled={sectionIndex === 0}
+                          onSelect={() => {
+                            run(() => api.moveSection(current.id, section.id, 'up'));
+                          }}
+                          data-testid="section-move-up"
+                        >
+                          <Icon name="arrow-up" />
+                          {text('moveSectionUp', { name: sectionName })}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          disabled={sectionIndex === current.sections.length - 1}
+                          onSelect={() => {
+                            run(() => api.moveSection(current.id, section.id, 'down'));
+                          }}
+                          data-testid="section-move-down"
+                        >
+                          <Icon name="arrow-down" />
+                          {text('moveSectionDown', { name: sectionName })}
+                        </DropdownMenuItem>
+                        {!system ? (
+                          <>
+                            <DropdownMenuItem
+                              onSelect={() => {
+                                run(() =>
+                                  api.setSectionVisible(current.id, section.id, !section.visible),
+                                );
+                              }}
+                              data-testid="section-toggle-visible"
+                            >
+                              <Icon name={section.visible ? 'eye-off' : 'eye'} />
+                              {section.visible
+                                ? text('hideSection', { name: sectionName })
+                                : text('showSection', { name: sectionName })}
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              tone="danger"
+                              onSelect={() => {
+                                setDeleting({ kind: 'section', section });
+                              }}
+                              data-testid="section-delete"
+                            >
+                              <Icon name="trash" />
+                              {text('deleteSection', { name: sectionName })}
+                            </DropdownMenuItem>
+                          </>
+                        ) : null}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  ) : null}
+                </div>
+                <div id={bodyId} hidden={!isOpen} className="flex flex-col gap-1.5">
+                  {section.fields.length === 0 ? (
+                    <p className="m-0 px-2 text-sm text-text-muted">{text('noFields')}</p>
+                  ) : (
+                    <ol className="m-0 flex list-none flex-col gap-1.5 p-0">
+                      {section.fields.map((field, fieldIndex) => {
+                        const label = fieldName(field);
+                        const condition = conditionText(section, field);
+                        const fixed = field.systemKey !== null;
+                        const isSelected =
+                          editing?.kind === 'field' && editing.fieldId === field.id;
+                        const summary = (
+                          <>
+                            <span
+                              className={cn(
+                                'block text-sm font-semibold [overflow-wrap:anywhere]',
+                                !field.visible && 'line-through',
+                              )}
+                              data-testid="builder-field-label"
+                            >
+                              {label}
+                            </span>
+                            <span className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[12.5px] text-text-muted">
+                              <span>
+                                {text(`types.${field.type}`)} ·{' '}
+                                {field.required ? text('required') : text('optional')}
+                              </span>
+                              {field.options.length > 0 ? (
+                                <span>{text('optionsCount', { count: field.options.length })}</span>
+                              ) : null}
+                              {!field.visible ? <span>{text('hiddenBadge')}</span> : null}
+                            </span>
+                            {fixed || condition ? (
+                              <span className="mt-1 flex flex-wrap gap-1">
+                                {fixed ? (
+                                  <Tag>
+                                    <Icon name="lock" className="size-3" />
+                                    {text('fixedField')}
+                                  </Tag>
+                                ) : null}
+                                {condition ? (
+                                  <span
+                                    className="inline-flex items-center gap-1 text-[12.5px] font-semibold text-primary-text"
+                                    data-testid="builder-field-condition"
+                                  >
+                                    {condition}
+                                  </span>
+                                ) : null}
+                              </span>
+                            ) : null}
+                          </>
+                        );
+                        return (
+                          <li
+                            key={field.id}
+                            className={cn(
+                              'flex items-center gap-1.5 rounded-[14px] border bg-surface px-1.5 py-1.5',
+                              isSelected ? 'border-primary bg-primary-subtle' : 'border-border',
+                              dragging?.kind === 'field' &&
+                                dragging.fieldId === field.id &&
+                                'opacity-60',
+                            )}
+                            data-testid="builder-field"
+                            data-field-id={field.id}
+                          >
+                            {editable ? (
+                              <span
+                                aria-hidden="true"
+                                draggable
+                                onDragStart={() => {
+                                  setDragging({
+                                    kind: 'field',
+                                    sectionId: section.id,
+                                    fieldId: field.id,
+                                    index: fieldIndex,
+                                  });
+                                }}
+                                onDragEnd={() => {
+                                  setDragging(null);
+                                }}
+                                className="hidden h-9 w-6 cursor-grab place-items-center text-text-subtle pointer-fine:grid"
+                              >
+                                <Icon name="menu" className="size-4" />
+                              </span>
+                            ) : null}
+                            {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions -- only a drop target of the pointer-only drag handle; the row menu's Move up / Move down are the keyboard way (WCAG 2.5.7) */}
+                            <div
+                              className="flex min-w-0 flex-1 items-center gap-2.5"
+                              onDragOver={(event) => {
+                                if (dragging?.kind === 'field' && dragging.sectionId === section.id)
+                                  event.preventDefault();
+                              }}
+                              onDrop={(event) => {
+                                if (dragging?.kind !== 'field' || dragging.sectionId !== section.id)
+                                  return;
+                                event.preventDefault();
+                                const moving = dragging;
+                                setDragging(null);
+                                moveBy(
+                                  (direction) =>
+                                    api.moveField(current.id, moving.fieldId, direction),
+                                  fieldIndex - moving.index,
+                                );
+                              }}
+                            >
+                              <span
+                                aria-hidden="true"
+                                className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary-subtle text-primary-text"
+                              >
+                                <Icon name={FIELD_TYPE_ICON[field.type]} className="size-4" />
+                              </span>
+                              {editable ? (
+                                <button
+                                  type="button"
+                                  className="min-w-0 flex-1 py-1 text-start"
+                                  aria-current={isSelected ? 'true' : undefined}
+                                  onClick={() => {
+                                    open({
+                                      kind: 'field',
+                                      sectionId: section.id,
+                                      fieldId: field.id,
+                                      key: 0,
+                                    });
+                                  }}
+                                  data-testid="field-edit"
+                                >
+                                  {summary}
+                                </button>
+                              ) : (
+                                <div className="min-w-0 flex-1 py-1">{summary}</div>
+                              )}
+                            </div>
+                            {editable ? (
+                              <DropdownMenu>
+                                <DropdownMenuTrigger
+                                  className={MENU_TRIGGER}
+                                  aria-label={text('rowActions', { name: label })}
+                                  disabled={pending}
+                                  data-testid="field-menu"
+                                >
+                                  <Icon name="more" />
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent>
+                                  {!fixed ? (
+                                    <DropdownMenuItem
+                                      onSelect={() => {
+                                        run(() =>
+                                          api.setFieldRequired(
+                                            current.id,
+                                            field.id,
+                                            !field.required,
+                                          ),
+                                        );
+                                      }}
+                                      data-testid="field-toggle-required"
+                                    >
+                                      <Icon name="check" />
+                                      {field.required
+                                        ? text('makeOptional', { name: label })
+                                        : text('makeRequired', { name: label })}
+                                    </DropdownMenuItem>
+                                  ) : null}
+                                  <DropdownMenuItem
+                                    disabled={fieldIndex === 0}
+                                    onSelect={() => {
+                                      run(() => api.moveField(current.id, field.id, 'up'));
+                                    }}
+                                    data-testid="field-move-up"
+                                  >
+                                    <Icon name="arrow-up" />
+                                    {text('moveFieldUp', { name: label })}
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    disabled={fieldIndex === section.fields.length - 1}
+                                    onSelect={() => {
+                                      run(() => api.moveField(current.id, field.id, 'down'));
+                                    }}
+                                    data-testid="field-move-down"
+                                  >
+                                    <Icon name="arrow-down" />
+                                    {text('moveFieldDown', { name: label })}
+                                  </DropdownMenuItem>
+                                  {!fixed ? (
+                                    <>
+                                      <DropdownMenuItem
+                                        onSelect={() => {
+                                          run(() =>
+                                            api.setFieldVisible(
+                                              current.id,
+                                              field.id,
+                                              !field.visible,
+                                            ),
+                                          );
+                                        }}
+                                        data-testid="field-toggle-visible"
+                                      >
+                                        <Icon name={field.visible ? 'eye-off' : 'eye'} />
+                                        {field.visible
+                                          ? text('hideField', { name: label })
+                                          : text('showField', { name: label })}
+                                      </DropdownMenuItem>
+                                      <DropdownMenuSeparator />
+                                      <DropdownMenuItem
+                                        tone="danger"
+                                        onSelect={() => {
+                                          setDeleting({ kind: 'field', field });
+                                        }}
+                                        data-testid="field-delete"
+                                      >
+                                        <Icon name="trash" />
+                                        {text('deleteField', { name: label })}
+                                      </DropdownMenuItem>
+                                    </>
+                                  ) : null}
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            ) : null}
+                          </li>
+                        );
+                      })}
+                    </ol>
+                  )}
+                  {editable ? (
+                    <button
+                      type="button"
+                      className="flex min-h-11 items-center justify-center gap-2 rounded-[14px] border-[1.5px] border-dashed border-border-strong font-semibold text-primary-text hover:bg-primary-subtle disabled:opacity-60"
+                      disabled={pending}
+                      onClick={() => {
+                        open({ kind: 'field', sectionId: section.id, fieldId: null, key: 0 });
+                      }}
+                      data-testid="field-add"
+                    >
+                      <Icon name="plus" className="size-4" />
+                      {text('addField')}
+                    </button>
+                  ) : null}
+                </div>
+              </section>
+            </li>
+          );
+        })}
+      </ol>
+      {editable ? (
+        <p className="m-0 flex items-start gap-2 px-1 text-[13px] text-text-muted">
+          <Icon name="menu" className="mt-0.5 size-3.5" />
+          {text('dragHint')}
+        </p>
+      ) : null}
+    </section>
+  );
+
+  const inspector =
+    editing?.kind === 'section' && editable ? (
+      <SectionInspector
+        key={editing.key}
+        locale={locale}
+        section={editingSection}
+        pending={pending}
+        message={message}
+        fieldErrors={fieldErrors}
+        text={text}
+        onClose={() => {
+          setEditing(null);
+        }}
+        onSave={saveSection}
+        onDelete={
+          editingSection && !editingSection.fields.some((f) => f.systemKey !== null)
+            ? () => {
+                setDeleting({ kind: 'section', section: editingSection });
+              }
+            : undefined
+        }
+      />
+    ) : editing?.kind === 'field' && editable && fieldSection ? (
+      <FieldInspector
+        key={editing.key}
+        locale={locale}
+        section={fieldSection}
+        field={editingField}
+        pending={pending}
+        message={message}
+        fieldErrors={fieldErrors}
+        text={text}
+        unsavedText={text('unsavedChanges')}
+        onClose={() => {
+          setEditing(null);
+        }}
+        onSave={saveField}
+        onDelete={
+          editingField?.systemKey === null
+            ? () => {
+                setDeleting({ kind: 'field', field: editingField });
+              }
+            : undefined
+        }
+      />
+    ) : null;
+
+  const preview = (
+    <section
+      aria-labelledby="builder-preview-title"
+      className="flex flex-col gap-3 rounded-[22px] border border-border bg-surface p-3.5 shadow-2 md:p-4.5"
+      data-testid="needs-form-preview-pane"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 id="builder-preview-title" className="m-0 flex items-center gap-2 text-lg font-bold">
+          <Icon name="eye" className="size-4" />
+          {text('preview')}
+        </h2>
+        <div
+          role="group"
+          aria-label={text('previewLanguage')}
+          className="flex gap-1 rounded-full bg-surface-sunken p-1"
+        >
+          {(['en', 'ar'] as const).map((lang) => (
+            <button
+              key={lang}
+              type="button"
+              lang={lang}
+              aria-pressed={previewLocale === lang}
               onClick={() => {
-                openEditing({ kind: 'section', section: null, key: dialogKey });
+                setPreviewLocale(lang);
               }}
-              data-testid="section-add"
+              className={cn(
+                'min-h-9 rounded-full px-3.5 text-sm font-semibold pointer-coarse:min-h-11',
+                previewLocale === lang ? 'bg-surface text-text shadow-1' : 'text-text-muted',
+              )}
+              data-testid={`preview-language-${lang}`}
             >
-              <Icon name="plus" />
-              {text('addSection')}
-            </Button>
+              {lang === 'en' ? 'English' : 'العربية'}
+            </button>
+          ))}
+        </div>
+      </div>
+      <p className="m-0 text-sm text-text-muted">{text('previewHint')}</p>
+      <div lang={previewLocale} dir={previewLocale === 'ar' ? 'rtl' : 'ltr'}>
+        <NeedsFormRenderer
+          form={current}
+          locale={previewLocale}
+          answers={answers}
+          onChange={setAnswers}
+          texts={props.texts}
+          idPrefix="preview"
+          highlight={editing?.kind === 'field' ? (editing.fieldId ?? undefined) : undefined}
+        />
+      </div>
+    </section>
+  );
+
+  return (
+    <div className="flex flex-col gap-5">
+      <div className="flex flex-col gap-1.5">
+        <a
+          href={props.libraryHref}
+          className="inline-flex w-fit items-center gap-1.5 text-sm font-semibold"
+        >
+          <span className="inline-flex -scale-x-100">
+            <Icon name="arrow-end" className="size-4" />
+          </span>
+          {text('back')}
+        </a>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <h1
+              className="m-0 text-[28px] font-bold leading-tight tracking-[-0.02em] md:text-4xl"
+              data-testid="needs-form-title"
+            >
+              {name}
+            </h1>
+            {current.isDefault ? <Badge tone="brand">{text('defaultBadge')}</Badge> : null}
+            {locked ? <Badge tone="warning">{text('lockedBadge')}</Badge> : null}
+            {!current.isActive ? <Badge tone="neutral">{text('inactiveBadge')}</Badge> : null}
+          </div>
+          {editable ? (
+            <p
+              role="status"
+              className={cn(
+                'm-0 inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-sm font-semibold',
+                pending ? 'bg-surface-hover text-text-muted' : 'bg-success-subtle text-success',
+              )}
+              data-testid="builder-save-status"
+            >
+              {pending ? <Spinner /> : <Icon name="success" className="size-4" />}
+              {pending ? text('saving') : text('allSaved')}
+            </p>
           ) : null}
         </div>
+        <p className="m-0 max-w-4xl text-text-muted">
+          <span className="me-2" data-testid="needs-form-stats">
+            {text('statsCount', { sections: current.sections.length, fields: fieldCount })}
+          </span>
+          {text('builderIntro')}
+        </p>
       </div>
 
       {props.mode === 'preview' ? (
@@ -297,333 +887,51 @@ export function NeedsFormBuilder(props: NeedsFormBuilderProps) {
       ) : null}
       {banner}
 
-      <ol className="m-0 flex list-none flex-col gap-4 p-0" data-testid="needs-form-sections">
-        {form.sections.map((section, sectionIndex) => {
-          const open = !collapsed.has(section.id);
-          const sectionName = localized(section.name, locale);
-          const system = section.fields.some((f) => f.systemKey !== null);
-          const bodyId = `section-body-${section.id}`;
-          return (
-            <li key={section.id}>
-              <section
-                aria-labelledby={`section-title-${section.id}`}
-                className={`rounded-xl border border-border bg-surface shadow-1 ${section.visible ? '' : 'opacity-75'}`}
-                data-testid="builder-section"
-                data-section-id={section.id}
-              >
-                <div className="flex flex-wrap items-center justify-between gap-3 p-4">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <div className="grid size-10 shrink-0 place-items-center rounded-lg bg-primary-subtle text-primary-text">
-                      <Icon name="form" className="size-5" />
-                    </div>
-                    <div className="flex min-w-0 flex-col gap-1">
-                      <h2 id={`section-title-${section.id}`} className="m-0 text-lg font-semibold">
-                        {sectionName}
-                      </h2>
-                      <div className="flex flex-wrap items-center gap-1">
-                        {system ? (
-                          <Badge tone="neutral">
-                            <Icon name="lock" className="size-3" />
-                            {text('systemBadge')}
-                          </Badge>
-                        ) : null}
-                        {section.repeatable ? (
-                          <Badge tone="info">
-                            <Icon name="repeat" className="size-3" />
-                            {text('repeatableBadge', {
-                              min: section.minEntries,
-                              max: section.maxEntries,
-                            })}
-                          </Badge>
-                        ) : null}
-                        <Badge tone="neutral">
-                          {text('fieldsCount', { count: section.fields.length })}
-                        </Badge>
-                        {!section.visible ? (
-                          <Badge tone="warning">{text('hiddenBadge')}</Badge>
-                        ) : null}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-0.5">
-                    {editable ? (
-                      <>
-                        <IconButton
-                          label={text('moveSectionUp', { name: sectionName })}
-                          icon="arrow-up"
-                          disabled={pending || sectionIndex === 0}
-                          onClick={() => {
-                            run(() => api.moveSection(form.id, section.id, 'up'));
-                          }}
-                          testId="section-move-up"
-                        />
-                        <IconButton
-                          label={text('moveSectionDown', { name: sectionName })}
-                          icon="arrow-down"
-                          disabled={pending || sectionIndex === form.sections.length - 1}
-                          onClick={() => {
-                            run(() => api.moveSection(form.id, section.id, 'down'));
-                          }}
-                          testId="section-move-down"
-                        />
-                        {!system ? (
-                          <IconButton
-                            label={
-                              section.visible
-                                ? text('hideSection', { name: sectionName })
-                                : text('showSection', { name: sectionName })
-                            }
-                            icon={section.visible ? 'eye' : 'eye-off'}
-                            pressed={!section.visible}
-                            disabled={pending}
-                            onClick={() => {
-                              run(() =>
-                                api.setSectionVisible(form.id, section.id, !section.visible),
-                              );
-                            }}
-                            testId="section-toggle-visible"
-                          />
-                        ) : null}
-                        <IconButton
-                          label={text('editSection', { name: sectionName })}
-                          icon="pencil"
-                          disabled={pending}
-                          onClick={() => {
-                            openEditing({ kind: 'section', section, key: dialogKey });
-                          }}
-                          testId="section-edit"
-                        />
-                        {!system ? (
-                          <IconButton
-                            label={text('deleteSection', { name: sectionName })}
-                            icon="trash"
-                            danger
-                            disabled={pending}
-                            onClick={() => {
-                              setDeleting({ kind: 'section', section });
-                            }}
-                            testId="section-delete"
-                          />
-                        ) : null}
-                      </>
-                    ) : null}
-                    <button
-                      type="button"
-                      className={iconButton}
-                      aria-expanded={open}
-                      aria-controls={bodyId}
-                      aria-label={
-                        open
-                          ? text('collapseSection', { name: sectionName })
-                          : text('expandSection', { name: sectionName })
-                      }
-                      onClick={() => {
-                        setCollapsed((c) => {
-                          const next = new Set(c);
-                          if (open) next.add(section.id);
-                          else next.delete(section.id);
-                          return next;
-                        });
-                      }}
-                      data-testid="section-expand"
-                    >
-                      <Icon name={open ? 'chevron-up' : 'chevron-down'} />
-                    </button>
-                  </div>
-                </div>
-                <div id={bodyId} hidden={!open} className="border-t border-border p-4">
-                  {section.fields.length === 0 ? (
-                    <p className="m-0 mb-3 text-sm text-text-muted">{text('noFields')}</p>
-                  ) : (
-                    <ol className="m-0 flex list-none flex-col gap-2 p-0">
-                      {section.fields.map((field, fieldIndex) => {
-                        const label = fieldName(field);
-                        const condition = conditionText(section, field);
-                        const fixed = field.systemKey !== null;
-                        return (
-                          <li
-                            key={field.id}
-                            className={`flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-surface-sunken px-3 py-2 ${field.visible ? '' : 'opacity-60'}`}
-                            data-testid="builder-field"
-                            data-field-id={field.id}
-                          >
-                            <div className="flex min-w-0 flex-col">
-                              <span
-                                className="text-sm font-medium"
-                                data-testid="builder-field-label"
-                              >
-                                {label}
-                                {field.required ? (
-                                  <span className="ms-1 text-danger" aria-hidden="true">
-                                    *
-                                  </span>
-                                ) : null}
-                              </span>
-                              <span className="flex flex-wrap items-center gap-x-2 text-xs text-text-muted">
-                                <span>{text(`types.${field.type}`)}</span>
-                                {field.options.length > 0 ? (
-                                  <span>
-                                    {text('optionsCount', { count: field.options.length })}
-                                  </span>
-                                ) : null}
-                                {fixed ? <span>{text('fixedField')}</span> : null}
-                                {condition ? (
-                                  <span
-                                    className="text-warning-strong"
-                                    data-testid="builder-field-condition"
-                                  >
-                                    {condition}
-                                  </span>
-                                ) : null}
-                                {!field.visible ? <span>{text('hiddenBadge')}</span> : null}
-                              </span>
-                            </div>
-                            <div className="flex flex-wrap items-center gap-0.5">
-                              {editable && !fixed ? (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  aria-label={
-                                    field.required
-                                      ? text('makeOptional', { name: label })
-                                      : text('makeRequired', { name: label })
-                                  }
-                                  disabled={pending}
-                                  onClick={() => {
-                                    run(() =>
-                                      api.setFieldRequired(form.id, field.id, !field.required),
-                                    );
-                                  }}
-                                  data-testid="field-toggle-required"
-                                >
-                                  {field.required ? text('required') : text('optional')}
-                                </Button>
-                              ) : (
-                                <span className="px-2 text-xs text-text-muted">
-                                  {field.required ? text('required') : text('optional')}
-                                </span>
-                              )}
-                              {editable ? (
-                                <>
-                                  <IconButton
-                                    label={text('moveFieldUp', { name: label })}
-                                    icon="arrow-up"
-                                    disabled={pending || fieldIndex === 0}
-                                    onClick={() => {
-                                      run(() => api.moveField(form.id, field.id, 'up'));
-                                    }}
-                                    testId="field-move-up"
-                                  />
-                                  <IconButton
-                                    label={text('moveFieldDown', { name: label })}
-                                    icon="arrow-down"
-                                    disabled={pending || fieldIndex === section.fields.length - 1}
-                                    onClick={() => {
-                                      run(() => api.moveField(form.id, field.id, 'down'));
-                                    }}
-                                    testId="field-move-down"
-                                  />
-                                  {!fixed ? (
-                                    <IconButton
-                                      label={
-                                        field.visible
-                                          ? text('hideField', { name: label })
-                                          : text('showField', { name: label })
-                                      }
-                                      icon={field.visible ? 'eye' : 'eye-off'}
-                                      pressed={!field.visible}
-                                      disabled={pending}
-                                      onClick={() => {
-                                        run(() =>
-                                          api.setFieldVisible(form.id, field.id, !field.visible),
-                                        );
-                                      }}
-                                      testId="field-toggle-visible"
-                                    />
-                                  ) : null}
-                                  <IconButton
-                                    label={text('editField', { name: label })}
-                                    icon="pencil"
-                                    disabled={pending}
-                                    onClick={() => {
-                                      openEditing({
-                                        kind: 'field',
-                                        section,
-                                        field,
-                                        key: dialogKey,
-                                      });
-                                    }}
-                                    testId="field-edit"
-                                  />
-                                  {!fixed ? (
-                                    <IconButton
-                                      label={text('deleteField', { name: label })}
-                                      icon="trash"
-                                      danger
-                                      disabled={pending}
-                                      onClick={() => {
-                                        setDeleting({ kind: 'field', field });
-                                      }}
-                                      testId="field-delete"
-                                    />
-                                  ) : null}
-                                </>
-                              ) : null}
-                            </div>
-                          </li>
-                        );
-                      })}
-                    </ol>
-                  )}
-                  {editable ? (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      className="mt-3"
-                      onClick={() => {
-                        openEditing({ kind: 'field', section, field: null, key: dialogKey });
-                      }}
-                      data-testid="field-add"
-                    >
-                      <Icon name="plus" />
-                      {text('addField')}
-                    </Button>
-                  ) : null}
-                </div>
-              </section>
-            </li>
-          );
-        })}
-      </ol>
+      <div
+        role="group"
+        aria-label={text('outline')}
+        className="flex gap-1 rounded-full bg-surface-sunken p-1 2xl:hidden"
+      >
+        {(['outline', 'preview'] as const).map((key) => (
+          <button
+            key={key}
+            type="button"
+            aria-pressed={tab === key}
+            onClick={() => {
+              setTab(key);
+            }}
+            className={cn(
+              'flex min-h-10 flex-1 items-center justify-center gap-2 rounded-full text-sm font-semibold pointer-coarse:min-h-11',
+              tab === key ? 'bg-surface text-text shadow-1' : 'text-text-muted',
+            )}
+            data-testid={`builder-tab-${key}`}
+          >
+            <Icon name={key === 'outline' ? 'form' : 'eye'} className="size-4" />
+            {key === 'outline' ? text('outline') : text('preview')}
+          </button>
+        ))}
+      </div>
 
-      {editing?.kind === 'section' ? (
-        <SectionDialog
-          key={dialogKey}
-          open
-          section={editing.section}
-          pending={pending}
-          message={message}
-          fieldErrors={fieldErrors}
-          text={text}
-          onClose={closeEditing}
-          onSave={saveSection}
-        />
-      ) : null}
-      {editing?.kind === 'field' ? (
-        <FieldDialog
-          key={dialogKey}
-          open
-          locale={locale}
-          section={form.sections.find((s) => s.id === editing.section.id) ?? editing.section}
-          field={editing.field}
-          pending={pending}
-          message={message}
-          fieldErrors={fieldErrors}
-          text={text}
-          onClose={closeEditing}
-          onSave={saveField}
-        />
-      ) : null}
+      <div
+        className={cn(
+          'grid grid-cols-1 items-start gap-4',
+          inspector
+            ? 'lg:grid-cols-2 2xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,1fr)]'
+            : '2xl:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]',
+        )}
+      >
+        <div className={cn('min-w-0', tab === 'preview' && 'max-2xl:hidden')}>{outline}</div>
+        {inspector ? (
+          <div
+            className={cn('min-w-0 2xl:sticky 2xl:top-24', tab === 'preview' && 'max-2xl:hidden')}
+          >
+            {inspector}
+          </div>
+        ) : null}
+        <div className={cn('min-w-0 2xl:sticky 2xl:top-24', tab === 'outline' && 'max-2xl:hidden')}>
+          {preview}
+        </div>
+      </div>
 
       <Dialog
         open={deleting !== null}
@@ -640,6 +948,7 @@ export function NeedsFormBuilder(props: NeedsFormBuilderProps) {
         }
         closeLabel={text('close')}
         size="sm"
+        tone="danger"
         data-testid="builder-delete-dialog"
         footer={
           <>
@@ -661,11 +970,12 @@ export function NeedsFormBuilder(props: NeedsFormBuilderProps) {
                 run(
                   () =>
                     target.kind === 'section'
-                      ? api.deleteSection(form.id, target.section.id)
-                      : api.deleteField(form.id, target.field.id),
+                      ? api.deleteSection(current.id, target.section.id)
+                      : api.deleteField(current.id, target.field.id),
                   {
                     done: () => {
                       setDeleting(null);
+                      setEditing(null);
                     },
                   },
                 );
@@ -677,29 +987,6 @@ export function NeedsFormBuilder(props: NeedsFormBuilderProps) {
           </>
         }
       />
-
-      <Dialog
-        open={previewing}
-        onClose={() => {
-          setPreviewing(false);
-        }}
-        title={text('previewTitle', { name })}
-        description={text('previewHint')}
-        closeLabel={text('close')}
-        size="lg"
-        data-testid="needs-form-preview-dialog"
-      >
-        {previewing ? (
-          <NeedsFormRenderer
-            form={form}
-            locale={locale}
-            answers={answers}
-            onChange={setAnswers}
-            texts={props.texts}
-            idPrefix="preview"
-          />
-        ) : null}
-      </Dialog>
     </div>
   );
 }

@@ -395,10 +395,8 @@
     "firstUseBody": "You are the only member so far. Invite the people who run training, or add many at once from a file.",
     "openProfile": "Open full profile",
     "moreActions": "More actions for {name}",
-    "quickLook": "Quick look at {name}",
     "copyField": "Copy {field}",
     "copied": "{field} copied.",
-    "tryAgain": "Try again",
     "undo": "Undo",
     "discardTitle": "Discard your changes?",
     "discardBody": "What you changed here isn’t saved yet. If you leave, it’s lost.",
@@ -1155,7 +1153,6 @@
       "loading": "Getting the code…"
     },
     "keptFromLast": "Unit, branch, role and language kept from your last invitation",
-    "noEmail": "Email isn’t set up, so nothing was emailed. Share the code or link with {name} yourself.",
     "done": "Done"
   },
   "deactivation": {

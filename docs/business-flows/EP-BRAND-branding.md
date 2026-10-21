@@ -4,7 +4,7 @@
 |---|---|
 | **Work package** | WP-ADM-02 (ROADMAP-by-role) |
 | **Requirements** | FR-ADM-07 (Branding page), FR-ADM-02 (names move here from General), FR-NTF-02 (brand part of e-mails) |
-| **Status** | **Agreed (PO, 20 Oct 2026)** — the three open questions approved as proposed |
+| **Status** | **Agreed (PO, 20 Oct 2026)** — the three open questions approved as proposed · **Changed after agreement (20 Oct 2026)**: BR-BRD-b, branding images are no longer virus-scanned (PO decision «B») |
 | **Copied from Kawadir** | Kawadir ATS `/org/branding`: company names EN/AR, logo, favicon, login page image, primary + secondary colour with a «use gradient» switch, preset swatches, company website, live preview; Org Admin only; the look applies to the app shell, the sign-in page and e-mails. **Not copied:** tagline and careers-page URL (recruitment-only, and unfinished in Kawadir) |
 
 ## 1. Goal
@@ -27,7 +27,7 @@ Each organization makes the product look like its own — its names, logo, brows
 
 ## 4. Business rules
 - BR-BRD-a: Only the Organization Admin edits branding; every change is in the audit log (who, when, before → after; images by name, not content).
-- BR-BRD-b: Images: PNG, JPG or WebP (SVG refused — it can carry scripts); logo ≤ 2 MB, favicon ≤ 500 KB, sign-in image ≤ 5 MB (Kawadir's limits); files are scanned like other uploads; a replaced or removed image is deleted.
+- BR-BRD-b: Images: PNG, JPG or WebP (SVG refused — it can carry scripts); logo ≤ 2 MB, favicon ≤ 500 KB, sign-in image ≤ 5 MB (Kawadir's limits); ~~files are scanned like other uploads~~ **branding images are not virus-scanned; the type is checked by content, the size and the number of pixels are limited and the metadata (e.g. the GPS position of a photo) is removed, and the image shows everywhere as soon as the Branding is saved**; a replaced or removed image is deleted. *Changed after agreement, 20 Oct 2026 — PO, 20 Oct 2026: like Kawadir, branding images are not virus-scanned so they show at once; type by content, size, pixels and metadata removal stay.* Every other upload (imports, profile photos, …) is still scanned.
 - BR-BRD-c: Colours are valid hex colours; a contrast below WCAG 2.2 AA is a **warning** (the admin may still save), so text stays readable.
 - BR-BRD-d: The product's own fonts are always used (no font choice — PO, 14 Oct 2026).
 - BR-BRD-e: Where the look shows: the product's menu and accents, the browser-tab icon, the sign-in page (logo, picture, colours) and the e-mails (logo and colour).

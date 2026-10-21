@@ -6,6 +6,7 @@ import {
   claimBrandAssetWork,
   forgetBrandingDeployedForTests,
   getEmailBrand,
+  loadBrandImageSource,
   noteBrandAssetFailure,
   publishBrandAsset,
 } from './branding';
@@ -118,5 +119,46 @@ describe('branding, worker side (WP-ADM-02)', () => {
         ]).tx,
       ),
     ).toBeNull();
+  });
+});
+
+describe('branding image sources, worker side (PO, 20 Oct 2026: no malware scan)', () => {
+  it('reads where the image is and whether its purpose is scanned (expand-first: scanned by default)', async () => {
+    const { tx, executed } = fakeTx([
+      {
+        bucket: 'images',
+        object_key: `${TENANT}/platform/tenant_branding/${TENANT}/${FILE}`,
+        status: 'uploaded',
+        size_bytes: '120',
+        sha256: null,
+        scan_required: false,
+      },
+    ]);
+    expect(await loadBrandImageSource(tx, FILE)).toEqual({
+      bucket: 'images',
+      objectKey: `${TENANT}/platform/tenant_branding/${TENANT}/${FILE}`,
+      status: 'uploaded',
+      scanRequired: false,
+      size: 120,
+      sha256: null,
+    });
+    expect(executed[0]?.sql).toContain("to_jsonb(p) ->> 'scan_required'");
+    expect(executed[0]?.sql).toContain("f.owner_entity_type = 'tenant_branding'");
+    expect(executed[0]?.params).toEqual([FILE]);
+    const unknown = fakeTx([
+      {
+        bucket: 'images',
+        object_key: 'k',
+        status: 'clean',
+        size_bytes: null,
+        sha256: 'a',
+        scan_required: null,
+      },
+    ]);
+    expect(await loadBrandImageSource(unknown.tx, FILE)).toMatchObject({
+      scanRequired: true,
+      size: null,
+    });
+    expect(await loadBrandImageSource(fakeTx([]).tx, FILE)).toBeNull();
   });
 });

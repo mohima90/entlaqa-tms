@@ -96,6 +96,7 @@ describe.skipIf(!configured)('user import against PostgreSQL', () => {
       Promise.resolve({ url: `https://storage.test/upload/${key}?token=t`, token: 't' }),
     createSignedDownloadUrl: (bucket, key) =>
       Promise.resolve(`https://storage.test/${bucket}/${key}`),
+    readObject: () => Promise.resolve(null),
   };
   const store: FileObjectStore = {
     read(_bucket, key) {

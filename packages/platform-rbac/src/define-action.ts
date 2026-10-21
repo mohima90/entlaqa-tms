@@ -161,7 +161,7 @@ export type ActionTarget<S extends z.ZodType> =
     }
   | { readonly resource?: never; readonly scoped?: boolean };
 
-export type ActionDefinition<S extends z.ZodType, O, Tx, R = O> = ActionTarget<S> & {
+export type ActionDefinition<S extends z.ZodType, O, Tx, R = O, B = void> = ActionTarget<S> & {
   readonly permission: PermissionDefinition;
   /** zod schema — untrusted input is validated before authorization and the handler run. */
   readonly input: S;
@@ -205,15 +205,20 @@ export type ActionDefinition<S extends z.ZodType, O, Tx, R = O> = ActionTarget<S
    * transaction must never run while this action holds a pooled connection (two connections per request
    * can starve the pool — security review T-M2-11), and whose count must survive the action's rollback.
    * An error result is the action's answer (no transaction is opened); a throw is an internal error. Use it
-   * only for per-actor work that is harmless for a caller the action would then refuse.
+   * only for per-actor work that is harmless for a caller the action would then refuse. Its value reaches
+   * the handler as `before` (the same value again when the transaction is retried after a conflict) — e.g.
+   * a file read from Storage with the user's session, which must never happen while the action holds a
+   * pooled connection (WP-ADM-02 branding images).
    */
   readonly beforeTransaction?: (args: {
     readonly actor: ActorContext;
     readonly input: z.output<S>;
-  }) => Promise<Result<void, AppError>>;
+  }) => Promise<Result<B, AppError>>;
   readonly handler: (args: {
     readonly ctx: ActionContext<Tx>;
     readonly input: z.output<S>;
+    /** What `beforeTransaction` answered (undefined without one). */
+    readonly before?: B;
   }) => Promise<Result<O, AppError>>;
   /**
    * Work AFTER the action's transaction has committed (T-M2-18 integration review M1): run ONCE — never
@@ -282,8 +287,8 @@ export function requiresStrictVerification(permission: PermissionDefinition): bo
  * [afterCommit, once, after the commit, no connection held].
  */
 export function createDefineAction<Tx>(runtime: ActionRuntime<Tx>) {
-  return function defineAction<S extends z.ZodType, O, R = O>(
-    definition: ActionDefinition<S, O, Tx, R>,
+  return function defineAction<S extends z.ZodType, O, R = O, B = void>(
+    definition: ActionDefinition<S, O, Tx, R, B>,
   ): ServerAction<z.input<S>, R> {
     if (
       definition.passiveRead !== undefined &&
@@ -331,6 +336,8 @@ export function createDefineAction<Tx>(runtime: ActionRuntime<Tx>) {
       let refused = null as AppError | null;
       // Did the committed attempt queue background work (declared, or an event emitted)?
       let queued = false as boolean;
+      // beforeTransaction's answer, for the handler.
+      let prepared: B | undefined;
       try {
         if (definition.beforeTransaction) {
           // The session check first (integration review T-M2-11 L3), in its own short transaction that
@@ -346,6 +353,7 @@ export function createDefineAction<Tx>(runtime: ActionRuntime<Tx>) {
             input: input.value,
           });
           if (!before.ok) return err(toClientError(before.error));
+          prepared = before.value;
         }
         const committed = await runtime.withUserTx(
           tenantClaims,
@@ -402,6 +410,7 @@ export function createDefineAction<Tx>(runtime: ActionRuntime<Tx>) {
                 tx,
               },
               input: input.value,
+              ...(prepared === undefined ? {} : { before: prepared }),
             });
             // Throwing rolls the transaction back.
             if (!output.ok) {

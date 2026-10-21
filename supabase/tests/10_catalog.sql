@@ -723,8 +723,9 @@ begin
   select string_agg(format('%s%s', p.oid::regprocedure, case when p.prosecdef then '' else ' (INVOKER)' end), ', '
                     order by p.oid::regprocedure::text collate "C") into v_list
   from pg_proc p where p.proowner = 'file_guard'::regrole;
-  -- Plus the branding images' functions (WP-ADM-02: publishing clean images, the public delivery path, the
-  -- image trigger of platform.tenant_branding and its two helpers).
+  -- Plus the branding images' functions (WP-ADM-02: publishing clean images and, since 20 Oct 2026, images of
+  -- purposes without a scan; the public delivery path, the image trigger of platform.tenant_branding and its
+  -- two helpers).
   perform tests.assert_eq(v_list,
     'private.branding_file_usable(uuid,uuid,text) (INVOKER), private.branding_image_names(uuid[]), '
     'private.can_read_object(text,text), private.can_upload_object(text,text), '
@@ -741,7 +742,8 @@ begin
     'private.lock_file_housekeeping(uuid,text), private.mark_file_used(uuid), '
     'private.note_brand_asset_failure(uuid,text), '
     'private.public_brand_asset(uuid), private.public_brand_asset_meta(uuid), private.public_tenant_brand(text), '
-    'private.publish_brand_asset(uuid,text,text,bytea), private.release_branding_file(uuid,uuid) (INVOKER), '
+    'private.publish_brand_asset(uuid,text,text,bytea), '
+    'private.publish_brand_image(uuid,text,text,bigint,text,bytea), private.release_branding_file(uuid,uuid) (INVOKER), '
     'private.retry_file_scan(uuid,text), private.tenant_branding_files()',
     'file_guard owns the file functions only');
   perform tests.assert((select prosecdef and pg_get_userbyid(proowner) = 'tenant_guard' from pg_proc

@@ -5,12 +5,15 @@ import {
   type WithPlatformTx,
   type WithSystemTx,
   claimBrandAssetWork,
+  loadBrandImageSource,
   noteBrandAssetFailure,
   publishBrandAsset,
+  publishBrandImage,
 } from '@jadarat/platform-db/jobs';
 import type { PlatformTask, WorkerLogLevel } from '@jadarat/platform-jobs/jobs';
 import { brandImageMaxBytes, prepareBrandImage } from '../brand-images';
-import { codeOf, isTemporary } from './store';
+import { prepareBrandUpload } from '../brand-prepare';
+import { type FileObjectStore, codeOf, isTemporary } from './store';
 import type { WorkerFiles } from './worker-files';
 
 /**
@@ -26,6 +29,13 @@ import type { WorkerFiles } from './worker-files';
  * pass (tried again next pass); any other failure is recorded (private.note_brand_asset_failure) and tried
  * again after 2, 4, 8, … minutes, up to 5 times — then the image is given up and the Branding page says it
  * cannot be used. Logs carry ids and codes only.
+ *
+ * Since 20 Oct 2026 (PO: branding images are not virus-scanned, like Kawadir) the web app publishes the
+ * images when the Branding is saved; this task is the FALLBACK for an image it did not publish (Storage
+ * unreachable then, an upload saved before the change): an image in use of a purpose without a scan that
+ * is `uploaded` or `accepted` is read from Storage with the worker's key, prepared exactly as the web app
+ * does (prepareBrandUpload) and published with private.publish_brand_image (the database compares the
+ * bytes read with the stored object). Clean images keep the path above.
  */
 export const BRAND_ASSET_TASK = 'platform.brand_assets';
 /** Images per pass. */
@@ -35,6 +45,8 @@ export interface BrandAssetTaskOptions {
   readonly withPlatformTx: WithPlatformTx;
   readonly withSystemTx: WithSystemTx;
   readonly files: WorkerFiles;
+  /** The worker's Storage access: images of a purpose without a scan are read directly (never `clean`). */
+  readonly store: FileObjectStore;
   readonly log: (level: WorkerLogLevel, message: string) => void;
 }
 
@@ -64,10 +76,50 @@ async function readAll(stream: ReadableStream<Uint8Array>, limit: number): Promi
 }
 
 export function createBrandAssetTask(options: BrandAssetTaskOptions): PlatformTask {
-  const { withPlatformTx, withSystemTx, files, log } = options;
+  const { withPlatformTx, withSystemTx, files, store, log } = options;
+
+  /** An image of a purpose without a malware scan, `uploaded` or `accepted` (the web app's fallback). */
+  async function publishUnscanned(
+    tx: SystemTx,
+    work: BrandAssetWork,
+    source: { readonly bucket: string; readonly objectKey: string },
+  ): Promise<'published' | 'skipped'> {
+    const object = await store.read(source.bucket, source.objectKey);
+    if (!object) {
+      throw Object.assign(new Error('branding image object missing'), { code: 'OBJECT_MISSING' });
+    }
+    const bytes = await readAll(object.body, brandImageMaxBytes(work.kind));
+    const prepared = await prepareBrandUpload(work.kind, work.fileId, bytes);
+    if ('refused' in prepared) {
+      const attempts = await noteBrandAssetFailure(tx, work.fileId, prepared.refused);
+      log(
+        'warning',
+        `branding image ${work.fileId} not published: ${prepared.refused} (attempt ${attempts})`,
+      );
+      return 'skipped';
+    }
+    const image = prepared.prepared;
+    const id = await publishBrandImage(tx, {
+      fileId: work.fileId,
+      kind: work.kind,
+      sourceSha256: image.sourceSha256,
+      sourceSize: image.sourceSize,
+      contentType: image.contentType,
+      content: image.content,
+    });
+    return id === null ? 'skipped' : 'published';
+  }
 
   async function publish(jobId: string, work: BrandAssetWork): Promise<'published' | 'skipped'> {
     return withSystemTx({ tenantId: work.tenantId, jobId }, async (tx: SystemTx) => {
+      const source = await loadBrandImageSource(tx, work.fileId);
+      if (!source) return 'skipped';
+      if (source.status !== 'clean') {
+        if (source.scanRequired || !['uploaded', 'accepted'].includes(source.status)) {
+          return 'skipped';
+        }
+        return publishUnscanned(tx, work, source);
+      }
       const stream = await files.openScannedFile(tx, work.fileId);
       const bytes = await readAll(stream, brandImageMaxBytes(work.kind));
       const prepared = await prepareBrandImage(work.kind, bytes);

@@ -719,6 +719,37 @@ describe('defineAction (ADR 0003 §4)', () => {
       expect(calls).toEqual([{ retryOnConflict: undefined }, { retryOnConflict: false }]);
     });
 
+    it('hands its value to the handler — the same value when the transaction is retried (WP-ADM-02)', async () => {
+      const retrying = runtime({
+        withUserTx: async (_c, fn, options) => {
+          if (options?.retryOnConflict === true) {
+            try {
+              await fn({ log: [] });
+            } catch {
+              // discarded, as after a rollback
+            }
+          }
+          return fn({ log: [] });
+        },
+      });
+      const seen: unknown[] = [];
+      const before = vi.fn(() => Promise.resolve(ok({ read: 'bytes' })));
+      const answer = await createDefineAction(retrying.rt)({
+        permission: approve,
+        input: Input,
+        scoped: true,
+        beforeTransaction: before,
+        handler: ({ before: prepared }) => {
+          seen.push(prepared);
+          return Promise.resolve(ok('done'));
+        },
+      })({ enrollmentId: ENROLLMENT });
+      expect(answer).toEqual(ok('done'));
+      expect(before).toHaveBeenCalledTimes(1);
+      expect(seen).toEqual([{ read: 'bytes' }, { read: 'bytes' }]);
+      expect(seen[0]).toBe(seen[1]);
+    });
+
     it('an action without beforeTransaction opens one transaction, as before', async () => {
       const { rt, log } = runtime();
       const r = await makeAction(rt)({ enrollmentId: ENROLLMENT });

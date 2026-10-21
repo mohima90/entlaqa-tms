@@ -1,12 +1,14 @@
 /**
  * One image slot of the Branding page (WP-ADM-02; security review M3): what the slot shows and which file
- * a save would keep, through a pick → upload → scan. A failed REPLACEMENT never loses the image the slot
+ * a save would keep, through a pick → upload → save. A failed REPLACEMENT never loses the image the slot
  * had: the slot remembers it (`previous`) when a new file is picked and puts it back on any failure —
- * start, upload or confirmation refused, the scan finding the file infected, rejected or failing. Pure state
- * transitions (the form holds them in React state), so every path is unit-tested.
+ * start, upload or confirmation refused, or the save refusing the image (wrong type by content, too large,
+ * too many pixels, damaged). Branding images are not virus-scanned (PO, 20 Oct 2026): the save checks and
+ * publishes them, so there is no scan to wait for. Pure state transitions (the form holds them in React
+ * state), so every path is unit-tested.
  */
 
-export type SlotPhase = 'none' | 'saved' | 'uploading' | 'checking' | 'ready' | 'previewOnly';
+export type SlotPhase = 'none' | 'saved' | 'uploading' | 'ready' | 'previewOnly';
 
 /** What a slot shows and keeps. */
 export interface SlotImage {
@@ -55,7 +57,7 @@ export function initialSlot(image: SavedImage | null): SlotState {
   };
 }
 
-const inProgress = (phase: SlotPhase) => phase === 'uploading' || phase === 'checking';
+const inProgress = (phase: SlotPhase) => phase === 'uploading';
 
 function snapshot(state: SlotState): SlotImage | null {
   if (state.fileId === null && state.src === null) return null;
@@ -64,16 +66,18 @@ function snapshot(state: SlotState): SlotImage | null {
 
 /**
  * A file was picked and passed the browser's checks: the previews show it at once. The image to put back is
- * the one the slot had — or, when a pick was still uploading or being checked, the one before that pick. The
- * slot keeps the old file id until the new upload is confirmed (a save meanwhile keeps the old image).
+ * the one the slot had — or, when a pick was still uploading or waiting for the save, the one before that
+ * pick. The slot keeps the old file id until the new upload is confirmed (a save meanwhile keeps the old
+ * image).
  */
 export function beginPick(
   state: SlotState,
   picked: { readonly src: string; readonly name: string },
   phase: 'uploading' | 'previewOnly',
 ): SlotState {
-  const previous = inProgress(state.phase) ? state.previous : snapshot(state);
-  const keptFileId = inProgress(state.phase) ? (previous?.fileId ?? null) : state.fileId;
+  const replacing = inProgress(state.phase) || state.phase === 'ready';
+  const previous = replacing ? state.previous : snapshot(state);
+  const keptFileId = replacing ? (previous?.fileId ?? null) : state.fileId;
   return {
     fileId: phase === 'uploading' ? keptFileId : state.fileId,
     src: picked.src,
@@ -102,41 +106,21 @@ export function uploadFailed(state: SlotState, src: string, error: string): Slot
 }
 
 /**
- * The upload of `src` was confirmed: the slot keeps the new file (clean: ready; else checked by the scan).
- * Ignored when the slot moved on meanwhile.
+ * The upload of `src` was confirmed: the slot keeps the new file, ready to be saved (the save checks and
+ * publishes it; until then the image before the pick can still be put back). Ignored when the slot moved on
+ * meanwhile.
  */
-export function uploadConfirmed(
-  state: SlotState,
-  src: string,
-  fileId: string,
-  status: string,
-): SlotState {
+export function uploadConfirmed(state: SlotState, src: string, fileId: string): SlotState {
   if (!uploading(state, src)) return state;
-  const clean = status === 'clean';
-  return {
-    ...state,
-    fileId,
-    phase: clean ? 'ready' : 'checking',
-    error: null,
-    previous: clean ? null : state.previous,
-  };
+  return { ...state, fileId, phase: 'ready', error: null };
 }
 
-export const SCAN_FINAL = new Set(['clean', 'infected', 'rejected', 'error', 'deleted']);
-
 /**
- * The scan of `fileId` finished. Ignored when the slot moved on (another file picked, removed, saved
- * over). Clean: ready. Otherwise the image before the pick is back, with the reason.
+ * The save refused this slot's image (its reason): a new image gives way to the one before the pick; a
+ * saved one keeps showing, with the reason.
  */
-export function scanFinished(
-  state: SlotState,
-  fileId: string,
-  status: string,
-  errorFor: (status: string) => string,
-): SlotState {
-  if (state.fileId !== fileId || state.phase !== 'checking') return state;
-  if (status === 'clean') return { ...state, phase: 'ready', previous: null };
-  return pickFailed(state, errorFor(status));
+export function saveRefused(state: SlotState, error: string): SlotState {
+  return state.phase === 'ready' ? pickFailed(state, error) : { ...state, error };
 }
 
 /** Removed by the admin: nothing to put back (a save removes the saved image). */
@@ -145,23 +129,10 @@ export function removed(): SlotState {
 }
 
 /**
- * After a successful save: what the slot holds is now the saved image — the image before a pick still being
- * checked was released by the save, so a failing scan then empties the slot instead of putting it back.
+ * After a successful save: what the slot holds is now the saved image (published by the save) — the image
+ * before the pick was released, nothing to put back any more.
  */
 export function afterSave(state: SlotState): SlotState {
-  return { ...state, previous: null, failed: state.failed && state.phase === 'saved' };
-}
-
-/**
- * Waits between scan status checks: quick at first, then slower, ≈ 10 minutes in all (a scan that takes
- * longer is still applied: the image shows once the check is done, the page says so).
- */
-export function scanPollDelays(): readonly number[] {
-  const delays = [2000, 3000, 5000, 8000, 12_000, 20_000];
-  let total = delays.reduce((sum, d) => sum + d, 0);
-  while (total < 600_000) {
-    delays.push(30_000);
-    total += 30_000;
-  }
-  return delays;
+  const phase = state.phase === 'ready' ? 'saved' : state.phase;
+  return { ...state, phase, previous: null, failed: state.failed && state.phase === 'saved' };
 }

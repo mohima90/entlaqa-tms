@@ -2,6 +2,7 @@ import { type AppError, type Result, appError, err, ok } from '@jadarat/platform
 import {
   BRAND_IMAGE_KINDS,
   type BrandImageKind,
+  type BrandImagePublication,
   type BrandingField,
   type BrandingRecord,
   type BrandingSettings,
@@ -10,6 +11,8 @@ import {
   type UserTx,
   changedBrandingFields,
   getBranding,
+  isDomainError,
+  publishBrandImage,
   saveBranding,
 } from '@jadarat/platform-db';
 import { z } from 'zod';
@@ -29,10 +32,13 @@ import { OrganizationNameInput } from './organization-profile';
  *   - Saving, uploading an image: `platform.tenant.manage` — the Organization Admin only (organization-wide,
  *     high risk: the session is confirmed with Auth; never in custom roles — catalogue rule
  *     `organization_only`). Audited before → after (images by file id and sanitized name, never their
- *     content; BR-BRD-a). The upload's scan progress, polled by the page, needs `platform.tenant.read`
- *     only (the file is visible to its uploader alone; security review L12).
- *   - Images go through platform-files (purposes platform.brand_*: PNG/JPEG/WebP, 2 MB / 500 KB / 5 MB,
- *     scanned); the app binds the file service (BrandingFileService) — this package does not depend on it.
+ *     content; BR-BRD-a).
+ *   - Images go through platform-files (purposes platform.brand_*: PNG/JPEG/WebP, 2 MB / 500 KB / 5 MB);
+ *     the app binds the file service (BrandingFileService) — this package does not depend on it. NOT
+ *     virus-scanned (PO, 20 Oct 2026 — like Kawadir): Save reads each newly chosen image with the admin's own
+ *     Storage session BEFORE its transaction (BrandingImageReader: type by content, size, pixels, metadata
+ *     removed — a refusal is the answer, with the reason, and nothing is saved) and publishes the copy IN
+ *     the save's transaction (private.publish_brand_image), so the image shows as soon as the save commits.
  *   - Colours: the app derives what is stored and the e-mail colours with the theme code
  *     (BrandingColorDeriver: packages/ui emailBrandColors) — platform packages never import the UI.
  */
@@ -164,13 +170,67 @@ function pick(
 const invalid = (path: string, code = 'INVALID'): AppError =>
   appError('VALIDATION_FAILED', { fieldErrors: [{ path, code }] });
 
+/** Why an image cannot be used (platform-files BrandImageRefusal), as the page shows it. */
+export type BrandImageReadRefusal =
+  'TYPE_NOT_ALLOWED' | 'TOO_LARGE' | 'EMPTY' | 'DIMENSIONS_TOO_LARGE' | 'MALFORMED';
+
+/** An image read for publishing: the copy, a refusal with its reason, or nothing to read. */
+export type BrandImageReading =
+  | { readonly publication: BrandImagePublication }
+  | { readonly refused: BrandImageReadRefusal }
+  | { readonly missing: true };
+
+/**
+ * What the app binds (platform-files readBrandUpload with the request's own Storage session): reads the
+ * caller's own upload for the organization's Branding and prepares the copy. `missing`: Storage does not let
+ * the caller read it — the image already shown (accepted or scanned), someone else's or another
+ * organization's: nothing to publish now. An error result (Storage unavailable) is the action's answer.
+ * Runs BEFORE the save's transaction (never with a pooled connection held).
+ */
+export type BrandingImageReader = (request: {
+  readonly tenantId: string;
+  readonly kind: BrandImageKind;
+  readonly fileId: string;
+}) => Promise<Result<BrandImageReading, AppError>>;
+
+const IMAGE_FIELD: Readonly<
+  Record<BrandImageKind, 'logoFileId' | 'faviconFileId' | 'signInImageFileId'>
+> = { logo: 'logoFileId', favicon: 'faviconFileId', sign_in_image: 'signInImageFileId' };
+
+/** The copies read before the transaction, by file id. */
+type PreparedImages = ReadonlyMap<string, BrandImagePublication>;
+
+/** The images the input chooses, by kind (null: none). */
+function chosenImages(input: z.output<typeof BrandingInput>): [BrandImageKind, string][] {
+  return BRAND_IMAGE_KINDS.flatMap((kind) => {
+    const id = input[IMAGE_FIELD[kind]];
+    return id === null ? [] : [[kind, id] as [BrandImageKind, string]];
+  });
+}
+
 export function saveBrandingActionDefinition(
   deriveColors: BrandingColorDeriver,
-): ActionDefinition<typeof BrandingInput, BrandingSaved, UserTx> {
+  readImage: BrandingImageReader,
+): ActionDefinition<typeof BrandingInput, BrandingSaved, UserTx, BrandingSaved, PreparedImages> {
   return {
     permission: PERMISSION_MANAGE,
     input: BrandingInput,
-    handler: async ({ ctx, input }) => {
+    // Before the transaction (with the caller's own Storage session; nothing is held): each chosen image the
+    // caller may read back — their new upload — is checked and its copy prepared. A refusal is the answer
+    // (nothing is saved); the image the Branding already shows is not readable and stays as it is.
+    beforeTransaction: async ({ actor, input }) => {
+      const prepared = new Map<string, BrandImagePublication>();
+      for (const [kind, fileId] of chosenImages(input)) {
+        const read = await readImage({ tenantId: actor.tenantId, kind, fileId });
+        if (!read.ok) return read;
+        if ('refused' in read.value) {
+          return err(invalid(IMAGE_FIELD[kind], `IMAGE_${read.value.refused}`));
+        }
+        if ('publication' in read.value) prepared.set(fileId, read.value.publication);
+      }
+      return ok(prepared);
+    },
+    handler: async ({ ctx, input, before: prepared }) => {
       if ((input.primaryColor === null) !== (input.secondaryColor === null)) {
         return err(invalid(input.primaryColor === null ? 'primaryColor' : 'secondaryColor'));
       }
@@ -197,6 +257,22 @@ export function saveBrandingActionDefinition(
         },
         input.version,
       );
+      if (saved.outcome === 'updated' || saved.outcome === 'unchanged') {
+        // Published in this transaction: the image shows as soon as the save commits. The database checks
+        // again that it is the saver's own upload, used for that kind, with the stored bytes.
+        for (const [kind, fileId] of chosenImages(input)) {
+          const publication = prepared?.get(fileId);
+          if (publication?.kind !== kind) continue;
+          try {
+            await publishBrandImage(ctx.tx, publication);
+          } catch (error) {
+            if (isDomainError(error) && error.code === 'BRAND_IMAGE_MISMATCH') {
+              return err(invalid(IMAGE_FIELD[kind], 'IMAGE_NOT_USABLE'));
+            }
+            throw error;
+          }
+        }
+      }
       switch (saved.outcome) {
         case 'unchanged':
           return ok({
@@ -311,7 +387,10 @@ function ownSlotFile(
   return ok({ fileId: view.fileId, status: view.status, reason: view.reason });
 }
 
-/** After the browser's PUT: confirmed and queued for the malware scan. */
+/**
+ * After the browser's PUT: confirmed (`uploaded`; empty, too large or stored with another type: `rejected`).
+ * Branding images are not virus-scanned (PO, 20 Oct 2026): Save checks and publishes them.
+ */
 export function confirmBrandImageUploadActionDefinition<R, I>(
   files: BrandingFileService<R, I>,
 ): ActionDefinition<typeof BrandImageFileInput, BrandImageStatus, UserTx> {
@@ -328,21 +407,5 @@ export function confirmBrandImageUploadActionDefinition<R, I>(
       if (!confirmed.ok) return confirmed;
       return ownSlotFile(confirmed.value, files.purposeOf(input.slot));
     },
-  };
-}
-
-/**
- * The scan's progress for the page, polled from the browser (the uploader only — files are visible to their
- * uploader). A read: nothing is written or audited; so it needs the page's read permission only, not the
- * high-risk manage permission (whose session confirmation with Auth every poll would repeat; review L12).
- */
-export function brandImageStatusActionDefinition<R, I>(
-  files: BrandingFileService<R, I>,
-): ActionDefinition<typeof BrandImageFileInput, BrandImageStatus, UserTx> {
-  return {
-    permission: PERMISSION_READ,
-    input: BrandImageFileInput,
-    handler: async ({ ctx, input }) =>
-      ownSlotFile(await files.status(ctx.tx, input.fileId), files.purposeOf(input.slot)),
   };
 }

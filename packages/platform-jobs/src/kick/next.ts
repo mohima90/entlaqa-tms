@@ -17,7 +17,7 @@ export function createAfterResponseKick(deps: {
   readonly request: (reason: string) => Promise<unknown>;
 }): (reason: string) => void {
   return (reason) => {
-    // No token (self-hosted, local): nothing to schedule.
+    // No dispatch App (self-hosted, local): nothing to schedule.
     if (!deps.configured()) return;
     try {
       deps.schedule(() => deps.request(reason));
@@ -29,7 +29,7 @@ export function createAfterResponseKick(deps: {
 }
 
 /**
- * After this request's response: ask GitHub for a worker pass (no-op without JOBS_DISPATCH_TOKEN; throttled).
+ * After this request's response: ask GitHub for a worker pass (no-op without the dispatch App settings; throttled).
  * Call it only once the request's work is committed or about to be (e.g. defineAction after its commit);
  * an extra pass that finds nothing to do is harmless.
  */

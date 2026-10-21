@@ -40,8 +40,10 @@ describe('createAfterResponseKick', () => {
     expect(request).toHaveBeenCalledWith('cron');
   });
 
-  it('the default kick is a no-op without JOBS_DISPATCH_TOKEN', () => {
-    vi.stubEnv('JOBS_DISPATCH_TOKEN', '');
+  it('the default kick is a no-op without the dispatch App settings', () => {
+    vi.stubEnv('JOBS_DISPATCH_APP_ID', '');
+    vi.stubEnv('JOBS_DISPATCH_APP_PRIVATE_KEY', '');
+    vi.stubEnv('JOBS_DISPATCH_INSTALLATION_ID', '');
     try {
       expect(() => {
         kickWorkerAfterResponse('cron');

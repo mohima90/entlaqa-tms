@@ -4,8 +4,10 @@
 # that is due, exit. Runs start (ADR 0005 §1 amendment, PO 20 Oct 2026; background-jobs.md §1a):
 #   - from the WEB APP right after an action queued work (invitation, test e-mail, upload scan, import,
 #     account e-mail) and from its Vercel Cron every minute (/api/cron/jobs): `workflow_dispatch` through
-#     the GitHub API with the narrow token JOBS_DISPATCH_TOKEN (Actions read/write on this repository only)
-#     — the worker's keys below never leave GitHub; at most one dispatch a minute per web instance;
+#     the GitHub API as a dedicated GitHub App (Actions read/write, installed on this repository only; its
+#     bot login is the repository variable JOBS_KICK_ACTOR) — the worker's keys below never leave GitHub;
+#     about one dispatch a minute per web instance. Every OTHER workflow with workflow_dispatch refuses a
+#     run started by that App (security review H1, 21 Oct 2026); here it may only run the production pass;
 #   - every 5 minutes on GitHub's schedule — the safety net (GitHub starts scheduled runs late, or skips
 #     them, under load);
 #   - by hand (Actions → Jobs → Run workflow).
@@ -90,7 +92,8 @@ concurrency:
 jobs:
   pass:
     name: Worker pass (${{ inputs.environment || 'production' }})
-    if: github.ref == 'refs/heads/main'
+    # The worker-kick App (vars.JOBS_KICK_ACTOR) runs the production pass only — never another target.
+    if: github.ref == 'refs/heads/main' && (github.triggering_actor != vars.JOBS_KICK_ACTOR || (inputs.environment || 'production') == 'production')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     environment: ${{ format('{0}-jobs', inputs.environment || 'production') }}

@@ -10,6 +10,10 @@ import { type Page, expect, test } from '@playwright/test';
  * authorization tests.
  */
 async function expectNoSeriousA11yViolations(page: Page) {
+  // From the top: a control scrolled under the sticky top bar would count as an overlapped touch target.
+  await page.evaluate(() => {
+    window.scrollTo(0, 0);
+  });
   const results = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
     .analyze();
@@ -67,6 +71,12 @@ const card = (page: Page, name: string) =>
     .getByTestId('needs-form-card')
     .filter({ has: page.getByRole('heading', { name, exact: true }) });
 
+/** The builder's Outline / Preview tabs (below the widest screens the panes are tabs). */
+async function showPane(page: Page, pane: 'outline' | 'preview') {
+  const tab = page.getByTestId(`builder-tab-${pane}`);
+  if (await tab.isVisible()) await tab.click();
+}
+
 async function addField(
   page: Page,
   values: {
@@ -77,24 +87,29 @@ async function addField(
     condition?: [string, string];
   },
 ) {
-  await page.getByTestId('field-add').click();
-  const dialog = page.getByTestId('field-dialog');
-  await expect(dialog).toBeVisible();
-  await dialog.locator('#field-label-en').fill(values.en);
-  await dialog.locator('#field-label-ar').fill(values.ar);
-  await dialog.locator('#field-type').selectOption(values.type);
+  await showPane(page, 'outline');
+  await page.getByTestId('field-add').first().click();
+  // The field settings open in the inspector pane (redesign package 4: no dialog).
+  const inspector = page.getByTestId('field-inspector');
+  await expect(inspector).toBeVisible();
+  await inspector.locator('#field-label-en').fill(values.en);
+  await inspector.locator('#field-label-ar').fill(values.ar);
+  await inspector.getByTestId(`field-type-${values.type}`).check({ force: true });
   for (const [en, ar] of values.options ?? []) {
-    await dialog.locator('#field-option-en').fill(en);
-    await dialog.locator('#field-option-ar').fill(ar);
-    await dialog.getByTestId('field-option-add').click();
+    await inspector.locator('#field-option-en').fill(en);
+    await inspector.locator('#field-option-ar').fill(ar);
+    await inspector.getByTestId('field-option-add').click();
   }
   if (values.condition) {
-    await dialog.locator('#field-condition-field').selectOption({ label: values.condition[0] });
-    await dialog.locator('#field-condition-value').selectOption(values.condition[1]);
+    await inspector.locator('#field-condition-field').selectOption({ label: values.condition[0] });
+    await inspector.locator('#field-condition-value').selectOption(values.condition[1]);
   }
-  await dialog.getByTestId('field-dialog-save').click();
-  await expect(dialog).toBeHidden();
-  await dismissToasts(page);
+  await expect(inspector.getByTestId('field-unsaved')).toBeVisible();
+  await inspector.getByTestId('field-save').click();
+  // Saved: the field stays open in the inspector, «All changes saved» says so (no toast per save).
+  await expect(inspector.getByTestId('field-unsaved')).toHaveCount(0);
+  await expect(inspector.getByTestId('field-type-change')).toBeVisible();
+  await expect(page.getByTestId('builder-save-status')).toBeVisible();
 }
 
 for (const locale of ['en', 'ar'] as const) {
@@ -112,31 +127,34 @@ for (const locale of ['en', 'ar'] as const) {
     await expect(card(page, t.defaultForm).getByText(t.defaultBadge, { exact: true })).toHaveCount(
       1,
     );
+    // Counts in words with the right plural (redesign package 4: no more «1 sections»).
     await expect(card(page, t.defaultForm)).toContainText(
-      locale === 'en' ? '1 sections · 10 fields' : '1 أقسام · 10 حقول',
+      locale === 'en' ? '1 section · 10 fields' : 'قسم واحد · 10 حقول',
     );
     await expectNoSeriousA11yViolations(page);
 
-    // Create a form: it starts with the «Training needs» section and its two fixed fields.
+    // Create a form from the two fixed fields: the builder opens on it.
     await page.getByTestId('needs-form-create').click();
     const dialog = page.getByTestId('needs-form-dialog');
+    await expect(dialog.getByTestId('needs-form-start-blank').getByRole('radio')).toBeChecked();
     await dialog.locator('#needs-form-name-en').fill('Engineering needs');
     await dialog.locator('#needs-form-name-ar').fill('احتياجات الهندسة');
     await expectNoSeriousA11yViolations(page);
     await dialog.getByTestId('needs-form-dialog-submit').click();
-    await expect(dialog).toBeHidden();
-    await expect(page.getByTestId('needs-form-card')).toHaveCount(2);
+    await expect(page).toHaveURL(
+      new RegExp(`/${locale}/suite/planning/needs-forms/[0-9a-f-]{36}$`),
+    );
     await dismissToasts(page);
 
-    // The builder.
-    await card(page, t.newName).getByTestId('needs-form-edit').click();
+    // The builder: outline, and the preview always there (a tab on smaller screens).
     await expect(page.getByTestId('needs-form-title')).toHaveText(t.newName);
+    await expect(page.getByTestId('builder-save-status')).toBeVisible();
     const labels = page.getByTestId('builder-field-label');
-    await expect(labels).toHaveText([`${t.topic}*`, `${t.people}*`]);
-    // Fixed fields: no delete, no show/hide.
-    await expect(page.getByTestId('builder-field').first().getByTestId('field-delete')).toHaveCount(
-      0,
-    );
+    await expect(labels).toHaveText([t.topic, t.people]);
+    // Fixed fields: no delete, no show/hide in their menu.
+    await page.getByTestId('builder-field').first().getByTestId('field-menu').click();
+    await expect(page.getByRole('menuitem')).toHaveCount(2);
+    await page.keyboard.press('Escape');
 
     await addField(page, {
       en: 'Level',
@@ -153,12 +171,17 @@ for (const locale of ['en', 'ar'] as const) {
       type: 'textarea',
       condition: [t.level, 'advanced'],
     });
-    await expect(labels).toHaveText([`${t.topic}*`, `${t.people}*`, t.level, t.details]);
+    await expect(labels).toHaveText([t.topic, t.people, t.level, t.details]);
     await expect(page.getByTestId('builder-field-condition')).toHaveText(t.condition);
 
-    // Reorder: the details move above the dropdown.
-    await page.getByRole('button', { name: t.moveUp }).click();
-    await expect(labels).toHaveText([`${t.topic}*`, `${t.people}*`, t.details, t.level]);
+    // Reorder from the row menu: the details move above the dropdown.
+    await page
+      .getByTestId('builder-field')
+      .filter({ hasText: t.details })
+      .getByTestId('field-menu')
+      .click();
+    await page.getByRole('menuitem', { name: t.moveUp }).click();
+    await expect(labels).toHaveText([t.topic, t.people, t.details, t.level]);
     await expectNoSeriousA11yViolations(page);
     // No horizontal overflow (the phone project runs at 390 px).
     const overflow = await page.evaluate(
@@ -166,22 +189,26 @@ for (const locale of ['en', 'ar'] as const) {
     );
     expect(overflow).toBeLessThanOrEqual(0);
 
-    // The live preview: the details appear only on the «Advanced» answer.
-    await page.getByTestId('needs-form-preview-open').click();
-    const preview = page.getByTestId('needs-form-preview-dialog');
+    // The live preview (always visible): the details appear only on the «Advanced» answer; the field
+    // being edited is outlined.
+    await showPane(page, 'preview');
+    const preview = page.getByTestId('needs-form-preview-pane');
     await expect(preview.getByLabel(t.topic, { exact: false }).first()).toBeVisible();
     await expect(preview.getByText(t.details)).toHaveCount(0);
     await preview
       .getByRole('combobox', { name: new RegExp(t.level) })
       .selectOption({ label: t.advanced });
     await expect(preview.getByText(t.details)).toBeVisible();
+    await expect(preview.locator('[data-highlighted]')).toContainText(t.details);
     await preview
       .getByRole('combobox', { name: new RegExp(t.level) })
       .selectOption({ label: t.basic });
     await expect(preview.getByText(t.details)).toHaveCount(0);
+    // Both languages can be checked from the same page.
+    const other = locale === 'en' ? 'ar' : 'en';
+    await preview.getByTestId(`preview-language-${other}`).click();
+    await expect(preview.getByText(locale === 'en' ? 'المستوى' : 'Level').first()).toBeVisible();
     await expectNoSeriousA11yViolations(page);
-    await page.keyboard.press('Escape');
-    await expect(preview).toBeHidden();
 
     // Back to the library: the new form becomes the default, then is duplicated.
     await page
@@ -190,25 +217,44 @@ for (const locale of ['en', 'ar'] as const) {
       })
       .click();
     await expect(card(page, t.newName)).toContainText(
-      locale === 'en' ? '1 sections · 4 fields' : '1 أقسام · 4 حقول',
+      locale === 'en' ? '1 section · 4 fields' : 'قسم واحد · 4 حقول',
     );
-    await card(page, t.newName).getByTestId('needs-form-set-default').click();
+    await card(page, t.newName).getByTestId('needs-form-menu').click();
+    await page.getByTestId('needs-form-set-default').click();
     await expect(card(page, t.newName).getByText(t.defaultBadge, { exact: true })).toHaveCount(1);
     await dismissToasts(page);
     await expect(card(page, t.defaultForm).getByText(t.defaultBadge, { exact: true })).toHaveCount(
       0,
     );
-    // The default form cannot be deleted: no Delete on its card.
-    await expect(card(page, t.newName).getByTestId('needs-form-delete')).toHaveCount(0);
+    // The default form cannot be deleted: no Delete in its menu.
+    await card(page, t.newName).getByTestId('needs-form-menu').click();
+    await expect(page.getByTestId('needs-form-delete')).toHaveCount(0);
 
-    await card(page, t.newName).getByTestId('needs-form-duplicate').click();
+    // Duplicate (in the menu): the copy opens in the builder.
+    await page.getByTestId('needs-form-duplicate').click();
     await expect(dialog.locator('#needs-form-name-en')).toHaveValue('Engineering needs (copy)');
     await dialog.getByTestId('needs-form-dialog-submit').click();
+    await expect(page.getByTestId('needs-form-title')).toHaveText(t.copyName);
+    await page
+      .getByRole('link', {
+        name: locale === 'en' ? 'Back to needs forms' : 'العودة إلى نماذج الاحتياجات',
+      })
+      .click();
     await expect(page.getByTestId('needs-form-card')).toHaveCount(3);
     await expect(card(page, t.copyName)).toContainText(
-      locale === 'en' ? '1 sections · 4 fields' : '1 أقسام · 4 حقول',
+      locale === 'en' ? '1 section · 4 fields' : 'قسم واحد · 4 حقول',
     );
     await expect(card(page, t.copyName).getByText(t.defaultBadge, { exact: true })).toHaveCount(0);
+
+    // Switching a form off can be undone from the toast (Switch on).
+    await dismissToasts(page);
+    await card(page, t.copyName).getByTestId('needs-form-menu').click();
+    await page.getByTestId('needs-form-toggle-active').click();
+    await expect(card(page, t.copyName)).toContainText(locale === 'en' ? 'Off' : 'متوقف');
+    await page.getByTestId('toast-action').click();
+    await expect(
+      card(page, t.copyName).getByText(locale === 'en' ? 'Off' : 'متوقف', { exact: true }),
+    ).toHaveCount(0);
 
     // The menu has Planning → Needs forms (on a phone the menu is a drawer, shell.spec.ts covers it).
     if (test.info().project.name.startsWith('mobile')) return;

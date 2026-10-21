@@ -26,6 +26,7 @@ export { DomainError, isDomainError } from './domain-error';
 export {
   BRAND_IMAGE_KINDS,
   type BrandImageKind,
+  type BrandImagePublication,
   type BrandImageState,
   type BrandingField,
   type BrandingRecord,
@@ -40,12 +41,14 @@ export {
   brandingExists,
   changedBrandingFields,
   createPublicBrandApi,
+  forgetBrandPublishingPresenceForTests,
   forgetBrandingPresenceForTests,
   getBranding,
   getTenantBrand,
   publicBrandAsset,
   publicBrandAssetMeta,
   publicTenantBrand,
+  publishBrandImage,
   saveBranding,
 } from './branding';
 /** SQLSTATE and constraint of a database error, for module services that map expected refusals. */
@@ -341,7 +344,13 @@ export {
   listOrgStructure,
   searchMemberOptions,
 } from './org-directory';
-export { EVENT_TYPE_PATTERN, type EmittedEvent, emitEvent } from './events';
+export {
+  EVENT_TYPE_PATTERN,
+  type EmittedEvent,
+  emitEvent,
+  noteWorkQueued,
+  queuedWorkIn,
+} from './events';
 export { type PersonalDetails, getPersonalDetails, updatePersonalDetails } from './my-profile';
 export {
   type EditableRole,

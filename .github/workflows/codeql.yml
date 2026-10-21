@@ -30,6 +30,17 @@ jobs:
       matrix:
         language: [javascript-typescript, actions]
     steps:
+      # Worker-kick guard (security review H1, 21 Oct 2026; docs/engineering/background-jobs.md §1a): a run
+      # (or re-run) started by the web app's GitHub App (vars.JOBS_KICK_ACTOR), or started by hand by any bot,
+      # FAILS here rather than being skipped — a skipped required check would count as passed.
+      - name: Refuse a start by the worker-kick app or another bot
+        if: github.triggering_actor == vars.JOBS_KICK_ACTOR || (github.event_name == 'workflow_dispatch' && endsWith(github.triggering_actor, '[bot]'))
+        env:
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          echo "::error::This workflow refuses runs started by the worker-kick app or, by hand, by any bot ($TRIGGERING_ACTOR, $EVENT_NAME). Only Jobs may be started that way."
+          exit 1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false

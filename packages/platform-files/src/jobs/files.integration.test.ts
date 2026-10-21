@@ -76,6 +76,7 @@ describe.skipIf(!configured)('files against PostgreSQL', () => {
         `https://storage.test/${bucket}/${key}?ttl=${String(ttl)}&download=${name}`,
       );
     },
+    readObject: (_bucket, key) => Promise.resolve(objects.get(key) ?? null),
   };
   const removed: string[] = [];
   const store: FileObjectStore = {
@@ -197,6 +198,7 @@ describe.skipIf(!configured)('files against PostgreSQL', () => {
       upload_by: string;
       audit_downloads: boolean;
       download_ttl_seconds: number;
+      scan_required: boolean;
     }>(sql`select * from platform.file_purposes order by purpose`);
     const database = Object.fromEntries(
       rows.map((row) => [
@@ -209,6 +211,7 @@ describe.skipIf(!configured)('files against PostgreSQL', () => {
           uploadBy: row.upload_by,
           auditDownloads: row.audit_downloads,
           downloadTtlSeconds: row.download_ttl_seconds,
+          scanRequired: row.scan_required,
         },
       ]),
     );
@@ -284,6 +287,94 @@ describe.skipIf(!configured)('files against PostgreSQL', () => {
       ),
     ).rejects.toMatchObject({ code: 'FILE_NOT_CLEAN' });
     expect(logs.join('\n')).not.toContain('تقرير');
+  });
+
+  /** The member uploads a branding logo (a purpose without a malware scan, PO 20 Oct 2026): confirmed. */
+  async function uploadBrandLogo() {
+    const bytes = new Uint8Array([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4, 5, 6, 7, 8,
+    ]);
+    const intent = await createUploadIntent({
+      purpose: 'platform.brand_logo',
+      owner: { module: 'platform', entityType: 'tenant_branding', entityId: tenant },
+      declaredName: 'logo.png',
+      size: bytes.length,
+    });
+    const [row] = await db.execute<{ object_key: string }>(
+      sql`select object_key from platform.files where id = ${intent.fileId}::uuid`,
+    );
+    const key = row?.object_key ?? '';
+    objects.set(key, bytes);
+    await db.execute(sql`insert into storage.objects (bucket_id, name, owner, metadata)
+      values ('images', ${key}, ${member.user},
+              ${JSON.stringify({ size: bytes.length, mimetype: intent.contentType })}::jsonb)`);
+    const confirmed = await withUserTx(claims, (tx) => confirmUpload(tx, intent.fileId));
+    expect(confirmed.status).toBe('uploaded');
+    return { id: intent.fileId, key, bytes };
+  }
+
+  it('an accepted branding image (no malware scan) is never readable by a job (openScannedFile)', async () => {
+    const { id, bytes } = await uploadBrandLogo();
+    const sha = createHash('sha256').update(bytes).digest('hex');
+    // Accepted as publish_brand_image leaves it (the write guard allows it for this purpose only).
+    await db.execute(sql`update platform.files set status = 'accepted', status_reason = 'scan_not_required',
+      detected_mime = 'image/png', size_bytes = ${bytes.length}, sha256 = ${sha} where id = ${id}::uuid`);
+    await expect(
+      withSystemTx({ tenantId: tenant, jobId: randomUUID() }, (tx) =>
+        createWorkerFiles({ store }).openScannedFile(tx, id),
+      ),
+    ).rejects.toMatchObject({ code: 'FILE_NOT_CLEAN' });
+    // Nor while it waits (uploaded): a job reads clean files only.
+    const waiting = await uploadBrandLogo();
+    await expect(
+      withSystemTx({ tenantId: tenant, jobId: randomUUID() }, (tx) =>
+        createWorkerFiles({ store }).openScannedFile(tx, waiting.id),
+      ),
+    ).rejects.toMatchObject({ code: 'FILE_NOT_CLEAN' });
+  });
+
+  it('housekeeping removes the raw upload of a branding image once its copy is published, and purges one unused after 24 hours (review M1)', async () => {
+    const housekeeping = createFileHousekeepingTask({
+      withPlatformTx,
+      store,
+      log: (level, message) => logs.push(`${level}: ${message}`),
+    });
+    const run = async (key: string) => {
+      for (let i = 0; i < 5 && !removed.includes(`images/${key}`); i += 1) {
+        await housekeeping.run({ jobId: randomUUID() });
+      }
+    };
+    // Accepted and published: the object goes, the record stays (the copy in PostgreSQL is served).
+    const published = await uploadBrandLogo();
+    const sha = createHash('sha256').update(published.bytes).digest('hex');
+    await db.execute(sql`update platform.files set status = 'accepted', status_reason = 'scan_not_required',
+      detected_mime = 'image/png', size_bytes = ${published.bytes.length}, sha256 = ${sha}
+      where id = ${published.id}::uuid`);
+    await db.execute(sql`insert into platform.brand_assets (tenant_id, file_id, kind, content_type, content, byte_size, sha256)
+      values (${tenant}::uuid, ${published.id}::uuid, 'logo', 'image/png', ${Buffer.from(published.bytes)}::bytea,
+              ${published.bytes.length}, ${sha})`);
+    await run(published.key);
+    expect(removed).toContain(`images/${published.key}`);
+    const [kept] = await db.execute<{ status: string; removed: boolean }>(
+      sql`select status, object_removed_at is not null as removed from platform.files where id = ${published.id}::uuid`,
+    );
+    expect(kept).toEqual({ status: 'accepted', removed: true });
+
+    // Uploaded 25 hours ago, never saved: purged (object and record).
+    const abandoned = await uploadBrandLogo();
+    await db.execute(sql`alter table platform.files disable trigger files_transition`);
+    await db.execute(sql`update platform.files set uploaded_at = now() - interval '25 hours'
+      where id = ${abandoned.id}::uuid`);
+    await db.execute(sql`alter table platform.files enable trigger files_transition`);
+    // A fresh upload waiting for the save is left alone.
+    const fresh = await uploadBrandLogo();
+    await run(abandoned.key);
+    expect(removed).toContain(`images/${abandoned.key}`);
+    expect(removed).not.toContain(`images/${fresh.key}`);
+    const [left] = await db.execute<{ n: string }>(
+      sql`select count(*) as n from platform.files where id = ${abandoned.id}::uuid`,
+    );
+    expect(Number(left?.n)).toBe(0);
   });
 
   it('housekeeping purges an abandoned upload (lock, removal and record in one transaction) and removes orphan objects', async () => {

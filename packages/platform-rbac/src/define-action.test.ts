@@ -436,6 +436,7 @@ describe('defineAction (ADR 0003 §4)', () => {
       { beforeTransaction: () => Promise.resolve(ok(undefined)) },
       { afterCommit: ({ result }: { result: number }) => Promise.resolve(ok(result)) },
       { externalEffects: true },
+      { queuesWork: true },
     ]) {
       expect(() => define({ ...base, ...extra })).toThrow('must only read');
     }
@@ -668,6 +669,59 @@ describe('defineAction (ADR 0003 §4)', () => {
       ]);
     });
 
+    it('offers a short read transaction of its own, with the same claims, ended before the action’s (M2)', async () => {
+      const steps: string[] = [];
+      let open = 0;
+      const claimsSeen: unknown[] = [];
+      const sequential = runtime({
+        withUserTx: async (claims, fn) => {
+          claimsSeen.push(claims);
+          open += 1;
+          steps.push(`begin (${String(open)} open)`);
+          try {
+            return await fn({ log: steps });
+          } finally {
+            open -= 1;
+            steps.push('end');
+          }
+        },
+        loadSessionFacts: () => Promise.resolve({ active: true, aal2: false }),
+      });
+      const answer = await createDefineAction(sequential.rt)({
+        permission: approve,
+        input: Input,
+        scoped: true,
+        beforeTransaction: async ({ read }) => {
+          const value = await read((tx) => {
+            steps.push(`read (${String(open)} open)`);
+            expect(tx.log).toBe(steps);
+            return Promise.resolve(41);
+          });
+          steps.push(`after read (${String(open)} open)`);
+          return ok(value + 1);
+        },
+        handler: ({ before }) => {
+          steps.push(`handler ${String(before)}`);
+          return Promise.resolve(ok('done'));
+        },
+      })({ enrollmentId: ENROLLMENT });
+      expect(answer).toEqual(ok('done'));
+      expect(steps).toEqual([
+        'begin (1 open)',
+        'end',
+        'begin (1 open)',
+        'read (1 open)',
+        'end',
+        'after read (0 open)',
+        'begin (1 open)',
+        'handler 42',
+        'end',
+      ]);
+      // The session check, the read and the action: the same verified claims.
+      expect(claimsSeen).toHaveLength(3);
+      expect(new Set(claimsSeen).size).toBe(1);
+    });
+
     it('runs beforeTransaction once, also when the action’s transaction is retried; externalEffects still turns the retry off', async () => {
       const calls: { retryOnConflict: boolean | undefined }[] = [];
       const retrying = runtime({
@@ -716,6 +770,37 @@ describe('defineAction (ADR 0003 §4)', () => {
       expect(before).toHaveBeenCalledTimes(1);
       expect(handler).toHaveBeenCalledTimes(1);
       expect(calls).toEqual([{ retryOnConflict: undefined }, { retryOnConflict: false }]);
+    });
+
+    it('hands its value to the handler — the same value when the transaction is retried (WP-ADM-02)', async () => {
+      const retrying = runtime({
+        withUserTx: async (_c, fn, options) => {
+          if (options?.retryOnConflict === true) {
+            try {
+              await fn({ log: [] });
+            } catch {
+              // discarded, as after a rollback
+            }
+          }
+          return fn({ log: [] });
+        },
+      });
+      const seen: unknown[] = [];
+      const before = vi.fn(() => Promise.resolve(ok({ read: 'bytes' })));
+      const answer = await createDefineAction(retrying.rt)({
+        permission: approve,
+        input: Input,
+        scoped: true,
+        beforeTransaction: before,
+        handler: ({ before: prepared }) => {
+          seen.push(prepared);
+          return Promise.resolve(ok('done'));
+        },
+      })({ enrollmentId: ENROLLMENT });
+      expect(answer).toEqual(ok('done'));
+      expect(before).toHaveBeenCalledTimes(1);
+      expect(seen).toEqual([{ read: 'bytes' }, { read: 'bytes' }]);
+      expect(seen[0]).toBe(seen[1]);
     });
 
     it('an action without beforeTransaction opens one transaction, as before', async () => {
@@ -797,6 +882,126 @@ describe('defineAction (ADR 0003 §4)', () => {
         }, 500);
       });
       expect(await Promise.race([stuck, control])).toBe('deadlock');
+    });
+  });
+
+  describe('worker pass after queued work (ADR 0005 §1 amendment, 20 Oct 2026)', () => {
+    function kickRuntime(over: Partial<ActionRuntime<FakeTx>> = {}) {
+      const base = runtime(over);
+      const kicks: { permission: string; log: string[] }[] = [];
+      const rt: ActionRuntime<FakeTx> = {
+        ...base.rt,
+        requestWorkerPass: ({ permission }) => {
+          kicks.push({ permission, log: [...base.log] });
+        },
+        ...over,
+      };
+      return { ...base, rt, kicks };
+    }
+
+    const define = (rt: ActionRuntime<FakeTx>, extra: Record<string, unknown> = {}) =>
+      createDefineAction(rt)({
+        permission: approve,
+        input: Input,
+        resource: (input) => ({ type: 'enrollment', id: input.enrollmentId }),
+        handler: () => Promise.resolve(ok('done')),
+        ...extra,
+      });
+
+    it('queuesWork: asks for a pass once, AFTER the commit, with the permission', async () => {
+      const { rt, kicks } = kickRuntime();
+      expect(await define(rt, { queuesWork: true })({ enrollmentId: ENROLLMENT })).toEqual(
+        ok('done'),
+      );
+      expect(kicks).toEqual([{ permission: approve.code, log: ['begin', 'commit'] }]);
+    });
+
+    it('an event emitted in the transaction counts on its own (runtime.queuedWork, asked inside it)', async () => {
+      const asked: string[][] = [];
+      const { rt, kicks, log } = kickRuntime({
+        queuedWork: () => {
+          asked.push([...log]);
+          return Promise.resolve(true);
+        },
+      });
+      await define(rt)({ enrollmentId: ENROLLMENT });
+      expect(asked).toEqual([['begin']]);
+      expect(kicks).toEqual([{ permission: approve.code, log: ['begin', 'commit'] }]);
+    });
+
+    it('nothing queued → no pass', async () => {
+      const { rt, kicks } = kickRuntime({ queuedWork: () => Promise.resolve(false) });
+      await define(rt)({ enrollmentId: ENROLLMENT });
+      expect(kicks).toEqual([]);
+    });
+
+    it('a refused or failed action never asks (its transaction rolled back)', async () => {
+      const { rt, kicks, log } = kickRuntime({ queuedWork: () => Promise.resolve(true) });
+      const refused = await define(rt, {
+        queuesWork: true,
+        handler: () => Promise.resolve(err(appError('CONFLICT_VERSION'))),
+      })({ enrollmentId: ENROLLMENT });
+      expect(!refused.ok && refused.error.code).toBe('CONFLICT_VERSION');
+      const failed = await define(rt, {
+        queuesWork: true,
+        handler: () => Promise.reject(new Error('boom')),
+      })({ enrollmentId: ENROLLMENT });
+      expect(!failed.ok && failed.error.code).toBe('INTERNAL_ERROR');
+      const denied = await define(rt, { queuesWork: true })({
+        enrollmentId: '55555555-5555-4555-8555-555555555555',
+      });
+      expect(!denied.ok && denied.error.code).toBe('NOT_FOUND');
+      expect(log.filter((step) => step === 'commit')).toEqual([]);
+      expect(kicks).toEqual([]);
+    });
+
+    it('after a conflict retry, only the committed attempt decides', async () => {
+      const conflict = Object.assign(new Error('deadlock'), { code: '40P01' });
+      let attempt = 0;
+      const base = kickRuntime({
+        // First attempt "emits" and is rolled back as a deadlock victim; the second emits nothing.
+        queuedWork: () => Promise.resolve(attempt === 1),
+      });
+      const rt: ActionRuntime<FakeTx> = {
+        ...base.rt,
+        withUserTx: async (c, fn, o) => {
+          attempt += 1;
+          try {
+            return await base.rt.withUserTx(c, async (tx) => {
+              const out = await fn(tx);
+              if (attempt === 1) throw conflict;
+              return out;
+            });
+          } catch (error) {
+            if (error !== conflict || o?.retryOnConflict !== true) throw error;
+            attempt += 1;
+            return base.rt.withUserTx(c, fn);
+          }
+        },
+      };
+      expect(await define(rt)({ enrollmentId: ENROLLMENT })).toEqual(ok('done'));
+      expect(base.kicks).toEqual([]);
+    });
+
+    it('a throwing requestWorkerPass never changes the answer; afterCommit still runs', async () => {
+      const after = vi.fn(() => Promise.resolve(ok('after')));
+      const { rt } = kickRuntime({
+        requestWorkerPass: () => {
+          throw new Error('kick failed');
+        },
+      });
+      expect(
+        await define(rt, { queuesWork: true, afterCommit: after })({ enrollmentId: ENROLLMENT }),
+      ).toEqual(ok('after'));
+      expect(after).toHaveBeenCalledOnce();
+    });
+
+    it('a runtime without requestWorkerPass (tests, tools) just commits', async () => {
+      const { rt, log } = runtime();
+      expect(await define(rt, { queuesWork: true })({ enrollmentId: ENROLLMENT })).toEqual(
+        ok('done'),
+      );
+      expect(log).toEqual(['begin', 'commit']);
     });
   });
 

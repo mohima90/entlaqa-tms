@@ -25,6 +25,12 @@ export type FileStatus =
   | 'uploaded'
   | 'scanning'
   | 'clean'
+  /**
+   * Checked by content and accepted WITHOUT a malware scan: purposes with scan_required = false only (the
+   * branding images, PO 20 Oct 2026; migration 20261023100500). Never `clean`: not downloadable, not
+   * readable by module jobs.
+   */
+  | 'accepted'
   | 'infected'
   | 'rejected'
   | 'error'

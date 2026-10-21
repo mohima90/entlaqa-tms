@@ -5,8 +5,10 @@ import { BRAND_ASSET_BATCH, BRAND_ASSET_TASK, createBrandAssetTask } from './bra
 
 const db = vi.hoisted(() => ({
   claimBrandAssetWork: vi.fn(),
+  loadBrandImageSource: vi.fn(),
   noteBrandAssetFailure: vi.fn(),
   publishBrandAsset: vi.fn(),
+  publishBrandImage: vi.fn(),
 }));
 vi.mock('@jadarat/platform-db/jobs', () => db);
 
@@ -24,16 +26,32 @@ const tx = <T>(actor: unknown, fn: (t: unknown) => Promise<T>) => {
   return fn({});
 };
 
-function setup(read: () => Promise<ReadableStream<Uint8Array>>) {
+const KEY = `${TENANT}/platform/tenant_branding/${TENANT}/${FILE}`;
+const CLEAN_SOURCE = {
+  bucket: 'images',
+  objectKey: KEY,
+  status: 'clean',
+  scanRequired: true,
+  size: PNG.length,
+  sha256: createHash('sha256').update(PNG).digest('hex'),
+};
+
+function setup(
+  read: () => Promise<ReadableStream<Uint8Array>>,
+  object: () => Promise<{ body: ReadableStream<Uint8Array>; size: number | null } | null> = () =>
+    Promise.resolve(null),
+) {
   const log = vi.fn();
   const files = { openScannedFile: vi.fn(read), storeGeneratedFile: vi.fn() };
+  const store = { read: vi.fn(object), move: vi.fn(), remove: vi.fn(), write: vi.fn() };
   const task = createBrandAssetTask({
     withPlatformTx: tx as never,
     withSystemTx: tx as never,
     files,
+    store,
     log,
   });
-  return { task, files, log };
+  return { task, files, store, log };
 }
 
 beforeEach(() => {
@@ -42,6 +60,9 @@ beforeEach(() => {
   db.publishBrandAsset.mockReset();
   db.noteBrandAssetFailure.mockReset();
   db.noteBrandAssetFailure.mockResolvedValue(1);
+  db.publishBrandImage.mockReset();
+  db.loadBrandImageSource.mockReset();
+  db.loadBrandImageSource.mockResolvedValue(CLEAN_SOURCE);
 });
 
 describe('branding image publishing task (WP-ADM-02)', () => {
@@ -154,5 +175,77 @@ describe('branding image publishing task (WP-ADM-02)', () => {
     const { task, log } = setup(() => Promise.resolve(streamOf(PNG)));
     await task.run({ jobId: 'job-6' });
     expect(log).not.toHaveBeenCalled();
+  });
+});
+
+describe('fallback for images without a malware scan (PO, 20 Oct 2026)', () => {
+  const UPLOADED = { ...CLEAN_SOURCE, status: 'uploaded', scanRequired: false, sha256: null };
+
+  it('reads an uploaded image with the worker key, prepares it as the web app does and publishes it', async () => {
+    db.claimBrandAssetWork.mockResolvedValue([{ tenantId: TENANT, fileId: FILE, kind: 'logo' }]);
+    db.loadBrandImageSource.mockResolvedValue(UPLOADED);
+    db.publishBrandImage.mockResolvedValue('3c4d5e6f-7081-4a9b-8c1d-2e3f4a5b6c7d');
+    const { task, files, store, log } = setup(
+      () => Promise.reject(new Error('never')),
+      () =>
+        Promise.resolve({ body: streamOf(PNG.subarray(0, 5), PNG.subarray(5)), size: PNG.length }),
+    );
+    await task.run({ jobId: 'job-u1' });
+    expect(files.openScannedFile).not.toHaveBeenCalled();
+    expect(store.read).toHaveBeenCalledWith('images', KEY);
+    expect(db.publishBrandAsset).not.toHaveBeenCalled();
+    const [, image] = db.publishBrandImage.mock.calls[0] ?? [];
+    expect(image).toMatchObject({
+      fileId: FILE,
+      kind: 'logo',
+      sourceSha256: createHash('sha256').update(PNG).digest('hex'),
+      sourceSize: PNG.length,
+      contentType: 'image/png',
+    });
+    const content = Buffer.from((image as { content: Uint8Array }).content);
+    expect(content).toEqual(Buffer.from(CLEAN));
+    expect(content.includes('GPS')).toBe(false);
+    expect(log).toHaveBeenCalledWith('info', 'branding images published: 1');
+  });
+
+  it('never publishes what is not a PNG, JPEG or WebP, nor an image too large', async () => {
+    db.claimBrandAssetWork.mockResolvedValue([{ tenantId: TENANT, fileId: FILE, kind: 'favicon' }]);
+    db.loadBrandImageSource.mockResolvedValue(UPLOADED);
+    const html = new TextEncoder().encode('<html><script>alert(1)</script></html>');
+    const first = setup(
+      () => Promise.reject(new Error('never')),
+      () => Promise.resolve({ body: streamOf(html), size: html.length }),
+    );
+    await first.task.run({ jobId: 'job-u2' });
+    expect(db.noteBrandAssetFailure).toHaveBeenCalledWith({}, FILE, 'TYPE_NOT_ALLOWED');
+    const big = new Uint8Array(500 * 1024 + 1);
+    const second = setup(
+      () => Promise.reject(new Error('never')),
+      () => Promise.resolve({ body: streamOf(big), size: big.length }),
+    );
+    await second.task.run({ jobId: 'job-u3' });
+    expect(db.noteBrandAssetFailure).toHaveBeenCalledWith({}, FILE, 'TOO_LARGE');
+    expect(db.publishBrandImage).not.toHaveBeenCalled();
+  });
+
+  it('a missing object is a failure of the image; a scanned purpose waiting for its scan is skipped', async () => {
+    db.claimBrandAssetWork.mockResolvedValue([{ tenantId: TENANT, fileId: FILE, kind: 'logo' }]);
+    db.loadBrandImageSource.mockResolvedValue(UPLOADED);
+    const missing = setup(() => Promise.reject(new Error('never')));
+    await missing.task.run({ jobId: 'job-u4' });
+    expect(db.noteBrandAssetFailure).toHaveBeenCalledWith({}, FILE, 'OBJECT_MISSING');
+
+    db.noteBrandAssetFailure.mockClear();
+    db.loadBrandImageSource.mockResolvedValue({ ...UPLOADED, scanRequired: true });
+    const scanned = setup(() => Promise.reject(new Error('never')));
+    await scanned.task.run({ jobId: 'job-u5' });
+    expect(scanned.store.read).not.toHaveBeenCalled();
+    expect(scanned.files.openScannedFile).not.toHaveBeenCalled();
+    expect(db.noteBrandAssetFailure).not.toHaveBeenCalled();
+
+    db.loadBrandImageSource.mockResolvedValue(null);
+    const gone = setup(() => Promise.reject(new Error('never')));
+    await gone.task.run({ jobId: 'job-u6' });
+    expect(gone.log).not.toHaveBeenCalled();
   });
 });

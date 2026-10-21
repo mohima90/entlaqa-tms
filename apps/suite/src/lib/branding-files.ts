@@ -6,11 +6,12 @@ import {
   confirmUpload,
   fileResult,
   getFileStatus,
+  readBrandUpload,
   reserveUploadIntent,
   signUploadIntent,
 } from '@jadarat/platform-files';
 import { requestFileStorage } from '@jadarat/platform-files/next';
-import type { BrandingFileService } from '@jadarat/platform-rbac';
+import type { BrandingFileService, BrandingImageReader } from '@jadarat/platform-rbac';
 
 /** What the browser needs for its PUT (WP-ADM-02 Branding images). */
 export interface BrandUploadTarget {
@@ -24,8 +25,9 @@ export interface BrandUploadTarget {
 
 /**
  * The Branding page's file service (WP-ADM-02): platform-files with the branding purposes (PNG/JPEG/WebP;
- * 2 MB / 500 KB / 5 MB; scanned), the reservation in the action's transaction and the signed upload URL
- * after the commit with the user's own Storage session (T-M2-18 integration review M1).
+ * 2 MB / 500 KB / 5 MB; not virus-scanned since 20 Oct 2026), the reservation in the action's transaction
+ * and the signed upload URL after the commit with the user's own Storage session (T-M2-18 integration
+ * review M1).
  */
 export const brandingFiles: BrandingFileService<UploadReservation, BrandUploadTarget> = {
   reserve: (tx, request) =>
@@ -53,4 +55,33 @@ export const brandingFiles: BrandingFileService<UploadReservation, BrandUploadTa
   confirm: (tx, fileId) => fileResult(confirmUpload(tx, fileId)),
   status: (tx, fileId) => getFileStatus(tx, fileId),
   purposeOf: (slot) => BRAND_IMAGE_PURPOSES[slot],
+};
+
+/**
+ * Save, before its transaction (PO, 20 Oct 2026: branding images are not virus-scanned, so they show at
+ * once): the admin's own upload read back with their Storage session — never a Storage key — checked by
+ * content, size and pixels and stripped of its metadata (platform-files readBrandUpload). The copy is
+ * published in the save's transaction. Storage unavailable → `unavailable` (saved; the worker publishes it).
+ */
+export const readBrandingImage: BrandingImageReader = async ({ tenantId, kind, fileId }) => {
+  const read = await fileResult(
+    readBrandUpload(await requestFileStorage(), { tenantId, slot: kind, fileId }),
+  );
+  // Storage unavailable (temporary): the save still goes through; the worker publishes the image (M2).
+  if (!read.ok && read.error.code === 'FILE_STORAGE_UNAVAILABLE') return ok({ unavailable: true });
+  if (!read.ok) return read;
+  const value = read.value;
+  if ('missing' in value) return ok(value);
+  if ('refused' in value) return ok({ refused: value.refused });
+  const image = value.prepared;
+  return ok({
+    publication: {
+      fileId: image.fileId,
+      kind: image.slot,
+      sourceSha256: image.sourceSha256,
+      sourceSize: image.sourceSize,
+      contentType: image.contentType,
+      content: image.content,
+    },
+  });
 };

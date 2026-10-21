@@ -44,6 +44,8 @@ describe('file purposes', () => {
         maxBytes,
         types: ['image/png', 'image/jpeg', 'image/webp'],
         uploadBy: 'user',
+        // PO, 20 Oct 2026: not virus-scanned (like Kawadir); type, size, pixels and metadata still checked.
+        scanRequired: false,
       });
       expect(declaredTypeFor(purpose as keyof typeof limits, 'logo.svg')).toBeNull();
       expect(declaredTypeFor(purpose as keyof typeof limits, 'logo.gif')).toBeNull();
@@ -52,6 +54,20 @@ describe('file purposes', () => {
       expect(declaredTypeFor(purpose as keyof typeof limits, 'logo.WEBP')).toBe('image/webp');
       expect(declaredTypeFor(purpose as keyof typeof limits, 'شعار.png')).toBe('image/png');
     }
+  });
+
+  it('only raster images users upload may skip the malware scan (migration 20261023100400)', () => {
+    for (const [purpose, definition] of Object.entries(FILE_PURPOSES)) {
+      if (definition.scanRequired) continue;
+      expect(purpose.startsWith('platform.brand_')).toBe(true);
+      expect(definition.uploadBy).toBe('user');
+      expect(definition.bucket).toBe('images');
+      for (const type of definition.types) {
+        expect(['image/png', 'image/jpeg', 'image/webp']).toContain(type);
+      }
+    }
+    expect(FILE_PURPOSES['platform.user_import'].scanRequired).toBe(true);
+    expect(FILE_PURPOSES['platform.profile_photo'].scanRequired).toBe(true);
   });
 
   it('download links live at most 5 minutes (ADR 0006 §4)', () => {

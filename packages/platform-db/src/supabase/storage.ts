@@ -24,6 +24,17 @@ export interface UserFileStorage {
     ttlSeconds: number,
     downloadName: string,
   ): Promise<string>;
+  /**
+   * The bytes of an object the user's session may read (the SELECT policy — e.g. their own upload of a
+   * purpose without a malware scan, waiting to be accepted: the branding images, WP-ADM-02), read as a
+   * stream and stopped past `maxBytes` ('too_large'). Null when the policies refuse it or it does not exist
+   * (Storage answers both the same). Throws FileStorageError STORAGE_UNAVAILABLE (temporary).
+   */
+  readObject(
+    bucket: string,
+    objectKey: string,
+    maxBytes: number,
+  ): Promise<Uint8Array | 'too_large' | null>;
 }
 
 export interface SignedUpload {
@@ -173,6 +184,33 @@ export function toPublicUrl(raw: string, publicOrigin: string | null): string {
   return new URL(`${url.pathname}${url.search}`, publicOrigin).toString();
 }
 
+/** Reads a stream to its end, or stops past `maxBytes` (the rest is never read). */
+export async function readCapped(
+  stream: ReadableStream<Uint8Array>,
+  maxBytes: number,
+): Promise<Uint8Array | 'too_large'> {
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.length;
+    if (size > maxBytes) {
+      await reader.cancel().catch(() => undefined);
+      return 'too_large';
+    }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return bytes;
+}
+
 /**
  * Storage through the user's server-side Supabase client (createSupabaseServerClient: publishable key +
  * the user's session cookies). Signing refuses to run inside a database transaction of the request
@@ -213,6 +251,28 @@ export function createUserFileStorage(
       const url = new URL(answer.data.signedUrl);
       url.searchParams.set('download', downloadName);
       return toPublicUrl(url.toString(), publicOrigin);
+    },
+    async readObject(bucket, objectKey, maxBytes) {
+      assertNoDatabaseTransaction('Reading a Storage object');
+      let answer: { data: ReadableStream<Uint8Array> | null; error: unknown };
+      try {
+        // GET /object/<bucket>/<key> with the user's own token: Storage applies the SELECT policy.
+        answer = await client.storage.from(bucket).download(objectKey).asStream();
+      } catch {
+        throw new FileStorageError('STORAGE_UNAVAILABLE', true);
+      }
+      if (answer.error) {
+        const refusal = storageErrorOf(answer.error);
+        if (refusal.temporary) throw refusal;
+        return null;
+      }
+      if (!answer.data) return null;
+      try {
+        return await readCapped(answer.data, maxBytes);
+      } catch {
+        // The stream broke off: worth another try.
+        throw new FileStorageError('STORAGE_UNAVAILABLE', true);
+      }
     },
   };
 }

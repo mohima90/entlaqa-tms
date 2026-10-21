@@ -4,8 +4,10 @@ import {
   readAuthLimitWindowOverride,
   readPasswordResetDelivery,
 } from '@jadarat/platform-identity';
+import { readWorkerKickSettings } from '@jadarat/platform-jobs/kick';
 import { log } from '@jadarat/platform-observability';
 import { parseAppBaseUrl } from './app-base-url';
+import { cronSecret } from './cron-jobs';
 import { CLIENT_IP_HEADER_ENV, readClientIpHeaderSetting } from './client-ip';
 
 type Env = Readonly<Record<string, string | undefined>>;
@@ -41,6 +43,15 @@ export function readClientIpHeader(env: Env): string | null {
  * APP_BASE_URL (FR-IAM-03, FR-ADM-17; configuration, not a secret): the canonical origin of copied invitation
  * links. A value that is not an https origin (http for localhost) without a path stops the start; unset,
  * the browser's own origin is used — a WARNING on a Vercel production deployment (`app_base_url_missing`).
+ *
+ * JOBS_DISPATCH_APP_ID / JOBS_DISPATCH_APP_PRIVATE_KEY / JOBS_DISPATCH_INSTALLATION_ID / JOBS_DISPATCH_REPO
+ * (ADR 0005 §1 amendment, 20 Oct 2026, security review H1 21 Oct 2026; platform-jobs ./kick): the web app
+ * starts the GitHub Jobs workflow after queued work, as a GitHub App. An incomplete or invalid set is an ERROR
+ * at start naming the setting only (`jobs_dispatch_config_invalid`; dispatching stays off, the app still
+ * starts — passes then come from GitHub's 5-minute schedule only); the App on a Vercel production deployment
+ * without CRON_SECRET is a WARNING (`cron_secret_missing`: the per-minute cron is refused). A leftover
+ * JOBS_DISPATCH_TOKEN (the personal token of the first version) is a WARNING (`jobs_dispatch_token_obsolete`):
+ * it is ignored — delete it from the environment and revoke it on GitHub.
  */
 export function checkServerSettings(env: Env = process.env) {
   const delivery = readPasswordResetDelivery(env);
@@ -87,6 +98,28 @@ export function checkServerSettings(env: Env = process.env) {
       reason: 'app_base_url_missing',
     });
   }
+  const workerKick = readWorkerKickSettings(env);
+  if ((env.JOBS_DISPATCH_TOKEN?.trim() ?? '') !== '') {
+    log.warn(
+      'JOBS_DISPATCH_TOKEN is no longer used (the worker kick runs as a GitHub App): remove it and revoke the token',
+      { action: 'app.start', reason: 'jobs_dispatch_token_obsolete' },
+    );
+  }
+  if (workerKick.kind === 'invalid') {
+    log.error(`${workerKick.problem} is invalid: the web app does not start worker passes`, {
+      action: 'app.start',
+      reason: 'jobs_dispatch_config_invalid',
+    });
+  } else if (
+    workerKick.kind === 'on' &&
+    env.VERCEL_ENV === 'production' &&
+    cronSecret(env) === undefined
+  ) {
+    log.warn('CRON_SECRET is not set: the per-minute worker-pass cron is refused (401)', {
+      action: 'app.start',
+      reason: 'cron_secret_missing',
+    });
+  }
   const clientIpHeader = clientIp.kind === 'header' ? clientIp.name : null;
   if (env.NODE_ENV === 'production' && env.VERCEL !== '1' && clientIpHeader === null) {
     log.error(
@@ -100,5 +133,6 @@ export function checkServerSettings(env: Env = process.env) {
     authClientHeader,
     clientIpHeader,
     appBaseUrl,
+    workerKick: workerKick.kind,
   };
 }

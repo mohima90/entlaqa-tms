@@ -1,3 +1,4 @@
+import { generateKeyPairSync } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import { checkServerSettings } from './server-settings';
 
@@ -25,6 +26,57 @@ describe('server settings at start-up (T-M2-17, T-M2-11)', () => {
     );
   });
 
+  it('worker kick (ADR 0005 §1 amendment, review H1): off by default; incomplete or invalid → an error naming the setting, never a stop; no CRON_SECRET on Vercel → a warning; a leftover personal token → a warning', () => {
+    const pem = generateKeyPairSync('rsa', { modulusLength: 2048 })
+      .privateKey.export({ type: 'pkcs8', format: 'pem' })
+      .toString();
+    const app = {
+      JOBS_DISPATCH_APP_ID: '123456',
+      JOBS_DISPATCH_APP_PRIVATE_KEY: pem,
+      JOBS_DISPATCH_INSTALLATION_ID: '7890123',
+      JOBS_DISPATCH_REPO: 'mohima90/entlaqa-tms',
+    };
+    log.error.mockClear();
+    log.warn.mockClear();
+    expect(checkServerSettings(app).workerKick).toBe('on');
+    const { JOBS_DISPATCH_INSTALLATION_ID: _omitted, ...incomplete } = app;
+    expect(checkServerSettings(incomplete).workerKick).toBe('invalid');
+    expect(log.error).toHaveBeenCalledWith(
+      'JOBS_DISPATCH_INSTALLATION_ID is invalid: the web app does not start worker passes',
+      { action: 'app.start', reason: 'jobs_dispatch_config_invalid' },
+    );
+    log.error.mockClear();
+    expect(
+      checkServerSettings({ ...app, JOBS_DISPATCH_APP_PRIVATE_KEY: 'not-a-pem-secret' }).workerKick,
+    ).toBe('invalid');
+    expect(log.error).toHaveBeenCalledWith(
+      'JOBS_DISPATCH_APP_PRIVATE_KEY is invalid: the web app does not start worker passes',
+      { action: 'app.start', reason: 'jobs_dispatch_config_invalid' },
+    );
+    expect(JSON.stringify(log.error.mock.calls)).not.toContain('not-a-pem-secret');
+    expect(JSON.stringify(log.error.mock.calls)).not.toContain('PRIVATE KEY');
+    const on = { ...app, VERCEL: '1', VERCEL_ENV: 'production' };
+    checkServerSettings(on);
+    expect(log.warn).toHaveBeenCalledWith(
+      'CRON_SECRET is not set: the per-minute worker-pass cron is refused (401)',
+      { action: 'app.start', reason: 'cron_secret_missing' },
+    );
+    log.warn.mockClear();
+    checkServerSettings({ ...on, CRON_SECRET: 'xxxxxxxxxxxxxxxxxxxx' });
+    expect(log.warn).not.toHaveBeenCalledWith(expect.anything(), {
+      action: 'app.start',
+      reason: 'cron_secret_missing',
+    });
+    // The personal token of the first version is ignored and reported (never its value).
+    const token = 'github_pat_0123456789abcdefghijklmnopqrstuvwxyz';
+    expect(checkServerSettings({ JOBS_DISPATCH_TOKEN: token }).workerKick).toBe('off');
+    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('JOBS_DISPATCH_TOKEN'), {
+      action: 'app.start',
+      reason: 'jobs_dispatch_token_obsolete',
+    });
+    expect(JSON.stringify(log.warn.mock.calls)).not.toContain(token);
+  });
+
   it('reads PASSWORD_RESET_DELIVERY: auth by default, worker when set', () => {
     expect(checkServerSettings({})).toEqual({
       passwordResetDelivery: 'auth',
@@ -32,6 +84,7 @@ describe('server settings at start-up (T-M2-17, T-M2-11)', () => {
       authClientHeader: null,
       clientIpHeader: null,
       appBaseUrl: null,
+      workerKick: 'off',
     });
     expect(checkServerSettings({ PASSWORD_RESET_DELIVERY: 'worker' })).toMatchObject({
       passwordResetDelivery: 'worker',

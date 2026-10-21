@@ -12,13 +12,17 @@ import { type ClaimsTx, runWithClaims } from '../claims-tx';
 
 export {
   type BrandAssetWork,
+  type BrandImageSource,
   type EmailBrand,
   claimBrandAssetWork,
   forgetBrandingDeployedForTests,
   getEmailBrand,
+  loadBrandImageSource,
   noteBrandAssetFailure,
   publishBrandAsset,
 } from './branding';
+// Branding images without a malware scan: the same database call as the web app's (job's tenant claims).
+export { type BrandImagePublication, publishBrandImage } from '../branding';
 export {
   type ClaimedEmail,
   type DeliveryOutcome,

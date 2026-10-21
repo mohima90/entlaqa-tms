@@ -7,15 +7,13 @@ import {
   initialSlot,
   pickFailed,
   removed,
-  scanFinished,
-  scanPollDelays,
+  saveRefused,
   uploadConfirmed,
   uploadFailed,
 } from './brand-image-slot';
 
 const SAVED = { fileId: 'f-saved', src: '/api/brand/a-saved', name: 'logo.png' };
 const NEW = { src: 'blob:new', name: 'new-logo.png' };
-const errorFor = (status: string) => `error:${status}`;
 
 const saved = (): SlotState => initialSlot(SAVED);
 const picking = () => beginPick(saved(), NEW, 'uploading');
@@ -55,26 +53,22 @@ describe('Branding image slot (WP-ADM-02)', () => {
     expectSavedBack(uploadFailed(picking(), NEW.src, error), error);
   });
 
-  it.each([['infected'], ['rejected'], ['error'], ['deleted']])(
-    'the scan says %s: the saved image is back',
-    (status) => {
-      const checking = uploadConfirmed(picking(), NEW.src, 'f-new', 'uploaded');
-      expect(checking).toMatchObject({ fileId: 'f-new', phase: 'checking' });
-      expectSavedBack(scanFinished(checking, 'f-new', status, errorFor), `error:${status}`);
-    },
-  );
+  it('a confirmed upload is ready at once — no scan to wait for (PO, 20 Oct 2026); the saved image can still come back', () => {
+    const ready = uploadConfirmed(picking(), NEW.src, 'f-new');
+    expect(ready).toMatchObject({ fileId: 'f-new', src: 'blob:new', phase: 'ready', error: null });
+    expect(ready.previous).toMatchObject({ fileId: 'f-saved' });
+  });
 
-  it('a clean scan keeps the new file; nothing to put back any more', () => {
-    const checking = uploadConfirmed(picking(), NEW.src, 'f-new', 'uploaded');
-    const ready = scanFinished(checking, 'f-new', 'clean', errorFor);
-    expect(ready).toMatchObject({
-      fileId: 'f-new',
-      src: 'blob:new',
-      phase: 'ready',
-      previous: null,
-    });
-    const cleanAtOnce = uploadConfirmed(picking(), NEW.src, 'f-new', 'clean');
-    expect(cleanAtOnce).toMatchObject({ phase: 'ready', previous: null });
+  it('the save refuses the new image (type, size, pixels, damaged): the saved image is back, with the reason', () => {
+    const ready = uploadConfirmed(picking(), NEW.src, 'f-new');
+    expectSavedBack(saveRefused(ready, 'error:type'), 'error:type');
+    // A saved image the save refused keeps showing, with the reason.
+    expect(saveRefused(saved(), 'error:x')).toMatchObject({ fileId: 'f-saved', error: 'error:x' });
+  });
+
+  it('after a successful save the new image is the saved one; nothing to put back any more', () => {
+    const savedNow = afterSave(uploadConfirmed(picking(), NEW.src, 'f-new'));
+    expect(savedNow).toMatchObject({ fileId: 'f-new', phase: 'saved', previous: null });
   });
 
   it('a first image that fails leaves the slot empty, with the reason', () => {
@@ -85,46 +79,24 @@ describe('Branding image slot (WP-ADM-02)', () => {
     });
   });
 
-  it('a second pick while the first is checked puts back the image before both', () => {
-    const checking = uploadConfirmed(picking(), NEW.src, 'f-new', 'uploaded');
-    const again = beginPick(checking, { src: 'blob:other', name: 'other.png' }, 'uploading');
+  it('a second pick while the first waits for the save puts back the image before both', () => {
+    const ready = uploadConfirmed(picking(), NEW.src, 'f-new');
+    const again = beginPick(ready, { src: 'blob:other', name: 'other.png' }, 'uploading');
     expect(again).toMatchObject({ fileId: 'f-saved', src: 'blob:other' });
-    // The abandoned file's scan result changes nothing.
-    expect(scanFinished(again, 'f-new', 'infected', errorFor)).toBe(again);
     expectSavedBack(uploadFailed(again, 'blob:other', 'error:upload'), 'error:upload');
   });
 
   it('late answers for a removed or replaced pick change nothing', () => {
     const gone = removed();
-    expect(uploadConfirmed(gone, NEW.src, 'f-new', 'clean')).toBe(gone);
+    expect(uploadConfirmed(gone, NEW.src, 'f-new')).toBe(gone);
     expect(uploadFailed(gone, NEW.src, 'x')).toBe(gone);
     const other = beginPick(saved(), { src: 'blob:other', name: 'o.png' }, 'uploading');
-    expect(uploadConfirmed(other, NEW.src, 'f-new', 'clean')).toBe(other);
-  });
-
-  it('after a save, a failing scan empties the slot (the old image was released by the save)', () => {
-    const checking = uploadConfirmed(picking(), NEW.src, 'f-new', 'uploaded');
-    const savedNow = afterSave(checking);
-    expect(savedNow.previous).toBeNull();
-    expect(scanFinished(savedNow, 'f-new', 'infected', errorFor)).toEqual({
-      ...EMPTY_SLOT,
-      error: 'error:infected',
-    });
+    expect(uploadConfirmed(other, NEW.src, 'f-new')).toBe(other);
   });
 
   it('a preview-only pick keeps the saved file and can be put back', () => {
     const preview = beginPick(saved(), NEW, 'previewOnly');
     expect(preview).toMatchObject({ fileId: 'f-saved', phase: 'previewOnly' });
     expectSavedBack(pickFailed(preview, 'x'), 'x');
-  });
-
-  it('polls quickly at first, then slower, for about ten minutes', () => {
-    const delays = scanPollDelays();
-    const total = delays.reduce((sum, d) => sum + d, 0);
-    expect(delays[0]).toBe(2000);
-    expect(total).toBeGreaterThanOrEqual(600_000);
-    expect(total).toBeLessThan(660_000);
-    expect(Math.max(...delays)).toBe(30_000);
-    expect(delays.length).toBeLessThan(30);
   });
 });

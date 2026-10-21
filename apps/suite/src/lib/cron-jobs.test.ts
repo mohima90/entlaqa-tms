@@ -1,0 +1,119 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  WRONG_BEARER_LOG_INTERVAL_MS,
+  cronAuthorized,
+  forgetCronLogStateForTests,
+  handleCronJobsRequest,
+} from './cron-jobs';
+
+const SECRET = 'cron-secret-xxxxxxxxxxxxxxxx';
+
+function call(authorization?: string) {
+  return new Request('https://tms.example.com/api/cron/jobs', {
+    headers: authorization === undefined ? {} : { authorization },
+  });
+}
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  forgetCronLogStateForTests();
+});
+
+describe('cronAuthorized', () => {
+  it('accepts exactly `Bearer <CRON_SECRET>`', () => {
+    expect(cronAuthorized(`Bearer ${SECRET}`, SECRET)).toBe(true);
+    expect(cronAuthorized(`Bearer ${SECRET}x`, SECRET)).toBe(false);
+    expect(cronAuthorized(`bearer ${SECRET}`, SECRET)).toBe(false);
+    expect(cronAuthorized(SECRET, SECRET)).toBe(false);
+    expect(cronAuthorized(null, SECRET)).toBe(false);
+  });
+
+  it('trims both sides the same way (L6)', () => {
+    expect(cronAuthorized(`Bearer ${SECRET}`, `  ${SECRET}\n`)).toBe(true);
+    expect(cronAuthorized(`  Bearer ${SECRET}  `, SECRET)).toBe(true);
+    expect(cronAuthorized(`Bearer  ${SECRET}`, SECRET)).toBe(true);
+    expect(cronAuthorized('Bearer    ', SECRET)).toBe(false);
+    expect(cronAuthorized(`Bearer ${SECRET}`, `   short   `)).toBe(false);
+  });
+
+  it('refuses everything without a CRON_SECRET of at least 16 characters (fail closed)', () => {
+    expect(cronAuthorized('Bearer ', undefined)).toBe(false);
+    expect(cronAuthorized('Bearer short', 'short')).toBe(false);
+  });
+});
+
+describe('GET /api/cron/jobs', () => {
+  it('401 without, or with a wrong, secret — and nothing is requested', async () => {
+    const requestWorkerPass = vi.fn(() => Promise.resolve('dispatched'));
+    const env = { CRON_SECRET: SECRET };
+    for (const authorization of [
+      undefined,
+      'Bearer wrong',
+      `Bearer ${SECRET}0`,
+      `Basic ${SECRET}`,
+    ]) {
+      const response = await handleCronJobsRequest(call(authorization), {
+        env,
+        requestWorkerPass,
+      });
+      expect(response.status).toBe(401);
+      expect(response.headers.get('cache-control')).toBe('no-store');
+    }
+    expect(requestWorkerPass).not.toHaveBeenCalled();
+  });
+
+  it('401 when CRON_SECRET is not set on the server, warned once per instance', async () => {
+    const spy = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+    const requestWorkerPass = vi.fn(() => Promise.resolve('dispatched'));
+    for (const env of [{}, { CRON_SECRET: 'short' }, {}]) {
+      const response = await handleCronJobsRequest(call('Bearer '), { env, requestWorkerPass });
+      expect(response.status).toBe(401);
+    }
+    expect(requestWorkerPass).not.toHaveBeenCalled();
+    const lines = spy.mock.calls.map(([line]) => String(line));
+    expect(lines.filter((line) => line.includes('cron_secret_missing'))).toHaveLength(1);
+  });
+
+  it('200 with the secret: asks for a pass with reason `cron` and returns the outcome only', async () => {
+    const requestWorkerPass = vi.fn(() => Promise.resolve('dispatched'));
+    const response = await handleCronJobsRequest(call(`Bearer ${SECRET}`), {
+      env: { CRON_SECRET: SECRET },
+      requestWorkerPass,
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ outcome: 'dispatched' });
+    expect(requestWorkerPass).toHaveBeenCalledWith('cron');
+  });
+
+  it('a wrong bearer while the secret is set: a warning without values, at most once per interval (L6)', async () => {
+    const spy = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+    let clock = 1_000_000;
+    const deps = {
+      env: { CRON_SECRET: SECRET },
+      requestWorkerPass: vi.fn(() => Promise.resolve('dispatched')),
+      now: () => clock,
+    };
+    // No Authorization header at all: refused, nothing logged.
+    expect((await handleCronJobsRequest(call(), deps)).status).toBe(401);
+    for (const wrong of ['Bearer wrong-value-1', 'Bearer wrong-value-2']) {
+      expect((await handleCronJobsRequest(call(wrong), deps)).status).toBe(401);
+    }
+    clock += WRONG_BEARER_LOG_INTERVAL_MS;
+    expect((await handleCronJobsRequest(call('Bearer wrong-value-3'), deps)).status).toBe(401);
+    const lines = spy.mock.calls.map(([line]) => String(line));
+    const mismatches = lines.filter((line) => line.includes('cron_secret_mismatch'));
+    expect(mismatches).toHaveLength(2);
+    expect(lines.join('\n')).not.toContain('wrong-value');
+    expect(lines.join('\n')).not.toContain(SECRET);
+    expect(deps.requestWorkerPass).not.toHaveBeenCalled();
+  });
+
+  it('200 no-op when dispatching is not configured (no dispatch App)', async () => {
+    const response = await handleCronJobsRequest(call(`Bearer ${SECRET}`), {
+      env: { CRON_SECRET: SECRET },
+      requestWorkerPass: () => Promise.resolve('off'),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ outcome: 'off' });
+  });
+});

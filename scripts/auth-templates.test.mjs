@@ -178,7 +178,10 @@ describe('Auth e-mail templates (T-M2-08)', () => {
       .map((ext) => `.${ext}`)
       .sort();
     expect(gatewayExtensions).toEqual([...DOWNLOAD_EXTENSIONS]);
-    // Creating signed URLs: port 8445, the app's network alone, the two sign POSTs and nothing else.
+    // Creating signed URLs: port 8445, the app's network alone, the two sign POSTs — and, since 20 Oct 2026
+    // (WP-ADM-02b: branding images are not virus-scanned), the app's GET of an `images` object with the
+    // user's own token (Storage's read policy admits only the uploader's own upload waiting to be accepted)
+    // — and nothing else.
     const signing = gateway.slice(
       gateway.indexOf('listen 8445 ssl;'),
       gateway.indexOf('listen 8444 ssl;'),
@@ -186,7 +189,12 @@ describe('Auth e-mail templates (T-M2-08)', () => {
     expect([...signing.matchAll(/proxy_pass (\S+);/g)].map((m) => m[1])).toEqual([
       'http://storage:5000/object/upload/sign/',
       'http://storage:5000/object/sign/',
+      'http://storage:5000/object/images/',
     ]);
+    expect(signing).toMatch(
+      /location \^~ \/storage\/v1\/object\/images\/ \{\n\s+limit_except GET \{ deny all; \}\n\s+proxy_pass http:\/\/storage:5000\/object\/images\/;/,
+    );
+    expect(signing.split('limit_except GET { deny all; }')).toHaveLength(2);
     expect(signing).toMatch(
       /\n\s+deny 10\.231\.0\.33;\n\s+allow 10\.231\.0\.32\/28;\n\s+deny all;\n/,
     );
@@ -202,7 +210,7 @@ describe('Auth e-mail templates (T-M2-08)', () => {
       'X-Forwarded-For',
       'Forwarded',
     ]) {
-      expect(signing.split(`proxy_set_header ${header} "";`)).toHaveLength(3);
+      expect(signing.split(`proxy_set_header ${header} "";`)).toHaveLength(4);
     }
     // The app and the gateway share `edge` (fixed subnet) and nothing else, so 8445's source rule holds.
     expect(compose).toContain('- { subnet: 10.231.0.32/28, gateway: 10.231.0.33 }');

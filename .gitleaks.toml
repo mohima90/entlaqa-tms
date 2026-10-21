@@ -23,3 +23,10 @@ condition = "AND"
 paths = ['''^apps/suite/src/lib/email-settings-form\.test\.ts$''', '''^packages/platform-notifications/src/jobs/(router|http-providers)\.test\.ts$''', '''^packages/platform-rbac/src/iam/email-integration\.test\.ts$''']
 regexTarget = "line"
 regexes = ['''(apiKey: '( re_abcdefgh123 |re_abcdefgh123|SG\.abcdefghij\.klmnopqrstuv|key-12345678)'|idempotencyKey: '5b0e7c39-6d4c-4d36-9d0a-1f0d1d6c0f11')''']
+
+[[allowlists]]
+description = "Fake cron secrets and a fake GitHub App installation token in worker-kick unit tests (ADR 0005 amendment; fixtures, not secrets). Commits bdda0da and 4fd0e20 hold them as literals; the current files use low-entropy placeholders."
+condition = "AND"
+paths = ['''^apps/suite/src/lib/(cron-jobs|server-settings)\.test\.ts$''', '''^packages/platform-jobs/src/kick/dispatch\.test\.ts$''']
+regexTarget = "line"
+regexes = ['''(const SECRET = 'cron-secret-0123456789abcdef';|CRON_SECRET: '0123456789abcdef0123'|const INSTALLATION_TOKEN = 'ghs_16C7e42F292c6912E7710c838347Ae178B4a';)''']

@@ -40,9 +40,30 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Worker-kick guard (security review H1, 21 Oct 2026; docs/engineering/background-jobs.md §1a): the web
+  # app's GitHub App (repository variable JOBS_KICK_ACTOR = its bot login, e.g. jadarat-jobs-kick[bot]) may
+  # start, cancel and re-run workflows of this repository. It may run Jobs only: every job here refuses a run
+  # whose triggering actor is that App (any event, re-runs included) and a MANUAL start (workflow_dispatch) by
+  # any bot; Dependabot's pull-request runs and schedules are unaffected, and with JOBS_KICK_ACTOR unset the
+  # PO and Claude still run it by hand. The job below makes a refused run fail visibly.
+  refuse-bot-start:
+    name: Refuse a start by the worker-kick app or another bot
+    if: github.triggering_actor == vars.JOBS_KICK_ACTOR || (github.event_name == 'workflow_dispatch' && endsWith(github.triggering_actor, '[bot]'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions: {}
+    steps:
+      - name: Refused
+        env:
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          echo "::error::This workflow refuses runs started by the worker-kick app or, by hand, by any bot ($TRIGGERING_ACTOR, $EVENT_NAME). Only Jobs may be started that way."
+          exit 1
+
   deploy:
     name: DB deploy (${{ inputs.mode }} → ${{ inputs.environment }})
-    if: github.ref == 'refs/heads/main'
+    if: (github.ref == 'refs/heads/main') && github.triggering_actor != vars.JOBS_KICK_ACTOR && (github.event_name != 'workflow_dispatch' || !endsWith(github.triggering_actor, '[bot]'))
     runs-on: ubuntu-24.04
     # Up to 16 minutes waiting for the deploy lock, plus the run.
     timeout-minutes: 30
